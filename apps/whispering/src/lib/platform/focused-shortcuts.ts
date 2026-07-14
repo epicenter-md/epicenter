@@ -4,7 +4,11 @@ import {
 	LocalShortcutManagerLive,
 } from '$lib/services/local-shortcut-manager';
 import { settings } from '$lib/state/settings.svelte';
-import { bindingsEqual, type KeyBinding } from '$lib/utils/key-binding';
+import {
+	bindingsEqual,
+	isEmptyBinding,
+	type KeyBinding,
+} from '$lib/utils/key-binding';
 import { createShortcuts } from './shortcuts.shared';
 import type { Shortcuts } from './types';
 
@@ -28,13 +32,22 @@ const localKey = (id: Command['id']) => `shortcut.${id}` as const;
 // The cell schema validates stored `keys` structurally as `string[]`, while
 // `KeyBinding` narrows them to `Key[]`, so the read crosses that boundary with one
 // documented cast, like the global tier.
-const readBinding = (id: Command['id']): KeyBinding | null =>
-	settings.get(localKey(id)) as KeyBinding | null;
+const EMPTY_BINDING: KeyBinding = { modifiers: [], keys: [] };
+
+const readBinding = (id: Command['id']): KeyBinding | null => {
+	const binding = settings.get(localKey(id)) as KeyBinding;
+	return isEmptyBinding(binding) ? null : binding;
+};
+
+const readDefaultBinding = (id: Command['id']): KeyBinding | null => {
+	const binding = settings.getDefault(localKey(id)) as KeyBinding;
+	return isEmptyBinding(binding) ? null : binding;
+};
 
 export const focusedShortcuts: Shortcuts = createShortcuts({
 	read: readBinding,
-	getDefault: (id) => settings.getDefault(localKey(id)) as KeyBinding | null,
-	write: (id, binding) => settings.set(localKey(id), binding),
+	getDefault: readDefaultBinding,
+	write: (id, binding) => settings.set(localKey(id), binding ?? EMPTY_BINDING),
 	// The keydown matcher fires every command whose set matches, so two commands
 	// sharing a set would both trigger. Refuse an exact duplicate at write time.
 	findConflict: (id, binding) => {

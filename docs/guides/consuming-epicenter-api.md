@@ -21,6 +21,29 @@ The hosted hub at `https://api.epicenter.so` handles auth, real-time sync, and A
 
 On the client, `@epicenter/workspace` exposes the preset directly: define your schema with `defineTable` / `defineKv`, wrap it with `defineWorkspace({ id, tables, kv, actions })`, then connect once at boot. `toConnection(auth, nodeId)` projects the auth snapshot: `null` signed out (bare local IndexedDB storage), the principal's connection signed in (principal-scoped storage plus relay sync).
 
+## Choose the storage plane first
+
+A workspace owns queryable records, stable synchronized preferences, and
+collaborative documents attached to record identities. Each plane has one
+distinct lifecycle and synchronization model.
+
+```text
+workspace
+|-- records: one active epoch of typed tables and atomic cells
+|-- synchronized KV: bounded preferences with defaults
+`-- child documents: lazy Yjs content addressed through table rows
+```
+
+Use a record for product data that needs identity, queries, relationships, or an
+explicit create, update, and delete lifecycle. Use KV for a bounded synchronized
+preference that can read from a default and does not need to commit atomically
+with a record. Use a child document when concurrent edits must merge inside the
+value, as with text or a collaborative keyed collection.
+
+The current examples below use the pre-SQLite public workspace path. The target
+records API is landing under `@epicenter/workspace/sqlite`; its storage model is
+described in [Workspace data model](../reference/workspace-data-model.md).
+
 ## Minimal cloud workspace shape
 
 This snippet shows the current browser shape. The per-app browser opener is the single source of truth for "how this app mounts in a browser." It reads `auth.state` once, so principal changes reload the page and re-project the connection.

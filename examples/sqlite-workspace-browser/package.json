@@ -1,0 +1,27 @@
+{
+	"name": "@examples/sqlite-workspace-browser",
+	"version": "0.0.1",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"build": "vite build",
+		"check:generation-lock": "bun run ../../scripts/check-application-generation-locks.ts --check --lock generation-lock.json --candidate src/generations/g1/workspace.ts --candidate src/generations/g2/workspace.ts",
+		"generation-lock": "bun run ../../scripts/check-application-generation-locks.ts --write --lock generation-lock.json --candidate src/generations/g1/workspace.ts --candidate src/generations/g2/workspace.ts",
+		"smoke": "bun run build && bun run smoke.ts",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@epicenter/field": "workspace:*",
+		"@epicenter/identity": "workspace:*",
+		"@epicenter/server": "workspace:*",
+		"@epicenter/workspace": "workspace:*",
+		"hono": "catalog:",
+		"yjs": "catalog:"
+	},
+	"devDependencies": {
+		"@types/node": "catalog:",
+		"playwright": "^1.61.1",
+		"typescript": "catalog:",
+		"vite": "catalog:"
+	}
+}

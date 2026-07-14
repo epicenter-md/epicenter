@@ -1,5 +1,10 @@
 # Touch `updatedAt` When Content in a Separate Yjs Doc Changes
 
+> Transition note: the target SQLite declaration does not automate this
+> projection. An application that needs it owns the document observer,
+> coalescing policy, and record patch explicitly. See
+> [ADR-0126](../adr/0126-child-documents-use-format-capabilities-and-evolve-outside-records-databases.md).
+
 Think of Google Drive's file list. It's always loaded, renders instantly, and each row is metadata plus a pointer to a document stored elsewhere. In our [split-doc architecture](./only-the-leaves-need-revision-history.md), the files table works the same way: each row stores a name, size, and timestamps, and the row's `id` doubles as the GUID of a separate Yjs content document that loads on demand.
 
 That separation creates a blind spot. When someone edits a content doc, nothing in the metadata row changes, so everything watching the files table (persistence, the file tree UI, "recently modified" sorting) sees no event. The fix: touch `updatedAt` on the metadata row every time the referenced content changes. One cheap metadata write makes content edits visible to every observer without loading all content docs.

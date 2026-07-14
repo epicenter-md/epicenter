@@ -23,7 +23,9 @@ Then paste the same token into the client's instance setting (`{ baseURL, token 
 
 Boot fails closed if `INSTANCE_TOKEN` is missing or too weak, and the error names `gen-token`. The box never mints or stores a token: you own the secret, which is exactly what lets the same instance run on Cloudflare too. To rotate, generate a new token, restart with it, and redistribute it; there is no per-person revocation (see [Offboarding](#offboarding-and-rotation)).
 
-`INSTANCE_TOKEN` is the only required variable. The instance needs no database and no auth secret: it composes no Better Auth and stores rooms as `bun:sqlite` files on local disk (ADR-0075). `DATA_DIR` holds that room data; persist it.
+`INSTANCE_TOKEN` is the only required variable. The instance needs no external
+database and no auth secret: it stores Yjs rooms and record authorities as
+`bun:sqlite` files on local disk. `DATA_DIR` holds both; persist it.
 
 ### Use TLS
 

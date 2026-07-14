@@ -1,5 +1,9 @@
 # How CRDTs Evolve Schemas Without Traditional Migrations
 
+> Historical: this article describes the retired Yjs-record model. Epicenter's
+> target record plane uses records epochs. Restore or wholesale replacement
+> starts a new epoch outside the sync protocol. See [ADR-0130](../adr/0130-records-replacement-starts-a-new-epoch-without-an-online-succession-protocol.md).
+
 I'm building Epicenter, a local-first workspace system using Yjs CRDTs. When I started thinking about schema evolution, I assumed I'd need something like database migrations: version numbers, up/down scripts, the whole ceremony.
 
 Then I realized: CRDTs don't work like databases. And that changes everything.

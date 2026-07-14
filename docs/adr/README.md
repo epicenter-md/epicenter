@@ -81,7 +81,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0002](0002-four-visible-read-states.md) | Stored entries reconcile to four visible read states | Superseded by 0003 |
 | [0003](0003-three-read-states-after-encryption-removal.md) | Stored entries reconcile to three visible read states | Accepted |
 | [0004](0004-trust-the-relay-reject-zero-knowledge.md) | Trust the relay; reject zero-knowledge | Accepted |
-| [0005](0005-child-docs-are-bound-through-the-workspace.md) | Child docs are bound through the workspace, not the component | Accepted |
+| [0005](0005-child-docs-are-bound-through-the-workspace.md) | Child docs are bound through the workspace, not the component | Superseded by 0126 |
 | [0006](0006-schema-evolution-keeps-the-version-tuple-and-refuses-repair-apis.md) | Schema evolution keeps the version tuple and refuses repair APIs | Accepted |
 | [0007](0007-local-shortcuts-sync-global-shortcuts-stay-per-device.md) | Local shortcuts sync, global shortcuts stay per-device | Accepted |
 | [0008](0008-rdev-backs-the-desktop-global-trigger.md) | rdev backs the desktop global trigger | Superseded by 0117 |
@@ -195,5 +195,22 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0116](0116-local-mail-is-desktop-first-one-bun-engine-no-background-mail-service.md) | Local Mail is desktop-first: one Bun engine, no background mail service, the open app owns the sync loop | Accepted |
 | [0117](0117-global-shortcut-input-is-plugin-chords-only-and-the-macos-tap-is-just-the-paste-grant-watcher.md) | Global shortcut input is plugin chords only, and the macOS tap is just the paste grant watcher | Accepted |
 | [0118](0118-epicenter-is-one-trusted-bun-hosted-spa-origin.md) | Epicenter is one trusted Bun-hosted SPA origin | Accepted |
+| [0119](0119-complete-metadata-replicas-sync-through-schema-blind-server-ordered-mutations.md) | Complete metadata replicas sync through schema-blind server-ordered mutations | Accepted |
+| [0120](0120-persisted-fields-are-atomic-cells-and-collaborative-bodies-are-yjs-documents.md) | Persisted fields are atomic cells and collaborative bodies are Yjs documents | Accepted |
+| [0121](0121-background-sync-is-automatic-and-database-boundary-merges-are-reviewable.md) | Background sync is automatic and database-boundary merges are reviewable | Accepted |
+| [0122](0122-logical-snapshots-are-the-portable-record-database-format-sqlite-files-are-runtime-state.md) | Logical snapshots are the portable records database format; SQLite files are runtime state | Accepted |
+| [0123](0123-bounded-metadata-uses-record-authority-merge-sensitive-state-uses-lazy-child-documents.md) | Bounded metadata uses record authority; merge-sensitive state uses lazy child documents | Accepted |
+| [0124](0124-workspace-kv-keeps-one-logical-identity-outside-the-record-database.md) | Workspace KV keeps one logical identity outside the records database | Accepted |
+| [0125](0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md) | Records schemas are immutable; evolution creates a successor database | Superseded by 0130 |
+| [0126](0126-child-documents-use-format-capabilities-and-evolve-outside-records-databases.md) | Child documents use format capabilities and evolve outside records databases | Accepted (touch policy amended by 0128) |
+| [0127](0127-chat-streams-live-turns-in-client-state-and-stores-finished-messages-as-records.md) | Chat streams live turns in client state and stores finished messages as records | Accepted |
+| [0128](0128-tables-do-not-declare-document-edit-touch-policy-without-a-runtime-owner.md) | Tables do not declare document-edit touch policy without a runtime owner | Accepted |
+| [0129](0129-matter-is-markdown-authoritative-application-records-follow-developer-owned-schemas.md) | Matter is Markdown-authoritative; application records follow developer-owned schemas | Accepted |
+| [0130](0130-records-replacement-starts-a-new-epoch-without-an-online-succession-protocol.md) | Records replacement starts a new epoch without an online succession protocol | Superseded by 0134 |
+| [0131](0131-every-durable-records-materialization-carries-its-canonical-descriptor.md) | Every durable records materialization carries its canonical descriptor | Accepted |
+| [0132](0132-an-obsolete-replica-exports-one-read-only-recovery-checkpoint.md) | An obsolete replica exports one read-only recovery checkpoint | Accepted |
+| [0133](0133-ordinary-record-sync-requests-carry-only-the-records-epoch.md) | Ordinary record sync requests carry only the records epoch | Accepted |
+| [0134](0134-application-data-generations-own-immutable-workspace-namespaces.md) | Application data generations own immutable workspace namespaces | Accepted |
+| [0135](0135-new-builds-ask-before-initializing-a-new-data-generation.md) | New builds ask before initializing a new data generation | Accepted |
 
 When you add an ADR, add its row here.

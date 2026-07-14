@@ -7,10 +7,25 @@ shapes, see `docs/adr/`.
 
 ## Platform and topology
 
-- **Workspace**: a Y.Doc that is at once a sync room and an access-policy atom. The
-  unit apps compose; an app may compose several workspaces.
-- **Room**: the server side of a workspace. One Cloudflare Durable Object with an
-  embedded SQLite `updates` table.
+- **Workspace**: one generation-qualified identity and access-policy boundary.
+  It owns synchronized KV, child documents, app-owned blobs, and one active
+  records epoch.
+- **Application data generation**: one immutable durable application contract
+  spanning records, KV, child-document identities and formats, and app-owned
+  blobs. Any durable contract change publishes a new generation.
+- **Generation lock**: the committed append-only list of an application's
+  generated workspace IDs, records hashes, and durable-plane identity tokens.
+  It carries no compatibility or migration graph.
+- **Workspace ID**: the framework-generated `<appId>-gN` namespace for one
+  application data generation. Applications author only `appId` and a positive
+  `dataGeneration`.
+- **Generation-aware boot**: the current build inspects its own local root
+  identity without creating storage. If it is absent and predecessors exist,
+  the build asks before starting its generation or navigating to a previous one.
+- **Room**: one server-side synchronization address. Yjs rooms store document
+  updates; the records authority stores logical rows, mutations, and
+  snapshots. Cloudflare may colocate several such logical stores in one Durable
+  Object SQLite database without making their physical file the sync contract.
 - **Star**: the one runnable program that holds your data, composing anchor,
   store, sync, and identity/auth into a deployment (ADR-0069). The star is the
   unit of self-host and the entire privacy question: Epicenter runs it (hosted)
@@ -19,7 +34,7 @@ shapes, see `docs/adr/`.
   payload you hand it, and is never part of the star's topology. "Single-user /
   sovereign" is a preset over the star's credential source and principal
   resolver, not a mode (ADR-0070, amended by ADR-0092).
-- **Anchor**: the always-on node that *holds* a workspace's Y.Doc so a sleeping
+- **Anchor**: the always-on node that holds synchronized state so a sleeping
   device can catch up. Who runs the anchor is the whole privacy question (ADR-0068):
   user-run gives topology privacy, Epicenter-run is trusted plaintext. Privacy moves
   by relocating the anchor, never by a setting in the app.
@@ -85,8 +100,53 @@ shapes, see `docs/adr/`.
 
 ## Workspace API
 
-- **`defineTable` / `defineKv`**: schema builders for a workspace's tables and
-  key-value store.
+- **Cell**: one named atomic value in a record. An update replaces the complete
+  cell value; values that need structural or character-level merging belong in
+  a child document instead.
+- **Record**: one identified row in a typed table, consisting of a stable row ID
+  and named atomic cells. Records have explicit create, update, and delete
+  lifecycles.
+- **Record table**: one named, typed collection of records. The table defines
+  record fields and may declare separately stored child documents addressed
+  through each record.
+- **Records database**: storage terminology for the complete queryable
+  collection of record tables in one records epoch. Every synchronized device
+  materializes it in local SQLite; the authority stores logical records, not a
+  device's SQLite file.
+- **Records epoch**: the authority-minted identity of one continuous records
+  history inside one application data generation. Restore or repair may mint a
+  new epoch, but a schema change always publishes a new generation.
+- **Sequence**: the authority-assigned position of an accepted mutation inside
+  one records epoch. A sequence has no meaning without its epoch.
+- **Records schema hash**: the canonical identity of synchronized record tables,
+  fields, and every portable constraint that changes accepted values or their
+  interpretation. Workspace identity, KV, child documents, local indexes,
+  physical storage, and the records epoch do not enter it. The hash is frozen
+  inside one application data generation; applications author neither the hash
+  nor the epoch.
+- **Records descriptor**: canonical, hash-bound JSON that explains the record
+  tables, fields, and code-independent constraints. Every authority epoch and
+  durable SQLite materialization stores it beside the hash. It contains no
+  executable actions, permissions, KV, child-document contents, or replica
+  transport state.
+- **Document format**: one Epicenter-owned collaborative Yjs representation. A
+  format capability carries a canonical descriptor, a derived format hash, and
+  the function that attaches its typed handle to an open Y.Doc. Document format
+  identity is independent of the records schema hash.
+- **Records epoch fence**: the authority transactionally admits work only when
+  its records epoch is current. An old cursor or write is rejected before it can
+  enter the new history.
+- **Logical snapshot**: live table, row, field, and value state without SQLite
+  pages, indexes, actor identity, cursors, outboxes, or deleted history.
+- **`defineTable` / `defineKv`**: builders for the records tables and synchronized
+  preferences frozen into one application data generation. Adding or renaming a
+  table, field, KV key, or child-document declaration requires a new generation.
+  Every `define*` call snapshots caller-owned inputs into a framework-owned
+  immutable definition.
+- **Recovery checkpoint**: a read-only export from an epoch-fenced replica. It
+  carries the obsolete epoch, canonical descriptor and hash, complete local
+  logical rows, and pending logical mutations. It contains no SQLite pages,
+  indexes, cursors, or automatic replay instruction.
 - **`satisfiesWorkspace`**: the bundle-conformance helper (renamed from the older
   `defineWorkspaceBundle`).
 - **Actions and collaboration**: actions live on the workspace bundle;
@@ -94,11 +154,15 @@ shapes, see `docs/adr/`.
 - **`scan()`**: the single bulk table read. Returns three buckets, conforming,
   nonconforming, and newer-writer, plus point probes. The valid-only read family
   (`getAllValid`, `getAllInvalid`, `getAll`, `conformance`, `filter`) was deleted.
-- **`_v`**: the per-row schema version tuple; conformance is judged against it.
+- **`_v`**: the legacy Yjs-table row version tuple. The SQLite records path does
+  not use it; one application data generation has one frozen records schema.
 - **Conformance**: whether a stored row matches the current schema. Nonconforming
   rows surface in `scan()`, never silently dropped.
-- **Child doc**: a separate Y.Doc per row field (for example a transcript), reached
-  through `ws.tables.X.docs.field.open(rowId)`. The workspace owns guid derivation.
+- **Child document**: a separate, lazy Y.Doc owned by one row and reached through
+  `ws.tables.X.docs.name.open(rowId)`. The workspace derives its address from the
+  generation-qualified workspace ID, table, a collision-resistant digest of the
+  full row ID, document name, and document format hash; the format capability
+  attaches the typed content handle after the runtime opens the doc.
 - **Worker**: running behavior that observes workspace state and writes results
   back. Workers may be local (every node runs them) or agent-bound (one
   configured agent answers). A conversation is answered by the client agent loop

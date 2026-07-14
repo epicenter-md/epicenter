@@ -1,5 +1,11 @@
 # Workspaces Were Documents All Along
 
+> **Historical note (2026-07-12):** This article traces the earlier root-Y.Doc
+> workspace architecture. The target workspace composes a records
+> database, stable synchronized KV, and format-addressed child documents as
+> separate storage planes. See
+> [Workspace data model](../reference/workspace-data-model.md).
+
 I built the workspace API five times. Each version deleted more code than the last, until the fifth version put some of it back : for a reason the earlier versions hadn't earned the right to see yet. Here's how I got there.
 
 ## The first version felt great to call

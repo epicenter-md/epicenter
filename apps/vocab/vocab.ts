@@ -25,7 +25,6 @@ import {
 	type InferTableRow,
 } from '@epicenter/workspace';
 import type { AgentMessage } from '@epicenter/workspace/agent';
-import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 
 /**
@@ -134,6 +133,6 @@ export const vocabWorkspace = defineWorkspace({
 		entries: entriesTable,
 	},
 	kv: {
-		showReadings: defineKv(Type.Boolean(), () => true),
+		showReadings: defineKv(field.boolean(), () => true),
 	},
 });

@@ -80,6 +80,11 @@ export {
 // its own boot validation and resolves through `resolveAuthSecrets` (ADR-0076).
 export { CloudAuthBindings, mountCloudAuth } from './mount-cloud-auth.js';
 export { mountCloudDb } from './mount-cloud-db.js';
+export {
+	createDurableObjectRecords,
+	RecordAuthorityDurableObject,
+} from './records/cloudflare.js';
+export type { Records, RecordsPartition } from './records/contracts.js';
 // Re-export the Cloudflare Durable Object class so each deployment's
 // wrangler.jsonc can resolve `class_name: "Room"` against this entrypoint.
 export { Room } from './room/backends/cloudflare/durable-object.js';
@@ -95,6 +100,7 @@ export { createDurableObjectRooms } from './room/backends/cloudflare/registry.js
 // `mountCloudAuth`; an instance composes none of it (ADR-0075).
 export { mountBlobsApp } from './routes/blobs.js';
 export { mountInferenceApp } from './routes/inference.js';
+export { mountRecordsApp } from './routes/records.js';
 export { mountRoomsApp } from './routes/rooms.js';
 export { mountSessionApp } from './routes/session.js';
 export { mountTranscriptionApp } from './routes/transcription.js';

@@ -19,6 +19,7 @@ import {
 	type CloudEnv,
 	connectHyperdriveDb,
 	createDurableObjectAttachRelay,
+	createDurableObjectRecords,
 	createDurableObjectRooms,
 	createServerApp,
 	mountAttachRelayApp,
@@ -26,9 +27,11 @@ import {
 	mountCloudAuth,
 	mountCloudDb,
 	mountInferenceApp,
+	mountRecordsApp,
 	mountRoomsApp,
 	mountSessionApp,
 	mountTranscriptionApp,
+	RecordAuthorityDurableObject,
 	Room,
 	requireBearerPrincipal,
 	requireCookieOrBearerPrincipal,
@@ -134,6 +137,11 @@ mountCloudAuth(app, {
 
 // Principal-partitioned reusable surfaces.
 mountSessionApp(app, { auth: cookieOrBearer });
+mountRecordsApp(app, {
+	auth: bearer,
+	resolveRecords: (env) =>
+		createDurableObjectRecords((env as Cloudflare.Env).RECORDS),
+});
 // Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver, not
 // a prebuilt wrapper.
 mountRoomsApp(app, { resolveBearerPrincipal: resolveRequestOAuthPrincipal });
@@ -195,4 +203,4 @@ app.get('/billing', (c) => c.redirect('/dashboard'));
 export default {
 	fetch: app.fetch,
 };
-export { AttachRelay, Room };
+export { AttachRelay, RecordAuthorityDurableObject, Room };

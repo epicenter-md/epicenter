@@ -1,5 +1,9 @@
 # Why Reads Should Be Pure
 
+> Historical: this article reasons about the retired migrate-on-read record
+> model. The target uses records epochs; disruptive replacement starts a new
+> epoch outside the sync protocol. See [ADR-0130](../adr/0130-records-replacement-starts-a-new-epoch-without-an-online-succession-protocol.md).
+
 When designing Epicenter's migrate-on-read pattern, we faced a question: after reading and migrating old data, should we automatically write the migrated version back to storage?
 
 We decided no. Reads should be pure.

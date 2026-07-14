@@ -15,7 +15,7 @@
  * Why it needs nothing:
  *   - The auth env vars below are throwaway, low-entropy, and deliberately fake.
  *     Boot validates them as strings; the dev path never exercises them.
- *   - The server log and room directory live under a throwaway temp dir, removed
+ *   - The server log and data directory live under a throwaway temp dir, removed
  *     on exit.
  *   - Scenario coverage, auth header shape, and blob SKIP behavior belong to
  *     `smoke.ts`; this wrapper forwards the caller's object-storage env.
@@ -75,7 +75,7 @@ async function generateSmokeApplePrivateKey(): Promise<string> {
 }
 
 const dataRoot = mkdtempSync(join(tmpdir(), 'epicenter-smoke-'));
-process.env.DATA_DIR = join(dataRoot, 'rooms');
+process.env.DATA_DIR = dataRoot;
 const serverLog = join(dataRoot, 'server.log');
 
 async function waitForHealth(

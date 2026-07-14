@@ -95,12 +95,15 @@ export {
 // merged into the cloud Bun host's boot validation.
 export { CloudAuthBindings, mountCloudAuth } from './mount-cloud-auth.js';
 export { mountCloudDb } from './mount-cloud-db.js';
+export { type BunRecords, createBunRecords } from './records/bun.js';
+export type { Records, RecordsPartition } from './records/contracts.js';
 // The Bun room backend: an in-process Rooms map + bun:sqlite update log,
 // plus the Bun `websocket` handler and `bindServer` the entry wires. Its `.rooms`
 // is what a Bun entry passes as `createServerApp`'s `resolveRooms`.
 export { createBunRooms } from './room/backends/bun/registry.js';
 export { mountBlobsApp } from './routes/blobs.js';
 export { mountInferenceApp } from './routes/inference.js';
+export { mountRecordsApp } from './routes/records.js';
 export { mountRoomsApp } from './routes/rooms.js';
 export { mountSessionApp } from './routes/session.js';
 export { mountTranscriptionApp } from './routes/transcription.js';

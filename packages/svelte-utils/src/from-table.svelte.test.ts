@@ -5,8 +5,13 @@ import type {
 	TableReadError,
 } from '@epicenter/workspace';
 import { TableNewerWriterError, TableParseError } from '@epicenter/workspace';
+import {
+	type AsyncTable,
+	asyncWorkspaceHandle,
+	type TableCommitDelta,
+} from '@epicenter/workspace/sqlite';
 import { Err, Ok } from 'wellcrafted/result';
-import { fromTable } from './from-table.svelte.js';
+import { fromTable, type ObservableTable } from './from-table.svelte.js';
 
 // `bun test` runs `.svelte.ts` modules without the Svelte compiler, so the runes
 // the source uses are plain globals here. `$derived.by` is stubbed as a proxy
@@ -21,8 +26,13 @@ import { fromTable } from './from-table.svelte.js';
 (globalThis as unknown as { $derived: unknown }).$derived = Object.assign(
 	<T>(v: T) => v,
 	{
-		by: (fn: () => Record<PropertyKey, unknown>) =>
-			new Proxy({}, { get: (_target, prop) => fn()[prop] }),
+		by: <TValue extends object>(fn: () => TValue): TValue =>
+			new Proxy(Array.isArray(fn()) ? [] : {}, {
+				get: (_target, prop) => Reflect.get(fn(), prop),
+				ownKeys: () => Reflect.ownKeys(fn()),
+				getOwnPropertyDescriptor: (_target, prop) =>
+					Reflect.getOwnPropertyDescriptor(fn(), prop),
+			}) as TValue,
 	},
 );
 
@@ -162,4 +172,79 @@ test('reads are live across every classification transition', () => {
 	store.set('a', row('a', 'fixed'));
 	expect(entries.byId('a')?.name).toBe('fixed');
 	expect(entries.newerWriter).toEqual([]);
+});
+
+test('SQLite table view reads list and point values without legacy issue buckets', () => {
+	type SqliteRow = { id: string; name: string };
+	const store = new Map<string, SqliteRow>();
+	const table: ObservableTable<SqliteRow> = {
+		get: (id) => store.get(id) ?? null,
+		list: () => [...store.values()],
+		observe: () => () => {},
+	};
+	const entries = fromTable(table);
+
+	expect(entries.all).toEqual([]);
+	store.set('a', { id: 'a', name: 'Ada' });
+	expect(entries.all).toEqual([{ id: 'a', name: 'Ada' }]);
+	expect(entries.byId('a')?.name).toBe('Ada');
+	expect(entries.byId('missing')).toBeUndefined();
+	expect('nonconforming' in entries).toBeFalse();
+	expect('newerWriter' in entries).toBeFalse();
+});
+
+test('async SQLite table view hydrates once, then applies committed deltas', async () => {
+	type SqliteRow = { id: string; name: string };
+	let resolveSnapshot!: (rows: SqliteRow[]) => void;
+	const snapshot = new Promise<SqliteRow[]>((resolve) => {
+		resolveSnapshot = resolve;
+	});
+	let observer: ((delta: TableCommitDelta) => void) | undefined;
+	let listCalls = 0;
+	let unobserved = false;
+	const table = {
+		[asyncWorkspaceHandle]: 'table',
+		list() {
+			listCalls += 1;
+			observer?.({
+				upserted: [
+					{ id: 'a', name: 'committed' },
+					{ id: 'b', name: 'Bee' },
+				],
+				removed: [],
+			});
+			return snapshot;
+		},
+		observe(callback: (delta: TableCommitDelta) => void) {
+			observer = callback;
+			return () => {
+				unobserved = true;
+			};
+		},
+	} as unknown as AsyncTable<SqliteRow>;
+
+	const entries = fromTable(table);
+	resolveSnapshot([{ id: 'a', name: 'snapshot' }]);
+	await entries.whenReady;
+
+	expect(listCalls).toBe(1);
+	expect(entries.all).toEqual([
+		{ id: 'a', name: 'committed' },
+		{ id: 'b', name: 'Bee' },
+	]);
+	expect(entries.byId('a')?.name).toBe('committed');
+
+	observer?.({
+		upserted: [{ id: 'c', name: 'Cee' }],
+		removed: ['a'],
+	});
+	expect(entries.all).toEqual([
+		{ id: 'b', name: 'Bee' },
+		{ id: 'c', name: 'Cee' },
+	]);
+	expect(entries.byId('a')).toBeUndefined();
+	expect(listCalls).toBe(1);
+
+	entries[Symbol.dispose]();
+	expect(unobserved).toBeTrue();
 });

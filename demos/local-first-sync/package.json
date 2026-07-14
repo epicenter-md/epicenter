@@ -1,0 +1,23 @@
+{
+	"name": "epicenter-demo-local-first-sync",
+	"private": true,
+	"type": "module",
+	"workspaces": [],
+	"scripts": {
+		"dev": "vite --port 5199",
+		"server": "bun run server/main.ts"
+	},
+	"dependencies": {
+		"@sqlite.org/sqlite-wasm": "^3.53.0-build1",
+		"typebox": "^1.3.6",
+		"vite": "^8.1.4",
+		"y-indexeddb": "^9.0.12",
+		"y-protocols": "^1.0.7",
+		"yjs": "^13.6.31"
+	},
+	"devDependencies": {
+		"@types/bun": "^1.3.14",
+		"@types/node": "^26.1.1",
+		"playwright": "^1.61.1"
+	}
+}

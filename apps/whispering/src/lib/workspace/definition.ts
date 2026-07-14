@@ -235,7 +235,7 @@ const completion = {
  * find/replace and not an algorithm; the AI is the matcher. See ADR-0099.
  */
 const dictionary = {
-	dictionary: defineKv(Type.Array(Type.String()), (): string[] => []),
+	dictionary: defineKv(field.tags(), (): string[] => []),
 } as const;
 
 /** Default Polish instruction. Kept faithful: fix mechanics, preserve wording. */
@@ -289,7 +289,8 @@ const KeyBindingSchema = Type.Object({
 /**
  * In-app keyboard shortcuts. System-global shortcuts are device-specific and stay
  * in localStorage: these are only the shortcuts within the Whispering window.
- * `null` = unbound.
+ * The empty binding is the persisted unbound sentinel. The platform adapter
+ * translates it back to `null`, keeping clear distinct from a KV value.
  */
 const shortcuts = {
 	// These getDefault thunks are the single source for the in-app shortcut
@@ -304,31 +305,31 @@ const shortcuts = {
 	// start+immediate-stop and feed a junk recording to the pipeline, so the safe
 	// in-app default is the toggle below.
 	'shortcut.pushToTalk': defineKv(
-		nullable(field.json(KeyBindingSchema)),
-		(): KeyBinding | null => null,
+		field.json(KeyBindingSchema),
+		(): KeyBinding => ({ modifiers: [], keys: [] }),
 	),
 	'shortcut.toggleManualRecording': defineKv(
-		nullable(field.json(KeyBindingSchema)),
-		(): KeyBinding | null => ({ modifiers: [], keys: ['space'] }),
+		field.json(KeyBindingSchema),
+		(): KeyBinding => ({ modifiers: [], keys: ['space'] }),
 	),
 	// Renamed from `shortcut.cancelManualRecording` (cancel now aborts manual or
 	// VAD capture, so the "manual" qualifier is gone). No migration: pre-release,
 	// the old key is simply orphaned and this falls back to its default.
 	'shortcut.cancelRecording': defineKv(
-		nullable(field.json(KeyBindingSchema)),
-		(): KeyBinding | null => ({ modifiers: [], keys: ['keyC'] }),
+		field.json(KeyBindingSchema),
+		(): KeyBinding => ({ modifiers: [], keys: ['keyC'] }),
 	),
 	'shortcut.toggleVadRecording': defineKv(
-		nullable(field.json(KeyBindingSchema)),
-		(): KeyBinding | null => ({ modifiers: [], keys: ['keyV'] }),
+		field.json(KeyBindingSchema),
+		(): KeyBinding => ({ modifiers: [], keys: ['keyV'] }),
 	),
 	'shortcut.openRecipePicker': defineKv(
-		nullable(field.json(KeyBindingSchema)),
-		(): KeyBinding | null => ({ modifiers: [], keys: ['keyT'] }),
+		field.json(KeyBindingSchema),
+		(): KeyBinding => ({ modifiers: [], keys: ['keyT'] }),
 	),
 	'shortcut.runRecipeOnClipboard': defineKv(
-		nullable(field.json(KeyBindingSchema)),
-		(): KeyBinding | null => ({ modifiers: [], keys: ['keyR'] }),
+		field.json(KeyBindingSchema),
+		(): KeyBinding => ({ modifiers: [], keys: ['keyR'] }),
 	),
 	// Navigation, focused by nature: Cmd+, (the platform "open preferences"
 	// gesture) opens settings in-app. A chord on a `focused` command still clamps
@@ -336,8 +337,8 @@ const shortcuts = {
 	// synced focused store. `meta` + `comma` is platform-free here (the synced
 	// default must be), surfacing as Cmd+, on macOS and Win+, elsewhere.
 	'shortcut.openSettings': defineKv(
-		nullable(field.json(KeyBindingSchema)),
-		(): KeyBinding | null => ({ modifiers: ['meta'], keys: ['comma'] }),
+		field.json(KeyBindingSchema),
+		(): KeyBinding => ({ modifiers: ['meta'], keys: ['comma'] }),
 	),
 } as const;
 

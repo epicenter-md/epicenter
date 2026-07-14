@@ -25,6 +25,10 @@
 	"homepage": "https://epicenter.so",
 	"exports": {
 		".": "./src/index.ts",
+		"./sqlite": "./src/sqlite/index.ts",
+		"./sqlite/browser": "./src/sqlite/browser.ts",
+		"./sqlite/browser-worker": "./src/sqlite/browser-worker.ts",
+		"./sqlite/bun": "./src/sqlite/bun.ts",
 		"./agent": "./src/agent/index.ts",
 		"./markdown": "./src/markdown/index.ts",
 		"./document/materializer/markdown": "./src/document/materializer/markdown/index.ts",
@@ -45,10 +49,12 @@
 		"bench": "bun test ./src/__benchmarks__/*.bench.ts --timeout 60000"
 	},
 	"dependencies": {
+		"@sqlite.org/sqlite-wasm": "catalog:",
 		"@epicenter/agent-protocol": "workspace:*",
 		"@epicenter/encryption": "workspace:*",
 		"@epicenter/field": "workspace:*",
 		"@epicenter/identity": "workspace:*",
+		"@epicenter/record-sync": "workspace:*",
 		"@epicenter/sync": "workspace:*",
 		"@sindresorhus/slugify": "catalog:",
 		"@types/bun": "catalog:",

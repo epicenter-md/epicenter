@@ -45,11 +45,13 @@
  * storage.
  */
 
+import { createHash } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { assertStrongToken } from '@epicenter/auth';
 import {
 	createAttachRelayBunServer,
+	createBunRecords,
 	createBunRooms,
 	createDeviceGrantStore,
 	createEnvTokenResolver,
@@ -60,6 +62,7 @@ import {
 	mountBlobsApp,
 	mountHostDirectoryApp,
 	mountInferenceApp,
+	mountRecordsApp,
 	mountRoomsApp,
 	mountSessionApp,
 	mountTranscriptionApp,
@@ -132,10 +135,14 @@ export function startSelfHostServer(): void {
 	// localhost; an operator overrides it with their own domain.
 	const origin = env.API_PUBLIC_ORIGIN ?? `http://localhost:${port}`;
 
-	// One room directory of `bun:sqlite` files for this host.
-	const dataDir = resolve(env.DATA_DIR ?? './.data/rooms');
+	// One data directory for this host's room and record SQLite files.
+	const dataDir = resolve(env.DATA_DIR ?? './.data');
 	mkdirSync(dataDir, { recursive: true });
-	const bunRooms = createBunRooms({ dir: dataDir });
+	const bunRooms = createBunRooms({ dir: join(dataDir, 'rooms') });
+	const bunRecords = createBunRecords({
+		dir: join(dataDir, 'records'),
+		sha256: async (value) => createHash('sha256').update(value).digest('hex'),
+	});
 	// The AttachRelay coordinator for this instance (ADR-0115): the
 	// endpoint-addressed byte forwarder. It shares this process's one `Bun.serve`
 	// with the rooms backend (see the merged websocket handler below).
@@ -170,6 +177,10 @@ export function startSelfHostServer(): void {
 	mountSessionApp(app, { auth });
 	// Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver.
 	mountRoomsApp(app, { resolveBearerPrincipal });
+	mountRecordsApp(app, {
+		auth,
+		resolveRecords: () => bunRecords.records,
+	});
 	// The AttachRelay upgrade (`/attach`), WS-aware and gated by a per-device grant
 	// (ADR-0115), not the operator token: a connect resolves against the
 	// device-grant store, and the instance principal is stamped server-side so a
@@ -243,7 +254,7 @@ export function startSelfHostServer(): void {
 
 	console.log(
 		`apps/self-host instance (Bun) listening on ${origin} ` +
-			`(rooms in ${dataDir}, partition principals/instance). Hand INSTANCE_TOKEN to ` +
+			`(data in ${dataDir}, partition principals/instance). Hand INSTANCE_TOKEN to ` +
 			'whoever should have access.',
 	);
 }

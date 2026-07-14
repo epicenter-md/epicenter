@@ -1,89 +1,92 @@
 /**
  * Reddit Import Pipeline Tests
  *
- * Verifies end-to-end import behavior including row-level error recovery.
- * Uses a real workspace client with in-memory Y.Doc.
+ * Verifies that supported CSVs become plain transformed arrays and metadata,
+ * while malformed rows are skipped and reported without a database lifecycle.
  *
  * Key behaviors:
- * - One bad row doesn't abort the entire import. Valid rows still land
- * - Errors are collected with table name, row index, and validation message
- * - Stats include both imported count and skipped count
+ * - Valid rows are returned in their named table arrays
+ * - Account statistics and preferences are returned as metadata
+ * - Invalid rows are skipped and represented exactly in import stats
  */
 
-import { describe, expect, test } from 'bun:test';
+import { expect, test } from 'bun:test';
 import { zipSync } from 'fflate';
 import { importRedditExport } from './index.js';
-import { createRedditImport } from './workspace.js';
 
-/** Create a mock Reddit export ZIP from filename → CSV text entries */
 function createZip(entries: Record<string, string>): Blob {
 	const files: Record<string, Uint8Array> = {};
 	for (const [name, content] of Object.entries(entries)) {
 		files[name] = new TextEncoder().encode(content);
 	}
-	return new Blob([zipSync(files) as BlobPart]);
+	return new Blob([zipSync(files)]);
 }
 
-function setup() {
-	const workspace = createRedditImport();
-	return { workspace };
-}
-
-// ============================================================================
-// Row-Level Error Recovery (Phase 2)
-// ============================================================================
-
-describe('row-level error recovery', () => {
-	test('valid rows imported, malformed row skipped and reported', async () => {
-		// post_votes schema requires direction to be 'up' | 'down' | 'none' | 'removed'
-		// Row 2 has an invalid direction "sideways" which fails validation
-		const zip = createZip({
-			'post_votes.csv': [
-				'id,permalink,direction',
-				'1,/r/a,up',
-				'2,/r/b,sideways',
-				'3,/r/c,down',
-			].join('\n'),
-		});
-
-		const { workspace } = setup();
-		const stats = await importRedditExport(zip, workspace);
-
-		expect(stats.tables.postVotes).toBe(2);
-		expect(stats.skipped).toBeGreaterThanOrEqual(1);
-		expect(stats.errors.length).toBeGreaterThanOrEqual(1);
-		expect(stats.errors[0]).toMatchObject({
-			table: 'postVotes',
-			rowIndex: 1,
-		});
+test('returns transformed table rows and account metadata', async () => {
+	const zip = createZip({
+		'post_votes.csv': [
+			'id,permalink,direction',
+			'1,/r/a,up',
+			'2,/r/b,down',
+		].join('\n'),
+		'statistics.csv': 'statistic,value\nkarma,42\naccount_age,10 years',
+		'user_preferences.csv': 'preference,value\ntheme,dark',
 	});
 
-	test('all rows invalid results in zero imported and all errors collected', async () => {
-		const zip = createZip({
-			'post_votes.csv': [
-				'id,permalink,direction',
-				'1,/r/a,sideways',
-				'2,/r/b,diagonal',
-			].join('\n'),
-		});
+	const result = await importRedditExport(zip);
 
-		const { workspace } = setup();
-		const stats = await importRedditExport(zip, workspace);
+	expect(result.tables.postVotes).toEqual([
+		{ id: '1', permalink: '/r/a', direction: 'up' },
+		{ id: '2', permalink: '/r/b', direction: 'down' },
+	]);
+	expect(result.metadata).toEqual({
+		statistics: { karma: '42', account_age: '10 years' },
+		preferences: { theme: 'dark' },
+	});
+	expect(result.stats.tables.postVotes).toBe(2);
+	expect(result.stats.metadata).toBe(2);
+	expect(result.stats.totalRows).toBe(4);
+	expect(result.stats.errors).toEqual([]);
+	expect(result.stats.skipped).toBe(0);
+});
 
-		expect(stats.tables.postVotes).toBe(0);
-		expect(stats.errors).toHaveLength(2);
-		expect(stats.skipped).toBe(2);
+test('skips malformed rows and reports their exact source position', async () => {
+	const zip = createZip({
+		'post_votes.csv': [
+			'id,permalink,direction',
+			'1,/r/a,up',
+			'2,/r/b,sideways',
+			'3,/r/c,down',
+		].join('\n'),
 	});
 
-	test('empty CSV produces zero rows and zero errors', async () => {
-		const zip = createZip({
-			'post_votes.csv': 'id,permalink,direction\n',
-		});
+	const result = await importRedditExport(zip);
 
-		const { workspace } = setup();
-		const stats = await importRedditExport(zip, workspace);
-
-		expect(stats.tables.postVotes).toBe(0);
-		expect(stats.errors).toHaveLength(0);
+	expect(result.tables.postVotes).toEqual([
+		{ id: '1', permalink: '/r/a', direction: 'up' },
+		{ id: '3', permalink: '/r/c', direction: 'down' },
+	]);
+	expect(result.stats.tables.postVotes).toBe(2);
+	expect(result.stats.totalRows).toBe(2);
+	expect(result.stats.skipped).toBe(1);
+	expect(result.stats.errors).toHaveLength(1);
+	expect(result.stats.errors[0]).toMatchObject({
+		table: 'postVotes',
+		rowIndex: 1,
 	});
+	expect(result.stats.errors[0]?.error).toContain('direction');
+});
+
+test('returns empty arrays and null metadata when supported files are absent', async () => {
+	const result = await importRedditExport(
+		createZip({ 'post_votes.csv': 'id,permalink,direction\n' }),
+	);
+
+	expect(result.tables.postVotes).toEqual([]);
+	expect(result.tables.posts).toEqual([]);
+	expect(result.metadata).toEqual({ statistics: null, preferences: null });
+	expect(result.stats.totalRows).toBe(0);
+	expect(result.stats.metadata).toBe(0);
+	expect(result.stats.errors).toEqual([]);
+	expect(result.stats.skipped).toBe(0);
 });

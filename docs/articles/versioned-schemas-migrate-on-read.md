@@ -1,5 +1,9 @@
 # Versioned Schemas with Migrate-on-Read
 
+> Historical: migrate-on-read is not the target records model. Epicenter uses
+> records epochs; disruptive replacement starts a new epoch outside the sync
+> protocol. See [ADR-0130](../adr/0130-records-replacement-starts-a-new-epoch-without-an-online-succession-protocol.md).
+
 Most developers struggle with migrations in local-first apps. The core issue: how do you rename columns, change field types, or restructure data when that data is replicated across many clients with different app versions?
 
 Epicenter solves this with a pattern we call **migrate-on-read**: store data in its original schema version, validate and migrate when reading.

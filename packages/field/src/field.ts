@@ -139,10 +139,11 @@ const StringItem = Type.Object({ type: Type.Literal('string') }, CLOSED);
 /** Item shape for `multiSelect`: the closed-set discriminant. Requires `enum` (that is not `tags`). */
 const SelectItem = Type.Object(enumProps, CLOSED);
 
-/** Bucket 2: string refinements. Closed set, so a typo'd key (`minLgth`) still dies. */
+/** Bucket 2: character and UTF-8 byte refinements for stored strings. */
 const STRING_REFINE = {
 	minLength: Type.Optional(Type.Integer()),
 	maxLength: Type.Optional(Type.Integer()),
+	maxBytes: Type.Optional(Type.Integer({ minimum: 0 })),
 	pattern: Type.Optional(Type.String()),
 };
 
@@ -417,5 +418,12 @@ export function compile(
 			? { ...schema, minLength: Math.max(1, schema.minLength ?? 0) }
 			: schema;
 	const validator = Schema.Compile(effective);
-	return (value) => validator.Check(value);
+	const maxBytes = 'maxBytes' in schema ? schema.maxBytes : undefined;
+	const encoder = maxBytes === undefined ? undefined : new TextEncoder();
+	return (value) =>
+		validator.Check(value) &&
+		(maxBytes === undefined ||
+			(typeof value === 'string' &&
+				encoder !== undefined &&
+				encoder.encode(value).byteLength <= maxBytes));
 }

@@ -8,8 +8,12 @@ import { createSubscriber } from 'svelte/reactivity';
  * into a reactive `{ current }` box. Reading `.current` is reactive (triggers
  * re-renders). Writing `.current` calls `kv.set()` under the hood.
  *
- * The observer fires on both local and remote changes (Yjs CRDT sync).
- * On delete, falls back to the KV definition's `defaultValue` via `kv.get()`.
+ * The primary shape is the workspace preference plane `Kv<TDefs>`: it lives
+ * on the eager root document, so reads are synchronous and `.current` is
+ * always the effective value (`get()` returns the declared default when the
+ * key is absent or its stored value is invalid). The observer fires on local
+ * writes and remote syncs, including the effective-default notification when
+ * an invalid winning value arrives.
  *
  * The binding is tied to one KV store for its lifetime. If the workspace
  * changes, remount the component or recreate the binding at that lifecycle
@@ -17,13 +21,13 @@ import { createSubscriber } from 'svelte/reactivity';
  *
  * @example
  * ```typescript
- * const selectedFolderId = fromKv(workspaceClient.kv, 'selectedFolderId');
+ * const showReadings = fromKv(workspace.kv, 'showReadings');
  *
  * // Read (reactive):
- * console.log(selectedFolderId.current); // FolderId | null
+ * console.log(showReadings.current); // boolean
  *
  * // Write (calls kv.set):
- * selectedFolderId.current = newFolderId;
+ * showReadings.current = true;
  * ```
  */
 export function fromKv<

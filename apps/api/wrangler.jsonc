@@ -56,6 +56,12 @@
 			{
 				"name": "ATTACH_RELAY",
 				"class_name": "AttachRelay"
+			},
+			// One SQLite-backed record authority per authenticated principal and
+			// workspace pair. The Worker derives the DO name after authentication.
+			{
+				"name": "RECORDS",
+				"class_name": "RecordAuthorityDurableObject"
 			}
 		]
 	},
@@ -75,6 +81,10 @@
 		{
 			"tag": "v3",
 			"new_sqlite_classes": ["AttachRelay"]
+		},
+		{
+			"tag": "v4",
+			"new_sqlite_classes": ["RecordAuthorityDurableObject"]
 		}
 	],
 	// --- Secrets (set via `wrangler secret put`, typed via `wrangler types`) ---

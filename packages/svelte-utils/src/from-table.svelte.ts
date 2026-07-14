@@ -4,7 +4,37 @@ import type {
 	TableNewerWriterError,
 	TableParseError,
 } from '@epicenter/workspace';
-import { createSubscriber } from 'svelte/reactivity';
+import {
+	type AsyncTable,
+	asyncWorkspaceHandle,
+	type TableCommitDelta,
+} from '@epicenter/workspace/sqlite';
+import { createSubscriber, SvelteMap } from 'svelte/reactivity';
+
+/** The read and invalidation surface exposed by SQLite workspace tables. */
+export type ObservableTable<TRow extends { id: string }> = {
+	get(id: TRow['id']): TRow | null;
+	list(): readonly TRow[];
+	observe(callback: (changedIds: ReadonlySet<TRow['id']>) => void): () => void;
+};
+
+/** A reactive view over rows that conform to one exact workspace schema. */
+export type TableView<TRow extends { id: string }> = {
+	readonly all: readonly TRow[];
+	byId(id: TRow['id']): TRow | undefined;
+};
+
+/**
+ * A synchronous UI projection of an async authoritative table.
+ *
+ * Await `whenReady` before reading the initial snapshot. Later committed
+ * deltas update `all` and `byId` reactively without rescanning the database.
+ * The projection is disposable cache state, never a durable mirror.
+ */
+export type AsyncTableView<TRow extends { id: string }> = TableView<TRow> & {
+	readonly whenReady: Promise<void>;
+	[Symbol.dispose](): void;
+};
 
 /**
  * A read-only reactive view of a workspace table: the conforming rows plus the
@@ -32,40 +62,48 @@ export type ReadonlyTableView<TRow extends BaseRow> = {
 };
 
 /**
- * Create a read-only reactive view of a workspace table from a single
- * `observe()` subscription.
+ * Create a read-only reactive view of an exact-schema workspace table.
  *
- * `all`, `nonconforming`, and `newerWriter` share one memoized `scan()`: the
- * scan recomputes once when the table changes, not once per surface read. The
- * table caches parsed rows by stored-value identity, so an unchanged row keeps
- * its object reference across scans and only changed rows are reparsed; the view
- * does not need a mirror of its own to stay incremental.
- *
- * `byId` reads straight through the table per call. It is reactive (it
- * subscribes), but coarsely: any table change re-runs it, where a per-key mirror
- * would re-run only on a change to that id. At table sizes below roughly ten
- * thousand rows with human-speed edits this is not worth a per-key subscription;
- * add one keyed by id if profiling ever says otherwise.
- *
- * The view self-manages its lifetime: `observe()` attaches when the first effect
- * starts reading and detaches a microtask after the last one stops. There is no
- * `[Symbol.dispose]` to thread through consumers.
- *
- * Read-only: mutations go through `table.set()`, `table.update()`, etc. The
- * observer picks up changes from both local writes and remote CRDT sync.
- *
- * @example
- * ```typescript
- * const entries = fromTable(workspaceClient.tables.entries);
- *
- * entries.all;                  // TRow[] (reactive)
- * entries.byId(id);             // TRow | undefined (reactive)
- * entries.nonconforming.length; // issue bucket (reactive)
- * ```
+ * The view reads through the table instead of maintaining a second row mirror.
+ * Its one ref-counted subscription invalidates both the memoized list and point
+ * reads after local writes, remote pulls, snapshots, and imports.
  */
+export function fromTable<TRow extends { id: string }>(
+	table: AsyncTable<TRow>,
+): AsyncTableView<TRow>;
+export function fromTable<TRow extends { id: string }>(
+	table: ObservableTable<TRow>,
+): TableView<TRow>;
+/** @deprecated Removed with the Yjs record table after app migration. */
 export function fromTable<TRow extends BaseRow>(
 	table: ReadonlyTable<TRow>,
-): ReadonlyTableView<TRow> {
+): ReadonlyTableView<TRow>;
+export function fromTable<TRow extends BaseRow>(
+	table: AsyncTable<TRow> | ObservableTable<TRow> | ReadonlyTable<TRow>,
+): AsyncTableView<TRow> | TableView<TRow> | ReadonlyTableView<TRow> {
+	if (asyncWorkspaceHandle in table) {
+		return createAsyncTableView(table as AsyncTable<TRow>);
+	}
+	if ('list' in table) {
+		const subscribe = createSubscriber((update) =>
+			(table as ObservableTable<TRow>).observe(() => update()),
+		);
+		const listed = $derived.by(() => {
+			subscribe();
+			return (table as ObservableTable<TRow>).list();
+		});
+
+		return {
+			get all() {
+				return listed;
+			},
+			byId(id: TRow['id']): TRow | undefined {
+				subscribe();
+				return (table as ObservableTable<TRow>).get(id) ?? undefined;
+			},
+		};
+	}
+
 	const subscribe = createSubscriber((update) => table.observe(update));
 	// One scan feeds every list surface and recomputes once per change. Reading
 	// `scanned` is what registers the dependency, so the list getters need no
@@ -89,5 +127,61 @@ export function fromTable<TRow extends BaseRow>(
 			subscribe();
 			return table.get(id).data ?? undefined;
 		},
+	};
+}
+
+function createAsyncTableView<TRow extends { id: string }>(
+	table: AsyncTable<TRow>,
+): AsyncTableView<TRow> {
+	const rows = new SvelteMap<TRow['id'], TRow>();
+	const pendingDeltas: TableCommitDelta<TRow>[] = [];
+	let isHydrated = false;
+	let isDisposed = false;
+
+	function apply(delta: TableCommitDelta<TRow>) {
+		for (const id of delta.removed) rows.delete(id as TRow['id']);
+		for (const row of delta.upserted) rows.set(row.id, row);
+	}
+
+	const unobserve = table.observe((delta) => {
+		if (isDisposed) return;
+		if (!isHydrated) {
+			pendingDeltas.push(delta);
+			return;
+		}
+		apply(delta);
+	});
+	const initialRows = table.list();
+
+	function dispose() {
+		if (isDisposed) return;
+		isDisposed = true;
+		pendingDeltas.length = 0;
+		unobserve();
+	}
+
+	const whenReady = initialRows.then(
+		(snapshot) => {
+			if (isDisposed) return;
+			for (const row of snapshot) rows.set(row.id, row);
+			for (const delta of pendingDeltas) apply(delta);
+			pendingDeltas.length = 0;
+			isHydrated = true;
+		},
+		(error: unknown) => {
+			dispose();
+			throw error;
+		},
+	);
+
+	return {
+		whenReady,
+		get all() {
+			return [...rows.values()];
+		},
+		byId(id) {
+			return rows.get(id);
+		},
+		[Symbol.dispose]: dispose,
 	};
 }

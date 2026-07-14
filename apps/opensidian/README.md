@@ -10,7 +10,7 @@ Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│  SvelteKit UI (CodeMirror, File Tree, Terminal, AI Chat) │
+│      SvelteKit UI (CodeMirror, File Tree, Terminal)      │
 ├──────────────────────────────────────────────────────────┤
 │  @epicenter/filesystem (POSIX ops, file tree, soft del)  │
 ├──────────────────────────────────────────────────────────┤
@@ -62,12 +62,6 @@ The relay reads plaintext: it runs Yjs and applies your updates, which is what m
 ### Search
 
 Full-text search runs against SQLite FTS5. It indexes both file names and content, supports match-case and regex toggles, and returns paginated results. The SQLite database is a materialized view of the CRDT state, rebuilt from Yjs updates whenever needed.
-
-### AI chat
-
-Conversations are stored in Yjs tables, so they sync across devices like everything else. Responses stream over SSE. The AI can call tools for file operations, search, and other tasks, with an approval UI that shows what the tool will do before it runs. The system prompt is layered: a base prompt plus per-skill additions. Provider and model are selectable at runtime.
-
----
 
 ## Running locally
 

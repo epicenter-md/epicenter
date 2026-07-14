@@ -40,12 +40,14 @@
  * serves the dashboard in dev, and billing is the hosted Worker's concern.
  */
 
+import { createHash } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { API_BUN_DEV_PORT } from '@epicenter/constants/apps';
 import {
 	CloudAuthBindings,
 	type CloudEnv,
+	createBunRecords,
 	createBunRooms,
 	createDb,
 	createServerApp,
@@ -53,6 +55,7 @@ import {
 	mountCloudAuth,
 	mountCloudDb,
 	mountInferenceApp,
+	mountRecordsApp,
 	mountRoomsApp,
 	mountSessionApp,
 	type ResolveBearerPrincipal,
@@ -121,10 +124,14 @@ export function startBunApiServer(
 	// on the chosen port; an operator overrides it with their domain.
 	const origin = env.API_PUBLIC_ORIGIN ?? `http://localhost:${port}`;
 
-	// One room directory of `bun:sqlite` files for this host.
-	const dataDir = resolve(env.DATA_DIR ?? './.data/rooms');
+	// One data directory for this host's room and record SQLite files.
+	const dataDir = resolve(env.DATA_DIR ?? './.data');
 	mkdirSync(dataDir, { recursive: true });
-	const bunRooms = createBunRooms({ dir: dataDir });
+	const bunRooms = createBunRooms({ dir: join(dataDir, 'rooms') });
+	const bunRecords = createBunRecords({
+		dir: join(dataDir, 'records'),
+		sha256: async (value) => createHash('sha256').update(value).digest('hex'),
+	});
 
 	// One pool for the process; drizzle checks a client out per query and returns
 	// it, so the `mountCloudDb` connect leg below hands back the shared handle with
@@ -179,6 +186,10 @@ export function startBunApiServer(
 	mountSessionApp(app, { auth: cookieOrBearer });
 	// Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver.
 	mountRoomsApp(app, { resolveBearerPrincipal });
+	mountRecordsApp(app, {
+		auth: bearer,
+		resolveRecords: () => bunRecords.records,
+	});
 	mountInferenceApp(app, { auth: bearer });
 	mountBlobsApp(app, { auth: cookieOrBearer });
 
@@ -195,7 +206,7 @@ export function startBunApiServer(
 	// so `handleUpgrade` can call `server.upgrade`.
 	bunRooms.bindServer(server);
 
-	console.log(`apps/api (Bun) listening on ${origin} (rooms in ${dataDir})`);
+	console.log(`apps/api (Bun) listening on ${origin} (data in ${dataDir})`);
 }
 
 // Run production only when this file is the entrypoint. `server.dev.ts` imports

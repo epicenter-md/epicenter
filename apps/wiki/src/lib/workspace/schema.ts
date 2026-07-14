@@ -64,23 +64,20 @@ export type ColumnSpec = {
 };
 
 /**
- * The `types.columns` cell.
- *
- * A `TSchema` IS a JSON object at runtime, but TypeBox's `TSchema` static type
- * is not seen as `JsonValue`, so `defineTable`'s SQLite-safe gate would reject a
- * `schema: TSchema` field. The cell therefore stores `schema` as a JSON object
- * and `typeColumns()` reads it back as a `ColumnSpec` (schema as `TSchema`).
- * The runtime value is the same object either way.
+ * The `types.columns` JSON cell. `Type.Unsafe` pins TypeBox's static view to the
+ * stored JSON shape; `field.json` remains the persisted storage declaration.
  */
 type StoredColumnSpec = { id: string; name: string; schema: JsonObject };
 
-const columnsCell = Type.Unsafe<StoredColumnSpec[]>(
-	Type.Array(
-		Type.Object({
-			id: Type.String(),
-			name: Type.String(),
-			schema: Type.Unknown(),
-		}),
+const columnsCell = field.json(
+	Type.Unsafe<StoredColumnSpec[]>(
+		Type.Array(
+			Type.Object({
+				id: Type.String(),
+				name: Type.String(),
+				schema: Type.Unknown(),
+			}),
+		),
 	),
 );
 
@@ -89,16 +86,15 @@ const columnsCell = Type.Unsafe<StoredColumnSpec[]>(
  *
  *   { youtube_video: { url: "https://...", duration: 1240 } }
  *
- * Like `columnsCell`, this uses `Type.Unsafe` rather than `field.json`: the
- * exact `Record<string, Record<string, JsonValue>>` static carries through while
- * the runtime schema stays an `object` the SQLite layer maps to a TEXT cell. Do
- * not "simplify" it back to `field.json`; the nested-record static does not
- * survive that gate.
+ * Like `columnsCell`, `Type.Unsafe` pins the exact nested-record static inside
+ * the persisted `field.json` declaration.
  */
 export type PageTypeValues = Record<string, Record<string, JsonValue>>;
 
-const pageTypeValuesCell = Type.Unsafe<PageTypeValues>(
-	Type.Record(Type.String(), Type.Record(Type.String(), Type.Unknown())),
+const pageTypeValuesCell = field.json(
+	Type.Unsafe<PageTypeValues>(
+		Type.Record(Type.String(), Type.Record(Type.String(), Type.Unknown())),
+	),
 );
 
 /** The types registry: one row per user-defined type. */
