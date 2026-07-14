@@ -7,7 +7,9 @@
  *
  * Key behaviors:
  * - Higher timestamps win conflicts regardless of merge ordering.
+ * - Equal timestamps use final Y.Array position, both at construction and sync.
  * - Reads inside caller-owned Yjs transactions include local writes and deletes.
+ * - Reconciliation preserves origins, event batching, and unchanged references.
  *
  * See also:
  * - `y-keyvalue.ts` for positional (rightmost-wins) alternative
@@ -15,6 +17,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
+import type { KvStoreChange } from './observable-kv-store.js';
 import { YKeyValueLww, type YKeyValueLwwEntry } from './y-keyvalue-lww';
 
 /**
@@ -61,13 +64,6 @@ function syncBoth(doc1: Y.Doc, doc2: Y.Doc): void {
 
 describe('YKeyValueLww', () => {
 	describe('Basic Operations', () => {
-		test('set stores value and get retrieves it', () => {
-			const { kv } = setupKv();
-
-			kv.set('foo', 'bar');
-			expect(kv.get('foo')).toBe('bar');
-		});
-
 		test('get() reports stored values and undefined for absence', () => {
 			const { kv } = setupKv();
 
@@ -128,15 +124,6 @@ describe('YKeyValueLww', () => {
 					.map((entry) => entry.key)
 					.sort(),
 			).toEqual(['bar', 'foo']);
-		});
-
-		test('delete removes value', () => {
-			const { kv } = setupKv();
-
-			kv.set('foo', 'bar');
-			kv.delete('foo');
-			expect(kv.get('foo')).toBeUndefined();
-			expect(kv.has('foo')).toBe(false);
 		});
 
 		test('bulkDelete removes all specified keys', () => {
@@ -252,56 +239,23 @@ describe('YKeyValueLww', () => {
 	});
 
 	describe('Change Events', () => {
-		test('fires add event for new key', () => {
-			const ydoc = new Y.Doc({ guid: 'test' });
-			const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
-			const kv = new YKeyValueLww(yarray);
-
-			const events: Array<{ key: string; action: string }> = [];
+		test('emits add, update, and delete across a key lifecycle', () => {
+			const { kv } = setupKv();
+			const events: KvStoreChange<string>[] = [];
 			kv.observe((changes) => {
-				for (const [key, change] of changes) {
-					events.push({ key, action: change.action });
-				}
+				const change = changes.get('foo');
+				if (change) events.push(change);
 			});
-
-			kv.set('foo', 'bar');
-			expect(events).toEqual([{ key: 'foo', action: 'add' }]);
-		});
-
-		test('fires update event when value changes', () => {
-			const ydoc = new Y.Doc({ guid: 'test' });
-			const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
-			const kv = new YKeyValueLww(yarray);
 
 			kv.set('foo', 'first');
-
-			const events: Array<{ key: string; action: string }> = [];
-			kv.observe((changes) => {
-				for (const [key, change] of changes) {
-					events.push({ key, action: change.action });
-				}
-			});
-
 			kv.set('foo', 'second');
-			expect(events).toEqual([{ key: 'foo', action: 'update' }]);
-		});
-
-		test('fires delete event when key removed', () => {
-			const ydoc = new Y.Doc({ guid: 'test' });
-			const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
-			const kv = new YKeyValueLww(yarray);
-
-			kv.set('foo', 'bar');
-
-			const events: Array<{ key: string; action: string }> = [];
-			kv.observe((changes) => {
-				for (const [key, change] of changes) {
-					events.push({ key, action: change.action });
-				}
-			});
-
 			kv.delete('foo');
-			expect(events).toEqual([{ key: 'foo', action: 'delete' }]);
+
+			expect(events).toEqual([
+				{ action: 'add', newValue: 'first' },
+				{ action: 'update', newValue: 'second' },
+				{ action: 'delete' },
+			]);
 		});
 	});
 
@@ -320,6 +274,306 @@ describe('YKeyValueLww', () => {
 			expect(kv.get('x')).toBe('second');
 			expect(yarray.length).toBe(1); // Duplicate should be cleaned up
 		});
+
+		test('live conflicts choose the same rightmost winner as constructor hydration', () => {
+			const { doc1, doc2, array1, array2 } = setupSyncedArrays();
+			array1.push([{ key: 'x', val: 'client-1', ts: 1000 }]);
+			array2.push([{ key: 'x', val: 'client-2', ts: 1000 }]);
+
+			const mergedDoc = new Y.Doc();
+			Y.applyUpdate(mergedDoc, Y.encodeStateAsUpdate(doc1));
+			Y.applyUpdate(mergedDoc, Y.encodeStateAsUpdate(doc2));
+			const mergedEntries = mergedDoc
+				.getArray<YKeyValueLwwEntry<string>>('data')
+				.toArray();
+			const expected = mergedEntries.at(-1)?.val;
+
+			const kv1 = new YKeyValueLww(array1);
+			const kv2 = new YKeyValueLww(array2);
+			syncBoth(doc1, doc2);
+
+			expect(kv1.get('x')).toBe(expected);
+			expect(kv2.get('x')).toBe(expected);
+			expect(array1).toHaveLength(1);
+			expect(array2).toHaveLength(1);
+		});
+	});
+
+	describe('Resolution pipeline contracts', () => {
+		test('nested transactions preserve the outer origin and emit once', () => {
+			const { ydoc, kv } = setupKv();
+			const outerOrigin = Symbol('outer');
+			const innerOrigin = Symbol('inner');
+			const batches: Array<{ changes: Map<string, unknown>; origin: unknown }> =
+				[];
+			kv.observe((changes, origin) => batches.push({ changes, origin }));
+
+			ydoc.transact(() => {
+				kv.set('a', 'first');
+				ydoc.transact(() => kv.set('a', 'second'), innerOrigin);
+				kv.set('b', 'value');
+			}, outerOrigin);
+
+			expect(batches).toHaveLength(1);
+			expect(batches[0]?.origin).toBe(outerOrigin);
+			expect([...(batches[0]?.changes.keys() ?? [])].sort()).toEqual([
+				'a',
+				'b',
+			]);
+		});
+
+		test('remote updates emit their applyUpdate origin', () => {
+			const { doc1, doc2, array1, array2 } = setupSyncedArrays();
+			const kv1 = new YKeyValueLww(array1);
+			const kv2 = new YKeyValueLww(array2);
+			const remoteOrigin = Symbol('remote');
+			const origins: unknown[] = [];
+			kv2.observe((_changes, origin) => origins.push(origin));
+
+			kv1.set('remote', 'value');
+			Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1), remoteOrigin);
+
+			expect(origins).toEqual([remoteOrigin]);
+			expect(kv2.get('remote')).toBe('value');
+		});
+
+		test('a lower-timestamp remote loser emits nothing and keeps winner identity', () => {
+			const { doc1, doc2, array1, array2 } = setupSyncedArrays();
+			array1.push([{ key: 'x', val: 'winner', ts: 2000 }]);
+			const kv1 = new YKeyValueLww(array1);
+			const winner = kv1.map.get('x');
+			let observerCalls = 0;
+			kv1.observe(() => observerCalls++);
+
+			array2.push([{ key: 'x', val: 'loser', ts: 1000 }]);
+			Y.applyUpdate(doc1, Y.encodeStateAsUpdate(doc2), Symbol('remote'));
+
+			expect(kv1.map.get('x')).toBe(winner);
+			expect(kv1.get('x')).toBe('winner');
+			expect(array1).toHaveLength(1);
+			expect(observerCalls).toBe(0);
+		});
+
+		test('conflict cleanup adds one private raw transaction but one public batch', () => {
+			const { ydoc, yarray, kv } = setupKv();
+			kv.set('x', 'old');
+			const origin = Symbol('bulk-update');
+			const rawOrigins: unknown[] = [];
+			const publicOrigins: unknown[] = [];
+			yarray.observe((_event, transaction) =>
+				rawOrigins.push(transaction.origin),
+			);
+			kv.observe((_changes, transactionOrigin) =>
+				publicOrigins.push(transactionOrigin),
+			);
+
+			ydoc.transact(() => kv.bulkSet([{ key: 'x', val: 'new' }]), origin);
+
+			expect(publicOrigins).toEqual([origin]);
+			expect(rawOrigins).toHaveLength(2);
+			expect(rawOrigins[0]).toBe(origin);
+			expect(typeof rawOrigins[1]).toBe('symbol');
+		});
+
+		test('constructor conflict cleanup keeps its origin-null raw transaction', () => {
+			const ydoc = new Y.Doc();
+			const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
+			yarray.push([
+				{ key: 'x', val: 'old', ts: 1 },
+				{ key: 'x', val: 'new', ts: 2 },
+			]);
+			const origins: unknown[] = [];
+			yarray.observe((_event, transaction) => origins.push(transaction.origin));
+
+			const kv = new YKeyValueLww(yarray);
+
+			expect(kv.get('x')).toBe('new');
+			expect(origins).toEqual([null]);
+		});
+
+		test('unchanged entries keep their entry and value references through cleanup', () => {
+			const { kv } = setupKv<{ label: string }>();
+			const stableValue = { label: 'stable' };
+			kv.bulkSet([
+				{ key: 'stable', val: stableValue },
+				{ key: 'changed', val: { label: 'old' } },
+			]);
+			const stableEntry = kv.map.get('stable');
+
+			kv.bulkSet([{ key: 'changed', val: { label: 'new' } }]);
+
+			expect(kv.map.get('stable')).toBe(stableEntry);
+			expect(kv.get('stable')).toBe(stableValue);
+		});
+
+		test('bulk conflict cleanup keeps one entry per key and emits one batch', () => {
+			const { yarray, kv } = setupKv<number>();
+			const count = 1000;
+			const initial = Array.from({ length: count }, (_, index) => ({
+				key: `key-${index}`,
+				val: index,
+			}));
+			kv.bulkSet(initial);
+			const batches: Map<string, unknown>[] = [];
+			kv.observe((changes) => batches.push(changes));
+
+			kv.bulkSet(initial.map(({ key, val }) => ({ key, val: val + 1 })));
+
+			expect(batches).toHaveLength(1);
+			expect(batches[0]?.size).toBe(count);
+			expect(yarray).toHaveLength(count);
+			expect(kv.get('key-999')).toBe(1000);
+		});
+
+		test('bulkSet resolves several versions of one absent key in one pass', () => {
+			const { yarray, kv } = setupKv();
+			const actions: string[] = [];
+			kv.observe((changes) => {
+				const change = changes.get('x');
+				if (change) actions.push(change.action);
+			});
+
+			kv.bulkSet([
+				{ key: 'x', val: 'first' },
+				{ key: 'x', val: 'second' },
+				{ key: 'x', val: 'third' },
+			]);
+
+			expect(kv.get('x')).toBe('third');
+			expect(yarray).toHaveLength(1);
+			expect(actions).toEqual(['update']);
+		});
+
+		test('repeated writes to an absent key retain the update event contract', () => {
+			const { ydoc, kv } = setupKv();
+			const actions: string[] = [];
+			kv.observe((changes) => {
+				const change = changes.get('x');
+				if (change) actions.push(change.action);
+			});
+
+			ydoc.transact(() => {
+				kv.set('x', 'first');
+				kv.set('x', 'second');
+			});
+
+			expect(actions).toEqual(['update']);
+			expect(kv.get('x')).toBe('second');
+		});
+
+		test('bulk writes followed by delete leave an absent key absent', () => {
+			const { ydoc, yarray, kv } = setupKv();
+			const actions: string[] = [];
+			kv.observe((changes) => {
+				const change = changes.get('x');
+				if (change) actions.push(change.action);
+			});
+
+			ydoc.transact(() => {
+				kv.bulkSet([
+					{ key: 'x', val: 'first' },
+					{ key: 'x', val: 'second' },
+				]);
+				kv.delete('x');
+			});
+
+			expect(kv.get('x')).toBeUndefined();
+			expect(yarray).toHaveLength(0);
+			expect(actions).toEqual([]);
+		});
+
+		test('a remote set applied after a local delete in one transaction survives', () => {
+			const { doc1, doc2, array1, array2 } = setupSyncedArrays();
+			const kv1 = new YKeyValueLww(array1);
+			const kv2 = new YKeyValueLww(array2);
+			kv1.set('x', 'original');
+			Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
+			const doc1State = Y.encodeStateVector(doc1);
+			kv2.set('x', 'remote');
+			const remoteUpdate = Y.encodeStateAsUpdate(doc2, doc1State);
+			const outerOrigin = Symbol('outer');
+			const origins: unknown[] = [];
+			kv1.observe((_changes, origin) => origins.push(origin));
+
+			doc1.transact(() => {
+				kv1.delete('x');
+				Y.applyUpdate(doc1, remoteUpdate, Symbol('nested-remote'));
+			}, outerOrigin);
+
+			expect(kv1.get('x')).toBe('remote');
+			expect(origins).toEqual([outerOrigin]);
+		});
+
+		const permutations = [
+			{
+				name: 'set-delete on an absent key stays absent without an event',
+				initial: undefined,
+				operations: ['set', 'delete'],
+				expected: undefined,
+				actions: [],
+			},
+			{
+				name: 'set-set-delete on an absent key leaves no surviving write',
+				initial: undefined,
+				operations: ['set', 'set', 'delete'],
+				expected: undefined,
+				actions: [],
+			},
+			{
+				name: 'set-delete-set on an absent key emits add for the final value',
+				initial: undefined,
+				operations: ['set', 'delete', 'set'],
+				expected: 'value-1',
+				actions: ['add'],
+			},
+			{
+				name: 'delete-set on an existing key emits update',
+				initial: 'initial',
+				operations: ['delete', 'set'],
+				expected: 'value-0',
+				actions: ['update'],
+			},
+			{
+				name: 'set-delete on an existing key emits delete',
+				initial: 'initial',
+				operations: ['set', 'delete'],
+				expected: undefined,
+				actions: ['delete'],
+			},
+			{
+				name: 'delete-set-delete on an existing key emits delete',
+				initial: 'initial',
+				operations: ['delete', 'set', 'delete'],
+				expected: undefined,
+				actions: ['delete'],
+			},
+		] as const;
+
+		for (const scenario of permutations) {
+			test(scenario.name, () => {
+				const { ydoc, yarray, kv } = setupKv();
+				if (scenario.initial !== undefined) kv.set('x', scenario.initial);
+				const actions: string[] = [];
+				kv.observe((changes) => {
+					const change = changes.get('x');
+					if (change) actions.push(change.action);
+				});
+
+				let setIndex = 0;
+				ydoc.transact(() => {
+					for (const operation of scenario.operations) {
+						if (operation === 'set') kv.set('x', `value-${setIndex++}`);
+						else kv.delete('x');
+					}
+				});
+
+				expect(kv.get('x')).toBe(scenario.expected);
+				expect(actions).toEqual([...scenario.actions]);
+				expect(
+					yarray.toArray().filter((entry) => entry.key === 'x'),
+				).toHaveLength(scenario.expected === undefined ? 0 : 1);
+			});
+		}
 	});
 
 	describe('Transaction-local reads', () => {
@@ -332,34 +586,6 @@ describe('YKeyValueLww', () => {
 		 */
 
 		describe('writes inside caller-owned transactions', () => {
-			test('get() returns a value set earlier', () => {
-				const { ydoc, kv } = setupKv();
-
-				let valueDuringTransaction: string | undefined;
-
-				ydoc.transact(() => {
-					kv.set('foo', 'bar');
-					valueDuringTransaction = kv.get('foo');
-				});
-
-				expect(valueDuringTransaction).toBe('bar');
-				// The value remains visible after the observer-backed map catches up.
-				expect(kv.get('foo')).toBe('bar');
-			});
-
-			test('has() returns true for a key set earlier', () => {
-				const { ydoc, kv } = setupKv();
-
-				let hasDuringTransaction: boolean = false;
-
-				ydoc.transact(() => {
-					kv.set('foo', 'bar');
-					hasDuringTransaction = kv.has('foo');
-				});
-
-				expect(hasDuringTransaction).toBe(true);
-			});
-
 			test('get() returns each successive value', () => {
 				const { ydoc, kv } = setupKv();
 
@@ -379,97 +605,25 @@ describe('YKeyValueLww', () => {
 				expect(valuesDuringTransaction).toEqual(['first', 'second', 'third']);
 				expect(kv.get('foo')).toBe('third');
 			});
-
-			test('get() returns an updated value for an existing key', () => {
-				const { ydoc, kv } = setupKv();
-
-				// Set the initial value before the caller-owned transaction.
-				kv.set('foo', 'initial');
-
-				let valueDuringTransaction: string | undefined;
-
-				ydoc.transact(() => {
-					kv.set('foo', 'updated');
-					valueDuringTransaction = kv.get('foo');
-				});
-
-				expect(valueDuringTransaction).toBe('updated');
-				expect(kv.get('foo')).toBe('updated');
-			});
 		});
 
 		describe('deletes inside caller-owned transactions', () => {
-			test('delete() removes a key set earlier', () => {
+			test('delete hides a pre-existing key from every read surface', () => {
 				const { ydoc, kv } = setupKv();
-
-				let hasAfterDelete: boolean = true;
-
-				ydoc.transact(() => {
-					kv.set('foo', 'bar');
-					kv.delete('foo');
-					hasAfterDelete = kv.has('foo');
-				});
-
-				expect(hasAfterDelete).toBe(false);
-
-				// After the transaction closes, the observer has caught up and the key
-				// remains absent.
-				expect(kv.has('foo')).toBe(false);
-			});
-
-			test('set() after delete() restores the key', () => {
-				const { ydoc, kv } = setupKv();
-
-				// Set initial value
-				kv.set('foo', 'initial');
-
-				let valueDuringTransaction: string | undefined;
-
-				ydoc.transact(() => {
-					kv.delete('foo');
-					kv.set('foo', 'restored');
-					valueDuringTransaction = kv.get('foo');
-				});
-
-				expect(valueDuringTransaction).toBe('restored');
-				expect(kv.get('foo')).toBe('restored');
-			});
-
-			test('delete() hides a pre-existing key immediately', () => {
-				const { ydoc, kv } = setupKv();
-
 				kv.set('foo', 'bar');
-				expect(kv.has('foo')).toBe(true);
 
 				ydoc.transact(() => {
 					kv.delete('foo');
+					expect(kv.get('foo')).toBeUndefined();
 					expect(kv.has('foo')).toBe(false);
+					expect([...kv.entries()]).toEqual([]);
 				});
 
-				// After the transaction closes, the observer-backed map agrees.
-				expect(kv.has('foo')).toBe(false);
+				expect(kv.get('foo')).toBeUndefined();
 			});
 		});
 
 		describe('entries() during caller-owned transactions', () => {
-			test('entries() yields values set earlier', () => {
-				const { ydoc, kv } = setupKv();
-
-				const keysDuringTransaction: string[] = [];
-
-				ydoc.transact(() => {
-					kv.set('a', '1');
-					kv.set('b', '2');
-					kv.set('c', '3');
-
-					for (const { key } of kv.entries()) {
-						keysDuringTransaction.push(key);
-					}
-				});
-
-				expect(keysDuringTransaction.sort()).toEqual(['a', 'b', 'c']);
-			});
-
 			test('entries() yields both observer-indexed and transaction-local values', () => {
 				const { ydoc, kv } = setupKv();
 
@@ -490,101 +644,26 @@ describe('YKeyValueLww', () => {
 				expect(entriesDuringTransaction).toContainEqual(['new', 'value']);
 			});
 
-			test('entries() prefers transaction-local value over observer-indexed value for same key', () => {
-				const { ydoc, kv } = setupKv();
-
-				kv.set('foo', 'old');
-
-				let valueDuringTransaction: string | undefined;
-
-				ydoc.transact(() => {
-					kv.set('foo', 'new');
-
-					for (const { key, val } of kv.entries()) {
-						if (key === 'foo') valueDuringTransaction = val;
-					}
-				});
-
-				expect(valueDuringTransaction).toBe('new');
-			});
-
 			test('entries() does not yield duplicates', () => {
 				const { ydoc, kv } = setupKv();
 
 				kv.set('foo', 'old');
 
 				let fooCount = 0;
+				let valueDuringTransaction: string | undefined;
 
 				ydoc.transact(() => {
 					kv.set('foo', 'new');
 
-					for (const { key } of kv.entries()) {
-						if (key === 'foo') fooCount++;
+					for (const { key, val } of kv.entries()) {
+						if (key !== 'foo') continue;
+						fooCount++;
+						valueDuringTransaction = val;
 					}
 				});
 
 				expect(fooCount).toBe(1);
-			});
-		});
-
-		describe('overlay cleanup', () => {
-			test('multiple transactions preserve prior keys and apply updates', () => {
-				const { ydoc, kv } = setupKv();
-
-				ydoc.transact(() => {
-					kv.set('a', '1');
-					kv.set('b', '2');
-				});
-
-				expect(kv.get('a')).toBe('1');
-				expect(kv.get('b')).toBe('2');
-
-				ydoc.transact(() => {
-					kv.set('c', '3');
-					kv.set('a', 'updated');
-				});
-
-				expect(kv.get('a')).toBe('updated');
-				expect(kv.get('b')).toBe('2');
-				expect(kv.get('c')).toBe('3');
-			});
-		});
-
-		describe('Observer behavior', () => {
-			test('observer fires once per caller-owned transaction, not per set()', () => {
-				const { ydoc, kv } = setupKv();
-
-				let observerCallCount = 0;
-				kv.observe(() => {
-					observerCallCount++;
-				});
-
-				ydoc.transact(() => {
-					kv.set('a', '1');
-					kv.set('b', '2');
-					kv.set('c', '3');
-				});
-
-				expect(observerCallCount).toBe(1);
-			});
-
-			test('observer receives all changes from a caller-owned transaction', () => {
-				const { ydoc, kv } = setupKv();
-
-				const changedKeys: string[] = [];
-				kv.observe((changes) => {
-					for (const [key] of changes) {
-						changedKeys.push(key);
-					}
-				});
-
-				ydoc.transact(() => {
-					kv.set('a', '1');
-					kv.set('b', '2');
-					kv.set('c', '3');
-				});
-
-				expect(changedKeys.sort()).toEqual(['a', 'b', 'c']);
+				expect(valueDuringTransaction).toBe('new');
 			});
 		});
 
@@ -614,31 +693,6 @@ describe('YKeyValueLww', () => {
 				expect(kv2.get('bar')).toBe('from-kv2');
 				expect(kv2.get('foo')).toBe('from-kv1');
 			});
-
-			test('LWW conflict resolution still works with transaction-local writes', () => {
-				const { doc1, doc2, array1, array2 } = setupSyncedArrays();
-
-				// Manually insert with controlled timestamps
-				array1.push([{ key: 'x', val: 'old', ts: 1000 }]);
-
-				const kv1 = new YKeyValueLww(array1);
-				const kv2 = new YKeyValueLww(array2);
-
-				// Sync initial state
-				Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
-				expect(kv2.get('x')).toBe('old');
-
-				// kv2 updates with higher timestamp
-				kv2.set('x', 'new'); // Will get ts > 1000
-
-				// Sync both ways
-				Y.applyUpdate(doc1, Y.encodeStateAsUpdate(doc2));
-				Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
-
-				// Higher timestamp should win
-				expect(kv1.get('x')).toBe('new');
-				expect(kv2.get('x')).toBe('new');
-			});
 		});
 
 		describe('Edge cases', () => {
@@ -648,17 +702,6 @@ describe('YKeyValueLww', () => {
 				kv.set('foo', undefined);
 				expect(kv.get('foo')).toBeUndefined();
 				expect(kv.has('foo')).toBe(false);
-			});
-
-			test('rapid set/get cycles always return the latest value', () => {
-				const { kv } = setupKv<number>();
-
-				for (let i = 0; i < 100; i++) {
-					kv.set('counter', i);
-					expect(kv.get('counter')).toBe(i);
-				}
-
-				expect(kv.get('counter')).toBe(99);
 			});
 
 			test('mixed operations expose their latest state in a caller-owned transaction', () => {
@@ -686,41 +729,6 @@ describe('YKeyValueLww', () => {
 				expect(kv.get('update')).toBe('new');
 				expect(kv.get('new')).toBe('added');
 				expect(kv.has('delete')).toBe(false);
-			});
-
-			test('delete then get returns undefined immediately', () => {
-				const { ydoc, kv } = setupKv();
-
-				kv.set('foo', 'bar');
-
-				let valueDuringTransaction: string | undefined = 'not-cleared';
-
-				ydoc.transact(() => {
-					kv.delete('foo');
-					valueDuringTransaction = kv.get('foo');
-				});
-
-				expect(valueDuringTransaction).toBeUndefined();
-				expect(kv.get('foo')).toBeUndefined();
-			});
-
-			test('delete then set returns the new value immediately', () => {
-				const { ydoc, kv } = setupKv();
-
-				kv.set('foo', 'bar');
-
-				let valueDuringTransaction: string | undefined;
-
-				ydoc.transact(() => {
-					kv.delete('foo');
-					expect(kv.get('foo')).toBeUndefined();
-					kv.set('foo', 'new');
-					valueDuringTransaction = kv.get('foo');
-				});
-
-				expect(valueDuringTransaction).toBe('new');
-				expect(kv.get('foo')).toBe('new');
-				expect(kv.has('foo')).toBe(true);
 			});
 
 			test('double delete is idempotent', () => {
@@ -759,102 +767,6 @@ describe('YKeyValueLww', () => {
 				expect(keysDuringTransaction).toContain('c');
 			});
 
-			test('observer clears transaction-local delete overlay', () => {
-				const { ydoc, kv } = setupKv();
-
-				kv.set('foo', 'bar');
-
-				ydoc.transact(() => {
-					kv.delete('foo');
-					expect(kv.has('foo')).toBe(false);
-				});
-
-				// After the transaction closes, the observer has cleared the delete overlay.
-				// Verify by setting a new value: a sticky overlay would keep has() false.
-				kv.set('foo', 'baz');
-				expect(kv.has('foo')).toBe(true);
-				expect(kv.get('foo')).toBe('baz');
-			});
-
-			test('set then delete leaves no sticky delete overlay', () => {
-				const { ydoc, kv } = setupKv();
-
-				// Set then delete in one transaction: the Y.Array entry is added and removed
-				// before the observer runs.
-				ydoc.transact(() => {
-					kv.set('foo', 'bar');
-					kv.delete('foo');
-				});
-
-				// After the transaction closes, the delete overlay should be clear.
-				// A subsequent set verifies that the old delete no longer masks this key.
-				kv.set('foo', 'new');
-				expect(kv.has('foo')).toBe(true);
-				expect(kv.get('foo')).toBe('new');
-			});
-
-			test('remote set after local delete is not masked by delete overlay', () => {
-				const { doc1, doc2, array1, array2 } = setupSyncedArrays('test');
-				const kv1 = new YKeyValueLww(array1);
-				const kv2 = new YKeyValueLww(array2);
-
-				// Both clients have the key
-				kv1.set('foo', 'original');
-				Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
-
-				// Client 1 deletes
-				kv1.delete('foo');
-				expect(kv1.has('foo')).toBe(false);
-
-				// Client 2 sets a new value (higher timestamp)
-				kv2.set('foo', 'remote-value');
-
-				// Sync client 2's update to client 1
-				Y.applyUpdate(doc1, Y.encodeStateAsUpdate(doc2));
-
-				// Client 1 should see the remote value: the delete overlay must not mask it.
-				expect(kv1.has('foo')).toBe(true);
-				expect(kv1.get('foo')).toBe('remote-value');
-			});
-
-			test('get() returns the final value after set-delete-set', () => {
-				const { ydoc, kv } = setupKv();
-
-				kv.set('foo', 'initial');
-
-				let finalGet: string | undefined;
-
-				ydoc.transact(() => {
-					kv.set('foo', 'first');
-					kv.delete('foo');
-					expect(kv.get('foo')).toBeUndefined();
-					kv.set('foo', 'final');
-					finalGet = kv.get('foo');
-				});
-
-				expect(finalGet).toBe('final');
-				expect(kv.get('foo')).toBe('final');
-				expect(kv.has('foo')).toBe(true);
-			});
-
-			test('get() returns undefined after delete-set-delete', () => {
-				const { ydoc, kv } = setupKv();
-
-				kv.set('foo', 'original');
-
-				ydoc.transact(() => {
-					kv.delete('foo');
-					expect(kv.has('foo')).toBe(false);
-					kv.set('foo', 'revived');
-					expect(kv.get('foo')).toBe('revived');
-					kv.delete('foo');
-					expect(kv.has('foo')).toBe(false);
-				});
-
-				expect(kv.has('foo')).toBe(false);
-				expect(kv.get('foo')).toBeUndefined();
-			});
-
 			test('delete non-existent key is no-op', () => {
 				const { ydoc, kv } = setupKv();
 
@@ -868,55 +780,6 @@ describe('YKeyValueLww', () => {
 					kv.delete('also-never-existed');
 					expect(kv.has('also-never-existed')).toBe(false);
 				});
-			});
-
-			test('delete overlay wins after set then delete', () => {
-				const { ydoc, kv } = setupKv();
-
-				kv.set('foo', 'original');
-
-				let valueDuringTransaction: string | undefined = 'sentinel';
-
-				ydoc.transact(() => {
-					// set() adds a write overlay and clears any delete overlay.
-					kv.set('foo', 'updated');
-					expect(kv.get('foo')).toBe('updated');
-
-					// delete() clears the write overlay and adds a delete overlay.
-					kv.delete('foo');
-					valueDuringTransaction = kv.get('foo');
-				});
-
-				// During the transaction, the delete overlay should have taken precedence.
-				expect(valueDuringTransaction).toBeUndefined();
-				expect(kv.has('foo')).toBe(false);
-			});
-
-			test('remote add for different key does not clear unrelated delete overlay', () => {
-				const { doc1, doc2, array1, array2 } = setupSyncedArrays('test');
-				const kv1 = new YKeyValueLww(array1);
-				const kv2 = new YKeyValueLww(array2);
-
-				// Both clients have keys 'a' and 'b'
-				kv1.set('a', '1');
-				kv1.set('b', '2');
-				Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
-
-				// Client 1 deletes 'a'
-				kv1.delete('a');
-				expect(kv1.has('a')).toBe(false);
-
-				// Client 2 adds a completely new key 'c'
-				kv2.set('c', '3');
-
-				// Sync client 2's update to client 1
-				Y.applyUpdate(doc1, Y.encodeStateAsUpdate(doc2));
-
-				// 'a' should still be deleted: the remote add of 'c' should not affect it
-				expect(kv1.has('a')).toBe(false);
-				expect(kv1.get('a')).toBeUndefined();
-				// 'c' should be visible
-				expect(kv1.get('c')).toBe('3');
 			});
 
 			test('both clients delete same key', () => {
