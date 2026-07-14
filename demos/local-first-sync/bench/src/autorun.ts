@@ -28,7 +28,9 @@ export async function maybeAutorun() {
 	if (phase === 'a') {
 		await bench.reset();
 		const seed = await bench.seed(rows);
-		log(`seed: insert ${seed.insertMs.toFixed(0)}ms persist ${seed.persistMs.toFixed(0)}ms`);
+		log(
+			`seed: insert ${seed.insertMs.toFixed(0)}ms persist ${seed.persistMs.toFixed(0)}ms`,
+		);
 		log('reloading for cold-open phase…');
 		params.set('phase', 'b');
 		location.search = params.toString();
@@ -37,7 +39,9 @@ export async function maybeAutorun() {
 
 	// Phase B: cold open + reads + writes on the persisted database.
 	const hydrate = await bench.hydrate();
-	log(`cold open: ${hydrate.hydrateMs.toFixed(0)}ms (${hydrate.rowCount} rows)`);
+	log(
+		`cold open: ${hydrate.hydrateMs.toFixed(0)}ms (${hydrate.rowCount} rows)`,
+	);
 	log(`settled memory: ${JSON.stringify(await bench.memory())}`);
 	log(`query100: ${JSON.stringify(await bench.query100())}`);
 	log(`search: ${JSON.stringify(await bench.search('needle'))}`);

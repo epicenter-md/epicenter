@@ -105,14 +105,14 @@ test('open reports the stored descriptor without replacing the records epoch', (
 			sha256,
 		});
 		if (!opened.ok) throw new Error('Expected authority to open');
-			expect(
-				openRecordAuthority({
-					database,
-					request: {
-						...request,
-						recordsDescriptor: 'different descriptor',
-						recordsSchemaHash: 'different',
-					},
+		expect(
+			openRecordAuthority({
+				database,
+				request: {
+					...request,
+					recordsDescriptor: 'different descriptor',
+					recordsSchemaHash: 'different',
+				},
 				sha256,
 			}),
 		).toMatchObject({

@@ -64,10 +64,8 @@ export function parseRecordAuthorityOpenRequest(
 	) {
 		throw new TypeError('Invalid record authority open request');
 	}
-	const { protocolMajor, recordsDescriptor, recordsSchemaHash } = value as Record<
-		string,
-		unknown
-	>;
+	const { protocolMajor, recordsDescriptor, recordsSchemaHash } =
+		value as Record<string, unknown>;
 	if (
 		!Number.isSafeInteger(protocolMajor) ||
 		(protocolMajor as number) < 1 ||

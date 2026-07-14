@@ -16,10 +16,10 @@ test('HTTP replica port binds one encoded workspace and forwards exact JSON', as
 			return Response.json(
 				requests.length === 1
 					? {
-						recordsEpoch: 'epoch-1',
-						recordsDescriptor: 'schema descriptor 1',
-						recordsSchemaHash: 'schema-1',
-					}
+							recordsEpoch: 'epoch-1',
+							recordsDescriptor: 'schema descriptor 1',
+							recordsSchemaHash: 'schema-1',
+						}
 					: { kind: 'push', ok: true },
 			);
 		},

@@ -98,7 +98,10 @@ window.bench = {
 		const t0 = now();
 		let count = 0;
 		for (const entry of state!.ykv.map.values()) {
-			if (entry.val.title.includes(needle) || entry.val.preview.includes(needle))
+			if (
+				entry.val.title.includes(needle) ||
+				entry.val.preview.includes(needle)
+			)
 				count++;
 		}
 		return { ms: now() - t0, count };
@@ -144,9 +147,11 @@ window.bench = {
 		// then apply the diff back — the real y-protocols path.
 		const remoteDoc = new Y.Doc({ gc: true });
 		Y.applyUpdate(remoteDoc, Y.encodeStateAsUpdate(doc));
-		const remoteArr = remoteDoc.getArray<{ key: string; val: Stored; ts: number }>(
-			'table:notes',
-		);
+		const remoteArr = remoteDoc.getArray<{
+			key: string;
+			val: Stored;
+			ts: number;
+		}>('table:notes');
 		const remoteYkv = new YKeyValueLww<Stored>(remoteArr);
 		const stateVectorBefore = Y.encodeStateVector(doc);
 		const plan = remotePlan(ykv.size, editCount);
@@ -174,4 +179,5 @@ window.bench = {
 window.benchReady = Promise.resolve();
 
 import { maybeAutorun } from './autorun';
+
 void window.benchReady.then(maybeAutorun);

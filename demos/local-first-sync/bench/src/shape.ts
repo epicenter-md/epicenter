@@ -89,7 +89,10 @@ export type RemoteCellEdit = {
 	value: string | number | boolean | null;
 };
 
-export function remotePlan(rowCount: number, editCount: number): RemoteCellEdit[] {
+export function remotePlan(
+	rowCount: number,
+	editCount: number,
+): RemoteCellEdit[] {
 	const edits: RemoteCellEdit[] = [];
 	for (let i = 0; i < editCount; i++) {
 		const index = (i * 104729) % rowCount;
@@ -134,7 +137,10 @@ declare global {
 	}
 }
 
-export async function measureMemory(): Promise<{ bytes: number; source: string }> {
+export async function measureMemory(): Promise<{
+	bytes: number;
+	source: string;
+}> {
 	const perf = performance as unknown as {
 		measureUserAgentSpecificMemory?: () => Promise<{ bytes: number }>;
 		memory?: { usedJSHeapSize: number };
@@ -153,7 +159,10 @@ export async function measureMemory(): Promise<{ bytes: number; source: string }
 	return { bytes: -1, source: 'unavailable' };
 }
 
-export async function storageEstimate(): Promise<{ bytes: number; detail: string }> {
+export async function storageEstimate(): Promise<{
+	bytes: number;
+	detail: string;
+}> {
 	const estimate = await navigator.storage.estimate();
 	const details = (estimate as { usageDetails?: Record<string, number> })
 		.usageDetails;

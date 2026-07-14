@@ -13,8 +13,8 @@ import type {
 import {
 	parseWorkspaceWorkerCommand,
 	parseWorkspaceWorkerEvent,
-	type WorkspaceWorkerEvent,
 	WORKSPACE_WORKER_PROTOCOL,
+	type WorkspaceWorkerEvent,
 } from './service-protocol.js';
 
 type Listener = (event: { data: unknown }) => void;

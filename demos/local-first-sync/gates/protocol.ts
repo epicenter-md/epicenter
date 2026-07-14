@@ -70,9 +70,7 @@ export type SnapshotChunkRequest = RequestEnvelope & {
 	index: number;
 };
 
-export type Refusal =
-	| 'protocol-mismatch'
-	| 'records-epoch-mismatch';
+export type Refusal = 'protocol-mismatch' | 'records-epoch-mismatch';
 
 export type PushResponse =
 	| { kind: 'push'; ok: true }

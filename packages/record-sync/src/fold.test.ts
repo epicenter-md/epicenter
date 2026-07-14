@@ -48,10 +48,7 @@ test('updateRow on an absent row folds to an accepted no-op', () => {
 
 test('deleteRow removes a live row and no-ops on an absent one', () => {
 	expect(
-		foldRow(
-			{ title: 'x' },
-			{ kind: 'deleteRow', table: 'notes', rowId: 'n1' },
-		),
+		foldRow({ title: 'x' }, { kind: 'deleteRow', table: 'notes', rowId: 'n1' }),
 	).toEqual({ kind: 'deleted' });
 	expect(
 		foldRow(undefined, { kind: 'deleteRow', table: 'notes', rowId: 'n1' }),

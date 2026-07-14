@@ -20,8 +20,8 @@ import type {
 	CommittedApplicationChanges,
 } from './database.js';
 import type { TableDefinitions } from './definition.js';
-import type { WorkspaceInvalidation } from './service-protocol.js';
 import type { RecordsRecoveryCheckpoint } from './recovery-checkpoint.js';
+import type { WorkspaceInvalidation } from './service-protocol.js';
 
 type UntypedRow = { id: string } & Record<string, unknown>;
 type UntypedTable = ApplicationTable<UntypedRow>;

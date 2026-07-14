@@ -11,8 +11,8 @@
  */
 
 import {
-	PROTOCOL_VERSION,
 	type Poke,
+	PROTOCOL_VERSION,
 	type PullResponse,
 	type PushResponse,
 } from '../../shared/protocol';

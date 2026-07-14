@@ -102,10 +102,7 @@ function fmtBytes(v: unknown): string {
 
 const results: EngineRun[] = [];
 const browser = await chromium.launch({
-	args: [
-		'--js-flags=--expose-gc',
-		'--enable-features=SharedArrayBuffer',
-	],
+	args: ['--js-flags=--expose-gc', '--enable-features=SharedArrayBuffer'],
 });
 
 try {

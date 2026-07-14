@@ -86,9 +86,7 @@ async function ensureInit() {
 
 function columnDdl(): string {
 	return knownFields
-		.map((field) =>
-			field === 'pinned' ? `${field} INTEGER` : `${field} TEXT`,
-		)
+		.map((field) => (field === 'pinned' ? `${field} INTEGER` : `${field} TEXT`))
 		.join(', ');
 }
 
@@ -287,9 +285,7 @@ const api = {
 			db = null;
 		}
 		await ensureInit();
-		const unlink = (
-			poolUtil as { unlink?: (path: string) => boolean }
-		).unlink;
+		const unlink = (poolUtil as { unlink?: (path: string) => boolean }).unlink;
 		unlink?.call(poolUtil, `/${opts.file}`);
 		return {};
 	},

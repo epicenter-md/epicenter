@@ -1,32 +1,52 @@
 <!doctype html>
 <html>
-<head>
-	<meta charset="utf-8" />
-	<title>Epicenter sync demo</title>
-	<style>
-		body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; }
-		#status { font-size: 0.85rem; color: #555; margin-bottom: 1rem; }
-		#notes li { cursor: pointer; padding: 2px 0; }
-		#body { margin-top: 1rem; border-top: 1px solid #ccc; padding-top: 0.5rem; }
-		#body-text { white-space: pre-wrap; background: #f6f6f6; padding: 0.5rem; min-height: 2rem; }
-	</style>
-</head>
-<body>
-	<div id="status">booting…</div>
-	<div>
-		<input id="new-title" placeholder="note title" />
-		<button id="create">create</button>
-		<button id="sign-in">sign in</button>
-		<button id="sign-out">sign out</button>
-		<button id="toggle-network">toggle network</button>
-	</div>
-	<ul id="notes"></ul>
-	<div id="body">
-		<div>body (lazy Yjs doc — click a note to open):</div>
-		<div id="body-text"></div>
-		<input id="body-append" placeholder="append text" />
-		<button id="append-body">append</button>
-	</div>
-	<script type="module" src="/client/src/app.ts"></script>
-</body>
+	<head>
+		<meta charset="utf-8">
+		<title>Epicenter sync demo</title>
+		<style>
+			body {
+				font-family: system-ui, sans-serif;
+				max-width: 640px;
+				margin: 2rem auto;
+			}
+			#status {
+				font-size: 0.85rem;
+				color: #555;
+				margin-bottom: 1rem;
+			}
+			#notes li {
+				cursor: pointer;
+				padding: 2px 0;
+			}
+			#body {
+				margin-top: 1rem;
+				border-top: 1px solid #ccc;
+				padding-top: 0.5rem;
+			}
+			#body-text {
+				white-space: pre-wrap;
+				background: #f6f6f6;
+				padding: 0.5rem;
+				min-height: 2rem;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="status">booting…</div>
+		<div>
+			<input id="new-title" placeholder="note title">
+			<button id="create">create</button>
+			<button id="sign-in">sign in</button>
+			<button id="sign-out">sign out</button>
+			<button id="toggle-network">toggle network</button>
+		</div>
+		<ul id="notes"></ul>
+		<div id="body">
+			<div>body (lazy Yjs doc — click a note to open):</div>
+			<div id="body-text"></div>
+			<input id="body-append" placeholder="append text">
+			<button id="append-body">append</button>
+		</div>
+		<script type="module" src="/client/src/app.ts"></script>
+	</body>
 </html>

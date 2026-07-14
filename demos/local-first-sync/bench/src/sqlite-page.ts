@@ -78,4 +78,5 @@ window.benchReady = ready.then(async () => {
 });
 
 import { maybeAutorun } from './autorun';
+
 void window.benchReady.then(maybeAutorun);
