@@ -205,6 +205,10 @@ function defineTranscriptionSettings(
 			field.string(),
 			() => PROVIDERS.Mistral.defaultModel as string,
 		),
+		'transcription.compressAudioBeforeTranscription': defineKv(
+			field.boolean(),
+			() => true,
+		),
 		'transcription.language': defineKv(
 			field.select(SUPPORTED_LANGUAGES),
 			() => 'auto' as const,
