@@ -54,6 +54,10 @@ export type ApplicationDatabaseOptions = {
 	onObserverError(error: unknown): void;
 };
 
+export type ApplicationDatabaseIdentityInspection =
+	| { readonly status: 'initialized' }
+	| { readonly status: 'invalid'; readonly reason: string };
+
 export type ApplicationLogicalSnapshot = {
 	rows: SnapshotRow[];
 };
@@ -585,7 +589,9 @@ function initializeDatabase(
 	kind: 'standalone' | 'replica',
 ): void {
 	sqlite.transaction(() => {
-		inspectDatabaseIdentity(sqlite, definition, kind);
+		const identity = readDatabaseIdentity(sqlite, definition, kind);
+		if (identity.status === 'invalid') throw new Error(identity.reason);
+		if (identity.status === 'initialized') return;
 		sqlite.run(
 			`CREATE TABLE IF NOT EXISTS ${quoteIdentifier(META_TABLE)} ("key" TEXT PRIMARY KEY, "value" TEXT NOT NULL)`,
 		);
@@ -639,28 +645,47 @@ function initializeDatabase(
 
 /**
  * Runtime-owned physical revision of the application-table layout. App
- * definitions no longer author representation migrations (ADR-0130); when
- * this runtime changes its own DDL it bumps this constant and owns the
- * in-place migration.
+ * definitions do not author representation migrations (ADR-0130). This
+ * greenfield runtime accepts only the exact revision it creates; it does not
+ * promise an in-place storage upgrade path.
  */
 const APPLICATION_STORAGE_REVISION = 1;
 
-function inspectDatabaseIdentity(
+/** Inspect one already-existing database without creating or changing storage. */
+export function inspectApplicationDatabaseIdentity(
+	definition: WorkspaceDefinition,
+	sqlite: RecordSyncSqlite,
+	kind: 'standalone' | 'replica',
+): ApplicationDatabaseIdentityInspection {
+	assertWorkspaceDefinition(definition);
+	const identity = readDatabaseIdentity(sqlite, definition, kind);
+	return identity.status === 'fresh'
+		? invalidDatabaseIdentity(
+				'Workspace database has no complete root identity',
+			)
+		: identity;
+}
+
+type DatabaseIdentityState =
+	| { readonly status: 'fresh' }
+	| ApplicationDatabaseIdentityInspection;
+
+function readDatabaseIdentity(
 	sqlite: RecordSyncSqlite,
 	definition: WorkspaceDefinition,
 	kind: 'standalone' | 'replica',
-): void {
+): DatabaseIdentityState {
 	const userTables = sqlite.all<{ name: string }>(
 		"SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
 	);
 	const hasMeta = userTables.some(({ name }) => name === META_TABLE);
 	if (!hasMeta) {
 		if (userTables.length > 0) {
-			throw new Error(
+			return invalidDatabaseIdentity(
 				'Workspace database has no identity metadata; refusing to adopt a non-empty database',
 			);
 		}
-		return;
+		return Object.freeze({ status: 'fresh' });
 	}
 
 	const storedRevisionText = readMeta(sqlite, 'storage_revision');
@@ -675,41 +700,48 @@ function inspectDatabaseIdentity(
 		storedRecordsSchemaHash === undefined ||
 		storedKind === undefined
 	) {
-		throw new Error(
+		return invalidDatabaseIdentity(
 			'Workspace database metadata is incomplete; refusing to adopt an unidentified database',
 		);
 	}
 	const storedRevision = Number(storedRevisionText);
 	if (!Number.isSafeInteger(storedRevision) || storedRevision < 1) {
-		throw new Error(
+		return invalidDatabaseIdentity(
 			`Invalid stored workspace revision '${storedRevisionText}'`,
 		);
 	}
 	if (storedWorkspaceId !== definition.workspaceId) {
-		throw new Error(
+		return invalidDatabaseIdentity(
 			`Workspace database belongs to '${storedWorkspaceId}', not '${definition.workspaceId}'`,
 		);
 	}
 	if (storedKind !== kind) {
-		throw new Error(
+		return invalidDatabaseIdentity(
 			`Workspace database is '${storedKind}', not '${kind}'; refusing the wrong lifecycle door`,
 		);
 	}
-	if (storedRevision > APPLICATION_STORAGE_REVISION) {
-		throw new Error(
-			`Workspace database revision ${storedRevision} is newer than this runtime's revision ${APPLICATION_STORAGE_REVISION}`,
+	if (storedRevision !== APPLICATION_STORAGE_REVISION) {
+		return invalidDatabaseIdentity(
+			`Workspace database revision ${storedRevision} does not match this runtime's revision ${APPLICATION_STORAGE_REVISION}`,
 		);
 	}
 	if (storedRecordsSchemaHash !== definition.recordsSchemaHash) {
-		throw new Error(
+		return invalidDatabaseIdentity(
 			'Workspace schema hash does not match the database; refusing typed access',
 		);
 	}
 	if (storedRecordsDescriptor !== definition.recordsDescriptor) {
-		throw new Error(
+		return invalidDatabaseIdentity(
 			'Workspace records descriptor does not match the database; refusing typed access',
 		);
 	}
+	return Object.freeze({ status: 'initialized' });
+}
+
+function invalidDatabaseIdentity(
+	reason: string,
+): ApplicationDatabaseIdentityInspection {
+	return Object.freeze({ status: 'invalid', reason });
 }
 
 function readLogicalSnapshot<TTables extends TableDefinitions>(

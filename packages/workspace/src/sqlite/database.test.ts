@@ -26,9 +26,15 @@ import { nullable } from '../document/nullable.js';
 import {
 	type ApplicationMutationCoordinator,
 	createApplicationDatabase,
+	inspectApplicationDatabaseIdentity,
 	ReplicaInvariantViolationError,
 } from './database.js';
-import { defineKv, defineTable } from './definition.js';
+import {
+	defineKv,
+	defineTable,
+	defineWorkspace as defineWorkspaceCandidate,
+	type WorkspaceDefinition,
+} from './definition.js';
 import { defineTestWorkspace as defineWorkspace } from './test-workspace.js';
 
 function createSqlite(database: Database): RecordSyncSqlite {
@@ -944,6 +950,182 @@ describe('transaction and invalidation', () => {
 });
 
 describe('database identity', () => {
+	function initializedIdentity(kind: 'standalone' | 'replica' = 'standalone') {
+		const database = new Database(':memory:');
+		const sqlite = createSqlite(database);
+		const definition = defineWorkspace({
+			appId: 'inspection-test',
+			tables: {
+				rows: defineTable({
+					fields: { id: field.string(), title: field.string() },
+				}),
+			},
+		});
+		const application = createApplicationDatabase(definition, sqlite, {
+			kind,
+			onObserverError() {},
+		});
+		return { application, database, definition, sqlite };
+	}
+
+	test('read-only inspection accepts a complete initialized database with no user rows', () => {
+		const { application, definition, sqlite } = initializedIdentity();
+
+		expect(application.tables.rows.count()).toBe(0);
+		expect(
+			inspectApplicationDatabaseIdentity(definition, sqlite, 'standalone'),
+		).toEqual({ status: 'initialized' });
+	});
+
+	test('read-only inspection rejects an existing empty database', () => {
+		const database = new Database(':memory:');
+		const sqlite = createSqlite(database);
+		const definition = defineWorkspace({
+			appId: 'empty-inspection-test',
+			tables: { rows: defineTable({ fields: { id: field.string() } }) },
+		});
+
+		expect(
+			inspectApplicationDatabaseIdentity(definition, sqlite, 'standalone'),
+		).toEqual({
+			status: 'invalid',
+			reason: 'Workspace database has no complete root identity',
+		});
+	});
+
+	test('read-only inspection rejects incomplete root metadata', () => {
+		const { database, definition, sqlite } = initializedIdentity();
+		database.run(
+			"DELETE FROM __epicenter_meta WHERE key = 'records_descriptor'",
+		);
+
+		expect(
+			inspectApplicationDatabaseIdentity(definition, sqlite, 'standalone'),
+		).toMatchObject({
+			status: 'invalid',
+			reason: expect.stringContaining('metadata is incomplete'),
+		});
+	});
+
+	test('read-only inspection rejects wrong workspace, descriptor, and schema hash', () => {
+		const wrongWorkspace = initializedIdentity();
+		const otherDefinition = defineWorkspace({
+			appId: 'other-inspection-test',
+			tables: wrongWorkspace.definition.tables,
+		});
+		expect(
+			inspectApplicationDatabaseIdentity(
+				otherDefinition,
+				wrongWorkspace.sqlite,
+				'standalone',
+			),
+		).toMatchObject({
+			status: 'invalid',
+			reason: expect.stringContaining("belongs to 'inspection-test-g1'"),
+		});
+
+		const wrongDescriptor = initializedIdentity();
+		wrongDescriptor.database.run(
+			"UPDATE __epicenter_meta SET value = 'forged descriptor' WHERE key = 'records_descriptor'",
+		);
+		expect(
+			inspectApplicationDatabaseIdentity(
+				wrongDescriptor.definition,
+				wrongDescriptor.sqlite,
+				'standalone',
+			),
+		).toMatchObject({
+			status: 'invalid',
+			reason: expect.stringContaining('records descriptor does not match'),
+		});
+
+		const wrongHash = initializedIdentity();
+		wrongHash.database.run(
+			"UPDATE __epicenter_meta SET value = 'sha256:forged' WHERE key = 'schema_hash'",
+		);
+		expect(
+			inspectApplicationDatabaseIdentity(
+				wrongHash.definition,
+				wrongHash.sqlite,
+				'standalone',
+			),
+		).toMatchObject({
+			status: 'invalid',
+			reason: expect.stringContaining('schema hash does not match'),
+		});
+	});
+
+	test('read-only inspection rejects wrong lifecycle kind and storage revision', () => {
+		const wrongKind = initializedIdentity();
+		expect(
+			inspectApplicationDatabaseIdentity(
+				wrongKind.definition,
+				wrongKind.sqlite,
+				'replica',
+			),
+		).toMatchObject({
+			status: 'invalid',
+			reason: expect.stringContaining("database is 'standalone'"),
+		});
+
+		const wrongRevision = initializedIdentity();
+		wrongRevision.database.run(
+			"UPDATE __epicenter_meta SET value = '2' WHERE key = 'storage_revision'",
+		);
+		expect(
+			inspectApplicationDatabaseIdentity(
+				wrongRevision.definition,
+				wrongRevision.sqlite,
+				'standalone',
+			),
+		).toMatchObject({
+			status: 'invalid',
+			reason: expect.stringContaining('revision 2 does not match'),
+		});
+	});
+
+	test('inspection performs no writes and rejects unlocked definitions before reading', () => {
+		const { database, definition } = initializedIdentity();
+		const base = createSqlite(database);
+		let writes = 0;
+		let reads = 0;
+		const readOnlySqlite: RecordSyncSqlite = {
+			...base,
+			run(sql, parameters) {
+				writes++;
+				return base.run(sql, parameters);
+			},
+			all(sql, parameters) {
+				reads++;
+				return base.all(sql, parameters);
+			},
+		};
+		expect(
+			inspectApplicationDatabaseIdentity(
+				definition,
+				readOnlySqlite,
+				'standalone',
+			),
+		).toEqual({ status: 'initialized' });
+		expect(reads).toBeGreaterThan(0);
+		expect(writes).toBe(0);
+
+		const candidate = defineWorkspaceCandidate({
+			appId: 'unlocked-inspection-test',
+			dataGeneration: 1,
+			tables: { rows: defineTable({ fields: { id: field.string() } }) },
+		});
+		reads = 0;
+		expect(() =>
+			inspectApplicationDatabaseIdentity(
+				candidate as unknown as WorkspaceDefinition,
+				readOnlySqlite,
+				'standalone',
+			),
+		).toThrow('must be returned by lockWorkspace()');
+		expect(reads).toBe(0);
+	});
+
 	test('identity inspection and fresh stamping share one immediate transaction', () => {
 		const database = new Database(':memory:');
 		const base = createSqlite(database);

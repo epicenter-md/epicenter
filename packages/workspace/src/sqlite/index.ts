@@ -16,6 +16,7 @@ export {
 } from './client.js';
 export {
 	type ApplicationDatabase,
+	type ApplicationDatabaseIdentityInspection,
 	type ApplicationDatabaseOptions,
 	type ApplicationLogicalSnapshot,
 	type ApplicationMutationContext,
@@ -23,6 +24,7 @@ export {
 	type ApplicationTable,
 	type ApplicationTables,
 	type ApplicationTransaction,
+	inspectApplicationDatabaseIdentity,
 	ReplicaInvariantViolationError,
 } from './database.js';
 export {
