@@ -250,14 +250,14 @@ contains no generation branch.
 
 ### Wave 5: Stop importing direct boot, verify, then remove
 
-- [ ] Route the fixture entirely through generation-aware boot while leaving
+- [x] Route the fixture entirely through generation-aware boot while leaving
   its old direct boot helper on disk but unused.
-- [ ] Run record-sync, SQLite, app-shell, browser, typecheck, and documentation
+- [x] Run record-sync, SQLite, app-shell, browser, typecheck, and documentation
   hygiene checks.
-- [ ] Revert to the old import if the new path fails before deleting anything.
-- [ ] Delete the unused direct boot helper, obsolete fixtures, and docs only
+- [x] Revert to the old import if the new path fails before deleting anything.
+- [x] Delete the unused direct boot helper, obsolete fixtures, and docs only
   after verification passes.
-- [ ] Re-run searches for schema replacement, independently authored workspace
+- [x] Re-run searches for schema replacement, independently authored workspace
   IDs, migration chains, selected-generation flags, and seed/import vocabulary
   on this path.
 
