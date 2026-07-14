@@ -22,9 +22,10 @@ possible.
 ## Decision
 
 Generation discovery belongs to the build being opened, not to a standalone
-generation-neutral shell. The build compiles the append-only generation lock
-and probes its own and predecessor namespaces without creating files, database
-tables, authorities, KV documents, child documents, or blob stores.
+generation-neutral shell. The build compiles the append-only generation lock,
+probes its own namespace without creating files, database tables, authorities,
+KV documents, child documents, or blob stores, and uses earlier lock entries to
+know that a predecessor may exist. It does not import a predecessor's schema.
 
 For data generation N, boot follows one state machine:
 
