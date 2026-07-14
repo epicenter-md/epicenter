@@ -487,6 +487,10 @@ export function createRecordAuthority({
 	identity: RecordAuthorityIdentity;
 	sha256: Sha256;
 }) {
+	if (identity.protocolMajor !== RECORD_SYNC_PROTOCOL_MAJOR)
+		throw new TypeError('Invalid record-sync protocol major');
+	if (!isBoundedIdentifier(identity.recordsEpoch))
+		throw new TypeError('Invalid records epoch');
 	if (!isBoundedRecordsDescriptor(identity.recordsDescriptor))
 		throw new TypeError('Invalid records descriptor');
 	if (!isBoundedRecordsSchemaHash(identity.recordsSchemaHash))

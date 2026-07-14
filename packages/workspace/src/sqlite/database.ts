@@ -637,7 +637,7 @@ function initializeDatabase(
 
 /**
  * Runtime-owned physical revision of the application-table layout. App
- * definitions no longer author representation migrations (ADR-0125); when
+ * definitions no longer author representation migrations (ADR-0130); when
  * this runtime changes its own DDL it bumps this constant and owns the
  * in-place migration.
  */

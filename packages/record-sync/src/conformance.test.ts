@@ -316,6 +316,13 @@ async function runConformance(open: OpenDatabase) {
 		expect(() =>
 			createRecordAuthority({
 				database,
+				identity: { ...identity, recordsEpoch: '' },
+				sha256,
+			}),
+		).toThrow('Invalid records epoch');
+		expect(() =>
+			createRecordAuthority({
+				database,
 				identity: { ...identity, recordsEpoch: 'wrong' },
 				sha256,
 			}),

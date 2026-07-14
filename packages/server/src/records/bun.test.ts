@@ -6,7 +6,7 @@
  *
  * Key behaviors:
  * - Records epoch and mutations survive closing and reopening
- * - Protocol and schema mismatches refuse without replacing stored identity
+ * - Protocol mismatches refuse; later opens only describe stored schema identity
  * - Principal and workspace pairs use independent SQLite authorities
  * - Production compaction sends stale cursors through bounded snapshots
  * - Compaction failure cannot change an already accepted push into a failure
