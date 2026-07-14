@@ -8,10 +8,7 @@
 import { expect, test } from 'bun:test';
 import { sha256Hex } from '../shared/sha256.js';
 import { document, inspectDocumentFormat } from './document-format.js';
-import {
-	createDocumentGuidIdentity,
-	formatDocumentGuid,
-} from './document-guid.js';
+import { createDocumentGuidIdentity } from './document-guid.js';
 
 test('the lock token contains the exact runtime hash domain and guid grammar', () => {
 	const identity = createDocumentGuidIdentity({
@@ -41,13 +38,13 @@ test('the lock token contains the exact runtime hash domain and guid grammar', (
 
 test('every record id string derives one fixed safe address segment', () => {
 	const rowId = 'Imported/Row.日本語';
-	const guid = formatDocumentGuid({
+	const identity = createDocumentGuidIdentity({
 		workspaceId: 'notes',
 		table: 'entries',
-		rowId,
 		document: 'body',
 		format: document.plainText,
 	});
+	const guid = identity.guid(rowId);
 	const rowDigest = sha256Hex(
 		`epicenter.document-row/1\0${JSON.stringify(rowId)}`,
 	);
@@ -60,36 +57,32 @@ test('every record id string derives one fixed safe address segment', () => {
 });
 
 test('distinct record ids derive distinct rooms', () => {
-	const reference = {
+	const identity = createDocumentGuidIdentity({
 		workspaceId: 'notes',
 		table: 'entries',
 		document: 'body',
 		format: document.plainText,
-	};
+	});
 
-	expect(
-		formatDocumentGuid({ ...reference, rowId: 'case-sensitive' }),
-	).not.toBe(formatDocumentGuid({ ...reference, rowId: 'Case-Sensitive' }));
-	expect(formatDocumentGuid({ ...reference, rowId: '' })).toContain(
+	expect(identity.guid('case-sensitive')).not.toBe(
+		identity.guid('Case-Sensitive'),
+	);
+	expect(identity.guid('')).toContain(
 		sha256Hex(`epicenter.document-row/1\0${JSON.stringify('')}`),
 	);
 });
 
 test('distinct lone UTF-16 surrogates remain distinct hash inputs', () => {
-	const reference = {
+	const identity = createDocumentGuidIdentity({
 		workspaceId: 'notes',
 		table: 'entries',
 		document: 'body',
 		format: document.plainText,
-	};
+	});
 
-	expect(formatDocumentGuid({ ...reference, rowId: '\ud800' })).not.toBe(
-		formatDocumentGuid({ ...reference, rowId: '\ud801' }),
-	);
-	expect(formatDocumentGuid({ ...reference, rowId: '\ud800' })).not.toBe(
-		formatDocumentGuid({ ...reference, rowId: '\ufffd' }),
-	);
-	expect(formatDocumentGuid({ ...reference, rowId: '😀' })).toContain(
+	expect(identity.guid('\ud800')).not.toBe(identity.guid('\ud801'));
+	expect(identity.guid('\ud800')).not.toBe(identity.guid('\ufffd'));
+	expect(identity.guid('😀')).toContain(
 		sha256Hex(`epicenter.document-row/1\0${JSON.stringify('😀')}`),
 	);
 });

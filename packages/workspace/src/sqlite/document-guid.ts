@@ -82,17 +82,3 @@ export function isDocumentGuidLockTokenFor(
 		/^[0-9a-f]{64}$/.test(token.slice(prefix.length))
 	);
 }
-
-/** Derive one runtime guid from the same owner that emits its lock token. */
-export function formatDocumentGuid({
-	rowId,
-	...owner
-}: {
-	workspaceId: string;
-	table: string;
-	rowId: string;
-	document: string;
-	format: DocumentFormat;
-}): Guid {
-	return createDocumentGuidIdentity(owner).guid(rowId);
-}
