@@ -1,14 +1,14 @@
 # Epicenter architecture
 
-Epicenter is a local-first workspace platform. Apps define stable workspaces,
-clients keep complete local data, and a hosted or self-hosted star keeps devices
-synchronized while they sleep.
+Epicenter is a local-first workspace platform. Apps publish immutable data
+generations, clients keep complete local data, and a hosted or self-hosted star
+keeps devices synchronized while they sleep.
 
 The workspace model is the center of the architecture:
 
-> A workspace owns queryable records, stable synchronized preferences, and
-> collaborative documents attached to record identities. Each plane has one
-> distinct lifecycle and synchronization model.
+> An application data generation freezes records, synchronized preferences,
+> child-document identities, and app-owned blobs under one generated workspace
+> namespace.
 
 This page is the five-minute map. See the
 [workspace data model](reference/workspace-data-model.md) for the placement rule
@@ -50,27 +50,30 @@ orders logical record mutations; Yjs sync carries KV and child-document
 updates. Middleware turns those capabilities into reactive state, filesystems,
 agent tools, and other app-shaped surfaces.
 
-## A workspace composes three storage planes
+## A generation composes four storage planes
 
-The workspace is the stable app-defined identity and access-policy boundary. It
-owns one active records epoch, one stable KV namespace, and a namespace of child
-documents.
+The application owns a stable `appId` and publishes a positive, increasing
+`dataGeneration`. The framework derives `<appId>-gN` as the workspace ID and
+uses it as the storage, synchronization, and access-policy boundary for that
+generation.
 
 ```text
-workspace
-|-- active records epoch
-|   `-- records database
-|       `-- tables
-|           `-- records
-|               |-- stable row id
-|               `-- named atomic cells
-|-- synchronized KV
-`-- child-document namespace
-    `-- format-addressed Yjs documents reached through records
+application data generation N
+`-- workspace ID: <appId>-gN
+    |-- active records epoch
+    |   `-- records database
+    |       `-- tables
+    |           `-- records
+    |               |-- stable row id
+    |               `-- named atomic cells
+    |-- synchronized KV
+    |-- child-document namespace
+    |   `-- format-addressed Yjs documents reached through records
+    `-- app-owned blob namespace
 ```
 
-A records replacement starts a new records epoch. It does not replace the
-workspace, reset preferences, or rename child documents.
+Any durable contract change publishes a new generation. UI-only builds may keep
+using the same one.
 
 ### Records are queryable product facts
 
@@ -91,14 +94,14 @@ than part of the records schema.
 ### KV is for bounded synchronized preferences
 
 Workspace KV stores declared preferences such as theme, language, or collapsed
-UI state. Its identity does not change when records start a new epoch.
-Missing or invalid values read as defaults; a new meaning normally gets a new
-dot-namespaced key.
+UI state. Its identity is fixed inside one application data generation. Missing
+or invalid values read as defaults. Adding a key or changing its meaning
+publishes a new generation.
 
-KV has no row lifecycle and does not participate in records snapshots,
-migrations, imports, or schema hashes. A value that must commit atomically with
-a record belongs in that record. Device-local and privacy-sensitive settings
-belong in device storage.
+KV has no row lifecycle and does not participate in records snapshots or schema
+hashes. A value that must commit atomically with a record belongs in
+that record. Device-local and privacy-sensitive settings belong in device
+storage.
 
 ### Child documents are for merge-sensitive content
 
@@ -108,23 +111,29 @@ plain text, an XML fragment, or validated keyed records.
 
 The record gives the document its product relationship and row identity, but
 the document bytes do not live in the record. Its address includes the
-workspace, table, a collision-resistant digest of the full row ID, document
-name, and document format hash. Document format identity is independent of the
-records schema hash.
+generation-qualified workspace ID, table, a collision-resistant digest of the
+full row ID, document name, and document format hash. Document format identity
+is independent of the records schema hash but frozen inside the generation.
 
-## Definitions travel; runtimes connect them
+## Definitions travel; locks freeze them
 
-The shared workspace definition is pure. It names the workspace, tables, KV
-preferences, actions, and child-document declarations without opening storage
-or a network connection.
+The SQLite workspace candidate is pure. It declares `appId`,
+`dataGeneration`, tables, KV preferences, child documents, and app-owned blob
+identities without opening storage or a network connection. Tooling records its
+derived identities in an append-only generation lock. Runtime openers accept
+only the validated locked definition.
 
 ```text
-defineWorkspace({ id, name, tables, kv, actions })
+defineWorkspace({ appId, dataGeneration, tables, kv, blobs })
         |
-        | pure app contract
+        | pure candidate
         v
-connect(...)                         browser or local runtime
-mount(...)                           daemon runtime
+lockWorkspace(candidate, generationLock)
+        |
+        | validated immutable generation
+        v
+openStandaloneWorkspace(...)        local runtime
+openWorkspaceReplica(...)           synchronized runtime
 ```
 
 `defineTable` declares fields and optional child documents. A field becomes one
@@ -133,10 +142,10 @@ schema and a fresh default factory. Both use the same closed `field.*`
 vocabulary, but they do not share a storage plane.
 
 Runtime openers supply the resources that cannot travel with the definition:
-browser storage, a record authority connection, Yjs collaboration, daemon
-persistence, materializers, auth, and platform APIs. App-facing code should
-enter through the workspace definition instead of rebuilding addresses or
-storage topology itself.
+the environment's SQLite service, record sync port, Yjs persistence and
+collaboration, and platform APIs. App-facing code should enter through the
+workspace definition instead of rebuilding addresses or storage topology
+itself.
 
 ## The records path
 
@@ -179,38 +188,38 @@ Child-document edits follow their own Yjs path. KV edits use the eager KV Yjs
 document. The workspace composes these paths but does not pretend they have one
 conflict model.
 
-## Replacement starts a new records epoch
+## Durable contract changes start a new generation
 
-One records epoch has one portable records schema hash. Every synchronized
-schema change, restore, or wholesale rewrite begins a new epoch through a
-disruptive administrative operation. Epicenter does not synchronize mixed
-schemas or translate mutations between them.
+One application data generation has one records schema and one exact identity
+for every other durable plane. A change to any of them publishes a new
+generation, even when the change is additive. Epicenter does not translate
+mutations, KV, child documents, or blobs between generations. Older generations
+remain independent and writable.
 
-The administrator briefly rejects writes, prepares one complete logical
-snapshot, installs it as a new records epoch, and requires replicas to
-resynchronize. Hosted and self-hosted deployments share the epoch fence. They do
-not share a candidate upload or activation protocol.
+A records epoch is narrower. The authority mints it for one continuous records
+history inside one generation. Same-descriptor restore or repair may mint a new
+epoch to fence stale cursors and writes. An epoch-fenced replica can export one
+self-describing recovery checkpoint containing its local rows and pending
+logical mutations. The checkpoint has no automatic import or replay operation.
+
+The current build owns generation-aware boot:
 
 ```text
-active records epoch A
+inspect current root identity without creating storage
         |
-        | reject writes; install complete logical snapshot
-        v
-active records epoch B
-        |
-        `-- old-epoch requests are rejected
+        |-- initialized -> open current generation
+        |-- invalid     -> refuse to open
+        `-- absent
+              |-- no predecessors -> initialize current generation
+              `-- predecessors    -> ask before creating anything
+                    |-- start current version
+                    `-- continue at a historical build route
 ```
 
-An epoch-fenced replica remains locally readable but refuses writes and sync.
-It can export one self-describing recovery checkpoint containing its local rows
-and pending logical mutations. The checkpoint has no shared import or replay
-operation; it exposes obsolete work without translating it into the new epoch.
-
-Applications may retain old descriptors and write one-off transforms to prepare
-the snapshot. Epicenter does not provide a shared migration or online lifecycle.
-Child-document format conversion is explicit and per-document. Moving authority
-between records and documents is an app-owned maintenance operation rather than
-a universal migration feature.
+The choice is not persisted. Starting the current generation leaves every
+predecessor unchanged. Continuing to a previous version does not initialize the
+current namespace. The first implementation adds no copy, seed, importer,
+migration chain, or read-only retirement fence.
 
 ## The star owns availability, not application meaning
 
@@ -219,22 +228,22 @@ hosted Cloud app and the self-hosted instance use the same shared server library
 but resolve principals differently.
 
 The records authority owns ordering, the current records epoch, and ordinary
-snapshot bootstrap. It remains schema-blind. Deployment-specific administration
-owns any temporary replacement storage. Yjs rooms carry KV and child-document
-updates. The blob store holds large binaries by reference.
+snapshot bootstrap. It receives the generated workspace ID but knows nothing
+about application IDs, data-generation numbers, predecessor order, or current
+builds. Yjs rooms carry KV and child-document updates. The blob store holds
+large binaries by reference.
 
 This separation keeps the privacy question concrete. Epicenter can run the
 star, or the user can run it. In either topology, apps keep their schema meaning
 and product policy at the client boundary.
 
-## Current transition
+## Current adoption
 
-The SQLite records implementation lives under `packages/workspace/src/sqlite`
-while the older public workspace path still stores record tables and KV in one
-root Y.Doc. The older path is implementation history, not the target ownership
-model described here.
+The generation-aware SQLite implementation lives under
+`packages/workspace/src/sqlite`. The older public workspace path still stores
+record tables and KV in one root Y.Doc. It does not gain a generation-one alias,
+fallback probe, or import bridge from the SQLite path.
 
-During the transition, use the code and accepted ADRs as current implementation
-truth. Use this architecture and the records ADRs to judge the final API, delete
-legacy branches, and prevent the root-Y.Doc topology from leaking back into the
-product vocabulary.
+Each adopting application must inventory records, KV, child documents, and
+app-owned blobs before it publishes a generation lock. The code and accepted
+ADRs remain current implementation truth.

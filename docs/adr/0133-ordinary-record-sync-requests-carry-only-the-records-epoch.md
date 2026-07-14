@@ -3,6 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-07-13
 - **Amends:** [ADR-0119](0119-complete-metadata-replicas-sync-through-schema-blind-server-ordered-mutations.md), [ADR-0130](0130-records-replacement-starts-a-new-epoch-without-an-online-succession-protocol.md)
+- **Amended by:** [ADR-0134](0134-application-data-generations-own-immutable-workspace-namespaces.md) (records epochs are intra-generation history fences, not schema-change identities)
 
 ## Context
 

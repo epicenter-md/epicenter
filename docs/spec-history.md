@@ -16,15 +16,20 @@
 >
 > **Regenerate (deterministic per ref set, lossless):** `bun scripts/generate-spec-history.ts`. The totals track the refs this clone can see; `--all` is deliberate so the timeline recovers specs that only lived on unmerged or deleted branches.
 
-**1375 specs ever** (552 still in tree, 823 removed).
+**1380 specs ever** (548 still in tree, 832 removed).
 
 
 ## 2026
 
 | Date | Spec | State | Path |
 |------|------|-------|------|
+| 2026-07-13 | immutable-application-data-generations | removed | specs/20260713T211805-immutable-application-data-generations.md |
+| 2026-07-13 | agent-skill-surface-consolidation | removed | specs/20260713T195355-agent-skill-surface-consolidation.md |
+| 2026-07-13 | desktop-auth-authority | removed | specs/20260713T115019-desktop-auth-authority.md |
 | 2026-07-11 | server-authoritative-sqlite-sync.handoff | removed | specs/20260711T103822-server-authoritative-sqlite-sync.handoff.md |
 | 2026-07-11 | server-authoritative-sqlite-sync | removed | specs/20260711T103822-server-authoritative-sqlite-sync.md |
+| 2026-07-10 | whispering-epicenter-capability-collapse | removed | specs/20260710T230000-whispering-epicenter-capability-collapse.md |
+| 2026-07-10 | epicenter-v8-desktop-release-transition | in tree | specs/20260710T115550-epicenter-v8-desktop-release-transition.md |
 | 2026-07-09 | epicenter-desktop-host-production-integration | removed | specs/20260709T230000-epicenter-desktop-host-production-integration.md |
 | 2026-07-09 | rdev-tier1-keyboard-runtime-decision | removed | apps/whispering/specs/20260709T010000-rdev-tier1-keyboard-runtime-decision.md |
 | 2026-07-09 | provider-app-and-empty-launch | removed | apps/local-mail/specs/20260709-provider-app-and-empty-launch.md |

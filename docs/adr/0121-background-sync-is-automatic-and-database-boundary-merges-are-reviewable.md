@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-07-11
 - **Relates:** [ADR-0088](0088-sign-in-is-an-enhancement-never-a-door.md)
-- **Amended by:** [ADR-0130](0130-records-replacement-starts-a-new-epoch-without-an-online-succession-protocol.md) (schema change and records replacement start a new records epoch)
+- **Amended by:** [ADR-0130](0130-records-replacement-starts-a-new-epoch-without-an-online-succession-protocol.md) (schema change and records replacement start a new records epoch); [ADR-0134](0134-application-data-generations-own-immutable-workspace-namespaces.md) (schema changes publish a new application data generation while ordinary sync remains generation-blind)
 
 ## Context
 

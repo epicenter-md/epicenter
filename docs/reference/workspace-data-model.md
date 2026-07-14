@@ -1,27 +1,31 @@
 # Workspace data model
 
-A workspace owns queryable records, stable synchronized preferences, and
-collaborative documents attached to record identities. Each plane has one
-distinct lifecycle and synchronization model.
+An application data generation owns queryable records, synchronized
+preferences, collaborative documents attached to record identities, and
+app-owned blobs. It freezes those durable contracts under one generated
+workspace ID. Each plane still has its own runtime and synchronization model.
 
 That sentence is the target architecture. It is also the rule for deciding
 where new data belongs.
 
 ```text
-workspace
-|-- active records epoch
-|   `-- records database
-|       `-- record tables
-|           `-- records
-|               |-- stable row id
-|               `-- named atomic cells
-|-- synchronized KV
-`-- child-document namespace
-    `-- documents addressed through table + row id + document name + format
+application data generation N
+`-- workspace ID: <appId>-gN
+    |-- active records epoch
+    |   `-- records database
+    |       `-- record tables
+    |           `-- records
+    |               |-- stable row id
+    |               `-- named atomic cells
+    |-- synchronized KV
+    |-- child-document namespace
+    |   `-- documents addressed through table + row id + document name + format
+    `-- app-owned blob namespace
 ```
 
-An app may compose several workspaces. Each workspace keeps one stable identity
-while its three storage planes evolve independently.
+An application publishes ordered generations, not a runtime workspace catalog.
+Any durable contract change creates a new generation and a new namespace.
+Several UI-only builds may keep using the same generation.
 
 ## Records are identified rows of atomic cells
 
@@ -54,17 +58,19 @@ logical records database
 ```
 
 SQLite pages, indexes, triggers, cursors, outboxes, and mutation history do not
-define the logical records database. A local SQLite layout may change without
-changing the records schema.
+define the logical records database. They also do not enter the records schema
+hash or application generation. The runtime storage revision owns and fences
+physical representation changes.
 
 Use records for product facts that need identity, queries, relationships,
 explicit creation or deletion, or atomic updates alongside other fields. A
 record can be primary product data, not merely metadata.
 
-## KV is the stable preference plane
+## KV is the generation's preference plane
 
 Workspace KV is a bounded set of synchronized preferences. Its identity is
-independent of the active records epoch.
+independent of the active records epoch and fixed inside one application data
+generation.
 
 ```text
 editor.theme
@@ -73,9 +79,9 @@ transcription.language
 ```
 
 KV has no row identity or record lifecycle. Missing or invalid values read as
-fresh defaults, and a semantic change normally uses a new dot-namespaced key.
-KV does not participate in records snapshots, imports, schema hashes, or
-records-epoch replacement.
+fresh defaults. Adding a key, removing a key, or changing a key's meaning
+publishes a new application data generation. KV does not participate in records
+snapshots or the records schema hash.
 
 Use KV for bounded settings and preferences that do not need to change
 atomically with a record. A value that must commit with a record belongs in
@@ -104,66 +110,75 @@ disposal.
 
 Not every table declares documents, and a declared document remains unopened
 until a caller needs it. Child-document formats have compatibility identities
-independent of the records schema. Adding a document or changing its format
-does not replace records or start a new records epoch.
+independent of the records schema. Adding a document or changing its format or
+address publishes a new application data generation.
 
 Fields and documents use separate declaration namespaces. A field and a child
 document may both be named `body`: callers still distinguish `row.body` from
 `table.docs.body`. Matching names do not make the two planes consistent or
 choose an authority. Table and document names participate in persistent room
-addresses, so renaming either creates new document identities and requires an
-explicit conversion when content must carry forward. Capability-owned internal
-Yjs root names are isolated from both public maps.
+addresses, so renaming either creates a new generation. Capability-owned
+internal Yjs root names are isolated from both public maps.
 
 Use a child document when independent edits inside one value must survive and
 converge. Do not put a large JSON object in one cell and expect its members to
 merge; an atomic JSON cell is still replaced as a whole.
 
-## The planes compose without sharing lifecycles
+## The generation freezes every durable plane
 
-The workspace is the stable owner that composes the three planes:
+The generated workspace namespace composes four durable planes:
 
 | Plane | Unit | Best for | Evolution |
 | --- | --- | --- | --- |
-| Records epoch | Identified record | Queryable product facts and metadata | Ordinary mutations; disruptive replacement starts a new epoch |
-| Synchronized KV | Declared key | Bounded preferences with defaults | Keep the stable KV identity; use a new key for a new meaning |
-| Child documents | Format-addressed Yjs document | Merge-sensitive bodies and collections | Convert one document explicitly into a new format-addressed document |
+| Records | Identified record | Queryable product facts and metadata | Ordinary mutations stay in the generation; a schema change creates a new generation |
+| Synchronized KV | Declared key | Bounded preferences with defaults | A declaration or meaning change creates a new generation |
+| Child documents | Format-addressed Yjs document | Merge-sensitive bodies and collections | A format or address change creates a new generation |
+| App-owned blobs | App-declared identity | Large binaries and artifacts | A naming or layout change creates a new generation |
 
-The separation is intentional. A universal migration system would need to scan
-lazy documents, coordinate different authorities, support cross-plane
-transactions, and reconcile dual writers. Epicenter refuses that abstraction.
-Moving data between records and child documents is an explicit app-owned
-authority transfer that chooses one authoritative plane after cutover.
-
-The current table path opens the declared target. A converter uses
-`historicalDocument(...)` to name one retained source and
-`workspace.documents.open(reference, rowId)` to open it through the same
-workspace runtime. Both handles are typed by their format capabilities. This is
-not a registry or scan: the application must know the old coordinates and the
-row ID. Format hashing prevents incompatible bytes from mixing; by itself it
-does not copy content, acknowledge target durability, atomically switch
-authority, or stop old clients editing the old room. Opening both handles is a
-copy and initialization seam, not a completed authority transfer.
+The separation remains intentional, but the lifecycle boundary is shared. A
+generation lock records each plane's exact identity. It does not describe
+compatibility, migration edges, copying, or retirement. Old generations remain
+independent and writable.
 
 ## Schema identity follows the owned data
 
 The records schema hash includes record tables and fields only. Workspace
-identity, KV declarations, child documents, local indexes, and physical SQLite
-storage do not enter it.
+identity, KV declarations, child documents, blobs, local indexes, and physical
+SQLite storage do not enter it. The generation lock binds that records hash to
+the identities of every other durable plane.
 
 This gives each compatibility boundary one owner:
 
 ```text
 record tables + fields  -> records schema hash
 child-document content  -> document format hash
-KV preferences          -> stable workspace KV identity
+KV preferences          -> generation-qualified KV identity
+app-owned blobs          -> generation-qualified blob identity
 physical SQLite layout  -> runtime storage version
 ```
 
-Ordinary record changes use ordinary mutations. A synchronized schema change,
-restore, or wholesale rewrite installs a complete logical snapshot as a new
-records epoch. The workspace, its KV preferences, and its child-document
-addresses remain stable.
+Ordinary record changes use ordinary mutations. The authority may mint a new
+records epoch for same-descriptor restore or repair inside one generation. A
+records schema change never mints a new epoch inside the same workspace; it
+publishes a new application data generation.
+
+## Builds open one locked generation
+
+Developers author `appId` and a positive `dataGeneration`. Tooling derives
+`<appId>-gN`, records that value and every durable-plane token in an append-only
+generation lock, and refuses published-entry drift. Runtime openers accept only
+a definition validated against that lock.
+
+The current build inspects its own local root identity without creating storage.
+An initialized identity opens normally. An invalid or partial identity refuses
+to open. If the current generation is absent and its lock has predecessors, the
+build asks before it creates anything: start the current version, or navigate to
+an available historical build. The choice is not persisted. Once the current
+root identity exists, its durable state selects normal boot.
+
+Synchronization does not interpret application generations. It receives the
+generated workspace ID and the authority-minted records epoch. It exposes no
+generation manifest, predecessor lookup, or copy route.
 
 ## Placement rule
 
@@ -195,13 +210,12 @@ concurrent operations do.
 The hard boundary is atomicity. If two values must change atomically, they must
 share an authority. Convenience alone is not a reason to cross storage planes.
 
-## Current transition
+## Current adoption
 
-The SQLite records path implements this target model under
-`packages/workspace/src/sqlite`. The older public workspace path still stores
-tables and KV in a root Y.Doc while the records-authority work lands. Treat that
-implementation as migration context, not as the target definition of a
-workspace.
+The SQLite records path under `packages/workspace/src/sqlite` is the first
+generation-aware implementation. Other workspace paths do not gain a fallback,
+alias, or import bridge from it. Each adopting application must inventory every
+durable plane before it publishes its own generation lock.
 
-This page collects the shared product model from the records-authority design.
-The ADRs retain the detailed protocol and evolution rationale.
+This page states the current product model. The ADRs retain the detailed
+identity, boot, synchronization, and refusal rationale.

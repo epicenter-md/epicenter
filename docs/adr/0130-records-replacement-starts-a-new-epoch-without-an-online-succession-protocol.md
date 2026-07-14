@@ -1,7 +1,8 @@
 # 0130. Records replacement starts a new epoch without an online succession protocol
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-07-13
+- **Superseded by:** [ADR-0134](0134-application-data-generations-own-immutable-workspace-namespaces.md)
 - **Supersedes:** [ADR-0125](0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md)
 - **Amends:** [ADR-0119](0119-complete-metadata-replicas-sync-through-schema-blind-server-ordered-mutations.md), [ADR-0120](0120-persisted-fields-are-atomic-cells-and-collaborative-bodies-are-yjs-documents.md), [ADR-0121](0121-background-sync-is-automatic-and-database-boundary-merges-are-reviewable.md), [ADR-0122](0122-logical-snapshots-are-the-portable-record-database-format-sqlite-files-are-runtime-state.md)
 - **Amended by:** [ADR-0131](0131-every-durable-records-materialization-carries-its-canonical-descriptor.md) (each epoch and local materialization carries its canonical descriptor); [ADR-0132](0132-an-obsolete-replica-exports-one-read-only-recovery-checkpoint.md) (a fenced replica exports its rows and pending intent without replay); [ADR-0133](0133-ordinary-record-sync-requests-carry-only-the-records-epoch.md) (ordinary sync uses the epoch as its only generation identity)

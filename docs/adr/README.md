@@ -206,11 +206,11 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0127](0127-chat-streams-live-turns-in-client-state-and-stores-finished-messages-as-records.md) | Chat streams live turns in client state and stores finished messages as records | Accepted |
 | [0128](0128-tables-do-not-declare-document-edit-touch-policy-without-a-runtime-owner.md) | Tables do not declare document-edit touch policy without a runtime owner | Accepted |
 | [0129](0129-matter-is-markdown-authoritative-application-records-follow-developer-owned-schemas.md) | Matter is Markdown-authoritative; application records follow developer-owned schemas | Accepted |
-| [0130](0130-records-replacement-starts-a-new-epoch-without-an-online-succession-protocol.md) | Records replacement starts a new epoch without an online succession protocol | Accepted |
+| [0130](0130-records-replacement-starts-a-new-epoch-without-an-online-succession-protocol.md) | Records replacement starts a new epoch without an online succession protocol | Superseded by 0134 |
 | [0131](0131-every-durable-records-materialization-carries-its-canonical-descriptor.md) | Every durable records materialization carries its canonical descriptor | Accepted |
 | [0132](0132-an-obsolete-replica-exports-one-read-only-recovery-checkpoint.md) | An obsolete replica exports one read-only recovery checkpoint | Accepted |
 | [0133](0133-ordinary-record-sync-requests-carry-only-the-records-epoch.md) | Ordinary record sync requests carry only the records epoch | Accepted |
-| [0134](0134-application-data-generations-own-immutable-workspace-namespaces.md) | Application data generations own immutable workspace namespaces | Proposed |
-| [0135](0135-new-builds-ask-before-initializing-a-new-data-generation.md) | New builds ask before initializing a new data generation | Proposed |
+| [0134](0134-application-data-generations-own-immutable-workspace-namespaces.md) | Application data generations own immutable workspace namespaces | Accepted |
+| [0135](0135-new-builds-ask-before-initializing-a-new-data-generation.md) | New builds ask before initializing a new data generation | Accepted |
 
 When you add an ADR, add its row here.
