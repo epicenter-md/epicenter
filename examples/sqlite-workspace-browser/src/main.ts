@@ -1,10 +1,15 @@
 import {
+	inspectLocalWorkspace,
+	type LocalWorkspaceInspection,
 	openStandaloneWorkspace,
 	openWorkspaceReplica,
 	type StandaloneWorkspace,
 	type WorkspaceReplica,
 } from '@epicenter/workspace/sqlite/browser';
 import * as Y from 'yjs';
+import GenerationOneInspectorWorker from './generations/g1/inspector.worker?worker';
+import { workspaceDefinition as generationTwoDefinition } from './generations/g2/definition.js';
+import GenerationTwoInspectorWorker from './generations/g2/inspector.worker?worker';
 import MismatchWorker from './mismatch.worker?worker';
 import ReplicaWorker from './replica.worker?worker';
 import { workspaceDefinition } from './workspace.js';
@@ -109,6 +114,16 @@ window.workspaceSmoke = {
 		if (!replica) throw new Error('Replica is not open');
 		return replica.tables.notes.get(id);
 	},
+	inspectGenerationOne() {
+		return inspectLocalWorkspace(workspaceDefinition, {
+			worker: () => new GenerationOneInspectorWorker(),
+		});
+	},
+	inspectGenerationTwo() {
+		return inspectLocalWorkspace(generationTwoDefinition, {
+			worker: () => new GenerationTwoInspectorWorker(),
+		});
+	},
 	async replicaDispose() {
 		await replica?.[Symbol.asyncDispose]();
 		replica = null;
@@ -134,6 +149,8 @@ declare global {
 			dispose(): Promise<void>;
 			reopen(): Promise<void>;
 			mismatchError(): Promise<string | null>;
+			inspectGenerationOne(): Promise<LocalWorkspaceInspection>;
+			inspectGenerationTwo(): Promise<LocalWorkspaceInspection>;
 			replicaCreate(note: CreateNote): Promise<Note>;
 			replicaGet(id: string): Promise<Note | null>;
 			replicaDispose(): Promise<void>;

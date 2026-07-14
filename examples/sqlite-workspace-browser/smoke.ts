@@ -112,6 +112,55 @@ try {
 		'Generation one did not mount its locked KV document identity',
 	);
 
+	const generationOneInspection = await first.evaluate(() =>
+		window.workspaceSmoke.inspectGenerationOne(),
+	);
+	assert(
+		generationOneInspection.status === 'initialized',
+		`User-empty generation one was not initialized: ${JSON.stringify(generationOneInspection)}`,
+	);
+	const readOpfsEntries = () =>
+		first.evaluate(async () => {
+			const root = await navigator.storage.getDirectory();
+			const names: string[] = [];
+			for await (const [name] of root as FileSystemDirectoryHandle &
+				AsyncIterable<[string, FileSystemHandle]>) {
+				names.push(name);
+			}
+			return names.toSorted();
+		});
+	const entriesBeforeAbsentProbe = await readOpfsEntries();
+	const absentGenerationTwo = await first.evaluate(() =>
+		window.workspaceSmoke.inspectGenerationTwo(),
+	);
+	const entriesAfterAbsentProbe = await readOpfsEntries();
+	assert(
+		absentGenerationTwo.status === 'absent',
+		`Missing generation two was not absent: ${JSON.stringify(absentGenerationTwo)}`,
+	);
+	assert(
+		JSON.stringify(entriesAfterAbsentProbe) ===
+			JSON.stringify(entriesBeforeAbsentProbe),
+		`Absent generation probe changed OPFS entries: ${JSON.stringify({ entriesBeforeAbsentProbe, entriesAfterAbsentProbe })}`,
+	);
+	await first.evaluate(async () => {
+		const root = await navigator.storage.getDirectory();
+		await root.getFileHandle('records-generation-fixture-g2.sqlite3', {
+			create: true,
+		});
+	});
+	const emptyGenerationTwo = await first.evaluate(() =>
+		window.workspaceSmoke.inspectGenerationTwo(),
+	);
+	assert(
+		emptyGenerationTwo.status === 'invalid',
+		`Existing empty generation two was not invalid: ${JSON.stringify(emptyGenerationTwo)}`,
+	);
+	await first.evaluate(async () => {
+		const root = await navigator.storage.getDirectory();
+		await root.removeEntry('records-generation-fixture-g2.sqlite3');
+	});
+
 	const firstRow = await first.evaluate(() =>
 		window.workspaceSmoke.create({ title: 'First page' }),
 	);

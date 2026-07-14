@@ -1,4 +1,9 @@
 import {
+	type LocalWorkspaceInspection,
+	parseWorkspaceInspectionEvent,
+	type WorkspaceInspectionEvent,
+} from './browser-inspection.js';
+import {
 	createWorkspaceWorkerPort,
 	type WorkspaceWorkerPortOptions,
 } from './browser-transport.js';
@@ -21,11 +26,88 @@ import {
 	type WorkspaceKvMountOption,
 } from './open.js';
 
+export type { LocalWorkspaceInspection } from './browser-inspection.js';
 export type {
 	StandaloneWorkspace,
 	WorkspaceKvMount,
 	WorkspaceReplica,
 } from './open.js';
+
+export type InspectLocalWorkspaceOptions = {
+	/** Create the app-owned inspector Worker that imports this definition. */
+	worker(): Worker;
+	timeoutMs?: number;
+};
+
+/** Inspect one locked OPFS namespace without creating or initializing it. */
+export function inspectLocalWorkspace(
+	definition: WorkspaceDefinition,
+	{ worker: createWorker, timeoutMs = 10_000 }: InspectLocalWorkspaceOptions,
+): Promise<LocalWorkspaceInspection> {
+	assertWorkspaceDefinition(definition);
+	const worker = createWorker();
+	return new Promise((resolve, reject) => {
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		function cleanup(): void {
+			if (timer) clearTimeout(timer);
+			worker.removeEventListener('message', onMessage);
+			worker.removeEventListener('error', onError);
+			worker.removeEventListener('messageerror', onMessageError);
+			worker.terminate();
+		}
+		function fail(error: Error): void {
+			cleanup();
+			reject(error);
+		}
+		function onMessage(event: MessageEvent<unknown>): void {
+			let message: WorkspaceInspectionEvent;
+			try {
+				message = parseWorkspaceInspectionEvent(event.data);
+			} catch (cause) {
+				fail(
+					new Error('Workspace inspector sent an invalid protocol message', {
+						cause,
+					}),
+				);
+				return;
+			}
+			if (message.type === 'error') {
+				const error = new Error(message.error.message);
+				error.name = message.error.name;
+				fail(error);
+				return;
+			}
+			if (
+				message.workspaceId !== definition.workspaceId ||
+				message.recordsDescriptor !== definition.recordsDescriptor ||
+				message.recordsSchemaHash !== definition.recordsSchemaHash
+			) {
+				fail(
+					new Error('Workspace inspector definition does not match the client'),
+				);
+				return;
+			}
+			cleanup();
+			resolve(message.inspection);
+		}
+		function onError(event: ErrorEvent): void {
+			fail(new Error(event.message || 'Workspace inspector crashed'));
+		}
+		function onMessageError(): void {
+			fail(new Error('Workspace inspector response could not be deserialized'));
+		}
+
+		worker.addEventListener('message', onMessage);
+		worker.addEventListener('error', onError);
+		worker.addEventListener('messageerror', onMessageError);
+		if (timeoutMs > 0) {
+			timer = setTimeout(
+				() => fail(new Error('Workspace inspector timed out')),
+				timeoutMs,
+			);
+		}
+	});
+}
 
 export type OpenStandaloneWorkspaceOptions<
 	TKvMount extends WorkspaceKvMount | undefined = undefined,

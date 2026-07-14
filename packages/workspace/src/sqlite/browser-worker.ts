@@ -5,12 +5,19 @@ import {
 } from '@epicenter/record-sync/browser';
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 import {
+	WORKSPACE_INSPECTION_PROTOCOL,
+	type WorkspaceInspectionEvent,
+} from './browser-inspection.js';
+import {
 	exposeWorkspaceService,
 	type WorkerWorkspaceService,
 	type WorkspaceWorkerScope,
 } from './browser-transport.js';
 import type { WorkspaceCommitDelta } from './client.js';
-import { createApplicationDatabase } from './database.js';
+import {
+	createApplicationDatabase,
+	inspectApplicationDatabaseIdentity,
+} from './database.js';
 import {
 	assertWorkspaceDefinition,
 	type TableDefinitions,
@@ -42,6 +49,79 @@ export type ServeWorkspaceReplicaWorkerOptions = {
 	onError(error: unknown): void;
 	pollIntervalMs?: number;
 };
+
+export type WorkspaceInspectorScope = {
+	postMessage(message: WorkspaceInspectionEvent): void;
+};
+
+/** Inspect one locked OPFS namespace from an app-owned one-shot Worker. */
+export function serveWorkspaceInspectorWorker(
+	definition: WorkspaceDefinition,
+	scope: WorkspaceInspectorScope = self as unknown as WorkspaceInspectorScope,
+): void {
+	assertWorkspaceDefinition(definition);
+	inspectOpfsWorkspace(definition).then(
+		(inspection) => {
+			scope.postMessage({
+				protocol: WORKSPACE_INSPECTION_PROTOCOL,
+				type: 'result',
+				workspaceId: definition.workspaceId,
+				recordsDescriptor: definition.recordsDescriptor,
+				recordsSchemaHash: definition.recordsSchemaHash,
+				inspection,
+			});
+		},
+		(cause: unknown) => {
+			const error =
+				cause instanceof Error
+					? { name: cause.name || 'Error', message: cause.message }
+					: { name: 'Error', message: String(cause) };
+			scope.postMessage({
+				protocol: WORKSPACE_INSPECTION_PROTOCOL,
+				type: 'error',
+				error,
+			});
+		},
+	);
+}
+
+async function inspectOpfsWorkspace(definition: WorkspaceDefinition) {
+	const root = await navigator.storage.getDirectory();
+	try {
+		await root.getFileHandle(`${definition.workspaceId}.sqlite3`);
+	} catch (cause) {
+		if (cause instanceof DOMException && cause.name === 'NotFoundError') {
+			return { status: 'absent' } as const;
+		}
+		throw cause;
+	}
+
+	if (!globalThis.crossOriginIsolated || !globalThis.SharedArrayBuffer) {
+		throw new Error(
+			'OPFS SQLite requires cross-origin isolation with COOP and COEP headers',
+		);
+	}
+	const sqlite3 = await sqlite3InitModule();
+	if (!sqlite3.capi.sqlite3_vfs_find('opfs')) {
+		throw new Error('SQLite opfs VFS is unavailable');
+	}
+
+	let native: (BrowserSqliteDatabase & { close(): void }) | undefined;
+	try {
+		native = new sqlite3.oo1.DB(
+			`/${definition.workspaceId}.sqlite3`,
+			'r',
+			'opfs',
+		) as unknown as BrowserSqliteDatabase & { close(): void };
+		return inspectApplicationDatabaseIdentity(
+			definition,
+			createBrowserSqliteAdapter(native),
+			'standalone',
+		);
+	} finally {
+		native?.close();
+	}
+}
 
 type ServeWorkspaceWorkerOptions =
 	| ({ workspaceKind: 'standalone' } & ServeStandaloneWorkspaceWorkerOptions)

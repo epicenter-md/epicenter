@@ -204,13 +204,13 @@ fixed workspace ID or compatibility alias remains on the new SQLite path.
 
 ### Wave 2: Add non-creating local discovery
 
-- [ ] Add an identity inspection path that distinguishes absent, initialized,
+- [x] Add an identity inspection path that distinguishes absent, initialized,
   and invalid without initializing storage.
-- [ ] Implement browser OPFS inspection without `create: true` behavior or an
+- [x] Implement browser OPFS inspection without `create: true` behavior or an
   eager worker that creates the file being probed.
-- [ ] Preserve the existing single-transaction DDL and identity stamp; make the
+- [x] Preserve the existing single-transaction DDL and identity stamp; make the
   valid identity the only initialized marker.
-- [ ] Cover an absent file, empty foreign file, incomplete metadata, wrong
+- [x] Cover an absent file, empty foreign file, incomplete metadata, wrong
   workspace ID, wrong records descriptor, and valid user-empty database.
 
 Proof: discovery has no durable side effects, and a crash before the identity
