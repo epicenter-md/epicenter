@@ -74,6 +74,7 @@ test('inspection protocol accepts exact results and rejects malformed events', (
 	const initialized = {
 		protocol: WORKSPACE_INSPECTION_PROTOCOL,
 		type: 'result',
+		workspaceKind: 'standalone',
 		workspaceId: definition.workspaceId,
 		recordsDescriptor: definition.recordsDescriptor,
 		recordsSchemaHash: definition.recordsSchemaHash,
@@ -100,11 +101,13 @@ test('successful inspection resolves and cleans up its Worker', async () => {
 	const fake = createWorker();
 	const inspection = inspectLocalWorkspace(definition, {
 		worker: () => fake.worker,
+		workspaceKind: 'standalone',
 	});
 	fake.emit('message', {
 		data: {
 			protocol: WORKSPACE_INSPECTION_PROTOCOL,
 			type: 'result',
+			workspaceKind: 'standalone',
 			workspaceId: definition.workspaceId,
 			recordsDescriptor: definition.recordsDescriptor,
 			recordsSchemaHash: definition.recordsSchemaHash,
@@ -116,15 +119,39 @@ test('successful inspection resolves and cleans up its Worker', async () => {
 	expect(fake.isCleanedUp).toBe(true);
 });
 
-test('same-workspace schema mismatch terminates the inspector', async () => {
+test('lifecycle mismatch terminates the inspector', async () => {
 	const fake = createWorker();
 	const inspection = inspectLocalWorkspace(definition, {
 		worker: () => fake.worker,
+		workspaceKind: 'standalone',
 	});
 	fake.emit('message', {
 		data: {
 			protocol: WORKSPACE_INSPECTION_PROTOCOL,
 			type: 'result',
+			workspaceKind: 'replica',
+			workspaceId: definition.workspaceId,
+			recordsDescriptor: definition.recordsDescriptor,
+			recordsSchemaHash: definition.recordsSchemaHash,
+			inspection: { status: 'initialized' },
+		},
+	});
+
+	await expect(inspection).rejects.toThrow('definition does not match');
+	expect(fake.isCleanedUp).toBe(true);
+});
+
+test('same-workspace schema mismatch terminates the inspector', async () => {
+	const fake = createWorker();
+	const inspection = inspectLocalWorkspace(definition, {
+		worker: () => fake.worker,
+		workspaceKind: 'standalone',
+	});
+	fake.emit('message', {
+		data: {
+			protocol: WORKSPACE_INSPECTION_PROTOCOL,
+			type: 'result',
+			workspaceKind: 'standalone',
 			workspaceId: definition.workspaceId,
 			recordsDescriptor: definition.recordsDescriptor,
 			recordsSchemaHash: `sha256:${'0'.repeat(64)}`,
@@ -139,6 +166,7 @@ test('remote error, Worker crash, and timeout clean up inspector Workers', async
 	const failed = createWorker();
 	const remoteFailure = inspectLocalWorkspace(definition, {
 		worker: () => failed.worker,
+		workspaceKind: 'standalone',
 	});
 	failed.emit('message', {
 		data: {
@@ -153,6 +181,7 @@ test('remote error, Worker crash, and timeout clean up inspector Workers', async
 	const crashed = createWorker();
 	const workerCrash = inspectLocalWorkspace(definition, {
 		worker: () => crashed.worker,
+		workspaceKind: 'standalone',
 	});
 	crashed.emit('error', { message: 'worker crashed' });
 	await expect(workerCrash).rejects.toThrow('worker crashed');
@@ -162,6 +191,7 @@ test('remote error, Worker crash, and timeout clean up inspector Workers', async
 	await expect(
 		inspectLocalWorkspace(definition, {
 			worker: () => timedOut.worker,
+			workspaceKind: 'standalone',
 			timeoutMs: 1,
 		}),
 	).rejects.toThrow('timed out');
@@ -176,6 +206,7 @@ test('unlocked candidate is rejected before an inspector Worker is created', () 
 	});
 	let workerCreated = false;
 	const options: InspectLocalWorkspaceOptions = {
+		workspaceKind: 'standalone',
 		worker() {
 			workerCreated = true;
 			return createWorker().worker;

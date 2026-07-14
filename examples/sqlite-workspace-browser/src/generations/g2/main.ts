@@ -10,9 +10,10 @@ import generationLock from '../../../generation-lock.json' with {
 	type: 'json',
 };
 import { workspaceDefinition } from './definition.js';
-import InspectorWorker from './inspector.worker?worker';
 import ReplicaWorker from './replica.worker?worker';
+import ReplicaInspectorWorker from './replica-inspector.worker?worker';
 import StandaloneWorker from './standalone.worker?worker';
+import StandaloneInspectorWorker from './standalone-inspector.worker?worker';
 
 type Note = { id: string; title: string; archived: boolean };
 type Workspace =
@@ -26,6 +27,9 @@ type Workspace =
 	  >;
 
 const app = requireApp();
+const workspaceKind = new URLSearchParams(location.search).has('replica')
+	? 'replica'
+	: 'standalone';
 
 const hasPredecessors = generationLock.generations.some(
 	({ dataGeneration }) => dataGeneration < workspaceDefinition.dataGeneration,
@@ -97,15 +101,16 @@ async function openCurrent(): Promise<void> {
 		onObserverError: reportError,
 	};
 	try {
-		workspace = new URLSearchParams(location.search).has('replica')
-			? await openWorkspaceReplica(workspaceDefinition, {
-					...options,
-					worker: () => new ReplicaWorker(),
-				})
-			: await openStandaloneWorkspace(workspaceDefinition, {
-					...options,
-					worker: () => new StandaloneWorker(),
-				});
+		workspace =
+			workspaceKind === 'replica'
+				? await openWorkspaceReplica(workspaceDefinition, {
+						...options,
+						worker: () => new ReplicaWorker(),
+					})
+				: await openStandaloneWorkspace(workspaceDefinition, {
+						...options,
+						worker: () => new StandaloneWorker(),
+					});
 		preferencesDoc = nextPreferencesDoc;
 	} catch (cause) {
 		nextPreferencesDoc.destroy();
@@ -169,7 +174,11 @@ renderState(
 );
 try {
 	const inspection = await inspectLocalWorkspace(workspaceDefinition, {
-		worker: () => new InspectorWorker(),
+		workspaceKind,
+		worker: () =>
+			workspaceKind === 'replica'
+				? new ReplicaInspectorWorker()
+				: new StandaloneInspectorWorker(),
 	});
 	switch (inspection.status) {
 		case 'initialized':

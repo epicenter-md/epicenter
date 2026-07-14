@@ -239,6 +239,17 @@ async function proveGenerationTwoReplication(
 		'Generation two replicas did not converge',
 	);
 	await pageA.evaluate(() => window.generationTwoSmoke.dispose());
+	await pageA.reload();
+	await waitForState(pageA, 'ready');
+	const reopened = await pageA.evaluate(
+		(id) => window.generationTwoSmoke.get(id),
+		created.id,
+	);
+	assert(
+		reopened?.title === created.title,
+		'Initialized generation two replica did not reopen',
+	);
+	await pageA.evaluate(() => window.generationTwoSmoke.dispose());
 	await pageB.evaluate(() => window.generationTwoSmoke.dispose());
 	return [contextA, contextB];
 }
@@ -273,7 +284,8 @@ try {
 		'Current bundle contains the historical generation records schema',
 	);
 	for (const worker of [
-		'inspector.worker',
+		'replica-inspector.worker',
+		'standalone-inspector.worker',
 		'standalone.worker',
 		'replica.worker',
 	]) {
@@ -285,7 +297,9 @@ try {
 	for (const source of [
 		'src/generations/g2/main.ts',
 		'src/generations/g2/definition.ts',
-		'src/generations/g2/inspector.worker.ts',
+		'src/generations/g2/workspace.ts',
+		'src/generations/g2/replica-inspector.worker.ts',
+		'src/generations/g2/standalone-inspector.worker.ts',
 		'src/generations/g2/standalone.worker.ts',
 		'src/generations/g2/replica.worker.ts',
 	]) {

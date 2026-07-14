@@ -36,13 +36,18 @@ export type {
 export type InspectLocalWorkspaceOptions = {
 	/** Create the app-owned inspector Worker that imports this definition. */
 	worker(): Worker;
+	workspaceKind: 'standalone' | 'replica';
 	timeoutMs?: number;
 };
 
 /** Inspect one locked OPFS namespace without creating or initializing it. */
 export function inspectLocalWorkspace(
 	definition: WorkspaceDefinition,
-	{ worker: createWorker, timeoutMs = 10_000 }: InspectLocalWorkspaceOptions,
+	{
+		worker: createWorker,
+		workspaceKind,
+		timeoutMs = 10_000,
+	}: InspectLocalWorkspaceOptions,
 ): Promise<LocalWorkspaceInspection> {
 	assertWorkspaceDefinition(definition);
 	const worker = createWorker();
@@ -78,6 +83,7 @@ export function inspectLocalWorkspace(
 				return;
 			}
 			if (
+				message.workspaceKind !== workspaceKind ||
 				message.workspaceId !== definition.workspaceId ||
 				message.recordsDescriptor !== definition.recordsDescriptor ||
 				message.recordsSchemaHash !== definition.recordsSchemaHash

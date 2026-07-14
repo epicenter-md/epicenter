@@ -11,6 +11,7 @@ export type WorkspaceInspectionEvent =
 	| {
 			protocol: typeof WORKSPACE_INSPECTION_PROTOCOL;
 			type: 'result';
+			workspaceKind: 'standalone' | 'replica';
 			workspaceId: string;
 			recordsDescriptor: string;
 			recordsSchemaHash: string;
@@ -49,7 +50,10 @@ export function parseWorkspaceInspectionEvent(
 			'recordsSchemaHash',
 			'type',
 			'workspaceId',
+			'workspaceKind',
 		]) ||
+		(value.workspaceKind !== 'standalone' &&
+			value.workspaceKind !== 'replica') ||
 		typeof value.workspaceId !== 'string' ||
 		typeof value.recordsDescriptor !== 'string' ||
 		typeof value.recordsSchemaHash !== 'string' ||

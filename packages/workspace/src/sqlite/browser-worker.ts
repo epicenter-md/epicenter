@@ -57,10 +57,11 @@ export type WorkspaceInspectorScope = {
 /** Inspect one locked OPFS namespace from an app-owned one-shot Worker. */
 export function serveWorkspaceInspectorWorker(
 	definition: WorkspaceDefinition,
+	workspaceKind: 'standalone' | 'replica',
 	scope: WorkspaceInspectorScope = self as unknown as WorkspaceInspectorScope,
 ): void {
 	assertWorkspaceDefinition(definition);
-	inspectOpfsWorkspace(definition).then(
+	inspectOpfsWorkspace(definition, workspaceKind).then(
 		(inspection) => {
 			scope.postMessage({
 				protocol: WORKSPACE_INSPECTION_PROTOCOL,
@@ -68,6 +69,7 @@ export function serveWorkspaceInspectorWorker(
 				workspaceId: definition.workspaceId,
 				recordsDescriptor: definition.recordsDescriptor,
 				recordsSchemaHash: definition.recordsSchemaHash,
+				workspaceKind,
 				inspection,
 			});
 		},
@@ -85,7 +87,10 @@ export function serveWorkspaceInspectorWorker(
 	);
 }
 
-async function inspectOpfsWorkspace(definition: WorkspaceDefinition) {
+async function inspectOpfsWorkspace(
+	definition: WorkspaceDefinition,
+	workspaceKind: 'standalone' | 'replica',
+) {
 	const root = await navigator.storage.getDirectory();
 	try {
 		await root.getFileHandle(`${definition.workspaceId}.sqlite3`);
@@ -116,7 +121,7 @@ async function inspectOpfsWorkspace(definition: WorkspaceDefinition) {
 		return inspectApplicationDatabaseIdentity(
 			definition,
 			createBrowserSqliteAdapter(native),
-			'standalone',
+			workspaceKind,
 		);
 	} finally {
 		native?.close();
