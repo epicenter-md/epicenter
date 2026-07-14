@@ -218,15 +218,15 @@ transaction cannot select a generation.
 
 ### Wave 3: Build one browser boot gate
 
-- [ ] Put predecessor discovery in one current application build, not a shared
+- [x] Put predecessor discovery in one current application build, not a shared
   neutral shell process.
-- [ ] Implement the three boot branches from ADR-0135.
-- [ ] Serve historical web builds from same-origin versioned paths. Keep route
+- [x] Implement the three boot branches from ADR-0135.
+- [x] Serve historical web builds from same-origin versioned paths. Keep route
   details internal to the Previous versions surface.
-- [ ] Offer only Start current and Continue previous in the shared contract.
+- [x] Offer only Start current and Continue previous in the shared contract.
   Reuse an app's existing exporter only when it already covers the data being
   described.
-- [ ] Do not persist dismissal or selection. Reopening the current build repeats
+- [x] Do not persist dismissal or selection. Reopening the current build repeats
   the gate until its namespace is initialized.
 
 Proof: with only generation one initialized, opening generation two creates no
@@ -234,15 +234,15 @@ generation-two storage until the user chooses Start current.
 
 ### Wave 4: Prove two independent generations
 
-- [ ] Use a small browser fixture with intentionally different generation-one
+- [x] Use a small browser fixture with intentionally different generation-one
   and generation-two records schemas.
-- [ ] Verify the generations use different local SQLite files, KV identities,
+- [x] Verify the generations use different local SQLite files, KV identities,
   child-document address roots, and synchronized workspace IDs.
-- [ ] Verify generation one remains readable, writable, and synchronizable
+- [x] Verify generation one remains readable, writable, and synchronizable
   after generation two starts.
-- [ ] Verify generation two never opens generation-one tables or replays its
+- [x] Verify generation two never opens generation-one tables or replays its
   outbox.
-- [ ] Verify a new device with no local generation receives the consent gate
+- [x] Verify a new device with no local generation receives the consent gate
   rather than silently creating the latest namespace when predecessors exist.
 
 Proof: the latest UI contains no historical schema reader and the sync server

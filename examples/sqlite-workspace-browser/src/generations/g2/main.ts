@@ -1,0 +1,190 @@
+import {
+	inspectLocalWorkspace,
+	openStandaloneWorkspace,
+	openWorkspaceReplica,
+	type StandaloneWorkspace,
+	type WorkspaceReplica,
+} from '@epicenter/workspace/sqlite/browser';
+import * as Y from 'yjs';
+import generationLock from '../../../generation-lock.json' with {
+	type: 'json',
+};
+import { workspaceDefinition } from './definition.js';
+import InspectorWorker from './inspector.worker?worker';
+import ReplicaWorker from './replica.worker?worker';
+import StandaloneWorker from './standalone.worker?worker';
+
+type Note = { id: string; title: string; archived: boolean };
+type Workspace =
+	| StandaloneWorkspace<
+			typeof workspaceDefinition.tables,
+			typeof workspaceDefinition.kv
+	  >
+	| WorkspaceReplica<
+			typeof workspaceDefinition.tables,
+			typeof workspaceDefinition.kv
+	  >;
+
+const app = requireApp();
+
+const preferencesDoc = new Y.Doc({
+	guid: workspaceDefinition.kvDocumentGuid,
+});
+const hasPredecessors = generationLock.generations.some(
+	({ dataGeneration }) => dataGeneration < workspaceDefinition.dataGeneration,
+);
+let workspace: Workspace | undefined;
+
+function requireApp(): HTMLElement {
+	const element = document.querySelector('main');
+	if (!(element instanceof HTMLElement)) {
+		throw new Error('Current generation root is missing');
+	}
+	return element;
+}
+
+function renderState(
+	state: 'loading' | 'invalid' | 'error' | 'ready',
+	title: string,
+	detail: string,
+): void {
+	document.body.dataset.state = state;
+	app.replaceChildren();
+	const heading = document.createElement('h1');
+	heading.textContent = title;
+	const description = document.createElement('p');
+	description.textContent = detail;
+	app.append(heading, description);
+}
+
+function renderGate(): void {
+	document.body.dataset.state = 'gate';
+	app.replaceChildren();
+	const heading = document.createElement('h1');
+	heading.textContent = 'Start the current version?';
+	const description = document.createElement('p');
+	description.textContent =
+		'This version starts with independent data. Your previous version stays unchanged.';
+	const actions = document.createElement('div');
+	actions.className = 'actions';
+	const start = document.createElement('button');
+	start.type = 'button';
+	start.textContent = 'Start current version';
+	const previous = document.createElement('a');
+	previous.href = `/previous/g1/${location.search}`;
+	previous.textContent = 'Continue with previous version';
+	start.addEventListener(
+		'click',
+		() => {
+			start.disabled = true;
+			renderState(
+				'loading',
+				'Starting current version',
+				'Creating the Generation 2 data namespace.',
+			);
+			openCurrent().catch(renderOperationalError);
+		},
+		{ once: true },
+	);
+	actions.append(start, previous);
+	app.append(heading, description, actions);
+}
+
+async function openCurrent(): Promise<void> {
+	const options = {
+		kv: { doc: preferencesDoc },
+		onObserverError: reportError,
+	};
+	workspace = new URLSearchParams(location.search).has('replica')
+		? await openWorkspaceReplica(workspaceDefinition, {
+				...options,
+				worker: () => new ReplicaWorker(),
+			})
+		: await openStandaloneWorkspace(workspaceDefinition, {
+				...options,
+				worker: () => new StandaloneWorker(),
+			});
+	window.generationTwoSmoke = {
+		create(note) {
+			return getWorkspace().tables.notes.create(note);
+		},
+		get(id) {
+			return getWorkspace().tables.notes.get(id);
+		},
+		list() {
+			return getWorkspace().tables.notes.list({ orderBy: 'id' });
+		},
+		identity,
+		async dispose() {
+			await workspace?.[Symbol.asyncDispose]();
+			workspace = undefined;
+		},
+	};
+	document.body.dataset.workspaceId = workspaceDefinition.workspaceId;
+	renderState(
+		'ready',
+		'Current version ready',
+		'Generation 2 is open in its own data namespace.',
+	);
+}
+
+function getWorkspace(): Workspace {
+	if (!workspace) throw new Error('Generation two is not open');
+	return workspace;
+}
+
+function identity() {
+	return {
+		workspaceId: workspaceDefinition.workspaceId,
+		kvDocumentGuid: preferencesDoc.guid,
+		childDocumentGuid:
+			getWorkspace().tables.notes.docs.body.guid('identity-proof-row'),
+		declaredBlobIdentity: workspaceDefinition.blobs.attachments.identity,
+	};
+}
+
+function renderOperationalError(cause: unknown): void {
+	const message = cause instanceof Error ? cause.message : String(cause);
+	renderState('error', 'Current version could not open', message);
+}
+
+renderState(
+	'loading',
+	'Checking this version',
+	'Looking for an initialized Generation 2 data namespace.',
+);
+try {
+	const inspection = await inspectLocalWorkspace(workspaceDefinition, {
+		worker: () => new InspectorWorker(),
+	});
+	switch (inspection.status) {
+		case 'initialized':
+			await openCurrent();
+			break;
+		case 'absent':
+			if (hasPredecessors) renderGate();
+			else await openCurrent();
+			break;
+		case 'invalid':
+			renderState(
+				'invalid',
+				'Current data cannot open',
+				`Generation 2 storage exists but is invalid: ${inspection.reason}`,
+			);
+			break;
+	}
+} catch (cause) {
+	renderOperationalError(cause);
+}
+
+declare global {
+	interface Window {
+		generationTwoSmoke: {
+			create(note: Omit<Note, 'id'>): Promise<Note>;
+			get(id: string): Promise<Note | null>;
+			list(): Promise<Note[]>;
+			identity(): ReturnType<typeof identity>;
+			dispose(): Promise<void>;
+		};
+	}
+}
