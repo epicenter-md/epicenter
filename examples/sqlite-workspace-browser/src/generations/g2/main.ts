@@ -27,13 +27,11 @@ type Workspace =
 
 const app = requireApp();
 
-const preferencesDoc = new Y.Doc({
-	guid: workspaceDefinition.kvDocumentGuid,
-});
 const hasPredecessors = generationLock.generations.some(
 	({ dataGeneration }) => dataGeneration < workspaceDefinition.dataGeneration,
 );
 let workspace: Workspace | undefined;
+let preferencesDoc: Y.Doc | undefined;
 
 function requireApp(): HTMLElement {
 	const element = document.querySelector('main');
@@ -91,19 +89,28 @@ function renderGate(): void {
 }
 
 async function openCurrent(): Promise<void> {
+	const nextPreferencesDoc = new Y.Doc({
+		guid: workspaceDefinition.kvDocumentGuid,
+	});
 	const options = {
-		kv: { doc: preferencesDoc },
+		kv: { doc: nextPreferencesDoc },
 		onObserverError: reportError,
 	};
-	workspace = new URLSearchParams(location.search).has('replica')
-		? await openWorkspaceReplica(workspaceDefinition, {
-				...options,
-				worker: () => new ReplicaWorker(),
-			})
-		: await openStandaloneWorkspace(workspaceDefinition, {
-				...options,
-				worker: () => new StandaloneWorker(),
-			});
+	try {
+		workspace = new URLSearchParams(location.search).has('replica')
+			? await openWorkspaceReplica(workspaceDefinition, {
+					...options,
+					worker: () => new ReplicaWorker(),
+				})
+			: await openStandaloneWorkspace(workspaceDefinition, {
+					...options,
+					worker: () => new StandaloneWorker(),
+				});
+		preferencesDoc = nextPreferencesDoc;
+	} catch (cause) {
+		nextPreferencesDoc.destroy();
+		throw cause;
+	}
 	window.generationTwoSmoke = {
 		create(note) {
 			return getWorkspace().tables.notes.create(note);
@@ -116,8 +123,13 @@ async function openCurrent(): Promise<void> {
 		},
 		identity,
 		async dispose() {
-			await workspace?.[Symbol.asyncDispose]();
-			workspace = undefined;
+			try {
+				await workspace?.[Symbol.asyncDispose]();
+			} finally {
+				workspace = undefined;
+				preferencesDoc?.destroy();
+				preferencesDoc = undefined;
+			}
 		},
 	};
 	document.body.dataset.workspaceId = workspaceDefinition.workspaceId;
@@ -134,9 +146,11 @@ function getWorkspace(): Workspace {
 }
 
 function identity() {
+	const kvDocumentGuid = preferencesDoc?.guid;
+	if (!kvDocumentGuid) throw new Error('Generation two KV is not open');
 	return {
 		workspaceId: workspaceDefinition.workspaceId,
-		kvDocumentGuid: preferencesDoc.guid,
+		kvDocumentGuid,
 		childDocumentGuid:
 			getWorkspace().tables.notes.docs.body.guid('identity-proof-row'),
 		declaredBlobIdentity: workspaceDefinition.blobs.attachments.identity,
