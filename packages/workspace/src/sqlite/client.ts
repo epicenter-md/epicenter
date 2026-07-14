@@ -1,14 +1,18 @@
 import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 import type { Guid } from '../shared/id.js';
-import type {
-	RowFor,
-	TableDefinitions,
-	WorkspaceDefinition,
+import {
+	assertWorkspaceDefinition,
+	type RowFor,
+	type TableDefinitions,
+	type WorkspaceDefinition,
 } from './definition.js';
-import type { OpenedDocument, WorkspaceDocuments } from './document-client.js';
+import type {
+	OpenedDocument,
+	WorkspaceDocumentOpener,
+} from './document-client.js';
 import type { DocumentFormat } from './document-format.js';
-import { createDocumentReference } from './document-reference.js';
+import { createDocumentGuidIdentity } from './document-guid.js';
 import type {
 	TableListOptions,
 	WorkspaceCommitDelta,
@@ -46,23 +50,19 @@ export type WorkspaceServicePort = {
 type AsyncTableDoc<
 	TFormat extends DocumentFormat = DocumentFormat,
 	TRowId extends string = string,
-	TWorkspaceDocuments extends WorkspaceDocuments | undefined = undefined,
+	TDocumentOpener extends WorkspaceDocumentOpener | undefined = undefined,
 > = {
 	guid(rowId: TRowId): Guid;
-} & (TWorkspaceDocuments extends WorkspaceDocuments
+} & (TDocumentOpener extends WorkspaceDocumentOpener
 	? { open(rowId: TRowId): OpenedDocument<TFormat> }
 	: object);
 
 type AsyncTableDocs<
 	TDocs extends Readonly<Record<string, DocumentFormat>>,
 	TRowId extends string = string,
-	TWorkspaceDocuments extends WorkspaceDocuments | undefined = undefined,
+	TDocumentOpener extends WorkspaceDocumentOpener | undefined = undefined,
 > = {
-	readonly [K in keyof TDocs]: AsyncTableDoc<
-		TDocs[K],
-		TRowId,
-		TWorkspaceDocuments
-	>;
+	readonly [K in keyof TDocs]: AsyncTableDoc<TDocs[K], TRowId, TDocumentOpener>;
 };
 
 export type AsyncTable<
@@ -70,7 +70,7 @@ export type AsyncTable<
 	TDocs extends Readonly<Record<string, DocumentFormat>> = Readonly<
 		Record<string, DocumentFormat>
 	>,
-	TWorkspaceDocuments extends WorkspaceDocuments | undefined = undefined,
+	TDocumentOpener extends WorkspaceDocumentOpener | undefined = undefined,
 > = {
 	readonly [asyncWorkspaceHandle]: 'table';
 	get(id: TRow['id']): Promise<TRow | null>;
@@ -89,17 +89,17 @@ export type AsyncTable<
 	remove(id: TRow['id']): Promise<void>;
 	observe(callback: (delta: TableCommitDelta<TRow>) => void): () => void;
 	/** Child-document identity and, when mounted, its typed opener. */
-	readonly docs: AsyncTableDocs<TDocs, TRow['id'], TWorkspaceDocuments>;
+	readonly docs: AsyncTableDocs<TDocs, TRow['id'], TDocumentOpener>;
 };
 
 export type AsyncTables<
 	TTables extends TableDefinitions,
-	TWorkspaceDocuments extends WorkspaceDocuments | undefined = undefined,
+	TDocumentOpener extends WorkspaceDocumentOpener | undefined = undefined,
 > = {
 	[K in keyof TTables]: AsyncTable<
 		RowFor<TTables[K]>,
 		TTables[K]['documents'],
-		TWorkspaceDocuments
+		TDocumentOpener
 	>;
 };
 
@@ -119,10 +119,9 @@ export type WorkspaceWriteBatch<TTables extends TableDefinitions> = {
 
 export type AsyncWorkspace<
 	TTables extends TableDefinitions,
-	TWorkspaceDocuments extends WorkspaceDocuments | undefined = undefined,
+	TDocumentOpener extends WorkspaceDocumentOpener | undefined = undefined,
 > = {
-	tables: AsyncTables<TTables, TWorkspaceDocuments>;
-	documents: TWorkspaceDocuments;
+	tables: AsyncTables<TTables, TDocumentOpener>;
 	/** Execute one SELECT and validate every returned row. */
 	sql<TResultSchema extends TSchema>(
 		query: string,
@@ -144,17 +143,18 @@ export function createWorkspaceClient<TTables extends TableDefinitions>(
 ): AsyncWorkspace<TTables, undefined>;
 export function createWorkspaceClient<
 	TTables extends TableDefinitions,
-	TWorkspaceDocuments extends WorkspaceDocuments,
+	TDocumentOpener extends WorkspaceDocumentOpener,
 >(
 	definition: WorkspaceDefinition<TTables>,
 	port: WorkspaceServicePort,
-	documents: TWorkspaceDocuments,
-): AsyncWorkspace<TTables, TWorkspaceDocuments>;
+	documents: TDocumentOpener,
+): AsyncWorkspace<TTables, TDocumentOpener>;
 export function createWorkspaceClient<TTables extends TableDefinitions>(
 	definition: WorkspaceDefinition<TTables>,
 	port: WorkspaceServicePort,
-	documents?: WorkspaceDocuments,
-): AsyncWorkspace<TTables, WorkspaceDocuments | undefined> {
+	documents?: WorkspaceDocumentOpener,
+): AsyncWorkspace<TTables, WorkspaceDocumentOpener | undefined> {
+	assertWorkspaceDefinition(definition);
 	function rowForTable(
 		tableName: string,
 		value: unknown,
@@ -222,8 +222,8 @@ export function createWorkspaceClient<TTables extends TableDefinitions>(
 			const docs = Object.fromEntries(
 				Object.entries<DocumentFormat>(tableDefinition.documents).map(
 					([field, type]) => {
-						const reference = createDocumentReference({
-							workspaceId: definition.id,
+						const identity = createDocumentGuidIdentity({
+							workspaceId: definition.workspaceId,
 							table: tableName,
 							document: field,
 							format: type,
@@ -232,10 +232,11 @@ export function createWorkspaceClient<TTables extends TableDefinitions>(
 							field,
 							documents
 								? {
-										guid: reference.guid,
-										open: (rowId: string) => documents.open(reference, rowId),
+										guid: identity.guid,
+										open: (rowId: string) =>
+											documents.open({ identity, format: type }, rowId),
 									}
-								: { guid: reference.guid },
+								: { guid: identity.guid },
 						];
 					},
 				),
@@ -318,11 +319,10 @@ export function createWorkspaceClient<TTables extends TableDefinitions>(
 			};
 			return [tableName, table];
 		}),
-	) as AsyncTables<TTables, WorkspaceDocuments | undefined>;
+	) as AsyncTables<TTables, WorkspaceDocumentOpener | undefined>;
 
 	return {
 		tables,
-		documents,
 		async sql(query, parameters, resultSchema) {
 			const response = await port.request({
 				kind: 'sql',

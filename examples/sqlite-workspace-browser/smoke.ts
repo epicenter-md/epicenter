@@ -77,6 +77,8 @@ async function waitForServer(): Promise<void> {
 const browserErrors: string[] = [];
 let browser: Browser | undefined;
 let context: BrowserContext | undefined;
+let replicaContextA: BrowserContext | undefined;
+let replicaContextB: BrowserContext | undefined;
 
 try {
 	const assets = readdirSync(join(import.meta.dir, 'dist', 'assets'));
@@ -99,6 +101,16 @@ try {
 		await page.goto(origin);
 		await page.waitForFunction(() => document.body.dataset.ready === 'true');
 	}
+	assert(
+		(await first.locator('body').getAttribute('data-workspace-id')) ===
+			'records-generation-fixture-g1',
+		'Generation one did not use its derived workspace id',
+	);
+	assert(
+		(await first.locator('body').getAttribute('data-kv-document-guid')) ===
+			'records-generation-fixture-g1.kv',
+		'Generation one did not mount its locked KV document identity',
+	);
 
 	const firstRow = await first.evaluate(() =>
 		window.workspaceSmoke.create({ title: 'First page' }),
@@ -188,7 +200,7 @@ try {
 		window.workspaceSmoke.mismatchError(),
 	);
 	assert(
-		mismatch?.includes('schema identity'),
+		mismatch?.includes('definition does not match'),
 		`Schema mismatch handshake did not fail: ${mismatch}`,
 	);
 	assert(
@@ -199,14 +211,16 @@ try {
 	await first.evaluate(() => window.workspaceSmoke.dispose());
 	await second.evaluate(() => window.workspaceSmoke.dispose());
 
-	const replicaA = await context.newPage();
-	const replicaB = await context.newPage();
-	for (const [page, name] of [
-		[replicaA, 'a'],
-		[replicaB, 'b'],
-	] as const) {
+	// Each browser context represents one device-local OPFS partition. Both
+	// replicas use the same generation-derived workspace id without accepting a
+	// second caller-authored storage name.
+	replicaContextA = await browser.newContext();
+	replicaContextB = await browser.newContext();
+	const replicaA = await replicaContextA.newPage();
+	const replicaB = await replicaContextB.newPage();
+	for (const page of [replicaA, replicaB]) {
 		page.on('pageerror', (error) => browserErrors.push(error.message));
-		await page.goto(`${origin}?replica=${name}`);
+		await page.goto(`${origin}?replica`);
 		await page.waitForFunction(
 			() => document.body.dataset.replicaReady === 'true',
 		);
@@ -237,6 +251,8 @@ try {
 		`Browser errors: ${browserErrors.join('; ')}`,
 	);
 } finally {
+	await replicaContextA?.close();
+	await replicaContextB?.close();
 	await context?.close();
 	await browser?.close();
 	recordsServer.stop(true);

@@ -10,13 +10,17 @@ import {
 	createWorkspaceClient,
 	type WorkspaceServicePort,
 } from './client.js';
-import type { TableDefinitions, WorkspaceDefinition } from './definition.js';
 import {
-	createWorkspaceDocuments,
+	assertWorkspaceDefinition,
+	type TableDefinitions,
+	type WorkspaceDefinition,
+} from './definition.js';
+import {
+	createWorkspaceDocumentOpener,
+	type WorkspaceDocumentOpener,
+	type WorkspaceDocumentOpenerFor,
 	type WorkspaceDocumentRuntime,
 	type WorkspaceDocumentRuntimeOption,
-	type WorkspaceDocuments,
-	type WorkspaceDocumentsFor,
 } from './document-client.js';
 import type { RecordsRecoveryCheckpoint } from './recovery-checkpoint.js';
 
@@ -84,8 +88,8 @@ export type OpenedWorkspace<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions | undefined,
 	TKind extends 'standalone' | 'replica',
-	TWorkspaceDocuments extends WorkspaceDocuments | undefined = undefined,
-> = AsyncWorkspace<TTables, TWorkspaceDocuments> &
+	TDocumentOpener extends WorkspaceDocumentOpener | undefined = undefined,
+> = AsyncWorkspace<TTables, TDocumentOpener> &
 	AsyncDisposable & {
 		readonly kind: TKind;
 		readonly kv: TKv extends KvDefinitions ? Kv<TKv> : undefined;
@@ -96,14 +100,14 @@ export type OpenedWorkspace<
 export type StandaloneWorkspace<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions | undefined = undefined,
-	TWorkspaceDocuments extends WorkspaceDocuments | undefined = undefined,
-> = OpenedWorkspace<TTables, TKv, 'standalone', TWorkspaceDocuments>;
+	TDocumentOpener extends WorkspaceDocumentOpener | undefined = undefined,
+> = OpenedWorkspace<TTables, TKv, 'standalone', TDocumentOpener>;
 
 export type WorkspaceReplica<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions | undefined = undefined,
-	TWorkspaceDocuments extends WorkspaceDocuments | undefined = undefined,
-> = OpenedWorkspace<TTables, TKv, 'replica', TWorkspaceDocuments>;
+	TDocumentOpener extends WorkspaceDocumentOpener | undefined = undefined,
+> = OpenedWorkspace<TTables, TKv, 'replica', TDocumentOpener>;
 
 /**
  * Open a typed client for a SQLite database service.
@@ -137,20 +141,26 @@ export async function openWorkspaceFromService<
 		TTables,
 		WorkspaceKvFor<TKvMount, TKv>,
 		TKind,
-		WorkspaceDocumentsFor<TDocumentRuntime>
+		WorkspaceDocumentOpenerFor<TDocumentRuntime>
 	>
 > {
+	assertWorkspaceDefinition(definition);
 	const { service, expectedKind, kv, documents } = options;
 	try {
 		const description = await service.request({ kind: 'describe' });
 		if (
 			description.kind !== 'workspace' ||
 			description.workspaceKind !== expectedKind ||
-			description.workspaceId !== definition.id ||
+			description.workspaceId !== definition.workspaceId ||
 			description.recordsDescriptor !== definition.recordsDescriptor ||
 			description.recordsSchemaHash !== definition.recordsSchemaHash
 		) {
 			throw new Error('Workspace service definition does not match the client');
+		}
+		if (kv && kv.doc.guid !== definition.kvDocumentGuid) {
+			throw new Error(
+				`Workspace KV document '${kv.doc.guid}' does not match '${definition.kvDocumentGuid}'`,
+			);
 		}
 		// Hydration ordering: never expose the kv handle while local persistence
 		// may still be loading; an absent key must not read as the durable
@@ -198,7 +208,7 @@ export async function openWorkspaceFromService<
 		},
 	};
 	const workspaceDocuments = documents
-		? createWorkspaceDocuments(definition.id, documents, () => {
+		? createWorkspaceDocumentOpener(definition.workspaceId, documents, () => {
 				if (state !== 'open') throw disposedError();
 			})
 		: undefined;
@@ -244,6 +254,6 @@ export async function openWorkspaceFromService<
 		TTables,
 		WorkspaceKvFor<TKvMount, TKv>,
 		TKind,
-		WorkspaceDocumentsFor<TDocumentRuntime>
+		WorkspaceDocumentOpenerFor<TDocumentRuntime>
 	>;
 }

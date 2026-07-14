@@ -23,13 +23,13 @@ import type {
 	WorkspaceWriteBatch,
 } from './client.js';
 import { createWorkspaceClient } from './client.js';
-import { defineTable, defineWorkspace, type RowFor } from './definition.js';
+import { defineTable, type RowFor } from './definition.js';
 import type {
+	WorkspaceDocumentOpener,
 	WorkspaceDocumentRuntime,
-	WorkspaceDocuments,
 } from './document-client.js';
 import { document } from './document-format.js';
-import type { DocumentReference } from './document-reference.js';
+import { defineTestWorkspace as defineWorkspace } from './test-workspace.js';
 
 type NoteId = string & Brand<'NoteId'>;
 type RecordingId = string & Brand<'RecordingId'>;
@@ -66,28 +66,23 @@ const notesWithDocuments = defineTable({
 	documents: { body: document.plainText },
 });
 const workspaceWithDocumentsDefinition = defineWorkspace({
-	id: 'client-type-test',
+	appId: 'client-type-test',
 	tables: { notes: notesWithDocuments },
 });
 declare const tableWithDocuments: AsyncTable<
 	RowFor<typeof notesWithDocuments>,
 	typeof notesWithDocuments.documents,
-	WorkspaceDocuments
+	WorkspaceDocumentOpener
 >;
-declare const documents: WorkspaceDocuments;
+declare const documentOpener: WorkspaceDocumentOpener;
 declare const documentRuntime: WorkspaceDocumentRuntime;
-declare const historicalBody: DocumentReference<typeof document.plainText>;
 declare const noteId: NoteId;
 declare const recordingId: RecordingId;
 
 const currentBody = tableWithDocuments.docs.body.open(noteId);
-const previousBody = documents.open(historicalBody, noteId);
 const currentReady: Promise<void> = currentBody.whenReady;
-const previousReady: Promise<void> = previousBody.whenReady;
 type CurrentBodyValue = ReturnType<typeof currentBody.content.read>;
-type PreviousBodyValue = ReturnType<typeof previousBody.content.read>;
 const currentBodyValue: CurrentBodyValue = 'current';
-const previousBodyValue: PreviousBodyValue = 'previous';
 
 tableWithDocuments.docs.body.guid(noteId);
 // @ts-expect-error — current table documents retain their owning row-id brand
@@ -102,18 +97,23 @@ declare const guidOnlyTable: AsyncTable<
 declare const workspaceWithoutDocuments: AsyncWorkspace<{
 	notes: typeof notesWithDocuments;
 }>;
-const noDocuments: undefined = workspaceWithoutDocuments.documents;
+// @ts-expect-error — historical document opening is not a workspace surface
+workspaceWithoutDocuments.documents;
 guidOnlyTable.docs.body.guid(noteId);
 // @ts-expect-error — opening requires a composed document runtime
 guidOnlyTable.docs.body.open(noteId);
 
 declare const servicePort: WorkspaceServicePort;
-createWorkspaceClient(workspaceWithDocumentsDefinition, servicePort, documents);
-// @ts-expect-error — a document-enabled client requires the runtime argument
-createWorkspaceClient<{ notes: typeof notesWithDocuments }, WorkspaceDocuments>(
+createWorkspaceClient(
 	workspaceWithDocumentsDefinition,
 	servicePort,
+	documentOpener,
 );
+// @ts-expect-error — a document-enabled client requires the runtime argument
+createWorkspaceClient<
+	{ notes: typeof notesWithDocuments },
+	WorkspaceDocumentOpener
+>(workspaceWithDocumentsDefinition, servicePort);
 
 const browserWithDocuments: BrowserOpenOptions<
 	undefined,
@@ -146,28 +146,20 @@ const browserOpen = openBrowserWorkspace(workspaceWithDocumentsDefinition, {
 	documents: documentRuntime,
 	onObserverError() {},
 });
-const inferredBrowserDocuments: WorkspaceDocuments = null as unknown as Awaited<
-	typeof browserOpen
->['documents'];
+// @ts-expect-error — browser openings expose only table-owned document opening
+browserOpen.then((workspace) => workspace.documents);
 const bunOpen = openBunWorkspace(workspaceWithDocumentsDefinition, {
 	storage: { kind: 'memory' },
 	documents: documentRuntime,
 	onObserverError() {},
 });
-const inferredBunDocuments: WorkspaceDocuments = null as unknown as Awaited<
-	typeof bunOpen
->['documents'];
+// @ts-expect-error — Bun openings expose only table-owned document opening
+bunOpen.then((workspace) => workspace.documents);
 
 void currentBody;
-void previousBody;
 void currentReady;
-void previousReady;
 void currentBodyValue;
-void previousBodyValue;
-void noDocuments;
 void browserWithDocuments;
 void browserMissingDocuments;
 void bunWithDocuments;
 void bunMissingDocuments;
-void inferredBrowserDocuments;
-void inferredBunDocuments;

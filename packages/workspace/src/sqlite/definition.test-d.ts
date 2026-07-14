@@ -14,9 +14,13 @@ import {
 	defineKv,
 	defineTable,
 	defineWorkspace,
+	lockWorkspace,
 	type RowFor,
+	type WorkspaceDefinition,
 } from './definition.js';
 import { type DocumentFormat, document } from './document-format.js';
+// @ts-expect-error — generated workspace ids are not a public authoring API
+import { applicationWorkspaceId } from './index.js';
 
 type NoteId = string & Brand<'NoteId'>;
 
@@ -49,10 +53,27 @@ const missingDoc: DocumentFormat = notes.documents.missing;
 
 const enabled = defineKv(field.boolean(), () => true);
 const enabledValue: boolean = null as unknown as Static<typeof enabled.schema>;
-const workspace = defineWorkspace({
-	id: 'notes',
+const candidate = defineWorkspace({
+	appId: 'notes',
+	dataGeneration: 1,
 	tables: { notes },
 	kv: { enabled },
+});
+// @ts-expect-error — source candidates cannot open storage before lock validation
+const unlocked: WorkspaceDefinition = candidate;
+const workspace = lockWorkspace(candidate, {
+	format: 'epicenter.application-generation-lock/1',
+	appId: candidate.appId,
+	generations: [candidate.proposedLockEntry],
+});
+void applicationWorkspaceId;
+
+defineWorkspace({
+	appId: 'notes',
+	dataGeneration: 1,
+	// @ts-expect-error — applications cannot author an independent workspace id
+	id: 'forged-workspace',
+	tables: { notes },
 });
 
 // @ts-expect-error — table definitions expose immutable field maps
@@ -76,15 +97,20 @@ const tableLookalike = {
 	documents: notes.documents,
 	compiledColumns: notes.compiledColumns,
 };
-// @ts-expect-error — only defineTable products carry table-definition identity
-defineWorkspace({ id: 'forged-table', tables: { notes: tableLookalike } });
+defineWorkspace({
+	appId: 'forged-table',
+	dataGeneration: 1,
+	// @ts-expect-error — only defineTable products carry table-definition identity
+	tables: { notes: tableLookalike },
+});
 
 const kvLookalike = {
 	schema: enabled.schema,
 	defaultValue: enabled.defaultValue,
 };
 defineWorkspace({
-	id: 'forged-kv',
+	appId: 'forged-kv',
+	dataGeneration: 1,
 	tables: { notes },
 	// @ts-expect-error — only defineKv products carry KV-definition identity
 	kv: { enabled: kvLookalike },
@@ -137,6 +163,7 @@ void bodyDoc;
 void summaryDoc;
 void missingDoc;
 void enabledValue;
+void unlocked;
 void workspace;
 void lastFolderValue;
 void bodyCell;

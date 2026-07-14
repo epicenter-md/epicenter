@@ -21,12 +21,13 @@ import {
 	isAdmissibleSnapshotRow,
 } from '@epicenter/record-sync';
 import type { TSchema } from 'typebox';
-import type {
-	CompiledColumn,
-	RowFor,
-	TableDefinition,
-	TableDefinitions,
-	WorkspaceDefinition,
+import {
+	assertWorkspaceDefinition,
+	type CompiledColumn,
+	type RowFor,
+	type TableDefinition,
+	type TableDefinitions,
+	type WorkspaceDefinition,
 } from './definition.js';
 
 /** Mutable during apply; coordinators inspect operations before committing. */
@@ -158,6 +159,7 @@ export function createApplicationDatabase<TTables extends TableDefinitions>(
 		onObserverError,
 	}: ApplicationDatabaseOptions,
 ) {
+	assertWorkspaceDefinition(definition);
 	const tableObservers = new Map<
 		string,
 		Set<(changedIds: ReadonlySet<string>) => void>
@@ -262,7 +264,7 @@ export function createApplicationDatabase<TTables extends TableDefinitions>(
 		definition,
 		identity: {
 			kind,
-			workspaceId: definition.id,
+			workspaceId: definition.workspaceId,
 			recordsDescriptor: definition.recordsDescriptor,
 			recordsSchemaHash: definition.recordsSchemaHash,
 		},
@@ -628,7 +630,7 @@ function initializeDatabase(
 			`INSERT INTO ${quoteIdentifier(META_TABLE)} ("key", "value") VALUES ('storage_revision', ?) ON CONFLICT("key") DO UPDATE SET "value" = excluded."value"`,
 			[String(APPLICATION_STORAGE_REVISION)],
 		);
-		writeMeta(sqlite, 'workspace_id', definition.id);
+		writeMeta(sqlite, 'workspace_id', definition.workspaceId);
 		writeMeta(sqlite, 'records_descriptor', definition.recordsDescriptor);
 		writeMeta(sqlite, 'schema_hash', definition.recordsSchemaHash);
 		writeMeta(sqlite, 'database_kind', kind);
@@ -683,9 +685,9 @@ function inspectDatabaseIdentity(
 			`Invalid stored workspace revision '${storedRevisionText}'`,
 		);
 	}
-	if (storedWorkspaceId !== definition.id) {
+	if (storedWorkspaceId !== definition.workspaceId) {
 		throw new Error(
-			`Workspace database belongs to '${storedWorkspaceId}', not '${definition.id}'`,
+			`Workspace database belongs to '${storedWorkspaceId}', not '${definition.workspaceId}'`,
 		);
 	}
 	if (storedKind !== kind) {

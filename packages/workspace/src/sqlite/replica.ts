@@ -32,7 +32,11 @@ import {
 	createApplicationDatabase,
 	ReplicaInvariantViolationError,
 } from './database.js';
-import type { TableDefinitions, WorkspaceDefinition } from './definition.js';
+import {
+	assertWorkspaceDefinition,
+	type TableDefinitions,
+	type WorkspaceDefinition,
+} from './definition.js';
 import {
 	RECORDS_RECOVERY_CHECKPOINT_FORMAT,
 	type RecordsRecoveryCheckpoint,
@@ -143,6 +147,7 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 	onObserverError,
 	pullLimit = DEFAULT_PULL_LIMIT,
 }: CreateReplicaRuntimeOptions<TTables>) {
+	assertWorkspaceDefinition(definition);
 	assertPositiveInteger(protocolMajor, 'protocolMajor');
 	if (!Number.isSafeInteger(pullLimit) || pullLimit < 1 || pullLimit > 1_000) {
 		throw new TypeError('pullLimit must be an integer from 1 through 1000');
@@ -205,7 +210,7 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 	}
 
 	const bindingRequest = {
-		workspaceId: definition.id,
+		workspaceId: definition.workspaceId,
 		recordsDescriptor: definition.recordsDescriptor,
 		recordsSchemaHash: definition.recordsSchemaHash,
 		protocolMajor,
@@ -216,7 +221,9 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 		signal?: AbortSignal,
 	): Promise<RecordAuthorityDescriptor> {
 		const { recordsEpoch, recordsDescriptor, recordsSchemaHash } =
-			parseAuthorityDescriptor(await sync.openAuthority(bindingRequest, signal));
+			parseAuthorityDescriptor(
+				await sync.openAuthority(bindingRequest, signal),
+			);
 		assertNonEmpty(recordsEpoch, 'recordsEpoch');
 		assertNonEmpty(recordsDescriptor, 'recordsDescriptor');
 		assertNonEmpty(recordsSchemaHash, 'recordsSchemaHash');
@@ -559,7 +566,7 @@ export async function createReplicaRuntime<TTables extends TableDefinitions>({
 				}
 				return {
 					format: RECORDS_RECOVERY_CHECKPOINT_FORMAT,
-					workspaceId: definition.id,
+					workspaceId: definition.workspaceId,
 					recordsEpoch: meta.recordsEpoch,
 					recordsDescriptor: definition.recordsDescriptor,
 					recordsSchemaHash: definition.recordsSchemaHash,

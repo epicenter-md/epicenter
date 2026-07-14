@@ -15,15 +15,16 @@ import { RECORD_SYNC_PROTOCOL_MAJOR } from '@epicenter/record-sync';
 import { createBunSqliteAdapter } from '@epicenter/record-sync/bun';
 import type { WorkspaceServicePort } from './client.js';
 import { createApplicationDatabase } from './database.js';
-import type {
-	KvDefinitions,
-	TableDefinitions,
-	WorkspaceDefinition,
+import {
+	assertWorkspaceDefinition,
+	type KvDefinitions,
+	type TableDefinitions,
+	type WorkspaceDefinition,
 } from './definition.js';
 import type {
+	WorkspaceDocumentOpenerFor,
 	WorkspaceDocumentRuntime,
 	WorkspaceDocumentRuntimeOption,
-	WorkspaceDocumentsFor,
 } from './document-client.js';
 import {
 	type OpenWorkspaceFromServiceOptions,
@@ -74,9 +75,10 @@ export async function openStandaloneWorkspace<
 	StandaloneWorkspace<
 		TTables,
 		undefined,
-		WorkspaceDocumentsFor<TDocumentRuntime>
+		WorkspaceDocumentOpenerFor<TDocumentRuntime>
 	>
 > {
+	assertWorkspaceDefinition(definition);
 	const { storage, onObserverError } = options;
 	const filePath = storage.kind === 'bun' ? resolve(storage.path) : undefined;
 	if (filePath && ownedFilePaths.has(filePath)) {
@@ -152,8 +154,13 @@ export async function openWorkspaceReplica<
 	definition: WorkspaceDefinition<TTables>,
 	options: OpenWorkspaceReplicaOptions<TDocumentRuntime>,
 ): Promise<
-	WorkspaceReplica<TTables, undefined, WorkspaceDocumentsFor<TDocumentRuntime>>
+	WorkspaceReplica<
+		TTables,
+		undefined,
+		WorkspaceDocumentOpenerFor<TDocumentRuntime>
+	>
 > {
+	assertWorkspaceDefinition(definition);
 	const { storage, sync, onSyncError, onObserverError, pollIntervalMs } =
 		options;
 	const filePath = storage.kind === 'bun' ? resolve(storage.path) : undefined;

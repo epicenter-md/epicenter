@@ -26,7 +26,7 @@ import {
 } from '@epicenter/record-sync';
 import { createBunSqliteAdapter } from '@epicenter/record-sync/bun';
 import { ReplicaInvariantViolationError } from './database.js';
-import { defineTable, defineWorkspace } from './definition.js';
+import { defineTable } from './definition.js';
 import {
 	createReplicaRuntime,
 	ReplicaAdmissionConflictError,
@@ -34,9 +34,10 @@ import {
 	type ReplicaSyncPort,
 	startReplicaSyncSupervisor,
 } from './replica.js';
+import { defineTestWorkspace as defineWorkspace } from './test-workspace.js';
 
 const definition = defineWorkspace({
-	id: 'replica-tests',
+	appId: 'replica-tests',
 	name: 'Replica tests',
 	tables: {
 		notes: defineTable({
@@ -76,11 +77,11 @@ function createPort(
 ): ReplicaSyncPort {
 	return {
 		bindWorkspace(workspaceId) {
-			expect(workspaceId).toBe(definition.id);
+			expect(workspaceId).toBe(definition.workspaceId);
 		},
 		async openAuthority(request) {
 			expect(request).toEqual({
-				workspaceId: definition.id,
+				workspaceId: definition.workspaceId,
 				recordsDescriptor: definition.recordsDescriptor,
 				recordsSchemaHash: definition.recordsSchemaHash,
 				protocolMajor: 1,
@@ -998,7 +999,7 @@ test('epoch mismatch freezes writes and preserves pending local work', async () 
 	const checkpoint = first.runtime.readRecoveryCheckpoint();
 	expect(checkpoint).toEqual({
 		format: 'epicenter.records-recovery/1',
-		workspaceId: definition.id,
+		workspaceId: definition.workspaceId,
 		recordsEpoch: 'epoch-1',
 		recordsDescriptor: definition.recordsDescriptor,
 		recordsSchemaHash: definition.recordsSchemaHash,

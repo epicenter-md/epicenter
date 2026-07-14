@@ -5,10 +5,7 @@ import {
 	type DocumentHandle,
 	inspectDocumentFormat,
 } from './document-format.js';
-import {
-	type DocumentReference,
-	inspectDocumentReference,
-} from './document-reference.js';
+import type { DocumentGuidIdentity } from './document-guid.js';
 
 /** One caller-owned persistence and synchronization session for a Yjs room. */
 export type WorkspaceDocumentSession = {
@@ -24,13 +21,13 @@ export type WorkspaceDocumentRuntime = {
 };
 
 /** Typed document surface contributed when a child-document runtime is present. */
-export type WorkspaceDocumentsFor<
+export type WorkspaceDocumentOpenerFor<
 	TRuntime extends WorkspaceDocumentRuntime | undefined,
 > = [TRuntime] extends [undefined]
 	? undefined
 	: undefined extends TRuntime
-		? WorkspaceDocuments | undefined
-		: WorkspaceDocuments;
+		? WorkspaceDocumentOpener | undefined
+		: WorkspaceDocumentOpener;
 
 /** @internal Require the runtime exactly when the generic says it is present. */
 export type WorkspaceDocumentRuntimeOption<
@@ -53,30 +50,32 @@ export type OpenedDocument<TFormat extends DocumentFormat> = {
 	[Symbol.dispose](): void;
 };
 
-/** Explicit opener for retained historical document references. */
-export type WorkspaceDocuments = {
+/** @internal Table-owned opener assembled only while building table handles. */
+export type WorkspaceDocumentOpener = {
 	open<TFormat extends DocumentFormat>(
-		reference: DocumentReference<TFormat>,
+		owner: {
+			identity: DocumentGuidIdentity;
+			format: TFormat;
+		},
 		rowId: string,
 	): OpenedDocument<TFormat>;
 };
 
-/** @internal Bind nominal references to one workspace runtime. */
-export function createWorkspaceDocuments(
+/** @internal Bind declared table documents to one workspace runtime. */
+export function createWorkspaceDocumentOpener(
 	workspaceId: string,
 	runtime: WorkspaceDocumentRuntime,
 	assertOpen: () => void = () => undefined,
-): WorkspaceDocuments {
+): WorkspaceDocumentOpener {
 	return {
-		open(reference, rowId) {
+		open(owner, rowId) {
 			assertOpen();
-			const referenceDefinition = inspectDocumentReference(reference);
-			if (referenceDefinition.workspaceId !== workspaceId) {
+			if (owner.identity.workspaceId !== workspaceId) {
 				throw new Error(
-					`Document reference belongs to workspace '${referenceDefinition.workspaceId}', not '${workspaceId}'`,
+					`Document belongs to workspace '${owner.identity.workspaceId}', not '${workspaceId}'`,
 				);
 			}
-			const guid = reference.guid(rowId);
+			const guid = owner.identity.guid(rowId);
 			const session = runtime.open(guid);
 			let disposed = false;
 			function dispose(): void {
@@ -103,11 +102,9 @@ export function createWorkspaceDocuments(
 						`Document runtime opened '${session.doc.guid}' for requested room '${guid}'`,
 					);
 				}
-				const content = inspectDocumentFormat(
-					referenceDefinition.format,
-				).attach(session.doc) as DocumentHandle<
-					typeof referenceDefinition.format
-				>;
+				const content = inspectDocumentFormat(owner.format).attach(
+					session.doc,
+				) as DocumentHandle<typeof owner.format>;
 				const whenReady = Promise.resolve(session.whenReady).then(
 					() => undefined,
 					failAfterDispose,

@@ -15,8 +15,9 @@ import { field } from '@epicenter/field';
 import { Type } from 'typebox';
 import { sha256Hex } from '../shared/sha256.js';
 import { createWorkspaceClient, type WorkspaceServicePort } from './client.js';
-import { defineTable, defineWorkspace } from './definition.js';
+import { defineTable } from './definition.js';
 import { document, inspectDocumentFormat } from './document-format.js';
+import { defineTestWorkspace as defineWorkspace } from './test-workspace.js';
 
 test('async client sends one write-only transaction and filters table deltas', async () => {
 	const requests: unknown[] = [];
@@ -43,7 +44,7 @@ test('async client sends one write-only transaction and filters table deltas', a
 		fields: { id: field.string(), title: field.string() },
 	});
 	const definition = defineWorkspace({
-		id: 'client-test',
+		appId: 'client-test',
 		name: 'Client test',
 		tables: { notes },
 	});
@@ -106,7 +107,7 @@ test('create returns committed rows with distinct UUID identities', async () => 
 		},
 	};
 	const definition = defineWorkspace({
-		id: 'client-create-test',
+		appId: 'client-create-test',
 		name: 'Client create test',
 		tables: {
 			notes: defineTable({
@@ -139,7 +140,7 @@ test('empty and async transaction builders never send a partial mutation', async
 		},
 	};
 	const definition = defineWorkspace({
-		id: 'client-builder-test',
+		appId: 'client-builder-test',
 		name: 'Client builder test',
 		tables: {
 			notes: defineTable({
@@ -178,7 +179,7 @@ test('typed client rejects malformed rows, deltas, and mutation results', async 
 		},
 	};
 	const definition = defineWorkspace({
-		id: 'client-validation-test',
+		appId: 'client-validation-test',
 		name: 'Client validation test',
 		tables: {
 			notes: defineTable({
@@ -217,7 +218,7 @@ test('sql validates every result row against the caller schema', async () => {
 		},
 	};
 	const definition = defineWorkspace({
-		id: 'client-sql-validation-test',
+		appId: 'client-sql-validation-test',
 		name: 'Client SQL validation test',
 		tables: {
 			notes: defineTable({
@@ -252,7 +253,7 @@ test('same-named cells and documents coexist with format-addressed identity', as
 		},
 	};
 	const definition = defineWorkspace({
-		id: 'client-docs-test',
+		appId: 'client-docs-test',
 		name: 'Client docs test',
 		tables: {
 			notes: defineTable({
@@ -273,11 +274,11 @@ test('same-named cells and documents coexist with format-addressed identity', as
 		`epicenter.document-row/1\0${JSON.stringify('row-1')}`,
 	);
 	expect(bodyGuid).toBe(
-		`client-docs-test.notes.${rowDigest}.body.${inspectDocumentFormat(document.xmlFragment).formatHash.slice('sha256:'.length)}`,
+		`${definition.workspaceId}.notes.${rowDigest}.body.${inspectDocumentFormat(document.xmlFragment).formatHash.slice('sha256:'.length)}`,
 	);
 	expect(row?.body).toBe('record body');
 	expect(summaryGuid).toBe(
-		`client-docs-test.notes.${rowDigest}.summary.${inspectDocumentFormat(document.plainText).formatHash.slice('sha256:'.length)}`,
+		`${definition.workspaceId}.notes.${rowDigest}.summary.${inspectDocumentFormat(document.plainText).formatHash.slice('sha256:'.length)}`,
 	);
 	expect(bodyGuid).not.toBe(summaryGuid);
 	// Record ids are values, not address grammar, so imported ids remain valid.

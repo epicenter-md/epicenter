@@ -20,8 +20,16 @@ import {
 import { isKvDefinition } from '../document/define-kv.js';
 import type { KvDefinitions } from '../document/kv.js';
 import { assertSafeSegment } from '../shared/safe-segment.js';
+import { sha256Hex } from '../shared/sha256.js';
 import { type DocumentFormat, isDocumentFormat } from './document-format.js';
+import { createDocumentGuidIdentity } from './document-guid.js';
 import {
+	type ApplicationGenerationLockEntry,
+	applicationWorkspaceId,
+	parseApplicationGenerationLock,
+} from './generation.js';
+import {
+	canonicalJson,
 	createRecordsDescriptor,
 	recordsSchemaHashOf,
 } from './schema-descriptor.js';
@@ -167,45 +175,81 @@ export function defineTable<
 
 export type TableDefinitions = Record<string, TableDefinition>;
 
-export type WorkspaceDefinition<
-	TTables extends TableDefinitions = TableDefinitions,
-	TKv extends KvDefinitions = KvDefinitions,
+export type BlobPlaneContracts = Record<string, string>;
+
+type BlobPlaneDefinitions<TContracts extends BlobPlaneContracts> = Readonly<{
+	[TName in keyof TContracts]: {
+		readonly identity: string;
+		readonly contract: TContracts[TName];
+	};
+}>;
+
+const workspaceCandidateBrand: unique symbol = Symbol(
+	'epicenter.workspace-candidate',
+);
+const workspaceDefinitionBrand: unique symbol = Symbol(
+	'epicenter.workspace-definition',
+);
+const workspaceCandidates = new WeakSet<object>();
+const workspaceDefinitions = new WeakSet<object>();
+
+type WorkspaceSource<
+	TTables extends TableDefinitions,
+	TKv extends KvDefinitions,
+	TBlobs extends BlobPlaneContracts,
 > = {
+	readonly appId: string;
+	readonly dataGeneration: number;
+	readonly workspaceId: string;
 	readonly recordsDescriptor: string;
 	readonly recordsSchemaHash: string;
-	/**
-	 * The stable app-defined workspace namespace: it keys local
-	 * persistence, sync routing, the KV document, and child-doc guids.
-	 */
-	readonly id: string;
-	/** Display label only (mount labels, sign-in copy). Defaults to `id`. */
+	/** Display label only (mount labels, sign-in copy). Defaults to `appId`. */
 	readonly name: string;
 	readonly tables: Readonly<TTables>;
 	readonly kv: Readonly<TKv>;
-	/**
-	 * Eager preference-document guid: `<id>.kv` (ADR-0124). Stable across
-	 * records epochs; applications do not author epoch values.
-	 */
+	readonly blobs: BlobPlaneDefinitions<TBlobs>;
+	/** Eager preference-document guid: `<workspaceId>.kv` (ADR-0124). */
 	readonly kvDocumentGuid: string;
+	readonly proposedLockEntry: ApplicationGenerationLockEntry;
+};
+
+export type WorkspaceCandidate<
+	TTables extends TableDefinitions = TableDefinitions,
+	TKv extends KvDefinitions = KvDefinitions,
+	TBlobs extends BlobPlaneContracts = BlobPlaneContracts,
+> = WorkspaceSource<TTables, TKv, TBlobs> & {
+	readonly [workspaceCandidateBrand]: true;
+};
+
+export type WorkspaceDefinition<
+	TTables extends TableDefinitions = TableDefinitions,
+	TKv extends KvDefinitions = KvDefinitions,
+	TBlobs extends BlobPlaneContracts = BlobPlaneContracts,
+> = WorkspaceSource<TTables, TKv, TBlobs> & {
+	readonly [workspaceDefinitionBrand]: true;
 };
 
 export function defineWorkspace<
 	const TTables extends TableDefinitions,
 	const TKv extends KvDefinitions = Record<never, never>,
+	const TBlobs extends BlobPlaneContracts = Record<never, never>,
 >({
-	id,
+	appId,
+	dataGeneration,
 	name,
 	tables,
 	kv,
+	blobs,
 }: {
-	id: string;
+	appId: string;
+	dataGeneration: number;
 	name?: string;
 	tables: TTables;
 	kv?: TKv;
-}): WorkspaceDefinition<TTables, TKv> {
-	if (id.trim() === '') throw new Error('Workspace id must not be empty');
-	assertSafeSegment(id, 'workspace id');
-	const displayName = name ?? id;
+	blobs?: TBlobs;
+}): WorkspaceCandidate<TTables, TKv, TBlobs> {
+	const workspaceId = applicationWorkspaceId(appId, dataGeneration);
+	const displayName = name ?? appId;
 	if (displayName.trim() === '') {
 		throw new Error('Workspace name must not be empty');
 	}
@@ -234,11 +278,33 @@ export function defineWorkspace<
 	const declaredKv = (kv ?? {}) as TKv;
 	assertSchemaRecord(declaredKv, 'workspace KV', 'workspace KV key');
 	for (const [key, definition] of Object.entries(declaredKv)) {
+		if (key === '') throw new Error('Workspace KV key must not be empty');
 		if (!isKvDefinition(definition)) {
 			throw new Error(`Workspace KV key '${key}' must use defineKv()`);
 		}
 	}
 	const ownedKv = Object.freeze({ ...declaredKv }) as TKv;
+	const declaredBlobs = (blobs ?? {}) as TBlobs;
+	assertSchemaRecord(declaredBlobs, 'workspace blobs', 'workspace blob plane');
+	const ownedBlobs = Object.freeze(
+		Object.fromEntries(
+			Object.entries(declaredBlobs).map(([blobName, contract]) => {
+				assertSafeSegment(blobName, 'blob plane name');
+				if (typeof contract !== 'string' || contract.trim() === '') {
+					throw new Error(
+						`Workspace blob plane '${blobName}' must declare a non-empty contract token`,
+					);
+				}
+				return [
+					blobName,
+					Object.freeze({
+						identity: `${workspaceId}.blob.${blobName}`,
+						contract,
+					}),
+				];
+			}),
+		),
+	) as BlobPlaneDefinitions<TBlobs>;
 
 	// KV, documents, and display name are deliberately absent.
 	// They have independent identities or are runtime behavior, not accepted
@@ -255,16 +321,137 @@ export function defineWorkspace<
 		})),
 	);
 	const recordsSchemaHash = recordsSchemaHashOf(recordsDescriptor);
+	const planeEntries: Array<[string, string]> = [
+		['kv', `${workspaceId}.kv`],
+		...Object.entries(ownedKv).map(([key, definition]): [string, string] => [
+			`kv.${key}`,
+			`sha256:${sha256Hex(canonicalJson(definition.schema))}`,
+		]),
+		...Object.entries(ownedTables).flatMap(([tableName, table]) =>
+			Object.entries(table.documents).map(
+				([documentName, format]): [string, string] => {
+					const identity = createDocumentGuidIdentity({
+						workspaceId,
+						table: tableName,
+						document: documentName,
+						format,
+					});
+					return [`document.${tableName}.${documentName}`, identity.lockToken];
+				},
+			),
+		),
+		...Object.entries(ownedBlobs).map(
+			([blobName, { identity, contract }]): [string, string] => [
+				`blob.${blobName}`,
+				`${identity}@sha256:${sha256Hex(contract)}`,
+			],
+		),
+	];
+	const planes = Object.freeze(
+		Object.fromEntries(
+			planeEntries.sort(([left], [right]) =>
+				left < right ? -1 : left > right ? 1 : 0,
+			),
+		),
+	);
+	const proposedLockEntry = Object.freeze({
+		dataGeneration,
+		workspaceId,
+		recordsSchemaHash,
+		planes,
+	});
 
-	return Object.freeze({
-		id,
+	const candidate = Object.freeze({
+		appId,
+		dataGeneration,
+		workspaceId,
 		name: displayName,
 		tables: ownedTables,
 		kv: ownedKv,
-		kvDocumentGuid: `${id}.kv`,
+		blobs: ownedBlobs,
+		kvDocumentGuid: `${workspaceId}.kv`,
 		recordsDescriptor,
 		recordsSchemaHash,
+		proposedLockEntry,
+		[workspaceCandidateBrand]: true as const,
 	});
+	workspaceCandidates.add(candidate);
+	return candidate;
+}
+
+export type WorkspaceCandidateInspection = Readonly<
+	Pick<
+		WorkspaceSource<TableDefinitions, KvDefinitions, BlobPlaneContracts>,
+		'appId' | 'proposedLockEntry'
+	>
+>;
+
+/** Inspect only a candidate minted by defineWorkspace(). */
+export function inspectWorkspaceCandidate(
+	value: unknown,
+): WorkspaceCandidateInspection {
+	if (
+		typeof value !== 'object' ||
+		value === null ||
+		!workspaceCandidates.has(value)
+	) {
+		throw new Error(
+			'Workspace candidate must be returned by defineWorkspace()',
+		);
+	}
+	const candidate = value as WorkspaceCandidate;
+	return Object.freeze({
+		appId: candidate.appId,
+		proposedLockEntry: candidate.proposedLockEntry,
+	});
+}
+
+/** @internal Reject definitions not minted by lockWorkspace(). */
+export function assertWorkspaceDefinition(
+	value: unknown,
+): asserts value is WorkspaceDefinition {
+	if (
+		typeof value !== 'object' ||
+		value === null ||
+		!workspaceDefinitions.has(value)
+	) {
+		throw new Error('Workspace definition must be returned by lockWorkspace()');
+	}
+}
+
+/** Validate the committed lock and authorize this declared generation at runtime. */
+export function lockWorkspace<
+	TTables extends TableDefinitions,
+	TKv extends KvDefinitions,
+	TBlobs extends BlobPlaneContracts,
+>(
+	candidate: WorkspaceCandidate<TTables, TKv, TBlobs>,
+	lockValue: unknown,
+): WorkspaceDefinition<TTables, TKv, TBlobs> {
+	inspectWorkspaceCandidate(candidate);
+	const lock = parseApplicationGenerationLock(lockValue);
+	if (lock.appId !== candidate.appId) {
+		throw new Error(
+			`Application generation lock belongs to '${lock.appId}', not '${candidate.appId}'`,
+		);
+	}
+	const published = lock.generations.find(
+		(entry) => entry.dataGeneration === candidate.dataGeneration,
+	);
+	if (
+		published === undefined ||
+		canonicalJson(published) !== canonicalJson(candidate.proposedLockEntry)
+	) {
+		throw new Error(
+			`Application generation lock does not publish generation ${candidate.dataGeneration}`,
+		);
+	}
+	const definition = Object.freeze({
+		...candidate,
+		[workspaceDefinitionBrand]: true as const,
+	});
+	workspaceDefinitions.add(definition);
+	return definition;
 }
 
 function assertSchemaRecord(

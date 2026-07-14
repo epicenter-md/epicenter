@@ -28,7 +28,8 @@ import {
 	createApplicationDatabase,
 	ReplicaInvariantViolationError,
 } from './database.js';
-import { defineKv, defineTable, defineWorkspace } from './definition.js';
+import { defineKv, defineTable } from './definition.js';
+import { defineTestWorkspace as defineWorkspace } from './test-workspace.js';
 
 function createSqlite(database: Database): RecordSyncSqlite {
 	return {
@@ -67,7 +68,7 @@ function setup() {
 	// Declared KV rides along on the definition but is invisible to the
 	// record database: it belongs to the root-document preference plane.
 	const definition = defineWorkspace({
-		id: 'sqlite-database-test',
+		appId: 'sqlite-database-test',
 		name: 'SQLite database test',
 		tables: { notes },
 		kv: {
@@ -182,7 +183,7 @@ describe('typed rows at rest', () => {
 		const native = new Database(':memory:');
 		const workspace = createApplicationDatabase(
 			defineWorkspace({
-				id: 'byte-admission',
+				appId: 'byte-admission',
 				tables: {
 					texts: defineTable({
 						fields: {
@@ -221,7 +222,7 @@ describe('typed rows at rest', () => {
 		const native = new Database(':memory:');
 		const workspace = createApplicationDatabase(
 			defineWorkspace({
-				id: 'aggregate-admission',
+				appId: 'aggregate-admission',
 				tables: {
 					cells: defineTable({
 						fields: { id: field.string(), body: field.string() },
@@ -293,7 +294,7 @@ describe('typed rows at rest', () => {
 		const database = new Database(':memory:');
 		const workspace = createApplicationDatabase(
 			defineWorkspace({
-				id: 'id-only-test',
+				appId: 'id-only-test',
 				name: 'ID-only test',
 				tables: { markers: defineTable({ fields: { id: field.string() } }) },
 			}),
@@ -460,7 +461,7 @@ describe('transaction and invalidation', () => {
 			fields: { id: field.string(), title: field.string() },
 		});
 		const definition = defineWorkspace({
-			id: 'coordinator-test',
+			appId: 'coordinator-test',
 			name: 'Coordinator test',
 			tables: { notes },
 		});
@@ -521,7 +522,7 @@ describe('transaction and invalidation', () => {
 		const database = new Database(':memory:');
 		const sqlite = createSqlite(database);
 		const definition = defineWorkspace({
-			id: 'operations-test',
+			appId: 'operations-test',
 			name: 'Operations test',
 			tables: {
 				notes: defineTable({
@@ -947,7 +948,7 @@ describe('database identity', () => {
 		const database = new Database(':memory:');
 		const base = createSqlite(database);
 		const definition = defineWorkspace({
-			id: 'atomic-identity-test',
+			appId: 'atomic-identity-test',
 			name: 'Atomic identity test',
 			tables: { rows: defineTable({ fields: { id: field.string() } }) },
 		});
@@ -961,11 +962,10 @@ describe('database identity', () => {
 				return base.all(sql, parameters);
 			},
 		};
-		createApplicationDatabase(
-			definition,
-			sqlite,
-			{ kind: 'standalone', onObserverError() {} },
-		);
+		createApplicationDatabase(definition, sqlite, {
+			kind: 'standalone',
+			onObserverError() {},
+		});
 
 		expect(inspectionWasTransactional).toBe(true);
 		expect(
@@ -985,7 +985,7 @@ describe('database identity', () => {
 		});
 		const original = createApplicationDatabase(
 			defineWorkspace({
-				id: 'identity-test',
+				appId: 'identity-test',
 				name: 'Identity test',
 				tables: { notes },
 			}),
@@ -1010,14 +1010,14 @@ describe('database identity', () => {
 		expect(() =>
 			createApplicationDatabase(
 				defineWorkspace({
-					id: 'other-workspace',
+					appId: 'other-workspace',
 					name: 'Other workspace',
 					tables: { notes },
 				}),
 				sqlite,
 				{ kind: 'standalone', onObserverError() {} },
 			),
-		).toThrow("belongs to 'identity-test'");
+		).toThrow("belongs to 'identity-test-g1'");
 
 		const nullableColumnAdded = defineTable({
 			fields: {
@@ -1029,7 +1029,7 @@ describe('database identity', () => {
 		expect(() =>
 			createApplicationDatabase(
 				defineWorkspace({
-					id: 'identity-test',
+					appId: 'identity-test',
 					name: 'Identity test',
 					tables: { notes: nullableColumnAdded },
 				}),
@@ -1044,7 +1044,7 @@ describe('database identity', () => {
 		const database = new Database(':memory:');
 		const sqlite = createSqlite(database);
 		const definition = defineWorkspace({
-			id: 'kind-test',
+			appId: 'kind-test',
 			name: 'Kind test',
 			tables: { rows: defineTable({ fields: { id: field.string() } }) },
 		});

@@ -17,8 +17,9 @@ import type { RecordSyncSqlite, SqliteRow } from '@epicenter/record-sync';
 import { Type } from 'typebox';
 import { createWorkspaceClient } from './client.js';
 import { createApplicationDatabase } from './database.js';
-import { defineTable, defineWorkspace } from './definition.js';
+import { defineTable } from './definition.js';
 import { createWorkspaceService } from './service.js';
+import { defineTestWorkspace as defineWorkspace } from './test-workspace.js';
 
 function setup() {
 	const native = new Database(':memory:');
@@ -51,7 +52,7 @@ function setup() {
 		fields: { id: field.string(), name: field.string() },
 	});
 	const definition = defineWorkspace({
-		id: 'service-test',
+		appId: 'service-test',
 		name: 'Service test',
 		tables: { labels, notes },
 	});

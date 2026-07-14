@@ -6,7 +6,6 @@ const syncOrigin = new URL(self.location.href);
 syncOrigin.port = '5199';
 
 serveWorkspaceReplicaWorker(workspaceDefinition, {
-	storage: { kind: 'opfs', name: 'browser-replica-b' },
 	sync: createHttpReplicaSyncPort({ baseUrl: syncOrigin.origin, fetch }),
 	pollIntervalMs: 10,
 	onSyncError: reportError,

@@ -4,10 +4,10 @@
  * Verifies the terminal persisted-schema boundary before any database opens.
  * The boundary accepts only the closed field vocabulary, compiles value
  * checks, validates table options and references, derives the canonical
- * schema descriptor plus `recordsSchemaHash`, derives the stable `<id>.kv`
- * preference-document guid (ADR-0124). Declared KV is validated as a plain
- * record but contributes nothing to record schema identity. Definitions own
- * immutable snapshots of every mutable authoring record and schema.
+ * schema descriptor plus `recordsSchemaHash`, and derives generation-qualified
+ * identities for every declared durable plane. Declared KV is validated as a
+ * plain record but contributes nothing to record schema identity. Definitions
+ * own immutable snapshots of every mutable authoring record and schema.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -121,7 +121,11 @@ describe('defineTable', () => {
 		const fields = { id: field.string(), title };
 		const documents = { body: document.plainText };
 		const notes = defineTable({ fields, documents });
-		const workspace = defineWorkspace({ id: 'notes', tables: { notes } });
+		const workspace = defineWorkspace({
+			appId: 'notes',
+			dataGeneration: 1,
+			tables: { notes },
+		});
 		const descriptor = workspace.recordsDescriptor;
 		const hash = workspace.recordsSchemaHash;
 
@@ -155,7 +159,8 @@ describe('defineKv', () => {
 		const lastFolder = defineKv(nullable(field.string()), () => null);
 		expect(lastFolder.defaultValue()).toBeNull();
 		const workspace = defineWorkspace({
-			id: 'nullable-kv',
+			appId: 'nullable-kv',
+			dataGeneration: 1,
 			tables: { rows: defineTable({ fields: { id: field.string() } }) },
 			kv: { lastFolder },
 		});
@@ -175,23 +180,27 @@ describe('defineWorkspace', () => {
 			},
 		});
 		const workspace = defineWorkspace({
-			id: 'notes',
+			appId: 'notes',
+			dataGeneration: 1,
 			tables: { folders, notes },
 		});
 
 		expect(workspace.name).toBe('notes');
-		expect(workspace.kvDocumentGuid).toBe('notes.kv');
+		expect(workspace.workspaceId).toBe('notes-g1');
+		expect(workspace.kvDocumentGuid).toBe('notes-g1.kv');
 		expect(workspace.kv).toEqual({});
 		expect(
 			defineWorkspace({
-				id: 'notes',
+				appId: 'notes',
+				dataGeneration: 1,
 				name: 'Notes',
 				tables: { notes: folders },
 			}).name,
 		).toBe('Notes');
 		expect(() =>
 			defineWorkspace({
-				id: 'broken',
+				appId: 'broken',
+				dataGeneration: 1,
 				tables: {
 					notes: defineTable({
 						fields: {
@@ -206,7 +215,8 @@ describe('defineWorkspace', () => {
 
 	test('recordsSchemaHash is a labelled digest of the canonical descriptor bytes', () => {
 		const workspace = defineWorkspace({
-			id: 'notes',
+			appId: 'notes',
+			dataGeneration: 1,
 			tables: {
 				notes: defineTable({
 					fields: { id: field.string(), title: field.string() },
@@ -223,7 +233,8 @@ describe('defineWorkspace', () => {
 	test('string maxBytes participates in records identity and cannot exceed sync admission', () => {
 		const hash = (maxBytes: number) =>
 			defineWorkspace({
-				id: 'notes',
+				appId: 'notes',
+				dataGeneration: 1,
 				tables: {
 					notes: defineTable({
 						fields: {
@@ -242,7 +253,8 @@ describe('defineWorkspace', () => {
 
 	test('recordsSchemaHash is stable across declaration order, display name, kv, and documents', () => {
 		const first = defineWorkspace({
-			id: 'notes',
+			appId: 'notes',
+			dataGeneration: 1,
 			name: 'First display name',
 			tables: {
 				notes: defineTable({
@@ -269,7 +281,8 @@ describe('defineWorkspace', () => {
 			},
 		});
 		const reordered = defineWorkspace({
-			id: 'notes',
+			appId: 'notes',
+			dataGeneration: 1,
 			name: 'Different display name',
 			tables: {
 				folders: defineTable({
@@ -297,7 +310,8 @@ describe('defineWorkspace', () => {
 	test('annotation edits are free: title, description, and default do not change recordsSchemaHash', () => {
 		function hashWithTitle(title: string | undefined) {
 			return defineWorkspace({
-				id: 'notes',
+				appId: 'notes',
+				dataGeneration: 1,
 				tables: {
 					notes: defineTable({
 						fields: {
@@ -318,7 +332,8 @@ describe('defineWorkspace', () => {
 	test('field.json root annotations are stripped; nested annotations stay identity', () => {
 		function hashWithPayload(payload: TObject) {
 			return defineWorkspace({
-				id: 'notes',
+				appId: 'notes',
+				dataGeneration: 1,
 				tables: {
 					notes: defineTable({
 						fields: {
@@ -331,7 +346,7 @@ describe('defineWorkspace', () => {
 		}
 
 		// The payload spreads onto the column root, so a root default or title
-		// is a stripped editor hint: no accepted value changes, no new epoch.
+		// is a stripped editor hint: no accepted value changes, no new generation.
 		const baseline = hashWithPayload(Type.Object({ level: Type.Number() }));
 		expect(
 			hashWithPayload(
@@ -351,19 +366,20 @@ describe('defineWorkspace', () => {
 		);
 	});
 
-	test('recordsSchemaHash changes with record fields, not documents or workspace id', () => {
+	test('recordsSchemaHash changes with record fields, not documents or app id', () => {
 		type IdentityOptions = {
-			workspaceId?: string;
+			appId?: string;
 			title?: ReturnType<typeof field.string>;
 			doc?: typeof document.plainText | typeof document.xmlFragment;
 		};
 		function identity({
-			workspaceId = 'notes',
+			appId = 'notes',
 			title = field.string(),
 			doc = document.plainText,
 		}: IdentityOptions = {}) {
 			return defineWorkspace({
-				id: workspaceId,
+				appId,
+				dataGeneration: 1,
 				tables: {
 					notes: defineTable({
 						fields: { id: field.string(), title },
@@ -380,13 +396,14 @@ describe('defineWorkspace', () => {
 		expect(identity({ doc: document.xmlFragment })).toBe(baseline);
 		// Family routing owns workspace binding; two workspaces with one logical
 		// schema share one hash by design.
-		expect(identity({ workspaceId: 'other' })).toBe(baseline);
+		expect(identity({ appId: 'other' })).toBe(baseline);
 	});
 
 	test('KV is not record schema identity: definitions differing only in kv share one hash', () => {
 		function withKv(kv: Record<string, ReturnType<typeof defineKv>>) {
 			return defineWorkspace({
-				id: 'notes',
+				appId: 'notes',
+				dataGeneration: 1,
 				tables: {
 					notes: defineTable({
 						fields: { id: field.string(), title: field.string() },
@@ -414,13 +431,15 @@ describe('defineWorkspace', () => {
 		});
 		expect(() =>
 			defineWorkspace({
-				id: 'Unsafe',
+				appId: 'Unsafe',
+				dataGeneration: 1,
 				tables: { notes: documented },
 			}),
-		).toThrow('Invalid workspace id');
+		).toThrow('Invalid application id');
 		expect(() =>
 			defineWorkspace({
-				id: 'safe',
+				appId: 'safe',
+				dataGeneration: 1,
 				tables: { 'bad.table': documented },
 			}),
 		).toThrow('Invalid child document table name');
@@ -430,29 +449,46 @@ describe('defineWorkspace', () => {
 		const rows = defineTable({ fields: { id: field.string() } });
 		expect(() =>
 			defineWorkspace({
-				id: 'rows',
+				appId: 'rows',
+				dataGeneration: 1,
 				tables: { constructor: rows },
 			}),
 		).toThrow("workspace table 'constructor' collides with Object.prototype");
 		expect(() =>
 			defineWorkspace({
-				id: 'rows',
+				appId: 'rows',
+				dataGeneration: 1,
 				tables: { rows },
 				kv: { toString: defineKv(field.string(), () => '') },
 			}),
 		).toThrow("workspace KV key 'toString' collides with Object.prototype");
 		expect(() =>
 			defineWorkspace({
-				id: 'rows',
+				appId: 'rows',
+				dataGeneration: 1,
 				tables: { rows, __proto__: rows },
 			}),
 		).toThrow('workspace tables must be a plain record');
 		expect(() =>
 			defineWorkspace({
-				id: 'rows',
+				appId: 'rows',
+				dataGeneration: 1,
 				tables: { rows, ['__proto__']: rows },
 			}),
 		).toThrow("workspace table '__proto__' collides with Object.prototype");
+	});
+
+	test('rejects an empty KV key before proposing an unpublishable lock entry', () => {
+		expect(() =>
+			defineWorkspace({
+				appId: 'empty-kv-key',
+				dataGeneration: 1,
+				tables: {
+					rows: defineTable({ fields: { id: field.string() } }),
+				},
+				kv: { '': defineKv(field.string(), () => '') },
+			}),
+		).toThrow('Workspace KV key must not be empty');
 	});
 
 	test('owns immutable table and KV declaration maps', () => {
@@ -460,7 +496,12 @@ describe('defineWorkspace', () => {
 		const theme = defineKv(field.string(), () => 'light');
 		const tables: Record<string, typeof notes> = { notes };
 		const kv: Record<string, typeof theme> = { theme };
-		const workspace = defineWorkspace({ id: 'notes', tables, kv });
+		const workspace = defineWorkspace({
+			appId: 'notes',
+			dataGeneration: 1,
+			tables,
+			kv,
+		});
 		const descriptor = workspace.recordsDescriptor;
 		const hash = workspace.recordsSchemaHash;
 
@@ -484,13 +525,15 @@ describe('defineWorkspace', () => {
 
 		expect(() =>
 			defineWorkspace({
-				id: 'forged-table',
+				appId: 'forged-table',
+				dataGeneration: 1,
 				tables: { notes: { ...notes } },
 			}),
 		).toThrow("Workspace table 'notes' must use defineTable()");
 		expect(() =>
 			defineWorkspace({
-				id: 'forged-kv',
+				appId: 'forged-kv',
+				dataGeneration: 1,
 				tables: { notes },
 				kv: { theme: { ...theme } },
 			}),

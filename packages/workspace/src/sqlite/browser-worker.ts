@@ -11,7 +11,11 @@ import {
 } from './browser-transport.js';
 import type { WorkspaceCommitDelta } from './client.js';
 import { createApplicationDatabase } from './database.js';
-import type { TableDefinitions, WorkspaceDefinition } from './definition.js';
+import {
+	assertWorkspaceDefinition,
+	type TableDefinitions,
+	type WorkspaceDefinition,
+} from './definition.js';
 import { createInvalidationRefreshQueue } from './invalidation-queue.js';
 import {
 	createReplicaRuntime,
@@ -26,13 +30,11 @@ import {
 } from './service-protocol.js';
 
 export type ServeStandaloneWorkspaceWorkerOptions = {
-	storage: { kind: 'opfs'; name: string };
 	/** Receives worker-side observer, broadcast, and cleanup failures. */
 	onError(error: unknown): void;
 };
 
 export type ServeWorkspaceReplicaWorkerOptions = {
-	storage: { kind: 'opfs'; name: string };
 	sync: ReplicaSyncPort;
 	/** Receives retryable or paused synchronization failures. */
 	onSyncError(error: unknown): void;
@@ -44,8 +46,6 @@ export type ServeWorkspaceReplicaWorkerOptions = {
 type ServeWorkspaceWorkerOptions =
 	| ({ workspaceKind: 'standalone' } & ServeStandaloneWorkspaceWorkerOptions)
 	| ({ workspaceKind: 'replica' } & ServeWorkspaceReplicaWorkerOptions);
-
-const STORAGE_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 function report(onError: (error: unknown) => void, error: unknown): void {
 	try {
@@ -70,12 +70,8 @@ async function openOpfsWorkspaceService<TTables extends TableDefinitions>(
 	definition: WorkspaceDefinition<TTables>,
 	options: ServeWorkspaceWorkerOptions,
 ): Promise<WorkerWorkspaceService> {
-	const { storage, onError, workspaceKind } = options;
-	if (!STORAGE_NAME.test(storage.name)) {
-		throw new Error(
-			`Invalid OPFS workspace name '${storage.name}'; expected lowercase letters, digits, and internal hyphens`,
-		);
-	}
+	assertWorkspaceDefinition(definition);
+	const { onError, workspaceKind } = options;
 	if (!globalThis.crossOriginIsolated || !globalThis.SharedArrayBuffer) {
 		throw new Error(
 			'OPFS SQLite requires cross-origin isolation with COOP and COEP headers',
@@ -142,12 +138,12 @@ async function openOpfsWorkspaceService<TTables extends TableDefinitions>(
 
 	try {
 		native = new sqlite3.oo1.DB(
-			`/${storage.name}.sqlite3`,
+			`/${definition.workspaceId}.sqlite3`,
 			'c',
 			'opfs',
 		) as unknown as BrowserSqliteDatabase & { close(): void };
 		channel = new BroadcastChannel(
-			`epicenter.sqlite.${workspaceKind}/${storage.name}`,
+			`epicenter.sqlite.${workspaceKind}/${definition.workspaceId}`,
 		);
 		const senderId = crypto.randomUUID();
 		native.exec({ sql: 'PRAGMA busy_timeout = 5000' });
@@ -241,6 +237,7 @@ export function serveStandaloneWorkspaceWorker<
 	options: ServeStandaloneWorkspaceWorkerOptions,
 	scope: WorkspaceWorkerScope = self as unknown as WorkspaceWorkerScope,
 ): void {
+	assertWorkspaceDefinition(definition);
 	exposeWorkspaceService(
 		scope,
 		openOpfsWorkspaceService(definition, {
@@ -256,6 +253,7 @@ export function serveWorkspaceReplicaWorker<TTables extends TableDefinitions>(
 	options: ServeWorkspaceReplicaWorkerOptions,
 	scope: WorkspaceWorkerScope = self as unknown as WorkspaceWorkerScope,
 ): void {
+	assertWorkspaceDefinition(definition);
 	exposeWorkspaceService(
 		scope,
 		openOpfsWorkspaceService(definition, {

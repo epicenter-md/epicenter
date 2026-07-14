@@ -2,6 +2,5 @@ import { serveStandaloneWorkspaceWorker } from '@epicenter/workspace/sqlite/brow
 import { workspaceDefinition } from './workspace.js';
 
 serveStandaloneWorkspaceWorker(workspaceDefinition, {
-	storage: { kind: 'opfs', name: 'browser-sqlite-smoke' },
 	onError() {},
 });

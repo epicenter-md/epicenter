@@ -5,22 +5,24 @@ import type {
 	WorkspaceServiceRequest,
 	WorkspaceServiceResponse,
 } from './client.js';
-import { defineKv, defineTable, defineWorkspace } from './definition.js';
+import { defineKv, defineTable } from './definition.js';
 import { document } from './document-format.js';
-import {
-	type DocumentReference,
-	historicalDocument,
-} from './document-reference.js';
 import {
 	type OwnedWorkspaceServicePort,
 	openWorkspaceFromService,
 } from './open.js';
+import { defineTestWorkspace as defineWorkspace } from './test-workspace.js';
 
 function setup() {
 	const definition = defineWorkspace({
-		id: 'open-test',
+		appId: 'open-test',
 		name: 'Open test',
-		tables: { notes: defineTable({ fields: { id: field.string() } }) },
+		tables: {
+			notes: defineTable({
+				fields: { id: field.string() },
+				documents: { body: document.plainText },
+			}),
+		},
 	});
 	let disposed = 0;
 	const requests: WorkspaceServiceRequest[] = [];
@@ -30,7 +32,7 @@ function setup() {
 			return {
 				kind: 'workspace',
 				workspaceKind: 'standalone',
-				workspaceId: definition.id,
+				workspaceId: definition.workspaceId,
 				recordsDescriptor: definition.recordsDescriptor,
 				recordsSchemaHash: definition.recordsSchemaHash,
 			};
@@ -70,7 +72,7 @@ test('shared service opener preserves the replica lifecycle kind', async () => {
 					kind: 'recoveryCheckpoint',
 					checkpoint: {
 						format: 'epicenter.records-recovery/1',
-						workspaceId: definition.id,
+						workspaceId: definition.workspaceId,
 						recordsEpoch: 'epoch-1',
 						recordsDescriptor: definition.recordsDescriptor,
 						recordsSchemaHash: definition.recordsSchemaHash,
@@ -83,7 +85,7 @@ test('shared service opener preserves the replica lifecycle kind', async () => {
 			return {
 				kind: 'workspace',
 				workspaceKind: 'replica',
-				workspaceId: definition.id,
+				workspaceId: definition.workspaceId,
 				recordsDescriptor: definition.recordsDescriptor,
 				recordsSchemaHash: definition.recordsSchemaHash,
 			};
@@ -97,7 +99,7 @@ test('shared service opener preserves the replica lifecycle kind', async () => {
 	expect(replica.kind).toBe('replica');
 	expect(await replica.readRecoveryCheckpoint()).toMatchObject({
 		format: 'epicenter.records-recovery/1',
-		workspaceId: definition.id,
+		workspaceId: definition.workspaceId,
 		recordsEpoch: 'epoch-1',
 	});
 	await replica[Symbol.asyncDispose]();
@@ -111,7 +113,7 @@ test('standalone workspace disposes a mismatched service and refuses to open', a
 			return {
 				kind: 'workspace',
 				workspaceKind: 'standalone',
-				workspaceId: definition.id,
+				workspaceId: definition.workspaceId,
 				recordsDescriptor: definition.recordsDescriptor,
 				recordsSchemaHash: 'different',
 			};
@@ -206,7 +208,7 @@ test('standalone workspace settles admitted work while rejecting new work during
 
 function setupWithKv() {
 	const definition = defineWorkspace({
-		id: 'open-kv-test',
+		appId: 'open-kv-test',
 		name: 'Open KV test',
 		tables: { notes: defineTable({ fields: { id: field.string() } }) },
 		kv: {
@@ -218,7 +220,7 @@ function setupWithKv() {
 			return {
 				kind: 'workspace',
 				workspaceKind: 'standalone',
-				workspaceId: definition.id,
+				workspaceId: definition.workspaceId,
 				recordsDescriptor: definition.recordsDescriptor,
 				recordsSchemaHash: definition.recordsSchemaHash,
 			};
@@ -244,7 +246,7 @@ test('table-only workspaces expose no kv handle', async () => {
 
 test('composed kv is a synchronous preference plane over the caller root document', async () => {
 	const { definition, service } = setupWithKv();
-	const doc = new Y.Doc();
+	const doc = new Y.Doc({ guid: definition.kvDocumentGuid });
 	const workspace = await openWorkspaceFromService(definition, {
 		service,
 		expectedKind: 'standalone',
@@ -279,7 +281,7 @@ test('composed kv is a synchronous preference plane over the caller root documen
 
 test('kv hydration is awaited before the workspace opens', async () => {
 	const { definition, service } = setupWithKv();
-	const doc = new Y.Doc();
+	const doc = new Y.Doc({ guid: definition.kvDocumentGuid });
 	let hydrate!: () => void;
 	const whenHydrated = new Promise<void>((resolve) => {
 		hydrate = resolve;
@@ -320,7 +322,7 @@ test('a rejected kv hydration disposes the service and refuses to open', async (
 			disposed++;
 		},
 	};
-	const doc = new Y.Doc();
+	const doc = new Y.Doc({ guid: definition.kvDocumentGuid });
 
 	await expect(
 		openWorkspaceFromService(definition, {
@@ -333,9 +335,31 @@ test('a rejected kv hydration disposes the service and refuses to open', async (
 	doc.destroy();
 });
 
-test('document runtime opens retained historical and current format endpoints explicitly', async () => {
+test('a foreign kv identity disposes the service before hydration', async () => {
+	const { definition, service } = setupWithKv();
+	let disposed = 0;
+	const countingService: OwnedWorkspaceServicePort = {
+		...service,
+		async [Symbol.asyncDispose]() {
+			disposed++;
+		},
+	};
+	const doc = new Y.Doc({ guid: 'another-app-g1.kv' });
+
+	await expect(
+		openWorkspaceFromService(definition, {
+			service: countingService,
+			expectedKind: 'standalone',
+			kv: { doc },
+		}),
+	).rejects.toThrow("KV document 'another-app-g1.kv' does not match");
+	expect(disposed).toBe(1);
+	doc.destroy();
+});
+
+test('document runtime opens current format-addressed endpoints', async () => {
 	const definition = defineWorkspace({
-		id: 'document-conversion-test',
+		appId: 'document-conversion-test',
 		tables: {
 			recordings: defineTable({
 				fields: { id: field.string(), transcript: field.string() },
@@ -348,7 +372,7 @@ test('document runtime opens retained historical and current format endpoints ex
 			return {
 				kind: 'workspace',
 				workspaceKind: 'standalone',
-				workspaceId: definition.id,
+				workspaceId: definition.workspaceId,
 				recordsDescriptor: definition.recordsDescriptor,
 				recordsSchemaHash: definition.recordsSchemaHash,
 			};
@@ -376,34 +400,22 @@ test('document runtime opens retained historical and current format endpoints ex
 			},
 		},
 	});
-	const previousTranscript = historicalDocument({
-		workspaceId: definition.id,
-		table: 'recordings',
-		document: 'transcript',
-		format: document.plainText,
-	});
 	const rowId = 'Imported/Recording.日本語';
-	const source = workspace.documents.open(previousTranscript, rowId);
 	const target = workspace.tables.recordings.docs.transcript.open(rowId);
-	await Promise.all([source.whenReady, target.whenReady]);
+	await target.whenReady;
 
-	source.content.write('retained transcript');
-	target.content.write(source.content.read());
+	target.content.write('current transcript');
 
-	expect(target.content.read()).toBe('retained transcript');
-	expect(source.guid).not.toBe(target.guid);
-	expect(source.guid.split('.')).toHaveLength(5);
+	expect(target.content.read()).toBe('current transcript');
 	expect(target.guid.split('.')).toHaveLength(5);
 
-	source[Symbol.dispose]();
-	source[Symbol.dispose]();
 	target[Symbol.dispose]();
-	expect(disposed).toEqual([source.guid, target.guid]);
+	expect(disposed).toEqual([target.guid]);
 	await workspace[Symbol.asyncDispose]();
 	expect(() => workspace.tables.recordings.docs.transcript.open(rowId)).toThrow(
 		'Workspace is disposed',
 	);
-	expect(disposed).toEqual([source.guid, target.guid]);
+	expect(disposed).toEqual([target.guid]);
 });
 
 test('a document readiness failure disposes its runtime session', async () => {
@@ -424,19 +436,13 @@ test('a document readiness failure disposes its runtime session', async () => {
 			},
 		},
 	});
-	const reference = historicalDocument({
-		workspaceId: definition.id,
-		table: 'notes',
-		document: 'body',
-		format: document.plainText,
-	});
-	const opened = workspace.documents.open(reference, 'note-1');
+	const opened = workspace.tables.notes.docs.body.open('note-1');
 
 	await expect(opened.whenReady).rejects.toThrow('document hydration failed');
 	expect(disposed).toBe(1);
 	opened[Symbol.dispose]();
 	expect(disposed).toBe(1);
-	const manuallyDisposed = workspace.documents.open(reference, 'note-2');
+	const manuallyDisposed = workspace.tables.notes.docs.body.open('note-2');
 	manuallyDisposed[Symbol.dispose]();
 	await expect(manuallyDisposed.whenReady).rejects.toThrow(
 		'document hydration failed',
@@ -445,7 +451,7 @@ test('a document readiness failure disposes its runtime session', async () => {
 	await workspace[Symbol.asyncDispose]();
 });
 
-test('unknown references and wrong runtime rooms fail before exposing a handle', async () => {
+test('wrong runtime rooms fail before exposing a handle', async () => {
 	const { definition, service } = setup();
 	let runtimeOpens = 0;
 	let disposed = 0;
@@ -464,19 +470,7 @@ test('unknown references and wrong runtime rooms fail before exposing a handle',
 			},
 		},
 	});
-	const forged = {} as DocumentReference<typeof document.plainText>;
-	expect(() => workspace.documents.open(forged, 'note-1')).toThrow(
-		'Unknown document reference',
-	);
-	expect(runtimeOpens).toBe(0);
-
-	const reference = historicalDocument({
-		workspaceId: definition.id,
-		table: 'notes',
-		document: 'body',
-		format: document.plainText,
-	});
-	expect(() => workspace.documents.open(reference, 'note-1')).toThrow(
+	expect(() => workspace.tables.notes.docs.body.open('note-1')).toThrow(
 		'for requested room',
 	);
 	expect(runtimeOpens).toBe(1);
@@ -500,16 +494,9 @@ test('document open preserves primary and session-cleanup failures', async () =>
 			},
 		},
 	});
-	const reference = historicalDocument({
-		workspaceId: definition.id,
-		table: 'notes',
-		document: 'body',
-		format: document.plainText,
-	});
-
 	let failure: unknown;
 	try {
-		workspace.documents.open(reference, 'note-1');
+		workspace.tables.notes.docs.body.open('note-1');
 	} catch (cause) {
 		failure = cause;
 	}
@@ -521,33 +508,5 @@ test('document open preserves primary and session-cleanup failures', async () =>
 		expect.stringContaining('for requested room'),
 		'session cleanup failed',
 	]);
-	await workspace[Symbol.asyncDispose]();
-});
-
-test('historical document references cannot cross workspace families', async () => {
-	const { definition, service } = setup();
-	let runtimeOpens = 0;
-	const workspace = await openWorkspaceFromService(definition, {
-		service,
-		expectedKind: 'standalone',
-		documents: {
-			open(guid) {
-				runtimeOpens++;
-				const doc = new Y.Doc({ guid });
-				return { doc, [Symbol.dispose]: () => doc.destroy() };
-			},
-		},
-	});
-	const foreign = historicalDocument({
-		workspaceId: 'another-workspace',
-		table: 'notes',
-		document: 'body',
-		format: document.plainText,
-	});
-
-	expect(() => workspace.documents.open(foreign, 'note-1')).toThrow(
-		"belongs to workspace 'another-workspace'",
-	);
-	expect(runtimeOpens).toBe(0);
 	await workspace[Symbol.asyncDispose]();
 });

@@ -26,6 +26,7 @@ export {
 	ReplicaInvariantViolationError,
 } from './database.js';
 export {
+	type BlobPlaneContracts,
 	type CompiledColumn,
 	defineKv,
 	defineTable,
@@ -33,16 +34,17 @@ export {
 	type Fields,
 	type KvDefinition,
 	type KvDefinitions,
+	lockWorkspace,
 	type RowFor,
 	type TableDefinition,
 	type TableDefinitions,
+	type WorkspaceCandidate,
 	type WorkspaceDefinition,
 } from './definition.js';
 export type {
 	OpenedDocument,
 	WorkspaceDocumentRuntime,
 	WorkspaceDocumentSession,
-	WorkspaceDocuments,
 } from './document-client.js';
 export {
 	type DocumentFormat,
@@ -50,10 +52,11 @@ export {
 	document,
 } from './document-format.js';
 export {
-	type DocumentReference,
-	type HistoricalDocumentDefinition,
-	historicalDocument,
-} from './document-reference.js';
+	APPLICATION_GENERATION_LOCK_FORMAT,
+	type ApplicationGenerationLock,
+	type ApplicationGenerationLockEntry,
+	parseApplicationGenerationLock,
+} from './generation.js';
 export type {
 	OpenedWorkspace,
 	StandaloneWorkspace,
@@ -61,15 +64,15 @@ export type {
 	WorkspaceReplica,
 } from './open.js';
 export {
-	ReplicaAdmissionConflictError,
-	ReplicaRecordsEpochMismatchError,
-	type ReplicaSyncPort,
-} from './replica.js';
-export {
 	RECORDS_RECOVERY_CHECKPOINT_FORMAT,
 	type RecordsRecoveryCheckpoint,
 	RecordsRecoveryCheckpointSchema,
 } from './recovery-checkpoint.js';
+export {
+	ReplicaAdmissionConflictError,
+	ReplicaRecordsEpochMismatchError,
+	type ReplicaSyncPort,
+} from './replica.js';
 export {
 	type CreateHttpReplicaSyncPortOptions,
 	createHttpReplicaSyncPort,

@@ -6,8 +6,7 @@ import {
 } from '@epicenter/workspace/sqlite/browser';
 import * as Y from 'yjs';
 import MismatchWorker from './mismatch.worker?worker';
-import ReplicaAWorker from './replica-a.worker?worker';
-import ReplicaBWorker from './replica-b.worker?worker';
+import ReplicaWorker from './replica.worker?worker';
 import { workspaceDefinition } from './workspace.js';
 import WorkspaceWorker from './workspace.worker?worker';
 
@@ -16,14 +15,16 @@ type CreateNote = Omit<Note, 'id'>;
 type Theme = 'light' | 'dark';
 
 // The preference plane lives on the eager root Yjs document, composed on the
-// main thread next to the SQLite worker client. A bare Y.Doc is enough for
-// this demo; persistence is environment-injected and out of scope here.
-const preferencesDoc = new Y.Doc();
+// main thread next to the SQLite worker client. The generation lock owns its
+// guid; persistence is environment-injected and out of scope here.
+const preferencesDoc = new Y.Doc({ guid: workspaceDefinition.kvDocumentGuid });
 
-let workspace: StandaloneWorkspace<
-	typeof workspaceDefinition.tables,
-	typeof workspaceDefinition.kv
->;
+let workspace:
+	| StandaloneWorkspace<
+			typeof workspaceDefinition.tables,
+			typeof workspaceDefinition.kv
+	  >
+	| undefined;
 let stopObserving: (() => void) | undefined;
 let replica: WorkspaceReplica<typeof workspaceDefinition.tables> | null = null;
 const observedIds: string[] = [];
@@ -45,38 +46,43 @@ async function open() {
 async function dispose() {
 	stopObserving?.();
 	stopObserving = undefined;
-	await workspace[Symbol.asyncDispose]();
+	await workspace?.[Symbol.asyncDispose]();
+	workspace = undefined;
 }
 
-await open();
+function getWorkspace() {
+	if (!workspace) throw new Error('Standalone workspace is not open');
+	return workspace;
+}
 
-const replicaName = new URLSearchParams(location.search).get('replica');
-if (replicaName === 'a' || replicaName === 'b') {
+const isReplica = new URLSearchParams(location.search).has('replica');
+if (isReplica) {
 	replica = await openWorkspaceReplica(workspaceDefinition, {
-		worker: () =>
-			replicaName === 'a' ? new ReplicaAWorker() : new ReplicaBWorker(),
+		worker: () => new ReplicaWorker(),
 		onObserverError(error) {
 			throw error;
 		},
 	});
+} else {
+	await open();
 }
 
 window.workspaceSmoke = {
 	create(note: CreateNote) {
-		return workspace.tables.notes.create(note);
+		return getWorkspace().tables.notes.create(note);
 	},
 	get(id: string) {
-		return workspace.tables.notes.get(id);
+		return getWorkspace().tables.notes.get(id);
 	},
 	list() {
-		return workspace.tables.notes.list({ orderBy: 'id' });
+		return getWorkspace().tables.notes.list({ orderBy: 'id' });
 	},
 	// The kv handle is synchronous: no worker round trip, no promises.
 	theme() {
-		return workspace.kv.get('theme');
+		return getWorkspace().kv.get('theme');
 	},
 	setTheme(value: Theme) {
-		workspace.kv.set('theme', value);
+		getWorkspace().kv.set('theme', value);
 	},
 	observedIds,
 	dispose,
@@ -111,6 +117,8 @@ window.workspaceSmoke = {
 
 document.body.dataset.ready = 'true';
 document.body.dataset.replicaReady = String(replica !== null);
+document.body.dataset.workspaceId = workspaceDefinition.workspaceId;
+document.body.dataset.kvDocumentGuid = preferencesDoc.guid;
 const status = document.querySelector('#status');
 if (status) status.textContent = 'OPFS workspace ready';
 

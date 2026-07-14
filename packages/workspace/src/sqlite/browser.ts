@@ -2,15 +2,16 @@ import {
 	createWorkspaceWorkerPort,
 	type WorkspaceWorkerPortOptions,
 } from './browser-transport.js';
-import type {
-	KvDefinitions,
-	TableDefinitions,
-	WorkspaceDefinition,
+import {
+	assertWorkspaceDefinition,
+	type KvDefinitions,
+	type TableDefinitions,
+	type WorkspaceDefinition,
 } from './definition.js';
 import type {
+	WorkspaceDocumentOpenerFor,
 	WorkspaceDocumentRuntime,
 	WorkspaceDocumentRuntimeOption,
-	WorkspaceDocumentsFor,
 } from './document-client.js';
 import {
 	type OpenedWorkspace,
@@ -50,9 +51,10 @@ export async function openStandaloneWorkspace<
 		TTables,
 		WorkspaceKvFor<TKvMount, TKv>,
 		'standalone',
-		WorkspaceDocumentsFor<TDocumentRuntime>
+		WorkspaceDocumentOpenerFor<TDocumentRuntime>
 	>
 > {
+	assertWorkspaceDefinition(definition);
 	const { worker: createWorker } = options;
 	const worker = createWorker();
 	const service = createWorkspaceWorkerPort(worker, {
@@ -97,9 +99,10 @@ export async function openWorkspaceReplica<
 		TTables,
 		WorkspaceKvFor<TKvMount, TKv>,
 		'replica',
-		WorkspaceDocumentsFor<TDocumentRuntime>
+		WorkspaceDocumentOpenerFor<TDocumentRuntime>
 	>
 > {
+	assertWorkspaceDefinition(definition);
 	const { worker: createWorker } = options;
 	const worker = createWorker();
 	const service = createWorkspaceWorkerPort(worker, {

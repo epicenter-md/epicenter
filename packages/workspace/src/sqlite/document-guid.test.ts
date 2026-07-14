@@ -8,7 +8,36 @@
 import { expect, test } from 'bun:test';
 import { sha256Hex } from '../shared/sha256.js';
 import { document, inspectDocumentFormat } from './document-format.js';
-import { formatDocumentGuid } from './document-guid.js';
+import {
+	createDocumentGuidIdentity,
+	formatDocumentGuid,
+} from './document-guid.js';
+
+test('the lock token contains the exact runtime hash domain and guid grammar', () => {
+	const identity = createDocumentGuidIdentity({
+		workspaceId: 'notes-g2',
+		table: 'entries',
+		document: 'body',
+		format: document.plainText,
+	});
+	const rowId = 'Imported/Row.日本語';
+	const rowDigest = sha256Hex(
+		`epicenter.document-row/1\0${JSON.stringify(rowId)}`,
+	);
+	const formatDigest = inspectDocumentFormat(
+		document.plainText,
+	).formatHash.slice('sha256:'.length);
+	const contract =
+		`epicenter.sqlite-child-document-guid/1;row-id=epicenter.document-row/1;guid=` +
+		`notes-g2.entries.<row-id-sha256>.body.${formatDigest}`;
+
+	expect(identity.lockToken).toBe(contract);
+	expect(String(identity.guid(rowId))).toBe(
+		contract
+			.slice(contract.indexOf('guid=') + 'guid='.length)
+			.replace('<row-id-sha256>', rowDigest),
+	);
+});
 
 test('every record id string derives one fixed safe address segment', () => {
 	const rowId = 'Imported/Row.日本語';

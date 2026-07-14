@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -12,13 +12,76 @@ import {
 } from '@epicenter/record-sync';
 import { createBunSqliteAdapter } from '@epicenter/record-sync/bun';
 import { openStandaloneWorkspace, openWorkspaceReplica } from './bun.js';
-import { defineTable, defineWorkspace } from './definition.js';
+import {
+	defineTable,
+	defineWorkspace as defineWorkspaceCandidate,
+	type WorkspaceDefinition,
+} from './definition.js';
+import { defineTestWorkspace as defineWorkspace } from './test-workspace.js';
+
+test('Bun refuses unlocked definitions before creating storage', async () => {
+	const directory = mkdtempSync(join(tmpdir(), 'epicenter-sqlite-forged-'));
+	const path = join(directory, 'forged.db');
+	const candidate = defineWorkspaceCandidate({
+		appId: 'bun-unlocked-test',
+		dataGeneration: 1,
+		tables: {
+			notes: defineTable({ fields: { id: field.string() } }),
+		},
+	});
+
+	try {
+		await expect(
+			openStandaloneWorkspace(
+				candidate as unknown as WorkspaceDefinition<typeof candidate.tables>,
+				{
+					storage: { kind: 'bun', path },
+					onObserverError() {},
+				},
+			),
+		).rejects.toThrow('must be returned by lockWorkspace()');
+		expect(existsSync(path)).toBe(false);
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
+test('Bun reopens a valid initialized database with no user rows', async () => {
+	const directory = mkdtempSync(join(tmpdir(), 'epicenter-sqlite-empty-'));
+	const path = join(directory, 'workspace.db');
+	const definition = defineWorkspace({
+		appId: 'bun-empty-test',
+		tables: {
+			notes: defineTable({
+				fields: { id: field.string(), title: field.string() },
+			}),
+		},
+	});
+
+	try {
+		const first = await openStandaloneWorkspace(definition, {
+			storage: { kind: 'bun', path },
+			onObserverError() {},
+		});
+		expect(await first.tables.notes.count()).toBe(0);
+		await first[Symbol.asyncDispose]();
+
+		const reopened = await openStandaloneWorkspace(definition, {
+			storage: { kind: 'bun', path },
+			onObserverError() {},
+		});
+		expect(await reopened.tables.notes.count()).toBe(0);
+		await reopened[Symbol.asyncDispose]();
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
 
 test('Bun standalone workspace persists typed rows across service lifecycles', async () => {
 	const directory = mkdtempSync(join(tmpdir(), 'epicenter-sqlite-'));
 	const path = join(directory, 'workspace.db');
 	const definition = defineWorkspace({
-		id: 'bun-local-test',
+		appId: 'bun-local-test',
 		name: 'Bun local test',
 		tables: {
 			notes: defineTable({
@@ -43,7 +106,7 @@ test('Bun standalone workspace persists typed rows across service lifecycles', a
 		await first[Symbol.asyncDispose]();
 
 		const mismatched = defineWorkspace({
-			id: 'bun-local-test',
+			appId: 'bun-local-test',
 			name: 'Bun local test',
 			tables: {
 				notes: defineTable({
@@ -79,7 +142,7 @@ test('Bun standalone workspace persists typed rows across service lifecycles', a
 
 test('Bun workspace replicas synchronize automatically through one authority', async () => {
 	const definition = defineWorkspace({
-		id: 'bun-replica-test',
+		appId: 'bun-replica-test',
 		name: 'Bun replica test',
 		tables: {
 			notes: defineTable({
