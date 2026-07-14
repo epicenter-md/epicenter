@@ -1,7 +1,7 @@
 # Immutable application data generations
 
 **Date**: 2026-07-13
-**Status**: Draft
+**Status**: In Progress
 **Owner**: Epicenter workspace and app shell
 **Branch**: `codex/records-epoch-clean-break`
 
@@ -186,17 +186,17 @@ The first implementation adds none of the following:
 
 ### Wave 1: Capture immutable generation identity
 
-- [ ] Audit every adopting app's durable planes before changing construction
+- [x] Audit every adopting app's durable planes before changing construction
   APIs.
-- [ ] Choose the smallest committed append-only lock representation and create
+- [x] Choose the smallest committed append-only lock representation and create
   a generation-one entry for each adopting app.
-- [ ] Add a CI check that refuses edits or removals of published lock entries
+- [x] Add a CI check that refuses edits or removals of published lock entries
   and refuses records-schema or declared plane-token drift inside a generation.
-- [ ] Change the SQLite workspace definition to receive one validated
+- [x] Change the SQLite workspace definition to receive one validated
   generation identity carrying `appId`, `dataGeneration`, and the generated
   `workspaceId`. Delete the independently authored `id` input and do not add an
   override.
-- [ ] Derive `<appId>-g<number>` through one function used by database, sync,
+- [x] Derive `<appId>-g<number>` through one function used by database, sync,
   KV, child-document, and browser-storage identities.
 
 Proof: every adopting application has one generation-one namespace, and no old
