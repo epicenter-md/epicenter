@@ -293,7 +293,7 @@ export const PROVIDERS = {
 		modelSettingKey: 'transcription.mistral.model',
 		modelsDoc: {
 			label: 'Mistral docs',
-			href: 'https://mistral.ai/news/voxtral/',
+			href: 'https://docs.mistral.ai/studio-api/audio/speech_to_text/offline_transcription',
 		},
 		defaultModel: 'voxtral-mini-latest',
 		models: [
