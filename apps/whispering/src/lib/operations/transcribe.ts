@@ -20,6 +20,7 @@ import { report } from '$lib/report';
 import { services } from '$lib/services';
 import { DeepgramTranscriptionServiceLive } from '$lib/services/transcription/cloud/deepgram';
 import { ElevenLabsTranscriptionServiceLive } from '$lib/services/transcription/cloud/elevenlabs';
+import { GoogleTranscriptionServiceLive } from '$lib/services/transcription/cloud/google';
 import { MistralTranscriptionServiceLive } from '$lib/services/transcription/cloud/mistral';
 import {
 	isOnDeviceProviderId,
@@ -145,6 +146,16 @@ const UPLOAD_DISPATCH = {
 				customFetch,
 			),
 		model: () => settings.get(PROVIDERS.OpenAI.modelSettingKey),
+	},
+	Google: {
+		kind: 'bespoke',
+		transcribe: (audio, { prompt, spokenLanguage }) =>
+			GoogleTranscriptionServiceLive.transcribe(audio, {
+				prompt,
+				spokenLanguage,
+				apiKey: secretApiKey(PROVIDERS.Google.apiKeyConfigKey) ?? '',
+				modelName: settings.get(PROVIDERS.Google.modelSettingKey),
+			}),
 	},
 	Groq: {
 		kind: 'wire',
