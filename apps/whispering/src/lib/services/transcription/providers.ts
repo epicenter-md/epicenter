@@ -179,6 +179,33 @@ export const PROVIDERS = {
 			},
 		],
 	},
+	Google: {
+		access: 'key',
+		label: 'Google (Gemini)',
+		description: 'Multimodal transcription via Gemini',
+		capabilities: { supportsPrompt: true, supportsLanguage: false },
+		apiKeyConfigKey: 'providers.google.apiKey',
+		modelSettingKey: 'transcription.google.model',
+		endpointConfigKey: null,
+		modelsDoc: {
+			label: 'Gemini models',
+			href: 'https://ai.google.dev/models/gemini',
+		},
+		defaultModel: 'gemini-3.5-flash',
+		models: [
+			{
+				name: 'gemini-3.5-flash',
+				description: 'Fast and versatile multimodal model (latest version).',
+				cost: 'Free tier available',
+			},
+			{
+				name: 'gemini-3.1-flash-lite',
+				description:
+					'Lightweight and fast multimodal model for everyday tasks.',
+				cost: 'Free tier available',
+			},
+		],
+	},
 	Groq: {
 		access: 'key',
 		label: 'Groq',

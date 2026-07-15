@@ -10,6 +10,7 @@ import deepgramIcon from '$lib/constants/icons/deepgram.svg?raw';
 import elevenlabsIcon from '$lib/constants/icons/elevenlabs.svg?raw';
 import epicenterIcon from '$lib/constants/icons/epicenter.svg?raw';
 import ggmlIcon from '$lib/constants/icons/ggml.svg?raw';
+import googleIcon from '$lib/constants/icons/google.svg?raw';
 import groqIcon from '$lib/constants/icons/groq.svg?raw';
 import mistralIcon from '$lib/constants/icons/mistral.svg?raw';
 import openaiIcon from '$lib/constants/icons/openai.svg?raw';
@@ -23,6 +24,7 @@ import {
 export const PROVIDER_ICONS = {
 	epicenter: { icon: epicenterIcon, invertInDarkMode: false },
 	OpenAI: { icon: openaiIcon, invertInDarkMode: true },
+	Google: { icon: googleIcon, invertInDarkMode: false },
 	Groq: { icon: groqIcon, invertInDarkMode: false },
 	ElevenLabs: { icon: elevenlabsIcon, invertInDarkMode: true },
 	Deepgram: { icon: deepgramIcon, invertInDarkMode: true },

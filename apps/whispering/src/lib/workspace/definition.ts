@@ -185,6 +185,10 @@ function defineTranscriptionSettings(
 			field.select(TRANSCRIPTION_SERVICE_IDS),
 			() => defaultTranscriptionService,
 		),
+		'transcription.google.model': defineKv(
+			field.string(),
+			() => PROVIDERS.Google.defaultModel as string,
+		),
 		'transcription.openai.model': defineKv(
 			field.string(),
 			() => PROVIDERS.OpenAI.defaultModel as string,
