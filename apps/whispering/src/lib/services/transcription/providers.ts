@@ -293,21 +293,21 @@ export const PROVIDERS = {
 		modelSettingKey: 'transcription.mistral.model',
 		modelsDoc: {
 			label: 'Mistral docs',
-			href: 'https://mistral.ai/news/voxtral/',
+			href: 'https://docs.mistral.ai/studio-api/audio/speech_to_text/offline_transcription',
 		},
 		defaultModel: 'voxtral-mini-latest',
 		models: [
 			{
 				name: 'voxtral-mini-latest',
 				description:
-					'API-optimized Voxtral Mini model delivering unparalleled cost and latency efficiency. Supports multilingual transcription with high accuracy.',
-				cost: '$0.12/hour',
+					"Mistral's latest Voxtral Mini model optimized for multilingual transcription.",
+				cost: '$0.18/hour',
 			},
 			{
-				name: 'voxtral-small-latest',
+				name: 'voxtral-mini-2602',
 				description:
-					'Voxtral Small model for higher accuracy and broader language support. Suitable for most transcription needs with a balance of cost and performance.',
-				cost: '$0.24/hour',
+					'Pinned February 2026 release of Voxtral Mini Transcribe 2.',
+				cost: '$0.18/hour',
 			},
 		],
 	},
