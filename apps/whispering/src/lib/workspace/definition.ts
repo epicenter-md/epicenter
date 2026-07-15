@@ -202,8 +202,8 @@ function defineTranscriptionSettings(
 			() => PROVIDERS.Deepgram.defaultModel as string,
 		),
 		'transcription.mistral.model': defineKv(
-			field.string(),
-			() => PROVIDERS.Mistral.defaultModel as string,
+			field.select(PROVIDERS.Mistral.models.map(({ name }) => name)),
+			() => PROVIDERS.Mistral.defaultModel,
 		),
 		'transcription.language': defineKv(
 			field.select(SUPPORTED_LANGUAGES),
