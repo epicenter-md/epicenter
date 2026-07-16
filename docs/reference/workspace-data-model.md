@@ -1,205 +1,176 @@
 # Workspace data model
 
-A workspace owns queryable records, stable synchronized preferences, and
-collaborative documents attached to record identities. Each plane has one
-distinct lifecycle and synchronization model.
-
-That sentence is the target architecture. It is also the rule for deciding
-where new data belongs.
-
-```text
-workspace family
-|-- current records database
-|   `-- record tables
-|       `-- records
-|           |-- stable row id
-|           `-- named atomic cells
-|-- synchronized KV
-`-- child-document namespace
-    `-- documents addressed through table + row id + document name + format
-```
-
-An app may compose several workspaces. Each workspace keeps one stable family
-identity while its three storage planes evolve independently.
-
-## Records are identified rows of atomic cells
-
-A record is one identified row in a typed table. It consists of a stable row ID
-and named atomic cells, and it has an explicit create, update, and delete
-lifecycle.
+A canonical workspace owns one complete schema-opaque map of JSON records and a
+set of independently addressed lazy Yjs documents. An application definition is
+a release-local lens over those resources. It validates typed reads, admits
+typed writes, and installs connection-local SQL views, but it never migrates or
+rewrites canonical user data.
 
 ```text
-notes table
-`-- note record
-    |-- id: "note_123"
-    |-- title: "Trip planning"
-    |-- pinned: true
-    `-- updatedAt: "2026-07-12T18:30:00Z"
+workspace
+|-- canonical record map
+|   `-- (table key, row id) -> JSON object
+|       complete device replica
+|       server-ordered create, patch, delete
+|       private SQLite materialization
+|-- release-local table lenses
+|   |-- typed validation and projection
+|   `-- connection-local read-only SQL views
+`-- top-level Yjs documents
+    |-- optional typed domain parameters
+    `-- lazy, revocable leases
 ```
 
-A cell is atomic because assigning it replaces its complete value. Concurrent
-assignments to different cells compose; concurrent assignments to the same cell
-resolve by server acceptance order. A value that needs character-level or
-structural merging is not a cell; it belongs in a child document.
+An app may open and compose several workspaces through one runtime. Each handle
+keeps its own record and document authority; composition does not create a
+cross-workspace transaction.
 
-A table is the typed collection that organizes records. The records database is
-the complete queryable collection of those tables under one immutable records
-schema. The name describes the logical product data, not its physical storage:
+## Records preserve honest JSON
+
+The canonical record store maps a permanent table key and runtime-allocated row
+ID to a JSON object. It does not store the current application schema, a schema
+hash, a row version, migration state, or generated historical definitions.
 
 ```text
-logical records database
-|-- authority: canonical rows, mutations, snapshots, and head
-`-- each device: local SQLite materialization
+("notes", "note_123") -> {
+  "title": "Trip planning",
+  "pinned": true,
+  "futureKey": "preserved for another release"
+}
 ```
 
-SQLite pages, indexes, triggers, cursors, outboxes, and mutation history do not
-define the logical records database. A local SQLite layout may change without
-changing the records schema.
+The synchronization wire has three commands:
 
-Use records for product facts that need identity, queries, relationships,
-explicit creation or deletion, or atomic updates alongside other fields. A
-record can be primary product data, not merely metadata.
+- `createRow` creates one complete JSON object and conflicts with an existing
+  live row.
+- `patchRow` replaces supplied keys and preserves omitted keys. Patching an
+  absent row is an accepted no-op.
+- `deleteRow` removes a live row. Deleting an absent row is an accepted no-op.
 
-## KV is the stable preference plane
+The server orders accepted patches. Devices keep complete local replicas so
+point reads and bounded scans do not require hydrating an entire CRDT into
+JavaScript memory. SQLite is runtime-owned storage for that canonical map, not
+the portable user-data contract.
 
-Workspace KV is a bounded set of synchronized preferences. It keeps one logical
-identity across records-database succession.
+## Definitions are release-local lenses
+
+`defineTable({ fields, optional })` describes how one release interprets JSON
+under one table key. Field names are exact permanent storage keys. A field
+validates one present value; the table lens decides whether the key is required
+or optional.
+
+A lens may change freely between releases. Existing rows may then be
+nonconforming, and that is honest. Reads never fill defaults, follow aliases,
+rename keys, or mutate stored data. `get()` returns a typed row or null inside
+`Result`, or a nonconforming-record error. `scan()` returns typed rows alongside
+diagnostics and raw canonical payloads that application repair code can inspect.
+
+Typed creates admit only the current shape. Typed patches preserve unknown keys.
+For an optional field, patching `undefined` means unset and removes the key;
+canonical JSON never stores `undefined`. `null` remains an ordinary value when
+the field accepts it.
+
+There is no records migration framework. A developer who wants to repair old or
+nonconforming data writes ordinary bounded application code:
 
 ```text
-editor.theme
-sidebar.collapsed
-transcription.language
+scan one page
+  -> identify a known old shape
+  -> patch the exact canonical keys
+  -> persist the application cursor
+  -> repeat safely
 ```
 
-KV has no row identity or record lifecycle. Missing or invalid values read as
-fresh defaults, and a semantic change normally uses a new dot-namespaced key.
-KV does not participate in records snapshots, imports, schema hashes, or
-successor-database activation.
+That work may be interrupted, retried, or omitted. Different releases may
+disagree about conformance without forking or replacing the canonical store.
 
-Use KV for bounded settings and preferences that do not need to change
-atomically with a record. A value that must commit with a record belongs in
-that record. Device-local or privacy-sensitive settings belong in device
-storage, not workspace KV.
+## SQL is a disposable view
 
-## Child documents hold merge-sensitive content
+Each SQLite connection installs one explicit-column `TEMP VIEW` per table lens.
+The view projects the current release's field names from canonical JSON and is
+read-only. It stores no rows, reflects canonical commits immediately, and
+disappears when the connection closes.
 
-A table may declare child-document slots for its records. A child document is a
-separate, lazy Yjs document with a format capability such as plain text, an XML
-fragment, or validated keyed records.
+Changing a lens therefore requires no projector, polling loop, materialized
+table, index catalog, or rebuild. Opening a new connection creates the current
+views, so stale columns do not survive an application reload. Full `field.*`
+validation remains in the typed JavaScript path; SQL only supplies a convenient
+storage-shaped query surface.
 
-```text
-note record
-|-- records database: title, pinned, updatedAt
-`-- child document: body
+## Documents are top-level parameterized resources
+
+Documents are declared once at workspace top level:
+
+```ts
+defineWorkspace({
+  id: "skills",
+  tables: { skills },
+  documents: {
+    instructions: document.text({
+      params: { skillId: field.string() },
+    }),
+    preferences: document.keyValue({
+      entries: { theme: field.select(["light", "dark"]) },
+    }),
+  },
+});
 ```
 
-The record supplies the product relationship and part of the address, but it
-does not contain the document bytes. The workspace derives a document address
-from the workspace, table, a collision-resistant digest of the full row ID,
-document name, and format identity. The digest accepts application IDs without
-turning the room-address grammar into a record-schema restriction. Opening the
-document owns its persistence, synchronization, caching, readiness, and
-disposal.
+Parameters express the domain relationship without coupling document ownership
+to a table declaration. A caller opens `instructions` with `{ skillId }`; the
+runtime derives the room identity from its authority binding, workspace,
+declaration, format, and canonical parameters. Application code never supplies
+a GUID or authority identity.
 
-Not every table declares documents, and a declared document remains unopened
-until a caller needs it. Child-document formats have compatibility identities
-independent of the records schema. Adding a document or changing its format
-does not create a successor records database.
+Every document opens lazily as a revocable lease. Releasing the final lease may
+unload live Yjs state, but it does not delete persisted or synchronized updates.
+The runtime keeps its room catalog private so it can reopen, synchronize, or
+export known rooms without exposing an arbitrary string room registry.
 
-Fields and documents use separate declaration namespaces. A field and a child
-document may both be named `body`: callers still distinguish `row.body` from
-`table.docs.body`. Matching names do not make the two planes consistent or
-choose an authority. Table and document names participate in persistent room
-addresses, so renaming either creates new document identities and requires an
-explicit conversion when content must carry forward. Capability-owned internal
-Yjs root names are isolated from both public maps.
+The current runtime persists and reconstructs those room manifests. A
+user-facing ownership-export orchestrator that packages the logical record
+snapshot, document manifest, and document updates is intentionally deferred. It
+is not a release gate for replacing the old workspace runtime. When added, it
+must follow the inert ownership-export contract in ADR-0122 rather than expose
+live replica files or public room identities.
 
-Use a child document when independent edits inside one value must survive and
-converge. Do not put a large JSON object in one cell and expect its members to
-merge; an atomic JSON cell is still replaced as a whole.
+`document.keyValue` is a document shape, not a separate workspace KV plane.
+Entries validate present values and return `undefined` when absent. Application
+code owns release-local fallback values.
 
-## The planes compose without sharing lifecycles
-
-The workspace family is the stable owner that composes the three planes:
-
-| Plane | Unit | Best for | Evolution |
-| --- | --- | --- | --- |
-| Records database | Identified record | Queryable product facts and metadata | Replace with a successor database under a new records schema hash |
-| Synchronized KV | Declared key | Bounded preferences with defaults | Keep the stable KV identity; use a new key for a new meaning |
-| Child documents | Format-addressed Yjs document | Merge-sensitive bodies and collections | Convert one document explicitly into a new format-addressed document |
-
-The separation is intentional. A universal migration system would need to scan
-lazy documents, coordinate different authorities, support cross-plane
-transactions, and reconcile dual writers. Epicenter refuses that abstraction.
-Moving data between records and child documents is an explicit app-owned
-authority transfer that chooses one authoritative plane after cutover.
-
-The current table path opens the declared target. A converter uses
-`historicalDocument(...)` to name one retained source and
-`workspace.documents.open(reference, rowId)` to open it through the same
-workspace runtime. Both handles are typed by their format capabilities. This is
-not a registry or scan: the application must know the old coordinates and the
-row ID. Format hashing prevents incompatible bytes from mixing; by itself it
-does not copy content, acknowledge target durability, atomically switch
-authority, or stop old clients editing the old room. Opening both handles is a
-copy and initialization seam, not a completed authority transfer.
-
-## Schema identity follows the owned data
-
-The records schema hash includes record tables and fields only. Workspace
-identity, KV declarations, child documents, local indexes, and physical SQLite
-storage do not enter it.
-
-This gives each compatibility boundary one owner:
-
-```text
-record tables + fields  -> records schema hash
-child-document content  -> document format hash
-KV preferences          -> stable workspace KV identity
-physical SQLite layout  -> runtime storage version
-```
-
-When the record tables or fields change, the workspace family selects a fresh
-records database built from a validated logical snapshot. The family itself,
-its KV preferences, and its child-document addresses remain stable.
+Records and documents do not share a transaction or cascade. A document may
+take a record ID as a parameter, but deleting the record neither unloads nor
+deletes that document. Cleanup is an explicit document/runtime operation only
+when a product earns permanent deletion semantics.
 
 ## Placement rule
 
-The merge unit chooses the storage plane. Store a value in records when
-server-ordered replacement of the whole cell preserves acceptable intent. Use a
-child document when independent edits inside one value must survive and
-converge.
+The required conflict boundary chooses the storage primitive:
 
-Size does not choose the storage plane. Offline availability does not choose it:
-records already support offline work. The required conflict boundary does.
+1. Use records for identified, queryable facts where server-ordered replacement
+   of a complete key preserves acceptable intent.
+2. Use a document when concurrent edits inside a value must merge, such as text,
+   rich structure, or independent key-value entries.
+3. Keep device-local, secret, or privacy-sensitive settings outside the
+   synchronized workspace unless the product explicitly defines another owner.
 
-Ask these questions in order:
+Size alone does not choose the plane. Records already work offline, and a large
+record collection remains bounded in JavaScript memory. Documents earn their
+Yjs history and lifecycle cost through merge semantics, not merely because a
+value is called content.
 
-1. Does this value need an identified create, update, and delete lifecycle, or
-   direct queries and relationships? Put it in a record.
-2. Does it need concurrent edits to merge inside the value? Put it in a child
-   document declared by the relevant table.
-3. Is it a bounded synchronized preference with a sensible default? Put it in
-   workspace KV.
-4. Is it local to one device, secret, or privacy-sensitive? Keep it outside the
-   synchronized workspace.
-
-A database-style spreadsheet can remain records when each logical cell is an
-acceptable replacement boundary. A workbook with concurrent structural edits,
-range operations, and collaborative undo may instead earn a dedicated document
-format. The product label "spreadsheet" does not decide the model; its required
-concurrent operations do.
-
-The hard boundary is atomicity. If two values must change atomically, they must
-share an authority. Convenience alone is not a reason to cross storage planes.
+If two values must change atomically, they must share one authority. Ordinary
+application composition cannot turn records and documents, or two workspaces,
+into one transaction.
 
 ## Current transition
 
-The SQLite records path implements this target model under
-`packages/workspace/src/sqlite`. The older public workspace path still stores
-tables and KV in a root Y.Doc while the records-authority work lands. Treat that
-implementation as migration context, not as the target definition of a
-workspace.
+The canonical model is exported from `@epicenter/workspace/sqlite`. New
+definitions use `runtime.open(definition)`, release-local tables, top-level
+parameterized documents, and read-only SQL.
 
-This page collects the shared product model from the records-authority design.
-The ADRs retain the detailed protocol and evolution rationale.
+The root `@epicenter/workspace` API is still active for apps not yet migrated.
+It stores tables and KV in a root Y.Doc and exposes definition-owned
+`create/connect/mount`, `defineKv`, `.docs`, and `_v`. Preserve those consumers
+until each app moves, but do not treat that compatibility lane as the canonical
+SQLite architecture or add its concepts to new SQLite definitions.

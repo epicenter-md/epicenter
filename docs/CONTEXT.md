@@ -7,12 +7,13 @@ shapes, see `docs/adr/`.
 
 ## Platform and topology
 
-- **Workspace**: the stable app-defined data and access-policy family. It owns
-  synchronized KV, a child-document namespace, and one current records database;
-  an app may compose several workspaces. The pre-SQLite runtime still carries
-  record tables in its root Y.Doc while ADR-0125 remains Proposed.
+- **Workspace**: one stable app-defined identity opened through an
+  authority-bound runtime. In the canonical SQLite lane it owns a complete
+  schema-opaque record map and top-level parameterized Yjs documents; an app may
+  compose several workspace handles. The transitional root-Yjs lane remains in
+  use by apps that have not moved yet.
 - **Room**: one server-side synchronization address. Yjs rooms store document
-  updates; the proposed records authority stores logical rows, mutations, and
+  updates; the records authority stores logical rows, mutations, and
   snapshots. Cloudflare may colocate several such logical stores in one Durable
   Object SQLite database without making their physical file the sync contract.
 - **Star**: the one runnable program that holds your data, composing anchor,
@@ -89,131 +90,80 @@ shapes, see `docs/adr/`.
 
 ## Workspace API
 
-- **Workspace family**: the stable workspace identity, synchronized KV, child-doc
-  namespace, and selection of one current records database. A schema change
-  replaces the selected records database, not the family.
-- **Cell**: one named atomic value in a record. An update replaces the complete
-  cell value; values that need structural or character-level merging belong in
-  a child document instead.
-- **Record**: one identified row in a typed table, consisting of a stable row ID
-  and named atomic cells. Records have explicit create, update, and delete
-  lifecycles.
-- **Record table**: one named, typed collection of records. The table defines
-  record fields and may declare separately stored child documents addressed
-  through each record.
-- **Records database**: the complete queryable collection of record tables for
-  one immutable logical schema. Every synchronized device materializes it in
-  local SQLite; the authority stores the same logical records, not the device's
-  SQLite file.
-- **Records schema hash**: the canonical structural identity of synchronized
-  record tables and fields. Workspace identity, KV, child documents, local
-  indexes, and physical storage do not enter it; applications author no epoch
-  beside it.
-- **Document format**: one Epicenter-owned collaborative Yjs representation. A
-  format capability carries a canonical descriptor, a derived format hash, and
-  the function that attaches its typed handle to an open Y.Doc. Document format
-  identity is independent of the records schema hash.
-- **Successor database**: a fresh records database prepared from a canonical
-  snapshot at source head H, then selected atomically only if the source is
-  still current and unchanged at H.
-- **Records migration candidate**: one temporary immutable upload of a complete
-  successor, bound to a source database, source head, and target records schema
-  hash. It never affects the selected source before conditional activation and
-  is safe to discard when stale or abandoned.
-- **Conditional activation**: the authority's atomic operation that selects a
-  sealed candidate by `candidateId` only when the family still selects the
-  manifest-bound source database and that source is still at the manifest-bound
-  head. The authority derives all bindings from its sealed manifest. Success
-  permanently fences the source; failure changes nothing.
-- **Current-database write rule**: an ordinary authority write atomically
-  requires that the family still selects its request database and that the
-  database is writable, then folds the mutation and advances that database's
-  head. This transaction serializes with conditional activation.
-- **Logical snapshot**: live table, row, field, and value state without SQLite
-  pages, indexes, actor identity, cursors, outboxes, or deleted history.
-- **`defineTable` / `defineKv`**: schema builders for a workspace's current
-  records tables and permanent synchronized key-value preferences. A table has
-  one `{ fields, documents }` declaration; indexes are
-  physical storage policy, not logical table schema. Every `define*` call
-  snapshots caller-owned inputs into a framework-owned immutable definition.
-  Fields and documents are separate namespaces, so the same semantic name may
-  exist in both and remains explicit as `row.<name>` versus
-  `table.docs.<name>`. Table and document names are persistent identity, not
-  display labels; renaming either creates new child-document addresses.
-- **Records-schema succession**: the first-class typed database-wide operation
-  that transforms canonical records database A at head H into complete
-  successor B for conditional authority activation. It never opens child
-  documents.
-- **Records migration chain**: a separate declarative linear list of
-  adjacent `defineRecordsMigration({ from, to, transform, discard })` steps. It
-  is not workspace definition state. Applications register generated history
-  and semantic transforms; the workspace lifecycle owns execution.
-  `defineRecordsMigrations(steps)` validates one path from the family's selected
-  source hash to the current schema; the runtime composes that path during one
-  cutover and never activates intermediate databases.
-- **Generated historical endpoint**: a committed module emitted from a records
-  definition and imported by application migrations. This is the sole supported
-  and documented historical-schema workflow. Its constructor lives at
-  `@epicenter/workspace/sqlite/generated` so generated TypeScript can resolve it;
-  that explicit subpath signals ownership but cannot prevent deliberate imports,
-  edits, casts, or generic row types that disagree with their descriptors.
-- **Records migration table rule**: a canonically identical same-named table
-  copies automatically. A changed same-named table requires one row transform;
-  a source-only table requires explicit `discard`; a target-only table begins
-  empty. A transform may omit a row with `null`, but it cannot change its table
-  or id, split it, merge it, or aggregate across rows.
-- **Records migration source conformance**: the trusted client validates every
-  canonical source row against its historical descriptor before running a
-  transform. Any nonconforming or quarantined row blocks succession and leaves
-  the source database unchanged for diagnosis and export.
-- **Local-only records succession**: an automatic lifecycle update that builds
-  and selects a fresh local database while retaining the source for logical
-  export. It needs no user approval because no other device can contribute
-  forgotten work.
-- **Synchronized records succession**: an approval-gated lifecycle update. The
-  user synchronizes the devices whose work matters before activation
-  permanently fences the old database. Declining closes that workspace in the
-  current application.
-- **Logical recovery export**: the portable recovery surface for retained old
-  or blocked records. It contains logical schema and row state, never SQLite
-  pages, indexes, cursors, outboxes, or replica identity. Version one has no
-  old-schema compatibility viewer, generic SQLite editor, merge, or re-import.
-- **Child-document format conversion**: an explicit per-document application
-  operation that reads one old format-addressed room and initializes one new
-  room through capability-specific code. Old room bytes remain retained; there
-  is no generic registry or workspace-wide document scan.
-  `historicalDocument(...)` names one retained old endpoint, while
-  `workspace.documents.open(reference, rowId)` and the current declared
-  `table.docs.<name>.open(rowId)` open the two sides explicitly. Opening does not
-  copy, enumerate, fence, reconcile, or choose authority.
-- **Cross-plane authority transfer**: explicit app-owned maintenance that moves
-  data between records and child documents using ordinary typed readers and
-  writers, then chooses exactly one authoritative plane. It has no generic
-  cross-plane atomicity, dual write, rollback, reconciliation, or server-run
-  conversion. Source bytes remain retained until separate explicit cleanup, but
-  they stop being authoritative after cutover.
-- **Historical records schema**: an inert generated descriptor with phantom row
-  types, conventionally exported as `recordsSchemaV1`, `recordsSchemaV2`, and so
-  on. The supported application workflow imports generated artifacts rather
-  than pairing descriptor strings with handwritten generic types. These names
-  are source-history labels; `recordsSchemaHash` is the authoritative
-  compatibility identity.
-- **`satisfiesWorkspace`**: the bundle-conformance helper (renamed from the older
-  `defineWorkspaceBundle`).
-- **Actions and collaboration**: actions live on the workspace bundle;
-  collaboration is sync and presence only.
-- **`scan()`**: the single bulk table read. Returns three buckets, conforming,
-  nonconforming, and newer-writer, plus point probes. The valid-only read family
-  (`getAllValid`, `getAllInvalid`, `getAll`, `conformance`, `filter`) was deleted.
-- **`_v`**: the legacy Yjs-table row version tuple. ADR-0125 proposes removing it
-  from the SQLite records path in favor of immutable-schema successor databases.
-- **Conformance**: whether a stored row matches the current schema. Nonconforming
-  rows surface in `scan()`, never silently dropped.
-- **Child document**: a separate, lazy Y.Doc owned by one row and reached through
-  `ws.tables.X.docs.name.open(rowId)`. The workspace derives its address from the
-  workspace, table, a collision-resistant digest of the full row ID, document
-  name, and document format hash; the format capability attaches the typed
-  content handle after the runtime opens the doc.
+- **Canonical record map**: one complete device replica from `(table key, row
+  id)` to a valid JSON object. The map stores user data without an application
+  schema, row version, migration state, or release identity.
+- **Record**: one identified canonical JSON object with explicit create, patch,
+  and delete behavior. A patch replaces supplied keys, preserves omitted keys,
+  and treats an absent-row patch or delete as a no-op.
+- **Table key**: the permanent storage key that partitions records in the
+  canonical map. A release-local table name is not a rename lens over another
+  key.
+- **Field key**: the exact permanent JSON key named by a table lens. There is no
+  fallback key, alias, automatic rename, or storage default.
+- **Table lens**: a release-local `defineTable({ fields, optional })`
+  declaration that validates and projects canonical JSON. It does not migrate,
+  heal, rewrite, or version stored rows.
+- **Field**: one `field.*` validator for a present JSON value. Required versus
+  optional presence belongs to the table lens, not the field definition.
+- **Conforming record**: a canonical row that satisfies the opened release's
+  table lens. `get()` returns a typed row or null inside `Result`, or a
+  `NonconformingRecord` error; `scan()` returns conforming rows and
+  nonconforming diagnostics without hiding canonical data.
+- **Optional field unset**: patching an optional field with `undefined` removes
+  that key. Canonical JSON never stores `undefined`; `null` remains an ordinary
+  value when its field accepts null.
+- **Application repair**: ordinary bounded reads and typed patches authored by
+  the application. Repair is explicit, retryable application work, not a
+  workspace migration API or an effect of reading.
+- **Logical record snapshot**: portable `(table key, row id, JSON payload)`
+  state without SQLite pages, application lenses, actors, cursors, outboxes,
+  receipts, derived indexes, or mutation history.
+- **Connection-local SQL view**: one read-only explicit-column `TEMP VIEW`
+  installed from the current table lens whenever a SQLite connection opens. It
+  stores no rows, reflects canonical commits immediately, and disappears with
+  the connection.
+- **Document declaration**: one top-level `document.text(...)`,
+  `document.xmlFragment(...)`, or `document.keyValue(...)` resource in a
+  workspace definition. Documents are never declared beneath tables.
+- **Document parameters**: typed domain values that select a document instance,
+  such as `{ skillId }`. The runtime combines them with authority, workspace,
+  declaration, and format identity; public application code never supplies a
+  room GUID or authority identity.
+- **Document lease**: the revocable handle returned by a lazy document open.
+  Releasing the final lease may unload live Yjs state but never deletes
+  persisted or synchronized content.
+- **Document room catalog**: runtime-private metadata needed to reopen,
+  synchronize, or export known rooms. It is not a public document registry or
+  string-addressed opening API.
+- **Key-value document**: a Yjs document shape with release-local typed entries.
+  Missing values return `undefined`; application code supplies fallbacks. It is
+  not a top-level workspace KV plane.
+- **Record command**: one schema-blind `createRow`, `patchRow`, or `deleteRow`
+  synchronization command. The server orders accepted patches and folds them
+  into current state; applications receive no public event log or manual sync
+  controls.
+- **Cross-plane composition**: ordinary application code using records and
+  document leases without a shared transaction, cascade, or lifecycle. A
+  document may take a record ID as a parameter, but deleting the record does not
+  implicitly delete the document.
+- **Canonical SQLite workspace**: the greenfield `@epicenter/workspace/sqlite`
+  lane. Definitions are inert release-local lenses, and
+  `runtime.open(definition)` returns borrowed handles for tables, documents, and
+  read-only SQL.
+- **Transitional root-Yjs workspace**: the still-active `@epicenter/workspace`
+  lane used by apps not yet migrated. Its `defineKv`, definition-owned
+  `create/connect/mount`, `.docs`, and `_v` behavior remain compatibility
+  surfaces for those apps, not the canonical SQLite design.
+- **Transitional `satisfiesWorkspace`**: the root-Yjs bundle-conformance helper
+  (renamed from the older `defineWorkspaceBundle`).
+- **Transitional actions and collaboration**: actions remain part of the
+  root-Yjs workspace bundle; collaboration is sync and presence only.
+- **Transitional root-Yjs child document**: a separate, lazy Y.Doc owned by one
+  row and reached through `ws.tables.X.docs.name.open(rowId)`. The workspace
+  derives its address from the workspace, table, a collision-resistant digest
+  of the full row ID, document name, and document format hash; the format
+  capability attaches the typed content handle after the runtime opens the doc.
 - **Worker**: running behavior that observes workspace state and writes results
   back. Workers may be local (every node runs them) or agent-bound (one
   configured agent answers). A conversation is answered by the client agent loop
@@ -244,7 +194,7 @@ shapes, see `docs/adr/`.
 - **`attach*` vs `create*`**: `attach*` are side-effectful primitives that register
   listeners at call time; `create*` are pure construction.
 
-## App composition
+## Transitional root-Yjs app composition
 
 - **`create<App>`**: the isomorphic doc factory for an app.
 - **`open<App>Browser` / `open<App>Extension` / tauri**: environment factories.

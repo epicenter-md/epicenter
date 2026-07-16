@@ -3,7 +3,7 @@
 **Date**: 2026-07-01
 **Status**: Draft
 **Owner**: Braden
-**Carries forward from**: `apps/whispering/specs/20260602T140000-cloud-sync-and-account.md` (deleted). That spec's Phases 1 (auth wiring), 2 (optional synced workspace, reload-on-auth), and 4 (first-sign-in migration) shipped and are verified live in `apps/whispering/src/lib/whispering/whispering.active.ts`, `apps/whispering/src/lib/whispering/reload-on-principal-change.ts`, and `apps/whispering/src/lib/migration/sign-in-migration.svelte.ts`, so they are not repeated here. Phase 3 (settings sync allowlist) needed no work; the `deviceConfig` vs `whispering.kv` split already implemented it. This file carries only what was never built: Phase 5 (audio to R2), Phase 6 (Tauri daemon mount), and the parent spec's four open questions. Read the deleted spec's body with `git log --all --full-history -- "apps/whispering/specs/20260602T140000-cloud-sync-and-account.md"` then `git show <sha>:<path>` if deeper context is needed; this file does not redesign anything, it is the unexecuted remainder verbatim.
+**Carries forward from**: `apps/whispering/specs/20260602T140000-cloud-sync-and-account.md` (deleted). Auth wiring and authority-specific reload behavior shipped and are verified live in `apps/whispering/src/lib/whispering/whispering.active.ts` and `apps/whispering/src/lib/whispering/reload-on-principal-change.ts`, so they are not repeated here. Signed-out local data and signed-in principal data remain separate authorities; moving data between them is an explicit app-owned import, never a runtime promotion or migration. Release-local device settings remain separate from synchronized settings opened through `whisperingWorkspace.documents.settings`. This file carries only the unbuilt audio-to-R2 and Tauri daemon work, plus the remaining product questions.
 
 ## One Sentence
 
@@ -11,7 +11,7 @@ Recording audio stays device-local by default; the unbuilt remainder is an opt-i
 
 ## Phase 5: Audio to R2 (opt-in)
 
-- [ ] **5.1** Add `audioUpload` column (nullable pointer) with a table migration.
+- [ ] **5.1** Add a required or nullable `audioUpload` field to the release-local recording lens. Existing rows that do not conform remain honest invalid data until an app-owned repair patches them.
 - [ ] **5.2** R2 bucket binding + principal-scoped PUT/GET routes in `packages/server` / `apps/api/worker`.
 - [ ] **5.3** Per-recording "Upload audio" action + UI; cross-device "Download / Play" vs "audio on original device."
 - [ ] **5.4** Decide + implement audio-at-rest encryption (see Open Questions).
@@ -50,9 +50,9 @@ R2 storage/egress is hosted-personal-cloud only; keep it in `apps/api/worker`, n
 
 ## Open Questions
 
-1. **Local doc vs principal doc reconciliation after sign-out.**
-   - Options: (a) signed-out startup always builds the local doc, and signed-in work lives only in the principal doc (sign-out "hides" synced-only recordings until you sign back in); (b) mirror principal writes back into the local doc so signed-out keeps a read-only copy; (c) after first sign-in, treat the principal doc as the only doc on that device and never fall back.
-   - **Recommendation**: (a) for MVP. Reload-on-auth implements it directly (the signed-out startup picks the local doc), it is the simplest honest model, and it matches "sync is an optional layer." Revisit if users find disappearing-on-sign-out surprising. Leave open.
+1. **Explicit import between local and principal authorities.**
+	- Signed-out local data and signed-in principal data never reconcile implicitly. If the product needs a move or copy, define a visible app-owned import that leaves the source intact and reports partial failure honestly.
+	- **Recommendation**: keep authorities separate until a concrete import workflow is required. Do not add sign-in promotion, mirroring, or hidden fallback.
 
 2. **Audio encryption at rest in R2.**
    - Options: (a) plaintext in R2 (server-readable, simplest, consistent with today's plaintext-body gap); (b) client-side keyring-encrypt the whole blob before PUT and decrypt on GET (E2E, but no range/streaming).

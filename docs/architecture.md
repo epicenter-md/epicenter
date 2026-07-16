@@ -6,9 +6,9 @@ keeps devices synchronized while they sleep.
 
 The workspace model is the center of the architecture:
 
-> A workspace owns queryable records, stable synchronized preferences, and
-> collaborative documents attached to record identities. Each plane has one
-> distinct lifecycle and synchronization model.
+> A workspace runtime owns a complete schema-opaque record map and lazily
+> opened collaborative documents. Release-local definitions validate and
+> project that data without migrating it.
 
 This page is the five-minute map. See the
 [workspace data model](reference/workspace-data-model.md) for the placement rule
@@ -45,88 +45,90 @@ policy stays in the app that can name it.
 ```
 
 `@epicenter/workspace` owns the app-facing data contract and runtime handles.
-`@epicenter/field` supplies the persisted cell vocabulary. The record protocol
-orders logical record mutations; Yjs sync carries KV and child-document
-updates. Middleware turns those capabilities into reactive state, filesystems,
-agent tools, and other app-shaped surfaces.
+`@epicenter/field` supplies the release-local projection vocabulary. The record
+protocol orders schema-opaque JSON mutations; Yjs sync carries independently
+addressed documents. Middleware turns those capabilities into reactive state,
+filesystems, agent tools, and other app-shaped surfaces.
 
-## A workspace family composes three storage planes
+## A workspace composes two storage planes
 
-The workspace family is the stable app-defined identity and access-policy
-boundary. It owns the selection of one current records database, one stable KV
-namespace, and a namespace of child documents.
+The workspace is the stable app-defined identity and access-policy boundary. A
+runtime binds it to one authority and owns a complete canonical record replica
+plus a private catalog of declared Yjs rooms.
 
 ```text
-workspace family
-|-- current records database
-|   `-- tables
-|       `-- records
-|           |-- stable row id
-|           `-- named atomic cells
-|-- synchronized KV
-`-- child-document namespace
-    `-- format-addressed Yjs documents reached through records
+workspace
+|-- canonical record map
+|   `-- (table key, row id) -> schema-opaque JSON object
+`-- document catalog
+    `-- lazily opened Yjs rooms selected by declared domain parameters
 ```
 
-A records schema change replaces the selected records database. It does not
-replace the workspace family, reset preferences, or rename child documents.
+There is no user-data schema migration or records-database succession. A new
+release may change its lens immediately. Nonconforming rows remain stored and
+visible to repair code.
 
 ### Records are queryable product facts
 
-A record is one identified row in a typed table. It has a stable row ID, named
-atomic cells, and explicit create, update, and delete lifecycles. The records
-database is the complete queryable collection of those tables under one
-immutable logical schema.
+A canonical record is an identified JSON object under a permanent table storage
+key. It has explicit create, patch, and delete lifecycles. Field names are exact
+permanent storage keys. The platform never renames, aliases, defaults, or heals
+them implicitly.
 
-Every synchronized device materializes the records database in local SQLite.
-The authority stores the same logical records, mutations, snapshots, and
-canonical head. It does not synchronize a device's SQLite file. Local indexes,
-pages, triggers, cursors, and outboxes are runtime state rather than part of the
-records schema.
+Every synchronized device keeps a complete SQLite replica of the canonical
+map. The server orders record commands and stores current state, receipts,
+temporary deletion markers, and snapshots. It does not synchronize a device's
+SQLite file. Local indexes, pages, cursors, outboxes, and SQL views are runtime
+state.
 
-### KV is for bounded synchronized preferences
+### Table definitions are release-local lenses
 
-Workspace KV stores declared preferences such as theme, language, or collapsed
-UI state. It has one stable logical identity across records-database changes.
-Missing or invalid values read as defaults; a new meaning normally gets a new
-dot-namespaced key.
+`defineTable` names a permanent table key and uses `field.*` to validate present
+values. It is not a storage schema. Typed `get` and `scan` return honest lens
+errors for nonconforming rows, while repair code can scan raw invalid rows and
+patch them with ordinary bounded writes.
 
-KV has no row lifecycle and does not participate in records snapshots,
-migrations, imports, or schema hashes. A value that must commit atomically with
-a record belongs in that record. Device-local and privacy-sensitive settings
-belong in device storage.
+Connection-local SQLite TEMP VIEWs project valid fields for read-only SQL.
+Wrong or missing values become `NULL` in the projection. The views are rebuilt
+when a connection opens with a different release-local lens; no materialized
+projection or lens-derived index is synchronized.
 
-### Child documents are for merge-sensitive content
+### Documents are for merge-sensitive content
 
-A table may declare child-document slots for its records. Each opened child is
-a separate lazy Yjs document with an Epicenter-owned format capability, such as
-plain text, an XML fragment, or validated keyed records.
+Every document declaration is top-level and parameterized by domain values when
+it needs cardinality. A record relationship is ordinary application
+composition:
 
-The record gives the document its product relationship and row identity, but
-the document bytes do not live in the record. Its address includes the
-workspace, table, a collision-resistant digest of the full row ID, document
-name, and document format hash. Document format identity is independent of the
-records schema hash.
+```ts
+documents: {
+  instructions: document.text({ params: { skillId: field.string() } }),
+  preferences: document.keyValue({ entries: { theme: field.string() } }),
+}
+```
+
+The runtime derives private authority and storage identity from the declaration
+and validated parameters. Public code never supplies a GUID, authority ID,
+storage key, provider, or manual synchronization command. Opening awaits local
+hydration, then the runtime attaches remote synchronization. Releasing the last
+lease unloads live state without deleting persisted content.
 
 ## Definitions travel; runtimes connect them
 
-The shared workspace definition is pure. It names the family, tables, KV
-preferences, actions, and child-document declarations without opening storage
-or a network connection.
+The shared workspace definition is pure. It names release-local table lenses
+and document declarations without opening storage or a network connection.
 
 ```text
-defineWorkspace({ id, name, tables, kv, actions })
+defineWorkspace({ id, tables, documents })
         |
         | pure app contract
         v
-connect(...)                         browser or local runtime
-mount(...)                           daemon runtime
+runtime.open(definition)             Browser, Bun, or desktop runtime
 ```
 
-`defineTable` declares fields and optional child documents. A field becomes one
-atomic SQLite cell and one record-wire value. `defineKv` declares a preference
-schema and a fresh default factory. Both use the same closed `field.*`
-vocabulary, but they do not share a storage plane.
+One runtime may open several imported workspace definitions. Ordinary
+TypeScript composes the returned handles. Opens and failures remain independent;
+there is no surface registry, cross-workspace transaction, or all-or-nothing
+application boot.
 
 Runtime openers supply the resources that cannot travel with the definition:
 browser storage, a record authority connection, Yjs collaboration, daemon
@@ -136,18 +138,19 @@ storage topology itself.
 
 ## The records path
 
-Record writes use three semantic operations:
+Record writes use three mechanical commands:
 
 ```text
-createRow(table, rowId, complete cells)
-updateRow(table, rowId, changed cells)
+createRow(table, rowId, JSON object)
+patchRow(table, rowId, set keys, unset keys)
 deleteRow(table, rowId)
 ```
 
-The authority orders accepted mutations and advances the database head. Each
-device applies the same ordered stream to its complete local SQLite replica.
-Applications retain typed table helpers and direct SQL queryability without
-making physical SQLite files the wire format.
+The authority orders accepted commands and folds them into current state. Each
+device applies the same ordered changes to its complete local SQLite replica.
+The log is transport intent, not permanent product history. Applications retain
+typed table helpers and read-only SQL without making physical SQLite files the
+wire format.
 
 ```text
 app action / UI event
@@ -167,37 +170,28 @@ record authority
 ordered mutations to other replicas
 ```
 
-Child-document edits follow their own Yjs path. KV edits use the eager KV Yjs
-document. The workspace composes these paths but does not pretend they have one
-conflict model.
+Document edits follow their own Yjs path. The workspace composes these paths but
+does not pretend records and documents share one conflict model or transaction.
 
-## Schema evolution creates a successor
+## Lens evolution never migrates user data
 
-One records database has one immutable logical schema, identified by a
-canonical hash of record tables and fields. A stored meaning change must be
-visible in that schema.
+Definitions are views over durable JSON. A release may add a required field,
+remove a field, or change validation. Rows that no longer conform remain
+preserved as invalid data. The runtime does not copy a database, execute an
+upcaster, add fallback keys, or reinterpret old writes.
 
-After user approval, a trusted client reads a canonical logical snapshot,
-validates its records against the historical descriptor, and builds a complete
-successor database. The authority activates that successor only if the family
-still selects the source database and its canonical head has not changed.
+When product semantics require conversion, the application owns a normal,
+explicit repair loop. It may recognize an old TypeBox shape, compute the new
+value, and issue bounded typed patches. Mixed releases may disagree until the
+repair converges; that is honest application behavior rather than a platform
+migration protocol.
 
 ```text
-source database A at head H
+canonical JSON stays unchanged
         |
-        | validate + transform records
-        v
-candidate database B
-        |
-        | activate only if A is still current at H
-        v
-workspace family selects B; A is fenced
+        +-- old release lens -> one interpretation
+        `-- new release lens -> valid rows plus explicit invalid rows
 ```
-
-`defineRecordsMigration` owns this records-only transformation. It never opens
-child documents or migrates KV. Child-document format conversion is explicit
-and per-document. Moving authority between records and documents is an
-app-owned maintenance operation rather than a universal migration feature.
 
 ## The star owns availability, not application meaning
 
@@ -205,9 +199,9 @@ A star is the runnable deployment that holds a person's synchronized data. The
 hosted Cloud app and the self-hosted instance use the same shared server library
 but resolve principals differently.
 
-The records authority owns ordering, canonical heads, candidate storage, and
-conditional activation. It remains schema-blind: trusted application clients
-own field validation and migration code. Yjs rooms carry KV and child-document
+The records authority owns ordering, current rows, receipts, deletion markers,
+and snapshots. It remains schema-blind: application releases own field
+validation and explicit repair code. Yjs rooms carry collaborative document
 updates. The blob store holds large binaries by reference.
 
 This separation keeps the privacy question concrete. Epicenter can run the
@@ -222,6 +216,5 @@ root Y.Doc. The older path is implementation history, not the target ownership
 model described here.
 
 During the transition, use the code and accepted ADRs as current implementation
-truth. Use this architecture and the proposed records ADRs to judge the final
-API, delete legacy branches, and prevent the root-Y.Doc topology from leaking
-back into the product vocabulary.
+truth. Use this architecture to judge conversions, delete legacy branches, and
+prevent the root-Y.Doc topology from leaking back into the selected vocabulary.

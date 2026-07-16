@@ -16,7 +16,7 @@ Singleton reactive state that stays in sync with the application. Unlike the rpc
 
 ### `settings.svelte.ts`
 
-Synced workspace settings backed by Yjs KV. Settings here roam across devices via CRDT sync. Uses a SvelteMap for per-key reactivity.
+Synced workspace settings backed by one lazily opened key-value document. Settings here roam across devices through document sync. A SvelteMap provides per-key reactivity while product defaults remain release-local application policy.
 
 ```typescript
 import { settings } from '$lib/state/settings.svelte';
@@ -24,13 +24,13 @@ import { settings } from '$lib/state/settings.svelte';
 // Read settings reactively (re-renders on change)
 const trigger = settings.get('recording.trigger');
 
-// Update settings (writes to Yjs KV → syncs to other devices)
+// Update settings (writes to the document and syncs to other devices)
 settings.set('recording.trigger', 'vad');
 ```
 
 ### `recordings.svelte.ts`
 
-Recording metadata backed by Yjs workspace table. SvelteMap provides per-key reactivity: updating one recording doesn't re-render the entire list. Audio blobs are not stored here because they are too large for CRDTs; use `$lib/rpc/audio` for playback URLs and `services.blobs.audio` for raw blob access.
+Recording metadata backed by the server-authoritative canonical record map. The state module maintains a bounded app-level cache and refreshes after local writes or installed remote record changes. Audio blobs remain separate; use `$lib/rpc/audio` for playback URLs and `services.blobs.audio` for raw blob access.
 
 ```typescript
 import { InstantString } from '@epicenter/field';
@@ -41,24 +41,24 @@ import { recordings } from '$lib/state/recordings.svelte';
 const recording = recordings.get(id);
 const sorted = recordings.sorted; // newest first
 
-// Write (Yjs observer auto-updates SvelteMap)
-recordings.set(recording);
-recordings.update(id, {
+// Writes are async and refresh the app-level cache after commit.
+await recordings.set(recording);
+await recordings.update(id, {
 	transcript,
 	transcription: { status: 'completed', completedAt: InstantString.now() },
 });
-recordings.delete(id);
+await recordings.delete(id);
 ```
 
 ### `recipes.svelte.ts`
 
-The on-demand Recipe library backed by a Yjs workspace table. Each recipe is a single self-contained row (`name`, `instructions`, optional `icon`); the built-in recipes are merged in ahead of the user's saved rows.
+The on-demand Recipe library backed by canonical records. Each recipe is a single self-contained row (`name`, `instructions`, optional `icon`); built-in recipes are merged ahead of the user's saved rows.
 
 ```typescript
 import { recipes } from '$lib/state/recipes.svelte';
 
 const list = recipes.pickable; // built-ins followed by saved recipes
-recipes.set({ id, name, instructions, icon: null });
+await recipes.set({ id, name, instructions, icon: null });
 ```
 
 ### `device-config.svelte.ts`

@@ -1,12 +1,11 @@
 # @epicenter/workspace
 
 > Transition note: this page documents the current production Yjs-record
-> entrypoint. The greenfield records target lives at
-> `@epicenter/workspace/sqlite`: SQLite owns typed records, KV keeps one stable
-> Yjs identity, and tables declare child-document capabilities with
-> `defineTable({ fields, documents })`. See
-> [ADR-0125](../../docs/adr/0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md)
-> and [ADR-0126](../../docs/adr/0126-child-documents-use-format-capabilities-and-evolve-outside-records-databases.md).
+> entrypoint. The greenfield target keeps canonical schema-opaque JSON records
+> in runtime-owned SQLite, applies release-local table lenses, and declares
+> lazy parameterized documents at the workspace top level. See
+> [ADR-0125](../../docs/adr/0125-record-definitions-are-release-local-lenses-and-never-migrate-user-data.md)
+> and [ADR-0124](../../docs/adr/0124-workspace-documents-are-top-level-parameterized-resources.md).
 
 A local-first workspace engine for TypeScript apps: Yjs is the source of truth; SQLite and Markdown are read-only materialized projections.
 

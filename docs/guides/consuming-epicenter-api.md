@@ -1,6 +1,12 @@
 # Consuming the Epicenter API
 
-> **Historical note.** Earlier drafts of this guide described a
+> **Transition note.** The canonical records and document API now lives under
+> `@epicenter/workspace/sqlite`: import a definition, bind it with
+> `runtime.open(definition)`, use release-local table lenses, and lazily open
+> top-level parameterized documents. The examples below deliberately document
+> the older root-Yjs compatibility lane still used by apps awaiting conversion.
+>
+> Earlier drafts of this guide described a
 > `createWorkspace(definition).withEncryption().withExtension(...)` builder
 > chain, and later an owner factory that wrapped the encryption, local
 > storage, and per-owner wipe paths behind a single object. Both shapes
@@ -19,26 +25,30 @@
 
 The hosted hub at `https://api.epicenter.so` handles auth, real-time sync, and AI inference. It runs on Cloudflare Workers with Durable Objects. Cloud sync enters through `/api/rooms/:roomId` (the same path in Cloud and self-hosted instance deployments): a cloud doc is scoped to the resolved `principalId` and addressed by its `ydoc.guid`, and the server resolves the room from the auth token. Browser apps and the workspace daemon both use this route.
 
-On the client, `@epicenter/workspace` exposes the preset directly: define your schema with `defineTable` / `defineKv`, wrap it with `defineWorkspace({ id, tables, kv, actions })`, then connect once at boot. `toConnection(auth, nodeId)` projects the auth snapshot: `null` signed out (bare local IndexedDB storage), the principal's connection signed in (principal-scoped storage plus relay sync).
+On the selected path, `@epicenter/workspace/sqlite` exposes imported workspace
+definitions through an authority-bound runtime. Records are a complete local
+SQLite replica of schema-opaque canonical JSON. `field.*` declarations are
+release-local validation and SQL projection lenses. Yjs documents are declared
+top-level, opened lazily with domain parameters, and synchronized through
+private runtime identity.
 
 ## Choose the storage plane first
 
-A workspace owns queryable records, stable synchronized preferences, and
-collaborative documents attached to record identities. Each plane has one
-distinct lifecycle and synchronization model.
+A workspace owns queryable canonical records and independently addressed
+collaborative documents. Each plane has one distinct lifecycle and
+synchronization model.
 
 ```text
-workspace family
-|-- records database: typed tables of identified records and atomic cells
-|-- synchronized KV: bounded preferences with defaults
-`-- child documents: lazy Yjs content addressed through table rows
+workspace
+|-- canonical record map: (table key, row id) -> JSON object
+`-- documents: lazy Yjs rooms selected by declared domain parameters
 ```
 
 Use a record for product data that needs identity, queries, relationships, or an
-explicit create, update, and delete lifecycle. Use KV for a bounded synchronized
-preference that can read from a default and does not need to commit atomically
-with a record. Use a child document when concurrent edits must merge inside the
-value, as with text or a collaborative keyed collection.
+explicit create, patch, and delete lifecycle. Use `document.keyValue` for
+bounded synchronized overrides whose fallback remains application policy. Use
+another document shape when concurrent edits must merge inside the value, as
+with text or collaborative rich structure.
 
 The current examples below use the pre-SQLite public workspace path. The target
 records API is landing under `@epicenter/workspace/sqlite`; its storage model is
