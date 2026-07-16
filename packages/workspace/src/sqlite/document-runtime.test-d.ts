@@ -1,7 +1,14 @@
 import { field } from '@epicenter/field';
 import type { Brand } from 'wellcrafted/brand';
-import { document } from './document-definition.js';
+import type { Result } from 'wellcrafted/result';
+import { type DocumentKeyValueError, document } from './document-definition.js';
 import type { DocumentNamespace } from './document-runtime.js';
+
+type Equal<TLeft, TRight> =
+	(<T>() => T extends TLeft ? 1 : 2) extends <T>() => T extends TRight ? 1 : 2
+		? true
+		: false;
+type Expect<T extends true> = T;
 
 type SkillId = string & Brand<'SkillId'>;
 
@@ -45,3 +52,12 @@ const opened = await documents.instructions.open({
 void opened.guid;
 // @ts-expect-error A lease does not expose its Y.Doc.
 void opened.ydoc;
+
+const preferences = await documents.preferences.open();
+const themeRead = preferences.content.get('theme');
+export type _ThemeReadPreservesKeySchema = Expect<
+	Equal<
+		typeof themeRead,
+		Result<'light' | 'dark' | undefined, DocumentKeyValueError>
+	>
+>;

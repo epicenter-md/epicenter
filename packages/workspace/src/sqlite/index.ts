@@ -10,6 +10,8 @@ export {
 	type DocumentDefinition,
 	type DocumentDefinitions,
 	type DocumentKeyValue,
+	DocumentKeyValueError,
+	type DocumentKeyValueIssue,
 	type DocumentParamsFor,
 	type DocumentText,
 	document,

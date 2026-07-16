@@ -15,6 +15,7 @@ import { expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
 import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import { document } from './document-definition.js';
 import {
 	createDocumentNamespace,
@@ -45,6 +46,7 @@ const documents = {
 		entries: {
 			theme: field.select(['light', 'dark']),
 			density: field.json(Type.Union([Type.Literal('compact'), Type.Null()])),
+			layout: field.json(Type.Object({ panels: Type.Array(Type.String()) })),
 		},
 	}),
 };
@@ -210,7 +212,7 @@ test('disposing one lease removes its observers while a shared room stays live',
 		const firstPreferences = await namespace.preferences.open();
 		const secondPreferences = await namespace.preferences.open();
 		firstPreferences.content.observe(() =>
-			observedPreferences.push(firstPreferences.content.get('theme')),
+			observedPreferences.push(expectOk(firstPreferences.content.get('theme'))),
 		);
 		firstPreferences[Symbol.dispose]();
 		secondPreferences.content.set('theme', 'dark');
@@ -421,8 +423,8 @@ test('open resolves after local hydration and only then attaches synchronization
 	}
 });
 
-test('key-value schemas validate values without participating in room identity', async () => {
-	const { roomCatalog, loads } = setup();
+test('release-local key-value schemas surface nonconforming stored values without changing room identity', async () => {
+	const { roomCatalog, loads, saves } = setup();
 	try {
 		const versionOne = createDocumentNamespace({
 			authorityKey: 'principal-alice',
@@ -436,8 +438,10 @@ test('key-value schemas validate values without participating in room identity',
 			assertRuntimeOpen() {},
 		});
 		const first = await versionOne.preferences.open();
-		first.content.set('theme', 'dark');
+		first.content.set('theme', 'light');
 		first[Symbol.dispose]();
+		await Bun.sleep(0);
+		const savesBeforeRead = saves.length;
 
 		const versionTwo = createDocumentNamespace({
 			authorityKey: 'principal-alice',
@@ -454,10 +458,33 @@ test('key-value schemas validate values without participating in room identity',
 			assertRuntimeOpen() {},
 		});
 		const second = await versionTwo.preferences.open();
-		expect(second.content.get('theme')).toBe('dark');
-		expect(second.content.get('density')).toBeUndefined();
+		const error = expectErr(second.content.get('theme'));
+		expect(error).toMatchObject({
+			name: 'NonconformingStoredValue',
+			key: 'theme',
+			raw: 'light',
+		});
+		expect(error.issues.length).toBeGreaterThan(0);
+		expect(expectErr(second.content.get('theme'))).toEqual(error);
+		expect(expectOk(second.content.get('density'))).toBeUndefined();
 		expect(new Set(loads).size).toBe(1);
+		expect(saves).toHaveLength(savesBeforeRead);
 		second[Symbol.dispose]();
+	} finally {
+		await roomCatalog[Symbol.asyncDispose]();
+	}
+});
+
+test('key-value object reads return detached snapshots', async () => {
+	const { namespace, roomCatalog } = setup();
+	try {
+		await using preferences = await namespace.preferences.open();
+		preferences.content.set('layout', { panels: ['primary'] });
+		const snapshot = expectOk(preferences.content.get('layout'));
+		snapshot?.panels.push('mutated outside the document');
+		expect(expectOk(preferences.content.get('layout'))).toEqual({
+			panels: ['primary'],
+		});
 	} finally {
 		await roomCatalog[Symbol.asyncDispose]();
 	}
@@ -472,15 +499,36 @@ test('key-value delete represents absence while null remains a stored value', as
 			changes += 1;
 		});
 		preferences.content.set('density', null);
-		expect(preferences.content.get('density')).toBeNull();
+		expect(expectOk(preferences.content.get('density'))).toBeNull();
 		preferences.content.delete('density');
-		expect(preferences.content.get('density')).toBeUndefined();
+		expect(expectOk(preferences.content.get('density'))).toBeUndefined();
 		expect(changes).toBe(2);
 		expect(() =>
 			preferences.content.set('density', undefined as never),
 		).toThrow(/invalid key-value value/i);
 		stop();
 		preferences[Symbol.dispose]();
+	} finally {
+		await roomCatalog[Symbol.asyncDispose]();
+	}
+});
+
+test('key-value methods reject undeclared keys', async () => {
+	const { namespace, roomCatalog } = setup();
+	try {
+		await using preferences = await namespace.preferences.open();
+		expect(() => preferences.content.get('unknown' as never)).toThrow(
+			"Unknown key-value key 'unknown'",
+		);
+		expect(() => preferences.content.get('toString' as never)).toThrow(
+			"Unknown key-value key 'toString'",
+		);
+		expect(() =>
+			preferences.content.set('unknown' as never, true as never),
+		).toThrow("Unknown key-value key 'unknown'");
+		expect(() => preferences.content.delete('unknown' as never)).toThrow(
+			"Unknown key-value key 'unknown'",
+		);
 	} finally {
 		await roomCatalog[Symbol.asyncDispose]();
 	}

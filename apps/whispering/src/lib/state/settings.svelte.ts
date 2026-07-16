@@ -1,4 +1,6 @@
+import type { DocumentKeyValueError } from '@epicenter/workspace/sqlite';
 import { SvelteMap } from 'svelte/reactivity';
+import type { Result } from 'wellcrafted/result';
 import { settingsDefaults, whispering } from '#platform/whispering';
 import type { WhisperingSettingValues } from '$lib/workspace';
 
@@ -9,12 +11,22 @@ export type BooleanSettingKey = {
 }[keyof WhisperingSettingValues];
 
 const settingsDocument = await whispering.documents.settings.open();
-const settingsContent = settingsDocument.content as {
-	get(key: string): unknown;
-	set(key: string, value: unknown): void;
-	delete(key: string): void;
-	observe(listener: () => void): () => void;
-};
+const settingsContent = settingsDocument.content;
+
+type ReadSetting = <TKey extends keyof WhisperingSettingValues>(
+	key: TKey,
+) => Result<WhisperingSettingValues[TKey] | undefined, DocumentKeyValueError>;
+type WriteSetting = <TKey extends keyof WhisperingSettingValues>(
+	key: TKey,
+	value: WhisperingSettingValues[TKey],
+) => void;
+type DeleteSetting = (key: keyof WhisperingSettingValues) => void;
+
+// Project schema-derived methods onto the already-derived setting values so
+// Svelte does not instantiate the full schema union for every operation.
+const readSetting = settingsContent.get as unknown as ReadSetting;
+const writeSetting = settingsContent.set as unknown as WriteSetting;
+const deleteSetting = settingsContent.delete as unknown as DeleteSetting;
 
 function clone<TValue>(value: TValue): TValue {
 	return structuredClone(value);
@@ -27,7 +39,13 @@ function createSettings() {
 		for (const key of Object.keys(settingsDefaults) as Array<
 			keyof WhisperingSettingValues
 		>) {
-			map.set(key, clone(settingsContent.get(key) ?? settingsDefaults[key]));
+			const { data: storedValue, error } = readSetting(key);
+			if (error) {
+				// A newer release may own this value. Use local policy without repair.
+				map.set(key, clone(settingsDefaults[key]));
+				continue;
+			}
+			map.set(key, clone(storedValue ?? settingsDefaults[key]));
 		}
 	}
 
@@ -44,7 +62,7 @@ function createSettings() {
 			key: TKey,
 			value: WhisperingSettingValues[TKey],
 		): void {
-			settingsContent.set(key, clone(value));
+			writeSetting(key, clone(value));
 			map.set(key, clone(value));
 		},
 		getDefault<TKey extends keyof WhisperingSettingValues>(
@@ -56,7 +74,7 @@ function createSettings() {
 			for (const key of Object.keys(settingsDefaults) as Array<
 				keyof WhisperingSettingValues
 			>) {
-				settingsContent.delete(key);
+				deleteSetting(key);
 				map.set(key, clone(settingsDefaults[key]));
 			}
 		},

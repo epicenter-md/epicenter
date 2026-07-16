@@ -162,7 +162,7 @@ test('Bun runtime lazily persists one canonical records file', async () => {
 		);
 		await using reopenedPreferences =
 			await reopened.documents.preferences.open();
-		expect(reopenedPreferences.content.get('theme')).toBe('dark');
+		expect(expectOk(reopenedPreferences.content.get('theme'))).toBe('dark');
 		expect(
 			readdirSync(storageRoot, { recursive: true }).some((name) =>
 				String(name).endsWith('.tmp'),
@@ -439,7 +439,7 @@ test('Bun runtime owns document sync attachment and cleanup', async () => {
 
 		const live = await skills.documents.preferences.open();
 		expect(attached).toBe(2);
-		expect(live.content.get('theme')).toBe('dark');
+		expect(expectOk(live.content.get('theme'))).toBe('dark');
 		await runtime[Symbol.asyncDispose]();
 		expect(detached).toBe(2);
 		expect(() => live.content.get('theme')).toThrow('runtime is disposed');

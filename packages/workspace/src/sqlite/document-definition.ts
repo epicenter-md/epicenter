@@ -1,6 +1,8 @@
 import { recognize } from '@epicenter/field';
 import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import { Ok, type Result } from 'wellcrafted/result';
 import type * as Y from 'yjs';
 import { attachRecords } from '../document/attach-records.js';
 import { attachRichText } from '../document/attach-rich-text.js';
@@ -19,10 +21,37 @@ export type DocumentText = {
 
 export type DocumentXmlFragment = ReturnType<typeof attachRichText>;
 
+export type DocumentKeyValueIssue = {
+	path: string;
+	message: string;
+};
+
+export const DocumentKeyValueError = defineErrors({
+	NonconformingStoredValue: ({
+		key,
+		raw,
+		issues,
+	}: {
+		key: string;
+		raw: unknown;
+		issues: readonly DocumentKeyValueIssue[];
+	}) => ({
+		message: `Stored value for '${key}' does not satisfy the current document declaration`,
+		key,
+		raw,
+		issues,
+	}),
+});
+export type DocumentKeyValueError = InferErrors<typeof DocumentKeyValueError>;
+
 export type DocumentKeyValue<TEntries extends SchemaRecord> = {
+	/**
+	 * Read one detached stored value. Absence is `Ok(undefined)`; a present value
+	 * that does not satisfy this release's schema is `NonconformingStoredValue`.
+	 */
 	get<TKey extends keyof TEntries & string>(
 		key: TKey,
-	): Static<TEntries[TKey]> | undefined;
+	): Result<Static<TEntries[TKey]> | undefined, DocumentKeyValueError>;
 	set<TKey extends keyof TEntries & string>(
 		key: TKey,
 		value: Static<TEntries[TKey]>,
@@ -175,21 +204,33 @@ function keyValue({
 		attach(ydoc, assertOpen, onDispose) {
 			const records = attachRecords<unknown>(ydoc);
 			const schemaFor = (key: string): TSchema => {
-				const schema = entries[key];
-				if (!schema) throw new Error(`Unknown key-value key '${key}'`);
-				return schema;
+				if (!Object.hasOwn(entries, key)) {
+					throw new Error(`Unknown key-value key '${key}'`);
+				}
+				return entries[key] as TSchema;
 			};
 			return {
 				get(key) {
 					assertOpen();
+					const schema = schemaFor(key);
 					const value = records.get(key);
-					return value !== undefined && Value.Check(schemaFor(key), value)
-						? cloneJson(value)
-						: undefined;
+					if (value === undefined) return Ok(undefined);
+					if (!Value.Check(schema, value)) {
+						return DocumentKeyValueError.NonconformingStoredValue({
+							key,
+							raw: cloneJson(value),
+							issues: [...Value.Errors(schema, value)].map((issue) => ({
+								path: issue.instancePath,
+								message: issue.message,
+							})),
+						});
+					}
+					return Ok(cloneJson(value));
 				},
 				set(key, value) {
 					assertOpen();
-					if (!isJsonValue(value) || !Value.Check(schemaFor(key), value)) {
+					const schema = schemaFor(key);
+					if (!isJsonValue(value) || !Value.Check(schema, value)) {
 						throw new TypeError(`Invalid key-value value for '${key}'`);
 					}
 					records.set(key, cloneJson(value));
