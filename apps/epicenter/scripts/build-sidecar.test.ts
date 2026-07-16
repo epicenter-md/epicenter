@@ -34,6 +34,7 @@ async function hostTargetTriple(): Promise<string> {
 
 async function readReady(
 	stdout: ReadableStream<Uint8Array>,
+	stderr: ReadableStream<Uint8Array>,
 ): Promise<ReadyFrame> {
 	const reader = stdout.getReader();
 	const decoder = new TextDecoder();
@@ -46,7 +47,14 @@ async function readReady(
 			if (newline !== -1) {
 				return JSON.parse(buffer.slice(0, newline)) as ReadyFrame;
 			}
-			if (done) throw new Error('compiled host exited before readiness');
+			if (done) {
+				const detail = (await new Response(stderr).text()).trim();
+				throw new Error(
+					detail.length > 0
+						? `compiled host exited before readiness: ${detail}`
+						: 'compiled host exited before readiness',
+				);
+			}
 		}
 	} finally {
 		reader.releaseLock();
@@ -95,7 +103,7 @@ test('compiled production host serves packaged apps and exits on parent EOF', as
 			})}\n`,
 		);
 		await sidecar.stdin.flush();
-		expect(await readReady(sidecar.stdout)).toEqual({
+		expect(await readReady(sidecar.stdout, sidecar.stderr)).toEqual({
 			type: 'ready',
 			protocolVersion: SIDECAR_PROTOCOL_VERSION,
 			port: PRODUCTION_PORT,
