@@ -3,7 +3,7 @@
 - **Status:** Proposed
 - **Date:** 2026-07-12
 - **Supersedes:** [ADR-0055](0055-conversation-storage-is-one-canonical-table-every-surface-syncs.md) (the canonical `@epicenter/chat` ownership and synchronized transcript promise carry forward; the keyed child-document store does not)
-- **Relates:** [ADR-0047](0047-the-agent-loop-runs-in-the-client-and-tools-are-dispatched-actions.md), [ADR-0123](0123-bounded-metadata-uses-record-authority-merge-sensitive-state-uses-lazy-child-documents.md), [ADR-0125](0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md)
+- **Relates:** [ADR-0047](0047-the-agent-loop-runs-in-the-client-and-tools-are-dispatched-actions.md), [ADR-0123](0123-bounded-metadata-uses-record-authority-merge-sensitive-state-uses-lazy-child-documents.md), [ADR-0125](0125-record-definitions-are-release-local-lenses-and-never-migrate-user-data.md)
 
 ## Context
 
@@ -80,18 +80,18 @@ table.
 
 ## Consequences
 
-- Conversations and messages participate in records-schema identity,
-  succession, logical export, validation, search, retention, and row deletion.
+- Conversations and messages participate in the canonical record map, logical
+  export, release-local validation, search, retention, and row deletion.
 - Message and turn IDs make concurrent appends independent. A product that
   needs causal branches beyond one turn and its steps must model an explicit
   parent identity rather than relying on storage insertion order.
 - Message parts are atomic after completion. The loop creates each message row
   once and never patches it. A future edit or branch must define explicit app
   semantics over rows; it does not merge characters.
-- `@epicenter/chat` owns conversation deletion as one records transaction: it
-  deletes every message that references the conversation, then deletes the
-  conversation. Reference metadata documents the relationship but does not
-  imply a generic framework cascade.
+- `@epicenter/chat` owns conversation deletion as an explicit application
+  routine: it deletes every message that references the conversation, then
+  deletes the conversation. Reference metadata documents the relationship but
+  does not imply a generic framework cascade or atomic multi-row transaction.
 - Chat no longer needs one Yjs room per conversation, a keyed message format, or
   a document runtime merely to read transcript history.
 - Every replica now carries the complete bounded transcript instead of lazily
@@ -100,7 +100,7 @@ table.
 - Cross-device live token viewing is refused. This removes token-level durable
   writes, partial-message reconciliation, stale `streaming` rows, and crash
   recovery for presentation state.
-- Tool output entering `parts` must satisfy a concrete cell and mutation bound.
+- Tool output entering `parts` must satisfy a concrete value and command bound.
   A larger result remains in its owning product store and the message keeps a
   bounded reference or summary. Size alone does not turn a write-once message
   into a collaborative document.
@@ -111,19 +111,18 @@ table.
   records that own them. The chat transcript is not their commit log, and retry
   does not make a side-effecting tool exactly-once; the tool still owns
   idempotency or a durable receipt.
-- Moving existing chat history is an explicit app-owned cross-plane conversion,
-  not `defineRecordsMigration`. The converter enumerates known conversations,
-  opens each retained keyed message room, validates and bounds every finished
-  message, builds the complete target rows, and transfers authority to the
-  record tables only after the import succeeds. Old rooms remain retained for
-  export; old binaries must fail closed after cutover rather than keep authoring
-  the abandoned plane.
+- Moving existing chat history is an explicit app-owned cross-plane copy, not a
+  workspace migration. The copier enumerates known conversations, opens each
+  retained keyed message room, validates and bounds every finished message, and
+  creates canonical target rows through ordinary typed methods. Old rooms
+  remain retained for export. Mixed releases may continue to disagree about
+  which plane they read; the platform does not coordinate a cutover.
 
 ## Considered alternatives
 
 - **Keep `document.keyed(agentMessageSchema)`.** Rejected: messages need
-  row-level query, retention, deletion, migration, and search, while their values
-  do not need collaborative merging.
+  row-level query, retention, deletion, explicit repair, and search, while their
+  values do not need collaborative merging.
 - **Write every streamed token into SQLite.** Rejected: temporary progress would
   become synchronized history, causing write amplification and recovery states
   with no durable product value.

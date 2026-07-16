@@ -1,10 +1,11 @@
 # 0126. Child documents use format capabilities and evolve outside records databases
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-07-12
+- **Superseded by:** [ADR-0124](0124-workspace-documents-are-top-level-parameterized-resources.md)
 - **Amended by:** [ADR-0128](0128-tables-do-not-declare-document-edit-touch-policy-without-a-runtime-owner.md) (the inert `touchOnDocumentEdit` declaration is withdrawn; document formats, addressing, openers, and conversion ownership are unchanged)
 - **Supersedes:** [ADR-0005](0005-child-docs-are-bound-through-the-workspace.md)
-- **Relates:** [ADR-0120](0120-persisted-fields-are-atomic-cells-and-collaborative-bodies-are-yjs-documents.md), [ADR-0125](0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md)
+- **Relates:** [ADR-0120](0120-fields-validate-present-values-and-table-lenses-own-presence.md), [ADR-0125](0125-record-definitions-are-release-local-lenses-and-never-migrate-user-data.md)
 
 ## Context
 

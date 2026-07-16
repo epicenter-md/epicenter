@@ -82,7 +82,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0003](0003-three-read-states-after-encryption-removal.md) | Stored entries reconcile to three visible read states | Accepted |
 | [0004](0004-trust-the-relay-reject-zero-knowledge.md) | Trust the relay; reject zero-knowledge | Accepted |
 | [0005](0005-child-docs-are-bound-through-the-workspace.md) | Child docs are bound through the workspace, not the component | Superseded by 0126 |
-| [0006](0006-schema-evolution-keeps-the-version-tuple-and-refuses-repair-apis.md) | Schema evolution keeps the version tuple and refuses repair APIs | Accepted |
+| [0006](0006-schema-evolution-keeps-the-version-tuple-and-refuses-repair-apis.md) | Schema evolution keeps the version tuple and refuses repair APIs | Superseded by 0125 |
 | [0007](0007-local-shortcuts-sync-global-shortcuts-stay-per-device.md) | Local shortcuts sync, global shortcuts stay per-device | Accepted |
 | [0008](0008-rdev-backs-the-desktop-global-trigger.md) | rdev backs the desktop global trigger | Superseded by 0117 |
 | [0009](0009-the-cli-dispatches-through-a-mandatory-daemon.md) | The CLI dispatches through a mandatory daemon; automation lives in library scripts | Accepted |
@@ -195,16 +195,16 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0116](0116-local-mail-is-desktop-first-one-bun-engine-no-background-mail-service.md) | Local Mail is desktop-first: one Bun engine, no background mail service, the open app owns the sync loop | Accepted |
 | [0117](0117-global-shortcut-input-is-plugin-chords-only-and-the-macos-tap-is-just-the-paste-grant-watcher.md) | Global shortcut input is plugin chords only, and the macOS tap is just the paste grant watcher | Accepted |
 | [0118](0118-epicenter-is-one-trusted-bun-hosted-spa-origin.md) | Epicenter is one trusted Bun-hosted SPA origin | Accepted |
-| [0119](0119-complete-metadata-replicas-sync-through-schema-blind-server-ordered-mutations.md) | Complete metadata replicas sync through schema-blind server-ordered mutations | Proposed |
-| [0120](0120-persisted-fields-are-atomic-cells-and-collaborative-bodies-are-yjs-documents.md) | Persisted fields are atomic cells and collaborative bodies are Yjs documents | Proposed |
-| [0121](0121-background-sync-is-automatic-and-database-boundary-merges-are-reviewable.md) | Background sync is automatic and database-boundary merges are reviewable | Proposed |
-| [0122](0122-logical-snapshots-are-the-portable-record-database-format-sqlite-files-are-runtime-state.md) | Logical snapshots are the portable records database format; SQLite files are runtime state | Proposed |
-| [0123](0123-bounded-metadata-uses-record-authority-merge-sensitive-state-uses-lazy-child-documents.md) | Bounded metadata uses record authority; merge-sensitive state uses lazy child documents | Accepted |
-| [0124](0124-workspace-kv-keeps-one-logical-identity-outside-the-record-database.md) | Workspace KV keeps one logical identity outside the records database | Proposed |
-| [0125](0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md) | Records schemas are immutable; evolution creates a successor database | Proposed |
-| [0126](0126-child-documents-use-format-capabilities-and-evolve-outside-records-databases.md) | Child documents use format capabilities and evolve outside records databases | Accepted (touch policy amended by 0128) |
+| [0119](0119-complete-record-maps-sync-through-schema-blind-server-ordered-patches.md) | Complete record maps sync through schema-blind server-ordered patches | Accepted |
+| [0120](0120-fields-validate-present-values-and-table-lenses-own-presence.md) | Fields validate present values and table lenses own presence | Accepted |
+| [0121](0121-background-sync-resolves-key-conflicts-by-server-order.md) | Background sync resolves key conflicts by server order | Accepted |
+| [0122](0122-logical-records-are-portable-sqlite-files-and-views-are-runtime-state.md) | Logical records are portable; SQLite files and views are runtime state | Accepted |
+| [0123](0123-bounded-metadata-uses-record-authority-merge-sensitive-state-uses-lazy-child-documents.md) | Bounded metadata uses record authority; merge-sensitive state uses lazy child documents | Superseded by 0124 |
+| [0124](0124-workspace-documents-are-top-level-parameterized-resources.md) | Workspace documents are top-level parameterized resources | Accepted |
+| [0125](0125-record-definitions-are-release-local-lenses-and-never-migrate-user-data.md) | Record definitions are release-local lenses and never migrate user data | Accepted |
+| [0126](0126-child-documents-use-format-capabilities-and-evolve-outside-records-databases.md) | Child documents use format capabilities and evolve outside records databases | Superseded by 0124 (touch policy amended by 0128) |
 | [0127](0127-chat-streams-live-turns-in-client-state-and-stores-finished-messages-as-records.md) | Chat streams live turns in client state and stores finished messages as records | Proposed |
 | [0128](0128-tables-do-not-declare-document-edit-touch-policy-without-a-runtime-owner.md) | Tables do not declare document-edit touch policy without a runtime owner | Accepted |
-| [0129](0129-matter-is-markdown-authoritative-application-records-follow-developer-owned-schemas.md) | Matter is Markdown-authoritative; application records follow developer-owned schemas | Proposed |
+| [0129](0129-matter-and-workspace-share-fields-not-authority-policy.md) | Matter and Workspace share fields, not authority policy | Accepted |
 
 When you add an ADR, add its row here.

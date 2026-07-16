@@ -1,8 +1,9 @@
 # 0123. Bounded metadata uses record authority; merge-sensitive state uses lazy child documents
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-07-11
-- **Relates:** [ADR-0106](0106-a-child-doc-body-owns-one-layout-the-polymorphic-timeline-is-refused-until-a-product-earns-it.md), [ADR-0119](0119-complete-metadata-replicas-sync-through-schema-blind-server-ordered-mutations.md), [ADR-0120](0120-persisted-fields-are-atomic-cells-and-collaborative-bodies-are-yjs-documents.md)
+- **Superseded by:** [ADR-0124](0124-workspace-documents-are-top-level-parameterized-resources.md)
+- **Relates:** [ADR-0106](0106-a-child-doc-body-owns-one-layout-the-polymorphic-timeline-is-refused-until-a-product-earns-it.md), [ADR-0119](0119-complete-record-maps-sync-through-schema-blind-server-ordered-patches.md), [ADR-0120](0120-fields-validate-present-values-and-table-lenses-own-presence.md)
 
 ## Context
 
@@ -27,7 +28,7 @@ a child document when independent edits inside one value must survive and
 converge.
 
 This ADR owns storage placement and the lazy child-document lifecycle.
-[ADR-0120](0120-persisted-fields-are-atomic-cells-and-collaborative-bodies-are-yjs-documents.md)
+[ADR-0120](0120-fields-validate-present-values-and-table-lenses-own-presence.md)
 owns the underlying record-cell replacement semantics and persisted field
 vocabulary.
 
