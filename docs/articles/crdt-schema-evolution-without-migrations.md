@@ -1,8 +1,9 @@
 # How CRDTs Evolve Schemas Without Traditional Migrations
 
 > Historical: this article describes the retired Yjs-record model. Epicenter's
-> target record plane uses immutable SQLite schemas and validated successor
-> databases. See [ADR-0125](../adr/0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md).
+> target record plane keeps schema-opaque canonical JSON and applies
+> release-local lenses without user-data migration. See
+> [ADR-0125](../adr/0125-record-definitions-are-release-local-lenses-and-never-migrate-user-data.md).
 
 I'm building Epicenter, a local-first workspace system using Yjs CRDTs. When I started thinking about schema evolution, I assumed I'd need something like database migrations: version numbers, up/down scripts, the whole ceremony.
 

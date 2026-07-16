@@ -1,9 +1,9 @@
 # Why Epicenter Uses Numbers Instead of Semantic Versioning
 
 > Historical: this article describes two retired versioning APIs. The target
-> record plane uses immutable SQLite schemas and a separate adjacent
-> `defineRecordsMigration` chain; see
-> [ADR-0125](../../../../docs/adr/0125-record-schemas-are-immutable-evolution-creates-a-successor-database.md).
+> record plane uses schema-opaque canonical JSON and release-local lenses with
+> no user-data migration; see
+> [ADR-0125](../../../../docs/adr/0125-record-definitions-are-release-local-lenses-and-never-migrate-user-data.md).
 
 In Epicenter, workspace versions are just numbers: 1, 2, 3, 4.
 
