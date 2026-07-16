@@ -4,7 +4,7 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import type { Result } from 'wellcrafted/result';
+import { isResult, Ok, type Result } from 'wellcrafted/result';
 
 export const DESKTOP_WORKSPACE_ROUTE = '/api/workspaces/:workspaceId/records';
 export const DESKTOP_DOCUMENT_ROUTE =
@@ -48,6 +48,42 @@ export const DesktopWorkspaceError = defineErrors({
 export type DesktopWorkspaceError = InferErrors<typeof DesktopWorkspaceError>;
 
 export type DesktopWorkspaceResponse = Result<unknown, DesktopWorkspaceError>;
+
+/** Preserve optional row Results across JSON, which cannot encode undefined. */
+export function encodeDesktopRecordResult(
+	operation: DesktopRecordOperation,
+	result: unknown,
+): unknown {
+	if (
+		isOptionalRowOperation(operation) &&
+		isResult(result) &&
+		result.error === null &&
+		result.data === undefined
+	) {
+		return Ok(null);
+	}
+	return result;
+}
+
+/** Restore the public undefined absence value from its wire-only null. */
+export function decodeDesktopRecordResult(
+	operation: DesktopRecordOperation,
+	result: unknown,
+): unknown {
+	if (
+		isOptionalRowOperation(operation) &&
+		isResult(result) &&
+		result.error === null &&
+		result.data === null
+	) {
+		return Ok(undefined);
+	}
+	return result;
+}
+
+function isOptionalRowOperation(operation: DesktopRecordOperation): boolean {
+	return operation.kind === 'get' || operation.kind === 'patch';
+}
 
 export function desktopWorkspaceRecordUrl(
 	baseUrl: string,

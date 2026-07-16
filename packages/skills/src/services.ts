@@ -67,10 +67,14 @@ export async function listSkills(workspace: SkillsWorkspace) {
 export async function getSkill(workspace: SkillsWorkspace, id: string) {
 	const result = await workspace.tables.skills.get(id);
 	if (result.error !== null) {
-		return { skill: null, instructions: null, nonconforming: [result.error] };
+		return {
+			skill: undefined,
+			instructions: undefined,
+			nonconforming: [result.error],
+		};
 	}
-	if (result.data === null) {
-		return { skill: null, instructions: null, nonconforming: [] };
+	if (result.data === undefined) {
+		return { skill: undefined, instructions: undefined, nonconforming: [] };
 	}
 	await using instructions = await workspace.documents.instructions.open({
 		skillId: id,
@@ -88,7 +92,7 @@ export async function getSkillWithReferences(
 	id: string,
 ) {
 	const skill = await getSkill(workspace, id);
-	if (skill.skill === null) {
+	if (skill.skill === undefined) {
 		return { ...skill, references: [] };
 	}
 	const scanned = await scanReferences(workspace);

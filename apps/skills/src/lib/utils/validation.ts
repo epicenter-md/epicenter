@@ -24,8 +24,8 @@ const SKILL_NAME_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
 export function validateSkill(fields: {
 	name: string;
 	description: string;
-	license?: string | null;
-	compatibility?: string | null;
+	license?: string;
+	compatibility?: string;
 }): string[] {
 	const errors: string[] = [];
 

@@ -17,7 +17,16 @@ import {
 	parsePullResponse,
 	parsePushRequest,
 	RECORD_SYNC_PROTOCOL_MAJOR,
+	requestRefusal,
 } from './protocol.js';
+
+test('request refusal is absent for the current protocol', () => {
+	expect(
+		requestRefusal({
+			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+		}),
+	).toBeUndefined();
+});
 
 test('canonical JSON orders object keys by JavaScript code units', () => {
 	expect(canonicalJson({ ä: 3, a: 2, Z: 1 })).toBe('{"Z":1,"a":2,"ä":3}');

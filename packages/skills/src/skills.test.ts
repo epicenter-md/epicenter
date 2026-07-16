@@ -33,7 +33,7 @@ import { Type } from 'typebox';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { SKILLS_WORKSPACE_ID } from './constants.js';
 import { exportSkillsToDisk, importSkillsFromDisk } from './node.js';
-import { listSkills, scanSkills } from './services.js';
+import { getSkill, listSkills, scanSkills } from './services.js';
 import { skillsWorkspace } from './workspace.js';
 
 const historicalSkillsWorkspace = defineWorkspace({
@@ -72,6 +72,11 @@ test('a stricter Skills lens exposes nonconformance until typed patch repairs it
 			storageRoot,
 		});
 		const skills = await runtime.open(skillsWorkspace);
+		expect(await getSkill(skills, 'missing')).toEqual({
+			skill: undefined,
+			instructions: undefined,
+			nonconforming: [],
+		});
 		const error = expectErr(await skills.tables.skills.get(oldSkill.id));
 		expect(error.issues).toContainEqual({
 			field: 'sourceId',

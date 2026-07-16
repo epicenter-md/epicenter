@@ -313,7 +313,7 @@ test('Bun runtime disposal aborts a stalled record transport', async () => {
 		});
 		const reopenedSkills = await reopened.open(definition);
 		expect(await reopenedSkills.tables.skills.get('missing')).toEqual({
-			data: null,
+			data: undefined,
 			error: null,
 		});
 	} finally {
@@ -355,7 +355,7 @@ test('Bun runtime disposal aborts a stalled transport factory', async () => {
 		});
 		const reopenedSkills = await reopened.open(definition);
 		expect(await reopenedSkills.tables.skills.get('missing')).toEqual({
-			data: null,
+			data: undefined,
 			error: null,
 		});
 	} finally {

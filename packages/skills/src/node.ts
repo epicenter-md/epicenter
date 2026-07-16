@@ -102,7 +102,7 @@ export async function importSkillsFromDisk({
 		let skill: Skill;
 		if (existing) {
 			const repaired = await workspace.tables.skills.patch(existing.id, input);
-			if (repaired.error !== null || repaired.data === null) {
+			if (repaired.error !== null || repaired.data === undefined) {
 				throw new Error(
 					repaired.error?.message ?? `Skill '${existing.id}' disappeared`,
 				);
@@ -244,7 +244,7 @@ async function repairReference(
 		path,
 		updatedAt: InstantString.now(),
 	});
-	if (repaired.error !== null || repaired.data === null) {
+	if (repaired.error !== null || repaired.data === undefined) {
 		throw new Error(
 			repaired.error?.message ?? `Reference '${reference.id}' disappeared`,
 		);

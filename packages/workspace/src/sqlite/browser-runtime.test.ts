@@ -42,7 +42,7 @@ class FakeWorker extends EventTarget {
 		this.requests.push(request);
 		const value =
 			request.operation.kind === 'get'
-				? { data: null, error: null }
+				? { data: undefined, error: null }
 				: request.operation.kind === 'delete'
 					? undefined
 					: {};
@@ -133,7 +133,7 @@ test('open stays inert and the first record call crosses one Worker boundary', a
 		expect(worker).toBeUndefined();
 		const reading = workspace.tables.notes.get('missing');
 		expect(worker).toBeDefined();
-		expect((await reading).data).toBeNull();
+		expect((await reading).data).toBeUndefined();
 		if (!worker) throw new Error('Record call did not create a Worker');
 		expect(worker.requests).toHaveLength(1);
 		expect(worker.requests[0]?.operation).toEqual({

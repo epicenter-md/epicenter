@@ -400,7 +400,7 @@ test('distributed aggregate refusal quarantines intent and rebases later command
 			id: 'untouched',
 			first: 'authority baseline',
 		});
-		expect(expectOk(second.rows.get(rolledBackCreate.id))).toBeNull();
+		expect(expectOk(second.rows.get(rolledBackCreate.id))).toBeUndefined();
 		expect(expectOk(second.rows.get(retained.id))).toEqual(retained);
 		expect(
 			authority

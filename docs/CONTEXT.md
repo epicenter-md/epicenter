@@ -107,7 +107,7 @@ shapes, see `docs/adr/`.
 - **Field**: one `field.*` validator for a present JSON value. Required versus
   optional presence belongs to the table lens, not the field definition.
 - **Conforming record**: a canonical row that satisfies the opened release's
-  table lens. `get()` returns a typed row or null inside `Result`, or a
+  table lens. `get()` returns a typed row or `undefined` inside `Result`, or a
   `NonconformingRecord` error; `scan()` returns conforming rows and
   nonconforming diagnostics without hiding canonical data.
 - **Optional field unset**: patching an optional field with `undefined` removes

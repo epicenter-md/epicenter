@@ -61,9 +61,10 @@ or optional.
 
 A lens may change freely between releases. Existing rows may then be
 nonconforming, and that is honest. Reads never fill defaults, follow aliases,
-rename keys, or mutate stored data. `get()` returns a typed row or null inside
-`Result`, or a nonconforming-record error. `scan()` returns typed rows alongside
-diagnostics and raw canonical payloads that application repair code can inspect.
+rename keys, or mutate stored data. `get()` returns a typed row or `undefined`
+inside `Result`, or a nonconforming-record error. `scan()` returns typed rows
+alongside diagnostics and raw canonical payloads that application repair code
+can inspect.
 
 Typed creates admit only the current shape. Typed patches preserve unknown keys.
 For an optional field, patching `undefined` means unset and removes the key;

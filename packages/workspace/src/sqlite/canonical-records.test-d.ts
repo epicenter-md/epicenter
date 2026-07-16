@@ -40,13 +40,23 @@ const invalidOptional: Skill = {
 
 declare const skills: CanonicalTable<typeof skillsDefinition>;
 
+const getResult = skills.get('skill-1');
+if (getResult.error === null) {
+	const found: Skill | undefined = getResult.data;
+	void found;
+}
+
 skills.create({ title: 'Allocated by runtime' });
 // @ts-expect-error: callers cannot choose structural row identity
 skills.create({ id: 'caller-id', title: 'Forbidden' });
 // @ts-expect-error: create requires every current-lens required field
 skills.create({ archived: false });
 
-skills.patch('skill-1', { title: 'Updated' });
+const patchResult = skills.patch('skill-1', { title: 'Updated' });
+if (patchResult.error === null) {
+	const patched: Skill | undefined = patchResult.data;
+	void patched;
+}
 skills.patch('skill-1', { archived: undefined });
 skills.patch('skill-1', { rating: 5 });
 // @ts-expect-error: required fields cannot be unset

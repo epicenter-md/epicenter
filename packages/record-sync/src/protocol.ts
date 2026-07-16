@@ -402,8 +402,8 @@ export function parseSnapshotChunkResponse(
 
 export function requestRefusal(
 	request: RequestEnvelope,
-): RequestRefusal | null {
+): RequestRefusal | undefined {
 	return request.protocolMajor === RECORD_SYNC_PROTOCOL_MAJOR
-		? null
+		? undefined
 		: 'protocol-mismatch';
 }

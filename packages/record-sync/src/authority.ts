@@ -546,7 +546,7 @@ export function openRecordAuthority({
 
 		async publishSnapshot({
 			maxChunkBytes,
-		}: SnapshotPublicationOptions): Promise<SnapshotManifest | null> {
+		}: SnapshotPublicationOptions): Promise<SnapshotManifest | undefined> {
 			if (
 				!Number.isSafeInteger(maxChunkBytes) ||
 				maxChunkBytes < 1 ||
@@ -572,7 +572,7 @@ export function openRecordAuthority({
 					meta.server_sequence !== capture.head ||
 					meta.snapshot_generation + 1 !== capture.generation
 				) {
-					return null;
+					return undefined;
 				}
 				database.run('DELETE FROM record_sync_snapshot_chunks');
 				for (const chunk of chunks) {
@@ -629,7 +629,7 @@ export function openRecordAuthority({
 		async maybePublishSnapshot({
 			minimumRetainedSequences,
 			maxChunkBytes,
-		}: RecordAuthorityCompactionPolicy): Promise<SnapshotManifest | null> {
+		}: RecordAuthorityCompactionPolicy): Promise<SnapshotManifest | undefined> {
 			if (
 				!Number.isSafeInteger(minimumRetainedSequences) ||
 				minimumRetainedSequences < 0
@@ -641,7 +641,7 @@ export function openRecordAuthority({
 				meta.server_sequence - meta.tombstone_floor <=
 				minimumRetainedSequences
 			) {
-				return null;
+				return undefined;
 			}
 			const manifest = await authority.publishSnapshot({ maxChunkBytes });
 			if (manifest) authority.compactDeletionsThrough(manifest.head);

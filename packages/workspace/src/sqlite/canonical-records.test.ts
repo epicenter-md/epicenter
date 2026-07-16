@@ -177,7 +177,9 @@ test('patch repairs invalid rows and preserves unknown future keys', () => {
 	expect(() => skills.patch('repair-me', { future: true } as never)).toThrow(
 		"Unknown field 'future'",
 	);
-	expect(expectOk(skills.patch('missing', { title: 'No upsert' }))).toBeNull();
+	expect(
+		expectOk(skills.patch('missing', { title: 'No upsert' })),
+	).toBeUndefined();
 	expect(() => skills.patch('missing', { future: true } as never)).toThrow(
 		"Unknown field 'future'",
 	);
@@ -260,7 +262,7 @@ test('delete removes only the addressed canonical row', () => {
 	const second = skills.create({ title: 'Second' });
 
 	skills.delete(first.id);
-	expect(expectOk(skills.get(first.id))).toBeNull();
+	expect(expectOk(skills.get(first.id))).toBeUndefined();
 	expect(expectOk(skills.get(second.id))).toEqual(second);
 	skills.delete(first.id);
 });

@@ -58,6 +58,24 @@ function remove(rowId: string): RecordCommand {
 	return { kind: 'deleteRow', table: 'skills', rowId };
 }
 
+test('snapshot publication is absent below the compaction threshold', async () => {
+	const sqlite = new Database(':memory:');
+	try {
+		const authority = openRecordAuthority({
+			database: createBunSqliteAdapter(sqlite),
+			sha256,
+		});
+		expect(
+			await authority.maybePublishSnapshot({
+				minimumRetainedSequences: 0,
+				maxChunkBytes: 512 * 1024,
+			}),
+		).toBeUndefined();
+	} finally {
+		sqlite.close();
+	}
+});
+
 test('exact latest retry returns its receipt without advancing state', () => {
 	const sqlite = new Database(':memory:');
 	try {

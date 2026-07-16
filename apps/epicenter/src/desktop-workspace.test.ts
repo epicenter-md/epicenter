@@ -23,6 +23,7 @@ import { whisperingWorkspace } from '@epicenter/whispering/workspace-contract';
 import { defineWorkspace } from '@epicenter/workspace/sqlite';
 import { createDesktopWorkspaceRuntime } from '@epicenter/workspace/sqlite/desktop';
 import { IDBFactory } from 'fake-indexeddb';
+import { isResult } from 'wellcrafted/result';
 import { createQueryHost } from './host.ts';
 import { BOOTSTRAP_ROUTE } from './routes.ts';
 import { createQueryServer } from './server.ts';
@@ -41,6 +42,16 @@ test('two clients share one owner, disconnect independently, and survive restart
 		const secondSkills = await secondClient.open(skillsWorkspace);
 		const firstWhispering = await firstClient.open(whisperingWorkspace);
 		const secondWhispering = await secondClient.open(whisperingWorkspace);
+		for (const result of [
+			await secondSkills.tables.skills.get('missing'),
+			await secondSkills.tables.skills.patch('missing', {
+				description: 'Still missing',
+			}),
+		]) {
+			expect(result).toEqual({ data: undefined, error: null });
+			expect(Object.hasOwn(result, 'data')).toBeTrue();
+			expect(isResult(result)).toBeTrue();
+		}
 		const recording = await firstWhispering.tables.recordings.create({
 			sourceId: 'shared-recording',
 			title: 'Shared recording',

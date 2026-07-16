@@ -8,6 +8,7 @@ import { createIndexedDbDocumentLocalStore } from './browser-document-store.js';
 import {
 	type DesktopRecordOperation,
 	type DesktopWorkspaceResponse,
+	decodeDesktopRecordResult,
 	desktopDocumentOpenUrl,
 	desktopWorkspaceRecordUrl,
 } from './desktop-protocol.js';
@@ -94,7 +95,7 @@ export function createDesktopWorkspaceRuntime({
 		) {
 			onRecordsChanged(workspaceId);
 		}
-		return envelope.data as TResult;
+		return decodeDesktopRecordResult(operation, envelope.data) as TResult;
 	};
 
 	function assertOpen(): void {

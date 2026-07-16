@@ -24,7 +24,7 @@ const MAX_SCAN_LIMIT = 1_000;
 
 export type CanonicalTable<TDefinition extends TableLensDefinition> = {
 	/** Read and project one canonical row through this release's lens. */
-	get(id: string): Result<RowFor<TDefinition> | null, RecordLensError>;
+	get(id: string): Result<RowFor<TDefinition> | undefined, RecordLensError>;
 	/** Read one bounded, row-id ordered page and partition it by conformance. */
 	scan(options: { cursor?: string; limit: number }): {
 		rows: RowFor<TDefinition>[];
@@ -40,7 +40,7 @@ export type CanonicalTable<TDefinition extends TableLensDefinition> = {
 	patch<const TPatch extends Record<string, unknown>>(
 		id: string,
 		patch: TPatch & ConstrainedPatch<TDefinition, TPatch>,
-	): Result<RowFor<TDefinition> | null, RecordLensError>;
+	): Result<RowFor<TDefinition> | undefined, RecordLensError>;
 	delete(id: string): void;
 };
 
@@ -79,7 +79,7 @@ export function createCanonicalRecords<
 				get(id: string) {
 					const payload = readCanonical(sqlite, tableName, id);
 					return payload === null
-						? Ok(null)
+						? Ok(undefined)
 						: lens.project(tableName, id, payload);
 				},
 				scan({ cursor = '', limit }: { cursor?: string; limit: number }) {
@@ -131,7 +131,7 @@ export function createCanonicalRecords<
 							normalized.unset.length === 0
 						) {
 							return payload === null
-								? Ok(null)
+								? Ok(undefined)
 								: lens.project(tableName, id, payload);
 						}
 						const command = {
@@ -143,7 +143,7 @@ export function createCanonicalRecords<
 						} satisfies RecordCommand;
 						if (payload === null) {
 							admitCommand(admit, command);
-							return Ok(null);
+							return Ok(undefined);
 						}
 						const folded = foldRow(payload, command);
 						if (folded.kind !== 'row') {

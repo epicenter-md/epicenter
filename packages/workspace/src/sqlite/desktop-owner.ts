@@ -13,7 +13,10 @@ import { createBunWorkspaceRuntime } from './bun-runtime.js';
 
 export { DesktopWorkspaceError } from './desktop-protocol.js';
 
-import type { DesktopRecordOperation } from './desktop-protocol.js';
+import {
+	type DesktopRecordOperation,
+	encodeDesktopRecordResult,
+} from './desktop-protocol.js';
 import type { DocumentDefinition } from './document-definition.js';
 import {
 	type DocumentRoomManifest,
@@ -81,7 +84,10 @@ export function createDesktopWorkspaceOwner({
 			if (!table) throw new Error(`Unknown table '${operation.table}'`);
 			switch (operation.kind) {
 				case 'get':
-					return table.get(operation.id);
+					return encodeDesktopRecordResult(
+						operation,
+						await table.get(operation.id),
+					);
 				case 'scan':
 					return table.scan(operation.options);
 				case 'create':
@@ -89,7 +95,10 @@ export function createDesktopWorkspaceOwner({
 				case 'patch': {
 					const patch: Record<string, unknown> = { ...operation.set };
 					for (const name of operation.unset) patch[name] = undefined;
-					return table.patch(operation.id, patch);
+					return encodeDesktopRecordResult(
+						operation,
+						await table.patch(operation.id, patch),
+					);
 				}
 				case 'delete':
 					return table.delete(operation.id);

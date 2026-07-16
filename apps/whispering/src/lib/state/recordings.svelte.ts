@@ -90,7 +90,7 @@ function createRecordings() {
 		},
 		async update(id: string, partial: Partial<Omit<Recording, 'id'>>) {
 			const canonicalId = canonicalIdBySourceId.get(id);
-			if (!canonicalId) return Ok(null);
+			if (!canonicalId) return Ok(undefined);
 			const result = await whispering.tables.recordings.patch(
 				canonicalId,
 				partial,
