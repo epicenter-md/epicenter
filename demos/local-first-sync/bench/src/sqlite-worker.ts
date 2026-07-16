@@ -53,7 +53,8 @@ function run(sql: string, bind: unknown[]): void {
 }
 
 let db: Sqlite3Db | null = null;
-let poolUtil: { wipeFiles?: () => Promise<void> } & Record<string, unknown> = {};
+let poolUtil: { wipeFiles?: () => Promise<void> } & Record<string, unknown> =
+	{};
 let sqlite3: unknown = null;
 
 const DB_FILE = '/bench-notes.db';
@@ -156,7 +157,10 @@ const api = {
 		db!.exec('BEGIN');
 		for (let i = 0; i < n; i++) {
 			const row = makeNote(i, 0);
-			run('INSERT OR REPLACE INTO notes VALUES (?,?,?,?,?,?,?,?,?)', rowValues(row));
+			run(
+				'INSERT OR REPLACE INTO notes VALUES (?,?,?,?,?,?,?,?,?)',
+				rowValues(row),
+			);
 			bumpClock(row.id, FIELD_KEYS, 'seed');
 		}
 		db!.exec('COMMIT');
@@ -194,7 +198,10 @@ const api = {
 			rowMode: 'array',
 			resultRows: rows,
 		});
-		return { ms: performance.now() - t0, count: Number((rows[0] as unknown[])[0]) };
+		return {
+			ms: performance.now() - t0,
+			count: Number((rows[0] as unknown[])[0]),
+		};
 	},
 	async editOne(index: number) {
 		const id = noteId(index);
@@ -222,7 +229,10 @@ const api = {
 				run('DELETE FROM cell_clock WHERE row_id = ?', [op.id]);
 			} else if (op.kind === 'reinsert') {
 				const row = makeNote(op.index, op.revision);
-				run('INSERT OR REPLACE INTO notes VALUES (?,?,?,?,?,?,?,?,?)', rowValues(row));
+				run(
+					'INSERT OR REPLACE INTO notes VALUES (?,?,?,?,?,?,?,?,?)',
+					rowValues(row),
+				);
 				bumpClock(row.id, FIELD_KEYS, 'local');
 			} else {
 				run(`UPDATE notes SET ${op.field} = ? WHERE id = ?`, [op.value, op.id]);
@@ -245,7 +255,10 @@ const api = {
 		db!.exec('BEGIN');
 		for (const edit of plan) {
 			// Server-authoritative apply: server version wins; bump local clock to match.
-			run(`UPDATE notes SET ${edit.field} = ? WHERE id = ?`, [edit.value, edit.id]);
+			run(`UPDATE notes SET ${edit.field} = ? WHERE id = ?`, [
+				edit.value,
+				edit.id,
+			]);
 			bumpClock(edit.id, [edit.field], 'server');
 		}
 		db!.exec('COMMIT');

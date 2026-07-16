@@ -26,7 +26,10 @@ function open() {
 	const doc = new Y.Doc({ gc: true });
 	const rows = doc.getMap<boolean>('table:notes:rows');
 	const cells = Object.fromEntries(
-		FIELD_KEYS.map((key) => [key, doc.getMap<unknown>(`table:notes:cell:${key}`)]),
+		FIELD_KEYS.map((key) => [
+			key,
+			doc.getMap<unknown>(`table:notes:cell:${key}`),
+		]),
 	) as Cells;
 	return { doc, rows, cells };
 }
@@ -178,4 +181,5 @@ window.bench = {
 window.benchReady = Promise.resolve();
 
 import { maybeAutorun } from './autorun';
+
 void window.benchReady.then(maybeAutorun);

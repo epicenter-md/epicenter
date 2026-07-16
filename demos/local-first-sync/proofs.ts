@@ -9,9 +9,9 @@
  *   bun proofs.ts
  */
 
-import { type Subprocess, spawn } from 'bun';
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { type Subprocess, spawn } from 'bun';
 import { type BrowserContext, chromium, type Page } from 'playwright';
 
 const VITE = 'http://localhost:5199';
@@ -22,7 +22,9 @@ const results: { n: number; name: string; pass: boolean; detail: string }[] =
 	[];
 function record(n: number, name: string, pass: boolean, detail = '') {
 	results.push({ n, name, pass, detail });
-	console.log(`  ${pass ? 'PASS' : 'FAIL'}  #${n} ${name}${detail ? ` — ${detail}` : ''}`);
+	console.log(
+		`  ${pass ? 'PASS' : 'FAIL'}  #${n} ${name}${detail ? ` — ${detail}` : ''}`,
+	);
 }
 
 async function demoEval<T>(page: Page, script: string): Promise<T> {
@@ -51,10 +53,13 @@ async function openApp(
 }
 
 function startServer(args: string[]): Subprocess {
-	const proc = spawn(['bun', join(import.meta.dir, 'server/main.ts'), ...args], {
-		stdout: 'inherit',
-		stderr: 'inherit',
-	});
+	const proc = spawn(
+		['bun', join(import.meta.dir, 'server/main.ts'), ...args],
+		{
+			stdout: 'inherit',
+			stderr: 'inherit',
+		},
+	);
 	return proc;
 }
 
@@ -79,7 +84,9 @@ async function serverNotes(url = SERVER, token = 'braden') {
 	return (await response.json()) as Record<string, unknown>[];
 }
 
-async function titles(page: Page): Promise<Map<string, Record<string, unknown>>> {
+async function titles(
+	page: Page,
+): Promise<Map<string, Record<string, unknown>>> {
 	const rows = await demoEval<Record<string, unknown>[]>(
 		page,
 		'window.demo.listTitles()',
@@ -127,17 +134,29 @@ try {
 	await pageA.waitForFunction('window.demo !== undefined');
 	await pageA.evaluate('window.demo.ready');
 	list = await titles(pageA);
-	record(2, 'restart restores complete local database', list.size === 3, `rows=${list.size}`);
+	record(
+		2,
+		'restart restores complete local database',
+		list.size === 3,
+		`rows=${list.size}`,
+	);
 
 	const t0 = Date.now();
-	await demoEval(pageA, `window.demo.patchCell('${id1}', 'title', 'first-edited')`);
+	await demoEval(
+		pageA,
+		`window.demo.patchCell('${id1}', 'title', 'first-edited')`,
+	);
 	await settle(200);
 	list = await titles(pageA);
-	const domHasEdit = (await pageA.textContent('#notes'))?.includes('first-edited');
+	const domHasEdit = (await pageA.textContent('#notes'))?.includes(
+		'first-edited',
+	);
 	record(
 		3,
 		'local mutation updates UI with no network round trip',
-		list.get(id1)?.title === 'first-edited' && domHasEdit === true && serverRequests.length === 0,
+		list.get(id1)?.title === 'first-edited' &&
+			domHasEdit === true &&
+			serverRequests.length === 0,
 		`latency<=${Date.now() - t0}ms, server requests=${serverRequests.length}`,
 	);
 
@@ -151,7 +170,8 @@ try {
 		plan: { inserts: unknown[]; cellImports: unknown[] } | null;
 	}>(pageA, `window.demo.signIn('braden', 'add')`);
 	list = await titles(pageA);
-	const localMigrated = list.size === 3 && plan !== null && plan.inserts.length === 3;
+	const localMigrated =
+		list.size === 3 && plan !== null && plan.inserts.length === 3;
 	const serverEmpty = (await serverNotes()).length === 0;
 	await demoEval(pageA, 'window.demo.setOnline(true)');
 	await settle(1500);
@@ -173,8 +193,14 @@ try {
 
 	await demoEval(pageA, 'window.demo.setOnline(false)');
 	await demoEval(pageB, 'window.demo.setOnline(false)');
-	await demoEval(pageA, `window.demo.patchCell('${id2}', 'title', 'title-from-A')`);
-	await demoEval(pageB, `window.demo.patchCell('${id2}', 'subtitle', 'subtitle-from-B')`);
+	await demoEval(
+		pageA,
+		`window.demo.patchCell('${id2}', 'title', 'title-from-A')`,
+	);
+	await demoEval(
+		pageB,
+		`window.demo.patchCell('${id2}', 'subtitle', 'subtitle-from-B')`,
+	);
 	await demoEval(pageA, 'window.demo.setOnline(true)');
 	await settle(1200);
 	await demoEval(pageB, 'window.demo.setOnline(true)');
@@ -198,9 +224,15 @@ try {
 	// 300ms LATER — then A pushes first and B pushes second. Wall-clock LWW
 	// would pick A (newer timestamp); acceptance order picks B (accepted
 	// later). Only a B win proves the server log is the authority.
-	await demoEval(pageB, `window.demo.patchCell('${id3}', 'title', 'same-field-B')`);
+	await demoEval(
+		pageB,
+		`window.demo.patchCell('${id3}', 'title', 'same-field-B')`,
+	);
 	await settle(300);
-	await demoEval(pageA, `window.demo.patchCell('${id3}', 'title', 'same-field-A')`);
+	await demoEval(
+		pageA,
+		`window.demo.patchCell('${id3}', 'title', 'same-field-A')`,
+	);
 	await demoEval(pageA, 'window.demo.setOnline(true)');
 	await settle(1200);
 	await demoEval(pageB, 'window.demo.setOnline(true)');
@@ -211,7 +243,9 @@ try {
 	record(
 		6,
 		'same-field conflict resolved by server acceptance order',
-		winnerA === 'same-field-B' && winnerB === 'same-field-B' && serverRow3?.title === 'same-field-B',
+		winnerA === 'same-field-B' &&
+			winnerB === 'same-field-B' &&
+			serverRow3?.title === 'same-field-B',
 		`A=${winnerA}, B=${winnerB}, server=${serverRow3?.title}`,
 	);
 
@@ -222,7 +256,10 @@ try {
 	await settle(1500);
 	const rowC = (await titles(pageC)).get(id2);
 	const carriesUnknown = JSON.parse(String(rowC?.extra ?? '{}'));
-	await demoEval(pageC, `window.demo.patchCell('${id2}', 'title', 'edited-by-v1')`);
+	await demoEval(
+		pageC,
+		`window.demo.patchCell('${id2}', 'title', 'edited-by-v1')`,
+	);
 	await settle(1500);
 	const rowAafterV1 = (await titles(pageA)).get(id2);
 	record(
@@ -255,7 +292,10 @@ try {
 	// ── Proof 9: Yjs bodies merge independently, load lazily ─────────────────
 	console.log('\nPhase 6: lazy Yjs bodies');
 	await demoEval(pageA, `window.demo.openNoteBody('${id1}')`);
-	const framesOnFirstOpen = await demoEval<number>(pageA, 'window.demo.bodyFrameCount()');
+	const framesOnFirstOpen = await demoEval<number>(
+		pageA,
+		'window.demo.bodyFrameCount()',
+	);
 	await demoEval(pageA, 'window.demo.setOnline(false)');
 	await demoEval(pageB, `window.demo.openNoteBody('${id1}')`);
 	await demoEval(pageB, 'window.demo.setOnline(false)');

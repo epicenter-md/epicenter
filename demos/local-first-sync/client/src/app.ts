@@ -164,7 +164,11 @@ async function planImport(anon: {
 	rows: NoteRecord[];
 	docs: { docId: string; frames: string[] }[];
 }): Promise<ImportPlan> {
-	const plan: ImportPlan = { inserts: [], cellImports: [], docFrames: anon.docs };
+	const plan: ImportPlan = {
+		inserts: [],
+		cellImports: [],
+		docFrames: anon.docs,
+	};
 	for (const row of anon.rows) {
 		const existing = await db.getNote(row.id);
 		if (!existing) {
@@ -326,10 +330,7 @@ document.getElementById('toggle-network')!.onclick = () => {
 };
 document.getElementById('append-body')!.onclick = async () => {
 	if (!openedBody) return;
-	openedBody.handle.insert(
-		openedBody.handle.text.length,
-		el.bodyAppend.value,
-	);
+	openedBody.handle.insert(openedBody.handle.text.length, el.bodyAppend.value);
 	el.bodyAppend.value = '';
 	renderBody();
 };
@@ -339,8 +340,10 @@ document.getElementById('sign-in')!.onclick = async () => {
 	const { notes } = await db.counts();
 	const choice =
 		notes > 0
-			? ((prompt(`${notes} anonymous notes. add / delete / keep?`) ??
-					'keep') as 'add' | 'delete' | 'keep')
+			? ((prompt(`${notes} anonymous notes. add / delete / keep?`) ?? 'keep') as
+					| 'add'
+					| 'delete'
+					| 'keep')
 			: 'keep';
 	await signIn(principal, choice);
 };

@@ -128,9 +128,7 @@ const server = Bun.serve<{ principal: string }>({
 			const principal = resolveWsPrincipal(url);
 			if (!principal) return json({ error: 'unauthorized' }, 401);
 			const upgraded = srv.upgrade(request, { data: { principal } });
-			return upgraded
-				? undefined
-				: json({ error: 'upgrade failed' }, 400);
+			return upgraded ? undefined : json({ error: 'upgrade failed' }, 400);
 		}
 
 		const principal = resolvePrincipal(request);

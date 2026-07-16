@@ -10,11 +10,5 @@
 		"types": ["vite/client", "bun"],
 		"allowImportingTsExtensions": true
 	},
-	"include": [
-		"bench",
-		"client",
-		"gates",
-		"server",
-		"vite-env.d.ts"
-	]
+	"include": ["bench", "client", "gates", "server", "vite-env.d.ts"]
 }
