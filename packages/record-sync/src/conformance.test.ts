@@ -1,3 +1,15 @@
+/**
+ * Record Authority Adapter Conformance Tests
+ *
+ * Runs the schema-blind current-state contract against every supported SQLite
+ * adapter.
+ *
+ * Key behaviors:
+ * - atomic pushes and server-ordered current-state pulls
+ * - snapshot publication and validation
+ * - transaction rollback in every adapter
+ */
+
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
@@ -10,17 +22,10 @@ import {
 	createDurableObjectSqliteAdapter,
 	type DurableObjectSqliteStorage,
 } from './adapters/durable-object.js';
-import { RECORD_SYNC_ADMISSION_LIMITS } from './admission.js';
-import { createRecordAuthority } from './authority.js';
-import type { Mutation } from './protocol.js';
+import { openRecordAuthority } from './authority.js';
+import { type PushRequest, RECORD_SYNC_PROTOCOL_MAJOR } from './protocol.js';
 import { isValidSnapshotChunk, isValidSnapshotManifest } from './snapshot.js';
 import type { RecordSyncSqlite, SqliteValue } from './sqlite.js';
-
-const envelope = {
-	protocolMajor: 2,
-	recordsSchemaHash: 'notes-v1',
-	databaseId: 'database-1',
-} as const;
 
 const sha256 = async (value: string) =>
 	createHash('sha256').update(value).digest('hex');
@@ -89,9 +94,11 @@ const adapters: [name: string, open: OpenDatabase][] = [
 				sql: {
 					exec<TRow>(sql: string, ...bindings: SqliteValue[]) {
 						let rows: TRow[] = [];
-						if (/^\s*(SELECT|WITH|PRAGMA)/i.test(sql))
+						if (/^\s*(SELECT|WITH|PRAGMA)/i.test(sql)) {
 							rows = query<TRow>(sqlite, sql, bindings);
-						else execute(sqlite, sql, bindings);
+						} else {
+							execute(sqlite, sql, bindings);
+						}
 						return { toArray: () => rows };
 					},
 				},
@@ -107,227 +114,103 @@ const adapters: [name: string, open: OpenDatabase][] = [
 	],
 ];
 
-async function runConformance(open: OpenDatabase) {
-	const { database, close } = open();
-	try {
-		database.run('CREATE TABLE transaction_probe(value TEXT NOT NULL)');
-		expect(() =>
-			database.transaction(() => {
-				database.run('INSERT INTO transaction_probe VALUES (?)', [
-					'rolled-back',
-				]);
-				throw new Error('rollback');
-			}),
-		).toThrow('rollback');
-		expect(
-			database.all<{ count: number }>(
-				'SELECT COUNT(*) AS count FROM transaction_probe',
-			)[0]?.count,
-		).toBe(0);
-
-		const authority = createRecordAuthority({ database, envelope, sha256 });
-		const first: Mutation = {
-			actorId: 'actor-a',
-			actorSequence: 1,
-			operations: [
-				{
-					kind: 'createRow' as const,
-					table: 'notes',
-					rowId: 'n1',
-					cells: { title: 'one', metadata: { tags: ['local-first'] } },
-				},
-				{
-					kind: 'createRow' as const,
-					table: 'notes',
-					rowId: 'n2',
-					cells: { title: 'two' },
-				},
-			],
-		};
-		const second: Mutation = {
-			actorId: 'actor-a',
-			actorSequence: 2,
-			operations: [
-				{ kind: 'deleteRow' as const, table: 'notes', rowId: 'n1' },
-				// A delayed edit after physical deletion folds to an accepted no-op.
-				{
-					kind: 'updateRow' as const,
-					table: 'notes',
-					rowId: 'n1',
-					cells: { title: 'cannot resurrect' },
-				},
-			],
-		};
-		expect(
-			authority.push({
-				kind: 'push',
-				...envelope,
-				mutations: [first, second],
-			}),
-		).toEqual({ kind: 'push', ok: true });
-		expect(
-			authority.push({ kind: 'push', ...envelope, mutations: [first] }),
-		).toEqual({ kind: 'push', ok: true });
-		expect(
-			authority.push({
-				kind: 'push',
-				...envelope,
-				mutations: [{ ...second, actorSequence: 4 }],
-			}),
-		).toEqual({
-			kind: 'push',
-			ok: false,
-			reason: 'actor-sequence-gap',
-		});
-		expect(
-			authority.push({
-				kind: 'push',
-				...envelope,
-				mutations: [
-					{
-						actorId: 'actor-gap',
-						actorSequence: 1,
-						operations: [
-							{
-								kind: 'createRow',
-								table: 'notes',
-								rowId: 'must-roll-back',
-								cells: { title: 'uncommitted prefix' },
-							},
-						],
-					},
-					{
-						actorId: 'actor-gap',
-						actorSequence: 3,
-						operations: [
-							{
-								kind: 'createRow',
-								table: 'notes',
-								rowId: 'gap',
-								cells: { title: 'gap' },
-							},
-						],
-					},
-				],
-			}),
-		).toEqual({
-			kind: 'push',
-			ok: false,
-			reason: 'actor-sequence-gap',
-		});
-		expect(
-			database.all<{ count: number }>(
-				`SELECT COUNT(*) AS count FROM record_sync_canonical_rows
-				 WHERE row_id IN ('must-roll-back', 'gap')`,
-			)[0]?.count,
-		).toBe(0);
-		expect(
-			database.all<{ count: number }>(
-				`SELECT COUNT(*) AS count FROM record_sync_actor_high_water
-				 WHERE actor_id = 'actor-gap'`,
-			)[0]?.count,
-		).toBe(0);
-		expect(
-			database.all<{ server_sequence: number }>(
-				`SELECT server_sequence FROM record_sync_databases
-				 WHERE database_id = ?`,
-				[envelope.databaseId],
-			)[0]?.server_sequence,
-		).toBe(2);
-		expect(
-			authority.push({
-				kind: 'push',
-				...envelope,
-				recordsSchemaHash: 'wrong',
-				mutations: [],
-			}),
-		).toEqual({ kind: 'push', ok: false, reason: 'records-schema-mismatch' });
-
-		// A duplicate create with a NEW sequence is a replica invariant
-		// violation: the whole push rolls back and the actor stays paused.
-		expect(
-			authority.push({
-				kind: 'push',
-				...envelope,
-				mutations: [
-					{
-						actorId: 'actor-a',
-						actorSequence: 3,
-						operations: [
-							{
-								kind: 'createRow' as const,
-								table: 'notes',
-								rowId: 'n2',
-								cells: { title: 'duplicate' },
-							},
-						],
-					},
-				],
-			}),
-		).toEqual({ kind: 'push', ok: false, reason: 'create-conflict' });
-		expect(
-			database.all<{ title: string }>(
-				`SELECT json_extract(cells_json, '$.title') AS title
-				 FROM record_sync_canonical_rows WHERE row_id = 'n2'`,
-			)[0]?.title,
-		).toBe('two');
-
-		const pull = authority.pull({
-			kind: 'pull',
-			...envelope,
-			cursor: 0,
-			limit: 100,
-		});
-		expect(pull.ok && !pull.snapshotRequired && pull.mutations).toHaveLength(2);
-
-		const manifest = await authority.publishSnapshot({
-			maxChunkBytes: RECORD_SYNC_ADMISSION_LIMITS.encodedSnapshotChunkBytes,
-		});
-		expect(manifest.actorHighWater).toEqual({ 'actor-a': 2 });
-		expect(await isValidSnapshotManifest(sha256, manifest)).toBeTrue();
-		const firstChunk = authority.snapshotChunk({
-			kind: 'snapshotChunk',
-			...envelope,
-			generation: manifest.generation,
-			index: 0,
-		});
-		if (!firstChunk.ok) throw new Error(firstChunk.reason);
-		expect(await isValidSnapshotChunk(sha256, firstChunk.chunk)).toBeTrue();
-		// Deletion is physical absence: the snapshot carries live rows only.
-		expect(firstChunk.chunk.rows).toEqual([
+function batch(): PushRequest {
+	return {
+		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+		kind: 'push',
+		actorId: 'actor-a',
+		mutations: [
 			{
-				table: 'notes',
-				rowId: 'n2',
-				cells: { title: 'two' },
+				actorSequence: 1,
+				command: {
+					kind: 'createRow',
+					table: 'skills',
+					rowId: 'skill-1',
+					value: { title: 'Initial', unknown: { preserved: true } },
+				},
 			},
-		]);
-
-		const stalePull = authority.pull({
-			kind: 'pull',
-			...envelope,
-			cursor: 0,
-			limit: 100,
-		});
-		expect(stalePull).toMatchObject({
-			kind: 'pull',
-			ok: true,
-			snapshotRequired: true,
-		});
-
-		createRecordAuthority({ database, envelope, sha256 });
-		expect(() =>
-			createRecordAuthority({
-				database,
-				envelope: { ...envelope, databaseId: 'wrong' },
-				sha256,
-			}),
-		).toThrow('databaseId');
-	} finally {
-		close();
-	}
+			{
+				actorSequence: 2,
+				command: {
+					kind: 'patchRow',
+					table: 'skills',
+					rowId: 'skill-1',
+					set: { title: 'Updated', nullable: null },
+					unset: [],
+				},
+			},
+		],
+	};
 }
 
-for (const [name, open] of adapters)
-	test(`${name} passes record authority conformance`, async () => {
-		await runConformance(open);
+for (const [name, open] of adapters) {
+	test(`${name}: atomic push publishes current state and snapshot`, async () => {
+		const { database, close } = open();
+		try {
+			database.run('CREATE TABLE transaction_probe(value TEXT NOT NULL)');
+			expect(() =>
+				database.transaction(() => {
+					database.run('INSERT INTO transaction_probe VALUES (?)', [
+						'rolled-back',
+					]);
+					throw new Error('rollback');
+				}),
+			).toThrow('rollback');
+			expect(
+				database.all<{ count: number }>(
+					'SELECT COUNT(*) AS count FROM transaction_probe',
+				)[0]?.count,
+			).toBe(0);
+
+			const authority = openRecordAuthority({ database, sha256 });
+			expect(authority.push(batch())).toMatchObject({
+				ok: true,
+				acceptance: 'accepted',
+			});
+			expect(
+				authority.pull({
+					protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+					kind: 'pull',
+					cursor: 0,
+					limit: 100,
+				}),
+			).toEqual({
+				kind: 'pull',
+				ok: true,
+				snapshotRequired: false,
+				fromCursor: 0,
+				entries: [
+					{
+						kind: 'row',
+						table: 'skills',
+						rowId: 'skill-1',
+						value: {
+							title: 'Updated',
+							unknown: { preserved: true },
+							nullable: null,
+						},
+						lastServerSequence: 2,
+					},
+				],
+				newCursor: 2,
+				hasMore: false,
+			});
+
+			const manifest = await authority.publishSnapshot({
+				maxChunkBytes: 512 * 1024,
+			});
+			if (!manifest) throw new Error('Expected stable snapshot publication');
+			expect(await isValidSnapshotManifest(sha256, manifest)).toBeTrue();
+			const response = authority.snapshotChunk({
+				protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+				kind: 'snapshotChunk',
+				generation: manifest.generation,
+				index: 0,
+			});
+			if (!response.ok) throw new Error(response.reason);
+			expect(await isValidSnapshotChunk(sha256, response.chunk)).toBeTrue();
+		} finally {
+			close();
+		}
 	});
+}

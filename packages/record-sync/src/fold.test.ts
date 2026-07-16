@@ -1,59 +1,92 @@
+/**
+ * Schema-Blind Row Fold Tests
+ *
+ * Verifies the three total current-state transitions without schemas or
+ * migration metadata.
+ *
+ * Key behaviors:
+ * - create refuses a live identity
+ * - patch preserves unknown keys and unsets explicitly
+ * - absent patch and delete are no-ops
+ */
+
 import { expect, test } from 'bun:test';
 import { foldRow } from './fold.js';
 
-test('createRow materializes an absent row and drops null cells', () => {
+test('createRow stores the complete opaque JSON object', () => {
 	expect(
 		foldRow(undefined, {
 			kind: 'createRow',
-			table: 'notes',
-			rowId: 'n1',
-			cells: { title: 'new', archivedAt: null },
+			table: 'skills',
+			rowId: 'skill-1',
+			value: { title: 'One', nested: { future: true }, nullable: null },
 		}),
-	).toEqual({ kind: 'created', cells: { title: 'new' } });
+	).toEqual({
+		kind: 'row',
+		value: { title: 'One', nested: { future: true }, nullable: null },
+	});
 });
 
-test('createRow on a live row is a create conflict, never a no-op', () => {
+test('createRow refuses an already live identity', () => {
 	expect(
 		foldRow(
-			{ title: 'existing' },
-			{ kind: 'createRow', table: 'notes', rowId: 'n1', cells: { title: 'x' } },
+			{ title: 'Existing' },
+			{
+				kind: 'createRow',
+				table: 'skills',
+				rowId: 'skill-1',
+				value: { title: 'Replacement' },
+			},
 		),
 	).toEqual({ kind: 'create-conflict' });
 });
 
-test('updateRow patches named cells and null clears one cell', () => {
+test('patchRow preserves unknown keys and distinguishes null from unset', () => {
 	expect(
 		foldRow(
-			{ title: 'old', pinned: true },
+			{ title: 'Old', unknown: { preserved: true }, removeMe: 1 },
 			{
-				kind: 'updateRow',
-				table: 'notes',
-				rowId: 'n1',
-				cells: { title: 'new', pinned: null },
+				kind: 'patchRow',
+				table: 'skills',
+				rowId: 'skill-1',
+				set: { title: 'New', nullable: null },
+				unset: ['removeMe'],
 			},
 		),
-	).toEqual({ kind: 'updated', cells: { title: 'new' } });
+	).toEqual({
+		kind: 'row',
+		value: {
+			title: 'New',
+			unknown: { preserved: true },
+			nullable: null,
+		},
+	});
 });
 
-test('updateRow on an absent row folds to an accepted no-op', () => {
+test('patchRow and deleteRow no-op when the row is absent', () => {
 	expect(
 		foldRow(undefined, {
-			kind: 'updateRow',
-			table: 'notes',
-			rowId: 'n1',
-			cells: { title: 'cannot resurrect' },
+			kind: 'patchRow',
+			table: 'skills',
+			rowId: 'missing',
+			set: { title: 'No row' },
+			unset: [],
+		}),
+	).toEqual({ kind: 'noop' });
+	expect(
+		foldRow(undefined, {
+			kind: 'deleteRow',
+			table: 'skills',
+			rowId: 'missing',
 		}),
 	).toEqual({ kind: 'noop' });
 });
 
-test('deleteRow removes a live row and no-ops on an absent one', () => {
+test('deleteRow marks a live row for deletion', () => {
 	expect(
 		foldRow(
-			{ title: 'x' },
-			{ kind: 'deleteRow', table: 'notes', rowId: 'n1' },
+			{ title: 'Existing' },
+			{ kind: 'deleteRow', table: 'skills', rowId: 'skill-1' },
 		),
-	).toEqual({ kind: 'deleted' });
-	expect(
-		foldRow(undefined, { kind: 'deleteRow', table: 'notes', rowId: 'n1' }),
-	).toEqual({ kind: 'noop' });
+	).toEqual({ kind: 'deletion' });
 });

@@ -1,36 +1,33 @@
 export {
-	isAdmissibleCellValue,
-	isAdmissibleOperationSet,
+	encodedBytes,
+	encodedJsonBytes,
+	isAdmissibleCanonicalRow,
+	isAdmissibleCommand,
+	isAdmissibleJsonObject,
+	isAdmissibleJsonValue,
 	isAdmissibleSnapshotRow,
+	isAdmissibleStateEntry,
 	RECORD_SYNC_ADMISSION_LIMITS,
 } from './admission.js';
 export {
-	createRecordAuthority,
-	type OpenedRecordAuthority,
 	openRecordAuthority,
-	parseRecordAuthorityOpenRequest,
 	type RecordAuthority,
 	type RecordAuthorityCompactionPolicy,
-	type RecordAuthorityDescriptor,
-	type RecordAuthorityOpenRequest,
-	type RecordAuthorityOpenResult,
-	recordAuthorityOpenRefusal,
-	restoreRecordAuthority,
 	type SnapshotPublicationOptions,
 } from './authority.js';
-export { foldRow } from './fold.js';
+export { recordBatchChecksum } from './batch-checksum.js';
+export { canonicalJson } from './canonical-json.js';
+export { foldRow, type RowFoldResult } from './fold.js';
 export {
-	type Cells,
+	type JsonObject,
 	type JsonValue,
-	type LoggedMutation,
 	type Mutation,
 	MutationSchema,
-	type Operation,
-	OperationSchema,
 	type PullRequest,
 	PullRequestSchema,
 	type PullResponse,
 	PullResponseSchema,
+	type PushReceipt,
 	type PushRequest,
 	PushRequestSchema,
 	type PushResponse,
@@ -44,6 +41,7 @@ export {
 	parseSnapshotChunkRequest,
 	parseSnapshotChunkResponse,
 	RECORD_SYNC_PROTOCOL_MAJOR,
+	type RecordCommand,
 	type RequestEnvelope,
 	RequestEnvelopeSchema,
 	type RequestRefusal,
@@ -57,9 +55,12 @@ export {
 	type SnapshotManifest,
 	type SnapshotManifestBody,
 	type SnapshotRow,
+	type StateEntry,
+	StateEntrySchema,
 } from './protocol.js';
 export {
 	createSnapshotChunk,
+	createSnapshotChunks,
 	createSnapshotManifest,
 	isValidSnapshotChunk,
 	isValidSnapshotManifest,
@@ -70,18 +71,3 @@ export type {
 	SqliteRow,
 	SqliteValue,
 } from './sqlite.js';
-export {
-	type ActivateCandidateResult,
-	type CandidateChunkIdentity,
-	type CandidateManifest,
-	type CandidateManifestBody,
-	CandidateManifestSchema,
-	createCandidateManifest,
-	createRecordSuccession,
-	type DiscardCandidateResult,
-	parseCandidateManifest,
-	RECORD_SUCCESSION_LIMITS,
-	type SealCandidateResult,
-	type StageCandidateResult,
-	type UploadCandidateChunkResult,
-} from './succession.js';

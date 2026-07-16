@@ -292,7 +292,7 @@ export async function transcribeAndPersist(
 ): Promise<Result<string, TranscriptionError>> {
 	const { data: transcribedText, error } = await transcribeAudio(recordingId);
 	if (error) {
-		recordings.update(recordingId, {
+		await recordings.update(recordingId, {
 			transcription: {
 				status: 'failed',
 				completedAt: InstantString.now(),
@@ -301,7 +301,7 @@ export async function transcribeAndPersist(
 		});
 		return Err(error);
 	}
-	recordings.update(recordingId, {
+	await recordings.update(recordingId, {
 		transcript: transcribedText,
 		polishedTranscript: null,
 		transcription: {

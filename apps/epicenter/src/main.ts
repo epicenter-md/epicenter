@@ -8,8 +8,15 @@
  * needed to change it because this entrypoint reads the env once.
  */
 
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { type AgentEngine, createOpenAiAgentEngine } from '@epicenter/client';
-import { createQueryHost, type QueryHost } from './host.ts';
+import { createBunRooms } from '@epicenter/server/bun';
+import {
+	createQueryHost,
+	type QueryHost,
+	resolveQueryDataDir,
+} from './host.ts';
 import { createQueryServer } from './server.ts';
 import {
 	createReadyFrame,
@@ -19,10 +26,14 @@ import {
 	watchParentPipe,
 } from './sidecar-runtime.ts';
 import { loadStaticAssets } from './static-assets.ts';
+import { createEpicenterWorkspaceOwner } from './workspace-owner.ts';
 
 async function main(): Promise<void> {
 	const parentPipe = watchParentPipe(Bun.stdin.stream());
 	let host: QueryHost | undefined;
+	let workspaceOwner:
+		| ReturnType<typeof createEpicenterWorkspaceOwner>
+		| undefined;
 	let server: ReturnType<typeof Bun.serve> | undefined;
 	let lifecycleOwnsResources = false;
 
@@ -32,7 +43,12 @@ async function main(): Promise<void> {
 
 		const { engine, model } = queryEngineFromEnvironment(process.env);
 
-		host = await createQueryHost({ engine, model });
+		const dataDir = resolveQueryDataDir();
+		host = await createQueryHost({ engine, model, dataDir });
+		workspaceOwner = createEpicenterWorkspaceOwner(dataDir);
+		const roomsDir = join(dataDir, 'workspace-runtime', 'rooms');
+		mkdirSync(roomsDir, { recursive: true });
+		const rooms = createBunRooms({ dir: roomsDir });
 
 		const appsDist = process.env.EPICENTER_APPS_DIST;
 		if (!appsDist) {
@@ -42,11 +58,13 @@ async function main(): Promise<void> {
 		}
 		const staticAssets = await loadStaticAssets(appsDist);
 		const origin = `http://127.0.0.1:${boot.port}`;
-		const { app, websocket } = createQueryServer({
+		const { app, websocket, bindServer } = createQueryServer({
 			host,
 			origin,
 			launchToken: boot.token,
 			staticAssets,
+			workspaceOwner,
+			rooms,
 		});
 
 		server = Bun.serve({
@@ -56,13 +74,34 @@ async function main(): Promise<void> {
 			fetch: app.fetch,
 			websocket,
 		});
+		bindServer(server);
 
 		process.stdout.write(`${JSON.stringify(createReadyFrame(boot.port))}\n`);
 		lifecycleOwnsResources = true;
-		await superviseSidecar({ server, host, parentPipe });
+		const queryHost = host;
+		const ownedWorkspaces = workspaceOwner;
+		await superviseSidecar({
+			server,
+			host: {
+				async [Symbol.asyncDispose]() {
+					const results = await Promise.allSettled([
+						queryHost[Symbol.asyncDispose](),
+						ownedWorkspaces[Symbol.asyncDispose](),
+					]);
+					const failures = results.flatMap((result) =>
+						result.status === 'rejected' ? [result.reason] : [],
+					);
+					if (failures.length > 0) {
+						throw new AggregateError(failures, 'Desktop host disposal failed');
+					}
+				},
+			},
+			parentPipe,
+		});
 	} finally {
 		if (!lifecycleOwnsResources) {
 			if (server) await server.stop(true);
+			if (workspaceOwner) await workspaceOwner[Symbol.asyncDispose]();
 			if (host) await host[Symbol.asyncDispose]();
 			await parentPipe.cancel();
 		}

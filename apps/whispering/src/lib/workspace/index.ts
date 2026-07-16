@@ -1,5 +1,14 @@
 export {
-	defineWhispering,
+	createWhisperingSettingDefaults,
 	type Recipe,
 	type Recording,
+	recipesTable,
+	recordingsTable,
+	type WhisperingSettingValues,
+	whisperingSettingEntries,
+	whisperingWorkspace,
 } from './definition';
+export {
+	repairRecordingSourceId,
+	type WhisperingWorkspace,
+} from './repair';

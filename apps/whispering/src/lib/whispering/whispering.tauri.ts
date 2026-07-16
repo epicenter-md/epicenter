@@ -1,18 +1,18 @@
-/**
- * Tauri runtime client for Whispering. Consumed everywhere through the
- * `#platform/whispering` seam; see `whispering.active.ts` for what
- * `openWhisperingBrowser` builds. The desktop default transcription service is
- * the on-device local GGUF provider.
- */
+import { createDesktopWorkspaceRuntime } from '@epicenter/workspace/sqlite/desktop';
+import { openWhisperingApplication } from './whispering.active';
 
-import { createNodeId } from '@epicenter/workspace';
-import { auth } from '#platform/auth';
-import { openWhisperingBrowser } from './whispering.active';
-
-const nodeId = createNodeId({ storage: window.localStorage });
-
-export const whispering = openWhisperingBrowser({
-	auth,
-	nodeId,
+const application = await openWhisperingApplication({
+	createRuntime: (onRecordsChanged) =>
+		createDesktopWorkspaceRuntime({ onRecordsChanged }),
 	defaultTranscriptionService: 'local',
 });
+
+export const whispering = application.whispering;
+export const skills = application.skills;
+export const settingsDefaults = application.settingsDefaults;
+export const onWhisperingRecordsChanged = (listener: () => void) =>
+	application.onRecordsChanged(whispering.id, listener);
+
+if (import.meta.hot) {
+	import.meta.hot.dispose(() => void application[Symbol.asyncDispose]());
+}

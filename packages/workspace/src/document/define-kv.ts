@@ -10,9 +10,9 @@
  * calls it on every default-branch firing (missing key or validation
  * failure), so callers can mutate the result of `kv.get(...)` without
  * leaking changes to the next reader. The uniformity is the entire
- * mutation-safety story; the cost is six characters at scalar call sites
- * (`() => true` vs `true`), and the win includes dynamic defaults
- * (`() => Date.now()`).
+ * mutation-safety story. Defaults must be pure and deterministic: synchronized
+ * absence must mean the same thing on every replica. Timestamps, random ids,
+ * and device-derived values become shared only through an explicit write.
  *
  * @example
  * ```ts
@@ -28,7 +28,6 @@
  *   () => ({ collapsed: false, width: 300 }),
  * );
  *
- * const startedAt = defineKv(Type.Number(), () => Date.now());
  * ```
  */
 
@@ -41,8 +40,8 @@ const kvDefinitions = new WeakSet<object>();
  * Create a KV definition with a TypeBox schema and a factory default.
  *
  * `defaultValue` runs on every missing-key / validation-failure read, so
- * each call produces a fresh value. Callers may mutate the result of
- * `kv.get()` without affecting other readers.
+ * each call produces a fresh, deterministic value. Callers may mutate the
+ * result of `kv.get()` without affecting other readers.
  */
 export function defineKv<S extends TSchema>(
 	schema: S,

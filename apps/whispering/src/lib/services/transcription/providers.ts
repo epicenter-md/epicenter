@@ -20,6 +20,12 @@ import type {
 	DeviceConfigKey,
 	SecretKey,
 } from '$lib/state/device-config.svelte';
+import type { TranscriptionServiceId } from './provider-ids';
+
+export {
+	TRANSCRIPTION_SERVICE_IDS,
+	type TranscriptionServiceId,
+} from './provider-ids';
 
 type Capabilities = { supportsPrompt: boolean; supportsLanguage: boolean };
 type CloudModel = { name: string; description: string; cost: string };
@@ -327,9 +333,7 @@ export const PROVIDERS = {
 		endpointConfigKey: 'providers.speaches.endpoint',
 		modelIdConfigKey: 'providers.speaches.modelId',
 	},
-} as const satisfies Record<string, TranscriptionProvider>;
-
-export type TranscriptionServiceId = keyof typeof PROVIDERS;
+} as const satisfies Record<TranscriptionServiceId, TranscriptionProvider>;
 
 /**
  * The ids of `key` providers (the ones that take a user API key), derived from
@@ -372,8 +376,3 @@ export type UploadProviderId = Exclude<
 	TranscriptionServiceId,
 	OnDeviceProviderId
 >;
-
-/** Every provider ID, e.g. for `field.select(TRANSCRIPTION_SERVICE_IDS)`. */
-export const TRANSCRIPTION_SERVICE_IDS = Object.keys(
-	PROVIDERS,
-) as TranscriptionServiceId[];

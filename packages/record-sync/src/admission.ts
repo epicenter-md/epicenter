@@ -1,30 +1,34 @@
 import type {
+	JsonObject,
 	JsonValue,
-	Mutation,
-	Operation,
+	RecordCommand,
 	SnapshotRow,
+	StateEntry,
 } from './protocol.js';
 
-/** Shared admission ceiling applied before any record-sync storage adapter. */
+/** Shared ceilings applied before any record-sync storage adapter. */
 export const RECORD_SYNC_ADMISSION_LIMITS = {
 	identifierBytes: 512,
-	recordsSchemaHashBytes: 64 * 1024,
 	mutationsPerPush: 64,
-	operationsPerMutation: 128,
-	cellsPerOperation: 128,
+	stateEntriesPerPull: 64,
+	unsetKeysPerCommand: 128,
 	jsonDepth: 16,
-	encodedCellBytes: 256 * 1024,
-	// Leaves 4 KiB for snapshot chunk framing under the production 512 KiB cap.
-	encodedSnapshotRowBytes: 508 * 1024,
+	propertiesPerObject: 1_024,
+	encodedCommandBytes: 256 * 1024,
+	encodedRowBytes: 508 * 1024,
 	encodedSnapshotChunkBytes: 512 * 1024,
-	encodedMutationBytes: 512 * 1024,
 	encodedPushBytes: 768 * 1024,
+	encodedPullBytes: 8 * 1024 * 1024,
 } as const;
 
 const textEncoder = new TextEncoder();
 
 export function encodedBytes(value: string): number {
 	return textEncoder.encode(value).byteLength;
+}
+
+export function encodedJsonBytes(value: unknown): number {
+	return encodedBytes(JSON.stringify(value));
 }
 
 export function isBoundedIdentifier(value: string): boolean {
@@ -34,125 +38,133 @@ export function isBoundedIdentifier(value: string): boolean {
 	);
 }
 
-export function isBoundedRecordsSchemaHash(value: string): boolean {
-	return (
-		value.length > 0 &&
-		encodedBytes(value) <= RECORD_SYNC_ADMISSION_LIMITS.recordsSchemaHashBytes
-	);
-}
-
-function isBoundedJsonValueAtDepth(
+function isJsonValueAtDepth(
 	value: unknown,
 	depth: number,
 	ancestors: Set<object>,
 ): value is JsonValue {
-	if (value === null || typeof value === 'string' || typeof value === 'boolean')
+	if (
+		value === null ||
+		typeof value === 'string' ||
+		typeof value === 'boolean'
+	) {
 		return true;
+	}
 	if (typeof value === 'number') return Number.isFinite(value);
 	if (
 		typeof value !== 'object' ||
 		depth >= RECORD_SYNC_ADMISSION_LIMITS.jsonDepth ||
 		ancestors.has(value)
-	)
+	) {
 		return false;
+	}
 	ancestors.add(value);
+	const prototype = Object.getPrototypeOf(value);
 	const valid = Array.isArray(value)
-		? value.every((child) =>
-				isBoundedJsonValueAtDepth(child, depth + 1, ancestors),
-			)
-		: Object.getPrototypeOf(value) === Object.prototype &&
+		? value.every((child) => isJsonValueAtDepth(child, depth + 1, ancestors))
+		: (prototype === Object.prototype || prototype === null) &&
+			Object.keys(value).length <=
+				RECORD_SYNC_ADMISSION_LIMITS.propertiesPerObject &&
 			Object.values(value).every((child) =>
-				isBoundedJsonValueAtDepth(child, depth + 1, ancestors),
+				isJsonValueAtDepth(child, depth + 1, ancestors),
 			);
 	ancestors.delete(value);
 	return valid;
 }
 
 export function isAdmissibleJsonValue(value: unknown): value is JsonValue {
-	return isBoundedJsonValueAtDepth(value, 0, new Set());
+	return isJsonValueAtDepth(value, 0, new Set());
 }
 
-/** Bound one logical cell by UTF-8 payload bytes, before JSON framing. */
-export function isAdmissibleCellValue(value: unknown): value is JsonValue {
-	if (!isAdmissibleJsonValue(value)) return false;
-	const encoded = typeof value === 'string' ? value : JSON.stringify(value);
-	return encodedBytes(encoded) <= RECORD_SYNC_ADMISSION_LIMITS.encodedCellBytes;
-}
-
-export function isAdmissibleSnapshotRow(row: SnapshotRow): boolean {
-	if (!isBoundedIdentifier(row.table) || !isBoundedIdentifier(row.rowId)) {
-		return false;
-	}
-	const cells = Object.entries(row.cells);
+export function isAdmissibleJsonObject(value: unknown): value is JsonObject {
 	return (
-		cells.length <= RECORD_SYNC_ADMISSION_LIMITS.cellsPerOperation &&
-		cells.every(
-			([name, value]) =>
-				isBoundedIdentifier(name) && isAdmissibleCellValue(value),
-		) &&
-		encodedBytes(JSON.stringify(row)) <=
-			RECORD_SYNC_ADMISSION_LIMITS.encodedSnapshotRowBytes
+		typeof value === 'object' &&
+		value !== null &&
+		!Array.isArray(value) &&
+		isAdmissibleJsonValue(value)
 	);
-}
-
-function isAdmissibleOperation(operation: Operation): boolean {
-	if (
-		!isBoundedIdentifier(operation.table) ||
-		!isBoundedIdentifier(operation.rowId)
-	) {
-		return false;
-	}
-	if (operation.kind === 'deleteRow') return true;
-	return isAdmissibleSnapshotRow({
-		table: operation.table,
-		rowId: operation.rowId,
-		cells: operation.cells,
-	});
 }
 
 /**
- * Validate a complete local operation set with conservative mutation-envelope
- * room, so a signed-out write remains encodable after a replica actor is bound.
+ * Check one canonical row against the portable aggregate limits that every
+ * authority sequence must be able to encode.
  */
-export function isAdmissibleOperationSet(
-	operations: readonly Operation[],
-): boolean {
-	if (
-		operations.length === 0 ||
-		operations.length > RECORD_SYNC_ADMISSION_LIMITS.operationsPerMutation ||
-		!operations.every(isAdmissibleOperation)
-	) {
-		return false;
-	}
-	const mutationWithMaximumActor: Mutation = {
-		// NUL is one UTF-8 byte but six JSON bytes, the worst valid identifier
-		// framing admitted by the byte-only identifier policy.
-		actorId: '\0'.repeat(RECORD_SYNC_ADMISSION_LIMITS.identifierBytes),
-		actorSequence: Number.MAX_SAFE_INTEGER,
-		operations: [...operations],
-	};
+export function isAdmissibleCanonicalRow({
+	table,
+	rowId,
+	value,
+}: Pick<SnapshotRow, 'table' | 'rowId' | 'value'>): boolean {
 	return (
-		encodedBytes(JSON.stringify(mutationWithMaximumActor)) <=
-		RECORD_SYNC_ADMISSION_LIMITS.encodedMutationBytes
+		isBoundedIdentifier(table) &&
+		isBoundedIdentifier(rowId) &&
+		isAdmissibleJsonObject(value) &&
+		encodedJsonBytes({
+			table,
+			rowId,
+			value,
+			lastServerSequence: Number.MAX_SAFE_INTEGER,
+		}) <= RECORD_SYNC_ADMISSION_LIMITS.encodedRowBytes
 	);
 }
 
-export function isAdmissibleMutation(mutation: Mutation): boolean {
-	if (
-		!isBoundedIdentifier(mutation.actorId) ||
-		mutation.operations.length === 0 ||
-		mutation.operations.length >
-			RECORD_SYNC_ADMISSION_LIMITS.operationsPerMutation
-	)
-		return false;
-	if (!mutation.operations.every(isAdmissibleOperation)) return false;
-	const canonicalMutation: Mutation = {
-		actorId: mutation.actorId,
-		actorSequence: mutation.actorSequence,
-		operations: mutation.operations,
-	};
+export function isAdmissibleSnapshotRow(row: SnapshotRow): boolean {
 	return (
-		encodedBytes(JSON.stringify(canonicalMutation)) <=
-		RECORD_SYNC_ADMISSION_LIMITS.encodedMutationBytes
+		Number.isSafeInteger(row.lastServerSequence) &&
+		row.lastServerSequence > 0 &&
+		isAdmissibleCanonicalRow(row)
 	);
+}
+
+export function isAdmissibleStateEntry(entry: StateEntry): boolean {
+	if (
+		!isBoundedIdentifier(entry.table) ||
+		!isBoundedIdentifier(entry.rowId) ||
+		!Number.isSafeInteger(entry.lastServerSequence) ||
+		entry.lastServerSequence < 1
+	) {
+		return false;
+	}
+	return (
+		entry.kind === 'deletion' ||
+		(isAdmissibleJsonObject(entry.value) &&
+			encodedJsonBytes(entry) <= RECORD_SYNC_ADMISSION_LIMITS.encodedRowBytes)
+	);
+}
+
+export function isAdmissibleCommand(command: RecordCommand): boolean {
+	if (
+		!isBoundedIdentifier(command.table) ||
+		!isBoundedIdentifier(command.rowId)
+	) {
+		return false;
+	}
+	switch (command.kind) {
+		case 'createRow':
+			return (
+				isAdmissibleJsonObject(command.value) &&
+				encodedJsonBytes(command) <=
+					RECORD_SYNC_ADMISSION_LIMITS.encodedCommandBytes
+			);
+		case 'patchRow': {
+			if (!isAdmissibleJsonObject(command.set)) return false;
+			if (Object.keys(command.set).length === 0 && command.unset.length === 0) {
+				return false;
+			}
+			const unset = new Set(command.unset);
+			return (
+				unset.size === command.unset.length &&
+				command.unset.every(isBoundedIdentifier) &&
+				Object.keys(command.set).every(
+					(key) => isBoundedIdentifier(key) && !unset.has(key),
+				) &&
+				encodedJsonBytes(command) <=
+					RECORD_SYNC_ADMISSION_LIMITS.encodedCommandBytes
+			);
+		}
+		case 'deleteRow':
+			return (
+				encodedJsonBytes(command) <=
+				RECORD_SYNC_ADMISSION_LIMITS.encodedCommandBytes
+			);
+	}
 }

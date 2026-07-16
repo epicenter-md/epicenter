@@ -1,51 +1,62 @@
+import { skillsWorkspace } from '@epicenter/skills';
+import type {
+	OpenedWorkspace,
+	WorkspaceDefinition,
+} from '@epicenter/workspace/sqlite';
+import type { TranscriptionServiceId } from '../services/transcription/providers';
+import {
+	createWhisperingSettingDefaults,
+	whisperingWorkspace,
+} from '../workspace';
+
+type ApplicationRuntime = {
+	open<TDefinition extends WorkspaceDefinition>(
+		definition: TDefinition,
+	): Promise<OpenedWorkspace<TDefinition>>;
+	[Symbol.asyncDispose](): Promise<void>;
+};
+
 /**
- * Boot-time Whispering client for both platforms (Option A: sync singleton +
- * reload).
- *
- * `toConnection` reads the persisted `auth.state` ONCE at startup
- * (ADR-0088/ADR-0094): signed out projects to `null` (plaintext local doc),
- * signed in / reauth-required projects to the principal's connection (principal doc
- * with relay sync). Construction is synchronous; data still loads async
- * behind `whenReady`. Identity changes are never an in-place swap:
- * `reloadOnPrincipalChange` (same subpath, mounted in the root layout) reloads
- * the page so the next boot re-projects.
- *
- * `openWhisperingBrowser` takes the boot inputs every workspace app passes to
- * its browser opener (`auth`, `nodeId`) and wraps the doc with the one action
- * every platform needs (`recordings_export_markdown`, whose logic is identical
- * on both platforms; see `recordings-markdown-export.ts`). The two platform
- * leaves (`whispering.browser.ts`, `whispering.tauri.ts`) supply those inputs
- * plus their default transcription service.
+ * Bind the two imported workspace contracts used by Whispering through one
+ * environment-owned runtime. Ordinary application code composes the returned
+ * handles; neither workspace definition knows about the other.
  */
-
-import type { SyncAuthClient } from '@epicenter/auth';
-import { toConnection } from '@epicenter/svelte/auth';
-import type { NodeId } from '@epicenter/workspace';
-import { defineActions, satisfiesWorkspace } from '@epicenter/workspace';
-import type { TranscriptionServiceId } from '$lib/services/transcription/providers';
-import { defineWhispering } from '$lib/workspace';
-import { defineRecordingsMarkdownExport } from './recordings-markdown-export';
-
-export function openWhisperingBrowser({
-	auth,
-	nodeId,
+export async function openWhisperingApplication({
+	createRuntime,
 	defaultTranscriptionService,
 }: {
-	auth: SyncAuthClient;
-	nodeId: NodeId;
+	createRuntime(
+		onRecordsChanged: (workspaceId: string) => void,
+	): ApplicationRuntime;
 	defaultTranscriptionService: TranscriptionServiceId;
 }) {
-	const model = defineWhispering(defaultTranscriptionService);
-	const bundle = model.connect(toConnection(auth, nodeId), (workspace) => ({
-		actions: defineActions({
-			recordings_export_markdown: defineRecordingsMarkdownExport(
-				workspace.tables.recordings,
-			),
-		}),
-	}));
+	const recordListeners = new Map<string, Set<() => void>>();
+	const runtime = createRuntime((workspaceId) => {
+		for (const listener of recordListeners.get(workspaceId) ?? []) listener();
+	});
+	const [whispering, skills] = await Promise.all([
+		runtime.open(whisperingWorkspace),
+		runtime.open(skillsWorkspace),
+	]);
 
-	return satisfiesWorkspace({
-		...bundle,
-		whenReady: bundle.storage.whenLoaded,
+	return Object.freeze({
+		whispering,
+		skills,
+		settingsDefaults: createWhisperingSettingDefaults(
+			defaultTranscriptionService,
+		),
+		onRecordsChanged(workspaceId: string, listener: () => void) {
+			let listeners = recordListeners.get(workspaceId);
+			if (!listeners) {
+				listeners = new Set();
+				recordListeners.set(workspaceId, listeners);
+			}
+			listeners.add(listener);
+			return () => listeners?.delete(listener);
+		},
+		async [Symbol.asyncDispose]() {
+			recordListeners.clear();
+			await runtime[Symbol.asyncDispose]();
+		},
 	});
 }

@@ -5,7 +5,8 @@
 	"description": "Browser-deployable speech-to-text SPA hosted natively by Epicenter",
 	"exports": {
 		"./commands": "./src/lib/commands.ts",
-		"./workspace": "./src/lib/workspace/index.ts"
+		"./workspace": "./src/lib/workspace/index.ts",
+		"./workspace-contract": "./src/lib/workspace/contract.ts"
 	},
 	"imports": {
 		"#platform/commands": {
@@ -106,6 +107,7 @@
 		"@tailwindcss/typography": "catalog:",
 		"@tailwindcss/vite": "catalog:",
 		"@types/js-yaml": "^4.0.9",
+		"fake-indexeddb": "^6.2.5",
 		"mode-watcher": "catalog:",
 		"svelte": "catalog:",
 		"svelte-check": "catalog:",
@@ -126,6 +128,7 @@
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/field": "workspace:*",
 		"@epicenter/recorder": "workspace:*",
+		"@epicenter/skills": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@mistralai/mistralai": "^1.9.18",

@@ -1,7 +1,6 @@
 import { expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
-import type { Kv } from '@epicenter/workspace';
-import { defineKv } from '@epicenter/workspace/sqlite';
+import { defineKv, type Kv } from '@epicenter/workspace';
 import { fromKv } from './from-kv.svelte.js';
 
 test('KV binding reads synchronously and observes one declared key', () => {

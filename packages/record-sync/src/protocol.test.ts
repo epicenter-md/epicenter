@@ -1,527 +1,201 @@
 /**
- * Record Sync Protocol Tests
+ * Schema-Blind Record Protocol Tests
  *
- * Verifies exact wire parsing and the shared admission ceilings enforced before
- * any browser, Bun, or Durable Object SQLite adapter receives a mutation.
+ * Verifies strict parsing and admission for the current-state wire contract.
  *
  * Key behaviors:
- * - Closed request and response shapes reject malformed protocol values
- * - Mutation identifiers, collection counts, JSON depth, and bytes are bounded
- * - Nested finite JSON within the admission policy remains valid
+ * - only createRow, patchRow, and deleteRow are admitted
+ * - actor sequences within a push are contiguous
+ * - JSON null is data while undefined is rejected
  */
 
 import { expect, test } from 'bun:test';
-import { encodedBytes, RECORD_SYNC_ADMISSION_LIMITS } from './admission.js';
+import { RECORD_SYNC_ADMISSION_LIMITS } from './admission.js';
+import { canonicalJson } from './canonical-json.js';
 import {
 	parseMutation,
-	parsePullRequest,
 	parsePullResponse,
 	parsePushRequest,
-	parsePushResponse,
-	parseSnapshotChunkRequest,
-	parseSnapshotChunkResponse,
+	RECORD_SYNC_PROTOCOL_MAJOR,
 } from './protocol.js';
 
-const envelope = {
-	protocolMajor: 2,
-	recordsSchemaHash: 'notes-v1',
-	databaseId: 'db-1',
-};
+test('canonical JSON orders object keys by JavaScript code units', () => {
+	expect(canonicalJson({ ä: 3, a: 2, Z: 1 })).toBe('{"Z":1,"a":2,"ä":3}');
+	expect(canonicalJson({ '2': 2, '10': 10, '\ue000': 2, '😀': 1 })).toBe(
+		'{"10":10,"2":2,"😀":1,"":2}',
+	);
+});
 
-test('protocol parsers accept the closed wire shapes and nested JSON cells', () => {
-	expect(
-		parseMutation({
+test('push parser accepts contiguous opaque JSON commands', () => {
+	const request = {
+		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+		kind: 'push' as const,
+		actorId: 'actor-a',
+		mutations: [
+			{
+				actorSequence: 1,
+				command: {
+					kind: 'createRow' as const,
+					table: 'skills',
+					rowId: 'skill-1',
+					value: { title: 'One', future: { nested: true }, nullable: null },
+				},
+			},
+			{
+				actorSequence: 2,
+				command: {
+					kind: 'patchRow' as const,
+					table: 'skills',
+					rowId: 'skill-1',
+					set: { title: 'Two' },
+					unset: ['obsolete'],
+				},
+			},
+		],
+	};
+
+	expect(parsePushRequest(request)).toEqual(request);
+});
+
+test('push parser rejects sequence gaps', () => {
+	expect(() =>
+		parsePushRequest({
+			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+			kind: 'push',
 			actorId: 'actor-a',
-			actorSequence: 1,
-			operations: [
+			mutations: [
 				{
+					actorSequence: 1,
+					command: {
+						kind: 'deleteRow',
+						table: 'skills',
+						rowId: 'one',
+					},
+				},
+				{
+					actorSequence: 3,
+					command: {
+						kind: 'deleteRow',
+						table: 'skills',
+						rowId: 'two',
+					},
+				},
+			],
+		}),
+	).toThrow('contiguous');
+});
+
+test('mutation parser rejects undefined and non-finite JSON values', () => {
+	for (const invalid of [undefined, Number.NaN, Number.POSITIVE_INFINITY]) {
+		expect(() =>
+			parseMutation({
+				actorSequence: 1,
+				command: {
 					kind: 'createRow',
-					table: 'notes',
-					rowId: 'n1',
-					cells: { title: 'one' },
+					table: 'skills',
+					rowId: 'skill-1',
+					value: { invalid },
 				},
-			],
-		}),
-	).toMatchObject({ actorId: 'actor-a', actorSequence: 1 });
-	expect(
-		parsePushRequest({
-			kind: 'push',
-			...envelope,
-			mutations: [
-				{
-					actorId: 'actor-a',
-					actorSequence: 1,
-					operations: [
-						{
-							kind: 'updateRow',
-							table: 'notes',
-							rowId: 'n1',
-							cells: { metadata: { tags: ['one', 'two'], rank: 2 } },
-						},
-					],
-				},
-			],
-		}).mutations[0]?.actorId,
-	).toBe('actor-a');
-	expect(
-		parsePullRequest({ kind: 'pull', ...envelope, cursor: 0, limit: 100 }),
-	).toMatchObject({ cursor: 0, limit: 100 });
-	expect(
-		parseSnapshotChunkRequest({
-			kind: 'snapshotChunk',
-			...envelope,
-			generation: 1,
-			index: 0,
-		}),
-	).toMatchObject({ generation: 1, index: 0 });
-});
-
-test('mutation parser rejects malformed durable outbox values', () => {
-	expect(() =>
-		parseMutation({
-			actorId: 'actor-a',
-			actorSequence: 1,
-			operations: [
-				{
-					kind: 'updateRow',
-					table: 'notes',
-					rowId: 'n1',
-					cells: { score: Number.NaN },
-				},
-			],
-		}),
-	).toThrow('Invalid record-sync mutation');
-});
-
-test('response parsers validate both success and refusal variants', () => {
-	expect(parsePushResponse({ kind: 'push', ok: true })).toEqual({
-		kind: 'push',
-		ok: true,
-	});
-	expect(
-		parsePushResponse({ kind: 'push', ok: false, reason: 'create-conflict' }),
-	).toMatchObject({ ok: false, reason: 'create-conflict' });
-	expect(
-		parsePullResponse({
-			kind: 'pull',
-			ok: true,
-			snapshotRequired: false,
-			fromCursor: 0,
-			mutations: [
-				{
-					serverSequence: 1,
-					actorId: 'actor-a',
-					actorSequence: 1,
-					operations: [
-						{
-							kind: 'updateRow',
-							table: 'notes',
-							rowId: 'n1',
-							cells: { metadata: { tags: ['one'] } },
-						},
-					],
-				},
-			],
-			newCursor: 1,
-			hasMore: false,
-		}),
-	).toMatchObject({ newCursor: 1 });
-	expect(
-		parseSnapshotChunkResponse({
-			kind: 'snapshotChunk',
-			ok: false,
-			reason: 'snapshot-replaced',
-		}),
-	).toMatchObject({ ok: false, reason: 'snapshot-replaced' });
-});
-
-test('response parsers reject extra fields and tombstone-era snapshot rows', () => {
-	expect(() =>
-		parsePushResponse({ kind: 'push', ok: true, acceptedThrough: 3 }),
-	).toThrow();
-	// Snapshots carry live rows only; the removed `deleted` flag is now an
-	// unknown extra property on the closed row shape.
-	expect(() =>
-		parseSnapshotChunkResponse({
-			kind: 'snapshotChunk',
-			ok: true,
-			chunk: {
-				generation: 1,
-				index: 0,
-				rows: [
-					{
-						table: 'notes',
-						rowId: 'n1',
-						deleted: true,
-						cells: {},
-					},
-				],
-				checksum: 'checksum',
-			},
-		}),
-	).toThrow();
-});
-
-test('push parsing rejects non-JSON cells, unsafe sequences, and extra keys', () => {
-	const operation = {
-		kind: 'updateRow',
-		table: 'notes',
-		rowId: 'n1',
-		cells: { title: 'valid' },
-	};
-	const mutation = {
-		actorId: 'actor-a',
-		actorSequence: 1,
-		operations: [operation],
-	};
-	const base = {
-		kind: 'push',
-		...envelope,
-		mutations: [mutation],
-	};
-	expect(() =>
-		parsePushRequest({ ...base, mutations: [], extra: true }),
-	).toThrow();
-	expect(() =>
-		parsePushRequest({
-			...base,
-			mutations: [
-				{
-					...mutation,
-					actorSequence: Number.MAX_SAFE_INTEGER + 1,
-				},
-			],
-		}),
-	).toThrow();
-	expect(() =>
-		parsePushRequest({
-			...base,
-			mutations: [
-				{
-					...mutation,
-					operations: [
-						{
-							...operation,
-							cells: { invalid: undefined },
-						},
-					],
-				},
-			],
-		}),
-	).toThrow();
-});
-
-test('mutation parsing rejects identifiers over the UTF-8 byte ceiling', () => {
-	const oversizedUnicodeId = '😀'.repeat(
-		Math.floor(RECORD_SYNC_ADMISSION_LIMITS.identifierBytes / 4) + 1,
-	);
-	expect(() =>
-		parseMutation({
-			actorId: oversizedUnicodeId,
-			actorSequence: 1,
-			operations: [
-				{
-					kind: 'deleteRow',
-					table: 'notes',
-					rowId: 'n1',
-				},
-			],
-		}),
-	).toThrow('Invalid record-sync mutation');
-});
-
-test('mutation parsing rejects operation and cell counts over their ceilings', () => {
-	const deletion = {
-		kind: 'deleteRow' as const,
-		table: 'notes',
-		rowId: 'n1',
-	};
-	expect(() =>
-		parseMutation({
-			actorId: 'actor-a',
-			actorSequence: 1,
-			operations: Array.from(
-				{
-					length: RECORD_SYNC_ADMISSION_LIMITS.operationsPerMutation + 1,
-				},
-				() => deletion,
-			),
-		}),
-	).toThrow('Invalid record-sync mutation');
-	expect(() =>
-		parseMutation({
-			actorId: 'actor-a',
-			actorSequence: 1,
-			operations: [
-				{
-					kind: 'updateRow',
-					table: 'notes',
-					rowId: 'n1',
-					cells: Object.fromEntries(
-						Array.from(
-							{
-								length: RECORD_SYNC_ADMISSION_LIMITS.cellsPerOperation + 1,
-							},
-							(_, index) => [`field-${index}`, index],
-						),
-					),
-				},
-			],
-		}),
-	).toThrow('Invalid record-sync mutation');
-});
-
-test('push parsing rejects mutation batches over the admission ceiling', () => {
-	const mutation = {
-		actorId: 'actor-a',
-		actorSequence: 1,
-		operations: [
-			{
-				kind: 'deleteRow' as const,
-				table: 'notes',
-				rowId: 'n1',
-			},
-		],
-	};
-	expect(() =>
-		parsePushRequest({
-			kind: 'push',
-			...envelope,
-			mutations: Array.from(
-				{ length: RECORD_SYNC_ADMISSION_LIMITS.mutationsPerPush + 1 },
-				(_, index) => ({ ...mutation, actorSequence: index + 1 }),
-			),
-		}),
-	).toThrow('Invalid record-sync push request');
-});
-
-test('mutation parsing rejects JSON deeper than the admission ceiling', () => {
-	let nested: unknown = 'leaf';
-	for (
-		let depth = 0;
-		depth <= RECORD_SYNC_ADMISSION_LIMITS.jsonDepth;
-		depth += 1
-	) {
-		nested = [nested];
+			}),
+		).toThrow('Invalid record mutation');
 	}
+});
+
+test('mutation parser rejects cyclic objects and bigint without leaking JSON errors', () => {
+	const cyclic: Record<string, unknown> = {};
+	cyclic.self = cyclic;
+	for (const invalid of [cyclic, 1n]) {
+		expect(() =>
+			parseMutation({
+				actorSequence: 1,
+				command: {
+					kind: 'createRow',
+					table: 'skills',
+					rowId: 'skill-1',
+					value: { invalid },
+				},
+			}),
+		).toThrow('Invalid record mutation');
+	}
+});
+
+test('patch parser rejects empty, duplicate, and overlapping unsets', () => {
+	for (const command of [
+		{ set: {}, unset: [] },
+		{ set: {}, unset: ['title', 'title'] },
+		{ set: { title: 'New' }, unset: ['title'] },
+	]) {
+		expect(() =>
+			parseMutation({
+				actorSequence: 1,
+				command: {
+					kind: 'patchRow',
+					table: 'skills',
+					rowId: 'skill-1',
+					...command,
+				},
+			}),
+		).toThrow('Invalid record mutation');
+	}
+});
+
+test('legacy schema, database, KV, and operation envelopes are rejected', () => {
+	expect(() =>
+		parsePushRequest({
+			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+			recordsSchemaHash: 'v1',
+			databaseId: 'database-a',
+			kind: 'push',
+			actorId: 'actor-a',
+			mutations: [],
+		}),
+	).toThrow('Invalid record push request');
 	expect(() =>
 		parseMutation({
-			actorId: 'actor-a',
 			actorSequence: 1,
-			operations: [
-				{
-					kind: 'updateRow',
-					table: 'notes',
-					rowId: 'n1',
-					cells: { metadata: nested },
-				},
-			],
+			command: { kind: 'setKv', key: 'theme', value: 'dark' },
 		}),
-	).toThrow('Invalid record-sync mutation');
+	).toThrow('Invalid record mutation');
 });
 
-test('cell admission counts ASCII and multibyte UTF-8 at the exact boundary', () => {
-	const parseBody = (body: string) =>
-		parseMutation({
-			actorId: 'actor-a',
-			actorSequence: 1,
-			operations: [
-				{
-					kind: 'updateRow',
-					table: 'notes',
-					rowId: 'n1',
-					cells: { body },
-				},
-			],
-		});
-	const limit = RECORD_SYNC_ADMISSION_LIMITS.encodedCellBytes;
-
-	expect(parseBody('x'.repeat(limit))).toBeDefined();
-	expect(() => parseBody('x'.repeat(limit + 1))).toThrow(
-		'Invalid record-sync mutation',
-	);
-	expect(parseBody('😀'.repeat(limit / 4))).toBeDefined();
-	expect(() => parseBody(`${'😀'.repeat(limit / 4)}a`)).toThrow(
-		'Invalid record-sync mutation',
-	);
-});
-
-test('mutation admission accepts the exact byte ceiling and rejects one-byte overflow', () => {
-	const firstBody = 'x'.repeat(RECORD_SYNC_ADMISSION_LIMITS.encodedCellBytes);
-	const base = {
-		actorId: 'actor-a',
-		actorSequence: 1,
-		operations: [
-			{
-				kind: 'updateRow' as const,
-				table: 'notes',
-				rowId: 'n1',
-				cells: { body: firstBody },
-			},
-			{
-				kind: 'updateRow' as const,
-				table: 'notes',
-				rowId: 'n2',
-				cells: { body: '' },
-			},
-		],
-	};
-	const remaining =
-		RECORD_SYNC_ADMISSION_LIMITS.encodedMutationBytes -
-		encodedBytes(JSON.stringify(base));
-	const exact = {
-		...base,
-		operations: [
-			base.operations[0]!,
-			{ ...base.operations[1]!, cells: { body: 'x'.repeat(remaining) } },
-		],
-	};
-
-	expect(encodedBytes(JSON.stringify(exact))).toBe(
-		RECORD_SYNC_ADMISSION_LIMITS.encodedMutationBytes,
-	);
-	expect(parseMutation(exact)).toBeDefined();
-	expect(
+test('pull responses are bounded by entry count and total encoded bytes', () => {
+	const deletion = (index: number) => ({
+		kind: 'deletion' as const,
+		table: 'skills',
+		rowId: `skill-${index}`,
+		lastServerSequence: index + 1,
+	});
+	expect(() =>
 		parsePullResponse({
 			kind: 'pull',
 			ok: true,
 			snapshotRequired: false,
 			fromCursor: 0,
-			newCursor: 1,
+			entries: Array.from(
+				{ length: RECORD_SYNC_ADMISSION_LIMITS.stateEntriesPerPull + 1 },
+				(_, index) => deletion(index),
+			),
+			newCursor: RECORD_SYNC_ADMISSION_LIMITS.stateEntriesPerPull + 1,
 			hasMore: false,
-			mutations: [{ ...exact, serverSequence: 1 }],
 		}),
-	).toBeDefined();
-	expect(() =>
-		parseMutation({
-			...exact,
-			operations: [
-				exact.operations[0]!,
-				{
-					...exact.operations[1]!,
-					cells: { body: `${exact.operations[1]!.cells.body}x` },
-				},
-			],
-		}),
-	).toThrow('Invalid record-sync mutation');
-});
+	).toThrow('Invalid record pull response');
 
-test('snapshot parsing rejects a cell or accumulated row over its byte ceiling', () => {
-	const response = (cells: Record<string, string>) => ({
-		kind: 'snapshotChunk' as const,
-		ok: true as const,
-		chunk: {
-			generation: 1,
-			index: 0,
-			rows: [{ table: 'notes', rowId: 'n1', cells }],
-			checksum: 'checksum',
-		},
-	});
-
+	const largeValue = 'x'.repeat(500 * 1024);
 	expect(() =>
-		parseSnapshotChunkResponse(
-			response({
-				body: 'x'.repeat(RECORD_SYNC_ADMISSION_LIMITS.encodedCellBytes + 1),
-			}),
-		),
-	).toThrow('Invalid record-sync snapshot chunk response');
-	expect(() =>
-		parseSnapshotChunkResponse(
-			response({
-				one: 'x'.repeat(RECORD_SYNC_ADMISSION_LIMITS.encodedCellBytes),
-				two: 'x'.repeat(RECORD_SYNC_ADMISSION_LIMITS.encodedCellBytes),
-			}),
-		),
-	).toThrow('Invalid record-sync snapshot chunk response');
-});
-
-test('snapshot parsing accepts the exact chunk ceiling and rejects one-byte overflow', () => {
-	const firstBody = 'x'.repeat(RECORD_SYNC_ADMISSION_LIMITS.encodedCellBytes);
-	const baseChunk = {
-		generation: 1,
-		index: 0,
-		rows: [
-			{ table: 'notes', rowId: 'n1', cells: { body: firstBody } },
-			{ table: 'notes', rowId: 'n2', cells: { body: '' } },
-		],
-		checksum: 'checksum',
-	};
-	const remaining =
-		RECORD_SYNC_ADMISSION_LIMITS.encodedSnapshotChunkBytes -
-		encodedBytes(JSON.stringify(baseChunk));
-	const exactChunk = {
-		...baseChunk,
-		rows: [
-			baseChunk.rows[0]!,
-			{
-				...baseChunk.rows[1]!,
-				cells: { body: 'x'.repeat(remaining) },
-			},
-		],
-	};
-	const response = (chunk: typeof exactChunk) => ({
-		kind: 'snapshotChunk' as const,
-		ok: true as const,
-		chunk,
-	});
-
-	expect(encodedBytes(JSON.stringify(exactChunk))).toBe(
-		RECORD_SYNC_ADMISSION_LIMITS.encodedSnapshotChunkBytes,
-	);
-	expect(parseSnapshotChunkResponse(response(exactChunk))).toBeDefined();
-	expect(() =>
-		parseSnapshotChunkResponse(
-			response({
-				...exactChunk,
-				rows: [
-					exactChunk.rows[0]!,
-					{
-						...exactChunk.rows[1]!,
-						cells: { body: `${exactChunk.rows[1]!.cells.body}x` },
-					},
-				],
-			}),
-		),
-	).toThrow('Invalid record-sync snapshot chunk response');
-});
-
-test('mutation parsing rejects encoded mutations over the byte ceiling', () => {
-	expect(() =>
-		parseMutation({
-			actorId: 'actor-a',
-			actorSequence: 1,
-			operations: [
-				{
-					kind: 'updateRow',
-					table: 'notes',
-					rowId: 'n1',
-					cells: {
-						body: 'x'.repeat(RECORD_SYNC_ADMISSION_LIMITS.encodedMutationBytes),
-					},
-				},
-			],
-		}),
-	).toThrow('Invalid record-sync mutation');
-});
-
-test('push parsing rejects aggregate bytes below the HTTP request ceiling', () => {
-	const body = 'x'.repeat(60 * 1024);
-	expect(() =>
-		parsePushRequest({
-			kind: 'push',
-			...envelope,
-			mutations: Array.from({ length: 13 }, (_, index) => ({
-				actorId: 'actor-a',
-				actorSequence: index + 1,
-				operations: [
-					{
-						kind: 'updateRow',
-						table: 'notes',
-						rowId: `n${index}`,
-						cells: { body },
-					},
-				],
+		parsePullResponse({
+			kind: 'pull',
+			ok: true,
+			snapshotRequired: false,
+			fromCursor: 0,
+			entries: Array.from({ length: 17 }, (_, index) => ({
+				kind: 'row',
+				table: 'skills',
+				rowId: `skill-${index}`,
+				value: { body: largeValue },
+				lastServerSequence: index + 1,
 			})),
+			newCursor: 17,
+			hasMore: false,
 		}),
-	).toThrow('Invalid record-sync push request');
+	).toThrow('Invalid record pull response');
 });

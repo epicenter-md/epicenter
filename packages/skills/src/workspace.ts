@@ -1,22 +1,28 @@
-import { createWorkspace } from '@epicenter/workspace';
+import { field } from '@epicenter/field';
+import {
+	defineWorkspace,
+	document,
+	type OpenedWorkspace,
+} from '@epicenter/workspace/sqlite';
 import { SKILLS_WORKSPACE_ID } from './constants.js';
 import { referencesTable, skillsTable } from './tables.js';
 
-export function createSkills({
-	workspaceId = SKILLS_WORKSPACE_ID,
-	clientID,
-}: {
-	workspaceId?: string;
-	clientID?: number;
-} = {}) {
-	const workspace = createWorkspace({
-		id: workspaceId,
-		tables: {
-			skills: skillsTable,
-			references: referencesTable,
-		},
-		kv: {},
-	});
-	if (clientID !== undefined) workspace.ydoc.clientID = clientID;
-	return workspace;
-}
+/**
+ * The inert Skills contract. A caller binds it through its environment-owned
+ * runtime and passes the resulting handle to ordinary application services.
+ */
+export const skillsWorkspace = defineWorkspace({
+	id: SKILLS_WORKSPACE_ID,
+	tables: {
+		skills: skillsTable,
+		references: referencesTable,
+	},
+	documents: {
+		instructions: document.text({ params: { skillId: field.string() } }),
+		reference: document.text({
+			params: { referenceId: field.string() },
+		}),
+	},
+});
+
+export type SkillsWorkspace = OpenedWorkspace<typeof skillsWorkspace>;

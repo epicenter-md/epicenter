@@ -9,11 +9,6 @@ export const RecordsError = defineErrors({
 		message: 'The record synchronization request is too large.',
 		status: 413 as const,
 	}),
-	ProtocolMismatch: () => ({
-		message: 'The record synchronization protocol is incompatible.',
-		status: 409 as const,
-		reason: 'protocol-mismatch' as const,
-	}),
 });
 
 export type RecordsError = InferErrors<typeof RecordsError>;

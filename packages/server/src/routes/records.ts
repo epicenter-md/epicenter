@@ -1,9 +1,6 @@
 import {
-	parseCandidateManifest,
 	parsePullRequest,
 	parsePushRequest,
-	parseRecordAuthorityOpenRequest,
-	parseSnapshotChunk,
 	parseSnapshotChunkRequest,
 	RECORD_SYNC_ADMISSION_LIMITS,
 } from '@epicenter/record-sync';
@@ -15,14 +12,6 @@ import { RecordsError } from './records-errors.js';
 const RECORDS_PREFIX = '/api/records';
 const RECORDS_ROUTE = `${RECORDS_PREFIX}/:workspaceId` as const;
 const MAX_RECORDS_REQUEST_BYTES = 1_048_576;
-
-function isBoundedIdentifier(value: string): boolean {
-	return (
-		value.length > 0 &&
-		new TextEncoder().encode(value).byteLength <=
-			RECORD_SYNC_ADMISSION_LIMITS.identifierBytes
-	);
-}
 
 async function parseJson<TValue>(
 	c: { req: { raw: Request } },
@@ -59,44 +48,6 @@ function invalidRequest<E extends Env>(
 	return c.json(error, error.error.status);
 }
 
-function parseCandidateId(value: unknown): string {
-	if (
-		typeof value !== 'object' ||
-		value === null ||
-		Array.isArray(value) ||
-		Object.getPrototypeOf(value) !== Object.prototype ||
-		Object.keys(value).length !== 1 ||
-		!Object.hasOwn(value, 'candidateId') ||
-		typeof (value as { candidateId?: unknown }).candidateId !== 'string' ||
-		!isBoundedIdentifier((value as { candidateId: string }).candidateId)
-	)
-		throw new TypeError('Invalid records succession candidate id');
-	return (value as { candidateId: string }).candidateId;
-}
-
-function parseCandidateChunk(value: unknown) {
-	if (
-		typeof value !== 'object' ||
-		value === null ||
-		Array.isArray(value) ||
-		Object.getPrototypeOf(value) !== Object.prototype ||
-		Object.keys(value).length !== 2 ||
-		!Object.hasOwn(value, 'candidateId') ||
-		!Object.hasOwn(value, 'chunk')
-	)
-		throw new TypeError('Invalid records succession candidate chunk');
-	const body = value as { candidateId?: unknown; chunk?: unknown };
-	if (
-		typeof body.candidateId !== 'string' ||
-		!isBoundedIdentifier(body.candidateId)
-	)
-		throw new TypeError('Invalid records succession candidate chunk');
-	return {
-		candidateId: body.candidateId,
-		chunk: parseSnapshotChunk(body.chunk),
-	};
-}
-
 function createRecordsApp<E extends Env>(
 	resolveRecords: (env: E['Bindings']) => Records,
 ): Hono<E> {
@@ -124,24 +75,6 @@ function createRecordsApp<E extends Env>(
 	}
 
 	return app
-		.post(`${RECORDS_ROUTE}/open`, async (c) => {
-			const parsed = await parseJson(c, parseRecordAuthorityOpenRequest);
-			if (!parsed.ok) {
-				return invalidRequest(c, parsed.reason);
-			}
-			const result = await resolveRecords(c.env).open(
-				partition(c),
-				parsed.value,
-			);
-			if (result.ok) {
-				return c.json({
-					databaseId: result.databaseId,
-					recordsSchemaHash: result.recordsSchemaHash,
-				});
-			}
-			const error = RecordsError.ProtocolMismatch();
-			return c.json(error, error.error.status);
-		})
 		.post(`${RECORDS_ROUTE}/push`, async (c) => {
 			const parsed = await parseJson(c, parsePushRequest);
 			if (!parsed.ok) {
@@ -167,51 +100,6 @@ function createRecordsApp<E extends Env>(
 			}
 			return c.json(
 				await resolveRecords(c.env).snapshotChunk(partition(c), parsed.value),
-			);
-		})
-		.post(`${RECORDS_ROUTE}/succession/stage`, async (c) => {
-			const parsed = await parseJson(c, parseCandidateManifest);
-			if (!parsed.ok) return invalidRequest(c, parsed.reason);
-			return c.json(
-				await resolveRecords(c.env).stageCandidate(partition(c), parsed.value),
-			);
-		})
-		.post(`${RECORDS_ROUTE}/succession/chunk`, async (c) => {
-			const parsed = await parseJson(c, parseCandidateChunk);
-			if (!parsed.ok) return invalidRequest(c, parsed.reason);
-			return c.json(
-				await resolveRecords(c.env).uploadCandidateChunk(
-					partition(c),
-					parsed.value.candidateId,
-					parsed.value.chunk,
-				),
-			);
-		})
-		.post(`${RECORDS_ROUTE}/succession/seal`, async (c) => {
-			const parsed = await parseJson(c, parseCandidateId);
-			if (!parsed.ok) return invalidRequest(c, parsed.reason);
-			return c.json(
-				await resolveRecords(c.env).sealCandidate(partition(c), parsed.value),
-			);
-		})
-		.post(`${RECORDS_ROUTE}/succession/activate`, async (c) => {
-			const parsed = await parseJson(c, parseCandidateId);
-			if (!parsed.ok) return invalidRequest(c, parsed.reason);
-			return c.json(
-				await resolveRecords(c.env).activateCandidate(
-					partition(c),
-					parsed.value,
-				),
-			);
-		})
-		.post(`${RECORDS_ROUTE}/succession/discard`, async (c) => {
-			const parsed = await parseJson(c, parseCandidateId);
-			if (!parsed.ok) return invalidRequest(c, parsed.reason);
-			return c.json(
-				await resolveRecords(c.env).discardCandidate(
-					partition(c),
-					parsed.value,
-				),
 			);
 		});
 }

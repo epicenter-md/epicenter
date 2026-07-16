@@ -1,339 +1,405 @@
 /**
- * Record Authority Binding Tests
+ * Current-State Record Authority Tests
  *
- * Verifies that the record-sync core exclusively owns discovery and binding of
- * authority identity metadata across every SQLite adapter.
+ * Verifies persistent actor ordering and compactable current state in the
+ * production SQLite authority.
  *
  * Key behaviors:
- * - First open mints and persists exactly one database identity
- * - Restore reconstructs an authority without minting another identity
- * - Protocol and schema refusals leave durable identity unchanged
- * - Refusing an unopened database does not partially initialize storage
- * - Published snapshot chunks stay within their encoded byte limit
+ * - exact latest retries return the original receipt
+ * - server order resolves patches while preserving unknown JSON keys
+ * - create conflicts roll back whole pushes
+ * - tombstone compaction forces a current-state snapshot
  */
 
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { createBunSqliteAdapter } from './adapters/bun.js';
-import { RECORD_SYNC_ADMISSION_LIMITS } from './admission.js';
-import { openRecordAuthority, restoreRecordAuthority } from './authority.js';
+import { encodedJsonBytes, RECORD_SYNC_ADMISSION_LIMITS } from './admission.js';
+import { openRecordAuthority } from './authority.js';
+import type { JsonObject, PushRequest, RecordCommand } from './protocol.js';
 import { RECORD_SYNC_PROTOCOL_MAJOR } from './protocol.js';
 
 const sha256 = async (value: string) =>
 	createHash('sha256').update(value).digest('hex');
-const request = {
-	protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-	recordsSchemaHash: 'notes-v1',
-};
 
-function setup() {
-	const native = new Database(':memory:', { strict: true });
+function push(
+	actorId: string,
+	commands: RecordCommand[],
+	firstActorSequence = 1,
+): PushRequest {
 	return {
-		native,
-		database: createBunSqliteAdapter(native),
+		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+		kind: 'push',
+		actorId,
+		mutations: commands.map((command, index) => ({
+			actorSequence: firstActorSequence + index,
+			command,
+		})),
 	};
 }
 
-test('first open persists one database id and restore reuses it', () => {
-	const { database, native } = setup();
-	let minted = 0;
+function create(
+	rowId: string,
+	value: JsonObject = { title: 'Initial' },
+): RecordCommand {
+	return { kind: 'createRow', table: 'skills', rowId, value };
+}
+
+function patch(
+	rowId: string,
+	set: Record<string, string | number | boolean | null | { source: string }>,
+	unset: string[] = [],
+): RecordCommand {
+	return { kind: 'patchRow', table: 'skills', rowId, set, unset };
+}
+
+function remove(rowId: string): RecordCommand {
+	return { kind: 'deleteRow', table: 'skills', rowId };
+}
+
+test('exact latest retry returns its receipt without advancing state', () => {
+	const sqlite = new Database(':memory:');
 	try {
-		const opened = openRecordAuthority({
-			database,
-			request,
-			createDatabaseId: () => `database-${++minted}`,
+		const authority = openRecordAuthority({
+			database: createBunSqliteAdapter(sqlite),
 			sha256,
 		});
-		expect(opened.ok).toBe(true);
-		if (!opened.ok) throw new Error('Expected authority to open');
-		expect(opened.databaseId).toBe('database-1');
+		const batch = push('actor-a', [
+			create('skill-1'),
+			patch('skill-1', { title: 'Updated' }),
+		]);
+		const accepted = authority.push(batch);
+		const afterAccepted = authority.inspect();
 
-		const reopened = openRecordAuthority({
-			database,
-			request,
-			createDatabaseId: () => `database-${++minted}`,
-			sha256,
-		});
-		expect(reopened.ok).toBe(true);
-		if (!reopened.ok) throw new Error('Expected authority to reopen');
-		expect(reopened.databaseId).toBe('database-1');
-		expect(minted).toBe(1);
-		expect(restoreRecordAuthority({ database, sha256 })?.envelope).toEqual(
-			opened.envelope,
-		);
-	} finally {
-		native.close();
-	}
-});
-
-test('family selection fences an already-open source database', async () => {
-	const { database, native } = setup();
-	try {
-		const opened = openRecordAuthority({
-			database,
-			request,
-			createDatabaseId: () => 'database-a',
-			sha256,
-		});
-		if (!opened.ok) throw new Error('Expected authority to open');
-		expect(
-			opened.authority.push({
-				kind: 'push',
-				...opened.envelope,
-				mutations: [
-					{
-						actorId: 'actor-a',
-						actorSequence: 1,
-						operations: [
-							{
-								kind: 'createRow',
-								table: 'notes',
-								rowId: 'n1',
-								cells: { title: 'Retained source' },
-							},
-						],
-					},
-				],
-			}),
-		).toEqual({ kind: 'push', ok: true });
-
-		database.transaction(() => {
-			database.run(
-				`INSERT INTO record_sync_databases(
-					database_id, storage_version, protocol_major, records_schema_hash,
-					status, server_sequence, watermark, snapshot_generation
-				) VALUES ('database-b', 1, ?, 'notes-v2', 'live', 0, 0, 0)`,
-				[RECORD_SYNC_PROTOCOL_MAJOR],
-			);
-			database.run(
-				"UPDATE record_sync_databases SET status = 'fenced' WHERE database_id = 'database-a'",
-			);
-			database.run(
-				"UPDATE record_sync_family SET current_database_id = 'database-b' WHERE id = 1",
-			);
-		});
-
-		expect(
-			opened.authority.push({
-				kind: 'push',
-				...opened.envelope,
-				mutations: [],
-			}),
-		).toEqual({ kind: 'push', ok: false, reason: 'database-id-mismatch' });
-		await expect(
-			opened.authority.publishSnapshot({ maxChunkBytes: 1024 }),
-		).rejects.toThrow('no longer current');
-		expect(restoreRecordAuthority({ database, sha256 })?.envelope).toEqual({
-			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-			recordsSchemaHash: 'notes-v2',
-			databaseId: 'database-b',
-		});
-		expect(
-			database.all<{ title: string }>(
-				`SELECT json_extract(cells_json, '$.title') AS title
-				 FROM record_sync_canonical_rows WHERE database_id = 'database-a'`,
-			),
-		).toEqual([{ title: 'Retained source' }]);
-	} finally {
-		native.close();
-	}
-});
-
-test('open reports the stored descriptor without replacing authority identity', () => {
-	const { database, native } = setup();
-	try {
-		const opened = openRecordAuthority({
-			database,
-			request,
-			createDatabaseId: () => 'database-1',
-			sha256,
-		});
-		if (!opened.ok) throw new Error('Expected authority to open');
-		expect(
-			openRecordAuthority({
-				database,
-				request: { ...request, recordsSchemaHash: 'different' },
-				createDatabaseId: () => 'must-not-mint',
-				sha256,
-			}),
-		).toMatchObject({
+		expect(accepted).toMatchObject({
 			ok: true,
-			databaseId: opened.databaseId,
-			recordsSchemaHash: request.recordsSchemaHash,
+			acceptance: 'accepted',
 		});
-		expect(restoreRecordAuthority({ database, sha256 })?.envelope).toEqual(
-			opened.envelope,
-		);
-	} finally {
-		native.close();
-	}
-});
-
-test('unsupported protocol refuses without initializing an empty database', () => {
-	const { database, native } = setup();
-	try {
+		expect(authority.push(structuredClone(batch))).toEqual({
+			...(accepted as Extract<typeof accepted, { ok: true }>),
+			acceptance: 'retry',
+		});
+		expect(authority.inspect()).toEqual(afterAccepted);
 		expect(
-			openRecordAuthority({
-				database,
-				request: {
-					...request,
-					protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR + 1,
-				},
-				createDatabaseId: () => 'must-not-mint',
-				sha256,
-			}),
-		).toEqual({ ok: false, reason: 'protocol-mismatch' });
-		expect(restoreRecordAuthority({ database, sha256 })).toBeNull();
+			authority.push(push('actor-a', [patch('skill-1', { title: 'Fork' })])),
+		).toEqual({ kind: 'push', ok: false, reason: 'actor-fork' });
+		expect(
+			authority.push(push('actor-a', [patch('skill-1', { title: 'Gap' })], 4)),
+		).toEqual({ kind: 'push', ok: false, reason: 'actor-sequence-gap' });
 	} finally {
-		native.close();
+		sqlite.close();
 	}
 });
 
-test('invalid binding input refuses before initializing storage', () => {
-	const { database, native } = setup();
+test('server acceptance order preserves unknown keys across mixed releases', () => {
+	const sqlite = new Database(':memory:');
 	try {
+		const authority = openRecordAuthority({
+			database: createBunSqliteAdapter(sqlite),
+			sha256,
+		});
+		authority.push(
+			push('old-release', [
+				create('skill-1', {
+					title: 'Old',
+					futureMetadata: { source: 'import' },
+				}),
+			]),
+		);
+		authority.push(
+			push('new-release', [
+				patch('skill-1', { title: 'New', category: 'general' }),
+			]),
+		);
+		authority.push(
+			push('accepted-last', [patch('skill-1', { title: 'Last' })]),
+		);
+
+		expect(authority.inspect().rows).toEqual([
+			{
+				table: 'skills',
+				rowId: 'skill-1',
+				value: {
+					title: 'Last',
+					futureMetadata: { source: 'import' },
+					category: 'general',
+				},
+				lastServerSequence: 3,
+			},
+		]);
+	} finally {
+		sqlite.close();
+	}
+});
+
+test('authority patches preserve __proto__ as an ordinary own JSON key', () => {
+	const sqlite = new Database(':memory:');
+	try {
+		const authority = openRecordAuthority({
+			database: createBunSqliteAdapter(sqlite),
+			sha256,
+		});
+		const original = JSON.parse(
+			'{"title":"Safe","__proto__":{"source":"create"}}',
+		) as JsonObject;
+		const set = JSON.parse('{"__proto__":{"source":"patch"}}') as JsonObject;
+
+		expect(
+			authority.push(
+				push('actor-a', [
+					create('skill-1', original),
+					{
+						kind: 'patchRow',
+						table: 'skills',
+						rowId: 'skill-1',
+						set,
+						unset: [],
+					},
+				]),
+			),
+		).toMatchObject({ ok: true });
+		const value = authority.inspect().rows[0]?.value;
+
+		expect(value).toBeDefined();
+		expect(Object.hasOwn(value as object, '__proto__')).toBeTrue();
+		expect(Object.getOwnPropertyDescriptor(value, '__proto__')?.value).toEqual({
+			source: 'patch',
+		});
+		expect(Object.getPrototypeOf(value)).toBe(Object.prototype);
+		expect(Object.getPrototypeOf({})).not.toHaveProperty('source');
+	} finally {
+		sqlite.close();
+	}
+});
+
+test('create conflict rolls back the complete push and leaves sequence unconsumed', () => {
+	const sqlite = new Database(':memory:');
+	try {
+		const authority = openRecordAuthority({
+			database: createBunSqliteAdapter(sqlite),
+			sha256,
+		});
+		authority.push(push('actor-a', [create('skill-1')]));
+		const before = authority.inspect();
+
+		expect(
+			authority.push(push('actor-b', [create('skill-2'), create('skill-1')])),
+		).toEqual({ kind: 'push', ok: false, reason: 'create-conflict' });
+		expect(authority.inspect()).toEqual(before);
+		expect(authority.push(push('actor-b', [create('skill-2')]))).toMatchObject({
+			ok: true,
+			acceptance: 'accepted',
+		});
+	} finally {
+		sqlite.close();
+	}
+});
+
+test('absent commands do not resurrect rows and still consume actor order', () => {
+	const sqlite = new Database(':memory:');
+	try {
+		const authority = openRecordAuthority({
+			database: createBunSqliteAdapter(sqlite),
+			sha256,
+		});
+		authority.push(
+			push('actor-a', [
+				patch('missing', { title: 'No row' }),
+				remove('missing'),
+				create('skill-1'),
+				remove('skill-1'),
+				patch('skill-1', { title: 'Cannot resurrect' }),
+			]),
+		);
+
+		expect(authority.inspect()).toMatchObject({
+			head: 5,
+			rows: [],
+			deletions: [
+				{
+					table: 'skills',
+					rowId: 'skill-1',
+					lastServerSequence: 4,
+				},
+			],
+			actorHighWater: { 'actor-a': 5 },
+		});
+	} finally {
+		sqlite.close();
+	}
+});
+
+test('create after delete starts a new row lifetime before or after compaction', async () => {
+	for (const compact of [false, true]) {
+		const sqlite = new Database(':memory:');
+		try {
+			const authority = openRecordAuthority({
+				database: createBunSqliteAdapter(sqlite),
+				sha256,
+			});
+			authority.push(push('actor-a', [create('skill-1'), remove('skill-1')]));
+			if (compact) {
+				const manifest = await authority.publishSnapshot({
+					maxChunkBytes: 512 * 1024,
+				});
+				if (!manifest) throw new Error('Expected snapshot publication');
+				authority.compactDeletionsThrough(manifest.head);
+			}
+			expect(
+				authority.push(
+					push('actor-b', [create('skill-1', { title: 'New lifetime' })]),
+				),
+			).toMatchObject({ ok: true, acceptance: 'accepted' });
+			expect(authority.inspect().rows).toMatchObject([
+				{ rowId: 'skill-1', value: { title: 'New lifetime' } },
+			]);
+		} finally {
+			sqlite.close();
+		}
+	}
+});
+
+test('pull paginates before the encoded response byte ceiling', () => {
+	const sqlite = new Database(':memory:');
+	try {
+		const authority = openRecordAuthority({
+			database: createBunSqliteAdapter(sqlite),
+			sha256,
+		});
+		const body = 'x'.repeat(240 * 1024);
+		for (let index = 0; index < 40; index += 1) {
+			expect(
+				authority.push(
+					push(`actor-${index}`, [create(`skill-${index}`, { title: body })]),
+				),
+			).toMatchObject({ ok: true });
+		}
+
+		const first = authority.pull({
+			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+			kind: 'pull',
+			cursor: 0,
+			limit: RECORD_SYNC_ADMISSION_LIMITS.stateEntriesPerPull,
+		});
+		expect(first.ok).toBeTrue();
+		if (!first.ok || first.snapshotRequired) {
+			throw new Error('Expected an incremental pull page');
+		}
+		expect(first.hasMore).toBeTrue();
+		expect(first.entries.length).toBeLessThan(40);
+		expect(encodedJsonBytes(first)).toBeLessThanOrEqual(
+			RECORD_SYNC_ADMISSION_LIMITS.encodedPullBytes,
+		);
+
+		const second = authority.pull({
+			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+			kind: 'pull',
+			cursor: first.newCursor,
+			limit: RECORD_SYNC_ADMISSION_LIMITS.stateEntriesPerPull,
+		});
+		expect(second.ok).toBeTrue();
+		if (!second.ok || second.snapshotRequired) {
+			throw new Error('Expected the remaining incremental pull page');
+		}
+		expect(second.hasMore).toBeFalse();
+		expect(first.entries.length + second.entries.length).toBe(40);
+	} finally {
+		sqlite.close();
+	}
+});
+
+test('published snapshot covers compacted deletion markers across reopen', async () => {
+	const sqlite = new Database(':memory:');
+	try {
+		const adapter = createBunSqliteAdapter(sqlite);
+		const authority = openRecordAuthority({ database: adapter, sha256 });
+		authority.push(push('actor-a', [create('skill-1'), remove('skill-1')]));
+		const manifest = await authority.publishSnapshot({
+			maxChunkBytes: 512 * 1024,
+		});
+		if (!manifest) throw new Error('Expected snapshot publication');
+		expect(authority.compactDeletionsThrough(2)).toBe(2);
+
+		const reopened = openRecordAuthority({ database: adapter, sha256 });
+		expect(
+			reopened.pull({
+				protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+				kind: 'pull',
+				cursor: 0,
+				limit: 100,
+			}),
+		).toEqual({
+			kind: 'pull',
+			ok: true,
+			snapshotRequired: true,
+			manifest,
+		});
+		const chunk = reopened.snapshotChunk({
+			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+			kind: 'snapshotChunk',
+			generation: manifest.generation,
+			index: 0,
+		});
+		expect(chunk).toMatchObject({ ok: true, chunk: { rows: [] } });
+	} finally {
+		sqlite.close();
+	}
+});
+
+test('authority stores no schema, database selection, KV, or mutation log tables', () => {
+	const sqlite = new Database(':memory:');
+	try {
+		openRecordAuthority({
+			database: createBunSqliteAdapter(sqlite),
+			sha256,
+		});
+		const names = sqlite
+			.query<{ name: string }, []>(
+				`SELECT name FROM sqlite_schema
+				 WHERE type = 'table' AND name LIKE 'record_sync_%'
+				 ORDER BY name`,
+			)
+			.all()
+			.map(({ name }) => name);
+
+		expect(names).toEqual([
+			'record_sync_actors',
+			'record_sync_deletions',
+			'record_sync_meta',
+			'record_sync_rows',
+			'record_sync_snapshot_chunks',
+			'record_sync_snapshot_manifest',
+		]);
+	} finally {
+		sqlite.close();
+	}
+});
+
+test('open refuses legacy authority storage instead of creating empty parallel state', () => {
+	const sqlite = new Database(':memory:');
+	try {
+		sqlite.run(`
+			CREATE TABLE record_sync_family (
+				id INTEGER PRIMARY KEY,
+				current_database_id TEXT NOT NULL
+			)
+		`);
 		expect(() =>
 			openRecordAuthority({
-				database,
-				request: {
-					...request,
-					recordsSchemaHash: 'x'.repeat(
-						RECORD_SYNC_ADMISSION_LIMITS.recordsSchemaHashBytes + 1,
-					),
-				},
-				createDatabaseId: () => 'must-not-mint',
+				database: createBunSqliteAdapter(sqlite),
 				sha256,
 			}),
-		).toThrow('Invalid record authority binding request');
-		expect(restoreRecordAuthority({ database, sha256 })).toBeNull();
-	} finally {
-		native.close();
-	}
-});
-
-test('snapshot publication bounds every encoded chunk by bytes', async () => {
-	const { database, native } = setup();
-	try {
-		const opened = openRecordAuthority({
-			database,
-			request,
-			createDatabaseId: () => 'database-1',
-			sha256,
-		});
-		if (!opened.ok) throw new Error('Expected authority to open');
+		).toThrow('Incompatible legacy record-sync authority storage');
 		expect(
-			opened.authority.push({
-				...opened.envelope,
-				kind: 'push',
-				mutations: [
-					{
-						actorId: 'actor-1',
-						actorSequence: 1,
-						operations: Array.from({ length: 4 }, (_, index) => ({
-							kind: 'createRow' as const,
-							table: 'notes',
-							rowId: `note-${index}`,
-							cells: { body: 'x'.repeat(80) },
-						})),
-					},
-				],
-			}),
-		).toEqual({ kind: 'push', ok: true });
-		const maxChunkBytes = 320;
-		const manifest = await opened.authority.publishSnapshot({ maxChunkBytes });
-		expect(manifest.chunkChecksums.length).toBeGreaterThan(1);
-		for (let index = 0; index < manifest.chunkChecksums.length; index += 1) {
-			const response = opened.authority.snapshotChunk({
-				...opened.envelope,
-				kind: 'snapshotChunk',
-				generation: manifest.generation,
-				index,
-			});
-			if (!response.ok) throw new Error('Expected snapshot chunk');
-			expect(
-				new TextEncoder().encode(JSON.stringify(response.chunk)).byteLength,
-			).toBeLessThanOrEqual(maxChunkBytes);
-		}
+			sqlite
+				.query<{ count: number }, []>(
+					`SELECT COUNT(*) AS count FROM sqlite_schema
+					 WHERE type = 'table' AND name = 'record_sync_meta'`,
+				)
+				.get()?.count,
+		).toBe(0);
 	} finally {
-		native.close();
-	}
-});
-
-test('snapshot publication cannot exceed the protocol chunk ceiling', async () => {
-	const { database, native } = setup();
-	try {
-		const opened = openRecordAuthority({
-			database,
-			request,
-			createDatabaseId: () => 'database-1',
-			sha256,
-		});
-		if (!opened.ok) throw new Error('Expected authority to open');
-		await expect(
-			opened.authority.publishSnapshot({
-				maxChunkBytes:
-					RECORD_SYNC_ADMISSION_LIMITS.encodedSnapshotChunkBytes + 1,
-			}),
-		).rejects.toThrow('maxChunkBytes must be an integer');
-	} finally {
-		native.close();
-	}
-});
-
-test('push rejects a patch that would make the canonical row unsnapshotable', () => {
-	const { database, native } = setup();
-	try {
-		const opened = openRecordAuthority({
-			database,
-			request,
-			createDatabaseId: () => 'database-1',
-			sha256,
-		});
-		if (!opened.ok) throw new Error('Expected authority to open');
-		const body = 'x'.repeat(RECORD_SYNC_ADMISSION_LIMITS.encodedCellBytes);
-
-		expect(
-			opened.authority.push({
-				...opened.envelope,
-				kind: 'push',
-				mutations: [
-					{
-						actorId: 'actor-1',
-						actorSequence: 1,
-						operations: [
-							{
-								kind: 'createRow',
-								table: 'notes',
-								rowId: 'note-1',
-								cells: { one: body },
-							},
-						],
-					},
-				],
-			}),
-		).toEqual({ kind: 'push', ok: true });
-		expect(
-			opened.authority.push({
-				...opened.envelope,
-				kind: 'push',
-				mutations: [
-					{
-						actorId: 'actor-1',
-						actorSequence: 2,
-						operations: [
-							{
-								kind: 'updateRow',
-								table: 'notes',
-								rowId: 'note-1',
-								cells: { two: body },
-							},
-						],
-					},
-				],
-			}),
-		).toEqual({ kind: 'push', ok: false, reason: 'row-too-large' });
-	} finally {
-		native.close();
+		sqlite.close();
 	}
 });

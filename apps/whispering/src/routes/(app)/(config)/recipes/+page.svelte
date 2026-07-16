@@ -34,7 +34,7 @@
 		editorOpen = true;
 	}
 
-	function save() {
+	async function save() {
 		const name = working.name.trim();
 		const instructions = working.instructions.trim();
 		if (!name) {
@@ -45,7 +45,7 @@
 			report.info({ title: 'Add an instruction', description: 'One line telling the AI what to do with the text.' });
 			return;
 		}
-		recipes.set({ ...$state.snapshot(working), name, instructions });
+		await recipes.set({ ...$state.snapshot(working), name, instructions });
 		editorOpen = false;
 		report.success({ title: isEditing ? 'Recipe updated' : 'Recipe created' });
 	}
@@ -55,8 +55,8 @@
 			title: `Delete ${recipe.name}?`,
 			description: 'This removes the recipe everywhere. It cannot be undone.',
 			confirm: { text: 'Delete', variant: 'destructive' },
-			onConfirm: () => {
-				recipes.delete(recipe.id);
+			onConfirm: async () => {
+				await recipes.delete(recipe.id);
 				report.success({ title: 'Recipe deleted' });
 			},
 		});

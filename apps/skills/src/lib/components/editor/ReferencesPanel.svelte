@@ -15,9 +15,12 @@
 			<Button
 				variant="ghost"
 				size="sm"
-				onclick={() => {
+				onclick={async () => {
 					if (!skillsState.selectedSkillId) return;
-					const id = skillsState.createReference(skillsState.selectedSkillId, 'new-reference.md');
+					const id = await skillsState.createReference(
+						skillsState.selectedSkillId,
+						'new-reference.md',
+					);
 					expandedRefId = id;
 				}}
 			>
@@ -46,9 +49,9 @@
 							<Button
 								variant="ghost"
 								size="icon-xs"
-								onclick={() => {
+								onclick={async () => {
 									if (expandedRefId === ref.id) expandedRefId = null;
-									skillsState.deleteReference(ref.id);
+									await skillsState.deleteReference(ref.id);
 								}}
 							>
 								<TrashIcon class="size-3.5 text-muted-foreground" />

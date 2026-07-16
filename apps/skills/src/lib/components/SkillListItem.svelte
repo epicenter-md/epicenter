@@ -53,7 +53,8 @@
 				skillsState.selectSkill(skill.id);
 				confirmationDialog.open({
 					title: `Delete ${skill.name}?`,
-					description: 'This will delete the skill and all its references. This action cannot be undone.',
+					description:
+						'This will delete the skill and its known reference records. This action cannot be undone.',
 					confirm: { text: 'Delete', variant: 'destructive' },
 					onConfirm: () => skillsState.deleteSkill(skill.id),
 				});

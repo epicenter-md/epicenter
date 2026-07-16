@@ -55,7 +55,7 @@ export async function processRecordingPipeline({
 	const isDictation = deliverySource === 'recording';
 	if (isDictation) dictationLifecycle.markTranscribing();
 
-	recordings.set({
+	await recordings.set({
 		id: recordingId,
 		title: '',
 		recordedAt: now,
@@ -76,7 +76,7 @@ export async function processRecordingPipeline({
 			// is nothing to transcribe. Bailing here surfaces the real
 			// failure instead of the misleading "no recording artifact
 			// found" the transcribe path would emit on the empty directory.
-			recordings.update(recordingId, {
+			await recordings.update(recordingId, {
 				transcription: {
 					status: 'failed',
 					completedAt: InstantString.now(),
@@ -169,7 +169,7 @@ export async function processRecordingPipeline({
 	// already left `polishedTranscript` null, so speed mode (no AI call) and a
 	// polish failure (the fallback delivers the raw words) need no second write.
 	if (willPolish && !polishError) {
-		recordings.update(recordingId, { polishedTranscript: polishedText });
+		await recordings.update(recordingId, { polishedTranscript: polishedText });
 	}
 
 	// The transcript is "ready" once it is polished and about to be delivered, so

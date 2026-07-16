@@ -1,105 +1,93 @@
-/**
- * @fileoverview Pure functions to parse SKILL.md files into table row data.
- *
- * Splits YAML frontmatter from the markdown body. Frontmatter fields map 1:1
- * to `skillsTable` columns. The body becomes the instructions document content,
- * written separately via a document handle.
- *
- * @module
- */
+/** Pure parsing for the agentskills.io SKILL.md representation. */
 
 import { InstantString } from '@epicenter/field';
+import type { JsonValue } from '@epicenter/workspace/sqlite';
 import { parse as parseYaml } from 'yaml';
-import type { Skill } from './tables.js';
 
-/**
- * Split a markdown file with YAML frontmatter into its two parts.
- *
- * Expects the standard `---` delimiters at the start of the file. If no
- * frontmatter is found, returns an empty object and the entire content as body.
- */
 function splitFrontmatter(content: string) {
 	const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
 	if (!match) return { frontmatter: {}, body: content };
 
-	const [, yamlStr, body] = match as [string, string, string];
-	const parsed: unknown = parseYaml(yamlStr);
+	const [, yamlString, body] = match as [string, string, string];
+	const parsed: unknown = parseYaml(yamlString);
 	const frontmatter =
 		parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
 			? (parsed as Record<string, unknown>)
 			: {};
-
 	return { frontmatter, body: body.trimStart() };
 }
 
-/**
- * Parse a SKILL.md file into fields suitable for a skills table row.
- *
- * Splits YAML frontmatter from the markdown body. Frontmatter fields map 1:1
- * to table columns per the agentskills.io spec:
- *
- * - `id` → extracted from `metadata.id` if present (survives round-trips)
- * - `name` → from the directory name (passed as parameter), not frontmatter
- * - `description` → frontmatter `description` field
- * - `license`, `compatibility`, `allowedTools` → optional frontmatter fields
- * - `metadata` → frontmatter `metadata` minus the reserved `id` key, JSON-stringified
- *
- * When `metadata.id` is present, it is extracted as the skill's stable identity
- * and stripped from the `metadata` column to avoid redundancy. This lets IDs
- * survive a full export→import cycle even on a fresh workspace.
- */
-export function parseSkillMd(
-	name: string,
-	content: string,
-): {
-	skill: Omit<Skill, 'id'> & { id: string | null };
-	instructions: string;
-} {
+/** Parse one SKILL.md without assigning canonical record identity. */
+export function parseSkillMd(name: string, content: string) {
 	const { frontmatter, body } = splitFrontmatter(content);
-
-	// Extract id from metadata.id, then strip it so it doesn't pollute the metadata column
-	let parsedId: string | null = null;
-	let metadataRecord: Record<string, unknown> | null = null;
+	let sourceId: string | undefined;
+	let metadata: Record<string, JsonValue> | undefined;
 
 	if (
-		frontmatter.metadata != null &&
+		frontmatter.metadata !== null &&
 		typeof frontmatter.metadata === 'object' &&
 		!Array.isArray(frontmatter.metadata)
 	) {
-		const { id: rawId, ...rest } = frontmatter.metadata as Record<
-			string,
-			unknown
-		>;
+		const { id, ...rest } = frontmatter.metadata as Record<string, unknown>;
 		if (
-			typeof rawId === 'string' &&
-			rawId.length > 0 &&
-			rawId.trim() === rawId &&
-			!rawId.includes(':')
+			typeof id === 'string' &&
+			id.length > 0 &&
+			id.trim() === id &&
+			!id.includes(':')
 		) {
-			parsedId = rawId;
+			sourceId = id;
 		}
-		// Only keep metadata if there are remaining keys after stripping id
-		if (Object.keys(rest).length > 0) metadataRecord = rest;
+		if (isJsonObject(rest) && Object.keys(rest).length > 0) metadata = rest;
 	}
 
 	return {
 		skill: {
-			id: parsedId,
+			sourceId,
 			name,
 			description: String(frontmatter.description ?? ''),
-			license:
-				typeof frontmatter.license === 'string' ? frontmatter.license : null,
-			compatibility:
-				typeof frontmatter.compatibility === 'string'
-					? frontmatter.compatibility
-					: null,
-			metadata: metadataRecord !== null ? JSON.stringify(metadataRecord) : null,
-			allowedTools:
-				typeof frontmatter['allowed-tools'] === 'string'
-					? frontmatter['allowed-tools']
-					: null,
+			...(typeof frontmatter.license === 'string' && {
+				license: frontmatter.license,
+			}),
+			...(typeof frontmatter.compatibility === 'string' && {
+				compatibility: frontmatter.compatibility,
+			}),
+			...(metadata && { metadata }),
+			...(typeof frontmatter['allowed-tools'] === 'string' && {
+				allowedTools: frontmatter['allowed-tools'],
+			}),
 			updatedAt: InstantString.now(),
 		},
 		instructions: body,
 	};
+}
+
+export type ParsedSkill = ReturnType<typeof parseSkillMd>['skill'];
+
+function isJsonObject(
+	value: Record<string, unknown>,
+): value is Record<string, JsonValue> {
+	return Object.values(value).every((child) => isJsonValue(child));
+}
+
+function isJsonValue(
+	value: unknown,
+	ancestors = new Set<object>(),
+): value is JsonValue {
+	if (
+		value === null ||
+		typeof value === 'string' ||
+		typeof value === 'boolean'
+	) {
+		return true;
+	}
+	if (typeof value === 'number') return Number.isFinite(value);
+	if (typeof value !== 'object' || ancestors.has(value)) return false;
+	ancestors.add(value);
+	const valid = Array.isArray(value)
+		? value.every((child) => isJsonValue(child, ancestors))
+		: (Object.getPrototypeOf(value) === Object.prototype ||
+				Object.getPrototypeOf(value) === null) &&
+			Object.values(value).every((child) => isJsonValue(child, ancestors));
+	ancestors.delete(value);
+	return valid;
 }

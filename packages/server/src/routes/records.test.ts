@@ -1,21 +1,9 @@
-/**
- * Records Route Tests
- *
- * Verifies the authenticated HTTP projection of the logical record authority.
- * The route owns exact request parsing and derives the durable partition from
- * server-side auth rather than accepting a principal from a client.
- *
- * Key behaviors:
- * - Authenticated principal and path workspace select the backend partition
- * - Malformed and structurally inexact JSON is rejected before the backend
- * - Open, push, and pull preserve the record-sync protocol responses
- */
-
 import { expect, test } from 'bun:test';
 import { asPrincipalId } from '@epicenter/identity';
 import {
 	type PullRequest,
 	type PushRequest,
+	RECORD_SYNC_ADMISSION_LIMITS,
 	RECORD_SYNC_PROTOCOL_MAJOR,
 } from '@epicenter/record-sync';
 import { Hono } from 'hono';
@@ -26,17 +14,21 @@ import { mountRecordsApp } from './records.js';
 function setup() {
 	const partitions: RecordsPartition[] = [];
 	const records: Records = {
-		async open(partition) {
+		async push(partition, request) {
 			partitions.push(partition);
 			return {
+				kind: 'push',
 				ok: true,
-				databaseId: 'database-1',
-				recordsSchemaHash: 'schema-1',
+				acceptance: 'accepted',
+				receipt: {
+					actorId: request.actorId,
+					batchChecksum: 'checksum',
+					firstActorSequence: 1,
+					lastActorSequence: 1,
+					firstServerSequence: 1,
+					lastServerSequence: 1,
+				},
 			};
-		},
-		async push(partition) {
-			partitions.push(partition);
-			return { kind: 'push', ok: true };
 		},
 		async pull(partition, request) {
 			partitions.push(partition);
@@ -45,33 +37,18 @@ function setup() {
 				ok: true,
 				snapshotRequired: false,
 				fromCursor: request.cursor,
-				mutations: [],
+				entries: [],
 				newCursor: request.cursor,
 				hasMore: false,
 			};
 		},
-		async snapshotChunk() {
+		async snapshotChunk(partition) {
+			partitions.push(partition);
 			return {
 				kind: 'snapshotChunk',
 				ok: false,
 				reason: 'snapshot-replaced',
 			};
-		},
-		async stageCandidate(partition, manifest) {
-			partitions.push(partition);
-			return { ok: true, candidateId: manifest.candidateId, replaced: false };
-		},
-		async uploadCandidateChunk() {
-			return { ok: true };
-		},
-		async sealCandidate() {
-			return { ok: true };
-		},
-		async activateCandidate() {
-			return { ok: true, status: 'activated' };
-		},
-		async discardCandidate() {
-			return { ok: true };
 		},
 	};
 	const app = new Hono<Env>();
@@ -85,10 +62,27 @@ function setup() {
 	return { app, partitions };
 }
 
-const envelope = {
+const push: PushRequest = {
 	protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-	recordsSchemaHash: 'schema-1',
-	databaseId: 'database-1',
+	kind: 'push',
+	actorId: 'actor-1',
+	mutations: [
+		{
+			actorSequence: 1,
+			command: {
+				kind: 'createRow',
+				table: 'pages',
+				rowId: 'page-1',
+				value: { title: 'Hello' },
+			},
+		},
+	],
+};
+const pull: PullRequest = {
+	protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+	kind: 'pull',
+	cursor: 0,
+	limit: RECORD_SYNC_ADMISSION_LIMITS.stateEntriesPerPull,
 };
 
 function post(
@@ -105,123 +99,23 @@ function post(
 	);
 }
 
-test('open stamps the authenticated principal and path workspace onto the backend call', async () => {
+test('push and pull derive the authority partition from authentication and path', async () => {
 	const { app, partitions } = setup();
-	const response = await post(app, 'open', {
-		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		recordsSchemaHash: 'schema-1',
-	});
-
-	expect(response.status).toBe(200);
-	expect((await response.json()) as unknown).toEqual({
-		databaseId: 'database-1',
-		recordsSchemaHash: 'schema-1',
-	});
-	expect(partitions).toEqual([
-		{
-			principalId: asPrincipalId('authenticated-alice'),
-			workspaceId: 'wiki',
-		},
-	]);
-});
-
-test('open rejects extra client-owned partition fields', async () => {
-	const { app, partitions } = setup();
-	const response = await post(app, 'open', {
-		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		recordsSchemaHash: 'schema-1',
-		principalId: 'mallory',
-	});
-
-	expect(response.status).toBe(400);
-	expect((await response.json()) as { error: { name: string } }).toMatchObject({
-		error: { name: 'InvalidRequest' },
-	});
-	expect(partitions).toEqual([]);
-});
-
-test('malformed JSON is rejected before the records backend', async () => {
-	const { app, partitions } = setup();
-	const response = await app.request('/api/records/wiki/push', {
-		method: 'POST',
-		headers: { 'content-type': 'application/json' },
-		body: '{',
-	});
-
-	expect(response.status).toBe(400);
-	expect(partitions).toEqual([]);
-});
-
-test('oversized JSON is rejected before parsing or backend work', async () => {
-	const { app, partitions } = setup();
-	const response = await app.request('/api/records/wiki/push', {
-		method: 'POST',
-		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify({ payload: 'x'.repeat(1_048_576) }),
-	});
-
-	expect(response.status).toBe(413);
-	expect((await response.json()) as { error: { name: string } }).toMatchObject({
-		error: { name: 'RequestTooLarge' },
-	});
-	expect(partitions).toEqual([]);
-});
-
-test('oversized workspace identity is rejected before backend work', async () => {
-	const { app, partitions } = setup();
-	const response = await app.request(`/api/records/${'w'.repeat(513)}/open`, {
-		method: 'POST',
-		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify({
-			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-			recordsSchemaHash: 'schema-1',
-		}),
-	});
-
-	expect(response.status).toBe(400);
-	expect(partitions).toEqual([]);
-});
-
-test('push and pull parse exact protocol requests and return backend responses', async () => {
-	const { app, partitions } = setup();
-	const push: PushRequest = {
-		...envelope,
-		kind: 'push',
-		mutations: [
-			{
-				actorId: 'actor-1',
-				actorSequence: 1,
-				operations: [
-					{
-						kind: 'createRow',
-						table: 'pages',
-						rowId: 'page-1',
-						cells: { title: 'Hello' },
-					},
-				],
-			},
-		],
-	};
-	const pull: PullRequest = {
-		...envelope,
-		kind: 'pull',
-		cursor: 0,
-		limit: 100,
-	};
-
 	const pushResponse = await post(app, 'push', push);
 	const pullResponse = await post(app, 'pull', pull);
 
-	expect((await pushResponse.json()) as unknown).toEqual({
+	expect(pushResponse.status).toBe(200);
+	expect((await pushResponse.json()) as { ok: boolean }).toMatchObject({
 		kind: 'push',
 		ok: true,
+		acceptance: 'accepted',
 	});
 	expect((await pullResponse.json()) as unknown).toEqual({
 		kind: 'pull',
 		ok: true,
 		snapshotRequired: false,
 		fromCursor: 0,
-		mutations: [],
+		entries: [],
 		newCursor: 0,
 		hasMore: false,
 	});
@@ -237,39 +131,37 @@ test('push and pull parse exact protocol requests and return backend responses',
 	]);
 });
 
-test('succession stage parses one exact manifest and derives the partition', async () => {
+test('malformed, oversized, and structurally inexact requests stop before backend work', async () => {
 	const { app, partitions } = setup();
-	const response = await post(app, 'succession/stage', {
-		format: 1,
-		sourceDatabaseId: 'database-1',
-		sourceHead: 4,
-		targetRecordsSchemaHash: 'schema-2',
-		chunks: [{ index: 0, checksum: 'chunk-1', rowCount: 1, encodedBytes: 128 }],
-		rowCount: 1,
-		encodedBytes: 128,
-		candidateId: 'candidate-1',
+	const malformed = await app.request('/api/records/wiki/push', {
+		method: 'POST',
+		body: '{',
 	});
+	const oversized = await post(app, 'push', {
+		payload: 'x'.repeat(1_048_576),
+	});
+	const inexact = await post(app, 'pull', { ...pull, principalId: 'mallory' });
 
-	expect(response.status).toBe(200);
-	expect((await response.json()) as unknown).toEqual({
-		ok: true,
-		candidateId: 'candidate-1',
-		replaced: false,
-	});
-	expect(partitions).toEqual([
-		{
-			principalId: asPrincipalId('authenticated-alice'),
-			workspaceId: 'wiki',
-		},
-	]);
+	expect(malformed.status).toBe(400);
+	expect(oversized.status).toBe(413);
+	expect(inexact.status).toBe(400);
+	expect(partitions).toEqual([]);
 });
 
-test('succession action rejects an oversized candidate identity', async () => {
+test('oversized workspace identity stops before backend work', async () => {
 	const { app, partitions } = setup();
-	const response = await post(app, 'succession/activate', {
-		candidateId: 'c'.repeat(513),
+	const response = await app.request(`/api/records/${'w'.repeat(513)}/pull`, {
+		method: 'POST',
+		body: JSON.stringify(pull),
 	});
 
 	expect(response.status).toBe(400);
+	expect(partitions).toEqual([]);
+});
+
+test('the transport exposes no open or succession lifecycle', async () => {
+	const { app, partitions } = setup();
+	expect((await post(app, 'open', {})).status).toBe(404);
+	expect((await post(app, 'succession/activate', {})).status).toBe(404);
 	expect(partitions).toEqual([]);
 });

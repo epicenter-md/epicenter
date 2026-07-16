@@ -1,14 +1,9 @@
-import { whispering } from '#platform/whispering';
+import { recordings } from '$lib/state/recordings.svelte';
 import type { PageLoad } from './$types';
 
 /**
- * Gate the recordings paint on local storage hydration. The table reads
- * `fromTable(whispering.tables.recordings)`, which is empty until
- * `storage.whenLoaded` resolves, so without this gate the "No recordings yet"
- * empty state flashes before recordings load from disk. SvelteKit blocks the
- * route's render until this load resolves; `whenReady` is a single promise, so
- * it resolves once and a later navigation never re-blocks.
+ * Gate the recordings paint on the initial bounded canonical-record scan.
  */
 export const load: PageLoad = async () => {
-	await whispering.whenReady;
+	await recordings.whenReady;
 };

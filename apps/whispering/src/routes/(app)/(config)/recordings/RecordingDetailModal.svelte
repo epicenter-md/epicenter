@@ -113,7 +113,7 @@
 		});
 	}
 
-	function save() {
+	async function save() {
 		const snapshot = $state.snapshot(workingCopy);
 		if (!InstantString.is(snapshot.recordedAt)) {
 			report.info({
@@ -123,7 +123,7 @@
 			return;
 		}
 
-		const { error } = recordings.update(recording.id, {
+		const { error } = await recordings.update(recording.id, {
 			title: snapshot.title,
 			recordedAt: snapshot.recordedAt,
 			recordedAtZone: snapshot.recordedAtZone,

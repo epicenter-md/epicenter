@@ -1,46 +1,36 @@
-import type { Cells, Operation } from './protocol.js';
+import type { JsonObject, RecordCommand } from './protocol.js';
 
-/**
- * One deterministic row transition. Absence is the only deleted state: a
- * deleted row is physically gone, and resurrection is prevented by explicit
- * creation plus one-lifetime row ids, not by tombstone records.
- */
-type FoldResult =
-	| { kind: 'created'; cells: Cells }
-	| { kind: 'updated'; cells: Cells }
-	| { kind: 'deleted' }
+export type RowFoldResult =
+	| { kind: 'row'; value: JsonObject }
+	| { kind: 'deletion' }
 	| { kind: 'noop' }
-	/**
-	 * `createRow` named an identity that is already live. Never a routine
-	 * no-op: the authority refuses the push and the submitting replica must
-	 * discard its state and rebootstrap.
-	 */
 	| { kind: 'create-conflict' };
 
-/** The total, schema-blind row transition shared by every runtime. */
+/** Fold one schema-blind command into one current row lifetime. */
 export function foldRow(
-	current: Cells | undefined,
-	operation: Operation,
-): FoldResult {
-	switch (operation.kind) {
-		case 'createRow': {
-			if (current !== undefined) return { kind: 'create-conflict' };
-			const cells: Cells = {};
-			for (const [field, value] of Object.entries(operation.cells)) {
-				if (value !== null) cells[field] = structuredClone(value);
-			}
-			return { kind: 'created', cells };
-		}
-		case 'updateRow': {
+	current: JsonObject | undefined,
+	command: RecordCommand,
+): RowFoldResult {
+	switch (command.kind) {
+		case 'createRow':
+			return current === undefined
+				? { kind: 'row', value: structuredClone(command.value) }
+				: { kind: 'create-conflict' };
+		case 'patchRow': {
 			if (current === undefined) return { kind: 'noop' };
-			const cells = structuredClone(current);
-			for (const [field, value] of Object.entries(operation.cells)) {
-				if (value === null) delete cells[field];
-				else cells[field] = structuredClone(value);
+			const value = structuredClone(current);
+			for (const key of command.unset) delete value[key];
+			for (const [key, next] of Object.entries(command.set)) {
+				Object.defineProperty(value, key, {
+					configurable: true,
+					enumerable: true,
+					value: structuredClone(next),
+					writable: true,
+				});
 			}
-			return { kind: 'updated', cells };
+			return { kind: 'row', value };
 		}
 		case 'deleteRow':
-			return current === undefined ? { kind: 'noop' } : { kind: 'deleted' };
+			return current === undefined ? { kind: 'noop' } : { kind: 'deletion' };
 	}
 }

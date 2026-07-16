@@ -1,72 +1,65 @@
 import { SvelteMap } from 'svelte/reactivity';
-import { whispering } from '#platform/whispering';
+import { settingsDefaults, whispering } from '#platform/whispering';
+import type { WhisperingSettingValues } from '$lib/workspace';
 
-type Kv = typeof whispering.kv;
-
-/** Every setting's value type, keyed by setting key. */
-type SettingsValues = ReturnType<Kv['getAll']>;
-
-/**
- * Setting keys whose stored value is a boolean.
- *
- * The `<SettingSwitch>` component constrains its `key` prop to these, so the
- * generic flows through `settings.get`/`settings.set` and a non-boolean key
- * (a number like `retention.maxCount`, an enum like `recording.trigger`) is a
- * compile error instead of a silently-broken toggle.
- */
 export type BooleanSettingKey = {
-	[K in keyof SettingsValues]: SettingsValues[K] extends boolean ? K : never;
-}[keyof SettingsValues];
+	[K in keyof WhisperingSettingValues]: WhisperingSettingValues[K] extends boolean
+		? K
+		: never;
+}[keyof WhisperingSettingValues];
+
+const settingsDocument = await whispering.documents.settings.open();
+const settingsContent = settingsDocument.content as {
+	get(key: string): unknown;
+	set(key: string, value: unknown): void;
+	delete(key: string): void;
+	observe(listener: () => void): () => void;
+};
+
+function clone<TValue>(value: TValue): TValue {
+	return structuredClone(value);
+}
 
 function createSettings() {
-	const map = new SvelteMap<string, unknown>();
+	const map = new SvelteMap<keyof WhisperingSettingValues, unknown>();
 
-	// Initialize SvelteMap with current values for ALL KV keys.
-	// kv.get() always returns a valid value (stored value or defaultValue).
-	for (const key of whispering.kv.keys) {
-		map.set(key, whispering.kv.get(key));
+	function refresh(): void {
+		for (const key of Object.keys(settingsDefaults) as Array<
+			keyof WhisperingSettingValues
+		>) {
+			map.set(key, clone(settingsContent.get(key) ?? settingsDefaults[key]));
+		}
 	}
 
-	// Single observer for ALL KV changes (local or remote).
-	// Observer updates SvelteMap -> components re-render per-key.
-	whispering.kv.observeAll((changes) => {
-		for (const [key, change] of changes) {
-			if (change.type === 'set') {
-				map.set(key, change.value);
-			} else if (change.type === 'delete') {
-				// On delete, restore default value so map always has a value
-				map.set(key, whispering.kv.get(key));
-			}
-		}
-	});
+	refresh();
+	settingsContent.observe(refresh);
 
 	return {
-		/**
-		 * Get a synced workspace setting. Returns the current value from the
-		 * reactive SvelteMap. Components reading this will re-render when the
-		 * value changes (from local writes OR remote sync).
-		 */
-		get: ((key) => map.get(key)) as Kv['get'],
-
-		/**
-		 * Set a synced workspace setting. Writes to Yjs KV, which fires the
-		 * observer, which updates the SvelteMap. Unidirectional: never set
-		 * the SvelteMap directly.
-		 */
-		set: whispering.kv.set,
-
-		/**
-		 * The default value for a setting key (factory-evaluated, per-key typed).
-		 * Reads straight from the KV schema, so the schema stays the single source
-		 * of defaults; callers never redeclare them.
-		 */
-		getDefault: whispering.kv.getDefault,
-
-		/**
-		 * Reset all workspace settings to their default values in one batch
-		 * (one observer firing, not one per key).
-		 */
-		reset: whispering.kv.reset,
+		get<TKey extends keyof WhisperingSettingValues>(
+			key: TKey,
+		): WhisperingSettingValues[TKey] {
+			return clone(map.get(key) as WhisperingSettingValues[TKey]);
+		},
+		set<TKey extends keyof WhisperingSettingValues>(
+			key: TKey,
+			value: WhisperingSettingValues[TKey],
+		): void {
+			settingsContent.set(key, clone(value));
+			map.set(key, clone(value));
+		},
+		getDefault<TKey extends keyof WhisperingSettingValues>(
+			key: TKey,
+		): WhisperingSettingValues[TKey] {
+			return clone(settingsDefaults[key]);
+		},
+		reset(): void {
+			for (const key of Object.keys(settingsDefaults) as Array<
+				keyof WhisperingSettingValues
+			>) {
+				settingsContent.delete(key);
+				map.set(key, clone(settingsDefaults[key]));
+			}
+		},
 	};
 }
 

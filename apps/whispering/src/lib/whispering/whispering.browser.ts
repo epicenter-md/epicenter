@@ -1,18 +1,22 @@
-/**
- * Browser runtime client for Whispering. Consumed everywhere through the
- * `#platform/whispering` seam; see `whispering.active.ts` for what
- * `openWhisperingBrowser` builds. The web default transcription service is
- * OpenAI.
- */
-
 import { createNodeId } from '@epicenter/workspace';
 import { auth } from '#platform/auth';
-import { openWhisperingBrowser } from './whispering.active';
+import { openWhisperingApplication } from './whispering.active';
+import { createWhisperingBrowserRuntime } from './whispering.browser-runtime';
 
 const nodeId = createNodeId({ storage: window.localStorage });
-
-export const whispering = openWhisperingBrowser({
-	auth,
-	nodeId,
+const application = await openWhisperingApplication({
+	createRuntime(onRecordsChanged) {
+		return createWhisperingBrowserRuntime({ auth, nodeId, onRecordsChanged });
+	},
 	defaultTranscriptionService: 'OpenAI',
 });
+
+export const whispering = application.whispering;
+export const skills = application.skills;
+export const settingsDefaults = application.settingsDefaults;
+export const onWhisperingRecordsChanged = (listener: () => void) =>
+	application.onRecordsChanged(whispering.id, listener);
+
+if (import.meta.hot) {
+	import.meta.hot.dispose(() => void application[Symbol.asyncDispose]());
+}

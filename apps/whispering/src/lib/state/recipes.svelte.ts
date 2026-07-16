@@ -1,78 +1,98 @@
-/**
- * Reactive Recipe state backed by the Yjs workspace table.
- *
- * A Recipe is a single self-contained row: a name and one instruction (text in,
- * text out). No replacements, no prompt split, no per-Recipe model. See ADR-0099.
- *
- * @example
- * ```typescript
- * import { recipes } from '$lib/state/recipes.svelte';
- *
- * // Read reactively: built-ins first, then the user's own (alphabetical)
- * const list = recipes.pickable;
- *
- * // Write
- * recipes.set(recipe);
- * recipes.delete(id);
- * ```
- */
-
-import { fromTable } from '@epicenter/svelte';
+import type { RecordLensError } from '@epicenter/workspace/sqlite';
 import { nanoid } from 'nanoid/non-secure';
-import { whispering } from '#platform/whispering';
+import { onWhisperingRecordsChanged, whispering } from '#platform/whispering';
 import { BUILTIN_RECIPES } from '$lib/state/builtin-recipes';
 import type { Recipe } from '$lib/workspace';
 
+const PAGE_SIZE = 500;
+
 function createRecipes() {
-	const view = fromTable(whispering.tables.recipes);
-
-	// Memoize sorted array with $derived for referential stability.
+	let rows = $state.raw<Recipe[]>([]);
+	let nonconforming = $state.raw<RecordLensError[]>([]);
+	let loadError = $state.raw<unknown>(null);
+	let canonicalIdBySourceId = new Map<string, string>();
+	let refreshGeneration = 0;
 	const sorted = $derived(
-		view.all.toSorted((a, b) => a.name.localeCompare(b.name)),
+		rows.toSorted((left, right) => left.name.localeCompare(right.name)),
 	);
-
-	// Built-ins first, then the user's own (alphabetical). This is the list the
-	// picker and the library both show: `builtins` union `customs`.
 	const pickable = $derived([...BUILTIN_RECIPES, ...sorted]);
 
+	async function refresh(): Promise<void> {
+		const generation = ++refreshGeneration;
+		const nextRows: Recipe[] = [];
+		const nextNonconforming: RecordLensError[] = [];
+		const nextCanonicalIds = new Map<string, string>();
+		let cursor: string | undefined;
+		try {
+			do {
+				const page = await whispering.tables.recipes.scan({
+					...(cursor && { cursor }),
+					limit: PAGE_SIZE,
+				});
+				for (const { id: canonicalId, sourceId, ...recipe } of page.rows) {
+					if (nextCanonicalIds.has(sourceId)) {
+						throw new Error(`Duplicate recipe source id '${sourceId}'`);
+					}
+					nextCanonicalIds.set(sourceId, canonicalId);
+					nextRows.push({ id: sourceId, ...recipe });
+				}
+				nextNonconforming.push(...page.nonconforming);
+				cursor = page.nextCursor;
+			} while (cursor !== undefined);
+			if (generation !== refreshGeneration) return;
+			rows = nextRows;
+			nonconforming = nextNonconforming;
+			canonicalIdBySourceId = nextCanonicalIds;
+			loadError = null;
+		} catch (cause) {
+			if (generation === refreshGeneration) loadError = cause;
+			throw cause;
+		}
+	}
+
+	const whenReady = refresh();
+	onWhisperingRecordsChanged(() => void refresh().catch(() => undefined));
+
 	return {
-		/**
-		 * Every recipe the user can pick: built-ins first, then their own. This is
-		 * what the picker and the library list. Memoized via `$derived`.
-		 */
+		whenReady,
 		get pickable(): Recipe[] {
 			return pickable;
 		},
-
-		/** Create or update a recipe. Writes to Yjs; the view re-reads on the observer signal. */
-		set(recipe: Recipe) {
-			whispering.tables.recipes.set(recipe);
+		get count() {
+			return rows.length;
 		},
-
-		/** Delete a recipe by ID. */
-		delete(id: string) {
-			whispering.tables.recipes.delete(id);
+		get nonconforming() {
+			return nonconforming;
 		},
+		get loadError() {
+			return loadError;
+		},
+		async set(recipe: Recipe): Promise<void> {
+			const { id: sourceId, ...value } = recipe;
+			const canonicalId = canonicalIdBySourceId.get(sourceId);
+			if (canonicalId) {
+				const result = await whispering.tables.recipes.patch(
+					canonicalId,
+					value,
+				);
+				if (result.error !== null) throw result.error;
+			} else {
+				await whispering.tables.recipes.create({ sourceId, ...value });
+			}
+			await refresh();
+		},
+		async delete(id: string): Promise<void> {
+			const canonicalId = canonicalIdBySourceId.get(id);
+			if (!canonicalId) return;
+			await whispering.tables.recipes.delete(canonicalId);
+			await refresh();
+		},
+		refresh,
 	};
 }
 
 export const recipes = createRecipes();
 
-/**
- * Generate a blank Recipe row: empty name and instructions, no icon. Ready to
- * pass straight to `recipes.set()`.
- *
- * @example
- * ```typescript
- * const r = generateDefaultRecipe();
- * recipes.set(r);
- * ```
- */
 export function generateDefaultRecipe(): Recipe {
-	return {
-		id: nanoid(),
-		name: '',
-		instructions: '',
-		icon: null,
-	};
+	return { id: nanoid(), name: '', instructions: '', icon: null };
 }

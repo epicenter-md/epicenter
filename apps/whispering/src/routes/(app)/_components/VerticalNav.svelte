@@ -9,7 +9,6 @@
 	import studioMicrophone from '$lib/assets/studio-microphone.png';
 	import { NAV_ITEMS } from './nav-items';
 	import { auth } from '#platform/auth';
-	import { whispering } from '#platform/whispering';
 	import { AccountPopover } from '@epicenter/app-shell/account-popover';
 	import { recordingActive } from '$lib/state/recording-active.svelte';
 	import { instanceSetting } from '$lib/instance';
@@ -77,7 +76,6 @@
 			<Sidebar.MenuItem>
 				<AccountPopover
 					{auth}
-					collaboration={whispering.collaboration}
 					syncNoun="recordings"
 					disabledReason={recordingActive.current
 						? 'Stop recording to change your account'

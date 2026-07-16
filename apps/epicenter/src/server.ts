@@ -6,10 +6,16 @@
  */
 
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import type { createBunRooms } from '@epicenter/server/bun';
+import { MAIN_SUBPROTOCOL, parseSubprotocols } from '@epicenter/sync';
 import type { AgentToolDefinition } from '@epicenter/workspace/agent';
+import type { DesktopWorkspaceOwner } from '@epicenter/workspace/sqlite/desktop-owner';
+import { DesktopWorkspaceError } from '@epicenter/workspace/sqlite/desktop-owner';
+import type { ServerWebSocket, WebSocketHandler } from 'bun';
 import { Hono } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
 import { getCookie, setCookie } from 'hono/cookie';
+import { Ok } from 'wellcrafted/result';
 import {
 	parseQueryCommand,
 	type QueryHost,
@@ -43,6 +49,8 @@ export type QueryServerOptions = {
 	launchToken: string;
 	/** Release-built documents and the contained Whispering asset resolver. */
 	staticAssets: EpicenterStaticAssets;
+	workspaceOwner?: DesktopWorkspaceOwner;
+	rooms?: ReturnType<typeof createBunRooms>;
 };
 
 const SESSION_COOKIE = 'epicenter_session';
@@ -53,6 +61,8 @@ export function createQueryServer({
 	origin,
 	launchToken,
 	staticAssets,
+	workspaceOwner,
+	rooms,
 }: QueryServerOptions) {
 	if (launchToken === '') {
 		throw new Error('Epicenter refuses to serve without a launch token.');
@@ -131,13 +141,19 @@ export function createQueryServer({
 	});
 	app.get('/apps/*', (c) => c.text('Not Found', 404));
 
-	app.use('/api/query/*', async (c, next) => {
+	const requireSession = async (
+		c: Parameters<Parameters<typeof app.use>[1]>[0],
+		next: () => Promise<void>,
+	) => {
 		const session = getCookie(c, SESSION_COOKIE);
 		if (session === undefined || !sessionHashes.has(tokenHash(session))) {
 			return c.text('Unauthorized', 401);
 		}
 		await next();
-	});
+	};
+	app.use('/api/query/*', requireSession);
+	app.use('/api/workspaces/*', requireSession);
+	app.use('/api/rooms/*', requireSession);
 	app.use(SESSION_STREAM_ROUTE.pattern, async (c, next) => {
 		if (c.req.header('origin') !== origin) return c.text('Forbidden', 403);
 		await next();
@@ -149,6 +165,78 @@ export function createQueryServer({
 			snapshot: host.snapshot(),
 		} satisfies QuerySessionResponse),
 	);
+
+	app.post('/api/workspaces/:workspaceId/records', async (c) => {
+		if (!workspaceOwner)
+			return c.json(DesktopWorkspaceError.OwnerUnavailable(), 404);
+		const workspaceId = c.req.param('workspaceId');
+		if (!workspaceOwner.hasWorkspace(workspaceId)) {
+			return c.json(
+				DesktopWorkspaceError.UnknownWorkspace({ workspaceId }),
+				404,
+			);
+		}
+		try {
+			return c.json(
+				Ok(await workspaceOwner.execute(workspaceId, await c.req.json())),
+			);
+		} catch (cause) {
+			return c.json(DesktopWorkspaceError.InvalidRequest({ cause }), 400);
+		}
+	});
+
+	app.post(
+		'/api/workspaces/:workspaceId/documents/:declaration/open',
+		async (c) => {
+			if (!workspaceOwner)
+				return c.json(DesktopWorkspaceError.OwnerUnavailable(), 404);
+			const workspaceId = c.req.param('workspaceId');
+			if (!workspaceOwner.hasWorkspace(workspaceId)) {
+				return c.json(
+					DesktopWorkspaceError.UnknownWorkspace({ workspaceId }),
+					404,
+				);
+			}
+			try {
+				const body = (await c.req.json()) as { params?: unknown };
+				if (!isPlainObject(body.params)) {
+					throw new TypeError('Document params must be a plain object');
+				}
+				return c.json(
+					Ok(
+						workspaceOwner.authorizeDocument(
+							workspaceId,
+							c.req.param('declaration'),
+							body.params,
+						),
+					),
+				);
+			} catch (cause) {
+				return c.json(DesktopWorkspaceError.InvalidRequest({ cause }), 400);
+			}
+		},
+	);
+
+	app.get('/api/rooms/:roomId', async (c) => {
+		if (!workspaceOwner || !rooms) return c.text('Not Found', 404);
+		const roomId = c.req.param('roomId');
+		if (!workspaceOwner.isDocumentAuthorized(roomId)) {
+			return c.text('Unknown room', 404);
+		}
+		const nodeId = c.req.query('nodeId');
+		if (!nodeId) return c.text('Missing nodeId', 400);
+		const offered = parseSubprotocols(
+			c.req.header('sec-websocket-protocol') ?? null,
+		);
+		if (!offered.includes(MAIN_SUBPROTOCOL)) {
+			return c.text(`Expected ${MAIN_SUBPROTOCOL} subprotocol`, 400);
+		}
+		return rooms.rooms.get(roomId).handleUpgrade({
+			request: c.req.raw,
+			principalId: 'instance' as never,
+			nodeId,
+		});
+	});
 
 	app.get(
 		SESSION_STREAM_ROUTE.pattern,
@@ -179,7 +267,42 @@ export function createQueryServer({
 		}),
 	);
 
-	return { app, websocket };
+	const ownedWebsocket = rooms
+		? mergeDesktopWebSocketHandlers(websocket, rooms.websocket)
+		: (websocket as unknown as WebSocketHandler<unknown>);
+	return {
+		app,
+		websocket: ownedWebsocket,
+		bindServer: rooms?.bindServer ?? (() => undefined),
+	};
+}
+
+function mergeDesktopWebSocketHandlers(
+	queryInput: unknown,
+	roomsInput: unknown,
+): WebSocketHandler<unknown> {
+	const query = queryInput as WebSocketHandler<unknown>;
+	const rooms = roomsInput as WebSocketHandler<unknown>;
+	const pick = (ws: ServerWebSocket<unknown>): WebSocketHandler<unknown> =>
+		isPlainObject(ws.data) && ws.data.surface === 'rooms' ? rooms : query;
+	return {
+		open(ws) {
+			pick(ws).open?.(ws);
+		},
+		message(ws, message) {
+			pick(ws).message?.(ws, message);
+		},
+		close(ws, code, reason) {
+			pick(ws).close?.(ws, code, reason);
+		},
+		drain(ws) {
+			pick(ws).drain?.(ws);
+		},
+	};
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function validateOrigin(origin: string): URL {

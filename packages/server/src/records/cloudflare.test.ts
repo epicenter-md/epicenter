@@ -1,35 +1,7 @@
-/**
- * Cloudflare Records Backend Tests
- *
- * Verifies the SQLite Durable Object implementation and the portable Records
- * registry that routes authenticated partitions to deterministic object names.
- *
- * Key behaviors:
- * - The first open mints and durably preserves one database identity
- * - Schema mismatches cannot replace the stored identity
- * - Failed first initialization can retry without a half-open object
- * - Principal and workspace pairs route to independent Durable Objects
- * - Push and pull cross the Records registry through the DO RPC contract
- * - Production compaction sends stale cursors through bounded snapshots
- */
-
 import { Database } from 'bun:sqlite';
 import { expect, mock, test } from 'bun:test';
 import { asPrincipalId } from '@epicenter/identity';
-import {
-	createCandidateManifest,
-	createSnapshotChunk,
-	RECORD_SYNC_PROTOCOL_MAJOR,
-	type RequestEnvelope,
-} from '@epicenter/record-sync';
-
-const sha256 = async (value: string) =>
-	Array.from(
-		new Uint8Array(
-			await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)),
-		),
-		(byte) => byte.toString(16).padStart(2, '0'),
-	).join('');
+import { RECORD_SYNC_PROTOCOL_MAJOR } from '@epicenter/record-sync';
 
 mock.module('cloudflare:workers', () => ({
 	DurableObject: class {
@@ -53,26 +25,22 @@ function createStorage() {
 					sql: string,
 					...bindings: SqlValue[]
 				) {
-					const statementCount = sql
-						.split(';')
-						.filter((part) => part.trim()).length;
-					if (statementCount > 1) {
+					const statements = sql.split(';').filter((part) => part.trim());
+					if (statements.length > 1) {
 						database.exec(sql);
 						return { toArray: () => [] as TRow[] };
 					}
-					const bunBindings = bindings.map((value) =>
+					const values = bindings.map((value) =>
 						value instanceof ArrayBuffer ? new Uint8Array(value) : value,
 					);
 					const query = database.query<
 						TRow,
 						(string | number | null | Uint8Array)[]
 					>(sql);
-					const isRead = /^\s*(SELECT|WITH|PRAGMA)\b/i.test(sql);
-					if (isRead) {
-						const rows = query.all(...bunBindings);
-						return { toArray: () => rows };
+					if (/^\s*(SELECT|WITH|PRAGMA)\b/i.test(sql)) {
+						return { toArray: () => query.all(...values) };
 					}
-					query.run(...bunBindings);
+					query.run(...values);
 					return { toArray: () => [] as TRow[] };
 				},
 			},
@@ -124,51 +92,36 @@ const partition = {
 	principalId: asPrincipalId('alice'),
 	workspaceId: 'wiki',
 };
-const bindingRequest = {
-	protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-	recordsSchemaHash: 'schema-1',
-};
 
-async function open(
-	records: Awaited<ReturnType<typeof setup>>['records'],
-	target = partition,
-	recordsSchemaHash = 'schema-1',
-): Promise<RequestEnvelope> {
-	const result = await records.open(target, {
-		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		recordsSchemaHash,
-	});
-	if (!result.ok) throw new Error(`Open refused: ${result.reason}`);
+function createRequest(actorId: string, actorSequence: number, rowId: string) {
 	return {
 		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		recordsSchemaHash,
-		databaseId: result.databaseId,
+		kind: 'push' as const,
+		actorId,
+		mutations: [
+			{
+				actorSequence,
+				command: {
+					kind: 'createRow' as const,
+					table: 'pages',
+					rowId,
+					value: { title: rowId },
+				},
+			},
+		],
 	};
 }
 
-test('database identity and mutation log survive Durable Object restart', async () => {
+test('current state survives Durable Object restart without an open handshake', async () => {
 	const context = await setup();
-	const envelope = await open(context.records);
 	expect(
-		await context.records.push(partition, {
-			...envelope,
-			kind: 'push',
-			mutations: [
-				{
-					actorId: 'actor-1',
-					actorSequence: 1,
-					operations: [
-						{
-							kind: 'createRow',
-							table: 'pages',
-							rowId: 'page-1',
-							cells: { title: 'Hello' },
-						},
-					],
-				},
-			],
-		}),
-	).toEqual({ kind: 'push', ok: true });
+		(
+			await context.records.push(
+				partition,
+				createRequest('actor-1', 1, 'page-1'),
+			)
+		).ok,
+	).toBe(true);
 
 	const name = context.names[0];
 	if (!name) throw new Error('Expected a Durable Object name');
@@ -179,86 +132,18 @@ test('database identity and mutation log survive Durable Object restart', async 
 		{} as Cloudflare.Env,
 	);
 
-	const reopened = await open(context.records);
-	expect(reopened.databaseId).toBe(envelope.databaseId);
 	const pulled = await context.records.pull(partition, {
-		...reopened,
+		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
 		kind: 'pull',
 		cursor: 0,
 		limit: 100,
 	});
-	expect(
-		pulled.ok && !pulled.snapshotRequired && pulled.mutations,
-	).toHaveLength(1);
+	expect(pulled.ok && !pulled.snapshotRequired && pulled.entries).toEqual([
+		expect.objectContaining({ rowId: 'page-1', value: { title: 'page-1' } }),
+	]);
 });
 
-test('open reports a different stored schema without replacing its identity', async () => {
-	const { records } = await setup();
-	const envelope = await open(records);
-	expect(
-		await records.open(partition, {
-			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-			recordsSchemaHash: 'different-schema',
-		}),
-	).toEqual({
-		ok: true,
-		databaseId: envelope.databaseId,
-		recordsSchemaHash: envelope.recordsSchemaHash,
-	});
-	expect((await open(records)).databaseId).toBe(envelope.databaseId);
-});
-
-test('database succession refreshes the Durable Object authority', async () => {
-	const { records } = await setup();
-	const source = await open(records);
-	const chunks = [
-		await createSnapshotChunk(sha256, 1, 0, [
-			{ table: 'pages', rowId: 'page-1', cells: { title: 'Migrated' } },
-		]),
-	];
-	const manifest = await createCandidateManifest({
-		sha256,
-		sourceDatabaseId: source.databaseId,
-		sourceHead: 0,
-		targetRecordsSchemaHash: 'schema-2',
-		chunks,
-	});
-
-	expect(await records.stageCandidate(partition, manifest)).toMatchObject({
-		ok: true,
-	});
-	for (const chunk of chunks) {
-		expect(
-			await records.uploadCandidateChunk(
-				partition,
-				manifest.candidateId,
-				chunk,
-			),
-		).toEqual({ ok: true });
-	}
-	expect(await records.sealCandidate(partition, manifest.candidateId)).toEqual({
-		ok: true,
-	});
-	expect(
-		await records.activateCandidate(partition, manifest.candidateId),
-	).toEqual({ ok: true, status: 'activated' });
-	const successor = await open(records, partition, 'schema-2');
-	expect(successor.databaseId).toBe(manifest.candidateId);
-	expect(
-		await records.pull(partition, {
-			...successor,
-			kind: 'pull',
-			cursor: 0,
-			limit: 100,
-		}),
-	).toMatchObject({
-		ok: true,
-		snapshotRequired: true,
-		manifest: { snapshotSequence: 1 },
-	});
-});
-
-test('failed first initialization leaves the Durable Object retryable', async () => {
+test('failed construction leaves Durable Object storage retryable', async () => {
 	const { RecordAuthorityDurableObject } = await setup();
 	const owned = createStorage();
 	const storage = owned.storage as unknown as {
@@ -273,79 +158,98 @@ test('failed first initialization leaves the Durable Object retryable', async ()
 		}
 		return transactionSync(run);
 	};
-	const object = new RecordAuthorityDurableObject(
+
+	expect(
+		() =>
+			new RecordAuthorityDurableObject(
+				{ storage: owned.storage } as DurableObjectState,
+				{} as Cloudflare.Env,
+			),
+	).toThrow('injected initialization failure');
+	const retried = new RecordAuthorityDurableObject(
 		{ storage: owned.storage } as DurableObjectState,
 		{} as Cloudflare.Env,
 	);
-
-	await expect(object.open(bindingRequest)).rejects.toThrow(
-		'injected initialization failure',
+	expect((await retried.push(createRequest('actor-1', 1, 'page-1'))).ok).toBe(
+		true,
 	);
-	const reopened = await object.open(bindingRequest);
-	expect(reopened.ok).toBe(true);
-	if (!reopened.ok) throw new Error('Expected retry to open authority');
-	expect(
-		await object.push({
-			...bindingRequest,
-			databaseId: reopened.databaseId,
-			kind: 'push',
-			mutations: [],
-		}),
-	).toEqual({ kind: 'push', ok: true });
 });
 
-test('authenticated principal and workspace pair determine the object name', async () => {
+test('authenticated principal and workspace pair determine object identity', async () => {
 	const { names, records } = await setup();
-	await open(records, partition);
-	await open(records, {
-		principalId: asPrincipalId('bob'),
-		workspaceId: 'wiki',
+	await records.pull(partition, {
+		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+		kind: 'pull',
+		cursor: 0,
+		limit: 1,
 	});
-	await open(records, {
-		principalId: asPrincipalId('alice'),
-		workspaceId: 'notes',
-	});
+	await records.pull(
+		{ principalId: asPrincipalId('bob'), workspaceId: 'wiki' },
+		{
+			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+			kind: 'pull',
+			cursor: 0,
+			limit: 1,
+		},
+	);
+	await records.pull(
+		{ principalId: asPrincipalId('alice'), workspaceId: 'notes' },
+		{
+			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+			kind: 'pull',
+			cursor: 0,
+			limit: 1,
+		},
+	);
 
 	expect(new Set(names)).toEqual(
 		new Set(['["alice","wiki"]', '["bob","wiki"]', '["alice","notes"]']),
 	);
 });
 
-test('production compaction serves a snapshot and chunks to a stale cursor', async () => {
+test('production compaction serves a bounded snapshot to stale cursors', async () => {
 	const { records } = await setup();
-	const envelope = await open(records);
 	expect(
-		await records.push(partition, {
-			...envelope,
-			kind: 'push',
-			mutations: Array.from({ length: 1_000 }, (_, index) => ({
+		(
+			await records.push(partition, {
+				protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+				kind: 'push',
 				actorId: 'actor-compact',
-				actorSequence: index + 1,
-				operations: [
-					{
+				mutations: Array.from({ length: 1_000 }, (_, index) => ({
+					actorSequence: index + 1,
+					command: {
 						kind: 'createRow' as const,
 						table: 'pages',
 						rowId: `page-${index}`,
-						cells: { title: `Page ${index}` },
+						value: { title: `Page ${index}` },
 					},
-				],
-			})),
-		}),
-	).toEqual({ kind: 'push', ok: true });
+				})),
+			})
+		).ok,
+	).toBe(true);
+	expect(
+		(
+			await records.push(
+				partition,
+				createRequest('actor-compact', 1_001, 'last'),
+			)
+		).ok,
+	).toBe(true);
 	const pulled = await records.pull(partition, {
-		...envelope,
+		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
 		kind: 'pull',
 		cursor: 0,
 		limit: 100,
 	});
 	expect(pulled.ok && pulled.snapshotRequired).toBe(true);
 	if (!pulled.ok || !pulled.snapshotRequired)
-		throw new Error('Expected snapshot bootstrap');
-	const chunk = await records.snapshotChunk(partition, {
-		...envelope,
-		kind: 'snapshotChunk',
-		generation: pulled.manifest.generation,
-		index: 0,
-	});
-	expect(chunk.ok).toBe(true);
+		throw new Error('Expected snapshot');
+	expect(
+		await records.snapshotChunk(partition, {
+			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+			kind: 'snapshotChunk',
+			generation: pulled.manifest.generation,
+			index: 0,
+		}),
+	).toMatchObject({ kind: 'snapshotChunk', ok: true });
 });

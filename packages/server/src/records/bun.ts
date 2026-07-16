@@ -3,12 +3,8 @@ import { createHash } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-	createRecordSuccession,
 	openRecordAuthority,
 	type RecordAuthority,
-	type RequestEnvelope,
-	recordAuthorityOpenRefusal,
-	restoreRecordAuthority,
 	type Sha256,
 } from '@epicenter/record-sync';
 import { createBunSqliteAdapter } from '@epicenter/record-sync/bun';
@@ -17,9 +13,7 @@ import type { Records, RecordsPartition } from './contracts.js';
 
 type OpenAuthority = {
 	database: Database;
-	envelope: RequestEnvelope;
 	authority: RecordAuthority;
-	succession: ReturnType<typeof createRecordSuccession>;
 	compaction?: Promise<void>;
 };
 
@@ -54,21 +48,13 @@ export function createBunRecords({
 			strict: true,
 		});
 		try {
-			const restored = restoreRecordAuthority({
+			const authority = openRecordAuthority({
 				database: createBunSqliteAdapter(database),
 				sha256,
 			});
-			if (!restored)
-				throw new Error(
-					'Records workspace must be opened before synchronization',
-				);
 			const opened = {
 				database,
-				...restored,
-				succession: createRecordSuccession({
-					database: createBunSqliteAdapter(database),
-					sha256,
-				}),
+				authority,
 			};
 			authorities.set(key, opened);
 			return opened;
@@ -79,53 +65,6 @@ export function createBunRecords({
 	}
 
 	const records: Records = {
-		async open(partition, request) {
-			if (isClosed) throw new Error('Bun records backend is closed');
-			const key = partitionKey(partition);
-			const cached = authorities.get(key);
-			if (cached) {
-				return (
-					recordAuthorityOpenRefusal(request, cached.envelope) ?? {
-						ok: true,
-						databaseId: cached.envelope.databaseId,
-						recordsSchemaHash: cached.envelope.recordsSchemaHash,
-					}
-				);
-			}
-			const database = new Database(join(dir, databaseFilename(partition)), {
-				create: true,
-				strict: true,
-			});
-			try {
-				const opened = openRecordAuthority({
-					database: createBunSqliteAdapter(database),
-					request,
-					createDatabaseId: () => crypto.randomUUID(),
-					sha256,
-				});
-				if (!opened.ok) {
-					database.close();
-					return opened;
-				}
-				authorities.set(key, {
-					database,
-					envelope: opened.envelope,
-					authority: opened.authority,
-					succession: createRecordSuccession({
-						database: createBunSqliteAdapter(database),
-						sha256,
-					}),
-				});
-				return {
-					ok: true,
-					databaseId: opened.databaseId,
-					recordsSchemaHash: opened.recordsSchemaHash,
-				};
-			} catch (error) {
-				database.close();
-				throw error;
-			}
-		},
 		async push(partition, request) {
 			const opened = load(partition);
 			const response = opened.authority.push(request);
@@ -151,32 +90,6 @@ export function createBunRecords({
 		},
 		async snapshotChunk(partition, request) {
 			return load(partition).authority.snapshotChunk(request);
-		},
-		async stageCandidate(partition, manifest) {
-			return load(partition).succession.stage(manifest);
-		},
-		async uploadCandidateChunk(partition, candidateId, chunk) {
-			return load(partition).succession.upload(candidateId, chunk);
-		},
-		async sealCandidate(partition, candidateId) {
-			return load(partition).succession.seal(candidateId);
-		},
-		async activateCandidate(partition, candidateId) {
-			const opened = load(partition);
-			const result = opened.succession.activate(candidateId);
-			if (result.ok) {
-				const restored = restoreRecordAuthority({
-					database: createBunSqliteAdapter(opened.database),
-					sha256,
-				});
-				if (!restored) throw new Error('Activated records database is missing');
-				opened.envelope = restored.envelope;
-				opened.authority = restored.authority;
-			}
-			return result;
-		},
-		async discardCandidate(partition, candidateId) {
-			return load(partition).succession.discard(candidateId);
 		},
 	};
 

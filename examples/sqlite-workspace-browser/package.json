@@ -4,8 +4,8 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"build": "vite build",
-		"smoke": "bun run build && bun run smoke.ts",
+		"build": "vite build --config browser-runtime.vite.config.ts",
+		"smoke": "bun run browser-runtime.smoke.ts",
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
@@ -14,9 +14,11 @@
 		"@epicenter/server": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"hono": "catalog:",
+		"typebox": "catalog:",
 		"yjs": "catalog:"
 	},
 	"devDependencies": {
+		"@noble/hashes": "^2.0.1",
 		"@types/node": "catalog:",
 		"playwright": "^1.61.1",
 		"typescript": "catalog:",

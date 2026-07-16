@@ -1,31 +1,12 @@
-/**
- * Bun Records Backend Tests
- *
- * Verifies the persistent Bun SQLite implementation of the portable records
- * backend, including durable identity and authenticated partition isolation.
- *
- * Key behaviors:
- * - Database identity and mutations survive closing and reopening
- * - Protocol and schema mismatches refuse without replacing stored identity
- * - Principal and workspace pairs use independent SQLite authorities
- * - Production compaction sends stale cursors through bounded snapshots
- * - Compaction failure cannot change an already accepted push into a failure
- */
-
 import { expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { asPrincipalId } from '@epicenter/identity';
-import {
-	createCandidateManifest,
-	createSnapshotChunk,
-	RECORD_SYNC_PROTOCOL_MAJOR,
-	type RequestEnvelope,
-} from '@epicenter/record-sync';
+import { RECORD_SYNC_PROTOCOL_MAJOR } from '@epicenter/record-sync';
 import { createBunRecords } from './bun.js';
-import type { RecordsPartition } from './contracts.js';
+import type { Records, RecordsPartition } from './contracts.js';
 
 const sha256 = async (value: string) =>
 	createHash('sha256').update(value).digest('hex');
@@ -47,62 +28,55 @@ function setup(hash = sha256) {
 	};
 }
 
-async function openEnvelope(
-	records: ReturnType<typeof createBunRecords>['records'],
-	target = partition,
-	recordsSchemaHash = 'schema-1',
-): Promise<RequestEnvelope> {
-	const result = await records.open(target, {
+async function createRow(
+	records: Records,
+	target: RecordsPartition,
+	actorId: string,
+	actorSequence: number,
+	rowId: string,
+) {
+	return records.push(target, {
 		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		recordsSchemaHash,
+		kind: 'push',
+		actorId,
+		mutations: [
+			{
+				actorSequence,
+				command: {
+					kind: 'createRow',
+					table: 'pages',
+					rowId,
+					value: { title: rowId },
+				},
+			},
+		],
 	});
-	if (!result.ok) throw new Error(`Open refused: ${result.reason}`);
-	return {
-		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		recordsSchemaHash,
-		databaseId: result.databaseId,
-	};
 }
 
-test('database identity and mutation log survive closing and reopening', async () => {
+test('current state survives closing and reopening without an open handshake', async () => {
 	const first = setup();
 	try {
-		const envelope = await openEnvelope(first.records);
 		expect(
-			await first.records.push(partition, {
-				...envelope,
-				kind: 'push',
-				mutations: [
-					{
-						actorId: 'actor-1',
-						actorSequence: 1,
-						operations: [
-							{
-								kind: 'createRow',
-								table: 'pages',
-								rowId: 'page-1',
-								cells: { title: 'Hello' },
-							},
-						],
-					},
-				],
-			}),
-		).toEqual({ kind: 'push', ok: true });
+			(await createRow(first.records, partition, 'actor-1', 1, 'page-1')).ok,
+		).toBe(true);
 		first.close();
 
 		const second = createBunRecords({ dir: first.dir, sha256 });
 		try {
-			const reopened = await openEnvelope(second.records);
-			expect(reopened.databaseId).toBe(envelope.databaseId);
 			const pulled = await second.records.pull(partition, {
-				...reopened,
+				protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
 				kind: 'pull',
 				cursor: 0,
 				limit: 100,
 			});
-			expect(
-				pulled.ok && !pulled.snapshotRequired && pulled.mutations,
-			).toHaveLength(1);
+			expect(pulled.ok && !pulled.snapshotRequired && pulled.entries).toEqual([
+				expect.objectContaining({
+					kind: 'row',
+					table: 'pages',
+					rowId: 'page-1',
+					value: { title: 'page-1' },
+				}),
+			]);
 		} finally {
 			second.close();
 		}
@@ -111,206 +85,144 @@ test('database identity and mutation log survive closing and reopening', async (
 	}
 });
 
-test('protocol refusal and schema discovery preserve stored identity', async () => {
+test('principal and workspace pairs own independent authorities', async () => {
 	const context = setup();
 	try {
-		const envelope = await openEnvelope(context.records);
-		expect(
-			await context.records.open(partition, {
-				protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR + 1,
-				recordsSchemaHash: envelope.recordsSchemaHash,
-			}),
-		).toEqual({ ok: false, reason: 'protocol-mismatch' });
-		expect(
-			await context.records.open(partition, {
-				protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-				recordsSchemaHash: 'different-schema',
-			}),
-		).toEqual({
-			ok: true,
-			databaseId: envelope.databaseId,
-			recordsSchemaHash: envelope.recordsSchemaHash,
-		});
-		expect((await openEnvelope(context.records)).databaseId).toBe(
-			envelope.databaseId,
-		);
-	} finally {
-		context.cleanup();
-	}
-});
-
-test('principal and workspace pairs own independent database identities', async () => {
-	const context = setup();
-	try {
-		const aliceWiki = await openEnvelope(context.records, partition);
-		const bobWiki = await openEnvelope(context.records, {
+		const bobWiki = {
 			principalId: asPrincipalId('bob'),
 			workspaceId: 'wiki',
-		});
-		const aliceNotes = await openEnvelope(context.records, {
+		};
+		const aliceNotes = {
 			principalId: asPrincipalId('alice'),
 			workspaceId: 'notes',
-		});
+		};
+		await createRow(context.records, partition, 'alice-wiki', 1, 'alice-wiki');
+		await createRow(context.records, bobWiki, 'bob-wiki', 1, 'bob-wiki');
+		await createRow(
+			context.records,
+			aliceNotes,
+			'alice-notes',
+			1,
+			'alice-notes',
+		);
 
-		expect(
-			new Set([aliceWiki.databaseId, bobWiki.databaseId, aliceNotes.databaseId])
-				.size,
-		).toBe(3);
+		for (const [target, rowId] of [
+			[partition, 'alice-wiki'],
+			[bobWiki, 'bob-wiki'],
+			[aliceNotes, 'alice-notes'],
+		] as const) {
+			const pulled = await context.records.pull(target, {
+				protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+				kind: 'pull',
+				cursor: 0,
+				limit: 100,
+			});
+			expect(
+				pulled.ok && !pulled.snapshotRequired && pulled.entries,
+			).toHaveLength(1);
+			expect(
+				pulled.ok && !pulled.snapshotRequired && pulled.entries[0]?.rowId,
+			).toBe(rowId);
+		}
 	} finally {
 		context.cleanup();
 	}
 });
 
-test('production compaction serves a snapshot and chunks to a stale cursor', async () => {
+test('production compaction serves a bounded snapshot to stale cursors', async () => {
 	const context = setup();
 	try {
-		const envelope = await openEnvelope(context.records);
+		const first = await context.records.push(partition, {
+			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+			kind: 'push',
+			actorId: 'actor-compact',
+			mutations: Array.from({ length: 1_000 }, (_, index) => ({
+				actorSequence: index + 1,
+				command: {
+					kind: 'createRow' as const,
+					table: 'pages',
+					rowId: `page-${index}`,
+					value: { title: `Page ${index}` },
+				},
+			})),
+		});
+		expect(first.ok).toBe(true);
 		expect(
-			await context.records.push(partition, {
-				...envelope,
-				kind: 'push',
-				mutations: Array.from({ length: 1_000 }, (_, index) => ({
-					actorId: 'actor-compact',
-					actorSequence: index + 1,
-					operations: [
-						{
-							kind: 'createRow' as const,
-							table: 'pages',
-							rowId: `page-${index}`,
-							cells: { title: `Page ${index}` },
-						},
-					],
-				})),
-			}),
-		).toEqual({ kind: 'push', ok: true });
+			(
+				await createRow(
+					context.records,
+					partition,
+					'actor-compact',
+					1_001,
+					'last',
+				)
+			).ok,
+		).toBe(true);
 		const pulled = await context.records.pull(partition, {
-			...envelope,
+			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
 			kind: 'pull',
 			cursor: 0,
 			limit: 100,
 		});
 		expect(pulled.ok && pulled.snapshotRequired).toBe(true);
 		if (!pulled.ok || !pulled.snapshotRequired)
-			throw new Error('Expected snapshot bootstrap');
-		const chunk = await context.records.snapshotChunk(partition, {
-			...envelope,
-			kind: 'snapshotChunk',
-			generation: pulled.manifest.generation,
-			index: 0,
-		});
-		expect(chunk.ok).toBe(true);
+			throw new Error('Expected snapshot');
+		expect(
+			await context.records.snapshotChunk(partition, {
+				protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+				kind: 'snapshotChunk',
+				generation: pulled.manifest.generation,
+				index: 0,
+			}),
+		).toMatchObject({ kind: 'snapshotChunk', ok: true });
 	} finally {
 		context.cleanup();
 	}
 });
 
-test('snapshot compaction failure preserves the accepted push response and log', async () => {
+test('snapshot publication failure cannot change an accepted push', async () => {
 	let failSnapshotHash = false;
 	const context = setup(async (value) => {
 		if (failSnapshotHash) throw new Error('injected snapshot hash failure');
 		return sha256(value);
 	});
 	try {
-		const envelope = await openEnvelope(context.records);
+		const first = await context.records.push(partition, {
+			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+			kind: 'push',
+			actorId: 'actor-failed-compaction',
+			mutations: Array.from({ length: 1_000 }, (_, index) => ({
+				actorSequence: index + 1,
+				command: {
+					kind: 'createRow' as const,
+					table: 'pages',
+					rowId: `page-${index}`,
+					value: { title: `Page ${index}` },
+				},
+			})),
+		});
+		expect(first.ok).toBe(true);
 		failSnapshotHash = true;
 		expect(
-			await context.records.push(partition, {
-				...envelope,
-				kind: 'push',
-				mutations: Array.from({ length: 1_000 }, (_, index) => ({
-					actorId: 'actor-failed-compaction',
-					actorSequence: index + 1,
-					operations: [
-						{
-							kind: 'createRow' as const,
-							table: 'pages',
-							rowId: `page-${index}`,
-							cells: { title: `Page ${index}` },
-						},
-					],
-				})),
-			}),
-		).toEqual({ kind: 'push', ok: true });
-
-		const pulled = await context.records.pull(partition, {
-			...envelope,
-			kind: 'pull',
-			cursor: 0,
-			limit: 100,
-		});
-		expect(pulled.ok && !pulled.snapshotRequired).toBe(true);
-		if (!pulled.ok || pulled.snapshotRequired)
-			throw new Error('Expected the uncompacted mutation log');
-		expect(pulled.mutations).toHaveLength(100);
-	} finally {
-		context.cleanup();
-	}
-});
-
-test('database succession refreshes the cached authority and bootstraps the successor', async () => {
-	const context = setup();
-	try {
-		const source = await openEnvelope(context.records);
-		const chunks = [
-			await createSnapshotChunk(sha256, 1, 0, [
-				{
-					table: 'pages',
-					rowId: 'page-1',
-					cells: { title: 'Migrated' },
-				},
-			]),
-		];
-		const manifest = await createCandidateManifest({
-			sha256,
-			sourceDatabaseId: source.databaseId,
-			sourceHead: 0,
-			targetRecordsSchemaHash: 'schema-2',
-			chunks,
-		});
-
-		expect(
-			await context.records.stageCandidate(partition, manifest),
-		).toMatchObject({ ok: true });
-		for (const chunk of chunks) {
-			expect(
-				await context.records.uploadCandidateChunk(
+			(
+				await createRow(
+					context.records,
 					partition,
-					manifest.candidateId,
-					chunk,
-				),
-			).toEqual({ ok: true });
-		}
-		expect(
-			await context.records.sealCandidate(partition, manifest.candidateId),
-		).toEqual({ ok: true });
-		expect(
-			await context.records.activateCandidate(partition, manifest.candidateId),
-		).toEqual({ ok: true, status: 'activated' });
-		expect(
-			await context.records.push(partition, {
-				...source,
-				kind: 'push',
-				mutations: [],
-			}),
-		).toEqual({ kind: 'push', ok: false, reason: 'records-schema-mismatch' });
-
-		const successor = await openEnvelope(
-			context.records,
-			partition,
-			'schema-2',
-		);
-		expect(successor.databaseId).toBe(manifest.candidateId);
-		const bootstrap = await context.records.pull(partition, {
-			...successor,
+					'actor-failed-compaction',
+					1_001,
+					'last',
+				)
+			).ok,
+		).toBe(true);
+		const pulled = await context.records.pull(partition, {
+			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
 			kind: 'pull',
 			cursor: 0,
 			limit: 100,
 		});
-		expect(bootstrap).toMatchObject({
-			ok: true,
-			snapshotRequired: true,
-			manifest: { snapshotSequence: 1 },
-		});
+		expect(
+			pulled.ok && !pulled.snapshotRequired && pulled.entries,
+		).toHaveLength(100);
 	} finally {
 		context.cleanup();
 	}

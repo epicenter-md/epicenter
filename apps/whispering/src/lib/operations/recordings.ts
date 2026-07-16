@@ -16,7 +16,7 @@ const liveDeletionDependencies: RecordingDeletionDependencies = {
 };
 
 /**
- * Delete recording artifacts before their Yjs rows.
+ * Delete recording artifacts before their canonical records.
  *
  * Native artifact deletion is the commit gate: if it fails, every workspace
  * row remains available for a retry. Cached playback URLs are revoked first,

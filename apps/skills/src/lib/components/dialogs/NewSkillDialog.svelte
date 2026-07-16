@@ -12,7 +12,7 @@
 	let name = $state('');
 	let error = $state('');
 
-	function handleCreate() {
+	async function handleCreate() {
 		const trimmed = name.trim();
 		if (!trimmed) return;
 
@@ -26,7 +26,7 @@
 			return;
 		}
 
-		skillsState.createSkill(trimmed);
+		await skillsState.createSkill(trimmed);
 		toast.success(`Created skill: ${trimmed}`);
 		isOpen = false;
 		name = '';
@@ -59,7 +59,7 @@
 				onkeydown={(e: KeyboardEvent) => {
 					if (e.key === 'Enter') {
 						e.preventDefault();
-						handleCreate();
+						void handleCreate();
 					}
 				}}
 			/>
@@ -72,7 +72,7 @@
 		</div>
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (isOpen = false)}>Cancel</Button>
-			<Button onclick={handleCreate} disabled={!name.trim()}>Create</Button>
+			<Button onclick={() => void handleCreate()} disabled={!name.trim()}>Create</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

@@ -19,14 +19,14 @@
 	import { os } from '#platform/os';
 	import { manualRecorderConfig } from '#platform/manual-recorder-config';
 	import { tauri } from '#platform/tauri';
-	import { whispering } from '#platform/whispering';
+	import { exportRecordingsMarkdown } from '$lib/whispering/recordings-markdown-export';
 	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
 	import VadSelectRecordingDevice from './VadSelectRecordingDevice.svelte';
 
 	const exportRecordings = createMutation(() =>
 		resultMutationOptions({
 			mutationKey: ['recordings', 'export'],
-			mutationFn: whispering.actions.recordings_export_markdown,
+			mutationFn: exportRecordingsMarkdown,
 		}),
 	);
 </script>

@@ -1,159 +1,132 @@
-import type { Skill } from '@epicenter/skills';
-import { fromTable } from '@epicenter/svelte';
-import { generateId, InstantString } from '@epicenter/workspace';
-import { skills as skillsDoc } from '$lib/skills/client';
+import { InstantString } from '@epicenter/field';
+import {
+	type Reference,
+	type Skill,
+	scanReferences,
+	scanSkills,
+} from '@epicenter/skills';
+import type { RecordLensError } from '@epicenter/workspace/sqlite';
+import { onSkillsRecordsChanged, skills } from '$lib/skills/client';
 
 export type SkillMetadataUpdate = Partial<
 	Pick<Skill, 'name' | 'description' | 'license' | 'compatibility'>
 >;
 
-/**
- * Reactive skills state singleton.
- *
- * Follows the canonical monorepo pattern: factory function creates
- * `fromTable()` reactive maps, `$derived` arrays, and CRUD methods.
- * Components import the singleton and read directly.
- *
- * @example
- * ```svelte
- * <script>
- *   import { skillsState } from '$lib/state/skills-state.svelte';
- * </script>
- *
- * {#each skillsState.skills as skill (skill.id)}
- *   <p>{skill.name}</p>
- * {/each}
- * ```
- */
 function createSkillsState() {
-	const skillsView = fromTable(skillsDoc.tables.skills);
-	const referencesView = fromTable(skillsDoc.tables.references);
+	let skillRows = $state.raw<Skill[]>([]);
+	let referenceRows = $state.raw<Reference[]>([]);
+	let nonconforming = $state.raw<RecordLensError[]>([]);
+	let loadError = $state.raw<unknown>(null);
+	let selectedSkillId = $state<string | null>(null);
+	let refreshGeneration = 0;
 
-	const skills = $derived(
-		skillsView.all.toSorted((a, b) => a.name.localeCompare(b.name)),
+	const sortedSkills = $derived(
+		skillRows.toSorted((left, right) => left.name.localeCompare(right.name)),
+	);
+	const selectedSkill = $derived(
+		selectedSkillId
+			? (skillRows.find((skill) => skill.id === selectedSkillId) ?? null)
+			: null,
+	);
+	const selectedReferences = $derived(
+		selectedSkillId
+			? referenceRows
+					.filter((reference) => reference.skillId === selectedSkillId)
+					.toSorted((left, right) => left.path.localeCompare(right.path))
+			: [],
 	);
 
-	let selectedSkillId = $state<string | null>(null);
+	async function refresh(): Promise<void> {
+		const generation = ++refreshGeneration;
+		try {
+			const [skillScan, referenceScan] = await Promise.all([
+				scanSkills(skills),
+				scanReferences(skills),
+			]);
+			if (generation !== refreshGeneration) return;
+			skillRows = skillScan.skills;
+			referenceRows = referenceScan.references;
+			nonconforming = [
+				...skillScan.nonconforming,
+				...referenceScan.nonconforming,
+			];
+			loadError = null;
+		} catch (cause) {
+			if (generation === refreshGeneration) loadError = cause;
+			throw cause;
+		}
+	}
 
-	const selectedSkill = $derived.by(() => {
-		if (!selectedSkillId) return null;
-		return skillsView.byId(selectedSkillId) ?? null;
-	});
-
-	const selectedReferences = $derived.by(() => {
-		if (!selectedSkillId) return [];
-		return [...referencesView.all]
-			.filter((r) => r.skillId === selectedSkillId)
-			.sort((a, b) => a.path.localeCompare(b.path));
-	});
+	const whenReady = refresh();
+	onSkillsRecordsChanged(() => void refresh().catch(() => undefined));
 
 	return {
-		/** All skills, sorted alphabetically by name. */
+		whenReady,
 		get skills() {
-			return skills;
+			return sortedSkills;
 		},
 		get selectedSkillId() {
 			return selectedSkillId;
 		},
-		/** The currently selected skill, or `null` if nothing is selected. */
 		get selectedSkill() {
 			return selectedSkill;
 		},
-		/** References belonging to the currently selected skill, sorted by path. */
 		get selectedReferences() {
 			return selectedReferences;
 		},
-
-		/**
-		 * Set the active skill for the editor panel.
-		 *
-		 * Prefer this over raw assignment: gives a single greppable call site
-		 * for selection and a stable extension point for future side effects
-		 * (analytics, scroll-into-view, etc.).
-		 */
+		get nonconforming() {
+			return nonconforming;
+		},
+		get loadError() {
+			return loadError;
+		},
 		selectSkill(id: string | null) {
 			selectedSkillId = id;
 		},
-
-		/**
-		 * Create a new skill and select it.
-		 *
-		 * Inserts a row with a placeholder description and auto-selects
-		 * the new skill so the editor opens immediately.
-		 *
-		 * @returns The generated skill ID.
-		 */
-		createSkill(name: string) {
-			const id = generateId();
-			skillsDoc.tables.skills.set({
-				id,
+		async createSkill(name: string): Promise<string> {
+			const skill = await skills.tables.skills.create({
+				sourceId: crypto.randomUUID(),
 				name,
 				description: 'TODO: describe when and why to use this skill.',
-				license: null,
-				compatibility: null,
-				metadata: null,
-				allowedTools: null,
 				updatedAt: InstantString.now(),
 			});
-			selectedSkillId = id;
-			return id;
+			await refresh();
+			selectedSkillId = skill.id;
+			return skill.id;
 		},
-
-		/**
-		 * Update editable fields on a skill.
-		 *
-		 * Automatically bumps `updatedAt`. Only name, description,
-		 * license, and compatibility are editable through this method.
-		 */
-		updateSkill(id: string, updates: SkillMetadataUpdate) {
-			skillsDoc.tables.skills.update(id, {
+		async updateSkill(id: string, updates: SkillMetadataUpdate): Promise<void> {
+			const result = await skills.tables.skills.patch(id, {
 				...updates,
 				updatedAt: InstantString.now(),
 			});
+			await refresh();
+			if (result.error !== null) throw result.error;
 		},
-
-		/**
-		 * Delete a skill and cascade-delete all its references.
-		 *
-		 * Uses `ydoc.transact()` to collapse observer notifications.
-		 * If the deleted skill was selected, selects the next skill
-		 * alphabetically, or clears the selection if none remain.
-		 */
-		deleteSkill(id: string) {
-			skillsDoc.ydoc.transact(() => {
-				for (const ref of referencesView.all) {
-					if (ref.skillId === id) {
-						skillsDoc.tables.references.delete(ref.id);
-					}
+		async deleteSkill(id: string): Promise<void> {
+			for (const reference of referenceRows) {
+				if (reference.skillId === id) {
+					await skills.tables.references.delete(reference.id);
 				}
-				skillsDoc.tables.skills.delete(id);
-			});
-
-			if (selectedSkillId === id) {
-				const next = skills.find((s) => s.id !== id);
-				selectedSkillId = next?.id ?? null;
 			}
+			await skills.tables.skills.delete(id);
+			if (selectedSkillId === id) {
+				selectedSkillId =
+					sortedSkills.find((skill) => skill.id !== id)?.id ?? null;
+			}
+			await refresh();
 		},
-
-		/**
-		 * Add a file reference to a skill.
-		 *
-		 * @returns The generated reference ID.
-		 */
-		createReference(skillId: string, path: string) {
-			const id = generateId();
-			skillsDoc.tables.references.set({
-				id,
+		async createReference(skillId: string, path: string): Promise<string> {
+			const reference = await skills.tables.references.create({
 				skillId,
 				path,
 				updatedAt: InstantString.now(),
 			});
-			return id;
+			await refresh();
+			return reference.id;
 		},
-
-		/** Remove a file reference by ID. */
-		deleteReference(id: string) {
-			skillsDoc.tables.references.delete(id);
+		async deleteReference(id: string): Promise<void> {
+			await skills.tables.references.delete(id);
+			await refresh();
 		},
 	};
 }

@@ -216,7 +216,7 @@ export async function createQueryHost(
 ): Promise<QueryHost> {
 	// Arm A: in-process Yjs apps. Each app's namespace keeps same-named verbs
 	// distinct in the composed surface; the prefix must not contain `__`.
-	const dataDir = options.dataDir ?? defaultDataDir();
+	const dataDir = options.dataDir ?? resolveQueryDataDir();
 	const nodeId = createNodeId({
 		storage: fileStorage(join(dataDir, 'node-id')),
 	});
@@ -537,7 +537,7 @@ function createSessionApproval(notify: () => void) {
 	};
 }
 
-function defaultDataDir(): string {
+export function resolveQueryDataDir(): string {
 	if (process.env.EPICENTER_QUERY_DATA_DIR)
 		return process.env.EPICENTER_QUERY_DATA_DIR;
 	if (platform() === 'darwin') {

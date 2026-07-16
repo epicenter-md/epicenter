@@ -18,10 +18,10 @@
 		"@codemirror/language": "^6.12.2",
 		"@codemirror/state": "^6.6.0",
 		"@codemirror/view": "^6.41.0",
+		"@epicenter/field": "workspace:*",
 		"@epicenter/skills": "workspace:*",
 		"@epicenter/ui": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
-		"@epicenter/svelte": "workspace:*",
 		"shiki": "^3.7.0",
 		"@sveltejs/adapter-auto": "catalog:",
 		"@sveltejs/kit": "catalog:",
@@ -34,10 +34,7 @@
 		"svelte-sonner": "catalog:",
 		"tailwindcss": "catalog:",
 		"typescript": "catalog:",
-		"vite": "catalog:",
-		"y-codemirror.next": "^0.3.5",
-		"y-indexeddb": "catalog:",
-		"yjs": "catalog:"
+		"vite": "catalog:"
 	},
 	"license": "AGPL-3.0-or-later",
 	"dependencies": {
