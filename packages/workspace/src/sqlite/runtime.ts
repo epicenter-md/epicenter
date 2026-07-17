@@ -204,7 +204,7 @@ export function createWorkspaceRuntime({
 				} catch (disposeCause) {
 					throw new AggregateError(
 						[cause, disposeCause],
-						'Workspace record owner initialization and cleanup failed',
+						'Workspace owner initialization and cleanup failed',
 					);
 				}
 				throw cause;
