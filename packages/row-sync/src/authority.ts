@@ -487,9 +487,9 @@ export function openRowAuthority({
 			{ growth = 'allow' }: { growth?: GrowthDecision } = {},
 		): EnrollResponse {
 			const refusal = requestRefusal(request);
-			if (refusal) return { kind: 'enroll', ok: false, reason: refusal };
+			if (refusal) return { result: refusal };
 			if (growth === 'delete-only') {
-				return { kind: 'enroll', ok: false, reason: 'enrollment-refused' };
+				return { result: 'enrollment-refused' };
 			}
 			return database.transaction(() => {
 				requireMeta(database);
@@ -507,7 +507,7 @@ export function openRowAuthority({
 						) VALUES (?, 0, '', 0)`,
 						[replicaId],
 					);
-					return { kind: 'enroll', ok: true, replicaId } as const;
+					return { result: 'enrolled', replicaId } as const;
 				}
 			});
 		},
@@ -525,7 +525,7 @@ export function openRowAuthority({
 			{ growth = 'allow' }: { growth?: GrowthDecision } = {},
 		): SyncResponse {
 			const refusal = requestRefusal(request);
-			if (refusal) return { kind: 'sync', ok: false, reason: refusal };
+			if (refusal) return { result: refusal };
 			const round = request.sealedRound;
 			return database.transaction(() => {
 				const facts = request.token;
@@ -543,11 +543,7 @@ export function openRowAuthority({
 				// Ordinary sync never creates authority state for an unseen
 				// client-supplied id; enrollment mints identity first.
 				if (!stored) {
-					return {
-						kind: 'sync',
-						ok: false,
-						reason: 'unknown-replica',
-					} as const;
+					return { result: 'unknown-replica' } as const;
 				}
 
 				if (round) {
@@ -555,9 +551,7 @@ export function openRowAuthority({
 						// Inert: folds nothing, changes no receipt state, and is
 						// never evaluated for capacity.
 						return {
-							kind: 'sync',
-							ok: false,
-							reason: 'stale-submission',
+							result: 'stale-submission',
 							submission: round.submission,
 							watermark: stored.submission_watermark,
 						} as const;
@@ -585,9 +579,7 @@ export function openRowAuthority({
 						// delete-only state.
 						if (round.requestDigest !== stored.request_digest) {
 							return {
-								kind: 'sync',
-								ok: false,
-								reason: 'replica-fork',
+								result: 'replica-fork',
 								submission: round.submission,
 							} as const;
 						}
@@ -601,9 +593,7 @@ export function openRowAuthority({
 							// move, no rejection history persists, and no intent
 							// folds. A mixed round is never partially accepted.
 							return {
-								kind: 'sync',
-								ok: false,
-								reason: 'capacity-refused',
+								result: 'capacity-refused',
 								submission: round.submission,
 							} as const;
 						}
@@ -627,11 +617,9 @@ export function openRowAuthority({
 						// A round from the past (or a skipped future) proves a fork
 						// or a corrupted replica; one stored digest cannot judge it.
 						return {
-							kind: 'sync',
-							ok: false,
-							reason: 'replica-fork',
-							submission: round.submission,
-						} as const;
+								result: 'replica-fork',
+								submission: round.submission,
+							} as const;
 					}
 				}
 
@@ -644,8 +632,6 @@ export function openRowAuthority({
 				// Round first, baseline second: the fold above already happened.
 				if (facts.checkpoint < meta.retention_floor) {
 					return {
-						kind: 'sync',
-						ok: true,
 						result: 'baseline-required',
 						token: {
 							replicaId: facts.replicaId,
@@ -678,10 +664,8 @@ export function openRowAuthority({
 				let hasMore = parts.length > included.length;
 				const page = (): Extract<
 					SyncResponse,
-					{ ok: true; result: 'page' }
+					{ result: 'page' }
 				> => ({
-					kind: 'sync',
-					ok: true,
 					result: 'page',
 					token: {
 						replicaId: facts.replicaId,
@@ -723,7 +707,7 @@ export function openRowAuthority({
 		baselineScan(request: BaselineScanRequest): BaselineScanResponse {
 			const refusal = requestRefusal(request);
 			if (refusal) {
-				return { kind: 'baselineScan', ok: false, reason: refusal };
+				return { result: refusal };
 			}
 			return database.transaction(() => {
 				const meta = requireMeta(database);
@@ -781,9 +765,8 @@ export function openRowAuthority({
 							...(document === undefined ? {} : { document }),
 						};
 					});
-				const page = (): Extract<BaselineScanResponse, { ok: true }> => ({
-					kind: 'baselineScan',
-					ok: true,
+				const page = (): Extract<BaselineScanResponse, { result: 'page' }> => ({
+					result: 'page',
 					rows,
 					head: meta.server_sequence,
 					retentionFloor: meta.retention_floor,

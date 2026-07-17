@@ -119,11 +119,9 @@ describe('sync request parsing', () => {
 });
 
 describe('sync response parsing', () => {
-	test('accepts pages, baseline-required, and every refusal shape', () => {
+	test('accepts every protocol state in the flat discriminant', () => {
 		expect(
 			parseSyncResponse({
-				kind: 'sync',
-				ok: true,
 				result: 'page',
 				token,
 				outcomes: [
@@ -140,39 +138,31 @@ describe('sync response parsing', () => {
 				hasMore: false,
 				retentionFloor: 0,
 				submission: 3,
-			}).ok,
-		).toBeTrue();
-		expect(
-			parseSyncResponse({
-				kind: 'sync',
-				ok: true,
-				result: 'baseline-required',
-				token,
-				retentionFloor: 10,
-			}).ok,
-		).toBeTrue();
-		for (const refusal of [
-			{ kind: 'sync', ok: false, reason: 'protocol-mismatch' },
-			{ kind: 'sync', ok: false, reason: 'unknown-replica' },
-			{ kind: 'sync', ok: false, reason: 'replica-fork' },
-			{
-				kind: 'sync',
-				ok: false,
-				reason: 'stale-submission',
-				submission: 1,
-				watermark: 4,
-			},
-			{ kind: 'sync', ok: false, reason: 'capacity-refused', submission: 5 },
+			}).result,
+		).toBe('page');
+		for (const response of [
+			{ result: 'baseline-required', token, retentionFloor: 10 },
+			{ result: 'protocol-mismatch' },
+			{ result: 'unknown-replica' },
+			{ result: 'replica-fork', submission: 2 },
+			{ result: 'stale-submission', submission: 1, watermark: 4 },
+			{ result: 'capacity-refused', submission: 5 },
 		]) {
-			expect(parseSyncResponse(refusal).ok).toBeFalse();
+			expect(parseSyncResponse(response).result).toBe(
+				response.result as never,
+			);
 		}
+	});
+
+	test('rejects a replica fork without its echoed submission', () => {
+		expect(() => parseSyncResponse({ result: 'replica-fork' })).toThrow(
+			'Invalid row sync response',
+		);
 	});
 
 	test('rejects a row outcome with neither fields nor document', () => {
 		expect(() =>
 			parseSyncResponse({
-				kind: 'sync',
-				ok: true,
 				result: 'page',
 				token,
 				outcomes: [{ kind: 'row', table: 'notes', rowId: ROW_ID, sequence: 1 }],

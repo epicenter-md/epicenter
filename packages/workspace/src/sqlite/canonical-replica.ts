@@ -424,8 +424,8 @@ export function createCanonicalReplica({
 				kind: 'enroll',
 			}),
 		);
-		if (!response.ok) {
-			throw new Error(`Replica enrollment refused: ${response.reason}`);
+		if (response.result !== 'enrolled') {
+			throw new Error(`Replica enrollment refused: ${response.result}`);
 		}
 		sqlite.run(
 			`INSERT INTO "${REPLICA_TABLE}"(
@@ -441,7 +441,7 @@ export function createCanonicalReplica({
 		await ensureEnrolled();
 		// Each pass retries growth once; a definitive refusal re-blocks it.
 		capacityBlocked = false;
-		while (true) {
+		synchronization: while (true) {
 			sealRound();
 			const replica = requireReplica();
 			const token = tokenOf(replica);
@@ -483,47 +483,55 @@ export function createCanonicalReplica({
 			}
 			const sentRound = request.sealedRound?.round;
 			const response = parseSyncResponse(await transport.sync(request));
-			if (!response.ok) {
-				switch (response.reason) {
-					case 'stale-submission': {
-						// Inert transmission: jump past the watermark and retry.
-						nextSubmission = Math.max(nextSubmission, response.watermark + 1);
-						continue;
-					}
-					case 'capacity-refused': {
-						// Authoritative only when it answers the greatest issued
-						// submission; an older refusal is superseded and ignored.
-						if (response.submission !== greatestIssuedSubmission) continue;
-						capacityBlocked = true;
-						resolveCapacityRefusal();
-						const after = requireReplica();
-						if (after.in_flight_round === null) break;
-						continue;
-					}
-					default:
-						throw new Error(`Row sync refused: ${response.reason}`);
+			switch (response.result) {
+				case 'stale-submission': {
+					// Inert transmission: jump past the watermark and retry.
+					nextSubmission = Math.max(nextSubmission, response.watermark + 1);
+					continue;
 				}
-			}
-			if (!response.ok) break;
-			if (response.result === 'baseline-required') {
-				throw new Error(
-					'Baseline acquisition is required but not yet implemented',
-				);
-			}
-			// The authority's acceptedRound must account exactly for what this
-			// exchange submitted: a response that silently advances (or ignores)
-			// a round is corrupt and must not retire local intent.
-			const expectedAcceptedRound = sentRound ?? token.acceptedRound;
-			if (response.token.acceptedRound !== expectedAcceptedRound) {
-				throw new Error('Sync page does not continue the local checkpoint');
-			}
-			const installed = installPage(token, response);
-			if (installed && response.outcomes.length > 0) onRemoteCommit();
-			if (!response.hasMore && requireReplica().in_flight_round === null) {
-				// Growth intents held back by a definitive capacity refusal stay
-				// queued for a later pass; nothing here discards local edits.
-				if (openIntentCount() === 0 || capacityBlocked) break;
-				continue;
+				case 'capacity-refused': {
+					// Authoritative only when it answers the greatest issued
+					// submission; an older refusal is superseded and ignored.
+					if (response.submission !== greatestIssuedSubmission) continue;
+					capacityBlocked = true;
+					resolveCapacityRefusal();
+					// Deletions reseal under the same round number; with none to
+					// reseal, growth stays queued for a later pass.
+					if (requireReplica().in_flight_round === null) {
+						break synchronization;
+					}
+					continue;
+				}
+				case 'baseline-required':
+					throw new Error(
+						'Baseline acquisition is required but not yet implemented',
+					);
+				case 'protocol-mismatch':
+				case 'unknown-replica':
+				case 'replica-fork':
+					throw new Error(`Row sync stopped: ${response.result}`);
+				case 'page': {
+					// The authority's acceptedRound must account exactly for what
+					// this exchange submitted: a response that silently advances
+					// (or ignores) a round is corrupt and must not retire intent.
+					const expectedAcceptedRound = sentRound ?? token.acceptedRound;
+					if (response.token.acceptedRound !== expectedAcceptedRound) {
+						throw new Error('Sync page does not continue the local checkpoint');
+					}
+					const installed = installPage(token, response);
+					if (installed && response.outcomes.length > 0) onRemoteCommit();
+					if (!response.hasMore && requireReplica().in_flight_round === null) {
+						// Growth intents held back by a definitive capacity refusal
+						// stay queued for a later pass; nothing discards local edits.
+						if (openIntentCount() === 0 || capacityBlocked) {
+							break synchronization;
+						}
+					}
+					continue;
+				}
+				default:
+					response satisfies never;
+					throw new Error('Unreachable sync response state');
 			}
 		}
 		return status();
@@ -531,7 +539,7 @@ export function createCanonicalReplica({
 
 	function installPage(
 		expected: SyncToken,
-		response: Extract<SyncResponse, { ok: true; result: 'page' }>,
+		response: Extract<SyncResponse, { result: 'page' }>,
 	): boolean {
 		if (
 			response.token.replicaId !== expected.replicaId ||

@@ -233,24 +233,14 @@ export type EnrollRequest = Static<typeof EnrollRequestSchema>;
 export const EnrollResponseSchema = Type.Union([
 	Type.Object(
 		{
-			kind: Type.Literal('enroll'),
-			ok: Type.Literal(true),
+			result: Type.Literal('enrolled'),
 			replicaId: identifier,
 		},
 		CLOSED,
 	),
-	Type.Object(
-		{
-			kind: Type.Literal('enroll'),
-			ok: Type.Literal(false),
-			reason: Type.Union([
-				Type.Literal('protocol-mismatch'),
-				/** Deployment capacity admission stops enrollment (ADR-0137). */
-				Type.Literal('enrollment-refused'),
-			]),
-		},
-		CLOSED,
-	),
+	Type.Object({ result: Type.Literal('protocol-mismatch') }, CLOSED),
+	/** Deployment capacity admission stops enrollment (ADR-0137). */
+	Type.Object({ result: Type.Literal('enrollment-refused') }, CLOSED),
 ]);
 export type EnrollResponse = Static<typeof EnrollResponseSchema>;
 
@@ -303,11 +293,14 @@ export const RowOutcomeSchema = Type.Union([
 ]);
 export type RowOutcome = Static<typeof RowOutcomeSchema>;
 
+/**
+ * The synchronization state machine's response states, one flat
+ * discriminant. Operational failure (network, parse, storage) is the
+ * caller's dimension, carried outside this union.
+ */
 export const SyncResponseSchema = Type.Union([
 	Type.Object(
 		{
-			kind: Type.Literal('sync'),
-			ok: Type.Literal(true),
 			result: Type.Literal('page'),
 			token: SyncTokenSchema,
 			outcomes: Type.Array(RowOutcomeSchema, {
@@ -323,8 +316,6 @@ export const SyncResponseSchema = Type.Union([
 	),
 	Type.Object(
 		{
-			kind: Type.Literal('sync'),
-			ok: Type.Literal(true),
 			result: Type.Literal('baseline-required'),
 			/** The round (if any) was already folded; store after install. */
 			token: SyncTokenSchema,
@@ -335,30 +326,8 @@ export const SyncResponseSchema = Type.Union([
 	),
 	Type.Object(
 		{
-			kind: Type.Literal('sync'),
-			ok: Type.Literal(false),
-			reason: Type.Union([
-				Type.Literal('protocol-mismatch'),
-				/** Ordinary sync never creates state for an unseen replica id. */
-				Type.Literal('unknown-replica'),
-				/**
-				 * Terminal: a digest mismatch on the accepted round, or a round
-				 * number that is neither the accepted round nor its successor
-				 * (ADR-0131). Recovery is a fresh replica identity.
-				 */
-				Type.Literal('replica-fork'),
-			]),
-			/** Echoed on post-watermark verdicts for a sealed round. */
-			submission: Type.Optional(positiveSequence),
-		},
-		CLOSED,
-	),
-	Type.Object(
-		{
-			kind: Type.Literal('sync'),
-			ok: Type.Literal(false),
 			/** Retryable: this transmission is inert; jump past the watermark. */
-			reason: Type.Literal('stale-submission'),
+			result: Type.Literal('stale-submission'),
 			submission: positiveSequence,
 			watermark: positiveSequence,
 		},
@@ -366,18 +335,31 @@ export const SyncResponseSchema = Type.Union([
 	),
 	Type.Object(
 		{
-			kind: Type.Literal('sync'),
-			ok: Type.Literal(false),
 			/**
 			 * Definitive deployment capacity refusal (ADR-0137). Authoritative
 			 * only when `submission` equals the greatest submission the client
 			 * has issued for the in-flight image; older refusals are superseded.
 			 */
-			reason: Type.Literal('capacity-refused'),
+			result: Type.Literal('capacity-refused'),
 			submission: positiveSequence,
 		},
 		CLOSED,
 	),
+	Type.Object(
+		{
+			/**
+			 * Terminal: a digest mismatch on the accepted round, or a round
+			 * number that is neither the accepted round nor its successor
+			 * (ADR-0131). Recovery is a fresh replica identity.
+			 */
+			result: Type.Literal('replica-fork'),
+			submission: positiveSequence,
+		},
+		CLOSED,
+	),
+	/** Ordinary sync never creates state for an unseen replica id. */
+	Type.Object({ result: Type.Literal('unknown-replica') }, CLOSED),
+	Type.Object({ result: Type.Literal('protocol-mismatch') }, CLOSED),
 ]);
 export type SyncResponse = Static<typeof SyncResponseSchema>;
 
@@ -427,8 +409,7 @@ export type BaselineRow = Static<typeof baselineRowSchema>;
 export const BaselineScanResponseSchema = Type.Union([
 	Type.Object(
 		{
-			kind: Type.Literal('baselineScan'),
-			ok: Type.Literal(true),
+			result: Type.Literal('page'),
 			rows: Type.Array(baselineRowSchema, {
 				maxItems: ROW_SYNC_ADMISSION_LIMITS.baselineRowsPerPage,
 			}),
@@ -439,14 +420,7 @@ export const BaselineScanResponseSchema = Type.Union([
 		},
 		CLOSED,
 	),
-	Type.Object(
-		{
-			kind: Type.Literal('baselineScan'),
-			ok: Type.Literal(false),
-			reason: Type.Literal('protocol-mismatch'),
-		},
-		CLOSED,
-	),
+	Type.Object({ result: Type.Literal('protocol-mismatch') }, CLOSED),
 ]);
 export type BaselineScanResponse = Static<typeof BaselineScanResponseSchema>;
 
@@ -467,7 +441,7 @@ export function parseEnrollRequest(value: unknown): EnrollRequest {
 export function parseEnrollResponse(value: unknown): EnrollResponse {
 	if (
 		!Value.Check(EnrollResponseSchema, value) ||
-		(value.ok && !isBoundedIdentifier(value.replicaId))
+		(value.result === 'enrolled' && !isBoundedIdentifier(value.replicaId))
 	) {
 		throw new TypeError('Invalid row-sync enroll response');
 	}
@@ -491,9 +465,7 @@ export function parseSyncResponse(value: unknown): SyncResponse {
 	if (
 		!Value.Check(SyncResponseSchema, value) ||
 		encodedJsonBytes(value) > ROW_SYNC_ADMISSION_LIMITS.encodedPageBytes ||
-		(value.ok &&
-			value.result === 'page' &&
-			!value.outcomes.every(isAdmissibleOutcome))
+		(value.result === 'page' && !value.outcomes.every(isAdmissibleOutcome))
 	) {
 		throw new TypeError('Invalid row sync response');
 	}
@@ -518,7 +490,7 @@ export function parseBaselineScanResponse(
 	if (
 		!Value.Check(BaselineScanResponseSchema, value) ||
 		encodedJsonBytes(value) > ROW_SYNC_ADMISSION_LIMITS.encodedPageBytes ||
-		(value.ok &&
+		(value.result === 'page' &&
 			!value.rows.every(
 				(row) =>
 					isBoundedIdentifier(row.table) && isBoundedIdentifier(row.rowId),

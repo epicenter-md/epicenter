@@ -41,7 +41,7 @@ export class RowAuthorityDurableObject extends DurableObject {
 
 	async sync(request: SyncRequest): Promise<SyncResponse> {
 		const response = this.authority.sync(request);
-		if (response.ok && request.sealedRound) {
+		if (response.result === 'page' && request.sealedRound) {
 			runRecordsCompaction(this.authority);
 		}
 		return response;

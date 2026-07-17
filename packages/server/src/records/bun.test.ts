@@ -50,8 +50,8 @@ function setup() {
 
 function expectPage(
 	response: SyncResponse,
-): Extract<SyncResponse, { ok: true; result: 'page' }> {
-	if (!response.ok || response.result !== 'page') {
+): Extract<SyncResponse, { result: 'page' }> {
+	if (response.result !== 'page') {
 		throw new Error(`Expected a sync page: ${JSON.stringify(response)}`);
 	}
 	return response;
@@ -65,7 +65,8 @@ async function enroll(
 		protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
 		kind: 'enroll',
 	});
-	if (!response.ok) throw new Error(`Enrollment failed: ${response.reason}`);
+	if (response.result !== 'enrolled')
+		throw new Error(`Enrollment failed: ${response.result}`);
 	return { replicaId: response.replicaId, acceptedRound: 0, checkpoint: 0 };
 }
 
@@ -185,8 +186,8 @@ test('enrollment and RowIntent state survive closing and reopening', async () =>
 				protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
 				kind: 'baselineScan',
 			});
-			expect(baseline.ok).toBe(true);
-			if (!baseline.ok) throw new Error('Expected a baseline page');
+			expect(baseline.result).toBe('page');
+			if (baseline.result !== 'page') throw new Error('Expected a baseline page');
 			expect(baseline.rows[0]).toMatchObject({
 				table: 'pages',
 				rowId: rid(1),
@@ -225,7 +226,7 @@ test('principal and workspace pairs own independent authorities', async () => {
 				protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
 				kind: 'baselineScan',
 			});
-			expect(baseline.ok && baseline.rows.map((row) => row.rowId)).toEqual([
+			expect(baseline.result === 'page' && baseline.rows.map((row) => row.rowId)).toEqual([
 				rowId,
 			]);
 		}
@@ -278,7 +279,7 @@ test('exact retry is idempotent and an unknown replica is refused', async () => 
 					checkpoint: 0,
 				},
 			}),
-		).toEqual({ kind: 'sync', ok: false, reason: 'unknown-replica' });
+		).toEqual({ result: 'unknown-replica' });
 	} finally {
 		context.cleanup();
 	}
@@ -296,8 +297,6 @@ test('compaction requires a stale replica to page through a baseline scan', asyn
 			token: { ...token, checkpoint: 0 },
 		});
 		expect(stale).toMatchObject({
-			kind: 'sync',
-			ok: true,
 			result: 'baseline-required',
 			retentionFloor: 1,
 		});
@@ -307,7 +306,8 @@ test('compaction requires a stale replica to page through a baseline scan', asyn
 			kind: 'baselineScan',
 			pageLimit: 1,
 		});
-		if (!first.ok) throw new Error('Expected the first baseline page');
+		if (first.result !== 'page')
+			throw new Error('Expected the first baseline page');
 		expect(first).toMatchObject({ hasMore: true, retentionFloor: 1 });
 		expect(first.rows.map((row) => row.rowId)).toEqual([rid(1)]);
 		expect(first.rows[0]?.document).toMatchObject({ updates: [] });
@@ -327,7 +327,9 @@ test('compaction requires a stale replica to page through a baseline scan', asyn
 			after: { table: 'pages', rowId: rid(1) },
 			pageLimit: 1,
 		});
-		expect(second.ok && second.rows.map((row) => row.rowId)).toEqual([rid(2)]);
+		expect(
+			second.result === 'page' && second.rows.map((row) => row.rowId),
+		).toEqual([rid(2)]);
 	} finally {
 		context.cleanup();
 	}

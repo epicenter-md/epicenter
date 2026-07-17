@@ -62,7 +62,7 @@ export function createBunRecords({ dir }: { dir: string }) {
 		async sync(partition, request) {
 			const opened = load(partition);
 			const response = opened.authority.sync(request);
-			if (response.ok && request.sealedRound) {
+			if (response.result === 'page' && request.sealedRound) {
 				runRecordsCompaction(opened.authority);
 			}
 			return response;

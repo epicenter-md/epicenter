@@ -57,7 +57,7 @@ function openTestAuthority() {
 		protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
 		kind: 'enroll',
 	});
-	if (!enrolled.ok) throw new Error('Enrollment failed');
+	if (enrolled.result !== 'enrolled') throw new Error('Enrollment failed');
 	let submission = 0;
 	const state = { replicaId: enrolled.replicaId, checkpoint: 0 };
 	return {
@@ -111,8 +111,8 @@ function openTestAuthority() {
 
 function expectPage(
 	response: SyncResponse,
-): Extract<SyncResponse, { ok: true; result: 'page' }> {
-	if (!response.ok || response.result !== 'page') {
+): Extract<SyncResponse, { result: 'page' }> {
+	if (response.result !== 'page') {
 		throw new Error(`Expected a page, got ${JSON.stringify(response)}`);
 	}
 	return response;
@@ -161,9 +161,7 @@ describe('enrollment (ADR-0131)', () => {
 	test('ordinary sync refuses an unseen client-supplied replica id', () => {
 		const { sync } = openTestAuthority();
 		expect(sync({ replicaId: 'somebodyelse000000000000' })).toEqual({
-			kind: 'sync',
-			ok: false,
-			reason: 'unknown-replica',
+			result: 'unknown-replica',
 		});
 	});
 
@@ -174,7 +172,7 @@ describe('enrollment (ADR-0131)', () => {
 				{ protocolMajor: ROW_SYNC_PROTOCOL_MAJOR, kind: 'enroll' },
 				{ growth: 'delete-only' },
 			),
-		).toEqual({ kind: 'enroll', ok: false, reason: 'enrollment-refused' });
+		).toEqual({ result: 'enrollment-refused' });
 	});
 });
 
@@ -403,12 +401,7 @@ describe('exact retry and the terminal fork rule (ADR-0131)', () => {
 				intents: [create(rid(2), { count: 2 })],
 				submission: 2,
 			}),
-		).toEqual({
-			kind: 'sync',
-			ok: false,
-			reason: 'replica-fork',
-			submission: 2,
-		});
+		).toEqual({ result: 'replica-fork', submission: 2 });
 	});
 
 	test('a round that is neither accepted nor its successor is a terminal fork', () => {
@@ -421,12 +414,7 @@ describe('exact retry and the terminal fork rule (ADR-0131)', () => {
 				intents: [create(rid(2), { count: 2 })],
 				submission: 2,
 			}),
-		).toEqual({
-			kind: 'sync',
-			ok: false,
-			reason: 'replica-fork',
-			submission: 2,
-		});
+		).toEqual({ result: 'replica-fork', submission: 2 });
 	});
 
 	test('a corrupt digest is refused before any folding', () => {
@@ -448,7 +436,7 @@ describe('exact retry and the terminal fork rule (ADR-0131)', () => {
 		// receives the retryable stale response instead of an exception.
 		expect(
 			sync({ round: 1, intents, submission: 5, digest: 'not-the-digest' }),
-		).toMatchObject({ ok: false, reason: 'stale-submission', watermark: 5 });
+		).toMatchObject({ result: 'stale-submission', watermark: 5 });
 		expect(authority.inspect().replicas[replicaId]?.submissionWatermark).toBe(
 			5,
 		);
@@ -467,13 +455,7 @@ describe('submission watermark and capacity refusal (ADR-0131/0137)', () => {
 		const { authority, sync, replicaId } = openTestAuthority();
 		const intents = [create(rid(1), { count: 1 })];
 		expectPage(sync({ round: 1, intents, submission: 5 }));
-		expect(sync({ round: 1, intents, submission: 5 })).toEqual({
-			kind: 'sync',
-			ok: false,
-			reason: 'stale-submission',
-			submission: 5,
-			watermark: 5,
-		});
+		expect(sync({ round: 1, intents, submission: 5 })).toEqual({ result: 'stale-submission', submission: 5, watermark: 5 });
 		expect(authority.inspect().replicas[replicaId]?.submissionWatermark).toBe(
 			5,
 		);
@@ -491,12 +473,7 @@ describe('submission watermark and capacity refusal (ADR-0131/0137)', () => {
 				submission: 2,
 				growth: 'delete-only',
 			}),
-		).toEqual({
-			kind: 'sync',
-			ok: false,
-			reason: 'capacity-refused',
-			submission: 2,
-		});
+		).toEqual({ result: 'capacity-refused', submission: 2 });
 		const inspected = authority.inspect();
 		// Only the watermark advanced: no fold, no retry-head move, no history.
 		expect(inspected.replicas[replicaId]).toEqual({
@@ -558,7 +535,7 @@ describe('submission watermark and capacity refusal (ADR-0131/0137)', () => {
 				submission: 2,
 				growth: 'allow',
 			}),
-		).toMatchObject({ ok: false, reason: 'stale-submission' });
+		).toMatchObject({ result: 'stale-submission' });
 		expect(authority.inspect().replicas[replicaId]?.acceptedRound).toBe(2);
 	});
 
@@ -605,7 +582,7 @@ describe('scalar conflicts follow authority acceptance order (ADR-0131)', () => 
 			protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
 			kind: 'enroll',
 		});
-		if (!enrollA.ok || !enrollB.ok) throw new Error('Enrollment failed');
+		if (enrollA.result !== 'enrolled' || enrollB.result !== 'enrolled') throw new Error('Enrollment failed');
 		const createIntent = [create(rid(1), { title: 'base' })];
 		authority.sync({
 			protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
@@ -781,13 +758,9 @@ describe('retention floor and compaction (ADR-0133/0136)', () => {
 		const { authority, sync } = seedRounds();
 		authority.compactOutcomesThrough(4);
 		const response = sync({ checkpoint: 2 });
-		expect(response).toMatchObject({
-			ok: true,
-			result: 'baseline-required',
-			retentionFloor: 4,
-		});
+		expect(response).toMatchObject({ result: 'baseline-required', retentionFloor: 4 });
 		// At or above the floor, incremental pages continue.
-		expect(expectPage(sync({ checkpoint: 4 })).ok).toBeTrue();
+		expect(expectPage(sync({ checkpoint: 4 })).result).toBe('page');
 	});
 
 	test('maybeCompact keeps the trailing retention window reachable', () => {
@@ -827,7 +800,7 @@ describe('baseline scan (ADR-0136)', () => {
 			kind: 'baselineScan',
 			pageLimit: 1,
 		});
-		if (!first.ok) throw new Error('Expected a scan page');
+		if (first.result !== 'page') throw new Error('Expected a scan page');
 		expect(first.hasMore).toBeTrue();
 		expect(first.head).toBe(4);
 		expect(first.retentionFloor).toBe(2);
@@ -852,7 +825,7 @@ describe('baseline scan (ADR-0136)', () => {
 			kind: 'baselineScan',
 			after: { table: 'notes', rowId: rid(1) },
 		});
-		if (!second.ok) throw new Error('Expected a scan page');
+		if (second.result !== 'page') throw new Error('Expected a scan page');
 		expect(second.hasMore).toBeFalse();
 		expect(second.rows).toEqual([
 			{ table: 'notes', rowId: rid(2), fields: { n: 2 } },
@@ -879,7 +852,7 @@ describe('baseline scan transport collapse (ADR-0136)', () => {
 			protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
 			kind: 'baselineScan',
 		});
-		if (!scan.ok) throw new Error('Expected a scan page');
+		if (scan.result !== 'page') throw new Error('Expected a scan page');
 		expect(scan.rows).toHaveLength(1);
 		expect(scan.rows[0]?.document?.updates).toEqual([]);
 		expect(scan.rows[0]?.document?.baseline).toBe(docUpdate(token));

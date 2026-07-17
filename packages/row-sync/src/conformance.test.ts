@@ -167,7 +167,7 @@ for (const [name, open] of adapters) {
 				protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
 				kind: 'enroll',
 			});
-			if (!enrolled.ok) throw new Error('Enrollment failed');
+			if (enrolled.result !== 'enrolled') throw new Error('Enrollment failed');
 
 			const accepted = authority.sync({
 				protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
@@ -185,8 +185,6 @@ for (const [name, open] of adapters) {
 				},
 			});
 			expect(accepted).toMatchObject({
-				kind: 'sync',
-				ok: true,
 				result: 'page',
 				token: {
 					replicaId: enrolled.replicaId,
@@ -208,8 +206,6 @@ for (const [name, open] of adapters) {
 					pageLimit: 1,
 				}),
 			).toEqual({
-				kind: 'sync',
-				ok: true,
 				result: 'page',
 				token: {
 					replicaId: enrolled.replicaId,
@@ -245,8 +241,6 @@ for (const [name, open] of adapters) {
 					pageLimit: 1,
 				}),
 			).toEqual({
-				kind: 'sync',
-				ok: true,
 				result: 'page',
 				token: {
 					replicaId: enrolled.replicaId,

@@ -116,8 +116,8 @@ const rid = (value: number) => value.toString(36).padStart(24, '0');
 
 function expectPage(
 	response: SyncResponse,
-): Extract<SyncResponse, { ok: true; result: 'page' }> {
-	if (!response.ok || response.result !== 'page') {
+): Extract<SyncResponse, { result: 'page' }> {
+	if (response.result !== 'page') {
 		throw new Error(`Expected a sync page: ${JSON.stringify(response)}`);
 	}
 	return response;
@@ -131,7 +131,8 @@ async function enroll(
 		protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
 		kind: 'enroll',
 	});
-	if (!response.ok) throw new Error(`Enrollment failed: ${response.reason}`);
+	if (response.result !== 'enrolled')
+		throw new Error(`Enrollment failed: ${response.result}`);
 	return { replicaId: response.replicaId, acceptedRound: 0, checkpoint: 0 };
 }
 
@@ -216,7 +217,7 @@ test('enrollment and accepted state survive Durable Object restart', async () =>
 			protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
 			kind: 'baselineScan',
 		});
-		expect(baseline.ok && baseline.rows).toEqual([
+		expect(baseline.result === 'page' && baseline.rows).toEqual([
 			{
 				table: 'pages',
 				rowId: rid(1),
@@ -261,7 +262,7 @@ test('failed construction leaves Durable Object storage retryable', async () => 
 				protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
 				kind: 'enroll',
 			}),
-		).toMatchObject({ kind: 'enroll', ok: true });
+		).toMatchObject({ result: 'enrolled' });
 	} finally {
 		owned.database.close();
 		context.cleanup();
@@ -335,7 +336,7 @@ test('exact retry is idempotent and an unknown replica is refused', async () => 
 					checkpoint: 0,
 				},
 			}),
-		).toEqual({ kind: 'sync', ok: false, reason: 'unknown-replica' });
+		).toEqual({ result: 'unknown-replica' });
 	} finally {
 		context.cleanup();
 	}
@@ -353,8 +354,6 @@ test('compaction requires stale RPC clients to page through a baseline scan', as
 				token: { ...token, checkpoint: 0 },
 			}),
 		).toMatchObject({
-			kind: 'sync',
-			ok: true,
 			result: 'baseline-required',
 			retentionFloor: 1,
 		});
@@ -364,7 +363,8 @@ test('compaction requires stale RPC clients to page through a baseline scan', as
 			kind: 'baselineScan',
 			pageLimit: 1,
 		});
-		if (!first.ok) throw new Error('Expected the first baseline page');
+		if (first.result !== 'page')
+			throw new Error('Expected the first baseline page');
 		expect(first.rows.map((row) => row.rowId)).toEqual([rid(1)]);
 		expect(first.hasMore).toBe(true);
 
@@ -374,7 +374,9 @@ test('compaction requires stale RPC clients to page through a baseline scan', as
 			after: { table: 'pages', rowId: rid(1) },
 			pageLimit: 1,
 		});
-		expect(second.ok && second.rows.map((row) => row.rowId)).toEqual([rid(2)]);
+		expect(
+			second.result === 'page' && second.rows.map((row) => row.rowId),
+		).toEqual([rid(2)]);
 	} finally {
 		context.cleanup();
 	}

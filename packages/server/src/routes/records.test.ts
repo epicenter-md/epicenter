@@ -32,8 +32,7 @@ function setup({ fail }: { fail?: keyof Records } = {}) {
 			partitions.push(partition);
 			if (fail === 'enroll') throw new TypeError('invalid enrollment');
 			return {
-				kind: 'enroll',
-				ok: true,
+				result: 'enrolled',
 				replicaId: '000000000000000000000001',
 			};
 		},
@@ -41,8 +40,6 @@ function setup({ fail }: { fail?: keyof Records } = {}) {
 			partitions.push(partition);
 			if (fail === 'sync') throw new TypeError('invalid sync');
 			return {
-				kind: 'sync',
-				ok: true,
 				result: 'page',
 				token: {
 					...request.token,
@@ -61,8 +58,7 @@ function setup({ fail }: { fail?: keyof Records } = {}) {
 			partitions.push(partition);
 			if (fail === 'baselineScan') throw new TypeError('invalid baseline scan');
 			return {
-				kind: 'baselineScan',
-				ok: true,
+				result: 'page',
 				rows: [],
 				head: 0,
 				retentionFloor: 0,
@@ -137,22 +133,18 @@ test('enroll, sync, and baseline-scan derive the authenticated partition', async
 
 	expect(enrollResponse.status).toBe(200);
 	expect((await enrollResponse.json()) as unknown).toEqual({
-		kind: 'enroll',
-		ok: true,
+		result: 'enrolled',
 		replicaId: '000000000000000000000001',
 	});
 	expect(syncResponse.status).toBe(200);
 	expect((await syncResponse.json()) as unknown).toMatchObject({
-		kind: 'sync',
-		ok: true,
 		result: 'page',
 		token: { acceptedRound: 1 },
 		submission: 1,
 	});
 	expect(baselineResponse.status).toBe(200);
 	expect((await baselineResponse.json()) as unknown).toEqual({
-		kind: 'baselineScan',
-		ok: true,
+		result: 'page',
 		rows: [],
 		head: 0,
 		retentionFloor: 0,
