@@ -1,129 +1,92 @@
-# Service Organization and Platform Variants
+# Service Organization And Platform Variants
 
-## When to Read This
+This reference covers Whispering's build-time service seam and the shared
+service barrel.
 
-Read when organizing service exports, designing namespace-based index files, or implementing platform-specific service variants (desktop vs web).
+## One Stable Import
 
-## Namespace Exports Pattern
+For a capability with browser and Tauri implementations, keep a shared contract
+and two implementation files:
 
-Services are organized hierarchically and re-exported as namespace objects:
-
-### Folder Structure
-
-```
-services/
-├── desktop/           # Desktop-only (Tauri)
-│   ├── index.ts       # Re-exports as desktopServices
-│   ├── command.ts
-│   └── ffmpeg.ts
-├── isomorphic/        # Cross-platform
-│   ├── index.ts       # Re-exports as services
-│   ├── transcription/
-│   │   ├── index.ts   # Re-exports as transcriptions namespace
-│   │   ├── cloud/
-│   │   │   ├── openai.ts
-│   │   │   └── groq.ts
-│   │   └── local/
-│   │       └── whispercpp.ts
-│   └── completion/
-│       ├── index.ts
-│       └── openai.ts
-├── types.ts
-└── index.ts           # Main entry point
+```txt
+services/text/
+|-- types.ts
+|-- index.browser.ts
+`-- index.tauri.ts
 ```
 
-### Index File Pattern
+Map one bare specifier in `apps/whispering/package.json`:
+
+```jsonc
+"#platform/text": {
+  "tauri": "./src/lib/services/text/index.tauri.ts",
+  "default": "./src/lib/services/text/index.browser.ts"
+}
+```
+
+Shared consumers import one name:
 
 ```typescript
-// services/isomorphic/transcription/index.ts
-export { OpenaiTranscriptionServiceLive as openai } from './cloud/openai';
-export { GroqTranscriptionServiceLive as groq } from './cloud/groq';
-export { WhispercppTranscriptionServiceLive as whispercpp } from './local/whispercpp';
+import { TextServiceLive } from '#platform/text';
+```
 
-// services/isomorphic/index.ts
-import * as transcriptions from './transcription';
-import * as completions from './completion';
+The web bundle resolves `default`; the Epicenter/Tauri surface activates the
+`tauri` condition. Do not add a runtime `window.__TAURI_INTERNALS__` branch or a
+second platform registry.
+
+Each implementation exports the same name and checks the shared contract:
+
+```typescript
+export const TextServiceLive = {
+	readFromClipboard,
+	copyToClipboard,
+	writeToCursor,
+	simulateEnterKeystroke,
+	simulateCopyKeystroke,
+} satisfies TextService;
+```
+
+Current service seams include analytics, blob-store, download, HTTP, recorder,
+and text. Check `package.json#imports` rather than copying this list when adding
+or moving a service.
+
+## Tauri-Only Capability
+
+When no meaningful browser implementation exists, use `#platform/tauri`. It
+resolves to the capability namespace on Tauri and `null` on the browser. Narrow
+once in shared code:
+
+```typescript
+import { tauri } from '#platform/tauri';
+
+if (tauri) {
+	await tauri.mainWindow.focus();
+}
+```
+
+Inside an already gated `.tauri.ts` file, import `tauriOnly` directly from
+`$lib/tauri.tauri`.
+
+## Shared Service Barrel
+
+`apps/whispering/src/lib/services/index.ts` aggregates cross-platform
+capabilities after their platform imports resolve:
+
+```typescript
+import { AnalyticsServiceLive } from '#platform/analytics';
+import { AudioBlobStoreLive } from '#platform/blob-store';
+import { DownloadServiceLive } from '#platform/download';
+import { TextServiceLive } from '#platform/text';
 
 export const services = {
-	db: DbServiceLive,
+	analytics: AnalyticsServiceLive,
+	text: TextServiceLive,
+	blobs: { audio: AudioBlobStoreLive },
+	download: DownloadServiceLive,
+	localShortcutManager: LocalShortcutManagerLive,
 	sound: PlaySoundServiceLive,
-	transcriptions, // Namespace import
-	completions, // Namespace import
 } as const;
-
-// services/index.ts (main entry)
-export { services } from './isomorphic';
-export { desktopServices } from './desktop';
 ```
 
-### Consuming Services
-
-```typescript
-// In query layer or anywhere
-import { services, desktopServices } from '$lib/services';
-
-// Access via namespace
-await services.transcriptions.openai.transcribe(blob, options);
-await services.transcriptions.groq.transcribe(blob, options);
-await services.db.recordings.getAll();
-await desktopServices.ffmpeg.compressAudioBlob(blob, options);
-```
-
-## Platform-Specific Services
-
-For services that need different implementations per platform:
-
-### Define Shared Interface
-
-```typescript
-// services/isomorphic/text/types.ts
-export type TextService = {
-	readFromClipboard(): Promise<Result<string | null, TextError>>;
-	copyToClipboard(text: string): Promise<Result<void, TextError>>;
-	writeToCursor(text: string): Promise<Result<void, TextError>>;
-};
-```
-
-### Implement Per Platform
-
-```typescript
-// services/isomorphic/text/desktop.ts
-const TextError = defineErrors({
-  ClipboardWriteFailed: ({ cause }: { cause: unknown }) => ({
-    message: `Clipboard write failed: ${extractErrorMessage(cause)}`,
-    cause,
-  }),
-});
-
-export function createTextServiceDesktop(): TextService {
-	return {
-		copyToClipboard: (text) =>
-			tryAsync({
-				try: () => writeText(text), // Tauri API
-				catch: (error) =>
-					TextError.ClipboardWriteFailed({ cause: error }),
-			}),
-	};
-}
-
-// services/isomorphic/text/web.ts
-export function createTextServiceWeb(): TextService {
-	return {
-		copyToClipboard: (text) =>
-			tryAsync({
-				try: () => navigator.clipboard.writeText(text), // Browser API
-				catch: (error) =>
-					TextError.ClipboardWriteFailed({ cause: error }),
-			}),
-	};
-}
-```
-
-### Build-Time Platform Detection
-
-```typescript
-// services/isomorphic/text/index.ts
-export const TextServiceLive = window.__TAURI_INTERNALS__
-	? createTextServiceDesktop()
-	: createTextServiceWeb();
-```
+The barrel is not a provider registry. Runtime-selected transcription providers
+remain directly imported by the operation that owns provider dispatch.
