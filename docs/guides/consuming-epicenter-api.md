@@ -31,8 +31,8 @@ derives the principal from the bearer. The transitional root-Yjs lane still
 uses `/api/rooms/:roomId` for apps awaiting conversion.
 
 On the selected path, `@epicenter/workspace/sqlite` exposes imported workspace
-definitions through an authority-bound runtime. Records are a complete local
-SQLite replica of schema-opaque canonical JSON. `field.*` declarations are
+definitions through an authority-bound runtime. The workspace is a complete
+local SQLite replica of schema-opaque canonical JSON rows. `field.*` declarations are
 release-local validation and SQL projection lenses. Every ordinary row owns one
 latent Yjs document under the same authority and lifecycle. The opened
 workspace handle exposes `tables`, `kv`, and `sql`.
