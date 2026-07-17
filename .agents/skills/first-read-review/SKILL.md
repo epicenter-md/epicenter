@@ -1,9 +1,9 @@
 ---
-name: approachability-audit
+name: first-read-review
 description: First-read approachability lens. Read code as a newly onboarded TypeScript developer to surface indirection, misleading names, type-system-only tricks, and wrong-owner boundaries. Cited by post-implementation-review and collapse-pass as their readability pass; also use directly when code feels clever or hard to follow on first read.
 ---
 
-# Approachability Audit
+# First-Read Review
 
 Read the code like a smart but newly onboarded TypeScript developer.
 

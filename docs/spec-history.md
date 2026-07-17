@@ -16,14 +16,16 @@
 >
 > **Regenerate (deterministic per ref set, lossless):** `bun scripts/generate-spec-history.ts`. The totals track the refs this clone can see; `--all` is deliberate so the timeline recovers specs that only lived on unmerged or deleted branches.
 
-**1388 specs ever** (549 still in tree, 839 removed).
+**1391 specs ever** (550 still in tree, 841 removed).
 
 
 ## 2026
 
 | Date | Spec | State | Path |
 |------|------|-------|------|
+| 2026-07-17 | workspace-root-cleanup | in tree | specs/20260717T120000-workspace-root-cleanup.md |
 | 2026-07-17 | hosted-storage-policy | removed | specs/20260717T004239-hosted-storage-policy.md |
+| 2026-07-16 | portable-workspace-tree-greenfield-dialectic | removed | specs/20260716T112345-portable-workspace-tree-greenfield-dialectic.md |
 | 2026-07-16 | workspace-tables-kv-row-documents | in tree | specs/20260716T161934-workspace-tables-kv-row-documents.md |
 | 2026-07-16 | confirmed-state-compacted-row-intents | removed | specs/20260716T204040-confirmed-state-compacted-row-intents.md |
 | 2026-07-16 | workspace-tables-kv-row-bodies | removed | specs/20260716T161934-workspace-tables-kv-row-bodies.md |
@@ -43,6 +45,7 @@
 | 2026-07-09 | provider-app-and-empty-launch | removed | apps/local-mail/specs/20260709-provider-app-and-empty-launch.md |
 | 2026-07-08 | host-discovery-connect-device | removed | apps/super-chat/specs/host-discovery-connect-device.md |
 | 2026-07-07 | super-chat-attach-relay-proof | removed | specs/20260707T200000-super-chat-attach-relay-proof.md |
+| 2026-07-06 | skill-clean-breaks-agent-handoff | removed | specs/20260706T125841-skill-clean-breaks-agent-handoff.md |
 | 2026-07-06 | cross-device-coordination-vision | in tree | specs/20260706T220000-cross-device-coordination-vision.md |
 | 2026-07-06 | encrypted-job-envelope-strategy | in tree | specs/20260706T233000-encrypted-job-envelope-strategy.md |
 | 2026-07-06 | super-chat-direct-command-forms | in tree | specs/super-chat-direct-command-forms.md |

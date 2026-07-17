@@ -58,7 +58,7 @@ greenfield-clean-breaks    public API, package boundary, config, lifecycle, nami
 fresh-context-review     independent adversarial review of a concrete diff or design
 asymmetric-wins          refuse a feature to collapse a disproportionate code family
 refactoring              caller counts, inlining, dead exports, stale imports, straggler sweep
-approachability-audit    too many hops, misleading names, clever types, first-read confusion
+first-read-review        too many hops, misleading names, clever types, first-read confusion
 code-audit               recurring repo smells and grep-based checks
 one-sentence-test        new abstraction, wrapper, option, endpoint, command, or module
 testing                  test files or changed behavior that needs coverage

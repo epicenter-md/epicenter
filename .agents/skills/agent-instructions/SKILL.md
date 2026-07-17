@@ -1,15 +1,17 @@
 ---
-name: skill-creator
-description: Create, revise, audit, evaluate, and validate Vercel-backed Agent Skills for this repository. Use when writing a new skill, improving or stress-testing an existing skill, tuning skill descriptions, deciding what belongs in SKILL.md, references, scripts, or assets, validating discovery, or reviewing whether a skill should exist.
+name: agent-instructions
+description: Create, revise, place, audit, evaluate, and validate repository agent instructions across AGENTS.md, CLAUDE.md, and `.agents/skills`. Use when adding or moving agent rules, deciding whether guidance belongs globally or in a skill or reference, writing or improving a skill, tuning routing descriptions, validating discovery, or reviewing instruction sprawl and composition.
 ---
 
-# Skill Creator
+# Agent Instructions
 
-Skill Creator owns creation and maintenance of project-local skills under `.agents/skills`.
+Agent Instructions owns the architecture and maintenance of repository guidance across `AGENTS.md`, `CLAUDE.md`, and `.agents/skills`.
 
 The Vercel `skills` CLI is the source of truth for format and discovery. Do not maintain a separate local validator unless the user explicitly asks for one.
 
 Skills should encode repeatable project expertise: real conventions, recurring failure modes, fragile workflows, and corrections the agent would otherwise miss. Do not turn one-off advice into a skill.
+
+Read [references/instruction-placement.md](references/instruction-placement.md) when adding or moving guidance, editing `AGENTS.md` or `CLAUDE.md`, deciding whether a rule should be always loaded or triggerable, or reducing instruction sprawl.
 
 Read [references/evaluation.md](references/evaluation.md) when tuning trigger descriptions, comparing skill versions, evaluating behavior, auditing imported skills, or checking source links.
 
@@ -20,7 +22,6 @@ Read [references/composition-audit.md](references/composition-audit.md) when str
 Use other skills for their owned domains:
 
 - `writing-voice`: user-facing prose, UI text, errors, docs, and tone.
-- `agent-instruction-hygiene`: deciding whether guidance belongs in `AGENTS.md`, a skill, a reference, or should be deleted.
 - Domain skills such as `workspace-api`, `svelte`, or `auth`: package conventions the new skill must encode.
 - `git`: staging, commits, branch work, and commit messages.
 - `plugin-creator`: Codex plugins, not agent skills.

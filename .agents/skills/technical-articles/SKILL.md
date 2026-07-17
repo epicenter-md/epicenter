@@ -72,9 +72,9 @@ When you have multiple independent reasons for something, write them as regular 
 
 ## Architecture Article Composition
 
-For articles about ownership, routing, auth, billing, sync, tenancy, API shape, or deployment boundaries, build the private model with [notebook-explanation](../notebook-explanation/SKILL.md) before drafting the public argument.
+For articles about ownership, routing, auth, billing, sync, tenancy, API shape, or deployment boundaries, build the private model before drafting the public argument.
 
-1. Use [notebook-explanation](../notebook-explanation/SKILL.md) to build the private model: ownership, boundaries, flow, good/bad examples, and durable rules.
+1. Build the private model: ownership, boundaries, flow, good/bad examples, and durable rules.
 2. Turn that model into a public argument here: title, opening, section claims, rhythm, code, diagrams, and closing.
 3. Use [writing-voice](../writing-voice/SKILL.md) throughout as the house voice and final punctuation pass.
 

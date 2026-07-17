@@ -1,20 +1,8 @@
----
-name: agent-instruction-hygiene
-description: Review AGENTS.md, CLAUDE.md, and `.agents/skills` for instruction sprawl, duplicated guidance, routing overlap, and misplaced process detail. Use when adding or revising agent instructions, deciding whether a rule belongs globally or in a skill, deciding whether a new skill should exist, or cutting down skill complexity.
----
+# Instruction Placement
 
-# Agent Instruction Hygiene
-
-The goal is not to capture every lesson. The goal is to keep future agents
-pointed at the smallest durable instruction that changes behavior.
-
-## Compose With
-
-- `skill-creator` owns skill format, discovery, validation, and update mechanics.
-- `writing-voice` owns prose tone and punctuation.
-- `greenfield-clean-breaks` owns clean-break, greenfield, compatibility-refusal,
-  and ideal-shape review.
-- `git` owns staging, commits, and branch hygiene.
+Use this reference when deciding where repository guidance belongs. The goal is
+not to capture every lesson. The goal is to keep future agents pointed at the
+smallest durable instruction that changes behavior.
 
 ## Product Sentence
 
@@ -29,8 +17,6 @@ before changing the prose.
 
 ## Placement Rules
 
-Use this table before editing:
-
 ```txt
 AGENTS.md      rules every agent must carry before any skill is selected
 SKILL.md       repeatable workflow selected by a concrete user intent
@@ -44,7 +30,7 @@ Do not create a new skill when an existing skill already owns the same user
 intent. Update the existing skill, narrow its description, or move detail into a
 reference instead.
 
-## Greenfield Grill
+## Greenfield Questions
 
 Ask these questions in order:
 
@@ -58,14 +44,13 @@ What can be deleted, moved to references, or shortened?
 Does the new shape reduce loaded context or only add another place to check?
 ```
 
-Default to deletion when the answer is "this was useful once." Default to
-updating an existing skill when the answer is "same trigger, sharper behavior."
-Default to a new skill only when the answer is "separate trigger, repeatable
-workflow, and lower total routing cost."
+Default to deletion when the answer is "this was useful once." Update an
+existing skill when the answer is "same trigger, sharper behavior." Add a skill
+only for a separate trigger, repeatable workflow, and lower total routing cost.
 
 ## Output Shape
 
-Before editing, report the decision in this shape:
+Before editing, report:
 
 ```txt
 Instruction sentence:
@@ -83,12 +68,3 @@ Decision:
 Why this reduces complexity:
   ...
 ```
-
-## Final Checks
-
-When edits land:
-
-1. Run `bun x --package skills skills add /Users/braden/Code/epicenter/.agents/skills --skill <skill-name> --list` for changed or added skills.
-2. Run `git diff --check` on touched instruction files.
-3. Check touched prose against the `writing-voice` punctuation rubric.
-4. Stage specific files only when the user asks.

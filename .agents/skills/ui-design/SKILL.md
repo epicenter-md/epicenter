@@ -1,6 +1,6 @@
 ---
 name: ui-design
-description: 'UI design and component-system collapse hub for Epicenter interfaces. Use when designing, implementing, polishing, redesigning, or reviewing visible UI; choosing @epicenter/ui components; changing packages/ui; building Svelte state surfaces; or replacing class-heavy markup, arbitrary Tailwind values, custom colors, and local interface primitives. Every meaningful UI change preserves the user-visible objective while challenging inherited structure and collapsing toward shared primitives. Not for a tiny CSS-only repair unless it reveals a broader pattern.'
+description: 'Design, explore, implement, polish, redesign, and review Epicenter interfaces from product direction through component-system collapse. Use when co-designing a screen, asking "what do other apps do", comparing UI directions or comparable apps, turning a rough feature idea into a buildable Svelte surface, choosing @epicenter/ui components, changing packages/ui, or replacing class-heavy markup and local interface primitives. Not for a tiny CSS-only repair unless it reveals a broader pattern.'
 metadata:
   author: epicenter
   version: '1.0'
@@ -20,7 +20,10 @@ implementation lineage and upstream grounding, not as an app import path.
 
 ## Canonical Path
 
-1. Name the user-visible objective in one concrete sentence.
+1. Name the user-visible objective in one concrete sentence. When the product
+   direction is unsettled, read
+   [references/direction-discovery.md](references/direction-discovery.md) before
+   choosing the composition.
 2. Read the current and neighboring surfaces. Inventory the workflow, hierarchy,
    accessibility, important states, and recognizable product intent that matter.
 3. Sketch the simplest greenfield composition using the natural anatomy of
@@ -89,6 +92,11 @@ details that serve the chosen direction.
 
 ## References
 
+- Read [references/direction-discovery.md](references/direction-discovery.md)
+  when the user wants to co-design, compare directions, or turn a rough UI idea
+  into a buildable surface.
+- Read [references/comparable-apps.md](references/comparable-apps.md) when the
+  design question depends on category fit or what other apps do.
 - Read [references/component-system.md](references/component-system.md) for every
   meaningful Epicenter product UI implementation or review. It owns collapse
   smells and exceptions, then routes exact component and package mechanics to
@@ -104,7 +112,6 @@ details that serve the chosen direction.
 - `styling` owns CSS, Tailwind, spacing, wrappers, overflow, and scroll traps.
 - `svelte` owns component structure, runes, lifecycle, and state mechanics.
 - `tanstack-table` owns table state, columns, sorting, and row identity.
-- `co-design` owns interactive exploration before a product direction is chosen.
 - `web-design-guidelines` owns an explicit external standards or accessibility audit.
 - `writing-voice` owns visible interface copy and tone.
 

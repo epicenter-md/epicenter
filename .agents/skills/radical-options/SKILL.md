@@ -18,7 +18,7 @@ migration strategy. Use [one-sentence-test](../one-sentence-test/SKILL.md) to
 name the system before auditing it. Use
 [asymmetric-wins](../asymmetric-wins/SKILL.md) for the refuse-one-shape-to-
 delete-a-code-family decision. Use
-[approachability-audit](../approachability-audit/SKILL.md) when the problem is
+[first-read-review](../first-read-review/SKILL.md) when the problem is
 mostly first-read clarity.
 
 ## The Ritual

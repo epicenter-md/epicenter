@@ -36,7 +36,7 @@ before applying. This skill delegates review, never execution.
 Load only the relevant local skills before reviewing:
 
 - `typescript` for type ownership, local shape copies, and discriminated unions
-- `approachability-audit` for first-read clarity
+- `first-read-review` for first-read clarity
 - `refactoring` for caller counts and helper inlining
 - `greenfield-clean-breaks` when the user says "greenfield", "no users",
   "clean break", "refuse compatibility", asks whether old behavior can be

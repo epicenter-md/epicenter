@@ -141,13 +141,13 @@ Do not rely blindly on Bun inline dependency auto-install behavior inside this m
 
 ## Concrete Examples
 
-Should trigger `skill-creator`:
+Should trigger `agent-instructions`:
 
 - "Write a skill for reviewing Svelte accessibility in this repo."
 - "Improve the workspace-api skill description so it triggers less often."
 - "Should this AGENTS.md rule become a skill or stay global?"
 
-Should not trigger `skill-creator`:
+Should not trigger `agent-instructions`:
 
 - "Install the TypeScript skill globally."
 - "Write a README for the auth package."

@@ -11,7 +11,7 @@ const phrase = process.argv.slice(2).join(' ').trim();
 
 if (!phrase) {
 	console.error(
-		'Usage: bun run .agents/skills/skill-creator/scripts/audit-routing-collisions.ts "trigger phrase"',
+		'Usage: bun run .agents/skills/agent-instructions/scripts/audit-routing-collisions.ts "trigger phrase"',
 	);
 	process.exit(2);
 }

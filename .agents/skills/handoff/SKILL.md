@@ -149,4 +149,4 @@ Stop after:
   a blocker list with the smallest remaining decisions
 ```
 
-For a `/goal` one-liner, use [agent-goal](../agent-goal/SKILL.md). For a human-facing progress summary, use [progress-summary](../progress-summary/SKILL.md).
+For a `/goal` one-liner, use [agent-goal](../agent-goal/SKILL.md). A human-facing progress summary is an ordinary response grounded in the branch and session state, not a separate handoff artifact.

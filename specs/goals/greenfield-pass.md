@@ -145,7 +145,7 @@ exist; ignore any that do not:
 - `collapse-pass` (continuous indirection reduction)
 - `refactoring` (per-change mechanics)
 - `post-implementation-review` (second-read pass after edits)
-- `approachability-audit` (first-read sanity check for new readers)
+- `first-read-review` (first-read sanity check for new readers)
 
 ## Output shape
 

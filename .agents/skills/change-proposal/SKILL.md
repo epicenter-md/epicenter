@@ -42,7 +42,7 @@ Rules:
 
 ### 2. ASCII Architecture Diagrams
 
-Show how components relate before and after the change. Use the characters from [progress-summary](../progress-summary/SKILL.md): `┌ ┐ └ ┘ ─ │ ├ ┤ ┬ ┴ ┼ ▼ ▲ ──→ ←──`
+Show how components relate before and after the change. Use these characters: `┌ ┐ └ ┘ ─ │ ├ ┤ ┬ ┴ ┼ ▼ ▲ ──→ ←──`
 
 **Before:**
 ```

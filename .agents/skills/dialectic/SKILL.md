@@ -28,7 +28,7 @@ positive synthesis
   asymmetric refusals.
 - Use [grill-me](../grill-me/SKILL.md) instead when a plan already exists and the
   job is to interrogate its decision tree.
-- Use [co-design](../co-design/SKILL.md) for UI-specific product design that must
+- Use [ui-design](../ui-design/SKILL.md) for UI-specific product design that must
   become a buildable interface.
 
 ## Establish The Frame
