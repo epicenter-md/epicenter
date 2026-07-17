@@ -1,6 +1,6 @@
-import { canonicalJson } from '@epicenter/row-sync';
+import { canonicalJson, sha256Hex } from '@epicenter/row-sync';
 import type { PrincipalId } from '@epicenter/identity';
-import { sha256Hex } from '../shared/sha256.js';
+
 
 export type WorkspaceAccount<TTransport> = {
 	/**

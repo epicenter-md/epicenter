@@ -16,7 +16,7 @@ Singleton reactive state that stays in sync with the application. Unlike the rpc
 
 ### `settings.svelte.ts`
 
-Synced workspace settings backed by one lazily opened key-value document. Settings here roam across devices through document sync. A SvelteMap provides per-key reactivity while product defaults remain release-local application policy.
+Synced workspace settings backed by the canonical workspace KV lens (ADR-0130). Settings roam across devices through row sync. A SvelteMap provides per-key reactivity while product defaults remain release-local application policy.
 
 ```typescript
 import { settings } from '$lib/state/settings.svelte';

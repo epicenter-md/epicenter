@@ -8,7 +8,7 @@
  * forwarding the guard's typed error to `c.json`, and pushing after-response
  * settlement/sync work onto the queue from `@epicenter/server`. Those ops
  * return a `Result` (they never reject) and the adapter logs any provider
- * failure at its source, so a failed finalize or storage sync is recorded
+ * failure at its source, so a failed finalize is recorded
  * rather than silently swallowed by the queue's `Promise.allSettled`, with no
  * separate settlement wrapper needed.
  *

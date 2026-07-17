@@ -1,6 +1,6 @@
-import type { SqliteValue } from '@epicenter/row-sync';
+import { sha256Hex, type SqliteValue } from '@epicenter/row-sync';
 import type { Static, TSchema } from 'typebox';
-import { sha256Hex } from '../shared/sha256.js';
+
 import {
 	accountPersistenceKey,
 	devicePersistenceKey,

@@ -35,9 +35,10 @@ baseline scan (ADR-0136).
 
 ## Exports
 
-- `@epicenter/row-sync`: protocol schemas, parsers, admission limits,
-  `foldFields`, `openRowAuthority`, the round digest, and the `RowSyncSqlite`
-  contract.
+- `@epicenter/row-sync`: protocol parsers, admission limits, `foldFields`,
+  `openRowAuthority`, the round digest, and the `RowSyncSqlite` contract.
+  Untrusted bytes enter through the parsers; the raw TypeBox schemas stay
+  internal.
 - `@epicenter/row-sync/browser`: sqlite.org OO1 adapter.
 - `@epicenter/row-sync/bun`: `bun:sqlite` adapter.
 - `@epicenter/row-sync/durable-object`: SQLite-backed Durable Object adapter.

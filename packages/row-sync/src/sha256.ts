@@ -5,7 +5,7 @@
  * transactions in browsers, workers, and Bun alike; WebCrypto's digest is
  * async and `node:crypto` is not isomorphic, so this package carries the one
  * standard primitive the wire needs. FIPS 180-4, no options, no streaming:
- * canonical command arrays are bounded JSON strings.
+ * canonical intent arrays and persistence keys are bounded strings.
  *
  * Verified against NIST vectors in `sha256.test.ts`.
  */

@@ -8,7 +8,3 @@ export {
 	whisperingSettingEntries,
 	whisperingWorkspace,
 } from './definition';
-export {
-	repairRecordingSourceId,
-	type WhisperingWorkspace,
-} from './repair';

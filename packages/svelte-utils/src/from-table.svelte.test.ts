@@ -6,7 +6,7 @@ import type {
 } from '@epicenter/workspace';
 import { TableNewerWriterError, TableParseError } from '@epicenter/workspace';
 import { Err, Ok } from 'wellcrafted/result';
-import { fromTable, type ObservableTable } from './from-table.svelte.js';
+import { fromTable } from './from-table.svelte.js';
 
 // `bun test` runs `.svelte.ts` modules without the Svelte compiler, so the runes
 // the source uses are plain globals here. `$derived.by` is stubbed as a proxy
@@ -167,23 +167,4 @@ test('reads are live across every classification transition', () => {
 	store.set('a', row('a', 'fixed'));
 	expect(entries.byId('a')?.name).toBe('fixed');
 	expect(entries.newerWriter).toEqual([]);
-});
-
-test('SQLite table view reads list and point values without legacy issue buckets', () => {
-	type SqliteRow = { id: string; name: string };
-	const store = new Map<string, SqliteRow>();
-	const table: ObservableTable<SqliteRow> = {
-		get: (id) => store.get(id) ?? null,
-		list: () => [...store.values()],
-		observe: () => () => {},
-	};
-	const entries = fromTable(table);
-
-	expect(entries.all).toEqual([]);
-	store.set('a', { id: 'a', name: 'Ada' });
-	expect(entries.all).toEqual([{ id: 'a', name: 'Ada' }]);
-	expect(entries.byId('a')?.name).toBe('Ada');
-	expect(entries.byId('missing')).toBeUndefined();
-	expect('nonconforming' in entries).toBeFalse();
-	expect('newerWriter' in entries).toBeFalse();
 });

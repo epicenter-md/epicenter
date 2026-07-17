@@ -72,7 +72,7 @@ const KeyBindingSchema = Type.Object({
 	keys: Type.Array(Type.String()),
 });
 
-/** Release-local validation for the one lazily opened settings document. */
+/** Release-local validation for the workspace KV settings lens (ADR-0130). */
 export const whisperingSettingEntries = {
 	'sound.manualStart': field.boolean(),
 	'sound.manualStop': field.boolean(),

@@ -11,9 +11,10 @@ import { dirname, join, resolve } from 'node:path';
 import {
 	RESERVED_KV_ROW_ID,
 	RESERVED_KV_TABLE,
+	sha256Hex,
 } from '@epicenter/row-sync';
 import { createBunSqliteAdapter } from '@epicenter/row-sync/bun';
-import { sha256Hex } from '../shared/sha256.js';
+
 import {
 	accountPersistenceKey,
 	devicePersistenceKey,
@@ -161,15 +162,12 @@ function createBunRuntimeWithPersistence({
 						for (const listener of baselineListeners) listener();
 					},
 				});
-				let activeSynchronization: Promise<void> | undefined;
+				let activeSynchronization: Promise<unknown> | undefined;
 				const synchronize = (): void => {
 					if (ownerDisposed) return;
-					const pending = replica
-						.synchronize()
-						.then(() => undefined)
-						.catch((cause) => {
-							if (!signal.aborted) reportSyncError(cause);
-						});
+					const pending = replica.synchronize().catch((cause) => {
+						if (!signal.aborted) reportSyncError(cause);
+					});
 					const synchronization = pending.finally(() => {
 						if (activeSynchronization === synchronization) {
 							activeSynchronization = undefined;

@@ -9,7 +9,11 @@
 import { expect, test } from 'bun:test';
 import { asPrincipalId } from '@epicenter/identity';
 import type { RecordsPartition, StorageObservation } from '@epicenter/server';
-import { createStorageService, type EnrollmentResponse } from './service.js';
+import {
+	type EnrollmentResponse,
+	issueStorageEnrollment,
+	type StorageIssuanceDependencies,
+} from './service.js';
 
 const principalId = asPrincipalId('alice');
 const target: RecordsPartition = { principalId, workspaceId: 'target' };
@@ -35,7 +39,7 @@ function setup({
 	}));
 	const currentSizes = new Map(Object.entries(sizes));
 
-	const service = createStorageService({
+	const dependencies = {
 		async listObservations(receivedPrincipalId) {
 			events.push(`list:${receivedPrincipalId}`);
 			if (listFailure) throw listFailure;
@@ -73,8 +77,8 @@ function setup({
 			if (allowanceFailure) throw allowanceFailure;
 			return currentIncludedBytes;
 		},
-		reportError: (message) => reportedErrors.push(message),
-	});
+		reportError: (message: string) => reportedErrors.push(message),
+	} satisfies StorageIssuanceDependencies;
 
 	let issues = 0;
 	const enroll = async (): Promise<EnrollmentResponse> => {
@@ -87,7 +91,10 @@ function setup({
 	};
 
 	return {
-		service,
+		issueEnrollment: (
+			partition: RecordsPartition,
+			enroll: () => Promise<EnrollmentResponse>,
+		) => issueStorageEnrollment(dependencies, partition, enroll),
 		enroll,
 		events,
 		reportedErrors,
@@ -120,7 +127,7 @@ test('an over-limit unseen workspace creates no target state', async () => {
 		sizes: { existing: 100, target: 7 },
 	});
 
-	expect(await fixture.service.issueEnrollment(target, fixture.enroll)).toEqual(
+	expect(await fixture.issueEnrollment(target, fixture.enroll)).toEqual(
 		{ result: 'enrollment-refused' },
 	);
 	expect(fixture.events).toEqual([
@@ -144,7 +151,7 @@ test('an admitted unseen workspace is registered before issuance without authori
 	});
 
 	expect(
-		await fixture.service.issueEnrollment(target, fixture.enroll),
+		await fixture.issueEnrollment(target, fixture.enroll),
 	).toMatchObject({ result: 'enrolled' });
 	expect(fixture.events).toEqual([
 		'list:alice',
@@ -165,7 +172,7 @@ test('usage exactly equal to the allowance refuses enrollment', async () => {
 		includedBytes: 80,
 	});
 
-	expect(await fixture.service.issueEnrollment(target, fixture.enroll)).toEqual(
+	expect(await fixture.issueEnrollment(target, fixture.enroll)).toEqual(
 		{ result: 'enrollment-refused' },
 	);
 	expect(fixture.events).not.toContain('read:target');
@@ -182,7 +189,7 @@ test('registered workspaces refresh while blobs retain their cached absolute', a
 		includedBytes: 90,
 	});
 
-	expect(await fixture.service.issueEnrollment(target, fixture.enroll)).toEqual(
+	expect(await fixture.issueEnrollment(target, fixture.enroll)).toEqual(
 		{ result: 'enrollment-refused' },
 	);
 	expect(fixture.events).not.toContain('read:account');
@@ -200,7 +207,7 @@ test('a registered target refreshes once and is not materialized again', async (
 	});
 
 	expect(
-		await fixture.service.issueEnrollment(target, fixture.enroll),
+		await fixture.issueEnrollment(target, fixture.enroll),
 	).toMatchObject({ result: 'enrolled' });
 	expect(
 		fixture.events.filter((event) => event === 'read:target'),
@@ -219,12 +226,12 @@ test('falling below the allowance admits the next attempt', async () => {
 		sizes: { existing: 100, target: 7 },
 	});
 
-	expect(await fixture.service.issueEnrollment(target, fixture.enroll)).toEqual(
+	expect(await fixture.issueEnrollment(target, fixture.enroll)).toEqual(
 		{ result: 'enrollment-refused' },
 	);
 	fixture.sizes.set('existing', 99);
 	expect(
-		await fixture.service.issueEnrollment(target, fixture.enroll),
+		await fixture.issueEnrollment(target, fixture.enroll),
 	).toMatchObject({ result: 'enrolled' });
 	expect(fixture.issues()).toBe(1);
 });
@@ -239,7 +246,7 @@ test('policy failures return unavailable before target contact or issuance', asy
 		});
 		fixture[fail](new Error(fail));
 
-		expect(await fixture.service.issueEnrollment(target, fixture.enroll)).toBe(
+		expect(await fixture.issueEnrollment(target, fixture.enroll)).toBe(
 			'unavailable',
 		);
 		expect(fixture.events).not.toContain('read:target');
@@ -252,7 +259,7 @@ test('target registration failure is unavailable before authority contact or rep
 	const fixture = setup({ sizes: { target: 7 } });
 	fixture.failUpsert(new Error('postgres unavailable'));
 
-	expect(await fixture.service.issueEnrollment(target, fixture.enroll)).toBe(
+	expect(await fixture.issueEnrollment(target, fixture.enroll)).toBe(
 		'unavailable',
 	);
 	expect(fixture.events).not.toContain('read:target');
@@ -264,7 +271,7 @@ test('authority enrollment failures are not mislabeled as policy outages', async
 	const authorityError = new TypeError('invalid enrollment');
 
 	expect(
-		fixture.service.issueEnrollment(target, async () => {
+		fixture.issueEnrollment(target, async () => {
 			throw authorityError;
 		}),
 	).rejects.toBe(authorityError);

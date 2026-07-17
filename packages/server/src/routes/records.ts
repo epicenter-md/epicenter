@@ -3,8 +3,8 @@ import {
 	parseBaselineScanRequest,
 	parseEnrollRequest,
 	parseSyncRequest,
+	requestRefusal,
 	ROW_SYNC_ADMISSION_LIMITS,
-	ROW_SYNC_PROTOCOL_MAJOR,
 } from '@epicenter/row-sync';
 import { type Context, Hono, type MiddlewareHandler } from 'hono';
 import type { Records, RecordsPartition } from '../records/contracts.js';
@@ -96,9 +96,10 @@ function createRecordsApp<E extends Env>(
 		.post(`${RECORDS_ROUTE}/enroll`, async (c) => {
 			const parsed = await parseJson(c, parseEnrollRequest);
 			if (!parsed.ok) return invalidRequest(c, parsed.reason);
-			if (parsed.value.protocolMajor !== ROW_SYNC_PROTOCOL_MAJOR) {
-				return c.json({ result: 'protocol-mismatch' as const });
-			}
+			// Refuse a dead protocol before spending capability issuance work;
+			// the authority would refuse identically (ADR-0131).
+			const refusal = requestRefusal(parsed.value);
+			if (refusal) return c.json({ result: refusal });
 			try {
 				const recordsPartition = partition(c);
 				const enroll = () =>

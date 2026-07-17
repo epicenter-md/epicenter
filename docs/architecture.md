@@ -27,7 +27,7 @@ policy stays in the app that can name it.
 | MIDDLEWARE                                                                 |
 |                                                                            |
 | @epicenter/svelte      @epicenter/filesystem                               |
-| @epicenter/skills      app-specific desktop and browser adapters           |
+| @epicenter/skills      app-owned runtime composition per environment       |
 +----------------------------------------------------------------------------+
                                       |
                                       v
