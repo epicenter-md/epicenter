@@ -23,7 +23,8 @@ import {
 	type DurableObjectSqliteStorage,
 } from './adapters/durable-object.js';
 import { openRecordAuthority } from './authority.js';
-import { type PushRequest, RECORD_SYNC_PROTOCOL_MAJOR } from './protocol.js';
+import { RECORD_SYNC_PROTOCOL_MAJOR, type SyncRequest } from './protocol.js';
+import { recordRoundDigest } from './round-digest.js';
 import { isValidSnapshotChunk, isValidSnapshotManifest } from './snapshot.js';
 import type { RecordSyncSqlite, SqliteValue } from './sqlite.js';
 
@@ -114,37 +115,36 @@ const adapters: [name: string, open: OpenDatabase][] = [
 	],
 ];
 
-function batch(): PushRequest {
+function round(): SyncRequest {
+	const commands = [
+		{
+			kind: 'createRow' as const,
+			table: 'skills',
+			rowId: 'skill-1',
+			value: { title: 'Initial', unknown: { preserved: true } },
+		},
+		{
+			kind: 'patchRow' as const,
+			table: 'skills',
+			rowId: 'skill-1',
+			set: { title: 'Updated', nullable: null },
+			unset: [],
+		},
+	];
 	return {
 		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		kind: 'push',
-		actorId: 'actor-a',
-		mutations: [
-			{
-				actorSequence: 1,
-				command: {
-					kind: 'createRow',
-					table: 'skills',
-					rowId: 'skill-1',
-					value: { title: 'Initial', unknown: { preserved: true } },
-				},
-			},
-			{
-				actorSequence: 2,
-				command: {
-					kind: 'patchRow',
-					table: 'skills',
-					rowId: 'skill-1',
-					set: { title: 'Updated', nullable: null },
-					unset: [],
-				},
-			},
-		],
+		kind: 'sync',
+		token: { replicaId: 'replica-a', acceptedRound: 0, checkpoint: 0 },
+		sealedRound: {
+			round: 1,
+			requestDigest: recordRoundDigest(commands),
+			commands,
+		},
 	};
 }
 
 for (const [name, open] of adapters) {
-	test(`${name}: atomic push publishes current state and snapshot`, async () => {
+	test(`${name}: atomic round folds into current state and snapshot`, async () => {
 		const { database, close } = open();
 		try {
 			database.run('CREATE TABLE transaction_probe(value TEXT NOT NULL)');
@@ -163,22 +163,11 @@ for (const [name, open] of adapters) {
 			).toBe(0);
 
 			const authority = openRecordAuthority({ database, sha256 });
-			expect(authority.push(batch())).toMatchObject({
-				ok: true,
-				acceptance: 'accepted',
-			});
-			expect(
-				authority.pull({
-					protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-					kind: 'pull',
-					cursor: 0,
-					limit: 100,
-				}),
-			).toEqual({
-				kind: 'pull',
+			expect(authority.sync(round())).toEqual({
+				kind: 'sync',
 				ok: true,
 				snapshotRequired: false,
-				fromCursor: 0,
+				token: { replicaId: 'replica-a', acceptedRound: 1, checkpoint: 2 },
 				entries: [
 					{
 						kind: 'row',
@@ -192,7 +181,6 @@ for (const [name, open] of adapters) {
 						lastServerSequence: 2,
 					},
 				],
-				newCursor: 2,
 				hasMore: false,
 			});
 

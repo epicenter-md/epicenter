@@ -9,17 +9,30 @@ import type {
 /** Shared ceilings applied before any record-sync storage adapter. */
 export const RECORD_SYNC_ADMISSION_LIMITS = {
 	identifierBytes: 512,
-	mutationsPerPush: 64,
-	stateEntriesPerPull: 64,
+	commandsPerRound: 64,
+	stateEntriesPerPage: 64,
 	unsetKeysPerCommand: 128,
 	jsonDepth: 16,
 	propertiesPerObject: 1_024,
 	encodedCommandBytes: 256 * 1024,
 	encodedRowBytes: 508 * 1024,
+	/** The reserved KV record's aggregate cap (ADR-0132). */
+	encodedKvAggregateBytes: 64 * 1024,
 	encodedSnapshotChunkBytes: 512 * 1024,
-	encodedPushBytes: 768 * 1024,
-	encodedPullBytes: 8 * 1024 * 1024,
+	encodedRoundBytes: 768 * 1024,
+	encodedPageBytes: 8 * 1024 * 1024,
 } as const;
+
+/**
+ * The one runtime-reserved record address: the workspace KV aggregate
+ * (ADR-0132). `patchRow` here folds from `{}`; row lifecycle is inadmissible.
+ */
+export const RESERVED_KV_TABLE = '__epicenter_kv';
+export const RESERVED_KV_ROW_ID = 'workspace';
+
+export function isReservedKvAddress(table: string, rowId: string): boolean {
+	return table === RESERVED_KV_TABLE && rowId === RESERVED_KV_ROW_ID;
+}
 
 const textEncoder = new TextEncoder();
 
@@ -124,11 +137,21 @@ export function isAdmissibleStateEntry(entry: StateEntry): boolean {
 	) {
 		return false;
 	}
-	return (
-		entry.kind === 'deletion' ||
-		(isAdmissibleJsonObject(entry.value) &&
-			encodedJsonBytes(entry) <= RECORD_SYNC_ADMISSION_LIMITS.encodedRowBytes)
-	);
+	switch (entry.kind) {
+		case 'deletion':
+			return true;
+		case 'bodyUpdate':
+			return (
+				entry.update.length > 0 &&
+				encodedJsonBytes(entry) <=
+					RECORD_SYNC_ADMISSION_LIMITS.encodedCommandBytes
+			);
+		case 'row':
+			return (
+				isAdmissibleJsonObject(entry.value) &&
+				encodedJsonBytes(entry) <= RECORD_SYNC_ADMISSION_LIMITS.encodedRowBytes
+			);
+	}
 }
 
 export function isAdmissibleCommand(command: RecordCommand): boolean {
@@ -138,9 +161,11 @@ export function isAdmissibleCommand(command: RecordCommand): boolean {
 	) {
 		return false;
 	}
+	const reserved = isReservedKvAddress(command.table, command.rowId);
 	switch (command.kind) {
 		case 'createRow':
 			return (
+				!reserved &&
 				isAdmissibleJsonObject(command.value) &&
 				encodedJsonBytes(command) <=
 					RECORD_SYNC_ADMISSION_LIMITS.encodedCommandBytes
@@ -163,8 +188,16 @@ export function isAdmissibleCommand(command: RecordCommand): boolean {
 		}
 		case 'deleteRow':
 			return (
+				!reserved &&
 				encodedJsonBytes(command) <=
-				RECORD_SYNC_ADMISSION_LIMITS.encodedCommandBytes
+					RECORD_SYNC_ADMISSION_LIMITS.encodedCommandBytes
+			);
+		case 'bodyAppend':
+			return (
+				!reserved &&
+				command.update.length > 0 &&
+				encodedJsonBytes(command) <=
+					RECORD_SYNC_ADMISSION_LIMITS.encodedCommandBytes
 			);
 	}
 }

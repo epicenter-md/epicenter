@@ -1,27 +1,24 @@
 import {
 	encodedJsonBytes,
-	isAdmissibleSnapshotRow,
 	RECORD_SYNC_ADMISSION_LIMITS,
 } from './admission.js';
-import { recordBatchChecksum } from './batch-checksum.js';
-import { canonicalJson } from './canonical-json.js';
 import { foldRow } from './fold.js';
 import type {
 	JsonObject,
-	PullRequest,
-	PullResponse,
-	PushReceipt,
-	PushRequest,
-	PushResponse,
 	RecordCommand,
+	SnapshotBodyUpdate,
 	SnapshotChunk,
 	SnapshotChunkRequest,
 	SnapshotChunkResponse,
 	SnapshotManifest,
 	SnapshotRow,
 	StateEntry,
+	SyncRequest,
+	SyncResponse,
+	SyncToken,
 } from './protocol.js';
 import { RECORD_SYNC_PROTOCOL_MAJOR, requestRefusal } from './protocol.js';
+import { recordRoundDigest } from './round-digest.js';
 import {
 	createSnapshotChunks,
 	createSnapshotManifest,
@@ -29,7 +26,14 @@ import {
 } from './snapshot.js';
 import type { RecordSyncSqlite } from './sqlite.js';
 
-const STORAGE_VERSION = 1;
+const STORAGE_VERSION = 2;
+
+/**
+ * Merge one row's ordered opaque body updates into one baseline update
+ * (ADR-0133). Injected so the sync core stays CRDT-library-free; an authority
+ * without it keeps an unbounded per-row log between snapshots.
+ */
+export type MergeBodyUpdates = (updates: Uint8Array[]) => Uint8Array;
 
 type StoredMeta = {
 	storage_version: number;
@@ -39,18 +43,13 @@ type StoredMeta = {
 	snapshot_generation: number;
 };
 
-type StoredActor = {
-	high_water: number;
-	batch_json: string | null;
-	batch_checksum: string | null;
-	first_actor_sequence: number | null;
-	last_actor_sequence: number | null;
-	first_server_sequence: number | null;
-	last_server_sequence: number | null;
+type StoredReplica = {
+	accepted_round: number;
+	request_digest: string;
 };
 
 type StoredState = {
-	kind: 'row' | 'deletion';
+	kind: 'row' | 'deletion' | 'bodyUpdate';
 	table_name: string;
 	row_id: string;
 	value_json: string | null;
@@ -61,6 +60,7 @@ type StoredSnapshotChunk = {
 	generation: number;
 	chunk_index: number;
 	rows_json: string;
+	bodies_json: string;
 	checksum: string;
 };
 
@@ -68,7 +68,7 @@ type SnapshotCapture = {
 	generation: number;
 	head: number;
 	rows: SnapshotRow[];
-	actorHighWater: Record<string, number>;
+	bodies: SnapshotBodyUpdate[];
 };
 
 function one<TRow extends Record<string, string | number | null>>(
@@ -81,21 +81,15 @@ function one<TRow extends Record<string, string | number | null>>(
 
 function initialize(database: RecordSyncSqlite): void {
 	database.transaction(() => {
-		const hasCurrentMeta = Boolean(
+		const hasLegacyStorage = Boolean(
 			one<{ present: number }>(
 				database,
 				`SELECT 1 AS present FROM sqlite_master
-				 WHERE type = 'table' AND name = 'record_sync_meta'`,
+				 WHERE type = 'table'
+				   AND name IN ('record_sync_family', 'record_sync_actors')`,
 			),
 		);
-		const hasLegacyAuthority = Boolean(
-			one<{ present: number }>(
-				database,
-				`SELECT 1 AS present FROM sqlite_master
-				 WHERE type = 'table' AND name = 'record_sync_family'`,
-			),
-		);
-		if (!hasCurrentMeta && hasLegacyAuthority) {
+		if (hasLegacyStorage) {
 			throw new Error('Incompatible legacy record-sync authority storage');
 		}
 		database.run(`
@@ -107,15 +101,10 @@ function initialize(database: RecordSyncSqlite): void {
 				tombstone_floor INTEGER NOT NULL,
 				snapshot_generation INTEGER NOT NULL
 			);
-			CREATE TABLE IF NOT EXISTS record_sync_actors (
-				actor_id TEXT PRIMARY KEY,
-				high_water INTEGER NOT NULL,
-				batch_json TEXT,
-				batch_checksum TEXT,
-				first_actor_sequence INTEGER,
-				last_actor_sequence INTEGER,
-				first_server_sequence INTEGER,
-				last_server_sequence INTEGER
+			CREATE TABLE IF NOT EXISTS record_sync_replicas (
+				replica_id TEXT PRIMARY KEY,
+				accepted_round INTEGER NOT NULL,
+				request_digest TEXT NOT NULL
 			);
 			CREATE TABLE IF NOT EXISTS record_sync_rows (
 				table_name TEXT NOT NULL,
@@ -134,6 +123,15 @@ function initialize(database: RecordSyncSqlite): void {
 			);
 			CREATE INDEX IF NOT EXISTS record_sync_deletions_sequence
 				ON record_sync_deletions(last_server_sequence);
+			CREATE TABLE IF NOT EXISTS record_sync_body_updates (
+				table_name TEXT NOT NULL,
+				row_id TEXT NOT NULL,
+				update_b64 TEXT NOT NULL,
+				last_server_sequence INTEGER NOT NULL,
+				PRIMARY KEY(table_name, row_id, last_server_sequence)
+			);
+			CREATE INDEX IF NOT EXISTS record_sync_body_updates_sequence
+				ON record_sync_body_updates(last_server_sequence);
 			CREATE TABLE IF NOT EXISTS record_sync_snapshot_manifest (
 				id INTEGER PRIMARY KEY CHECK(id = 1),
 				manifest_json TEXT NOT NULL
@@ -142,6 +140,7 @@ function initialize(database: RecordSyncSqlite): void {
 				chunk_index INTEGER PRIMARY KEY,
 				generation INTEGER NOT NULL,
 				rows_json TEXT NOT NULL,
+				bodies_json TEXT NOT NULL,
 				checksum TEXT NOT NULL
 			);
 		`);
@@ -194,32 +193,36 @@ function readRow(
 	return stored ? JSON.parse(stored.value_json) : undefined;
 }
 
-class CreateConflictError extends Error {}
-class RowTooLargeError extends Error {}
-
+/**
+ * Fold one admitted command at one server sequence. Never refuses: every
+ * outcome is an application or a deterministic no-op (ADR-0131). Returns
+ * whether the command applied, for optional diagnostics.
+ */
 function applyCommand(
 	database: RecordSyncSqlite,
 	command: RecordCommand,
 	serverSequence: number,
-): void {
-	const current = readRow(database, command.table, command.rowId);
-	if (command.kind === 'createRow' && current !== undefined) {
-		throw new CreateConflictError();
+): boolean {
+	if (command.kind === 'bodyAppend') {
+		// Only a live row accepts body updates; absence (never created, or
+		// dead forever) folds the append to a no-op (ADR-0133).
+		if (readRow(database, command.table, command.rowId) === undefined) {
+			return false;
+		}
+		database.run(
+			`INSERT INTO record_sync_body_updates(
+				table_name, row_id, update_b64, last_server_sequence
+			) VALUES (?, ?, ?, ?)`,
+			[command.table, command.rowId, command.update, serverSequence],
+		);
+		return true;
 	}
+	const current = readRow(database, command.table, command.rowId);
 	const result = foldRow(current, command);
 	switch (result.kind) {
-		case 'create-conflict':
-			throw new CreateConflictError();
 		case 'noop':
-			return;
-		case 'row': {
-			const row: SnapshotRow = {
-				table: command.table,
-				rowId: command.rowId,
-				value: result.value,
-				lastServerSequence: serverSequence,
-			};
-			if (!isAdmissibleSnapshotRow(row)) throw new RowTooLargeError();
+			return false;
+		case 'row':
 			database.run(
 				`INSERT INTO record_sync_rows(
 					table_name, row_id, value_json, last_server_sequence
@@ -239,8 +242,7 @@ function applyCommand(
 				 WHERE table_name = ? AND row_id = ?`,
 				[command.table, command.rowId],
 			);
-			return;
-		}
+			return true;
 		case 'deletion':
 			database.run(
 				`DELETE FROM record_sync_rows
@@ -255,30 +257,14 @@ function applyCommand(
 					last_server_sequence = excluded.last_server_sequence`,
 				[command.table, command.rowId, serverSequence],
 			);
+			// Death purges the body log; late appends fold to no-ops forever.
+			database.run(
+				`DELETE FROM record_sync_body_updates
+				 WHERE table_name = ? AND row_id = ?`,
+				[command.table, command.rowId],
+			);
+			return true;
 	}
-}
-
-function storedReceipt(
-	actorId: string,
-	actor: StoredActor,
-): PushReceipt | null {
-	if (
-		actor.batch_checksum === null ||
-		actor.first_actor_sequence === null ||
-		actor.last_actor_sequence === null ||
-		actor.first_server_sequence === null ||
-		actor.last_server_sequence === null
-	) {
-		return null;
-	}
-	return {
-		actorId,
-		batchChecksum: actor.batch_checksum,
-		firstActorSequence: actor.first_actor_sequence,
-		lastActorSequence: actor.last_actor_sequence,
-		firstServerSequence: actor.first_server_sequence,
-		lastServerSequence: actor.last_server_sequence,
-	};
 }
 
 function readManifest(database: RecordSyncSqlite): SnapshotManifest | null {
@@ -289,26 +275,58 @@ function readManifest(database: RecordSyncSqlite): SnapshotManifest | null {
 	return stored ? JSON.parse(stored.manifest_json) : null;
 }
 
-function pullPage({
-	cursor,
-	entries,
-	hasMore,
-	head,
-}: {
-	cursor: number;
-	entries: StateEntry[];
-	hasMore: boolean;
-	head: number;
-}): Extract<PullResponse, { ok: true; snapshotRequired: false }> {
-	return {
-		kind: 'pull',
-		ok: true,
-		snapshotRequired: false,
-		fromCursor: cursor,
-		entries,
-		newCursor: hasMore ? (entries.at(-1)?.lastServerSequence ?? cursor) : head,
-		hasMore,
-	};
+function collectEntries(
+	database: RecordSyncSqlite,
+	checkpoint: number,
+	limit: number,
+): StateEntry[] {
+	const stored = database.all<StoredState>(
+		`SELECT kind, table_name, row_id, value_json, last_server_sequence
+		 FROM (
+			SELECT 'row' AS kind, table_name, row_id, value_json,
+			       last_server_sequence
+			FROM record_sync_rows
+			UNION ALL
+			SELECT 'deletion' AS kind, table_name, row_id, NULL AS value_json,
+			       last_server_sequence
+			FROM record_sync_deletions
+			UNION ALL
+			SELECT 'bodyUpdate' AS kind, table_name, row_id, update_b64 AS value_json,
+			       last_server_sequence
+			FROM record_sync_body_updates
+		 )
+		 WHERE last_server_sequence > ?
+		 ORDER BY last_server_sequence, table_name, row_id
+		 LIMIT ?`,
+		[checkpoint, limit],
+	);
+	return stored.map((entry): StateEntry => {
+		switch (entry.kind) {
+			case 'row':
+				return {
+					kind: 'row',
+					table: entry.table_name,
+					rowId: entry.row_id,
+					value: JSON.parse(entry.value_json as string),
+					lastServerSequence: entry.last_server_sequence,
+				};
+			case 'deletion':
+				return {
+					kind: 'deletion',
+					table: entry.table_name,
+					rowId: entry.row_id,
+					lastServerSequence: entry.last_server_sequence,
+				};
+			case 'bodyUpdate':
+				return {
+					kind: 'bodyUpdate',
+					table: entry.table_name,
+					rowId: entry.row_id,
+					update: entry.value_json as string,
+					lastServerSequence: entry.last_server_sequence,
+				};
+		}
+	});
 }
 
 function captureSnapshot(database: RecordSyncSqlite): SnapshotCapture {
@@ -333,15 +351,38 @@ function captureSnapshot(database: RecordSyncSqlite): SnapshotCapture {
 					value: JSON.parse(stored.value_json),
 					lastServerSequence: stored.last_server_sequence,
 				})),
-			actorHighWater: Object.fromEntries(
-				database
-					.all<{ actor_id: string; high_water: number }>(
-						'SELECT actor_id, high_water FROM record_sync_actors ORDER BY actor_id',
-					)
-					.map((actor) => [actor.actor_id, actor.high_water]),
-			),
+			bodies: database
+				.all<{
+					table_name: string;
+					row_id: string;
+					update_b64: string;
+					last_server_sequence: number;
+				}>(
+					`SELECT table_name, row_id, update_b64, last_server_sequence
+					 FROM record_sync_body_updates
+					 ORDER BY table_name, row_id, last_server_sequence`,
+				)
+				.map((stored) => ({
+					table: stored.table_name,
+					rowId: stored.row_id,
+					update: stored.update_b64,
+					lastServerSequence: stored.last_server_sequence,
+				})),
 		};
 	});
+}
+
+function decodeBase64(value: string): Uint8Array {
+	const binary = atob(value);
+	const bytes = new Uint8Array(binary.length);
+	for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+	return bytes;
+}
+
+function encodeBase64(bytes: Uint8Array): string {
+	let binary = '';
+	for (const byte of bytes) binary += String.fromCharCode(byte);
+	return btoa(binary);
 }
 
 export type SnapshotPublicationOptions = { maxChunkBytes: number };
@@ -350,195 +391,152 @@ export type RecordAuthorityCompactionPolicy = SnapshotPublicationOptions & {
 	minimumRetainedSequences: number;
 };
 
-/** Open one schema-blind current-state authority over caller-owned SQLite. */
+/** Open one schema-blind fold-never-refuse authority over caller-owned SQLite. */
 export function openRecordAuthority({
 	database,
 	sha256,
+	mergeBodyUpdates,
 }: {
 	database: RecordSyncSqlite;
 	sha256: Sha256;
+	mergeBodyUpdates?: MergeBodyUpdates;
 }) {
 	initialize(database);
 
 	const authority = {
-		push(request: PushRequest): PushResponse {
+		/**
+		 * One exchange (ADR-0131): fold an optional sealed round exactly once,
+		 * then answer with ordered current-state pages from the caller's
+		 * checkpoint. Terminal verdicts: a digest mismatch on the accepted
+		 * round, or a round that is neither accepted nor its successor.
+		 */
+		sync(request: SyncRequest): SyncResponse {
 			const refusal = requestRefusal(request);
-			if (refusal) return { kind: 'push', ok: false, reason: refusal };
-			const canonicalBatch = canonicalJson(request);
-			const batchChecksum = recordBatchChecksum(request);
-			const first = request.mutations[0];
-			const last = request.mutations.at(-1);
-			if (!first || !last) throw new TypeError('Push must not be empty');
-			try {
-				return database.transaction(() => {
-					const actor = one<StoredActor>(
-						database,
-						`SELECT high_water, batch_json, batch_checksum,
-						        first_actor_sequence, last_actor_sequence,
-						        first_server_sequence, last_server_sequence
-						 FROM record_sync_actors WHERE actor_id = ?`,
-						[request.actorId],
-					) ?? {
-						high_water: 0,
-						batch_json: null,
-						batch_checksum: null,
-						first_actor_sequence: null,
-						last_actor_sequence: null,
-						first_server_sequence: null,
-						last_server_sequence: null,
-					};
-					if (first.actorSequence <= actor.high_water) {
-						const receipt = storedReceipt(request.actorId, actor);
-						return actor.batch_json === canonicalBatch && receipt
-							? { kind: 'push', ok: true, acceptance: 'retry', receipt }
-							: { kind: 'push', ok: false, reason: 'actor-fork' };
-					}
-					if (first.actorSequence !== actor.high_water + 1) {
-						return {
-							kind: 'push',
-							ok: false,
-							reason: 'actor-sequence-gap',
-						};
-					}
-					const meta = requireMeta(database);
-					const firstServerSequence = meta.server_sequence + 1;
-					for (const [index, mutation] of request.mutations.entries()) {
-						applyCommand(
-							database,
-							mutation.command,
-							firstServerSequence + index,
-						);
-					}
-					const lastServerSequence =
-						meta.server_sequence + request.mutations.length;
-					const receipt: PushReceipt = {
-						actorId: request.actorId,
-						batchChecksum,
-						firstActorSequence: first.actorSequence,
-						lastActorSequence: last.actorSequence,
-						firstServerSequence,
-						lastServerSequence,
-					};
-					database.run(
-						`INSERT INTO record_sync_actors(
-							actor_id, high_water, batch_json, batch_checksum,
-							first_actor_sequence, last_actor_sequence,
-							first_server_sequence, last_server_sequence
-						) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-						ON CONFLICT(actor_id) DO UPDATE SET
-							high_water = excluded.high_water,
-							batch_json = excluded.batch_json,
-							batch_checksum = excluded.batch_checksum,
-							first_actor_sequence = excluded.first_actor_sequence,
-							last_actor_sequence = excluded.last_actor_sequence,
-							first_server_sequence = excluded.first_server_sequence,
-							last_server_sequence = excluded.last_server_sequence`,
-						[
-							request.actorId,
-							last.actorSequence,
-							canonicalBatch,
-							batchChecksum,
-							first.actorSequence,
-							last.actorSequence,
-							firstServerSequence,
-							lastServerSequence,
-						],
-					);
-					database.run(
-						'UPDATE record_sync_meta SET server_sequence = ? WHERE id = 1',
-						[lastServerSequence],
-					);
-					return { kind: 'push', ok: true, acceptance: 'accepted', receipt };
-				});
-			} catch (error) {
-				if (error instanceof CreateConflictError) {
-					return { kind: 'push', ok: false, reason: 'create-conflict' };
-				}
-				if (error instanceof RowTooLargeError) {
-					return { kind: 'push', ok: false, reason: 'row-too-large' };
-				}
-				throw error;
+			if (refusal) return { kind: 'sync', ok: false, reason: refusal };
+			const round = request.sealedRound;
+			if (round && recordRoundDigest(round.commands) !== round.requestDigest) {
+				throw new TypeError('Sealed round digest does not match its commands');
 			}
-		},
-
-		pull(request: PullRequest): PullResponse {
-			const refusal = requestRefusal(request);
-			if (refusal) return { kind: 'pull', ok: false, reason: refusal };
 			return database.transaction(() => {
-				const meta = requireMeta(database);
-				if (request.cursor > meta.server_sequence) {
-					throw new TypeError('Pull cursor is ahead of the authority');
+				const facts = request.token;
+				// Validate the token before folding anything so a corrupt
+				// checkpoint can never roll back an accepted round.
+				if (facts.checkpoint > requireMeta(database).server_sequence) {
+					throw new TypeError('Sync checkpoint is ahead of the authority');
 				}
-				if (request.cursor < meta.tombstone_floor) {
+				const stored = one<StoredReplica>(
+					database,
+					`SELECT accepted_round, request_digest FROM record_sync_replicas
+					 WHERE replica_id = ?`,
+					[facts.replicaId],
+				) ?? { accepted_round: 0, request_digest: '' };
+
+				if (round) {
+					if (round.round === stored.accepted_round) {
+						// Retry of the accepted round: digest must match; nothing
+						// refolds and pages regenerate from current state.
+						if (round.requestDigest !== stored.request_digest) {
+							return {
+								kind: 'sync',
+								ok: false,
+								reason: 'replica-fork',
+							} as const;
+						}
+					} else if (round.round === stored.accepted_round + 1) {
+						const meta = requireMeta(database);
+						let serverSequence = meta.server_sequence;
+						for (const command of round.commands) {
+							serverSequence += 1;
+							applyCommand(database, command, serverSequence);
+						}
+						database.run(
+							'UPDATE record_sync_meta SET server_sequence = ? WHERE id = 1',
+							[serverSequence],
+						);
+						database.run(
+							`INSERT INTO record_sync_replicas(
+								replica_id, accepted_round, request_digest
+							) VALUES (?, ?, ?)
+							ON CONFLICT(replica_id) DO UPDATE SET
+								accepted_round = excluded.accepted_round,
+								request_digest = excluded.request_digest`,
+							[facts.replicaId, round.round, round.requestDigest],
+						);
+					} else {
+						// A round from the past (or a skipped future) proves a fork
+						// or a corrupted replica; one stored digest cannot judge it.
+						return {
+							kind: 'sync',
+							ok: false,
+							reason: 'replica-fork',
+						} as const;
+					}
+				}
+
+				const acceptedRound = round
+					? Math.max(stored.accepted_round, round.round)
+					: stored.accepted_round;
+				const meta = requireMeta(database);
+
+				// Round first, snapshot second: the fold above already happened.
+				if (facts.checkpoint < meta.tombstone_floor) {
 					const manifest = readManifest(database);
 					if (!manifest || manifest.head < meta.tombstone_floor) {
 						throw new Error('Tombstone floor has no covering snapshot');
 					}
 					return {
-						kind: 'pull',
+						kind: 'sync',
 						ok: true,
 						snapshotRequired: true,
+						resumeToken: {
+							replicaId: facts.replicaId,
+							acceptedRound,
+							checkpoint: manifest.head,
+						},
 						manifest,
-					};
+					} as const;
 				}
-				const stored = database.all<StoredState>(
-					`SELECT kind, table_name, row_id, value_json, last_server_sequence
-					 FROM (
-						SELECT 'row' AS kind, table_name, row_id, value_json,
-						       last_server_sequence
-						FROM record_sync_rows
-						UNION ALL
-						SELECT 'deletion' AS kind, table_name, row_id, NULL AS value_json,
-						       last_server_sequence
-						FROM record_sync_deletions
-					 )
-					 WHERE last_server_sequence > ?
-					 ORDER BY last_server_sequence, table_name, row_id
-					 LIMIT ?`,
-					[request.cursor, request.limit + 1],
+
+				const pageLimit =
+					request.pageLimit ??
+					RECORD_SYNC_ADMISSION_LIMITS.stateEntriesPerPage;
+				const stored2 = collectEntries(
+					database,
+					facts.checkpoint,
+					pageLimit + 1,
 				);
-				let entries: StateEntry[] = stored
-					.slice(0, request.limit)
-					.map((entry) =>
-						entry.kind === 'row'
-							? {
-									kind: 'row',
-									table: entry.table_name,
-									rowId: entry.row_id,
-									value: JSON.parse(entry.value_json as string),
-									lastServerSequence: entry.last_server_sequence,
-								}
-							: {
-									kind: 'deletion',
-									table: entry.table_name,
-									rowId: entry.row_id,
-									lastServerSequence: entry.last_server_sequence,
-								},
-					);
-				let hasMore = stored.length > entries.length;
-				let response = pullPage({
-					cursor: request.cursor,
+				let entries = stored2.slice(0, pageLimit);
+				let hasMore = stored2.length > entries.length;
+				const page = (): Extract<
+					SyncResponse,
+					{ ok: true; snapshotRequired: false }
+				> => ({
+					kind: 'sync',
+					ok: true,
+					snapshotRequired: false,
+					token: {
+						replicaId: facts.replicaId,
+						acceptedRound,
+						checkpoint: hasMore
+							? (entries.at(-1)?.lastServerSequence ?? facts.checkpoint)
+							: meta.server_sequence,
+					} satisfies SyncToken,
 					entries,
 					hasMore,
-					head: meta.server_sequence,
 				});
+				let response = page();
 				while (
 					encodedJsonBytes(response) >
-					RECORD_SYNC_ADMISSION_LIMITS.encodedPullBytes
+					RECORD_SYNC_ADMISSION_LIMITS.encodedPageBytes
 				) {
 					if (entries.length <= 1) {
 						throw new Error(
-							'One admitted state entry exceeds the pull byte limit',
+							'One admitted state entry exceeds the page byte limit',
 						);
 					}
 					entries = entries.slice(0, -1);
 					hasMore = true;
-					response = pullPage({
-						cursor: request.cursor,
-						entries,
-						hasMore,
-						head: meta.server_sequence,
-					});
+					response = page();
 				}
 				return response;
 			});
@@ -558,13 +556,13 @@ export function openRecordAuthority({
 			const chunks = await createSnapshotChunks(sha256, {
 				generation: capture.generation,
 				rows: capture.rows,
+				bodies: capture.bodies,
 				maxChunkBytes,
 			});
 			const manifest = await createSnapshotManifest(sha256, {
 				generation: capture.generation,
 				head: capture.head,
 				chunkChecksums: chunks.map((chunk) => chunk.checksum),
-				actorHighWater: capture.actorHighWater,
 			});
 			return database.transaction(() => {
 				const meta = requireMeta(database);
@@ -578,12 +576,13 @@ export function openRecordAuthority({
 				for (const chunk of chunks) {
 					database.run(
 						`INSERT INTO record_sync_snapshot_chunks(
-							chunk_index, generation, rows_json, checksum
-						) VALUES (?, ?, ?, ?)`,
+							chunk_index, generation, rows_json, bodies_json, checksum
+						) VALUES (?, ?, ?, ?, ?)`,
 						[
 							chunk.index,
 							chunk.generation,
 							JSON.stringify(chunk.rows),
+							JSON.stringify(chunk.bodies),
 							chunk.checksum,
 						],
 					);
@@ -602,6 +601,11 @@ export function openRecordAuthority({
 			});
 		},
 
+		/**
+		 * Raise the floor. Deletions at or below it are forgotten, and each
+		 * live row's covered body prefix merges into one baseline when a merge
+		 * function was injected (ADR-0133).
+		 */
 		compactDeletionsThrough(requestedFloor: number): number {
 			if (!Number.isSafeInteger(requestedFloor) || requestedFloor < 0) {
 				throw new TypeError('Compaction floor must be a non-negative integer');
@@ -618,6 +622,45 @@ export function openRecordAuthority({
 					'DELETE FROM record_sync_deletions WHERE last_server_sequence <= ?',
 					[floor],
 				);
+				if (mergeBodyUpdates) {
+					const keys = database.all<{ table_name: string; row_id: string }>(
+						`SELECT DISTINCT table_name, row_id FROM record_sync_body_updates
+						 WHERE last_server_sequence <= ?`,
+						[floor],
+					);
+					for (const key of keys) {
+						const covered = database.all<{
+							update_b64: string;
+							last_server_sequence: number;
+						}>(
+							`SELECT update_b64, last_server_sequence
+							 FROM record_sync_body_updates
+							 WHERE table_name = ? AND row_id = ?
+							   AND last_server_sequence <= ?
+							 ORDER BY last_server_sequence`,
+							[key.table_name, key.row_id, floor],
+						);
+						if (covered.length <= 1) continue;
+						const merged = encodeBase64(
+							mergeBodyUpdates(
+								covered.map((update) => decodeBase64(update.update_b64)),
+							),
+						);
+						const baselineSequence = covered.at(-1)!.last_server_sequence;
+						database.run(
+							`DELETE FROM record_sync_body_updates
+							 WHERE table_name = ? AND row_id = ?
+							   AND last_server_sequence <= ?`,
+							[key.table_name, key.row_id, floor],
+						);
+						database.run(
+							`INSERT INTO record_sync_body_updates(
+								table_name, row_id, update_b64, last_server_sequence
+							) VALUES (?, ?, ?, ?)`,
+							[key.table_name, key.row_id, merged, baselineSequence],
+						);
+					}
+				}
 				database.run(
 					'UPDATE record_sync_meta SET tombstone_floor = ? WHERE id = 1',
 					[floor],
@@ -663,7 +706,7 @@ export function openRecordAuthority({
 			}
 			const stored = one<StoredSnapshotChunk>(
 				database,
-				`SELECT generation, chunk_index, rows_json, checksum
+				`SELECT generation, chunk_index, rows_json, bodies_json, checksum
 				 FROM record_sync_snapshot_chunks WHERE chunk_index = ?`,
 				[request.index],
 			);
@@ -678,6 +721,7 @@ export function openRecordAuthority({
 				generation: stored.generation,
 				index: stored.chunk_index,
 				rows: JSON.parse(stored.rows_json),
+				bodies: JSON.parse(stored.bodies_json),
 				checksum: stored.checksum,
 			};
 			return { kind: 'snapshotChunk', ok: true, chunk };
@@ -713,12 +757,23 @@ export function openRecordAuthority({
 					        last_server_sequence AS lastServerSequence
 					 FROM record_sync_deletions ORDER BY table_name, row_id`,
 				),
-				actorHighWater: Object.fromEntries(
+				bodyLog: database.all<{
+					table: string;
+					rowId: string;
+					lastServerSequence: number;
+				}>(
+					`SELECT table_name AS "table", row_id AS rowId,
+					        last_server_sequence AS lastServerSequence
+					 FROM record_sync_body_updates
+					 ORDER BY table_name, row_id, last_server_sequence`,
+				),
+				replicaRounds: Object.fromEntries(
 					database
-						.all<{ actor_id: string; high_water: number }>(
-							'SELECT actor_id, high_water FROM record_sync_actors ORDER BY actor_id',
+						.all<{ replica_id: string; accepted_round: number }>(
+							`SELECT replica_id, accepted_round FROM record_sync_replicas
+							 ORDER BY replica_id`,
 						)
-						.map((actor) => [actor.actor_id, actor.high_water]),
+						.map((replica) => [replica.replica_id, replica.accepted_round]),
 				),
 			};
 		},

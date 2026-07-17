@@ -1,6 +1,7 @@
 import { encodedJsonBytes } from './admission.js';
 import { canonicalJson } from './canonical-json.js';
 import type {
+	SnapshotBodyUpdate,
 	SnapshotChunk,
 	SnapshotManifest,
 	SnapshotManifestBody,
@@ -14,64 +15,80 @@ export async function createSnapshotChunk(
 	generation: number,
 	index: number,
 	rows: SnapshotRow[],
+	bodies: SnapshotBodyUpdate[],
 ): Promise<SnapshotChunk> {
 	return {
 		generation,
 		index,
 		rows,
-		checksum: await sha256(canonicalJson({ generation, index, rows })),
+		bodies,
+		checksum: await sha256(canonicalJson({ generation, index, rows, bodies })),
 	};
 }
 
-/** Encode ordered current rows into byte-bounded snapshot chunks. */
+type StagedChunk = { rows: SnapshotRow[]; bodies: SnapshotBodyUpdate[] };
+
+/** Encode ordered current rows and body baselines into byte-bounded chunks. */
 export async function createSnapshotChunks(
 	sha256: Sha256,
 	{
 		generation,
 		rows: sourceRows,
+		bodies: sourceBodies = [],
 		maxChunkBytes,
 	}: {
 		generation: number;
 		rows: readonly SnapshotRow[];
+		bodies?: readonly SnapshotBodyUpdate[];
 		maxChunkBytes: number;
 	},
 ): Promise<SnapshotChunk[]> {
-	const pages: SnapshotRow[][] = [];
-	let rows: SnapshotRow[] = [];
-	for (const row of sourceRows) {
-		const candidate = [...rows, row];
-		const index = pages.length;
-		if (
-			encodedJsonBytes({
-				generation,
-				index,
-				rows: candidate,
-				checksum: '0'.repeat(64),
-			}) <= maxChunkBytes
-		) {
-			rows = candidate;
+	const items: (
+		| { kind: 'row'; row: SnapshotRow }
+		| { kind: 'body'; body: SnapshotBodyUpdate }
+	)[] = [
+		...sourceRows.map((row) => ({ kind: 'row' as const, row })),
+		...sourceBodies.map((body) => ({ kind: 'body' as const, body })),
+	];
+	const pages: StagedChunk[] = [];
+	let staged: StagedChunk = { rows: [], bodies: [] };
+
+	const encodedBytes = (chunk: StagedChunk, index: number) =>
+		encodedJsonBytes({
+			generation,
+			index,
+			rows: chunk.rows,
+			bodies: chunk.bodies,
+			checksum: '0'.repeat(64),
+		});
+
+	for (const item of items) {
+		const candidate: StagedChunk =
+			item.kind === 'row'
+				? { rows: [...staged.rows, item.row], bodies: staged.bodies }
+				: { rows: staged.rows, bodies: [...staged.bodies, item.body] };
+		if (encodedBytes(candidate, pages.length) <= maxChunkBytes) {
+			staged = candidate;
 			continue;
 		}
-		if (rows.length === 0) {
-			throw new Error('Snapshot row exceeds maxChunkBytes');
+		if (staged.rows.length === 0 && staged.bodies.length === 0) {
+			throw new Error('Snapshot entry exceeds maxChunkBytes');
 		}
-		pages.push(rows);
-		rows = [row];
-		if (
-			encodedJsonBytes({
-				generation,
-				index: pages.length,
-				rows,
-				checksum: '0'.repeat(64),
-			}) > maxChunkBytes
-		) {
-			throw new Error('Snapshot row exceeds maxChunkBytes');
+		pages.push(staged);
+		staged =
+			item.kind === 'row'
+				? { rows: [item.row], bodies: [] }
+				: { rows: [], bodies: [item.body] };
+		if (encodedBytes(staged, pages.length) > maxChunkBytes) {
+			throw new Error('Snapshot entry exceeds maxChunkBytes');
 		}
 	}
-	if (rows.length > 0 || pages.length === 0) pages.push(rows);
+	if (staged.rows.length > 0 || staged.bodies.length > 0 || pages.length === 0) {
+		pages.push(staged);
+	}
 	const chunks = await Promise.all(
 		pages.map((page, index) =>
-			createSnapshotChunk(sha256, generation, index, page),
+			createSnapshotChunk(sha256, generation, index, page.rows, page.bodies),
 		),
 	);
 	if (chunks.some((chunk) => encodedJsonBytes(chunk) > maxChunkBytes)) {
@@ -98,6 +115,7 @@ export async function isValidSnapshotChunk(
 				generation: chunk.generation,
 				index: chunk.index,
 				rows: chunk.rows,
+				bodies: chunk.bodies,
 			}),
 		))
 	);
