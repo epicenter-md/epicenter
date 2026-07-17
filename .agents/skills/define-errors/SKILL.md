@@ -10,6 +10,11 @@ metadata:
 
 > **Related Skills**: See `error-handling` for trySync/tryAsync usage and toast-on-error patterns. See `services-layer` for service architecture and namespace exports.
 
+Ground API claims in the official `wellcrafted-dev/wellcrafted` source and
+tests for Epicenter's installed version. This skill owns variant construction,
+naming, fields, and type extraction. `error-handling` owns catch adaptation and
+Result consumption; `logging` owns diagnostic severity and sinks.
+
 ## Import
 
 ```typescript
@@ -32,7 +37,7 @@ import {
 7. Use `InferError<typeof FooError.Variant>` to extract a single variant's type when needed
 8. **Variant names describe the specific failure mode** : never use generic names like `Service`, `Error`, or `Failed`
 9. Aim for 2-5 variants per domain, each named by failure mode
-10. **Write `.message` for end-user readability** : `toastOnError` shows `.message` as the muted toast description below the bold title. Write messages that make sense to users, not just developers. Avoid raw paths, status codes, or stack traces as the primary message. Include them after a human-readable prefix:
+10. **Write `.message` for its actual consumers** : variants that reach `toastOnError` or `$lib/report` need safe, readable user copy. Diagnostic-only variants may be technical because the logger is their consumer. Do not assume every tagged error is user-facing. For presented errors, avoid raw paths, status codes, or stack traces as the primary message. Put necessary technical detail after a human-readable prefix:
 
 ```typescript
 // ✅ GOOD : human-readable prefix, technical detail after
@@ -334,7 +339,11 @@ type CallResult<T> = Result<T, CallError>;
 
 **Why**: every wellcrafted helper (`isOk`/`isErr`, `tryAsync`/`trySync`, `unwrap`, `tapErr`, the logger's `"name" in err` discriminator) operates on `{ data, error }`. `{ ok }` returns can't compose with any of it. Each ad-hoc invention loses ecosystem leverage and forces every consumer to learn one more shape.
 
-**Wire-format corollary**: when a `Result` crosses a serialization boundary (RPC, IPC, HTTP), the `defineErrors` `{ name, message, ...fields }` shape **is** the wire form. The receiver reconstructs by reading `error.name` to dispatch : no `{ ok }` wrapper needed.
+**Wire-format boundary**: an internal RPC or IPC surface that explicitly adopts
+Wellcrafted Result can serialize `{ data, error }` and the tagged
+`{ name, message, ...fields }` error directly. That does not make this the
+universal HTTP envelope. External protocols and existing routes keep their own
+wire contracts; see `error-handling/references/http-boundaries.md`.
 
 ## Whispering RPC Boundary
 
@@ -370,11 +379,14 @@ defineErrors({
 
 This is **not** type-enforced (an earlier wellcrafted PR tried to reserve `data` and reverted : the logger's `"name" in err` discriminator doesn't depend on the reservation, so the breaking change was dropped). Prefer `payload`, `body`, `value`, or a domain-specific name like `path`, `response`, `input`.
 
-## Related: don't call `Err(null)` : wrap caught values in a tagged error
+## Related: Domain Catch Boundaries And `Err(null)`
 
 `wellcrafted`'s Result shape can't distinguish `Err(null)` from `Ok(null)` : both produce `{ data: null, error: null }`, and `isErr` reads both as success. The `Err` constructor accepts any `E`; there's no type-level ban (one was tried and reverted because it was bypassable by casts and taught the wrong fix).
 
-The rule lives in idiom: **at every `catch (error: unknown)` boundary, wrap the caught value in a tagged error from `defineErrors`, don't pass it straight to `Err`.**
+At a domain boundary that promises `Result<T, DomainError>`, wrap the caught
+value in a tagged domain error. Recovery, selective rethrow, exception-based
+framework contracts, and generic normalization adapters are different
+contracts; choose them with the `error-handling` skill.
 
 ```ts
 // ❌ If error is ever null/undefined at runtime, Err silently becomes Ok
@@ -390,4 +402,12 @@ const Errors = defineErrors({
 catch: (error) => Errors.Unexpected({ cause: error })
 ```
 
-See [docs/articles/ok-null-is-fine-err-null-is-a-lie.md](../../../docs/articles/ok-null-is-fine-err-null-is-a-lie.md) for the full rationale : and the wellcrafted philosophy doc at `docs/philosophy/err-null-is-ok-null.md` for the deep dive on why the type-level ban failed.
+A generic adapter may deliberately preserve an unknown cause, as
+`invokeAction` does with `Result<T, unknown>`. That contract cannot promise a
+tagged error and still carries the runtime `Err(null)` hazard if arbitrary code
+throws `null`. Do not copy that raw normalization into a domain service merely
+to avoid defining its failure vocabulary.
+
+See [Epicenter's Err-null article](../../../docs/articles/ok-null-is-fine-err-null-is-a-lie.md)
+and the [Wellcrafted philosophy note](https://github.com/wellcrafted-dev/wellcrafted/blob/main/docs/philosophy/err-null-is-ok-null.md)
+for why the type-level ban failed.
