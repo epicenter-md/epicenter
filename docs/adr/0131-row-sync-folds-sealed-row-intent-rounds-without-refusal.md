@@ -57,8 +57,10 @@ base64-encodes them. No layer translates the intent into `RecordCommand`,
 
 Create contains the complete initial field postimage required by the
 submitting release's table lens. The schema-blind authority validates only
-bounded JSON and permanent row rules; it does not know which application
-fields are required. Update fields use disjoint absolute `set` and `unset`
+bounded JSON, the 24-character row-id shape, and reserved-address rules; it does
+not know which application fields are required. It does not keep deleted-id
+tombstones. Conforming runtimes mint row ids once and never reuse them, as
+specified by ADR-0130. Update fields use disjoint absolute `set` and `unset`
 operations. Omitting a field preserves it, setting `null` stores JSON null, and
 unsetting removes the property. An update must contain non-empty field changes,
 a document update, or both.
@@ -66,13 +68,15 @@ a document update, or both.
 A `RowIntent` is one lifecycle atom, not one all-or-nothing application atom:
 
 - `create` on an absent address creates the fields and, when present, its
-  document in one authority transaction. `create` on a live address no-ops as
-  a whole.
+  document in one authority transaction. A create whose complete document would
+  exceed the canonical document maximum no-ops as a whole. `create` on a live
+  address also no-ops as a whole.
 - `update` on an absent address no-ops as a whole. On a live row, its field and
   document components fold independently. A field component that would exceed
-  the row cap no-ops and may visibly correct at retirement; a valid document
-  update still merges. An unrelated scalar capacity race never discards
-  durable collaborative content.
+  the row cap no-ops and may visibly correct at retirement. A document component
+  that would make the merged canonical document exceed its bound also no-ops;
+  an admissible document update still merges. Scalar and document capacity
+  races cannot discard each other's component.
 - `delete` removes the row fields and document state in one authority
   transaction. Delete on absence is a deterministic no-op.
 
@@ -111,30 +115,73 @@ one round number and digest. Edits authored while a round is unresolved remain
 open for a later round. Nothing compacts across that boundary.
 
 Sealing selects a deterministic bounded subset of open RowIntents. Intents that
-do not fit remain open for later rounds. Local admission rejects any single
-RowIntent that cannot fit the per-intent ceiling, including a merged document
-update that grows beyond it; the system does not create an unsendable durable
-intent. Chunking, streaming, and upload sessions remain refused.
+do not fit remain open for later rounds. A document edit first merges into the
+open intent. If that pending delta approaches its ceiling, the replica hydrates
+confirmed, sealed, and open state into a fresh `gc: true` Yjs document, then
+stores the smaller of a delta against the confirmed-plus-sealed base and a full
+state update. Sealing freezes those exact bytes.
 
-The exchange is:
+The active protocol defines an encoded canonical document maximum and keeps it
+strictly below the maximum document component in one RowIntent. That component
+maximum in turn stays below the sealed-round, request, and deployment-backend
+limits. The concrete byte values are selected from benchmarks before the
+protocol lands, not guessed in this ADR. Local admission never commits a
+RowIntent that cannot be sent. If even a compact full state exceeds the
+document maximum, persistence of the edit fails and the document handle follows
+ADR-0134's poison-and-reopen rule. Chunking, streaming, upload sessions, and
+multiple document fragments remain refused. Yjs garbage collection removes
+deleted-history overhead, not live content, so applications must keep row
+documents within the interactive-content bound.
+
+Client admission is not the authority bound. Two replicas can each produce a
+valid bounded state whose merge is too large. For every document-bearing fold,
+the authority's injected Yjs codec computes the merged compact state before
+commit. If it exceeds the canonical document maximum, the document component
+deterministically no-ops while an independently admissible field component may
+still apply. This is an ordinary confirmed outcome, not a rejected sealed round
+or a new recovery lifecycle.
+
+Replica identity is explicitly enrolled by the authority before this exchange.
+Ordinary `sync` never creates authority state for an unseen client-supplied id.
+Enrollment mints and returns the protocol identity whose exact-retry receipt the
+authority will retain; authentication separately decides whether the caller may
+access the workspace.
+
+The exchanges are:
 
 ```txt
-sync({ token, sealedRound?: { round, requestDigest, intents[] } })
+enroll({ token, protocolMajor }) -> { replicaId }
+
+sync({
+  token,
+  protocolMajor,
+  replicaId,
+  sealedRound?: { round, requestDigest, intents[] }
+})
 ```
 
-The authority folds a round exactly once and stores one `(replicaId,
-acceptedRound, requestDigest)` triple. A matching retry refolds nothing. A
-digest mismatch or a round other than `acceptedRound` or `acceptedRound + 1`
-is a terminal replica fork. The sealed round stays durable through every
-response page and retires only after the exchange reaches head.
+Enrollment creates the receipt at accepted round zero with no request digest.
+After a round folds, the authority stores its `(replicaId, acceptedRound,
+requestDigest)` triple. A matching retry refolds nothing. A digest mismatch or
+a round other than `acceptedRound` or `acceptedRound + 1` is a terminal
+replica fork. The sealed round stays durable through every response page and
+retires only after the exchange reaches head.
 
 The accepted-round triple is the durable head of that replica's retry chain and
 is not removed by outcome-tail compaction or baseline acquisition. It remains
-for the workspace lifetime. Explicit revocation is terminal for that replica
-id: it cannot later present or remint a pending round under the revoked retry
-chain. Baseline acquisition keeps the same replica id, sealed round, digest,
-and canonical RowIntent rows. Scratch confirmed state is disposable; authored
-intent and exact-retry identity are not.
+until workspace deletion. There is no replica-specific count, slot allocation,
+generation, eviction, expiration, or unenrollment lifecycle. Baseline
+acquisition keeps the same replica id, sealed round, digest, and canonical
+RowIntent rows. Scratch confirmed state is disposable; authored intent and
+exact-retry identity are not.
+
+Hosted deployments bound authority growth with aggregate per-workspace storage
+admission and throttle enrollment. Self-hosted operators own their available
+storage and may choose no configured quota. These are deployment policies, not
+wire-level replica limits. An authenticated client can consume its workspace's
+budget by repeatedly enrolling identities, and abandoned receipts persist until
+workspace deletion. The hosted service must implement those deployment controls
+before this protocol ships.
 
 Elapsed time never changes a durable RowIntent's eligibility. After baseline
 acquisition, the replica automatically retries its sealed round and seals newer
@@ -162,12 +209,21 @@ across that gap.
   rebootstrap, per-command actor sequences, stored batch JSON, and durable
   rejection history disappear.
 - A fold may partially apply the components of a live-row update. That is
-  deliberate: lifecycle validity is shared, while scalar capacity and CRDT
-  merge are independent laws.
+  deliberate: lifecycle validity is shared, while scalar capacity, document
+  capacity, and CRDT merge are independent laws.
+- Concurrent bounded documents may merge above the canonical maximum. The later
+  accepted document component no-ops rather than making confirmed state
+  unsendable or creating a chunking protocol.
 - Exact lost-response retry remains mandatory. Open and sealed are lifecycle
   states around the same semantic type, not separate command formats.
-- Document update encoding is one workspace protocol decision, not a per-table
-  contract. A protocol-major mismatch is refused before a round folds.
+- Document update encoding and its bounds are one workspace protocol decision,
+  not a per-table contract. A build supports exactly one active wire protocol
+  major. A different major is refused before enrollment or round folding; there
+  is no permanent previous-major compatibility path, negotiation registry, or
+  protocol catalog.
+- Exact-retry receipts consume authority storage for the workspace lifetime.
+  Aggregate hosted storage admission and enrollment throttling bound that cost
+  without inventing replica-count plans or device lifecycle policy.
 
 ## Considered alternatives
 
@@ -177,8 +233,16 @@ across that gap.
 - **Make a combined update atomic across fields and document.** Rejected because
   a concurrent scalar capacity race could silently discard durable
   collaborative text.
+- **Trust client-side document admission as the authority bound.** Rejected
+  because two valid offline documents can merge above the maximum.
 - **Let one oversized open intent remain durable until the network improves.**
   Rejected because no network condition can make a protocol-oversized intent
   sendable.
+- **Cap or recycle enrolled replicas.** Rejected because correctness needs a
+  durable retry receipt, not a product device limit. Aggregate authority storage
+  admission bounds the resource instead.
+- **Expire or unenroll inactive replicas.** Rejected because time and device
+  management would create another retry-chain lifecycle. Receipts end only with
+  workspace deletion.
 - **Store or replay RowIntents as confirmed history.** Rejected because sync is
   not an audit product; confirmed pages carry resulting facts instead.

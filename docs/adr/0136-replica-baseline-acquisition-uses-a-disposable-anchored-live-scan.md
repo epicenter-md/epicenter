@@ -60,8 +60,10 @@ its address may be absent. Complete scalar postimages, delete outcomes, and
 idempotent Yjs updates make the `(S, E]` fold converge scratch to one coherent
 authority state at `E`. A composite outcome carrying fields installs its
 complete live postimage even when scratch lacks that row. A document-only
-outcome on an absent row and a deletion of an absent row no-op. Row ids are
-never reused.
+outcome on an absent row and a deletion of an absent row no-op. Conforming
+runtimes mint ADR-0130's collision-resistant row ids once and never reuse them.
+The authority does not retain lifetime tombstones or defend this fold against a
+principal deliberately fabricating a deleted id.
 
 Keeping the `(S, E]` fold inside hidden scratch is deliberate. Promoting the
 fuzzy address scan at `S` and catching up visibly could temporarily regress a
@@ -73,8 +75,9 @@ The retention floor must remain at or below the scratch fold cursor. Every scan
 and outcome page reports the floor. If it overtakes the cursor, the replica
 deletes scratch and starts again with a new anchor. This guarantees safety, not
 completion under unbounded authority churn: one attempt must finish within the
-retained-outcome window. The authority holds no scan session, compaction lease,
-or per-replica liveness promise.
+retained-outcome window. Deployments size that window generously from measured
+scan throughput, workspace size, and mutation rate. The authority holds no scan
+session, compaction lease, or per-replica liveness promise.
 
 ## Disposable scratch and promotion
 
@@ -131,9 +134,12 @@ normal authority order; a Yjs document update enters normal CRDT merge. Time
 creates no second conflict doctrine and no stale-change review state.
 
 The authority stores current rows, document baselines plus retained tails,
-bounded ordered outcomes, one exact-retry receipt per replica, and its
-compaction floor. It publishes no snapshot artifact and stores no transfer
-progress.
+bounded ordered outcomes, one exact-retry receipt per explicitly enrolled
+replica, and its compaction floor. A receipt persists until workspace deletion;
+there is no replica count, slot, generation, eviction, expiration, or
+unenrollment lifecycle. Hosted aggregate workspace storage admission and
+enrollment throttling bound receipt growth. It publishes no snapshot artifact
+and stores no transfer progress.
 
 ## Consequences
 
@@ -147,6 +153,9 @@ progress.
   is not. The authority must retain enough outcomes for one acquisition to
   finish. Epicenter refuses per-replica floor pins and restarts acquisition when
   that window is unavailable.
+- The first implementation uses full restart after a floor race. Incremental
+  restart is reconsidered only if production measurements show that a
+  generously sized retention window cannot provide a safe operating margin.
 - Initial bootstrap and long-offline reseeding use one protocol path.
 - Baseline acquisition reuses the ordinary confirmed-outcome fold, checkpoint,
   retry identity, and RowIntent rules. It adds no mutation vocabulary.
@@ -165,6 +174,9 @@ progress.
   compaction coordination while fighting bounded request runtimes.
 - **Persist resumable acquisition state.** Rejected because it turns disposable
   transfer progress into canonical schema and recovery policy.
+- **Incrementally restart after a floor race.** Deferred because the baseline
+  path is derived work and a full restart is the smaller safe system. It earns a
+  prototype only if measured acquisition margins require it.
 - **Publish immutable authority snapshots.** Rejected because current state plus
   an anchored idempotent outcome tail proves the same result with fewer owners.
 - **Expire replicas below the retention floor.** Rejected because a fresh

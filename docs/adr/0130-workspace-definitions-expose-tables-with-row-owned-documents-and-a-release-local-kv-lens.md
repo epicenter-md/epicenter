@@ -62,11 +62,27 @@ update   field set/unset changes, a document update, or both
 delete   end the row lifetime and cascade through fields and document
 ```
 
-Creation mints a runtime row id and accepts no caller-supplied id. A deleted id
-is never reused. `fields` names the schema-opaque JSON component; `document`
-names the collaborative component. `record`, `object`, and `entity` do not
-become parallel lifecycle nouns. The document has no identity or lifecycle
-independent from its row.
+Creation mints a 24-character lowercase alphanumeric NanoID from
+`abcdefghijklmnopqrstuvwxyz0123456789` and accepts no caller-supplied id. This
+provides about 124 bits of randomness, exceeding UUIDv4's 122 random bits. The
+id is a capability-like public collision identifier, not an authentication
+secret.
+
+Conforming runtimes never reuse a minted row id, including after deletion. The
+authority does not retain permanent tombstones or defend a principal against a
+deliberately fabricated reuse of a deleted id. Correctness relies on the
+conforming-writer rule plus the identifier's collision resistance, rather than
+on a permanent dead-address set, server-issued row ids, or row incarnations.
+
+`fields` names the schema-opaque JSON component; `document` names the
+collaborative component. `record`, `object`, and `entity` do not become parallel
+lifecycle nouns. The document has no identity or lifecycle independent from its
+row.
+
+Row documents are bounded interactive CRDT state. They are not a large-file or
+blob plane. Media and other large payloads use the filesystem or blob layer and
+may be referenced from a row. ADRs 0131, 0133, and 0135 own document admission,
+compaction, and durability at the encoded document maximum.
 
 Ordinary row fields are last-accepted-wins values under authority order. Device
 time and authorship time do not change that order. A field is therefore the
@@ -107,6 +123,12 @@ workspace vocabulary.
   lifecycle, or query needs.
 - JSON fields and KV retain authority-ordered replacement semantics. Only row
   documents pay for interior CRDT merge.
+- Row identity needs no tombstone table, incarnation counter, or authority
+  allocation round trip. In return, a malicious or nonconforming writer can
+  deliberately fabricate a previously deleted address inside its own
+  principal.
+- Bounded row documents cover interactive content, not arbitrary binary
+  payloads. Applications place large content in the filesystem or blob plane.
 - Existing document APIs and rooms are replacement targets, not compatibility
   surfaces. Build the new path, stop importing the old path, verify, then delete.
 

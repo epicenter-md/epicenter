@@ -133,13 +133,24 @@ an application conversion and replacement.
 There is no document declaration on `defineTable`, no per-table document kind,
 and no authority document-contract map. An empty document persists no
 `documents` row. One opaque document update may affect any number of roots;
-the authority neither hydrates the update nor validates its layout.
+the authority neither inspects nor validates its root layout.
 
-Root names carry no workspace version prefix. Yjs dependency and update
-encoding compatibility belong to the workspace protocol major. This
-greenfield runtime selects Yjs 14 and pins an exact release-candidate version
-until stable is adopted deliberately. A future incompatible encoding change
-updates the protocol and storage major; it does not create versioned roots.
+The whole row document is bounded interactive CRDT state under ADR-0131's
+encoded canonical document maximum. Root composition does not create separate
+size allowances. Media and other large payloads belong in the filesystem or
+blob plane. If a local edit cannot be compacted into a valid document below the
+maximum, its SQLite persistence fails, the handle is poisoned, and the caller
+must reopen it. Garbage collection reduces deleted history but cannot make
+unbounded live content admissible.
+
+Root names carry no workspace version prefix. Yjs dependency, update encoding,
+and document bounds belong to the workspace protocol major. This greenfield
+runtime selects Yjs 14 and pins an exact release-candidate version until stable
+is adopted deliberately. A build implements exactly one active wire major and
+refuses different majors before folding. A future incompatible encoding change
+updates the protocol constant and physical storage migration together; it does
+not create versioned roots, negotiation objects, or a permanent previous-major
+path.
 
 ## Consequences
 
@@ -157,6 +168,9 @@ updates the protocol and storage major; it does not create versioned roots.
 - Two releases can still disagree about root names or interpretations. That is
   an application compatibility error, not sync admission or a platform
   migration system.
+- One row cannot become a general blob container by adding roots. Exceeding the
+  document maximum fails local durability instead of creating chunks or a
+  permanently unsendable intent.
 - Adopting a release candidate accepts upstream API churn before Yjs 14 stable.
   Exact dependency pinning contains that risk without preserving a Yjs 13 path.
 

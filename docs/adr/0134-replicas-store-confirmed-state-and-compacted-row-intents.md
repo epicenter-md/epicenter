@@ -62,7 +62,7 @@ Rows and documents remain physically separate because their payload sizes and
 write patterns differ. They share one row lifecycle and transaction owner.
 Row deletion removes both. An empty document has no `documents` row.
 
-Within the open generation:
+Within the open intent state:
 
 ```txt
 create + update   -> create(final fields, merged document)
@@ -72,15 +72,34 @@ update + delete   -> delete
 ```
 
 Nothing compacts across the seal. Field operations compact to final absolute
-set/unset changes. Document components compact using the workspace's selected Yjs
-update encoding. Merging update bytes does not garbage-collect deleted structs;
-baseline compaction hydrates a fresh confirmed-only document and re-encodes it.
+set/unset changes. Document components compact using the workspace's selected
+Yjs update encoding. When a merged open delta approaches its ceiling, the
+runtime hydrates confirmed, sealed, and open state into a fresh `gc: true`
+document and persists the smaller of a delta against confirmed-plus-sealed state
+and a full state update. If a compact full state exceeds the canonical document
+maximum, the edit is not committed and the handle is poisoned. No unsendable
+intent becomes durable.
 
 The `intents` table stores the canonical semantic RowIntent directly. It does
-not store command JSON or produce a copied sealed array. The `replica`
-singleton owns checkpoint, replica id, accepted round, in-flight round, and
-request digest. A sealed flag on each selected intent is enough because only
-one round may be unresolved.
+not store command JSON or produce a copied sealed array. The optional `replica`
+singleton exists only in a synchronized file. It owns the authority-enrolled
+replica id, confirmed checkpoint, accepted round, in-flight round, and request
+digest. A sealed flag on each selected intent is enough because only one round
+may be unresolved. The replica id is protocol position, not an authentication
+secret or device credential.
+
+The checkpoint is the greatest authority outcome installed in confirmed state.
+The accepted round and its digest identify the last sealed request the authority
+has durably folded. The in-flight round and digest identify the immutable local
+retry image that may still need that acknowledgement. These are synchronization
+metadata, not application history or additional user state. A newly enrolled
+replica begins at accepted round zero with no accepted digest.
+
+The wire protocol major is a build constant carried by admission and request
+envelopes, not another durable column in `replica`. A build supports one active
+major and refuses any other before folding. `PRAGMA user_version` separately
+owns the local physical SQLite schema version; storage migration completes
+before networking begins.
 
 Current fields are a connection-local projection of confirmed rows, sealed
 field intent, then open field intent. A document handle hydrates the confirmed
@@ -116,6 +135,11 @@ mode, writes go directly to rows and documents, `intents` remains empty,
 and the `replica` singleton is absent. This refuses an in-place switch between
 local-only and synchronized ownership while avoiding a second schema.
 
+The physical SQLite file is runtime state, never a portability format. Moving
+between local-only and synchronized ownership uses explicit logical
+export/import or publish operations that rebuild canonical state for the new
+owner. Copying a database file is not a supported move, copy, or import API.
+
 ## Consequences
 
 - Confirmed state has one owner and never changes before authority acceptance.
@@ -125,9 +149,15 @@ local-only and synchronized ownership while avoiding a second schema.
   tables disappear.
 - Four tables are the smallest honest canonical replica schema, not the entire
   distributed system. The authority still owns current content, retained
-  outcomes, and exact-once round receipts.
+  outcomes, and exact-once round receipts for explicitly enrolled replica ids.
+- Authority receipts persist until workspace deletion. They have no local table
+  cardinality counterpart, replica slots, generation, eviction, expiration, or
+  unenrollment lifecycle. Hosted deployments bound them through aggregate
+  workspace storage admission and enrollment throttling.
 - Losing projections or disposable baseline-acquisition scratch loses no unique
   user data.
+- A copied SQLite file carries runtime protocol position and is not a portable
+  workspace. Only logical state crosses ownership boundaries.
 - Existing independent document rooms require an explicit one-shot import or a
   deliberate clean break before their storage and routes are deleted.
 

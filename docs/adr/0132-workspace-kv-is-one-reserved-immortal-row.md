@@ -24,6 +24,8 @@ map, at the runtime-reserved address `__epicenter_kv/workspace`.
 `kv.set(key, value)` normalizes to a field-bearing `RowIntent` update that sets
 the key; `kv.unset(key)` normalizes to an update that unsets it. Absence of a
 key in the newest image is the entire unset story; no tombstone exists.
+The reserved address is runtime vocabulary, not an ordinary ADR-0130 NanoID,
+and does not weaken the rule that public row creation accepts no supplied id.
 
 The encoding costs exactly these permanent rules, and no new wire, state,
 baseline-acquisition, or authority vocabulary:
@@ -45,7 +47,8 @@ Per-key value bounds and declared-key counts are typed-lens validation in the
 client release, not fold or admission rules; only the aggregate cap is
 permanent. The fold exception is a semantic wire change even though no
 vocabulary changes (an older authority would silently no-op reserved patches
-while advancing sequence), so it ships inside ADR-0131's protocol major 5.
+while advancing sequence), so it ships inside ADR-0131's one active protocol
+major, initially major 5.
 
 ## Consequences
 

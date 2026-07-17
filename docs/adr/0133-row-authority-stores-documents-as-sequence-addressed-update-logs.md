@@ -21,10 +21,13 @@ composite row outcome at that sequence. This sequence-addressed document tail is
 confirmed transport, not a fourth mutation command and not the replica's
 canonical document representation.
 
-The authority treats update bytes as opaque. It does not inspect Yjs roots,
-choose document layouts, or decide editor schema. Application-owned root
-composition is a client API contract owned by ADR-0135; update encoding
-compatibility belongs to the workspace protocol major.
+The authority treats update layout as opaque. It validates the update's
+protocol-level byte bound and uses an injected Yjs codec to compute whether the
+merged compact document remains within the canonical maximum, but it does not
+inspect roots, choose document layouts, or decide editor schema.
+Application-owned root composition is a client API contract owned by ADR-0135;
+update encoding compatibility and the encoded canonical document maximum belong
+to the one active workspace protocol major.
 
 RowIntent folding owns document liveness:
 
@@ -32,8 +35,8 @@ RowIntent folding owns document liveness:
   transaction. A create collision no-ops as a whole, so document bytes cannot
   merge into another row lifetime.
 - `update` on an absent row no-ops as a whole. On a live row, a valid document
-  component appends even when an unrelated field component no-ops under the
-  scalar capacity rule.
+  component within the merged document bound appends even when an unrelated
+  field component no-ops under the scalar capacity rule.
 - `delete` removes the row and all authoritative document state in one
   transaction. Late updates for the absent address remain deterministic no-ops.
 
@@ -53,13 +56,26 @@ ordinary outcomes may be removed. Document compaction may fold outcomes only
 through that floor, so every outcome above the floor remains available to
 catch-up.
 
-An injected codec merges a baseline and its retained tail for compaction and
-baseline acquisition; ordinary authority folding remains append-only and
-byte-opaque. The sync core stays CRDT-library-free. Merge and application are
-idempotent: a baseline or update installed twice hydrates to the same Yjs state.
-ADR-0136
-scans the complete baseline-plus-tail composite and then replays outcomes after
-its anchor; overlap is safe because Yjs updates are idempotent.
+For every document-bearing fold, the injected codec hydrates the current
+baseline and tail with the candidate update into a fresh `gc: true` Yjs
+document and encodes its compact full state. If that state exceeds ADR-0131's
+canonical document maximum, the document component deterministically no-ops.
+Otherwise ordinary authority storage appends the original update bytes at the
+RowIntent's sequence.
+
+The same codec periodically replaces a baseline and the tail below the
+retention floor with a compact full-state baseline. The sync core remains
+independent of root layout and editor schema while the injected codec owns the
+minimum merge-aware admission and compaction operations. Merge and application
+are idempotent: a baseline or update installed twice hydrates to the same Yjs
+state. ADR-0136 scans the complete baseline-plus-tail composite and then replays
+outcomes after its anchor; overlap is safe because Yjs updates are idempotent.
+
+Row documents are bounded interactive content, not storage for media or large
+files. Garbage collection can remove deleted structs from the compacted state,
+but it cannot shrink live content. Files and media use the filesystem or blob
+plane. The protocol does not add chunks, upload sessions, or multiple fragments
+to make an oversized document admissible.
 
 State pages emit one composite row outcome per applied RowIntent. It may carry
 the latest scalar row image, the incremental document update, or both. Delete
@@ -76,9 +92,12 @@ incremental tail.
   and one open document component; they do not retain the authority tail locally.
 - Interior collaborative merge remains earned while ordinary fields and KV stay
   plain JSON under authority order.
-- The authority owns merge-aware compaction through an injected codec. Without
-  compaction, a hot document's retained tail and baseline-scan work grow without
-  bound.
+- The authority owns merge-aware admission and compaction through an injected
+  codec. Admission prevents concurrent valid updates from producing an
+  unsendable canonical document; compaction bounds a hot document's retained
+  tail and baseline-scan work.
+- The encoded document maximum is a product contract. Increasing it is a
+  deliberate protocol and deployment decision, not an automatic chunking path.
 - Per-room Yjs transports, catalogs, and persistence for row-owned documents are
   replacement targets.
 
@@ -90,8 +109,8 @@ incremental tail.
   document acceptance would remain split across authorities.
 - **Per-row positional update indexes.** Rejected because compaction can reuse
   an index for different bytes and make replicas diverge.
-- **Hydrate Yjs inside ordinary authority folding.** Rejected because only
-  compaction needs merge awareness; admission, storage, paging, and deletion
-  can stay byte-opaque.
+- **Keep ordinary authority folding entirely byte-opaque.** Rejected because
+  client admission cannot bound the result of merging concurrent offline
+  documents.
 - **Unbounded update tails.** Rejected because a hot collaborative document would
   grow authority storage and baseline-scan work forever.
