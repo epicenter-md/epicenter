@@ -65,4 +65,5 @@ export {
 	type WireRowIntent,
 } from './protocol.js';
 export { rowRoundDigest } from './round-digest.js';
+export { sha256Hex } from './sha256.js';
 export type { RowSyncSqlite, SqliteRow, SqliteValue } from './sqlite.js';

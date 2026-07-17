@@ -11,9 +11,10 @@ import { dirname, join, resolve } from 'node:path';
 import {
 	RESERVED_KV_ROW_ID,
 	RESERVED_KV_TABLE,
+	sha256Hex,
 } from '@epicenter/row-sync';
 import { createBunSqliteAdapter } from '@epicenter/row-sync/bun';
-import { sha256Hex } from '../shared/sha256.js';
+
 import {
 	accountPersistenceKey,
 	devicePersistenceKey,
