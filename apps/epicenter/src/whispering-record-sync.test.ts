@@ -87,6 +87,9 @@ test('offline Whispering fields and document edits converge in both directions',
 		await waitFor(async () =>
 			Boolean((await second.tables.recordings.get(recording.id)).data),
 		);
+		expect(
+			(await second.tables.recordings.get(recording.id)).data?.transcript,
+		).toBe('Authored offline');
 		await expectDocumentText(second, recording.id, 'first device');
 
 		await second.tables.recordings.update(recording.id, {
@@ -103,10 +106,18 @@ test('offline Whispering fields and document edits converge in both directions',
 				(await first.tables.recordings.get(recording.id)).data?.title ===
 				'Edited on second device',
 		);
+		expect((await first.tables.recordings.get(recording.id)).data?.title).toBe(
+			'Edited on second device',
+		);
 		await waitFor(async () => {
 			using draft = await first.tables.recordings.document.open(recording.id);
 			return draft.get('draft').toString() === 'first device and second device';
 		});
+		await expectDocumentText(
+			first,
+			recording.id,
+			'first device and second device',
+		);
 	} finally {
 		backend.close();
 		rmSync(root, { recursive: true, force: true });

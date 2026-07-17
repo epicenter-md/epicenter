@@ -70,7 +70,7 @@ type RuntimeBroadcastChannel = {
 
 export type CreateBrowserWorkspaceRuntimeOptions = {
 	storageScopeKey: string;
-	recordSync?: {
+	rowSync?: {
 		baseUrl: string;
 		fetch?: BrowserRecordFetch;
 		headers?: Readonly<Record<string, string>>;
@@ -84,7 +84,7 @@ export type CreateBrowserWorkspaceRuntimeOptions = {
 /** Create the page-side client for one OPFS-owning records Worker. */
 export function createBrowserWorkspaceRuntime({
 	storageScopeKey,
-	recordSync: recordSyncInput,
+	rowSync: rowSyncInput,
 	createBroadcastChannel = defaultBroadcastChannel,
 	onRecordsChanged = () => undefined,
 	onBackgroundError = () => undefined,
@@ -93,7 +93,7 @@ export function createBrowserWorkspaceRuntime({
 		throw new Error('Storage scope key must not be empty');
 	}
 	const storageScopeHash = sha256Hex(storageScopeKey);
-	const recordSync = normalizeRecordSync(recordSyncInput);
+	const rowSync = normalizeRowSync(rowSyncInput);
 	const pending = new Map<number, PendingRequest>();
 	const workspaces = new Map<string, BoundWorkspace>();
 	const invalidationChannel = createBroadcastChannel(
@@ -204,19 +204,19 @@ export function createBrowserWorkspaceRuntime({
 		message: Extract<BrowserRuntimeMessage, { type: 'transport-request' }>,
 	): Promise<void> {
 		try {
-			if (!recordSync) throw new Error('Browser record sync transport is not bound');
-			const response = await recordSync.fetch(
+			if (!rowSync) throw new Error('Browser row-sync transport is not bound');
+			const response = await rowSync.fetch(
 				new URL(
 					`/api/records/${encodeURIComponent(message.workspaceId)}/${message.action}`,
-					recordSync.baseUrl,
+					rowSync.baseUrl,
 				),
 				{
 					method: 'POST',
 					headers: {
-						...recordSync.headers,
+						...rowSync.headers,
 						'content-type': 'application/json',
 					},
-					credentials: recordSync.credentials,
+					credentials: rowSync.credentials,
 					body: JSON.stringify(message.body),
 				},
 			);
@@ -478,7 +478,7 @@ export function createBrowserWorkspaceRuntime({
 				storageKey: sha256Hex(`${storageScopeKey}\0${definition.id}`),
 				tables: serializeTableLenses(definition.tables),
 				kv: JSON.parse(JSON.stringify(definition.kv)),
-				rowSync: recordSync?.binding,
+				rowSync: rowSync?.binding,
 			};
 			const binding = createHandle(definition, manifest);
 			workspaces.set(definition.id, {
@@ -526,8 +526,8 @@ function defaultBroadcastChannel(
 		: new BroadcastChannel(name);
 }
 
-function normalizeRecordSync(
-	input: CreateBrowserWorkspaceRuntimeOptions['recordSync'],
+function normalizeRowSync(
+	input: CreateBrowserWorkspaceRuntimeOptions['rowSync'],
 ):
 	| {
 			binding: BrowserRowSyncBinding;
