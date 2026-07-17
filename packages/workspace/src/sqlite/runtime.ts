@@ -38,6 +38,8 @@ export type WorkspaceRecordOwner = {
 	sqlite: RecordSyncSqlite;
 	/** Persist synchronization intent in the caller's current SQLite transaction. */
 	admit?(command: RecordCommand): void;
+	/** Notify after remote state installs, so lenses can re-evaluate. */
+	subscribeRemoteCommit?(listener: () => void): () => void;
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
@@ -66,6 +68,8 @@ export type OpenedWorkspaceBody<TFormat extends BodyFormat = BodyFormat> = {
 	content: TFormat extends 'richText' ? Y.XmlFragment : Y.Text;
 	/** Resolves once every edit issued so far is durably committed. */
 	whenDurable(): Promise<void>;
+	/** Apply accepted remote updates that arrived since the body opened. */
+	refresh(): void;
 	[Symbol.dispose](): void;
 };
 
@@ -195,16 +199,17 @@ export function createWorkspaceRuntime({
 					entry.definition.tables,
 					{ admit: owner.admit },
 				);
-				return {
-					owner,
-					records,
-					kv: createCanonicalKv(owner.sqlite, entry.definition.kv, {
-						admit: owner.admit,
-					}),
-					bodies: createCanonicalBodies(owner.sqlite, {
-						admit: owner.admit,
-					}),
-				};
+				const kv = createCanonicalKv(owner.sqlite, entry.definition.kv, {
+					admit: owner.admit,
+				});
+				const bodies = createCanonicalBodies(owner.sqlite, {
+					admit: owner.admit,
+				});
+				owner.subscribeRemoteCommit?.(() => {
+					kv.notifyExternalChange();
+					bodies.refreshAll();
+				});
+				return { owner, records, kv, bodies };
 			} catch (cause) {
 				try {
 					await owner[Symbol.asyncDispose]();
@@ -265,6 +270,7 @@ export function createWorkspaceRuntime({
 													? handle.doc.getXmlFragment('body')
 													: handle.doc.getText('body'),
 											whenDurable: handle.whenDurable,
+											refresh: handle.refresh,
 											[Symbol.dispose]() {
 												handle[Symbol.dispose]();
 											},

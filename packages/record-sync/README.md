@@ -23,9 +23,10 @@ DO storage.sql ------------+
 ```
 
 The caller owns opening and closing the database. The adapter owns only SQL API
-translation and transaction entry. The record authority owns DDL, identity
-fencing, actor high-water marks, canonical rows, the mutation tail, snapshots,
-and compaction.
+translation and transaction entry. The record authority owns DDL, the
+per-replica round triple (`replicaId`, `acceptedRound`, `requestDigest`),
+canonical rows and deletion tombstones, sequence-addressed body logs,
+snapshots, and compaction (ADR-0131/0132/0133).
 
 ## Exports
 
@@ -35,9 +36,9 @@ and compaction.
 - `@epicenter/record-sync/bun`: `bun:sqlite` adapter.
 - `@epicenter/record-sync/durable-object`: SQLite-backed Durable Object adapter.
 
-Transport code validates untrusted client messages with `parsePushRequest`,
-`parsePullRequest`, and `parseSnapshotChunkRequest`. Clients validate server
-messages with the matching response parsers.
+Transport code validates untrusted client messages with `parseSyncRequest`
+and `parseSnapshotChunkRequest`. Clients validate server messages with the
+matching response parsers.
 
 ## Verification
 

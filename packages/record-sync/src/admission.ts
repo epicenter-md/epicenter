@@ -34,6 +34,15 @@ export function isReservedKvAddress(table: string, rowId: string): boolean {
 	return table === RESERVED_KV_TABLE && rowId === RESERVED_KV_ROW_ID;
 }
 
+const BASE64_PAYLOAD = /^[A-Za-z0-9+/]+={0,2}$/;
+
+/** Body update payloads are opaque bytes, but the encoding must decode. */
+export function isBase64Payload(value: string): boolean {
+	return (
+		value.length > 0 && value.length % 4 === 0 && BASE64_PAYLOAD.test(value)
+	);
+}
+
 const textEncoder = new TextEncoder();
 
 export function encodedBytes(value: string): number {
@@ -142,7 +151,7 @@ export function isAdmissibleStateEntry(entry: StateEntry): boolean {
 			return true;
 		case 'bodyUpdate':
 			return (
-				entry.update.length > 0 &&
+				isBase64Payload(entry.update) &&
 				encodedJsonBytes(entry) <=
 					RECORD_SYNC_ADMISSION_LIMITS.encodedCommandBytes
 			);
@@ -195,7 +204,7 @@ export function isAdmissibleCommand(command: RecordCommand): boolean {
 		case 'bodyAppend':
 			return (
 				!reserved &&
-				command.update.length > 0 &&
+				isBase64Payload(command.update) &&
 				encodedJsonBytes(command) <=
 					RECORD_SYNC_ADMISSION_LIMITS.encodedCommandBytes
 			);

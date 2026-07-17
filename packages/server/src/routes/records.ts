@@ -79,9 +79,17 @@ function createRecordsApp<E extends Env>(
 			if (!parsed.ok) {
 				return invalidRequest(c, parsed.reason);
 			}
-			return c.json(
-				await resolveRecords(c.env).sync(partition(c), parsed.value),
-			);
+			try {
+				return c.json(
+					await resolveRecords(c.env).sync(partition(c), parsed.value),
+				);
+			} catch (cause) {
+				// The authority throws TypeError for client-authored corruption
+				// (a digest that does not match its commands, a checkpoint ahead
+				// of the head); those are invalid requests, not server faults.
+				if (cause instanceof TypeError) return invalidRequest(c, 'invalid');
+				throw cause;
+			}
 		})
 		.post(`${RECORDS_ROUTE}/snapshot-chunk`, async (c) => {
 			const parsed = await parseJson(c, parseSnapshotChunkRequest);

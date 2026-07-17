@@ -54,6 +54,7 @@ export function createCanonicalBodies(
 	sqlite: RecordSyncSqlite,
 	{ admit }: CanonicalBodiesOptions = {},
 ) {
+	const openRefreshers = new Set<() => void>();
 	sqlite.run(`
 		CREATE TABLE IF NOT EXISTS "${LOCAL_LOG_TABLE}" (
 			ordinal INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -158,6 +159,7 @@ export function createCanonicalBodies(
 				});
 			};
 			doc.on('update', persist);
+			openRefreshers.add(applyAccepted);
 
 			return {
 				doc,
@@ -168,10 +170,16 @@ export function createCanonicalBodies(
 				},
 				refresh: applyAccepted,
 				[Symbol.dispose]() {
+					openRefreshers.delete(applyAccepted);
 					doc.off('update', persist);
 					doc.destroy();
 				},
 			};
+		},
+
+		/** Apply newly accepted updates to every open body. */
+		refreshAll(): void {
+			for (const refresh of openRefreshers) refresh();
 		},
 
 		/** Purge every local update for one row (its deletion is permanent). */

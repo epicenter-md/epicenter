@@ -200,14 +200,29 @@ export function createCanonicalReplica({
 					? {}
 					: { pageLimit }),
 			};
+			const sentRound = request.sealedRound?.round;
 			const response = parseSyncResponse(await transport.sync(request));
 			if (!response.ok) {
 				throw new Error(`Record sync refused: ${response.reason}`);
 			}
+			// The authority's acceptedRound must account exactly for what this
+			// exchange submitted: a response that silently advances (or ignores)
+			// a round is corrupt and must not retire local intent.
+			const expectedAcceptedRound = sentRound ?? token.acceptedRound;
 			if (response.snapshotRequired) {
+				if (
+					response.resumeToken.replicaId !== token.replicaId ||
+					response.resumeToken.checkpoint !== response.manifest.head ||
+					response.resumeToken.acceptedRound !== expectedAcceptedRound
+				) {
+					throw new Error('Snapshot resume token does not match this replica');
+				}
 				await downloadAndInstallSnapshot(response.manifest, response.resumeToken);
 				onRemoteCommit();
 				continue;
+			}
+			if (response.token.acceptedRound !== expectedAcceptedRound) {
+				throw new Error('Sync page does not continue the local checkpoint');
 			}
 			const installed = installPage(token, response);
 			if (installed && response.entries.length > 0) onRemoteCommit();
@@ -297,6 +312,19 @@ export function createCanonicalReplica({
 					`DELETE FROM "${BODIES_TABLE}" WHERE table_name = ? AND row_id = ?`,
 					[entry.table, entry.rowId],
 				);
+				// Deletion is permanent everywhere: the local body edit log dies
+				// with the row too (the bodies owner creates it lazily).
+				if (
+					sqlite.all<{ present: number }>(
+						`SELECT 1 AS present FROM sqlite_master
+						 WHERE type = 'table' AND name = '__epicenter_bodies_log'`,
+					).length > 0
+				) {
+					sqlite.run(
+						`DELETE FROM "__epicenter_bodies_log" WHERE table_name = ? AND row_id = ?`,
+						[entry.table, entry.rowId],
+					);
+				}
 				// The deletion fence (ADR-0133): queued body edits for a row the
 				// authority reports dead are dropped, never resubmitted. Appends
 				// already sealed are immutable and rely on the authority fold.
@@ -683,6 +711,14 @@ function stageSnapshotChunk(
 			stored.next_chunk_index !== index
 		) {
 			throw new Error('Snapshot staging cursor changed before installation');
+		}
+		for (const entry of [...chunk.rows, ...chunk.bodies]) {
+			if (
+				entry.lastServerSequence < 1 ||
+				entry.lastServerSequence > manifest.head
+			) {
+				throw new Error('Snapshot chunk entry exceeds its manifest head');
+			}
 		}
 		for (const row of chunk.rows) {
 			sqlite.run(

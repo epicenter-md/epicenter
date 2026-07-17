@@ -126,6 +126,21 @@ export function createBunWorkspaceRuntime({
 						reportSyncError(cause);
 					}
 				};
+				const remoteCommitListeners = new Set<() => void>();
+				const emitRemoteCommit = (): void => {
+					emitRecordsChanged();
+					for (const listener of remoteCommitListeners) {
+						try {
+							listener();
+						} catch (cause) {
+							reportSyncError(cause);
+						}
+					}
+				};
+				const subscribeRemoteCommit = (listener: () => void): (() => void) => {
+					remoteCommitListeners.add(listener);
+					return () => remoteCommitListeners.delete(listener);
+				};
 				if (!transport) {
 					return {
 						sqlite,
@@ -152,7 +167,7 @@ export function createBunWorkspaceRuntime({
 					sqlite,
 					transport: cancellableTransport,
 					sha256: async (value) => sha256Hex(value),
-					onRemoteCommit: emitRecordsChanged,
+					onRemoteCommit: emitRemoteCommit,
 				});
 				const synchronize = (): void => {
 					if (ownerDisposed) return;
@@ -184,6 +199,7 @@ export function createBunWorkspaceRuntime({
 							synchronize();
 						});
 					},
+					subscribeRemoteCommit,
 					async [Symbol.asyncDispose]() {
 						ownerDisposed = true;
 						clearInterval(poll);
