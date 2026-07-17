@@ -91,8 +91,12 @@ using document = await client.tables.notes.document.open(note.id);
 const editor = document.get('editor');
 const comments = document.get('comments');
 
+document.transact(() => {
+	editor.insert(0, 'Hello');
+}, 'editor');
+
+// Normal editing does not await this. This is an explicit durable boundary.
 await document.whenDurable();
-await client.tables.notes.delete(note.id);
 ```
 
 The acquisition name and capability shape are fixed:
@@ -100,10 +104,29 @@ The acquisition name and capability shape are fixed:
 ```ts
 type RowDocument = {
 	get: Y.Doc['get'];
+	/**
+	 * Groups application-authored changes into one local Yjs transaction.
+	 *
+	 * This signature deliberately restates rather than derives
+	 * `Y.Doc['transact']`: Yjs's third `local` parameter belongs to provider
+	 * infrastructure, so application code must not control it.
+	 *
+	 * @example
+	 * document.transact(() => {
+	 * 	editor.insert(0, 'Hello');
+	 * }, 'editor');
+	 */
 	transact<TValue>(
 		callback: (transaction: Y.Transaction) => TValue,
 		origin?: unknown,
 	): TValue;
+	/**
+	 * Waits until the SQLite transaction containing every local update observed
+	 * before this call has committed.
+	 *
+	 * Persistence starts automatically. Normal editing does not await this;
+	 * use it only when another operation requires a durable local boundary.
+	 */
 	whenDurable(): Promise<void>;
 	[Symbol.dispose](): void;
 };
@@ -111,12 +134,27 @@ type RowDocument = {
 
 `get` derives Yjs's exact native signature. `transact` preserves the native
 callback and origin shape while withholding its provider-facing `local` flag.
-`whenDurable` waits for every local document update observed before the call to
-commit to SQLite. `[Symbol.dispose]` releases the cached lease; the workspace
-finishes already queued persistence independently and owns eventual Yjs
-document destruction. Disposal neither waits for durability nor cancels an
-observed update. Retained roots are unsupported after lease disposal or row
-deletion.
+Its eventual public implementation must retain this JSDoc because the missing
+parameter is an intentional authority boundary. Persistence begins
+automatically; `whenDurable` is only an optional barrier for a caller that must
+know every local document update observed before the call is included in a
+committed transaction in the canonical workspace database. The browser OPFS
+runtime uses `journal_mode = DELETE` with `synchronous = FULL`, so there is no
+WAL checkpoint on that path. The method does not wait for authority acceptance.
+Normal editor updates do not await it. `[Symbol.dispose]` releases the cached
+lease; the workspace finishes already queued persistence independently and owns
+eventual Yjs document destruction. Disposal neither waits for durability nor
+cancels an observed update. Retained roots are unsupported after lease disposal
+or row deletion.
+
+The SQLite workspace file is the durability boundary. This row-document path
+does not attach `y-indexeddb` and does not retain browser IndexedDB as another
+persistence owner. Existing IndexedDB-backed paths are migration sources only.
+
+`open(rowId)` resolves only after row liveness checking, cached-lease
+acquisition, hydration from confirmed plus pending SQLite state, and update
+capture installation. It does not wait for remote convergence. The asynchronous
+boundary prevents callers from receiving a half-hydrated document.
 
 Root names and interpretations are durable application schema. One application
 may bind `editor` as structured content and use `comments` for another

@@ -42,6 +42,17 @@ SQLite `PRAGMA user_version` owns the physical storage version. Rebuildable
 current-state projections, release table views, and baseline-acquisition scratch
 are not canonical tables.
 
+This SQLite file is the local persistence owner. The destination does not also
+persist row documents through `y-indexeddb` or browser IndexedDB. Existing
+IndexedDB-backed workspace paths are replaced rather than retained as a second
+canonical store.
+
+The browser runtime opens the official SQLite WASM `opfs` VFS with
+`journal_mode = DELETE` and `synchronous = FULL`. This path has a rollback
+journal, not a WAL, so it has no WAL checkpoint boundary. OPFS can technically
+host WAL-mode SQLite under exclusive locking, but this destination does not
+enable it.
+
 Rows and documents remain physically separate because their payload sizes and
 write patterns differ. They share one row lifecycle and transaction owner.
 Row deletion removes both. An empty document has no `documents` row.
@@ -74,10 +85,14 @@ shared types for application-owned roots, but there is no raw `Y.Doc` API.
 
 A Yjs editor transaction is visible in memory before its SQLite write commits.
 `whenDurable()` resolves only after every local document update observed before
-the call commits to SQLite. A failed write poisons the handle; the caller must
-discard and reopen it. Every document persistence transaction rechecks current
-row liveness. Local or remote deletion revokes all handles and cannot be undone
-by a queued update.
+the call is included in a committed transaction in the canonical workspace
+database. On the browser OPFS path, that is a completed DELETE-journal
+transaction with `synchronous = FULL`; there is no WAL checkpoint to await. It
+does not wait for authority acceptance. Persistence starts automatically, so
+ordinary editor code does not await this optional barrier. A failed write
+poisons the handle; the caller must discard and reopen it. Every document
+persistence transaction rechecks current row liveness. Local or remote deletion
+revokes all handles and cannot be undone by a queued update.
 
 Each response page installs confirmed outcomes and advances the checkpoint in
 one transaction while keeping the sealed overlay. The final page at head retires

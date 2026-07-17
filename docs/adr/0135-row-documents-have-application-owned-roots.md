@@ -52,10 +52,29 @@ deliberately native-shaped `RowDocument`, not the raw Yjs `Doc`:
 ```ts
 type RowDocument = {
 	get: Y.Doc['get'];
+	/**
+	 * Groups application-authored changes into one local Yjs transaction.
+	 *
+	 * This signature deliberately restates rather than derives
+	 * `Y.Doc['transact']`: Yjs's third `local` parameter belongs to provider
+	 * infrastructure, so application code must not control it.
+	 *
+	 * @example
+	 * document.transact(() => {
+	 * 	editor.insert(0, 'Hello');
+	 * }, 'editor');
+	 */
 	transact<TValue>(
 		callback: (transaction: Y.Transaction) => TValue,
 		origin?: unknown,
 	): TValue;
+	/**
+	 * Waits until the SQLite transaction containing every local update observed
+	 * before this call has committed.
+	 *
+	 * Persistence starts automatically. Normal editing does not await this;
+	 * use it only when another operation requires a durable local boundary.
+	 */
 	whenDurable(): Promise<void>;
 	[Symbol.dispose](): void;
 };
@@ -65,9 +84,28 @@ type RowDocument = {
 instead of copying it. `transact` preserves the native callback, origin, and
 return-value shape but deliberately omits Yjs's third `local` parameter. Every
 application transaction is local; provider application remains workspace
-infrastructure. `whenDurable()` is the workspace durability method. It waits
-until every local document update observed before the call has committed to
-SQLite.
+infrastructure. The JSDoc must remain on the eventual public method because the
+missing third parameter is a deliberate authority boundary, not an incomplete
+copy of the upstream signature.
+
+Persistence starts automatically for every emitted update. `whenDurable()` is
+an optional observation barrier, not the command that begins persistence. It
+waits until every local document update observed before the call has committed
+in the canonical workspace database. The browser OPFS runtime uses SQLite's
+DELETE journal with `synchronous = FULL`, not WAL, so no WAL checkpoint exists
+on that path. The method does not wait for remote authority acceptance. Most
+editor code never calls it; it exists for operations that must not proceed from
+memory-only state.
+
+SQLite is the canonical local persistence boundary in this destination. Row
+documents do not attach `y-indexeddb`, and browser IndexedDB is not a second
+durability owner. Existing IndexedDB-backed workspace paths are migration
+sources, not part of this contract.
+
+`open(rowId)` is asynchronous because the returned handle is ready rather than
+half-hydrated. It checks row liveness, acquires the cached lease, loads confirmed
+plus pending state from SQLite, and installs update capture before resolving.
+It does not wait for remote convergence.
 
 `[Symbol.dispose]()` releases this acquisition's cached lease. It does not
 wait for durability, cancel an already observed update, or destroy canonical

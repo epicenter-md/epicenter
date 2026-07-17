@@ -206,6 +206,12 @@ Rows and documents stay separate to avoid rewriting large document overflow
 pages during ordinary field installation. Local-only files use the same schema:
 `intents` is empty and the `replica` singleton is absent.
 
+The workspace SQLite file is the only canonical local persistence owner. Row
+documents do not also attach `y-indexeddb` or persist through browser IndexedDB.
+Existing IndexedDB-backed workspace paths are deleted during the clean break.
+The browser runtime uses the official SQLite WASM `opfs` VFS with
+`journal_mode = DELETE` and `synchronous = FULL`; it does not enable WAL.
+
 ## Current state and durability
 
 Fields use a connection-local projection:
@@ -223,10 +229,14 @@ documents -> sealed document update -> open document update -> live Yjs document
 `table.document.open(rowId)` is the supported document acquisition, and `get`
 is the supported root acquisition. A Yjs editor transaction is visible before
 its SQLite commit. `whenDurable()` resolves only after every local document
-update observed before the call commits to SQLite. A failed persistence write
-poisons the handle; reopen restores the last durable state. Every document
-write rechecks row liveness. Synchronous lease disposal neither waits for nor
-cancels queued persistence. Deletion revokes all handles.
+update observed before the call is included in a committed transaction in the
+canonical workspace database. The browser OPFS path uses SQLite's DELETE journal
+with `synchronous = FULL`, so no WAL checkpoint exists there. The method does
+not wait for authority acceptance. Persistence begins automatically, so normal
+editor code does not await this optional barrier. A failed persistence write
+poisons the handle; reopen restores the last durable state. Every document write
+rechecks row liveness. Synchronous lease disposal neither waits for nor cancels
+queued persistence. Deletion revokes all handles.
 
 ## Page installation and baseline acquisition
 
