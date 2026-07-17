@@ -92,7 +92,7 @@ Persistence starts automatically for every emitted update. `whenDurable()` is
 an optional observation barrier, not the command that begins persistence. It
 waits until every local document update observed before the call has committed
 in the canonical workspace database. The browser OPFS runtime uses SQLite's
-DELETE journal with `synchronous = FULL`, not WAL, so no WAL checkpoint exists
+DELETE journal with `synchronous = EXTRA`, not WAL, so no WAL checkpoint exists
 on that path. The method does not wait for remote authority acceptance. Most
 editor code never calls it; it exists for operations that must not proceed from
 memory-only state.

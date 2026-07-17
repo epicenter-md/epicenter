@@ -210,7 +210,7 @@ The workspace SQLite file is the only canonical local persistence owner. Row
 documents do not also attach `y-indexeddb` or persist through browser IndexedDB.
 Existing IndexedDB-backed workspace paths are deleted during the clean break.
 The browser runtime uses the official SQLite WASM `opfs` VFS with
-`journal_mode = DELETE` and `synchronous = FULL`; it does not enable WAL.
+`journal_mode = DELETE` and `synchronous = EXTRA`; it does not enable WAL.
 
 ## Current state and durability
 
@@ -231,7 +231,7 @@ is the supported root acquisition. A Yjs editor transaction is visible before
 its SQLite commit. `whenDurable()` resolves only after every local document
 update observed before the call is included in a committed transaction in the
 canonical workspace database. The browser OPFS path uses SQLite's DELETE journal
-with `synchronous = FULL`, so no WAL checkpoint exists there. The method does
+with `synchronous = EXTRA`, so no WAL checkpoint exists there. The method does
 not wait for authority acceptance. Persistence begins automatically, so normal
 editor code does not await this optional barrier. A failed persistence write
 poisons the handle; reopen restores the last durable state. Every document write
@@ -311,6 +311,9 @@ those prove different non-negotiable invariants.
 
 ### Wave 0: Prove the unstable edges
 
+- [x] Verify `synchronous = EXTRA` with DELETE journaling on Chromium OPFS,
+  including acknowledged-commit recovery and alternating-order latency samples.
+- [ ] Repeat the OPFS durability and latency harness in Firefox and Safari.
 - [ ] Pin the selected Yjs 14 release candidate exactly and prove several named
   roots through update-encoding round trips.
 - [ ] Verify current CodeMirror and ProseMirror bindings accept the unified

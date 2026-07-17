@@ -64,10 +64,12 @@ async function openRecords(
 				'opfs',
 			);
 			try {
+				// EXTRA extends FULL by syncing rollback-journal deletion in DELETE
+				// mode, strengthening the configured local commit boundary.
 				database.exec(`
 					PRAGMA busy_timeout = 5000;
 					PRAGMA journal_mode = DELETE;
-					PRAGMA synchronous = FULL;
+					PRAGMA synchronous = EXTRA;
 					PRAGMA temp_store = MEMORY;
 				`);
 				const definitions = Object.fromEntries(

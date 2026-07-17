@@ -139,7 +139,7 @@ parameter is an intentional authority boundary. Persistence begins
 automatically; `whenDurable` is only an optional barrier for a caller that must
 know every local document update observed before the call is included in a
 committed transaction in the canonical workspace database. The browser OPFS
-runtime uses `journal_mode = DELETE` with `synchronous = FULL`, so there is no
+runtime uses `journal_mode = DELETE` with `synchronous = EXTRA`, so there is no
 WAL checkpoint on that path. The method does not wait for authority acceptance.
 Normal editor updates do not await it. `[Symbol.dispose]` releases the cached
 lease; the workspace finishes already queued persistence independently and owns

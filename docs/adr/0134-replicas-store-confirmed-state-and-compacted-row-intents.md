@@ -48,10 +48,15 @@ IndexedDB-backed workspace paths are replaced rather than retained as a second
 canonical store.
 
 The browser runtime opens the official SQLite WASM `opfs` VFS with
-`journal_mode = DELETE` and `synchronous = FULL`. This path has a rollback
-journal, not a WAL, so it has no WAL checkpoint boundary. OPFS can technically
+`journal_mode = DELETE` and `synchronous = EXTRA`. In DELETE mode, EXTRA extends
+FULL by requesting a sync of the directory entry after SQLite unlinks the
+rollback journal. This path has no WAL checkpoint boundary. OPFS can technically
 host WAL-mode SQLite under exclusive locking, but this destination does not
-enable it.
+enable it. The
+[OPFS synchronous-mode prototype](../../packages/workspace/__prototypes__/opfs-synchronous-mode/NOTES.md)
+verified the setting, recovery after acknowledged commits, and no stable material
+latency penalty in Chromium. That evidence does not prove physical power-loss
+durability or equivalent behavior in every browser.
 
 Rows and documents remain physically separate because their payload sizes and
 write patterns differ. They share one row lifecycle and transaction owner.
@@ -87,7 +92,7 @@ A Yjs editor transaction is visible in memory before its SQLite write commits.
 `whenDurable()` resolves only after every local document update observed before
 the call is included in a committed transaction in the canonical workspace
 database. On the browser OPFS path, that is a completed DELETE-journal
-transaction with `synchronous = FULL`; there is no WAL checkpoint to await. It
+transaction with `synchronous = EXTRA`; there is no WAL checkpoint to await. It
 does not wait for authority acceptance. Persistence starts automatically, so
 ordinary editor code does not await this optional barrier. A failed write
 poisons the handle; the caller must discard and reopen it. Every document
@@ -144,3 +149,7 @@ local-only and synchronized ownership while avoiding a second schema.
   table and absent replica row cost less than maintaining a second schema.
 - **Persist baseline-acquisition staging in the workspace schema.** Rejected by
   ADR-0136: incomplete install data is disposable scratch, not canonical state.
+- **Use `synchronous = FULL` in browser OPFS.** Rejected because DELETE mode
+  commits by unlinking the rollback journal, and EXTRA also requests a sync of
+  that directory change. The prototype found no stable material latency penalty
+  for matching the configured policy to the local durability boundary.
