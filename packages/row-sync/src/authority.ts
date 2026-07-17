@@ -35,6 +35,7 @@ const STORAGE_VERSION = 5;
  * before commit, and folding a retained tail into a compacted baseline.
  */
 export type DocumentCodec = {
+	isValidUpdate(update: Uint8Array): boolean;
 	mergedCompactState(parts: readonly Uint8Array[]): Uint8Array;
 };
 
@@ -251,6 +252,11 @@ function applyIntent(
 			let documentUpdate: string | undefined;
 			if (intent.documentUpdate !== undefined) {
 				const bytes = decodeBase64(intent.documentUpdate);
+				// Wire admission proves only that this is bounded base64. The
+				// injected codec owns semantic validation of the opaque CRDT bytes.
+				// Invalid bytes deterministically no-op the whole create rather than
+				// wedging its sealed round forever.
+				if (!codec.isValidUpdate(bytes)) return false;
 				const compact = codec.mergedCompactState([bytes]);
 				// An oversized initial document no-ops the create as a whole, so
 				// document bytes cannot merge into another row lifetime.
@@ -298,6 +304,9 @@ function applyIntent(
 			let documentApplied = false;
 			if (intent.documentUpdate !== undefined && current !== undefined) {
 				const candidate = decodeBase64(intent.documentUpdate);
+				// A malformed document component no-ops independently. Field changes
+				// in the same live update still fold under their own bound.
+				if (!codec.isValidUpdate(candidate)) return fieldsApplied;
 				const merged = codec.mergedCompactState([
 					...readDocumentParts(database, intent.table, intent.rowId),
 					candidate,

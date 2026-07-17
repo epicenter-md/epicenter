@@ -30,6 +30,16 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 const codec: DocumentCodec = {
+	isValidUpdate(update) {
+		try {
+			const value = JSON.parse(decoder.decode(update));
+			return (
+				Array.isArray(value) && value.every((token) => typeof token === 'string')
+			);
+		} catch {
+			return false;
+		}
+	},
 	mergedCompactState(parts) {
 		const tokens = new Set<string>();
 		for (const part of parts) {

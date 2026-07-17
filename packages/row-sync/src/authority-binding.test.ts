@@ -27,6 +27,16 @@ const encoder = new TextEncoder();
  * merging is idempotent and compact size grows with distinct content.
  */
 const codec: DocumentCodec = {
+	isValidUpdate(update) {
+		try {
+			const value = JSON.parse(decoder.decode(update));
+			return (
+				Array.isArray(value) && value.every((token) => typeof token === 'string')
+			);
+		} catch {
+			return false;
+		}
+	},
 	mergedCompactState(parts) {
 		const tokens = new Set<string>();
 		for (const part of parts) {
@@ -277,6 +287,63 @@ describe('merge-aware document admission (ADR-0131/0133)', () => {
 		`${name}:${'x'.repeat(
 			Math.ceil(ROW_SYNC_ADMISSION_LIMITS.canonicalDocumentBytes * 0.6),
 		)}`;
+	const malformedUpdate = encodeBase64(new Uint8Array([1, 2, 3]));
+
+	test('malformed document bytes no-op without wedging the sealed round', () => {
+		const { authority, replicaId, sync } = openTestAuthority();
+		const created = expectPage(
+			sync({
+				round: 1,
+				intents: [create(rid(1), { title: 'invalid' }, malformedUpdate)],
+			}),
+		);
+		expect(created.token).toEqual({
+			replicaId,
+			acceptedRound: 1,
+			checkpoint: 1,
+		});
+		expect(created.outcomes).toEqual([]);
+		expect(authority.inspect().rows).toEqual([]);
+
+		expectPage(
+			sync({
+				round: 2,
+				acceptedRound: 1,
+				checkpoint: 1,
+				intents: [create(rid(1), { title: 'valid' })],
+			}),
+		);
+		expect(authority.inspect().rows[0]?.fields).toEqual({ title: 'valid' });
+	});
+
+	test('malformed document bytes no-op only the live update component', () => {
+		const { authority, sync } = openTestAuthority();
+		sync({ round: 1, intents: [create(rid(1), { title: 'before' })] });
+		const page = expectPage(
+			sync({
+				round: 2,
+				acceptedRound: 1,
+				checkpoint: 1,
+				intents: [
+					update(
+						rid(1),
+						{ set: { title: 'after' }, unset: [] },
+						malformedUpdate,
+					),
+				],
+			}),
+		);
+		expect(page.outcomes).toEqual([
+			{
+				kind: 'row',
+				table: 'notes',
+				rowId: rid(1),
+				fields: { title: 'after' },
+				sequence: 2,
+			},
+		]);
+		expect(authority.inspect().documentUpdates).toEqual([]);
+	});
 
 	test('a merged document above the canonical maximum no-ops only the document component', () => {
 		const { authority, sync } = openTestAuthority();
