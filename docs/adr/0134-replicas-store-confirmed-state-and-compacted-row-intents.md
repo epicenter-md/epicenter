@@ -52,11 +52,10 @@ The browser runtime opens the official SQLite WASM `opfs` VFS with
 FULL by requesting a sync of the directory entry after SQLite unlinks the
 rollback journal. This path has no WAL checkpoint boundary. OPFS can technically
 host WAL-mode SQLite under exclusive locking, but this destination does not
-enable it. The
-[OPFS synchronous-mode prototype](../../packages/workspace/__prototypes__/opfs-synchronous-mode/NOTES.md)
-verified the setting, recovery after acknowledged commits, and no stable material
-latency penalty in Chromium. That evidence does not prove physical power-loss
-durability or equivalent behavior in every browser.
+enable it. A disposable OPFS experiment verified the setting, recovery after
+acknowledged commits, and no stable material latency penalty in Chromium. That
+evidence does not prove physical power-loss durability or equivalent behavior
+in every browser.
 
 Rows and documents remain physically separate because their payload sizes and
 write patterns differ. They share one row lifecycle and transaction owner.
