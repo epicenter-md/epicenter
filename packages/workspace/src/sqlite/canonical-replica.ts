@@ -2,6 +2,7 @@ import {
 	type BaselineScanRequest,
 	decodeBase64,
 	encodeBase64,
+	encodedJsonBytes,
 	type EnrollRequest,
 	foldFields,
 	type JsonObject,
@@ -1098,7 +1099,7 @@ function encodedRoundBytes(
 			? {}
 			: { pageLimit }),
 	};
-	return new TextEncoder().encode(JSON.stringify(request)).byteLength;
+	return encodedJsonBytes(request);
 }
 
 function hasMonotoneOutcomes(
