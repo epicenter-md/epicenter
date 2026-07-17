@@ -49,7 +49,7 @@ import {
 } from './billing/policies.js';
 import { mountBillingApi } from './billing/routes.js';
 import { billingServiceFor } from './billing/service.js';
-import { createStorageService } from './storage/service.js';
+import { issueStorageEnrollment } from './storage/service.js';
 import { buildEpicenterTrustedOrigins } from './trusted-origins.js';
 
 // Compile-time proof that this worker's generated Env provides every
@@ -150,16 +150,20 @@ mountRecordsApp(app, {
 	// registry row. Admission registers the source before the replica is minted.
 	// Synchronization never consults storage state.
 	issueEnrollment: (c, partition, enroll) =>
-		createStorageService({
-			listObservations: (principalId) =>
-				listStorageObservations(c.var.db, principalId),
-			readWorkspaceBytes: (source) =>
-				readWorkspaceDatabaseSize((c.env as Cloudflare.Env).RECORDS, source),
-			upsertObservation: (observation) =>
-				upsertStorageObservation(c.var.db, observation),
-			resolveIncludedBytes: () =>
-				billingServiceFor(c).getStorageIncludedBytes(),
-		}).issueEnrollment(partition, enroll),
+		issueStorageEnrollment(
+			{
+				listObservations: (principalId) =>
+					listStorageObservations(c.var.db, principalId),
+				readWorkspaceBytes: (source) =>
+					readWorkspaceDatabaseSize((c.env as Cloudflare.Env).RECORDS, source),
+				upsertObservation: (observation) =>
+					upsertStorageObservation(c.var.db, observation),
+				resolveIncludedBytes: () =>
+					billingServiceFor(c).getStorageIncludedBytes(),
+			},
+			partition,
+			enroll,
+		),
 });
 // Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver, not
 // a prebuilt wrapper.
