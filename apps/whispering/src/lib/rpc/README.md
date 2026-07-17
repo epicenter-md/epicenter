@@ -45,21 +45,21 @@ For one-off local lifecycle state, wrap the operation in the component instead:
 ```svelte
 <script lang="ts">
   import { createMutation } from '@tanstack/svelte-query';
-  import { mutationOptions } from 'wellcrafted/query';
+  import { resultMutationOptions } from 'wellcrafted/query';
   import {
     startManualRecording,
     stopManualRecording,
   } from '$lib/operations/recording';
 
   const startMutation = createMutation(() =>
-    mutationOptions({
+    resultMutationOptions({
       mutationKey: ['recording', 'startManual'],
       mutationFn: startManualRecording,
     }),
   );
 
   const stopMutation = createMutation(() =>
-    mutationOptions({
+    resultMutationOptions({
       mutationKey: ['recording', 'stopManual'],
       mutationFn: stopManualRecording,
     }),
@@ -73,7 +73,7 @@ For one-off local lifecycle state, wrap the operation in the component instead:
 
 Cross-adapter coordination still belongs in operations. An RPC file should not import a sibling RPC module just to sequence work.
 
-If the one-off operation returns a Wellcrafted `Result`, use `mutationOptions({ mutationKey, mutationFn })` at the hook call site so TanStack receives data and error through its normal channels.
+If the one-off operation returns a Wellcrafted `Result`, use `resultMutationOptions({ mutationKey, mutationFn })` at the hook call site. The adapter resolves `Ok(data)` into TanStack's data channel and throws `Err(error)` into its error channel.
 
 ## Canonical module shape
 
@@ -158,7 +158,7 @@ Prefer plain async functions in `$lib/operations/` for code that is not observed
 UI (.svelte)
   │  createQuery(() => rpc.<x>.options)         ← shared cached reads
   │  createMutation(() => rpc.<y>.options)      ← shared mutations w/ cache invalidation
-  │  createMutation(() => mutationOptions(...)) ← local lifecycle over an orchestration
+  │  createMutation(() => resultMutationOptions(...)) ← local lifecycle over an orchestration
   │  await <operation>(...)                     ← fire-and-forget orchestrations
   ▼
 $lib/rpc/*          TanStack adapters (this directory)

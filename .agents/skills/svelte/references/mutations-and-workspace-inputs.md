@@ -10,7 +10,7 @@ In `.svelte` files, use `createMutation` for user-triggered async operations whe
 
 `createMutation` is the component operation lifecycle primitive. It is not reserved for cache invalidation, retry policy, or shared mutation keys.
 
-Use `defineMutation` in `$lib/rpc` when the operation has shared query-layer identity: multiple consumers, cache invalidation, optimistic updates, `useIsMutating`, or a reusable RPC boundary. For a one-off Result-returning component action, keep the operation as a plain function in `$lib/operations`, `$lib/services`, or a focused module, then wrap it locally with `createMutation(() => mutationOptions({ mutationKey, mutationFn }))`.
+Use `defineMutation` in `$lib/rpc` when the operation has shared query-layer identity: multiple consumers, cache invalidation, optimistic updates, `useIsMutating`, or a reusable RPC boundary. For a one-off Result-returning component action, keep the operation as a plain function in `$lib/operations`, `$lib/services`, or a focused module, then wrap it locally with `createMutation(() => resultMutationOptions({ mutationKey, mutationFn }))`.
 
 Use direct `await` when no template lifecycle state is observed, when the code runs outside component context, or when a sequential workflow would become harder to read as mutation callbacks. Shared Wellcrafted mutations are callable, so imperative RPC mutation usage is `await rpc.thing(input)`.
 
@@ -65,12 +65,12 @@ For component-local operation lifecycle, wrap the function locally:
 ```svelte
 <script lang="ts">
 	import { createMutation } from '@tanstack/svelte-query';
-	import { mutationOptions } from 'wellcrafted/query';
+	import { resultMutationOptions } from 'wellcrafted/query';
 	import { exportRecordingsMarkdown } from '$lib/recording-markdown-export';
 	import { report } from '$lib/report';
 
 	const exportMarkdown = createMutation(() =>
-		mutationOptions({
+		resultMutationOptions({
 			mutationKey: ['recordings', 'exportMarkdown'],
 			mutationFn: exportRecordingsMarkdown,
 		}),
@@ -133,11 +133,11 @@ observe `isPending`. Wrap the operation locally:
 ```svelte
 <script lang="ts">
 	import { createMutation } from '@tanstack/svelte-query';
-	import { mutationOptions } from 'wellcrafted/query';
+	import { resultMutationOptions } from 'wellcrafted/query';
 	import { startManualRecording } from '$lib/operations/recording';
 
 	const startRecording = createMutation(() =>
-		mutationOptions({
+		resultMutationOptions({
 			mutationKey: ['recording', 'startManual'],
 			mutationFn: startManualRecording,
 		}),

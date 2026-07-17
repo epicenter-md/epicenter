@@ -46,10 +46,10 @@ The query/RPC layer is the reactive bridge between UI components and the service
 
 | Scope | Query | Mutation |
 | --- | --- | --- |
-| Hook-local | `queryOptions(input)` | `mutationOptions(input)` |
+| Hook-local Result adapter | `resultQueryOptions(input)` | `resultMutationOptions(input)` |
 | Reusable definition | `defineQuery(input)` | `defineMutation(input)` |
 
-Use `queryOptions` and `mutationOptions` at one hook call site when no imperative API or shared query identity is needed.
+Use `resultQueryOptions` and `resultMutationOptions` at one hook call site when a Result-returning function needs to enter TanStack's data/error channels and no imperative API or shared query identity is needed.
 
 Use `defineQuery` and `defineMutation` in shared `$lib/rpc` / `$lib/query` modules.
 
@@ -104,7 +104,7 @@ Rules:
 
 Use `$lib/rpc` as the shared TanStack observation surface. It may wrap a direct service/state call, or a `$lib/operations` entry point when UI needs shared mutation identity: multiple consumers, cache invalidation, optimistic updates, `useIsMutating`, or a named mutation key over that operation.
 
-Keep orchestration in `$lib/operations`: delivery, reporting, sounds, analytics, clipboard writes, and multi-step workflows. A one-off component can observe a Result-returning operation locally with `createMutation(() => mutationOptions({ mutationKey, mutationFn }))` instead of promoting it into `$lib/rpc`.
+Keep orchestration in `$lib/operations`: delivery, reporting, sounds, analytics, clipboard writes, and multi-step workflows. A one-off component can observe a Result-returning operation locally with `createMutation(() => resultMutationOptions({ mutationKey, mutationFn }))` instead of promoting it into `$lib/rpc`.
 
 Lack of cache invalidation is not a reason to avoid `createMutation` in a Svelte component. If the template observes operation lifecycle state such as `isPending`, disabled controls, loading text, success handling, or error handling, local `createMutation` is the preferred wrapper.
 
@@ -130,16 +130,16 @@ Only define an RPC-local error when the adapter itself discovers a failure that 
 
 ## Reactive And Imperative Use
 
-Query-layer adapters provide reactive hook usage and explicit imperative usage. Component-local Result-returning operations can use the same reactive shape with `mutationOptions`.
+Query-layer adapters provide reactive hook usage and explicit imperative usage. Component-local Result-returning operations can use the same reactive shape with `resultMutationOptions`.
 
 ### Reactive Interface: `.options` Or Hook-Local Options
 
-Use in Svelte components when the template reads lifecycle state. Pass `.options` (a static object) inside an accessor function for shared RPC operations. For one-off component operations, use `queryOptions` or `mutationOptions`:
+Use in Svelte components when the template reads lifecycle state. Pass `.options` (a static object) inside an accessor function for shared RPC operations. For one-off Result-returning component operations, use `resultQueryOptions` or `resultMutationOptions`:
 
 ```svelte
 <script lang="ts">
 	import { createQuery, createMutation } from '@tanstack/svelte-query';
-	import { mutationOptions } from 'wellcrafted/query';
+	import { resultMutationOptions } from 'wellcrafted/query';
 	import { rpc } from '$lib/rpc';
 	import { exportRecordingsMarkdown } from '$lib/recording-markdown-export';
 
@@ -152,7 +152,7 @@ Use in Svelte components when the template reads lifecycle state. Pass `.options
 	);
 
 	const exportMarkdown = createMutation(() =>
-		mutationOptions({
+		resultMutationOptions({
 			mutationKey: ['recordings', 'exportMarkdown'],
 			mutationFn: exportRecordingsMarkdown,
 		}),
@@ -208,7 +208,7 @@ Use `.fetch()` when the user action asks for freshness or validation against cur
 | --------- | ------- |
 | Component reads server or async data | `createQuery(() => rpc.thing.options)` |
 | Shared mutation identity, invalidation, optimistic update, or multiple consumers | `defineMutation` in `$lib/rpc`, consumed with `createMutation(() => rpc.thing.options)` |
-| One-off Svelte button/action with observed pending, success, or error state | Local `createMutation(() => mutationOptions({ mutationKey, mutationFn }))` |
+| One-off Svelte button/action with observed pending, success, or error state | Local `createMutation(() => resultMutationOptions({ mutationKey, mutationFn }))` |
 | Imperative query read | `rpc.thing(...).fetch()` or `rpc.thing(...).ensure()` |
 | Imperative mutation | `rpc.thing(input)` |
 | Plain operation with no observed lifecycle state | Direct `await operation(input)` |
