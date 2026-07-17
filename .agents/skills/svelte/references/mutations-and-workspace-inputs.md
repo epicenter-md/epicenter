@@ -147,7 +147,7 @@ Whispering error presentation goes through `$lib/report` at the UI or operation
 boundary:
 
 ```typescript
-if (error) {
+if (error !== null) {
 	report.error({ cause: error });
 	return;
 }
@@ -160,7 +160,7 @@ In `.ts` files, use direct `await` because `createMutation` requires component c
 ```typescript
 // In a .ts file (e.g., load function, utility)
 const { error } = await rpc.download.downloadRecording(recording);
-if (error) {
+if (error !== null) {
 	// Handle error
 } else {
 	// Handle success

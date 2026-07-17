@@ -1,9 +1,9 @@
 ---
 name: query-layer
-description: Query/RPC layer with TanStack Query, defineKeys, service composition, runtime DI. Use for createQuery, createMutation, queries/mutations, reactive data management.
+description: 'Query/RPC boundaries with TanStack Query and Wellcrafted Results. Use when editing createQuery, createMutation, resultQueryOptions, resultMutationOptions, defineQuery, defineMutation, defineKeys, shared cache identity, mutation lifecycle, or service-to-TanStack adapters.'
 metadata:
   author: epicenter
-  version: '2.0'
+  version: '3.0'
 ---
 
 # Query Layer Patterns
@@ -18,7 +18,7 @@ When TanStack Query behavior, Svelte adapter types, cache invalidation semantics
 
 Skip DeepWiki for stable basics and repo-local patterns already documented below.
 
-The query/RPC layer is the reactive bridge between UI components and the service layer. It wraps service functions or observable operations with caching, mutation lifecycle state, invalidation, and direct imperative access using TanStack Query and WellCrafted factories.
+The query/RPC layer is the reactive bridge between UI components and the service layer. It wraps service functions or observable operations with caching, mutation lifecycle state, invalidation, and direct imperative access using TanStack Query and Wellcrafted factories.
 
 > **Related Skills**: See `services-layer` for the service layer these queries consume. See `svelte` for Svelte-specific TanStack Query patterns. See `error-handling` for toast/report patterns after Results reach the UI boundary.
 
@@ -87,9 +87,7 @@ Rules:
 
 Use `$lib/rpc` as the shared TanStack observation surface. It may wrap a direct service/state call, or a `$lib/operations` entry point when UI needs shared mutation identity: multiple consumers, cache invalidation, optimistic updates, `useIsMutating`, or a named mutation key over that operation.
 
-Keep orchestration in `$lib/operations`: delivery, reporting, sounds, analytics, clipboard writes, and multi-step workflows. A one-off component can observe a Result-returning operation locally with `createMutation(() => resultMutationOptions({ mutationKey, mutationFn }))` instead of promoting it into `$lib/rpc`.
-
-Lack of cache invalidation is not a reason to avoid `createMutation` in a Svelte component. If the template observes operation lifecycle state such as `isPending`, disabled controls, loading text, success handling, or error handling, local `createMutation` is the preferred wrapper.
+Keep orchestration in `$lib/operations`: delivery, reporting, sounds, analytics, clipboard writes, and multi-step workflows. Do not promote a one-component operation into `$lib/rpc` merely to observe local pending state. The `svelte` skill owns the component's choice between local `createMutation` and direct `await`.
 
 ## Dependency Direction
 
@@ -113,18 +111,16 @@ Only define an RPC-local error when the adapter itself discovers a failure that 
 
 ## Reactive And Imperative Use
 
-Query-layer adapters provide reactive hook usage and explicit imperative usage. Component-local Result-returning operations can use the same reactive shape with `resultMutationOptions`.
+Query-layer adapters provide reactive hook usage and explicit imperative usage.
 
-### Reactive Interface: `.options` Or Hook-Local Options
+### Reactive Interface: `.options`
 
-Use in Svelte components when the template reads lifecycle state. Pass `.options` (a static object) inside an accessor function for shared RPC operations. For one-off Result-returning component operations, use `resultQueryOptions` or `resultMutationOptions`:
+Shared RPC adapters expose `.options` as a static object. Svelte hooks read it inside an accessor:
 
 ```svelte
 <script lang="ts">
 	import { createQuery, createMutation } from '@tanstack/svelte-query';
-	import { resultMutationOptions } from 'wellcrafted/query';
 	import { rpc } from '$lib/rpc';
-	import { exportRecordingsMarkdown } from '$lib/recording-markdown-export';
 
 	const playbackUrl = createQuery(() =>
 		rpc.audio.getPlaybackUrl(() => recordingId).options,
@@ -133,18 +129,11 @@ Use in Svelte components when the template reads lifecycle state. Pass `.options
 	const transcribeRecording = createMutation(
 		() => rpc.transcription.transcribeRecording.options,
 	);
-
-	const exportMarkdown = createMutation(() =>
-		resultMutationOptions({
-			mutationKey: ['recordings', 'exportMarkdown'],
-			mutationFn: exportRecordingsMarkdown,
-		}),
-	);
 </script>
 
 {#if playbackUrl.isPending}
 	<Spinner />
-{:else if playbackUrl.error}
+{:else if playbackUrl.error !== null}
 	<Error message={playbackUrl.error.message} />
 {:else}
 	<AudioPlayer src={playbackUrl.data} />
@@ -153,13 +142,13 @@ Use in Svelte components when the template reads lifecycle state. Pass `.options
 
 ### Imperative Interface: Queries Choose Cache Policy, Mutations Are Callable
 
-Use outside component context, or inside Svelte workflows that do not expose pending, success, or error state to the template:
+Use outside component context, or whenever the caller needs a direct Result:
 
 ```typescript
 // In an event handler or workflow
 async function handleDownload(recording: Recording) {
 	const { error } = await rpc.download.downloadRecording(recording);
-	if (error) {
+	if (error !== null) {
 		report.error({ cause: error });
 		return;
 	}
@@ -171,7 +160,7 @@ async function stopAndTranscribe(toastId: string) {
 	const { data: url, error: playbackUrlError } =
 		await rpc.audio.getPlaybackUrl(() => recordingId).fetch();
 
-	if (playbackUrlError) {
+	if (playbackUrlError !== null) {
 		report.error({ cause: playbackUrlError });
 		return;
 	}
@@ -184,14 +173,15 @@ Use `.fetch()` when TanStack should evaluate the query's normal staleness policy
 
 ### When to Use Each
 
-| Situation | Pattern |
-| --------- | ------- |
-| Component reads server or async data | `createQuery(() => rpc.thing.options)` |
-| Shared mutation identity, invalidation, optimistic update, or multiple consumers | `defineMutation` in `$lib/rpc`, consumed with `createMutation(() => rpc.thing.options)` |
-| One-off Svelte button/action with observed pending, success, or error state | Local `createMutation(() => resultMutationOptions({ mutationKey, mutationFn }))` |
+| Adapter surface | Pattern |
+| --------------- | ------- |
+| Shared reactive query | `createQuery(() => rpc.thing.options)` |
+| Shared reactive mutation | `createMutation(() => rpc.thing.options)` |
 | Imperative query read | `rpc.thing(...).fetch()` or `rpc.thing(...).ensure()` |
 | Imperative mutation | `rpc.thing(input)` |
-| Plain operation with no observed lifecycle state | Direct `await operation(input)` |
+
+For local component operation placement and lifecycle decisions, use the
+`svelte` skill's mutation guidance.
 
 ## Key Rules
 
@@ -199,7 +189,7 @@ Use `.fetch()` when TanStack should evaluate the query's normal staleness policy
 2. **Use `.options` (no parentheses)** - It's a static object, wrap in accessor for Svelte
 3. **Do not translate tagged errors by default** - Pass service/operation errors through to the report boundary
 4. **Services receive explicit app inputs** - The consuming edge injects settings and device config
-5. **Use imperative calls in `.ts` files** - `createMutation` requires component context
+5. **Keep component lifecycle policy in `svelte`** - This skill owns shared adapter shape and cache behavior
 6. **Update cache deliberately** - Use optimistic writes only when the cache owner and rollback path are explicit; otherwise invalidate or refetch
 
 ## References

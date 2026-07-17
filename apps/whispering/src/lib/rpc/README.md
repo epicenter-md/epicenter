@@ -123,7 +123,7 @@ downloadRecording: defineMutation({
   mutationFn: async (recording: Recording) => {
     const { data: audioBlob, error } =
       await services.blobs.audio.getBlob(recording.id);
-    if (error) return Err(error);
+    if (error !== null) return Err(error);
 
     return services.download.downloadBlob({
       name: `whispering_recording_${recording.id}`,

@@ -14,7 +14,7 @@ downloadRecording: defineMutation({
 	mutationFn: async (recording: Recording) => {
 		const { data: audioBlob, error } =
 			await services.blobs.audio.getBlob(recording.id);
-		if (error) return Err(error);
+		if (error !== null) return Err(error);
 
 		return services.download.downloadBlob({
 			name: `whispering_recording_${recording.id}`,
@@ -32,7 +32,7 @@ another module needs to name the exact union.
 
 ```typescript
 // Wrong: domain fields and variant identity disappear before presentation.
-if (error) {
+if (error !== null) {
 	return Err({
 		title: 'Failed',
 		description: error.message,
@@ -40,7 +40,7 @@ if (error) {
 }
 
 // Right: preserve the tagged error until the report boundary.
-if (error) return Err(error);
+if (error !== null) return Err(error);
 
 report.error({ cause: error });
 ```

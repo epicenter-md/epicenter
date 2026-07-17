@@ -3,7 +3,7 @@ name: error-handling
 description: Adapt thrown or rejected operations into wellcrafted Results and consume Result values without swallowing failures. Use when replacing try-catch, adding trySync or tryAsync, choosing fallback versus typed propagation or selective rethrow, forwarding Err, handling fire-and-forget promises, mapping known failures at HTTP boundaries, or surfacing tagged errors with toastOnError.
 metadata:
   author: epicenter
-  version: '3.0'
+  version: '3.1'
 ---
 
 # Error Handling
@@ -62,7 +62,7 @@ Prefer an immediate guard so the success path stays linear.
 
 - `await` when this function inspects the Result.
 - `return tryAsync(...)` when the caller owns the `Promise<Result<...>>`.
-- `void tryAsync(...)` only for an intentionally best-effort side effect whose outcome is irrelevant and whose `catch` callback does not rethrow.
+- Do not use bare `void tryAsync(...)`: ordinary failures fulfill with `Err`, so a Promise rejection handler cannot observe them. A best-effort operation still needs an async owner that awaits the Result and explicitly logs or ignores its error branch.
 - In UI fire-and-forget code, attach presentation before discarding a Promise that fulfills with a Result: `void save().then((result) => toastOnError(result, 'Save failed'))`. If the Promise can reject, adapt or catch that rejection first.
 
 ## Keep Native Try-Catch When It Expresses The Contract
@@ -82,5 +82,5 @@ Do not turn unknown programming errors into a generic domain failure. Mapping ev
 1. The function's throw-versus-Result contract is explicit.
 2. The wrapper covers one coherent failure meaning.
 3. Caught values become typed errors, intentional fallbacks, or selective rethrows.
-4. Every possible `Err` branch is handled, forwarded, logged, presented, or deliberately discarded at a named best-effort boundary.
+4. Every possible `Err` branch is handled, forwarded, logged, presented, or explicitly ignored by a named best-effort owner.
 5. Unknown bugs still reach the appropriate crash or framework error boundary.
