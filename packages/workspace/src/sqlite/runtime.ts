@@ -1,15 +1,14 @@
-import {
-	decodeBase64,
-	type RowSyncSqlite,
-	type SqliteValue,
-	type WireRowIntent,
+import type {
+	RowSyncSqlite,
+	SqliteValue,
+	WireRowIntent,
 } from '@epicenter/row-sync';
 import type { Static, TSchema } from 'typebox';
 import type { Result } from 'wellcrafted/result';
 import {
 	createDocumentRuntime,
+	createLocalDocumentAdmission,
 	type DocumentRuntime,
-	mergeDocumentUpdates,
 	type RowDocument,
 } from './canonical-documents.js';
 import { type CanonicalKv, createCanonicalKv } from './canonical-kv.js';
@@ -32,12 +31,20 @@ import type {
 } from './lens-definition.js';
 import type { WorkspaceDefinition } from './runtime-definition.js';
 
-export type WorkspaceRecordOwner = {
+export type WorkspaceRecordOwner<
+	TAdmission extends void | Promise<void> = void,
+> = {
 	sqlite: RowSyncSqlite;
 	/** Present only for synchronized files. */
-	admitIntent?(intent: WireRowIntent): void;
-	readCurrentRow?(table: string, rowId: string): unknown | undefined;
-	readCurrentDocumentParts?(table: string, rowId: string): Uint8Array[];
+	admitIntent?(intent: WireRowIntent): TAdmission;
+	readCurrentRow?(
+		table: string,
+		rowId: string,
+	): unknown | undefined | Promise<unknown | undefined>;
+	readCurrentDocumentParts?(
+		table: string,
+		rowId: string,
+	): Uint8Array[] | Promise<Uint8Array[]>;
 	onLocalCommit?(): void;
 	subscribeRemoteCommit?(listener: () => void): () => void;
 	subscribeRowsDeleted?(
@@ -165,14 +172,14 @@ export function createWorkspaceRuntime({
 					((table: string, rowId: string) =>
 						readCurrentDocumentParts(owner.sqlite, table, rowId));
 				const documents = createDocumentRuntime({
-					sqlite: owner.sqlite,
 					admitIntent:
 						owner.admitIntent ??
-						createLocalDocumentAdmission(
-							owner.sqlite,
-							currentRow,
-							owner.onLocalCommit,
-						),
+						createLocalDocumentAdmission({
+							sqlite: owner.sqlite,
+							readCurrentRow: (table, rowId) =>
+								readCurrentRow(owner.sqlite, table, rowId),
+							onLocalCommit: owner.onLocalCommit,
+						}),
 					readParts: currentDocumentParts,
 					readCurrentRow: currentRow,
 				});
@@ -335,44 +342,6 @@ export function createWorkspaceRuntime({
 }
 
 export type WorkspaceRuntime = ReturnType<typeof createWorkspaceRuntime>;
-
-function createLocalDocumentAdmission(
-	sqlite: RowSyncSqlite,
-	currentRow: (table: string, rowId: string) => unknown | undefined,
-	onLocalCommit: (() => void) | undefined,
-): (intent: WireRowIntent) => void {
-	return (intent) => {
-		if (intent.kind !== 'update' || intent.documentUpdate === undefined) {
-			throw new TypeError(
-				'Local document persistence requires an update intent',
-			);
-		}
-		sqlite.transaction(() => {
-			if (currentRow(intent.table, intent.rowId) === undefined) return;
-			const incoming = decodeBase64(intent.documentUpdate as string);
-			const stored = sqlite.all<{ yjs_state: Uint8Array }>(
-				`SELECT yjs_state FROM documents
-				 WHERE table_key = ? AND row_id = ?`,
-				[intent.table, intent.rowId],
-			)[0];
-			const merged = mergeDocumentUpdates(
-				stored ? [toBytes(stored.yjs_state), incoming] : [incoming],
-			);
-			sqlite.run(
-				`INSERT INTO documents(table_key, row_id, yjs_state)
-				 VALUES (?, ?, ?)
-				 ON CONFLICT(table_key, row_id) DO UPDATE SET
-					yjs_state = excluded.yjs_state`,
-				[intent.table, intent.rowId, merged],
-			);
-			onLocalCommit?.();
-		});
-	};
-}
-
-function toBytes(value: Uint8Array | ArrayBuffer): Uint8Array {
-	return value instanceof Uint8Array ? value : new Uint8Array(value);
-}
 
 function tableFor(
 	records: CanonicalRecords,

@@ -1,4 +1,4 @@
-import type { SqliteValue } from '@epicenter/row-sync';
+import type { SqliteValue, WireRowIntent } from '@epicenter/row-sync';
 import type { TSchema } from 'typebox';
 import type { TableLensDefinitions } from './lens-definition.js';
 
@@ -26,6 +26,9 @@ export type BrowserRecordOperation =
 	| { kind: 'kv-get'; key: string }
 	| { kind: 'kv-set'; key: string; value: unknown }
 	| { kind: 'kv-unset'; key: string }
+	| { kind: 'read-current-row'; table: string; rowId: string }
+	| { kind: 'read-current-document-parts'; table: string; rowId: string }
+	| { kind: 'admit-document-intent'; intent: WireRowIntent }
 	| { kind: 'list'; table: string }
 	| { kind: 'create'; table: string; input: Record<string, unknown> }
 	| {
@@ -64,6 +67,12 @@ export type BrowserWorkerInbound =
 export type BrowserRuntimeMessage =
 	| { type: 'ready' }
 	| { type: 'records-changed'; workspaceId: string }
+	| {
+			type: 'rows-deleted';
+			workspaceId: string;
+			addresses: { table: string; rowId: string }[];
+	  }
+	| { type: 'baseline-promoted'; workspaceId: string }
 	| {
 			type: 'background-error';
 			workspaceId: string;

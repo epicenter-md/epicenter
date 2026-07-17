@@ -1,3 +1,4 @@
+import type { RowSyncSqlite, WireRowIntent } from '@epicenter/row-sync';
 import {
 	type BrowserSqliteDatabase,
 	createBrowserSqliteAdapter,
@@ -9,7 +10,10 @@ import type {
 	BrowserWorkerInbound,
 	BrowserWorkspaceManifest,
 } from './browser-runtime-protocol.js';
-import { mergeDocumentUpdates } from './canonical-documents.js';
+import {
+	createLocalDocumentAdmission,
+	mergeDocumentUpdates,
+} from './canonical-documents.js';
 import { type CanonicalKv, createCanonicalKv } from './canonical-kv.js';
 import {
 	type CanonicalRecords,
@@ -19,6 +23,8 @@ import {
 	type CanonicalReplica,
 	type CanonicalReplicaTransport,
 	createCanonicalReplica,
+	readCurrentDocumentParts,
+	readCurrentRow,
 } from './canonical-replica.js';
 import type { KvDefinitions } from './kv-definition.js';
 import { defineTable, type TableLensDefinitions } from './lens-definition.js';
@@ -34,8 +40,10 @@ type WorkerScope = {
 type OpenedRecords = {
 	manifest: BrowserWorkspaceManifest;
 	database: Database;
+	sqlite: RowSyncSqlite;
 	records: CanonicalRecords;
 	kv: CanonicalKv<KvDefinitions>;
+	admitDocumentIntent(intent: WireRowIntent): void;
 	replica?: CanonicalReplica;
 };
 
@@ -95,6 +103,19 @@ async function openRecords(
 									workspaceId: manifest.workspaceId,
 								});
 							},
+							onRowsDeleted(addresses) {
+								scope.postMessage({
+									type: 'rows-deleted',
+									workspaceId: manifest.workspaceId,
+									addresses,
+								});
+							},
+							onBaselinePromoted() {
+								scope.postMessage({
+									type: 'baseline-promoted',
+									workspaceId: manifest.workspaceId,
+								});
+							},
 						})
 					: undefined;
 				const records = createCanonicalRecords(sqlite, definitions, {
@@ -103,6 +124,13 @@ async function openRecords(
 				kv = createCanonicalKv(sqlite, (manifest.kv ?? {}) as KvDefinitions, {
 					admitIntent: replica?.admit,
 				});
+				const admitDocumentIntent =
+					replica?.admit ??
+					createLocalDocumentAdmission({
+						sqlite,
+						readCurrentRow: (table, rowId) =>
+							readCurrentRow(sqlite, table, rowId),
+					});
 				if (replica) {
 					synchronize(replica, manifest.workspaceId);
 					setInterval(
@@ -113,8 +141,10 @@ async function openRecords(
 				return {
 					manifest,
 					database,
+					sqlite,
 					records,
 					kv,
+					admitDocumentIntent,
 					replica,
 				};
 			} catch (cause) {
@@ -195,6 +225,26 @@ function execute(state: OpenedRecords, operation: BrowserRecordOperation) {
 		case 'kv-unset':
 			state.kv.unset(operation.key);
 			return undefined;
+		case 'read-current-row':
+			return readCurrentRow(state.sqlite, operation.table, operation.rowId);
+		case 'read-current-document-parts':
+			return readCurrentDocumentParts(
+				state.sqlite,
+				operation.table,
+				operation.rowId,
+			);
+		case 'admit-document-intent':
+			if (
+				operation.intent.kind !== 'update' ||
+				operation.intent.documentUpdate === undefined ||
+				operation.intent.fields !== undefined
+			) {
+				throw new TypeError(
+					'Browser document admission requires a document-only update intent',
+				);
+			}
+			state.admitDocumentIntent(operation.intent);
+			return undefined;
 		case 'list':
 			return tableFor(records, operation.table).list();
 		case 'create':
@@ -243,7 +293,8 @@ scope.addEventListener('message', (event) => {
 				request.operation.kind === 'update' ||
 				request.operation.kind === 'delete' ||
 				request.operation.kind === 'kv-set' ||
-				request.operation.kind === 'kv-unset'
+				request.operation.kind === 'kv-unset' ||
+				request.operation.kind === 'admit-document-intent'
 			) {
 				scope.postMessage({
 					type: 'records-changed',

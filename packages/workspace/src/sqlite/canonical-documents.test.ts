@@ -12,15 +12,11 @@
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
-import {
-	decodeBase64,
-	type RowSyncSqlite,
-	type WireRowIntent,
-} from '@epicenter/row-sync';
 import { createBunSqliteAdapter } from '@epicenter/row-sync/bun';
 import * as Y from '@y/y';
 import {
 	createDocumentRuntime,
+	createLocalDocumentAdmission,
 	mergeDocumentUpdates,
 } from './canonical-documents.js';
 import { createCanonicalRecords } from './canonical-records.js';
@@ -38,31 +34,6 @@ import {
 const definitions = {
 	notes: defineTable({ fields: { title: field.string() } }),
 };
-
-function localDocumentAdmission(sqlite: RowSyncSqlite) {
-	return (intent: WireRowIntent): void => {
-		if (intent.kind !== 'update' || intent.documentUpdate === undefined) {
-			throw new Error('Expected a document update intent');
-		}
-		sqlite.transaction(() => {
-			if (readCurrentRow(sqlite, intent.table, intent.rowId) === undefined)
-				return;
-			const incoming = decodeBase64(intent.documentUpdate as string);
-			const stored = sqlite.all<{ yjs_state: Uint8Array }>(
-				'SELECT yjs_state FROM documents WHERE table_key = ? AND row_id = ?',
-				[intent.table, intent.rowId],
-			)[0];
-			const merged = mergeDocumentUpdates(
-				stored ? [stored.yjs_state, incoming] : [incoming],
-			);
-			sqlite.run(
-				`INSERT INTO documents(table_key, row_id, yjs_state) VALUES (?, ?, ?)
-				 ON CONFLICT(table_key, row_id) DO UPDATE SET yjs_state = excluded.yjs_state`,
-				[intent.table, intent.rowId, merged],
-			);
-		});
-	};
-}
 
 test('compaction returns a small delta against a confirmed base', () => {
 	const source = new Y.Doc();
@@ -100,8 +71,10 @@ test('open, edit, whenDurable, dispose, and reopen restore durable state', async
 		});
 		const row = records.tables.notes.create({ title: 'Document owner' });
 		documents = createDocumentRuntime({
-			sqlite,
-			admitIntent: localDocumentAdmission(sqlite),
+			admitIntent: createLocalDocumentAdmission({
+				sqlite,
+				readCurrentRow: (table, rowId) => readCurrentRow(sqlite, table, rowId),
+			}),
 			readParts: (table, rowId) =>
 				readCurrentDocumentParts(sqlite, table, rowId),
 			readCurrentRow: (table, rowId) => readCurrentRow(sqlite, table, rowId),
@@ -133,7 +106,6 @@ test('persistence failure poisons durability and further transactions', async ()
 		);
 		const failure = new Error('disk write failed');
 		const documents = createDocumentRuntime({
-			sqlite,
 			admitIntent() {
 				throw failure;
 			},
@@ -161,8 +133,10 @@ test('local deletion revokes handles and drops queued updates', async () => {
 		});
 		const row = records.tables.notes.create({ title: 'Delete me' });
 		documents = createDocumentRuntime({
-			sqlite,
-			admitIntent: localDocumentAdmission(sqlite),
+			admitIntent: createLocalDocumentAdmission({
+				sqlite,
+				readCurrentRow: (table, rowId) => readCurrentRow(sqlite, table, rowId),
+			}),
 			readParts: (table, rowId) =>
 				readCurrentDocumentParts(sqlite, table, rowId),
 			readCurrentRow: (table, rowId) => readCurrentRow(sqlite, table, rowId),
@@ -199,7 +173,6 @@ test('remote deletion revokes a synchronized row document handle', async () => {
 		const row = firstRecords.tables.notes.create({ title: 'Shared' });
 		await first.synchronize();
 		documents = createDocumentRuntime({
-			sqlite: firstSqlite,
 			admitIntent: first.admit,
 			readParts: first.readCurrentDocumentParts,
 			readCurrentRow: first.readCurrentRow,

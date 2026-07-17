@@ -9,7 +9,12 @@ import {
 	type BrowserWorkspaceManifest,
 	serializeTableLenses,
 } from './browser-runtime-protocol.js';
-import type { OpenedWorkspace, WorkspaceTables } from './runtime.js';
+import { createDocumentRuntime } from './canonical-documents.js';
+import type {
+	OpenedWorkspace,
+	WorkspaceRecordOwner,
+	WorkspaceTables,
+} from './runtime.js';
 import type { WorkspaceDefinition } from './runtime-definition.js';
 
 type DefinitionTables<TDefinition> =
@@ -24,6 +29,29 @@ type BoundWorkspace = {
 	definition: WorkspaceDefinition;
 	manifest: BrowserWorkspaceManifest;
 	handle: OpenedWorkspace<WorkspaceDefinition>;
+	notifyRecordsChanged(): void;
+	notifyRowsDeleted(addresses: RowAddress[]): void;
+	notifyBaselinePromoted(): void;
+};
+
+type RowAddress = { table: string; rowId: string };
+
+type PageWorkspaceRecordOwner = Required<
+	Pick<
+		WorkspaceRecordOwner<void | Promise<void>>,
+		| 'admitIntent'
+		| 'readCurrentRow'
+		| 'readCurrentDocumentParts'
+		| 'subscribeRowsDeleted'
+		| 'subscribeBaselinePromoted'
+	>
+>;
+
+type KvObservation = {
+	handlers: Set<() => void>;
+	lastSeen?: string;
+	isInitialized: boolean;
+	tail: Promise<void>;
 };
 
 type InvalidationMessage = { type: 'records-changed'; workspaceId: string };
@@ -87,6 +115,7 @@ export function createBrowserWorkspaceRuntime({
 				workspaceId,
 			} satisfies InvalidationMessage);
 		}
+		workspaces.get(workspaceId)?.notifyRecordsChanged();
 		onRecordsChanged(workspaceId);
 	}
 
@@ -123,6 +152,14 @@ export function createBrowserWorkspaceRuntime({
 						return;
 					case 'records-changed':
 						emitRecordsChanged(message.workspaceId, true);
+						return;
+					case 'rows-deleted':
+						workspaces
+							.get(message.workspaceId)
+							?.notifyRowsDeleted(message.addresses);
+						return;
+					case 'baseline-promoted':
+						workspaces.get(message.workspaceId)?.notifyBaselinePromoted();
 						return;
 					case 'background-error': {
 						const cause = new Error(message.message);
@@ -241,7 +278,92 @@ export function createBrowserWorkspaceRuntime({
 	function createHandle<TDefinition extends WorkspaceDefinition>(
 		definition: TDefinition,
 		manifest: BrowserWorkspaceManifest,
-	): OpenedWorkspace<TDefinition> {
+	) {
+		const rowsDeletedListeners = new Set<(addresses: RowAddress[]) => void>();
+		const baselinePromotedListeners = new Set<() => void>();
+		const kvObservations = new Map<string, KvObservation>();
+
+		function getKv(key: string) {
+			return request(manifest, { kind: 'kv-get', key });
+		}
+
+		function refreshKvObservation(
+			key: string,
+			observation: KvObservation,
+		): void {
+			observation.tail = observation.tail
+				.then(async () => {
+					if (observation.handlers.size === 0) return;
+					const current = JSON.stringify(await getKv(key));
+					if (!observation.isInitialized) {
+						observation.lastSeen = current;
+						observation.isInitialized = true;
+						return;
+					}
+					if (observation.lastSeen === current) return;
+					observation.lastSeen = current;
+					for (const handler of observation.handlers) handler();
+				})
+				.catch((cause) => {
+					onBackgroundError(
+						cause instanceof Error ? cause : new Error(String(cause)),
+						manifest.workspaceId,
+					);
+				});
+		}
+
+		function notifyRecordsChanged(): void {
+			for (const [key, observation] of kvObservations) {
+				refreshKvObservation(key, observation);
+			}
+		}
+
+		function notifyRowsDeleted(addresses: RowAddress[]): void {
+			for (const listener of rowsDeletedListeners) listener(addresses);
+		}
+
+		function notifyBaselinePromoted(): void {
+			for (const listener of baselinePromotedListeners) listener();
+		}
+
+		const owner = {
+			admitIntent(intent) {
+				return request<void>(manifest, {
+					kind: 'admit-document-intent',
+					intent,
+				});
+			},
+			readCurrentRow(table, rowId) {
+				return request(manifest, { kind: 'read-current-row', table, rowId });
+			},
+			readCurrentDocumentParts(table, rowId) {
+				return request<Uint8Array[]>(manifest, {
+					kind: 'read-current-document-parts',
+					table,
+					rowId,
+				});
+			},
+			subscribeRowsDeleted(listener) {
+				rowsDeletedListeners.add(listener);
+				return () => {
+					rowsDeletedListeners.delete(listener);
+				};
+			},
+			subscribeBaselinePromoted(listener) {
+				baselinePromotedListeners.add(listener);
+				return () => {
+					baselinePromotedListeners.delete(listener);
+				};
+			},
+		} satisfies PageWorkspaceRecordOwner;
+		const documents = createDocumentRuntime({
+			admitIntent: owner.admitIntent,
+			readParts: owner.readCurrentDocumentParts,
+			readCurrentRow: owner.readCurrentRow,
+		});
+		owner.subscribeRowsDeleted(documents.revoke);
+		owner.subscribeBaselinePromoted(documents.revokeAll);
+
 		const tables = Object.fromEntries(
 			Object.keys(definition.tables).map((table) => [
 				table,
@@ -263,14 +385,13 @@ export function createBrowserWorkspaceRuntime({
 							changes,
 						});
 					},
-					delete(id: string) {
-						return request<void>(manifest, { kind: 'delete', table, id });
+					async delete(id: string) {
+						await request<void>(manifest, { kind: 'delete', table, id });
+						notifyRowsDeleted([{ table, rowId: id }]);
 					},
 					document: Object.freeze({
-						async open(): Promise<never> {
-							throw new Error(
-								'Row documents are not yet openable in the browser runtime',
-							);
+						open(rowId: string) {
+							return documents.open(table, rowId);
 						},
 					}),
 				}),
@@ -279,7 +400,7 @@ export function createBrowserWorkspaceRuntime({
 
 		const kv = Object.freeze({
 			get(key: string) {
-				return request(manifest, { kind: 'kv-get', key });
+				return getKv(key);
 			},
 			set(key: string, value: unknown) {
 				return request(manifest, { kind: 'kv-set', key, value });
@@ -287,14 +408,29 @@ export function createBrowserWorkspaceRuntime({
 			async unset(key: string) {
 				await request(manifest, { kind: 'kv-unset', key });
 			},
-			observe(): never {
-				throw new Error(
-					'kv.observe is not yet wired through the browser Worker runtime',
-				);
+			observe(key: string, handler: () => void) {
+				if (!Object.hasOwn(definition.kv, key)) {
+					throw new Error(`Unknown kv key '${key}'`);
+				}
+				let observation = kvObservations.get(key);
+				if (!observation) {
+					observation = {
+						handlers: new Set(),
+						isInitialized: false,
+						tail: Promise.resolve(),
+					};
+					kvObservations.set(key, observation);
+					refreshKvObservation(key, observation);
+				}
+				observation.handlers.add(handler);
+				return () => {
+					observation.handlers.delete(handler);
+					if (observation.handlers.size === 0) kvObservations.delete(key);
+				};
 			},
 		});
 
-		return Object.freeze({
+		const handle = Object.freeze({
 			id: definition.id,
 			tables,
 			kv: kv as never,
@@ -313,6 +449,12 @@ export function createBrowserWorkspaceRuntime({
 				},
 			}),
 		}) as unknown as OpenedWorkspace<TDefinition>;
+		return {
+			handle,
+			notifyRecordsChanged,
+			notifyRowsDeleted,
+			notifyBaselinePromoted,
+		};
 	}
 
 	return {
@@ -336,13 +478,13 @@ export function createBrowserWorkspaceRuntime({
 				kv: JSON.parse(JSON.stringify(definition.kv)),
 				recordSync: recordSync?.binding,
 			};
-			const handle = createHandle(definition, manifest);
+			const binding = createHandle(definition, manifest);
 			workspaces.set(definition.id, {
 				definition,
 				manifest,
-				handle,
+				...binding,
 			});
-			return handle;
+			return binding.handle;
 		},
 		async [Symbol.asyncDispose](): Promise<void> {
 			if (isDisposed) return;
