@@ -6,9 +6,11 @@ export type WorkspaceAccount<TTransport> = {
 	/**
 	 * Canonical deployment identity for local account-owned storage.
 	 *
-	 * Today callers pass the deployment base URL. The account handle owns the
-	 * eventual tightening to a branded deployment id; runtime callers should not
-	 * compose persistence keys themselves.
+	 * Today callers pass the deployment base URL; `accountPersistenceKey`
+	 * normalizes it once, so formatting variants of the same URL resolve to the
+	 * same persistence identity. The account handle owns the eventual tightening
+	 * to a branded deployment id; runtime callers should not compose persistence
+	 * keys themselves.
 	 */
 	deploymentId: string;
 	principalId: PrincipalId;
@@ -25,8 +27,18 @@ export function accountPersistenceKey(
 	return sha256Hex(
 		canonicalJson({
 			owner: 'account',
-			deploymentId: account.deploymentId,
+			deploymentId: canonicalDeploymentId(account.deploymentId),
 			principalId: account.principalId,
 		}),
 	);
+}
+
+/**
+ * Normalize deployment identity once (ADR-0138) so formatting variants of the
+ * same deployment URL cannot fork account persistence. The trailing slash makes
+ * origin-only and path-prefixed deployments each canonical.
+ */
+function canonicalDeploymentId(deploymentId: string): string {
+	const href = new URL(deploymentId).href;
+	return href.endsWith('/') ? href : `${href}/`;
 }
