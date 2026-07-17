@@ -161,15 +161,12 @@ function createBunRuntimeWithPersistence({
 						for (const listener of baselineListeners) listener();
 					},
 				});
-				let activeSynchronization: Promise<void> | undefined;
+				let activeSynchronization: Promise<unknown> | undefined;
 				const synchronize = (): void => {
 					if (ownerDisposed) return;
-					const pending = replica
-						.synchronize()
-						.then(() => undefined)
-						.catch((cause) => {
-							if (!signal.aborted) reportSyncError(cause);
-						});
+					const pending = replica.synchronize().catch((cause) => {
+						if (!signal.aborted) reportSyncError(cause);
+					});
 					const synchronization = pending.finally(() => {
 						if (activeSynchronization === synchronization) {
 							activeSynchronization = undefined;
