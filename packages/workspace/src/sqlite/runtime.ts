@@ -267,10 +267,16 @@ export function createWorkspaceRuntime({
 			observe(key: string, handler: () => void) {
 				let disposed = false;
 				let detach: (() => void) | undefined;
-				void openedFor(entry).then((opened) => {
-					if (disposed) return;
-					detach = opened.kv.observe(key, handler);
-				});
+				void openedFor(entry)
+					.then((opened) => {
+						if (disposed) return;
+						detach = opened.kv.observe(key, handler);
+					})
+					.catch(() => {
+						// Best-effort attach: an owner-open failure (or disposal
+						// during opening) already surfaces loudly on the first kv
+						// read or write, so the observation just never attaches.
+					});
 				return () => {
 					disposed = true;
 					detach?.();
