@@ -1,9 +1,9 @@
 import {
 	type BaselineScanRequest,
 	decodeBase64,
+	type EnrollRequest,
 	encodeBase64,
 	encodedJsonBytes,
-	type EnrollRequest,
 	foldFields,
 	type JsonObject,
 	parseBaselineScanResponse,

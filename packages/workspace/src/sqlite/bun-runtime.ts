@@ -254,7 +254,11 @@ export function inspectDeviceWorkspace({
 	storageRoot: string;
 	workspaceId: string;
 }): DeviceWorkspaceInspection {
-	const path = workspaceDatabasePath(storageRoot, devicePersistenceKey(), workspaceId);
+	const path = workspaceDatabasePath(
+		storageRoot,
+		devicePersistenceKey(),
+		workspaceId,
+	);
 	if (!existsSync(path)) return { adoptable: false };
 	const database = new Database(path, { readonly: true });
 	try {
@@ -309,7 +313,11 @@ export function deleteDeviceWorkspace({
 	storageRoot: string;
 	workspaceId: string;
 }): void {
-	const path = workspaceDatabasePath(storageRoot, devicePersistenceKey(), workspaceId);
+	const path = workspaceDatabasePath(
+		storageRoot,
+		devicePersistenceKey(),
+		workspaceId,
+	);
 	deleteWorkspaceFiles(path);
 }
 
@@ -318,7 +326,10 @@ function workspaceDatabasePath(
 	persistenceKey: string,
 	workspaceId: string,
 ): string {
-	return join(resolve(storageRoot, persistenceKey), `${workspaceId}.records.sqlite3`);
+	return join(
+		resolve(storageRoot, persistenceKey),
+		`${workspaceId}.records.sqlite3`,
+	);
 }
 
 function workspaceSummary(database: Database): {
@@ -343,9 +354,7 @@ function workspaceSummary(database: Database): {
 			.get(RESERVED_KV_TABLE, RESERVED_KV_ROW_ID)?.count ?? 0;
 	const documentCount =
 		database
-			.query<{ count: number }, []>(
-				'SELECT COUNT(*) AS count FROM documents',
-			)
+			.query<{ count: number }, []>('SELECT COUNT(*) AS count FROM documents')
 			.get()?.count ?? 0;
 	return { rows: rowCount, kv: kvCount, documents: documentCount };
 }
@@ -414,7 +423,7 @@ function hasAdoptedMarker(database: Database): boolean {
 				'SELECT 1 AS present FROM adoption_meta WHERE id = 1',
 			)
 			.get()?.present ?? 0) === 1
-		);
+	);
 }
 
 function serializeDatabase(path: string): Uint8Array {

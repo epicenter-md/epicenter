@@ -3,8 +3,8 @@ import {
 	parseBaselineScanRequest,
 	parseEnrollRequest,
 	parseSyncRequest,
-	requestRefusal,
 	ROW_SYNC_ADMISSION_LIMITS,
+	requestRefusal,
 } from '@epicenter/row-sync';
 import { type Context, Hono, type MiddlewareHandler } from 'hono';
 import type { Records, RecordsPartition } from '../records/contracts.js';

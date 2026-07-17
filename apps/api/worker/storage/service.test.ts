@@ -127,9 +127,9 @@ test('an over-limit unseen workspace creates no target state', async () => {
 		sizes: { existing: 100, target: 7 },
 	});
 
-	expect(await fixture.issueEnrollment(target, fixture.enroll)).toEqual(
-		{ result: 'enrollment-refused' },
-	);
+	expect(await fixture.issueEnrollment(target, fixture.enroll)).toEqual({
+		result: 'enrollment-refused',
+	});
 	expect(fixture.events).toEqual([
 		'list:alice',
 		'read:existing',
@@ -150,9 +150,9 @@ test('an admitted unseen workspace is registered before issuance without authori
 		sizes: { existing: 40, target: 7 },
 	});
 
-	expect(
-		await fixture.issueEnrollment(target, fixture.enroll),
-	).toMatchObject({ result: 'enrolled' });
+	expect(await fixture.issueEnrollment(target, fixture.enroll)).toMatchObject({
+		result: 'enrolled',
+	});
 	expect(fixture.events).toEqual([
 		'list:alice',
 		'read:existing',
@@ -172,9 +172,9 @@ test('usage exactly equal to the allowance refuses enrollment', async () => {
 		includedBytes: 80,
 	});
 
-	expect(await fixture.issueEnrollment(target, fixture.enroll)).toEqual(
-		{ result: 'enrollment-refused' },
-	);
+	expect(await fixture.issueEnrollment(target, fixture.enroll)).toEqual({
+		result: 'enrollment-refused',
+	});
 	expect(fixture.events).not.toContain('read:target');
 	expect(fixture.issues()).toBe(0);
 });
@@ -189,9 +189,9 @@ test('registered workspaces refresh while blobs retain their cached absolute', a
 		includedBytes: 90,
 	});
 
-	expect(await fixture.issueEnrollment(target, fixture.enroll)).toEqual(
-		{ result: 'enrollment-refused' },
-	);
+	expect(await fixture.issueEnrollment(target, fixture.enroll)).toEqual({
+		result: 'enrollment-refused',
+	});
 	expect(fixture.events).not.toContain('read:account');
 	expect(fixture.events).not.toContain('read:target');
 	expect(fixture.issues()).toBe(0);
@@ -206,9 +206,9 @@ test('a registered target refreshes once and is not materialized again', async (
 		includedBytes: 100,
 	});
 
-	expect(
-		await fixture.issueEnrollment(target, fixture.enroll),
-	).toMatchObject({ result: 'enrolled' });
+	expect(await fixture.issueEnrollment(target, fixture.enroll)).toMatchObject({
+		result: 'enrolled',
+	});
 	expect(
 		fixture.events.filter((event) => event === 'read:target'),
 	).toHaveLength(1);
@@ -226,13 +226,13 @@ test('falling below the allowance admits the next attempt', async () => {
 		sizes: { existing: 100, target: 7 },
 	});
 
-	expect(await fixture.issueEnrollment(target, fixture.enroll)).toEqual(
-		{ result: 'enrollment-refused' },
-	);
+	expect(await fixture.issueEnrollment(target, fixture.enroll)).toEqual({
+		result: 'enrollment-refused',
+	});
 	fixture.sizes.set('existing', 99);
-	expect(
-		await fixture.issueEnrollment(target, fixture.enroll),
-	).toMatchObject({ result: 'enrolled' });
+	expect(await fixture.issueEnrollment(target, fixture.enroll)).toMatchObject({
+		result: 'enrolled',
+	});
 	expect(fixture.issues()).toBe(1);
 });
 

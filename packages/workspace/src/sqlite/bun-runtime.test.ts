@@ -111,7 +111,9 @@ test('device workspace adoption copies into an empty account workspace', async (
 	try {
 		let rowId: string;
 		{
-			await using device = createDeviceBunWorkspaceRuntime({ storageRoot: root });
+			await using device = createDeviceBunWorkspaceRuntime({
+				storageRoot: root,
+			});
 			const workspace = await device.open(definition);
 			const row = await workspace.tables.notes.create({ title: 'Device' });
 			rowId = row.id;
@@ -121,11 +123,12 @@ test('device workspace adoption copies into an empty account workspace', async (
 			await document.whenDurable();
 		}
 
-		expect(inspectDeviceWorkspace({ storageRoot: root, workspaceId: definition.id }))
-			.toMatchObject({
-				adoptable: true,
-				summary: { rows: 1, kv: 1, documents: 1 },
-			});
+		expect(
+			inspectDeviceWorkspace({ storageRoot: root, workspaceId: definition.id }),
+		).toMatchObject({
+			adoptable: true,
+			summary: { rows: 1, kv: 1, documents: 1 },
+		});
 
 		adoptDeviceWorkspace({
 			storageRoot: root,
@@ -173,7 +176,9 @@ test('device workspace adoption refuses a non-empty account workspace', async ()
 	};
 	try {
 		{
-			await using device = createDeviceBunWorkspaceRuntime({ storageRoot: root });
+			await using device = createDeviceBunWorkspaceRuntime({
+				storageRoot: root,
+			});
 			const workspace = await device.open(definition);
 			await workspace.tables.notes.create({ title: 'Device' });
 		}
