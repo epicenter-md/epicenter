@@ -184,6 +184,24 @@ export function createDocumentRuntime({
 				entry.doc.destroy();
 			}
 		},
+		/**
+		 * Baseline promotion replaced every confirmed document (ADR-0136);
+		 * every cached handle is poisoned and callers explicitly reopen from
+		 * the promoted state.
+		 */
+		revokeAll(): void {
+			for (const entry of [...cached.values()]) {
+				poison(
+					entry,
+					new Error(
+						'Row document was revoked because a baseline promotion replaced confirmed state',
+					),
+				);
+				cached.delete(keyOf(entry));
+				entry.doc.off('update', entry.listener);
+				entry.doc.destroy();
+			}
+		},
 	};
 }
 

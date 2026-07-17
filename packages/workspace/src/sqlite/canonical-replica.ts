@@ -3,6 +3,7 @@ import {
 	type EnrollRequest,
 	foldFields,
 	type JsonObject,
+	parseBaselineScanResponse,
 	parseEnrollResponse,
 	parseRowIntent,
 	parseSyncResponse,
@@ -24,6 +25,14 @@ const ROWS_TABLE = 'rows';
 const DOCUMENTS_TABLE = 'documents';
 const INTENTS_TABLE = 'intents';
 const REPLICA_TABLE = 'replica';
+
+/**
+ * Disposable baseline-acquisition scratch (ADR-0136). Not canonical tables:
+ * they exist only while one acquisition attempt runs, and dropping them is
+ * the entire crash-recovery policy.
+ */
+const SCRATCH_ROWS_TABLE = 'baseline_scratch_rows';
+const SCRATCH_DOCUMENTS_TABLE = 'baseline_scratch_documents';
 
 /**
  * The workspace's Yjs update operations, injected so this owner stays
@@ -88,6 +97,7 @@ export function createCanonicalReplica({
 	codec,
 	onRemoteCommit = () => undefined,
 	onRowsDeleted = () => undefined,
+	onBaselinePromoted = () => undefined,
 	roundLimit = ROW_SYNC_ADMISSION_LIMITS.intentsPerRound,
 	pageLimit = ROW_SYNC_ADMISSION_LIMITS.outcomesPerPage,
 }: {
@@ -97,12 +107,20 @@ export function createCanonicalReplica({
 	onRemoteCommit?: () => void;
 	/** Confirmed deletions revoke document handles (ADR-0135). */
 	onRowsDeleted?: (addresses: { table: string; rowId: string }[]) => void;
+	/**
+	 * Baseline promotion replaced every confirmed row and document; the
+	 * runtime must revoke every live document handle and rebuild projections
+	 * (ADR-0136). Callers explicitly reopen handles afterwards.
+	 */
+	onBaselinePromoted?: () => void;
 	roundLimit?: number;
 	pageLimit?: number;
 }) {
 	assertLimit(roundLimit, ROW_SYNC_ADMISSION_LIMITS.intentsPerRound, 'round');
 	assertLimit(pageLimit, ROW_SYNC_ADMISSION_LIMITS.outcomesPerPage, 'page');
 	initializeCanonicalSchema(sqlite);
+	// A crash during a prior acquisition leaves only droppable scratch.
+	dropScratch(sqlite);
 	let activeSynchronization: Promise<CanonicalReplicaStatus> | undefined;
 	let rerunRequested = false;
 	/** Strictly increasing per transmission; exclusive-writer scoped. */
@@ -502,10 +520,10 @@ export function createCanonicalReplica({
 					}
 					continue;
 				}
-				case 'baseline-required':
-					throw new Error(
-						'Baseline acquisition is required but not yet implemented',
-					);
+				case 'baseline-required': {
+					await acquireBaseline();
+					continue;
+				}
 				case 'protocol-mismatch':
 				case 'unknown-replica':
 				case 'replica-fork':
@@ -535,6 +553,228 @@ export function createCanonicalReplica({
 			}
 		}
 		return status();
+	}
+
+	/**
+	 * Disposable anchored baseline acquisition (ADR-0136). Owns the sync lane
+	 * exclusively: no ordinary page installs and no round submits until
+	 * promotion. Local edits keep flowing into canonical open intents. A
+	 * floor race deletes scratch and restarts the whole attempt.
+	 */
+	async function acquireBaseline(): Promise<void> {
+		for (;;) {
+			const attempt = await attemptBaselineAcquisition();
+			if (attempt === 'promoted') return;
+		}
+	}
+
+	async function attemptBaselineAcquisition(): Promise<
+		'promoted' | 'floor-raced'
+	> {
+		createScratch();
+		const replica = requireReplica();
+		/** Anchor `S`: the authority head observed with the first scan page. */
+		let anchor: number | undefined;
+		/** Target `E`: the authority head observed with the final scan page. */
+		let target = 0;
+		let cursor: { table: string; rowId: string } | undefined;
+		for (;;) {
+			const response = parseBaselineScanResponse(
+				await transport.baselineScan({
+					protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+					kind: 'baselineScan',
+					...(cursor === undefined ? {} : { after: cursor }),
+				}),
+			);
+			if (response.result !== 'page') {
+				throw new Error(`Baseline scan refused: ${response.result}`);
+			}
+			anchor ??= response.head;
+			// The retention floor must stay at or below the scratch fold
+			// cursor, which is still the anchor during the scan.
+			if (response.retentionFloor > anchor) {
+				dropScratch(sqlite);
+				return 'floor-raced';
+			}
+			sqlite.transaction(() => {
+				for (const row of response.rows) {
+					sqlite.run(
+						`INSERT INTO "${SCRATCH_ROWS_TABLE}"(table_key, row_id, fields_json)
+						 VALUES (?, ?, ?)
+						 ON CONFLICT(table_key, row_id) DO UPDATE SET
+							fields_json = excluded.fields_json`,
+						[row.table, row.rowId, JSON.stringify(row.fields)],
+					);
+					if (row.document) {
+						const parts = [
+							...(row.document.baseline === undefined
+								? []
+								: [base64ToBytes(row.document.baseline)]),
+							...row.document.updates.map(base64ToBytes),
+						];
+						if (parts.length > 0) {
+							sqlite.run(
+								`INSERT INTO "${SCRATCH_DOCUMENTS_TABLE}"(table_key, row_id, yjs_state)
+								 VALUES (?, ?, ?)
+								 ON CONFLICT(table_key, row_id) DO UPDATE SET
+									yjs_state = excluded.yjs_state`,
+								[row.table, row.rowId, codec.mergeUpdates(parts)],
+							);
+						}
+					}
+				}
+			});
+			const last = response.rows.at(-1);
+			if (last) cursor = { table: last.table, rowId: last.rowId };
+			target = response.head;
+			if (!response.hasMore) break;
+		}
+
+		// Fold ordinary confirmed outcomes over scratch for `(S, E]`. Pages
+		// may advance past `E` toward the current head; the promoted
+		// checkpoint is wherever the fold lands at or beyond `E`.
+		let foldCursor = anchor ?? 0;
+		while (foldCursor < target) {
+			const response = parseSyncResponse(
+				await transport.sync({
+					protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+					kind: 'sync',
+					token: {
+						replicaId: replica.replica_id,
+						acceptedRound: replica.accepted_round,
+						checkpoint: foldCursor,
+					},
+				}),
+			);
+			switch (response.result) {
+				case 'page': {
+					if (response.retentionFloor > foldCursor) {
+						dropScratch(sqlite);
+						return 'floor-raced';
+					}
+					sqlite.transaction(() => {
+						for (const outcome of response.outcomes) {
+							foldOutcomeIntoScratch(outcome);
+						}
+					});
+					if (response.token.checkpoint <= foldCursor) {
+						throw new Error('Baseline fold page did not advance');
+					}
+					foldCursor = response.token.checkpoint;
+					if (!response.hasMore) target = foldCursor;
+					continue;
+				}
+				case 'baseline-required': {
+					dropScratch(sqlite);
+					return 'floor-raced';
+				}
+				default:
+					throw new Error(`Baseline fold stopped: ${response.result}`);
+			}
+		}
+
+		// Promote exactly the folded state in one transaction: replace
+		// confirmed rows and documents, set the checkpoint, and preserve
+		// replica identity, exact-retry metadata, and every intent.
+		sqlite.transaction(() => {
+			const current = requireReplica();
+			if (
+				current.replica_id !== replica.replica_id ||
+				current.checkpoint !== replica.checkpoint
+			) {
+				throw new Error(
+					'Canonical replica state changed during baseline acquisition',
+				);
+			}
+			sqlite.run(`DELETE FROM "${ROWS_TABLE}"`);
+			sqlite.run(
+				`INSERT INTO "${ROWS_TABLE}"(table_key, row_id, fields_json)
+				 SELECT table_key, row_id, fields_json FROM "${SCRATCH_ROWS_TABLE}"`,
+			);
+			sqlite.run(`DELETE FROM "${DOCUMENTS_TABLE}"`);
+			sqlite.run(
+				`INSERT INTO "${DOCUMENTS_TABLE}"(table_key, row_id, yjs_state)
+				 SELECT table_key, row_id, yjs_state FROM "${SCRATCH_DOCUMENTS_TABLE}"`,
+			);
+			sqlite.run(`UPDATE "${REPLICA_TABLE}" SET checkpoint = ? WHERE id = 1`, [
+				foldCursor,
+			]);
+			dropScratch(sqlite);
+		});
+		onBaselinePromoted();
+		onRemoteCommit();
+		return 'promoted';
+	}
+
+	/**
+	 * The ordinary confirmed-outcome fold over scratch (ADR-0136): a
+	 * fields-bearing outcome installs its complete postimage even when the
+	 * scan missed the row; a document-only outcome on an absent row and a
+	 * deletion of an absent row no-op.
+	 */
+	function foldOutcomeIntoScratch(outcome: RowOutcome): void {
+		if (outcome.kind === 'deletion') {
+			sqlite.run(
+				`DELETE FROM "${SCRATCH_ROWS_TABLE}" WHERE table_key = ? AND row_id = ?`,
+				[outcome.table, outcome.rowId],
+			);
+			sqlite.run(
+				`DELETE FROM "${SCRATCH_DOCUMENTS_TABLE}" WHERE table_key = ? AND row_id = ?`,
+				[outcome.table, outcome.rowId],
+			);
+			return;
+		}
+		if (outcome.fields !== undefined) {
+			sqlite.run(
+				`INSERT INTO "${SCRATCH_ROWS_TABLE}"(table_key, row_id, fields_json)
+				 VALUES (?, ?, ?)
+				 ON CONFLICT(table_key, row_id) DO UPDATE SET
+					fields_json = excluded.fields_json`,
+				[outcome.table, outcome.rowId, JSON.stringify(outcome.fields)],
+			);
+		}
+		if (outcome.documentUpdate !== undefined) {
+			const live = sqlite.all<{ present: number }>(
+				`SELECT 1 AS present FROM "${SCRATCH_ROWS_TABLE}"
+				 WHERE table_key = ? AND row_id = ?`,
+				[outcome.table, outcome.rowId],
+			)[0];
+			if (!live) return;
+			const incoming = base64ToBytes(outcome.documentUpdate);
+			const existing = sqlite.all<{ yjs_state: Uint8Array }>(
+				`SELECT yjs_state FROM "${SCRATCH_DOCUMENTS_TABLE}"
+				 WHERE table_key = ? AND row_id = ?`,
+				[outcome.table, outcome.rowId],
+			)[0];
+			const merged = existing
+				? codec.mergeUpdates([toBytes(existing.yjs_state), incoming])
+				: incoming;
+			sqlite.run(
+				`INSERT INTO "${SCRATCH_DOCUMENTS_TABLE}"(table_key, row_id, yjs_state)
+				 VALUES (?, ?, ?)
+				 ON CONFLICT(table_key, row_id) DO UPDATE SET
+					yjs_state = excluded.yjs_state`,
+				[outcome.table, outcome.rowId, merged],
+			);
+		}
+	}
+
+	function createScratch(): void {
+		dropScratch(sqlite);
+		sqlite.run(`
+			CREATE TABLE "${SCRATCH_ROWS_TABLE}" (
+				table_key   TEXT NOT NULL,
+				row_id      TEXT NOT NULL,
+				fields_json TEXT NOT NULL CHECK (json_valid(fields_json)),
+				PRIMARY KEY (table_key, row_id)
+			) WITHOUT ROWID, STRICT;
+			CREATE TABLE "${SCRATCH_DOCUMENTS_TABLE}" (
+				table_key TEXT NOT NULL,
+				row_id    TEXT NOT NULL,
+				yjs_state BLOB NOT NULL,
+				PRIMARY KEY (table_key, row_id)
+			) WITHOUT ROWID, STRICT;
+		`);
 	}
 
 	function installPage(
@@ -1044,6 +1284,11 @@ export function initializeCanonicalSchema(sqlite: RowSyncSqlite): void {
 			throw new Error('Incompatible canonical replica storage');
 		}
 	});
+}
+
+function dropScratch(sqlite: RowSyncSqlite): void {
+	sqlite.run(`DROP TABLE IF EXISTS "${SCRATCH_ROWS_TABLE}"`);
+	sqlite.run(`DROP TABLE IF EXISTS "${SCRATCH_DOCUMENTS_TABLE}"`);
 }
 
 function assertLimit(value: number, maximum: number, label: string): void {

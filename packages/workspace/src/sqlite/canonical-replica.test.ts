@@ -549,3 +549,244 @@ test('two replicas converge by scalar acceptance order and Yjs merge', async () 
 		authorityState.database.close();
 	}
 });
+
+test('a fresh replica below the retention floor acquires a baseline and resumes incrementally', async () => {
+	const authorityState = openTestAuthority();
+	const seederDatabase = new Database(':memory:');
+	const freshDatabase = new Database(':memory:');
+	try {
+		const seeder = openReplica(
+			seederDatabase,
+			createTestTransport(authorityState.authority),
+		);
+		seeder.admit({
+			kind: 'create',
+			table: 'notes',
+			rowId: ROW_A,
+			fields: { title: 'kept' },
+			documentUpdate: encodeBase64(
+				captureUpdate((doc) => doc.get('editor').insert(0, 'seeded')),
+			),
+		});
+		seeder.admit({
+			kind: 'create',
+			table: 'notes',
+			rowId: ROW_B,
+			fields: { title: 'doomed' },
+		});
+		await seeder.synchronize();
+		seeder.admit({ kind: 'delete', table: 'notes', rowId: ROW_B });
+		await seeder.synchronize();
+		// Bound authority history so incremental catch-up cannot start from zero.
+		authorityState.authority.compactOutcomesThrough(3);
+
+		let promotions = 0;
+		const transport = createTestTransport(authorityState.authority);
+		const fresh = createCanonicalReplica({
+			sqlite: createBunSqliteAdapter(freshDatabase),
+			transport,
+			codec: { mergeUpdates: mergeDocumentUpdates },
+			onBaselinePromoted: () => {
+				promotions += 1;
+			},
+		});
+		await fresh.synchronize();
+
+		expect(promotions).toBe(1);
+		expect(transport.baselineRequests.length).toBeGreaterThan(0);
+		expect(fresh.readCurrentRow('notes', ROW_A)).toEqual({ title: 'kept' });
+		expect(fresh.readCurrentRow('notes', ROW_B)).toBeUndefined();
+		expect(readText(fresh.readCurrentDocumentParts('notes', ROW_A))).toBe(
+			'seeded',
+		);
+		expect(
+			freshDatabase
+				.query<{ name: string }, []>(
+					`SELECT name FROM sqlite_master
+					 WHERE type = 'table' AND name LIKE 'baseline_scratch%'`,
+				)
+				.all(),
+		).toEqual([]);
+
+		// Ordinary catch-up resumes above the promoted checkpoint.
+		const scans = transport.baselineRequests.length;
+		seeder.admit({
+			kind: 'update',
+			table: 'notes',
+			rowId: ROW_A,
+			fields: { set: { title: 'later' }, unset: [] },
+		});
+		await seeder.synchronize();
+		await fresh.synchronize();
+		expect(fresh.readCurrentRow('notes', ROW_A)).toEqual({ title: 'later' });
+		expect(transport.baselineRequests.length).toBe(scans);
+	} finally {
+		seederDatabase.close();
+		freshDatabase.close();
+		authorityState.database.close();
+	}
+});
+
+test('baseline acquisition preserves authored intent and exact retry across the promotion', async () => {
+	const authorityState = openTestAuthority();
+	const offlineDatabase = new Database(':memory:');
+	const seederDatabase = new Database(':memory:');
+	try {
+		const offline = openReplica(
+			offlineDatabase,
+			createTestTransport(authorityState.authority),
+		);
+		offline.admit({
+			kind: 'create',
+			table: 'notes',
+			rowId: ROW_A,
+			fields: { title: 'offline-base' },
+		});
+		await offline.synchronize();
+
+		// The workspace moves on while the replica sleeps; history compacts
+		// past its checkpoint.
+		const seeder = openReplica(
+			seederDatabase,
+			createTestTransport(authorityState.authority),
+		);
+		for (const rowId of [ROW_B, ROW_C]) {
+			seeder.admit({
+				kind: 'create',
+				table: 'notes',
+				rowId,
+				fields: { title: `seeded-${rowId}` },
+			});
+			await seeder.synchronize();
+		}
+		authorityState.authority.compactOutcomesThrough(
+			authorityState.authority.inspect().head,
+		);
+
+		// Durable local work authored before the gap surfaced: it must ride
+		// through acquisition untouched and fold exactly once.
+		offline.admit({
+			kind: 'update',
+			table: 'notes',
+			rowId: ROW_A,
+			fields: { set: { title: 'authored-offline' }, unset: [] },
+		});
+		await offline.synchronize();
+
+		expect(offline.readCurrentRow('notes', ROW_A)).toEqual({
+			title: 'authored-offline',
+		});
+		expect(offline.readCurrentRow('notes', ROW_B)).toEqual({
+			title: `seeded-${ROW_B}`,
+		});
+		expect(offline.status()).toMatchObject({
+			pendingIntents: 0,
+			hasInflightRound: false,
+		});
+		expect(
+			authorityState.authority
+				.inspect()
+				.rows.find((row) => row.rowId === ROW_A)?.fields,
+		).toEqual({ title: 'authored-offline' });
+	} finally {
+		offlineDatabase.close();
+		seederDatabase.close();
+		authorityState.database.close();
+	}
+});
+
+test('a compaction floor overtaking the anchor restarts acquisition from scratch', async () => {
+	const authorityState = openTestAuthority();
+	const seederDatabase = new Database(':memory:');
+	const freshDatabase = new Database(':memory:');
+	try {
+		const seeder = openReplica(
+			seederDatabase,
+			createTestTransport(authorityState.authority),
+		);
+		for (const rowId of [ROW_A, ROW_B, ROW_C]) {
+			seeder.admit({
+				kind: 'create',
+				table: 'notes',
+				rowId,
+				fields: { title: rowId },
+			});
+			await seeder.synchronize();
+		}
+		authorityState.authority.compactOutcomesThrough(1);
+
+		// Between the fresh replica's first scan page and the next, the
+		// seeder keeps writing and the authority compacts past the anchor.
+		const transport = createTestTransport(authorityState.authority);
+		const rawBaselineScan = transport.baselineScan.bind(transport);
+		let racedOnce = false;
+		transport.baselineScan = async (request) => {
+			const response = await rawBaselineScan(request);
+			if (!racedOnce) {
+				racedOnce = true;
+				seeder.admit({
+					kind: 'update',
+					table: 'notes',
+					rowId: ROW_A,
+					fields: { set: { title: 'post-anchor' }, unset: [] },
+				});
+				await seeder.synchronize();
+				authorityState.authority.compactOutcomesThrough(
+					authorityState.authority.inspect().head,
+				);
+			}
+			return response;
+		};
+		const fresh = openReplica(freshDatabase, transport);
+		await fresh.synchronize();
+
+		// Two anchor attempts: the raced one and the clean restart.
+		const anchorScans = transport.baselineRequests.filter(
+			(request) => request.after === undefined,
+		);
+		expect(anchorScans.length).toBeGreaterThanOrEqual(2);
+		expect(fresh.readCurrentRow('notes', ROW_A)).toEqual({
+			title: 'post-anchor',
+		});
+		expect(fresh.readCurrentRow('notes', ROW_C)).toEqual({ title: ROW_C });
+	} finally {
+		seederDatabase.close();
+		freshDatabase.close();
+		authorityState.database.close();
+	}
+});
+
+test('stale scratch from a crashed acquisition is dropped on the next open', () => {
+	const database = new Database(':memory:');
+	try {
+		const sqlite = createBunSqliteAdapter(database);
+		initializeCanonicalSchema(sqlite);
+		// A crash mid-acquisition leaves only disposable scratch behind.
+		database.run(`
+			CREATE TABLE baseline_scratch_rows (
+				table_key TEXT NOT NULL, row_id TEXT NOT NULL,
+				fields_json TEXT NOT NULL, PRIMARY KEY (table_key, row_id)
+			);
+		`);
+		database.run(
+			`INSERT INTO baseline_scratch_rows VALUES ('notes', ?, '{"stale":true}')`,
+			[ROW_A],
+		);
+		const authorityState = openTestAuthority();
+		try {
+			openReplica(database, createTestTransport(authorityState.authority));
+			expect(
+				database
+					.query<{ name: string }, []>(
+						`SELECT name FROM sqlite_master
+						 WHERE type = 'table' AND name LIKE 'baseline_scratch%'`,
+					)
+					.all(),
+			).toEqual([]);
+		} finally {
+			authorityState.database.close();
+		}
+	} finally {
+		database.close();
+	}
+});

@@ -102,6 +102,7 @@ export function createBunWorkspaceRuntime({
 				const deletionListeners = new Set<
 					(addresses: { table: string; rowId: string }[]) => void
 				>();
+				const baselineListeners = new Set<() => void>();
 				const cancellableTransport: CanonicalReplicaTransport = {
 					enroll: (request) => abortable(transport.enroll(request), signal),
 					sync: (request) => abortable(transport.sync(request), signal),
@@ -118,6 +119,9 @@ export function createBunWorkspaceRuntime({
 					},
 					onRowsDeleted(addresses) {
 						for (const listener of deletionListeners) listener(addresses);
+					},
+					onBaselinePromoted() {
+						for (const listener of baselineListeners) listener();
 					},
 				});
 				let activeSynchronization: Promise<void> | undefined;
@@ -159,6 +163,10 @@ export function createBunWorkspaceRuntime({
 					) {
 						deletionListeners.add(listener);
 						return () => deletionListeners.delete(listener);
+					},
+					subscribeBaselinePromoted(listener: () => void) {
+						baselineListeners.add(listener);
+						return () => baselineListeners.delete(listener);
 					},
 					async [Symbol.asyncDispose]() {
 						ownerDisposed = true;

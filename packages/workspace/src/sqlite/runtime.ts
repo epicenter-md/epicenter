@@ -43,6 +43,12 @@ export type WorkspaceRecordOwner = {
 	subscribeRowsDeleted?(
 		listener: (addresses: { table: string; rowId: string }[]) => void,
 	): () => void;
+	/**
+	 * Baseline promotion replaced every confirmed row and document
+	 * (ADR-0136); the runtime revokes every live document handle so callers
+	 * reopen from the promoted state.
+	 */
+	subscribeBaselinePromoted?(listener: () => void): () => void;
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
@@ -185,6 +191,7 @@ export function createWorkspaceRuntime({
 				});
 				owner.subscribeRemoteCommit?.(() => kv.notifyExternalChange());
 				owner.subscribeRowsDeleted?.(documents.revoke);
+				owner.subscribeBaselinePromoted?.(documents.revokeAll);
 				return { owner, records, kv, documents };
 			} catch (cause) {
 				try {
