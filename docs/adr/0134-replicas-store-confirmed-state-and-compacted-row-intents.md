@@ -89,11 +89,12 @@ may be unresolved. The replica id is protocol position, not an authentication
 secret or device credential.
 
 The checkpoint is the greatest authority outcome installed in confirmed state.
-The accepted round and its digest identify the last sealed request the authority
-has durably folded. The in-flight round and digest identify the immutable local
-retry image that may still need that acknowledgement. These are synchronization
+The accepted round identifies the last sealed request the authority has durably
+folded. The in-flight round and digest identify the immutable local retry image
+that may still need that acknowledgement. The authority receipt, not the local
+singleton, retains the accepted request digest. These are synchronization
 metadata, not application history or additional user state. A newly enrolled
-replica begins at accepted round zero with no accepted digest.
+replica begins at accepted round zero.
 
 The wire protocol major is a build constant carried by admission and request
 envelopes, not another durable column in `replica`. A build supports one active

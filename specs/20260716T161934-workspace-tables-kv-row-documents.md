@@ -171,7 +171,17 @@ Applications own the layout inside that boundary.
 Create requires the complete fields required by the current release and may
 include an initial document update. Update may change fields, document, or
 both. Delete ends the full row lifetime, revokes handles, and cascades through
-fields and document. Row ids are minted by the runtime and never reused.
+fields and document. Public creation mints a 24-character lowercase
+alphanumeric NanoID from `abcdefghijklmnopqrstuvwxyz0123456789` and accepts no
+caller-supplied id. Conforming runtimes never reuse a minted id. The authority
+does not retain deleted-id tombstones or defend against deliberate fabricated
+reuse.
+
+Row documents are bounded interactive CRDT state, not blob storage. The active
+protocol fixes the encoded canonical document maximum after benchmarks. Media
+and other large payloads use the filesystem or blob plane. If a document cannot
+compact below the maximum, the edit fails local persistence and poisons the
+handle rather than creating a durable unsendable intent.
 
 Ordinary scalar fields use absolute set/unset and later authority acceptance
 wins. Device clocks and authorship timestamps do not arbitrate conflicts. The
@@ -224,6 +234,9 @@ editor schemas.
 - No automatic text/rich-text conversion, materialization, or dual-source
   document.
 - No caller-supplied or reused deleted row ids.
+- No permanent deleted-id tombstones, row incarnations, or authority-issued row
+  ids.
+- No document chunks, upload sessions, or use of row documents as blob storage.
 - No document on workspace KV.
 - No dynamic KV or stored defaults.
 - No version-history or backup product.
@@ -239,6 +252,8 @@ from these refusals.
   definition.
 - [ ] Add direct typed KV schemas with no stored defaults.
 - [ ] Reject reserved table names and caller-supplied row ids.
+- [ ] Mint and validate the exact 24-character lowercase alphanumeric row-id
+  format without adding deleted-id tombstones.
 
 ### Wave 2: Expose the native-shaped runtime surface
 
@@ -261,6 +276,8 @@ from these refusals.
 - [ ] Prove offline create/edit/reopen/delete, multiple roots, both target editor
   bindings, handle races, two-replica merge, baseline acquisition, unknown KV
   preservation, and export/import.
+- [ ] Prove a document that cannot compact below the protocol maximum fails
+  durability without leaving an unsendable intent.
 - [ ] Smoke test each migrated consumer.
 
 ### Wave 5: Delete and publish current truth

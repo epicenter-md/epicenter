@@ -79,9 +79,13 @@ neither       invalid
 ```
 
 Runtime normalization also rejects empty field changes, overlapping set/unset
-keys, unbounded JSON, document bytes at the KV root, create/delete at the KV root,
-and an intent too large to fit one round. `undefined` normalizes to unset;
-`null` remains JSON null.
+keys, unbounded JSON, a noncanonical 24-character ordinary row id, document
+bytes at the KV root, create/delete at the KV root, and an intent too large to
+fit one round. The reserved KV address is the explicit runtime-owned exception
+to the ordinary row-id shape. `undefined` normalizes to unset; `null` remains
+JSON null. Public creation mints row ids from
+`abcdefghijklmnopqrstuvwxyz0123456789`; conforming runtimes never reuse them,
+and the authority retains no deleted-id tombstones.
 
 The same semantic RowIntent exists in memory, SQLite, a sealed round, wire
 encoding, and authority folding. `Uint8Array`, SQLite BLOB, and wire base64 are
@@ -99,9 +103,17 @@ update + delete   -> delete
 ```
 
 Document updates compact using the protocol's selected Yjs update encoding. Root
-keys do not carry that version. Merging updates deduplicates encoding but does
-not garbage-collect deleted structs; confirmed compaction hydrates a fresh
-confirmed-only document and re-encodes it.
+keys do not carry that version. When the merged open delta approaches its
+ceiling, the runtime hydrates confirmed, sealed, and open state into a fresh
+`gc: true` document and stores the smaller of a delta against
+confirmed-plus-sealed state and a full state update. If the compact full state
+exceeds the canonical document maximum, the edit fails persistence and poisons
+the handle. No unsendable intent becomes durable.
+
+The protocol fixes a canonical document maximum below the maximum document
+component in one RowIntent. That component maximum remains below the sealed
+round, request, and deployment-backend limits. Wave 0 selects concrete byte
+values from measurements rather than guessing them here.
 
 There is at most one sealed and one open intent per address. Nothing compacts
 across the seal. Sealing selects a deterministic bounded subset of open intents,
@@ -122,11 +134,14 @@ delete on live      delete fields and complete document together
 delete on absent    no-op
 ```
 
-Independent live-update components prevent a scalar capacity race from
-discarding collaborative content. One applied intent consumes one authority
-sequence and emits one composite row outcome with a complete field postimage,
-a document update, or both. Delete emits one deletion outcome. Confirmed outcomes
-are installation facts, not a second mutation API.
+An oversized initial document makes create no-op as a whole. On a live update,
+the field component no-ops if it exceeds the row cap, while the document
+component no-ops if its merged compact state would exceed the canonical document
+maximum. Independent components prevent either capacity race from discarding
+the other component. One applied intent consumes one authority sequence and
+emits one composite row outcome with a complete field postimage, a document
+update, or both. Delete emits one deletion outcome. Confirmed outcomes are
+installation facts, not a second mutation API.
 
 Scalar fields resolve only by authority acceptance order. Device clocks,
 authorship timestamps, and offline duration are not fold inputs. An older-
@@ -135,13 +150,18 @@ accepted later. Collaborative content uses Yjs merge. Workflows that cannot
 tolerate last-accepted-wins use an application-specific authority operation
 with its own validation and transaction, not another RowIntent variant.
 
-The authority treats document bytes opaquely outside injected compaction. It
-knows neither root names, root shapes, nor editor schemas. Applications own
-roots, so there are no table contracts, contract pins, or contract outcomes.
+The authority treats document layout as opaque. It knows neither root names,
+root shapes, nor editor schemas. Applications own roots, so there are no table
+contracts, contract pins, or contract outcomes. For every document-bearing
+fold, the injected codec hydrates the baseline, retained tail, and candidate
+update into a fresh `gc: true` document and encodes compact full state. An
+oversized result deterministically no-ops the document component. Otherwise the
+authority appends the original update bytes at the RowIntent sequence.
+
 Each document stores a compacted baseline with its completed-through sequence
-plus every retained update above it. The injected codec merges that composite
-only during compaction and baseline acquisition; the ordinary write path
-remains append-only.
+plus every retained update above it. The same codec periodically compacts the
+tail through the retention floor. Authority admission and compaction are
+merge-aware, while root layout and editor schema remain application-owned.
 
 A deterministic no-op may consume an authority sequence without emitting a row
 fact. Page checkpoints advance across such gaps.
@@ -186,7 +206,6 @@ CREATE TABLE intents (
 
 CREATE TABLE replica (
   id                        INTEGER PRIMARY KEY CHECK (id = 1),
-  protocol_major            INTEGER NOT NULL,
   replica_id                TEXT NOT NULL,
   accepted_round            INTEGER NOT NULL,
   checkpoint                INTEGER NOT NULL,
@@ -202,6 +221,11 @@ versioning. It does not add storage metadata, document contracts, authority
 sequence per row, intent generation, copied request JSON, a sealed-round
 singleton, or snapshot tables.
 
+The wire protocol major is a build constant carried by enrollment and sync
+envelopes, not a durable `replica` column. A build supports exactly one active
+major and refuses any other before enrollment or folding. Storage migration
+completes before networking begins.
+
 Rows and documents stay separate to avoid rewriting large document overflow
 pages during ordinary field installation. Local-only files use the same schema:
 `intents` is empty and the `replica` singleton is absent.
@@ -211,6 +235,39 @@ documents do not also attach `y-indexeddb` or persist through browser IndexedDB.
 Existing IndexedDB-backed workspace paths are deleted during the clean break.
 The browser runtime uses the official SQLite WASM `opfs` VFS with
 `journal_mode = DELETE` and `synchronous = EXTRA`; it does not enable WAL.
+
+The physical SQLite file is runtime state, never a portability format. Explicit
+logical export/import or publish operations rebuild canonical state when
+ownership changes. Copying a database file is not a supported move or import.
+
+## Replica enrollment and receipts
+
+The authority explicitly enrolls a replica before ordinary synchronization:
+
+```txt
+enroll({ token, protocolMajor }) -> { replicaId }
+
+sync({
+  token,
+  protocolMajor,
+  replicaId,
+  sealedRound?: { round, requestDigest, intents[] }
+})
+```
+
+Enrollment creates an authority receipt at accepted round zero. Ordinary
+`sync` refuses an unseen client-supplied replica id. Authentication controls
+workspace access; replica identity owns only protocol position and exact retry.
+After a round folds, the authority receipt stores the accepted round and request
+digest. The local singleton stores the accepted round plus any unresolved
+in-flight round and digest; it does not duplicate the accepted digest.
+
+Receipts persist until workspace deletion. There is no replica-specific count,
+slot, generation, eviction, expiration, revocation, or unenrollment lifecycle.
+Hosted deployments bound all authority state with aggregate per-workspace
+storage admission and throttle enrollment. Self-hosted operators own their
+available storage and may run without a configured quota. These hosted controls
+are launch requirements, not features already present in the authority path.
 
 ## Current state and durability
 
@@ -269,6 +326,10 @@ race deletes the sidecar and restarts. The authority stores no snapshot
 manifests, chunks, generations, refreshable downloads, scan sessions, or floor
 pins. Completion requires one acquisition attempt to finish inside the retained
 outcome window; unbounded continuous churn may force repeated safe restarts.
+Deployments size that window generously from measured scan throughput,
+workspace size, and mutation rate. The first implementation always restarts
+from zero after a floor race; incremental restart earns a prototype only if
+production measurements show an unsafe margin.
 
 Replica id, open and sealed RowIntents, in-flight round, and request digest
 remain canonical throughout baseline acquisition. Promotion takes an exclusive
@@ -301,6 +362,8 @@ The destination deletes:
 - scalar-before-document ordering and offline document parking;
 - document declarations, contract IDs, authority pins, protocol facts, and tables;
 - durable replica snapshot tables and authority snapshot publications;
+- replica slots, expiry, revocation, unenrollment, and receipt garbage
+  collection;
 - top-level document catalogs, rooms, transports, and deletion policy.
 
 It retains exact retry, authority round receipts, retained ordered outcomes,
@@ -321,6 +384,10 @@ those prove different non-negotiable invariants.
 - [ ] Edit application-owned roots through each binding in separate fixtures,
   compact updates, close, reopen, and compare state.
 - [ ] Prove an untouched document persists no bytes.
+- [ ] Benchmark canonical document, document-component, sealed-round, request,
+  and backend limits, then freeze a strictly nested set of protocol constants.
+- [ ] Prove two individually bounded offline documents whose merge exceeds the
+  maximum deterministically no-op only the later document component.
 - [ ] Prove anchored baseline acquisition under concurrent create, update, delete,
   compaction-floor advance, crash, and restart.
 - [ ] Prove an unresolved sealed round and newer open intent survive baseline
@@ -332,15 +399,22 @@ those prove different non-negotiable invariants.
   timestamps or device clocks.
 - [ ] Prove an undersized retained-outcome window causes a safe full retry, not
   partial promotion or durable acquisition state.
+- [ ] Measure baseline scan throughput and mutation rates to choose a generous
+  retained-outcome window before considering incremental restart.
 
 ### Wave 1: Replace protocol vocabulary
 
 - [ ] Rename `packages/record-sync` to `packages/row-sync` with no compatibility
   package or re-export.
 - [ ] Define one runtime-validated RowIntent schema.
+- [ ] Add authority-controlled replica enrollment and reject unseen replica ids
+  in ordinary sync.
+- [ ] Persist exact-retry receipts until workspace deletion with no replica
+  lifecycle API.
 - [ ] Seal `intents[]`, fold RowIntents directly, and emit composite outcomes.
 - [ ] Add canonical encoding and digest fixtures.
-- [ ] Keep global protocol-major admission; add no document-contract admission.
+- [ ] Carry the one active protocol major in enrollment and sync envelopes; add
+  no compatibility registry or document-contract admission.
 
 ### Wave 2: Build the four canonical tables
 
@@ -364,6 +438,7 @@ those prove different non-negotiable invariants.
 - [ ] Install outcome and checkpoint atomically.
 - [ ] Implement the two-table disposable sidecar, exclusive sync lane, promotion
   barrier, and atomic replacement at checkpoint `E`.
+- [ ] Restart acquisition from zero after a floor race.
 - [ ] Automatically resume sealed retry and newer open sealing after promotion.
 - [ ] Delete replay mutation and durable snapshot staging.
 
@@ -409,6 +484,8 @@ wave must nevertheless account for them explicitly:
 - [ ] Exact retry, bounded backlog, deletion, independent component fold,
   durability, document compaction, baseline acquisition, non-expiry, and
   automatic submission proofs pass.
+- [ ] Hosted aggregate storage admission and enrollment throttling bound
+  authority growth without replica-count policy.
 - [ ] Current-truth docs and skills are updated only after implementation lands.
 
 ## References
