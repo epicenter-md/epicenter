@@ -2,6 +2,10 @@ import { compile, type Kind, recognize } from '@epicenter/field';
 import type { Static, TSchema } from 'typebox';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
+import {
+	type BodyDefinition,
+	isBodyDefinition,
+} from './body-definition.js';
 
 export type JsonValue =
 	| null
@@ -22,10 +26,13 @@ export type TableLensDefinition<
 	TFields extends FieldSchemas = FieldSchemas,
 	TOptional extends readonly (keyof TFields &
 		string)[] = readonly (keyof TFields & string)[],
+	TBody extends BodyDefinition | undefined = BodyDefinition | undefined,
 > = {
 	fields: Readonly<TFields>;
 	optional: TOptional;
-	[tableLensParts]: { fields: TFields; optional: TOptional };
+	/** At most one text or rich-text body per row (ADR-0130). */
+	body: TBody;
+	[tableLensParts]: { fields: TFields; optional: TOptional; body: TBody };
 };
 
 export type TableLensDefinitions = Readonly<
@@ -143,22 +150,30 @@ const compiledLenses = new WeakMap<object, CompiledTableLens>();
  * Field names are permanent storage keys. `id` is structural and cannot be
  * declared. Fields are required for interpretation unless listed as optional.
  */
-export function defineTable<const TFields extends FieldSchemas>(config: {
+export function defineTable<
+	const TFields extends FieldSchemas,
+	const TBody extends BodyDefinition | undefined = undefined,
+>(config: {
 	fields: TFields & { id?: never };
-}): TableLensDefinition<TFields, readonly []>;
+	body?: TBody;
+}): TableLensDefinition<TFields, readonly [], TBody>;
 export function defineTable<
 	const TFields extends FieldSchemas,
 	const TOptional extends readonly (keyof TFields & string)[],
+	const TBody extends BodyDefinition | undefined = undefined,
 >(config: {
 	fields: TFields & { id?: never };
 	optional: TOptional;
-}): TableLensDefinition<TFields, TOptional>;
+	body?: TBody;
+}): TableLensDefinition<TFields, TOptional, TBody>;
 export function defineTable({
 	fields: fieldsInput,
 	optional: optionalInput,
+	body: bodyInput,
 }: {
 	fields: FieldSchemas & { id?: never };
 	optional?: readonly string[];
+	body?: BodyDefinition;
 }): TableLensDefinition {
 	assertPlainObject(fieldsInput, 'table fields');
 	if (Object.keys(fieldsInput).some((name) => name.toLowerCase() === 'id')) {
@@ -209,9 +224,13 @@ export function defineTable({
 		});
 	}
 
+	if (bodyInput !== undefined && !isBodyDefinition(bodyInput)) {
+		throw new Error('A table body must be body.text() or body.richText()');
+	}
 	const definition = Object.freeze({
 		fields,
 		optional,
+		body: bodyInput,
 	}) as TableLensDefinition;
 	compiledLenses.set(
 		definition,

@@ -17,6 +17,17 @@ export {
 	document,
 } from './document-definition.js';
 export {
+	body,
+	type BodyDefinition,
+	type BodyFormat,
+} from './body-definition.js';
+export {
+	type KvDefinitions,
+	KvReadError,
+	type KvValues,
+	KvWriteError,
+} from './kv-definition.js';
+export {
 	type ConstrainedPatch,
 	type CreateInputFor,
 	defineTable,
@@ -30,6 +41,7 @@ export {
 } from './lens-definition.js';
 export type {
 	OpenedWorkspace,
+	WorkspaceKv,
 	WorkspaceRecords,
 	WorkspaceRuntime,
 	WorkspaceTables,

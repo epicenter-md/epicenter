@@ -4,8 +4,15 @@ import type {
 	SqliteValue,
 } from '@epicenter/record-sync';
 import type { Static, TSchema } from 'typebox';
+import { type CanonicalKv, createCanonicalKv } from './canonical-kv.js';
 import type { CanonicalRecords, CanonicalTable } from './canonical-records.js';
 import { createCanonicalRecords } from './canonical-records.js';
+import type {
+	KvDefinitions,
+	KvReadError,
+	KvValues,
+	KvWriteError,
+} from './kv-definition.js';
 import type { DocumentDefinitions } from './document-definition.js';
 import {
 	createDocumentNamespace,
@@ -17,6 +24,7 @@ import type {
 	TableLensDefinition,
 	TableLensDefinitions,
 } from './lens-definition.js';
+import type { Result } from 'wellcrafted/result';
 import type { WorkspaceDefinition } from './runtime-definition.js';
 
 /** One physical canonical record store opened and closed by a runtime. */
@@ -61,23 +69,58 @@ export type WorkspaceRecords = {
 };
 
 type DefinitionTables<TDefinition> =
-	TDefinition extends WorkspaceDefinition<infer TTables, DocumentDefinitions>
+	TDefinition extends WorkspaceDefinition<
+		infer TTables,
+		DocumentDefinitions,
+		KvDefinitions
+	>
 		? TTables
 		: never;
 
 type DefinitionDocuments<TDefinition> =
 	TDefinition extends WorkspaceDefinition<
 		TableLensDefinitions,
-		infer TDocuments
+		infer TDocuments,
+		KvDefinitions
 	>
 		? TDocuments
 		: never;
+
+type DefinitionKv<TDefinition> =
+	TDefinition extends WorkspaceDefinition<
+		TableLensDefinitions,
+		DocumentDefinitions,
+		infer TKv
+	>
+		? TKv
+		: never;
+
+/** The async typed lens over the canonical KV map (ADR-0130/0132). */
+export type WorkspaceKv<TKv extends KvDefinitions> = {
+	get<K extends keyof TKv & string>(
+		key: K,
+	): Promise<Result<KvValues<TKv>[K] | undefined, KvReadError>>;
+	set<K extends keyof TKv & string>(
+		key: K,
+		value: KvValues<TKv>[K],
+	): Promise<Result<void, KvWriteError>>;
+	unset<K extends keyof TKv & string>(key: K): Promise<void>;
+	/**
+	 * Observe one declared key. Subscription is established asynchronously
+	 * once the record owner opens; the returned disposer always detaches.
+	 */
+	observe<K extends keyof TKv & string>(
+		key: K,
+		handler: () => void,
+	): () => void;
+};
 
 /** A borrowed typed workspace handle. The runtime owns its lifetime. */
 export type OpenedWorkspace<TDefinition extends WorkspaceDefinition> = {
 	id: TDefinition['id'];
 	tables: WorkspaceTables<DefinitionTables<TDefinition>>;
 	documents: DocumentNamespace<DefinitionDocuments<TDefinition>>;
+	kv: WorkspaceKv<DefinitionKv<TDefinition>>;
 	records: WorkspaceRecords;
 };
 
@@ -88,6 +131,7 @@ type RuntimeEntry = {
 	ownerPromise?: Promise<{
 		owner: WorkspaceRecordOwner;
 		records: CanonicalRecords;
+		kv: CanonicalKv<KvDefinitions>;
 	}>;
 };
 
@@ -111,7 +155,7 @@ export function createWorkspaceRuntime({
 		if (isDisposed) throw new Error('Workspace runtime is disposed');
 	}
 
-	async function recordsFor(entry: RuntimeEntry): Promise<CanonicalRecords> {
+	async function openedFor(entry: RuntimeEntry) {
 		assertOpen();
 		entry.abortController ??= new AbortController();
 		entry.ownerPromise ??= (async () => {
@@ -125,13 +169,17 @@ export function createWorkspaceRuntime({
 						'Workspace runtime was disposed while records opened',
 					);
 				}
+				const records = createCanonicalRecords(
+					owner.sqlite,
+					entry.definition.tables,
+					{ admit: owner.admit },
+				);
 				return {
 					owner,
-					records: createCanonicalRecords(
-						owner.sqlite,
-						entry.definition.tables,
-						{ admit: owner.admit },
-					),
+					records,
+					kv: createCanonicalKv(owner.sqlite, entry.definition.kv, {
+						admit: owner.admit,
+					}),
 				};
 			} catch (cause) {
 				try {
@@ -148,7 +196,11 @@ export function createWorkspaceRuntime({
 			entry.ownerPromise = undefined;
 			throw cause;
 		});
-		return (await entry.ownerPromise).records;
+		return await entry.ownerPromise;
+	}
+
+	async function recordsFor(entry: RuntimeEntry): Promise<CanonicalRecords> {
+		return (await openedFor(entry)).records;
 	}
 
 	function createHandle<TDefinition extends WorkspaceDefinition>(
@@ -178,9 +230,34 @@ export function createWorkspaceRuntime({
 			}),
 		) as WorkspaceTables<DefinitionTables<TDefinition>>;
 
+		const kv = Object.freeze({
+			async get(key: string) {
+				return (await openedFor(entry)).kv.get(key);
+			},
+			async set(key: string, value: never) {
+				return (await openedFor(entry)).kv.set(key, value);
+			},
+			async unset(key: string) {
+				(await openedFor(entry)).kv.unset(key);
+			},
+			observe(key: string, handler: () => void) {
+				let disposed = false;
+				let detach: (() => void) | undefined;
+				void openedFor(entry).then((opened) => {
+					if (disposed) return;
+					detach = opened.kv.observe(key, handler);
+				});
+				return () => {
+					disposed = true;
+					detach?.();
+				};
+			},
+		}) as WorkspaceKv<DefinitionKv<TDefinition>>;
+
 		return Object.freeze({
 			id: definition.id,
 			tables: Object.freeze(tables),
+			kv,
 			documents: createDocumentNamespace({
 				authorityKey,
 				workspaceId: definition.id,

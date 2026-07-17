@@ -51,8 +51,9 @@ await skills.tables.skills.create({ id: 'caller-id', title: 'Forbidden' });
 await skills.tables.skills.patch(created.id, { title: undefined });
 // @ts-expect-error: undeclared keys are not part of this release's lens
 await skills.tables.skills.patch(created.id, { future: true });
-// @ts-expect-error: there is no privileged KV plane
-void skills.kv;
+// The typed KV lens exists, but only declared keys pass through it.
+// @ts-expect-error: this workspace declares no kv keys
+await skills.kv.get('undeclared');
 // @ts-expect-error: user-data migrations are refused
 void skills.migrate;
 // @ts-expect-error: raw SQL writes are not exposed

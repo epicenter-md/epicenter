@@ -2,12 +2,14 @@ import {
 	type DocumentDefinitions,
 	isDocumentDefinition,
 } from './document-definition.js';
+import { compileKvLens, type KvDefinitions } from './kv-definition.js';
 import {
 	compileTableLens,
 	type TableLensDefinitions,
 } from './lens-definition.js';
 
 type NoDocuments = Readonly<Record<never, never>>;
+type NoKv = Readonly<Record<never, never>>;
 
 declare const workspaceDefinitionParts: unique symbol;
 
@@ -15,13 +17,17 @@ declare const workspaceDefinitionParts: unique symbol;
 export type WorkspaceDefinition<
 	TTables extends TableLensDefinitions = TableLensDefinitions,
 	TDocuments extends DocumentDefinitions = NoDocuments,
+	TKv extends KvDefinitions = NoKv,
 > = {
 	id: string;
 	tables: Readonly<TTables>;
 	documents: Readonly<TDocuments>;
+	/** This release's typed lens over the canonical KV map (ADR-0130). */
+	kv: Readonly<TKv>;
 	[workspaceDefinitionParts]: {
 		tables: TTables;
 		documents: TDocuments;
+		kv: TKv;
 	};
 };
 
@@ -29,15 +35,18 @@ export type WorkspaceDefinition<
 export function defineWorkspace<
 	const TTables extends TableLensDefinitions,
 	const TDocuments extends DocumentDefinitions = NoDocuments,
+	const TKv extends KvDefinitions = NoKv,
 >({
 	id,
 	tables: tablesInput,
 	documents: documentsInput,
+	kv: kvInput,
 }: {
 	id: string;
 	tables: TTables;
 	documents?: TDocuments;
-}): WorkspaceDefinition<TTables, TDocuments> {
+	kv?: TKv;
+}): WorkspaceDefinition<TTables, TDocuments, TKv> {
 	assertWorkspaceId(id);
 	assertPlainRecord(tablesInput, 'workspace tables');
 	for (const definition of Object.values(tablesInput)) {
@@ -50,11 +59,15 @@ export function defineWorkspace<
 			throw new Error(`Workspace document '${name}' must use document.*`);
 		}
 	}
+	const kv = kvInput ?? ({} as TKv);
+	assertPlainRecord(kv, 'workspace kv');
+	compileKvLens(kv);
 	return Object.freeze({
 		id,
 		tables: Object.freeze({ ...tablesInput }),
 		documents: Object.freeze({ ...documents }),
-	}) as WorkspaceDefinition<TTables, TDocuments>;
+		kv: Object.freeze({ ...kv }),
+	}) as WorkspaceDefinition<TTables, TDocuments, TKv>;
 }
 
 function assertWorkspaceId(id: string): void {
