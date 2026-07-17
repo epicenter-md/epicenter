@@ -1,5 +1,7 @@
 import {
 	type BaselineScanRequest,
+	decodeBase64,
+	encodeBase64,
 	type EnrollRequest,
 	foldFields,
 	type JsonObject,
@@ -155,7 +157,7 @@ export function createCanonicalReplica({
 				: JSON.stringify(admitted.fields);
 		const documentUpdate =
 			admitted.kind !== 'delete' && admitted.documentUpdate !== undefined
-				? base64ToBytes(admitted.documentUpdate)
+				? decodeBase64(admitted.documentUpdate)
 				: null;
 		sqlite.run(
 			`INSERT INTO "${INTENTS_TABLE}"(
@@ -272,9 +274,9 @@ export function createCanonicalReplica({
 	): string | undefined {
 		if (newer === undefined) return older;
 		const base = readDocumentBaseParts(table, rowId);
-		const open = older === undefined ? [] : [base64ToBytes(older)];
-		return bytesToBase64(
-			codec.mergeUpdates([...base, ...open, base64ToBytes(newer)], base.length),
+		const open = older === undefined ? [] : [decodeBase64(older)];
+		return encodeBase64(
+			codec.mergeUpdates([...base, ...open, decodeBase64(newer)], base.length),
 		);
 	}
 
@@ -285,9 +287,9 @@ export function createCanonicalReplica({
 		const base = readDocumentBaseParts(intent.table, intent.rowId);
 		return {
 			...intent,
-			documentUpdate: bytesToBase64(
+			documentUpdate: encodeBase64(
 				codec.mergeUpdates(
-					[...base, base64ToBytes(intent.documentUpdate)],
+					[...base, decodeBase64(intent.documentUpdate)],
 					base.length,
 				),
 			),
@@ -508,8 +510,8 @@ export function createCanonicalReplica({
 						const parts = [
 							...(row.document.baseline === undefined
 								? []
-								: [base64ToBytes(row.document.baseline)]),
-							...row.document.updates.map(base64ToBytes),
+								: [decodeBase64(row.document.baseline)]),
+							...row.document.updates.map(decodeBase64),
 						];
 						if (parts.length > 0) {
 							sqlite.run(
@@ -639,7 +641,7 @@ export function createCanonicalReplica({
 				[outcome.table, outcome.rowId],
 			)[0];
 			if (!live) return;
-			const incoming = base64ToBytes(outcome.documentUpdate);
+			const incoming = decodeBase64(outcome.documentUpdate);
 			const existing = sqlite.all<{ yjs_state: Uint8Array }>(
 				`SELECT yjs_state FROM "${SCRATCH_DOCUMENTS_TABLE}"
 				 WHERE table_key = ? AND row_id = ?`,
@@ -750,7 +752,7 @@ export function createCanonicalReplica({
 					);
 				}
 				if (outcome.documentUpdate !== undefined) {
-					const incoming = base64ToBytes(outcome.documentUpdate);
+					const incoming = decodeBase64(outcome.documentUpdate);
 					const existing = sqlite.all<{ yjs_state: Uint8Array }>(
 						`SELECT yjs_state FROM "${DOCUMENTS_TABLE}"
 						 WHERE table_key = ? AND row_id = ?`,
@@ -959,7 +961,7 @@ function projectIntent(
 
 function storedIntentToWire(stored: StoredIntent): WireRowIntent {
 	const documentUpdate = stored.document_update
-		? bytesToBase64(toBytes(stored.document_update))
+		? encodeBase64(toBytes(stored.document_update))
 		: undefined;
 	if (stored.kind === 'delete') {
 		return { kind: 'delete', table: stored.table_key, rowId: stored.row_id };
@@ -1200,15 +1202,3 @@ function toBytes(value: Uint8Array | ArrayBuffer): Uint8Array {
 	return value instanceof Uint8Array ? value : new Uint8Array(value);
 }
 
-function base64ToBytes(value: string): Uint8Array {
-	const binary = atob(value);
-	const bytes = new Uint8Array(binary.length);
-	for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-	return bytes;
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-	let binary = '';
-	for (const byte of bytes) binary += String.fromCharCode(byte);
-	return btoa(binary);
-}
