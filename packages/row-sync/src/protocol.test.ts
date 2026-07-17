@@ -243,3 +243,45 @@ describe('protocol refusal', () => {
 		);
 	});
 });
+
+describe('parseSyncRequest hostile field values', () => {
+	const request = (fields: unknown) => ({
+		protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+		kind: 'sync',
+		token: { replicaId: 'replica', acceptedRound: 0, checkpoint: 0 },
+		sealedRound: {
+			round: 1,
+			requestDigest: 'digest',
+			submission: 1,
+			intents: [
+				{
+					kind: 'create',
+					table: 'notes',
+					rowId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+					fields,
+				},
+			],
+		},
+	});
+
+	test('accepts a pull-only request without a sealed round', () => {
+		expect(
+			parseSyncRequest({
+				protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+				kind: 'sync',
+				token: { replicaId: 'replica', acceptedRound: 0, checkpoint: 0 },
+			}).sealedRound,
+		).toBeUndefined();
+	});
+
+	test('rejects non-finite numbers, undefined values, and cycles in field JSON', () => {
+		expect(() => parseSyncRequest(request({ bad: Number.NaN }))).toThrow();
+		expect(() =>
+			parseSyncRequest(request({ bad: Number.POSITIVE_INFINITY })),
+		).toThrow();
+		expect(() => parseSyncRequest(request({ bad: undefined }))).toThrow();
+		const cyclic: Record<string, unknown> = {};
+		cyclic.self = cyclic;
+		expect(() => parseSyncRequest(request(cyclic))).toThrow();
+	});
+});
