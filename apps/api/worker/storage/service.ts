@@ -3,21 +3,22 @@
  *
  * Epicenter Cloud meters one physical account total: the sum of the latest
  * absolute `databaseSize` observation per hosted workspace plus the absolute
- * hosted blob bytes. This module owns the Cloud side of that policy: it
- * records observations, recomputes the per-account projection against the
- * active catalog allowance, and answers the records route's deployment-
- * neutral growth question. Request paths read the projection row only; the
- * billing provider is never on a request path. An absent projection row is a
- * new account: zero observed bytes, growth allowed.
+ * hosted blob bytes. This module owns the Cloud side of that policy at its
+ * one decision point: capability issuance. When Cloud is about to create a
+ * new storage-producing capability (today: a replica enrollment, which also
+ * covers first contact with a new workspace), it refreshes the account's
+ * workspace observations from the authorities, sums them with any blob
+ * observation, resolves the active plan allowance, and admits or refuses.
+ * Synchronization never consults storage state, and no per-exchange
+ * observation, projection row, or billing call exists (ADR-0131/0137).
  */
 
 import type { PrincipalId } from '@epicenter/identity';
 import type { Db, RecordsPartition } from '@epicenter/server';
 import {
-	readStorageProjection,
-	sumStorageObservations,
+	listStorageObservations,
+	readWorkspaceDatabaseSize,
 	upsertStorageObservation,
-	writeStorageProjection,
 } from '@epicenter/server';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { createAutumnClient } from '../billing/autumn.js';
@@ -26,12 +27,11 @@ import { getPlan, PLAN_IDS, type PlanId } from '../billing/catalog.js';
 /** Resolve the account's included storage bytes from the active plan. */
 async function resolveIncludedBytes(
 	env: Cloudflare.Env,
-	principal: { id: PrincipalId; email?: string },
+	principalId: PrincipalId,
 ): Promise<number> {
 	const autumn = createAutumnClient(env);
 	const customer = await autumn.customers.getOrCreate({
-		customerId: principal.id,
-		...(principal.email === undefined ? {} : { email: principal.email }),
+		customerId: principalId,
 	});
 	const mainSubscription =
 		customer.subscriptions.find((subscription) => !subscription.addOn) ?? null;
@@ -49,56 +49,53 @@ export function createStorageService({
 }) {
 	return {
 		/**
-		 * Record one workspace authority's absolute size and recompute the
-		 * account projection. Runs in the after-response lifetime; a provider
-		 * or database failure leaves the previous projection standing and is
-		 * reported at its source.
+		 * Decide one enrollment (ADR-0137). Reads every observed workspace
+		 * authority's current absolute size plus the target workspace's,
+		 * overwrites the observation registry with those absolutes, and
+		 * compares the account total against the active plan allowance.
+		 * Failure to decide returns `unavailable`: enrollment fails closed
+		 * and retryably while reads, deletions, and synchronization for
+		 * already-enrolled replicas continue untouched.
 		 */
-		async observeWorkspace(
+		async admitEnrollment(
 			partition: RecordsPartition,
-			observedBytes: number,
-			principalEmail?: string,
-		): Promise<void> {
+		): Promise<'admit' | 'refuse' | 'unavailable'> {
 			try {
-				await upsertStorageObservation(db, {
-					principalId: partition.principalId,
-					sourceKind: 'workspace',
-					sourceId: partition.workspaceId,
-					observedBytes,
-				});
-				const total = await sumStorageObservations(db, partition.principalId);
-				const includedBytes = await resolveIncludedBytes(env, {
-					id: partition.principalId,
-					...(principalEmail === undefined ? {} : { email: principalEmail }),
-				});
-				await writeStorageProjection(db, {
-					principalId: partition.principalId,
-					observedBytes: total,
-					growthAllowed: total < includedBytes,
-				});
-			} catch (cause) {
-				console.error(
-					`[storage] observation for ${partition.principalId}/${partition.workspaceId} failed: ${extractErrorMessage(cause)}`,
-				);
-			}
-		},
-
-		/**
-		 * The records route's growth decision (ADR-0137). An absent projection
-		 * row is a new account and may grow; a database failure resolves
-		 * `unavailable`, which fails only growth, closed and retryably.
-		 */
-		async resolveGrowth(
-			partition: RecordsPartition,
-		): Promise<'allow' | 'delete-only' | 'unavailable'> {
-			try {
-				const projection = await readStorageProjection(
+				const observations = await listStorageObservations(
 					db,
 					partition.principalId,
 				);
-				if (!projection) return 'allow';
-				return projection.growthAllowed ? 'allow' : 'delete-only';
-			} catch {
+				const workspaceIds = new Set(
+					observations
+						.filter((observation) => observation.sourceKind === 'workspace')
+						.map((observation) => observation.sourceId),
+				);
+				workspaceIds.add(partition.workspaceId);
+				let total = observations
+					.filter((observation) => observation.sourceKind === 'blobs')
+					.reduce((sum, observation) => sum + observation.observedBytes, 0);
+				for (const workspaceId of workspaceIds) {
+					const observedBytes = await readWorkspaceDatabaseSize(env.RECORDS, {
+						principalId: partition.principalId,
+						workspaceId,
+					});
+					await upsertStorageObservation(db, {
+						principalId: partition.principalId,
+						sourceKind: 'workspace',
+						sourceId: workspaceId,
+						observedBytes,
+					});
+					total += observedBytes;
+				}
+				const includedBytes = await resolveIncludedBytes(
+					env,
+					partition.principalId,
+				);
+				return total < includedBytes ? 'admit' : 'refuse';
+			} catch (cause) {
+				console.error(
+					`[storage] enrollment admission for ${partition.principalId}/${partition.workspaceId} failed: ${extractErrorMessage(cause)}`,
+				);
 				return 'unavailable';
 			}
 		},

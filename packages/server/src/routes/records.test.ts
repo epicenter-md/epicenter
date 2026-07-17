@@ -8,6 +8,7 @@
  * - all three routes derive partitions from authentication and workspace paths
  * - declared and actual bodies are capped at 1 MiB before backend work
  * - authority TypeErrors become 400 invalid-request responses
+ * - capability-issuance admission gates enrollment only, never sync
  */
 
 import { expect, test } from 'bun:test';
@@ -21,37 +22,30 @@ import {
 	type WireRowIntent,
 } from '@epicenter/row-sync';
 import { Hono } from 'hono';
-import type {
-	Records,
-	RecordsCallOptions,
-	RecordsPartition,
-} from '../records/contracts.js';
-import type { ResolveGrowth } from './records.js';
+import type { Records, RecordsPartition } from '../records/contracts.js';
+import type { AdmitEnrollment } from './records.js';
 import type { Env } from '../types.js';
 import { mountRecordsApp } from './records.js';
 
 function setup({
 	fail,
-	resolveGrowth,
+	admitEnrollment,
 }: {
 	fail?: keyof Records;
-	resolveGrowth?: ResolveGrowth;
+	admitEnrollment?: AdmitEnrollment;
 } = {}) {
 	const partitions: RecordsPartition[] = [];
-	const growthOptions: (RecordsCallOptions | undefined)[] = [];
 	const records: Records = {
-		async enroll(partition, _request, options) {
+		async enroll(partition) {
 			partitions.push(partition);
-			growthOptions.push(options);
 			if (fail === 'enroll') throw new TypeError('invalid enrollment');
 			return {
 				result: 'enrolled',
 				replicaId: '000000000000000000000001',
 			};
 		},
-		async sync(partition, request, options) {
+		async sync(partition, request) {
 			partitions.push(partition);
-			growthOptions.push(options);
 			if (fail === 'sync') throw new TypeError('invalid sync');
 			return {
 				result: 'page',
@@ -63,9 +57,6 @@ function setup({
 				outcomes: [],
 				hasMore: false,
 				retentionFloor: 0,
-				...(request.sealedRound === undefined
-					? {}
-					: { submission: request.sealedRound.submission }),
 			};
 		},
 		async baselineScan(partition) {
@@ -83,13 +74,13 @@ function setup({
 	const app = new Hono<Env>();
 	mountRecordsApp(app, {
 		resolveRecords: () => records,
-		...(resolveGrowth === undefined ? {} : { resolveGrowth }),
+		...(admitEnrollment === undefined ? {} : { admitEnrollment }),
 		auth: async (c, next) => {
 			c.set('principal', { id: asPrincipalId('authenticated-alice') });
 			await next();
 		},
 	});
-	return { app, partitions, growthOptions };
+	return { app, partitions };
 }
 
 const intents: WireRowIntent[] = [
@@ -155,7 +146,6 @@ test('enroll, sync, and baseline-scan derive the authenticated partition', async
 	expect((await syncResponse.json()) as unknown).toMatchObject({
 		result: 'page',
 		token: { acceptedRound: 1 },
-		submission: 1,
 	});
 	expect(baselineResponse.status).toBe(200);
 	expect((await baselineResponse.json()) as unknown).toEqual({
@@ -236,38 +226,39 @@ test('snapshot and deleted record-sync routes have no compatibility aliases', as
 	expect(partitions).toEqual([]);
 });
 
-
-test('the resolved growth decision reaches the backend for growth exchanges', async () => {
-	const { app, growthOptions } = setup({
-		resolveGrowth: async () => 'delete-only',
-	});
-	const response = await post(app, 'sync', sync);
-	expect(response.status).toBe(200);
-	expect(growthOptions).toEqual([{ growth: 'delete-only' }]);
-});
-
-test('an unavailable growth decision fails growth closed and retryably', async () => {
+test('a refused enrollment answers the definitive protocol refusal', async () => {
 	const { app, partitions } = setup({
-		resolveGrowth: async () => 'unavailable',
+		admitEnrollment: async () => 'refuse',
 	});
-	const growthResponse = await post(app, 'sync', sync);
-	expect(growthResponse.status).toBe(503);
-	const enrollResponse = await post(app, 'enroll', enroll);
-	expect(enrollResponse.status).toBe(503);
-	// Enrollment and the growth round never reached the backend.
+	const response = await post(app, 'enroll', enroll);
+	expect(response.status).toBe(200);
+	expect((await response.json()) as unknown).toEqual({
+		result: 'enrollment-refused',
+	});
+	// The refused enrollment never reached the backend.
 	expect(partitions).toEqual([]);
 });
 
-test('an unavailable growth decision leaves pulls running under delete-only', async () => {
-	const { app, growthOptions } = setup({
-		resolveGrowth: async () => 'unavailable',
+test('an undecidable enrollment admission fails closed and retryably', async () => {
+	const { app, partitions } = setup({
+		admitEnrollment: async () => 'unavailable',
 	});
-	const pull: SyncRequest = {
-		protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
-		kind: 'sync',
-		token: sync.token,
-	};
-	const response = await post(app, 'sync', pull);
-	expect(response.status).toBe(200);
-	expect(growthOptions).toEqual([{ growth: 'delete-only' }]);
+	const response = await post(app, 'enroll', enroll);
+	expect(response.status).toBe(503);
+	expect(partitions).toEqual([]);
+});
+
+test('sync and baseline-scan never consult enrollment admission', async () => {
+	const consulted: RecordsPartition[] = [];
+	const { app } = setup({
+		admitEnrollment: async (_c, partition) => {
+			consulted.push(partition);
+			return 'refuse';
+		},
+	});
+	const syncResponse = await post(app, 'sync', sync);
+	const baselineResponse = await post(app, 'baseline-scan', baselineScan);
+	expect(syncResponse.status).toBe(200);
+	expect(baselineResponse.status).toBe(200);
+	expect(consulted).toEqual([]);
 });

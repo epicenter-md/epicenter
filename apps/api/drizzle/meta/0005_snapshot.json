@@ -1,5 +1,5 @@
 {
-  "id": "f3f1d92c-0a7b-403a-be14-93c0070cd4be",
+  "id": "08fe21fc-3b5d-4d0c-b9fa-2bddda572231",
   "prevId": "ea328139-adc9-442b-a0c6-45b199458689",
   "version": "7",
   "dialect": "postgresql",
@@ -1241,50 +1241,6 @@
           "with": {}
         }
       },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.storage_account_projection": {
-      "name": "storage_account_projection",
-      "schema": "",
-      "columns": {
-        "principal_id": {
-          "name": "principal_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "observed_bytes": {
-          "name": "observed_bytes",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "growth_allowed": {
-          "name": "growth_allowed",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "policy_observed_at": {
-          "name": "policy_observed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "usage_reconciled_at": {
-          "name": "usage_reconciled_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},

@@ -53,12 +53,9 @@ export { connectHyperdriveDb } from './db/backends/cloudflare.js';
 export { createDb, type Db } from './db/create-db.js';
 export {
 	deleteStorageObservation,
-	readStorageProjection,
-	type StorageProjection,
+	listStorageObservations,
 	type StorageSourceKind,
-	sumStorageObservations,
 	upsertStorageObservation,
-	writeStorageProjection,
 } from './db/storage-data.js';
 // An opt-in burn-rate cap for the inference `policies` seam: caps requests per
 // principal partition so a shared house key cannot be run up unbounded (ADR-0076).
@@ -115,8 +112,8 @@ export { createDurableObjectRooms } from './room/backends/cloudflare/registry.js
 export { mountBlobsApp } from './routes/blobs.js';
 export { mountInferenceApp } from './routes/inference.js';
 export {
+	type AdmitEnrollment,
 	mountRecordsApp,
-	type ResolveGrowth,
 } from './routes/records.js';
 export { mountRoomsApp } from './routes/rooms.js';
 export { mountSessionApp } from './routes/session.js';

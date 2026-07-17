@@ -1,12 +1,12 @@
 import { eq, sql } from 'drizzle-orm';
 import type { Db } from './create-db.js';
-import { storageAccountProjection, storageObservation } from './schema/storage.js';
+import { storageObservation } from './schema/storage.js';
 
 /**
- * Mechanics for the ADR-0137 storage tables. These functions move absolute
- * values; they never learn plan ids, allowances, or prices. The hosted
- * deployment owns the policy that decides `growthAllowed` and injects the
- * result through the records route's growth seam.
+ * Mechanics for the ADR-0137 storage-observation registry. These functions
+ * move absolute values; they never learn plan ids, allowances, or prices.
+ * The hosted deployment owns the policy that turns the observed sum into a
+ * capability-issuance decision.
  */
 
 export type StorageSourceKind = 'workspace' | 'blobs';
@@ -54,72 +54,24 @@ export async function deleteStorageObservation(
 		);
 }
 
-/** The reconciled sum of the newest absolute observation per live source. */
-export async function sumStorageObservations(
+/** Every live source observation for one account. */
+export async function listStorageObservations(
 	db: Db,
 	principalId: string,
-): Promise<number> {
-	const [row] = await db
+): Promise<
+	{ sourceKind: StorageSourceKind; sourceId: string; observedBytes: number }[]
+> {
+	const rows = await db
 		.select({
-			total: sql<number>`coalesce(sum(${storageObservation.observedBytes}), 0)`,
+			sourceKind: storageObservation.sourceKind,
+			sourceId: storageObservation.sourceId,
+			observedBytes: storageObservation.observedBytes,
 		})
 		.from(storageObservation)
 		.where(eq(storageObservation.principalId, principalId));
-	return Number(row?.total ?? 0);
-}
-
-export type StorageProjection = {
-	observedBytes: number;
-	growthAllowed: boolean;
-	policyObservedAt: Date;
-	usageReconciledAt: Date | null;
-};
-
-export async function readStorageProjection(
-	db: Db,
-	principalId: string,
-): Promise<StorageProjection | undefined> {
-	const [row] = await db
-		.select()
-		.from(storageAccountProjection)
-		.where(eq(storageAccountProjection.principalId, principalId));
-	return row
-		? {
-				observedBytes: Number(row.observedBytes),
-				growthAllowed: row.growthAllowed,
-				policyObservedAt: row.policyObservedAt,
-				usageReconciledAt: row.usageReconciledAt,
-			}
-		: undefined;
-}
-
-export async function writeStorageProjection(
-	db: Db,
-	projection: {
-		principalId: string;
-		observedBytes: number;
-		growthAllowed: boolean;
-		usageReconciledAt?: Date | null;
-	},
-): Promise<void> {
-	await db
-		.insert(storageAccountProjection)
-		.values({
-			principalId: projection.principalId,
-			observedBytes: projection.observedBytes,
-			growthAllowed: projection.growthAllowed,
-			policyObservedAt: new Date(),
-			usageReconciledAt: projection.usageReconciledAt ?? null,
-		})
-		.onConflictDoUpdate({
-			target: storageAccountProjection.principalId,
-			set: {
-				observedBytes: projection.observedBytes,
-				growthAllowed: projection.growthAllowed,
-				policyObservedAt: new Date(),
-				...(projection.usageReconciledAt === undefined
-					? {}
-					: { usageReconciledAt: projection.usageReconciledAt }),
-			},
-		});
+	return rows.map((row) => ({
+		sourceKind: row.sourceKind,
+		sourceId: row.sourceId,
+		observedBytes: Number(row.observedBytes),
+	}));
 }

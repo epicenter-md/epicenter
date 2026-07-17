@@ -20,7 +20,6 @@ import {
 	connectHyperdriveDb,
 	createDurableObjectAttachRelay,
 	createDurableObjectRecords,
-	readWorkspaceDatabaseSize,
 	createDurableObjectRooms,
 	createServerApp,
 	mountAttachRelayApp,
@@ -143,28 +142,12 @@ mountRecordsApp(app, {
 	auth: bearer,
 	resolveRecords: (env) =>
 		createDurableObjectRecords((env as Cloudflare.Env).RECORDS),
-	// Hosted storage policy (ADR-0137): the locally projected growth decision
-	// gates growth exchanges, and each completed exchange records the
-	// authority's absolute databaseSize through the after-response lifetime.
-	resolveGrowth: (c, partition) =>
+	// Hosted storage policy (ADR-0137): the account allowance gates capability
+	// issuance only. Enrollment refreshes the account's absolute observations
+	// and admits or refuses; synchronization never consults storage state.
+	admitEnrollment: (c, partition) =>
 		createStorageService({ db: c.var.db, env: c.env as Cloudflare.Env })
-			.resolveGrowth(partition),
-	afterExchange: (c, partition) => {
-		const env = c.env as Cloudflare.Env;
-		const db = c.var.db;
-		c.executionCtx.waitUntil(
-			(async () => {
-				const observedBytes = await readWorkspaceDatabaseSize(
-					env.RECORDS,
-					partition,
-				);
-				await createStorageService({ db, env }).observeWorkspace(
-					partition,
-					observedBytes,
-				);
-			})(),
-		);
-	},
+			.admitEnrollment(partition),
 });
 // Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver, not
 // a prebuilt wrapper.
