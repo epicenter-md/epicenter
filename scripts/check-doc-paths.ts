@@ -1,12 +1,12 @@
 /**
- * Fail when a living doc cites a repo-rooted file path that is not tracked.
+ * Fail when a living doc cites a repo-rooted file path that does not exist.
  *
  * Stale `apps/...`/`packages/...` references accrue after every refactor that
  * moves or deletes files (the worker collapse, the dashboard removal, app
  * restructures). They are invisible to typecheck and lint because they live in
  * Markdown, so they rot silently until someone clicks a dead link. This walks
  * every backtick-wrapped file path in the canonical docs and checks it resolves
- * to a tracked file.
+ * in the current worktree.
  *
  * Scope is deliberately narrow to stay false-positive free:
  *   - Only backtick-wrapped tokens with a filename extension are treated as
@@ -27,7 +27,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 // Resolve the repo root so paths resolve regardless of the invoking cwd.
@@ -35,16 +35,16 @@ const root = execFileSync('git', ['rev-parse', '--show-toplevel'], {
 	encoding: 'utf8',
 }).trim();
 
-// `git ls-files` is the load-bearing choice: it yields tracked files only, so
-// node_modules, dist, and every .gitignored output are skipped for free, which
-// `Bun.Glob` (no .gitignore awareness) cannot do. `-z` survives odd filenames.
+// `git ls-files` is the load-bearing choice for selecting docs to scan: it
+// yields tracked files only, so node_modules, dist, and every .gitignored output
+// are skipped for free, which `Bun.Glob` (no .gitignore awareness) cannot do.
+// `-z` survives odd filenames.
 const tracked = execFileSync('git', ['ls-files', '-z'], {
 	cwd: root,
 	encoding: 'utf8',
 })
 	.split('\0')
 	.filter(Boolean);
-const trackedFiles = new Set(tracked);
 
 const EXCLUDED_DOC_DIRS = ['specs', 'docs/articles', '.agents', '.claude'];
 const REPO_ROOT_DIRS = [
@@ -71,9 +71,13 @@ const FILE_TOKEN =
 const IGNORE_FILE = /<!--\s*doc-path-check:\s*ignore-file\b.*?-->/;
 const IGNORE_NEXT_LINE = /<!--\s*doc-path-check:\s*ignore-next-line\b.*?-->/;
 
-const docs = tracked.filter(
-	(file) => file.endsWith('.md') && !isExcludedDoc(file),
-);
+const docs = tracked.filter((file) => {
+	if (!file.endsWith('.md') || isExcludedDoc(file)) return false;
+	// `git ls-files` still includes tracked files deleted in an unstaged
+	// worktree. Skip them here so cleanup branches can run the checker before
+	// staging the deletion.
+	return existsSync(join(root, file));
+});
 const violations: { file: string; line: number; path: string }[] = [];
 
 for (const file of docs) {
@@ -93,7 +97,7 @@ for (const file of docs) {
 			) {
 				continue;
 			}
-			if (!trackedFiles.has(path)) {
+			if (!existsSync(join(root, path))) {
 				violations.push({ file, line: i + 1, path });
 			}
 		}

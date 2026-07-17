@@ -206,13 +206,14 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0127](0127-chat-streams-live-turns-in-client-state-and-stores-finished-messages-as-records.md) | Chat streams live turns in client state and stores finished messages as records | Proposed |
 | [0128](0128-tables-do-not-declare-document-edit-touch-policy-without-a-runtime-owner.md) | Tables do not declare document-edit touch policy without a runtime owner | Accepted |
 | [0129](0129-matter-and-workspace-share-fields-not-authority-policy.md) | Matter and Workspace share fields, not authority policy | Accepted |
-| [0130](0130-workspace-definitions-expose-tables-with-row-owned-documents-and-a-release-local-kv-lens.md) | Workspace definitions expose tables with row-owned documents and a release-local KV lens | Proposed |
-| [0131](0131-row-sync-folds-sealed-row-intent-rounds-without-refusal.md) | Row sync folds sealed RowIntent rounds without refusal | Proposed |
-| [0132](0132-workspace-kv-is-one-reserved-immortal-row.md) | Workspace KV is one reserved immortal row | Proposed |
-| [0133](0133-row-authority-stores-documents-as-sequence-addressed-update-logs.md) | The row authority stores documents as sequence-addressed update logs | Proposed |
-| [0134](0134-replicas-store-confirmed-state-and-compacted-row-intents.md) | Replicas store confirmed state and compacted RowIntents | Proposed |
-| [0135](0135-row-documents-have-application-owned-roots.md) | Row documents have application-owned roots | Proposed |
-| [0136](0136-replica-baseline-acquisition-uses-a-disposable-anchored-live-scan.md) | Replica baseline acquisition uses a disposable anchored live scan | Proposed |
-| [0137](0137-hosted-storage-is-one-eventually-enforced-physical-account-allowance.md) | Hosted storage is one eventually enforced physical account allowance | Proposed |
+| [0130](0130-workspace-definitions-expose-tables-with-row-owned-documents-and-a-release-local-kv-lens.md) | Workspace definitions expose tables with row-owned documents and a release-local KV lens | Accepted |
+| [0131](0131-row-sync-folds-sealed-row-intent-rounds-without-refusal.md) | Row sync folds sealed RowIntent rounds without refusal | Accepted |
+| [0132](0132-workspace-kv-is-one-reserved-immortal-row.md) | Workspace KV is one reserved immortal row | Accepted |
+| [0133](0133-row-authority-stores-documents-as-sequence-addressed-update-logs.md) | The workspace authority stores documents as sequence-addressed update logs | Accepted |
+| [0134](0134-replicas-store-confirmed-state-and-compacted-row-intents.md) | Replicas store confirmed state and compacted RowIntents | Accepted |
+| [0135](0135-row-documents-have-application-owned-roots.md) | Row documents have application-owned roots | Accepted |
+| [0136](0136-replica-baseline-acquisition-uses-a-disposable-anchored-live-scan.md) | Replica baseline acquisition uses a disposable anchored live scan | Accepted |
+| [0137](0137-hosted-storage-is-one-eventually-enforced-physical-account-allowance.md) | Hosted storage is one eventually enforced physical account allowance | Accepted |
+| [0138](0138-principal-scoped-workspaces-transfer-from-local-storage-scopes.md) | Principal-scoped workspaces transfer from local storage scopes | Accepted |
 
 When you add an ADR, add its row here.

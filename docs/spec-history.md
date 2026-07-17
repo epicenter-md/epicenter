@@ -5,7 +5,7 @@
 > survives any deletion. Scope is every `specs/` directory repo-wide.
 >
 > - For **current decisions and why**, read `docs/adr/`.
-> - For **how the system works now**, read `docs/reference/` and the code.
+> - For **how package-owned systems work now**, read the package README and code.
 > - For **shared vocabulary**, read `docs/CONTEXT.md`.
 > - To **read a removed spec's body**: `git log --all --full-history -- "<path>"` then `git show <sha>:<path>`.
 >

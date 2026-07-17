@@ -3,7 +3,7 @@
 > **Historical note (2026-07-12):** This article describes the earlier
 > root-Y.Doc records model. The target architecture gives records their own
 > authoritative logical database and materializes that database in local
-> SQLite. See [Workspace data model](../reference/workspace-data-model.md).
+> SQLite. See ADR-0130 through ADR-0137 for the current direction.
 
 Yjs is the database. SQLite is a read cache that happens to look like one.
 

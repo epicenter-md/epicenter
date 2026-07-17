@@ -1,25 +1,26 @@
-# 0133. The row authority stores documents as sequence-addressed update logs
+# 0133. The workspace authority stores documents as sequence-addressed update logs
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-16
 - **Relates:** [ADR-0130](0130-workspace-definitions-expose-tables-with-row-owned-documents-and-a-release-local-kv-lens.md), [ADR-0131](0131-row-sync-folds-sealed-row-intent-rounds-without-refusal.md), [ADR-0134](0134-replicas-store-confirmed-state-and-compacted-row-intents.md), [ADR-0135](0135-row-documents-have-application-owned-roots.md), [ADR-0136](0136-replica-baseline-acquisition-uses-a-disposable-anchored-live-scan.md)
 
 ## Context
 
 ADR-0130 makes a collaborative document row-owned with no public identity. The
-authority must accept document updates and row deletion under one liveness rule
-and one transaction. Independent Yjs rooms cannot provide that boundary. The
-remaining question is how confirmed document outcomes are retained and
-replicated without turning the authority into a Yjs document runtime.
+workspace authority must accept document updates and row deletion under one
+liveness rule and one transaction. Independent Yjs rooms cannot provide that
+boundary. The remaining question is how confirmed document outcomes are
+retained and replicated without turning the authority into a Yjs document
+runtime.
 
 ## Decision
 
-The row authority stores each accepted row-document update as opaque bytes under
-the one authority sequence assigned to its applied `RowIntent`. When fields and
-document both apply, the fields' current postimage and document update share one
-composite row outcome at that sequence. This sequence-addressed document tail is
-confirmed transport, not a fourth mutation command and not the replica's
-canonical document representation.
+The workspace authority stores each accepted row-document update as opaque bytes
+under the one authority sequence assigned to its applied `RowIntent`. When
+fields and document both apply, the fields' current postimage and document
+update share one composite row outcome at that sequence. This sequence-addressed
+document tail is confirmed transport, not a fourth mutation command and not the
+replica's canonical document representation.
 
 The authority treats update layout as opaque. It validates the update's
 protocol-level byte bound and uses an injected Yjs codec to compute whether the

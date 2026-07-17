@@ -484,7 +484,7 @@ those prove different non-negotiable invariants.
 Do not rewrite these as implemented truth before the runtime lands. The deletion
 wave must nevertheless account for them explicitly:
 
-- `docs/CONTEXT.md` and `docs/reference/workspace-data-model.md`: old command,
+- `docs/CONTEXT.md`, `docs/architecture.md`, and package READMEs: old command,
   replay, top-level document, and child-document vocabulary.
 - `docs/architecture.md`: top-level text and key-value documents.
 - `.agents/skills/workspace-api/references/primitive-api.md`: `.docs`, manual

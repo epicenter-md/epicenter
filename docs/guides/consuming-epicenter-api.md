@@ -51,8 +51,8 @@ another document shape when concurrent edits must merge inside the value, as
 with text or collaborative rich structure.
 
 The current examples below use the pre-SQLite public workspace path. The target
-records API is landing under `@epicenter/workspace/sqlite`; its storage model is
-described in [Workspace data model](../reference/workspace-data-model.md).
+records API is landing under `@epicenter/workspace/sqlite`; its durable storage
+decisions live in ADR-0130 through ADR-0137.
 
 ## Minimal cloud workspace shape
 
