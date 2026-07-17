@@ -1,11 +1,9 @@
 import type { PrincipalId } from '@epicenter/identity';
 import type {
-	PullRequest,
-	PullResponse,
-	PushRequest,
-	PushResponse,
 	SnapshotChunkRequest,
 	SnapshotChunkResponse,
+	SyncRequest,
+	SyncResponse,
 } from '@epicenter/record-sync';
 
 /** The authenticated server partition selected outside the record-sync protocol. */
@@ -16,14 +14,10 @@ export type RecordsPartition = {
 
 /** Portable authority backend used by HTTP routes and runtime-specific stores. */
 export type Records = {
-	push(
+	sync(
 		partition: RecordsPartition,
-		request: PushRequest,
-	): Promise<PushResponse>;
-	pull(
-		partition: RecordsPartition,
-		request: PullRequest,
-	): Promise<PullResponse>;
+		request: SyncRequest,
+	): Promise<SyncResponse>;
 	snapshotChunk(
 		partition: RecordsPartition,
 		request: SnapshotChunkRequest,

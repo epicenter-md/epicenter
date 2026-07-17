@@ -1,7 +1,6 @@
 import {
-	parsePullRequest,
-	parsePushRequest,
 	parseSnapshotChunkRequest,
+	parseSyncRequest,
 	RECORD_SYNC_ADMISSION_LIMITS,
 } from '@epicenter/record-sync';
 import { type Context, Hono, type MiddlewareHandler } from 'hono';
@@ -75,22 +74,13 @@ function createRecordsApp<E extends Env>(
 	}
 
 	return app
-		.post(`${RECORDS_ROUTE}/push`, async (c) => {
-			const parsed = await parseJson(c, parsePushRequest);
+		.post(`${RECORDS_ROUTE}/sync`, async (c) => {
+			const parsed = await parseJson(c, parseSyncRequest);
 			if (!parsed.ok) {
 				return invalidRequest(c, parsed.reason);
 			}
 			return c.json(
-				await resolveRecords(c.env).push(partition(c), parsed.value),
-			);
-		})
-		.post(`${RECORDS_ROUTE}/pull`, async (c) => {
-			const parsed = await parseJson(c, parsePullRequest);
-			if (!parsed.ok) {
-				return invalidRequest(c, parsed.reason);
-			}
-			return c.json(
-				await resolveRecords(c.env).pull(partition(c), parsed.value),
+				await resolveRecords(c.env).sync(partition(c), parsed.value),
 			);
 		})
 		.post(`${RECORDS_ROUTE}/snapshot-chunk`, async (c) => {

@@ -139,13 +139,12 @@ export function createBunWorkspaceRuntime({
 					};
 				}
 
-				// Establish the schema-opaque canonical map before background pull can
+				// Establish the schema-opaque canonical map before background sync can
 				// install remote rows. The runtime installs release-local lens views next.
 				createCanonicalRecords(sqlite, {});
 				let activeSynchronization: Promise<void> | undefined;
 				const cancellableTransport: CanonicalReplicaTransport = {
-					push: (request) => abortable(transport.push(request), signal),
-					pull: (request) => abortable(transport.pull(request), signal),
+					sync: (request) => abortable(transport.sync(request), signal),
 					snapshotChunk: (request) =>
 						abortable(transport.snapshotChunk(request), signal),
 				};

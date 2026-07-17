@@ -1,33 +1,38 @@
 /**
- * Canonical Record Replica Tests
+ * Canonical Record Replica Tests (ADR-0131/0132/0133)
  *
- * Verifies the private file-owned actor, durable outbox, exact push retry,
- * current-state pull installation, and below-floor snapshot recovery.
+ * Verifies the sealed-round client: durable pending intent, exact round
+ * retry, paged catch-up installation, mirrored fold replay, the deletion
+ * fence, and below-floor snapshot recovery.
  *
  * Key behaviors:
- * - optimistic records and contiguous outbox intent commit atomically
- * - uncertain pushes retry the exact sealed batch after process restart
- * - snapshots preserve accepted-after-head and newly pending local intent
+ * - optimistic records and outbox intent commit atomically
+ * - an uncertain round retries the exact digest after process restart
+ * - a divergent clone receives the terminal fork verdict
+ * - own writes never regress while catch-up pages stream
  * - pulled schema-opaque state never creates local outbox commands
  */
 
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { field } from '@epicenter/field';
 import {
-	createSnapshotManifest,
 	openRecordAuthority,
-	type PushRequest,
-	RECORD_SYNC_ADMISSION_LIMITS,
 	RECORD_SYNC_PROTOCOL_MAJOR,
+	type RecordCommand,
+	RESERVED_KV_ROW_ID,
+	RESERVED_KV_TABLE,
+	recordRoundDigest,
+	type SyncRequest,
 } from '@epicenter/record-sync';
 import { createBunSqliteAdapter } from '@epicenter/record-sync/bun';
 import { expectOk } from 'wellcrafted/testing';
 import { createCanonicalRecords } from './canonical-records.js';
 import {
+	type CanonicalReplicaDiagnostic,
 	type CanonicalReplicaTransport,
 	createCanonicalReplica,
 } from './canonical-replica.js';
@@ -51,11 +56,8 @@ function authorityTransport(
 	authority: ReturnType<typeof openRecordAuthority>,
 ): CanonicalReplicaTransport {
 	return {
-		async push(request) {
-			return authority.push(request);
-		},
-		async pull(request) {
-			return authority.pull(request);
+		async sync(request) {
+			return authority.sync(request);
 		},
 		async snapshotChunk(request) {
 			return authority.snapshotChunk(request);
@@ -67,9 +69,10 @@ function openLocal(
 	path: string,
 	transport: CanonicalReplicaTransport,
 	options: {
-		pushLimit?: number;
-		pullLimit?: number;
+		roundLimit?: number;
+		pageLimit?: number;
 		onRemoteCommit?: () => void;
+		onDiagnostic?: (diagnostic: CanonicalReplicaDiagnostic) => void;
 	} = {},
 ) {
 	const native = new Database(path, { create: true });
@@ -86,92 +89,129 @@ function openLocal(
 	return { native, replica, records, skills: records.tables.skills };
 }
 
-function actorId(native: Database): string {
-	return (
-		native
-			.query<{ actor_id: string }, []>(
-				'SELECT actor_id FROM __epicenter_replica_meta WHERE id = 1',
-			)
-			.get()?.actor_id ?? ''
-	);
-}
-
-function rawPayload(native: Database, rowId: string): Record<string, unknown> {
+function rawPayload(
+	native: Database,
+	rowId: string,
+	table = 'skills',
+): Record<string, unknown> {
 	const stored = native
-		.query<{ payload: string }, [string]>(
+		.query<{ payload: string }, [string, string]>(
 			`SELECT payload FROM __epicenter_records
-			 WHERE table_key = 'skills' AND row_id = ?`,
+			 WHERE table_key = ? AND row_id = ?`,
 		)
-		.get(rowId);
-	if (!stored) throw new Error(`Missing canonical row '${rowId}'`);
+		.get(table, rowId);
+	if (!stored) throw new Error(`Missing canonical row '${table}/${rowId}'`);
 	return JSON.parse(stored.payload);
 }
 
-function push(
+function writerRound(
 	authority: ReturnType<typeof openRecordAuthority>,
-	actor: string,
-	commands: PushRequest['mutations'][number]['command'][],
+	replicaId: string,
+	acceptedRound: number,
+	commands: RecordCommand[],
 ) {
-	return authority.push({
+	const request: SyncRequest = {
 		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		kind: 'push',
-		actorId: actor,
-		mutations: commands.map((command, index) => ({
-			actorSequence: index + 1,
-			command,
-		})),
-	});
+		kind: 'sync',
+		token: { replicaId, acceptedRound, checkpoint: 0 },
+		sealedRound: {
+			round: acceptedRound + 1,
+			requestDigest: recordRoundDigest(commands),
+			commands,
+		},
+	};
+	const response = authority.sync(request);
+	if (!response.ok) throw new Error(`writer round refused: ${response.reason}`);
+	return response;
 }
 
-test('uncertain sealed push retries exactly after the replica file reopens', async () => {
+test('optimistic writes and durable intent commit atomically, then one round syncs', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'canonical-replica-'));
+	const authorityNative = new Database(':memory:');
+	try {
+		const authority = openRecordAuthority({
+			database: createBunSqliteAdapter(authorityNative),
+			sha256,
+		});
+		const { native, replica, skills } = openLocal(
+			join(root, 'replica.sqlite3'),
+			authorityTransport(authority),
+		);
+		const created = skills.create({ title: 'Fold' });
+		expectOk(skills.patch(created.id, { category: 'sync' }));
+		expect(replica.status()).toMatchObject({
+			checkpoint: 0,
+			pendingCommands: 2,
+			hasInflightRound: false,
+		});
+
+		const status = await replica.synchronize();
+		expect(status).toMatchObject({
+			checkpoint: 2,
+			pendingCommands: 0,
+			hasInflightRound: false,
+		});
+		expect(authority.inspect().rows).toMatchObject([
+			{ rowId: created.id, value: { title: 'Fold', category: 'sync' } },
+		]);
+		expect(rawPayload(native, created.id)).toEqual({
+			title: 'Fold',
+			category: 'sync',
+		});
+		native.close();
+	} finally {
+		authorityNative.close();
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test('an uncertain round retries the exact digest after the replica file reopens', async () => {
 	const root = mkdtempSync(join(tmpdir(), 'canonical-replica-'));
 	const path = join(root, 'replica.sqlite3');
 	const authorityNative = new Database(':memory:');
-	const authority = openRecordAuthority({
-		database: createBunSqliteAdapter(authorityNative),
-		sha256,
-	});
-	const requests: PushRequest[] = [];
-	let loseFirstReceipt = true;
-	const transport: CanonicalReplicaTransport = {
-		...authorityTransport(authority),
-		async push(request) {
-			requests.push(structuredClone(request));
-			const response = authority.push(request);
-			if (loseFirstReceipt) {
-				loseFirstReceipt = false;
-				throw new Error('connection lost after acceptance');
-			}
-			return response;
-		},
-	};
-
 	try {
-		const first = openLocal(path, transport);
-		const created = first.skills.create({ title: 'Durable intent' });
-		const originalActor = actorId(first.native);
-		await expect(first.replica.synchronize()).rejects.toThrow(
-			'connection lost after acceptance',
-		);
-		expect(first.replica.status()).toMatchObject({
-			pendingCommands: 1,
-			hasInflightPush: true,
+		const authority = openRecordAuthority({
+			database: createBunSqliteAdapter(authorityNative),
+			sha256,
 		});
+		// The request commits, the response is lost.
+		const lossy: CanonicalReplicaTransport = {
+			async sync(request) {
+				authority.sync(request);
+				throw new Error('response lost');
+			},
+			async snapshotChunk() {
+				throw new Error('unused');
+			},
+		};
+		const first = openLocal(path, lossy);
+		const created = first.skills.create({ title: 'Uncertain' });
+		await expect(first.replica.synchronize()).rejects.toThrow('response lost');
+		expect(first.replica.status()).toMatchObject({ hasInflightRound: true });
 		first.native.close();
 
-		const reopened = openLocal(path, transport);
-		expect(actorId(reopened.native)).toBe(originalActor);
-		await reopened.replica.synchronize();
-		expect(requests).toHaveLength(2);
-		expect(requests[1]).toEqual(requests[0]);
-		expect(reopened.replica.status()).toEqual({
-			pullCursor: 1,
-			pendingCommands: 0,
-			acceptedCommandsAwaitingPull: 0,
-			hasInflightPush: false,
+		// Another replica overwrites the same key before the retry.
+		writerRound(authority, 'writer-b', 0, [
+			{
+				kind: 'patchRow',
+				table: 'skills',
+				rowId: created.id,
+				set: { title: 'Overwritten' },
+				unset: [],
+			},
+		]);
+
+		// Crash boundary: only the file survives. The retry matches the stored
+		// digest, refolds nothing, and pages show the overwrite.
+		const reopened = openLocal(path, authorityTransport(authority));
+		const status = await reopened.replica.synchronize();
+		expect(status).toMatchObject({ pendingCommands: 0, hasInflightRound: false });
+		expect(authority.inspect().rows).toMatchObject([
+			{ rowId: created.id, value: { title: 'Overwritten' } },
+		]);
+		expect(rawPayload(reopened.native, created.id)).toEqual({
+			title: 'Overwritten',
 		});
-		expect(expectOk(reopened.skills.get(created.id))).toEqual(created);
-		expect(authority.inspect().rows).toHaveLength(1);
 		reopened.native.close();
 	} finally {
 		authorityNative.close();
@@ -179,588 +219,139 @@ test('uncertain sealed push retries exactly after the replica file reopens', asy
 	}
 });
 
-test('bounded pushes keep one contiguous file-owned actor sequence', async () => {
+test('a request lost before commit folds as the same round on retry', async () => {
 	const root = mkdtempSync(join(tmpdir(), 'canonical-replica-'));
 	const authorityNative = new Database(':memory:');
-	const authority = openRecordAuthority({
-		database: createBunSqliteAdapter(authorityNative),
-		sha256,
-	});
-	const sizes: number[] = [];
-	const transport: CanonicalReplicaTransport = {
-		...authorityTransport(authority),
-		async push(request) {
-			sizes.push(request.mutations.length);
-			return authority.push(request);
-		},
-	};
-	const local = openLocal(join(root, 'replica.sqlite3'), transport, {
-		pushLimit: 2,
-	});
-
 	try {
-		for (let index = 0; index < 5; index++) {
-			local.skills.create({ title: `Skill ${index}` });
-		}
-		await local.replica.synchronize();
-		expect(sizes).toEqual([2, 2, 1]);
-		expect(authority.inspect().actorHighWater).toEqual({
-			[actorId(local.native)]: 5,
+		const authority = openRecordAuthority({
+			database: createBunSqliteAdapter(authorityNative),
+			sha256,
 		});
-		expect(authority.inspect().rows).toHaveLength(5);
-	} finally {
-		local.native.close();
-		authorityNative.close();
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
-test('aggregate row admission rolls back the overflowing patch and outbox entry', async () => {
-	const localNative = new Database(':memory:');
-	const authorityNative = new Database(':memory:');
-	const authority = openRecordAuthority({
-		database: createBunSqliteAdapter(authorityNative),
-		sha256,
-	});
-	const sqlite = createBunSqliteAdapter(localNative);
-	const replica = createCanonicalReplica({
-		sqlite,
-		transport: authorityTransport(authority),
-		sha256,
-	});
-	const largeDefinition = defineTable({
-		fields: {
-			first: field.string(),
-			second: field.string(),
-			third: field.string(),
-		},
-		optional: ['first', 'second', 'third'],
-	});
-	const rows = createCanonicalRecords(
-		sqlite,
-		{ rows: largeDefinition },
-		{ admit: replica.admit },
-	).tables.rows;
-	const part = 'x'.repeat(180 * 1024);
-
-	try {
-		const created = rows.create({ first: part });
-		expect(rows.patch(created.id, { second: part }).error).toBeNull();
-		expect(replica.status().pendingCommands).toBe(2);
-		expect(() => rows.patch(created.id, { third: part })).toThrow(
-			'Canonical row exceeds portable record-sync limits',
+		let dropRequests = 1;
+		const flaky: CanonicalReplicaTransport = {
+			async sync(request) {
+				if (dropRequests > 0) {
+					dropRequests -= 1;
+					throw new Error('request lost');
+				}
+				return authority.sync(request);
+			},
+			async snapshotChunk(request) {
+				return authority.snapshotChunk(request);
+			},
+		};
+		const { native, replica, skills } = openLocal(
+			join(root, 'replica.sqlite3'),
+			flaky,
 		);
-		expect(replica.status().pendingCommands).toBe(2);
-		const stored = localNative
-			.query<{ payload: string }, [string]>(
-				`SELECT payload FROM __epicenter_records WHERE table_key = 'rows' AND row_id = ?`,
-			)
-			.get(created.id);
-		expect(stored).toBeDefined();
-		const payload = JSON.parse(stored?.payload ?? '{}');
-		expect(payload).toEqual({ first: part, second: part });
-		expect(JSON.stringify(payload).length).toBeLessThan(
-			RECORD_SYNC_ADMISSION_LIMITS.encodedRowBytes,
-		);
+		const created = skills.create({ title: 'Lost request' });
+		await expect(replica.synchronize()).rejects.toThrow('request lost');
+		expect(authority.inspect().head).toBe(0);
 
 		await replica.synchronize();
-		expect(replica.status().pendingCommands).toBe(0);
-		expect(authority.inspect().rows[0]?.value).toEqual(payload);
+		expect(authority.inspect().rows).toMatchObject([
+			{ rowId: created.id, value: { title: 'Lost request' } },
+		]);
+		expect(authority.inspect().replicaRounds).toMatchObject(
+			Object.fromEntries([[Object.keys(authority.inspect().replicaRounds)[0]!, 1]]),
+		);
+		native.close();
 	} finally {
-		localNative.close();
 		authorityNative.close();
+		rmSync(root, { recursive: true, force: true });
 	}
 });
 
-test('distributed aggregate refusal quarantines intent and rebases later commands', async () => {
+test('a divergent clone receives the terminal fork verdict', async () => {
 	const root = mkdtempSync(join(tmpdir(), 'canonical-replica-'));
+	const path = join(root, 'replica.sqlite3');
+	const clonePath = join(root, 'clone.sqlite3');
 	const authorityNative = new Database(':memory:');
-	const authority = openRecordAuthority({
-		database: createBunSqliteAdapter(authorityNative),
-		sha256,
-	});
-	const largeDefinition = defineTable({
-		fields: {
-			first: field.string(),
-			second: field.string(),
-		},
-		optional: ['first', 'second'],
-	});
-	const transport = authorityTransport(authority);
-	const openLargeLocal = (path: string) => {
-		const native = new Database(path, { create: true });
-		const sqlite = createBunSqliteAdapter(native);
-		const replica = createCanonicalReplica({
-			sqlite,
-			transport,
+	try {
+		const authority = openRecordAuthority({
+			database: createBunSqliteAdapter(authorityNative),
 			sha256,
-			pushLimit: 2,
 		});
-		const rows = createCanonicalRecords(
-			sqlite,
-			{ rows: largeDefinition },
-			{ admit: replica.admit },
-		).tables.rows;
-		return { native, replica, rows };
-	};
-	const accepted = push(authority, 'seed', [
-		{
-			kind: 'createRow',
-			table: 'rows',
-			rowId: 'shared',
-			value: {},
-		},
-		{
-			kind: 'createRow',
-			table: 'rows',
-			rowId: 'untouched',
-			value: { first: 'authority baseline' },
-		},
-	]);
-	expect(accepted.ok).toBeTrue();
-	const first = openLargeLocal(join(root, 'first.sqlite3'));
-	const secondPath = join(root, 'second.sqlite3');
-	let second = openLargeLocal(secondPath);
-	const part = 'x'.repeat(255 * 1024);
+		const original = openLocal(path, authorityTransport(authority));
+		original.skills.create({ title: 'Base' });
+		await original.replica.synchronize();
+		original.native.close();
 
-	try {
-		await Promise.all([
-			first.replica.synchronize(),
-			second.replica.synchronize(),
-		]);
-		expect(first.rows.patch('shared', { first: part }).error).toBeNull();
-		await first.replica.synchronize();
+		// Fork the physical file, then let both copies write divergently.
+		copyFileSync(path, clonePath);
+		const survivor = openLocal(path, authorityTransport(authority));
+		const clone = openLocal(clonePath, authorityTransport(authority));
+		survivor.skills.create({ title: 'From survivor' });
+		clone.skills.create({ title: 'From clone' });
 
-		const rolledBackCreate = second.rows.create({
-			first: 'created inside rejected batch',
-		});
-		expect(second.rows.patch('shared', { second: part }).error).toBeNull();
-		expect(
-			second.rows.patch(rolledBackCreate.id, {
-				second: 'depends on rejected create',
-			}).error,
-		).toBeNull();
-		const retained = second.rows.create({ first: 'later local intent' });
-		const refusedActor = actorId(second.native);
-		await expect(second.replica.synchronize()).rejects.toThrow(
-			'Record push permanently refused; 3 commands quarantined: row-too-large',
+		await survivor.replica.synchronize();
+		await expect(clone.replica.synchronize()).rejects.toThrow(
+			'Record sync refused: replica-fork',
 		);
+		// The clone's intent stays durable and inspectable for app-level
+		// recovery (fresh identity + resubmission); nothing was silently lost.
+		expect(clone.replica.status()).toMatchObject({ hasInflightRound: true });
+		survivor.native.close();
+		clone.native.close();
+	} finally {
+		authorityNative.close();
+		rmSync(root, { recursive: true, force: true });
+	}
+});
 
-		expect(actorId(second.native)).not.toBe(refusedActor);
-		expect(second.replica.status()).toMatchObject({
-			pullCursor: 3,
-			pendingCommands: 1,
-			hasInflightPush: false,
+test('own writes never regress while catch-up pages stream, across a crash', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'canonical-replica-'));
+	const path = join(root, 'replica.sqlite3');
+	const authorityNative = new Database(':memory:');
+	try {
+		const authority = openRecordAuthority({
+			database: createBunSqliteAdapter(authorityNative),
+			sha256,
 		});
-		const quarantine = second.replica.inspectQuarantine();
-		expect(quarantine).toMatchObject([
-			{
-				actorId: refusedActor,
-				actorSequence: 1,
-				reason: 'row-too-large',
-				command: {
+		for (let index = 0; index < 7; index += 1) {
+			writerRound(authority, 'writer', index, [
+				{
 					kind: 'createRow',
-					table: 'rows',
-					rowId: rolledBackCreate.id,
+					table: 'skills',
+					rowId: `remote-${index}`,
+					value: { title: `Remote ${index}` },
 				},
-			},
-			{
-				actorId: refusedActor,
-				actorSequence: 2,
-				reason: 'row-too-large',
-				command: {
-					kind: 'patchRow',
-					table: 'rows',
-					rowId: 'shared',
-					unset: [],
-				},
-			},
-			{
-				actorId: refusedActor,
-				actorSequence: 3,
-				reason: 'depends-on-rejected-batch',
-				command: {
-					kind: 'patchRow',
-					table: 'rows',
-					rowId: rolledBackCreate.id,
-				},
-			},
-		]);
-		const refusedCommand = quarantine[1]?.command;
-		expect(refusedCommand?.kind).toBe('patchRow');
-		if (refusedCommand?.kind !== 'patchRow') {
-			throw new Error('Expected a quarantined patch command');
+			]);
 		}
-		expect(refusedCommand.set.second).toBe(part);
-		expect(expectOk(second.rows.get('shared'))).toEqual({
-			id: 'shared',
-			first: part,
-		});
-		expect(expectOk(second.rows.get('untouched'))).toEqual({
-			id: 'untouched',
-			first: 'authority baseline',
-		});
-		expect(expectOk(second.rows.get(rolledBackCreate.id))).toBeUndefined();
-		expect(expectOk(second.rows.get(retained.id))).toEqual(retained);
-		expect(
-			authority
-				.inspect()
-				.rows.some(({ rowId }) => rowId === rolledBackCreate.id),
-		).toBeFalse();
-		expect(
-			authority.inspect().rows.some(({ rowId }) => rowId === retained.id),
-		).toBeFalse();
 
-		second.native.close();
-		second = openLargeLocal(secondPath);
-		expect(second.replica.inspectQuarantine()).toHaveLength(3);
-		expect(expectOk(second.rows.get(retained.id))).toEqual(retained);
-		await second.replica.synchronize();
-		expect(second.replica.status()).toMatchObject({
-			pendingCommands: 0,
-			hasInflightPush: false,
-		});
-		expect(
-			authority.inspect().rows.some(({ rowId }) => rowId === retained.id),
-		).toBeTrue();
-	} finally {
-		first.native.close();
-		second.native.close();
-		authorityNative.close();
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
-test('create conflict quarantines a later recreate on every rejected batch row', async () => {
-	const root = mkdtempSync(join(tmpdir(), 'canonical-replica-'));
-	const authorityNative = new Database(':memory:');
-	const authority = openRecordAuthority({
-		database: createBunSqliteAdapter(authorityNative),
-		sha256,
-	});
-	push(authority, 'seed', [
-		{
-			kind: 'createRow',
-			table: 'skills',
-			rowId: 'conflict',
-			value: { title: 'Authority conflict' },
-		},
-		{
-			kind: 'createRow',
-			table: 'skills',
-			rowId: 'deleted-in-batch',
-			value: { title: 'Authority survivor' },
-		},
-	]);
-	const local = openLocal(
-		join(root, 'replica.sqlite3'),
-		authorityTransport(authority),
-		{ pushLimit: 2 },
-	);
-
-	try {
-		await local.replica.synchronize();
-		local.native
-			.query(
-				`DELETE FROM __epicenter_records
-				 WHERE table_key = 'skills' AND row_id = ?`,
-			)
-			.run('conflict');
-		local.replica.admit({
-			kind: 'createRow',
-			table: 'skills',
-			rowId: 'conflict',
-			value: { title: 'Conflicting local lifetime' },
-		});
-		local.skills.delete('deleted-in-batch');
-		local.replica.admit({
-			kind: 'createRow',
-			table: 'skills',
-			rowId: 'deleted-in-batch',
-			value: { title: 'Ambiguous recreate' },
-		});
-
-		await expect(local.replica.synchronize()).rejects.toThrow(
-			'Record push permanently refused; 3 commands quarantined: create-conflict',
+		// Fail after the first successful page so pagination is interrupted.
+		let pagesServed = 0;
+		const flaky: CanonicalReplicaTransport = {
+			async sync(request) {
+				const response = authority.sync(request);
+				pagesServed += 1;
+				if (pagesServed === 1) return response;
+				throw new Error('connection dropped');
+			},
+			async snapshotChunk(request) {
+				return authority.snapshotChunk(request);
+			},
+		};
+		const first = openLocal(path, flaky, { pageLimit: 2 });
+		const created = first.skills.create({ title: 'Mine' });
+		await expect(first.replica.synchronize()).rejects.toThrow(
+			'connection dropped',
 		);
-		expect(local.replica.status()).toMatchObject({
-			pendingCommands: 0,
-			hasInflightPush: false,
-		});
-		expect(local.replica.inspectQuarantine()).toMatchObject([
-			{
-				actorSequence: 1,
-				reason: 'create-conflict',
-				command: { kind: 'createRow', rowId: 'conflict' },
-			},
-			{
-				actorSequence: 2,
-				reason: 'create-conflict',
-				command: { kind: 'deleteRow', rowId: 'deleted-in-batch' },
-			},
-			{
-				actorSequence: 3,
-				reason: 'depends-on-rejected-batch',
-				command: { kind: 'createRow', rowId: 'deleted-in-batch' },
-			},
-		]);
-		expect(expectOk(local.skills.get('conflict'))).toEqual({
-			id: 'conflict',
-			title: 'Authority conflict',
-		});
-		expect(expectOk(local.skills.get('deleted-in-batch'))).toEqual({
-			id: 'deleted-in-batch',
-			title: 'Authority survivor',
-		});
-		await local.replica.synchronize();
-		expect(local.replica.inspectQuarantine()).toHaveLength(3);
-	} finally {
-		local.native.close();
-		authorityNative.close();
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
-test('interrupted bootstrap rebases retained commands before any rotated-actor push', async () => {
-	const root = mkdtempSync(join(tmpdir(), 'canonical-replica-'));
-	const authorityNative = new Database(':memory:');
-	const authority = openRecordAuthority({
-		database: createBunSqliteAdapter(authorityNative),
-		sha256,
-	});
-	push(authority, 'remote-release', [
-		{
-			kind: 'createRow',
-			table: 'skills',
-			rowId: 'remote',
-			value: { title: 'Authority baseline' },
-		},
-	]);
-	let pushCalls = 0;
-	const transport: CanonicalReplicaTransport = {
-		...authorityTransport(authority),
-		async push(request) {
-			pushCalls += 1;
-			return authority.push(request);
-		},
-	};
-	const local = openLocal(join(root, 'replica.sqlite3'), transport);
-	const retained = local.skills.create({ title: 'Retained after crash' });
-	local.native.run(
-		`UPDATE __epicenter_replica_meta SET
-			actor_id = ?, pull_cursor = 0, inflight_first = NULL,
-			inflight_last = NULL, requires_bootstrap = 1
-		 WHERE id = 1`,
-		[crypto.randomUUID()],
-	);
-	local.native.run('DELETE FROM __epicenter_records');
-
-	try {
-		await local.replica.synchronize();
-		expect(pushCalls).toBe(0);
-		expect(expectOk(local.skills.get('remote'))).toEqual({
-			id: 'remote',
-			title: 'Authority baseline',
-		});
-		expect(expectOk(local.skills.get(retained.id))).toEqual(retained);
-		expect(local.replica.status()).toMatchObject({ pendingCommands: 1 });
-
-		await local.replica.synchronize();
-		expect(pushCalls).toBe(1);
-		expect(local.replica.status()).toMatchObject({ pendingCommands: 0 });
-	} finally {
-		local.native.close();
-		authorityNative.close();
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
-test('an admit during active synchronization schedules another complete pass', async () => {
-	const root = mkdtempSync(join(tmpdir(), 'canonical-replica-'));
-	const authorityNative = new Database(':memory:');
-	const authority = openRecordAuthority({
-		database: createBunSqliteAdapter(authorityNative),
-		sha256,
-	});
-	let local: ReturnType<typeof openLocal>;
-	let admittedDuringPush = false;
-	let joinedPass: Promise<unknown> | undefined;
-	const transport: CanonicalReplicaTransport = {
-		...authorityTransport(authority),
-		async push(request) {
-			const response = authority.push(request);
-			if (!admittedDuringPush) {
-				admittedDuringPush = true;
-				local.skills.create({ title: 'Admitted during push' });
-				joinedPass = local.replica.synchronize();
-			}
-			return response;
-		},
-	};
-	local = openLocal(join(root, 'replica.sqlite3'), transport);
-
-	try {
-		local.skills.create({ title: 'Initial' });
-		const initialPass = local.replica.synchronize();
-		await initialPass;
-		expect(joinedPass).toBe(initialPass);
-		expect(local.replica.status()).toMatchObject({ pendingCommands: 0 });
-		expect(authority.inspect().rows).toHaveLength(2);
-	} finally {
-		local.native.close();
-		authorityNative.close();
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
-test('two supervisors accept the same sealed receipt idempotently', async () => {
-	const root = mkdtempSync(join(tmpdir(), 'canonical-replica-'));
-	const path = join(root, 'replica.sqlite3');
-	const authorityNative = new Database(':memory:');
-	const authority = openRecordAuthority({
-		database: createBunSqliteAdapter(authorityNative),
-		sha256,
-	});
-	let arrivals = 0;
-	let releasePushes: (() => void) | undefined;
-	const bothPushing = new Promise<void>((resolve) => {
-		releasePushes = resolve;
-	});
-	const transport: CanonicalReplicaTransport = {
-		...authorityTransport(authority),
-		async push(request) {
-			const response = authority.push(request);
-			arrivals += 1;
-			if (arrivals === 2) releasePushes?.();
-			await bothPushing;
-			return response;
-		},
-	};
-	const first = openLocal(path, transport);
-	const second = openLocal(path, transport);
-
-	try {
-		first.skills.create({ title: 'Shared file' });
-		await Promise.all([
-			first.replica.synchronize(),
-			second.replica.synchronize(),
-		]);
-		expect(arrivals).toBe(2);
-		expect(first.replica.status()).toMatchObject({
-			pullCursor: 1,
-			pendingCommands: 0,
-		});
-		expect(authority.inspect().rows).toHaveLength(1);
-	} finally {
+		// The first page installed; the sealed round replays over it.
+		expect(first.replica.status().checkpoint).toBeGreaterThan(0);
+		expect(rawPayload(first.native, created.id)).toEqual({ title: 'Mine' });
 		first.native.close();
-		second.native.close();
-		authorityNative.close();
-		rmSync(root, { recursive: true, force: true });
-	}
-});
 
-test('a push receipt must authenticate the exact sealed batch', async () => {
-	const root = mkdtempSync(join(tmpdir(), 'canonical-replica-'));
-	const authorityNative = new Database(':memory:');
-	const authority = openRecordAuthority({
-		database: createBunSqliteAdapter(authorityNative),
-		sha256,
-	});
-	const transport: CanonicalReplicaTransport = {
-		...authorityTransport(authority),
-		async push(request) {
-			const response = authority.push(request);
-			if (!response.ok) return response;
-			return {
-				...response,
-				receipt: { ...response.receipt, batchChecksum: 'wrong-batch' },
-			};
-		},
-	};
-	const local = openLocal(join(root, 'replica.sqlite3'), transport);
-
-	try {
-		local.skills.create({ title: 'Exact intent' });
-		await expect(local.replica.synchronize()).rejects.toThrow(
-			'Push receipt does not match the sealed request',
-		);
-		expect(local.replica.status()).toMatchObject({
-			pendingCommands: 1,
-			hasInflightPush: true,
+		// Crash boundary: reopen the file, resume paging to head.
+		const reopened = openLocal(path, authorityTransport(authority), {
+			pageLimit: 2,
 		});
-	} finally {
-		local.native.close();
-		authorityNative.close();
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
-test('pull installs mixed-release current state without enqueuing commands', async () => {
-	const root = mkdtempSync(join(tmpdir(), 'canonical-replica-'));
-	const authorityNative = new Database(':memory:');
-	const authority = openRecordAuthority({
-		database: createBunSqliteAdapter(authorityNative),
-		sha256,
-	});
-	const accepted = push(authority, 'remote-release', [
-		{
-			kind: 'createRow',
-			table: 'skills',
-			rowId: 'shared',
-			value: { title: 'Old', future: { retained: true } },
-		},
-		{
-			kind: 'patchRow',
-			table: 'skills',
-			rowId: 'shared',
-			set: { title: 'New', oldReleaseOnly: 1 },
-			unset: [],
-		},
-		{
-			kind: 'patchRow',
-			table: 'skills',
-			rowId: 'shared',
-			set: { category: 'writing' },
-			unset: ['oldReleaseOnly'],
-		},
-	]);
-	expect(accepted.ok).toBe(true);
-	const path = join(root, 'replica.sqlite3');
-	let remoteCommits = 0;
-	const local = openLocal(path, authorityTransport(authority), {
-		onRemoteCommit: () => {
-			remoteCommits += 1;
-		},
-	});
-
-	try {
-		await local.replica.synchronize();
-		expect(rawPayload(local.native, 'shared')).toEqual({
-			title: 'New',
-			category: 'writing',
-			future: { retained: true },
-		});
-		expect(expectOk(local.skills.get('shared'))).toEqual({
-			id: 'shared',
-			title: 'New',
-			category: 'writing',
-		});
-		expect(local.replica.status()).toMatchObject({
-			pullCursor: 3,
-			pendingCommands: 0,
-			acceptedCommandsAwaitingPull: 0,
-		});
-		expect(
-			local.native.query('SELECT * FROM __epicenter_replica_outbox').all(),
-		).toEqual([]);
-		expect(remoteCommits).toBe(1);
-		local.native.close();
-
-		const reopened = openLocal(path, authorityTransport(authority));
-		expect(reopened.replica.status().pullCursor).toBe(3);
-		expect(rawPayload(reopened.native, 'shared').future).toEqual({
-			retained: true,
-		});
+		expect(rawPayload(reopened.native, created.id)).toEqual({ title: 'Mine' });
+		const status = await reopened.replica.synchronize();
+		expect(status).toMatchObject({ pendingCommands: 0, hasInflightRound: false });
+		expect(rawPayload(reopened.native, created.id)).toEqual({ title: 'Mine' });
+		const scan = reopened.skills.scan({ limit: 100 });
+		expect(scan.rows).toHaveLength(8);
 		reopened.native.close();
 	} finally {
 		authorityNative.close();
@@ -768,308 +359,333 @@ test('pull installs mixed-release current state without enqueuing commands', asy
 	}
 });
 
-test('pending rebase preserves __proto__ as an ordinary own JSON key', async () => {
+test('a concurrent deletion wins over a late edit and fences queued body appends', async () => {
 	const root = mkdtempSync(join(tmpdir(), 'canonical-replica-'));
 	const authorityNative = new Database(':memory:');
-	const authority = openRecordAuthority({
-		database: createBunSqliteAdapter(authorityNative),
-		sha256,
-	});
-	push(authority, 'remote-release', [
-		{
-			kind: 'createRow',
+	try {
+		const authority = openRecordAuthority({
+			database: createBunSqliteAdapter(authorityNative),
+			sha256,
+		});
+		const diagnostics: CanonicalReplicaDiagnostic[] = [];
+		// One command per round so the queued body edit is still in the outbox
+		// (not sealed) when the deletion entry installs: the fence's shape. An
+		// already-sealed append is immutable and relies on the authority fold.
+		const { native, replica, skills } = openLocal(
+			join(root, 'replica.sqlite3'),
+			authorityTransport(authority),
+			{
+				roundLimit: 1,
+				onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+			},
+		);
+		const created = skills.create({ title: 'Doomed' });
+		await replica.synchronize();
+
+		// Another replica deletes the row at the authority.
+		writerRound(authority, 'writer-b', 0, [
+			{ kind: 'deleteRow', table: 'skills', rowId: created.id },
+		]);
+
+		// Meanwhile this replica queues a scalar edit and a body edit.
+		expectOk(skills.patch(created.id, { title: 'Late edit' }));
+		replica.admit({
+			kind: 'bodyAppend',
 			table: 'skills',
-			rowId: 'shared',
-			value: { title: 'Remote' },
-		},
-	]);
-	let local: ReturnType<typeof openLocal>;
-	let admittedDuringPull = false;
-	const transport: CanonicalReplicaTransport = {
-		...authorityTransport(authority),
-		async pull(request) {
-			if (!admittedDuringPull) {
-				admittedDuringPull = true;
-				local.replica.admit({
-					kind: 'patchRow',
-					table: 'skills',
-					rowId: 'shared',
-					set: JSON.parse('{"__proto__":{"source":"pending-rebase"}}'),
-					unset: [],
-				});
-			}
-			return authority.pull(request);
-		},
-	};
-	local = openLocal(join(root, 'replica.sqlite3'), transport);
-
-	try {
-		await local.replica.synchronize();
-		const value = rawPayload(local.native, 'shared');
-		expect(Object.hasOwn(value, '__proto__')).toBeTrue();
-		expect(Object.getOwnPropertyDescriptor(value, '__proto__')?.value).toEqual({
-			source: 'pending-rebase',
-		});
-		expect(Object.getPrototypeOf(value)).toBe(Object.prototype);
-		expect(Object.getPrototypeOf({})).not.toHaveProperty('source');
-		expect(local.replica.status()).toMatchObject({ pendingCommands: 0 });
-	} finally {
-		local.native.close();
-		authorityNative.close();
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
-test('below-floor snapshot preserves accepted-after-head and pending local rows', async () => {
-	const root = mkdtempSync(join(tmpdir(), 'canonical-replica-'));
-	const authorityNative = new Database(':memory:');
-	const authority = openRecordAuthority({
-		database: createBunSqliteAdapter(authorityNative),
-		sha256,
-	});
-	push(authority, 'remote-release', [
-		{
-			kind: 'createRow',
-			table: 'skills',
-			rowId: 'remote',
-			value: { title: 'Snapshot row', future: 'opaque' },
-		},
-	]);
-	const manifest = await authority.publishSnapshot({ maxChunkBytes: 64_000 });
-	if (!manifest) throw new Error('Expected published snapshot');
-	authority.compactDeletionsThrough(manifest.head);
-
-	let createDuringSnapshot: (() => void) | undefined;
-	let didCreateDuringSnapshot = false;
-	const transport: CanonicalReplicaTransport = {
-		...authorityTransport(authority),
-		async snapshotChunk(request) {
-			if (!didCreateDuringSnapshot) {
-				didCreateDuringSnapshot = true;
-				createDuringSnapshot?.();
-			}
-			return authority.snapshotChunk(request);
-		},
-	};
-	const local = openLocal(join(root, 'replica.sqlite3'), transport);
-	const acceptedAfterHead = local.skills.create({ title: 'Accepted after H' });
-	let pendingRowId = '';
-	createDuringSnapshot = () => {
-		pendingRowId = local.skills.create({ title: 'Pending during snapshot' }).id;
-	};
-
-	try {
-		await local.replica.synchronize();
-		expect(local.replica.status()).toEqual({
-			pullCursor: 3,
-			pendingCommands: 0,
-			acceptedCommandsAwaitingPull: 0,
-			hasInflightPush: false,
-		});
-		expect(expectOk(local.skills.get('remote'))).toMatchObject({
-			title: 'Snapshot row',
-		});
-		expect(expectOk(local.skills.get(acceptedAfterHead.id))).toMatchObject({
-			title: 'Accepted after H',
-		});
-		expect(expectOk(local.skills.get(pendingRowId))).toMatchObject({
-			title: 'Pending during snapshot',
+			rowId: created.id,
+			update: 'bGF0ZS1ib2R5',
 		});
 
-		expect(authority.inspect().rows).toHaveLength(3);
-	} finally {
-		local.native.close();
-		authorityNative.close();
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
-test('a stale staged snapshot cannot roll a shared replica backward', async () => {
-	const root = mkdtempSync(join(tmpdir(), 'canonical-replica-'));
-	const manifest = await createSnapshotManifest(sha256, {
-		generation: 1,
-		head: 1,
-		chunkChecksums: ['already-staged'],
-		actorHighWater: {},
-	});
-	let pulls = 0;
-	const transport: CanonicalReplicaTransport = {
-		async push() {
-			throw new Error('Unexpected push');
-		},
-		async pull(request) {
-			pulls += 1;
-			if (pulls === 1) {
-				return {
-					kind: 'pull',
-					ok: true,
-					snapshotRequired: true,
-					manifest,
-				};
-			}
-			return {
-				kind: 'pull',
-				ok: true,
-				snapshotRequired: false,
-				fromCursor: request.cursor,
-				entries: [],
-				newCursor: request.cursor,
-				hasMore: false,
-			};
-		},
-		async snapshotChunk() {
-			throw new Error('Completed staging must not redownload chunks');
-		},
-	};
-	const local = openLocal(join(root, 'replica.sqlite3'), transport);
-
-	try {
-		local.native.run(
-			`INSERT INTO __epicenter_records(table_key, row_id, payload)
-			 VALUES ('skills', 'shared', '{"title":"newer"}')`,
-		);
-		local.native.run(
-			'UPDATE __epicenter_replica_meta SET pull_cursor = 2 WHERE id = 1',
-		);
-		local.native.run(
-			`INSERT INTO __epicenter_replica_snapshot_meta(
-				id, generation, manifest_json, next_chunk_index
-			) VALUES (1, ?, ?, 1)`,
-			[manifest.generation, JSON.stringify(manifest)],
-		);
-		local.native.run(
-			`INSERT INTO __epicenter_replica_snapshot_rows(
-				generation, table_key, row_id, payload, last_server_sequence
-			) VALUES (1, 'skills', 'shared', '{"title":"stale"}', 1)`,
-		);
-
-		await local.replica.synchronize();
-		expect(local.replica.status().pullCursor).toBe(2);
-		expect(expectOk(local.skills.get('shared'))).toMatchObject({
-			title: 'newer',
-		});
-	} finally {
-		local.native.close();
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
-test('an invalid pull response cannot advance the transactional cursor', async () => {
-	const root = mkdtempSync(join(tmpdir(), 'canonical-replica-'));
-	const transport: CanonicalReplicaTransport = {
-		async push() {
-			throw new Error('Unexpected push');
-		},
-		async pull() {
-			return {
-				kind: 'pull',
-				ok: true,
-				snapshotRequired: false,
-				fromCursor: 0,
-				entries: [{ kind: 'row', table: 'skills', rowId: 'bad' }],
-				newCursor: 1,
-				hasMore: false,
-			};
-		},
-		async snapshotChunk() {
-			throw new Error('Unexpected snapshot');
-		},
-	};
-	const local = openLocal(join(root, 'replica.sqlite3'), transport);
-
-	try {
-		await expect(local.replica.synchronize()).rejects.toThrow(
-			'Invalid record pull response',
-		);
-		expect(local.replica.status().pullCursor).toBe(0);
+		await replica.synchronize();
+		// The deletion installed; the queued body append was fenced before it
+		// could ship; the late patch was accepted upstream as a no-op.
 		expect(
-			local.native.query('SELECT * FROM __epicenter_records').all(),
+			diagnostics.some(
+				(diagnostic) => diagnostic.command.kind === 'bodyAppend',
+			),
+		).toBeTrue();
+		expect(authority.inspect().rows).toEqual([]);
+		expect(authority.inspect().bodyLog).toEqual([]);
+		expect(
+			native
+				.query('SELECT * FROM __epicenter_records')
+				.all(),
 		).toEqual([]);
+		native.close();
 	} finally {
-		local.native.close();
+		authorityNative.close();
 		rmSync(root, { recursive: true, force: true });
 	}
 });
 
-test('a paginated pull must make monotone progress', async () => {
+test('body updates install by sequence and deletion purges local body state', async () => {
 	const root = mkdtempSync(join(tmpdir(), 'canonical-replica-'));
-	const transport: CanonicalReplicaTransport = {
-		async push() {
-			throw new Error('Unexpected push');
-		},
-		async pull(request) {
-			return {
-				kind: 'pull',
-				ok: true,
-				snapshotRequired: false,
-				fromCursor: request.cursor,
-				entries: [],
-				newCursor: request.cursor,
-				hasMore: true,
-			};
-		},
-		async snapshotChunk() {
-			throw new Error('Unexpected snapshot');
-		},
-	};
-	const local = openLocal(join(root, 'replica.sqlite3'), transport);
-
+	const authorityNative = new Database(':memory:');
 	try {
-		await expect(local.replica.synchronize()).rejects.toThrow(
-			'Pull response does not continue the local cursor',
+		const authority = openRecordAuthority({
+			database: createBunSqliteAdapter(authorityNative),
+			sha256,
+		});
+		writerRound(authority, 'writer', 0, [
+			{ kind: 'createRow', table: 'notes', rowId: 'note-1', value: {} },
+			{ kind: 'bodyAppend', table: 'notes', rowId: 'note-1', update: 'b25l' },
+			{ kind: 'bodyAppend', table: 'notes', rowId: 'note-1', update: 'dHdv' },
+		]);
+		const { native, replica } = openLocal(
+			join(root, 'replica.sqlite3'),
+			authorityTransport(authority),
 		);
-		expect(local.replica.status().pullCursor).toBe(0);
+		await replica.synchronize();
+		expect(
+			native
+				.query<{ update_b64: string; last_server_sequence: number }, []>(
+					`SELECT update_b64, last_server_sequence
+					 FROM __epicenter_replica_bodies ORDER BY last_server_sequence`,
+				)
+				.all(),
+		).toEqual([
+			{ update_b64: 'b25l', last_server_sequence: 2 },
+			{ update_b64: 'dHdv', last_server_sequence: 3 },
+		]);
+
+		writerRound(authority, 'writer', 1, [
+			{ kind: 'deleteRow', table: 'notes', rowId: 'note-1' },
+		]);
+		await replica.synchronize();
+		expect(
+			native.query('SELECT * FROM __epicenter_replica_bodies').all(),
+		).toEqual([]);
+		native.close();
 	} finally {
-		local.native.close();
+		authorityNative.close();
 		rmSync(root, { recursive: true, force: true });
 	}
 });
 
-test('a pull cannot exceed the requested entry count', async () => {
+test('a below-floor replica bootstraps after its round folds, keeping pending intent', async () => {
 	const root = mkdtempSync(join(tmpdir(), 'canonical-replica-'));
-	const transport: CanonicalReplicaTransport = {
-		async push() {
-			throw new Error('Unexpected push');
-		},
-		async pull(request) {
-			return {
-				kind: 'pull',
-				ok: true,
-				snapshotRequired: false,
-				fromCursor: request.cursor,
-				entries: [
-					{
-						kind: 'deletion',
-						table: 'skills',
-						rowId: 'one',
-						lastServerSequence: 1,
-					},
-					{
-						kind: 'deletion',
-						table: 'skills',
-						rowId: 'two',
-						lastServerSequence: 2,
-					},
-				],
-				newCursor: 2,
-				hasMore: false,
-			};
-		},
-		async snapshotChunk() {
-			throw new Error('Unexpected snapshot');
-		},
-	};
-	const local = openLocal(join(root, 'replica.sqlite3'), transport, {
-		pullLimit: 1,
-	});
-
+	const authorityNative = new Database(':memory:');
 	try {
-		await expect(local.replica.synchronize()).rejects.toThrow(
-			'Pull response exceeds the requested entry limit',
+		const authority = openRecordAuthority({
+			database: createBunSqliteAdapter(authorityNative),
+			sha256,
+		});
+		writerRound(authority, 'writer', 0, [
+			{ kind: 'createRow', table: 'skills', rowId: 'kept', value: { title: 'Kept' } },
+			{ kind: 'createRow', table: 'skills', rowId: 'doomed', value: { title: 'Doomed' } },
+		]);
+
+		const { native, replica, skills } = openLocal(
+			join(root, 'replica.sqlite3'),
+			authorityTransport(authority),
 		);
-		expect(local.replica.status().pullCursor).toBe(0);
+		await replica.synchronize();
+		expect(rawPayload(native, 'doomed')).toEqual({ title: 'Doomed' });
+
+		// The authority deletes, snapshots, and compacts past the tombstone.
+		writerRound(authority, 'writer', 1, [
+			{ kind: 'deleteRow', table: 'skills', rowId: 'doomed' },
+		]);
+		const manifest = await authority.publishSnapshot({
+			maxChunkBytes: 512 * 1024,
+		});
+		if (!manifest) throw new Error('Expected snapshot publication');
+		authority.compactDeletionsThrough(manifest.head);
+		expect(authority.inspect().deletions).toEqual([]);
+
+		// The stale replica edits offline, then synchronizes below the floor.
+		expectOk(skills.patch('kept', { category: 'offline' }));
+		await replica.synchronize();
+		expect(authority.inspect().rows).toMatchObject([
+			{ rowId: 'kept', value: { title: 'Kept', category: 'offline' } },
+		]);
+		expect(rawPayload(native, 'kept')).toEqual({
+			title: 'Kept',
+			category: 'offline',
+		});
+		expect(() => rawPayload(native, 'doomed')).toThrow('Missing canonical row');
+		native.close();
 	} finally {
-		local.native.close();
+		authorityNative.close();
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test('an interrupted snapshot install resumes by chunk index after reopen', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'canonical-replica-'));
+	const path = join(root, 'replica.sqlite3');
+	const authorityNative = new Database(':memory:');
+	try {
+		const authority = openRecordAuthority({
+			database: createBunSqliteAdapter(authorityNative),
+			sha256,
+		});
+		// Wide rows force multiple snapshot chunks.
+		const wide = 'x'.repeat(200 * 1024);
+		writerRound(authority, 'writer', 0, [
+			{ kind: 'createRow', table: 'skills', rowId: 'row-a', value: { title: wide } },
+			{ kind: 'createRow', table: 'skills', rowId: 'row-b', value: { title: wide } },
+			{ kind: 'createRow', table: 'skills', rowId: 'row-c', value: { title: wide } },
+			{ kind: 'deleteRow', table: 'skills', rowId: 'row-c' },
+		]);
+		const manifest = await authority.publishSnapshot({
+			maxChunkBytes: 256 * 1024,
+		});
+		if (!manifest) throw new Error('Expected snapshot publication');
+		authority.compactDeletionsThrough(manifest.head);
+		expect(manifest.chunkChecksums.length).toBeGreaterThan(1);
+
+		const fetches: number[] = [];
+		let failuresLeft = 1;
+		const flaky: CanonicalReplicaTransport = {
+			async sync(request) {
+				return authority.sync(request);
+			},
+			async snapshotChunk(request) {
+				fetches.push(request.index);
+				if (request.index === 1 && failuresLeft > 0) {
+					failuresLeft -= 1;
+					throw new Error('network died mid-snapshot');
+				}
+				return authority.snapshotChunk(request);
+			},
+		};
+		const first = openLocal(path, flaky);
+		await expect(first.replica.synchronize()).rejects.toThrow(
+			'network died mid-snapshot',
+		);
+		first.native.close();
+
+		const reopened = openLocal(path, flaky);
+		await reopened.replica.synchronize();
+		expect(fetches.filter((index) => index === 0)).toHaveLength(1);
+		expect(rawPayload(reopened.native, 'row-a')).toEqual({ title: wide });
+		expect(rawPayload(reopened.native, 'row-b')).toEqual({ title: wide });
+		expect(() => rawPayload(reopened.native, 'row-c')).toThrow(
+			'Missing canonical row',
+		);
+		reopened.native.close();
+	} finally {
+		authorityNative.close();
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test('a capacity loser mirrors the authority no-op and surfaces a diagnostic', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'canonical-replica-'));
+	const authorityNative = new Database(':memory:');
+	try {
+		const authority = openRecordAuthority({
+			database: createBunSqliteAdapter(authorityNative),
+			sha256,
+		});
+		// Seed the reserved KV aggregate near its cap.
+		writerRound(authority, 'writer', 0, [
+			{
+				kind: 'patchRow',
+				table: RESERVED_KV_TABLE,
+				rowId: RESERVED_KV_ROW_ID,
+				set: { big: 'x'.repeat(63 * 1024) },
+				unset: [],
+			},
+		]);
+
+		const diagnostics: CanonicalReplicaDiagnostic[] = [];
+		const { native, replica } = openLocal(
+			join(root, 'replica.sqlite3'),
+			authorityTransport(authority),
+			{ onDiagnostic: (diagnostic) => diagnostics.push(diagnostic) },
+		);
+
+		// The loser writes BEFORE pulling the winner's near-cap image: fits
+		// against its local base, folds to a no-op under authority order. The
+		// replay over the freshly installed image mirrors that no-op.
+		replica.admit({
+			kind: 'patchRow',
+			table: RESERVED_KV_TABLE,
+			rowId: RESERVED_KV_ROW_ID,
+			set: { more: 'y'.repeat(2 * 1024) },
+			unset: [],
+		});
+		await replica.synchronize();
+
+		const map = rawPayload(native, RESERVED_KV_ROW_ID, RESERVED_KV_TABLE);
+		expect(Object.keys(map)).toEqual(['big']);
+		expect(
+			diagnostics.some((diagnostic) => diagnostic.reason === 'folded-to-noop'),
+		).toBeTrue();
+		expect(authority.inspect().rows[0]?.value).toEqual(map);
+		native.close();
+	} finally {
+		authorityNative.close();
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test('pulled schema-opaque state never creates local outbox commands', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'canonical-replica-'));
+	const authorityNative = new Database(':memory:');
+	try {
+		const authority = openRecordAuthority({
+			database: createBunSqliteAdapter(authorityNative),
+			sha256,
+		});
+		writerRound(authority, 'writer', 0, [
+			{
+				kind: 'createRow',
+				table: 'skills',
+				rowId: 'remote',
+				value: { title: 'Remote', futureField: { unknown: true } },
+			},
+		]);
+		const { native, replica } = openLocal(
+			join(root, 'replica.sqlite3'),
+			authorityTransport(authority),
+		);
+		await replica.synchronize();
+		expect(rawPayload(native, 'remote')).toEqual({
+			title: 'Remote',
+			futureField: { unknown: true },
+		});
+		expect(replica.status()).toMatchObject({
+			pendingCommands: 0,
+			hasInflightRound: false,
+		});
+		native.close();
+	} finally {
+		authorityNative.close();
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test('open refuses legacy replica storage instead of migrating it', () => {
+	const root = mkdtempSync(join(tmpdir(), 'canonical-replica-'));
+	try {
+		const native = new Database(join(root, 'legacy.sqlite3'), { create: true });
+		native.run(`
+			CREATE TABLE __epicenter_replica_quarantine (
+				actor_id TEXT NOT NULL,
+				actor_sequence INTEGER NOT NULL,
+				reason TEXT NOT NULL,
+				command_json TEXT NOT NULL
+			)
+		`);
+		expect(() =>
+			createCanonicalReplica({
+				sqlite: createBunSqliteAdapter(native),
+				transport: {
+					async sync() {
+						throw new Error('unused');
+					},
+					async snapshotChunk() {
+						throw new Error('unused');
+					},
+				},
+				sha256,
+			}),
+		).toThrow('Incompatible canonical replica storage');
+		native.close();
+	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
 });

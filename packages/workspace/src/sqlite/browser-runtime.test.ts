@@ -12,6 +12,10 @@
  */
 import { expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
+import {
+	RECORD_SYNC_PROTOCOL_MAJOR,
+	recordRoundDigest,
+} from '@epicenter/record-sync';
 import { IDBFactory } from 'fake-indexeddb';
 import { createIndexedDbDocumentLocalStore } from './browser-document-store.js';
 import { createBrowserWorkspaceRuntime } from './browser-runtime.js';
@@ -146,16 +150,37 @@ test('open stays inert and the first record call crosses one Worker boundary', a
 			workspaceId: workspaceDefinition.id,
 		});
 		expect(changes).toEqual([workspaceDefinition.id]);
+		const commands = [
+			{
+				kind: 'createRow',
+				table: 'notes',
+				rowId: 'note-1',
+				value: { title: 'First note' },
+			},
+		] as const;
 		worker.emit({
 			type: 'transport-request',
 			transportId: 1,
 			workspaceId: workspaceDefinition.id,
-			action: 'pull',
-			body: { kind: 'pull' },
+			action: 'sync',
+			body: {
+				protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+				kind: 'sync',
+				token: {
+					replicaId: 'browser-replica',
+					acceptedRound: 0,
+					checkpoint: 0,
+				},
+				sealedRound: {
+					round: 1,
+					requestDigest: recordRoundDigest(commands),
+					commands,
+				},
+			},
 		});
 		await Bun.sleep(0);
 		expect(fetched).toEqual([
-			`https://authority.test/api/records/${workspaceDefinition.id}/pull`,
+			`https://authority.test/api/records/${workspaceDefinition.id}/sync`,
 		]);
 		expect(worker.transportResponses).toEqual([
 			{ type: 'transport-result', transportId: 1, value: { ok: true } },

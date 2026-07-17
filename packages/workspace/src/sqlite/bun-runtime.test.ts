@@ -24,9 +24,9 @@ import { join } from 'node:path';
 import { field } from '@epicenter/field';
 import {
 	openRecordAuthority,
-	RECORD_SYNC_ADMISSION_LIMITS,
 	RECORD_SYNC_PROTOCOL_MAJOR,
 	type RecordCommand,
+	recordRoundDigest,
 } from '@epicenter/record-sync';
 import { createBunSqliteAdapter } from '@epicenter/record-sync/bun';
 import { expectOk } from 'wellcrafted/testing';
@@ -57,11 +57,8 @@ function createAuthority() {
 		sha256,
 	});
 	const transport: CanonicalReplicaTransport = {
-		async push(request) {
-			return authority.push(request);
-		},
-		async pull(request) {
-			return authority.pull(request);
+		async sync(request) {
+			return authority.sync(request);
 		},
 		async snapshotChunk(request) {
 			return authority.snapshotChunk(request);
@@ -72,30 +69,34 @@ function createAuthority() {
 
 function seedAuthority(
 	authority: ReturnType<typeof openRecordAuthority>,
-	actorId: string,
+	replicaId: string,
 	commands: RecordCommand[],
 ): void {
-	const response = authority.push({
+	const response = authority.sync({
 		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		kind: 'push',
-		actorId,
-		mutations: commands.map((command, index) => ({
-			actorSequence: index + 1,
-			command,
-		})),
+		kind: 'sync',
+		token: { replicaId, acceptedRound: 0, checkpoint: 0 },
+		sealedRound: {
+			round: 1,
+			requestDigest: recordRoundDigest(commands),
+			commands,
+		},
 	});
-	if (!response.ok) throw new Error(`Seed push refused: ${response.reason}`);
+	if (!response.ok) throw new Error(`Seed sync refused: ${response.reason}`);
 }
 
 function authorityHasRow(
 	authority: ReturnType<typeof openRecordAuthority>,
 	rowId: string,
 ): boolean {
-	const response = authority.pull({
+	const response = authority.sync({
 		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		kind: 'pull',
-		cursor: 0,
-		limit: RECORD_SYNC_ADMISSION_LIMITS.stateEntriesPerPull,
+		kind: 'sync',
+		token: {
+			replicaId: 'authority-inspector',
+			acceptedRound: 0,
+			checkpoint: 0,
+		},
 	});
 	return (
 		response.ok &&
@@ -173,7 +174,7 @@ test('Bun runtime lazily persists one canonical records file', async () => {
 	}
 });
 
-test('Bun runtime pulls on startup and pushes local writes without public sync controls', async () => {
+test('Bun runtime synchronizes on startup and after local writes without public sync controls', async () => {
 	const storageRoot = mkdtempSync(join(tmpdir(), 'epicenter-runtime-sync-'));
 	const remote = createAuthority();
 	seedAuthority(remote.authority, 'remote-seed', [
@@ -186,7 +187,7 @@ test('Bun runtime pulls on startup and pushes local writes without public sync c
 	]);
 	const invalidations: string[] = [];
 	let transportBindings = 0;
-	let pulls = 0;
+	let syncs = 0;
 	try {
 		await using runtime = createBunWorkspaceRuntime({
 			authorityKey: 'remote-account',
@@ -196,9 +197,9 @@ test('Bun runtime pulls on startup and pushes local writes without public sync c
 				transportBindings += 1;
 				return {
 					...remote.transport,
-					async pull(request) {
-						pulls += 1;
-						return remote.transport.pull(request);
+					async sync(request) {
+						syncs += 1;
+						return remote.transport.sync(request);
 					},
 				};
 			},
@@ -225,9 +226,9 @@ test('Bun runtime pulls on startup and pushes local writes without public sync c
 		const created = await first.tables.skills.create({ title: 'Local write' });
 		await waitFor(() => authorityHasRow(remote.authority, created.id));
 		await runtime[Symbol.asyncDispose]();
-		const pullsAfterDisposal = pulls;
+		const syncsAfterDisposal = syncs;
 		await Bun.sleep(30);
-		expect(pulls).toBe(pullsAfterDisposal);
+		expect(syncs).toBe(syncsAfterDisposal);
 	} finally {
 		remote.native.close();
 		rmSync(storageRoot, { recursive: true, force: true });
@@ -244,7 +245,7 @@ test('Bun runtime recovers a durable outbox after restart', async () => {
 			storageRoot,
 			recordTransport: () => ({
 				...remote.transport,
-				async push() {
+				async sync() {
 					throw new Error('offline');
 				},
 			}),
@@ -278,17 +279,14 @@ test('Bun runtime recovers a durable outbox after restart', async () => {
 
 test('Bun runtime disposal aborts a stalled record transport', async () => {
 	const storageRoot = mkdtempSync(join(tmpdir(), 'epicenter-runtime-abort-'));
-	let pullStarted = false;
+	let syncStarted = false;
 	try {
 		const runtime = createBunWorkspaceRuntime({
 			authorityKey: 'remote-account',
 			storageRoot,
 			recordTransport: () => ({
-				async push() {
-					return await new Promise<never>(() => undefined);
-				},
-				async pull() {
-					pullStarted = true;
+				async sync() {
+					syncStarted = true;
 					return await new Promise<never>(() => undefined);
 				},
 				async snapshotChunk() {
@@ -298,7 +296,7 @@ test('Bun runtime disposal aborts a stalled record transport', async () => {
 		});
 		const skills = await runtime.open(definition);
 		await skills.tables.skills.get('missing');
-		await waitFor(() => pullStarted);
+		await waitFor(() => syncStarted);
 
 		await Promise.race([
 			runtime[Symbol.asyncDispose](),
@@ -363,32 +361,32 @@ test('Bun runtime disposal aborts a stalled transport factory', async () => {
 	}
 });
 
-test('Bun runtime disposal aborts a stalled push and preserves its outbox', async () => {
+test('Bun runtime disposal aborts a stalled sync and preserves its pending commands', async () => {
 	const storageRoot = mkdtempSync(
-		join(tmpdir(), 'epicenter-runtime-push-abort-'),
+		join(tmpdir(), 'epicenter-runtime-sync-abort-'),
 	);
 	const remote = createAuthority();
-	let pushStarted = false;
+	let syncStarted = false;
 	try {
 		const runtime = createBunWorkspaceRuntime({
 			authorityKey: 'remote-account',
 			storageRoot,
 			recordTransport: () => ({
 				...remote.transport,
-				async push() {
-					pushStarted = true;
+				async sync() {
+					syncStarted = true;
 					return await new Promise<never>(() => undefined);
 				},
 			}),
 		});
 		const skills = await runtime.open(definition);
 		const created = await skills.tables.skills.create({ title: 'Pending' });
-		await waitFor(() => pushStarted);
+		await waitFor(() => syncStarted);
 
 		await Promise.race([
 			runtime[Symbol.asyncDispose](),
 			Bun.sleep(500).then(() => {
-				throw new Error('Runtime disposal did not abort stalled push');
+				throw new Error('Runtime disposal did not abort stalled sync');
 			}),
 		]);
 		expect(authorityHasRow(remote.authority, created.id)).toBe(false);

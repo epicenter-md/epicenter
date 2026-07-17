@@ -185,6 +185,30 @@ test('patch repairs invalid rows and preserves unknown future keys', () => {
 	);
 });
 
+test('a patch whose composed row exceeds the capacity cap is refused eagerly', () => {
+	const { database, skills } = setup();
+	const half = 'x'.repeat(260 * 1024);
+	// The bulk lives in a preserved unknown key, so the composed row (not the
+	// patch alone) is what crosses the cap.
+	seed(database, 'near-cap', { title: 'small', future: half });
+
+	// The mirror fold (ADR-0131) refuses composed capacity at the public
+	// boundary: the write never enters canonical storage or the outbox.
+	expect(() => skills.patch('near-cap', { title: half })).toThrow(
+		'Canonical row exceeds portable record-sync limits',
+	);
+	expect(expectOk(skills.get('near-cap'))).toEqual({
+		id: 'near-cap',
+		title: 'small',
+	});
+	// A small replacement composes under the cap and applies.
+	expectOk(skills.patch('near-cap', { title: 'still small' }));
+	expect(expectOk(skills.get('near-cap'))).toEqual({
+		id: 'near-cap',
+		title: 'still small',
+	});
+});
+
 test('scan is bounded and partitions conforming from invalid rows', () => {
 	const { database, skills } = setup();
 	seed(database, 'a', { title: 'A' });

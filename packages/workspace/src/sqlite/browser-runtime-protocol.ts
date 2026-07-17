@@ -73,7 +73,7 @@ export type BrowserRuntimeMessage =
 			type: 'transport-request';
 			transportId: number;
 			workspaceId: string;
-			action: 'push' | 'pull' | 'snapshot-chunk';
+			action: 'sync' | 'snapshot-chunk';
 			body: unknown;
 	  }
 	| { type: 'result'; id: number; value: unknown }

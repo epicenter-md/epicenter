@@ -1,15 +1,14 @@
 import { DurableObject } from 'cloudflare:workers';
 import {
 	openRecordAuthority,
-	type PullRequest,
-	type PullResponse,
-	type PushRequest,
-	type PushResponse,
 	type RecordAuthority,
 	type SnapshotChunkRequest,
 	type SnapshotChunkResponse,
+	type SyncRequest,
+	type SyncResponse,
 } from '@epicenter/record-sync';
 import { createDurableObjectSqliteAdapter } from '@epicenter/record-sync/durable-object';
+import * as Y from 'yjs';
 import { RECORDS_COMPACTION_POLICY } from './compaction.js';
 import type { Records, RecordsPartition } from './contracts.js';
 
@@ -37,12 +36,14 @@ export class RecordAuthorityDurableObject extends DurableObject {
 		this.authority = openRecordAuthority({
 			database: createDurableObjectSqliteAdapter(ctx.storage),
 			sha256,
+			mergeBodyUpdates: (updates) =>
+				Y.mergeUpdates(updates.map((update) => new Uint8Array(update))),
 		});
 	}
 
-	async push(request: PushRequest): Promise<PushResponse> {
-		const response = this.authority.push(request);
-		if (response.ok) {
+	async sync(request: SyncRequest): Promise<SyncResponse> {
+		const response = this.authority.sync(request);
+		if (response.ok && request.sealedRound) {
 			const compaction = (this.compaction ?? Promise.resolve())
 				.catch(() => {})
 				.then(() =>
@@ -60,10 +61,6 @@ export class RecordAuthorityDurableObject extends DurableObject {
 		return response;
 	}
 
-	async pull(request: PullRequest): Promise<PullResponse> {
-		return this.authority.pull(request);
-	}
-
 	async snapshotChunk(
 		request: SnapshotChunkRequest,
 	): Promise<SnapshotChunkResponse> {
@@ -72,8 +69,7 @@ export class RecordAuthorityDurableObject extends DurableObject {
 }
 
 type RecordsRpc = {
-	push(request: PushRequest): Promise<PushResponse>;
-	pull(request: PullRequest): Promise<PullResponse>;
+	sync(request: SyncRequest): Promise<SyncResponse>;
 	snapshotChunk(request: SnapshotChunkRequest): Promise<SnapshotChunkResponse>;
 };
 
@@ -91,8 +87,7 @@ export function createDurableObjectRecords(
 	}
 
 	return {
-		push: (partition, request) => get(partition).push(request),
-		pull: (partition, request) => get(partition).pull(request),
+		sync: (partition, request) => get(partition).sync(request),
 		snapshotChunk: (partition, request) =>
 			get(partition).snapshotChunk(request),
 	};

@@ -1,7 +1,26 @@
+/**
+ * Cloudflare Record Backend Tests
+ *
+ * Verifies wire-v5 sync through the Durable Object RPC and SQLite adapters.
+ *
+ * Key behaviors:
+ * - accepted state survives object restart and failed construction is retryable
+ * - authenticated partitions map to independent Durable Object names
+ * - accepted sealed rounds trigger snapshots served through snapshotChunk
+ */
+
 import { Database } from 'bun:sqlite';
 import { expect, mock, test } from 'bun:test';
 import { asPrincipalId } from '@epicenter/identity';
-import { RECORD_SYNC_PROTOCOL_MAJOR } from '@epicenter/record-sync';
+import {
+	recordRoundDigest,
+	RECORD_SYNC_ADMISSION_LIMITS,
+	RECORD_SYNC_PROTOCOL_MAJOR,
+	type RecordCommand,
+	type SyncResponse,
+	type SyncToken,
+} from '@epicenter/record-sync';
+import type { Records, RecordsPartition } from './contracts.js';
 
 mock.module('cloudflare:workers', () => ({
 	DurableObject: class {
@@ -88,40 +107,90 @@ async function setup() {
 	};
 }
 
-const partition = {
+const partition: RecordsPartition = {
 	principalId: asPrincipalId('alice'),
 	workspaceId: 'wiki',
 };
 
-function createRequest(actorId: string, actorSequence: number, rowId: string) {
-	return {
+function token(
+	replicaId: string,
+	acceptedRound = 0,
+	checkpoint = 0,
+): SyncToken {
+	return { replicaId, acceptedRound, checkpoint };
+}
+
+function expectPage(
+	response: SyncResponse,
+): Extract<SyncResponse, { ok: true; snapshotRequired: false }> {
+	if (!response.ok || response.snapshotRequired) {
+		throw new Error(`Expected an incremental page: ${JSON.stringify(response)}`);
+	}
+	return response;
+}
+
+async function syncRound(
+	records: Records,
+	target: RecordsPartition,
+	tokenValue: SyncToken,
+	commands: RecordCommand[],
+) {
+	return records.sync(target, {
 		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		kind: 'push' as const,
-		actorId,
-		mutations: [
-			{
-				actorSequence,
-				command: {
-					kind: 'createRow' as const,
+		kind: 'sync',
+		token: tokenValue,
+		sealedRound: {
+			round: tokenValue.acceptedRound + 1,
+			requestDigest: recordRoundDigest(commands),
+			commands,
+		},
+	});
+}
+
+async function createRows(
+	records: Records,
+	target: RecordsPartition,
+	replicaId: string,
+	rowIds: string[],
+): Promise<SyncToken> {
+	let nextToken = token(replicaId);
+	for (
+		let offset = 0;
+		offset < rowIds.length;
+		offset += RECORD_SYNC_ADMISSION_LIMITS.commandsPerRound
+	) {
+		const commands = rowIds
+			.slice(offset, offset + RECORD_SYNC_ADMISSION_LIMITS.commandsPerRound)
+			.map(
+				(rowId): RecordCommand => ({
+					kind: 'createRow',
 					table: 'pages',
 					rowId,
 					value: { title: rowId },
-				},
-			},
-		],
-	};
+				}),
+			);
+		nextToken = expectPage(
+			await syncRound(records, target, nextToken, commands),
+		).token;
+	}
+	return nextToken;
+}
+
+async function readFromStart(records: Records, target: RecordsPartition) {
+	return records.sync(target, {
+		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+		kind: 'sync',
+		token: token('reader'),
+		pageLimit: RECORD_SYNC_ADMISSION_LIMITS.stateEntriesPerPage,
+	});
 }
 
 test('current state survives Durable Object restart without an open handshake', async () => {
 	const context = await setup();
 	expect(
-		(
-			await context.records.push(
-				partition,
-				createRequest('actor-1', 1, 'page-1'),
-			)
-		).ok,
-	).toBe(true);
+		(await createRows(context.records, partition, 'replica-1', ['page-1']))
+			.acceptedRound,
+	).toBe(1);
 
 	const name = context.names[0];
 	if (!name) throw new Error('Expected a Durable Object name');
@@ -132,13 +201,8 @@ test('current state survives Durable Object restart without an open handshake', 
 		{} as Cloudflare.Env,
 	);
 
-	const pulled = await context.records.pull(partition, {
-		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		kind: 'pull',
-		cursor: 0,
-		limit: 100,
-	});
-	expect(pulled.ok && !pulled.snapshotRequired && pulled.entries).toEqual([
+	const page = expectPage(await readFromStart(context.records, partition));
+	expect(page.entries).toEqual([
 		expect.objectContaining({ rowId: 'page-1', value: { title: 'page-1' } }),
 	]);
 });
@@ -170,85 +234,75 @@ test('failed construction leaves Durable Object storage retryable', async () => 
 		{ storage: owned.storage } as DurableObjectState,
 		{} as Cloudflare.Env,
 	);
-	expect((await retried.push(createRequest('actor-1', 1, 'page-1'))).ok).toBe(
-		true,
-	);
+	const command: RecordCommand = {
+		kind: 'createRow',
+		table: 'pages',
+		rowId: 'page-1',
+		value: { title: 'page-1' },
+	};
+	expect(
+		(
+			await retried.sync({
+				protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+				kind: 'sync',
+				token: token('replica-1'),
+				sealedRound: {
+					round: 1,
+					requestDigest: recordRoundDigest([command]),
+					commands: [command],
+				},
+			})
+		).ok,
+	).toBe(true);
 });
 
 test('authenticated principal and workspace pair determine object identity', async () => {
 	const { names, records } = await setup();
-	await records.pull(partition, {
-		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		kind: 'pull',
-		cursor: 0,
-		limit: 1,
+	await readFromStart(records, partition);
+	await readFromStart(records, {
+		principalId: asPrincipalId('bob'),
+		workspaceId: 'wiki',
 	});
-	await records.pull(
-		{ principalId: asPrincipalId('bob'), workspaceId: 'wiki' },
-		{
-			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-			kind: 'pull',
-			cursor: 0,
-			limit: 1,
-		},
-	);
-	await records.pull(
-		{ principalId: asPrincipalId('alice'), workspaceId: 'notes' },
-		{
-			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-			kind: 'pull',
-			cursor: 0,
-			limit: 1,
-		},
-	);
+	await readFromStart(records, {
+		principalId: asPrincipalId('alice'),
+		workspaceId: 'notes',
+	});
 
 	expect(new Set(names)).toEqual(
 		new Set(['["alice","wiki"]', '["bob","wiki"]', '["alice","notes"]']),
 	);
 });
 
-test('production compaction serves a bounded snapshot to stale cursors', async () => {
+test('production compaction serves a bounded snapshot to stale checkpoints', async () => {
 	const { records } = await setup();
+	const nextToken = await createRows(
+		records,
+		partition,
+		'replica-compact',
+		Array.from({ length: 1_000 }, (_, index) => `page-${index}`),
+	);
 	expect(
-		(
-			await records.push(partition, {
-				protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-				kind: 'push',
-				actorId: 'actor-compact',
-				mutations: Array.from({ length: 1_000 }, (_, index) => ({
-					actorSequence: index + 1,
-					command: {
-						kind: 'createRow' as const,
-						table: 'pages',
-						rowId: `page-${index}`,
-						value: { title: `Page ${index}` },
-					},
-				})),
-			})
-		).ok,
-	).toBe(true);
-	expect(
-		(
-			await records.push(
-				partition,
-				createRequest('actor-compact', 1_001, 'last'),
-			)
-		).ok,
-	).toBe(true);
-	const pulled = await records.pull(partition, {
-		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		kind: 'pull',
-		cursor: 0,
-		limit: 100,
-	});
-	expect(pulled.ok && pulled.snapshotRequired).toBe(true);
-	if (!pulled.ok || !pulled.snapshotRequired)
+		expectPage(
+			await syncRound(records, partition, nextToken, [
+				{
+					kind: 'createRow',
+					table: 'pages',
+					rowId: 'last',
+					value: { title: 'last' },
+				},
+			]),
+		).token.acceptedRound,
+	).toBe(nextToken.acceptedRound + 1);
+
+	const stale = await readFromStart(records, partition);
+	expect(stale.ok && stale.snapshotRequired).toBe(true);
+	if (!stale.ok || !stale.snapshotRequired)
 		throw new Error('Expected snapshot');
 	expect(
 		await records.snapshotChunk(partition, {
 			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
 			kind: 'snapshotChunk',
-			generation: pulled.manifest.generation,
+			generation: stale.manifest.generation,
 			index: 0,
 		}),
 	).toMatchObject({ kind: 'snapshotChunk', ok: true });

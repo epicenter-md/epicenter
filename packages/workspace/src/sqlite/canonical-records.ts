@@ -146,11 +146,17 @@ export function createCanonicalRecords<
 							return Ok(undefined);
 						}
 						const folded = foldRow(payload, command);
-						if (folded.kind !== 'row') {
+						if (folded.kind === 'deletion') {
 							throw new Error('A live canonical row patch must produce a row');
 						}
+						if (folded.kind === 'noop') {
+							// The mirror fold refused capacity locally; the typed
+							// write never enters canonical storage or the outbox.
+							throw new RangeError(
+								'Canonical row exceeds portable record-sync limits',
+							);
+						}
 						const next = folded.value;
-						assertAdmissibleCanonicalRow(tableName, id, next);
 						admitCommand(admit, command);
 						sqlite.run(
 							`UPDATE "${RECORDS_TABLE}" SET "payload" = ? WHERE "table_key" = ? AND "row_id" = ?`,

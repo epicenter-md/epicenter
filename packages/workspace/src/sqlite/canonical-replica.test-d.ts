@@ -2,7 +2,8 @@
  * Canonical Replica Type Tests
  *
  * Locks the owner-only synchronization boundary. Applications cannot select
- * actor identity, issue protocol operations, or access replica SQLite.
+ * actor identity, issue protocol operations, inspect retired recovery state,
+ * or access replica SQLite.
  */
 
 import type { CanonicalReplica } from './canonical-replica.js';
@@ -25,5 +26,7 @@ void replica.actorId;
 void replica.push;
 // @ts-expect-error: raw protocol pull is not a replica capability.
 void replica.pull;
+// @ts-expect-error: quarantine inspection was removed with command refusal.
+void replica.inspectQuarantine;
 // @ts-expect-error: the private SQLite owner is not returned.
 void replica.sqlite;

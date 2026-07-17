@@ -98,17 +98,13 @@ async function installRecordAuthority(context: BrowserContext): Promise<void> {
 		const body = request.postDataJSON() as unknown;
 		const pathname = new URL(request.url()).pathname;
 		recordRequests.push(pathname);
-		const response = pathname.endsWith('/push')
-			? recordAuthority.push(body as Parameters<typeof recordAuthority.push>[0])
-			: pathname.endsWith('/pull')
-				? recordAuthority.pull(
-						body as Parameters<typeof recordAuthority.pull>[0],
+		const response = pathname.endsWith('/sync')
+			? recordAuthority.sync(body as Parameters<typeof recordAuthority.sync>[0])
+			: pathname.endsWith('/snapshot-chunk')
+				? recordAuthority.snapshotChunk(
+						body as Parameters<typeof recordAuthority.snapshotChunk>[0],
 					)
-				: pathname.endsWith('/snapshot-chunk')
-					? recordAuthority.snapshotChunk(
-							body as Parameters<typeof recordAuthority.snapshotChunk>[0],
-						)
-					: undefined;
+				: undefined;
 		if (!response) throw new Error(`Unexpected record route '${pathname}'`);
 		await route.fulfill({
 			contentType: 'application/json',
@@ -158,16 +154,19 @@ try {
 	);
 
 	for (let attempt = 0; attempt < 250; attempt++) {
-		const pulled = recordAuthority.pull({
+		const synced = recordAuthority.sync({
 			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-			kind: 'pull',
-			cursor: 0,
-			limit: 100,
+			kind: 'sync',
+			token: {
+				replicaId: 'smoke-inspector',
+				acceptedRound: 0,
+				checkpoint: 0,
+			},
 		});
 		if (
-			pulled.ok &&
-			!pulled.snapshotRequired &&
-			pulled.entries.some((entry) => entry.rowId === secondRow.id)
+			synced.ok &&
+			!synced.snapshotRequired &&
+			synced.entries.some((entry) => entry.rowId === secondRow.id)
 		) {
 			break;
 		}
@@ -193,7 +192,7 @@ try {
 	);
 	assert(
 		remotelyInstalled.data?.title === 'second',
-		'automatic startup pull did not install authority state',
+		'automatic startup sync did not install authority state',
 	);
 	await remote.evaluate(() => window.productionBrowserRuntime.dispose());
 	await remote.close();

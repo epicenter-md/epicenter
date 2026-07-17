@@ -1,10 +1,21 @@
+/**
+ * Record Sync Route Tests
+ *
+ * Verifies that the authenticated HTTP boundary validates wire-v5 requests,
+ * derives authority partitions, and exposes only sync and snapshot reads.
+ *
+ * Key behaviors:
+ * - sync and snapshot-chunk derive their partition from auth and the path
+ * - malformed, oversized, and structurally inexact requests never reach storage
+ * - obsolete and unrelated authority lifecycle routes remain absent
+ */
+
 import { expect, test } from 'bun:test';
 import { asPrincipalId } from '@epicenter/identity';
 import {
-	type PullRequest,
-	type PushRequest,
-	RECORD_SYNC_ADMISSION_LIMITS,
+	recordRoundDigest,
 	RECORD_SYNC_PROTOCOL_MAJOR,
+	type SyncRequest,
 } from '@epicenter/record-sync';
 import { Hono } from 'hono';
 import type { Records, RecordsPartition } from '../records/contracts.js';
@@ -14,31 +25,17 @@ import { mountRecordsApp } from './records.js';
 function setup() {
 	const partitions: RecordsPartition[] = [];
 	const records: Records = {
-		async push(partition, request) {
+		async sync(partition, request) {
 			partitions.push(partition);
 			return {
-				kind: 'push',
-				ok: true,
-				acceptance: 'accepted',
-				receipt: {
-					actorId: request.actorId,
-					batchChecksum: 'checksum',
-					firstActorSequence: 1,
-					lastActorSequence: 1,
-					firstServerSequence: 1,
-					lastServerSequence: 1,
-				},
-			};
-		},
-		async pull(partition, request) {
-			partitions.push(partition);
-			return {
-				kind: 'pull',
+				kind: 'sync',
 				ok: true,
 				snapshotRequired: false,
-				fromCursor: request.cursor,
+				token: {
+					...request.token,
+					acceptedRound: request.sealedRound?.round ?? request.token.acceptedRound,
+				},
 				entries: [],
-				newCursor: request.cursor,
 				hasMore: false,
 			};
 		},
@@ -62,34 +59,32 @@ function setup() {
 	return { app, partitions };
 }
 
-const push: PushRequest = {
+const commands = [
+	{
+		kind: 'createRow' as const,
+		table: 'pages',
+		rowId: 'page-1',
+		value: { title: 'Hello' },
+	},
+];
+const sync: SyncRequest = {
 	protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-	kind: 'push',
-	actorId: 'actor-1',
-	mutations: [
-		{
-			actorSequence: 1,
-			command: {
-				kind: 'createRow',
-				table: 'pages',
-				rowId: 'page-1',
-				value: { title: 'Hello' },
-			},
-		},
-	],
+	kind: 'sync',
+	token: { replicaId: 'replica-1', acceptedRound: 0, checkpoint: 0 },
+	sealedRound: {
+		round: 1,
+		requestDigest: recordRoundDigest(commands),
+		commands,
+	},
 };
-const pull: PullRequest = {
+const snapshotChunk = {
 	protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-	kind: 'pull',
-	cursor: 0,
-	limit: RECORD_SYNC_ADMISSION_LIMITS.stateEntriesPerPull,
+	kind: 'snapshotChunk' as const,
+	generation: 1,
+	index: 0,
 };
 
-function post(
-	app: Hono<Env>,
-	suffix: string,
-	body: unknown,
-): Promise<Response> {
+function post(app: Hono<Env>, suffix: string, body: unknown): Promise<Response> {
 	return Promise.resolve(
 		app.request(`/api/records/wiki/${suffix}`, {
 			method: 'POST',
@@ -99,25 +94,24 @@ function post(
 	);
 }
 
-test('push and pull derive the authority partition from authentication and path', async () => {
+test('sync and snapshot-chunk derive the authority partition from authentication and path', async () => {
 	const { app, partitions } = setup();
-	const pushResponse = await post(app, 'push', push);
-	const pullResponse = await post(app, 'pull', pull);
+	const syncResponse = await post(app, 'sync', sync);
+	const snapshotResponse = await post(app, 'snapshot-chunk', snapshotChunk);
 
-	expect(pushResponse.status).toBe(200);
-	expect((await pushResponse.json()) as { ok: boolean }).toMatchObject({
-		kind: 'push',
-		ok: true,
-		acceptance: 'accepted',
-	});
-	expect((await pullResponse.json()) as unknown).toEqual({
-		kind: 'pull',
+	expect(syncResponse.status).toBe(200);
+	expect((await syncResponse.json()) as unknown).toEqual({
+		kind: 'sync',
 		ok: true,
 		snapshotRequired: false,
-		fromCursor: 0,
+		token: { replicaId: 'replica-1', acceptedRound: 1, checkpoint: 0 },
 		entries: [],
-		newCursor: 0,
 		hasMore: false,
+	});
+	expect((await snapshotResponse.json()) as unknown).toEqual({
+		kind: 'snapshotChunk',
+		ok: false,
+		reason: 'snapshot-replaced',
 	});
 	expect(partitions).toEqual([
 		{
@@ -133,14 +127,14 @@ test('push and pull derive the authority partition from authentication and path'
 
 test('malformed, oversized, and structurally inexact requests stop before backend work', async () => {
 	const { app, partitions } = setup();
-	const malformed = await app.request('/api/records/wiki/push', {
+	const malformed = await app.request('/api/records/wiki/sync', {
 		method: 'POST',
 		body: '{',
 	});
-	const oversized = await post(app, 'push', {
+	const oversized = await post(app, 'sync', {
 		payload: 'x'.repeat(1_048_576),
 	});
-	const inexact = await post(app, 'pull', { ...pull, principalId: 'mallory' });
+	const inexact = await post(app, 'sync', { ...sync, principalId: 'mallory' });
 
 	expect(malformed.status).toBe(400);
 	expect(oversized.status).toBe(413);
@@ -150,17 +144,19 @@ test('malformed, oversized, and structurally inexact requests stop before backen
 
 test('oversized workspace identity stops before backend work', async () => {
 	const { app, partitions } = setup();
-	const response = await app.request(`/api/records/${'w'.repeat(513)}/pull`, {
+	const response = await app.request(`/api/records/${'w'.repeat(513)}/sync`, {
 		method: 'POST',
-		body: JSON.stringify(pull),
+		body: JSON.stringify(sync),
 	});
 
 	expect(response.status).toBe(400);
 	expect(partitions).toEqual([]);
 });
 
-test('the transport exposes no open or succession lifecycle', async () => {
+test('the transport exposes no obsolete verbs or authority lifecycle', async () => {
 	const { app, partitions } = setup();
+	expect((await post(app, 'push', {})).status).toBe(404);
+	expect((await post(app, 'pull', {})).status).toBe(404);
 	expect((await post(app, 'open', {})).status).toBe(404);
 	expect((await post(app, 'succession/activate', {})).status).toBe(404);
 	expect(partitions).toEqual([]);

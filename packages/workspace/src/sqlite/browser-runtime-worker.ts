@@ -131,7 +131,7 @@ async function openRecords(
 
 function createRecordTransport(workspaceId: string): CanonicalReplicaTransport {
 	const post = (
-		action: 'push' | 'pull' | 'snapshot-chunk',
+		action: 'sync' | 'snapshot-chunk',
 		body: unknown,
 	): Promise<unknown> => {
 		const id = ++transportId;
@@ -147,8 +147,7 @@ function createRecordTransport(workspaceId: string): CanonicalReplicaTransport {
 		});
 	};
 	return {
-		push: (request) => post('push', request),
-		pull: (request) => post('pull', request),
+		sync: (request) => post('sync', request),
 		snapshotChunk: (request) => post('snapshot-chunk', request),
 	};
 }

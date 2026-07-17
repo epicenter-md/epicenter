@@ -1,10 +1,28 @@
+/**
+ * Bun Record Backend Tests
+ *
+ * Verifies wire-v5 sealed-round sync over persistent Bun SQLite authorities.
+ *
+ * Key behaviors:
+ * - accepted state survives reopen and partitions remain isolated
+ * - accepted sealed rounds trigger production snapshot compaction
+ * - snapshot publication failures never change an accepted sync response
+ */
+
 import { expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { asPrincipalId } from '@epicenter/identity';
-import { RECORD_SYNC_PROTOCOL_MAJOR } from '@epicenter/record-sync';
+import {
+	recordRoundDigest,
+	RECORD_SYNC_ADMISSION_LIMITS,
+	RECORD_SYNC_PROTOCOL_MAJOR,
+	type RecordCommand,
+	type SyncResponse,
+	type SyncToken,
+} from '@epicenter/record-sync';
 import { createBunRecords } from './bun.js';
 import type { Records, RecordsPartition } from './contracts.js';
 
@@ -28,28 +46,77 @@ function setup(hash = sha256) {
 	};
 }
 
-async function createRow(
+function token(
+	replicaId: string,
+	acceptedRound = 0,
+	checkpoint = 0,
+): SyncToken {
+	return { replicaId, acceptedRound, checkpoint };
+}
+
+function expectPage(
+	response: SyncResponse,
+): Extract<SyncResponse, { ok: true; snapshotRequired: false }> {
+	if (!response.ok || response.snapshotRequired) {
+		throw new Error(`Expected an incremental page: ${JSON.stringify(response)}`);
+	}
+	return response;
+}
+
+async function syncRound(
 	records: Records,
 	target: RecordsPartition,
-	actorId: string,
-	actorSequence: number,
-	rowId: string,
+	tokenValue: SyncToken,
+	commands: RecordCommand[],
 ) {
-	return records.push(target, {
+	return records.sync(target, {
 		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		kind: 'push',
-		actorId,
-		mutations: [
-			{
-				actorSequence,
-				command: {
+		kind: 'sync',
+		token: tokenValue,
+		sealedRound: {
+			round: tokenValue.acceptedRound + 1,
+			requestDigest: recordRoundDigest(commands),
+			commands,
+		},
+	});
+}
+
+async function createRows(
+	records: Records,
+	target: RecordsPartition,
+	replicaId: string,
+	rowIds: string[],
+): Promise<SyncToken> {
+	let nextToken = token(replicaId);
+	for (
+		let offset = 0;
+		offset < rowIds.length;
+		offset += RECORD_SYNC_ADMISSION_LIMITS.commandsPerRound
+	) {
+		const commands = rowIds
+			.slice(offset, offset + RECORD_SYNC_ADMISSION_LIMITS.commandsPerRound)
+			.map(
+				(rowId): RecordCommand => ({
 					kind: 'createRow',
 					table: 'pages',
 					rowId,
 					value: { title: rowId },
-				},
-			},
-		],
+				}),
+			);
+		const page = expectPage(
+			await syncRound(records, target, nextToken, commands),
+		);
+		nextToken = page.token;
+	}
+	return nextToken;
+}
+
+async function readFromStart(records: Records, target: RecordsPartition) {
+	return records.sync(target, {
+		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+		kind: 'sync',
+		token: token('reader'),
+		pageLimit: RECORD_SYNC_ADMISSION_LIMITS.stateEntriesPerPage,
 	});
 }
 
@@ -57,19 +124,15 @@ test('current state survives closing and reopening without an open handshake', a
 	const first = setup();
 	try {
 		expect(
-			(await createRow(first.records, partition, 'actor-1', 1, 'page-1')).ok,
-		).toBe(true);
+			(await createRows(first.records, partition, 'replica-1', ['page-1']))
+				.acceptedRound,
+		).toBe(1);
 		first.close();
 
 		const second = createBunRecords({ dir: first.dir, sha256 });
 		try {
-			const pulled = await second.records.pull(partition, {
-				protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-				kind: 'pull',
-				cursor: 0,
-				limit: 100,
-			});
-			expect(pulled.ok && !pulled.snapshotRequired && pulled.entries).toEqual([
+			const page = expectPage(await readFromStart(second.records, partition));
+			expect(page.entries).toEqual([
 				expect.objectContaining({
 					kind: 'row',
 					table: 'pages',
@@ -96,82 +159,61 @@ test('principal and workspace pairs own independent authorities', async () => {
 			principalId: asPrincipalId('alice'),
 			workspaceId: 'notes',
 		};
-		await createRow(context.records, partition, 'alice-wiki', 1, 'alice-wiki');
-		await createRow(context.records, bobWiki, 'bob-wiki', 1, 'bob-wiki');
-		await createRow(
-			context.records,
-			aliceNotes,
+		await createRows(context.records, partition, 'alice-wiki', ['alice-wiki']);
+		await createRows(context.records, bobWiki, 'bob-wiki', ['bob-wiki']);
+		await createRows(context.records, aliceNotes, 'alice-notes', [
 			'alice-notes',
-			1,
-			'alice-notes',
-		);
+		]);
 
 		for (const [target, rowId] of [
 			[partition, 'alice-wiki'],
 			[bobWiki, 'bob-wiki'],
 			[aliceNotes, 'alice-notes'],
 		] as const) {
-			const pulled = await context.records.pull(target, {
-				protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-				kind: 'pull',
-				cursor: 0,
-				limit: 100,
-			});
-			expect(
-				pulled.ok && !pulled.snapshotRequired && pulled.entries,
-			).toHaveLength(1);
-			expect(
-				pulled.ok && !pulled.snapshotRequired && pulled.entries[0]?.rowId,
-			).toBe(rowId);
+			const page = expectPage(await readFromStart(context.records, target));
+			expect(page.entries).toHaveLength(1);
+			expect(page.entries[0]?.rowId).toBe(rowId);
 		}
 	} finally {
 		context.cleanup();
 	}
 });
 
-test('production compaction serves a bounded snapshot to stale cursors', async () => {
+test('production compaction serves a bounded snapshot to stale checkpoints', async () => {
 	const context = setup();
 	try {
-		const first = await context.records.push(partition, {
-			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-			kind: 'push',
-			actorId: 'actor-compact',
-			mutations: Array.from({ length: 1_000 }, (_, index) => ({
-				actorSequence: index + 1,
-				command: {
-					kind: 'createRow' as const,
-					table: 'pages',
-					rowId: `page-${index}`,
-					value: { title: `Page ${index}` },
-				},
-			})),
-		});
-		expect(first.ok).toBe(true);
+		const firstThousand = Array.from(
+			{ length: 1_000 },
+			(_, index) => `page-${index}`,
+		);
+		const nextToken = await createRows(
+			context.records,
+			partition,
+			'replica-compact',
+			firstThousand,
+		);
 		expect(
-			(
-				await createRow(
-					context.records,
-					partition,
-					'actor-compact',
-					1_001,
-					'last',
-				)
-			).ok,
-		).toBe(true);
-		const pulled = await context.records.pull(partition, {
-			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-			kind: 'pull',
-			cursor: 0,
-			limit: 100,
-		});
-		expect(pulled.ok && pulled.snapshotRequired).toBe(true);
-		if (!pulled.ok || !pulled.snapshotRequired)
+			expectPage(
+				await syncRound(context.records, partition, nextToken, [
+					{
+						kind: 'createRow',
+						table: 'pages',
+						rowId: 'last',
+						value: { title: 'last' },
+					},
+				]),
+			).token.acceptedRound,
+		).toBe(nextToken.acceptedRound + 1);
+
+		const stale = await readFromStart(context.records, partition);
+		expect(stale.ok && stale.snapshotRequired).toBe(true);
+		if (!stale.ok || !stale.snapshotRequired)
 			throw new Error('Expected snapshot');
 		expect(
 			await context.records.snapshotChunk(partition, {
 				protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
 				kind: 'snapshotChunk',
-				generation: pulled.manifest.generation,
+				generation: stale.manifest.generation,
 				index: 0,
 			}),
 		).toMatchObject({ kind: 'snapshotChunk', ok: true });
@@ -180,49 +222,36 @@ test('production compaction serves a bounded snapshot to stale cursors', async (
 	}
 });
 
-test('snapshot publication failure cannot change an accepted push', async () => {
+test('snapshot publication failure cannot change an accepted sync', async () => {
 	let failSnapshotHash = false;
 	const context = setup(async (value) => {
 		if (failSnapshotHash) throw new Error('injected snapshot hash failure');
 		return sha256(value);
 	});
 	try {
-		const first = await context.records.push(partition, {
-			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-			kind: 'push',
-			actorId: 'actor-failed-compaction',
-			mutations: Array.from({ length: 1_000 }, (_, index) => ({
-				actorSequence: index + 1,
-				command: {
-					kind: 'createRow' as const,
-					table: 'pages',
-					rowId: `page-${index}`,
-					value: { title: `Page ${index}` },
-				},
-			})),
-		});
-		expect(first.ok).toBe(true);
+		const nextToken = await createRows(
+			context.records,
+			partition,
+			'replica-failed-compaction',
+			Array.from({ length: 1_000 }, (_, index) => `page-${index}`),
+		);
 		failSnapshotHash = true;
-		expect(
-			(
-				await createRow(
-					context.records,
-					partition,
-					'actor-failed-compaction',
-					1_001,
-					'last',
-				)
-			).ok,
-		).toBe(true);
-		const pulled = await context.records.pull(partition, {
-			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-			kind: 'pull',
-			cursor: 0,
-			limit: 100,
-		});
-		expect(
-			pulled.ok && !pulled.snapshotRequired && pulled.entries,
-		).toHaveLength(100);
+		const accepted = expectPage(
+			await syncRound(context.records, partition, nextToken, [
+				{
+					kind: 'createRow',
+					table: 'pages',
+					rowId: 'last',
+					value: { title: 'last' },
+				},
+			]),
+		);
+		expect(accepted.token.acceptedRound).toBe(nextToken.acceptedRound + 1);
+
+		const stale = expectPage(await readFromStart(context.records, partition));
+		expect(stale.entries).toHaveLength(
+			RECORD_SYNC_ADMISSION_LIMITS.stateEntriesPerPage,
+		);
 	} finally {
 		context.cleanup();
 	}

@@ -8,6 +8,7 @@ import {
 	type Sha256,
 } from '@epicenter/record-sync';
 import { createBunSqliteAdapter } from '@epicenter/record-sync/bun';
+import * as Y from 'yjs';
 import { RECORDS_COMPACTION_POLICY } from './compaction.js';
 import type { Records, RecordsPartition } from './contracts.js';
 
@@ -51,6 +52,8 @@ export function createBunRecords({
 			const authority = openRecordAuthority({
 				database: createBunSqliteAdapter(database),
 				sha256,
+				mergeBodyUpdates: (updates) =>
+					Y.mergeUpdates(updates.map((update) => new Uint8Array(update))),
 			});
 			const opened = {
 				database,
@@ -65,10 +68,10 @@ export function createBunRecords({
 	}
 
 	const records: Records = {
-		async push(partition, request) {
+		async sync(partition, request) {
 			const opened = load(partition);
-			const response = opened.authority.push(request);
-			if (response.ok) {
+			const response = opened.authority.sync(request);
+			if (response.ok && request.sealedRound) {
 				const compaction = (opened.compaction ?? Promise.resolve())
 					.catch(() => {})
 					.then(() =>
@@ -84,9 +87,6 @@ export function createBunRecords({
 				}
 			}
 			return response;
-		},
-		async pull(partition, request) {
-			return load(partition).authority.pull(request);
 		},
 		async snapshotChunk(partition, request) {
 			return load(partition).authority.snapshotChunk(request);
