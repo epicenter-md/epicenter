@@ -19,11 +19,20 @@ export function mergedCompactState(parts: readonly Uint8Array[]): Uint8Array {
 	}
 }
 
+function isValidUpdate(update: Uint8Array): boolean {
+	try {
+		mergedCompactState([update]);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 export function openTestAuthority() {
 	const database = new Database(':memory:');
 	const authority = openRowAuthority({
 		database: createBunSqliteAdapter(database),
-		codec: { mergedCompactState },
+		codec: { isValidUpdate, mergedCompactState },
 	});
 	return { authority, database };
 }

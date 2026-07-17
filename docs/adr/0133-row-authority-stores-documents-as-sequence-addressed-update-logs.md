@@ -22,10 +22,11 @@ update share one composite row outcome at that sequence. This sequence-addressed
 document tail is confirmed transport, not a fourth mutation command and not the
 replica's canonical document representation.
 
-The authority treats update layout as opaque. It validates the update's
-protocol-level byte bound and uses an injected Yjs codec to compute whether the
-merged compact document remains within the canonical maximum, but it does not
-inspect roots, choose document layouts, or decide editor schema.
+The authority treats root layout as opaque. It validates the update's
+protocol-level byte bound and uses an injected Yjs codec to validate the Yjs
+encoding and compute whether the merged compact document remains within the
+canonical maximum. It does not inspect roots, choose document layouts, or
+decide editor schema.
 Application-owned root composition is a client API contract owned by ADR-0135;
 update encoding compatibility and the encoded canonical document maximum belong
 to the one active workspace protocol major.
@@ -34,10 +35,13 @@ RowIntent folding owns document liveness:
 
 - A successful `create` may install its initial fields and document update in one
   transaction. A create collision no-ops as a whole, so document bytes cannot
-  merge into another row lifetime.
+  merge into another row lifetime. A malformed initial Yjs update also no-ops
+  the whole create.
 - `update` on an absent row no-ops as a whole. On a live row, a valid document
   component within the merged document bound appends even when an unrelated
-  field component no-ops under the scalar capacity rule.
+  field component no-ops under the scalar capacity rule. A malformed document
+  component no-ops independently, so valid field changes in the same update
+  still apply.
 - `delete` removes the row and all authoritative document state in one
   transaction. Late updates for the absent address remain deterministic no-ops.
 
@@ -57,12 +61,14 @@ ordinary outcomes may be removed. Document compaction may fold outcomes only
 through that floor, so every outcome above the floor remains available to
 catch-up.
 
-For every document-bearing fold, the injected codec hydrates the current
-baseline and tail with the candidate update into a fresh `gc: true` Yjs
-document and encodes its compact full state. If that state exceeds ADR-0131's
-canonical document maximum, the document component deterministically no-ops.
-Otherwise ordinary authority storage appends the original update bytes at the
-RowIntent's sequence.
+For every document-bearing fold, the injected codec first validates the
+candidate as a Yjs update. A malformed candidate follows the deterministic
+create or update no-op rule above, so opaque junk bytes cannot wedge a sealed
+round. The codec then hydrates the current baseline and tail with a valid
+candidate into a fresh `gc: true` Yjs document and encodes its compact full
+state. If that state exceeds ADR-0131's canonical document maximum, the
+document component deterministically no-ops. Otherwise ordinary authority
+storage appends the original update bytes at the RowIntent's sequence.
 
 The same codec periodically replaces a baseline and the tail below the
 retention floor with a compact full-state baseline. The sync core remains

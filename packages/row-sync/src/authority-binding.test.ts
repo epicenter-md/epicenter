@@ -31,7 +31,8 @@ const codec: DocumentCodec = {
 		try {
 			const value = JSON.parse(decoder.decode(update));
 			return (
-				Array.isArray(value) && value.every((token) => typeof token === 'string')
+				Array.isArray(value) &&
+				value.every((token) => typeof token === 'string')
 			);
 		} catch {
 			return false;
@@ -510,7 +511,8 @@ describe('scalar conflicts follow authority acceptance order (ADR-0131)', () => 
 			protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
 			kind: 'enroll',
 		});
-		if (enrollA.result !== 'enrolled' || enrollB.result !== 'enrolled') throw new Error('Enrollment failed');
+		if (enrollA.result !== 'enrolled' || enrollB.result !== 'enrolled')
+			throw new Error('Enrollment failed');
 		const createIntent = [create(rid(1), { title: 'base' })];
 		authority.sync({
 			protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
@@ -683,7 +685,10 @@ describe('retention floor and compaction (ADR-0133/0136)', () => {
 		const { authority, sync } = seedRounds();
 		authority.compactOutcomesThrough(4);
 		const response = sync({ checkpoint: 2 });
-		expect(response).toMatchObject({ result: 'baseline-required', retentionFloor: 4 });
+		expect(response).toMatchObject({
+			result: 'baseline-required',
+			retentionFloor: 4,
+		});
 		// At or above the floor, incremental pages continue.
 		expect(expectPage(sync({ checkpoint: 4 })).result).toBe('page');
 	});

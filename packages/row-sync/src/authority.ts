@@ -1,7 +1,4 @@
-import {
-	encodedJsonBytes,
-	ROW_SYNC_ADMISSION_LIMITS,
-} from './admission.js';
+import { encodedJsonBytes, ROW_SYNC_ADMISSION_LIMITS } from './admission.js';
 import { foldFields } from './fold.js';
 import type {
 	BaselineRow,
@@ -29,10 +26,11 @@ const STORAGE_VERSION = 5;
 
 /**
  * The injected merge-aware document codec (ADR-0133). The sync core stays
- * CRDT-library-free; the codec hydrates ordered opaque updates into one
- * fresh garbage-collected document and returns its compact full state. The
- * authority uses it for two operations only: bounding a candidate merge
- * before commit, and folding a retained tail into a compacted baseline.
+ * CRDT-library-free; the codec validates one opaque update, or hydrates ordered
+ * updates into one fresh garbage-collected document and returns its compact
+ * full state. The authority uses it for semantic update validation, bounding a
+ * candidate merge before commit, and folding a retained tail into a compacted
+ * baseline.
  */
 export type DocumentCodec = {
 	isValidUpdate(update: Uint8Array): boolean;
@@ -599,19 +597,17 @@ export function openRowAuthority({
 					pageLimit + 2,
 				);
 				let included = parts.slice(0, pageLimit);
+				const trailingSequence = included.at(-1)?.sequence;
 				while (
-					included.length > 0 &&
+					trailingSequence !== undefined &&
 					included.length < parts.length &&
-					parts[included.length]!.sequence === included.at(-1)!.sequence
+					parts[included.length]?.sequence === trailingSequence
 				) {
 					included = parts.slice(0, included.length + 1);
 				}
 				let outcomes = coalesceOutcomes(included);
 				let hasMore = parts.length > included.length;
-				const page = (): Extract<
-					SyncResponse,
-					{ result: 'page' }
-				> => ({
+				const page = (): Extract<SyncResponse, { result: 'page' }> => ({
 					result: 'page',
 					token: {
 						replicaId: facts.replicaId,
@@ -806,7 +802,12 @@ export function openRowAuthority({
 						...covered.map((update) => decodeBase64(update.update_b64)),
 					];
 					const merged = encodeBase64(codec.mergedCompactState(parts));
-					const throughSequence = covered.at(-1)!.sequence;
+					const throughSequence = covered.at(-1)?.sequence;
+					if (throughSequence === undefined) {
+						throw new Error(
+							'Document compaction selected an empty update prefix',
+						);
+					}
 					database.run(
 						`INSERT INTO row_sync_document_baselines(
 							table_name, row_id, baseline_b64, through_sequence

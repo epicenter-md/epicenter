@@ -34,7 +34,8 @@ const codec: DocumentCodec = {
 		try {
 			const value = JSON.parse(decoder.decode(update));
 			return (
-				Array.isArray(value) && value.every((token) => typeof token === 'string')
+				Array.isArray(value) &&
+				value.every((token) => typeof token === 'string')
 			);
 		} catch {
 			return false;
