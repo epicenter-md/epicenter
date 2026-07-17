@@ -1,4 +1,4 @@
-import { sha256Hex, type SqliteValue } from '@epicenter/row-sync';
+import { type SqliteValue, sha256Hex } from '@epicenter/row-sync';
 import type { Static, TSchema } from 'typebox';
 
 import {
