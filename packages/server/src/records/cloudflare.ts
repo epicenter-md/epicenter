@@ -55,13 +55,12 @@ export class RowAuthorityDurableObject extends DurableObject {
 
 	/**
 	 * The authority's absolute physical size (ADR-0137): workerd's allocated
-	 * pages excluding freelist pages. The hosted deployment records this as
-	 * its per-workspace storage observation after a completed exchange.
+	 * pages excluding freelist pages. Hosted capability issuance refreshes this
+	 * observation for registered sources. Synchronization never records it.
 	 */
 	async databaseSize(): Promise<number> {
-		return (
-			this.ctx.storage as unknown as { sql: { databaseSize: number } }
-		).sql.databaseSize;
+		return (this.ctx.storage as unknown as { sql: { databaseSize: number } })
+			.sql.databaseSize;
 	}
 }
 

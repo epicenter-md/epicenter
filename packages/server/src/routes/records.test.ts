@@ -8,7 +8,7 @@
  * - all three routes derive partitions from authentication and workspace paths
  * - declared and actual bodies are capped at 1 MiB before backend work
  * - authority TypeErrors become 400 invalid-request responses
- * - capability-issuance admission gates enrollment only, never sync
+ * - deployment capability issuance wraps enrollment only, never sync
  */
 
 import { expect, test } from 'bun:test';
@@ -23,16 +23,16 @@ import {
 } from '@epicenter/row-sync';
 import { Hono } from 'hono';
 import type { Records, RecordsPartition } from '../records/contracts.js';
-import type { AdmitEnrollment } from './records.js';
+import type { IssueEnrollment } from './records.js';
 import type { Env } from '../types.js';
 import { mountRecordsApp } from './records.js';
 
 function setup({
 	fail,
-	admitEnrollment,
+	issueEnrollment,
 }: {
 	fail?: keyof Records;
-	admitEnrollment?: AdmitEnrollment;
+	issueEnrollment?: IssueEnrollment;
 } = {}) {
 	const partitions: RecordsPartition[] = [];
 	const records: Records = {
@@ -74,7 +74,7 @@ function setup({
 	const app = new Hono<Env>();
 	mountRecordsApp(app, {
 		resolveRecords: () => records,
-		...(admitEnrollment === undefined ? {} : { admitEnrollment }),
+		...(issueEnrollment === undefined ? {} : { issueEnrollment }),
 		auth: async (c, next) => {
 			c.set('principal', { id: asPrincipalId('authenticated-alice') });
 			await next();
@@ -227,7 +227,7 @@ test('snapshot and deleted record-sync routes have no compatibility aliases', as
 
 test('a refused enrollment answers the definitive protocol refusal', async () => {
 	const { app, partitions } = setup({
-		admitEnrollment: async () => 'refuse',
+		issueEnrollment: async () => ({ result: 'enrollment-refused' }),
 	});
 	const response = await post(app, 'enroll', enroll);
 	expect(response.status).toBe(200);
@@ -238,21 +238,65 @@ test('a refused enrollment answers the definitive protocol refusal', async () =>
 	expect(partitions).toEqual([]);
 });
 
+test('protocol mismatch stops before deployment issuance or authority state', async () => {
+	let consulted = false;
+	const { app, partitions } = setup({
+		issueEnrollment: async () => {
+			consulted = true;
+			return { result: 'enrollment-refused' };
+		},
+	});
+	const response = await post(app, 'enroll', {
+		...enroll,
+		protocolMajor: ROW_SYNC_PROTOCOL_MAJOR + 1,
+	});
+	expect(response.status).toBe(200);
+	expect((await response.json()) as unknown).toEqual({
+		result: 'protocol-mismatch',
+	});
+	expect(consulted).toBe(false);
+	expect(partitions).toEqual([]);
+});
+
 test('an undecidable enrollment admission fails closed and retryably', async () => {
 	const { app, partitions } = setup({
-		admitEnrollment: async () => 'unavailable',
+		issueEnrollment: async () => 'unavailable',
 	});
 	const response = await post(app, 'enroll', enroll);
 	expect(response.status).toBe(503);
 	expect(partitions).toEqual([]);
 });
 
-test('sync and baseline-scan never consult enrollment admission', async () => {
+test('admitted enrollment invokes the authority operation exactly once', async () => {
+	let issues = 0;
+	const { app, partitions } = setup({
+		issueEnrollment: async (_c, _partition, enroll) => {
+			issues += 1;
+			return enroll();
+		},
+	});
+	const response = await post(app, 'enroll', enroll);
+	expect(response.status).toBe(200);
+	expect(issues).toBe(1);
+	expect(partitions).toHaveLength(1);
+});
+
+test('authority TypeError through deployment issuance retains the 400 mapping', async () => {
+	const { app, partitions } = setup({
+		fail: 'enroll',
+		issueEnrollment: async (_c, _partition, enroll) => enroll(),
+	});
+	const response = await post(app, 'enroll', enroll);
+	expect(response.status).toBe(400);
+	expect(partitions).toHaveLength(1);
+});
+
+test('sync and baseline-scan never consult enrollment issuance', async () => {
 	const consulted: RecordsPartition[] = [];
 	const { app } = setup({
-		admitEnrollment: async (_c, partition) => {
+		issueEnrollment: async (_c, partition) => {
 			consulted.push(partition);
-			return 'refuse';
+			return { result: 'enrollment-refused' };
 		},
 	});
 	const syncResponse = await post(app, 'sync', sync);

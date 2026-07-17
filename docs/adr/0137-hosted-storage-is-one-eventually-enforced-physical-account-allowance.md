@@ -27,9 +27,14 @@ automatic deletion. The allowance is enforced at exactly one kind of moment:
 when Cloud is about to create a new storage-producing capability. Today that
 is replica enrollment, which also covers first contact with a new hosted
 workspace; new blob upload grants join the same gate when Free blob uploads
-ship. At issuance, Cloud refreshes the account's absolute observations
-(each workspace authority's `databaseSize` plus hosted blob bytes), sums
-them, and refuses the capability when the total has reached the allowance.
+ship. At issuance, Cloud refreshes every registered workspace authority's
+absolute `databaseSize`, combines those values with the hosted blob
+observation, and refuses the capability when the total has reached the
+allowance. An unseen enrollment target is not contacted or registered before
+that decision. Once admitted, Cloud registers the unseen source at zero bytes
+and only then mints the replica. A later issuance refreshes its absolute
+authority size. Refusal or a failed registry write leaves no target authority,
+source observation, or replica receipt.
 
 Row synchronization never consults storage state. An enrolled replica's
 structurally valid durable RowIntents always enter authority order
@@ -67,7 +72,8 @@ Epicenter billing or account quota policy.
   call. The billing provider is consulted once per issuance attempt.
 - The `storage_observation` table is the account's source registry and
   last-observed cache; issuance refreshes and overwrites it with current
-  absolutes. Rows leave only when their source is authoritatively deleted.
+  absolutes. A new workspace enters before its first replica is minted; rows
+  leave only when their source is authoritatively deleted.
 - If the issuance decision cannot be computed, enrollment fails closed and
   retryably; nothing else depends on it.
 - Physical usage is page-granular. A small record deletion need not lower

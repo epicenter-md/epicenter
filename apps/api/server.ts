@@ -38,6 +38,8 @@
  *
  * The dashboard SPA and billing data plane are intentionally omitted: Vite
  * serves the dashboard in dev, and billing is the hosted Worker's concern.
+ * Because this runtime cannot resolve the hosted storage allowance, new record
+ * enrollment fails closed with 503. Existing enrolled replicas may still sync.
  */
 
 import { mkdirSync } from 'node:fs';
@@ -187,6 +189,9 @@ export function startBunApiServer(
 	mountRecordsApp(app, {
 		auth: bearer,
 		resolveRecords: () => bunRecords.records,
+		// This runtime deliberately omits Autumn, so it cannot decide the Cloud
+		// account allowance. Never grant a new hosted capability by bypass.
+		issueEnrollment: async () => 'unavailable',
 	});
 	mountInferenceApp(app, { auth: bearer });
 	mountBlobsApp(app, { auth: cookieOrBearer });

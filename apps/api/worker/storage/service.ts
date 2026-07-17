@@ -1,85 +1,70 @@
 /**
- * Hosted storage policy (ADR-0137).
+ * Hosted storage capability issuance (ADR-0137).
  *
- * Epicenter Cloud meters one physical account total: the sum of the latest
- * absolute `databaseSize` observation per hosted workspace plus the absolute
- * hosted blob bytes. This module owns the Cloud side of that policy at its
- * one decision point: capability issuance. When Cloud is about to create a
- * new storage-producing capability (today: a replica enrollment, which also
- * covers first contact with a new workspace), it refreshes the account's
- * workspace observations from the authorities, sums them with any blob
- * observation, resolves the active plan allowance, and admits or refuses.
- * Synchronization never consults storage state, and no per-exchange
- * observation, projection row, or billing call exists (ADR-0131/0137).
+ * The observation registry is the complete set of storage-producing sources
+ * already issued to an account. Enrollment refreshes only those registered
+ * workspace authorities before deciding. An unseen target is not contacted
+ * or registered on refusal. Once admitted, the source is registered at zero
+ * bytes and only then is its first replica minted. A later issuance refreshes
+ * that registered authority's absolute size. Synchronization never consults or
+ * mutates this policy.
  */
 
 import type { PrincipalId } from '@epicenter/identity';
-import type { Db, RecordsPartition } from '@epicenter/server';
-import {
-	listStorageObservations,
-	readWorkspaceDatabaseSize,
-	upsertStorageObservation,
+import type {
+	Records,
+	RecordsPartition,
+	StorageObservation,
 } from '@epicenter/server';
 import { extractErrorMessage } from 'wellcrafted/error';
-import { createAutumnClient } from '../billing/autumn.js';
-import { getPlan, PLAN_IDS, type PlanId } from '../billing/catalog.js';
 
-/** Resolve the account's included storage bytes from the active plan. */
-async function resolveIncludedBytes(
-	env: Cloudflare.Env,
-	principalId: PrincipalId,
-): Promise<number> {
-	const autumn = createAutumnClient(env);
-	const customer = await autumn.customers.getOrCreate({
-		customerId: principalId,
-	});
-	const mainSubscription =
-		customer.subscriptions.find((subscription) => !subscription.addOn) ?? null;
-	const planId = (mainSubscription?.planId ?? PLAN_IDS.free) as PlanId;
-	const plan = getPlan(planId);
-	return plan && plan.kind === 'subscription' ? plan.storage.includedBytes : 0;
-}
+export type EnrollmentResponse = Awaited<ReturnType<Records['enroll']>>;
+
+type StorageIssuanceDependencies = {
+	listObservations(principalId: PrincipalId): Promise<StorageObservation[]>;
+	readWorkspaceBytes(partition: RecordsPartition): Promise<number>;
+	upsertObservation(
+		observation: StorageObservation & { principalId: PrincipalId },
+	): Promise<void>;
+	resolveIncludedBytes(): Promise<number>;
+	reportError?(message: string): void;
+};
 
 export function createStorageService({
-	db,
-	env,
-}: {
-	db: Db;
-	env: Cloudflare.Env;
-}) {
+	listObservations,
+	readWorkspaceBytes,
+	upsertObservation,
+	resolveIncludedBytes,
+	reportError = console.error,
+}: StorageIssuanceDependencies) {
 	return {
 		/**
-		 * Decide one enrollment (ADR-0137). Reads every observed workspace
-		 * authority's current absolute size plus the target workspace's,
-		 * overwrites the observation registry with those absolutes, and
-		 * compares the account total against the active plan allowance.
-		 * Failure to decide returns `unavailable`: enrollment fails closed
-		 * and retryably while reads, deletions, and synchronization for
-		 * already-enrolled replicas continue untouched.
+		 * Decide and issue one enrollment. Policy and registry failures return
+		 * `unavailable` before any unseen target authority exists. The enrollment
+		 * call deliberately sits outside that catch so authority errors preserve the
+		 * records route's existing semantics.
 		 */
-		async admitEnrollment(
+		async issueEnrollment(
 			partition: RecordsPartition,
-		): Promise<'admit' | 'refuse' | 'unavailable'> {
+			enroll: () => Promise<EnrollmentResponse>,
+		): Promise<EnrollmentResponse | 'unavailable'> {
 			try {
-				const observations = await listStorageObservations(
-					db,
-					partition.principalId,
-				);
-				const workspaceIds = new Set(
+				const observations = await listObservations(partition.principalId);
+				const registeredWorkspaceIds = new Set(
 					observations
 						.filter((observation) => observation.sourceKind === 'workspace')
 						.map((observation) => observation.sourceId),
 				);
-				workspaceIds.add(partition.workspaceId);
 				let total = observations
 					.filter((observation) => observation.sourceKind === 'blobs')
 					.reduce((sum, observation) => sum + observation.observedBytes, 0);
-				for (const workspaceId of workspaceIds) {
-					const observedBytes = await readWorkspaceDatabaseSize(env.RECORDS, {
+
+				for (const workspaceId of registeredWorkspaceIds) {
+					const observedBytes = await readWorkspaceBytes({
 						principalId: partition.principalId,
 						workspaceId,
 					});
-					await upsertStorageObservation(db, {
+					await upsertObservation({
 						principalId: partition.principalId,
 						sourceKind: 'workspace',
 						sourceId: workspaceId,
@@ -87,17 +72,28 @@ export function createStorageService({
 					});
 					total += observedBytes;
 				}
-				const includedBytes = await resolveIncludedBytes(
-					env,
-					partition.principalId,
-				);
-				return total < includedBytes ? 'admit' : 'refuse';
+
+				const includedBytes = await resolveIncludedBytes();
+				if (total >= includedBytes) {
+					return { result: 'enrollment-refused' };
+				}
+
+				if (!registeredWorkspaceIds.has(partition.workspaceId)) {
+					await upsertObservation({
+						principalId: partition.principalId,
+						sourceKind: 'workspace',
+						sourceId: partition.workspaceId,
+						observedBytes: 0,
+					});
+				}
 			} catch (cause) {
-				console.error(
-					`[storage] enrollment admission for ${partition.principalId}/${partition.workspaceId} failed: ${extractErrorMessage(cause)}`,
+				reportError(
+					`[storage] enrollment issuance for ${partition.principalId}/${partition.workspaceId} failed: ${extractErrorMessage(cause)}`,
 				);
 				return 'unavailable';
 			}
+
+			return enroll();
 		},
 	};
 }

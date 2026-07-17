@@ -11,6 +11,12 @@ import { storageObservation } from './schema/storage.js';
 
 export type StorageSourceKind = 'workspace' | 'blobs';
 
+export type StorageObservation = {
+	sourceKind: StorageSourceKind;
+	sourceId: string;
+	observedBytes: number;
+};
+
 export async function upsertStorageObservation(
 	db: Db,
 	observation: {
@@ -40,9 +46,7 @@ export async function upsertStorageObservation(
 export async function listStorageObservations(
 	db: Db,
 	principalId: string,
-): Promise<
-	{ sourceKind: StorageSourceKind; sourceId: string; observedBytes: number }[]
-> {
+): Promise<StorageObservation[]> {
 	const rows = await db
 		.select({
 			sourceKind: storageObservation.sourceKind,

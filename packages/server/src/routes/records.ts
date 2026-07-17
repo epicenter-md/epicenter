@@ -1,8 +1,10 @@
 import {
+	type EnrollResponse,
 	parseBaselineScanRequest,
 	parseEnrollRequest,
 	parseSyncRequest,
 	ROW_SYNC_ADMISSION_LIMITS,
+	ROW_SYNC_PROTOCOL_MAJOR,
 } from '@epicenter/row-sync';
 import { type Context, Hono, type MiddlewareHandler } from 'hono';
 import type { Records, RecordsPartition } from '../records/contracts.js';
@@ -10,19 +12,19 @@ import type { Env } from '../types.js';
 import { RecordsError } from './records-errors.js';
 
 /**
- * The deployment's capability-issuance admission for one enrollment
- * (ADR-0137). Enrollment mints the durable replica receipt, the one
- * storage-producing capability this surface creates; a deployment with a
- * storage allowance answers here. `refuse` is the definitive protocol
- * refusal; `unavailable` means the deployment could not decide and
- * enrollment fails closed and retryably. Synchronization never consults
- * this seam. Shared server code never learns plan ids, allowances, or
- * billing concepts.
+ * The deployment's complete capability-issuance strategy for one enrollment
+ * (ADR-0137). The strategy receives the authority operation as an opaque
+ * closure so a deployment can decide, register the admitted source, and only
+ * then mint its durable replica receipt. `unavailable` means the deployment
+ * could not safely complete issuance, so enrollment fails closed and
+ * retryably. Synchronization never consults this seam. Shared server code
+ * never learns plan ids, allowances, or billing concepts.
  */
-export type AdmitEnrollment<E extends Env = Env> = (
+export type IssueEnrollment<E extends Env = Env> = (
 	c: Context<E>,
 	partition: RecordsPartition,
-) => Promise<'admit' | 'refuse' | 'unavailable'>;
+	enroll: () => Promise<EnrollResponse>,
+) => Promise<EnrollResponse | 'unavailable'>;
 
 const RECORDS_PREFIX = '/api/records';
 const RECORDS_ROUTE = `${RECORDS_PREFIX}/:workspaceId` as const;
@@ -65,7 +67,7 @@ function invalidRequest<E extends Env>(
 
 function createRecordsApp<E extends Env>(
 	resolveRecords: (env: E['Bindings']) => Records,
-	admitEnrollment: AdmitEnrollment<E> | undefined,
+	issueEnrollment: IssueEnrollment<E> | undefined,
 ): Hono<E> {
 	const app = new Hono<E>();
 	app.use(`${RECORDS_ROUTE}/*`, async (c, next) => {
@@ -94,18 +96,21 @@ function createRecordsApp<E extends Env>(
 		.post(`${RECORDS_ROUTE}/enroll`, async (c) => {
 			const parsed = await parseJson(c, parseEnrollRequest);
 			if (!parsed.ok) return invalidRequest(c, parsed.reason);
+			if (parsed.value.protocolMajor !== ROW_SYNC_PROTOCOL_MAJOR) {
+				return c.json({ result: 'protocol-mismatch' as const });
+			}
 			try {
-				const admission = await admitEnrollment?.(c, partition(c));
-				if (admission === 'unavailable') {
+				const recordsPartition = partition(c);
+				const enroll = () =>
+					resolveRecords(c.env).enroll(recordsPartition, parsed.value);
+				const response = issueEnrollment
+					? await issueEnrollment(c, recordsPartition, enroll)
+					: await enroll();
+				if (response === 'unavailable') {
 					const error = RecordsError.EnrollmentUnavailable();
 					return c.json(error, error.error.status);
 				}
-				if (admission === 'refuse') {
-					return c.json({ result: 'enrollment-refused' as const });
-				}
-				return c.json(
-					await resolveRecords(c.env).enroll(partition(c), parsed.value),
-				);
+				return c.json(response);
 			} catch (cause) {
 				if (cause instanceof TypeError) return invalidRequest(c, 'invalid');
 				throw cause;
@@ -150,18 +155,18 @@ export function mountRecordsApp<E extends Env = Env>(
 	{
 		auth,
 		resolveRecords,
-		admitEnrollment,
+		issueEnrollment,
 	}: {
 		auth: MiddlewareHandler<E>;
 		resolveRecords: (env: E['Bindings']) => Records;
 		/**
-		 * Deployment capability-issuance admission for enrollment (ADR-0137).
+		 * Deployment capability issuance for enrollment (ADR-0137).
 		 * Omitted for deployments without a storage allowance, like the
-		 * self-hosted instance: every enrollment is then admitted.
+		 * self-hosted instance: enrollment then goes straight to its authority.
 		 */
-		admitEnrollment?: AdmitEnrollment<E>;
+		issueEnrollment?: IssueEnrollment<E>;
 	},
 ): void {
 	app.use(`${RECORDS_PREFIX}/*`, auth);
-	app.route('/', createRecordsApp(resolveRecords, admitEnrollment));
+	app.route('/', createRecordsApp(resolveRecords, issueEnrollment));
 }

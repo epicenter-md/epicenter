@@ -22,6 +22,7 @@ import {
 	createDurableObjectRecords,
 	createDurableObjectRooms,
 	createServerApp,
+	listStorageObservations,
 	mountAttachRelayApp,
 	mountBlobsApp,
 	mountCloudAuth,
@@ -35,8 +36,10 @@ import {
 	RowAuthorityDurableObject,
 	requireBearerPrincipal,
 	requireCookieOrBearerPrincipal,
+	readWorkspaceDatabaseSize,
 	resolveRequestOAuthPrincipal,
 	type ServerBindings,
+	upsertStorageObservation,
 } from '@epicenter/server';
 import type { Context } from 'hono';
 import { describeRoute } from 'hono-openapi';
@@ -45,6 +48,7 @@ import {
 	chargeOpenAiTranscriptionCredits,
 } from './billing/policies.js';
 import { mountBillingApi } from './billing/routes.js';
+import { billingServiceFor } from './billing/service.js';
 import { buildEpicenterTrustedOrigins } from './trusted-origins.js';
 import { createStorageService } from './storage/service.js';
 
@@ -142,12 +146,20 @@ mountRecordsApp(app, {
 	auth: bearer,
 	resolveRecords: (env) =>
 		createDurableObjectRecords((env as Cloudflare.Env).RECORDS),
-	// Hosted storage policy (ADR-0137): the account allowance gates capability
-	// issuance only. Enrollment refreshes the account's absolute observations
-	// and admits or refuses; synchronization never consults storage state.
-	admitEnrollment: (c, partition) =>
-		createStorageService({ db: c.var.db, env: c.env as Cloudflare.Env })
-			.admitEnrollment(partition),
+	// Hosted storage policy (ADR-0137): refusal creates no target authority or
+	// registry row. Admission registers the source before the replica is minted.
+	// Synchronization never consults storage state.
+	issueEnrollment: (c, partition, enroll) =>
+		createStorageService({
+			listObservations: (principalId) =>
+				listStorageObservations(c.var.db, principalId),
+			readWorkspaceBytes: (source) =>
+				readWorkspaceDatabaseSize((c.env as Cloudflare.Env).RECORDS, source),
+			upsertObservation: (observation) =>
+				upsertStorageObservation(c.var.db, observation),
+			resolveIncludedBytes: () =>
+				billingServiceFor(c).getStorageIncludedBytes(),
+		}).issueEnrollment(partition, enroll),
 });
 // Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver, not
 // a prebuilt wrapper.

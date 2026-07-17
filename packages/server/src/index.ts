@@ -53,6 +53,7 @@ export { connectHyperdriveDb } from './db/backends/cloudflare.js';
 export { createDb, type Db } from './db/create-db.js';
 export {
 	listStorageObservations,
+	type StorageObservation,
 	type StorageSourceKind,
 	upsertStorageObservation,
 } from './db/storage-data.js';
@@ -107,7 +108,7 @@ export { createDurableObjectRooms } from './room/backends/cloudflare/registry.js
 export { mountBlobsApp } from './routes/blobs.js';
 export { mountInferenceApp } from './routes/inference.js';
 export {
-	type AdmitEnrollment,
+	type IssueEnrollment,
 	mountRecordsApp,
 } from './routes/records.js';
 export { mountRoomsApp } from './routes/rooms.js';
