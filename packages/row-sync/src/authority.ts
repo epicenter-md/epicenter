@@ -240,13 +240,13 @@ function applyIntent(
 	codec: DocumentCodec,
 	intent: WireRowIntent,
 	sequence: number,
-): boolean {
+): void {
 	const current = readRowFields(database, intent.table, intent.rowId);
 	switch (intent.kind) {
 		case 'create': {
 			const folded = foldFields(current, intent);
 			// A live address or over-cap fields no-op the whole create.
-			if (folded.kind !== 'fields') return false;
+			if (folded.kind !== 'fields') return;
 			let documentUpdate: string | undefined;
 			if (intent.documentUpdate !== undefined) {
 				const bytes = decodeBase64(intent.documentUpdate);
@@ -254,14 +254,14 @@ function applyIntent(
 				// injected codec owns semantic validation of the opaque CRDT bytes.
 				// Invalid bytes deterministically no-op the whole create rather than
 				// wedging its sealed round forever.
-				if (!codec.isValidUpdate(bytes)) return false;
+				if (!codec.isValidUpdate(bytes)) return;
 				const compact = codec.mergedCompactState([bytes]);
 				// An oversized initial document no-ops the create as a whole, so
 				// document bytes cannot merge into another row lifetime.
 				if (
 					compact.byteLength > ROW_SYNC_ADMISSION_LIMITS.canonicalDocumentBytes
 				) {
-					return false;
+					return;
 				}
 				documentUpdate = intent.documentUpdate;
 			}
@@ -280,15 +280,14 @@ function applyIntent(
 					[intent.table, intent.rowId, documentUpdate, sequence],
 				);
 			}
-			return true;
+			return;
 		}
 		case 'update': {
 			const folded = foldFields(current, intent);
 			const reservedKvFold = current === undefined && folded.kind === 'fields';
 			// Update on an absent address no-ops as a whole; the reserved KV
 			// address folds from `{}` (ADR-0132) and never has a document.
-			if (current === undefined && !reservedKvFold) return false;
-			let fieldsApplied = false;
+			if (current === undefined && !reservedKvFold) return;
 			if (folded.kind === 'fields') {
 				writeRowFields(
 					database,
@@ -297,14 +296,12 @@ function applyIntent(
 					folded.fields,
 					sequence,
 				);
-				fieldsApplied = true;
 			}
-			let documentApplied = false;
 			if (intent.documentUpdate !== undefined && current !== undefined) {
 				const candidate = decodeBase64(intent.documentUpdate);
 				// A malformed document component no-ops independently. Field changes
 				// in the same live update still fold under their own bound.
-				if (!codec.isValidUpdate(candidate)) return fieldsApplied;
+				if (!codec.isValidUpdate(candidate)) return;
 				const merged = codec.mergedCompactState([
 					...readDocumentParts(database, intent.table, intent.rowId),
 					candidate,
@@ -320,13 +317,12 @@ function applyIntent(
 						) VALUES (?, ?, ?, ?)`,
 						[intent.table, intent.rowId, intent.documentUpdate, sequence],
 					);
-					documentApplied = true;
 				}
 			}
-			return fieldsApplied || documentApplied;
+			return;
 		}
 		case 'delete': {
-			if (current === undefined) return false;
+			if (current === undefined) return;
 			database.run(
 				`DELETE FROM row_sync_rows WHERE table_name = ? AND row_id = ?`,
 				[intent.table, intent.rowId],
@@ -350,7 +346,7 @@ function applyIntent(
 				 WHERE table_name = ? AND row_id = ?`,
 				[intent.table, intent.rowId],
 			);
-			return true;
+			return;
 		}
 	}
 }
