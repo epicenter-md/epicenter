@@ -125,7 +125,6 @@ export function createDesktopWorkspaceRuntime({
 		revokeRows(addresses: RowAddress[]): void;
 		revokeDocuments(cause: Error): void;
 	} {
-		const kvObservers = new Map<string, Set<() => void>>();
 		const documents = createDocumentRuntime({
 			admitIntent(intent) {
 				return request(definition.id, {
@@ -149,9 +148,6 @@ export function createDesktopWorkspaceRuntime({
 				return [decodeBase64(state)];
 			},
 		});
-		const notifyKv = (key: string): void => {
-			for (const handler of kvObservers.get(key) ?? []) handler();
-		};
 		const tables = Object.fromEntries(
 			Object.keys(definition.tables).map((table) => [
 				table,
@@ -210,43 +206,11 @@ export function createDesktopWorkspaceRuntime({
 			get(key: string) {
 				return request(definition.id, { kind: 'kv-get', key });
 			},
-			async set(key: string, value: unknown) {
-				const before = await request<{
-					data?: unknown;
-					error: unknown;
-				}>(definition.id, { kind: 'kv-get', key });
-				const result = await request<{ data?: unknown; error: unknown }>(
-					definition.id,
-					{ kind: 'kv-set', key, value },
-				);
-				if (
-					result.error === null &&
-					(before.error !== null ||
-						JSON.stringify(before.data) !== JSON.stringify(value))
-				) {
-					notifyKv(key);
-				}
-				return result;
+			set(key: string, value: unknown) {
+				return request(definition.id, { kind: 'kv-set', key, value });
 			},
 			async unset(key: string) {
-				const before = await request<{
-					data?: unknown;
-					error: unknown;
-				}>(definition.id, { kind: 'kv-get', key });
 				await request<void>(definition.id, { kind: 'kv-unset', key });
-				if (before.error !== null || before.data !== undefined) notifyKv(key);
-			},
-			observe(key: string, handler: () => void) {
-				let handlers = kvObservers.get(key);
-				if (!handlers) {
-					handlers = new Set();
-					kvObservers.set(key, handlers);
-				}
-				handlers.add(handler);
-				return () => {
-					handlers.delete(handler);
-					if (handlers.size === 0) kvObservers.delete(key);
-				};
 			},
 		});
 

@@ -42,11 +42,6 @@ export type CanonicalKv<TDefinitions extends KvDefinitions> = {
 		value: KvValues<TDefinitions>[K],
 	): Result<void, KvWriteErrorType>;
 	unset<K extends keyof TDefinitions & string>(key: K): void;
-	observe<K extends keyof TDefinitions & string>(
-		key: K,
-		handler: () => void,
-	): () => void;
-	notifyExternalChange(): void;
 };
 
 export function createCanonicalKv<const TDefinitions extends KvDefinitions>(
@@ -56,8 +51,6 @@ export function createCanonicalKv<const TDefinitions extends KvDefinitions>(
 ): CanonicalKv<TDefinitions> {
 	initializeCanonicalSchema(sqlite);
 	const lens = compileKvLens(definitions);
-	const observers = new Map<string, Set<() => void>>();
-	const lastSeen = new Map<string, string | undefined>();
 
 	function readMap(): JsonObject {
 		return readCurrentRow(sqlite, RESERVED_KV_TABLE, RESERVED_KV_ROW_ID) ?? {};
@@ -67,16 +60,6 @@ export function createCanonicalKv<const TDefinitions extends KvDefinitions>(
 		const compiled = lens.get(key);
 		if (!compiled) throw new Error(`Unknown kv key '${key}'`);
 		return compiled;
-	}
-
-	function encodeCurrent(key: string): string | undefined {
-		const map = readMap();
-		return Object.hasOwn(map, key) ? JSON.stringify(map[key]) : undefined;
-	}
-
-	function fire(key: string): void {
-		lastSeen.set(key, encodeCurrent(key));
-		for (const handler of observers.get(key) ?? []) handler();
 	}
 
 	function admit(intent: WireRowIntent): void {
@@ -125,7 +108,6 @@ export function createCanonicalKv<const TDefinitions extends KvDefinitions>(
 					reason: 'value does not satisfy the declared schema',
 				});
 			}
-			const before = encodeCurrent(key);
 			admit({
 				kind: 'update',
 				table: RESERVED_KV_TABLE,
@@ -135,38 +117,16 @@ export function createCanonicalKv<const TDefinitions extends KvDefinitions>(
 					unset: [],
 				},
 			});
-			if (encodeCurrent(key) !== before) fire(key);
 			return Ok(undefined);
 		},
 		unset(key) {
 			requireDeclared(key);
-			const before = encodeCurrent(key);
 			admit({
 				kind: 'update',
 				table: RESERVED_KV_TABLE,
 				rowId: RESERVED_KV_ROW_ID,
 				fields: { set: {}, unset: [key] },
 			});
-			if (encodeCurrent(key) !== before) fire(key);
-		},
-		observe(key, handler) {
-			requireDeclared(key);
-			let handlers = observers.get(key);
-			if (!handlers) {
-				handlers = new Set();
-				observers.set(key, handlers);
-			}
-			handlers.add(handler);
-			if (!lastSeen.has(key)) lastSeen.set(key, encodeCurrent(key));
-			return () => {
-				handlers.delete(handler);
-				if (handlers.size === 0) observers.delete(key);
-			};
-		},
-		notifyExternalChange() {
-			for (const key of observers.keys()) {
-				if (lastSeen.get(key) !== encodeCurrent(key)) fire(key);
-			}
 		},
 	};
 }

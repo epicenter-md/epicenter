@@ -87,14 +87,12 @@ async function openRecords(
 				const sqlite = createBrowserSqliteAdapter(
 					database as unknown as BrowserSqliteDatabase,
 				);
-				let kv: CanonicalKv<KvDefinitions> | undefined;
 				const replica = manifest.rowSync
 					? createCanonicalReplica({
 							sqlite,
 							transport: createRecordTransport(manifest.workspaceId),
 							codec: { mergeUpdates: mergeDocumentUpdates },
 							onRemoteCommit() {
-								kv?.notifyExternalChange();
 								scope.postMessage({
 									type: 'records-changed',
 									workspaceId: manifest.workspaceId,
@@ -118,9 +116,11 @@ async function openRecords(
 				const records = createCanonicalRows(sqlite, definitions, {
 					admitIntent: replica?.admit,
 				});
-				kv = createCanonicalKv(sqlite, (manifest.kv ?? {}) as KvDefinitions, {
-					admitIntent: replica?.admit,
-				});
+				const kv = createCanonicalKv(
+					sqlite,
+					(manifest.kv ?? {}) as KvDefinitions,
+					{ admitIntent: replica?.admit },
+				);
 				const admitDocumentIntent =
 					replica?.admit ??
 					createLocalDocumentAdmission({

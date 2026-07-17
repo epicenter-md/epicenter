@@ -66,7 +66,7 @@ test('local-only set and unset preserve unknown and nonconforming keys', () => {
 	}
 });
 
-test('synchronized set and unset round-trip and notify observers', async () => {
+test('synchronized set and unset round-trip through the authority', async () => {
 	const authorityState = openTestAuthority();
 	const transport = createTestTransport(authorityState.authority);
 	const database = new Database(':memory:');
@@ -80,10 +80,6 @@ test('synchronized set and unset round-trip and notify observers', async () => {
 		const kv = createCanonicalKv(sqlite, definitions, {
 			admitIntent: replica.admit,
 		});
-		let notifications = 0;
-		const stop = kv.observe('theme', () => {
-			notifications += 1;
-		});
 		expectOk(kv.set('theme', 'dark'));
 		expect(expectOk(kv.get('theme'))).toBe('dark');
 		await replica.synchronize();
@@ -93,8 +89,6 @@ test('synchronized set and unset round-trip and notify observers', async () => {
 		kv.unset('theme');
 		await replica.synchronize();
 		expect(expectOk(kv.get('theme'))).toBeUndefined();
-		expect(notifications).toBe(2);
-		stop();
 	} finally {
 		database.close();
 		authorityState.database.close();

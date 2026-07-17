@@ -136,7 +136,6 @@ function createBunRuntimeWithPersistence({
 					};
 				}
 
-				const remoteCommitListeners = new Set<() => void>();
 				const deletionListeners = new Set<
 					(addresses: { table: string; rowId: string }[]) => void
 				>();
@@ -153,7 +152,6 @@ function createBunRuntimeWithPersistence({
 					codec: { mergeUpdates: mergeDocumentUpdates },
 					onRemoteCommit() {
 						emitRecordsChanged();
-						for (const listener of remoteCommitListeners) listener();
 					},
 					onRowsDeleted(addresses) {
 						for (const listener of deletionListeners) listener(addresses);
@@ -189,10 +187,6 @@ function createBunRuntimeWithPersistence({
 					},
 					readCurrentRow: replica.readCurrentRow,
 					readCurrentDocumentParts: replica.readCurrentDocumentParts,
-					subscribeRemoteCommit(listener: () => void) {
-						remoteCommitListeners.add(listener);
-						return () => remoteCommitListeners.delete(listener);
-					},
 					subscribeRowsDeleted(
 						listener: (addresses: { table: string; rowId: string }[]) => void,
 					) {

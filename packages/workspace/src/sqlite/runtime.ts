@@ -44,7 +44,6 @@ export type WorkspaceOwner<TAdmission extends void | Promise<void> = void> = {
 		rowId: string,
 	): Uint8Array[] | Promise<Uint8Array[]>;
 	onLocalCommit?(): void;
-	subscribeRemoteCommit?(listener: () => void): () => void;
 	subscribeRowsDeleted?(
 		listener: (addresses: { table: string; rowId: string }[]) => void,
 	): () => void;
@@ -105,10 +104,6 @@ export type WorkspaceKv<TKv extends KvDefinitions> = {
 		value: KvValues<TKv>[K],
 	): Promise<Result<void, KvWriteError>>;
 	unset<K extends keyof TKv & string>(key: K): Promise<void>;
-	observe<K extends keyof TKv & string>(
-		key: K,
-		handler: () => void,
-	): () => void;
 };
 
 export type OpenedWorkspace<TDefinition extends WorkspaceDefinition> = {
@@ -192,7 +187,6 @@ export function createWorkspaceRuntime({
 					admitIntent: owner.admitIntent,
 					onLocalCommit: owner.onLocalCommit,
 				});
-				owner.subscribeRemoteCommit?.(() => kv.notifyExternalChange());
 				owner.subscribeRowsDeleted?.(documents.revoke);
 				owner.subscribeBaselinePromoted?.(documents.revokeAll);
 				return { owner, rows, kv, documents };
@@ -259,24 +253,6 @@ export function createWorkspaceRuntime({
 			},
 			async unset(key: string) {
 				(await openedFor(entry)).kv.unset(key);
-			},
-			observe(key: string, handler: () => void) {
-				let disposed = false;
-				let detach: (() => void) | undefined;
-				void openedFor(entry)
-					.then((opened) => {
-						if (disposed) return;
-						detach = opened.kv.observe(key, handler);
-					})
-					.catch(() => {
-						// Best-effort attach: an owner-open failure (or disposal
-						// during opening) already surfaces loudly on the first kv
-						// read or write, so the observation just never attaches.
-					});
-				return () => {
-					disposed = true;
-					detach?.();
-				};
 			},
 		}) as WorkspaceKv<DefinitionKv<TDefinition>>;
 

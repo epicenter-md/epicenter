@@ -88,11 +88,6 @@ test('two clients invalidate documents, disconnect independently, and survive re
 			(await firstWhispering.tables.recordings.get(deletedRecording.id)).data,
 		).toBeUndefined();
 
-		let observedSettings = 0;
-		const stopObserving = firstWhispering.kv.observe(
-			'analytics.enabled',
-			() => observedSettings++,
-		);
 		expect((await firstWhispering.kv.get('analytics.enabled')).data).toBe(
 			undefined,
 		);
@@ -102,14 +97,11 @@ test('two clients invalidate documents, disconnect independently, and survive re
 		expect(
 			(await firstWhispering.kv.get('analytics.enabled')).data,
 		).toBeFalse();
-		expect(observedSettings).toBe(1);
 		await firstWhispering.kv.unset('analytics.enabled');
 		expect((await firstWhispering.kv.get('analytics.enabled')).data).toBe(
 			undefined,
 		);
-		expect(observedSettings).toBe(2);
 		await firstWhispering.kv.set('analytics.enabled', false);
-		stopObserving();
 		const created = await firstSkills.tables.skills.create({
 			sourceId: 'shared-skill',
 			name: 'Shared',

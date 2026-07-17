@@ -118,10 +118,6 @@ function createRuntime() {
 	});
 }
 
-async function settleWorkerBoundary(): Promise<void> {
-	for (let index = 0; index < 8; index += 1) await Promise.resolve();
-}
-
 test('page sends list and update operations', async () => {
 	await using runtime = createRuntime();
 	const workspace = await runtime.open(definition);
@@ -189,40 +185,6 @@ test('baseline promotion revokes documents and reports their workspace', async (
 
 	expect(() => document.get('editor')).toThrow('was revoked');
 	expect(invalidatedWorkspaces).toEqual([definition.id]);
-});
-
-test('KV observation emits for a remote value change and stops after unsubscribe', async () => {
-	await using runtime = createRuntime();
-	const workspace = await runtime.open(definition);
-	let emissions = 0;
-	const unsubscribe = workspace.kv.observe('theme', () => {
-		emissions += 1;
-	});
-	await settleWorkerBoundary();
-
-	if (FakeWorker.latest) FakeWorker.latest.theme = 'dark';
-	FakeWorker.latest?.emit({
-		type: 'records-changed',
-		workspaceId: definition.id,
-	});
-	await settleWorkerBoundary();
-	expect(emissions).toBe(1);
-
-	FakeWorker.latest?.emit({
-		type: 'records-changed',
-		workspaceId: definition.id,
-	});
-	await settleWorkerBoundary();
-	expect(emissions).toBe(1);
-
-	unsubscribe();
-	if (FakeWorker.latest) FakeWorker.latest.theme = 'light';
-	FakeWorker.latest?.emit({
-		type: 'records-changed',
-		workspaceId: definition.id,
-	});
-	await settleWorkerBoundary();
-	expect(emissions).toBe(1);
 });
 
 test('worker transport actions pass through to matching HTTP route suffixes', async () => {
