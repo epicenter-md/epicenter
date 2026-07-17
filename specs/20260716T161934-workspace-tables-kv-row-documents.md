@@ -19,6 +19,7 @@ singleton values live behind one typed KV lens.
 - [ADR-0134](../docs/adr/0134-replicas-store-confirmed-state-and-compacted-row-intents.md): replica storage and durability.
 - [ADR-0135](../docs/adr/0135-row-documents-have-application-owned-roots.md): the native-shaped document surface and application-owned roots.
 - [ADR-0136](../docs/adr/0136-replica-baseline-acquisition-uses-a-disposable-anchored-live-scan.md): baseline acquisition without snapshot products.
+- [ADR-0127](../docs/adr/0127-chat-streams-live-turns-in-client-state-and-stores-finished-messages-as-records.md): live chat turns stay in client state and the remaining consumer port stores finished messages as ordinary rows.
 
 ADRs 0131 through 0136 own the settled protocol, storage, and replacement
 decisions. This draft owns the remaining public consumer path only.
