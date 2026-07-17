@@ -194,17 +194,19 @@ export function createDocumentRuntime({
 			}
 		},
 		/**
-		 * Baseline promotion replaced every confirmed document (ADR-0136);
-		 * every cached handle is poisoned and callers explicitly reopen from
-		 * the promoted state.
+		 * Revoke every cached handle. Baseline promotion calls this with no
+		 * cause because promotion replaced every confirmed document
+		 * (ADR-0136); runtime disposal passes its own cause. Callers
+		 * explicitly reopen from the current state.
 		 */
-		revokeAll(): void {
+		revokeAll(cause?: Error): void {
 			for (const entry of [...cached.values()]) {
 				poison(
 					entry,
-					new Error(
-						'Row document was revoked because a baseline promotion replaced confirmed state',
-					),
+					cause ??
+						new Error(
+							'Row document was revoked because a baseline promotion replaced confirmed state',
+						),
 				);
 				cached.delete(keyOf(entry));
 				entry.doc.off('update', entry.listener);

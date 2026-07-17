@@ -328,6 +328,16 @@ export function createWorkspaceRuntime({
 			const failures: unknown[] = [];
 			for (const result of results) {
 				if (result.status !== 'fulfilled') continue;
+				// Revoke cached row documents before the SQLite owner closes so
+				// retained handles fail loudly instead of queueing persistence
+				// against a disposed owner (ADR-0135).
+				try {
+					result.value.documents.revokeAll(
+						new Error('Workspace runtime is disposed'),
+					);
+				} catch (cause) {
+					failures.push(cause);
+				}
 				try {
 					await result.value.owner[Symbol.asyncDispose]();
 				} catch (cause) {

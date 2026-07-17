@@ -151,3 +151,31 @@ test('local documents compact history and poison oversized live state', async ()
 		await runtime[Symbol.asyncDispose]();
 	}
 });
+
+test('runtime disposal revokes retained row-document handles', async () => {
+	const database = new Database(':memory:');
+	const runtime = createWorkspaceRuntime({
+		async openRecordOwner() {
+			return {
+				sqlite: createBunSqliteAdapter(database),
+				async [Symbol.asyncDispose]() {
+					database.close();
+				},
+			};
+		},
+	});
+	const workspace = await runtime.open(definition);
+	const created = await workspace.tables.notes.create({ title: 'Draft' });
+	const document = await workspace.tables.notes.document.open(created.id);
+	document.get('editor').insert(0, 'hello');
+	await document.whenDurable();
+
+	await runtime[Symbol.asyncDispose]();
+
+	expect(() => document.get('editor')).toThrow(
+		'Workspace runtime is disposed',
+	);
+	expect(() => document.transact(() => undefined)).toThrow(
+		'Workspace runtime is disposed',
+	);
+});

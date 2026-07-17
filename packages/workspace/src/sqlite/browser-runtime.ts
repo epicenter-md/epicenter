@@ -32,6 +32,7 @@ type BoundWorkspace = {
 	notifyRecordsChanged(): void;
 	notifyRowsDeleted(addresses: RowAddress[]): void;
 	notifyBaselinePromoted(): void;
+	revokeDocuments(cause: Error): void;
 };
 
 type RowAddress = { table: string; rowId: string };
@@ -454,6 +455,9 @@ export function createBrowserWorkspaceRuntime({
 			notifyRecordsChanged,
 			notifyRowsDeleted,
 			notifyBaselinePromoted,
+			revokeDocuments(cause: Error) {
+				documents.revokeAll(cause);
+			},
 		};
 	}
 
@@ -491,6 +495,9 @@ export function createBrowserWorkspaceRuntime({
 			isDisposed = true;
 			worker?.terminate();
 			const cause = new Error('Browser workspace runtime is disposed');
+			// Revoke page-side row documents so retained handles fail loudly
+			// instead of queueing persistence at a terminated Worker.
+			for (const bound of workspaces.values()) bound.revokeDocuments(cause);
 			ready?.reject(cause);
 			for (const request of pending.values()) request.reject(cause);
 			pending.clear();
