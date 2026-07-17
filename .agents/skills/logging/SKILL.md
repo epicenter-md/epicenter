@@ -1,6 +1,6 @@
 ---
 name: logging
-description: 'wellcrafted/logger for library diagnostics: 5 levels, typed errors, DI sink. Use for attach primitives, background errors, file-backed logs. No console.* in library code.'
+description: 'wellcrafted/logger for library diagnostics: 5 levels, typed errors, injected sinks, and host-owned durability. Use for attach primitives, background errors, durable host logs, or replacing console.* in library code.'
 metadata:
   author: epicenter
   version: '2.1'
@@ -9,6 +9,10 @@ metadata:
 # Workspace Logger
 
 Structured, level-keyed, field-oriented logging for library code. Modeled on Rust's `tracing`. Completes the `defineErrors` story: errors are structured data; level lives at the call site.
+
+Ground API and behavior claims in the official `wellcrafted-dev/wellcrafted`
+source and logger declarations for Epicenter's installed version. Ground call
+site examples in current Epicenter code.
 
 ## Where it lives
 
@@ -22,7 +26,9 @@ import { createLogger } from 'wellcrafted/logger';
 const log = createLogger('markdown-materializer'); // defaults to consoleSink
 
 log.info('materializer ready');
-log.warn(MarkdownError.TableWrite({ path, cause }));
+
+const result = await writeProjection();
+if (result.error !== null) log.warn(result.error);
 ```
 
 ## The 5 levels
@@ -38,6 +44,10 @@ log.warn(MarkdownError.TableWrite({ path, cause }));
 | `error` | `(err)` | Unrecoverable at this layer; the operation has given up |
 
 **Shape split is intentional.** `warn` / `error` take a typed error unary : the variant carries `message`, `name`, and captured fields. `trace` / `debug` / `info` are free-form because free-running diagnostic events don't need enumeration.
+
+Native `Error` also satisfies the logger's structural `{ name, message }`
+contract. This is intentional for migration and exception boundaries; prefer a
+tagged variant when the layer owns a stable failure vocabulary.
 
 ## Level is a call-site decision, not a variant property
 
@@ -124,17 +134,29 @@ Do NOT assert on `console.*` output. Inject a `memorySink` and inspect the event
 No module-level logger registry. No `setDefaultLogger()`. Each attach primitive takes an optional `log?: Logger` option and defaults to `createLogger(<source>)` (console sink). Caller wires sinks explicitly.
 
 ```ts
-const markdown = attachMarkdownMaterializer(ydoc, { dir, log });
-const sqlite   = attachSqliteMaterializer(ydoc, { db, log });
-const collaboration = openCollaboration(ydoc, { url, log, openWebSocket, replicaId });
+const markdown = attachMarkdownExport(workspace, { dir, tables, log });
+const sqlite = attachBunSqliteMaterializer(workspace, { filePath, log });
+const collaboration = openCollaboration(workspace.ydoc, {
+	url,
+	openWebSocket,
+	onReconnectSignal,
+	log,
+});
 ```
 
 Share one sink across loggers when you build a custom one:
 
 ```ts
 const sink = composeSinks(consoleSink, myCustomSink);
-const markdown = attachMarkdownMaterializer(ydoc, { dir, log: createLogger('workspace/markdown', sink) });
-const sqlite   = attachSqliteMaterializer(ydoc, { db, log: createLogger('workspace/sqlite', sink) });
+const markdown = attachMarkdownExport(workspace, {
+	dir,
+	tables,
+	log: createLogger('workspace/markdown', sink),
+});
+const sqlite = attachBunSqliteMaterializer(workspace, {
+	filePath,
+	log: createLogger('workspace/sqlite', sink),
+});
 ```
 
 ## Browser
