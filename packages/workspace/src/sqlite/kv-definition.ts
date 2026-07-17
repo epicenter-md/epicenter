@@ -54,7 +54,10 @@ export type CompiledKvLens = ReadonlyMap<
  * values validate identically everywhere the lens travels.
  */
 export function compileKvLens(definitions: KvDefinitions): CompiledKvLens {
-	const compiled = new Map<string, { key: string; check(value: unknown): boolean }>();
+	const compiled = new Map<
+		string,
+		{ key: string; check(value: unknown): boolean }
+	>();
 	for (const [key, schema] of Object.entries(definitions)) {
 		assertKvKey(key);
 		const recognized = recognize(JSON.parse(JSON.stringify(schema)));

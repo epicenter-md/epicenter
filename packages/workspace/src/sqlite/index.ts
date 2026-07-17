@@ -18,17 +18,17 @@ export {
 	defineTable,
 	type JsonObject,
 	type JsonValue,
+	type RowFor,
 	RowLensError,
 	type RowLensIssue,
-	type RowFor,
 	type TableLensDefinition,
 	type TableLensDefinitions,
 } from './lens-definition.js';
 export type {
 	OpenedWorkspace,
 	WorkspaceKv,
-	WorkspaceSql,
 	WorkspaceRuntime,
+	WorkspaceSql,
 	WorkspaceTables,
 } from './runtime.js';
 export {

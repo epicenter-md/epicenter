@@ -142,9 +142,7 @@ describe('sync response parsing', () => {
 			{ result: 'unknown-replica' },
 			{ result: 'replica-fork' },
 		]) {
-			expect(parseSyncResponse(response).result).toBe(
-				response.result as never,
-			);
+			expect(parseSyncResponse(response).result).toBe(response.result as never);
 		}
 	});
 

@@ -23,8 +23,8 @@ import {
 } from '@epicenter/row-sync';
 import { Hono } from 'hono';
 import type { Records, RecordsPartition } from '../records/contracts.js';
-import type { IssueEnrollment } from './records.js';
 import type { Env } from '../types.js';
+import type { IssueEnrollment } from './records.js';
 import { mountRecordsApp } from './records.js';
 
 function setup({

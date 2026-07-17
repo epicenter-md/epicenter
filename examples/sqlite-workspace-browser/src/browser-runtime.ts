@@ -7,7 +7,9 @@ import {
 import { createBrowserWorkspaceRuntime } from '@epicenter/workspace/sqlite/browser';
 import { Type } from 'typebox';
 
-const storageScopeKey = new URLSearchParams(location.search).get('storageScope');
+const storageScopeKey = new URLSearchParams(location.search).get(
+	'storageScope',
+);
 if (!storageScopeKey) {
 	throw new Error('Expected a storageScope query parameter');
 }

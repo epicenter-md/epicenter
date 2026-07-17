@@ -31,11 +31,11 @@ import type { PrincipalId } from '@epicenter/identity';
 import type { CloudEnv } from '@epicenter/server';
 import { Autumn, ConnectionError } from 'autumn-js';
 import { Hono } from 'hono';
+import { PLAN_IDS, PLANS } from './catalog.js';
 import {
 	chargeOpenAiCreditsWithAutumn,
 	chargeOpenAiTranscriptionCredits,
 } from './policies.js';
-import { PLAN_IDS, PLANS } from './catalog.js';
 import { createBillingService } from './service.js';
 
 // ----- Real service + real policies against a spied Autumn client ------------

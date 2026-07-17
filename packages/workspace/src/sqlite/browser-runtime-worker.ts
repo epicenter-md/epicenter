@@ -16,16 +16,13 @@ import {
 } from './canonical-documents.js';
 import { type CanonicalKv, createCanonicalKv } from './canonical-kv.js';
 import {
-	type CanonicalRows,
-	createCanonicalRows,
-} from './canonical-rows.js';
-import {
 	type CanonicalReplica,
 	type CanonicalReplicaTransport,
 	createCanonicalReplica,
 	readCurrentDocumentParts,
 	readCurrentRow,
 } from './canonical-replica.js';
+import { type CanonicalRows, createCanonicalRows } from './canonical-rows.js';
 import type { KvDefinitions } from './kv-definition.js';
 import { defineTable, type TableLensDefinitions } from './lens-definition.js';
 
@@ -162,8 +159,7 @@ async function openRecords(
 		state.manifest.storageKey !== manifest.storageKey ||
 		JSON.stringify(state.manifest.tables) !== JSON.stringify(manifest.tables) ||
 		JSON.stringify(state.manifest.kv) !== JSON.stringify(manifest.kv) ||
-		JSON.stringify(state.manifest.rowSync) !==
-			JSON.stringify(manifest.rowSync)
+		JSON.stringify(state.manifest.rowSync) !== JSON.stringify(manifest.rowSync)
 	) {
 		throw new Error(
 			`Workspace '${manifest.workspaceId}' is already bound to another release-local lens in this Worker`,

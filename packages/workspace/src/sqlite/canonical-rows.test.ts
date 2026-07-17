@@ -18,8 +18,8 @@ import { field } from '@epicenter/field';
 import { createBunSqliteAdapter } from '@epicenter/row-sync/bun';
 import { expectOk } from 'wellcrafted/testing';
 import { mergeDocumentUpdates } from './canonical-documents.js';
-import { createCanonicalRows } from './canonical-rows.js';
 import { createCanonicalReplica } from './canonical-replica.js';
+import { createCanonicalRows } from './canonical-rows.js';
 import { defineTable } from './lens-definition.js';
 import {
 	createTestTransport,

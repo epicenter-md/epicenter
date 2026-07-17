@@ -111,9 +111,7 @@ async function createRows(
 					? { documentUpdate: firstDocumentUpdate }
 					: {}),
 			}));
-		token = expectPage(
-			await syncRound(records, target, token, intents),
-		).token;
+		token = expectPage(await syncRound(records, target, token, intents)).token;
 	}
 	return token;
 }
@@ -141,36 +139,26 @@ test('enrollment and RowIntent state survive closing and reopening', async () =>
 		const [initial, incremental] = documentUpdates();
 		let token = await enroll(context.records, partition);
 		token = expectPage(
-			await syncRound(
-				context.records,
-				partition,
-				token,
-				[
-					{
-						kind: 'create',
-						table: 'pages',
-						rowId: rid(1),
-						fields: { title: 'Initial' },
-						documentUpdate: initial,
-					},
-				],
-			),
+			await syncRound(context.records, partition, token, [
+				{
+					kind: 'create',
+					table: 'pages',
+					rowId: rid(1),
+					fields: { title: 'Initial' },
+					documentUpdate: initial,
+				},
+			]),
 		).token;
 		token = expectPage(
-			await syncRound(
-				context.records,
-				partition,
-				token,
-				[
-					{
-						kind: 'update',
-						table: 'pages',
-						rowId: rid(1),
-						fields: { set: { title: 'Updated' }, unset: [] },
-						documentUpdate: incremental,
-					},
-				],
-			),
+			await syncRound(context.records, partition, token, [
+				{
+					kind: 'update',
+					table: 'pages',
+					rowId: rid(1),
+					fields: { set: { title: 'Updated' }, unset: [] },
+					documentUpdate: incremental,
+				},
+			]),
 		).token;
 		expect(token.acceptedRound).toBe(2);
 		context.close();
@@ -182,7 +170,8 @@ test('enrollment and RowIntent state survive closing and reopening', async () =>
 				kind: 'baselineScan',
 			});
 			expect(baseline.result).toBe('page');
-			if (baseline.result !== 'page') throw new Error('Expected a baseline page');
+			if (baseline.result !== 'page')
+				throw new Error('Expected a baseline page');
 			expect(baseline.rows[0]).toMatchObject({
 				table: 'pages',
 				rowId: rid(1),
@@ -221,9 +210,9 @@ test('principal and workspace pairs own independent authorities', async () => {
 				protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
 				kind: 'baselineScan',
 			});
-			expect(baseline.result === 'page' && baseline.rows.map((row) => row.rowId)).toEqual([
-				rowId,
-			]);
+			expect(
+				baseline.result === 'page' && baseline.rows.map((row) => row.rowId),
+			).toEqual([rowId]);
 		}
 	} finally {
 		context.cleanup();

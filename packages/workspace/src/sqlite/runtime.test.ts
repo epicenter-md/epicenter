@@ -172,9 +172,7 @@ test('runtime disposal revokes retained row-document handles', async () => {
 
 	await runtime[Symbol.asyncDispose]();
 
-	expect(() => document.get('editor')).toThrow(
-		'Workspace runtime is disposed',
-	);
+	expect(() => document.get('editor')).toThrow('Workspace runtime is disposed');
 	expect(() => document.transact(() => undefined)).toThrow(
 		'Workspace runtime is disposed',
 	);

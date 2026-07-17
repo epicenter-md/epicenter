@@ -19,8 +19,8 @@ import {
 	type ConstrainedChanges,
 	type CreateInputFor,
 	compileTableLens,
-	type RowLensError,
 	type RowFor,
+	type RowLensError,
 	type TableLensDefinition,
 	type TableLensDefinitions,
 } from './lens-definition.js';
@@ -61,9 +61,7 @@ export type CanonicalRowsOptions = {
 };
 
 /** Open release-local table lenses over the canonical four-table SQLite owner. */
-export function createCanonicalRows<
-	const TTables extends TableLensDefinitions,
->(
+export function createCanonicalRows<const TTables extends TableLensDefinitions>(
 	sqlite: RowSyncSqlite,
 	definitions: TTables,
 	{

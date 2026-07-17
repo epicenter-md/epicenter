@@ -19,12 +19,12 @@ import {
 	createLocalDocumentAdmission,
 	mergeDocumentUpdates,
 } from './canonical-documents.js';
-import { createCanonicalRows } from './canonical-rows.js';
 import {
 	createCanonicalReplica,
 	readCurrentDocumentParts,
 	readCurrentRow,
 } from './canonical-replica.js';
+import { createCanonicalRows } from './canonical-rows.js';
 import { defineTable } from './lens-definition.js';
 import {
 	createTestTransport,
@@ -99,11 +99,9 @@ test('persistence failure poisons durability and further transactions', async ()
 	const database = new Database(':memory:');
 	try {
 		const sqlite = createBunSqliteAdapter(database);
-		const row = createCanonicalRows(sqlite, definitions).tables.notes.create(
-			{
-				title: 'Poisoned',
-			},
-		);
+		const row = createCanonicalRows(sqlite, definitions).tables.notes.create({
+			title: 'Poisoned',
+		});
 		const failure = new Error('disk write failed');
 		const documents = createDocumentRuntime({
 			admitIntent() {
@@ -176,9 +174,7 @@ test('promotion-style revocation drains captured updates into durable intents', 
 		await expect(document.whenDurable()).rejects.toThrow('was revoked');
 
 		using reopened = await documents.open('notes', row.id);
-		expect(reopened.get('editor').toString()).toBe(
-			'captured before promotion',
-		);
+		expect(reopened.get('editor').toString()).toBe('captured before promotion');
 	} finally {
 		database.close();
 	}

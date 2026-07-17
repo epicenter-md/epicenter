@@ -34,9 +34,9 @@ import {
 	mountTranscriptionApp,
 	Room,
 	RowAuthorityDurableObject,
+	readWorkspaceDatabaseSize,
 	requireBearerPrincipal,
 	requireCookieOrBearerPrincipal,
-	readWorkspaceDatabaseSize,
 	resolveRequestOAuthPrincipal,
 	type ServerBindings,
 	upsertStorageObservation,
@@ -49,8 +49,8 @@ import {
 } from './billing/policies.js';
 import { mountBillingApi } from './billing/routes.js';
 import { billingServiceFor } from './billing/service.js';
-import { buildEpicenterTrustedOrigins } from './trusted-origins.js';
 import { createStorageService } from './storage/service.js';
+import { buildEpicenterTrustedOrigins } from './trusted-origins.js';
 
 // Compile-time proof that this worker's generated Env provides every
 // binding the library reads. A missing or mistyped binding fails here,

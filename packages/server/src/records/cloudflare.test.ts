@@ -173,9 +173,7 @@ async function createRows(
 				rowId,
 				fields: { title: rowId },
 			}));
-		token = expectPage(
-			await syncRound(records, target, token, intents),
-		).token;
+		token = expectPage(await syncRound(records, target, token, intents)).token;
 	}
 	return token;
 }
@@ -185,19 +183,14 @@ test('enrollment and accepted state survive Durable Object restart', async () =>
 	try {
 		const token = await enroll(context.records, partition);
 		expectPage(
-			await syncRound(
-				context.records,
-				partition,
-				token,
-				[
-					{
-						kind: 'create',
-						table: 'pages',
-						rowId: rid(1),
-						fields: { title: 'Persisted' },
-					},
-				],
-			),
+			await syncRound(context.records, partition, token, [
+				{
+					kind: 'create',
+					table: 'pages',
+					rowId: rid(1),
+					fields: { title: 'Persisted' },
+				},
+			]),
 		);
 
 		const name = context.names[0];

@@ -72,11 +72,7 @@ export function createDesktopWorkspaceOwner({
 			const operation = parseDesktopRecordOperation(input);
 			const workspace = await open(workspaceId);
 			if (operation.kind === 'sql') {
-				return workspace.sql(
-					operation.query,
-					operation.parameters,
-					sqliteRows,
-				);
+				return workspace.sql(operation.query, operation.parameters, sqliteRows);
 			}
 			if (operation.kind === 'kv-get') {
 				return encodeDesktopRecordResult(

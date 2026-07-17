@@ -632,9 +632,8 @@ test('baseline acquisition preserves authored intent and exact retry across the 
 			hasInflightRound: false,
 		});
 		expect(
-			authorityState.authority
-				.inspect()
-				.rows.find((row) => row.rowId === ROW_A)?.fields,
+			authorityState.authority.inspect().rows.find((row) => row.rowId === ROW_A)
+				?.fields,
 		).toEqual({ title: 'authored-offline' });
 	} finally {
 		offlineDatabase.close();

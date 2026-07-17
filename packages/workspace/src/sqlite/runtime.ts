@@ -12,12 +12,12 @@ import {
 	type RowDocument,
 } from './canonical-documents.js';
 import { type CanonicalKv, createCanonicalKv } from './canonical-kv.js';
-import type { CanonicalRows, CanonicalTable } from './canonical-rows.js';
-import { createCanonicalRows } from './canonical-rows.js';
 import {
 	readCurrentDocumentParts,
 	readCurrentRow,
 } from './canonical-replica.js';
+import type { CanonicalRows, CanonicalTable } from './canonical-rows.js';
+import { createCanonicalRows } from './canonical-rows.js';
 import type {
 	KvDefinitions,
 	KvReadError,
@@ -31,9 +31,7 @@ import type {
 } from './lens-definition.js';
 import type { WorkspaceDefinition } from './runtime-definition.js';
 
-export type WorkspaceOwner<
-	TAdmission extends void | Promise<void> = void,
-> = {
+export type WorkspaceOwner<TAdmission extends void | Promise<void> = void> = {
 	sqlite: RowSyncSqlite;
 	/** Present only for synchronized files. */
 	admitIntent?(intent: WireRowIntent): TAdmission;

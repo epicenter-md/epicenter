@@ -14,7 +14,6 @@ export type RecordsPartition = {
 	workspaceId: string;
 };
 
-
 /** Portable authority backend used by HTTP routes and runtime-specific stores. */
 export type Records = {
 	enroll(
