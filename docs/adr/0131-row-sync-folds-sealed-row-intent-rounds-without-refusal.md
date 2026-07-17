@@ -156,20 +156,80 @@ sync({
   token,
   protocolMajor,
   replicaId,
-  sealedRound?: { round, requestDigest, intents[] }
+  sealedRound?: { round, requestDigest, submission, intents[] }
 })
 ```
 
-Enrollment creates the receipt at accepted round zero with no request digest.
-After a round folds, the authority stores its `(replicaId, acceptedRound,
-requestDigest)` triple. A matching retry refolds nothing. A digest mismatch or
-a round other than `acceptedRound` or `acceptedRound + 1` is a terminal
-replica fork. The sealed round stays durable through every response page and
-retires only after the exchange reaches head.
+Enrollment creates the receipt at accepted round zero with no request digest
+and a submission watermark of zero. Every transmission of a sealed round
+carries a `submission` number that the client chooses strictly greater than
+any number it has previously sent for this replica. Before evaluating the
+round, the authority durably advances the receipt's submission watermark to
+that number, in the same transaction that commits any fold. A transmission
+whose submission is at or below the stored watermark receives a retryable
+stale-submission response carrying the current watermark and is otherwise
+inert: it folds nothing, changes no receipt state, and is never evaluated for
+capacity. Every definitive sealed-round response echoes the submission it
+evaluated. Pull-only sync carries no submission and never touches the
+watermark. The watermark records only the newest submission seen, independent
+of outcome; it is transmission ordering, not rejection history.
 
-The accepted-round triple is the durable head of that replica's retry chain and
-is not removed by outcome-tail compaction or baseline acquisition. It remains
-until workspace deletion. There is no replica-specific count, slot allocation,
+After a round folds, the authority stores its `(replicaId, acceptedRound,
+requestDigest)` retry head beside the watermark. Row effects, emitted
+outcomes, the retry head, and the watermark commit in one authority
+transaction. A matching retry refolds nothing. A digest mismatch or a round
+other than `acceptedRound` or `acceptedRound + 1` is a terminal replica fork.
+The sealed round stays durable through every response page and retires only
+after the exchange reaches head.
+
+A deployment may inject a binary capacity admission (ADR-0137). The authority
+evaluates a sealed round in this order: protocol major, replica identity,
+submission watermark, retry-head position, deployment capacity admission, and
+only then semantic RowIntent folding. When the deployment is in delete-only
+state and the round contains any `create` or `update` intent, the authority
+returns a definitive capacity refusal. The refusal advances only the
+submission watermark; the retry head does not move, no rejection history
+persists, and no intent folds. A round made entirely of `delete` intents folds
+normally. A mixed round is never partially accepted. Capacity admission is a
+deployment admission result, not a semantic RowIntent outcome; the retry-head
+check runs first, so an exact retry of an already accepted round returns its
+idempotent acceptance even when the deployment has since entered delete-only
+state.
+
+The replica has exactly one exclusive writer process. The runtime enforces
+that lease physically (the browser's OPFS synchronous access handle and
+process-local file ownership elsewhere), and submission monotonicity is scoped
+to it. A newly sealed round is always `acceptedRound + 1`. Until the client
+receives a definitive response for its sealed round, it retries the identical
+round, digest, and intents under fresh submission numbers. If capacity is
+restored before the client receives a refusal, an in-flight retry simply folds
+and returns ordinary acceptance.
+
+A capacity refusal is authoritative only when its echoed submission equals the
+greatest submission the client has issued for the in-flight image. An older
+refusal is superseded by the newer transmission it cannot see: the client
+ignores it, the image stays in flight, and resolution comes from the newer
+submission's response or a later retry. Acceptance of the in-flight round and
+digest is a durable fact and may be acted on whichever submission it answers.
+
+Once the client accepts an authoritative capacity refusal, the sealed round is
+resolved as refused. In one local SQLite transaction the client clears its
+in-flight metadata, returns the refused intents to open state under ordinary
+compaction, and reseals any `delete` intents as the same round number with a
+new digest; every `create` and `update` stays queued for a later admissible
+round. Local edits are never discarded.
+
+Reusing the still-unaccepted round number with a new digest is safe because of
+the watermark: an authoritative refusal answers the client's greatest issued
+submission and durably advanced the watermark to it, so every outstanding copy
+of the refused image carries a submission at or below the watermark. No copy
+of a definitively refused round can fold later, so a late duplicate cannot
+advance the retry head to a digest the client no longer holds, and the
+terminal-fork rule stays sound.
+
+The accepted-round retry head and its submission watermark are the durable
+core of that replica's retry chain and are not removed by outcome-tail
+compaction or baseline acquisition. They remain until workspace deletion. There is no replica-specific count, slot allocation,
 generation, eviction, expiration, or unenrollment lifecycle. Baseline
 acquisition keeps the same replica id, sealed round, digest, and canonical
 RowIntent rows. Scratch confirmed state is disposable; authored intent and
@@ -216,6 +276,9 @@ across that gap.
   unsendable or creating a chunking protocol.
 - Exact lost-response retry remains mandatory. Open and sealed are lifecycle
   states around the same semantic type, not separate command formats.
+- A sealed-round transmission costs one durable watermark write even when it
+  folds nothing. That single integer is what makes deployment capacity refusal
+  compatible with exact retry and safe round-number reuse.
 - Document update encoding and its bounds are one workspace protocol decision,
   not a per-table contract. A build supports exactly one active wire protocol
   major. A different major is refused before enrollment or round folding; there
@@ -246,3 +309,12 @@ across that gap.
   workspace deletion.
 - **Store or replay RowIntents as confirmed history.** Rejected because sync is
   not an audit product; confirmed pages carry resulting facts instead.
+- **Refuse capacity without a submission watermark.** Rejected because an
+  abandoned earlier transmission of the refused round could fold after capacity
+  is restored, forking the replica against its own reseal of the same round
+  number and duplicating accepted scalar updates.
+- **Advance the retry head on a capacity refusal.** Rejected because the
+  receipt would then persist a rejection outcome, and consuming the round
+  number would turn deployment admission into semantic RowIntent history.
+- **Keep the submission watermark in authority memory only.** Rejected because
+  a restart would forget it and reopen the late-fold fork.

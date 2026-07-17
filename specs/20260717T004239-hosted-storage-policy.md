@@ -96,12 +96,19 @@ delete-only state   reject every mixed, create-only, or update-only round
 
 The authority does not estimate post-transaction bytes, classify shrinking
 updates, or partially fold a mixed round. A definitive capacity response does
-not advance the authority receipt. The client reopens the rejected sealed
-round, reseals deletions first, and leaves every create or update queued. If the
-capacity response is lost, the client retries the original sealed digest until
-it receives that definitive response. This capacity admission result is a
-deployment refusal before ordinary RowIntent folding, not a semantic RowIntent
-outcome.
+not advance the authority retry head; it advances only ADR-0131's per-replica
+submission watermark, which exists so a definitively refused round image can
+never fold from a delayed duplicate transmission. Responses echo the
+submission they evaluated, and the client honors a refusal only when it
+answers the greatest submission it has issued; an older delayed refusal is
+superseded and ignored. On an authoritative refusal the client atomically
+reopens the rejected sealed round, reseals deletions first under the same
+round number with a new digest and fresh submission, and leaves every create
+or update queued. If the capacity response is lost, the client retries the
+original sealed digest until it receives that definitive response; a retry
+that arrives after capacity is restored simply folds and returns ordinary
+acceptance. This capacity admission result is a deployment refusal before
+ordinary RowIntent folding, not a semantic RowIntent outcome.
 
 ### Paid to Free downgrade
 
@@ -261,9 +268,10 @@ upload behavior and the measured operational envelope makes "bounded" honest.
 2. Set Free `includedBytes` to `100_000_000` and keep storage overage disabled.
 3. Add one deployment-neutral capacity error that distinguishes a retryable
    transport failure from the definitive delete-only admission response.
-4. Clarify ADR-0131 during its acceptance pass: deployment capacity admission
-   may refuse a sealed round before folding without adding semantic RowIntent
-   rejection history.
+4. ADR-0131 now fixes the seam: admission order (major, identity, submission
+   watermark, retry head, capacity, fold) and the per-replica submission
+   watermark that makes post-refusal round-number reuse safe. Implement that
+   contract exactly; do not add semantic RowIntent rejection history.
 
 ### Wave 2: Build the Cloud projection
 

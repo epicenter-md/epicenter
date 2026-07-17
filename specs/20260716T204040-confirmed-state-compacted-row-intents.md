@@ -251,16 +251,39 @@ sync({
   token,
   protocolMajor,
   replicaId,
-  sealedRound?: { round, requestDigest, intents[] }
+  sealedRound?: { round, requestDigest, submission, intents[] }
 })
 ```
 
-Enrollment creates an authority receipt at accepted round zero. Ordinary
-`sync` refuses an unseen client-supplied replica id. Authentication controls
-workspace access; replica identity owns only protocol position and exact retry.
-After a round folds, the authority receipt stores the accepted round and request
-digest. The local singleton stores the accepted round plus any unresolved
-in-flight round and digest; it does not duplicate the accepted digest.
+Enrollment creates an authority receipt at accepted round zero with a
+submission watermark of zero. Ordinary `sync` refuses an unseen client-supplied
+replica id. Authentication controls workspace access; replica identity owns
+only protocol position and exact retry. After a round folds, the authority
+receipt stores the accepted round and request digest. The local singleton
+stores the accepted round plus any unresolved in-flight round and digest; it
+does not duplicate the accepted digest.
+
+Every sealed-round transmission carries a `submission` number strictly greater
+than any this replica has previously sent; the replica has one exclusive
+writer process and submission monotonicity is scoped to that lease. The
+authority durably advances the receipt's watermark to that number before
+evaluating the round, atomically with any fold, retry-head advance, and
+emitted outcomes; a transmission at or below the watermark receives a
+retryable stale-submission response carrying the watermark and is otherwise
+inert. Every definitive sealed-round response echoes the submission it
+evaluated. Evaluation order is: protocol major, replica identity, submission
+watermark, retry-head position, deployment capacity admission, then folding.
+A definitive capacity refusal (ADR-0137) advances only the watermark; the
+retry head does not move and nothing folds. A refusal is authoritative only
+when it echoes the greatest submission the client has issued; older refusals
+are ignored as superseded. On an authoritative refusal the client, in one
+local transaction, clears in-flight metadata, reopens the refused intents into
+open state, and reseals any delete intents under the same round number with a
+new digest and fresh submission; creates and updates stay queued. The
+watermark is what makes that round-number reuse safe: no outstanding copy of
+the refused image carries a submission above the watermark the authoritative
+refusal advanced, so no copy can fold later. Pull-only sync carries no
+submission.
 
 Receipts persist until workspace deletion. There is no replica-specific count,
 slot, generation, eviction, expiration, revocation, or unenrollment lifecycle.
@@ -412,6 +435,9 @@ those prove different non-negotiable invariants.
 - [ ] Persist exact-retry receipts until workspace deletion with no replica
   lifecycle API.
 - [ ] Seal `intents[]`, fold RowIntents directly, and emit composite outcomes.
+- [ ] Enforce the per-replica submission watermark and the definitive
+  capacity-refusal admission order (major, identity, watermark, retry head,
+  capacity, fold), with an injected deployment-neutral admission callback.
 - [ ] Add canonical encoding and digest fixtures.
 - [ ] Carry the one active protocol major in enrollment and sync envelopes; add
   no compatibility registry or document-contract admission.
