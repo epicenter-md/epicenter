@@ -1,8 +1,8 @@
 import { field } from '@epicenter/field';
 import {
-	document as collaborativeDocument,
 	defineTable,
 	defineWorkspace,
+	type RowDocument,
 } from '@epicenter/workspace/sqlite';
 import { createBrowserWorkspaceRuntime } from '@epicenter/workspace/sqlite/browser';
 import { Type } from 'typebox';
@@ -15,9 +15,7 @@ const definition = defineWorkspace({
 	tables: {
 		notes: defineTable({ fields: { title: field.string() } }),
 	},
-	documents: {
-		draft: collaborativeDocument.text({ params: { noteId: field.string() } }),
-	},
+	kv: {},
 });
 
 let changes = 0;
@@ -32,12 +30,7 @@ const runtime = createBrowserWorkspaceRuntime({
 	},
 });
 const workspace = await runtime.open(definition);
-let draft:
-	| Awaited<ReturnType<typeof workspace.documents.draft.open>>
-	| undefined;
-let releasedDraft:
-	| Awaited<ReturnType<typeof workspace.documents.draft.open>>['content']
-	| undefined;
+let draft: RowDocument | undefined;
 
 window.productionBrowserRuntime = {
 	create(title: string) {
@@ -54,21 +47,20 @@ window.productionBrowserRuntime = {
 		);
 	},
 	async openDraft(noteId: string) {
-		draft ??= await workspace.documents.draft.open({ noteId });
-		return draft.content.read();
+		draft ??= await workspace.tables.notes.document.open(noteId);
+		return draft.get('draft').toString();
 	},
-	writeDraft(value: string) {
+	async writeDraft(value: string) {
 		if (!draft) throw new Error('Draft is not open');
-		draft.content.write(value);
+		const root = draft.get('draft');
+		root.delete(0, root.length);
+		root.insert(0, value);
+		await draft.whenDurable();
 	},
 	closeDraft() {
 		if (!draft) return;
-		releasedDraft = draft.content;
 		draft[Symbol.dispose]();
 		draft = undefined;
-	},
-	readReleasedDraft() {
-		return releasedDraft?.read();
 	},
 	changeCount() {
 		return changes;
@@ -89,14 +81,13 @@ declare global {
 		productionBrowserRuntime: {
 			create(title: string): Promise<{ id: string; title: string }>;
 			get(id: string): Promise<{
-				data: { id: string; title: string } | null;
+				data: { id: string; title: string } | undefined | null;
 				error: unknown;
 			}>;
 			sql(): Promise<Array<{ id: string; title: string }>>;
 			openDraft(noteId: string): Promise<string>;
-			writeDraft(value: string): void;
+			writeDraft(value: string): Promise<void>;
 			closeDraft(): void;
-			readReleasedDraft(): string | undefined;
 			changeCount(): number;
 			dispose(): Promise<void>;
 		};

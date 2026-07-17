@@ -9,13 +9,13 @@ shapes, see `docs/adr/`.
 
 - **Workspace**: one stable app-defined identity opened through an
   authority-bound runtime. In the canonical SQLite lane it owns a complete
-  schema-opaque record map and top-level parameterized Yjs documents; an app may
-  compose several workspace handles. The transitional root-Yjs lane remains in
-  use by apps that have not moved yet.
-- **Room**: one server-side synchronization address. Yjs rooms store document
-  updates; the records authority stores logical rows, mutations, and
-  snapshots. Cloudflare may colocate several such logical stores in one Durable
-  Object SQLite database without making their physical file the sync contract.
+  schema-opaque row map, one latent document per ordinary row, and reserved
+  workspace KV; an app may compose several workspace handles. The transitional
+  root-Yjs lane remains in use by apps that have not moved yet.
+- **Room**: one server-side synchronization address in the transitional
+  root-Yjs lane. The canonical SQLite lane uses a row authority, not rooms. Its
+  authority owns rows, RowIntents, composite outcomes, and baseline scans; it
+  publishes no portable SQLite snapshot artifact.
 - **Star**: the one runnable program that holds your data, composing anchor,
   store, sync, and identity/auth into a deployment (ADR-0069). The star is the
   unit of self-host and the entire privacy question: Epicenter runs it (hosted)
@@ -90,12 +90,12 @@ shapes, see `docs/adr/`.
 
 ## Workspace API
 
-- **Canonical record map**: one complete device replica from `(table key, row
-  id)` to a valid JSON object. The map stores user data without an application
-  schema, row version, migration state, or release identity.
-- **Record**: one identified canonical JSON object with explicit create, patch,
-  and delete behavior. A patch replaces supplied keys, preserves omitted keys,
-  and treats an absent-row patch or delete as a no-op.
+- **Canonical row map**: one complete device replica from `(table key, row id)`
+  to schema-opaque fields plus row-document state. It stores user data without
+  an application schema, row version, migration state, or release identity.
+- **Row**: one identified lifecycle aggregate containing JSON fields and one
+  latent collaborative document. Create starts the lifetime, update changes
+  fields, document state, or both, and delete ends the whole lifetime.
 - **Table key**: the permanent storage key that partitions records in the
   canonical map. A release-local table name is not a rename lens over another
   key.
@@ -106,7 +106,7 @@ shapes, see `docs/adr/`.
   heal, rewrite, or version stored rows.
 - **Field**: one `field.*` validator for a present JSON value. Required versus
   optional presence belongs to the table lens, not the field definition.
-- **Conforming record**: a canonical row that satisfies the opened release's
+- **Conforming row**: a canonical row whose fields satisfy the opened release's
   table lens. `get()` returns a typed row or `undefined` inside `Result`, or a
   `NonconformingRecord` error; `scan()` returns conforming rows and
   nonconforming diagnostics without hiding canonical data.
@@ -116,41 +116,33 @@ shapes, see `docs/adr/`.
 - **Application repair**: ordinary bounded reads and typed patches authored by
   the application. Repair is explicit, retryable application work, not a
   workspace migration API or an effect of reading.
-- **Logical record snapshot**: portable `(table key, row id, JSON payload)`
-  state without SQLite pages, application lenses, actors, cursors, outboxes,
-  receipts, derived indexes, or mutation history.
+- **Logical ownership state**: portable rows (fields plus row-document state)
+  and workspace KV without SQLite pages, application lenses, replica receipts,
+  pending intents, derived indexes, cursors, or transport history.
 - **Connection-local SQL view**: one read-only explicit-column `TEMP VIEW`
   installed from the current table lens whenever a SQLite connection opens. It
   stores no rows, reflects canonical commits immediately, and disappears with
   the connection.
-- **Document declaration**: one top-level `document.text(...)`,
-  `document.xmlFragment(...)`, or `document.keyValue(...)` resource in a
-  workspace definition. Documents are never declared beneath tables.
-- **Document parameters**: typed domain values that select a document instance,
-  such as `{ skillId }`. The runtime combines them with authority, workspace,
-  declaration, and format identity; public application code never supplies a
-  room GUID or authority identity.
-- **Document lease**: the revocable handle returned by a lazy document open.
-  Releasing the final lease may unload live Yjs state but never deletes
-  persisted or synchronized content.
-- **Document room catalog**: runtime-private metadata needed to reopen,
-  synchronize, or export known rooms. It is not a public document registry or
-  string-addressed opening API.
-- **Key-value document**: a Yjs document shape with release-local typed entries.
-  Missing values return `undefined`; application code supplies fallbacks. It is
-  not a top-level workspace KV plane.
-- **Record command**: one schema-blind `createRow`, `patchRow`, or `deleteRow`
-  synchronization command. The server orders accepted patches and folds them
-  into current state; applications receive no public event log or manual sync
-  controls.
-- **Cross-plane composition**: ordinary application code using records and
-  document leases without a shared transaction, cascade, or lifecycle. A
-  document may take a record ID as a parameter, but deleting the record does not
-  implicitly delete the document.
+- **Row document**: the latent collaborative Yjs state owned by every ordinary
+  row. It has no identity, authority, or lifecycle independent from that row.
+- **`RowDocument` lease**: the native-shaped handle returned by
+  `table.document.open(rowId)`. It exposes application roots, transactions, a
+  local durability barrier, and disposal while withholding provider and
+  lifecycle control.
+- **Application-owned document root**: an arbitrary top-level root named and
+  interpreted by application code. Epicenter does not declare, reserve,
+  validate, version, or interpret roots.
+- **Workspace KV lens**: the release-local typed `kv` object in a workspace
+  definition. Every key is optional in canonical storage; reads never install
+  defaults or repair values. Different keys are independent merge units.
+- **RowIntent**: one schema-blind `create`, `update`, or `delete` intent for a
+  row. An update may contain field set/unset changes, a row-document update, or
+  both. The server folds sealed intent rounds and returns composite outcomes;
+  applications receive no public event log or manual sync controls.
 - **Canonical SQLite workspace**: the greenfield `@epicenter/workspace/sqlite`
-  lane. Definitions are inert release-local lenses, and
-  `runtime.open(definition)` returns borrowed handles for tables, documents, and
-  read-only SQL.
+  lane. `defineWorkspace({ id, tables, kv })` is an inert release-local lens,
+  and `runtime.open(definition)` returns one handle with `tables`, `kv`, and
+  `records.sql`.
 - **Transitional root-Yjs workspace**: the still-active `@epicenter/workspace`
   lane used by apps not yet migrated. Its `defineKv`, definition-owned
   `create/connect/mount`, `.docs`, and `_v` behavior remain compatibility

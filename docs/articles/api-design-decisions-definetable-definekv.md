@@ -2,9 +2,10 @@
 
 > Historical: the chained version API below is retired. The target is one
 > release-local `defineTable({ fields, optional })` lens over schema-opaque
-> canonical JSON, plus top-level parameterized documents. See
-> [ADR-0125](../adr/0125-record-definitions-are-release-local-lenses-and-never-migrate-user-data.md)
-> and [ADR-0124](../adr/0124-workspace-documents-are-top-level-parameterized-resources.md).
+> canonical fields, one latent document per ordinary row, and a release-local
+> workspace KV lens. See
+> [ADR-0130](../adr/0130-workspace-definitions-expose-tables-with-row-owned-documents-and-a-release-local-kv-lens.md)
+> and [ADR-0135](../adr/0135-row-documents-have-application-owned-roots.md).
 
 Designing an API is about trade-offs. Every choice closes some doors and opens others. Here's the reasoning behind Epicenter's versioned schema API.
 

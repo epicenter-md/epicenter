@@ -3,8 +3,8 @@
  *
  * This root entrypoint is the current production Yjs-record API. The
  * greenfield records contract is exported from `@epicenter/workspace/sqlite`;
- * its tables declare release-local fields and its workspace declares lazy,
- * parameterized documents at the top level.
+ * its workspace declares release-local tables and KV, and every ordinary row
+ * owns one lazy document with application-owned roots.
  * Keep examples below as migration context until their consumers move.
  *
  * `@epicenter/workspace` builds typed Yjs-backed workspaces: tables, KV,

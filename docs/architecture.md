@@ -6,9 +6,9 @@ keeps devices synchronized while they sleep.
 
 The workspace model is the center of the architecture:
 
-> A workspace runtime owns a complete schema-opaque record map and lazily
-> opened collaborative documents. Release-local definitions validate and
-> project that data without migrating it.
+> A workspace runtime owns complete canonical rows, reserved workspace KV, and
+> one latent collaborative document per ordinary row. Release-local definitions
+> validate and project that data without migrating it.
 
 This page is the five-minute map. See the
 [workspace data model](reference/workspace-data-model.md) for the placement rule
@@ -45,28 +45,26 @@ policy stays in the app that can name it.
 ```
 
 `@epicenter/workspace` owns the app-facing data contract and runtime handles.
-`@epicenter/field` supplies the release-local projection vocabulary. The record
-protocol orders schema-opaque JSON mutations; Yjs sync carries independently
-addressed documents. Middleware turns those capabilities into reactive state,
+`@epicenter/field` supplies the release-local projection vocabulary. Row sync
+orders schema-opaque fields and carries row-owned Yjs updates through one
+authority. Middleware turns those capabilities into reactive state,
 filesystems, agent tools, and other app-shaped surfaces.
 
-## A workspace composes two storage planes
+## A workspace owns one row authority
 
 The workspace is the stable app-defined identity and access-policy boundary. A
-runtime binds it to one authority and owns a complete canonical record replica
-plus a private catalog of declared Yjs rooms.
+runtime binds it to one authority and owns a complete canonical replica.
 
 ```text
 workspace
-|-- canonical record map
-|   `-- (table key, row id) -> schema-opaque JSON object
-`-- document catalog
-    `-- lazily opened Yjs rooms selected by declared domain parameters
+|-- ordinary rows
+|   `-- (table key, row id) -> fields + latent row document
+`-- reserved workspace KV row
 ```
 
 There is no user-data schema migration or records-database succession. A new
 release may change its lens immediately. Nonconforming rows remain stored and
-visible to repair code.
+visible to repair code. Row documents are not rooms or a second authority.
 
 ### Records are queryable product facts
 
@@ -95,32 +93,31 @@ Wrong or missing values become `NULL` in the projection. The views are rebuilt
 when a connection opens with a different release-local lens; no materialized
 projection or lens-derived index is synchronized.
 
-### Documents are for merge-sensitive content
+### Every ordinary row owns merge-sensitive content
 
-Every document declaration is top-level and parameterized by domain values when
-it needs cardinality. A record relationship is ordinary application
-composition:
+Every ordinary row has one lazy document under the same identity, liveness, and
+authority as its fields:
 
 ```ts
-documents: {
-  instructions: document.text({ params: { skillId: field.string() } }),
-  preferences: document.keyValue({ entries: { theme: field.string() } }),
-}
+using document = await workspace.tables.notes.document.open(note.id);
+
+const editor = document.get('editor');
+const comments = document.get('comments');
 ```
 
-The runtime derives private authority and storage identity from the declaration
-and validated parameters. Public code never supplies a GUID, authority ID,
-storage key, provider, or manual synchronization command. Opening awaits local
-hydration, then the runtime attaches remote synchronization. Releasing the last
-lease unloads live state without deleting persisted content.
+The application owns root names and their interpretation. The platform owns
+document identity, hydration, update capture, persistence, synchronization, and
+revocation. Opening checks row liveness and awaits local hydration. Releasing
+the final lease unloads live state without deleting the row. Deleting the row
+ends both its fields and document lifetime.
 
 ## Definitions travel; runtimes connect them
 
-The shared workspace definition is pure. It names release-local table lenses
-and document declarations without opening storage or a network connection.
+The shared workspace definition is pure. It names release-local table and KV
+lenses without opening storage or a network connection.
 
 ```text
-defineWorkspace({ id, tables, documents })
+defineWorkspace({ id, tables, kv })
         |
         | pure app contract
         v
@@ -133,26 +130,28 @@ there is no surface registry, cross-workspace transaction, or all-or-nothing
 application boot.
 
 Runtime openers supply the resources that cannot travel with the definition:
-browser storage, a record authority connection, Yjs collaboration, daemon
-persistence, materializers, auth, and platform APIs. App-facing code should
-enter through the workspace definition instead of rebuilding addresses or
-storage topology itself.
+browser storage, the row authority connection, daemon persistence,
+materializers, auth, and platform APIs. An opened handle exposes typed
+`tables`, typed `kv`, and `records.sql`. App-facing code should enter through
+that handle instead of rebuilding addresses or storage topology itself.
 
 ## The records path
 
-Record writes use three mechanical commands:
+Fields and document changes use one row-lifecycle vocabulary:
 
 ```text
-createRow(table, rowId, JSON object)
-patchRow(table, rowId, set keys, unset keys)
-deleteRow(table, rowId)
+create  complete fields, optionally with an initial document update
+update  field set/unset changes, a document update, or both
+delete  end the row lifetime, including fields and document
 ```
 
-The authority orders accepted commands and folds them into current state. Each
-device applies the same ordered changes to its complete local SQLite replica.
-The log is transport intent, not permanent product history. Applications retain
-typed table helpers and read-only SQL without making physical SQLite files the
-wire format.
+These are `RowIntent` variants. The authority orders accepted intents and folds
+them into current state. Fields follow authority order; document content uses
+Yjs merge within the same row lifetime. Each device applies the same composite
+outcomes to its complete local SQLite replica. The log is transport intent, not
+permanent product history. Applications retain typed table helpers, row
+documents, KV, and read-only SQL without making physical SQLite files the wire
+format.
 
 ```text
 app action / UI event
@@ -166,14 +165,11 @@ typed table operation
         +----------------------+
         |
         v
-record authority
+row authority
         |
         v
-ordered mutations to other replicas
+composite row outcomes to other replicas
 ```
-
-Document edits follow their own Yjs path. The workspace composes these paths but
-does not pretend records and documents share one conflict model or transaction.
 
 ## Lens evolution never migrates user data
 

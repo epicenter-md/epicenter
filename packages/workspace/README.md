@@ -2,10 +2,10 @@
 
 > Transition note: this page documents the current production Yjs-record
 > entrypoint. The greenfield target keeps canonical schema-opaque JSON records
-> in runtime-owned SQLite, applies release-local table lenses, and declares
-> lazy parameterized documents at the workspace top level. See
-> [ADR-0125](../../docs/adr/0125-record-definitions-are-release-local-lenses-and-never-migrate-user-data.md)
-> and [ADR-0124](../../docs/adr/0124-workspace-documents-are-top-level-parameterized-resources.md).
+> in runtime-owned SQLite, gives every ordinary row one latent document, and
+> applies release-local table and KV lenses. See
+> [ADR-0130](../../docs/adr/0130-workspace-definitions-expose-tables-with-row-owned-documents-and-a-release-local-kv-lens.md)
+> and [ADR-0135](../../docs/adr/0135-row-documents-have-application-owned-roots.md).
 
 A local-first workspace engine for TypeScript apps: Yjs is the source of truth; SQLite and Markdown are read-only materialized projections.
 
