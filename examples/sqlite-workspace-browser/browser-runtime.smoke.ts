@@ -16,11 +16,11 @@ import {
 	chromium,
 	type Page,
 } from 'playwright';
-import { createBunSqliteAdapter } from '../../packages/record-sync/src/adapters/bun.js';
+import { createBunSqliteAdapter } from '../../packages/row-sync/src/adapters/bun.js';
 import {
 	openRecordAuthority,
 	RECORD_SYNC_PROTOCOL_MAJOR,
-} from '../../packages/record-sync/src/index.js';
+} from '../../packages/row-sync/src/index.js';
 
 const port = 5214;
 const origin = `http://127.0.0.1:${port}`;

@@ -1,4 +1,4 @@
-import type { RecordAuthorityCompactionPolicy } from '@epicenter/record-sync';
+import type { RecordAuthorityCompactionPolicy } from '@epicenter/row-sync';
 
 /** Internal production policy shared by both authority storage backends. */
 export const RECORDS_COMPACTION_POLICY = {

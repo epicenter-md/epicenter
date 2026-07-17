@@ -13,7 +13,7 @@
 import { Database, type SQLQueryBindings } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
-import type { RecordSyncSqlite } from '@epicenter/record-sync';
+import type { RecordSyncSqlite } from '@epicenter/row-sync';
 import { Type } from 'typebox';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { createCanonicalRecords } from './canonical-records.js';
@@ -195,7 +195,7 @@ test('a patch whose composed row exceeds the capacity cap is refused eagerly', (
 	// The mirror fold (ADR-0131) refuses composed capacity at the public
 	// boundary: the write never enters canonical storage or the outbox.
 	expect(() => skills.patch('near-cap', { title: half })).toThrow(
-		'Canonical row exceeds portable record-sync limits',
+		'Canonical row exceeds portable row-sync limits',
 	);
 	expect(expectOk(skills.get('near-cap'))).toEqual({
 		id: 'near-cap',

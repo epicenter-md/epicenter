@@ -4,9 +4,9 @@ import type {
 	SnapshotChunkResponse,
 	SyncRequest,
 	SyncResponse,
-} from '@epicenter/record-sync';
+} from '@epicenter/row-sync';
 
-/** The authenticated server partition selected outside the record-sync protocol. */
+/** The authenticated server partition selected outside the row-sync protocol. */
 export type RecordsPartition = {
 	principalId: PrincipalId;
 	workspaceId: string;

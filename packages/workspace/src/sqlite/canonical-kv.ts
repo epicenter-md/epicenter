@@ -16,7 +16,7 @@ import {
 	type RecordSyncSqlite,
 	RESERVED_KV_ROW_ID,
 	RESERVED_KV_TABLE,
-} from '@epicenter/record-sync';
+} from '@epicenter/row-sync';
 import { Ok, type Result } from 'wellcrafted/result';
 import {
 	compileKvLens,

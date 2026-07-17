@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -910,18 +909,6 @@
         "typescript": "catalog:",
       },
     },
-    "packages/record-sync": {
-      "name": "@epicenter/record-sync",
-      "version": "0.0.1",
-      "dependencies": {
-        "typebox": "catalog:",
-      },
-      "devDependencies": {
-        "@cloudflare/workers-types": "^4.20260405.1",
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
     "packages/recorder": {
       "name": "@epicenter/recorder",
       "version": "0.0.1",
@@ -930,6 +917,18 @@
         "wellcrafted": "catalog:",
       },
       "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/row-sync": {
+      "name": "@epicenter/row-sync",
+      "version": "0.0.1",
+      "dependencies": {
+        "typebox": "catalog:",
+      },
+      "devDependencies": {
+        "@cloudflare/workers-types": "^4.20260405.1",
         "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
@@ -944,7 +943,7 @@
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/identity": "workspace:*",
-        "@epicenter/record-sync": "workspace:*",
+        "@epicenter/row-sync": "workspace:*",
         "@epicenter/sync": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@hono/standard-validator": "catalog:",
@@ -1097,7 +1096,7 @@
         "@epicenter/encryption": "workspace:*",
         "@epicenter/field": "workspace:*",
         "@epicenter/identity": "workspace:*",
-        "@epicenter/record-sync": "workspace:*",
+        "@epicenter/row-sync": "workspace:*",
         "@epicenter/sync": "workspace:*",
         "@sindresorhus/slugify": "catalog:",
         "@sqlite.org/sqlite-wasm": "catalog:",
@@ -1489,11 +1488,11 @@
 
     "@epicenter/posthog-reverse-proxy": ["@epicenter/posthog-reverse-proxy@workspace:apps/posthog-reverse-proxy"],
 
-    "@epicenter/record-sync": ["@epicenter/record-sync@workspace:packages/record-sync"],
-
     "@epicenter/recorder": ["@epicenter/recorder@workspace:packages/recorder"],
 
     "@epicenter/reddit": ["@epicenter/reddit@workspace:apps/reddit"],
+
+    "@epicenter/row-sync": ["@epicenter/row-sync@workspace:packages/row-sync"],
 
     "@epicenter/self-host": ["@epicenter/self-host@workspace:apps/self-host"],
 

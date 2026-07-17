@@ -16,7 +16,7 @@ import {
 	recordRoundDigest,
 	RECORD_SYNC_PROTOCOL_MAJOR,
 	type SyncRequest,
-} from '@epicenter/record-sync';
+} from '@epicenter/row-sync';
 import { Hono } from 'hono';
 import type { Records, RecordsPartition } from '../records/contracts.js';
 import type { Env } from '../types.js';

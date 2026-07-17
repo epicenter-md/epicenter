@@ -19,7 +19,7 @@
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/identity": "workspace:*",
-		"@epicenter/record-sync": "workspace:*",
+		"@epicenter/row-sync": "workspace:*",
 		"@epicenter/sync": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@hono/standard-validator": "catalog:",

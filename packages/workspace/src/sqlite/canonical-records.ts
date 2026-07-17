@@ -3,8 +3,8 @@ import type {
 	RecordSyncSqlite,
 	SqliteRow,
 	SqliteValue,
-} from '@epicenter/record-sync';
-import { foldRow, isAdmissibleCanonicalRow } from '@epicenter/record-sync';
+} from '@epicenter/row-sync';
+import { foldRow, isAdmissibleCanonicalRow } from '@epicenter/row-sync';
 import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 import { Ok, type Result } from 'wellcrafted/result';
@@ -153,7 +153,7 @@ export function createCanonicalRecords<
 							// The mirror fold refused capacity locally; the typed
 							// write never enters canonical storage or the outbox.
 							throw new RangeError(
-								'Canonical row exceeds portable record-sync limits',
+								'Canonical row exceeds portable row-sync limits',
 							);
 						}
 						const next = folded.value;
@@ -230,7 +230,7 @@ function assertAdmissibleCanonicalRow(
 	value: JsonObject,
 ): void {
 	if (!isAdmissibleCanonicalRow({ table, rowId, value })) {
-		throw new RangeError('Canonical row exceeds portable record-sync limits');
+		throw new RangeError('Canonical row exceeds portable row-sync limits');
 	}
 }
 

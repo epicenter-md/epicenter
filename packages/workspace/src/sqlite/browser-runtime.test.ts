@@ -15,7 +15,7 @@ import { field } from '@epicenter/field';
 import {
 	RECORD_SYNC_PROTOCOL_MAJOR,
 	recordRoundDigest,
-} from '@epicenter/record-sync';
+} from '@epicenter/row-sync';
 import { IDBFactory } from 'fake-indexeddb';
 import { createIndexedDbDocumentLocalStore } from './browser-document-store.js';
 import { createBrowserWorkspaceRuntime } from './browser-runtime.js';

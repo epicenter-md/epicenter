@@ -2,7 +2,7 @@ import {
 	parseSnapshotChunkRequest,
 	parseSyncRequest,
 	RECORD_SYNC_ADMISSION_LIMITS,
-} from '@epicenter/record-sync';
+} from '@epicenter/row-sync';
 import { type Context, Hono, type MiddlewareHandler } from 'hono';
 import type { Records, RecordsPartition } from '../records/contracts.js';
 import type { Env } from '../types.js';

@@ -1,4 +1,4 @@
-import type { SqliteValue } from '@epicenter/record-sync';
+import type { SqliteValue } from '@epicenter/row-sync';
 import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 import { openCollaboration } from '../document/open-collaboration.js';

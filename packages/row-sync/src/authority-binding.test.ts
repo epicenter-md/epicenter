@@ -626,7 +626,7 @@ test('open refuses legacy authority storage instead of creating parallel state',
 					database: createBunSqliteAdapter(sqlite),
 					sha256,
 				}),
-			).toThrow('Incompatible legacy record-sync authority storage');
+			).toThrow('Incompatible legacy row-sync authority storage');
 			expect(
 				sqlite
 					.query<{ count: number }, []>(

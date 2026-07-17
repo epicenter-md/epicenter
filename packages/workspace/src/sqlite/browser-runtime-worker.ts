@@ -1,7 +1,7 @@
 import {
 	type BrowserSqliteDatabase,
 	createBrowserSqliteAdapter,
-} from '@epicenter/record-sync/browser';
+} from '@epicenter/row-sync/browser';
 import sqlite3InitModule, { type Database } from '@sqlite.org/sqlite-wasm';
 import type {
 	BrowserRecordOperation,

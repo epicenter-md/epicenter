@@ -1,4 +1,4 @@
-import { canonicalJson } from '@epicenter/record-sync';
+import { canonicalJson } from '@epicenter/row-sync';
 import { Value } from 'typebox/value';
 import * as Y from 'yjs';
 import { assertSafeSegment } from '../shared/safe-segment.js';

@@ -19,8 +19,8 @@ import {
 	openRecordAuthority,
 	RESERVED_KV_ROW_ID,
 	RESERVED_KV_TABLE,
-} from '@epicenter/record-sync';
-import { createBunSqliteAdapter } from '@epicenter/record-sync/bun';
+} from '@epicenter/row-sync';
+import { createBunSqliteAdapter } from '@epicenter/row-sync/bun';
 import { Type } from 'typebox';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { createCanonicalKv } from './canonical-kv.js';

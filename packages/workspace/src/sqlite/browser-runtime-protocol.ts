@@ -1,4 +1,4 @@
-import type { SqliteValue } from '@epicenter/record-sync';
+import type { SqliteValue } from '@epicenter/row-sync';
 import type { TSchema } from 'typebox';
 import type { TableLensDefinitions } from './lens-definition.js';
 

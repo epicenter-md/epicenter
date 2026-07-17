@@ -39,7 +39,7 @@ policy stays in the app that can name it.
 +----------------------------------------------------------------------------+
 | CORE                                                                       |
 |                                                                            |
-| @epicenter/workspace   @epicenter/record-sync   @epicenter/sync            |
+| @epicenter/workspace   @epicenter/row-sync   @epicenter/sync            |
 | @epicenter/field       @epicenter/constants     @epicenter/ui              |
 +----------------------------------------------------------------------------+
 ```

@@ -27,8 +27,8 @@ import {
 	RECORD_SYNC_PROTOCOL_MAJOR,
 	type RecordCommand,
 	recordRoundDigest,
-} from '@epicenter/record-sync';
-import { createBunSqliteAdapter } from '@epicenter/record-sync/bun';
+} from '@epicenter/row-sync';
+import { createBunSqliteAdapter } from '@epicenter/row-sync/bun';
 import { expectOk } from 'wellcrafted/testing';
 import { createBunWorkspaceRuntime } from './bun-runtime.js';
 import type { CanonicalReplicaTransport } from './canonical-replica.js';

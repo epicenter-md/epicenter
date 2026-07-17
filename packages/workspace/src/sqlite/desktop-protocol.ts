@@ -1,4 +1,4 @@
-import type { SqliteValue } from '@epicenter/record-sync';
+import type { SqliteValue } from '@epicenter/row-sync';
 import {
 	defineErrors,
 	extractErrorMessage,

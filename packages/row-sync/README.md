@@ -1,6 +1,6 @@
-# @epicenter/record-sync
+# @epicenter/row-sync
 
-`@epicenter/record-sync` is the portable record-plane core. It owns the logical
+`@epicenter/row-sync` is the portable row-plane core. It owns the logical
 mutation protocol, the schema-blind row fold, canonical server persistence,
 snapshots, and compaction. Yjs document sync remains in `@epicenter/sync`.
 
@@ -30,11 +30,11 @@ snapshots, and compaction (ADR-0131/0132/0133).
 
 ## Exports
 
-- `@epicenter/record-sync`: protocol schemas, parsers, fold, authority, snapshot
+- `@epicenter/row-sync`: protocol schemas, parsers, fold, authority, snapshot
   codec, and the `RecordSyncSqlite` contract.
-- `@epicenter/record-sync/browser`: sqlite.org OO1 adapter.
-- `@epicenter/record-sync/bun`: `bun:sqlite` adapter.
-- `@epicenter/record-sync/durable-object`: SQLite-backed Durable Object adapter.
+- `@epicenter/row-sync/browser`: sqlite.org OO1 adapter.
+- `@epicenter/row-sync/bun`: `bun:sqlite` adapter.
+- `@epicenter/row-sync/durable-object`: SQLite-backed Durable Object adapter.
 
 Transport code validates untrusted client messages with `parseSyncRequest`
 and `parseSnapshotChunkRequest`. Clients validate server messages with the
@@ -43,8 +43,8 @@ matching response parsers.
 ## Verification
 
 ```sh
-bun run --cwd packages/record-sync typecheck
-bun run --cwd packages/record-sync test
+bun run --cwd packages/row-sync typecheck
+bun run --cwd packages/row-sync test
 ```
 
 The conformance test runs the same authority scenario through all three adapter

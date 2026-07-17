@@ -16,7 +16,7 @@ import { mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { field } from '@epicenter/field';
-import { createBunSqliteAdapter } from '@epicenter/record-sync/bun';
+import { createBunSqliteAdapter } from '@epicenter/row-sync/bun';
 import { Type } from 'typebox';
 import { createCanonicalRecords } from '../sqlite/canonical-records.js';
 import { defineTable } from '../sqlite/lens-definition.js';

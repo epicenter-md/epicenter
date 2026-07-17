@@ -19,7 +19,7 @@ import {
 	type SyncRequest,
 	type SyncResponse,
 	type SyncToken,
-} from '@epicenter/record-sync';
+} from '@epicenter/row-sync';
 
 const STORAGE_VERSION = 2;
 const RECORDS_TABLE = '__epicenter_records';

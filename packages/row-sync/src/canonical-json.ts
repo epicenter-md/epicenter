@@ -1,4 +1,4 @@
-/** Canonical JSON used for every content-addressed record-sync digest. */
+/** Canonical JSON used for every content-addressed row-sync digest. */
 export function canonicalJson(value: unknown): string {
 	if (
 		value === null ||

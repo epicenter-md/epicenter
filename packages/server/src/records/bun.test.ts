@@ -22,7 +22,7 @@ import {
 	type RecordCommand,
 	type SyncResponse,
 	type SyncToken,
-} from '@epicenter/record-sync';
+} from '@epicenter/row-sync';
 import { createBunRecords } from './bun.js';
 import type { Records, RecordsPartition } from './contracts.js';
 

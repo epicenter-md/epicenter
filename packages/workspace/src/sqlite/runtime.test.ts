@@ -15,8 +15,8 @@
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
-import type { RecordCommand } from '@epicenter/record-sync';
-import { createBunSqliteAdapter } from '@epicenter/record-sync/bun';
+import type { RecordCommand } from '@epicenter/row-sync';
+import { createBunSqliteAdapter } from '@epicenter/row-sync/bun';
 import { expectOk } from 'wellcrafted/testing';
 import { document } from './document-definition.js';
 import { createDocumentRoomCatalog } from './document-runtime.js';

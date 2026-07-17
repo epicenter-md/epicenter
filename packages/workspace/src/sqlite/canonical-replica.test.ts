@@ -27,8 +27,8 @@ import {
 	RESERVED_KV_TABLE,
 	recordRoundDigest,
 	type SyncRequest,
-} from '@epicenter/record-sync';
-import { createBunSqliteAdapter } from '@epicenter/record-sync/bun';
+} from '@epicenter/row-sync';
+import { createBunSqliteAdapter } from '@epicenter/row-sync/bun';
 import { expectOk } from 'wellcrafted/testing';
 import { createCanonicalRecords } from './canonical-records.js';
 import {

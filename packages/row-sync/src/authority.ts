@@ -90,7 +90,7 @@ function initialize(database: RecordSyncSqlite): void {
 			),
 		);
 		if (hasLegacyStorage) {
-			throw new Error('Incompatible legacy record-sync authority storage');
+			throw new Error('Incompatible legacy row-sync authority storage');
 		}
 		database.run(`
 			CREATE TABLE IF NOT EXISTS record_sync_meta (
@@ -159,7 +159,7 @@ function initialize(database: RecordSyncSqlite): void {
 			stored.storage_version !== STORAGE_VERSION ||
 			stored.protocol_major !== RECORD_SYNC_PROTOCOL_MAJOR
 		) {
-			throw new Error('Incompatible record-sync authority storage');
+			throw new Error('Incompatible row-sync authority storage');
 		}
 	});
 }

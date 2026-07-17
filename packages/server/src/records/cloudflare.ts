@@ -6,8 +6,8 @@ import {
 	type SnapshotChunkResponse,
 	type SyncRequest,
 	type SyncResponse,
-} from '@epicenter/record-sync';
-import { createDurableObjectSqliteAdapter } from '@epicenter/record-sync/durable-object';
+} from '@epicenter/row-sync';
+import { createDurableObjectSqliteAdapter } from '@epicenter/row-sync/durable-object';
 import * as Y from 'yjs';
 import { RECORDS_COMPACTION_POLICY } from './compaction.js';
 import type { Records, RecordsPartition } from './contracts.js';

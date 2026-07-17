@@ -6,7 +6,7 @@ import type {
 	StateEntry,
 } from './protocol.js';
 
-/** Shared ceilings applied before any record-sync storage adapter. */
+/** Shared ceilings applied before any row-sync storage adapter. */
 export const RECORD_SYNC_ADMISSION_LIMITS = {
 	identifierBytes: 512,
 	commandsPerRound: 64,

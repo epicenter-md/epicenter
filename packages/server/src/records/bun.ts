@@ -6,8 +6,8 @@ import {
 	openRecordAuthority,
 	type RecordAuthority,
 	type Sha256,
-} from '@epicenter/record-sync';
-import { createBunSqliteAdapter } from '@epicenter/record-sync/bun';
+} from '@epicenter/row-sync';
+import { createBunSqliteAdapter } from '@epicenter/row-sync/bun';
 import * as Y from 'yjs';
 import { RECORDS_COMPACTION_POLICY } from './compaction.js';
 import type { Records, RecordsPartition } from './contracts.js';

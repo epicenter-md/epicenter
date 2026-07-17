@@ -2,7 +2,7 @@ import type {
 	RecordCommand,
 	RecordSyncSqlite,
 	SqliteValue,
-} from '@epicenter/record-sync';
+} from '@epicenter/row-sync';
 import type { Static, TSchema } from 'typebox';
 import type * as Y from 'yjs';
 import type { BodyDefinition, BodyFormat } from './body-definition.js';

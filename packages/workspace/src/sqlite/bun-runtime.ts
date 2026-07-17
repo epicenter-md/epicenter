@@ -8,7 +8,7 @@ import {
 	writeFileSync,
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { createBunSqliteAdapter } from '@epicenter/record-sync/bun';
+import { createBunSqliteAdapter } from '@epicenter/row-sync/bun';
 import { sha256Hex } from '../shared/sha256.js';
 import { createCanonicalRecords } from './canonical-records.js';
 import {

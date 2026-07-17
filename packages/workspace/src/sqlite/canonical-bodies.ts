@@ -13,7 +13,7 @@
  * Offline parking needs no mechanism: a row's create precedes its appends in
  * the same outbox order, so the authority folds them in order.
  */
-import type { RecordCommand, RecordSyncSqlite } from '@epicenter/record-sync';
+import type { RecordCommand, RecordSyncSqlite } from '@epicenter/row-sync';
 import * as Y from 'yjs';
 
 const LOCAL_LOG_TABLE = '__epicenter_bodies_log';
