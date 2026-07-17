@@ -213,5 +213,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0134](0134-replicas-store-confirmed-state-and-compacted-row-intents.md) | Replicas store confirmed state and compacted RowIntents | Proposed |
 | [0135](0135-row-documents-have-application-owned-roots.md) | Row documents have application-owned roots | Proposed |
 | [0136](0136-replica-baseline-acquisition-uses-a-disposable-anchored-live-scan.md) | Replica baseline acquisition uses a disposable anchored live scan | Proposed |
+| [0137](0137-hosted-storage-is-one-eventually-enforced-physical-account-allowance.md) | Hosted storage is one eventually enforced physical account allowance | Proposed |
 
 When you add an ADR, add its row here.
