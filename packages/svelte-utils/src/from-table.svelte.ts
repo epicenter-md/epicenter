@@ -6,19 +6,6 @@ import type {
 } from '@epicenter/workspace';
 import { createSubscriber } from 'svelte/reactivity';
 
-/** The read and invalidation surface exposed by SQLite workspace tables. */
-export type ObservableTable<TRow extends { id: string }> = {
-	get(id: TRow['id']): TRow | null;
-	list(): readonly TRow[];
-	observe(callback: (changedIds: ReadonlySet<TRow['id']>) => void): () => void;
-};
-
-/** A reactive view over rows that conform to one exact workspace schema. */
-export type TableView<TRow extends { id: string }> = {
-	readonly all: readonly TRow[];
-	byId(id: TRow['id']): TRow | undefined;
-};
-
 /**
  * A read-only reactive view of a workspace table: the conforming rows plus the
  * table's two issue buckets, all driven by one `observe()` subscription.
@@ -50,37 +37,14 @@ export type ReadonlyTableView<TRow extends BaseRow> = {
  * The view reads through the table instead of maintaining a second row mirror.
  * Its one ref-counted subscription invalidates both the memoized list and point
  * reads after local writes, remote pulls, snapshots, and imports.
+ *
+ * @deprecated Removed with the Yjs record table after app migration. The
+ * canonical SQLite runtime's tables are asynchronous and need their own
+ * adapter (owned by the first migrating app's cutover).
  */
-export function fromTable<TRow extends { id: string }>(
-	table: ObservableTable<TRow>,
-): TableView<TRow>;
-/** @deprecated Removed with the Yjs record table after app migration. */
 export function fromTable<TRow extends BaseRow>(
 	table: ReadonlyTable<TRow>,
-): ReadonlyTableView<TRow>;
-export function fromTable<TRow extends BaseRow>(
-	table: ObservableTable<TRow> | ReadonlyTable<TRow>,
-): TableView<TRow> | ReadonlyTableView<TRow> {
-	if ('list' in table) {
-		const subscribe = createSubscriber((update) =>
-			(table as ObservableTable<TRow>).observe(() => update()),
-		);
-		const listed = $derived.by(() => {
-			subscribe();
-			return (table as ObservableTable<TRow>).list();
-		});
-
-		return {
-			get all() {
-				return listed;
-			},
-			byId(id: TRow['id']): TRow | undefined {
-				subscribe();
-				return (table as ObservableTable<TRow>).get(id) ?? undefined;
-			},
-		};
-	}
-
+): ReadonlyTableView<TRow> {
 	const subscribe = createSubscriber((update) => table.observe(update));
 	// One scan feeds every list surface and recomputes once per change. Reading
 	// `scanned` is what registers the dependency, so the list getters need no
