@@ -23,7 +23,7 @@
 
 | Date | Spec | State | Path |
 |------|------|-------|------|
-| 2026-07-16 | workspace-tables-kv-row-bodies | in tree | specs/20260716T161934-workspace-tables-kv-row-bodies.md |
+| 2026-07-16 | workspace-tables-kv-row-documents | in tree | specs/20260716T161934-workspace-tables-kv-row-documents.md |
 | 2026-07-16 | fold-never-refuse-sync-architecture | removed | specs/20260716T173049-fold-never-refuse-sync-architecture.md |
 | 2026-07-14 | synchronized-data-open-runtime-clean-break | removed | specs/20260714T162816-synchronized-data-open-runtime-clean-break.md |
 | 2026-07-14 | sqlite-workspace-app-adoption | removed | specs/20260714T131232-sqlite-workspace-app-adoption.md |

@@ -2,7 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-07-16
-- **Relates:** [ADR-0122](0122-logical-records-are-portable-sqlite-files-and-views-are-runtime-state.md), [ADR-0131](0131-row-sync-folds-sealed-row-intent-rounds-without-refusal.md), [ADR-0132](0132-workspace-kv-is-one-reserved-immortal-record-in-the-record-map.md), [ADR-0133](0133-row-bodies-are-sequence-addressed-update-logs-in-the-record-authority.md), [ADR-0134](0134-replicas-store-confirmed-state-and-compacted-row-intents.md)
+- **Relates:** [ADR-0122](0122-logical-records-are-portable-sqlite-files-and-views-are-runtime-state.md), [ADR-0131](0131-row-sync-folds-sealed-row-intent-rounds-without-refusal.md), [ADR-0132](0132-workspace-kv-is-one-reserved-immortal-row.md), [ADR-0133](0133-row-authority-stores-documents-as-sequence-addressed-update-logs.md), [ADR-0134](0134-replicas-store-confirmed-state-and-compacted-row-intents.md)
 
 ## Context
 
@@ -40,8 +40,8 @@ replica or a replica below the floor acquires a baseline:
 
 1. Capture authority head `S` as the replay anchor.
 2. Scan live rows through stateless pages in stable address order. Each row read
-   atomically returns its complete fields and the complete body composite from
-   ADR-0133.
+   atomically returns its complete fields and the complete document composite
+   from ADR-0133.
 3. Capture authority head `E` with the final scan page.
 4. Apply the ordinary confirmed-outcome fold over scratch for every sequence in
    `(S, E]`.
@@ -59,8 +59,9 @@ Different rows may include later state, and a row created after the scan passed
 its address may be absent. Complete scalar postimages, delete outcomes, and
 idempotent Yjs updates make the `(S, E]` fold converge scratch to one coherent
 authority state at `E`. A composite outcome carrying fields installs its
-complete live postimage even when scratch lacks that row. A body-only outcome
-on an absent row and a deletion of an absent row no-op. Row ids are never reused.
+complete live postimage even when scratch lacks that row. A document-only
+outcome on an absent row and a deletion of an absent row no-op. Row ids are
+never reused.
 
 Keeping the `(S, E]` fold inside hidden scratch is deliberate. Promoting the
 fuzzy address scan at `S` and catching up visibly could temporarily regress a
@@ -80,35 +81,35 @@ or per-replica liveness promise.
 The baseline-acquisition adapter owns one disposable sidecar with only:
 
 ```txt
-records  scanned and folded confirmed field maps
-bodies   scanned and folded confirmed body state
+rows       scanned and folded confirmed field maps
+documents  scanned and folded confirmed document state
 ```
 
 Anchor `S`, address cursor, target `E`, and fold cursor live only in the running
 operation. Stateless page requests may retry while that process remains alive.
-The cursors are not sidecar tables or crash-resumable state. The sidecar
-is never an ownership export, backup, canonical workspace, or fifth replica
-table. Deleting it is the entire crash-recovery policy before promotion.
+The cursors are not sidecar tables or crash-resumable state. The sidecar is
+never an ownership export, backup, canonical workspace, or fifth replica table.
+Deleting it is the entire crash-recovery policy before promotion.
 
-The canonical workspace continues to own `row_intents` and `replica`. An
+The canonical workspace continues to own `intents` and `replica`. An
 existing device may keep serving its old complete confirmed baseline plus local
 RowIntents while the sidecar is built. A new device waits because it has no
 complete baseline. Partially acquired state is never visible.
 
 Promotion takes an exclusive workspace barrier. It stops new canonical
-operations, drains already-emitted body persistence, revokes every live body
-handle, and freezes scratch. It then reads the sidecar and, in one transaction
-on the canonical workspace:
+operations, drains already-emitted document persistence, revokes every live
+document handle, and freezes scratch. It then reads the sidecar and, in one
+transaction on the canonical workspace:
 
-1. Replaces `records`.
-2. Replaces `bodies`.
+1. Replaces `rows`.
+2. Replaces `documents`.
 3. Sets `replica.checkpoint` to `E`.
 4. Preserves replica id, accepted round, in-flight round and digest, and every
    open or sealed RowIntent.
 
 A crash during promotion leaves either the old canonical state or the complete
 new state. After commit, current projections rebuild before the barrier releases.
-Callers explicitly reopen body handles from the new confirmed baseline plus
+Callers explicitly reopen document handles from the new confirmed baseline plus
 intent, and the sidecar is deleted. No read or write observes the promoted
 checkpoint through a pre-promotion projection or handle. The first ordinary
 exchange above `E` carries or retries the sealed round; newer open intent then
@@ -126,12 +127,13 @@ compacted into the acquired baseline.
 Automatic submission does not promise that old intent wins. Update against an
 absent row, delete against absence, and create collision retain their ordinary
 deterministic no-op rules. An absolute scalar change against a live row enters
-normal authority order; a Yjs body update enters normal CRDT merge. Time creates
-no second conflict doctrine and no stale-change review state.
+normal authority order; a Yjs document update enters normal CRDT merge. Time
+creates no second conflict doctrine and no stale-change review state.
 
-The authority stores current rows, body baselines plus retained tails, bounded
-ordered outcomes, one exact-retry receipt per replica, and its compaction floor.
-It publishes no snapshot artifact and stores no transfer progress.
+The authority stores current rows, document baselines plus retained tails,
+bounded ordered outcomes, one exact-retry receipt per replica, and its
+compaction floor. It publishes no snapshot artifact and stores no transfer
+progress.
 
 ## Consequences
 

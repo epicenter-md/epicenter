@@ -1,8 +1,8 @@
-# 0132. Workspace KV is one reserved immortal record in the record map
+# 0132. Workspace KV is one reserved immortal row
 
 - **Status:** Proposed
 - **Date:** 2026-07-16
-- **Relates:** [ADR-0121](0121-background-sync-resolves-key-conflicts-by-server-order.md), [ADR-0130](0130-workspace-definitions-expose-tables-with-row-owned-bodies-and-a-release-local-kv-lens.md), [ADR-0131](0131-row-sync-folds-sealed-row-intent-rounds-without-refusal.md), [ADR-0134](0134-replicas-store-confirmed-state-and-compacted-row-intents.md)
+- **Relates:** [ADR-0121](0121-background-sync-resolves-key-conflicts-by-server-order.md), [ADR-0130](0130-workspace-definitions-expose-tables-with-row-owned-documents-and-a-release-local-kv-lens.md), [ADR-0131](0131-row-sync-folds-sealed-row-intent-rounds-without-refusal.md), [ADR-0134](0134-replicas-store-confirmed-state-and-compacted-row-intents.md)
 
 ## Context
 
@@ -12,15 +12,15 @@ order; unknown and nonconforming values preserved) but deliberately leaves the
 internal encoding open. A falsification harness ran the full KV proof matrix
 against two funded encodings and both passed every trace identically, so
 semantics cannot pick the winner; the counted set of permanent invariants can.
-An independent audit counted 8 permanent obligations for a reserved record,
+An independent audit counted 8 permanent obligations for a reserved row,
 12 for a dedicated KV table, and 12 for first-class KV wire vocabulary. The
-prior killer objection to the reserved record (an ensure-create quarantine
+prior killer objection to the reserved row (an ensure-create quarantine
 race) died with ADR-0131.
 
 ## Decision
 
-Canonical workspace KV is one reserved immortal record inside the existing
-record map, at the runtime-reserved address `__epicenter_kv/workspace`.
+Canonical workspace KV is one reserved immortal row inside the existing row
+map, at the runtime-reserved address `__epicenter_kv/workspace`.
 `kv.set(key, value)` normalizes to a field-bearing `RowIntent` update that sets
 the key; `kv.unset(key)` normalizes to an update that unsets it. Absence of a
 key in the newest image is the entire unset story; no tombstone exists.
@@ -31,9 +31,10 @@ baseline-acquisition, or authority vocabulary:
 - An update on the absent reserved address folds from `{}`; the physical map
   materializes on first write. No eager provisioning row is required.
 - `create` and `delete` intents are inadmissible at the reserved prefix; the
-  record is immortal and lifecycle-free by construction.
-- Body-bearing intents are inadmissible at the reserved address. The workspace
-  root is scalar-only: the fixed row body belongs only to ordinary table rows.
+  row is immortal and lifecycle-free by construction.
+- Document-bearing intents are inadmissible at the reserved address. The
+  workspace root is scalar-only: row documents belong only to ordinary table
+  rows.
 - The reserved row's capacity cap is 64 KiB aggregate instead of the general
   row cap, enforced by the ADR-0131 capacity fold rule: a later update whose
   composed image exceeds the cap is accepted and folds to a deterministic
@@ -60,11 +61,11 @@ while advancing sequence), so it ships inside ADR-0131's protocol major 5.
 - The reserved prefix must stay unreachable from application table names
   (already enforced: `__epicenter_` names are rejected at definition time).
 - The public model stays lifecycle-free even though the encoding is a row;
-  nothing public can create, delete, query, or enumerate the reserved record.
+  nothing public can create, delete, query, or enumerate the reserved row.
 
 ## Considered alternatives
 
-- **Dedicated KV table beside the record map.** 12 permanent obligations: a
+- **Dedicated KV table beside the row map.** 12 permanent obligations: a
   second singleton slot, its own pull/state-entry branch, and a baseline
   acquisition section on both sides, for identical semantics.
 - **First-class `kvSet`/`kvUnset` wire vocabulary.** 12 permanent obligations:
