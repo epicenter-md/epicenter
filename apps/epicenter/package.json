@@ -26,6 +26,7 @@
 	"dependencies": {
 		"@epicenter/chat": "workspace:*",
 		"@epicenter/client": "workspace:*",
+		"@epicenter/field": "workspace:*",
 		"@epicenter/honeycrisp": "workspace:*",
 		"@epicenter/server": "workspace:*",
 		"@epicenter/skills": "workspace:*",
@@ -37,7 +38,8 @@
 		"@modelcontextprotocol/sdk": "catalog:",
 		"@tauri-apps/api": "catalog:",
 		"hono": "catalog:",
-		"mime": "catalog:"
+		"mime": "catalog:",
+		"wellcrafted": "catalog:"
 	},
 	"devDependencies": {
 		"@sveltejs/vite-plugin-svelte": "catalog:",
