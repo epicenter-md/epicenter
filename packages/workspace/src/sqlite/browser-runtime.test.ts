@@ -6,6 +6,7 @@
  * Key behaviors:
  * - list and update use the public row verbs
  * - row documents hydrate, persist, and revoke across the Worker boundary
+ * - baseline promotion revokes documents and reports app-level invalidation
  * - KV observation re-reads changed values and detaches cleanly
  * - row-sync transport actions cross the boundary
  */
@@ -167,6 +168,27 @@ test('remote deletion revokes a page row-document handle', async () => {
 		addresses: [{ table: 'notes', rowId: ROW_ID }],
 	});
 	expect(() => document.get('editor')).toThrow('was revoked');
+});
+
+test('baseline promotion revokes documents and reports their workspace', async () => {
+	globalThis.Worker = FakeWorker as unknown as typeof Worker;
+	const invalidatedWorkspaces: string[] = [];
+	await using runtime = createDeviceBrowserWorkspaceRuntime({
+		createBroadcastChannel: () => undefined,
+		onDocumentsInvalidated(workspaceId) {
+			invalidatedWorkspaces.push(workspaceId);
+		},
+	});
+	const workspace = await runtime.open(definition);
+	using document = await workspace.tables.notes.document.open(ROW_ID);
+
+	FakeWorker.latest?.emit({
+		type: 'baseline-promoted',
+		workspaceId: definition.id,
+	});
+
+	expect(() => document.get('editor')).toThrow('was revoked');
+	expect(invalidatedWorkspaces).toEqual([definition.id]);
 });
 
 test('KV observation emits for a remote value change and stops after unsubscribe', async () => {

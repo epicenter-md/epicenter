@@ -2,6 +2,11 @@ import type { SqliteValue } from '@epicenter/row-sync';
 import type { Static, TSchema } from 'typebox';
 import { sha256Hex } from '../shared/sha256.js';
 import {
+	accountPersistenceKey,
+	devicePersistenceKey,
+	type WorkspaceAccount,
+} from './account-runtime.js';
+import {
 	type BrowserRecordOperation,
 	type BrowserRowSyncBinding,
 	type BrowserRuntimeMessage,
@@ -9,11 +14,6 @@ import {
 	type BrowserWorkspaceManifest,
 	serializeTableLenses,
 } from './browser-runtime-protocol.js';
-import {
-	accountPersistenceKey,
-	devicePersistenceKey,
-	type WorkspaceAccount,
-} from './account-runtime.js';
 import { createDocumentRuntime } from './canonical-documents.js';
 import type {
 	OpenedWorkspace,
@@ -88,12 +88,14 @@ type CreateBrowserWorkspaceRuntimeOptions = {
 	transport?: BrowserWorkspaceTransport;
 	createBroadcastChannel?(name: string): RuntimeBroadcastChannel | undefined;
 	onRecordsChanged?(workspaceId: string): void;
+	onDocumentsInvalidated?(workspaceId: string): void;
 	onBackgroundError?(cause: Error, workspaceId: string): void;
 };
 
 export function createDeviceBrowserWorkspaceRuntime({
 	createBroadcastChannel,
 	onRecordsChanged,
+	onDocumentsInvalidated,
 	onBackgroundError,
 }: Omit<
 	CreateBrowserWorkspaceRuntimeOptions,
@@ -103,6 +105,7 @@ export function createDeviceBrowserWorkspaceRuntime({
 		persistenceKey: devicePersistenceKey(),
 		createBroadcastChannel,
 		onRecordsChanged,
+		onDocumentsInvalidated,
 		onBackgroundError,
 	});
 }
@@ -111,6 +114,7 @@ export function createAccountBrowserWorkspaceRuntime({
 	account,
 	createBroadcastChannel,
 	onRecordsChanged,
+	onDocumentsInvalidated,
 	onBackgroundError,
 }: Omit<
 	CreateBrowserWorkspaceRuntimeOptions,
@@ -123,6 +127,7 @@ export function createAccountBrowserWorkspaceRuntime({
 		transport: account.transport,
 		createBroadcastChannel,
 		onRecordsChanged,
+		onDocumentsInvalidated,
 		onBackgroundError,
 	});
 }
@@ -133,6 +138,7 @@ function createBrowserRuntimeWithPersistence({
 	transport: transportInput,
 	createBroadcastChannel = defaultBroadcastChannel,
 	onRecordsChanged = () => undefined,
+	onDocumentsInvalidated = () => undefined,
 	onBackgroundError = () => undefined,
 }: CreateBrowserWorkspaceRuntimeOptions) {
 	if (persistenceKey.length === 0) {
@@ -207,6 +213,7 @@ function createBrowserRuntimeWithPersistence({
 						return;
 					case 'baseline-promoted':
 						workspaces.get(message.workspaceId)?.notifyBaselinePromoted();
+						onDocumentsInvalidated(message.workspaceId);
 						return;
 					case 'background-error': {
 						const cause = new Error(message.message);
@@ -523,9 +530,7 @@ function createBrowserRuntimeWithPersistence({
 			}
 			const manifest: BrowserWorkspaceManifest = {
 				workspaceId: definition.id,
-				storageKey: sha256Hex(
-					JSON.stringify([persistenceKey, definition.id]),
-				),
+				storageKey: sha256Hex(JSON.stringify([persistenceKey, definition.id])),
 				tables: serializeTableLenses(definition.tables),
 				kv: JSON.parse(JSON.stringify(definition.kv)),
 				rowSync: transport?.binding,
@@ -585,7 +590,7 @@ function normalizeTransport(
 			fetch: BrowserRecordFetch;
 			headers: Record<string, string>;
 			credentials: RequestCredentials;
-	}
+	  }
 	| undefined {
 	if (!input) return undefined;
 	const baseUrl = ensureTrailingSlash(new URL(input.baseUrl).href);
