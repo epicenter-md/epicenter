@@ -82,7 +82,7 @@ export { CloudAuthBindings, mountCloudAuth } from './mount-cloud-auth.js';
 export { mountCloudDb } from './mount-cloud-db.js';
 export {
 	createDurableObjectRecords,
-	RecordAuthorityDurableObject,
+	RowAuthorityDurableObject,
 } from './records/cloudflare.js';
 export type { Records, RecordsPartition } from './records/contracts.js';
 // Re-export the Cloudflare Durable Object class so each deployment's

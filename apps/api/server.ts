@@ -40,7 +40,6 @@
  * serves the dashboard in dev, and billing is the hosted Worker's concern.
  */
 
-import { createHash } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { API_BUN_DEV_PORT } from '@epicenter/constants/apps';
@@ -130,7 +129,6 @@ export function startBunApiServer(
 	const bunRooms = createBunRooms({ dir: join(dataDir, 'rooms') });
 	const bunRecords = createBunRecords({
 		dir: join(dataDir, 'records'),
-		sha256: async (value) => createHash('sha256').update(value).digest('hex'),
 	});
 
 	// One pool for the process; drizzle checks a client out per query and returns

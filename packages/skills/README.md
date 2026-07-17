@@ -26,21 +26,22 @@ release-local table lenses. The runtime allocates structural row ids. A
 SKILL.md `metadata.id` is stored separately as `sourceId`, so filesystem
 round-trips can match records without forging canonical identity.
 
-Instruction and reference bodies are top-level parameterized documents:
+Each skill and reference row owns one document. The skill document stores its
+instructions; the reference document stores its Markdown body:
 
 ```ts
-await using instructions = await skills.documents.instructions.open({
-	skillId: skill.id,
-});
-instructions.content.write('# Instructions');
+await using instructions = await skills.tables.skills.document.open(skill.id);
+const content = instructions.get('content');
+instructions.transact(() => content.insert(0, '# Instructions'));
+await instructions.whenDurable();
 ```
 
-The runtime derives private room identity, persistence, and synchronization.
-Callers pass only domain parameters.
+The runtime derives persistence and synchronization from the row address.
+Callers pass the structural row id they already own.
 
-Every catalog scan is bounded. Services return nonconforming rows explicitly;
-they never heal user data during reads. A developer repairs a row with the same
-typed `patch` used for ordinary writes.
+Catalog reads return nonconforming rows explicitly; they never heal user data
+during reads. A developer repairs a row with the same typed `update` used for
+ordinary writes.
 
 ## Filesystem portability
 

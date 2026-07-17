@@ -1,8 +1,8 @@
 import type { Database, SQLQueryBindings } from 'bun:sqlite';
-import type { RecordSyncSqlite, SqliteRow } from '../sqlite.js';
+import type { RowSyncSqlite, SqliteRow } from '../sqlite.js';
 
 /** Adapt one caller-owned `bun:sqlite` database. */
-export function createBunSqliteAdapter(database: Database): RecordSyncSqlite {
+export function createBunSqliteAdapter(database: Database): RowSyncSqlite {
 	return {
 		run(sql, parameters = []): void {
 			database.run(sql, parameters as SQLQueryBindings[]);

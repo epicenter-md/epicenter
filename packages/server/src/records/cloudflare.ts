@@ -1,85 +1,72 @@
 import { DurableObject } from 'cloudflare:workers';
 import {
-	openRecordAuthority,
-	type RecordAuthority,
-	type SnapshotChunkRequest,
-	type SnapshotChunkResponse,
+	type BaselineScanRequest,
+	type BaselineScanResponse,
+	type EnrollRequest,
+	type EnrollResponse,
+	openRowAuthority,
+	type RowAuthority,
 	type SyncRequest,
 	type SyncResponse,
 } from '@epicenter/row-sync';
-import { createDurableObjectSqliteAdapter } from '@epicenter/row-sync/durable-object';
-import * as Y from 'yjs';
-import { RECORDS_COMPACTION_POLICY } from './compaction.js';
+import {
+	createDurableObjectSqliteAdapter,
+	type DurableObjectSqliteStorage,
+} from '@epicenter/row-sync/durable-object';
+import { rowDocumentCodec } from './codec.js';
+import { runRecordsCompaction } from './compaction.js';
 import type { Records, RecordsPartition } from './contracts.js';
 
 function partitionName({ principalId, workspaceId }: RecordsPartition): string {
 	return JSON.stringify([principalId, workspaceId]);
 }
 
-async function sha256(value: string): Promise<string> {
-	const digest = await crypto.subtle.digest(
-		'SHA-256',
-		new TextEncoder().encode(value),
-	);
-	return Array.from(new Uint8Array(digest), (byte) =>
-		byte.toString(16).padStart(2, '0'),
-	).join('');
-}
-
 /** One server-owned logical-record authority backed by Durable Object SQLite. */
-export class RecordAuthorityDurableObject extends DurableObject {
-	private readonly authority: RecordAuthority;
-	private compaction: Promise<void> | undefined;
+export class RowAuthorityDurableObject extends DurableObject {
+	private readonly authority: RowAuthority;
 
 	constructor(ctx: DurableObjectState, env: Cloudflare.Env) {
 		super(ctx, env);
-		this.authority = openRecordAuthority({
-			database: createDurableObjectSqliteAdapter(ctx.storage),
-			sha256,
-			mergeBodyUpdates: (updates) =>
-				Y.mergeUpdates(updates.map((update) => new Uint8Array(update))),
+		this.authority = openRowAuthority({
+			database: createDurableObjectSqliteAdapter(
+				ctx.storage as unknown as DurableObjectSqliteStorage,
+			),
+			codec: rowDocumentCodec,
 		});
+	}
+
+	async enroll(request: EnrollRequest): Promise<EnrollResponse> {
+		return this.authority.enroll(request);
 	}
 
 	async sync(request: SyncRequest): Promise<SyncResponse> {
 		const response = this.authority.sync(request);
 		if (response.ok && request.sealedRound) {
-			const compaction = (this.compaction ?? Promise.resolve())
-				.catch(() => {})
-				.then(() =>
-					this.authority.maybePublishSnapshot(RECORDS_COMPACTION_POLICY),
-				)
-				.then(() => {})
-				.catch(() => {});
-			this.compaction = compaction;
-			try {
-				await compaction;
-			} finally {
-				if (this.compaction === compaction) this.compaction = undefined;
-			}
+			runRecordsCompaction(this.authority);
 		}
 		return response;
 	}
 
-	async snapshotChunk(
-		request: SnapshotChunkRequest,
-	): Promise<SnapshotChunkResponse> {
-		return this.authority.snapshotChunk(request);
+	async baselineScan(
+		request: BaselineScanRequest,
+	): Promise<BaselineScanResponse> {
+		return this.authority.baselineScan(request);
 	}
 }
 
 type RecordsRpc = {
+	enroll(request: EnrollRequest): Promise<EnrollResponse>;
 	sync(request: SyncRequest): Promise<SyncResponse>;
-	snapshotChunk(request: SnapshotChunkRequest): Promise<SnapshotChunkResponse>;
+	baselineScan(request: BaselineScanRequest): Promise<BaselineScanResponse>;
 };
 
 /** Build the portable records backend over the hosted Worker's DO namespace. */
 export function createDurableObjectRecords(
-	namespace: DurableObjectNamespace<RecordAuthorityDurableObject>,
+	namespace: DurableObjectNamespace<RowAuthorityDurableObject>,
 ): Records {
 	function get(partition: RecordsPartition): RecordsRpc {
 		// Cloudflare's recursive RPC proxy type exceeds TypeScript's instantiation
-		// limit for the nested snapshot response. Keep that compiler limitation at
+		// limit for the nested row-sync responses. Keep that compiler limitation at
 		// this runtime-owned stub boundary while checking the class methods above.
 		return namespace.getByName(
 			partitionName(partition),
@@ -87,8 +74,8 @@ export function createDurableObjectRecords(
 	}
 
 	return {
+		enroll: (partition, request) => get(partition).enroll(request),
 		sync: (partition, request) => get(partition).sync(request),
-		snapshotChunk: (partition, request) =>
-			get(partition).snapshotChunk(request),
+		baselineScan: (partition, request) => get(partition).baselineScan(request),
 	};
 }

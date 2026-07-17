@@ -1,45 +1,49 @@
-import type {
-	RecordCommand,
-	RecordSyncSqlite,
-	SqliteRow,
-	SqliteValue,
+import {
+	foldFields,
+	isAdmissibleCanonicalRow,
+	type RowSyncSqlite,
+	type SqliteRow,
+	type SqliteValue,
+	type WireRowIntent,
 } from '@epicenter/row-sync';
-import { foldRow, isAdmissibleCanonicalRow } from '@epicenter/row-sync';
+import { customAlphabet } from 'nanoid';
 import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 import { Ok, type Result } from 'wellcrafted/result';
 import {
-	type ConstrainedPatch,
+	initializeCanonicalSchema,
+	listCurrentRows,
+	readCurrentRow,
+} from './canonical-replica.js';
+import {
+	type ConstrainedChanges,
 	type CreateInputFor,
 	compileTableLens,
-	type JsonObject,
 	type RecordLensError,
 	type RowFor,
 	type TableLensDefinition,
 	type TableLensDefinitions,
 } from './lens-definition.js';
 
-const RECORDS_TABLE = '__epicenter_records';
-const MAX_SCAN_LIMIT = 1_000;
+const ROWS_TABLE = 'rows';
+const DOCUMENTS_TABLE = 'documents';
+const ROW_ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
+const mintRowId = customAlphabet(ROW_ID_ALPHABET, 24);
 
 export type CanonicalTable<TDefinition extends TableLensDefinition> = {
-	/** Read and project one canonical row through this release's lens. */
+	/** Read and project one current row through this release's lens. */
 	get(id: string): Result<RowFor<TDefinition> | undefined, RecordLensError>;
-	/** Read one bounded, row-id ordered page and partition it by conformance. */
-	scan(options: { cursor?: string; limit: number }): {
+	/** List every current row, partitioned by release-lens conformance. */
+	list(): {
 		rows: RowFor<TDefinition>[];
 		nonconforming: RecordLensError[];
-		nextCursor: string | undefined;
 	};
-	/** Validate a complete current-lens row and allocate its structural id. */
-	create(input: CreateInputFor<TDefinition>): RowFor<TDefinition>;
-	/**
-	 * Patch only supplied declared keys. A write can repair a row that does not
-	 * currently satisfy the complete lens.
-	 */
-	patch<const TPatch extends Record<string, unknown>>(
+	/** Validate complete fields and allocate the row's structural id. */
+	create(fields: CreateInputFor<TDefinition>): RowFor<TDefinition>;
+	/** Validate and apply supplied absolute field changes. */
+	update<const TChanges extends Record<string, unknown>>(
 		id: string,
-		patch: TPatch & ConstrainedPatch<TDefinition, TPatch>,
+		changes: TChanges & ConstrainedChanges<TDefinition, TChanges>,
 	): Result<RowFor<TDefinition> | undefined, RecordLensError>;
 	delete(id: string): void;
 };
@@ -49,27 +53,27 @@ export type CanonicalTables<TTables extends TableLensDefinitions> = {
 };
 
 export type CanonicalRecordsOptions = {
-	/**
-	 * Admit one schema-opaque synchronization command in the same SQLite
-	 * transaction as its optimistic canonical write. A standalone owner may
-	 * omit this hook.
-	 */
-	admit?(command: RecordCommand): void;
+	/** Synchronized mode admits durable RowIntents instead of mutating confirmed rows. */
+	admitIntent?(intent: WireRowIntent): void;
+	onLocalCommit?(): void;
+	/** Revoke cached row documents as soon as local deletion changes liveness. */
+	onRowsDeleted?(addresses: { table: string; rowId: string }[]): void;
 };
 
-/**
- * The synchronous SQLite owner behind async workspace clients and transports.
- * It owns one schema-opaque canonical map and connection-local SQL lenses.
- */
+/** Open release-local table lenses over the canonical four-table SQLite owner. */
 export function createCanonicalRecords<
 	const TTables extends TableLensDefinitions,
 >(
-	sqlite: RecordSyncSqlite,
+	sqlite: RowSyncSqlite,
 	definitions: TTables,
-	{ admit = () => undefined }: CanonicalRecordsOptions = {},
+	{
+		admitIntent,
+		onLocalCommit = () => undefined,
+		onRowsDeleted = () => undefined,
+	}: CanonicalRecordsOptions = {},
 ) {
 	assertDefinitions(definitions);
-	initializeCanonicalStore(sqlite);
+	initializeCanonicalSchema(sqlite);
 	installTemporaryViews(sqlite, definitions);
 
 	const tables = Object.fromEntries(
@@ -77,106 +81,109 @@ export function createCanonicalRecords<
 			const lens = compileTableLens(definition);
 			const table = {
 				get(id: string) {
-					const payload = readCanonical(sqlite, tableName, id);
-					return payload === null
+					const fields = readCurrentRow(sqlite, tableName, id);
+					return fields === undefined
 						? Ok(undefined)
-						: lens.project(tableName, id, payload);
+						: lens.project(tableName, id, fields);
 				},
-				scan({ cursor = '', limit }: { cursor?: string; limit: number }) {
-					assertScanLimit(limit);
-					const stored = sqlite.all<{ id: string; payload: string }>(
-						`SELECT "row_id" AS "id", "payload" FROM "${RECORDS_TABLE}" WHERE "table_key" = ? AND "row_id" > ? ORDER BY "row_id" LIMIT ?`,
-						[tableName, cursor, limit + 1],
-					);
-					const hasMore = stored.length > limit;
-					const page = hasMore ? stored.slice(0, limit) : stored;
+				list() {
 					const rows: Record<string, unknown>[] = [];
 					const nonconforming: RecordLensError[] = [];
-					for (const entry of page) {
-						const payload = parseCanonicalPayload(entry.payload);
-						const result = lens.project(tableName, entry.id, payload);
+					for (const current of listCurrentRows(sqlite, tableName)) {
+						const result = lens.project(
+							tableName,
+							current.rowId,
+							current.fields,
+						);
 						if (result.error === null) rows.push(result.data);
 						else nonconforming.push(result.error);
 					}
-					return {
-						rows,
-						nonconforming,
-						nextCursor: hasMore ? page.at(-1)?.id : undefined,
-					};
+					return { rows, nonconforming };
 				},
 				create(input: Record<string, unknown>) {
-					const payload = lens.validateCreate(input);
-					const id = crypto.randomUUID();
-					assertAdmissibleCanonicalRow(tableName, id, payload);
-					sqlite.transaction(() => {
-						admitCommand(admit, {
-							kind: 'createRow',
-							table: tableName,
-							rowId: id,
-							value: payload,
-						});
-						sqlite.run(
-							`INSERT INTO "${RECORDS_TABLE}" ("table_key", "row_id", "payload") VALUES (?, ?, ?)`,
-							[tableName, id, JSON.stringify(payload)],
+					const fields = lens.validateCreate(input);
+					const id = mintRowId();
+					if (
+						!isAdmissibleCanonicalRow({ table: tableName, rowId: id, fields })
+					) {
+						throw new RangeError(
+							'Canonical row exceeds portable row-sync limits',
 						);
-					});
-					return expectConforming(lens.project(tableName, id, payload));
+					}
+					const intent = {
+						kind: 'create',
+						table: tableName,
+						rowId: id,
+						fields,
+					} satisfies WireRowIntent;
+					if (admitIntent) admitIntent(structuredClone(intent));
+					else {
+						sqlite.run(
+							`INSERT INTO "${ROWS_TABLE}"(table_key, row_id, fields_json)
+							 VALUES (?, ?, ?)`,
+							[tableName, id, JSON.stringify(fields)],
+						);
+						onLocalCommit();
+					}
+					return expectConforming(lens.project(tableName, id, fields));
 				},
-				patch(id: string, patch: Record<string, unknown>) {
-					const normalized = lens.normalizePatch(patch);
-					return sqlite.transaction(() => {
-						const payload = readCanonical(sqlite, tableName, id);
-						if (
-							Object.keys(normalized.set).length === 0 &&
-							normalized.unset.length === 0
-						) {
-							return payload === null
-								? Ok(undefined)
-								: lens.project(tableName, id, payload);
-						}
-						const command = {
-							kind: 'patchRow',
-							table: tableName,
-							rowId: id,
-							set: normalized.set,
-							unset: normalized.unset,
-						} satisfies RecordCommand;
-						if (payload === null) {
-							admitCommand(admit, command);
-							return Ok(undefined);
-						}
-						const folded = foldRow(payload, command);
-						if (folded.kind === 'deletion') {
-							throw new Error('A live canonical row patch must produce a row');
-						}
-						if (folded.kind === 'noop') {
-							// The mirror fold refused capacity locally; the typed
-							// write never enters canonical storage or the outbox.
-							throw new RangeError(
-								'Canonical row exceeds portable row-sync limits',
+				update(id: string, changes: Record<string, unknown>) {
+					const normalized = lens.normalizeChanges(changes);
+					const current = readCurrentRow(sqlite, tableName, id);
+					if (
+						Object.keys(normalized.set).length === 0 &&
+						normalized.unset.length === 0
+					) {
+						return current === undefined
+							? Ok(undefined)
+							: lens.project(tableName, id, current);
+					}
+					const intent = {
+						kind: 'update',
+						table: tableName,
+						rowId: id,
+						fields: normalized,
+					} satisfies WireRowIntent;
+					if (admitIntent) admitIntent(structuredClone(intent));
+					else {
+						const folded = foldFields(current, intent);
+						if (folded.kind === 'fields') {
+							sqlite.run(
+								`UPDATE "${ROWS_TABLE}" SET fields_json = ?
+								 WHERE table_key = ? AND row_id = ?`,
+								[JSON.stringify(folded.fields), tableName, id],
 							);
+							onLocalCommit();
 						}
-						const next = folded.value;
-						admitCommand(admit, command);
-						sqlite.run(
-							`UPDATE "${RECORDS_TABLE}" SET "payload" = ? WHERE "table_key" = ? AND "row_id" = ?`,
-							[JSON.stringify(next), tableName, id],
-						);
-						return lens.project(tableName, id, next);
-					});
+					}
+					const projected = readCurrentRow(sqlite, tableName, id);
+					return projected === undefined
+						? Ok(undefined)
+						: lens.project(tableName, id, projected);
 				},
 				delete(id: string) {
-					sqlite.transaction(() => {
-						sqlite.run(
-							`DELETE FROM "${RECORDS_TABLE}" WHERE "table_key" = ? AND "row_id" = ?`,
-							[tableName, id],
-						);
-						admitCommand(admit, {
-							kind: 'deleteRow',
-							table: tableName,
-							rowId: id,
+					const intent = {
+						kind: 'delete',
+						table: tableName,
+						rowId: id,
+					} satisfies WireRowIntent;
+					if (admitIntent) admitIntent(intent);
+					else {
+						sqlite.transaction(() => {
+							sqlite.run(
+								`DELETE FROM "${ROWS_TABLE}"
+								 WHERE table_key = ? AND row_id = ?`,
+								[tableName, id],
+							);
+							sqlite.run(
+								`DELETE FROM "${DOCUMENTS_TABLE}"
+								 WHERE table_key = ? AND row_id = ?`,
+								[tableName, id],
+							);
 						});
-					});
+						onLocalCommit();
+					}
+					onRowsDeleted([{ table: tableName, rowId: id }]);
 				},
 			};
 			return [tableName, table];
@@ -185,13 +192,14 @@ export function createCanonicalRecords<
 
 	return {
 		tables,
-		/** Execute one validated read-only SELECT against this connection. */
+		/** Execute one validated read-only SELECT against current lens views. */
 		sql<TResultSchema extends TSchema>(
 			query: string,
 			parameters: readonly SqliteValue[],
 			resultSchema: TResultSchema,
 		): Static<TResultSchema>[] {
 			assertSelectStatement(query);
+			refreshTemporaryProjections(sqlite, definitions);
 			sqlite.run('PRAGMA query_only = ON');
 			try {
 				const rows = sqlite.all<SqliteRow>(query, parameters);
@@ -217,49 +225,75 @@ export type CanonicalRecords<
 	TTables extends TableLensDefinitions = TableLensDefinitions,
 > = ReturnType<typeof createCanonicalRecords<TTables>>;
 
-function admitCommand(
-	admit: (command: RecordCommand) => void,
-	command: RecordCommand,
-): void {
-	admit(structuredClone(command));
+function expectConforming<TResult>(
+	result: Result<TResult, RecordLensError>,
+): TResult {
+	if (result.error !== null) throw new Error(result.error.message);
+	return result.data;
 }
 
-function assertAdmissibleCanonicalRow(
-	table: string,
-	rowId: string,
-	value: JsonObject,
-): void {
-	if (!isAdmissibleCanonicalRow({ table, rowId, value })) {
-		throw new RangeError('Canonical row exceeds portable row-sync limits');
+function assertDefinitions(definitions: TableLensDefinitions): void {
+	if (!isPlainObject(definitions)) {
+		throw new TypeError('Table lenses must be a plain object');
+	}
+	const sqliteNames = new Set<string>();
+	for (const [name, definition] of Object.entries(definitions)) {
+		assertSqlName(name, 'table name');
+		const sqliteName = name.toLowerCase();
+		if (sqliteNames.has(sqliteName)) {
+			throw new Error(`Table '${name}' collides with another table in SQLite`);
+		}
+		sqliteNames.add(sqliteName);
+		compileTableLens(definition);
 	}
 }
 
-function initializeCanonicalStore(sqlite: RecordSyncSqlite): void {
-	sqlite.run(`
-		CREATE TABLE IF NOT EXISTS "${RECORDS_TABLE}" (
-			"table_key" TEXT NOT NULL,
-			"row_id" TEXT NOT NULL,
-			"payload" TEXT NOT NULL CHECK(json_valid("payload") AND json_type("payload") = 'object'),
-			PRIMARY KEY ("table_key", "row_id")
-		) WITHOUT ROWID, STRICT
-	`);
+function projectionTableName(table: string): string {
+	return `__epicenter_projection_${table}`;
 }
 
 function installTemporaryViews(
-	sqlite: RecordSyncSqlite,
+	sqlite: RowSyncSqlite,
 	definitions: TableLensDefinitions,
 ): void {
 	for (const [tableName, definition] of Object.entries(definitions)) {
-		const lens = compileTableLens(definition);
+		const projection = projectionTableName(tableName);
 		sqlite.run(`DROP VIEW IF EXISTS temp.${quoteIdentifier(tableName)}`);
+		sqlite.run(
+			`CREATE TEMP TABLE IF NOT EXISTS ${quoteIdentifier(projection)} (
+				row_id TEXT PRIMARY KEY,
+				fields_json TEXT NOT NULL CHECK(json_valid(fields_json))
+			) WITHOUT ROWID, STRICT`,
+		);
+		const lens = compileTableLens(definition);
 		const columns = [
 			'"row_id" AS "id"',
 			...[...lens.fields.values()].map(projectedSqlColumn),
 		];
 		sqlite.run(
-			`CREATE TEMP VIEW ${quoteIdentifier(tableName)} AS SELECT ${columns.join(', ')} FROM "${RECORDS_TABLE}" WHERE "table_key" = ${quoteSqlLiteral(tableName)}`,
+			`CREATE TEMP VIEW ${quoteIdentifier(tableName)} AS
+			 SELECT ${columns.join(', ')} FROM ${quoteIdentifier(projection)}`,
 		);
 	}
+}
+
+function refreshTemporaryProjections(
+	sqlite: RowSyncSqlite,
+	definitions: TableLensDefinitions,
+): void {
+	sqlite.transaction(() => {
+		for (const tableName of Object.keys(definitions)) {
+			const projection = projectionTableName(tableName);
+			sqlite.run(`DELETE FROM temp.${quoteIdentifier(projection)}`);
+			for (const row of listCurrentRows(sqlite, tableName)) {
+				sqlite.run(
+					`INSERT INTO temp.${quoteIdentifier(projection)}(row_id, fields_json)
+					 VALUES (?, ?)`,
+					[row.rowId, JSON.stringify(row.fields)],
+				);
+			}
+		}
+	});
 }
 
 function projectedSqlColumn(field: {
@@ -268,7 +302,7 @@ function projectedSqlColumn(field: {
 }): string {
 	const path = quoteSqlLiteral(`$.${field.name}`);
 	const jsonTypes = sqlJsonTypes(field.kind).map(quoteSqlLiteral).join(', ');
-	return `CASE WHEN json_type("payload", ${path}) IN (${jsonTypes}) THEN json_extract("payload", ${path}) ELSE NULL END AS ${quoteIdentifier(field.name)}`;
+	return `CASE WHEN json_type("fields_json", ${path}) IN (${jsonTypes}) THEN json_extract("fields_json", ${path}) ELSE NULL END AS ${quoteIdentifier(field.name)}`;
 }
 
 function sqlJsonTypes(
@@ -305,57 +339,6 @@ function sqlJsonTypes(
 			];
 		default:
 			return kind satisfies never;
-	}
-}
-
-function readCanonical(
-	sqlite: RecordSyncSqlite,
-	table: string,
-	id: string,
-): JsonObject | null {
-	const [stored] = sqlite.all<{ payload: string }>(
-		`SELECT "payload" FROM "${RECORDS_TABLE}" WHERE "table_key" = ? AND "row_id" = ?`,
-		[table, id],
-	);
-	return stored ? parseCanonicalPayload(stored.payload) : null;
-}
-
-function parseCanonicalPayload(payload: string): JsonObject {
-	const parsed: unknown = JSON.parse(payload);
-	if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-		throw new Error('Canonical record payload is not a JSON object');
-	}
-	return parsed as JsonObject;
-}
-
-function expectConforming<TResult>(
-	result: Result<TResult, RecordLensError>,
-): TResult {
-	if (result.error !== null) throw new Error(result.error.message);
-	return result.data;
-}
-
-function assertDefinitions(definitions: TableLensDefinitions): void {
-	if (!isPlainObject(definitions)) {
-		throw new TypeError('Table lenses must be a plain object');
-	}
-	const sqliteNames = new Set<string>();
-	for (const [name, definition] of Object.entries(definitions)) {
-		assertSqlName(name, 'table name');
-		const sqliteName = name.toLowerCase();
-		if (sqliteNames.has(sqliteName)) {
-			throw new Error(`Table '${name}' collides with another table in SQLite`);
-		}
-		sqliteNames.add(sqliteName);
-		compileTableLens(definition);
-	}
-}
-
-function assertScanLimit(limit: number): void {
-	if (!Number.isInteger(limit) || limit < 1 || limit > MAX_SCAN_LIMIT) {
-		throw new RangeError(
-			`scan limit must be an integer from 1 through ${MAX_SCAN_LIMIT}`,
-		);
 	}
 }
 

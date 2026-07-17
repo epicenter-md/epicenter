@@ -1,41 +1,43 @@
 /**
- * Bun Record Backend Tests
+ * Bun Row Backend Tests
  *
- * Verifies wire-v5 sealed-round sync over persistent Bun SQLite authorities.
+ * Verifies RowIntent sync over persistent, partitioned Bun SQLite authorities.
  *
  * Key behaviors:
- * - accepted state survives reopen and partitions remain isolated
- * - accepted sealed rounds trigger production snapshot compaction
- * - snapshot publication failures never change an accepted sync response
+ * - enrollment and accepted sealed rounds survive reopen
+ * - exact retries are idempotent and unknown replicas are refused
+ * - compaction moves stale replicas to paged baseline acquisition
  */
 
 import { expect, test } from 'bun:test';
-import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { asPrincipalId } from '@epicenter/identity';
 import {
-	recordRoundDigest,
-	RECORD_SYNC_ADMISSION_LIMITS,
-	RECORD_SYNC_PROTOCOL_MAJOR,
-	type RecordCommand,
+	decodeBase64,
+	encodeBase64,
+	ROW_SYNC_ADMISSION_LIMITS,
+	ROW_SYNC_PROTOCOL_MAJOR,
+	rowRoundDigest,
 	type SyncResponse,
 	type SyncToken,
+	type WireRowIntent,
 } from '@epicenter/row-sync';
+import * as Y from '@y/y';
 import { createBunRecords } from './bun.js';
 import type { Records, RecordsPartition } from './contracts.js';
 
-const sha256 = async (value: string) =>
-	createHash('sha256').update(value).digest('hex');
 const partition: RecordsPartition = {
 	principalId: asPrincipalId('alice'),
 	workspaceId: 'wiki',
 };
 
-function setup(hash = sha256) {
-	const dir = mkdtempSync(join(tmpdir(), 'epicenter-records-'));
-	const opened = createBunRecords({ dir, sha256: hash });
+const rid = (value: number) => value.toString(36).padStart(24, '0');
+
+function setup() {
+	const dir = mkdtempSync(join(tmpdir(), 'epicenter-rows-'));
+	const opened = createBunRecords({ dir });
 	return {
 		dir,
 		...opened,
@@ -46,37 +48,43 @@ function setup(hash = sha256) {
 	};
 }
 
-function token(
-	replicaId: string,
-	acceptedRound = 0,
-	checkpoint = 0,
-): SyncToken {
-	return { replicaId, acceptedRound, checkpoint };
-}
-
 function expectPage(
 	response: SyncResponse,
-): Extract<SyncResponse, { ok: true; snapshotRequired: false }> {
-	if (!response.ok || response.snapshotRequired) {
-		throw new Error(`Expected an incremental page: ${JSON.stringify(response)}`);
+): Extract<SyncResponse, { ok: true; result: 'page' }> {
+	if (!response.ok || response.result !== 'page') {
+		throw new Error(`Expected a sync page: ${JSON.stringify(response)}`);
 	}
 	return response;
+}
+
+async function enroll(
+	records: Records,
+	target: RecordsPartition,
+): Promise<SyncToken> {
+	const response = await records.enroll(target, {
+		protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+		kind: 'enroll',
+	});
+	if (!response.ok) throw new Error(`Enrollment failed: ${response.reason}`);
+	return { replicaId: response.replicaId, acceptedRound: 0, checkpoint: 0 };
 }
 
 async function syncRound(
 	records: Records,
 	target: RecordsPartition,
-	tokenValue: SyncToken,
-	commands: RecordCommand[],
+	token: SyncToken,
+	intents: WireRowIntent[],
+	submission: number,
 ) {
 	return records.sync(target, {
-		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+		protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
 		kind: 'sync',
-		token: tokenValue,
+		token,
 		sealedRound: {
-			round: tokenValue.acceptedRound + 1,
-			requestDigest: recordRoundDigest(commands),
-			commands,
+			round: token.acceptedRound + 1,
+			requestDigest: rowRoundDigest(intents),
+			submission,
+			intents,
 		},
 	});
 }
@@ -84,174 +92,242 @@ async function syncRound(
 async function createRows(
 	records: Records,
 	target: RecordsPartition,
-	replicaId: string,
 	rowIds: string[],
+	firstDocumentUpdate?: string,
 ): Promise<SyncToken> {
-	let nextToken = token(replicaId);
+	let token = await enroll(records, target);
+	let submission = 0;
 	for (
 		let offset = 0;
 		offset < rowIds.length;
-		offset += RECORD_SYNC_ADMISSION_LIMITS.commandsPerRound
+		offset += ROW_SYNC_ADMISSION_LIMITS.intentsPerRound
 	) {
-		const commands = rowIds
-			.slice(offset, offset + RECORD_SYNC_ADMISSION_LIMITS.commandsPerRound)
-			.map(
-				(rowId): RecordCommand => ({
-					kind: 'createRow',
-					table: 'pages',
-					rowId,
-					value: { title: rowId },
-				}),
-			);
-		const page = expectPage(
-			await syncRound(records, target, nextToken, commands),
-		);
-		nextToken = page.token;
+		const intents: WireRowIntent[] = rowIds
+			.slice(offset, offset + ROW_SYNC_ADMISSION_LIMITS.intentsPerRound)
+			.map((rowId, index) => ({
+				kind: 'create',
+				table: 'pages',
+				rowId,
+				fields: { title: rowId },
+				...(offset + index === 0 && firstDocumentUpdate !== undefined
+					? { documentUpdate: firstDocumentUpdate }
+					: {}),
+			}));
+		token = expectPage(
+			await syncRound(records, target, token, intents, (submission += 1)),
+		).token;
 	}
-	return nextToken;
+	return token;
 }
 
-async function readFromStart(records: Records, target: RecordsPartition) {
-	return records.sync(target, {
-		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		kind: 'sync',
-		token: token('reader'),
-		pageLimit: RECORD_SYNC_ADMISSION_LIMITS.stateEntriesPerPage,
-	});
-}
-
-test('current state survives closing and reopening without an open handshake', async () => {
-	const first = setup();
+function documentUpdates(): [initial: string, incremental: string] {
+	const document = new Y.Doc();
 	try {
-		expect(
-			(await createRows(first.records, partition, 'replica-1', ['page-1']))
-				.acceptedRound,
-		).toBe(1);
-		first.close();
+		const text = document.get('content');
+		text.insert(0, 'hello');
+		const initial = Y.encodeStateAsUpdate(document);
+		const stateVector = Y.encodeStateVector(document);
+		text.insert(5, ' world');
+		return [
+			encodeBase64(initial),
+			encodeBase64(Y.encodeStateAsUpdate(document, stateVector)),
+		];
+	} finally {
+		document.destroy();
+	}
+}
 
-		const second = createBunRecords({ dir: first.dir, sha256 });
+test('enrollment and RowIntent state survive closing and reopening', async () => {
+	const context = setup();
+	try {
+		const [initial, incremental] = documentUpdates();
+		let token = await enroll(context.records, partition);
+		token = expectPage(
+			await syncRound(
+				context.records,
+				partition,
+				token,
+				[
+					{
+						kind: 'create',
+						table: 'pages',
+						rowId: rid(1),
+						fields: { title: 'Initial' },
+						documentUpdate: initial,
+					},
+				],
+				1,
+			),
+		).token;
+		token = expectPage(
+			await syncRound(
+				context.records,
+				partition,
+				token,
+				[
+					{
+						kind: 'update',
+						table: 'pages',
+						rowId: rid(1),
+						fields: { set: { title: 'Updated' }, unset: [] },
+						documentUpdate: incremental,
+					},
+				],
+				2,
+			),
+		).token;
+		expect(token.acceptedRound).toBe(2);
+		context.close();
+
+		const reopened = createBunRecords({ dir: context.dir });
 		try {
-			const page = expectPage(await readFromStart(second.records, partition));
-			expect(page.entries).toEqual([
-				expect.objectContaining({
-					kind: 'row',
-					table: 'pages',
-					rowId: 'page-1',
-					value: { title: 'page-1' },
-				}),
-			]);
+			const baseline = await reopened.records.baselineScan(partition, {
+				protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+				kind: 'baselineScan',
+			});
+			expect(baseline.ok).toBe(true);
+			if (!baseline.ok) throw new Error('Expected a baseline page');
+			expect(baseline.rows[0]).toMatchObject({
+				table: 'pages',
+				rowId: rid(1),
+				fields: { title: 'Updated' },
+			});
+			const installed = new Y.Doc();
+			try {
+				for (const update of baseline.rows[0]?.document?.updates ?? []) {
+					Y.applyUpdate(installed, decodeBase64(update));
+				}
+				expect(installed.get('content').toString()).toBe('hello world');
+			} finally {
+				installed.destroy();
+			}
 		} finally {
-			second.close();
+			reopened.close();
 		}
 	} finally {
-		first.cleanup();
+		context.cleanup();
 	}
 });
 
 test('principal and workspace pairs own independent authorities', async () => {
 	const context = setup();
 	try {
-		const bobWiki = {
-			principalId: asPrincipalId('bob'),
-			workspaceId: 'wiki',
-		};
-		const aliceNotes = {
-			principalId: asPrincipalId('alice'),
-			workspaceId: 'notes',
-		};
-		await createRows(context.records, partition, 'alice-wiki', ['alice-wiki']);
-		await createRows(context.records, bobWiki, 'bob-wiki', ['bob-wiki']);
-		await createRows(context.records, aliceNotes, 'alice-notes', [
-			'alice-notes',
-		]);
-
-		for (const [target, rowId] of [
-			[partition, 'alice-wiki'],
-			[bobWiki, 'bob-wiki'],
-			[aliceNotes, 'alice-notes'],
-		] as const) {
-			const page = expectPage(await readFromStart(context.records, target));
-			expect(page.entries).toHaveLength(1);
-			expect(page.entries[0]?.rowId).toBe(rowId);
+		const targets = [
+			[partition, rid(1)],
+			[{ principalId: asPrincipalId('bob'), workspaceId: 'wiki' }, rid(2)],
+			[{ principalId: asPrincipalId('alice'), workspaceId: 'notes' }, rid(3)],
+		] as const;
+		for (const [target, rowId] of targets) {
+			await createRows(context.records, target, [rowId]);
+		}
+		for (const [target, rowId] of targets) {
+			const baseline = await context.records.baselineScan(target, {
+				protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+				kind: 'baselineScan',
+			});
+			expect(baseline.ok && baseline.rows.map((row) => row.rowId)).toEqual([
+				rowId,
+			]);
 		}
 	} finally {
 		context.cleanup();
 	}
 });
 
-test('production compaction serves a bounded snapshot to stale checkpoints', async () => {
+test('exact retry is idempotent and an unknown replica is refused', async () => {
 	const context = setup();
 	try {
-		const firstThousand = Array.from(
-			{ length: 1_000 },
-			(_, index) => `page-${index}`,
+		const token = await enroll(context.records, partition);
+		const intents: WireRowIntent[] = [
+			{
+				kind: 'create',
+				table: 'pages',
+				rowId: rid(1),
+				fields: { title: 'Retry once' },
+			},
+		];
+		const accepted = expectPage(
+			await syncRound(context.records, partition, token, intents, 1),
 		);
-		const nextToken = await createRows(
-			context.records,
-			partition,
-			'replica-compact',
-			firstThousand,
-		);
-		expect(
-			expectPage(
-				await syncRound(context.records, partition, nextToken, [
-					{
-						kind: 'createRow',
-						table: 'pages',
-						rowId: 'last',
-						value: { title: 'last' },
-					},
-				]),
-			).token.acceptedRound,
-		).toBe(nextToken.acceptedRound + 1);
-
-		const stale = await readFromStart(context.records, partition);
-		expect(stale.ok && stale.snapshotRequired).toBe(true);
-		if (!stale.ok || !stale.snapshotRequired)
-			throw new Error('Expected snapshot');
-		expect(
-			await context.records.snapshotChunk(partition, {
-				protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-				kind: 'snapshotChunk',
-				generation: stale.manifest.generation,
-				index: 0,
+		const retry = expectPage(
+			await context.records.sync(partition, {
+				protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+				kind: 'sync',
+				token: accepted.token,
+				sealedRound: {
+					round: 1,
+					requestDigest: rowRoundDigest(intents),
+					submission: 2,
+					intents,
+				},
 			}),
-		).toMatchObject({ kind: 'snapshotChunk', ok: true });
+		);
+		expect(retry).toMatchObject({
+			token: { acceptedRound: 1, checkpoint: 1 },
+			outcomes: [],
+			submission: 2,
+		});
+
+		expect(
+			await context.records.sync(partition, {
+				protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+				kind: 'sync',
+				token: {
+					replicaId: 'unknownreplica0000000000',
+					acceptedRound: 0,
+					checkpoint: 0,
+				},
+			}),
+		).toEqual({ kind: 'sync', ok: false, reason: 'unknown-replica' });
 	} finally {
 		context.cleanup();
 	}
 });
 
-test('snapshot publication failure cannot change an accepted sync', async () => {
-	let failSnapshotHash = false;
-	const context = setup(async (value) => {
-		if (failSnapshotHash) throw new Error('injected snapshot hash failure');
-		return sha256(value);
-	});
+test('compaction requires a stale replica to page through a baseline scan', async () => {
+	const context = setup();
 	try {
-		const nextToken = await createRows(
-			context.records,
-			partition,
-			'replica-failed-compaction',
-			Array.from({ length: 1_000 }, (_, index) => `page-${index}`),
-		);
-		failSnapshotHash = true;
-		const accepted = expectPage(
-			await syncRound(context.records, partition, nextToken, [
-				{
-					kind: 'createRow',
-					table: 'pages',
-					rowId: 'last',
-					value: { title: 'last' },
-				},
-			]),
-		);
-		expect(accepted.token.acceptedRound).toBe(nextToken.acceptedRound + 1);
+		const rowIds = Array.from({ length: 1_001 }, (_, index) => rid(index + 1));
+		const [initial] = documentUpdates();
+		const token = await createRows(context.records, partition, rowIds, initial);
+		const stale = await context.records.sync(partition, {
+			protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+			kind: 'sync',
+			token: { ...token, checkpoint: 0 },
+		});
+		expect(stale).toMatchObject({
+			kind: 'sync',
+			ok: true,
+			result: 'baseline-required',
+			retentionFloor: 1,
+		});
 
-		const stale = expectPage(await readFromStart(context.records, partition));
-		expect(stale.entries).toHaveLength(
-			RECORD_SYNC_ADMISSION_LIMITS.stateEntriesPerPage,
-		);
+		const first = await context.records.baselineScan(partition, {
+			protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+			kind: 'baselineScan',
+			pageLimit: 1,
+		});
+		if (!first.ok) throw new Error('Expected the first baseline page');
+		expect(first).toMatchObject({ hasMore: true, retentionFloor: 1 });
+		expect(first.rows.map((row) => row.rowId)).toEqual([rid(1)]);
+		expect(first.rows[0]?.document).toMatchObject({ updates: [] });
+		const compacted = new Y.Doc();
+		try {
+			const baseline = first.rows[0]?.document?.baseline;
+			if (!baseline) throw new Error('Expected a compacted document baseline');
+			Y.applyUpdate(compacted, decodeBase64(baseline));
+			expect(compacted.get('content').toString()).toBe('hello');
+		} finally {
+			compacted.destroy();
+		}
+
+		const second = await context.records.baselineScan(partition, {
+			protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+			kind: 'baselineScan',
+			after: { table: 'pages', rowId: rid(1) },
+			pageLimit: 1,
+		});
+		expect(second.ok && second.rows.map((row) => row.rowId)).toEqual([rid(2)]);
 	} finally {
 		context.cleanup();
 	}

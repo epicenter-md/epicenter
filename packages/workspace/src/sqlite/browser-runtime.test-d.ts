@@ -1,16 +1,5 @@
-/**
- * Browser runtime public capability type tests.
- *
- * The Browser binding exposes the same workspace handle as other runtimes,
- * while synchronization, room identity, Worker ownership, and OPFS paths stay
- * private runtime concerns.
- */
 import { field } from '@epicenter/field';
-import {
-	type BrowserWorkspaceRuntime,
-	createBrowserWorkspaceRuntime,
-} from './browser-runtime.js';
-import { document } from './document-definition.js';
+import type { createBrowserWorkspaceRuntime } from './browser-runtime.js';
 import { defineTable } from './lens-definition.js';
 import { defineWorkspace } from './runtime-definition.js';
 
@@ -19,33 +8,17 @@ const definition = defineWorkspace({
 	tables: {
 		notes: defineTable({ fields: { title: field.string() } }),
 	},
-	documents: {
-		draft: document.text({ params: { noteId: field.string() } }),
-	},
+	kv: { theme: field.select(['light', 'dark']) },
 });
 
-async function assertBrowserRuntimeCapabilities(
-	runtime: BrowserWorkspaceRuntime,
-): Promise<void> {
-	const workspace = await runtime.open(definition);
-	const note = await workspace.tables.notes.create({ title: 'Typed' });
-	const title: string = note.title;
-	void title;
+declare const runtime: ReturnType<typeof createBrowserWorkspaceRuntime>;
+const workspace = await runtime.open(definition);
+const row = await workspace.tables.notes.create({ title: 'typed' });
+await workspace.tables.notes.update(row.id, { title: 'updated' });
+await workspace.tables.notes.document.open(row.id);
+await workspace.kv.set('theme', 'dark');
 
-	using draft = await workspace.documents.draft.open({ noteId: note.id });
-	draft.content.write('typed document');
-
-	// @ts-expect-error Synchronization is automatic and runtime-private.
-	void runtime.synchronize;
-	// @ts-expect-error Synchronization status is not a workspace capability.
-	void workspace.sync;
-	// @ts-expect-error Private room identifiers never enter document handles.
-	void draft.storageRef;
-	// @ts-expect-error Domain calls accept declared params, not runtime guids.
-	void workspace.documents.draft.open({ guid: 'private' });
-	// @ts-expect-error Live OPFS paths are not public capabilities.
-	void workspace.path;
-}
-
-void assertBrowserRuntimeCapabilities;
-void createBrowserWorkspaceRuntime;
+// @ts-expect-error create never accepts a caller-supplied id
+await workspace.tables.notes.create({ id: 'manual', title: 'typed' });
+// @ts-expect-error undeclared fields are rejected
+await workspace.tables.notes.update(row.id, { future: true });

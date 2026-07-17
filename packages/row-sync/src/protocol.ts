@@ -2,17 +2,16 @@ import { type Static, Type } from 'typebox';
 import { Value } from 'typebox/value';
 import {
 	encodedJsonBytes,
-	isAdmissibleCommand,
-	isAdmissibleSnapshotRow,
-	isAdmissibleStateEntry,
+	isAdmissibleIntent,
+	isAdmissibleOutcome,
 	isBoundedIdentifier,
-	RECORD_SYNC_ADMISSION_LIMITS,
+	ROW_SYNC_ADMISSION_LIMITS,
 } from './admission.js';
 
 const CLOSED = { additionalProperties: false } as const;
 
 /** Increment only for an incompatible wire change. */
-export const RECORD_SYNC_PROTOCOL_MAJOR = 5;
+export const ROW_SYNC_PROTOCOL_MAJOR = 5;
 
 const sequence = Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER });
 const positiveSequence = Type.Integer({
@@ -21,7 +20,7 @@ const positiveSequence = Type.Integer({
 });
 const identifier = Type.String({
 	minLength: 1,
-	maxLength: RECORD_SYNC_ADMISSION_LIMITS.identifierBytes,
+	maxLength: ROW_SYNC_ADMISSION_LIMITS.identifierBytes,
 });
 
 export type JsonValue =
@@ -43,49 +42,145 @@ const jsonObjectSchema = Type.Unsafe<JsonObject>(
 	),
 );
 
-const commandSchema = Type.Union([
+const fieldChangesSchema = Type.Object(
+	{
+		set: jsonObjectSchema,
+		unset: Type.Array(identifier, {
+			maxItems: ROW_SYNC_ADMISSION_LIMITS.unsetKeysPerIntent,
+		}),
+	},
+	CLOSED,
+);
+export type FieldChanges = Static<typeof fieldChangesSchema>;
+
+/** One opaque CRDT update payload, base64-encoded on the JSON wire. */
+const documentUpdateSchema = Type.String({ minLength: 1 });
+
+/**
+ * The canonical row mutation on the wire (ADR-0131). The same semantic
+ * RowIntent accumulates locally, persists in SQLite, freezes inside a sealed
+ * round, crosses the wire, and folds at the authority. `Uint8Array`, SQLite
+ * BLOB, and this base64 form are physical encodings of one type.
+ */
+const intentSchema = Type.Union([
 	Type.Object(
 		{
-			kind: Type.Literal('createRow'),
+			kind: Type.Literal('create'),
 			table: identifier,
 			rowId: identifier,
-			value: jsonObjectSchema,
+			fields: jsonObjectSchema,
+			documentUpdate: Type.Optional(documentUpdateSchema),
 		},
 		CLOSED,
 	),
 	Type.Object(
 		{
-			kind: Type.Literal('patchRow'),
+			kind: Type.Literal('update'),
 			table: identifier,
 			rowId: identifier,
-			set: jsonObjectSchema,
-			unset: Type.Array(identifier, {
-				maxItems: RECORD_SYNC_ADMISSION_LIMITS.unsetKeysPerCommand,
-			}),
+			fields: Type.Optional(fieldChangesSchema),
+			documentUpdate: Type.Optional(documentUpdateSchema),
 		},
 		CLOSED,
 	),
 	Type.Object(
 		{
-			kind: Type.Literal('deleteRow'),
+			kind: Type.Literal('delete'),
 			table: identifier,
 			rowId: identifier,
-		},
-		CLOSED,
-	),
-	Type.Object(
-		{
-			kind: Type.Literal('bodyAppend'),
-			table: identifier,
-			rowId: identifier,
-			/** One opaque CRDT update payload, base64-encoded (ADR-0133). */
-			update: Type.String({ minLength: 1 }),
 		},
 		CLOSED,
 	),
 ]);
 
-export type RecordCommand = Static<typeof commandSchema>;
+export type WireRowIntent = Static<typeof intentSchema>;
+
+/** The semantic RowIntent with its document component as raw bytes. */
+export type RowIntent =
+	| {
+			kind: 'create';
+			table: string;
+			rowId: string;
+			fields: JsonObject;
+			documentUpdate?: Uint8Array;
+	  }
+	| {
+			kind: 'update';
+			table: string;
+			rowId: string;
+			fields?: FieldChanges;
+			documentUpdate?: Uint8Array;
+	  }
+	| { kind: 'delete'; table: string; rowId: string };
+
+export function decodeBase64(value: string): Uint8Array {
+	const binary = atob(value);
+	const bytes = new Uint8Array(binary.length);
+	for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+	return bytes;
+}
+
+export function encodeBase64(bytes: Uint8Array): string {
+	let binary = '';
+	for (const byte of bytes) binary += String.fromCharCode(byte);
+	return btoa(binary);
+}
+
+export function toWireRowIntent(intent: RowIntent): WireRowIntent {
+	if (intent.kind === 'delete') {
+		return { kind: 'delete', table: intent.table, rowId: intent.rowId };
+	}
+	const documentUpdate =
+		intent.documentUpdate === undefined
+			? undefined
+			: encodeBase64(intent.documentUpdate);
+	if (intent.kind === 'create') {
+		return {
+			kind: 'create',
+			table: intent.table,
+			rowId: intent.rowId,
+			fields: structuredClone(intent.fields),
+			...(documentUpdate === undefined ? {} : { documentUpdate }),
+		};
+	}
+	return {
+		kind: 'update',
+		table: intent.table,
+		rowId: intent.rowId,
+		...(intent.fields === undefined
+			? {}
+			: { fields: structuredClone(intent.fields) }),
+		...(documentUpdate === undefined ? {} : { documentUpdate }),
+	};
+}
+
+export function fromWireRowIntent(intent: WireRowIntent): RowIntent {
+	if (intent.kind === 'delete') {
+		return { kind: 'delete', table: intent.table, rowId: intent.rowId };
+	}
+	const documentUpdate =
+		intent.documentUpdate === undefined
+			? undefined
+			: decodeBase64(intent.documentUpdate);
+	if (intent.kind === 'create') {
+		return {
+			kind: 'create',
+			table: intent.table,
+			rowId: intent.rowId,
+			fields: structuredClone(intent.fields),
+			...(documentUpdate === undefined ? {} : { documentUpdate }),
+		};
+	}
+	return {
+		kind: 'update',
+		table: intent.table,
+		rowId: intent.rowId,
+		...(intent.fields === undefined
+			? {}
+			: { fields: structuredClone(intent.fields) }),
+		...(documentUpdate === undefined ? {} : { documentUpdate }),
+	};
+}
 
 /**
  * The replica facts every exchange carries (ADR-0131). The server-minted
@@ -106,9 +201,15 @@ export const SealedRoundSchema = Type.Object(
 	{
 		round: positiveSequence,
 		requestDigest: Type.String({ minLength: 1, maxLength: 128 }),
-		commands: Type.Array(commandSchema, {
+		/**
+		 * Strictly increasing per replica across transmissions (ADR-0131). The
+		 * authority's receipt watermark makes a definitively refused image
+		 * permanently inert, so the round number may be reused after a refusal.
+		 */
+		submission: positiveSequence,
+		intents: Type.Array(intentSchema, {
 			minItems: 1,
-			maxItems: RECORD_SYNC_ADMISSION_LIMITS.commandsPerRound,
+			maxItems: ROW_SYNC_ADMISSION_LIMITS.intentsPerRound,
 		}),
 	},
 	CLOSED,
@@ -120,6 +221,39 @@ const envelopeProperties = { protocolMajor: positiveSequence };
 export const RequestEnvelopeSchema = Type.Object(envelopeProperties, CLOSED);
 export type RequestEnvelope = Static<typeof RequestEnvelopeSchema>;
 
+export const EnrollRequestSchema = Type.Object(
+	{
+		...envelopeProperties,
+		kind: Type.Literal('enroll'),
+	},
+	CLOSED,
+);
+export type EnrollRequest = Static<typeof EnrollRequestSchema>;
+
+export const EnrollResponseSchema = Type.Union([
+	Type.Object(
+		{
+			kind: Type.Literal('enroll'),
+			ok: Type.Literal(true),
+			replicaId: identifier,
+		},
+		CLOSED,
+	),
+	Type.Object(
+		{
+			kind: Type.Literal('enroll'),
+			ok: Type.Literal(false),
+			reason: Type.Union([
+				Type.Literal('protocol-mismatch'),
+				/** Deployment capacity admission stops enrollment (ADR-0137). */
+				Type.Literal('enrollment-refused'),
+			]),
+		},
+		CLOSED,
+	),
+]);
+export type EnrollResponse = Static<typeof EnrollResponseSchema>;
+
 export const SyncRequestSchema = Type.Object(
 	{
 		...envelopeProperties,
@@ -129,7 +263,7 @@ export const SyncRequestSchema = Type.Object(
 		pageLimit: Type.Optional(
 			Type.Integer({
 				minimum: 1,
-				maximum: RECORD_SYNC_ADMISSION_LIMITS.stateEntriesPerPage,
+				maximum: ROW_SYNC_ADMISSION_LIMITS.outcomesPerPage,
 			}),
 		),
 	},
@@ -137,70 +271,53 @@ export const SyncRequestSchema = Type.Object(
 );
 export type SyncRequest = Static<typeof SyncRequestSchema>;
 
-const rowStateSchema = Type.Object(
+/**
+ * One composite confirmed outcome per applied RowIntent (ADR-0133): the
+ * complete field postimage when fields changed, the opaque document update
+ * when the document changed, or both at one authority sequence. Delete is a
+ * separate outcome. These are installation facts, never replayed authorship.
+ */
+const rowOutcomeSchema = Type.Object(
 	{
 		kind: Type.Literal('row'),
 		table: identifier,
 		rowId: identifier,
-		value: jsonObjectSchema,
-		lastServerSequence: positiveSequence,
+		fields: Type.Optional(jsonObjectSchema),
+		documentUpdate: Type.Optional(documentUpdateSchema),
+		sequence: positiveSequence,
 	},
 	CLOSED,
 );
-const deletionStateSchema = Type.Object(
+const deletionOutcomeSchema = Type.Object(
 	{
 		kind: Type.Literal('deletion'),
 		table: identifier,
 		rowId: identifier,
-		lastServerSequence: positiveSequence,
+		sequence: positiveSequence,
 	},
 	CLOSED,
 );
-const bodyUpdateStateSchema = Type.Object(
-	{
-		kind: Type.Literal('bodyUpdate'),
-		table: identifier,
-		rowId: identifier,
-		update: Type.String({ minLength: 1 }),
-		lastServerSequence: positiveSequence,
-	},
-	CLOSED,
-);
-export const StateEntrySchema = Type.Union([
-	rowStateSchema,
-	deletionStateSchema,
-	bodyUpdateStateSchema,
+export const RowOutcomeSchema = Type.Union([
+	rowOutcomeSchema,
+	deletionOutcomeSchema,
 ]);
-export type StateEntry = Static<typeof StateEntrySchema>;
-
-const snapshotManifestSchema = Type.Object(
-	{
-		generation: positiveSequence,
-		head: sequence,
-		chunkChecksums: Type.Array(Type.String({ minLength: 1 }), {
-			minItems: 1,
-		}),
-		checksum: Type.String({ minLength: 1 }),
-	},
-	CLOSED,
-);
-export type SnapshotManifest = Static<typeof snapshotManifestSchema>;
-export type SnapshotManifestBody = Omit<SnapshotManifest, 'checksum'>;
-
-const requestRefusalSchema = Type.Literal('protocol-mismatch');
-export type RequestRefusal = Static<typeof requestRefusalSchema>;
+export type RowOutcome = Static<typeof RowOutcomeSchema>;
 
 export const SyncResponseSchema = Type.Union([
 	Type.Object(
 		{
 			kind: Type.Literal('sync'),
 			ok: Type.Literal(true),
-			snapshotRequired: Type.Literal(false),
+			result: Type.Literal('page'),
 			token: SyncTokenSchema,
-			entries: Type.Array(StateEntrySchema, {
-				maxItems: RECORD_SYNC_ADMISSION_LIMITS.stateEntriesPerPage,
+			outcomes: Type.Array(RowOutcomeSchema, {
+				maxItems: ROW_SYNC_ADMISSION_LIMITS.outcomesPerPage,
 			}),
 			hasMore: Type.Boolean(),
+			/** Every page reports the floor so acquisition can detect races. */
+			retentionFloor: sequence,
+			/** Echoes the sealed round's submission when one was evaluated. */
+			submission: Type.Optional(positiveSequence),
 		},
 		CLOSED,
 	),
@@ -208,10 +325,11 @@ export const SyncResponseSchema = Type.Union([
 		{
 			kind: Type.Literal('sync'),
 			ok: Type.Literal(true),
-			snapshotRequired: Type.Literal(true),
+			result: Type.Literal('baseline-required'),
 			/** The round (if any) was already folded; store after install. */
-			resumeToken: SyncTokenSchema,
-			manifest: snapshotManifestSchema,
+			token: SyncTokenSchema,
+			retentionFloor: sequence,
+			submission: Type.Optional(positiveSequence),
 		},
 		CLOSED,
 	),
@@ -220,7 +338,9 @@ export const SyncResponseSchema = Type.Union([
 			kind: Type.Literal('sync'),
 			ok: Type.Literal(false),
 			reason: Type.Union([
-				requestRefusalSchema,
+				Type.Literal('protocol-mismatch'),
+				/** Ordinary sync never creates state for an unseen replica id. */
+				Type.Literal('unknown-replica'),
 				/**
 				 * Terminal: a digest mismatch on the accepted round, or a round
 				 * number that is neither the accepted round nor its successor
@@ -228,90 +348,128 @@ export const SyncResponseSchema = Type.Union([
 				 */
 				Type.Literal('replica-fork'),
 			]),
+			/** Echoed on post-watermark verdicts for a sealed round. */
+			submission: Type.Optional(positiveSequence),
+		},
+		CLOSED,
+	),
+	Type.Object(
+		{
+			kind: Type.Literal('sync'),
+			ok: Type.Literal(false),
+			/** Retryable: this transmission is inert; jump past the watermark. */
+			reason: Type.Literal('stale-submission'),
+			submission: positiveSequence,
+			watermark: positiveSequence,
+		},
+		CLOSED,
+	),
+	Type.Object(
+		{
+			kind: Type.Literal('sync'),
+			ok: Type.Literal(false),
+			/**
+			 * Definitive deployment capacity refusal (ADR-0137). Authoritative
+			 * only when `submission` equals the greatest submission the client
+			 * has issued for the in-flight image; older refusals are superseded.
+			 */
+			reason: Type.Literal('capacity-refused'),
+			submission: positiveSequence,
 		},
 		CLOSED,
 	),
 ]);
 export type SyncResponse = Static<typeof SyncResponseSchema>;
 
-export type SnapshotRow = {
-	table: string;
-	rowId: string;
-	value: JsonObject;
-	lastServerSequence: number;
-};
-
-const snapshotRowSchema = Type.Object(
-	{
-		table: identifier,
-		rowId: identifier,
-		value: jsonObjectSchema,
-		lastServerSequence: positiveSequence,
-	},
-	CLOSED,
-);
-
-const snapshotBodyUpdateSchema = Type.Object(
-	{
-		table: identifier,
-		rowId: identifier,
-		update: Type.String({ minLength: 1 }),
-		lastServerSequence: positiveSequence,
-	},
-	CLOSED,
-);
-export type SnapshotBodyUpdate = Static<typeof snapshotBodyUpdateSchema>;
-
-export const SnapshotChunkSchema = Type.Object(
-	{
-		generation: positiveSequence,
-		index: sequence,
-		rows: Type.Array(snapshotRowSchema),
-		bodies: Type.Array(snapshotBodyUpdateSchema),
-		checksum: Type.String({ minLength: 1 }),
-	},
-	CLOSED,
-);
-export type SnapshotChunk = Static<typeof SnapshotChunkSchema>;
-
-export const SnapshotChunkRequestSchema = Type.Object(
+/**
+ * Stateless baseline-acquisition scan (ADR-0136): complete live rows in
+ * stable address order, each carrying its full document composite (compacted
+ * baseline plus retained tail). Pages are disposable; the authority stores no
+ * scan session, snapshot, or floor pin.
+ */
+export const BaselineScanRequestSchema = Type.Object(
 	{
 		...envelopeProperties,
-		kind: Type.Literal('snapshotChunk'),
-		generation: positiveSequence,
-		index: sequence,
+		kind: Type.Literal('baselineScan'),
+		after: Type.Optional(
+			Type.Object({ table: identifier, rowId: identifier }, CLOSED),
+		),
+		pageLimit: Type.Optional(
+			Type.Integer({
+				minimum: 1,
+				maximum: ROW_SYNC_ADMISSION_LIMITS.baselineRowsPerPage,
+			}),
+		),
 	},
 	CLOSED,
 );
-export type SnapshotChunkRequest = Static<typeof SnapshotChunkRequestSchema>;
+export type BaselineScanRequest = Static<typeof BaselineScanRequestSchema>;
 
-export const SnapshotChunkResponseSchema = Type.Union([
+const baselineRowSchema = Type.Object(
+	{
+		table: identifier,
+		rowId: identifier,
+		fields: jsonObjectSchema,
+		document: Type.Optional(
+			Type.Object(
+				{
+					baseline: Type.Optional(documentUpdateSchema),
+					updates: Type.Array(documentUpdateSchema),
+				},
+				CLOSED,
+			),
+		),
+	},
+	CLOSED,
+);
+export type BaselineRow = Static<typeof baselineRowSchema>;
+
+export const BaselineScanResponseSchema = Type.Union([
 	Type.Object(
 		{
-			kind: Type.Literal('snapshotChunk'),
+			kind: Type.Literal('baselineScan'),
 			ok: Type.Literal(true),
-			chunk: SnapshotChunkSchema,
+			rows: Type.Array(baselineRowSchema, {
+				maxItems: ROW_SYNC_ADMISSION_LIMITS.baselineRowsPerPage,
+			}),
+			/** The authority head observed with this page. */
+			head: sequence,
+			retentionFloor: sequence,
+			hasMore: Type.Boolean(),
 		},
 		CLOSED,
 	),
 	Type.Object(
 		{
-			kind: Type.Literal('snapshotChunk'),
+			kind: Type.Literal('baselineScan'),
 			ok: Type.Literal(false),
-			reason: Type.Union([
-				requestRefusalSchema,
-				Type.Literal('snapshot-replaced'),
-				Type.Literal('chunk-out-of-range'),
-			]),
+			reason: Type.Literal('protocol-mismatch'),
 		},
 		CLOSED,
 	),
 ]);
-export type SnapshotChunkResponse = Static<typeof SnapshotChunkResponseSchema>;
+export type BaselineScanResponse = Static<typeof BaselineScanResponseSchema>;
 
-export function parseRecordCommand(value: unknown): RecordCommand {
-	if (!Value.Check(commandSchema, value) || !isAdmissibleCommand(value)) {
-		throw new TypeError('Invalid record command');
+export function parseRowIntent(value: unknown): WireRowIntent {
+	if (!Value.Check(intentSchema, value) || !isAdmissibleIntent(value)) {
+		throw new TypeError('Invalid row intent');
+	}
+	return structuredClone(value);
+}
+
+export function parseEnrollRequest(value: unknown): EnrollRequest {
+	if (!Value.Check(EnrollRequestSchema, value)) {
+		throw new TypeError('Invalid row-sync enroll request');
+	}
+	return structuredClone(value);
+}
+
+export function parseEnrollResponse(value: unknown): EnrollResponse {
+	if (
+		!Value.Check(EnrollResponseSchema, value) ||
+		(value.ok && !isBoundedIdentifier(value.replicaId))
+	) {
+		throw new TypeError('Invalid row-sync enroll response');
 	}
 	return structuredClone(value);
 }
@@ -321,10 +479,10 @@ export function parseSyncRequest(value: unknown): SyncRequest {
 		!Value.Check(SyncRequestSchema, value) ||
 		!isBoundedIdentifier(value.token.replicaId) ||
 		(value.sealedRound !== undefined &&
-			!value.sealedRound.commands.every(isAdmissibleCommand)) ||
-		encodedJsonBytes(value) > RECORD_SYNC_ADMISSION_LIMITS.encodedRoundBytes
+			!value.sealedRound.intents.every(isAdmissibleIntent)) ||
+		encodedJsonBytes(value) > ROW_SYNC_ADMISSION_LIMITS.encodedRoundBytes
 	) {
-		throw new TypeError('Invalid record sync request');
+		throw new TypeError('Invalid row sync request');
 	}
 	return structuredClone(value);
 }
@@ -332,51 +490,52 @@ export function parseSyncRequest(value: unknown): SyncRequest {
 export function parseSyncResponse(value: unknown): SyncResponse {
 	if (
 		!Value.Check(SyncResponseSchema, value) ||
-		encodedJsonBytes(value) > RECORD_SYNC_ADMISSION_LIMITS.encodedPageBytes ||
+		encodedJsonBytes(value) > ROW_SYNC_ADMISSION_LIMITS.encodedPageBytes ||
 		(value.ok &&
-			!value.snapshotRequired &&
-			!value.entries.every(isAdmissibleStateEntry))
+			value.result === 'page' &&
+			!value.outcomes.every(isAdmissibleOutcome))
 	) {
-		throw new TypeError('Invalid record sync response');
+		throw new TypeError('Invalid row sync response');
 	}
 	return structuredClone(value);
 }
 
-export function parseSnapshotChunkRequest(
-	value: unknown,
-): SnapshotChunkRequest {
-	if (!Value.Check(SnapshotChunkRequestSchema, value)) {
-		throw new TypeError('Invalid snapshot chunk request');
-	}
-	return structuredClone(value);
-}
-
-export function parseSnapshotChunk(value: unknown): SnapshotChunk {
+export function parseBaselineScanRequest(value: unknown): BaselineScanRequest {
 	if (
-		!Value.Check(SnapshotChunkSchema, value) ||
-		!value.rows.every(isAdmissibleSnapshotRow) ||
-		encodedJsonBytes(value) >
-			RECORD_SYNC_ADMISSION_LIMITS.encodedSnapshotChunkBytes
+		!Value.Check(BaselineScanRequestSchema, value) ||
+		(value.after !== undefined &&
+			(!isBoundedIdentifier(value.after.table) ||
+				!isBoundedIdentifier(value.after.rowId)))
 	) {
-		throw new TypeError('Invalid snapshot chunk');
+		throw new TypeError('Invalid baseline scan request');
 	}
 	return structuredClone(value);
 }
 
-export function parseSnapshotChunkResponse(
+export function parseBaselineScanResponse(
 	value: unknown,
-): SnapshotChunkResponse {
-	if (!Value.Check(SnapshotChunkResponseSchema, value)) {
-		throw new TypeError('Invalid snapshot chunk response');
+): BaselineScanResponse {
+	if (
+		!Value.Check(BaselineScanResponseSchema, value) ||
+		encodedJsonBytes(value) > ROW_SYNC_ADMISSION_LIMITS.encodedPageBytes ||
+		(value.ok &&
+			!value.rows.every(
+				(row) =>
+					isBoundedIdentifier(row.table) && isBoundedIdentifier(row.rowId),
+			))
+	) {
+		throw new TypeError('Invalid baseline scan response');
 	}
-	if (value.ok) parseSnapshotChunk(value.chunk);
 	return structuredClone(value);
 }
+
+const requestRefusalSchema = Type.Literal('protocol-mismatch');
+export type RequestRefusal = Static<typeof requestRefusalSchema>;
 
 export function requestRefusal(
 	request: RequestEnvelope,
 ): RequestRefusal | undefined {
-	return request.protocolMajor === RECORD_SYNC_PROTOCOL_MAJOR
+	return request.protocolMajor === ROW_SYNC_PROTOCOL_MAJOR
 		? undefined
 		: 'protocol-mismatch';
 }

@@ -4,7 +4,7 @@
 declare namespace Cloudflare {
 	interface GlobalProps {
 		mainModule: typeof import('./worker/index');
-		durableNamespaces: 'Room' | 'AttachRelay' | 'RecordAuthorityDurableObject';
+		durableNamespaces: 'Room' | 'AttachRelay' | 'RowAuthorityDurableObject';
 	}
 	interface Env {
 		HYPERDRIVE: Hyperdrive;
@@ -25,7 +25,7 @@ declare namespace Cloudflare {
 		ROOM: DurableObjectNamespace<import('./worker/index').Room>;
 		ATTACH_RELAY: DurableObjectNamespace<import('./worker/index').AttachRelay>;
 		RECORDS: DurableObjectNamespace<
-			import('./worker/index').RecordAuthorityDurableObject
+			import('./worker/index').RowAuthorityDurableObject
 		>;
 	}
 }

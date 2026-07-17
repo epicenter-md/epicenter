@@ -1,32 +1,40 @@
-/**
- * Canonical Replica Type Tests
- *
- * Locks the owner-only synchronization boundary. Applications cannot select
- * actor identity, issue protocol operations, inspect retired recovery state,
- * or access replica SQLite.
- */
+import type { RowSyncSqlite } from '@epicenter/row-sync';
+import { createCanonicalReplica } from './canonical-replica.js';
 
-import type { CanonicalReplica } from './canonical-replica.js';
-
-declare const replica: CanonicalReplica;
+declare const sqlite: RowSyncSqlite;
+const replica = createCanonicalReplica({
+	sqlite,
+	transport: {
+		async enroll() {
+			return {};
+		},
+		async sync() {
+			return {};
+		},
+		async baselineScan() {
+			return {};
+		},
+	},
+	codec: { mergeUpdates: (parts) => parts[0] ?? new Uint8Array() },
+});
 
 replica.admit({
-	kind: 'patchRow',
-	table: 'skills',
-	rowId: 'skill-id',
-	set: { title: 'Updated' },
-	unset: [],
+	kind: 'create',
+	table: 'notes',
+	rowId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+	fields: { title: 'typed' },
 });
-void replica.synchronize();
-void replica.status();
 
-// @ts-expect-error: actor identity belongs to the physical replica file.
-void replica.actorId;
-// @ts-expect-error: raw protocol push is not a replica capability.
-void replica.push;
-// @ts-expect-error: raw protocol pull is not a replica capability.
-void replica.pull;
-// @ts-expect-error: quarantine inspection was removed with command refusal.
-void replica.inspectQuarantine;
-// @ts-expect-error: the private SQLite owner is not returned.
-void replica.sqlite;
+// @ts-expect-error create intents require complete fields
+replica.admit({
+	kind: 'create',
+	table: 'notes',
+	rowId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+});
+replica.admit({
+	kind: 'delete',
+	table: 'notes',
+	rowId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+	// @ts-expect-error delete intents cannot carry fields
+	fields: { set: {}, unset: [] },
+});

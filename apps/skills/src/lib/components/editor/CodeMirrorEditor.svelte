@@ -17,17 +17,18 @@
 		keymap,
 		placeholder,
 	} from '@codemirror/view';
-	import type { DocumentText } from '@epicenter/workspace/sqlite';
+	import type { RowDocument } from '@epicenter/workspace/sqlite';
 
-	let { content }: { content: DocumentText } = $props();
+	let { document }: { document: RowDocument } = $props();
 	let container: HTMLDivElement | undefined = $state();
 
 	$effect(() => {
 		if (!container) return;
+		const content = document.get('content');
 		let applyingDocumentUpdate = false;
 		const view = new EditorView({
 			state: EditorState.create({
-				doc: content.read(),
+				doc: content.toString(),
 				extensions: [
 					history(),
 					keymap.of([...historyKeymap, ...defaultKeymap, indentWithTab]),
@@ -37,7 +38,11 @@
 					markdown(),
 					EditorView.updateListener.of((update) => {
 						if (update.docChanged && !applyingDocumentUpdate) {
-							content.write(update.state.doc.toString());
+							const next = update.state.doc.toString();
+							document.transact(() => {
+								content.delete(0, content.length);
+								content.insert(0, next);
+							});
 						}
 					}),
 					placeholder('Write skill instructions here...'),
@@ -58,8 +63,8 @@
 			}),
 			parent: container,
 		});
-		const unobserve = content.observe(() => {
-			const next = content.read();
+		const onDocumentUpdate = () => {
+			const next = content.toString();
 			if (next === view.state.doc.toString()) return;
 			applyingDocumentUpdate = true;
 			try {
@@ -69,9 +74,10 @@
 			} finally {
 				applyingDocumentUpdate = false;
 			}
-		});
+		};
+		content.observe(onDocumentUpdate);
 		return () => {
-			unobserve();
+			content.unobserve(onDocumentUpdate);
 			view.destroy();
 		};
 	});

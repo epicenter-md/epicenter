@@ -9,6 +9,7 @@ import type {
 	BrowserWorkerInbound,
 	BrowserWorkspaceManifest,
 } from './browser-runtime-protocol.js';
+import { mergeDocumentUpdates } from './canonical-documents.js';
 import { type CanonicalKv, createCanonicalKv } from './canonical-kv.js';
 import {
 	type CanonicalRecords,
@@ -81,12 +82,14 @@ async function openRecords(
 				const sqlite = createBrowserSqliteAdapter(
 					database as unknown as BrowserSqliteDatabase,
 				);
+				let kv: CanonicalKv<KvDefinitions> | undefined;
 				const replica = manifest.recordSync
 					? createCanonicalReplica({
 							sqlite,
 							transport: createRecordTransport(manifest.workspaceId),
-							sha256,
+							codec: { mergeUpdates: mergeDocumentUpdates },
 							onRemoteCommit() {
+								kv?.notifyExternalChange();
 								scope.postMessage({
 									type: 'records-changed',
 									workspaceId: manifest.workspaceId,
@@ -95,13 +98,11 @@ async function openRecords(
 						})
 					: undefined;
 				const records = createCanonicalRecords(sqlite, definitions, {
-					admit: replica?.admit,
+					admitIntent: replica?.admit,
 				});
-				const kv = createCanonicalKv(
-					sqlite,
-					(manifest.kv ?? {}) as KvDefinitions,
-					{ admit: replica?.admit },
-				);
+				kv = createCanonicalKv(sqlite, (manifest.kv ?? {}) as KvDefinitions, {
+					admitIntent: replica?.admit,
+				});
 				if (replica) {
 					synchronize(replica, manifest.workspaceId);
 					setInterval(
@@ -143,7 +144,7 @@ async function openRecords(
 
 function createRecordTransport(workspaceId: string): CanonicalReplicaTransport {
 	const post = (
-		action: 'sync' | 'snapshot-chunk',
+		action: 'sync' | 'enroll' | 'baseline-scan',
 		body: unknown,
 	): Promise<unknown> => {
 		const id = ++transportId;
@@ -159,19 +160,10 @@ function createRecordTransport(workspaceId: string): CanonicalReplicaTransport {
 		});
 	};
 	return {
+		enroll: (request) => post('enroll', request),
 		sync: (request) => post('sync', request),
-		snapshotChunk: (request) => post('snapshot-chunk', request),
+		baselineScan: (request) => post('baseline-scan', request),
 	};
-}
-
-async function sha256(value: string): Promise<string> {
-	const digest = await crypto.subtle.digest(
-		'SHA-256',
-		new TextEncoder().encode(value),
-	);
-	return [...new Uint8Array(digest)]
-		.map((byte) => byte.toString(16).padStart(2, '0'))
-		.join('');
 }
 
 function synchronize(replica: CanonicalReplica, workspaceId: string): void {
@@ -203,14 +195,14 @@ function execute(state: OpenedRecords, operation: BrowserRecordOperation) {
 		case 'kv-unset':
 			state.kv.unset(operation.key);
 			return undefined;
-		case 'scan':
-			return tableFor(records, operation.table).scan(operation.options);
+		case 'list':
+			return tableFor(records, operation.table).list();
 		case 'create':
 			return tableFor(records, operation.table).create(operation.input);
-		case 'patch':
-			return tableFor(records, operation.table).patch(
+		case 'update':
+			return tableFor(records, operation.table).update(
 				operation.id,
-				operation.patch,
+				operation.changes,
 			);
 		case 'delete':
 			tableFor(records, operation.table).delete(operation.id);
@@ -248,7 +240,7 @@ scope.addEventListener('message', (event) => {
 			scope.postMessage({ type: 'result', id: request.id, value });
 			if (
 				request.operation.kind === 'create' ||
-				request.operation.kind === 'patch' ||
+				request.operation.kind === 'update' ||
 				request.operation.kind === 'delete' ||
 				request.operation.kind === 'kv-set' ||
 				request.operation.kind === 'kv-unset'

@@ -1,7 +1,8 @@
 import {
-	parseSnapshotChunkRequest,
+	parseBaselineScanRequest,
+	parseEnrollRequest,
 	parseSyncRequest,
-	RECORD_SYNC_ADMISSION_LIMITS,
+	ROW_SYNC_ADMISSION_LIMITS,
 } from '@epicenter/row-sync';
 import { type Context, Hono, type MiddlewareHandler } from 'hono';
 import type { Records, RecordsPartition } from '../records/contracts.js';
@@ -56,7 +57,7 @@ function createRecordsApp<E extends Env>(
 		if (
 			workspaceId.length === 0 ||
 			new TextEncoder().encode(workspaceId).byteLength >
-				RECORD_SYNC_ADMISSION_LIMITS.identifierBytes
+				ROW_SYNC_ADMISSION_LIMITS.identifierBytes
 		) {
 			return invalidRequest(c, 'invalid');
 		}
@@ -74,6 +75,18 @@ function createRecordsApp<E extends Env>(
 	}
 
 	return app
+		.post(`${RECORDS_ROUTE}/enroll`, async (c) => {
+			const parsed = await parseJson(c, parseEnrollRequest);
+			if (!parsed.ok) return invalidRequest(c, parsed.reason);
+			try {
+				return c.json(
+					await resolveRecords(c.env).enroll(partition(c), parsed.value),
+				);
+			} catch (cause) {
+				if (cause instanceof TypeError) return invalidRequest(c, 'invalid');
+				throw cause;
+			}
+		})
 		.post(`${RECORDS_ROUTE}/sync`, async (c) => {
 			const parsed = await parseJson(c, parseSyncRequest);
 			if (!parsed.ok) {
@@ -85,20 +98,25 @@ function createRecordsApp<E extends Env>(
 				);
 			} catch (cause) {
 				// The authority throws TypeError for client-authored corruption
-				// (a digest that does not match its commands, a checkpoint ahead
+				// (a digest that does not match its intents, a checkpoint ahead
 				// of the head); those are invalid requests, not server faults.
 				if (cause instanceof TypeError) return invalidRequest(c, 'invalid');
 				throw cause;
 			}
 		})
-		.post(`${RECORDS_ROUTE}/snapshot-chunk`, async (c) => {
-			const parsed = await parseJson(c, parseSnapshotChunkRequest);
+		.post(`${RECORDS_ROUTE}/baseline-scan`, async (c) => {
+			const parsed = await parseJson(c, parseBaselineScanRequest);
 			if (!parsed.ok) {
 				return invalidRequest(c, parsed.reason);
 			}
-			return c.json(
-				await resolveRecords(c.env).snapshotChunk(partition(c), parsed.value),
-			);
+			try {
+				return c.json(
+					await resolveRecords(c.env).baselineScan(partition(c), parsed.value),
+				);
+			} catch (cause) {
+				if (cause instanceof TypeError) return invalidRequest(c, 'invalid');
+				throw cause;
+			}
 		});
 }
 

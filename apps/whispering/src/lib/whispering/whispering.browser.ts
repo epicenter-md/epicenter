@@ -1,12 +1,10 @@
-import { createNodeId } from '@epicenter/workspace';
 import { auth } from '#platform/auth';
 import { openWhisperingApplication } from './whispering.active';
 import { createWhisperingBrowserRuntime } from './whispering.browser-runtime';
 
-const nodeId = createNodeId({ storage: window.localStorage });
 const application = await openWhisperingApplication({
 	createRuntime(onRecordsChanged) {
-		return createWhisperingBrowserRuntime({ auth, nodeId, onRecordsChanged });
+		return createWhisperingBrowserRuntime({ auth, onRecordsChanged });
 	},
 	defaultTranscriptionService: 'OpenAI',
 });

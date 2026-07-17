@@ -1,7 +1,9 @@
 import type { PrincipalId } from '@epicenter/identity';
 import type {
-	SnapshotChunkRequest,
-	SnapshotChunkResponse,
+	BaselineScanRequest,
+	BaselineScanResponse,
+	EnrollRequest,
+	EnrollResponse,
 	SyncRequest,
 	SyncResponse,
 } from '@epicenter/row-sync';
@@ -14,12 +16,16 @@ export type RecordsPartition = {
 
 /** Portable authority backend used by HTTP routes and runtime-specific stores. */
 export type Records = {
+	enroll(
+		partition: RecordsPartition,
+		request: EnrollRequest,
+	): Promise<EnrollResponse>;
 	sync(
 		partition: RecordsPartition,
 		request: SyncRequest,
 	): Promise<SyncResponse>;
-	snapshotChunk(
+	baselineScan(
 		partition: RecordsPartition,
-		request: SnapshotChunkRequest,
-	): Promise<SnapshotChunkResponse>;
+		request: BaselineScanRequest,
+	): Promise<BaselineScanResponse>;
 };

@@ -1,50 +1,72 @@
 /**
- * Record Sync Route Tests
+ * Row Sync Route Tests
  *
- * Verifies that the authenticated HTTP boundary validates wire-v5 requests,
- * derives authority partitions, and exposes only sync and snapshot reads.
+ * Verifies that the authenticated HTTP boundary validates RowIntent requests,
+ * derives authority partitions, and exposes enrollment, sync, and baseline scan.
  *
  * Key behaviors:
- * - sync and snapshot-chunk derive their partition from auth and the path
- * - malformed, oversized, and structurally inexact requests never reach storage
- * - obsolete and unrelated authority lifecycle routes remain absent
+ * - all three routes derive partitions from authentication and workspace paths
+ * - declared and actual bodies are capped at 1 MiB before backend work
+ * - authority TypeErrors become 400 invalid-request responses
  */
 
 import { expect, test } from 'bun:test';
 import { asPrincipalId } from '@epicenter/identity';
 import {
-	recordRoundDigest,
-	RECORD_SYNC_PROTOCOL_MAJOR,
+	type BaselineScanRequest,
+	type EnrollRequest,
+	ROW_SYNC_PROTOCOL_MAJOR,
+	rowRoundDigest,
 	type SyncRequest,
+	type WireRowIntent,
 } from '@epicenter/row-sync';
 import { Hono } from 'hono';
 import type { Records, RecordsPartition } from '../records/contracts.js';
 import type { Env } from '../types.js';
 import { mountRecordsApp } from './records.js';
 
-function setup() {
+function setup({ fail }: { fail?: keyof Records } = {}) {
 	const partitions: RecordsPartition[] = [];
 	const records: Records = {
+		async enroll(partition) {
+			partitions.push(partition);
+			if (fail === 'enroll') throw new TypeError('invalid enrollment');
+			return {
+				kind: 'enroll',
+				ok: true,
+				replicaId: '000000000000000000000001',
+			};
+		},
 		async sync(partition, request) {
 			partitions.push(partition);
+			if (fail === 'sync') throw new TypeError('invalid sync');
 			return {
 				kind: 'sync',
 				ok: true,
-				snapshotRequired: false,
+				result: 'page',
 				token: {
 					...request.token,
-					acceptedRound: request.sealedRound?.round ?? request.token.acceptedRound,
+					acceptedRound:
+						request.sealedRound?.round ?? request.token.acceptedRound,
 				},
-				entries: [],
+				outcomes: [],
 				hasMore: false,
+				retentionFloor: 0,
+				...(request.sealedRound === undefined
+					? {}
+					: { submission: request.sealedRound.submission }),
 			};
 		},
-		async snapshotChunk(partition) {
+		async baselineScan(partition) {
 			partitions.push(partition);
+			if (fail === 'baselineScan') throw new TypeError('invalid baseline scan');
 			return {
-				kind: 'snapshotChunk',
-				ok: false,
-				reason: 'snapshot-replaced',
+				kind: 'baselineScan',
+				ok: true,
+				rows: [],
+				head: 0,
+				retentionFloor: 0,
+				hasMore: false,
 			};
 		},
 	};
@@ -59,86 +81,115 @@ function setup() {
 	return { app, partitions };
 }
 
-const commands = [
+const intents: WireRowIntent[] = [
 	{
-		kind: 'createRow' as const,
+		kind: 'create',
 		table: 'pages',
-		rowId: 'page-1',
-		value: { title: 'Hello' },
+		rowId: '000000000000000000000001',
+		fields: { title: 'Hello' },
 	},
 ];
+const enroll: EnrollRequest = {
+	protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+	kind: 'enroll',
+};
 const sync: SyncRequest = {
-	protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+	protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
 	kind: 'sync',
-	token: { replicaId: 'replica-1', acceptedRound: 0, checkpoint: 0 },
+	token: {
+		replicaId: '000000000000000000000001',
+		acceptedRound: 0,
+		checkpoint: 0,
+	},
 	sealedRound: {
 		round: 1,
-		requestDigest: recordRoundDigest(commands),
-		commands,
+		requestDigest: rowRoundDigest(intents),
+		submission: 1,
+		intents,
 	},
 };
-const snapshotChunk = {
-	protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-	kind: 'snapshotChunk' as const,
-	generation: 1,
-	index: 0,
+const baselineScan: BaselineScanRequest = {
+	protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+	kind: 'baselineScan',
+	pageLimit: 1,
 };
 
-function post(app: Hono<Env>, suffix: string, body: unknown): Promise<Response> {
+function post(
+	app: Hono<Env>,
+	suffix: string,
+	body: unknown,
+	headers?: Record<string, string>,
+): Promise<Response> {
 	return Promise.resolve(
 		app.request(`/api/records/wiki/${suffix}`, {
 			method: 'POST',
-			headers: { 'content-type': 'application/json' },
+			headers: { 'content-type': 'application/json', ...headers },
 			body: JSON.stringify(body),
 		}),
 	);
 }
 
-test('sync and snapshot-chunk derive the authority partition from authentication and path', async () => {
+test('enroll, sync, and baseline-scan derive the authenticated partition', async () => {
 	const { app, partitions } = setup();
+	const enrollResponse = await post(app, 'enroll', enroll);
 	const syncResponse = await post(app, 'sync', sync);
-	const snapshotResponse = await post(app, 'snapshot-chunk', snapshotChunk);
+	const baselineResponse = await post(app, 'baseline-scan', baselineScan);
 
+	expect(enrollResponse.status).toBe(200);
+	expect((await enrollResponse.json()) as unknown).toEqual({
+		kind: 'enroll',
+		ok: true,
+		replicaId: '000000000000000000000001',
+	});
 	expect(syncResponse.status).toBe(200);
-	expect((await syncResponse.json()) as unknown).toEqual({
+	expect((await syncResponse.json()) as unknown).toMatchObject({
 		kind: 'sync',
 		ok: true,
-		snapshotRequired: false,
-		token: { replicaId: 'replica-1', acceptedRound: 1, checkpoint: 0 },
-		entries: [],
+		result: 'page',
+		token: { acceptedRound: 1 },
+		submission: 1,
+	});
+	expect(baselineResponse.status).toBe(200);
+	expect((await baselineResponse.json()) as unknown).toEqual({
+		kind: 'baselineScan',
+		ok: true,
+		rows: [],
+		head: 0,
+		retentionFloor: 0,
 		hasMore: false,
 	});
-	expect((await snapshotResponse.json()) as unknown).toEqual({
-		kind: 'snapshotChunk',
-		ok: false,
-		reason: 'snapshot-replaced',
-	});
-	expect(partitions).toEqual([
-		{
+	expect(partitions).toEqual(
+		Array.from({ length: 3 }, () => ({
 			principalId: asPrincipalId('authenticated-alice'),
 			workspaceId: 'wiki',
-		},
-		{
-			principalId: asPrincipalId('authenticated-alice'),
-			workspaceId: 'wiki',
-		},
-	]);
+		})),
+	);
 });
 
-test('malformed, oversized, and structurally inexact requests stop before backend work', async () => {
+test('malformed and structurally inexact requests stop before backend work', async () => {
 	const { app, partitions } = setup();
 	const malformed = await app.request('/api/records/wiki/sync', {
 		method: 'POST',
 		body: '{',
 	});
-	const oversized = await post(app, 'sync', {
-		payload: 'x'.repeat(1_048_576),
-	});
 	const inexact = await post(app, 'sync', { ...sync, principalId: 'mallory' });
 
 	expect(malformed.status).toBe(400);
-	expect(oversized.status).toBe(413);
 	expect(inexact.status).toBe(400);
+	expect(partitions).toEqual([]);
+});
+
+test('declared and actual bodies above 1 MiB stop before backend work', async () => {
+	const { app, partitions } = setup();
+	const declared = await post(app, 'enroll', enroll, {
+		'content-length': '1048577',
+	});
+	const actual = await post(app, 'sync', {
+		payload: 'x'.repeat(1_048_576),
+	});
+
+	expect(declared.status).toBe(413);
+	expect(actual.status).toBe(413);
 	expect(partitions).toEqual([]);
 });
 
@@ -153,11 +204,27 @@ test('oversized workspace identity stops before backend work', async () => {
 	expect(partitions).toEqual([]);
 });
 
-test('the transport exposes no obsolete verbs or authority lifecycle', async () => {
+test('authority TypeErrors map to 400 invalid-request on every route', async () => {
+	for (const [method, body, fail] of [
+		['enroll', enroll, 'enroll'],
+		['sync', sync, 'sync'],
+		['baseline-scan', baselineScan, 'baselineScan'],
+	] as const) {
+		const { app } = setup({ fail });
+		expect((await post(app, method, body)).status).toBe(400);
+	}
+});
+
+test('snapshot and deleted record-sync routes have no compatibility aliases', async () => {
 	const { app, partitions } = setup();
-	expect((await post(app, 'push', {})).status).toBe(404);
-	expect((await post(app, 'pull', {})).status).toBe(404);
-	expect((await post(app, 'open', {})).status).toBe(404);
-	expect((await post(app, 'succession/activate', {})).status).toBe(404);
+	for (const route of [
+		'snapshot-chunk',
+		'push',
+		'pull',
+		'open',
+		'succession/activate',
+	]) {
+		expect((await post(app, route, {})).status).toBe(404);
+	}
 	expect(partitions).toEqual([]);
 });

@@ -26,17 +26,13 @@ export type BrowserRecordOperation =
 	| { kind: 'kv-get'; key: string }
 	| { kind: 'kv-set'; key: string; value: unknown }
 	| { kind: 'kv-unset'; key: string }
-	| {
-			kind: 'scan';
-			table: string;
-			options: { cursor?: string; limit: number };
-	  }
+	| { kind: 'list'; table: string }
 	| { kind: 'create'; table: string; input: Record<string, unknown> }
 	| {
-			kind: 'patch';
+			kind: 'update';
 			table: string;
 			id: string;
-			patch: Record<string, unknown>;
+			changes: Record<string, unknown>;
 	  }
 	| { kind: 'delete'; table: string; id: string }
 	| {
@@ -78,7 +74,7 @@ export type BrowserRuntimeMessage =
 			type: 'transport-request';
 			transportId: number;
 			workspaceId: string;
-			action: 'sync' | 'snapshot-chunk';
+			action: 'sync' | 'enroll' | 'baseline-scan';
 			body: unknown;
 	  }
 	| { type: 'result'; id: number; value: unknown }

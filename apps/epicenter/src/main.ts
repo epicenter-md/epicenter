@@ -8,10 +8,7 @@
  * needed to change it because this entrypoint reads the env once.
  */
 
-import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
 import { type AgentEngine, createOpenAiAgentEngine } from '@epicenter/client';
-import { createBunRooms } from '@epicenter/server/bun';
 import {
 	createQueryHost,
 	type QueryHost,
@@ -46,9 +43,6 @@ async function main(): Promise<void> {
 		const dataDir = resolveQueryDataDir();
 		host = await createQueryHost({ engine, model, dataDir });
 		workspaceOwner = createEpicenterWorkspaceOwner(dataDir);
-		const roomsDir = join(dataDir, 'workspace-runtime', 'rooms');
-		mkdirSync(roomsDir, { recursive: true });
-		const rooms = createBunRooms({ dir: roomsDir });
 
 		const appsDist = process.env.EPICENTER_APPS_DIST;
 		if (!appsDist) {
@@ -58,13 +52,12 @@ async function main(): Promise<void> {
 		}
 		const staticAssets = await loadStaticAssets(appsDist);
 		const origin = `http://127.0.0.1:${boot.port}`;
-		const { app, websocket, bindServer } = createQueryServer({
+		const { app, websocket } = createQueryServer({
 			host,
 			origin,
 			launchToken: boot.token,
 			staticAssets,
 			workspaceOwner,
-			rooms,
 		});
 
 		server = Bun.serve({
@@ -74,8 +67,6 @@ async function main(): Promise<void> {
 			fetch: app.fetch,
 			websocket,
 		});
-		bindServer(server);
-
 		process.stdout.write(`${JSON.stringify(createReadyFrame(boot.port))}\n`);
 		lifecycleOwnsResources = true;
 		const queryHost = host;

@@ -1,23 +1,19 @@
 /**
- * The canonical KV client (ADR-0130/0132).
- *
- * KV is one reserved immortal record inside the canonical record map:
- * `kv.set` compiles to `patchRow` at `__epicenter_kv/workspace`, `kv.unset`
- * to its `unset`, and the aggregate inherits the outbox, sealed rounds,
- * ordering, snapshots, and compaction of rows with no machinery of its own.
- *
- * Reads are honest: a conforming value, `undefined` for absence, or a
- * nonconforming error carrying the raw stored value. Nothing here heals,
- * defaults, migrates, or deletes unknown keys.
+ * Typed release-local KV lens over the reserved immortal row (ADR-0130/0132).
+ * Unknown and nonconforming values remain untouched in the canonical map.
  */
 import {
-	foldRow,
-	type RecordCommand,
-	type RecordSyncSqlite,
+	foldFields,
 	RESERVED_KV_ROW_ID,
 	RESERVED_KV_TABLE,
+	type RowSyncSqlite,
+	type WireRowIntent,
 } from '@epicenter/row-sync';
 import { Ok, type Result } from 'wellcrafted/result';
+import {
+	initializeCanonicalSchema,
+	readCurrentRow,
+} from './canonical-replica.js';
 import {
 	compileKvLens,
 	type KvDefinitions,
@@ -29,60 +25,42 @@ import {
 } from './kv-definition.js';
 import type { JsonObject, JsonValue } from './lens-definition.js';
 
-const RECORDS_TABLE = '__epicenter_records';
+const ROWS_TABLE = 'rows';
 
 export type CanonicalKvOptions = {
-	/**
-	 * Admit one schema-opaque synchronization command in the same SQLite
-	 * transaction as its optimistic canonical write. A standalone owner may
-	 * omit this hook.
-	 */
-	admit?(command: RecordCommand): void;
+	/** Synchronized mode admits the reserved row's field-bearing update intent. */
+	admitIntent?(intent: WireRowIntent): void;
+	onLocalCommit?(): void;
 };
 
 export type CanonicalKv<TDefinitions extends KvDefinitions> = {
-	/** Read one declared key: value, `undefined` for absence, or the raw error. */
 	get<K extends keyof TDefinitions & string>(
 		key: K,
 	): Result<KvValues<TDefinitions>[K] | undefined, KvReadErrorType>;
-	/** Validate and write one declared key. Nested values replace atomically. */
 	set<K extends keyof TDefinitions & string>(
 		key: K,
 		value: KvValues<TDefinitions>[K],
 	): Result<void, KvWriteErrorType>;
-	/** Return one declared key to absence. No tombstone, no stored default. */
 	unset<K extends keyof TDefinitions & string>(key: K): void;
-	/** Observe one declared key. Fires after any local or installed change. */
 	observe<K extends keyof TDefinitions & string>(
 		key: K,
 		handler: () => void,
 	): () => void;
-	/**
-	 * Runtime hook: re-evaluate observers after remote state installs. The
-	 * synchronization owner calls this from its remote-commit path.
-	 */
 	notifyExternalChange(): void;
 };
 
-/**
- * Open the typed KV lens over one canonical record store. The records table
- * must already exist (the canonical records owner creates it).
- */
 export function createCanonicalKv<const TDefinitions extends KvDefinitions>(
-	sqlite: RecordSyncSqlite,
+	sqlite: RowSyncSqlite,
 	definitions: TDefinitions,
-	{ admit = () => undefined }: CanonicalKvOptions = {},
+	{ admitIntent, onLocalCommit = () => undefined }: CanonicalKvOptions = {},
 ): CanonicalKv<TDefinitions> {
+	initializeCanonicalSchema(sqlite);
 	const lens = compileKvLens(definitions);
 	const observers = new Map<string, Set<() => void>>();
 	const lastSeen = new Map<string, string | undefined>();
 
 	function readMap(): JsonObject {
-		const stored = sqlite.all<{ payload: string }>(
-			`SELECT payload FROM "${RECORDS_TABLE}" WHERE table_key = ? AND row_id = ?`,
-			[RESERVED_KV_TABLE, RESERVED_KV_ROW_ID],
-		)[0];
-		return stored ? (JSON.parse(stored.payload) as JsonObject) : {};
+		return readCurrentRow(sqlite, RESERVED_KV_TABLE, RESERVED_KV_ROW_ID) ?? {};
 	}
 
 	function requireDeclared(key: string): { check(value: unknown): boolean } {
@@ -91,25 +69,37 @@ export function createCanonicalKv<const TDefinitions extends KvDefinitions>(
 		return compiled;
 	}
 
-	function fire(key: string): void {
-		lastSeen.set(key, encodeCurrent(key));
-		for (const handler of observers.get(key) ?? []) handler();
-	}
-
 	function encodeCurrent(key: string): string | undefined {
 		const map = readMap();
 		return Object.hasOwn(map, key) ? JSON.stringify(map[key]) : undefined;
 	}
 
-	function writeFolded(command: RecordCommand, value: JsonObject): void {
+	function fire(key: string): void {
+		lastSeen.set(key, encodeCurrent(key));
+		for (const handler of observers.get(key) ?? []) handler();
+	}
+
+	function admit(intent: WireRowIntent): void {
+		if (admitIntent) {
+			admitIntent(structuredClone(intent));
+			return;
+		}
 		sqlite.transaction(() => {
-			admit(structuredClone(command));
-			sqlite.run(
-				`INSERT INTO "${RECORDS_TABLE}"(table_key, row_id, payload)
-				 VALUES (?, ?, ?)
-				 ON CONFLICT(table_key, row_id) DO UPDATE SET payload = excluded.payload`,
-				[RESERVED_KV_TABLE, RESERVED_KV_ROW_ID, JSON.stringify(value)],
+			const current = readCurrentRow(
+				sqlite,
+				RESERVED_KV_TABLE,
+				RESERVED_KV_ROW_ID,
 			);
+			const folded = foldFields(current, intent);
+			if (folded.kind !== 'fields') return;
+			sqlite.run(
+				`INSERT INTO "${ROWS_TABLE}"(table_key, row_id, fields_json)
+				 VALUES (?, ?, ?)
+				 ON CONFLICT(table_key, row_id) DO UPDATE SET
+					fields_json = excluded.fields_json`,
+				[RESERVED_KV_TABLE, RESERVED_KV_ROW_ID, JSON.stringify(folded.fields)],
+			);
+			onLocalCommit();
 		});
 	}
 
@@ -135,45 +125,29 @@ export function createCanonicalKv<const TDefinitions extends KvDefinitions>(
 					reason: 'value does not satisfy the declared schema',
 				});
 			}
-			const command: RecordCommand = {
-				kind: 'patchRow',
+			const before = encodeCurrent(key);
+			admit({
+				kind: 'update',
 				table: RESERVED_KV_TABLE,
 				rowId: RESERVED_KV_ROW_ID,
-				set: { [key]: structuredClone(value) as JsonValue } as JsonObject,
-				unset: [],
-			};
-			const current = readMap();
-			const folded = foldRow(
-				Object.keys(current).length === 0 ? undefined : current,
-				command,
-			);
-			if (folded.kind !== 'row') {
-				return KvWriteError.InvalidKvWrite({
-					key,
-					reason: 'the composed KV aggregate exceeds its capacity cap',
-				});
-			}
-			writeFolded(command, folded.value);
-			fire(key);
+				fields: {
+					set: { [key]: structuredClone(value) as JsonValue },
+					unset: [],
+				},
+			});
+			if (encodeCurrent(key) !== before) fire(key);
 			return Ok(undefined);
 		},
 		unset(key) {
 			requireDeclared(key);
-			const command: RecordCommand = {
-				kind: 'patchRow',
+			const before = encodeCurrent(key);
+			admit({
+				kind: 'update',
 				table: RESERVED_KV_TABLE,
 				rowId: RESERVED_KV_ROW_ID,
-				set: {},
-				unset: [key],
-			};
-			const current = readMap();
-			const folded = foldRow(
-				Object.keys(current).length === 0 ? undefined : current,
-				command,
-			);
-			if (folded.kind !== 'row') return;
-			writeFolded(command, folded.value);
-			fire(key);
+				fields: { set: {}, unset: [key] },
+			});
+			if (encodeCurrent(key) !== before) fire(key);
 		},
 		observe(key, handler) {
 			requireDeclared(key);
@@ -191,8 +165,7 @@ export function createCanonicalKv<const TDefinitions extends KvDefinitions>(
 		},
 		notifyExternalChange() {
 			for (const key of observers.keys()) {
-				const current = encodeCurrent(key);
-				if (lastSeen.get(key) !== current) fire(key);
+				if (lastSeen.get(key) !== encodeCurrent(key)) fire(key);
 			}
 		},
 	};

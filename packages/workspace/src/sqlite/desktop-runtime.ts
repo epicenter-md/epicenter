@@ -1,22 +1,12 @@
 import type { SqliteValue } from '@epicenter/row-sync';
 import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
-import { openCollaboration } from '../document/open-collaboration.js';
-import { roomWsUrl } from '../document/transport.js';
-import { sha256Hex } from '../shared/sha256.js';
-import { createIndexedDbDocumentLocalStore } from './browser-document-store.js';
 import {
 	type DesktopRecordOperation,
 	type DesktopWorkspaceResponse,
 	decodeDesktopRecordResult,
-	desktopDocumentOpenUrl,
 	desktopWorkspaceRecordUrl,
 } from './desktop-protocol.js';
-import {
-	createDocumentNamespace,
-	createDocumentRoomCatalog,
-	type DocumentRoomManifest,
-} from './document-runtime.js';
 import type { OpenedWorkspace, WorkspaceTables } from './runtime.js';
 import type { WorkspaceDefinition } from './runtime-definition.js';
 
@@ -26,8 +16,6 @@ type DefinitionTables<TDefinition> =
 export type CreateDesktopWorkspaceRuntimeOptions = {
 	baseUrl?: string;
 	fetch?(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
-	openWebSocket?: Parameters<typeof openCollaboration>[1]['openWebSocket'];
-	indexedDB?: IDBFactory;
 	onRecordsChanged?(workspaceId: string): void;
 };
 
@@ -35,33 +23,9 @@ export type CreateDesktopWorkspaceRuntimeOptions = {
 export function createDesktopWorkspaceRuntime({
 	baseUrl = location.origin,
 	fetch: fetchInput = globalThis.fetch,
-	openWebSocket,
-	indexedDB = globalThis.indexedDB,
 	onRecordsChanged = () => undefined,
 }: CreateDesktopWorkspaceRuntimeOptions = {}) {
 	const origin = new URL(baseUrl).origin;
-	const openSocket =
-		openWebSocket ??
-		((url: string | URL, protocols?: string[]) =>
-			new WebSocket(url, protocols));
-	const localStore = createIndexedDbDocumentLocalStore(
-		`epicenter-desktop-${sha256Hex(origin)}-documents`,
-		indexedDB,
-	);
-	const rooms = createDocumentRoomCatalog({
-		localStore,
-		attachSync(ydoc, storageRef) {
-			const config = {
-				url: roomWsUrl({
-					baseURL: origin,
-					guid: storageRef,
-					nodeId: crypto.randomUUID() as never,
-				}),
-				onReconnectSignal: () => () => undefined,
-			};
-			return openCollaboration(ydoc, { ...config, openWebSocket: openSocket });
-		},
-	});
 	const workspaces = new Map<
 		string,
 		{ definition: WorkspaceDefinition; handle: object }
@@ -90,7 +54,7 @@ export function createDesktopWorkspaceRuntime({
 		}
 		if (
 			operation.kind === 'create' ||
-			operation.kind === 'patch' ||
+			operation.kind === 'update' ||
 			operation.kind === 'delete'
 		) {
 			onRecordsChanged(workspaceId);
@@ -105,39 +69,36 @@ export function createDesktopWorkspaceRuntime({
 	function createHandle<TDefinition extends WorkspaceDefinition>(
 		definition: TDefinition,
 	): OpenedWorkspace<TDefinition> {
+		const kvObservers = new Map<string, Set<() => void>>();
+		const notifyKv = (key: string): void => {
+			for (const handler of kvObservers.get(key) ?? []) handler();
+		};
 		const tables = Object.fromEntries(
-			Object.entries(definition.tables).map(([table, tableDefinition]) => {
-				const bodyStub = tableDefinition.body
-					? {
-							body: Object.freeze({
-								async open(): Promise<never> {
-									throw new Error(
-										'Row bodies are not yet openable in the desktop runtime',
-									);
-								},
-							}),
-						}
-					: {};
-				const handle = {
-					...bodyStub,
+			Object.keys(definition.tables).map((table) => [
+				table,
+				Object.freeze({
 					get(id: string) {
 						return request(definition.id, { kind: 'get', table, id });
 					},
-					scan(options: { cursor?: string; limit: number }) {
-						return request(definition.id, { kind: 'scan', table, options });
+					list() {
+						return request(definition.id, { kind: 'list', table });
 					},
 					create(input: Record<string, unknown>) {
-						return request(definition.id, { kind: 'create', table, input });
+						return request(definition.id, {
+							kind: 'create',
+							table,
+							input,
+						});
 					},
-					patch(id: string, patch: Record<string, unknown>) {
+					update(id: string, changes: Record<string, unknown>) {
 						const set: Record<string, unknown> = {};
 						const unset: string[] = [];
-						for (const [name, value] of Object.entries(patch)) {
+						for (const [name, value] of Object.entries(changes)) {
 							if (value === undefined) unset.push(name);
 							else set[name] = value;
 						}
 						return request(definition.id, {
-							kind: 'patch',
+							kind: 'update',
 							table,
 							id,
 							set,
@@ -151,23 +112,58 @@ export function createDesktopWorkspaceRuntime({
 							id,
 						});
 					},
-				};
-				return [table, Object.freeze(handle)];
-			}),
+					document: Object.freeze({
+						async open(): Promise<never> {
+							throw new Error(
+								'Row documents are not yet openable in the desktop runtime',
+							);
+						},
+					}),
+				}),
+			]),
 		) as unknown as WorkspaceTables<DefinitionTables<TDefinition>>;
 
 		const kv = Object.freeze({
-			async get(): Promise<never> {
-				throw new Error('kv is not yet wired through the desktop runtime');
+			get(key: string) {
+				return request(definition.id, { kind: 'kv-get', key });
 			},
-			async set(): Promise<never> {
-				throw new Error('kv is not yet wired through the desktop runtime');
+			async set(key: string, value: unknown) {
+				const before = await request<{
+					data?: unknown;
+					error: unknown;
+				}>(definition.id, { kind: 'kv-get', key });
+				const result = await request<{ data?: unknown; error: unknown }>(
+					definition.id,
+					{ kind: 'kv-set', key, value },
+				);
+				if (
+					result.error === null &&
+					(before.error !== null ||
+						JSON.stringify(before.data) !== JSON.stringify(value))
+				) {
+					notifyKv(key);
+				}
+				return result;
 			},
-			async unset(): Promise<never> {
-				throw new Error('kv is not yet wired through the desktop runtime');
+			async unset(key: string) {
+				const before = await request<{
+					data?: unknown;
+					error: unknown;
+				}>(definition.id, { kind: 'kv-get', key });
+				await request<void>(definition.id, { kind: 'kv-unset', key });
+				if (before.error !== null || before.data !== undefined) notifyKv(key);
 			},
-			observe(): never {
-				throw new Error('kv is not yet wired through the desktop runtime');
+			observe(key: string, handler: () => void) {
+				let handlers = kvObservers.get(key);
+				if (!handlers) {
+					handlers = new Set();
+					kvObservers.set(key, handlers);
+				}
+				handlers.add(handler);
+				return () => {
+					handlers.delete(handler);
+					if (handlers.size === 0) kvObservers.delete(key);
+				};
 			},
 		});
 
@@ -175,31 +171,6 @@ export function createDesktopWorkspaceRuntime({
 			id: definition.id,
 			tables,
 			kv: kv as never,
-			documents: createDocumentNamespace({
-				workspaceId: definition.id,
-				definitions: definition.documents,
-				roomCatalog: rooms,
-				assertRuntimeOpen: assertOpen,
-				async resolveManifest({ workspaceId, declaration, params }) {
-					const response = await fetchInput(
-						desktopDocumentOpenUrl(origin, workspaceId, declaration),
-						{
-							method: 'POST',
-							headers: { 'content-type': 'application/json' },
-							credentials: 'same-origin',
-							body: JSON.stringify({ params }),
-						},
-					);
-					const envelope = (await response.json()) as DesktopWorkspaceResponse;
-					if (!response.ok || envelope.error !== null) {
-						throw new Error(
-							envelope.error?.message ??
-								`Desktop document HTTP ${response.status}`,
-						);
-					}
-					return envelope.data as DocumentRoomManifest;
-				},
-			}),
 			records: Object.freeze({
 				async sql<TResultSchema extends TSchema>(
 					query: string,
@@ -246,8 +217,6 @@ export function createDesktopWorkspaceRuntime({
 			if (disposed) return;
 			disposed = true;
 			workspaces.clear();
-			await rooms[Symbol.asyncDispose]();
-			await localStore[Symbol.asyncDispose]();
 		},
 	});
 }

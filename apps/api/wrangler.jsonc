@@ -61,7 +61,7 @@
 			// workspace pair. The Worker derives the DO name after authentication.
 			{
 				"name": "RECORDS",
-				"class_name": "RecordAuthorityDurableObject"
+				"class_name": "RowAuthorityDurableObject"
 			}
 		]
 	},
@@ -84,7 +84,7 @@
 		},
 		{
 			"tag": "v4",
-			"new_sqlite_classes": ["RecordAuthorityDurableObject"]
+			"new_sqlite_classes": ["RowAuthorityDurableObject"]
 		}
 	],
 	// --- Secrets (set via `wrangler secret put`, typed via `wrangler types`) ---

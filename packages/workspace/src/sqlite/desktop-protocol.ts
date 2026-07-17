@@ -7,19 +7,16 @@ import {
 import { isResult, Ok, type Result } from 'wellcrafted/result';
 
 export const DESKTOP_WORKSPACE_ROUTE = '/api/workspaces/:workspaceId/records';
-export const DESKTOP_DOCUMENT_ROUTE =
-	'/api/workspaces/:workspaceId/documents/:declaration/open';
 
 export type DesktopRecordOperation =
 	| { kind: 'get'; table: string; id: string }
-	| {
-			kind: 'scan';
-			table: string;
-			options: { cursor?: string; limit: number };
-	  }
+	| { kind: 'kv-get'; key: string }
+	| { kind: 'kv-set'; key: string; value: unknown }
+	| { kind: 'kv-unset'; key: string }
+	| { kind: 'list'; table: string }
 	| { kind: 'create'; table: string; input: Record<string, unknown> }
 	| {
-			kind: 'patch';
+			kind: 'update';
 			table: string;
 			id: string;
 			set: Record<string, unknown>;
@@ -82,7 +79,11 @@ export function decodeDesktopRecordResult(
 }
 
 function isOptionalRowOperation(operation: DesktopRecordOperation): boolean {
-	return operation.kind === 'get' || operation.kind === 'patch';
+	return (
+		operation.kind === 'get' ||
+		operation.kind === 'update' ||
+		operation.kind === 'kv-get'
+	);
 }
 
 export function desktopWorkspaceRecordUrl(
@@ -94,20 +95,6 @@ export function desktopWorkspaceRecordUrl(
 			':workspaceId',
 			encodeURIComponent(workspaceId),
 		),
-		baseUrl,
-	).toString();
-}
-
-export function desktopDocumentOpenUrl(
-	baseUrl: string,
-	workspaceId: string,
-	declaration: string,
-): string {
-	return new URL(
-		DESKTOP_DOCUMENT_ROUTE.replace(
-			':workspaceId',
-			encodeURIComponent(workspaceId),
-		).replace(':declaration', encodeURIComponent(declaration)),
 		baseUrl,
 	).toString();
 }

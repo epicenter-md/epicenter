@@ -1,318 +1,161 @@
 /**
  * Browser Workspace Runtime Tests
  *
- * Verifies the page-side ownership boundary without pretending Bun is OPFS.
- * The real SQLite Worker is covered by the Browser smoke test.
+ * Verifies the page-side Worker protocol without opening OPFS.
  *
  * Key behaviors:
- * - runtime open is inert until the first record operation
- * - committed-write hints stay at runtime construction
- * - IndexedDB persists room manifests and Yjs state across runtime restarts
- * - released document capabilities are revoked and remote sync starts after replay
+ * - list and update use the public row verbs
+ * - row-document and KV observation channels fail loudly until Wave 6
+ * - row-sync transport actions cross the boundary
  */
-import { expect, test } from 'bun:test';
+
+import { afterEach, expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
-import {
-	RECORD_SYNC_PROTOCOL_MAJOR,
-	recordRoundDigest,
-} from '@epicenter/row-sync';
-import { IDBFactory } from 'fake-indexeddb';
-import { createIndexedDbDocumentLocalStore } from './browser-document-store.js';
 import { createBrowserWorkspaceRuntime } from './browser-runtime.js';
 import type {
 	BrowserRuntimeMessage,
-	BrowserWorkerInbound,
+	BrowserRuntimeRequest,
 } from './browser-runtime-protocol.js';
-import { document } from './document-definition.js';
 import { defineTable } from './lens-definition.js';
 import { defineWorkspace } from './runtime-definition.js';
 
-class FakeWorker extends EventTarget {
-	requests: Array<Extract<BrowserWorkerInbound, { id: number }>> = [];
-	transportResponses: Array<Extract<BrowserWorkerInbound, { type: string }>> =
-		[];
-	isTerminated = false;
+const NativeWorker = globalThis.Worker;
+
+class FakeWorker {
+	static latest: FakeWorker | undefined;
+	readonly operations: BrowserRuntimeRequest['operation'][] = [];
+	private readonly messageListeners = new Set<
+		(event: MessageEvent<BrowserRuntimeMessage>) => void
+	>();
 
 	constructor() {
-		super();
+		FakeWorker.latest = this;
 		queueMicrotask(() => this.emit({ type: 'ready' }));
 	}
 
-	postMessage(request: BrowserWorkerInbound): void {
-		if ('type' in request) {
-			this.transportResponses.push(request);
-			return;
-		}
-		this.requests.push(request);
-		const value =
-			request.operation.kind === 'get'
-				? { data: undefined, error: null }
-				: request.operation.kind === 'delete'
-					? undefined
-					: {};
-		queueMicrotask(() => this.emit({ type: 'result', id: request.id, value }));
+	addEventListener(
+		type: string,
+		listener: (event: MessageEvent<never>) => void,
+	) {
+		if (type === 'message') this.messageListeners.add(listener as never);
 	}
 
-	terminate(): void {
-		this.isTerminated = true;
+	postMessage(message: BrowserRuntimeRequest | { type: string }): void {
+		if ('type' in message) return;
+		this.operations.push(message.operation);
+		const value = (() => {
+			switch (message.operation.kind) {
+				case 'kv-get':
+				case 'kv-set':
+					return { data: undefined, error: null };
+				default:
+					return undefined;
+			}
+		})();
+		queueMicrotask(() => {
+			this.emit({ type: 'result', id: message.id, value });
+		});
 	}
 
 	emit(message: BrowserRuntimeMessage): void {
-		this.dispatchEvent(new MessageEvent('message', { data: message }));
+		for (const listener of this.messageListeners) {
+			listener(new MessageEvent('message', { data: message }));
+		}
 	}
+
+	terminate(): void {}
 }
 
-function createTestBroadcastChannelFactory() {
-	type TestChannel = {
-		onmessage: ((event: MessageEvent<unknown>) => void) | null;
-		postMessage(message: unknown): void;
-		close(): void;
-	};
-	const channels = new Map<string, Set<TestChannel>>();
-	return (name: string): TestChannel => {
-		const peers = channels.get(name) ?? new Set<TestChannel>();
-		channels.set(name, peers);
-		const channel: TestChannel = {
-			onmessage: null,
-			postMessage(message) {
-				for (const peer of peers) {
-					if (peer === channel) continue;
-					queueMicrotask(() =>
-						peer.onmessage?.(new MessageEvent('message', { data: message })),
-					);
-				}
-			},
-			close() {
-				peers.delete(channel);
-				if (peers.size === 0) channels.delete(name);
-			},
-		};
-		peers.add(channel);
-		return channel;
-	};
-}
+afterEach(() => {
+	globalThis.Worker = NativeWorker;
+	FakeWorker.latest = undefined;
+});
 
-const workspaceDefinition = defineWorkspace({
-	id: 'browser-runtime-test',
+const definition = defineWorkspace({
+	id: 'browser-test',
 	tables: {
 		notes: defineTable({ fields: { title: field.string() } }),
 	},
-	documents: {
-		draft: document.text({ params: { noteId: field.string() } }),
-	},
+	kv: { theme: field.select(['light', 'dark']) },
 });
 
-test('open stays inert and the first record call crosses one Worker boundary', async () => {
-	const createBroadcastChannel = createTestBroadcastChannelFactory();
-	let worker: FakeWorker | undefined;
-	const OriginalWorker = globalThis.Worker;
-	globalThis.Worker = class extends FakeWorker {
-		constructor() {
-			super();
-			worker = this;
-		}
-	} as unknown as typeof Worker;
-	const changes: string[] = [];
-	const backgroundErrors: string[] = [];
-	const fetched: string[] = [];
-	const runtime = createBrowserWorkspaceRuntime({
-		authorityKey: crypto.randomUUID(),
-		createBroadcastChannel,
-		recordSync: {
-			baseUrl: 'https://authority.test',
-			async fetch(input) {
-				fetched.push(String(input));
-				return new Response(JSON.stringify({ ok: true }));
-			},
-		},
-		onRecordsChanged(workspaceId) {
-			changes.push(workspaceId);
-		},
-		onBackgroundError(cause, workspaceId) {
-			backgroundErrors.push(`${workspaceId}: ${cause.message}`);
-		},
+function createRuntime() {
+	globalThis.Worker = FakeWorker as unknown as typeof Worker;
+	return createBrowserWorkspaceRuntime({
+		authorityKey: 'browser-authority',
+		createBroadcastChannel: () => undefined,
 	});
-	try {
-		const workspace = await runtime.open(workspaceDefinition);
-		expect(worker).toBeUndefined();
-		const reading = workspace.tables.notes.get('missing');
-		expect(worker).toBeDefined();
-		expect((await reading).data).toBeUndefined();
-		if (!worker) throw new Error('Record call did not create a Worker');
-		expect(worker.requests).toHaveLength(1);
-		expect(worker.requests[0]?.operation).toEqual({
-			kind: 'get',
+}
+
+test('page sends list and update operations', async () => {
+	await using runtime = createRuntime();
+	const workspace = await runtime.open(definition);
+	await workspace.tables.notes.list();
+	await workspace.tables.notes.update('aaaaaaaaaaaaaaaaaaaaaaaa', {
+		title: 'changed',
+	});
+	expect(FakeWorker.latest?.operations).toEqual([
+		{ kind: 'list', table: 'notes' },
+		{
+			kind: 'update',
 			table: 'notes',
-			id: 'missing',
-		});
-		worker.emit({
-			type: 'records-changed',
-			workspaceId: workspaceDefinition.id,
-		});
-		expect(changes).toEqual([workspaceDefinition.id]);
-		const commands = [
-			{
-				kind: 'createRow',
-				table: 'notes',
-				rowId: 'note-1',
-				value: { title: 'First note' },
+			id: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+			changes: { title: 'changed' },
+		},
+	]);
+});
+
+test('row documents fail loudly until the browser Worker channel lands', async () => {
+	await using runtime = createRuntime();
+	const workspace = await runtime.open(definition);
+	await expect(
+		workspace.tables.notes.document.open('aaaaaaaaaaaaaaaaaaaaaaaa'),
+	).rejects.toThrow('Row documents are not yet openable');
+	expect(FakeWorker.latest).toBeUndefined();
+});
+
+test('KV observation fails loudly until the browser Worker channel lands', async () => {
+	await using runtime = createRuntime();
+	const workspace = await runtime.open(definition);
+	expect(() => workspace.kv.observe('theme', () => undefined)).toThrow(
+		'kv.observe is not yet wired',
+	);
+	expect(FakeWorker.latest).toBeUndefined();
+});
+
+test('worker transport actions pass through to matching HTTP route suffixes', async () => {
+	globalThis.Worker = FakeWorker as unknown as typeof Worker;
+	const urls: string[] = [];
+	await using runtime = createBrowserWorkspaceRuntime({
+		authorityKey: 'browser-authority',
+		createBroadcastChannel: () => undefined,
+		recordSync: {
+			baseUrl: 'https://example.test',
+			async fetch(input) {
+				urls.push(String(input));
+				return new Response('{}', {
+					status: 200,
+					headers: { 'content-type': 'application/json' },
+				});
 			},
-		] as const;
-		worker.emit({
+		},
+	});
+	const workspace = await runtime.open(definition);
+	await workspace.tables.notes.list();
+	for (const action of ['enroll', 'sync', 'baseline-scan'] as const) {
+		FakeWorker.latest?.emit({
 			type: 'transport-request',
-			transportId: 1,
-			workspaceId: workspaceDefinition.id,
-			action: 'sync',
-			body: {
-				protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-				kind: 'sync',
-				token: {
-					replicaId: 'browser-replica',
-					acceptedRound: 0,
-					checkpoint: 0,
-				},
-				sealedRound: {
-					round: 1,
-					requestDigest: recordRoundDigest(commands),
-					commands,
-				},
-			},
+			transportId: urls.length + 1,
+			workspaceId: definition.id,
+			action,
+			body: {},
 		});
-		await Bun.sleep(0);
-		expect(fetched).toEqual([
-			`https://authority.test/api/records/${workspaceDefinition.id}/sync`,
-		]);
-		expect(worker.transportResponses).toEqual([
-			{ type: 'transport-result', transportId: 1, value: { ok: true } },
-		]);
-		worker.emit({
-			type: 'background-error',
-			workspaceId: workspaceDefinition.id,
-			name: 'Error',
-			message: 'retry later',
-		});
-		expect(backgroundErrors).toEqual([
-			`${workspaceDefinition.id}: retry later`,
-		]);
-	} finally {
-		await runtime[Symbol.asyncDispose]();
-		globalThis.Worker = OriginalWorker;
+		await Promise.resolve();
+		await Promise.resolve();
 	}
-	expect(worker?.isTerminated).toBe(true);
-});
-
-test('IndexedDB preserves room manifests and rejects storage-ref collisions', async () => {
-	const indexedDb = new IDBFactory();
-	const name = `browser-document-store-${crypto.randomUUID()}`;
-	const manifest = {
-		formatVersion: 1 as const,
-		storageRef: 'room-a',
-		workspaceId: 'notes',
-		declaration: 'draft',
-		documentFormat: 'text/1',
-		params: { noteId: 'note-a' },
-	};
-	const first = createIndexedDbDocumentLocalStore(name, indexedDb);
-	await first.rememberRoom(manifest);
-	await first.save(manifest.storageRef, new Uint8Array([1, 2, 3]));
-	await first[Symbol.asyncDispose]();
-
-	const reopened = createIndexedDbDocumentLocalStore(name, indexedDb);
-	try {
-		expect(await reopened.load(manifest.storageRef)).toEqual(
-			new Uint8Array([1, 2, 3]),
-		);
-		await expect(
-			reopened.rememberRoom({ ...manifest, workspaceId: 'other' }),
-		).rejects.toThrow('another manifest');
-	} finally {
-		await reopened[Symbol.asyncDispose]();
-	}
-});
-
-test('document replay precedes sync attachment and released content is revoked', async () => {
-	const createBroadcastChannel = createTestBroadcastChannelFactory();
-	const OriginalIndexedDb = globalThis.indexedDB;
-	globalThis.indexedDB = new IDBFactory();
-	const authorityKey = crypto.randomUUID();
-	const firstRuntime = createBrowserWorkspaceRuntime({
-		authorityKey,
-		createBroadcastChannel,
-	});
-	const indexedDb = globalThis.indexedDB;
-	globalThis.indexedDB = OriginalIndexedDb;
-	const firstWorkspace = await firstRuntime.open(workspaceDefinition);
-	const firstLease = await firstWorkspace.documents.draft.open({ noteId: 'a' });
-	firstLease.content.write('persisted draft');
-	const releasedContent = firstLease.content;
-	firstLease[Symbol.dispose]();
-	expect(() => releasedContent.read()).toThrow('lease is disposed');
-	await firstRuntime[Symbol.asyncDispose]();
-
-	const hydratedBeforeSync: string[] = [];
-	globalThis.indexedDB = indexedDb;
-	let secondRuntime: ReturnType<typeof createBrowserWorkspaceRuntime>;
-	try {
-		secondRuntime = createBrowserWorkspaceRuntime({
-			authorityKey,
-			createBroadcastChannel,
-			attachDocumentSync(ydoc) {
-				hydratedBeforeSync.push(ydoc.getText('content').toString());
-				return { [Symbol.dispose]() {} };
-			},
-		});
-	} finally {
-		globalThis.indexedDB = OriginalIndexedDb;
-	}
-	try {
-		const secondWorkspace = await secondRuntime.open(workspaceDefinition);
-		using reopened = await secondWorkspace.documents.draft.open({
-			noteId: 'a',
-		});
-		expect(reopened.content.read()).toBe('persisted draft');
-		expect(hydratedBeforeSync).toEqual(['persisted draft']);
-	} finally {
-		await secondRuntime[Symbol.asyncDispose]();
-	}
-});
-
-test('independent page runtimes exchange live Yjs updates without a document leader', async () => {
-	const createBroadcastChannel = createTestBroadcastChannelFactory();
-	const OriginalIndexedDb = globalThis.indexedDB;
-	globalThis.indexedDB = new IDBFactory();
-	const authorityKey = crypto.randomUUID();
-	const firstRuntime = createBrowserWorkspaceRuntime({
-		authorityKey,
-		createBroadcastChannel,
-	});
-	const secondRuntime = createBrowserWorkspaceRuntime({
-		authorityKey,
-		createBroadcastChannel,
-	});
-	globalThis.indexedDB = OriginalIndexedDb;
-	try {
-		const firstWorkspace = await firstRuntime.open(workspaceDefinition);
-		const secondWorkspace = await secondRuntime.open(workspaceDefinition);
-		using first = await firstWorkspace.documents.draft.open({
-			noteId: 'shared',
-		});
-		using second = await secondWorkspace.documents.draft.open({
-			noteId: 'shared',
-		});
-		first.content.write('from first page');
-		for (let attempt = 0; attempt < 100; attempt++) {
-			if (second.content.read() === 'from first page') break;
-			if (attempt === 99) throw new Error('Yjs update did not cross pages');
-			await Bun.sleep(5);
-		}
-		second.content.insert(second.content.read().length, ' and second page');
-		for (let attempt = 0; attempt < 100; attempt++) {
-			if (first.content.read() === 'from first page and second page') break;
-			if (attempt === 99) throw new Error('Yjs reply did not cross pages');
-			await Bun.sleep(5);
-		}
-	} finally {
-		await firstRuntime[Symbol.asyncDispose]();
-		await secondRuntime[Symbol.asyncDispose]();
-	}
+	expect(urls.map((url) => new URL(url).pathname)).toEqual([
+		'/api/records/browser-test/enroll',
+		'/api/records/browser-test/sync',
+		'/api/records/browser-test/baseline-scan',
+	]);
 });

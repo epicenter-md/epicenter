@@ -4,9 +4,7 @@
 
 	let { id }: { id: string } = $props();
 
-	const lease = $derived(
-		skills.documents.reference.open({ referenceId: id }),
-	);
+	const lease = $derived(skills.tables.references.document.open(id));
 	$effect(() => {
 		const openedLease = lease;
 		return () =>
@@ -19,6 +17,6 @@
 
 <div class="h-48 border-t">
 	{#await lease then opened}
-		<CodeMirrorEditor content={opened.content} />
+		<CodeMirrorEditor document={opened} />
 	{/await}
 </div>

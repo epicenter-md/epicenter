@@ -3,6 +3,7 @@
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { InstantString } from '@epicenter/field';
+import type { RowDocument } from '@epicenter/workspace/sqlite';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -24,9 +25,9 @@ export const SkillsIoError = defineErrors({
 export type SkillsIoError = InferErrors<typeof SkillsIoError>;
 
 /**
- * Import agentskills.io folders into canonical records and parameterized
- * documents. Frontmatter ids are portable `sourceId` payloads, never caller-
- * selected structural record ids.
+ * Import agentskills.io folders into canonical records and row documents.
+ * Frontmatter ids are portable `sourceId` payloads, never caller-selected
+ * structural record ids.
  */
 export async function importSkillsFromDisk({
 	workspace,
@@ -101,7 +102,7 @@ export async function importSkillsFromDisk({
 		const existing = skillsBySourceId.get(sourceId);
 		let skill: Skill;
 		if (existing) {
-			const repaired = await workspace.tables.skills.patch(existing.id, input);
+			const repaired = await workspace.tables.skills.update(existing.id, input);
 			if (repaired.error !== null || repaired.data === undefined) {
 				throw new Error(
 					repaired.error?.message ?? `Skill '${existing.id}' disappeared`,
@@ -122,10 +123,10 @@ export async function importSkillsFromDisk({
 				'utf8',
 			);
 		}
-		await using instructions = await workspace.documents.instructions.open({
-			skillId: skill.id,
-		});
-		instructions.content.write(read.instructions);
+		await using instructions = await workspace.tables.skills.document.open(
+			skill.id,
+		);
+		writeDocumentText(instructions, read.instructions);
 
 		const referencesPath = join(read.skillPath, 'references');
 		let referenceFiles: string[] = [];
@@ -149,10 +150,10 @@ export async function importSkillsFromDisk({
 							updatedAt: InstantString.now(),
 						});
 				referencesByOwnerAndPath.set(key, reference);
-				await using document = await workspace.documents.reference.open({
-					referenceId: reference.id,
-				});
-				document.content.write(content);
+				await using document = await workspace.tables.references.document.open(
+					reference.id,
+				);
+				writeDocumentText(document, content);
 			}),
 		);
 	}
@@ -182,12 +183,12 @@ export async function exportSkillsToDisk({
 		skillsScan.skills.map(async (skill) => {
 			const skillDir = join(dir, skill.name);
 			await mkdir(skillDir, { recursive: true });
-			await using instructions = await workspace.documents.instructions.open({
-				skillId: skill.id,
-			});
+			await using instructions = await workspace.tables.skills.document.open(
+				skill.id,
+			);
 			await writeFile(
 				join(skillDir, 'SKILL.md'),
-				serializeSkillMd(skill, instructions.content.read()),
+				serializeSkillMd(skill, instructions.get('content').toString()),
 				'utf8',
 			);
 			const references = referencesScan.references.filter(
@@ -198,12 +199,12 @@ export async function exportSkillsToDisk({
 			await mkdir(referencesDir, { recursive: true });
 			await Promise.all(
 				references.map(async (reference) => {
-					await using content = await workspace.documents.reference.open({
-						referenceId: reference.id,
-					});
+					await using content = await workspace.tables.references.document.open(
+						reference.id,
+					);
 					await writeFile(
 						join(referencesDir, reference.path),
-						content.content.read(),
+						content.get('content').toString(),
 						'utf8',
 					);
 				}),
@@ -240,7 +241,7 @@ async function repairReference(
 	reference: { id: string },
 	path: string,
 ): Promise<Reference> {
-	const repaired = await workspace.tables.references.patch(reference.id, {
+	const repaired = await workspace.tables.references.update(reference.id, {
 		path,
 		updatedAt: InstantString.now(),
 	});
@@ -250,6 +251,14 @@ async function repairReference(
 		);
 	}
 	return repaired.data;
+}
+
+function writeDocumentText(document: RowDocument, value: string): void {
+	const content = document.get('content');
+	document.transact(() => {
+		content.delete(0, content.length);
+		content.insert(0, value);
+	});
 }
 
 function referenceKey(skillId: string, path: string): string {

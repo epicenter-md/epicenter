@@ -1,222 +1,255 @@
-/**
- * Schema-Blind Record Protocol Tests (wire major 5)
- *
- * Verifies strict parsing and admission for the sealed-round sync contract.
- *
- * Key behaviors:
- * - only createRow, patchRow, deleteRow, and bodyAppend are admitted
- * - row lifecycle at the reserved KV address is rejected at parse time
- * - JSON null is data while undefined is rejected
- * - sync responses are bounded by entry count and total encoded bytes
- */
-
-import { expect, test } from 'bun:test';
-import { RECORD_SYNC_ADMISSION_LIMITS } from './admission.js';
-import { canonicalJson } from './canonical-json.js';
+import { describe, expect, test } from 'bun:test';
+import { ROW_SYNC_ADMISSION_LIMITS } from './admission.js';
 import {
-	parseRecordCommand,
+	fromWireRowIntent,
+	parseBaselineScanRequest,
+	parseEnrollRequest,
 	parseSyncRequest,
 	parseSyncResponse,
-	RECORD_SYNC_PROTOCOL_MAJOR,
-	type RecordCommand,
+	ROW_SYNC_PROTOCOL_MAJOR,
+	type RowIntent,
 	requestRefusal,
-	type SyncRequest,
+	toWireRowIntent,
+	type WireRowIntent,
 } from './protocol.js';
-import { recordRoundDigest } from './round-digest.js';
+import { rowRoundDigest } from './round-digest.js';
 
-function sealedSync(commands: RecordCommand[]): SyncRequest {
-	return {
-		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		kind: 'sync',
-		token: { replicaId: 'replica-a', acceptedRound: 0, checkpoint: 0 },
-		sealedRound: {
-			round: 1,
-			requestDigest: recordRoundDigest(commands),
-			commands,
-		},
-	};
-}
+const ROW_ID = 'abc123def456ghi789jkl012';
 
-test('request refusal is absent for the current protocol', () => {
-	expect(
-		requestRefusal({
-			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		}),
-	).toBeUndefined();
-	expect(requestRefusal({ protocolMajor: 4 })).toBe('protocol-mismatch');
-});
+const intents: WireRowIntent[] = [
+	{
+		kind: 'create',
+		table: 'notes',
+		rowId: ROW_ID,
+		fields: { title: 'a' },
+		documentUpdate: 'AAAA',
+	},
+];
 
-test('canonical JSON orders object keys by JavaScript code units', () => {
-	expect(canonicalJson({ ä: 3, a: 2, Z: 1 })).toBe('{"Z":1,"a":2,"ä":3}');
-	expect(canonicalJson({ '2': 2, '10': 10, '\ue000': 2, '😀': 1 })).toBe(
-		'{"10":10,"2":2,"😀":1,"\ue000":2}',
-	);
-});
+const token = { replicaId: 'replica-a', acceptedRound: 0, checkpoint: 0 };
 
-test('sync parser accepts a sealed round of opaque JSON commands', () => {
-	const request = sealedSync([
-		{
-			kind: 'createRow',
-			table: 'skills',
-			rowId: 'skill-1',
-			value: { title: 'One', future: { nested: true }, nullable: null },
-		},
-		{
-			kind: 'patchRow',
-			table: 'skills',
-			rowId: 'skill-1',
-			set: { title: 'Two' },
-			unset: ['obsolete'],
-		},
-		{
-			kind: 'bodyAppend',
-			table: 'skills',
-			rowId: 'skill-1',
-			update: 'dXBkYXRl',
-		},
-	]);
-
-	expect(parseSyncRequest(request)).toEqual(request);
-	// A pull is a sync with no round.
-	const pull: SyncRequest = {
-		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		kind: 'sync',
-		token: { replicaId: 'replica-a', acceptedRound: 3, checkpoint: 17 },
-	};
-	expect(parseSyncRequest(pull)).toEqual(pull);
-});
-
-test('command parser rejects undefined and non-finite JSON values', () => {
-	for (const invalid of [undefined, Number.NaN, Number.POSITIVE_INFINITY]) {
-		expect(() =>
-			parseRecordCommand({
-				kind: 'createRow',
-				table: 'skills',
-				rowId: 'skill-1',
-				value: { invalid },
-			}),
-		).toThrow('Invalid record command');
-	}
-});
-
-test('command parser rejects cyclic objects and bigint without leaking JSON errors', () => {
-	const cyclic: Record<string, unknown> = {};
-	cyclic.self = cyclic;
-	for (const invalid of [cyclic, 1n]) {
-		expect(() =>
-			parseRecordCommand({
-				kind: 'createRow',
-				table: 'skills',
-				rowId: 'skill-1',
-				value: { invalid },
-			}),
-		).toThrow('Invalid record command');
-	}
-});
-
-test('patch parser rejects empty, duplicate, and overlapping unsets', () => {
-	for (const command of [
-		{ set: {}, unset: [] },
-		{ set: {}, unset: ['title', 'title'] },
-		{ set: { title: 'New' }, unset: ['title'] },
-	]) {
-		expect(() =>
-			parseRecordCommand({
-				kind: 'patchRow',
-				table: 'skills',
-				rowId: 'skill-1',
-				...command,
-			}),
-		).toThrow('Invalid record command');
-	}
-});
-
-test('row lifecycle at the reserved KV address is rejected at parse time', () => {
-	expect(() =>
-		parseSyncRequest(
-			sealedSync([
-				{
-					kind: 'createRow',
-					table: '__epicenter_kv',
-					rowId: 'workspace',
-					value: {},
-				},
-			]),
-		),
-	).toThrow('Invalid record sync request');
-	expect(() =>
-		parseSyncRequest(
-			sealedSync([
-				{ kind: 'deleteRow', table: '__epicenter_kv', rowId: 'workspace' },
-			]),
-		),
-	).toThrow('Invalid record sync request');
-	expect(
-		parseSyncRequest(
-			sealedSync([
-				{
-					kind: 'patchRow',
-					table: '__epicenter_kv',
-					rowId: 'workspace',
-					set: { theme: 'dark' },
-					unset: [],
-				},
-			]),
-		).sealedRound?.commands,
-	).toHaveLength(1);
-});
-
-test('legacy push, actor, and first-class KV envelopes are rejected', () => {
-	expect(() =>
-		parseSyncRequest({
-			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-			kind: 'push',
-			actorId: 'actor-a',
-			mutations: [],
-		}),
-	).toThrow('Invalid record sync request');
-	expect(() =>
-		parseRecordCommand({ kind: 'kvSet', key: 'theme', value: 'dark' }),
-	).toThrow('Invalid record command');
-});
-
-test('sync responses are bounded by entry count and total encoded bytes', () => {
-	const token = { replicaId: 'replica-a', acceptedRound: 1, checkpoint: 65 };
-	const deletion = (index: number) => ({
-		kind: 'deletion' as const,
-		table: 'skills',
-		rowId: `skill-${index}`,
-		lastServerSequence: index + 1,
+describe('sync request parsing', () => {
+	test('accepts a sealed round with a submission', () => {
+		const request = parseSyncRequest({
+			protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+			kind: 'sync',
+			token,
+			sealedRound: {
+				round: 1,
+				requestDigest: rowRoundDigest(intents),
+				submission: 1,
+				intents,
+			},
+		});
+		expect(request.sealedRound?.submission).toBe(1);
 	});
-	expect(() =>
-		parseSyncResponse({
-			kind: 'sync',
-			ok: true,
-			snapshotRequired: false,
-			token,
-			entries: Array.from(
-				{ length: RECORD_SYNC_ADMISSION_LIMITS.stateEntriesPerPage + 1 },
-				(_, index) => deletion(index),
-			),
-			hasMore: false,
-		}),
-	).toThrow('Invalid record sync response');
 
-	const largeValue = 'x'.repeat(500 * 1024);
-	expect(() =>
-		parseSyncResponse({
-			kind: 'sync',
-			ok: true,
-			snapshotRequired: false,
-			token,
-			entries: Array.from({ length: 17 }, (_, index) => ({
-				kind: 'row',
-				table: 'skills',
-				rowId: `skill-${index}`,
-				value: { body: largeValue },
-				lastServerSequence: index + 1,
-			})),
-			hasMore: false,
-		}),
-	).toThrow('Invalid record sync response');
+	test('rejects a sealed round without a submission', () => {
+		expect(() =>
+			parseSyncRequest({
+				protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+				kind: 'sync',
+				token,
+				sealedRound: {
+					round: 1,
+					requestDigest: rowRoundDigest(intents),
+					intents,
+				},
+			}),
+		).toThrow('Invalid row sync request');
+	});
+
+	test('rejects inadmissible intents and the old command vocabulary', () => {
+		expect(() =>
+			parseSyncRequest({
+				protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+				kind: 'sync',
+				token,
+				sealedRound: {
+					round: 1,
+					requestDigest: 'x',
+					submission: 1,
+					intents: [
+						{ kind: 'createRow', table: 'notes', rowId: ROW_ID, value: {} },
+					],
+				},
+			}),
+		).toThrow('Invalid row sync request');
+		expect(() =>
+			parseSyncRequest({
+				protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+				kind: 'sync',
+				token,
+				sealedRound: {
+					round: 1,
+					requestDigest: 'x',
+					submission: 1,
+					intents: [
+						{ kind: 'create', table: 'notes', rowId: 'short', fields: {} },
+					],
+				},
+			}),
+		).toThrow('Invalid row sync request');
+	});
+
+	test('rejects a request above the encoded round bound', () => {
+		const oversized: WireRowIntent = {
+			kind: 'update',
+			table: 'notes',
+			rowId: ROW_ID,
+			fields: {
+				set: { a: 'x'.repeat(ROW_SYNC_ADMISSION_LIMITS.encodedRoundBytes) },
+				unset: [],
+			},
+		};
+		expect(() =>
+			parseSyncRequest({
+				protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+				kind: 'sync',
+				token,
+				sealedRound: {
+					round: 1,
+					requestDigest: rowRoundDigest([oversized]),
+					submission: 1,
+					intents: [oversized],
+				},
+			}),
+		).toThrow('Invalid row sync request');
+	});
+});
+
+describe('sync response parsing', () => {
+	test('accepts pages, baseline-required, and every refusal shape', () => {
+		expect(
+			parseSyncResponse({
+				kind: 'sync',
+				ok: true,
+				result: 'page',
+				token,
+				outcomes: [
+					{
+						kind: 'row',
+						table: 'notes',
+						rowId: ROW_ID,
+						fields: { title: 'a' },
+						documentUpdate: 'AAAA',
+						sequence: 1,
+					},
+					{ kind: 'deletion', table: 'notes', rowId: ROW_ID, sequence: 2 },
+				],
+				hasMore: false,
+				retentionFloor: 0,
+				submission: 3,
+			}).ok,
+		).toBeTrue();
+		expect(
+			parseSyncResponse({
+				kind: 'sync',
+				ok: true,
+				result: 'baseline-required',
+				token,
+				retentionFloor: 10,
+			}).ok,
+		).toBeTrue();
+		for (const refusal of [
+			{ kind: 'sync', ok: false, reason: 'protocol-mismatch' },
+			{ kind: 'sync', ok: false, reason: 'unknown-replica' },
+			{ kind: 'sync', ok: false, reason: 'replica-fork' },
+			{
+				kind: 'sync',
+				ok: false,
+				reason: 'stale-submission',
+				submission: 1,
+				watermark: 4,
+			},
+			{ kind: 'sync', ok: false, reason: 'capacity-refused', submission: 5 },
+		]) {
+			expect(parseSyncResponse(refusal).ok).toBeFalse();
+		}
+	});
+
+	test('rejects a row outcome with neither fields nor document', () => {
+		expect(() =>
+			parseSyncResponse({
+				kind: 'sync',
+				ok: true,
+				result: 'page',
+				token,
+				outcomes: [{ kind: 'row', table: 'notes', rowId: ROW_ID, sequence: 1 }],
+				hasMore: false,
+				retentionFloor: 0,
+			}),
+		).toThrow('Invalid row sync response');
+	});
+});
+
+describe('enrollment and baseline scan parsing', () => {
+	test('enroll request is the bare envelope', () => {
+		expect(
+			parseEnrollRequest({
+				protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+				kind: 'enroll',
+			}).kind,
+		).toBe('enroll');
+	});
+
+	test('baseline scan accepts an optional address cursor', () => {
+		expect(
+			parseBaselineScanRequest({
+				protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+				kind: 'baselineScan',
+				after: { table: 'notes', rowId: ROW_ID },
+				pageLimit: 8,
+			}).after?.table,
+		).toBe('notes');
+	});
+});
+
+describe('round digest', () => {
+	test('is deterministic over the canonical wire encoding', () => {
+		expect(rowRoundDigest(intents)).toBe(
+			rowRoundDigest(structuredClone(intents)),
+		);
+		expect(rowRoundDigest(intents)).toMatch(/^[0-9a-f]{64}$/);
+	});
+
+	test('changes when intent order or content changes', () => {
+		const reordered: WireRowIntent[] = [
+			{ kind: 'delete', table: 'notes', rowId: ROW_ID },
+			...intents,
+		];
+		expect(rowRoundDigest(reordered)).not.toBe(rowRoundDigest(intents));
+		expect(
+			rowRoundDigest([
+				{ ...intents[0]!, fields: { title: 'b' } } as WireRowIntent,
+			]),
+		).not.toBe(rowRoundDigest(intents));
+	});
+});
+
+describe('semantic and wire encodings', () => {
+	test('one RowIntent round trips bytes through base64', () => {
+		const semantic: RowIntent = {
+			kind: 'update',
+			table: 'notes',
+			rowId: ROW_ID,
+			fields: { set: { a: 1 }, unset: ['b'] },
+			documentUpdate: new Uint8Array([1, 2, 3, 250]),
+		};
+		const wire = toWireRowIntent(semantic);
+		if (wire.kind !== 'update') throw new Error('Expected an update');
+		expect(typeof wire.documentUpdate).toBe('string');
+		expect(fromWireRowIntent(wire)).toEqual(semantic);
+	});
+});
+
+describe('protocol refusal', () => {
+	test('a different major is refused before any authority work', () => {
+		expect(
+			requestRefusal({ protocolMajor: ROW_SYNC_PROTOCOL_MAJOR }),
+		).toBeUndefined();
+		expect(requestRefusal({ protocolMajor: ROW_SYNC_PROTOCOL_MAJOR + 1 })).toBe(
+			'protocol-mismatch',
+		);
+	});
 });

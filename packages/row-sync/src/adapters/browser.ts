@@ -1,4 +1,4 @@
-import type { RecordSyncSqlite, SqliteRow, SqliteValue } from '../sqlite.js';
+import type { RowSyncSqlite, SqliteRow, SqliteValue } from '../sqlite.js';
 
 export type BrowserSqliteDatabase = {
 	exec(options: {
@@ -16,7 +16,7 @@ export type BrowserSqliteDatabase = {
 /** Adapt sqlite.org's OO1 browser API without importing a WASM implementation. */
 export function createBrowserSqliteAdapter(
 	database: BrowserSqliteDatabase,
-): RecordSyncSqlite {
+): RowSyncSqlite {
 	return {
 		run(sql, parameters = []): void {
 			database.exec({ sql, bind: parameters });

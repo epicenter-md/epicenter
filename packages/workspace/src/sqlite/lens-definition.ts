@@ -2,10 +2,6 @@ import { compile, type Kind, recognize } from '@epicenter/field';
 import type { Static, TSchema } from 'typebox';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
-import {
-	type BodyDefinition,
-	isBodyDefinition,
-} from './body-definition.js';
 
 export type JsonValue =
 	| null
@@ -26,13 +22,10 @@ export type TableLensDefinition<
 	TFields extends FieldSchemas = FieldSchemas,
 	TOptional extends readonly (keyof TFields &
 		string)[] = readonly (keyof TFields & string)[],
-	TBody extends BodyDefinition | undefined = BodyDefinition | undefined,
 > = {
 	fields: Readonly<TFields>;
 	optional: TOptional;
-	/** At most one text or rich-text body per row (ADR-0130). */
-	body: TBody;
-	[tableLensParts]: { fields: TFields; optional: TOptional; body: TBody };
+	[tableLensParts]: { fields: TFields; optional: TOptional };
 };
 
 export type TableLensDefinitions = Readonly<
@@ -74,17 +67,17 @@ export type CreateInputFor<TDefinition extends TableLensDefinition> =
 	> & { id?: never };
 
 /**
- * Restrict a patch to declared fields while allowing `undefined` only for
+ * Restrict update changes to declared fields while allowing `undefined` only for
  * optional fields, where it means unset.
  */
-export type ConstrainedPatch<
+export type ConstrainedChanges<
 	TDefinition extends TableLensDefinition,
-	TPatch extends Record<string, unknown>,
+	TChanges extends Record<string, unknown>,
 > = Record<
-	Exclude<keyof TPatch, keyof PartsOf<TDefinition>['fields']>,
+	Exclude<keyof TChanges, keyof PartsOf<TDefinition>['fields']>,
 	never
 > & {
-	[K in keyof TPatch]: K extends keyof PartsOf<TDefinition>['fields']
+	[K in keyof TChanges]: K extends keyof PartsOf<TDefinition>['fields']
 		? K extends PartsOf<TDefinition>['optional'][number]
 			? Static<PartsOf<TDefinition>['fields'][K]> | undefined
 			: Static<PartsOf<TDefinition>['fields'][K]>
@@ -124,7 +117,7 @@ type CompiledLensField = {
 	check(value: unknown): boolean;
 };
 
-type NormalizedPatch = {
+type NormalizedChanges = {
 	set: JsonObject;
 	unset: string[];
 };
@@ -139,7 +132,7 @@ type CompiledTableLens = {
 		payload: JsonObject,
 	): Result<Record<string, unknown>, RecordLensError>;
 	validateCreate(input: Record<string, unknown>): JsonObject;
-	normalizePatch(patch: Record<string, unknown>): NormalizedPatch;
+	normalizeChanges(changes: Record<string, unknown>): NormalizedChanges;
 };
 
 const compiledLenses = new WeakMap<object, CompiledTableLens>();
@@ -150,30 +143,22 @@ const compiledLenses = new WeakMap<object, CompiledTableLens>();
  * Field names are permanent storage keys. `id` is structural and cannot be
  * declared. Fields are required for interpretation unless listed as optional.
  */
-export function defineTable<
-	const TFields extends FieldSchemas,
-	const TBody extends BodyDefinition | undefined = undefined,
->(config: {
+export function defineTable<const TFields extends FieldSchemas>(config: {
 	fields: TFields & { id?: never };
-	body?: TBody;
-}): TableLensDefinition<TFields, readonly [], TBody>;
+}): TableLensDefinition<TFields, readonly []>;
 export function defineTable<
 	const TFields extends FieldSchemas,
 	const TOptional extends readonly (keyof TFields & string)[],
-	const TBody extends BodyDefinition | undefined = undefined,
 >(config: {
 	fields: TFields & { id?: never };
 	optional: TOptional;
-	body?: TBody;
-}): TableLensDefinition<TFields, TOptional, TBody>;
+}): TableLensDefinition<TFields, TOptional>;
 export function defineTable({
 	fields: fieldsInput,
 	optional: optionalInput,
-	body: bodyInput,
 }: {
 	fields: FieldSchemas & { id?: never };
 	optional?: readonly string[];
-	body?: BodyDefinition;
 }): TableLensDefinition {
 	assertPlainObject(fieldsInput, 'table fields');
 	if (Object.keys(fieldsInput).some((name) => name.toLowerCase() === 'id')) {
@@ -224,13 +209,9 @@ export function defineTable({
 		});
 	}
 
-	if (bodyInput !== undefined && !isBodyDefinition(bodyInput)) {
-		throw new Error('A table body must be body.text() or body.richText()');
-	}
 	const definition = Object.freeze({
 		fields,
 		optional,
-		body: bodyInput,
 	}) as TableLensDefinition;
 	compiledLenses.set(
 		definition,
@@ -308,11 +289,11 @@ function createCompiledLens(
 			}
 			return payload;
 		},
-		normalizePatch(patch: Record<string, unknown>) {
-			assertPlainObject(patch, 'patch input');
+		normalizeChanges(changes: Record<string, unknown>) {
+			assertPlainObject(changes, 'update changes');
 			const set: JsonObject = {};
 			const unset: string[] = [];
-			for (const [name, value] of Object.entries(patch)) {
+			for (const [name, value] of Object.entries(changes)) {
 				const field = fields.get(name);
 				if (!field) throw new Error(`Unknown field '${name}'`);
 				if (value === undefined) {

@@ -3,12 +3,12 @@
  *
  * Exercises the real package definition through the Bun workspace runtime.
  * The tests prove release-local nonconformance, explicit typed repair,
- * read-only SQL lenses, parameterized documents, and honest filesystem ids.
+ * read-only SQL lenses, row documents, and honest filesystem ids.
  *
  * Key behaviors:
  * - a stricter release surfaces old canonical JSON until an explicit patch repairs it
  * - SQL projects only the current lens after repair
- * - parameterized documents persist without exposing or accepting room ids
+ * - row documents persist under their owning structural row ids
  * - agentskills.io metadata ids round-trip as payload source ids
  */
 
@@ -26,7 +26,7 @@ import { field, InstantString } from '@epicenter/field';
 import {
 	defineTable,
 	defineWorkspace,
-	document,
+	type RowDocument,
 } from '@epicenter/workspace/sqlite';
 import { createBunWorkspaceRuntime } from '@epicenter/workspace/sqlite/bun';
 import { Type } from 'typebox';
@@ -47,12 +47,9 @@ const historicalSkillsWorkspace = defineWorkspace({
 			},
 		}),
 	},
-	documents: {
-		instructions: document.text({ params: { skillId: field.string() } }),
-	},
 });
 
-test('a stricter Skills lens exposes nonconformance until typed patch repairs it', async () => {
+test('a stricter Skills lens exposes nonconformance until typed update repairs it', async () => {
 	const storageRoot = mkdtempSync(join(tmpdir(), 'epicenter-skills-'));
 	try {
 		const historicalRuntime = createBunWorkspaceRuntime({
@@ -90,7 +87,7 @@ test('a stricter Skills lens exposes nonconformance until typed patch repairs it
 		]);
 
 		const repaired = expectOk(
-			await skills.tables.skills.patch(oldSkill.id, {
+			await skills.tables.skills.update(oldSkill.id, {
 				sourceId: 'agentskills-writing-voice',
 			}),
 		);
@@ -114,25 +111,35 @@ test('a stricter Skills lens exposes nonconformance until typed patch repairs it
 			},
 		]);
 
-		await using instructions = await skills.documents.instructions.open({
-			skillId: oldSkill.id,
-		});
-		instructions.content.write('Keep the answer concise.');
+		await using instructions = await skills.tables.skills.document.open(
+			oldSkill.id,
+		);
+		writeDocumentText(instructions, 'Keep the answer concise.');
 		const another = await skills.tables.skills.create({
 			sourceId: 'agentskills-other',
 			name: 'other',
 			description: 'Another skill',
 			updatedAt: InstantString.now(),
 		});
-		await using otherInstructions = await skills.documents.instructions.open({
-			skillId: another.id,
-		});
-		expect(otherInstructions.content.read()).toBe('');
-		expect(instructions.content.read()).toBe('Keep the answer concise.');
+		await using otherInstructions = await skills.tables.skills.document.open(
+			another.id,
+		);
+		expect(otherInstructions.get('content').toString()).toBe('');
+		expect(instructions.get('content').toString()).toBe(
+			'Keep the answer concise.',
+		);
 	} finally {
 		rmSync(storageRoot, { recursive: true, force: true });
 	}
 });
+
+function writeDocumentText(document: RowDocument, value: string): void {
+	const content = document.get('content');
+	document.transact(() => {
+		content.delete(0, content.length);
+		content.insert(0, value);
+	});
+}
 
 test('filesystem import stores metadata id as sourceId instead of structural id', async () => {
 	const root = mkdtempSync(join(tmpdir(), 'epicenter-skills-io-'));

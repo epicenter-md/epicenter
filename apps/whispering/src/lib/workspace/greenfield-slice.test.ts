@@ -3,13 +3,13 @@
  *
  * Exercises Whispering and Skills through one real Bun runtime. It proves that
  * stricter release-local lenses surface old JSON, app code repairs it through a
- * normal typed patch, SQL remains read-only, and parameterized documents compose
- * without exposing room identity.
+ * normal typed update, SQL remains read-only, and Skills text stays attached to
+ * its owning row.
  *
  * Key behaviors:
  * - a historical recording remains stored but nonconforming under the new lens
  * - explicit app repair makes the row conform without a migration subsystem
- * - one runtime opens Whispering and Skills and keeps Skills documents isolated
+ * - one runtime opens Whispering and Skills and keeps row documents isolated
  */
 
 import { expect, test } from 'bun:test';
@@ -106,11 +106,12 @@ test('one runtime composes explicit recording repair, SQL, and Skills documents'
 			description: 'Summarize the selected transcript',
 			updatedAt: InstantString.now(),
 		});
-		await using instructions = await skills.documents.instructions.open({
-			skillId: skill.id,
-		});
-		instructions.content.write('Return three concise bullets.');
-		expect(instructions.content.read()).toBe('Return three concise bullets.');
+		await using instructions = await skills.tables.skills.document.open(
+			skill.id,
+		);
+		const content = instructions.get('content');
+		content.insert(0, 'Return three concise bullets.');
+		expect(content.toString()).toBe('Return three concise bullets.');
 		await expect(
 			whispering.records.sql(
 				"DELETE FROM recordings WHERE id = 'forbidden'",

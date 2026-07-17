@@ -51,6 +51,7 @@
 		"bench": "bun test ./src/__benchmarks__/*.bench.ts --timeout 60000"
 	},
 	"dependencies": {
+		"@y/y": "14.0.0-rc.24",
 		"@sqlite.org/sqlite-wasm": "catalog:",
 		"@epicenter/agent-protocol": "workspace:*",
 		"@epicenter/encryption": "workspace:*",

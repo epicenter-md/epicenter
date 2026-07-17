@@ -1,268 +1,114 @@
 /**
- * Canonical KV Lens Tests (ADR-0130/0132)
+ * Canonical KV Tests
  *
- * Verifies the typed lens over the reserved immortal record: honest reads,
- * validated writes, per-key observation, unknown-value preservation, and the
- * synchronized round trip through the fold-never-refuse authority.
+ * Verifies the typed KV lens over the reserved immortal row in local-only and
+ * synchronized ownership modes.
  *
  * Key behaviors:
- * - absent reads undefined; invalid reads return the raw value, never heal
- * - a typed set validates before durable local admission
- * - unset returns a key to absence with no tombstone
- * - unknown and nonconforming keys survive typed writes and synchronization
+ * - set, unset, and get round-trip through RowIntent projection
+ * - unknown and nonconforming values survive typed writes
+ * - an aggregate-cap overflow deterministically no-ops
  */
-
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
-import {
-	openRecordAuthority,
-	RESERVED_KV_ROW_ID,
-	RESERVED_KV_TABLE,
-} from '@epicenter/row-sync';
+import { RESERVED_KV_ROW_ID, RESERVED_KV_TABLE } from '@epicenter/row-sync';
 import { createBunSqliteAdapter } from '@epicenter/row-sync/bun';
-import { Type } from 'typebox';
 import { expectErr, expectOk } from 'wellcrafted/testing';
+import { mergeDocumentUpdates } from './canonical-documents.js';
 import { createCanonicalKv } from './canonical-kv.js';
-import { createCanonicalRecords } from './canonical-records.js';
 import {
-	type CanonicalReplicaTransport,
 	createCanonicalReplica,
+	initializeCanonicalSchema,
 } from './canonical-replica.js';
-import { defineTable } from './lens-definition.js';
-import { defineWorkspace } from './runtime-definition.js';
+import {
+	createTestTransport,
+	openTestAuthority,
+} from './row-sync-test-utils.js';
 
-const kvDefinitions = {
-	'editor.spellcheck': field.boolean(),
-	'editor.defaultView': field.select(['reading', 'editing']),
-	'shortcut.newNote': field.json(
-		Type.Object({
-			modifiers: Type.Array(Type.String()),
-			keys: Type.Array(Type.String()),
-		}),
-	),
+const definitions = {
+	theme: field.select(['light', 'dark']),
+	label: field.string(),
 };
 
-async function sha256(value: string): Promise<string> {
-	return new Bun.CryptoHasher('sha256').update(value).digest('hex');
-}
-
-function setup(admit?: (command: never) => void) {
-	const native = new Database(':memory:');
-	const sqlite = createBunSqliteAdapter(native);
-	// The records owner creates the canonical table the KV lens reads.
-	createCanonicalRecords(sqlite, {}, admit ? { admit: admit as never } : {});
-	const kv = createCanonicalKv(sqlite, kvDefinitions, {
-		...(admit ? { admit: admit as never } : {}),
-	});
-	return { native, sqlite, kv };
-}
-
-function rawMap(native: Database): Record<string, unknown> {
-	const stored = native
-		.query<{ payload: string }, [string, string]>(
-			`SELECT payload FROM __epicenter_records WHERE table_key = ? AND row_id = ?`,
-		)
-		.get(RESERVED_KV_TABLE, RESERVED_KV_ROW_ID);
-	return stored ? JSON.parse(stored.payload) : {};
-}
-
-function seedRaw(native: Database, map: Record<string, unknown>): void {
-	native.run(
-		`INSERT INTO __epicenter_records(table_key, row_id, payload)
-		 VALUES (?, ?, ?)
-		 ON CONFLICT(table_key, row_id) DO UPDATE SET payload = excluded.payload`,
-		[RESERVED_KV_TABLE, RESERVED_KV_ROW_ID, JSON.stringify(map)],
-	);
-}
-
-test('absent reads undefined and never materializes a default', () => {
-	const { native, kv } = setup();
-	expect(expectOk(kv.get('editor.spellcheck'))).toBeUndefined();
-	expect(rawMap(native)).toEqual({});
-	native.close();
-});
-
-test('set validates, persists, and reads back; nested values replace atomically', () => {
-	const { native, kv } = setup();
-	expectOk(kv.set('editor.spellcheck', true));
-	expectOk(kv.set('shortcut.newNote', { modifiers: ['meta'], keys: ['n'] }));
-	expect(expectOk(kv.get('editor.spellcheck'))).toBeTrue();
-	expect(expectOk(kv.get('shortcut.newNote'))).toEqual({
-		modifiers: ['meta'],
-		keys: ['n'],
-	});
-
-	// A nested value replaces whole, never merges.
-	expectOk(kv.set('shortcut.newNote', { modifiers: ['ctrl'], keys: ['m'] }));
-	expect(expectOk(kv.get('shortcut.newNote'))).toEqual({
-		modifiers: ['ctrl'],
-		keys: ['m'],
-	});
-
-	// An invalid typed set never enters canonical storage.
-	const refused = expectErr(kv.set('editor.defaultView', 'split' as never));
-	expect(refused.key).toBe('editor.defaultView');
-	expect(rawMap(native)['editor.defaultView']).toBeUndefined();
-	native.close();
-});
-
-test('unset returns a key to absence without a tombstone or stored default', () => {
-	const { native, kv } = setup();
-	expectOk(kv.set('editor.spellcheck', true));
-	kv.unset('editor.spellcheck');
-	expect(expectOk(kv.get('editor.spellcheck'))).toBeUndefined();
-	expect(rawMap(native)).toEqual({});
-	native.close();
-});
-
-test('invalid stored values read as errors carrying the raw value, never healed', () => {
-	const { native, kv } = setup();
-	seedRaw(native, {
-		'editor.spellcheck': 'yes-please',
-		'future.unknownKey': { nested: [1, 2] },
-	});
-
-	const reading = kv.get('editor.spellcheck');
-	if (reading.error === null) throw new Error('Expected a nonconforming read');
-	expect(reading.error.key).toBe('editor.spellcheck');
-	expect(reading.error.raw).toBe('yes-please');
-
-	// Reading did not heal, unset, or rewrite anything.
-	expect(rawMap(native)).toEqual({
-		'editor.spellcheck': 'yes-please',
-		'future.unknownKey': { nested: [1, 2] },
-	});
-	native.close();
-});
-
-test('unknown and nonconforming keys survive typed writes', () => {
-	const { native, kv } = setup();
-	seedRaw(native, {
-		'editor.spellcheck': 'yes-please',
-		'future.unknownKey': { nested: [1, 2] },
-	});
-	expectOk(kv.set('editor.defaultView', 'reading'));
-	expect(rawMap(native)).toEqual({
-		'editor.spellcheck': 'yes-please',
-		'future.unknownKey': { nested: [1, 2] },
-		'editor.defaultView': 'reading',
-	});
-	native.close();
-});
-
-test('undeclared keys are unreachable through the lens', () => {
-	const { native, kv } = setup();
-	expect(() => kv.get('future.unknownKey' as never)).toThrow(
-		"Unknown kv key 'future.unknownKey'",
-	);
-	expect(() => kv.set('future.unknownKey' as never, true as never)).toThrow(
-		"Unknown kv key 'future.unknownKey'",
-	);
-	native.close();
-});
-
-test('observers fire per key on local writes and external installs', () => {
-	const { native, kv } = setup();
-	let spellcheckFired = 0;
-	let viewFired = 0;
-	const stopSpellcheck = kv.observe('editor.spellcheck', () => {
-		spellcheckFired += 1;
-	});
-	kv.observe('editor.defaultView', () => {
-		viewFired += 1;
-	});
-
-	expectOk(kv.set('editor.spellcheck', true));
-	expect(spellcheckFired).toBe(1);
-	expect(viewFired).toBe(0);
-
-	// A remote install lands directly in canonical storage; the runtime then
-	// pokes the lens, which fires only observers whose keys changed.
-	seedRaw(native, { 'editor.spellcheck': true, 'editor.defaultView': 'editing' });
-	kv.notifyExternalChange();
-	expect(spellcheckFired).toBe(1);
-	expect(viewFired).toBe(1);
-
-	stopSpellcheck();
-	expectOk(kv.set('editor.spellcheck', false));
-	expect(spellcheckFired).toBe(1);
-	native.close();
-});
-
-test('kv writes ride the replica round trip and converge through the authority', async () => {
-	const authorityNative = new Database(':memory:');
-	const writerNative = new Database(':memory:');
-	const readerNative = new Database(':memory:');
+test('local-only set and unset preserve unknown and nonconforming keys', () => {
+	const database = new Database(':memory:');
 	try {
-		const authority = openRecordAuthority({
-			database: createBunSqliteAdapter(authorityNative),
-			sha256,
-		});
-		const transport: CanonicalReplicaTransport = {
-			async sync(request) {
-				return authority.sync(request);
-			},
-			async snapshotChunk(request) {
-				return authority.snapshotChunk(request);
-			},
-		};
-
-		const writerSqlite = createBunSqliteAdapter(writerNative);
-		const writerReplica = createCanonicalReplica({
-			sqlite: writerSqlite,
-			transport,
-			sha256,
-		});
-		createCanonicalRecords(writerSqlite, {}, { admit: writerReplica.admit });
-		const writerKv = createCanonicalKv(writerSqlite, kvDefinitions, {
-			admit: writerReplica.admit,
-		});
-		expectOk(writerKv.set('editor.spellcheck', true));
-		expectOk(writerKv.set('editor.defaultView', 'editing'));
-		writerKv.unset('editor.spellcheck');
-		await writerReplica.synchronize();
-
-		const readerSqlite = createBunSqliteAdapter(readerNative);
-		const readerReplica = createCanonicalReplica({
-			sqlite: readerSqlite,
-			transport,
-			sha256,
-		});
-		createCanonicalRecords(readerSqlite, {}, { admit: readerReplica.admit });
-		const readerKv = createCanonicalKv(readerSqlite, kvDefinitions, {
-			admit: readerReplica.admit,
-		});
-		await readerReplica.synchronize();
-		expect(expectOk(readerKv.get('editor.defaultView'))).toBe('editing');
-		expect(expectOk(readerKv.get('editor.spellcheck'))).toBeUndefined();
+		const sqlite = createBunSqliteAdapter(database);
+		initializeCanonicalSchema(sqlite);
+		sqlite.run(
+			`INSERT INTO rows(table_key, row_id, fields_json) VALUES (?, ?, ?)`,
+			[
+				RESERVED_KV_TABLE,
+				RESERVED_KV_ROW_ID,
+				JSON.stringify({ unknown: { nested: true }, theme: 'future' }),
+			],
+		);
+		const kv = createCanonicalKv(sqlite, definitions);
+		const nonconforming = expectErr(kv.get('theme'));
+		expect(nonconforming.raw).toBe('future');
+		expectOk(kv.set('label', 'kept'));
+		expect(expectOk(kv.get('label'))).toBe('kept');
+		kv.unset('label');
+		expect(expectOk(kv.get('label'))).toBeUndefined();
+		const stored = JSON.parse(
+			database
+				.query<{ fields_json: string }, []>(
+					'SELECT fields_json FROM rows WHERE table_key = "__epicenter_kv"',
+				)
+				.get()?.fields_json ?? '{}',
+		);
+		expect(stored).toEqual({ unknown: { nested: true }, theme: 'future' });
+		expect(database.query('SELECT * FROM replica').all()).toEqual([]);
+		expect(database.query('SELECT * FROM intents').all()).toEqual([]);
 	} finally {
-		authorityNative.close();
-		writerNative.close();
-		readerNative.close();
+		database.close();
 	}
 });
 
-test('defineWorkspace accepts direct kv schemas and refuses non-field values', () => {
-	const workspace = defineWorkspace({
-		id: 'epicenter-kv-test',
-		tables: { notes: defineTable({ fields: { title: field.string() } }) },
-		kv: kvDefinitions,
-	});
-	expect(Object.keys(workspace.kv)).toEqual(Object.keys(kvDefinitions));
+test('synchronized set and unset round-trip and notify observers', async () => {
+	const authorityState = openTestAuthority();
+	const transport = createTestTransport(authorityState.authority);
+	const database = new Database(':memory:');
+	try {
+		const sqlite = createBunSqliteAdapter(database);
+		const replica = createCanonicalReplica({
+			sqlite,
+			transport,
+			codec: { mergeUpdates: mergeDocumentUpdates },
+		});
+		const kv = createCanonicalKv(sqlite, definitions, {
+			admitIntent: replica.admit,
+		});
+		let notifications = 0;
+		const stop = kv.observe('theme', () => {
+			notifications += 1;
+		});
+		expectOk(kv.set('theme', 'dark'));
+		expect(expectOk(kv.get('theme'))).toBe('dark');
+		await replica.synchronize();
+		expect(authorityState.authority.inspect().rows[0]?.fields).toEqual({
+			theme: 'dark',
+		});
+		kv.unset('theme');
+		await replica.synchronize();
+		expect(expectOk(kv.get('theme'))).toBeUndefined();
+		expect(notifications).toBe(2);
+		stop();
+	} finally {
+		database.close();
+		authorityState.database.close();
+	}
+});
 
-	expect(() =>
-		defineWorkspace({
-			id: 'epicenter-kv-test',
-			tables: {},
-			kv: { broken: { not: 'a schema' } as never },
-		}),
-	).toThrow("KV key 'broken' must use the field.* vocabulary");
-	expect(() =>
-		defineWorkspace({
-			id: 'epicenter-kv-test',
-			tables: {},
-			kv: { __epicenter_reserved: field.boolean() },
-		}),
-	).toThrow('Invalid KV key');
+test('aggregate-cap overflow is an accepted local no-op', () => {
+	const database = new Database(':memory:');
+	try {
+		const kv = createCanonicalKv(createBunSqliteAdapter(database), definitions);
+		expectOk(kv.set('label', 'small'));
+		expectOk(kv.set('label', 'x'.repeat(70 * 1024)));
+		expect(expectOk(kv.get('label'))).toBe('small');
+	} finally {
+		database.close();
+	}
 });

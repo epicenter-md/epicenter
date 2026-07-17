@@ -2,20 +2,15 @@ import { Database } from 'bun:sqlite';
 import { createHash } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import {
-	openRecordAuthority,
-	type RecordAuthority,
-	type Sha256,
-} from '@epicenter/row-sync';
+import { openRowAuthority, type RowAuthority } from '@epicenter/row-sync';
 import { createBunSqliteAdapter } from '@epicenter/row-sync/bun';
-import * as Y from 'yjs';
-import { RECORDS_COMPACTION_POLICY } from './compaction.js';
+import { rowDocumentCodec } from './codec.js';
+import { runRecordsCompaction } from './compaction.js';
 import type { Records, RecordsPartition } from './contracts.js';
 
 type OpenAuthority = {
 	database: Database;
-	authority: RecordAuthority;
-	compaction?: Promise<void>;
+	authority: RowAuthority;
 };
 
 function partitionKey({ principalId, workspaceId }: RecordsPartition): string {
@@ -27,13 +22,7 @@ function databaseFilename(partition: RecordsPartition): string {
 }
 
 /** Open the persistent Bun record authorities rooted in one deployment directory. */
-export function createBunRecords({
-	dir,
-	sha256,
-}: {
-	dir: string;
-	sha256: Sha256;
-}) {
+export function createBunRecords({ dir }: { dir: string }) {
 	mkdirSync(dir, { recursive: true });
 	const authorities = new Map<string, OpenAuthority>();
 	let isClosed = false;
@@ -49,11 +38,10 @@ export function createBunRecords({
 			strict: true,
 		});
 		try {
-			const authority = openRecordAuthority({
+			database.run('PRAGMA journal_mode = WAL');
+			const authority = openRowAuthority({
 				database: createBunSqliteAdapter(database),
-				sha256,
-				mergeBodyUpdates: (updates) =>
-					Y.mergeUpdates(updates.map((update) => new Uint8Array(update))),
+				codec: rowDocumentCodec,
 			});
 			const opened = {
 				database,
@@ -68,28 +56,19 @@ export function createBunRecords({
 	}
 
 	const records: Records = {
+		async enroll(partition, request) {
+			return load(partition).authority.enroll(request);
+		},
 		async sync(partition, request) {
 			const opened = load(partition);
 			const response = opened.authority.sync(request);
 			if (response.ok && request.sealedRound) {
-				const compaction = (opened.compaction ?? Promise.resolve())
-					.catch(() => {})
-					.then(() =>
-						opened.authority.maybePublishSnapshot(RECORDS_COMPACTION_POLICY),
-					)
-					.then(() => {})
-					.catch(() => {});
-				opened.compaction = compaction;
-				try {
-					await compaction;
-				} finally {
-					if (opened.compaction === compaction) opened.compaction = undefined;
-				}
+				runRecordsCompaction(opened.authority);
 			}
 			return response;
 		},
-		async snapshotChunk(partition, request) {
-			return load(partition).authority.snapshotChunk(request);
+		async baselineScan(partition, request) {
+			return load(partition).authority.baselineScan(request);
 		},
 	};
 

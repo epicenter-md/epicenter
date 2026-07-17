@@ -31,8 +31,8 @@ import {
 	mountRoomsApp,
 	mountSessionApp,
 	mountTranscriptionApp,
-	RecordAuthorityDurableObject,
 	Room,
+	RowAuthorityDurableObject,
 	requireBearerPrincipal,
 	requireCookieOrBearerPrincipal,
 	resolveRequestOAuthPrincipal,
@@ -203,4 +203,4 @@ app.get('/billing', (c) => c.redirect('/dashboard'));
 export default {
 	fetch: app.fetch,
 };
-export { AttachRelay, RecordAuthorityDurableObject, Room };
+export { AttachRelay, Room, RowAuthorityDurableObject };

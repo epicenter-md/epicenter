@@ -1,8 +1,6 @@
 import type { SqliteValue } from '@epicenter/row-sync';
 import type { Static, TSchema } from 'typebox';
-import * as Y from 'yjs';
 import { sha256Hex } from '../shared/sha256.js';
-import { createIndexedDbDocumentLocalStore } from './browser-document-store.js';
 import {
 	type BrowserRecordOperation,
 	type BrowserRecordSyncBinding,
@@ -11,11 +9,6 @@ import {
 	type BrowserWorkspaceManifest,
 	serializeTableLenses,
 } from './browser-runtime-protocol.js';
-import {
-	type AttachDocumentSync,
-	createDocumentNamespace,
-	createDocumentRoomCatalog,
-} from './document-runtime.js';
 import type { OpenedWorkspace, WorkspaceTables } from './runtime.js';
 import type { WorkspaceDefinition } from './runtime-definition.js';
 
@@ -33,6 +26,8 @@ type BoundWorkspace = {
 	handle: OpenedWorkspace<WorkspaceDefinition>;
 };
 
+type InvalidationMessage = { type: 'records-changed'; workspaceId: string };
+
 type BrowserRecordFetch = (
 	input: RequestInfo | URL,
 	init?: RequestInit,
@@ -46,50 +41,29 @@ type RuntimeBroadcastChannel = {
 
 export type CreateBrowserWorkspaceRuntimeOptions = {
 	authorityKey: string;
-	/** Optional private HTTP authority binding used only inside the Worker. */
 	recordSync?: {
 		baseUrl: string;
-		/** Auth-owned fetch. When supplied, transport is proxied from the Worker. */
 		fetch?: BrowserRecordFetch;
 		headers?: Readonly<Record<string, string>>;
 		credentials?: RequestCredentials;
 	};
-	/** Environment-owned remote Yjs attachment, started after IndexedDB replay. */
-	attachDocumentSync?: AttachDocumentSync;
-	/** @internal Platform seam used by deterministic non-browser tests. */
 	createBroadcastChannel?(name: string): RuntimeBroadcastChannel | undefined;
-	/** Lossy re-read hint after local commits and installed remote state. */
 	onRecordsChanged?(workspaceId: string): void;
-	/** Environment-owned reporting for retryable background sync failures. */
 	onBackgroundError?(cause: Error, workspaceId: string): void;
 };
 
-/**
- * Create a Browser runtime backed by one page-owned Dedicated Worker.
- * Workspace OPFS connections and IndexedDB document rooms remain lazy.
- */
+/** Create the page-side client for one OPFS-owning records Worker. */
 export function createBrowserWorkspaceRuntime({
 	authorityKey,
 	recordSync: recordSyncInput,
-	attachDocumentSync,
 	createBroadcastChannel = defaultBroadcastChannel,
 	onRecordsChanged = () => undefined,
 	onBackgroundError = () => undefined,
 }: CreateBrowserWorkspaceRuntimeOptions) {
-	if (authorityKey.length === 0)
+	if (authorityKey.length === 0) {
 		throw new Error('Authority key must not be empty');
+	}
 	const authorityStorageKey = sha256Hex(authorityKey);
-	const localStore = createIndexedDbDocumentLocalStore(
-		`epicenter-${authorityStorageKey}-documents`,
-		globalThis.indexedDB,
-	);
-	const documentRoomCatalog = createDocumentRoomCatalog({
-		localStore,
-		attachSync: createBrowserDocumentSync(
-			attachDocumentSync,
-			createBroadcastChannel,
-		),
-	});
 	const recordSync = normalizeRecordSync(recordSyncInput);
 	const pending = new Map<number, PendingRequest>();
 	const workspaces = new Map<string, BoundWorkspace>();
@@ -107,15 +81,21 @@ export function createBrowserWorkspaceRuntime({
 	}
 
 	function emitRecordsChanged(workspaceId: string, broadcast: boolean): void {
-		if (broadcast) invalidationChannel?.postMessage(workspaceId);
+		if (broadcast) {
+			invalidationChannel?.postMessage({
+				type: 'records-changed',
+				workspaceId,
+			} satisfies InvalidationMessage);
+		}
 		onRecordsChanged(workspaceId);
 	}
 
 	if (invalidationChannel) {
 		invalidationChannel.onmessage = (event: MessageEvent<unknown>) => {
-			if (typeof event.data === 'string' && workspaces.has(event.data)) {
-				emitRecordsChanged(event.data, false);
-			}
+			if (!isInvalidationMessage(event.data)) return;
+			const message = event.data;
+			if (!workspaces.has(message.workspaceId)) return;
+			emitRecordsChanged(message.workspaceId, false);
 		};
 	}
 
@@ -129,10 +109,7 @@ export function createBrowserWorkspaceRuntime({
 		ready = Promise.withResolvers<void>();
 		worker = new Worker(
 			new URL('./browser-runtime-worker.ts', import.meta.url),
-			{
-				type: 'module',
-				name: `epicenter-${authorityStorageKey}`,
-			},
+			{ type: 'module', name: `epicenter-${authorityStorageKey}` },
 		);
 		const ownedWorker = worker;
 		const ownedReady = ready;
@@ -205,10 +182,10 @@ export function createBrowserWorkspaceRuntime({
 					body: JSON.stringify(message.body),
 				},
 			);
-			const text = await response.text();
+			const body = await response.text();
 			let value: unknown;
 			try {
-				value = text === '' ? null : JSON.parse(text);
+				value = body === '' ? null : JSON.parse(body);
 			} catch (cause) {
 				throw new Error(
 					`Record sync returned non-JSON HTTP ${response.status}`,
@@ -216,7 +193,7 @@ export function createBrowserWorkspaceRuntime({
 				);
 			}
 			if (!response.ok) {
-				throw new Error(`Record sync HTTP ${response.status}: ${text}`);
+				throw new Error(`Record sync HTTP ${response.status}: ${body}`);
 			}
 			if (!isDisposed) {
 				ownedWorker.postMessage({
@@ -266,58 +243,38 @@ export function createBrowserWorkspaceRuntime({
 		manifest: BrowserWorkspaceManifest,
 	): OpenedWorkspace<TDefinition> {
 		const tables = Object.fromEntries(
-			Object.entries(definition.tables).map(([tableName, tableDefinition]) => {
-				// The live-document editor channel across the records Worker is
-				// the ADR-0133 transport follow-up; sync-layer body updates
-				// already replicate underneath it.
-				const bodyStub = tableDefinition.body
-					? {
-							body: Object.freeze({
-								async open(): Promise<never> {
-									throw new Error(
-										'Row bodies are not yet openable in the browser runtime',
-									);
-								},
-							}),
-						}
-					: {};
-				const handle = {
-					...bodyStub,
+			Object.keys(definition.tables).map((table) => [
+				table,
+				Object.freeze({
 					get(id: string) {
-						return request(manifest, { kind: 'get', table: tableName, id });
+						return request(manifest, { kind: 'get', table, id });
 					},
-					scan(options: { cursor?: string; limit: number }) {
-						return request(manifest, {
-							kind: 'scan',
-							table: tableName,
-							options,
-						});
+					list() {
+						return request(manifest, { kind: 'list', table });
 					},
 					create(input: Record<string, unknown>) {
-						return request(manifest, {
-							kind: 'create',
-							table: tableName,
-							input,
-						});
+						return request(manifest, { kind: 'create', table, input });
 					},
-					patch(id: string, patch: Record<string, unknown>) {
+					update(id: string, changes: Record<string, unknown>) {
 						return request(manifest, {
-							kind: 'patch',
-							table: tableName,
+							kind: 'update',
+							table,
 							id,
-							patch,
+							changes,
 						});
 					},
 					delete(id: string) {
-						return request<void>(manifest, {
-							kind: 'delete',
-							table: tableName,
-							id,
-						});
+						return request<void>(manifest, { kind: 'delete', table, id });
 					},
-				};
-				return [tableName, Object.freeze(handle)];
-			}),
+					document: Object.freeze({
+						async open(): Promise<never> {
+							throw new Error(
+								'Row documents are not yet openable in the browser runtime',
+							);
+						},
+					}),
+				}),
+			]),
 		) as unknown as WorkspaceTables<DefinitionTables<TDefinition>>;
 
 		const kv = Object.freeze({
@@ -331,9 +288,6 @@ export function createBrowserWorkspaceRuntime({
 				await request(manifest, { kind: 'kv-unset', key });
 			},
 			observe(): never {
-				// Per-key observation crosses the Worker boundary with the
-				// first UI consumer (the Whispering settings port); until then
-				// a silent no-op would hide staleness.
 				throw new Error(
 					'kv.observe is not yet wired through the browser Worker runtime',
 				);
@@ -344,13 +298,6 @@ export function createBrowserWorkspaceRuntime({
 			id: definition.id,
 			tables,
 			kv: kv as never,
-			documents: createDocumentNamespace({
-				authorityKey,
-				workspaceId: definition.id,
-				definitions: definition.documents,
-				roomCatalog: documentRoomCatalog,
-				assertRuntimeOpen: assertOpen,
-			}),
 			records: Object.freeze({
 				sql<TResultSchema extends TSchema>(
 					query: string,
@@ -369,7 +316,6 @@ export function createBrowserWorkspaceRuntime({
 	}
 
 	return {
-		/** Bind an imported definition without opening OPFS or a document room. */
 		async open<TDefinition extends WorkspaceDefinition>(
 			definition: TDefinition,
 		): Promise<OpenedWorkspace<TDefinition>> {
@@ -391,7 +337,11 @@ export function createBrowserWorkspaceRuntime({
 				recordSync: recordSync?.binding,
 			};
 			const handle = createHandle(definition, manifest);
-			workspaces.set(definition.id, { definition, manifest, handle });
+			workspaces.set(definition.id, {
+				definition,
+				manifest,
+				handle,
+			});
 			return handle;
 		},
 		async [Symbol.asyncDispose](): Promise<void> {
@@ -404,8 +354,6 @@ export function createBrowserWorkspaceRuntime({
 			pending.clear();
 			workspaces.clear();
 			invalidationChannel?.close();
-			await documentRoomCatalog[Symbol.asyncDispose]();
-			await localStore[Symbol.asyncDispose]();
 		},
 	};
 }
@@ -414,41 +362,13 @@ export type BrowserWorkspaceRuntime = ReturnType<
 	typeof createBrowserWorkspaceRuntime
 >;
 
-function createBrowserDocumentSync(
-	attachRemote: AttachDocumentSync | undefined,
-	createBroadcastChannel: (name: string) => RuntimeBroadcastChannel | undefined,
-): AttachDocumentSync {
-	return (ydoc, storageRef) => {
-		const channel = createBroadcastChannel(`epicenter-${storageRef}-updates`);
-		const channelOrigin = Symbol('browser-document-channel');
-		const broadcast = (update: Uint8Array, origin: unknown) => {
-			if (origin !== channelOrigin) channel?.postMessage(update);
-		};
-		if (channel) {
-			channel.onmessage = (event: MessageEvent<unknown>) => {
-				if (event.data instanceof ArrayBuffer) {
-					Y.applyUpdate(ydoc, new Uint8Array(event.data), channelOrigin);
-				} else if (event.data instanceof Uint8Array) {
-					Y.applyUpdate(ydoc, event.data, channelOrigin);
-				}
-			};
-		}
-		ydoc.on('update', broadcast);
-		try {
-			const remote = attachRemote?.(ydoc, storageRef);
-			return {
-				[Symbol.dispose]() {
-					ydoc.off('update', broadcast);
-					channel?.close();
-					remote?.[Symbol.dispose]();
-				},
-			};
-		} catch (cause) {
-			ydoc.off('update', broadcast);
-			channel?.close();
-			throw cause;
-		}
-	};
+function isInvalidationMessage(value: unknown): value is InvalidationMessage {
+	if (typeof value !== 'object' || value === null || !('type' in value)) {
+		return false;
+	}
+	const message = value as Record<string, unknown>;
+	if (typeof message.workspaceId !== 'string') return false;
+	return message.type === 'records-changed';
 }
 
 function defaultBroadcastChannel(
@@ -481,9 +401,7 @@ function normalizeRecordSync(
 		}),
 	);
 	return {
-		binding: {
-			intervalMs: 30_000,
-		},
+		binding: { intervalMs: 30_000 },
 		baseUrl,
 		fetch: input.fetch ?? globalThis.fetch.bind(globalThis),
 		headers,

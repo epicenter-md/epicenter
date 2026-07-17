@@ -1,448 +1,102 @@
 /**
  * Bun Workspace Runtime Tests
  *
- * Verifies the production Bun record-owner door uses one lazy durable SQLite
- * file per workspace and releases ownership when the runtime closes.
+ * Verifies file-backed local persistence and the Bun runtime's background
+ * RowIntent transport wiring.
  *
  * Key behaviors:
- * - opening a workspace does not create its records file
- * - canonical rows survive closing and reopening the runtime
- * - two live runtimes cannot own the same records file
+ * - rows, KV, and row documents survive runtime close and reopen
+ * - synchronized local writes reach an in-process row authority
  */
 
-import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
-import {
-	existsSync,
-	mkdtempSync,
-	readdirSync,
-	readFileSync,
-	rmSync,
-} from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { field } from '@epicenter/field';
-import {
-	openRecordAuthority,
-	RECORD_SYNC_PROTOCOL_MAJOR,
-	type RecordCommand,
-	recordRoundDigest,
-} from '@epicenter/row-sync';
-import { createBunSqliteAdapter } from '@epicenter/row-sync/bun';
 import { expectOk } from 'wellcrafted/testing';
 import { createBunWorkspaceRuntime } from './bun-runtime.js';
-import type { CanonicalReplicaTransport } from './canonical-replica.js';
-import { document } from './document-definition.js';
 import { defineTable } from './lens-definition.js';
+import {
+	createTestTransport,
+	openTestAuthority,
+} from './row-sync-test-utils.js';
 import { defineWorkspace } from './runtime-definition.js';
 
 const definition = defineWorkspace({
-	id: 'skills',
+	id: 'bun-test',
 	tables: {
-		skills: defineTable({ fields: { title: field.string() } }),
+		notes: defineTable({ fields: { title: field.string() } }),
 	},
-	documents: {
-		preferences: document.keyValue({ entries: { theme: field.string() } }),
-	},
+	kv: { theme: field.select(['light', 'dark']) },
 });
 
-async function sha256(value: string): Promise<string> {
-	return new Bun.CryptoHasher('sha256').update(value).digest('hex');
-}
-
-function createAuthority() {
-	const native = new Database(':memory:');
-	const authority = openRecordAuthority({
-		database: createBunSqliteAdapter(native),
-		sha256,
-	});
-	const transport: CanonicalReplicaTransport = {
-		async sync(request) {
-			return authority.sync(request);
-		},
-		async snapshotChunk(request) {
-			return authority.snapshotChunk(request);
-		},
-	};
-	return { native, authority, transport };
-}
-
-function seedAuthority(
-	authority: ReturnType<typeof openRecordAuthority>,
-	replicaId: string,
-	commands: RecordCommand[],
-): void {
-	const response = authority.sync({
-		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		kind: 'sync',
-		token: { replicaId, acceptedRound: 0, checkpoint: 0 },
-		sealedRound: {
-			round: 1,
-			requestDigest: recordRoundDigest(commands),
-			commands,
-		},
-	});
-	if (!response.ok) throw new Error(`Seed sync refused: ${response.reason}`);
-}
-
-function authorityHasRow(
-	authority: ReturnType<typeof openRecordAuthority>,
-	rowId: string,
-): boolean {
-	const response = authority.sync({
-		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		kind: 'sync',
-		token: {
-			replicaId: 'authority-inspector',
-			acceptedRound: 0,
-			checkpoint: 0,
-		},
-	});
-	return (
-		response.ok &&
-		!response.snapshotRequired &&
-		response.entries.some(
-			(entry) => entry.kind === 'row' && entry.rowId === rowId,
-		)
-	);
-}
-
-async function waitFor(check: () => boolean | Promise<boolean>): Promise<void> {
-	for (let attempt = 0; attempt < 200; attempt += 1) {
-		if (await check()) return;
-		await Bun.sleep(5);
-	}
-	throw new Error('Timed out waiting for background synchronization');
-}
-
-test('Bun runtime lazily persists one canonical records file', async () => {
-	const storageRoot = mkdtempSync(join(tmpdir(), 'epicenter-runtime-'));
-	const path = join(storageRoot, 'skills.records.sqlite3');
-	const invalidations: string[] = [];
+test('local Bun runtime reopens durable rows, KV, and documents', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'epicenter-bun-runtime-'));
 	try {
-		const firstRuntime = createBunWorkspaceRuntime({
-			authorityKey: 'local-device',
-			storageRoot,
-			onRecordsChanged(workspaceId) {
-				invalidations.push(workspaceId);
-			},
-		});
-		const first = await firstRuntime.open(definition);
-		expect(existsSync(path)).toBe(false);
-		const created = await first.tables.skills.create({ title: 'Durable' });
-		await waitFor(() => invalidations.includes('skills'));
-		expect(existsSync(path)).toBe(true);
-		const preferences = await first.documents.preferences.open();
-		preferences.content.set('theme', 'dark');
-		preferences[Symbol.dispose]();
+		let rowId: string;
+		{
+			await using runtime = createBunWorkspaceRuntime({
+				authorityKey: 'local-authority',
+				storageRoot: root,
+			});
+			const workspace = await runtime.open(definition);
+			const row = await workspace.tables.notes.create({ title: 'Durable' });
+			rowId = row.id;
+			expectOk(await workspace.kv.set('theme', 'dark'));
+			using document = await workspace.tables.notes.document.open(row.id);
+			document.get('editor').insert(0, 'persisted');
+			await document.whenDurable();
+		}
 
-		expect(() =>
-			createBunWorkspaceRuntime({
-				authorityKey: 'local-device',
-				storageRoot,
-			}),
-		).toThrow('runtime storage already has an owner');
-
-		await firstRuntime[Symbol.asyncDispose]();
-		expect(
-			readFileSync(join(storageRoot, '.epicenter-runtime.json'), 'utf8'),
-		).not.toContain('local-device');
-		expect(() =>
-			createBunWorkspaceRuntime({
-				authorityKey: 'another-authority',
-				storageRoot,
-			}),
-		).toThrow('storage belongs to another authority');
-		await using reopenedRuntime = createBunWorkspaceRuntime({
-			authorityKey: 'local-device',
-			storageRoot,
+		await using reopened = createBunWorkspaceRuntime({
+			authorityKey: 'local-authority',
+			storageRoot: root,
 		});
-		const reopened = await reopenedRuntime.open(definition);
-		expect(expectOk(await reopened.tables.skills.get(created.id))).toEqual(
-			created,
+		const workspace = await reopened.open(definition);
+		expect(expectOk(await workspace.tables.notes.get(rowId!))?.title).toBe(
+			'Durable',
 		);
-		await using reopenedPreferences =
-			await reopened.documents.preferences.open();
-		expect(expectOk(reopenedPreferences.content.get('theme'))).toBe('dark');
-		expect(
-			readdirSync(storageRoot, { recursive: true }).some((name) =>
-				String(name).endsWith('.tmp'),
-			),
-		).toBe(false);
+		expect(expectOk(await workspace.kv.get('theme'))).toBe('dark');
+		using document = await workspace.tables.notes.document.open(rowId!);
+		expect(document.get('editor').toString()).toBe('persisted');
 	} finally {
-		rmSync(storageRoot, { recursive: true, force: true });
+		rmSync(root, { recursive: true, force: true });
 	}
 });
 
-test('Bun runtime synchronizes on startup and after local writes without public sync controls', async () => {
-	const storageRoot = mkdtempSync(join(tmpdir(), 'epicenter-runtime-sync-'));
-	const remote = createAuthority();
-	seedAuthority(remote.authority, 'remote-seed', [
-		{
-			kind: 'createRow',
-			table: 'skills',
-			rowId: 'remote-skill',
-			value: { title: 'From authority' },
-		},
-	]);
-	const invalidations: string[] = [];
-	let transportBindings = 0;
-	let syncs = 0;
+test('synchronized Bun runtime sends RowIntents through enroll and sync', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'epicenter-bun-sync-'));
+	const authorityState = openTestAuthority();
+	const transport = createTestTransport(authorityState.authority);
 	try {
 		await using runtime = createBunWorkspaceRuntime({
-			authorityKey: 'remote-account',
-			storageRoot,
-			recordTransport(workspaceId) {
-				expect(workspaceId).toBe('skills');
-				transportBindings += 1;
-				return {
-					...remote.transport,
-					async sync(request) {
-						syncs += 1;
-						return remote.transport.sync(request);
-					},
-				};
-			},
-			recordPollIntervalMs: 10,
-			onRecordsChanged(workspaceId) {
-				invalidations.push(workspaceId);
-			},
+			authorityKey: 'remote-authority',
+			storageRoot: root,
+			recordTransport: () => transport,
+			recordPollIntervalMs: 60_000,
 		});
-		const [first, reopened] = await Promise.all([
-			runtime.open(definition),
-			runtime.open(definition),
-		]);
-		expect(first).toBe(reopened);
-		expect('synchronize' in runtime).toBe(false);
-		expect('synchronize' in first).toBe(false);
-
-		await waitFor(async () => {
-			const row = expectOk(await first.tables.skills.get('remote-skill'));
-			return row?.title === 'From authority';
+		const workspace = await runtime.open(definition);
+		const row = await workspace.tables.notes.create({ title: 'Synced' });
+		await waitFor(() => authorityState.authority.inspect().rows.length === 1);
+		expect(authorityState.authority.inspect().rows[0]).toMatchObject({
+			rowId: row.id,
+			fields: { title: 'Synced' },
 		});
-		expect(transportBindings).toBe(1);
-		expect(invalidations).toContain('skills');
-
-		const created = await first.tables.skills.create({ title: 'Local write' });
-		await waitFor(() => authorityHasRow(remote.authority, created.id));
-		await runtime[Symbol.asyncDispose]();
-		const syncsAfterDisposal = syncs;
-		await Bun.sleep(30);
-		expect(syncs).toBe(syncsAfterDisposal);
+		await workspace.tables.notes.delete(row.id);
+		await waitFor(() => authorityState.authority.inspect().rows.length === 0);
+		expect(transport.enrollRequests).toHaveLength(1);
+		expect(transport.syncRequests.length).toBeGreaterThanOrEqual(2);
 	} finally {
-		remote.native.close();
-		rmSync(storageRoot, { recursive: true, force: true });
+		authorityState.database.close();
+		rmSync(root, { recursive: true, force: true });
 	}
 });
 
-test('Bun runtime recovers a durable outbox after restart', async () => {
-	const storageRoot = mkdtempSync(join(tmpdir(), 'epicenter-runtime-retry-'));
-	const remote = createAuthority();
-	const syncErrors: unknown[] = [];
-	try {
-		const offlineRuntime = createBunWorkspaceRuntime({
-			authorityKey: 'remote-account',
-			storageRoot,
-			recordTransport: () => ({
-				...remote.transport,
-				async sync() {
-					throw new Error('offline');
-				},
-			}),
-			recordPollIntervalMs: 10,
-			onSyncError(cause) {
-				syncErrors.push(cause);
-			},
-		});
-		const offline = await offlineRuntime.open(definition);
-		const created = await offline.tables.skills.create({ title: 'Retry me' });
-		await waitFor(() => syncErrors.length > 0);
-		expect(authorityHasRow(remote.authority, created.id)).toBe(false);
-		await offlineRuntime[Symbol.asyncDispose]();
-
-		await using recoveredRuntime = createBunWorkspaceRuntime({
-			authorityKey: 'remote-account',
-			storageRoot,
-			recordTransport: () => remote.transport,
-			recordPollIntervalMs: 10,
-		});
-		const recovered = await recoveredRuntime.open(definition);
-		expect(expectOk(await recovered.tables.skills.get(created.id))).toEqual(
-			created,
-		);
-		await waitFor(() => authorityHasRow(remote.authority, created.id));
-	} finally {
-		remote.native.close();
-		rmSync(storageRoot, { recursive: true, force: true });
+async function waitFor(predicate: () => boolean): Promise<void> {
+	const deadline = Date.now() + 2_000;
+	while (!predicate()) {
+		if (Date.now() > deadline) throw new Error('Timed out waiting for sync');
+		await Bun.sleep(10);
 	}
-});
-
-test('Bun runtime disposal aborts a stalled record transport', async () => {
-	const storageRoot = mkdtempSync(join(tmpdir(), 'epicenter-runtime-abort-'));
-	let syncStarted = false;
-	try {
-		const runtime = createBunWorkspaceRuntime({
-			authorityKey: 'remote-account',
-			storageRoot,
-			recordTransport: () => ({
-				async sync() {
-					syncStarted = true;
-					return await new Promise<never>(() => undefined);
-				},
-				async snapshotChunk() {
-					return await new Promise<never>(() => undefined);
-				},
-			}),
-		});
-		const skills = await runtime.open(definition);
-		await skills.tables.skills.get('missing');
-		await waitFor(() => syncStarted);
-
-		await Promise.race([
-			runtime[Symbol.asyncDispose](),
-			Bun.sleep(500).then(() => {
-				throw new Error('Runtime disposal did not abort stalled transport');
-			}),
-		]);
-
-		await using reopened = createBunWorkspaceRuntime({
-			authorityKey: 'remote-account',
-			storageRoot,
-		});
-		const reopenedSkills = await reopened.open(definition);
-		expect(await reopenedSkills.tables.skills.get('missing')).toEqual({
-			data: undefined,
-			error: null,
-		});
-	} finally {
-		rmSync(storageRoot, { recursive: true, force: true });
-	}
-});
-
-test('Bun runtime disposal aborts a stalled transport factory', async () => {
-	const storageRoot = mkdtempSync(
-		join(tmpdir(), 'epicenter-runtime-factory-abort-'),
-	);
-	let factoryStarted = false;
-	try {
-		const runtime = createBunWorkspaceRuntime({
-			authorityKey: 'remote-account',
-			storageRoot,
-			async recordTransport() {
-				factoryStarted = true;
-				return await new Promise<never>(() => undefined);
-			},
-		});
-		const skills = await runtime.open(definition);
-		const pendingRead = skills.tables.skills
-			.get('missing')
-			.catch((cause) => cause);
-		await waitFor(() => factoryStarted);
-
-		await Promise.race([
-			runtime[Symbol.asyncDispose](),
-			Bun.sleep(500).then(() => {
-				throw new Error('Runtime disposal did not abort transport factory');
-			}),
-		]);
-		expect(await pendingRead).toBeDefined();
-
-		await using reopened = createBunWorkspaceRuntime({
-			authorityKey: 'remote-account',
-			storageRoot,
-		});
-		const reopenedSkills = await reopened.open(definition);
-		expect(await reopenedSkills.tables.skills.get('missing')).toEqual({
-			data: undefined,
-			error: null,
-		});
-	} finally {
-		rmSync(storageRoot, { recursive: true, force: true });
-	}
-});
-
-test('Bun runtime disposal aborts a stalled sync and preserves its pending commands', async () => {
-	const storageRoot = mkdtempSync(
-		join(tmpdir(), 'epicenter-runtime-sync-abort-'),
-	);
-	const remote = createAuthority();
-	let syncStarted = false;
-	try {
-		const runtime = createBunWorkspaceRuntime({
-			authorityKey: 'remote-account',
-			storageRoot,
-			recordTransport: () => ({
-				...remote.transport,
-				async sync() {
-					syncStarted = true;
-					return await new Promise<never>(() => undefined);
-				},
-			}),
-		});
-		const skills = await runtime.open(definition);
-		const created = await skills.tables.skills.create({ title: 'Pending' });
-		await waitFor(() => syncStarted);
-
-		await Promise.race([
-			runtime[Symbol.asyncDispose](),
-			Bun.sleep(500).then(() => {
-				throw new Error('Runtime disposal did not abort stalled sync');
-			}),
-		]);
-		expect(authorityHasRow(remote.authority, created.id)).toBe(false);
-
-		await using reopened = createBunWorkspaceRuntime({
-			authorityKey: 'remote-account',
-			storageRoot,
-			recordTransport: () => remote.transport,
-			recordPollIntervalMs: 10,
-		});
-		const reopenedSkills = await reopened.open(definition);
-		expect(
-			expectOk(await reopenedSkills.tables.skills.get(created.id)),
-		).toEqual(created);
-		await waitFor(() => authorityHasRow(remote.authority, created.id));
-	} finally {
-		remote.native.close();
-		rmSync(storageRoot, { recursive: true, force: true });
-	}
-});
-
-test('Bun runtime owns document sync attachment and cleanup', async () => {
-	const storageRoot = mkdtempSync(join(tmpdir(), 'epicenter-runtime-docs-'));
-	let attached = 0;
-	let detached = 0;
-	try {
-		const runtime = createBunWorkspaceRuntime({
-			authorityKey: 'remote-account',
-			storageRoot,
-			attachDocumentSync(ydoc, storageRef) {
-				expect(ydoc.guid).toBe(storageRef);
-				attached += 1;
-				return {
-					[Symbol.dispose]() {
-						detached += 1;
-					},
-				};
-			},
-		});
-		const skills = await runtime.open(definition);
-		const first = await skills.documents.preferences.open();
-		const second = await skills.documents.preferences.open();
-		expect(attached).toBe(1);
-		first.content.set('theme', 'dark');
-		first[Symbol.dispose]();
-		second[Symbol.dispose]();
-		await waitFor(() => detached === 1);
-
-		const live = await skills.documents.preferences.open();
-		expect(attached).toBe(2);
-		expect(expectOk(live.content.get('theme'))).toBe('dark');
-		await runtime[Symbol.asyncDispose]();
-		expect(detached).toBe(2);
-		expect(() => live.content.get('theme')).toThrow('runtime is disposed');
-		live[Symbol.dispose]();
-	} finally {
-		rmSync(storageRoot, { recursive: true, force: true });
-	}
-});
+}

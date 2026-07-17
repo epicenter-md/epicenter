@@ -95,7 +95,7 @@ function createSkillsState() {
 			return skill.id;
 		},
 		async updateSkill(id: string, updates: SkillMetadataUpdate): Promise<void> {
-			const result = await skills.tables.skills.patch(id, {
+			const result = await skills.tables.skills.update(id, {
 				...updates,
 				updatedAt: InstantString.now(),
 			});

@@ -16,5 +16,5 @@ export function repairRecordingSourceId({
 	canonicalId: string;
 	sourceId: string;
 }) {
-	return workspace.tables.recordings.patch(canonicalId, { sourceId });
+	return workspace.tables.recordings.update(canonicalId, { sourceId });
 }

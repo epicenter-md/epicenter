@@ -5,8 +5,6 @@ import type { Recording } from '$lib/workspace';
 
 export type { Recording } from '$lib/workspace';
 
-const PAGE_SIZE = 500;
-
 function createRecordings() {
 	let rows = $state.raw<Recording[]>([]);
 	let nonconforming = $state.raw<RecordLensError[]>([]);
@@ -26,23 +24,16 @@ function createRecordings() {
 		const nextRows: Recording[] = [];
 		const nextNonconforming: RecordLensError[] = [];
 		const nextCanonicalIds = new Map<string, string>();
-		let cursor: string | undefined;
 		try {
-			do {
-				const page = await whispering.tables.recordings.scan({
-					...(cursor && { cursor }),
-					limit: PAGE_SIZE,
-				});
-				for (const { id: canonicalId, sourceId, ...recording } of page.rows) {
-					if (nextCanonicalIds.has(sourceId)) {
-						throw new Error(`Duplicate recording source id '${sourceId}'`);
-					}
-					nextCanonicalIds.set(sourceId, canonicalId);
-					nextRows.push({ id: sourceId, ...recording });
+			const listed = await whispering.tables.recordings.list();
+			for (const { id: canonicalId, sourceId, ...recording } of listed.rows) {
+				if (nextCanonicalIds.has(sourceId)) {
+					throw new Error(`Duplicate recording source id '${sourceId}'`);
 				}
-				nextNonconforming.push(...page.nonconforming);
-				cursor = page.nextCursor;
-			} while (cursor !== undefined);
+				nextCanonicalIds.set(sourceId, canonicalId);
+				nextRows.push({ id: sourceId, ...recording });
+			}
+			nextNonconforming.push(...listed.nonconforming);
 			if (generation !== refreshGeneration) return;
 			rows = nextRows;
 			nonconforming = nextNonconforming;
@@ -78,7 +69,7 @@ function createRecordings() {
 			const { id: sourceId, ...value } = recording;
 			const canonicalId = canonicalIdBySourceId.get(sourceId);
 			if (canonicalId) {
-				const result = await whispering.tables.recordings.patch(
+				const result = await whispering.tables.recordings.update(
 					canonicalId,
 					value,
 				);
@@ -91,7 +82,7 @@ function createRecordings() {
 		async update(id: string, partial: Partial<Omit<Recording, 'id'>>) {
 			const canonicalId = canonicalIdBySourceId.get(id);
 			if (!canonicalId) return Ok(undefined);
-			const result = await whispering.tables.recordings.patch(
+			const result = await whispering.tables.recordings.update(
 				canonicalId,
 				partial,
 			);

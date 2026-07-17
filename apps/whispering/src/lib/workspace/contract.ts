@@ -2,7 +2,6 @@ import { field } from '@epicenter/field';
 import {
 	defineTable,
 	defineWorkspace,
-	document,
 	type RowFor,
 } from '@epicenter/workspace/sqlite';
 import type { Static, TSchema } from 'typebox';
@@ -133,7 +132,5 @@ export const whisperingWorkspace = defineWorkspace({
 		recordings: recordingsTable,
 		recipes: recipesTable,
 	},
-	documents: {
-		settings: document.keyValue({ entries: whisperingSettingEntries }),
-	},
+	kv: whisperingSettingEntries,
 });

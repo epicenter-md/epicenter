@@ -45,7 +45,6 @@
  * storage.
  */
 
-import { createHash } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { assertStrongToken } from '@epicenter/auth';
@@ -141,7 +140,6 @@ export function startSelfHostServer(): void {
 	const bunRooms = createBunRooms({ dir: join(dataDir, 'rooms') });
 	const bunRecords = createBunRecords({
 		dir: join(dataDir, 'records'),
-		sha256: async (value) => createHash('sha256').update(value).digest('hex'),
 	});
 	// The AttachRelay coordinator for this instance (ADR-0115): the
 	// endpoint-addressed byte forwarder. It shares this process's one `Bun.serve`

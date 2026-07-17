@@ -1,18 +1,13 @@
 /**
- * Record Authority Adapter Conformance Tests
+ * Row Authority Adapter Conformance Tests
  *
- * Runs the schema-blind current-state contract against every supported SQLite
- * adapter.
- *
- * Key behaviors:
- * - atomic pushes and server-ordered current-state pulls
- * - snapshot publication and validation
- * - transaction rollback in every adapter
+ * Runs the schema-blind RowIntent contract against every supported SQLite
+ * adapter: enrollment, atomic sealed-round folds, composite outcome paging,
+ * and transaction rollback.
  */
 
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
-import { createHash } from 'node:crypto';
 import {
 	type BrowserSqliteDatabase,
 	createBrowserSqliteAdapter,
@@ -22,17 +17,32 @@ import {
 	createDurableObjectSqliteAdapter,
 	type DurableObjectSqliteStorage,
 } from './adapters/durable-object.js';
-import { openRecordAuthority } from './authority.js';
-import { RECORD_SYNC_PROTOCOL_MAJOR, type SyncRequest } from './protocol.js';
-import { recordRoundDigest } from './round-digest.js';
-import { isValidSnapshotChunk, isValidSnapshotManifest } from './snapshot.js';
-import type { RecordSyncSqlite, SqliteValue } from './sqlite.js';
+import { type DocumentCodec, openRowAuthority } from './authority.js';
+import {
+	encodeBase64,
+	ROW_SYNC_PROTOCOL_MAJOR,
+	type WireRowIntent,
+} from './protocol.js';
+import { rowRoundDigest } from './round-digest.js';
+import type { RowSyncSqlite, SqliteValue } from './sqlite.js';
 
-const sha256 = async (value: string) =>
-	createHash('sha256').update(value).digest('hex');
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+
+const codec: DocumentCodec = {
+	mergedCompactState(parts) {
+		const tokens = new Set<string>();
+		for (const part of parts) {
+			for (const token of JSON.parse(decoder.decode(part)) as string[]) {
+				tokens.add(token);
+			}
+		}
+		return encoder.encode(JSON.stringify([...tokens].sort()));
+	},
+};
 
 type OpenDatabase = () => {
-	database: RecordSyncSqlite;
+	database: RowSyncSqlite;
 	close(): void;
 };
 
@@ -115,36 +125,26 @@ const adapters: [name: string, open: OpenDatabase][] = [
 	],
 ];
 
-function round(): SyncRequest {
-	const commands = [
-		{
-			kind: 'createRow' as const,
-			table: 'skills',
-			rowId: 'skill-1',
-			value: { title: 'Initial', unknown: { preserved: true } },
-		},
-		{
-			kind: 'patchRow' as const,
-			table: 'skills',
-			rowId: 'skill-1',
-			set: { title: 'Updated', nullable: null },
-			unset: [],
-		},
-	];
-	return {
-		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		kind: 'sync',
-		token: { replicaId: 'replica-a', acceptedRound: 0, checkpoint: 0 },
-		sealedRound: {
-			round: 1,
-			requestDigest: recordRoundDigest(commands),
-			commands,
-		},
-	};
-}
+const ROW_ID = 'abc123def456ghi789jkl012';
+
+const intents: WireRowIntent[] = [
+	{
+		kind: 'create',
+		table: 'skills',
+		rowId: ROW_ID,
+		fields: { title: 'Initial', unknown: { preserved: true } },
+		documentUpdate: encodeBase64(encoder.encode(JSON.stringify(['seed']))),
+	},
+	{
+		kind: 'update',
+		table: 'skills',
+		rowId: ROW_ID,
+		fields: { set: { title: 'Updated', nullable: null }, unset: [] },
+	},
+];
 
 for (const [name, open] of adapters) {
-	test(`${name}: atomic round folds into current state and snapshot`, async () => {
+	test(`${name}: composite outcomes persist across authority reopen`, () => {
 		const { database, close } = open();
 		try {
 			database.run('CREATE TABLE transaction_probe(value TEXT NOT NULL)');
@@ -162,41 +162,113 @@ for (const [name, open] of adapters) {
 				)[0]?.count,
 			).toBe(0);
 
-			const authority = openRecordAuthority({ database, sha256 });
-			expect(authority.sync(round())).toEqual({
+			const authority = openRowAuthority({ database, codec });
+			const enrolled = authority.enroll({
+				protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+				kind: 'enroll',
+			});
+			if (!enrolled.ok) throw new Error('Enrollment failed');
+
+			const accepted = authority.sync({
+				protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+				kind: 'sync',
+				token: {
+					replicaId: enrolled.replicaId,
+					acceptedRound: 0,
+					checkpoint: 0,
+				},
+				sealedRound: {
+					round: 1,
+					requestDigest: rowRoundDigest(intents),
+					submission: 1,
+					intents,
+				},
+			});
+			expect(accepted).toMatchObject({
 				kind: 'sync',
 				ok: true,
-				snapshotRequired: false,
-				token: { replicaId: 'replica-a', acceptedRound: 1, checkpoint: 2 },
-				entries: [
+				result: 'page',
+				token: {
+					replicaId: enrolled.replicaId,
+					acceptedRound: 1,
+					checkpoint: 2,
+				},
+			});
+
+			const reopened = openRowAuthority({ database, codec });
+			expect(
+				reopened.sync({
+					protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+					kind: 'sync',
+					token: {
+						replicaId: enrolled.replicaId,
+						acceptedRound: 1,
+						checkpoint: 0,
+					},
+					pageLimit: 1,
+				}),
+			).toEqual({
+				kind: 'sync',
+				ok: true,
+				result: 'page',
+				token: {
+					replicaId: enrolled.replicaId,
+					acceptedRound: 1,
+					checkpoint: 1,
+				},
+				outcomes: [
 					{
 						kind: 'row',
 						table: 'skills',
-						rowId: 'skill-1',
-						value: {
+						rowId: ROW_ID,
+						fields: { title: 'Initial', unknown: { preserved: true } },
+						documentUpdate: encodeBase64(
+							encoder.encode(JSON.stringify(['seed'])),
+						),
+						sequence: 1,
+					},
+				],
+				hasMore: true,
+				retentionFloor: 0,
+			});
+
+			const reopenedAgain = openRowAuthority({ database, codec });
+			expect(
+				reopenedAgain.sync({
+					protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+					kind: 'sync',
+					token: {
+						replicaId: enrolled.replicaId,
+						acceptedRound: 1,
+						checkpoint: 1,
+					},
+					pageLimit: 1,
+				}),
+			).toEqual({
+				kind: 'sync',
+				ok: true,
+				result: 'page',
+				token: {
+					replicaId: enrolled.replicaId,
+					acceptedRound: 1,
+					checkpoint: 2,
+				},
+				outcomes: [
+					{
+						kind: 'row',
+						table: 'skills',
+						rowId: ROW_ID,
+						fields: {
 							title: 'Updated',
 							unknown: { preserved: true },
 							nullable: null,
 						},
-						lastServerSequence: 2,
+						sequence: 2,
 					},
 				],
 				hasMore: false,
+				retentionFloor: 0,
 			});
-
-			const manifest = await authority.publishSnapshot({
-				maxChunkBytes: 512 * 1024,
-			});
-			if (!manifest) throw new Error('Expected stable snapshot publication');
-			expect(await isValidSnapshotManifest(sha256, manifest)).toBeTrue();
-			const response = authority.snapshotChunk({
-				protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-				kind: 'snapshotChunk',
-				generation: manifest.generation,
-				index: 0,
-			});
-			if (!response.ok) throw new Error(response.reason);
-			expect(await isValidSnapshotChunk(sha256, response.chunk)).toBeTrue();
 		} finally {
 			close();
 		}

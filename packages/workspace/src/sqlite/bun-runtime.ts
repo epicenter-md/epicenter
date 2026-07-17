@@ -10,45 +10,34 @@ import {
 import { dirname, join, resolve } from 'node:path';
 import { createBunSqliteAdapter } from '@epicenter/row-sync/bun';
 import { sha256Hex } from '../shared/sha256.js';
-import { createCanonicalRecords } from './canonical-records.js';
+import { mergeDocumentUpdates } from './canonical-documents.js';
 import {
 	type CanonicalReplicaTransport,
 	createCanonicalReplica,
 } from './canonical-replica.js';
-import {
-	type AttachDocumentSync,
-	createDocumentRoomCatalog,
-} from './document-runtime.js';
 import { createWorkspaceRuntime } from './runtime.js';
 
 const ownedRoots = new Set<string>();
 
-/** Open a Bun runtime whose workspace record owners are lazy SQLite files. */
+/** Open a Bun runtime whose workspace owners are lazy SQLite files. */
 export function createBunWorkspaceRuntime({
 	authorityKey,
 	storageRoot,
 	recordTransport,
-	attachDocumentSync,
 	onRecordsChanged = () => undefined,
 	onSyncError = () => undefined,
 	recordPollIntervalMs = 30_000,
 }: {
 	authorityKey: string;
 	storageRoot: string;
-	/** Environment-owned private transport binding for each synchronized workspace. */
 	recordTransport?(
 		workspaceId: string,
 	):
 		| CanonicalReplicaTransport
 		| undefined
 		| Promise<CanonicalReplicaTransport | undefined>;
-	/** Environment-owned remote Yjs attachment, started after local hydration. */
-	attachDocumentSync?: AttachDocumentSync;
-	/** Lossy re-read hint after local commits and installed remote state. */
 	onRecordsChanged?(workspaceId: string): void;
-	/** Environment-owned reporting for retryable background sync failures. */
 	onSyncError?(cause: unknown, workspaceId: string): void;
-	/** Private periodic remote repair interval for synchronized workspaces. */
 	recordPollIntervalMs?: number;
 }) {
 	if (!Number.isFinite(recordPollIntervalMs) || recordPollIntervalMs <= 0) {
@@ -66,38 +55,8 @@ export function createBunWorkspaceRuntime({
 		ownedRoots.delete(root);
 		throw cause;
 	}
-	const documentsRoot = join(root, 'documents');
-	const documentCatalogRoot = join(documentsRoot, 'catalog');
-	const documentRoomCatalog = createDocumentRoomCatalog({
-		localStore: {
-			async rememberRoom(manifest) {
-				mkdirSync(documentCatalogRoot, { recursive: true });
-				const path = join(documentCatalogRoot, `${manifest.storageRef}.json`);
-				const encoded = JSON.stringify(manifest);
-				if (existsSync(path)) {
-					if (readFileSync(path, 'utf8') !== encoded) {
-						throw new Error(
-							`Document room manifest conflicts with persisted catalog: ${manifest.storageRef}`,
-						);
-					}
-					return;
-				}
-				writeFileAtomic(path, encoded);
-			},
-			async load(roomId) {
-				const path = join(documentsRoot, `${roomId}.yjs`);
-				return existsSync(path) ? readFileSync(path) : undefined;
-			},
-			async save(roomId, update) {
-				mkdirSync(documentsRoot, { recursive: true });
-				writeFileAtomic(join(documentsRoot, `${roomId}.yjs`), update);
-			},
-		},
-		attachSync: attachDocumentSync,
-	});
+
 	const runtime = createWorkspaceRuntime({
-		authorityKey,
-		documentRoomCatalog,
 		async openRecordOwner(workspaceId, signal) {
 			const path = join(root, `${workspaceId}.records.sqlite3`);
 			let database: Database | undefined;
@@ -115,7 +74,7 @@ export function createBunWorkspaceRuntime({
 					try {
 						onSyncError(cause, workspaceId);
 					} catch {
-						// A reporting sink cannot become another synchronization failure.
+						// Reporting cannot become another synchronization failure.
 					}
 				};
 				const emitRecordsChanged = (): void => {
@@ -126,25 +85,10 @@ export function createBunWorkspaceRuntime({
 						reportSyncError(cause);
 					}
 				};
-				const remoteCommitListeners = new Set<() => void>();
-				const emitRemoteCommit = (): void => {
-					emitRecordsChanged();
-					for (const listener of remoteCommitListeners) {
-						try {
-							listener();
-						} catch (cause) {
-							reportSyncError(cause);
-						}
-					}
-				};
-				const subscribeRemoteCommit = (listener: () => void): (() => void) => {
-					remoteCommitListeners.add(listener);
-					return () => remoteCommitListeners.delete(listener);
-				};
 				if (!transport) {
 					return {
 						sqlite,
-						admit() {
+						onLocalCommit() {
 							queueMicrotask(emitRecordsChanged);
 						},
 						async [Symbol.asyncDispose]() {
@@ -154,21 +98,29 @@ export function createBunWorkspaceRuntime({
 					};
 				}
 
-				// Establish the schema-opaque canonical map before background sync can
-				// install remote rows. The runtime installs release-local lens views next.
-				createCanonicalRecords(sqlite, {});
-				let activeSynchronization: Promise<void> | undefined;
+				const remoteCommitListeners = new Set<() => void>();
+				const deletionListeners = new Set<
+					(addresses: { table: string; rowId: string }[]) => void
+				>();
 				const cancellableTransport: CanonicalReplicaTransport = {
+					enroll: (request) => abortable(transport.enroll(request), signal),
 					sync: (request) => abortable(transport.sync(request), signal),
-					snapshotChunk: (request) =>
-						abortable(transport.snapshotChunk(request), signal),
+					baselineScan: (request) =>
+						abortable(transport.baselineScan(request), signal),
 				};
 				const replica = createCanonicalReplica({
 					sqlite,
 					transport: cancellableTransport,
-					sha256: async (value) => sha256Hex(value),
-					onRemoteCommit: emitRemoteCommit,
+					codec: { mergeUpdates: mergeDocumentUpdates },
+					onRemoteCommit() {
+						emitRecordsChanged();
+						for (const listener of remoteCommitListeners) listener();
+					},
+					onRowsDeleted(addresses) {
+						for (const listener of deletionListeners) listener(addresses);
+					},
 				});
+				let activeSynchronization: Promise<void> | undefined;
 				const synchronize = (): void => {
 					if (ownerDisposed) return;
 					const pending = replica
@@ -184,22 +136,30 @@ export function createBunWorkspaceRuntime({
 					});
 					activeSynchronization = synchronization;
 				};
-				const scheduleSynchronization = (): void => {
-					queueMicrotask(synchronize);
-				};
 				const poll = setInterval(synchronize, recordPollIntervalMs);
 				poll.unref();
-				scheduleSynchronization();
+				queueMicrotask(synchronize);
 				return {
 					sqlite,
-					admit(command) {
-						replica.admit(command);
+					admitIntent(intent) {
+						replica.admit(intent);
 						queueMicrotask(() => {
 							emitRecordsChanged();
 							synchronize();
 						});
 					},
-					subscribeRemoteCommit,
+					readCurrentRow: replica.readCurrentRow,
+					readCurrentDocumentParts: replica.readCurrentDocumentParts,
+					subscribeRemoteCommit(listener: () => void) {
+						remoteCommitListeners.add(listener);
+						return () => remoteCommitListeners.delete(listener);
+					},
+					subscribeRowsDeleted(
+						listener: (addresses: { table: string; rowId: string }[]) => void,
+					) {
+						deletionListeners.add(listener);
+						return () => deletionListeners.delete(listener);
+					},
 					async [Symbol.asyncDispose]() {
 						ownerDisposed = true;
 						clearInterval(poll);
@@ -213,6 +173,7 @@ export function createBunWorkspaceRuntime({
 			}
 		},
 	});
+
 	let isDisposed = false;
 	return Object.freeze({
 		open: runtime.open,

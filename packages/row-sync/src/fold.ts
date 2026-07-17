@@ -2,86 +2,92 @@ import {
 	encodedJsonBytes,
 	isAdmissibleJsonObject,
 	isReservedKvAddress,
-	RECORD_SYNC_ADMISSION_LIMITS,
+	ROW_SYNC_ADMISSION_LIMITS,
 } from './admission.js';
-import type { JsonObject, RecordCommand } from './protocol.js';
+import type { JsonObject, WireRowIntent } from './protocol.js';
 
-/** The row-state commands; `bodyAppend` folds into a row's body log instead. */
-export type RowCommand = Exclude<RecordCommand, { kind: 'bodyAppend' }>;
-
-export type RowFoldResult =
-	| { kind: 'row'; value: JsonObject }
+/**
+ * The scalar component of one intent folded against one current row. The
+ * document component folds separately at the authority (ADR-0131: field and
+ * document components of a live-row update are independent laws).
+ */
+export type FieldsFoldResult =
+	| { kind: 'fields'; fields: JsonObject }
 	| { kind: 'deletion' }
 	| { kind: 'noop' };
 
 /**
- * Fold one schema-blind command into one current row. This is the mirror rule
- * (ADR-0131): the authority folds every accepted command with it and every
- * replica replays pending intent with it, so both sides reach the same
- * application or the same deterministic no-op. Nothing here refuses:
+ * Fold one schema-blind RowIntent's field component into one current row.
+ * This is the mirror rule (ADR-0131): the authority folds every accepted
+ * intent with it and every replica projects pending intent with it, so both
+ * sides reach the same application or the same deterministic no-op. Nothing
+ * here refuses:
  *
- * - `createRow` on a live row is a no-op; first create wins.
- * - `patchRow` on an absent row is a no-op, except at the reserved KV address
+ * - `create` on a live row is a no-op; first create wins.
+ * - `update` on an absent row is a no-op, except at the reserved KV address
  *   (ADR-0132), where it folds from `{}`.
  * - A folded row that exceeds its capacity cap (the general row cap, or the
  *   KV aggregate cap at the reserved address) is a no-op.
- * - `deleteRow` on an absent row is a no-op; deletion is permanent.
+ * - `delete` on an absent row is a no-op; deletion is permanent.
+ * - A document-only `update` leaves fields untouched (`noop` here); its
+ *   liveness rule is the caller's, because absence no-ops the whole intent.
  */
-export function foldRow(
+export function foldFields(
 	current: JsonObject | undefined,
-	command: RowCommand,
-): RowFoldResult {
-	switch (command.kind) {
-		case 'createRow':
-			return current === undefined && fitsCapacity(command, command.value)
-				? { kind: 'row', value: structuredClone(command.value) }
+	intent: WireRowIntent,
+): FieldsFoldResult {
+	switch (intent.kind) {
+		case 'create':
+			return current === undefined && fitsCapacity(intent, intent.fields)
+				? { kind: 'fields', fields: structuredClone(intent.fields) }
 				: { kind: 'noop' };
-		case 'patchRow': {
+		case 'update': {
+			if (intent.fields === undefined) return { kind: 'noop' };
 			const base =
 				current ??
-				(isReservedKvAddress(command.table, command.rowId) ? {} : undefined);
+				(isReservedKvAddress(intent.table, intent.rowId) ? {} : undefined);
 			if (base === undefined) return { kind: 'noop' };
-			const value = structuredClone(base);
-			for (const key of command.unset) delete value[key];
-			for (const [key, next] of Object.entries(command.set)) {
-				Object.defineProperty(value, key, {
+			const fields = structuredClone(base);
+			for (const key of intent.fields.unset) delete fields[key];
+			for (const [key, next] of Object.entries(intent.fields.set)) {
+				Object.defineProperty(fields, key, {
 					configurable: true,
 					enumerable: true,
 					value: structuredClone(next),
 					writable: true,
 				});
 			}
-			return fitsCapacity(command, value)
-				? { kind: 'row', value }
+			return fitsCapacity(intent, fields)
+				? { kind: 'fields', fields }
 				: { kind: 'noop' };
 		}
-		case 'deleteRow':
+		case 'delete':
 			return current === undefined ? { kind: 'noop' } : { kind: 'deletion' };
 	}
 }
 
 /**
  * The capacity fold rule. No compositionally closed local bound exists for
- * schema-blind patch composition, so the cap is enforced where composition
- * happens: at fold time, deterministically, on both sides.
+ * schema-blind set/unset composition, so the cap is enforced where
+ * composition happens: at fold time, deterministically, on both sides.
  */
 function fitsCapacity(
-	command: { table: string; rowId: string },
-	value: JsonObject,
+	intent: { table: string; rowId: string },
+	fields: JsonObject,
 ): boolean {
-	if (!isAdmissibleJsonObject(value)) return false;
-	if (isReservedKvAddress(command.table, command.rowId)) {
+	if (!isAdmissibleJsonObject(fields)) return false;
+	if (isReservedKvAddress(intent.table, intent.rowId)) {
 		return (
-			encodedJsonBytes(value) <=
-			RECORD_SYNC_ADMISSION_LIMITS.encodedKvAggregateBytes
+			encodedJsonBytes(fields) <=
+			ROW_SYNC_ADMISSION_LIMITS.encodedKvAggregateBytes
 		);
 	}
 	return (
 		encodedJsonBytes({
-			table: command.table,
-			rowId: command.rowId,
-			value,
-			lastServerSequence: Number.MAX_SAFE_INTEGER,
-		}) <= RECORD_SYNC_ADMISSION_LIMITS.encodedRowBytes
+			table: intent.table,
+			rowId: intent.rowId,
+			fields,
+			sequence: Number.MAX_SAFE_INTEGER,
+		}) <= ROW_SYNC_ADMISSION_LIMITS.encodedRowBytes
 	);
 }

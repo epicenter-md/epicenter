@@ -4,8 +4,6 @@ import { onWhisperingRecordsChanged, whispering } from '#platform/whispering';
 import { BUILTIN_RECIPES } from '$lib/state/builtin-recipes';
 import type { Recipe } from '$lib/workspace';
 
-const PAGE_SIZE = 500;
-
 function createRecipes() {
 	let rows = $state.raw<Recipe[]>([]);
 	let nonconforming = $state.raw<RecordLensError[]>([]);
@@ -22,23 +20,16 @@ function createRecipes() {
 		const nextRows: Recipe[] = [];
 		const nextNonconforming: RecordLensError[] = [];
 		const nextCanonicalIds = new Map<string, string>();
-		let cursor: string | undefined;
 		try {
-			do {
-				const page = await whispering.tables.recipes.scan({
-					...(cursor && { cursor }),
-					limit: PAGE_SIZE,
-				});
-				for (const { id: canonicalId, sourceId, ...recipe } of page.rows) {
-					if (nextCanonicalIds.has(sourceId)) {
-						throw new Error(`Duplicate recipe source id '${sourceId}'`);
-					}
-					nextCanonicalIds.set(sourceId, canonicalId);
-					nextRows.push({ id: sourceId, ...recipe });
+			const listed = await whispering.tables.recipes.list();
+			for (const { id: canonicalId, sourceId, ...recipe } of listed.rows) {
+				if (nextCanonicalIds.has(sourceId)) {
+					throw new Error(`Duplicate recipe source id '${sourceId}'`);
 				}
-				nextNonconforming.push(...page.nonconforming);
-				cursor = page.nextCursor;
-			} while (cursor !== undefined);
+				nextCanonicalIds.set(sourceId, canonicalId);
+				nextRows.push({ id: sourceId, ...recipe });
+			}
+			nextNonconforming.push(...listed.nonconforming);
 			if (generation !== refreshGeneration) return;
 			rows = nextRows;
 			nonconforming = nextNonconforming;
@@ -71,7 +62,7 @@ function createRecipes() {
 			const { id: sourceId, ...value } = recipe;
 			const canonicalId = canonicalIdBySourceId.get(sourceId);
 			if (canonicalId) {
-				const result = await whispering.tables.recipes.patch(
+				const result = await whispering.tables.recipes.update(
 					canonicalId,
 					value,
 				);

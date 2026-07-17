@@ -1,7 +1,5 @@
-import { field } from '@epicenter/field';
 import {
 	defineWorkspace,
-	document,
 	type OpenedWorkspace,
 } from '@epicenter/workspace/sqlite';
 import { SKILLS_WORKSPACE_ID } from './constants.js';
@@ -16,12 +14,6 @@ export const skillsWorkspace = defineWorkspace({
 	tables: {
 		skills: skillsTable,
 		references: referencesTable,
-	},
-	documents: {
-		instructions: document.text({ params: { skillId: field.string() } }),
-		reference: document.text({
-			params: { referenceId: field.string() },
-		}),
 	},
 });
 

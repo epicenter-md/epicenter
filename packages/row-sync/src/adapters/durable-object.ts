@@ -1,4 +1,4 @@
-import type { RecordSyncSqlite, SqliteRow, SqliteValue } from '../sqlite.js';
+import type { RowSyncSqlite, SqliteRow, SqliteValue } from '../sqlite.js';
 
 export type DurableObjectSqliteStorage = {
 	sql: {
@@ -13,7 +13,7 @@ export type DurableObjectSqliteStorage = {
 /** Adapt a SQLite-backed Durable Object's synchronous storage API. */
 export function createDurableObjectSqliteAdapter(
 	storage: DurableObjectSqliteStorage,
-): RecordSyncSqlite {
+): RowSyncSqlite {
 	return {
 		run(sql, parameters = []): void {
 			storage.sql.exec(sql, ...parameters);

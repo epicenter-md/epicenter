@@ -2,8 +2,6 @@ import type { RecordLensError } from '@epicenter/workspace/sqlite';
 import type { Reference, Skill } from './tables.js';
 import type { SkillsWorkspace } from './workspace.js';
 
-const PAGE_SIZE = 500;
-
 export type SkillsScan = {
 	skills: Skill[];
 	nonconforming: RecordLensError[];
@@ -14,41 +12,27 @@ export type ReferencesScan = {
 	nonconforming: RecordLensError[];
 };
 
-/** Read the complete skill catalog through mandatory bounded pages. */
+/** Read the complete conforming skill catalog and surface invalid rows. */
 export async function scanSkills(
 	workspace: SkillsWorkspace,
 ): Promise<SkillsScan> {
 	const skills: Skill[] = [];
 	const nonconforming: RecordLensError[] = [];
-	let cursor: string | undefined;
-	do {
-		const page = await workspace.tables.skills.scan({
-			...(cursor && { cursor }),
-			limit: PAGE_SIZE,
-		});
-		skills.push(...page.rows);
-		nonconforming.push(...page.nonconforming);
-		cursor = page.nextCursor;
-	} while (cursor !== undefined);
+	const listed = await workspace.tables.skills.list();
+	skills.push(...listed.rows);
+	nonconforming.push(...listed.nonconforming);
 	return { skills, nonconforming };
 }
 
-/** Read the complete reference catalog through mandatory bounded pages. */
+/** Read the complete conforming reference catalog and surface invalid rows. */
 export async function scanReferences(
 	workspace: SkillsWorkspace,
 ): Promise<ReferencesScan> {
 	const references: Reference[] = [];
 	const nonconforming: RecordLensError[] = [];
-	let cursor: string | undefined;
-	do {
-		const page = await workspace.tables.references.scan({
-			...(cursor && { cursor }),
-			limit: PAGE_SIZE,
-		});
-		references.push(...page.rows);
-		nonconforming.push(...page.nonconforming);
-		cursor = page.nextCursor;
-	} while (cursor !== undefined);
+	const listed = await workspace.tables.references.list();
+	references.push(...listed.rows);
+	nonconforming.push(...listed.nonconforming);
 	return { references, nonconforming };
 }
 
@@ -63,7 +47,7 @@ export async function listSkills(workspace: SkillsWorkspace) {
 	};
 }
 
-/** Read one skill and lazily hydrate its parameterized instruction document. */
+/** Read one skill and lazily hydrate its row-owned instruction document. */
 export async function getSkill(workspace: SkillsWorkspace, id: string) {
 	const result = await workspace.tables.skills.get(id);
 	if (result.error !== null) {
@@ -76,12 +60,10 @@ export async function getSkill(workspace: SkillsWorkspace, id: string) {
 	if (result.data === undefined) {
 		return { skill: undefined, instructions: undefined, nonconforming: [] };
 	}
-	await using instructions = await workspace.documents.instructions.open({
-		skillId: id,
-	});
+	await using instructions = await workspace.tables.skills.document.open(id);
 	return {
 		skill: result.data,
-		instructions: instructions.content.read(),
+		instructions: instructions.get('content').toString(),
 		nonconforming: [],
 	};
 }
@@ -100,10 +82,13 @@ export async function getSkillWithReferences(
 		scanned.references
 			.filter((reference) => reference.skillId === id)
 			.map(async (reference) => {
-				await using content = await workspace.documents.reference.open({
-					referenceId: reference.id,
-				});
-				return { path: reference.path, content: content.content.read() };
+				await using content = await workspace.tables.references.document.open(
+					reference.id,
+				);
+				return {
+					path: reference.path,
+					content: content.get('content').toString(),
+				};
 			}),
 	);
 	return {

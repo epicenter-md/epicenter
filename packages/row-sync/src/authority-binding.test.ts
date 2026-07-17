@@ -1,642 +1,939 @@
 /**
- * Fold-Never-Refuse Record Authority Tests (ADR-0131/0132/0133)
+ * Row Authority Binding Tests
  *
- * Verifies sealed-round folding and compactable current state in the
- * production SQLite authority.
- *
- * Key behaviors:
- * - a round folds exactly once; an exact retry regenerates pages, never state
- * - digest mismatch on the accepted round and stale rounds are terminal forks
- * - capacity and duplicate-create conflicts fold to deterministic no-ops
- * - the reserved KV record folds from `{}` and owns the aggregate cap
- * - body appends require a live row; deletion purges the body log forever
- * - tombstone compaction forces a current-state snapshot
+ * Verifies sealed-round folding, retry receipts, outcome paging, compaction,
+ * baseline scans, and deployment admission against Bun SQLite.
  */
 
 import { Database } from 'bun:sqlite';
-import { expect, test } from 'bun:test';
-import { createHash } from 'node:crypto';
+import { describe, expect, test } from 'bun:test';
 import { createBunSqliteAdapter } from './adapters/bun.js';
+import { ROW_SYNC_ADMISSION_LIMITS } from './admission.js';
 import {
-	encodedJsonBytes,
-	RECORD_SYNC_ADMISSION_LIMITS,
-	RESERVED_KV_ROW_ID,
-	RESERVED_KV_TABLE,
-} from './admission.js';
-import { openRecordAuthority, type RecordAuthority } from './authority.js';
-import type {
-	JsonObject,
-	RecordCommand,
-	SyncRequest,
-	SyncResponse,
-	SyncToken,
+	type DocumentCodec,
+	type GrowthDecision,
+	openRowAuthority,
+} from './authority.js';
+import {
+	encodeBase64,
+	ROW_SYNC_PROTOCOL_MAJOR,
+	type SyncResponse,
+	type WireRowIntent,
 } from './protocol.js';
-import { RECORD_SYNC_PROTOCOL_MAJOR } from './protocol.js';
-import { recordRoundDigest } from './round-digest.js';
+import { rowRoundDigest } from './round-digest.js';
 
-const sha256 = async (value: string) =>
-	createHash('sha256').update(value).digest('hex');
+const decoder = new TextDecoder();
+const encoder = new TextEncoder();
 
-function token(
-	replicaId: string,
-	acceptedRound = 0,
-	checkpoint = 0,
-): SyncToken {
-	return { replicaId, acceptedRound, checkpoint };
-}
+/**
+ * A deterministic stand-in for the injected Yjs codec: an update is a JSON
+ * array of tokens and the compact state is the sorted distinct union, so
+ * merging is idempotent and compact size grows with distinct content.
+ */
+const codec: DocumentCodec = {
+	mergedCompactState(parts) {
+		const tokens = new Set<string>();
+		for (const part of parts) {
+			for (const token of JSON.parse(decoder.decode(part)) as string[]) {
+				tokens.add(token);
+			}
+		}
+		return encoder.encode(JSON.stringify([...tokens].sort()));
+	},
+};
 
-function syncRound(
-	tokenValue: SyncToken,
-	commands: RecordCommand[],
-	overrides: Partial<SyncRequest['sealedRound'] & object> = {},
-): SyncRequest {
+const docUpdate = (...tokens: string[]) =>
+	encodeBase64(encoder.encode(JSON.stringify(tokens)));
+
+const rid = (n: number) => n.toString(36).padStart(24, '0');
+
+function openTestAuthority() {
+	const sqlite = new Database(':memory:');
+	const authority = openRowAuthority({
+		database: createBunSqliteAdapter(sqlite),
+		codec,
+	});
+	const enrolled = authority.enroll({
+		protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+		kind: 'enroll',
+	});
+	if (!enrolled.ok) throw new Error('Enrollment failed');
+	let submission = 0;
+	const state = { replicaId: enrolled.replicaId, checkpoint: 0 };
 	return {
-		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		kind: 'sync',
-		token: tokenValue,
-		sealedRound: {
-			round: tokenValue.acceptedRound + 1,
-			requestDigest: recordRoundDigest(commands),
-			commands,
-			...overrides,
+		authority,
+		replicaId: state.replicaId,
+		sqlite,
+		nextSubmission: () => (submission += 1),
+		sync({
+			round,
+			intents,
+			digest,
+			submission: overrideSubmission,
+			checkpoint = 0,
+			acceptedRound = round === undefined ? 0 : round - 1,
+			growth,
+			pageLimit,
+			replicaId = state.replicaId,
+		}: {
+			round?: number;
+			intents?: WireRowIntent[];
+			digest?: string;
+			submission?: number;
+			checkpoint?: number;
+			acceptedRound?: number;
+			growth?: GrowthDecision;
+			pageLimit?: number;
+			replicaId?: string;
+		} = {}): SyncResponse {
+			return authority.sync(
+				{
+					protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+					kind: 'sync',
+					token: { replicaId, acceptedRound, checkpoint },
+					...(round === undefined
+						? {}
+						: {
+								sealedRound: {
+									round,
+									requestDigest: digest ?? rowRoundDigest(intents ?? []),
+									submission: overrideSubmission ?? (submission += 1),
+									intents: intents ?? [],
+								},
+							}),
+					...(pageLimit === undefined ? {} : { pageLimit }),
+				},
+				growth === undefined ? undefined : { growth },
+			);
 		},
-	};
-}
-
-function syncPull(tokenValue: SyncToken, pageLimit?: number): SyncRequest {
-	return {
-		protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-		kind: 'sync',
-		token: tokenValue,
-		...(pageLimit === undefined ? {} : { pageLimit }),
 	};
 }
 
 function expectPage(
 	response: SyncResponse,
-): Extract<SyncResponse, { ok: true; snapshotRequired: false }> {
-	if (!response.ok || response.snapshotRequired) {
-		throw new Error(`Expected an incremental page: ${JSON.stringify(response)}`);
+): Extract<SyncResponse, { ok: true; result: 'page' }> {
+	if (!response.ok || response.result !== 'page') {
+		throw new Error(`Expected a page, got ${JSON.stringify(response)}`);
 	}
 	return response;
 }
 
-function create(
+const create = (
 	rowId: string,
-	value: JsonObject = { title: 'Initial' },
-): RecordCommand {
-	return { kind: 'createRow', table: 'skills', rowId, value };
-}
-
-function patch(
-	rowId: string,
-	set: JsonObject,
-	unset: string[] = [],
-): RecordCommand {
-	return { kind: 'patchRow', table: 'skills', rowId, set, unset };
-}
-
-function remove(rowId: string): RecordCommand {
-	return { kind: 'deleteRow', table: 'skills', rowId };
-}
-
-function bodyAppend(rowId: string, update: string): RecordCommand {
-	return { kind: 'bodyAppend', table: 'skills', rowId, update };
-}
-
-function kvPatch(set: JsonObject, unset: string[] = []): RecordCommand {
-	return {
-		kind: 'patchRow',
-		table: RESERVED_KV_TABLE,
-		rowId: RESERVED_KV_ROW_ID,
-		set,
-		unset,
-	};
-}
-
-function withAuthority(
-	run: (authority: RecordAuthority, sqlite: Database) => void | Promise<void>,
-): void | Promise<void> {
-	const sqlite = new Database(':memory:');
-	const finish = () => sqlite.close();
-	try {
-		const result = run(
-			openRecordAuthority({ database: createBunSqliteAdapter(sqlite), sha256 }),
-			sqlite,
-		);
-		if (result instanceof Promise) return result.finally(finish);
-		finish();
-	} catch (error) {
-		finish();
-		throw error;
-	}
-}
-
-test('snapshot publication is absent below the compaction threshold', async () => {
-	await withAuthority(async (authority) => {
-		expect(
-			await authority.maybePublishSnapshot({
-				minimumRetainedSequences: 0,
-				maxChunkBytes: 512 * 1024,
-			}),
-		).toBeUndefined();
-	});
+	fields: Record<string, unknown>,
+	documentUpdate?: string,
+): WireRowIntent => ({
+	kind: 'create',
+	table: 'notes',
+	rowId,
+	fields: fields as never,
+	...(documentUpdate === undefined ? {} : { documentUpdate }),
 });
 
-test('a round folds exactly once and an exact retry regenerates pages', () => {
-	withAuthority((authority) => {
-		const replica = token('replica-a');
-		const request = syncRound(replica, [
-			create('skill-1'),
-			patch('skill-1', { title: 'Updated' }),
-		]);
-		const accepted = expectPage(authority.sync(request));
-		expect(accepted.token).toEqual({
-			replicaId: 'replica-a',
-			acceptedRound: 1,
-			checkpoint: 2,
+const update = (
+	rowId: string,
+	fields?: { set: Record<string, unknown>; unset: string[] },
+	documentUpdate?: string,
+): WireRowIntent => ({
+	kind: 'update',
+	table: 'notes',
+	rowId,
+	...(fields === undefined ? {} : { fields: fields as never }),
+	...(documentUpdate === undefined ? {} : { documentUpdate }),
+});
+
+const remove = (rowId: string): WireRowIntent => ({
+	kind: 'delete',
+	table: 'notes',
+	rowId,
+});
+
+describe('enrollment (ADR-0131)', () => {
+	test('enrollment mints a canonical replica identity at round zero', () => {
+		const { authority, replicaId } = openTestAuthority();
+		expect(replicaId).toMatch(/^[a-z0-9]{24}$/);
+		expect(authority.inspect().replicas[replicaId]).toEqual({
+			acceptedRound: 0,
+			submissionWatermark: 0,
 		});
-		const afterAccepted = authority.inspect();
+	});
 
-		const retried = expectPage(authority.sync(structuredClone(request)));
-		expect(retried.entries).toEqual(accepted.entries);
-		expect(authority.inspect()).toEqual(afterAccepted);
+	test('ordinary sync refuses an unseen client-supplied replica id', () => {
+		const { sync } = openTestAuthority();
+		expect(sync({ replicaId: 'somebodyelse000000000000' })).toEqual({
+			kind: 'sync',
+			ok: false,
+			reason: 'unknown-replica',
+		});
+	});
+
+	test('delete-only capacity refuses enrollment', () => {
+		const { authority } = openTestAuthority();
+		expect(
+			authority.enroll(
+				{ protocolMajor: ROW_SYNC_PROTOCOL_MAJOR, kind: 'enroll' },
+				{ growth: 'delete-only' },
+			),
+		).toEqual({ kind: 'enroll', ok: false, reason: 'enrollment-refused' });
 	});
 });
 
-test('digest mismatch on the accepted round is the terminal fork verdict', () => {
-	withAuthority((authority) => {
-		const replica = token('replica-a');
-		authority.sync(syncRound(replica, [create('skill-1')]));
-		const divergent = [create('skill-2')];
+describe('RowIntent lifecycle and composite outcomes (ADR-0131/0133)', () => {
+	test('create with fields and document emits one composite outcome', () => {
+		const { sync, replicaId } = openTestAuthority();
+		const page = expectPage(
+			sync({
+				round: 1,
+				intents: [create(rid(1), { title: 'a' }, docUpdate('t1'))],
+			}),
+		);
+		expect(page.token).toEqual({ replicaId, acceptedRound: 1, checkpoint: 1 });
+		expect(page.outcomes).toEqual([
+			{
+				kind: 'row',
+				table: 'notes',
+				rowId: rid(1),
+				fields: { title: 'a' },
+				documentUpdate: docUpdate('t1'),
+				sequence: 1,
+			},
+		]);
+	});
 
-		expect(
-			authority.sync(
-				syncRound(replica, divergent, {
-					round: 1,
-					requestDigest: recordRoundDigest(divergent),
-				}),
-			),
-		).toEqual({ kind: 'sync', ok: false, reason: 'replica-fork' });
+	test('field and document components of a live update fold independently', () => {
+		const { sync } = openTestAuthority();
+		sync({ round: 1, intents: [create(rid(1), { title: 'a' })] });
+		const page = expectPage(
+			sync({
+				round: 2,
+				acceptedRound: 1,
+				checkpoint: 1,
+				intents: [
+					update(rid(1), { set: { title: 'b' }, unset: [] }, docUpdate('t1')),
+				],
+			}),
+		);
+		expect(page.outcomes).toEqual([
+			{
+				kind: 'row',
+				table: 'notes',
+				rowId: rid(1),
+				fields: { title: 'b' },
+				documentUpdate: docUpdate('t1'),
+				sequence: 2,
+			},
+		]);
+	});
+
+	test('delete removes fields and all document state in one transaction', () => {
+		const { authority, sync } = openTestAuthority();
+		sync({
+			round: 1,
+			intents: [create(rid(1), { title: 'a' }, docUpdate('t1'))],
+		});
+		const page = expectPage(
+			sync({
+				round: 2,
+				acceptedRound: 1,
+				checkpoint: 1,
+				intents: [remove(rid(1))],
+			}),
+		);
+		expect(page.outcomes).toEqual([
+			{ kind: 'deletion', table: 'notes', rowId: rid(1), sequence: 2 },
+		]);
+		const inspected = authority.inspect();
+		expect(inspected.rows).toEqual([]);
+		expect(inspected.documentUpdates).toEqual([]);
+		expect(inspected.documentBaselines).toEqual([]);
+	});
+
+	test('late document updates for a dead address no-op forever', () => {
+		const { authority, sync } = openTestAuthority();
+		sync({ round: 1, intents: [create(rid(1), { title: 'a' })] });
+		sync({
+			round: 2,
+			acceptedRound: 1,
+			intents: [remove(rid(1))],
+		});
+		const page = expectPage(
+			sync({
+				round: 3,
+				acceptedRound: 2,
+				checkpoint: 2,
+				intents: [update(rid(1), undefined, docUpdate('late'))],
+			}),
+		);
+		// The no-op consumed sequence 3 without emitting a row fact; the
+		// checkpoint advances across the gap.
+		expect(page.outcomes).toEqual([]);
+		expect(page.token.checkpoint).toBe(3);
+		expect(authority.inspect().documentUpdates).toEqual([]);
+	});
+
+	test('create on a live address no-ops as a whole', () => {
+		const { authority, sync } = openTestAuthority();
+		sync({
+			round: 1,
+			intents: [create(rid(1), { title: 'first' }, docUpdate('t1'))],
+		});
+		expectPage(
+			sync({
+				round: 2,
+				acceptedRound: 1,
+				intents: [create(rid(1), { title: 'second' }, docUpdate('t2'))],
+			}),
+		);
+		const inspected = authority.inspect();
+		expect(inspected.rows).toEqual([
+			{
+				table: 'notes',
+				rowId: rid(1),
+				fields: { title: 'first' },
+				sequence: 1,
+			},
+		]);
+		expect(inspected.documentUpdates).toEqual([
+			{ table: 'notes', rowId: rid(1), sequence: 1 },
+		]);
+	});
+});
+
+describe('merge-aware document admission (ADR-0131/0133)', () => {
+	const bigToken = (name: string) =>
+		`${name}:${'x'.repeat(
+			Math.ceil(ROW_SYNC_ADMISSION_LIMITS.canonicalDocumentBytes * 0.6),
+		)}`;
+
+	test('a merged document above the canonical maximum no-ops only the document component', () => {
+		const { authority, sync } = openTestAuthority();
+		sync({
+			round: 1,
+			intents: [create(rid(1), { title: 'a' }, docUpdate(bigToken('a')))],
+		});
+		const page = expectPage(
+			sync({
+				round: 2,
+				acceptedRound: 1,
+				checkpoint: 1,
+				intents: [
+					update(
+						rid(1),
+						{ set: { title: 'b' }, unset: [] },
+						docUpdate(bigToken('b')),
+					),
+				],
+			}),
+		);
+		// The scalar component still applies; the document component no-ops.
+		expect(page.outcomes).toEqual([
+			{
+				kind: 'row',
+				table: 'notes',
+				rowId: rid(1),
+				fields: { title: 'b' },
+				sequence: 2,
+			},
+		]);
+		expect(authority.inspect().documentUpdates).toEqual([
+			{ table: 'notes', rowId: rid(1), sequence: 1 },
+		]);
+	});
+
+	test('an admissible document merge appends even when fields no-op on capacity', () => {
+		const { authority, sync } = openTestAuthority();
+		sync({ round: 1, intents: [create(rid(1), { title: 'a' })] });
+		const oversizedFields = {
+			set: { big: 'x'.repeat(ROW_SYNC_ADMISSION_LIMITS.encodedRowBytes) },
+			unset: [],
+		};
+		const page = expectPage(
+			sync({
+				round: 2,
+				acceptedRound: 1,
+				checkpoint: 1,
+				intents: [update(rid(1), oversizedFields, docUpdate('t1'))],
+			}),
+		);
+		expect(page.outcomes).toEqual([
+			{
+				kind: 'row',
+				table: 'notes',
+				rowId: rid(1),
+				documentUpdate: docUpdate('t1'),
+				sequence: 2,
+			},
+		]);
+		expect(authority.inspect().rows[0]?.fields).toEqual({ title: 'a' });
+	});
+
+	test('a create whose initial document exceeds the maximum no-ops as a whole', () => {
+		const { authority, sync } = openTestAuthority();
+		const oversized = docUpdate(bigToken('a'), bigToken('b'));
+		expectPage(
+			sync({ round: 1, intents: [create(rid(1), { title: 'a' }, oversized)] }),
+		);
+		expect(authority.inspect().rows).toEqual([]);
+		expect(authority.inspect().documentUpdates).toEqual([]);
+	});
+});
+
+describe('exact retry and the terminal fork rule (ADR-0131)', () => {
+	test('a lost accepted response retries without refolding', () => {
+		const { authority, sync } = openTestAuthority();
+		const intents = [create(rid(1), { count: 1 })];
+		expectPage(sync({ round: 1, intents }));
+		const headBefore = authority.inspect().head;
+		// The identical image under a fresh submission returns idempotent
+		// acceptance, even when the deployment has since entered delete-only.
+		const retried = expectPage(
+			sync({ round: 1, intents, growth: 'delete-only' }),
+		);
+		expect(retried.token.acceptedRound).toBe(1);
+		expect(authority.inspect().head).toBe(headBefore);
 		expect(authority.inspect().rows).toHaveLength(1);
 	});
-});
 
-test('a stale or skipped round number is terminal, never silently absorbed', () => {
-	withAuthority((authority) => {
-		const replica = token('replica-a');
-		authority.sync(syncRound(replica, [create('skill-1')]));
-		authority.sync(
-			syncRound(token('replica-a', 1, 1), [patch('skill-1', { n: 2 })]),
-		);
-
-		// A late clone still submitting round 1 with different content.
-		const stale = [remove('skill-1')];
+	test('a digest mismatch on the accepted round is a terminal fork echoing its submission', () => {
+		const { sync } = openTestAuthority();
+		sync({ round: 1, intents: [create(rid(1), { count: 1 })], submission: 1 });
 		expect(
-			authority.sync(
-				syncRound(replica, stale, {
-					round: 1,
-					requestDigest: recordRoundDigest(stale),
-				}),
-			),
-		).toEqual({ kind: 'sync', ok: false, reason: 'replica-fork' });
-		// A skipped-future round proves the same corruption.
-		expect(
-			authority.sync(
-				syncRound(token('replica-a', 3, 0), [create('skill-9')]),
-			),
-		).toEqual({ kind: 'sync', ok: false, reason: 'replica-fork' });
-		expect(authority.inspect().rows).toMatchObject([
-			{ rowId: 'skill-1', value: { title: 'Initial', n: 2 } },
-		]);
-	});
-});
-
-test('server acceptance order preserves unknown keys across mixed releases', () => {
-	withAuthority((authority) => {
-		authority.sync(
-			syncRound(token('old-release'), [
-				create('skill-1', {
-					title: 'Old',
-					futureMetadata: { source: 'import' },
-				}),
-			]),
-		);
-		authority.sync(
-			syncRound(token('new-release'), [
-				patch('skill-1', { title: 'New', category: 'general' }),
-			]),
-		);
-		authority.sync(
-			syncRound(token('accepted-last'), [patch('skill-1', { title: 'Last' })]),
-		);
-
-		expect(authority.inspect().rows).toEqual([
-			{
-				table: 'skills',
-				rowId: 'skill-1',
-				value: {
-					title: 'Last',
-					futureMetadata: { source: 'import' },
-					category: 'general',
-				},
-				lastServerSequence: 3,
-			},
-		]);
-	});
-});
-
-test('authority patches preserve __proto__ as an ordinary own JSON key', () => {
-	withAuthority((authority) => {
-		const original = JSON.parse(
-			'{"title":"Safe","__proto__":{"source":"create"}}',
-		) as JsonObject;
-		const set = JSON.parse('{"__proto__":{"source":"patch"}}') as JsonObject;
-
-		expect(
-			expectPage(
-				authority.sync(
-					syncRound(token('replica-a'), [
-						create('skill-1', original),
-						{
-							kind: 'patchRow',
-							table: 'skills',
-							rowId: 'skill-1',
-							set,
-							unset: [],
-						},
-					]),
-				),
-			).hasMore,
-		).toBeFalse();
-		const value = authority.inspect().rows[0]?.value;
-
-		expect(value).toBeDefined();
-		expect(Object.hasOwn(value as object, '__proto__')).toBeTrue();
-		expect(Object.getOwnPropertyDescriptor(value, '__proto__')?.value).toEqual({
-			source: 'patch',
+			sync({
+				round: 1,
+				intents: [create(rid(2), { count: 2 })],
+				submission: 2,
+			}),
+		).toEqual({
+			kind: 'sync',
+			ok: false,
+			reason: 'replica-fork',
+			submission: 2,
 		});
-		expect(Object.getPrototypeOf(value)).toBe(Object.prototype);
-		expect(Object.getPrototypeOf({})).not.toHaveProperty('source');
+	});
+
+	test('a round that is neither accepted nor its successor is a terminal fork', () => {
+		const { sync } = openTestAuthority();
+		sync({ round: 1, intents: [create(rid(1), { count: 1 })], submission: 1 });
+		expect(
+			sync({
+				round: 3,
+				acceptedRound: 1,
+				intents: [create(rid(2), { count: 2 })],
+				submission: 2,
+			}),
+		).toEqual({
+			kind: 'sync',
+			ok: false,
+			reason: 'replica-fork',
+			submission: 2,
+		});
+	});
+
+	test('a corrupt digest is refused before any folding', () => {
+		const { sync } = openTestAuthority();
+		expect(() =>
+			sync({
+				round: 1,
+				intents: [create(rid(1), { count: 1 })],
+				digest: 'not-the-digest',
+			}),
+		).toThrow('Sealed round digest does not match its intents');
+	});
+
+	test('a stale transmission with a corrupt digest stays inert', () => {
+		const { authority, sync, replicaId } = openTestAuthority();
+		const intents = [create(rid(1), { count: 1 })];
+		expectPage(sync({ round: 1, intents, submission: 5 }));
+		// The stale gate runs before digest evaluation, so the transmission
+		// receives the retryable stale response instead of an exception.
+		expect(
+			sync({ round: 1, intents, submission: 5, digest: 'not-the-digest' }),
+		).toMatchObject({ ok: false, reason: 'stale-submission', watermark: 5 });
+		expect(authority.inspect().replicas[replicaId]?.submissionWatermark).toBe(
+			5,
+		);
+	});
+
+	test('a checkpoint ahead of the authority is refused', () => {
+		const { sync } = openTestAuthority();
+		expect(() => sync({ checkpoint: 99 })).toThrow(
+			'Sync checkpoint is ahead of the authority',
+		);
 	});
 });
 
-test('a duplicate create folds to a no-op and the rest of the round applies', () => {
-	withAuthority((authority) => {
-		authority.sync(syncRound(token('replica-a'), [create('skill-1')]));
-
-		const response = expectPage(
-			authority.sync(
-				syncRound(token('replica-b'), [
-					create('skill-1', { title: 'Loser' }),
-					create('skill-2'),
-				]),
-			),
+describe('submission watermark and capacity refusal (ADR-0131/0137)', () => {
+	test('a transmission at or below the watermark is inert', () => {
+		const { authority, sync, replicaId } = openTestAuthority();
+		const intents = [create(rid(1), { count: 1 })];
+		expectPage(sync({ round: 1, intents, submission: 5 }));
+		expect(sync({ round: 1, intents, submission: 5 })).toEqual({
+			kind: 'sync',
+			ok: false,
+			reason: 'stale-submission',
+			submission: 5,
+			watermark: 5,
+		});
+		expect(authority.inspect().replicas[replicaId]?.submissionWatermark).toBe(
+			5,
 		);
-		expect(response.token.acceptedRound).toBe(1);
-		expect(authority.inspect().rows).toMatchObject([
-			{ rowId: 'skill-1', value: { title: 'Initial' } },
-			{ rowId: 'skill-2', value: { title: 'Initial' } },
+	});
+
+	test('a mixed round is refused whole in delete-only state without advancing the retry head', () => {
+		const { authority, sync, replicaId } = openTestAuthority();
+		sync({ round: 1, intents: [create(rid(1), { count: 1 })], submission: 1 });
+		const mixed = [remove(rid(1)), create(rid(2), { count: 2 })];
+		expect(
+			sync({
+				round: 2,
+				acceptedRound: 1,
+				intents: mixed,
+				submission: 2,
+				growth: 'delete-only',
+			}),
+		).toEqual({
+			kind: 'sync',
+			ok: false,
+			reason: 'capacity-refused',
+			submission: 2,
+		});
+		const inspected = authority.inspect();
+		// Only the watermark advanced: no fold, no retry-head move, no history.
+		expect(inspected.replicas[replicaId]).toEqual({
+			acceptedRound: 1,
+			submissionWatermark: 2,
+		});
+		expect(inspected.rows).toHaveLength(1);
+		expect(inspected.head).toBe(1);
+	});
+
+	test('an all-delete round folds normally in delete-only state', () => {
+		const { sync } = openTestAuthority();
+		sync({ round: 1, intents: [create(rid(1), { count: 1 })], submission: 1 });
+		const page = expectPage(
+			sync({
+				round: 2,
+				acceptedRound: 1,
+				checkpoint: 1,
+				intents: [remove(rid(1))],
+				submission: 2,
+				growth: 'delete-only',
+			}),
+		);
+		expect(page.outcomes).toEqual([
+			{ kind: 'deletion', table: 'notes', rowId: rid(1), sequence: 2 },
 		]);
 	});
+
+	test('after a refusal the round number is safely reused and the old image stays inert', () => {
+		const { authority, sync, replicaId } = openTestAuthority();
+		sync({ round: 1, intents: [create(rid(1), { count: 1 })], submission: 1 });
+		const refusedImage = [remove(rid(1)), create(rid(2), { count: 2 })];
+		sync({
+			round: 2,
+			acceptedRound: 1,
+			intents: refusedImage,
+			submission: 2,
+			growth: 'delete-only',
+		});
+		// The client reseals only the delete under the SAME round number.
+		const resealed = expectPage(
+			sync({
+				round: 2,
+				acceptedRound: 1,
+				checkpoint: 1,
+				intents: [remove(rid(1))],
+				submission: 3,
+				growth: 'delete-only',
+			}),
+		);
+		expect(resealed.token.acceptedRound).toBe(2);
+		// A delayed duplicate of the refused image can never fold: it sits at
+		// or below the watermark the refusal advanced.
+		expect(
+			sync({
+				round: 2,
+				acceptedRound: 1,
+				intents: refusedImage,
+				submission: 2,
+				growth: 'allow',
+			}),
+		).toMatchObject({ ok: false, reason: 'stale-submission' });
+		expect(authority.inspect().replicas[replicaId]?.acceptedRound).toBe(2);
+	});
+
+	test('capacity restored before the client receives a refusal simply folds the retry', () => {
+		const { sync } = openTestAuthority();
+		sync({ round: 1, intents: [create(rid(1), { count: 1 })], submission: 1 });
+		const image = [create(rid(2), { count: 2 })];
+		// First transmission refused; the response is lost.
+		sync({
+			round: 2,
+			acceptedRound: 1,
+			intents: image,
+			submission: 2,
+			growth: 'delete-only',
+		});
+		// The byte-identical retry under a fresh submission folds normally.
+		const retried = expectPage(
+			sync({
+				round: 2,
+				acceptedRound: 1,
+				checkpoint: 1,
+				intents: image,
+				submission: 3,
+				growth: 'allow',
+			}),
+		);
+		expect(retried.token.acceptedRound).toBe(2);
+		expect(retried.outcomes).toHaveLength(1);
+	});
 });
 
-test('absent commands do not resurrect rows and still consume server order', () => {
-	withAuthority((authority) => {
-		authority.sync(
-			syncRound(token('replica-a'), [
-				patch('missing', { title: 'No row' }),
-				remove('missing'),
-				create('skill-1'),
-				remove('skill-1'),
-				patch('skill-1', { title: 'Cannot resurrect' }),
-			]),
-		);
+describe('scalar conflicts follow authority acceptance order (ADR-0131)', () => {
+	test('the later accepted absolute value wins regardless of authorship', () => {
+		const sqlite = new Database(':memory:');
+		const authority = openRowAuthority({
+			database: createBunSqliteAdapter(sqlite),
+			codec,
+		});
+		const enrollA = authority.enroll({
+			protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+			kind: 'enroll',
+		});
+		const enrollB = authority.enroll({
+			protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+			kind: 'enroll',
+		});
+		if (!enrollA.ok || !enrollB.ok) throw new Error('Enrollment failed');
+		const createIntent = [create(rid(1), { title: 'base' })];
+		authority.sync({
+			protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+			kind: 'sync',
+			token: { replicaId: enrollA.replicaId, acceptedRound: 0, checkpoint: 0 },
+			sealedRound: {
+				round: 1,
+				requestDigest: rowRoundDigest(createIntent),
+				submission: 1,
+				intents: createIntent,
+			},
+		});
+		// B's "older authored" change is accepted after A's newer one.
+		const fromA = [
+			update(rid(1), { set: { title: 'authored-later' }, unset: [] }),
+		];
+		const fromB = [
+			update(rid(1), { set: { title: 'authored-earlier' }, unset: [] }),
+		];
+		authority.sync({
+			protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+			kind: 'sync',
+			token: { replicaId: enrollA.replicaId, acceptedRound: 1, checkpoint: 0 },
+			sealedRound: {
+				round: 2,
+				requestDigest: rowRoundDigest(fromA),
+				submission: 2,
+				intents: fromA,
+			},
+		});
+		authority.sync({
+			protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+			kind: 'sync',
+			token: { replicaId: enrollB.replicaId, acceptedRound: 0, checkpoint: 0 },
+			sealedRound: {
+				round: 1,
+				requestDigest: rowRoundDigest(fromB),
+				submission: 1,
+				intents: fromB,
+			},
+		});
+		expect(authority.inspect().rows[0]?.fields).toEqual({
+			title: 'authored-earlier',
+		});
+	});
+});
 
-		expect(authority.inspect()).toMatchObject({
-			head: 5,
-			rows: [],
-			deletions: [
+describe('paging (ADR-0133)', () => {
+	test('a later scalar write does not tear an earlier composite outcome across pages', () => {
+		const { sync } = openTestAuthority();
+		sync({
+			round: 1,
+			intents: [create(rid(1), { title: 'initial' }, docUpdate('d1'))],
+		});
+		sync({
+			round: 2,
+			acceptedRound: 1,
+			intents: [update(rid(1), { set: { title: 'updated' }, unset: [] })],
+		});
+
+		const first = expectPage(sync({ checkpoint: 0, pageLimit: 1 }));
+		expect(first).toMatchObject({
+			token: { acceptedRound: 2, checkpoint: 1 },
+			outcomes: [
 				{
-					table: 'skills',
-					rowId: 'skill-1',
-					lastServerSequence: 4,
+					kind: 'row',
+					table: 'notes',
+					rowId: rid(1),
+					fields: { title: 'initial' },
+					documentUpdate: docUpdate('d1'),
+					sequence: 1,
 				},
 			],
-			replicaRounds: { 'replica-a': 1 },
+			hasMore: true,
+		});
+
+		expect(expectPage(sync({ checkpoint: 1, pageLimit: 1 }))).toMatchObject({
+			token: { acceptedRound: 2, checkpoint: 2 },
+			outcomes: [
+				{
+					kind: 'row',
+					table: 'notes',
+					rowId: rid(1),
+					fields: { title: 'updated' },
+					sequence: 2,
+				},
+			],
+			hasMore: false,
 		});
 	});
-});
 
-test('a composed row over the capacity cap folds to a no-op, not a refusal', () => {
-	withAuthority((authority) => {
-		const half = 'x'.repeat(260 * 1024);
-		authority.sync(syncRound(token('replica-a'), [create('skill-1', {})]));
-		authority.sync(
-			syncRound(token('replica-a', 1, 0), [patch('skill-1', { a: half })]),
+	test('one composite outcome never splits across pages', () => {
+		const { sync } = openTestAuthority();
+		expectPage(
+			sync({
+				round: 1,
+				intents: [
+					create(rid(1), { n: 1 }, docUpdate('d1')),
+					create(rid(2), { n: 2 }, docUpdate('d2')),
+					create(rid(3), { n: 3 }, docUpdate('d3')),
+				],
+			}),
 		);
-
-		// Fits alone, over the cap composed: accepted, ordered, no-op.
-		const response = expectPage(
-			authority.sync(syncRound(token('replica-b'), [patch('skill-1', { b: half })])),
-		);
-		expect(response.token.acceptedRound).toBe(1);
-		const inspected = authority.inspect();
-		expect(inspected.head).toBe(3);
-		expect(Object.keys(inspected.rows[0]?.value ?? {})).toEqual(['a']);
-	});
-});
-
-test('the reserved KV record folds from {} and owns the aggregate cap', () => {
-	withAuthority((authority) => {
-		// First write materializes the map through the patch-on-absent fold.
-		authority.sync(
-			syncRound(token('replica-a'), [kvPatch({ 'editor.spellcheck': true })]),
-		);
-		// Different keys compose; unset removes without a tombstone.
-		authority.sync(
-			syncRound(token('replica-b'), [
-				kvPatch({ theme: 'dark' }, ['editor.spellcheck']),
-			]),
-		);
-		expect(authority.inspect().rows).toMatchObject([
-			{
-				table: RESERVED_KV_TABLE,
-				rowId: RESERVED_KV_ROW_ID,
-				value: { theme: 'dark' },
-			},
-		]);
-
-		// The 64 KiB aggregate cap folds the overflowing write to a no-op.
-		const nearCap = 'x'.repeat(63 * 1024);
-		authority.sync(
-			syncRound(token('replica-a', 1, 0), [kvPatch({ big: nearCap })]),
-		);
-		const overflowing = expectPage(
-			authority.sync(
-				syncRound(token('replica-b', 1, 0), [kvPatch({ more: 'y'.repeat(2 * 1024) })]),
-			),
-		);
-		expect(overflowing.token.acceptedRound).toBe(2);
-		const map = authority.inspect().rows[0]?.value ?? {};
-		expect(map.big).toBe(nearCap);
-		expect(map.more).toBeUndefined();
-	});
-});
-
-test('body appends require a live row and deletion purges the log forever', () => {
-	withAuthority((authority) => {
-		authority.sync(
-			syncRound(token('replica-a'), [
-				create('note-1'),
-				bodyAppend('note-1', 'dXBkYXRlLTE='),
-				bodyAppend('note-1', 'dXBkYXRlLTI='),
-			]),
-		);
-		expect(authority.inspect().bodyLog).toMatchObject([
-			{ rowId: 'note-1', lastServerSequence: 2 },
-			{ rowId: 'note-1', lastServerSequence: 3 },
-		]);
-		const page = expectPage(authority.sync(syncPull(token('reader'))));
-		expect(page.entries.map((entry) => entry.kind)).toEqual([
-			'row',
-			'bodyUpdate',
-			'bodyUpdate',
-		]);
-
-		// Deletion purges; a late append is accepted and folds to a no-op.
-		authority.sync(syncRound(token('replica-b'), [remove('note-1')]));
-		expect(authority.inspect().bodyLog).toEqual([]);
-		const late = expectPage(
-			authority.sync(
-				syncRound(token('replica-c'), [bodyAppend('note-1', 'c3RhbGU=')]),
-			),
-		);
-		expect(late.token.acceptedRound).toBe(1);
-		expect(authority.inspect().bodyLog).toEqual([]);
-		expect(authority.inspect().rows).toEqual([]);
-	});
-});
-
-test('sync paginates before the encoded response byte ceiling', () => {
-	withAuthority((authority) => {
-		const body = 'x'.repeat(240 * 1024);
-		for (let index = 0; index < 40; index += 1) {
-			expectPage(
-				authority.sync(
-					syncRound(token(`replica-${index}`), [
-						create(`skill-${index}`, { title: body }),
-					]),
-				),
-			);
+		const seen: number[] = [];
+		let checkpoint = 0;
+		for (;;) {
+			const page = expectPage(sync({ checkpoint, pageLimit: 1 }));
+			for (const outcome of page.outcomes) {
+				if (outcome.kind !== 'row') throw new Error('Expected row outcomes');
+				// Every page outcome carries BOTH halves of its intent.
+				expect(outcome.fields).toBeDefined();
+				expect(outcome.documentUpdate).toBeDefined();
+				seen.push(outcome.sequence);
+			}
+			checkpoint = page.token.checkpoint;
+			if (!page.hasMore) break;
 		}
+		expect(seen).toEqual([1, 2, 3]);
+	});
 
-		const first = expectPage(authority.sync(syncPull(token('reader'))));
-		expect(first.hasMore).toBeTrue();
-		expect(first.entries.length).toBeLessThan(40);
-		expect(encodedJsonBytes(first)).toBeLessThanOrEqual(
-			RECORD_SYNC_ADMISSION_LIMITS.encodedPageBytes,
-		);
-
-		const second = expectPage(
-			authority.sync(syncPull(token('reader', 0, first.token.checkpoint))),
-		);
-		expect(second.hasMore).toBeFalse();
-		expect(first.entries.length + second.entries.length).toBe(40);
+	test('every page reports the retention floor', () => {
+		const { sync } = openTestAuthority();
+		const page = expectPage(sync({}));
+		expect(page.retentionFloor).toBe(0);
 	});
 });
 
-test('rounds are accepted before stale-client snapshot bootstrap', async () => {
-	await withAuthority(async (authority) => {
-		authority.sync(
-			syncRound(token('writer'), [create('skill-1'), remove('skill-1')]),
-		);
-		const manifest = await authority.publishSnapshot({
-			maxChunkBytes: 512 * 1024,
-		});
-		if (!manifest) throw new Error('Expected snapshot publication');
-		authority.compactDeletionsThrough(manifest.head);
-
-		// A below-floor replica submits a round: round first, snapshot second.
-		const response = authority.sync(
-			syncRound(token('stale'), [create('skill-2', { title: 'Offline' })]),
-		);
-		if (!response.ok || !response.snapshotRequired) {
-			throw new Error('Expected a snapshot-required response');
-		}
-		expect(response.resumeToken).toEqual({
-			replicaId: 'stale',
+describe('retention floor and compaction (ADR-0133/0136)', () => {
+	function seedRounds() {
+		const context = openTestAuthority();
+		const { sync } = context;
+		sync({ round: 1, intents: [create(rid(1), { n: 1 }, docUpdate('d1'))] });
+		sync({
+			round: 2,
 			acceptedRound: 1,
-			checkpoint: manifest.head,
+			intents: [update(rid(1), undefined, docUpdate('d2'))],
 		});
-		expect(authority.inspect().rows).toMatchObject([
-			{ rowId: 'skill-2', value: { title: 'Offline' } },
+		sync({
+			round: 3,
+			acceptedRound: 2,
+			intents: [create(rid(2), { n: 2 }), remove(rid(2))],
+		});
+		// head is now 5: seq 1 create, 2 doc update, 3 create, 4 unused? no:
+		// round 3 folds two intents at sequences 3 and 4.
+		return context;
+	}
+
+	test('compaction folds the covered document tail into one baseline', () => {
+		const { authority, sqlite } = seedRounds();
+		const floor = authority.compactOutcomesThrough(4);
+		expect(floor).toBe(4);
+		const inspected = authority.inspect();
+		expect(inspected.retentionFloor).toBe(4);
+		expect(inspected.deletionOutcomes).toEqual([]);
+		expect(inspected.documentUpdates).toEqual([]);
+		expect(inspected.documentBaselines).toEqual([
+			{ table: 'notes', rowId: rid(1), throughSequence: 2 },
 		]);
-		// The fold landed above the snapshot head, so resuming pages deliver it.
-		const resumed = expectPage(authority.sync(syncPull(response.resumeToken)));
-		expect(resumed.entries).toMatchObject([{ kind: 'row', rowId: 'skill-2' }]);
-	});
-});
-
-test('published snapshot covers compacted deletion markers across reopen', async () => {
-	const sqlite = new Database(':memory:');
-	try {
-		const adapter = createBunSqliteAdapter(sqlite);
-		const authority = openRecordAuthority({ database: adapter, sha256 });
-		authority.sync(
-			syncRound(token('replica-a'), [create('skill-1'), remove('skill-1')]),
-		);
-		const manifest = await authority.publishSnapshot({
-			maxChunkBytes: 512 * 1024,
-		});
-		if (!manifest) throw new Error('Expected snapshot publication');
-		expect(authority.compactDeletionsThrough(2)).toBe(2);
-
-		const reopened = openRecordAuthority({ database: adapter, sha256 });
-		expect(reopened.sync(syncPull(token('fresh')))).toEqual({
-			kind: 'sync',
-			ok: true,
-			snapshotRequired: true,
-			resumeToken: { replicaId: 'fresh', acceptedRound: 0, checkpoint: 2 },
-			manifest,
-		});
-		const chunk = reopened.snapshotChunk({
-			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-			kind: 'snapshotChunk',
-			generation: manifest.generation,
-			index: 0,
-		});
-		expect(chunk).toMatchObject({ ok: true, chunk: { rows: [], bodies: [] } });
-	} finally {
-		sqlite.close();
-	}
-});
-
-test('injected merge compacts a body log prefix into one baseline', async () => {
-	const sqlite = new Database(':memory:');
-	try {
-		const decode = (value: string) =>
-			Uint8Array.from(atob(value), (c) => c.charCodeAt(0));
-		const authority = openRecordAuthority({
-			database: createBunSqliteAdapter(sqlite),
-			sha256,
-			mergeBodyUpdates: (updates) => {
-				const merged = new Uint8Array(
-					updates.reduce((total, update) => total + update.length, 0),
-				);
-				let offset = 0;
-				for (const update of updates) {
-					merged.set(update, offset);
-					offset += update.length;
-				}
-				return merged;
-			},
-		});
-		authority.sync(
-			syncRound(token('replica-a'), [
-				create('note-1'),
-				bodyAppend('note-1', btoa('one')),
-				bodyAppend('note-1', btoa('two')),
-			]),
-		);
-		const manifest = await authority.publishSnapshot({
-			maxChunkBytes: 512 * 1024,
-		});
-		if (!manifest) throw new Error('Expected snapshot publication');
-		authority.compactDeletionsThrough(manifest.head);
-
-		const log = authority.inspect().bodyLog;
-		expect(log).toHaveLength(1);
-		expect(log[0]?.lastServerSequence).toBe(3);
-		const chunk = authority.snapshotChunk({
-			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
-			kind: 'snapshotChunk',
-			generation: manifest.generation,
-			index: 0,
-		});
-		if (!chunk.ok) throw new Error('Expected the snapshot chunk');
-		// The snapshot was published before compaction, so it carries the
-		// original two updates; the live log carries the merged baseline.
-		expect(chunk.chunk.bodies).toHaveLength(2);
-		const baseline = sqlite
-			.query<{ update_b64: string }, []>(
-				'SELECT update_b64 FROM record_sync_body_updates',
-			)
-			.get();
-		expect(new TextDecoder().decode(decode(baseline?.update_b64 ?? ''))).toBe(
-			'onetwo',
-		);
-	} finally {
-		sqlite.close();
-	}
-});
-
-test('a checkpoint ahead of the authority is rejected before any fold', () => {
-	withAuthority((authority) => {
-		expect(() =>
-			authority.sync(syncRound(token('replica-a', 0, 99), [create('skill-1')])),
-		).toThrow('Sync checkpoint is ahead of the authority');
-		expect(authority.inspect().head).toBe(0);
-		expect(authority.inspect().replicaRounds).toEqual({});
-	});
-});
-
-test('authority stores no schema, actor, KV, or mutation log tables', () => {
-	const sqlite = new Database(':memory:');
-	try {
-		openRecordAuthority({
-			database: createBunSqliteAdapter(sqlite),
-			sha256,
-		});
-		const names = sqlite
-			.query<{ name: string }, []>(
-				`SELECT name FROM sqlite_schema
-				 WHERE type = 'table' AND name LIKE 'record_sync_%'
-				 ORDER BY name`,
-			)
-			.all()
-			.map(({ name }) => name);
-
-		expect(names).toEqual([
-			'record_sync_body_updates',
-			'record_sync_deletions',
-			'record_sync_meta',
-			'record_sync_replicas',
-			'record_sync_rows',
-			'record_sync_snapshot_chunks',
-			'record_sync_snapshot_manifest',
-		]);
-	} finally {
-		sqlite.close();
-	}
-});
-
-test('open refuses legacy authority storage instead of creating parallel state', () => {
-	for (const legacyTable of ['record_sync_family', 'record_sync_actors']) {
-		const sqlite = new Database(':memory:');
-		try {
-			sqlite.run(`
-				CREATE TABLE ${legacyTable} (
-					id INTEGER PRIMARY KEY,
-					payload TEXT
+		expect(
+			sqlite
+				.query<{ count: number }, []>(
+					'SELECT COUNT(*) AS count FROM row_sync_field_outcomes',
 				)
-			`);
-			expect(() =>
-				openRecordAuthority({
-					database: createBunSqliteAdapter(sqlite),
-					sha256,
-				}),
-			).toThrow('Incompatible legacy row-sync authority storage');
-			expect(
-				sqlite
-					.query<{ count: number }, []>(
-						`SELECT COUNT(*) AS count FROM sqlite_schema
-						 WHERE type = 'table' AND name = 'record_sync_meta'`,
-					)
-					.get()?.count,
-			).toBe(0);
-		} finally {
-			sqlite.close();
+				.get()?.count,
+		).toBe(0);
+		// Outcome compaction does not remove the live current-row baseline.
+		expect(inspected.rows).toEqual([
+			{ table: 'notes', rowId: rid(1), fields: { n: 1 }, sequence: 1 },
+		]);
+	});
+
+	test('a checkpoint below the floor requires baseline acquisition', () => {
+		const { authority, sync } = seedRounds();
+		authority.compactOutcomesThrough(4);
+		const response = sync({ checkpoint: 2 });
+		expect(response).toMatchObject({
+			ok: true,
+			result: 'baseline-required',
+			retentionFloor: 4,
+		});
+		// At or above the floor, incremental pages continue.
+		expect(expectPage(sync({ checkpoint: 4 })).ok).toBeTrue();
+	});
+
+	test('maybeCompact keeps the trailing retention window reachable', () => {
+		const { authority } = seedRounds();
+		expect(authority.maybeCompact({ minimumRetainedSequences: 100 })).toBe(
+			undefined,
+		);
+		expect(authority.maybeCompact({ minimumRetainedSequences: 1 })).toBe(3);
+		expect(authority.inspect().retentionFloor).toBe(3);
+	});
+});
+
+describe('baseline scan (ADR-0136)', () => {
+	test('scans complete live rows in stable address order with document composites', () => {
+		const { authority, sync } = openTestAuthority();
+		sync({
+			round: 1,
+			intents: [
+				create(rid(2), { n: 2 }),
+				create(rid(1), { n: 1 }, docUpdate('d1')),
+			],
+		});
+		sync({
+			round: 2,
+			acceptedRound: 1,
+			intents: [update(rid(1), undefined, docUpdate('d2'))],
+		});
+		authority.compactOutcomesThrough(2);
+		sync({
+			round: 3,
+			acceptedRound: 2,
+			intents: [update(rid(1), undefined, docUpdate('d3'))],
+		});
+
+		const first = authority.baselineScan({
+			protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+			kind: 'baselineScan',
+			pageLimit: 1,
+		});
+		if (!first.ok) throw new Error('Expected a scan page');
+		expect(first.hasMore).toBeTrue();
+		expect(first.head).toBe(4);
+		expect(first.retentionFloor).toBe(2);
+		expect(first.rows).toEqual([
+			{
+				table: 'notes',
+				rowId: rid(1),
+				fields: { n: 1 },
+				document: {
+					// The floor at 2 covers only d1 (sequence 2); d2 (sequence 3)
+					// and d3 (sequence 4) remain in the retained tail.
+					baseline: encodeBase64(
+						codec.mergedCompactState([encoder.encode(JSON.stringify(['d1']))]),
+					),
+					updates: [docUpdate('d2'), docUpdate('d3')],
+				},
+			},
+		]);
+
+		const second = authority.baselineScan({
+			protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+			kind: 'baselineScan',
+			after: { table: 'notes', rowId: rid(1) },
+		});
+		if (!second.ok) throw new Error('Expected a scan page');
+		expect(second.hasMore).toBeFalse();
+		expect(second.rows).toEqual([
+			{ table: 'notes', rowId: rid(2), fields: { n: 2 } },
+		]);
+	});
+});
+
+describe('baseline scan transport collapse (ADR-0136)', () => {
+	test('a redundant retained tail collapses through the codec instead of failing the page', () => {
+		const { authority, sync } = openTestAuthority();
+		// One 200 KiB token repeated across many accepted updates: every merge
+		// stays below the canonical document maximum (the union is one token),
+		// but the retained base64 tail exceeds the page envelope.
+		const token = 't'.repeat(200 * 1024);
+		sync({ round: 1, intents: [create(rid(1), { n: 1 }, docUpdate(token))] });
+		for (let round = 2; round <= 33; round += 1) {
+			sync({
+				round,
+				acceptedRound: round - 1,
+				intents: [update(rid(1), undefined, docUpdate(token))],
+			});
 		}
-	}
+		const scan = authority.baselineScan({
+			protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+			kind: 'baselineScan',
+		});
+		if (!scan.ok) throw new Error('Expected a scan page');
+		expect(scan.rows).toHaveLength(1);
+		expect(scan.rows[0]?.document?.updates).toEqual([]);
+		expect(scan.rows[0]?.document?.baseline).toBe(docUpdate(token));
+	});
+});
+
+describe('reserved KV row (ADR-0132)', () => {
+	const kvUpdate = (
+		set: Record<string, unknown>,
+		unset: string[] = [],
+	): WireRowIntent => ({
+		kind: 'update',
+		table: '__epicenter_kv',
+		rowId: 'workspace',
+		fields: { set: set as never, unset },
+	});
+
+	test('the reserved row materializes on first write and folds from {}', () => {
+		const { authority, sync } = openTestAuthority();
+		const page = expectPage(
+			sync({ round: 1, intents: [kvUpdate({ 'editor.theme': 'dark' })] }),
+		);
+		expect(page.outcomes).toEqual([
+			{
+				kind: 'row',
+				table: '__epicenter_kv',
+				rowId: 'workspace',
+				fields: { 'editor.theme': 'dark' },
+				sequence: 1,
+			},
+		]);
+		expect(authority.inspect().rows[0]?.rowId).toBe('workspace');
+	});
+
+	test('a later update whose composed image exceeds the aggregate cap no-ops', () => {
+		const { authority, sync } = openTestAuthority();
+		sync({
+			round: 1,
+			intents: [
+				kvUpdate({
+					big: 'x'.repeat(
+						ROW_SYNC_ADMISSION_LIMITS.encodedKvAggregateBytes - 1024,
+					),
+				}),
+			],
+		});
+		expectPage(
+			sync({
+				round: 2,
+				acceptedRound: 1,
+				intents: [kvUpdate({ more: 'y'.repeat(4096) })],
+			}),
+		);
+		const fields = authority.inspect().rows[0]?.fields;
+		expect(fields && 'more' in fields).toBeFalse();
+	});
 });

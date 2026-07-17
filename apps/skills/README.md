@@ -2,8 +2,9 @@
 
 A local browser editor for Epicenter agent skills. Records live in the Browser
 workspace runtime's canonical OPFS store. Instructions and reference bodies are
-parameterized Yjs documents persisted in IndexedDB. No remote synchronization is
-wired in, so the editor works entirely offline.
+row-owned Yjs documents in the workspace contract. The browser row-document
+channel is still a deliberate runtime stub, so metadata works but the text
+editors remain blocked until that channel lands.
 
 Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo.
 AGPL-3.0 licensed.
@@ -18,24 +19,24 @@ in the UI's invalid-record count rather than being silently deleted or migrated.
 The app uses runtime-owned structural record IDs. Each valid skill and reference
 also carries a stable `sourceId` in its JSON payload for domain-level references.
 Deleting a skill explicitly deletes its currently conforming reference records.
-Its persisted document rooms are retained; releasing an editor only unloads the
-live document lease.
+Deleting a row also deletes its owned document state.
 
-Instructions and reference bodies are top-level parameterized documents:
+Instructions and reference bodies open through their owning rows:
 
 ```ts
-await skills.documents.instructions.open({ skillId });
-await skills.documents.reference.open({ referenceId });
+await skills.tables.skills.document.open(skillId);
+await skills.tables.references.document.open(referenceId);
 ```
 
-Application code never constructs room IDs, GUIDs, authority identities, or
-document providers. The runtime derives and owns them.
+Application code never constructs document addresses, authority identities, or
+providers. The runtime derives them from the table and structural row id.
 
 ## UI
 
 The single route renders a resizable split view with a searchable skill list,
 metadata editor, Markdown instructions editor, references panel, and command
-palette. CodeMirror writes document content through the typed document handle.
+palette. CodeMirror writes document content through the row document handle once
+the browser channel is available.
 
 ## Development
 
