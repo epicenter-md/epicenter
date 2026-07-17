@@ -71,15 +71,17 @@ visible to repair code.
 ### Records are queryable product facts
 
 A canonical record is an identified JSON object under a permanent table storage
-key. It has explicit create, patch, and delete lifecycles. Field names are exact
-permanent storage keys. The platform never renames, aliases, defaults, or heals
-them implicitly.
+key. Its whole mutation vocabulary is one `RowIntent`: create, update, and
+delete (ADR-0131). Field names are exact permanent storage keys. The platform
+never renames, aliases, defaults, or heals them implicitly.
 
-Every synchronized device keeps a complete SQLite replica of the canonical
-map. The server orders record commands and stores current state, receipts,
-temporary deletion markers, and snapshots. It does not synchronize a device's
-SQLite file. Local indexes, pages, cursors, outboxes, and SQL views are runtime
-state.
+Every synchronized device keeps a complete SQLite replica: confirmed authority
+state plus its own compacted sealed and open RowIntents (ADR-0134). The server
+folds sealed rounds in authority order and stores current rows, exact-retry
+receipts, and a bounded ordered outcome tail; a replica below the retention
+floor reacquires state through a disposable baseline scan (ADR-0136). It does
+not synchronize a device's SQLite file. Local indexes, pages, cursors, and SQL
+views are runtime state.
 
 ### Table definitions are release-local lenses
 
@@ -199,10 +201,11 @@ A star is the runnable deployment that holds a person's synchronized data. The
 hosted Cloud app and the self-hosted instance use the same shared server library
 but resolve principals differently.
 
-The records authority owns ordering, current rows, receipts, deletion markers,
-and snapshots. It remains schema-blind: application releases own field
-validation and explicit repair code. Yjs rooms carry collaborative document
-updates. The blob store holds large binaries by reference.
+The records authority owns ordering, current rows, exact-retry receipts, and a
+bounded ordered outcome tail. It remains schema-blind: application releases own
+field validation and explicit repair code. Row-owned collaborative document
+updates travel inside RowIntents and composite outcomes on the same authority
+(ADR-0133). The blob store holds large binaries by reference.
 
 This separation keeps the privacy question concrete. Epicenter can run the
 star, or the user can run it. In either topology, apps keep their schema meaning
