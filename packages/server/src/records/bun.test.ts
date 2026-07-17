@@ -75,7 +75,6 @@ async function syncRound(
 	target: RecordsPartition,
 	token: SyncToken,
 	intents: WireRowIntent[],
-	submission: number,
 ) {
 	return records.sync(target, {
 		protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
@@ -84,7 +83,6 @@ async function syncRound(
 		sealedRound: {
 			round: token.acceptedRound + 1,
 			requestDigest: rowRoundDigest(intents),
-			submission,
 			intents,
 		},
 	});
@@ -97,7 +95,6 @@ async function createRows(
 	firstDocumentUpdate?: string,
 ): Promise<SyncToken> {
 	let token = await enroll(records, target);
-	let submission = 0;
 	for (
 		let offset = 0;
 		offset < rowIds.length;
@@ -115,7 +112,7 @@ async function createRows(
 					: {}),
 			}));
 		token = expectPage(
-			await syncRound(records, target, token, intents, (submission += 1)),
+			await syncRound(records, target, token, intents),
 		).token;
 	}
 	return token;
@@ -157,7 +154,6 @@ test('enrollment and RowIntent state survive closing and reopening', async () =>
 						documentUpdate: initial,
 					},
 				],
-				1,
 			),
 		).token;
 		token = expectPage(
@@ -174,7 +170,6 @@ test('enrollment and RowIntent state survive closing and reopening', async () =>
 						documentUpdate: incremental,
 					},
 				],
-				2,
 			),
 		).token;
 		expect(token.acceptedRound).toBe(2);
@@ -248,7 +243,7 @@ test('exact retry is idempotent and an unknown replica is refused', async () => 
 			},
 		];
 		const accepted = expectPage(
-			await syncRound(context.records, partition, token, intents, 1),
+			await syncRound(context.records, partition, token, intents),
 		);
 		const retry = expectPage(
 			await context.records.sync(partition, {
@@ -258,7 +253,6 @@ test('exact retry is idempotent and an unknown replica is refused', async () => 
 				sealedRound: {
 					round: 1,
 					requestDigest: rowRoundDigest(intents),
-					submission: 2,
 					intents,
 				},
 			}),
@@ -266,7 +260,6 @@ test('exact retry is idempotent and an unknown replica is refused', async () => 
 		expect(retry).toMatchObject({
 			token: { acceptedRound: 1, checkpoint: 1 },
 			outcomes: [],
-			submission: 2,
 		});
 
 		expect(

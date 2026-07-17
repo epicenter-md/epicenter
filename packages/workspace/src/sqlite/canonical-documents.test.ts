@@ -152,6 +152,38 @@ test('local deletion revokes handles and drops queued updates', async () => {
 	}
 });
 
+test('promotion-style revocation drains captured updates into durable intents', async () => {
+	const database = new Database(':memory:');
+	try {
+		const sqlite = createBunSqliteAdapter(database);
+		const records = createCanonicalRecords(sqlite, definitions);
+		const row = records.tables.notes.create({ title: 'Keep my edit' });
+		const documents = createDocumentRuntime({
+			admitIntent: createLocalDocumentAdmission({
+				sqlite,
+				readCurrentRow: (table, rowId) => readCurrentRow(sqlite, table, rowId),
+			}),
+			readParts: (table, rowId) =>
+				readCurrentDocumentParts(sqlite, table, rowId),
+			readCurrentRow: (table, rowId) => readCurrentRow(sqlite, table, rowId),
+		});
+		using document = await documents.open('notes', row.id);
+		document.get('editor').insert(0, 'captured before promotion');
+		// Baseline promotion revokes every handle while this update is still
+		// queued; the revocation must not drop the captured edit (ADR-0136).
+		documents.revokeAll();
+		expect(() => document.transact(() => undefined)).toThrow('was revoked');
+		await expect(document.whenDurable()).rejects.toThrow('was revoked');
+
+		using reopened = await documents.open('notes', row.id);
+		expect(reopened.get('editor').toString()).toBe(
+			'captured before promotion',
+		);
+	} finally {
+		database.close();
+	}
+});
+
 test('remote deletion revokes a synchronized row document handle', async () => {
 	const authorityState = openTestAuthority();
 	const firstTransport = createTestTransport(authorityState.authority);

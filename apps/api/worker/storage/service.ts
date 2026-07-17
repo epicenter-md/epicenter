@@ -1,108 +1,99 @@
 /**
- * Hosted storage policy (ADR-0137).
+ * Hosted storage capability issuance (ADR-0137).
  *
- * Epicenter Cloud meters one physical account total: the sum of the latest
- * absolute `databaseSize` observation per hosted workspace plus the absolute
- * hosted blob bytes. This module owns the Cloud side of that policy: it
- * records observations, recomputes the per-account projection against the
- * active catalog allowance, and answers the records route's deployment-
- * neutral growth question. Request paths read the projection row only; the
- * billing provider is never on a request path. An absent projection row is a
- * new account: zero observed bytes, growth allowed.
+ * The observation registry is the complete set of storage-producing sources
+ * already issued to an account. Enrollment refreshes only those registered
+ * workspace authorities before deciding. An unseen target is not contacted
+ * or registered on refusal. Once admitted, the source is registered at zero
+ * bytes and only then is its first replica minted. A later issuance refreshes
+ * that registered authority's absolute size. Synchronization never consults or
+ * mutates this policy.
  */
 
 import type { PrincipalId } from '@epicenter/identity';
-import type { Db, RecordsPartition } from '@epicenter/server';
-import {
-	readStorageProjection,
-	sumStorageObservations,
-	upsertStorageObservation,
-	writeStorageProjection,
+import type {
+	Records,
+	RecordsPartition,
+	StorageObservation,
 } from '@epicenter/server';
 import { extractErrorMessage } from 'wellcrafted/error';
-import { createAutumnClient } from '../billing/autumn.js';
-import { getPlan, PLAN_IDS, type PlanId } from '../billing/catalog.js';
 
-/** Resolve the account's included storage bytes from the active plan. */
-async function resolveIncludedBytes(
-	env: Cloudflare.Env,
-	principal: { id: PrincipalId; email?: string },
-): Promise<number> {
-	const autumn = createAutumnClient(env);
-	const customer = await autumn.customers.getOrCreate({
-		customerId: principal.id,
-		...(principal.email === undefined ? {} : { email: principal.email }),
-	});
-	const mainSubscription =
-		customer.subscriptions.find((subscription) => !subscription.addOn) ?? null;
-	const planId = (mainSubscription?.planId ?? PLAN_IDS.free) as PlanId;
-	const plan = getPlan(planId);
-	return plan && plan.kind === 'subscription' ? plan.storage.includedBytes : 0;
-}
+export type EnrollmentResponse = Awaited<ReturnType<Records['enroll']>>;
+
+type StorageIssuanceDependencies = {
+	listObservations(principalId: PrincipalId): Promise<StorageObservation[]>;
+	readWorkspaceBytes(partition: RecordsPartition): Promise<number>;
+	upsertObservation(
+		observation: StorageObservation & { principalId: PrincipalId },
+	): Promise<void>;
+	resolveIncludedBytes(): Promise<number>;
+	reportError?(message: string): void;
+};
 
 export function createStorageService({
-	db,
-	env,
-}: {
-	db: Db;
-	env: Cloudflare.Env;
-}) {
+	listObservations,
+	readWorkspaceBytes,
+	upsertObservation,
+	resolveIncludedBytes,
+	reportError = console.error,
+}: StorageIssuanceDependencies) {
 	return {
 		/**
-		 * Record one workspace authority's absolute size and recompute the
-		 * account projection. Runs in the after-response lifetime; a provider
-		 * or database failure leaves the previous projection standing and is
-		 * reported at its source.
+		 * Decide and issue one enrollment. Policy and registry failures return
+		 * `unavailable` before any unseen target authority exists. The enrollment
+		 * call deliberately sits outside that catch so authority errors preserve the
+		 * records route's existing semantics.
 		 */
-		async observeWorkspace(
+		async issueEnrollment(
 			partition: RecordsPartition,
-			observedBytes: number,
-			principalEmail?: string,
-		): Promise<void> {
+			enroll: () => Promise<EnrollmentResponse>,
+		): Promise<EnrollmentResponse | 'unavailable'> {
 			try {
-				await upsertStorageObservation(db, {
-					principalId: partition.principalId,
-					sourceKind: 'workspace',
-					sourceId: partition.workspaceId,
-					observedBytes,
-				});
-				const total = await sumStorageObservations(db, partition.principalId);
-				const includedBytes = await resolveIncludedBytes(env, {
-					id: partition.principalId,
-					...(principalEmail === undefined ? {} : { email: principalEmail }),
-				});
-				await writeStorageProjection(db, {
-					principalId: partition.principalId,
-					observedBytes: total,
-					growthAllowed: total < includedBytes,
-				});
-			} catch (cause) {
-				console.error(
-					`[storage] observation for ${partition.principalId}/${partition.workspaceId} failed: ${extractErrorMessage(cause)}`,
+				const observations = await listObservations(partition.principalId);
+				const registeredWorkspaceIds = new Set(
+					observations
+						.filter((observation) => observation.sourceKind === 'workspace')
+						.map((observation) => observation.sourceId),
 				);
-			}
-		},
+				let total = observations
+					.filter((observation) => observation.sourceKind === 'blobs')
+					.reduce((sum, observation) => sum + observation.observedBytes, 0);
 
-		/**
-		 * The records route's growth decision (ADR-0137). An absent projection
-		 * row is a new account and may grow; a database failure resolves
-		 * `unavailable`, which fails only growth, closed and retryably.
-		 */
-		async resolveGrowth(
-			partition: RecordsPartition,
-		): Promise<'allow' | 'delete-only' | 'unavailable'> {
-			try {
-				const projection = await readStorageProjection(
-					db,
-					partition.principalId,
+				for (const workspaceId of registeredWorkspaceIds) {
+					const observedBytes = await readWorkspaceBytes({
+						principalId: partition.principalId,
+						workspaceId,
+					});
+					await upsertObservation({
+						principalId: partition.principalId,
+						sourceKind: 'workspace',
+						sourceId: workspaceId,
+						observedBytes,
+					});
+					total += observedBytes;
+				}
+
+				const includedBytes = await resolveIncludedBytes();
+				if (total >= includedBytes) {
+					return { result: 'enrollment-refused' };
+				}
+
+				if (!registeredWorkspaceIds.has(partition.workspaceId)) {
+					await upsertObservation({
+						principalId: partition.principalId,
+						sourceKind: 'workspace',
+						sourceId: partition.workspaceId,
+						observedBytes: 0,
+					});
+				}
+			} catch (cause) {
+				reportError(
+					`[storage] enrollment issuance for ${partition.principalId}/${partition.workspaceId} failed: ${extractErrorMessage(cause)}`,
 				);
-				if (!projection) return 'allow';
-				return projection.growthAllowed ? 'allow' : 'delete-only';
-			} catch {
 				return 'unavailable';
 			}
+
+			return enroll();
 		},
 	};
 }
-
-export type StorageService = ReturnType<typeof createStorageService>;

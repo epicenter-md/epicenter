@@ -82,7 +82,7 @@ describe('foldFields mirror rule', () => {
 		expect(foldFields(undefined, intent)).toEqual({ kind: 'noop' });
 	});
 
-	test('a folded row above the general capacity cap is a no-op', () => {
+	test('a folded row above the general row byte cap is a no-op', () => {
 		const oversized = 'x'.repeat(ROW_SYNC_ADMISSION_LIMITS.encodedRowBytes);
 		expect(foldFields({ title: 'a' }, update({ big: oversized }))).toEqual({
 			kind: 'noop',
@@ -123,5 +123,28 @@ describe('reserved KV address (ADR-0132)', () => {
 		expect(foldFields(nearCap, kvUpdate({ more: 'z'.repeat(4096) }))).toEqual({
 			kind: 'noop',
 		});
+	});
+});
+
+describe('foldFields hostile and aliasing inputs', () => {
+	test('a __proto__ set key stays an own data key without polluting prototypes', () => {
+		const folded = foldFields(
+			{ title: 'live' },
+			update({ ['__proto__']: { polluted: true } }),
+		);
+		if (folded.kind !== 'fields') throw new Error('Expected a fields fold');
+		expect(Object.hasOwn(folded.fields, '__proto__')).toBe(true);
+		expect(Object.getPrototypeOf(folded.fields)).toBe(Object.prototype);
+		expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+	});
+
+	test('fold neither mutates the current row nor aliases nested set values', () => {
+		const current = { title: 'before', nested: { keep: true } };
+		const nested = { child: { flag: 1 } };
+		const folded = foldFields(current, update({ nested }));
+		if (folded.kind !== 'fields') throw new Error('Expected a fields fold');
+		expect(current).toEqual({ title: 'before', nested: { keep: true } });
+		(folded.fields.nested as { child: { flag: number } }).child.flag = 2;
+		expect(nested.child.flag).toBe(1);
 	});
 });

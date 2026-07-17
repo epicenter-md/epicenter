@@ -6,11 +6,11 @@ Apps currently use one of two workspace lanes. New canonical SQLite work starts
 from an inert definition and an authority-bound runtime:
 
 ```txt
-defineWorkspace({ id, tables, documents })
-  release-local table lenses and top-level parameterized documents
+defineWorkspace({ id, tables, kv })
+  release-local table and KV lenses
 
 runtime.open(definition)
-  borrowed tables, documents, and read-only SQL handles
+  borrowed tables, KV, and read-only SQL handles
 ```
 
 Several apps still use the transitional root-Yjs lane:
@@ -51,11 +51,11 @@ record path. Its definition-owned `create/connect/mount`, `defineKv`, `.docs`,
 and `_v` APIs remain compatibility surfaces until those apps migrate.
 
 The canonical SQLite lane uses `defineTable({ fields, optional })` only for
-release-local record validation and projection. It declares every Yjs resource
-at workspace top level with `document.*`, using typed parameters such as
-`{ skillId }` when a document has a domain relationship to a record. It has no
-workspace KV plane, nested table documents, user-data migration API, schema
-hash, or successor database.
+release-local row-field validation and projection. Every ordinary row has one
+latent document opened through `table.document.open(rowId)`; applications own
+the roots inside it. The workspace definition includes a release-local `kv`
+lens. It has no document declarations, room catalog, user-data migration API,
+schema hash, or successor database.
 
 Do not mix the two record authorities inside one app. Compose several canonical
 workspaces by opening their imported definitions through one runtime and passing

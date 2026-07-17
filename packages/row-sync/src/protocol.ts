@@ -11,7 +11,7 @@ import {
 const CLOSED = { additionalProperties: false } as const;
 
 /** Increment only for an incompatible wire change. */
-export const ROW_SYNC_PROTOCOL_MAJOR = 5;
+export const ROW_SYNC_PROTOCOL_MAJOR = 6;
 
 const sequence = Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER });
 const positiveSequence = Type.Integer({
@@ -201,12 +201,6 @@ export const SealedRoundSchema = Type.Object(
 	{
 		round: positiveSequence,
 		requestDigest: Type.String({ minLength: 1, maxLength: 128 }),
-		/**
-		 * Strictly increasing per replica across transmissions (ADR-0131). The
-		 * authority's receipt watermark makes a definitively refused image
-		 * permanently inert, so the round number may be reused after a refusal.
-		 */
-		submission: positiveSequence,
 		intents: Type.Array(intentSchema, {
 			minItems: 1,
 			maxItems: ROW_SYNC_ADMISSION_LIMITS.intentsPerRound,
@@ -239,7 +233,11 @@ export const EnrollResponseSchema = Type.Union([
 		CLOSED,
 	),
 	Type.Object({ result: Type.Literal('protocol-mismatch') }, CLOSED),
-	/** Deployment capacity admission stops enrollment (ADR-0137). */
+	/**
+	 * The deployment refused to issue this new storage-producing capability
+	 * (ADR-0137). Definitive for this attempt; issuance is decided before the
+	 * authority is reached, so no receipt state exists for the caller.
+	 */
 	Type.Object({ result: Type.Literal('enrollment-refused') }, CLOSED),
 ]);
 export type EnrollResponse = Static<typeof EnrollResponseSchema>;
@@ -309,8 +307,6 @@ export const SyncResponseSchema = Type.Union([
 			hasMore: Type.Boolean(),
 			/** Every page reports the floor so acquisition can detect races. */
 			retentionFloor: sequence,
-			/** Echoes the sealed round's submission when one was evaluated. */
-			submission: Type.Optional(positiveSequence),
 		},
 		CLOSED,
 	),
@@ -320,28 +316,6 @@ export const SyncResponseSchema = Type.Union([
 			/** The round (if any) was already folded; store after install. */
 			token: SyncTokenSchema,
 			retentionFloor: sequence,
-			submission: Type.Optional(positiveSequence),
-		},
-		CLOSED,
-	),
-	Type.Object(
-		{
-			/** Retryable: this transmission is inert; jump past the watermark. */
-			result: Type.Literal('stale-submission'),
-			submission: positiveSequence,
-			watermark: positiveSequence,
-		},
-		CLOSED,
-	),
-	Type.Object(
-		{
-			/**
-			 * Definitive deployment capacity refusal (ADR-0137). Authoritative
-			 * only when `submission` equals the greatest submission the client
-			 * has issued for the in-flight image; older refusals are superseded.
-			 */
-			result: Type.Literal('capacity-refused'),
-			submission: positiveSequence,
 		},
 		CLOSED,
 	),
@@ -353,7 +327,6 @@ export const SyncResponseSchema = Type.Union([
 			 * (ADR-0131). Recovery is a fresh replica identity.
 			 */
 			result: Type.Literal('replica-fork'),
-			submission: positiveSequence,
 		},
 		CLOSED,
 	),

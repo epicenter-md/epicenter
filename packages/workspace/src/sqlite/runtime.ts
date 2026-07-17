@@ -267,10 +267,16 @@ export function createWorkspaceRuntime({
 			observe(key: string, handler: () => void) {
 				let disposed = false;
 				let detach: (() => void) | undefined;
-				void openedFor(entry).then((opened) => {
-					if (disposed) return;
-					detach = opened.kv.observe(key, handler);
-				});
+				void openedFor(entry)
+					.then((opened) => {
+						if (disposed) return;
+						detach = opened.kv.observe(key, handler);
+					})
+					.catch(() => {
+						// Best-effort attach: an owner-open failure (or disposal
+						// during opening) already surfaces loudly on the first kv
+						// read or write, so the observation just never attaches.
+					});
 				return () => {
 					disposed = true;
 					detach?.();
@@ -328,6 +334,16 @@ export function createWorkspaceRuntime({
 			const failures: unknown[] = [];
 			for (const result of results) {
 				if (result.status !== 'fulfilled') continue;
+				// Revoke cached row documents before the SQLite owner closes so
+				// retained handles fail loudly instead of queueing persistence
+				// against a disposed owner (ADR-0135).
+				try {
+					result.value.documents.revokeAll(
+						new Error('Workspace runtime is disposed'),
+					);
+				} catch (cause) {
+					failures.push(cause);
+				}
 				try {
 					await result.value.owner[Symbol.asyncDispose]();
 				} catch (cause) {

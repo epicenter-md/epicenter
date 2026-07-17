@@ -16,14 +16,17 @@
 >
 > **Regenerate (deterministic per ref set, lossless):** `bun scripts/generate-spec-history.ts`. The totals track the refs this clone can see; `--all` is deliberate so the timeline recovers specs that only lived on unmerged or deleted branches.
 
-**1385 specs ever** (549 still in tree, 836 removed).
+**1388 specs ever** (549 still in tree, 839 removed).
 
 
 ## 2026
 
 | Date | Spec | State | Path |
 |------|------|-------|------|
+| 2026-07-17 | hosted-storage-policy | removed | specs/20260717T004239-hosted-storage-policy.md |
 | 2026-07-16 | workspace-tables-kv-row-documents | in tree | specs/20260716T161934-workspace-tables-kv-row-documents.md |
+| 2026-07-16 | confirmed-state-compacted-row-intents | removed | specs/20260716T204040-confirmed-state-compacted-row-intents.md |
+| 2026-07-16 | workspace-tables-kv-row-bodies | removed | specs/20260716T161934-workspace-tables-kv-row-bodies.md |
 | 2026-07-16 | fold-never-refuse-sync-architecture | removed | specs/20260716T173049-fold-never-refuse-sync-architecture.md |
 | 2026-07-14 | synchronized-data-open-runtime-clean-break | removed | specs/20260714T162816-synchronized-data-open-runtime-clean-break.md |
 | 2026-07-14 | sqlite-workspace-app-adoption | removed | specs/20260714T131232-sqlite-workspace-app-adoption.md |

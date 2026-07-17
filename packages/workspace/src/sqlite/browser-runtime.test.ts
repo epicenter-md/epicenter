@@ -206,7 +206,7 @@ test('worker transport actions pass through to matching HTTP route suffixes', as
 	await using runtime = createBrowserWorkspaceRuntime({
 		authorityKey: 'browser-authority',
 		createBroadcastChannel: () => undefined,
-		recordSync: {
+		rowSync: {
 			baseUrl: 'https://example.test',
 			async fetch(input) {
 				urls.push(String(input));
@@ -235,4 +235,19 @@ test('worker transport actions pass through to matching HTTP route suffixes', as
 		'/api/records/browser-test/sync',
 		'/api/records/browser-test/baseline-scan',
 	]);
+});
+
+test('browser runtime disposal revokes retained row-document handles', async () => {
+	const runtime = createRuntime();
+	const workspace = await runtime.open(definition);
+	const document = await workspace.tables.notes.document.open(ROW_ID);
+
+	await runtime[Symbol.asyncDispose]();
+
+	expect(() => document.get('editor')).toThrow(
+		'Browser workspace runtime is disposed',
+	);
+	expect(() => document.transact(() => undefined)).toThrow(
+		'Browser workspace runtime is disposed',
+	);
 });

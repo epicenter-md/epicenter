@@ -10,13 +10,13 @@ export const RecordsError = defineErrors({
 		status: 413 as const,
 	}),
 	/**
-	 * The deployment could not load its storage growth decision (ADR-0137).
-	 * Only growth fails, and it fails closed and retryably; reads and
-	 * deletions never depend on the projection.
+	 * The deployment could not decide its capability-issuance admission
+	 * (ADR-0137). Enrollment fails closed and retryably; synchronization
+	 * and baseline scans never depend on the decision.
 	 */
-	GrowthUnavailable: () => ({
+	EnrollmentUnavailable: () => ({
 		message:
-			'The storage capacity decision is temporarily unavailable. Retry this change later.',
+			'The storage capability decision is temporarily unavailable. Retry enrollment later.',
 		status: 503 as const,
 	}),
 });

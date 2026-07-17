@@ -3,7 +3,7 @@ import type { Static, TSchema } from 'typebox';
 import { sha256Hex } from '../shared/sha256.js';
 import {
 	type BrowserRecordOperation,
-	type BrowserRecordSyncBinding,
+	type BrowserRowSyncBinding,
 	type BrowserRuntimeMessage,
 	type BrowserRuntimeRequest,
 	type BrowserWorkspaceManifest,
@@ -32,6 +32,7 @@ type BoundWorkspace = {
 	notifyRecordsChanged(): void;
 	notifyRowsDeleted(addresses: RowAddress[]): void;
 	notifyBaselinePromoted(): void;
+	revokeDocuments(cause: Error): void;
 };
 
 type RowAddress = { table: string; rowId: string };
@@ -69,7 +70,7 @@ type RuntimeBroadcastChannel = {
 
 export type CreateBrowserWorkspaceRuntimeOptions = {
 	authorityKey: string;
-	recordSync?: {
+	rowSync?: {
 		baseUrl: string;
 		fetch?: BrowserRecordFetch;
 		headers?: Readonly<Record<string, string>>;
@@ -83,7 +84,7 @@ export type CreateBrowserWorkspaceRuntimeOptions = {
 /** Create the page-side client for one OPFS-owning records Worker. */
 export function createBrowserWorkspaceRuntime({
 	authorityKey,
-	recordSync: recordSyncInput,
+	rowSync: rowSyncInput,
 	createBroadcastChannel = defaultBroadcastChannel,
 	onRecordsChanged = () => undefined,
 	onBackgroundError = () => undefined,
@@ -92,7 +93,7 @@ export function createBrowserWorkspaceRuntime({
 		throw new Error('Authority key must not be empty');
 	}
 	const authorityStorageKey = sha256Hex(authorityKey);
-	const recordSync = normalizeRecordSync(recordSyncInput);
+	const rowSync = normalizeRowSync(rowSyncInput);
 	const pending = new Map<number, PendingRequest>();
 	const workspaces = new Map<string, BoundWorkspace>();
 	const invalidationChannel = createBroadcastChannel(
@@ -203,19 +204,19 @@ export function createBrowserWorkspaceRuntime({
 		message: Extract<BrowserRuntimeMessage, { type: 'transport-request' }>,
 	): Promise<void> {
 		try {
-			if (!recordSync) throw new Error('Browser record transport is not bound');
-			const response = await recordSync.fetch(
+			if (!rowSync) throw new Error('Browser row-sync transport is not bound');
+			const response = await rowSync.fetch(
 				new URL(
 					`/api/records/${encodeURIComponent(message.workspaceId)}/${message.action}`,
-					recordSync.baseUrl,
+					rowSync.baseUrl,
 				),
 				{
 					method: 'POST',
 					headers: {
-						...recordSync.headers,
+						...rowSync.headers,
 						'content-type': 'application/json',
 					},
-					credentials: recordSync.credentials,
+					credentials: rowSync.credentials,
 					body: JSON.stringify(message.body),
 				},
 			);
@@ -454,6 +455,9 @@ export function createBrowserWorkspaceRuntime({
 			notifyRecordsChanged,
 			notifyRowsDeleted,
 			notifyBaselinePromoted,
+			revokeDocuments(cause: Error) {
+				documents.revokeAll(cause);
+			},
 		};
 	}
 
@@ -476,7 +480,7 @@ export function createBrowserWorkspaceRuntime({
 				storageKey: sha256Hex(`${authorityKey}\0${definition.id}`),
 				tables: serializeTableLenses(definition.tables),
 				kv: JSON.parse(JSON.stringify(definition.kv)),
-				recordSync: recordSync?.binding,
+				rowSync: rowSync?.binding,
 			};
 			const binding = createHandle(definition, manifest);
 			workspaces.set(definition.id, {
@@ -491,6 +495,9 @@ export function createBrowserWorkspaceRuntime({
 			isDisposed = true;
 			worker?.terminate();
 			const cause = new Error('Browser workspace runtime is disposed');
+			// Revoke page-side row documents so retained handles fail loudly
+			// instead of queueing persistence at a terminated Worker.
+			for (const bound of workspaces.values()) bound.revokeDocuments(cause);
 			ready?.reject(cause);
 			for (const request of pending.values()) request.reject(cause);
 			pending.clear();
@@ -521,11 +528,11 @@ function defaultBroadcastChannel(
 		: new BroadcastChannel(name);
 }
 
-function normalizeRecordSync(
-	input: CreateBrowserWorkspaceRuntimeOptions['recordSync'],
+function normalizeRowSync(
+	input: CreateBrowserWorkspaceRuntimeOptions['rowSync'],
 ):
 	| {
-			binding: BrowserRecordSyncBinding;
+			binding: BrowserRowSyncBinding;
 			baseUrl: string;
 			fetch: BrowserRecordFetch;
 			headers: Record<string, string>;

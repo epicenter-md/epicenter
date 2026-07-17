@@ -35,6 +35,7 @@ import {
 	chargeOpenAiCreditsWithAutumn,
 	chargeOpenAiTranscriptionCredits,
 } from './policies.js';
+import { PLAN_IDS, PLANS } from './catalog.js';
 import { createBillingService } from './service.js';
 
 // ----- Real service + real policies against a spied Autumn client ------------
@@ -68,6 +69,7 @@ let trackImpl: (args: TrackArgs) => Promise<unknown> = async () => ({
 });
 const finalizeCalls: Array<'confirm' | 'release'> = [];
 const trackCalls: TrackArgs[] = [];
+const customerCalls: unknown[] = [];
 
 // The nested sub-clients share one prototype across instances; a sample client
 // hands us the objects to spy on. Cast to the narrow method shapes the service
@@ -93,6 +95,7 @@ beforeEach(() => {
 	trackImpl = async () => ({ id: 'evt_async' });
 	finalizeCalls.length = 0;
 	trackCalls.length = 0;
+	customerCalls.length = 0;
 
 	spyOn(clientProto, 'check').mockImplementation(async (input) =>
 		checkImpl(input),
@@ -104,9 +107,10 @@ beforeEach(() => {
 	spyOn(balancesProto, 'finalize').mockImplementation(async ({ action }) => {
 		finalizeCalls.push(action);
 	});
-	spyOn(customersProto, 'getOrCreate').mockImplementation(
-		async () => customerState,
-	);
+	spyOn(customersProto, 'getOrCreate').mockImplementation(async (...args) => {
+		customerCalls.push(args[0]);
+		return customerState;
+	});
 });
 
 afterEach(() => {
@@ -134,6 +138,42 @@ function makeService() {
 		},
 	);
 }
+
+test('storage allowance defaults to Free and preserves billing identity', async () => {
+	const includedBytes = await makeService().getStorageIncludedBytes();
+
+	expect(includedBytes).toBe(PLANS[PLAN_IDS.free].storage.includedBytes);
+	expect(customerCalls).toEqual([
+		{
+			customerId: 'user_1',
+			email: 'user@example.com',
+			expand: ['subscriptions.plan', 'balances.feature'],
+		},
+	]);
+});
+
+test('storage allowance selects the paid main subscription, not an add-on', async () => {
+	customerState = {
+		subscriptions: [
+			{ addOn: true, planId: PLAN_IDS.creditTopUp },
+			{ planId: PLAN_IDS.pro },
+		],
+	};
+
+	expect(await makeService().getStorageIncludedBytes()).toBe(
+		PLANS[PLAN_IDS.pro].storage.includedBytes,
+	);
+});
+
+test('an unknown active plan leaves storage issuance retryably undecidable', async () => {
+	customerState = {
+		subscriptions: [{ planId: 'removed-plan' }],
+	};
+
+	expect(makeService().getStorageIncludedBytes()).rejects.toThrow(
+		"Active subscription plan 'removed-plan' is not in the catalog",
+	);
+});
 
 // ----- AI inference policy (the OpenAI-compatible gateway) --------------------
 

@@ -52,13 +52,10 @@ export { connectHyperdriveDb } from './db/backends/cloudflare.js';
 // `connectHyperdriveDb`; a Bun host builds its own `pg.Pool` inline.
 export { createDb, type Db } from './db/create-db.js';
 export {
-	deleteStorageObservation,
-	readStorageProjection,
-	type StorageProjection,
+	listStorageObservations,
+	type StorageObservation,
 	type StorageSourceKind,
-	sumStorageObservations,
 	upsertStorageObservation,
-	writeStorageProjection,
 } from './db/storage-data.js';
 // An opt-in burn-rate cap for the inference `policies` seam: caps requests per
 // principal partition so a shared house key cannot be run up unbounded (ADR-0076).
@@ -94,11 +91,7 @@ export {
 	readWorkspaceDatabaseSize,
 	RowAuthorityDurableObject,
 } from './records/cloudflare.js';
-export type {
-	Records,
-	RecordsCallOptions,
-	RecordsPartition,
-} from './records/contracts.js';
+export type { Records, RecordsPartition } from './records/contracts.js';
 // Re-export the Cloudflare Durable Object class so each deployment's
 // wrangler.jsonc can resolve `class_name: "Room"` against this entrypoint.
 export { Room } from './room/backends/cloudflare/durable-object.js';
@@ -115,8 +108,8 @@ export { createDurableObjectRooms } from './room/backends/cloudflare/registry.js
 export { mountBlobsApp } from './routes/blobs.js';
 export { mountInferenceApp } from './routes/inference.js';
 export {
+	type IssueEnrollment,
 	mountRecordsApp,
-	type ResolveGrowth,
 } from './routes/records.js';
 export { mountRoomsApp } from './routes/rooms.js';
 export { mountSessionApp } from './routes/session.js';

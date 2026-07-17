@@ -3,11 +3,10 @@
  *
  * Proves independent page Workers share one canonical OPFS replica, automatic
  * authority sync converges another Browser context, lossy invalidation reaches
- * another page, live Yjs updates cross tabs, IndexedDB documents survive
+ * another page, live row-document updates cross tabs, SQLite documents survive
  * release, and a force-terminated Worker can be replaced without losing data.
  */
 import { Database } from 'bun:sqlite';
-import { createHash } from 'node:crypto';
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -18,18 +17,19 @@ import {
 } from 'playwright';
 import { createBunSqliteAdapter } from '../../packages/row-sync/src/adapters/bun.js';
 import {
-	openRecordAuthority,
-	RECORD_SYNC_PROTOCOL_MAJOR,
+	openRowAuthority,
+	ROW_SYNC_PROTOCOL_MAJOR,
 } from '../../packages/row-sync/src/index.js';
+import { rowDocumentCodec } from '../../packages/server/src/records/codec.js';
 
 const port = 5214;
 const origin = `http://127.0.0.1:${port}`;
 const authority = `browser-runtime-${Date.now().toString(36)}`;
 const config = 'browser-runtime.vite.config.ts';
 const authorityDatabase = new Database(':memory:');
-const recordAuthority = openRecordAuthority({
+const rowAuthority = openRowAuthority({
 	database: createBunSqliteAdapter(authorityDatabase),
-	sha256: async (value) => createHash('sha256').update(value).digest('hex'),
+	codec: rowDocumentCodec,
 });
 const recordRequests: string[] = [];
 
@@ -98,13 +98,15 @@ async function installRecordAuthority(context: BrowserContext): Promise<void> {
 		const body = request.postDataJSON() as unknown;
 		const pathname = new URL(request.url()).pathname;
 		recordRequests.push(pathname);
-		const response = pathname.endsWith('/sync')
-			? recordAuthority.sync(body as Parameters<typeof recordAuthority.sync>[0])
-			: pathname.endsWith('/snapshot-chunk')
-				? recordAuthority.snapshotChunk(
-						body as Parameters<typeof recordAuthority.snapshotChunk>[0],
-					)
-				: undefined;
+		const response = pathname.endsWith('/enroll')
+			? rowAuthority.enroll(body as Parameters<typeof rowAuthority.enroll>[0])
+			: pathname.endsWith('/sync')
+				? rowAuthority.sync(body as Parameters<typeof rowAuthority.sync>[0])
+				: pathname.endsWith('/baseline-scan')
+					? rowAuthority.baselineScan(
+							body as Parameters<typeof rowAuthority.baselineScan>[0],
+						)
+					: undefined;
 		if (!response) throw new Error(`Unexpected record route '${pathname}'`);
 		await route.fulfill({
 			contentType: 'application/json',
@@ -153,26 +155,30 @@ try {
 		'first Worker did not project the second Worker write',
 	);
 
+	const inspector = rowAuthority.enroll({
+		protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+		kind: 'enroll',
+	});
+	assert(inspector.result === 'enrolled', 'Smoke inspector enrollment failed');
 	for (let attempt = 0; attempt < 250; attempt++) {
-		const synced = recordAuthority.sync({
-			protocolMajor: RECORD_SYNC_PROTOCOL_MAJOR,
+		const synced = rowAuthority.sync({
+			protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
 			kind: 'sync',
 			token: {
-				replicaId: 'smoke-inspector',
+				replicaId: inspector.replicaId,
 				acceptedRound: 0,
 				checkpoint: 0,
 			},
 		});
 		if (
-			synced.ok &&
-			!synced.snapshotRequired &&
-			synced.entries.some((entry) => entry.rowId === secondRow.id)
+			synced.result === 'page' &&
+			synced.outcomes.some((outcome) => outcome.rowId === secondRow.id)
 		) {
 			break;
 		}
 		if (attempt === 249)
 			throw new Error(
-				`Browser outbox never reached authority; requests: ${recordRequests.join(', ')}`,
+				`Browser sealed round never reached authority; requests: ${recordRequests.join(', ')}`,
 			);
 		await Bun.sleep(20);
 	}
@@ -208,7 +214,7 @@ try {
 		),
 	]);
 	await first.evaluate(async () => {
-		window.productionBrowserRuntime.writeDraft('durable document');
+		await window.productionBrowserRuntime.writeDraft('durable document');
 	});
 	await second.waitForFunction(
 		(id) =>
@@ -218,15 +224,6 @@ try {
 		firstRow.id,
 	);
 	await first.evaluate(() => window.productionBrowserRuntime.closeDraft());
-	const revoked = await first.evaluate(() => {
-		try {
-			window.productionBrowserRuntime.readReleasedDraft();
-			return false;
-		} catch {
-			return true;
-		}
-	});
-	assert(revoked, 'released document content remained usable');
 	await first.evaluate(() => window.productionBrowserRuntime.dispose());
 	await first.close();
 
@@ -248,7 +245,7 @@ try {
 	);
 	assert(
 		draft === 'durable document',
-		'IndexedDB document did not survive reopen',
+		'SQLite row document did not survive reopen',
 	);
 	await reopened.evaluate(() => window.productionBrowserRuntime.dispose());
 	await reopened.close();
@@ -258,7 +255,7 @@ try {
 		`Browser errors: ${browserErrors.join('; ')}`,
 	);
 	process.stdout.write(
-		'Production Browser runtime passed: two page Workers, shared OPFS, automatic authority sync, invalidation, SQL lenses, durable lazy documents, revocation, and forced reopen.\n',
+		'Production Browser runtime passed: two page Workers, shared OPFS, automatic authority sync, invalidation, SQL lenses, durable row documents, and forced reopen.\n',
 	);
 } finally {
 	await context?.close();

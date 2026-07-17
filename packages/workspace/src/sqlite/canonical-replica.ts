@@ -57,8 +57,6 @@ export type CanonicalReplicaStatus = {
 	checkpoint: number;
 	pendingIntents: number;
 	hasInflightRound: boolean;
-	/** True when a definitive delete-only refusal left growth intents queued. */
-	capacityBlocked: boolean;
 };
 
 type StoredIntent = {
@@ -87,9 +85,9 @@ type StoredReplica = {
  *
  * This owner is the replica's single exclusive writer (ADR-0131): the
  * runtime enforces the lease physically (the browser's OPFS synchronous
- * access handle; process-local file ownership elsewhere), and the in-memory
- * submission counter is scoped to it. A crash costs one stale-submission
- * response, whose watermark the counter jumps past.
+ * access handle; process-local file ownership elsewhere). Until the sealed
+ * round resolves, every transmission is the identical image; the authority's
+ * accepted-round and digest receipt makes retries idempotent.
  */
 export function createCanonicalReplica({
 	sqlite,
@@ -123,12 +121,6 @@ export function createCanonicalReplica({
 	dropScratch(sqlite);
 	let activeSynchronization: Promise<CanonicalReplicaStatus> | undefined;
 	let rerunRequested = false;
-	/** Strictly increasing per transmission; exclusive-writer scoped. */
-	let nextSubmission = 1;
-	/** The greatest submission issued for the current in-flight image. */
-	let greatestIssuedSubmission = 0;
-	/** Set by a definitive refusal; cleared when growth may retry. */
-	let capacityBlocked = false;
 
 	function readReplica(): StoredReplica | undefined {
 		return sqlite.all<StoredReplica>(
@@ -241,7 +233,7 @@ export function createCanonicalReplica({
 						? folded.fields
 						: undefined;
 			if (fields === undefined) {
-				throw new Error('Local intent composition exceeded its capacity cap');
+				throw new Error('Local intent composition exceeded its size cap');
 			}
 			writeStoredIntent(
 				{
@@ -324,16 +316,13 @@ export function createCanonicalReplica({
 	/**
 	 * Seal a deterministic bounded subset of open intents under the next round
 	 * number (ADR-0131). At most one round is unresolved; it leaves disk only
-	 * when its exchange completes or a definitive capacity refusal resolves
-	 * it. While capacity-blocked, only delete intents seal.
+	 * when its exchange completes.
 	 */
 	function sealRound(): void {
 		sqlite.transaction(() => {
 			const replica = requireReplica();
 			if (replica.in_flight_round !== null) return;
-			const openIntents = readStoredIntents(0).filter(
-				(stored) => !capacityBlocked || stored.kind === 'delete',
-			);
+			const openIntents = readStoredIntents(0);
 			if (openIntents.length === 0) return;
 			let taken = openIntents.slice(0, roundLimit);
 			let wire = taken.map(toWire);
@@ -366,72 +355,6 @@ export function createCanonicalReplica({
 				[replica.accepted_round + 1, rowRoundDigest(wire)],
 			);
 		});
-		greatestIssuedSubmission = 0;
-	}
-
-	/**
-	 * Resolve a definitively refused sealed round (ADR-0131): in one local
-	 * transaction, clear the in-flight metadata, return the refused intents
-	 * to open state under ordinary compaction, and reseal any delete intents
-	 * as the same round number with a new digest. Local edits are never
-	 * discarded.
-	 */
-	function resolveCapacityRefusal(): void {
-		sqlite.transaction(() => {
-			const replica = requireReplica();
-			if (replica.in_flight_round === null) return;
-			const sealedIntents = readStoredIntents(1);
-			sqlite.run(`DELETE FROM "${INTENTS_TABLE}" WHERE sealed = 1`);
-			sqlite.run(
-				`UPDATE "${REPLICA_TABLE}" SET
-					in_flight_round = NULL, in_flight_request_digest = NULL
-				 WHERE id = 1`,
-			);
-			// Reopen under ordinary compaction: the refused intent is older
-			// than any open intent authored while the round was unresolved.
-			for (const stored of sealedIntents) {
-				const refused = toWire(stored);
-				const newerOpen = sqlite.all<StoredIntent>(
-					`SELECT table_key, row_id, sealed, kind, fields_json, document_update
-					 FROM "${INTENTS_TABLE}"
-					 WHERE table_key = ? AND row_id = ? AND sealed = 0`,
-					[stored.table_key, stored.row_id],
-				)[0];
-				if (!newerOpen) {
-					writeStoredIntent(refused, 0);
-					continue;
-				}
-				const newer = toWire(newerOpen);
-				sqlite.run(
-					`DELETE FROM "${INTENTS_TABLE}"
-					 WHERE table_key = ? AND row_id = ? AND sealed = 0`,
-					[stored.table_key, stored.row_id],
-				);
-				writeStoredIntent(refused, 0);
-				compactIntoOpen(newer);
-			}
-			// Reseal deletions first, reusing the still-unaccepted round
-			// number; the submission watermark makes the reuse safe.
-			const deletions = readStoredIntents(0).filter(
-				(stored) => stored.kind === 'delete',
-			);
-			if (deletions.length === 0) return;
-			const taken = deletions.slice(0, roundLimit);
-			for (const stored of taken) {
-				sqlite.run(
-					`UPDATE "${INTENTS_TABLE}" SET sealed = 1
-					 WHERE table_key = ? AND row_id = ? AND sealed = 0`,
-					[stored.table_key, stored.row_id],
-				);
-			}
-			sqlite.run(
-				`UPDATE "${REPLICA_TABLE}" SET
-					in_flight_round = ?, in_flight_request_digest = ?
-				 WHERE id = 1`,
-				[replica.accepted_round + 1, rowRoundDigest(taken.map(toWire))],
-			);
-		});
-		greatestIssuedSubmission = 0;
 	}
 
 	async function ensureEnrolled(): Promise<void> {
@@ -457,8 +380,6 @@ export function createCanonicalReplica({
 
 	async function runSynchronization(): Promise<CanonicalReplicaStatus> {
 		await ensureEnrolled();
-		// Each pass retries growth once; a definitive refusal re-blocks it.
-		capacityBlocked = false;
 		synchronization: while (true) {
 			sealRound();
 			const replica = requireReplica();
@@ -472,9 +393,6 @@ export function createCanonicalReplica({
 				if (digest !== replica.in_flight_request_digest) {
 					throw new Error('Sealed round no longer matches its stored digest');
 				}
-				const submission = nextSubmission;
-				nextSubmission += 1;
-				greatestIssuedSubmission = submission;
 				request = {
 					protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
 					kind: 'sync',
@@ -482,7 +400,6 @@ export function createCanonicalReplica({
 					sealedRound: {
 						round: replica.in_flight_round,
 						requestDigest: digest,
-						submission,
 						intents: wire,
 					},
 					...(pageLimit === ROW_SYNC_ADMISSION_LIMITS.outcomesPerPage
@@ -502,24 +419,6 @@ export function createCanonicalReplica({
 			const sentRound = request.sealedRound?.round;
 			const response = parseSyncResponse(await transport.sync(request));
 			switch (response.result) {
-				case 'stale-submission': {
-					// Inert transmission: jump past the watermark and retry.
-					nextSubmission = Math.max(nextSubmission, response.watermark + 1);
-					continue;
-				}
-				case 'capacity-refused': {
-					// Authoritative only when it answers the greatest issued
-					// submission; an older refusal is superseded and ignored.
-					if (response.submission !== greatestIssuedSubmission) continue;
-					capacityBlocked = true;
-					resolveCapacityRefusal();
-					// Deletions reseal under the same round number; with none to
-					// reseal, growth stays queued for a later pass.
-					if (requireReplica().in_flight_round === null) {
-						break synchronization;
-					}
-					continue;
-				}
 				case 'baseline-required': {
 					await acquireBaseline();
 					continue;
@@ -538,12 +437,12 @@ export function createCanonicalReplica({
 					}
 					const installed = installPage(token, response);
 					if (installed && response.outcomes.length > 0) onRemoteCommit();
-					if (!response.hasMore && requireReplica().in_flight_round === null) {
-						// Growth intents held back by a definitive capacity refusal
-						// stay queued for a later pass; nothing discards local edits.
-						if (openIntentCount() === 0 || capacityBlocked) {
-							break synchronization;
-						}
+					if (
+						!response.hasMore &&
+						requireReplica().in_flight_round === null &&
+						openIntentCount() === 0
+					) {
+						break synchronization;
 					}
 					continue;
 				}
@@ -909,7 +808,6 @@ export function createCanonicalReplica({
 			checkpoint: replica?.checkpoint ?? 0,
 			pendingIntents: openIntentCount() + sealedIntentCount(),
 			hasInflightRound: replica?.in_flight_round != null,
-			capacityBlocked,
 		};
 	}
 
@@ -1192,7 +1090,6 @@ function encodedRoundBytes(
 		sealedRound: {
 			round: token.acceptedRound + 1,
 			requestDigest: '0'.repeat(64),
-			submission: Number.MAX_SAFE_INTEGER,
 			intents,
 		},
 		...(pageLimit === ROW_SYNC_ADMISSION_LIMITS.outcomesPerPage

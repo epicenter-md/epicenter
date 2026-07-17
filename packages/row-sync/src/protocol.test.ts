@@ -29,7 +29,7 @@ const intents: WireRowIntent[] = [
 const token = { replicaId: 'replica-a', acceptedRound: 0, checkpoint: 0 };
 
 describe('sync request parsing', () => {
-	test('accepts a sealed round with a submission', () => {
+	test('accepts a sealed round of round, digest, and intents alone', () => {
 		const request = parseSyncRequest({
 			protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
 			kind: 'sync',
@@ -37,14 +37,13 @@ describe('sync request parsing', () => {
 			sealedRound: {
 				round: 1,
 				requestDigest: rowRoundDigest(intents),
-				submission: 1,
 				intents,
 			},
 		});
-		expect(request.sealedRound?.submission).toBe(1);
+		expect(request.sealedRound?.round).toBe(1);
 	});
 
-	test('rejects a sealed round without a submission', () => {
+	test('rejects a sealed round carrying the deleted submission field', () => {
 		expect(() =>
 			parseSyncRequest({
 				protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
@@ -53,6 +52,7 @@ describe('sync request parsing', () => {
 				sealedRound: {
 					round: 1,
 					requestDigest: rowRoundDigest(intents),
+					submission: 1,
 					intents,
 				},
 			}),
@@ -68,7 +68,6 @@ describe('sync request parsing', () => {
 				sealedRound: {
 					round: 1,
 					requestDigest: 'x',
-					submission: 1,
 					intents: [
 						{ kind: 'createRow', table: 'notes', rowId: ROW_ID, value: {} },
 					],
@@ -83,7 +82,6 @@ describe('sync request parsing', () => {
 				sealedRound: {
 					round: 1,
 					requestDigest: 'x',
-					submission: 1,
 					intents: [
 						{ kind: 'create', table: 'notes', rowId: 'short', fields: {} },
 					],
@@ -110,7 +108,6 @@ describe('sync request parsing', () => {
 				sealedRound: {
 					round: 1,
 					requestDigest: rowRoundDigest([oversized]),
-					submission: 1,
 					intents: [oversized],
 				},
 			}),
@@ -137,16 +134,13 @@ describe('sync response parsing', () => {
 				],
 				hasMore: false,
 				retentionFloor: 0,
-				submission: 3,
 			}).result,
 		).toBe('page');
 		for (const response of [
 			{ result: 'baseline-required', token, retentionFloor: 10 },
 			{ result: 'protocol-mismatch' },
 			{ result: 'unknown-replica' },
-			{ result: 'replica-fork', submission: 2 },
-			{ result: 'stale-submission', submission: 1, watermark: 4 },
-			{ result: 'capacity-refused', submission: 5 },
+			{ result: 'replica-fork' },
 		]) {
 			expect(parseSyncResponse(response).result).toBe(
 				response.result as never,
@@ -154,10 +148,16 @@ describe('sync response parsing', () => {
 		}
 	});
 
-	test('rejects a replica fork without its echoed submission', () => {
-		expect(() => parseSyncResponse({ result: 'replica-fork' })).toThrow(
-			'Invalid row sync response',
-		);
+	test('rejects the deleted submission-era response variants', () => {
+		for (const response of [
+			{ result: 'replica-fork', submission: 2 },
+			{ result: 'stale-submission', submission: 1, watermark: 4 },
+			{ result: 'capacity-refused', submission: 5 },
+		]) {
+			expect(() => parseSyncResponse(response)).toThrow(
+				'Invalid row sync response',
+			);
+		}
 	});
 
 	test('rejects a row outcome with neither fields nor document', () => {
@@ -241,5 +241,46 @@ describe('protocol refusal', () => {
 		expect(requestRefusal({ protocolMajor: ROW_SYNC_PROTOCOL_MAJOR + 1 })).toBe(
 			'protocol-mismatch',
 		);
+	});
+});
+
+describe('parseSyncRequest hostile field values', () => {
+	const request = (fields: unknown) => ({
+		protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+		kind: 'sync',
+		token: { replicaId: 'replica', acceptedRound: 0, checkpoint: 0 },
+		sealedRound: {
+			round: 1,
+			requestDigest: 'digest',
+			intents: [
+				{
+					kind: 'create',
+					table: 'notes',
+					rowId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+					fields,
+				},
+			],
+		},
+	});
+
+	test('accepts a pull-only request without a sealed round', () => {
+		expect(
+			parseSyncRequest({
+				protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+				kind: 'sync',
+				token: { replicaId: 'replica', acceptedRound: 0, checkpoint: 0 },
+			}).sealedRound,
+		).toBeUndefined();
+	});
+
+	test('rejects non-finite numbers, undefined values, and cycles in field JSON', () => {
+		expect(() => parseSyncRequest(request({ bad: Number.NaN }))).toThrow();
+		expect(() =>
+			parseSyncRequest(request({ bad: Number.POSITIVE_INFINITY })),
+		).toThrow();
+		expect(() => parseSyncRequest(request({ bad: undefined }))).toThrow();
+		const cyclic: Record<string, unknown> = {};
+		cyclic.self = cyclic;
+		expect(() => parseSyncRequest(request(cyclic))).toThrow();
 	});
 });

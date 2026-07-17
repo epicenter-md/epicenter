@@ -1,7 +1,6 @@
 import {
 	encodedJsonBytes,
 	ROW_SYNC_ADMISSION_LIMITS,
-	roundRequestsGrowth,
 } from './admission.js';
 import { foldFields } from './fold.js';
 import type {
@@ -26,7 +25,7 @@ import {
 import { rowRoundDigest } from './round-digest.js';
 import type { RowSyncSqlite } from './sqlite.js';
 
-const STORAGE_VERSION = 4;
+const STORAGE_VERSION = 5;
 
 /**
  * The injected merge-aware document codec (ADR-0133). The sync core stays
@@ -39,16 +38,6 @@ export type DocumentCodec = {
 	mergedCompactState(parts: readonly Uint8Array[]): Uint8Array;
 };
 
-/**
- * The deployment capacity admission fact for one exchange (ADR-0137). The
- * deployment resolves it before calling the authority; `allow` is the
- * policy-free default. When the deployment cannot load its projection it
- * must not call `sync` with a growth-bearing round at all; it fails that
- * request closed with a retryable transport error instead of a definitive
- * refusal.
- */
-export type GrowthDecision = 'allow' | 'delete-only';
-
 type StoredMeta = {
 	storage_version: number;
 	protocol_major: number;
@@ -59,7 +48,6 @@ type StoredMeta = {
 type StoredReplica = {
 	accepted_round: number;
 	request_digest: string;
-	submission_watermark: number;
 };
 
 type StoredOutcome = {
@@ -102,8 +90,7 @@ function initialize(database: RowSyncSqlite): void {
 			CREATE TABLE IF NOT EXISTS row_sync_replicas (
 				replica_id TEXT PRIMARY KEY,
 				accepted_round INTEGER NOT NULL,
-				request_digest TEXT NOT NULL,
-				submission_watermark INTEGER NOT NULL
+				request_digest TEXT NOT NULL
 			);
 			CREATE TABLE IF NOT EXISTS row_sync_rows (
 				table_name TEXT NOT NULL,
@@ -247,7 +234,7 @@ function writeRowFields(
  * Fold one admitted RowIntent at one authority sequence. Never refuses:
  * every outcome is an application or a deterministic no-op (ADR-0131). The
  * intent is one lifecycle atom; on a live update its field and document
- * components fold under independent capacity laws.
+ * components fold under independent size bounds.
  */
 function applyIntent(
 	database: RowSyncSqlite,
@@ -479,18 +466,13 @@ export function openRowAuthority({
 		/**
 		 * Explicit replica enrollment (ADR-0131). Mints the protocol identity
 		 * whose exact-retry receipt the authority retains until workspace
-		 * deletion. Deployment capacity admission may refuse enrollment
+		 * deletion. Whether to issue this capability at all is the
+		 * deployment's decision, made before the authority is reached
 		 * (ADR-0137); authentication is the caller's, outside this core.
 		 */
-		enroll(
-			request: EnrollRequest,
-			{ growth = 'allow' }: { growth?: GrowthDecision } = {},
-		): EnrollResponse {
+		enroll(request: EnrollRequest): EnrollResponse {
 			const refusal = requestRefusal(request);
 			if (refusal) return { result: refusal };
-			if (growth === 'delete-only') {
-				return { result: 'enrollment-refused' };
-			}
 			return database.transaction(() => {
 				requireMeta(database);
 				for (;;) {
@@ -503,8 +485,8 @@ export function openRowAuthority({
 					if (exists) continue;
 					database.run(
 						`INSERT INTO row_sync_replicas(
-							replica_id, accepted_round, request_digest, submission_watermark
-						) VALUES (?, 0, '', 0)`,
+							replica_id, accepted_round, request_digest
+						) VALUES (?, 0, '')`,
 						[replicaId],
 					);
 					return { result: 'enrolled', replicaId } as const;
@@ -514,16 +496,12 @@ export function openRowAuthority({
 
 		/**
 		 * One exchange (ADR-0131): evaluate an optional sealed round in the
-		 * fixed order (protocol major, replica identity, submission watermark,
-		 * retry head, deployment capacity admission, fold), then answer with
-		 * ordered confirmed outcomes from the caller's checkpoint. Row
-		 * effects, outcomes, the retry head, and the watermark commit in one
+		 * fixed order (protocol major, replica identity, retry head, fold),
+		 * then answer with ordered confirmed outcomes from the caller's
+		 * checkpoint. Row effects, outcomes, and the retry head commit in one
 		 * transaction.
 		 */
-		sync(
-			request: SyncRequest,
-			{ growth = 'allow' }: { growth?: GrowthDecision } = {},
-		): SyncResponse {
+		sync(request: SyncRequest): SyncResponse {
 			const refusal = requestRefusal(request);
 			if (refusal) return { result: refusal };
 			const round = request.sealedRound;
@@ -536,7 +514,7 @@ export function openRowAuthority({
 				}
 				const stored = one<StoredReplica>(
 					database,
-					`SELECT accepted_round, request_digest, submission_watermark
+					`SELECT accepted_round, request_digest
 					 FROM row_sync_replicas WHERE replica_id = ?`,
 					[facts.replicaId],
 				);
@@ -547,25 +525,8 @@ export function openRowAuthority({
 				}
 
 				if (round) {
-					if (round.submission <= stored.submission_watermark) {
-						// Inert: folds nothing, changes no receipt state, and is
-						// never evaluated for capacity.
-						return {
-							result: 'stale-submission',
-							submission: round.submission,
-							watermark: stored.submission_watermark,
-						} as const;
-					}
-					// Durably advance the watermark before evaluating the round,
-					// in the same transaction that commits any fold.
-					database.run(
-						`UPDATE row_sync_replicas SET submission_watermark = ?
-						 WHERE replica_id = ?`,
-						[round.submission, facts.replicaId],
-					);
-					// After the stale gate: a corrupt digest is client-authored
-					// corruption, refused as an invalid request. The throw rolls
-					// this transaction (and the watermark advance) back.
+					// A corrupt digest is client-authored corruption, refused as
+					// an invalid request. The throw rolls this transaction back.
 					if (rowRoundDigest(round.intents) !== round.requestDigest) {
 						throw new TypeError(
 							'Sealed round digest does not match its intents',
@@ -573,30 +534,11 @@ export function openRowAuthority({
 					}
 					if (round.round === stored.accepted_round) {
 						// Retry of the accepted round: digest must match; nothing
-						// refolds and pages regenerate from current state. The
-						// retry-head check runs before capacity admission, so an
-						// exact retry returns its idempotent acceptance even in
-						// delete-only state.
+						// refolds and pages regenerate from current state.
 						if (round.requestDigest !== stored.request_digest) {
-							return {
-								result: 'replica-fork',
-								submission: round.submission,
-							} as const;
+							return { result: 'replica-fork' } as const;
 						}
 					} else if (round.round === stored.accepted_round + 1) {
-						if (
-							growth === 'delete-only' &&
-							roundRequestsGrowth(round.intents)
-						) {
-							// Definitive deployment refusal before semantic folding:
-							// only the watermark advanced; the retry head does not
-							// move, no rejection history persists, and no intent
-							// folds. A mixed round is never partially accepted.
-							return {
-								result: 'capacity-refused',
-								submission: round.submission,
-							} as const;
-						}
 						const meta = requireMeta(database);
 						let serverSequence = meta.server_sequence;
 						for (const intent of round.intents) {
@@ -616,10 +558,7 @@ export function openRowAuthority({
 					} else {
 						// A round from the past (or a skipped future) proves a fork
 						// or a corrupted replica; one stored digest cannot judge it.
-						return {
-								result: 'replica-fork',
-								submission: round.submission,
-							} as const;
+						return { result: 'replica-fork' } as const;
 					}
 				}
 
@@ -627,7 +566,6 @@ export function openRowAuthority({
 					? Math.max(stored.accepted_round, round.round)
 					: stored.accepted_round;
 				const meta = requireMeta(database);
-				const submission = round ? round.submission : undefined;
 
 				// Round first, baseline second: the fold above already happened.
 				if (facts.checkpoint < meta.retention_floor) {
@@ -639,7 +577,6 @@ export function openRowAuthority({
 							checkpoint: facts.checkpoint,
 						} satisfies SyncToken,
 						retentionFloor: meta.retention_floor,
-						...(submission === undefined ? {} : { submission }),
 					} as const;
 				}
 
@@ -677,7 +614,6 @@ export function openRowAuthority({
 					outcomes,
 					hasMore,
 					retentionFloor: meta.retention_floor,
-					...(submission === undefined ? {} : { submission }),
 				});
 				let response = page();
 				while (
@@ -956,17 +892,13 @@ export function openRowAuthority({
 						.all<{
 							replica_id: string;
 							accepted_round: number;
-							submission_watermark: number;
 						}>(
-							`SELECT replica_id, accepted_round, submission_watermark
+							`SELECT replica_id, accepted_round
 							 FROM row_sync_replicas ORDER BY replica_id`,
 						)
 						.map((replica) => [
 							replica.replica_id,
-							{
-								acceptedRound: replica.accepted_round,
-								submissionWatermark: replica.submission_watermark,
-							},
+							{ acceptedRound: replica.accepted_round },
 						]),
 				),
 			};

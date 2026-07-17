@@ -91,7 +91,7 @@ async function openRecords(
 					database as unknown as BrowserSqliteDatabase,
 				);
 				let kv: CanonicalKv<KvDefinitions> | undefined;
-				const replica = manifest.recordSync
+				const replica = manifest.rowSync
 					? createCanonicalReplica({
 							sqlite,
 							transport: createRecordTransport(manifest.workspaceId),
@@ -135,7 +135,7 @@ async function openRecords(
 					synchronize(replica, manifest.workspaceId);
 					setInterval(
 						() => synchronize(replica, manifest.workspaceId),
-						manifest.recordSync?.intervalMs,
+						manifest.rowSync?.intervalMs,
 					);
 				}
 				return {
@@ -162,8 +162,8 @@ async function openRecords(
 		state.manifest.storageKey !== manifest.storageKey ||
 		JSON.stringify(state.manifest.tables) !== JSON.stringify(manifest.tables) ||
 		JSON.stringify(state.manifest.kv) !== JSON.stringify(manifest.kv) ||
-		JSON.stringify(state.manifest.recordSync) !==
-			JSON.stringify(manifest.recordSync)
+		JSON.stringify(state.manifest.rowSync) !==
+			JSON.stringify(manifest.rowSync)
 	) {
 		throw new Error(
 			`Workspace '${manifest.workspaceId}' is already bound to another release-local lens in this Worker`,

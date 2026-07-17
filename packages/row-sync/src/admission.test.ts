@@ -6,7 +6,6 @@ import {
 	RESERVED_KV_ROW_ID,
 	RESERVED_KV_TABLE,
 	ROW_SYNC_ADMISSION_LIMITS,
-	roundRequestsGrowth,
 } from './admission.js';
 import type { WireRowIntent } from './protocol.js';
 
@@ -131,26 +130,6 @@ describe('update field changes', () => {
 			Math.ceil((ROW_SYNC_ADMISSION_LIMITS.documentComponentBytes + 3) / 3) * 4,
 		);
 		expect(isAdmissibleIntent(update(undefined, overCap))).toBeFalse();
-	});
-});
-
-describe('delete-only growth classification (ADR-0137)', () => {
-	const deletion: WireRowIntent = {
-		kind: 'delete',
-		table: 'notes',
-		rowId: ROW_ID,
-	};
-	const growth: WireRowIntent = {
-		kind: 'update',
-		table: 'notes',
-		rowId: ROW_ID,
-		fields: { set: { a: 1 }, unset: [] },
-	};
-
-	test('classification is syntactic: only all-delete rounds are non-growing', () => {
-		expect(roundRequestsGrowth([deletion, deletion])).toBeFalse();
-		expect(roundRequestsGrowth([deletion, growth])).toBeTrue();
-		expect(roundRequestsGrowth([growth])).toBeTrue();
 	});
 });
 

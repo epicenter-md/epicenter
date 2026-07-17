@@ -30,7 +30,15 @@ type Address = { table: string; rowId: string };
 type CachedDocument = Address & {
 	doc: Y.Doc;
 	leases: number;
+	/** A persistence failure: blocks new writes AND queued persistence. */
 	poison: Error | undefined;
+	/**
+	 * A lifecycle revocation (row deletion, baseline promotion, runtime
+	 * disposal): blocks new writes and reads, but updates captured before
+	 * the revocation still drain to `admitIntent`, so an edit the user
+	 * already made is never dropped by the handle lifecycle (ADR-0136).
+	 */
+	revoked: Error | undefined;
 	durability: Promise<void>;
 	listener(update: Uint8Array): void;
 };
@@ -63,6 +71,7 @@ export function createDocumentRuntime({
 
 	function assertWritable(entry: CachedDocument): void {
 		if (entry.poison) throw entry.poison;
+		if (entry.revoked) throw entry.revoked;
 		if (entry.leases === 0) {
 			throw new Error('Row document handle is disposed');
 		}
@@ -70,6 +79,14 @@ export function createDocumentRuntime({
 
 	function poison(entry: CachedDocument, cause: unknown): void {
 		entry.poison ??= asError(cause);
+	}
+
+	/** Detach and destroy a revoked entry; captured persistence drains on. */
+	function revokeEntry(entry: CachedDocument, cause: Error): void {
+		entry.revoked ??= cause;
+		cached.delete(keyOf(entry));
+		entry.doc.off('update', entry.listener);
+		entry.doc.destroy();
 	}
 
 	function finishLastLease(entry: CachedDocument): void {
@@ -87,7 +104,8 @@ export function createDocumentRuntime({
 		return {
 			get: ((...args: Parameters<Y.Doc['get']>) => {
 				if (disposed) throw new Error('Row document handle is disposed');
-				if (entry.poison) throw entry.poison;
+				const failure = entry.poison ?? entry.revoked;
+				if (failure) throw failure;
 				return entry.doc.get(...args);
 			}) as Y.Doc['get'],
 			transact<TValue>(
@@ -102,7 +120,8 @@ export function createDocumentRuntime({
 				if (disposed) throw new Error('Row document handle is disposed');
 				const barrier = entry.durability;
 				await barrier;
-				if (entry.poison) throw entry.poison;
+				const failure = entry.poison ?? entry.revoked;
+				if (failure) throw failure;
 			},
 			[Symbol.dispose]() {
 				if (disposed) return;
@@ -150,11 +169,17 @@ export function createDocumentRuntime({
 					doc,
 					leases: 1,
 					poison: undefined,
+					revoked: undefined,
 					durability: Promise.resolve(),
 					listener(update) {
 						assertWritable(entry);
 						const captured = Uint8Array.from(update);
 						const persistence = entry.durability.then(async () => {
+							// Only a persistence failure stops the chain: skipping one
+							// captured update would leave a causal gap in front of its
+							// successors. A lifecycle revocation does not cancel
+							// captured persistence; the row-gone guard below drops
+							// updates whose row has authoritatively died.
 							if (entry.poison) throw entry.poison;
 							if ((await readCurrentRow(table, rowId)) === undefined) return;
 							await admitIntent({
@@ -179,36 +204,32 @@ export function createDocumentRuntime({
 		},
 		revoke(addresses: Address[]): void {
 			for (const address of addresses) {
-				const key = keyOf(address);
-				const entry = cached.get(key);
+				const entry = cached.get(keyOf(address));
 				if (!entry) continue;
-				poison(
+				revokeEntry(
 					entry,
 					new Error(
 						`Row document was revoked because '${address.table}.${address.rowId}' was deleted`,
 					),
 				);
-				cached.delete(key);
-				entry.doc.off('update', entry.listener);
-				entry.doc.destroy();
 			}
 		},
 		/**
-		 * Baseline promotion replaced every confirmed document (ADR-0136);
-		 * every cached handle is poisoned and callers explicitly reopen from
-		 * the promoted state.
+		 * Revoke every cached handle. Baseline promotion calls this with no
+		 * cause because promotion replaced every confirmed document
+		 * (ADR-0136); runtime disposal passes its own cause. Callers
+		 * explicitly reopen from the current state. Updates captured before
+		 * the revocation still drain into durable intents.
 		 */
-		revokeAll(): void {
+		revokeAll(cause?: Error): void {
 			for (const entry of [...cached.values()]) {
-				poison(
+				revokeEntry(
 					entry,
-					new Error(
-						'Row document was revoked because a baseline promotion replaced confirmed state',
-					),
+					cause ??
+						new Error(
+							'Row document was revoked because a baseline promotion replaced confirmed state',
+						),
 				);
-				cached.delete(keyOf(entry));
-				entry.doc.off('update', entry.listener);
-				entry.doc.destroy();
 			}
 		},
 	};

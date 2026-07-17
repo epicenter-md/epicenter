@@ -2,7 +2,6 @@ import { Database } from 'bun:sqlite';
 import {
 	type BaselineScanRequest,
 	type EnrollRequest,
-	type GrowthDecision,
 	openRowAuthority,
 	type SyncRequest,
 } from '@epicenter/row-sync';
@@ -32,12 +31,10 @@ export function openTestAuthority() {
 export function createTestTransport(
 	authority: ReturnType<typeof openRowAuthority>,
 ) {
-	let growth: GrowthDecision = 'allow';
 	const enrollRequests: EnrollRequest[] = [];
 	const syncRequests: SyncRequest[] = [];
 	const baselineRequests: BaselineScanRequest[] = [];
 	const transport: CanonicalReplicaTransport & {
-		setGrowth(decision: GrowthDecision): void;
 		enrollRequests: EnrollRequest[];
 		syncRequests: SyncRequest[];
 		baselineRequests: BaselineScanRequest[];
@@ -45,16 +42,13 @@ export function createTestTransport(
 		enrollRequests,
 		syncRequests,
 		baselineRequests,
-		setGrowth(decision) {
-			growth = decision;
-		},
 		async enroll(request) {
 			enrollRequests.push(structuredClone(request));
-			return authority.enroll(request, { growth });
+			return authority.enroll(request);
 		},
 		async sync(request) {
 			syncRequests.push(structuredClone(request));
-			return authority.sync(request, { growth });
+			return authority.sync(request);
 		},
 		async baselineScan(request) {
 			baselineRequests.push(structuredClone(request));

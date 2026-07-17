@@ -2,18 +2,14 @@
  * Row Authority Binding Tests
  *
  * Verifies sealed-round folding, retry receipts, outcome paging, compaction,
- * baseline scans, and deployment admission against Bun SQLite.
+ * and baseline scans against Bun SQLite.
  */
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 import { createBunSqliteAdapter } from './adapters/bun.js';
 import { ROW_SYNC_ADMISSION_LIMITS } from './admission.js';
-import {
-	type DocumentCodec,
-	type GrowthDecision,
-	openRowAuthority,
-} from './authority.js';
+import { type DocumentCodec, openRowAuthority } from './authority.js';
 import {
 	encodeBase64,
 	ROW_SYNC_PROTOCOL_MAJOR,
@@ -58,53 +54,43 @@ function openTestAuthority() {
 		kind: 'enroll',
 	});
 	if (enrolled.result !== 'enrolled') throw new Error('Enrollment failed');
-	let submission = 0;
 	const state = { replicaId: enrolled.replicaId, checkpoint: 0 };
 	return {
 		authority,
 		replicaId: state.replicaId,
 		sqlite,
-		nextSubmission: () => (submission += 1),
 		sync({
 			round,
 			intents,
 			digest,
-			submission: overrideSubmission,
 			checkpoint = 0,
 			acceptedRound = round === undefined ? 0 : round - 1,
-			growth,
 			pageLimit,
 			replicaId = state.replicaId,
 		}: {
 			round?: number;
 			intents?: WireRowIntent[];
 			digest?: string;
-			submission?: number;
 			checkpoint?: number;
 			acceptedRound?: number;
-			growth?: GrowthDecision;
 			pageLimit?: number;
 			replicaId?: string;
 		} = {}): SyncResponse {
-			return authority.sync(
-				{
-					protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
-					kind: 'sync',
-					token: { replicaId, acceptedRound, checkpoint },
-					...(round === undefined
-						? {}
-						: {
-								sealedRound: {
-									round,
-									requestDigest: digest ?? rowRoundDigest(intents ?? []),
-									submission: overrideSubmission ?? (submission += 1),
-									intents: intents ?? [],
-								},
-							}),
-					...(pageLimit === undefined ? {} : { pageLimit }),
-				},
-				growth === undefined ? undefined : { growth },
-			);
+			return authority.sync({
+				protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+				kind: 'sync',
+				token: { replicaId, acceptedRound, checkpoint },
+				...(round === undefined
+					? {}
+					: {
+							sealedRound: {
+								round,
+								requestDigest: digest ?? rowRoundDigest(intents ?? []),
+								intents: intents ?? [],
+							},
+						}),
+				...(pageLimit === undefined ? {} : { pageLimit }),
+			});
 		},
 	};
 }
@@ -154,7 +140,6 @@ describe('enrollment (ADR-0131)', () => {
 		expect(replicaId).toMatch(/^[a-z0-9]{24}$/);
 		expect(authority.inspect().replicas[replicaId]).toEqual({
 			acceptedRound: 0,
-			submissionWatermark: 0,
 		});
 	});
 
@@ -163,16 +148,6 @@ describe('enrollment (ADR-0131)', () => {
 		expect(sync({ replicaId: 'somebodyelse000000000000' })).toEqual({
 			result: 'unknown-replica',
 		});
-	});
-
-	test('delete-only capacity refuses enrollment', () => {
-		const { authority } = openTestAuthority();
-		expect(
-			authority.enroll(
-				{ protocolMajor: ROW_SYNC_PROTOCOL_MAJOR, kind: 'enroll' },
-				{ growth: 'delete-only' },
-			),
-		).toEqual({ result: 'enrollment-refused' });
 	});
 });
 
@@ -382,39 +357,56 @@ describe('exact retry and the terminal fork rule (ADR-0131)', () => {
 		const intents = [create(rid(1), { count: 1 })];
 		expectPage(sync({ round: 1, intents }));
 		const headBefore = authority.inspect().head;
-		// The identical image under a fresh submission returns idempotent
-		// acceptance, even when the deployment has since entered delete-only.
-		const retried = expectPage(
-			sync({ round: 1, intents, growth: 'delete-only' }),
-		);
+		// The identical image retries idempotently: the receipt's round and
+		// digest alone decide it, and nothing refolds.
+		const retried = expectPage(sync({ round: 1, intents }));
 		expect(retried.token.acceptedRound).toBe(1);
 		expect(authority.inspect().head).toBe(headBefore);
 		expect(authority.inspect().rows).toHaveLength(1);
 	});
 
-	test('a digest mismatch on the accepted round is a terminal fork echoing its submission', () => {
+	test('a digest mismatch on the accepted round is a terminal fork', () => {
 		const { sync } = openTestAuthority();
-		sync({ round: 1, intents: [create(rid(1), { count: 1 })], submission: 1 });
+		sync({ round: 1, intents: [create(rid(1), { count: 1 })] });
 		expect(
 			sync({
 				round: 1,
 				intents: [create(rid(2), { count: 2 })],
-				submission: 2,
 			}),
-		).toEqual({ result: 'replica-fork', submission: 2 });
+		).toEqual({ result: 'replica-fork' });
 	});
 
 	test('a round that is neither accepted nor its successor is a terminal fork', () => {
 		const { sync } = openTestAuthority();
-		sync({ round: 1, intents: [create(rid(1), { count: 1 })], submission: 1 });
+		sync({ round: 1, intents: [create(rid(1), { count: 1 })] });
 		expect(
 			sync({
 				round: 3,
 				acceptedRound: 1,
 				intents: [create(rid(2), { count: 2 })],
-				submission: 2,
 			}),
-		).toEqual({ result: 'replica-fork', submission: 2 });
+		).toEqual({ result: 'replica-fork' });
+	});
+
+	test('a late duplicate of a superseded round forks without mutating anything', () => {
+		const { authority, sync } = openTestAuthority();
+		const first = [create(rid(1), { count: 1 })];
+		expectPage(sync({ round: 1, intents: first }));
+		expectPage(
+			sync({
+				round: 2,
+				acceptedRound: 1,
+				checkpoint: 1,
+				intents: [create(rid(2), { count: 2 })],
+			}),
+		);
+		const before = authority.inspect();
+		// A delayed retransmission of round 1 answers a dead connection; it
+		// must not fold, move the receipt, or emit outcomes.
+		expect(sync({ round: 1, intents: first })).toEqual({
+			result: 'replica-fork',
+		});
+		expect(authority.inspect()).toEqual(before);
 	});
 
 	test('a corrupt digest is refused before any folding', () => {
@@ -428,142 +420,11 @@ describe('exact retry and the terminal fork rule (ADR-0131)', () => {
 		).toThrow('Sealed round digest does not match its intents');
 	});
 
-	test('a stale transmission with a corrupt digest stays inert', () => {
-		const { authority, sync, replicaId } = openTestAuthority();
-		const intents = [create(rid(1), { count: 1 })];
-		expectPage(sync({ round: 1, intents, submission: 5 }));
-		// The stale gate runs before digest evaluation, so the transmission
-		// receives the retryable stale response instead of an exception.
-		expect(
-			sync({ round: 1, intents, submission: 5, digest: 'not-the-digest' }),
-		).toMatchObject({ result: 'stale-submission', watermark: 5 });
-		expect(authority.inspect().replicas[replicaId]?.submissionWatermark).toBe(
-			5,
-		);
-	});
-
 	test('a checkpoint ahead of the authority is refused', () => {
 		const { sync } = openTestAuthority();
 		expect(() => sync({ checkpoint: 99 })).toThrow(
 			'Sync checkpoint is ahead of the authority',
 		);
-	});
-});
-
-describe('submission watermark and capacity refusal (ADR-0131/0137)', () => {
-	test('a transmission at or below the watermark is inert', () => {
-		const { authority, sync, replicaId } = openTestAuthority();
-		const intents = [create(rid(1), { count: 1 })];
-		expectPage(sync({ round: 1, intents, submission: 5 }));
-		expect(sync({ round: 1, intents, submission: 5 })).toEqual({ result: 'stale-submission', submission: 5, watermark: 5 });
-		expect(authority.inspect().replicas[replicaId]?.submissionWatermark).toBe(
-			5,
-		);
-	});
-
-	test('a mixed round is refused whole in delete-only state without advancing the retry head', () => {
-		const { authority, sync, replicaId } = openTestAuthority();
-		sync({ round: 1, intents: [create(rid(1), { count: 1 })], submission: 1 });
-		const mixed = [remove(rid(1)), create(rid(2), { count: 2 })];
-		expect(
-			sync({
-				round: 2,
-				acceptedRound: 1,
-				intents: mixed,
-				submission: 2,
-				growth: 'delete-only',
-			}),
-		).toEqual({ result: 'capacity-refused', submission: 2 });
-		const inspected = authority.inspect();
-		// Only the watermark advanced: no fold, no retry-head move, no history.
-		expect(inspected.replicas[replicaId]).toEqual({
-			acceptedRound: 1,
-			submissionWatermark: 2,
-		});
-		expect(inspected.rows).toHaveLength(1);
-		expect(inspected.head).toBe(1);
-	});
-
-	test('an all-delete round folds normally in delete-only state', () => {
-		const { sync } = openTestAuthority();
-		sync({ round: 1, intents: [create(rid(1), { count: 1 })], submission: 1 });
-		const page = expectPage(
-			sync({
-				round: 2,
-				acceptedRound: 1,
-				checkpoint: 1,
-				intents: [remove(rid(1))],
-				submission: 2,
-				growth: 'delete-only',
-			}),
-		);
-		expect(page.outcomes).toEqual([
-			{ kind: 'deletion', table: 'notes', rowId: rid(1), sequence: 2 },
-		]);
-	});
-
-	test('after a refusal the round number is safely reused and the old image stays inert', () => {
-		const { authority, sync, replicaId } = openTestAuthority();
-		sync({ round: 1, intents: [create(rid(1), { count: 1 })], submission: 1 });
-		const refusedImage = [remove(rid(1)), create(rid(2), { count: 2 })];
-		sync({
-			round: 2,
-			acceptedRound: 1,
-			intents: refusedImage,
-			submission: 2,
-			growth: 'delete-only',
-		});
-		// The client reseals only the delete under the SAME round number.
-		const resealed = expectPage(
-			sync({
-				round: 2,
-				acceptedRound: 1,
-				checkpoint: 1,
-				intents: [remove(rid(1))],
-				submission: 3,
-				growth: 'delete-only',
-			}),
-		);
-		expect(resealed.token.acceptedRound).toBe(2);
-		// A delayed duplicate of the refused image can never fold: it sits at
-		// or below the watermark the refusal advanced.
-		expect(
-			sync({
-				round: 2,
-				acceptedRound: 1,
-				intents: refusedImage,
-				submission: 2,
-				growth: 'allow',
-			}),
-		).toMatchObject({ result: 'stale-submission' });
-		expect(authority.inspect().replicas[replicaId]?.acceptedRound).toBe(2);
-	});
-
-	test('capacity restored before the client receives a refusal simply folds the retry', () => {
-		const { sync } = openTestAuthority();
-		sync({ round: 1, intents: [create(rid(1), { count: 1 })], submission: 1 });
-		const image = [create(rid(2), { count: 2 })];
-		// First transmission refused; the response is lost.
-		sync({
-			round: 2,
-			acceptedRound: 1,
-			intents: image,
-			submission: 2,
-			growth: 'delete-only',
-		});
-		// The byte-identical retry under a fresh submission folds normally.
-		const retried = expectPage(
-			sync({
-				round: 2,
-				acceptedRound: 1,
-				checkpoint: 1,
-				intents: image,
-				submission: 3,
-				growth: 'allow',
-			}),
-		);
-		expect(retried.token.acceptedRound).toBe(2);
-		expect(retried.outcomes).toHaveLength(1);
 	});
 });
 
@@ -591,7 +452,6 @@ describe('scalar conflicts follow authority acceptance order (ADR-0131)', () => 
 			sealedRound: {
 				round: 1,
 				requestDigest: rowRoundDigest(createIntent),
-				submission: 1,
 				intents: createIntent,
 			},
 		});
@@ -609,7 +469,6 @@ describe('scalar conflicts follow authority acceptance order (ADR-0131)', () => 
 			sealedRound: {
 				round: 2,
 				requestDigest: rowRoundDigest(fromA),
-				submission: 2,
 				intents: fromA,
 			},
 		});
@@ -620,7 +479,6 @@ describe('scalar conflicts follow authority acceptance order (ADR-0131)', () => 
 			sealedRound: {
 				round: 1,
 				requestDigest: rowRoundDigest(fromB),
-				submission: 1,
 				intents: fromB,
 			},
 		});

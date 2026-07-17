@@ -2,6 +2,12 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-16
+- **Amended:** 2026-07-17: deployment capacity admission and the submission
+  watermark are deleted. Every structurally valid RowIntent in a valid sealed
+  round from an enrolled replica enters authority order exactly once; the
+  hosted storage allowance gates capability issuance (ADR-0137), never
+  synchronization. The exact-retry receipt is `acceptedRound` plus
+  `requestDigest` alone.
 - **Supersedes:** [ADR-0119](0119-complete-record-maps-sync-through-schema-blind-server-ordered-patches.md)
 - **Relates:** [ADR-0120](0120-fields-validate-present-values-and-table-lenses-own-presence.md), [ADR-0121](0121-background-sync-resolves-key-conflicts-by-server-order.md), [ADR-0122](0122-logical-records-are-portable-sqlite-files-and-views-are-runtime-state.md), [ADR-0130](0130-workspace-definitions-expose-tables-with-row-owned-documents-and-a-release-local-kv-lens.md), [ADR-0132](0132-workspace-kv-is-one-reserved-immortal-row.md), [ADR-0133](0133-row-authority-stores-documents-as-sequence-addressed-update-logs.md), [ADR-0134](0134-replicas-store-confirmed-state-and-compacted-row-intents.md), [ADR-0135](0135-row-documents-have-application-owned-roots.md), [ADR-0136](0136-replica-baseline-acquisition-uses-a-disposable-anchored-live-scan.md)
 
@@ -150,98 +156,59 @@ access the workspace.
 The exchanges are:
 
 ```txt
-enroll({ token, protocolMajor }) -> { replicaId }
+enroll({ protocolMajor }) -> { replicaId }
 
 sync({
   token,
   protocolMajor,
-  replicaId,
-  sealedRound?: { round, requestDigest, submission, intents[] }
+  sealedRound?: { round, requestDigest, intents[] }
 })
 ```
 
-Enrollment creates the receipt at accepted round zero with no request digest
-and a submission watermark of zero. Every transmission of a sealed round
-carries a `submission` number that the client chooses strictly greater than
-any number it has previously sent for this replica. Before evaluating the
-round, the authority durably advances the receipt's submission watermark to
-that number, in the same transaction that commits any fold. A transmission
-whose submission is at or below the stored watermark receives a retryable
-stale-submission response carrying the current watermark and is otherwise
-inert: it folds nothing, changes no receipt state, and is never evaluated for
-capacity. Every definitive sealed-round response echoes the submission it
-evaluated. Pull-only sync carries no submission and never touches the
-watermark. The watermark records only the newest submission seen, independent
-of outcome; it is transmission ordering, not rejection history.
+Enrollment creates the receipt at accepted round zero with no request digest.
+The receipt is `(replicaId, acceptedRound, requestDigest)` and nothing else:
+exactly the state needed to distinguish the next round, an exact retry, and a
+fork.
 
-After a round folds, the authority stores its `(replicaId, acceptedRound,
-requestDigest)` retry head beside the watermark. Row effects, emitted
-outcomes, the retry head, and the watermark commit in one authority
-transaction. A matching retry refolds nothing. A digest mismatch or a round
-other than `acceptedRound` or `acceptedRound + 1` is a terminal replica fork.
-The sealed round stays durable through every response page and retires only
-after the exchange reaches head.
-
-A deployment may inject a binary capacity admission (ADR-0137). The authority
-evaluates a sealed round in this order: protocol major, replica identity,
-submission watermark, retry-head position, deployment capacity admission, and
-only then semantic RowIntent folding. When the deployment is in delete-only
-state and the round contains any `create` or `update` intent, the authority
-returns a definitive capacity refusal. The refusal advances only the
-submission watermark; the retry head does not move, no rejection history
-persists, and no intent folds. A round made entirely of `delete` intents folds
-normally. A mixed round is never partially accepted. Capacity admission is a
-deployment admission result, not a semantic RowIntent outcome; the retry-head
-check runs first, so an exact retry of an already accepted round returns its
-idempotent acceptance even when the deployment has since entered delete-only
-state.
+The authority evaluates a sealed round in this order: protocol major, replica
+identity, retry-head position, and then semantic RowIntent folding. Every
+structurally valid sealed round at `acceptedRound + 1` from an enrolled
+replica folds; there is no deployment admission step, and quota never
+participates in synchronization (ADR-0137). After a round folds, row effects,
+emitted outcomes, and the retry head commit in one authority transaction. A
+matching retry refolds nothing. A digest mismatch or a round other than
+`acceptedRound` or `acceptedRound + 1` is a terminal replica fork that
+mutates nothing. The sealed round stays durable through every response page
+and retires only after the exchange reaches head.
 
 The replica has exactly one exclusive writer process. The runtime enforces
 that lease physically (the browser's OPFS synchronous access handle and
-process-local file ownership elsewhere), and submission monotonicity is scoped
-to it. A newly sealed round is always `acceptedRound + 1`. Until the client
-receives a definitive response for its sealed round, it retries the identical
-round, digest, and intents under fresh submission numbers. If capacity is
-restored before the client receives a refusal, an in-flight retry simply folds
-and returns ordinary acceptance.
+process-local file ownership elsewhere). A newly sealed round is always
+`acceptedRound + 1`, and until the client receives a definitive response it
+retries the byte-identical round, digest, and intents. Round numbers are
+never reused with different content, so the receipt alone makes duplicates
+idempotent: a delayed duplicate of the accepted round matches the digest and
+refolds nothing, and a delayed duplicate of an older round answers a dead
+connection with a fork response and no state change.
 
-A capacity refusal is authoritative only when its echoed submission equals the
-greatest submission the client has issued for the in-flight image. An older
-refusal is superseded by the newer transmission it cannot see: the client
-ignores it, the image stays in flight, and resolution comes from the newer
-submission's response or a later retry. Acceptance of the in-flight round and
-digest is a durable fact and may be acted on whichever submission it answers.
+The accepted-round retry head is the durable core of that replica's retry
+chain and is not removed by outcome-tail compaction or baseline acquisition.
+It remains until workspace deletion. There is no replica-specific count, slot
+allocation, generation, eviction, expiration, or unenrollment lifecycle.
+Baseline acquisition keeps the same replica id, sealed round, digest, and
+canonical RowIntent rows. Scratch confirmed state is disposable; authored
+intent and exact-retry identity are not.
 
-Once the client accepts an authoritative capacity refusal, the sealed round is
-resolved as refused. In one local SQLite transaction the client clears its
-in-flight metadata, returns the refused intents to open state under ordinary
-compaction, and reseals any `delete` intents as the same round number with a
-new digest; every `create` and `update` stays queued for a later admissible
-round. Local edits are never discarded.
-
-Reusing the still-unaccepted round number with a new digest is safe because of
-the watermark: an authoritative refusal answers the client's greatest issued
-submission and durably advanced the watermark to it, so every outstanding copy
-of the refused image carries a submission at or below the watermark. No copy
-of a definitively refused round can fold later, so a late duplicate cannot
-advance the retry head to a digest the client no longer holds, and the
-terminal-fork rule stays sound.
-
-The accepted-round retry head and its submission watermark are the durable
-core of that replica's retry chain and are not removed by outcome-tail
-compaction or baseline acquisition. They remain until workspace deletion. There is no replica-specific count, slot allocation,
-generation, eviction, expiration, or unenrollment lifecycle. Baseline
-acquisition keeps the same replica id, sealed round, digest, and canonical
-RowIntent rows. Scratch confirmed state is disposable; authored intent and
-exact-retry identity are not.
-
-Hosted deployments bound authority growth with aggregate per-workspace storage
-admission and throttle enrollment. Self-hosted operators own their available
-storage and may choose no configured quota. These are deployment policies, not
-wire-level replica limits. An authenticated client can consume its workspace's
-budget by repeatedly enrolling identities, and abandoned receipts persist until
-workspace deletion. The hosted service must implement those deployment controls
-before this protocol ships.
+Hosted storage policy gates capability issuance, never synchronization
+(ADR-0137). Enrollment is the one storage-producing capability this surface
+creates; a hosted deployment may refuse to issue it (`enrollment-refused`)
+when the account allowance is exhausted, and may throttle it operationally.
+Once a replica is enrolled, its valid durable RowIntents always synchronize;
+an over-allowance account may at most receive an informational warning, never
+a mutation gate. Honest offline backlog may exceed the allowance without a
+fixed local ceiling. Self-hosted operators own their available storage and
+compose no quota. Abuse suspension and authorization revocation remain
+separate operational controls, not protocol states.
 
 Elapsed time never changes a durable RowIntent's eligibility. After baseline
 acquisition, the replica automatically retries its sealed round and seals newer
@@ -276,17 +243,17 @@ across that gap.
   unsendable or creating a chunking protocol.
 - Exact lost-response retry remains mandatory. Open and sealed are lifecycle
   states around the same semantic type, not separate command formats.
-- A sealed-round transmission costs one durable watermark write even when it
-  folds nothing. That single integer is what makes deployment capacity refusal
-  compatible with exact retry and safe round-number reuse.
+- Protocol acceptance is distinct from semantic effect: ordinary deterministic
+  create/update/delete no-ops remain valid outcomes of a folded round.
 - Document update encoding and its bounds are one workspace protocol decision,
   not a per-table contract. A build supports exactly one active wire protocol
   major. A different major is refused before enrollment or round folding; there
   is no permanent previous-major compatibility path, negotiation registry, or
   protocol catalog.
 - Exact-retry receipts consume authority storage for the workspace lifetime.
-  Aggregate hosted storage admission and enrollment throttling bound that cost
-  without inventing replica-count plans or device lifecycle policy.
+  Enrollment-time capability admission and operational throttling (ADR-0137)
+  bound that cost without inventing replica-count plans or device lifecycle
+  policy.
 
 ## Considered alternatives
 
@@ -309,12 +276,13 @@ across that gap.
   workspace deletion.
 - **Store or replay RowIntents as confirmed history.** Rejected because sync is
   not an audit product; confirmed pages carry resulting facts instead.
-- **Refuse capacity without a submission watermark.** Rejected because an
-  abandoned earlier transmission of the refused round could fold after capacity
-  is restored, forking the replica against its own reseal of the same round
-  number and duplicating accepted scalar updates.
-- **Advance the retry head on a capacity refusal.** Rejected because the
-  receipt would then persist a rejection outcome, and consuming the round
-  number would turn deployment admission into semantic RowIntent history.
-- **Keep the submission watermark in authority memory only.** Rejected because
-  a restart would forget it and reopen the late-fold fork.
+- **Refuse storage growth inside synchronization (delete-only admission plus a
+  submission watermark).** Built, then deleted by the 2026-07-17 amendment.
+  Refusing a sealed round mid-sync forced a whole recovery family: per-replica
+  submission numbering, a durable watermark write on every transmission,
+  refusal-authoritativeness rules, sealed-to-open reopening, delete-first
+  resealing under a reused round number, and a client capacity-blocked state.
+  Gating capability issuance instead (ADR-0137) deletes all of it while
+  keeping the allowance enforceable, because enrollment is where new growth
+  capability is created and existing replicas' durable edits must always
+  drain.

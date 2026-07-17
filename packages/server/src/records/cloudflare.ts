@@ -15,11 +15,7 @@ import {
 } from '@epicenter/row-sync/durable-object';
 import { rowDocumentCodec } from './codec.js';
 import { runRecordsCompaction } from './compaction.js';
-import type {
-	Records,
-	RecordsCallOptions,
-	RecordsPartition,
-} from './contracts.js';
+import type { Records, RecordsPartition } from './contracts.js';
 
 function partitionName({ principalId, workspaceId }: RecordsPartition): string {
 	return JSON.stringify([principalId, workspaceId]);
@@ -39,18 +35,12 @@ export class RowAuthorityDurableObject extends DurableObject {
 		});
 	}
 
-	async enroll(
-		request: EnrollRequest,
-		options?: RecordsCallOptions,
-	): Promise<EnrollResponse> {
-		return this.authority.enroll(request, options);
+	async enroll(request: EnrollRequest): Promise<EnrollResponse> {
+		return this.authority.enroll(request);
 	}
 
-	async sync(
-		request: SyncRequest,
-		options?: RecordsCallOptions,
-	): Promise<SyncResponse> {
-		const response = this.authority.sync(request, options);
+	async sync(request: SyncRequest): Promise<SyncResponse> {
+		const response = this.authority.sync(request);
 		if (response.result === 'page' && request.sealedRound) {
 			runRecordsCompaction(this.authority);
 		}
@@ -65,25 +55,18 @@ export class RowAuthorityDurableObject extends DurableObject {
 
 	/**
 	 * The authority's absolute physical size (ADR-0137): workerd's allocated
-	 * pages excluding freelist pages. The hosted deployment records this as
-	 * its per-workspace storage observation after a completed exchange.
+	 * pages excluding freelist pages. Hosted capability issuance refreshes this
+	 * observation for registered sources. Synchronization never records it.
 	 */
 	async databaseSize(): Promise<number> {
-		return (
-			this.ctx.storage as unknown as { sql: { databaseSize: number } }
-		).sql.databaseSize;
+		return (this.ctx.storage as unknown as { sql: { databaseSize: number } })
+			.sql.databaseSize;
 	}
 }
 
 type RecordsRpc = {
-	enroll(
-		request: EnrollRequest,
-		options?: RecordsCallOptions,
-	): Promise<EnrollResponse>;
-	sync(
-		request: SyncRequest,
-		options?: RecordsCallOptions,
-	): Promise<SyncResponse>;
+	enroll(request: EnrollRequest): Promise<EnrollResponse>;
+	sync(request: SyncRequest): Promise<SyncResponse>;
 	baselineScan(request: BaselineScanRequest): Promise<BaselineScanResponse>;
 };
 
@@ -101,10 +84,8 @@ export function createDurableObjectRecords(
 	}
 
 	return {
-		enroll: (partition, request, options) =>
-			get(partition).enroll(request, options),
-		sync: (partition, request, options) =>
-			get(partition).sync(request, options),
+		enroll: (partition, request) => get(partition).enroll(request),
+		sync: (partition, request) => get(partition).sync(request),
 		baselineScan: (partition, request) => get(partition).baselineScan(request),
 	};
 }
