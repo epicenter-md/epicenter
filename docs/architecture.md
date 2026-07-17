@@ -95,16 +95,16 @@ Each replica tracks:
 ```text
 acceptedRound  authored work the authority accepted from this replica
 checkpoint     global authority outcomes this replica installed
-submission     freshness of this network attempt
+requestDigest  exact retry identity for the accepted round
 ```
 
-Those numbers intentionally stay separate. `acceptedRound` supports exact retry
-of authored work. `checkpoint` supports paging through everyone else's
-confirmed outcomes. `submission` makes old network responses harmless.
+Those values intentionally stay separate. `acceptedRound` and `requestDigest`
+support exact retry of authored work. `checkpoint` supports paging through
+everyone else's confirmed outcomes.
 
-For the protocol details and executable golden trace, read
+For protocol details and executable coverage, read
 [`packages/row-sync/README.md`](../packages/row-sync/README.md) and
-[`packages/row-sync/src/protocol-traces.test.ts`](../packages/row-sync/src/protocol-traces.test.ts).
+[`packages/row-sync/src/protocol.test.ts`](../packages/row-sync/src/protocol.test.ts).
 
 ## Documents are merge-sensitive row content
 
