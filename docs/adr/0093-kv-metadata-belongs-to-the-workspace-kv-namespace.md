@@ -1,7 +1,8 @@
 # 0093. KV metadata belongs to the workspace kv namespace
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-07-02
+- **Superseded by:** [ADR-0130](0130-workspace-definitions-expose-tables-with-row-owned-documents-and-a-release-local-kv-lens.md)
 
 ## Context
 

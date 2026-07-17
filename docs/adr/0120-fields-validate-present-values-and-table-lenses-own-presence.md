@@ -49,7 +49,7 @@ field. Table definitions cannot declare `id`. Normal typed creation allocates a
 fresh id, and successful typed reads add it to the projected payload shape.
 
 Typed reads validate without mutation. `get(id)` returns
-`Result<Row | undefined, RecordLensError>`. `scan()` returns conforming rows and
+`Result<Row | undefined, RowLensError>`. `list()` returns conforming rows and
 nonconforming diagnostics in separate buckets. A read never inserts defaults,
 clears invalid values, rewrites a row, or records a new version.
 

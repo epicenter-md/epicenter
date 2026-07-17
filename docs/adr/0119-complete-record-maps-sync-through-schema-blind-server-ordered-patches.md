@@ -1,7 +1,8 @@
 # 0119. Complete record maps sync through schema-blind server-ordered patches
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-07-15
+- **Superseded by:** [ADR-0131](0131-row-sync-folds-sealed-row-intent-rounds-without-refusal.md)
 - **Relates:** [ADR-0035](0035-durable-storage-is-one-per-person-coordination-box.md), [ADR-0079](0079-cross-device-is-two-planes-epicenter-syncs-the-crdt-the-box-is-reached-directly.md), [ADR-0092](0092-identity-is-the-partition.md), [ADR-0120](0120-fields-validate-present-values-and-table-lenses-own-presence.md)
 
 ## Context

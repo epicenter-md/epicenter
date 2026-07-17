@@ -42,16 +42,17 @@ policy stays in the app that can name it.
 `@epicenter/workspace` owns the app-facing data contract and runtime handles.
 `@epicenter/field` supplies the release-local projection vocabulary.
 `@epicenter/row-sync` owns the portable row-plane protocol: row intent folding,
-exact retry, outcome paging, compaction, baseline acquisition, and capacity
-refusal. Yjs sync carries merge-sensitive document updates.
+exact retry, outcome paging, compaction, and baseline acquisition. Row-owned
+Yjs document updates travel inside row intents and composite outcomes.
 
 ## Workspace definitions are app contracts
 
-A workspace definition is pure. It names release-local table lenses and
-document declarations without opening storage or a network connection.
+A workspace definition is pure. It names release-local table and KV lenses
+without opening storage or a network connection. Every ordinary row owns one
+optional Yjs document; document roots remain application-owned.
 
 ```text
-defineWorkspace({ id, tables, documents })
+defineWorkspace({ id, tables, kv })
         |
         | pure app contract
         v
@@ -62,10 +63,9 @@ Definitions are not storage schemas. A new release may change its lens
 immediately. Nonconforming rows remain stored and visible to repair code.
 
 Runtime openers supply the resources that cannot travel with the definition:
-browser storage, desktop storage, workspace authority access, Yjs collaboration,
-materializers, auth, and platform APIs. App-facing code should enter through
-the workspace definition instead of rebuilding addresses or storage topology
-itself.
+browser storage, desktop storage, row synchronization, materializers, auth, and
+platform APIs. App-facing code should enter through the workspace definition
+instead of rebuilding addresses or storage topology itself.
 
 ## The row plane is the ordered durable core
 
@@ -108,19 +108,19 @@ For protocol details and executable coverage, read
 
 ## Documents are merge-sensitive row content
 
-Documents remain the right representation for merge-sensitive content. The
-workspace API should expose domain-shaped handles, while the runtime derives
-private authority and storage identity from declarations and validated
-parameters.
+Documents remain the right representation for merge-sensitive content. Every
+ordinary row owns optional Yjs state under the same identity and lifecycle as
+its fields. The workspace API exposes that state through the row's singular
+document handle.
 
-Opening a document awaits local hydration, then attaches remote
-synchronization. Releasing the last lease unloads live state without deleting
-persisted content.
+Opening a document hydrates its confirmed, sealed, and open components from
+local SQLite. Edits become durable document-bearing row intents, and the
+authority merges their Yjs updates into composite row outcomes. Releasing the
+last handle unloads live state without deleting it; deleting the row revokes
+its handles and removes its document state.
 
-The row plane and document merge plane do not pretend to share one conflict
-model. The selected direction is to make row-owned document updates explicit at
-the protocol boundary instead of leaking root-Y.Doc topology into public
-workspace concepts.
+Yjs supplies merge semantics inside a row. It is not a second public address,
+sync protocol, room, or lifecycle.
 
 ## Lens evolution never migrates user data implicitly
 
@@ -148,9 +148,9 @@ A star is the runnable deployment that holds a person's synchronized data. The
 hosted Cloud app and the self-hosted instance use the same shared server library
 but resolve principals differently.
 
-The workspace authority backend owns ordering, current rows, receipts,
-compaction, and baseline acquisition. Application releases own field validation
-and explicit repair code. Yjs rooms carry collaborative document updates. Blob
+The workspace authority backend owns ordering, current rows and row-document
+update logs, receipts, compaction, and baseline acquisition. Application
+releases own field validation, document roots, and explicit repair code. Blob
 storage holds large binaries by reference.
 
 This separation keeps the privacy question concrete. Epicenter can run the

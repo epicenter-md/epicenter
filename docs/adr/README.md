@@ -169,7 +169,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0090](0090-the-blob-layer-stays-plaintext-confidentiality-belongs-to-the-encrypting-consumer.md) | The blob layer stays plaintext; confidentiality belongs to the encrypting consumer | Accepted |
 | [0091](0091-blobs-trade-a-file-for-a-durable-content-addressed-url-documents-are-the-only-manifest.md) | Blobs trade a file for a durable content-addressed URL; documents are the only manifest | Accepted (URL shape amended by 0092) |
 | [0092](0092-identity-is-the-partition.md) | Identity is the partition | Accepted |
-| [0093](0093-kv-metadata-belongs-to-the-workspace-kv-namespace.md) | KV metadata belongs to the workspace kv namespace | Accepted |
+| [0093](0093-kv-metadata-belongs-to-the-workspace-kv-namespace.md) | KV metadata belongs to the workspace kv namespace | Superseded by 0130 |
 | [0094](0094-the-connection-is-the-boot-decision-one-connect-call.md) | The connection is the boot decision: one connect call | Accepted |
 | [0095](0095-websocket-room-auth-uses-route-owned-subprotocol-bearers.md) | WebSocket room auth uses route-owned subprotocol bearers | Accepted |
 | [0096](0096-local-workspace-persistence-is-environment-injected.md) | Local workspace persistence is environment-injected | Accepted |
@@ -195,12 +195,12 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0116](0116-local-mail-is-desktop-first-one-bun-engine-no-background-mail-service.md) | Local Mail is desktop-first: one Bun engine, no background mail service, the open app owns the sync loop | Accepted |
 | [0117](0117-global-shortcut-input-is-plugin-chords-only-and-the-macos-tap-is-just-the-paste-grant-watcher.md) | Global shortcut input is plugin chords only, and the macOS tap is just the paste grant watcher | Accepted |
 | [0118](0118-epicenter-is-one-trusted-bun-hosted-spa-origin.md) | Epicenter is one trusted Bun-hosted SPA origin | Accepted |
-| [0119](0119-complete-record-maps-sync-through-schema-blind-server-ordered-patches.md) | Complete record maps sync through schema-blind server-ordered patches | Accepted |
+| [0119](0119-complete-record-maps-sync-through-schema-blind-server-ordered-patches.md) | Complete record maps sync through schema-blind server-ordered patches | Superseded by 0131 |
 | [0120](0120-fields-validate-present-values-and-table-lenses-own-presence.md) | Fields validate present values and table lenses own presence | Accepted |
 | [0121](0121-background-sync-resolves-key-conflicts-by-server-order.md) | Background sync resolves key conflicts by server order | Accepted |
 | [0122](0122-logical-records-are-portable-sqlite-files-and-views-are-runtime-state.md) | Logical records are portable; SQLite files and views are runtime state | Accepted |
 | [0123](0123-bounded-metadata-uses-record-authority-merge-sensitive-state-uses-lazy-child-documents.md) | Bounded metadata uses record authority; merge-sensitive state uses lazy child documents | Superseded by 0124 |
-| [0124](0124-workspace-documents-are-top-level-parameterized-resources.md) | Workspace documents are top-level parameterized resources | Accepted |
+| [0124](0124-workspace-documents-are-top-level-parameterized-resources.md) | Workspace documents are top-level parameterized resources | Superseded by 0130 |
 | [0125](0125-record-definitions-are-release-local-lenses-and-never-migrate-user-data.md) | Record definitions are release-local lenses and never migrate user data | Accepted |
 | [0126](0126-child-documents-use-format-capabilities-and-evolve-outside-records-databases.md) | Child documents use format capabilities and evolve outside records databases | Superseded by 0124 (touch policy amended by 0128) |
 | [0127](0127-chat-streams-live-turns-in-client-state-and-stores-finished-messages-as-records.md) | Chat streams live turns in client state and stores finished messages as records | Proposed |

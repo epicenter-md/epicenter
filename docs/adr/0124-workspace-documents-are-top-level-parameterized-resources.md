@@ -1,7 +1,8 @@
 # 0124. Workspace documents are top-level parameterized resources
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-07-15
+- **Superseded by:** [ADR-0130](0130-workspace-definitions-expose-tables-with-row-owned-documents-and-a-release-local-kv-lens.md)
 - **Supersedes:** [ADR-0123](0123-bounded-metadata-uses-record-authority-merge-sensitive-state-uses-lazy-child-documents.md), [ADR-0126](0126-child-documents-use-format-capabilities-and-evolve-outside-records-databases.md)
 - **Relates:** [ADR-0120](0120-fields-validate-present-values-and-table-lenses-own-presence.md), [ADR-0128](0128-tables-do-not-declare-document-edit-touch-policy-without-a-runtime-owner.md)
 

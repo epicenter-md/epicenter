@@ -20,9 +20,8 @@ singleton values live behind one typed KV lens.
 - [ADR-0135](../docs/adr/0135-row-documents-have-application-owned-roots.md): the native-shaped document surface and application-owned roots.
 - [ADR-0136](../docs/adr/0136-replica-baseline-acquisition-uses-a-disposable-anchored-live-scan.md): baseline acquisition without snapshot products.
 
-Internal protocol, storage, and replacement work lives in
-[`20260716T204040-confirmed-state-compacted-row-intents.md`](20260716T204040-confirmed-state-compacted-row-intents.md).
-This spec owns the public API and consumer path only.
+ADRs 0131 through 0136 own the settled protocol, storage, and replacement
+decisions. This draft owns the remaining public consumer path only.
 
 ## Placement rule
 

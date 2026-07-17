@@ -49,8 +49,8 @@ local-only storage scope
 
 ## Consequences
 
-- `authorityKey` is a replacement target. The code should name local persistence
-  with `LocalStorageScope` or `storageScopeKey`, not authority.
+- SQLite workspace runtimes name local persistence with `storageScopeKey`, not
+  authority. `authorityKey` is not retained as a compatibility alias.
 - The caller never supplies `principalId` as a data selector. The deployment
   resolves it from authentication.
 - Sign-in needs an import or transfer workflow. Silent upload of the signed-out
