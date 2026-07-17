@@ -6,13 +6,20 @@ import {
 	roundRequestsGrowth,
 } from '@epicenter/row-sync';
 import { type Context, Hono, type MiddlewareHandler } from 'hono';
-import type {
-	Records,
-	RecordsPartition,
-	ResolveGrowth,
-} from '../records/contracts.js';
+import type { Records, RecordsPartition } from '../records/contracts.js';
 import type { Env } from '../types.js';
 import { RecordsError } from './records-errors.js';
+
+/**
+ * The deployment's local capacity resolution for one exchange (ADR-0137).
+ * `unavailable` means the projection could not be loaded: growth fails
+ * closed with a retryable response while reads and deletions proceed.
+ * Shared server code never learns plan ids, allowances, or billing concepts.
+ */
+export type ResolveGrowth<E extends Env = Env> = (
+	c: Context<E>,
+	partition: RecordsPartition,
+) => Promise<'allow' | 'delete-only' | 'unavailable'>;
 
 const RECORDS_PREFIX = '/api/records';
 const RECORDS_ROUTE = `${RECORDS_PREFIX}/:workspaceId` as const;
@@ -55,7 +62,10 @@ function invalidRequest<E extends Env>(
 
 function createRecordsApp<E extends Env>(
 	resolveRecords: (env: E['Bindings']) => Records,
-	resolveGrowth: ResolveGrowth | undefined,
+	resolveGrowth: ResolveGrowth<E> | undefined,
+	afterExchange:
+		| ((c: Context<E>, partition: RecordsPartition) => void)
+		| undefined,
 ): Hono<E> {
 	const app = new Hono<E>();
 	app.use(`${RECORDS_ROUTE}/*`, async (c, next) => {
@@ -92,15 +102,15 @@ function createRecordsApp<E extends Env>(
 			try {
 				// Enrollment creates a durable receipt, so it is growth
 				// (ADR-0137): an unavailable decision fails it closed.
-				const growth = await resolveGrowth?.(partition(c));
+				const growth = await resolveGrowth?.(c, partition(c));
 				if (growth === 'unavailable') return growthUnavailable(c);
-				return c.json(
-					await resolveRecords(c.env).enroll(
-						partition(c),
-						parsed.value,
-						growth === undefined ? undefined : { growth },
-					),
+				const response = await resolveRecords(c.env).enroll(
+					partition(c),
+					parsed.value,
+					growth === undefined ? undefined : { growth },
 				);
+				afterExchange?.(c, partition(c));
+				return c.json(response);
 			} catch (cause) {
 				if (cause instanceof TypeError) return invalidRequest(c, 'invalid');
 				throw cause;
@@ -115,20 +125,20 @@ function createRecordsApp<E extends Env>(
 				const wantsGrowth =
 					parsed.value.sealedRound !== undefined &&
 					roundRequestsGrowth(parsed.value.sealedRound.intents);
-				let growth = await resolveGrowth?.(partition(c));
+				let growth = await resolveGrowth?.(c, partition(c));
 				if (growth === 'unavailable') {
 					// Only growth fails closed and retryably; pulls and
 					// all-delete rounds proceed under delete-only admission.
 					if (wantsGrowth) return growthUnavailable(c);
 					growth = 'delete-only';
 				}
-				return c.json(
-					await resolveRecords(c.env).sync(
-						partition(c),
-						parsed.value,
-						growth === undefined ? undefined : { growth },
-					),
+				const response = await resolveRecords(c.env).sync(
+					partition(c),
+					parsed.value,
+					growth === undefined ? undefined : { growth },
 				);
+				afterExchange?.(c, partition(c));
+				return c.json(response);
 			} catch (cause) {
 				// The authority throws TypeError for client-authored corruption
 				// (a digest that does not match its intents, a checkpoint ahead
@@ -160,6 +170,7 @@ export function mountRecordsApp<E extends Env = Env>(
 		auth,
 		resolveRecords,
 		resolveGrowth,
+		afterExchange,
 	}: {
 		auth: MiddlewareHandler<E>;
 		resolveRecords: (env: E['Bindings']) => Records;
@@ -168,9 +179,15 @@ export function mountRecordsApp<E extends Env = Env>(
 		 * without a storage policy, like the self-hosted instance: every
 		 * exchange then runs with the authority's policy-free default.
 		 */
-		resolveGrowth?: ResolveGrowth;
+		resolveGrowth?: ResolveGrowth<E>;
+		/**
+		 * Deployment lifecycle hook after a completed enroll or sync exchange;
+		 * the hosted deployment schedules its storage observation here through
+		 * the request's after-response lifetime.
+		 */
+		afterExchange?: (c: Context<E>, partition: RecordsPartition) => void;
 	},
 ): void {
 	app.use(`${RECORDS_PREFIX}/*`, auth);
-	app.route('/', createRecordsApp(resolveRecords, resolveGrowth));
+	app.route('/', createRecordsApp(resolveRecords, resolveGrowth, afterExchange));
 }

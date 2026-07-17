@@ -62,6 +62,17 @@ export class RowAuthorityDurableObject extends DurableObject {
 	): Promise<BaselineScanResponse> {
 		return this.authority.baselineScan(request);
 	}
+
+	/**
+	 * The authority's absolute physical size (ADR-0137): workerd's allocated
+	 * pages excluding freelist pages. The hosted deployment records this as
+	 * its per-workspace storage observation after a completed exchange.
+	 */
+	async databaseSize(): Promise<number> {
+		return (
+			this.ctx.storage as unknown as { sql: { databaseSize: number } }
+		).sql.databaseSize;
+	}
 }
 
 type RecordsRpc = {
@@ -96,4 +107,16 @@ export function createDurableObjectRecords(
 			get(partition).sync(request, options),
 		baselineScan: (partition, request) => get(partition).baselineScan(request),
 	};
+}
+
+/** Read one workspace authority's absolute physical size (ADR-0137). */
+export function readWorkspaceDatabaseSize(
+	namespace: DurableObjectNamespace<RowAuthorityDurableObject>,
+	partition: RecordsPartition,
+): Promise<number> {
+	return (
+		namespace.getByName(partitionName(partition)) as unknown as {
+			databaseSize(): Promise<number>;
+		}
+	).databaseSize();
 }

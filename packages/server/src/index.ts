@@ -50,7 +50,16 @@ export { connectHyperdriveDb } from './db/backends/cloudflare.js';
 // client/pool in drizzle with the auth schema; a cloud entry hands the result to
 // `mountCloudDb`. The Cloudflare per-request `pg.Client` over Hyperdrive comes from
 // `connectHyperdriveDb`; a Bun host builds its own `pg.Pool` inline.
-export { createDb } from './db/create-db.js';
+export { createDb, type Db } from './db/create-db.js';
+export {
+	deleteStorageObservation,
+	readStorageProjection,
+	type StorageProjection,
+	type StorageSourceKind,
+	sumStorageObservations,
+	upsertStorageObservation,
+	writeStorageProjection,
+} from './db/storage-data.js';
 // An opt-in burn-rate cap for the inference `policies` seam: caps requests per
 // principal partition so a shared house key cannot be run up unbounded (ADR-0076).
 export { rateLimit } from './middleware/rate-limit.js';
@@ -82,9 +91,14 @@ export { CloudAuthBindings, mountCloudAuth } from './mount-cloud-auth.js';
 export { mountCloudDb } from './mount-cloud-db.js';
 export {
 	createDurableObjectRecords,
+	readWorkspaceDatabaseSize,
 	RowAuthorityDurableObject,
 } from './records/cloudflare.js';
-export type { Records, RecordsPartition } from './records/contracts.js';
+export type {
+	Records,
+	RecordsCallOptions,
+	RecordsPartition,
+} from './records/contracts.js';
 // Re-export the Cloudflare Durable Object class so each deployment's
 // wrangler.jsonc can resolve `class_name: "Room"` against this entrypoint.
 export { Room } from './room/backends/cloudflare/durable-object.js';
@@ -100,7 +114,10 @@ export { createDurableObjectRooms } from './room/backends/cloudflare/registry.js
 // `mountCloudAuth`; an instance composes none of it (ADR-0075).
 export { mountBlobsApp } from './routes/blobs.js';
 export { mountInferenceApp } from './routes/inference.js';
-export { mountRecordsApp } from './routes/records.js';
+export {
+	mountRecordsApp,
+	type ResolveGrowth,
+} from './routes/records.js';
 export { mountRoomsApp } from './routes/rooms.js';
 export { mountSessionApp } from './routes/session.js';
 export { mountTranscriptionApp } from './routes/transcription.js';

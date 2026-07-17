@@ -125,7 +125,10 @@ export const PLANS = {
 		basePrice: null,
 		freeTrial: null,
 		credits: { grantedPerCycle: 50, reset: 'month', overage: null },
-		storage: { includedBytes: 0, overagePerGbUsd: 0 },
+		// Permanent no-card hosted storage (ADR-0137): included bytes are
+		// mutable catalog data, never an ADR constant. No storage overage on
+		// Free; reaching the allowance flips the account to delete-only.
+		storage: { includedBytes: 100_000_000, overagePerGbUsd: 0 },
 	},
 	[PLAN_IDS.pro]: {
 		id: PLAN_IDS.pro,

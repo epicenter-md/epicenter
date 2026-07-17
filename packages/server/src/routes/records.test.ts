@@ -25,8 +25,8 @@ import type {
 	Records,
 	RecordsCallOptions,
 	RecordsPartition,
-	ResolveGrowth,
 } from '../records/contracts.js';
+import type { ResolveGrowth } from './records.js';
 import type { Env } from '../types.js';
 import { mountRecordsApp } from './records.js';
 

@@ -20,6 +20,7 @@ import {
 	connectHyperdriveDb,
 	createDurableObjectAttachRelay,
 	createDurableObjectRecords,
+	readWorkspaceDatabaseSize,
 	createDurableObjectRooms,
 	createServerApp,
 	mountAttachRelayApp,
@@ -46,6 +47,7 @@ import {
 } from './billing/policies.js';
 import { mountBillingApi } from './billing/routes.js';
 import { buildEpicenterTrustedOrigins } from './trusted-origins.js';
+import { createStorageService } from './storage/service.js';
 
 // Compile-time proof that this worker's generated Env provides every
 // binding the library reads. A missing or mistyped binding fails here,
@@ -141,6 +143,28 @@ mountRecordsApp(app, {
 	auth: bearer,
 	resolveRecords: (env) =>
 		createDurableObjectRecords((env as Cloudflare.Env).RECORDS),
+	// Hosted storage policy (ADR-0137): the locally projected growth decision
+	// gates growth exchanges, and each completed exchange records the
+	// authority's absolute databaseSize through the after-response lifetime.
+	resolveGrowth: (c, partition) =>
+		createStorageService({ db: c.var.db, env: c.env as Cloudflare.Env })
+			.resolveGrowth(partition),
+	afterExchange: (c, partition) => {
+		const env = c.env as Cloudflare.Env;
+		const db = c.var.db;
+		c.executionCtx.waitUntil(
+			(async () => {
+				const observedBytes = await readWorkspaceDatabaseSize(
+					env.RECORDS,
+					partition,
+				);
+				await createStorageService({ db, env }).observeWorkspace(
+					partition,
+					observedBytes,
+				);
+			})(),
+		);
+	},
 });
 // Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver, not
 // a prebuilt wrapper.
