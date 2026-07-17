@@ -1202,4 +1202,3 @@ function assertLimit(value: number, maximum: number, label: string): void {
 function toBytes(value: Uint8Array | ArrayBuffer): Uint8Array {
 	return value instanceof Uint8Array ? value : new Uint8Array(value);
 }
-
