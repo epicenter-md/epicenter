@@ -2,6 +2,10 @@
 
 - **Status:** Proposed
 - **Date:** 2026-07-17
+- **Amended:** 2026-07-17: enforcement moves entirely to capability issuance.
+  The allowance gates creation of new storage-producing capabilities (replica
+  enrollment, hosted workspace creation, new blob upload grants) and never
+  participates in row synchronization or semantic row folding (ADR-0131).
 - **Relates:** [ADR-0075](0075-self-host-is-a-single-partition-instance-behind-one-operator-supplied-bearer.md), [ADR-0076](0076-the-relational-auth-substrate-is-a-cloud-only-layer-the-instance-composes-neither.md), [ADR-0089](0089-the-blob-store-is-a-presigned-s3-kernel-and-the-bucket-is-its-only-index.md), [ADR-0131](0131-row-sync-folds-sealed-row-intent-rounds-without-refusal.md)
 
 ## Context
@@ -19,23 +23,35 @@ the latest absolute `databaseSize` observation for every hosted workspace plus
 the hosted blob bytes under that account.
 
 Free has one account-wide included allowance with no overage, debt, expiry, or
-automatic deletion. Once a reconciled observation reaches the allowance, the
-account enters a binary delete-only state. Reads, downloads, exports, workspace
-deletion, record deletion, blob deletion, and operations contractually
-classified as non-growing remain available. The deployment does not calculate
-the net physical effect of a request to make that classification.
-Storage-growing sync rounds, blob uploads, workspace creation, and replica
-enrollment stop. Local edits remain queued. Deleting enough data or upgrading
-restores growth after reconciliation.
+automatic deletion. The allowance is enforced at exactly one kind of moment:
+when Cloud is about to create a new storage-producing capability. Today that
+is replica enrollment, which also covers first contact with a new hosted
+workspace; new blob upload grants join the same gate when Free blob uploads
+ship. At issuance, Cloud refreshes the account's absolute observations
+(each workspace authority's `databaseSize` plus hosted blob bytes), sums
+them, and refuses the capability when the total has reached the allowance.
 
-Enforcement is eventually consistent. Epicenter accepts the bounded overshoot
-created by reconciliation lag and concurrent bounded operations. It does not
-build distributed reservations, byte-perfect quota checks, or customer debt to
-recover that overshoot.
+Row synchronization never consults storage state. An enrolled replica's
+structurally valid durable RowIntents always enter authority order
+(ADR-0131); honest offline backlog may exceed the allowance without a fixed
+local ceiling, and an over-allowance account may at most receive an
+informational warning, never a mutation gate. Reads, downloads, exports,
+workspace deletion, record deletion, and blob deletion are always available.
+Falling below the allowance (through deletion or upgrade) restores capability
+issuance at the next attempt, because admission reads current absolutes
+rather than a cached projection.
 
-Paid plans use the same physical meter with larger included allowances and
-overage. A downgrade may place an oversized account directly into delete-only
-state, but it never deletes data or creates retroactive debt.
+Enforcement is eventually consistent. Epicenter accepts the overshoot an
+already-issued capability can create between issuance checks. It does not
+build distributed reservations, byte-perfect quota checks, pending-byte
+accounting, quota leases, or customer debt to recover that overshoot. Abuse
+suspension and authorization revocation remain separate operational
+controls.
+
+Paid plans use the same physical meter and the same capability boundary with
+larger included allowances and overage. A downgrade may leave an oversized
+account unable to create new capabilities, but it never deletes data, gates
+synchronization, or creates retroactive debt.
 
 Allowance sizes, paid-plan grants, overage prices, reconciliation cadence, and
 operation ceilings are mutable catalog or implementation values, not parts of
@@ -46,16 +62,20 @@ Epicenter billing or account quota policy.
 
 - One absolute meter serves enforcement, billing, and the dashboard. There are
   no logical-byte, per-workspace, per-app, per-table, or per-replica balances.
-- Request paths consume one locally projected growth decision. They do not call
-  the billing provider or distribute a remaining-byte balance to authorities.
-- Reads and deletions fail independently of that projection. If the local
-  growth decision cannot be loaded, only growth fails closed and retryably.
-- Physical usage may change in page-sized steps. A small record deletion need
-  not lower `databaseSize` immediately, and capacity may remain blocked until a
-  later observation.
-- A sealed sync round is either admitted as ordinary growth or, in delete-only
-  state, admitted only when every intent is a record deletion. The authority
-  does not estimate a mixed round's net byte effect or partially accept it.
+- The sync request path carries no storage policy: no per-exchange
+  observation, no eagerly maintained projection row, and no billing-provider
+  call. The billing provider is consulted once per issuance attempt.
+- The `storage_observation` table is the account's source registry and
+  last-observed cache; issuance refreshes and overwrites it with current
+  absolutes. Rows leave only when their source is authoritatively deleted.
+- If the issuance decision cannot be computed, enrollment fails closed and
+  retryably; nothing else depends on it.
+- Physical usage is page-granular. A small record deletion need not lower
+  `databaseSize` immediately, so issuance may stay refused until a later
+  attempt observes the lower total.
+- Paid plans use the same capability boundary with larger included allowances
+  and overage; pushing reconciled usage to the billing provider for overage
+  billing is a later, non-request-path concern.
 - Exact enforcement, overshoot debt, automatic cleanup, paid hard caps, and
   storage expiration are deliberately refused.
 
@@ -69,3 +89,11 @@ Epicenter billing or account quota policy.
   require a distributed coordinator across workspace authorities and blobs.
 - **Recover overshoot as debt or deletion.** Rejected because Free's permanent,
   no-surprise storage promise is more valuable than byte-perfect enforcement.
+- **Enforce the allowance inside synchronization (binary delete-only state).**
+  Built, then deleted by the 2026-07-17 amendment. Gating sealed rounds
+  required a per-exchange growth decision, an eagerly maintained
+  `growth_allowed` projection, an after-exchange observation hook with one
+  billing call per sync, and a protocol refusal-and-recovery family
+  (ADR-0131's deleted submission watermark). Capability issuance is the
+  narrower door: it bounds new growth surfaces while every enrolled replica's
+  durable edits keep their unconditional path to the authority.

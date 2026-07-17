@@ -137,8 +137,8 @@ The authority stores current rows, document baselines plus retained tails,
 bounded ordered outcomes, one exact-retry receipt per explicitly enrolled
 replica, and its compaction floor. A receipt persists until workspace deletion;
 there is no replica count, slot, generation, eviction, expiration, or
-unenrollment lifecycle. Hosted aggregate workspace storage admission and
-enrollment throttling bound receipt growth. It publishes no snapshot artifact
+unenrollment lifecycle. Enrollment-time capability admission and operational
+throttling bound receipt growth (ADR-0137). It publishes no snapshot artifact
 and stores no transfer progress.
 
 ## Consequences

@@ -152,8 +152,8 @@ owner. Copying a database file is not a supported move, copy, or import API.
   outcomes, and exact-once round receipts for explicitly enrolled replica ids.
 - Authority receipts persist until workspace deletion. They have no local table
   cardinality counterpart, replica slots, generation, eviction, expiration, or
-  unenrollment lifecycle. Hosted deployments bound them through aggregate
-  workspace storage admission and enrollment throttling.
+  unenrollment lifecycle. Hosted deployments bound them at enrollment-time
+  capability admission and operational throttling (ADR-0137).
 - Losing projections or disposable baseline-acquisition scratch loses no unique
   user data.
 - A copied SQLite file carries runtime protocol position and is not a portable
