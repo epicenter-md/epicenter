@@ -52,7 +52,6 @@ export { connectHyperdriveDb } from './db/backends/cloudflare.js';
 // `connectHyperdriveDb`; a Bun host builds its own `pg.Pool` inline.
 export { createDb, type Db } from './db/create-db.js';
 export {
-	deleteStorageObservation,
 	listStorageObservations,
 	type StorageSourceKind,
 	upsertStorageObservation,

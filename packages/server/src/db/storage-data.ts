@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { Db } from './create-db.js';
 import { storageObservation } from './schema/storage.js';
 
@@ -34,24 +34,6 @@ export async function upsertStorageObservation(
 				observedAt: new Date(),
 			},
 		});
-}
-
-/** Remove one source's observation after its authoritative deletion. */
-export async function deleteStorageObservation(
-	db: Db,
-	source: {
-		principalId: string;
-		sourceKind: StorageSourceKind;
-		sourceId: string;
-	},
-): Promise<void> {
-	await db
-		.delete(storageObservation)
-		.where(
-			sql`${storageObservation.principalId} = ${source.principalId}
-			 and ${storageObservation.sourceKind} = ${source.sourceKind}
-			 and ${storageObservation.sourceId} = ${source.sourceId}`,
-		);
 }
 
 /** Every live source observation for one account. */
