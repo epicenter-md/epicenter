@@ -20,18 +20,18 @@ Runtime packages adapt their native engine to that capability:
 
 ```txt
 sqlite.org OO1 (browser) --+
-bun:sqlite ----------------+--> RowSyncSqlite --> row authority
+bun:sqlite ----------------+--> RowSyncSqlite --> row-sync authority core
 DO storage.sql ------------+
 ```
 
 The caller owns opening and closing the database. The adapter owns only SQL API
-translation and transaction entry. The row authority owns DDL, the exact-retry
-receipt per enrolled replica (`replicaId`, `acceptedRound`, `requestDigest`),
-canonical rows, sequence-addressed composite outcomes,
-document baselines plus retained update tails, and outcome compaction behind
-the retention floor. It keeps no deleted-id tombstones and publishes no
-snapshot artifact; a replica below the floor reacquires state through the
-stateless baseline scan (ADR-0136).
+translation and transaction entry. The row-sync authority core owns DDL, the
+exact-retry receipt per enrolled replica (`replicaId`, `acceptedRound`,
+`requestDigest`), canonical rows, sequence-addressed composite outcomes,
+document baselines plus retained update tails, and outcome compaction behind the
+retention floor. It keeps no deleted-id tombstones and publishes no snapshot
+artifact; a replica below the floor reacquires state through the stateless
+baseline scan (ADR-0136).
 
 ## Exports
 
