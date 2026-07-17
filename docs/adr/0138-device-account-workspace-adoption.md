@@ -1,7 +1,8 @@
 # 0138. Device and account workspace adoption
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-07-17
+- **Superseded by:** [ADR-0139](0139-account-runtime-open-adds-device-state-through-native-intents.md)
 - **Relates:** [ADR-0092](0092-identity-is-the-partition.md), [ADR-0094](0094-the-connection-is-the-boot-decision-one-connect-call.md), [ADR-0130](0130-workspace-definitions-expose-tables-with-row-owned-documents-and-a-release-local-kv-lens.md), [ADR-0131](0131-row-sync-folds-sealed-row-intent-rounds-without-refusal.md)
 
 ## Context

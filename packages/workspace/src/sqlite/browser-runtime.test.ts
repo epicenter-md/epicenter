@@ -4,6 +4,7 @@
  * Verifies the page-side Worker protocol without opening OPFS.
  *
  * Key behaviors:
+ * - open waits for one shared Worker initialization acknowledgement
  * - list and update use the public row verbs
  * - row documents hydrate, persist, and revoke across the Worker boundary
  * - baseline promotion revokes documents and reports app-level invalidation
@@ -31,13 +32,16 @@ const ROW_ID = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 
 class FakeWorker {
 	static latest: FakeWorker | undefined;
+	static openMode: 'resolve' | 'defer' | 'reject' = 'resolve';
 	readonly operations: BrowserRuntimeRequest['operation'][] = [];
+	readonly manifests: BrowserRuntimeRequest['manifest'][] = [];
 	readonly documentParts: Uint8Array[] = [];
 	row: Record<string, unknown> | undefined = { title: 'Browser row' };
 	theme: 'light' | 'dark' | undefined = 'light';
 	private readonly messageListeners = new Set<
 		(event: MessageEvent<BrowserRuntimeMessage>) => void
 	>();
+	private deferredOpen: BrowserRuntimeRequest | undefined;
 
 	constructor() {
 		FakeWorker.latest = this;
@@ -54,6 +58,26 @@ class FakeWorker {
 	postMessage(message: BrowserRuntimeRequest | { type: string }): void {
 		if ('type' in message) return;
 		this.operations.push(message.operation);
+		this.manifests.push(message.manifest);
+		if (message.operation.kind === 'open') {
+			if (FakeWorker.openMode === 'defer') {
+				this.deferredOpen = message;
+				return;
+			}
+			queueMicrotask(() => {
+				if (FakeWorker.openMode === 'reject') {
+					this.emit({
+						type: 'error',
+						id: message.id,
+						name: 'Error',
+						message: 'open failed',
+					});
+					return;
+				}
+				this.emit({ type: 'result', id: message.id, value: undefined });
+			});
+			return;
+		}
 		const value = (() => {
 			switch (message.operation.kind) {
 				case 'read-current-row':
@@ -89,6 +113,13 @@ class FakeWorker {
 		});
 	}
 
+	resolveOpen(): void {
+		const request = this.deferredOpen;
+		if (!request) throw new Error('No deferred open request');
+		this.deferredOpen = undefined;
+		this.emit({ type: 'result', id: request.id, value: undefined });
+	}
+
 	emit(message: BrowserRuntimeMessage): void {
 		for (const listener of this.messageListeners) {
 			listener(new MessageEvent('message', { data: message }));
@@ -101,6 +132,7 @@ class FakeWorker {
 afterEach(() => {
 	globalThis.Worker = NativeWorker;
 	FakeWorker.latest = undefined;
+	FakeWorker.openMode = 'resolve';
 });
 
 const definition = defineWorkspace({
@@ -118,6 +150,71 @@ function createRuntime() {
 	});
 }
 
+test('open waits for Worker initialization', async () => {
+	FakeWorker.openMode = 'defer';
+	await using runtime = createRuntime();
+	let settled = false;
+	const opening = runtime.open(definition).then((workspace) => {
+		settled = true;
+		return workspace;
+	});
+	await Promise.resolve();
+	await Promise.resolve();
+	expect(settled).toBe(false);
+	expect(FakeWorker.latest?.operations).toEqual([{ kind: 'open' }]);
+	FakeWorker.latest?.resolveOpen();
+	await opening;
+});
+
+test('concurrent opens share one Worker initialization', async () => {
+	FakeWorker.openMode = 'defer';
+	await using runtime = createRuntime();
+	const first = runtime.open(definition);
+	const second = runtime.open(definition);
+	await Promise.resolve();
+	await Promise.resolve();
+	expect(FakeWorker.latest?.operations).toEqual([{ kind: 'open' }]);
+	FakeWorker.latest?.resolveOpen();
+	expect(await first).toBe(await second);
+});
+
+test('failed open rejects and retries initialization', async () => {
+	FakeWorker.openMode = 'reject';
+	await using runtime = createRuntime();
+	await expect(runtime.open(definition)).rejects.toThrow('open failed');
+	FakeWorker.openMode = 'resolve';
+	await runtime.open(definition);
+	expect(FakeWorker.latest?.operations).toEqual([
+		{ kind: 'open' },
+		{ kind: 'open' },
+	]);
+});
+
+test('Account open identifies matching Device storage', async () => {
+	globalThis.Worker = FakeWorker as unknown as typeof Worker;
+	await using accountRuntime = createAccountBrowserWorkspaceRuntime({
+		account: {
+			deploymentId: 'https://example.test',
+			principalId: asPrincipalId('alice'),
+			transport: { baseUrl: 'https://example.test' },
+		},
+		createBroadcastChannel: () => undefined,
+	});
+	await accountRuntime.open(definition);
+	const accountManifest = FakeWorker.latest?.manifests[0];
+	expect(accountManifest?.additionSourceStorageKey).toBeString();
+	expect(accountManifest?.additionSourceStorageKey).not.toBe(
+		accountManifest?.storageKey,
+	);
+
+	await accountRuntime[Symbol.asyncDispose]();
+	await using deviceRuntime = createRuntime();
+	await deviceRuntime.open(definition);
+	expect(
+		FakeWorker.latest?.manifests[0]?.additionSourceStorageKey,
+	).toBeUndefined();
+});
+
 test('page sends list and update operations', async () => {
 	await using runtime = createRuntime();
 	const workspace = await runtime.open(definition);
@@ -126,6 +223,7 @@ test('page sends list and update operations', async () => {
 		title: 'changed',
 	});
 	expect(FakeWorker.latest?.operations).toEqual([
+		{ kind: 'open' },
 		{ kind: 'list', table: 'notes' },
 		{
 			kind: 'update',

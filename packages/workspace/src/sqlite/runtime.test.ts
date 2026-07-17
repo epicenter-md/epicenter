@@ -5,6 +5,7 @@
  * SQLite owner.
  *
  * Key behaviors:
+ * - open eagerly acquires storage and retries failed initialization
  * - table CRUD exposes create/update/delete/get/list
  * - every table exposes the singular row document capability
  * - KV and validated read-only SQL remain available
@@ -29,6 +30,60 @@ const definition = defineWorkspace({
 		}),
 	},
 	kv: { theme: field.select(['light', 'dark']) },
+});
+
+test('open waits for workspace owner acquisition', async () => {
+	const database = new Database(':memory:');
+	const gate = Promise.withResolvers<void>();
+	let settled = false;
+	const runtime = createWorkspaceRuntime({
+		async openWorkspaceOwner() {
+			await gate.promise;
+			return {
+				sqlite: createBunSqliteAdapter(database),
+				async [Symbol.asyncDispose]() {
+					database.close();
+				},
+			};
+		},
+	});
+	try {
+		const opening = runtime.open(definition).then((workspace) => {
+			settled = true;
+			return workspace;
+		});
+		await Promise.resolve();
+		expect(settled).toBe(false);
+		gate.resolve();
+		await opening;
+		expect(settled).toBe(true);
+	} finally {
+		await runtime[Symbol.asyncDispose]();
+	}
+});
+
+test('failed owner acquisition rejects open and retries cleanly', async () => {
+	const database = new Database(':memory:');
+	let attempts = 0;
+	const runtime = createWorkspaceRuntime({
+		async openWorkspaceOwner() {
+			attempts += 1;
+			if (attempts === 1) throw new Error('owner failed');
+			return {
+				sqlite: createBunSqliteAdapter(database),
+				async [Symbol.asyncDispose]() {
+					database.close();
+				},
+			};
+		},
+	});
+	try {
+		await expect(runtime.open(definition)).rejects.toThrow('owner failed');
+		await runtime.open(definition);
+		expect(attempts).toBe(2);
+	} finally {
+		await runtime[Symbol.asyncDispose]();
+	}
 });
 
 test('runtime composes row, document, KV, and SQL capabilities', async () => {

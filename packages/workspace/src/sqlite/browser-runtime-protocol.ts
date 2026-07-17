@@ -10,6 +10,8 @@ export type SerializedTableLens = {
 export type BrowserWorkspaceManifest = {
 	workspaceId: string;
 	storageKey: string;
+	/** Matching Device storage consumed before this Account owner opens. */
+	additionSourceStorageKey?: string;
 	tables: Record<string, SerializedTableLens>;
 	/** Serialized field.* schemas for this release's KV lens (ADR-0132). */
 	kv: Record<string, unknown>;
@@ -22,6 +24,7 @@ export type BrowserRowSyncBinding = {
 };
 
 export type BrowserRecordOperation =
+	| { kind: 'open' }
 	| { kind: 'get'; table: string; id: string }
 	| { kind: 'kv-get'; key: string }
 	| { kind: 'kv-set'; key: string; value: unknown }

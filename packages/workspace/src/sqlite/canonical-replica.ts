@@ -10,6 +10,8 @@ import {
 	parseEnrollResponse,
 	parseRowIntent,
 	parseSyncResponse,
+	RESERVED_KV_ROW_ID,
+	RESERVED_KV_TABLE,
 	ROW_SYNC_ADMISSION_LIMITS,
 	ROW_SYNC_PROTOCOL_MAJOR,
 	type RowOutcome,
@@ -206,7 +208,11 @@ export function createCanonicalReplica({
 			throw new Error('A locally deleted row accepts no further intent');
 		}
 		if (next.kind === 'create') {
-			throw new Error('A live open intent already exists for this address');
+			// Admission already proved that the current projection is absent. The
+			// only remaining live open shape is therefore an update on an absent
+			// row, which the later create replaces in authority order.
+			writeStoredIntent(next, 0);
+			return;
 		}
 		if (next.kind === 'delete') {
 			if (open.kind === 'create') {
@@ -843,7 +849,7 @@ export function createCanonicalReplica({
 		 */
 		admit(intent: WireRowIntent): void {
 			const admitted = prepareLocalIntent(intent);
-			sqlite.transaction(() => {
+			const changed = sqlite.transaction(() => {
 				// The seal is immutable, but admission validity may consult it:
 				// a sealed local delete ends the row lifetime for this replica.
 				const sealed = sqlite.all<StoredIntent>(
@@ -855,12 +861,16 @@ export function createCanonicalReplica({
 				if (sealed?.kind === 'delete') {
 					throw new Error('A locally deleted row accepts no further intent');
 				}
-				if (admitted.kind === 'create' && sealed) {
-					throw new Error('A live open intent already exists for this address');
+				if (
+					admitted.kind === 'create' &&
+					readCurrentRow(sqlite, admitted.table, admitted.rowId) !== undefined
+				) {
+					return false;
 				}
 				compactIntoOpen(admitted);
+				return true;
 			});
-			rerunRequested = true;
+			if (changed) rerunRequested = true;
 		},
 		/**
 		 * Project one current row: confirmed fields folded through the sealed
@@ -901,6 +911,52 @@ export function createCanonicalReplica({
 }
 
 export type CanonicalReplica = ReturnType<typeof createCanonicalReplica>;
+
+/**
+ * Replay one canonical Device workspace into an Account replica through native
+ * intents. The source remains untouched; the storage owner deletes it only
+ * after this complete synchronous pass returns.
+ */
+export function addCanonicalWorkspace({
+	source,
+	admitIntent,
+	mergeUpdates,
+}: {
+	source: RowSyncSqlite;
+	admitIntent(intent: WireRowIntent): void;
+	mergeUpdates(parts: readonly Uint8Array[]): Uint8Array;
+}): void {
+	const tables = source.all<{ table_key: string }>(
+		`SELECT table_key FROM "${ROWS_TABLE}" WHERE table_key <> ?
+		 UNION
+		 SELECT table_key FROM "${INTENTS_TABLE}" WHERE table_key <> ?
+		 ORDER BY table_key`,
+		[RESERVED_KV_TABLE, RESERVED_KV_TABLE],
+	);
+	for (const { table_key: table } of tables) {
+		for (const { rowId, fields } of listCurrentRows(source, table)) {
+			const parts = readCurrentDocumentParts(source, table, rowId);
+			admitIntent({
+				kind: 'create',
+				table,
+				rowId,
+				fields: structuredClone(fields),
+				...(parts.length === 0
+					? {}
+					: { documentUpdate: encodeBase64(mergeUpdates(parts)) }),
+			});
+		}
+	}
+
+	const kv = readCurrentRow(source, RESERVED_KV_TABLE, RESERVED_KV_ROW_ID);
+	if (kv === undefined || Object.keys(kv).length === 0) return;
+	admitIntent({
+		kind: 'update',
+		table: RESERVED_KV_TABLE,
+		rowId: RESERVED_KV_ROW_ID,
+		fields: { set: structuredClone(kv), unset: [] },
+	});
+}
 
 /**
  * Compose two ordered field-change sets into their final absolute form: the

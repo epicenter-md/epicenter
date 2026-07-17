@@ -8,11 +8,7 @@ import {
 	writeFileSync,
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import {
-	RESERVED_KV_ROW_ID,
-	RESERVED_KV_TABLE,
-	sha256Hex,
-} from '@epicenter/row-sync';
+import { sha256Hex } from '@epicenter/row-sync';
 import { createBunSqliteAdapter } from '@epicenter/row-sync/bun';
 
 import {
@@ -22,9 +18,9 @@ import {
 } from './account-runtime.js';
 import { mergeDocumentUpdates } from './canonical-documents.js';
 import {
+	addCanonicalWorkspace,
 	type CanonicalReplicaTransport,
 	createCanonicalReplica,
-	initializeCanonicalSchema,
 } from './canonical-replica.js';
 import { createWorkspaceRuntime } from './runtime.js';
 
@@ -33,10 +29,7 @@ const ownedRoots = new Set<string>();
 export type BunWorkspaceAccount = WorkspaceAccount<
 	(
 		workspaceId: string,
-	) =>
-		| CanonicalReplicaTransport
-		| undefined
-		| Promise<CanonicalReplicaTransport | undefined>
+	) => CanonicalReplicaTransport | Promise<CanonicalReplicaTransport>
 >;
 
 export type BunWorkspaceRuntimeOptions = {
@@ -62,13 +55,15 @@ export function createAccountBunWorkspaceRuntime({
 	return createBunRuntimeWithPersistence({
 		...options,
 		persistenceKey: accountPersistenceKey(account),
+		additionSourcePersistenceKey: devicePersistenceKey(),
 		recordTransport: account.transport,
 	});
 }
 
-/** Open a Bun runtime whose workspace owners are lazy SQLite files. */
+/** Open a Bun runtime whose `open()` eagerly acquires its SQLite owner. */
 function createBunRuntimeWithPersistence({
 	persistenceKey,
+	additionSourcePersistenceKey,
 	storageRoot,
 	recordTransport,
 	onRecordsChanged = () => undefined,
@@ -76,27 +71,42 @@ function createBunRuntimeWithPersistence({
 	recordPollIntervalMs = 30_000,
 }: BunWorkspaceRuntimeOptions & {
 	persistenceKey: string;
+	additionSourcePersistenceKey?: string;
 	recordTransport?: BunWorkspaceAccount['transport'];
 }) {
 	if (!Number.isFinite(recordPollIntervalMs) || recordPollIntervalMs <= 0) {
 		throw new Error('Record poll interval must be a positive finite number');
 	}
 	const root = resolve(storageRoot, persistenceKey);
-	if (ownedRoots.has(root)) {
-		throw new Error(`Workspace runtime storage already has an owner: ${root}`);
+	const additionSourceRoot = additionSourcePersistenceKey
+		? resolve(storageRoot, additionSourcePersistenceKey)
+		: undefined;
+	const claimedRoots = [
+		...(additionSourceRoot ? [additionSourceRoot] : []),
+		root,
+	];
+	for (const claimed of claimedRoots) {
+		if (ownedRoots.has(claimed)) {
+			throw new Error(
+				`Workspace runtime storage already has an owner: ${claimed}`,
+			);
+		}
 	}
-	ownedRoots.add(root);
+	for (const claimed of claimedRoots) ownedRoots.add(claimed);
 	try {
 		mkdirSync(root, { recursive: true });
 		bindPersistenceIdentity(root, persistenceKey);
 	} catch (cause) {
-		ownedRoots.delete(root);
+		for (const claimed of claimedRoots) ownedRoots.delete(claimed);
 		throw cause;
 	}
 
 	const runtime = createWorkspaceRuntime({
 		async openWorkspaceOwner(workspaceId, signal) {
 			const path = join(root, `${workspaceId}.records.sqlite3`);
+			const additionSourcePath = additionSourceRoot
+				? join(additionSourceRoot, `${workspaceId}.records.sqlite3`)
+				: undefined;
 			let database: Database | undefined;
 			try {
 				database = new Database(path, { create: true });
@@ -160,6 +170,21 @@ function createBunRuntimeWithPersistence({
 						for (const listener of baselineListeners) listener();
 					},
 				});
+				if (additionSourcePath && existsSync(additionSourcePath)) {
+					const sourceDatabase = new Database(additionSourcePath, {
+						readonly: true,
+					});
+					try {
+						addCanonicalWorkspace({
+							source: createBunSqliteAdapter(sourceDatabase),
+							admitIntent: replica.admit,
+							mergeUpdates: mergeDocumentUpdates,
+						});
+					} finally {
+						sourceDatabase.close();
+					}
+					deleteWorkspaceFiles(additionSourcePath);
+				}
 				let activeSynchronization: Promise<unknown> | undefined;
 				const synchronize = (): void => {
 					if (ownerDisposed) return;
@@ -220,7 +245,7 @@ function createBunRuntimeWithPersistence({
 			try {
 				await runtime[Symbol.asyncDispose]();
 			} finally {
-				ownedRoots.delete(root);
+				for (const claimed of claimedRoots) ownedRoots.delete(claimed);
 			}
 		},
 	});
@@ -230,209 +255,10 @@ export type BunWorkspaceRuntime = ReturnType<
 	typeof createDeviceBunWorkspaceRuntime
 >;
 
-export type DeviceWorkspaceInspection =
-	| { adoptable: false }
-	| {
-			adoptable: true;
-			summary: {
-				rows: number;
-				kv: number;
-				documents: number;
-			};
-	  };
-
-export function inspectDeviceWorkspace({
-	storageRoot,
-	workspaceId,
-}: {
-	storageRoot: string;
-	workspaceId: string;
-}): DeviceWorkspaceInspection {
-	const path = workspaceDatabasePath(
-		storageRoot,
-		devicePersistenceKey(),
-		workspaceId,
-	);
-	if (!existsSync(path)) return { adoptable: false };
-	const database = new Database(path, { readonly: true });
-	try {
-		const sqlite = createBunSqliteAdapter(database);
-		initializeCanonicalSchema(sqlite);
-		const summary = workspaceSummary(database);
-		if (summary.rows === 0 && summary.kv === 0 && summary.documents === 0) {
-			return { adoptable: false };
-		}
-		if (hasAdoptedMarker(database)) return { adoptable: false };
-		return { adoptable: true, summary };
-	} finally {
-		database.close();
-	}
-}
-
-export function adoptDeviceWorkspace({
-	storageRoot,
-	workspaceId,
-	into,
-}: {
-	storageRoot: string;
-	workspaceId: string;
-	into: BunWorkspaceAccount;
-}): void {
-	const sourcePath = workspaceDatabasePath(
-		storageRoot,
-		devicePersistenceKey(),
-		workspaceId,
-	);
-	if (!existsSync(sourcePath)) {
-		throw new Error(`Device workspace '${workspaceId}' does not exist`);
-	}
-	assertDeviceWorkspaceAdoptable(sourcePath);
-	const targetPersistenceKey = accountPersistenceKey(into);
-	const targetPath = workspaceDatabasePath(
-		storageRoot,
-		targetPersistenceKey,
-		workspaceId,
-	);
-	assertAccountWorkspaceEmpty(targetPath);
-	mkdirSync(dirname(targetPath), { recursive: true });
-	deleteWorkspaceFiles(targetPath);
-	writeFileAtomic(targetPath, serializeDatabase(sourcePath));
-	markDeviceWorkspaceAdopted(sourcePath);
-}
-
-export function deleteDeviceWorkspace({
-	storageRoot,
-	workspaceId,
-}: {
-	storageRoot: string;
-	workspaceId: string;
-}): void {
-	const path = workspaceDatabasePath(
-		storageRoot,
-		devicePersistenceKey(),
-		workspaceId,
-	);
-	deleteWorkspaceFiles(path);
-}
-
-function workspaceDatabasePath(
-	storageRoot: string,
-	persistenceKey: string,
-	workspaceId: string,
-): string {
-	return join(
-		resolve(storageRoot, persistenceKey),
-		`${workspaceId}.records.sqlite3`,
-	);
-}
-
-function workspaceSummary(database: Database): {
-	rows: number;
-	kv: number;
-	documents: number;
-} {
-	const rowCount =
-		database
-			.query<{ count: number }, [string, string]>(
-				`SELECT COUNT(*) AS count FROM rows
-				 WHERE NOT (table_key = ? AND row_id = ?)`,
-			)
-			.get(RESERVED_KV_TABLE, RESERVED_KV_ROW_ID)?.count ?? 0;
-	const kvCount =
-		database
-			.query<{ count: number }, [string, string]>(
-				`SELECT COUNT(*) AS count
-				 FROM rows, json_each(rows.fields_json)
-				 WHERE table_key = ? AND row_id = ?`,
-			)
-			.get(RESERVED_KV_TABLE, RESERVED_KV_ROW_ID)?.count ?? 0;
-	const documentCount =
-		database
-			.query<{ count: number }, []>('SELECT COUNT(*) AS count FROM documents')
-			.get()?.count ?? 0;
-	return { rows: rowCount, kv: kvCount, documents: documentCount };
-}
-
-function assertDeviceWorkspaceAdoptable(path: string): void {
-	const database = new Database(path, { readonly: true });
-	try {
-		const sqlite = createBunSqliteAdapter(database);
-		initializeCanonicalSchema(sqlite);
-		const summary = workspaceSummary(database);
-		if (summary.rows === 0 && summary.kv === 0 && summary.documents === 0) {
-			throw new Error('Cannot adopt an empty device workspace');
-		}
-		if (hasAdoptedMarker(database)) {
-			throw new Error('Device workspace has already been adopted');
-		}
-	} finally {
-		database.close();
-	}
-}
-
-function assertAccountWorkspaceEmpty(path: string): void {
-	if (!existsSync(path)) return;
-	const database = new Database(path, { readonly: true });
-	try {
-		const sqlite = createBunSqliteAdapter(database);
-		initializeCanonicalSchema(sqlite);
-		const summary = workspaceSummary(database);
-		if (summary.rows > 0 || summary.kv > 0 || summary.documents > 0) {
-			throw new Error(
-				'Cannot adopt device workspace into a non-empty account workspace',
-			);
-		}
-	} finally {
-		database.close();
-	}
-}
-
-function markDeviceWorkspaceAdopted(path: string): void {
-	const database = new Database(path, { create: true });
-	try {
-		database.exec(`
-			CREATE TABLE IF NOT EXISTS adoption_meta (
-				id INTEGER PRIMARY KEY CHECK (id = 1),
-				adopted_at TEXT NOT NULL
-			);
-			INSERT INTO adoption_meta(id, adopted_at)
-			VALUES (1, datetime('now'))
-			ON CONFLICT(id) DO UPDATE SET adopted_at = excluded.adopted_at;
-		`);
-	} finally {
-		database.close();
-	}
-}
-
-function hasAdoptedMarker(database: Database): boolean {
-	const table = database
-		.query<{ name: string }, []>(
-			"SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'adoption_meta'",
-		)
-		.get();
-	if (!table) return false;
-	return (
-		(database
-			.query<{ present: number }, []>(
-				'SELECT 1 AS present FROM adoption_meta WHERE id = 1',
-			)
-			.get()?.present ?? 0) === 1
-	);
-}
-
-function serializeDatabase(path: string): Uint8Array {
-	const database = new Database(path, { readonly: true });
-	try {
-		return database.serialize();
-	} finally {
-		database.close();
-	}
-}
-
 function deleteWorkspaceFiles(path: string): void {
-	rmSync(path, { force: true });
 	rmSync(`${path}-wal`, { force: true });
 	rmSync(`${path}-shm`, { force: true });
+	rmSync(path, { force: true });
 }
 
 function bindPersistenceIdentity(root: string, persistenceKey: string): void {

@@ -11,11 +11,16 @@ import type {
 	BrowserWorkspaceManifest,
 } from './browser-runtime-protocol.js';
 import {
+	acquireBrowserStorageLease,
+	type BrowserStorageLease,
+} from './browser-storage-lease.js';
+import {
 	createLocalDocumentAdmission,
 	mergeDocumentUpdates,
 } from './canonical-documents.js';
 import { type CanonicalKv, createCanonicalKv } from './canonical-kv.js';
 import {
+	addCanonicalWorkspace,
 	type CanonicalReplica,
 	type CanonicalReplicaTransport,
 	createCanonicalReplica,
@@ -42,6 +47,8 @@ type OpenedRecords = {
 	kv: CanonicalKv<KvDefinitions>;
 	admitDocumentIntent(intent: WireRowIntent): void;
 	replica?: CanonicalReplica;
+	/** Held until Worker termination so Device and Account cannot overlap. */
+	retainedLeases: BrowserStorageLease[];
 };
 
 const scope = self as unknown as WorkerScope;
@@ -60,16 +67,30 @@ async function openRecords(
 	let opening = opened.get(manifest.workspaceId);
 	if (!opening) {
 		opening = (async () => {
-			sqliteModule ??= await sqlite3InitModule();
-			if (!sqliteModule.capi.sqlite3_vfs_find('opfs')) {
-				throw new Error('SQLite OPFS VFS is unavailable');
-			}
-			const database = new sqliteModule.oo1.DB(
-				`/epicenter-${manifest.storageKey}.sqlite3`,
-				'c',
-				'opfs',
-			);
+			let sourceLease: BrowserStorageLease | undefined;
+			let targetLease: BrowserStorageLease | undefined;
+			let sourceDatabase: Database | undefined;
+			let database: Database | undefined;
 			try {
+				if (manifest.additionSourceStorageKey) {
+					sourceLease = await acquireBrowserStorageLease(
+						navigator.locks,
+						manifest.additionSourceStorageKey,
+					);
+				}
+				targetLease = await acquireBrowserStorageLease(
+					navigator.locks,
+					manifest.storageKey,
+				);
+				sqliteModule ??= await sqlite3InitModule();
+				if (!sqliteModule.capi.sqlite3_vfs_find('opfs')) {
+					throw new Error('SQLite OPFS VFS is unavailable');
+				}
+				database = new sqliteModule.oo1.DB(
+					`/epicenter-${manifest.storageKey}.sqlite3`,
+					'c',
+					'opfs',
+				);
 				// EXTRA extends FULL by syncing rollback-journal deletion in DELETE
 				// mode, strengthening the configured local commit boundary.
 				database.exec(`
@@ -128,6 +149,37 @@ async function openRecords(
 						readCurrentRow: (table, rowId) =>
 							readCurrentRow(sqlite, table, rowId),
 					});
+				if (manifest.additionSourceStorageKey) {
+					if (!replica) {
+						throw new Error(
+							'Account workspace addition requires synchronized storage',
+						);
+					}
+					const sourceFilename = workspaceFilename(
+						manifest.additionSourceStorageKey,
+					);
+					const directory = await navigator.storage.getDirectory();
+					if (await fileExists(directory, sourceFilename)) {
+						sourceDatabase = new sqliteModule.oo1.DB(
+							`/${sourceFilename}`,
+							'r',
+							'opfs',
+						);
+						try {
+							addCanonicalWorkspace({
+								source: createBrowserSqliteAdapter(
+									sourceDatabase as unknown as BrowserSqliteDatabase,
+								),
+								admitIntent: replica.admit,
+								mergeUpdates: mergeDocumentUpdates,
+							});
+						} finally {
+							sourceDatabase.close();
+							sourceDatabase = undefined;
+						}
+						await directory.removeEntry(sourceFilename);
+					}
+				}
 				if (replica) {
 					synchronize(replica, manifest.workspaceId);
 					setInterval(
@@ -143,9 +195,36 @@ async function openRecords(
 					kv,
 					admitDocumentIntent,
 					replica,
+					retainedLeases: [...(sourceLease ? [sourceLease] : []), targetLease],
 				};
 			} catch (cause) {
-				database.close();
+				const cleanupFailures: unknown[] = [];
+				try {
+					sourceDatabase?.close();
+				} catch (cleanupCause) {
+					cleanupFailures.push(cleanupCause);
+				}
+				try {
+					database?.close();
+				} catch (cleanupCause) {
+					cleanupFailures.push(cleanupCause);
+				}
+				try {
+					await sourceLease?.release();
+				} catch (cleanupCause) {
+					cleanupFailures.push(cleanupCause);
+				}
+				try {
+					await targetLease?.release();
+				} catch (cleanupCause) {
+					cleanupFailures.push(cleanupCause);
+				}
+				if (cleanupFailures.length > 0) {
+					throw new AggregateError(
+						[cause, ...cleanupFailures],
+						'Browser workspace initialization and cleanup failed',
+					);
+				}
 				throw cause;
 			}
 		})().catch((cause) => {
@@ -157,6 +236,8 @@ async function openRecords(
 	const state = await opening;
 	if (
 		state.manifest.storageKey !== manifest.storageKey ||
+		state.manifest.additionSourceStorageKey !==
+			manifest.additionSourceStorageKey ||
 		JSON.stringify(state.manifest.tables) !== JSON.stringify(manifest.tables) ||
 		JSON.stringify(state.manifest.kv) !== JSON.stringify(manifest.kv) ||
 		JSON.stringify(state.manifest.rowSync) !== JSON.stringify(manifest.rowSync)
@@ -212,6 +293,8 @@ function tableFor(records: CanonicalRows, name: string) {
 function execute(state: OpenedRecords, operation: BrowserRecordOperation) {
 	const { records } = state;
 	switch (operation.kind) {
+		case 'open':
+			return undefined;
 		case 'get':
 			return tableFor(records, operation.table).get(operation.id);
 		case 'kv-get':
@@ -261,6 +344,25 @@ function execute(state: OpenedRecords, operation: BrowserRecordOperation) {
 			);
 		default:
 			return operation satisfies never;
+	}
+}
+
+function workspaceFilename(storageKey: string): string {
+	return `epicenter-${storageKey}.sqlite3`;
+}
+
+async function fileExists(
+	directory: FileSystemDirectoryHandle,
+	filename: string,
+): Promise<boolean> {
+	try {
+		await directory.getFileHandle(filename);
+		return true;
+	} catch (cause) {
+		if (cause instanceof DOMException && cause.name === 'NotFoundError') {
+			return false;
+		}
+		throw cause;
 	}
 }
 

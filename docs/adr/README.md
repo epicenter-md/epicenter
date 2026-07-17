@@ -214,6 +214,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0135](0135-row-documents-have-application-owned-roots.md) | Row documents have application-owned roots | Accepted |
 | [0136](0136-replica-baseline-acquisition-uses-a-disposable-anchored-live-scan.md) | Replica baseline acquisition uses a disposable anchored live scan | Accepted |
 | [0137](0137-hosted-storage-is-one-eventually-enforced-physical-account-allowance.md) | Hosted storage is one eventually enforced physical account allowance | Accepted |
-| [0138](0138-device-account-workspace-adoption.md) | Device and account workspace adoption | Accepted |
+| [0138](0138-device-account-workspace-adoption.md) | Device and account workspace adoption | Superseded by 0139 |
+| [0139](0139-account-runtime-open-adds-device-state-through-native-intents.md) | Account runtime open adds device state through native intents | Accepted |
 
 When you add an ADR, add its row here.

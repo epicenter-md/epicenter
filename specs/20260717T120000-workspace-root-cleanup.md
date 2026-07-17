@@ -2,7 +2,7 @@
 
 - **Status:** In Progress
 - **Date:** 2026-07-17
-- **Depends on:** ADR-0130 through ADR-0138
+- **Depends on:** ADR-0130 through ADR-0139
 
 ## Recommendation
 
@@ -12,12 +12,13 @@ Environment-specific runtime construction stays on explicit subpaths.
 `@epicenter/row-sync` continues to own the wire protocol, authority fold,
 admission, and physical sync storage.
 
-Naming and identity follow ADR-0138
-(`docs/adr/0138-device-account-workspace-adoption.md`): a connection
-authenticates to a deployment, the deployment resolves a principal, auth passes
-an account handle into the runtime, and each synchronized workspace is governed
-by one workspace authority. Signed-out device workspaces adopt explicitly into
-an empty account workspace when the user signs in.
+ADR-0139
+(`docs/adr/0139-account-runtime-open-adds-device-state-through-native-intents.md`)
+retains the Device and Account identity vocabulary introduced by ADR-0138: a
+connection authenticates to a deployment, the deployment resolves a principal,
+auth passes an account handle into the runtime, and one workspace authority
+governs each synchronized workspace. Account runtime open adds matching device
+rows and KV through native intents before synchronization starts.
 
 The final root export should be the current app-facing surface from
 `packages/workspace/src/sqlite/index.ts`:
@@ -110,7 +111,7 @@ explicit pre-user clean break, not an unfinished migration assignment.
 
 ## Next implementation goal
 
-With ADR-0130 through ADR-0138 accepted, migrate the current `/sqlite`
+With ADR-0130 through ADR-0139 accepted, migrate the current `/sqlite`
 application callers to the new root and runtime subpaths in one wave, remove
 the `/sqlite` exports, and leave the old document implementation reachable only
 through its remaining explicit legacy subpaths. Then migrate or retire those
@@ -119,7 +120,8 @@ callers in dependency order before deleting `src/document/`.
 Before that migration, run the naming cleanup in narrow waves:
 
 1. Done: replace public `authorityKey` and `storageScopeKey` runtime identity
-   with Device/Account constructors and explicit adoption.
+   with Device/Account constructors and automatic native-intent addition on
+   Account open.
 2. Rename the public in-memory workspace vocabulary from records to rows where
    the names are not durable routes, protocol strings, filenames, or external
    compatibility surfaces.

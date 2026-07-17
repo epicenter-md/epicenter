@@ -127,7 +127,7 @@ type RuntimeEntry = {
 	ownerPromise?: Promise<OpenedOwner>;
 };
 
-/** Create one runtime whose workspace SQLite owners open lazily. */
+/** Create one runtime whose `open()` eagerly acquires its SQLite owner. */
 export function createWorkspaceRuntime({
 	openWorkspaceOwner,
 }: {
@@ -285,12 +285,22 @@ export function createWorkspaceRuntime({
 				if (!existing.handle) {
 					throw new Error(`Workspace '${definition.id}' has no runtime handle`);
 				}
+				await openedFor(existing);
 				return existing.handle as OpenedWorkspace<TDefinition>;
 			}
 			const entry: RuntimeEntry = { definition };
 			entry.handle = createHandle(definition, entry);
 			entries.set(definition.id, entry);
-			return entry.handle as OpenedWorkspace<TDefinition>;
+			try {
+				await openedFor(entry);
+				return entry.handle as OpenedWorkspace<TDefinition>;
+			} catch (cause) {
+				if (entries.get(definition.id) === entry) {
+					entries.delete(definition.id);
+				}
+				entry.abortController?.abort(cause);
+				throw cause;
+			}
 		},
 		async [Symbol.asyncDispose](): Promise<void> {
 			if (isDisposed) return;

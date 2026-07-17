@@ -34,6 +34,7 @@ type BoundWorkspace = {
 	definition: WorkspaceDefinition;
 	manifest: BrowserWorkspaceManifest;
 	handle: OpenedWorkspace<WorkspaceDefinition>;
+	readiness: Promise<void>;
 	notifyRowsDeleted(addresses: RowAddress[]): void;
 	notifyBaselinePromoted(): void;
 	revokeDocuments(cause: Error): void;
@@ -77,6 +78,7 @@ export type BrowserWorkspaceAccount =
 
 type CreateBrowserWorkspaceRuntimeOptions = {
 	persistenceKey: string;
+	additionSourcePersistenceKey?: string;
 	transport?: BrowserWorkspaceTransport;
 	createBroadcastChannel?(name: string): RuntimeBroadcastChannel | undefined;
 	onRecordsChanged?(workspaceId: string): void;
@@ -91,7 +93,7 @@ export function createDeviceBrowserWorkspaceRuntime({
 	onBackgroundError,
 }: Omit<
 	CreateBrowserWorkspaceRuntimeOptions,
-	'persistenceKey' | 'transport'
+	'persistenceKey' | 'additionSourcePersistenceKey' | 'transport'
 > = {}) {
 	return createBrowserRuntimeWithPersistence({
 		persistenceKey: devicePersistenceKey(),
@@ -110,12 +112,13 @@ export function createAccountBrowserWorkspaceRuntime({
 	onBackgroundError,
 }: Omit<
 	CreateBrowserWorkspaceRuntimeOptions,
-	'persistenceKey' | 'transport'
+	'persistenceKey' | 'additionSourcePersistenceKey' | 'transport'
 > & {
 	account: BrowserWorkspaceAccount;
 }) {
 	return createBrowserRuntimeWithPersistence({
 		persistenceKey: accountPersistenceKey(account),
+		additionSourcePersistenceKey: devicePersistenceKey(),
 		transport: account.transport,
 		createBroadcastChannel,
 		onRecordsChanged,
@@ -127,6 +130,7 @@ export function createAccountBrowserWorkspaceRuntime({
 /** Create the page-side client for one OPFS-owning records Worker. */
 function createBrowserRuntimeWithPersistence({
 	persistenceKey,
+	additionSourcePersistenceKey,
 	transport: transportInput,
 	createBroadcastChannel = defaultBroadcastChannel,
 	onRecordsChanged = () => undefined,
@@ -464,21 +468,46 @@ function createBrowserRuntimeWithPersistence({
 						`Workspace '${definition.id}' is already bound to another definition in this runtime`,
 					);
 				}
+				await existing.readiness;
 				return existing.handle as OpenedWorkspace<TDefinition>;
 			}
 			const manifest: BrowserWorkspaceManifest = {
 				workspaceId: definition.id,
-				storageKey: sha256Hex(JSON.stringify([persistenceKey, definition.id])),
+				storageKey: workspaceStorageKey(persistenceKey, definition.id),
+				...(additionSourcePersistenceKey
+					? {
+							additionSourceStorageKey: workspaceStorageKey(
+								additionSourcePersistenceKey,
+								definition.id,
+							),
+						}
+					: {}),
 				tables: serializeTableLenses(definition.tables),
 				kv: JSON.parse(JSON.stringify(definition.kv)),
 				rowSync: transport?.binding,
 			};
 			const binding = createHandle(definition, manifest);
-			workspaces.set(definition.id, {
+			const readiness = Promise.withResolvers<void>();
+			const bound: BoundWorkspace = {
 				definition,
 				manifest,
 				...binding,
-			});
+				readiness: readiness.promise,
+			};
+			workspaces.set(definition.id, bound);
+			void request<void>(manifest, { kind: 'open' }).then(
+				() => readiness.resolve(),
+				(cause) => {
+					if (workspaces.get(definition.id) === bound) {
+						workspaces.delete(definition.id);
+					}
+					const error =
+						cause instanceof Error ? cause : new Error(String(cause));
+					bound.revokeDocuments(error);
+					readiness.reject(error);
+				},
+			);
+			await bound.readiness;
 			return binding.handle;
 		},
 		async [Symbol.asyncDispose](): Promise<void> {
@@ -551,4 +580,11 @@ function normalizeTransport(
 
 function ensureTrailingSlash(value: string): string {
 	return value.endsWith('/') ? value : `${value}/`;
+}
+
+function workspaceStorageKey(
+	persistenceKey: string,
+	workspaceId: string,
+): string {
+	return sha256Hex(JSON.stringify([persistenceKey, workspaceId]));
 }

@@ -10,18 +10,16 @@
  */
 
 import { expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { field } from '@epicenter/field';
 import { asPrincipalId } from '@epicenter/identity';
 import { expectOk } from 'wellcrafted/testing';
+import { devicePersistenceKey } from './account-runtime.js';
 import {
-	adoptDeviceWorkspace,
 	createAccountBunWorkspaceRuntime,
 	createDeviceBunWorkspaceRuntime,
-	deleteDeviceWorkspace,
-	inspectDeviceWorkspace,
 } from './bun-runtime.js';
 import { defineTable } from './lens-definition.js';
 import {
@@ -35,13 +33,17 @@ const definition = defineWorkspace({
 	tables: {
 		notes: defineTable({ fields: { title: field.string() } }),
 	},
-	kv: { theme: field.select(['light', 'dark']) },
+	kv: {
+		theme: field.select(['light', 'dark']),
+		language: field.string(),
+		deviceFlag: field.boolean(),
+	},
 });
 
 test('local Bun runtime reopens durable rows, KV, and documents', async () => {
 	const root = mkdtempSync(join(tmpdir(), 'epicenter-bun-runtime-'));
 	try {
-		let rowId: string;
+		let rowId = '';
 		{
 			await using runtime = createDeviceBunWorkspaceRuntime({
 				storageRoot: root,
@@ -59,11 +61,11 @@ test('local Bun runtime reopens durable rows, KV, and documents', async () => {
 			storageRoot: root,
 		});
 		const workspace = await reopened.open(definition);
-		expect(expectOk(await workspace.tables.notes.get(rowId!))?.title).toBe(
+		expect(expectOk(await workspace.tables.notes.get(rowId))?.title).toBe(
 			'Durable',
 		);
 		expect(expectOk(await workspace.kv.get('theme'))).toBe('dark');
-		using document = await workspace.tables.notes.document.open(rowId!);
+		using document = await workspace.tables.notes.document.open(rowId);
 		expect(document.get('editor').toString()).toBe('persisted');
 	} finally {
 		rmSync(root, { recursive: true, force: true });
@@ -101,15 +103,13 @@ test('synchronized Bun runtime sends RowIntents through enroll and sync', async 
 	}
 });
 
-test('device workspace adoption copies into an empty account workspace', async () => {
-	const root = mkdtempSync(join(tmpdir(), 'epicenter-bun-adopt-'));
-	const account = {
-		deploymentId: 'https://example.test',
-		principalId: asPrincipalId('alice'),
-		transport: () => undefined,
-	};
+test('Account open adds Device state, deletes its source, then synchronizes', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'epicenter-bun-add-'));
+	const authorityState = openTestAuthority();
+	const base = createTestTransport(authorityState.authority);
+	const sourcePath = deviceWorkspacePath(root);
 	try {
-		let rowId: string;
+		let rowId = '';
 		{
 			await using device = createDeviceBunWorkspaceRuntime({
 				storageRoot: root,
@@ -122,58 +122,57 @@ test('device workspace adoption copies into an empty account workspace', async (
 			document.get('editor').insert(0, 'device draft');
 			await document.whenDurable();
 		}
+		expect(existsSync(sourcePath)).toBe(true);
 
-		expect(
-			inspectDeviceWorkspace({ storageRoot: root, workspaceId: definition.id }),
-		).toMatchObject({
-			adoptable: true,
-			summary: { rows: 1, kv: 1, documents: 1 },
-		});
-
-		adoptDeviceWorkspace({
+		await using accountRuntime = createAccountBunWorkspaceRuntime({
 			storageRoot: root,
-			workspaceId: definition.id,
-			into: account,
+			account: {
+				deploymentId: 'https://example.test',
+				principalId: asPrincipalId('alice'),
+				transport: () => ({
+					enroll(request) {
+						expect(existsSync(sourcePath)).toBe(false);
+						return base.enroll(request);
+					},
+					sync(request) {
+						expect(existsSync(sourcePath)).toBe(false);
+						return base.sync(request);
+					},
+					baselineScan: base.baselineScan,
+				}),
+			},
+			recordPollIntervalMs: 60_000,
 		});
-		expect(
-			inspectDeviceWorkspace({ storageRoot: root, workspaceId: definition.id }),
-		).toEqual({ adoptable: false });
-		expect(() =>
-			adoptDeviceWorkspace({
-				storageRoot: root,
-				workspaceId: definition.id,
-				into: account,
-			}),
-		).toThrow('already been adopted');
-
-		await using adopted = createAccountBunWorkspaceRuntime({
-			storageRoot: root,
-			account,
-		});
-		const workspace = await adopted.open(definition);
-		expect(expectOk(await workspace.tables.notes.get(rowId!))?.title).toBe(
+		const workspace = await accountRuntime.open(definition);
+		expect(existsSync(sourcePath)).toBe(false);
+		expect(existsSync(`${sourcePath}-wal`)).toBe(false);
+		expect(existsSync(`${sourcePath}-shm`)).toBe(false);
+		expect(expectOk(await workspace.tables.notes.get(rowId))?.title).toBe(
 			'Device',
 		);
 		expect(expectOk(await workspace.kv.get('theme'))).toBe('dark');
-		using document = await workspace.tables.notes.document.open(rowId!);
+		using document = await workspace.tables.notes.document.open(rowId);
 		expect(document.get('editor').toString()).toBe('device draft');
-
-		deleteDeviceWorkspace({ storageRoot: root, workspaceId: definition.id });
+		await waitFor(() =>
+			authorityState.authority
+				.inspect()
+				.rows.some((row) => row.rowId === rowId),
+		);
 		expect(
-			inspectDeviceWorkspace({ storageRoot: root, workspaceId: definition.id }),
-		).toEqual({ adoptable: false });
+			authorityState.authority.inspect().rows.find((row) => row.rowId === rowId)
+				?.rowId,
+		).toBe(rowId);
 	} finally {
+		authorityState.database.close();
 		rmSync(root, { recursive: true, force: true });
 	}
 });
 
-test('device workspace adoption refuses a non-empty account workspace', async () => {
-	const root = mkdtempSync(join(tmpdir(), 'epicenter-bun-adopt-refuse-'));
-	const account = {
-		deploymentId: 'https://example.test',
-		principalId: asPrincipalId('alice'),
-		transport: () => undefined,
-	};
+test('corrupt Device storage rejects Account open without synchronization', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'epicenter-bun-add-corrupt-'));
+	const authorityState = openTestAuthority();
+	const transport = createTestTransport(authorityState.authority);
+	const sourcePath = deviceWorkspacePath(root);
 	try {
 		{
 			await using device = createDeviceBunWorkspaceRuntime({
@@ -182,26 +181,69 @@ test('device workspace adoption refuses a non-empty account workspace', async ()
 			const workspace = await device.open(definition);
 			await workspace.tables.notes.create({ title: 'Device' });
 		}
-		{
-			await using existing = createAccountBunWorkspaceRuntime({
-				storageRoot: root,
-				account,
-			});
-			const workspace = await existing.open(definition);
-			await workspace.tables.notes.create({ title: 'Account' });
-		}
-
-		expect(() =>
-			adoptDeviceWorkspace({
-				storageRoot: root,
-				workspaceId: definition.id,
-				into: account,
-			}),
-		).toThrow('non-empty account workspace');
+		expect(existsSync(sourcePath)).toBe(true);
+		rmSync(`${sourcePath}-wal`, { force: true });
+		rmSync(`${sourcePath}-shm`, { force: true });
+		writeFileSync(sourcePath, 'not a sqlite database');
+		await using account = createAccountBunWorkspaceRuntime({
+			storageRoot: root,
+			account: {
+				deploymentId: 'https://example.test',
+				principalId: asPrincipalId('alice'),
+				transport: () => transport,
+			},
+		});
+		await expect(account.open(definition)).rejects.toThrow();
+		expect(existsSync(sourcePath)).toBe(true);
+		expect(transport.enrollRequests).toEqual([]);
+		expect(transport.syncRequests).toEqual([]);
 	} finally {
+		authorityState.database.close();
 		rmSync(root, { recursive: true, force: true });
 	}
 });
+
+test('Account runtime exclusively owns Device and Account roots', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'epicenter-bun-ownership-'));
+	const authorityState = openTestAuthority();
+	const transport = createTestTransport(authorityState.authority);
+	const accountOptions = {
+		storageRoot: root,
+		account: {
+			deploymentId: 'https://example.test',
+			principalId: asPrincipalId('alice'),
+			transport: () => transport,
+		},
+	};
+	try {
+		const device = createDeviceBunWorkspaceRuntime({ storageRoot: root });
+		expect(() => createAccountBunWorkspaceRuntime(accountOptions)).toThrow(
+			'already has an owner',
+		);
+		await device[Symbol.asyncDispose]();
+
+		const account = createAccountBunWorkspaceRuntime(accountOptions);
+		expect(() =>
+			createDeviceBunWorkspaceRuntime({ storageRoot: root }),
+		).toThrow('already has an owner');
+		expect(() => createAccountBunWorkspaceRuntime(accountOptions)).toThrow(
+			'already has an owner',
+		);
+		await account[Symbol.asyncDispose]();
+
+		await using released = createDeviceBunWorkspaceRuntime({
+			storageRoot: root,
+		});
+		await released.open(definition);
+	} finally {
+		authorityState.database.close();
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+function deviceWorkspacePath(root: string): string {
+	return join(root, devicePersistenceKey(), `${definition.id}.records.sqlite3`);
+}
 
 async function waitFor(predicate: () => boolean): Promise<void> {
 	const deadline = Date.now() + 2_000;
