@@ -1,106 +1,84 @@
-# Toast-on-Error Patterns
+# Toast On Error
 
-How to surface errors to users via toast notifications across the monorepo.
+`toastOnError` from `@epicenter/ui/sonner` accepts either a `Result<T, AnyTaggedError>` or a bare `AnyTaggedError`. It shows the tagged error's message and returns its input unchanged.
 
-## The `toastOnError` Passthrough
+The call site supplies the short UI title. The error variant owns the detailed description.
 
-`toastOnError` from `@epicenter/ui/sonner` is a passthrough function inspired by Rust's `inspect_err`. It shows a toast and returns the input unchanged—so you can slot it into `return` statements or `.then()` chains without disrupting control flow.
+## Inspect Data Locally
 
-It accepts either a `Result<T, AnyTaggedError>` or a bare `AnyTaggedError`.
+Destructure the Result, present the error branch, then continue with the narrowed data:
 
-- **Title** (bold headline): provided at the call site—this is UI copy, not a service concern.
-- **Description** (muted text below): always `error.message` from the tagged error, shown automatically.
-
-```typescript
-import { toastOnError } from '@epicenter/ui/sonner';
-```
-
-## Preferred Pattern: Destructure First, Then Toast-and-Return
-
-Always destructure the Result first, then use `toastOnError` in the error guard. Never mix `.then()` with `await` on the same expression.
-
-```typescript
-// ✅ GOOD — destructure, then one-liner error guard
+```ts
 const { data, error } = await api.billing.portal();
-if (error) return toastOnError(error, 'Could not open billing portal');
-if (data.url) window.location.href = data.url;
-
-// ❌ BAD — mixing .then() with await
-const { data, error } = await api.billing.portal().then(r => toastOnError(r, '...'));
-```
-
-## Fire-and-Forget Pattern
-
-For onclick handlers where you don't need the result, use `.then()`:
-
-```typescript
-// ✅ Fire-and-forget — no await, no destructuring
-bookmarkState.toggle(tab).then((r) => toastOnError(r, 'Failed to toggle bookmark'));
-savedTabState.save(tab).then((r) => toastOnError(r, 'Failed to save tab'));
-```
-
-## When NOT to Use `toastOnError`
-
-### Catch blocks with `unknown` errors
-
-`toastOnError` requires `AnyTaggedError` (from `defineErrors`). Raw `catch (err)` blocks have `unknown` errors—use `extractErrorMessage` instead:
-
-```typescript
-import { extractErrorMessage } from 'wellcrafted/error';
-
-// ✅ catch blocks — use extractErrorMessage
-try {
-    await riskyOperation();
-} catch (err) {
-    toast.error('Operation failed', { description: extractErrorMessage(err) });
+if (error !== null) {
+	return toastOnError(error, 'Could not open billing portal');
 }
+if (data.portalUrl) window.location.href = data.portalUrl;
+```
 
-// ✅ tryAsync catch handlers — same pattern
-await tryAsync({
-    try: () => someOperation(),
-    catch: (error) => {
-        toast.error('Failed', { description: extractErrorMessage(error) });
-        return Ok(undefined);
-    },
+## Fire And Forget
+
+When an event handler does not need pending state or success data, attach presentation before intentionally discarding the Promise:
+
+```ts
+void bookmarkState
+	.toggle(tab)
+	.then((result) => toastOnError(result, 'Failed to toggle bookmark'));
+```
+
+This is appropriate only when `toggle` fulfills with a Result rather than rejecting. If the Promise can reject, adapt that rejection at the service boundary first or attach a rejection handler.
+
+Do not combine `await` and `.then(...)` on the same expression.
+
+## Raw Unknown Errors
+
+`toastOnError` requires a tagged error. A raw `catch (cause)` value is `unknown`, so either adapt it into a typed error first or use `toast.error` with `extractErrorMessage` at a local UI boundary:
+
+```ts
+try {
+	await riskyUiOperation();
+} catch (cause) {
+	toast.error('Operation failed', {
+		description: extractErrorMessage(cause),
+	});
+}
+```
+
+Do not pass `unknown` to `toastOnError` or cast it to `AnyTaggedError`.
+
+## TanStack Mutation Errors
+
+Choose from the mutation's actual error type, not from the fact that TanStack is involved:
+
+- A generic rejected mutation commonly exposes `unknown` or `Error`: use `extractErrorMessage` or adapt it into a tagged error.
+- `wellcrafted/query` Result mutation helpers preserve the tagged Result error type: use `toastOnError(error, title)` directly.
+
+```ts
+// Created with wellcrafted/query Result mutation options: error is tagged.
+resultMutation.mutate(input, {
+	onError: (error) => toastOnError(error, 'Failed to save changes'),
 });
 ```
 
-### TanStack Query `onError` callbacks
+## Custom Toast Options
 
-Errors from mutation rejection may not be tagged errors. Use `extractErrorMessage`:
+Call `toast.error` directly when the toast needs an action, duration, identifier, or custom description:
 
-```typescript
-// ✅ TanStack onError — extractErrorMessage for unknown error types
-topUp.mutate(url, {
-    onError: (error) => toast.error('Top-up failed', {
-        description: extractErrorMessage(error),
-    }),
-});
-```
-
-### Toasts with extra options (actions, custom duration)
-
-`toastOnError` only sets `title` + `description`. If you need `action`, `duration`, or other Sonner options, call `toast.error()` directly:
-
-```typescript
-// ✅ Needs action button — use toast.error directly
-if (error) {
-    toast.error('Failed to open accessibility settings', {
-        description: error.message,
-        action: {
-            label: 'Open Settings',
-            onClick: () => openSystemSettings(),
-        },
-    });
+```ts
+if (error !== null) {
+	toast.error('Could not open settings', {
+		description: error.message,
+		action: { label: 'Open settings', onClick: openSystemSettings },
+	});
 }
 ```
 
 ## Decision Table
 
 | Situation | Pattern |
-|---|---|
-| Result with tagged error, need to handle data | `if (error) return toastOnError(error, 'title')` |
-| Result, fire-and-forget | `.then((r) => toastOnError(r, 'title'))` |
-| `catch` block, `unknown` error | `toast.error('title', { description: extractErrorMessage(err) })` |
-| TanStack `onError` callback | `toast.error('title', { description: extractErrorMessage(error) })` |
-| Toast needs action/duration/id | `toast.error('title', { description: error.message, action: ... })` |
+| --- | --- |
+| Tagged Result with locally used data | Destructure, guard, `toastOnError(error, title)` |
+| Tagged Result with unused success data | `.then((result) => toastOnError(result, title))` |
+| Raw `unknown` at a UI boundary | Adapt to a tagged error or use `extractErrorMessage` |
+| Typed Result mutation error | `toastOnError(error, title)` |
+| Toast needs custom options | `toast.error(...)` |
