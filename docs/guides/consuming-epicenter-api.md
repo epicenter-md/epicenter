@@ -35,7 +35,7 @@ definitions through an authority-bound runtime. Records are a complete local
 SQLite replica of schema-opaque canonical JSON. `field.*` declarations are
 release-local validation and SQL projection lenses. Every ordinary row owns one
 latent Yjs document under the same authority and lifecycle. The opened
-workspace handle exposes `tables`, `kv`, and `records.sql`.
+workspace handle exposes `tables`, `kv`, and `sql`.
 
 ## Choose the row component
 
