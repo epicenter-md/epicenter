@@ -11,6 +11,8 @@ export type BrowserWorkspaceManifest = {
 	workspaceId: string;
 	storageKey: string;
 	tables: Record<string, SerializedTableLens>;
+	/** Serialized field.* schemas for this release's KV lens (ADR-0132). */
+	kv: Record<string, unknown>;
 	recordSync?: BrowserRecordSyncBinding;
 };
 
@@ -21,6 +23,9 @@ export type BrowserRecordSyncBinding = {
 
 export type BrowserRecordOperation =
 	| { kind: 'get'; table: string; id: string }
+	| { kind: 'kv-get'; key: string }
+	| { kind: 'kv-set'; key: string; value: unknown }
+	| { kind: 'kv-unset'; key: string }
 	| {
 			kind: 'scan';
 			table: string;

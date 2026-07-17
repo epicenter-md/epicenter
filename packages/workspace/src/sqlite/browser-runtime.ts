@@ -266,9 +266,23 @@ export function createBrowserWorkspaceRuntime({
 		manifest: BrowserWorkspaceManifest,
 	): OpenedWorkspace<TDefinition> {
 		const tables = Object.fromEntries(
-			Object.keys(definition.tables).map((tableName) => [
-				tableName,
-				Object.freeze({
+			Object.entries(definition.tables).map(([tableName, tableDefinition]) => {
+				// The live-document editor channel across the records Worker is
+				// the ADR-0133 transport follow-up; sync-layer body updates
+				// already replicate underneath it.
+				const bodyStub = tableDefinition.body
+					? {
+							body: Object.freeze({
+								async open(): Promise<never> {
+									throw new Error(
+										'Row bodies are not yet openable in the browser runtime',
+									);
+								},
+							}),
+						}
+					: {};
+				const handle = {
+					...bodyStub,
 					get(id: string) {
 						return request(manifest, { kind: 'get', table: tableName, id });
 					},
@@ -301,13 +315,35 @@ export function createBrowserWorkspaceRuntime({
 							id,
 						});
 					},
-				}),
-			]),
-		) as WorkspaceTables<DefinitionTables<TDefinition>>;
+				};
+				return [tableName, Object.freeze(handle)];
+			}),
+		) as unknown as WorkspaceTables<DefinitionTables<TDefinition>>;
+
+		const kv = Object.freeze({
+			get(key: string) {
+				return request(manifest, { kind: 'kv-get', key });
+			},
+			set(key: string, value: unknown) {
+				return request(manifest, { kind: 'kv-set', key, value });
+			},
+			async unset(key: string) {
+				await request(manifest, { kind: 'kv-unset', key });
+			},
+			observe(): never {
+				// Per-key observation crosses the Worker boundary with the
+				// first UI consumer (the Whispering settings port); until then
+				// a silent no-op would hide staleness.
+				throw new Error(
+					'kv.observe is not yet wired through the browser Worker runtime',
+				);
+			},
+		});
 
 		return Object.freeze({
 			id: definition.id,
 			tables,
+			kv: kv as never,
 			documents: createDocumentNamespace({
 				authorityKey,
 				workspaceId: definition.id,
@@ -329,7 +365,7 @@ export function createBrowserWorkspaceRuntime({
 					});
 				},
 			}),
-		}) as OpenedWorkspace<TDefinition>;
+		}) as unknown as OpenedWorkspace<TDefinition>;
 	}
 
 	return {
@@ -351,6 +387,7 @@ export function createBrowserWorkspaceRuntime({
 				workspaceId: definition.id,
 				storageKey: sha256Hex(`${authorityKey}\0${definition.id}`),
 				tables: serializeTableLenses(definition.tables),
+				kv: JSON.parse(JSON.stringify(definition.kv)),
 				recordSync: recordSync?.binding,
 			};
 			const handle = createHandle(definition, manifest);

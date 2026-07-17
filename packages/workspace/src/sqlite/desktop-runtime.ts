@@ -106,9 +106,20 @@ export function createDesktopWorkspaceRuntime({
 		definition: TDefinition,
 	): OpenedWorkspace<TDefinition> {
 		const tables = Object.fromEntries(
-			Object.keys(definition.tables).map((table) => [
-				table,
-				Object.freeze({
+			Object.entries(definition.tables).map(([table, tableDefinition]) => {
+				const bodyStub = tableDefinition.body
+					? {
+							body: Object.freeze({
+								async open(): Promise<never> {
+									throw new Error(
+										'Row bodies are not yet openable in the desktop runtime',
+									);
+								},
+							}),
+						}
+					: {};
+				const handle = {
+					...bodyStub,
 					get(id: string) {
 						return request(definition.id, { kind: 'get', table, id });
 					},
@@ -140,13 +151,30 @@ export function createDesktopWorkspaceRuntime({
 							id,
 						});
 					},
-				}),
-			]),
-		) as WorkspaceTables<DefinitionTables<TDefinition>>;
+				};
+				return [table, Object.freeze(handle)];
+			}),
+		) as unknown as WorkspaceTables<DefinitionTables<TDefinition>>;
+
+		const kv = Object.freeze({
+			async get(): Promise<never> {
+				throw new Error('kv is not yet wired through the desktop runtime');
+			},
+			async set(): Promise<never> {
+				throw new Error('kv is not yet wired through the desktop runtime');
+			},
+			async unset(): Promise<never> {
+				throw new Error('kv is not yet wired through the desktop runtime');
+			},
+			observe(): never {
+				throw new Error('kv is not yet wired through the desktop runtime');
+			},
+		});
 
 		return Object.freeze({
 			id: definition.id,
 			tables,
+			kv: kv as never,
 			documents: createDocumentNamespace({
 				workspaceId: definition.id,
 				definitions: definition.documents,
@@ -193,7 +221,7 @@ export function createDesktopWorkspaceRuntime({
 					return rows as Static<TResultSchema>[];
 				},
 			}),
-		}) as OpenedWorkspace<TDefinition>;
+		}) as unknown as OpenedWorkspace<TDefinition>;
 	}
 
 	return Object.freeze({

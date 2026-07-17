@@ -41,6 +41,7 @@ export {
 } from './lens-definition.js';
 export type {
 	OpenedWorkspace,
+	OpenedWorkspaceBody,
 	WorkspaceKv,
 	WorkspaceRecords,
 	WorkspaceRuntime,

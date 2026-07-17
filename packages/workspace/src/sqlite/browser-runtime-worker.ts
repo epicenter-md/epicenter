@@ -9,6 +9,7 @@ import type {
 	BrowserWorkerInbound,
 	BrowserWorkspaceManifest,
 } from './browser-runtime-protocol.js';
+import { type CanonicalKv, createCanonicalKv } from './canonical-kv.js';
 import {
 	type CanonicalRecords,
 	createCanonicalRecords,
@@ -18,6 +19,7 @@ import {
 	type CanonicalReplicaTransport,
 	createCanonicalReplica,
 } from './canonical-replica.js';
+import type { KvDefinitions } from './kv-definition.js';
 import { defineTable, type TableLensDefinitions } from './lens-definition.js';
 
 type WorkerScope = {
@@ -32,6 +34,7 @@ type OpenedRecords = {
 	manifest: BrowserWorkspaceManifest;
 	database: Database;
 	records: CanonicalRecords;
+	kv: CanonicalKv<KvDefinitions>;
 	replica?: CanonicalReplica;
 };
 
@@ -92,6 +95,11 @@ async function openRecords(
 				const records = createCanonicalRecords(sqlite, definitions, {
 					admit: replica?.admit,
 				});
+				const kv = createCanonicalKv(
+					sqlite,
+					(manifest.kv ?? {}) as KvDefinitions,
+					{ admit: replica?.admit },
+				);
 				if (replica) {
 					synchronize(replica, manifest.workspaceId);
 					setInterval(
@@ -103,6 +111,7 @@ async function openRecords(
 					manifest,
 					database,
 					records,
+					kv,
 					replica,
 				};
 			} catch (cause) {
@@ -119,6 +128,7 @@ async function openRecords(
 	if (
 		state.manifest.storageKey !== manifest.storageKey ||
 		JSON.stringify(state.manifest.tables) !== JSON.stringify(manifest.tables) ||
+		JSON.stringify(state.manifest.kv) !== JSON.stringify(manifest.kv) ||
 		JSON.stringify(state.manifest.recordSync) !==
 			JSON.stringify(manifest.recordSync)
 	) {
@@ -179,10 +189,18 @@ function tableFor(records: CanonicalRecords, name: string) {
 	return table;
 }
 
-function execute(records: CanonicalRecords, operation: BrowserRecordOperation) {
+function execute(state: OpenedRecords, operation: BrowserRecordOperation) {
+	const { records } = state;
 	switch (operation.kind) {
 		case 'get':
 			return tableFor(records, operation.table).get(operation.id);
+		case 'kv-get':
+			return state.kv.get(operation.key);
+		case 'kv-set':
+			return state.kv.set(operation.key, operation.value as never);
+		case 'kv-unset':
+			state.kv.unset(operation.key);
+			return undefined;
 		case 'scan':
 			return tableFor(records, operation.table).scan(operation.options);
 		case 'create':
@@ -224,12 +242,14 @@ scope.addEventListener('message', (event) => {
 	tail = tail.then(async () => {
 		try {
 			const state = await openRecords(request.manifest);
-			const value = execute(state.records, request.operation);
+			const value = execute(state, request.operation);
 			scope.postMessage({ type: 'result', id: request.id, value });
 			if (
 				request.operation.kind === 'create' ||
 				request.operation.kind === 'patch' ||
-				request.operation.kind === 'delete'
+				request.operation.kind === 'delete' ||
+				request.operation.kind === 'kv-set' ||
+				request.operation.kind === 'kv-unset'
 			) {
 				scope.postMessage({
 					type: 'records-changed',

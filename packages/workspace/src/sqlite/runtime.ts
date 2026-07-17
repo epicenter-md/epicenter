@@ -4,6 +4,12 @@ import type {
 	SqliteValue,
 } from '@epicenter/record-sync';
 import type { Static, TSchema } from 'typebox';
+import type * as Y from 'yjs';
+import type { BodyDefinition, BodyFormat } from './body-definition.js';
+import {
+	type CanonicalBodies,
+	createCanonicalBodies,
+} from './canonical-bodies.js';
 import { type CanonicalKv, createCanonicalKv } from './canonical-kv.js';
 import type { CanonicalRecords, CanonicalTable } from './canonical-records.js';
 import { createCanonicalRecords } from './canonical-records.js';
@@ -55,8 +61,22 @@ type AsyncCanonicalTable<TDefinition extends TableLensDefinition> = {
 	delete(id: string): Promise<void>;
 };
 
+/** One opened row body; format is fixed by the table declaration. */
+export type OpenedWorkspaceBody<TFormat extends BodyFormat = BodyFormat> = {
+	content: TFormat extends 'richText' ? Y.XmlFragment : Y.Text;
+	/** Resolves once every edit issued so far is durably committed. */
+	whenDurable(): Promise<void>;
+	[Symbol.dispose](): void;
+};
+
+type TableBodySurface<TDefinition extends TableLensDefinition> =
+	TDefinition extends { body: BodyDefinition<infer TFormat> }
+		? { body: { open(id: string): Promise<OpenedWorkspaceBody<TFormat>> } }
+		: { body?: never };
+
 export type WorkspaceTables<TTables extends TableLensDefinitions> = {
-	[K in keyof TTables]: AsyncCanonicalTable<TTables[K]>;
+	[K in keyof TTables]: AsyncCanonicalTable<TTables[K]> &
+		TableBodySurface<TTables[K]>;
 };
 
 export type WorkspaceRecords = {
@@ -132,6 +152,7 @@ type RuntimeEntry = {
 		owner: WorkspaceRecordOwner;
 		records: CanonicalRecords;
 		kv: CanonicalKv<KvDefinitions>;
+		bodies: CanonicalBodies;
 	}>;
 };
 
@@ -180,6 +201,9 @@ export function createWorkspaceRuntime({
 					kv: createCanonicalKv(owner.sqlite, entry.definition.kv, {
 						admit: owner.admit,
 					}),
+					bodies: createCanonicalBodies(owner.sqlite, {
+						admit: owner.admit,
+					}),
 				};
 			} catch (cause) {
 				try {
@@ -208,7 +232,8 @@ export function createWorkspaceRuntime({
 		entry: RuntimeEntry,
 	): OpenedWorkspace<TDefinition> {
 		const tables = Object.fromEntries(
-			Object.keys(definition.tables).map((name) => {
+			Object.entries(definition.tables).map(([name, tableDefinition]) => {
+				const bodyDefinition = tableDefinition.body;
 				const table = {
 					async get(id: string) {
 						return tableFor(await recordsFor(entry), name).get(id);
@@ -223,8 +248,31 @@ export function createWorkspaceRuntime({
 						return tableFor(await recordsFor(entry), name).patch(id, patch);
 					},
 					async delete(id: string) {
-						tableFor(await recordsFor(entry), name).delete(id);
+						const opened = await openedFor(entry);
+						tableFor(opened.records, name).delete(id);
+						// Deletion is permanent: the local body log dies with it.
+						opened.bodies.purgeRow(name, id);
 					},
+					...(bodyDefinition
+						? {
+								body: Object.freeze({
+									async open(id: string): Promise<OpenedWorkspaceBody> {
+										const opened = await openedFor(entry);
+										const handle = opened.bodies.open(name, id);
+										return {
+											content:
+												bodyDefinition.format === 'richText'
+													? handle.doc.getXmlFragment('body')
+													: handle.doc.getText('body'),
+											whenDurable: handle.whenDurable,
+											[Symbol.dispose]() {
+												handle[Symbol.dispose]();
+											},
+										};
+									},
+								}),
+							}
+						: {}),
 				};
 				return [name, Object.freeze(table)];
 			}),
