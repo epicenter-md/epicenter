@@ -2,79 +2,93 @@
 
 - **Status:** Proposed
 - **Date:** 2026-07-16
-- **Relates:** [ADR-0106](0106-a-child-doc-body-owns-one-layout-the-polymorphic-timeline-is-refused-until-a-product-earns-it.md), [ADR-0107](0107-a-child-doc-text-body-is-a-plain-y-text-the-timeline-array-is-deleted.md), [ADR-0130](0130-workspace-definitions-expose-tables-with-row-owned-bodies-and-a-release-local-kv-lens.md), [ADR-0131](0131-record-sync-folds-sealed-replica-rounds-without-refusal.md)
+- **Relates:** [ADR-0130](0130-workspace-definitions-expose-tables-with-row-owned-bodies-and-a-release-local-kv-lens.md), [ADR-0131](0131-row-sync-folds-sealed-row-intent-rounds-without-refusal.md), [ADR-0134](0134-replicas-store-confirmed-state-and-compacted-row-intents.md), [ADR-0135](0135-row-bodies-have-one-content-root.md), [ADR-0136](0136-replica-bootstrap-uses-a-disposable-anchored-live-scan.md)
 
 ## Context
 
-ADR-0130 makes a body row-owned with no public identity, but today's records
-authority and Yjs rooms are independently addressable, so no single transaction
-can prove a row is live while accepting or purging its body updates. The
-open mechanisms were the authority topology, the update addressing, the
-offline story before a create is accepted, and the browser durability
-acknowledgement. A prototype (30 executable trace checks) ran the full
-lifecycle against one candidate topology: body updates as commands in the
-record authority's own order.
+ADR-0130 makes a collaborative body row-owned with no public identity. The
+authority must accept body updates and row deletion under one liveness rule and
+one transaction. Independent Yjs rooms cannot provide that boundary. The
+remaining question is how confirmed body outcomes are retained and replicated
+without turning the authority into a Yjs document runtime.
 
 ## Decision
 
-A row body is a per-row log of opaque CRDT update payloads inside the record
-authority, written by one new command: `bodyAppend(table, rowId, update)`.
-The command rides the same outbox, sealed rounds, server order, state pages,
-snapshots, and compaction floor as row commands.
+The record authority stores each accepted row-body update as opaque bytes under
+the one authority sequence assigned to its applied `RowIntent`. When fields and
+body both apply, the fields' current postimage and body update share one
+composite row outcome at that sequence. This sequence-addressed body tail is
+confirmed transport, not a fourth mutation command and not the replica's
+canonical body representation.
 
-- **Liveness is the fold rule.** `bodyAppend` on a live row appends;
-  on an absent row (never created, or dead forever) it is an accepted
-  deterministic no-op, exactly like `patchRow` on absence. `deleteRow` purges
-  the row's authoritative body log in the same fold. There is no incarnation
-  token, lifetime integer, or fencing state; late updates from a deleted
-  lifetime are permanently inert because absence is permanent (ADR-0131).
-- **Updates are addressed by their authority sequence,** never by a per-row
-  array index. Positional addressing diverges after compaction reindexes a
-  log; the sequence is the one stable, monotone address the protocol already
-  owns.
-- **Offline parking is outbox ordering.** A body opened and edited before its
-  row's create is accepted needs no parking state: the create precedes its
-  appends in the same round, so the authority folds them in order.
-- **A replica drops queued body edits for a row the authority reports
-  deleted** (the deletion fence). Appends already sealed into an in-flight
-  round are immutable and rely on the authority fold instead.
-- **Compaction merges a row's covered update prefix into one baseline** at the
-  snapshot floor, through an injected merge function; the sync core stays
-  CRDT-library-free and treats update bytes as opaque everywhere else.
-  Snapshots carry the merged baseline per live row.
-- **An edit is durable when the local SQLite transaction that stores its
-  update and its outbox command commits.** The opened body exposes that
-  acknowledgement (`whenDurable()`); whether editors await it per keystroke or
-  only on close/discard is a browser measurement, not a semantic question.
+The authority treats update bytes as opaque. It does not inspect Yjs roots,
+choose document layouts, or decide editor schema. The fixed supported layout is
+a client API contract owned by ADR-0135; update encoding compatibility belongs
+to the workspace protocol major.
+
+RowIntent folding owns body liveness:
+
+- A successful `create` may install its initial fields and body update in one
+  transaction. A create collision no-ops as a whole, so body bytes cannot merge
+  into another row lifetime.
+- `update` on an absent row no-ops as a whole. On a live row, a valid body
+  component appends even when an unrelated field component no-ops under the
+  scalar capacity rule.
+- `delete` removes the row and all authoritative body state in one transaction.
+  Late updates for the absent address remain deterministic no-ops.
+
+A create with an initial body is one intent, so there is no scalar-before-body
+command order and no separate offline parking state. Every ordinary row is
+body-capable, but an empty body persists no update; absence is the merge identity.
+
+Body updates use their authority sequence, never a per-row positional index.
+Compaction may reindex a physical list, while the global sequence remains the
+stable replication cursor already owned by state paging.
+
+The authority stores each body's compacted baseline with the authority sequence
+through which it is complete, plus every retained body outcome above that
+sequence. The retention floor is the greatest authority sequence below which
+ordinary outcomes may be removed. Body compaction may fold outcomes only through
+that floor, so every outcome above the floor remains available to catch-up.
+
+An injected codec merges a baseline and its retained tail for compaction and
+bootstrap; ordinary authority folding remains append-only and byte-opaque. The
+sync core stays CRDT-library-free. Merge and application are idempotent: a
+baseline or update installed twice hydrates to the same Yjs state. ADR-0136
+scans the complete baseline-plus-tail composite and then replays outcomes after
+its anchor; overlap is safe because Yjs updates are idempotent.
+
+State pages emit one composite row outcome per applied RowIntent. It may carry
+the latest scalar row image, the incremental body update, or both. Delete is a
+separate outcome. This is not a return to authorship commands: the field value
+is a confirmed postimage, and the body component comes from the retained
+incremental tail.
 
 ## Consequences
 
-- One authority, one order, one crash boundary: a body update concurrent with
-  row deletion cannot survive it, and the deletion race, late-update,
-  crash/reopen, catch-up, snapshot, and compaction traces are the row traces.
-- Interior text merge stays earned: bodies keep a real CRDT merge engine while
-  rows and KV stay plain JSON under server order.
-- The authority gains one responsibility it did not have: merge-aware
-  compaction of body bytes. Injection keeps the dependency at the composition
-  seam (the same pattern as the injected `sha256`), but an authority that
-  never compacts bodies keeps an unbounded per-row log between snapshots.
-- Body bytes count against round and page budgets like any command payload;
-  very large pastes page like any large state.
-- Per-room Yjs transports for record-owned bodies are retired when this
-  lands; body transport is the record sync exchange. (Free-standing
-  collaborative documents outside tables are unaffected; ADR-0130 already
-  removed them from workspace definitions.)
+- Row fields and body share one authority, order, liveness rule, and delete
+  transaction even though their confirmed transport shapes differ.
+- Body updates concurrent with deletion cannot survive the deletion fold.
+- Replicas store one confirmed merged body baseline plus at most one sealed and
+  one open body component; they do not retain the authority tail locally.
+- Interior collaborative merge remains earned while ordinary fields and KV stay
+  plain JSON under authority order.
+- The authority owns merge-aware compaction through an injected codec. Without
+  compaction, a hot body's retained tail and baseline-scan work grow without
+  bound.
+- Per-room Yjs transports, catalogs, and persistence for row-owned bodies are
+  replacement targets.
 
 ## Considered alternatives
 
-- **Independent Yjs rooms keyed by row id (status quo).** Cannot atomically
-  prove row liveness when accepting or purging body state; deletion and
-  recreation races live in the seam between two authorities.
-- **Authority-assigned row incarnation fencing.** Nothing left to fence under
-  dead-forever ids; adds a lifetime fact to every row for races that fold
-  rules already absorb.
-- **Per-row positional update indexes.** Falsified live: a replica that pulls
-  a reindexed update after compaction overwrites a different update stored at
-  that index and diverges.
-- **Unbounded append log without merge-aware compaction.** Keeps the core
-  byte-opaque but lets a hot document's log grow without bound; refused.
+- **Keep `bodyAppend` as a wire command.** Rejected because the update is a
+  component of `RowIntent`; the authority tail does not define authorship.
+- **Independent Yjs rooms keyed by row id.** Rejected because row deletion and
+  body acceptance would remain split across authorities.
+- **Per-row positional update indexes.** Rejected because compaction can reuse
+  an index for different bytes and make replicas diverge.
+- **Hydrate Yjs inside ordinary authority folding.** Rejected because only
+  compaction needs merge awareness; admission, storage, paging, and deletion
+  can stay byte-opaque.
+- **Unbounded update tails.** Rejected because a hot collaborative body would
+  grow authority storage and baseline-scan work forever.

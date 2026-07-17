@@ -53,8 +53,9 @@ cutover removed them forever.
 
 Physical runtime tables may evolve through internal SQLite storage migrations
 because they do not reinterpret canonical payload meaning. Connection-local SQL
-views change with the release and need no migration. Yjs document format
-identity evolves independently under ADR-0124.
+views change with the release and need no migration. Row-body root identity is
+fixed by ADR-0135. Yjs binary update compatibility evolves through the
+workspace protocol and storage major, not record lenses.
 
 ## Consequences
 

@@ -182,8 +182,8 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0103](0103-stt-overspend-is-guarded-in-trigger-order-never-by-media-preflight.md) | STT overspend is bounded by cheap guards in trigger order, never by media preflight or a reservation lock | Accepted |
 | [0104](0104-hosted-models-are-a-build-time-seed-not-discovered-the-runtime-overlay-is-deferred.md) | Hosted models are a build-time seed catalog, not a discovered one; a runtime overlay is a named deferral | Accepted |
 | [0105](0105-vocab-is-a-multilingual-tutor-and-readings-are-a-client-side-derived-view.md) | Vocab is a multilingual tutor and readings are a client-side derived view | Accepted |
-| [0106](0106-a-child-doc-body-owns-one-layout-the-polymorphic-timeline-is-refused-until-a-product-earns-it.md) | A child-doc body owns one layout; the polymorphic timeline is refused until a product earns it | Accepted |
-| [0107](0107-a-child-doc-text-body-is-a-plain-y-text-the-timeline-array-is-deleted.md) | A child-doc text body is a plain `Y.Text`; the timeline array is deleted | Accepted |
+| [0106](0106-a-child-doc-body-owns-one-layout-the-polymorphic-timeline-is-refused-until-a-product-earns-it.md) | A child-doc body owns one layout; the polymorphic timeline is refused until a product earns it | Accepted (row-body layout amended by 0135) |
+| [0107](0107-a-child-doc-text-body-is-a-plain-y-text-the-timeline-array-is-deleted.md) | A child-doc text body is a plain `Y.Text`; the timeline array is deleted | Accepted (row-body root amended by 0135) |
 | [0108](0108-provider-credentials-are-selected-by-target-environment-encoded-in-the-secret-name.md) | Third-party provider credentials are selected by the app's target provider-environment, encoded in the secret name and resolved by one injected helper | Accepted |
 | [0109](0109-hosted-tauri-auth-keeps-app-owned-keyring-edges-until-three-real-callers-earn-sharing.md) | Hosted Tauri auth keeps app-owned keyring edges until three real callers earn sharing | Accepted |
 | [0110](0110-edit-write-timing-follows-the-value-owner-there-is-no-debounce-tier.md) | Edit write timing follows the value owner; there is no debounce tier | Accepted |
@@ -195,10 +195,10 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0116](0116-local-mail-is-desktop-first-one-bun-engine-no-background-mail-service.md) | Local Mail is desktop-first: one Bun engine, no background mail service, the open app owns the sync loop | Accepted |
 | [0117](0117-global-shortcut-input-is-plugin-chords-only-and-the-macos-tap-is-just-the-paste-grant-watcher.md) | Global shortcut input is plugin chords only, and the macOS tap is just the paste grant watcher | Accepted |
 | [0118](0118-epicenter-is-one-trusted-bun-hosted-spa-origin.md) | Epicenter is one trusted Bun-hosted SPA origin | Accepted |
-| [0119](0119-complete-record-maps-sync-through-schema-blind-server-ordered-patches.md) | Complete record maps sync through schema-blind server-ordered patches | Accepted (refusal recovery, per-command actor sequences, and create-refuses-duplicate superseded by 0131) |
+| [0119](0119-complete-record-maps-sync-through-schema-blind-server-ordered-patches.md) | Complete record maps sync through schema-blind server-ordered patches | Accepted |
 | [0120](0120-fields-validate-present-values-and-table-lenses-own-presence.md) | Fields validate present values and table lenses own presence | Accepted |
-| [0121](0121-background-sync-resolves-key-conflicts-by-server-order.md) | Background sync resolves key conflicts by server order | Accepted (extended to capacity and identity conflicts by 0131) |
-| [0122](0122-logical-records-are-portable-sqlite-files-and-views-are-runtime-state.md) | Logical records are portable; SQLite files and views are runtime state | Accepted (checkpoint actor high-water marks become replica rounds via 0131) |
+| [0121](0121-background-sync-resolves-key-conflicts-by-server-order.md) | Background sync resolves key conflicts by server order | Accepted |
+| [0122](0122-logical-records-are-portable-sqlite-files-and-views-are-runtime-state.md) | Logical records are portable; SQLite files and views are runtime state | Accepted |
 | [0123](0123-bounded-metadata-uses-record-authority-merge-sensitive-state-uses-lazy-child-documents.md) | Bounded metadata uses record authority; merge-sensitive state uses lazy child documents | Superseded by 0124 |
 | [0124](0124-workspace-documents-are-top-level-parameterized-resources.md) | Workspace documents are top-level parameterized resources | Accepted |
 | [0125](0125-record-definitions-are-release-local-lenses-and-never-migrate-user-data.md) | Record definitions are release-local lenses and never migrate user data | Accepted |
@@ -207,8 +207,11 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0128](0128-tables-do-not-declare-document-edit-touch-policy-without-a-runtime-owner.md) | Tables do not declare document-edit touch policy without a runtime owner | Accepted |
 | [0129](0129-matter-and-workspace-share-fields-not-authority-policy.md) | Matter and Workspace share fields, not authority policy | Accepted |
 | [0130](0130-workspace-definitions-expose-tables-with-row-owned-bodies-and-a-release-local-kv-lens.md) | Workspace definitions expose tables with row-owned bodies and a release-local KV lens | Proposed |
-| [0131](0131-record-sync-folds-sealed-replica-rounds-without-refusal.md) | Record sync folds sealed replica rounds without refusal | Proposed |
+| [0131](0131-row-sync-folds-sealed-row-intent-rounds-without-refusal.md) | Row sync folds sealed RowIntent rounds without refusal | Proposed |
 | [0132](0132-workspace-kv-is-one-reserved-immortal-record-in-the-record-map.md) | Workspace KV is one reserved immortal record in the record map | Proposed |
 | [0133](0133-row-bodies-are-sequence-addressed-update-logs-in-the-record-authority.md) | Row bodies are sequence-addressed update logs in the record authority | Proposed |
+| [0134](0134-replicas-store-confirmed-state-and-compacted-row-intents.md) | Replicas store confirmed state and compacted RowIntents | Proposed |
+| [0135](0135-row-bodies-have-one-content-root.md) | Row bodies have one `content` root | Proposed |
+| [0136](0136-replica-bootstrap-uses-a-disposable-anchored-live-scan.md) | Replica bootstrap uses a disposable anchored live scan | Proposed |
 
 When you add an ADR, add its row here.
