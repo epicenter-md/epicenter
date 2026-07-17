@@ -9,8 +9,8 @@
 
 Selecting a text or rich-text layout per table makes body format a permanent
 table contract. That requires declarations, authority pins, admission checks,
-ordered contract outcomes, replica metadata, bootstrap sections, and migration
-rules. Giving every body separate text and rich-text roots avoids negotiation,
+ordered contract outcomes, replica metadata, baseline-acquisition sections, and
+migration rules. Giving every body separate text and rich-text roots avoids negotiation,
 but preserves two canonical values and forces applications to decide whether
 they are related.
 
@@ -80,8 +80,8 @@ workspace layer.
 ## Consequences
 
 - The body declaration API, contract identifiers, authority contract pins,
-  contract protocol entries, contract tables, and contract bootstrap sections
-  disappear.
+  contract protocol entries, contract tables, and contract baseline-acquisition
+  sections disappear.
 - The separate `TextBody` and `RichTextBody` handles, dual-root hydration, and
   questions about which value is canonical disappear.
 - Direct `Y.Doc` accessors, generic roots, automatic conversion, active-body

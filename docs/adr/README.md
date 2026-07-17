@@ -212,6 +212,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0133](0133-row-bodies-are-sequence-addressed-update-logs-in-the-record-authority.md) | Row bodies are sequence-addressed update logs in the record authority | Proposed |
 | [0134](0134-replicas-store-confirmed-state-and-compacted-row-intents.md) | Replicas store confirmed state and compacted RowIntents | Proposed |
 | [0135](0135-row-bodies-have-one-content-root.md) | Row bodies have one `content` root | Proposed |
-| [0136](0136-replica-bootstrap-uses-a-disposable-anchored-live-scan.md) | Replica bootstrap uses a disposable anchored live scan | Proposed |
+| [0136](0136-replica-baseline-acquisition-uses-a-disposable-anchored-live-scan.md) | Replica baseline acquisition uses a disposable anchored live scan | Proposed |
 
 When you add an ADR, add its row here.

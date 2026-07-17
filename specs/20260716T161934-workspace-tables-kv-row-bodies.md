@@ -18,7 +18,7 @@ live behind one typed KV lens.
 - [ADR-0133](../docs/adr/0133-row-bodies-are-sequence-addressed-update-logs-in-the-record-authority.md): authority body outcomes.
 - [ADR-0134](../docs/adr/0134-replicas-store-confirmed-state-and-compacted-row-intents.md): replica storage and durability.
 - [ADR-0135](../docs/adr/0135-row-bodies-have-one-content-root.md): one fixed body root.
-- [ADR-0136](../docs/adr/0136-replica-bootstrap-uses-a-disposable-anchored-live-scan.md): bootstrap without snapshot products.
+- [ADR-0136](../docs/adr/0136-replica-baseline-acquisition-uses-a-disposable-anchored-live-scan.md): baseline acquisition without snapshot products.
 
 Internal protocol, storage, and replacement work lives in
 [`20260716T204040-confirmed-state-compacted-row-intents.md`](20260716T204040-confirmed-state-compacted-row-intents.md).
@@ -125,6 +125,12 @@ include an initial body update. Update may change fields, body, or both. Delete
 ends the full row lifetime, revokes handles, and cascades through fields and body.
 Row ids are minted by the runtime and never reused.
 
+Ordinary scalar fields use absolute set/unset and later authority acceptance
+wins. Device clocks and authorship timestamps do not arbitrate conflicts. The
+body uses Yjs merge. A critical workflow whose correctness depends on current
+authority state belongs in an application-specific authority operation, not in
+stronger generic field semantics.
+
 ## KV surface
 
 ```ts
@@ -136,7 +142,7 @@ await client.kv['editor.spellcheck'].unset();
 All declared keys are optional in canonical storage. Reads return a conforming
 value, absence, or an honest nonconforming error containing the raw value.
 Applications own defaults and repair. Unknown and nonconforming values survive
-old releases, bootstrap, import, and export.
+old releases, baseline acquisition, import, and export.
 
 Different keys compose independently under authority order. A nested JSON value
 replaces atomically. There is no `patchKv`, default materialization, dynamic key
@@ -204,8 +210,8 @@ from these refusals.
 - [ ] Stop production imports of top-level documents, child rooms, `.docs`,
   `defineKv`, body declarations, and compatibility handles.
 - [ ] Prove offline create/edit/reopen/delete, both target editor bindings,
-  handle races, two-replica merge, bootstrap, unknown KV preservation, and
-  export/import.
+  handle races, two-replica merge, baseline acquisition, unknown KV
+  preservation, and export/import.
 - [ ] Smoke test each migrated consumer.
 
 ### Wave 5: Delete and publish current truth

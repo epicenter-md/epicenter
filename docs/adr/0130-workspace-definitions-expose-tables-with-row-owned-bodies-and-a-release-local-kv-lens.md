@@ -3,7 +3,7 @@
 - **Status:** Proposed
 - **Date:** 2026-07-16
 - **Supersedes:** [ADR-0093](0093-kv-metadata-belongs-to-the-workspace-kv-namespace.md), [ADR-0124](0124-workspace-documents-are-top-level-parameterized-resources.md)
-- **Relates:** [ADR-0120](0120-fields-validate-present-values-and-table-lenses-own-presence.md), [ADR-0121](0121-background-sync-resolves-key-conflicts-by-server-order.md), [ADR-0122](0122-logical-records-are-portable-sqlite-files-and-views-are-runtime-state.md), [ADR-0125](0125-record-definitions-are-release-local-lenses-and-never-migrate-user-data.md), [ADR-0128](0128-tables-do-not-declare-document-edit-touch-policy-without-a-runtime-owner.md), [ADR-0131](0131-row-sync-folds-sealed-row-intent-rounds-without-refusal.md), [ADR-0132](0132-workspace-kv-is-one-reserved-immortal-record-in-the-record-map.md), [ADR-0133](0133-row-bodies-are-sequence-addressed-update-logs-in-the-record-authority.md), [ADR-0134](0134-replicas-store-confirmed-state-and-compacted-row-intents.md), [ADR-0135](0135-row-bodies-have-one-content-root.md), [ADR-0136](0136-replica-bootstrap-uses-a-disposable-anchored-live-scan.md)
+- **Relates:** [ADR-0120](0120-fields-validate-present-values-and-table-lenses-own-presence.md), [ADR-0121](0121-background-sync-resolves-key-conflicts-by-server-order.md), [ADR-0122](0122-logical-records-are-portable-sqlite-files-and-views-are-runtime-state.md), [ADR-0125](0125-record-definitions-are-release-local-lenses-and-never-migrate-user-data.md), [ADR-0128](0128-tables-do-not-declare-document-edit-touch-policy-without-a-runtime-owner.md), [ADR-0131](0131-row-sync-folds-sealed-row-intent-rounds-without-refusal.md), [ADR-0132](0132-workspace-kv-is-one-reserved-immortal-record-in-the-record-map.md), [ADR-0133](0133-row-bodies-are-sequence-addressed-update-logs-in-the-record-authority.md), [ADR-0134](0134-replicas-store-confirmed-state-and-compacted-row-intents.md), [ADR-0135](0135-row-bodies-have-one-content-root.md), [ADR-0136](0136-replica-baseline-acquisition-uses-a-disposable-anchored-live-scan.md)
 
 ## Context
 
@@ -64,6 +64,13 @@ is never reused. `record` remains the internal name for the schema-opaque JSON
 component; `body` names the collaborative component. `object`, `entity`, and
 `document` do not become parallel public lifecycle nouns.
 
+Ordinary row fields are last-accepted-wins values under authority order. Device
+time and authorship time do not change that order. A field is therefore the
+right model only when a later accepted absolute value may replace an earlier
+one. Collaborative content uses the row body; a workflow whose correctness
+depends on validation against current authority state uses an application-
+specific authority operation instead of stronger field conflict machinery.
+
 The `kv` object is itself the definition. Its entries are present-value schemas,
 not wrappers with stored defaults. Canonical KV stores bounded JSON independently
 of any release. Every key is optional in storage. A typed read returns a
@@ -73,11 +80,12 @@ never materialize defaults, repair values, delete unknown keys, or migrate data.
 
 Different KV keys are independent merge units. Concurrent changes to different
 keys compose; changes to the same key follow authority order. Nested JSON values
-replace atomically. Synchronization, bootstrap, import, and ownership export
-preserve unknown and nonconforming bounded JSON.
+replace atomically. Synchronization, baseline acquisition, import, and ownership
+export preserve unknown and nonconforming bounded JSON.
 
 ADRs 0131 through 0136 own RowIntent, the reserved KV representation,
-authority body outcomes, replica storage, the fixed body layout, and bootstrap.
+authority body outcomes, replica storage, the fixed body layout, and baseline
+acquisition.
 Those private mechanisms must not leak into the public workspace vocabulary.
 
 ## Consequences

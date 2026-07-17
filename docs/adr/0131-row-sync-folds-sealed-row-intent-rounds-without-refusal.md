@@ -3,7 +3,7 @@
 - **Status:** Proposed
 - **Date:** 2026-07-16
 - **Supersedes:** [ADR-0119](0119-complete-record-maps-sync-through-schema-blind-server-ordered-patches.md)
-- **Relates:** [ADR-0120](0120-fields-validate-present-values-and-table-lenses-own-presence.md), [ADR-0121](0121-background-sync-resolves-key-conflicts-by-server-order.md), [ADR-0122](0122-logical-records-are-portable-sqlite-files-and-views-are-runtime-state.md), [ADR-0130](0130-workspace-definitions-expose-tables-with-row-owned-bodies-and-a-release-local-kv-lens.md), [ADR-0132](0132-workspace-kv-is-one-reserved-immortal-record-in-the-record-map.md), [ADR-0133](0133-row-bodies-are-sequence-addressed-update-logs-in-the-record-authority.md), [ADR-0134](0134-replicas-store-confirmed-state-and-compacted-row-intents.md), [ADR-0135](0135-row-bodies-have-one-content-root.md), [ADR-0136](0136-replica-bootstrap-uses-a-disposable-anchored-live-scan.md)
+- **Relates:** [ADR-0120](0120-fields-validate-present-values-and-table-lenses-own-presence.md), [ADR-0121](0121-background-sync-resolves-key-conflicts-by-server-order.md), [ADR-0122](0122-logical-records-are-portable-sqlite-files-and-views-are-runtime-state.md), [ADR-0130](0130-workspace-definitions-expose-tables-with-row-owned-bodies-and-a-release-local-kv-lens.md), [ADR-0132](0132-workspace-kv-is-one-reserved-immortal-record-in-the-record-map.md), [ADR-0133](0133-row-bodies-are-sequence-addressed-update-logs-in-the-record-authority.md), [ADR-0134](0134-replicas-store-confirmed-state-and-compacted-row-intents.md), [ADR-0135](0135-row-bodies-have-one-content-root.md), [ADR-0136](0136-replica-baseline-acquisition-uses-a-disposable-anchored-live-scan.md)
 
 ## Context
 
@@ -75,6 +75,31 @@ A `RowIntent` is one lifecycle atom, not one all-or-nothing application atom:
 - `delete` removes the row fields and body state in one authority transaction.
   Delete on absence is a deterministic no-op.
 
+Conflict semantics follow the kind of data being changed:
+
+```txt
+ordinary scalar fields
+  absolute set/unset
+  later authority acceptance wins
+
+collaborative body
+  Yjs CRDT merge
+
+critical workflow
+  application-specific authority operation with its own validation and transaction
+```
+
+Scalar field changes fold in authority acceptance order. Device clocks,
+authorship timestamps, and offline duration do not participate in conflict
+resolution. Consequently, an older offline field change may supersede a
+newer-authored change when the authority accepts the offline change later.
+
+An application must not encode a workflow as ordinary fields when silently
+losing one participant's update would violate a business invariant. Inventory
+reservation, balance transfer, uniqueness claims, and similar operations need
+an application-specific authority operation. RowIntent does not grow compare-
+and-set, clock arbitration, or a generic remote transaction language for them.
+
 The reserved KV address accepts only field-bearing `update` intents. It folds
 an absent physical payload from `{}`, materializes on first write, and rejects
 `create`, `delete`, and body-bearing intents before sealing.
@@ -103,11 +128,18 @@ is a terminal replica fork. The sealed round stays durable through every
 response page and retires only after the exchange reaches head.
 
 The accepted-round triple is the durable head of that replica's retry chain and
-is not removed by outcome-tail compaction or replica bootstrap. It remains for
-the workspace lifetime unless the replica is explicitly and permanently revoked.
-Bootstrap keeps the same replica id, sealed round, digest, and canonical
-RowIntent rows. Scratch confirmed state is disposable; authored intent and
-exact-retry identity are not.
+is not removed by outcome-tail compaction or baseline acquisition. It remains
+for the workspace lifetime. Explicit revocation is terminal for that replica
+id: it cannot later present or remint a pending round under the revoked retry
+chain. Baseline acquisition keeps the same replica id, sealed round, digest,
+and canonical RowIntent rows. Scratch confirmed state is disposable; authored
+intent and exact-retry identity are not.
+
+Elapsed time never changes a durable RowIntent's eligibility. After baseline
+acquisition, the replica automatically retries its sealed round and seals newer
+open intent through the ordinary protocol. There is no expiration threshold,
+recovery copy, or stale-change review state. Ordinary RowIntent folding decides
+the result, so automatic submission does not promise that an old change wins.
 
 Confirmed outcome transport remains distinct from authorship intent. One
 applied RowIntent consumes one authority sequence and emits one composite row
@@ -121,7 +153,7 @@ across that gap.
 
 - ADR-0119's durable product semantics survive: complete schema-opaque replicas,
   absolute set/unset field changes, authority order, unknown-key preservation,
-  logical snapshots, no application history, and no partial replication.
+  logical ownership export, no application history, and no partial replication.
 - The three scalar commands and `bodyAppend` disappear from the wire. A create
   with an initial body needs no scalar-before-body ordering or parking rule.
 - Quarantine, dependent-intent partitioning, actor rotation, forced

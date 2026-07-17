@@ -2,7 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-07-16
-- **Relates:** [ADR-0130](0130-workspace-definitions-expose-tables-with-row-owned-bodies-and-a-release-local-kv-lens.md), [ADR-0131](0131-row-sync-folds-sealed-row-intent-rounds-without-refusal.md), [ADR-0134](0134-replicas-store-confirmed-state-and-compacted-row-intents.md), [ADR-0135](0135-row-bodies-have-one-content-root.md), [ADR-0136](0136-replica-bootstrap-uses-a-disposable-anchored-live-scan.md)
+- **Relates:** [ADR-0130](0130-workspace-definitions-expose-tables-with-row-owned-bodies-and-a-release-local-kv-lens.md), [ADR-0131](0131-row-sync-folds-sealed-row-intent-rounds-without-refusal.md), [ADR-0134](0134-replicas-store-confirmed-state-and-compacted-row-intents.md), [ADR-0135](0135-row-bodies-have-one-content-root.md), [ADR-0136](0136-replica-baseline-acquisition-uses-a-disposable-anchored-live-scan.md)
 
 ## Context
 
@@ -52,8 +52,8 @@ ordinary outcomes may be removed. Body compaction may fold outcomes only through
 that floor, so every outcome above the floor remains available to catch-up.
 
 An injected codec merges a baseline and its retained tail for compaction and
-bootstrap; ordinary authority folding remains append-only and byte-opaque. The
-sync core stays CRDT-library-free. Merge and application are idempotent: a
+baseline acquisition; ordinary authority folding remains append-only and
+byte-opaque. The sync core stays CRDT-library-free. Merge and application are idempotent: a
 baseline or update installed twice hydrates to the same Yjs state. ADR-0136
 scans the complete baseline-plus-tail composite and then replays outcomes after
 its anchor; overlap is safe because Yjs updates are idempotent.

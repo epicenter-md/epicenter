@@ -4,7 +4,7 @@
 **Status**: Draft
 **Owner**: Braden
 **Branch**: `codex/sqlite-sync-architecture`
-**Decisions**: [ADR-0131](../docs/adr/0131-row-sync-folds-sealed-row-intent-rounds-without-refusal.md), [ADR-0134](../docs/adr/0134-replicas-store-confirmed-state-and-compacted-row-intents.md), [ADR-0135](../docs/adr/0135-row-bodies-have-one-content-root.md), [ADR-0136](../docs/adr/0136-replica-bootstrap-uses-a-disposable-anchored-live-scan.md)
+**Decisions**: [ADR-0131](../docs/adr/0131-row-sync-folds-sealed-row-intent-rounds-without-refusal.md), [ADR-0134](../docs/adr/0134-replicas-store-confirmed-state-and-compacted-row-intents.md), [ADR-0135](../docs/adr/0135-row-bodies-have-one-content-root.md), [ADR-0136](../docs/adr/0136-replica-baseline-acquisition-uses-a-disposable-anchored-live-scan.md)
 **Depends on**: [ADR-0130](../docs/adr/0130-workspace-definitions-expose-tables-with-row-owned-bodies-and-a-release-local-kv-lens.md), [ADR-0132](../docs/adr/0132-workspace-kv-is-one-reserved-immortal-record-in-the-record-map.md), [ADR-0133](../docs/adr/0133-row-bodies-are-sequence-addressed-update-logs-in-the-record-authority.md)
 
 ## One sentence
@@ -125,13 +125,21 @@ sequence and emits one composite row outcome with a complete field postimage,
 a body update, or both. Delete emits one deletion outcome. Confirmed outcomes
 are installation facts, not a second mutation API.
 
+Scalar fields resolve only by authority acceptance order. Device clocks,
+authorship timestamps, and offline duration are not fold inputs. An older-
+authored absolute value may therefore replace a newer-authored value when it is
+accepted later. Collaborative content uses Yjs merge. Workflows that cannot
+tolerate last-accepted-wins use an application-specific authority operation
+with its own validation and transaction, not another RowIntent variant.
+
 The authority treats body bytes opaquely outside injected compaction. It knows
 neither root shape nor editor schema. Every workspace uses the same supported
 `content` root, so there are no table contracts, contract pins, or contract
 outcomes.
 Each body stores a compacted baseline with its completed-through sequence plus
 every retained update above it. The injected codec merges that composite only
-during compaction and bootstrap; the ordinary write path remains append-only.
+during compaction and baseline acquisition; the ordinary write path remains
+append-only.
 
 A deterministic no-op may consume an authority sequence without emitting a row
 fact. Page checkpoints advance across such gaps.
@@ -216,14 +224,16 @@ after the emitted update merges into the open RowIntent. A failed persistence
 write poisons the handle; reopen restores the last durable state. Every body
 write rechecks row liveness. Deletion revokes all handles.
 
-## Page installation and bootstrap
+## Page installation and baseline acquisition
 
 Each ordinary response page installs composite outcomes and advances the
 checkpoint in one transaction while retaining the sealed overlay. Only reaching
 head retires sealed intents and clears in-flight metadata. Open intent remains;
-lifecycle folding makes edits against dead rows inert.
+lifecycle folding resolves edits against dead rows through the ordinary
+deterministic no-op. The intent remains durable and eligible until that fold.
 
-Above the retention floor, sync returns ordinary outcomes. Below it, bootstrap:
+Above the retention floor, sync returns ordinary outcomes. A fresh replica or a
+replica below the floor acquires a baseline:
 
 1. Captures authority head `S` as the replay start.
 2. Scans complete live rows in stable address order, merging each body's
@@ -234,15 +244,32 @@ Above the retention floor, sync returns ordinary outcomes. Below it, bootstrap:
    fold cursor.
 6. Atomically promotes only when the scratch fold cursor is exactly `E`.
 
-Bootstrap scratch may be a temporary database or sidecar file. It is disposable,
-outside canonical schema, and never resumed after a process crash. A crash or
-floor race discards it and restarts. The authority stores no snapshot manifests,
-chunks, generations, or refreshable download sessions.
+Baseline acquisition exclusively owns the replica's network synchronization
+lane. Local edits may continue into canonical open RowIntents, but no ordinary
+page installs and no new or retry round submits until promotion completes.
+
+The adapter owns one disposable sidecar containing only `records` and `bodies`.
+Anchor `S`, address cursor, target `E`, and fold cursor live in memory. A live
+process may retry stateless pages after a disconnect; a process crash or floor
+race deletes the sidecar and restarts. The authority stores no snapshot
+manifests, chunks, generations, refreshable downloads, scan sessions, or floor
+pins. Completion requires one acquisition attempt to finish inside the retained
+outcome window; unbounded continuous churn may force repeated safe restarts.
 
 Replica id, open and sealed RowIntents, in-flight round, and request digest remain
-canonical throughout bootstrap. The authority retains each replica's accepted
-round and digest independently of outcome-tail compaction, so a lost-response
-retry cannot reapply a scalar field component.
+canonical throughout baseline acquisition. Promotion takes an exclusive
+workspace barrier: stop new canonical operations, drain emitted body persistence,
+revoke every live body handle, freeze scratch, replace `records` and `bodies`,
+set checkpoint `E`, rebuild projections, then release. Callers explicitly reopen
+body handles. The authority retains each replica's accepted round and digest
+independently of outcome-tail compaction, so a lost-response retry cannot reapply
+a scalar field component.
+
+The first ordinary exchange above `E` carries or retries the immutable sealed
+round; newer open intent then seals normally. Elapsed time never changes intent
+bytes or eligibility, and no expiry, recovery-copy, or stale-review branch
+exists. Automatic submission does not promise that old intent wins; the
+ordinary RowIntent fold resolves it.
 
 This is distinct from ownership export/import and operator disaster-recovery
 backups. Epicenter has no backup schedule, restore-point UI, retention policy,
@@ -277,10 +304,17 @@ those prove different non-negotiable invariants.
 - [ ] Edit `content` through each binding in separate fixtures, compact updates,
   close, reopen, and compare state.
 - [ ] Prove an untouched body persists no bytes.
-- [ ] Prove anchored live-scan bootstrap under concurrent create, update, delete,
+- [ ] Prove anchored baseline acquisition under concurrent create, update, delete,
   compaction-floor advance, crash, and restart.
-- [ ] Prove an unresolved sealed round and newer open intent survive bootstrap
-  without scalar reapplication or intent loss.
+- [ ] Prove an unresolved sealed round and newer open intent survive baseline
+  acquisition without scalar reapplication or intent loss.
+- [ ] Prove arbitrary elapsed time does not change durable intent bytes or
+  eligibility, and promotion automatically resumes sealed retry then open
+  sealing.
+- [ ] Prove scalar conflicts follow acceptance order regardless of authored
+  timestamps or device clocks.
+- [ ] Prove an undersized retained-outcome window causes a safe full retry, not
+  partial promotion or durable acquisition state.
 
 ### Wave 1: Replace protocol vocabulary
 
@@ -303,11 +337,13 @@ those prove different non-negotiable invariants.
 - [ ] Acknowledge only after SQLite commit.
 - [ ] Revoke handles and recheck liveness in every body write transaction.
 
-### Wave 4: Install outcomes and bootstrap
+### Wave 4: Install outcomes and acquire baselines
 
 - [ ] Retain sealed intent through every response page and retire only at head.
 - [ ] Install outcome and checkpoint atomically.
-- [ ] Implement disposable anchored live-scan scratch and atomic promotion.
+- [ ] Implement the two-table disposable sidecar, exclusive sync lane, promotion
+  barrier, and atomic replacement at checkpoint `E`.
+- [ ] Automatically resume sealed retry and newer open sealing after promotion.
 - [ ] Delete replay mutation and durable snapshot staging.
 
 ### Wave 5: Port consumers, stop imports, then delete
@@ -350,7 +386,8 @@ wave must nevertheless account for them explicitly:
   negotiation, second root, or automatic conversion.
 - [ ] SQLite has exactly four canonical tables for both sync modes.
 - [ ] Exact retry, bounded backlog, deletion, independent component fold,
-  durability, body compaction, and live-scan bootstrap proofs pass.
+  durability, body compaction, baseline acquisition, non-expiry, and automatic
+  submission proofs pass.
 - [ ] Current-truth docs and skills are updated only after implementation lands.
 
 ## References
