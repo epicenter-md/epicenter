@@ -192,6 +192,7 @@
 		"tinyexec": "^1.0.4"
 	},
 	"patchedDependencies": {
-		"y-indexeddb@9.0.12": "patches/y-indexeddb@9.0.12.patch"
+		"y-indexeddb@9.0.12": "patches/y-indexeddb@9.0.12.patch",
+		"@y/prosemirror@2.0.0-6": "patches/@y%2Fprosemirror@2.0.0-6.patch"
 	}
 }

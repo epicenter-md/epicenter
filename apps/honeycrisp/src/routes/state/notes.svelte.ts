@@ -1,57 +1,32 @@
-/**
- * Reactive notes state for Honeycrisp.
- *
- * Manages note CRUD operations and reactive note collections. Backed by
- * a Y.Doc CRDT table, so notes sync across devices. Clears URL search
- * param selection when a selected note is deleted.
- *
- * @example
- * ```svelte
- * <script>
- *   import { honeycrisp } from '$lib/honeycrisp';
- * </script>
- *
- * {#each honeycrisp.state.notes.all as note (note.id)}
- *   <p>{note.title}</p>
- * {/each}
- * <button onclick={() => honeycrisp.state.notes.create(null)}>New Note</button>
- * ```
- */
-
 import { InstantString } from '@epicenter/field';
-import {
-	type FolderId,
-	generateNoteId,
-	type NoteId,
+import type {
+	FolderId,
+	HoneycrispWorkspace,
+	Note,
+	NoteId,
+	notesTable,
 } from '@epicenter/honeycrisp';
-import { fromTable } from '@epicenter/svelte';
-import type { HoneycrispBrowser } from '$lib/workspace/browser';
-import type { createFolders } from './folders.svelte';
-import { searchParams } from './search-params.svelte';
+import type {
+	ConstrainedChanges,
+	RowLensError,
+} from '@epicenter/workspace/sqlite';
+import type { createFolders } from './folders.svelte.js';
+import { searchParams } from './search-params.svelte.js';
 
 export function createNotes({
 	folders,
 	honeycrisp,
 }: {
 	folders: ReturnType<typeof createFolders>;
-	honeycrisp: HoneycrispBrowser;
+	honeycrisp: HoneycrispWorkspace;
 }) {
-	// ─── Reactive State ──────────────────────────────────────────────────
+	let rows = $state.raw<Note[]>([]);
+	let nonconforming = $state.raw<RowLensError[]>([]);
+	let loadError = $state.raw<unknown>(null);
+	let refreshGeneration = 0;
 
-	const notesView = fromTable(honeycrisp.tables.notes);
-
-	/** All valid notes (including deleted). Cached, only recomputes when table changes. */
-	const allNotes = $derived(notesView.all);
-
-	// ─── Derived State ───────────────────────────────────────────────────
-
-	/** Active notes, not soft-deleted. */
-	const all = $derived(allNotes.filter((n) => n.deletedAt === null));
-
-	/** Soft-deleted notes for the Recently Deleted view. */
-	const deleted = $derived(allNotes.filter((n) => n.deletedAt !== null));
-
-	/** Per-folder note counts for the sidebar (active notes only). */
+	const all = $derived(rows.filter((note) => note.deletedAt === undefined));
+	const deleted = $derived(rows.filter((note) => note.deletedAt !== undefined));
 	const countsByFolder = $derived.by(() => {
 		const counts: Record<string, number> = {};
 		for (const note of all) {
@@ -62,16 +37,34 @@ export function createNotes({
 		return counts;
 	});
 
-	// ─── Public API ──────────────────────────────────────────────────────
+	async function refresh(): Promise<void> {
+		const generation = ++refreshGeneration;
+		try {
+			const scan = await honeycrisp.tables.notes.list();
+			if (generation !== refreshGeneration) return;
+			rows = scan.rows;
+			nonconforming = scan.nonconforming;
+			loadError = null;
+		} catch (cause) {
+			if (generation === refreshGeneration) loadError = cause;
+			throw cause;
+		}
+	}
+
+	async function update<const TChanges extends Record<string, unknown>>(
+		noteId: NoteId,
+		changes: TChanges & ConstrainedChanges<typeof notesTable, TChanges>,
+	): Promise<void> {
+		const result = await honeycrisp.tables.notes.update(noteId, changes);
+		if (result.error !== null) throw result.error;
+		await refresh();
+	}
 
 	return {
-		/**
-		 * Look up a note by ID. Returns `undefined` if not found.
-		 */
+		refresh,
 		get(id: NoteId) {
-			return notesView.byId(id);
+			return rows.find((note) => note.id === id);
 		},
-
 		get all() {
 			return all;
 		},
@@ -81,171 +74,76 @@ export function createNotes({
 		get countsByFolder() {
 			return countsByFolder;
 		},
+		get nonconforming() {
+			return nonconforming;
+		},
+		get loadError() {
+			return loadError;
+		},
 
-		/**
-		 * Create a new note in the given folder and return its ID.
-		 *
-		 * The note starts with an empty title and preview. Pass a folderId
-		 * to file the note, or omit/pass `undefined` to create it unfiled.
-		 * The caller is responsible for selecting the note afterward.
-		 *
-		 * @example
-		 * ```typescript
-		 * const { id } = app.state.notes.create(app.state.view.selectedFolderId);
-		 * app.state.view.selectNote(id);
-		 * ```
-		 */
-		create(folderId: FolderId | null) {
-			const id = generateNoteId();
-			honeycrisp.tables.notes.set({
-				id,
-				folderId,
+		async create(folderId: FolderId | null): Promise<{ id: NoteId }> {
+			const now = InstantString.now();
+			const note = await honeycrisp.tables.notes.create({
+				...(folderId === null ? {} : { folderId }),
 				title: '',
 				preview: '',
 				pinned: false,
-				deletedAt: null,
-				wordCount: null,
-				createdAt: InstantString.now(),
-				updatedAt: InstantString.now(),
+				createdAt: now,
+				updatedAt: now,
 			});
-			return { id };
+			await refresh();
+			return { id: note.id };
 		},
 
-		/**
-		 * Soft-delete a note, moves it to Recently Deleted.
-		 *
-		 * The note is marked with a `deletedAt` timestamp but not permanently
-		 * removed. It can be restored from the Recently Deleted view. If the
-		 * deleted note was selected, the selection is cleared.
-		 *
-		 * @example
-		 * ```typescript
-		 * app.state.notes.softDelete(noteId);
-		 * // Note moves to Recently Deleted, editor closes
-		 * ```
-		 */
-		softDelete(noteId: NoteId) {
-			honeycrisp.tables.notes.update(noteId, {
-				deletedAt: InstantString.now(),
-			});
+		async softDelete(noteId: NoteId): Promise<void> {
+			await update(noteId, { deletedAt: InstantString.now() });
 			if (searchParams.note === noteId) {
 				searchParams.update({ note: null });
 			}
 		},
 
-		/**
-		 * Restore a soft-deleted note from Recently Deleted.
-		 *
-		 * Removes the `deletedAt` timestamp. If the note's original folder no
-		 * longer exists, the note is restored to unfiled instead.
-		 *
-		 * @example
-		 * ```typescript
-		 * app.state.notes.restore(noteId);
-		 * // Note reappears in its original folder (or unfiled)
-		 * ```
-		 */
-		restore(noteId: NoteId) {
-			const note = notesView.byId(noteId);
+		async restore(noteId: NoteId): Promise<void> {
+			const note = rows.find((candidate) => candidate.id === noteId);
 			if (!note) return;
 			const folderExists = note.folderId
-				? folders.all.some((f) => f.id === note.folderId)
+				? folders.all.some((folder) => folder.id === note.folderId)
 				: true;
-			honeycrisp.tables.notes.update(noteId, {
-				deletedAt: null,
-				...(folderExists ? {} : { folderId: null }),
+			await update(noteId, {
+				deletedAt: undefined,
+				...(folderExists ? {} : { folderId: undefined }),
 			});
 		},
 
-		/**
-		 * Permanently delete a note, no recovery.
-		 *
-		 * Removes the note from the database completely. This cannot be undone.
-		 * If the deleted note was selected, the selection is cleared.
-		 *
-		 * @example
-		 * ```typescript
-		 * app.state.notes.permanentlyDelete(noteId);
-		 * // Note is removed from Recently Deleted and database
-		 * ```
-		 */
-		permanentlyDelete(noteId: NoteId) {
-			honeycrisp.tables.notes.delete(noteId);
+		async permanentlyDelete(noteId: NoteId): Promise<void> {
+			await honeycrisp.tables.notes.delete(noteId);
+			await refresh();
 			if (searchParams.note === noteId) {
 				searchParams.update({ note: null });
 			}
 		},
 
-		/**
-		 * Toggle the pin state of a note.
-		 *
-		 * Pinned notes typically appear at the top of the note list. If the note
-		 * doesn't exist, the operation is silently ignored.
-		 *
-		 * @example
-		 * ```typescript
-		 * app.state.notes.togglePin(noteId);
-		 * // Note moves to the top of the list (or unpins)
-		 * ```
-		 */
-		togglePin(noteId: NoteId) {
-			const note = notesView.byId(noteId);
+		async togglePin(noteId: NoteId): Promise<void> {
+			const note = rows.find((candidate) => candidate.id === noteId);
 			if (!note) return;
-			honeycrisp.tables.notes.update(noteId, {
-				pinned: !note.pinned,
+			await update(noteId, { pinned: !note.pinned });
+		},
+
+		async moveToFolder(
+			noteId: NoteId,
+			folderId: FolderId | null,
+		): Promise<void> {
+			await update(noteId, {
+				folderId: folderId === null ? undefined : folderId,
 			});
 		},
 
-		/**
-		 * Move a note to a different folder.
-		 *
-		 * Pass `null` to move the note to unfiled (remove from folder).
-		 * The note remains selected if it was selected before the move.
-		 *
-		 * @example
-		 * ```typescript
-		 * app.state.notes.moveToFolder(noteId, folderId);
-		 *
-		 * // Move a note to unfiled
-		 * app.state.notes.moveToFolder(noteId, null);
-		 * ```
-		 */
-		moveToFolder(noteId: NoteId, folderId: FolderId | null) {
-			honeycrisp.tables.notes.update(noteId, { folderId });
-		},
-
-		/**
-		 * Update the title, preview, and word count of a note.
-		 *
-		 * Called when the editor content changes. Caller passes the noteId
-		 * explicitly: the note is whichever note the editor is bound to,
-		 * which is not necessarily what the URL search param says.
-		 *
-		 * @example
-		 * ```typescript
-		 * app.state.notes.updateContent(noteId, {
-		 *   title: 'My Note Title',
-		 *   preview: 'First line of content...',
-		 *   wordCount: 42,
-		 * });
-		 * ```
-		 */
-		updateContent(
+		async updateContent(
 			noteId: NoteId,
-			{
-				title,
-				preview,
-				wordCount,
-			}: {
-				title: string;
-				preview: string;
-				wordCount: number;
-			},
-		) {
-			honeycrisp.tables.notes.update(noteId, {
-				title,
-				preview,
-				wordCount,
+			content: Pick<Note, 'title' | 'preview'> & { wordCount: number },
+		): Promise<void> {
+			await update(noteId, {
+				...content,
+				updatedAt: InstantString.now(),
 			});
 		},
 	};

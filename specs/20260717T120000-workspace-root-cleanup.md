@@ -1,6 +1,6 @@
 # Workspace root cleanup after the SQLite proof
 
-- **Status:** Draft
+- **Status:** In Progress
 - **Date:** 2026-07-17
 - **Depends on:** ADR-0130 through ADR-0138
 
@@ -84,21 +84,21 @@ preserve two root APIs.
 
 Honeycrisp is not a mechanical import rewrite. Its end-to-end cutover owns:
 
-1. An async reactive table adapter or app-owned refresh state to replace
+1. [x] An async reactive table adapter or app-owned refresh state to replace
    synchronous `fromTable` observation.
-2. Browser Device/Account runtime composition based on the SQLite runtime, HTTP
+2. [x] Browser Device/Account runtime composition based on the SQLite runtime, HTTP
    row sync semantics, async readiness, auth namespace changes, and runtime
    disposal. This replaces `connect(toConnection(...))`, `NodeId`, room
    WebSockets, and `storage.whenLoaded`.
-3. An async row-document Svelte cache with loading, disposal, revocation, and
-   reopen behavior. ProseMirror can continue using a native `Y.XmlFragment`
+3. [x] An async row-document Svelte cache with loading, disposal, revocation, and
+   reopen behavior. ProseMirror uses the native Yjs 14 type
    from an application-owned root such as Honeycrisp's current `body` root; that
    root name is not a platform noun.
-4. Keep folder deletion as a best-effort application service: list the folder's
+4. [x] Keep folder deletion as a best-effort application service: list the folder's
    notes, issue ordinary updates that unset `folderId`, then delete the folder.
    Honeycrisp does not require this multi-row convenience to be one authority
    transaction.
-5. Make document-edit metadata explicit application policy. The editor's
+5. [x] Make document-edit metadata explicit application policy. The editor's
    existing content-change operation updates `title`, `preview`, `wordCount`,
    and `updatedAt`; the workspace runtime has no implicit touch declaration.
 

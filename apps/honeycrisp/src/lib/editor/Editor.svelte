@@ -3,6 +3,15 @@
 	import { Toggle } from '@epicenter/ui/toggle';
 	import * as ToggleGroup from '@epicenter/ui/toggle-group';
 	import * as Tooltip from '@epicenter/ui/tooltip';
+	import {
+		configureYProsemirror,
+		redo,
+		syncPlugin,
+		undo,
+		ySyncPluginKey,
+		yUndoPlugin,
+	} from '@y/prosemirror';
+	import * as Y from '@y/y';
 	import BoldIcon from '@lucide/svelte/icons/bold';
 	import Heading1Icon from '@lucide/svelte/icons/heading-1';
 	import Heading2Icon from '@lucide/svelte/icons/heading-2';
@@ -50,18 +59,9 @@
 	import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 	import 'prosemirror-view/style/prosemirror.css';
 	import {
-		redo,
-		undo,
-		ySyncPlugin,
-		ySyncPluginKey,
-		yUndoPlugin,
-	} from 'y-prosemirror';
-	import type * as Y from 'yjs';
-	import {
 		extractNoteMetadata,
-		isDocEmpty,
 		type NoteMetadata,
-	} from './extract-metadata';
+	} from './extract-metadata.js';
 
 	const taskList = {
 		group: 'block',
@@ -222,7 +222,7 @@
 		focusRequest,
 		onContentChange,
 	}: {
-		yxmlfragment: Y.XmlFragment;
+		yxmlfragment: Y.Type;
 		focusRequest: number;
 		onContentChange: (content: NoteMetadata) => void;
 	} = $props();
@@ -261,13 +261,14 @@
 		if (!element) return;
 
 		let currentView: EditorView;
+		const undoManager = new Y.UndoManager(yxmlfragment);
 
 		currentView = new EditorView(element, {
 			state: EditorState.create({
 				schema,
 				plugins: [
-					ySyncPlugin(yxmlfragment),
-					yUndoPlugin(),
+					syncPlugin(),
+					yUndoPlugin(undoManager),
 					createPlaceholderPlugin('Start writing…'),
 					createTaskItemPlugin(),
 					keymap({
@@ -339,46 +340,35 @@
 				// document, not a writing surface.
 				class: 'focus:outline-none',
 			},
-			// `this` is the EditorView (ProseMirror calls
-			// `dispatchTransaction.call(view, tr)`), which is the only handle that
-			// exists during the synchronous `ySyncPlugin` init render: that first
-			// dispatch fires from inside `new EditorView(...)`, before `currentView`
-			// has been assigned, so reading `currentView.state` here would throw and
-			// abort construction. Reading `this.state` is safe at every point.
+			// `this` is always the live EditorView, including binding-origin
+			// transactions dispatched while the Y type hydrates ProseMirror.
 			dispatchTransaction(this: EditorView, tr) {
 				const newState = this.state.apply(tr);
 				this.updateState(newState);
 				updateActiveFormats(newState);
 				if (!tr.docChanged) return;
-				// A ySync-origin transaction that leaves the document empty is the
-				// sync layer initializing or streaming in the note body, not a user
-				// edit. On a signed-in relogin the editor can mount and render before
-				// the body doc's WebSocket handshake delivers content, so ySync's
-				// initial render (`_forceRerender`, which fires synchronously during
-				// `new EditorView(...)`) and any pre-content sync frame produce an
-				// empty document. Persisting that would overwrite the note's real
-				// title/preview/wordCount on the table row, and last-writer-wins makes
-				// the empty write durable (issue #1590). Skip it: real content arrives
-				// as a later non-empty sync transaction, and genuine user edits
-				// (including clearing a note) are not sync-origin, so both still
-				// persist.
+				// Opening or remotely syncing a document is not a local edit. Skipping
+				// binding-origin changes prevents a mere open from advancing updatedAt;
+				// genuine user transactions, including clearing a note, still persist.
 				const isSyncOrigin =
-					tr.getMeta(ySyncPluginKey)?.isChangeOrigin === true;
-				if (isSyncOrigin && isDocEmpty(newState.doc)) return;
+					tr.getMeta('y-sync-transaction') ||
+					tr.getMeta(ySyncPluginKey) ||
+					tr.getMeta('y-sync-append');
+				if (isSyncOrigin) return;
 				onContentChange(extractNoteMetadata(newState.doc));
 			},
 		});
+		configureYProsemirror({ ytype: yxmlfragment })(
+			currentView.state,
+			currentView.dispatch,
+		);
 
 		view = currentView;
 		updateActiveFormats(currentView.state);
-		// No explicit initial extraction: ySync's `_forceRerender` already fires a
-		// `docChanged` transaction through `dispatchTransaction` during construction
-		// above, which extracts metadata when content is present and (per #1590)
-		// skips the empty pre-load render. A direct call here would bypass that
-		// guard and clobber real metadata with an empty write.
 
 		return () => {
 			currentView.destroy();
+			undoManager.destroy();
 			view = undefined;
 		};
 	});

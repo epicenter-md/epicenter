@@ -4,15 +4,14 @@
  * These lock the two extraction bugs fixed alongside the editor init repair: the
  * title must come from the first block alone (not every block concatenated), and
  * the preview and word count must separate adjacent blocks with a space (not run
- * the last word of one block into the first word of the next). The emptiness
- * predicate that guards the #1590 pre-load clobber is covered too.
+ * the last word of one block into the first word of the next).
  */
 
 import { describe, expect, test } from 'bun:test';
 import { type Node, Schema } from 'prosemirror-model';
 import { schema as basicSchema } from 'prosemirror-schema-basic';
 import { addListNodes } from 'prosemirror-schema-list';
-import { extractNoteMetadata, isDocEmpty } from './extract-metadata';
+import { extractNoteMetadata } from './extract-metadata.js';
 
 const schema = new Schema({
 	nodes: addListNodes(basicSchema.spec.nodes, 'paragraph block*', 'block'),
@@ -62,19 +61,5 @@ describe('extractNoteMetadata', () => {
 	test('preview is capped at 100 characters', () => {
 		const long = 'y'.repeat(200);
 		expect(extractNoteMetadata(docOf(long)).preview).toHaveLength(100);
-	});
-});
-
-describe('isDocEmpty', () => {
-	test('true for a document with no text', () => {
-		expect(isDocEmpty(docOf(''))).toBe(true);
-	});
-
-	test('true for a whitespace-only document', () => {
-		expect(isDocEmpty(docOf('   '))).toBe(true);
-	});
-
-	test('false once any block carries text', () => {
-		expect(isDocEmpty(docOf('', 'content'))).toBe(false);
 	});
 });

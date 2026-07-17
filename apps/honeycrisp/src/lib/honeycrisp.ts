@@ -1,33 +1,47 @@
-/**
- * Boot-time Honeycrisp client (ADR-0088: sign-in is an enhancement, never a
- * door).
- *
- * `openHoneycrispBrowser` reads the persisted `auth.state` ONCE at startup
- * and picks the workspace preset: bare local IndexedDB (signed out) or
- * principal-scoped storage plus relay sync (signed in / reauth-required).
- * Construction is synchronous; data still loads async behind `whenReady`.
- * Identity changes are never an in-place swap: `reloadOnPrincipalChange` (mounted
- * in the root layout) reloads the page so the next boot re-runs this selection.
- *
- * `honeycrisp` composes that browser bundle with `createHoneycrispState`, the
- * app's reactive folder/note/view state. There is no `require*()` accessor
- * and no HMR dispose block: the workspace is never `null`, so nothing gates
- * on it existing (matches Whispering's `whispering` singleton).
- */
-
-import { createNodeId } from '@epicenter/workspace';
+import { honeycrispWorkspace } from '@epicenter/honeycrisp';
 import { auth } from '#platform/auth';
-import { createHoneycrispState } from '../routes/state';
-import { openHoneycrispBrowser } from './workspace/browser';
+import { createHoneycrispState } from '../routes/state/index.js';
+import { createHoneycrispBrowserRuntime } from './workspace/browser.js';
 
-const nodeId = createNodeId({ storage: localStorage });
+const recordsChangedListeners = new Set<() => void>();
+const documentsInvalidatedListeners = new Set<() => void>();
 
-const browser = openHoneycrispBrowser({ auth, nodeId });
-const state = createHoneycrispState(browser);
+const runtime = createHoneycrispBrowserRuntime({
+	auth,
+	onRecordsChanged(workspaceId) {
+		if (workspaceId !== honeycrispWorkspace.id) return;
+		for (const listener of recordsChangedListeners) listener();
+	},
+	onDocumentsInvalidated(workspaceId) {
+		if (workspaceId !== honeycrispWorkspace.id) return;
+		for (const listener of documentsInvalidatedListeners) listener();
+	},
+});
+
+const workspace = await runtime.open(honeycrispWorkspace);
+const state = createHoneycrispState({
+	honeycrisp: workspace,
+	onRecordsChanged(listener) {
+		recordsChangedListeners.add(listener);
+		return () => recordsChangedListeners.delete(listener);
+	},
+});
 
 export const honeycrisp = {
-	...browser,
+	...workspace,
 	state,
-	/** Resolves when local persistence has hydrated the root doc. */
-	whenReady: browser.storage.whenLoaded,
+	whenReady: state.whenReady,
+	onDocumentsInvalidated(listener: () => void) {
+		documentsInvalidatedListeners.add(listener);
+		return () => documentsInvalidatedListeners.delete(listener);
+	},
 };
+
+if (import.meta.hot) {
+	import.meta.hot.dispose(() => {
+		state[Symbol.dispose]();
+		recordsChangedListeners.clear();
+		documentsInvalidatedListeners.clear();
+		void runtime[Symbol.asyncDispose]();
+	});
+}

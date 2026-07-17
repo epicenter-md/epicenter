@@ -36,14 +36,3 @@ export function extractNoteMetadata(doc: Node): NoteMetadata {
 		wordCount: trimmed.length === 0 ? 0 : trimmed.split(/\s+/).length,
 	};
 }
-
-/**
- * Whether `doc` carries no text.
- *
- * An empty note produces empty metadata. The editor uses this to refuse
- * persisting a sync-driven empty document over real table-row metadata before
- * the note body has finished loading (issue #1590).
- */
-export function isDocEmpty(doc: Node): boolean {
-	return doc.textContent.trim().length === 0;
-}

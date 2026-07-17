@@ -1,13 +1,13 @@
 /**
  * The Query host: one local desktop chat session; built-in apps enter
- * through one verb catalog (ADR-0080). Built-in Yjs apps mount in-process
- * as action registries (arm A); boxed apps an upstream forces off the mesh
+ * through one verb catalog (ADR-0080). Built-in apps mount in-process through
+ * app-owned catalogs (arm A); boxed apps an upstream forces off the mesh
  * may join as local stdio MCP subprocesses (arm B, Local Books today). One
  * agent loop consumes the composed catalog and never learns where a verb lives.
  *
- * The in-process apps open through the ungated durable local preset:
- * `connect(null, { persistence })`. Sign-in is still an enhancement; the Bun
- * host gets disk-backed replicas without constructing an auth client.
+ * The in-process apps use device-owned durable local storage. Honeycrisp uses
+ * the SQLite row runtime; the remaining Yjs apps still use
+ * `connect(null, { persistence })`. Sign-in remains an enhancement.
  *
  * Transcripts are durable the same way: the host's own workspace holds the
  * canonical conversations table (ADR-0055), null-connected, so finished
@@ -39,6 +39,8 @@ import {
 	type ToolCatalog,
 } from '@epicenter/workspace/agent';
 import { bunLocalPersistence } from '@epicenter/workspace/node';
+import { createDeviceBunWorkspaceRuntime } from '@epicenter/workspace/sqlite/bun';
+import { createHoneycrispCatalog } from './honeycrisp-catalog.js';
 import {
 	createLocalSourceCatalog,
 	type LocalSourceCatalogOptions,
@@ -214,27 +216,42 @@ const INVOCATION_LIMIT = 20;
 export async function createQueryHost(
 	options: QueryHostOptions,
 ): Promise<QueryHost> {
-	// Arm A: in-process Yjs apps. Each app's namespace keeps same-named verbs
-	// distinct in the composed surface; the prefix must not contain `__`.
+	// Arm A: in-process apps. Each namespace keeps same-named verbs distinct in
+	// the composed surface; the prefix must not contain `__`.
 	const dataDir = options.dataDir ?? resolveQueryDataDir();
 	const nodeId = createNodeId({
 		storage: fileStorage(join(dataDir, 'node-id')),
 	});
 	const persistence = bunLocalPersistence({ dir: dataDir, nodeId });
-	const honeycrisp = honeycrispWorkspace.connect(null, { persistence });
+	const honeycrispRuntime = createDeviceBunWorkspaceRuntime({
+		storageRoot: dataDir,
+	});
+	const honeycrisp = await honeycrispRuntime.open(honeycrispWorkspace);
 	const todos = todosWorkspace.connect(null, { persistence });
 	// The host's own workspace: durable transcripts, same ungated local preset.
 	const query = queryWorkspace.connect(null, { persistence });
-	await Promise.all([
-		honeycrisp.storage.whenLoaded,
-		todos.storage.whenLoaded,
-		query.storage.whenLoaded,
-	]);
+	const disposeInProcessApps = async () => {
+		const honeycrispDisposal = honeycrispRuntime[Symbol.asyncDispose]();
+		todos[Symbol.dispose]();
+		query[Symbol.dispose]();
+		await Promise.all([
+			honeycrispDisposal,
+			todos.storage.whenDisposed,
+			query.storage.whenDisposed,
+		]);
+	};
+	try {
+		await Promise.all([
+			honeycrisp.tables.folders.list(),
+			todos.storage.whenLoaded,
+			query.storage.whenLoaded,
+		]);
+	} catch (error) {
+		await disposeInProcessApps();
+		throw error;
+	}
 	const catalogs: ToolCatalog[] = [
-		namespaceToolCatalog(
-			'honeycrisp',
-			createLocalToolCatalog(honeycrisp.actions),
-		),
+		namespaceToolCatalog('honeycrisp', createHoneycrispCatalog(honeycrisp)),
 		namespaceToolCatalog('todos', createLocalToolCatalog(todos.actions)),
 	];
 
@@ -252,10 +269,8 @@ export async function createQueryHost(
 
 	// Arm B: boxed apps join as stdio MCP subprocesses behind the same seam.
 	const localBooks = options.localBooks
-		? await createStdioMcpCatalog(options.localBooks).catch((error) => {
-				honeycrisp[Symbol.dispose]();
-				todos[Symbol.dispose]();
-				query[Symbol.dispose]();
+		? await createStdioMcpCatalog(options.localBooks).catch(async (error) => {
+				await disposeInProcessApps();
 				throw error;
 			})
 		: undefined;
@@ -447,13 +462,8 @@ export async function createQueryHost(
 			invokeAbort.abort();
 			sessionApproval.cancelAll();
 			await localBooks?.[Symbol.asyncDispose]();
-			honeycrisp[Symbol.dispose]();
-			todos[Symbol.dispose]();
-			query[Symbol.dispose]();
 			await Promise.all([
-				honeycrisp.storage.whenDisposed,
-				todos.storage.whenDisposed,
-				query.storage.whenDisposed,
+				disposeInProcessApps(),
 				// Transcript flushes: the active store plus any `clear` left behind.
 				activeStore.whenDisposed,
 				...storeFlushes,

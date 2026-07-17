@@ -8,6 +8,7 @@
 	import { auth } from '#platform/auth';
 	import { honeycrisp } from '$lib/honeycrisp';
 	import { instanceSetting } from '$lib/instance';
+	import { runHoneycrispMutation } from '$lib/mutation.js';
 	import FolderMenuItem from '../components/FolderMenuItem.svelte';
 </script>
 
@@ -18,9 +19,7 @@
 			<div class="flex items-center gap-1">
 				<AccountPopover
 					{auth}
-					collaboration={honeycrisp.collaboration}
 					syncNoun="notes"
-					onForgetDevice={() => honeycrisp.wipe()}
 					instanceConnect={{ appName: 'Honeycrisp', setting: instanceSetting }}
 				/>
 				<Sidebar.Trigger />
@@ -76,7 +75,11 @@
 				</Collapsible.Trigger>
 				<Sidebar.GroupAction
 					title="New Folder"
-					onclick={() => honeycrisp.state.folders.create()}
+					onclick={() =>
+						runHoneycrispMutation(
+							honeycrisp.state.folders.create(),
+							'Could not create folder',
+						)}
 				>
 					<PlusIcon />
 					<span class="sr-only">New Folder</span>

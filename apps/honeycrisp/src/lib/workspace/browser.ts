@@ -1,26 +1,38 @@
-/**
- * Honeycrisp browser composition: the one boot call (ADR-0088/ADR-0094).
- *
- * `toConnection` reads `auth.state` once: signed out projects to `null` (bare
- * guid-named IndexedDB, cross-tab channel, no relay), signed in projects to
- * the principal's connection (principal-scoped storage plus relay). Both arms return
- * the same bundle shape, per-row note-body openers and `wipe()` included, so
- * nothing downstream branches on auth again.
- */
-
 import type { SyncAuthClient } from '@epicenter/auth';
-import { toConnection } from '@epicenter/svelte/auth';
-import type { NodeId } from '@epicenter/workspace';
-import { honeycrispWorkspace } from './index.js';
+import {
+	createAccountBrowserWorkspaceRuntime,
+	createDeviceBrowserWorkspaceRuntime,
+} from '@epicenter/workspace/sqlite/browser';
 
-export function openHoneycrispBrowser({
+type WorkspaceAuth = Pick<SyncAuthClient, 'state' | 'deployment' | 'fetch'>;
+
+/** Bind Honeycrisp to the device or signed-in account selected at page boot. */
+export function createHoneycrispBrowserRuntime({
 	auth,
-	nodeId,
+	onRecordsChanged,
+	onDocumentsInvalidated,
 }: {
-	auth: SyncAuthClient;
-	nodeId: NodeId;
+	auth: WorkspaceAuth;
+	onRecordsChanged(workspaceId: string): void;
+	onDocumentsInvalidated(workspaceId: string): void;
 }) {
-	return honeycrispWorkspace.connect(toConnection(auth, nodeId));
+	const bootState = auth.state;
+	if (bootState.status === 'signed-out') {
+		return createDeviceBrowserWorkspaceRuntime({
+			onRecordsChanged,
+			onDocumentsInvalidated,
+		});
+	}
+	return createAccountBrowserWorkspaceRuntime({
+		account: {
+			deploymentId: auth.deployment.baseURL,
+			principalId: bootState.principalId,
+			transport: {
+				baseUrl: auth.deployment.baseURL,
+				fetch: auth.fetch,
+			},
+		},
+		onRecordsChanged,
+		onDocumentsInvalidated,
+	});
 }
-
-export type HoneycrispBrowser = ReturnType<typeof openHoneycrispBrowser>;
