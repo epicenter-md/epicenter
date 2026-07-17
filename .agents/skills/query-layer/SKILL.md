@@ -59,36 +59,19 @@ Mutations expose `.options` and are callable. They do not expose `.execute()`.
 
 ## Canonical Whispering RPC Module Shape
 
-For Whispering-style `$lib/rpc` modules, keep source-of-truth declarations close to the work they describe:
+For Whispering-style `$lib/rpc` modules, keep source-of-truth declarations close to the work they describe. The audio adapter is the current query shape:
 
 ```typescript
-export const exampleKeys = defineKeys({
-	playbackUrl: (id: string) => ['example', 'playbackUrl', id] as const,
-	transformRecording: ['example', 'transformRecording'],
+export const audioKeys = defineKeys({
+	playbackUrl: (id: string) => ['audio', 'playbackUrl', id] as const,
 });
 
-const ExampleRpcError = defineErrors({
-	RecordingNotFound: () => ({
-		message: 'Could not find the selected recording.',
-	}),
-});
-type ExampleRpcError = InferErrors<typeof ExampleRpcError>;
-
-export const example = {
-	playbackUrl: (id: Accessor<string>) =>
+export const audio = {
+	getPlaybackUrl: (id: Accessor<string>) =>
 		defineQuery({
-			queryKey: exampleKeys.playbackUrl(id()),
+			queryKey: audioKeys.playbackUrl(id()),
 			queryFn: () => services.blobs.audio.ensurePlaybackUrl(id()),
 		}),
-
-	transformRecording: defineMutation({
-		mutationKey: exampleKeys.transformRecording,
-		mutationFn: (params: {
-			recordingId: string;
-			transformation: Transformation;
-		}) =>
-			runTransformation(params),
-	}),
 };
 ```
 
@@ -147,8 +130,8 @@ Use in Svelte components when the template reads lifecycle state. Pass `.options
 		rpc.audio.getPlaybackUrl(() => recordingId).options,
 	);
 
-	const transformRecording = createMutation(
-		() => rpc.transformer.transformRecording.options,
+	const transcribeRecording = createMutation(
+		() => rpc.transcription.transcribeRecording.options,
 	);
 
 	const exportMarkdown = createMutation(() =>
@@ -174,16 +157,13 @@ Use outside component context, or inside Svelte workflows that do not expose pen
 
 ```typescript
 // In an event handler or workflow
-async function handleTransform(recordingId: string, transformation: Transformation) {
-	const { error } = await rpc.transformer.transformRecording({
-		recordingId,
-		transformation,
-	});
+async function handleDownload(recording: Recording) {
+	const { error } = await rpc.download.downloadRecording(recording);
 	if (error) {
 		report.error({ cause: error });
 		return;
 	}
-	report.success({ title: 'Transformation complete' });
+	report.success({ title: 'Recording downloaded' });
 }
 
 // In a sequential workflow
@@ -200,7 +180,7 @@ async function stopAndTranscribe(toastId: string) {
 }
 ```
 
-Use `.fetch()` when the user action asks for freshness or validation against current external state. Use `.ensure()` when cache-first behavior is acceptable, such as preloaders or setup flows.
+Use `.fetch()` when TanStack should evaluate the query's normal staleness policy: fresh cached data may still be returned without a request. Use `.ensure()` when any cached data is acceptable and fetching is only required when the cache is empty.
 
 ### When to Use Each
 
@@ -220,7 +200,7 @@ Use `.fetch()` when the user action asks for freshness or validation against cur
 3. **Do not translate tagged errors by default** - Pass service/operation errors through to the report boundary
 4. **Services receive explicit app inputs** - The consuming edge injects settings and device config
 5. **Use imperative calls in `.ts` files** - `createMutation` requires component context
-6. **Update cache optimistically** - Better UX for mutations
+6. **Update cache deliberately** - Use optimistic writes only when the cache owner and rollback path are explicit; otherwise invalidate or refetch
 
 ## References
 

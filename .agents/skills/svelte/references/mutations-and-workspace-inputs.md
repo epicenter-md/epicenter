@@ -21,39 +21,37 @@ Pass `onSuccess` and `onError` as the second argument to `.mutate()` so the call
 ```svelte
 <script lang="ts">
 	import { createMutation } from '@tanstack/svelte-query';
-	import * as rpc from '$lib/query';
+	import { report } from '$lib/report';
+	import { rpc } from '$lib/rpc';
 
-	const deleteSession = createMutation(
-		() => rpc.sessions.deleteSession.options,
+	const downloadRecording = createMutation(
+		() => rpc.download.downloadRecording.options,
 	);
-
-	// Local state that we can access in callbacks
-	let isDialogOpen = $state(false);
 </script>
 
 <Button
 	onclick={() => {
-		deleteSession.mutate(
-			{ sessionId },
+		downloadRecording.mutate(
+			recording,
 			{
 				onSuccess: () => {
-					// Access local state and context
-					isDialogOpen = false;
-					toast.success('Session deleted');
-					goto('/sessions');
+					report.success({ title: 'Recording downloaded' });
 				},
 				onError: (error) => {
-					toast.error(error.title, { description: error.description });
+					report.error({
+						title: 'Failed to download recording',
+						cause: error,
+					});
 				},
 			},
 		);
 	}}
-	disabled={deleteSession.isPending}
+	disabled={downloadRecording.isPending}
 >
-	{#if deleteSession.isPending}
-		Deleting...
+	{#if downloadRecording.isPending}
+		Downloading...
 	{:else}
-		Delete
+		Download
 	{/if}
 </Button>
 ```
@@ -121,8 +119,8 @@ accessor:
 		rpc.audio.getPlaybackUrl(() => recordingId).options,
 	);
 
-	const transformRecording = createMutation(
-		() => rpc.transformer.transformRecording.options,
+	const transcribeRecording = createMutation(
+		() => rpc.transcription.transcribeRecording.options,
 	);
 </script>
 ```
@@ -161,14 +159,10 @@ In `.ts` files, use direct `await` because `createMutation` requires component c
 
 ```typescript
 // In a .ts file (e.g., load function, utility)
-const result = await rpc.sessions.createSession({
-	body: { title: 'New Session' },
-});
-
-const { data, error } = result;
+const { error } = await rpc.download.downloadRecording(recording);
 if (error) {
 	// Handle error
-} else if (data) {
+} else {
 	// Handle success
 }
 ```

@@ -80,29 +80,16 @@ If the one-off operation returns a Wellcrafted `Result`, use `resultMutationOpti
 Keep each adapter file in source-of-truth order:
 
 ```ts
-export const exampleKeys = defineKeys({
-  all: ['example'],
-  detail: (id: string) => ['example', 'detail', id] as const,
-  transformThing: ['example', 'transformThing'],
+export const audioKeys = defineKeys({
+  playbackUrl: (id: string) => ['audio', 'playbackUrl', id] as const,
 });
 
-const ExampleError = defineErrors({
-  MissingThing: () => ({ message: 'Could not find the requested thing.' }),
-});
-type ExampleError = InferErrors<typeof ExampleError>;
-
-export const example = {
-  detail: (id: Accessor<string>) =>
+export const audio = {
+  getPlaybackUrl: (id: Accessor<string>) =>
     defineQuery({
-      queryKey: exampleKeys.detail(id()),
-      queryFn: () => services.example.detail(id()),
+      queryKey: audioKeys.playbackUrl(id()),
+      queryFn: () => services.blobs.audio.ensurePlaybackUrl(id()),
     }),
-
-  transformThing: defineMutation({
-    mutationKey: exampleKeys.transformThing,
-    mutationFn: (params: { id: string; input: string }) =>
-      services.example.transform(params),
-  }),
 };
 ```
 
@@ -131,18 +118,24 @@ $lib/ui/          ->  $lib/rpc/  ->  $lib/services/ + $lib/state/
 Services and operations return tagged errors built with `defineErrors` from `wellcrafted/error`. RPC adapters pass them through without translation; the component (or the operation it dispatches into) decides what the user should see by calling `report.error`, `report.info`, etc., from `$lib/report`.
 
 ```ts
-transcribeRecording: defineMutation({
+downloadRecording: defineMutation({
+  mutationKey: downloadKeys.downloadRecording,
   mutationFn: async (recording: Recording) => {
-    const { data: blob, error } = await services.blobs.audio.getBlob(recording.id);
-    if (error) return Err(error); // tagged error from the service, unchanged
-    return services.transcriptions.openai.transcribe(blob, options);
+    const { data: audioBlob, error } =
+      await services.blobs.audio.getBlob(recording.id);
+    if (error) return Err(error);
+
+    return services.download.downloadBlob({
+      name: `whispering_recording_${recording.id}`,
+      blob: audioBlob,
+    });
   },
 });
 ```
 
 ## Imperative escape hatches
 
-Queries expose `.fetch()` and `.ensure()` for imperative reads. Use `.fetch()` when freshness matters, and `.ensure()` when cache-first behavior is acceptable.
+Queries expose `.fetch()` and `.ensure()` for imperative reads. `.fetch()` evaluates TanStack's staleness policy and can return fresh cached data; `.ensure()` accepts any cached value and fetches only when the cache is empty.
 
 Mutations are callable for imperative writes:
 
@@ -159,7 +152,7 @@ UI (.svelte)
   │  createQuery(() => rpc.<x>.options)         ← shared cached reads
   │  createMutation(() => rpc.<y>.options)      ← shared mutations w/ cache invalidation
   │  createMutation(() => resultMutationOptions(...)) ← local lifecycle over an orchestration
-  │  await <operation>(...)                     ← fire-and-forget orchestrations
+  │  await <operation>(...)                     ← imperative orchestration without observed lifecycle
   ▼
 $lib/rpc/*          TanStack adapters (this directory)
   │                 wraps services/state directly, or wraps an operation when
@@ -169,7 +162,7 @@ $lib/operations/*   imperative orchestrations (delivery, recording, upload,
                     pipeline, transcribe, run-polish, run-recipe,
                     recipe-clipboard, analytics, sound, shortcuts)
   ▼
-$lib/services/*     UI-free, Result-typed
+$lib/services/*     UI-free; fallible APIs are Result-typed
 $lib/state/*        reactive (Svelte runes, Yjs)
 ```
 

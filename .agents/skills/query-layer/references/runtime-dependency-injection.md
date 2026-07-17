@@ -1,59 +1,43 @@
 # Runtime Dependency Injection
 
-## When to Read This
+This reference covers dynamic implementation selection from app settings or
+platform capability.
 
-Read when implementing dynamic service selection based on platform or user settings.
+## The Consuming Edge Chooses
 
-## Runtime Dependency Injection
+Services stay free of app-owned settings. The operation or state module reads
+settings and platform capability, chooses the implementation, and passes the
+service explicit inputs. `$lib/rpc` only selects a service when the adapter
+directly owns the whole use case.
 
-The consuming edge selects service implementations and injects app configuration. In Whispering this usually lives in `$lib/operations`; `$lib/rpc` only does it when the adapter directly owns the use case.
-
-### Service Selection Pattern
+Whispering's transcription operation owns the current provider dispatch:
 
 ```typescript
-// From operations/transcribe.ts: switch between providers.
-async function transcribeBlob(blob: Blob): Promise<Result<string, TranscriptionError>> {
-	const selectedService = settings.get(
-		'transcription.selectedTranscriptionService',
-	);
+export async function transcribeAudio(
+	recordingId: string,
+): Promise<Result<string, TranscriptionError>> {
+	const selectedService = settings.get('transcription.service');
 
-	switch (selectedService) {
-		case 'OpenAI':
-			return await services.transcriptions.openai.transcribe(blob, {
-				apiKey: deviceConfig.get('apiKeys.openai'),
-				modelName: settings.get('transcription.openai.model'),
-				outputLanguage: settings.get('transcription.outputLanguage'),
-				prompt: settings.get('transcription.prompt'),
-				temperature: settings.get('transcription.temperature'),
-				baseURL: deviceConfig.get('apiEndpoints.openai') || undefined,
-			});
-		case 'Groq':
-			return await services.transcriptions.groq.transcribe(blob, {
-				apiKey: deviceConfig.get('apiKeys.groq'),
-				modelName: settings.get('transcription.groq.model'),
-				outputLanguage: settings.get('transcription.outputLanguage'),
-				prompt: settings.get('transcription.prompt'),
-				temperature: settings.get('transcription.temperature'),
-			});
-		default:
-			return TranscriptionError.NoServiceSelected();
-	}
+	return isOnDeviceProviderId(selectedService)
+		? transcribeOnDevice(recordingId, selectedService)
+		: transcribeViaUpload(recordingId, selectedService);
 }
 ```
 
-### Recorder Service Selection
+The upload branch uses a total `Record<UploadProviderId, UploadDispatch>` so a
+new provider is a compile error until it has a dispatch entry. Each entry closes
+over the exact settings, credentials, endpoint, transport, or provider client it
+needs. The query layer observes the operation through
+`rpc.transcription.transcribeRecording`; it does not reimplement provider
+selection.
 
-```typescript
-function resolveServiceForStart(): RecorderService {
-	if (
-		CpalRecorderServiceLive &&
-		deviceConfig.get('recording.method') === 'cpal'
-	) {
-		return CpalRecorderServiceLive;
-	}
+## Ownership Check
 
-	return services.navigatorRecorder;
-}
-```
+- App settings and device configuration: operation or state owner.
+- Platform implementation: `#platform/*` build-time seam where one exists.
+- Provider routing: one exhaustive dispatch table or switch at the consuming edge.
+- Cache identity and lifecycle observation: query/RPC layer.
+- User presentation: component or report-owning operation.
 
-The service stays free of app state. The operation or state module reads `settings` / `deviceConfig`, chooses the implementation, and passes explicit parameters into the service.
+Do not reintroduce removed service registries or runtime platform checks merely
+to make the RPC layer choose between implementations.
