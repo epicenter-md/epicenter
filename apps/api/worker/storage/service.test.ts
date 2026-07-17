@@ -92,7 +92,7 @@ function setup({
 
 	return {
 		issueEnrollment: (
-			partition: Parameters<typeof issueStorageEnrollment>[1],
+			partition: RecordsPartition,
 			enroll: () => Promise<EnrollmentResponse>,
 		) => issueStorageEnrollment(dependencies, partition, enroll),
 		enroll,
