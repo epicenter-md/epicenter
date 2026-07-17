@@ -53,9 +53,53 @@ test('two clients share one owner, disconnect independently, and survive restart
 			duration: null,
 			transcription: null,
 		});
+		const deletedRecording = await firstWhispering.tables.recordings.create({
+			sourceId: 'deleted-recording',
+			title: 'Delete me',
+			recordedAt: InstantString.now(),
+			recordedAtZone: 'UTC',
+			transcript: 'Temporary transcript',
+			polishedTranscript: null,
+			duration: null,
+			transcription: null,
+		});
 		expect(
 			(await secondWhispering.tables.recordings.get(recording.id)).data?.title,
 		).toBe('Shared recording');
+		expect(
+			(
+				await firstWhispering.tables.recordings.update(recording.id, {
+					transcript: 'Updated transcript',
+				})
+			).data?.transcript,
+		).toBe('Updated transcript');
+		await firstWhispering.tables.recordings.delete(deletedRecording.id);
+		expect(
+			(await firstWhispering.tables.recordings.get(deletedRecording.id)).data,
+		).toBeUndefined();
+
+		let observedSettings = 0;
+		const stopObserving = firstWhispering.kv.observe(
+			'analytics.enabled',
+			() => observedSettings++,
+		);
+		expect((await firstWhispering.kv.get('analytics.enabled')).data).toBe(
+			undefined,
+		);
+		expect(
+			(await firstWhispering.kv.set('analytics.enabled', false)).error,
+		).toBe(null);
+		expect(
+			(await firstWhispering.kv.get('analytics.enabled')).data,
+		).toBeFalse();
+		expect(observedSettings).toBe(1);
+		await firstWhispering.kv.unset('analytics.enabled');
+		expect((await firstWhispering.kv.get('analytics.enabled')).data).toBe(
+			undefined,
+		);
+		expect(observedSettings).toBe(2);
+		await firstWhispering.kv.set('analytics.enabled', false);
+		stopObserving();
 		const created = await firstSkills.tables.skills.create({
 			sourceId: 'shared-skill',
 			name: 'Shared',
@@ -65,18 +109,37 @@ test('two clients share one owner, disconnect independently, and survive restart
 		expect((await secondSkills.tables.skills.get(created.id)).data?.name).toBe(
 			'Shared',
 		);
-		await expect(
-			firstSkills.tables.skills.document.open(created.id),
-		).rejects.toThrow(
-			'Row documents are not yet openable in the desktop runtime',
+		using firstDocument = await firstSkills.tables.skills.document.open(
+			created.id,
 		);
+		firstDocument.get('content').insert(0, 'Desktop document');
+		await firstDocument.whenDurable();
+		using secondDocument = await secondSkills.tables.skills.document.open(
+			created.id,
+		);
+		expect(secondDocument.get('content').toString()).toBe('Desktop document');
+		await firstSkills.tables.skills.delete(created.id);
+		expect(() => firstDocument.get('content')).toThrow(/revoked/);
+
+		const survivingSkill = await firstSkills.tables.skills.create({
+			sourceId: 'surviving-skill',
+			name: 'Surviving',
+			description: 'One Bun owner',
+			updatedAt: InstantString.now(),
+		});
+		using survivingDocument = await firstSkills.tables.skills.document.open(
+			survivingSkill.id,
+		);
+		survivingDocument.get('content').insert(0, 'Survives restart');
+		await survivingDocument.whenDurable();
 
 		await firstClient[Symbol.asyncDispose]();
-		await secondSkills.tables.skills.update(created.id, {
+		await secondSkills.tables.skills.update(survivingSkill.id, {
 			description: 'Second client remains connected',
 		});
 		expect(
-			(await secondSkills.tables.skills.get(created.id)).data?.description,
+			(await secondSkills.tables.skills.get(survivingSkill.id)).data
+				?.description,
 		).toBe('Second client remains connected');
 		await secondClient[Symbol.asyncDispose]();
 		await firstServer.dispose();
@@ -84,17 +147,28 @@ test('two clients share one owner, disconnect independently, and survive restart
 		try {
 			const client = createClient(restarted.origin, restarted.cookie);
 			const skills = await client.open(skillsWorkspace);
+			const whispering = await client.open(whisperingWorkspace);
 			expect(
-				(await skills.tables.skills.get(created.id)).data?.description,
+				(await skills.tables.skills.get(survivingSkill.id)).data?.description,
 			).toBe('Second client remains connected');
+			expect(
+				(await whispering.tables.recordings.get(recording.id)).data?.transcript,
+			).toBe('Updated transcript');
+			expect((await whispering.kv.get('analytics.enabled')).data).toBeFalse();
+			using restartedDocument = await skills.tables.skills.document.open(
+				survivingSkill.id,
+			);
+			expect(restartedDocument.get('content').toString()).toBe(
+				'Survives restart',
+			);
 			const unknownDefinition = defineWorkspace({
 				id: 'not-statically-linked',
 				tables: skillsWorkspace.tables,
 			});
 			const unknown = await client.open(unknownDefinition);
-			await expect(unknown.tables.skills.get(created.id)).rejects.toThrow(
-				'Unknown workspace',
-			);
+			await expect(
+				unknown.tables.skills.get(survivingSkill.id),
+			).rejects.toThrow('Unknown workspace');
 			const conflictingDefinition = defineWorkspace({
 				id: skillsWorkspace.id,
 				tables: skillsWorkspace.tables,
@@ -103,7 +177,7 @@ test('two clients share one owner, disconnect independently, and survive restart
 				'already bound to another definition',
 			);
 			await expect(
-				skills.records.sql(
+				skills.sql(
 					"UPDATE skills SET name = 'Raw write'",
 					[],
 					{} as never,

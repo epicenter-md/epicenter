@@ -1,11 +1,12 @@
-import type { SqliteValue } from '@epicenter/row-sync';
+import { decodeBase64, type SqliteValue } from '@epicenter/row-sync';
 import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
+import { createDocumentRuntime } from './canonical-documents.js';
 import {
 	type DesktopRecordOperation,
 	type DesktopWorkspaceResponse,
 	decodeDesktopRecordResult,
-	desktopWorkspaceRecordUrl,
+	desktopWorkspaceUrl,
 } from './desktop-protocol.js';
 import type { OpenedWorkspace, WorkspaceTables } from './runtime.js';
 import type { WorkspaceDefinition } from './runtime-definition.js';
@@ -38,7 +39,7 @@ export function createDesktopWorkspaceRuntime({
 	): Promise<TResult> => {
 		assertOpen();
 		const response = await fetchInput(
-			desktopWorkspaceRecordUrl(origin, workspaceId),
+			desktopWorkspaceUrl(origin, workspaceId),
 			{
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
@@ -55,7 +56,10 @@ export function createDesktopWorkspaceRuntime({
 		if (
 			operation.kind === 'create' ||
 			operation.kind === 'update' ||
-			operation.kind === 'delete'
+			operation.kind === 'delete' ||
+			operation.kind === 'kv-set' ||
+			operation.kind === 'kv-unset' ||
+			operation.kind === 'admit-document-intent'
 		) {
 			onRecordsChanged(workspaceId);
 		}
@@ -70,6 +74,29 @@ export function createDesktopWorkspaceRuntime({
 		definition: TDefinition,
 	): OpenedWorkspace<TDefinition> {
 		const kvObservers = new Map<string, Set<() => void>>();
+		const documents = createDocumentRuntime({
+			admitIntent(intent) {
+				return request(definition.id, {
+					kind: 'admit-document-intent',
+					intent,
+				});
+			},
+			readCurrentRow(table, rowId) {
+				return request(definition.id, {
+					kind: 'read-current-row',
+					table,
+					rowId,
+				});
+			},
+			async readParts(table, rowId) {
+				const state = await request<string>(definition.id, {
+					kind: 'read-current-document',
+					table,
+					rowId,
+				});
+				return [decodeBase64(state)];
+			},
+		});
 		const notifyKv = (key: string): void => {
 			for (const handler of kvObservers.get(key) ?? []) handler();
 		};
@@ -105,18 +132,17 @@ export function createDesktopWorkspaceRuntime({
 							unset,
 						});
 					},
-					delete(id: string) {
-						return request<void>(definition.id, {
+					async delete(id: string) {
+						await request<void>(definition.id, {
 							kind: 'delete',
 							table,
 							id,
 						});
+						documents.revoke([{ table, rowId: id }]);
 					},
 					document: Object.freeze({
-						async open(): Promise<never> {
-							throw new Error(
-								'Row documents are not yet openable in the desktop runtime',
-							);
+						open(rowId: string) {
+							return documents.open(table, rowId);
 						},
 					}),
 				}),
@@ -171,27 +197,25 @@ export function createDesktopWorkspaceRuntime({
 			id: definition.id,
 			tables,
 			kv: kv as never,
-			records: Object.freeze({
-				async sql<TResultSchema extends TSchema>(
-					query: string,
-					parameters: readonly SqliteValue[],
-					resultSchema: TResultSchema,
-				): Promise<Static<TResultSchema>[]> {
-					const rows = await request<unknown[]>(definition.id, {
-						kind: 'sql',
-						query,
-						parameters,
-					});
-					for (const [index, row] of rows.entries()) {
-						if (!Value.Check(resultSchema, row)) {
-							throw new TypeError(
-								`Desktop SQL row ${index} does not satisfy the result schema`,
-							);
-						}
+			async sql<TResultSchema extends TSchema>(
+				query: string,
+				parameters: readonly SqliteValue[],
+				resultSchema: TResultSchema,
+			): Promise<Static<TResultSchema>[]> {
+				const rows = await request<unknown[]>(definition.id, {
+					kind: 'sql',
+					query,
+					parameters,
+				});
+				for (const [index, row] of rows.entries()) {
+					if (!Value.Check(resultSchema, row)) {
+						throw new TypeError(
+							`Desktop SQL row ${index} does not satisfy the result schema`,
+						);
 					}
-					return rows as Static<TResultSchema>[];
-				},
-			}),
+				}
+				return rows as Static<TResultSchema>[];
+			},
 		}) as unknown as OpenedWorkspace<TDefinition>;
 	}
 

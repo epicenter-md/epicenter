@@ -1,4 +1,4 @@
-import type { RecordLensError } from '@epicenter/workspace/sqlite';
+import type { RowLensError } from '@epicenter/workspace/sqlite';
 import { Ok } from 'wellcrafted/result';
 import { onWhisperingRecordsChanged, whispering } from '#platform/whispering';
 import type { Recording } from '$lib/workspace';
@@ -7,7 +7,7 @@ export type { Recording } from '$lib/workspace';
 
 function createRecordings() {
 	let rows = $state.raw<Recording[]>([]);
-	let nonconforming = $state.raw<RecordLensError[]>([]);
+	let nonconforming = $state.raw<RowLensError[]>([]);
 	let loadError = $state.raw<unknown>(null);
 	let canonicalIdBySourceId = new Map<string, string>();
 	let refreshGeneration = 0;
@@ -22,7 +22,7 @@ function createRecordings() {
 	async function refresh(): Promise<void> {
 		const generation = ++refreshGeneration;
 		const nextRows: Recording[] = [];
-		const nextNonconforming: RecordLensError[] = [];
+		const nextNonconforming: RowLensError[] = [];
 		const nextCanonicalIds = new Map<string, string>();
 		try {
 			const listed = await whispering.tables.recordings.list();

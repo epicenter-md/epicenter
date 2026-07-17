@@ -34,7 +34,7 @@ const definition = defineWorkspace({
 test('runtime composes row, document, KV, and SQL capabilities', async () => {
 	const database = new Database(':memory:');
 	const runtime = createWorkspaceRuntime({
-		async openRecordOwner() {
+		async openWorkspaceOwner() {
 			return {
 				sqlite: createBunSqliteAdapter(database),
 				async [Symbol.asyncDispose]() {
@@ -60,7 +60,7 @@ test('runtime composes row, document, KV, and SQL capabilities', async () => {
 
 		expectOk(await workspace.kv.set('theme', 'dark'));
 		expect(expectOk(await workspace.kv.get('theme'))).toBe('dark');
-		const rows = await workspace.records.sql(
+		const rows = await workspace.sql(
 			'SELECT id, title FROM notes',
 			[],
 			Type.Object({ id: Type.String(), title: Type.String() }),
@@ -79,7 +79,7 @@ test('runtime composes row, document, KV, and SQL capabilities', async () => {
 test('runtime binds one definition identity per workspace id', async () => {
 	const database = new Database(':memory:');
 	const runtime = createWorkspaceRuntime({
-		async openRecordOwner() {
+		async openWorkspaceOwner() {
 			return {
 				sqlite: createBunSqliteAdapter(database),
 				async [Symbol.asyncDispose]() {
@@ -107,7 +107,7 @@ test('runtime binds one definition identity per workspace id', async () => {
 test('local documents compact history and poison oversized live state', async () => {
 	const database = new Database(':memory:');
 	const runtime = createWorkspaceRuntime({
-		async openRecordOwner() {
+		async openWorkspaceOwner() {
 			return {
 				sqlite: createBunSqliteAdapter(database),
 				async [Symbol.asyncDispose]() {
@@ -155,7 +155,7 @@ test('local documents compact history and poison oversized live state', async ()
 test('runtime disposal revokes retained row-document handles', async () => {
 	const database = new Database(':memory:');
 	const runtime = createWorkspaceRuntime({
-		async openRecordOwner() {
+		async openWorkspaceOwner() {
 			return {
 				sqlite: createBunSqliteAdapter(database),
 				async [Symbol.asyncDispose]() {

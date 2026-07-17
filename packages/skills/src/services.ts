@@ -1,15 +1,15 @@
-import type { RecordLensError } from '@epicenter/workspace/sqlite';
+import type { RowLensError } from '@epicenter/workspace/sqlite';
 import type { Reference, Skill } from './tables.js';
 import type { SkillsWorkspace } from './workspace.js';
 
 export type SkillsScan = {
 	skills: Skill[];
-	nonconforming: RecordLensError[];
+	nonconforming: RowLensError[];
 };
 
 export type ReferencesScan = {
 	references: Reference[];
-	nonconforming: RecordLensError[];
+	nonconforming: RowLensError[];
 };
 
 /** Read the complete conforming skill catalog and surface invalid rows. */
@@ -17,7 +17,7 @@ export async function scanSkills(
 	workspace: SkillsWorkspace,
 ): Promise<SkillsScan> {
 	const skills: Skill[] = [];
-	const nonconforming: RecordLensError[] = [];
+	const nonconforming: RowLensError[] = [];
 	const listed = await workspace.tables.skills.list();
 	skills.push(...listed.rows);
 	nonconforming.push(...listed.nonconforming);
@@ -29,7 +29,7 @@ export async function scanReferences(
 	workspace: SkillsWorkspace,
 ): Promise<ReferencesScan> {
 	const references: Reference[] = [];
-	const nonconforming: RecordLensError[] = [];
+	const nonconforming: RowLensError[] = [];
 	const listed = await workspace.tables.references.list();
 	references.push(...listed.rows);
 	nonconforming.push(...listed.nonconforming);

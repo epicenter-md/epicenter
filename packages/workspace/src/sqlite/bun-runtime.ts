@@ -21,14 +21,14 @@ const ownedRoots = new Set<string>();
 
 /** Open a Bun runtime whose workspace owners are lazy SQLite files. */
 export function createBunWorkspaceRuntime({
-	authorityKey,
+	storageScopeKey,
 	storageRoot,
 	recordTransport,
 	onRecordsChanged = () => undefined,
 	onSyncError = () => undefined,
 	recordPollIntervalMs = 30_000,
 }: {
-	authorityKey: string;
+	storageScopeKey: string;
 	storageRoot: string;
 	recordTransport?(
 		workspaceId: string,
@@ -50,14 +50,14 @@ export function createBunWorkspaceRuntime({
 	ownedRoots.add(root);
 	try {
 		mkdirSync(root, { recursive: true });
-		bindAuthority(root, authorityKey);
+		bindStorageScope(root, storageScopeKey);
 	} catch (cause) {
 		ownedRoots.delete(root);
 		throw cause;
 	}
 
 	const runtime = createWorkspaceRuntime({
-		async openRecordOwner(workspaceId, signal) {
+		async openWorkspaceOwner(workspaceId, signal) {
 			const path = join(root, `${workspaceId}.records.sqlite3`);
 			let database: Database | undefined;
 			try {
@@ -199,15 +199,17 @@ export function createBunWorkspaceRuntime({
 
 export type BunWorkspaceRuntime = ReturnType<typeof createBunWorkspaceRuntime>;
 
-function bindAuthority(root: string, authorityKey: string): void {
+function bindStorageScope(root: string, storageScopeKey: string): void {
 	const path = join(root, '.epicenter-runtime.json');
 	const encoded = JSON.stringify({
 		formatVersion: 1,
-		authorityHash: sha256Hex(authorityKey),
+		authorityHash: sha256Hex(storageScopeKey),
 	});
 	if (existsSync(path)) {
 		if (readFileSync(path, 'utf8') !== encoded) {
-			throw new Error('Workspace runtime storage belongs to another authority');
+			throw new Error(
+				'Workspace runtime storage belongs to another storage scope',
+			);
 		}
 		return;
 	}

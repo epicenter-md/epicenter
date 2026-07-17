@@ -4,7 +4,7 @@ import { createBrowserWorkspaceRuntime } from '@epicenter/workspace/sqlite/brows
 const recordsChangedListeners = new Set<() => void>();
 
 export const skillsRuntime = createBrowserWorkspaceRuntime({
-	authorityKey: 'skills-local-device',
+	storageScopeKey: 'skills-local-device',
 	onRecordsChanged(workspaceId) {
 		if (workspaceId !== skillsWorkspace.id) return;
 		for (const listener of recordsChangedListeners) listener();

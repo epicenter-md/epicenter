@@ -12,8 +12,8 @@ import {
 	type RowDocument,
 } from './canonical-documents.js';
 import { type CanonicalKv, createCanonicalKv } from './canonical-kv.js';
-import type { CanonicalRecords, CanonicalTable } from './canonical-records.js';
-import { createCanonicalRecords } from './canonical-records.js';
+import type { CanonicalRows, CanonicalTable } from './canonical-rows.js';
+import { createCanonicalRows } from './canonical-rows.js';
 import {
 	readCurrentDocumentParts,
 	readCurrentRow,
@@ -31,7 +31,7 @@ import type {
 } from './lens-definition.js';
 import type { WorkspaceDefinition } from './runtime-definition.js';
 
-export type WorkspaceRecordOwner<
+export type WorkspaceOwner<
 	TAdmission extends void | Promise<void> = void,
 > = {
 	sqlite: RowSyncSqlite;
@@ -59,10 +59,10 @@ export type WorkspaceRecordOwner<
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
-export type WorkspaceRecordOwnerFactory = (
+export type WorkspaceOwnerFactory = (
 	workspaceId: string,
 	signal: AbortSignal,
-) => Promise<WorkspaceRecordOwner>;
+) => Promise<WorkspaceOwner>;
 
 type AsyncCanonicalTable<TDefinition extends TableLensDefinition> = {
 	get(id: string): Promise<ReturnType<CanonicalTable<TDefinition>['get']>>;
@@ -82,13 +82,11 @@ export type WorkspaceTables<TTables extends TableLensDefinitions> = {
 	[K in keyof TTables]: AsyncCanonicalTable<TTables[K]>;
 };
 
-export type WorkspaceRecords = {
-	sql<TResultSchema extends TSchema>(
-		query: string,
-		parameters: readonly SqliteValue[],
-		resultSchema: TResultSchema,
-	): Promise<Static<TResultSchema>[]>;
-};
+export type WorkspaceSql = <TResultSchema extends TSchema>(
+	query: string,
+	parameters: readonly SqliteValue[],
+	resultSchema: TResultSchema,
+) => Promise<Static<TResultSchema>[]>;
 
 type DefinitionTables<TDefinition> =
 	TDefinition extends WorkspaceDefinition<infer TTables, KvDefinitions>
@@ -119,12 +117,12 @@ export type OpenedWorkspace<TDefinition extends WorkspaceDefinition> = {
 	id: TDefinition['id'];
 	tables: WorkspaceTables<DefinitionTables<TDefinition>>;
 	kv: WorkspaceKv<DefinitionKv<TDefinition>>;
-	records: WorkspaceRecords;
+	sql: WorkspaceSql;
 };
 
 type OpenedOwner = {
-	owner: WorkspaceRecordOwner;
-	records: CanonicalRecords;
+	owner: WorkspaceOwner;
+	rows: CanonicalRows;
 	kv: CanonicalKv<KvDefinitions>;
 	documents: DocumentRuntime;
 };
@@ -138,9 +136,9 @@ type RuntimeEntry = {
 
 /** Create one runtime whose workspace SQLite owners open lazily. */
 export function createWorkspaceRuntime({
-	openRecordOwner,
+	openWorkspaceOwner,
 }: {
-	openRecordOwner: WorkspaceRecordOwnerFactory;
+	openWorkspaceOwner: WorkspaceOwnerFactory;
 }) {
 	const entries = new Map<string, RuntimeEntry>();
 	let isDisposed = false;
@@ -153,7 +151,7 @@ export function createWorkspaceRuntime({
 		assertOpen();
 		entry.abortController ??= new AbortController();
 		entry.ownerPromise ??= (async () => {
-			const owner = await openRecordOwner(
+			const owner = await openWorkspaceOwner(
 				entry.definition.id,
 				entry.abortController?.signal ?? AbortSignal.abort(),
 			);
@@ -183,7 +181,7 @@ export function createWorkspaceRuntime({
 					readParts: currentDocumentParts,
 					readCurrentRow: currentRow,
 				});
-				const records = createCanonicalRecords(
+				const rows = createCanonicalRows(
 					owner.sqlite,
 					entry.definition.tables,
 					{
@@ -199,7 +197,7 @@ export function createWorkspaceRuntime({
 				owner.subscribeRemoteCommit?.(() => kv.notifyExternalChange());
 				owner.subscribeRowsDeleted?.(documents.revoke);
 				owner.subscribeBaselinePromoted?.(documents.revokeAll);
-				return { owner, records, kv, documents };
+				return { owner, rows, kv, documents };
 			} catch (cause) {
 				try {
 					await owner[Symbol.asyncDispose]();
@@ -218,8 +216,8 @@ export function createWorkspaceRuntime({
 		return entry.ownerPromise;
 	}
 
-	async function recordsFor(entry: RuntimeEntry): Promise<CanonicalRecords> {
-		return (await openedFor(entry)).records;
+	async function rowsFor(entry: RuntimeEntry): Promise<CanonicalRows> {
+		return (await openedFor(entry)).rows;
 	}
 
 	function createHandle<TDefinition extends WorkspaceDefinition>(
@@ -231,19 +229,19 @@ export function createWorkspaceRuntime({
 				name,
 				Object.freeze({
 					async get(id: string) {
-						return tableFor(await recordsFor(entry), name).get(id);
+						return tableFor(await rowsFor(entry), name).get(id);
 					},
 					async list() {
-						return tableFor(await recordsFor(entry), name).list();
+						return tableFor(await rowsFor(entry), name).list();
 					},
 					async create(fields: Record<string, unknown>) {
-						return tableFor(await recordsFor(entry), name).create(fields);
+						return tableFor(await rowsFor(entry), name).create(fields);
 					},
 					async update(id: string, changes: Record<string, unknown>) {
-						return tableFor(await recordsFor(entry), name).update(id, changes);
+						return tableFor(await rowsFor(entry), name).update(id, changes);
 					},
 					async delete(id: string) {
-						tableFor(await recordsFor(entry), name).delete(id);
+						tableFor(await rowsFor(entry), name).delete(id);
 					},
 					document: Object.freeze({
 						async open(rowId: string) {
@@ -288,15 +286,13 @@ export function createWorkspaceRuntime({
 			id: definition.id,
 			tables: Object.freeze(tables),
 			kv,
-			records: Object.freeze({
-				async sql<TResultSchema extends TSchema>(
-					query: string,
-					parameters: readonly SqliteValue[],
-					resultSchema: TResultSchema,
-				) {
-					return (await recordsFor(entry)).sql(query, parameters, resultSchema);
-				},
-			}),
+			async sql<TResultSchema extends TSchema>(
+				query: string,
+				parameters: readonly SqliteValue[],
+				resultSchema: TResultSchema,
+			) {
+				return (await rowsFor(entry)).sql(query, parameters, resultSchema);
+			},
 		}) as OpenedWorkspace<TDefinition>;
 	}
 
@@ -360,7 +356,7 @@ export function createWorkspaceRuntime({
 export type WorkspaceRuntime = ReturnType<typeof createWorkspaceRuntime>;
 
 function tableFor(
-	records: CanonicalRecords,
+	records: CanonicalRows,
 	name: string,
 ): CanonicalTable<TableLensDefinition> {
 	const table = records.tables[name];

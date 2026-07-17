@@ -12,7 +12,7 @@ import {
 import { createDocumentRuntime } from './canonical-documents.js';
 import type {
 	OpenedWorkspace,
-	WorkspaceRecordOwner,
+	WorkspaceOwner,
 	WorkspaceTables,
 } from './runtime.js';
 import type { WorkspaceDefinition } from './runtime-definition.js';
@@ -37,9 +37,9 @@ type BoundWorkspace = {
 
 type RowAddress = { table: string; rowId: string };
 
-type PageWorkspaceRecordOwner = Required<
+type PageWorkspaceOwner = Required<
 	Pick<
-		WorkspaceRecordOwner<void | Promise<void>>,
+		WorkspaceOwner<void | Promise<void>>,
 		| 'admitIntent'
 		| 'readCurrentRow'
 		| 'readCurrentDocumentParts'
@@ -69,8 +69,8 @@ type RuntimeBroadcastChannel = {
 };
 
 export type CreateBrowserWorkspaceRuntimeOptions = {
-	authorityKey: string;
-	rowSync?: {
+	storageScopeKey: string;
+	recordSync?: {
 		baseUrl: string;
 		fetch?: BrowserRecordFetch;
 		headers?: Readonly<Record<string, string>>;
@@ -83,21 +83,21 @@ export type CreateBrowserWorkspaceRuntimeOptions = {
 
 /** Create the page-side client for one OPFS-owning records Worker. */
 export function createBrowserWorkspaceRuntime({
-	authorityKey,
-	rowSync: rowSyncInput,
+	storageScopeKey,
+	recordSync: recordSyncInput,
 	createBroadcastChannel = defaultBroadcastChannel,
 	onRecordsChanged = () => undefined,
 	onBackgroundError = () => undefined,
 }: CreateBrowserWorkspaceRuntimeOptions) {
-	if (authorityKey.length === 0) {
-		throw new Error('Authority key must not be empty');
+	if (storageScopeKey.length === 0) {
+		throw new Error('Storage scope key must not be empty');
 	}
-	const authorityStorageKey = sha256Hex(authorityKey);
-	const rowSync = normalizeRowSync(rowSyncInput);
+	const storageScopeHash = sha256Hex(storageScopeKey);
+	const recordSync = normalizeRecordSync(recordSyncInput);
 	const pending = new Map<number, PendingRequest>();
 	const workspaces = new Map<string, BoundWorkspace>();
 	const invalidationChannel = createBroadcastChannel(
-		`epicenter-${authorityStorageKey}-records`,
+		`epicenter-${storageScopeHash}-records`,
 	);
 	let requestId = 0;
 	let isDisposed = false;
@@ -139,7 +139,7 @@ export function createBrowserWorkspaceRuntime({
 		ready = Promise.withResolvers<void>();
 		worker = new Worker(
 			new URL('./browser-runtime-worker.ts', import.meta.url),
-			{ type: 'module', name: `epicenter-${authorityStorageKey}` },
+			{ type: 'module', name: `epicenter-${storageScopeHash}` },
 		);
 		const ownedWorker = worker;
 		const ownedReady = ready;
@@ -204,19 +204,19 @@ export function createBrowserWorkspaceRuntime({
 		message: Extract<BrowserRuntimeMessage, { type: 'transport-request' }>,
 	): Promise<void> {
 		try {
-			if (!rowSync) throw new Error('Browser row-sync transport is not bound');
-			const response = await rowSync.fetch(
+			if (!recordSync) throw new Error('Browser record sync transport is not bound');
+			const response = await recordSync.fetch(
 				new URL(
 					`/api/records/${encodeURIComponent(message.workspaceId)}/${message.action}`,
-					rowSync.baseUrl,
+					recordSync.baseUrl,
 				),
 				{
 					method: 'POST',
 					headers: {
-						...rowSync.headers,
+						...recordSync.headers,
 						'content-type': 'application/json',
 					},
-					credentials: rowSync.credentials,
+					credentials: recordSync.credentials,
 					body: JSON.stringify(message.body),
 				},
 			);
@@ -356,7 +356,7 @@ export function createBrowserWorkspaceRuntime({
 					baselinePromotedListeners.delete(listener);
 				};
 			},
-		} satisfies PageWorkspaceRecordOwner;
+		} satisfies PageWorkspaceOwner;
 		const documents = createDocumentRuntime({
 			admitIntent: owner.admitIntent,
 			readParts: owner.readCurrentDocumentParts,
@@ -435,20 +435,18 @@ export function createBrowserWorkspaceRuntime({
 			id: definition.id,
 			tables,
 			kv: kv as never,
-			records: Object.freeze({
-				sql<TResultSchema extends TSchema>(
-					query: string,
-					parameters: readonly SqliteValue[],
-					resultSchema: TResultSchema,
-				): Promise<Static<TResultSchema>[]> {
-					return request(manifest, {
-						kind: 'sql',
-						query,
-						parameters,
-						resultSchema,
-					});
-				},
-			}),
+			sql<TResultSchema extends TSchema>(
+				query: string,
+				parameters: readonly SqliteValue[],
+				resultSchema: TResultSchema,
+			): Promise<Static<TResultSchema>[]> {
+				return request(manifest, {
+					kind: 'sql',
+					query,
+					parameters,
+					resultSchema,
+				});
+			},
 		}) as unknown as OpenedWorkspace<TDefinition>;
 		return {
 			handle,
@@ -477,10 +475,10 @@ export function createBrowserWorkspaceRuntime({
 			}
 			const manifest: BrowserWorkspaceManifest = {
 				workspaceId: definition.id,
-				storageKey: sha256Hex(`${authorityKey}\0${definition.id}`),
+				storageKey: sha256Hex(`${storageScopeKey}\0${definition.id}`),
 				tables: serializeTableLenses(definition.tables),
 				kv: JSON.parse(JSON.stringify(definition.kv)),
-				rowSync: rowSync?.binding,
+				rowSync: recordSync?.binding,
 			};
 			const binding = createHandle(definition, manifest);
 			workspaces.set(definition.id, {
@@ -528,8 +526,8 @@ function defaultBroadcastChannel(
 		: new BroadcastChannel(name);
 }
 
-function normalizeRowSync(
-	input: CreateBrowserWorkspaceRuntimeOptions['rowSync'],
+function normalizeRecordSync(
+	input: CreateBrowserWorkspaceRuntimeOptions['recordSync'],
 ):
 	| {
 			binding: BrowserRowSyncBinding;

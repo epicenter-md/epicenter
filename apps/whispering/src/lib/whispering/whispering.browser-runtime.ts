@@ -12,12 +12,12 @@ export function createWhisperingBrowserRuntime({
 	onRecordsChanged(workspaceId: string): void;
 }) {
 	const bootState = auth.state;
-	const authorityKey =
+	const storageScopeKey =
 		bootState.status === 'signed-out'
 			? `local:${auth.deployment.baseURL}`
 			: `${auth.deployment.baseURL}\0${bootState.principalId}`;
 	return createBrowserWorkspaceRuntime({
-		authorityKey,
+		storageScopeKey,
 		rowSync:
 			bootState.status === 'signed-out'
 				? undefined

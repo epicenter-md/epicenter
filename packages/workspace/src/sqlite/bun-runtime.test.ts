@@ -6,7 +6,7 @@
  *
  * Key behaviors:
  * - rows, KV, and row documents survive runtime close and reopen
- * - synchronized local writes reach an in-process row authority
+ * - synchronized local writes reach an in-process workspace authority
  */
 
 import { expect, test } from 'bun:test';
@@ -37,7 +37,7 @@ test('local Bun runtime reopens durable rows, KV, and documents', async () => {
 		let rowId: string;
 		{
 			await using runtime = createBunWorkspaceRuntime({
-				authorityKey: 'local-authority',
+				storageScopeKey: 'local-storage-scope',
 				storageRoot: root,
 			});
 			const workspace = await runtime.open(definition);
@@ -50,7 +50,7 @@ test('local Bun runtime reopens durable rows, KV, and documents', async () => {
 		}
 
 		await using reopened = createBunWorkspaceRuntime({
-			authorityKey: 'local-authority',
+			storageScopeKey: 'local-storage-scope',
 			storageRoot: root,
 		});
 		const workspace = await reopened.open(definition);
@@ -71,7 +71,7 @@ test('synchronized Bun runtime sends RowIntents through enroll and sync', async 
 	const transport = createTestTransport(authorityState.authority);
 	try {
 		await using runtime = createBunWorkspaceRuntime({
-			authorityKey: 'remote-authority',
+			storageScopeKey: 'remote-storage-scope',
 			storageRoot: root,
 			recordTransport: () => transport,
 			recordPollIntervalMs: 60_000,

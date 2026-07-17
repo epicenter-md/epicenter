@@ -16,9 +16,9 @@ import {
 } from './canonical-documents.js';
 import { type CanonicalKv, createCanonicalKv } from './canonical-kv.js';
 import {
-	type CanonicalRecords,
-	createCanonicalRecords,
-} from './canonical-records.js';
+	type CanonicalRows,
+	createCanonicalRows,
+} from './canonical-rows.js';
 import {
 	type CanonicalReplica,
 	type CanonicalReplicaTransport,
@@ -41,7 +41,7 @@ type OpenedRecords = {
 	manifest: BrowserWorkspaceManifest;
 	database: Database;
 	sqlite: RowSyncSqlite;
-	records: CanonicalRecords;
+	records: CanonicalRows;
 	kv: CanonicalKv<KvDefinitions>;
 	admitDocumentIntent(intent: WireRowIntent): void;
 	replica?: CanonicalReplica;
@@ -118,7 +118,7 @@ async function openRecords(
 							},
 						})
 					: undefined;
-				const records = createCanonicalRecords(sqlite, definitions, {
+				const records = createCanonicalRows(sqlite, definitions, {
 					admitIntent: replica?.admit,
 				});
 				kv = createCanonicalKv(sqlite, (manifest.kv ?? {}) as KvDefinitions, {
@@ -207,7 +207,7 @@ function synchronize(replica: CanonicalReplica, workspaceId: string): void {
 	});
 }
 
-function tableFor(records: CanonicalRecords, name: string) {
+function tableFor(records: CanonicalRows, name: string) {
 	const table = records.tables[name];
 	if (!table) throw new Error(`Unknown canonical table '${name}'`);
 	return table;

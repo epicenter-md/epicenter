@@ -19,7 +19,7 @@ import {
 	type ConstrainedChanges,
 	type CreateInputFor,
 	compileTableLens,
-	type RecordLensError,
+	type RowLensError,
 	type RowFor,
 	type TableLensDefinition,
 	type TableLensDefinitions,
@@ -32,11 +32,11 @@ const mintRowId = customAlphabet(ROW_ID_ALPHABET, 24);
 
 export type CanonicalTable<TDefinition extends TableLensDefinition> = {
 	/** Read and project one current row through this release's lens. */
-	get(id: string): Result<RowFor<TDefinition> | undefined, RecordLensError>;
+	get(id: string): Result<RowFor<TDefinition> | undefined, RowLensError>;
 	/** List every current row, partitioned by release-lens conformance. */
 	list(): {
 		rows: RowFor<TDefinition>[];
-		nonconforming: RecordLensError[];
+		nonconforming: RowLensError[];
 	};
 	/** Validate complete fields and allocate the row's structural id. */
 	create(fields: CreateInputFor<TDefinition>): RowFor<TDefinition>;
@@ -44,7 +44,7 @@ export type CanonicalTable<TDefinition extends TableLensDefinition> = {
 	update<const TChanges extends Record<string, unknown>>(
 		id: string,
 		changes: TChanges & ConstrainedChanges<TDefinition, TChanges>,
-	): Result<RowFor<TDefinition> | undefined, RecordLensError>;
+	): Result<RowFor<TDefinition> | undefined, RowLensError>;
 	delete(id: string): void;
 };
 
@@ -52,7 +52,7 @@ export type CanonicalTables<TTables extends TableLensDefinitions> = {
 	[K in keyof TTables]: CanonicalTable<TTables[K]>;
 };
 
-export type CanonicalRecordsOptions = {
+export type CanonicalRowsOptions = {
 	/** Synchronized mode admits durable RowIntents instead of mutating confirmed rows. */
 	admitIntent?(intent: WireRowIntent): void;
 	onLocalCommit?(): void;
@@ -61,7 +61,7 @@ export type CanonicalRecordsOptions = {
 };
 
 /** Open release-local table lenses over the canonical four-table SQLite owner. */
-export function createCanonicalRecords<
+export function createCanonicalRows<
 	const TTables extends TableLensDefinitions,
 >(
 	sqlite: RowSyncSqlite,
@@ -70,7 +70,7 @@ export function createCanonicalRecords<
 		admitIntent,
 		onLocalCommit = () => undefined,
 		onRowsDeleted = () => undefined,
-	}: CanonicalRecordsOptions = {},
+	}: CanonicalRowsOptions = {},
 ) {
 	assertDefinitions(definitions);
 	initializeCanonicalSchema(sqlite);
@@ -88,7 +88,7 @@ export function createCanonicalRecords<
 				},
 				list() {
 					const rows: Record<string, unknown>[] = [];
-					const nonconforming: RecordLensError[] = [];
+					const nonconforming: RowLensError[] = [];
 					for (const current of listCurrentRows(sqlite, tableName)) {
 						const result = lens.project(
 							tableName,
@@ -221,12 +221,12 @@ export function createCanonicalRecords<
 	};
 }
 
-export type CanonicalRecords<
+export type CanonicalRows<
 	TTables extends TableLensDefinitions = TableLensDefinitions,
-> = ReturnType<typeof createCanonicalRecords<TTables>>;
+> = ReturnType<typeof createCanonicalRows<TTables>>;
 
 function expectConforming<TResult>(
-	result: Result<TResult, RecordLensError>,
+	result: Result<TResult, RowLensError>,
 ): TResult {
 	if (result.error !== null) throw new Error(result.error.message);
 	return result.data;

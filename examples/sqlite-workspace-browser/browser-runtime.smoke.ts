@@ -60,7 +60,7 @@ const server = Bun.spawn(
 	{ cwd: import.meta.dir, stdout: 'ignore', stderr: 'inherit' },
 );
 
-const url = `${origin}/browser-runtime.html?${new URLSearchParams({ authority })}`;
+const url = `${origin}/browser-runtime.html?${new URLSearchParams({ storageScope: authority })}`;
 
 async function waitForServer(): Promise<void> {
 	for (let attempt = 0; attempt < 250; attempt++) {

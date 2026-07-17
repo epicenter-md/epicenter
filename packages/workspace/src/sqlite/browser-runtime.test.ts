@@ -109,7 +109,7 @@ const definition = defineWorkspace({
 function createRuntime() {
 	globalThis.Worker = FakeWorker as unknown as typeof Worker;
 	return createBrowserWorkspaceRuntime({
-		authorityKey: 'browser-authority',
+		storageScopeKey: 'browser-storage-scope',
 		createBroadcastChannel: () => undefined,
 	});
 }
@@ -204,9 +204,9 @@ test('worker transport actions pass through to matching HTTP route suffixes', as
 	globalThis.Worker = FakeWorker as unknown as typeof Worker;
 	const urls: string[] = [];
 	await using runtime = createBrowserWorkspaceRuntime({
-		authorityKey: 'browser-authority',
+		storageScopeKey: 'browser-storage-scope',
 		createBroadcastChannel: () => undefined,
-		rowSync: {
+		recordSync: {
 			baseUrl: 'https://example.test',
 			async fetch(input) {
 				urls.push(String(input));

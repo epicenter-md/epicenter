@@ -6,7 +6,7 @@ import { createDesktopWorkspaceOwner } from '@epicenter/workspace/sqlite/desktop
 /** The executable workspace lineage statically linked into the Bun sidecar. */
 export function createEpicenterWorkspaceOwner(dataDir: string) {
 	return createDesktopWorkspaceOwner({
-		authorityKey: 'epicenter-desktop-local',
+		storageScopeKey: 'epicenter-desktop-local',
 		storageRoot: join(dataDir, 'workspace-runtime'),
 		definitions: [skillsWorkspace, whisperingWorkspace],
 	});

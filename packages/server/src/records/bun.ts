@@ -21,14 +21,14 @@ function databaseFilename(partition: RecordsPartition): string {
 	return `${createHash('sha256').update(partitionKey(partition)).digest('hex')}.sqlite`;
 }
 
-/** Open the persistent Bun record authorities rooted in one deployment directory. */
+/** Open the persistent Bun workspace authorities rooted in one deployment directory. */
 export function createBunRecords({ dir }: { dir: string }) {
 	mkdirSync(dir, { recursive: true });
 	const authorities = new Map<string, OpenAuthority>();
 	let isClosed = false;
 
 	function load(partition: RecordsPartition): OpenAuthority {
-		if (isClosed) throw new Error('Bun records backend is closed');
+		if (isClosed) throw new Error('Bun workspace authority backend is closed');
 		const key = partitionKey(partition);
 		const cached = authorities.get(key);
 		if (cached) return cached;

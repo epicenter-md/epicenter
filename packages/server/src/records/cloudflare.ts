@@ -21,7 +21,7 @@ function partitionName({ principalId, workspaceId }: RecordsPartition): string {
 	return JSON.stringify([principalId, workspaceId]);
 }
 
-/** One server-owned logical-record authority backed by Durable Object SQLite. */
+/** One server-owned workspace authority backed by Durable Object SQLite. */
 export class RowAuthorityDurableObject extends DurableObject {
 	private readonly authority: RowAuthority;
 
@@ -70,7 +70,7 @@ type RecordsRpc = {
 	baselineScan(request: BaselineScanRequest): Promise<BaselineScanResponse>;
 };
 
-/** Build the portable records backend over the hosted Worker's DO namespace. */
+/** Build the portable workspace authority backend over the hosted Worker's DO namespace. */
 export function createDurableObjectRecords(
 	namespace: DurableObjectNamespace<RowAuthorityDurableObject>,
 ): Records {

@@ -7,8 +7,10 @@ import {
 import { createBrowserWorkspaceRuntime } from '@epicenter/workspace/sqlite/browser';
 import { Type } from 'typebox';
 
-const authorityKey = new URLSearchParams(location.search).get('authority');
-if (!authorityKey) throw new Error('Expected an authority query parameter');
+const storageScopeKey = new URLSearchParams(location.search).get('storageScope');
+if (!storageScopeKey) {
+	throw new Error('Expected a storageScope query parameter');
+}
 
 const definition = defineWorkspace({
 	id: 'browser-runtime-smoke',
@@ -20,7 +22,7 @@ const definition = defineWorkspace({
 
 let changes = 0;
 const runtime = createBrowserWorkspaceRuntime({
-	authorityKey,
+	storageScopeKey,
 	rowSync: {
 		baseUrl: location.origin,
 		fetch: (input, init) => fetch(input, init),
@@ -40,7 +42,7 @@ window.productionBrowserRuntime = {
 		return workspace.tables.notes.get(id);
 	},
 	sql() {
-		return workspace.records.sql(
+		return workspace.sql(
 			'SELECT id, title FROM notes ORDER BY id',
 			[],
 			Type.Object({ id: Type.String(), title: Type.String() }),

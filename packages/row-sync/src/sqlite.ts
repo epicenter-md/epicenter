@@ -10,7 +10,7 @@ export type SqliteValue = string | number | null | Uint8Array;
 export type SqliteRow = Record<string, SqliteValue | ArrayBuffer>;
 
 /**
- * The complete runtime-specific boundary consumed by the row authority.
+ * The complete runtime-specific boundary consumed by the workspace authority.
  *
  * Transactions are synchronous because every supported embedded SQLite engine
  * provides a synchronous transaction callback. Network and hashing work stays

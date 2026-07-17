@@ -1,5 +1,14 @@
+import {
+	decodeBase64,
+	encodeBase64,
+	parseRowIntent,
+} from '@epicenter/row-sync';
 import { Type } from 'typebox';
 import { createBunWorkspaceRuntime } from './bun-runtime.js';
+import {
+	applyRowDocumentUpdate,
+	encodeRowDocumentState,
+} from './canonical-documents.js';
 
 export { DesktopWorkspaceError } from './desktop-protocol.js';
 
@@ -24,11 +33,11 @@ type ErasedKv = {
 
 /** Bun-only owner over a statically linked set of imported definitions. */
 export function createDesktopWorkspaceOwner({
-	authorityKey,
+	storageScopeKey,
 	storageRoot,
 	definitions,
 }: {
-	authorityKey: string;
+	storageScopeKey: string;
 	storageRoot: string;
 	definitions: readonly WorkspaceDefinition[];
 }) {
@@ -39,7 +48,7 @@ export function createDesktopWorkspaceOwner({
 		}
 		catalog.set(definition.id, definition);
 	}
-	const runtime = createBunWorkspaceRuntime({ authorityKey, storageRoot });
+	const runtime = createBunWorkspaceRuntime({ storageScopeKey, storageRoot });
 	const handles = new Map<string, Promise<ErasedWorkspace>>();
 
 	const open = (workspaceId: string): Promise<ErasedWorkspace> => {
@@ -63,7 +72,7 @@ export function createDesktopWorkspaceOwner({
 			const operation = parseDesktopRecordOperation(input);
 			const workspace = await open(workspaceId);
 			if (operation.kind === 'sql') {
-				return workspace.records.sql(
+				return workspace.sql(
 					operation.query,
 					operation.parameters,
 					sqliteRows,
@@ -83,6 +92,43 @@ export function createDesktopWorkspaceOwner({
 			}
 			if (operation.kind === 'kv-unset') {
 				return (workspace.kv as unknown as ErasedKv).unset(operation.key);
+			}
+			if (operation.kind === 'read-current-row') {
+				const table = workspace.tables[operation.table];
+				if (!table) throw new Error(`Unknown table '${operation.table}'`);
+				try {
+					using _document = await table.document.open(operation.rowId);
+					return {};
+				} catch (cause) {
+					if (cause instanceof Error && /absent row/.test(cause.message)) {
+						return undefined;
+					}
+					throw cause;
+				}
+			}
+			if (operation.kind === 'read-current-document') {
+				const table = workspace.tables[operation.table];
+				if (!table) throw new Error(`Unknown table '${operation.table}'`);
+				using document = await table.document.open(operation.rowId);
+				return encodeBase64(encodeRowDocumentState(document));
+			}
+			if (operation.kind === 'admit-document-intent') {
+				const { intent } = operation;
+				if (
+					intent.kind !== 'update' ||
+					intent.documentUpdate === undefined ||
+					intent.fields !== undefined
+				) {
+					throw new TypeError(
+						'Desktop document admission requires a document-only update intent',
+					);
+				}
+				const table = workspace.tables[intent.table];
+				if (!table) throw new Error(`Unknown table '${intent.table}'`);
+				await using document = await table.document.open(intent.rowId);
+				applyRowDocumentUpdate(document, decodeBase64(intent.documentUpdate));
+				await document.whenDurable();
+				return undefined;
 			}
 			const table = workspace.tables[operation.table];
 			if (!table) throw new Error(`Unknown table '${operation.table}'`);
@@ -135,6 +181,16 @@ function parseDesktopRecordOperation(input: unknown): DesktopRecordOperation {
 		case 'kv-set':
 			if (typeof input.key !== 'string' || !('value' in input)) break;
 			return { kind: 'kv-set', key: input.key, value: input.value };
+		case 'read-current-row':
+		case 'read-current-document':
+			if (!table || typeof input.rowId !== 'string') break;
+			return { kind: input.kind, table, rowId: input.rowId };
+		case 'admit-document-intent':
+			if (!isPlainObject(input.intent)) break;
+			return {
+				kind: 'admit-document-intent',
+				intent: parseRowIntent(input.intent),
+			};
 		case 'get':
 		case 'delete':
 			if (!table || !id) break;

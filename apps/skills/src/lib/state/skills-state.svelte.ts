@@ -5,7 +5,7 @@ import {
 	scanReferences,
 	scanSkills,
 } from '@epicenter/skills';
-import type { RecordLensError } from '@epicenter/workspace/sqlite';
+import type { RowLensError } from '@epicenter/workspace/sqlite';
 import { onSkillsRecordsChanged, skills } from '$lib/skills/client';
 
 export type SkillMetadataUpdate = Partial<
@@ -15,7 +15,7 @@ export type SkillMetadataUpdate = Partial<
 function createSkillsState() {
 	let skillRows = $state.raw<Skill[]>([]);
 	let referenceRows = $state.raw<Reference[]>([]);
-	let nonconforming = $state.raw<RecordLensError[]>([]);
+	let nonconforming = $state.raw<RowLensError[]>([]);
 	let loadError = $state.raw<unknown>(null);
 	let selectedSkillId = $state<string | null>(null);
 	let refreshGeneration = 0;

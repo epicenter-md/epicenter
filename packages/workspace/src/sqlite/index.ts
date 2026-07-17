@@ -18,8 +18,8 @@ export {
 	defineTable,
 	type JsonObject,
 	type JsonValue,
-	RecordLensError,
-	type RecordLensIssue,
+	RowLensError,
+	type RowLensIssue,
 	type RowFor,
 	type TableLensDefinition,
 	type TableLensDefinitions,
@@ -27,7 +27,7 @@ export {
 export type {
 	OpenedWorkspace,
 	WorkspaceKv,
-	WorkspaceRecords,
+	WorkspaceSql,
 	WorkspaceRuntime,
 	WorkspaceTables,
 } from './runtime.js';

@@ -40,7 +40,7 @@ test('one runtime composes explicit recording repair, SQL, and Skills documents'
 	);
 	try {
 		const historicalRuntime = createBunWorkspaceRuntime({
-			authorityKey: 'local-person',
+			storageScopeKey: 'local-person',
 			storageRoot,
 		});
 		const historical = await historicalRuntime.open(
@@ -58,7 +58,7 @@ test('one runtime composes explicit recording repair, SQL, and Skills documents'
 		await historicalRuntime[Symbol.asyncDispose]();
 
 		await using runtime = createBunWorkspaceRuntime({
-			authorityKey: 'local-person',
+			storageScopeKey: 'local-person',
 			storageRoot,
 		});
 		const [whispering, skills] = await Promise.all([
@@ -83,7 +83,7 @@ test('one runtime composes explicit recording repair, SQL, and Skills documents'
 		);
 		expect(repaired?.sourceId).toBe('artifact-1');
 		expect(
-			await whispering.records.sql(
+			await whispering.sql(
 				'SELECT id, sourceId, transcript FROM recordings',
 				[],
 				Type.Object({
@@ -113,7 +113,7 @@ test('one runtime composes explicit recording repair, SQL, and Skills documents'
 		content.insert(0, 'Return three concise bullets.');
 		expect(content.toString()).toBe('Return three concise bullets.');
 		await expect(
-			whispering.records.sql(
+			whispering.sql(
 				"DELETE FROM recordings WHERE id = 'forbidden'",
 				[],
 				Type.Object({}),

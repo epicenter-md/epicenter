@@ -1,6 +1,6 @@
 import { field } from '@epicenter/field';
 import type { RowSyncSqlite } from '@epicenter/row-sync';
-import { createCanonicalRecords } from './canonical-records.js';
+import { createCanonicalRows } from './canonical-rows.js';
 import { defineTable } from './lens-definition.js';
 
 const definitions = {
@@ -11,7 +11,7 @@ const definitions = {
 };
 
 declare const sqlite: RowSyncSqlite;
-const notes = createCanonicalRecords(sqlite, definitions).tables.notes;
+const notes = createCanonicalRows(sqlite, definitions).tables.notes;
 const row = notes.create({ title: 'typed' });
 notes.update(row.id, { archived: undefined });
 

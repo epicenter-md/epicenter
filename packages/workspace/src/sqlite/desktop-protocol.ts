@@ -1,4 +1,4 @@
-import type { SqliteValue } from '@epicenter/row-sync';
+import type { SqliteValue, WireRowIntent } from '@epicenter/row-sync';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -13,6 +13,9 @@ export type DesktopRecordOperation =
 	| { kind: 'kv-get'; key: string }
 	| { kind: 'kv-set'; key: string; value: unknown }
 	| { kind: 'kv-unset'; key: string }
+	| { kind: 'read-current-row'; table: string; rowId: string }
+	| { kind: 'read-current-document'; table: string; rowId: string }
+	| { kind: 'admit-document-intent'; intent: WireRowIntent }
 	| { kind: 'list'; table: string }
 	| { kind: 'create'; table: string; input: Record<string, unknown> }
 	| {
@@ -86,7 +89,7 @@ function isOptionalRowOperation(operation: DesktopRecordOperation): boolean {
 	);
 }
 
-export function desktopWorkspaceRecordUrl(
+export function desktopWorkspaceUrl(
 	baseUrl: string,
 	workspaceId: string,
 ): string {

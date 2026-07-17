@@ -452,7 +452,7 @@ export type RowAuthorityCompactionPolicy = {
 	minimumRetainedSequences: number;
 };
 
-/** Open one schema-blind fold-never-refuse row authority over caller-owned SQLite. */
+/** Open one schema-blind workspace authority over caller-owned SQLite. */
 export function openRowAuthority({
 	database,
 	codec,

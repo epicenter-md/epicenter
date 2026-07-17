@@ -9,8 +9,8 @@ import {
 /**
  * One absolute physical-size observation per storage source (ADR-0137).
  * This is the account's source registry and last-observed cache: `workspace`
- * sources record the row authority's `databaseSize`, the `blobs` source the
- * account's absolute listed object bytes. The hosted deployment refreshes
+ * sources record the workspace authority's `databaseSize`, the `blobs` source
+ * the account's absolute listed object bytes. The hosted deployment refreshes
  * and sums these rows when it issues one capability; no synchronization
  * exchange reads or writes them. Writes always overwrite with the newest
  * absolute value; nothing accumulates deltas. A workspace enters the registry

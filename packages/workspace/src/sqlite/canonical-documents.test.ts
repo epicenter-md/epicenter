@@ -19,7 +19,7 @@ import {
 	createLocalDocumentAdmission,
 	mergeDocumentUpdates,
 } from './canonical-documents.js';
-import { createCanonicalRecords } from './canonical-records.js';
+import { createCanonicalRows } from './canonical-rows.js';
 import {
 	createCanonicalReplica,
 	readCurrentDocumentParts,
@@ -64,7 +64,7 @@ test('open, edit, whenDurable, dispose, and reopen restore durable state', async
 	try {
 		const sqlite = createBunSqliteAdapter(database);
 		let documents: ReturnType<typeof createDocumentRuntime>;
-		const records = createCanonicalRecords(sqlite, definitions, {
+		const records = createCanonicalRows(sqlite, definitions, {
 			onRowsDeleted(addresses) {
 				documents.revoke(addresses);
 			},
@@ -99,7 +99,7 @@ test('persistence failure poisons durability and further transactions', async ()
 	const database = new Database(':memory:');
 	try {
 		const sqlite = createBunSqliteAdapter(database);
-		const row = createCanonicalRecords(sqlite, definitions).tables.notes.create(
+		const row = createCanonicalRows(sqlite, definitions).tables.notes.create(
 			{
 				title: 'Poisoned',
 			},
@@ -128,7 +128,7 @@ test('local deletion revokes handles and drops queued updates', async () => {
 	try {
 		const sqlite = createBunSqliteAdapter(database);
 		let documents: ReturnType<typeof createDocumentRuntime>;
-		const records = createCanonicalRecords(sqlite, definitions, {
+		const records = createCanonicalRows(sqlite, definitions, {
 			onRowsDeleted: (addresses) => documents.revoke(addresses),
 		});
 		const row = records.tables.notes.create({ title: 'Delete me' });
@@ -156,7 +156,7 @@ test('promotion-style revocation drains captured updates into durable intents', 
 	const database = new Database(':memory:');
 	try {
 		const sqlite = createBunSqliteAdapter(database);
-		const records = createCanonicalRecords(sqlite, definitions);
+		const records = createCanonicalRows(sqlite, definitions);
 		const row = records.tables.notes.create({ title: 'Keep my edit' });
 		const documents = createDocumentRuntime({
 			admitIntent: createLocalDocumentAdmission({
@@ -199,7 +199,7 @@ test('remote deletion revokes a synchronized row document handle', async () => {
 			codec: { mergeUpdates: mergeDocumentUpdates },
 			onRowsDeleted: (addresses) => documents.revoke(addresses),
 		});
-		const firstRecords = createCanonicalRecords(firstSqlite, definitions, {
+		const firstRecords = createCanonicalRows(firstSqlite, definitions, {
 			admitIntent: first.admit,
 		});
 		const row = firstRecords.tables.notes.create({ title: 'Shared' });

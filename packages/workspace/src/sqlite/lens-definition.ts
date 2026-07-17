@@ -84,14 +84,14 @@ export type ConstrainedChanges<
 		: never;
 };
 
-export type RecordLensIssue = {
+export type RowLensIssue = {
 	field: string;
 	kind: 'missing' | 'invalid';
 	message: string;
 };
 
-export const RecordLensError = defineErrors({
-	NonconformingRecord: ({
+export const RowLensError = defineErrors({
+	NonconformingRow: ({
 		table,
 		id,
 		raw,
@@ -100,7 +100,7 @@ export const RecordLensError = defineErrors({
 		table: string;
 		id: string;
 		raw: JsonObject;
-		issues: readonly RecordLensIssue[];
+		issues: readonly RowLensIssue[];
 	}) => ({
 		message: `Canonical row '${table}.${id}' does not satisfy the current lens`,
 		table,
@@ -109,7 +109,7 @@ export const RecordLensError = defineErrors({
 		issues,
 	}),
 });
-export type RecordLensError = InferErrors<typeof RecordLensError>;
+export type RowLensError = InferErrors<typeof RowLensError>;
 
 type CompiledLensField = {
 	name: string;
@@ -130,7 +130,7 @@ type CompiledTableLens = {
 		table: string,
 		id: string,
 		payload: JsonObject,
-	): Result<Record<string, unknown>, RecordLensError>;
+	): Result<Record<string, unknown>, RowLensError>;
 	validateCreate(input: Record<string, unknown>): JsonObject;
 	normalizeChanges(changes: Record<string, unknown>): NormalizedChanges;
 };
@@ -238,7 +238,7 @@ function createCompiledLens(
 		optional,
 		project(table: string, id: string, payload: JsonObject) {
 			const row: Record<string, unknown> = { id };
-			const issues: RecordLensIssue[] = [];
+			const issues: RowLensIssue[] = [];
 			for (const [name, field] of fields) {
 				if (!Object.hasOwn(payload, name)) {
 					if (!optional.has(name)) {
@@ -263,7 +263,7 @@ function createCompiledLens(
 			}
 			return issues.length === 0
 				? Ok(row)
-				: RecordLensError.NonconformingRecord({
+				: RowLensError.NonconformingRow({
 						table,
 						id,
 						raw: cloneJsonObject(payload),

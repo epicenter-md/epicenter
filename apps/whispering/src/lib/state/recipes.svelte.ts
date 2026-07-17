@@ -1,4 +1,4 @@
-import type { RecordLensError } from '@epicenter/workspace/sqlite';
+import type { RowLensError } from '@epicenter/workspace/sqlite';
 import { nanoid } from 'nanoid/non-secure';
 import { onWhisperingRecordsChanged, whispering } from '#platform/whispering';
 import { BUILTIN_RECIPES } from '$lib/state/builtin-recipes';
@@ -6,7 +6,7 @@ import type { Recipe } from '$lib/workspace';
 
 function createRecipes() {
 	let rows = $state.raw<Recipe[]>([]);
-	let nonconforming = $state.raw<RecordLensError[]>([]);
+	let nonconforming = $state.raw<RowLensError[]>([]);
 	let loadError = $state.raw<unknown>(null);
 	let canonicalIdBySourceId = new Map<string, string>();
 	let refreshGeneration = 0;
@@ -18,7 +18,7 @@ function createRecipes() {
 	async function refresh(): Promise<void> {
 		const generation = ++refreshGeneration;
 		const nextRows: Recipe[] = [];
-		const nextNonconforming: RecordLensError[] = [];
+		const nextNonconforming: RowLensError[] = [];
 		const nextCanonicalIds = new Map<string, string>();
 		try {
 			const listed = await whispering.tables.recipes.list();

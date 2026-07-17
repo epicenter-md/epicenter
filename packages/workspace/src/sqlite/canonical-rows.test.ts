@@ -1,5 +1,5 @@
 /**
- * Canonical Records Tests
+ * Canonical Rows Tests
  *
  * Verifies release-lens CRUD over both local-only canonical rows and a
  * synchronized RowIntent replica.
@@ -18,7 +18,7 @@ import { field } from '@epicenter/field';
 import { createBunSqliteAdapter } from '@epicenter/row-sync/bun';
 import { expectOk } from 'wellcrafted/testing';
 import { mergeDocumentUpdates } from './canonical-documents.js';
-import { createCanonicalRecords } from './canonical-records.js';
+import { createCanonicalRows } from './canonical-rows.js';
 import { createCanonicalReplica } from './canonical-replica.js';
 import { defineTable } from './lens-definition.js';
 import {
@@ -34,11 +34,11 @@ const definitions = {
 };
 
 test('local-only create, update, delete, and reopen preserve canonical state', () => {
-	const root = mkdtempSync(join(tmpdir(), 'epicenter-canonical-records-'));
+	const root = mkdtempSync(join(tmpdir(), 'epicenter-canonical-rows-'));
 	const path = join(root, 'workspace.sqlite3');
 	try {
 		let database = new Database(path, { create: true });
-		let records = createCanonicalRecords(
+		let records = createCanonicalRows(
 			createBunSqliteAdapter(database),
 			definitions,
 		);
@@ -55,7 +55,7 @@ test('local-only create, update, delete, and reopen preserve canonical state', (
 		database.close();
 
 		database = new Database(path);
-		records = createCanonicalRecords(
+		records = createCanonicalRows(
 			createBunSqliteAdapter(database),
 			definitions,
 		);
@@ -68,7 +68,7 @@ test('local-only create, update, delete, and reopen preserve canonical state', (
 		database.close();
 
 		database = new Database(path);
-		records = createCanonicalRecords(
+		records = createCanonicalRows(
 			createBunSqliteAdapter(database),
 			definitions,
 		);
@@ -91,7 +91,7 @@ test('synchronized create, update, and delete project before authority round tri
 			transport,
 			codec: { mergeUpdates: mergeDocumentUpdates },
 		});
-		const records = createCanonicalRecords(sqlite, definitions, {
+		const records = createCanonicalRows(sqlite, definitions, {
 			admitIntent: replica.admit,
 		});
 		const created = records.tables.notes.create({ title: 'Local' });
