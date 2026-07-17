@@ -206,7 +206,7 @@ test('worker transport actions pass through to matching HTTP route suffixes', as
 	await using runtime = createBrowserWorkspaceRuntime({
 		authorityKey: 'browser-authority',
 		createBroadcastChannel: () => undefined,
-		recordSync: {
+		rowSync: {
 			baseUrl: 'https://example.test',
 			async fetch(input) {
 				urls.push(String(input));

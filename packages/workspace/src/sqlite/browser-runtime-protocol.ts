@@ -13,11 +13,11 @@ export type BrowserWorkspaceManifest = {
 	tables: Record<string, SerializedTableLens>;
 	/** Serialized field.* schemas for this release's KV lens (ADR-0132). */
 	kv: Record<string, unknown>;
-	recordSync?: BrowserRecordSyncBinding;
+	rowSync?: BrowserRowSyncBinding;
 };
 
 /** Serializable environment binding consumed only inside the records Worker. */
-export type BrowserRecordSyncBinding = {
+export type BrowserRowSyncBinding = {
 	intervalMs: number;
 };
 

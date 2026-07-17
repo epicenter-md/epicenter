@@ -23,7 +23,7 @@ const definition = defineWorkspace({
 let changes = 0;
 const runtime = createBrowserWorkspaceRuntime({
 	authorityKey,
-	recordSync: {
+	rowSync: {
 		baseUrl: location.origin,
 		fetch: (input, init) => fetch(input, init),
 	},

@@ -18,7 +18,7 @@ export function createWhisperingBrowserRuntime({
 			: `${auth.deployment.baseURL}\0${bootState.principalId}`;
 	return createBrowserWorkspaceRuntime({
 		authorityKey,
-		recordSync:
+		rowSync:
 			bootState.status === 'signed-out'
 				? undefined
 				: {
