@@ -2,7 +2,8 @@
  * Desktop workspace owner integration.
  *
  * Two independent same-origin clients use one statically linked Bun owner.
- * Client disposal never closes owner state, and a new owner reopens the same
+ * Row deletion revokes peer document handles, client disposal revokes its own
+ * handles without closing owner state, and a new owner reopens the same
  * canonical records after a full server restart.
  */
 import { expect, test } from 'bun:test';
@@ -23,12 +24,21 @@ import { createEpicenterWorkspaceOwner } from './workspace-owner.ts';
 
 const TOKEN = 'desktop-workspace-test-token';
 
-test('two clients share one owner, disconnect independently, and survive restart', async () => {
+test('two clients invalidate documents, disconnect independently, and survive restart', async () => {
 	const root = mkdtempSync(join(tmpdir(), 'epicenter-desktop-owner-'));
+	const createBroadcastChannel = createBroadcastChannelFactory();
 	try {
 		const firstServer = await startDesktopServer(root);
-		const firstClient = createClient(firstServer.origin, firstServer.cookie);
-		const secondClient = createClient(firstServer.origin, firstServer.cookie);
+		const firstClient = createClient(
+			firstServer.origin,
+			firstServer.cookie,
+			createBroadcastChannel,
+		);
+		const secondClient = createClient(
+			firstServer.origin,
+			firstServer.cookie,
+			createBroadcastChannel,
+		);
 		const firstSkills = await firstClient.open(skillsWorkspace);
 		const secondSkills = await secondClient.open(skillsWorkspace);
 		const firstWhispering = await firstClient.open(whisperingWorkspace);
@@ -120,6 +130,7 @@ test('two clients share one owner, disconnect independently, and survive restart
 		expect(secondDocument.get('content').toString()).toBe('Desktop document');
 		await firstSkills.tables.skills.delete(created.id);
 		expect(() => firstDocument.get('content')).toThrow(/revoked/);
+		expect(() => secondDocument.get('content')).toThrow(/revoked/);
 
 		const survivingSkill = await firstSkills.tables.skills.create({
 			sourceId: 'surviving-skill',
@@ -134,6 +145,7 @@ test('two clients share one owner, disconnect independently, and survive restart
 		await survivingDocument.whenDurable();
 
 		await firstClient[Symbol.asyncDispose]();
+		expect(() => survivingDocument.get('content')).toThrow(/disposed/);
 		await secondSkills.tables.skills.update(survivingSkill.id, {
 			description: 'Second client remains connected',
 		});
@@ -145,7 +157,11 @@ test('two clients share one owner, disconnect independently, and survive restart
 		await firstServer.dispose();
 		const restarted = await startDesktopServer(root);
 		try {
-			const client = createClient(restarted.origin, restarted.cookie);
+			const client = createClient(
+				restarted.origin,
+				restarted.cookie,
+				createBroadcastChannel,
+			);
 			const skills = await client.open(skillsWorkspace);
 			const whispering = await client.open(whisperingWorkspace);
 			expect(
@@ -177,11 +193,7 @@ test('two clients share one owner, disconnect independently, and survive restart
 				'already bound to another definition',
 			);
 			await expect(
-				skills.sql(
-					"UPDATE skills SET name = 'Raw write'",
-					[],
-					{} as never,
-				),
+				skills.sql("UPDATE skills SET name = 'Raw write'", [], {} as never),
 			).rejects.toThrow('only SELECT');
 			await client[Symbol.asyncDispose]();
 		} finally {
@@ -238,9 +250,14 @@ async function startDesktopServer(root: string) {
 	};
 }
 
-function createClient(origin: string, cookie: string) {
+function createClient(
+	origin: string,
+	cookie: string,
+	createBroadcastChannel: ReturnType<typeof createBroadcastChannelFactory>,
+) {
 	return createDesktopWorkspaceRuntime({
 		baseUrl: origin,
+		createBroadcastChannel,
 		fetch(input, init) {
 			return fetch(input, {
 				...init,
@@ -248,6 +265,33 @@ function createClient(origin: string, cookie: string) {
 			});
 		},
 	});
+}
+
+function createBroadcastChannelFactory() {
+	type TestChannel = {
+		name: string;
+		onmessage: ((event: MessageEvent<unknown>) => void) | null;
+		postMessage(message: unknown): void;
+		close(): void;
+	};
+	const channels = new Set<TestChannel>();
+	return (name: string): TestChannel => {
+		const channel: TestChannel = {
+			name,
+			onmessage: null,
+			postMessage(message) {
+				for (const peer of channels) {
+					if (peer === channel || peer.name !== name) continue;
+					peer.onmessage?.({ data: structuredClone(message) } as MessageEvent);
+				}
+			},
+			close() {
+				channels.delete(channel);
+			},
+		};
+		channels.add(channel);
+		return channel;
+	};
 }
 
 async function testAssets(root: string) {

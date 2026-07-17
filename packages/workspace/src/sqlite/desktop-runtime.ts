@@ -14,9 +14,31 @@ import type { WorkspaceDefinition } from './runtime-definition.js';
 type DefinitionTables<TDefinition> =
 	TDefinition extends WorkspaceDefinition<infer TTables> ? TTables : never;
 
+type RowAddress = { table: string; rowId: string };
+
+type DesktopInvalidationMessage =
+	| { type: 'records-changed'; workspaceId: string }
+	| { type: 'rows-deleted'; workspaceId: string; addresses: RowAddress[] };
+
+type DesktopRuntimeBroadcastChannel = {
+	onmessage: ((event: MessageEvent<unknown>) => void) | null;
+	postMessage(message: unknown): void;
+	close(): void;
+};
+
+type BoundWorkspace = {
+	definition: WorkspaceDefinition;
+	handle: OpenedWorkspace<WorkspaceDefinition>;
+	revokeRows(addresses: RowAddress[]): void;
+	revokeDocuments(cause: Error): void;
+};
+
 export type CreateDesktopWorkspaceRuntimeOptions = {
 	baseUrl?: string;
 	fetch?(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+	createBroadcastChannel?(
+		name: string,
+	): DesktopRuntimeBroadcastChannel | undefined;
 	onRecordsChanged?(workspaceId: string): void;
 };
 
@@ -24,14 +46,40 @@ export type CreateDesktopWorkspaceRuntimeOptions = {
 export function createDesktopWorkspaceRuntime({
 	baseUrl = location.origin,
 	fetch: fetchInput = globalThis.fetch,
+	createBroadcastChannel = defaultBroadcastChannel,
 	onRecordsChanged = () => undefined,
 }: CreateDesktopWorkspaceRuntimeOptions = {}) {
 	const origin = new URL(baseUrl).origin;
-	const workspaces = new Map<
-		string,
-		{ definition: WorkspaceDefinition; handle: object }
-	>();
+	const workspaces = new Map<string, BoundWorkspace>();
+	const invalidationChannel = createBroadcastChannel(
+		'epicenter-desktop-workspaces',
+	);
 	let disposed = false;
+
+	function emitRecordsChanged(workspaceId: string, broadcast: boolean): void {
+		if (broadcast) {
+			invalidationChannel?.postMessage({
+				type: 'records-changed',
+				workspaceId,
+			} satisfies DesktopInvalidationMessage);
+		}
+		onRecordsChanged(workspaceId);
+	}
+
+	if (invalidationChannel) {
+		invalidationChannel.onmessage = (event: MessageEvent<unknown>) => {
+			const message = parseInvalidationMessage(event.data);
+			if (!message || !workspaces.has(message.workspaceId)) return;
+			switch (message.type) {
+				case 'records-changed':
+					emitRecordsChanged(message.workspaceId, false);
+					return;
+				case 'rows-deleted':
+					workspaces.get(message.workspaceId)?.revokeRows(message.addresses);
+					return;
+			}
+		};
+	}
 
 	const request = async <TResult>(
 		workspaceId: string,
@@ -61,7 +109,7 @@ export function createDesktopWorkspaceRuntime({
 			operation.kind === 'kv-unset' ||
 			operation.kind === 'admit-document-intent'
 		) {
-			onRecordsChanged(workspaceId);
+			emitRecordsChanged(workspaceId, true);
 		}
 		return decodeDesktopRecordResult(operation, envelope.data) as TResult;
 	};
@@ -72,7 +120,11 @@ export function createDesktopWorkspaceRuntime({
 
 	function createHandle<TDefinition extends WorkspaceDefinition>(
 		definition: TDefinition,
-	): OpenedWorkspace<TDefinition> {
+	): {
+		handle: OpenedWorkspace<TDefinition>;
+		revokeRows(addresses: RowAddress[]): void;
+		revokeDocuments(cause: Error): void;
+	} {
 		const kvObservers = new Map<string, Set<() => void>>();
 		const documents = createDocumentRuntime({
 			admitIntent(intent) {
@@ -139,6 +191,11 @@ export function createDesktopWorkspaceRuntime({
 							id,
 						});
 						documents.revoke([{ table, rowId: id }]);
+						invalidationChannel?.postMessage({
+							type: 'rows-deleted',
+							workspaceId: definition.id,
+							addresses: [{ table, rowId: id }],
+						} satisfies DesktopInvalidationMessage);
 					},
 					document: Object.freeze({
 						open(rowId: string) {
@@ -193,7 +250,7 @@ export function createDesktopWorkspaceRuntime({
 			},
 		});
 
-		return Object.freeze({
+		const handle = Object.freeze({
 			id: definition.id,
 			tables,
 			kv: kv as never,
@@ -217,6 +274,11 @@ export function createDesktopWorkspaceRuntime({
 				return rows as Static<TResultSchema>[];
 			},
 		}) as unknown as OpenedWorkspace<TDefinition>;
+		return {
+			handle,
+			revokeRows: documents.revoke,
+			revokeDocuments: documents.revokeAll,
+		};
 	}
 
 	return Object.freeze({
@@ -233,14 +295,20 @@ export function createDesktopWorkspaceRuntime({
 				}
 				return existing.handle as OpenedWorkspace<TDefinition>;
 			}
-			const handle = createHandle(definition);
-			workspaces.set(definition.id, { definition, handle });
-			return handle;
+			const binding = createHandle(definition);
+			workspaces.set(definition.id, {
+				definition,
+				...binding,
+			});
+			return binding.handle;
 		},
 		async [Symbol.asyncDispose]() {
 			if (disposed) return;
 			disposed = true;
+			const cause = new Error('Desktop workspace runtime is disposed');
+			for (const bound of workspaces.values()) bound.revokeDocuments(cause);
 			workspaces.clear();
+			invalidationChannel?.close();
 		},
 	});
 }
@@ -248,3 +316,48 @@ export function createDesktopWorkspaceRuntime({
 export type DesktopWorkspaceRuntime = ReturnType<
 	typeof createDesktopWorkspaceRuntime
 >;
+
+function parseInvalidationMessage(
+	value: unknown,
+): DesktopInvalidationMessage | undefined {
+	if (typeof value !== 'object' || value === null) return undefined;
+	const message = value as Record<string, unknown>;
+	if (typeof message.workspaceId !== 'string') return undefined;
+	if (message.type === 'records-changed') {
+		return {
+			type: message.type,
+			workspaceId: message.workspaceId,
+		};
+	}
+	if (
+		message.type !== 'rows-deleted' ||
+		!Array.isArray(message.addresses) ||
+		!message.addresses.every(isRowAddress)
+	) {
+		return undefined;
+	}
+	return {
+		type: 'rows-deleted',
+		workspaceId: message.workspaceId,
+		addresses: message.addresses,
+	};
+}
+
+function isRowAddress(value: unknown): value is RowAddress {
+	return (
+		typeof value === 'object' &&
+		value !== null &&
+		'table' in value &&
+		typeof value.table === 'string' &&
+		'rowId' in value &&
+		typeof value.rowId === 'string'
+	);
+}
+
+function defaultBroadcastChannel(
+	name: string,
+): DesktopRuntimeBroadcastChannel | undefined {
+	return typeof BroadcastChannel === 'undefined'
+		? undefined
+		: new BroadcastChannel(name);
+}
