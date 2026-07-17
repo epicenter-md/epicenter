@@ -13,12 +13,11 @@ Environment-specific runtime construction stays on explicit subpaths.
 admission, and physical sync storage.
 
 Naming and identity follow ADR-0138
-(`docs/adr/0138-principal-scoped-workspaces-transfer-from-local-storage-scopes.md`):
-a connection authenticates to a deployment, the deployment resolves a principal,
-a principal scope contains synchronized
-workspaces, and each synchronized workspace is governed by one workspace
-authority. Signed-out local workspaces transfer explicitly into a new
-principal-scoped storage scope when the user signs in.
+(`docs/adr/0138-device-account-workspace-adoption.md`): a connection
+authenticates to a deployment, the deployment resolves a principal, auth passes
+an account handle into the runtime, and each synchronized workspace is governed
+by one workspace authority. Signed-out device workspaces adopt explicitly into
+an empty account workspace when the user signs in.
 
 The final root export should be the current app-facing surface from
 `packages/workspace/src/sqlite/index.ts`:
@@ -81,30 +80,33 @@ preserve two root APIs.
 - Keep agent, daemon, markdown, links, and materializer capabilities on explicit
   subpaths or in dedicated packages. They do not belong in the workspace root.
 
-## Honeycrisp blockers
+## Honeycrisp cutover
 
-Honeycrisp is not a mechanical import rewrite. Before the old document world can
-be deleted, it needs:
+Honeycrisp is not a mechanical import rewrite. Its end-to-end cutover owns:
 
 1. An async reactive table adapter or app-owned refresh state to replace
    synchronous `fromTable` observation.
-2. A one-time IndexedDB/Yjs to SQLite import policy. Runtime-minted row IDs need
-   an explicit mapping for notes, folders, folder references, and selected URL
-   IDs, followed by a decision about when old IndexedDB data may be cleared.
-3. Browser storage-scope and workspace-authority composition based on the
-   SQLite runtime, HTTP row sync semantics, async readiness, auth namespace
-   changes, and runtime disposal. This replaces `connect(toConnection(...))`,
-   `NodeId`, room WebSockets, and `storage.whenLoaded`.
-4. An async row-document Svelte cache with loading, disposal, revocation, and
+2. Browser Device/Account runtime composition based on the SQLite runtime, HTTP
+   row sync semantics, async readiness, auth namespace changes, and runtime
+   disposal. This replaces `connect(toConnection(...))`, `NodeId`, room
+   WebSockets, and `storage.whenLoaded`.
+3. An async row-document Svelte cache with loading, disposal, revocation, and
    reopen behavior. ProseMirror can continue using a native `Y.XmlFragment`
    from an application-owned root such as Honeycrisp's current `body` root; that
    root name is not a platform noun.
-5. A decision for folder deletion. If reparenting notes and deleting the folder
-   is best-effort UI behavior, use an app service. If it is an authority
-   invariant, add an application-specific authority operation instead of
-   pretending several ordinary row intents are atomic.
-6. Explicit metadata policy for document edits because the old
-   `.docs({ touch: 'updatedAt' })` declaration disappears.
+4. Keep folder deletion as a best-effort application service: list the folder's
+   notes, issue ordinary updates that unset `folderId`, then delete the folder.
+   Honeycrisp does not require this multi-row convenience to be one authority
+   transaction.
+5. Make document-edit metadata explicit application policy. The editor's
+   existing content-change operation updates `title`, `preview`, `wordCount`,
+   and `updatedAt`; the workspace runtime has no implicit touch declaration.
+
+Legacy storage is not a blocker. The first SQLite release starts with an empty
+Honeycrisp workspace and does not inspect, import, map, clear, or fall back to
+the old root Y.Doc, child documents, rooms, or IndexedDB databases. Those stores
+become unreachable and may remain until normal browser eviction. This is an
+explicit pre-user clean break, not an unfinished migration assignment.
 
 ## Next implementation goal
 
@@ -116,8 +118,8 @@ callers in dependency order before deleting `src/document/`.
 
 Before that migration, run the naming cleanup in narrow waves:
 
-1. Done: replace `authorityKey` with an explicit local storage scope name while
-   preserving durable storage encodings.
+1. Done: replace public `authorityKey` and `storageScopeKey` runtime identity
+   with Device/Account constructors and explicit adoption.
 2. Rename the public in-memory workspace vocabulary from records to rows where
    the names are not durable routes, protocol strings, filenames, or external
    compatibility surfaces.

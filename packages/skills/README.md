@@ -9,10 +9,9 @@ import {
 	listSkills,
 	skillsWorkspace,
 } from '@epicenter/skills';
-import { createBunWorkspaceRuntime } from '@epicenter/workspace/sqlite/bun';
+import { createDeviceBunWorkspaceRuntime } from '@epicenter/workspace/sqlite/bun';
 
-await using runtime = createBunWorkspaceRuntime({
-	storageScopeKey: 'local-device',
+await using runtime = createDeviceBunWorkspaceRuntime({
 	storageRoot: '/app/data',
 });
 const skills = await runtime.open(skillsWorkspace);

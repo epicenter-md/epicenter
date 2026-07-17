@@ -12,8 +12,12 @@
 
 import { afterEach, expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
+import { asPrincipalId } from '@epicenter/identity';
 import { decodeBase64 } from '@epicenter/row-sync';
-import { createBrowserWorkspaceRuntime } from './browser-runtime.js';
+import {
+	createAccountBrowserWorkspaceRuntime,
+	createDeviceBrowserWorkspaceRuntime,
+} from './browser-runtime.js';
 import type {
 	BrowserRuntimeMessage,
 	BrowserRuntimeRequest,
@@ -108,8 +112,7 @@ const definition = defineWorkspace({
 
 function createRuntime() {
 	globalThis.Worker = FakeWorker as unknown as typeof Worker;
-	return createBrowserWorkspaceRuntime({
-		storageScopeKey: 'browser-storage-scope',
+	return createDeviceBrowserWorkspaceRuntime({
 		createBroadcastChannel: () => undefined,
 	});
 }
@@ -203,19 +206,22 @@ test('KV observation emits for a remote value change and stops after unsubscribe
 test('worker transport actions pass through to matching HTTP route suffixes', async () => {
 	globalThis.Worker = FakeWorker as unknown as typeof Worker;
 	const urls: string[] = [];
-	await using runtime = createBrowserWorkspaceRuntime({
-		storageScopeKey: 'browser-storage-scope',
-		createBroadcastChannel: () => undefined,
-		rowSync: {
-			baseUrl: 'https://example.test',
-			async fetch(input) {
-				urls.push(String(input));
-				return new Response('{}', {
-					status: 200,
-					headers: { 'content-type': 'application/json' },
-				});
+	await using runtime = createAccountBrowserWorkspaceRuntime({
+		account: {
+			deploymentId: 'https://example.test',
+			principalId: asPrincipalId('alice'),
+			transport: {
+				baseUrl: 'https://example.test',
+				async fetch(input) {
+					urls.push(String(input));
+					return new Response('{}', {
+						status: 200,
+						headers: { 'content-type': 'application/json' },
+					});
+				},
 			},
 		},
+		createBroadcastChannel: () => undefined,
 	});
 	const workspace = await runtime.open(definition);
 	await workspace.tables.notes.list();

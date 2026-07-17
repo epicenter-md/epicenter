@@ -2,6 +2,11 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-16
+- **Amended:** 2026-07-17: the replacement is also a storage clean break for
+  first-party applications. Under the explicit pre-user assumption, old
+  root-Yjs, room, and IndexedDB data is abandoned in place. Applications do not
+  import, map, repair, clear, or fall back to that data when they adopt the
+  SQLite row runtime.
 - **Supersedes:** [ADR-0093](0093-kv-metadata-belongs-to-the-workspace-kv-namespace.md), [ADR-0124](0124-workspace-documents-are-top-level-parameterized-resources.md)
 - **Relates:** [ADR-0120](0120-fields-validate-present-values-and-table-lenses-own-presence.md), [ADR-0121](0121-background-sync-resolves-key-conflicts-by-server-order.md), [ADR-0122](0122-logical-records-are-portable-sqlite-files-and-views-are-runtime-state.md), [ADR-0125](0125-record-definitions-are-release-local-lenses-and-never-migrate-user-data.md), [ADR-0128](0128-tables-do-not-declare-document-edit-touch-policy-without-a-runtime-owner.md), [ADR-0131](0131-row-sync-folds-sealed-row-intent-rounds-without-refusal.md), [ADR-0132](0132-workspace-kv-is-one-reserved-immortal-row.md), [ADR-0133](0133-row-authority-stores-documents-as-sequence-addressed-update-logs.md), [ADR-0134](0134-replicas-store-confirmed-state-and-compacted-row-intents.md), [ADR-0135](0135-row-documents-have-application-owned-roots.md), [ADR-0136](0136-replica-baseline-acquisition-uses-a-disposable-anchored-live-scan.md)
 
@@ -131,6 +136,10 @@ workspace vocabulary.
   payloads. Applications place large content in the filesystem or blob plane.
 - Existing document APIs and rooms are replacement targets, not compatibility
   surfaces. Build the new path, stop importing the old path, verify, then delete.
+- First-party application cutovers start with a new SQLite workspace. They ship
+  no legacy storage reader, row-id mapping, dual writer, fallback, restoration
+  UI, or old-store cleanup job. Legacy browser storage may remain physically
+  present until normal browser eviction, but no production code addresses it.
 
 ## Considered alternatives
 

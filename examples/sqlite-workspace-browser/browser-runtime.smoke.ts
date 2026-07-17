@@ -24,7 +24,7 @@ import { rowDocumentCodec } from '../../packages/server/src/records/codec.js';
 
 const port = 5214;
 const origin = `http://127.0.0.1:${port}`;
-const authority = `browser-runtime-${Date.now().toString(36)}`;
+const principal = `browser-runtime-${Date.now().toString(36)}`;
 const config = 'browser-runtime.vite.config.ts';
 const authorityDatabase = new Database(':memory:');
 const rowAuthority = openRowAuthority({
@@ -60,7 +60,7 @@ const server = Bun.spawn(
 	{ cwd: import.meta.dir, stdout: 'ignore', stderr: 'inherit' },
 );
 
-const url = `${origin}/browser-runtime.html?${new URLSearchParams({ storageScope: authority })}`;
+const url = `${origin}/browser-runtime.html?${new URLSearchParams({ principal })}`;
 
 async function waitForServer(): Promise<void> {
 	for (let attempt = 0; attempt < 250; attempt++) {

@@ -1,5 +1,5 @@
 import { field } from '@epicenter/field';
-import type { createBrowserWorkspaceRuntime } from './browser-runtime.js';
+import type { createDeviceBrowserWorkspaceRuntime } from './browser-runtime.js';
 import { defineTable } from './lens-definition.js';
 import { defineWorkspace } from './runtime-definition.js';
 
@@ -11,7 +11,7 @@ const definition = defineWorkspace({
 	kv: { theme: field.select(['light', 'dark']) },
 });
 
-declare const runtime: ReturnType<typeof createBrowserWorkspaceRuntime>;
+declare const runtime: ReturnType<typeof createDeviceBrowserWorkspaceRuntime>;
 const workspace = await runtime.open(definition);
 const row = await workspace.tables.notes.create({ title: 'typed' });
 await workspace.tables.notes.update(row.id, { title: 'updated' });

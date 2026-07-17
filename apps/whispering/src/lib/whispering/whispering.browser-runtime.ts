@@ -1,5 +1,8 @@
 import type { SyncAuthClient } from '@epicenter/auth';
-import { createBrowserWorkspaceRuntime } from '@epicenter/workspace/sqlite/browser';
+import {
+	createAccountBrowserWorkspaceRuntime,
+	createDeviceBrowserWorkspaceRuntime,
+} from '@epicenter/workspace/sqlite/browser';
 
 type WorkspaceAuth = Pick<SyncAuthClient, 'state' | 'deployment' | 'fetch'>;
 
@@ -12,19 +15,18 @@ export function createWhisperingBrowserRuntime({
 	onRecordsChanged(workspaceId: string): void;
 }) {
 	const bootState = auth.state;
-	const storageScopeKey =
-		bootState.status === 'signed-out'
-			? `local:${auth.deployment.baseURL}`
-			: `${auth.deployment.baseURL}\0${bootState.principalId}`;
-	return createBrowserWorkspaceRuntime({
-		storageScopeKey,
-		rowSync:
-			bootState.status === 'signed-out'
-				? undefined
-				: {
-						baseUrl: auth.deployment.baseURL,
-						fetch: auth.fetch,
-					},
+	if (bootState.status === 'signed-out') {
+		return createDeviceBrowserWorkspaceRuntime({ onRecordsChanged });
+	}
+	return createAccountBrowserWorkspaceRuntime({
+		account: {
+			deploymentId: auth.deployment.baseURL,
+			principalId: bootState.principalId,
+			transport: {
+				baseUrl: auth.deployment.baseURL,
+				fetch: auth.fetch,
+			},
+		},
 		onRecordsChanged,
 	});
 }

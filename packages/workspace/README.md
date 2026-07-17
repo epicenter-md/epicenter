@@ -5,7 +5,7 @@
 > row-owned documents in runtime-owned SQLite, applies release-local table and
 > KV lenses, and treats records as transitional vocabulary. See
 > [ADR-0130](../../docs/adr/0130-workspace-definitions-expose-tables-with-row-owned-documents-and-a-release-local-kv-lens.md)
-> and [ADR-0138](../../docs/adr/0138-principal-scoped-workspaces-transfer-from-local-storage-scopes.md).
+> and [ADR-0138](../../docs/adr/0138-device-account-workspace-adoption.md).
 
 A local-first workspace engine for TypeScript apps: Yjs is the source of truth; SQLite and Markdown are read-only materialized projections.
 

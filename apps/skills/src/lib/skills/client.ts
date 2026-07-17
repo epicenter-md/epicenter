@@ -1,10 +1,9 @@
 import { skillsWorkspace } from '@epicenter/skills';
-import { createBrowserWorkspaceRuntime } from '@epicenter/workspace/sqlite/browser';
+import { createDeviceBrowserWorkspaceRuntime } from '@epicenter/workspace/sqlite/browser';
 
 const recordsChangedListeners = new Set<() => void>();
 
-export const skillsRuntime = createBrowserWorkspaceRuntime({
-	storageScopeKey: 'skills-local-device',
+export const skillsRuntime = createDeviceBrowserWorkspaceRuntime({
 	onRecordsChanged(workspaceId) {
 		if (workspaceId !== skillsWorkspace.id) return;
 		for (const listener of recordsChangedListeners) listener();

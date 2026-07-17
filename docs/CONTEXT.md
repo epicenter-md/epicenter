@@ -17,25 +17,26 @@ shapes, see `docs/adr/`.
   self-hosted instance resolves every valid operator bearer to the literal
   `instance` principal. Durable namespaces use `principals/<principalId>/...`.
   Billing is hosted-only and lives in `apps/api/worker/billing/`.
-- **Principal scope**: one resolved principal inside one deployment. Credentials
-  may rotate, but the deployment identity plus `principalId` is the stable
-  authenticated scope that contains synchronized workspaces.
+- **Account**: the runtime handle for one resolved principal inside one
+  deployment. Credentials may rotate, but deployment identity plus `principalId`
+  is the stable data identity; transport is how the runtime syncs.
 - **Workspace**: one stable app-defined local-first data and sync unit. It owns
   workspace KV and tables; each table owns rows; each row owns fields plus an
-  optional lifecycle-bound document. A workspace may be local-only or
-  principal-scoped after explicit transfer.
+  optional lifecycle-bound document.
+- **Device workspace**: a signed-out SQLite workspace owned only by the current
+  device. It has no deployment, principal, credential, or sync transport.
+- **Account workspace**: a signed-in SQLite workspace owned by an account. When
+  synchronized, its server partition is `(principalId, workspaceId)` inside the
+  deployment that resolved the principal.
+- **Adoption**: explicit copy of a whole device workspace into an empty account
+  workspace after sign-in. It preserves `workspaceId`, may optionally delete the
+  device copy, and refuses non-empty account targets instead of merging.
 - **Workspace partition**: the server-local synchronized workspace identified by
   `(principalId, workspaceId)`. The deployment is implicit in the server that
   resolved the principal.
 - **Workspace authority**: the runtime role that orders, folds, retries,
   compacts, and synchronizes one workspace partition. It is not an address and
   not a credential.
-- **Local storage scope**: the local persistence fence for a workspace instance.
-  It may be local-only or derived from a principal scope. A signed-out workspace
-  that later signs in explicitly transfers its logical contents into a new
-  principal-scoped storage scope, preserving the app `workspaceId` while changing
-  storage lineage. It is not silently reinterpreted as the same remote
-  workspace.
 - **Room**: one legacy server-side Yjs synchronization address. Canonical SQLite
   synchronization uses a workspace authority for rows, document updates, and
   confirmed state. Cloudflare may colocate several such logical stores in one

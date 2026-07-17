@@ -149,7 +149,9 @@ or row deletion.
 
 The SQLite workspace file is the durability boundary. This row-document path
 does not attach `y-indexeddb` and does not retain browser IndexedDB as another
-persistence owner. Existing IndexedDB-backed paths are migration sources only.
+persistence owner. First-party applications adopt it as a clean break: existing
+IndexedDB-backed workspace data is abandoned, never imported or read as a
+fallback.
 
 `open(rowId)` resolves only after row liveness checking, cached-lease
 acquisition, hydration from confirmed plus pending SQLite state, and update
@@ -264,7 +266,8 @@ from these refusals.
 
 ### Wave 3: Port real consumers
 
-- [ ] Port Honeycrisp to its application-owned structured root.
+- [ ] Port Honeycrisp end to end to its application-owned structured root and
+  the SQLite row runtime, with no legacy storage reader or importer.
 - [ ] Port Skills and Filesystem to their application-owned text roots.
 - [ ] Port Whispering and Vocab settings to typed KV.
 - [ ] Keep chat messages as ordinary rows.

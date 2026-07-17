@@ -4,7 +4,7 @@ import {
 	parseRowIntent,
 } from '@epicenter/row-sync';
 import { Type } from 'typebox';
-import { createBunWorkspaceRuntime } from './bun-runtime.js';
+import { createDeviceBunWorkspaceRuntime } from './bun-runtime.js';
 import {
 	applyRowDocumentUpdate,
 	encodeRowDocumentState,
@@ -33,11 +33,9 @@ type ErasedKv = {
 
 /** Bun-only owner over a statically linked set of imported definitions. */
 export function createDesktopWorkspaceOwner({
-	storageScopeKey,
 	storageRoot,
 	definitions,
 }: {
-	storageScopeKey: string;
 	storageRoot: string;
 	definitions: readonly WorkspaceDefinition[];
 }) {
@@ -48,7 +46,7 @@ export function createDesktopWorkspaceOwner({
 		}
 		catalog.set(definition.id, definition);
 	}
-	const runtime = createBunWorkspaceRuntime({ storageScopeKey, storageRoot });
+	const runtime = createDeviceBunWorkspaceRuntime({ storageRoot });
 	const handles = new Map<string, Promise<ErasedWorkspace>>();
 
 	const open = (workspaceId: string): Promise<ErasedWorkspace> => {

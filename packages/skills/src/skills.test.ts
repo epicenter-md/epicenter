@@ -28,7 +28,7 @@ import {
 	defineWorkspace,
 	type RowDocument,
 } from '@epicenter/workspace/sqlite';
-import { createBunWorkspaceRuntime } from '@epicenter/workspace/sqlite/bun';
+import { createDeviceBunWorkspaceRuntime } from '@epicenter/workspace/sqlite/bun';
 import { Type } from 'typebox';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { SKILLS_WORKSPACE_ID } from './constants.js';
@@ -52,8 +52,7 @@ const historicalSkillsWorkspace = defineWorkspace({
 test('a stricter Skills lens exposes nonconformance until typed update repairs it', async () => {
 	const storageRoot = mkdtempSync(join(tmpdir(), 'epicenter-skills-'));
 	try {
-		const historicalRuntime = createBunWorkspaceRuntime({
-			storageScopeKey: 'local-user',
+		const historicalRuntime = createDeviceBunWorkspaceRuntime({
 			storageRoot,
 		});
 		const historical = await historicalRuntime.open(historicalSkillsWorkspace);
@@ -64,8 +63,7 @@ test('a stricter Skills lens exposes nonconformance until typed update repairs i
 		});
 		await historicalRuntime[Symbol.asyncDispose]();
 
-		await using runtime = createBunWorkspaceRuntime({
-			storageScopeKey: 'local-user',
+		await using runtime = createDeviceBunWorkspaceRuntime({
 			storageRoot,
 		});
 		const skills = await runtime.open(skillsWorkspace);
@@ -154,8 +152,7 @@ test('filesystem import stores metadata id as sourceId instead of structural id'
 			'---\ndescription: Write directly\nmetadata:\n  id: portable-writing-voice\n---\n\nUse plain language.\n',
 		);
 		writeFileSync(join(skillRoot, 'references', 'examples.md'), '# Examples\n');
-		await using runtime = createBunWorkspaceRuntime({
-			storageScopeKey: 'local-user',
+		await using runtime = createDeviceBunWorkspaceRuntime({
 			storageRoot,
 		});
 		const skills = await runtime.open(skillsWorkspace);

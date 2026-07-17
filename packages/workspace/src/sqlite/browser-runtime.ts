@@ -9,6 +9,11 @@ import {
 	type BrowserWorkspaceManifest,
 	serializeTableLenses,
 } from './browser-runtime-protocol.js';
+import {
+	accountPersistenceKey,
+	devicePersistenceKey,
+	type WorkspaceAccount,
+} from './account-runtime.js';
 import { createDocumentRuntime } from './canonical-documents.js';
 import type {
 	OpenedWorkspace,
@@ -68,36 +73,77 @@ type RuntimeBroadcastChannel = {
 	close(): void;
 };
 
-export type CreateBrowserWorkspaceRuntimeOptions = {
-	storageScopeKey: string;
-	rowSync?: {
-		baseUrl: string;
-		fetch?: BrowserRecordFetch;
-		headers?: Readonly<Record<string, string>>;
-		credentials?: RequestCredentials;
-	};
+export type BrowserWorkspaceTransport = {
+	baseUrl: string;
+	fetch?: BrowserRecordFetch;
+	headers?: Readonly<Record<string, string>>;
+	credentials?: RequestCredentials;
+};
+
+export type BrowserWorkspaceAccount =
+	WorkspaceAccount<BrowserWorkspaceTransport>;
+
+type CreateBrowserWorkspaceRuntimeOptions = {
+	persistenceKey: string;
+	transport?: BrowserWorkspaceTransport;
 	createBroadcastChannel?(name: string): RuntimeBroadcastChannel | undefined;
 	onRecordsChanged?(workspaceId: string): void;
 	onBackgroundError?(cause: Error, workspaceId: string): void;
 };
 
+export function createDeviceBrowserWorkspaceRuntime({
+	createBroadcastChannel,
+	onRecordsChanged,
+	onBackgroundError,
+}: Omit<
+	CreateBrowserWorkspaceRuntimeOptions,
+	'persistenceKey' | 'transport'
+> = {}) {
+	return createBrowserRuntimeWithPersistence({
+		persistenceKey: devicePersistenceKey(),
+		createBroadcastChannel,
+		onRecordsChanged,
+		onBackgroundError,
+	});
+}
+
+export function createAccountBrowserWorkspaceRuntime({
+	account,
+	createBroadcastChannel,
+	onRecordsChanged,
+	onBackgroundError,
+}: Omit<
+	CreateBrowserWorkspaceRuntimeOptions,
+	'persistenceKey' | 'transport'
+> & {
+	account: BrowserWorkspaceAccount;
+}) {
+	return createBrowserRuntimeWithPersistence({
+		persistenceKey: accountPersistenceKey(account),
+		transport: account.transport,
+		createBroadcastChannel,
+		onRecordsChanged,
+		onBackgroundError,
+	});
+}
+
 /** Create the page-side client for one OPFS-owning records Worker. */
-export function createBrowserWorkspaceRuntime({
-	storageScopeKey,
-	rowSync: rowSyncInput,
+function createBrowserRuntimeWithPersistence({
+	persistenceKey,
+	transport: transportInput,
 	createBroadcastChannel = defaultBroadcastChannel,
 	onRecordsChanged = () => undefined,
 	onBackgroundError = () => undefined,
 }: CreateBrowserWorkspaceRuntimeOptions) {
-	if (storageScopeKey.length === 0) {
-		throw new Error('Storage scope key must not be empty');
+	if (persistenceKey.length === 0) {
+		throw new Error('Workspace persistence key must not be empty');
 	}
-	const storageScopeHash = sha256Hex(storageScopeKey);
-	const rowSync = normalizeRowSync(rowSyncInput);
+	const persistenceHash = sha256Hex(persistenceKey);
+	const transport = normalizeTransport(transportInput);
 	const pending = new Map<number, PendingRequest>();
 	const workspaces = new Map<string, BoundWorkspace>();
 	const invalidationChannel = createBroadcastChannel(
-		`epicenter-${storageScopeHash}-records`,
+		`epicenter-${persistenceHash}-records`,
 	);
 	let requestId = 0;
 	let isDisposed = false;
@@ -139,7 +185,7 @@ export function createBrowserWorkspaceRuntime({
 		ready = Promise.withResolvers<void>();
 		worker = new Worker(
 			new URL('./browser-runtime-worker.ts', import.meta.url),
-			{ type: 'module', name: `epicenter-${storageScopeHash}` },
+			{ type: 'module', name: `epicenter-${persistenceHash}` },
 		);
 		const ownedWorker = worker;
 		const ownedReady = ready;
@@ -204,19 +250,21 @@ export function createBrowserWorkspaceRuntime({
 		message: Extract<BrowserRuntimeMessage, { type: 'transport-request' }>,
 	): Promise<void> {
 		try {
-			if (!rowSync) throw new Error('Browser row-sync transport is not bound');
-			const response = await rowSync.fetch(
+			if (!transport) {
+				throw new Error('Browser workspace transport is not bound');
+			}
+			const response = await transport.fetch(
 				new URL(
-					`/api/records/${encodeURIComponent(message.workspaceId)}/${message.action}`,
-					rowSync.baseUrl,
+					`api/records/${encodeURIComponent(message.workspaceId)}/${message.action}`,
+					transport.baseUrl,
 				),
 				{
 					method: 'POST',
 					headers: {
-						...rowSync.headers,
+						...transport.headers,
 						'content-type': 'application/json',
 					},
-					credentials: rowSync.credentials,
+					credentials: transport.credentials,
 					body: JSON.stringify(message.body),
 				},
 			);
@@ -475,10 +523,12 @@ export function createBrowserWorkspaceRuntime({
 			}
 			const manifest: BrowserWorkspaceManifest = {
 				workspaceId: definition.id,
-				storageKey: sha256Hex(`${storageScopeKey}\0${definition.id}`),
+				storageKey: sha256Hex(
+					JSON.stringify([persistenceKey, definition.id]),
+				),
 				tables: serializeTableLenses(definition.tables),
 				kv: JSON.parse(JSON.stringify(definition.kv)),
-				rowSync: rowSync?.binding,
+				rowSync: transport?.binding,
 			};
 			const binding = createHandle(definition, manifest);
 			workspaces.set(definition.id, {
@@ -506,7 +556,7 @@ export function createBrowserWorkspaceRuntime({
 }
 
 export type BrowserWorkspaceRuntime = ReturnType<
-	typeof createBrowserWorkspaceRuntime
+	typeof createDeviceBrowserWorkspaceRuntime
 >;
 
 function isInvalidationMessage(value: unknown): value is InvalidationMessage {
@@ -526,8 +576,8 @@ function defaultBroadcastChannel(
 		: new BroadcastChannel(name);
 }
 
-function normalizeRowSync(
-	input: CreateBrowserWorkspaceRuntimeOptions['rowSync'],
+function normalizeTransport(
+	input: CreateBrowserWorkspaceRuntimeOptions['transport'],
 ):
 	| {
 			binding: BrowserRowSyncBinding;
@@ -535,10 +585,10 @@ function normalizeRowSync(
 			fetch: BrowserRecordFetch;
 			headers: Record<string, string>;
 			credentials: RequestCredentials;
-	  }
+	}
 	| undefined {
 	if (!input) return undefined;
-	const baseUrl = new URL(input.baseUrl).origin;
+	const baseUrl = ensureTrailingSlash(new URL(input.baseUrl).href);
 	const headers = Object.fromEntries(
 		Object.entries(input.headers ?? {}).map(([name, value]) => {
 			if (name.length === 0 || value.length === 0) {
@@ -554,4 +604,8 @@ function normalizeRowSync(
 		headers,
 		credentials: input.credentials ?? 'same-origin',
 	};
+}
+
+function ensureTrailingSlash(value: string): string {
+	return value.endsWith('/') ? value : `${value}/`;
 }

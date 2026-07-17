@@ -14,8 +14,15 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { field } from '@epicenter/field';
+import { asPrincipalId } from '@epicenter/identity';
 import { expectOk } from 'wellcrafted/testing';
-import { createBunWorkspaceRuntime } from './bun-runtime.js';
+import {
+	adoptDeviceWorkspace,
+	createAccountBunWorkspaceRuntime,
+	createDeviceBunWorkspaceRuntime,
+	deleteDeviceWorkspace,
+	inspectDeviceWorkspace,
+} from './bun-runtime.js';
 import { defineTable } from './lens-definition.js';
 import {
 	createTestTransport,
@@ -36,8 +43,7 @@ test('local Bun runtime reopens durable rows, KV, and documents', async () => {
 	try {
 		let rowId: string;
 		{
-			await using runtime = createBunWorkspaceRuntime({
-				storageScopeKey: 'local-storage-scope',
+			await using runtime = createDeviceBunWorkspaceRuntime({
 				storageRoot: root,
 			});
 			const workspace = await runtime.open(definition);
@@ -49,8 +55,7 @@ test('local Bun runtime reopens durable rows, KV, and documents', async () => {
 			await document.whenDurable();
 		}
 
-		await using reopened = createBunWorkspaceRuntime({
-			storageScopeKey: 'local-storage-scope',
+		await using reopened = createDeviceBunWorkspaceRuntime({
 			storageRoot: root,
 		});
 		const workspace = await reopened.open(definition);
@@ -70,10 +75,13 @@ test('synchronized Bun runtime sends RowIntents through enroll and sync', async 
 	const authorityState = openTestAuthority();
 	const transport = createTestTransport(authorityState.authority);
 	try {
-		await using runtime = createBunWorkspaceRuntime({
-			storageScopeKey: 'remote-storage-scope',
+		await using runtime = createAccountBunWorkspaceRuntime({
 			storageRoot: root,
-			recordTransport: () => transport,
+			account: {
+				deploymentId: 'https://example.test',
+				principalId: asPrincipalId('alice'),
+				transport: () => transport,
+			},
 			recordPollIntervalMs: 60_000,
 		});
 		const workspace = await runtime.open(definition);
@@ -89,6 +97,103 @@ test('synchronized Bun runtime sends RowIntents through enroll and sync', async 
 		expect(transport.syncRequests.length).toBeGreaterThanOrEqual(2);
 	} finally {
 		authorityState.database.close();
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test('device workspace adoption copies into an empty account workspace', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'epicenter-bun-adopt-'));
+	const account = {
+		deploymentId: 'https://example.test',
+		principalId: asPrincipalId('alice'),
+		transport: () => undefined,
+	};
+	try {
+		let rowId: string;
+		{
+			await using device = createDeviceBunWorkspaceRuntime({ storageRoot: root });
+			const workspace = await device.open(definition);
+			const row = await workspace.tables.notes.create({ title: 'Device' });
+			rowId = row.id;
+			expectOk(await workspace.kv.set('theme', 'dark'));
+			using document = await workspace.tables.notes.document.open(row.id);
+			document.get('editor').insert(0, 'device draft');
+			await document.whenDurable();
+		}
+
+		expect(inspectDeviceWorkspace({ storageRoot: root, workspaceId: definition.id }))
+			.toMatchObject({
+				adoptable: true,
+				summary: { rows: 1, kv: 1, documents: 1 },
+			});
+
+		adoptDeviceWorkspace({
+			storageRoot: root,
+			workspaceId: definition.id,
+			into: account,
+		});
+		expect(
+			inspectDeviceWorkspace({ storageRoot: root, workspaceId: definition.id }),
+		).toEqual({ adoptable: false });
+		expect(() =>
+			adoptDeviceWorkspace({
+				storageRoot: root,
+				workspaceId: definition.id,
+				into: account,
+			}),
+		).toThrow('already been adopted');
+
+		await using adopted = createAccountBunWorkspaceRuntime({
+			storageRoot: root,
+			account,
+		});
+		const workspace = await adopted.open(definition);
+		expect(expectOk(await workspace.tables.notes.get(rowId!))?.title).toBe(
+			'Device',
+		);
+		expect(expectOk(await workspace.kv.get('theme'))).toBe('dark');
+		using document = await workspace.tables.notes.document.open(rowId!);
+		expect(document.get('editor').toString()).toBe('device draft');
+
+		deleteDeviceWorkspace({ storageRoot: root, workspaceId: definition.id });
+		expect(
+			inspectDeviceWorkspace({ storageRoot: root, workspaceId: definition.id }),
+		).toEqual({ adoptable: false });
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test('device workspace adoption refuses a non-empty account workspace', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'epicenter-bun-adopt-refuse-'));
+	const account = {
+		deploymentId: 'https://example.test',
+		principalId: asPrincipalId('alice'),
+		transport: () => undefined,
+	};
+	try {
+		{
+			await using device = createDeviceBunWorkspaceRuntime({ storageRoot: root });
+			const workspace = await device.open(definition);
+			await workspace.tables.notes.create({ title: 'Device' });
+		}
+		{
+			await using existing = createAccountBunWorkspaceRuntime({
+				storageRoot: root,
+				account,
+			});
+			const workspace = await existing.open(definition);
+			await workspace.tables.notes.create({ title: 'Account' });
+		}
+
+		expect(() =>
+			adoptDeviceWorkspace({
+				storageRoot: root,
+				workspaceId: definition.id,
+				into: account,
+			}),
+		).toThrow('non-empty account workspace');
+	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
 });

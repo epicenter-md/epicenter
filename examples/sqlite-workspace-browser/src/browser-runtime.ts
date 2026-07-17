@@ -1,18 +1,15 @@
 import { field } from '@epicenter/field';
+import { asPrincipalId } from '@epicenter/identity';
 import {
 	defineTable,
 	defineWorkspace,
 	type RowDocument,
 } from '@epicenter/workspace/sqlite';
-import { createBrowserWorkspaceRuntime } from '@epicenter/workspace/sqlite/browser';
+import { createAccountBrowserWorkspaceRuntime } from '@epicenter/workspace/sqlite/browser';
 import { Type } from 'typebox';
 
-const storageScopeKey = new URLSearchParams(location.search).get(
-	'storageScope',
-);
-if (!storageScopeKey) {
-	throw new Error('Expected a storageScope query parameter');
-}
+const principalId = new URLSearchParams(location.search).get('principal');
+if (!principalId) throw new Error('Expected a principal query parameter');
 
 const definition = defineWorkspace({
 	id: 'browser-runtime-smoke',
@@ -23,11 +20,14 @@ const definition = defineWorkspace({
 });
 
 let changes = 0;
-const runtime = createBrowserWorkspaceRuntime({
-	storageScopeKey,
-	rowSync: {
-		baseUrl: location.origin,
-		fetch: (input, init) => fetch(input, init),
+const runtime = createAccountBrowserWorkspaceRuntime({
+	account: {
+		deploymentId: location.origin,
+		principalId: asPrincipalId(principalId),
+		transport: {
+			baseUrl: location.origin,
+			fetch: (input, init) => fetch(input, init),
+		},
 	},
 	onRecordsChanged() {
 		changes += 1;

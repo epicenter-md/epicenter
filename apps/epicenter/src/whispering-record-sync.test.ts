@@ -17,7 +17,10 @@ import { InstantString } from '@epicenter/field';
 import { createBunRecords, mountRecordsApp } from '@epicenter/server/bun';
 import { whisperingWorkspace } from '@epicenter/whispering/workspace-contract';
 import type { OpenedWorkspace } from '@epicenter/workspace/sqlite';
-import { createBunWorkspaceRuntime } from '@epicenter/workspace/sqlite/bun';
+import {
+	type BunWorkspaceAccount,
+	createAccountBunWorkspaceRuntime,
+} from '@epicenter/workspace/sqlite/bun';
 import { Hono } from 'hono';
 
 test('offline Whispering fields and document edits converge in both directions', async () => {
@@ -38,6 +41,11 @@ test('offline Whispering fields and document edits converge in both directions',
 		sync: (body: unknown) => post('sync', workspaceId, body),
 		baselineScan: (body: unknown) => post('baseline-scan', workspaceId, body),
 	});
+	const account: BunWorkspaceAccount = {
+		deploymentId: 'https://example.test',
+		principalId: 'whispering-test-person' as BunWorkspaceAccount['principalId'],
+		transport,
+	};
 	async function post(action: string, workspaceId: string, body: unknown) {
 		if (!online) throw new Error('Simulated offline transport');
 		const response = await app.request(
@@ -53,10 +61,9 @@ test('offline Whispering fields and document edits converge in both directions',
 	}
 
 	try {
-		await using firstRuntime = createBunWorkspaceRuntime({
-			storageScopeKey: 'http-person',
+		await using firstRuntime = createAccountBunWorkspaceRuntime({
 			storageRoot: join(root, 'first'),
-			recordTransport: transport as never,
+			account,
 			recordPollIntervalMs: 20,
 		});
 		const first = await firstRuntime.open(whisperingWorkspace);
@@ -77,10 +84,9 @@ test('offline Whispering fields and document edits converge in both directions',
 		}
 
 		online = true;
-		await using secondRuntime = createBunWorkspaceRuntime({
-			storageScopeKey: 'http-person',
+		await using secondRuntime = createAccountBunWorkspaceRuntime({
 			storageRoot: join(root, 'second'),
-			recordTransport: transport as never,
+			account,
 			recordPollIntervalMs: 20,
 		});
 		const second = await secondRuntime.open(whisperingWorkspace);

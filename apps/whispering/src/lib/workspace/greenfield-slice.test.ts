@@ -19,7 +19,7 @@ import { join } from 'node:path';
 import { field, InstantString } from '@epicenter/field';
 import { skillsWorkspace } from '@epicenter/skills';
 import { defineTable, defineWorkspace } from '@epicenter/workspace/sqlite';
-import { createBunWorkspaceRuntime } from '@epicenter/workspace/sqlite/bun';
+import { createDeviceBunWorkspaceRuntime } from '@epicenter/workspace/sqlite/bun';
 import { Type } from 'typebox';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { recordingsTable, whisperingWorkspace } from './definition';
@@ -39,8 +39,7 @@ test('one runtime composes explicit recording repair, SQL, and Skills documents'
 		join(tmpdir(), 'epicenter-whispering-slice-'),
 	);
 	try {
-		const historicalRuntime = createBunWorkspaceRuntime({
-			storageScopeKey: 'local-person',
+		const historicalRuntime = createDeviceBunWorkspaceRuntime({
 			storageRoot,
 		});
 		const historical = await historicalRuntime.open(
@@ -57,8 +56,7 @@ test('one runtime composes explicit recording repair, SQL, and Skills documents'
 		});
 		await historicalRuntime[Symbol.asyncDispose]();
 
-		await using runtime = createBunWorkspaceRuntime({
-			storageScopeKey: 'local-person',
+		await using runtime = createDeviceBunWorkspaceRuntime({
 			storageRoot,
 		});
 		const [whispering, skills] = await Promise.all([
