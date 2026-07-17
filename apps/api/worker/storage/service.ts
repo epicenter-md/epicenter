@@ -104,5 +104,3 @@ export function createStorageService({
 		},
 	};
 }
-
-export type StorageService = ReturnType<typeof createStorageService>;
