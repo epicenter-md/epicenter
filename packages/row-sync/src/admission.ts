@@ -264,13 +264,3 @@ export function isAdmissibleOutcome(outcome: RowOutcome): boolean {
 		}
 	}
 }
-
-/**
- * Whether a sealed round contains any storage-growing intent (ADR-0137).
- * Delete-only classification is syntactic; nothing estimates byte effects.
- */
-export function roundRequestsGrowth(
-	intents: readonly WireRowIntent[],
-): boolean {
-	return intents.some((intent) => intent.kind !== 'delete');
-}

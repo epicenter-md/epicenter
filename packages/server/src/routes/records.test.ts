@@ -106,7 +106,6 @@ const sync: SyncRequest = {
 	sealedRound: {
 		round: 1,
 		requestDigest: rowRoundDigest(intents),
-		submission: 1,
 		intents,
 	},
 };

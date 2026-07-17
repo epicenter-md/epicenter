@@ -82,7 +82,7 @@ describe('foldFields mirror rule', () => {
 		expect(foldFields(undefined, intent)).toEqual({ kind: 'noop' });
 	});
 
-	test('a folded row above the general capacity cap is a no-op', () => {
+	test('a folded row above the general row byte cap is a no-op', () => {
 		const oversized = 'x'.repeat(ROW_SYNC_ADMISSION_LIMITS.encodedRowBytes);
 		expect(foldFields({ title: 'a' }, update({ big: oversized }))).toEqual({
 			kind: 'noop',

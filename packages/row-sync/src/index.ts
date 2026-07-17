@@ -13,11 +13,9 @@ export {
 	RESERVED_KV_ROW_ID,
 	RESERVED_KV_TABLE,
 	ROW_SYNC_ADMISSION_LIMITS,
-	roundRequestsGrowth,
 } from './admission.js';
 export {
 	type DocumentCodec,
-	type GrowthDecision,
 	openRowAuthority,
 	type RowAuthority,
 	type RowAuthorityCompactionPolicy,

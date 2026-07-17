@@ -180,7 +180,6 @@ for (const [name, open] of adapters) {
 				sealedRound: {
 					round: 1,
 					requestDigest: rowRoundDigest(intents),
-					submission: 1,
 					intents,
 				},
 			});

@@ -91,11 +91,7 @@ export {
 	readWorkspaceDatabaseSize,
 	RowAuthorityDurableObject,
 } from './records/cloudflare.js';
-export type {
-	Records,
-	RecordsCallOptions,
-	RecordsPartition,
-} from './records/contracts.js';
+export type { Records, RecordsPartition } from './records/contracts.js';
 // Re-export the Cloudflare Durable Object class so each deployment's
 // wrangler.jsonc can resolve `class_name: "Room"` against this entrypoint.
 export { Room } from './room/backends/cloudflare/durable-object.js';

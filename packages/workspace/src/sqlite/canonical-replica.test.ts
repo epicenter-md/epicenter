@@ -1,13 +1,12 @@
 /**
  * Canonical Replica Tests
  *
- * Exercises durable RowIntent compaction, exact retry, crash recovery,
- * capacity-refusal resealing, and multi-replica scalar/document convergence.
+ * Exercises durable RowIntent compaction, exact retry, crash recovery, and
+ * multi-replica scalar/document convergence.
  *
  * Key behaviors:
  * - open intents compact without crossing the sealed boundary
  * - lost responses and restart retry the exact durable image
- * - delete-only capacity recovery preserves queued growth
  * - authority order and Yjs merge converge two replicas
  */
 import { Database } from 'bun:sqlite';
@@ -337,14 +336,14 @@ test('restart after sealing retries the same digest from the SQLite file', async
 	const authorityState = openTestAuthority();
 	try {
 		const base = createTestTransport(authorityState.authority);
-		let failBeforeSubmission = true;
+		let failBeforeTransmission = true;
 		const transport: CanonicalReplicaTransport = {
 			enroll: base.enroll,
 			baselineScan: base.baselineScan,
 			async sync(request) {
-				if (failBeforeSubmission && request.sealedRound) {
-					failBeforeSubmission = false;
-					throw new Error('crashed before submission');
+				if (failBeforeTransmission && request.sealedRound) {
+					failBeforeTransmission = false;
+					throw new Error('crashed before transmission');
 				}
 				return base.sync(request);
 			},
@@ -358,7 +357,7 @@ test('restart after sealing retries the same digest from the SQLite file', async
 			fields: { title: 'durable image' },
 		});
 		await expect(replica.synchronize()).rejects.toThrow(
-			'crashed before submission',
+			'crashed before transmission',
 		);
 		const digest = database
 			.query<{ in_flight_request_digest: string }, []>(
@@ -382,57 +381,6 @@ test('restart after sealing retries the same digest from the SQLite file', async
 	} finally {
 		authorityState.database.close();
 		rmSync(root, { recursive: true, force: true });
-	}
-});
-
-test('capacity refusal reseals deletes first and keeps growth queued', async () => {
-	const authorityState = openTestAuthority();
-	const transport = createTestTransport(authorityState.authority);
-	const database = new Database(':memory:');
-	try {
-		const replica = openReplica(database, transport);
-		replica.admit({
-			kind: 'create',
-			table: 'notes',
-			rowId: ROW_A,
-			fields: { title: 'remove' },
-		});
-		await replica.synchronize();
-		const before = transport.syncRequests.length;
-		replica.admit({ kind: 'delete', table: 'notes', rowId: ROW_A });
-		replica.admit({
-			kind: 'create',
-			table: 'notes',
-			rowId: ROW_B,
-			fields: { title: 'queued growth' },
-		});
-		transport.setGrowth('delete-only');
-		const blocked = await replica.synchronize();
-		const submitted = transport.syncRequests
-			.slice(before)
-			.filter((request) => request.sealedRound)
-			.map((request) => request.sealedRound!);
-		expect(submitted[0]?.round).toBe(submitted[1]?.round);
-		expect(submitted[0]?.intents.map((intent) => intent.kind).sort()).toEqual([
-			'create',
-			'delete',
-		]);
-		expect(submitted[1]?.intents.map((intent) => intent.kind)).toEqual([
-			'delete',
-		]);
-		expect(blocked.capacityBlocked).toBe(true);
-		expect(blocked.pendingIntents).toBe(1);
-		expect(authorityState.authority.inspect().rows).toEqual([]);
-
-		transport.setGrowth('allow');
-		await replica.synchronize();
-		expect(authorityState.authority.inspect().rows[0]).toMatchObject({
-			rowId: ROW_B,
-			fields: { title: 'queued growth' },
-		});
-	} finally {
-		database.close();
-		authorityState.database.close();
 	}
 });
 
