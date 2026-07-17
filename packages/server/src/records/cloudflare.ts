@@ -15,7 +15,11 @@ import {
 } from '@epicenter/row-sync/durable-object';
 import { rowDocumentCodec } from './codec.js';
 import { runRecordsCompaction } from './compaction.js';
-import type { Records, RecordsPartition } from './contracts.js';
+import type {
+	Records,
+	RecordsCallOptions,
+	RecordsPartition,
+} from './contracts.js';
 
 function partitionName({ principalId, workspaceId }: RecordsPartition): string {
 	return JSON.stringify([principalId, workspaceId]);
@@ -35,12 +39,18 @@ export class RowAuthorityDurableObject extends DurableObject {
 		});
 	}
 
-	async enroll(request: EnrollRequest): Promise<EnrollResponse> {
-		return this.authority.enroll(request);
+	async enroll(
+		request: EnrollRequest,
+		options?: RecordsCallOptions,
+	): Promise<EnrollResponse> {
+		return this.authority.enroll(request, options);
 	}
 
-	async sync(request: SyncRequest): Promise<SyncResponse> {
-		const response = this.authority.sync(request);
+	async sync(
+		request: SyncRequest,
+		options?: RecordsCallOptions,
+	): Promise<SyncResponse> {
+		const response = this.authority.sync(request, options);
 		if (response.result === 'page' && request.sealedRound) {
 			runRecordsCompaction(this.authority);
 		}
@@ -55,8 +65,14 @@ export class RowAuthorityDurableObject extends DurableObject {
 }
 
 type RecordsRpc = {
-	enroll(request: EnrollRequest): Promise<EnrollResponse>;
-	sync(request: SyncRequest): Promise<SyncResponse>;
+	enroll(
+		request: EnrollRequest,
+		options?: RecordsCallOptions,
+	): Promise<EnrollResponse>;
+	sync(
+		request: SyncRequest,
+		options?: RecordsCallOptions,
+	): Promise<SyncResponse>;
 	baselineScan(request: BaselineScanRequest): Promise<BaselineScanResponse>;
 };
 
@@ -74,8 +90,10 @@ export function createDurableObjectRecords(
 	}
 
 	return {
-		enroll: (partition, request) => get(partition).enroll(request),
-		sync: (partition, request) => get(partition).sync(request),
+		enroll: (partition, request, options) =>
+			get(partition).enroll(request, options),
+		sync: (partition, request, options) =>
+			get(partition).sync(request, options),
 		baselineScan: (partition, request) => get(partition).baselineScan(request),
 	};
 }

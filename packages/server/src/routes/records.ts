@@ -3,9 +3,14 @@ import {
 	parseEnrollRequest,
 	parseSyncRequest,
 	ROW_SYNC_ADMISSION_LIMITS,
+	roundRequestsGrowth,
 } from '@epicenter/row-sync';
 import { type Context, Hono, type MiddlewareHandler } from 'hono';
-import type { Records, RecordsPartition } from '../records/contracts.js';
+import type {
+	Records,
+	RecordsPartition,
+	ResolveGrowth,
+} from '../records/contracts.js';
 import type { Env } from '../types.js';
 import { RecordsError } from './records-errors.js';
 
@@ -50,6 +55,7 @@ function invalidRequest<E extends Env>(
 
 function createRecordsApp<E extends Env>(
 	resolveRecords: (env: E['Bindings']) => Records,
+	resolveGrowth: ResolveGrowth | undefined,
 ): Hono<E> {
 	const app = new Hono<E>();
 	app.use(`${RECORDS_ROUTE}/*`, async (c, next) => {
@@ -74,13 +80,26 @@ function createRecordsApp<E extends Env>(
 		};
 	}
 
+	function growthUnavailable<TContext extends Context<E>>(c: TContext) {
+		const error = RecordsError.GrowthUnavailable();
+		return c.json(error, error.error.status);
+	}
+
 	return app
 		.post(`${RECORDS_ROUTE}/enroll`, async (c) => {
 			const parsed = await parseJson(c, parseEnrollRequest);
 			if (!parsed.ok) return invalidRequest(c, parsed.reason);
 			try {
+				// Enrollment creates a durable receipt, so it is growth
+				// (ADR-0137): an unavailable decision fails it closed.
+				const growth = await resolveGrowth?.(partition(c));
+				if (growth === 'unavailable') return growthUnavailable(c);
 				return c.json(
-					await resolveRecords(c.env).enroll(partition(c), parsed.value),
+					await resolveRecords(c.env).enroll(
+						partition(c),
+						parsed.value,
+						growth === undefined ? undefined : { growth },
+					),
 				);
 			} catch (cause) {
 				if (cause instanceof TypeError) return invalidRequest(c, 'invalid');
@@ -93,8 +112,22 @@ function createRecordsApp<E extends Env>(
 				return invalidRequest(c, parsed.reason);
 			}
 			try {
+				const wantsGrowth =
+					parsed.value.sealedRound !== undefined &&
+					roundRequestsGrowth(parsed.value.sealedRound.intents);
+				let growth = await resolveGrowth?.(partition(c));
+				if (growth === 'unavailable') {
+					// Only growth fails closed and retryably; pulls and
+					// all-delete rounds proceed under delete-only admission.
+					if (wantsGrowth) return growthUnavailable(c);
+					growth = 'delete-only';
+				}
 				return c.json(
-					await resolveRecords(c.env).sync(partition(c), parsed.value),
+					await resolveRecords(c.env).sync(
+						partition(c),
+						parsed.value,
+						growth === undefined ? undefined : { growth },
+					),
 				);
 			} catch (cause) {
 				// The authority throws TypeError for client-authored corruption
@@ -126,11 +159,18 @@ export function mountRecordsApp<E extends Env = Env>(
 	{
 		auth,
 		resolveRecords,
+		resolveGrowth,
 	}: {
 		auth: MiddlewareHandler<E>;
 		resolveRecords: (env: E['Bindings']) => Records;
+		/**
+		 * Deployment capacity admission (ADR-0137). Omitted for deployments
+		 * without a storage policy, like the self-hosted instance: every
+		 * exchange then runs with the authority's policy-free default.
+		 */
+		resolveGrowth?: ResolveGrowth;
 	},
 ): void {
 	app.use(`${RECORDS_PREFIX}/*`, auth);
-	app.route('/', createRecordsApp(resolveRecords));
+	app.route('/', createRecordsApp(resolveRecords, resolveGrowth));
 }

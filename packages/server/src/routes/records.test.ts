@@ -21,23 +21,37 @@ import {
 	type WireRowIntent,
 } from '@epicenter/row-sync';
 import { Hono } from 'hono';
-import type { Records, RecordsPartition } from '../records/contracts.js';
+import type {
+	Records,
+	RecordsCallOptions,
+	RecordsPartition,
+	ResolveGrowth,
+} from '../records/contracts.js';
 import type { Env } from '../types.js';
 import { mountRecordsApp } from './records.js';
 
-function setup({ fail }: { fail?: keyof Records } = {}) {
+function setup({
+	fail,
+	resolveGrowth,
+}: {
+	fail?: keyof Records;
+	resolveGrowth?: ResolveGrowth;
+} = {}) {
 	const partitions: RecordsPartition[] = [];
+	const growthOptions: (RecordsCallOptions | undefined)[] = [];
 	const records: Records = {
-		async enroll(partition) {
+		async enroll(partition, _request, options) {
 			partitions.push(partition);
+			growthOptions.push(options);
 			if (fail === 'enroll') throw new TypeError('invalid enrollment');
 			return {
 				result: 'enrolled',
 				replicaId: '000000000000000000000001',
 			};
 		},
-		async sync(partition, request) {
+		async sync(partition, request, options) {
 			partitions.push(partition);
+			growthOptions.push(options);
 			if (fail === 'sync') throw new TypeError('invalid sync');
 			return {
 				result: 'page',
@@ -69,12 +83,13 @@ function setup({ fail }: { fail?: keyof Records } = {}) {
 	const app = new Hono<Env>();
 	mountRecordsApp(app, {
 		resolveRecords: () => records,
+		...(resolveGrowth === undefined ? {} : { resolveGrowth }),
 		auth: async (c, next) => {
 			c.set('principal', { id: asPrincipalId('authenticated-alice') });
 			await next();
 		},
 	});
-	return { app, partitions };
+	return { app, partitions, growthOptions };
 }
 
 const intents: WireRowIntent[] = [
@@ -219,4 +234,40 @@ test('snapshot and deleted record-sync routes have no compatibility aliases', as
 		expect((await post(app, route, {})).status).toBe(404);
 	}
 	expect(partitions).toEqual([]);
+});
+
+
+test('the resolved growth decision reaches the backend for growth exchanges', async () => {
+	const { app, growthOptions } = setup({
+		resolveGrowth: async () => 'delete-only',
+	});
+	const response = await post(app, 'sync', sync);
+	expect(response.status).toBe(200);
+	expect(growthOptions).toEqual([{ growth: 'delete-only' }]);
+});
+
+test('an unavailable growth decision fails growth closed and retryably', async () => {
+	const { app, partitions } = setup({
+		resolveGrowth: async () => 'unavailable',
+	});
+	const growthResponse = await post(app, 'sync', sync);
+	expect(growthResponse.status).toBe(503);
+	const enrollResponse = await post(app, 'enroll', enroll);
+	expect(enrollResponse.status).toBe(503);
+	// Enrollment and the growth round never reached the backend.
+	expect(partitions).toEqual([]);
+});
+
+test('an unavailable growth decision leaves pulls running under delete-only', async () => {
+	const { app, growthOptions } = setup({
+		resolveGrowth: async () => 'unavailable',
+	});
+	const pull: SyncRequest = {
+		protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
+		kind: 'sync',
+		token: sync.token,
+	};
+	const response = await post(app, 'sync', pull);
+	expect(response.status).toBe(200);
+	expect(growthOptions).toEqual([{ growth: 'delete-only' }]);
 });
