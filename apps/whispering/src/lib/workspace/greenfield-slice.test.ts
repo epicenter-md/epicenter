@@ -23,7 +23,6 @@ import { createDeviceBunWorkspaceRuntime } from '@epicenter/workspace/sqlite/bun
 import { Type } from 'typebox';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { recordingsTable, whisperingWorkspace } from './definition';
-import { repairRecordingSourceId } from './repair';
 
 const { sourceId: _sourceId, ...historicalRecordingFields } =
 	recordingsTable.fields;
@@ -72,10 +71,9 @@ test('one runtime composes explicit recording repair, SQL, and Skills documents'
 			message: "Missing required field 'sourceId'",
 		});
 
+		// Explicit application repair is an ordinary typed update (ADR-0125).
 		const repaired = expectOk(
-			await repairRecordingSourceId({
-				workspace: whispering,
-				canonicalId: oldRecording.id,
+			await whispering.tables.recordings.update(oldRecording.id, {
 				sourceId: 'artifact-1',
 			}),
 		);
