@@ -86,15 +86,31 @@ Wave H is finally complete.
   entire boot (white screen) against the exclusive storage lease; under the
   earlier legacy Yjs runtime, multi-tab worked concurrently.
 - **What changed:** The storage lease steals (newest tab wins): the new tab
-  gets full ownership and all data; the previous tab stops syncing and every
-  later workspace operation there fails loudly with
-  `WorkspaceStorageMovedError`.
+  gets full ownership and all data; the previous tab stops syncing, every
+  later workspace operation there fails with `WorkspaceStorageMovedError`,
+  and the app replaces its UI with one blocking "open in a newer tab" screen
+  (`@epicenter/app-shell/storage-moved`, wired through the runtime's
+  `onBackgroundError` and `isWorkspaceStorageMovedError`) offering one
+  action: "Use this tab instead" (reload, which steals ownership back).
+  Ownership transfer is fenced by the storage primitive itself: OPFS
+  sync-access-handle exclusivity means the thief cannot open the pool until
+  the previous owner has actually closed its database and released its
+  handles (or its worker terminated); the Web Locks steal only asks it to.
 - **Why legacy-bound:** The SAH-pool VFS admits one live owner per pool
   directory, and one-SQLite-owner was already the runtime's design; true
-  concurrent multi-tab needs a SharedWorker owner.
+  concurrent multi-tab needs a SharedWorker owner, and OPFS sync access
+  handles are dedicated-worker-only, so that owner would also need nested
+  workers.
 - **User impact:** Using the same app in two tabs no longer works
-  concurrently; the most recently opened tab is the live one.
-- **To revisit:** Move the records Worker behind a SharedWorker (one owner,
+  concurrently; the most recently opened tab is the live one, and the older
+  tab shows the blocking moved screen instead of a stale-live UI. Known
+  limitation: if the previous owner is suspended (a frozen tab or
+  backgrounded PWA that cannot run the release), the new tab's boot fails
+  after ~5s with a named "storage is still held by another tab" error
+  instead of silently waiting; closing or resuming the old surface and
+  reloading recovers.
+- **To revisit:** Only if concurrent multi-tab editing ever becomes a real
+  product promise: move the records Worker behind a SharedWorker (one owner,
   many pages) and delete the steal path.
 
 ## 5. iPhone topology harness route ships in the Honeycrisp bundle (temporary)

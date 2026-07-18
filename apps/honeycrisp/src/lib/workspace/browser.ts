@@ -1,3 +1,4 @@
+import { storageMoved } from '@epicenter/app-shell/storage-moved';
 import type { SyncAuthClient } from '@epicenter/auth';
 import {
 	createAccountBrowserWorkspaceRuntime,
@@ -17,10 +18,15 @@ export function createHoneycrispBrowserRuntime({
 	auth: WorkspaceAuth;
 	onRecordsChanged(workspaceId: string): void;
 }) {
+	// A newer tab stealing this storage flips the app-wide blocking moved
+	// state; the root layout renders <StorageMovedScreen /> in place of a
+	// stale-live UI.
+	const onBackgroundError = storageMoved.observe;
 	const bootState = auth.state;
 	if (bootState.status === 'signed-out') {
 		return createDeviceBrowserWorkspaceRuntime({
 			onRecordsChanged,
+			onBackgroundError,
 		});
 	}
 	return createAccountBrowserWorkspaceRuntime({
@@ -34,5 +40,6 @@ export function createHoneycrispBrowserRuntime({
 			},
 		},
 		onRecordsChanged,
+		onBackgroundError,
 	});
 }

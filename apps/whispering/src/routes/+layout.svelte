@@ -1,4 +1,8 @@
 <script lang="ts">
+	import {
+		StorageMovedScreen,
+		storageMoved,
+	} from '@epicenter/app-shell/storage-moved';
 	import { Toaster } from '@epicenter/ui/sonner';
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { ModeWatcher } from 'mode-watcher';
@@ -38,10 +42,14 @@
 
 <svelte:head> <title>Whispering</title> </svelte:head>
 
-<QueryClientProvider client={queryClient}>
-	<!-- Uses UI package defaults (300ms delay, 150ms skip) -->
-	<Tooltip.Provider> {@render children()} </Tooltip.Provider>
-</QueryClientProvider>
+{#if storageMoved.current}
+	<StorageMovedScreen />
+{:else}
+	<QueryClientProvider client={queryClient}>
+		<!-- Uses UI package defaults (300ms delay, 150ms skip) -->
+		<Tooltip.Provider> {@render children()} </Tooltip.Provider>
+	</QueryClientProvider>
+{/if}
 
 <Toaster
 	offset={16}

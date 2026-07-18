@@ -14,6 +14,7 @@
 		"./agent-chat": "./src/agent-chat/index.ts",
 		"./inference-picker": "./src/inference-picker/index.ts",
 		"./sign-in-migration": "./src/sign-in-migration/index.ts",
+		"./storage-moved": "./src/storage-moved/index.ts",
 		"./workspace-gate": "./src/workspace-gate/index.ts"
 	},
 	"scripts": {

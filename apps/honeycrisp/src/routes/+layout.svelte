@@ -1,4 +1,8 @@
 <script lang="ts">
+	import {
+		StorageMovedScreen,
+		storageMoved,
+	} from '@epicenter/app-shell/storage-moved';
 	import { WorkspaceGate } from '@epicenter/app-shell/workspace-gate';
 	import { FlushEditsOnHide } from '@epicenter/svelte';
 	import { reloadOnPrincipalChange } from '@epicenter/svelte/auth';
@@ -20,12 +24,16 @@
 
 <svelte:head><title>Honeycrisp</title></svelte:head>
 
-<WorkspaceGate
-	pending={honeycrisp.whenReady}
-	onSignOut={() => auth.signOut()}
->
-	<Tooltip.Provider>{@render children?.()}</Tooltip.Provider>
-</WorkspaceGate>
+{#if storageMoved.current}
+	<StorageMovedScreen />
+{:else}
+	<WorkspaceGate
+		pending={honeycrisp.whenReady}
+		onSignOut={() => auth.signOut()}
+	>
+		<Tooltip.Provider>{@render children?.()}</Tooltip.Provider>
+	</WorkspaceGate>
+{/if}
 
 <Toaster offset={16} closeButton />
 <ConfirmationDialog />
