@@ -68,14 +68,6 @@ export function createDocumentHubCore({
 	}
 
 	return {
-		/** Reattach one runtime-restored socket after its completed state exchange. */
-		restore(socket: DocumentHubSocket): void {
-			if (sockets.has(socket)) {
-				throw new TypeError('Document socket is already connected');
-			}
-			sockets.add(socket);
-		},
-
 		/** Bind one accepted socket and start a symmetric Yjs 14 state exchange. */
 		connect(socket: DocumentHubSocket, stateVector: Uint8Array): boolean {
 			if (sockets.has(socket)) {

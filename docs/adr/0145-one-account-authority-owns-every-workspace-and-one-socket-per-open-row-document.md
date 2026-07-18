@@ -137,11 +137,14 @@ Each client opens one dedicated WebSocket per row document it currently has
 open. This is not multiplexing: the socket's route binds one immutable address,
 frames carry no addresses or subscriptions, and every socket for the account
 terminates at the same authority actor, which stores each socket's fixed
-structured address and protocol major in its hibernation attachment (within the
-16,384-byte cap) and verifies the major before decoding a restored socket.
-Fanout enumerates the actor's sockets and compares the complete attachment
-address; no hashed tag or secondary index ships until measured socket counts
-earn one.
+structured address and negotiated subprotocol in its hibernation attachment
+(within the 16,384-byte cap) and verifies the subprotocol before decoding any
+frame. An actor restart closes every restored document socket with an ordinary
+retryable close, so the reconnect state-vector exchange owns repair, including
+a crash between commit and broadcast; hibernation absorbs idle transport
+acceptance, never document-session continuity. Fanout enumerates the actor's
+sockets and compares the complete attachment address; no hashed tag or
+secondary index ships until measured socket counts earn one.
 
 The authority retains no live `Y.Doc`. Admission calls one atomic store
 operation that rechecks row liveness and loads committed state in a single

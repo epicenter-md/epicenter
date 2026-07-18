@@ -16,6 +16,8 @@ const ORDINARY_CLOSE_CODE = 1000;
 
 type DocumentAttachment = {
 	version: 1;
+	/** The negotiated document subprotocol, verified before any frame decode. */
+	subprotocol: string;
 	workspaceId: string;
 	table: string;
 	rowId: string;
@@ -33,6 +35,7 @@ function isAttachment(value: unknown): value is DocumentAttachment {
 	const attachment = value as Partial<DocumentAttachment>;
 	return (
 		attachment.version === 1 &&
+		typeof attachment.subprotocol === 'string' &&
 		typeof attachment.workspaceId === 'string' &&
 		typeof attachment.table === 'string' &&
 		typeof attachment.rowId === 'string' &&
@@ -66,7 +69,6 @@ export class CloudflareWorkspaceDocumentRuntime {
 		private readonly ctx: DurableObjectState,
 		private readonly resolveStore: (workspaceId: string) => DocumentHubStore,
 	) {
-		const now = Date.now();
 		for (const socket of ctx.getWebSockets()) {
 			if (socket.readyState !== WebSocket.OPEN) continue;
 			const attachment = socket.deserializeAttachment();
@@ -74,19 +76,12 @@ export class CloudflareWorkspaceDocumentRuntime {
 				socket.close(1011, 'invalid-document-attachment');
 				continue;
 			}
-			if (now >= attachment.authorizationExpiresAt) {
-				socket.close(ORDINARY_CLOSE_CODE, 'credential-expired');
-				continue;
-			}
-			if (attachment.connected) {
-				const address = { table: attachment.table, rowId: attachment.rowId };
-				this.hub(attachment.workspaceId, address).restore(this.socket(socket));
-			} else {
-				// A socket restored mid-handshake has a peer waiting on a reply this
-				// actor no longer owes; close retryably so the client reconnects
-				// instead of waiting forever.
-				socket.close(ORDINARY_CLOSE_CODE, 'handshake-incomplete');
-			}
+			// Every restored document socket closes retryably: a crash between
+			// commit and broadcast leaves a restored peer permanently behind, and a
+			// mid-handshake peer waits on a reply this actor no longer owes, so the
+			// reconnect state-vector exchange owns repair. Hibernation absorbs idle
+			// transport acceptance, never document-session continuity.
+			socket.close(ORDINARY_CLOSE_CODE, 'restart-resync');
 		}
 	}
 
@@ -114,6 +109,7 @@ export class CloudflareWorkspaceDocumentRuntime {
 		const [client, server] = [pair[0], pair[1]];
 		const attachment: DocumentAttachment = {
 			version: 1,
+			subprotocol: DOCUMENT_SUBPROTOCOL,
 			workspaceId,
 			table,
 			rowId,
@@ -135,6 +131,13 @@ export class CloudflareWorkspaceDocumentRuntime {
 		const attachment = socket.deserializeAttachment();
 		if (!isAttachment(attachment)) {
 			socket.close(1011, 'invalid-document-attachment');
+			return;
+		}
+		if (attachment.subprotocol !== DOCUMENT_SUBPROTOCOL) {
+			// A deploy changed the document protocol under a surviving socket;
+			// never feed its frames to the current decoder.
+			this.disconnect(socket, attachment);
+			socket.close(ORDINARY_CLOSE_CODE, 'stale-subprotocol');
 			return;
 		}
 		if (Date.now() >= attachment.authorizationExpiresAt) {

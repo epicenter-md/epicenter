@@ -229,15 +229,10 @@ describe('fixed-address document hub core', () => {
 		expect(fixture.bob.messages).toEqual([{ kind: 'update', update }]);
 	});
 
-	test('disconnect and restore only manage socket membership', () => {
+	test('disconnect only manages socket membership', () => {
 		const fixture = setup();
-		fixture.hub.restore(fixture.alice);
+		fixture.hub.connect(fixture.alice, emptyStateVector());
 		expect(fixture.hub.connectionCount).toBe(1);
-		expect(fixture.store.opens).toBe(0);
-
-		expect(() => fixture.hub.restore(fixture.alice)).toThrow(
-			'already connected',
-		);
 		fixture.hub.disconnect(fixture.alice);
 		expect(fixture.hub.connectionCount).toBe(0);
 	});
