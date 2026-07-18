@@ -2,7 +2,12 @@
 
 - **Status:** In Progress
 - **Date:** 2026-07-17
-- **Depends on:** ADR-0130 through ADR-0139
+- **Depends on:** ADR-0132 and Proposed ADR-0144 through ADR-0147
+
+Proposed ADRs 0144 through 0147 own the two-plane synchronization lifecycle,
+workspace document hub, Yjs 14-only boundary, and explicit Device-to-Account
+coordination. This cleanup follows that public surface and does not preserve the
+old automatic Device-addition or combined scalar/document assumptions.
 
 ## Recommendation
 
@@ -12,13 +17,11 @@ Environment-specific runtime construction stays on explicit subpaths.
 `@epicenter/row-sync` continues to own the wire protocol, authority fold,
 admission, and physical sync storage.
 
-ADR-0139
-(`docs/adr/0139-account-runtime-open-adds-device-state-through-native-intents.md`)
-retains the Device and Account identity vocabulary introduced by ADR-0138: a
-connection authenticates to a deployment, the deployment resolves a principal,
-auth passes an account handle into the runtime, and one workspace authority
-governs each synchronized workspace. Account runtime open adds matching device
-rows and KV through native intents before synchronization starts.
+ADR-0143 retains the Device and Account identity vocabulary introduced by
+ADR-0138: a connection authenticates to a deployment, the deployment resolves a
+principal, auth passes an account handle into the runtime, and one workspace
+authority governs each synchronized workspace. Account open never reads Device
+storage. Products offer explicit Add, Delete, or Keep.
 
 The final root export should be the current app-facing surface from
 `packages/workspace/src/sqlite/index.ts`:
@@ -43,26 +46,35 @@ clean-break wave. Physical files may remain under `src/sqlite/` temporarily.
 Only use deprecated aliases if release coordination proves an atomic caller
 migration impossible, and delete those aliases after one named release.
 
-## Old document deletion target
+## Document clean-break target
 
-After every production caller has moved, delete the old Yjs workspace system in
-`packages/workspace/src/document/`, including:
+The two-plane runtime in
+[`20260717T212450-two-plane-row-document-runtime.md`](20260717T212450-two-plane-row-document-runtime.md)
+changes this cleanup boundary. Delete the old root-Yjs workspace database and
+every Yjs 13 implementation, but port the earned provider behavior to the Yjs
+14 row-document plane instead of deleting collaboration wholesale.
+
+After every production caller has moved, delete:
 
 - old `defineWorkspace`, `defineTable`, `defineKv`, table, KV, and action code
 - `.docs(...)`, document declarations, child-document identity and cache wiring
-- `connect(...)`, `mount(...)`, `connect-doc`, collaboration, presence, and room
-  adapters owned by the old model
+- root-workspace `connect(...)`, `mount(...)`, and `connect-doc` ownership
+- Yjs 13 collaboration, presence, IndexedDB, file-log, and room implementations
+  after their required behavior is proven in Yjs 14 replacements
 - `attachIndexedDb`, `attachLocalStorage`, `attachRecords`, `attachPlainText`,
   `attachRichText`, and related update listeners
 - legacy document SQLite readers, writers, materializers, wipe helpers, tests,
   benchmarks, examples, and root exports
 - old `y-keyvalue` implementations once their remaining direct callers move
+- arbitrary room ids and per-document room actors after the workspace document
+  hub owns production traffic
 
 This deletion is not yet safe. Current production callers still include the
 daemon and agent paths plus apps such as Honeycrisp, Todos, Vocab, Tab Manager,
 Opensidian, Wiki, Chat, and Filesystem. Server room presence also imports the old
-document world. Treat those as migration or retirement waves, not reasons to
-preserve two root APIs.
+document world. Its presence and reconnect semantics are evidence for the
+replacement workspace document hub, not a reason to retain its Yjs 13 package
+or per-document actor topology.
 
 ## Neutral utilities
 
@@ -120,7 +132,7 @@ callers in dependency order before deleting `src/document/`.
 Before that migration, run the naming cleanup in narrow waves:
 
 1. Done: replace public `authorityKey` and `storageScopeKey` runtime identity
-   with Device/Account constructors and automatic native-intent addition on
+   with Device/Account constructors. Do not restore automatic addition on
    Account open.
 2. Rename the public in-memory workspace vocabulary from records to rows where
    the names are not durable routes, protocol strings, filenames, or external

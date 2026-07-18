@@ -1,7 +1,8 @@
 # 0139. Account runtime open adds device state through native intents
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-07-17
+- **Superseded by:** [ADR-0143](0143-account-open-never-consumes-device-data.md)
 - **Supersedes:** [ADR-0138](0138-device-account-workspace-adoption.md)
 - **Relates:** [ADR-0088](0088-sign-in-is-an-enhancement-never-a-door.md), [ADR-0130](0130-workspace-definitions-expose-tables-with-row-owned-documents-and-a-release-local-kv-lens.md), [ADR-0131](0131-row-sync-folds-sealed-row-intent-rounds-without-refusal.md), [ADR-0132](0132-workspace-kv-is-one-reserved-immortal-row.md), [ADR-0134](0134-replicas-store-confirmed-state-and-compacted-row-intents.md)
 

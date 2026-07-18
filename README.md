@@ -49,7 +49,12 @@ Press record, speak, optionally transform the transcript, and copy or deliver th
 
 The developer toolkit is MIT: build anything on it, including closed-source and commercial products, and you own what you build, with no obligation back to Epicenter. These are the packages meant to leave this repo: [`@epicenter/workspace`](packages/workspace), [`@epicenter/ui`](packages/ui), [`@epicenter/filesystem`](packages/filesystem), and [`@epicenter/sync`](packages/sync). They are pre-1.0 and tuned for our own apps, so treat them as fork-and-own rather than a stability-guaranteed SDK for now.
 
-The hard problem with local-first apps is synchronization. If each device has its own SQLite file or Markdown folder, how do you keep them in sync? [`@epicenter/workspace`](packages/workspace) answers by making Yjs the source of truth, then projecting app state to SQLite for queries and Markdown for reading.
+The hard problem with local-first apps is synchronization. If each device has
+its own SQLite file or Markdown folder, how do you keep them in sync?
+[`@epicenter/workspace`](packages/workspace) is moving to a two-plane answer:
+bounded JSON rows live directly in runtime-native SQLite, while each row may
+own a lazy Yjs 14 document for collaborative rich content. SQLite remains the
+queryable scalar source rather than a mirror of one giant in-memory document.
 
 Alongside typed tables, local persistence, collaboration hooks, and validated actions, the package gives apps materializers, the writers that project state to disk.
 
@@ -99,13 +104,17 @@ Your folders are ordinary Markdown: grep them, open them in Obsidian, version th
 
 ```txt
 purpose-built app
-  -> Yjs live state
+  -> SQLite scalar rows for local queries and synchronization
+  -> lazy row-owned Yjs 14 documents for collaborative content
   -> Markdown projection for human reading
-  -> SQLite mirror for local queries
   -> curated Markdown when something is worth keeping
 ```
 
-Yjs handles live app state, offline edits, and multi-device sync. SQLite gives scripts and views a fast query surface. Markdown gives you files you can read, quote, copy, version, and publish.
+SQLite handles bounded rows, local SQL, and scalar synchronization. Yjs handles
+lazy rich documents, offline document edits, and live collaboration. Markdown
+gives you files you can read, quote, copy, version, and publish. This clean
+break is recorded in Proposed ADRs 0144 through 0147 and is still being
+implemented; the current package README labels the old and new paths explicitly.
 
 A generated Markdown projection is meant to be boring on purpose (this is the target shape):
 
@@ -166,8 +175,10 @@ These packages carry the main architecture.
 
 | Package | Role | License |
 | --- | --- | --- |
-| [`@epicenter/workspace`](packages/workspace) | Core workspace primitives: typed schemas, Yjs documents, local persistence, materializers, actions, and collaboration hooks. | MIT |
-| [`@epicenter/sync`](packages/sync) | Yjs sync protocol encoding and decoding. Protocol framing lives separately from transport. | MIT |
+| [`@epicenter/workspace`](packages/workspace) | Typed workspace API, queryable scalar replicas, lazy row documents, local persistence, actions, and runtime composition. | MIT |
+| [`@epicenter/row-sync`](packages/row-sync) | Portable scalar row protocol, admission, deterministic field folding, and exact-retry digests. It owns no authority database. | MIT |
+| [`@epicenter/sqlite`](packages/sqlite) | Neutral embedded-SQLite driver and Browser, Bun, and Durable Object adapters. It owns no product schema. | MIT |
+| [`@epicenter/sync`](packages/sync) | Yjs document protocol encoding and provider behavior, separate from scalar row synchronization. | MIT |
 | [`@epicenter/ui`](packages/ui) | Shared Svelte component library used by multiple app surfaces. | MIT |
 | [`@epicenter/filesystem`](packages/filesystem) | POSIX-style virtual filesystem helpers over workspace data. | MIT |
 | [`@epicenter/server`](packages/server) | Shared Hono server library composed by the hosted API and self-host reference deployable. | AGPL-3.0-or-later |

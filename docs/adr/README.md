@@ -207,14 +207,22 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0128](0128-tables-do-not-declare-document-edit-touch-policy-without-a-runtime-owner.md) | Tables do not declare document-edit touch policy without a runtime owner | Accepted |
 | [0129](0129-matter-and-workspace-share-fields-not-authority-policy.md) | Matter and Workspace share fields, not authority policy | Accepted |
 | [0130](0130-workspace-definitions-expose-tables-with-row-owned-documents-and-a-release-local-kv-lens.md) | Workspace definitions expose tables with row-owned documents and a release-local KV lens | Accepted |
-| [0131](0131-row-sync-folds-sealed-row-intent-rounds-without-refusal.md) | Row sync folds sealed RowIntent rounds without refusal | Accepted |
+| [0131](0131-row-sync-folds-sealed-row-intent-rounds-without-refusal.md) | Row sync folds sealed RowIntent rounds without refusal | Superseded by 0141 |
 | [0132](0132-workspace-kv-is-one-reserved-immortal-row.md) | Workspace KV is one reserved immortal row | Accepted |
-| [0133](0133-row-authority-stores-documents-as-sequence-addressed-update-logs.md) | The workspace authority stores documents as sequence-addressed update logs | Accepted |
-| [0134](0134-replicas-store-confirmed-state-and-compacted-row-intents.md) | Replicas store confirmed state and compacted RowIntents | Accepted |
+| [0133](0133-row-authority-stores-documents-as-sequence-addressed-update-logs.md) | The workspace authority stores documents as sequence-addressed update logs | Superseded by 0141 |
+| [0134](0134-replicas-store-confirmed-state-and-compacted-row-intents.md) | Replicas store confirmed state and compacted RowIntents | Superseded by 0141 |
 | [0135](0135-row-documents-have-application-owned-roots.md) | Row documents have application-owned roots | Accepted |
-| [0136](0136-replica-baseline-acquisition-uses-a-disposable-anchored-live-scan.md) | Replica baseline acquisition uses a disposable anchored live scan | Accepted |
+| [0136](0136-replica-baseline-acquisition-uses-a-disposable-anchored-live-scan.md) | Replica baseline acquisition uses a disposable anchored live scan | Superseded by 0142 |
 | [0137](0137-hosted-storage-is-one-eventually-enforced-physical-account-allowance.md) | Hosted storage is one eventually enforced physical account allowance | Accepted |
 | [0138](0138-device-account-workspace-adoption.md) | Device and account workspace adoption | Superseded by 0139 |
-| [0139](0139-account-runtime-open-adds-device-state-through-native-intents.md) | Account runtime open adds device state through native intents | Accepted |
+| [0139](0139-account-runtime-open-adds-device-state-through-native-intents.md) | Account runtime open adds device state through native intents | Superseded by 0143 |
+| [0140](0140-open-workspaces-synchronize-automatically-and-callers-settle-one-watermark.md) | Open workspaces synchronize automatically and callers settle one watermark | Accepted |
+| [0141](0141-authority-current-state-and-receipt-watermarks-drive-row-convergence.md) | Authority current state and receipt watermarks drive row convergence | Accepted |
+| [0142](0142-bootstrap-history-gaps-and-lineage-mismatches-have-distinct-recovery.md) | Bootstrap, history gaps, and lineage mismatches have distinct recovery | Accepted |
+| [0143](0143-account-open-never-consumes-device-data.md) | Account open never consumes Device data | Accepted |
+| [0144](0144-scalar-rows-and-row-documents-synchronize-through-independent-client-planes.md) | Scalar rows and row documents synchronize through independent client planes | Proposed |
+| [0145](0145-one-account-authority-owns-every-workspace-and-one-socket-per-open-row-document.md) | One account authority owns every workspace and one socket per open row document | Proposed |
+| [0146](0146-row-documents-use-one-yjs-14-major-and-runtime-native-update-logs.md) | Row documents use one Yjs 14 major and runtime-native update logs | Proposed |
+| [0147](0147-cross-plane-transfer-and-recovery-use-logical-coordination-not-atomic-snapshots.md) | Cross-plane transfer and recovery use logical coordination, not atomic snapshots | Proposed |
 
 When you add an ADR, add its row here.

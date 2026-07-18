@@ -41,15 +41,17 @@ policy stays in the app that can name it.
 
 `@epicenter/workspace` owns the app-facing data contract and runtime handles.
 `@epicenter/field` supplies the release-local projection vocabulary.
-`@epicenter/row-sync` owns the portable row-plane protocol: row intent folding,
-exact retry, outcome paging, compaction, and baseline acquisition. Row-owned
-Yjs document updates travel inside row intents and composite outcomes.
+`@epicenter/row-sync` owns the portable scalar row protocol: row intent folding,
+exact retry, current-state paging, transport compaction, and complete-state
+acquisition. The Proposed two-plane replacement removes document bytes from
+that protocol. Row-addressed Yjs 14 connections synchronize lazy row documents
+independently.
 
 ## Workspace definitions are app contracts
 
 A workspace definition is pure. It names release-local table and KV lenses
 without opening storage or a network connection. Every ordinary row owns one
-optional Yjs document; document roots remain application-owned.
+latent Yjs document; document roots remain application-owned.
 
 ```text
 defineWorkspace({ id, tables, kv })
@@ -62,27 +64,51 @@ runtime.open(definition)             Browser, Bun, desktop, or hosted runtime
 Definitions are not storage schemas. A new release may change its lens
 immediately. Nonconforming rows remain stored and visible to repair code.
 
+An Account workspace synchronizes scalar rows automatically. Scalar
+`sync.settle()` waits for the scalar work present at invocation and the
+authority state that confirms it. Each open document persists automatically;
+its `whenDurable()` covers only the local Yjs provider and its connection status
+reports document-network progress. Neither barrier impersonates the other.
+
+Device and Account storage are independent owners. Account `open()` never reads
+Device data. Products implement consent with Device `capture()` and `delete()`,
+Account `add()`, or no call for Keep.
+
 Runtime openers supply the resources that cannot travel with the definition:
 browser storage, desktop storage, row synchronization, materializers, auth, and
 platform APIs. App-facing code should enter through the workspace definition
 instead of rebuilding addresses or storage topology itself.
 
-## The row plane is the ordered durable core
-
-Workspace tables, workspace KV, and row-owned document updates all reduce to
-row intents before they cross the synchronization boundary.
+The client planes meet only at the workspace handle and the server authority:
 
 ```text
-workspace runtime
-  create/update/delete rows, kv, row documents
+Browser page: Yjs 14 + IndexedDB  ---- socket per open document --------+
+                                                                      |
+Browser Worker: OPFS SQLite  -------- scalar row HTTP protocol --------+-- workspace authority
+
+Native host: private document store -- socket per open document --------+
+Native host: scalar SQLite ----------- scalar row HTTP protocol --------+
+```
+
+One physical native database may implement both local stores, but that is not a
+cross-plane transaction contract.
+
+## The scalar row plane is the ordered queryable core
+
+Workspace table fields and workspace KV reduce to scalar row intents. Document
+updates never cross this boundary.
+
+```text
+workspace scalar runtime
+  create/update/delete row fields and kv
         |
         v
 row-sync protocol
-  RowIntent, sealed rounds, tokens, outcomes
+  RowIntent, sealed rounds, receipts, current-state pages
         |
         v
 workspace authority
-  SQLite-backed fold, receipts, paging, compaction, baseline scan
+  SQLite-backed fold, receipts, paging, compaction, acquisition
 ```
 
 The workspace authority is schema-blind. It orders semantically valid row
@@ -90,37 +116,74 @@ intents and folds them into deterministic outcomes. It does not rename fields,
 apply defaults, heal application data, or synchronize a device SQLite file as
 the wire format.
 
-Each replica tracks:
+Each synchronized client tracks:
 
 ```text
-acceptedRound  authored work the authority accepted from this replica
-checkpoint     global authority outcomes this replica installed
-requestDigest  exact retry identity for the accepted round
+retired receipt  exact outgoing round already installed locally
+checkpoint       authority state this client installed
+open intents     compactable local work not yet sent
+sealed intents   immutable exact-retry payload
 ```
 
-Those values intentionally stay separate. `acceptedRound` and `requestDigest`
-support exact retry of authored work. `checkpoint` supports paging through
-everyone else's confirmed outcomes.
+The authority receipt contains the accepted round, request digest, and the
+sequence through which that round changed current state. The client retires its
+sealed overlay only after pull installs state through that sequence. The digest
+is the safety witness that stops a restored or copied private database from
+silently retiring different content under the same round.
 
 For protocol details and executable coverage, read
 [`packages/row-sync/README.md`](../packages/row-sync/README.md) and
-[`packages/row-sync/src/protocol.test.ts`](../packages/row-sync/src/protocol.test.ts).
+[`packages/row-sync/src/current-state-protocol.test.ts`](../packages/row-sync/src/current-state-protocol.test.ts).
 
-## Documents are merge-sensitive row content
+## Documents are a lazy Yjs 14 plane
 
 Documents remain the right representation for merge-sensitive content. Every
-ordinary row owns optional Yjs state under the same identity and lifecycle as
-its fields. The workspace API exposes that state through the row's singular
+ordinary row owns latent Yjs state under the same identity and lifecycle as its
+fields. The workspace API exposes that state through the row's singular
 document handle.
 
-Opening a document hydrates its confirmed, sealed, and open components from
-local SQLite. Edits become durable document-bearing row intents, and the
-authority merges their Yjs updates into composite row outcomes. Releasing the
-last handle unloads live state without deleting it; deleting the row revokes
-its handles and removes its document state.
+Opening a document hydrates its runtime-native update log before networking.
+Browser documents use an Epicenter-owned IndexedDB provider; native runtimes
+use private SQLite persistence. Releasing the last handle unloads live state
+without deleting it. Deleting the row revokes its handles and eventually clears
+client-local bytes.
 
-Yjs supplies merge semantics inside a row. It is not a second public address,
-sync protocol, room, or lifecycle.
+Each currently open row document uses one Yjs 14 WebSocket. Every such
+connection and the scalar HTTP protocol terminate at the same account
+authority actor, which owns exact row liveness and deletion without putting
+document updates in `RowIntent`. Closed documents use no socket, and the
+server retains no live document state: it hydrates disposable committed state
+per admission and per accepted update. Yjs supplies merge semantics inside a
+row, but it is not a second public identity or lifecycle.
+
+Document admission has three facts and one surface. The upgrade credential
+authenticates a principal. The authority address derives deterministically
+from that principal alone (ADR-0092: the principal is the partition, and here
+also the actor), so a workspace id is a name inside the requester's own
+partition and no request can address another principal's state; there is no
+catalog, grant, or per-request authorization lookup. Finally, the authority
+checks whether the route's `(table, rowId)` is live. A not-live row closes
+retryably with no reserved code; the client's own scalar plane knows whether
+its row is still awaiting admission, and scalar synchronization installing a
+deletion is what revokes the open document. The only document-specific wire
+verdict is the terminal `too-large` close (1009). The row address is not a
+capability. Every update rechecks liveness in its SQLite transaction. Row
+deletion removes the row, records a bounded deletion marker, and removes the
+server document snapshot and update log in one transaction, then closes the
+row's sockets. A crash before those closes cannot resurrect bytes because
+acceptance rechecks liveness against committed state.
+
+On Cloudflare, each hibernating socket stores its one fixed structured address
+within the platform's 16,384 byte attachment limit. Fanout enumerates the
+actor's sockets and compares complete attachment addresses; open documents are
+few by product premise, so no tag index ships until measured socket counts
+earn one. This uses the platform's per-socket recovery instead of persisting a
+mutable multiplex subscription set. The platform permits at most 32,768
+hibernating sockets per actor. Multiplexing remains refused until measured
+open-document socket pressure earns its additional protocol state.
+
+This document plane uses `@y/y` 14 only. It provides no Yjs 13 dependency,
+persisted-state reader, alias, migration path, dual wire, or fallback.
 
 ## Lens evolution never migrates user data implicitly
 
@@ -148,10 +211,10 @@ A star is the runnable deployment that holds a person's synchronized data. The
 hosted Cloud app and the self-hosted instance use the same shared server library
 but resolve principals differently.
 
-The workspace authority backend owns ordering, current rows and row-document
-update logs, receipts, compaction, and baseline acquisition. Application
-releases own field validation, document roots, and explicit repair code. Blob
-storage holds large binaries by reference.
+The workspace authority backend owns scalar ordering, receipts, current rows,
+complete-state acquisition, and the separate row-document connections.
+Application releases own field validation, document roots, and explicit repair
+code. Blob storage holds large binaries by reference.
 
 This separation keeps the privacy question concrete. Epicenter can run the
 star, or the user can run it. In either topology, apps keep their schema meaning
@@ -159,11 +222,11 @@ and product policy at the client boundary.
 
 ## Current transition
 
-The selected direction is workspace authority plus row-owned document updates. Some
-workspace implementation code still lives under
-`packages/workspace/src/sqlite`, and older public workspace paths still contain
-root-Y.Doc-era concepts. Treat those as migration surfaces, not ownership
-boundaries.
+The Proposed clean break is queryable SQLite scalars plus runtime-native Yjs 14
+document providers, terminating at one workspace authority through separate
+protocols. Current code still contains the combined row/document replica,
+per-document Yjs 13 rooms, and root-Y.Doc-era paths. Treat all three as
+transition surfaces, not ownership boundaries.
 
 During the transition, use accepted ADRs, package READMEs, executable tests, and
 code as current implementation truth. Use this architecture page to judge

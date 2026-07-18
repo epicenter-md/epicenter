@@ -21,27 +21,33 @@ shapes, see `docs/adr/`.
   deployment. Credentials may rotate, but deployment identity plus `principalId`
   is the stable data identity; transport is how the runtime syncs.
 - **Workspace**: one stable app-defined local-first data and sync unit. It owns
-  workspace KV and tables; each table owns rows; each row owns fields plus an
-  optional lifecycle-bound document.
-- **Device workspace**: a signed-out SQLite workspace owned only by the current
-  device. It has no deployment, principal, credential, or sync transport.
-- **Account workspace**: a signed-in SQLite workspace owned by an account. When
-  synchronized, its server partition is `(principalId, workspaceId)` inside the
-  deployment that resolved the principal.
-- **Adoption**: explicit copy of a whole device workspace into an empty account
-  workspace after sign-in. It preserves `workspaceId`, may optionally delete the
-  device copy, and refuses non-empty account targets instead of merging.
-- **Workspace partition**: the server-local synchronized workspace identified by
-  `(principalId, workspaceId)`. The deployment is implicit in the server that
-  resolved the principal.
-- **Workspace authority**: the runtime role that orders, folds, retries,
-  compacts, and synchronizes one workspace partition. It is not an address and
-  not a credential.
-- **Room**: one legacy server-side Yjs synchronization address. Canonical SQLite
-  synchronization uses a workspace authority for rows, document updates, and
-  confirmed state. Cloudflare may colocate several such logical stores in one
-  Durable Object SQLite database without making their physical file the sync
-  contract.
+  workspace KV and tables; each table owns rows; each ordinary row owns scalar
+  fields plus one latent lifecycle-bound document.
+- **Device workspace**: a signed-out workspace owned only by the current device.
+  Runtime-native SQLite owns its scalar rows; a runtime-native provider owns its
+  row documents. It has no deployment, principal, credential, or sync transport.
+- **Account workspace**: a signed-in workspace inside the authenticated
+  principal's own partition. The route workspace id is a name in that
+  partition; no catalog, grant, or authorization lookup exists. Its scalar and
+  document stores remain independent client persistence owners.
+- **Adoption**: explicit Add, Delete, or Keep after sign-in. Add transfers
+  logical scalar state and documents through their native planes; source
+  deletion is a separate action after both destination stores are locally
+  durable.
+- **Account authority**: the one server runtime owner for everything an
+  authenticated principal stores: one actor and one SQLite database containing
+  every named workspace as a logical namespace. Its address derives
+  deterministically from the principal alone, so no request can reach another
+  principal's state. It orders scalar row synchronization and hosts the
+  separate row-document connections.
+- **Row-document connection**: one authenticated Yjs 14 WebSocket for one
+  currently open `(table key, row id)` inside a synchronized workspace. Its
+  structured route address is lifecycle identity, not a secret; it is separate
+  from scalar push, pull, acquisition, and settlement.
+- **Row liveness**: the authority-local fact that a row address is currently
+  live. Absence is a derived query, not durable state; deletion is a bounded
+  feed marker backed by acquisition, and conforming runtimes never re-mint a
+  deleted row id. Liveness is a lifecycle invariant, not a per-row ACL.
 - **Star**: the one runnable program that holds your data, composing anchor,
   store, sync, and identity/auth into a deployment (ADR-0069). The star is the
   unit of self-host and the entire privacy question: Epicenter runs it (hosted)
@@ -85,10 +91,11 @@ shapes, see `docs/adr/`.
   community single-partition instance reference, not Epicenter-operated; ADR-0075).
 - **Cross-device planes**: cross-device work splits by responsibility. *Inference* (the
   chat brain) streams tokens from an OpenAI-compatible endpoint (ADR-0050),
-  over the inference seam. *Sync* (convergent state) carries document history
-  over the relay, and server-owned presence reports which workspace peers are
-  online. *Invoke* (the agent's hands) is local to the host that owns the tool
-  process, unless a future product re-earns a direct URL-addressed box surface.
+  over the inference seam. *Scalar sync* carries queryable rows and KV through
+  the row authority. *Document sync* carries lazy Yjs history and row-scoped
+  presence over row-document connections. *Invoke* (the agent's hands) is local
+  to the host that owns the tool process, unless a future product re-earns a
+  direct URL-addressed box surface.
 - **Infisical project**: the owner and access-control boundary. Each secret-using
   runnable surface owns its own `.infisical.json`: `apps/api` and `ops` point
   at Epicenter's hosted/operator project, and personal local apps use ignored
@@ -117,8 +124,9 @@ shapes, see `docs/adr/`.
 - **Table key**: the permanent storage key that partitions rows in a workspace.
   A release-local table name is not a rename lens over another key.
 - **Row**: one identified application value in a table. It is the public
-  lifecycle aggregate: deleting the row deletes its fields and row-owned
-  document state.
+  lifecycle aggregate. Server deletion atomically tombstones its address and
+  removes its document state; disconnected clients revoke handles and clean up
+  retained local document bytes when they observe that deletion.
 - **Field key**: the exact permanent JSON key named by a table lens. There is no
   fallback key, alias, automatic rename, or storage default.
 - **Table lens**: a release-local `defineTable({ fields, optional })`
@@ -126,8 +134,10 @@ shapes, see `docs/adr/`.
   heal, rewrite, or version stored rows.
 - **Field**: one `field.*` validator for a present JSON value. Required versus
   optional presence belongs to the table lens, not the field definition.
-- **Row-owned document**: the optional collaborative document owned by a row.
-  It has no public id, authority, or lifecycle independent from the row.
+- **Row-owned document**: the latent collaborative document owned by a row.
+  It has no public id, authority, or lifecycle independent from the row. Its
+  runtime-native provider persists and synchronizes it independently from
+  scalar row sync.
 - **Record**: not a platform lifecycle noun in the canonical workspace model.
   Use row for the durable application aggregate, fields for JSON values, and
   document for the row-owned CRDT state. Historical docs and transitional code
@@ -142,26 +152,30 @@ shapes, see `docs/adr/`.
 - **Application repair**: ordinary bounded reads and typed patches authored by
   the application. Repair is explicit, retryable application work, not a
   workspace migration API or an effect of reading.
-- **Logical row snapshot**: portable `(table key, row id, fields, document)`
-  state without SQLite pages, application lenses, actors, cursors, outboxes,
-  receipts, derived indexes, or mutation history.
+- **Logical workspace copy**: coordinated scalar rows, KV, compact Yjs 14
+  document states, and explicit document-availability diagnostics. It is not an
+  exact cross-plane instant and contains no SQLite pages, provider databases,
+  actors, cursors, receipts, or mutation history.
 - **Connection-local SQL view**: one read-only explicit-column `TEMP VIEW`
   installed from the current table lens whenever a SQLite connection opens. It
   stores no rows, reflects canonical commits immediately, and disappears with
   the connection.
 - **Row document handle**: the revocable handle returned by a lazy row document
-  open. Releasing the final handle may unload live Yjs state but never deletes
-  persisted or synchronized content.
+  open. It exposes application roots, local provider durability, and document
+  connection status. Releasing the final handle may unload live Yjs state but
+  never deletes persisted or synchronized content.
 - **Row intent**: one schema-blind `create`, `update`, or `delete` sync unit. It
-  may carry fields, a document update, or both. The workspace authority orders
-  accepted intents and folds them into confirmed state.
+  carries scalar fields or the reserved KV representation, never document
+  updates. The workspace authority orders accepted intents and folds them into
+  confirmed scalar state.
 - **Blob**: immutable content addressed outside workspace rows and KV. Rows and
   KV may reference blobs; row-owned documents are bounded interactive CRDT
   state, not a media or large-file plane.
-- **Canonical SQLite workspace**: the greenfield `@epicenter/workspace/sqlite`
-  lane. Definitions are inert release-local lenses, and
-  `runtime.open(definition)` returns borrowed handles for tables, workspace KV,
-  row documents, and read-only SQL.
+- **Canonical workspace runtime**: the greenfield two-plane lane. Runtime-native
+  SQLite owns queryable scalar rows, TEMP views, and read-only SQL. Runtime-native
+  Yjs 14 providers own lazy row documents. The public workspace handle composes
+  them without promising cross-plane atomicity. This lane uses `@y/y` 14 only;
+  it has no Yjs 13 dependency, persisted reader, alias, dual wire, or fallback.
 - **Transitional root-Yjs workspace**: the still-active `@epicenter/workspace`
   lane used by apps not yet migrated. Its `defineKv`, definition-owned
   `create/connect/mount`, `.docs`, and `_v` behavior remain compatibility
@@ -227,8 +241,9 @@ shapes, see `docs/adr/`.
   It opens the root's mount, owns the lease, joins sync when signed in, and keeps
   materializers alive. It is not a callable action server. Internal code still
   uses `daemon` names (`DaemonMetadata`, `claimDaemonLease`) for this process.
-- **Peer**: a device currently connected to the same workspace room. Presence is
-  server-owned and surfaced by app UI or watcher logs, not a generic CLI query.
+- **Peer**: a device currently present in the same row-document subscription.
+  Presence is server-owned and carried by that document's connection, then
+  surfaced by app UI or watcher logs, not a generic CLI query.
 - **Watcher lifecycle commands**: `up`, `down`, `status`, and `logs`. They use
   metadata, pid liveness, logs, and OS signals. No Unix socket or daemon action
   client exists.

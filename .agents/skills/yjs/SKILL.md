@@ -1,21 +1,22 @@
 ---
 name: yjs
-description: Yjs CRDT patterns, shared types (Y.Map, Y.Array, Y.Text), transactions, y-protocols sync and awareness, y-indexeddb persistence, conflict resolution, and document storage. Use when mentioning Yjs, Y.Doc, CRDTs, collaborative editing, real-time sync, awareness, IndexeddbPersistence, or Yjs providers.
+description: 'Yjs 14 CRDT patterns for Epicenter row documents: @y/y shared types, transactions, updateV2 persistence, row-addressed synchronization, awareness, conflict resolution, and document storage. Use when mentioning Yjs, Y.Doc, CRDTs, collaborative editing, awareness, IndexedDB document persistence, row documents, or Yjs providers.'
 metadata:
   author: epicenter
   version: '1.0'
 ---
 
-# Yjs CRDT Patterns
+# Yjs 14 CRDT Patterns
 ## Reference Repositories
 
 - [Yjs](https://github.com/yjs/yjs): CRDT framework for shared editing and offline-first data
-- [Yjs Protocols](https://github.com/yjs/y-protocols) - Sync, awareness, and auth protocol helpers
-- [Y IndexedDB](https://github.com/yjs/y-indexeddb) - Browser persistence provider for Y.Doc updates
+- [Yjs Protocols](https://github.com/yjs/y-protocols): algorithmic grounding for sync and awareness
 
 ## Upstream Grounding
 
-When conflict semantics, transaction origins, shared-type behavior, update encoding, storage growth, or shared-type APIs affect correctness, use source-backed grounding before relying on memory. If DeepWiki MCP is available, ask a narrow question against `yjs/yjs`; for sync, awareness, auth protocol helpers, or provider interoperability, ask against `yjs/y-protocols`; for browser persistence behavior, ask against `yjs/y-indexeddb`. If DeepWiki is unavailable or the repo is not indexed, use upstream source or official docs directly. Treat DeepWiki as orientation, then verify decisive details against local installed types, source, or official docs before changing code.
+When conflict semantics, transaction origins, shared-type behavior, update encoding, storage growth, or shared-type APIs affect correctness, use source-backed grounding before relying on memory. If DeepWiki MCP is available, ask a narrow question against `yjs/yjs`; for sync and awareness algorithms, ask against `yjs/y-protocols`. If DeepWiki is unavailable or the repo is not indexed, use upstream source or official docs directly. Treat DeepWiki as orientation, then verify decisive details against the locally pinned `@y/y` types and source before changing code.
+
+Epicenter targets `@y/y` 14 only. Do not add `yjs` 13, `y-indexeddb`, a compatibility reader, a package alias, a dual wire, or a fallback. Existing Yjs 13 code is replacement material, not a compatibility surface.
 
 Skip DeepWiki for stable basics and repo-local patterns already documented below.
 
@@ -24,31 +25,40 @@ Skip DeepWiki for stable basics and repo-local patterns already documented below
 ## Transactions, Origins, And Undo
 
 - Yjs updates are commutative and idempotent. Custom sync and persistence layers should use state vectors instead of inventing ordering guarantees.
-- Use `Y.encodeStateVector(doc)` to describe local clocks, then `Y.encodeStateAsUpdate(doc, remoteStateVector)` to send only missing updates.
+- Use `Y.encodeStateVector(doc)` to describe local clocks, then `Y.encodeStateAsUpdateV2(doc, remoteStateVector)` to send only missing updates.
+- Persist and transmit bytes from the `updateV2` event. Replay them with `Y.applyUpdateV2(doc, update, origin)`.
 - Wrap multi-write user actions in `doc.transact(() => { ... }, origin)`. This reduces observer churn and gives persistence, providers, and undo logic a useful origin.
 - Treat transaction origins as the boundary for filtering provider echoes, app-authored operations, and undo tracking.
 - Scope `Y.UndoManager` to concrete shared types. Set `trackedOrigins`, tune `captureTimeout`, and call `stopCapturing()` between logically separate commands.
 - Use relative positions for collaborative cursor and selection anchors. Raw numeric indexes drift under remote edits.
-- `Y.snapshot()` is a historical marker that depends on retained delete history. `Y.encodeStateAsUpdate(doc)` is the self-contained checkpoint format.
+- `Y.snapshot()` is a historical marker that depends on retained delete history. `Y.encodeStateAsUpdateV2(doc)` is the self-contained checkpoint format.
 - Prefer separate top-level docs over Yjs subdocuments unless Epicenter owns the whole provider lifecycle for the subdoc path.
 
-## Provider Protocols
+## Row Document Connection
 
-- The sync protocol has `SyncStep1`, `SyncStep2`, and incremental `Update` messages. Providers should implement that flow rather than exchanging full documents by default.
-- Awareness is ephemeral presence, not canonical document state. Never persist awareness into Y.Doc or IndexedDB as data.
-- Awareness is single-writer per client and clocked. Apply remote awareness only when the clock is newer.
-- On disconnect, set local awareness state to `null` so peers do not wait for timeout.
-- For read-only clients, filter mutation messages at the protocol boundary. Authorization still belongs in the provider or server boundary.
+- Yjs is network-agnostic. It supplies CRDT state, state vectors, updates, and awareness behavior, not Epicenter's connection topology, authorization, row lifecycle, or durability contract.
+- Each currently open row document uses one authenticated WebSocket at `/api/workspaces/:workspaceId/tables/:table/rows/:rowId/document`. Do not create an arbitrary room id or a mutable multiplex subscription set.
+- Authenticate the bearer into a principal. The account authority derives deterministically from that principal alone (ADR-0092: the principal is the partition and the actor); the route workspace id is a name inside the requester's own partition. There is no catalog, grant, or authority key.
+- The structured `(workspaceId, table, rowId)` route address selects one lifecycle-bound document inside the account authority. The address is a name, not a secret or capability. Check row liveness atomically with committed-state load on admission and again on every persisted update.
+- Select the exact `epicenter-document-v3` WebSocket subprotocol. Binary messages carry only `sync-request(stateVector)`, `sync-response(updateV2)`, and `update(updateV2)`. Both peers request missing state. Do not add an envelope fact already owned by the route, subprotocol, WebSocket boundary, close code, state vector, or update bytes.
+- The only document-specific close verdict is terminal `too-large` (1009). A row that is not live refuses or closes retryably with no reserved code; the client's scalar plane owns pending-versus-deleted knowledge and revokes the document when a deletion marker installs. Do not encode lifecycle verdicts as Yjs binary frames.
+- On Cloudflare, serialize the socket's complete fixed address within the 16,384 byte hibernation attachment limit and fan out by enumerating the actor's sockets and comparing complete attachment addresses. No tag index until measured socket counts earn one. The server retains no live Y.Doc; hydrate disposable committed state per admission and acceptance.
+- Reconnect with the same structured route and repeat state-vector exchange. Do not add durable subscription recovery or multiplexing until measured open-document socket pressure earns that machinery.
+- Use state-vector exchange followed by incremental `updateV2` messages instead of exchanging complete documents by default.
+- Presence is deliberately absent from document v3 until a concrete consumer earns awareness state, disconnect cleanup, and a later protocol major. If added later, awareness is ephemeral and must never be persisted into Y.Doc or IndexedDB as canonical data.
+- Browser upgrades authenticate through exactly one `bearer.<token>` subprotocol entry. Non-browser clients may instead use an `Authorization` header. Do not use cookie-only upgrades, query-string credentials, or post-accept authentication frames.
+- Authentication, deterministic authority resolution, and row liveness are three distinct facts with one surface. Row liveness is a lifecycle invariant, not a second per-row authorization system.
 
 ## IndexedDB Persistence
 
-- `IndexeddbPersistence(name, doc)` starts local loading immediately. Wait for upstream `whenSynced`, or Epicenter's wrapper `whenLoaded`, before assuming local state is hydrated.
-- Upstream `whenSynced` means local IndexedDB load complete. It does not mean remote network convergence.
-- Do not call `_storeUpdate`; it is an internal listener installed by the provider.
-- `destroy()` stops persistence and closes the DB connection. `clearData()` destroys persistence and deletes local stored data.
-- Stop writers before reset flows that call `clearData()`.
-- Use provider `set`, `get`, and `del` only for local provider metadata. Collaborative state belongs in shared Yjs types.
-- y-indexeddb periodically compacts stored update rows into a single encoded update, but that does not remove CRDT modeling costs inside the encoded document.
+- There is no official `@y/indexeddb` provider for the chosen Yjs 14 line. Epicenter owns the browser provider; do not install or peer-override `y-indexeddb`.
+- Use one versioned IndexedDB database per workspace with indexed update logs keyed by document address. Do not create one database per document.
+- Attach the `updateV2` listener before hydration can race with application writes. Append copied update bytes and expose an invocation-time `whenDurable()` barrier over the persistence tail.
+- Apply stored updates with a private persistence origin so replay does not append them again.
+- `whenLoaded` means local IndexedDB hydration completed. It does not mean remote convergence.
+- Stop the update listener before clearing or disposing a document. Wait for admitted writes before deleting its stored rows or closing the database.
+- Compact at bounded thresholds by replacing a covered prefix with one complete V2 update. Compaction does not remove CRDT modeling costs inside that encoded document.
+- Treat corruption, eviction, blocked upgrades, and transaction failure as storage failures. Do not silently continue with an empty document.
 
 ## Core Concepts
 
@@ -86,9 +96,9 @@ return dec2.curr.id.client - dec1.curr.id.client; // Higher clientID wins
 ```
 
 This is deterministic (all clients converge to the same state) but not
-intuitive: a later edit can lose. Epicenter's table, KV, and record surfaces do
-not expose this raw policy directly; they sit on `YKeyValueLww`, which adds a
-timestamped last-write-wins layer for keyed rows.
+intuitive: a later edit can lose. Design document roots around that fact.
+Epicenter's scalar tables and KV do not use Yjs or `YKeyValueLww`; runtime-native
+SQLite and the scalar row protocol own their convergence semantics.
 
 ### Shared Types Cannot Move
 
@@ -186,28 +196,28 @@ titleSchema.set('default', 'Untitled');
 
 ## Storage Optimization
 
-### Y.Map vs Workspace Keyed Stores
+### Y.Map vs Scalar Rows
 
 `Y.Map` tombstones retain the key forever. Every `ymap.set(key, value)` creates a new internal item and tombstones the previous one.
 
-In Epicenter, do not reach for upstream `y-utility` from app code. The workspace
-package owns keyed table, KV, and record storage through internal
-`YKeyValueLww`, a timestamped last-write-wins store over a `Y.Array`.
+Do not use one workspace-wide Y.Doc as the row or KV database. Scalar tables and
+KV live in runtime-native SQLite so large record sets remain queryable without
+hydrating one CRDT graph into memory. Yjs is reserved for lazy row documents.
 
 ```typescript
-// App code should usually stay at this level.
+// Scalar data stays on the row plane.
 workspace.tables.notes.set(note);
 workspace.kv.set('theme.mode', 'dark');
 
+// Keyed collaborative content may live inside one opened row document.
 using messages = workspace.tables.conversations.docs.messages.open(id);
 messages.set(message.id, message);
 ```
 
 Use raw `Y.Map` for bounded, rarely changing structures inside a private
-attachment. Use workspace tables, KV, or `attachRecords` for keyed app data.
-Only edit `YKeyValueLww` itself when you are working inside
-`packages/workspace/src/document/y-keyvalue/`; ground that work in the local
-tests and benchmarks.
+attachment. Use workspace tables and KV for scalar keyed data. Existing
+`YKeyValueLww` table and KV code is legacy replacement work; do not extend it or
+describe it as the final scalar storage model.
 
 ### Epoch-Based Compaction
 
@@ -215,9 +225,9 @@ If your architecture uses versioned snapshots, you get free compaction:
 
 ```typescript
 // Compact a Y.Doc by re-encoding current state
-const snapshot = Y.encodeStateAsUpdate(doc);
+const snapshot = Y.encodeStateAsUpdateV2(doc);
 const freshDoc = new Y.Doc({ guid: doc.guid });
-Y.applyUpdate(freshDoc, snapshot);
+Y.applyUpdateV2(freshDoc, snapshot);
 // freshDoc has same content, no history overhead
 ```
 
@@ -226,9 +236,8 @@ Y.applyUpdate(freshDoc, snapshot);
 ### 1. Assuming Raw "Last Write Wins" Means Timestamps
 
 It doesn't. Raw Yjs conflict ordering can use clientID, not wall-clock time.
-Design around this, use single-writer keys, or use an Epicenter surface that
-already owns timestamped LWW semantics (`YKeyValueLww` through tables, KV, or
-records).
+Design document state around this or use single-writer keys. Scalar row and KV
+conflicts belong to the SQLite row plane, not a Yjs LWW wrapper.
 
 ### 2. Using Y.Array Position for User-Controlled Order
 
@@ -307,7 +316,7 @@ Three layers, each with clear Y.js exposure:
 ```
 ┌──────────────────────────────────────────────────────┐
 │  Consumer Code (apps, features)                      │
-│  • Uses handle.read(), handle.write(), tables.*.set()│
+│  • Uses row document handles and typed root APIs     │
 │  • MAY bind to Y.Text/Y.XmlFragment from as*()      │
 │  • NEVER constructs Y.js types                       │
 │  • NEVER casts to Y.js types                         │
@@ -318,7 +327,7 @@ Three layers, each with clear Y.js exposure:
 │  • Converts between Y.js ↔ string/JSON               │
 │  • Lives close to the owning module                   │
 ├──────────────────────────────────────────────────────┤
-│  Timeline / Table / KV Internals                      │
+│  Row Document Internals                               │
 │  • Constructs and manages Y.js shared types           │
 │  • Owns the Y.Doc layout (array keys, map structure)  │
 │  • Exposes typed APIs that hide the CRDT details      │
@@ -360,5 +369,7 @@ If documents grow unexpectedly, check for:
 - [GitHub issue #520](https://github.com/yjs/yjs/issues/520) - Conflict resolution discussion with dmonad
 - [fractional-indexing](https://github.com/rocicorp/fractional-indexing) - Production library
 - [YATA paper](https://www.researchgate.net/publication/310212186_Near_Real-Time_Peer-to-Peer_Shared_Editing_on_Extensible_Data_Types) - Academic foundation
-- `packages/workspace/src/document/y-keyvalue/y-keyvalue-lww.ts` - Epicenter's timestamped keyed store for tables, KV, and records
-- `packages/workspace/src/document/attach-indexed-db.ts` - Epicenter's wrapper around `y-indexeddb`
+- `packages/workspace/src/document-provider/browser-indexed-db.ts`: Epicenter's owned Yjs 14 browser persistence provider
+- `packages/sync/src/document-v3/`: the Yjs 14 row-document wire
+- [ADR-0145](../../../docs/adr/0145-one-account-authority-owns-every-workspace-and-one-socket-per-open-row-document.md): workspace authority and document connection ownership
+- [ADR-0146](../../../docs/adr/0146-row-documents-use-one-yjs-14-major-and-runtime-native-update-logs.md): Yjs 14-only persistence decision

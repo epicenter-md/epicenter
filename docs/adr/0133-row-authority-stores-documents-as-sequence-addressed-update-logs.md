@@ -1,7 +1,8 @@
 # 0133. The workspace authority stores documents as sequence-addressed update logs
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-07-16
+- **Superseded by:** [ADR-0141](0141-authority-current-state-and-receipt-watermarks-drive-row-convergence.md)
 - **Relates:** [ADR-0130](0130-workspace-definitions-expose-tables-with-row-owned-documents-and-a-release-local-kv-lens.md), [ADR-0131](0131-row-sync-folds-sealed-row-intent-rounds-without-refusal.md), [ADR-0134](0134-replicas-store-confirmed-state-and-compacted-row-intents.md), [ADR-0135](0135-row-documents-have-application-owned-roots.md), [ADR-0136](0136-replica-baseline-acquisition-uses-a-disposable-anchored-live-scan.md)
 
 ## Context

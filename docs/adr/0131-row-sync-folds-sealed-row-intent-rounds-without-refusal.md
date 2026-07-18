@@ -1,7 +1,8 @@
 # 0131. Row sync folds sealed RowIntent rounds without refusal
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-07-16
+- **Superseded by:** [ADR-0141](0141-authority-current-state-and-receipt-watermarks-drive-row-convergence.md)
 - **Amended:** 2026-07-17: deployment capacity admission and the submission
   watermark are deleted. Every structurally valid RowIntent in a valid sealed
   round from an enrolled replica enters authority order exactly once; the
