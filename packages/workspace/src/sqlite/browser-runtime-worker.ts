@@ -7,11 +7,12 @@ import sqlite3InitModule, {
 	type Database,
 	type SAHPoolUtil,
 } from '@sqlite.org/sqlite-wasm';
-import type {
-	BrowserRecordOperation,
-	BrowserRuntimeMessage,
-	BrowserWorkerInbound,
-	BrowserWorkspaceManifest,
+import {
+	type BrowserRecordOperation,
+	type BrowserRuntimeMessage,
+	type BrowserWorkerInbound,
+	type BrowserWorkspaceManifest,
+	WORKSPACE_STORAGE_MOVED_ERROR_NAME,
 } from './browser-runtime-protocol.js';
 import {
 	acquireBrowserStorageLease,
@@ -286,7 +287,7 @@ function markStolen(state: OpenedRecords): void {
 	state.stolen = new Error(
 		`Workspace '${state.manifest.workspaceId}' storage moved to a newer tab`,
 	);
-	state.stolen.name = 'WorkspaceStorageMovedError';
+	state.stolen.name = WORKSPACE_STORAGE_MOVED_ERROR_NAME;
 	tail = tail.then(async () => {
 		try {
 			await state.sync?.[Symbol.asyncDispose]();
@@ -308,7 +309,7 @@ function markStolen(state: OpenedRecords): void {
 		scope.postMessage({
 			type: 'background-error',
 			workspaceId: state.manifest.workspaceId,
-			name: state.stolen?.name ?? 'WorkspaceStorageMovedError',
+			name: state.stolen?.name ?? WORKSPACE_STORAGE_MOVED_ERROR_NAME,
 			message:
 				state.stolen?.message ?? 'Workspace storage moved to a newer tab',
 		});

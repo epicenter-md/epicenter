@@ -12,6 +12,25 @@ export type SerializedTableLens = {
 	optional: string[];
 };
 
+/**
+ * Error name the records Worker stamps when a newer tab steals this
+ * workspace's storage (newest tab wins). It reaches the page twice: once
+ * through `onBackgroundError` at the moment of the steal, and again on every
+ * later operation, which fails with the same named error.
+ */
+export const WORKSPACE_STORAGE_MOVED_ERROR_NAME = 'WorkspaceStorageMovedError';
+
+/**
+ * True when an error means this tab's workspace storage moved to a newer
+ * tab. Apps use this in `onBackgroundError` to flip their one blocking
+ * "moved" state instead of leaving a stale-live UI behind.
+ */
+export function isWorkspaceStorageMovedError(cause: unknown): boolean {
+	return (
+		cause instanceof Error && cause.name === WORKSPACE_STORAGE_MOVED_ERROR_NAME
+	);
+}
+
 export type BrowserWorkspaceManifest = {
 	workspaceId: string;
 	storageKey: string;

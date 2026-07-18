@@ -10,6 +10,7 @@ export type {
 	LogicalWorkspaceExport,
 	LogicalWorkspaceRow,
 } from './canonical-addition.js';
+export { isWorkspaceStorageMovedError } from './browser-runtime-protocol.js';
 export {
 	type DocumentConnection,
 	type DocumentConnectionStatus,
