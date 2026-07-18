@@ -262,6 +262,16 @@ try {
 	await remote.close();
 
 	await second.evaluate(() => window.productionBrowserRuntime.closeDraft());
+	// A released document must survive: write a draft on the surviving row,
+	// close it, and assert its bytes after the forced reopen below.
+	await second.evaluate(
+		(id) => window.productionBrowserRuntime.openDraft(id),
+		secondRow.id,
+	);
+	await second.evaluate(async () => {
+		await window.productionBrowserRuntime.writeDraft('survives release');
+	});
+	await second.evaluate(() => window.productionBrowserRuntime.closeDraft());
 	// Closing the page force-terminates its Worker without a runtime flush.
 	await second.close();
 
@@ -274,6 +284,14 @@ try {
 	assert(
 		afterCrash.data?.title === 'second',
 		'force-terminated Worker lost committed OPFS records',
+	);
+	const survivingDraft = await reopened.evaluate(
+		(id) => window.productionBrowserRuntime.openDraft(id),
+		secondRow.id,
+	);
+	assert(
+		survivingDraft === 'survives release',
+		'SQLite row document did not survive release and reopen',
 	);
 	await reopened.evaluate(() => window.productionBrowserRuntime.dispose());
 	await reopened.close();

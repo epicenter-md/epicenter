@@ -242,6 +242,10 @@ export function createRowDocumentRuntime<TConnection = never>({
 			[Symbol.dispose](): void {
 				if (disposed) return;
 				disposed = true;
+				// The transport bridge must refuse a disposed handle exactly like
+				// get/transact do; dropping the registry entry makes its lookup
+				// fail loudly.
+				ownedDocuments.delete(handle);
 				entry.references -= 1;
 				if (entry.references === 0 && entry.revoked === undefined) {
 					void startTeardown(key, entry).catch(() => undefined);
