@@ -11,6 +11,11 @@ export type {
 	LogicalWorkspaceExport,
 	LogicalWorkspaceRow,
 } from './canonical-addition.js';
+export {
+	type DocumentConnection,
+	type DocumentConnectionStatus,
+	rowDocumentConnection,
+} from '../document-provider/connection/index.js';
 export type { RowDocument } from '../document-provider/runtime/index.js';
 export type {
 	WorkspaceSync,

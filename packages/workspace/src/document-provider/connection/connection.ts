@@ -490,3 +490,18 @@ function closeSocket(socket: WebSocket): void {
 }
 
 export type DocumentConnection = ReturnType<typeof attachDocumentConnection>;
+
+/**
+ * Typed reach into a row document's network connection surface.
+ *
+ * `RowDocument` deliberately erases the connection generic on the shared
+ * workspace facade (a Device runtime has no connection at all), so callers
+ * that observe status, subscribe, or await the first exchange narrow through
+ * this one accessor instead of casting. Returns `undefined` on documents
+ * opened by a runtime without a network transport.
+ */
+export function rowDocumentConnection(document: {
+	connection: unknown;
+}): DocumentConnection | undefined {
+	return document.connection as DocumentConnection | undefined;
+}
