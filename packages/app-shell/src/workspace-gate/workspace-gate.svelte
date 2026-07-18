@@ -32,6 +32,8 @@
 	import { Loading } from '@epicenter/ui/loading';
 	import { toast } from '@epicenter/ui/sonner';
 	import { Spinner } from '@epicenter/ui/spinner';
+	import { isWorkspaceStorageHeldError } from '@epicenter/workspace/sqlite';
+	import AppWindowIcon from '@lucide/svelte/icons/app-window';
 	import DatabaseZapIcon from '@lucide/svelte/icons/database-zap';
 	import LogOutIcon from '@lucide/svelte/icons/log-out';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
@@ -110,6 +112,30 @@
 {:catch err}
 	{#if error}
 		{@render error(err)}
+	{:else if isWorkspaceStorageHeldError(err)}
+		<!--
+			Another surface (a suspended tab or backgrounded installed app) still
+			holds this workspace's storage and could not hand it off. Data is
+			safe where it is; the recovery is closing or resuming that surface.
+		-->
+		<Empty.Root class="h-dvh flex-none border-0">
+			<Empty.Media>
+				<AppWindowIcon class="size-8 text-muted-foreground" />
+			</Empty.Media>
+			<Empty.Title>Another window is using this app's storage</Empty.Title>
+			<Empty.Description>
+				This app is open in another tab, another window, or the installed
+				app, possibly suspended in the background. Your data is safe there.
+				Close that other copy, or bring it to the foreground so it can hand
+				off, then try again.
+			</Empty.Description>
+			<Empty.Content>
+				<Button onclick={() => window.location.reload()}>
+					<RefreshCwIcon class="size-4" />
+					Try again
+				</Button>
+			</Empty.Content>
+		</Empty.Root>
 	{:else}
 		<Empty.Root class="h-dvh flex-none border-0">
 			<Empty.Media>
