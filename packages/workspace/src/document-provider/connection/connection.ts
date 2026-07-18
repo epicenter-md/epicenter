@@ -186,6 +186,10 @@ export function attachDocumentConnection(
 	let disposed = false;
 	let connectedOnce = false;
 	const connected = Promise.withResolvers<void>();
+	// Disposal before the first exchange rejects `whenConnected`; observing it
+	// here keeps that ordinary lifecycle from becoming an unhandled rejection
+	// for callers that never await the connection.
+	void connected.promise.catch(() => undefined);
 	const disposedBarrier = Promise.withResolvers<void>();
 
 	// Estimator state. The measure survives reconnects; the handshake facts

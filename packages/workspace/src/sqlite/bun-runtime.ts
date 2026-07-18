@@ -28,6 +28,7 @@ import {
 	deleteLocalWorkspace,
 	type LogicalWorkspaceCopy,
 	logicalWorkspaceIntents,
+	withCapturedDocuments,
 } from './canonical-addition.js';
 import { mergeDocumentUpdates } from './canonical-documents.js';
 import { createCanonicalSyncSupervisor } from './canonical-sync-supervisor.js';
@@ -307,19 +308,10 @@ function createBunRuntimeWithPersistence({
 			const state = localWorkspaces.get(workspaceId);
 			if (!state)
 				throw new Error(`Device workspace '${workspaceId}' is not open`);
-			const copy = captureLocalWorkspace(state.sqlite, mergeDocumentUpdates);
-			return {
-				...copy,
-				rows: await Promise.all(
-					copy.rows.map(async (row) => {
-						const document = await state.documents.capture({
-							table: row.table,
-							rowId: row.rowId,
-						});
-						return document === undefined ? row : { ...row, document };
-					}),
-				),
-			};
+			return withCapturedDocuments(
+				captureLocalWorkspace(state.sqlite, mergeDocumentUpdates),
+				state.documents.capture,
+			);
 		},
 		async deleteLocal(workspaceId: string): Promise<void> {
 			const state = localWorkspaces.get(workspaceId);

@@ -1084,8 +1084,7 @@ export function createCurrentStateReplica({
 		};
 	}
 
-	function captureRecovery(): LogicalWorkspaceCopy | null {
-		if (readReplica().recovery_required !== 1) return null;
+	function captureVisible(): LogicalWorkspaceCopy {
 		const addresses = sqlite.all<RowAddress>(
 			`SELECT table_key AS "table", row_id AS "rowId" FROM "${TABLES.rows}"
 			 UNION
@@ -1096,6 +1095,11 @@ export function createCurrentStateReplica({
 			addresses,
 			readCurrentRow,
 		});
+	}
+
+	function captureRecovery(): LogicalWorkspaceCopy | null {
+		if (readReplica().recovery_required !== 1) return null;
+		return captureVisible();
 	}
 
 	function startFreshLineage(): void {
@@ -1201,6 +1205,9 @@ export function createCurrentStateReplica({
 
 		/** Discard ambiguous private sync state and mint one empty fresh lineage. */
 		startFreshLineage,
+
+		/** Capture visible user content (confirmed rows plus intent overlays). */
+		captureVisible,
 
 		/** Capture visible user content after a lineage halt, never protocol state. */
 		captureRecovery,

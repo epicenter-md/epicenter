@@ -410,9 +410,18 @@ test('Account sync status is reactive across the Worker boundary', async () => {
 		workspaceId: definition.id,
 		status: { phase: 'recovery-required', reason: 'lineage-mismatch' },
 	});
-	expect(await workspace.sync?.captureRecovery()).toMatchObject({
+	{
+		using document = await workspace.tables.notes.document.open(ROW_ID);
+		document.get('content').insert(0, 'recover me');
+		await document.whenDurable();
+	}
+	const copy = await workspace.sync?.captureRecovery();
+	expect(copy).toMatchObject({
 		rows: [{ table: 'notes', rowId: ROW_ID }],
 	});
+	// The page folds its locally durable IndexedDB document state into the
+	// Worker's scalar recovery copy (ADR-0142's compact document state).
+	expect(copy?.rows[0]?.document).toBeInstanceOf(Uint8Array);
 	unsubscribe?.();
 });
 

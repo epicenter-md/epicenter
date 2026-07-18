@@ -23,7 +23,10 @@ import {
 	type BrowserWorkspaceManifest,
 	serializeTableLenses,
 } from './browser-runtime-protocol.js';
-import type { LogicalWorkspaceCopy } from './canonical-addition.js';
+import {
+	type LogicalWorkspaceCopy,
+	withCapturedDocuments,
+} from './canonical-addition.js';
 import type {
 	WorkspaceSync,
 	WorkspaceSyncSettlement,
@@ -450,6 +453,12 @@ function createBrowserRuntimeWithPersistence({
 		const documentStore = lazyBrowserDocumentStore(
 			documentDatabaseName(persistenceHash, definition.id),
 		);
+		async function captureDocuments(
+			copy: LogicalWorkspaceCopy,
+		): Promise<LogicalWorkspaceCopy> {
+			await documents.captureDurabilityBarrier();
+			return withCapturedDocuments(copy, documentStore.capture);
+		}
 		const documents = createRowDocumentRuntime<DocumentConnection>({
 			store: documentStore,
 			isLive: async ({ table, rowId }) =>
@@ -496,8 +505,13 @@ function createBrowserRuntimeWithPersistence({
 							kind: 'sync-settle',
 						});
 					},
-					captureRecovery() {
-						return request(manifest, { kind: 'sync-capture-recovery' });
+					async captureRecovery() {
+						const copy = await request<LogicalWorkspaceCopy | null>(manifest, {
+							kind: 'sync-capture-recovery',
+						});
+						// The recovery copy carries each row's locally durable compact
+						// document state (ADR-0142); the Worker owns only rows and KV.
+						return copy === null ? null : captureDocuments(copy);
 					},
 					async startFresh() {
 						if (syncStatus.phase !== 'recovery-required') {
@@ -587,21 +601,7 @@ function createBrowserRuntimeWithPersistence({
 			captureDurability: documents.captureDurabilityBarrier,
 			disposeDocuments: documents[Symbol.asyncDispose],
 			deleteDocuments: documentStore.deleteAll,
-			async captureDocuments(copy: LogicalWorkspaceCopy) {
-				await documents.captureDurabilityBarrier();
-				return {
-					...copy,
-					rows: await Promise.all(
-						copy.rows.map(async (row) => {
-							const document = await documentStore.capture({
-								table: row.table,
-								rowId: row.rowId,
-							});
-							return document === undefined ? row : { ...row, document };
-						}),
-					),
-				};
-			},
+			captureDocuments,
 			async importDocuments(copy: LogicalWorkspaceCopy) {
 				for (const row of copy.rows) {
 					if (row.document === undefined) continue;

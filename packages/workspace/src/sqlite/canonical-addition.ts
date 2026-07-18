@@ -79,6 +79,33 @@ export function logicalWorkspaceIntents(
 	return intents;
 }
 
+/**
+ * Fold each row's locally durable document state into a logical copy.
+ *
+ * A row keeps its scalar-captured document bytes when the store holds nothing
+ * for its address. A row without a `document` field afterwards is the explicit
+ * omission record: no locally available document state existed for it at
+ * capture time, and whether authority-side state exists is deliberately not
+ * asked here.
+ */
+export async function withCapturedDocuments(
+	copy: LogicalWorkspaceCopy,
+	capture: (address: {
+		table: string;
+		rowId: string;
+	}) => Promise<Uint8Array | undefined>,
+): Promise<LogicalWorkspaceCopy> {
+	return {
+		...copy,
+		rows: await Promise.all(
+			copy.rows.map(async (row) => {
+				const document = await capture({ table: row.table, rowId: row.rowId });
+				return document === undefined ? row : { ...row, document };
+			}),
+		),
+	};
+}
+
 export function captureLocalWorkspace(
 	source: SqliteDatabase,
 	mergeUpdates: (parts: readonly Uint8Array[]) => Uint8Array,

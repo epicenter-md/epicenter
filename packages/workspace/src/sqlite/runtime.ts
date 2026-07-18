@@ -11,6 +11,10 @@ import {
 import type { DocumentStore, RowAddress } from '../document-provider/persistence.js';
 import { createNativeSqliteDocumentStore } from '../document-provider/native-sqlite.js';
 import type * as Y from '@y/y';
+import {
+	type LogicalWorkspaceCopy,
+	withCapturedDocuments,
+} from './canonical-addition.js';
 import { type CanonicalKv, createCanonicalKv } from './canonical-kv.js';
 import type { CanonicalRows, CanonicalTable } from './canonical-rows.js';
 import { createCanonicalRows } from './canonical-rows.js';
@@ -160,10 +164,11 @@ export function createWorkspaceRuntime({
 					owner.readCurrentRow ??
 					((table: string, rowId: string) =>
 						readLocalRow(owner.sqlite, table, rowId));
+				const documentStore =
+					owner.documentStore ??
+					createNativeSqliteDocumentStore({ database: owner.sqlite });
 				const documents = createRowDocumentRuntime<unknown>({
-					store:
-						owner.documentStore ??
-						createNativeSqliteDocumentStore({ database: owner.sqlite }),
+					store: documentStore,
 					isLive: ({ table, rowId }) => currentRow(table, rowId) !== undefined,
 					...(owner.connectDocument
 						? { connect: owner.connectDocument }
@@ -190,7 +195,10 @@ export function createWorkspaceRuntime({
 					for (const address of addresses) void documents.revoke(address);
 				});
 				owner.subscribeAcquisitionPromoted?.(documents.revokeAll);
-				const sync = bindWorkspaceSync(owner.sync);
+				const sync = bindWorkspaceSync(owner.sync, async (copy) => {
+					await documents.captureDurabilityBarrier();
+					return withCapturedDocuments(copy, documentStore.capture);
+				});
 				return { owner, rows, kv, documents, sync };
 			} catch (cause) {
 				try {
@@ -365,6 +373,9 @@ function tableFor(
 
 function bindWorkspaceSync(
 	ownerSync: WorkspaceOwnerSync | undefined,
+	captureDocuments: (
+		copy: LogicalWorkspaceCopy,
+	) => Promise<LogicalWorkspaceCopy>,
 ): WorkspaceSync | null {
 	if (!ownerSync) return null;
 	return Object.freeze({
@@ -377,11 +388,17 @@ function bindWorkspaceSync(
 		settle() {
 			return ownerSync.settleThrough(ownerSync.captureAdmissionCut());
 		},
-		captureRecovery() {
-			return ownerSync.captureRecovery();
+		async captureRecovery() {
+			const copy = await ownerSync.captureRecovery();
+			// The recovery copy carries each row's locally durable compact
+			// document state (ADR-0142); the scalar replica owns only rows and KV.
+			return copy === null ? null : captureDocuments(copy);
 		},
 		startFresh() {
 			// This explicit recovery action discards the halted private lineage.
+			// Local document logs deliberately survive it: same-address Yjs merge
+			// is the document plane's ordinary convergence law, and conforming
+			// runtimes never reuse a row address across lifetimes (ADR-0145).
 			return ownerSync.startFresh();
 		},
 	});

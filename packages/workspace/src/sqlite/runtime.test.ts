@@ -16,8 +16,10 @@ import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 import { field } from "@epicenter/field";
 import { createBunSqliteAdapter } from "@epicenter/sqlite/bun";
+import * as Y from "@y/y";
 import { Type } from "typebox";
 import { expectOk } from "wellcrafted/testing";
+import type { LogicalWorkspaceCopy } from "./canonical-addition.js";
 import type {
   WorkspaceOwnerSync,
   WorkspaceSyncSettlement,
@@ -43,10 +45,12 @@ function setupSynchronizedRuntime({
   initialStatus = { phase: "caught-up" },
   captureAdmissionCut = () => 0,
   settle = async (_cut: number) => ({ outcome: "caught-up" }),
+  captureRecovery = async (): Promise<LogicalWorkspaceCopy | null> => null,
 }: {
   initialStatus?: WorkspaceSyncStatus;
   captureAdmissionCut?: () => number;
   settle?: (cut: number) => Promise<WorkspaceSyncSettlement>;
+  captureRecovery?: () => Promise<LogicalWorkspaceCopy | null>;
 } = {}) {
   const database = new Database(":memory:");
   const sqlite = createBunSqliteAdapter(database);
@@ -70,9 +74,7 @@ function setupSynchronizedRuntime({
     async settle() {
       return ownerSync.settleThrough(ownerSync.captureAdmissionCut());
     },
-    async captureRecovery() {
-      return null;
-    },
+    captureRecovery,
     async startFresh() {},
     async whenReady() {},
     captureAdmissionCut,
@@ -219,6 +221,52 @@ test("workspace settlement returns every owner settlement outcome", async () => 
     } finally {
       await runtime[Symbol.asyncDispose]();
     }
+  }
+});
+
+test("recovery capture folds locally durable row documents into the copy", async () => {
+  const { runtime } = setupSynchronizedRuntime({
+    captureRecovery: async () => ({
+      rows: [{ table: "notes", rowId: "note-1", fields: { title: "Existing" } }],
+      kv: { theme: "light" },
+    }),
+  });
+  try {
+    const workspace = await runtime.open(definition);
+    {
+      using document = await workspace.tables.notes.document.open("note-1");
+      document.get("editor").insert(0, "recover me");
+      await document.whenDurable();
+    }
+    const copy = await workspace.sync?.captureRecovery();
+    const captured = copy?.rows[0]?.document;
+    expect(captured).toBeInstanceOf(Uint8Array);
+    const replay = new Y.Doc();
+    Y.applyUpdateV2(replay, captured as Uint8Array);
+    expect(replay.get("editor").toString()).toBe("recover me");
+    replay.destroy();
+    // The capture reads durable state only; a second capture is equivalent.
+    const again = await workspace.sync?.captureRecovery();
+    expect(again?.rows[0]?.document).toEqual(captured);
+    expect(copy?.kv).toEqual({ theme: "light" });
+  } finally {
+    await runtime[Symbol.asyncDispose]();
+  }
+});
+
+test("recovery capture keeps rows without local document state unmarked", async () => {
+  const { runtime } = setupSynchronizedRuntime({
+    captureRecovery: async () => ({
+      rows: [{ table: "notes", rowId: "note-1", fields: { title: "Existing" } }],
+      kv: {},
+    }),
+  });
+  try {
+    const workspace = await runtime.open(definition);
+    const copy = await workspace.sync?.captureRecovery();
+    expect(copy?.rows[0]).not.toContainKey("document");
+  } finally {
+    await runtime[Symbol.asyncDispose]();
   }
 });
 
