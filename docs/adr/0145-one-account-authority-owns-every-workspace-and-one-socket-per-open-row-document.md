@@ -153,14 +153,23 @@ to the address's other sockets. There is no cache to advance, rebuild, or race
 against deletion; a crash after commit and before broadcast is repaired by the
 next state-vector exchange.
 
-The only document-specific wire verdict is the terminal `too-large` close
-(WebSocket code 1009), because oversized content is a fact no other plane owns:
-local editing, persistence, and logical export remain available while remote
-synchronization is refused. Every other refusal, including a not-live row and
-the physical wall, is an ordinary retryable close: the client's scalar plane
-already knows whether its row is awaiting admission, and scalar synchronization
-installing a deletion is what stops the retry loop. No `pending-row` or
-`row-deleted` code and no transient accept-then-close admission exist.
+The authority enforces one compound document bound exactly, inside the append
+transaction, on the canonical post-candidate state it already computes: an
+encoded byte ceiling and a decoded struct ceiling (ADR-0146 owns the bound's
+definition and constants). A refused candidate mutates nothing. There is no
+terminal document verdict on the wire: WebSocket close 1009 remains only as a
+defensive transport backstop against a client whose estimate was stale, it
+carries no reason taxonomy, and it causes no product-state transition. Clients
+estimate the same bound with exact measures, suppress every upstream
+update-bearing frame while over it (including the deferred handshake reply,
+which always waits until downstream state is applied and measured), keep
+receiving downstream, and resume on their own when a measure comes back under.
+Local editing, persistence, and logical export remain available throughout.
+Every other refusal, including a not-live row and the physical wall, is an
+ordinary retryable close: the client's scalar plane already knows whether its
+row is awaiting admission, and scalar synchronization installing a deletion is
+what stops the retry loop. No `pending-row` or `row-deleted` code and no
+transient accept-then-close admission exist.
 
 Multiplexing remains deferred, not a parallel mode. Before this ADR becomes
 Accepted, the production endpoint must pass the iPhone Safari and installed-PWA

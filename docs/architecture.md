@@ -165,8 +165,12 @@ catalog, grant, or per-request authorization lookup. Finally, the authority
 checks whether the route's `(table, rowId)` is live. A not-live row closes
 retryably with no reserved code; the client's own scalar plane knows whether
 its row is still awaiting admission, and scalar synchronization installing a
-deletion is what revokes the open document. The only document-specific wire
-verdict is the terminal `too-large` close (1009). The row address is not a
+deletion is what revokes the open document. There is no terminal document
+verdict on the wire: the authority enforces the compound document bound
+(bytes and struct count of the canonical post-candidate state, ADR-0146)
+exactly inside the append transaction, clients estimate the same bound and
+suppress sending while over it, and close 1009 is only a defensive backstop
+against a stale estimate. The row address is not a
 capability. Every update rechecks liveness in its SQLite transaction. Row
 deletion removes the row, records a bounded deletion marker, and removes the
 server document snapshot and update log in one transaction, then closes the

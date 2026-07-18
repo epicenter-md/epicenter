@@ -50,10 +50,34 @@ The document network protocol has its own explicit wire major and is implemented
 only against `@y/y` 14 encoding. Existing Yjs 13 room and provider code is
 algorithmic precedent, not a compatibility surface.
 
-The authority bounds accepted document state. If a locally valid document grows
-beyond that bound, local persistence and logical export remain available while
-its connection becomes terminal `too-large`. Epicenter never reports that
-content as remotely synchronized and never silently drops an oversized update.
+The authority bounds accepted document state with one compound bound owned by
+`@epicenter/sync/document-v3` and computed identically on both endpoints from
+one canonical encoded state: `stateBytes = 1_048_576` and
+`stateStructs = 131_072` (`encodeStateAsUpdateV2` byte length and
+`decodeUpdateV2` struct count). The authority enforces it exactly on the
+post-candidate state inside the append transaction, refuses struct-dense
+candidates with a streaming pre-apply count before hydration allocates for
+them, and never mutates committed state on refusal. The frame envelope derives
+from the bound (`header + 2 x stateBytes`); measured diffs never exceeded
+canonical state across sliced, delete-set-heavy, and pending shapes.
+
+The struct ceiling is a resource pin, not a legitimacy judgment: it holds
+worst-case authority hydration near 90 ms and tens of megabytes of transient
+memory per append in workerd (measured ~0.7 microseconds and ~0.06 KiB per
+struct). Every measured real producer shape stays under ~50 structs/KiB and
+crosses the byte bound first; extremely format-dense text such as
+per-character marks (~154 structs/KiB) can legitimately hit the structural
+wall below the byte bound, so a structural refusal is never treated as abuse.
+
+If a locally valid document grows beyond the bound, local persistence and
+logical export remain available while the connection reports one non-terminal
+`document-full` status and suppresses sending; downstream synchronization
+continues. Byte fullness recovers automatically once deletions shrink the
+canonical state. Structural fullness does not recover by deletion (garbage
+collection shears content bytes but does not coalesce struct count), and the
+status reports it non-recoverable: the honest exit is moving content to a
+fresh row document. Epicenter never reports unsynchronized content as
+synchronized and never silently drops an oversized update.
 
 The application still receives the restricted native-shaped `RowDocument` from
 ADR-0144. It owns root names and interpretations. Epicenter owns Yjs document

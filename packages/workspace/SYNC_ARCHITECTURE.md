@@ -86,7 +86,12 @@ Every connection and update checks row liveness:
   and allocates no document state; the client's scalar plane owns the
   difference between "not yet synchronized" and "deleted" and revokes the
   open document when a deletion marker installs.
-- The only terminal document verdict is `too-large` (1009).
+- There is no terminal document verdict. The authority enforces the compound
+  document bound (canonical bytes and struct count, ADR-0146) exactly on the
+  post-candidate state; the client estimates the same bound, reports one
+  non-terminal `document-full` status, suppresses upstream frames while over
+  it (downstream keeps applying), and resumes on its own when a measure comes
+  back under. Close 1009 is a retryable backstop, not a verdict.
 
 Row deletion removes the row, records a bounded deletion marker, and deletes
 server document state in the same SQLite transaction. After commit, the

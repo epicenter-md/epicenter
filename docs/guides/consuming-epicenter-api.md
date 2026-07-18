@@ -81,7 +81,10 @@ table and row. The server checks row liveness before hydration and before
 every persisted update. A row that is not live closes retryably with no
 reserved code; the client's scalar plane owns the difference between "not yet
 synchronized" and "deleted", and revokes the document when a deletion
-installs. The only terminal document verdict is `too-large` (1009).
+installs. There is no terminal document verdict: the authority enforces the
+compound document bound (canonical bytes and struct count) on every accepted
+update, clients suppress sending while they measure over it, and close 1009
+is only a retryable backstop against a stale client estimate.
 
 ## Browser and native storage
 

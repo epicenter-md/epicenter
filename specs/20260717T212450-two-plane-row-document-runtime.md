@@ -83,9 +83,9 @@ authority live document cache, and socket-tag indexing.
   first accepted push binds `(workspace, replica)` under the allowance gate.
 - No permanent tombstone table; deletion is a bounded marker plus acquisition
   beyond the retention floor; replica receipts are permanent.
-- Each open row document has one WebSocket to the account authority; the only
-  document-specific wire verdict is terminal `too-large` (1009); the server
-  retains no live `Y.Doc`.
+- Each open row document has one WebSocket to the account authority; there is
+  no terminal document wire verdict (1009 is a retryable backstop); the
+  server retains no live `Y.Doc`.
 - Arbitrary `/api/rooms/:roomId`, per-document or per-workspace actors, Yjs 13
   providers, and the combined scalar/document path are absent from production.
 - Scalar rows remain available to arbitrary read-only SQL and TEMP views.
@@ -120,7 +120,7 @@ type RowDocument = {
 	get: Y.Doc['get'];
 	transact<T>(run: (transaction: Y.Transaction) => T, origin?: unknown): T;
 	whenDurable(): Promise<void>; // local document provider only
-	connection: DocumentConnectionStatus; // terminal reasons: too-large, auth, upgrade
+	connection: DocumentConnectionStatus; // non-terminal document-full; terminal: auth, upgrade
 	[Symbol.dispose](): void;
 };
 ```
@@ -148,10 +148,11 @@ sync-request(stateVector)  sync-response(updateV2)  update(updateV2)
   closing retryably; reads, downstream document sync, export, and workspace
   and account deletion remain available there.
 - Document admission: one atomic store read (liveness plus committed updates);
-  a not-live row closes retryably with no reserved code; too-large closes
-  terminally with 1009; deletion closes sockets after commit with an ordinary
-  close, and the client's scalar plane ends the retry loop by revoking the
-  document when the deletion marker installs.
+  a not-live row closes retryably with no reserved code; a candidate whose
+  post-state exceeds the compound bound refuses with the retryable 1009
+  backstop while the client suppresses; deletion closes sockets after commit
+  with an ordinary close, and the client's scalar plane ends the retry loop by
+  revoking the document when the deletion marker installs.
 - The hibernation attachment stores the fixed structured address and protocol
   major; fanout enumerates sockets and compares complete addresses; no tags.
 
@@ -308,16 +309,55 @@ route dispatches through the one resolved authority (route tests); workspace
 deletion closes pre-handshake sockets on both runtimes; Bun shutdown closes
 sockets with 1001 and refuses later operations (runtime test).
 
-### Wave F2: wire document clients — BLOCKED on the document decision
+### Wave F2: the compound document bound and suppression lifecycle — DONE 2026-07-18
 
-The document architecture is under greenfield review; this wave does not start
-until that decision is explicitly settled.
+The greenfield review settled on corrected Family 1: the authority hydrates
+committed state per append and enforces one compound bound exactly on the
+canonical post-candidate state; clients estimate the same bound and suppress
+instead of parking. Falsified and deleted along the way: the byte-only bound
+(a byte-small struct-dense document loops forever), the terminal `too-large`
+verdict, the per-update byte limit, and the running byte/struct accumulator
+(canonical growth measured up to 1.71x emitted update bytes; deletion splits
+add structs no update reports).
 
-- [ ] Wire browser and native document connections through the accepted
-  document model against the mounted routes.
+- [x] `@epicenter/sync/document-v3` owns `DOCUMENT_BOUND`
+  (`stateBytes 1_048_576`, `stateStructs 131_072`), the shared
+  `measureDocument`/`measureDocumentState` definition, and the derived frame
+  envelope `header + 2 x stateBytes` (fixes the maximal-legal-state reconnect
+  hazard). `@y/y` is a peer dependency.
+- [x] Authority enforcement inside the append transaction: streaming pre-apply
+  struct count (lazy reader via the pinned `@y/y` patch; O(1) retained
+  memory) refuses dense candidates before hydration, then the exact compound
+  check runs on the post-candidate canonical encode; refusal mutates nothing.
+  The hub's materializing decode validation is deleted; handshake sends fail
+  closed; Cloudflare closes restored pre-handshake sockets.
+- [x] Client two-zone exact-measure scheduler (near zone: every observed
+  update; far zone: every 32nd update or any single update >= 64 KiB),
+  suppression of every upstream update-bearing frame including the always-
+  deferred handshake reply, automatic byte-fullness resume via one diff
+  against the last known server state vector, retryable 1009, and one
+  non-terminal `document-full` status with a `recoverable` property
+  (structural fullness reports false).
 
-Proof: live socket smoke on Bun and wrangler dev; hibernation restore;
-deletion racing update; wall behavior on the document path.
+Constants pinned from measurement (Bun and workerd, 2026-07-18): benign
+1 MiB append 0.29 ms in workerd; worst legitimate corpus (rich-text format
+churn) 49k structs at the byte bound and 61 ms per append; hostile ceilings
+68-126 ms; struct densities: every measured real producer under
+~50 structs/KiB, per-character marks ~154 structs/KiB, adversarial head
+inserts ~1,024 structs/KiB; transient apply memory ~0.06 KiB per struct.
+Measured max diff-vs-state overshoot: 0 bytes across all shapes. Ledger
+watch item: agent chat transcripts reach the byte bound at roughly 400
+tool-heavy messages (1.23 MiB measured); the answer is app-level
+conversation rollover before it is a bound change.
+
+Proof: 44 focused tests across document-v3 protocol, document hub,
+authority document store, struct-count conformance, and the connection
+lifecycle matrix (deferred reply, suppression with downstream flow, byte
+recovery, non-recoverable structural fullness, one 1009 per crossing,
+maximal-legal-state reconnect); full five-package suites green; an
+independent adversarial review confirmed convergence, resume, and
+loop-freedom and its three falsifiers (handshake fail-open, pre-apply
+resource gap, struct-ceiling legitimacy claim) are closed in this wave.
 
 ### Wave G: coordinated product operations
 
@@ -348,6 +388,10 @@ deletion racing update; wall behavior on the document path.
 - No economic refusal inside ordered synchronization; no growth classification
   of intents; no delete-first reordering or second deletion route.
 - No `pending-row`/`row-deleted` verdicts; no transient accept-then-close.
+- No terminal document verdict; no reason taxonomy on the 1009 backstop; no
+  client-side enforcement; no authority-side estimation.
+- No running byte/struct estimator accumulator and no timer-based measure
+  scheduling; the two-zone scheduler is transaction-count deterministic.
 - No authority live-document cache; no socket tags.
 - No first-contact retry protocol: hosted admission keeps the two authority
   round trips (`hasReplica`, then `push`) until telemetry demonstrates a
