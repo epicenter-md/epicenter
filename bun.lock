@@ -415,13 +415,11 @@
         "@epicenter/constants": "workspace:*",
         "@epicenter/identity": "workspace:*",
         "@epicenter/server": "workspace:*",
-        "@epicenter/sqlite": "workspace:*",
         "arktype": "catalog:",
         "hono": "catalog:",
       },
       "devDependencies": {
         "@cloudflare/workers-types": "^4.20260405.1",
-        "@epicenter/row-sync": "workspace:*",
         "@types/bun": "catalog:",
         "typescript": "catalog:",
         "wrangler": "catalog:",
@@ -1144,6 +1142,7 @@
   "patchedDependencies": {
     "@y/prosemirror@2.0.0-6": "patches/@y%2Fprosemirror@2.0.0-6.patch",
     "y-indexeddb@9.0.12": "patches/y-indexeddb@9.0.12.patch",
+    "@y/y@14.0.0-rc.24": "patches/@y%2Fy@14.0.0-rc.24.patch",
   },
   "overrides": {
     "@protobufjs/utf8": "^1.1.1",

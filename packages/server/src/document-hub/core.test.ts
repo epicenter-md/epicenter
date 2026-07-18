@@ -126,6 +126,30 @@ describe('fixed-address document hub core', () => {
 		expect(fixture.hub.connectionCount).toBe(1);
 	});
 
+	test('a failed handshake send closes the socket instead of stranding it', () => {
+		const fixture = setup();
+		// The sync-request succeeds but the sync-response send fails: the peer
+		// defers its reply until the response arrives, so the hub must fail
+		// closed instead of keeping a connection it believes is live.
+		let sends = 0;
+		const flaky: DocumentHubSocket & {
+			closes: { code: number; reason: string }[];
+		} = {
+			closes: [],
+			send() {
+				sends += 1;
+				if (sends === 2) throw new Error('socket buffer gone');
+			},
+			close(code, reason) {
+				flaky.closes.push({ code, reason });
+			},
+		};
+
+		expect(fixture.hub.connect(flaky, emptyStateVector())).toBe(false);
+		expect(flaky.closes).toEqual([{ code: 1000, reason: 'handshake-failed' }]);
+		expect(fixture.hub.connectionCount).toBe(0);
+	});
+
 	test('never persists bytes that decode but fail store application', () => {
 		const fixture = setup();
 		fixture.hub.connect(fixture.alice, emptyStateVector());

@@ -18,8 +18,14 @@ import {
 	rowRoundDigest,
 } from '@epicenter/row-sync';
 import type { SqliteDatabase } from '@epicenter/sqlite';
+import {
+	DOCUMENT_BOUND,
+	exceedsDocumentBound,
+	measureDocumentState,
+} from '@epicenter/sync/document-v3';
 import * as Y from '@y/y';
 import type { DocumentHubStore } from '../document-hub/core.js';
+import { updateStructCountExceeds } from './update-struct-count.js';
 
 type DocumentAddress = Parameters<DocumentHubStore['openIfLive']>[0];
 
@@ -37,11 +43,17 @@ const STORAGE_VERSION = 10;
 export const ACCOUNT_AUTHORITY_WALL = 10 * 1024 ** 3 - 64 * 1024 ** 2;
 
 export const AUTHORITY_DOCUMENT_LIMITS = {
-	updateBytes: 1_048_576,
-	stateBytes: 1_048_576,
 	updatesBeforeCompaction: 64,
 	updateBytesBeforeCompaction: 524_288,
 } as const;
+
+/**
+ * Pre-apply candidate ceiling: a legal client's frame never carries more
+ * structs than its own bounded document, so anything past the shared struct
+ * bound plus a small boundary-slicing slack is refused before hydration and
+ * apply allocate memory for it.
+ */
+const CANDIDATE_STRUCT_LIMIT = DOCUMENT_BOUND.stateStructs + 1_024;
 
 const OLD_TABLE_PREFIX = 'row_sync_';
 const CURRENT_TABLE_PREFIX = 'row_authority_';
@@ -600,6 +612,16 @@ function createWorkspaceAuthorityDocumentStore(
 					return 'refused';
 				}
 
+				// Refuse struct-dense candidates before hydration and apply allocate
+				// for them; the walk retains O(1) memory and aborts at the limit.
+				try {
+					if (updateStructCountExceeds(candidate, CANDIDATE_STRUCT_LIMIT)) {
+						return 'too-large';
+					}
+				} catch (cause) {
+					throw new TypeError('Invalid Yjs 14 document update', { cause });
+				}
+
 				const document = hydrateDocument(
 					readDocumentParts(database, workspaceId, address),
 				);
@@ -609,11 +631,8 @@ function createWorkspaceAuthorityDocumentStore(
 					} catch (cause) {
 						throw new TypeError('Invalid Yjs 14 document update', { cause });
 					}
-					if (candidate.byteLength > AUTHORITY_DOCUMENT_LIMITS.updateBytes) {
-						return 'too-large';
-					}
 					const snapshot = Y.encodeStateAsUpdateV2(document);
-					if (snapshot.byteLength > AUTHORITY_DOCUMENT_LIMITS.stateBytes) {
+					if (exceedsDocumentBound(measureDocumentState(snapshot))) {
 						return 'too-large';
 					}
 

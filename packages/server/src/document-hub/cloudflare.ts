@@ -81,6 +81,11 @@ export class CloudflareWorkspaceDocumentRuntime {
 			if (attachment.connected) {
 				const address = { table: attachment.table, rowId: attachment.rowId };
 				this.hub(attachment.workspaceId, address).restore(this.socket(socket));
+			} else {
+				// A socket restored mid-handshake has a peer waiting on a reply this
+				// actor no longer owes; close retryably so the client reconnects
+				// instead of waiting forever.
+				socket.close(ORDINARY_CLOSE_CODE, 'handshake-incomplete');
 			}
 		}
 	}

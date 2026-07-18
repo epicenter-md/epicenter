@@ -378,8 +378,14 @@ test('workspace deletion closes hibernating sockets before their handshake', asy
 			} as unknown as DurableObjectState,
 			{} as Cloudflare.Env,
 		);
+		// Construction closes restored pre-handshake sockets so their peers
+		// reconnect instead of waiting on a reply this actor no longer owes;
+		// deletion then closes whatever the runtime still enumerates.
 		await object.deleteWorkspace('wiki');
-		expect(closes).toEqual([{ code: 1000, reason: 'not-live' }]);
+		expect(closes).toEqual([
+			{ code: 1000, reason: 'handshake-incomplete' },
+			{ code: 1000, reason: 'not-live' },
+		]);
 	} finally {
 		owned.database.close();
 		context.cleanup();

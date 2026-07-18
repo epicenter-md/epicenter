@@ -20,6 +20,7 @@ import {
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import {
 	DOCUMENT_BACKSTOP_CLOSE_CODE,
+	DOCUMENT_BOUND,
 	type DocumentFrame,
 } from '@epicenter/sync/document-v3';
 import * as Y from '@y/y';
@@ -71,7 +72,7 @@ test('malformed and oversized updates store no document bytes', () => {
 		try {
 			oversized
 				.get('editor')
-				.insert(0, 'x'.repeat(AUTHORITY_DOCUMENT_LIMITS.stateBytes + 1));
+				.insert(0, 'x'.repeat(DOCUMENT_BOUND.stateBytes + 1));
 			const update = Y.encodeStateAsUpdateV2(oversized);
 			expect(authority.documents.appendIfLive(ADDRESS, update)).toBe(
 				'too-large',
@@ -100,7 +101,7 @@ test('malformed and oversized updates store no document bytes', () => {
 test('a row that is not live refuses append before candidate validation', () => {
 	const { authority, database } = setup();
 	try {
-		const oversized = new Uint8Array(AUTHORITY_DOCUMENT_LIMITS.updateBytes + 1);
+		const oversized = new Uint8Array(DOCUMENT_BOUND.stateBytes + 1);
 		expect(
 			authority.documents.appendIfLive(
 				{ table: 'notes', rowId: 'absentabsentabsentabsent' },
@@ -163,9 +164,7 @@ test('merged-state overflow closes only its sender and rehydrates committed stat
 
 		rejectedSource.get('right').insert(0, 'y'.repeat(550_000));
 		const rejected = Y.encodeStateAsUpdateV2(rejectedSource);
-		expect(rejected.byteLength).toBeLessThan(
-			AUTHORITY_DOCUMENT_LIMITS.updateBytes,
-		);
+		expect(rejected.byteLength).toBeLessThan(DOCUMENT_BOUND.stateBytes);
 		hub.receive(alice, { kind: 'update', update: rejected });
 
 		expect(alice.messages).toEqual([]);
@@ -239,6 +238,110 @@ test('update threshold compacts into one replayable V2 snapshot', () => {
 		} finally {
 			hydrated.destroy();
 		}
+	} finally {
+		source.destroy();
+		database.close();
+	}
+});
+
+test('struct-dense post-state refuses while committed state survives', () => {
+	const { authority, database } = setup();
+	const dense = new Y.Doc();
+	try {
+		// Head inserts in one transaction never merge, so struct count exceeds
+		// the ceiling while bytes stay far below the byte bound.
+		dense.transact(() => {
+			for (let i = 0; i < DOCUMENT_BOUND.stateStructs + 1; i++) {
+				dense.get('t').insert(0, 'z');
+			}
+		});
+		const candidate = Y.encodeStateAsUpdateV2(dense);
+		expect(candidate.byteLength).toBeLessThan(DOCUMENT_BOUND.stateBytes);
+		expect(authority.documents.appendIfLive(ADDRESS, candidate)).toBe(
+			'too-large',
+		);
+		expect(authority.documents.openIfLive(ADDRESS)).toEqual([]);
+	} finally {
+		dense.destroy();
+		database.close();
+	}
+});
+
+test('candidates past the struct limit refuse before hydration and apply', () => {
+	const { authority, database } = setup();
+	const committedSource = new Y.Doc();
+	const attack = new Y.Doc();
+	try {
+		committedSource.get('t').insert(0, 'committed');
+		const committed = Y.encodeStateAsUpdateV2(committedSource);
+		expect(authority.documents.appendIfLive(ADDRESS, committed)).toBe(
+			'appended',
+		);
+		const before = authority.documents.openIfLive(ADDRESS);
+
+		attack.transact(() => {
+			for (let i = 0; i < DOCUMENT_BOUND.stateStructs + 2_000; i++) {
+				attack.get('t').insert(0, 'z');
+			}
+		});
+		expect(
+			authority.documents.appendIfLive(
+				ADDRESS,
+				Y.encodeStateAsUpdateV2(attack),
+			),
+		).toBe('too-large');
+		expect(authority.documents.openIfLive(ADDRESS)).toEqual(before);
+	} finally {
+		committedSource.destroy();
+		attack.destroy();
+		database.close();
+	}
+});
+
+test('a deletion shrinks an at-bound document and future growth resumes', () => {
+	const { authority, database } = setup();
+	const source = new Y.Doc();
+	try {
+		source.get('t').insert(0, 'x'.repeat(1_040_000));
+		expect(
+			authority.documents.appendIfLive(
+				ADDRESS,
+				Y.encodeStateAsUpdateV2(source),
+			),
+		).toBe('appended');
+
+		const grownFrom = Y.encodeStateVector(source);
+		source.get('t').insert(0, 'y'.repeat(50_000));
+		expect(
+			authority.documents.appendIfLive(
+				ADDRESS,
+				Y.encodeStateAsUpdateV2(source, grownFrom),
+			),
+		).toBe('too-large');
+
+		// Rebuild the client's view from committed state, delete content, and
+		// verify the small delete update is admitted and shrinks the state.
+		const client = new Y.Doc();
+		for (const part of authority.documents.openIfLive(ADDRESS) ?? []) {
+			Y.applyUpdateV2(client, part);
+		}
+		const beforeDelete = Y.encodeStateVector(client);
+		client.get('t').delete(0, 600_000);
+		const deletion = Y.encodeStateAsUpdateV2(client, beforeDelete);
+		expect(deletion.byteLength).toBeLessThan(1_000);
+		expect(authority.documents.appendIfLive(ADDRESS, deletion)).toBe(
+			'appended',
+		);
+
+		const rehydrated = new Y.Doc();
+		for (const part of authority.documents.openIfLive(ADDRESS) ?? []) {
+			Y.applyUpdateV2(rehydrated, part);
+		}
+		expect(
+			Y.encodeStateAsUpdateV2(rehydrated).byteLength,
+		).toBeLessThan(DOCUMENT_BOUND.stateBytes / 2);
+		client.destroy();
+		rehydrated.destroy();
 	} finally {
 		source.destroy();
 		database.close();

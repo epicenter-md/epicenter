@@ -94,14 +94,23 @@ export function createDocumentHubCore({
 					Y.applyUpdateV2(document, update, hydrationOrigin);
 				}
 				sockets.add(socket);
-				trySend(socket, {
-					kind: 'sync-request',
-					stateVector: Y.encodeStateVector(document),
-				});
-				trySend(socket, {
-					kind: 'sync-response',
-					update: Y.encodeStateAsUpdateV2(document, stateVector),
-				});
+				// A half-delivered handshake would strand the peer: it defers its own
+				// reply until this response arrives, so a swallowed send failure must
+				// close the socket instead of leaving a connection the hub believes
+				// is live.
+				const handshakeSent =
+					trySend(socket, {
+						kind: 'sync-request',
+						stateVector: Y.encodeStateVector(document),
+					}) &&
+					trySend(socket, {
+						kind: 'sync-response',
+						update: Y.encodeStateAsUpdateV2(document, stateVector),
+					});
+				if (!handshakeSent) {
+					closeSocket(socket, ORDINARY_CLOSE_CODE, 'handshake-failed');
+					return false;
+				}
 				return true;
 			} finally {
 				document.destroy();
@@ -114,7 +123,8 @@ export function createDocumentHubCore({
 			frame: Extract<DocumentFrame, { kind: 'sync-response' | 'update' }>,
 		): void {
 			requireConnected(socket);
-			Y.decodeUpdateV2(frame.update);
+			// Candidate validation and bounds belong to the store's transaction; a
+			// malformed update throws there and the runtime closes with 1002.
 			const result = store.appendIfLive(address, frame.update);
 			switch (result) {
 				case 'refused':
@@ -146,11 +156,13 @@ export function createDocumentHubCore({
 	};
 }
 
-function trySend(socket: DocumentHubSocket, frame: DocumentFrame): void {
+function trySend(socket: DocumentHubSocket, frame: DocumentFrame): boolean {
 	try {
 		socket.send(frame);
+		return true;
 	} catch {
 		// The runtime-owned close path removes the dead socket's connection.
+		return false;
 	}
 }
 
