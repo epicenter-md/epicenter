@@ -4,6 +4,7 @@ import {
 	defineTable,
 	defineWorkspace,
 	isWorkspaceStorageMovedError,
+	type OpenedWorkspace,
 	type RowDocument,
 	rowDocumentConnection,
 } from '@epicenter/workspace/sqlite';
@@ -50,8 +51,28 @@ const runtime = createAccountBrowserWorkspaceRuntime({
 		if (isWorkspaceStorageMovedError(cause)) movedNotice = cause.message;
 	},
 });
-const workspace = await runtime.open(definition);
+// The same infallible-module boot contract the production apps use: open()
+// returns the stable handle synchronously, whenOpen reports readiness,
+// success flags dataset.ready, and a rejection (for example held storage)
+// flags dataset.bootError with the error's contract name instead of
+// blanking the page.
+const workspace: OpenedWorkspace<typeof definition> = runtime.open(definition);
 let draft: RowDocument | undefined;
+runtime.whenOpen(definition.id).then(
+	() => {
+		document.body.dataset.ready = 'true';
+		const status = document.querySelector('#status');
+		if (status) {
+			status.textContent = 'Production Browser workspace runtime ready';
+		}
+	},
+	(cause: unknown) => {
+		document.body.dataset.bootError =
+			cause instanceof Error ? cause.name : 'Error';
+		document.body.dataset.bootMessage =
+			cause instanceof Error ? cause.message : String(cause);
+	},
+);
 
 window.productionBrowserRuntime = {
 	movedNotice() {
@@ -115,10 +136,6 @@ window.productionBrowserRuntime = {
 		await runtime[Symbol.asyncDispose]();
 	},
 };
-
-document.body.dataset.ready = 'true';
-const status = document.querySelector('#status');
-if (status) status.textContent = 'Production Browser workspace runtime ready';
 
 declare global {
 	interface Window {
