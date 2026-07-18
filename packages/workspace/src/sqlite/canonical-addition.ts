@@ -98,6 +98,57 @@ export function logicalWorkspaceIntents(
 }
 
 /**
+ * The Device Add deletion gate (ADR-0147): what one settled verification of an
+ * added logical copy proved about its destination Account workspace.
+ *
+ * `verified` proves that every copied row address was canonically live at one
+ * settled scalar cut and that every copied document byte set is locally
+ * durable at the destination. Only then is the Device source safe to delete.
+ * It deliberately does NOT prove that document bytes reached the authority
+ * (documents converge lazily per open document; no global remote document
+ * settlement exists) or that rows stay live afterwards.
+ *
+ * `missing` lists addresses that are not safe: a create refused at a retained
+ * deletion marker, a row deleted during transfer, or an interrupted `add()`
+ * whose document import never committed. Re-running `add()` with the same
+ * copy is idempotent (first-create-wins scalar admission, idempotent Yjs
+ * import), so the recovery path is retry-add then verify again.
+ *
+ * KV needs no per-key check: KV updates fold from absence and cannot be
+ * refused, so a `caught-up` settlement alone proves their admission.
+ */
+export type DeviceAddVerification =
+	| { outcome: 'verified' }
+	| { outcome: 'unsettled'; settlement: WorkspaceSyncSettlement }
+	| { outcome: 'missing'; addresses: { table: string; rowId: string }[] };
+
+/** Addresses from a copy that fail the settled destination-liveness gate. */
+export async function missingAddedAddresses(
+	copy: LogicalWorkspaceCopy,
+	readCurrentRow: (table: string, rowId: string) => unknown,
+	captureDocument: (address: {
+		table: string;
+		rowId: string;
+	}) => Promise<Uint8Array | undefined>,
+): Promise<{ table: string; rowId: string }[]> {
+	const missing: { table: string; rowId: string }[] = [];
+	for (const row of copy.rows) {
+		const address = { table: row.table, rowId: row.rowId };
+		if ((await readCurrentRow(row.table, row.rowId)) === undefined) {
+			missing.push(address);
+			continue;
+		}
+		if (
+			row.document !== undefined &&
+			(await captureDocument(address)) === undefined
+		) {
+			missing.push(address);
+		}
+	}
+	return missing;
+}
+
+/**
  * Fold each row's locally durable document state into a logical copy.
  *
  * A row keeps its scalar-captured document bytes when the store holds nothing

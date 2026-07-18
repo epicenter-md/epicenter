@@ -327,6 +327,61 @@ test('Account export settles first, then captures visible state with page docume
 	);
 });
 
+test('Account verifyAdded gates source deletion on liveness and durability', async () => {
+	globalThis.Worker = FakeWorker as unknown as typeof Worker;
+	await using runtime = createAccountBrowserWorkspaceRuntime({
+		account: {
+			deploymentId: 'https://example.test',
+			principalId: asPrincipalId('verify-bob'),
+			transport: {
+				baseUrl: 'https://example.test',
+				openWebSocket: neverOpenWebSocket,
+			},
+		},
+		createBroadcastChannel: () => undefined,
+	});
+	const workspace = await runtime.open(definition);
+	const scalarCopy = {
+		rows: [{ table: 'notes', rowId: ROW_ID, fields: { title: 'Browser row' } }],
+		kv: {},
+	};
+	expect(await runtime.verifyAdded(definition, scalarCopy)).toEqual({
+		outcome: 'verified',
+	});
+
+	// A copied document whose import never committed locally is not safe.
+	const documentCopy = {
+		rows: [
+			{
+				table: 'notes',
+				rowId: ROW_ID,
+				fields: { title: 'Browser row' },
+				document: new Uint8Array([1, 2, 3]),
+			},
+		],
+		kv: {},
+	};
+	expect(await runtime.verifyAdded(definition, documentCopy)).toEqual({
+		outcome: 'missing',
+		addresses: [{ table: 'notes', rowId: ROW_ID }],
+	});
+	{
+		using document = await workspace.tables.notes.document.open(ROW_ID);
+		document.get('content').insert(0, 'imported');
+		await document.whenDurable();
+	}
+	expect(await runtime.verifyAdded(definition, documentCopy)).toEqual({
+		outcome: 'verified',
+	});
+
+	// A row absent after settlement fails verification at that address.
+	if (FakeWorker.latest) FakeWorker.latest.row = undefined;
+	expect(await runtime.verifyAdded(definition, scalarCopy)).toEqual({
+		outcome: 'missing',
+		addresses: [{ table: 'notes', rowId: ROW_ID }],
+	});
+});
+
 test('page sends list and update operations', async () => {
 	await using runtime = createRuntime();
 	const workspace = await runtime.open(definition);

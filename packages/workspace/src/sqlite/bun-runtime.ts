@@ -26,9 +26,11 @@ import {
 import {
 	captureLocalWorkspace,
 	deleteLocalWorkspace,
+	type DeviceAddVerification,
 	type LogicalWorkspaceCopy,
 	type LogicalWorkspaceExport,
 	logicalWorkspaceIntents,
+	missingAddedAddresses,
 	withCapturedDocuments,
 } from './canonical-addition.js';
 import { mergeDocumentUpdates } from './canonical-documents.js';
@@ -110,6 +112,14 @@ export function createAccountBunWorkspaceRuntime({
 			await runtime.open(definition);
 			await runtime.whenReady(definition.id);
 			await runtime.addToAccount(definition.id, copy);
+		},
+		/** The Device Add deletion gate: run after add(), before Device delete(). */
+		async verifyAdded(
+			definition: WorkspaceDefinition,
+			copy: LogicalWorkspaceCopy,
+		): Promise<DeviceAddVerification> {
+			await runtime.open(definition);
+			return runtime.verifyAdded(definition.id, copy);
 		},
 		async export(
 			definition: WorkspaceDefinition,
@@ -345,6 +355,26 @@ function createBunRuntimeWithPersistence({
 			state.notifyDeleted(addresses);
 			await state.documents.deleteAll();
 			state.emitChanged();
+		},
+		async verifyAdded(
+			workspaceId: string,
+			copy: LogicalWorkspaceCopy,
+		): Promise<DeviceAddVerification> {
+			const state = accountWorkspaces.get(workspaceId);
+			if (!state)
+				throw new Error(`Account workspace '${workspaceId}' is not open`);
+			const settlement = await state.settle();
+			if (settlement.outcome !== 'caught-up') {
+				return { outcome: 'unsettled', settlement };
+			}
+			const missing = await missingAddedAddresses(
+				copy,
+				state.replica.readCurrentRow,
+				state.documents.capture,
+			);
+			return missing.length > 0
+				? { outcome: 'missing', addresses: missing }
+				: { outcome: 'verified' };
 		},
 		async exportAccount(workspaceId: string): Promise<LogicalWorkspaceExport> {
 			const state = accountWorkspaces.get(workspaceId);

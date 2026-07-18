@@ -6,6 +6,7 @@
  */
 
 export type {
+	DeviceAddVerification,
 	LogicalWorkspaceCopy,
 	LogicalWorkspaceExport,
 	LogicalWorkspaceRow,
