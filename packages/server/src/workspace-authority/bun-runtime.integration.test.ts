@@ -19,6 +19,7 @@ import { field } from '@epicenter/field';
 import { asPrincipalId } from '@epicenter/identity';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { defineTable, defineWorkspace } from '@epicenter/workspace/sqlite';
+import * as Y from '@y/y';
 import {
 	createAccountBunWorkspaceRuntime,
 	createDeviceBunWorkspaceRuntime,
@@ -405,6 +406,52 @@ test('Device Add verification proves liveness and durability before source delet
 		).toEqual({
 			outcome: 'missing',
 			addresses: [{ table: 'notes', rowId: scalarOnly.id }],
+			kvKeys: [],
+		});
+
+		// Foreign destination bytes at the address are still not the copy: the
+		// gate proves containment, never mere existence.
+		const ownDocument = await accountWorkspace.tables.notes.create({
+			title: 'Account authored',
+		});
+		{
+			using document =
+				await accountWorkspace.tables.notes.document.open(ownDocument.id);
+			document.get('editor').insert(0, 'account only');
+			await document.whenDurable();
+		}
+		const foreignDoc = new Y.Doc();
+		foreignDoc.get('editor').insert(0, 'device only');
+		const foreignBytes = new Uint8Array(Y.encodeStateAsUpdateV2(foreignDoc));
+		foreignDoc.destroy();
+		expect(
+			await account.verifyAdded(definition, {
+				rows: [
+					{
+						table: 'notes',
+						rowId: ownDocument.id,
+						fields: { title: 'Account authored' },
+						document: foreignBytes,
+					},
+				],
+				kv: {},
+			}),
+		).toEqual({
+			outcome: 'missing',
+			addresses: [{ table: 'notes', rowId: ownDocument.id }],
+			kvKeys: [],
+		});
+
+		// A copied KV key whose fold never committed is not safe either.
+		expect(
+			await account.verifyAdded(definition, {
+				rows: [],
+				kv: { language: 'unadmitted' },
+			}),
+		).toEqual({
+			outcome: 'missing',
+			addresses: [],
+			kvKeys: ['language'],
 		});
 	} finally {
 		authorityState.database.close();
@@ -449,6 +496,7 @@ test('a retained deletion marker fails Device Add verification at that address',
 		expect(await account.verifyAdded(definition, conflicting)).toEqual({
 			outcome: 'missing',
 			addresses: [{ table: 'notes', rowId: doomed.id }],
+			kvKeys: [],
 		});
 	} finally {
 		authorityState.database.close();

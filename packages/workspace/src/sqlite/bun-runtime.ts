@@ -30,7 +30,7 @@ import {
 	type LogicalWorkspaceCopy,
 	type LogicalWorkspaceExport,
 	logicalWorkspaceIntents,
-	missingAddedAddresses,
+	missingAddedContent,
 	withCapturedDocuments,
 } from './canonical-addition.js';
 import { mergeDocumentUpdates } from './canonical-documents.js';
@@ -367,13 +367,15 @@ function createBunRuntimeWithPersistence({
 			if (settlement.outcome !== 'caught-up') {
 				return { outcome: 'unsettled', settlement };
 			}
-			const missing = await missingAddedAddresses(
+			// One synchronous confirmed snapshot: every presence check below reads
+			// the same canonical cut, never intent overlays.
+			const missing = await missingAddedContent(
 				copy,
-				state.replica.readCurrentRow,
+				state.replica.captureConfirmed(),
 				state.documents.capture,
 			);
-			return missing.length > 0
-				? { outcome: 'missing', addresses: missing }
+			return missing.addresses.length > 0 || missing.kvKeys.length > 0
+				? { outcome: 'missing', ...missing }
 				: { outcome: 'verified' };
 		},
 		async exportAccount(workspaceId: string): Promise<LogicalWorkspaceExport> {

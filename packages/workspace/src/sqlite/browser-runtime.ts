@@ -27,7 +27,7 @@ import {
 	type DeviceAddVerification,
 	type LogicalWorkspaceCopy,
 	type LogicalWorkspaceExport,
-	missingAddedAddresses,
+	missingAddedContent,
 	withCapturedDocuments,
 } from './canonical-addition.js';
 import type {
@@ -723,18 +723,18 @@ function createBrowserRuntimeWithPersistence({
 			if (settlement.outcome !== 'caught-up') {
 				return { outcome: 'unsettled', settlement };
 			}
-			const missing = await missingAddedAddresses(
+			// One Worker operation returns one synchronous confirmed snapshot, so
+			// every presence check below reads the same canonical cut.
+			const confirmed = await request<LogicalWorkspaceCopy>(bound.manifest, {
+				kind: 'capture-confirmed',
+			});
+			const missing = await missingAddedContent(
 				copy,
-				(table, rowId) =>
-					request<Record<string, unknown> | undefined>(bound.manifest, {
-						kind: 'read-current-row',
-						table,
-						rowId,
-					}),
+				confirmed,
 				bound.captureDocument,
 			);
-			return missing.length > 0
-				? { outcome: 'missing', addresses: missing }
+			return missing.addresses.length > 0 || missing.kvKeys.length > 0
+				? { outcome: 'missing', ...missing }
 				: { outcome: 'verified' };
 		},
 		async exportAccount(workspaceId: string): Promise<LogicalWorkspaceExport> {

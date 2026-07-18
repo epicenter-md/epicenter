@@ -14,6 +14,7 @@ import { afterEach, expect, test } from 'bun:test';
 import 'fake-indexeddb/auto';
 import { field } from '@epicenter/field';
 import { asPrincipalId } from '@epicenter/identity';
+import * as Y from '@y/y';
 import {
 	createAccountBrowserWorkspaceRuntime,
 	createDeviceBrowserWorkspaceRuntime,
@@ -103,6 +104,13 @@ class FakeWorker {
 							},
 						],
 						kv: { theme: 'light' },
+					};
+				case 'capture-confirmed':
+					return {
+						rows: this.row
+							? [{ table: 'notes', rowId: ROW_ID, fields: this.row }]
+							: [],
+						kv: this.theme ? { theme: this.theme } : {},
 					};
 				case 'logical-add':
 					return undefined;
@@ -327,7 +335,7 @@ test('Account export settles first, then captures visible state with page docume
 	);
 });
 
-test('Account verifyAdded gates source deletion on liveness and durability', async () => {
+test('Account verifyAdded gates source deletion on containment, not existence', async () => {
 	globalThis.Worker = FakeWorker as unknown as typeof Worker;
 	await using runtime = createAccountBrowserWorkspaceRuntime({
 		account: {
@@ -349,29 +357,55 @@ test('Account verifyAdded gates source deletion on liveness and durability', asy
 		outcome: 'verified',
 	});
 
-	// A copied document whose import never committed locally is not safe.
+	const deviceDoc = new Y.Doc();
+	deviceDoc.get('content').insert(0, 'device draft');
 	const documentCopy = {
 		rows: [
 			{
 				table: 'notes',
 				rowId: ROW_ID,
 				fields: { title: 'Browser row' },
-				document: new Uint8Array([1, 2, 3]),
+				document: new Uint8Array(Y.encodeStateAsUpdateV2(deviceDoc)),
 			},
 		],
 		kv: {},
 	};
+	deviceDoc.destroy();
+	// A copied document whose import never committed locally is not safe.
 	expect(await runtime.verifyAdded(definition, documentCopy)).toEqual({
 		outcome: 'missing',
 		addresses: [{ table: 'notes', rowId: ROW_ID }],
+		kvKeys: [],
 	});
+	// Foreign destination bytes at the address are still not the copy: the
+	// gate proves containment, never mere existence.
 	{
 		using document = await workspace.tables.notes.document.open(ROW_ID);
-		document.get('content').insert(0, 'imported');
+		document.get('content').insert(0, 'account-authored');
 		await document.whenDurable();
 	}
 	expect(await runtime.verifyAdded(definition, documentCopy)).toEqual({
+		outcome: 'missing',
+		addresses: [{ table: 'notes', rowId: ROW_ID }],
+		kvKeys: [],
+	});
+	// A completed add() imports the copied bytes; containment then holds even
+	// beside later destination edits.
+	await runtime.add(definition, documentCopy);
+	expect(await runtime.verifyAdded(definition, documentCopy)).toEqual({
 		outcome: 'verified',
+	});
+
+	// A copied KV key absent from the confirmed snapshot is not safe.
+	expect(
+		await runtime.verifyAdded(definition, {
+			rows: [],
+			kv: { language: 'en' },
+		}),
+	).toEqual({
+		outcome: 'missing',
+		addresses: [],
+		kvKeys: ['language'],
 	});
 
 	// A row absent after settlement fails verification at that address.
@@ -379,6 +413,7 @@ test('Account verifyAdded gates source deletion on liveness and durability', asy
 	expect(await runtime.verifyAdded(definition, scalarCopy)).toEqual({
 		outcome: 'missing',
 		addresses: [{ table: 'notes', rowId: ROW_ID }],
+		kvKeys: [],
 	});
 });
 

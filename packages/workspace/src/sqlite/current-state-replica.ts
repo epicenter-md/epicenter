@@ -1097,6 +1097,24 @@ export function createCurrentStateReplica({
 		});
 	}
 
+	function captureConfirmed(): LogicalWorkspaceCopy {
+		const addresses = sqlite.all<RowAddress>(
+			`SELECT table_key AS "table", row_id AS "rowId" FROM "${TABLES.rows}"
+			 ORDER BY "table", "rowId"`,
+		);
+		return captureLogicalWorkspace({
+			addresses,
+			readCurrentRow: (table, rowId) => {
+				const stored = sqlite.all<{ fields_json: string }>(
+					`SELECT fields_json FROM "${TABLES.rows}"
+					 WHERE table_key = ? AND row_id = ?`,
+					[table, rowId],
+				)[0];
+				return stored ? JSON.parse(stored.fields_json) : undefined;
+			},
+		});
+	}
+
 	function captureRecovery(): LogicalWorkspaceCopy | null {
 		if (readReplica().recovery_required !== 1) return null;
 		return captureVisible();
@@ -1208,6 +1226,12 @@ export function createCurrentStateReplica({
 
 		/** Capture visible user content (confirmed rows plus intent overlays). */
 		captureVisible,
+
+		/**
+		 * Capture confirmed canonical state only, with no intent overlays: one
+		 * synchronous snapshot, the Device Add verification cut.
+		 */
+		captureConfirmed,
 
 		/** Capture visible user content after a lineage halt, never protocol state. */
 		captureRecovery,
