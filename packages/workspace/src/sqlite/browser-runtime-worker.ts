@@ -3,7 +3,10 @@ import {
 	type BrowserSqliteDatabase,
 	createBrowserSqliteAdapter,
 } from '@epicenter/sqlite/browser';
-import sqlite3InitModule, { type Database } from '@sqlite.org/sqlite-wasm';
+import sqlite3InitModule, {
+	type Database,
+	type SAHPoolUtil,
+} from '@sqlite.org/sqlite-wasm';
 import type {
 	BrowserRecordOperation,
 	BrowserRuntimeMessage,
@@ -53,6 +56,7 @@ type WorkerScope = {
 type OpenedRecords = {
 	manifest: BrowserWorkspaceManifest;
 	database: Database;
+	pool: SAHPoolUtil;
 	sqlite: SqliteDatabase;
 	records: CanonicalRows;
 	kv: CanonicalKv<KvDefinitions>;
@@ -60,6 +64,8 @@ type OpenedRecords = {
 	sync?: CanonicalSyncSupervisor;
 	/** Held until Worker termination so this storage has one SQLite owner. */
 	retainedLease: BrowserStorageLease;
+	/** Set when a newer tab stole the storage; every later operation throws. */
+	stolen?: Error;
 };
 
 const scope = self as unknown as WorkerScope;
@@ -69,6 +75,52 @@ const transportRequests = new Map<
 	{ resolve(value: unknown): void; reject(cause: unknown): void }
 >();
 let sqliteModule: Awaited<ReturnType<typeof sqlite3InitModule>> | undefined;
+const sahPools = new Map<string, Promise<SAHPoolUtil>>();
+
+/**
+ * One SAH pool VFS per workspace storage key.
+ *
+ * The pool VFS needs no cross-origin isolation (unlike the
+ * SharedArrayBuffer-backed 'opfs' VFS), so statically hosted production
+ * pages, Tauri WebViews, and iOS Safari can run this worker. A pool
+ * directory admits exactly one live VFS instance; the exclusive storage
+ * lease acquired before this call already guarantees that for the key, and
+ * per-key directories keep concurrent device and account workers disjoint.
+ */
+function acquireSahPool(
+	module: NonNullable<typeof sqliteModule>,
+	storageKey: string,
+): Promise<SAHPoolUtil> {
+	let pool = sahPools.get(storageKey);
+	if (!pool) {
+		pool = (async () => {
+			// The previous owner (a reloaded page or a stolen tab) releases its
+			// access handles asynchronously, so first acquisition attempts can
+			// race it; retry briefly before declaring the environment unusable.
+			let lastFailure: unknown;
+			for (let attempt = 0; attempt < 20; attempt += 1) {
+				try {
+					const util = await module.installOpfsSAHPoolVfs({
+						name: `epicenter-${storageKey}`,
+						directory: `.epicenter-sahpool-${storageKey}`,
+					});
+					// A paused pool from an earlier steal in this same worker
+					// lifetime resumes instead of reinstalling.
+					return util.isPaused() ? await util.unpauseVfs() : util;
+				} catch (cause) {
+					lastFailure = cause;
+					await new Promise((resolve) => setTimeout(resolve, 250));
+				}
+			}
+			throw lastFailure instanceof Error
+				? lastFailure
+				: new Error(String(lastFailure));
+		})();
+		void pool.catch(() => sahPools.delete(storageKey));
+		sahPools.set(storageKey, pool);
+	}
+	return pool;
+}
 let tail = Promise.resolve();
 let transportId = 0;
 
@@ -80,19 +132,23 @@ async function openRecords(
 		opening = (async () => {
 			let retainedLease: BrowserStorageLease | undefined;
 			let database: Database | undefined;
+			// The lease is acquired before the database exists; the box lets the
+			// steal notification reach the fully built state (or flag a steal
+			// that lands mid-open).
+			let stolenEarly = false;
+			let handleStolen = (): void => {
+				stolenEarly = true;
+			};
 			try {
 				retainedLease = await acquireBrowserStorageLease(
 					navigator.locks,
 					manifest.storageKey,
+					{ onStolen: () => handleStolen() },
 				);
 				sqliteModule ??= await sqlite3InitModule();
-				if (!sqliteModule.capi.sqlite3_vfs_find('opfs')) {
-					throw new Error('SQLite OPFS VFS is unavailable');
-				}
-				database = new sqliteModule.oo1.DB(
+				const pool = await acquireSahPool(sqliteModule, manifest.storageKey);
+				database = new pool.OpfsSAHPoolDb(
 					`/epicenter-${manifest.storageKey}.sqlite3`,
-					'c',
-					'opfs',
 				);
 				// EXTRA extends FULL by syncing rollback-journal deletion in DELETE
 				// mode, strengthening the configured local commit boundary.
@@ -165,9 +221,10 @@ async function openRecords(
 						status,
 					});
 				});
-				return {
+				const state: OpenedRecords = {
 					manifest,
 					database,
+					pool,
 					sqlite,
 					records,
 					kv,
@@ -175,6 +232,9 @@ async function openRecords(
 					sync,
 					retainedLease,
 				};
+				handleStolen = () => markStolen(state);
+				if (stolenEarly) handleStolen();
+				return state;
 			} catch (cause) {
 				const cleanupFailures: unknown[] = [];
 				try {
@@ -213,6 +273,46 @@ async function openRecords(
 		);
 	}
 	return state;
+}
+
+/**
+ * A newer tab stole this workspace's storage: stop syncing, close the
+ * database, release the SAH pool's access handles so the thief can acquire
+ * them, and degrade every later operation to a loud failure. Runs on the
+ * worker's operation tail so it never closes the database mid-statement.
+ */
+function markStolen(state: OpenedRecords): void {
+	if (state.stolen) return;
+	state.stolen = new Error(
+		`Workspace '${state.manifest.workspaceId}' storage moved to a newer tab`,
+	);
+	state.stolen.name = 'WorkspaceStorageMovedError';
+	tail = tail.then(async () => {
+		try {
+			await state.sync?.[Symbol.asyncDispose]();
+		} catch {
+			// The supervisor may already be failing; the teardown continues.
+		}
+		try {
+			state.database.close();
+		} catch {
+			// A close failure must not keep the access handles held below.
+		}
+		try {
+			state.pool.pauseVfs();
+			sahPools.delete(state.manifest.storageKey);
+		} catch {
+			// Pause can fail if another database still uses the pool; the
+			// thief's acquisition retry loop absorbs the delay.
+		}
+		scope.postMessage({
+			type: 'background-error',
+			workspaceId: state.manifest.workspaceId,
+			name: state.stolen?.name ?? 'WorkspaceStorageMovedError',
+			message:
+				state.stolen?.message ?? 'Workspace storage moved to a newer tab',
+		});
+	});
 }
 
 function createRecordTransport(
@@ -355,6 +455,7 @@ scope.addEventListener('message', (event) => {
 	tail = tail.then(async () => {
 		try {
 			const state = await openRecords(request.manifest);
+			if (state.stolen) throw state.stolen;
 			if (request.operation.kind === 'sync-settle') {
 				if (!state.sync) {
 					throw new Error('Local-only workspace has no synchronization');

@@ -87,6 +87,8 @@ export type BrowserWorkspaceTransport = {
 	openWebSocket(url: string | URL, protocols?: string[]): Promise<WebSocket>;
 	headers?: Readonly<Record<string, string>>;
 	credentials?: RequestCredentials;
+	/** Scalar poll cadence override; production keeps the 30s default. */
+	pollIntervalMs?: number;
 };
 
 export type BrowserWorkspaceAccount =
@@ -863,7 +865,7 @@ function normalizeTransport(
 		}),
 	);
 	return {
-		binding: { intervalMs: 30_000 },
+		binding: { intervalMs: input.pollIntervalMs ?? 30_000 },
 		baseUrl,
 		fetch: input.fetch ?? globalThis.fetch.bind(globalThis),
 		openWebSocket: input.openWebSocket,
