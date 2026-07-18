@@ -580,6 +580,29 @@ test('Device Add verification refuses while the authority is unreachable', async
 	}
 });
 
+test('Device delete revokes an open document handle before deleting storage', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'epicenter-bun-delete-open-'));
+	try {
+		await using device = createDeviceBunWorkspaceRuntime({ storageRoot: root });
+		const workspace = await device.open(definition);
+		const row = await workspace.tables.notes.create({ title: 'Doomed' });
+		using document = await workspace.tables.notes.document.open(row.id);
+		document.get('editor').insert(0, 'draft');
+		await document.whenDurable();
+
+		// Destructive cleanup disposes active leases first (ADR-0146): an open
+		// handle must not turn explicit deletion into a partial failure that has
+		// already destroyed the scalar rows.
+		await device.delete(definition);
+		expect(() => document.get('editor')).toThrow('revoked');
+		expect((await workspace.tables.notes.list()).rows).toEqual([]);
+		const recaptured = await device.capture(definition);
+		expect(recaptured.rows).toEqual([]);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test('logical export captures a settled cut, documents, and explicit omissions', async () => {
 	const root = mkdtempSync(join(tmpdir(), 'epicenter-bun-export-'));
 	const authorityState = openAuthority();

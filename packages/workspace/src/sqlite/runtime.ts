@@ -321,6 +321,13 @@ export function createWorkspaceRuntime({
 			const opened = await openedFor(entry);
 			await opened.documents.captureDurabilityBarrier();
 		},
+		/** Revoke every open row-document handle before destructive storage work. */
+		async revokeDocuments(workspaceId: string, cause?: Error): Promise<void> {
+			const entry = entries.get(workspaceId);
+			if (!entry) throw new Error(`Workspace '${workspaceId}' is not open`);
+			const opened = await openedFor(entry);
+			await opened.documents.revokeAll(cause);
+		},
 		/** Apply portable Yjs 14 state as ordinary locally durable document work. */
 		async importDocument(
 			workspaceId: string,

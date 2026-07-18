@@ -352,6 +352,12 @@ function createBunRuntimeWithPersistence({
 			).rows.map(({ table, rowId }) => ({ table, rowId }));
 			deleteLocalWorkspace(state.sqlite);
 			state.notifyDeleted(addresses);
+			// Destructive cleanup disposes active leases before the store deletes
+			// (ADR-0146); the browser facade awaits the same revocation.
+			await runtime.revokeDocuments(
+				workspaceId,
+				new Error('Device workspace data was deleted'),
+			);
 			await state.documents.deleteAll();
 			state.emitChanged();
 		},
