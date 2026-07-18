@@ -55,6 +55,7 @@ export { connectHyperdriveDb } from './db/backends/cloudflare.js';
 // `connectHyperdriveDb`; a Bun host builds its own `pg.Pool` inline.
 export { createDb, type Db } from './db/create-db.js';
 export {
+	deleteStorageObservations,
 	listStorageObservations,
 	type StorageObservation,
 	type StorageSourceKind,
@@ -111,7 +112,8 @@ export { createDurableObjectRooms } from './room/backends/cloudflare/registry.js
 // only the deployment-controlled knobs (auth choice, optional policies). The
 // cloud's Better Auth surface (sessions, OAuth, `c.var.auth`) is bundled into
 // `mountCloudAuth`; an instance composes none of it (ADR-0075).
-export { mountBlobsApp } from './routes/blobs.js';
+export { blobPrincipalPrefix } from './principal.js';
+export { mountBlobsApp, resolveDeploymentBlobStore } from './routes/blobs.js';
 export {
 	type AdmitFirstContact,
 	mountCurrentStateRecordsApp,

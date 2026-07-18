@@ -34,7 +34,7 @@ import type { CloudEnv } from '@epicenter/server';
 import type { Context } from 'hono';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import { AiChatError } from './ai-chat-errors.js';
-import { createAutumnClient, tryAutumn } from './autumn.js';
+import { createAutumnClient, isNotFoundError, tryAutumn } from './autumn.js';
 import {
 	type CheckoutPlanId,
 	FEATURE_IDS,
@@ -544,6 +544,25 @@ export function createBillingService(
 		});
 	}
 
+	/**
+	 * Delete this account's Autumn customer and its Stripe counterpart during
+	 * account deletion. Idempotent: a customer Autumn does not know (never
+	 * created, or already removed by an earlier partial attempt) is success,
+	 * so the deletion coordinator can retry across cross-system failures.
+	 */
+	async function deleteCustomer(): Promise<Result<void, BillingError>> {
+		return tryAutumn(async () => {
+			try {
+				await autumn.customers.delete({
+					customerId: identity.principalId,
+					deleteInStripe: true,
+				});
+			} catch (error) {
+				if (!isNotFoundError(error)) throw error;
+			}
+		});
+	}
+
 	return {
 		reserveAiChat,
 		checkAiCredits,
@@ -557,6 +576,7 @@ export function createBillingService(
 		checkoutPlan,
 		checkoutTopUp,
 		openPortal,
+		deleteCustomer,
 	};
 }
 

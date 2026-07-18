@@ -239,6 +239,40 @@
 		invalidate(accountKeys.passkeys);
 	}
 
+	/**
+	 * Hosted account deletion (`DELETE /api/account`). The server deletes in a
+	 * retry-safe order and answers 503 with the failed step on a partial
+	 * failure, so the remedy is always "retry until 204". Only a 204 means the
+	 * account is gone; afterwards the session is dead, so sign-out is
+	 * best-effort cookie cleanup before leaving the dashboard.
+	 */
+	function deleteAccount() {
+		const email = profile?.email ?? 'this account';
+		confirmationDialog.open({
+			title: 'Delete account',
+			description: `Permanently delete ${email} everywhere: synced workspaces, documents, uploaded files, billing, and every way to sign in. This cannot be undone. Data stored on your devices stays on your devices.`,
+			confirm: { text: 'Delete forever', variant: 'destructive' },
+			onConfirm: async () => {
+				const response = await auth.fetch('/api/account', { method: 'DELETE' });
+				if (!response.ok) {
+					toast.error(
+						response.status === 503
+							? 'Deletion did not finish. Confirm again to retry until it completes.'
+							: 'Could not delete your account. Please try again.',
+					);
+					throw new Error(`Account deletion answered ${response.status}`); // retryable: keep the dialog open
+				}
+				toast.success('Your account has been deleted');
+				try {
+					await auth.signOut();
+				} catch {
+					// The session was already destroyed with the account.
+				}
+				window.location.href = '/';
+			},
+		});
+	}
+
 	function deletePasskey(passkey: Passkey) {
 		const label = passkey.name?.trim() || 'this passkey';
 		confirmationDialog.open({
@@ -453,6 +487,26 @@
 					</Button>
 				</div>
 			{/if}
+		</Card.Content>
+	</Card.Root>
+
+	<!-- Danger zone -->
+	<Card.Root class="border-destructive/50">
+		<Card.Header>
+			<Card.Title>Delete account</Card.Title>
+		</Card.Header>
+		<Card.Content class="flex flex-col gap-4">
+			<p class="text-sm text-muted-foreground">
+				Permanently deletes your synced workspaces, documents, uploaded files,
+				billing, and every way to sign in. Data stored on your devices stays on
+				your devices. This cannot be undone.
+			</p>
+			<div>
+				<Button variant="destructive" onclick={deleteAccount}>
+					<Trash2Icon class="size-4" />
+					Delete account
+				</Button>
+			</div>
 		</Card.Content>
 	</Card.Root>
 </div>

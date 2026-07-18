@@ -70,6 +70,11 @@ export function mapAutumnError(error: AutumnError | HTTPClientError) {
 	return BillingError.ProviderRequestFailed();
 }
 
+/** Provider 404: the target does not exist. Deletion flows treat it as done. */
+export function isNotFoundError(error: unknown): boolean {
+	return error instanceof AutumnError && error.statusCode === 404;
+}
+
 /**
  * Narrow a throw to a provider failure (HTTP non-2xx OR network/transport),
  * versus a programming bug in our own handler code. Route `onError` uses this

@@ -106,6 +106,19 @@ function resolveBlobStoreConfig(env: {
 }
 
 /**
+ * Build this deployment's blob store from its `BLOBS_S3_*` env, or `null` when
+ * object storage is not configured. The routes below wrap this in a 503; a
+ * deployment operation (account deletion's prefix sweep) treats `null` as
+ * nothing to delete.
+ */
+export function resolveDeploymentBlobStore(
+	env: Parameters<typeof resolveBlobStoreConfig>[0],
+): S3BlobStore | null {
+	const config = resolveBlobStoreConfig(env);
+	return config === null ? null : createS3BlobStore(config);
+}
+
+/**
  * Build this deployment's S3 blob store onto `c.var.blobStore`, or answer 503
  * when object storage is not configured. One owner for the "store is configured"
  * invariant, so every handler can assume the store is present. Typed as a bare
@@ -114,12 +127,12 @@ function resolveBlobStoreConfig(env: {
  */
 const requireBlobStore: MiddlewareHandler = createMiddleware<BlobEnv>(
 	async (c, next) => {
-		const config = resolveBlobStoreConfig(c.env);
-		if (!config) {
+		const store = resolveDeploymentBlobStore(c.env);
+		if (!store) {
 			const err = BlobError.StorageNotConfigured();
 			return c.json(err, err.error.status);
 		}
-		c.set('blobStore', createS3BlobStore(config));
+		c.set('blobStore', store);
 		await next();
 	},
 );
