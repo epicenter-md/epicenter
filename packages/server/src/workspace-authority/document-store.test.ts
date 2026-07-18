@@ -19,7 +19,7 @@ import {
 } from '@epicenter/row-sync';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import {
-	DOCUMENT_CLOSE_CODE,
+	DOCUMENT_BACKSTOP_CLOSE_CODE,
 	type DocumentFrame,
 } from '@epicenter/sync/document-v3';
 import * as Y from '@y/y';
@@ -170,7 +170,7 @@ test('merged-state overflow closes only its sender and rehydrates committed stat
 
 		expect(alice.messages).toEqual([]);
 		expect(alice.closes).toEqual([
-			{ code: DOCUMENT_CLOSE_CODE['too-large'], reason: 'too-large' },
+			{ code: DOCUMENT_BACKSTOP_CLOSE_CODE, reason: 'too-large' },
 		]);
 		expect(bob.messages).toEqual([]);
 		expect(bob.closes).toEqual([]);

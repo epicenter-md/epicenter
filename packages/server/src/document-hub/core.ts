@@ -1,6 +1,6 @@
 import type { RowAddress } from '@epicenter/row-sync';
 import {
-	DOCUMENT_CLOSE_CODE,
+	DOCUMENT_BACKSTOP_CLOSE_CODE,
 	type DocumentFrame,
 } from '@epicenter/sync/document-v3';
 import * as Y from '@y/y';
@@ -121,7 +121,7 @@ export function createDocumentHubCore({
 					closeAll();
 					return;
 				case 'too-large':
-					closeSocket(socket, DOCUMENT_CLOSE_CODE['too-large'], 'too-large');
+					closeSocket(socket, DOCUMENT_BACKSTOP_CLOSE_CODE, 'too-large');
 					return;
 				case 'appended': {
 					const broadcast = { kind: 'update', update: frame.update } as const;

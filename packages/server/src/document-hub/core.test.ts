@@ -12,7 +12,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { RowAddress } from '@epicenter/row-sync';
 import {
-	DOCUMENT_CLOSE_CODE,
+	DOCUMENT_BACKSTOP_CLOSE_CODE,
 	type DocumentFrame,
 } from '@epicenter/sync/document-v3';
 import * as Y from '@y/y';
@@ -120,7 +120,7 @@ describe('fixed-address document hub core', () => {
 		});
 
 		expect(fixture.alice.closes).toEqual([
-			{ code: DOCUMENT_CLOSE_CODE['too-large'], reason: 'too-large' },
+			{ code: DOCUMENT_BACKSTOP_CLOSE_CODE, reason: 'too-large' },
 		]);
 		expect(fixture.bob.closes).toEqual([]);
 		expect(fixture.hub.connectionCount).toBe(1);

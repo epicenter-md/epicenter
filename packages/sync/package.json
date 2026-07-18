@@ -32,7 +32,8 @@
 		"wellcrafted": "catalog:"
 	},
 	"peerDependencies": {
-		"yjs": "catalog:"
+		"yjs": "catalog:",
+		"@y/y": "14.0.0-rc.24"
 	},
 	"devDependencies": {
 		"@y/y": "14.0.0-rc.24",

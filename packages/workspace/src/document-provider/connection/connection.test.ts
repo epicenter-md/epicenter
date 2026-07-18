@@ -6,7 +6,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import {
-	DOCUMENT_CLOSE_CODE,
+	DOCUMENT_BACKSTOP_CLOSE_CODE,
 	DOCUMENT_SUBPROTOCOL,
 	decodeDocumentFrame,
 	encodeDocumentFrame,
@@ -184,7 +184,7 @@ describe('route-bound document connection', () => {
 				socket: required(sockets, opens++).asWebSocket(),
 			}),
 			classifyClose: ({ code }) =>
-				code === DOCUMENT_CLOSE_CODE['too-large']
+				code === DOCUMENT_BACKSTOP_CLOSE_CODE
 					? { outcome: 'terminal', reason: 'too-large' }
 					: { outcome: 'retry', reason: 'network' },
 			schedule: scheduler.schedule,
@@ -203,7 +203,7 @@ describe('route-bound document connection', () => {
 		await flush();
 		required(sockets, 1).open();
 		required(sockets, 1).serverClose(
-			DOCUMENT_CLOSE_CODE['too-large'],
+			DOCUMENT_BACKSTOP_CLOSE_CODE,
 			'too-large',
 		);
 		expect(connection.status).toEqual({

@@ -12,12 +12,16 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from '@y/y';
 import {
-	DOCUMENT_CLOSE_CODE,
+	DOCUMENT_BACKSTOP_CLOSE_CODE,
+	DOCUMENT_BOUND,
 	DOCUMENT_FRAME_LIMITS,
 	DOCUMENT_SUBPROTOCOL,
 	type DocumentFrame,
 	decodeDocumentFrame,
 	encodeDocumentFrame,
+	exceedsDocumentBound,
+	measureDocument,
+	measureDocumentState,
 } from './protocol.js';
 
 describe('document v3 frame codec', () => {
@@ -80,10 +84,57 @@ describe('document v3 frame codec', () => {
 		expect([...encoded]).toEqual([2, 7, 8, 9]);
 	});
 
-	test('reserves only terminal too-large as a document close code', () => {
-		expect(DOCUMENT_CLOSE_CODE).toEqual({
-			'too-large': 1009,
+	test('reserves no product close code; 1009 is only the backstop number', () => {
+		expect(DOCUMENT_BACKSTOP_CLOSE_CODE).toBe(1009);
+	});
+
+	test('the frame envelope admits a maximal legal canonical state', () => {
+		const maximalState = new Uint8Array(DOCUMENT_BOUND.stateBytes);
+		const frame = encodeDocumentFrame({
+			kind: 'sync-response',
+			update: maximalState,
 		});
+		expect(frame.byteLength).toBeLessThanOrEqual(
+			DOCUMENT_FRAME_LIMITS.encodedFrameBytes,
+		);
+		expect(DOCUMENT_FRAME_LIMITS.payloadBytes).toBe(
+			2 * DOCUMENT_BOUND.stateBytes,
+		);
+	});
+
+	test('both bound dimensions measure from one canonical encoded state', () => {
+		const doc = createDoc('measured');
+		const encoded = Y.encodeStateAsUpdateV2(doc);
+		const fromState = measureDocumentState(encoded);
+		const fromDoc = measureDocument(doc);
+		expect(fromDoc).toEqual(fromState);
+		expect(fromState.stateBytes).toBe(encoded.byteLength);
+		expect(fromState.stateStructs).toBe(
+			Y.decodeUpdateV2(encoded).structs.length,
+		);
+		expect(exceedsDocumentBound(fromState)).toBe(false);
+		expect(
+			exceedsDocumentBound({
+				stateBytes: DOCUMENT_BOUND.stateBytes + 1,
+				stateStructs: 1,
+			}),
+		).toBe(true);
+		expect(
+			exceedsDocumentBound({
+				stateBytes: 1,
+				stateStructs: DOCUMENT_BOUND.stateStructs + 1,
+			}),
+		).toBe(true);
+	});
+
+	test('the measure is stable across re-encode and hydration round trips', () => {
+		const doc = createDoc('stable');
+		doc.get('content').delete(0, 3);
+		const first = measureDocument(doc);
+		expect(measureDocument(doc)).toEqual(first);
+		const rehydrated = new Y.Doc();
+		Y.applyUpdateV2(rehydrated, Y.encodeStateAsUpdateV2(doc));
+		expect(measureDocument(rehydrated)).toEqual(first);
 	});
 
 	test('rejects malformed, empty, over-limit, and unknown frames', () => {

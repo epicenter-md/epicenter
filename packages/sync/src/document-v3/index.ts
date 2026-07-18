@@ -1,11 +1,13 @@
 export {
-  DOCUMENT_CLOSE_CODE,
+  DOCUMENT_BACKSTOP_CLOSE_CODE,
+  DOCUMENT_BOUND,
   DOCUMENT_FRAME_LIMITS,
   DOCUMENT_SUBPROTOCOL,
-  type DocumentCloseCode,
-  type DocumentCloseReason,
   type DocumentFrame,
-  type DocumentStopReason,
+  type DocumentMeasure,
   decodeDocumentFrame,
   encodeDocumentFrame,
+  exceedsDocumentBound,
+  measureDocument,
+  measureDocumentState,
 } from "./protocol";

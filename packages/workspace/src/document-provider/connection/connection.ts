@@ -1,6 +1,6 @@
 import { isOpenWebSocketDenial } from '@epicenter/sync';
 import {
-	DOCUMENT_CLOSE_CODE,
+	DOCUMENT_BACKSTOP_CLOSE_CODE,
 	DOCUMENT_SUBPROTOCOL,
 	decodeDocumentFrame,
 	encodeDocumentFrame,
@@ -115,7 +115,7 @@ export function attachAuthenticatedDocumentConnection({
 			}
 		},
 		classifyClose({ code }) {
-			if (code === DOCUMENT_CLOSE_CODE['too-large']) {
+			if (code === DOCUMENT_BACKSTOP_CLOSE_CODE) {
 				return { outcome: 'terminal', reason: 'too-large' };
 			}
 			if (code === 1002) return { outcome: 'terminal', reason: 'upgrade' };
