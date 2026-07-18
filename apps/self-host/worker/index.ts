@@ -23,8 +23,7 @@
 import { assertStrongToken } from '@epicenter/auth';
 import {
 	CurrentStateRowAuthorityDurableObject,
-	createCurrentStateDurableObjectDocuments,
-	createCurrentStateDurableObjectRecords,
+	createDurableObjectAccountAuthorities,
 	createDurableObjectRooms,
 	createEnvTokenResolver,
 	createServerApp,
@@ -90,15 +89,15 @@ mountWorkspaceDocumentsApp(app, {
 	resolveDocumentPrincipal: withDocumentAuthorizationDeadline(
 		resolveBearerPrincipal,
 	),
-	resolveDocuments: (env) =>
-		createCurrentStateDurableObjectDocuments((env as Cloudflare.Env).RECORDS),
+	resolveAuthorities: (env) =>
+		createDurableObjectAccountAuthorities((env as Cloudflare.Env).RECORDS),
 });
 // Records use one SQLite authority for the instance principal. This deployment has no hosted
 // allowance policy, so first push goes directly to the instance authority.
 mountCurrentStateRecordsApp(app, {
 	auth,
-	resolveRecords: (env) =>
-		createCurrentStateDurableObjectRecords((env as Cloudflare.Env).RECORDS),
+	resolveAuthorities: (env) =>
+		createDurableObjectAccountAuthorities((env as Cloudflare.Env).RECORDS),
 });
 // Cap the inference burn rate so a leaked or overused bearer cannot run the
 // operator's house key up unbounded. Per-isolate on Cloudflare (approximate);

@@ -6,7 +6,7 @@ import { createMiddleware } from "hono/factory";
 import { extractUpgradeBearer } from "../auth/extract-upgrade-bearer.js";
 import { OAuthError } from "../auth/oauth-errors.js";
 import { createOAuthUnauthorizedResourceResponse } from "../auth/oauth-resource.js";
-import type { WorkspaceDocuments } from "../document-hub/contracts.js";
+import type { AccountAuthorities } from "../records/current-state-contracts.js";
 import { isWebSocketUpgrade } from "../is-websocket-upgrade.js";
 import type { Env, ResolveDocumentPrincipal } from "../types.js";
 
@@ -25,7 +25,7 @@ function isBoundedIdentifier(value: string): boolean {
 
 function requireDocumentBearer<E extends Env>(
   resolveDocumentPrincipal: ResolveDocumentPrincipal<E>,
-  resolveDocuments: (env: E["Bindings"]) => WorkspaceDocuments,
+  resolveAuthorities: (env: E["Bindings"]) => AccountAuthorities,
 ): MiddlewareHandler<E> {
   return createMiddleware<E>(async (c, next) => {
     const bearer = extractUpgradeBearer(c.req.raw.headers);
@@ -38,7 +38,7 @@ function requireDocumentBearer<E extends Env>(
         c.req.header("sec-websocket-protocol") ?? null,
       );
       if (isWebSocketUpgrade(c) && offered.includes(DOCUMENT_SUBPROTOCOL)) {
-        return resolveDocuments(c.env).rejectUpgrade({
+        return resolveAuthorities(c.env).rejectDocumentUpgrade({
           request: c.req.raw,
           code: 4000 + error.status,
           reason: JSON.stringify(error),
@@ -56,9 +56,9 @@ function requireDocumentBearer<E extends Env>(
 }
 
 function createWorkspaceDocumentsApp<E extends Env>({
-  resolveDocuments,
+  resolveAuthorities,
 }: {
-  resolveDocuments: (env: E["Bindings"]) => WorkspaceDocuments;
+  resolveAuthorities: (env: E["Bindings"]) => AccountAuthorities;
 }): Hono<E> {
   return new Hono<E>().get(DOCUMENT_ROUTE, async (c) => {
     if (!isWebSocketUpgrade(c)) {
@@ -93,12 +93,14 @@ function createWorkspaceDocumentsApp<E extends Env>({
     // The account authority derives from the authenticated principal alone
     // (ADR-0092); the workspace id is a name inside that partition, so no
     // authorization lookup exists between authentication and the upgrade.
-    return resolveDocuments(c.env).handleUpgrade({
-      partition: { principalId: c.var.principal.id, workspaceId },
-      address: { table, rowId },
-      authorizationExpiresAt: c.var.documentAuthorizationExpiresAt,
-      request: c.req.raw,
-    });
+    return resolveAuthorities(c.env)
+      .authority(c.var.principal.id)
+      .acceptDocumentUpgrade({
+        workspaceId,
+        address: { table, rowId },
+        authorizationExpiresAt: c.var.documentAuthorizationExpiresAt,
+        request: c.req.raw,
+      });
   });
 }
 
@@ -107,15 +109,15 @@ export function mountWorkspaceDocumentsApp<E extends Env = Env>(
   app: Hono<E>,
   {
     resolveDocumentPrincipal,
-    resolveDocuments,
+    resolveAuthorities,
   }: {
     resolveDocumentPrincipal: ResolveDocumentPrincipal<E>;
-    resolveDocuments: (env: E["Bindings"]) => WorkspaceDocuments;
+    resolveAuthorities: (env: E["Bindings"]) => AccountAuthorities;
   },
 ): void {
   app.use(
     DOCUMENT_ROUTE,
-    requireDocumentBearer(resolveDocumentPrincipal, resolveDocuments),
+    requireDocumentBearer(resolveDocumentPrincipal, resolveAuthorities),
   );
-  app.route("/", createWorkspaceDocumentsApp({ resolveDocuments }));
+  app.route("/", createWorkspaceDocumentsApp({ resolveAuthorities }));
 }

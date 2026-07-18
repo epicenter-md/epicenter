@@ -57,8 +57,9 @@
 				"name": "ATTACH_RELAY",
 				"class_name": "AttachRelay"
 			},
-			// One SQLite-backed record authority per authenticated principal and
-			// workspace pair. The Worker derives the DO name after authentication.
+			// One SQLite-backed account authority per authenticated principal; named
+			// workspaces are rows inside it. The Worker derives the DO name from the
+			// principal alone after authentication.
 			{
 				"name": "RECORDS",
 				"class_name": "CurrentStateRowAuthorityDurableObject"

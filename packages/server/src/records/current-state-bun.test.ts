@@ -1,14 +1,16 @@
 /**
- * Current-State Bun Records Tests
+ * Bun Account Authority Runtime Tests
  *
- * Verifies persistent partitioned authorities through the new Bun backend.
+ * Verifies persistent per-principal account authorities through the Bun
+ * runtime's route-facing locator.
  *
  * Key behaviors:
  * - first push registers a client-owned retry identity idempotently
- * - accepted current state and receipts survive backend reopen
- * - principal and workspace pairs own independent SQLite authorities
+ * - accepted current state and receipts survive runtime reopen
+ * - principals own independent SQLite authorities; workspaces share one
  * - accepted pushes compact to the predictable retained sequence window
  * - first open deletes the authorized legacy authority tables
+ * - shutdown closes active document sockets and every database
  */
 
 import { Database } from 'bun:sqlite';
@@ -16,32 +18,30 @@ import { expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { asPrincipalId } from '@epicenter/identity';
+import { asPrincipalId, type PrincipalId } from '@epicenter/identity';
 import {
 	CURRENT_STATE_ROW_SYNC_PROTOCOL_MAJOR,
 	type CurrentStateWireRowIntent,
 	rowRoundDigest,
 } from '@epicenter/row-sync';
 import type { BunWorkspaceDocumentSocketData } from './current-state-bun.js';
-import { createCurrentStateBunRecords } from './current-state-bun.js';
-import type {
-	CurrentStateRecords,
-	CurrentStateRecordsPartition,
-} from './current-state-contracts.js';
+import { createBunAccountAuthorityRuntime } from './current-state-bun.js';
+import type { AccountAuthority } from './current-state-contracts.js';
 
-const partition: CurrentStateRecordsPartition = {
-	principalId: asPrincipalId('alice'),
-	workspaceId: 'wiki',
-};
+const alice = asPrincipalId('alice');
+const WORKSPACE = 'wiki';
 
 const rid = (value: number) => value.toString(36).padStart(24, '0');
 
 function setup() {
 	const dir = mkdtempSync(join(tmpdir(), 'epicenter-current-rows-'));
-	const opened = createCurrentStateBunRecords({ dir });
+	const opened = createBunAccountAuthorityRuntime({ dir });
 	return {
 		dir,
 		...opened,
+		authority(principalId: PrincipalId = alice): AccountAuthority {
+			return opened.authorities.authority(principalId);
+		},
 		cleanup() {
 			opened.close();
 			rmSync(dir, { recursive: true, force: true });
@@ -50,13 +50,13 @@ function setup() {
 }
 
 async function push(
-	records: CurrentStateRecords,
-	target: CurrentStateRecordsPartition,
+	authority: AccountAuthority,
+	workspaceId: string,
 	replicaId: string,
 	round: number,
 	intents: CurrentStateWireRowIntent[],
 ) {
-	return records.push(target, {
+	return authority.push(workspaceId, {
 		protocolMajor: CURRENT_STATE_ROW_SYNC_PROTOCOL_MAJOR,
 		kind: 'push',
 		replicaId,
@@ -69,21 +69,16 @@ async function push(
 test('hasReplica observes first-push registration', async () => {
 	const context = setup();
 	try {
-		expect(await context.records.hasReplica(partition, rid(100))).toBe(false);
+		const authority = context.authority();
+		expect(await authority.hasReplica(WORKSPACE, rid(100))).toBe(false);
 		const intents = [
 			{ kind: 'create', table: 'pages', rowId: rid(1), fields: { n: 1 } },
 		] satisfies CurrentStateWireRowIntent[];
-		const accepted = await push(
-			context.records,
-			partition,
-			rid(100),
-			1,
-			intents,
+		const accepted = await push(authority, WORKSPACE, rid(100), 1, intents);
+		expect(await authority.hasReplica(WORKSPACE, rid(100))).toBe(true);
+		expect(await push(authority, WORKSPACE, rid(100), 1, intents)).toEqual(
+			accepted,
 		);
-		expect(await context.records.hasReplica(partition, rid(100))).toBe(true);
-		expect(
-			await push(context.records, partition, rid(100), 1, intents),
-		).toEqual(accepted);
 	} finally {
 		context.cleanup();
 	}
@@ -102,8 +97,8 @@ test('accepted state and receipts survive closing and reopening', async () => {
 			},
 		];
 		const accepted = await push(
-			context.records,
-			partition,
+			context.authority(),
+			WORKSPACE,
 			replicaId,
 			1,
 			intents,
@@ -114,10 +109,11 @@ test('accepted state and receipts survive closing and reopening', async () => {
 		});
 		context.close();
 
-		const reopened = createCurrentStateBunRecords({ dir: context.dir });
+		const reopened = createBunAccountAuthorityRuntime({ dir: context.dir });
 		try {
+			const authority = reopened.authorities.authority(alice);
 			expect(
-				await reopened.records.push(partition, {
+				await authority.push(WORKSPACE, {
 					protocolMajor: CURRENT_STATE_ROW_SYNC_PROTOCOL_MAJOR,
 					kind: 'push',
 					replicaId,
@@ -126,7 +122,7 @@ test('accepted state and receipts survive closing and reopening', async () => {
 					intents,
 				}),
 			).toEqual(accepted);
-			const acquired = await reopened.records.acquire(partition, {
+			const acquired = await authority.acquire(WORKSPACE, {
 				protocolMajor: CURRENT_STATE_ROW_SYNC_PROTOCOL_MAJOR,
 				kind: 'acquire',
 				replicaId,
@@ -149,17 +145,16 @@ test('accepted state and receipts survive closing and reopening', async () => {
 	}
 });
 
-test('principal and workspace pairs own independent authorities', async () => {
+test('principals and workspaces own independent authority state', async () => {
 	const context = setup();
 	try {
 		const targets = [
-			[partition, rid(1)],
-			[{ principalId: asPrincipalId('bob'), workspaceId: 'wiki' }, rid(2)],
-			[{ principalId: asPrincipalId('alice'), workspaceId: 'notes' }, rid(3)],
+			[alice, WORKSPACE, rid(1)],
+			[asPrincipalId('bob'), WORKSPACE, rid(2)],
+			[alice, 'notes', rid(3)],
 		] as const;
-		for (const [target, rowId] of targets) {
-			const replicaId = rid(100);
-			await push(context.records, target, replicaId, 1, [
+		for (const [principalId, workspaceId, rowId] of targets) {
+			await push(context.authority(principalId), workspaceId, rid(100), 1, [
 				{
 					kind: 'create',
 					table: 'pages',
@@ -168,13 +163,14 @@ test('principal and workspace pairs own independent authorities', async () => {
 				},
 			]);
 		}
-		for (const [target, rowId] of targets) {
-			const replicaId = rid(100);
-			const acquired = await context.records.acquire(target, {
-				protocolMajor: CURRENT_STATE_ROW_SYNC_PROTOCOL_MAJOR,
-				kind: 'acquire',
-				replicaId,
-			});
+		for (const [principalId, workspaceId, rowId] of targets) {
+			const acquired = await context
+				.authority(principalId)
+				.acquire(workspaceId, {
+					protocolMajor: CURRENT_STATE_ROW_SYNC_PROTOCOL_MAJOR,
+					kind: 'acquire',
+					replicaId: rid(100),
+				});
 			expect(
 				acquired.result === 'page' && acquired.rows.map((row) => row.rowId),
 			).toEqual([rowId]);
@@ -186,12 +182,12 @@ test('principal and workspace pairs own independent authorities', async () => {
 
 test('workspaces under one principal share one database and delete independently', async () => {
 	const context = setup();
-	const notes = { ...partition, workspaceId: 'notes' };
 	try {
-		await push(context.records, partition, rid(100), 1, [
+		const authority = context.authority();
+		await push(authority, WORKSPACE, rid(100), 1, [
 			{ kind: 'create', table: 'pages', rowId: rid(1), fields: { n: 1 } },
 		]);
-		await push(context.records, notes, rid(100), 1, [
+		await push(authority, 'notes', rid(100), 1, [
 			{ kind: 'create', table: 'pages', rowId: rid(2), fields: { n: 2 } },
 		]);
 
@@ -200,10 +196,10 @@ test('workspaces under one principal share one database and delete independently
 				name.endsWith('.sqlite'),
 			),
 		).toEqual(['authority.sqlite']);
-		await context.records.deleteWorkspace(partition);
-		expect(await context.records.hasReplica(partition, rid(100))).toBe(false);
+		await authority.deleteWorkspace(WORKSPACE);
+		expect(await authority.hasReplica(WORKSPACE, rid(100))).toBe(false);
 		expect(
-			await context.records.acquire(notes, {
+			await authority.acquire('notes', {
 				protocolMajor: CURRENT_STATE_ROW_SYNC_PROTOCOL_MAJOR,
 				kind: 'acquire',
 				replicaId: rid(100),
@@ -224,7 +220,8 @@ test('workspace deletion closes upgraded document sockets before their handshake
 		data: {
 			surface: 'workspace-document',
 			kind: 'document',
-			partition,
+			principalId: alice,
+			workspaceId: WORKSPACE,
 			address: { table: 'pages', rowId: rid(1) },
 			authorizationExpiresAt: Date.now() + 60_000,
 			connected: false,
@@ -235,23 +232,46 @@ test('workspace deletion closes upgraded document sockets before their handshake
 	};
 	try {
 		context.websocket.open?.(socket as never);
-		await context.records.deleteWorkspace(partition);
+		await context.authority().deleteWorkspace(WORKSPACE);
 		expect(closes).toEqual([{ code: 1000, reason: 'not-live' }]);
 	} finally {
 		context.cleanup();
 	}
 });
 
-test('partition components cannot escape their principal directory', async () => {
+test('shutdown closes active document sockets and refuses later operations', async () => {
+	const context = setup();
+	const closes: { code: number; reason: string }[] = [];
+	const socket = {
+		data: {
+			surface: 'workspace-document',
+			kind: 'document',
+			principalId: alice,
+			workspaceId: WORKSPACE,
+			address: { table: 'pages', rowId: rid(1) },
+			authorizationExpiresAt: Date.now() + 60_000,
+			connected: false,
+		} satisfies BunWorkspaceDocumentSocketData,
+		close(code: number, reason: string) {
+			closes.push({ code, reason });
+		},
+	};
+	try {
+		context.websocket.open?.(socket as never);
+		context.close();
+		expect(closes).toEqual([{ code: 1001, reason: 'server-shutdown' }]);
+		expect(context.authority().hasReplica(WORKSPACE, rid(100))).rejects.toThrow(
+			'closed',
+		);
+	} finally {
+		rmSync(context.dir, { recursive: true, force: true });
+	}
+});
+
+test('principal ids cannot escape their principal directory', async () => {
 	const context = setup();
 	try {
-		await context.records.hasReplica(
-			{
-				principalId: asPrincipalId('..'),
-				workspaceId: '..',
-			},
-			rid(100),
-		);
+		await context.authority(asPrincipalId('..')).hasReplica('..', rid(100));
 		expect(readdirSync(join(context.dir, 'principals'))).toEqual(['%2E%2E']);
 		expect(readdirSync(join(context.dir, 'principals', '%2E%2E'))).toContain(
 			'authority.sqlite',
@@ -264,6 +284,7 @@ test('partition components cannot escape their principal directory', async () =>
 test('accepted pushes retain the newest one thousand sequences', async () => {
 	const context = setup();
 	try {
+		const authority = context.authority();
 		const replicaId = rid(100);
 		let round = 0;
 		let remaining = 1_001;
@@ -280,8 +301,8 @@ test('accepted pushes retain the newest one thousand sequences', async () => {
 			);
 			round += 1;
 			const response = await push(
-				context.records,
-				partition,
+				authority,
+				WORKSPACE,
 				replicaId,
 				round,
 				intents,
@@ -291,7 +312,7 @@ test('accepted pushes retain the newest one thousand sequences', async () => {
 		}
 
 		expect(
-			await context.records.pull(partition, {
+			await authority.pull(WORKSPACE, {
 				protocolMajor: CURRENT_STATE_ROW_SYNC_PROTOCOL_MAJOR,
 				kind: 'pull',
 				replicaId,
@@ -318,9 +339,9 @@ test('first authority open deletes legacy authority tables', async () => {
 		database.run('INSERT INTO row_sync_meta(id) VALUES (1)');
 		database.close();
 
-		const reopened = createCurrentStateBunRecords({ dir: context.dir });
+		const reopened = createBunAccountAuthorityRuntime({ dir: context.dir });
 		try {
-			await reopened.records.hasReplica(partition, rid(100));
+			await reopened.authorities.authority(alice).hasReplica(WORKSPACE, rid(100));
 		} finally {
 			reopened.close();
 		}

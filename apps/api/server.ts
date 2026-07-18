@@ -52,7 +52,7 @@ import {
 	CloudAuthBindings,
 	type CloudEnv,
 	createBunRooms,
-	createCurrentStateBunRecords,
+	createBunAccountAuthorityRuntime,
 	createDb,
 	createServerApp,
 	listStorageObservations,
@@ -145,7 +145,7 @@ export function startBunApiServer(
 	// Keep the operator-selected directory stable, but the replacement authority
 	// deliberately drops the legacy table family on first open. There is no
 	// compatibility reader or receipt migration across this protocol reset.
-	const bunRecords = createCurrentStateBunRecords({
+	const bunRecords = createBunAccountAuthorityRuntime({
 		dir: join(dataDir, 'records'),
 	});
 
@@ -209,21 +209,20 @@ export function startBunApiServer(
 	mountRoomsApp(app, { resolveBearerPrincipal });
 	mountWorkspaceDocumentsApp(app, {
 		resolveDocumentPrincipal,
-		resolveDocuments: () => bunRecords.documents,
+		resolveAuthorities: () => bunRecords.authorities,
 	});
 	mountCurrentStateRecordsApp(app, {
 		auth: bearer,
-		resolveRecords: () => bunRecords.records,
+		resolveAuthorities: () => bunRecords.authorities,
 		// This runtime deliberately omits Autumn, so it cannot decide the Cloud
 		// account allowance. It may resume an existing client-owned identity, but
 		// never grants a genuinely new hosted capability by bypass.
-		admitFirstContact: (c, partition) =>
+		admitFirstContact: (c, { principalId, workspaceId }) =>
 			admitRegisteredStorageFirstContact(
 				{
-					listObservations: (principalId) =>
-						listStorageObservations(c.var.db, principalId),
+					listObservations: () => listStorageObservations(c.var.db, principalId),
 				},
-				partition,
+				{ principalId, workspaceId },
 			),
 	});
 	mountInferenceApp(app, { auth: bearer });
@@ -245,6 +244,16 @@ export function startBunApiServer(
 	// so `handleUpgrade` can call `server.upgrade`.
 	bunRooms.bindServer(server);
 	bunRecords.bindServer(server);
+
+	// Close authority databases and their sockets before the process dies so WAL
+	// checkpoints land and clients see a clean 1001 instead of a dropped TCP.
+	const shutdown = () => {
+		bunRecords.close();
+		void server.stop(true);
+		process.exit(0);
+	};
+	process.once('SIGINT', shutdown);
+	process.once('SIGTERM', shutdown);
 
 	console.log(`apps/api (Bun) listening on ${origin} (data in ${dataDir})`);
 }

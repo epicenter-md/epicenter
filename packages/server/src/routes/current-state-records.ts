@@ -1,3 +1,4 @@
+import type { PrincipalId } from '@epicenter/identity';
 import {
 	currentStateRequestRefusal,
 	parseAcquireRequest,
@@ -7,15 +8,19 @@ import {
 } from '@epicenter/row-sync';
 import { type Context, Hono, type MiddlewareHandler } from 'hono';
 import type {
-	CurrentStateRecords,
-	CurrentStateRecordsPartition,
+	AccountAuthorities,
+	AccountAuthority,
 } from '../records/current-state-contracts.js';
 import type { Env } from '../types.js';
 import { RecordsError } from './records-errors.js';
 
 export type AdmitFirstContact<E extends Env = Env> = (
 	c: Context<E>,
-	partition: CurrentStateRecordsPartition,
+	input: {
+		authority: AccountAuthority;
+		principalId: PrincipalId;
+		workspaceId: string;
+	},
 ) => Promise<'allow' | 'refuse'>;
 
 const WORKSPACES_PREFIX = '/api/workspaces';
@@ -59,7 +64,7 @@ function invalidRequest<E extends Env>(
 }
 
 function createCurrentStateRecordsApp<E extends Env>(
-	resolveRecords: (env: E['Bindings']) => CurrentStateRecords,
+	resolveAuthorities: (env: E['Bindings']) => AccountAuthorities,
 	admitFirstContact: AdmitFirstContact<E> | undefined,
 ): Hono<E> {
 	const app = new Hono<E>();
@@ -75,6 +80,7 @@ function createCurrentStateRecordsApp<E extends Env>(
 		await next();
 	};
 	app.use(`${WORKSPACE_ROUTE}/*`, requireBoundedWorkspaceId);
+	app.use(WORKSPACE_ROUTE, requireBoundedWorkspaceId);
 
 	function refuseMismatchedProtocol<ERequest extends { protocolMajor: number }>(
 		c: Context<E>,
@@ -84,12 +90,19 @@ function createCurrentStateRecordsApp<E extends Env>(
 		return refusal ? c.json({ result: refusal }) : undefined;
 	}
 
-	function partition(c: {
+	function selectAuthority(c: {
+		env: E['Bindings'];
 		var: Env['Variables'];
 		req: { param(name: 'workspaceId'): string };
-	}): CurrentStateRecordsPartition {
+	}): {
+		authority: AccountAuthority;
+		principalId: PrincipalId;
+		workspaceId: string;
+	} {
+		const principalId = c.var.principal.id;
 		return {
-			principalId: c.var.principal.id,
+			authority: resolveAuthorities(c.env).authority(principalId),
+			principalId,
 			workspaceId: c.req.param('workspaceId'),
 		};
 	}
@@ -101,19 +114,20 @@ function createCurrentStateRecordsApp<E extends Env>(
 			const refusal = refuseMismatchedProtocol(c, parsed.value);
 			if (refusal) return refusal;
 			try {
-				const records = resolveRecords(c.env);
-				const recordsPartition = partition(c);
+				const selected = selectAuthority(c);
 				if (
-					!(await records.hasReplica(
-						recordsPartition,
+					!(await selected.authority.hasReplica(
+						selected.workspaceId,
 						parsed.value.replicaId,
 					)) &&
 					admitFirstContact &&
-					(await admitFirstContact(c, recordsPartition)) === 'refuse'
+					(await admitFirstContact(c, selected)) === 'refuse'
 				) {
 					return c.json({ result: 'storage-limit' } as const);
 				}
-				return c.json(await records.push(recordsPartition, parsed.value));
+				return c.json(
+					await selected.authority.push(selected.workspaceId, parsed.value),
+				);
 			} catch (cause) {
 				if (cause instanceof TypeError) return invalidRequest(c, 'invalid');
 				throw cause;
@@ -125,8 +139,9 @@ function createCurrentStateRecordsApp<E extends Env>(
 			const refusal = refuseMismatchedProtocol(c, parsed.value);
 			if (refusal) return refusal;
 			try {
+				const selected = selectAuthority(c);
 				return c.json(
-					await resolveRecords(c.env).pull(partition(c), parsed.value),
+					await selected.authority.pull(selected.workspaceId, parsed.value),
 				);
 			} catch (cause) {
 				if (cause instanceof TypeError) return invalidRequest(c, 'invalid');
@@ -139,13 +154,23 @@ function createCurrentStateRecordsApp<E extends Env>(
 			const refusal = refuseMismatchedProtocol(c, parsed.value);
 			if (refusal) return refusal;
 			try {
+				const selected = selectAuthority(c);
 				return c.json(
-					await resolveRecords(c.env).acquire(partition(c), parsed.value),
+					await selected.authority.acquire(selected.workspaceId, parsed.value),
 				);
 			} catch (cause) {
 				if (cause instanceof TypeError) return invalidRequest(c, 'invalid');
 				throw cause;
 			}
+		})
+		// Workspace deletion is never refused (ADR-0145): it is a pure authority
+		// transaction that shrinks the database and closes the workspace's document
+		// sockets after commit. Account deletion is a separate operation because it
+		// coordinates authority storage, R2, and authentication-owned records.
+		.delete(WORKSPACE_ROUTE, async (c) => {
+			const selected = selectAuthority(c);
+			await selected.authority.deleteWorkspace(selected.workspaceId);
+			return c.body(null, 204);
 		});
 }
 
@@ -154,17 +179,17 @@ export function mountCurrentStateRecordsApp<E extends Env = Env>(
 	app: Hono<E>,
 	{
 		auth,
-		resolveRecords,
+		resolveAuthorities,
 		admitFirstContact,
 	}: {
 		auth: MiddlewareHandler<E>;
-		resolveRecords: (env: E['Bindings']) => CurrentStateRecords;
+		resolveAuthorities: (env: E['Bindings']) => AccountAuthorities;
 		admitFirstContact?: AdmitFirstContact<E>;
 	},
 ): void {
 	app.use(`${WORKSPACES_PREFIX}/*`, auth);
 	app.route(
 		'/',
-		createCurrentStateRecordsApp(resolveRecords, admitFirstContact),
+		createCurrentStateRecordsApp(resolveAuthorities, admitFirstContact),
 	);
 }

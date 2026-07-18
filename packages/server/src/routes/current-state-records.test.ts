@@ -1,14 +1,15 @@
 /**
  * Workspace Authority Route Tests
  *
- * Proves that route parsing and authentication select the records partition
- * directly from the authenticated principal and bounded workspace route.
+ * Proves that route parsing and authentication resolve one account authority
+ * from the authenticated principal alone, with the bounded workspace id as an
+ * operation argument.
  */
 
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { asPrincipalId } from '@epicenter/identity';
+import { asPrincipalId, type PrincipalId } from '@epicenter/identity';
 import {
 	type AcquireRequest,
 	CURRENT_STATE_ROW_SYNC_PROTOCOL_MAJOR,
@@ -19,8 +20,8 @@ import {
 } from '@epicenter/row-sync';
 import { Hono } from 'hono';
 import type {
-	CurrentStateRecords,
-	CurrentStateRecordsPartition,
+	AccountAuthorities,
+	AccountAuthority,
 } from '../records/current-state-contracts.js';
 import type { Env } from '../types.js';
 import {
@@ -28,80 +29,94 @@ import {
 	mountCurrentStateRecordsApp,
 } from './current-state-records.js';
 
+type OperationCall = { principalId: PrincipalId; workspaceId: string };
+
 function setup({
 	fail,
 	admitFirstContact,
 	hasReplica = false,
 	isAuthenticated = true,
 }: {
-	fail?: keyof CurrentStateRecords;
+	fail?: 'deleteWorkspace' | 'hasReplica' | 'push' | 'pull' | 'acquire';
 	admitFirstContact?: AdmitFirstContact;
 	hasReplica?: boolean;
 	isAuthenticated?: boolean;
 } = {}) {
-	const partitionCalls: CurrentStateRecordsPartition[] = [];
-	let backendResolutions = 0;
-	const records: CurrentStateRecords = {
-		async deleteWorkspace(partition) {
-			partitionCalls.push(partition);
-			if (fail === 'deleteWorkspace') throw new TypeError('invalid deletion');
-		},
-		async hasReplica(partition) {
-			partitionCalls.push(partition);
-			if (fail === 'hasReplica') throw new TypeError('invalid replica lookup');
-			return hasReplica;
-		},
-		async push(partition, request) {
-			partitionCalls.push(partition);
-			if (fail === 'push') throw new TypeError('invalid push');
-			return {
-				result: 'accepted',
-				receipt: {
-					acceptedRound: request.round,
-					requestDigest: request.requestDigest,
-					appliedThrough: request.intents.length,
-				},
-			};
-		},
-		async pull(partition, request) {
-			partitionCalls.push(partition);
-			if (fail === 'pull') throw new TypeError('invalid pull');
-			return {
-				result: 'page',
-				receipt: {
-					acceptedRound: 1,
-					requestDigest: 'digest',
-					appliedThrough: 1,
-				},
-				through: request.through ?? 1,
-				checkpoint: request.through ?? 1,
-				retentionFloor: 0,
-				entries: [],
-			};
-		},
-		async acquire(partition) {
-			partitionCalls.push(partition);
-			if (fail === 'acquire') throw new TypeError('invalid acquire');
-			return {
-				result: 'page',
-				receipt: {
-					acceptedRound: 1,
-					requestDigest: 'digest',
-					appliedThrough: 1,
-				},
-				rows: [],
-				head: 1,
-				retentionFloor: 0,
-				hasMore: false,
-			};
+	const operationCalls: OperationCall[] = [];
+	let authorityResolutions = 0;
+	function authority(principalId: PrincipalId): AccountAuthority {
+		authorityResolutions += 1;
+		return {
+			async deleteWorkspace(workspaceId) {
+				operationCalls.push({ principalId, workspaceId });
+				if (fail === 'deleteWorkspace') throw new TypeError('invalid deletion');
+			},
+			async hasReplica(workspaceId) {
+				operationCalls.push({ principalId, workspaceId });
+				if (fail === 'hasReplica') throw new TypeError('invalid replica lookup');
+				return hasReplica;
+			},
+			async push(workspaceId, request) {
+				operationCalls.push({ principalId, workspaceId });
+				if (fail === 'push') throw new TypeError('invalid push');
+				return {
+					result: 'accepted',
+					receipt: {
+						acceptedRound: request.round,
+						requestDigest: request.requestDigest,
+						appliedThrough: request.intents.length,
+					},
+				};
+			},
+			async pull(workspaceId, request) {
+				operationCalls.push({ principalId, workspaceId });
+				if (fail === 'pull') throw new TypeError('invalid pull');
+				return {
+					result: 'page',
+					receipt: {
+						acceptedRound: 1,
+						requestDigest: 'digest',
+						appliedThrough: 1,
+					},
+					through: request.through ?? 1,
+					checkpoint: request.through ?? 1,
+					retentionFloor: 0,
+					entries: [],
+				};
+			},
+			async acquire(workspaceId) {
+				operationCalls.push({ principalId, workspaceId });
+				if (fail === 'acquire') throw new TypeError('invalid acquire');
+				return {
+					result: 'page',
+					receipt: {
+						acceptedRound: 1,
+						requestDigest: 'digest',
+						appliedThrough: 1,
+					},
+					rows: [],
+					head: 1,
+					retentionFloor: 0,
+					hasMore: false,
+				};
+			},
+			async databaseSize() {
+				return 0;
+			},
+			acceptDocumentUpgrade() {
+				return new Response(null, { status: 500 });
+			},
+		};
+	}
+	const authorities: AccountAuthorities = {
+		authority,
+		rejectDocumentUpgrade() {
+			return new Response(null, { status: 500 });
 		},
 	};
 	const app = new Hono<Env>();
 	mountCurrentStateRecordsApp(app, {
-		resolveRecords: () => {
-			backendResolutions += 1;
-			return records;
-		},
+		resolveAuthorities: () => authorities,
 		admitFirstContact,
 		auth: async (c, next) => {
 			if (!isAuthenticated) return new Response(null, { status: 401 });
@@ -113,9 +128,9 @@ function setup({
 	});
 	return {
 		app,
-		partitionCalls,
-		get backendResolutions() {
-			return backendResolutions;
+		operationCalls,
+		get authorityResolutions() {
+			return authorityResolutions;
 		},
 	};
 }
@@ -163,7 +178,7 @@ function post(
 	);
 }
 
-test('every scalar operation passes the authenticated records partition', async () => {
+test('every scalar operation enters one resolved account authority', async () => {
 	const context = setup();
 	const responses = await Promise.all([
 		post(context.app, 'push', push),
@@ -172,24 +187,60 @@ test('every scalar operation passes the authenticated records partition', async 
 	]);
 
 	expect(responses.map(({ status }) => status)).toEqual([200, 200, 200]);
-	expect(context.partitionCalls).toEqual(
+	expect(context.operationCalls).toEqual(
 		Array.from({ length: 4 }, () => ({
 			principalId: asPrincipalId('alice'),
 			workspaceId: 'wiki',
 		})),
 	);
-	expect(context.backendResolutions).toBe(3);
+	// One authority resolution per request; push reuses its handle for the
+	// replica lookup and the dispatch.
+	expect(context.authorityResolutions).toBe(3);
 });
 
-test('authenticated principals select independent records partitions', async () => {
+test('authenticated principals select independent account authorities', async () => {
 	const context = setup();
 	await post(context.app, 'pull', pull, { 'x-test-principal': 'alice' });
 	await post(context.app, 'pull', pull, { 'x-test-principal': 'bob' });
 
-	expect(context.partitionCalls).toEqual([
+	expect(context.operationCalls).toEqual([
 		{ principalId: asPrincipalId('alice'), workspaceId: 'wiki' },
 		{ principalId: asPrincipalId('bob'), workspaceId: 'wiki' },
 	]);
+});
+
+test('workspace deletion is a mounted authenticated operation', async () => {
+	const context = setup();
+	const response = await context.app.request('/api/workspaces/wiki', {
+		method: 'DELETE',
+	});
+
+	expect(response.status).toBe(204);
+	expect(context.operationCalls).toEqual([
+		{ principalId: asPrincipalId('alice'), workspaceId: 'wiki' },
+	]);
+});
+
+test('workspace deletion requires authentication and a bounded id', async () => {
+	const unauthenticated = setup({ isAuthenticated: false });
+	expect(
+		(
+			await unauthenticated.app.request('/api/workspaces/wiki', {
+				method: 'DELETE',
+			})
+		).status,
+	).toBe(401);
+	expect(unauthenticated.operationCalls).toEqual([]);
+
+	const context = setup();
+	expect(
+		(
+			await context.app.request(`/api/workspaces/${'w'.repeat(513)}`, {
+				method: 'DELETE',
+			})
+		).status,
+	).toBe(400);
+	expect(context.operationCalls).toEqual([]);
 });
 
 test('the workspace creation route is absent', async () => {
@@ -199,7 +250,7 @@ test('the workspace creation route is absent', async () => {
 	});
 
 	expect(response.status).toBe(404);
-	expect(context.backendResolutions).toBe(0);
+	expect(context.authorityResolutions).toBe(0);
 });
 
 test('the enrollment route is absent', async () => {
@@ -211,8 +262,8 @@ test('the enrollment route is absent', async () => {
 	});
 
 	expect(response.status).toBe(404);
-	expect(context.backendResolutions).toBe(0);
-	expect(context.partitionCalls).toEqual([]);
+	expect(context.authorityResolutions).toBe(0);
+	expect(context.operationCalls).toEqual([]);
 });
 
 test('authentication protects every data operation', async () => {
@@ -224,10 +275,10 @@ test('authentication protects every data operation', async () => {
 	] as const) {
 		expect((await post(context.app, method, body)).status).toBe(401);
 	}
-	expect(context.partitionCalls).toEqual([]);
+	expect(context.operationCalls).toEqual([]);
 });
 
-test('invalid bodies and protocol mismatch stop before backend resolution', async () => {
+test('invalid bodies and protocol mismatch stop before authority resolution', async () => {
 	const context = setup();
 	const malformed = await context.app.request(
 		'/api/workspaces/wiki/records/push',
@@ -248,11 +299,11 @@ test('invalid bodies and protocol mismatch stop before backend resolution', asyn
 	expect((await mismatch.json()) as unknown).toEqual({
 		result: 'protocol-mismatch',
 	});
-	expect(context.partitionCalls).toEqual([]);
-	expect(context.backendResolutions).toBe(0);
+	expect(context.operationCalls).toEqual([]);
+	expect(context.authorityResolutions).toBe(0);
 });
 
-test('workspace and body bounds stop before backend resolution', async () => {
+test('workspace and body bounds stop before authority resolution', async () => {
 	const context = setup();
 	const oversizedWorkspace = 'w'.repeat(513);
 	expect(
@@ -270,15 +321,23 @@ test('workspace and body bounds stop before backend resolution', async () => {
 			})
 		).status,
 	).toBe(413);
-	expect(context.partitionCalls).toEqual([]);
-	expect(context.backendResolutions).toBe(0);
+	expect(context.operationCalls).toEqual([]);
+	expect(context.authorityResolutions).toBe(0);
 });
 
-test('first-contact admission receives the records partition before push', async () => {
-	const issued: CurrentStateRecordsPartition[] = [];
+test('first-contact admission receives the already-resolved authority', async () => {
+	const issued: {
+		principalId: PrincipalId;
+		workspaceId: string;
+		accountBytes: number;
+	}[] = [];
 	const context = setup({
-		admitFirstContact: async (_c, partition) => {
-			issued.push(partition);
+		admitFirstContact: async (_c, { authority, principalId, workspaceId }) => {
+			issued.push({
+				principalId,
+				workspaceId,
+				accountBytes: await authority.databaseSize(),
+			});
 			return 'allow';
 		},
 	});
@@ -286,9 +345,15 @@ test('first-contact admission receives the records partition before push', async
 
 	expect(response.status).toBe(200);
 	expect(issued).toEqual([
-		{ principalId: asPrincipalId('alice'), workspaceId: 'wiki' },
+		{
+			principalId: asPrincipalId('alice'),
+			workspaceId: 'wiki',
+			accountBytes: 0,
+		},
 	]);
-	expect(context.partitionCalls).toEqual([
+	// The admission callback shares the push's single authority resolution.
+	expect(context.authorityResolutions).toBe(1);
+	expect(context.operationCalls).toEqual([
 		{ principalId: asPrincipalId('alice'), workspaceId: 'wiki' },
 		{ principalId: asPrincipalId('alice'), workspaceId: 'wiki' },
 	]);
@@ -302,7 +367,7 @@ test('refused first contact returns storage-limit without dispatching push', asy
 	expect((await response.json()) as unknown).toEqual({
 		result: 'storage-limit',
 	});
-	expect(context.partitionCalls).toEqual([
+	expect(context.operationCalls).toEqual([
 		{ principalId: asPrincipalId('alice'), workspaceId: 'wiki' },
 	]);
 });
@@ -342,7 +407,7 @@ test('the old records route is absent', async () => {
 			})
 		).status,
 	).toBe(404);
-	expect(context.partitionCalls).toEqual([]);
+	expect(context.operationCalls).toEqual([]);
 });
 
 test('new production modules never call deleted authority operations', () => {

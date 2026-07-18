@@ -5,8 +5,6 @@ import {
 } from '@epicenter/sync/document-v3';
 import * as Y from '@y/y';
 
-export type DocumentAppendResult = 'appended' | 'refused' | 'too-large';
-
 export type DocumentHubStore = {
 	/** Atomically recheck row liveness and load its document in one snapshot. */
 	openIfLive(address: RowAddress): readonly Uint8Array[] | undefined;
@@ -14,7 +12,10 @@ export type DocumentHubStore = {
 	 * Atomically recheck row liveness, validate the candidate against committed
 	 * document state, and append its exact bytes only when it is still live.
 	 */
-	appendIfLive(address: RowAddress, update: Uint8Array): DocumentAppendResult;
+	appendIfLive(
+		address: RowAddress,
+		update: Uint8Array,
+	): 'appended' | 'refused' | 'too-large';
 };
 
 export type DocumentHubSocket = {
@@ -165,4 +166,3 @@ function tryClose(
 	}
 }
 
-export type DocumentHubCore = ReturnType<typeof createDocumentHubCore>;

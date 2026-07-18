@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import type { PrincipalId } from '@epicenter/identity';
 import type { RowAddress } from '@epicenter/row-sync';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import {
@@ -9,25 +10,21 @@ import {
 	encodeDocumentFrame,
 } from '@epicenter/sync/document-v3';
 import type { Server, ServerWebSocket, WebSocketHandler } from 'bun';
-import type { WorkspaceDocuments } from '../document-hub/contracts.js';
 import {
 	createDocumentHubCore,
 	type DocumentHubSocket,
 } from '../document-hub/core.js';
 import { sanitizeUpgradeSubprotocols } from '../sanitize-upgrade-subprotocols.js';
-import {
-	type AccountRowAuthority,
-	openAccountRowAuthority,
-} from '../workspace-authority/authority.js';
+import { openAccountRowAuthority } from '../workspace-authority/authority.js';
 import { runCurrentStateTransportCompaction } from './current-state-compaction.js';
 import type {
-	CurrentStateRecords,
-	CurrentStateRecordsPartition,
+	AccountAuthorities,
+	AccountAuthority,
 } from './current-state-contracts.js';
 
 type OpenAuthority = {
 	database: Database;
-	authority: AccountRowAuthority;
+	authority: ReturnType<typeof openAccountRowAuthority>;
 	hubs: Map<string, ReturnType<typeof createDocumentHubCore>>;
 };
 
@@ -35,7 +32,8 @@ export type BunWorkspaceDocumentSocketData =
 	| {
 			surface: 'workspace-document';
 			kind: 'document';
-			partition: CurrentStateRecordsPartition;
+			principalId: PrincipalId;
+			workspaceId: string;
 			address: RowAddress;
 			authorizationExpiresAt: number;
 			connected: boolean;
@@ -51,10 +49,7 @@ function encodePathComponent(value: string): string {
 	return encodeURIComponent(value).replaceAll('.', '%2E');
 }
 
-function databasePath(
-	dir: string,
-	principalId: CurrentStateRecordsPartition['principalId'],
-): string {
+function databasePath(dir: string, principalId: PrincipalId): string {
 	const principalDir = join(
 		dir,
 		'principals',
@@ -64,10 +59,14 @@ function databasePath(
 	return join(principalDir, 'authority.sqlite');
 }
 
-/** Open persistent current-state account authorities in one Bun directory. */
-export function createCurrentStateBunRecords({ dir }: { dir: string }) {
+/**
+ * The Bun account-authority runtime: persistent per-principal SQLite
+ * authorities, their document hubs and sockets, credential expiry, and
+ * shutdown, behind one route-facing `AccountAuthorities` locator.
+ */
+export function createBunAccountAuthorityRuntime({ dir }: { dir: string }) {
 	mkdirSync(dir, { recursive: true });
-	const authorities = new Map<string, OpenAuthority>();
+	const openAuthorities = new Map<string, OpenAuthority>();
 	const activeSockets = new Set<
 		ServerWebSocket<BunWorkspaceDocumentSocketData>
 	>();
@@ -82,11 +81,9 @@ export function createCurrentStateBunRecords({ dir }: { dir: string }) {
 		return JSON.stringify([workspaceId, address.table, address.rowId]);
 	}
 
-	function load(
-		principalId: CurrentStateRecordsPartition['principalId'],
-	): OpenAuthority {
-		if (isClosed) throw new Error('Bun account authority backend is closed');
-		const cached = authorities.get(principalId);
+	function load(principalId: PrincipalId): OpenAuthority {
+		if (isClosed) throw new Error('Bun account authority runtime is closed');
+		const cached = openAuthorities.get(principalId);
 		if (cached) return cached;
 
 		const database = new Database(databasePath(dir, principalId), {
@@ -97,21 +94,10 @@ export function createCurrentStateBunRecords({ dir }: { dir: string }) {
 			database.run('PRAGMA journal_mode = WAL');
 			const authority = openAccountRowAuthority({
 				database: createBunSqliteAdapter(database),
-				readDatabaseSize: () => {
-					const pageCount = database
-						.query<{ page_count: number }, []>('PRAGMA page_count')
-						.get()?.page_count;
-					const pageSize = database
-						.query<{ page_size: number }, []>('PRAGMA page_size')
-						.get()?.page_size;
-					if (pageCount === undefined || pageSize === undefined) {
-						throw new Error('Could not read authority SQLite size');
-					}
-					return pageCount * pageSize;
-				},
+				readDatabaseSize: () => readDatabaseSize(database),
 			});
 			const opened = { database, authority, hubs: new Map() };
-			authorities.set(principalId, opened);
+			openAuthorities.set(principalId, opened);
 			return opened;
 		} catch (error) {
 			database.close();
@@ -119,17 +105,31 @@ export function createCurrentStateBunRecords({ dir }: { dir: string }) {
 		}
 	}
 
+	function readDatabaseSize(database: Database): number {
+		const pageCount = database
+			.query<{ page_count: number }, []>('PRAGMA page_count')
+			.get()?.page_count;
+		const pageSize = database
+			.query<{ page_size: number }, []>('PRAGMA page_size')
+			.get()?.page_size;
+		if (pageCount === undefined || pageSize === undefined) {
+			throw new Error('Could not read authority SQLite size');
+		}
+		return pageCount * pageSize;
+	}
+
 	function hub(
-		partition: CurrentStateRecordsPartition,
+		principalId: PrincipalId,
+		workspaceId: string,
 		address: RowAddress,
 	): ReturnType<typeof createDocumentHubCore> {
-		const opened = load(partition.principalId);
-		const key = addressKey(partition.workspaceId, address);
+		const opened = load(principalId);
+		const key = addressKey(workspaceId, address);
 		let documentHub = opened.hubs.get(key);
 		if (!documentHub) {
 			documentHub = createDocumentHubCore({
 				address,
-				store: opened.authority.workspace(partition.workspaceId).documents,
+				store: opened.authority.workspace(workspaceId).documents,
 			});
 			opened.hubs.set(key, documentHub);
 		}
@@ -155,11 +155,8 @@ export function createCurrentStateBunRecords({ dir }: { dir: string }) {
 	): void {
 		activeSockets.delete(socket);
 		if (socket.data.kind !== 'document' || !socket.data.connected) return;
-		const opened = authorities.get(socket.data.partition.principalId);
-		const key = addressKey(
-			socket.data.partition.workspaceId,
-			socket.data.address,
-		);
+		const opened = openAuthorities.get(socket.data.principalId);
+		const key = addressKey(socket.data.workspaceId, socket.data.address);
 		const documentHub = opened?.hubs.get(key);
 		if (!documentHub) return;
 		documentHub.disconnect(socketAdapter(socket));
@@ -168,89 +165,115 @@ export function createCurrentStateBunRecords({ dir }: { dir: string }) {
 		}
 	}
 
-	const records: CurrentStateRecords = {
-		async deleteWorkspace(partition) {
-			const opened = load(partition.principalId);
-			opened.authority.deleteWorkspace(partition.workspaceId);
-			for (const socket of activeSockets) {
-				if (
-					socket.data.kind !== 'document' ||
-					socket.data.partition.principalId !== partition.principalId ||
-					socket.data.partition.workspaceId !== partition.workspaceId
-				) {
-					continue;
-				}
-				disconnect(socket);
-				socket.close(1000, 'not-live');
+	function deleteWorkspace(
+		principalId: PrincipalId,
+		workspaceId: string,
+	): void {
+		const opened = load(principalId);
+		opened.authority.deleteWorkspace(workspaceId);
+		for (const socket of activeSockets) {
+			if (
+				socket.data.kind !== 'document' ||
+				socket.data.principalId !== principalId ||
+				socket.data.workspaceId !== workspaceId
+			) {
+				continue;
 			}
-			const keyPrefix = JSON.stringify([partition.workspaceId]).slice(0, -1);
-			for (const [key, documentHub] of opened.hubs) {
-				if (!key.startsWith(keyPrefix)) continue;
-				documentHub.closeAll();
-				opened.hubs.delete(key);
-			}
-		},
-		async hasReplica(partition, replicaId) {
-			return load(partition.principalId)
-				.authority.workspace(partition.workspaceId)
-				.hasReplica(replicaId);
-		},
-		async push(partition, request) {
-			const opened = load(partition.principalId);
-			const authority = opened.authority.workspace(partition.workspaceId);
-			const response = authority.push(request);
-			if (response.result === 'accepted') {
-				for (const intent of request.intents) {
-					if (intent.kind !== 'delete') continue;
-					const address = { table: intent.table, rowId: intent.rowId };
-					const key = addressKey(partition.workspaceId, address);
-					const documentHub = opened.hubs.get(key);
-					if (documentHub) {
-						documentHub.closeAll();
-						opened.hubs.delete(key);
-					}
-				}
-				runCurrentStateTransportCompaction(
-					authority.compactThrough,
-					response.receipt,
-				);
-			}
-			return response;
-		},
-		async pull(partition, request) {
-			return load(partition.principalId)
-				.authority.workspace(partition.workspaceId)
-				.pull(request);
-		},
-		async acquire(partition, request) {
-			return load(partition.principalId)
-				.authority.workspace(partition.workspaceId)
-				.acquire(request);
-		},
-	};
+			disconnect(socket);
+			socket.close(1000, 'not-live');
+		}
+		const keyPrefix = JSON.stringify([workspaceId]).slice(0, -1);
+		for (const [key, documentHub] of opened.hubs) {
+			if (!key.startsWith(keyPrefix)) continue;
+			documentHub.closeAll();
+			opened.hubs.delete(key);
+		}
+	}
 
-	const documents: WorkspaceDocuments = {
-		handleUpgrade({ partition, address, authorizationExpiresAt, request }) {
-			if (!server) {
-				return new Response('workspace document server not bound', {
-					status: 500,
-				});
-			}
-			load(partition.principalId);
-			const data: BunWorkspaceDocumentSocketData = {
-				surface: 'workspace-document',
-				kind: 'document',
-				partition,
-				address,
-				authorizationExpiresAt,
-				connected: false,
-			};
-			sanitizeUpgradeSubprotocols(request, DOCUMENT_SUBPROTOCOL);
-			return server.upgrade(request, { data })
-				? new Response(null)
-				: new Response('expected a WebSocket upgrade', { status: 426 });
+	function acceptDocumentUpgrade(
+		principalId: PrincipalId,
+		input: {
+			workspaceId: string;
+			address: RowAddress;
+			authorizationExpiresAt: number;
+			request: Request;
 		},
-		rejectUpgrade({ request, code, reason }) {
+	): Response {
+		if (!server) {
+			return new Response('workspace document server not bound', {
+				status: 500,
+			});
+		}
+		load(principalId);
+		const data: BunWorkspaceDocumentSocketData = {
+			surface: 'workspace-document',
+			kind: 'document',
+			principalId,
+			workspaceId: input.workspaceId,
+			address: input.address,
+			authorizationExpiresAt: input.authorizationExpiresAt,
+			connected: false,
+		};
+		sanitizeUpgradeSubprotocols(input.request, DOCUMENT_SUBPROTOCOL);
+		return server.upgrade(input.request, { data })
+			? new Response(null)
+			: new Response('expected a WebSocket upgrade', { status: 426 });
+	}
+
+	const authorities: AccountAuthorities = {
+		// Every operation re-enters load(principalId) so the closed-state guard
+		// keeps firing even when a handle is held across an awaited admission step.
+		authority(principalId): AccountAuthority {
+			return {
+				async hasReplica(workspaceId, replicaId) {
+					return load(principalId)
+						.authority.workspace(workspaceId)
+						.hasReplica(replicaId);
+				},
+				async push(workspaceId, request) {
+					const opened = load(principalId);
+					const authority = opened.authority.workspace(workspaceId);
+					const response = authority.push(request);
+					if (response.result === 'accepted') {
+						for (const intent of request.intents) {
+							if (intent.kind !== 'delete') continue;
+							const address = { table: intent.table, rowId: intent.rowId };
+							const key = addressKey(workspaceId, address);
+							const documentHub = opened.hubs.get(key);
+							if (documentHub) {
+								documentHub.closeAll();
+								opened.hubs.delete(key);
+							}
+						}
+						runCurrentStateTransportCompaction(
+							authority.compactThrough,
+							response.receipt,
+						);
+					}
+					return response;
+				},
+				async pull(workspaceId, request) {
+					return load(principalId)
+						.authority.workspace(workspaceId)
+						.pull(request);
+				},
+				async acquire(workspaceId, request) {
+					return load(principalId)
+						.authority.workspace(workspaceId)
+						.acquire(request);
+				},
+				async deleteWorkspace(workspaceId) {
+					deleteWorkspace(principalId, workspaceId);
+				},
+				async databaseSize() {
+					return readDatabaseSize(load(principalId).database);
+				},
+				acceptDocumentUpgrade(input) {
+					return acceptDocumentUpgrade(principalId, input);
+				},
+			};
+		},
+		rejectDocumentUpgrade({ request, code, reason }) {
 			if (!server) {
 				return new Response('workspace document server not bound', {
 					status: 500,
@@ -292,7 +315,11 @@ export function createCurrentStateBunRecords({ dir }: { dir: string }) {
 					throw new TypeError('Document frames are binary');
 				}
 				const frame = decodeDocumentFrame(new Uint8Array(message));
-				const documentHub = hub(socket.data.partition, socket.data.address);
+				const documentHub = hub(
+					socket.data.principalId,
+					socket.data.workspaceId,
+					socket.data.address,
+				);
 				if (!socket.data.connected) {
 					if (frame.kind !== 'sync-request') {
 						throw new TypeError('First document frame must be sync-request');
@@ -329,8 +356,7 @@ export function createCurrentStateBunRecords({ dir }: { dir: string }) {
 	expirySweep.unref();
 
 	return {
-		records,
-		documents,
+		authorities,
 		websocket,
 		bindServer(bound: Server<BunWorkspaceDocumentSocketData>): void {
 			server = bound;
@@ -339,12 +365,16 @@ export function createCurrentStateBunRecords({ dir }: { dir: string }) {
 			if (isClosed) return;
 			isClosed = true;
 			clearInterval(expirySweep);
-			for (const { database } of authorities.values()) database.close();
-			authorities.clear();
+			for (const socket of [...activeSockets]) {
+				disconnect(socket);
+				socket.close(1001, 'server-shutdown');
+			}
+			for (const { database } of openAuthorities.values()) database.close();
+			openAuthorities.clear();
 		},
 	};
 }
 
-export type CurrentStateBunRecords = ReturnType<
-	typeof createCurrentStateBunRecords
+export type BunAccountAuthorityRuntime = ReturnType<
+	typeof createBunAccountAuthorityRuntime
 >;

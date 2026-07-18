@@ -1,4 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
+import type { PrincipalId } from '@epicenter/identity';
 import type {
 	AcquireRequest,
 	AcquireResponse,
@@ -16,30 +17,20 @@ import {
 	CLOUDFLARE_DOCUMENT_INTERNAL_HEADERS,
 	CloudflareWorkspaceDocumentRuntime,
 } from '../document-hub/cloudflare.js';
-import type { WorkspaceDocuments } from '../document-hub/contracts.js';
-import {
-	type AccountRowAuthority,
-	openAccountRowAuthority,
-} from '../workspace-authority/authority.js';
+import { openAccountRowAuthority } from '../workspace-authority/authority.js';
 import { runCurrentStateTransportCompaction } from './current-state-compaction.js';
 import type {
-	CurrentStateRecords,
-	CurrentStateRecordsPartition,
+	AccountAuthorities,
+	AccountAuthority,
 } from './current-state-contracts.js';
 
-function principalName(
-	principalId: CurrentStateRecordsPartition['principalId'],
-): string {
+function principalName(principalId: PrincipalId): string {
 	return encodeURIComponent(principalId).replaceAll('.', '%2E');
-}
-
-function partitionName({ principalId }: CurrentStateRecordsPartition): string {
-	return principalName(principalId);
 }
 
 /** One server-owned current-state account authority in Durable Object SQLite. */
 export class CurrentStateRowAuthorityDurableObject extends DurableObject {
-	private readonly authority: AccountRowAuthority;
+	private readonly authority: ReturnType<typeof openAccountRowAuthority>;
 	private readonly documents: CloudflareWorkspaceDocumentRuntime;
 
 	constructor(ctx: DurableObjectState, env: Cloudflare.Env) {
@@ -128,32 +119,67 @@ export class CurrentStateRowAuthorityDurableObject extends DurableObject {
 	}
 }
 
-/** Route authorized document upgrades into the principal's account authority. */
-export function createCurrentStateDurableObjectDocuments(
+type AccountAuthorityRpc = {
+	deleteWorkspace(workspaceId: string): Promise<void>;
+	hasReplica(workspaceId: string, replicaId: string): Promise<boolean>;
+	push(workspaceId: string, request: PushRequest): Promise<PushResponse>;
+	pull(workspaceId: string, request: PullRequest): Promise<PullResponse>;
+	acquire(
+		workspaceId: string,
+		request: AcquireRequest,
+	): Promise<AcquireResponse>;
+	databaseSize(): Promise<number>;
+};
+
+/** Locate account authorities over one Durable Object namespace. */
+export function createDurableObjectAccountAuthorities(
 	namespace: DurableObjectNamespace<CurrentStateRowAuthorityDurableObject>,
-): WorkspaceDocuments {
+): AccountAuthorities {
 	return {
-		handleUpgrade({ partition, address, authorizationExpiresAt, request }) {
-			const headers = new Headers(request.headers);
-			headers.set('sec-websocket-protocol', DOCUMENT_SUBPROTOCOL);
-			headers.set(
-				CLOUDFLARE_DOCUMENT_INTERNAL_HEADERS.workspace,
-				partition.workspaceId,
-			);
-			headers.set(CLOUDFLARE_DOCUMENT_INTERNAL_HEADERS.table, address.table);
-			headers.set(CLOUDFLARE_DOCUMENT_INTERNAL_HEADERS.row, address.rowId);
-			headers.set(
-				CLOUDFLARE_DOCUMENT_INTERNAL_HEADERS.authorizationExpiresAt,
-				String(authorizationExpiresAt),
-			);
-			return namespace.getByName(partitionName(partition)).fetch(
-				new Request('https://workspace-authority.internal/document', {
-					method: 'GET',
-					headers,
-				}),
-			);
+		authority(principalId): AccountAuthority {
+			const stub = () =>
+				namespace.getByName(
+					principalName(principalId),
+				) as unknown as AccountAuthorityRpc;
+			return {
+				hasReplica: (workspaceId, replicaId) =>
+					stub().hasReplica(workspaceId, replicaId),
+				push: (workspaceId, request) => stub().push(workspaceId, request),
+				pull: (workspaceId, request) => stub().pull(workspaceId, request),
+				acquire: (workspaceId, request) => stub().acquire(workspaceId, request),
+				deleteWorkspace: (workspaceId) => stub().deleteWorkspace(workspaceId),
+				databaseSize: () => stub().databaseSize(),
+				acceptDocumentUpgrade({
+					workspaceId,
+					address,
+					authorizationExpiresAt,
+					request,
+				}) {
+					const headers = new Headers(request.headers);
+					headers.set('sec-websocket-protocol', DOCUMENT_SUBPROTOCOL);
+					headers.set(
+						CLOUDFLARE_DOCUMENT_INTERNAL_HEADERS.workspace,
+						workspaceId,
+					);
+					headers.set(
+						CLOUDFLARE_DOCUMENT_INTERNAL_HEADERS.table,
+						address.table,
+					);
+					headers.set(CLOUDFLARE_DOCUMENT_INTERNAL_HEADERS.row, address.rowId);
+					headers.set(
+						CLOUDFLARE_DOCUMENT_INTERNAL_HEADERS.authorizationExpiresAt,
+						String(authorizationExpiresAt),
+					);
+					return namespace.getByName(principalName(principalId)).fetch(
+						new Request('https://workspace-authority.internal/document', {
+							method: 'GET',
+							headers,
+						}),
+					);
+				},
+			};
 		},
-		rejectUpgrade({ code, reason }) {
+		rejectDocumentUpgrade({ code, reason }) {
 			const pair = new WebSocketPair();
 			const [client, server] = [pair[0], pair[1]];
 			server.accept();
@@ -165,53 +191,4 @@ export function createCurrentStateDurableObjectDocuments(
 			});
 		},
 	};
-}
-
-type CurrentStateRecordsRpc = {
-	deleteWorkspace(workspaceId: string): Promise<void>;
-	hasReplica(workspaceId: string, replicaId: string): Promise<boolean>;
-	push(workspaceId: string, request: PushRequest): Promise<PushResponse>;
-	pull(workspaceId: string, request: PullRequest): Promise<PullResponse>;
-	acquire(
-		workspaceId: string,
-		request: AcquireRequest,
-	): Promise<AcquireResponse>;
-};
-
-/** Build current-state records over an account Durable Object namespace. */
-export function createCurrentStateDurableObjectRecords(
-	namespace: DurableObjectNamespace<CurrentStateRowAuthorityDurableObject>,
-): CurrentStateRecords {
-	function get(
-		partition: CurrentStateRecordsPartition,
-	): CurrentStateRecordsRpc {
-		return namespace.getByName(
-			partitionName(partition),
-		) as unknown as CurrentStateRecordsRpc;
-	}
-
-	return {
-		deleteWorkspace: (partition) =>
-			get(partition).deleteWorkspace(partition.workspaceId),
-		hasReplica: (partition, replicaId) =>
-			get(partition).hasReplica(partition.workspaceId, replicaId),
-		push: (partition, request) =>
-			get(partition).push(partition.workspaceId, request),
-		pull: (partition, request) =>
-			get(partition).pull(partition.workspaceId, request),
-		acquire: (partition, request) =>
-			get(partition).acquire(partition.workspaceId, request),
-	};
-}
-
-/** Read one current-state account authority's absolute physical size. */
-export function readCurrentStateAccountDatabaseSize(
-	namespace: DurableObjectNamespace<CurrentStateRowAuthorityDurableObject>,
-	principalId: CurrentStateRecordsPartition['principalId'],
-): Promise<number> {
-	return (
-		namespace.getByName(principalName(principalId)) as unknown as {
-			databaseSize(): Promise<number>;
-		}
-	).databaseSize();
 }

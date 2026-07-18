@@ -43,8 +43,8 @@ function setup({
 			events.push('list');
 			return observations;
 		},
-		async readAccountBytes(principalId: typeof partition.principalId) {
-			events.push(`read:${principalId}`);
+		async readAccountBytes() {
+			events.push('read:authority');
 			return accountBytes;
 		},
 		async upsertObservation(
@@ -81,7 +81,7 @@ test('unseen workspace is registered at zero before first push', async () => {
 	);
 	expect(context.events).toEqual([
 		'list',
-		'read:alice',
+		'read:authority',
 		'upsert:account',
 		'allowance',
 		'upsert:target',

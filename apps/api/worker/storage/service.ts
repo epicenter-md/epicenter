@@ -8,15 +8,18 @@
  */
 
 import type { PrincipalId } from '@epicenter/identity';
-import type {
-	CurrentStateRecordsPartition,
-	StorageObservation,
-} from '@epicenter/server';
+import type { StorageObservation } from '@epicenter/server';
 import { extractErrorMessage } from 'wellcrafted/error';
 
+export type StorageAdmissionTarget = {
+	principalId: PrincipalId;
+	workspaceId: string;
+};
+
 export type StorageAdmissionDependencies = {
-	listObservations(principalId: PrincipalId): Promise<StorageObservation[]>;
-	readAccountBytes(principalId: PrincipalId): Promise<number>;
+	listObservations(): Promise<StorageObservation[]>;
+	/** The already-resolved account authority's physical size. */
+	readAccountBytes(): Promise<number>;
 	upsertObservation(
 		observation: StorageObservation & { principalId: PrincipalId },
 	): Promise<void>;
@@ -35,20 +38,20 @@ export async function admitRegisteredStorageFirstContact(
 		listObservations,
 		reportError = console.error,
 	}: RegisteredStorageAdmissionDependencies,
-	partition: CurrentStateRecordsPartition,
+	target: StorageAdmissionTarget,
 ): Promise<'allow' | 'refuse'> {
 	try {
-		const observations = await listObservations(partition.principalId);
+		const observations = await listObservations();
 		return observations.some(
 			(observation) =>
 				observation.sourceKind === 'workspace' &&
-				observation.sourceId === partition.workspaceId,
+				observation.sourceId === target.workspaceId,
 		)
 			? 'allow'
 			: 'refuse';
 	} catch (cause) {
 		reportError(
-			`[storage] first-contact admission for ${partition.principalId}/${partition.workspaceId} failed: ${extractErrorMessage(cause)}`,
+			`[storage] first-contact admission for ${target.principalId}/${target.workspaceId} failed: ${extractErrorMessage(cause)}`,
 		);
 		return 'refuse';
 	}
@@ -63,10 +66,10 @@ export async function admitStorageFirstContact(
 		resolveIncludedBytes,
 		reportError = console.error,
 	}: StorageAdmissionDependencies,
-	partition: CurrentStateRecordsPartition,
+	target: StorageAdmissionTarget,
 ): Promise<'allow' | 'refuse'> {
 	try {
-		const observations = await listObservations(partition.principalId);
+		const observations = await listObservations();
 		const registeredWorkspaceIds = new Set(
 			observations
 				.filter((observation) => observation.sourceKind === 'workspace')
@@ -75,9 +78,9 @@ export async function admitStorageFirstContact(
 		const blobBytes = observations
 			.filter((observation) => observation.sourceKind === 'blobs')
 			.reduce((sum, observation) => sum + observation.observedBytes, 0);
-		const accountBytes = await readAccountBytes(partition.principalId);
+		const accountBytes = await readAccountBytes();
 		await upsertObservation({
-			principalId: partition.principalId,
+			principalId: target.principalId,
 			sourceKind: 'structured',
 			sourceId: 'account',
 			observedBytes: accountBytes,
@@ -87,18 +90,18 @@ export async function admitStorageFirstContact(
 			return 'refuse';
 		}
 
-		if (!registeredWorkspaceIds.has(partition.workspaceId)) {
+		if (!registeredWorkspaceIds.has(target.workspaceId)) {
 			await upsertObservation({
-				principalId: partition.principalId,
+				principalId: target.principalId,
 				sourceKind: 'workspace',
-				sourceId: partition.workspaceId,
+				sourceId: target.workspaceId,
 				observedBytes: 0,
 			});
 		}
 		return 'allow';
 	} catch (cause) {
 		reportError(
-			`[storage] first-contact admission for ${partition.principalId}/${partition.workspaceId} failed: ${extractErrorMessage(cause)}`,
+			`[storage] first-contact admission for ${target.principalId}/${target.workspaceId} failed: ${extractErrorMessage(cause)}`,
 		);
 		return 'refuse';
 	}

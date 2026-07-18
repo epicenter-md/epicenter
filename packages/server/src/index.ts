@@ -60,7 +60,6 @@ export {
 	type StorageSourceKind,
 	upsertStorageObservation,
 } from './db/storage-data.js';
-export type { WorkspaceDocuments } from './document-hub/contracts.js';
 // An opt-in burn-rate cap for the inference `policies` seam: caps requests per
 // principal partition so a shared house key cannot be run up unbounded (ADR-0076).
 export { rateLimit } from './middleware/rate-limit.js';
@@ -93,13 +92,11 @@ export { CloudAuthBindings, mountCloudAuth } from './mount-cloud-auth.js';
 export { mountCloudDb } from './mount-cloud-db.js';
 export {
 	CurrentStateRowAuthorityDurableObject,
-	createCurrentStateDurableObjectDocuments,
-	createCurrentStateDurableObjectRecords,
-	readCurrentStateAccountDatabaseSize,
+	createDurableObjectAccountAuthorities,
 } from './records/current-state-cloudflare.js';
 export type {
-	CurrentStateRecords,
-	CurrentStateRecordsPartition,
+	AccountAuthorities,
+	AccountAuthority,
 } from './records/current-state-contracts.js';
 // Re-export the Cloudflare Durable Object class so each deployment's
 // wrangler.jsonc can resolve `class_name: "Room"` against this entrypoint.

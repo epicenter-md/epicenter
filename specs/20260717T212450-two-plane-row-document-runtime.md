@@ -236,7 +236,7 @@ workspace typechecks green.
 - [x] `deleteWorkspace(workspaceId)` is one transaction, closing that
   workspace's sockets after commit (including not-yet-handshaken upgrades).
   Account deletion via `deleteAll()` plus R2 prefix remains deployment wiring
-  in Wave F/G.
+  in Wave G.
 
 Proof: 438 tests green including two-workspace isolation, independent
 deletion, wall retryability, readable-under-wall, and pending-socket closure;
@@ -264,11 +264,57 @@ post-compaction recreation, acquisition removal with document revocation,
 pending-create survival, and non-resurrecting pending updates; all five
 package typechecks green.
 
-### Wave F: mount production document routes
+### Wave F1: collapse the authority seam — DONE 2026-07-18
 
-- [ ] Mount the document route in hosted and self-hosted deployables with
-  hibernation attachments; wire browser and native connections through the
-  runtime.
+Seam destination accepted 2026-07-18 (Candidate A of the account-authority
+runtime seam memo, deleted as spent when this wave landed): one principal
+resolves once to one `AccountAuthority`; `workspaceId` is an operation
+argument, never part of the authority address; each deployment binds one
+authority locator.
+
+- [x] One route-facing `AccountAuthorities` seam: `authority(principalId)`
+  returns the handle carrying `hasReplica`, `push`, `pull`, `acquire`,
+  `deleteWorkspace`, `databaseSize`, and `acceptDocumentUpgrade`;
+  `rejectDocumentUpgrade` (accept-then-close) sits beside the locator as
+  deployment transport policy. Both mounts inject the same single
+  `resolveAuthorities`.
+- [x] Deleted `CurrentStateRecordsPartition`, the `resolveRecords`/
+  `resolveDocuments` injection pair, `WorkspaceDocuments`,
+  `createCurrentStateDurableObjectDocuments`,
+  `readCurrentStateAccountDatabaseSize`, and the dead `CurrentStateBunRecords`,
+  `DocumentHubCore`, `AccountRowAuthority`, `DocumentAppendResult` aliases.
+  `AdmitFirstContact` receives the already-resolved `AccountAuthority` (hosted
+  account sizing reads `authority.databaseSize()`);
+  `apps/api/worker/storage/service.ts` changed in the same commit.
+- [x] Cloudflare: the two factories merged into
+  `createDurableObjectAccountAuthorities(namespace)` over the unchanged
+  `CurrentStateRowAuthorityDurableObject`. Bun:
+  `createBunAccountAuthorityRuntime` returns
+  `{ authorities, websocket, bindServer, close }`; `authority(pid)` stays a
+  thin wrapper that re-enters `load(pid)` per operation so the closed-state
+  guard keeps firing; `close()` also closes active document sockets (1001)
+  and is wired into both Bun entrypoints on SIGINT/SIGTERM.
+- [x] Authenticated workspace deletion mounted as
+  `DELETE /api/workspaces/:workspaceId`, entering
+  `authority(pid).deleteWorkspace(ws)`. Account deletion stays a separate
+  operation because it coordinates authority storage, the R2 prefix, and
+  authentication-owned records (Wave G wiring).
+- [x] Fixed the stale pair-model comment on the RECORDS binding
+  (`apps/api/wrangler.jsonc`) and deleted the spent seam memo.
+
+Proof: 950 tests green across the five packages; row-sync, sqlite, server,
+sync, workspace, api, and self-host typechecks green; the mounted deletion
+route dispatches through the one resolved authority (route tests); workspace
+deletion closes pre-handshake sockets on both runtimes; Bun shutdown closes
+sockets with 1001 and refuses later operations (runtime test).
+
+### Wave F2: wire document clients — BLOCKED on the document decision
+
+The document architecture is under greenfield review; this wave does not start
+until that decision is explicitly settled.
+
+- [ ] Wire browser and native document connections through the accepted
+  document model against the mounted routes.
 
 Proof: live socket smoke on Bun and wrangler dev; hibernation restore;
 deletion racing update; wall behavior on the document path.
@@ -303,6 +349,12 @@ deletion racing update; wall behavior on the document path.
   of intents; no delete-first reordering or second deletion route.
 - No `pending-row`/`row-deleted` verdicts; no transient accept-then-close.
 - No authority live-document cache; no socket tags.
+- No first-contact retry protocol: hosted admission keeps the two authority
+  round trips (`hasReplica`, then `push`) until telemetry demonstrates a
+  problem at human cadence.
+- No portable Hono `upgradeWebSocket` adoption: verified unable to absorb
+  hibernation or the bearer-subprotocol contract; it would relocate platform
+  code, not delete it.
 - No initial public indexes, FTS, or materialized projections.
 - No global remote document settlement or exact cross-plane snapshot.
 - No structured account data beyond the wall headroom below 10 GB.

@@ -1001,4 +1001,3 @@ export function openAccountRowAuthority({
 	};
 }
 
-export type AccountRowAuthority = ReturnType<typeof openAccountRowAuthority>;

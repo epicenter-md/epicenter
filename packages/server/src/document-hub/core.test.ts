@@ -18,7 +18,6 @@ import {
 import * as Y from '@y/y';
 import {
 	createDocumentHubCore,
-	type DocumentAppendResult,
 	type DocumentHubSocket,
 	type DocumentHubStore,
 } from './core.js';
@@ -315,7 +314,7 @@ function createMemoryStore(initiallyLive: boolean, seed: Uint8Array[]) {
 		isLive: boolean;
 		updates: Uint8Array[];
 		beforeAppend: (() => void) | undefined;
-		nextAppendResult: DocumentAppendResult | undefined;
+		nextAppendResult: ReturnType<DocumentHubStore['appendIfLive']> | undefined;
 		throwNextAppend: boolean;
 	};
 	const store: MemoryStore = {

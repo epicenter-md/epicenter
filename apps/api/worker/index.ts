@@ -19,8 +19,7 @@ import {
 	type CloudEnv,
 	CurrentStateRowAuthorityDurableObject,
 	connectHyperdriveDb,
-	createCurrentStateDurableObjectDocuments,
-	createCurrentStateDurableObjectRecords,
+	createDurableObjectAccountAuthorities,
 	createDurableObjectAttachRelay,
 	createDurableObjectRooms,
 	createServerApp,
@@ -36,7 +35,6 @@ import {
 	mountTranscriptionApp,
 	mountWorkspaceDocumentsApp,
 	Room,
-	readCurrentStateAccountDatabaseSize,
 	requireBearerPrincipal,
 	requireCookieOrBearerPrincipal,
 	resolveRequestOAuthDocumentAuthorization,
@@ -148,44 +146,39 @@ mountCloudAuth(app, {
 mountSessionApp(app, { auth: cookieOrBearer });
 mountWorkspaceDocumentsApp(app, {
 	resolveDocumentPrincipal: resolveRequestOAuthDocumentAuthorization,
-	resolveDocuments: (env) =>
-		createCurrentStateDurableObjectDocuments((env as Cloudflare.Env).RECORDS),
+	resolveAuthorities: (env) =>
+		createDurableObjectAccountAuthorities((env as Cloudflare.Env).RECORDS),
 });
 mountCurrentStateRecordsApp(app, {
 	auth: bearer,
-	resolveRecords: (env) =>
-		createCurrentStateDurableObjectRecords((env as Cloudflare.Env).RECORDS),
+	resolveAuthorities: (env) =>
+		createDurableObjectAccountAuthorities((env as Cloudflare.Env).RECORDS),
 	// Hosted storage policy (ADR-0137): refusal creates no target authority or
 	// registry row. Admission registers the source before the client-owned replica
 	// identity gets its first authority receipt. Synchronization never consults
-	// storage state.
-	admitFirstContact: (c, partition) =>
+	// storage state. Account sizing reads the already-resolved authority.
+	admitFirstContact: (c, { authority, principalId, workspaceId }) =>
 		admitStorageFirstContact(
 			{
-				listObservations: (principalId) =>
-					listStorageObservations(c.var.db, principalId),
-				readAccountBytes: (principalId) =>
-					readCurrentStateAccountDatabaseSize(
-						(c.env as Cloudflare.Env).RECORDS,
-						principalId,
-					),
+				listObservations: () => listStorageObservations(c.var.db, principalId),
+				readAccountBytes: () => authority.databaseSize(),
 				upsertObservation: (observation) =>
 					upsertStorageObservation(c.var.db, observation),
 				resolveIncludedBytes: async () => {
 					const principalEmail = await readHostedPrincipalEmail(
 						c.var.db,
-						partition.principalId,
+						principalId,
 					);
 					if (principalEmail === null) {
 						throw new Error('Workspace storage principal does not exist');
 					}
 					return createBillingService(c.env as Cloudflare.Env, {
-						principalId: partition.principalId,
+						principalId,
 						principalEmail,
 					}).getStorageIncludedBytes();
 				},
 			},
-			partition,
+			{ principalId, workspaceId },
 		),
 });
 // Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver, not

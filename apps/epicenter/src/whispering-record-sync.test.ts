@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { InstantString } from '@epicenter/field';
 import {
-	createCurrentStateBunRecords,
+	createBunAccountAuthorityRuntime,
 	mountCurrentStateRecordsApp,
 } from '@epicenter/server/bun';
 import { whisperingWorkspace } from '@epicenter/whispering/workspace-contract';
@@ -28,13 +28,13 @@ import { Hono } from 'hono';
 
 test('offline Whispering scalar edits converge in both directions', async () => {
 	const root = mkdtempSync(join(tmpdir(), 'epicenter-whispering-sync-'));
-	const backend = createCurrentStateBunRecords({
+	const backend = createBunAccountAuthorityRuntime({
 		dir: join(root, 'authority'),
 	});
 	let online = false;
 	const app = new Hono();
 	mountCurrentStateRecordsApp(app as never, {
-		resolveRecords: () => backend.records,
+		resolveAuthorities: () => backend.authorities,
 		auth: async (context, next) => {
 			context.set('principal', { id: 'whispering-test-person' } as never);
 			await next();

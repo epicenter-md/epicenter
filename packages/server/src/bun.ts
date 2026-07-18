@@ -104,13 +104,13 @@ export {
 export { CloudAuthBindings, mountCloudAuth } from './mount-cloud-auth.js';
 export { mountCloudDb } from './mount-cloud-db.js';
 export {
+	type BunAccountAuthorityRuntime,
 	type BunWorkspaceDocumentSocketData,
-	type CurrentStateBunRecords,
-	createCurrentStateBunRecords,
+	createBunAccountAuthorityRuntime,
 } from './records/current-state-bun.js';
 export type {
-	CurrentStateRecords,
-	CurrentStateRecordsPartition,
+	AccountAuthorities,
+	AccountAuthority,
 } from './records/current-state-contracts.js';
 // The Bun room backend: an in-process Rooms map + bun:sqlite update log,
 // plus the Bun `websocket` handler and `bindServer` the entry wires. Its `.rooms`
@@ -139,4 +139,3 @@ export type {
 	ResolveBearerPrincipal,
 	ResolveDocumentPrincipal,
 } from './types.js';
-export type { WorkspaceDocuments } from './document-hub/contracts.js';

@@ -1,25 +1,25 @@
 /**
- * Current-State Durable Object Records Tests
+ * Durable Object Account Authority Tests
  *
- * Verifies current-state operations across the Durable Object RPC boundary.
+ * Verifies account-authority operations across the Durable Object RPC boundary
+ * through the merged route-facing locator.
  *
  * Key behaviors:
  * - first-push registration and lookup cross the RPC boundary
  * - accepted state and receipts survive object restart
- * - authenticated partitions select independent object names
+ * - the principal alone names the object; workspaces are arguments
  * - push, pull, and acquire cross the RPC boundary unchanged
  * - failed initialization leaves storage retryable
  */
 
 import { Database } from 'bun:sqlite';
 import { expect, mock, test } from 'bun:test';
-import { asPrincipalId } from '@epicenter/identity';
+import { asPrincipalId, type PrincipalId } from '@epicenter/identity';
 import {
 	CURRENT_STATE_ROW_SYNC_PROTOCOL_MAJOR,
 	type CurrentStateWireRowIntent,
 	rowRoundDigest,
 } from '@epicenter/row-sync';
-import type { CurrentStateRecordsPartition } from './current-state-contracts.js';
 
 mock.module('cloudflare:workers', () => ({
 	DurableObject: class {
@@ -75,9 +75,7 @@ function createStorage() {
 async function setup() {
 	const {
 		CurrentStateRowAuthorityDurableObject,
-		createCurrentStateDurableObjectDocuments,
-		createCurrentStateDurableObjectRecords,
-		readCurrentStateAccountDatabaseSize,
+		createDurableObjectAccountAuthorities,
 	} = await import('./current-state-cloudflare.js');
 	type RowObject = InstanceType<typeof CurrentStateRowAuthorityDurableObject>;
 	const objects = new Map<
@@ -102,16 +100,19 @@ async function setup() {
 			return object;
 		},
 	};
+	const authorities = createDurableObjectAccountAuthorities(
+		namespace as unknown as DurableObjectNamespace<RowObject>,
+	);
 	return {
 		names,
 		objects,
 		namespace,
-		records: createCurrentStateDurableObjectRecords(
-			namespace as unknown as DurableObjectNamespace<RowObject>,
-		),
+		authorities,
+		authority(principalId: PrincipalId = alice) {
+			return authorities.authority(principalId);
+		},
 		CurrentStateRowAuthorityDurableObject,
-		createCurrentStateDurableObjectDocuments,
-		readCurrentStateAccountDatabaseSize,
+		createDurableObjectAccountAuthorities,
 		cleanup() {
 			for (const owned of objects.values()) owned.storage.database.close();
 			objects.clear();
@@ -119,10 +120,8 @@ async function setup() {
 	};
 }
 
-const partition: CurrentStateRecordsPartition = {
-	principalId: asPrincipalId('alice'),
-	workspaceId: 'wiki',
-};
+const alice = asPrincipalId('alice');
+const WORKSPACE = 'wiki';
 
 const rid = (value: number) => value.toString(36).padStart(24, '0');
 
@@ -140,17 +139,18 @@ function pushRequest(replicaId: string, intents: CurrentStateWireRowIntent[]) {
 test('hasReplica observes first-push registration across RPC', async () => {
 	const context = await setup();
 	try {
-		expect(await context.records.hasReplica(partition, rid(100))).toBe(false);
+		const authority = context.authority();
+		expect(await authority.hasReplica(WORKSPACE, rid(100))).toBe(false);
 		const intents = [
 			{ kind: 'create', table: 'pages', rowId: rid(1), fields: { n: 1 } },
 		] satisfies CurrentStateWireRowIntent[];
-		const accepted = await context.records.push(
-			partition,
+		const accepted = await authority.push(
+			WORKSPACE,
 			pushRequest(rid(100), intents),
 		);
-		expect(await context.records.hasReplica(partition, rid(100))).toBe(true);
+		expect(await authority.hasReplica(WORKSPACE, rid(100))).toBe(true);
 		expect(
-			await context.records.push(partition, pushRequest(rid(100), intents)),
+			await authority.push(WORKSPACE, pushRequest(rid(100), intents)),
 		).toEqual(accepted);
 	} finally {
 		context.cleanup();
@@ -160,6 +160,7 @@ test('hasReplica observes first-push registration across RPC', async () => {
 test('accepted state and receipt survive Durable Object restart', async () => {
 	const context = await setup();
 	try {
+		const authority = context.authority();
 		const replicaId = rid(100);
 		const intents: CurrentStateWireRowIntent[] = [
 			{
@@ -169,8 +170,8 @@ test('accepted state and receipt survive Durable Object restart', async () => {
 				fields: { title: 'Persisted' },
 			},
 		];
-		const accepted = await context.records.push(
-			partition,
+		const accepted = await authority.push(
+			WORKSPACE,
 			pushRequest(replicaId, intents),
 		);
 		const name = context.names[0];
@@ -186,10 +187,10 @@ test('accepted state and receipt survive Durable Object restart', async () => {
 		);
 
 		expect(
-			await context.records.push(partition, pushRequest(replicaId, intents)),
+			await authority.push(WORKSPACE, pushRequest(replicaId, intents)),
 		).toEqual(accepted);
 		expect(
-			await context.records.acquire(partition, {
+			await authority.acquire(WORKSPACE, {
 				protocolMajor: CURRENT_STATE_ROW_SYNC_PROTOCOL_MAJOR,
 				kind: 'acquire',
 				replicaId,
@@ -212,6 +213,7 @@ test('accepted state and receipt survive Durable Object restart', async () => {
 test('push, fixed pull, and acquire cross RPC unchanged', async () => {
 	const context = await setup();
 	try {
+		const authority = context.authority();
 		const replicaId = rid(100);
 		const intents: CurrentStateWireRowIntent[] = [
 			{
@@ -221,8 +223,8 @@ test('push, fixed pull, and acquire cross RPC unchanged', async () => {
 				fields: { title: 'Hello' },
 			},
 		];
-		const pushed = await context.records.push(
-			partition,
+		const pushed = await authority.push(
+			WORKSPACE,
 			pushRequest(replicaId, intents),
 		);
 		expect(pushed).toMatchObject({
@@ -230,7 +232,7 @@ test('push, fixed pull, and acquire cross RPC unchanged', async () => {
 			receipt: { acceptedRound: 1, appliedThrough: 1 },
 		});
 		expect(
-			await context.records.pull(partition, {
+			await authority.pull(WORKSPACE, {
 				protocolMajor: CURRENT_STATE_ROW_SYNC_PROTOCOL_MAJOR,
 				kind: 'pull',
 				replicaId,
@@ -243,7 +245,7 @@ test('push, fixed pull, and acquire cross RPC unchanged', async () => {
 			entries: [{ kind: 'row', fields: { title: 'Hello' } }],
 		});
 		expect(
-			await context.records.acquire(partition, {
+			await authority.acquire(WORKSPACE, {
 				protocolMajor: CURRENT_STATE_ROW_SYNC_PROTOCOL_MAJOR,
 				kind: 'acquire',
 				replicaId,
@@ -257,22 +259,15 @@ test('push, fixed pull, and acquire cross RPC unchanged', async () => {
 test('principal alone determines the object name for every workspace', async () => {
 	const context = await setup();
 	try {
-		for (const target of [
-			partition,
-			{ principalId: asPrincipalId('bob'), workspaceId: 'wiki' },
-			{ principalId: asPrincipalId('alice'), workspaceId: 'notes' },
-		]) {
-			await context.records.hasReplica(target, rid(100));
+		for (const [principalId, workspaceId] of [
+			[alice, WORKSPACE],
+			[asPrincipalId('bob'), WORKSPACE],
+			[alice, 'notes'],
+		] as const) {
+			await context.authority(principalId).hasReplica(workspaceId, rid(100));
 		}
 		expect(new Set(context.names)).toEqual(new Set(['alice', 'bob']));
-		expect(
-			await context.readCurrentStateAccountDatabaseSize(
-				context.namespace as unknown as DurableObjectNamespace<
-					InstanceType<typeof context.CurrentStateRowAuthorityDurableObject>
-				>,
-				partition.principalId,
-			),
-		).toBe(0);
+		expect(await context.authority(alice).databaseSize()).toBe(0);
 	} finally {
 		context.cleanup();
 	}
@@ -294,13 +289,13 @@ test('document upgrade sends workspace identity to the principal object', async 
 		},
 	};
 	try {
-		const documents = context.createCurrentStateDurableObjectDocuments(
+		const authorities = context.createDurableObjectAccountAuthorities(
 			namespace as unknown as DurableObjectNamespace<
 				InstanceType<typeof context.CurrentStateRowAuthorityDurableObject>
 			>,
 		);
-		await documents.handleUpgrade({
-			partition,
+		await authorities.authority(alice).acceptDocumentUpgrade({
+			workspaceId: WORKSPACE,
 			address: { table: 'pages', rowId: rid(1) },
 			authorizationExpiresAt: Date.now() + 60_000,
 			request: new Request('https://example.test/document', {
@@ -321,25 +316,25 @@ test('document upgrade sends workspace identity to the principal object', async 
 
 test('one principal object deletes one workspace without deleting its siblings', async () => {
 	const context = await setup();
-	const notes = { ...partition, workspaceId: 'notes' };
 	try {
-		await context.records.push(
-			partition,
+		const authority = context.authority();
+		await authority.push(
+			WORKSPACE,
 			pushRequest(rid(100), [
 				{ kind: 'create', table: 'pages', rowId: rid(1), fields: { n: 1 } },
 			]),
 		);
-		await context.records.push(
-			notes,
+		await authority.push(
+			'notes',
 			pushRequest(rid(100), [
 				{ kind: 'create', table: 'pages', rowId: rid(2), fields: { n: 2 } },
 			]),
 		);
-		await context.records.deleteWorkspace(partition);
+		await authority.deleteWorkspace(WORKSPACE);
 
-		expect(await context.records.hasReplica(partition, rid(100))).toBe(false);
+		expect(await authority.hasReplica(WORKSPACE, rid(100))).toBe(false);
 		expect(
-			await context.records.acquire(notes, {
+			await authority.acquire('notes', {
 				protocolMajor: CURRENT_STATE_ROW_SYNC_PROTOCOL_MAJOR,
 				kind: 'acquire',
 				replicaId: rid(100),

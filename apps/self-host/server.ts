@@ -51,7 +51,7 @@ import { assertStrongToken } from '@epicenter/auth';
 import {
 	createAttachRelayBunServer,
 	createBunRooms,
-	createCurrentStateBunRecords,
+	createBunAccountAuthorityRuntime,
 	createDeviceGrantStore,
 	createEnvTokenResolver,
 	createServerApp,
@@ -144,7 +144,7 @@ export function startSelfHostServer(): void {
 	// first open deliberately drops legacy authority tables: synchronized
 	// authority state resets, while unrelated local-only workspace storage is
 	// untouched.
-	const bunRecords = createCurrentStateBunRecords({
+	const bunRecords = createBunAccountAuthorityRuntime({
 		dir: join(dataDir, 'records'),
 	});
 	// The AttachRelay coordinator for this instance (ADR-0115): the
@@ -185,11 +185,11 @@ export function startSelfHostServer(): void {
 		resolveDocumentPrincipal: withDocumentAuthorizationDeadline(
 			resolveBearerPrincipal,
 		),
-		resolveDocuments: () => bunRecords.documents,
+		resolveAuthorities: () => bunRecords.authorities,
 	});
 	mountCurrentStateRecordsApp(app, {
 		auth,
-		resolveRecords: () => bunRecords.records,
+		resolveAuthorities: () => bunRecords.authorities,
 	});
 	// The AttachRelay upgrade (`/attach`), WS-aware and gated by a per-device grant
 	// (ADR-0115), not the operator token: a connect resolves against the
@@ -263,6 +263,16 @@ export function startSelfHostServer(): void {
 	bunRooms.bindServer(server);
 	bunRecords.bindServer(server);
 	attachRelay.bindServer(server);
+
+	// Close authority databases and their sockets before the process dies so WAL
+	// checkpoints land and clients see a clean 1001 instead of a dropped TCP.
+	const shutdown = () => {
+		bunRecords.close();
+		void server.stop(true);
+		process.exit(0);
+	};
+	process.once('SIGINT', shutdown);
+	process.once('SIGTERM', shutdown);
 
 	console.log(
 		`apps/self-host instance (Bun) listening on ${origin} ` +
