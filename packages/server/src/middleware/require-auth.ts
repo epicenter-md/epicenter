@@ -20,18 +20,23 @@
  * JWKS; an instance closes over its env-token resolver instead).
  */
 
-import { Principal } from '@epicenter/auth';
-import { verifyJwsAccessToken } from 'better-auth/oauth2';
-import { eq } from 'drizzle-orm';
-import type { Context, MiddlewareHandler, Next } from 'hono';
-import { createMiddleware } from 'hono/factory';
-import { Ok, type Result } from 'wellcrafted/result';
-import { OAuthError } from '../auth/oauth-errors.js';
-import { createOAuthIssuerURL } from '../auth/oauth-metadata.js';
-import { createOAuthUnauthorizedResourceResponse } from '../auth/oauth-resource.js';
-import { parseBearer } from '../auth/parse-bearer.js';
-import * as schema from '../db/schema/index.js';
-import type { CloudEnv, Env, ResolveBearerPrincipal } from '../types.js';
+import { Principal } from "@epicenter/auth";
+import { verifyJwsAccessToken } from "better-auth/oauth2";
+import { eq } from "drizzle-orm";
+import type { Context, MiddlewareHandler, Next } from "hono";
+import { createMiddleware } from "hono/factory";
+import { Ok, type Result } from "wellcrafted/result";
+import { OAuthError } from "../auth/oauth-errors.js";
+import { createOAuthIssuerURL } from "../auth/oauth-metadata.js";
+import { createOAuthUnauthorizedResourceResponse } from "../auth/oauth-resource.js";
+import { parseBearer } from "../auth/parse-bearer.js";
+import * as schema from "../db/schema/index.js";
+import type {
+  CloudEnv,
+  DocumentAuthorization,
+  Env,
+  ResolveBearerPrincipal,
+} from "../types.js";
 
 /**
  * Resolve an OAuth bearer token to the calling principal.
@@ -67,44 +72,63 @@ import type { CloudEnv, Env, ResolveBearerPrincipal } from '../types.js';
  * expiration, and subject.
  */
 export async function resolveRequestOAuthPrincipal(
-	c: Context<CloudEnv>,
-	accessToken: string,
+  c: Context<CloudEnv>,
+  accessToken: string,
 ): Promise<Result<Principal, OAuthError>> {
-	const audience = c.var.authBaseURL;
-	let keysUnreadable = false;
-	let payload: Awaited<ReturnType<typeof verifyJwsAccessToken>>;
-	try {
-		payload = await verifyJwsAccessToken(accessToken, {
-			jwksFetch: async () => {
-				try {
-					return await c.var.auth.api.getJwks();
-				} catch {
-					keysUnreadable = true;
-					return undefined;
-				}
-			},
-			verifyOptions: { audience, issuer: createOAuthIssuerURL(audience) },
-		});
-	} catch {
-		return keysUnreadable
-			? OAuthError.ServerError()
-			: OAuthError.InvalidToken();
-	}
+  const { data, error } = await resolveRequestOAuthDocumentAuthorization(
+    c,
+    accessToken,
+  );
+  return error ? { data: null, error } : Ok(data.principal);
+}
 
-	const userId = typeof payload?.sub === 'string' ? payload.sub : null;
-	if (!userId) return OAuthError.InvalidToken();
+/** Verify one OAuth bearer and preserve its JWT expiry for WebSocket leases. */
+export async function resolveRequestOAuthDocumentAuthorization(
+  c: Context<CloudEnv>,
+  accessToken: string,
+): Promise<Result<DocumentAuthorization, OAuthError>> {
+  const audience = c.var.authBaseURL;
+  let keysUnreadable = false;
+  let payload: Awaited<ReturnType<typeof verifyJwsAccessToken>>;
+  try {
+    payload = await verifyJwsAccessToken(accessToken, {
+      jwksFetch: async () => {
+        try {
+          return await c.var.auth.api.getJwks();
+        } catch {
+          keysUnreadable = true;
+          return undefined;
+        }
+      },
+      verifyOptions: { audience, issuer: createOAuthIssuerURL(audience) },
+    });
+  } catch {
+    return keysUnreadable
+      ? OAuthError.ServerError()
+      : OAuthError.InvalidToken();
+  }
 
-	let user: Awaited<ReturnType<typeof c.var.db.query.user.findFirst>>;
-	try {
-		user = await c.var.db.query.user.findFirst({
-			where: eq(schema.user.id, userId),
-		});
-	} catch {
-		return OAuthError.ServerError();
-	}
-	if (!user) return OAuthError.InvalidToken();
+  const userId = typeof payload?.sub === "string" ? payload.sub : null;
+  const authorizationExpiresAt =
+    typeof payload?.exp === "number" ? payload.exp * 1000 : null;
+  if (!userId || authorizationExpiresAt === null) {
+    return OAuthError.InvalidToken();
+  }
 
-	return Ok(Principal.assert(user));
+  let user: Awaited<ReturnType<typeof c.var.db.query.user.findFirst>>;
+  try {
+    user = await c.var.db.query.user.findFirst({
+      where: eq(schema.user.id, userId),
+    });
+  } catch {
+    return OAuthError.ServerError();
+  }
+  if (!user) return OAuthError.InvalidToken();
+
+  return Ok({
+    principal: Principal.assert(user),
+    authorizationExpiresAt,
+  });
 }
 
 /**
@@ -119,36 +143,36 @@ export async function resolveRequestOAuthPrincipal(
  * defer to `reject`.
  */
 export async function setPrincipalOrReject<E extends Env>(
-	c: Context<E>,
-	next: Next,
-	resolution: Result<Principal, OAuthError>,
-	reject: (error: OAuthError) => Response | Promise<Response>,
+  c: Context<E>,
+  next: Next,
+  resolution: Result<Principal, OAuthError>,
+  reject: (error: OAuthError) => Response | Promise<Response>,
 ): Promise<Response | undefined> {
-	const { data: principal, error } = resolution;
-	if (error) return reject(error);
-	c.set('principal', principal);
-	await next();
+  const { data: principal, error } = resolution;
+  if (error) return reject(error);
+  c.set("principal", principal);
+  await next();
 }
 
 export function requireCookieOrBearerPrincipal(
-	resolveBearerPrincipal: ResolveBearerPrincipal<CloudEnv>,
+  resolveBearerPrincipal: ResolveBearerPrincipal<CloudEnv>,
 ): MiddlewareHandler<CloudEnv> {
-	return createMiddleware<CloudEnv>(async (c, next) => {
-		const session = await c.var.auth.api.getSession({
-			headers: c.req.raw.headers,
-		});
-		if (session) {
-			c.set('principal', Principal.assert(session.user));
-			return next();
-		}
-		const bearer = parseBearer(c.req.header('authorization') ?? null);
-		const resolution = bearer
-			? await resolveBearerPrincipal(c, bearer)
-			: OAuthError.InvalidToken();
-		return setPrincipalOrReject(c, next, resolution, (error) =>
-			createOAuthUnauthorizedResourceResponse(c, error),
-		);
-	});
+  return createMiddleware<CloudEnv>(async (c, next) => {
+    const session = await c.var.auth.api.getSession({
+      headers: c.req.raw.headers,
+    });
+    if (session) {
+      c.set("principal", Principal.assert(session.user));
+      return next();
+    }
+    const bearer = parseBearer(c.req.header("authorization") ?? null);
+    const resolution = bearer
+      ? await resolveBearerPrincipal(c, bearer)
+      : OAuthError.InvalidToken();
+    return setPrincipalOrReject(c, next, resolution, (error) =>
+      createOAuthUnauthorizedResourceResponse(c, error),
+    );
+  });
 }
 
 /**
@@ -164,15 +188,15 @@ export function requireCookieOrBearerPrincipal(
  * wrapper holds its resolver directly.
  */
 export function requireBearerPrincipal<E extends Env = Env>(
-	resolveBearerPrincipal: ResolveBearerPrincipal<E>,
+  resolveBearerPrincipal: ResolveBearerPrincipal<E>,
 ): MiddlewareHandler<E> {
-	return createMiddleware<E>(async (c, next) => {
-		const bearer = parseBearer(c.req.header('authorization') ?? null);
-		const resolution = bearer
-			? await resolveBearerPrincipal(c, bearer)
-			: OAuthError.InvalidToken();
-		return setPrincipalOrReject(c, next, resolution, (error) =>
-			createOAuthUnauthorizedResourceResponse(c, error),
-		);
-	});
+  return createMiddleware<E>(async (c, next) => {
+    const bearer = parseBearer(c.req.header("authorization") ?? null);
+    const resolution = bearer
+      ? await resolveBearerPrincipal(c, bearer)
+      : OAuthError.InvalidToken();
+    return setPrincipalOrReject(c, next, resolution, (error) =>
+      createOAuthUnauthorizedResourceResponse(c, error),
+    );
+  });
 }

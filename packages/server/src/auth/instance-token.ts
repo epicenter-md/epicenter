@@ -33,11 +33,15 @@
  * either runtime with the operator supplying the secret.
  */
 
-import { Principal } from '@epicenter/auth';
-import { INSTANCE_PRINCIPAL_ID } from '@epicenter/identity';
-import { Ok } from 'wellcrafted/result';
-import type { ResolveBearerPrincipal } from '../types.js';
-import { OAuthError } from './oauth-errors.js';
+import { Principal } from "@epicenter/auth";
+import { INSTANCE_PRINCIPAL_ID } from "@epicenter/identity";
+import { Ok } from "wellcrafted/result";
+import type {
+  Env,
+  ResolveBearerPrincipal,
+  ResolveDocumentPrincipal,
+} from "../types.js";
+import { OAuthError } from "./oauth-errors.js";
 
 /**
  * Constant-time equality for two strings of any length.
@@ -50,18 +54,18 @@ import { OAuthError } from './oauth-errors.js';
  * so this stays portable and names no `node:` built-in on the shared surface.
  */
 async function constantTimeEqual(a: string, b: string): Promise<boolean> {
-	const encoder = new TextEncoder();
-	const [digestA, digestB] = await Promise.all([
-		crypto.subtle.digest('SHA-256', encoder.encode(a)),
-		crypto.subtle.digest('SHA-256', encoder.encode(b)),
-	]);
-	const bytesA = new Uint8Array(digestA);
-	const bytesB = new Uint8Array(digestB);
-	let mismatch = 0;
-	for (let i = 0; i < bytesA.length; i += 1) {
-		mismatch |= (bytesA[i] ?? 0) ^ (bytesB[i] ?? 0);
-	}
-	return mismatch === 0;
+  const encoder = new TextEncoder();
+  const [digestA, digestB] = await Promise.all([
+    crypto.subtle.digest("SHA-256", encoder.encode(a)),
+    crypto.subtle.digest("SHA-256", encoder.encode(b)),
+  ]);
+  const bytesA = new Uint8Array(digestA);
+  const bytesB = new Uint8Array(digestB);
+  let mismatch = 0;
+  for (let i = 0; i < bytesA.length; i += 1) {
+    mismatch |= (bytesA[i] ?? 0) ^ (bytesB[i] ?? 0);
+  }
+  return mismatch === 0;
 }
 
 /**
@@ -75,8 +79,21 @@ async function constantTimeEqual(a: string, b: string): Promise<boolean> {
  * Nobody fabricates an email for the instance principal.
  */
 export function createEnvTokenResolver(secret: string): ResolveBearerPrincipal {
-	return async (_c, presented) =>
-		(await constantTimeEqual(presented, secret))
-			? Ok(Principal.assert({ id: INSTANCE_PRINCIPAL_ID }))
-			: OAuthError.InvalidToken();
+  return async (_c, presented) =>
+    (await constantTimeEqual(presented, secret))
+      ? Ok(Principal.assert({ id: INSTANCE_PRINCIPAL_ID }))
+      : OAuthError.InvalidToken();
+}
+
+/** Force static-token sockets to periodically repeat the normal auth gate. */
+export function withDocumentAuthorizationDeadline<E extends Env>(
+  resolve: ResolveBearerPrincipal<E>,
+  maxAgeMs = 10 * 60_000,
+): ResolveDocumentPrincipal<E> {
+  return async (c, bearer) => {
+    const { data: principal, error } = await resolve(c, bearer);
+    return error
+      ? { data: null, error }
+      : Ok({ principal, authorizationExpiresAt: Date.now() + maxAgeMs });
+  };
 }

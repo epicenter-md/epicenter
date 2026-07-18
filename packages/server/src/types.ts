@@ -5,16 +5,16 @@
  * etc.). The authenticated principal id is the partition key by definition.
  */
 
-import type { Principal } from '@epicenter/auth';
-import type { PrincipalId } from '@epicenter/identity';
-import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import type { Context } from 'hono';
-import type { Result } from 'wellcrafted/result';
-import type { CloudAuthBindings, createAuth } from './auth/create-auth.js';
-import type { OAuthError } from './auth/oauth-errors.js';
-import type * as schema from './db/schema/index.js';
-import type { Rooms } from './room/contracts.js';
-import type { ServerBindings } from './server-bindings.js';
+import type { Principal } from "@epicenter/auth";
+import type { PrincipalId } from "@epicenter/identity";
+import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import type { Context } from "hono";
+import type { Result } from "wellcrafted/result";
+import type { CloudAuthBindings, createAuth } from "./auth/create-auth.js";
+import type { OAuthError } from "./auth/oauth-errors.js";
+import type * as schema from "./db/schema/index.js";
+import type { Rooms } from "./room/contracts.js";
+import type { ServerBindings } from "./server-bindings.js";
 
 /**
  * How an explicit bearer token resolves to the calling principal: the one auth
@@ -49,9 +49,20 @@ import type { ServerBindings } from './server-bindings.js';
  * only composes onto a cloud app.
  */
 export type ResolveBearerPrincipal<E extends Env = Env> = (
-	c: Context<E>,
-	bearer: string,
+  c: Context<E>,
+  bearer: string,
 ) => Promise<Result<Principal, OAuthError>>;
+
+export type DocumentAuthorization = {
+  principal: Principal;
+  authorizationExpiresAt: number;
+};
+
+/** Bearer verification plus the deadline at which a socket must reauthorize. */
+export type ResolveDocumentPrincipal<E extends Env = Env> = (
+  c: Context<E>,
+  bearer: string,
+) => Promise<Result<DocumentAuthorization, OAuthError>>;
 
 /**
  * Per-connection identity and runtime state, stamped onto the Cloudflare
@@ -71,16 +82,16 @@ export type ResolveBearerPrincipal<E extends Env = Env> = (
  * where that principal came from.
  */
 export type Connection = {
-	principalId: PrincipalId;
-	nodeId: string;
-	connectedAt: number;
-	/**
-	 * The catalog agent this connection answers as (ADR-0025), set from the
-	 * node's `presence_publish` and mirrored on the wire so a picker can decorate
-	 * a durable agent as live. Undefined until published; ordinary participants
-	 * never set it. Opaque to the relay (forwarded, never inspected).
-	 */
-	agentId?: string;
+  principalId: PrincipalId;
+  nodeId: string;
+  connectedAt: number;
+  /**
+   * The catalog agent this connection answers as (ADR-0025), set from the
+   * node's `presence_publish` and mirrored on the wire so a picker can decorate
+   * a durable agent as live. Undefined until published; ordinary participants
+   * never set it. Opaque to the relay (forwarded, never inspected).
+   */
+  agentId?: string;
 };
 
 /**
@@ -103,19 +114,20 @@ export type Connection = {
  * Better Auth handle (cloud-only, {@link CloudEnv}).
  */
 export type Env = {
-	Bindings: ServerBindings;
-	Variables: {
-		authBaseURL: string;
-		/**
-		 * Origins this deployment trusts for CORS, cookie-mutation CSRF, and
-		 * Better Auth's redirect allow-list. Supplied by the deployment
-		 * (`createServerApp`'s `resolveTrustedOrigins`), never hardcoded in the
-		 * library: a self-host trusts its own origins, not Epicenter cloud's.
-		 */
-		trustedOrigins: string[];
-		principal: Principal;
-		rooms: Rooms;
-	};
+  Bindings: ServerBindings;
+  Variables: {
+    authBaseURL: string;
+    /**
+     * Origins this deployment trusts for CORS, cookie-mutation CSRF, and
+     * Better Auth's redirect allow-list. Supplied by the deployment
+     * (`createServerApp`'s `resolveTrustedOrigins`), never hardcoded in the
+     * library: a self-host trusts its own origins, not Epicenter cloud's.
+     */
+    trustedOrigins: string[];
+    principal: Principal;
+    documentAuthorizationExpiresAt: number;
+    rooms: Rooms;
+  };
 };
 
 /**
@@ -127,37 +139,37 @@ export type Env = {
  * and the `authApp` routes type against this; the portable surfaces stay on `Env`.
  */
 export type CloudEnv = {
-	Bindings: ServerBindings;
-	Variables: Env['Variables'] & {
-		/**
-		 * The per-request Postgres handle. Populated by `mountCloudDb`. Read by
-		 * Better Auth (the only Postgres consumer once room telemetry was deleted).
-		 */
-		db: NodePgDatabase<typeof schema>;
-		/** The per-request Better Auth instance. Populated by `mountCloudAuth`. */
-		auth: ReturnType<typeof createAuth>;
-		/**
-		 * The cloud-only relational-auth secrets ({@link CloudAuthBindings}),
-		 * resolved once per request by `mountCloudAuth` from the cloud's own
-		 * deploy-gated env so its readers (Better Auth construction and the `authApp`
-		 * sign-in page) take them from one resolved value, never the portable `c.env`.
-		 */
-		authSecrets: CloudAuthBindings;
-		/**
-		 * Deployment-owned static shell for the hosted auth browser surfaces.
-		 * `packages/server` owns auth policy and dispatch, but the deployable owns
-		 * where the built SvelteKit fallback comes from: Workers read ASSETS, Bun
-		 * can point at local dev or a local build.
-		 */
-		authUiShell: (c: Context<CloudEnv>) => Response | Promise<Response>;
-		/**
-		 * Per-request queue of fire-and-forget promises that must outlive the HTTP
-		 * response (billing's Autumn charges). `mountCloudDb` drains the whole queue
-		 * (`Promise.allSettled(...).then(close)`) through the deployment's
-		 * `afterResponse` hook (`executionCtx.waitUntil` on Workers, the live process
-		 * on Bun), then closes the db handle. The queue is the data; the hook is how
-		 * it is kept alive.
-		 */
-		afterResponseQueue: Promise<unknown>[];
-	};
+  Bindings: ServerBindings;
+  Variables: Env["Variables"] & {
+    /**
+     * The per-request Postgres handle. Populated by `mountCloudDb`. Read by
+     * Better Auth (the only Postgres consumer once room telemetry was deleted).
+     */
+    db: NodePgDatabase<typeof schema>;
+    /** The per-request Better Auth instance. Populated by `mountCloudAuth`. */
+    auth: ReturnType<typeof createAuth>;
+    /**
+     * The cloud-only relational-auth secrets ({@link CloudAuthBindings}),
+     * resolved once per request by `mountCloudAuth` from the cloud's own
+     * deploy-gated env so its readers (Better Auth construction and the `authApp`
+     * sign-in page) take them from one resolved value, never the portable `c.env`.
+     */
+    authSecrets: CloudAuthBindings;
+    /**
+     * Deployment-owned static shell for the hosted auth browser surfaces.
+     * `packages/server` owns auth policy and dispatch, but the deployable owns
+     * where the built SvelteKit fallback comes from: Workers read ASSETS, Bun
+     * can point at local dev or a local build.
+     */
+    authUiShell: (c: Context<CloudEnv>) => Response | Promise<Response>;
+    /**
+     * Per-request queue of fire-and-forget promises that must outlive the HTTP
+     * response (billing's Autumn charges). `mountCloudDb` drains the whole queue
+     * (`Promise.allSettled(...).then(close)`) through the deployment's
+     * `afterResponse` hook (`executionCtx.waitUntil` on Workers, the live process
+     * on Bun), then closes the db handle. The queue is the data; the hook is how
+     * it is kept alive.
+     */
+    afterResponseQueue: Promise<unknown>[];
+  };
 };

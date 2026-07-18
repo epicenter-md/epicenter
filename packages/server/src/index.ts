@@ -39,7 +39,10 @@ export { ATTACH_RELAY_ROUTE } from './attach-relay/route.js';
 // deployment injects `createEnvTokenResolver(secret)` as its `ResolveBearerPrincipal`.
 // The pure generator + boot entropy gate (`generateInstanceToken`
 // / `assertStrongToken`) live in `@epicenter/auth`.
-export { createEnvTokenResolver } from './auth/instance-token.js';
+export {
+	createEnvTokenResolver,
+	withDocumentAuthorizationDeadline,
+} from './auth/instance-token.js';
 // The OAuth resource-boundary error union the bearer resolver emits (401
 // `InvalidToken` / 503 `ServerError`). Re-exported so a deployment's own bearer
 // resolver (e.g. `apps/api`'s dev auth) returns the same variants the request
@@ -57,6 +60,7 @@ export {
 	type StorageSourceKind,
 	upsertStorageObservation,
 } from './db/storage-data.js';
+export type { WorkspaceDocuments } from './document-hub/contracts.js';
 // An opt-in burn-rate cap for the inference `policies` seam: caps requests per
 // principal partition so a shared house key cannot be run up unbounded (ADR-0076).
 export { rateLimit } from './middleware/rate-limit.js';
@@ -75,6 +79,7 @@ export { rateLimit } from './middleware/rate-limit.js';
 export {
 	requireBearerPrincipal,
 	requireCookieOrBearerPrincipal,
+	resolveRequestOAuthDocumentAuthorization,
 	resolveRequestOAuthPrincipal,
 } from './middleware/require-auth.js';
 // The cloud-only relational layer, in two halves the cloud installs after
@@ -87,11 +92,15 @@ export {
 export { CloudAuthBindings, mountCloudAuth } from './mount-cloud-auth.js';
 export { mountCloudDb } from './mount-cloud-db.js';
 export {
-	createDurableObjectRecords,
-	RowAuthorityDurableObject,
-	readWorkspaceDatabaseSize,
-} from './records/cloudflare.js';
-export type { Records, RecordsPartition } from './records/contracts.js';
+	CurrentStateRowAuthorityDurableObject,
+	createCurrentStateDurableObjectDocuments,
+	createCurrentStateDurableObjectRecords,
+	readCurrentStateAccountDatabaseSize,
+} from './records/current-state-cloudflare.js';
+export type {
+	CurrentStateRecords,
+	CurrentStateRecordsPartition,
+} from './records/current-state-contracts.js';
 // Re-export the Cloudflare Durable Object class so each deployment's
 // wrangler.jsonc can resolve `class_name: "Room"` against this entrypoint.
 export { Room } from './room/backends/cloudflare/durable-object.js';
@@ -106,21 +115,21 @@ export { createDurableObjectRooms } from './room/backends/cloudflare/registry.js
 // cloud's Better Auth surface (sessions, OAuth, `c.var.auth`) is bundled into
 // `mountCloudAuth`; an instance composes none of it (ADR-0075).
 export { mountBlobsApp } from './routes/blobs.js';
-export { mountInferenceApp } from './routes/inference.js';
 export {
-	type IssueEnrollment,
-	mountRecordsApp,
-} from './routes/records.js';
+	type AdmitFirstContact,
+	mountCurrentStateRecordsApp,
+} from './routes/current-state-records.js';
+export { mountInferenceApp } from './routes/inference.js';
 export { mountRoomsApp } from './routes/rooms.js';
 export { mountSessionApp } from './routes/session.js';
 export { mountTranscriptionApp } from './routes/transcription.js';
+export { mountWorkspaceDocumentsApp } from './routes/workspace-documents.js';
 // Parent app. Wires the portable per-request lifecycle (origin + trust, CORS,
 // CSRF, the rooms registry) and returns the `Hono` every surface mounts onto. It
 // takes `resolveRooms` (the one runtime-specific portable concern) and an
 // `Identity` (who this deployment is on the web). The cloud's db + Better Auth are
 // NOT here; the cloud adds them via `mountCloudDb` + `mountCloudAuth`.
 export { createServerApp } from './server-app.js';
-
 // Binding contract: the portable env the library reads from `c.env`, as both
 // the arktype schema (value) and its inferred type (same name). Each deployment
 // proves its own Env against it (extends in apps/self-host, satisfies in
@@ -129,4 +138,10 @@ export { ServerBindings } from './server-bindings.js';
 // Public Hono context types: the portable `Env` (both deployments), the cloud's
 // `CloudEnv` (Env + Better Auth/Postgres state), and the `ResolveBearerPrincipal<E>`
 // seam the deployment closes its auth wrappers over.
-export type { CloudEnv, Env, ResolveBearerPrincipal } from './types.js';
+export type {
+	CloudEnv,
+	DocumentAuthorization,
+	Env,
+	ResolveBearerPrincipal,
+	ResolveDocumentPrincipal,
+} from './types.js';

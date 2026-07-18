@@ -5,11 +5,11 @@ import { storageObservation } from './schema/storage.js';
 /**
  * Mechanics for the ADR-0137 storage-observation registry. These functions
  * move absolute values; they never learn plan ids, allowances, or prices.
- * The hosted deployment owns the policy that turns the observed sum into a
+ * The hosted deployment owns the policy that turns observed usage into a
  * capability-issuance decision.
  */
 
-export type StorageSourceKind = 'workspace' | 'blobs';
+export type StorageSourceKind = 'workspace' | 'structured' | 'blobs';
 
 export type StorageObservation = {
 	sourceKind: StorageSourceKind;

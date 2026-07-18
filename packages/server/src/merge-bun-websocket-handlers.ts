@@ -21,12 +21,14 @@
  * Bun server this merged handler drives.
  */
 
-import type { ServerWebSocket, WebSocketHandler } from 'bun';
-import type { AttachRelaySocketData } from './attach-relay/bun-server.js';
-import type { BunRoomSocketData } from './room/backends/bun/registry.js';
+import type { ServerWebSocket, WebSocketHandler } from "bun";
+import type { AttachRelaySocketData } from "./attach-relay/bun-server.js";
+import type { BunWorkspaceDocumentSocketData } from "./records/current-state-bun.js";
+import type { BunRoomSocketData } from "./room/backends/bun/registry.js";
 
 /** The two disjoint `ws.data` shapes this merged handler dispatches between. */
-type MergedSocketData = BunRoomSocketData | AttachRelaySocketData;
+export type MergedSocketData =
+  BunRoomSocketData | AttachRelaySocketData | BunWorkspaceDocumentSocketData;
 
 /**
  * Build the one `WebSocketHandler` that routes each socket to its owning backend
@@ -37,34 +39,37 @@ type MergedSocketData = BunRoomSocketData | AttachRelaySocketData;
  * directly.
  */
 export function mergeBunWebSocketHandlers(handlers: {
-	rooms: WebSocketHandler<BunRoomSocketData>;
-	attach: WebSocketHandler<AttachRelaySocketData>;
+  rooms: WebSocketHandler<BunRoomSocketData>;
+  documents: WebSocketHandler<BunWorkspaceDocumentSocketData>;
+  attach?: WebSocketHandler<AttachRelaySocketData>;
 }): WebSocketHandler<MergedSocketData> {
-	const pick = (
-		ws: ServerWebSocket<MergedSocketData>,
-	): WebSocketHandler<MergedSocketData> =>
-		(ws.data.surface === 'rooms'
-			? handlers.rooms
-			: handlers.attach) as WebSocketHandler<MergedSocketData>;
+  const pick = (
+    ws: ServerWebSocket<MergedSocketData>,
+  ): WebSocketHandler<MergedSocketData> =>
+    (ws.data.surface === "rooms"
+      ? handlers.rooms
+      : ws.data.surface === "workspace-document"
+        ? handlers.documents
+        : handlers.attach) as WebSocketHandler<MergedSocketData>;
 
-	return {
-		open(ws) {
-			pick(ws).open?.(ws);
-		},
-		message(ws, message) {
-			pick(ws).message?.(ws, message);
-		},
-		close(ws, code, reason) {
-			pick(ws).close?.(ws, code, reason);
-		},
-		drain(ws) {
-			pick(ws).drain?.(ws);
-		},
-		ping(ws, data) {
-			pick(ws).ping?.(ws, data);
-		},
-		pong(ws, data) {
-			pick(ws).pong?.(ws, data);
-		},
-	};
+  return {
+    open(ws) {
+      pick(ws).open?.(ws);
+    },
+    message(ws, message) {
+      pick(ws).message?.(ws, message);
+    },
+    close(ws, code, reason) {
+      pick(ws).close?.(ws, code, reason);
+    },
+    drain(ws) {
+      pick(ws).drain?.(ws);
+    },
+    ping(ws, data) {
+      pick(ws).ping?.(ws, data);
+    },
+    pong(ws, data) {
+      pick(ws).pong?.(ws, data);
+    },
+  };
 }

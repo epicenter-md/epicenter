@@ -6,7 +6,8 @@
 	"description": "Shared Hono server for Epicenter cloud and the self-hosted single-partition instance.",
 	"exports": {
 		".": "./src/index.ts",
-		"./bun": "./src/bun.ts"
+		"./bun": "./src/bun.ts",
+		"./cloud-db": "./src/cloud-db.ts"
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit",
@@ -20,6 +21,7 @@
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/identity": "workspace:*",
 		"@epicenter/row-sync": "workspace:*",
+		"@epicenter/sqlite": "workspace:*",
 		"@epicenter/sync": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@hono/standard-validator": "catalog:",

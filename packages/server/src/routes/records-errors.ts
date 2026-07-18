@@ -9,16 +9,6 @@ export const RecordsError = defineErrors({
 		message: 'The record synchronization request is too large.',
 		status: 413 as const,
 	}),
-	/**
-	 * The deployment could not decide its capability-issuance admission
-	 * (ADR-0137). Enrollment fails closed and retryably; synchronization
-	 * and baseline scans never depend on the decision.
-	 */
-	EnrollmentUnavailable: () => ({
-		message:
-			'The storage capability decision is temporarily unavailable. Retry enrollment later.',
-		status: 503 as const,
-	}),
 });
 
 export type RecordsError = InferErrors<typeof RecordsError>;

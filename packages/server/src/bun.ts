@@ -71,13 +71,20 @@ export { ATTACH_RELAY_ROUTE } from './attach-relay/route.js';
 // `ResolveBearerPrincipal` a Bun instance injects (`createEnvTokenResolver(token)`).
 // The pure generator + boot entropy gate (`generateInstanceToken` /
 // `assertStrongToken`) live in `@epicenter/auth`.
-export { createEnvTokenResolver } from './auth/instance-token.js';
+export {
+	createEnvTokenResolver,
+	withDocumentAuthorizationDeadline,
+} from './auth/instance-token.js';
 // The OAuth resource-boundary error union the bearer resolver emits. Exported
 // here too (it is not a Cloudflare module) so a Bun entry's dev bearer resolver
 // gets it without importing the main barrel, which would drag in the `Room`
 // Durable Object and its `cloudflare:workers` import.
 export { OAuthError } from './auth/oauth-errors.js';
 export { createDb } from './db/create-db.js';
+export {
+	listStorageObservations,
+	type StorageObservation,
+} from './db/storage-data.js';
 // Merge several Bun `WebSocketHandler`s onto one `Bun.serve`, dispatching each
 // socket to its backend by a `surface` tag (rooms + attach relay on one port).
 export { mergeBunWebSocketHandlers } from './merge-bun-websocket-handlers.js';
@@ -86,6 +93,7 @@ export { rateLimit } from './middleware/rate-limit.js';
 export {
 	requireBearerPrincipal,
 	requireCookieOrBearerPrincipal,
+	resolveRequestOAuthDocumentAuthorization,
 	resolveRequestOAuthPrincipal,
 } from './middleware/require-auth.js';
 // The cloud-only relational layer (Better Auth on `c.var.auth` + the auth surface,
@@ -95,16 +103,27 @@ export {
 // merged into the cloud Bun host's boot validation.
 export { CloudAuthBindings, mountCloudAuth } from './mount-cloud-auth.js';
 export { mountCloudDb } from './mount-cloud-db.js';
-export { type BunRecords, createBunRecords } from './records/bun.js';
-export type { Records, RecordsPartition } from './records/contracts.js';
+export {
+	type BunWorkspaceDocumentSocketData,
+	type CurrentStateBunRecords,
+	createCurrentStateBunRecords,
+} from './records/current-state-bun.js';
+export type {
+	CurrentStateRecords,
+	CurrentStateRecordsPartition,
+} from './records/current-state-contracts.js';
 // The Bun room backend: an in-process Rooms map + bun:sqlite update log,
 // plus the Bun `websocket` handler and `bindServer` the entry wires. Its `.rooms`
 // is what a Bun entry passes as `createServerApp`'s `resolveRooms`.
 export { createBunRooms } from './room/backends/bun/registry.js';
 export { mountBlobsApp } from './routes/blobs.js';
+export {
+	type AdmitFirstContact,
+	mountCurrentStateRecordsApp,
+} from './routes/current-state-records.js';
 export { mountInferenceApp } from './routes/inference.js';
-export { mountRecordsApp } from './routes/records.js';
 export { mountRoomsApp } from './routes/rooms.js';
+export { mountWorkspaceDocumentsApp } from './routes/workspace-documents.js';
 export { mountSessionApp } from './routes/session.js';
 export { mountTranscriptionApp } from './routes/transcription.js';
 export { createServerApp } from './server-app.js';
@@ -114,4 +133,10 @@ export { createServerApp } from './server-app.js';
 export { ServerBindings } from './server-bindings.js';
 // Public Hono context types: the portable `Env`, the cloud's `CloudEnv`, and the
 // `ResolveBearerPrincipal<E>` seam the dev Bun entry closes its wrapper over for the smoke.
-export type { CloudEnv, Env, ResolveBearerPrincipal } from './types.js';
+export type {
+	CloudEnv,
+	Env,
+	ResolveBearerPrincipal,
+	ResolveDocumentPrincipal,
+} from './types.js';
+export type { WorkspaceDocuments } from './document-hub/contracts.js';
