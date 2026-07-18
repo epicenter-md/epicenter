@@ -3,6 +3,7 @@
 		StorageMovedScreen,
 		storageMoved,
 	} from '@epicenter/app-shell/storage-moved';
+	import { WorkspaceGate } from '@epicenter/app-shell/workspace-gate';
 	import { Toaster } from '@epicenter/ui/sonner';
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { ModeWatcher } from 'mode-watcher';
@@ -12,6 +13,7 @@
 	import { FlushEditsOnHide } from '@epicenter/svelte';
 	import { reloadOnPrincipalChange } from '@epicenter/svelte/auth';
 	import { queryClient } from '$lib/rpc/client';
+	import { whisperingReady } from '$lib/whispering/whispering-ready';
 	import '@epicenter/ui/app.css';
 	// Whispering's brand overrides, layered after the shared theme so they win.
 	// Keep this import last among the stylesheets.
@@ -45,10 +47,12 @@
 {#if storageMoved.current}
 	<StorageMovedScreen />
 {:else}
-	<QueryClientProvider client={queryClient}>
-		<!-- Uses UI package defaults (300ms delay, 150ms skip) -->
-		<Tooltip.Provider> {@render children()} </Tooltip.Provider>
-	</QueryClientProvider>
+	<WorkspaceGate pending={whisperingReady} onSignOut={() => auth.signOut()}>
+		<QueryClientProvider client={queryClient}>
+			<!-- Uses UI package defaults (300ms delay, 150ms skip) -->
+			<Tooltip.Provider> {@render children()} </Tooltip.Provider>
+		</QueryClientProvider>
+	</WorkspaceGate>
 {/if}
 
 <Toaster

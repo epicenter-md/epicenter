@@ -75,4 +75,14 @@ async function createSettings() {
 	};
 }
 
-export const settings = await createSettings();
+/**
+ * Assigned by `initSettings`, which the app boot chain awaits after the
+ * workspace opens (the initial KV hydration gates first paint, exactly as
+ * the old top-level await did); the root WorkspaceGate blocks every
+ * consumer until then.
+ */
+export let settings: Awaited<ReturnType<typeof createSettings>>;
+
+export async function initSettings(): Promise<void> {
+	settings = await createSettings();
+}
