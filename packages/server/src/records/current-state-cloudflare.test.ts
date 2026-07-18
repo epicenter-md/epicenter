@@ -393,6 +393,66 @@ test('workspace deletion closes hibernating sockets before their handshake', asy
 	}
 });
 
+test('account deletion closes every socket and deletes alarm and storage', async () => {
+	const context = await setup();
+	const owned = createStorage();
+	const closes: { code: number; reason: string }[] = [];
+	const calls: string[] = [];
+	const socket = {
+		readyState: WebSocket.OPEN,
+		deserializeAttachment() {
+			return {
+				version: 1,
+				subprotocol: 'epicenter-document-v3',
+				workspaceId: 'wiki',
+				table: 'pages',
+				rowId: rid(1),
+				acceptedAt: Date.now(),
+				authorizationExpiresAt: Date.now() + 60_000,
+				connected: false,
+			};
+		},
+		close(code: number, reason: string) {
+			closes.push({ code, reason });
+		},
+	};
+	const storage = owned.storage as unknown as Record<string, unknown>;
+	storage.deleteAlarm = async () => {
+		calls.push('deleteAlarm');
+	};
+	storage.deleteAll = async () => {
+		calls.push('deleteAll');
+	};
+	try {
+		const object = new context.CurrentStateRowAuthorityDurableObject(
+			{
+				storage: owned.storage,
+				getWebSockets: () => [socket as unknown as WebSocket],
+			} as unknown as DurableObjectState,
+			{} as Cloudflare.Env,
+		);
+		await object.deleteAccount();
+		// Construction closes restored sockets retryably; deletion then closes
+		// whatever the runtime still enumerates with an ordinary not-live.
+		expect(closes).toEqual([
+			{ code: 1000, reason: 'restart-resync' },
+			{ code: 1000, reason: 'not-live' },
+		]);
+		expect(calls).toEqual(['deleteAlarm', 'deleteAll']);
+		// Idempotent retry for a deployment coordinator's partial failure.
+		await object.deleteAccount();
+		expect(calls).toEqual([
+			'deleteAlarm',
+			'deleteAll',
+			'deleteAlarm',
+			'deleteAll',
+		]);
+	} finally {
+		owned.database.close();
+		context.cleanup();
+	}
+});
+
 test('failed construction leaves Durable Object storage retryable', async () => {
 	const context = await setup();
 	const owned = createStorage();

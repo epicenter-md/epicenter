@@ -268,6 +268,46 @@ test('shutdown closes active document sockets and refuses later operations', asy
 	}
 });
 
+test('account deletion removes principal storage, closes sockets, and retries idempotently', async () => {
+	const context = setup();
+	const closes: { code: number; reason: string }[] = [];
+	const socket = {
+		data: {
+			surface: 'workspace-document',
+			kind: 'document',
+			principalId: alice,
+			workspaceId: WORKSPACE,
+			address: { table: 'pages', rowId: rid(1) },
+			authorizationExpiresAt: Date.now() + 60_000,
+			connected: false,
+		} satisfies BunWorkspaceDocumentSocketData,
+		close(code: number, reason: string) {
+			closes.push({ code, reason });
+		},
+	};
+	try {
+		const authority = context.authority();
+		await push(authority, WORKSPACE, rid(100), 1, [
+			{ kind: 'create', table: 'pages', rowId: rid(1), fields: { n: 1 } },
+		]);
+		const otherAuthority = context.authority(asPrincipalId('bob'));
+		await push(otherAuthority, WORKSPACE, rid(200), 1, [
+			{ kind: 'create', table: 'pages', rowId: rid(2), fields: { n: 2 } },
+		]);
+		context.websocket.open?.(socket as never);
+
+		await authority.deleteAccount();
+		expect(closes).toEqual([{ code: 1000, reason: 'not-live' }]);
+		expect(readdirSync(join(context.dir, 'principals'))).toEqual(['bob']);
+		// Idempotent retry after a partial cross-system failure.
+		await authority.deleteAccount();
+		// The other principal's authority is untouched.
+		expect(await otherAuthority.hasReplica(WORKSPACE, rid(200))).toBe(true);
+	} finally {
+		context.cleanup();
+	}
+});
+
 test('principal ids cannot escape their principal directory', async () => {
 	const context = setup();
 	try {

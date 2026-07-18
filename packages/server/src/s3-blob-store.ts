@@ -107,6 +107,37 @@ export function createS3BlobStore(config: S3BlobStoreConfig) {
 	const objectUrl = (key: string) =>
 		new URL(`${config.endpoint}/${config.bucket}/${key}`);
 
+	async function list(prefix: string): Promise<S3Object[]> {
+		const out: S3Object[] = [];
+		let continuationToken: string | undefined;
+		do {
+			const url = new URL(`${config.endpoint}/${config.bucket}`);
+			url.searchParams.set('list-type', '2');
+			url.searchParams.set('prefix', prefix);
+			url.searchParams.set('max-keys', '1000');
+			if (continuationToken) {
+				url.searchParams.set('continuation-token', continuationToken);
+			}
+			const res = await client.fetch(url.toString(), { method: 'GET' });
+			if (!res.ok) {
+				throw new Error(`S3 LIST ${prefix} failed: ${res.status}`);
+			}
+			const { objects, nextToken } = parseListObjectsV2(await res.text());
+			out.push(...objects);
+			continuationToken = nextToken;
+		} while (continuationToken);
+		return out;
+	}
+
+	async function deleteObject(key: string): Promise<void> {
+		const res = await client.fetch(objectUrl(key).toString(), {
+			method: 'DELETE',
+		});
+		if (!res.ok && res.status !== 404) {
+			throw new Error(`S3 DELETE ${key} failed: ${res.status}`);
+		}
+	}
+
 	return {
 		/**
 		 * Presign a PUT that the store will reject unless the uploaded bytes hash
@@ -192,35 +223,19 @@ export function createS3BlobStore(config: S3BlobStoreConfig) {
 		 * object's key, size, and upload time. The S3 list API is XML-only, so
 		 * the body is parsed by {@link parseListObjectsV2}.
 		 */
-		async list(prefix: string): Promise<S3Object[]> {
-			const out: S3Object[] = [];
-			let continuationToken: string | undefined;
-			do {
-				const url = new URL(`${config.endpoint}/${config.bucket}`);
-				url.searchParams.set('list-type', '2');
-				url.searchParams.set('prefix', prefix);
-				url.searchParams.set('max-keys', '1000');
-				if (continuationToken) {
-					url.searchParams.set('continuation-token', continuationToken);
-				}
-				const res = await client.fetch(url.toString(), { method: 'GET' });
-				if (!res.ok) {
-					throw new Error(`S3 LIST ${prefix} failed: ${res.status}`);
-				}
-				const { objects, nextToken } = parseListObjectsV2(await res.text());
-				out.push(...objects);
-				continuationToken = nextToken;
-			} while (continuationToken);
-			return out;
-		},
+		list,
 
 		/** DeleteObject. Idempotent: a missing key is not an error. */
-		async delete(key: string): Promise<void> {
-			const res = await client.fetch(objectUrl(key).toString(), {
-				method: 'DELETE',
-			});
-			if (!res.ok && res.status !== 404) {
-				throw new Error(`S3 DELETE ${key} failed: ${res.status}`);
+		delete: deleteObject,
+
+		/**
+		 * Delete every object under `prefix` (list-then-delete; idempotent, so an
+		 * account-deletion coordinator can re-run it after a partial failure). Not
+		 * atomic: an already-presigned PUT can land after this sweep completes.
+		 */
+		async deletePrefix(prefix: string): Promise<void> {
+			for (const object of await list(prefix)) {
+				await deleteObject(object.key);
 			}
 		},
 	};

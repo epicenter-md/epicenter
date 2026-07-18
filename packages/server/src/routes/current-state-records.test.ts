@@ -51,6 +51,7 @@ function setup({
 				operationCalls.push({ principalId, workspaceId });
 				if (fail === 'deleteWorkspace') throw new TypeError('invalid deletion');
 			},
+			async deleteAccount() {},
 			async hasReplica(workspaceId) {
 				operationCalls.push({ principalId, workspaceId });
 				if (fail === 'hasReplica') throw new TypeError('invalid replica lookup');

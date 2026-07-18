@@ -23,6 +23,16 @@ export type AccountAuthority = {
 		request: AcquireRequest,
 	): Promise<AcquireResponse>;
 	deleteWorkspace(workspaceId: string): Promise<void>;
+	/**
+	 * Delete every workspace, document, socket, and byte this account owns.
+	 *
+	 * Never refused by allowance or the physical wall, and idempotent, so a
+	 * deployment coordinator can retry it across partial cross-system
+	 * failures. Durable prevention of later operations is the deployment's
+	 * job (removing the principal's credentials); this operation only
+	 * guarantees the storage is gone and its sockets are closed.
+	 */
+	deleteAccount(): Promise<void>;
 	/** This authority's absolute physical SQLite size in bytes. */
 	databaseSize(): Promise<number>;
 	acceptDocumentUpgrade(input: {

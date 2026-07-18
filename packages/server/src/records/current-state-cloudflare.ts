@@ -77,6 +77,20 @@ export class CurrentStateRowAuthorityDurableObject extends DurableObject {
 		this.documents.evictWorkspace(workspaceId);
 	}
 
+	/**
+	 * Delete the whole account: every socket, alarm, and storage byte.
+	 *
+	 * Idempotent. This live instance's in-memory authority is broken after
+	 * `deleteAll` (its schema is gone), so later scalar or document operations
+	 * on it fail until the actor is evicted; the durable gate against them is
+	 * the deployment removing the principal's credentials.
+	 */
+	async deleteAccount(): Promise<void> {
+		this.documents.evictAll();
+		await this.ctx.storage.deleteAlarm();
+		await this.ctx.storage.deleteAll();
+	}
+
 	async hasReplica(workspaceId: string, replicaId: string): Promise<boolean> {
 		return this.authority.workspace(workspaceId).hasReplica(replicaId);
 	}
@@ -121,6 +135,7 @@ export class CurrentStateRowAuthorityDurableObject extends DurableObject {
 
 type AccountAuthorityRpc = {
 	deleteWorkspace(workspaceId: string): Promise<void>;
+	deleteAccount(): Promise<void>;
 	hasReplica(workspaceId: string, replicaId: string): Promise<boolean>;
 	push(workspaceId: string, request: PushRequest): Promise<PushResponse>;
 	pull(workspaceId: string, request: PullRequest): Promise<PullResponse>;
@@ -148,6 +163,7 @@ export function createDurableObjectAccountAuthorities(
 				pull: (workspaceId, request) => stub().pull(workspaceId, request),
 				acquire: (workspaceId, request) => stub().acquire(workspaceId, request),
 				deleteWorkspace: (workspaceId) => stub().deleteWorkspace(workspaceId),
+				deleteAccount: () => stub().deleteAccount(),
 				databaseSize: () => stub().databaseSize(),
 				acceptDocumentUpgrade({
 					workspaceId,

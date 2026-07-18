@@ -205,6 +205,18 @@ export class CloudflareWorkspaceDocumentRuntime {
 		}
 	}
 
+	/** Close every socket and discard every hub for the deleted account. */
+	evictAll(): void {
+		for (const socket of this.ctx.getWebSockets()) {
+			const attachment = socket.deserializeAttachment();
+			if (isAttachment(attachment) && attachment.connected) {
+				this.disconnect(socket, attachment);
+			}
+			socket.close(ORDINARY_CLOSE_CODE, 'not-live');
+		}
+		this.hubs.clear();
+	}
+
 	/** Close every socket and discard every hub for one deleted workspace. */
 	evictWorkspace(workspaceId: string): void {
 		for (const socket of this.ctx.getWebSockets()) {

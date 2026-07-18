@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import type { PrincipalId } from '@epicenter/identity';
 import type { RowAddress } from '@epicenter/row-sync';
@@ -190,6 +190,34 @@ export function createBunAccountAuthorityRuntime({ dir }: { dir: string }) {
 		}
 	}
 
+	function deleteAccount(principalId: PrincipalId): void {
+		if (isClosed) throw new Error('Bun account authority runtime is closed');
+		for (const socket of [...activeSockets]) {
+			if (
+				socket.data.kind !== 'document' ||
+				socket.data.principalId !== principalId
+			) {
+				continue;
+			}
+			disconnect(socket);
+			socket.close(1000, 'not-live');
+		}
+		const opened = openAuthorities.get(principalId);
+		if (opened) {
+			for (const documentHub of opened.hubs.values()) documentHub.closeAll();
+			opened.hubs.clear();
+			opened.database.close();
+			openAuthorities.delete(principalId);
+		}
+		// Remove authority.sqlite and its WAL sidecars; force keeps retries
+		// idempotent. Deliberately not load(): resolving the path would recreate
+		// the directory this operation exists to remove.
+		rmSync(join(dir, 'principals', encodePathComponent(principalId)), {
+			recursive: true,
+			force: true,
+		});
+	}
+
 	function acceptDocumentUpgrade(
 		principalId: PrincipalId,
 		input: {
@@ -264,6 +292,9 @@ export function createBunAccountAuthorityRuntime({ dir }: { dir: string }) {
 				},
 				async deleteWorkspace(workspaceId) {
 					deleteWorkspace(principalId, workspaceId);
+				},
+				async deleteAccount() {
+					deleteAccount(principalId);
 				},
 				async databaseSize() {
 					return readDatabaseSize(load(principalId).database);
