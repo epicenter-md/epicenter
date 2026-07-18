@@ -116,17 +116,16 @@ const DEFAULT_RETRY_BASE_DELAY_MS = 500;
 const DEFAULT_RETRY_MAX_DELAY_MS = 30_000;
 
 const defaultScheduler: CanonicalSyncScheduler = {
-	queueTask: queueMicrotask,
+	// Wrapped so the method call `scheduler.queueTask(...)` never invokes the
+	// native function with the scheduler as `this` (Chromium throws
+	// "Illegal invocation" on a non-global receiver; Bun does not).
+	queueTask: (task) => queueMicrotask(task),
 	setTimer(task, delayMs) {
 		const timer = setTimeout(task, delayMs);
-		if (
-			typeof timer === 'object' &&
-			timer !== null &&
-			'unref' in timer &&
-			typeof timer.unref === 'function'
-		) {
-			timer.unref();
-		}
+		// Node/Bun timers expose unref; browser timers are numbers. The cast
+		// avoids a DOM-lib narrowing trap (`'unref' in timer` narrows number
+		// to never in browser-typed programs).
+		(timer as unknown as { unref?: () => void }).unref?.();
 		return timer;
 	},
 	clearTimer: clearTimeout,
