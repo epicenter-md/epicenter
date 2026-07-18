@@ -398,6 +398,48 @@ idempotency, and account-deletion socket closure on both runtimes); all seven
 typechecks green; license graph clean; an independent fresh-context
 adversarial review of the destructive-operation gates (findings folded).
 
+### Wave G amendment (2026-07-18, pre-gate wave)
+
+The Device Add product sentence was clarified after Wave G landed: Device
+mode is a permanent first-class mode, copying into the account is optional,
+the source remains by default, and local deletion is a separate explicit
+destructive action. The automatic delete-after-copy promise and its entire
+verification family (`verifyAdded`, `DeviceAddVerification`,
+`missingAddedContent`, `captureConfirmed`, the `capture-confirmed` Worker
+operation) were deleted on `codex/wave-h-pre-gate`; ADR-0147's Proposed text
+carries the clarified flow and `WAVE_H_REMOVED_FEATURES.md` records the
+removal. Export, capture, idempotent add, recovery, and account deletion are
+unchanged.
+
+### Wave H pre-gate (DONE 2026-07-18, branch `codex/wave-h-pre-gate`)
+
+Everything below is complete except the four gated items in the next section.
+
+- [x] Honeycrisp and Whispering are fully on the two-plane runtime in every
+  supported environment with zero legacy callers (`yjs` 13, `/api/rooms`,
+  `y-indexeddb`, `toConnection`-era runtime): browser (Device/Account),
+  Honeycrisp standalone Tauri (browser runtime in the WebView; a native
+  desktop owner is a recorded deferral), Whispering under the Epicenter host
+  (Device-only desktop runtime; the sync promise in its account settings copy
+  was corrected).
+- [x] Browser scalar storage moved from the isolation-requiring 'opfs' VFS
+  (broken in every production deploy and on Safari < 17) to per-key SAH
+  pools; COOP/COEP requirements deleted everywhere; the storage lease steals
+  newest-tab-wins with loud degradation of the stolen tab.
+- [x] The new-runtime import graph exits the legacy `@epicenter/sync` barrel
+  (`./auth-subprotocol` subpath), fixing every Whispering build.
+- [x] The desktop document plane was repaired (owner bridge against
+  runtime-native handles; concurrent same-host clients receive relayed
+  document updates), and the four Wave G audit fixes are incorporated.
+- [x] The browser smoke (`examples/sqlite-workspace-browser`) drives the real
+  Bun authority end to end in headless Chromium: records routes, document
+  sockets, steal, deletion revocation, forced reopen, no isolation headers.
+- [x] The topology harness exists at Honeycrisp `/dev/topology?n=1|2|4|8`
+  (one page, N simultaneous documents, per-document phase/reconnect/
+  revocation observability, edit pulse). Deployment for the gate: deploy
+  `apps/api` then `apps/honeycrisp` to their production hostnames (OAuth
+  redirect URIs pin `honeycrisp.epicenter.so`, so previews cannot sign in).
+
 ### Wave H: flip, delete, and name
 
 - [ ] Flip Browser, Tauri, hosted, and self-hosted production paths together.
