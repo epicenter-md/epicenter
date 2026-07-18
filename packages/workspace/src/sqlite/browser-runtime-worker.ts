@@ -113,9 +113,14 @@ function acquireSahPool(
 					await new Promise((resolve) => setTimeout(resolve, 250));
 				}
 			}
-			throw lastFailure instanceof Error
-				? lastFailure
-				: new Error(String(lastFailure));
+			// A suspended previous owner (a frozen tab or backgrounded PWA)
+			// cannot answer the steal notification, and OPFS access-handle
+			// exclusivity keeps its files locked until it resumes or closes.
+			// Name that state instead of surfacing a raw storage error.
+			throw new Error(
+				`Workspace storage '${storageKey}' is still held by another tab or window; close it (or wait for it to resume) and reload`,
+				{ cause: lastFailure },
+			);
 		})();
 		void pool.catch(() => sahPools.delete(storageKey));
 		sahPools.set(storageKey, pool);
