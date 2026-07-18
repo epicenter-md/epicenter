@@ -12,7 +12,7 @@
 	import { ModeWatcher } from 'mode-watcher';
 	import { onMount } from 'svelte';
 	import { auth } from '#platform/auth';
-	import { honeycrisp } from '$lib/honeycrisp';
+	import { honeycrispReady } from '$lib/honeycrisp';
 	import '@epicenter/ui/app.css';
 
 	let { children } = $props();
@@ -27,10 +27,7 @@
 {#if storageMoved.current}
 	<StorageMovedScreen />
 {:else}
-	<WorkspaceGate
-		pending={honeycrisp.whenReady}
-		onSignOut={() => auth.signOut()}
-	>
+	<WorkspaceGate pending={honeycrispReady} onSignOut={() => auth.signOut()}>
 		<Tooltip.Provider>{@render children?.()}</Tooltip.Provider>
 	</WorkspaceGate>
 {/if}
