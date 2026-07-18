@@ -359,11 +359,44 @@ independent adversarial review confirmed convergence, resume, and
 loop-freedom and its three falsifiers (handshake fail-open, pre-apply
 resource gap, struct-ceiling legitimacy claim) are closed in this wave.
 
-### Wave G: coordinated product operations
+### Wave G: coordinated product operations — DONE 2026-07-18
 
-- [ ] Export scalar cuts plus available document states with explicit
-  omissions; Device Add persists both planes, settles, verifies canonical
-  liveness, then permits source deletion; recovery captures logical content.
+- [x] Export: every runtime facade (browser and Bun, Device and Account)
+  exposes `export(definition)` returning `LogicalWorkspaceExport`: one
+  best-effort scalar settlement (null for Device), visible state (confirmed
+  rows plus intent overlays via the replica's ungated `captureVisible`), and
+  each row's locally durable compact document state. A row without a
+  `document` field is the deterministic explicit omission record; a pending
+  settlement (offline, storage-limit) never blocks export, so export stays
+  available at the physical wall. The runtime owns structured capture only;
+  archive formats stay with applications.
+- [x] Device Add: the unfused `capture`/`add`/`delete` verbs gain
+  `verifyAdded(definition, copy)` on Account runtimes: settle one scalar cut,
+  then prove every copied row address reads back canonically live and every
+  copied document byte set is locally durable. A create silently refused at a
+  retained deletion marker, a row deleted mid-transfer, and an interrupted
+  `add()` all surface as `missing`; `add()` is idempotent, so the failure
+  path is retry-add then verify, with the Device source preserved. `verified`
+  deliberately does not claim document bytes reached the authority.
+- [x] Recovery: `captureRecovery()` now returns ADR-0142's full copy (rows,
+  KV, and locally durable compact document state) on both runtimes;
+  `startFresh()` deliberately retains local document logs (same-address Yjs
+  merge is the document plane's convergence law; address reuse across
+  lifetimes is already refused self-harm).
+- [x] Account deletion: `AccountAuthority.deleteAccount()` (Cloudflare:
+  socket eviction, alarm delete, `storage.deleteAll()`; Bun: principal
+  directory removal), S3 `deletePrefix`, and the hosted
+  `DELETE /api/account` coordinator ordered authority -> blobs -> Autumn
+  customer -> storage observations -> auth user (last, so retries stay
+  authenticated), answering 503 with the failed step until a 204 means
+  deleted. Dashboard danger zone confirms and retries. Self-host has no
+  per-user deletion surface.
+
+Proof: 1018 tests green across the five packages plus apps/api (including
+retained-marker refusal, offline export/verification, deletion ordering and
+idempotency, and account-deletion socket closure on both runtimes); all seven
+typechecks green; license graph clean; an independent fresh-context
+adversarial review of the destructive-operation gates (findings folded).
 
 ### Wave H: flip, delete, and name
 
@@ -376,6 +409,50 @@ resource gap, struct-ceiling legitimacy claim) are closed in this wave.
   and 8 sockets; failure selects one workspace socket as the sole topology.
 - [ ] Collapse, fresh-context, and post-implementation reviews; accept ADRs
   0144 through 0147 with the 0137/0141 amendment notes; delete this spec.
+
+#### Topology gate: exact manual procedure (requires a physical iPhone)
+
+The gate decides ADR-0145's one-socket-per-open-row-document topology and
+cannot run from a development machine. Do not infer success; ADR-0145 and
+ADR-0146 stay Proposed until this runs.
+
+Prerequisites: the current branch deployed to the production endpoint (a real
+HTTPS hostname; Private Relay does not engage for localhost); an iPhone on
+current iOS signed into iCloud+ with Private Relay ENABLED (Settings >
+[name] > iCloud > Private Relay); a laptop signed into the same account to
+drive remote edits; a workspace with at least 8 rows owning documents; a page
+context that holds N row documents open SIMULTANEOUSLY (the topology question
+is per-page socket count, so N Safari tabs with one document each do not
+count — use a dev-only harness route that opens N documents in one page).
+
+Matrix: {Safari tab, installed PWA via Add to Home Screen} x {Private Relay
+on} x N in {1, 2, 4, 8}. For each cell:
+
+1. Sign in; confirm each document socket completes the bearer-subprotocol
+   handshake (101 with `epicenter-document-v3`), and no credential appears in
+   any URL (remote Web Inspector network tab).
+2. Downstream: laptop edits on all N documents appear on the phone within a
+   few seconds. Upstream: phone edits on all N appear on the laptop.
+3. Background the app 30 seconds, then foreground: all N reconnect and
+   repair (make laptop edits while backgrounded; they must arrive after
+   foregrounding). Repeat with a 5-minute background.
+4. Hibernation restoration: idle 2+ minutes, then edit on the phone; the
+   restore-close plus reconnect must repair (the edit lands on the laptop).
+5. Deletion closure: delete one open row from the laptop; the phone's socket
+   for it closes and the document handle revokes.
+6. Record failure signals: any socket that never connects at N >= 4, a
+   systematic cap (only k < N connect), starvation (one document stops
+   receiving while others flow), or a reconnect storm (repeating
+   connect/close cycles in the network log).
+
+Record per run: device model, iOS version, Safari vs PWA, Private Relay
+state, network (Wi-Fi and cellular), timestamps, N, and per-check results.
+
+Decision: every check green at N = 8 in both Safari and the installed PWA
+under Private Relay -> retain one socket per open row document and accept
+ADR-0145/0146 at the flip. Any reproducible topology-attributable failure ->
+implement one workspace socket as the sole topology before the flip (do not
+keep both modes).
 
 ## Refusals
 

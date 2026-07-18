@@ -25,12 +25,21 @@ await workspace.tables.notes.document.open(row.id);
 await workspace.kv.set('theme', 'dark');
 const copy = await runtime.capture(definition);
 await accountRuntime.add(definition, copy);
+const verification = await accountRuntime.verifyAdded(definition, copy);
+verification.outcome satisfies 'verified' | 'unsettled' | 'missing';
+const deviceExport = await runtime.export(definition);
+deviceExport.settlement satisfies null | { outcome: string };
+await accountRuntime.export(definition);
 await runtime.delete(definition);
 
 // @ts-expect-error Device runtimes never upload logical data
 await runtime.add(definition, copy);
 // @ts-expect-error Account runtimes never expose Device deletion
 await accountRuntime.delete(definition);
+// @ts-expect-error Device runtimes have no authority to verify against
+await runtime.verifyAdded(definition, copy);
+// @ts-expect-error Account runtimes never expose Device capture
+await accountRuntime.capture(definition);
 
 // @ts-expect-error create never accepts a caller-supplied id
 await workspace.tables.notes.create({ id: 'manual', title: 'typed' });
