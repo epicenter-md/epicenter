@@ -17,9 +17,11 @@ import { PRODUCTION_API_URL } from '@epicenter/constants/apps';
 import {
 	AttachRelay,
 	type CloudEnv,
+	CurrentStateRowAuthorityDurableObject,
 	connectHyperdriveDb,
+	createCurrentStateDurableObjectDocuments,
+	createCurrentStateDurableObjectRecords,
 	createDurableObjectAttachRelay,
-	createDurableObjectRecords,
 	createDurableObjectRooms,
 	createServerApp,
 	listStorageObservations,
@@ -27,20 +29,22 @@ import {
 	mountBlobsApp,
 	mountCloudAuth,
 	mountCloudDb,
+	mountCurrentStateRecordsApp,
 	mountInferenceApp,
-	mountRecordsApp,
 	mountRoomsApp,
 	mountSessionApp,
 	mountTranscriptionApp,
+	mountWorkspaceDocumentsApp,
 	Room,
-	RowAuthorityDurableObject,
-	readWorkspaceDatabaseSize,
+	readCurrentStateAccountDatabaseSize,
 	requireBearerPrincipal,
 	requireCookieOrBearerPrincipal,
+	resolveRequestOAuthDocumentAuthorization,
 	resolveRequestOAuthPrincipal,
 	type ServerBindings,
 	upsertStorageObservation,
 } from '@epicenter/server';
+import { readHostedPrincipalEmail } from '@epicenter/server/cloud-db';
 import type { Context } from 'hono';
 import { describeRoute } from 'hono-openapi';
 import {
@@ -48,8 +52,8 @@ import {
 	chargeOpenAiTranscriptionCredits,
 } from './billing/policies.js';
 import { mountBillingApi } from './billing/routes.js';
-import { billingServiceFor } from './billing/service.js';
-import { issueStorageEnrollment } from './storage/service.js';
+import { createBillingService } from './billing/service.js';
+import { admitStorageFirstContact } from './storage/service.js';
 import { buildEpicenterTrustedOrigins } from './trusted-origins.js';
 
 // Compile-time proof that this worker's generated Env provides every
@@ -142,27 +146,46 @@ mountCloudAuth(app, {
 
 // Principal-partitioned reusable surfaces.
 mountSessionApp(app, { auth: cookieOrBearer });
-mountRecordsApp(app, {
+mountWorkspaceDocumentsApp(app, {
+	resolveDocumentPrincipal: resolveRequestOAuthDocumentAuthorization,
+	resolveDocuments: (env) =>
+		createCurrentStateDurableObjectDocuments((env as Cloudflare.Env).RECORDS),
+});
+mountCurrentStateRecordsApp(app, {
 	auth: bearer,
 	resolveRecords: (env) =>
-		createDurableObjectRecords((env as Cloudflare.Env).RECORDS),
+		createCurrentStateDurableObjectRecords((env as Cloudflare.Env).RECORDS),
 	// Hosted storage policy (ADR-0137): refusal creates no target authority or
-	// registry row. Admission registers the source before the replica is minted.
-	// Synchronization never consults storage state.
-	issueEnrollment: (c, partition, enroll) =>
-		issueStorageEnrollment(
+	// registry row. Admission registers the source before the client-owned replica
+	// identity gets its first authority receipt. Synchronization never consults
+	// storage state.
+	admitFirstContact: (c, partition) =>
+		admitStorageFirstContact(
 			{
 				listObservations: (principalId) =>
 					listStorageObservations(c.var.db, principalId),
-				readWorkspaceBytes: (source) =>
-					readWorkspaceDatabaseSize((c.env as Cloudflare.Env).RECORDS, source),
+				readAccountBytes: (principalId) =>
+					readCurrentStateAccountDatabaseSize(
+						(c.env as Cloudflare.Env).RECORDS,
+						principalId,
+					),
 				upsertObservation: (observation) =>
 					upsertStorageObservation(c.var.db, observation),
-				resolveIncludedBytes: () =>
-					billingServiceFor(c).getStorageIncludedBytes(),
+				resolveIncludedBytes: async () => {
+					const principalEmail = await readHostedPrincipalEmail(
+						c.var.db,
+						partition.principalId,
+					);
+					if (principalEmail === null) {
+						throw new Error('Workspace storage principal does not exist');
+					}
+					return createBillingService(c.env as Cloudflare.Env, {
+						principalId: partition.principalId,
+						principalEmail,
+					}).getStorageIncludedBytes();
+				},
 			},
 			partition,
-			enroll,
 		),
 });
 // Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver, not
@@ -226,4 +249,4 @@ app.get('/billing', (c) => c.redirect('/dashboard'));
 export default {
 	fetch: app.fetch,
 };
-export { AttachRelay, Room, RowAuthorityDurableObject };
+export { AttachRelay, CurrentStateRowAuthorityDurableObject, Room };

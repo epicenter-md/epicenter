@@ -38,8 +38,11 @@
  *
  * The dashboard SPA and billing data plane are intentionally omitted: Vite
  * serves the dashboard in dev, and billing is the hosted Worker's concern.
- * Because this runtime cannot resolve the hosted storage allowance, new record
- * enrollment fails closed with 503. Existing enrolled replicas may still sync.
+ * Because this runtime cannot resolve the hosted storage allowance, first
+ * contact is allowed only for workspaces already registered by the hosted
+ * Worker. Existing current-state replicas in this runtime's own backend may
+ * still sync; opening an old records database performs the authorized protocol
+ * reset and does not resume legacy receipts.
  */
 
 import { mkdirSync } from 'node:fs';
@@ -48,25 +51,32 @@ import { API_BUN_DEV_PORT } from '@epicenter/constants/apps';
 import {
 	CloudAuthBindings,
 	type CloudEnv,
-	createBunRecords,
 	createBunRooms,
+	createCurrentStateBunRecords,
 	createDb,
 	createServerApp,
+	listStorageObservations,
 	mountBlobsApp,
 	mountCloudAuth,
 	mountCloudDb,
+	mountCurrentStateRecordsApp,
+	mountWorkspaceDocumentsApp,
 	mountInferenceApp,
-	mountRecordsApp,
 	mountRoomsApp,
 	mountSessionApp,
 	type ResolveBearerPrincipal,
 	requireBearerPrincipal,
 	requireCookieOrBearerPrincipal,
 	resolveRequestOAuthPrincipal,
+	resolveRequestOAuthDocumentAuthorization,
+	withDocumentAuthorizationDeadline,
+	mergeBunWebSocketHandlers,
+	type ResolveDocumentPrincipal,
 	ServerBindings,
 } from '@epicenter/server/bun';
 import { type } from 'arktype';
 import pg from 'pg';
+import { admitRegisteredStorageFirstContact } from './worker/storage/service.js';
 import { buildEpicenterTrustedOrigins } from './worker/trusted-origins.js';
 
 /**
@@ -107,7 +117,10 @@ const ApiBunBindings = ServerBindings.merge(CloudAuthBindings).merge({
  * identical across the two, so they cannot drift.
  */
 export function startBunApiServer(
-	opts: { resolveBearerPrincipal?: ResolveBearerPrincipal<CloudEnv> } = {},
+	opts: {
+		resolveBearerPrincipal?: ResolveBearerPrincipal<CloudEnv>;
+		resolveDocumentPrincipal?: ResolveDocumentPrincipal<CloudEnv>;
+	} = {},
 ): void {
 	// Validate this Bun host's environment once, at boot. The validated result IS
 	// the typed env handed to the Hono app: no `as`-cast over `process.env`, no
@@ -129,7 +142,10 @@ export function startBunApiServer(
 	const dataDir = resolve(env.DATA_DIR ?? './.data');
 	mkdirSync(dataDir, { recursive: true });
 	const bunRooms = createBunRooms({ dir: join(dataDir, 'rooms') });
-	const bunRecords = createBunRecords({
+	// Keep the operator-selected directory stable, but the replacement authority
+	// deliberately drops the legacy table family on first open. There is no
+	// compatibility reader or receipt migration across this protocol reset.
+	const bunRecords = createCurrentStateBunRecords({
 		dir: join(dataDir, 'records'),
 	});
 
@@ -151,6 +167,11 @@ export function startBunApiServer(
 	// keeps the real OAuth bearer resolver. Each protected wrapper closes over it.
 	const resolveBearerPrincipal =
 		opts.resolveBearerPrincipal ?? resolveRequestOAuthPrincipal;
+	const resolveDocumentPrincipal =
+		opts.resolveDocumentPrincipal ??
+		(opts.resolveBearerPrincipal
+			? withDocumentAuthorizationDeadline(opts.resolveBearerPrincipal)
+			: resolveRequestOAuthDocumentAuthorization);
 	const cookieOrBearer = requireCookieOrBearerPrincipal(resolveBearerPrincipal);
 	const bearer = requireBearerPrincipal(resolveBearerPrincipal);
 	const serveAuthUiShell = () =>
@@ -186,12 +207,24 @@ export function startBunApiServer(
 	mountSessionApp(app, { auth: cookieOrBearer });
 	// Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver.
 	mountRoomsApp(app, { resolveBearerPrincipal });
-	mountRecordsApp(app, {
+	mountWorkspaceDocumentsApp(app, {
+		resolveDocumentPrincipal,
+		resolveDocuments: () => bunRecords.documents,
+	});
+	mountCurrentStateRecordsApp(app, {
 		auth: bearer,
 		resolveRecords: () => bunRecords.records,
 		// This runtime deliberately omits Autumn, so it cannot decide the Cloud
-		// account allowance. Never grant a new hosted capability by bypass.
-		issueEnrollment: async () => 'unavailable',
+		// account allowance. It may resume an existing client-owned identity, but
+		// never grants a genuinely new hosted capability by bypass.
+		admitFirstContact: (c, partition) =>
+			admitRegisteredStorageFirstContact(
+				{
+					listObservations: (principalId) =>
+						listStorageObservations(c.var.db, principalId),
+				},
+				partition,
+			),
 	});
 	mountInferenceApp(app, { auth: bearer });
 	mountBlobsApp(app, { auth: cookieOrBearer });
@@ -203,11 +236,15 @@ export function startBunApiServer(
 		// route via the bound server (see createBunRooms), after auth runs, so they
 		// are never intercepted ahead of the auth pipeline here.
 		fetch: (req) => app.fetch(req, env),
-		websocket: bunRooms.websocket,
+		websocket: mergeBunWebSocketHandlers({
+			rooms: bunRooms.websocket,
+			documents: bunRecords.websocket,
+		}),
 	});
 	// `server` only exists once `Bun.serve` returns; hand it to the room registry
 	// so `handleUpgrade` can call `server.upgrade`.
 	bunRooms.bindServer(server);
+	bunRecords.bindServer(server);
 
 	console.log(`apps/api (Bun) listening on ${origin} (data in ${dataDir})`);
 }

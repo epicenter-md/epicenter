@@ -50,8 +50,8 @@ import { join, resolve } from 'node:path';
 import { assertStrongToken } from '@epicenter/auth';
 import {
 	createAttachRelayBunServer,
-	createBunRecords,
 	createBunRooms,
+	createCurrentStateBunRecords,
 	createDeviceGrantStore,
 	createEnvTokenResolver,
 	createServerApp,
@@ -59,14 +59,16 @@ import {
 	mountAttachGrantsApp,
 	mountAttachRelayApp,
 	mountBlobsApp,
+	mountCurrentStateRecordsApp,
+	mountWorkspaceDocumentsApp,
 	mountHostDirectoryApp,
 	mountInferenceApp,
-	mountRecordsApp,
 	mountRoomsApp,
 	mountSessionApp,
 	mountTranscriptionApp,
 	rateLimit,
 	requireBearerPrincipal,
+	withDocumentAuthorizationDeadline,
 	ServerBindings,
 } from '@epicenter/server/bun';
 import { type } from 'arktype';
@@ -138,7 +140,11 @@ export function startSelfHostServer(): void {
 	const dataDir = resolve(env.DATA_DIR ?? './.data');
 	mkdirSync(dataDir, { recursive: true });
 	const bunRooms = createBunRooms({ dir: join(dataDir, 'rooms') });
-	const bunRecords = createBunRecords({
+	// The current-state authority owns the same private records directory. Its
+	// first open deliberately drops legacy authority tables: synchronized
+	// authority state resets, while unrelated local-only workspace storage is
+	// untouched.
+	const bunRecords = createCurrentStateBunRecords({
 		dir: join(dataDir, 'records'),
 	});
 	// The AttachRelay coordinator for this instance (ADR-0115): the
@@ -175,7 +181,13 @@ export function startSelfHostServer(): void {
 	mountSessionApp(app, { auth });
 	// Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver.
 	mountRoomsApp(app, { resolveBearerPrincipal });
-	mountRecordsApp(app, {
+	mountWorkspaceDocumentsApp(app, {
+		resolveDocumentPrincipal: withDocumentAuthorizationDeadline(
+			resolveBearerPrincipal,
+		),
+		resolveDocuments: () => bunRecords.documents,
+	});
+	mountCurrentStateRecordsApp(app, {
 		auth,
 		resolveRecords: () => bunRecords.records,
 	});
@@ -242,12 +254,14 @@ export function startSelfHostServer(): void {
 		// without blending their state.
 		websocket: mergeBunWebSocketHandlers({
 			rooms: bunRooms.websocket,
+			documents: bunRecords.websocket,
 			attach: attachRelay.websocket,
 		}),
 	});
 	// `server` only exists once `Bun.serve` returns; hand it to both backends so
 	// each `handleUpgrade` can call `server.upgrade` on the shared server.
 	bunRooms.bindServer(server);
+	bunRecords.bindServer(server);
 	attachRelay.bindServer(server);
 
 	console.log(

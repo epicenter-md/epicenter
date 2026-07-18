@@ -24,8 +24,10 @@ Then paste the same token into the client's instance setting (`{ baseURL, token 
 Boot fails closed if `INSTANCE_TOKEN` is missing or too weak, and the error names `gen-token`. The box never mints or stores a token: you own the secret, which is exactly what lets the same instance run on Cloudflare too. To rotate, generate a new token, restart with it, and redistribute it; there is no per-person revocation (see [Offboarding](#offboarding-and-rotation)).
 
 `INSTANCE_TOKEN` is the only required variable. The instance needs no external
-database and no auth secret: it stores Yjs rooms and record authorities as
-`bun:sqlite` files on local disk. `DATA_DIR` holds both; persist it.
+database and no auth secret: it currently stores Yjs rooms and record
+authorities as `bun:sqlite` files on local disk under `DATA_DIR`. The
+destination shape is even simpler: one instance principal, one authority
+database file containing every named workspace. Persist the whole directory.
 
 ### Use TLS
 
@@ -56,9 +58,13 @@ bun run --cwd apps/self-host typecheck
 bun run --cwd apps/self-host deploy
 ```
 
-`INSTANCE_TOKEN` is the only secret to set: the instance composes no Better Auth and no Postgres, so there is no `BETTER_AUTH_SECRET` and no Hyperdrive binding (ADR-0075). Set `API_PUBLIC_ORIGIN` in `wrangler.jsonc` to your domain, and provision the one Durable Object binding the file documents. A Worker has no boot phase, so the entropy gate (`assertStrongToken`) runs per request at the edge: a weak or unset `INSTANCE_TOKEN` fails every request closed. Use `gen-token` for the secret.
+`INSTANCE_TOKEN` is the only secret to set: the instance composes no Better Auth and no Postgres, so there is no `BETTER_AUTH_SECRET` and no Hyperdrive binding (ADR-0075). Set `API_PUBLIC_ORIGIN` in `wrangler.jsonc` to your domain. Proposed ADR-0145 collapses the current records and per-document room Durable Object bindings into one workspace authority binding. Each open row document uses one route-bound Yjs 14 socket to that authority. A Worker has no boot phase, so the entropy gate (`assertStrongToken`) runs per request at the edge: a weak or unset `INSTANCE_TOKEN` fails every request closed. Use `gen-token` for the secret.
 
-`worker-configuration.d.ts` is hand-written: it inherits the library's binding contract (`ServerBindings`) and declares only the deployment-owned `API_PUBLIC_ORIGIN` and `INSTANCE_TOKEN`. If you add bindings of your own, declare them there (or regenerate with `bun run typegen` and re-add the `extends` clause).
+`worker-configuration.d.ts` is hand-written: it inherits the library's binding
+contract (`ServerBindings`) and declares the deployment-owned Durable Object
+bindings, `API_PUBLIC_ORIGIN`, and `INSTANCE_TOKEN`. If you add bindings of your
+own, declare them there (or regenerate with `bun run typegen` and re-add the
+`extends` clause).
 
 ## What this isn't
 

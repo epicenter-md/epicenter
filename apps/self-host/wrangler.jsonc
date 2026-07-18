@@ -42,6 +42,10 @@
 			{
 				"name": "ROOM",
 				"class_name": "Room"
+			},
+			{
+				"name": "RECORDS",
+				"class_name": "CurrentStateRowAuthorityDurableObject"
 			}
 		]
 	},
@@ -49,9 +53,15 @@
 		{
 			"tag": "v1",
 			"new_sqlite_classes": ["Room"]
+		},
+		{
+			"tag": "v2",
+			"new_sqlite_classes": ["CurrentStateRowAuthorityDurableObject"]
 		}
 	]
 
-	// No Hyperdrive binding: the instance composes no Postgres (no Better Auth, no
-	// telemetry), so its only binding is the Durable Object above (ADR-0075).
+	// No Hyperdrive binding: the instance composes no Postgres (no Better Auth or
+	// telemetry). ROOM and RECORDS are its complete durable substrate
+	// (ADR-0075). No workspace catalog exists: the authority derives from the
+	// principal alone (ADR-0092, ADR-0145).
 }

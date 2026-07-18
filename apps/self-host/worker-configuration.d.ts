@@ -25,6 +25,9 @@ declare namespace Cloudflare {
 		// `resolveRooms` resolver, so it declares it here. There is no Hyperdrive
 		// binding: the instance composes no Postgres (ADR-0075).
 		ROOM: DurableObjectNamespace<import('@epicenter/server').Room>;
+		RECORDS: DurableObjectNamespace<
+			import('@epicenter/server').CurrentStateRowAuthorityDurableObject
+		>;
 		// Deployment-owned config the library never reads by name; this
 		// deployment reads them in its own resolvers (ADR-0066). `API_PUBLIC_ORIGIN`
 		// is this instance's public origin (a wrangler.jsonc var); `INSTANCE_TOKEN`

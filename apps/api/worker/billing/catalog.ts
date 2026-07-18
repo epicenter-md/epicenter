@@ -128,7 +128,7 @@ export const PLANS = {
 		// Permanent no-card hosted storage (ADR-0137): included bytes are
 		// mutable catalog data, never an ADR constant. No storage overage on
 		// Free; reaching the allowance stops new capability issuance
-		// (replica enrollment), never synchronization.
+		// (first-contact replica admission), never established synchronization.
 		storage: { includedBytes: 100_000_000, overagePerGbUsd: 0 },
 	},
 	[PLAN_IDS.pro]: {

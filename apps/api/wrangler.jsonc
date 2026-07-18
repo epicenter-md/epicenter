@@ -61,7 +61,7 @@
 			// workspace pair. The Worker derives the DO name after authentication.
 			{
 				"name": "RECORDS",
-				"class_name": "RowAuthorityDurableObject"
+				"class_name": "CurrentStateRowAuthorityDurableObject"
 			}
 		]
 	},
@@ -85,6 +85,13 @@
 		{
 			"tag": "v4",
 			"new_sqlite_classes": ["RowAuthorityDurableObject"]
+		},
+		{
+			// Reset-only protocol break: create a fresh namespace for the
+			// current-state authority and permanently delete every legacy authority.
+			"tag": "v5",
+			"new_sqlite_classes": ["CurrentStateRowAuthorityDurableObject"],
+			"deleted_classes": ["RowAuthorityDurableObject"]
 		}
 	],
 	// --- Secrets (set via `wrangler secret put`, typed via `wrangler types`) ---

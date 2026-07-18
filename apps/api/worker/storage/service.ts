@@ -1,28 +1,22 @@
 /**
- * Hosted storage capability issuance (ADR-0137).
+ * Hosted first-contact storage admission (ADR-0137).
  *
- * The observation registry is the complete set of storage-producing sources
- * already issued to an account. Enrollment refreshes only those registered
- * workspace authorities before deciding. An unseen target is not contacted
- * or registered on refusal. Once admitted, the source is registered at zero
- * bytes and only then is its first replica minted. A later issuance refreshes
- * that registered authority's absolute size. Synchronization never consults or
- * mutates this policy.
+ * The route calls this policy only for an unknown replica. A refusal leaves the
+ * push undispatched. Admission refreshes the account's structured observation,
+ * preserves blob accounting, and registers a newly admitted workspace at zero
+ * bytes before its first push creates durable authority state.
  */
 
 import type { PrincipalId } from '@epicenter/identity';
 import type {
-	Records,
-	RecordsPartition,
+	CurrentStateRecordsPartition,
 	StorageObservation,
 } from '@epicenter/server';
 import { extractErrorMessage } from 'wellcrafted/error';
 
-export type EnrollmentResponse = Awaited<ReturnType<Records['enroll']>>;
-
-export type StorageIssuanceDependencies = {
+export type StorageAdmissionDependencies = {
 	listObservations(principalId: PrincipalId): Promise<StorageObservation[]>;
-	readWorkspaceBytes(partition: RecordsPartition): Promise<number>;
+	readAccountBytes(principalId: PrincipalId): Promise<number>;
 	upsertObservation(
 		observation: StorageObservation & { principalId: PrincipalId },
 	): Promise<void>;
@@ -30,23 +24,47 @@ export type StorageIssuanceDependencies = {
 	reportError?(message: string): void;
 };
 
-/**
- * Decide and issue one enrollment. Policy and registry failures return
- * `unavailable` before any unseen target authority exists. The enrollment
- * call deliberately sits outside that catch so authority errors preserve the
- * records route's existing semantics.
- */
-export async function issueStorageEnrollment(
+export type RegisteredStorageAdmissionDependencies = Pick<
+	StorageAdmissionDependencies,
+	'listObservations' | 'reportError'
+>;
+
+/** Allow first contact only for a workspace already known to hosted storage. */
+export async function admitRegisteredStorageFirstContact(
 	{
 		listObservations,
-		readWorkspaceBytes,
+		reportError = console.error,
+	}: RegisteredStorageAdmissionDependencies,
+	partition: CurrentStateRecordsPartition,
+): Promise<'allow' | 'refuse'> {
+	try {
+		const observations = await listObservations(partition.principalId);
+		return observations.some(
+			(observation) =>
+				observation.sourceKind === 'workspace' &&
+				observation.sourceId === partition.workspaceId,
+		)
+			? 'allow'
+			: 'refuse';
+	} catch (cause) {
+		reportError(
+			`[storage] first-contact admission for ${partition.principalId}/${partition.workspaceId} failed: ${extractErrorMessage(cause)}`,
+		);
+		return 'refuse';
+	}
+}
+
+/** Evaluate and register one hosted workspace before its first replica push. */
+export async function admitStorageFirstContact(
+	{
+		listObservations,
+		readAccountBytes,
 		upsertObservation,
 		resolveIncludedBytes,
 		reportError = console.error,
-	}: StorageIssuanceDependencies,
-	partition: RecordsPartition,
-	enroll: () => Promise<EnrollmentResponse>,
-): Promise<EnrollmentResponse | 'unavailable'> {
+	}: StorageAdmissionDependencies,
+	partition: CurrentStateRecordsPartition,
+): Promise<'allow' | 'refuse'> {
 	try {
 		const observations = await listObservations(partition.principalId);
 		const registeredWorkspaceIds = new Set(
@@ -54,27 +72,19 @@ export async function issueStorageEnrollment(
 				.filter((observation) => observation.sourceKind === 'workspace')
 				.map((observation) => observation.sourceId),
 		);
-		let total = observations
+		const blobBytes = observations
 			.filter((observation) => observation.sourceKind === 'blobs')
 			.reduce((sum, observation) => sum + observation.observedBytes, 0);
+		const accountBytes = await readAccountBytes(partition.principalId);
+		await upsertObservation({
+			principalId: partition.principalId,
+			sourceKind: 'structured',
+			sourceId: 'account',
+			observedBytes: accountBytes,
+		});
 
-		for (const workspaceId of registeredWorkspaceIds) {
-			const observedBytes = await readWorkspaceBytes({
-				principalId: partition.principalId,
-				workspaceId,
-			});
-			await upsertObservation({
-				principalId: partition.principalId,
-				sourceKind: 'workspace',
-				sourceId: workspaceId,
-				observedBytes,
-			});
-			total += observedBytes;
-		}
-
-		const includedBytes = await resolveIncludedBytes();
-		if (total >= includedBytes) {
-			return { result: 'enrollment-refused' };
+		if (blobBytes + accountBytes >= (await resolveIncludedBytes())) {
+			return 'refuse';
 		}
 
 		if (!registeredWorkspaceIds.has(partition.workspaceId)) {
@@ -85,12 +95,11 @@ export async function issueStorageEnrollment(
 				observedBytes: 0,
 			});
 		}
+		return 'allow';
 	} catch (cause) {
 		reportError(
-			`[storage] enrollment issuance for ${partition.principalId}/${partition.workspaceId} failed: ${extractErrorMessage(cause)}`,
+			`[storage] first-contact admission for ${partition.principalId}/${partition.workspaceId} failed: ${extractErrorMessage(cause)}`,
 		);
-		return 'unavailable';
+		return 'refuse';
 	}
-
-	return enroll();
 }
