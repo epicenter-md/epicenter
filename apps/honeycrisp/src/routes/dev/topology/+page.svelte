@@ -186,7 +186,12 @@
 	}
 
 	async function deleteRow(panel: Panel): Promise<void> {
-		await honeycrisp.tables.notes.delete(panel.rowId);
+		try {
+			await honeycrisp.tables.notes.delete(panel.rowId);
+		} catch (cause) {
+			panel.openError = cause instanceof Error ? cause.message : String(cause);
+			panels = [...panels];
+		}
 	}
 
 	function setCount(count: number): void {
