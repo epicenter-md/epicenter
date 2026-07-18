@@ -189,7 +189,8 @@ test('two clients invalidate documents, disconnect independently, and survive re
 				id: skillsWorkspace.id,
 				tables: skillsWorkspace.tables,
 			});
-			await expect(client.open(conflictingDefinition)).rejects.toThrow(
+			// open() is synchronous, so a conflicting rebind throws directly.
+			expect(() => client.open(conflictingDefinition)).toThrow(
 				'already bound to another definition',
 			);
 			await expect(

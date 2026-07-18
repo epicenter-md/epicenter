@@ -283,9 +283,9 @@ export function createDesktopWorkspaceRuntime({
 	}
 
 	return Object.freeze({
-		async open<TDefinition extends WorkspaceDefinition>(
+		open<TDefinition extends WorkspaceDefinition>(
 			definition: TDefinition,
-		): Promise<OpenedWorkspace<TDefinition>> {
+		): OpenedWorkspace<TDefinition> {
 			assertOpen();
 			const existing = workspaces.get(definition.id);
 			if (existing) {
@@ -302,6 +302,19 @@ export function createDesktopWorkspaceRuntime({
 				...binding,
 			});
 			return binding.handle;
+		},
+		/**
+		 * Same readiness surface as the browser runtime. The desktop request
+		 * transport has no acquisition phase (the host's owner supervises its
+		 * own storage), so a bound workspace is immediately open.
+		 */
+		whenOpen(workspaceId: string): Promise<void> {
+			if (!workspaces.has(workspaceId)) {
+				return Promise.reject(
+					new Error(`Workspace '${workspaceId}' is not open`),
+				);
+			}
+			return Promise.resolve();
 		},
 		async [Symbol.asyncDispose]() {
 			if (disposed) return;

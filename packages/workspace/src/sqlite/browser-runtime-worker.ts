@@ -264,10 +264,13 @@ async function openRecords(
 				}
 				throw cause;
 			}
-		})().catch((cause) => {
-			opened.delete(manifest.workspaceId);
-			throw cause;
-		});
+		})();
+		// A failed acquisition is terminal for this Worker: the rejected
+		// promise stays cached so every queued and later operation rejects
+		// immediately with the same failure (for example the named
+		// held-storage error) instead of re-running the multi-second
+		// acquisition retry loop per operation. Recovery is an explicit
+		// reload, which replaces the Worker.
 		opened.set(manifest.workspaceId, opening);
 	}
 	const state = await opening;

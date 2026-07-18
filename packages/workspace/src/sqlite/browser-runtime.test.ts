@@ -18,9 +18,10 @@ import {
 	createAccountBrowserWorkspaceRuntime,
 	createDeviceBrowserWorkspaceRuntime,
 } from './browser-runtime.js';
-import type {
-	BrowserRuntimeMessage,
-	BrowserRuntimeRequest,
+import {
+	type BrowserRuntimeMessage,
+	type BrowserRuntimeRequest,
+	isWorkspaceStorageHeldError,
 } from './browser-runtime-protocol.js';
 import { defineTable } from './lens-definition.js';
 import { defineWorkspace } from './runtime-definition.js';
@@ -72,11 +73,13 @@ class FakeWorker {
 			}
 			queueMicrotask(() => {
 				if (FakeWorker.openMode === 'reject') {
+					// Mirrors the real Worker's terminal acquisition failure: the
+					// named held-storage contract crossing the message boundary.
 					this.emit({
 						type: 'error',
 						id: message.id,
-						name: 'Error',
-						message: 'open failed',
+						name: 'WorkspaceStorageHeldError',
+						message: "Workspace storage is held by another tab or window",
 					});
 					return;
 				}
@@ -182,44 +185,48 @@ function createRuntime() {
 	});
 }
 
-test('open waits for Worker initialization', async () => {
+test('open returns the stable handle synchronously; whenOpen reports readiness', async () => {
 	FakeWorker.openMode = 'defer';
 	await using runtime = createRuntime();
-	let settled = false;
-	const opening = runtime.open(definition).then((workspace) => {
-		settled = true;
-		return workspace;
+	const workspace = runtime.open(definition);
+	// The handle is stable: reopening yields the same object before and
+	// after readiness.
+	expect(runtime.open(definition)).toBe(workspace);
+	let ready = false;
+	const readiness = runtime.whenOpen(definition.id).then(() => {
+		ready = true;
 	});
+	// A call made before readiness queues and completes once storage answers.
+	const queuedList = workspace.tables.notes.list();
 	await Promise.resolve();
 	await Promise.resolve();
-	expect(settled).toBe(false);
-	expect(FakeWorker.latest?.operations).toEqual([{ kind: 'open' }]);
+	expect(ready).toBe(false);
+	expect(FakeWorker.latest?.operations[0]).toEqual({ kind: 'open' });
 	FakeWorker.latest?.resolveOpen();
-	await opening;
+	await readiness;
+	await queuedList;
+	expect(runtime.open(definition)).toBe(workspace);
 });
 
-test('concurrent opens share one Worker initialization', async () => {
-	FakeWorker.openMode = 'defer';
-	await using runtime = createRuntime();
-	const first = runtime.open(definition);
-	const second = runtime.open(definition);
-	await Promise.resolve();
-	await Promise.resolve();
-	expect(FakeWorker.latest?.operations).toEqual([{ kind: 'open' }]);
-	FakeWorker.latest?.resolveOpen();
-	expect(await first).toBe(await second);
-});
-
-test('failed open rejects and retries initialization', async () => {
+test('failed acquisition is terminal: whenOpen rejects with the named error and open never retries', async () => {
 	FakeWorker.openMode = 'reject';
 	await using runtime = createRuntime();
-	await expect(runtime.open(definition)).rejects.toThrow('open failed');
-	FakeWorker.openMode = 'resolve';
-	await runtime.open(definition);
-	expect(FakeWorker.latest?.operations).toEqual([
-		{ kind: 'open' },
-		{ kind: 'open' },
-	]);
+	const workspace = runtime.open(definition);
+	const failure = await runtime.whenOpen(definition.id).then(
+		() => undefined,
+		(cause: unknown) => cause,
+	);
+	expect(failure).toBeInstanceOf(Error);
+	expect(isWorkspaceStorageHeldError(failure)).toBe(true);
+	// The same handle and the same terminal rejection, with no second
+	// acquisition attempt behind a later open.
+	expect(runtime.open(definition)).toBe(workspace);
+	await expect(runtime.whenOpen(definition.id)).rejects.toThrow(
+		'held by another tab',
+	);
+	expect(
+		FakeWorker.latest?.operations.filter(({ kind }) => kind === 'open'),
+	).toEqual([{ kind: 'open' }]);
 });
 
 test('Account manifest owns only Account storage and never references Device', async () => {
@@ -235,7 +242,8 @@ test('Account manifest owns only Account storage and never references Device', a
 		},
 		createBroadcastChannel: () => undefined,
 	});
-	await accountRuntime.open(definition);
+	accountRuntime.open(definition);
+	await accountRuntime.whenOpen(definition.id);
 	const accountManifest = FakeWorker.latest?.manifests[0];
 	const accountStorageKey = accountManifest?.storageKey;
 	expect(accountStorageKey).toBeString();
@@ -245,7 +253,8 @@ test('Account manifest owns only Account storage and never references Device', a
 
 	await accountRuntime[Symbol.asyncDispose]();
 	await using deviceRuntime = createRuntime();
-	await deviceRuntime.open(definition);
+	deviceRuntime.open(definition);
+	await deviceRuntime.whenOpen(definition.id);
 	expect(FakeWorker.latest?.manifests[0]?.storageKey).not.toBe(
 		accountStorageKey,
 	);
@@ -256,7 +265,7 @@ test('Device capture/delete and Account add are explicit logical actions', async
 	let copy: Awaited<ReturnType<ReturnType<typeof createRuntime>['capture']>>;
 	{
 		await using device = createRuntime();
-		await device.open(definition);
+		device.open(definition);
 		copy = await device.capture(definition);
 		expect(copy.rows[0]).toMatchObject({
 			table: 'notes',
@@ -280,7 +289,7 @@ test('Device capture/delete and Account add are explicit logical actions', async
 		},
 		createBroadcastChannel: () => undefined,
 	});
-	await account.open(definition);
+	account.open(definition);
 	await account.add(definition, copy);
 	expect(FakeWorker.latest?.operations.at(-1)).toEqual({
 		kind: 'logical-add',
@@ -290,7 +299,7 @@ test('Device capture/delete and Account add are explicit logical actions', async
 
 test('Device export reports a null settlement over the local capture', async () => {
 	await using runtime = createRuntime();
-	await runtime.open(definition);
+	runtime.open(definition);
 	const exported = await runtime.export(definition);
 	expect(exported.settlement).toBeNull();
 	expect(exported.rows[0]).toMatchObject({ table: 'notes', rowId: ROW_ID });
@@ -312,7 +321,7 @@ test('Account export settles first, then captures visible state with page docume
 		},
 		createBroadcastChannel: () => undefined,
 	});
-	const workspace = await runtime.open(definition);
+	const workspace = runtime.open(definition);
 	{
 		using document = await workspace.tables.notes.document.open(ROW_ID);
 		document.get('content').insert(0, 'export me');
@@ -329,7 +338,7 @@ test('Account export settles first, then captures visible state with page docume
 
 test('page sends list and update operations', async () => {
 	await using runtime = createRuntime();
-	const workspace = await runtime.open(definition);
+	const workspace = runtime.open(definition);
 	await workspace.tables.notes.list();
 	await workspace.tables.notes.update('aaaaaaaaaaaaaaaaaaaaaaaa', {
 		title: 'changed',
@@ -348,7 +357,7 @@ test('page sends list and update operations', async () => {
 
 test('browser row documents use the page-owned IndexedDB provider', async () => {
 	await using runtime = createRuntime();
-	const workspace = await runtime.open(definition);
+	const workspace = runtime.open(definition);
 	using document = await workspace.tables.notes.document.open(ROW_ID);
 	document.get('content').insert(0, 'local');
 	await document.whenDurable();
@@ -376,7 +385,7 @@ test('worker transport uses the workspace record routes', async () => {
 		},
 		createBroadcastChannel: () => undefined,
 	});
-	const workspace = await runtime.open(definition);
+	const workspace = runtime.open(definition);
 	await workspace.tables.notes.list();
 	for (const action of ['push', 'pull', 'acquire'] as const) {
 		FakeWorker.latest?.emit({
@@ -411,7 +420,7 @@ test('settlement is one scalar Worker operation', async () => {
 		},
 		createBroadcastChannel: () => undefined,
 	});
-	const workspace = await runtime.open(definition);
+	const workspace = runtime.open(definition);
 	expect(await workspace.sync?.settle()).toEqual({ outcome: 'caught-up' });
 	expect(FakeWorker.latest?.operations.at(-1)).toEqual({ kind: 'sync-settle' });
 });
@@ -429,7 +438,7 @@ test('Account sync status is reactive across the Worker boundary', async () => {
 		},
 		createBroadcastChannel: () => undefined,
 	});
-	const workspace = await runtime.open(definition);
+	const workspace = runtime.open(definition);
 	const statuses: unknown[] = [];
 	const unsubscribe = workspace.sync?.onStatusChange((status) => {
 		statuses.push(status);
@@ -491,7 +500,7 @@ test('browser transport serializes only known interruptions as retryable', async
 		},
 		createBroadcastChannel: () => undefined,
 	});
-	await runtime.open(definition);
+	runtime.open(definition);
 	const actions = ['push', 'pull', 'acquire'] as const;
 	for (const action of actions) {
 		FakeWorker.latest?.emit({
