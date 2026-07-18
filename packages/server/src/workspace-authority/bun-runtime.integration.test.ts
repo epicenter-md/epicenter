@@ -459,6 +459,47 @@ test('Device Add verification proves liveness and durability before source delet
 	}
 });
 
+test('retrying add() stays idempotent while the destination holds the copied document open', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'epicenter-bun-add-retry-open-'));
+	const authorityState = openAuthority();
+	const { transport } = createTransport(authorityState.authority);
+	try {
+		await using device = createDeviceBunWorkspaceRuntime({ storageRoot: root });
+		await using account = createAccountBunWorkspaceRuntime({
+			storageRoot: root,
+			account: {
+				deploymentId: 'https://example.test',
+				principalId: asPrincipalId('alice'),
+				transport: () => transport,
+			},
+			recordPollIntervalMs: 60_000,
+		});
+		const deviceWorkspace = await device.open(definition);
+		const accountWorkspace = await account.open(definition);
+		const row = await deviceWorkspace.tables.notes.create({ title: 'Add me' });
+		{
+			using document = await deviceWorkspace.tables.notes.document.open(row.id);
+			document.get('editor').insert(0, 'device body');
+			await document.whenDurable();
+		}
+		const copy = await device.capture(definition);
+		await account.add(definition, copy);
+
+		// The documented recovery path is retry-add then verify. A destination
+		// that opened the imported document must not turn the retry into a
+		// persistence-attachment conflict.
+		using opened = await accountWorkspace.tables.notes.document.open(row.id);
+		await account.add(definition, copy);
+		expect(opened.get('editor').toString()).toBe('device body');
+		expect(await account.verifyAdded(definition, copy)).toEqual({
+			outcome: 'verified',
+		});
+	} finally {
+		authorityState.database.close();
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test('a retained deletion marker fails Device Add verification at that address', async () => {
 	const root = mkdtempSync(join(tmpdir(), 'epicenter-bun-add-marker-'));
 	const authorityState = openAuthority();

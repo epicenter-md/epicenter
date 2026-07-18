@@ -10,7 +10,6 @@ import {
 import { dirname, join, resolve } from 'node:path';
 import { sha256Hex } from '@epicenter/row-sync';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-import * as Y from '@y/y';
 import { createNativeSqliteDocumentStore } from '../document-provider/native-sqlite.js';
 import type { DocumentStore } from '../document-provider/persistence.js';
 import {
@@ -402,21 +401,16 @@ function createBunRuntimeWithPersistence({
 			if (!state)
 				throw new Error(`Account workspace '${workspaceId}' is not open`);
 			state.replica.admitMany(logicalWorkspaceIntents(copy));
+			// The runtime importer applies through an already-open destination
+			// document (so retry-add never conflicts with its persistence lease)
+			// and otherwise imports through a disposed transient lease.
 			for (const row of copy.rows) {
 				if (row.document === undefined) continue;
-				const document = new Y.Doc();
-				const lease = state.documents.attach(
+				await runtime.importDocument(
+					workspaceId,
 					{ table: row.table, rowId: row.rowId },
-					document,
+					row.document,
 				);
-				try {
-					await lease.whenLoaded;
-					Y.applyUpdateV2(document, row.document);
-					await lease.whenDurable();
-				} finally {
-					await lease.dispose();
-					document.destroy();
-				}
 			}
 			queueMicrotask(() => {
 				state.emitChanged();
