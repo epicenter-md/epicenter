@@ -425,7 +425,11 @@ Everything below is complete except the four gated items in the next section.
 - [x] Browser scalar storage moved from the isolation-requiring 'opfs' VFS
   (broken in every production deploy and on Safari < 17) to per-key SAH
   pools; COOP/COEP requirements deleted everywhere; the storage lease steals
-  newest-tab-wins with loud degradation of the stolen tab.
+  newest-tab-wins with loud degradation of the stolen tab; the stolen tab
+  renders one blocking moved screen (`@epicenter/app-shell/storage-moved`)
+  whose only action reloads and steals ownership back. Fencing is the
+  storage primitive itself: OPFS access-handle exclusivity blocks the thief
+  until the previous owner actually releases.
 - [x] The new-runtime import graph exits the legacy `@epicenter/sync` barrel
   (`./auth-subprotocol` subpath), fixing every Whispering build.
 - [x] The desktop document plane was repaired (owner bridge against
