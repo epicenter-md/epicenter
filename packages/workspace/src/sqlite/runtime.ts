@@ -1,16 +1,19 @@
 import type { WireRowIntent } from '@epicenter/row-sync';
 import type { SqliteDatabase, SqliteValue } from '@epicenter/sqlite';
+import type * as Y from '@y/y';
 import type { Static, TSchema } from 'typebox';
 import type { Result } from 'wellcrafted/result';
+import { createNativeSqliteDocumentStore } from '../document-provider/native-sqlite.js';
+import type {
+	DocumentStore,
+	RowAddress,
+} from '../document-provider/persistence.js';
 import {
 	createRowDocumentRuntime,
 	type RowDocument,
 	type RowDocumentConnectionLease,
 	type RowDocumentRuntime,
 } from '../document-provider/runtime/index.js';
-import type { DocumentStore, RowAddress } from '../document-provider/persistence.js';
-import { createNativeSqliteDocumentStore } from '../document-provider/native-sqlite.js';
-import type * as Y from '@y/y';
 import {
 	type LogicalWorkspaceCopy,
 	withCapturedDocuments,
@@ -109,13 +112,15 @@ export type WorkspaceKv<TKv extends KvDefinitions> = {
 	unset<K extends keyof TKv & string>(key: K): Promise<void>;
 };
 
-export type OpenedWorkspace<TDefinition extends WorkspaceDefinition> = {
-	id: TDefinition['id'];
-	tables: WorkspaceTables<DefinitionTables<TDefinition>>;
-	kv: WorkspaceKv<DefinitionKv<TDefinition>>;
-	sql: WorkspaceSql;
+export type WorkspaceHandle<TDefinition extends WorkspaceDefinition> = {
+	readonly id: TDefinition['id'];
+	/** Resolves when this handle's one eager storage-opening attempt completes. */
+	readonly opened: Promise<void>;
+	readonly tables: WorkspaceTables<DefinitionTables<TDefinition>>;
+	readonly kv: WorkspaceKv<DefinitionKv<TDefinition>>;
+	readonly sql: WorkspaceSql;
 	/** Account synchronization, or `null` for a local-only workspace. */
-	sync: WorkspaceSync | null;
+	readonly sync: WorkspaceSync | null;
 };
 
 type OpenedOwner = {
@@ -128,7 +133,7 @@ type OpenedOwner = {
 
 type RuntimeEntry = {
 	definition: WorkspaceDefinition;
-	handle?: OpenedWorkspace<WorkspaceDefinition>;
+	handle?: WorkspaceHandle<WorkspaceDefinition>;
 	abortController?: AbortController;
 	ownerPromise?: Promise<OpenedOwner>;
 };
@@ -170,9 +175,7 @@ export function createWorkspaceRuntime({
 				const documents = createRowDocumentRuntime<unknown>({
 					store: documentStore,
 					isLive: ({ table, rowId }) => currentRow(table, rowId) !== undefined,
-					...(owner.connectDocument
-						? { connect: owner.connectDocument }
-						: {}),
+					...(owner.connectDocument ? { connect: owner.connectDocument } : {}),
 				});
 				const rows = createCanonicalRows(
 					owner.sqlite,
@@ -226,7 +229,7 @@ export function createWorkspaceRuntime({
 		definition: TDefinition,
 		entry: RuntimeEntry,
 		sync: WorkspaceSync | null,
-	): OpenedWorkspace<TDefinition> {
+	): WorkspaceHandle<TDefinition> {
 		const tables = Object.fromEntries(
 			Object.keys(definition.tables).map((name) => [
 				name,
@@ -272,6 +275,9 @@ export function createWorkspaceRuntime({
 
 		return Object.freeze({
 			id: definition.id,
+			// Native handles are constructed only after their owner opens, so this
+			// is already fulfilled when the asynchronous open() returns.
+			opened: Promise.resolve(),
 			tables: Object.freeze(tables),
 			kv,
 			sync,
@@ -282,13 +288,13 @@ export function createWorkspaceRuntime({
 			) {
 				return (await rowsFor(entry)).sql(query, parameters, resultSchema);
 			},
-		}) as OpenedWorkspace<TDefinition>;
+		}) as WorkspaceHandle<TDefinition>;
 	}
 
 	return {
 		async open<TDefinition extends WorkspaceDefinition>(
 			definition: TDefinition,
-		): Promise<OpenedWorkspace<TDefinition>> {
+		): Promise<WorkspaceHandle<TDefinition>> {
 			assertOpen();
 			const existing = entries.get(definition.id);
 			if (existing) {
@@ -299,14 +305,14 @@ export function createWorkspaceRuntime({
 				}
 				const opened = await openedFor(existing);
 				existing.handle ??= createHandle(definition, existing, opened.sync);
-				return existing.handle as OpenedWorkspace<TDefinition>;
+				return existing.handle as WorkspaceHandle<TDefinition>;
 			}
 			const entry: RuntimeEntry = { definition };
 			entries.set(definition.id, entry);
 			try {
 				const opened = await openedFor(entry);
 				entry.handle = createHandle(definition, entry, opened.sync);
-				return entry.handle as OpenedWorkspace<TDefinition>;
+				return entry.handle as WorkspaceHandle<TDefinition>;
 			} catch (cause) {
 				if (entries.get(definition.id) === entry) {
 					entries.delete(definition.id);

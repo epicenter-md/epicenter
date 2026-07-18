@@ -4,7 +4,7 @@
  * Verifies the page-side Worker protocol without opening OPFS.
  *
  * Key behaviors:
- * - open waits for one shared Worker initialization acknowledgement
+ * - open returns one stable handle with one observable opening promise
  * - list and update use the public row verbs
  * - KV observation re-reads changed values and detaches cleanly
  * - current-state transport actions cross the boundary
@@ -79,7 +79,7 @@ class FakeWorker {
 						type: 'error',
 						id: message.id,
 						name: 'WorkspaceStorageHeldError',
-						message: "Workspace storage is held by another tab or window",
+						message: 'Workspace storage is held by another tab or window',
 					});
 					return;
 				}
@@ -185,15 +185,16 @@ function createRuntime() {
 	});
 }
 
-test('open returns the stable handle synchronously; whenOpen reports readiness', async () => {
+test('open returns a stable handle whose opened promise reports readiness', async () => {
 	FakeWorker.openMode = 'defer';
 	await using runtime = createRuntime();
 	const workspace = runtime.open(definition);
 	// The handle is stable: reopening yields the same object before and
 	// after readiness.
 	expect(runtime.open(definition)).toBe(workspace);
+	expect(runtime.open(definition).opened).toBe(workspace.opened);
 	let ready = false;
-	const readiness = runtime.whenOpen(definition.id).then(() => {
+	const readiness = workspace.opened.then(() => {
 		ready = true;
 	});
 	// A call made before readiness queues and completes once storage answers.
@@ -208,11 +209,11 @@ test('open returns the stable handle synchronously; whenOpen reports readiness',
 	expect(runtime.open(definition)).toBe(workspace);
 });
 
-test('failed acquisition is terminal: whenOpen rejects with the named error and open never retries', async () => {
+test('failed acquisition is terminal: opened rejects once and open never retries', async () => {
 	FakeWorker.openMode = 'reject';
 	await using runtime = createRuntime();
 	const workspace = runtime.open(definition);
-	const failure = await runtime.whenOpen(definition.id).then(
+	const failure = await workspace.opened.then(
 		() => undefined,
 		(cause: unknown) => cause,
 	);
@@ -221,9 +222,7 @@ test('failed acquisition is terminal: whenOpen rejects with the named error and 
 	// The same handle and the same terminal rejection, with no second
 	// acquisition attempt behind a later open.
 	expect(runtime.open(definition)).toBe(workspace);
-	await expect(runtime.whenOpen(definition.id)).rejects.toThrow(
-		'held by another tab',
-	);
+	await expect(workspace.opened).rejects.toThrow('held by another tab');
 	expect(
 		FakeWorker.latest?.operations.filter(({ kind }) => kind === 'open'),
 	).toEqual([{ kind: 'open' }]);
@@ -242,8 +241,7 @@ test('Account manifest owns only Account storage and never references Device', a
 		},
 		createBroadcastChannel: () => undefined,
 	});
-	accountRuntime.open(definition);
-	await accountRuntime.whenOpen(definition.id);
+	await accountRuntime.open(definition).opened;
 	const accountManifest = FakeWorker.latest?.manifests[0];
 	const accountStorageKey = accountManifest?.storageKey;
 	expect(accountStorageKey).toBeString();
@@ -253,8 +251,7 @@ test('Account manifest owns only Account storage and never references Device', a
 
 	await accountRuntime[Symbol.asyncDispose]();
 	await using deviceRuntime = createRuntime();
-	deviceRuntime.open(definition);
-	await deviceRuntime.whenOpen(definition.id);
+	await deviceRuntime.open(definition).opened;
 	expect(FakeWorker.latest?.manifests[0]?.storageKey).not.toBe(
 		accountStorageKey,
 	);
@@ -330,7 +327,9 @@ test('Account export settles first, then captures visible state with page docume
 	const exported = await runtime.export(definition);
 	expect(exported.settlement).toEqual({ outcome: 'caught-up' });
 	expect(exported.rows[0]?.document).toBeInstanceOf(Uint8Array);
-	const kinds = FakeWorker.latest?.operations.map((operation) => operation.kind);
+	const kinds = FakeWorker.latest?.operations.map(
+		(operation) => operation.kind,
+	);
 	expect(kinds?.indexOf('sync-settle')).toBeLessThan(
 		kinds?.indexOf('capture-visible') ?? -1,
 	);

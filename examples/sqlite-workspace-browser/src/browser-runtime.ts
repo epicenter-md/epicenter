@@ -4,9 +4,9 @@ import {
 	defineTable,
 	defineWorkspace,
 	isWorkspaceStorageMovedError,
-	type OpenedWorkspace,
 	type RowDocument,
 	rowDocumentConnection,
+	type WorkspaceHandle,
 } from '@epicenter/workspace/sqlite';
 import { createAccountBrowserWorkspaceRuntime } from '@epicenter/workspace/sqlite/browser';
 import { Type } from 'typebox';
@@ -52,13 +52,13 @@ const runtime = createAccountBrowserWorkspaceRuntime({
 	},
 });
 // The same infallible-module boot contract the production apps use: open()
-// returns the stable handle synchronously, whenOpen reports readiness,
+// returns the stable handle synchronously, handle.opened reports readiness,
 // success flags dataset.ready, and a rejection (for example held storage)
 // flags dataset.bootError with the error's contract name instead of
 // blanking the page.
-const workspace: OpenedWorkspace<typeof definition> = runtime.open(definition);
+const workspace: WorkspaceHandle<typeof definition> = runtime.open(definition);
 let draft: RowDocument | undefined;
-runtime.whenOpen(definition.id).then(
+workspace.opened.then(
 	() => {
 		document.body.dataset.ready = 'true';
 		const status = document.querySelector('#status');
@@ -110,7 +110,9 @@ window.productionBrowserRuntime = {
 		try {
 			return { text: draft.get('draft').toString() };
 		} catch (cause) {
-			return { revoked: cause instanceof Error ? cause.message : String(cause) };
+			return {
+				revoked: cause instanceof Error ? cause.message : String(cause),
+			};
 		}
 	},
 	draftConnectionPhase() {

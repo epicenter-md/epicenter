@@ -10,8 +10,8 @@ import { field } from '@epicenter/field';
 import {
 	defineTable,
 	defineWorkspace,
-	type OpenedWorkspace,
 	type RowFor,
+	type WorkspaceHandle,
 } from '@epicenter/workspace/sqlite';
 
 /** Runtime-minted structural note row id. */
@@ -51,7 +51,7 @@ export const honeycrispWorkspace = defineWorkspace({
 	tables: { folders: foldersTable, notes: notesTable },
 });
 
-export type HoneycrispWorkspace = OpenedWorkspace<typeof honeycrispWorkspace>;
+export type HoneycrispWorkspace = WorkspaceHandle<typeof honeycrispWorkspace>;
 
 /**
  * Delete a folder after best-effort re-parenting of its current notes.

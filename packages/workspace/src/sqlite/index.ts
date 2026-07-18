@@ -2,24 +2,26 @@
  * Schema-opaque canonical records and release-local workspace lenses.
  *
  * `runtime.open(definition)` binds release-local table and KV lenses to the
- * canonical row store. Every ordinary row owns one lazy document capability.
+ * canonical row store. Browser and desktop runtimes return the stable handle
+ * synchronously; its `opened` promise reports the one storage-opening attempt.
+ * Every ordinary row owns one lazy document capability.
  */
 
-export type {
-	LogicalWorkspaceCopy,
-	LogicalWorkspaceExport,
-	LogicalWorkspaceRow,
-} from './canonical-addition.js';
-export {
-	isWorkspaceStorageHeldError,
-	isWorkspaceStorageMovedError,
-} from './browser-runtime-protocol.js';
 export {
 	type DocumentConnection,
 	type DocumentConnectionStatus,
 	rowDocumentConnection,
 } from '../document-provider/connection/index.js';
 export type { RowDocument } from '../document-provider/runtime/index.js';
+export {
+	isWorkspaceStorageHeldError,
+	isWorkspaceStorageMovedError,
+} from './browser-runtime-protocol.js';
+export type {
+	LogicalWorkspaceCopy,
+	LogicalWorkspaceExport,
+	LogicalWorkspaceRow,
+} from './canonical-addition.js';
 export type {
 	WorkspaceSync,
 	WorkspaceSyncPendingReason,
@@ -47,7 +49,7 @@ export {
 	type TableLensDefinitions,
 } from './lens-definition.js';
 export type {
-	OpenedWorkspace,
+	WorkspaceHandle,
 	WorkspaceKv,
 	WorkspaceRuntime,
 	WorkspaceSql,

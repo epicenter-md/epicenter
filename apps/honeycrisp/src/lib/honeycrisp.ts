@@ -40,13 +40,13 @@ export const honeycrisp = {
  * screen instead of a blank page.
  */
 export const honeycrispReady: Promise<void> = (async () => {
-	await runtime.whenOpen(honeycrispWorkspace.id);
+	await workspace.opened;
 	await state.whenReady;
 })();
 // The gate is the one observer of boot failure; without these, a failed boot
 // also fires unhandled-rejection events before the gate can render it
 // (state hydration rejects on its own when acquisition fails, because
-// honeycrispReady stops at the whenOpen rejection and never awaits it).
+// honeycrispReady stops at the opened rejection and never awaits it).
 void honeycrispReady.catch(() => undefined);
 void state.whenReady.catch(() => undefined);
 

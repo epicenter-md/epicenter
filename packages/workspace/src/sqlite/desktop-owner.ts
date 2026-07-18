@@ -17,7 +17,7 @@ import {
 	type DesktopRecordOperation,
 	encodeDesktopRecordResult,
 } from './desktop-protocol.js';
-import type { OpenedWorkspace } from './runtime.js';
+import type { WorkspaceHandle } from './runtime.js';
 import type { WorkspaceDefinition } from './runtime-definition.js';
 
 const sqliteRows = Type.Record(
@@ -25,7 +25,7 @@ const sqliteRows = Type.Record(
 	Type.Union([Type.String(), Type.Number(), Type.Null()]),
 );
 
-type ErasedWorkspace = OpenedWorkspace<WorkspaceDefinition>;
+type ErasedWorkspace = WorkspaceHandle<WorkspaceDefinition>;
 type ErasedKv = {
 	get(key: string): Promise<unknown>;
 	set(key: string, value: unknown): Promise<unknown>;

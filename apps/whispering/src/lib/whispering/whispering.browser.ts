@@ -21,7 +21,7 @@ export const settingsDefaults = application.settingsDefaults;
 export const onWhisperingRecordsChanged = (listener: () => void) =>
 	application.onRecordsChanged(whispering.id, listener);
 /** Resolves when both workspaces' storage is open; rejects terminally. */
-export const whisperingBoot: Promise<void> = application.whenOpen;
+export const whisperingBoot: Promise<void> = application.opened;
 
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => void application[Symbol.asyncDispose]());

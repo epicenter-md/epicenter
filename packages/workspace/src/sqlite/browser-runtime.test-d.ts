@@ -18,7 +18,8 @@ declare const runtime: ReturnType<typeof createDeviceBrowserWorkspaceRuntime>;
 declare const accountRuntime: ReturnType<
 	typeof createAccountBrowserWorkspaceRuntime
 >;
-const workspace = await runtime.open(definition);
+const workspace = runtime.open(definition);
+await workspace.opened;
 const row = await workspace.tables.notes.create({ title: 'typed' });
 await workspace.tables.notes.update(row.id, { title: 'updated' });
 await workspace.tables.notes.document.open(row.id);
@@ -29,6 +30,9 @@ const deviceExport = await runtime.export(definition);
 deviceExport.settlement satisfies null | { outcome: string };
 await accountRuntime.export(definition);
 await runtime.delete(definition);
+
+// @ts-expect-error opening readiness is runtime-owned
+workspace.opened = Promise.resolve();
 
 // @ts-expect-error Device runtimes never upload logical data
 await runtime.add(definition, copy);

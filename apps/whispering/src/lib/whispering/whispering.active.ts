@@ -1,7 +1,7 @@
 import { skillsWorkspace } from '@epicenter/skills';
 import type {
-	OpenedWorkspace,
 	WorkspaceDefinition,
+	WorkspaceHandle,
 } from '@epicenter/workspace/sqlite';
 import type { TranscriptionServiceId } from '../services/transcription/providers';
 import {
@@ -12,8 +12,7 @@ import {
 type ApplicationRuntime = {
 	open<TDefinition extends WorkspaceDefinition>(
 		definition: TDefinition,
-	): OpenedWorkspace<TDefinition>;
-	whenOpen(workspaceId: string): Promise<void>;
+	): WorkspaceHandle<TDefinition>;
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
@@ -23,8 +22,8 @@ type ApplicationRuntime = {
  * handles; neither workspace definition knows about the other.
  *
  * Construction is synchronous and infallible: `open` returns stable handles
- * whose operations queue behind the runtime's storage acquisition, and
- * `whenOpen` is the one fallible readiness promise the boot gate awaits.
+ * whose operations queue behind the runtime's storage acquisition. Their
+ * `opened` promises are the one fallible boundary the boot gate awaits.
  */
 export function openWhisperingApplication({
 	createRuntime,
@@ -41,18 +40,17 @@ export function openWhisperingApplication({
 	});
 	const whispering = runtime.open(whisperingWorkspace);
 	const skills = runtime.open(skillsWorkspace);
-	const whenOpen = Promise.all([
-		runtime.whenOpen(whisperingWorkspace.id),
-		runtime.whenOpen(skillsWorkspace.id),
-	]).then(() => undefined);
+	const opened = Promise.all([whispering.opened, skills.opened]).then(
+		() => undefined,
+	);
 	// The boot gate is the observer; without this, a failed acquisition also
 	// fires an unhandled-rejection event before the gate can render it.
-	void whenOpen.catch(() => undefined);
+	void opened.catch(() => undefined);
 
 	return Object.freeze({
 		whispering,
 		skills,
-		whenOpen,
+		opened,
 		settingsDefaults: createWhisperingSettingDefaults(
 			defaultTranscriptionService,
 		),

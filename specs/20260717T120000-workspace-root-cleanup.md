@@ -28,7 +28,7 @@ The final root export should be the current app-facing surface from
 
 - `defineWorkspace`, `WorkspaceDefinition`, `defineTable`
 - row, field-change, lens, value, and validation error types
-- `OpenedWorkspace`, `WorkspaceTables`, `WorkspaceKv`, and the final row/table
+- `WorkspaceHandle`, `WorkspaceTables`, `WorkspaceKv`, and the final row/table
   operation surface
 - `RowDocument`
 

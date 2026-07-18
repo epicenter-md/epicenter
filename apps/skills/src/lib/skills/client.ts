@@ -10,7 +10,7 @@ export const skillsRuntime = createDeviceBrowserWorkspaceRuntime({
 	},
 });
 
-export const skills = await skillsRuntime.open(skillsWorkspace);
+export const skills = skillsRuntime.open(skillsWorkspace);
 
 export function onSkillsRecordsChanged(listener: () => void): () => void {
 	recordsChangedListeners.add(listener);

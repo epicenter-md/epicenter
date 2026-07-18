@@ -2,12 +2,12 @@ import { sha256Hex } from '@epicenter/row-sync';
 import type { SqliteValue } from '@epicenter/sqlite';
 import type { Static, TSchema } from 'typebox';
 import { createBrowserIndexedDbDocumentStore } from '../document-provider/browser-indexed-db.js';
-import type { DocumentStore } from '../document-provider/persistence.js';
 import {
 	attachAuthenticatedDocumentConnection,
 	type DocumentConnection,
 	rowDocumentWebSocketUrl,
 } from '../document-provider/connection/index.js';
+import type { DocumentStore } from '../document-provider/persistence.js';
 import { createRowDocumentRuntime } from '../document-provider/runtime/index.js';
 
 import {
@@ -34,7 +34,7 @@ import type {
 	WorkspaceSyncStatus,
 } from './canonical-sync-supervisor.js';
 import { CurrentStateTransportInterruption } from './current-state-transport.js';
-import type { OpenedWorkspace, WorkspaceTables } from './runtime.js';
+import type { WorkspaceHandle, WorkspaceTables } from './runtime.js';
 import type { WorkspaceDefinition } from './runtime-definition.js';
 
 type DefinitionTables<TDefinition> =
@@ -48,8 +48,7 @@ type PendingRequest = {
 type BoundWorkspace = {
 	definition: WorkspaceDefinition;
 	manifest: BrowserWorkspaceManifest;
-	handle: OpenedWorkspace<WorkspaceDefinition>;
-	readiness: Promise<void>;
+	handle: WorkspaceHandle<WorkspaceDefinition>;
 	notifyRowsDeleted(addresses: RowAddress[]): void;
 	notifySyncStatus(status: WorkspaceSyncStatus): void;
 	notifyReady(): void;
@@ -115,9 +114,8 @@ export function createDeviceBrowserWorkspaceRuntime({
 	});
 	return Object.freeze({
 		open: runtime.open,
-		whenOpen: runtime.whenOpen,
 		async capture(definition: WorkspaceDefinition) {
-			runtime.open(definition);
+			await runtime.open(definition).opened;
 			await runtime.captureDurability(definition.id);
 			return runtime.captureLocal(definition.id);
 		},
@@ -125,12 +123,15 @@ export function createDeviceBrowserWorkspaceRuntime({
 		async export(
 			definition: WorkspaceDefinition,
 		): Promise<LogicalWorkspaceExport> {
-			runtime.open(definition);
+			await runtime.open(definition).opened;
 			await runtime.captureDurability(definition.id);
-			return { settlement: null, ...(await runtime.captureLocal(definition.id)) };
+			return {
+				settlement: null,
+				...(await runtime.captureLocal(definition.id)),
+			};
 		},
 		async delete(definition: WorkspaceDefinition) {
-			runtime.open(definition);
+			await runtime.open(definition).opened;
 			return runtime.deleteLocal(definition.id);
 		},
 		[Symbol.asyncDispose]: runtime[Symbol.asyncDispose],
@@ -157,16 +158,15 @@ export function createAccountBrowserWorkspaceRuntime({
 	});
 	return Object.freeze({
 		open: runtime.open,
-		whenOpen: runtime.whenOpen,
 		async add(definition: WorkspaceDefinition, copy: LogicalWorkspaceCopy) {
-			runtime.open(definition);
+			await runtime.open(definition).opened;
 			await runtime.whenReady(definition.id);
 			return runtime.addToAccount(definition.id, copy);
 		},
 		async export(
 			definition: WorkspaceDefinition,
 		): Promise<LogicalWorkspaceExport> {
-			runtime.open(definition);
+			await runtime.open(definition).opened;
 			return runtime.exportAccount(definition.id);
 		},
 		[Symbol.asyncDispose]: runtime[Symbol.asyncDispose],
@@ -409,6 +409,7 @@ function createBrowserRuntimeWithPersistence({
 	function createHandle<TDefinition extends WorkspaceDefinition>(
 		definition: TDefinition,
 		manifest: BrowserWorkspaceManifest,
+		opened: Promise<void>,
 	) {
 		const rowsDeletedListeners = new Set<(addresses: RowAddress[]) => void>();
 		const syncStatusListeners = new Set<
@@ -593,6 +594,7 @@ function createBrowserRuntimeWithPersistence({
 
 		const handle = Object.freeze({
 			id: definition.id,
+			opened,
 			tables,
 			kv: kv as never,
 			sync,
@@ -608,7 +610,7 @@ function createBrowserRuntimeWithPersistence({
 					resultSchema,
 				});
 			},
-		}) as unknown as OpenedWorkspace<TDefinition>;
+		}) as unknown as WorkspaceHandle<TDefinition>;
 		return {
 			handle,
 			notifyRowsDeleted,
@@ -639,15 +641,15 @@ function createBrowserRuntimeWithPersistence({
 		/**
 		 * Synchronously binds and returns the stable workspace handle. Storage
 		 * acquisition happens in the Worker behind it; operations invoked
-		 * before readiness queue there, and `whenOpen` reports when storage is
-		 * actually open (or rejects with the acquisition failure, for example
+		 * before readiness queue there, and `handle.opened` reports when storage
+		 * is actually open (or rejects with the acquisition failure, for example
 		 * the named held-storage error). Nothing here may be fallible: app
 		 * singleton modules call this at module evaluation, before any error
 		 * surface exists.
 		 */
 		open<TDefinition extends WorkspaceDefinition>(
 			definition: TDefinition,
-		): OpenedWorkspace<TDefinition> {
+		): WorkspaceHandle<TDefinition> {
 			assertOpen();
 			const existing = workspaces.get(definition.id);
 			if (existing) {
@@ -656,7 +658,7 @@ function createBrowserRuntimeWithPersistence({
 						`Workspace '${definition.id}' is already bound to another definition in this runtime`,
 					);
 				}
-				return existing.handle as OpenedWorkspace<TDefinition>;
+				return existing.handle as WorkspaceHandle<TDefinition>;
 			}
 			const manifest: BrowserWorkspaceManifest = {
 				workspaceId: definition.id,
@@ -665,17 +667,16 @@ function createBrowserRuntimeWithPersistence({
 				kv: JSON.parse(JSON.stringify(definition.kv)),
 				rowSync: transport?.binding,
 			};
-			const binding = createHandle(definition, manifest);
 			const readiness = Promise.withResolvers<void>();
+			const binding = createHandle(definition, manifest, readiness.promise);
 			const bound: BoundWorkspace = {
 				definition,
 				manifest,
 				...binding,
-				readiness: readiness.promise,
 			};
 			// A failed acquisition is terminal for this runtime (the Worker
 			// keeps the failure; recovery is an explicit reload). The bound
-			// entry stays registered so `whenOpen` keeps reporting the same
+			// entry stays registered so `handle.opened` keeps reporting the same
 			// rejection instead of a confusing not-open error.
 			void readiness.promise.catch(() => undefined);
 			workspaces.set(definition.id, bound);
@@ -693,16 +694,6 @@ function createBrowserRuntimeWithPersistence({
 				},
 			);
 			return binding.handle;
-		},
-		/** Resolves when the workspace's storage is open; rejects terminally. */
-		whenOpen(workspaceId: string): Promise<void> {
-			const bound = workspaces.get(workspaceId);
-			if (!bound) {
-				return Promise.reject(
-					new Error(`Workspace '${workspaceId}' is not open`),
-				);
-			}
-			return bound.readiness;
 		},
 		async captureLocal(workspaceId: string): Promise<LogicalWorkspaceCopy> {
 			const bound = workspaces.get(workspaceId);

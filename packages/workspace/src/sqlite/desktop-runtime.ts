@@ -12,7 +12,7 @@ import {
 	decodeDesktopRecordResult,
 	desktopWorkspaceUrl,
 } from './desktop-protocol.js';
-import type { OpenedWorkspace, WorkspaceTables } from './runtime.js';
+import type { WorkspaceHandle, WorkspaceTables } from './runtime.js';
 import type { WorkspaceDefinition } from './runtime-definition.js';
 
 type DefinitionTables<TDefinition> =
@@ -39,7 +39,7 @@ type DesktopRuntimeBroadcastChannel = {
 
 type BoundWorkspace = {
 	definition: WorkspaceDefinition;
-	handle: OpenedWorkspace<WorkspaceDefinition>;
+	handle: WorkspaceHandle<WorkspaceDefinition>;
 	revokeRows(addresses: RowAddress[]): void;
 	revokeDocuments(cause: Error): void;
 	applyDocumentUpdate(address: RowAddress, update: Uint8Array): void;
@@ -142,7 +142,7 @@ export function createDesktopWorkspaceRuntime({
 	function createHandle<TDefinition extends WorkspaceDefinition>(
 		definition: TDefinition,
 	): {
-		handle: OpenedWorkspace<TDefinition>;
+		handle: WorkspaceHandle<TDefinition>;
 		revokeRows(addresses: RowAddress[]): void;
 		revokeDocuments(cause: Error): void;
 		applyDocumentUpdate(address: RowAddress, update: Uint8Array): void;
@@ -250,6 +250,9 @@ export function createDesktopWorkspaceRuntime({
 
 		const handle = Object.freeze({
 			id: definition.id,
+			// The desktop host owns acquisition, so the WebView handle is open as
+			// soon as it is bound to the request transport.
+			opened: Promise.resolve(),
 			tables,
 			kv: kv as never,
 			async sql<TResultSchema extends TSchema>(
@@ -271,7 +274,7 @@ export function createDesktopWorkspaceRuntime({
 				}
 				return rows as Static<TResultSchema>[];
 			},
-		}) as unknown as OpenedWorkspace<TDefinition>;
+		}) as unknown as WorkspaceHandle<TDefinition>;
 		return {
 			handle,
 			revokeRows: documents.revoke,
@@ -285,7 +288,7 @@ export function createDesktopWorkspaceRuntime({
 	return Object.freeze({
 		open<TDefinition extends WorkspaceDefinition>(
 			definition: TDefinition,
-		): OpenedWorkspace<TDefinition> {
+		): WorkspaceHandle<TDefinition> {
 			assertOpen();
 			const existing = workspaces.get(definition.id);
 			if (existing) {
@@ -294,7 +297,7 @@ export function createDesktopWorkspaceRuntime({
 						`Workspace '${definition.id}' is already bound to another definition in this runtime`,
 					);
 				}
-				return existing.handle as OpenedWorkspace<TDefinition>;
+				return existing.handle as WorkspaceHandle<TDefinition>;
 			}
 			const binding = createHandle(definition);
 			workspaces.set(definition.id, {
@@ -302,19 +305,6 @@ export function createDesktopWorkspaceRuntime({
 				...binding,
 			});
 			return binding.handle;
-		},
-		/**
-		 * Same readiness surface as the browser runtime. The desktop request
-		 * transport has no acquisition phase (the host's owner supervises its
-		 * own storage), so a bound workspace is immediately open.
-		 */
-		whenOpen(workspaceId: string): Promise<void> {
-			if (!workspaces.has(workspaceId)) {
-				return Promise.reject(
-					new Error(`Workspace '${workspaceId}' is not open`),
-				);
-			}
-			return Promise.resolve();
 		},
 		async [Symbol.asyncDispose]() {
 			if (disposed) return;
