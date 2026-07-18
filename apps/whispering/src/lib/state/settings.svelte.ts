@@ -16,11 +16,15 @@ function clone<TValue>(value: TValue): TValue {
 	return structuredClone(value);
 }
 
-async function createSettings() {
+function createSettings() {
 	const map = new SvelteMap<keyof WhisperingSettingValues, unknown>();
 	const keys = Object.keys(settingsDefaults) as Array<
 		keyof WhisperingSettingValues
 	>;
+	// Seed defaults synchronously so `get` is never undefined; the boot gate
+	// awaits `whenReady` before first paint, so users still only ever see
+	// hydrated values.
+	for (const key of keys) map.set(key, clone(settingsDefaults[key]));
 
 	async function refreshKey<TKey extends keyof WhisperingSettingValues>(
 		key: TKey,
@@ -40,12 +44,16 @@ async function createSettings() {
 	const unsubscribe = onWhisperingRecordsChanged(
 		() => void Promise.all(keys.map(refreshKey)),
 	);
-	await Promise.all(keys.map(refreshKey));
+	// The initial reads queue behind the runtime's storage acquisition; the
+	// root gate awaits this before rendering, exactly like the old top-level
+	// await, but a failure now lands on the gate instead of blanking the page.
+	const whenReady = Promise.all(keys.map(refreshKey)).then(() => undefined);
 	// This module is a singleton; without this, each hot reload leaves the old
 	// instance's listener registered beside the new one.
 	if (import.meta.hot) import.meta.hot.dispose(unsubscribe);
 
 	return {
+		whenReady,
 		get<TKey extends keyof WhisperingSettingValues>(
 			key: TKey,
 		): WhisperingSettingValues[TKey] {
@@ -75,14 +83,4 @@ async function createSettings() {
 	};
 }
 
-/**
- * Assigned by `initSettings`, which the app boot chain awaits after the
- * workspace opens (the initial KV hydration gates first paint, exactly as
- * the old top-level await did); the root WorkspaceGate blocks every
- * consumer until then.
- */
-export let settings: Awaited<ReturnType<typeof createSettings>>;
-
-export async function initSettings(): Promise<void> {
-	settings = await createSettings();
-}
+export const settings = createSettings();

@@ -12,7 +12,8 @@ import {
 type ApplicationRuntime = {
 	open<TDefinition extends WorkspaceDefinition>(
 		definition: TDefinition,
-	): Promise<OpenedWorkspace<TDefinition>>;
+	): OpenedWorkspace<TDefinition>;
+	whenOpen(workspaceId: string): Promise<void>;
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
@@ -20,8 +21,12 @@ type ApplicationRuntime = {
  * Bind the two imported workspace contracts used by Whispering through one
  * environment-owned runtime. Ordinary application code composes the returned
  * handles; neither workspace definition knows about the other.
+ *
+ * Construction is synchronous and infallible: `open` returns stable handles
+ * whose operations queue behind the runtime's storage acquisition, and
+ * `whenOpen` is the one fallible readiness promise the boot gate awaits.
  */
-export async function openWhisperingApplication({
+export function openWhisperingApplication({
 	createRuntime,
 	defaultTranscriptionService,
 }: {
@@ -34,14 +39,20 @@ export async function openWhisperingApplication({
 	const runtime = createRuntime((workspaceId) => {
 		for (const listener of recordListeners.get(workspaceId) ?? []) listener();
 	});
-	const [whispering, skills] = await Promise.all([
-		runtime.open(whisperingWorkspace),
-		runtime.open(skillsWorkspace),
-	]);
+	const whispering = runtime.open(whisperingWorkspace);
+	const skills = runtime.open(skillsWorkspace);
+	const whenOpen = Promise.all([
+		runtime.whenOpen(whisperingWorkspace.id),
+		runtime.whenOpen(skillsWorkspace.id),
+	]).then(() => undefined);
+	// The boot gate is the observer; without this, a failed acquisition also
+	// fires an unhandled-rejection event before the gate can render it.
+	void whenOpen.catch(() => undefined);
 
 	return Object.freeze({
 		whispering,
 		skills,
+		whenOpen,
 		settingsDefaults: createWhisperingSettingDefaults(
 			defaultTranscriptionService,
 		),

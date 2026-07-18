@@ -87,15 +87,7 @@ function createRecipes() {
 	};
 }
 
-/**
- * Assigned by `initRecipes`, which the app boot chain calls after the
- * workspace opens; the root WorkspaceGate blocks every consumer until then.
- */
-export let recipes: ReturnType<typeof createRecipes>;
-
-export function initRecipes(): void {
-	recipes = createRecipes();
-}
+export const recipes = createRecipes();
 
 export function generateDefaultRecipe(): Recipe {
 	return { id: nanoid(), name: '', instructions: '', icon: null };

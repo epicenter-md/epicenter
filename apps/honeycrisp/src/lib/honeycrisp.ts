@@ -5,8 +5,11 @@ import { createHoneycrispBrowserRuntime } from './workspace/browser.js';
 
 const recordsChangedListeners = new Set<() => void>();
 
-// Runtime construction is synchronous and infallible; the fallible work
-// (opening browser storage) happens inside `honeycrispReady` below.
+// Construction is synchronous and infallible: the handle is a real singleton
+// at module scope and operations queue behind storage acquisition. Nothing
+// here may top-level await storage work: a module-evaluation rejection would
+// blank the page before any error surface could mount
+// (scripts/check-boot-purity.ts guards this).
 const runtime = createHoneycrispBrowserRuntime({
 	auth,
 	onRecordsChanged(workspaceId) {
@@ -15,31 +18,30 @@ const runtime = createHoneycrispBrowserRuntime({
 	},
 });
 
-async function openHoneycrisp() {
-	const workspace = await runtime.open(honeycrispWorkspace);
-	const state = createHoneycrispState({
-		honeycrisp: workspace,
-		onRecordsChanged(listener) {
-			recordsChangedListeners.add(listener);
-			return () => recordsChangedListeners.delete(listener);
-		},
-	});
-	return { ...workspace, state, whenReady: state.whenReady };
-}
+const workspace = runtime.open(honeycrispWorkspace);
+const state = createHoneycrispState({
+	honeycrisp: workspace,
+	onRecordsChanged(listener) {
+		recordsChangedListeners.add(listener);
+		return () => recordsChangedListeners.delete(listener);
+	},
+});
+
+export const honeycrisp = {
+	...workspace,
+	state,
+	whenReady: state.whenReady,
+};
 
 /**
- * Assigned when `honeycrispReady` resolves. Opening browser storage is
- * fallible (a suspended tab can hold the OPFS access handles), so no
- * module-evaluation code may await it: a top-level rejection here would
- * blank the page before any error surface could mount. The root layout's
- * WorkspaceGate awaits `honeycrispReady` before rendering any consumer, so
- * ordinary app code keeps importing this singleton and using it directly.
+ * The one fallible app bootstrap the root layout's WorkspaceGate awaits
+ * before rendering anything: storage acquisition, then state hydration. A
+ * failure (held storage, or any other open error) becomes a visible gate
+ * screen instead of a blank page.
  */
-export let honeycrisp: Awaited<ReturnType<typeof openHoneycrisp>>;
-
 export const honeycrispReady: Promise<void> = (async () => {
-	honeycrisp = await openHoneycrisp();
-	await honeycrisp.whenReady;
+	await runtime.whenOpen(honeycrispWorkspace.id);
+	await state.whenReady;
 })();
 // The gate is the one observer of boot failure; without this, a failed boot
 // also fires an unhandled-rejection event before the gate can render it.
@@ -47,9 +49,7 @@ void honeycrispReady.catch(() => undefined);
 
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => {
-		void honeycrispReady
-			.then(() => honeycrisp.state[Symbol.dispose]())
-			.catch(() => undefined);
+		state[Symbol.dispose]();
 		recordsChangedListeners.clear();
 		void runtime[Symbol.asyncDispose]();
 	});

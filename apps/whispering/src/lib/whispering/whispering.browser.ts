@@ -2,38 +2,27 @@ import { auth } from '#platform/auth';
 import { openWhisperingApplication } from './whispering.active';
 import { createWhisperingBrowserRuntime } from './whispering.browser-runtime';
 
-type WhisperingApplication = Awaited<
-	ReturnType<typeof openWhisperingApplication>
->;
+// Construction is synchronous and infallible: handles are real singletons at
+// module scope, operations queue behind storage acquisition, and the one
+// fallible thing (`whisperingBoot`) is a promise the root layout's
+// WorkspaceGate awaits. Nothing here may top-level await storage work: a
+// module-evaluation rejection would blank the page before any error surface
+// could mount (scripts/check-boot-purity.ts guards this).
+const application = openWhisperingApplication({
+	createRuntime(onRecordsChanged) {
+		return createWhisperingBrowserRuntime({ auth, onRecordsChanged });
+	},
+	defaultTranscriptionService: 'OpenAI',
+});
 
-/**
- * Assigned when `whisperingBoot` resolves. Opening browser storage is
- * fallible (a suspended tab can hold the OPFS access handles), so no
- * module-evaluation code may await it: a top-level rejection would blank
- * the page before any error surface could mount. The root layout's
- * WorkspaceGate blocks every consumer until the composed app boot resolves.
- */
-export let whispering: WhisperingApplication['whispering'];
-export let skills: WhisperingApplication['skills'];
-export let settingsDefaults: WhisperingApplication['settingsDefaults'];
-export let onWhisperingRecordsChanged: (listener: () => void) => () => void;
+export const whispering = application.whispering;
+export const skills = application.skills;
+export const settingsDefaults = application.settingsDefaults;
+export const onWhisperingRecordsChanged = (listener: () => void) =>
+	application.onRecordsChanged(whispering.id, listener);
+/** Resolves when both workspaces' storage is open; rejects terminally. */
+export const whisperingBoot: Promise<void> = application.whenOpen;
 
-export const whisperingBoot: Promise<void> = (async () => {
-	const application = await openWhisperingApplication({
-		createRuntime(onRecordsChanged) {
-			return createWhisperingBrowserRuntime({ auth, onRecordsChanged });
-		},
-		defaultTranscriptionService: 'OpenAI',
-	});
-	whispering = application.whispering;
-	skills = application.skills;
-	settingsDefaults = application.settingsDefaults;
-	onWhisperingRecordsChanged = (listener) =>
-		application.onRecordsChanged(application.whispering.id, listener);
-	if (import.meta.hot) {
-		import.meta.hot.dispose(() => void application[Symbol.asyncDispose]());
-	}
-})();
-// The gate observes boot failure through whisperingReady; without this, a
-// failed boot also fires an unhandled-rejection event first.
-void whisperingBoot.catch(() => undefined);
+if (import.meta.hot) {
+	import.meta.hot.dispose(() => void application[Symbol.asyncDispose]());
+}

@@ -114,12 +114,4 @@ function createRecordings() {
 	};
 }
 
-/**
- * Assigned by `initRecordings`, which the app boot chain calls after the
- * workspace opens; the root WorkspaceGate blocks every consumer until then.
- */
-export let recordings: ReturnType<typeof createRecordings>;
-
-export function initRecordings(): void {
-	recordings = createRecordings();
-}
+export const recordings = createRecordings();
