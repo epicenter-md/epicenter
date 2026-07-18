@@ -128,7 +128,10 @@ const defaultScheduler: CanonicalSyncScheduler = {
 		(timer as unknown as { unref?: () => void }).unref?.();
 		return timer;
 	},
-	clearTimer: clearTimeout,
+	// Wrapped for the same receiver reason as queueTask: WebKit workers throw
+	// "Can only call WorkerGlobalScope.clearTimeout on instances of
+	// WorkerGlobalScope" when the bare reference is invoked as a method.
+	clearTimer: (timer) => clearTimeout(timer),
 };
 
 export function createCanonicalSyncSupervisor({
