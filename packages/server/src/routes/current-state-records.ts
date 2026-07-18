@@ -17,7 +17,11 @@ import { RecordsError } from './records-errors.js';
 export type AdmitFirstContact<E extends Env = Env> = (
 	c: Context<E>,
 	input: {
-		authority: AccountAuthority;
+		/**
+		 * The push's already-resolved authority, narrowed to account sizing so an
+		 * admission policy cannot mutate or upgrade while deciding storage.
+		 */
+		authority: Pick<AccountAuthority, 'databaseSize'>;
 		principalId: PrincipalId;
 		workspaceId: string;
 	},

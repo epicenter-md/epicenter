@@ -87,7 +87,9 @@ compaction, and destruction.
 ## Consequences
 
 - `yjs`, `y-indexeddb`, their old `lib0` and protocol family, and the patched
-  IndexedDB provider leave the final dependency graph.
+  IndexedDB provider leave the final dependency graph at the production flip
+  that deletes the old room path; until that flip they serve only the legacy
+  rooms, never row documents.
 - Browser and native providers share conformance semantics without sharing a
   storage implementation.
 - Persisted Yjs 13 stores are abandoned under the authorized pre-user reset and
