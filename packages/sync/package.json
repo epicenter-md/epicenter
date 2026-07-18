@@ -19,7 +19,8 @@
 	},
 	"homepage": "https://epicenter.so",
 	"exports": {
-		".": "./src/index.ts"
+		".": "./src/index.ts",
+		"./document-v3": "./src/document-v3/index.ts"
 	},
 	"license": "MIT",
 	"scripts": {
@@ -34,6 +35,7 @@
 		"yjs": "catalog:"
 	},
 	"devDependencies": {
+		"@y/y": "14.0.0-rc.24",
 		"@types/bun": "catalog:",
 		"typescript": "catalog:",
 		"yjs": "catalog:"
