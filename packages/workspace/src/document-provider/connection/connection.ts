@@ -353,10 +353,7 @@ export function attachDocumentConnection(
 						// pre-downstream estimate under-reads the merged document.
 						serverStateVector = frame.stateVector;
 						owedServerReply = true;
-						if (handshakeComplete) {
-							measureNow();
-							if (!isSuppressed()) sendDeferredReply();
-						}
+						if (handshakeComplete) measureNow();
 						return;
 					case 'sync-response':
 						Y.applyUpdateV2(doc, frame.update, protocolOrigin);
@@ -364,7 +361,6 @@ export function attachDocumentConnection(
 						handshakeComplete = true;
 						attempt = 0;
 						measureNow();
-						if (!isSuppressed()) sendDeferredReply();
 						setStatus(connectedStatus());
 						if (!connectedOnce) {
 							connectedOnce = true;

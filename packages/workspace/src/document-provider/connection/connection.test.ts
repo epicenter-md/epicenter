@@ -96,6 +96,9 @@ describe('route-bound document connection', () => {
 		await connection.whenConnected;
 		expect(connection.status).toEqual({ phase: 'connected' });
 
+		// Exactly two client frames after a normal handshake: the initial
+		// sync-request and one deferred sync-response.
+		expect(socket.sent).toHaveLength(2);
 		const reply = decodeDocumentFrame(required(socket.sent, 1));
 		if (reply.kind !== 'sync-response') {
 			throw new Error('Expected the deferred sync response');
