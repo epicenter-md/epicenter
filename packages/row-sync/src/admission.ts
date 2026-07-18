@@ -1,23 +1,15 @@
-import type {
-	JsonObject,
-	JsonValue,
-	RowOutcome,
-	WireRowIntent,
-} from './protocol.js';
+import type { JsonObject, JsonValue, WireRowIntent } from './protocol.js';
 
 /**
- * Shared ceilings applied before any row-sync storage adapter. The document
- * bounds form ADR-0131's strictly nested chain, selected from Wave 0
- * measurements: canonical document < document component < intent < round <
- * request < page < backend limits.
+ * Shared ceilings applied before any row-sync storage adapter.
  */
 export const ROW_SYNC_ADMISSION_LIMITS = {
 	identifierBytes: 512,
 	/** Public row ids are exactly 24 lowercase alphanumerics (ADR-0130). */
 	rowIdLength: 24,
 	intentsPerRound: 64,
-	outcomesPerPage: 64,
-	baselineRowsPerPage: 64,
+	pullEntriesPerPage: 64,
+	acquiredRowsPerPage: 64,
 	unsetKeysPerIntent: 128,
 	jsonDepth: 16,
 	propertiesPerObject: 1_024,
@@ -25,11 +17,7 @@ export const ROW_SYNC_ADMISSION_LIMITS = {
 	encodedRowBytes: 508 * 1024,
 	/** The reserved KV row's aggregate cap (ADR-0132). */
 	encodedKvAggregateBytes: 64 * 1024,
-	/** A compact document full state after merge, in binary bytes (ADR-0131). */
-	canonicalDocumentBytes: 256 * 1024,
-	/** One intent's document component, in binary bytes. */
-	documentComponentBytes: 384 * 1024,
-	/** One encoded RowIntent on the JSON wire, including base64 inflation. */
+	/** One encoded RowIntent on the JSON wire. */
 	encodedIntentBytes: 700 * 1024,
 	encodedRoundBytes: 768 * 1024,
 	encodedPageBytes: 8 * 1024 * 1024,
@@ -54,23 +42,6 @@ const ROW_ID = /^[a-z0-9]{24}$/;
 /** The exact public row-id shape; the reserved KV address is the exception. */
 export function isCanonicalRowId(rowId: string): boolean {
 	return ROW_ID.test(rowId);
-}
-
-const BASE64_PAYLOAD = /^[A-Za-z0-9+/]+={0,2}$/;
-
-/** Document payloads are opaque bytes, but the encoding must decode. */
-export function isBase64Payload(value: string): boolean {
-	return (
-		value.length > 0 && value.length % 4 === 0 && BASE64_PAYLOAD.test(value)
-	);
-}
-
-/** Decoded byte length of a valid base64 payload. */
-export function base64DecodedBytes(value: string): number {
-	let padding = 0;
-	if (value.endsWith('==')) padding = 2;
-	else if (value.endsWith('=')) padding = 1;
-	return (value.length / 4) * 3 - padding;
 }
 
 const textEncoder = new TextEncoder();
@@ -175,20 +146,10 @@ function isAdmissibleAddress(intent: WireRowIntent): boolean {
 		// The reserved KV row accepts only field-bearing updates (ADR-0132).
 		return (
 			isReservedKvAddress(intent.table, intent.rowId) &&
-			intent.kind === 'update' &&
-			intent.fields !== undefined &&
-			intent.documentUpdate === undefined
+			intent.kind === 'update'
 		);
 	}
 	return isCanonicalRowId(intent.rowId);
-}
-
-function isAdmissibleDocumentUpdate(update: string): boolean {
-	return (
-		isBase64Payload(update) &&
-		base64DecodedBytes(update) <=
-			ROW_SYNC_ADMISSION_LIMITS.documentComponentBytes
-	);
 }
 
 export function isAdmissibleIntent(intent: WireRowIntent): boolean {
@@ -198,18 +159,8 @@ export function isAdmissibleIntent(intent: WireRowIntent): boolean {
 	}
 	switch (intent.kind) {
 		case 'create':
-			return (
-				isAdmissibleJsonObject(intent.fields) &&
-				(intent.documentUpdate === undefined ||
-					isAdmissibleDocumentUpdate(intent.documentUpdate))
-			);
+			return isAdmissibleJsonObject(intent.fields);
 		case 'update': {
-			if (intent.fields === undefined) {
-				return (
-					intent.documentUpdate !== undefined &&
-					isAdmissibleDocumentUpdate(intent.documentUpdate)
-				);
-			}
 			const { set, unset } = intent.fields;
 			if (!isAdmissibleJsonObject(set)) return false;
 			if (Object.keys(set).length === 0 && unset.length === 0) return false;
@@ -219,48 +170,10 @@ export function isAdmissibleIntent(intent: WireRowIntent): boolean {
 				unset.every(isBoundedIdentifier) &&
 				Object.keys(set).every(
 					(key) => isBoundedIdentifier(key) && !unsetKeys.has(key),
-				) &&
-				(intent.documentUpdate === undefined ||
-					isAdmissibleDocumentUpdate(intent.documentUpdate))
+				)
 			);
 		}
 		case 'delete':
 			return true;
-	}
-}
-
-export function isAdmissibleOutcome(outcome: RowOutcome): boolean {
-	if (
-		!isBoundedIdentifier(outcome.table) ||
-		!isBoundedIdentifier(outcome.rowId) ||
-		!Number.isSafeInteger(outcome.sequence) ||
-		outcome.sequence < 1
-	) {
-		return false;
-	}
-	switch (outcome.kind) {
-		case 'deletion':
-			return true;
-		case 'row': {
-			if (
-				outcome.fields === undefined &&
-				outcome.documentUpdate === undefined
-			) {
-				return false;
-			}
-			if (
-				outcome.documentUpdate !== undefined &&
-				!isAdmissibleDocumentUpdate(outcome.documentUpdate)
-			) {
-				return false;
-			}
-			if (
-				outcome.fields !== undefined &&
-				!isAdmissibleJsonObject(outcome.fields)
-			) {
-				return false;
-			}
-			return true;
-		}
 	}
 }

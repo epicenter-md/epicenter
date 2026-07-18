@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 import {
-	base64DecodedBytes,
 	isAdmissibleIntent,
 	isCanonicalRowId,
 	RESERVED_KV_ROW_ID,
@@ -54,21 +53,6 @@ describe('reserved addresses (ADR-0132)', () => {
 			isAdmissibleIntent({ kind: 'create', ...address, fields: {} }),
 		).toBeFalse();
 		expect(isAdmissibleIntent({ kind: 'delete', ...address })).toBeFalse();
-		expect(
-			isAdmissibleIntent({
-				kind: 'update',
-				...address,
-				fields: { set: { theme: 'dark' }, unset: [] },
-				documentUpdate: 'AAAA',
-			}),
-		).toBeFalse();
-		expect(
-			isAdmissibleIntent({
-				kind: 'update',
-				...address,
-				documentUpdate: 'AAAA',
-			}),
-		).toBeFalse();
 	});
 
 	test('every other __epicenter_ table refuses application rows', () => {
@@ -92,25 +76,19 @@ describe('reserved addresses (ADR-0132)', () => {
 });
 
 describe('update field changes', () => {
-	const update = (
-		fields?: { set: Record<string, unknown>; unset: string[] },
-		documentUpdate?: string,
-	): WireRowIntent => ({
+	const update = (fields: {
+		set: Record<string, unknown>;
+		unset: string[];
+	}): WireRowIntent => ({
 		kind: 'update',
 		table: 'notes',
 		rowId: ROW_ID,
-		...(fields === undefined ? {} : { fields: fields as never }),
-		...(documentUpdate === undefined ? {} : { documentUpdate }),
+		fields: fields as never,
 	});
 
-	test('an update needs field changes, a document update, or both', () => {
-		expect(isAdmissibleIntent(update())).toBeFalse();
+	test('an update needs at least one field change', () => {
 		expect(isAdmissibleIntent(update({ set: {}, unset: [] }))).toBeFalse();
 		expect(isAdmissibleIntent(update({ set: { a: 1 }, unset: [] }))).toBeTrue();
-		expect(isAdmissibleIntent(update(undefined, 'AAAA'))).toBeTrue();
-		expect(
-			isAdmissibleIntent(update({ set: { a: 1 }, unset: [] }, 'AAAA')),
-		).toBeTrue();
 	});
 
 	test('set and unset keys are disjoint and unset keys unique', () => {
@@ -123,33 +101,12 @@ describe('update field changes', () => {
 		expect(isAdmissibleIntent(update({ set: {}, unset: ['b'] }))).toBeTrue();
 	});
 
-	test('document updates must be decodable base64 within the component cap', () => {
-		expect(isAdmissibleIntent(update(undefined, 'not base64!'))).toBeFalse();
-		expect(isAdmissibleIntent(update(undefined, 'AAA'))).toBeFalse();
-		const overCap = 'A'.repeat(
-			Math.ceil((ROW_SYNC_ADMISSION_LIMITS.documentComponentBytes + 3) / 3) * 4,
-		);
-		expect(isAdmissibleIntent(update(undefined, overCap))).toBeFalse();
-	});
 });
 
-describe('protocol constant nesting (ADR-0131)', () => {
+describe('protocol constant nesting', () => {
 	test('the bounds form a strictly nested chain', () => {
 		const limits = ROW_SYNC_ADMISSION_LIMITS;
-		expect(limits.canonicalDocumentBytes).toBeLessThan(
-			limits.documentComponentBytes,
-		);
-		// A maximum document component must survive base64 inflation inside
-		// one encoded intent.
-		const componentAsBase64 = Math.ceil(limits.documentComponentBytes / 3) * 4;
-		expect(componentAsBase64).toBeLessThan(limits.encodedIntentBytes);
 		expect(limits.encodedIntentBytes).toBeLessThan(limits.encodedRoundBytes);
 		expect(limits.encodedRoundBytes).toBeLessThan(limits.encodedPageBytes);
-	});
-
-	test('base64DecodedBytes matches real payload lengths', () => {
-		expect(base64DecodedBytes('AAAA')).toBe(3);
-		expect(base64DecodedBytes('AAA=')).toBe(2);
-		expect(base64DecodedBytes('AA==')).toBe(1);
 	});
 });

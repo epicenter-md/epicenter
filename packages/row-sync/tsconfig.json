@@ -1,7 +1,7 @@
 {
 	"extends": "../../tsconfig.base.json",
 	"compilerOptions": {
-		"types": ["bun", "@cloudflare/workers-types"],
+		"types": ["bun"],
 		"noUnusedLocals": true,
 		"noUnusedParameters": true
 	}

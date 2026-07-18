@@ -7,9 +7,7 @@ import {
 import type { JsonObject, WireRowIntent } from './protocol.js';
 
 /**
- * The scalar component of one intent folded against one current row. The
- * document component folds separately at the authority (ADR-0131: field and
- * document components of a live-row update are independent laws).
+ * One scalar intent folded against one current row.
  */
 export type FieldsFoldResult =
 	| { kind: 'fields'; fields: JsonObject }
@@ -18,7 +16,7 @@ export type FieldsFoldResult =
 
 /**
  * Fold one schema-blind RowIntent's field component into one current row.
- * This is the mirror rule (ADR-0131): the authority folds every accepted
+ * This is the mirror rule (ADR-0144): the authority folds every accepted
  * intent with it and every replica projects pending intent with it, so both
  * sides reach the same application or the same deterministic no-op. Nothing
  * here refuses:
@@ -29,8 +27,6 @@ export type FieldsFoldResult =
  * - A folded row that exceeds its capacity cap (the general row cap, or the
  *   KV aggregate cap at the reserved address) is a no-op.
  * - `delete` on an absent row is a no-op; deletion is permanent.
- * - A document-only `update` leaves fields untouched (`noop` here); its
- *   liveness rule is the caller's, because absence no-ops the whole intent.
  */
 export function foldFields(
 	current: JsonObject | undefined,
@@ -42,7 +38,6 @@ export function foldFields(
 				? { kind: 'fields', fields: structuredClone(intent.fields) }
 				: { kind: 'noop' };
 		case 'update': {
-			if (intent.fields === undefined) return { kind: 'noop' };
 			const base =
 				current ??
 				(isReservedKvAddress(intent.table, intent.rowId) ? {} : undefined);

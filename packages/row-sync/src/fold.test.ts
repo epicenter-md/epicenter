@@ -58,20 +58,6 @@ describe('foldFields mirror rule', () => {
 		});
 	});
 
-	test('a document-only update leaves fields untouched', () => {
-		expect(
-			foldFields(
-				{ title: 'a' },
-				{
-					kind: 'update',
-					table: 'notes',
-					rowId: ROW_ID,
-					documentUpdate: 'AAAA',
-				},
-			),
-		).toEqual({ kind: 'noop' });
-	});
-
 	test('delete on a live row emits deletion; on absence a no-op', () => {
 		const intent: WireRowIntent = {
 			kind: 'delete',

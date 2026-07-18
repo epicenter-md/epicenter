@@ -1,7 +1,7 @@
 /**
  * Synchronous SHA-256 over a UTF-8 string, returning lowercase hex.
  *
- * The sealed-round digest (ADR-0131) is computed inside synchronous SQLite
+ * The sealed-round digest (ADR-0144) is computed inside synchronous SQLite
  * transactions in browsers, workers, and Bun alike; WebCrypto's digest is
  * async and `node:crypto` is not isomorphic, so this package carries the one
  * standard primitive the wire needs. FIPS 180-4, no options, no streaming:
@@ -27,6 +27,12 @@ const K = new Uint32Array([
 
 const rotr = (value: number, bits: number): number =>
 	(value >>> bits) | (value << (32 - bits));
+
+function wordAt(words: Uint32Array, index: number): number {
+	const word = words[index];
+	if (word === undefined) throw new RangeError('SHA-256 word index is invalid');
+	return word;
+}
 
 /** Compute the SHA-256 digest of `input` (UTF-8) as lowercase hex. */
 export function sha256Hex(input: string): string {
@@ -60,10 +66,11 @@ export function sha256Hex(input: string): string {
 			w[t] = view.getUint32(offset + t * 4);
 		}
 		for (let t = 16; t < 64; t++) {
-			const s0 =
-				rotr(w[t - 15]!, 7) ^ rotr(w[t - 15]!, 18) ^ (w[t - 15]! >>> 3);
-			const s1 = rotr(w[t - 2]!, 17) ^ rotr(w[t - 2]!, 19) ^ (w[t - 2]! >>> 10);
-			w[t] = (w[t - 16]! + s0 + w[t - 7]! + s1) >>> 0;
+			const word15 = wordAt(w, t - 15);
+			const word2 = wordAt(w, t - 2);
+			const s0 = rotr(word15, 7) ^ rotr(word15, 18) ^ (word15 >>> 3);
+			const s1 = rotr(word2, 17) ^ rotr(word2, 19) ^ (word2 >>> 10);
+			w[t] = (wordAt(w, t - 16) + s0 + wordAt(w, t - 7) + s1) >>> 0;
 		}
 
 		let a = h0;
@@ -78,7 +85,7 @@ export function sha256Hex(input: string): string {
 		for (let t = 0; t < 64; t++) {
 			const s1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
 			const ch = (e & f) ^ (~e & g);
-			const temp1 = (h + s1 + ch + K[t]! + w[t]!) >>> 0;
+			const temp1 = (h + s1 + ch + wordAt(K, t) + wordAt(w, t)) >>> 0;
 			const s0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
 			const maj = (a & b) ^ (a & c) ^ (b & c);
 			const temp2 = (s0 + maj) >>> 0;
