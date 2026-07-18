@@ -12,6 +12,7 @@ import {
 	type BrowserRuntimeMessage,
 	type BrowserWorkerInbound,
 	type BrowserWorkspaceManifest,
+	WORKSPACE_STORAGE_HELD_ERROR_NAME,
 	WORKSPACE_STORAGE_MOVED_ERROR_NAME,
 } from './browser-runtime-protocol.js';
 import {
@@ -116,11 +117,13 @@ function acquireSahPool(
 			// A suspended previous owner (a frozen tab or backgrounded PWA)
 			// cannot answer the steal notification, and OPFS access-handle
 			// exclusivity keeps its files locked until it resumes or closes.
-			// Name that state instead of surfacing a raw storage error.
-			throw new Error(
-				`Workspace storage '${storageKey}' is still held by another tab or window; close it (or wait for it to resume) and reload`,
+			// Name that state so boot gates can render the held-storage screen.
+			const held = new Error(
+				`Workspace storage '${storageKey}' is still held by another tab or window; close it (or wait for it to resume) and retry`,
 				{ cause: lastFailure },
 			);
+			held.name = WORKSPACE_STORAGE_HELD_ERROR_NAME;
+			throw held;
 		})();
 		void pool.catch(() => sahPools.delete(storageKey));
 		sahPools.set(storageKey, pool);

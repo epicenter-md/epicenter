@@ -31,6 +31,27 @@ export function isWorkspaceStorageMovedError(cause: unknown): boolean {
 	);
 }
 
+/**
+ * Error name the records Worker stamps when it cannot acquire this
+ * workspace's storage because another context still holds it: a suspended
+ * tab or backgrounded PWA that retains the OPFS access handles while unable
+ * to answer the steal notification. `runtime.open()` rejects with this
+ * named error; the recovery is closing or resuming the other surface, then
+ * retrying.
+ */
+export const WORKSPACE_STORAGE_HELD_ERROR_NAME = 'WorkspaceStorageHeldError';
+
+/**
+ * True when an error means workspace storage is held by another context
+ * that could not hand it off. Boot gates use this to render one blocking
+ * held-storage screen with concrete recovery instructions.
+ */
+export function isWorkspaceStorageHeldError(cause: unknown): boolean {
+	return (
+		cause instanceof Error && cause.name === WORKSPACE_STORAGE_HELD_ERROR_NAME
+	);
+}
+
 export type BrowserWorkspaceManifest = {
 	workspaceId: string;
 	storageKey: string;
