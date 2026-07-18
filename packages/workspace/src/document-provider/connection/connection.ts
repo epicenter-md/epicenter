@@ -1,9 +1,12 @@
 import { isOpenWebSocketDenial } from '@epicenter/sync';
 import {
 	DOCUMENT_BACKSTOP_CLOSE_CODE,
+	DOCUMENT_BOUND,
 	DOCUMENT_SUBPROTOCOL,
+	type DocumentMeasure,
 	decodeDocumentFrame,
 	encodeDocumentFrame,
+	measureDocument,
 } from '@epicenter/sync/document-v3';
 import * as Y from '@y/y';
 
@@ -13,7 +16,26 @@ const BASE_RETRY_MS = 500;
 const MAX_RETRY_MS = 30_000;
 const protocolOrigin = Symbol('document-connection');
 
-export type DocumentConnectionTerminalReason = 'too-large' | 'auth' | 'upgrade';
+/**
+ * Two-zone exact-measure scheduler constants.
+ *
+ * Send decisions consult the latest exact measure. Near the bound (either
+ * dimension at or past half, or while suppressed) every observed update
+ * triggers an exact recompute; far from the bound the recompute is debounced
+ * to every 32nd observed update, with an immediate recompute for any single
+ * update of 64 KiB or more. Far-zone staleness is therefore bounded by at
+ * most 31 sub-64 KiB updates, and any race escape costs at most one authority
+ * refusal (1009) per crossing because the reconnect path measures after
+ * downstream before sending anything. A running byte/struct accumulator was
+ * measured unsound (canonical growth reached 1.71x emitted update bytes and
+ * deletion splits add structs no update reports), so no arithmetic shortcut
+ * replaces the exact measure.
+ */
+const NEAR_ZONE_DIVISOR = 2;
+const FAR_MEASURE_EVERY_UPDATES = 32;
+const LARGE_UPDATE_BYTES = 65_536;
+
+export type DocumentConnectionTerminalReason = 'auth' | 'upgrade';
 
 export type DocumentConnectionVerdict =
 	| { outcome: 'retry'; reason: 'network' }
@@ -30,6 +52,17 @@ export type DocumentConnectionStatus =
 			retryInMs: number;
 	  }
 	| { phase: 'connected' }
+	| {
+			/**
+			 * Connected and receiving remote changes, but past the document bound,
+			 * so local changes stay durable and are not sent. `recoverable` is true
+			 * for byte fullness, which exits on its own once deletions shrink the
+			 * document; structural fullness does not exit by deletion, and its only
+			 * recovery is moving content to a fresh row document.
+			 */
+			phase: 'document-full';
+			recoverable: boolean;
+	  }
 	| {
 			phase: 'terminal';
 			reason: DocumentConnectionTerminalReason;
@@ -115,8 +148,11 @@ export function attachAuthenticatedDocumentConnection({
 			}
 		},
 		classifyClose({ code }) {
+			// 1009 is the authority's defensive backstop against a stale estimate.
+			// It is retryable: the reconnect applies downstream state, measures
+			// exactly, and suppresses, so one crossing costs at most one refusal.
 			if (code === DOCUMENT_BACKSTOP_CLOSE_CODE) {
-				return { outcome: 'terminal', reason: 'too-large' };
+				return { outcome: 'retry', reason: 'network' };
 			}
 			if (code === 1002) return { outcome: 'terminal', reason: 'upgrade' };
 			return { outcome: 'retry', reason: 'network' };
@@ -127,8 +163,12 @@ export function attachAuthenticatedDocumentConnection({
 /**
  * Attach one route-bound Yjs 14 connection to one document.
  *
- * Auth, protocol-major, network, liveness, and size decisions arrive from HTTP
- * upgrade or WebSocket close classification. Binary frames carry Yjs data only.
+ * Auth, protocol-major, network, and liveness decisions arrive from HTTP
+ * upgrade or WebSocket close classification. Binary frames carry Yjs data
+ * only. The connection is an advisory estimator, never an enforcer: it
+ * suppresses every upstream update-bearing frame while the document measures
+ * past the shared bound, keeps applying downstream, and resumes on its own
+ * when a measure comes back under.
  */
 export function attachDocumentConnection(
 	doc: Y.Doc,
@@ -147,9 +187,45 @@ export function attachDocumentConnection(
 	const connected = Promise.withResolvers<void>();
 	const disposedBarrier = Promise.withResolvers<void>();
 
+	// Estimator state. The measure survives reconnects; the handshake facts
+	// are per socket cycle and reset in bind().
+	let lastMeasure: DocumentMeasure | undefined;
+	let updatesSinceMeasure = 0;
+	let handshakeComplete = false;
+	let serverStateVector: Uint8Array | undefined;
+	let owedServerReply = false;
+
 	function setStatus(next: DocumentConnectionStatus): void {
 		status = next;
 		for (const listener of listeners) listener(next);
+	}
+
+	function isSuppressed(): boolean {
+		return (
+			lastMeasure !== undefined &&
+			(lastMeasure.stateBytes > DOCUMENT_BOUND.stateBytes ||
+				lastMeasure.stateStructs > DOCUMENT_BOUND.stateStructs)
+		);
+	}
+
+	function isNearZone(): boolean {
+		if (!lastMeasure) return false;
+		return (
+			isSuppressed() ||
+			lastMeasure.stateBytes >= DOCUMENT_BOUND.stateBytes / NEAR_ZONE_DIVISOR ||
+			lastMeasure.stateStructs >=
+				DOCUMENT_BOUND.stateStructs / NEAR_ZONE_DIVISOR
+		);
+	}
+
+	function connectedStatus(): DocumentConnectionStatus {
+		return isSuppressed()
+			? {
+					phase: 'document-full',
+					recoverable:
+						(lastMeasure?.stateStructs ?? 0) <= DOCUMENT_BOUND.stateStructs,
+				}
+			: { phase: 'connected' };
 	}
 
 	function send(frame: Parameters<typeof encodeDocumentFrame>[0]): void {
@@ -160,9 +236,53 @@ export function attachDocumentConnection(
 		socket.send(copy);
 	}
 
-	function handleLocalUpdate(update: Uint8Array, origin: unknown): void {
-		if (origin === protocolOrigin) return;
-		send({ kind: 'update', update });
+	function sendDeferredReply(): void {
+		if (!handshakeComplete || !serverStateVector) return;
+		if (socket?.readyState !== SOCKET_OPEN) return;
+		send({
+			kind: 'sync-response',
+			update: Y.encodeStateAsUpdateV2(doc, serverStateVector),
+		});
+		owedServerReply = false;
+	}
+
+	function measureNow(): void {
+		const wasSuppressed = isSuppressed();
+		lastMeasure = measureDocument(doc);
+		updatesSinceMeasure = 0;
+		const suppressed = isSuppressed();
+		if (!handshakeComplete) return;
+		// Recovery sends one diff against the last known server state vector. A
+		// stale vector over-sends idempotent structs, never loses data, and stays
+		// within the frame envelope because the diff is bounded by this
+		// document's own canonical state.
+		if (!suppressed && (wasSuppressed || owedServerReply)) {
+			sendDeferredReply();
+		}
+		if (status.phase === 'connected' || status.phase === 'document-full') {
+			const next = connectedStatus();
+			const changed =
+				next.phase !== status.phase ||
+				(next.phase === 'document-full' &&
+					status.phase === 'document-full' &&
+					next.recoverable !== status.recoverable);
+			if (changed) setStatus(next);
+		}
+	}
+
+	function handleDocUpdate(update: Uint8Array, origin: unknown): void {
+		const isLocal = origin !== protocolOrigin;
+		updatesSinceMeasure += 1;
+		if (
+			update.byteLength >= LARGE_UPDATE_BYTES ||
+			isNearZone() ||
+			updatesSinceMeasure >= FAR_MEASURE_EVERY_UPDATES
+		) {
+			measureNow();
+		}
+		if (isLocal && handshakeComplete && !isSuppressed()) {
+			send({ kind: 'update', update });
+		}
 	}
 
 	function retry(
@@ -212,7 +332,9 @@ export function attachDocumentConnection(
 		}
 		socket = opened;
 		opened.binaryType = 'arraybuffer';
-		let handshakeComplete = false;
+		handshakeComplete = false;
+		serverStateVector = undefined;
+		owedServerReply = false;
 
 		const handleOpen = () => {
 			if (opened.protocol !== DOCUMENT_SUBPROTOCOL) {
@@ -229,17 +351,24 @@ export function attachDocumentConnection(
 				const frame = decodeDocumentFrame(messageBytes(event.data));
 				switch (frame.kind) {
 					case 'sync-request':
-						send({
-							kind: 'sync-response',
-							update: Y.encodeStateAsUpdateV2(doc, frame.stateVector),
-						});
+						// Defer the reply: upstream stays suppressed until downstream
+						// state is applied and an exact measure is taken, because a
+						// pre-downstream estimate under-reads the merged document.
+						serverStateVector = frame.stateVector;
+						owedServerReply = true;
+						if (handshakeComplete) {
+							measureNow();
+							if (!isSuppressed()) sendDeferredReply();
+						}
 						return;
 					case 'sync-response':
 						Y.applyUpdateV2(doc, frame.update, protocolOrigin);
 						if (handshakeComplete) return;
 						handshakeComplete = true;
 						attempt = 0;
-						setStatus({ phase: 'connected' });
+						measureNow();
+						if (!isSuppressed()) sendDeferredReply();
+						setStatus(connectedStatus());
 						if (!connectedOnce) {
 							connectedOnce = true;
 							connected.resolve();
@@ -297,7 +426,7 @@ export function attachDocumentConnection(
 		cycle += 1;
 		cancelRetry?.();
 		cancelRetry = undefined;
-		doc.off('updateV2', handleLocalUpdate);
+		doc.off('updateV2', handleDocUpdate);
 		const opened = socket;
 		socket = undefined;
 		if (opened) {
@@ -317,7 +446,7 @@ export function attachDocumentConnection(
 		disposedBarrier.resolve();
 	}
 
-	doc.on('updateV2', handleLocalUpdate);
+	doc.on('updateV2', handleDocUpdate);
 	void connect();
 
 	return {

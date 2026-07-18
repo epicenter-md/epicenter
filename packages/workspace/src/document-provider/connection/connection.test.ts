@@ -1,12 +1,15 @@
 /**
  * Route-bound Document Connection Tests
  *
- * Verifies subprotocol negotiation, symmetric Yjs 14 exchange, lifecycle
+ * Verifies subprotocol negotiation, the deferred symmetric Yjs 14 exchange,
+ * the two-zone estimator with suppression and automatic resume, lifecycle
  * classification, retry scheduling, and disposal for one fixed document.
  */
 import { describe, expect, test } from 'bun:test';
 import {
 	DOCUMENT_BACKSTOP_CLOSE_CODE,
+	DOCUMENT_BOUND,
+	DOCUMENT_FRAME_LIMITS,
 	DOCUMENT_SUBPROTOCOL,
 	decodeDocumentFrame,
 	encodeDocumentFrame,
@@ -60,26 +63,15 @@ describe('route-bound document connection', () => {
 		doc.destroy();
 	});
 
-	test('negotiates the document protocol and completes a symmetric Yjs 14 handshake', async () => {
+	test('defers its handshake reply until downstream is applied and measured', async () => {
 		const socket = new FakeSocket();
-		const requested: { url: string; protocols: string[] }[] = [];
 		const doc = createDoc('local');
 		const connection = attachDocumentConnection(doc, {
 			url: 'https://api.example/documents/notes/note-a',
-			openSocket(url, protocols) {
-				requested.push({ url: String(url), protocols });
-				return { outcome: 'opened', socket: socket.asWebSocket() };
-			},
+			openSocket: () => ({ outcome: 'opened', socket: socket.asWebSocket() }),
 			classifyClose: networkClose,
 		});
 		await flush();
-
-		expect(requested).toEqual([
-			{
-				url: 'https://api.example/documents/notes/note-a',
-				protocols: [DOCUMENT_SUBPROTOCOL],
-			},
-		]);
 		socket.open();
 		const request = decodeDocumentFrame(required(socket.sent, 0));
 		expect(request.kind).toBe('sync-request');
@@ -89,31 +81,265 @@ describe('route-bound document connection', () => {
 			kind: 'sync-request',
 			stateVector: Y.encodeStateVector(server),
 		});
-		const localDiff = decodeDocumentFrame(required(socket.sent, 1));
-		if (localDiff.kind !== 'sync-response') {
-			throw new Error('Expected local sync response');
-		}
-		Y.applyUpdateV2(server, localDiff.update);
-		expect(server.get('content').toString()).toContain('local');
+		// The reply is deferred: a naive pre-downstream reply would precede the
+		// exact measure the suppression decision needs.
+		expect(socket.sent).toHaveLength(1);
 
-		const sentBeforeRemoteUpdate = socket.sent.length;
+		// A local edit made mid-handshake is not sent as its own frame either.
+		doc.get('content').insert(0, 'mid-handshake ');
+		expect(socket.sent).toHaveLength(1);
+
 		socket.receive({
 			kind: 'sync-response',
 			update: Y.encodeStateAsUpdateV2(server, Y.encodeStateVector(doc)),
 		});
 		await connection.whenConnected;
 		expect(connection.status).toEqual({ phase: 'connected' });
-		expect(socket.sent).toHaveLength(sentBeforeRemoteUpdate);
+
+		const reply = decodeDocumentFrame(required(socket.sent, 1));
+		if (reply.kind !== 'sync-response') {
+			throw new Error('Expected the deferred sync response');
+		}
+		Y.applyUpdateV2(server, reply.update);
+		expect(server.get('content').toString()).toContain('local');
+		expect(server.get('content').toString()).toContain('mid-handshake');
 
 		doc.get('content').insert(0, 'new ');
 		expect(
 			decodeDocumentFrame(required(socket.sent, socket.sent.length - 1)),
-		).toMatchObject({
-			kind: 'update',
-		});
+		).toMatchObject({ kind: 'update' });
 		connection.dispose();
 		await connection.whenDisposed;
 		doc.destroy();
+		server.destroy();
+	});
+
+	test('suppresses every upstream frame while downstream keeps applying', async () => {
+		const socket = new FakeSocket();
+		const doc = createDoc('local');
+		const connection = attachDocumentConnection(doc, {
+			url: 'https://api.example/document',
+			openSocket: () => ({ outcome: 'opened', socket: socket.asWebSocket() }),
+			classifyClose: networkClose,
+		});
+		await flush();
+		socket.open();
+
+		const server = new Y.Doc();
+		server.get('content').insert(0, 'x'.repeat(DOCUMENT_BOUND.stateBytes + 64));
+		socket.receive({
+			kind: 'sync-request',
+			stateVector: Y.encodeStateVector(server),
+		});
+		socket.receive({
+			kind: 'sync-response',
+			update: Y.encodeStateAsUpdateV2(server, Y.encodeStateVector(doc)),
+		});
+		await connection.whenConnected;
+
+		// Byte-full: the deferred reply is suppressed and the status says so.
+		expect(socket.sent).toHaveLength(1);
+		expect(connection.status).toEqual({
+			phase: 'document-full',
+			recoverable: true,
+		});
+
+		// Local edits stay durable in the doc but are not sent.
+		doc.get('content').insert(0, 'unsent ');
+		expect(socket.sent).toHaveLength(1);
+
+		// Downstream keeps flowing while suppressed.
+		const beforeRemote = doc.get('content').toString();
+		const remoteSv = Y.encodeStateVector(server);
+		server.get('content').insert(0, 'remote-progress ');
+		socket.receive({
+			kind: 'update',
+			update: Y.encodeStateAsUpdateV2(server, remoteSv),
+		});
+		expect(doc.get('content').toString()).not.toBe(beforeRemote);
+		expect(doc.get('content').toString()).toContain('remote-progress');
+
+		connection.dispose();
+		doc.destroy();
+		server.destroy();
+	});
+
+	test('byte fullness resumes on its own once deletions shrink the document', async () => {
+		const socket = new FakeSocket();
+		const doc = new Y.Doc();
+		const connection = attachDocumentConnection(doc, {
+			url: 'https://api.example/document',
+			openSocket: () => ({ outcome: 'opened', socket: socket.asWebSocket() }),
+			classifyClose: networkClose,
+		});
+		await flush();
+		socket.open();
+
+		const server = new Y.Doc();
+		server.get('content').insert(0, 'y'.repeat(DOCUMENT_BOUND.stateBytes + 64));
+		const serverSv = Y.encodeStateVector(server);
+		socket.receive({ kind: 'sync-request', stateVector: serverSv });
+		socket.receive({
+			kind: 'sync-response',
+			update: Y.encodeStateAsUpdateV2(server, Y.encodeStateVector(doc)),
+		});
+		await connection.whenConnected;
+		expect(connection.status).toEqual({
+			phase: 'document-full',
+			recoverable: true,
+		});
+		expect(socket.sent).toHaveLength(1);
+
+		// The user deletes most of the content; GC shears it and the next exact
+		// measure comes back under the bound, which sends the deferred reply as
+		// the resume diff and returns the status to connected.
+		doc.get('content').delete(0, DOCUMENT_BOUND.stateBytes - 1024);
+		expect(connection.status).toEqual({ phase: 'connected' });
+		const resume = decodeDocumentFrame(required(socket.sent, 1));
+		expect(resume.kind).toBe('sync-response');
+
+		// Ordinary updates flow again.
+		doc.get('content').insert(0, 'resumed ');
+		expect(
+			decodeDocumentFrame(required(socket.sent, socket.sent.length - 1)),
+		).toMatchObject({ kind: 'update' });
+
+		connection.dispose();
+		doc.destroy();
+		server.destroy();
+	});
+
+	test('structural fullness reports non-recoverable and never loops', async () => {
+		const socket = new FakeSocket();
+		const doc = new Y.Doc();
+		const connection = attachDocumentConnection(doc, {
+			url: 'https://api.example/document',
+			openSocket: () => ({ outcome: 'opened', socket: socket.asWebSocket() }),
+			classifyClose: networkClose,
+		});
+		await flush();
+		socket.open();
+
+		const server = new Y.Doc();
+		// Head inserts in one transaction never merge: struct-dense, byte-small.
+		server.transact(() => {
+			for (let i = 0; i < DOCUMENT_BOUND.stateStructs + 1; i++) {
+				server.get('content').insert(0, 'z');
+			}
+		});
+		socket.receive({
+			kind: 'sync-request',
+			stateVector: Y.encodeStateVector(server),
+		});
+		socket.receive({
+			kind: 'sync-response',
+			update: Y.encodeStateAsUpdateV2(server, Y.encodeStateVector(doc)),
+		});
+		await connection.whenConnected;
+		expect(connection.status).toEqual({
+			phase: 'document-full',
+			recoverable: false,
+		});
+		// Deleting content does not shrink the struct dimension; the connection
+		// stays suppressed instead of retrying into refusals.
+		doc.get('content').delete(0, 1_000);
+		expect(connection.status).toEqual({
+			phase: 'document-full',
+			recoverable: false,
+		});
+		expect(socket.sent).toHaveLength(1);
+
+		connection.dispose();
+		doc.destroy();
+		server.destroy();
+	});
+
+	test('a 1009 backstop closes retryably and the reconnect measures first', async () => {
+		const scheduler = createScheduler();
+		const sockets = [new FakeSocket(), new FakeSocket()];
+		let opens = 0;
+		const doc = createDoc('local');
+		const connection = attachDocumentConnection(doc, {
+			url: 'wss://api.example/document',
+			openSocket: () => ({
+				outcome: 'opened',
+				socket: required(sockets, opens++).asWebSocket(),
+			}),
+			// The shared classifier: 1009 is retryable, never terminal.
+			classifyClose: ({ code }) =>
+				code === 1002
+					? { outcome: 'terminal', reason: 'upgrade' }
+					: { outcome: 'retry', reason: 'network' },
+			schedule: scheduler.schedule,
+			random: () => 0,
+		});
+		await flush();
+		const first = required(sockets, 0);
+		first.open();
+		const server = new Y.Doc();
+		socketHandshake(first, server, doc);
+		await connection.whenConnected;
+		expect(connection.status).toEqual({ phase: 'connected' });
+
+		// The authority refuses a racing update with the backstop close.
+		first.serverClose(DOCUMENT_BACKSTOP_CLOSE_CODE, 'too-large');
+		expect(connection.status).toMatchObject({
+			phase: 'pending',
+			reason: 'network',
+		});
+
+		// The reconnect applies downstream (now over the bound) and measures
+		// before replying: it suppresses, so one crossing costs one refusal.
+		scheduler.runNext();
+		await flush();
+		const second = required(sockets, 1);
+		second.open();
+		server.get('content').insert(0, 'x'.repeat(DOCUMENT_BOUND.stateBytes));
+		socketHandshake(second, server, doc);
+		expect(connection.status).toEqual({
+			phase: 'document-full',
+			recoverable: true,
+		});
+		const upstream = second.sent.filter(
+			(bytes) => decodeDocumentFrame(bytes).kind !== 'sync-request',
+		);
+		expect(upstream).toHaveLength(0);
+
+		connection.dispose();
+		doc.destroy();
+		server.destroy();
+	});
+
+	test('a maximal legal canonical state fits the reconnect frame envelope', async () => {
+		const socket = new FakeSocket();
+		const doc = new Y.Doc();
+		const connection = attachDocumentConnection(doc, {
+			url: 'https://api.example/document',
+			openSocket: () => ({ outcome: 'opened', socket: socket.asWebSocket() }),
+			classifyClose: networkClose,
+		});
+		await flush();
+		socket.open();
+
+		const server = new Y.Doc();
+		server.get('content').insert(0, 'm'.repeat(1_040_000));
+		const state = Y.encodeStateAsUpdateV2(server);
+		expect(state.byteLength).toBeLessThanOrEqual(DOCUMENT_BOUND.stateBytes);
+		expect(state.byteLength + DOCUMENT_FRAME_LIMITS.headerBytes).toBeLessThan(
+			DOCUMENT_FRAME_LIMITS.encodedFrameBytes,
+		);
+		socket.receive({
+			kind: 'sync-request',
+			stateVector: Y.encodeStateVector(server),
+		});
+		socket.receive({ kind: 'sync-response', update: state });
+		await connection.whenConnected;
+		expect(connection.status).toEqual({ phase: 'connected' });
+		expect(doc.get('content').toString()).toHaveLength(1_040_000);
+
+		connection.dispose();
+		doc.destroy();
+		server.destroy();
 	});
 
 	test('retries a non-terminal admission with injected backoff', async () => {
@@ -152,8 +378,8 @@ describe('route-bound document connection', () => {
 		doc.destroy();
 	});
 
-	test('parks terminal auth, too-large, and upgrade admissions', async () => {
-		for (const reason of ['auth', 'too-large', 'upgrade'] as const) {
+	test('parks terminal auth and upgrade admissions', async () => {
+		for (const reason of ['auth', 'upgrade'] as const) {
 			const scheduler = createScheduler();
 			const doc = new Y.Doc();
 			const connection = attachDocumentConnection(doc, {
@@ -170,49 +396,6 @@ describe('route-bound document connection', () => {
 			connection.dispose();
 			doc.destroy();
 		}
-	});
-
-	test('retries ordinary close and parks terminal too-large close', async () => {
-		const scheduler = createScheduler();
-		const sockets = [new FakeSocket(), new FakeSocket()];
-		let opens = 0;
-		const doc = new Y.Doc();
-		const connection = attachDocumentConnection(doc, {
-			url: 'https://api.example/document',
-			openSocket: () => ({
-				outcome: 'opened',
-				socket: required(sockets, opens++).asWebSocket(),
-			}),
-			classifyClose: ({ code }) =>
-				code === DOCUMENT_BACKSTOP_CLOSE_CODE
-					? { outcome: 'terminal', reason: 'too-large' }
-					: { outcome: 'retry', reason: 'network' },
-			schedule: scheduler.schedule,
-			random: () => 0,
-		});
-		void connection.whenConnected.catch(() => undefined);
-		await flush();
-		required(sockets, 0).open();
-		required(sockets, 0).serverClose(1000, 'not-live');
-		expect(connection.status).toMatchObject({
-			phase: 'pending',
-			reason: 'network',
-		});
-
-		scheduler.runNext();
-		await flush();
-		required(sockets, 1).open();
-		required(sockets, 1).serverClose(
-			DOCUMENT_BACKSTOP_CLOSE_CODE,
-			'too-large',
-		);
-		expect(connection.status).toEqual({
-			phase: 'terminal',
-			reason: 'too-large',
-		});
-		expect(scheduler.tasks).toEqual([]);
-		connection.dispose();
-		doc.destroy();
 	});
 
 	test('explicit disposal cancels retry without owning document destruction', async () => {
@@ -265,6 +448,18 @@ function createDoc(content: string): Y.Doc {
 	doc.get('content').insert(0, content);
 	return doc;
 }
+
+function socketHandshake(socket: FakeSocket, server: Y.Doc, doc: Y.Doc): void {
+	socket.receive({
+		kind: 'sync-request',
+		stateVector: Y.encodeStateVector(server),
+	});
+	socket.receive({
+		kind: 'sync-response',
+		update: Y.encodeStateAsUpdateV2(server, Y.encodeStateVector(doc)),
+	});
+}
+
 
 function flush(): Promise<void> {
 	return new Promise((resolve) => queueMicrotask(resolve));
