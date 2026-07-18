@@ -34,10 +34,13 @@ async function createSettings() {
 		map.set(key, clone(storedValue ?? settingsDefaults[key]));
 	}
 
-	await Promise.all(keys.map(refreshKey));
+	// Subscribe before the first reads: a records-changed event that lands
+	// during initial hydration must still trigger a re-read, or the cache
+	// starts stale until the next change.
 	const unsubscribe = onWhisperingRecordsChanged(
 		() => void Promise.all(keys.map(refreshKey)),
 	);
+	await Promise.all(keys.map(refreshKey));
 	// This module is a singleton; without this, each hot reload leaves the old
 	// instance's listener registered beside the new one.
 	if (import.meta.hot) import.meta.hot.dispose(unsubscribe);
