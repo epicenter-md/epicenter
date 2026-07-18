@@ -20,6 +20,7 @@
 	"homepage": "https://epicenter.so",
 	"exports": {
 		".": "./src/index.ts",
+		"./auth-subprotocol": "./src/auth-subprotocol.ts",
 		"./document-v3": "./src/document-v3/index.ts"
 	},
 	"license": "MIT",

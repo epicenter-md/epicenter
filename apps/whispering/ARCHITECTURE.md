@@ -16,30 +16,17 @@ Whispering uses a clean three-layer architecture that shares one SPA between its
 
 ## Workspace Composition
 
-Whispering uses the same workspace composition vocabulary as the rest of the repo across browser and Epicenter-hosted builds:
+Whispering binds two inert workspace contracts (its own plus `@epicenter/skills`) through one environment-owned SQLite runtime:
 
 ```txt
-defineWorkspace()
-  -> defineWhispering(defaultTranscriptionService)
-    -> openWhisperingBrowser({ auth, nodeId, defaultTranscriptionService })
+defineWorkspace()                       src/lib/workspace/contract.ts (inert schema)
+  -> openWhisperingApplication()        src/lib/whispering/whispering.active.ts
+    -> #platform/whispering             the one boot call per environment
 ```
 
-`defineWhispering(defaultTranscriptionService)` in `src/lib/workspace/definition.ts` is the shared model factory. It defines the fixed workspace id, tables, and KV schema with no platform APIs; the platform argument only changes read-side KV defaults.
+`src/lib/workspace/contract.ts` defines the fixed workspace id, row tables, and KV settings schema with no platform APIs. `openWhisperingApplication({ createRuntime, defaultTranscriptionService })` opens both workspaces through the runtime the environment supplies and multiplexes records-changed notifications.
 
-`openWhisperingBrowser({ auth, nodeId, defaultTranscriptionService })` in `src/lib/whispering/whispering.active.ts` is the shared browser/Tauri runtime opener. It connects once at boot with `toConnection(auth, nodeId)`, layers the recording markdown export, and aliases `storage.whenLoaded` as `whenReady`; settings metadata comes from the workspace's own `kv.keys` / `kv.getDefault` / `kv.reset` (ADR-0093). The `#platform/whispering` leaves supply the auth client, stable node id, and default transcription service.
-
-The rule is the same as Fuji and Honeycrisp:
-
-```txt
-create<App>()
-  shared isomorphic model
-
-open<App>Browser/open<App>Daemon/open<App>Tauri()
-  runtime resources around that model
-
-attach*
-  one side-effectful layer
-```
+The `#platform/whispering` leaves pick the runtime: the web build (`whispering.browser.ts`) selects the device or account browser runtime from the boot auth state (`whispering.browser-runtime.ts`); the Epicenter-hosted build (`whispering.tauri.ts`) uses the same-origin desktop workspace runtime served by the host's Bun-owned workspace owner. Scalar rows live in runtime-native SQLite; row documents are lazy Yjs 14 documents behind the runtime's document provider (ADR-0144).
 
 ## Service Layer - Pure Business Logic + Platform Abstraction
 
@@ -120,13 +107,13 @@ async function transcribeBlob(blob: Blob) {
 }
 ```
 
-**Workspace State** - After migrating to Yjs CRDTs, domain data (recordings, transformations, transformation runs) lives in reactive workspace state modules (`$lib/state/*.svelte.ts`). These use SvelteMap backed by Yjs documents for instant reactivity. No cache invalidation or optimistic updates needed.
+**Workspace State** - Domain data (recordings, recipes, settings) lives in reactive workspace state modules (`$lib/state/*.svelte.ts`). Each module reads its rows or KV keys from the SQLite workspace and refreshes on the runtime's records-changed notifications, so remote sync and other-tab writes appear without manual cache invalidation.
 
-The rpc layer's role has narrowed to things that don't fit in CRDTs:
+The rpc layer's role has narrowed to things that don't fit in workspace rows:
 
 - **External APIs**: Transcription services, LLM completions (`rpc.transcription.*`, `rpc.transformer.*`)
 - **Microphone enumeration**: Async device list with loading states (`manualRecorder.enumerateDevices`). Recorder state itself lives in `$lib/state/manual-recorder.svelte.ts` and `$lib/state/vad-recorder.svelte.ts` as `$state`, not queries.
-- **Audio blob access**: Too large for Yjs CRDTs, still served via DbService (`rpc.audio.getPlaybackUrl`)
+- **Audio blob access**: Too large for workspace rows, still served via the blob store (`rpc.audio.getPlaybackUrl`)
 
 ```svelte
 <script>
@@ -136,7 +123,7 @@ The rpc layer's role has narrowed to things that don't fit in CRDTs:
   // Domain data: workspace state (reactive, no queries needed)
   const latestRecording = $derived(recordings.sorted[0]);
 
-  // Audio blob: still needs TanStack Query (too large for CRDTs)
+  // Audio blob: still needs TanStack Query (too large for workspace rows)
   const audioUrl = createQuery(() => ({
     ...rpc.audio.getPlaybackUrl(() => latestRecording?.id ?? '').options,
     enabled: !!latestRecording?.id,

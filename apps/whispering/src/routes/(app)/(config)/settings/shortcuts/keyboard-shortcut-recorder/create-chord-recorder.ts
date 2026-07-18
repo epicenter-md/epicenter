@@ -1,4 +1,3 @@
-import { debounce } from '@epicenter/workspace';
 import { on } from 'svelte/events';
 import {
 	domCodeToKey,
@@ -135,4 +134,25 @@ export function createChordRecorder({
 	}
 
 	return { start, stop };
+}
+
+/** Trailing-edge debounce with a cancel for teardown; last call's args win. */
+function debounce(
+	fn: () => void,
+	ms: number,
+): { (): void; cancel(): void } {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	function debounced(): void {
+		if (timer !== undefined) clearTimeout(timer);
+		timer = setTimeout(() => {
+			timer = undefined;
+			fn();
+		}, ms);
+	}
+	debounced.cancel = (): void => {
+		if (timer === undefined) return;
+		clearTimeout(timer);
+		timer = undefined;
+	};
+	return debounced;
 }

@@ -1,5 +1,4 @@
 import { InstantString } from '@epicenter/field';
-import { IanaTimeZone } from '@epicenter/workspace';
 import { extractErrorMessage } from 'wellcrafted/error';
 import {
 	deliverTranscriptionResult,
@@ -59,7 +58,7 @@ export async function processRecordingPipeline({
 		id: recordingId,
 		title: '',
 		recordedAt: now,
-		recordedAtZone: IanaTimeZone.current(),
+		recordedAtZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
 		transcript: '',
 		polishedTranscript: null,
 		duration: durationMs,

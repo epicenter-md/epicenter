@@ -2,7 +2,7 @@ import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	BEARER_SUBPROTOCOL_PREFIX,
 	type OpenWebSocketDenial,
-} from '@epicenter/sync';
+} from '@epicenter/sync/auth-subprotocol';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Err, Ok, type Result } from 'wellcrafted/result';

@@ -1,5 +1,5 @@
 import { INSTANCE_PRINCIPAL_ID } from '@epicenter/identity';
-import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/sync';
+import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/sync/auth-subprotocol';
 import { defineErrors } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Ok, type Result } from 'wellcrafted/result';

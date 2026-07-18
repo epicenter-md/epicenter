@@ -1,4 +1,4 @@
-import { isOpenWebSocketDenial } from '@epicenter/sync';
+import { isOpenWebSocketDenial } from '@epicenter/sync/auth-subprotocol';
 import {
 	DOCUMENT_BACKSTOP_CLOSE_CODE,
 	DOCUMENT_BOUND,
