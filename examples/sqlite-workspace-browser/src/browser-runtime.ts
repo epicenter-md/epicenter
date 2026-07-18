@@ -4,12 +4,17 @@ import {
 	defineTable,
 	defineWorkspace,
 	type RowDocument,
+	rowDocumentConnection,
 } from '@epicenter/workspace/sqlite';
 import { createAccountBrowserWorkspaceRuntime } from '@epicenter/workspace/sqlite/browser';
 import { Type } from 'typebox';
 
-const principalId = new URLSearchParams(location.search).get('principal');
-if (!principalId) throw new Error('Expected a principal query parameter');
+const params = new URLSearchParams(location.search);
+const apiOrigin = params.get('api');
+const token = params.get('token');
+if (!apiOrigin || !token) {
+	throw new Error('Expected api and token query parameters');
+}
 
 const definition = defineWorkspace({
 	id: 'browser-runtime-smoke',
@@ -22,11 +27,17 @@ const definition = defineWorkspace({
 let changes = 0;
 const runtime = createAccountBrowserWorkspaceRuntime({
 	account: {
-		deploymentId: location.origin,
-		principalId: asPrincipalId(principalId),
+		deploymentId: apiOrigin,
+		principalId: asPrincipalId('instance'),
 		transport: {
-			baseUrl: location.origin,
+			baseUrl: apiOrigin,
 			fetch: (input, init) => fetch(input, init),
+			headers: { authorization: `Bearer ${token}` },
+			credentials: 'omit',
+			// The smoke drives cross-context deletion within test timeouts.
+			pollIntervalMs: 250,
+			openWebSocket: async (url, protocols) =>
+				new WebSocket(url, [...(protocols ?? []), `bearer.${token}`]),
 		},
 	},
 	onRecordsChanged() {
@@ -42,6 +53,9 @@ window.productionBrowserRuntime = {
 	},
 	get(id: string) {
 		return workspace.tables.notes.get(id);
+	},
+	delete(id: string) {
+		return workspace.tables.notes.delete(id);
 	},
 	sql() {
 		return workspace.sql(
@@ -61,6 +75,18 @@ window.productionBrowserRuntime = {
 		root.insert(0, value);
 		await draft.whenDurable();
 	},
+	readDraft() {
+		if (!draft) throw new Error('Draft is not open');
+		try {
+			return { text: draft.get('draft').toString() };
+		} catch (cause) {
+			return { revoked: cause instanceof Error ? cause.message : String(cause) };
+		}
+	},
+	draftConnectionPhase() {
+		if (!draft) return undefined;
+		return rowDocumentConnection(draft)?.status.phase;
+	},
 	closeDraft() {
 		if (!draft) return;
 		draft[Symbol.dispose]();
@@ -68,6 +94,11 @@ window.productionBrowserRuntime = {
 	},
 	changeCount() {
 		return changes;
+	},
+	async settle() {
+		const sync = workspace.sync;
+		if (!sync) throw new Error('Workspace has no synchronization');
+		return sync.settle();
 	},
 	async dispose() {
 		draft?.[Symbol.dispose]();
@@ -88,11 +119,15 @@ declare global {
 				data: { id: string; title: string } | undefined | null;
 				error: unknown;
 			}>;
+			delete(id: string): Promise<void>;
 			sql(): Promise<Array<{ id: string; title: string }>>;
 			openDraft(noteId: string): Promise<string>;
 			writeDraft(value: string): Promise<void>;
+			readDraft(): { text?: string; revoked?: string };
+			draftConnectionPhase(): string | undefined;
 			closeDraft(): void;
 			changeCount(): number;
+			settle(): Promise<{ outcome: string }>;
 			dispose(): Promise<void>;
 		};
 	}

@@ -1,14 +1,11 @@
 import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 
-const isolationHeaders = {
-	'Cross-Origin-Opener-Policy': 'same-origin',
-	'Cross-Origin-Embedder-Policy': 'require-corp',
-};
-
+// Deliberately serves NO cross-origin isolation headers: the smoke proves
+// the SAH-pool OPFS worker runs on a plain statically hosted page, exactly
+// like the production deployments, Tauri WebViews, and iOS Safari.
 export default defineConfig({
-	server: { headers: isolationHeaders, hmr: false },
-	preview: { headers: isolationHeaders },
+	server: { hmr: false },
 	optimizeDeps: { exclude: ['@sqlite.org/sqlite-wasm'] },
 	worker: { format: 'es' },
 	build: {

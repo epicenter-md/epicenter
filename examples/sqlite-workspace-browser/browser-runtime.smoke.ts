@@ -1,41 +1,78 @@
 /**
  * Production Browser workspace runtime smoke gate.
  *
- * Proves independent page Workers share one canonical OPFS replica, automatic
- * authority sync converges another Browser context, lossy invalidation reaches
- * another page, live row-document updates cross tabs, SQLite documents survive
- * release, and a force-terminated Worker can be replaced without losing data.
+ * Serves the built page with NO cross-origin isolation headers and runs the
+ * real Bun account authority (records HTTP routes plus row-document
+ * WebSockets) on a second origin. Proves independent page Workers share one
+ * canonical OPFS replica over the SAH-pool VFS, scalar sync converges a
+ * second browser storage context through the real routes, a row document
+ * synchronizes across storage contexts over its own WebSocket, deleting the
+ * row revokes the remote document, SQLite documents survive release, and a
+ * force-terminated Worker can be replaced without losing data.
  */
-import { Database } from 'bun:sqlite';
-import { rmSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import {
+	createBunAccountAuthorityRuntime,
+	createEnvTokenResolver,
+	mountCurrentStateRecordsApp,
+	mountWorkspaceDocumentsApp,
+	requireBearerPrincipal,
+	withDocumentAuthorizationDeadline,
+} from '@epicenter/server/bun';
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import {
 	type Browser,
 	type BrowserContext,
 	chromium,
 	type Page,
 } from 'playwright';
-import { createBunSqliteAdapter } from '../../packages/row-sync/src/adapters/bun.js';
-import {
-	openRowAuthority,
-	ROW_SYNC_PROTOCOL_MAJOR,
-} from '../../packages/row-sync/src/index.js';
-import { rowDocumentCodec } from '../../packages/server/src/records/codec.js';
 
-const port = 5214;
-const origin = `http://127.0.0.1:${port}`;
-const principal = `browser-runtime-${Date.now().toString(36)}`;
+const pagePort = 5214;
+const apiPort = 5215;
+const pageOrigin = `http://127.0.0.1:${pagePort}`;
+const apiOrigin = `http://127.0.0.1:${apiPort}`;
+const token = `browser-runtime-smoke-${Date.now().toString(36)}-0123456789abcdef`;
 const config = 'browser-runtime.vite.config.ts';
-const authorityDatabase = new Database(':memory:');
-const rowAuthority = openRowAuthority({
-	database: createBunSqliteAdapter(authorityDatabase),
-	codec: rowDocumentCodec,
-});
-const recordRequests: string[] = [];
 
 function assert(condition: unknown, message: string): asserts condition {
 	if (!condition) throw new Error(message);
 }
+
+const authorityDir = mkdtempSync(join(tmpdir(), 'epicenter-browser-smoke-'));
+const backend = createBunAccountAuthorityRuntime({
+	dir: join(authorityDir, 'records'),
+});
+const resolveBearerPrincipal = createEnvTokenResolver(token);
+const app = new Hono();
+// The page and the authority run on different loopback origins, exactly like
+// a deployed SPA against the hosted API; CORS carries the bearer header.
+app.use(
+	'*',
+	cors({ origin: pageOrigin, allowHeaders: ['authorization', 'content-type'] }),
+);
+// Documents mount BEFORE records: the records mount guards all of
+// /api/workspaces/* with header-only bearer auth, which would 401 a browser
+// WebSocket upgrade (whose bearer rides the subprotocol) if it ran first.
+mountWorkspaceDocumentsApp(app as never, {
+	resolveDocumentPrincipal: withDocumentAuthorizationDeadline(
+		resolveBearerPrincipal,
+	),
+	resolveAuthorities: () => backend.authorities,
+});
+mountCurrentStateRecordsApp(app as never, {
+	auth: requireBearerPrincipal(resolveBearerPrincipal),
+	resolveAuthorities: () => backend.authorities,
+});
+const apiServer = Bun.serve({
+	hostname: '127.0.0.1',
+	port: apiPort,
+	fetch: (request) => app.fetch(request),
+	websocket: backend.websocket,
+});
+backend.bindServer(apiServer);
 
 const build = Bun.spawnSync(['bun', 'x', 'vite', 'build', '--config', config], {
 	cwd: import.meta.dir,
@@ -44,7 +81,7 @@ const build = Bun.spawnSync(['bun', 'x', 'vite', 'build', '--config', config], {
 });
 if (!build.success) throw new Error('Production Browser runtime build failed');
 
-const server = Bun.spawn(
+const pageServer = Bun.spawn(
 	[
 		'bun',
 		'x',
@@ -55,12 +92,15 @@ const server = Bun.spawn(
 		'--host',
 		'127.0.0.1',
 		'--port',
-		String(port),
+		String(pagePort),
 	],
 	{ cwd: import.meta.dir, stdout: 'ignore', stderr: 'inherit' },
 );
 
-const url = `${origin}/browser-runtime.html?${new URLSearchParams({ principal })}`;
+const url = `${pageOrigin}/browser-runtime.html?${new URLSearchParams({
+	api: apiOrigin,
+	token,
+})}`;
 
 async function waitForServer(): Promise<void> {
 	for (let attempt = 0; attempt < 250; attempt++) {
@@ -74,162 +114,158 @@ async function waitForServer(): Promise<void> {
 	throw new Error('Vite preview did not start');
 }
 
+let browser: Browser | undefined;
+let context: BrowserContext | undefined;
+let remoteContext: BrowserContext | undefined;
+const browserErrors: string[] = [];
+
 async function openPage(context: BrowserContext): Promise<Page> {
 	const page = await context.newPage();
 	page.setDefaultTimeout(20_000);
-	page.on('pageerror', (error) => browserErrors.push(error.message));
+	page.on('pageerror', (error) =>
+		browserErrors.push(error.stack ?? error.message),
+	);
+	page.on('console', (message) => {
+		if (message.type() === 'error') {
+			browserErrors.push(`console: ${message.text()}`);
+		}
+	});
 	await page.goto(url);
 	try {
 		await page.waitForFunction(() => document.body.dataset.ready === 'true');
 	} catch (cause) {
 		throw new Error(
 			`Browser runtime did not open: ${browserErrors.join('; ')}`,
-			{
-				cause,
-			},
+			{ cause },
 		);
 	}
 	return page;
 }
 
-async function installRecordAuthority(context: BrowserContext): Promise<void> {
-	await context.route(`${origin}/api/records/**`, async (route) => {
-		const request = route.request();
-		const body = request.postDataJSON() as unknown;
-		const pathname = new URL(request.url()).pathname;
-		recordRequests.push(pathname);
-		const response = pathname.endsWith('/enroll')
-			? rowAuthority.enroll(body as Parameters<typeof rowAuthority.enroll>[0])
-			: pathname.endsWith('/sync')
-				? rowAuthority.sync(body as Parameters<typeof rowAuthority.sync>[0])
-				: pathname.endsWith('/baseline-scan')
-					? rowAuthority.baselineScan(
-							body as Parameters<typeof rowAuthority.baselineScan>[0],
-						)
-					: undefined;
-		if (!response) throw new Error(`Unexpected record route '${pathname}'`);
-		await route.fulfill({
-			contentType: 'application/json',
-			body: JSON.stringify(await response),
-		});
-	});
-}
-
-let browser: Browser | undefined;
-let context: BrowserContext | undefined;
-let remoteContext: BrowserContext | undefined;
-const browserErrors: string[] = [];
-
 try {
 	await waitForServer();
 	browser = await chromium.launch({ headless: true });
 	context = await browser.newContext();
-	await installRecordAuthority(context);
 	const first = await openPage(context);
-	const second = await openPage(context);
+	const firstRow = await first.evaluate(() =>
+		window.productionBrowserRuntime.create('first'),
+	);
+	const firstSettlement = await first.evaluate(() =>
+		window.productionBrowserRuntime.settle(),
+	);
+	assert(
+		firstSettlement.outcome === 'caught-up',
+		`scalar settlement did not catch up: ${firstSettlement.outcome}`,
+	);
 
-	const [firstRow, secondRow] = await Promise.all([
-		first.evaluate(() => window.productionBrowserRuntime.create('first')),
-		second.evaluate(() => window.productionBrowserRuntime.create('second')),
-	]);
+	// A second tab of the same app steals the storage (newest tab wins): it
+	// reads everything the first tab committed, and the first tab degrades to
+	// loud failures instead of corrupting the shared SQLite file.
+	process.stdout.write('step: steal-open\n');
+	const second = await openPage(context);
+	const secondRow = await second.evaluate(() =>
+		window.productionBrowserRuntime.create('second'),
+	);
 	const crossRead = await second.evaluate(
 		(id) => window.productionBrowserRuntime.get(id),
 		firstRow.id,
 	);
 	assert(
 		crossRead.data?.title === 'first',
-		'second Worker did not read shared OPFS',
+		'stealing Worker did not read the previous owner\'s OPFS state',
 	);
-	await second.waitForFunction(
-		() => window.productionBrowserRuntime.changeCount() >= 2,
-	);
-	const sqlRows = await first.evaluate(() =>
+	const sqlRows = await second.evaluate(() =>
 		window.productionBrowserRuntime.sql(),
 	);
 	assert(
-		sqlRows.length === 2,
-		'connection-local SQL lens missed committed rows',
+		sqlRows.length === 2 && sqlRows.some(({ id }) => id === secondRow.id),
+		'stealing Worker SQL lens missed committed rows',
+	);
+	const stolenFailure = await first.evaluate(() =>
+		window.productionBrowserRuntime
+			.create('after-steal')
+			.then(() => undefined)
+			.catch((cause: unknown) =>
+				cause instanceof Error ? cause.message : String(cause),
+			),
 	);
 	assert(
-		sqlRows.some(({ id }) => id === secondRow.id),
-		'first Worker did not project the second Worker write',
+		typeof stolenFailure === 'string' && /moved to a newer tab/.test(stolenFailure),
+		`stolen tab did not fail loudly: ${stolenFailure}`,
+	);
+	await first.close();
+	const settlement = await second.evaluate(() =>
+		window.productionBrowserRuntime.settle(),
+	);
+	assert(
+		settlement.outcome === 'caught-up',
+		`post-steal settlement did not catch up: ${settlement.outcome}`,
 	);
 
-	const inspector = rowAuthority.enroll({
-		protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
-		kind: 'enroll',
-	});
-	assert(inspector.result === 'enrolled', 'Smoke inspector enrollment failed');
-	for (let attempt = 0; attempt < 250; attempt++) {
-		const synced = rowAuthority.sync({
-			protocolMajor: ROW_SYNC_PROTOCOL_MAJOR,
-			kind: 'sync',
-			token: {
-				replicaId: inspector.replicaId,
-				acceptedRound: 0,
-				checkpoint: 0,
-			},
-		});
-		if (
-			synced.result === 'page' &&
-			synced.outcomes.some((outcome) => outcome.rowId === secondRow.id)
-		) {
-			break;
-		}
-		if (attempt === 249)
-			throw new Error(
-				`Browser sealed round never reached authority; requests: ${recordRequests.join(', ')}`,
-			);
-		await Bun.sleep(20);
-	}
+	// A separate storage context is a second device: nothing arrives except
+	// through the real records routes.
+	process.stdout.write('step: remote-context\n');
 	remoteContext = await browser.newContext();
-	await installRecordAuthority(remoteContext);
 	const remote = await openPage(remoteContext);
-	await remote.evaluate(
-		(id) => window.productionBrowserRuntime.get(id),
+	await remote.waitForFunction(
+		(id) =>
+			window.productionBrowserRuntime
+				.get(id)
+				.then(({ data }) => data?.title === 'second'),
 		secondRow.id,
+	);
+
+	// The row document plane: one socket per open document, across contexts.
+	process.stdout.write('step: second-open-draft\n');
+	await second.evaluate(
+		(id) => window.productionBrowserRuntime.openDraft(id),
+		firstRow.id,
+	);
+	await second.evaluate(async () => {
+		await window.productionBrowserRuntime.writeDraft('durable document');
+	});
+	try {
+		await second.waitForFunction(
+			() =>
+				window.productionBrowserRuntime.draftConnectionPhase() === 'connected',
+		);
+	} catch (cause) {
+		const phase = await second.evaluate(() =>
+			window.productionBrowserRuntime.draftConnectionPhase(),
+		);
+		throw new Error(
+			`draft never connected (phase=${phase}); ${browserErrors.join('; ')}`,
+			{ cause },
+		);
+	}
+	process.stdout.write('step: remote-open-draft\n');
+	await remote.evaluate(
+		(id) => window.productionBrowserRuntime.openDraft(id),
+		firstRow.id,
 	);
 	await remote.waitForFunction(
-		() => window.productionBrowserRuntime.changeCount() >= 1,
+		() =>
+			window.productionBrowserRuntime.readDraft().text === 'durable document',
 	);
-	const remotelyInstalled = await remote.evaluate(
-		(id) => window.productionBrowserRuntime.get(id),
-		secondRow.id,
+
+	process.stdout.write('step: delete-row\n');
+	// Deleting the row on one device closes the other device's socket and
+	// revokes its handle once its scalar plane installs the deletion.
+	await second.evaluate(
+		(id) => window.productionBrowserRuntime.delete(id),
+		firstRow.id,
 	);
-	assert(
-		remotelyInstalled.data?.title === 'second',
-		'automatic startup sync did not install authority state',
+	await remote.waitForFunction(
+		() => window.productionBrowserRuntime.readDraft().revoked !== undefined,
 	);
 	await remote.evaluate(() => window.productionBrowserRuntime.dispose());
 	await remote.close();
 
-	await Promise.all([
-		first.evaluate(
-			(id) => window.productionBrowserRuntime.openDraft(id),
-			firstRow.id,
-		),
-		second.evaluate(
-			(id) => window.productionBrowserRuntime.openDraft(id),
-			firstRow.id,
-		),
-	]);
-	await first.evaluate(async () => {
-		await window.productionBrowserRuntime.writeDraft('durable document');
-	});
-	await second.waitForFunction(
-		(id) =>
-			window.productionBrowserRuntime
-				.openDraft(id)
-				.then((text) => text === 'durable document'),
-		firstRow.id,
-	);
-	await first.evaluate(() => window.productionBrowserRuntime.closeDraft());
-	await first.evaluate(() => window.productionBrowserRuntime.dispose());
-	await first.close();
-
+	await second.evaluate(() => window.productionBrowserRuntime.closeDraft());
 	// Closing the page force-terminates its Worker without a runtime flush.
 	await second.close();
 
+	process.stdout.write('step: reopen\n');
 	const reopened = await openPage(context);
 	const afterCrash = await reopened.evaluate(
 		(id) => window.productionBrowserRuntime.get(id),
@@ -239,14 +275,6 @@ try {
 		afterCrash.data?.title === 'second',
 		'force-terminated Worker lost committed OPFS records',
 	);
-	const draft = await reopened.evaluate(
-		(id) => window.productionBrowserRuntime.openDraft(id),
-		firstRow.id,
-	);
-	assert(
-		draft === 'durable document',
-		'SQLite row document did not survive reopen',
-	);
 	await reopened.evaluate(() => window.productionBrowserRuntime.dispose());
 	await reopened.close();
 
@@ -255,17 +283,22 @@ try {
 		`Browser errors: ${browserErrors.join('; ')}`,
 	);
 	process.stdout.write(
-		'Production Browser runtime passed: two page Workers, shared OPFS, automatic authority sync, invalidation, SQL lenses, durable row documents, and forced reopen.\n',
+		'Production Browser runtime passed: SAH-pool OPFS without isolation headers, newest-tab-wins storage steal, real record routes, cross-context row-document WebSocket sync, deletion revocation, and forced reopen.\n',
 	);
 } finally {
 	await context?.close();
 	await remoteContext?.close();
 	await browser?.close();
-	authorityDatabase.close();
-	server.kill();
-	await server.exited;
+	pageServer.kill();
+	await pageServer.exited;
+	backend.close();
+	await apiServer.stop(true);
+	rmSync(authorityDir, { recursive: true, force: true });
 	rmSync(join(import.meta.dir, 'dist-browser-runtime'), {
 		recursive: true,
 		force: true,
 	});
+	// The Bun authority backend retains live handles after close(); exit
+	// explicitly so the gate terminates once verdicts are printed.
+	process.exit(process.exitCode ?? 0);
 }
