@@ -1,10 +1,17 @@
 <!--
 	Render gate that blocks children until `pending` resolves.
 
-	Composition: defaults the loading state to <Loading> (the same shell
-	used by pre-auth layouts) so the moment children mount is the only
-	visible transition. The error state defaults to a workspace-flavored
-	Empty.Root with Reload, Forget this device, and Sign out actions.
+	This is the app's one boot-failure surface: pass the app's ready promise
+	(storage acquisition plus state hydration) and every rejection becomes a
+	visible screen instead of a blank page. A held-storage rejection
+	(isWorkspaceStorageHeldError) renders its own recovery branch: another
+	surface still holds the OPFS access handles, so the only useful action is
+	Try again after closing or resuming it; Forget this device is deliberately
+	absent there because wiping cannot release handles another process holds.
+	Every other rejection gets the generic workspace-flavored Empty.Root with
+	Reload, Forget this device, and Sign out actions. Loading defaults to
+	<Loading> (the same shell used by pre-auth layouts) so the moment children
+	mount is the only visible transition.
 
 	Both branches accept snippet overrides for apps that need different chrome.
 	Mount <ConfirmationDialog> once in the app layout when using onForgetDevice.

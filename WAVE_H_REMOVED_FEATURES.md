@@ -106,9 +106,14 @@ Wave H is finally complete.
   tab shows the blocking moved screen instead of a stale-live UI. Known
   limitation: if the previous owner is suspended (a frozen tab or
   backgrounded PWA that cannot run the release), the new tab's boot fails
-  after ~5s with a named "storage is still held by another tab" error
-  instead of silently waiting; closing or resuming the old surface and
-  reloading recovers.
+  after ~5s with the named `WorkspaceStorageHeldError`, which the root
+  WorkspaceGate renders as a blocking held-storage screen with recovery
+  instructions and a Try again action (the failure is terminal until that
+  explicit retry; operations queued behind it reject with the same error).
+  App boots reach that screen because `runtime.open()` is synchronous and
+  each app's one ready promise is awaited by the gate; no singleton module
+  top-level awaits storage (`scripts/check-boot-purity.ts` guards this
+  after the physical Safari check falsified the previous blank-page boot).
 - **To revisit:** Only if concurrent multi-tab editing ever becomes a real
   product promise: move the records Worker behind a SharedWorker (one owner,
   many pages) and delete the steal path.

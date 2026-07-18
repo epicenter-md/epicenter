@@ -429,7 +429,13 @@ Everything below is complete except the four gated items in the next section.
   renders one blocking moved screen (`@epicenter/app-shell/storage-moved`)
   whose only action reloads and steals ownership back. Fencing is the
   storage primitive itself: OPFS access-handle exclusivity blocks the thief
-  until the previous owner actually releases.
+  until the previous owner actually releases. When the previous owner is
+  suspended and cannot release, acquisition fails terminally with the named
+  `WorkspaceStorageHeldError`; `runtime.open()` returns the stable handle
+  synchronously, `whenOpen` carries the failure, and each app's root
+  WorkspaceGate renders the recoverable held-storage screen (the physical
+  Safari check falsified the earlier top-level-await boot, which blanked
+  the page; `check-boot-purity` guards the contract).
 - [x] The new-runtime import graph exits the legacy `@epicenter/sync` barrel
   (`./auth-subprotocol` subpath), fixing every Whispering build.
 - [x] The desktop document plane was repaired (owner bridge against
