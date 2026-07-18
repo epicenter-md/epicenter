@@ -46,6 +46,11 @@ function createRecordings() {
 	}
 
 	const whenReady = refresh();
+	// Surfaces that gate on whenReady observe its rejection; when nothing
+	// does (a boot that fails before this page is visited), the failure is
+	// already on the WorkspaceGate and must not double as an
+	// unhandled-rejection event.
+	void whenReady.catch(() => undefined);
 	const unsubscribe = onWhisperingRecordsChanged(
 		() => void refresh().catch(() => undefined),
 	);

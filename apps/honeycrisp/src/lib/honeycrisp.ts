@@ -43,9 +43,12 @@ export const honeycrispReady: Promise<void> = (async () => {
 	await runtime.whenOpen(honeycrispWorkspace.id);
 	await state.whenReady;
 })();
-// The gate is the one observer of boot failure; without this, a failed boot
-// also fires an unhandled-rejection event before the gate can render it.
+// The gate is the one observer of boot failure; without these, a failed boot
+// also fires unhandled-rejection events before the gate can render it
+// (state hydration rejects on its own when acquisition fails, because
+// honeycrispReady stops at the whenOpen rejection and never awaits it).
 void honeycrispReady.catch(() => undefined);
+void state.whenReady.catch(() => undefined);
 
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => {

@@ -42,6 +42,9 @@ function createRecipes() {
 	}
 
 	const whenReady = refresh();
+	// Rejection is observed by gating surfaces when present; never as an
+	// unhandled-rejection event (the boot failure is already on the gate).
+	void whenReady.catch(() => undefined);
 	const unsubscribe = onWhisperingRecordsChanged(
 		() => void refresh().catch(() => undefined),
 	);

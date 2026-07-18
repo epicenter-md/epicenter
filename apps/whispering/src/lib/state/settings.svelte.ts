@@ -48,6 +48,10 @@ function createSettings() {
 	// root gate awaits this before rendering, exactly like the old top-level
 	// await, but a failure now lands on the gate instead of blanking the page.
 	const whenReady = Promise.all(keys.map(refreshKey)).then(() => undefined);
+	// whisperingReady observes this when the boot reaches it; a boot that
+	// fails at acquisition must not double the failure as an
+	// unhandled-rejection event.
+	void whenReady.catch(() => undefined);
 	// This module is a singleton; without this, each hot reload leaves the old
 	// instance's listener registered beside the new one.
 	if (import.meta.hot) import.meta.hot.dispose(unsubscribe);

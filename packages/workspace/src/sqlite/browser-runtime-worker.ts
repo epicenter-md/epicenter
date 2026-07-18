@@ -114,16 +114,33 @@ function acquireSahPool(
 					await new Promise((resolve) => setTimeout(resolve, 250));
 				}
 			}
-			// A suspended previous owner (a frozen tab or backgrounded PWA)
-			// cannot answer the steal notification, and OPFS access-handle
-			// exclusivity keeps its files locked until it resumes or closes.
-			// Name that state so boot gates can render the held-storage screen.
-			const held = new Error(
-				`Workspace storage '${storageKey}' is still held by another tab or window; close it (or wait for it to resume) and retry`,
+			// Attribute honestly: only access-handle contention means another
+			// context still holds the storage (a suspended tab or backgrounded
+			// PWA that cannot answer the steal notification). Chromium reports
+			// contention as NoModificationAllowedError per spec; WebKit reports
+			// InvalidStateError. Anything else (for example OPFS entirely
+			// unavailable, as in Safari private browsing) must not tell the
+			// user to close other tabs.
+			const isHandleContention =
+				lastFailure instanceof Error &&
+				(lastFailure.name === 'NoModificationAllowedError' ||
+					lastFailure.name === 'InvalidStateError');
+			if (isHandleContention) {
+				const held = new Error(
+					`Workspace storage '${storageKey}' is still held by another tab or window; close it (or wait for it to resume) and retry`,
+					{ cause: lastFailure },
+				);
+				held.name = WORKSPACE_STORAGE_HELD_ERROR_NAME;
+				throw held;
+			}
+			throw new Error(
+				`Browser storage for workspace '${storageKey}' is unavailable: ${
+					lastFailure instanceof Error
+						? lastFailure.message
+						: String(lastFailure)
+				}`,
 				{ cause: lastFailure },
 			);
-			held.name = WORKSPACE_STORAGE_HELD_ERROR_NAME;
-			throw held;
 		})();
 		void pool.catch(() => sahPools.delete(storageKey));
 		sahPools.set(storageKey, pool);
