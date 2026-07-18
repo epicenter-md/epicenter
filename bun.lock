@@ -613,7 +613,6 @@
         "tailwind-variants": "catalog:",
         "typebox": "catalog:",
         "wellcrafted": "catalog:",
-        "yjs": "catalog:",
       },
       "devDependencies": {
         "@epicenter/ui": "workspace:*",
@@ -1043,6 +1042,7 @@
         "yjs": "catalog:",
       },
       "peerDependencies": {
+        "@y/y": "14.0.0-rc.24",
         "yjs": "catalog:",
       },
     },

@@ -8,16 +8,7 @@
 	let { noteId, focusRequest }: { noteId: NoteId; focusRequest: number } =
 		$props();
 
-	let documentGeneration = $state(0);
-	const lease = $derived.by(() => {
-		documentGeneration;
-		return honeycrisp.tables.notes.document.open(noteId);
-	});
-	$effect(() =>
-		honeycrisp.onDocumentsInvalidated(() => {
-			documentGeneration += 1;
-		}),
-	);
+	const lease = $derived(honeycrisp.tables.notes.document.open(noteId));
 	$effect(() => {
 		const openedLease = lease;
 		return () =>

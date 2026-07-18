@@ -35,7 +35,12 @@ async function createSettings() {
 	}
 
 	await Promise.all(keys.map(refreshKey));
-	onWhisperingRecordsChanged(() => void Promise.all(keys.map(refreshKey)));
+	const unsubscribe = onWhisperingRecordsChanged(
+		() => void Promise.all(keys.map(refreshKey)),
+	);
+	// This module is a singleton; without this, each hot reload leaves the old
+	// instance's listener registered beside the new one.
+	if (import.meta.hot) import.meta.hot.dispose(unsubscribe);
 
 	return {
 		get<TKey extends keyof WhisperingSettingValues>(

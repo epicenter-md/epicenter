@@ -13,17 +13,14 @@ type WorkspaceAuth = Pick<
 export function createHoneycrispBrowserRuntime({
 	auth,
 	onRecordsChanged,
-	onDocumentsInvalidated,
 }: {
 	auth: WorkspaceAuth;
 	onRecordsChanged(workspaceId: string): void;
-	onDocumentsInvalidated(workspaceId: string): void;
 }) {
 	const bootState = auth.state;
 	if (bootState.status === 'signed-out') {
 		return createDeviceBrowserWorkspaceRuntime({
 			onRecordsChanged,
-			onDocumentsInvalidated,
 		});
 	}
 	return createAccountBrowserWorkspaceRuntime({
@@ -37,6 +34,5 @@ export function createHoneycrispBrowserRuntime({
 			},
 		},
 		onRecordsChanged,
-		onDocumentsInvalidated,
 	});
 }

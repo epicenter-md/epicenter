@@ -42,7 +42,12 @@ function createRecipes() {
 	}
 
 	const whenReady = refresh();
-	onWhisperingRecordsChanged(() => void refresh().catch(() => undefined));
+	const unsubscribe = onWhisperingRecordsChanged(
+		() => void refresh().catch(() => undefined),
+	);
+	// This module is a singleton; without this, each hot reload leaves the old
+	// instance's listener registered beside the new one.
+	if (import.meta.hot) import.meta.hot.dispose(unsubscribe);
 
 	return {
 		whenReady,
