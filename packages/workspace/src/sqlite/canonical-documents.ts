@@ -53,8 +53,6 @@ type CachedDocument = Address & {
 	listener(update: Uint8Array, origin: unknown): void;
 };
 
-const ownedDocuments = new WeakMap<RowDocument, CachedDocument>();
-
 /**
  * Origin tag for updates another same-host client already persisted. The
  * capture listener skips them, so a relayed update never round-trips back
@@ -125,7 +123,7 @@ export function createDocumentRuntime({
 
 	function createHandle(entry: CachedDocument): RowDocument {
 		let disposed = false;
-		const handle: RowDocument = {
+		return {
 			get: ((...args: Parameters<Y.Doc['get']>) => {
 				if (disposed) throw new Error('Row document handle is disposed');
 				const failure = entry.poison ?? entry.revoked;
@@ -154,8 +152,6 @@ export function createDocumentRuntime({
 				if (entry.leases === 0) finishLastLease(entry);
 			},
 		};
-		ownedDocuments.set(handle, entry);
-		return handle;
 	}
 
 	return {
@@ -279,23 +275,6 @@ export function createDocumentRuntime({
 			}
 		},
 	};
-}
-
-/** Runtime-only bridge for transporting one hydrated row document. */
-export function encodeRowDocumentState(document: RowDocument): Uint8Array {
-	const entry = ownedDocuments.get(document);
-	if (!entry) throw new TypeError('Row document is not owned by this runtime');
-	return Y.encodeStateAsUpdate(entry.doc);
-}
-
-/** Runtime-only bridge for applying one opaque transported update. */
-export function applyRowDocumentUpdate(
-	document: RowDocument,
-	update: Uint8Array,
-): void {
-	const entry = ownedDocuments.get(document);
-	if (!entry) throw new TypeError('Row document is not owned by this runtime');
-	Y.applyUpdate(entry.doc, Uint8Array.from(update));
 }
 
 export type DocumentRuntime = ReturnType<typeof createDocumentRuntime>;
