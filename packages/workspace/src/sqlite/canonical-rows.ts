@@ -1,29 +1,24 @@
 import {
 	foldFields,
 	isAdmissibleCanonicalRow,
-	type RowSyncSqlite,
-	type SqliteRow,
-	type SqliteValue,
 	type WireRowIntent,
 } from '@epicenter/row-sync';
+import type { SqliteDatabase, SqliteRow, SqliteValue } from '@epicenter/sqlite';
 import { customAlphabet } from 'nanoid';
 import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 import { Ok, type Result } from 'wellcrafted/result';
 import {
-	initializeCanonicalSchema,
-	listCurrentRows,
-	readCurrentRow,
-} from './canonical-replica.js';
-import {
 	type ConstrainedChanges,
 	type CreateInputFor,
 	compileTableLens,
+	type JsonObject,
 	type RowFor,
 	type RowLensError,
 	type TableLensDefinition,
 	type TableLensDefinitions,
 } from './lens-definition.js';
+import { listLocalRows, readLocalRow } from './local-workspace-storage.js';
 
 const ROWS_TABLE = 'rows';
 const DOCUMENTS_TABLE = 'documents';
@@ -55,6 +50,8 @@ export type CanonicalTables<TTables extends TableLensDefinitions> = {
 export type CanonicalRowsOptions = {
 	/** Synchronized mode admits durable RowIntents instead of mutating confirmed rows. */
 	admitIntent?(intent: WireRowIntent): void;
+	/** Read confirmed state plus any synchronized optimistic overlay. */
+	readCurrentRow?(table: string, rowId: string): JsonObject | undefined;
 	onLocalCommit?(): void;
 	/** Revoke cached row documents as soon as local deletion changes liveness. */
 	onRowsDeleted?(addresses: { table: string; rowId: string }[]): void;
@@ -62,16 +59,16 @@ export type CanonicalRowsOptions = {
 
 /** Open release-local table lenses over the canonical four-table SQLite owner. */
 export function createCanonicalRows<const TTables extends TableLensDefinitions>(
-	sqlite: RowSyncSqlite,
+	sqlite: SqliteDatabase,
 	definitions: TTables,
 	{
 		admitIntent,
+		readCurrentRow = (table, rowId) => readLocalRow(sqlite, table, rowId),
 		onLocalCommit = () => undefined,
 		onRowsDeleted = () => undefined,
 	}: CanonicalRowsOptions = {},
 ) {
 	assertDefinitions(definitions);
-	initializeCanonicalSchema(sqlite);
 	installTemporaryViews(sqlite, definitions);
 
 	const tables = Object.fromEntries(
@@ -79,7 +76,7 @@ export function createCanonicalRows<const TTables extends TableLensDefinitions>(
 			const lens = compileTableLens(definition);
 			const table = {
 				get(id: string) {
-					const fields = readCurrentRow(sqlite, tableName, id);
+					const fields = readCurrentRow(tableName, id);
 					return fields === undefined
 						? Ok(undefined)
 						: lens.project(tableName, id, fields);
@@ -87,7 +84,7 @@ export function createCanonicalRows<const TTables extends TableLensDefinitions>(
 				list() {
 					const rows: Record<string, unknown>[] = [];
 					const nonconforming: RowLensError[] = [];
-					for (const current of listCurrentRows(sqlite, tableName)) {
+					for (const current of listRows(tableName)) {
 						const result = lens.project(
 							tableName,
 							current.rowId,
@@ -127,7 +124,7 @@ export function createCanonicalRows<const TTables extends TableLensDefinitions>(
 				},
 				update(id: string, changes: Record<string, unknown>) {
 					const normalized = lens.normalizeChanges(changes);
-					const current = readCurrentRow(sqlite, tableName, id);
+					const current = readCurrentRow(tableName, id);
 					if (
 						Object.keys(normalized.set).length === 0 &&
 						normalized.unset.length === 0
@@ -154,7 +151,7 @@ export function createCanonicalRows<const TTables extends TableLensDefinitions>(
 							onLocalCommit();
 						}
 					}
-					const projected = readCurrentRow(sqlite, tableName, id);
+					const projected = readCurrentRow(tableName, id);
 					return projected === undefined
 						? Ok(undefined)
 						: lens.project(tableName, id, projected);
@@ -197,7 +194,7 @@ export function createCanonicalRows<const TTables extends TableLensDefinitions>(
 			resultSchema: TResultSchema,
 		): Static<TResultSchema>[] {
 			assertSelectStatement(query);
-			refreshTemporaryProjections(sqlite, definitions);
+			refreshTemporaryProjections(sqlite, definitions, listRows);
 			sqlite.run('PRAGMA query_only = ON');
 			try {
 				const rows = sqlite.all<SqliteRow>(query, parameters);
@@ -217,6 +214,21 @@ export function createCanonicalRows<const TTables extends TableLensDefinitions>(
 			}
 		},
 	};
+
+	function listRows(table: string): { rowId: string; fields: JsonObject }[] {
+		if (!admitIntent) return listLocalRows(sqlite, table);
+		const rowIds = sqlite.all<{ row_id: string }>(
+			`SELECT row_id FROM "${ROWS_TABLE}" WHERE table_key = ?
+			 UNION
+			 SELECT row_id FROM "intents" WHERE table_key = ?
+			 ORDER BY row_id`,
+			[table, table],
+		);
+		return rowIds.flatMap(({ row_id: rowId }) => {
+			const fields = readCurrentRow(table, rowId);
+			return fields === undefined ? [] : [{ rowId, fields }];
+		});
+	}
 }
 
 export type CanonicalRows<
@@ -251,7 +263,7 @@ function projectionTableName(table: string): string {
 }
 
 function installTemporaryViews(
-	sqlite: RowSyncSqlite,
+	sqlite: SqliteDatabase,
 	definitions: TableLensDefinitions,
 ): void {
 	for (const [tableName, definition] of Object.entries(definitions)) {
@@ -276,14 +288,15 @@ function installTemporaryViews(
 }
 
 function refreshTemporaryProjections(
-	sqlite: RowSyncSqlite,
+	sqlite: SqliteDatabase,
 	definitions: TableLensDefinitions,
+	listRows: (table: string) => { rowId: string; fields: JsonObject }[],
 ): void {
 	sqlite.transaction(() => {
 		for (const tableName of Object.keys(definitions)) {
 			const projection = projectionTableName(tableName);
 			sqlite.run(`DELETE FROM temp.${quoteIdentifier(projection)}`);
-			for (const row of listCurrentRows(sqlite, tableName)) {
+			for (const row of listRows(tableName)) {
 				sqlite.run(
 					`INSERT INTO temp.${quoteIdentifier(projection)}(row_id, fields_json)
 					 VALUES (?, ?)`,

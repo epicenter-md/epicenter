@@ -1,23 +1,23 @@
-import type {
-	RowSyncSqlite,
-	SqliteValue,
-	WireRowIntent,
-} from '@epicenter/row-sync';
+import type { WireRowIntent } from '@epicenter/row-sync';
+import type { SqliteDatabase, SqliteValue } from '@epicenter/sqlite';
 import type { Static, TSchema } from 'typebox';
 import type { Result } from 'wellcrafted/result';
 import {
-	createDocumentRuntime,
-	createLocalDocumentAdmission,
-	type DocumentRuntime,
+	createRowDocumentRuntime,
 	type RowDocument,
-} from './canonical-documents.js';
+	type RowDocumentConnectionLease,
+	type RowDocumentRuntime,
+} from '../document-provider/runtime/index.js';
+import type { DocumentStore, RowAddress } from '../document-provider/persistence.js';
+import { createNativeSqliteDocumentStore } from '../document-provider/native-sqlite.js';
+import type * as Y from '@y/y';
 import { type CanonicalKv, createCanonicalKv } from './canonical-kv.js';
-import {
-	readCurrentDocumentParts,
-	readCurrentRow,
-} from './canonical-replica.js';
 import type { CanonicalRows, CanonicalTable } from './canonical-rows.js';
 import { createCanonicalRows } from './canonical-rows.js';
+import type {
+	WorkspaceOwnerSync,
+	WorkspaceSync,
+} from './canonical-sync-supervisor.js';
 import type {
 	KvDefinitions,
 	KvReadError,
@@ -26,33 +26,32 @@ import type {
 } from './kv-definition.js';
 import type {
 	ConstrainedChanges,
+	JsonObject,
 	TableLensDefinition,
 	TableLensDefinitions,
 } from './lens-definition.js';
+import { readLocalRow } from './local-workspace-storage.js';
 import type { WorkspaceDefinition } from './runtime-definition.js';
 
 export type WorkspaceOwner<TAdmission extends void | Promise<void> = void> = {
-	sqlite: RowSyncSqlite;
+	sqlite: SqliteDatabase;
+	/** Present only for synchronized files. */
+	sync?: WorkspaceOwnerSync;
 	/** Present only for synchronized files. */
 	admitIntent?(intent: WireRowIntent): TAdmission;
-	readCurrentRow?(
-		table: string,
-		rowId: string,
-	): unknown | undefined | Promise<unknown | undefined>;
-	readCurrentDocumentParts?(
-		table: string,
-		rowId: string,
-	): Uint8Array[] | Promise<Uint8Array[]>;
+	readCurrentRow?(table: string, rowId: string): JsonObject | undefined;
+	/** Independent row-document provider. Scalar synchronization never supplies it. */
+	documentStore?: DocumentStore;
+	connectDocument?(
+		address: RowAddress,
+		document: Y.Doc,
+	): RowDocumentConnectionLease<unknown>;
 	onLocalCommit?(): void;
 	subscribeRowsDeleted?(
 		listener: (addresses: { table: string; rowId: string }[]) => void,
 	): () => void;
-	/**
-	 * Baseline promotion replaced every confirmed row and document
-	 * (ADR-0136); the runtime revokes every live document handle so callers
-	 * reopen from the promoted state.
-	 */
-	subscribeBaselinePromoted?(listener: () => void): () => void;
+	/** Revoke live document handles after complete-state acquisition promotes. */
+	subscribeAcquisitionPromoted?(listener: () => void): () => void;
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
@@ -111,13 +110,16 @@ export type OpenedWorkspace<TDefinition extends WorkspaceDefinition> = {
 	tables: WorkspaceTables<DefinitionTables<TDefinition>>;
 	kv: WorkspaceKv<DefinitionKv<TDefinition>>;
 	sql: WorkspaceSql;
+	/** Account synchronization, or `null` for a local-only workspace. */
+	sync: WorkspaceSync | null;
 };
 
 type OpenedOwner = {
 	owner: WorkspaceOwner;
 	rows: CanonicalRows;
 	kv: CanonicalKv<KvDefinitions>;
-	documents: DocumentRuntime;
+	documents: RowDocumentRuntime;
+	sync: WorkspaceSync | null;
 };
 
 type RuntimeEntry = {
@@ -157,39 +159,39 @@ export function createWorkspaceRuntime({
 				const currentRow =
 					owner.readCurrentRow ??
 					((table: string, rowId: string) =>
-						readCurrentRow(owner.sqlite, table, rowId));
-				const currentDocumentParts =
-					owner.readCurrentDocumentParts ??
-					((table: string, rowId: string) =>
-						readCurrentDocumentParts(owner.sqlite, table, rowId));
-				const documents = createDocumentRuntime({
-					admitIntent:
-						owner.admitIntent ??
-						createLocalDocumentAdmission({
-							sqlite: owner.sqlite,
-							readCurrentRow: (table, rowId) =>
-								readCurrentRow(owner.sqlite, table, rowId),
-							onLocalCommit: owner.onLocalCommit,
-						}),
-					readParts: currentDocumentParts,
-					readCurrentRow: currentRow,
+						readLocalRow(owner.sqlite, table, rowId));
+				const documents = createRowDocumentRuntime<unknown>({
+					store:
+						owner.documentStore ??
+						createNativeSqliteDocumentStore({ database: owner.sqlite }),
+					isLive: ({ table, rowId }) => currentRow(table, rowId) !== undefined,
+					...(owner.connectDocument
+						? { connect: owner.connectDocument }
+						: {}),
 				});
 				const rows = createCanonicalRows(
 					owner.sqlite,
 					entry.definition.tables,
 					{
 						admitIntent: owner.admitIntent,
+						readCurrentRow: currentRow,
 						onLocalCommit: owner.onLocalCommit,
-						onRowsDeleted: documents.revoke,
+						onRowsDeleted(addresses) {
+							for (const address of addresses) void documents.revoke(address);
+						},
 					},
 				);
 				const kv = createCanonicalKv(owner.sqlite, entry.definition.kv, {
 					admitIntent: owner.admitIntent,
+					readCurrentRow: currentRow,
 					onLocalCommit: owner.onLocalCommit,
 				});
-				owner.subscribeRowsDeleted?.(documents.revoke);
-				owner.subscribeBaselinePromoted?.(documents.revokeAll);
-				return { owner, rows, kv, documents };
+				owner.subscribeRowsDeleted?.((addresses) => {
+					for (const address of addresses) void documents.revoke(address);
+				});
+				owner.subscribeAcquisitionPromoted?.(documents.revokeAll);
+				const sync = bindWorkspaceSync(owner.sync);
+				return { owner, rows, kv, documents, sync };
 			} catch (cause) {
 				try {
 					await owner[Symbol.asyncDispose]();
@@ -215,6 +217,7 @@ export function createWorkspaceRuntime({
 	function createHandle<TDefinition extends WorkspaceDefinition>(
 		definition: TDefinition,
 		entry: RuntimeEntry,
+		sync: WorkspaceSync | null,
 	): OpenedWorkspace<TDefinition> {
 		const tables = Object.fromEntries(
 			Object.keys(definition.tables).map((name) => [
@@ -237,12 +240,15 @@ export function createWorkspaceRuntime({
 					},
 					document: Object.freeze({
 						async open(rowId: string) {
-							return (await openedFor(entry)).documents.open(name, rowId);
+							return (await openedFor(entry)).documents.open({
+								table: name,
+								rowId,
+							});
 						},
 					}),
 				}),
 			]),
-		) as WorkspaceTables<DefinitionTables<TDefinition>>;
+		) as unknown as WorkspaceTables<DefinitionTables<TDefinition>>;
 
 		const kv = Object.freeze({
 			async get(key: string) {
@@ -260,6 +266,7 @@ export function createWorkspaceRuntime({
 			id: definition.id,
 			tables: Object.freeze(tables),
 			kv,
+			sync,
 			async sql<TResultSchema extends TSchema>(
 				query: string,
 				parameters: readonly SqliteValue[],
@@ -282,17 +289,15 @@ export function createWorkspaceRuntime({
 						`Workspace '${definition.id}' is already bound to another definition in this runtime`,
 					);
 				}
-				if (!existing.handle) {
-					throw new Error(`Workspace '${definition.id}' has no runtime handle`);
-				}
-				await openedFor(existing);
+				const opened = await openedFor(existing);
+				existing.handle ??= createHandle(definition, existing, opened.sync);
 				return existing.handle as OpenedWorkspace<TDefinition>;
 			}
 			const entry: RuntimeEntry = { definition };
-			entry.handle = createHandle(definition, entry);
 			entries.set(definition.id, entry);
 			try {
-				await openedFor(entry);
+				const opened = await openedFor(entry);
+				entry.handle = createHandle(definition, entry, opened.sync);
 				return entry.handle as OpenedWorkspace<TDefinition>;
 			} catch (cause) {
 				if (entries.get(definition.id) === entry) {
@@ -301,6 +306,18 @@ export function createWorkspaceRuntime({
 				entry.abortController?.abort(cause);
 				throw cause;
 			}
+		},
+		async captureDurability(workspaceId: string): Promise<void> {
+			const entry = entries.get(workspaceId);
+			if (!entry) throw new Error(`Workspace '${workspaceId}' is not open`);
+			const opened = await openedFor(entry);
+			await opened.documents.captureDurabilityBarrier();
+		},
+		async whenReady(workspaceId: string): Promise<void> {
+			const entry = entries.get(workspaceId);
+			if (!entry) throw new Error(`Workspace '${workspaceId}' is not open`);
+			const opened = await openedFor(entry);
+			await opened.owner.sync?.whenReady();
 		},
 		async [Symbol.asyncDispose](): Promise<void> {
 			if (isDisposed) return;
@@ -318,9 +335,7 @@ export function createWorkspaceRuntime({
 				// retained handles fail loudly instead of queueing persistence
 				// against a disposed owner (ADR-0135).
 				try {
-					result.value.documents.revokeAll(
-						new Error('Workspace runtime is disposed'),
-					);
+					await result.value.documents[Symbol.asyncDispose]();
 				} catch (cause) {
 					failures.push(cause);
 				}
@@ -346,4 +361,28 @@ function tableFor(
 	const table = records.tables[name];
 	if (!table) throw new Error(`Canonical table '${name}' is missing`);
 	return table;
+}
+
+function bindWorkspaceSync(
+	ownerSync: WorkspaceOwnerSync | undefined,
+): WorkspaceSync | null {
+	if (!ownerSync) return null;
+	return Object.freeze({
+		get status() {
+			return ownerSync.status;
+		},
+		onStatusChange(listener) {
+			return ownerSync.onStatusChange(listener);
+		},
+		settle() {
+			return ownerSync.settleThrough(ownerSync.captureAdmissionCut());
+		},
+		captureRecovery() {
+			return ownerSync.captureRecovery();
+		},
+		startFresh() {
+			// This explicit recovery action discards the halted private lineage.
+			return ownerSync.startFresh();
+		},
+	});
 }

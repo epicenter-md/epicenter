@@ -1,5 +1,10 @@
-import type { SqliteValue, WireRowIntent } from '@epicenter/row-sync';
+import type { SqliteValue } from '@epicenter/sqlite';
 import type { TSchema } from 'typebox';
+import type { LogicalWorkspaceCopy } from './canonical-addition.js';
+import type {
+	WorkspaceSyncSettlement,
+	WorkspaceSyncStatus,
+} from './canonical-sync-supervisor.js';
 import type { TableLensDefinitions } from './lens-definition.js';
 
 export type SerializedTableLens = {
@@ -10,8 +15,6 @@ export type SerializedTableLens = {
 export type BrowserWorkspaceManifest = {
 	workspaceId: string;
 	storageKey: string;
-	/** Matching Device storage consumed before this Account owner opens. */
-	additionSourceStorageKey?: string;
 	tables: Record<string, SerializedTableLens>;
 	/** Serialized field.* schemas for this release's KV lens (ADR-0132). */
 	kv: Record<string, unknown>;
@@ -30,8 +33,12 @@ export type BrowserRecordOperation =
 	| { kind: 'kv-set'; key: string; value: unknown }
 	| { kind: 'kv-unset'; key: string }
 	| { kind: 'read-current-row'; table: string; rowId: string }
-	| { kind: 'read-current-document-parts'; table: string; rowId: string }
-	| { kind: 'admit-document-intent'; intent: WireRowIntent }
+	| { kind: 'sync-settle' }
+	| { kind: 'sync-capture-recovery' }
+	| { kind: 'sync-start-fresh' }
+	| { kind: 'logical-capture' }
+	| { kind: 'logical-add'; copy: LogicalWorkspaceCopy }
+	| { kind: 'logical-delete' }
 	| { kind: 'list'; table: string }
 	| { kind: 'create'; table: string; input: Record<string, unknown> }
 	| {
@@ -61,6 +68,11 @@ export type BrowserTransportResponse =
 			transportId: number;
 			name: string;
 			message: string;
+			pendingReason?:
+				| 'offline'
+				| 'retrying'
+				| 'authentication'
+				| 'storage-limit';
 	  };
 
 export type BrowserWorkerInbound =
@@ -75,7 +87,11 @@ export type BrowserRuntimeMessage =
 			workspaceId: string;
 			addresses: { table: string; rowId: string }[];
 	  }
-	| { type: 'baseline-promoted'; workspaceId: string }
+	| {
+			type: 'sync-status';
+			workspaceId: string;
+			status: WorkspaceSyncStatus;
+	  }
 	| {
 			type: 'background-error';
 			workspaceId: string;
@@ -86,10 +102,14 @@ export type BrowserRuntimeMessage =
 			type: 'transport-request';
 			transportId: number;
 			workspaceId: string;
-			action: 'sync' | 'enroll' | 'baseline-scan';
+			action: 'push' | 'pull' | 'acquire';
 			body: unknown;
 	  }
-	| { type: 'result'; id: number; value: unknown }
+	| {
+			type: 'result';
+			id: number;
+			value: unknown | WorkspaceSyncSettlement;
+	  }
 	| { type: 'error'; id: number; name: string; message: string };
 
 /** Copy release-local lenses into values that can cross a Worker boundary. */

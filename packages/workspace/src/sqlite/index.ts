@@ -5,7 +5,19 @@
  * canonical row store. Every ordinary row owns one lazy document capability.
  */
 
-export type { RowDocument } from './canonical-documents.js';
+export type {
+	LogicalWorkspaceCopy,
+	LogicalWorkspaceRow,
+} from './canonical-addition.js';
+export type { RowDocument } from '../document-provider/runtime/index.js';
+export type {
+	WorkspaceSync,
+	WorkspaceSyncPendingReason,
+	WorkspaceSyncRecoveryReason,
+	WorkspaceSyncSettlement,
+	WorkspaceSyncStatus,
+} from './canonical-sync-supervisor.js';
+export { CurrentStateTransportInterruption } from './current-state-transport.js';
 export {
 	type KvDefinitions,
 	KvReadError,

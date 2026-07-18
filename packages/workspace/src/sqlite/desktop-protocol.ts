@@ -1,4 +1,4 @@
-import type { SqliteValue, WireRowIntent } from '@epicenter/row-sync';
+import type { SqliteValue } from '@epicenter/sqlite';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -15,7 +15,12 @@ export type DesktopRecordOperation =
 	| { kind: 'kv-unset'; key: string }
 	| { kind: 'read-current-row'; table: string; rowId: string }
 	| { kind: 'read-current-document'; table: string; rowId: string }
-	| { kind: 'admit-document-intent'; intent: WireRowIntent }
+	| {
+			kind: 'persist-document-update';
+			table: string;
+			rowId: string;
+			update: string;
+	  }
 	| { kind: 'list'; table: string }
 	| { kind: 'create'; table: string; input: Record<string, unknown> }
 	| {

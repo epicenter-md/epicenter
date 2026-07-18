@@ -9,27 +9,43 @@ import {
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { sha256Hex } from '@epicenter/row-sync';
-import { createBunSqliteAdapter } from '@epicenter/row-sync/bun';
+import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
+import * as Y from '@y/y';
+import { createNativeSqliteDocumentStore } from '../document-provider/native-sqlite.js';
+import type { DocumentStore } from '../document-provider/persistence.js';
+import {
+	attachAuthenticatedDocumentConnection,
+	rowDocumentWebSocketUrl,
+} from '../document-provider/connection/index.js';
 
 import {
 	accountPersistenceKey,
 	devicePersistenceKey,
 	type WorkspaceAccount,
 } from './account-runtime.js';
-import { mergeDocumentUpdates } from './canonical-documents.js';
 import {
-	addCanonicalWorkspace,
-	type CanonicalReplicaTransport,
-	createCanonicalReplica,
-} from './canonical-replica.js';
+	captureLocalWorkspace,
+	deleteLocalWorkspace,
+	type LogicalWorkspaceCopy,
+	logicalWorkspaceIntents,
+} from './canonical-addition.js';
+import { mergeDocumentUpdates } from './canonical-documents.js';
+import { createCanonicalSyncSupervisor } from './canonical-sync-supervisor.js';
+import {
+	type CurrentStateReplicaTransport,
+	createCurrentStateReplica,
+} from './current-state-replica.js';
+import { classifyCurrentStateTransport } from './current-state-transport.js';
+import { initializeLocalWorkspaceStorage } from './local-workspace-storage.js';
 import { createWorkspaceRuntime } from './runtime.js';
+import type { WorkspaceDefinition } from './runtime-definition.js';
 
 const ownedRoots = new Set<string>();
 
 export type BunWorkspaceAccount = WorkspaceAccount<
 	(
 		workspaceId: string,
-	) => CanonicalReplicaTransport | Promise<CanonicalReplicaTransport>
+	) => CurrentStateReplicaTransport | Promise<CurrentStateReplicaTransport>
 >;
 
 export type BunWorkspaceRuntimeOptions = {
@@ -37,14 +53,32 @@ export type BunWorkspaceRuntimeOptions = {
 	onRecordsChanged?(workspaceId: string): void;
 	onSyncError?(cause: unknown, workspaceId: string): void;
 	recordPollIntervalMs?: number;
+	/** Native auth-owned document transport. Omit only for Device workspaces. */
+	documentTransport?: {
+		baseUrl: string;
+		openWebSocket(url: string | URL, protocols?: string[]): Promise<WebSocket>;
+	};
 };
 
 export function createDeviceBunWorkspaceRuntime(
 	options: BunWorkspaceRuntimeOptions,
 ) {
-	return createBunRuntimeWithPersistence({
+	const runtime = createBunRuntimeWithPersistence({
 		...options,
 		persistenceKey: devicePersistenceKey(),
+	});
+	return Object.freeze({
+		open: runtime.open,
+		async capture(definition: WorkspaceDefinition) {
+			await runtime.open(definition);
+			await runtime.captureDurability(definition.id);
+			return runtime.captureLocal(definition.id);
+		},
+		async delete(definition: WorkspaceDefinition) {
+			await runtime.open(definition);
+			await runtime.deleteLocal(definition.id);
+		},
+		[Symbol.asyncDispose]: runtime[Symbol.asyncDispose],
 	});
 }
 
@@ -52,67 +86,79 @@ export function createAccountBunWorkspaceRuntime({
 	account,
 	...options
 }: BunWorkspaceRuntimeOptions & { account: BunWorkspaceAccount }) {
-	return createBunRuntimeWithPersistence({
+	const runtime = createBunRuntimeWithPersistence({
 		...options,
 		persistenceKey: accountPersistenceKey(account),
-		additionSourcePersistenceKey: devicePersistenceKey(),
 		recordTransport: account.transport,
+	});
+	return Object.freeze({
+		open: runtime.open,
+		async add(definition: WorkspaceDefinition, copy: LogicalWorkspaceCopy) {
+			await runtime.open(definition);
+			await runtime.whenReady(definition.id);
+			await runtime.addToAccount(definition.id, copy);
+		},
+		[Symbol.asyncDispose]: runtime[Symbol.asyncDispose],
 	});
 }
 
 /** Open a Bun runtime whose `open()` eagerly acquires its SQLite owner. */
 function createBunRuntimeWithPersistence({
 	persistenceKey,
-	additionSourcePersistenceKey,
 	storageRoot,
 	recordTransport,
 	onRecordsChanged = () => undefined,
 	onSyncError = () => undefined,
 	recordPollIntervalMs = 30_000,
+	documentTransport,
 }: BunWorkspaceRuntimeOptions & {
 	persistenceKey: string;
-	additionSourcePersistenceKey?: string;
 	recordTransport?: BunWorkspaceAccount['transport'];
 }) {
 	if (!Number.isFinite(recordPollIntervalMs) || recordPollIntervalMs <= 0) {
 		throw new Error('Record poll interval must be a positive finite number');
 	}
 	const root = resolve(storageRoot, persistenceKey);
-	const additionSourceRoot = additionSourcePersistenceKey
-		? resolve(storageRoot, additionSourcePersistenceKey)
-		: undefined;
-	const claimedRoots = [
-		...(additionSourceRoot ? [additionSourceRoot] : []),
-		root,
-	];
-	for (const claimed of claimedRoots) {
-		if (ownedRoots.has(claimed)) {
-			throw new Error(
-				`Workspace runtime storage already has an owner: ${claimed}`,
-			);
+	const localWorkspaces = new Map<
+		string,
+		{
+			sqlite: ReturnType<typeof createBunSqliteAdapter>;
+			documents: DocumentStore;
+			notifyDeleted(addresses: { table: string; rowId: string }[]): void;
+			emitChanged(): void;
 		}
+	>();
+	const accountWorkspaces = new Map<
+		string,
+		{
+			replica: ReturnType<typeof createCurrentStateReplica>;
+			documents: DocumentStore;
+			wake(): void;
+			emitChanged(): void;
+		}
+	>();
+	if (ownedRoots.has(root)) {
+		throw new Error(`Workspace runtime storage already has an owner: ${root}`);
 	}
-	for (const claimed of claimedRoots) ownedRoots.add(claimed);
+	ownedRoots.add(root);
 	try {
 		mkdirSync(root, { recursive: true });
 		bindPersistenceIdentity(root, persistenceKey);
 	} catch (cause) {
-		for (const claimed of claimedRoots) ownedRoots.delete(claimed);
+		ownedRoots.delete(root);
 		throw cause;
 	}
 
 	const runtime = createWorkspaceRuntime({
 		async openWorkspaceOwner(workspaceId, signal) {
 			const path = join(root, `${workspaceId}.records.sqlite3`);
-			const additionSourcePath = additionSourceRoot
-				? join(additionSourceRoot, `${workspaceId}.records.sqlite3`)
-				: undefined;
 			let database: Database | undefined;
 			try {
 				database = new Database(path, { create: true });
 				database.exec('PRAGMA busy_timeout = 5000');
 				database.exec('PRAGMA journal_mode = WAL');
 				const sqlite = createBunSqliteAdapter(database);
+				const documents = createNativeSqliteDocumentStore({ database: sqlite });
 				const transport = await abortable(
 					Promise.resolve(recordTransport?.(workspaceId)),
 					signal,
@@ -134,13 +180,37 @@ function createBunRuntimeWithPersistence({
 					}
 				};
 				if (!transport) {
+					initializeLocalWorkspaceStorage(sqlite);
+					const deletionListeners = new Set<
+						(addresses: { table: string; rowId: string }[]) => void
+					>();
+					localWorkspaces.set(workspaceId, {
+						sqlite,
+						documents,
+						notifyDeleted(addresses) {
+							for (const listener of deletionListeners) {
+								try {
+									listener(addresses);
+								} catch (cause) {
+									reportSyncError(cause);
+								}
+							}
+						},
+						emitChanged: emitRecordsChanged,
+					});
 					return {
 						sqlite,
+						documentStore: documents,
 						onLocalCommit() {
 							queueMicrotask(emitRecordsChanged);
 						},
+						subscribeRowsDeleted(listener) {
+							deletionListeners.add(listener);
+							return () => deletionListeners.delete(listener);
+						},
 						async [Symbol.asyncDispose]() {
 							ownerDisposed = true;
+							localWorkspaces.delete(workspaceId);
 							database?.close();
 						},
 					};
@@ -149,83 +219,75 @@ function createBunRuntimeWithPersistence({
 				const deletionListeners = new Set<
 					(addresses: { table: string; rowId: string }[]) => void
 				>();
-				const baselineListeners = new Set<() => void>();
-				const cancellableTransport: CanonicalReplicaTransport = {
-					enroll: (request) => abortable(transport.enroll(request), signal),
-					sync: (request) => abortable(transport.sync(request), signal),
-					baselineScan: (request) =>
-						abortable(transport.baselineScan(request), signal),
+				const cancellableTransport: CurrentStateReplicaTransport = {
+					push: (request) => abortable(transport.push(request), signal),
+					pull: (request) => abortable(transport.pull(request), signal),
+					acquire: (request) => abortable(transport.acquire(request), signal),
 				};
-				const replica = createCanonicalReplica({
+				const replica = createCurrentStateReplica({
 					sqlite,
 					transport: cancellableTransport,
-					codec: { mergeUpdates: mergeDocumentUpdates },
 					onRemoteCommit() {
 						emitRecordsChanged();
 					},
 					onRowsDeleted(addresses) {
 						for (const listener of deletionListeners) listener(addresses);
 					},
-					onBaselinePromoted() {
-						for (const listener of baselineListeners) listener();
+				});
+				const supervisor = createCanonicalSyncSupervisor({
+					driver: classifyCurrentStateTransport(replica),
+					pollIntervalMs: recordPollIntervalMs,
+					onFatal(cause) {
+						if (!signal.aborted) reportSyncError(cause);
 					},
 				});
-				if (additionSourcePath && existsSync(additionSourcePath)) {
-					const sourceDatabase = new Database(additionSourcePath, {
-						readonly: true,
-					});
-					try {
-						addCanonicalWorkspace({
-							source: createBunSqliteAdapter(sourceDatabase),
-							admitIntent: replica.admit,
-							mergeUpdates: mergeDocumentUpdates,
-						});
-					} finally {
-						sourceDatabase.close();
-					}
-					deleteWorkspaceFiles(additionSourcePath);
-				}
-				let activeSynchronization: Promise<unknown> | undefined;
-				const synchronize = (): void => {
-					if (ownerDisposed) return;
-					const pending = replica.synchronize().catch((cause) => {
-						if (!signal.aborted) reportSyncError(cause);
-					});
-					const synchronization = pending.finally(() => {
-						if (activeSynchronization === synchronization) {
-							activeSynchronization = undefined;
-						}
-					});
-					activeSynchronization = synchronization;
-				};
-				const poll = setInterval(synchronize, recordPollIntervalMs);
-				poll.unref();
-				queueMicrotask(synchronize);
+				accountWorkspaces.set(workspaceId, {
+					replica,
+					documents,
+					wake: supervisor.wake,
+					emitChanged: emitRecordsChanged,
+				});
 				return {
 					sqlite,
+					documentStore: documents,
+					...(documentTransport
+						? {
+								connectDocument(address, document) {
+									const connection = attachAuthenticatedDocumentConnection({
+										document,
+										url: rowDocumentWebSocketUrl({
+											baseUrl: documentTransport.baseUrl,
+											workspaceId,
+											address,
+										}),
+										openWebSocket: documentTransport.openWebSocket,
+									});
+									return {
+										connection,
+										dispose: connection.dispose,
+									};
+								},
+							}
+						: {}),
+					sync: supervisor,
 					admitIntent(intent) {
 						replica.admit(intent);
 						queueMicrotask(() => {
 							emitRecordsChanged();
-							synchronize();
+							supervisor.wake();
 						});
 					},
 					readCurrentRow: replica.readCurrentRow,
-					readCurrentDocumentParts: replica.readCurrentDocumentParts,
 					subscribeRowsDeleted(
 						listener: (addresses: { table: string; rowId: string }[]) => void,
 					) {
 						deletionListeners.add(listener);
 						return () => deletionListeners.delete(listener);
 					},
-					subscribeBaselinePromoted(listener: () => void) {
-						baselineListeners.add(listener);
-						return () => baselineListeners.delete(listener);
-					},
 					async [Symbol.asyncDispose]() {
 						ownerDisposed = true;
-						clearInterval(poll);
-						await activeSynchronization;
+						accountWorkspaces.delete(workspaceId);
+						await supervisor.dispose();
 						database?.close();
 					},
 				};
@@ -239,13 +301,75 @@ function createBunRuntimeWithPersistence({
 	let isDisposed = false;
 	return Object.freeze({
 		open: runtime.open,
+		captureDurability: runtime.captureDurability,
+		whenReady: runtime.whenReady,
+		async captureLocal(workspaceId: string): Promise<LogicalWorkspaceCopy> {
+			const state = localWorkspaces.get(workspaceId);
+			if (!state)
+				throw new Error(`Device workspace '${workspaceId}' is not open`);
+			const copy = captureLocalWorkspace(state.sqlite, mergeDocumentUpdates);
+			return {
+				...copy,
+				rows: await Promise.all(
+					copy.rows.map(async (row) => {
+						const document = await state.documents.capture({
+							table: row.table,
+							rowId: row.rowId,
+						});
+						return document === undefined ? row : { ...row, document };
+					}),
+				),
+			};
+		},
+		async deleteLocal(workspaceId: string): Promise<void> {
+			const state = localWorkspaces.get(workspaceId);
+			if (!state)
+				throw new Error(`Device workspace '${workspaceId}' is not open`);
+			const addresses = captureLocalWorkspace(
+				state.sqlite,
+				mergeDocumentUpdates,
+			).rows.map(({ table, rowId }) => ({ table, rowId }));
+			deleteLocalWorkspace(state.sqlite);
+			state.notifyDeleted(addresses);
+			await state.documents.deleteAll();
+			state.emitChanged();
+		},
+		async addToAccount(
+			workspaceId: string,
+			copy: LogicalWorkspaceCopy,
+		): Promise<void> {
+			const state = accountWorkspaces.get(workspaceId);
+			if (!state)
+				throw new Error(`Account workspace '${workspaceId}' is not open`);
+			state.replica.admitMany(logicalWorkspaceIntents(copy));
+			for (const row of copy.rows) {
+				if (row.document === undefined) continue;
+				const document = new Y.Doc();
+				const lease = state.documents.attach(
+					{ table: row.table, rowId: row.rowId },
+					document,
+				);
+				try {
+					await lease.whenLoaded;
+					Y.applyUpdateV2(document, row.document);
+					await lease.whenDurable();
+				} finally {
+					await lease.dispose();
+					document.destroy();
+				}
+			}
+			queueMicrotask(() => {
+				state.emitChanged();
+				state.wake();
+			});
+		},
 		async [Symbol.asyncDispose]() {
 			if (isDisposed) return;
 			isDisposed = true;
 			try {
 				await runtime[Symbol.asyncDispose]();
 			} finally {
-				for (const claimed of claimedRoots) ownedRoots.delete(claimed);
+				ownedRoots.delete(root);
 			}
 		},
 	});
@@ -254,12 +378,6 @@ function createBunRuntimeWithPersistence({
 export type BunWorkspaceRuntime = ReturnType<
 	typeof createDeviceBunWorkspaceRuntime
 >;
-
-function deleteWorkspaceFiles(path: string): void {
-	rmSync(`${path}-wal`, { force: true });
-	rmSync(`${path}-shm`, { force: true });
-	rmSync(path, { force: true });
-}
 
 function bindPersistenceIdentity(root: string, persistenceKey: string): void {
 	const path = join(root, '.epicenter-runtime.json');

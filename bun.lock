@@ -415,11 +415,13 @@
         "@epicenter/constants": "workspace:*",
         "@epicenter/identity": "workspace:*",
         "@epicenter/server": "workspace:*",
+        "@epicenter/sqlite": "workspace:*",
         "arktype": "catalog:",
         "hono": "catalog:",
       },
       "devDependencies": {
         "@cloudflare/workers-types": "^4.20260405.1",
+        "@epicenter/row-sync": "workspace:*",
         "@types/bun": "catalog:",
         "typescript": "catalog:",
         "wrangler": "catalog:",
@@ -928,7 +930,6 @@
         "typebox": "catalog:",
       },
       "devDependencies": {
-        "@cloudflare/workers-types": "^4.20260405.1",
         "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
@@ -944,6 +945,7 @@
         "@epicenter/constants": "workspace:*",
         "@epicenter/identity": "workspace:*",
         "@epicenter/row-sync": "workspace:*",
+        "@epicenter/sqlite": "workspace:*",
         "@epicenter/sync": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@hono/standard-validator": "catalog:",
@@ -981,6 +983,15 @@
         "yaml": "^2.8.0",
       },
       "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/sqlite": {
+      "name": "@epicenter/sqlite",
+      "version": "0.0.1",
+      "devDependencies": {
+        "@cloudflare/workers-types": "^4.20260405.1",
         "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
@@ -1029,6 +1040,7 @@
       },
       "devDependencies": {
         "@types/bun": "catalog:",
+        "@y/y": "14.0.0-rc.24",
         "typescript": "catalog:",
         "yjs": "catalog:",
       },
@@ -1098,6 +1110,7 @@
         "@epicenter/field": "workspace:*",
         "@epicenter/identity": "workspace:*",
         "@epicenter/row-sync": "workspace:*",
+        "@epicenter/sqlite": "workspace:*",
         "@epicenter/sync": "workspace:*",
         "@sindresorhus/slugify": "catalog:",
         "@sqlite.org/sqlite-wasm": "catalog:",
@@ -1502,6 +1515,8 @@
     "@epicenter/server": ["@epicenter/server@workspace:packages/server"],
 
     "@epicenter/skills": ["@epicenter/skills@workspace:packages/skills"],
+
+    "@epicenter/sqlite": ["@epicenter/sqlite@workspace:packages/sqlite"],
 
     "@epicenter/svelte": ["@epicenter/svelte@workspace:packages/svelte-utils"],
 

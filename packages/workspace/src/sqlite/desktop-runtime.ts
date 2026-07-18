@@ -1,7 +1,11 @@
-import { decodeBase64, type SqliteValue } from '@epicenter/row-sync';
+import type { SqliteValue } from '@epicenter/sqlite';
 import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
-import { createDocumentRuntime } from './canonical-documents.js';
+import {
+	createDocumentRuntime,
+	decodeDocumentBytes,
+	encodeDocumentBytes,
+} from './canonical-documents.js';
 import {
 	type DesktopRecordOperation,
 	type DesktopWorkspaceResponse,
@@ -107,7 +111,7 @@ export function createDesktopWorkspaceRuntime({
 			operation.kind === 'delete' ||
 			operation.kind === 'kv-set' ||
 			operation.kind === 'kv-unset' ||
-			operation.kind === 'admit-document-intent'
+			operation.kind === 'persist-document-update'
 		) {
 			emitRecordsChanged(workspaceId, true);
 		}
@@ -126,10 +130,12 @@ export function createDesktopWorkspaceRuntime({
 		revokeDocuments(cause: Error): void;
 	} {
 		const documents = createDocumentRuntime({
-			admitIntent(intent) {
+			persistUpdate(table, rowId, update) {
 				return request(definition.id, {
-					kind: 'admit-document-intent',
-					intent,
+					kind: 'persist-document-update',
+					table,
+					rowId,
+					update: encodeDocumentBytes(update),
 				});
 			},
 			readCurrentRow(table, rowId) {
@@ -145,7 +151,7 @@ export function createDesktopWorkspaceRuntime({
 					table,
 					rowId,
 				});
-				return [decodeBase64(state)];
+				return [decodeDocumentBytes(state)];
 			},
 		});
 		const tables = Object.fromEntries(

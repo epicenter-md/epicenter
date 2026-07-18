@@ -6,14 +6,10 @@ import {
 	foldFields,
 	RESERVED_KV_ROW_ID,
 	RESERVED_KV_TABLE,
-	type RowSyncSqlite,
 	type WireRowIntent,
 } from '@epicenter/row-sync';
+import type { SqliteDatabase } from '@epicenter/sqlite';
 import { Ok, type Result } from 'wellcrafted/result';
-import {
-	initializeCanonicalSchema,
-	readCurrentRow,
-} from './canonical-replica.js';
 import {
 	compileKvLens,
 	type KvDefinitions,
@@ -24,12 +20,14 @@ import {
 	type KvWriteError as KvWriteErrorType,
 } from './kv-definition.js';
 import type { JsonObject, JsonValue } from './lens-definition.js';
+import { readLocalRow } from './local-workspace-storage.js';
 
 const ROWS_TABLE = 'rows';
 
 export type CanonicalKvOptions = {
 	/** Synchronized mode admits the reserved row's field-bearing update intent. */
 	admitIntent?(intent: WireRowIntent): void;
+	readCurrentRow?(table: string, rowId: string): JsonObject | undefined;
 	onLocalCommit?(): void;
 };
 
@@ -45,15 +43,18 @@ export type CanonicalKv<TDefinitions extends KvDefinitions> = {
 };
 
 export function createCanonicalKv<const TDefinitions extends KvDefinitions>(
-	sqlite: RowSyncSqlite,
+	sqlite: SqliteDatabase,
 	definitions: TDefinitions,
-	{ admitIntent, onLocalCommit = () => undefined }: CanonicalKvOptions = {},
+	{
+		admitIntent,
+		readCurrentRow = (table, rowId) => readLocalRow(sqlite, table, rowId),
+		onLocalCommit = () => undefined,
+	}: CanonicalKvOptions = {},
 ): CanonicalKv<TDefinitions> {
-	initializeCanonicalSchema(sqlite);
 	const lens = compileKvLens(definitions);
 
 	function readMap(): JsonObject {
-		return readCurrentRow(sqlite, RESERVED_KV_TABLE, RESERVED_KV_ROW_ID) ?? {};
+		return readCurrentRow(RESERVED_KV_TABLE, RESERVED_KV_ROW_ID) ?? {};
 	}
 
 	function requireDeclared(key: string): { check(value: unknown): boolean } {
@@ -68,11 +69,7 @@ export function createCanonicalKv<const TDefinitions extends KvDefinitions>(
 			return;
 		}
 		sqlite.transaction(() => {
-			const current = readCurrentRow(
-				sqlite,
-				RESERVED_KV_TABLE,
-				RESERVED_KV_ROW_ID,
-			);
+			const current = readCurrentRow(RESERVED_KV_TABLE, RESERVED_KV_ROW_ID);
 			const folded = foldFields(current, intent);
 			if (folded.kind !== 'fields') return;
 			sqlite.run(

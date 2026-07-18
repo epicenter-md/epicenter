@@ -1,12 +1,9 @@
-import {
-	decodeBase64,
-	encodeBase64,
-	parseRowIntent,
-} from '@epicenter/row-sync';
 import { Type } from 'typebox';
 import { createDeviceBunWorkspaceRuntime } from './bun-runtime.js';
 import {
 	applyRowDocumentUpdate,
+	decodeDocumentBytes,
+	encodeDocumentBytes,
 	encodeRowDocumentState,
 } from './canonical-documents.js';
 
@@ -104,23 +101,13 @@ export function createDesktopWorkspaceOwner({
 				const table = workspace.tables[operation.table];
 				if (!table) throw new Error(`Unknown table '${operation.table}'`);
 				using document = await table.document.open(operation.rowId);
-				return encodeBase64(encodeRowDocumentState(document));
+				return encodeDocumentBytes(encodeRowDocumentState(document));
 			}
-			if (operation.kind === 'admit-document-intent') {
-				const { intent } = operation;
-				if (
-					intent.kind !== 'update' ||
-					intent.documentUpdate === undefined ||
-					intent.fields !== undefined
-				) {
-					throw new TypeError(
-						'Desktop document admission requires a document-only update intent',
-					);
-				}
-				const table = workspace.tables[intent.table];
-				if (!table) throw new Error(`Unknown table '${intent.table}'`);
-				await using document = await table.document.open(intent.rowId);
-				applyRowDocumentUpdate(document, decodeBase64(intent.documentUpdate));
+			if (operation.kind === 'persist-document-update') {
+				const table = workspace.tables[operation.table];
+				if (!table) throw new Error(`Unknown table '${operation.table}'`);
+				await using document = await table.document.open(operation.rowId);
+				applyRowDocumentUpdate(document, decodeDocumentBytes(operation.update));
 				await document.whenDurable();
 				return undefined;
 			}
@@ -179,11 +166,18 @@ function parseDesktopRecordOperation(input: unknown): DesktopRecordOperation {
 		case 'read-current-document':
 			if (!table || typeof input.rowId !== 'string') break;
 			return { kind: input.kind, table, rowId: input.rowId };
-		case 'admit-document-intent':
-			if (!isPlainObject(input.intent)) break;
+		case 'persist-document-update':
+			if (
+				!table ||
+				typeof input.rowId !== 'string' ||
+				typeof input.update !== 'string'
+			)
+				break;
 			return {
-				kind: 'admit-document-intent',
-				intent: parseRowIntent(input.intent),
+				kind: 'persist-document-update',
+				table,
+				rowId: input.rowId,
+				update: input.update,
 			};
 		case 'get':
 		case 'delete':

@@ -6,16 +6,14 @@
  * Key behaviors:
  * - open waits for one shared Worker initialization acknowledgement
  * - list and update use the public row verbs
- * - row documents hydrate, persist, and revoke across the Worker boundary
- * - baseline promotion revokes documents and reports app-level invalidation
  * - KV observation re-reads changed values and detaches cleanly
- * - row-sync transport actions cross the boundary
+ * - current-state transport actions cross the boundary
  */
 
 import { afterEach, expect, test } from 'bun:test';
+import 'fake-indexeddb/auto';
 import { field } from '@epicenter/field';
 import { asPrincipalId } from '@epicenter/identity';
-import { decodeBase64 } from '@epicenter/row-sync';
 import {
 	createAccountBrowserWorkspaceRuntime,
 	createDeviceBrowserWorkspaceRuntime,
@@ -30,18 +28,23 @@ import { defineWorkspace } from './runtime-definition.js';
 const NativeWorker = globalThis.Worker;
 const ROW_ID = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 
+function neverOpenWebSocket(): Promise<WebSocket> {
+	return new Promise(() => undefined);
+}
+
 class FakeWorker {
 	static latest: FakeWorker | undefined;
 	static openMode: 'resolve' | 'defer' | 'reject' = 'resolve';
 	readonly operations: BrowserRuntimeRequest['operation'][] = [];
 	readonly manifests: BrowserRuntimeRequest['manifest'][] = [];
-	readonly documentParts: Uint8Array[] = [];
+	readonly transportResponses: { type: string; pendingReason?: string }[] = [];
 	row: Record<string, unknown> | undefined = { title: 'Browser row' };
 	theme: 'light' | 'dark' | undefined = 'light';
 	private readonly messageListeners = new Set<
 		(event: MessageEvent<BrowserRuntimeMessage>) => void
 	>();
 	private deferredOpen: BrowserRuntimeRequest | undefined;
+	private deferredSettlement: BrowserRuntimeRequest | undefined;
 
 	constructor() {
 		FakeWorker.latest = this;
@@ -56,7 +59,10 @@ class FakeWorker {
 	}
 
 	postMessage(message: BrowserRuntimeRequest | { type: string }): void {
-		if ('type' in message) return;
+		if ('type' in message) {
+			this.transportResponses.push(message);
+			return;
+		}
 		this.operations.push(message.operation);
 		this.manifests.push(message.manifest);
 		if (message.operation.kind === 'open') {
@@ -74,24 +80,37 @@ class FakeWorker {
 					});
 					return;
 				}
-				this.emit({ type: 'result', id: message.id, value: undefined });
+				this.emit({ type: 'result', id: message.id, value: { isReady: true } });
 			});
+			return;
+		}
+		if (message.operation.kind === 'sync-settle') {
+			this.deferredSettlement = message;
+			this.finishSettlement();
 			return;
 		}
 		const value = (() => {
 			switch (message.operation.kind) {
+				case 'logical-capture':
+				case 'sync-capture-recovery':
+					return {
+						rows: [
+							{
+								table: 'notes',
+								rowId: ROW_ID,
+								fields: { title: 'Browser row' },
+							},
+						],
+						kv: { theme: 'light' },
+					};
+				case 'logical-add':
+					return undefined;
+				case 'logical-delete':
+					this.row = undefined;
+					this.theme = undefined;
+					return undefined;
 				case 'read-current-row':
 					return this.row;
-				case 'read-current-document-parts':
-					return this.documentParts.map((part) => Uint8Array.from(part));
-				case 'admit-document-intent': {
-					const intent = message.operation.intent;
-					if (intent.kind !== 'update' || !intent.documentUpdate) {
-						throw new Error('Expected a document-bearing update intent');
-					}
-					this.documentParts.push(decodeBase64(intent.documentUpdate));
-					return undefined;
-				}
 				case 'kv-get':
 					return { data: this.theme, error: null };
 				case 'kv-set':
@@ -102,7 +121,6 @@ class FakeWorker {
 					return undefined;
 				case 'delete':
 					this.row = undefined;
-					this.documentParts.length = 0;
 					return undefined;
 				default:
 					return undefined;
@@ -117,7 +135,20 @@ class FakeWorker {
 		const request = this.deferredOpen;
 		if (!request) throw new Error('No deferred open request');
 		this.deferredOpen = undefined;
-		this.emit({ type: 'result', id: request.id, value: undefined });
+		this.emit({ type: 'result', id: request.id, value: { isReady: true } });
+	}
+
+	private finishSettlement(): void {
+		const request = this.deferredSettlement;
+		if (!request) return;
+		this.deferredSettlement = undefined;
+		queueMicrotask(() => {
+			this.emit({
+				type: 'result',
+				id: request.id,
+				value: { outcome: 'caught-up' },
+			});
+		});
 	}
 
 	emit(message: BrowserRuntimeMessage): void {
@@ -190,29 +221,70 @@ test('failed open rejects and retries initialization', async () => {
 	]);
 });
 
-test('Account open identifies matching Device storage', async () => {
+test('Account manifest owns only Account storage and never references Device', async () => {
 	globalThis.Worker = FakeWorker as unknown as typeof Worker;
 	await using accountRuntime = createAccountBrowserWorkspaceRuntime({
 		account: {
 			deploymentId: 'https://example.test',
 			principalId: asPrincipalId('alice'),
-			transport: { baseUrl: 'https://example.test' },
+			transport: {
+				baseUrl: 'https://example.test',
+				openWebSocket: neverOpenWebSocket,
+			},
 		},
 		createBroadcastChannel: () => undefined,
 	});
 	await accountRuntime.open(definition);
 	const accountManifest = FakeWorker.latest?.manifests[0];
-	expect(accountManifest?.additionSourceStorageKey).toBeString();
-	expect(accountManifest?.additionSourceStorageKey).not.toBe(
-		accountManifest?.storageKey,
+	const accountStorageKey = accountManifest?.storageKey;
+	expect(accountStorageKey).toBeString();
+	expect(Object.hasOwn(accountManifest ?? {}, 'additionSourceStorageKey')).toBe(
+		false,
 	);
 
 	await accountRuntime[Symbol.asyncDispose]();
 	await using deviceRuntime = createRuntime();
 	await deviceRuntime.open(definition);
-	expect(
-		FakeWorker.latest?.manifests[0]?.additionSourceStorageKey,
-	).toBeUndefined();
+	expect(FakeWorker.latest?.manifests[0]?.storageKey).not.toBe(
+		accountStorageKey,
+	);
+});
+
+test('Device capture/delete and Account add are explicit logical actions', async () => {
+	globalThis.Worker = FakeWorker as unknown as typeof Worker;
+	let copy: Awaited<ReturnType<ReturnType<typeof createRuntime>['capture']>>;
+	{
+		await using device = createRuntime();
+		await device.open(definition);
+		copy = await device.capture(definition);
+		expect(copy.rows[0]).toMatchObject({
+			table: 'notes',
+			rowId: ROW_ID,
+			fields: { title: 'Browser row' },
+		});
+		await device.delete(definition);
+		expect(FakeWorker.latest?.operations.at(-1)).toEqual({
+			kind: 'logical-delete',
+		});
+	}
+
+	await using account = createAccountBrowserWorkspaceRuntime({
+		account: {
+			deploymentId: 'https://example.test',
+			principalId: asPrincipalId('alice'),
+			transport: {
+				baseUrl: 'https://example.test',
+				openWebSocket: neverOpenWebSocket,
+			},
+		},
+		createBroadcastChannel: () => undefined,
+	});
+	await account.open(definition);
+	await account.add(definition, copy);
+	expect(FakeWorker.latest?.operations.at(-1)).toEqual({
+		kind: 'logical-add',
+		copy,
+	});
 });
 
 test('page sends list and update operations', async () => {
@@ -234,68 +306,27 @@ test('page sends list and update operations', async () => {
 	]);
 });
 
-test('page row document hydrates edits committed by the Worker acknowledgement', async () => {
-	await using runtime = createRuntime();
-	const workspace = await runtime.open(definition);
-	const first = await workspace.tables.notes.document.open(ROW_ID);
-	first.get('editor').insert(0, 'browser durable');
-	await first.whenDurable();
-	first[Symbol.dispose]();
-	await Promise.resolve();
-
-	using reopened = await workspace.tables.notes.document.open(ROW_ID);
-	expect(reopened.get('editor').toString()).toBe('browser durable');
-	expect(
-		FakeWorker.latest?.operations.some(
-			(operation) => operation.kind === 'admit-document-intent',
-		),
-	).toBe(true);
-});
-
-test('remote deletion revokes a page row-document handle', async () => {
+test('browser row documents use the page-owned IndexedDB provider', async () => {
 	await using runtime = createRuntime();
 	const workspace = await runtime.open(definition);
 	using document = await workspace.tables.notes.document.open(ROW_ID);
-	FakeWorker.latest?.emit({
-		type: 'rows-deleted',
-		workspaceId: definition.id,
-		addresses: [{ table: 'notes', rowId: ROW_ID }],
-	});
-	expect(() => document.get('editor')).toThrow('was revoked');
+	document.get('content').insert(0, 'local');
+	await document.whenDurable();
+	expect(document.get('content').toString()).toBe('local');
 });
 
-test('baseline promotion revokes documents and reports their workspace', async () => {
+test('worker transport uses the workspace record routes', async () => {
 	globalThis.Worker = FakeWorker as unknown as typeof Worker;
-	const invalidatedWorkspaces: string[] = [];
-	await using runtime = createDeviceBrowserWorkspaceRuntime({
-		createBroadcastChannel: () => undefined,
-		onDocumentsInvalidated(workspaceId) {
-			invalidatedWorkspaces.push(workspaceId);
-		},
-	});
-	const workspace = await runtime.open(definition);
-	using document = await workspace.tables.notes.document.open(ROW_ID);
-
-	FakeWorker.latest?.emit({
-		type: 'baseline-promoted',
-		workspaceId: definition.id,
-	});
-
-	expect(() => document.get('editor')).toThrow('was revoked');
-	expect(invalidatedWorkspaces).toEqual([definition.id]);
-});
-
-test('worker transport actions pass through to matching HTTP route suffixes', async () => {
-	globalThis.Worker = FakeWorker as unknown as typeof Worker;
-	const urls: string[] = [];
+	const requests: { url: string; method: string }[] = [];
 	await using runtime = createAccountBrowserWorkspaceRuntime({
 		account: {
 			deploymentId: 'https://example.test',
 			principalId: asPrincipalId('alice'),
 			transport: {
 				baseUrl: 'https://example.test',
-				async fetch(input) {
-					urls.push(String(input));
+				openWebSocket: neverOpenWebSocket,
+				async fetch(input, init) {
+					requests.push({ url: String(input), method: init?.method ?? 'GET' });
 					return new Response('{}', {
 						status: 200,
 						headers: { 'content-type': 'application/json' },
@@ -307,10 +338,10 @@ test('worker transport actions pass through to matching HTTP route suffixes', as
 	});
 	const workspace = await runtime.open(definition);
 	await workspace.tables.notes.list();
-	for (const action of ['enroll', 'sync', 'baseline-scan'] as const) {
+	for (const action of ['push', 'pull', 'acquire'] as const) {
 		FakeWorker.latest?.emit({
 			type: 'transport-request',
-			transportId: urls.length + 1,
+			transportId: requests.length + 1,
 			workspaceId: definition.id,
 			action,
 			body: {},
@@ -318,24 +349,130 @@ test('worker transport actions pass through to matching HTTP route suffixes', as
 		await Promise.resolve();
 		await Promise.resolve();
 	}
-	expect(urls.map((url) => new URL(url).pathname)).toEqual([
-		'/api/records/browser-test/enroll',
-		'/api/records/browser-test/sync',
-		'/api/records/browser-test/baseline-scan',
+	expect(
+		requests.map(({ url, method }) => [new URL(url).pathname, method]),
+	).toEqual([
+		['/api/workspaces/browser-test/records/push', 'POST'],
+		['/api/workspaces/browser-test/records/pull', 'POST'],
+		['/api/workspaces/browser-test/records/acquire', 'POST'],
 	]);
 });
 
-test('browser runtime disposal revokes retained row-document handles', async () => {
-	const runtime = createRuntime();
+test('settlement is one scalar Worker operation', async () => {
+	globalThis.Worker = FakeWorker as unknown as typeof Worker;
+	await using runtime = createAccountBrowserWorkspaceRuntime({
+		account: {
+			deploymentId: 'https://example.test',
+			principalId: asPrincipalId('alice'),
+			transport: {
+				baseUrl: 'https://example.test',
+				openWebSocket: neverOpenWebSocket,
+			},
+		},
+		createBroadcastChannel: () => undefined,
+	});
 	const workspace = await runtime.open(definition);
-	const document = await workspace.tables.notes.document.open(ROW_ID);
+	expect(await workspace.sync?.settle()).toEqual({ outcome: 'caught-up' });
+	expect(FakeWorker.latest?.operations.at(-1)).toEqual({ kind: 'sync-settle' });
+});
 
-	await runtime[Symbol.asyncDispose]();
+test('Account sync status is reactive across the Worker boundary', async () => {
+	globalThis.Worker = FakeWorker as unknown as typeof Worker;
+	await using runtime = createAccountBrowserWorkspaceRuntime({
+		account: {
+			deploymentId: 'https://example.test',
+			principalId: asPrincipalId('alice'),
+			transport: {
+				baseUrl: 'https://example.test',
+				openWebSocket: neverOpenWebSocket,
+			},
+		},
+		createBroadcastChannel: () => undefined,
+	});
+	const workspace = await runtime.open(definition);
+	const statuses: unknown[] = [];
+	const unsubscribe = workspace.sync?.onStatusChange((status) => {
+		statuses.push(status);
+	});
+	FakeWorker.latest?.emit({
+		type: 'sync-status',
+		workspaceId: definition.id,
+		status: { phase: 'pending', reason: 'authentication' },
+	});
 
-	expect(() => document.get('editor')).toThrow(
-		'Browser workspace runtime is disposed',
-	);
-	expect(() => document.transact(() => undefined)).toThrow(
-		'Browser workspace runtime is disposed',
+	expect(workspace.sync?.status).toEqual({
+		phase: 'pending',
+		reason: 'authentication',
+	});
+	expect(statuses).toEqual([{ phase: 'pending', reason: 'authentication' }]);
+	FakeWorker.latest?.emit({
+		type: 'sync-status',
+		workspaceId: definition.id,
+		status: { phase: 'recovery-required', reason: 'lineage-mismatch' },
+	});
+	expect(await workspace.sync?.captureRecovery()).toMatchObject({
+		rows: [{ table: 'notes', rowId: ROW_ID }],
+	});
+	unsubscribe?.();
+});
+
+test('browser transport serializes only known interruptions as retryable', async () => {
+	globalThis.Worker = FakeWorker as unknown as typeof Worker;
+	await using runtime = createAccountBrowserWorkspaceRuntime({
+		account: {
+			deploymentId: 'https://example.test',
+			principalId: asPrincipalId('alice'),
+			transport: {
+				baseUrl: 'https://example.test',
+				openWebSocket: neverOpenWebSocket,
+				async fetch(input) {
+					const action = new URL(String(input)).pathname.split('/').at(-1);
+					switch (action) {
+						case 'push':
+							return Response.json({}, { status: 401 });
+						case 'pull':
+							return new Response('temporary proxy failure', { status: 503 });
+						case 'acquire':
+							return Response.json({}, { status: 400 });
+						default:
+							throw new Error('Unexpected action');
+					}
+				},
+			},
+		},
+		createBroadcastChannel: () => undefined,
+	});
+	await runtime.open(definition);
+	const actions = ['push', 'pull', 'acquire'] as const;
+	for (const action of actions) {
+		FakeWorker.latest?.emit({
+			type: 'transport-request',
+			transportId: FakeWorker.latest.transportResponses.length + 1,
+			workspaceId: definition.id,
+			action,
+			body: {},
+		});
+		await waitFor(
+			() =>
+				(FakeWorker.latest?.transportResponses.length ?? 0) >
+				actions.indexOf(action),
+		);
+	}
+
+	expect(FakeWorker.latest?.transportResponses).toMatchObject([
+		{ type: 'transport-error', pendingReason: 'authentication' },
+		{ type: 'transport-error', pendingReason: 'retrying' },
+		{ type: 'transport-error' },
+	]);
+	expect(FakeWorker.latest?.transportResponses[2]).not.toHaveProperty(
+		'pendingReason',
 	);
 });
+
+async function waitFor(predicate: () => boolean): Promise<void> {
+	const deadline = Date.now() + 2_000;
+	while (!predicate()) {
+		if (Date.now() > deadline) throw new Error('Timed out waiting for browser');
+		await Bun.sleep(5);
+	}
+}

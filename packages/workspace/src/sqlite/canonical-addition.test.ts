@@ -5,26 +5,20 @@
  * native intents without modifying the source or inspecting target conflicts.
  *
  * Key behaviors:
- * - preserved-ID creates add rows and documents while existing account rows win
+ * - preserved-ID creates keep existing scalar fields
  * - one KV update preserves account-only keys and overlays device keys
  * - interruption retries from source existence without duplicate intent state
  */
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 import { RESERVED_KV_ROW_ID, RESERVED_KV_TABLE } from '@epicenter/row-sync';
-import { createBunSqliteAdapter } from '@epicenter/row-sync/bun';
-import { mergeDocumentUpdates } from './canonical-documents.js';
+import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import {
-	addCanonicalWorkspace,
-	createCanonicalReplica,
-	initializeCanonicalSchema,
-} from './canonical-replica.js';
-import {
-	captureUpdate,
-	createTestTransport,
-	openTestAuthority,
-	readText,
-} from './row-sync-test-utils.js';
+	captureLocalWorkspace,
+	logicalWorkspaceIntents,
+} from './canonical-addition.js';
+import { createCurrentStateReplica } from './current-state-replica.js';
+import { initializeLocalWorkspaceStorage } from './local-workspace-storage.js';
 
 const ROW_A = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 const ROW_B = 'bbbbbbbbbbbbbbbbbbbbbbbb';
@@ -35,39 +29,23 @@ function setup() {
 	const targetDatabase = new Database(':memory:');
 	const source = createBunSqliteAdapter(sourceDatabase);
 	const targetSqlite = createBunSqliteAdapter(targetDatabase);
-	const authorityState = openTestAuthority();
-	initializeCanonicalSchema(source);
-	const target = createCanonicalReplica({
+	initializeLocalWorkspaceStorage(source);
+	const target = createCurrentStateReplica({
 		sqlite: targetSqlite,
-		transport: createTestTransport(authorityState.authority),
-		codec: { mergeUpdates: mergeDocumentUpdates },
+		transport: {
+			push: unavailable,
+			pull: unavailable,
+			acquire: unavailable,
+		},
 	});
 	return {
-		authority: authorityState.authority,
 		source,
 		target,
 		targetDatabase,
-		addSourceRow({
-			rowId,
-			fields,
-			text,
-		}: {
-			rowId: string;
-			fields: object;
-			text?: string;
-		}) {
+		addSourceRow({ rowId, fields }: { rowId: string; fields: object }) {
 			source.run(
 				'INSERT INTO rows(table_key, row_id, fields_json) VALUES (?, ?, ?)',
 				['notes', rowId, JSON.stringify(fields)],
-			);
-			if (text === undefined) return;
-			source.run(
-				'INSERT INTO documents(table_key, row_id, yjs_state) VALUES (?, ?, ?)',
-				[
-					'notes',
-					rowId,
-					captureUpdate((doc) => doc.get('editor').insert(0, text)),
-				],
 			);
 		},
 		setSourceKv(value: object) {
@@ -77,32 +55,33 @@ function setup() {
 			);
 		},
 		add() {
-			addCanonicalWorkspace({
-				source,
-				admitIntent: target.admit,
-				mergeUpdates: mergeDocumentUpdates,
-			});
+			target.admitMany(
+				logicalWorkspaceIntents(
+					captureLocalWorkspace(source, () => new Uint8Array()),
+				),
+			);
 		},
 		dispose() {
 			sourceDatabase.close();
 			targetDatabase.close();
-			authorityState.database.close();
 		},
 	};
 }
 
-test('addition preserves account rows and adds device rows, documents, and KV', () => {
+async function unavailable(): Promise<never> {
+	throw new Error('Transport is unavailable in logical addition tests');
+}
+
+test('addition preserves account rows and adds device scalar rows and KV', () => {
 	const { source, target, addSourceRow, setSourceKv, add, dispose } = setup();
 	try {
 		addSourceRow({
 			rowId: ROW_A,
 			fields: { title: 'device collision' },
-			text: 'device collision',
 		});
 		addSourceRow({
 			rowId: ROW_B,
 			fields: { title: 'device only' },
-			text: 'device text',
 		});
 		setSourceKv({ deviceOnly: 1, shared: 'device' });
 
@@ -111,9 +90,6 @@ test('addition preserves account rows and adds device rows, documents, and KV', 
 			table: 'notes',
 			rowId: ROW_A,
 			fields: { title: 'account collision' },
-			documentUpdate: Buffer.from(
-				captureUpdate((doc) => doc.get('editor').insert(0, 'account text')),
-			).toString('base64'),
 		});
 		target.admit({
 			kind: 'create',
@@ -136,15 +112,9 @@ test('addition preserves account rows and adds device rows, documents, and KV', 
 		expect(target.readCurrentRow('notes', ROW_A)).toEqual({
 			title: 'account collision',
 		});
-		expect(readText(target.readCurrentDocumentParts('notes', ROW_A))).toBe(
-			'account text',
-		);
 		expect(target.readCurrentRow('notes', ROW_B)).toEqual({
 			title: 'device only',
 		});
-		expect(readText(target.readCurrentDocumentParts('notes', ROW_B))).toBe(
-			'device text',
-		);
 		expect(target.readCurrentRow('notes', ROW_C)).toEqual({
 			title: 'account only',
 		});
@@ -157,33 +127,14 @@ test('addition preserves account rows and adds device rows, documents, and KV', 
 	}
 });
 
-test('interrupted addition retries to one intent per address', () => {
-	const {
-		source,
-		target,
-		targetDatabase,
-		addSourceRow,
-		setSourceKv,
-		add,
-		dispose,
-	} = setup();
+test('repeated addition compacts to one intent per address', () => {
+	const { target, targetDatabase, addSourceRow, setSourceKv, add, dispose } =
+		setup();
 	try {
 		addSourceRow({ rowId: ROW_A, fields: { title: 'first' } });
 		addSourceRow({ rowId: ROW_B, fields: { title: 'second' } });
 		setSourceKv({ theme: 'dark' });
-		let admitted = 0;
-		expect(() =>
-			addCanonicalWorkspace({
-				source,
-				admitIntent(intent) {
-					admitted += 1;
-					if (admitted === 2) throw new Error('interrupted');
-					target.admit(intent);
-				},
-				mergeUpdates: mergeDocumentUpdates,
-			}),
-		).toThrow('interrupted');
-
+		add();
 		add();
 
 		expect(target.readCurrentRow('notes', ROW_A)).toEqual({ title: 'first' });
@@ -207,44 +158,6 @@ test('empty source admits no intents', () => {
 		add();
 		expect(targetDatabase.query('SELECT * FROM intents').all()).toEqual([]);
 	} finally {
-		dispose();
-	}
-});
-
-test('over-capacity KV no-ops while ordinary rows still synchronize', async () => {
-	const { authority, target, addSourceRow, setSourceKv, add, dispose } =
-		setup();
-	const writerDatabase = new Database(':memory:');
-	try {
-		const writer = createCanonicalReplica({
-			sqlite: createBunSqliteAdapter(writerDatabase),
-			transport: createTestTransport(authority),
-			codec: { mergeUpdates: mergeDocumentUpdates },
-		});
-		writer.admit({
-			kind: 'update',
-			table: RESERVED_KV_TABLE,
-			rowId: RESERVED_KV_ROW_ID,
-			fields: {
-				set: { accountOnly: 'a'.repeat(40 * 1024) },
-				unset: [],
-			},
-		});
-		await writer.synchronize();
-
-		addSourceRow({ rowId: ROW_A, fields: { title: 'device row' } });
-		setSourceKv({ deviceOnly: 'd'.repeat(40 * 1024) });
-		add();
-		await target.synchronize();
-
-		expect(target.readCurrentRow('notes', ROW_A)).toEqual({
-			title: 'device row',
-		});
-		expect(
-			target.readCurrentRow(RESERVED_KV_TABLE, RESERVED_KV_ROW_ID),
-		).toEqual({ accountOnly: 'a'.repeat(40 * 1024) });
-	} finally {
-		writerDatabase.close();
 		dispose();
 	}
 });

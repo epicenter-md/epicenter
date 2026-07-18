@@ -1,6 +1,17 @@
+/**
+ * Workspace Runtime Type Tests
+ *
+ * Verifies release-lens inputs and the nullable, readonly synchronization
+ * capability exposed by an opened workspace.
+ */
 import { field } from '@epicenter/field';
+import type {
+	WorkspaceRuntime,
+	WorkspaceSync,
+	WorkspaceSyncSettlement,
+	WorkspaceSyncStatus,
+} from './index.js';
 import { defineTable } from './lens-definition.js';
-import type { WorkspaceRuntime } from './runtime.js';
 import { defineWorkspace } from './runtime-definition.js';
 
 const definition = defineWorkspace({
@@ -20,6 +31,23 @@ const row = await workspace.tables.notes.create({ title: 'typed' });
 await workspace.tables.notes.update(row.id, { archived: undefined });
 await workspace.tables.notes.document.open(row.id);
 await workspace.kv.set('theme', 'dark');
+
+const nullableSync: WorkspaceSync | null = workspace.sync;
+if (nullableSync) {
+	const status: WorkspaceSyncStatus = nullableSync.status;
+	const settlement: WorkspaceSyncSettlement = await nullableSync.settle();
+	const recovery = await nullableSync.captureRecovery();
+	status satisfies WorkspaceSyncStatus;
+	settlement satisfies WorkspaceSyncSettlement;
+	recovery satisfies
+		| import('./canonical-addition.js').LogicalWorkspaceCopy
+		| null;
+	// @ts-expect-error synchronization status is runtime-owned
+	nullableSync.status = { phase: 'syncing' };
+}
+
+// @ts-expect-error local-only workspaces make synchronization nullable
+await workspace.sync.settle();
 
 // @ts-expect-error identity is allocated by create
 await workspace.tables.notes.create({ id: 'manual', title: 'typed' });

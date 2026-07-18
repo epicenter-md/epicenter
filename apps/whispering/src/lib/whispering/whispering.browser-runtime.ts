@@ -4,7 +4,10 @@ import {
 	createDeviceBrowserWorkspaceRuntime,
 } from '@epicenter/workspace/sqlite/browser';
 
-type WorkspaceAuth = Pick<SyncAuthClient, 'state' | 'deployment' | 'fetch'>;
+type WorkspaceAuth = Pick<
+	SyncAuthClient,
+	'state' | 'deployment' | 'fetch' | 'openWebSocket'
+>;
 
 /** Bind Whispering's web build to its page-owned local-first runtime. */
 export function createWhisperingBrowserRuntime({
@@ -25,6 +28,7 @@ export function createWhisperingBrowserRuntime({
 			transport: {
 				baseUrl: auth.deployment.baseURL,
 				fetch: auth.fetch,
+				openWebSocket: auth.openWebSocket,
 			},
 		},
 		onRecordsChanged,

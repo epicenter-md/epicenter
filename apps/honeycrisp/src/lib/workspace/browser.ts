@@ -4,7 +4,10 @@ import {
 	createDeviceBrowserWorkspaceRuntime,
 } from '@epicenter/workspace/sqlite/browser';
 
-type WorkspaceAuth = Pick<SyncAuthClient, 'state' | 'deployment' | 'fetch'>;
+type WorkspaceAuth = Pick<
+	SyncAuthClient,
+	'state' | 'deployment' | 'fetch' | 'openWebSocket'
+>;
 
 /** Bind Honeycrisp to the device or signed-in account selected at page boot. */
 export function createHoneycrispBrowserRuntime({
@@ -30,6 +33,7 @@ export function createHoneycrispBrowserRuntime({
 			transport: {
 				baseUrl: auth.deployment.baseURL,
 				fetch: auth.fetch,
+				openWebSocket: auth.openWebSocket,
 			},
 		},
 		onRecordsChanged,

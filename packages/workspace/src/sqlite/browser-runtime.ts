@@ -1,5 +1,14 @@
-import { type SqliteValue, sha256Hex } from '@epicenter/row-sync';
+import { sha256Hex } from '@epicenter/row-sync';
+import type { SqliteValue } from '@epicenter/sqlite';
 import type { Static, TSchema } from 'typebox';
+import { createBrowserIndexedDbDocumentStore } from '../document-provider/browser-indexed-db.js';
+import type { DocumentStore } from '../document-provider/persistence.js';
+import {
+	attachAuthenticatedDocumentConnection,
+	type DocumentConnection,
+	rowDocumentWebSocketUrl,
+} from '../document-provider/connection/index.js';
+import { createRowDocumentRuntime } from '../document-provider/runtime/index.js';
 
 import {
 	accountPersistenceKey,
@@ -14,12 +23,14 @@ import {
 	type BrowserWorkspaceManifest,
 	serializeTableLenses,
 } from './browser-runtime-protocol.js';
-import { createDocumentRuntime } from './canonical-documents.js';
+import type { LogicalWorkspaceCopy } from './canonical-addition.js';
 import type {
-	OpenedWorkspace,
-	WorkspaceOwner,
-	WorkspaceTables,
-} from './runtime.js';
+	WorkspaceSync,
+	WorkspaceSyncSettlement,
+	WorkspaceSyncStatus,
+} from './canonical-sync-supervisor.js';
+import { CurrentStateTransportInterruption } from './current-state-transport.js';
+import type { OpenedWorkspace, WorkspaceTables } from './runtime.js';
 import type { WorkspaceDefinition } from './runtime-definition.js';
 
 type DefinitionTables<TDefinition> =
@@ -36,22 +47,19 @@ type BoundWorkspace = {
 	handle: OpenedWorkspace<WorkspaceDefinition>;
 	readiness: Promise<void>;
 	notifyRowsDeleted(addresses: RowAddress[]): void;
-	notifyBaselinePromoted(): void;
-	revokeDocuments(cause: Error): void;
+	notifySyncStatus(status: WorkspaceSyncStatus): void;
+	notifyReady(): void;
+	waitUntilReady(): Promise<void>;
+	rejectReadiness(cause: Error): void;
+	revokeDocuments(cause: Error): Promise<void>;
+	captureDurability(): Promise<void>;
+	disposeDocuments(): Promise<void>;
+	deleteDocuments(): Promise<void>;
+	captureDocuments(copy: LogicalWorkspaceCopy): Promise<LogicalWorkspaceCopy>;
+	importDocuments(copy: LogicalWorkspaceCopy): Promise<void>;
 };
 
 type RowAddress = { table: string; rowId: string };
-
-type PageWorkspaceOwner = Required<
-	Pick<
-		WorkspaceOwner<void | Promise<void>>,
-		| 'admitIntent'
-		| 'readCurrentRow'
-		| 'readCurrentDocumentParts'
-		| 'subscribeRowsDeleted'
-		| 'subscribeBaselinePromoted'
-	>
->;
 
 type InvalidationMessage = { type: 'records-changed'; workspaceId: string };
 
@@ -69,6 +77,7 @@ type RuntimeBroadcastChannel = {
 export type BrowserWorkspaceTransport = {
 	baseUrl: string;
 	fetch?: BrowserRecordFetch;
+	openWebSocket(url: string | URL, protocols?: string[]): Promise<WebSocket>;
 	headers?: Readonly<Record<string, string>>;
 	credentials?: RequestCredentials;
 };
@@ -78,29 +87,38 @@ export type BrowserWorkspaceAccount =
 
 type CreateBrowserWorkspaceRuntimeOptions = {
 	persistenceKey: string;
-	additionSourcePersistenceKey?: string;
 	transport?: BrowserWorkspaceTransport;
 	createBroadcastChannel?(name: string): RuntimeBroadcastChannel | undefined;
 	onRecordsChanged?(workspaceId: string): void;
-	onDocumentsInvalidated?(workspaceId: string): void;
 	onBackgroundError?(cause: Error, workspaceId: string): void;
 };
 
 export function createDeviceBrowserWorkspaceRuntime({
 	createBroadcastChannel,
 	onRecordsChanged,
-	onDocumentsInvalidated,
 	onBackgroundError,
 }: Omit<
 	CreateBrowserWorkspaceRuntimeOptions,
-	'persistenceKey' | 'additionSourcePersistenceKey' | 'transport'
+	'persistenceKey' | 'transport'
 > = {}) {
-	return createBrowserRuntimeWithPersistence({
+	const runtime = createBrowserRuntimeWithPersistence({
 		persistenceKey: devicePersistenceKey(),
 		createBroadcastChannel,
 		onRecordsChanged,
-		onDocumentsInvalidated,
 		onBackgroundError,
+	});
+	return Object.freeze({
+		open: runtime.open,
+		async capture(definition: WorkspaceDefinition) {
+			await runtime.open(definition);
+			await runtime.captureDurability(definition.id);
+			return runtime.captureLocal(definition.id);
+		},
+		async delete(definition: WorkspaceDefinition) {
+			await runtime.open(definition);
+			return runtime.deleteLocal(definition.id);
+		},
+		[Symbol.asyncDispose]: runtime[Symbol.asyncDispose],
 	});
 }
 
@@ -108,33 +126,37 @@ export function createAccountBrowserWorkspaceRuntime({
 	account,
 	createBroadcastChannel,
 	onRecordsChanged,
-	onDocumentsInvalidated,
 	onBackgroundError,
 }: Omit<
 	CreateBrowserWorkspaceRuntimeOptions,
-	'persistenceKey' | 'additionSourcePersistenceKey' | 'transport'
+	'persistenceKey' | 'transport'
 > & {
 	account: BrowserWorkspaceAccount;
 }) {
-	return createBrowserRuntimeWithPersistence({
+	const runtime = createBrowserRuntimeWithPersistence({
 		persistenceKey: accountPersistenceKey(account),
-		additionSourcePersistenceKey: devicePersistenceKey(),
 		transport: account.transport,
 		createBroadcastChannel,
 		onRecordsChanged,
-		onDocumentsInvalidated,
 		onBackgroundError,
+	});
+	return Object.freeze({
+		open: runtime.open,
+		async add(definition: WorkspaceDefinition, copy: LogicalWorkspaceCopy) {
+			await runtime.open(definition);
+			await runtime.whenReady(definition.id);
+			return runtime.addToAccount(definition.id, copy);
+		},
+		[Symbol.asyncDispose]: runtime[Symbol.asyncDispose],
 	});
 }
 
 /** Create the page-side client for one OPFS-owning records Worker. */
 function createBrowserRuntimeWithPersistence({
 	persistenceKey,
-	additionSourcePersistenceKey,
 	transport: transportInput,
 	createBroadcastChannel = defaultBroadcastChannel,
 	onRecordsChanged = () => undefined,
-	onDocumentsInvalidated = () => undefined,
 	onBackgroundError = () => undefined,
 }: CreateBrowserWorkspaceRuntimeOptions) {
 	if (persistenceKey.length === 0) {
@@ -149,6 +171,7 @@ function createBrowserRuntimeWithPersistence({
 	);
 	let requestId = 0;
 	let isDisposed = false;
+	let isWorkerReady = false;
 	let worker: Worker | undefined;
 	let workerFailure: Error | undefined;
 	let ready: ReturnType<typeof Promise.withResolvers<void>> | undefined;
@@ -196,6 +219,7 @@ function createBrowserRuntimeWithPersistence({
 				const message = event.data;
 				switch (message.type) {
 					case 'ready':
+						isWorkerReady = true;
 						ownedReady.resolve();
 						return;
 					case 'records-changed':
@@ -206,9 +230,10 @@ function createBrowserRuntimeWithPersistence({
 							.get(message.workspaceId)
 							?.notifyRowsDeleted(message.addresses);
 						return;
-					case 'baseline-promoted':
-						workspaces.get(message.workspaceId)?.notifyBaselinePromoted();
-						onDocumentsInvalidated(message.workspaceId);
+					case 'sync-status':
+						workspaces
+							.get(message.workspaceId)
+							?.notifySyncStatus(message.status);
 						return;
 					case 'background-error': {
 						const cause = new Error(message.message);
@@ -255,22 +280,51 @@ function createBrowserRuntimeWithPersistence({
 			if (!transport) {
 				throw new Error('Browser workspace transport is not bound');
 			}
-			const response = await transport.fetch(
-				new URL(
-					`api/records/${encodeURIComponent(message.workspaceId)}/${message.action}`,
-					transport.baseUrl,
-				),
-				{
-					method: 'POST',
-					headers: {
-						...transport.headers,
-						'content-type': 'application/json',
+			let response: Response;
+			try {
+				response = await transport.fetch(
+					new URL(
+						`api/workspaces/${encodeURIComponent(message.workspaceId)}/records/${message.action}`,
+						transport.baseUrl,
+					),
+					{
+						method: 'POST',
+						headers: {
+							...transport.headers,
+							'content-type': 'application/json',
+						},
+						credentials: transport.credentials,
+						body: JSON.stringify(message.body),
 					},
-					credentials: transport.credentials,
-					body: JSON.stringify(message.body),
-				},
-			);
+				);
+			} catch (cause) {
+				throw new CurrentStateTransportInterruption(
+					'offline',
+					'Record authority is unreachable',
+					{ cause },
+				);
+			}
 			const body = await response.text();
+			if (!response.ok) {
+				if (response.status === 401 || response.status === 403) {
+					throw new CurrentStateTransportInterruption(
+						'authentication',
+						`Record authority rejected authentication (${response.status})`,
+					);
+				}
+				if (
+					response.status === 408 ||
+					response.status === 425 ||
+					response.status === 429 ||
+					response.status >= 500
+				) {
+					throw new CurrentStateTransportInterruption(
+						'retrying',
+						`Record authority is temporarily unavailable (${response.status})`,
+					);
+				}
+				throw new Error(`Record sync HTTP ${response.status}: ${body}`);
+			}
 			let value: unknown;
 			try {
 				value = body === '' ? null : JSON.parse(body);
@@ -279,9 +333,6 @@ function createBrowserRuntimeWithPersistence({
 					`Record sync returned non-JSON HTTP ${response.status}`,
 					{ cause },
 				);
-			}
-			if (!response.ok) {
-				throw new Error(`Record sync HTTP ${response.status}: ${body}`);
 			}
 			if (!isDisposed) {
 				ownedWorker.postMessage({
@@ -297,33 +348,38 @@ function createBrowserRuntimeWithPersistence({
 					transportId: message.transportId,
 					name: cause instanceof Error ? cause.name : 'Error',
 					message: cause instanceof Error ? cause.message : String(cause),
+					...(cause instanceof CurrentStateTransportInterruption
+						? { pendingReason: cause.reason }
+						: {}),
 				});
 			}
 		}
 	}
 
-	async function request<TResult>(
+	function request<TResult>(
 		manifest: BrowserWorkspaceManifest,
 		operation: BrowserRecordOperation,
 	): Promise<TResult> {
 		assertOpen();
 		const owner = recordsWorker();
-		await owner.ready.promise;
-		assertOpen();
-		const id = ++requestId;
-		return new Promise<TResult>((resolve, reject) => {
-			pending.set(id, {
-				resolve(value) {
-					resolve(value as TResult);
-				},
-				reject,
+		const send = (): Promise<TResult> => {
+			assertOpen();
+			const id = ++requestId;
+			return new Promise<TResult>((resolve, reject) => {
+				pending.set(id, {
+					resolve(value) {
+						resolve(value as TResult);
+					},
+					reject,
+				});
+				owner.worker.postMessage({
+					id,
+					manifest,
+					operation,
+				} satisfies BrowserRuntimeRequest);
 			});
-			owner.worker.postMessage({
-				id,
-				manifest,
-				operation,
-			} satisfies BrowserRuntimeRequest);
-		});
+		};
+		return isWorkerReady ? send() : owner.ready.promise.then(send);
 	}
 
 	function createHandle<TDefinition extends WorkspaceDefinition>(
@@ -331,7 +387,45 @@ function createBrowserRuntimeWithPersistence({
 		manifest: BrowserWorkspaceManifest,
 	) {
 		const rowsDeletedListeners = new Set<(addresses: RowAddress[]) => void>();
-		const baselinePromotedListeners = new Set<() => void>();
+		const syncStatusListeners = new Set<
+			(status: WorkspaceSyncStatus) => void
+		>();
+		let syncStatus: WorkspaceSyncStatus = { phase: 'syncing' };
+		let isReady = manifest.rowSync === undefined;
+		const readinessWaiters = new Set<
+			ReturnType<typeof Promise.withResolvers<void>>
+		>();
+
+		function notifyReady(): void {
+			if (isReady) return;
+			isReady = true;
+			for (const waiter of readinessWaiters) waiter.resolve();
+			readinessWaiters.clear();
+		}
+
+		function markNotReady(): void {
+			isReady = false;
+		}
+
+		function rejectReadiness(cause: Error): void {
+			for (const waiter of readinessWaiters) waiter.reject(cause);
+			readinessWaiters.clear();
+		}
+
+		function waitUntilReady(): Promise<void> {
+			if (isReady) return Promise.resolve();
+			if (syncStatus.phase === 'recovery-required') {
+				return Promise.reject(new Error('Workspace requires lineage recovery'));
+			}
+			if (syncStatus.phase === 'upgrade-required') {
+				return Promise.reject(
+					new Error('Workspace protocol requires an upgrade'),
+				);
+			}
+			const waiter = Promise.withResolvers<void>();
+			readinessWaiters.add(waiter);
+			return waiter.promise;
+		}
 
 		function getKv(key: string) {
 			return request(manifest, { kind: 'kv-get', key });
@@ -341,47 +435,80 @@ function createBrowserRuntimeWithPersistence({
 			for (const listener of rowsDeletedListeners) listener(addresses);
 		}
 
-		function notifyBaselinePromoted(): void {
-			for (const listener of baselinePromotedListeners) listener();
+		function notifySyncStatus(status: WorkspaceSyncStatus): void {
+			syncStatus = status;
+			if (status.phase === 'caught-up') notifyReady();
+			if (status.phase === 'recovery-required') {
+				rejectReadiness(new Error('Workspace requires lineage recovery'));
+			}
+			if (status.phase === 'upgrade-required') {
+				rejectReadiness(new Error('Workspace protocol requires an upgrade'));
+			}
+			for (const listener of syncStatusListeners) listener(status);
 		}
 
-		const owner = {
-			admitIntent(intent) {
-				return request<void>(manifest, {
-					kind: 'admit-document-intent',
-					intent,
-				});
-			},
-			readCurrentRow(table, rowId) {
-				return request(manifest, { kind: 'read-current-row', table, rowId });
-			},
-			readCurrentDocumentParts(table, rowId) {
-				return request<Uint8Array[]>(manifest, {
-					kind: 'read-current-document-parts',
+		const documentStore = lazyBrowserDocumentStore(
+			documentDatabaseName(persistenceHash, definition.id),
+		);
+		const documents = createRowDocumentRuntime<DocumentConnection>({
+			store: documentStore,
+			isLive: async ({ table, rowId }) =>
+				(await request<Record<string, unknown> | undefined>(manifest, {
+					kind: 'read-current-row',
 					table,
 					rowId,
-				});
-			},
-			subscribeRowsDeleted(listener) {
-				rowsDeletedListeners.add(listener);
-				return () => {
-					rowsDeletedListeners.delete(listener);
-				};
-			},
-			subscribeBaselinePromoted(listener) {
-				baselinePromotedListeners.add(listener);
-				return () => {
-					baselinePromotedListeners.delete(listener);
-				};
-			},
-		} satisfies PageWorkspaceOwner;
-		const documents = createDocumentRuntime({
-			admitIntent: owner.admitIntent,
-			readParts: owner.readCurrentDocumentParts,
-			readCurrentRow: owner.readCurrentRow,
+				})) !== undefined,
+			...(transport
+				? {
+						connect(address, document) {
+							const connection = attachAuthenticatedDocumentConnection({
+								document,
+								url: rowDocumentWebSocketUrl({
+									baseUrl: transport.baseUrl,
+									workspaceId: definition.id,
+									address,
+								}),
+								openWebSocket: transport.openWebSocket,
+							});
+							return {
+								connection,
+								dispose: connection.dispose,
+							};
+						},
+					}
+				: {}),
 		});
-		owner.subscribeRowsDeleted(documents.revoke);
-		owner.subscribeBaselinePromoted(documents.revokeAll);
+		rowsDeletedListeners.add((addresses) => {
+			for (const address of addresses) void documents.revoke(address);
+		});
+
+		const sync: WorkspaceSync | null = manifest.rowSync
+			? Object.freeze({
+					get status() {
+						return syncStatus;
+					},
+					onStatusChange(listener: (status: WorkspaceSyncStatus) => void) {
+						syncStatusListeners.add(listener);
+						return () => syncStatusListeners.delete(listener);
+					},
+					settle(): Promise<WorkspaceSyncSettlement> {
+						return request<WorkspaceSyncSettlement>(manifest, {
+							kind: 'sync-settle',
+						});
+					},
+					captureRecovery() {
+						return request(manifest, { kind: 'sync-capture-recovery' });
+					},
+					async startFresh() {
+						if (syncStatus.phase !== 'recovery-required') {
+							throw new Error('Workspace does not require lineage recovery');
+						}
+						markNotReady();
+						await request(manifest, { kind: 'sync-start-fresh' });
+						notifyReady();
+					},
+				})
+			: null;
 
 		const tables = Object.fromEntries(
 			Object.keys(definition.tables).map((table) => [
@@ -410,7 +537,7 @@ function createBrowserRuntimeWithPersistence({
 					},
 					document: Object.freeze({
 						open(rowId: string) {
-							return documents.open(table, rowId);
+							return documents.open({ table, rowId });
 						},
 					}),
 				}),
@@ -433,6 +560,7 @@ function createBrowserRuntimeWithPersistence({
 			id: definition.id,
 			tables,
 			kv: kv as never,
+			sync,
 			sql<TResultSchema extends TSchema>(
 				query: string,
 				parameters: readonly SqliteValue[],
@@ -449,9 +577,39 @@ function createBrowserRuntimeWithPersistence({
 		return {
 			handle,
 			notifyRowsDeleted,
-			notifyBaselinePromoted,
+			notifySyncStatus,
+			notifyReady,
+			waitUntilReady,
+			rejectReadiness,
 			revokeDocuments(cause: Error) {
-				documents.revokeAll(cause);
+				return documents.revokeAll(cause);
+			},
+			captureDurability: documents.captureDurabilityBarrier,
+			disposeDocuments: documents[Symbol.asyncDispose],
+			deleteDocuments: documentStore.deleteAll,
+			async captureDocuments(copy: LogicalWorkspaceCopy) {
+				await documents.captureDurabilityBarrier();
+				return {
+					...copy,
+					rows: await Promise.all(
+						copy.rows.map(async (row) => {
+							const document = await documentStore.capture({
+								table: row.table,
+								rowId: row.rowId,
+							});
+							return document === undefined ? row : { ...row, document };
+						}),
+					),
+				};
+			},
+			async importDocuments(copy: LogicalWorkspaceCopy) {
+				for (const row of copy.rows) {
+					if (row.document === undefined) continue;
+					await documents.importUpdate(
+						{ table: row.table, rowId: row.rowId },
+						row.document,
+					);
+				}
 			},
 		};
 	}
@@ -474,14 +632,6 @@ function createBrowserRuntimeWithPersistence({
 			const manifest: BrowserWorkspaceManifest = {
 				workspaceId: definition.id,
 				storageKey: workspaceStorageKey(persistenceKey, definition.id),
-				...(additionSourcePersistenceKey
-					? {
-							additionSourceStorageKey: workspaceStorageKey(
-								additionSourcePersistenceKey,
-								definition.id,
-							),
-						}
-					: {}),
 				tables: serializeTableLenses(definition.tables),
 				kv: JSON.parse(JSON.stringify(definition.kv)),
 				rowSync: transport?.binding,
@@ -495,20 +645,77 @@ function createBrowserRuntimeWithPersistence({
 				readiness: readiness.promise,
 			};
 			workspaces.set(definition.id, bound);
-			void request<void>(manifest, { kind: 'open' }).then(
-				() => readiness.resolve(),
+			void request<{ isReady: boolean }>(manifest, { kind: 'open' }).then(
+				({ isReady }) => {
+					if (isReady) bound.notifyReady();
+					readiness.resolve();
+				},
 				(cause) => {
 					if (workspaces.get(definition.id) === bound) {
 						workspaces.delete(definition.id);
 					}
 					const error =
 						cause instanceof Error ? cause : new Error(String(cause));
-					bound.revokeDocuments(error);
+					void bound.revokeDocuments(error);
+					bound.rejectReadiness(error);
 					readiness.reject(error);
 				},
 			);
 			await bound.readiness;
 			return binding.handle;
+		},
+		async captureLocal(workspaceId: string): Promise<LogicalWorkspaceCopy> {
+			const bound = workspaces.get(workspaceId);
+			if (!bound) {
+				return Promise.reject(
+					new Error(`Device workspace '${workspaceId}' is not open`),
+				);
+			}
+			const copy = await request<LogicalWorkspaceCopy>(bound.manifest, {
+				kind: 'logical-capture',
+			});
+			return bound.captureDocuments(copy);
+		},
+		captureDurability(workspaceId: string): Promise<void> {
+			const bound = workspaces.get(workspaceId);
+			if (!bound) {
+				return Promise.reject(
+					new Error(`Workspace '${workspaceId}' is not open`),
+				);
+			}
+			return bound.captureDurability();
+		},
+		whenReady(workspaceId: string): Promise<void> {
+			const bound = workspaces.get(workspaceId);
+			if (!bound) {
+				return Promise.reject(
+					new Error(`Workspace '${workspaceId}' is not open`),
+				);
+			}
+			return bound.waitUntilReady();
+		},
+		async deleteLocal(workspaceId: string): Promise<void> {
+			const bound = workspaces.get(workspaceId);
+			if (!bound)
+				throw new Error(`Device workspace '${workspaceId}' is not open`);
+			await request<void>(bound.manifest, { kind: 'logical-delete' });
+			await bound.revokeDocuments(
+				new Error('Device workspace data was deleted'),
+			);
+			await bound.deleteDocuments();
+		},
+		async addToAccount(
+			workspaceId: string,
+			copy: LogicalWorkspaceCopy,
+		): Promise<void> {
+			const bound = workspaces.get(workspaceId);
+			if (!bound) {
+				return Promise.reject(
+					new Error(`Account workspace '${workspaceId}' is not open`),
+				);
+			}
+			await request(bound.manifest, { kind: 'logical-add', copy });
+			await bound.importDocuments(copy);
 		},
 		async [Symbol.asyncDispose](): Promise<void> {
 			if (isDisposed) return;
@@ -517,7 +724,10 @@ function createBrowserRuntimeWithPersistence({
 			const cause = new Error('Browser workspace runtime is disposed');
 			// Revoke page-side row documents so retained handles fail loudly
 			// instead of queueing persistence at a terminated Worker.
-			for (const bound of workspaces.values()) bound.revokeDocuments(cause);
+			for (const bound of workspaces.values()) {
+				await bound.disposeDocuments();
+				bound.rejectReadiness(cause);
+			}
 			ready?.reject(cause);
 			for (const request of pending.values()) request.reject(cause);
 			pending.clear();
@@ -555,6 +765,7 @@ function normalizeTransport(
 			binding: BrowserRowSyncBinding;
 			baseUrl: string;
 			fetch: BrowserRecordFetch;
+			openWebSocket: BrowserWorkspaceTransport['openWebSocket'];
 			headers: Record<string, string>;
 			credentials: RequestCredentials;
 	  }
@@ -573,8 +784,28 @@ function normalizeTransport(
 		binding: { intervalMs: 30_000 },
 		baseUrl,
 		fetch: input.fetch ?? globalThis.fetch.bind(globalThis),
+		openWebSocket: input.openWebSocket,
 		headers,
 		credentials: input.credentials ?? 'same-origin',
+	};
+}
+
+function documentDatabaseName(
+	persistenceHash: string,
+	workspaceId: string,
+): string {
+	return `epicenter-${persistenceHash}-${sha256Hex(workspaceId)}-documents-v1`;
+}
+
+function lazyBrowserDocumentStore(databaseName: string): DocumentStore {
+	let store: DocumentStore | undefined;
+	const opened = () =>
+		(store ??= createBrowserIndexedDbDocumentStore({ databaseName }));
+	return {
+		attach: (address, document) => opened().attach(address, document),
+		capture: (address) => opened().capture(address),
+		delete: (address) => opened().delete(address),
+		deleteAll: () => opened().deleteAll(),
 	};
 }
 

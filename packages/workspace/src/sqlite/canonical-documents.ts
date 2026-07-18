@@ -1,12 +1,5 @@
-import {
-	decodeBase64,
-	encodeBase64,
-	ROW_SYNC_ADMISSION_LIMITS,
-	type RowSyncSqlite,
-	type WireRowIntent,
-} from '@epicenter/row-sync';
+import type { SqliteDatabase } from '@epicenter/sqlite';
 import * as Y from '@y/y';
-import { initializeCanonicalSchema } from './canonical-replica.js';
 
 export type RowDocument = {
 	get: Y.Doc['get'];
@@ -25,6 +18,23 @@ export type RowDocument = {
 	[Symbol.dispose](): void;
 };
 
+/** JSON transport encoding owned by document-provider adapters. */
+export function encodeDocumentBytes(bytes: Uint8Array): string {
+	let binary = '';
+	for (const byte of bytes) binary += String.fromCharCode(byte);
+	return btoa(binary);
+}
+
+/** Decode document-provider bytes from their JSON transport form. */
+export function decodeDocumentBytes(value: string): Uint8Array {
+	const binary = atob(value);
+	const bytes = new Uint8Array(binary.length);
+	for (let index = 0; index < binary.length; index += 1) {
+		bytes[index] = binary.charCodeAt(index);
+	}
+	return bytes;
+}
+
 type Address = { table: string; rowId: string };
 
 type CachedDocument = Address & {
@@ -35,8 +45,8 @@ type CachedDocument = Address & {
 	/**
 	 * A lifecycle revocation (row deletion, baseline promotion, runtime
 	 * disposal): blocks new writes and reads, but updates captured before
-	 * the revocation still drain to `admitIntent`, so an edit the user
-	 * already made is never dropped by the handle lifecycle (ADR-0136).
+	 * the revocation still drain to the document provider, so an edit the user
+	 * already made is never dropped by the handle lifecycle (ADR-0142).
 	 */
 	revoked: Error | undefined;
 	durability: Promise<void>;
@@ -50,11 +60,15 @@ const ownedDocuments = new WeakMap<RowDocument, CachedDocument>();
  * address and every emitted update persists automatically.
  */
 export function createDocumentRuntime({
-	admitIntent,
+	persistUpdate,
 	readParts,
 	readCurrentRow,
 }: {
-	admitIntent(intent: WireRowIntent): void | Promise<void>;
+	persistUpdate(
+		table: string,
+		rowId: string,
+		update: Uint8Array,
+	): void | Promise<void>;
 	readParts(table: string, rowId: string): Uint8Array[] | Promise<Uint8Array[]>;
 	readCurrentRow(
 		table: string,
@@ -79,8 +93,9 @@ export function createDocumentRuntime({
 		}
 	}
 
-	function poison(entry: CachedDocument, cause: unknown): void {
+	function poison(entry: CachedDocument, cause: unknown): Error {
 		entry.poison ??= asError(cause);
+		return entry.poison;
 	}
 
 	/** Detach and destroy a revoked entry; captured persistence drains on. */
@@ -137,6 +152,20 @@ export function createDocumentRuntime({
 	}
 
 	return {
+		/**
+		 * INTERNAL: Capture one fixed local durability cut across every currently
+		 * cached row document. Updates emitted after this call replace their
+		 * entry's durability promise and therefore do not extend this barrier.
+		 */
+		captureDurabilityBarrier(): Promise<void> {
+			const barriers = [...cached.values()].map((entry) => {
+				const durability = entry.durability;
+				return durability.then(() => {
+					if (entry.poison) throw entry.poison;
+				});
+			});
+			return Promise.all(barriers).then(() => undefined);
+		},
 		async open(table: string, rowId: string): Promise<RowDocument> {
 			if ((await readCurrentRow(table, rowId)) === undefined) {
 				throw new Error(
@@ -181,17 +210,11 @@ export function createDocumentRuntime({
 						const persistence = entry.durability.then(async () => {
 							// Only a persistence failure stops the chain: skipping one
 							// captured update would leave a causal gap in front of its
-							// successors. A lifecycle revocation does not cancel
-							// captured persistence; the row-gone guard below drops
-							// updates whose row has authoritatively died.
+							// successors. Row deletion drops updates that have not yet
+							// reached the document provider.
 							if (entry.poison) throw entry.poison;
 							if ((await readCurrentRow(table, rowId)) === undefined) return;
-							await admitIntent({
-								kind: 'update',
-								table,
-								rowId,
-								documentUpdate: encodeBase64(captured),
-							});
+							await persistUpdate(table, rowId, captured);
 						});
 						entry.durability = persistence.catch((cause) => {
 							poison(entry, cause);
@@ -219,11 +242,11 @@ export function createDocumentRuntime({
 			}
 		},
 		/**
-		 * Revoke every cached handle. Baseline promotion calls this with no
-		 * cause because promotion replaced every confirmed document
-		 * (ADR-0136); runtime disposal passes its own cause. Callers
+		 * Revoke every cached handle. Acquisition promotion calls this with no
+		 * cause when a document provider is replaced; runtime disposal passes
+		 * its own cause. Callers
 		 * explicitly reopen from the current state. Updates captured before
-		 * the revocation still drain into durable intents.
+		 * the revocation still drain into provider durability.
 		 */
 		revokeAll(cause?: Error): void {
 			for (const entry of [...cached.values()]) {
@@ -231,7 +254,7 @@ export function createDocumentRuntime({
 					entry,
 					cause ??
 						new Error(
-							'Row document was revoked because a baseline promotion replaced confirmed state',
+							'Row document was revoked because its provider state was replaced',
 						),
 				);
 			}
@@ -258,40 +281,33 @@ export function applyRowDocumentUpdate(
 
 export type DocumentRuntime = ReturnType<typeof createDocumentRuntime>;
 
-/** Persist document-bearing update intents directly in a local-only file. */
-export function createLocalDocumentAdmission({
+/** Persist document updates directly in a local-only file. */
+export function createLocalDocumentPersistence({
 	sqlite,
 	readCurrentRow,
 	onLocalCommit = () => undefined,
 }: {
-	sqlite: RowSyncSqlite;
+	sqlite: SqliteDatabase;
 	readCurrentRow(table: string, rowId: string): unknown | undefined;
 	onLocalCommit?: () => void;
-}): (intent: WireRowIntent) => void {
-	initializeCanonicalSchema(sqlite);
-	return (intent) => {
-		if (intent.kind !== 'update' || intent.documentUpdate === undefined) {
-			throw new TypeError(
-				'Local document persistence requires an update intent',
-			);
-		}
+}): (table: string, rowId: string, update: Uint8Array) => void {
+	return (table, rowId, update) => {
 		sqlite.transaction(() => {
-			if (readCurrentRow(intent.table, intent.rowId) === undefined) return;
-			const incoming = decodeBase64(intent.documentUpdate as string);
+			if (readCurrentRow(table, rowId) === undefined) return;
 			const stored = sqlite.all<{ yjs_state: Uint8Array }>(
 				`SELECT yjs_state FROM documents
 				 WHERE table_key = ? AND row_id = ?`,
-				[intent.table, intent.rowId],
+				[table, rowId],
 			)[0];
 			const merged = mergeDocumentUpdates(
-				stored ? [toBytes(stored.yjs_state), incoming] : [incoming],
+				stored ? [toBytes(stored.yjs_state), update] : [update],
 			);
 			sqlite.run(
 				`INSERT INTO documents(table_key, row_id, yjs_state)
 				 VALUES (?, ?, ?)
 				 ON CONFLICT(table_key, row_id) DO UPDATE SET
 					yjs_state = excluded.yjs_state`,
-				[intent.table, intent.rowId, merged],
+				[table, rowId, merged],
 			);
 			onLocalCommit();
 		});
@@ -328,9 +344,7 @@ export function mergeDocumentUpdates(
 			Y.applyUpdate(current, Y.mergeUpdates(ownedParts));
 		}
 		const fullState = Y.encodeStateAsUpdate(current);
-		if (
-			fullState.byteLength > ROW_SYNC_ADMISSION_LIMITS.canonicalDocumentBytes
-		) {
+		if (fullState.byteLength > 256 * 1024) {
 			throw new RangeError('Canonical row document exceeds its size limit');
 		}
 		const delta = Y.encodeStateAsUpdate(current, Y.encodeStateVector(base));

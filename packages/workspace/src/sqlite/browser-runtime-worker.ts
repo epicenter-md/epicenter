@@ -1,8 +1,8 @@
-import type { RowSyncSqlite, WireRowIntent } from '@epicenter/row-sync';
+import type { SqliteDatabase } from '@epicenter/sqlite';
 import {
 	type BrowserSqliteDatabase,
 	createBrowserSqliteAdapter,
-} from '@epicenter/row-sync/browser';
+} from '@epicenter/sqlite/browser';
 import sqlite3InitModule, { type Database } from '@sqlite.org/sqlite-wasm';
 import type {
 	BrowserRecordOperation,
@@ -15,21 +15,32 @@ import {
 	type BrowserStorageLease,
 } from './browser-storage-lease.js';
 import {
-	createLocalDocumentAdmission,
-	mergeDocumentUpdates,
-} from './canonical-documents.js';
+	captureLocalWorkspace,
+	deleteLocalWorkspace,
+	logicalWorkspaceIntents,
+} from './canonical-addition.js';
+import { mergeDocumentUpdates } from './canonical-documents.js';
 import { type CanonicalKv, createCanonicalKv } from './canonical-kv.js';
-import {
-	addCanonicalWorkspace,
-	type CanonicalReplica,
-	type CanonicalReplicaTransport,
-	createCanonicalReplica,
-	readCurrentDocumentParts,
-	readCurrentRow,
-} from './canonical-replica.js';
 import { type CanonicalRows, createCanonicalRows } from './canonical-rows.js';
+import {
+	type CanonicalSyncSupervisor,
+	createCanonicalSyncSupervisor,
+} from './canonical-sync-supervisor.js';
+import {
+	type CurrentStateReplica,
+	type CurrentStateReplicaTransport,
+	createCurrentStateReplica,
+} from './current-state-replica.js';
+import {
+	CurrentStateTransportInterruption,
+	classifyCurrentStateTransport,
+} from './current-state-transport.js';
 import type { KvDefinitions } from './kv-definition.js';
 import { defineTable, type TableLensDefinitions } from './lens-definition.js';
+import {
+	initializeLocalWorkspaceStorage,
+	readLocalRow,
+} from './local-workspace-storage.js';
 
 type WorkerScope = {
 	postMessage(message: BrowserRuntimeMessage): void;
@@ -42,13 +53,13 @@ type WorkerScope = {
 type OpenedRecords = {
 	manifest: BrowserWorkspaceManifest;
 	database: Database;
-	sqlite: RowSyncSqlite;
+	sqlite: SqliteDatabase;
 	records: CanonicalRows;
 	kv: CanonicalKv<KvDefinitions>;
-	admitDocumentIntent(intent: WireRowIntent): void;
-	replica?: CanonicalReplica;
-	/** Held until Worker termination so Device and Account cannot overlap. */
-	retainedLeases: BrowserStorageLease[];
+	replica?: CurrentStateReplica;
+	sync?: CanonicalSyncSupervisor;
+	/** Held until Worker termination so this storage has one SQLite owner. */
+	retainedLease: BrowserStorageLease;
 };
 
 const scope = self as unknown as WorkerScope;
@@ -67,18 +78,10 @@ async function openRecords(
 	let opening = opened.get(manifest.workspaceId);
 	if (!opening) {
 		opening = (async () => {
-			let sourceLease: BrowserStorageLease | undefined;
-			let targetLease: BrowserStorageLease | undefined;
-			let sourceDatabase: Database | undefined;
+			let retainedLease: BrowserStorageLease | undefined;
 			let database: Database | undefined;
 			try {
-				if (manifest.additionSourceStorageKey) {
-					sourceLease = await acquireBrowserStorageLease(
-						navigator.locks,
-						manifest.additionSourceStorageKey,
-					);
-				}
-				targetLease = await acquireBrowserStorageLease(
+				retainedLease = await acquireBrowserStorageLease(
 					navigator.locks,
 					manifest.storageKey,
 				);
@@ -108,11 +111,11 @@ async function openRecords(
 				const sqlite = createBrowserSqliteAdapter(
 					database as unknown as BrowserSqliteDatabase,
 				);
+				if (!manifest.rowSync) initializeLocalWorkspaceStorage(sqlite);
 				const replica = manifest.rowSync
-					? createCanonicalReplica({
+					? createCurrentStateReplica({
 							sqlite,
 							transport: createRecordTransport(manifest.workspaceId),
-							codec: { mergeUpdates: mergeDocumentUpdates },
 							onRemoteCommit() {
 								scope.postMessage({
 									type: 'records-changed',
@@ -126,96 +129,61 @@ async function openRecords(
 									addresses,
 								});
 							},
-							onBaselinePromoted() {
-								scope.postMessage({
-									type: 'baseline-promoted',
-									workspaceId: manifest.workspaceId,
-								});
-							},
 						})
 					: undefined;
 				const records = createCanonicalRows(sqlite, definitions, {
 					admitIntent: replica?.admit,
+					readCurrentRow: replica?.readCurrentRow,
 				});
 				const kv = createCanonicalKv(
 					sqlite,
 					(manifest.kv ?? {}) as KvDefinitions,
-					{ admitIntent: replica?.admit },
+					{
+						admitIntent: replica?.admit,
+						readCurrentRow: replica?.readCurrentRow,
+					},
 				);
-				const admitDocumentIntent =
-					replica?.admit ??
-					createLocalDocumentAdmission({
-						sqlite,
-						readCurrentRow: (table, rowId) =>
-							readCurrentRow(sqlite, table, rowId),
+				const sync = replica
+					? createCanonicalSyncSupervisor({
+							driver: classifyCurrentStateTransport(replica),
+							pollIntervalMs: manifest.rowSync?.intervalMs,
+							onFatal(cause) {
+								scope.postMessage({
+									type: 'background-error',
+									workspaceId: manifest.workspaceId,
+									name: cause instanceof Error ? cause.name : 'Error',
+									message:
+										cause instanceof Error ? cause.message : String(cause),
+								});
+							},
+						})
+					: undefined;
+				sync?.onStatusChange((status) => {
+					scope.postMessage({
+						type: 'sync-status',
+						workspaceId: manifest.workspaceId,
+						status,
 					});
-				if (manifest.additionSourceStorageKey) {
-					if (!replica) {
-						throw new Error(
-							'Account workspace addition requires synchronized storage',
-						);
-					}
-					const sourceFilename = workspaceFilename(
-						manifest.additionSourceStorageKey,
-					);
-					const directory = await navigator.storage.getDirectory();
-					if (await fileExists(directory, sourceFilename)) {
-						sourceDatabase = new sqliteModule.oo1.DB(
-							`/${sourceFilename}`,
-							'r',
-							'opfs',
-						);
-						try {
-							addCanonicalWorkspace({
-								source: createBrowserSqliteAdapter(
-									sourceDatabase as unknown as BrowserSqliteDatabase,
-								),
-								admitIntent: replica.admit,
-								mergeUpdates: mergeDocumentUpdates,
-							});
-						} finally {
-							sourceDatabase.close();
-							sourceDatabase = undefined;
-						}
-						await directory.removeEntry(sourceFilename);
-					}
-				}
-				if (replica) {
-					synchronize(replica, manifest.workspaceId);
-					setInterval(
-						() => synchronize(replica, manifest.workspaceId),
-						manifest.rowSync?.intervalMs,
-					);
-				}
+				});
 				return {
 					manifest,
 					database,
 					sqlite,
 					records,
 					kv,
-					admitDocumentIntent,
 					replica,
-					retainedLeases: [...(sourceLease ? [sourceLease] : []), targetLease],
+					sync,
+					retainedLease,
 				};
 			} catch (cause) {
 				const cleanupFailures: unknown[] = [];
-				try {
-					sourceDatabase?.close();
-				} catch (cleanupCause) {
-					cleanupFailures.push(cleanupCause);
-				}
 				try {
 					database?.close();
 				} catch (cleanupCause) {
 					cleanupFailures.push(cleanupCause);
 				}
 				try {
-					await sourceLease?.release();
-				} catch (cleanupCause) {
-					cleanupFailures.push(cleanupCause);
-				}
-				try {
-					await targetLease?.release();
+					await retainedLease?.release();
 				} catch (cleanupCause) {
 					cleanupFailures.push(cleanupCause);
 				}
@@ -236,8 +204,6 @@ async function openRecords(
 	const state = await opening;
 	if (
 		state.manifest.storageKey !== manifest.storageKey ||
-		state.manifest.additionSourceStorageKey !==
-			manifest.additionSourceStorageKey ||
 		JSON.stringify(state.manifest.tables) !== JSON.stringify(manifest.tables) ||
 		JSON.stringify(state.manifest.kv) !== JSON.stringify(manifest.kv) ||
 		JSON.stringify(state.manifest.rowSync) !== JSON.stringify(manifest.rowSync)
@@ -249,9 +215,11 @@ async function openRecords(
 	return state;
 }
 
-function createRecordTransport(workspaceId: string): CanonicalReplicaTransport {
+function createRecordTransport(
+	workspaceId: string,
+): CurrentStateReplicaTransport {
 	const post = (
-		action: 'sync' | 'enroll' | 'baseline-scan',
+		action: 'push' | 'pull' | 'acquire',
 		body: unknown,
 	): Promise<unknown> => {
 		const id = ++transportId;
@@ -267,21 +235,10 @@ function createRecordTransport(workspaceId: string): CanonicalReplicaTransport {
 		});
 	};
 	return {
-		enroll: (request) => post('enroll', request),
-		sync: (request) => post('sync', request),
-		baselineScan: (request) => post('baseline-scan', request),
+		push: (request) => post('push', request),
+		pull: (request) => post('pull', request),
+		acquire: (request) => post('acquire', request),
 	};
-}
-
-function synchronize(replica: CanonicalReplica, workspaceId: string): void {
-	void replica.synchronize().catch((cause) => {
-		scope.postMessage({
-			type: 'background-error',
-			workspaceId,
-			name: cause instanceof Error ? cause.name : 'Error',
-			message: cause instanceof Error ? cause.message : String(cause),
-		});
-	});
 }
 
 function tableFor(records: CanonicalRows, name: string) {
@@ -290,11 +247,14 @@ function tableFor(records: CanonicalRows, name: string) {
 	return table;
 }
 
-function execute(state: OpenedRecords, operation: BrowserRecordOperation) {
+async function execute(
+	state: OpenedRecords,
+	operation: BrowserRecordOperation,
+) {
 	const { records } = state;
 	switch (operation.kind) {
 		case 'open':
-			return undefined;
+			return { isReady: state.replica?.isReady() ?? true };
 		case 'get':
 			return tableFor(records, operation.table).get(operation.id);
 		case 'kv-get':
@@ -305,24 +265,36 @@ function execute(state: OpenedRecords, operation: BrowserRecordOperation) {
 			state.kv.unset(operation.key);
 			return undefined;
 		case 'read-current-row':
-			return readCurrentRow(state.sqlite, operation.table, operation.rowId);
-		case 'read-current-document-parts':
-			return readCurrentDocumentParts(
-				state.sqlite,
-				operation.table,
-				operation.rowId,
+			return state.replica
+				? state.replica.readCurrentRow(operation.table, operation.rowId)
+				: readLocalRow(state.sqlite, operation.table, operation.rowId);
+		case 'sync-settle':
+			throw new Error('Sync settlement must not block the Worker request tail');
+		case 'sync-start-fresh':
+			throw new Error(
+				'Fresh-lineage acquisition must not block the Worker request tail',
 			);
-		case 'admit-document-intent':
-			if (
-				operation.intent.kind !== 'update' ||
-				operation.intent.documentUpdate === undefined ||
-				operation.intent.fields !== undefined
-			) {
-				throw new TypeError(
-					'Browser document admission requires a document-only update intent',
-				);
+		case 'sync-capture-recovery':
+			if (!state.sync) {
+				throw new Error('Local-only workspace has no synchronization');
 			}
-			state.admitDocumentIntent(operation.intent);
+			return state.sync.captureRecovery();
+		case 'logical-capture':
+			if (state.replica) {
+				throw new Error('Only Device workspaces expose logical capture');
+			}
+			return captureLocalWorkspace(state.sqlite, mergeDocumentUpdates);
+		case 'logical-add':
+			if (!state.replica) {
+				throw new Error('Only Account workspaces accept logical additions');
+			}
+			state.replica.admitMany(logicalWorkspaceIntents(operation.copy));
+			return undefined;
+		case 'logical-delete':
+			if (state.replica) {
+				throw new Error('Only Device workspaces expose logical deletion');
+			}
+			deleteLocalWorkspace(state.sqlite);
 			return undefined;
 		case 'list':
 			return tableFor(records, operation.table).list();
@@ -347,25 +319,6 @@ function execute(state: OpenedRecords, operation: BrowserRecordOperation) {
 	}
 }
 
-function workspaceFilename(storageKey: string): string {
-	return `epicenter-${storageKey}.sqlite3`;
-}
-
-async function fileExists(
-	directory: FileSystemDirectoryHandle,
-	filename: string,
-): Promise<boolean> {
-	try {
-		await directory.getFileHandle(filename);
-		return true;
-	} catch (cause) {
-		if (cause instanceof DOMException && cause.name === 'NotFoundError') {
-			return false;
-		}
-		throw cause;
-	}
-}
-
 scope.addEventListener('message', (event) => {
 	const message = event.data;
 	if ('type' in message) {
@@ -374,8 +327,16 @@ scope.addEventListener('message', (event) => {
 		transportRequests.delete(message.transportId);
 		if (message.type === 'transport-result') pending.resolve(message.value);
 		else {
-			const cause = new Error(message.message);
-			cause.name = message.name;
+			let cause: Error;
+			if (message.pendingReason) {
+				cause = new CurrentStateTransportInterruption(
+					message.pendingReason,
+					message.message,
+				);
+			} else {
+				cause = new Error(message.message);
+				cause.name = message.name;
+			}
 			pending.reject(cause);
 		}
 		return;
@@ -384,7 +345,49 @@ scope.addEventListener('message', (event) => {
 	tail = tail.then(async () => {
 		try {
 			const state = await openRecords(request.manifest);
-			const value = execute(state, request.operation);
+			if (request.operation.kind === 'sync-settle') {
+				if (!state.sync) {
+					throw new Error('Local-only workspace has no synchronization');
+				}
+				void state.sync.settle().then(
+					(value) => {
+						scope.postMessage({ type: 'result', id: request.id, value });
+					},
+					(cause) => {
+						scope.postMessage({
+							type: 'error',
+							id: request.id,
+							name: cause instanceof Error ? cause.name : 'Error',
+							message: cause instanceof Error ? cause.message : String(cause),
+						});
+					},
+				);
+				return;
+			}
+			if (request.operation.kind === 'sync-start-fresh') {
+				if (!state.sync) {
+					throw new Error('Local-only workspace has no synchronization');
+				}
+				void state.sync.startFresh().then(
+					() => {
+						scope.postMessage({
+							type: 'result',
+							id: request.id,
+							value: undefined,
+						});
+					},
+					(cause) => {
+						scope.postMessage({
+							type: 'error',
+							id: request.id,
+							name: cause instanceof Error ? cause.name : 'Error',
+							message: cause instanceof Error ? cause.message : String(cause),
+						});
+					},
+				);
+				return;
+			}
+			const value = await execute(state, request.operation);
 			scope.postMessage({ type: 'result', id: request.id, value });
 			if (
 				request.operation.kind === 'create' ||
@@ -392,15 +395,14 @@ scope.addEventListener('message', (event) => {
 				request.operation.kind === 'delete' ||
 				request.operation.kind === 'kv-set' ||
 				request.operation.kind === 'kv-unset' ||
-				request.operation.kind === 'admit-document-intent'
+				request.operation.kind === 'logical-add' ||
+				request.operation.kind === 'logical-delete'
 			) {
 				scope.postMessage({
 					type: 'records-changed',
 					workspaceId: request.manifest.workspaceId,
 				});
-				if (state.replica) {
-					synchronize(state.replica, request.manifest.workspaceId);
-				}
+				state.sync?.wake();
 			}
 		} catch (cause) {
 			scope.postMessage({

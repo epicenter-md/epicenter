@@ -13,18 +13,10 @@ import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
 import { RESERVED_KV_ROW_ID, RESERVED_KV_TABLE } from '@epicenter/row-sync';
-import { createBunSqliteAdapter } from '@epicenter/row-sync/bun';
+import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { expectErr, expectOk } from 'wellcrafted/testing';
-import { mergeDocumentUpdates } from './canonical-documents.js';
 import { createCanonicalKv } from './canonical-kv.js';
-import {
-	createCanonicalReplica,
-	initializeCanonicalSchema,
-} from './canonical-replica.js';
-import {
-	createTestTransport,
-	openTestAuthority,
-} from './row-sync-test-utils.js';
+import { initializeLocalWorkspaceStorage } from './local-workspace-storage.js';
 
 const definitions = {
 	theme: field.select(['light', 'dark']),
@@ -35,7 +27,7 @@ test('local-only set and unset preserve unknown and nonconforming keys', () => {
 	const database = new Database(':memory:');
 	try {
 		const sqlite = createBunSqliteAdapter(database);
-		initializeCanonicalSchema(sqlite);
+		initializeLocalWorkspaceStorage(sqlite);
 		sqlite.run(
 			`INSERT INTO rows(table_key, row_id, fields_json) VALUES (?, ?, ?)`,
 			[
@@ -59,46 +51,25 @@ test('local-only set and unset preserve unknown and nonconforming keys', () => {
 				.get()?.fields_json ?? '{}',
 		);
 		expect(stored).toEqual({ unknown: { nested: true }, theme: 'future' });
-		expect(database.query('SELECT * FROM replica').all()).toEqual([]);
-		expect(database.query('SELECT * FROM intents').all()).toEqual([]);
+		expect(
+			database
+				.query<{ name: string }, []>(
+					`SELECT name FROM sqlite_master
+					 WHERE type = 'table' AND name IN ('replica', 'intents')`,
+				)
+				.all(),
+		).toEqual([]);
 	} finally {
 		database.close();
-	}
-});
-
-test('synchronized set and unset round-trip through the authority', async () => {
-	const authorityState = openTestAuthority();
-	const transport = createTestTransport(authorityState.authority);
-	const database = new Database(':memory:');
-	try {
-		const sqlite = createBunSqliteAdapter(database);
-		const replica = createCanonicalReplica({
-			sqlite,
-			transport,
-			codec: { mergeUpdates: mergeDocumentUpdates },
-		});
-		const kv = createCanonicalKv(sqlite, definitions, {
-			admitIntent: replica.admit,
-		});
-		expectOk(kv.set('theme', 'dark'));
-		expect(expectOk(kv.get('theme'))).toBe('dark');
-		await replica.synchronize();
-		expect(authorityState.authority.inspect().rows[0]?.fields).toEqual({
-			theme: 'dark',
-		});
-		kv.unset('theme');
-		await replica.synchronize();
-		expect(expectOk(kv.get('theme'))).toBeUndefined();
-	} finally {
-		database.close();
-		authorityState.database.close();
 	}
 });
 
 test('aggregate-cap overflow is an accepted local no-op', () => {
 	const database = new Database(':memory:');
 	try {
-		const kv = createCanonicalKv(createBunSqliteAdapter(database), definitions);
+		const sqlite = createBunSqliteAdapter(database);
+		initializeLocalWorkspaceStorage(sqlite);
+		const kv = createCanonicalKv(sqlite, definitions);
 		expectOk(kv.set('label', 'small'));
 		expectOk(kv.set('label', 'x'.repeat(70 * 1024)));
 		expect(expectOk(kv.get('label'))).toBe('small');
