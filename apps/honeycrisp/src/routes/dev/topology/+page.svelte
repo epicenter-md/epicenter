@@ -52,7 +52,7 @@
 	let pulseTimer: ReturnType<typeof setInterval> | undefined;
 	let pulsing = $state(false);
 
-	const isSignedIn = auth.state.status === 'signed-in';
+	const isSignedIn = $derived(auth.state.status === 'signed-in');
 
 	function refreshPanel(panel: Panel): void {
 		if (!panel.document) return;
@@ -194,6 +194,21 @@
 		}
 	}
 
+	/** Post-gate cleanup: delete every harness-created row, open panels included. */
+	async function deleteHarnessRows(): Promise<void> {
+		openGeneration += 1;
+		for (const panel of panels) {
+			panel.unsubscribe?.();
+			panel.document?.[Symbol.dispose]();
+		}
+		panels = [];
+		const { rows } = await honeycrisp.tables.notes.list();
+		for (const note of rows) {
+			if (!note.title.startsWith(TITLE_PREFIX)) continue;
+			await honeycrisp.tables.notes.delete(note.id);
+		}
+	}
+
 	function setCount(count: number): void {
 		requestedCount = count;
 		const url = new URL(location.href);
@@ -262,6 +277,13 @@
 		<Button variant="outline" size="sm" onclick={editAll}>Edit all</Button>
 		<Button variant="outline" size="sm" onclick={togglePulse}>
 			{pulsing ? 'Stop pulse' : 'Pulse every 5s'}
+		</Button>
+		<Button
+			variant="destructive"
+			size="sm"
+			onclick={() => void deleteHarnessRows()}
+		>
+			Delete harness rows
 		</Button>
 	</div>
 	<p class="text-xs text-muted-foreground">
