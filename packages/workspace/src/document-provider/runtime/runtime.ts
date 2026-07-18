@@ -35,6 +35,32 @@ type CachedDocument<TConnection> = {
 	revoked: Error | undefined;
 };
 
+const ownedDocuments = new WeakMap<
+	RowDocument<unknown>,
+	CachedDocument<unknown>
+>();
+
+/** Runtime-only bridge for transporting one hydrated row document. */
+export function encodeRowDocumentState(
+	document: RowDocument<unknown>,
+): Uint8Array {
+	const entry = ownedDocuments.get(document);
+	if (!entry) throw new TypeError('Row document is not owned by this runtime');
+	if (entry.revoked) throw entry.revoked;
+	return Y.encodeStateAsUpdate(entry.document);
+}
+
+/** Runtime-only bridge for applying one opaque transported update. */
+export function applyRowDocumentUpdate(
+	document: RowDocument<unknown>,
+	update: Uint8Array,
+): void {
+	const entry = ownedDocuments.get(document);
+	if (!entry) throw new TypeError('Row document is not owned by this runtime');
+	if (entry.revoked) throw entry.revoked;
+	Y.applyUpdate(entry.document, Uint8Array.from(update));
+}
+
 /**
  * Own independently loadable row documents above one workspace document store.
  *
@@ -195,7 +221,7 @@ export function createRowDocumentRuntime<TConnection = never>({
 			if (entry.revoked) throw entry.revoked;
 		}
 
-		return {
+		const handle: RowDocument<TConnection> = {
 			get: ((...args: Parameters<Y.Doc['get']>) => {
 				requireUsable();
 				return entry.document.get(...args);
@@ -222,6 +248,8 @@ export function createRowDocumentRuntime<TConnection = never>({
 				}
 			},
 		};
+		ownedDocuments.set(handle, entry);
+		return handle;
 	}
 
 	async function revokeEntry(

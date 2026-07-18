@@ -120,6 +120,14 @@ test('two clients invalidate documents, disconnect independently, and survive re
 			created.id,
 		);
 		expect(secondDocument.get('content').toString()).toBe('Desktop document');
+		// A concurrent edit reaches the peer's already-open document without a
+		// reopen: the persisting client relays the update over the invalidation
+		// channel once the owner commits it.
+		firstDocument.get('content').insert('Desktop document'.length, ' for two');
+		await firstDocument.whenDurable();
+		expect(secondDocument.get('content').toString()).toBe(
+			'Desktop document for two',
+		);
 		await firstSkills.tables.skills.delete(created.id);
 		expect(() => firstDocument.get('content')).toThrow(/revoked/);
 		expect(() => secondDocument.get('content')).toThrow(/revoked/);

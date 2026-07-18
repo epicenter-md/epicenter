@@ -1,10 +1,14 @@
 import { Type } from 'typebox';
-import { createDeviceBunWorkspaceRuntime } from './bun-runtime.js';
+// The Bun runtime hands out document-provider handles, so the transport
+// bridge must come from the same module that owns their Y.Doc registry.
 import {
 	applyRowDocumentUpdate,
+	encodeRowDocumentState,
+} from '../document-provider/runtime/index.js';
+import { createDeviceBunWorkspaceRuntime } from './bun-runtime.js';
+import {
 	decodeDocumentBytes,
 	encodeDocumentBytes,
-	encodeRowDocumentState,
 } from './canonical-documents.js';
 
 export { DesktopWorkspaceError } from './desktop-protocol.js';

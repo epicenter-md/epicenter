@@ -22,7 +22,14 @@ type RowAddress = { table: string; rowId: string };
 
 type DesktopInvalidationMessage =
 	| { type: 'records-changed'; workspaceId: string }
-	| { type: 'rows-deleted'; workspaceId: string; addresses: RowAddress[] };
+	| { type: 'rows-deleted'; workspaceId: string; addresses: RowAddress[] }
+	| {
+			type: 'document-updated';
+			workspaceId: string;
+			address: RowAddress;
+			/** Base64 document-provider transport encoding of one Yjs update. */
+			update: string;
+	  };
 
 type DesktopRuntimeBroadcastChannel = {
 	onmessage: ((event: MessageEvent<unknown>) => void) | null;
@@ -35,6 +42,7 @@ type BoundWorkspace = {
 	handle: OpenedWorkspace<WorkspaceDefinition>;
 	revokeRows(addresses: RowAddress[]): void;
 	revokeDocuments(cause: Error): void;
+	applyDocumentUpdate(address: RowAddress, update: Uint8Array): void;
 };
 
 export type CreateDesktopWorkspaceRuntimeOptions = {
@@ -80,6 +88,15 @@ export function createDesktopWorkspaceRuntime({
 					return;
 				case 'rows-deleted':
 					workspaces.get(message.workspaceId)?.revokeRows(message.addresses);
+					return;
+				case 'document-updated':
+					workspaces
+						.get(message.workspaceId)
+						?.applyDocumentUpdate(
+							message.address,
+							decodeDocumentBytes(message.update),
+						);
+					emitRecordsChanged(message.workspaceId, false);
 					return;
 			}
 		};
@@ -128,15 +145,26 @@ export function createDesktopWorkspaceRuntime({
 		handle: OpenedWorkspace<TDefinition>;
 		revokeRows(addresses: RowAddress[]): void;
 		revokeDocuments(cause: Error): void;
+		applyDocumentUpdate(address: RowAddress, update: Uint8Array): void;
 	} {
 		const documents = createDocumentRuntime({
-			persistUpdate(table, rowId, update) {
-				return request(definition.id, {
+			async persistUpdate(table, rowId, update) {
+				const encoded = encodeDocumentBytes(update);
+				await request(definition.id, {
 					kind: 'persist-document-update',
 					table,
 					rowId,
-					update: encodeDocumentBytes(update),
+					update: encoded,
 				});
+				// Another client with this document open applies the update
+				// directly; without this, its cached Y.Doc goes stale until the
+				// document is reopened.
+				invalidationChannel?.postMessage({
+					type: 'document-updated',
+					workspaceId: definition.id,
+					address: { table, rowId },
+					update: encoded,
+				} satisfies DesktopInvalidationMessage);
 			},
 			readCurrentRow(table, rowId) {
 				return request(definition.id, {
@@ -248,6 +276,9 @@ export function createDesktopWorkspaceRuntime({
 			handle,
 			revokeRows: documents.revoke,
 			revokeDocuments: documents.revokeAll,
+			applyDocumentUpdate(address, update) {
+				documents.applyRelayedUpdate(address, update);
+			},
 		};
 	}
 
@@ -297,6 +328,18 @@ function parseInvalidationMessage(
 		return {
 			type: message.type,
 			workspaceId: message.workspaceId,
+		};
+	}
+	if (
+		message.type === 'document-updated' &&
+		isRowAddress(message.address) &&
+		typeof message.update === 'string'
+	) {
+		return {
+			type: 'document-updated',
+			workspaceId: message.workspaceId,
+			address: message.address,
+			update: message.update,
 		};
 	}
 	if (

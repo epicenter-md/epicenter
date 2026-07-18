@@ -50,10 +50,17 @@ type CachedDocument = Address & {
 	 */
 	revoked: Error | undefined;
 	durability: Promise<void>;
-	listener(update: Uint8Array): void;
+	listener(update: Uint8Array, origin: unknown): void;
 };
 
 const ownedDocuments = new WeakMap<RowDocument, CachedDocument>();
+
+/**
+ * Origin tag for updates another same-host client already persisted. The
+ * capture listener skips them, so a relayed update never round-trips back
+ * through this client's persistUpdate.
+ */
+const relayedOrigin = Symbol('relayed-document-update');
 
 /**
  * Open the row-document owner (ADR-0135). One Y.Doc is cached per live row
@@ -153,6 +160,17 @@ export function createDocumentRuntime({
 
 	return {
 		/**
+		 * Apply an update another same-host client already persisted to a
+		 * currently open document. Not-open addresses are ignored (the next
+		 * open hydrates from the owner); the relayed origin keeps the capture
+		 * listener from persisting it again.
+		 */
+		applyRelayedUpdate(address: Address, update: Uint8Array): void {
+			const entry = cached.get(keyOf(address));
+			if (!entry || entry.poison || entry.revoked) return;
+			Y.applyUpdate(entry.doc, Uint8Array.from(update), relayedOrigin);
+		},
+		/**
 		 * INTERNAL: Capture one fixed local durability cut across every currently
 		 * cached row document. Updates emitted after this call replace their
 		 * entry's durability promise and therefore do not extend this barrier.
@@ -204,7 +222,8 @@ export function createDocumentRuntime({
 					poison: undefined,
 					revoked: undefined,
 					durability: Promise.resolve(),
-					listener(update) {
+					listener(update, origin) {
+						if (origin === relayedOrigin) return;
 						assertWritable(entry);
 						const captured = Uint8Array.from(update);
 						const persistence = entry.durability.then(async () => {
