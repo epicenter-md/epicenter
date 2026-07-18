@@ -193,6 +193,11 @@ try {
 		typeof stolenFailure === 'string' && /moved to a newer tab/.test(stolenFailure),
 		`stolen tab did not fail loudly: ${stolenFailure}`,
 	);
+	// The steal also notifies the stolen page once through onBackgroundError,
+	// which is what apps turn into their blocking moved screen.
+	await first.waitForFunction(
+		() => window.productionBrowserRuntime.movedNotice() !== undefined,
+	);
 	await first.close();
 	const settlement = await second.evaluate(() =>
 		window.productionBrowserRuntime.settle(),

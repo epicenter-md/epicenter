@@ -3,6 +3,7 @@ import { asPrincipalId } from '@epicenter/identity';
 import {
 	defineTable,
 	defineWorkspace,
+	isWorkspaceStorageMovedError,
 	type RowDocument,
 	rowDocumentConnection,
 } from '@epicenter/workspace/sqlite';
@@ -25,6 +26,7 @@ const definition = defineWorkspace({
 });
 
 let changes = 0;
+let movedNotice: string | undefined;
 const runtime = createAccountBrowserWorkspaceRuntime({
 	account: {
 		deploymentId: apiOrigin,
@@ -43,11 +45,18 @@ const runtime = createAccountBrowserWorkspaceRuntime({
 	onRecordsChanged() {
 		changes += 1;
 	},
+	// The steal notification apps turn into their blocking moved screen.
+	onBackgroundError(cause) {
+		if (isWorkspaceStorageMovedError(cause)) movedNotice = cause.message;
+	},
 });
 const workspace = await runtime.open(definition);
 let draft: RowDocument | undefined;
 
 window.productionBrowserRuntime = {
+	movedNotice() {
+		return movedNotice;
+	},
 	create(title: string) {
 		return workspace.tables.notes.create({ title });
 	},
@@ -127,6 +136,7 @@ declare global {
 			draftConnectionPhase(): string | undefined;
 			closeDraft(): void;
 			changeCount(): number;
+			movedNotice(): string | undefined;
 			settle(): Promise<{ outcome: string }>;
 			dispose(): Promise<void>;
 		};
