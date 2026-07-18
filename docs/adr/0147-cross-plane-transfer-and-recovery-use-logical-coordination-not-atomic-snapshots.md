@@ -14,15 +14,22 @@ non-destructive response to divergent restored scalar replicas.
 
 ## Decision
 
-Account open still never consumes Device data automatically. Add, Delete, and
-Keep remain explicit product actions. Scalar rows and KV transfer through
-ordinary scalar intents. Documents transfer through the document provider under
-the same row addresses only after the destination row is locally admitted. The
-destination first persists both planes locally, then scalar synchronization
-settles and canonical installation proves every destination row remains live.
-Only then may the source be deleted. A permanently tombstoned destination
-address is a terminal import conflict: Epicenter reports it and preserves the
-Device source and its document bytes.
+Device mode is a permanent first-class mode, not temporary guest storage.
+Account open still never consumes Device data automatically. After sign-in an
+application may non-mutatingly detect an existing device-local workspace and
+offer to copy it into the account; copying is optional, and the Device source
+remains after a copy by default. Scalar rows and KV transfer through ordinary
+scalar intents. Documents transfer through the document provider under the
+same row addresses only after the destination row is locally admitted. The
+copy is idempotent (first-create-wins scalar admission, idempotent Yjs
+import), so the recovery path for an interrupted copy is simply running it
+again.
+
+Deleting the Device source is a separate, explicit, destructive user action
+with its own confirmation, never a consequence of a copy. No automatic
+delete-after-copy exists, so no verification machinery gates it: a create the
+authority silently refuses (for example at a retained deletion marker) leaves
+that row absent from the account while the Device source still holds it.
 
 Logical export and recovery coordinate the two planes but do not claim one exact
 cross-plane instant. An export captures one scalar cut plus one compact state for
@@ -48,8 +55,9 @@ from the device must fetch it while online or report it as unavailable.
   document provider.
 - Device Add is crash-safe through source preservation and idempotent logical
   retries, not one destination SQLite transaction.
-- Local destination durability alone never authorizes Device deletion; canonical
-  scalar liveness is the deletion gate.
+- Device deletion has no automatic trigger and no verification gate; it is an
+  explicit destructive user action, and the copy's safety comes from the source
+  remaining in place.
 - A device may hold a complete scalar workspace without holding every document.
 - Complete offline export of never-opened documents is refused; the export
   result reports incompleteness instead of silently omitting it.
@@ -65,6 +73,8 @@ from the device must fetch it while online or report it as unavailable.
   editing or adding distributed snapshot machinery.
 - **Copy provider databases during Add or recovery.** Rejected because it
   transfers private lifecycle and format state rather than logical content.
-- **Delete Device data after local destination admission.** Rejected because a
-  tombstoned row address can make the canonical create a permanent no-op while
-  leaving only orphaned destination document bytes.
+- **Automatic delete-after-copy, gated on a canonical-liveness verification.**
+  Rejected: Device mode is permanent, so a successful copy authorizes nothing;
+  the verification family (settled confirmed snapshots, document containment
+  checks, missing-address outcomes) existed only to make automatic source
+  deletion safe and was deleted with the promise it served.

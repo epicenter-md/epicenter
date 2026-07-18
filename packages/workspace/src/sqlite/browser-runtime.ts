@@ -24,10 +24,8 @@ import {
 	serializeTableLenses,
 } from './browser-runtime-protocol.js';
 import {
-	type DeviceAddVerification,
 	type LogicalWorkspaceCopy,
 	type LogicalWorkspaceExport,
-	missingAddedContent,
 	withCapturedDocuments,
 } from './canonical-addition.js';
 import type {
@@ -61,7 +59,6 @@ type BoundWorkspace = {
 	captureDurability(): Promise<void>;
 	disposeDocuments(): Promise<void>;
 	deleteDocuments(): Promise<void>;
-	captureDocument(address: RowAddress): Promise<Uint8Array | undefined>;
 	captureDocuments(copy: LogicalWorkspaceCopy): Promise<LogicalWorkspaceCopy>;
 	importDocuments(copy: LogicalWorkspaceCopy): Promise<void>;
 };
@@ -163,14 +160,6 @@ export function createAccountBrowserWorkspaceRuntime({
 			await runtime.open(definition);
 			await runtime.whenReady(definition.id);
 			return runtime.addToAccount(definition.id, copy);
-		},
-		/** The Device Add deletion gate: run after add(), before Device delete(). */
-		async verifyAdded(
-			definition: WorkspaceDefinition,
-			copy: LogicalWorkspaceCopy,
-		): Promise<DeviceAddVerification> {
-			await runtime.open(definition);
-			return runtime.verifyAdded(definition.id, copy);
 		},
 		async export(
 			definition: WorkspaceDefinition,
@@ -629,7 +618,6 @@ function createBrowserRuntimeWithPersistence({
 			captureDurability: documents.captureDurabilityBarrier,
 			disposeDocuments: documents[Symbol.asyncDispose],
 			deleteDocuments: documentStore.deleteAll,
-			captureDocument: documentStore.capture,
 			captureDocuments,
 			async importDocuments(copy: LogicalWorkspaceCopy) {
 				for (const row of copy.rows) {
@@ -704,40 +692,6 @@ function createBrowserRuntimeWithPersistence({
 				kind: 'logical-capture',
 			});
 			return bound.captureDocuments(copy);
-		},
-		async verifyAdded(
-			workspaceId: string,
-			copy: LogicalWorkspaceCopy,
-		): Promise<DeviceAddVerification> {
-			const bound = workspaces.get(workspaceId);
-			if (!bound) {
-				return Promise.reject(
-					new Error(`Account workspace '${workspaceId}' is not open`),
-				);
-			}
-			const sync = bound.handle.sync;
-			if (!sync) {
-				return Promise.reject(
-					new Error(`Workspace '${workspaceId}' has no synchronization`),
-				);
-			}
-			const settlement = await sync.settle();
-			if (settlement.outcome !== 'caught-up') {
-				return { outcome: 'unsettled', settlement };
-			}
-			// One Worker operation returns one synchronous confirmed snapshot, so
-			// every presence check below reads the same canonical cut.
-			const confirmed = await request<LogicalWorkspaceCopy>(bound.manifest, {
-				kind: 'capture-confirmed',
-			});
-			const missing = await missingAddedContent(
-				copy,
-				confirmed,
-				bound.captureDocument,
-			);
-			return missing.addresses.length > 0 || missing.kvKeys.length > 0
-				? { outcome: 'missing', ...missing }
-				: { outcome: 'verified' };
 		},
 		async exportAccount(workspaceId: string): Promise<LogicalWorkspaceExport> {
 			const bound = workspaces.get(workspaceId);

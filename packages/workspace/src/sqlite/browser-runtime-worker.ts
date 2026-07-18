@@ -389,11 +389,6 @@ async function execute(
 				throw new Error('Only Account workspaces expose visible capture');
 			}
 			return state.replica.captureVisible();
-		case 'capture-confirmed':
-			if (!state.replica) {
-				throw new Error('Only Account workspaces expose confirmed capture');
-			}
-			return state.replica.captureConfirmed();
 		case 'logical-add':
 			if (!state.replica) {
 				throw new Error('Only Account workspaces accept logical additions');

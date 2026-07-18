@@ -19,7 +19,6 @@ import { field } from '@epicenter/field';
 import { asPrincipalId } from '@epicenter/identity';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { defineTable, defineWorkspace } from '@epicenter/workspace/sqlite';
-import * as Y from '@y/y';
 import {
 	createAccountBunWorkspaceRuntime,
 	createDeviceBunWorkspaceRuntime,
@@ -355,110 +354,6 @@ test('explicit Add commits scalar Device data before explicit deletion', async (
 	}
 });
 
-test('Device Add verification proves liveness and durability before source deletion', async () => {
-	const root = mkdtempSync(join(tmpdir(), 'epicenter-bun-add-verify-'));
-	const authorityState = openAuthority();
-	const { transport } = createTransport(authorityState.authority);
-	try {
-		await using device = createDeviceBunWorkspaceRuntime({ storageRoot: root });
-		await using account = createAccountBunWorkspaceRuntime({
-			storageRoot: root,
-			account: {
-				deploymentId: 'https://example.test',
-				principalId: asPrincipalId('alice'),
-				transport: () => transport,
-			},
-			recordPollIntervalMs: 60_000,
-		});
-		const deviceWorkspace = await device.open(definition);
-		const accountWorkspace = await account.open(definition);
-		const row = await deviceWorkspace.tables.notes.create({ title: 'Add me' });
-		{
-			using document = await deviceWorkspace.tables.notes.document.open(row.id);
-			document.get('editor').insert(0, 'device body');
-			await document.whenDurable();
-		}
-
-		const copy = await device.capture(definition);
-		await account.add(definition, copy);
-		expect(await account.verifyAdded(definition, copy)).toEqual({
-			outcome: 'verified',
-		});
-		await device.delete(definition);
-
-		// A copy claiming document bytes for a row whose import never committed
-		// is exactly what an interrupted add() looks like: not safe to delete.
-		const scalarOnly = await accountWorkspace.tables.notes.create({
-			title: 'No document',
-		});
-		expect(
-			await account.verifyAdded(definition, {
-				rows: [
-					{
-						table: 'notes',
-						rowId: scalarOnly.id,
-						fields: { title: 'No document' },
-						document: new Uint8Array([1, 2, 3]),
-					},
-				],
-				kv: {},
-			}),
-		).toEqual({
-			outcome: 'missing',
-			addresses: [{ table: 'notes', rowId: scalarOnly.id }],
-			kvKeys: [],
-		});
-
-		// Foreign destination bytes at the address are still not the copy: the
-		// gate proves containment, never mere existence.
-		const ownDocument = await accountWorkspace.tables.notes.create({
-			title: 'Account authored',
-		});
-		{
-			using document =
-				await accountWorkspace.tables.notes.document.open(ownDocument.id);
-			document.get('editor').insert(0, 'account only');
-			await document.whenDurable();
-		}
-		const foreignDoc = new Y.Doc();
-		foreignDoc.get('editor').insert(0, 'device only');
-		const foreignBytes = new Uint8Array(Y.encodeStateAsUpdateV2(foreignDoc));
-		foreignDoc.destroy();
-		expect(
-			await account.verifyAdded(definition, {
-				rows: [
-					{
-						table: 'notes',
-						rowId: ownDocument.id,
-						fields: { title: 'Account authored' },
-						document: foreignBytes,
-					},
-				],
-				kv: {},
-			}),
-		).toEqual({
-			outcome: 'missing',
-			addresses: [{ table: 'notes', rowId: ownDocument.id }],
-			kvKeys: [],
-		});
-
-		// A copied KV key whose fold never committed is not safe either.
-		expect(
-			await account.verifyAdded(definition, {
-				rows: [],
-				kv: { language: 'unadmitted' },
-			}),
-		).toEqual({
-			outcome: 'missing',
-			addresses: [],
-			kvKeys: ['language'],
-		});
-	} finally {
-		authorityState.database.close();
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
 test('retrying add() stays idempotent while the destination holds the copied document open', async () => {
 	const root = mkdtempSync(join(tmpdir(), 'epicenter-bun-add-retry-open-'));
 	const authorityState = openAuthority();
@@ -485,22 +380,19 @@ test('retrying add() stays idempotent while the destination holds the copied doc
 		const copy = await device.capture(definition);
 		await account.add(definition, copy);
 
-		// The documented recovery path is retry-add then verify. A destination
-		// that opened the imported document must not turn the retry into a
-		// persistence-attachment conflict.
+		// The documented recovery path for an interrupted copy is retry-add. A
+		// destination that opened the imported document must not turn the retry
+		// into a persistence-attachment conflict.
 		using opened = await accountWorkspace.tables.notes.document.open(row.id);
 		await account.add(definition, copy);
 		expect(opened.get('editor').toString()).toBe('device body');
-		expect(await account.verifyAdded(definition, copy)).toEqual({
-			outcome: 'verified',
-		});
 	} finally {
 		authorityState.database.close();
 		rmSync(root, { recursive: true, force: true });
 	}
 });
 
-test('a retained deletion marker fails Device Add verification at that address', async () => {
+test('a retained deletion marker silently refuses a copied create without resurrecting the row', async () => {
 	const root = mkdtempSync(join(tmpdir(), 'epicenter-bun-add-marker-'));
 	const authorityState = openAuthority();
 	const { transport } = createTransport(authorityState.authority);
@@ -520,9 +412,10 @@ test('a retained deletion marker fails Device Add verification at that address',
 		await workspace.tables.notes.delete(doomed.id);
 		expect(await workspace.sync?.settle()).toEqual({ outcome: 'caught-up' });
 
-		// The authority silently refuses a create at a retained deletion marker;
-		// verification surfaces it as a missing address so the Device source
-		// survives (the ADR-0147 terminal import conflict).
+		// The authority silently refuses a create at a retained deletion marker.
+		// The copy stays optional and the Device source remains by default
+		// (ADR-0147), so the refused row is simply absent from the account; it
+		// must not resurrect through the copy path.
 		const conflicting = {
 			rows: [
 				{
@@ -531,51 +424,14 @@ test('a retained deletion marker fails Device Add verification at that address',
 					fields: { title: 'Old Device copy' },
 				},
 			],
-			kv: {},
+			kv: { language: 'copied' },
 		};
 		await account.add(definition, conflicting);
-		expect(await account.verifyAdded(definition, conflicting)).toEqual({
-			outcome: 'missing',
-			addresses: [{ table: 'notes', rowId: doomed.id }],
-			kvKeys: [],
-		});
+		expect(await workspace.sync?.settle()).toEqual({ outcome: 'caught-up' });
+		expect((await workspace.tables.notes.get(doomed.id)).data).toBeUndefined();
+		expect((await workspace.kv.get('language')).data).toBe('copied');
 	} finally {
 		authorityState.database.close();
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
-test('Device Add verification refuses while the authority is unreachable', async () => {
-	const root = mkdtempSync(join(tmpdir(), 'epicenter-bun-add-offline-'));
-	const offline = async () => {
-		throw new CurrentStateTransportInterruption(
-			'offline',
-			'network unavailable',
-		);
-	};
-	const transport: CurrentStateReplicaTransport = {
-		push: offline,
-		pull: offline,
-		acquire: offline,
-	};
-	try {
-		await using account = createAccountBunWorkspaceRuntime({
-			storageRoot: root,
-			account: {
-				deploymentId: 'https://example.test',
-				principalId: asPrincipalId('alice'),
-				transport: () => transport,
-			},
-			recordPollIntervalMs: 60_000,
-		});
-		await account.open(definition);
-		expect(
-			await account.verifyAdded(definition, { rows: [], kv: {} }),
-		).toEqual({
-			outcome: 'unsettled',
-			settlement: { outcome: 'pending', reason: 'offline' },
-		});
-	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
 });

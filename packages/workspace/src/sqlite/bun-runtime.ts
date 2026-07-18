@@ -25,11 +25,9 @@ import {
 import {
 	captureLocalWorkspace,
 	deleteLocalWorkspace,
-	type DeviceAddVerification,
 	type LogicalWorkspaceCopy,
 	type LogicalWorkspaceExport,
 	logicalWorkspaceIntents,
-	missingAddedContent,
 	withCapturedDocuments,
 } from './canonical-addition.js';
 import { mergeDocumentUpdates } from './canonical-documents.js';
@@ -111,14 +109,6 @@ export function createAccountBunWorkspaceRuntime({
 			await runtime.open(definition);
 			await runtime.whenReady(definition.id);
 			await runtime.addToAccount(definition.id, copy);
-		},
-		/** The Device Add deletion gate: run after add(), before Device delete(). */
-		async verifyAdded(
-			definition: WorkspaceDefinition,
-			copy: LogicalWorkspaceCopy,
-		): Promise<DeviceAddVerification> {
-			await runtime.open(definition);
-			return runtime.verifyAdded(definition.id, copy);
 		},
 		async export(
 			definition: WorkspaceDefinition,
@@ -360,28 +350,6 @@ function createBunRuntimeWithPersistence({
 			);
 			await state.documents.deleteAll();
 			state.emitChanged();
-		},
-		async verifyAdded(
-			workspaceId: string,
-			copy: LogicalWorkspaceCopy,
-		): Promise<DeviceAddVerification> {
-			const state = accountWorkspaces.get(workspaceId);
-			if (!state)
-				throw new Error(`Account workspace '${workspaceId}' is not open`);
-			const settlement = await state.settle();
-			if (settlement.outcome !== 'caught-up') {
-				return { outcome: 'unsettled', settlement };
-			}
-			// One synchronous confirmed snapshot: every presence check below reads
-			// the same canonical cut, never intent overlays.
-			const missing = await missingAddedContent(
-				copy,
-				state.replica.captureConfirmed(),
-				state.documents.capture,
-			);
-			return missing.addresses.length > 0 || missing.kvKeys.length > 0
-				? { outcome: 'missing', ...missing }
-				: { outcome: 'verified' };
 		},
 		async exportAccount(workspaceId: string): Promise<LogicalWorkspaceExport> {
 			const state = accountWorkspaces.get(workspaceId);

@@ -5,7 +5,6 @@ import {
 	type WireRowIntent,
 } from '@epicenter/row-sync';
 import type { SqliteDatabase } from '@epicenter/sqlite';
-import * as Y from '@y/y';
 import type { WorkspaceSyncSettlement } from './canonical-sync-supervisor.js';
 import {
 	readLocalDocumentParts,
@@ -96,95 +95,6 @@ export function logicalWorkspaceIntents(
 		fields: { set: structuredClone(copy.kv), unset: [] },
 	});
 	return intents;
-}
-
-/**
- * The Device Add deletion gate (ADR-0147): what one settled verification of an
- * added logical copy proved about its destination Account workspace.
- *
- * `verified` proves three facts, and only then is the Device source safe to
- * delete: every copied row address is present in one confirmed scalar
- * snapshot taken after settlement (a single synchronous cut of canonical
- * state, never intent overlays); every copied document byte set is CONTAINED
- * in the destination's locally durable document state (later destination
- * edits and garbage collection keep containment true; foreign bytes at the
- * address do not); and every copied KV key exists in that confirmed snapshot.
- * It deliberately does NOT prove that document bytes reached the authority
- * (documents converge lazily per open document; no global remote document
- * settlement exists) or that rows stay live afterwards.
- *
- * `missing` lists content that is not safe: a create refused at a retained
- * deletion marker, a row deleted during transfer, or an interrupted `add()`
- * whose scalar admission, document import, or KV fold never committed.
- * Re-running `add()` with the same copy is idempotent (first-create-wins
- * scalar admission, idempotent Yjs import), so the recovery path is retry-add
- * then verify again.
- *
- * Known residual: a copied KV key that the destination already set from its
- * own edits reads as present even if this copy's fold never committed. Row
- * ids are runtime-minted and cannot collide that way. The documented flow
- * (idempotent `add()` before every verify) closes the gap.
- */
-export type DeviceAddVerification =
-	| { outcome: 'verified' }
-	| { outcome: 'unsettled'; settlement: WorkspaceSyncSettlement }
-	| {
-			outcome: 'missing';
-			addresses: { table: string; rowId: string }[];
-			kvKeys: string[];
-	  };
-
-/** Copied content absent from one confirmed destination snapshot. */
-export async function missingAddedContent(
-	copy: LogicalWorkspaceCopy,
-	confirmed: LogicalWorkspaceCopy,
-	captureDocument: (address: {
-		table: string;
-		rowId: string;
-	}) => Promise<Uint8Array | undefined>,
-): Promise<{ addresses: { table: string; rowId: string }[]; kvKeys: string[] }> {
-	const confirmedAddresses = new Set(
-		confirmed.rows.map((row) => `${row.table}\u0000${row.rowId}`),
-	);
-	const addresses: { table: string; rowId: string }[] = [];
-	for (const row of copy.rows) {
-		const address = { table: row.table, rowId: row.rowId };
-		if (!confirmedAddresses.has(`${row.table}\u0000${row.rowId}`)) {
-			addresses.push(address);
-			continue;
-		}
-		if (row.document === undefined) continue;
-		const captured = await captureDocument(address);
-		if (captured === undefined || !containsDocumentState(captured, row.document)) {
-			addresses.push(address);
-		}
-	}
-	const kvKeys = Object.keys(copy.kv).filter(
-		(key) => !Object.hasOwn(confirmed.kv, key),
-	);
-	return { addresses, kvKeys };
-}
-
-/**
- * True when applying `copied` to a document already holding `captured`
- * changes nothing: the destination contains every struct and deletion the
- * copy carries (clock coverage survives destination-side deletion and GC).
- */
-function containsDocumentState(
-	captured: Uint8Array,
-	copied: Uint8Array,
-): boolean {
-	const replay = new Y.Doc();
-	try {
-		Y.applyUpdateV2(replay, captured);
-		const before = Y.encodeStateAsUpdateV2(replay);
-		Y.applyUpdateV2(replay, copied);
-		const after = Y.encodeStateAsUpdateV2(replay);
-		if (before.byteLength !== after.byteLength) return false;
-		return before.every((byte, index) => byte === after[index]);
-	} finally {
-		replay.destroy();
-	}
 }
 
 /**
