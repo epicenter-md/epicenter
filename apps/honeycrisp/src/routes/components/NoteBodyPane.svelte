@@ -4,6 +4,7 @@
 	import HoneycripEditor from '$lib/editor/Editor.svelte';
 	import { honeycrisp } from '$lib/honeycrisp';
 	import { runHoneycrispMutation } from '$lib/mutation.js';
+	import DocumentSyncStatus from './DocumentSyncStatus.svelte';
 
 	let { noteId, focusRequest }: { noteId: NoteId; focusRequest: number } =
 		$props();
@@ -22,13 +23,18 @@
 {#await lease}
 	<Loading class="h-full" />
 {:then document}
-	<HoneycripEditor
-		yxmlfragment={document.get('body')}
-		{focusRequest}
-		onContentChange={(change) =>
-			runHoneycrispMutation(
-				honeycrisp.state.notes.updateContent(noteId, change),
-				'Could not save note',
-			)}
-	/>
+	<div class="flex h-full flex-col">
+		<div class="min-h-0 flex-1">
+			<HoneycripEditor
+				yxmlfragment={document.get('body')}
+				{focusRequest}
+				onContentChange={(change) =>
+					runHoneycrispMutation(
+						honeycrisp.state.notes.updateContent(noteId, change),
+						'Could not save note',
+					)}
+			/>
+		</div>
+		<DocumentSyncStatus {document} />
+	</div>
 {/await}
