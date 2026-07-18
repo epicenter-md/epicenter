@@ -29,7 +29,7 @@ import {
 	type DocumentHubSocket,
 } from '../document-hub/core.js';
 import {
-	AUTHORITY_DOCUMENT_LIMITS,
+	AUTHORITY_DOCUMENT_COMPACTION,
 	openAccountRowAuthority,
 } from './authority.js';
 
@@ -203,7 +203,7 @@ test('update threshold compacts into one replayable V2 snapshot', () => {
 		const editor = source.get('editor');
 		for (
 			let index = 0;
-			index < AUTHORITY_DOCUMENT_LIMITS.updatesBeforeCompaction;
+			index < AUTHORITY_DOCUMENT_COMPACTION.updatesBeforeCompaction;
 			index += 1
 		) {
 			editor.insert(editor.length, 'x');

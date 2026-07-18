@@ -6,6 +6,7 @@ import {
 	type DocumentMeasure,
 	decodeDocumentFrame,
 	encodeDocumentFrame,
+	exceedsDocumentBound,
 	measureDocument,
 } from '@epicenter/sync/document-v3';
 import * as Y from '@y/y';
@@ -201,11 +202,7 @@ export function attachDocumentConnection(
 	}
 
 	function isSuppressed(): boolean {
-		return (
-			lastMeasure !== undefined &&
-			(lastMeasure.stateBytes > DOCUMENT_BOUND.stateBytes ||
-				lastMeasure.stateStructs > DOCUMENT_BOUND.stateStructs)
-		);
+		return lastMeasure !== undefined && exceedsDocumentBound(lastMeasure);
 	}
 
 	function isNearZone(): boolean {

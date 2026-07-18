@@ -7,7 +7,7 @@
  * Key behaviors:
  * - every connection opens one committed store snapshot and destroys its Y.Doc
  * - refused writes close every socket with an ordinary retryable close
- * - only too-large uses a terminal document-specific close code
+ * - a refused over-bound candidate closes only its sender with the 1009 backstop
  */
 import { describe, expect, test } from 'bun:test';
 import type { RowAddress } from '@epicenter/row-sync';
@@ -108,7 +108,7 @@ describe('fixed-address document hub core', () => {
 		expect(fixture.hub.connectionCount).toBe(0);
 	});
 
-	test('too-large closes only the sender with terminal code 1009', () => {
+	test('too-large closes only the sender with the 1009 backstop', () => {
 		const fixture = setup();
 		fixture.hub.connect(fixture.alice, emptyStateVector());
 		fixture.hub.connect(fixture.bob, emptyStateVector());

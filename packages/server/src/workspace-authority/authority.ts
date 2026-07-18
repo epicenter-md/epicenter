@@ -42,7 +42,7 @@ const STORAGE_VERSION = 10;
 
 export const ACCOUNT_AUTHORITY_WALL = 10 * 1024 ** 3 - 64 * 1024 ** 2;
 
-export const AUTHORITY_DOCUMENT_LIMITS = {
+export const AUTHORITY_DOCUMENT_COMPACTION = {
 	updatesBeforeCompaction: 64,
 	updateBytesBeforeCompaction: 524_288,
 } as const;
@@ -660,9 +660,9 @@ function createWorkspaceAuthorityDocumentStore(
 					);
 
 					if (
-						nextSequence >= AUTHORITY_DOCUMENT_LIMITS.updatesBeforeCompaction ||
+						nextSequence >= AUTHORITY_DOCUMENT_COMPACTION.updatesBeforeCompaction ||
 						(stats?.bytes ?? 0) + candidate.byteLength >=
-							AUTHORITY_DOCUMENT_LIMITS.updateBytesBeforeCompaction
+							AUTHORITY_DOCUMENT_COMPACTION.updateBytesBeforeCompaction
 					) {
 						database.run(
 							`INSERT INTO row_authority_document_snapshots(
