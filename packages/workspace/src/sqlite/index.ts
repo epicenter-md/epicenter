@@ -7,6 +7,7 @@
 
 export type {
 	LogicalWorkspaceCopy,
+	LogicalWorkspaceExport,
 	LogicalWorkspaceRow,
 } from './canonical-addition.js';
 export type { RowDocument } from '../document-provider/runtime/index.js';

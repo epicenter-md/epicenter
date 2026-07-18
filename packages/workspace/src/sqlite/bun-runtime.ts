@@ -27,11 +27,15 @@ import {
 	captureLocalWorkspace,
 	deleteLocalWorkspace,
 	type LogicalWorkspaceCopy,
+	type LogicalWorkspaceExport,
 	logicalWorkspaceIntents,
 	withCapturedDocuments,
 } from './canonical-addition.js';
 import { mergeDocumentUpdates } from './canonical-documents.js';
-import { createCanonicalSyncSupervisor } from './canonical-sync-supervisor.js';
+import {
+	createCanonicalSyncSupervisor,
+	type WorkspaceSyncSettlement,
+} from './canonical-sync-supervisor.js';
 import {
 	type CurrentStateReplicaTransport,
 	createCurrentStateReplica,
@@ -75,6 +79,14 @@ export function createDeviceBunWorkspaceRuntime(
 			await runtime.captureDurability(definition.id);
 			return runtime.captureLocal(definition.id);
 		},
+		/** A Device export is the local capture; there is no authority to settle. */
+		async export(
+			definition: WorkspaceDefinition,
+		): Promise<LogicalWorkspaceExport> {
+			await runtime.open(definition);
+			await runtime.captureDurability(definition.id);
+			return { settlement: null, ...(await runtime.captureLocal(definition.id)) };
+		},
 		async delete(definition: WorkspaceDefinition) {
 			await runtime.open(definition);
 			await runtime.deleteLocal(definition.id);
@@ -98,6 +110,12 @@ export function createAccountBunWorkspaceRuntime({
 			await runtime.open(definition);
 			await runtime.whenReady(definition.id);
 			await runtime.addToAccount(definition.id, copy);
+		},
+		async export(
+			definition: WorkspaceDefinition,
+		): Promise<LogicalWorkspaceExport> {
+			await runtime.open(definition);
+			return runtime.exportAccount(definition.id);
 		},
 		[Symbol.asyncDispose]: runtime[Symbol.asyncDispose],
 	});
@@ -134,6 +152,7 @@ function createBunRuntimeWithPersistence({
 		{
 			replica: ReturnType<typeof createCurrentStateReplica>;
 			documents: DocumentStore;
+			settle(): Promise<WorkspaceSyncSettlement>;
 			wake(): void;
 			emitChanged(): void;
 		}
@@ -245,6 +264,7 @@ function createBunRuntimeWithPersistence({
 				accountWorkspaces.set(workspaceId, {
 					replica,
 					documents,
+					settle: supervisor.settle,
 					wake: supervisor.wake,
 					emitChanged: emitRecordsChanged,
 				});
@@ -325,6 +345,22 @@ function createBunRuntimeWithPersistence({
 			state.notifyDeleted(addresses);
 			await state.documents.deleteAll();
 			state.emitChanged();
+		},
+		async exportAccount(workspaceId: string): Promise<LogicalWorkspaceExport> {
+			const state = accountWorkspaces.get(workspaceId);
+			if (!state)
+				throw new Error(`Account workspace '${workspaceId}' is not open`);
+			// Best effort: a pending settlement (offline, storage-limit) never
+			// blocks export; the outcome reports the quality of the scalar cut.
+			const settlement = await state.settle();
+			await runtime.captureDurability(workspaceId);
+			return {
+				settlement,
+				...(await withCapturedDocuments(
+					state.replica.captureVisible(),
+					state.documents.capture,
+				)),
+			};
 		},
 		async addToAccount(
 			workspaceId: string,

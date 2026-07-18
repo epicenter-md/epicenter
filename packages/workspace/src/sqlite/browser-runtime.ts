@@ -25,6 +25,7 @@ import {
 } from './browser-runtime-protocol.js';
 import {
 	type LogicalWorkspaceCopy,
+	type LogicalWorkspaceExport,
 	withCapturedDocuments,
 } from './canonical-addition.js';
 import type {
@@ -117,6 +118,14 @@ export function createDeviceBrowserWorkspaceRuntime({
 			await runtime.captureDurability(definition.id);
 			return runtime.captureLocal(definition.id);
 		},
+		/** A Device export is the local capture; there is no authority to settle. */
+		async export(
+			definition: WorkspaceDefinition,
+		): Promise<LogicalWorkspaceExport> {
+			await runtime.open(definition);
+			await runtime.captureDurability(definition.id);
+			return { settlement: null, ...(await runtime.captureLocal(definition.id)) };
+		},
 		async delete(definition: WorkspaceDefinition) {
 			await runtime.open(definition);
 			return runtime.deleteLocal(definition.id);
@@ -149,6 +158,12 @@ export function createAccountBrowserWorkspaceRuntime({
 			await runtime.open(definition);
 			await runtime.whenReady(definition.id);
 			return runtime.addToAccount(definition.id, copy);
+		},
+		async export(
+			definition: WorkspaceDefinition,
+		): Promise<LogicalWorkspaceExport> {
+			await runtime.open(definition);
+			return runtime.exportAccount(definition.id);
 		},
 		[Symbol.asyncDispose]: runtime[Symbol.asyncDispose],
 	});
@@ -675,6 +690,27 @@ function createBrowserRuntimeWithPersistence({
 				kind: 'logical-capture',
 			});
 			return bound.captureDocuments(copy);
+		},
+		async exportAccount(workspaceId: string): Promise<LogicalWorkspaceExport> {
+			const bound = workspaces.get(workspaceId);
+			if (!bound) {
+				return Promise.reject(
+					new Error(`Account workspace '${workspaceId}' is not open`),
+				);
+			}
+			const sync = bound.handle.sync;
+			if (!sync) {
+				return Promise.reject(
+					new Error(`Workspace '${workspaceId}' has no synchronization`),
+				);
+			}
+			// Best effort: a pending settlement (offline, storage-limit) never
+			// blocks export; the outcome reports the quality of the scalar cut.
+			const settlement = await sync.settle();
+			const copy = await request<LogicalWorkspaceCopy>(bound.manifest, {
+				kind: 'capture-visible',
+			});
+			return { settlement, ...(await bound.captureDocuments(copy)) };
 		},
 		captureDurability(workspaceId: string): Promise<void> {
 			const bound = workspaces.get(workspaceId);

@@ -284,6 +284,11 @@ async function execute(
 				throw new Error('Only Device workspaces expose logical capture');
 			}
 			return captureLocalWorkspace(state.sqlite, mergeDocumentUpdates);
+		case 'capture-visible':
+			if (!state.replica) {
+				throw new Error('Only Account workspaces expose visible capture');
+			}
+			return state.replica.captureVisible();
 		case 'logical-add':
 			if (!state.replica) {
 				throw new Error('Only Account workspaces accept logical additions');

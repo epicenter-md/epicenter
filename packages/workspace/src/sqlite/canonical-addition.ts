@@ -5,6 +5,7 @@ import {
 	type WireRowIntent,
 } from '@epicenter/row-sync';
 import type { SqliteDatabase } from '@epicenter/sqlite';
+import type { WorkspaceSyncSettlement } from './canonical-sync-supervisor.js';
 import {
 	readLocalDocumentParts,
 	readLocalRow,
@@ -21,6 +22,23 @@ export type LogicalWorkspaceRow = {
 export type LogicalWorkspaceCopy = {
 	rows: LogicalWorkspaceRow[];
 	kv: JsonObject;
+};
+
+/**
+ * One logically coordinated workspace export (ADR-0147), never an atomic
+ * cross-plane snapshot: the scalar cut and each row's compact document state
+ * are captured sequentially from local durable storage.
+ *
+ * `settlement` is `null` for a Device workspace, which has no authority to
+ * settle against. For an Account workspace it reports the best-effort scalar
+ * settlement taken before capture; a non-`caught-up` outcome means remote
+ * changes may be missing, while locally visible content (including
+ * unsynchronized intents) is always captured. A row without a `document`
+ * field is the explicit omission record: no locally available document state
+ * existed for it, and authority-side state was deliberately not fetched.
+ */
+export type LogicalWorkspaceExport = LogicalWorkspaceCopy & {
+	settlement: WorkspaceSyncSettlement | null;
 };
 
 export function captureLogicalWorkspace({

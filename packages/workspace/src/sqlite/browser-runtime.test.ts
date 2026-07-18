@@ -92,6 +92,7 @@ class FakeWorker {
 		const value = (() => {
 			switch (message.operation.kind) {
 				case 'logical-capture':
+				case 'capture-visible':
 				case 'sync-capture-recovery':
 					return {
 						rows: [
@@ -285,6 +286,45 @@ test('Device capture/delete and Account add are explicit logical actions', async
 		kind: 'logical-add',
 		copy,
 	});
+});
+
+test('Device export reports a null settlement over the local capture', async () => {
+	await using runtime = createRuntime();
+	await runtime.open(definition);
+	const exported = await runtime.export(definition);
+	expect(exported.settlement).toBeNull();
+	expect(exported.rows[0]).toMatchObject({ table: 'notes', rowId: ROW_ID });
+	expect(FakeWorker.latest?.operations.at(-1)).toEqual({
+		kind: 'logical-capture',
+	});
+});
+
+test('Account export settles first, then captures visible state with page documents', async () => {
+	globalThis.Worker = FakeWorker as unknown as typeof Worker;
+	await using runtime = createAccountBrowserWorkspaceRuntime({
+		account: {
+			deploymentId: 'https://example.test',
+			principalId: asPrincipalId('alice'),
+			transport: {
+				baseUrl: 'https://example.test',
+				openWebSocket: neverOpenWebSocket,
+			},
+		},
+		createBroadcastChannel: () => undefined,
+	});
+	const workspace = await runtime.open(definition);
+	{
+		using document = await workspace.tables.notes.document.open(ROW_ID);
+		document.get('content').insert(0, 'export me');
+		await document.whenDurable();
+	}
+	const exported = await runtime.export(definition);
+	expect(exported.settlement).toEqual({ outcome: 'caught-up' });
+	expect(exported.rows[0]?.document).toBeInstanceOf(Uint8Array);
+	const kinds = FakeWorker.latest?.operations.map((operation) => operation.kind);
+	expect(kinds?.indexOf('sync-settle')).toBeLessThan(
+		kinds?.indexOf('capture-visible') ?? -1,
+	);
 });
 
 test('page sends list and update operations', async () => {

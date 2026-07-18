@@ -354,6 +354,113 @@ test('explicit Add commits scalar Device data before explicit deletion', async (
 	}
 });
 
+test('logical export captures a settled cut, documents, and explicit omissions', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'epicenter-bun-export-'));
+	const authorityState = openAuthority();
+	const { transport } = createTransport(authorityState.authority);
+	try {
+		await using device = createDeviceBunWorkspaceRuntime({ storageRoot: root });
+		const deviceWorkspace = await device.open(definition);
+		const withDocument = await deviceWorkspace.tables.notes.create({
+			title: 'Documented',
+		});
+		const scalarOnly = await deviceWorkspace.tables.notes.create({
+			title: 'Scalar only',
+		});
+		expectOk(await deviceWorkspace.kv.set('theme', 'dark'));
+		{
+			using document =
+				await deviceWorkspace.tables.notes.document.open(withDocument.id);
+			document.get('editor').insert(0, 'body');
+			await document.whenDurable();
+		}
+		const deviceExport = await device.export(definition);
+		expect(deviceExport.settlement).toBeNull();
+		expect(deviceExport.kv).toEqual({ theme: 'dark' });
+		expect(
+			deviceExport.rows.find((row) => row.rowId === withDocument.id)?.document,
+		).toBeInstanceOf(Uint8Array);
+		// A row without local document state carries no document field: the
+		// deterministic, explicit omission record.
+		expect(
+			deviceExport.rows.find((row) => row.rowId === scalarOnly.id),
+		).not.toContainKey('document');
+
+		await using account = createAccountBunWorkspaceRuntime({
+			storageRoot: root,
+			account: {
+				deploymentId: 'https://example.test',
+				principalId: asPrincipalId('alice'),
+				transport: () => transport,
+			},
+			recordPollIntervalMs: 60_000,
+		});
+		const accountWorkspace = await account.open(definition);
+		const accountRow = await accountWorkspace.tables.notes.create({
+			title: 'Account',
+		});
+		{
+			using document =
+				await accountWorkspace.tables.notes.document.open(accountRow.id);
+			document.get('editor').insert(0, 'account body');
+			await document.whenDurable();
+		}
+		const accountExport = await account.export(definition);
+		expect(accountExport.settlement).toEqual({ outcome: 'caught-up' });
+		expect(
+			accountExport.rows.find((row) => row.rowId === accountRow.id)?.document,
+		).toBeInstanceOf(Uint8Array);
+		expect(authorityRows(authorityState.database)).toContainEqual({
+			rowId: accountRow.id,
+			fields: { title: 'Account' },
+		});
+	} finally {
+		authorityState.database.close();
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test('export stays available while the authority is unreachable', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'epicenter-bun-export-offline-'));
+	const offline = async () => {
+		throw new CurrentStateTransportInterruption(
+			'offline',
+			'network unavailable',
+		);
+	};
+	const transport: CurrentStateReplicaTransport = {
+		push: offline,
+		pull: offline,
+		acquire: offline,
+	};
+	try {
+		await using account = createAccountBunWorkspaceRuntime({
+			storageRoot: root,
+			account: {
+				deploymentId: 'https://example.test',
+				principalId: asPrincipalId('alice'),
+				transport: () => transport,
+			},
+			recordPollIntervalMs: 60_000,
+		});
+		const workspace = await account.open(definition);
+		const queued = await workspace.tables.notes.create({ title: 'Queued' });
+		const exported = await account.export(definition);
+		expect(exported.settlement).toEqual({
+			outcome: 'pending',
+			reason: 'offline',
+		});
+		// Locally visible unsynchronized content is captured, never omitted.
+		expect(exported.rows).toContainEqual({
+			table: 'notes',
+			rowId: queued.id,
+			fields: { title: 'Queued' },
+		});
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test('Device and Account own separate roots while duplicate Account owners fail', async () => {
 	const root = mkdtempSync(join(tmpdir(), 'epicenter-bun-ownership-'));
 	const authorityState = openAuthority();

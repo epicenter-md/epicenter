@@ -37,6 +37,7 @@ export type BrowserRecordOperation =
 	| { kind: 'sync-capture-recovery' }
 	| { kind: 'sync-start-fresh' }
 	| { kind: 'logical-capture' }
+	| { kind: 'capture-visible' }
 	| { kind: 'logical-add'; copy: LogicalWorkspaceCopy }
 	| { kind: 'logical-delete' }
 	| { kind: 'list'; table: string }
