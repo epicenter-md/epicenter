@@ -223,7 +223,9 @@ mountBillingApi(app, { auth: cookieOrBearer });
 // Hosted account deletion (Wave G): one route coordinates authority storage,
 // the blob prefix, the Autumn customer, storage observations, and the auth
 // user, ordered so retries stay authenticated until deletion is complete.
-mountAccountDeletionApi(app, { auth: cookieOrBearer });
+// Auth is bundled inside the mount: a fresh cookie session only, so a leaked
+// bearer can never destroy the account.
+mountAccountDeletionApi(app);
 
 // Dashboard SPA: serve the cloud UI shell for the dashboard URLs. The hosted
 // auth browser surfaces use the same shell through `mountCloudAuth` above.

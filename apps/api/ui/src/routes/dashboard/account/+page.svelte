@@ -255,6 +255,12 @@
 			onConfirm: async () => {
 				const response = await auth.fetch('/api/account', { method: 'DELETE' });
 				if (!response.ok) {
+					if (response.status === 403) {
+						// The route requires a fresh session; the remedy is the same
+						// re-sign-in the other sensitive account changes use.
+						reauthToast();
+						return;
+					}
 					toast.error(
 						response.status === 503
 							? 'Deletion did not finish. Confirm again to retry until it completes.'
