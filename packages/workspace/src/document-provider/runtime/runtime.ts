@@ -278,12 +278,47 @@ export function createRowDocumentRuntime<TConnection = never>({
 			);
 			return Promise.all(cuts).then(() => undefined);
 		},
-		/** Apply portable Yjs 14 state as ordinary locally durable document work. */
+		/**
+		 * Apply portable Yjs 14 state as ordinary locally durable document work.
+		 *
+		 * An already-open document receives the update live. A not-open document
+		 * imports through a transient persistence-only lease: no network
+		 * connection is opened and no cache entry survives, so importing many
+		 * documents (Device Add) leaves nothing behind for documents the
+		 * application never opened.
+		 */
 		async importUpdate(address: RowAddress, update: Uint8Array): Promise<void> {
 			requireRuntimeOpen();
-			const entry = await getOrCreate(copyAddress(address));
-			Y.applyUpdateV2(entry.document, new Uint8Array(update));
-			await entry.persistence.whenDurable();
+			const owned = new Uint8Array(update);
+			const key = keyOf(address);
+			const applyThroughLiveEntry = async (): Promise<boolean> => {
+				const entry =
+					cached.get(key) ??
+					(await opening.get(key)?.catch(() => undefined));
+				if (!entry || cached.get(key) !== entry || entry.revoked) return false;
+				Y.applyUpdateV2(entry.document, owned);
+				await entry.persistence.whenDurable();
+				return true;
+			};
+			if (await applyThroughLiveEntry()) return;
+			await closing.get(key);
+			await requireLive(address);
+			// An open() may have raced the liveness check; prefer its live entry
+			// over a second store attachment.
+			if (await applyThroughLiveEntry()) return;
+			const document = new Y.Doc({ gc: true });
+			const persistence = store.attach(copyAddress(address), document);
+			try {
+				await persistence.whenLoaded;
+				Y.applyUpdateV2(document, owned);
+				await persistence.whenDurable();
+			} finally {
+				try {
+					await persistence.dispose();
+				} finally {
+					document.destroy();
+				}
+			}
 		},
 		async [Symbol.asyncDispose](): Promise<void> {
 			if (disposal !== undefined) return disposal;
