@@ -1,6 +1,6 @@
 ---
 name: yjs
-description: 'Yjs 14 CRDT patterns for Epicenter row documents: @y/y shared types, transactions, updateV2 persistence, row-addressed synchronization, awareness, conflict resolution, and document storage. Use when mentioning Yjs, Y.Doc, CRDTs, collaborative editing, awareness, IndexedDB document persistence, row documents, or Yjs providers.'
+description: 'Yjs 14 CRDT patterns for Epicenter row documents: @y/y shared types, transactions, updateV2 persistence, row-addressed synchronization, awareness, conflict resolution, and document storage. Use when mentioning Yjs, Y.Doc, CRDTs, collaborative editing, awareness, owner-side SQLite document persistence, row documents, or Yjs providers.'
 metadata:
   author: epicenter
   version: '1.0'
@@ -45,20 +45,29 @@ Skip DeepWiki for stable basics and repo-local patterns already documented below
 - On Cloudflare, serialize the socket's complete fixed address within the 16,384 byte hibernation attachment limit and fan out by enumerating the actor's sockets and comparing complete attachment addresses. No tag index until measured socket counts earn one. The server retains no live Y.Doc; hydrate disposable committed state per admission and acceptance.
 - Reconnect with the same structured route and repeat state-vector exchange. Do not add durable subscription recovery or multiplexing until measured open-document socket pressure earns that machinery.
 - Use state-vector exchange followed by incremental `updateV2` messages instead of exchanging complete documents by default.
-- Presence is deliberately absent from document v3 until a concrete consumer earns awareness state, disconnect cleanup, and a later protocol major. If added later, awareness is ephemeral and must never be persisted into Y.Doc or IndexedDB as canonical data.
+- Presence is deliberately absent from document v3 until a concrete consumer earns awareness state, disconnect cleanup, and a later protocol major. If added later, awareness is ephemeral and must never be persisted into Y.Doc or the SQLite update log as canonical data.
 - Browser upgrades authenticate through exactly one `bearer.<token>` subprotocol entry. Non-browser clients may instead use an `Authorization` header. Do not use cookie-only upgrades, query-string credentials, or post-accept authentication frames.
 - Authentication, deterministic authority resolution, and row liveness are three distinct facts with one surface. Row liveness is a lifecycle invariant, not a second per-row authorization system.
 
-## IndexedDB Persistence
+## Owner-Side SQLite Persistence
 
-- There is no official `@y/indexeddb` provider for the chosen Yjs 14 line. Epicenter owns the browser provider; do not install or peer-override `y-indexeddb`.
-- Use one versioned IndexedDB database per workspace with indexed update logs keyed by document address. Do not create one database per document.
-- Attach the `updateV2` listener before hydration can race with application writes. Append copied update bytes and expose an invocation-time `whenDurable()` barrier over the persistence tail.
-- Apply stored updates with a private persistence origin so replay does not append them again.
-- `whenLoaded` means local IndexedDB hydration completed. It does not mean remote convergence.
-- Stop the update listener before clearing or disposing a document. Wait for admitted writes before deleting its stored rows or closing the database.
-- Compact at bounded thresholds by replacing a covered prefix with one complete V2 update. Compaction does not remove CRDT modeling costs inside that encoded document.
-- Treat corruption, eviction, blocked upgrades, and transaction failure as storage failures. Do not silently continue with an empty document.
+Row documents persist in the Workspace ID's own `store.sqlite3`, in one
+`workspace_document_updates` update-log table beside the scalar rows (ADR-0159).
+There is no IndexedDB row-document store and no per-runtime provider: the browser
+records Worker owns the log in its OPFS SQLite, the Bun host owns it natively,
+and the desktop WebView reaches it over the same-origin records route. There is
+no official `@y/indexeddb` provider for the Yjs 14 line; do not install or
+peer-override `y-indexeddb`.
+
+- The owner side is `createSqliteDocumentLog`: it owns schema, append admission, compaction, capture, and durable deletion. It never holds a live `Y.Doc`.
+- Renderer-facing code owns live documents through `createRowDocumentRuntime` over one `createDocumentStore` load/append seam. The renderer capability is exactly `load(address)` and `append(address, updateV2)`; capture, deletion, and compaction policy are never reachable through renderer persistence.
+- Attach the `updateV2` listener before hydration can race application writes. Append copied update bytes and expose an invocation-time `whenDurable()` barrier over the persistence tail.
+- Apply stored updates with a private hydration origin so replay does not append them again.
+- `whenLoaded` means local owner hydration completed. It does not mean remote convergence.
+- The owner checks row liveness inside the same transaction as the insert: a late append after row deletion refuses with the address-scoped `DocumentRowAbsentError` instead of resurrecting content.
+- Document death happens in the transaction that ends the row's scalar life (local delete, replica lifecycle transitions, fresh-lineage reset, workspace deletion). Deletion is owner-side; a renderer never deletes a log.
+- Compact at bounded thresholds by replaying a covered prefix through a fresh `gc: true` document and re-encoding one complete V2 update. Compaction does not remove CRDT modeling costs inside that encoded document.
+- Treat corruption, eviction, and transaction failure as storage failures. Do not silently continue with an empty document.
 
 ## Core Concepts
 
@@ -369,7 +378,9 @@ If documents grow unexpectedly, check for:
 - [GitHub issue #520](https://github.com/yjs/yjs/issues/520) - Conflict resolution discussion with dmonad
 - [fractional-indexing](https://github.com/rocicorp/fractional-indexing) - Production library
 - [YATA paper](https://www.researchgate.net/publication/310212186_Near_Real-Time_Peer-to-Peer_Shared_Editing_on_Extensible_Data_Types) - Academic foundation
-- `packages/workspace/src/document-provider/browser-indexed-db.ts`: Epicenter's owned Yjs 14 browser persistence provider
+- `packages/workspace/src/document-provider/sqlite-document-log.ts`: the owner-side Yjs 14 SQLite update log (schema, append, compaction, capture, deletion)
+- `packages/workspace/src/document-provider/persistence.ts`: the shared `createDocumentStore` load/append seam between live documents and the owner log
 - `packages/sync/src/document-v3/`: the Yjs 14 row-document wire
 - [ADR-0145](../../../docs/adr/0145-one-account-authority-owns-every-workspace-and-one-socket-per-open-row-document.md): workspace authority and document connection ownership
 - [ADR-0146](../../../docs/adr/0146-row-documents-use-one-yjs-14-major-and-runtime-native-update-logs.md): Yjs 14-only persistence decision
+- [ADR-0159](../../../docs/adr/0159-row-documents-persist-in-one-owner-side-sqlite-update-log.md): one owner-side SQLite update log and shared attachment seam
