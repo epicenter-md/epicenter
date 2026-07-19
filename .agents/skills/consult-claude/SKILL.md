@@ -80,11 +80,14 @@ The runner starts Claude in safe mode with no tools, browser, project discovery,
 or persisted session. It inherits the environment needed for local
 authentication. Do not add tools without revisiting that trust boundary.
 
-If the runtime blocks export of private context, do not silently weaken the
-packet. Explain the boundary. Prefer routing the scoped network approval to the
-user. If the user chooses a sanitized consultation instead, remove private
-identifiers, paths, code, commits, and verbatim conversation, then run from a
-neutral temporary directory.
+Sending the packet to the locally authenticated Claude CLI is an export of its
+contents. Include private context only when the user's request covers it,
+whether or not the runtime objects. If the runtime blocks export of private
+context, do not silently weaken the packet. Explain the boundary. Prefer
+routing the scoped network approval to the user. If the user chooses a
+sanitized consultation instead, remove private identifiers, paths, code,
+commits, and verbatim conversation, then run from a neutral temporary
+directory.
 
 ## Wait patiently
 
