@@ -340,14 +340,14 @@ test('explicit Add commits scalar Device data before explicit deletion', async (
 		const row = await deviceWorkspace.tables.notes.create({ title: 'Add me' });
 		expectOk(await deviceWorkspace.kv.set('theme', 'dark'));
 
-		const copy = await device.capture(definition);
-		await account.add(definition, copy);
+		const copy = await device.capture(definition.id);
+		await account.add(definition.id, copy);
 		expect(
 			expectOk(await accountWorkspace.tables.notes.get(row.id))?.title,
 		).toBe('Add me');
 		expect(expectOk(await accountWorkspace.kv.get('theme'))).toBe('dark');
 
-		await device.delete(definition);
+		await device.delete(definition.id);
 		expect((await deviceWorkspace.tables.notes.list()).rows).toEqual([]);
 		expect(expectOk(await deviceWorkspace.kv.get('theme'))).toBeUndefined();
 		expect(await accountWorkspace.sync?.settle()).toEqual({
@@ -388,14 +388,14 @@ test('retrying add() stays idempotent while the destination holds the copied doc
 			document.get('editor').insert(0, 'device body');
 			await document.whenDurable();
 		}
-		const copy = await device.capture(definition);
-		await account.add(definition, copy);
+		const copy = await device.capture(definition.id);
+		await account.add(definition.id, copy);
 
 		// The documented recovery path for an interrupted copy is retry-add. A
 		// destination that opened the imported document must not turn the retry
 		// into a persistence-attachment conflict.
 		using opened = await accountWorkspace.tables.notes.document.open(row.id);
-		await account.add(definition, copy);
+		await account.add(definition.id, copy);
 		expect(opened.get('editor').toString()).toBe('device body');
 	} finally {
 		authorityState.database.close();
@@ -437,7 +437,7 @@ test('a retained deletion marker silently refuses a copied create without resurr
 			],
 			kv: { language: 'copied' },
 		};
-		await account.add(definition, conflicting);
+		await account.add(definition.id, conflicting);
 		expect(await workspace.sync?.settle()).toEqual({ outcome: 'caught-up' });
 		expect((await workspace.tables.notes.get(doomed.id)).data).toBeUndefined();
 		expect((await workspace.kv.get('language')).data).toBe('copied');
@@ -462,10 +462,10 @@ test('Device delete revokes an open document handle before deleting storage', as
 		// Destructive cleanup disposes active leases first (ADR-0146): an open
 		// handle must not turn explicit deletion into a partial failure that has
 		// already destroyed the scalar rows.
-		await device.delete(definition);
+		await device.delete(definition.id);
 		expect(() => document.get('editor')).toThrow('revoked');
 		expect((await workspace.tables.notes.list()).rows).toEqual([]);
-		const recaptured = await device.capture(definition);
+		const recaptured = await device.capture(definition.id);
 		expect(recaptured.rows).toEqual([]);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
@@ -495,7 +495,7 @@ test('logical export captures a settled cut, documents, and explicit omissions',
 			document.get('editor').insert(0, 'body');
 			await document.whenDurable();
 		}
-		const deviceExport = await device.export(definition);
+		const deviceExport = await device.export(definition.id);
 		expect(deviceExport.settlement).toBeNull();
 		expect(deviceExport.kv).toEqual({ theme: 'dark' });
 		expect(
@@ -527,7 +527,7 @@ test('logical export captures a settled cut, documents, and explicit omissions',
 			document.get('editor').insert(0, 'account body');
 			await document.whenDurable();
 		}
-		const accountExport = await account.export(definition);
+		const accountExport = await account.export(definition.id);
 		expect(accountExport.settlement).toEqual({ outcome: 'caught-up' });
 		expect(
 			accountExport.rows.find((row) => row.rowId === accountRow.id)?.document,
@@ -567,7 +567,7 @@ test('export stays available while the authority is unreachable', async () => {
 		});
 		const workspace = await account.open(definition);
 		const queued = await workspace.tables.notes.create({ title: 'Queued' });
-		const exported = await account.export(definition);
+		const exported = await account.export(definition.id);
 		expect(exported.settlement).toEqual({
 			outcome: 'pending',
 			reason: 'offline',

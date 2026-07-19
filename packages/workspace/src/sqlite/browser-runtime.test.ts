@@ -279,13 +279,13 @@ test('Device capture/delete and Account add are explicit logical actions', async
 	let copy: Awaited<ReturnType<ReturnType<typeof createRuntime>['capture']>>;
 	{
 		await using device = createRuntime();
-		copy = await device.capture(definition);
+		copy = await device.capture(definition.id);
 		expect(copy.rows[0]).toMatchObject({
 			table: 'notes',
 			rowId: ROW_ID,
 			fields: { title: 'Browser row' },
 		});
-		await device.delete(definition);
+		await device.delete(definition.id);
 		expect(FakeWorker.latest?.operations.at(-1)).toEqual({
 			kind: 'logical-delete',
 		});
@@ -302,7 +302,7 @@ test('Device capture/delete and Account add are explicit logical actions', async
 		},
 		createBroadcastChannel: () => undefined,
 	});
-	await account.add(definition, copy);
+	await account.add(definition.id, copy);
 	expect(FakeWorker.latest?.operations.at(-1)).toEqual({
 		kind: 'logical-add',
 		copy,
@@ -311,7 +311,7 @@ test('Device capture/delete and Account add are explicit logical actions', async
 
 test('Device export reports a null settlement over the local capture', async () => {
 	await using runtime = createRuntime();
-	const exported = await runtime.export(definition);
+	const exported = await runtime.export(definition.id);
 	expect(exported.settlement).toBeNull();
 	expect(exported.rows[0]).toMatchObject({ table: 'notes', rowId: ROW_ID });
 	expect(FakeWorker.latest?.operations.at(-1)).toEqual({
@@ -338,7 +338,7 @@ test('Account export settles first, then captures visible state with page docume
 		document.get('content').insert(0, 'export me');
 		await document.whenDurable();
 	}
-	const exported = await runtime.export(definition);
+	const exported = await runtime.export(definition.id);
 	expect(exported.settlement).toEqual({ outcome: 'caught-up' });
 	expect(exported.rows[0]?.document).toBeInstanceOf(Uint8Array);
 	const kinds = FakeWorker.latest?.operations.map(

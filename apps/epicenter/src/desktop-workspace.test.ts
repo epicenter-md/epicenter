@@ -37,12 +37,14 @@ const TOKEN = 'desktop-workspace-test-token';
 test('two clients invalidate documents, disconnect independently, and survive restart', async () => {
 	const root = mkdtempSync(join(tmpdir(), 'epicenter-desktop-owner-'));
 	const createBroadcastChannel = createBroadcastChannelFactory();
+	const firstOperations: Record<string, unknown>[] = [];
 	try {
 		const firstServer = await startDesktopServer(root);
 		const firstClient = createClient(
 			firstServer.origin,
 			firstServer.cookie,
 			createBroadcastChannel,
+			firstOperations,
 		);
 		const secondClient = createClient(
 			firstServer.origin,
@@ -190,6 +192,7 @@ test('two clients invalidate documents, disconnect independently, and survive re
 				restarted.origin,
 				restarted.cookie,
 				createBroadcastChannel,
+				firstOperations,
 			);
 			const skills = await client.open(skillsWorkspace);
 			const whispering = await client.open(whisperingWorkspace);
@@ -228,9 +231,25 @@ test('two clients invalidate documents, disconnect independently, and survive re
 				id: survivingSkill.id,
 				name: 'Surviving',
 			});
+			const nonconformingLens = defineWorkspace({
+				id: skillsWorkspace.id,
+				tables: {
+					skills: defineTable({ fields: { name: field.number() } }),
+				},
+			});
+			const nonconformingSkills = await client.open(nonconformingLens);
+			expect(
+				(await nonconformingSkills.tables.skills.get(survivingSkill.id)).error
+					?.name,
+			).toBe('NonconformingRow');
 			await expect(
 				skills.sql("UPDATE skills SET name = 'Raw write'", [], {} as never),
 			).rejects.toThrow('only SELECT');
+			for (const operation of firstOperations) {
+				expect(operation).not.toHaveProperty('lens');
+				expect(operation).not.toHaveProperty('tables');
+				expect(operation).not.toHaveProperty('resultSchema');
+			}
 			await client[Symbol.asyncDispose]();
 		} finally {
 			await restarted.dispose();
@@ -293,11 +312,15 @@ function createClient(
 	origin: string,
 	cookie: string,
 	createBroadcastChannel: ReturnType<typeof createBroadcastChannelFactory>,
+	operations?: Record<string, unknown>[],
 ) {
 	return createDesktopWorkspaceRuntime({
 		baseUrl: origin,
 		createBroadcastChannel,
 		fetch(input, init) {
+			if (operations && typeof init?.body === 'string') {
+				operations.push(JSON.parse(init.body) as Record<string, unknown>);
+			}
 			return fetch(input, {
 				...init,
 				headers: { ...init?.headers, cookie, origin },

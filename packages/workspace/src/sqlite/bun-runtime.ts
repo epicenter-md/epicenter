@@ -40,7 +40,6 @@ import {
 import { classifyCurrentStateTransport } from './current-state-transport.js';
 import { initializeLocalWorkspaceStorage } from './local-workspace-storage.js';
 import { createWorkspaceRuntime } from './runtime.js';
-import type { WorkspaceLens } from './workspace-lens.js';
 
 const ownedRoots = new Set<string>();
 
@@ -77,23 +76,23 @@ export function createDeviceBunWorkspaceRuntime({
 	return Object.freeze({
 		open: runtime.open,
 		openRaw: runtime.openRaw,
-		async capture(definition: WorkspaceLens) {
-			await runtime.open(definition);
-			await runtime.captureDurability(definition.id);
-			return runtime.captureLocal(definition.id);
+		async capture(workspaceId: string) {
+			await runtime.openRaw(workspaceId);
+			await runtime.captureDurability(workspaceId);
+			return runtime.captureLocal(workspaceId);
 		},
 		/** A Device export is the local capture; there is no authority to settle. */
-		async export(definition: WorkspaceLens): Promise<LogicalWorkspaceExport> {
-			await runtime.open(definition);
-			await runtime.captureDurability(definition.id);
+		async export(workspaceId: string): Promise<LogicalWorkspaceExport> {
+			await runtime.openRaw(workspaceId);
+			await runtime.captureDurability(workspaceId);
 			return {
 				settlement: null,
-				...(await runtime.captureLocal(definition.id)),
+				...(await runtime.captureLocal(workspaceId)),
 			};
 		},
-		async delete(definition: WorkspaceLens) {
-			await runtime.open(definition);
-			await runtime.deleteLocal(definition.id);
+		async delete(workspaceId: string) {
+			await runtime.openRaw(workspaceId);
+			await runtime.deleteLocal(workspaceId);
 		},
 		[Symbol.asyncDispose]: runtime[Symbol.asyncDispose],
 	});
@@ -114,14 +113,14 @@ export function createAccountBunWorkspaceRuntime({
 	return Object.freeze({
 		open: runtime.open,
 		openRaw: runtime.openRaw,
-		async add(definition: WorkspaceLens, copy: LogicalWorkspaceCopy) {
-			await runtime.open(definition);
-			await runtime.whenReady(definition.id);
-			await runtime.addToAccount(definition.id, copy);
+		async add(workspaceId: string, copy: LogicalWorkspaceCopy) {
+			await runtime.openRaw(workspaceId);
+			await runtime.whenReady(workspaceId);
+			await runtime.addToAccount(workspaceId, copy);
 		},
-		async export(definition: WorkspaceLens): Promise<LogicalWorkspaceExport> {
-			await runtime.open(definition);
-			return runtime.exportAccount(definition.id);
+		async export(workspaceId: string): Promise<LogicalWorkspaceExport> {
+			await runtime.openRaw(workspaceId);
+			return runtime.exportAccount(workspaceId);
 		},
 		[Symbol.asyncDispose]: runtime[Symbol.asyncDispose],
 	});

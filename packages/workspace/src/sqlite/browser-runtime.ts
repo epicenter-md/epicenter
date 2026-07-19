@@ -33,7 +33,7 @@ import type {
 } from './canonical-sync-supervisor.js';
 import { CurrentStateTransportInterruption } from './current-state-transport.js';
 import type { Workspace } from './runtime.js';
-import type { WorkspaceLens } from './workspace-lens.js';
+import { assertWorkspaceId, type WorkspaceLens } from './workspace-lens.js';
 
 type PendingRequest = {
 	resolve(value: unknown): void;
@@ -114,23 +114,23 @@ export function createDeviceBrowserWorkspaceRuntime({
 	});
 	return Object.freeze({
 		open: runtime.open,
-		async capture(definition: WorkspaceLens) {
-			await runtime.open(definition);
-			await runtime.captureDurability(definition.id);
-			return runtime.captureLocal(definition.id);
+		async capture(workspaceId: string) {
+			await runtime.openRaw(workspaceId);
+			await runtime.captureDurability(workspaceId);
+			return runtime.captureLocal(workspaceId);
 		},
 		/** A Device export is the local capture; there is no authority to settle. */
-		async export(definition: WorkspaceLens): Promise<LogicalWorkspaceExport> {
-			await runtime.open(definition);
-			await runtime.captureDurability(definition.id);
+		async export(workspaceId: string): Promise<LogicalWorkspaceExport> {
+			await runtime.openRaw(workspaceId);
+			await runtime.captureDurability(workspaceId);
 			return {
 				settlement: null,
-				...(await runtime.captureLocal(definition.id)),
+				...(await runtime.captureLocal(workspaceId)),
 			};
 		},
-		async delete(definition: WorkspaceLens) {
-			await runtime.open(definition);
-			return runtime.deleteLocal(definition.id);
+		async delete(workspaceId: string) {
+			await runtime.openRaw(workspaceId);
+			return runtime.deleteLocal(workspaceId);
 		},
 		[Symbol.asyncDispose]: runtime[Symbol.asyncDispose],
 	});
@@ -156,14 +156,14 @@ export function createAccountBrowserWorkspaceRuntime({
 	});
 	return Object.freeze({
 		open: runtime.open,
-		async add(definition: WorkspaceLens, copy: LogicalWorkspaceCopy) {
-			await runtime.open(definition);
-			await runtime.whenReady(definition.id);
-			return runtime.addToAccount(definition.id, copy);
+		async add(workspaceId: string, copy: LogicalWorkspaceCopy) {
+			await runtime.openRaw(workspaceId);
+			await runtime.whenReady(workspaceId);
+			return runtime.addToAccount(workspaceId, copy);
 		},
-		async export(definition: WorkspaceLens): Promise<LogicalWorkspaceExport> {
-			await runtime.open(definition);
-			return runtime.exportAccount(definition.id);
+		async export(workspaceId: string): Promise<LogicalWorkspaceExport> {
+			await runtime.openRaw(workspaceId);
+			return runtime.exportAccount(workspaceId);
 		},
 		[Symbol.asyncDispose]: runtime[Symbol.asyncDispose],
 	});
@@ -597,7 +597,42 @@ function createBrowserRuntimeWithPersistence({
 		};
 	}
 
+	function openRaw(workspaceId: string): Promise<BoundWorkspace> {
+		assertOpen();
+		assertWorkspaceId(workspaceId);
+		const existing = workspaces.get(workspaceId);
+		if (existing) return existing.opened.then(() => existing);
+		const manifest: BrowserWorkspaceManifest = {
+			workspaceId,
+			storageKey: workspaceStorageKey(persistenceKey, workspaceId),
+			rowSync: transport?.binding,
+		};
+		const binding = createBinding(workspaceId, manifest);
+		const created: BoundWorkspace = {
+			manifest,
+			views: new Map(),
+			...binding,
+			opened: undefined as never,
+		};
+		workspaces.set(workspaceId, created);
+		created.opened = request<{ isReady: boolean }>(manifest, {
+			kind: 'open',
+		}).then(
+			({ isReady }) => {
+				if (isReady) created.notifyReady();
+			},
+			(cause) => {
+				const error = cause instanceof Error ? cause : new Error(String(cause));
+				void created.revokeDocuments(error);
+				created.rejectReadiness(error);
+				throw error;
+			},
+		);
+		return created.opened.then(() => created);
+	}
+
 	return {
+		openRaw,
 		/**
 		 * Opens the workspace and resolves only with a ready handle. The stable
 		 * Worker proxy and its FIFO request queue exist behind this promise;
@@ -610,51 +645,25 @@ function createBrowserRuntimeWithPersistence({
 			definition: TDefinition,
 		): Promise<Workspace<TDefinition>> {
 			assertOpen();
-			const bound = workspaces.get(definition.id);
-			if (bound) {
-				const cached = bound.views.get(definition);
+			const existing = workspaces.get(definition.id);
+			if (existing) {
+				const cached = existing.views.get(definition);
 				if (cached) return cached as Promise<Workspace<TDefinition>>;
-				const existing = bound;
 				const view = existing.opened.then(() =>
 					existing.createView(definition),
 				);
-				bound.views.set(definition, view as Promise<Workspace<WorkspaceLens>>);
+				existing.views.set(
+					definition,
+					view as Promise<Workspace<WorkspaceLens>>,
+				);
 				return view;
 			}
-			const manifest: BrowserWorkspaceManifest = {
-				workspaceId: definition.id,
-				storageKey: workspaceStorageKey(persistenceKey, definition.id),
-				rowSync: transport?.binding,
-			};
-			const binding = createBinding(definition.id, manifest);
-			const createdBound: BoundWorkspace = {
-				manifest,
-				views: new Map(),
-				...binding,
-				opened: undefined as never,
-			};
-			workspaces.set(definition.id, createdBound);
-			createdBound.opened = request<{ isReady: boolean }>(manifest, {
-				kind: 'open',
-			}).then(
-				({ isReady }) => {
-					if (isReady) createdBound.notifyReady();
-				},
-				(cause) => {
-					const error =
-						cause instanceof Error ? cause : new Error(String(cause));
-					void createdBound.revokeDocuments(error);
-					createdBound.rejectReadiness(error);
-					throw error;
-				},
-			);
-			const view = createdBound.opened.then(() =>
-				createdBound.createView(definition),
-			);
-			createdBound.views.set(
-				definition,
-				view as Promise<Workspace<WorkspaceLens>>,
-			);
+			const opening = openRaw(definition.id);
+			const created = workspaces.get(definition.id);
+			if (!created)
+				throw new Error(`Workspace '${definition.id}' failed to open`);
+			const view = opening.then(() => created.createView(definition));
+			created.views.set(definition, view as Promise<Workspace<WorkspaceLens>>);
 			return view;
 		},
 		async captureLocal(workspaceId: string): Promise<LogicalWorkspaceCopy> {
