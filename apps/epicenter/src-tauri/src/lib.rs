@@ -75,8 +75,8 @@ pub mod clipboard;
 
 const PRODUCT_NAME: &str = "Epicenter";
 /// Reserved label prefix for derived-catalog app windows (ADR-0153). One
-/// capability glob (`app-*`) grants every such window the fixed trusted-app
-/// authority, so no host-internal window label may ever start with it.
+/// capability glob (`app-*`) grants every such window the first trusted-app
+/// authority slice, so no host-internal window label may ever start with it.
 const APP_WINDOW_PREFIX: &str = "app-";
 #[cfg(any(not(debug_assertions), test))]
 const PRODUCTION_PORT: u16 = 39_130;
@@ -1343,7 +1343,7 @@ mod tests {
     }
 
     #[test]
-    fn app_window_capabilities_grant_the_glob_scoped_trusted_authority() {
+    fn app_window_capabilities_grant_the_glob_scoped_http_slice() {
         for encoded in [
             include_str!("../capabilities/trusted-app-windows-development.json"),
             include_str!("../capabilities/trusted-app-windows-production.json"),
@@ -1370,7 +1370,7 @@ mod tests {
             assert_eq!(
                 allowed,
                 ["http://*", "https://*", "http://*:*", "https://*:*"],
-                "trusted app windows get unrestricted HTTP(S) egress and nothing else"
+                "the first trusted-app authority slice is unrestricted HTTP(S) egress"
             );
         }
     }

@@ -1,7 +1,7 @@
 {
 	"$schema": "../gen/schemas/desktop-schema.json",
 	"identifier": "trusted-app-windows-development",
-	"description": "Grants every development derived-catalog app window (reserved app-* label glob) the fixed trusted-app authority: unrestricted HTTP(S) egress through the Tauri HTTP plugin (ADR-0153).",
+	"description": "Grants every development derived-catalog app window (reserved app-* label glob) the first trusted-app authority slice: unrestricted HTTP(S) egress through the Tauri HTTP plugin (ADR-0153).",
 	"local": false,
 	"windows": ["app-*"],
 	"remote": {
