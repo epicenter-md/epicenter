@@ -91,7 +91,10 @@ async function assertBooted(page: Page): Promise<void> {
 	await page.waitForSelector(app.readySelector);
 	const text = await page.evaluate(() => document.body.innerText);
 	for (const failure of FAILURE_TEXTS) {
-		assert(!text.includes(failure), `boot landed on failure screen: ${failure}`);
+		assert(
+			!text.includes(failure),
+			`boot landed on failure screen: ${failure}`,
+		);
 	}
 }
 
@@ -100,7 +103,9 @@ const pageErrors: string[] = [];
 const watched: Page[] = [];
 function watch(page: Page): Page {
 	page.setDefaultTimeout(30_000);
-	page.on('pageerror', (error) => pageErrors.push(error.stack ?? error.message));
+	page.on('pageerror', (error) =>
+		pageErrors.push(error.stack ?? error.message),
+	);
 	watched.push(page);
 	return page;
 }

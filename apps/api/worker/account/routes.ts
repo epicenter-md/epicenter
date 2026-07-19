@@ -46,9 +46,9 @@ import {
 import type { Hono, MiddlewareHandler } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import { describeRoute } from 'hono-openapi';
-import { extractErrorMessage } from 'wellcrafted/error';
+import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { createBillingService } from '../billing/service.js';
-import { runAccountDeletion } from './service.js';
+import { type AccountDeletionStep, runAccountDeletion } from './service.js';
 
 /**
  * Better Auth's `session.freshAge` default. The deployment's auth config does
@@ -56,6 +56,31 @@ import { runAccountDeletion } from './service.js';
  * mirrors the same window `SESSION_NOT_FRESH` uses for login-method changes.
  */
 const FRESH_AGE_SECONDS = 60 * 60 * 24;
+
+/**
+ * Error variants for the hosted deletion surface, owned beside their only
+ * consumer: account deletion is hosted deployment policy (see the module
+ * JSDoc), so this union is cloud-local, not a shared contract. Each factory
+ * returns the wellcrafted envelope `{ data: null, error: { name, message,
+ * ...fields } }` that `c.json` serializes directly. The dashboard branches on
+ * HTTP status alone; `SessionNotFresh.code` mirrors the `SESSION_NOT_FRESH`
+ * code Better Auth emits for the other fresh-session surfaces.
+ */
+const AccountDeletionError = defineErrors({
+	Unauthorized: () => ({ message: 'Session required' }),
+	SessionNotFresh: () => ({
+		message: 'Sign in again to delete your account.',
+		code: 'SESSION_NOT_FRESH',
+	}),
+	AccountDeletionIncomplete: ({
+		failedStep,
+	}: {
+		failedStep: AccountDeletionStep;
+	}) => ({
+		message: `Account deletion did not complete (step: ${failedStep}). Retry the request.`,
+		failedStep,
+	}),
+});
 
 /**
  * Cookie-only, cache-bypassing, freshness-gated authentication for the one
@@ -70,23 +95,11 @@ const requireFreshCookieSession: MiddlewareHandler<CloudEnv> =
 			query: { disableCookieCache: true },
 		});
 		if (!session) {
-			return c.json(
-				{ error: { name: 'Unauthorized', message: 'Session required' } },
-				401,
-			);
+			return c.json(AccountDeletionError.Unauthorized(), 401);
 		}
 		const createdAt = new Date(session.session.createdAt).getTime();
 		if (Date.now() - createdAt >= FRESH_AGE_SECONDS * 1000) {
-			return c.json(
-				{
-					error: {
-						name: 'SessionNotFresh',
-						code: 'SESSION_NOT_FRESH',
-						message: 'Sign in again to delete your account.',
-					},
-				},
-				403,
-			);
+			return c.json(AccountDeletionError.SessionNotFresh(), 403);
 		}
 		c.set('principal', Principal.assert(session.user));
 		return next();
@@ -146,13 +159,9 @@ export function mountAccountDeletionApi(app: Hono<CloudEnv>): void {
 			);
 			if (result.outcome === 'incomplete') {
 				return c.json(
-					{
-						error: {
-							name: 'AccountDeletionIncomplete',
-							message: `Account deletion did not complete (step: ${result.failedStep}). Retry the request.`,
-							failedStep: result.failedStep,
-						},
-					},
+					AccountDeletionError.AccountDeletionIncomplete({
+						failedStep: result.failedStep,
+					}),
 					503,
 				);
 			}

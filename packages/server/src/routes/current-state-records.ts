@@ -111,71 +111,76 @@ function createCurrentStateRecordsApp<E extends Env>(
 		};
 	}
 
-	return app
-		.post(`${RECORDS_ROUTE}/push`, async (c) => {
-			const parsed = await parseJson(c, parsePushRequest);
-			if (!parsed.ok) return invalidRequest(c, parsed.reason);
-			const refusal = refuseMismatchedProtocol(c, parsed.value);
-			if (refusal) return refusal;
-			try {
-				const selected = selectAuthority(c);
-				if (
-					!(await selected.authority.hasReplica(
-						selected.workspaceId,
-						parsed.value.replicaId,
-					)) &&
-					admitFirstContact &&
-					(await admitFirstContact(c, selected)) === 'refuse'
-				) {
-					return c.json({ result: 'storage-limit' } as const);
+	return (
+		app
+			.post(`${RECORDS_ROUTE}/push`, async (c) => {
+				const parsed = await parseJson(c, parsePushRequest);
+				if (!parsed.ok) return invalidRequest(c, parsed.reason);
+				const refusal = refuseMismatchedProtocol(c, parsed.value);
+				if (refusal) return refusal;
+				try {
+					const selected = selectAuthority(c);
+					if (
+						!(await selected.authority.hasReplica(
+							selected.workspaceId,
+							parsed.value.replicaId,
+						)) &&
+						admitFirstContact &&
+						(await admitFirstContact(c, selected)) === 'refuse'
+					) {
+						return c.json({ result: 'storage-limit' } as const);
+					}
+					return c.json(
+						await selected.authority.push(selected.workspaceId, parsed.value),
+					);
+				} catch (cause) {
+					if (cause instanceof TypeError) return invalidRequest(c, 'invalid');
+					throw cause;
 				}
-				return c.json(
-					await selected.authority.push(selected.workspaceId, parsed.value),
-				);
-			} catch (cause) {
-				if (cause instanceof TypeError) return invalidRequest(c, 'invalid');
-				throw cause;
-			}
-		})
-		.post(`${RECORDS_ROUTE}/pull`, async (c) => {
-			const parsed = await parseJson(c, parsePullRequest);
-			if (!parsed.ok) return invalidRequest(c, parsed.reason);
-			const refusal = refuseMismatchedProtocol(c, parsed.value);
-			if (refusal) return refusal;
-			try {
+			})
+			.post(`${RECORDS_ROUTE}/pull`, async (c) => {
+				const parsed = await parseJson(c, parsePullRequest);
+				if (!parsed.ok) return invalidRequest(c, parsed.reason);
+				const refusal = refuseMismatchedProtocol(c, parsed.value);
+				if (refusal) return refusal;
+				try {
+					const selected = selectAuthority(c);
+					return c.json(
+						await selected.authority.pull(selected.workspaceId, parsed.value),
+					);
+				} catch (cause) {
+					if (cause instanceof TypeError) return invalidRequest(c, 'invalid');
+					throw cause;
+				}
+			})
+			.post(`${RECORDS_ROUTE}/acquire`, async (c) => {
+				const parsed = await parseJson(c, parseAcquireRequest);
+				if (!parsed.ok) return invalidRequest(c, parsed.reason);
+				const refusal = refuseMismatchedProtocol(c, parsed.value);
+				if (refusal) return refusal;
+				try {
+					const selected = selectAuthority(c);
+					return c.json(
+						await selected.authority.acquire(
+							selected.workspaceId,
+							parsed.value,
+						),
+					);
+				} catch (cause) {
+					if (cause instanceof TypeError) return invalidRequest(c, 'invalid');
+					throw cause;
+				}
+			})
+			// Workspace deletion is never refused (ADR-0145): it is a pure authority
+			// transaction that shrinks the database and closes the workspace's document
+			// sockets after commit. Account deletion is a separate operation because it
+			// coordinates authority storage, R2, and authentication-owned records.
+			.delete(WORKSPACE_ROUTE, async (c) => {
 				const selected = selectAuthority(c);
-				return c.json(
-					await selected.authority.pull(selected.workspaceId, parsed.value),
-				);
-			} catch (cause) {
-				if (cause instanceof TypeError) return invalidRequest(c, 'invalid');
-				throw cause;
-			}
-		})
-		.post(`${RECORDS_ROUTE}/acquire`, async (c) => {
-			const parsed = await parseJson(c, parseAcquireRequest);
-			if (!parsed.ok) return invalidRequest(c, parsed.reason);
-			const refusal = refuseMismatchedProtocol(c, parsed.value);
-			if (refusal) return refusal;
-			try {
-				const selected = selectAuthority(c);
-				return c.json(
-					await selected.authority.acquire(selected.workspaceId, parsed.value),
-				);
-			} catch (cause) {
-				if (cause instanceof TypeError) return invalidRequest(c, 'invalid');
-				throw cause;
-			}
-		})
-		// Workspace deletion is never refused (ADR-0145): it is a pure authority
-		// transaction that shrinks the database and closes the workspace's document
-		// sockets after commit. Account deletion is a separate operation because it
-		// coordinates authority storage, R2, and authentication-owned records.
-		.delete(WORKSPACE_ROUTE, async (c) => {
-			const selected = selectAuthority(c);
-			await selected.authority.deleteWorkspace(selected.workspaceId);
-			return c.body(null, 204);
-		});
+				await selected.authority.deleteWorkspace(selected.workspaceId);
+				return c.body(null, 204);
+			})
+	);
 }
 
 /** Mount the authenticated current-state logical-record authority. */

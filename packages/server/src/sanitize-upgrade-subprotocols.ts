@@ -24,20 +24,20 @@
  * to auto-echo.
  */
 
-import { MAIN_SUBPROTOCOL, parseSubprotocols } from "@epicenter/sync";
+import { MAIN_SUBPROTOCOL, parseSubprotocols } from '@epicenter/sync';
 
 /** Rewrite `request`'s subprotocol header to the main one only (or none). */
 export function sanitizeUpgradeSubprotocols(
-  request: Request,
-  selected = MAIN_SUBPROTOCOL,
+	request: Request,
+	selected = MAIN_SUBPROTOCOL,
 ): void {
-  const offered = parseSubprotocols(
-    request.headers.get("sec-websocket-protocol"),
-  );
-  if (offered.length === 0) return;
-  if (offered.includes(selected)) {
-    request.headers.set("sec-websocket-protocol", selected);
-  } else {
-    request.headers.delete("sec-websocket-protocol");
-  }
+	const offered = parseSubprotocols(
+		request.headers.get('sec-websocket-protocol'),
+	);
+	if (offered.length === 0) return;
+	if (offered.includes(selected)) {
+		request.headers.set('sec-websocket-protocol', selected);
+	} else {
+		request.headers.delete('sec-websocket-protocol');
+	}
 }

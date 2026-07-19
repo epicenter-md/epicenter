@@ -123,9 +123,9 @@ export {
 } from './routes/current-state-records.js';
 export { mountInferenceApp } from './routes/inference.js';
 export { mountRoomsApp } from './routes/rooms.js';
-export { mountWorkspaceDocumentsApp } from './routes/workspace-documents.js';
 export { mountSessionApp } from './routes/session.js';
 export { mountTranscriptionApp } from './routes/transcription.js';
+export { mountWorkspaceDocumentsApp } from './routes/workspace-documents.js';
 export { createServerApp } from './server-app.js';
 // The portable env contract as both arktype schema (value) and inferred type;
 // the Bun entry validates `process.env` against it at boot (merging its own

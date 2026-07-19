@@ -100,7 +100,6 @@ describe('update field changes', () => {
 		).toBeFalse();
 		expect(isAdmissibleIntent(update({ set: {}, unset: ['b'] }))).toBeTrue();
 	});
-
 });
 
 describe('protocol constant nesting', () => {

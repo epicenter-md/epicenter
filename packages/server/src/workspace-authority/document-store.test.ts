@@ -337,9 +337,9 @@ test('a deletion shrinks an at-bound document and future growth resumes', () => 
 		for (const part of authority.documents.openIfLive(ADDRESS) ?? []) {
 			Y.applyUpdateV2(rehydrated, part);
 		}
-		expect(
-			Y.encodeStateAsUpdateV2(rehydrated).byteLength,
-		).toBeLessThan(DOCUMENT_BOUND.stateBytes / 2);
+		expect(Y.encodeStateAsUpdateV2(rehydrated).byteLength).toBeLessThan(
+			DOCUMENT_BOUND.stateBytes / 2,
+		);
 		client.destroy();
 		rehydrated.destroy();
 	} finally {

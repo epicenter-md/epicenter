@@ -33,7 +33,8 @@ import {
 
 // SMOKE_BROWSER=webkit runs the same gate on WebKit (the Safari engine the
 // physical iPhone gate depends on); the default stays Chromium.
-const engineName = process.env.SMOKE_BROWSER === 'webkit' ? 'webkit' : 'chromium';
+const engineName =
+	process.env.SMOKE_BROWSER === 'webkit' ? 'webkit' : 'chromium';
 const engine = engineName === 'webkit' ? webkit : chromium;
 
 const pagePort = 5214;
@@ -235,7 +236,7 @@ try {
 	);
 	assert(
 		crossRead.data?.title === 'first',
-		'stealing Worker did not read the previous owner\'s OPFS state',
+		"stealing Worker did not read the previous owner's OPFS state",
 	);
 	const sqlRows = await second.evaluate(() =>
 		window.productionBrowserRuntime.sql(),
@@ -253,7 +254,8 @@ try {
 			),
 	);
 	assert(
-		typeof stolenFailure === 'string' && /moved to a newer tab/.test(stolenFailure),
+		typeof stolenFailure === 'string' &&
+			/moved to a newer tab/.test(stolenFailure),
 		`stolen tab did not fail loudly: ${stolenFailure}`,
 	);
 	// The steal also notifies the stolen page once through onBackgroundError,

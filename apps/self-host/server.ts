@@ -50,8 +50,8 @@ import { join, resolve } from 'node:path';
 import { assertStrongToken } from '@epicenter/auth';
 import {
 	createAttachRelayBunServer,
-	createBunRooms,
 	createBunAccountAuthorityRuntime,
+	createBunRooms,
 	createDeviceGrantStore,
 	createEnvTokenResolver,
 	createServerApp,
@@ -60,16 +60,16 @@ import {
 	mountAttachRelayApp,
 	mountBlobsApp,
 	mountCurrentStateRecordsApp,
-	mountWorkspaceDocumentsApp,
 	mountHostDirectoryApp,
 	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
 	mountTranscriptionApp,
+	mountWorkspaceDocumentsApp,
 	rateLimit,
 	requireBearerPrincipal,
-	withDocumentAuthorizationDeadline,
 	ServerBindings,
+	withDocumentAuthorizationDeadline,
 } from '@epicenter/server/bun';
 import { type } from 'arktype';
 import { resolveSelfHostTrustedOrigins } from './trusted-origins.js';

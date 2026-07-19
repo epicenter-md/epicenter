@@ -1,6 +1,6 @@
 export {
-	attachDocumentConnection,
 	attachAuthenticatedDocumentConnection,
+	attachDocumentConnection,
 	type DocumentConnection,
 	type DocumentConnectionOptions,
 	type DocumentConnectionStatus,

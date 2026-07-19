@@ -295,7 +295,7 @@ no workspace lookup.
 
 For production-shaped browser wiring, see
 `apps/honeycrisp/src/lib/workspace/browser.ts`. For the boot-time doc selection, see
-`apps/honeycrisp/src/lib/honeycrisp.ts`.
+`apps/honeycrisp/src/lib/application.ts`.
 
 ## Core Philosophy
 

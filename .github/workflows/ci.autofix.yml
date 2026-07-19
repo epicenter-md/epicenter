@@ -21,8 +21,10 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: 'package.json'
+      # Frozen so a formatting pass can never resolve new dependency versions
+      # and push a mutated bun.lock back to the PR branch.
       - name: Install dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
       - name: Format
         run: bun run format
       - name: Apply fixes

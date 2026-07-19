@@ -100,7 +100,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0021](0021-actions-are-the-only-surface-that-crosses-a-process-boundary.md) | Actions are the only surface that crosses a process boundary | Accepted |
 | [0022](0022-rust-owns-the-models-folder-the-webview-owns-the-catalog.md) | Rust owns the models folder, the webview owns the catalog | Accepted |
 | [0023](0023-whispering-separates-its-identity-mark-from-lucide-controls.md) | Whispering separates its identity mark from Lucide controls | Accepted |
-| [0024](0024-an-always-on-worker-runs-app-semantics-beside-the-app-blind-anchor.md) | An always-on worker runs app semantics beside the app-blind anchor | Proposed |
+| [0024](0024-an-always-on-worker-runs-app-semantics-beside-the-app-blind-anchor.md) | An always-on worker runs app semantics beside the app-blind anchor | Superseded by 0043 |
 | [0025](0025-agent-conversations-are-durable-child-docs-driven-by-an-observing-worker.md) | Agent conversations are durable child docs driven by an observing worker | Proposed |
 | [0026](0026-matter-vault-sqlite-is-a-projection-never-a-verdict-source.md) | The Matter vault's SQLite mirror is a read-only projection, never a verdict source | Accepted |
 | [0027](0027-playback-pause-tracks-the-speaking-window.md) | Playback pause tracks the speaking window; VAD pauses per utterance | Accepted |
@@ -203,7 +203,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0124](0124-workspace-documents-are-top-level-parameterized-resources.md) | Workspace documents are top-level parameterized resources | Superseded by 0130 |
 | [0125](0125-record-definitions-are-release-local-lenses-and-never-migrate-user-data.md) | Record definitions are release-local lenses and never migrate user data | Accepted |
 | [0126](0126-child-documents-use-format-capabilities-and-evolve-outside-records-databases.md) | Child documents use format capabilities and evolve outside records databases | Superseded by 0124 (touch policy amended by 0128) |
-| [0127](0127-chat-streams-live-turns-in-client-state-and-stores-finished-messages-as-records.md) | Chat streams live turns in client state and stores finished messages as records | Proposed |
+| [0127](0127-chat-streams-live-turns-in-client-state-and-stores-finished-messages-as-records.md) | Chat streams live turns in client state and stores finished messages as records | Superseded by 0152 |
 | [0128](0128-tables-do-not-declare-document-edit-touch-policy-without-a-runtime-owner.md) | Tables do not declare document-edit touch policy without a runtime owner | Accepted |
 | [0129](0129-matter-and-workspace-share-fields-not-authority-policy.md) | Matter and Workspace share fields, not authority policy | Accepted |
 | [0130](0130-workspace-definitions-expose-tables-with-row-owned-documents-and-a-release-local-kv-lens.md) | Workspace definitions expose tables with row-owned documents and a release-local KV lens | Accepted |

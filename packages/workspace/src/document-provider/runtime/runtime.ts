@@ -325,8 +325,7 @@ export function createRowDocumentRuntime<TConnection = never>({
 			const key = keyOf(address);
 			const applyThroughLiveEntry = async (): Promise<boolean> => {
 				const entry =
-					cached.get(key) ??
-					(await opening.get(key)?.catch(() => undefined));
+					cached.get(key) ?? (await opening.get(key)?.catch(() => undefined));
 				if (!entry || cached.get(key) !== entry || entry.revoked) return false;
 				Y.applyUpdateV2(entry.document, owned);
 				await entry.persistence.whenDurable();

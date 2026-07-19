@@ -29,8 +29,11 @@ jobs:
           bun-version-file: 'package.json'
       - name: Install dependencies
         run: bun install --frozen-lockfile
+      # Errors only, as GitHub annotations: the warning debt stays visible in
+      # local `bun run lint:check`, not in every CI log. Exit semantics are
+      # unchanged (warnings never fail either command).
       - name: Lint check
-        run: bun run lint:check
+        run: bun run lint:ci
       - name: Type check
         run: bun run typecheck
       # Rejects backtick-wrapped repo-rooted file paths in living docs that are
@@ -38,12 +41,6 @@ jobs:
       # ignore-file-marked docs. See scripts/check-doc-paths.ts.
       - name: Check doc file references
         run: bun run check:doc-paths
-      # Rejects specs that declare a terminal status (a finished spec should be
-      # harvested into docs/adr/ and deleted, not left in the tree) and Proposed
-      # ADRs orphaned by a deleted spec. A backstop for the gate the agent also
-      # runs in spec-execution Phase 4. See scripts/check-doc-hygiene.ts.
-      - name: Check doc hygiene
-        run: bun run check:doc-hygiene
       # Rejects floating specs (latest, *, dist-tags) in the bun catalog. A
       # catalog entry IS the version pin; a floating one reintroduces lockfile
       # drift that only surfaces as a frozen-install failure here, days later,
@@ -51,33 +48,10 @@ jobs:
       - name: Check catalog pins
         run: bun run check:catalog-pins
       # The Biome plugin at scripts/biome/c-json-errors.grit rejects ad-hoc
-      # c.json({ ... }, 4xx/5xx) error literals as part of `bun run lint:check`
-      # above; no separate step is needed. See
-      # specs/20260524T100110-centralize-c-json-error-responses.md.
+      # c.json({ ... }, 4xx/5xx) error literals as part of `bun run lint:ci`
+      # above; no separate step is needed.
+      # Rejects wire URL path literals hardcoded outside
+      # packages/constants/src/{api,oauth}-routes.ts. See
+      # scripts/check-api-paths.ts for the rule and its exclusions.
       - name: Reject hardcoded API path literals
-        # Every wire URL path Epicenter serves or calls lives in one
-        # place: packages/constants/src/{api,oauth}-routes.ts. Consumers
-        # import patterns + URL builders from there. See
-        # specs/20260524T153612-centralize-route-paths.md.
-        #
-        # Excludes (per spec § Decisions Log):
-        #   - The constants files themselves (they ARE the source of truth).
-        #   - Vendored mirrors that intentionally re-declare these paths to
-        #     avoid a runtime dependency on @epicenter/constants
-        #     (packages/sync/src/room-route.ts, packages/auth/src/routes.ts,
-        #     apps/epicenter/src/routes.ts, whose /api/session is the shell's
-        #     own loopback contract, not the cloud session endpoint).
-        #   - *.test.ts / *.test.tsx (mock URL matchers are allowed to
-        #     reference paths verbatim).
-        #   - JSDoc/comment lines (descriptive prose, not constructions).
-        run: |
-          if grep -rEn --include='*.ts' --include='*.tsx' \
-              --exclude='*.test.ts' --exclude='*.test.tsx' \
-              --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=.wrangler --exclude-dir=.next --exclude-dir=.svelte-kit \
-              "['\"\`]/api/(session|rooms|blobs|ai)([^a-z]|$)|['\"\`]/auth/(oauth2/[a-z]+|cli-callback)" \
-              packages apps \
-              | grep -vE "packages/constants/src/(api|oauth)-routes\.ts|packages/sync/src/room-route\.ts|packages/auth/src/routes\.ts|apps/epicenter/src/routes\.ts|packages/server/src/auth-pages/scripts/" \
-              | grep -vE "^[^:]+:[0-9]+:[[:space:]]*(\*|//|/\*)" ; then
-            echo "::error::Hardcoded API path literal found. Use API_ROUTES.* from @epicenter/constants/api-routes or OAUTH_ROUTES.* from @epicenter/constants/oauth-routes instead."
-            exit 1
-          fi
+        run: bun run check:api-paths
