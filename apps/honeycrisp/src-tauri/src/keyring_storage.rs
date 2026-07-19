@@ -8,10 +8,10 @@
 //! crate. Its default `v1` feature already picks the right native backend per
 //! platform, so there is no per-OS Cargo feature to juggle here.
 //!
-//! `keyring`'s `Entry` calls are blocking OS/D-Bus round-trips (and can block
-//! on a locked keychain waiting for the user), so both commands hop onto the
-//! runtime's blocking pool via `tauri::async_runtime::spawn_blocking` instead
-//! of running on an async worker thread.
+//! `keyring`'s `Entry` calls are blocking OS/D-Bus round-trips. Commands hop
+//! onto Tauri's blocking pool. The one boot read intentionally runs before the
+//! main WebView is constructed because auth needs a synchronous snapshot before
+//! its JavaScript module graph evaluates.
 
 use keyring::{Entry, Error as KeyringCrateError};
 use serde::Serialize;
@@ -64,17 +64,25 @@ impl KeyringError {
 /// platform failure, bad encoding) surfaces as `Err`.
 #[tauri::command]
 pub async fn keyring_read() -> Result<Option<String>, KeyringError> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let entry = Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT)
-            .map_err(|e| KeyringError::from_crate_error("opening keyring entry", e))?;
-        match entry.get_password() {
-            Ok(password) => Ok(Some(password)),
-            Err(KeyringCrateError::NoEntry) => Ok(None),
-            Err(e) => Err(KeyringError::from_crate_error("reading keyring entry", e)),
-        }
-    })
+    tauri::async_runtime::spawn_blocking(read_serialized)
     .await
     .map_err(|join_err| KeyringError::task_panicked("keyring_read", join_err))?
+}
+
+/// Read the auth cell before the main WebView exists.
+///
+/// Honeycrisp's auth state is synchronous by contract. The native owner calls
+/// this once during application setup and injects the resulting snapshot into
+/// the WebView's document-start script, before the JavaScript module graph can
+/// evaluate. The command above reuses the same operation for diagnostics.
+pub fn read_serialized() -> Result<Option<String>, KeyringError> {
+    let entry = Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT)
+        .map_err(|e| KeyringError::from_crate_error("opening keyring entry", e))?;
+    match entry.get_password() {
+        Ok(password) => Ok(Some(password)),
+        Err(KeyringCrateError::NoEntry) => Ok(None),
+        Err(e) => Err(KeyringError::from_crate_error("reading keyring entry", e)),
+    }
 }
 
 /// Write `value` as the stored secret, or delete the entry when `value` is
