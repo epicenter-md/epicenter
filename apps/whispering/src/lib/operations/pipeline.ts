@@ -8,6 +8,7 @@ import { uploadRecordingAudio } from '$lib/operations/recording-audio';
 import { polishWillRun, runPolish } from '$lib/operations/run-polish';
 import { sound } from '$lib/operations/sound';
 import { transcribeAndPersist } from '$lib/operations/transcribe';
+import { saveRecordingHistory } from '$lib/operations/transcription-history';
 import { report } from '$lib/report';
 import { services } from '$lib/services';
 import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
@@ -101,7 +102,7 @@ export async function processRecordingPipeline({
 				description: 'Your recording is being transcribed...',
 			});
 
-	const { data: transcribedText, error: transcribeError } =
+	const { data: transcription, error: transcribeError } =
 		await transcribeAndPersist(recording.id, audioBlobId);
 
 	if (transcribeError) {
@@ -115,10 +116,12 @@ export async function processRecordingPipeline({
 		}
 		return;
 	}
+	const { text: transcribedText } = transcription;
+	let history = transcription.history;
 
-	// Run Polish over the raw transcript, then deliver the polished text. The raw
-	// stays on `recordings.transcript` (persisted by transcribeAndPersist) so
-	// "show original" is recoverable. We hold delivery until Polish finishes and
+	// Run Polish over the raw transcript, then deliver the polished text. When
+	// history succeeds, the raw stays on `recordings.transcript` so "show
+	// original" is recoverable. We hold delivery until Polish finishes and
 	// deliver once, with the final text: delivering the raw and then the polished
 	// version would land two copies (a clipboard the user might paste mid-polish,
 	// or two cursor pastes), the exact race the deliver-after-polish rule exists to
@@ -153,13 +156,16 @@ export async function processRecordingPipeline({
 		});
 	}
 
-	// Persist the polished transcript alongside the raw transcript so history
-	// shows what was actually delivered, with the original one click away. Only
-	// write when a Polish pass actually produced a result: row creation
+	// Attempt to persist the polished transcript alongside the raw transcript so
+	// history can show what was actually delivered, with the original one click
+	// away. Only write when a Polish pass actually produced a result: row creation
 	// already left `polishedTranscript` null, so speed mode (no AI call) and a
 	// polish failure (the fallback delivers the raw words) need no second write.
 	if (willPolish && !polishError) {
-		await recordings.update(recording.id, { polishedTranscript: polishedText });
+		const polishedHistory = await saveRecordingHistory(recording.id, {
+			polishedTranscript: polishedText,
+		});
+		if (polishedHistory.error !== null) history = polishedHistory;
 	}
 
 	// The transcript is "ready" once it is polished and about to be delivered, so
@@ -171,12 +177,18 @@ export async function processRecordingPipeline({
 			source: deliverySource,
 		});
 	if (isDictation) {
-		// The polished transcript is the dictation receipt. Every reach is a success
-		// (the transcript is saved), so this is always `delivered`; the reach decides
+		// The delivered transcript is the dictation receipt. Every reach is a success,
+		// even when history could not be confirmed, so this is always `delivered`; the reach decides
 		// whether the pill flashes (clean `output`) or persists (a reduced
 		// `clipboard`).
 		dictationLifecycle.markDelivered(transcriptDelivery.reach);
 	} else {
 		transcribeLoading?.resolve(transcribeNotice);
+	}
+	if (history.error !== null) {
+		report.info({
+			title: 'Transcription delivered, but history may be incomplete',
+			description: history.error.message,
+		});
 	}
 }

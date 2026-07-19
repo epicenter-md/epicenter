@@ -86,13 +86,19 @@
 					title: 'Failed to transcribe recording',
 				});
 			},
-			onSuccess: async (transcribedText) => {
+			onSuccess: async ({ text, history }) => {
 				sound.playSoundIfEnabled('transcriptionComplete');
 
 				const { notice } = await deliverTranscriptionResult({
-					text: transcribedText,
+					text,
 				});
 				loading.resolve(notice);
+				if (history.error !== null) {
+					report.info({
+						title: 'Transcription delivered, but history may be incomplete',
+						description: history.error.message,
+					});
+				}
 			},
 		});
 	}

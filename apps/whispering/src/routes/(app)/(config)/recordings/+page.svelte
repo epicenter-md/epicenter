@@ -393,18 +393,35 @@
 								selectedRecordingRows.map(({ original }) => original),
 								{
 									onSuccess: ({ oks, errs }) => {
+										const historyUnconfirmedTexts = oks.flatMap(({ data }) =>
+											data.history.error === null ? [] : [data.text],
+										);
+										const historyWarningCount = historyUnconfirmedTexts.length;
+										const copyUnsavedAction =
+											historyWarningCount === 0
+												? undefined
+												: {
+														label: 'Copy unsaved transcripts',
+														onClick: () =>
+															createCopyFn('unsaved transcripts')(
+																historyUnconfirmedTexts.join('\n\n'),
+															),
+													};
 										if (errs.length === 0) {
 											const count = oks.length;
 											loading.resolve({
-												title: `Transcribed ${count} recording${count === 1 ? '' : 's'}!`,
-												description: `Your ${count} recording${count === 1 ? ' has' : 's have'} been transcribed successfully.`,
+												title: `Transcribed ${count} recording${count === 1 ? '' : 's'}`,
+												description:
+													historyWarningCount === 0
+														? `Your ${count} recording${count === 1 ? ' has' : 's have'} been transcribed successfully.`
+														: `Recording history may be incomplete for ${historyWarningCount} transcription${historyWarningCount === 1 ? '' : 's'}.`,
+												action: copyUnsavedAction,
 											});
 											return;
 										}
 
-										// Per-recording errors already live on their rows:
-										// transcribeAndPersist marks each failed row and the row
-										// surfaces its message plus a retry. So the bulk toast only
+										// transcribeAndPersist attempts to mark each failed row so
+										// history can surface its message plus a retry. So the bulk toast only
 										// summarizes, and forwards the first real failure as the
 										// cause so More details stays a genuine provider error
 										// rather than a synthesized one. Dedupe the messages so a
@@ -428,7 +445,8 @@
 										loading.reject({
 											cause: firstFailure.error,
 											title: `Transcribed ${oks.length} of ${oks.length + errs.length} recordings`,
-											description: `${oks.length} succeeded, ${errs.length} failed:\n${failureSummary}`,
+											description: `${oks.length} succeeded, ${errs.length} failed${historyWarningCount === 0 ? '' : `, ${historyWarningCount} may not have been saved to history`}:\n${failureSummary}`,
+											action: copyUnsavedAction,
 										});
 									},
 								},

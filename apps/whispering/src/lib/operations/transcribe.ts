@@ -5,18 +5,17 @@ import {
 	transcribe,
 } from '@epicenter/client';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
-import { InstantString } from '@epicenter/field';
-import {
-	type AnyTaggedError,
-	defineErrors,
-	extractErrorMessage,
-} from 'wellcrafted/error';
+import { type AnyTaggedError, defineErrors } from 'wellcrafted/error';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import { auth } from '#platform/auth';
 import { customFetch } from '#platform/http';
 import { tauri } from '#platform/tauri';
 import type { SupportedLanguage } from '$lib/constants/languages';
 import { analytics } from '$lib/operations/analytics';
+import {
+	recordTranscriptionOutcome,
+	type TranscriptionSuccess,
+} from '$lib/operations/transcription-history';
 import { report } from '$lib/report';
 import { services } from '$lib/services';
 import { DeepgramTranscriptionServiceLive } from '$lib/services/transcription/cloud/deepgram';
@@ -29,7 +28,6 @@ import {
 	type UploadProviderId,
 } from '$lib/services/transcription/providers';
 import { deviceConfig } from '$lib/state/device-config.svelte';
-import { recordings } from '$lib/state/recordings.svelte';
 import { type SecretKey, secrets } from '$lib/state/secrets.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import type { RecordingId } from '$lib/workspace';
@@ -44,6 +42,8 @@ import type { RecordingId } from '$lib/workspace';
  * union would add error variants no consumer reads.
  */
 export type TranscriptionError = AnyTaggedError;
+
+export type { TranscriptionSuccess } from '$lib/operations/transcription-history';
 
 const TranscriptionOperationError = defineErrors({
 	/** The hosted Epicenter gateway answered 402 (`InsufficientCredits`, ADR-0100):
@@ -281,36 +281,20 @@ export async function transcribeAudio(
 }
 
 /**
- * Transcribe a saved recording by id and persist the outcome to the recordings
- * table: on success the transcript plus a completed outcome, on failure a
- * failed outcome carrying the error. Every path that transcribes (the record
- * pipeline, manual retry, bulk) goes through here, so the stored outcome can
- * never drift between callers.
+ * Transcribe a saved recording by id and attempt to persist the outcome to the
+ * recordings table. Successful text remains successful when history cannot be
+ * confirmed: callers receive that secondary Result and choose how to warn.
+ * Every path that transcribes (the record pipeline, manual retry, bulk) goes
+ * through here, so they share one history-write policy.
  */
 export async function transcribeAndPersist(
 	recordingId: RecordingId,
 	audioBlobId: BlobId,
-): Promise<Result<string, TranscriptionError>> {
-	const { data: transcribedText, error } = await transcribeAudio(audioBlobId);
-	if (error) {
-		await recordings.update(recordingId, {
-			transcription: {
-				status: 'failed',
-				completedAt: InstantString.now(),
-				error: extractErrorMessage(error),
-			},
-		});
-		return Err(error);
-	}
-	await recordings.update(recordingId, {
-		transcript: transcribedText,
-		polishedTranscript: null,
-		transcription: {
-			status: 'completed',
-			completedAt: InstantString.now(),
-		},
-	});
-	return Ok(transcribedText);
+): Promise<Result<TranscriptionSuccess, TranscriptionError>> {
+	return recordTranscriptionOutcome(
+		recordingId,
+		await transcribeAudio(audioBlobId),
+	);
 }
 
 /**

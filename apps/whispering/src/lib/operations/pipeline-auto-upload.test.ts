@@ -7,39 +7,56 @@
  * - An enabled setting attempts the same upload operation exactly once
  * - A disabled setting performs no upload
  * - Upload remains best-effort and does not block transcription
+ * - History failure warns only after usable text is delivered
  */
-import { expect, mock, test } from 'bun:test';
+import { afterEach, expect, mock, test } from 'bun:test';
 import { generateBlobId } from '@epicenter/blobs';
-import { Ok } from 'wellcrafted/result';
+import { Err, Ok } from 'wellcrafted/result';
 import type { RecordingId } from '$lib/workspace';
 
 let autoUpload = true;
 let createError: unknown = null;
+let willPolish = false;
 const uploadRecordingAudio = mock(async () => Ok(undefined));
 const deleteBlob = mock(async () => Ok(undefined));
+const deliverTranscriptionResult = mock(async () => ({
+	outcome: { reach: 'output' } as const,
+	notice: { title: 'done' },
+}));
+const reportInfo = mock();
+let historyError: { name: string; message: string } | null = null;
+let polishedHistoryError: { name: string; message: string } | null = null;
+const saveRecordingHistory = mock(async () =>
+	polishedHistoryError === null ? Ok(undefined) : Err(polishedHistoryError),
+);
 
 mock.module('$lib/operations/recording-audio', () => ({
 	uploadRecordingAudio,
 }));
 mock.module('$lib/operations/delivery', () => ({
-	deliverTranscriptionResult: async () => ({
-		outcome: { reach: 'output' },
-		notice: { title: 'done' },
-	}),
+	deliverTranscriptionResult,
 }));
 mock.module('$lib/operations/run-polish', () => ({
-	polishWillRun: () => false,
-	runPolish: async ({ input }: { input: string }) => Ok(input),
+	polishWillRun: () => willPolish,
+	runPolish: async ({ input }: { input: string }) =>
+		Ok(willPolish ? 'polished transcript' : input),
 }));
 mock.module('$lib/operations/sound', () => ({
 	sound: { playSoundIfEnabled: mock() },
 }));
 mock.module('$lib/operations/transcribe', () => ({
-	transcribeAndPersist: async () => Ok('transcript'),
+	transcribeAndPersist: async () =>
+		Ok({
+			text: 'transcript',
+			history: historyError === null ? Ok(undefined) : Err(historyError),
+		}),
+}));
+mock.module('$lib/operations/transcription-history', () => ({
+	saveRecordingHistory,
 }));
 mock.module('$lib/report', () => ({
 	report: {
-		info: mock(),
+		info: reportInfo,
 		error: mock(),
 		loading: () => ({ resolve: mock(), reject: mock() }),
 	},
@@ -72,6 +89,14 @@ mock.module('$lib/state/settings.svelte', () => ({
 }));
 
 const { processRecordingPipeline } = await import('./pipeline.js');
+
+afterEach(() => {
+	autoUpload = true;
+	createError = null;
+	willPolish = false;
+	historyError = null;
+	polishedHistoryError = null;
+});
 
 test('auto-upload attempts once for each new row only when enabled', async () => {
 	await processRecordingPipeline({
@@ -106,4 +131,85 @@ test('a failed row creation removes the already-finalized local blob', async () 
 	).rejects.toBe(cause);
 	expect(deleteBlob).toHaveBeenLastCalledWith(audioBlobId);
 	createError = null;
+});
+
+test('history failure warns after delivering the usable transcription', async () => {
+	historyError = {
+		name: 'SaveUnconfirmed',
+		message: 'The transcription may not appear in recording history.',
+	};
+	const deliveriesBefore = deliverTranscriptionResult.mock.calls.length;
+	const noticesBefore = reportInfo.mock.calls.length;
+
+	await processRecordingPipeline({
+		audioBlobId: generateBlobId(),
+		durationMs: 100,
+		deliverySource: 'recording',
+	});
+
+	expect(deliverTranscriptionResult).toHaveBeenCalledTimes(
+		deliveriesBefore + 1,
+	);
+	expect(deliverTranscriptionResult).toHaveBeenLastCalledWith({
+		text: 'transcript',
+		source: 'recording',
+	});
+	expect(reportInfo).toHaveBeenCalledTimes(noticesBefore + 1);
+	expect(reportInfo).toHaveBeenLastCalledWith({
+		title: 'Transcription delivered, but history may be incomplete',
+		description: historyError.message,
+	});
+});
+
+test('polished history failure still delivers polished text and warns', async () => {
+	willPolish = true;
+	polishedHistoryError = {
+		name: 'SaveUnconfirmed',
+		message: 'The transcription may not appear in recording history.',
+	};
+	const deliveriesBefore = deliverTranscriptionResult.mock.calls.length;
+	const noticesBefore = reportInfo.mock.calls.length;
+
+	await processRecordingPipeline({
+		audioBlobId: generateBlobId(),
+		durationMs: 100,
+		deliverySource: 'recording',
+	});
+
+	expect(deliverTranscriptionResult).toHaveBeenCalledTimes(
+		deliveriesBefore + 1,
+	);
+	expect(deliverTranscriptionResult).toHaveBeenLastCalledWith({
+		text: 'polished transcript',
+		source: 'recording',
+	});
+	expect(reportInfo).toHaveBeenCalledTimes(noticesBefore + 1);
+	expect(reportInfo).toHaveBeenLastCalledWith({
+		title: 'Transcription delivered, but history may be incomplete',
+		description: polishedHistoryError.message,
+	});
+});
+
+test('polished history success does not hide an earlier raw history error', async () => {
+	willPolish = true;
+	historyError = {
+		name: 'SaveUnconfirmed',
+		message: 'Raw transcript history was not confirmed.',
+	};
+	const noticesBefore = reportInfo.mock.calls.length;
+
+	await processRecordingPipeline({
+		audioBlobId: generateBlobId(),
+		durationMs: 100,
+		deliverySource: 'recording',
+	});
+
+	expect(saveRecordingHistory).toHaveBeenLastCalledWith('recording-1', {
+		polishedTranscript: 'polished transcript',
+	});
+	expect(reportInfo).toHaveBeenCalledTimes(noticesBefore + 1);
+	expect(reportInfo).toHaveBeenLastCalledWith({
+		title: 'Transcription delivered, but history may be incomplete',
+		description: historyError.message,
+	});
 });
