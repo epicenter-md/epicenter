@@ -3,7 +3,7 @@ use tauri_plugin_log::{Target, TargetKind};
 
 pub mod keyring_storage;
 
-use keyring_storage::{keyring_read, keyring_write, read_serialized};
+use keyring_storage::{keyring_read, keyring_write, read_serialized_for_boot};
 
 fn auth_bootstrap_script(serialized: Option<String>, error: Option<String>) -> String {
     let serialized = serde_json::to_string(&serialized).expect("serialize auth bootstrap");
@@ -47,8 +47,11 @@ pub fn run() {
             // module construction. Build the main WebView only after its native
             // owner has read that snapshot, then inject it at document start.
             // This avoids top-level await and the WebKit module-cycle crash it
-            // caused in packaged builds.
-            let (serialized, error) = match read_serialized() {
+            // caused in packaged builds. The read is bounded so a hung
+            // credential store cannot leave the launch with zero windows: on
+            // timeout the window is still created, the error rides the
+            // snapshot, and the app boots signed out with the grant untouched.
+            let (serialized, error) = match read_serialized_for_boot() {
                 Ok(serialized) => (serialized, None),
                 Err(error) => (None, Some(error.to_string())),
             };
