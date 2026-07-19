@@ -19,7 +19,7 @@ import { foldFields, type WireRowIntent } from '@epicenter/row-sync';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { Type } from 'typebox';
 import { expectOk } from 'wellcrafted/testing';
-import { createCanonicalRows } from './canonical-rows.js';
+import { createCanonicalRowsView } from './canonical-rows.js';
 import { createCanonicalStore } from './canonical-store.js';
 import { defineTable, type JsonObject } from './lens-definition.js';
 import { initializeLocalWorkspaceStorage } from './local-workspace-storage.js';
@@ -37,8 +37,8 @@ test('local-only create, update, delete, and reopen preserve canonical state', (
 	try {
 		let database = new Database(path, { create: true });
 		initializeLocalWorkspaceStorage(createBunSqliteAdapter(database));
-		let records = createCanonicalRows(
-			createBunSqliteAdapter(database),
+		let records = createCanonicalRowsView(
+			createCanonicalStore(createBunSqliteAdapter(database)),
 			definitions,
 		);
 		const created = records.tables.notes.create({
@@ -54,8 +54,8 @@ test('local-only create, update, delete, and reopen preserve canonical state', (
 		database.close();
 
 		database = new Database(path);
-		records = createCanonicalRows(
-			createBunSqliteAdapter(database),
+		records = createCanonicalRowsView(
+			createCanonicalStore(createBunSqliteAdapter(database)),
 			definitions,
 		);
 		expect(expectOk(records.tables.notes.get(created.id))).toEqual({
@@ -67,8 +67,8 @@ test('local-only create, update, delete, and reopen preserve canonical state', (
 		database.close();
 
 		database = new Database(path);
-		records = createCanonicalRows(
-			createBunSqliteAdapter(database),
+		records = createCanonicalRowsView(
+			createCanonicalStore(createBunSqliteAdapter(database)),
 			definitions,
 		);
 		expect(expectOk(records.tables.notes.get(created.id))).toBeUndefined();
@@ -90,8 +90,9 @@ test('records exposes synchronized optimistic create, update, and delete state',
 	) WITHOUT ROWID, STRICT`);
 	const optimistic = new Map<string, JsonObject>();
 	const keyFor = (table: string, rowId: string) => `${table}:${rowId}`;
-	const records = createCanonicalRows(sqlite, definitions, {
-		admitIntent(intent: WireRowIntent) {
+	const records = createCanonicalRowsView(
+		createCanonicalStore(sqlite, {
+			admitIntent(intent: WireRowIntent) {
 			const key = keyFor(intent.table, intent.rowId);
 			switch (intent.kind) {
 				case 'create':
@@ -113,10 +114,12 @@ test('records exposes synchronized optimistic create, update, and delete state',
 				[intent.table, intent.rowId],
 			);
 		},
-		readCurrentRow(table, rowId) {
-			return optimistic.get(keyFor(table, rowId));
-		},
-	});
+			readCurrentRow(table, rowId) {
+				return optimistic.get(keyFor(table, rowId));
+			},
+		}),
+		definitions,
+	);
 	try {
 		const created = records.tables.notes.create({ title: 'Draft' });
 		expectOk(records.tables.notes.update(created.id, { archived: true }));

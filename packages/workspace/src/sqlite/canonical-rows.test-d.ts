@@ -1,6 +1,7 @@
 import { field } from '@epicenter/field';
 import type { SqliteDatabase } from '@epicenter/sqlite';
-import { createCanonicalRows } from './canonical-rows.js';
+import { createCanonicalRowsView } from './canonical-rows.js';
+import { createCanonicalStore } from './canonical-store.js';
 import { defineTable } from './lens-definition.js';
 
 const definitions = {
@@ -11,7 +12,8 @@ const definitions = {
 };
 
 declare const sqlite: SqliteDatabase;
-const notes = createCanonicalRows(sqlite, definitions).tables.notes;
+const notes = createCanonicalRowsView(createCanonicalStore(sqlite), definitions)
+	.tables.notes;
 const row = notes.create({ title: 'typed' });
 notes.update(row.id, { archived: undefined });
 

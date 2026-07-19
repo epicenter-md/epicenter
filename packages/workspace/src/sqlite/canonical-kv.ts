@@ -3,13 +3,8 @@
  * Unknown and nonconforming values remain untouched in the canonical map.
  */
 import { RESERVED_KV_ROW_ID, RESERVED_KV_TABLE } from '@epicenter/row-sync';
-import type { SqliteDatabase } from '@epicenter/sqlite';
 import { Ok, type Result } from 'wellcrafted/result';
-import {
-	type CanonicalStore,
-	type CanonicalStoreOptions,
-	createCanonicalStore,
-} from './canonical-store.js';
+import type { CanonicalStore } from './canonical-store.js';
 import {
 	compileKvLens,
 	type KvDefinitions,
@@ -21,8 +16,6 @@ import {
 } from './kv-definition.js';
 import type { JsonValue } from './lens-definition.js';
 
-export type CanonicalKvOptions = CanonicalStoreOptions;
-
 export type CanonicalKv<TDefinitions extends KvDefinitions> = {
 	get<K extends keyof TDefinitions & string>(
 		key: K,
@@ -33,17 +26,6 @@ export type CanonicalKv<TDefinitions extends KvDefinitions> = {
 	): Result<void, KvWriteErrorType>;
 	unset<K extends keyof TDefinitions & string>(key: K): void;
 };
-
-export function createCanonicalKv<const TDefinitions extends KvDefinitions>(
-	sqlite: SqliteDatabase,
-	definitions: TDefinitions,
-	options?: CanonicalKvOptions,
-): CanonicalKv<TDefinitions> {
-	return createCanonicalKvView(
-		createCanonicalStore(sqlite, options),
-		definitions,
-	);
-}
 
 /** Open one release-local KV lens over a schema-opaque canonical store. */
 export function createCanonicalKvView<const TDefinitions extends KvDefinitions>(

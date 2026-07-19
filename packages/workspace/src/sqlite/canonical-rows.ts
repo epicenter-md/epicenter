@@ -1,13 +1,9 @@
-import type { SqliteDatabase, SqliteValue } from '@epicenter/sqlite';
+import type { SqliteValue } from '@epicenter/sqlite';
 import { customAlphabet } from 'nanoid';
 import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 import { Ok, type Result } from 'wellcrafted/result';
-import {
-	type CanonicalStore,
-	type CanonicalStoreOptions,
-	createCanonicalStore,
-} from './canonical-store.js';
+import type { CanonicalStore } from './canonical-store.js';
 import {
 	type ConstrainedChanges,
 	type CreateInputFor,
@@ -43,23 +39,6 @@ export type CanonicalTable<TDefinition extends TableLensDefinition> = {
 export type CanonicalTables<TTables extends TableLensDefinitions> = {
 	[K in keyof TTables]: CanonicalTable<TTables[K]>;
 };
-
-export type CanonicalRowsOptions = CanonicalStoreOptions;
-
-/**
- * Legacy definition-bound constructor retained until browser and desktop
- * transports move onto schema-opaque stores in Waves C and D.
- */
-export function createCanonicalRows<const TTables extends TableLensDefinitions>(
-	sqlite: SqliteDatabase,
-	definitions: TTables,
-	options?: CanonicalRowsOptions,
-) {
-	return createCanonicalRowsView(
-		createCanonicalStore(sqlite, options),
-		definitions,
-	);
-}
 
 /** Open one release-local table lens over a schema-opaque canonical store. */
 export function createCanonicalRowsView<
@@ -169,7 +148,7 @@ export function createCanonicalRowsView<
 
 export type CanonicalRows<
 	TTables extends TableLensDefinitions = TableLensDefinitions,
-> = ReturnType<typeof createCanonicalRows<TTables>>;
+> = ReturnType<typeof createCanonicalRowsView<TTables>>;
 
 function expectConforming<TResult>(
 	result: Result<TResult, RowLensError>,

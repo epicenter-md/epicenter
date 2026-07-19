@@ -15,7 +15,8 @@ import { field } from '@epicenter/field';
 import { RESERVED_KV_ROW_ID, RESERVED_KV_TABLE } from '@epicenter/row-sync';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { expectErr, expectOk } from 'wellcrafted/testing';
-import { createCanonicalKv } from './canonical-kv.js';
+import { createCanonicalKvView } from './canonical-kv.js';
+import { createCanonicalStore } from './canonical-store.js';
 import { initializeLocalWorkspaceStorage } from './local-workspace-storage.js';
 
 const definitions = {
@@ -36,7 +37,7 @@ test('local-only set and unset preserve unknown and nonconforming keys', () => {
 				JSON.stringify({ unknown: { nested: true }, theme: 'future' }),
 			],
 		);
-		const kv = createCanonicalKv(sqlite, definitions);
+		const kv = createCanonicalKvView(createCanonicalStore(sqlite), definitions);
 		const nonconforming = expectErr(kv.get('theme'));
 		expect(nonconforming.raw).toBe('future');
 		expectOk(kv.set('label', 'kept'));
@@ -69,7 +70,7 @@ test('aggregate-cap overflow is an accepted local no-op', () => {
 	try {
 		const sqlite = createBunSqliteAdapter(database);
 		initializeLocalWorkspaceStorage(sqlite);
-		const kv = createCanonicalKv(sqlite, definitions);
+		const kv = createCanonicalKvView(createCanonicalStore(sqlite), definitions);
 		expectOk(kv.set('label', 'small'));
 		expectOk(kv.set('label', 'x'.repeat(70 * 1024)));
 		expect(expectOk(kv.get('label'))).toBe('small');
