@@ -17,6 +17,7 @@ import {
 	createOpenAiAgentEngine,
 } from '@epicenter/client';
 import { honeycrispWorkspace } from '@epicenter/honeycrisp';
+import { createDesktopWorkspaceOwner } from '@epicenter/workspace/sqlite/desktop-owner';
 import {
 	createDesktopAuthAuthority,
 	type DesktopAuthAuthority,
@@ -35,16 +36,13 @@ import {
 } from './sidecar-runtime.ts';
 import { deriveAppCatalog, loadStaticAssets } from './static-assets.ts';
 import { conversationsWorkspace } from './workspace.ts';
-import {
-	BUILT_IN_WORKSPACE_IDS,
-	createEpicenterWorkspaceOwner,
-} from './workspace-owner.ts';
+import { BUILT_IN_WORKSPACE_IDS } from './workspace-owner.ts';
 
 async function main(): Promise<void> {
 	const parentPipe = watchParentPipe(Bun.stdin.stream());
 	let host: HomeHost | undefined;
 	let workspaceOwner:
-		| ReturnType<typeof createEpicenterWorkspaceOwner>
+		| ReturnType<typeof createDesktopWorkspaceOwner>
 		| undefined;
 	let desktopAuth: DesktopAuthAuthority | undefined;
 	let server: ReturnType<typeof Bun.serve> | undefined;
@@ -67,10 +65,10 @@ async function main(): Promise<void> {
 				'EPICENTER_DATA_DIR must name the Epicenter app data directory.',
 			);
 		}
-		workspaceOwner = createEpicenterWorkspaceOwner(
-			join(epicenterDataDir, 'workspaces'),
-			BUILT_IN_WORKSPACE_IDS,
-		);
+		workspaceOwner = createDesktopWorkspaceOwner({
+			workspacesRoot: join(epicenterDataDir, 'workspaces'),
+			workspaceIds: BUILT_IN_WORKSPACE_IDS,
+		});
 		const [honeycrisp, conversations] = await Promise.all([
 			workspaceOwner.open(honeycrispWorkspace),
 			workspaceOwner.open(conversationsWorkspace),

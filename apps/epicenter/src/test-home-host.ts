@@ -1,13 +1,11 @@
 import { join } from 'node:path';
 import { honeycrispWorkspace } from '@epicenter/honeycrisp';
+import { createDesktopWorkspaceOwner } from '@epicenter/workspace/sqlite/desktop-owner';
 import { createDesktopAuthAuthority } from './desktop-auth-authority.ts';
 import { createHomeHost, type HomeHost, type HomeHostInputs } from './host.ts';
 import type { ConversationsWorkspace } from './workspace.ts';
 import { conversationsWorkspace } from './workspace.ts';
-import {
-	BUILT_IN_WORKSPACE_IDS,
-	createEpicenterWorkspaceOwner,
-} from './workspace-owner.ts';
+import { BUILT_IN_WORKSPACE_IDS } from './workspace-owner.ts';
 
 type OwnedTestHomeHostOptions = HomeHostInputs & {
 	/** Fixture root only. Production has no separate Home data directory. */
@@ -55,10 +53,10 @@ export async function createOwnedTestHomeHostBundle(
 ) {
 	const { dataDir, workspacesRoot, wrapConversations, ...hostOptions } =
 		options;
-	const workspaceOwner = createEpicenterWorkspaceOwner(
-		workspacesRoot ?? join(dataDir, 'workspaces'),
-		BUILT_IN_WORKSPACE_IDS,
-	);
+	const workspaceOwner = createDesktopWorkspaceOwner({
+		workspacesRoot: workspacesRoot ?? join(dataDir, 'workspaces'),
+		workspaceIds: BUILT_IN_WORKSPACE_IDS,
+	});
 	try {
 		const [honeycrisp, conversations] = await Promise.all([
 			workspaceOwner.open(honeycrispWorkspace),
