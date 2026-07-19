@@ -9,9 +9,9 @@
 	import studioMicrophone from '$lib/assets/studio-microphone.png';
 	import { NAV_ITEMS } from './nav-items';
 	import { auth } from '#platform/auth';
+	import { instanceSetting } from '#platform/instance';
 	import { AccountPopover } from '@epicenter/app-shell/account-popover';
 	import { recordingActive } from '$lib/state/recording-active.svelte';
-	import { instanceSetting } from '$lib/instance';
 
 	const sidebar = useSidebar();
 </script>

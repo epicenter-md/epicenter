@@ -35,7 +35,10 @@ import {
 	isValidAppId,
 	loadStaticAssets,
 } from './static-assets.ts';
-import { createOwnedTestHomeHost } from './test-home-host.ts';
+import {
+	createOwnedTestHomeHost,
+	createTestDesktopAuth,
+} from './test-home-host.ts';
 
 const RESERVED_IDS = Object.keys(SURFACE_ROUTES);
 const COMMITTED_FIXTURE_ROOT = fileURLToPath(
@@ -242,6 +245,7 @@ describe('home server catalog routes', () => {
 			blobs: createBunBlobStore({
 				directory: join(tempDir('epicenter-blobs-'), 'blobs'),
 			}),
+			desktopAuth: createTestDesktopAuth(),
 		});
 		const server = Bun.serve({
 			hostname: '127.0.0.1',
@@ -278,13 +282,21 @@ describe('home server catalog routes', () => {
 			expect((await fetch(`${origin}/apps/unknown/`)).status).toBe(404);
 			expect((await fetch(`${origin}/apps/hello-http`)).status).toBe(404);
 
-			// The legacy closed layout stays intact beside the catalog.
-			expect(await (await fetch(`${origin}/apps/home/`)).text()).toBe(
-				HOME_PAGE,
-			);
-			expect(await (await fetch(`${origin}/apps/whispering/`)).text()).toBe(
-				WHISPERING_PAGE,
-			);
+			// The legacy closed layout stays intact beside the catalog. Surface
+			// documents carry the identity snapshot, so they require an
+			// established browser session and are served with the bootstrap
+			// element injected.
+			const cookie = await bootstrapCookie(origin);
+			const homeDocument = await (
+				await fetch(`${origin}/apps/home/`, { headers: { cookie } })
+			).text();
+			expect(homeDocument).toContain('Home test page');
+			expect(homeDocument).toContain('epicenter-auth-bootstrap');
+			const whisperingDocument = await (
+				await fetch(`${origin}/apps/whispering/`, { headers: { cookie } })
+			).text();
+			expect(whisperingDocument).toContain('Whispering test application');
+			expect(whisperingDocument).toContain('epicenter-auth-bootstrap');
 		} finally {
 			await server.stop(true);
 		}

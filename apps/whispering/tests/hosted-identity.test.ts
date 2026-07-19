@@ -53,10 +53,15 @@ describe('Epicenter-hosted Whispering identity', () => {
 		expect(read('src/lib/services/fs-paths.ts')).toContain('so.epicenter');
 	});
 
-	test('OAuth callbacks use the unified Epicenter deep-link scheme', () => {
+	test('desktop auth uses the Bun authority instead of a window OAuth launcher', () => {
 		const auth = read('src/lib/platform/auth.tauri.ts');
-		expect(auth).toContain('EPICENTER_DESKTOP_OAUTH_CLIENT_ID');
-		expect(auth).toContain('EPICENTER_DESKTOP_TAURI_OAUTH_REDIRECT_URI');
-		expect(auth).not.toContain('EPICENTER_WHISPERING_TAURI_OAUTH_REDIRECT_URI');
+		const bootstrap = read('src/lib/platform/desktop-auth-bootstrap.tauri.ts');
+		const instance = read('src/lib/platform/instance.tauri.ts');
+		expect(auth).toContain('createDesktopBrokerAuth');
+		expect(bootstrap).toContain('epicenter-auth-bootstrap');
+		expect(instance).toContain('createDesktopInstanceSetting');
+		expect(instance).not.toContain('createInstanceSetting');
+		expect(auth).not.toContain('createHostedDeepLinkAuth');
+		expect(auth).not.toContain('keyring');
 	});
 });

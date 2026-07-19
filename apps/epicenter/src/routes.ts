@@ -38,6 +38,10 @@ export const SURFACE_ROUTES = {
 export type SurfaceId = keyof typeof SURFACE_ROUTES;
 
 export const BOOTSTRAP_ROUTE = route('/_epicenter/bootstrap');
+export const ACCOUNT_SIGN_IN_ROUTE = route('/_epicenter/account/sign-in');
+export const ACCOUNT_SIGN_OUT_ROUTE = route('/_epicenter/account/sign-out');
+export const ACCOUNT_INSTANCE_ROUTE = route('/_epicenter/account/instance');
+export const ACCOUNT_PROFILE_ROUTE = route('/_epicenter/account/profile');
 export const HOME_ROUTE = SURFACE_ROUTES.home;
 export const WHISPERING_ROUTE = SURFACE_ROUTES.whispering;
 export const MAIL_ROUTE = SURFACE_ROUTES.mail;

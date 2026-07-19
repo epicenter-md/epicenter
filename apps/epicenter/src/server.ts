@@ -11,16 +11,23 @@ import type { BunBlobStore } from '@epicenter/blobs/bun';
 import type { AgentToolDefinition } from '@epicenter/workspace/agent';
 import type { DesktopWorkspaceOwner } from '@epicenter/workspace/sqlite/desktop-owner';
 import { DesktopWorkspaceError } from '@epicenter/workspace/sqlite/desktop-owner';
-import { Hono } from 'hono';
+import { type Context, Hono, type Next } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
 import { getCookie, setCookie } from 'hono/cookie';
+import { getProfileVia } from '@epicenter/auth';
 import { Ok } from 'wellcrafted/result';
+import type { DesktopAuthAuthority } from './desktop-auth-authority.ts';
+import { createDesktopAuthorityFetch } from './desktop-authority-fetch.ts';
 import {
 	type HomeHost,
 	type HomeSessionSnapshot,
 	parseHomeCommand,
 } from './host.ts';
 import {
+	ACCOUNT_INSTANCE_ROUTE,
+	ACCOUNT_PROFILE_ROUTE,
+	ACCOUNT_SIGN_IN_ROUTE,
+	ACCOUNT_SIGN_OUT_ROUTE,
 	BOOTSTRAP_ROUTE,
 	LOCAL_BLOB_ROUTE,
 	SESSION_ROUTE,
@@ -54,10 +61,13 @@ export type HomeServerOptions = {
 	workspaceOwner?: DesktopWorkspaceOwner;
 	/** Canonical device-local bytes shared by every trusted app surface. */
 	blobs: BunBlobStore;
+	/** One credential owner for every compiled desktop surface. */
+	desktopAuth: DesktopAuthAuthority;
 };
 
 const SESSION_COOKIE = 'epicenter_session';
 const MAX_BROWSER_SESSIONS = 32;
+const SESSION_SHELL = `<!doctype html><html><head><meta charset="utf-8"><title>Epicenter</title><script>window.__EPICENTER_SESSION_READY__.then(() => window.location.reload())</script></head><body></body></html>`;
 
 export function createHomeServer({
 	host,
@@ -67,6 +77,7 @@ export function createHomeServer({
 	appCatalog = { apps: [] },
 	workspaceOwner,
 	blobs,
+	desktopAuth,
 }: HomeServerOptions) {
 	if (launchToken === '') {
 		throw new Error('Epicenter refuses to serve without a launch token.');
@@ -75,11 +86,17 @@ export function createHomeServer({
 	const activeHost = activeUrl.host;
 	const sessionHashes = new Set<string>();
 	const surfacePages = {
-		home: staticAssets.homePage,
-		whispering: staticAssets.whisperingPage,
+		home: injectAuthBootstrap(staticAssets.homePage, desktopAuth.bootSnapshot),
+		whispering: injectAuthBootstrap(
+			staticAssets.whisperingPage,
+			desktopAuth.bootSnapshot,
+		),
 		...PLACEHOLDER_SURFACE_PAGES,
 	} satisfies Record<SurfaceId, string>;
-	const csp = contentSecurityPolicy(Object.values(surfacePages).join('\n'));
+	const csp = contentSecurityPolicy(
+		`${Object.values(surfacePages).join('\n')}\n${SESSION_SHELL}`,
+	);
+	const deploymentFetch = createDesktopAuthorityFetch(desktopAuth);
 	const { upgradeWebSocket, websocket } = createBunWebSocket();
 	const app = new Hono();
 
@@ -123,6 +140,70 @@ export function createHomeServer({
 		});
 		return c.body(null, 204);
 	});
+	const hasBrowserSession = (c: Context) => {
+		const session = getCookie(c, SESSION_COOKIE);
+		return session !== undefined && sessionHashes.has(tokenHash(session));
+	};
+
+	const requireBrowserSession = async (c: Context, next: Next) => {
+		if (!hasBrowserSession(c)) return c.text('Unauthorized', 401);
+		await next();
+	};
+	const requirePrivateBroker = async (c: Context, next: Next) => {
+		if (!hasBrowserSession(c)) return c.text('Unauthorized', 401);
+		if (c.req.header('origin') !== origin) return c.text('Forbidden', 403);
+		await next();
+	};
+	// The account broker carries only host-owned identity commands and the
+	// profile projection. There is deliberately no authorize/bearer-grant
+	// route: no credential ever crosses into a WebView, so the windows keep
+	// the loopback-only CSP. The read-only profile GET is session-guarded
+	// without the origin check because a browser omits the Origin header on
+	// same-origin GETs.
+	app.use('/_epicenter/account/*', async (c, next) => {
+		if (c.req.method === 'GET') return requireBrowserSession(c, next);
+		return requirePrivateBroker(c, next);
+	});
+
+	app.get(ACCOUNT_PROFILE_ROUTE.pattern, async (c) => {
+		const profile = await getProfileVia(deploymentFetch, desktopAuth.baseURL);
+		if (profile.error !== null) return c.text('Profile unavailable', 502);
+		return c.json(profile.data);
+	});
+	app.post(ACCOUNT_SIGN_IN_ROUTE.pattern, async (c) => {
+		const result = await desktopAuth.startSignIn();
+		if (result.error) return c.text('Sign-in failed', 502);
+		return c.body(null, 202);
+	});
+	app.post(ACCOUNT_SIGN_OUT_ROUTE.pattern, async (c) => {
+		const result = await desktopAuth.signOut();
+		if (result.error) return c.text('Sign-out failed', 500);
+		return c.body(null, 202);
+	});
+	app.post(ACCOUNT_INSTANCE_ROUTE.pattern, async (c) => {
+		const input = await readJsonObject(c.req.raw);
+		if (
+			input === null ||
+			Object.keys(input).some((key) => key !== 'baseURL' && key !== 'token') ||
+			typeof input.baseURL !== 'string' ||
+			typeof input.token !== 'string'
+		) {
+			return c.text('Bad Request', 400);
+		}
+		try {
+			await desktopAuth.selectInstance({
+				baseURL: input.baseURL,
+				token: input.token,
+			});
+			return c.body(null, 202);
+		} catch {
+			return c.text('Invalid instance', 400);
+		}
+	});
+	app.delete(ACCOUNT_INSTANCE_ROUTE.pattern, async (c) => {
+		await desktopAuth.selectHosted();
+		return c.body(null, 202);
+	});
 
 	for (const surface of [
 		SURFACE_ROUTES.home,
@@ -131,15 +212,29 @@ export function createHomeServer({
 	]) {
 		app.get(surface.pattern, (c) => {
 			c.header('cache-control', 'no-store');
+			if (!hasBrowserSession(c)) return c.html(SESSION_SHELL);
 			return c.html(surfacePages[surface.id]);
 		});
 	}
 	app.get('/apps/whispering/*', async (c) => {
-		const asset = await staticAssets.resolveWhispering(
-			new URL(c.req.url).pathname,
-		);
+		const pathname = new URL(c.req.url).pathname;
+		if (
+			pathname === SURFACE_ROUTES.whispering.pattern ||
+			pathname === `${SURFACE_ROUTES.whispering.pattern}index.html`
+		) {
+			c.header('cache-control', 'no-store');
+			if (!hasBrowserSession(c)) return c.html(SESSION_SHELL);
+			return c.html(surfacePages.whispering);
+		}
+		const asset = await staticAssets.resolveWhispering(pathname);
 		if (!asset) return c.text('Not Found', 404);
 		c.header('cache-control', 'no-store');
+		if (!hasBrowserSession(c)) {
+			return asset.isDocument
+				? c.html(SESSION_SHELL)
+				: c.text('Unauthorized', 401);
+		}
+		if (asset.isDocument) return c.html(surfacePages.whispering);
 		c.header('content-type', asset.contentType);
 		return c.body(asset.file.stream());
 	});
@@ -159,20 +254,10 @@ export function createHomeServer({
 	});
 	app.get('/apps/*', (c) => c.text('Not Found', 404));
 
-	const requireSession = async (
-		c: Parameters<Parameters<typeof app.use>[1]>[0],
-		next: () => Promise<void>,
-	) => {
-		const session = getCookie(c, SESSION_COOKIE);
-		if (session === undefined || !sessionHashes.has(tokenHash(session))) {
-			return c.text('Unauthorized', 401);
-		}
-		await next();
-	};
-	app.use('/api/apps', requireSession);
-	app.use('/api/home/*', requireSession);
-	app.use('/api/workspaces/*', requireSession);
-	app.use('/api/local-blobs/*', requireSession);
+	app.use('/api/apps', requireBrowserSession);
+	app.use('/api/home/*', requireBrowserSession);
+	app.use('/api/workspaces/*', requireBrowserSession);
+	app.use('/api/local-blobs/*', requireBrowserSession);
 	app.use(SESSION_STREAM_ROUTE.pattern, async (c, next) => {
 		if (c.req.header('origin') !== origin) return c.text('Forbidden', 403);
 		await next();
@@ -343,6 +428,18 @@ export function createHomeServer({
 	return { app, websocket };
 }
 
+function injectAuthBootstrap(
+	page: string,
+	snapshot: DesktopAuthAuthority['bootSnapshot'],
+): string {
+	const serialized = JSON.stringify(snapshot).replaceAll('<', '\\u003c');
+	const element = `<script id="epicenter-auth-bootstrap" type="application/json">${serialized}</script>`;
+	const head = page.search(/<\/head\s*>/i);
+	return head === -1
+		? page.replace(/<body\b/i, `${element}<body`)
+		: `${page.slice(0, head)}${element}${page.slice(head)}`;
+}
+
 function blobResponseHeaders(contentType: string): Record<string, string> {
 	return {
 		'accept-ranges': 'bytes',
@@ -444,6 +541,19 @@ function contentSecurityPolicy(page: string): string {
 		"base-uri 'self'",
 		"frame-ancestors 'none'",
 	].join('; ');
+}
+
+async function readJsonObject(
+	request: Request,
+): Promise<Record<string, unknown> | null> {
+	try {
+		const value: unknown = await request.json();
+		return typeof value === 'object' && value !== null && !Array.isArray(value)
+			? (value as Record<string, unknown>)
+			: null;
+	} catch {
+		return null;
+	}
 }
 
 function parseFrame(data: unknown): unknown {

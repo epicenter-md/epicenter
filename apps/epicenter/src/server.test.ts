@@ -34,6 +34,9 @@ import { desktopBlobUrl } from '@epicenter/blobs/webview';
 import type { AgentEngine, EngineChunk } from '@epicenter/workspace/agent';
 import type { HomeHost, HomeHostInputs } from './host.ts';
 import {
+	ACCOUNT_INSTANCE_ROUTE,
+	ACCOUNT_PROFILE_ROUTE,
+	ACCOUNT_SIGN_OUT_ROUTE,
 	BOOKS_ROUTE,
 	BOOTSTRAP_ROUTE,
 	HOME_ROUTE,
@@ -50,7 +53,10 @@ import {
 } from './server.ts';
 import type { ReadyFrame } from './sidecar-runtime.ts';
 import { loadStaticAssets } from './static-assets.ts';
-import { createOwnedTestHomeHost } from './test-home-host.ts';
+import {
+	createOwnedTestHomeHost,
+	createTestDesktopAuth,
+} from './test-home-host.ts';
 
 const TOKEN = 'per-launch-secret';
 
@@ -58,6 +64,13 @@ const TOKEN = 'per-launch-secret';
 const PAGE = '<!doctype html><html><body>Home test page</body></html>';
 const WHISPERING_PAGE =
 	'<!doctype html><html><body>Whispering test application</body></html>';
+
+function withoutAuthBootstrap(page: string): string {
+	return page.replace(
+		/<script id="epicenter-auth-bootstrap" type="application\/json">[\s\S]*?<\/script>/,
+		'',
+	);
+}
 
 const queryDir = fileURLToPath(new URL('..', import.meta.url));
 type TestServer = ReturnType<typeof Bun.serve>;
@@ -119,6 +132,7 @@ async function serveHost(host: HomeHost, page: string = PAGE) {
 		launchToken: TOKEN,
 		staticAssets: await createAppsDistFixture(page),
 		blobs: createTestBlobs(),
+		desktopAuth: createTestDesktopAuth(),
 	});
 	const server = Bun.serve({
 		hostname: '127.0.0.1',
@@ -316,6 +330,7 @@ describe('createHomeServer', () => {
 			engine: scriptedEngine([[]]),
 		});
 		const staticAssets = await createAppsDistFixture();
+		const desktopAuth = createTestDesktopAuth();
 		expect(() =>
 			createHomeServer({
 				host,
@@ -323,6 +338,7 @@ describe('createHomeServer', () => {
 				launchToken: '',
 				staticAssets,
 				blobs: createTestBlobs(),
+				desktopAuth,
 			}),
 		).toThrow(/launch token/);
 		for (const origin of [
@@ -338,6 +354,7 @@ describe('createHomeServer', () => {
 					launchToken: TOKEN,
 					staticAssets,
 					blobs: createTestBlobs(),
+					desktopAuth,
 				}),
 			).toThrow(/exact http:\/\/127\.0\.0\.1/);
 		}
@@ -383,16 +400,20 @@ describe('createHomeServer', () => {
 		}
 	});
 
-	test('serves Home publicly but keeps domain APIs behind the browser session', async () => {
+	test('serves only the session shell before bootstrap and gates domain APIs', async () => {
 		await using host = await createTestHost({
 			engine: scriptedEngine([[]]),
 		});
 		const server = await serveHost(host);
 		try {
-			const page = await fetch(HOME_ROUTE.url(server.url.origin));
-			expect(page.status).toBe(200);
-			expect(await page.text()).toBe(PAGE);
-			expect(page.headers.get('cache-control')).toBe('no-store');
+			const shell = await fetch(HOME_ROUTE.url(server.url.origin));
+			expect(shell.status).toBe(200);
+			expect(await shell.text()).toContain('__EPICENTER_SESSION_READY__');
+			expect(shell.headers.get('cache-control')).toBe('no-store');
+			const page = await fetch(HOME_ROUTE.url(server.url.origin), {
+				headers: authenticatedHeaders(server),
+			});
+			expect(withoutAuthBootstrap(await page.text())).toBe(PAGE);
 
 			const bareSession = await fetch(SESSION_ROUTE.url(server.url.origin));
 			expect(bareSession.status).toBe(401);
@@ -440,13 +461,22 @@ describe('createHomeServer', () => {
 				{ id: 'books', pattern: '/apps/books/', windowLabel: 'books' },
 			]);
 
-			const query = await fetch(HOME_ROUTE.url(server.url.origin));
-			expect(await query.text()).toBe(PAGE);
+			const query = await fetch(HOME_ROUTE.url(server.url.origin), {
+				headers: authenticatedHeaders(server),
+			});
+			const queryPage = await query.text();
+			expect(queryPage).toContain('id="epicenter-auth-bootstrap"');
+			expect(withoutAuthBootstrap(queryPage)).toBe(PAGE);
 
-			const whispering = await fetch(WHISPERING_ROUTE.url(server.url.origin));
-			expect(await whispering.text()).toBe(WHISPERING_PAGE);
+			const whispering = await fetch(WHISPERING_ROUTE.url(server.url.origin), {
+				headers: authenticatedHeaders(server),
+			});
+			const whisperingPage = await whispering.text();
+			expect(whisperingPage).toContain('id="epicenter-auth-bootstrap"');
+			expect(withoutAuthBootstrap(whisperingPage)).toBe(WHISPERING_PAGE);
 			const whisperingAsset = await fetch(
 				`${server.url.origin}/apps/whispering/_app/immutable/entry.js?v=1`,
+				{ headers: authenticatedHeaders(server) },
 			);
 			expect(await whisperingAsset.text()).toContain('whisperingLoaded');
 			expect(whisperingAsset.headers.get('content-type')).toContain(
@@ -454,17 +484,25 @@ describe('createHomeServer', () => {
 			);
 			const vadAsset = await fetch(
 				`${server.url.origin}/apps/whispering/vad/silero_vad_v5.onnx`,
+				{ headers: authenticatedHeaders(server) },
 			);
 			expect(await vadAsset.text()).toBe('vad-model');
 			const clientRoute = await fetch(
 				`${server.url.origin}/apps/whispering/settings/transcription?tab=models`,
+				{ headers: authenticatedHeaders(server) },
 			);
-			expect(await clientRoute.text()).toBe(WHISPERING_PAGE);
-			const mail = await fetch(MAIL_ROUTE.url(server.url.origin));
+			expect(withoutAuthBootstrap(await clientRoute.text())).toBe(
+				WHISPERING_PAGE,
+			);
+			const mail = await fetch(MAIL_ROUTE.url(server.url.origin), {
+				headers: authenticatedHeaders(server),
+			});
 			expect(await mail.text()).toContain(
 				'the full Mail experience is not included',
 			);
-			const books = await fetch(BOOKS_ROUTE.url(server.url.origin));
+			const books = await fetch(BOOKS_ROUTE.url(server.url.origin), {
+				headers: authenticatedHeaders(server),
+			});
 			expect(await books.text()).toContain(
 				'the full Books experience is not included',
 			);
@@ -511,14 +549,16 @@ describe('createHomeServer', () => {
 			// Home strings are SPA state, not an alternate server-side surface.
 			const queryState = await fetch(
 				`${HOME_ROUTE.url(server.url.origin)}?conversation=recent`,
+				{ headers: authenticatedHeaders(server) },
 			);
 			expect(queryState.status).toBe(200);
-			expect(await queryState.text()).toBe(PAGE);
+			expect(withoutAuthBootstrap(await queryState.text())).toBe(PAGE);
 
 			// URL fragments are browser state and are not sent in an HTTP request.
 			// The server therefore sees this as the one canonical Mail path.
 			const browserFragment = await fetch(
 				`${MAIL_ROUTE.url(server.url.origin)}#compose`,
+				{ headers: authenticatedHeaders(server) },
 			);
 			expect(browserFragment.status).toBe(200);
 			expect(await browserFragment.text()).toContain('<h1>Mail</h1>');
@@ -554,6 +594,54 @@ describe('createHomeServer', () => {
 			);
 			expect(page.headers.get('referrer-policy')).toBe('no-referrer');
 			expect(page.headers.get('x-frame-options')).toBe('DENY');
+		} finally {
+			await server.stop(true);
+		}
+	});
+
+	test('the account broker requires the browser session and grants no bearer', async () => {
+		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
+		const server = await serveHost(host);
+		const { cookie, origin } = authenticationFor(server);
+		try {
+			const unauthorized = await fetch(ACCOUNT_SIGN_OUT_ROUTE.url(origin), {
+				method: 'POST',
+				headers: { origin },
+			});
+			expect(unauthorized.status).toBe(401);
+
+			const missingOrigin = await fetch(ACCOUNT_SIGN_OUT_ROUTE.url(origin), {
+				method: 'POST',
+				headers: { cookie },
+			});
+			expect(missingOrigin.status).toBe(403);
+
+			const profileWithoutSession = await fetch(
+				ACCOUNT_PROFILE_ROUTE.url(origin),
+			);
+			expect(profileWithoutSession.status).toBe(401);
+
+			const signedOut = await fetch(ACCOUNT_SIGN_OUT_ROUTE.url(origin), {
+				method: 'POST',
+				headers: { cookie, origin },
+			});
+			expect(signedOut.status).toBe(202);
+
+			const invalidInstance = await fetch(ACCOUNT_INSTANCE_ROUTE.url(origin), {
+				method: 'POST',
+				headers: { cookie, origin, 'content-type': 'application/json' },
+				body: JSON.stringify({
+					baseURL: 'https://box.example',
+					token: 'too-short',
+				}),
+			});
+			expect(invalidInstance.status).toBe(400);
+
+			const hosted = await fetch(ACCOUNT_INSTANCE_ROUTE.url(origin), {
+				method: 'DELETE',
+				headers: { cookie, origin },
+			});
+			expect(hosted.status).toBe(202);
 		} finally {
 			await server.stop(true);
 		}
@@ -1054,9 +1142,11 @@ describe('the built SPA', () => {
 		});
 		const server = await serveHost(host, page);
 		try {
-			const response = await fetch(HOME_ROUTE.url(server.url.origin));
+			const response = await fetch(HOME_ROUTE.url(server.url.origin), {
+				headers: authenticatedHeaders(server),
+			});
 			expect(response.status).toBe(200);
-			expect(await response.text()).toBe(page);
+			expect(withoutAuthBootstrap(await response.text())).toBe(page);
 			expect(response.headers.get('content-security-policy')).toMatch(
 				/script-src 'self' 'sha256-/,
 			);
@@ -1167,7 +1257,7 @@ async function readPortAnnouncement(
 					const ready = JSON.parse(line) as ReadyFrame;
 					expect(ready).toEqual({
 						type: 'ready',
-						protocolVersion: 1,
+						protocolVersion: 2,
 						port: ready.port,
 					});
 					return ready.port;
@@ -1250,17 +1340,16 @@ describe('sidecar end-to-end smoke', () => {
 		try {
 			// The credential and Rust-resolved port travel in the boot frame.
 			sidecar.stdin.write(
-				`${JSON.stringify({ type: 'boot', protocolVersion: 1, token: TOKEN, port })}\n`,
+				`${JSON.stringify({ type: 'boot', protocolVersion: 2, token: TOKEN, port, authCell: null })}\n`,
 			);
 			await sidecar.stdin.flush();
 			const announcedPort = await readPortAnnouncement(sidecar, 30_000);
 			expect(announcedPort).toBe(port);
 			const origin = `http://127.0.0.1:${announcedPort}`;
 
-			// The final Home route is public static content; domain access is not.
-			const served = await fetch(HOME_ROUTE.url(origin));
-			expect(served.status).toBe(200);
-			expect(await served.text()).toBe(page);
+			const shell = await fetch(HOME_ROUTE.url(origin));
+			expect(shell.status).toBe(200);
+			expect(await shell.text()).toContain('__EPICENTER_SESSION_READY__');
 
 			const bootstrap = await fetch(BOOTSTRAP_ROUTE.url(origin), {
 				method: 'POST',
@@ -1272,6 +1361,10 @@ describe('sidecar end-to-end smoke', () => {
 			expect(bootstrap.status).toBe(204);
 			const cookie = bootstrap.headers.get('set-cookie')?.split(';', 1)[0];
 			expect(cookie).toBeDefined();
+			const served = await fetch(HOME_ROUTE.url(origin), {
+				headers: { cookie: cookie ?? '' },
+			});
+			expect(withoutAuthBootstrap(await served.text())).toBe(page);
 
 			const session = await fetch(SESSION_ROUTE.url(origin), {
 				headers: { cookie: cookie ?? '' },
@@ -1353,7 +1446,7 @@ describe('sidecar end-to-end smoke', () => {
 		);
 		try {
 			sidecar.stdin.write(
-				`${JSON.stringify({ type: 'boot', protocolVersion: 1, token: TOKEN, port: occupiedPort })}\n`,
+				`${JSON.stringify({ type: 'boot', protocolVersion: 2, token: TOKEN, port: occupiedPort, authCell: null })}\n`,
 			);
 			await sidecar.stdin.flush();
 			expect(await exitWithin(sidecar, 30_000)).not.toBe(0);
@@ -1394,7 +1487,7 @@ describe('sidecar end-to-end smoke', () => {
 		);
 		try {
 			sidecar.stdin.write(
-				`${JSON.stringify({ type: 'boot', protocolVersion: 1, token: TOKEN, port })}\n`,
+				`${JSON.stringify({ type: 'boot', protocolVersion: 2, token: TOKEN, port, authCell: null })}\n`,
 			);
 			await sidecar.stdin.flush();
 			expect(await readPortAnnouncement(sidecar, 30_000)).toBe(port);

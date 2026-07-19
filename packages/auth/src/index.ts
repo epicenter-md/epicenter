@@ -22,6 +22,10 @@ export {
 	normalizeInstanceUrl,
 } from './instance.js';
 export {
+	createInstanceCredentialAuthority,
+	type InstanceCredentialAuthority,
+} from './instance-credential-authority.js';
+export {
 	createInstanceSetting,
 	type InstanceSetting,
 	loadInstanceSetting,
@@ -36,6 +40,11 @@ export {
 	generateInstanceToken,
 	MIN_INSTANCE_TOKEN_CHARS,
 } from './instance-token.js';
+export {
+	createOAuthCredentialAuthority,
+	type OAuthCredentialAuthority,
+} from './oauth-credential-authority.js';
+export { getProfileVia } from './read-api-session.js';
 export {
 	createSerializedPersistedAuthStorage,
 	createWebStoragePersistedAuthStorage,

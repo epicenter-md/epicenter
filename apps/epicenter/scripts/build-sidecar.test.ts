@@ -100,6 +100,7 @@ test('compiled production host serves packaged apps and exits on parent EOF', as
 				protocolVersion: SIDECAR_PROTOCOL_VERSION,
 				token: 'compiled_test_token',
 				port: PRODUCTION_PORT,
+				authCell: null,
 			})}\n`,
 		);
 		await sidecar.stdin.flush();
@@ -108,13 +109,23 @@ test('compiled production host serves packaged apps and exits on parent EOF', as
 			protocolVersion: SIDECAR_PROTOCOL_VERSION,
 			port: PRODUCTION_PORT,
 		});
+		const origin = `http://127.0.0.1:${PRODUCTION_PORT}`;
+		const bootstrap = await fetch(`${origin}/_epicenter/bootstrap`, {
+			method: 'POST',
+			headers: {
+				authorization: 'Bearer compiled_test_token',
+				origin,
+			},
+		});
+		expect(bootstrap.status).toBe(204);
+		const cookie = bootstrap.headers.get('set-cookie')?.split(';', 1)[0];
+		expect(cookie).toBeDefined();
+		const session = { headers: { cookie: cookie ?? '' } };
 
-		const query = await fetch(`http://127.0.0.1:${PRODUCTION_PORT}/apps/home/`);
-		expect(query.status).toBe(200);
-		expect(await query.text()).toContain('<title>Home</title>');
-		const whispering = await fetch(
-			`http://127.0.0.1:${PRODUCTION_PORT}/apps/whispering/`,
-		);
+		const home = await fetch(`${origin}/apps/home/`, session);
+		expect(home.status).toBe(200);
+		expect(await home.text()).toContain('<title>Home</title>');
+		const whispering = await fetch(`${origin}/apps/whispering/`, session);
 		expect(whispering.status).toBe(200);
 		const whisperingPage = await whispering.text();
 		expect(whisperingPage).toContain('<title>Whispering</title>');
@@ -122,13 +133,12 @@ test('compiled production host serves packaged apps and exits on parent EOF', as
 			/\/apps\/whispering\/_app\/[^" ]+\.js/,
 		)?.[0];
 		expect(entryPath).toBeDefined();
-		const entry = await fetch(
-			`http://127.0.0.1:${PRODUCTION_PORT}${entryPath ?? ''}`,
-		);
+		const entry = await fetch(`${origin}${entryPath ?? ''}`, session);
 		expect(entry.status).toBe(200);
 		expect(entry.headers.get('content-type')).toContain('text/javascript');
 		const vad = await fetch(
-			`http://127.0.0.1:${PRODUCTION_PORT}/apps/whispering/vad/silero_vad_v5.onnx`,
+			`${origin}/apps/whispering/vad/silero_vad_v5.onnx`,
+			session,
 		);
 		expect(vad.status).toBe(200);
 		expect((await vad.arrayBuffer()).byteLength).toBeGreaterThan(1_000);

@@ -50,8 +50,8 @@ use download::{cancel_download, DownloadManager};
 mod delivery;
 use delivery::{simulate_copy_keystroke, simulate_enter_keystroke, write_text};
 
-pub mod keyring_storage;
-use keyring_storage::{keyring_read, keyring_write};
+mod keyring_storage;
+use keyring_storage::{read_auth_cell, write_auth_cell};
 
 pub mod media;
 use media::{pause_playback, resume_playback};
@@ -82,7 +82,8 @@ const APP_WINDOW_PREFIX: &str = "app-";
 const PRODUCTION_PORT: u16 = 39_130;
 #[cfg(any(debug_assertions, test))]
 const DEVELOPMENT_PORT: u16 = 39_131;
-const PROTOCOL_VERSION: u8 = 1;
+const PROTOCOL_VERSION: u8 = 2;
+const HOSTED_AUTH_ORIGIN: &str = "https://api.epicenter.so";
 const READY_TIMEOUT: Duration = Duration::from_secs(15);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 
@@ -138,6 +139,7 @@ struct BootFrame<'a> {
     protocol_version: u8,
     token: &'a str,
     port: u16,
+    auth_cell: Option<&'a str>,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
@@ -146,6 +148,37 @@ struct ReadyFrame {
     r#type: String,
     protocol_version: u8,
     port: u16,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
+enum BunToRustAuthFrame {
+    StoreAuth {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        serialized: Option<String>,
+    },
+    OpenAuthUrl {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        url: String,
+    },
+    Relaunch {},
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+enum RustToBunAuthFrame<'a> {
+    NativeResult {
+        #[serde(rename = "requestId")]
+        request_id: &'a str,
+        status: &'static str,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        message: Option<&'a str>,
+    },
+    OauthCallback {
+        url: &'a str,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -166,6 +199,7 @@ struct HostState {
     process: Mutex<Option<ManagedChild>>,
     active_token: Mutex<Option<String>>,
     pending_surfaces: Mutex<Vec<Surface>>,
+    pending_oauth_callback: Mutex<Option<String>>,
     shutting_down: AtomicBool,
     starting: AtomicBool,
 }
@@ -178,6 +212,7 @@ impl HostState {
             process: Mutex::new(None),
             active_token: Mutex::new(None),
             pending_surfaces: Mutex::new(Vec::new()),
+            pending_oauth_callback: Mutex::new(None),
             shutting_down: AtomicBool::new(false),
             starting: AtomicBool::new(false),
         }
@@ -207,6 +242,20 @@ impl HostState {
                 .lock()
                 .expect("pending surface lock poisoned"),
         )
+    }
+
+    fn queue_oauth_callback(&self, url: String) {
+        *self
+            .pending_oauth_callback
+            .lock()
+            .expect("pending OAuth callback lock poisoned") = Some(url);
+    }
+
+    fn take_oauth_callback(&self) -> Option<String> {
+        self.pending_oauth_callback
+            .lock()
+            .expect("pending OAuth callback lock poisoned")
+            .take()
     }
 
     fn activate(&self, token: &str) {
@@ -281,8 +330,6 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cancel_download,
             pause_playback,
             resume_playback,
-            keyring_read,
-            keyring_write,
             keyboard::commands::set_auto_paste_enabled,
             keyboard::commands::get_dictation_capability,
             replace_global_shortcuts,
@@ -416,7 +463,7 @@ pub fn run() {
         // This must remain the first plugin: later plugins and setup must only run
         // in the process that owns the application instance.
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-            open_forwarded_surfaces(app, &args);
+            open_forwarded_deep_links(app, &args);
         }))
         .plugin(log_plugin)
         .plugin(tauri_plugin_macos_permissions::init())
@@ -469,6 +516,9 @@ pub fn run() {
             let mut opened_surface = false;
             if let Some(urls) = current {
                 for url in &urls {
+                    if let Some(callback) = parse_oauth_callback(url) {
+                        queue_or_send_oauth_callback(app.handle(), callback);
+                    }
                     if let Some(surface) = parse_surface_deep_link(url) {
                         request_surface(app.handle(), surface);
                         opened_surface = true;
@@ -490,8 +540,16 @@ pub fn run() {
         });
 }
 
-fn open_forwarded_surfaces(app: &DesktopAppHandle, arguments: &[String]) {
+fn open_forwarded_deep_links(app: &DesktopAppHandle, arguments: &[String]) {
     let surfaces = surfaces_from_arguments(arguments);
+    for argument in arguments {
+        let Ok(url) = tauri::Url::parse(argument) else {
+            continue;
+        };
+        if let Some(callback) = parse_oauth_callback(&url) {
+            queue_or_send_oauth_callback(app, callback);
+        }
+    }
     if surfaces.is_empty() {
         request_surface(app, Surface::Home);
     } else {
@@ -519,9 +577,50 @@ fn surfaces_from_arguments(arguments: &[String]) -> Vec<Surface> {
 
 fn open_deep_links(app: &DesktopAppHandle, urls: &[tauri::Url]) {
     for url in urls {
+        if let Some(callback) = parse_oauth_callback(url) {
+            queue_or_send_oauth_callback(app, callback);
+        }
         if let Some(surface) = parse_surface_deep_link(url) {
             request_surface(app, surface);
         }
+    }
+}
+
+fn parse_oauth_callback(url: &tauri::Url) -> Option<String> {
+    if url.scheme() != "epicenter"
+        || url.host_str() != Some("auth")
+        || url.path() != "/callback"
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.port().is_some()
+        || url.fragment().is_some()
+        || !(url.query_pairs().any(|(key, _)| key == "code")
+            || url.query_pairs().any(|(key, _)| key == "error"))
+    {
+        return None;
+    }
+    Some(url.to_string())
+}
+
+fn queue_or_send_oauth_callback(app: &DesktopAppHandle, url: String) {
+    let state = app.state::<HostState>();
+    let generation = state
+        .process
+        .lock()
+        .expect("host state lock poisoned")
+        .as_ref()
+        .map(|process| process.generation);
+    let Some(generation) = generation else {
+        state.queue_oauth_callback(url);
+        return;
+    };
+    if let Err(error) = send_auth_frame(
+        &state,
+        generation,
+        &RustToBunAuthFrame::OauthCallback { url: &url },
+    ) {
+        state.queue_oauth_callback(url);
+        append_parent_log(app, &format!("deliver OAuth callback: {error:#}"));
     }
 }
 
@@ -646,6 +745,15 @@ fn start_once(app: &DesktopAppHandle) -> Result<()> {
         });
     }
 
+    if let Some(callback) = state.take_oauth_callback() {
+        send_auth_frame(
+            &state,
+            generation,
+            &RustToBunAuthFrame::OauthCallback { url: &callback },
+        )
+        .context("deliver the queued OAuth callback")?;
+    }
+
     state.activate(&token);
     let mut surfaces = state.take_pending_surfaces();
     if surfaces.is_empty() {
@@ -682,7 +790,8 @@ fn launch_host(app: &DesktopAppHandle, port: u16) -> Result<LaunchedHost> {
     let mut stdin = child.stdin.take().context("capture Bun stdin")?;
     let stdout = child.stdout.take().context("capture Bun stdout")?;
     let token = launch_token()?;
-    let frame = boot_frame_json(&token, port)?;
+    let auth_cell = read_auth_cell().context("read the desktop auth cell")?;
+    let frame = boot_frame_json(&token, port, auth_cell.as_deref())?;
 
     if let Err(error) = writeln!(stdin, "{frame}").and_then(|()| stdin.flush()) {
         stop_starting_child(child, stdin);
@@ -700,7 +809,7 @@ fn launch_host(app: &DesktopAppHandle, port: u16) -> Result<LaunchedHost> {
         Ok(value) => value,
         Err(mpsc::RecvTimeoutError::Timeout) => {
             stop_starting_child(child, stdin);
-            bail!("Bun did not emit its v1 ready frame within 15 seconds");
+            bail!("Bun did not emit its v2 ready frame within 15 seconds");
         }
         Err(mpsc::RecvTimeoutError::Disconnected) => {
             stop_starting_child(child, stdin);
@@ -766,14 +875,23 @@ fn host_command(_app: &DesktopAppHandle) -> Result<Command> {
 
 fn monitor_host(app: DesktopAppHandle, generation: u64, mut stdout: BufReader<ChildStdout>) {
     let (stdout_sender, stdout_receiver) = mpsc::sync_channel(1);
-    thread::spawn(move || {
-        let mut bytes = Vec::new();
-        let event = match stdout.read_until(b'\n', &mut bytes) {
-            Ok(0) => "Bun closed stdout after readiness".to_string(),
-            Ok(count) => format!("Bun wrote {count} unexpected byte(s) to stdout after readiness"),
-            Err(error) => format!("failed to monitor Bun stdout: {error}"),
+    thread::spawn(move || loop {
+        let mut line = String::new();
+        let event = match stdout.read_line(&mut line) {
+            Ok(0) => Err("Bun closed stdout after readiness".to_string()),
+            Ok(_) if !line.ends_with('\n') => {
+                Err("Bun closed stdout during an auth frame".to_string())
+            }
+            Ok(_) => {
+                serde_json::from_str::<BunToRustAuthFrame>(line.trim_end_matches(['\r', '\n']))
+                    .map_err(|error| format!("Bun emitted an invalid auth frame: {error}"))
+            }
+            Err(error) => Err(format!("failed to monitor Bun stdout: {error}")),
         };
-        let _ = stdout_sender.send(event);
+        let terminal = event.is_err();
+        if stdout_sender.send(event).is_err() || terminal {
+            return;
+        }
     });
 
     thread::spawn(move || loop {
@@ -785,9 +903,23 @@ fn monitor_host(app: DesktopAppHandle, generation: u64, mut stdout: BufReader<Ch
             return;
         }
 
-        if let Ok(message) = stdout_receiver.recv_timeout(Duration::from_millis(150)) {
-            fail_generation(&app, generation, message);
-            return;
+        if let Ok(event) = stdout_receiver.recv_timeout(Duration::from_millis(150)) {
+            match event {
+                Ok(frame) => {
+                    if let Err(error) = handle_auth_frame(&app, generation, frame) {
+                        fail_generation(
+                            &app,
+                            generation,
+                            format!("handle Bun auth frame: {error:#}"),
+                        );
+                        return;
+                    }
+                }
+                Err(message) => {
+                    fail_generation(&app, generation, message);
+                    return;
+                }
+            }
         }
 
         let status = {
@@ -822,6 +954,100 @@ fn monitor_host(app: DesktopAppHandle, generation: u64, mut stdout: BufReader<Ch
             }
         }
     });
+}
+
+fn handle_auth_frame(
+    app: &DesktopAppHandle,
+    generation: u64,
+    frame: BunToRustAuthFrame,
+) -> Result<()> {
+    match frame {
+        BunToRustAuthFrame::StoreAuth {
+            request_id,
+            serialized,
+        } => {
+            let result = write_auth_cell(serialized);
+            send_native_result(app, generation, &request_id, result)
+        }
+        BunToRustAuthFrame::OpenAuthUrl { request_id, url } => {
+            let result = validate_hosted_auth_url(&url).and_then(|()| {
+                app.opener()
+                    .open_url(url, None::<String>)
+                    .map_err(Into::into)
+            });
+            send_native_result(app, generation, &request_id, result)
+        }
+        BunToRustAuthFrame::Relaunch {} => app.restart(),
+    }
+}
+
+fn send_native_result<E: std::fmt::Display>(
+    app: &DesktopAppHandle,
+    generation: u64,
+    request_id: &str,
+    result: std::result::Result<(), E>,
+) -> Result<()> {
+    if request_id.is_empty() {
+        bail!("native requestId must be non-empty");
+    }
+    let state = app.state::<HostState>();
+    match result {
+        Ok(()) => send_auth_frame(
+            &state,
+            generation,
+            &RustToBunAuthFrame::NativeResult {
+                request_id,
+                status: "ok",
+                message: None,
+            },
+        ),
+        Err(error) => {
+            let message = error.to_string();
+            send_auth_frame(
+                &state,
+                generation,
+                &RustToBunAuthFrame::NativeResult {
+                    request_id,
+                    status: "error",
+                    message: Some(&message),
+                },
+            )
+        }
+    }
+}
+
+fn send_auth_frame(
+    state: &HostState,
+    generation: u64,
+    frame: &RustToBunAuthFrame<'_>,
+) -> Result<()> {
+    let line = serde_json::to_string(frame).context("serialize the native auth frame")?;
+    let mut process = state.process.lock().expect("host state lock poisoned");
+    let process = process
+        .as_mut()
+        .filter(|process| process.generation == generation)
+        .context("the target Bun generation is no longer active")?;
+    let stdin = process
+        .stdin
+        .as_mut()
+        .context("the target Bun generation has no command pipe")?;
+    writeln!(stdin, "{line}").and_then(|()| stdin.flush())?;
+    Ok(())
+}
+
+fn validate_hosted_auth_url(value: &str) -> Result<()> {
+    let url = tauri::Url::parse(value).context("parse the hosted authorization URL")?;
+    if url.scheme() != "https"
+        || url.host_str() != Some("api.epicenter.so")
+        || url.port().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+        || !url.path().starts_with("/auth/")
+    {
+        bail!("authorization URL must stay under {HOSTED_AUTH_ORIGIN}/auth/");
+    }
+    Ok(())
 }
 
 fn fail_generation(app: &DesktopAppHandle, generation: u64, message: String) {
@@ -1070,12 +1296,13 @@ fn launch_token() -> Result<String> {
     Ok(URL_SAFE_NO_PAD.encode(bytes))
 }
 
-fn boot_frame_json(token: &str, port: u16) -> Result<String> {
+fn boot_frame_json(token: &str, port: u16, auth_cell: Option<&str>) -> Result<String> {
     serde_json::to_string(&BootFrame {
         r#type: "boot",
         protocol_version: PROTOCOL_VERSION,
         token,
         port,
+        auth_cell,
     })
     .context("serialize the Bun boot frame")
 }
@@ -1086,15 +1313,15 @@ fn read_ready_frame(reader: &mut impl BufRead, expected_port: u16) -> Result<()>
         .read_line(&mut line)
         .context("read the Bun readiness frame")?;
     if count == 0 {
-        bail!("Bun exited without emitting its v1 ready frame");
+        bail!("Bun exited without emitting its v2 ready frame");
     }
     if !line.ends_with('\n') {
-        bail!("Bun closed stdout before completing its v1 ready frame");
+        bail!("Bun closed stdout before completing its v2 ready frame");
     }
 
     let line = line.trim_end_matches(['\r', '\n']);
     let frame: ReadyFrame =
-        serde_json::from_str(line).context("Bun stdout was not one strict v1 ready frame")?;
+        serde_json::from_str(line).context("Bun stdout was not one strict v2 ready frame")?;
     if frame.r#type != "ready" {
         bail!("Bun emitted a frame other than ready");
     }
@@ -1135,32 +1362,6 @@ fn initialization_script(origin: &str, token: &str) -> Result<String> {
     configurable: false,
     writable: false,
   }});
-  if (window.location.pathname.startsWith('/apps/whispering/')) {{
-    const credentialReady = window.__TAURI_INTERNALS__.invoke('keyring_read').then(
-      (serialized) => {{
-        Object.defineProperty(window, '__EPICENTER_WHISPERING_AUTH_BOOTSTRAP__', {{
-          value: {{ serialized, error: null }},
-          enumerable: false,
-          configurable: true,
-          writable: false,
-        }});
-      }},
-      (error) => {{
-        Object.defineProperty(window, '__EPICENTER_WHISPERING_AUTH_BOOTSTRAP__', {{
-          value: {{ serialized: null, error: String(error) }},
-          enumerable: false,
-          configurable: true,
-          writable: false,
-        }});
-      }},
-    );
-    Object.defineProperty(window, '__EPICENTER_WHISPERING_AUTH_READY__', {{
-      value: credentialReady,
-      enumerable: false,
-      configurable: false,
-      writable: false,
-    }});
-  }}
 }})();"#
     ))
 }
@@ -1226,19 +1427,19 @@ mod tests {
     }
 
     #[test]
-    fn parses_only_the_expected_v1_ready_frame() {
+    fn parses_only_the_expected_v2_ready_frame() {
         read_ready_frame(
-            &mut Cursor::new(b"{\"type\":\"ready\",\"protocolVersion\":1,\"port\":39130}\n"),
+            &mut Cursor::new(b"{\"type\":\"ready\",\"protocolVersion\":2,\"port\":39130}\n"),
             PRODUCTION_PORT,
         )
         .unwrap();
 
         for invalid in [
             "preamble\n",
-            "{\"type\":\"ready\",\"protocolVersion\":2,\"port\":39130}\n",
-            "{\"type\":\"ready\",\"protocolVersion\":1,\"port\":39131}\n",
-            "{\"type\":\"ready\",\"protocolVersion\":1,\"port\":39130,\"extra\":true}\n",
-            "{\"type\":\"ready\",\"protocolVersion\":1,\"port\":39130}",
+            "{\"type\":\"ready\",\"protocolVersion\":1,\"port\":39130}\n",
+            "{\"type\":\"ready\",\"protocolVersion\":2,\"port\":39131}\n",
+            "{\"type\":\"ready\",\"protocolVersion\":2,\"port\":39130,\"extra\":true}\n",
+            "{\"type\":\"ready\",\"protocolVersion\":2,\"port\":39130}",
         ] {
             assert!(read_ready_frame(&mut Cursor::new(invalid), PRODUCTION_PORT).is_err());
         }
@@ -1422,6 +1623,71 @@ mod tests {
     }
 
     #[test]
+    fn oauth_deep_links_accept_only_the_exact_callback_route() {
+        for url in [
+            "epicenter://auth/callback?code=code&state=state",
+            "epicenter://auth/callback?error=access_denied&state=state",
+        ] {
+            assert_eq!(
+                parse_oauth_callback(&url.parse().unwrap()),
+                Some(url.to_string())
+            );
+        }
+
+        for denied in [
+            "epicenter://auth/callback",
+            "epicenter://auth/callback?state=state",
+            "epicenter://auth/callback/extra?code=code",
+            "epicenter://auth/callback?code=code#fragment",
+            "epicenter://user@auth/callback?code=code",
+            "https://api.epicenter.so/auth/callback?code=code",
+        ] {
+            assert_eq!(parse_oauth_callback(&denied.parse().unwrap()), None);
+        }
+    }
+
+    #[test]
+    fn system_browser_accepts_only_hosted_auth_urls() {
+        for allowed in [
+            "https://api.epicenter.so/auth/oauth2/authorize?client_id=desktop",
+            "https://api.epicenter.so/auth/sign-in",
+        ] {
+            validate_hosted_auth_url(allowed).unwrap();
+        }
+        for denied in [
+            "http://api.epicenter.so/auth/sign-in",
+            "https://api.epicenter.so.evil.test/auth/sign-in",
+            "https://api.epicenter.so/not-auth",
+            "https://user@api.epicenter.so/auth/sign-in",
+            "https://api.epicenter.so/auth/sign-in#fragment",
+        ] {
+            assert!(validate_hosted_auth_url(denied).is_err());
+        }
+    }
+
+    #[test]
+    fn bun_auth_frames_are_closed_and_exact() {
+        assert_eq!(
+            serde_json::from_str::<BunToRustAuthFrame>(
+                "{\"type\":\"store-auth\",\"requestId\":\"one\",\"serialized\":null}"
+            )
+            .unwrap(),
+            BunToRustAuthFrame::StoreAuth {
+                request_id: "one".to_string(),
+                serialized: None,
+            }
+        );
+        assert!(serde_json::from_str::<BunToRustAuthFrame>(
+            "{\"type\":\"execute\",\"command\":\"shell\"}"
+        )
+        .is_err());
+        assert!(serde_json::from_str::<BunToRustAuthFrame>(
+            "{\"type\":\"relaunch\",\"extra\":true}"
+        )
+        .is_err());
+    }
+
+    #[test]
     fn forwarded_arguments_extract_valid_unique_surface_links() {
         let arguments = [
             "/Applications/Epicenter.app/Contents/MacOS/Epicenter",
@@ -1438,13 +1704,13 @@ mod tests {
     }
 
     #[test]
-    fn boot_frame_is_strict_v1_and_does_not_pad_the_token() {
+    fn boot_frame_is_strict_v2_and_carries_the_opaque_auth_cell() {
         let token = URL_SAFE_NO_PAD.encode([7_u8; 32]);
-        let json = boot_frame_json(&token, PRODUCTION_PORT).unwrap();
+        let json = boot_frame_json(&token, PRODUCTION_PORT, Some("opaque")).unwrap();
         assert_eq!(
             json,
             format!(
-                "{{\"type\":\"boot\",\"protocolVersion\":1,\"token\":\"{token}\",\"port\":39130}}"
+                "{{\"type\":\"boot\",\"protocolVersion\":2,\"token\":\"{token}\",\"port\":39130,\"authCell\":\"opaque\"}}"
             )
         );
         assert!(!token.contains('='));
@@ -1456,10 +1722,9 @@ mod tests {
         assert!(script.contains("window.location.origin !== expectedOrigin"));
         assert!(script.contains("/_epicenter/bootstrap"));
         assert!(script.contains("__EPICENTER_SESSION_READY__"));
-        assert!(script.contains("window.location.pathname.startsWith('/apps/whispering/')"));
-        assert!(script.contains("__EPICENTER_WHISPERING_AUTH_READY__"));
-        assert!(script.contains("__EPICENTER_WHISPERING_AUTH_BOOTSTRAP__"));
-        assert!(script.contains("invoke('keyring_read')"));
+        assert!(!script.contains("__EPICENTER_WHISPERING_AUTH_READY__"));
+        assert!(!script.contains("__EPICENTER_WHISPERING_AUTH_BOOTSTRAP__"));
+        assert!(!script.contains("keyring_read"));
         assert!(!script.contains("localStorage"));
         assert!(!script.contains("sessionStorage"));
     }

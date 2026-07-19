@@ -14,7 +14,7 @@
 		"build": "bun run clean:dist && bun run build:home && bun run build:whispering",
 		"build:home": "vite build",
 		"build:sidecar": "bun run scripts/build-sidecar.ts",
-		"build:whispering": "bun run --cwd ../whispering build:epicenter && bun run scripts/prepare-whispering-index.ts",
+		"build:whispering": "bun run --cwd ../whispering build:epicenter",
 		"clean:dist": "bun run scripts/clean-dist.ts",
 		"build:desktop": "bun run build && bun run build:sidecar",
 		"desktop:build": "tauri build",
@@ -24,9 +24,11 @@
 		"typecheck:home": "tsc --noEmit && svelte-check --tsconfig ./tsconfig.json"
 	},
 	"dependencies": {
+		"@epicenter/auth": "workspace:*",
 		"@epicenter/blobs": "workspace:*",
 		"@epicenter/chat": "workspace:*",
 		"@epicenter/client": "workspace:*",
+		"@epicenter/constants": "workspace:*",
 		"@epicenter/field": "workspace:*",
 		"@epicenter/honeycrisp": "workspace:*",
 		"@epicenter/server": "workspace:*",

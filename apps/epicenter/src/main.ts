@@ -12,10 +12,15 @@ import { join } from 'node:path';
 import { createBunBlobStore } from '@epicenter/blobs/bun';
 import { type AgentEngine, createOpenAiAgentEngine } from '@epicenter/client';
 import { honeycrispWorkspace } from '@epicenter/honeycrisp';
+import {
+	createDesktopAuthAuthority,
+	type DesktopAuthAuthority,
+} from './desktop-auth-authority.ts';
 import { createHomeHost, type HomeHost } from './host.ts';
 import { SURFACE_ROUTES } from './routes.ts';
 import { createHomeServer } from './server.ts';
 import {
+	createNativeAuthPort,
 	createReadyFrame,
 	parseBootFrame,
 	parseRuntimeMode,
@@ -32,12 +37,18 @@ async function main(): Promise<void> {
 	let workspaceOwner:
 		| ReturnType<typeof createEpicenterWorkspaceOwner>
 		| undefined;
+	let desktopAuth: DesktopAuthAuthority | undefined;
 	let server: ReturnType<typeof Bun.serve> | undefined;
 	let lifecycleOwnsResources = false;
 
 	try {
 		const runtimeMode = parseRuntimeMode(Bun.argv);
 		const boot = parseBootFrame(await parentPipe.bootLine, runtimeMode);
+		const nativeAuthPort = createNativeAuthPort({ parentPipe });
+		desktopAuth = createDesktopAuthAuthority({
+			authCell: boot.authCell,
+			nativeAuthPort,
+		});
 
 		const { engine, model } = homeEngineFromEnvironment(process.env);
 
@@ -81,6 +92,7 @@ async function main(): Promise<void> {
 			appCatalog,
 			workspaceOwner,
 			blobs,
+			desktopAuth,
 		});
 
 		server = Bun.serve({
@@ -94,19 +106,23 @@ async function main(): Promise<void> {
 		lifecycleOwnsResources = true;
 		const ownedHost = host;
 		const ownedWorkspaces = workspaceOwner;
+		const ownedDesktopAuth = desktopAuth;
 		await superviseSidecar({
 			server,
 			host: {
 				async [Symbol.asyncDispose]() {
+					ownedDesktopAuth[Symbol.dispose]();
 					await ownedHost[Symbol.asyncDispose]();
 					await ownedWorkspaces[Symbol.asyncDispose]();
 				},
 			},
 			parentPipe,
+			protocol: nativeAuthPort,
 		});
 	} finally {
 		if (!lifecycleOwnsResources) {
 			if (server) await server.stop(true);
+			desktopAuth?.[Symbol.dispose]();
 			if (host) await host[Symbol.asyncDispose]();
 			if (workspaceOwner) await workspaceOwner[Symbol.asyncDispose]();
 			await parentPipe.cancel();

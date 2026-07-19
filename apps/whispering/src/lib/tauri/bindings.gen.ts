@@ -189,26 +189,6 @@ export const commands = {
 	resumePlayback: (sessions: string[]) =>
 		__TAURI_INVOKE<void>('resume_playback', { sessions }),
 	/**
-	 *  Read the stored secret, or `None` when absent.
-	 *
-	 *  `keyring::Error::NoEntry` (nothing stored yet, or a prior delete) is the
-	 *  only variant folded into `Ok(None)`; every other failure (locked keychain,
-	 *  platform failure, bad encoding) surfaces as `Err`.
-	 */
-	keyringRead: () =>
-		typedError<string | null, KeyringError>(__TAURI_INVOKE('keyring_read')),
-	/**
-	 *  Write `value` as the stored secret, or delete the entry when `value` is
-	 *  `None`.
-	 *
-	 *  Deleting an entry that is already absent (`NoEntry`) is treated as
-	 *  success, matching `Storage.removeItem`'s no-throw-if-missing semantics:
-	 *  the TypeScript `PersistedAuthStorage.set(null)` contract relies on a
-	 *  no-op delete being safe to call repeatedly.
-	 */
-	keyringWrite: (value: string | null) =>
-		typedError<null, KeyringError>(__TAURI_INVOKE('keyring_write', { value })),
-	/**
 	 *  Tell the keyboard supervisor whether auto-paste-at-cursor is enabled. Paste
 	 *  writes a synthetic Cmd/Ctrl+V through the macOS Accessibility grant the tap
 	 *  watches, so the supervisor holds the tap whenever paste is on to track that
@@ -334,17 +314,6 @@ export type GlobalShortcutTriggered = {
 	commandId: string;
 	state: GlobalShortcutState;
 };
-
-/**
- *  Structured failure for both commands.
- *
- *  Only one variant: the frontend adapter (`tauriOnly.keyring` in
- *  `tauri.tauri.ts`) does not branch on a finer taxonomy. It logs and treats a
- *  read failure as signed-out, and propagates a write failure, exactly like
- *  the `localStorage`-backed `PersistedAuthStorage` adapter it replaces. The
- *  detail still travels in `message`.
- */
-export type KeyringError = { name: 'Failed'; message: string };
 
 /**
  *  The OS-level microphone authorization, read from the platform privacy store.

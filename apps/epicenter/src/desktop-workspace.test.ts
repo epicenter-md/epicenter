@@ -27,7 +27,10 @@ import { isResult } from 'wellcrafted/result';
 import { BOOTSTRAP_ROUTE } from './routes.ts';
 import { createHomeServer } from './server.ts';
 import { loadStaticAssets } from './static-assets.ts';
-import { createOwnedTestHomeHostBundle } from './test-home-host.ts';
+import {
+	createOwnedTestHomeHostBundle,
+	createTestDesktopAuth,
+} from './test-home-host.ts';
 
 const TOKEN = 'desktop-workspace-test-token';
 
@@ -255,6 +258,7 @@ async function startDesktopServer(root: string) {
 		staticAssets: await testAssets(root),
 		workspaceOwner: owner,
 		blobs: createBunBlobStore({ directory: join(root, 'blobs') }),
+		desktopAuth: createTestDesktopAuth(),
 	});
 	const server = Bun.serve({
 		hostname: '127.0.0.1',

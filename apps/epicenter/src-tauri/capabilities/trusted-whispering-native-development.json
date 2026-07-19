@@ -42,8 +42,6 @@
 		"allow-cancel-download",
 		"allow-pause-playback",
 		"allow-resume-playback",
-		"allow-keyring-read",
-		"allow-keyring-write",
 		"allow-set-auto-paste-enabled",
 		"allow-get-dictation-capability",
 		"allow-replace-global-shortcuts",

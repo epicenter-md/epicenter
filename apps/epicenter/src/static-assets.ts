@@ -27,6 +27,7 @@ const APP_ID_PATTERN = /^[a-z0-9-]+$/;
 export type StaticAsset = {
 	file: ReturnType<typeof Bun.file>;
 	contentType: string;
+	isDocument: boolean;
 };
 
 export type EpicenterStaticAssets = {
@@ -147,7 +148,9 @@ export async function loadStaticAssets(
  * The one contained static SPA resolver: existing files below `root` are
  * served directly, extensionless client-side routes fall back to the app
  * document, and missing generated assets stay honest 404s. Traversal,
- * separator smuggling, and symlink escape resolve to nothing.
+ * separator smuggling, and symlink escape resolve to nothing. The app
+ * document is flagged so the server can gate it behind an established
+ * browser session and inject the identity snapshot.
  */
 function createContainedResolver({
 	prefix,
@@ -165,13 +168,13 @@ function createContainedResolver({
 		const requested = relativePath === '' ? index : resolve(root, relativePath);
 		const requestedFile = await containedFile(root, requested);
 		if (requestedFile.kind === 'file') {
-			return staticAsset(requestedFile.path);
+			return staticAsset(requestedFile.path, requestedFile.path === index);
 		}
 		if (requestedFile.kind === 'outside') return undefined;
 
 		const lastSegment = relativePath.split('/').at(-1) ?? '';
 		if (lastSegment.includes('.')) return undefined;
-		return staticAsset(index);
+		return staticAsset(index, true);
 	};
 }
 
@@ -284,9 +287,10 @@ function isContained(root: string, path: string): boolean {
 	);
 }
 
-function staticAsset(path: string): StaticAsset {
+function staticAsset(path: string, isDocument = false): StaticAsset {
 	return {
 		file: Bun.file(path),
 		contentType: mime.getType(path) ?? 'application/octet-stream',
+		isDocument,
 	};
 }

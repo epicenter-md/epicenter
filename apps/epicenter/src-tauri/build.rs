@@ -36,8 +36,6 @@ const COMMANDS: &[&str] = &[
     "cancel_download",
     "pause_playback",
     "resume_playback",
-    "keyring_read",
-    "keyring_write",
     "set_auto_paste_enabled",
     "get_dictation_capability",
 ];

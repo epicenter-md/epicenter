@@ -10,6 +10,7 @@
 	import DatabaseZap from '@lucide/svelte/icons/database-zap';
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+	import Server from '@lucide/svelte/icons/server';
 	import {
 		createMutation,
 		createQuery,
@@ -133,10 +134,16 @@
 	// it reads muted. A `rejected` token is not handled here: it drops `state` to
 	// signed-out (see `createInstanceTokenAuth`), which reveals the sign-in panel
 	// that owns the rejected-token copy, so this signed-in surface never sees it.
-	const unreachableNotice = $derived.by(() => {
+	const instanceNotice = $derived.by(() => {
 		if (auth.deployment.kind !== 'self-hosted') return null;
-		if (auth.deployment.connection.status !== 'unreachable') return null;
-		return `Can't reach ${selfHostHost}. You're working locally; sync resumes when it's back.`;
+		switch (auth.deployment.connection.status) {
+			case 'unreachable':
+				return `Can't reach ${selfHostHost}. You're working locally; sync resumes when it's back.`;
+			case 'rejected':
+				return `${selfHostHost} rejected the saved token. Change the instance to repair sync.`;
+			default:
+				return null;
+		}
 	});
 	// Identity lives on the auth client: `state` carries the principal partition,
 	// and `getProfile()` reads presentational identity (the email) on demand.
@@ -304,8 +311,8 @@
 					{#if selfHostHost}
 						<p class="text-sm font-medium">{selfHostHost}</p>
 						<p class="text-xs text-muted-foreground">Self-hosted instance</p>
-						{#if unreachableNotice}
-							<p class="text-xs text-muted-foreground">{unreachableNotice}</p>
+						{#if instanceNotice}
+							<p class="text-xs text-muted-foreground">{instanceNotice}</p>
 						{/if}
 					{:else}
 						<p class="text-sm font-medium">{accountLabel}</p>
@@ -325,6 +332,18 @@
 					</div>
 				{/if}
 				<div class="border-t pt-3 flex gap-2">
+					{#if selfHostHost}
+						<Button
+							variant="outline"
+							size="sm"
+							class="flex-1"
+							onclick={openInstanceModal}
+							disabled={accountLocked}
+						>
+							<Server class="size-3.5" />
+							Change instance
+						</Button>
+					{/if}
 					{#if collaboration && syncStatus?.phase !== 'connected'}
 						<Button
 							variant="outline"
