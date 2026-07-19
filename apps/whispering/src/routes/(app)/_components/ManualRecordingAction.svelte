@@ -5,9 +5,9 @@
 	import RecordingActionCard from './RecordingActionCard.svelte';
 
 	let {
-		pipeline,
+		status,
 	}: {
-		pipeline: Snippet;
+		status: Snippet;
 	} = $props();
 
 	const rec = createManualRecordingController();
@@ -15,6 +15,6 @@
 
 <RecordingActionCard
 	controller={rec}
-	footer={pipeline}
+	footer={status}
 	iconViewTransitionName={viewTransition.recordingMode('manual')}
 />

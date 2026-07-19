@@ -7,8 +7,8 @@
 	import type { RecordingActionController } from './recording-action-controller';
 
 	// The controller owns the state machine and every derived label/icon. The card
-	// only decides presentation: a spinner while pending, the destructive "filled"
-	// treatment while active, and the pipeline footer below the toggle.
+	// only decides presentation: a spinner while pending, a destructive treatment
+	// while active, and one quiet output-status line below the toggle.
 	let {
 		controller,
 		footer,
@@ -55,7 +55,7 @@
 		<!-- The controller owns the state machine and the icon (mic -> stop square);
 		this glyph only paints it. The floating pill, not this card, is the live
 		recording surface on every platform and route, so the glyph never animates
-		or meters: it is a static brand-primary CTA that turns tinted destructive
+		or meters: it is a neutral primary CTA that turns tinted destructive
 		while active. -->
 		<span
 			aria-hidden="true"
@@ -102,12 +102,11 @@
 		{/if}
 	</Button>
 
-	<!-- The footer stays put across start/stop, so there is no height jump by
-	construction. Cancel lives on the pill, the sole live recording surface. The
-	pipeline controls stay useful mid-take: model and transformation are read at
-	stop time. -->
+	<!-- The status stays put across start/stop, so there is no height jump by
+	construction. Configuration belongs in Settings; this reports only the final
+	output mode and colors the exceptional unavailable state. -->
 	{#if footer}
-		<div class="border-t border-border/60 px-5 pt-3 pb-5">
+		<div class="flex justify-center px-5 pb-4">
 			{@render footer()}
 		</div>
 	{/if}
