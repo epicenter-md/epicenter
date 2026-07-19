@@ -14,6 +14,8 @@ import { afterEach, expect, test } from 'bun:test';
 import 'fake-indexeddb/auto';
 import { field } from '@epicenter/field';
 import { asPrincipalId } from '@epicenter/identity';
+import { RESERVED_KV_TABLE } from '@epicenter/row-sync';
+import { Type } from 'typebox';
 import {
 	createAccountBrowserWorkspaceRuntime,
 	createDeviceBrowserWorkspaceRuntime,
@@ -40,7 +42,8 @@ class FakeWorker {
 	readonly manifests: BrowserRuntimeRequest['manifest'][] = [];
 	readonly transportResponses: { type: string; pendingReason?: string }[] = [];
 	row: Record<string, unknown> | undefined = { title: 'Browser row' };
-	theme: 'light' | 'dark' | undefined = 'light';
+	theme: unknown = 'light';
+	sqlRows: Record<string, unknown>[] = [];
 	private readonly messageListeners = new Set<
 		(event: MessageEvent<BrowserRuntimeMessage>) => void
 	>();
@@ -115,17 +118,33 @@ class FakeWorker {
 					return undefined;
 				case 'read-current-row':
 					return this.row;
-				case 'kv-get':
-					return { data: this.theme, error: null };
-				case 'kv-set':
-					this.theme = message.operation.value as 'light' | 'dark';
-					return { data: undefined, error: null };
-				case 'kv-unset':
-					this.theme = undefined;
+				case 'list-current-rows':
+					return this.row === undefined
+						? []
+						: [{ rowId: ROW_ID, fields: this.row }];
+				case 'kv-read-map':
+					return this.theme === undefined ? {} : { theme: this.theme };
+				case 'admit-intent': {
+					const { intent } = message.operation;
+					if (intent.table === RESERVED_KV_TABLE) {
+						if (intent.kind === 'update') {
+							if (intent.fields.unset.includes('theme')) this.theme = undefined;
+							if ('theme' in intent.fields.set) {
+								this.theme = intent.fields.set.theme as 'light' | 'dark';
+							}
+						}
+						return undefined;
+					}
+					if (intent.kind === 'delete') this.row = undefined;
+					if (intent.kind === 'create') this.row = intent.fields;
+					if (intent.kind === 'update' && this.row) {
+						this.row = { ...this.row, ...intent.fields.set };
+						for (const key of intent.fields.unset) delete this.row[key];
+					}
 					return undefined;
-				case 'delete':
-					this.row = undefined;
-					return undefined;
+				}
+				case 'sql':
+					return this.sqlRows;
 				default:
 					return undefined;
 			}
@@ -330,7 +349,7 @@ test('Account export settles first, then captures visible state with page docume
 	);
 });
 
-test('page sends list and update operations', async () => {
+test('page sends raw list, read, and intent operations', async () => {
 	await using runtime = createRuntime();
 	const workspace = await runtime.open(definition);
 	await workspace.tables.notes.list();
@@ -339,14 +358,90 @@ test('page sends list and update operations', async () => {
 	});
 	expect(FakeWorker.latest?.operations).toEqual([
 		{ kind: 'open' },
-		{ kind: 'list', table: 'notes' },
+		{ kind: 'list-current-rows', table: 'notes' },
 		{
-			kind: 'update',
+			kind: 'read-current-row',
 			table: 'notes',
-			id: 'aaaaaaaaaaaaaaaaaaaaaaaa',
-			changes: { title: 'changed' },
+			rowId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+		},
+		{
+			kind: 'admit-intent',
+			intent: {
+				kind: 'update',
+				table: 'notes',
+				rowId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+				fields: { set: { title: 'changed' }, unset: [] },
+			},
+		},
+		{
+			kind: 'read-current-row',
+			table: 'notes',
+			rowId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
 		},
 	]);
+});
+
+test('same workspace ID supports divergent page-local lenses over one owner', async () => {
+	await using runtime = createRuntime();
+	const recordingLens = defineWorkspace({
+		id: definition.id,
+		tables: {
+			notes: defineTable({
+				fields: { title: field.string(), archived: field.boolean() },
+				optional: ['archived'],
+			}),
+		},
+	});
+	const honeycrisp = await runtime.open(definition);
+	const recording = await runtime.open(recordingLens);
+	expect(honeycrisp).not.toBe(recording);
+	expect(await runtime.open(definition)).toBe(honeycrisp);
+	expect(await runtime.open(recordingLens)).toBe(recording);
+	expect(
+		FakeWorker.latest?.operations.filter(({ kind }) => kind === 'open'),
+	).toEqual([{ kind: 'open' }]);
+	expect(FakeWorker.latest?.manifests[0]).toEqual({
+		workspaceId: definition.id,
+		storageKey: expect.any(String),
+	});
+});
+
+test('row and SQL conformance are checked only in the page realm', async () => {
+	await using runtime = createRuntime();
+	const workspace = await runtime.open(definition);
+	if (!FakeWorker.latest) throw new Error('Expected fake Worker');
+	FakeWorker.latest.row = { title: 42 };
+	const row = await workspace.tables.notes.get(ROW_ID);
+	expect(row.error).not.toBeNull();
+	const listed = await workspace.tables.notes.list();
+	expect(listed.rows).toEqual([]);
+	expect(listed.nonconforming).toHaveLength(1);
+
+	FakeWorker.latest.sqlRows = [{ title: 42 }];
+	await expect(
+		workspace.sql(
+			'SELECT title FROM records',
+			[],
+			Type.Object({ title: Type.String() }),
+		),
+	).rejects.toThrow('SQL row 0 does not satisfy the result schema');
+	const sqlOperation = FakeWorker.latest.operations.at(-1);
+	expect(sqlOperation).toEqual({
+		kind: 'sql',
+		query: 'SELECT title FROM records',
+		parameters: [],
+	});
+	expect(sqlOperation).not.toHaveProperty('resultSchema');
+});
+
+test('KV conformance is checked in the page realm over one raw map', async () => {
+	await using runtime = createRuntime();
+	const workspace = await runtime.open(definition);
+	if (!FakeWorker.latest) throw new Error('Expected fake Worker');
+	FakeWorker.latest.theme = 42;
+	const value = await workspace.kv.get('theme');
+	expect(value.error).not.toBeNull();
+	expect(FakeWorker.latest.operations.at(-1)).toEqual({ kind: 'kv-read-map' });
 });
 
 test('browser row documents use the page-owned IndexedDB provider', async () => {

@@ -1,6 +1,14 @@
-import { sha256Hex } from '@epicenter/row-sync';
+import {
+	RESERVED_KV_ROW_ID,
+	RESERVED_KV_TABLE,
+	sha256Hex,
+	type WireRowIntent,
+} from '@epicenter/row-sync';
 import type { SqliteValue } from '@epicenter/sqlite';
+import { customAlphabet } from 'nanoid';
 import type { Static, TSchema } from 'typebox';
+import { Value } from 'typebox/value';
+import { Ok } from 'wellcrafted/result';
 import { createBrowserIndexedDbDocumentStore } from '../document-provider/browser-indexed-db.js';
 import {
 	attachAuthenticatedDocumentConnection,
@@ -15,13 +23,12 @@ import {
 	deviceBrowserPersistenceKey,
 	type WorkspaceAccount,
 } from './account-runtime.js';
-import {
-	type BrowserRecordOperation,
-	type BrowserRowSyncBinding,
-	type BrowserRuntimeMessage,
-	type BrowserRuntimeRequest,
-	type BrowserWorkspaceManifest,
-	serializeTableLenses,
+import type {
+	BrowserRecordOperation,
+	BrowserRowSyncBinding,
+	BrowserRuntimeMessage,
+	BrowserRuntimeRequest,
+	BrowserWorkspaceManifest,
 } from './browser-runtime-protocol.js';
 import {
 	type LogicalWorkspaceCopy,
@@ -34,6 +41,13 @@ import type {
 	WorkspaceSyncStatus,
 } from './canonical-sync-supervisor.js';
 import { CurrentStateTransportInterruption } from './current-state-transport.js';
+import {
+	compileKvLens,
+	type KvDefinitions,
+	KvReadError,
+	KvWriteError,
+} from './kv-definition.js';
+import { compileTableLens, type JsonObject } from './lens-definition.js';
 import type { Workspace, WorkspaceTables } from './runtime.js';
 import type { WorkspaceLens } from './workspace-lens.js';
 
@@ -46,11 +60,14 @@ type PendingRequest = {
 };
 
 type BoundWorkspace = {
-	definition: WorkspaceLens;
 	manifest: BrowserWorkspaceManifest;
-	handle: Workspace<WorkspaceLens>;
-	/** The one storage-opening attempt; resolves with the ready handle. */
-	opened: Promise<Workspace<WorkspaceLens>>;
+	views: Map<WorkspaceLens, Promise<Workspace<WorkspaceLens>>>;
+	/** The one storage-opening attempt. */
+	opened: Promise<void>;
+	sync: WorkspaceSync | null;
+	createView<TDefinition extends WorkspaceLens>(
+		definition: TDefinition,
+	): Workspace<TDefinition>;
 	notifyRowsDeleted(addresses: RowAddress[]): void;
 	notifySyncStatus(status: WorkspaceSyncStatus): void;
 	notifyReady(): void;
@@ -63,6 +80,9 @@ type BoundWorkspace = {
 	captureDocuments(copy: LogicalWorkspaceCopy): Promise<LogicalWorkspaceCopy>;
 	importDocuments(copy: LogicalWorkspaceCopy): Promise<void>;
 };
+
+const ROW_ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
+const mintRowId = customAlphabet(ROW_ID_ALPHABET, 24);
 
 type RowAddress = { table: string; rowId: string };
 
@@ -122,9 +142,7 @@ export function createDeviceBrowserWorkspaceRuntime({
 			return runtime.captureLocal(definition.id);
 		},
 		/** A Device export is the local capture; there is no authority to settle. */
-		async export(
-			definition: WorkspaceLens,
-		): Promise<LogicalWorkspaceExport> {
+		async export(definition: WorkspaceLens): Promise<LogicalWorkspaceExport> {
 			await runtime.open(definition);
 			await runtime.captureDurability(definition.id);
 			return {
@@ -165,9 +183,7 @@ export function createAccountBrowserWorkspaceRuntime({
 			await runtime.whenReady(definition.id);
 			return runtime.addToAccount(definition.id, copy);
 		},
-		async export(
-			definition: WorkspaceLens,
-		): Promise<LogicalWorkspaceExport> {
+		async export(definition: WorkspaceLens): Promise<LogicalWorkspaceExport> {
 			await runtime.open(definition);
 			return runtime.exportAccount(definition.id);
 		},
@@ -408,8 +424,8 @@ function createBrowserRuntimeWithPersistence({
 		return owner.ready.promise.then(send);
 	}
 
-	function createHandle<TDefinition extends WorkspaceLens>(
-		definition: TDefinition,
+	function createBinding(
+		workspaceId: string,
 		manifest: BrowserWorkspaceManifest,
 	) {
 		const rowsDeletedListeners = new Set<(addresses: RowAddress[]) => void>();
@@ -453,10 +469,6 @@ function createBrowserRuntimeWithPersistence({
 			return waiter.promise;
 		}
 
-		function getKv(key: string) {
-			return request(manifest, { kind: 'kv-get', key });
-		}
-
 		function notifyRowsDeleted(addresses: RowAddress[]): void {
 			for (const listener of rowsDeletedListeners) listener(addresses);
 		}
@@ -474,7 +486,7 @@ function createBrowserRuntimeWithPersistence({
 		}
 
 		const documentStore = lazyBrowserDocumentStore(
-			documentDatabaseName(persistenceHash, definition.id),
+			documentDatabaseName(persistenceHash, workspaceId),
 		);
 		async function captureDocuments(
 			copy: LogicalWorkspaceCopy,
@@ -497,7 +509,7 @@ function createBrowserRuntimeWithPersistence({
 								document,
 								url: rowDocumentWebSocketUrl({
 									baseUrl: transport.baseUrl,
-									workspaceId: definition.id,
+									workspaceId,
 									address,
 								}),
 								openWebSocket: transport.openWebSocket,
@@ -547,72 +559,181 @@ function createBrowserRuntimeWithPersistence({
 				})
 			: null;
 
-		const tables = Object.fromEntries(
-			Object.keys(definition.tables).map((table) => [
-				table,
-				Object.freeze({
-					get(id: string) {
-						return request(manifest, { kind: 'get', table, id });
-					},
-					list() {
-						return request(manifest, { kind: 'list', table });
-					},
-					create(input: Record<string, unknown>) {
-						return request(manifest, { kind: 'create', table, input });
-					},
-					update(id: string, changes: Record<string, unknown>) {
-						return request(manifest, {
-							kind: 'update',
-							table,
-							id,
-							changes,
-						});
-					},
-					async delete(id: string) {
-						await request<void>(manifest, { kind: 'delete', table, id });
-						notifyRowsDeleted([{ table, rowId: id }]);
-					},
-					document: Object.freeze({
-						open(rowId: string) {
-							return documents.open({ table, rowId });
-						},
-					}),
+		function createView<TDefinition extends WorkspaceLens>(
+			definition: TDefinition,
+		): Workspace<TDefinition> {
+			const tables = Object.fromEntries(
+				Object.entries(definition.tables).map(([table, tableDefinition]) => {
+					const lens = compileTableLens(tableDefinition);
+					return [
+						table,
+						Object.freeze({
+							async get(id: string) {
+								const fields = await request<JsonObject | undefined>(manifest, {
+									kind: 'read-current-row',
+									table,
+									rowId: id,
+								});
+								return fields === undefined
+									? Ok(undefined)
+									: lens.project(table, id, fields);
+							},
+							async list() {
+								const current = await request<
+									{ rowId: string; fields: JsonObject }[]
+								>(manifest, { kind: 'list-current-rows', table });
+								const rows: Record<string, unknown>[] = [];
+								const nonconforming = [];
+								for (const row of current) {
+									const projected = lens.project(table, row.rowId, row.fields);
+									if (projected.error === null) rows.push(projected.data);
+									else nonconforming.push(projected.error);
+								}
+								return { rows, nonconforming };
+							},
+							async create(input: Record<string, unknown>) {
+								const fields = lens.validateCreate(input);
+								const id = mintRowId();
+								await admit({ kind: 'create', table, rowId: id, fields });
+								const projected = lens.project(table, id, fields);
+								if (projected.error !== null)
+									throw new Error(projected.error.message);
+								return projected.data;
+							},
+							async update(id: string, changes: Record<string, unknown>) {
+								const normalized = lens.normalizeChanges(changes);
+								const current = await request<JsonObject | undefined>(
+									manifest,
+									{
+										kind: 'read-current-row',
+										table,
+										rowId: id,
+									},
+								);
+								if (
+									Object.keys(normalized.set).length === 0 &&
+									normalized.unset.length === 0
+								) {
+									return current === undefined
+										? Ok(undefined)
+										: lens.project(table, id, current);
+								}
+								await admit({
+									kind: 'update',
+									table,
+									rowId: id,
+									fields: normalized,
+								});
+								const fields = await request<JsonObject | undefined>(manifest, {
+									kind: 'read-current-row',
+									table,
+									rowId: id,
+								});
+								return fields === undefined
+									? Ok(undefined)
+									: lens.project(table, id, fields);
+							},
+							async delete(id: string) {
+								await admit({ kind: 'delete', table, rowId: id });
+								notifyRowsDeleted([{ table, rowId: id }]);
+							},
+							document: Object.freeze({
+								open(rowId: string) {
+									return documents.open({ table, rowId });
+								},
+							}),
+						}),
+					];
 				}),
-			]),
-		) as unknown as WorkspaceTables<DefinitionTables<TDefinition>>;
+			) as unknown as WorkspaceTables<DefinitionTables<TDefinition>>;
+			const kvLens = compileKvLens(definition.kv as KvDefinitions);
+			const requireKv = (key: string) => {
+				const compiled = kvLens.get(key);
+				if (!compiled) throw new Error(`Unknown kv key '${key}'`);
+				return compiled;
+			};
+			const readKvMap = () =>
+				request<JsonObject>(manifest, { kind: 'kv-read-map' });
+			const kv = Object.freeze({
+				async get(key: string) {
+					const compiled = requireKv(key);
+					const map = await readKvMap();
+					if (!Object.hasOwn(map, key)) return Ok(undefined);
+					const raw = map[key];
+					return compiled.check(raw)
+						? Ok(structuredClone(raw))
+						: KvReadError.NonconformingKvValue({
+								key,
+								raw: structuredClone(raw) as never,
+							});
+				},
+				async set(key: string, value: unknown) {
+					const compiled = requireKv(key);
+					if (!compiled.check(value)) {
+						return KvWriteError.InvalidKvWrite({
+							key,
+							reason: 'value does not satisfy the declared schema',
+						});
+					}
+					await admit({
+						kind: 'update',
+						table: RESERVED_KV_TABLE,
+						rowId: RESERVED_KV_ROW_ID,
+						fields: {
+							set: { [key]: structuredClone(value) as never },
+							unset: [],
+						},
+					});
+					return Ok(undefined);
+				},
+				async unset(key: string) {
+					requireKv(key);
+					await admit({
+						kind: 'update',
+						table: RESERVED_KV_TABLE,
+						rowId: RESERVED_KV_ROW_ID,
+						fields: { set: {}, unset: [key] },
+					});
+				},
+			});
 
-		const kv = Object.freeze({
-			get(key: string) {
-				return getKv(key);
-			},
-			set(key: string, value: unknown) {
-				return request(manifest, { kind: 'kv-set', key, value });
-			},
-			async unset(key: string) {
-				await request(manifest, { kind: 'kv-unset', key });
-			},
-		});
+			return Object.freeze({
+				id: definition.id,
+				tables,
+				kv: kv as never,
+				sync,
+				async sql<TResultSchema extends TSchema>(
+					query: string,
+					parameters: readonly SqliteValue[],
+					resultSchema: TResultSchema,
+				): Promise<Static<TResultSchema>[]> {
+					const rows = await request<Record<string, unknown>[]>(manifest, {
+						kind: 'sql',
+						query,
+						parameters,
+					});
+					for (const [index, row] of rows.entries()) {
+						if (!Value.Check(resultSchema, row)) {
+							const issues = [...Value.Errors(resultSchema, row)]
+								.map((issue) => `${issue.instancePath}: ${issue.message}`)
+								.join('; ');
+							throw new TypeError(
+								`SQL row ${index} does not satisfy the result schema: ${issues}`,
+							);
+						}
+					}
+					return rows as Static<TResultSchema>[];
+				},
+			}) as Workspace<TDefinition>;
+		}
 
-		const handle = Object.freeze({
-			id: definition.id,
-			tables,
-			kv: kv as never,
-			sync,
-			sql<TResultSchema extends TSchema>(
-				query: string,
-				parameters: readonly SqliteValue[],
-				resultSchema: TResultSchema,
-			): Promise<Static<TResultSchema>[]> {
-				return request(manifest, {
-					kind: 'sql',
-					query,
-					parameters,
-					resultSchema,
-				});
-			},
-		}) as unknown as Workspace<TDefinition>;
+		function admit(intent: WireRowIntent): Promise<void> {
+			return request(manifest, { kind: 'admit-intent', intent });
+		}
+
 		return {
-			handle,
+			createView,
+			sync,
 			notifyRowsDeleted,
 			notifySyncStatus,
 			notifyReady,
@@ -650,46 +771,52 @@ function createBrowserRuntimeWithPersistence({
 			definition: TDefinition,
 		): Promise<Workspace<TDefinition>> {
 			assertOpen();
-			const existing = workspaces.get(definition.id);
-			if (existing) {
-				if (existing.definition !== definition) {
-					throw new Error(
-						`Workspace '${definition.id}' is already bound to another definition in this runtime`,
-					);
-				}
-				return existing.opened as Promise<Workspace<TDefinition>>;
+			const bound = workspaces.get(definition.id);
+			if (bound) {
+				const cached = bound.views.get(definition);
+				if (cached) return cached as Promise<Workspace<TDefinition>>;
+				const existing = bound;
+				const view = existing.opened.then(() =>
+					existing.createView(definition),
+				);
+				bound.views.set(definition, view as Promise<Workspace<WorkspaceLens>>);
+				return view;
 			}
 			const manifest: BrowserWorkspaceManifest = {
 				workspaceId: definition.id,
 				storageKey: workspaceStorageKey(persistenceKey, definition.id),
-				tables: serializeTableLenses(definition.tables),
-				kv: JSON.parse(JSON.stringify(definition.kv)),
 				rowSync: transport?.binding,
 			};
-			const binding = createHandle(definition, manifest);
-			const bound: BoundWorkspace = {
-				definition,
+			const binding = createBinding(definition.id, manifest);
+			const createdBound: BoundWorkspace = {
 				manifest,
+				views: new Map(),
 				...binding,
 				opened: undefined as never,
 			};
-			workspaces.set(definition.id, bound);
-			bound.opened = request<{ isReady: boolean }>(manifest, {
+			workspaces.set(definition.id, createdBound);
+			createdBound.opened = request<{ isReady: boolean }>(manifest, {
 				kind: 'open',
 			}).then(
 				({ isReady }) => {
-					if (isReady) bound.notifyReady();
-					return binding.handle;
+					if (isReady) createdBound.notifyReady();
 				},
 				(cause) => {
 					const error =
 						cause instanceof Error ? cause : new Error(String(cause));
-					void bound.revokeDocuments(error);
-					bound.rejectReadiness(error);
+					void createdBound.revokeDocuments(error);
+					createdBound.rejectReadiness(error);
 					throw error;
 				},
 			);
-			return bound.opened as Promise<Workspace<TDefinition>>;
+			const view = createdBound.opened.then(() =>
+				createdBound.createView(definition),
+			);
+			createdBound.views.set(
+				definition,
+				view as Promise<Workspace<WorkspaceLens>>,
+			);
+			return view;
 		},
 		async captureLocal(workspaceId: string): Promise<LogicalWorkspaceCopy> {
 			const bound = workspaces.get(workspaceId);
@@ -710,7 +837,7 @@ function createBrowserRuntimeWithPersistence({
 					new Error(`Account workspace '${workspaceId}' is not open`),
 				);
 			}
-			const sync = bound.handle.sync;
+			const sync = bound.sync;
 			if (!sync) {
 				return Promise.reject(
 					new Error(`Workspace '${workspaceId}' has no synchronization`),

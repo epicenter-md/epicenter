@@ -1,3 +1,4 @@
+import { RESERVED_KV_ROW_ID, RESERVED_KV_TABLE } from '@epicenter/row-sync';
 import type { SqliteDatabase } from '@epicenter/sqlite';
 import {
 	type BrowserSqliteDatabase,
@@ -25,8 +26,10 @@ import {
 	logicalWorkspaceIntents,
 } from './canonical-addition.js';
 import { mergeDocumentUpdates } from './canonical-documents.js';
-import { type CanonicalKv, createCanonicalKv } from './canonical-kv.js';
-import { type CanonicalRows, createCanonicalRows } from './canonical-rows.js';
+import {
+	type CanonicalStore,
+	createCanonicalStore,
+} from './canonical-store.js';
 import {
 	type CanonicalSyncSupervisor,
 	createCanonicalSyncSupervisor,
@@ -40,12 +43,7 @@ import {
 	CurrentStateTransportInterruption,
 	classifyCurrentStateTransport,
 } from './current-state-transport.js';
-import type { KvDefinitions } from './kv-definition.js';
-import { defineTable, type TableLensDefinitions } from './lens-definition.js';
-import {
-	initializeLocalWorkspaceStorage,
-	readLocalRow,
-} from './local-workspace-storage.js';
+import { initializeLocalWorkspaceStorage } from './local-workspace-storage.js';
 
 type WorkerScope = {
 	postMessage(message: BrowserRuntimeMessage): void;
@@ -60,8 +58,7 @@ type OpenedRecords = {
 	database: Database;
 	pool: SAHPoolUtil;
 	sqlite: SqliteDatabase;
-	records: CanonicalRows;
-	kv: CanonicalKv<KvDefinitions>;
+	store: CanonicalStore;
 	replica?: CurrentStateReplica;
 	sync?: CanonicalSyncSupervisor;
 	/** Held until Worker termination so this storage has one SQLite owner. */
@@ -184,12 +181,6 @@ async function openRecords(
 					PRAGMA synchronous = EXTRA;
 					PRAGMA temp_store = MEMORY;
 				`);
-				const definitions = Object.fromEntries(
-					Object.entries(manifest.tables).map(([name, lens]) => [
-						name,
-						defineTable({ fields: lens.fields, optional: lens.optional }),
-					]),
-				) as TableLensDefinitions;
 				const sqlite = createBrowserSqliteAdapter(
 					database as unknown as BrowserSqliteDatabase,
 				);
@@ -213,18 +204,10 @@ async function openRecords(
 							},
 						})
 					: undefined;
-				const records = createCanonicalRows(sqlite, definitions, {
+				const store = createCanonicalStore(sqlite, {
 					admitIntent: replica?.admit,
 					readCurrentRow: replica?.readCurrentRow,
 				});
-				const kv = createCanonicalKv(
-					sqlite,
-					(manifest.kv ?? {}) as KvDefinitions,
-					{
-						admitIntent: replica?.admit,
-						readCurrentRow: replica?.readCurrentRow,
-					},
-				);
 				const sync = replica
 					? createCanonicalSyncSupervisor({
 							driver: classifyCurrentStateTransport(replica),
@@ -252,8 +235,7 @@ async function openRecords(
 					database,
 					pool,
 					sqlite,
-					records,
-					kv,
+					store,
 					replica,
 					sync,
 					retainedLease,
@@ -291,16 +273,6 @@ async function openRecords(
 		opened.set(manifest.workspaceId, opening);
 	}
 	const state = await opening;
-	if (
-		state.manifest.storageKey !== manifest.storageKey ||
-		JSON.stringify(state.manifest.tables) !== JSON.stringify(manifest.tables) ||
-		JSON.stringify(state.manifest.kv) !== JSON.stringify(manifest.kv) ||
-		JSON.stringify(state.manifest.rowSync) !== JSON.stringify(manifest.rowSync)
-	) {
-		throw new Error(
-			`Workspace '${manifest.workspaceId}' is already bound to another release-local lens in this Worker`,
-		);
-	}
 	return state;
 }
 
@@ -370,33 +342,23 @@ function createRecordTransport(
 	};
 }
 
-function tableFor(records: CanonicalRows, name: string) {
-	const table = records.tables[name];
-	if (!table) throw new Error(`Unknown canonical table '${name}'`);
-	return table;
-}
-
 async function execute(
 	state: OpenedRecords,
 	operation: BrowserRecordOperation,
 ) {
-	const { records } = state;
+	const { store } = state;
 	switch (operation.kind) {
 		case 'open':
 			return { isReady: state.replica?.isReady() ?? true };
-		case 'get':
-			return tableFor(records, operation.table).get(operation.id);
-		case 'kv-get':
-			return state.kv.get(operation.key);
-		case 'kv-set':
-			return state.kv.set(operation.key, operation.value as never);
-		case 'kv-unset':
-			state.kv.unset(operation.key);
-			return undefined;
 		case 'read-current-row':
-			return state.replica
-				? state.replica.readCurrentRow(operation.table, operation.rowId)
-				: readLocalRow(state.sqlite, operation.table, operation.rowId);
+			return store.read(operation.table, operation.rowId);
+		case 'list-current-rows':
+			return store.list(operation.table);
+		case 'admit-intent':
+			store.admit(operation.intent);
+			return undefined;
+		case 'kv-read-map':
+			return store.read(RESERVED_KV_TABLE, RESERVED_KV_ROW_ID) ?? {};
 		case 'sync-settle':
 			throw new Error('Sync settlement must not block the Worker request tail');
 		case 'sync-start-fresh':
@@ -430,24 +392,8 @@ async function execute(
 			}
 			deleteLocalWorkspace(state.sqlite);
 			return undefined;
-		case 'list':
-			return tableFor(records, operation.table).list();
-		case 'create':
-			return tableFor(records, operation.table).create(operation.input);
-		case 'update':
-			return tableFor(records, operation.table).update(
-				operation.id,
-				operation.changes,
-			);
-		case 'delete':
-			tableFor(records, operation.table).delete(operation.id);
-			return undefined;
 		case 'sql':
-			return records.sql(
-				operation.query,
-				operation.parameters,
-				operation.resultSchema,
-			);
+			return store.sql(operation.query, operation.parameters);
 		default:
 			return operation satisfies never;
 	}
@@ -525,11 +471,7 @@ scope.addEventListener('message', (event) => {
 			const value = await execute(state, request.operation);
 			scope.postMessage({ type: 'result', id: request.id, value });
 			if (
-				request.operation.kind === 'create' ||
-				request.operation.kind === 'update' ||
-				request.operation.kind === 'delete' ||
-				request.operation.kind === 'kv-set' ||
-				request.operation.kind === 'kv-unset' ||
+				request.operation.kind === 'admit-intent' ||
 				request.operation.kind === 'logical-add' ||
 				request.operation.kind === 'logical-delete'
 			) {

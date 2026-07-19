@@ -1,16 +1,10 @@
+import type { WireRowIntent } from '@epicenter/row-sync';
 import type { SqliteValue } from '@epicenter/sqlite';
-import type { TSchema } from 'typebox';
 import type { LogicalWorkspaceCopy } from './canonical-addition.js';
 import type {
 	WorkspaceSyncSettlement,
 	WorkspaceSyncStatus,
 } from './canonical-sync-supervisor.js';
-import type { TableLensDefinitions } from './lens-definition.js';
-
-export type SerializedTableLens = {
-	fields: Record<string, TSchema>;
-	optional: string[];
-};
 
 /**
  * Error name the records Worker stamps when a newer tab steals this
@@ -55,9 +49,6 @@ export function isWorkspaceStorageHeldError(cause: unknown): boolean {
 export type BrowserWorkspaceManifest = {
 	workspaceId: string;
 	storageKey: string;
-	tables: Record<string, SerializedTableLens>;
-	/** Serialized field.* schemas for this release's KV lens (ADR-0132). */
-	kv: Record<string, unknown>;
 	rowSync?: BrowserRowSyncBinding;
 };
 
@@ -68,11 +59,10 @@ export type BrowserRowSyncBinding = {
 
 export type BrowserRecordOperation =
 	| { kind: 'open' }
-	| { kind: 'get'; table: string; id: string }
-	| { kind: 'kv-get'; key: string }
-	| { kind: 'kv-set'; key: string; value: unknown }
-	| { kind: 'kv-unset'; key: string }
 	| { kind: 'read-current-row'; table: string; rowId: string }
+	| { kind: 'list-current-rows'; table: string }
+	| { kind: 'admit-intent'; intent: WireRowIntent }
+	| { kind: 'kv-read-map' }
 	| { kind: 'sync-settle' }
 	| { kind: 'sync-capture-recovery' }
 	| { kind: 'sync-start-fresh' }
@@ -80,20 +70,10 @@ export type BrowserRecordOperation =
 	| { kind: 'capture-visible' }
 	| { kind: 'logical-add'; copy: LogicalWorkspaceCopy }
 	| { kind: 'logical-delete' }
-	| { kind: 'list'; table: string }
-	| { kind: 'create'; table: string; input: Record<string, unknown> }
-	| {
-			kind: 'update';
-			table: string;
-			id: string;
-			changes: Record<string, unknown>;
-	  }
-	| { kind: 'delete'; table: string; id: string }
 	| {
 			kind: 'sql';
 			query: string;
 			parameters: readonly SqliteValue[];
-			resultSchema: TSchema;
 	  };
 
 export type BrowserRuntimeRequest = {
@@ -152,18 +132,3 @@ export type BrowserRuntimeMessage =
 			value: unknown | WorkspaceSyncSettlement;
 	  }
 	| { type: 'error'; id: number; name: string; message: string };
-
-/** Copy release-local lenses into values that can cross a Worker boundary. */
-export function serializeTableLenses(
-	definitions: TableLensDefinitions,
-): Record<string, SerializedTableLens> {
-	return Object.fromEntries(
-		Object.entries(definitions).map(([name, definition]) => [
-			name,
-			{
-				fields: structuredClone(definition.fields),
-				optional: [...definition.optional],
-			},
-		]),
-	);
-}
