@@ -12,7 +12,7 @@ import {
 import { createDeviceBunWorkspaceRuntime } from '@epicenter/workspace/sqlite/bun';
 
 await using runtime = createDeviceBunWorkspaceRuntime({
-	storageRoot: '/app/data',
+	workspacesRoot: '/app/data/workspaces',
 });
 const skills = await runtime.open(skillsWorkspace);
 const catalog = await listSkills(skills);

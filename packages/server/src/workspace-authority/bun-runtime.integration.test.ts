@@ -24,10 +24,7 @@ import {
 	createDeviceBunWorkspaceRuntime,
 } from '@epicenter/workspace/sqlite/bun';
 import { expectOk } from 'wellcrafted/testing';
-import {
-	accountPersistenceKey,
-	devicePersistenceKey,
-} from '../../../workspace/src/sqlite/account-runtime.js';
+import { accountStorageIdentity } from '../../../workspace/src/sqlite/account-runtime.js';
 import type { CurrentStateReplicaTransport } from '../../../workspace/src/sqlite/current-state-replica.js';
 import { CurrentStateTransportInterruption } from '../../../workspace/src/sqlite/current-state-transport.js';
 import { initializeLocalWorkspaceStorage } from '../../../workspace/src/sqlite/local-workspace-storage.js';
@@ -80,7 +77,7 @@ test('local Bun runtime reopens durable rows, KV, and documents', async () => {
 		let rowId = '';
 		{
 			await using runtime = createDeviceBunWorkspaceRuntime({
-				storageRoot: root,
+				workspacesRoot: root,
 			});
 			const workspace = await runtime.open(definition);
 			const row = await workspace.tables.notes.create({ title: 'Durable' });
@@ -92,7 +89,7 @@ test('local Bun runtime reopens durable rows, KV, and documents', async () => {
 		}
 
 		await using reopened = createDeviceBunWorkspaceRuntime({
-			storageRoot: root,
+			workspacesRoot: root,
 		});
 		const workspace = await reopened.open(definition);
 		expect(expectOk(await workspace.tables.notes.get(rowId))?.title).toBe(
@@ -112,7 +109,7 @@ test('synchronized Bun runtime automatically pushes and pulls current state', as
 	const { transport, requests } = createTransport(authorityState.authority);
 	try {
 		await using runtime = createAccountBunWorkspaceRuntime({
-			storageRoot: root,
+			workspacesRoot: root,
 			account: {
 				deploymentId: 'https://example.test',
 				principalId: asPrincipalId('alice'),
@@ -160,7 +157,7 @@ test('typed Bun transport interruption reports pending and retries automatically
 	};
 	try {
 		await using runtime = createAccountBunWorkspaceRuntime({
-			storageRoot: root,
+			workspacesRoot: root,
 			account: {
 				deploymentId: 'https://example.test',
 				principalId: asPrincipalId('alice'),
@@ -203,7 +200,7 @@ test('protocol mismatch requires upgrade while local editing stays durable', asy
 	};
 	try {
 		await using runtime = createAccountBunWorkspaceRuntime({
-			storageRoot: root,
+			workspacesRoot: root,
 			account: {
 				deploymentId: 'https://example.test',
 				principalId: asPrincipalId('alice'),
@@ -238,14 +235,16 @@ test('Account clean-break reset leaves Device storage untouched and unimported',
 	};
 	const accountPath = join(
 		root,
-		accountPersistenceKey(account),
-		`${definition.id}.records.sqlite3`,
+		'accounts',
+		accountStorageIdentity(account).key,
+		definition.id,
+		'store.sqlite3',
 	);
 	try {
 		let deviceRowId = '';
 		{
 			await using device = createDeviceBunWorkspaceRuntime({
-				storageRoot: root,
+				workspacesRoot: root,
 			});
 			const workspace = await device.open(definition);
 			const row = await workspace.tables.notes.create({ title: 'Device' });
@@ -257,7 +256,15 @@ test('Account clean-break reset leaves Device storage untouched and unimported',
 		}
 		expect(existsSync(devicePath)).toBe(true);
 
-		mkdirSync(join(root, accountPersistenceKey(account)), { recursive: true });
+		mkdirSync(
+			join(
+				root,
+				'accounts',
+				accountStorageIdentity(account).key,
+				definition.id,
+			),
+			{ recursive: true },
+		);
 		{
 			const legacyAccount = new Database(accountPath, { create: true });
 			const sqlite = createBunSqliteAdapter(legacyAccount);
@@ -271,7 +278,7 @@ test('Account clean-break reset leaves Device storage untouched and unimported',
 
 		{
 			await using accountRuntime = createAccountBunWorkspaceRuntime({
-				storageRoot: root,
+				workspacesRoot: root,
 				account,
 				recordPollIntervalMs: 60_000,
 			});
@@ -282,7 +289,7 @@ test('Account clean-break reset leaves Device storage untouched and unimported',
 			).toBeUndefined();
 
 			await using deviceRuntime = createDeviceBunWorkspaceRuntime({
-				storageRoot: root,
+				workspacesRoot: root,
 			});
 			const deviceWorkspace = await deviceRuntime.open(definition);
 			expect(
@@ -316,9 +323,11 @@ test('explicit Add commits scalar Device data before explicit deletion', async (
 	const authorityState = openAuthority();
 	const { transport } = createTransport(authorityState.authority);
 	try {
-		await using device = createDeviceBunWorkspaceRuntime({ storageRoot: root });
+		await using device = createDeviceBunWorkspaceRuntime({
+			workspacesRoot: root,
+		});
 		await using account = createAccountBunWorkspaceRuntime({
-			storageRoot: root,
+			workspacesRoot: root,
 			account: {
 				deploymentId: 'https://example.test',
 				principalId: asPrincipalId('alice'),
@@ -359,9 +368,11 @@ test('retrying add() stays idempotent while the destination holds the copied doc
 	const authorityState = openAuthority();
 	const { transport } = createTransport(authorityState.authority);
 	try {
-		await using device = createDeviceBunWorkspaceRuntime({ storageRoot: root });
+		await using device = createDeviceBunWorkspaceRuntime({
+			workspacesRoot: root,
+		});
 		await using account = createAccountBunWorkspaceRuntime({
-			storageRoot: root,
+			workspacesRoot: root,
 			account: {
 				deploymentId: 'https://example.test',
 				principalId: asPrincipalId('alice'),
@@ -398,7 +409,7 @@ test('a retained deletion marker silently refuses a copied create without resurr
 	const { transport } = createTransport(authorityState.authority);
 	try {
 		await using account = createAccountBunWorkspaceRuntime({
-			storageRoot: root,
+			workspacesRoot: root,
 			account: {
 				deploymentId: 'https://example.test',
 				principalId: asPrincipalId('alice'),
@@ -439,7 +450,9 @@ test('a retained deletion marker silently refuses a copied create without resurr
 test('Device delete revokes an open document handle before deleting storage', async () => {
 	const root = mkdtempSync(join(tmpdir(), 'epicenter-bun-delete-open-'));
 	try {
-		await using device = createDeviceBunWorkspaceRuntime({ storageRoot: root });
+		await using device = createDeviceBunWorkspaceRuntime({
+			workspacesRoot: root,
+		});
 		const workspace = await device.open(definition);
 		const row = await workspace.tables.notes.create({ title: 'Doomed' });
 		using document = await workspace.tables.notes.document.open(row.id);
@@ -464,7 +477,9 @@ test('logical export captures a settled cut, documents, and explicit omissions',
 	const authorityState = openAuthority();
 	const { transport } = createTransport(authorityState.authority);
 	try {
-		await using device = createDeviceBunWorkspaceRuntime({ storageRoot: root });
+		await using device = createDeviceBunWorkspaceRuntime({
+			workspacesRoot: root,
+		});
 		const deviceWorkspace = await device.open(definition);
 		const withDocument = await deviceWorkspace.tables.notes.create({
 			title: 'Documented',
@@ -474,8 +489,9 @@ test('logical export captures a settled cut, documents, and explicit omissions',
 		});
 		expectOk(await deviceWorkspace.kv.set('theme', 'dark'));
 		{
-			using document =
-				await deviceWorkspace.tables.notes.document.open(withDocument.id);
+			using document = await deviceWorkspace.tables.notes.document.open(
+				withDocument.id,
+			);
 			document.get('editor').insert(0, 'body');
 			await document.whenDurable();
 		}
@@ -492,7 +508,7 @@ test('logical export captures a settled cut, documents, and explicit omissions',
 		).not.toContainKey('document');
 
 		await using account = createAccountBunWorkspaceRuntime({
-			storageRoot: root,
+			workspacesRoot: root,
 			account: {
 				deploymentId: 'https://example.test',
 				principalId: asPrincipalId('alice'),
@@ -505,8 +521,9 @@ test('logical export captures a settled cut, documents, and explicit omissions',
 			title: 'Account',
 		});
 		{
-			using document =
-				await accountWorkspace.tables.notes.document.open(accountRow.id);
+			using document = await accountWorkspace.tables.notes.document.open(
+				accountRow.id,
+			);
 			document.get('editor').insert(0, 'account body');
 			await document.whenDurable();
 		}
@@ -540,7 +557,7 @@ test('export stays available while the authority is unreachable', async () => {
 	};
 	try {
 		await using account = createAccountBunWorkspaceRuntime({
-			storageRoot: root,
+			workspacesRoot: root,
 			account: {
 				deploymentId: 'https://example.test',
 				principalId: asPrincipalId('alice'),
@@ -571,7 +588,7 @@ test('Device and Account own separate roots while duplicate Account owners fail'
 	const authorityState = openAuthority();
 	const { transport } = createTransport(authorityState.authority);
 	const accountOptions = {
-		storageRoot: root,
+		workspacesRoot: root,
 		account: {
 			deploymentId: 'https://example.test',
 			principalId: asPrincipalId('alice'),
@@ -579,10 +596,10 @@ test('Device and Account own separate roots while duplicate Account owners fail'
 		},
 	};
 	try {
-		const device = createDeviceBunWorkspaceRuntime({ storageRoot: root });
+		const device = createDeviceBunWorkspaceRuntime({ workspacesRoot: root });
 		const account = createAccountBunWorkspaceRuntime(accountOptions);
 		expect(() =>
-			createDeviceBunWorkspaceRuntime({ storageRoot: root }),
+			createDeviceBunWorkspaceRuntime({ workspacesRoot: root }),
 		).toThrow('already has an owner');
 		expect(() => createAccountBunWorkspaceRuntime(accountOptions)).toThrow(
 			'already has an owner',
@@ -591,7 +608,7 @@ test('Device and Account own separate roots while duplicate Account owners fail'
 		await account[Symbol.asyncDispose]();
 
 		await using released = createDeviceBunWorkspaceRuntime({
-			storageRoot: root,
+			workspacesRoot: root,
 		});
 		await released.open(definition);
 	} finally {
@@ -601,7 +618,7 @@ test('Device and Account own separate roots while duplicate Account owners fail'
 });
 
 function deviceWorkspacePath(root: string): string {
-	return join(root, devicePersistenceKey(), `${definition.id}.records.sqlite3`);
+	return join(root, 'device', definition.id, 'store.sqlite3');
 }
 
 function authorityRows(database: Database) {

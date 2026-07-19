@@ -57,6 +57,11 @@ function assertWorkspaceId(id: string): void {
 			`Invalid workspace id '${id}'; use lowercase letters, digits, and hyphens`,
 		);
 	}
+	if (/^(aux|con|nul|prn|com[1-9]|lpt[1-9])$/.test(id)) {
+		throw new Error(
+			`Invalid workspace id '${id}'; reserved device names cannot be used as directories`,
+		);
+	}
 }
 
 function assertPlainRecord(value: object, label: string): void {

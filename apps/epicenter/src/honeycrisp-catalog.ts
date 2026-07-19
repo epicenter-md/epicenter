@@ -9,6 +9,29 @@ import type {
 	ToolCatalog,
 } from '@epicenter/workspace/agent';
 
+const LIST_FOLDERS_TOOL: AgentToolDefinition = {
+	name: 'folders_list',
+	kind: 'query',
+	description: 'List Honeycrisp folders',
+	inputSchema: {
+		type: 'object',
+		properties: {},
+		additionalProperties: false,
+	},
+};
+
+const CREATE_FOLDER_TOOL: AgentToolDefinition = {
+	name: 'folders_create',
+	kind: 'mutation',
+	description: 'Create a Honeycrisp folder',
+	inputSchema: {
+		type: 'object',
+		properties: { name: { type: 'string' } },
+		required: ['name'],
+		additionalProperties: false,
+	},
+};
+
 const DELETE_FOLDER_TOOL: AgentToolDefinition = {
 	name: 'folders_delete',
 	kind: 'mutation',
@@ -21,11 +44,36 @@ const DELETE_FOLDER_TOOL: AgentToolDefinition = {
 	},
 };
 
-/** Adapt Honeycrisp's async row operation to the Query host's tool boundary. */
+/** Adapt Honeycrisp's async row operation to the Home host's tool boundary. */
 export function createHoneycrispCatalog(
 	workspace: HoneycrispWorkspace,
 ): ToolCatalog {
 	async function resolve(call: AgentToolCall): Promise<AgentToolOutcome> {
+		if (call.toolName === LIST_FOLDERS_TOOL.name) {
+			const { rows, nonconforming } = await workspace.tables.folders.list();
+			if (nonconforming.length > 0) {
+				return {
+					content: 'Some Honeycrisp folders do not conform to this release.',
+					isError: true,
+				};
+			}
+			return { content: JSON.stringify(rows), details: rows, isError: false };
+		}
+		if (call.toolName === CREATE_FOLDER_TOOL.name) {
+			const name = readString(call.input, 'name');
+			if (name === undefined) {
+				return { content: 'A "name" string is required.', isError: true };
+			}
+			const folder = await workspace.tables.folders.create({
+				name,
+				sortOrder: 0,
+			});
+			return {
+				content: JSON.stringify(folder),
+				details: folder,
+				isError: false,
+			};
+		}
 		if (call.toolName !== DELETE_FOLDER_TOOL.name) {
 			return {
 				content: `No Honeycrisp tool named "${call.toolName}".`,
@@ -47,13 +95,27 @@ export function createHoneycrispCatalog(
 		}
 	}
 
-	return { definitions: () => [DELETE_FOLDER_TOOL], resolve };
+	return {
+		definitions: () => [
+			LIST_FOLDERS_TOOL,
+			CREATE_FOLDER_TOOL,
+			DELETE_FOLDER_TOOL,
+		],
+		resolve,
+	};
 }
 
 function readFolderId(input: AgentToolCall['input']): string | undefined {
+	return readString(input, 'folderId');
+}
+
+function readString(
+	input: AgentToolCall['input'],
+	key: string,
+): string | undefined {
 	if (input === null || typeof input !== 'object' || Array.isArray(input)) {
 		return undefined;
 	}
-	const folderId = (input as Record<string, unknown>).folderId;
-	return typeof folderId === 'string' ? folderId : undefined;
+	const value = (input as Record<string, unknown>)[key];
+	return typeof value === 'string' ? value : undefined;
 }

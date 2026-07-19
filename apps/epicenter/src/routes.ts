@@ -29,7 +29,7 @@ function surface<const TId extends string>(id: TId, title: string) {
 }
 
 export const SURFACE_ROUTES = {
-	query: surface('query', 'Query'),
+	home: surface('home', 'Home'),
 	whispering: surface('whispering', 'Whispering'),
 	mail: surface('mail', 'Mail'),
 	books: surface('books', 'Books'),
@@ -38,12 +38,12 @@ export const SURFACE_ROUTES = {
 export type SurfaceId = keyof typeof SURFACE_ROUTES;
 
 export const BOOTSTRAP_ROUTE = route('/_epicenter/bootstrap');
-export const QUERY_ROUTE = SURFACE_ROUTES.query;
+export const HOME_ROUTE = SURFACE_ROUTES.home;
 export const WHISPERING_ROUTE = SURFACE_ROUTES.whispering;
 export const MAIL_ROUTE = SURFACE_ROUTES.mail;
 export const BOOKS_ROUTE = SURFACE_ROUTES.books;
-export const SESSION_ROUTE = route('/api/query/session');
-export const SESSION_STREAM_ROUTE = route('/api/query/session/stream');
+export const SESSION_ROUTE = route('/api/home/session');
+export const SESSION_STREAM_ROUTE = route('/api/home/session/stream');
 export const LOCAL_BLOB_ROUTE = {
 	pattern: `${LOCAL_BLOB_PATH}/:blobId`,
 } as const;

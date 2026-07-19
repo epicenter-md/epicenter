@@ -1,5 +1,5 @@
 /**
- * How a Query client reads a host's directory liveness (ADR-0115).
+ * How a Home client reads a host's directory liveness (ADR-0115).
  * The directory carries only `hostId`, `label`, and a three-valued `status`
  * (`@epicenter/server`); it names what to dial, never what the host can do. This
  * is the client's interpretation of that status: whether a new local-source

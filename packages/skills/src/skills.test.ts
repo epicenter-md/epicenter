@@ -53,7 +53,7 @@ test('a stricter Skills lens exposes nonconformance until typed update repairs i
 	const storageRoot = mkdtempSync(join(tmpdir(), 'epicenter-skills-'));
 	try {
 		const historicalRuntime = createDeviceBunWorkspaceRuntime({
-			storageRoot,
+			workspacesRoot: storageRoot,
 		});
 		const historical = await historicalRuntime.open(historicalSkillsWorkspace);
 		const oldSkill = await historical.tables.skills.create({
@@ -64,7 +64,7 @@ test('a stricter Skills lens exposes nonconformance until typed update repairs i
 		await historicalRuntime[Symbol.asyncDispose]();
 
 		await using runtime = createDeviceBunWorkspaceRuntime({
-			storageRoot,
+			workspacesRoot: storageRoot,
 		});
 		const skills = await runtime.open(skillsWorkspace);
 		expect(await getSkill(skills, 'missing')).toEqual({
@@ -153,7 +153,7 @@ test('filesystem import stores metadata id as sourceId instead of structural id'
 		);
 		writeFileSync(join(skillRoot, 'references', 'examples.md'), '# Examples\n');
 		await using runtime = createDeviceBunWorkspaceRuntime({
-			storageRoot,
+			workspacesRoot: storageRoot,
 		});
 		const skills = await runtime.open(skillsWorkspace);
 		const imported = await importSkillsFromDisk({

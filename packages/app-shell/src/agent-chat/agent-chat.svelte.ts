@@ -41,9 +41,9 @@ import {
 	asConversationId,
 	type Conversation,
 	type ConversationId,
-	type ConversationsTable,
 	generateConversationId,
 } from '@epicenter/chat';
+import type { ConversationsTable } from '@epicenter/chat/legacy-root-yjs';
 import { createOpenAiAgentEngine } from '@epicenter/client';
 import { bindAgentConversation, fromTable } from '@epicenter/svelte';
 import { generateId, InstantString } from '@epicenter/workspace';

@@ -1,11 +1,13 @@
 import type { PrincipalId } from '@epicenter/identity';
 import { canonicalJson, sha256Hex } from '@epicenter/row-sync';
 
+export const ACCOUNT_KEY_DERIVATION = 'sha256-canonical-json-v1' as const;
+
 export type WorkspaceAccount<TTransport> = {
 	/**
 	 * Canonical deployment identity for local account-owned storage.
 	 *
-	 * Today callers pass the deployment base URL; `accountPersistenceKey`
+	 * Today callers pass the deployment base URL; `accountStorageIdentity`
 	 * normalizes it once, so formatting variants of the same URL resolve to the
 	 * same persistence identity. The account handle owns the eventual tightening
 	 * to a branded deployment id; runtime callers should not compose persistence
@@ -16,20 +18,44 @@ export type WorkspaceAccount<TTransport> = {
 	transport: TTransport;
 };
 
-export function devicePersistenceKey(): string {
+/** Opaque IndexedDB owner key for unsigned browser persistence. */
+export function deviceBrowserPersistenceKey(): string {
 	return sha256Hex(canonicalJson({ owner: 'device' }));
 }
 
-export function accountPersistenceKey(
+/** Opaque IndexedDB owner key for one authenticated browser account. */
+export function accountBrowserPersistenceKey(
 	account: Pick<WorkspaceAccount<unknown>, 'deploymentId' | 'principalId'>,
 ): string {
-	return sha256Hex(
-		canonicalJson({
-			owner: 'account',
-			deploymentId: canonicalDeploymentId(account.deploymentId),
+	return accountStorageIdentity(account).key;
+}
+
+export function accountStorageIdentity(
+	account: Pick<WorkspaceAccount<unknown>, 'deploymentId' | 'principalId'>,
+): {
+	key: string;
+	witness: {
+		formatVersion: 1;
+		keyDerivation: typeof ACCOUNT_KEY_DERIVATION;
+		deploymentId: string;
+		principalId: PrincipalId;
+	};
+} {
+	const deploymentId = canonicalDeploymentId(account.deploymentId);
+	const identity = {
+		owner: 'account',
+		deploymentId,
+		principalId: account.principalId,
+	} as const;
+	return {
+		key: sha256Hex(canonicalJson(identity)),
+		witness: {
+			formatVersion: 1,
+			keyDerivation: ACCOUNT_KEY_DERIVATION,
+			deploymentId,
 			principalId: account.principalId,
-		}),
-	);
+		},
+	};
 }
 
 /**

@@ -13,7 +13,7 @@
  *      → `openVocabBrowser({ auth, nodeId })`
  */
 
-import { conversationsTable } from '@epicenter/chat';
+import { conversationsTable } from '@epicenter/chat/legacy-root-yjs';
 import type { ServableModel } from '@epicenter/constants/ai-providers';
 import { field } from '@epicenter/field';
 import {

@@ -52,8 +52,9 @@ import {
 	attachHostToRelay,
 	type RelayHostSocket,
 } from './attach-relay-host.ts';
-import { createQueryHost, type QueryHost } from './host.ts';
-import type { QueryServerEvent } from './server.ts';
+import type { HomeHost } from './host.ts';
+import type { HomeServerEvent } from './server.ts';
+import { createOwnedTestHomeHost } from './test-home-host.ts';
 
 /** A strong-enough operator bearer for the admin surface's constant-time compare. */
 const OPERATOR_TOKEN = 'self-host-instance-token-0123456789abcdef';
@@ -73,7 +74,7 @@ function testDataDir(): string {
 }
 
 function createTestHost(engine: AgentEngine) {
-	return createQueryHost({
+	return createOwnedTestHomeHost({
 		dataDir: testDataDir(),
 		model: 'test-model',
 		engine,
@@ -124,6 +125,7 @@ function serveSelfHostRelay(operatorToken: string): {
 		fetch: (req) => app.fetch(req, {} as never),
 		websocket: mergeBunWebSocketHandlers({
 			rooms: bunRooms.websocket,
+			documents: { message() {} },
 			attach: attachRelay.websocket,
 		}),
 	});
@@ -148,20 +150,20 @@ async function pairDevice(
 /** Resolve on the first snapshot matching `predicate`, checking the latest first. */
 function nextClientSnapshot(
 	client: {
-		latest(): QueryServerEvent | undefined;
-		subscribe(l: (e: QueryServerEvent) => void): () => void;
+		latest(): HomeServerEvent | undefined;
+		subscribe(l: (e: HomeServerEvent) => void): () => void;
 	},
-	predicate: (event: QueryServerEvent) => boolean,
+	predicate: (event: HomeServerEvent) => boolean,
 	description: string,
 	timeoutMs = 5000,
-): Promise<QueryServerEvent> {
+): Promise<HomeServerEvent> {
 	return new Promise((resolve, reject) => {
 		let unsubscribe = () => {};
 		const timer = setTimeout(() => {
 			unsubscribe();
 			reject(new Error(`timed out waiting for ${description}`));
 		}, timeoutMs);
-		const settle = (event: QueryServerEvent) => {
+		const settle = (event: HomeServerEvent) => {
 			if (!predicate(event)) return;
 			clearTimeout(timer);
 			unsubscribe();
@@ -176,7 +178,7 @@ function nextClientSnapshot(
 /** The turn settled and the last assistant message contains `text`. */
 const settledWith =
 	(text: string) =>
-	(event: QueryServerEvent): boolean => {
+	(event: HomeServerEvent): boolean => {
 		const conversation = event.snapshot.conversation;
 		const last = conversation.messages.at(-1);
 		return (
@@ -247,7 +249,7 @@ async function attachClient(
 
 describe('AttachRelay: attach behind per-device grants', () => {
 	test('a host and client, each with a device grant, share one session', async () => {
-		await using host: QueryHost = await createTestHost(
+		await using host: HomeHost = await createTestHost(
 			scriptedEngine([
 				[{ type: 'text-delta', delta: 'Attached through self-host.' }],
 			]),
@@ -291,7 +293,7 @@ describe('AttachRelay: attach behind per-device grants', () => {
 	});
 
 	test('the server stamps the instance principal, ignoring the query principalId', async () => {
-		await using host: QueryHost = await createTestHost(
+		await using host: HomeHost = await createTestHost(
 			scriptedEngine([[{ type: 'text-delta', delta: 'One partition.' }]]),
 		);
 		const { server, origin, grants } = serveSelfHostRelay(OPERATOR_TOKEN);
@@ -414,7 +416,7 @@ describe('AttachRelay: attach behind per-device grants', () => {
 	});
 
 	test('the authenticated host wire is still endpoint-addressed, never route-addressed', async () => {
-		await using host: QueryHost = await createTestHost(
+		await using host: HomeHost = await createTestHost(
 			scriptedEngine([[{ type: 'text-delta', delta: 'Endpoint only.' }]]),
 		);
 		const { server, origin, grants } = serveSelfHostRelay(OPERATOR_TOKEN);
@@ -474,7 +476,7 @@ describe('AttachRelay: attach behind per-device grants', () => {
 	});
 
 	test('a turn one client drives settles for both attached clients', async () => {
-		await using host: QueryHost = await createTestHost(
+		await using host: HomeHost = await createTestHost(
 			scriptedEngine([
 				[{ type: 'text-delta', delta: 'Shared over the relay.' }],
 			]),
@@ -535,14 +537,14 @@ describe('AttachRelay: attach behind per-device grants', () => {
 	});
 
 	test('either client can approve a mutation the other client raised', async () => {
-		await using host: QueryHost = await createTestHost(
+		await using host: HomeHost = await createTestHost(
 			scriptedEngine([
 				[
 					{
 						type: 'tool-call',
 						toolCallId: 'call-approve',
-						toolName: 'todos__todos_create',
-						input: { title: 'Approve over the relay' },
+						toolName: 'honeycrisp__folders_create',
+						input: { name: 'Approve over the relay' },
 					},
 				],
 				[{ type: 'text-delta', delta: 'Created over the relay.' }],
@@ -583,12 +585,12 @@ describe('AttachRelay: attach behind per-device grants', () => {
 			);
 
 			// The CLI drives a turn that raises a mutation approval.
-			cli.send({ type: 'send', content: 'create a todo' });
+			cli.send({ type: 'send', content: 'create a folder' });
 
 			const [phonePendingEvent] = await Promise.all([phonePending, cliPending]);
 			const approval = phonePendingEvent.snapshot.pendingApprovals[0];
 			if (!approval) throw new Error('expected a pending approval');
-			expect(approval.toolName).toBe('todos__todos_create');
+			expect(approval.toolName).toBe('honeycrisp__folders_create');
 
 			// The PHONE approves the CLI's turn: either endpoint drives the one session.
 			const phoneSettled = nextClientSnapshot(
@@ -619,7 +621,7 @@ describe('AttachRelay: attach behind per-device grants', () => {
 	});
 
 	test('a paired client discovers the host over GET /attach/hosts, online then offline', async () => {
-		await using host: QueryHost = await createTestHost(
+		await using host: HomeHost = await createTestHost(
 			scriptedEngine([[{ type: 'text-delta', delta: 'Discoverable.' }]]),
 		);
 		const { server, origin, httpOrigin, grants } =

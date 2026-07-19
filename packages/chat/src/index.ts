@@ -1,72 +1,86 @@
 /**
- * Canonical chat-conversation storage, shared by every chat surface
- * (opensidian, vocab, local-books, tab-manager).
+ * Canonical conversation domain and SQLite workspace lens.
  *
- * A conversation is a row in the {@link conversationsTable}: light, synced
- * metadata (title, model, timestamps) that drives the conversation list. Its
- * turns are NOT rows: each row's `messages` handle opens a synced child doc, a
- * last-write-wins store of finished {@link AgentMessage} records keyed by id
- * (ADR-0046/0047). The open client runs the one agent loop and writes each
- * finished message into that doc; the live turn never enters the CRDT.
- *
- * This package is the one place allowed to know both the storage primitives
- * (`defineTable` + `attachRecords`, from `@epicenter/workspace`) and the agent
- * domain (`AgentMessage`, from `@epicenter/workspace/agent`). The agent loop's
- * package stays storage-agnostic and the workspace package stays
- * domain-agnostic; the conversation storage that needs both lives here.
+ * Each product binds this table through its own Device or Account workspace.
+ * Finished messages live in the row-owned Yjs 14 document under one `messages`
+ * map; live turns remain client state.
  */
 
 import { field } from '@epicenter/field';
+import type {
+	AgentMessage,
+	AgentMessageStore,
+} from '@epicenter/workspace/agent';
 import {
-	attachRecords,
-	type ConnectedTables,
 	defineTable,
-	generateId,
-	type Id,
-	type InferTableRow,
-} from '@epicenter/workspace';
-import type { AgentMessage } from '@epicenter/workspace/agent';
+	type RowDocument,
+	type RowFor,
+	type WorkspaceTables,
+} from '@epicenter/workspace/sqlite';
 import type { Brand } from 'wellcrafted/brand';
 
-/** Branded conversation id: a nanoid minted when a conversation is created. */
-export type ConversationId = Id & Brand<'ConversationId'>;
+export type ConversationId = string & Brand<'ConversationId'>;
 
-/** Mint a unique {@link ConversationId}. */
 export const generateConversationId = (): ConversationId =>
-	generateId<ConversationId>();
+	crypto.randomUUID() as ConversationId;
 
-/**
- * Cast a stored key to a {@link ConversationId}. The constrained `string`
- * parameter is what earns it over a bare `as` at the call site.
- */
 export const asConversationId = (value: string): ConversationId =>
 	value as ConversationId;
 
-/**
- * The conversations table: the synced chat list. One row per conversation,
- * carrying only the metadata the list needs; the turns live in the `messages`
- * child doc (keyed by message id). `model` is the conversation's model pick (an
- * app with a single fixed model writes it once and never reads it); the provider
- * is derived from it, so it is not stored separately.
- */
 export const conversationsTable = defineTable({
-	id: field.string<ConversationId>(),
-	title: field.string(),
-	model: field.string(),
-	createdAt: field.instant(),
-	updatedAt: field.instant(),
-}).docs({ messages: (ydoc) => attachRecords<AgentMessage>(ydoc) });
+	fields: {
+		title: field.string(),
+		model: field.string(),
+		createdAt: field.instant(),
+		updatedAt: field.instant(),
+	},
+});
 
-/** One conversation row. */
-export type Conversation = InferTableRow<typeof conversationsTable>;
+export type Conversation = RowFor<typeof conversationsTable>;
 
-/**
- * The connected runtime handle for the conversations table, as every chat app
- * holds it at `workspace.tables.conversations`: the row reads/writes plus the
- * `.docs.messages.open(id)` opener for a conversation's turn store. Exported so
- * a shared chat-state module can name the table it drives without reaching into
- * any one app's workspace type.
- */
-export type ConversationsTable = ConnectedTables<{
+export type ConversationsTable = WorkspaceTables<{
 	conversations: typeof conversationsTable;
 }>['conversations'];
+
+export type AgentMessageDocumentStore = AgentMessageStore & {
+	/** Wait for every message write issued before this call to reach local storage. */
+	whenDurable(): Promise<void>;
+};
+
+/** Bind the agent loop's by-id store to one canonical row document. */
+export function createAgentMessageDocumentStore(
+	document: RowDocument,
+): AgentMessageDocumentStore {
+	const messages = document.get('messages');
+	let disposed = false;
+	const requireOpen = () => {
+		if (disposed) throw new Error('Agent message store is disposed');
+	};
+
+	return {
+		set(key, value) {
+			requireOpen();
+			document.transact(() => messages.setAttr(key, value));
+		},
+		*entries() {
+			requireOpen();
+			for (const [key, val] of messages.attrEntries()) {
+				yield { key: String(key), val: val as AgentMessage };
+			}
+		},
+		observe(handler) {
+			requireOpen();
+			messages.observe(handler);
+			return () => messages.unobserve(handler);
+		},
+		whenDurable() {
+			requireOpen();
+			return document.whenDurable();
+		},
+		[Symbol.dispose]() {
+			if (disposed) return;
+			disposed = true;
+			document[Symbol.dispose]();
+		},
+	};
+}

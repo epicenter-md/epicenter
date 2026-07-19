@@ -8,18 +8,16 @@ import {
 	writeFileSync,
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { sha256Hex } from '@epicenter/row-sync';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-import { createNativeSqliteDocumentStore } from '../document-provider/native-sqlite.js';
-import type { DocumentStore } from '../document-provider/persistence.js';
 import {
 	attachAuthenticatedDocumentConnection,
 	rowDocumentWebSocketUrl,
 } from '../document-provider/connection/index.js';
+import { createNativeSqliteDocumentStore } from '../document-provider/native-sqlite.js';
+import type { DocumentStore } from '../document-provider/persistence.js';
 
 import {
-	accountPersistenceKey,
-	devicePersistenceKey,
+	accountStorageIdentity,
 	type WorkspaceAccount,
 } from './account-runtime.js';
 import {
@@ -52,8 +50,7 @@ export type BunWorkspaceAccount = WorkspaceAccount<
 	) => CurrentStateReplicaTransport | Promise<CurrentStateReplicaTransport>
 >;
 
-export type BunWorkspaceRuntimeOptions = {
-	storageRoot: string;
+type BunWorkspaceRuntimeBehaviorOptions = {
 	onRecordsChanged?(workspaceId: string): void;
 	onSyncError?(cause: unknown, workspaceId: string): void;
 	recordPollIntervalMs?: number;
@@ -64,12 +61,18 @@ export type BunWorkspaceRuntimeOptions = {
 	};
 };
 
-export function createDeviceBunWorkspaceRuntime(
-	options: BunWorkspaceRuntimeOptions,
-) {
+export type BunWorkspaceRuntimeOptions = BunWorkspaceRuntimeBehaviorOptions & {
+	/** Parent of the runtime-owned `device` and `accounts` directories. */
+	workspacesRoot: string;
+};
+
+export function createDeviceBunWorkspaceRuntime({
+	workspacesRoot,
+	...options
+}: BunWorkspaceRuntimeOptions) {
 	const runtime = createBunRuntimeWithPersistence({
 		...options,
-		persistenceKey: devicePersistenceKey(),
+		ownerRoot: resolve(workspacesRoot, 'device'),
 	});
 	return Object.freeze({
 		open: runtime.open,
@@ -84,7 +87,10 @@ export function createDeviceBunWorkspaceRuntime(
 		): Promise<LogicalWorkspaceExport> {
 			await runtime.open(definition);
 			await runtime.captureDurability(definition.id);
-			return { settlement: null, ...(await runtime.captureLocal(definition.id)) };
+			return {
+				settlement: null,
+				...(await runtime.captureLocal(definition.id)),
+			};
 		},
 		async delete(definition: WorkspaceDefinition) {
 			await runtime.open(definition);
@@ -96,11 +102,14 @@ export function createDeviceBunWorkspaceRuntime(
 
 export function createAccountBunWorkspaceRuntime({
 	account,
+	workspacesRoot,
 	...options
 }: BunWorkspaceRuntimeOptions & { account: BunWorkspaceAccount }) {
+	const identity = accountStorageIdentity(account);
 	const runtime = createBunRuntimeWithPersistence({
 		...options,
-		persistenceKey: accountPersistenceKey(account),
+		ownerRoot: resolve(workspacesRoot, 'accounts', identity.key),
+		accountWitness: JSON.stringify(identity.witness),
 		recordTransport: account.transport,
 	});
 	return Object.freeze({
@@ -122,21 +131,22 @@ export function createAccountBunWorkspaceRuntime({
 
 /** Open a Bun runtime whose `open()` eagerly acquires its SQLite owner. */
 function createBunRuntimeWithPersistence({
-	persistenceKey,
-	storageRoot,
+	ownerRoot,
+	accountWitness,
 	recordTransport,
 	onRecordsChanged = () => undefined,
 	onSyncError = () => undefined,
 	recordPollIntervalMs = 30_000,
 	documentTransport,
-}: BunWorkspaceRuntimeOptions & {
-	persistenceKey: string;
+}: BunWorkspaceRuntimeBehaviorOptions & {
+	ownerRoot: string;
+	accountWitness?: string;
 	recordTransport?: BunWorkspaceAccount['transport'];
 }) {
 	if (!Number.isFinite(recordPollIntervalMs) || recordPollIntervalMs <= 0) {
 		throw new Error('Record poll interval must be a positive finite number');
 	}
-	const root = resolve(storageRoot, persistenceKey);
+	const root = resolve(ownerRoot);
 	const localWorkspaces = new Map<
 		string,
 		{
@@ -162,7 +172,9 @@ function createBunRuntimeWithPersistence({
 	ownedRoots.add(root);
 	try {
 		mkdirSync(root, { recursive: true });
-		bindPersistenceIdentity(root, persistenceKey);
+		if (accountWitness !== undefined) {
+			bindAccountWitness(root, accountWitness);
+		}
 	} catch (cause) {
 		ownedRoots.delete(root);
 		throw cause;
@@ -170,9 +182,10 @@ function createBunRuntimeWithPersistence({
 
 	const runtime = createWorkspaceRuntime({
 		async openWorkspaceOwner(workspaceId, signal) {
-			const path = join(root, `${workspaceId}.records.sqlite3`);
+			const path = join(root, workspaceId, 'store.sqlite3');
 			let database: Database | undefined;
 			try {
+				mkdirSync(dirname(path), { recursive: true });
 				database = new Database(path, { create: true });
 				database.exec('PRAGMA busy_timeout = 5000');
 				database.exec('PRAGMA journal_mode = WAL');
@@ -407,16 +420,12 @@ export type BunWorkspaceRuntime = ReturnType<
 	typeof createDeviceBunWorkspaceRuntime
 >;
 
-function bindPersistenceIdentity(root: string, persistenceKey: string): void {
-	const path = join(root, '.epicenter-runtime.json');
-	const encoded = JSON.stringify({
-		formatVersion: 1,
-		persistenceHash: sha256Hex(persistenceKey),
-	});
+function bindAccountWitness(root: string, encoded: string): void {
+	const path = join(root, 'account.json');
 	if (existsSync(path)) {
 		if (readFileSync(path, 'utf8') !== encoded) {
 			throw new Error(
-				'Workspace runtime storage belongs to another persistence identity',
+				`Account workspace storage identity does not match ${path}`,
 			);
 		}
 		return;

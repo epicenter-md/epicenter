@@ -11,12 +11,9 @@
 import { join } from 'node:path';
 import { createBunBlobs } from '@epicenter/blobs/bun';
 import { type AgentEngine, createOpenAiAgentEngine } from '@epicenter/client';
-import {
-	createQueryHost,
-	type QueryHost,
-	resolveQueryDataDir,
-} from './host.ts';
-import { createQueryServer } from './server.ts';
+import { honeycrispWorkspace } from '@epicenter/honeycrisp';
+import { createHomeHost, type HomeHost } from './host.ts';
+import { createHomeServer } from './server.ts';
 import {
 	createReadyFrame,
 	parseBootFrame,
@@ -25,11 +22,12 @@ import {
 	watchParentPipe,
 } from './sidecar-runtime.ts';
 import { loadStaticAssets } from './static-assets.ts';
+import { conversationsWorkspace } from './workspace.ts';
 import { createEpicenterWorkspaceOwner } from './workspace-owner.ts';
 
 async function main(): Promise<void> {
 	const parentPipe = watchParentPipe(Bun.stdin.stream());
-	let host: QueryHost | undefined;
+	let host: HomeHost | undefined;
 	let workspaceOwner:
 		| ReturnType<typeof createEpicenterWorkspaceOwner>
 		| undefined;
@@ -40,17 +38,22 @@ async function main(): Promise<void> {
 		const runtimeMode = parseRuntimeMode(Bun.argv);
 		const boot = parseBootFrame(await parentPipe.bootLine, runtimeMode);
 
-		const { engine, model } = queryEngineFromEnvironment(process.env);
+		const { engine, model } = homeEngineFromEnvironment(process.env);
 
-		const dataDir = resolveQueryDataDir();
 		const epicenterDataDir = process.env.EPICENTER_DATA_DIR;
 		if (!epicenterDataDir) {
 			throw new Error(
 				'EPICENTER_DATA_DIR must name the Epicenter app data directory.',
 			);
 		}
-		host = await createQueryHost({ engine, model, dataDir });
-		workspaceOwner = createEpicenterWorkspaceOwner(dataDir);
+		workspaceOwner = createEpicenterWorkspaceOwner(
+			join(epicenterDataDir, 'workspaces'),
+		);
+		const [honeycrisp, conversations] = await Promise.all([
+			workspaceOwner.open(honeycrispWorkspace),
+			workspaceOwner.open(conversationsWorkspace),
+		]);
+		host = await createHomeHost({ engine, model, honeycrisp, conversations });
 		const blobs = createBunBlobs({
 			directory: join(epicenterDataDir, 'blobs'),
 		});
@@ -63,7 +66,7 @@ async function main(): Promise<void> {
 		}
 		const staticAssets = await loadStaticAssets(appsDist);
 		const origin = `http://127.0.0.1:${boot.port}`;
-		const { app, websocket } = createQueryServer({
+		const { app, websocket } = createHomeServer({
 			host,
 			origin,
 			launchToken: boot.token,
@@ -87,16 +90,8 @@ async function main(): Promise<void> {
 			server,
 			host: {
 				async [Symbol.asyncDispose]() {
-					const results = await Promise.allSettled([
-						queryHost[Symbol.asyncDispose](),
-						ownedWorkspaces[Symbol.asyncDispose](),
-					]);
-					const failures = results.flatMap((result) =>
-						result.status === 'rejected' ? [result.reason] : [],
-					);
-					if (failures.length > 0) {
-						throw new AggregateError(failures, 'Desktop host disposal failed');
-					}
+					await queryHost[Symbol.asyncDispose]();
+					await ownedWorkspaces[Symbol.asyncDispose]();
 				},
 			},
 			parentPipe,
@@ -104,19 +99,19 @@ async function main(): Promise<void> {
 	} finally {
 		if (!lifecycleOwnsResources) {
 			if (server) await server.stop(true);
-			if (workspaceOwner) await workspaceOwner[Symbol.asyncDispose]();
 			if (host) await host[Symbol.asyncDispose]();
+			if (workspaceOwner) await workspaceOwner[Symbol.asyncDispose]();
 			await parentPipe.cancel();
 		}
 	}
 }
 
-export function queryEngineFromEnvironment(
+export function homeEngineFromEnvironment(
 	environment: Record<string, string | undefined>,
 ): { engine: AgentEngine; model: string } {
-	const baseURL = environment.EPICENTER_QUERY_INFERENCE_URL;
-	const model = environment.EPICENTER_QUERY_MODEL;
-	const apiKey = environment.EPICENTER_QUERY_API_KEY;
+	const baseURL = environment.EPICENTER_HOME_INFERENCE_URL;
+	const model = environment.EPICENTER_HOME_MODEL;
+	const apiKey = environment.EPICENTER_HOME_API_KEY;
 	if (!baseURL || !model) {
 		return {
 			model: 'unconfigured',
@@ -125,7 +120,7 @@ export function queryEngineFromEnvironment(
 					type: 'run-error',
 					code: 'stream-error',
 					message:
-						'Query needs an OpenAI-compatible endpoint. Set EPICENTER_QUERY_INFERENCE_URL and EPICENTER_QUERY_MODEL, then restart Epicenter.',
+						'Home needs an OpenAI-compatible endpoint. Set EPICENTER_HOME_INFERENCE_URL and EPICENTER_HOME_MODEL, then restart Epicenter.',
 				};
 			},
 		};
@@ -148,7 +143,7 @@ export function queryEngineFromEnvironment(
 				baseURL,
 				model,
 				systemPrompts: [
-					'You are Query, a local assistant that acts across the apps on this machine through their tools.',
+					'You are Epicenter Home, a local assistant that acts across the apps on this machine through their tools.',
 				],
 			}),
 		}),

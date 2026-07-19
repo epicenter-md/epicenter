@@ -1,20 +1,16 @@
-/**
- * The Query workspace: the host's own durable data, today just the
- * canonical conversations table (ADR-0055). The host connects it with
- * `connect(null, { persistence })` beside the built-in app replicas, so
- * transcripts are durable on this machine but never reach a relay; sync is a
- * deliberate later wave that arrives with host sign-in.
- *
- * Exported so tests (and later waves) can open a second replica over the same
- * data directory and read what the host wrote.
- */
+/** Epicenter Home's device-owned durable conversation workspace. */
 
 import { conversationsTable } from '@epicenter/chat';
-import { defineWorkspace } from '@epicenter/workspace';
+import {
+	defineWorkspace,
+	type WorkspaceHandle,
+} from '@epicenter/workspace/sqlite';
 
-export const queryWorkspace = defineWorkspace({
-	id: 'epicenter-query',
-	name: 'query',
+export const conversationsWorkspace = defineWorkspace({
+	id: 'epicenter-conversations',
 	tables: { conversations: conversationsTable },
-	kv: {},
 });
+
+export type ConversationsWorkspace = WorkspaceHandle<
+	typeof conversationsWorkspace
+>;

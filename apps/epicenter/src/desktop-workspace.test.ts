@@ -7,7 +7,13 @@
  * canonical records after a full server restart.
  */
 import { expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { generateBlobId } from '@epicenter/blobs';
@@ -18,11 +24,10 @@ import { whisperingWorkspace } from '@epicenter/whispering/workspace-contract';
 import { defineWorkspace } from '@epicenter/workspace/sqlite';
 import { createDesktopWorkspaceRuntime } from '@epicenter/workspace/sqlite/desktop';
 import { isResult } from 'wellcrafted/result';
-import { createQueryHost } from './host.ts';
 import { BOOTSTRAP_ROUTE } from './routes.ts';
-import { createQueryServer } from './server.ts';
+import { createHomeServer } from './server.ts';
 import { loadStaticAssets } from './static-assets.ts';
-import { createEpicenterWorkspaceOwner } from './workspace-owner.ts';
+import { createOwnedTestHomeHostBundle } from './test-home-host.ts';
 
 const TOKEN = 'desktop-workspace-test-token';
 
@@ -45,6 +50,29 @@ test('two clients invalidate documents, disconnect independently, and survive re
 		const secondSkills = await secondClient.open(skillsWorkspace);
 		const firstWhispering = await firstClient.open(whisperingWorkspace);
 		const secondWhispering = await secondClient.open(whisperingWorkspace);
+		await Promise.all([
+			firstSkills.opened,
+			secondSkills.opened,
+			firstWhispering.opened,
+			secondWhispering.opened,
+		]);
+		await Promise.all([
+			firstSkills.tables.skills.list(),
+			firstWhispering.tables.recordings.list(),
+		]);
+		for (const workspaceId of [
+			'epicenter-conversations',
+			'epicenter-honeycrisp',
+			'epicenter-skills',
+			'epicenter-whispering',
+		]) {
+			expect(
+				existsSync(
+					join(root, 'workspaces', 'device', workspaceId, 'store.sqlite3'),
+				),
+			).toBeTrue();
+		}
+		expect(existsSync(join(root, 'workspace-runtime'))).toBeFalse();
 		for (const result of [
 			await secondSkills.tables.skills.get('missing'),
 			await secondSkills.tables.skills.update('missing', {
@@ -219,13 +247,13 @@ async function startDesktopServer(root: string) {
 	await probe.stop(true);
 	if (!port) throw new Error('Port probe did not bind');
 	const origin = `http://127.0.0.1:${port}`;
-	const host = await createQueryHost({
-		dataDir: join(root, 'query'),
+	const { host, workspaceOwner: owner } = await createOwnedTestHomeHostBundle({
+		dataDir: join(root, 'home'),
+		workspacesRoot: join(root, 'workspaces'),
 		model: 'test',
 		engine: async function* () {},
 	});
-	const owner = createEpicenterWorkspaceOwner(root);
-	const { app, websocket } = createQueryServer({
+	const { app, websocket } = createHomeServer({
 		host,
 		origin,
 		launchToken: TOKEN,
@@ -250,8 +278,8 @@ async function startDesktopServer(root: string) {
 		cookie,
 		async dispose() {
 			await server.stop(true);
-			await owner[Symbol.asyncDispose]();
 			await host[Symbol.asyncDispose]();
+			await owner[Symbol.asyncDispose]();
 		},
 	};
 }
@@ -302,12 +330,9 @@ function createBroadcastChannelFactory() {
 
 async function testAssets(root: string) {
 	const dist = join(root, 'dist');
-	mkdirSync(join(dist, 'query'), { recursive: true });
+	mkdirSync(join(dist, 'home'), { recursive: true });
 	mkdirSync(join(dist, 'whispering'), { recursive: true });
-	writeFileSync(
-		join(dist, 'query', 'index.html'),
-		'<!doctype html><body>Query',
-	);
+	writeFileSync(join(dist, 'home', 'index.html'), '<!doctype html><body>Home');
 	writeFileSync(
 		join(dist, 'whispering', 'index.html'),
 		'<!doctype html><body>Whispering',

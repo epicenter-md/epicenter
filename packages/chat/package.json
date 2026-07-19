@@ -4,7 +4,8 @@
 	"version": "0.1.0",
 	"type": "module",
 	"exports": {
-		".": "./src/index.ts"
+		".": "./src/index.ts",
+		"./legacy-root-yjs": "./src/legacy-root-yjs.ts"
 	},
 	"files": [
 		"src",

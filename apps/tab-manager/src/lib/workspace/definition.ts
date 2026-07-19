@@ -9,7 +9,7 @@
  * factory.
  */
 
-import { conversationsTable } from '@epicenter/chat';
+import { conversationsTable } from '@epicenter/chat/legacy-root-yjs';
 import { field } from '@epicenter/field';
 import {
 	defineTable,

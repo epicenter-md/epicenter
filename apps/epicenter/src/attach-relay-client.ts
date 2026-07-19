@@ -1,6 +1,6 @@
 /**
  * A client endpoint of the AttachRelay (ADR-0115): the "phone" or second
- * browser that attaches to one desktop's Query host and shares its live
+ * browser that attaches to one desktop's Home host and shares its live
  * session. It sends host-owned commands (ADR-0113) as opaque bytes and renders
  * from the host snapshots the relay forwards back; the relay routes by endpoint
  * envelope and does not own command semantics.
@@ -12,8 +12,8 @@
  */
 
 import { ATTACH_RELAY_ROUTE } from '@epicenter/server/bun';
-import type { QueryClientCommand } from './host.ts';
-import type { QueryServerEvent } from './server.ts';
+import type { HomeClientCommand } from './host.ts';
+import type { HomeServerEvent } from './server.ts';
 
 export type AttachRelayClientOptions = {
 	/** The relay's origin, e.g. `ws://127.0.0.1:<port>` on loopback. */
@@ -50,11 +50,11 @@ export type AttachRelayClient = {
 	/** Resolves once the socket is open and this client can send. */
 	ready: Promise<void>;
 	/** Send one host command as opaque bytes to the shared session. */
-	send(command: QueryClientCommand): void;
+	send(command: HomeClientCommand): void;
 	/** The most recent host snapshot, or undefined before the first arrives. */
-	latest(): QueryServerEvent | undefined;
+	latest(): HomeServerEvent | undefined;
 	/** Observe every host snapshot forwarded to this endpoint. */
-	subscribe(listener: (event: QueryServerEvent) => void): () => void;
+	subscribe(listener: (event: HomeServerEvent) => void): () => void;
 	/** Detach and drop the connection. */
 	close(): void;
 };
@@ -72,8 +72,8 @@ export function createAttachRelayClient(
 	});
 	const socket = open(url, ATTACH_RELAY_ROUTE.subprotocols(options.bearer));
 
-	let latest: QueryServerEvent | undefined;
-	const listeners = new Set<(event: QueryServerEvent) => void>();
+	let latest: HomeServerEvent | undefined;
+	const listeners = new Set<(event: HomeServerEvent) => void>();
 
 	let resolveReady!: () => void;
 	const ready = new Promise<void>((resolve) => {
@@ -98,7 +98,7 @@ export function createAttachRelayClient(
 		send(command) {
 			if (socket.readyState !== 1 /* OPEN */) return;
 			// The command is the opaque payload; the relay forwards it without owning
-			// or interpreting Query command semantics.
+			// or interpreting Home command semantics.
 			socket.send(JSON.stringify(command));
 		},
 		latest() {
@@ -123,9 +123,9 @@ function defaultOpenSocket(
 }
 
 /** Parse a forwarded host snapshot; a non-snapshot or malformed frame drops. */
-function parseServerEvent(data: string): QueryServerEvent | undefined {
+function parseServerEvent(data: string): HomeServerEvent | undefined {
 	try {
-		const value = JSON.parse(data) as QueryServerEvent;
+		const value = JSON.parse(data) as HomeServerEvent;
 		return value.type === 'snapshot' ? value : undefined;
 	} catch {
 		return undefined;

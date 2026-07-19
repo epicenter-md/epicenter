@@ -34,10 +34,10 @@ type ErasedKv = {
 
 /** Bun-only owner over a statically linked set of imported definitions. */
 export function createDesktopWorkspaceOwner({
-	storageRoot,
+	workspacesRoot,
 	definitions,
 }: {
-	storageRoot: string;
+	workspacesRoot: string;
 	definitions: readonly WorkspaceDefinition[];
 }) {
 	const catalog = new Map<string, WorkspaceDefinition>();
@@ -47,10 +47,10 @@ export function createDesktopWorkspaceOwner({
 		}
 		catalog.set(definition.id, definition);
 	}
-	const runtime = createDeviceBunWorkspaceRuntime({ storageRoot });
+	const runtime = createDeviceBunWorkspaceRuntime({ workspacesRoot });
 	const handles = new Map<string, Promise<ErasedWorkspace>>();
 
-	const open = (workspaceId: string): Promise<ErasedWorkspace> => {
+	const openRegistered = (workspaceId: string): Promise<ErasedWorkspace> => {
 		const definition = catalog.get(workspaceId);
 		if (!definition) {
 			throw new Error(`Unknown desktop workspace '${workspaceId}'`);
@@ -64,12 +64,24 @@ export function createDesktopWorkspaceOwner({
 	};
 
 	return Object.freeze({
+		async open<TDefinition extends WorkspaceDefinition>(
+			definition: TDefinition,
+		): Promise<WorkspaceHandle<TDefinition>> {
+			if (catalog.get(definition.id) !== definition) {
+				throw new Error(
+					`Desktop workspace '${definition.id}' is not registered with this definition`,
+				);
+			}
+			return (await openRegistered(
+				definition.id,
+			)) as WorkspaceHandle<TDefinition>;
+		},
 		hasWorkspace(workspaceId: string): boolean {
 			return catalog.has(workspaceId);
 		},
 		async execute(workspaceId: string, input: unknown): Promise<unknown> {
 			const operation = parseDesktopRecordOperation(input);
-			const workspace = await open(workspaceId);
+			const workspace = await openRegistered(workspaceId);
 			if (operation.kind === 'sql') {
 				return workspace.sql(operation.query, operation.parameters, sqliteRows);
 			}

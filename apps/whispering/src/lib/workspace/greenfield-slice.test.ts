@@ -47,7 +47,7 @@ test('one runtime discards old sourceId rows and composes Skills documents', asy
 	);
 	try {
 		const historicalRuntime = createDeviceBunWorkspaceRuntime({
-			storageRoot,
+			workspacesRoot: storageRoot,
 		});
 		const historical = await historicalRuntime.open(
 			historicalWhisperingWorkspace,
@@ -65,7 +65,7 @@ test('one runtime discards old sourceId rows and composes Skills documents', asy
 		await historicalRuntime[Symbol.asyncDispose]();
 
 		await using runtime = createDeviceBunWorkspaceRuntime({
-			storageRoot,
+			workspacesRoot: storageRoot,
 		});
 		const [whispering, skills] = await Promise.all([
 			runtime.open(whisperingWorkspace),

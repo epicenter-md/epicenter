@@ -1,5 +1,5 @@
 /**
- * A read-only local source the Query host can read on this machine and
+ * A read-only local source the Home host can read on this machine and
  * offer as one verb (ADR-0115). The desktop composes a source it owns
  * locally (iMessage in the design memo; an injected reader here) into the same
  * {@link ToolCatalog} the agent loop already consumes, so a chat turn can ask a

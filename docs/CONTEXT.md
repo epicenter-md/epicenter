@@ -23,6 +23,17 @@ shapes, see `docs/adr/`.
 - **Workspace**: one stable app-defined local-first data and sync unit. It owns
   workspace KV and tables; each table owns rows; each ordinary row owns scalar
   fields plus one latent lifecycle-bound document.
+- **Storage owner**: the Device or one Account that owns a local workspace
+  store. Device and Account with the same Workspace ID remain separate owners;
+  owner-wide lifecycle never crosses between them.
+- **Workspace store**: the runtime-private SQLite family for one storage owner
+  and Workspace ID. Bun stores it at
+  `workspaces/device/<WorkspaceId>/store.sqlite3` or
+  `workspaces/accounts/<AccountKey>/<WorkspaceId>/store.sqlite3`; it is not a
+  portable workspace export or an app-visible file capability.
+- **Epicenter Home**: the trusted shell above registered workspaces. It owns
+  navigation, assistant sessions, commands, approvals, and live interface
+  state; durable data such as conversations lives in ordinary workspaces.
 - **Device workspace**: a signed-out workspace owned only by the current device.
   Runtime-native SQLite owns its scalar rows; a runtime-native provider owns its
   row documents. It has no deployment, principal, credential, or sync transport.

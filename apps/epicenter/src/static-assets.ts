@@ -3,10 +3,10 @@
  *
  * The directory contract is deliberately small and explicit:
  *
- * - `query/index.html`
+ * - `home/index.html`
  * - `whispering/index.html` plus its generated asset tree
  *
- * Query is currently a single-file build. Whispering is a multi-file SvelteKit
+ * Home is currently a single-file build. Whispering is a multi-file SvelteKit
  * build, so every request is resolved below its one real directory and checked
  * again after symlinks are resolved.
  */
@@ -23,7 +23,7 @@ export type StaticAsset = {
 };
 
 export type EpicenterStaticAssets = {
-	queryPage: string;
+	homePage: string;
 	whisperingPage: string;
 	resolveWhispering(pathname: string): Promise<StaticAsset | undefined>;
 };
@@ -38,10 +38,10 @@ export async function loadStaticAssets(
 	}
 
 	const root = await requiredDirectory(appsDist, 'applications asset root');
-	const queryIndex = await requiredFile(
+	const homeIndex = await requiredFile(
 		root,
-		resolve(root, 'query', 'index.html'),
-		'Query index',
+		resolve(root, 'home', 'index.html'),
+		'Home index',
 	);
 	const whisperingRoot = await requiredContainedDirectory(
 		root,
@@ -55,7 +55,7 @@ export async function loadStaticAssets(
 	);
 
 	return {
-		queryPage: await Bun.file(queryIndex).text(),
+		homePage: await Bun.file(homeIndex).text(),
 		whisperingPage: await Bun.file(whisperingIndex).text(),
 		async resolveWhispering(pathname) {
 			const relativePath = whisperingRelativePath(pathname);

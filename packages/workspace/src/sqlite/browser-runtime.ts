@@ -11,8 +11,8 @@ import type { DocumentStore } from '../document-provider/persistence.js';
 import { createRowDocumentRuntime } from '../document-provider/runtime/index.js';
 
 import {
-	accountPersistenceKey,
-	devicePersistenceKey,
+	accountBrowserPersistenceKey,
+	deviceBrowserPersistenceKey,
 	type WorkspaceAccount,
 } from './account-runtime.js';
 import {
@@ -107,7 +107,7 @@ export function createDeviceBrowserWorkspaceRuntime({
 	'persistenceKey' | 'transport'
 > = {}) {
 	const runtime = createBrowserRuntimeWithPersistence({
-		persistenceKey: devicePersistenceKey(),
+		persistenceKey: deviceBrowserPersistenceKey(),
 		createBroadcastChannel,
 		onRecordsChanged,
 		onBackgroundError,
@@ -150,7 +150,7 @@ export function createAccountBrowserWorkspaceRuntime({
 	account: BrowserWorkspaceAccount;
 }) {
 	const runtime = createBrowserRuntimeWithPersistence({
-		persistenceKey: accountPersistenceKey(account),
+		persistenceKey: accountBrowserPersistenceKey(account),
 		transport: account.transport,
 		createBroadcastChannel,
 		onRecordsChanged,

@@ -21,7 +21,9 @@ import { deleteHoneycrispFolder, honeycrispWorkspace } from './index.js';
 test('runtime-minted rows support optional fields and folder re-parenting', async () => {
 	const storageRoot = mkdtempSync(join(tmpdir(), 'epicenter-honeycrisp-'));
 	try {
-		await using runtime = createDeviceBunWorkspaceRuntime({ storageRoot });
+		await using runtime = createDeviceBunWorkspaceRuntime({
+			workspacesRoot: storageRoot,
+		});
 		const honeycrisp = await runtime.open(honeycrispWorkspace);
 		const folder = await honeycrisp.tables.folders.create({
 			name: 'Projects',
@@ -61,7 +63,9 @@ test('note body documents remain durable across runtime reopen', async () => {
 	try {
 		let noteId: string;
 		{
-			await using runtime = createDeviceBunWorkspaceRuntime({ storageRoot });
+			await using runtime = createDeviceBunWorkspaceRuntime({
+				workspacesRoot: storageRoot,
+			});
 			const honeycrisp = await runtime.open(honeycrispWorkspace);
 			const now = InstantString.now();
 			const note = await honeycrisp.tables.notes.create({
@@ -79,7 +83,7 @@ test('note body documents remain durable across runtime reopen', async () => {
 		}
 
 		await using reopenedRuntime = createDeviceBunWorkspaceRuntime({
-			storageRoot,
+			workspacesRoot: storageRoot,
 		});
 		const reopened = await reopenedRuntime.open(honeycrispWorkspace);
 		using document = await reopened.tables.notes.document.open(noteId);
@@ -92,7 +96,9 @@ test('note body documents remain durable across runtime reopen', async () => {
 test('deleting a note revokes its open body document', async () => {
 	const storageRoot = mkdtempSync(join(tmpdir(), 'epicenter-honeycrisp-'));
 	try {
-		await using runtime = createDeviceBunWorkspaceRuntime({ storageRoot });
+		await using runtime = createDeviceBunWorkspaceRuntime({
+			workspacesRoot: storageRoot,
+		});
 		const honeycrisp = await runtime.open(honeycrispWorkspace);
 		const now = InstantString.now();
 		const note = await honeycrisp.tables.notes.create({

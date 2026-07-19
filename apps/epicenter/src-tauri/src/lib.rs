@@ -84,18 +84,18 @@ const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Surface {
-    Query,
+    Home,
     Whispering,
     Mail,
     Books,
 }
 
 impl Surface {
-    const ALL: [Self; 4] = [Self::Query, Self::Whispering, Self::Mail, Self::Books];
+    const ALL: [Self; 4] = [Self::Home, Self::Whispering, Self::Mail, Self::Books];
 
     const fn id(self) -> &'static str {
         match self {
-            Self::Query => "query",
+            Self::Home => "home",
             Self::Whispering => "whispering",
             Self::Mail => "mail",
             Self::Books => "books",
@@ -104,7 +104,7 @@ impl Surface {
 
     const fn path(self) -> &'static str {
         match self {
-            Self::Query => "/apps/query/",
+            Self::Home => "/apps/home/",
             Self::Whispering => "/apps/whispering/",
             Self::Mail => "/apps/mail/",
             Self::Books => "/apps/books/",
@@ -113,7 +113,7 @@ impl Surface {
 
     const fn title(self) -> &'static str {
         match self {
-            Self::Query => "Epicenter: Query",
+            Self::Home => "Epicenter: Home",
             Self::Whispering => "Epicenter: Whispering",
             Self::Mail => "Epicenter: Mail",
             Self::Books => "Epicenter: Books",
@@ -395,7 +395,7 @@ pub fn run() {
                 }
             }
             if !opened_surface {
-                request_surface(app.handle(), Surface::Query);
+                request_surface(app.handle(), Surface::Home);
             }
             request_start(app.handle().clone(), None);
             Ok(())
@@ -403,7 +403,7 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("failed to build Epicenter")
         .run(|app, event| match event {
-            RunEvent::Reopen { .. } => request_surface(app, Surface::Query),
+            RunEvent::Reopen { .. } => request_surface(app, Surface::Home),
             RunEvent::Exit => shutdown_host(app),
             _ => {}
         });
@@ -412,7 +412,7 @@ pub fn run() {
 fn open_forwarded_surfaces(app: &DesktopAppHandle, arguments: &[String]) {
     let surfaces = surfaces_from_arguments(arguments);
     if surfaces.is_empty() {
-        request_surface(app, Surface::Query);
+        request_surface(app, Surface::Home);
     } else {
         for surface in surfaces {
             request_surface(app, surface);
@@ -568,7 +568,7 @@ fn start_once(app: &DesktopAppHandle) -> Result<()> {
     state.activate(&token);
     let mut surfaces = state.take_pending_surfaces();
     if surfaces.is_empty() {
-        surfaces.push(Surface::Query);
+        surfaces.push(Surface::Home);
     }
     if let Err(error) = create_surfaces_on_main_thread(app, port, &token, surfaces) {
         state.deactivate();
@@ -586,14 +586,10 @@ fn start_once(app: &DesktopAppHandle) -> Result<()> {
 fn launch_host(app: &DesktopAppHandle, port: u16) -> Result<LaunchedHost> {
     let log = open_log_file(app)?;
     let app_data_dir = app.path().app_data_dir()?;
-    let data_dir = app_data_dir.join("query");
-    fs::create_dir_all(&data_dir)
-        .with_context(|| format!("create Query data directory at {}", data_dir.display()))?;
 
     let mut command = host_command(app)?;
     command
         .env("EPICENTER_DATA_DIR", &app_data_dir)
-        .env("EPICENTER_QUERY_DATA_DIR", &data_dir)
         .env("EPICENTER_APPS_DIST", apps_dist(app)?)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -1163,7 +1159,7 @@ mod tests {
     #[test]
     fn navigation_allows_only_the_exact_active_origin_without_credentials() {
         for allowed in [
-            "http://127.0.0.1:39130/apps/query/",
+            "http://127.0.0.1:39130/apps/home/",
             "http://127.0.0.1:39130/another/path?query=ok#fragment",
         ] {
             assert!(is_allowed_navigation(
@@ -1173,11 +1169,11 @@ mod tests {
         }
 
         for denied in [
-            "https://127.0.0.1:39130/apps/query/",
-            "http://localhost:39130/apps/query/",
-            "http://127.0.0.1:39131/apps/query/",
-            "http://user@127.0.0.1:39130/apps/query/",
-            "http://user:secret@127.0.0.1:39130/apps/query/",
+            "https://127.0.0.1:39130/apps/home/",
+            "http://localhost:39130/apps/home/",
+            "http://127.0.0.1:39131/apps/home/",
+            "http://user@127.0.0.1:39130/apps/home/",
+            "http://user:secret@127.0.0.1:39130/apps/home/",
         ] {
             assert!(!is_allowed_navigation(
                 &denied.parse().unwrap(),
@@ -1192,7 +1188,7 @@ mod tests {
         assert_eq!(
             actual,
             [
-                ("query", "/apps/query/", "Epicenter: Query"),
+                ("home", "/apps/home/", "Epicenter: Home"),
                 ("whispering", "/apps/whispering/", "Epicenter: Whispering"),
                 ("mail", "/apps/mail/", "Epicenter: Mail"),
                 ("books", "/apps/books/", "Epicenter: Books"),
@@ -1203,7 +1199,7 @@ mod tests {
     #[test]
     fn deep_links_accept_only_the_closed_surface_route_table() {
         for (url, expected) in [
-            ("epicenter://surface/query", Surface::Query),
+            ("epicenter://surface/home", Surface::Home),
             ("epicenter://surface/whispering", Surface::Whispering),
             ("epicenter://surface/mail", Surface::Mail),
             ("epicenter://surface/books", Surface::Books),
@@ -1216,14 +1212,14 @@ mod tests {
 
         for denied in [
             "epicenter://surface/unknown",
-            "epicenter://surface/query/",
-            "epicenter://surface/query/extra",
-            "epicenter://surface/query?mode=other",
-            "epicenter://surface/query#other",
-            "epicenter://user@surface/query",
-            "epicenter://user:secret@surface/query",
+            "epicenter://surface/home/",
+            "epicenter://surface/home/extra",
+            "epicenter://surface/home?mode=other",
+            "epicenter://surface/home#other",
+            "epicenter://user@surface/home",
+            "epicenter://user:secret@surface/home",
             "epicenter://other/query",
-            "https://surface/query",
+            "https://surface/home",
         ] {
             assert_eq!(parse_surface_deep_link(&denied.parse().unwrap()), None);
         }

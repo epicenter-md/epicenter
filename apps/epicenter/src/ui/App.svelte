@@ -6,7 +6,7 @@
 	import * as Item from '@epicenter/ui/item';
 	import * as Popover from '@epicenter/ui/popover';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import type { QueryInvocation } from '../host.ts';
+	import type { HomeInvocation } from '../host.ts';
 	import Composer from './Composer.svelte';
 	import { readRuntimeInfo } from './runtime.ts';
 	import Transcript from './Transcript.svelte';
@@ -40,7 +40,7 @@
 		succeeded: { label: 'Done', variant: 'status.completed' },
 		failed: { label: 'Failed', variant: 'status.failed' },
 	} as const satisfies Record<
-		QueryInvocation['status'],
+		HomeInvocation['status'],
 		{ label: string; variant: BadgeVariant }
 	>;
 
@@ -70,7 +70,7 @@
 
 <div class="flex h-full flex-col text-sm">
 		<header class="flex flex-none items-center gap-3 border-b px-3 py-2">
-			<span class="font-semibold">Query</span>
+			<span class="font-semibold">Home</span>
 			{#if nativeStatus === 'connected'}
 				<Badge variant="status.completed">Native connected</Badge>
 			{:else if nativeStatus === 'denied'}

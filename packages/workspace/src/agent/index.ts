@@ -15,6 +15,7 @@ export type {
 } from './engine.js';
 export { createLocalToolCatalog } from './local-tool-catalog.js';
 export {
+	type AgentMessageStore,
 	type ConversationError,
 	type ConversationHandle,
 	type ConversationOptions,

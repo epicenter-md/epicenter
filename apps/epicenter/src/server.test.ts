@@ -1,15 +1,15 @@
 /**
- * Query Server Tests
+ * Home Server Tests
  *
  * Verifies the loopback shell around one host session (ADR-0084): the
  * exact Host and Origin checks protect the loopback boundary, Tauri bootstraps
- * HttpOnly browser sessions without a URL token, Query is served at its final
+ * HttpOnly browser sessions without a URL token, Home is served at its final
  * route, and the WebSocket drives the single shared chat session.
  *
  * Key behaviors:
  * - The launch token is accepted only by the bootstrap route
- * - Query APIs and WebSockets require an HttpOnly browser session
- * - Query and Whispering serve their builds; Mail and Books stay placeholders
+ * - Home APIs and WebSockets require an HttpOnly browser session
+ * - Home and Whispering serve their builds; Mail and Books stay placeholders
  * - Unknown, non-canonical, and traversal-shaped surface paths stay closed
  * - Host, Origin, CSP, frame, and referrer policies are enforced
  * - Malformed WebSocket frames drop silently without killing the socket
@@ -32,33 +32,30 @@ import { generateBlobId } from '@epicenter/blobs';
 import { createBunBlobs } from '@epicenter/blobs/bun';
 import { desktopBlobUrl } from '@epicenter/blobs/webview';
 import type { AgentEngine, EngineChunk } from '@epicenter/workspace/agent';
-import {
-	createQueryHost,
-	type QueryHost,
-	type QueryHostOptions,
-} from './host.ts';
+import type { HomeHost, HomeHostInputs } from './host.ts';
 import {
 	BOOKS_ROUTE,
 	BOOTSTRAP_ROUTE,
+	HOME_ROUTE,
 	MAIL_ROUTE,
-	QUERY_ROUTE,
 	SESSION_ROUTE,
 	SESSION_STREAM_ROUTE,
 	SURFACE_ROUTES,
 	WHISPERING_ROUTE,
 } from './routes.ts';
 import {
-	createQueryServer,
-	type QueryServerEvent,
-	type QuerySessionResponse,
+	createHomeServer,
+	type HomeServerEvent,
+	type HomeSessionResponse,
 } from './server.ts';
 import type { ReadyFrame } from './sidecar-runtime.ts';
 import { loadStaticAssets } from './static-assets.ts';
+import { createOwnedTestHomeHost } from './test-home-host.ts';
 
 const TOKEN = 'per-launch-secret';
 
 /** A stand-in for the built SPA document; `/` must return it byte-for-byte. */
-const PAGE = '<!doctype html><html><body>Query test page</body></html>';
+const PAGE = '<!doctype html><html><body>Home test page</body></html>';
 const WHISPERING_PAGE =
 	'<!doctype html><html><body>Whispering test application</body></html>';
 
@@ -94,15 +91,20 @@ function boundPort(server: { port?: number }): number {
 	return server.port;
 }
 
-function createTestHost(options: Omit<QueryHostOptions, 'dataDir' | 'model'>) {
-	return createQueryHost({
+function createTestHost(
+	options: Pick<
+		HomeHostInputs,
+		'approval' | 'engine' | 'localBooks' | 'localSource'
+	>,
+) {
+	return createOwnedTestHomeHost({
 		dataDir: testDataDir(),
 		model: 'test-model',
 		...options,
 	});
 }
 
-async function serveHost(host: QueryHost, page: string = PAGE) {
+async function serveHost(host: HomeHost, page: string = PAGE) {
 	const portProbe = Bun.serve({
 		hostname: '127.0.0.1',
 		port: 0,
@@ -111,7 +113,7 @@ async function serveHost(host: QueryHost, page: string = PAGE) {
 	const port = boundPort(portProbe);
 	await portProbe.stop(true);
 	const origin = `http://127.0.0.1:${port}`;
-	const { app, websocket } = createQueryServer({
+	const { app, websocket } = createHomeServer({
 		host,
 		origin,
 		launchToken: TOKEN,
@@ -140,16 +142,16 @@ async function serveHost(host: QueryHost, page: string = PAGE) {
 	return server;
 }
 
-async function createAppsDistFixture(queryPage: string = PAGE) {
-	return loadStaticAssets(writeAppsDistFixture(queryPage));
+async function createAppsDistFixture(homePage: string = PAGE) {
+	return loadStaticAssets(writeAppsDistFixture(homePage));
 }
 
-function writeAppsDistFixture(queryPage: string = PAGE): string {
+function writeAppsDistFixture(homePage: string = PAGE): string {
 	const root = mkdtempSync(join(tmpdir(), 'epicenter-apps-dist-'));
-	mkdirSync(join(root, 'query'), { recursive: true });
+	mkdirSync(join(root, 'home'), { recursive: true });
 	mkdirSync(join(root, 'whispering', '_app', 'immutable'), { recursive: true });
 	mkdirSync(join(root, 'whispering', 'vad'), { recursive: true });
-	writeFileSync(join(root, 'query', 'index.html'), queryPage);
+	writeFileSync(join(root, 'home', 'index.html'), homePage);
 	writeFileSync(join(root, 'whispering', 'index.html'), WHISPERING_PAGE);
 	writeFileSync(
 		join(root, 'whispering', '_app', 'immutable', 'entry.js'),
@@ -162,7 +164,7 @@ function writeAppsDistFixture(queryPage: string = PAGE): string {
 	return root;
 }
 
-function conversationOf(event: QueryServerEvent) {
+function conversationOf(event: HomeServerEvent) {
 	return event.snapshot.conversation;
 }
 
@@ -194,17 +196,17 @@ function openSocket(server: TestServer): WebSocket {
  */
 function nextSnapshot(
 	ws: WebSocket,
-	predicate: (event: QueryServerEvent) => boolean,
+	predicate: (event: HomeServerEvent) => boolean,
 	description: string,
 	timeoutMs = 5000,
-): Promise<QueryServerEvent> {
+): Promise<HomeServerEvent> {
 	return new Promise((resolve, reject) => {
 		const timer = setTimeout(
 			() => reject(new Error(`timed out waiting for ${description}`)),
 			timeoutMs,
 		);
 		ws.addEventListener('message', (event) => {
-			const parsed = JSON.parse(String(event.data)) as QueryServerEvent;
+			const parsed = JSON.parse(String(event.data)) as HomeServerEvent;
 			if (!predicate(parsed)) return;
 			clearTimeout(timer);
 			resolve(parsed);
@@ -219,7 +221,7 @@ function nextSnapshot(
 /** The turn settled and the last assistant message contains `text`. */
 const settledWith =
 	(text: string) =>
-	(event: QueryServerEvent): boolean => {
+	(event: HomeServerEvent): boolean => {
 		const snapshot = conversationOf(event);
 		const last = snapshot.messages.at(-1);
 		return (
@@ -236,8 +238,8 @@ describe('loadStaticAssets', () => {
 		const missingWhispering = mkdtempSync(
 			join(tmpdir(), 'epicenter-missing-whispering-'),
 		);
-		mkdirSync(join(missingWhispering, 'query'), { recursive: true });
-		writeFileSync(join(missingWhispering, 'query', 'index.html'), PAGE);
+		mkdirSync(join(missingWhispering, 'home'), { recursive: true });
+		writeFileSync(join(missingWhispering, 'home', 'index.html'), PAGE);
 		expect(loadStaticAssets(missingWhispering)).rejects.toThrow(
 			/Whispering asset root is missing/,
 		);
@@ -251,7 +253,7 @@ describe('loadStaticAssets', () => {
 			WHISPERING_PAGE,
 		);
 		expect(loadStaticAssets(missingQuery)).rejects.toThrow(
-			/Query index is missing/,
+			/Home index is missing/,
 		);
 	});
 
@@ -292,9 +294,9 @@ describe('loadStaticAssets', () => {
 		const assets = await loadStaticAssets(root);
 
 		for (const pathname of [
-			'/apps/whispering/../query/index.html',
-			'/apps/whispering/%2e%2e/query/index.html',
-			'/apps/whispering/%252e%252e/query/index.html',
+			'/apps/whispering/../home/index.html',
+			'/apps/whispering/%2e%2e/home/index.html',
+			'/apps/whispering/%252e%252e/home/index.html',
 			'/apps/whispering/%2fetc/passwd',
 			'/apps/whispering/%252fetc/passwd',
 			'/apps/whispering//etc/passwd',
@@ -308,14 +310,14 @@ describe('loadStaticAssets', () => {
 	});
 });
 
-describe('createQueryServer', () => {
+describe('createHomeServer', () => {
 	test('refuses an empty launch token and non-loopback origins', async () => {
 		await using host = await createTestHost({
 			engine: scriptedEngine([[]]),
 		});
 		const staticAssets = await createAppsDistFixture();
 		expect(() =>
-			createQueryServer({
+			createHomeServer({
 				host,
 				origin: 'http://127.0.0.1:39130',
 				launchToken: '',
@@ -330,7 +332,7 @@ describe('createQueryServer', () => {
 			'http://127.0.0.1:39130/path',
 		]) {
 			expect(() =>
-				createQueryServer({
+				createHomeServer({
 					host,
 					origin,
 					launchToken: TOKEN,
@@ -381,13 +383,13 @@ describe('createQueryServer', () => {
 		}
 	});
 
-	test('serves Query publicly but keeps domain APIs behind the browser session', async () => {
+	test('serves Home publicly but keeps domain APIs behind the browser session', async () => {
 		await using host = await createTestHost({
 			engine: scriptedEngine([[]]),
 		});
 		const server = await serveHost(host);
 		try {
-			const page = await fetch(QUERY_ROUTE.url(server.url.origin));
+			const page = await fetch(HOME_ROUTE.url(server.url.origin));
 			expect(page.status).toBe(200);
 			expect(await page.text()).toBe(PAGE);
 			expect(page.headers.get('cache-control')).toBe('no-store');
@@ -398,9 +400,9 @@ describe('createQueryServer', () => {
 				headers: authenticatedHeaders(server),
 			});
 			expect(session.status).toBe(200);
-			const body = (await session.json()) as QuerySessionResponse;
+			const body = (await session.json()) as HomeSessionResponse;
 			const createTodos = body.tools.find(
-				(t) => t.name === 'todos__todos_create',
+				(t) => t.name === 'honeycrisp__folders_create',
 			);
 			expect(createTodos).toBeDefined();
 			expect(createTodos?.inputSchema).toBeDefined();
@@ -415,7 +417,7 @@ describe('createQueryServer', () => {
 		}
 	});
 
-	test('serves Query and Whispering builds plus honest Mail and Books placeholders', async () => {
+	test('serves Home and Whispering builds plus honest Mail and Books placeholders', async () => {
 		await using host = await createTestHost({
 			engine: scriptedEngine([[]]),
 		});
@@ -428,7 +430,7 @@ describe('createQueryServer', () => {
 					windowLabel,
 				})),
 			).toEqual([
-				{ id: 'query', pattern: '/apps/query/', windowLabel: 'query' },
+				{ id: 'home', pattern: '/apps/home/', windowLabel: 'home' },
 				{
 					id: 'whispering',
 					pattern: '/apps/whispering/',
@@ -438,7 +440,7 @@ describe('createQueryServer', () => {
 				{ id: 'books', pattern: '/apps/books/', windowLabel: 'books' },
 			]);
 
-			const query = await fetch(QUERY_ROUTE.url(server.url.origin));
+			const query = await fetch(HOME_ROUTE.url(server.url.origin));
 			expect(await query.text()).toBe(PAGE);
 
 			const whispering = await fetch(WHISPERING_ROUTE.url(server.url.origin));
@@ -495,10 +497,10 @@ describe('createQueryServer', () => {
 		try {
 			for (const path of [
 				'/apps/unknown/',
-				'/apps/query/extra',
-				'/apps/query%2f',
-				'/apps/query/%2e%2e/%2e%2e/package.json',
-				'/apps/query/%252e%252e/%252e%252e/package.json',
+				'/apps/home/extra',
+				'/apps/home%2f',
+				'/apps/home/%2e%2e/%2e%2e/package.json',
+				'/apps/home/%252e%252e/%252e%252e/package.json',
 				'/apps/whispering/missing.js',
 			]) {
 				const response = await fetch(`${server.url.origin}${path}`);
@@ -506,9 +508,9 @@ describe('createQueryServer', () => {
 				expect(await response.text()).not.toContain('"scripts"');
 			}
 
-			// Query strings are SPA state, not an alternate server-side surface.
+			// Home strings are SPA state, not an alternate server-side surface.
 			const queryState = await fetch(
-				`${QUERY_ROUTE.url(server.url.origin)}?conversation=recent`,
+				`${HOME_ROUTE.url(server.url.origin)}?conversation=recent`,
 			);
 			expect(queryState.status).toBe(200);
 			expect(await queryState.text()).toBe(PAGE);
@@ -532,15 +534,15 @@ describe('createQueryServer', () => {
 		const server = await serveHost(host);
 		try {
 			const wrongHost = await fetch(
-				QUERY_ROUTE.url(server.url.origin).replace('127.0.0.1', 'localhost'),
+				HOME_ROUTE.url(server.url.origin).replace('127.0.0.1', 'localhost'),
 			);
 			expect(wrongHost.status).toBe(421);
-			const wrongOrigin = await fetch(QUERY_ROUTE.url(server.url.origin), {
+			const wrongOrigin = await fetch(HOME_ROUTE.url(server.url.origin), {
 				headers: { origin: 'https://example.com' },
 			});
 			expect(wrongOrigin.status).toBe(403);
 
-			const page = await fetch(QUERY_ROUTE.url(server.url.origin));
+			const page = await fetch(HOME_ROUTE.url(server.url.origin));
 			expect(page.headers.get('content-security-policy')).toContain(
 				"connect-src 'self' ipc: http://ipc.localhost",
 			);
@@ -594,8 +596,8 @@ describe('createQueryServer', () => {
 					{
 						type: 'tool-call',
 						toolCallId: 'call-approve',
-						toolName: 'todos__todos_create',
-						input: { title: 'Approve over WebSocket' },
+						toolName: 'honeycrisp__folders_create',
+						input: { name: 'Approve over WebSocket' },
 					},
 				],
 				[{ type: 'text-delta', delta: 'Created over WebSocket.' }],
@@ -611,7 +613,7 @@ describe('createQueryServer', () => {
 			);
 			firstSocket.addEventListener('open', () => {
 				firstSocket.send(
-					JSON.stringify({ type: 'send', content: 'create a todo' }),
+					JSON.stringify({ type: 'send', content: 'create a folder' }),
 				);
 			});
 
@@ -621,8 +623,8 @@ describe('createQueryServer', () => {
 			expect(approval).toEqual(
 				expect.objectContaining({
 					toolCallId: 'call-approve',
-					toolName: 'todos__todos_create',
-					input: { title: 'Approve over WebSocket' },
+					toolName: 'honeycrisp__folders_create',
+					input: { name: 'Approve over WebSocket' },
 				}),
 			);
 			firstSocket.close();
@@ -729,7 +731,7 @@ describe('createQueryServer', () => {
 				ws.send(
 					JSON.stringify({
 						type: 'invoke',
-						toolName: 'todos__todos_list',
+						toolName: 'honeycrisp__folders_list',
 						input: {},
 					}),
 				);
@@ -738,7 +740,7 @@ describe('createQueryServer', () => {
 			const final = await settled;
 			expect(final.snapshot.invocations[0]).toEqual(
 				expect.objectContaining({
-					toolName: 'todos__todos_list',
+					toolName: 'honeycrisp__folders_list',
 					status: 'succeeded',
 				}),
 			);
@@ -1003,13 +1005,13 @@ describe('local blob routes', () => {
 let builtPagePromise: Promise<string> | undefined;
 
 /**
- * Run the real Vite build once per test run and return Query's index document.
+ * Run the real Vite build once per test run and return Home's index document.
  * Memoized because both the built-SPA describe and the sidecar smoke need it,
  * and bun test does not guarantee an ordering contract between describes.
  */
 function buildSpaOnce(): Promise<string> {
 	builtPagePromise ??= (async () => {
-		const outDir = mkdtempSync(join(tmpdir(), 'epicenter-query-build-'));
+		const outDir = mkdtempSync(join(tmpdir(), 'epicenter-home-build-'));
 		const build = Bun.spawn(['bun', 'x', 'vite', 'build', '--outDir', outDir], {
 			cwd: queryDir,
 			stdout: 'pipe',
@@ -1029,7 +1031,7 @@ describe('the built SPA', () => {
 	test('the build emits one self-contained document and the server returns it byte-for-byte', async () => {
 		const page = await buildSpaOnce();
 
-		// Query currently ships as one document. The server hashes every inline
+		// Home currently ships as one document. The server hashes every inline
 		// script into its CSP instead of allowing arbitrary inline execution.
 		const scriptTags = page.match(/<script\b[^>]*>/gi) ?? [];
 		expect(scriptTags.length).toBeGreaterThan(0);
@@ -1052,7 +1054,7 @@ describe('the built SPA', () => {
 		});
 		const server = await serveHost(host, page);
 		try {
-			const response = await fetch(QUERY_ROUTE.url(server.url.origin));
+			const response = await fetch(HOME_ROUTE.url(server.url.origin));
 			expect(response.status).toBe(200);
 			expect(await response.text()).toBe(page);
 			expect(response.headers.get('content-security-policy')).toMatch(
@@ -1088,7 +1090,7 @@ function openAiSse(chunks: object[]): Response {
 	});
 }
 
-/** First model call: a fragmented streamed tool call to `todos__todos_list`. */
+/** First model call: a fragmented streamed tool call to `honeycrisp__folders_list`. */
 const TOOL_CALL_TURN = [
 	{
 		choices: [
@@ -1099,7 +1101,7 @@ const TOOL_CALL_TURN = [
 							index: 0,
 							id: 'call_1',
 							type: 'function',
-							function: { name: 'todos__todos_list', arguments: '' },
+							function: { name: 'honeycrisp__folders_list', arguments: '' },
 						},
 					],
 				},
@@ -1118,12 +1120,12 @@ const TOOL_CALL_TURN = [
 	{ choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
 ];
 
-const FINAL_TEXT = 'Your todo list is empty.';
+const FINAL_TEXT = 'Your folder list is empty.';
 
 /** Second model call: the final assistant sentence as text deltas. */
 const FINAL_TEXT_TURN = [
 	{
-		choices: [{ delta: { content: 'Your todo list' }, finish_reason: null }],
+		choices: [{ delta: { content: 'Your folder list' }, finish_reason: null }],
 	},
 	{ choices: [{ delta: { content: ' is empty.' }, finish_reason: null }] },
 	{ choices: [{ delta: {}, finish_reason: 'stop' }] },
@@ -1202,7 +1204,7 @@ describe('sidecar end-to-end smoke', () => {
 		const appsDist = writeAppsDistFixture(page);
 
 		// The fake OpenAI-compatible backend: first request streams a
-		// `todos__todos_list` tool call, second streams the final sentence.
+		// `honeycrisp__folders_list` tool call, second streams the final sentence.
 		let inferenceRequests = 0;
 		const inference = Bun.serve({
 			hostname: '127.0.0.1',
@@ -1235,11 +1237,10 @@ describe('sidecar end-to-end smoke', () => {
 					EPICENTER_APPS_DIST: appsDist,
 					// The engine POSTs `${baseURL}/chat/completions`, so the base
 					// carries the `/v1` prefix.
-					EPICENTER_QUERY_INFERENCE_URL: `${inference.url.origin}/v1`,
-					EPICENTER_QUERY_MODEL: 'fake-model',
+					EPICENTER_HOME_INFERENCE_URL: `${inference.url.origin}/v1`,
+					EPICENTER_HOME_MODEL: 'fake-model',
 					// Keep the host's replicas out of the real user data directory.
 					EPICENTER_DATA_DIR: testDataDir(),
-					EPICENTER_QUERY_DATA_DIR: testDataDir(),
 				},
 				stdin: 'pipe',
 				stdout: 'pipe',
@@ -1256,8 +1257,8 @@ describe('sidecar end-to-end smoke', () => {
 			expect(announcedPort).toBe(port);
 			const origin = `http://127.0.0.1:${announcedPort}`;
 
-			// The final Query route is public static content; domain access is not.
-			const served = await fetch(QUERY_ROUTE.url(origin));
+			// The final Home route is public static content; domain access is not.
+			const served = await fetch(HOME_ROUTE.url(origin));
 			expect(served.status).toBe(200);
 			expect(await served.text()).toBe(page);
 
@@ -1276,8 +1277,10 @@ describe('sidecar end-to-end smoke', () => {
 				headers: { cookie: cookie ?? '' },
 			});
 			expect(session.status).toBe(200);
-			const catalog = (await session.json()) as QuerySessionResponse;
-			expect(catalog.tools.map((t) => t.name)).toContain('todos__todos_list');
+			const catalog = (await session.json()) as HomeSessionResponse;
+			expect(catalog.tools.map((t) => t.name)).toContain(
+				'honeycrisp__folders_list',
+			);
 			expect(catalog.snapshot.conversation.messages).toEqual([]);
 
 			// One WebSocket turn: send, then await the settled snapshot.
@@ -1292,9 +1295,9 @@ describe('sidecar end-to-end smoke', () => {
 				20_000,
 			);
 			ws.addEventListener('open', () => {
-				ws.send(JSON.stringify({ type: 'send', content: 'list my todos' }));
+				ws.send(JSON.stringify({ type: 'send', content: 'list my folders' }));
 			});
-			let final: QueryServerEvent;
+			let final: HomeServerEvent;
 			try {
 				final = await settled;
 			} finally {
@@ -1306,13 +1309,13 @@ describe('sidecar end-to-end smoke', () => {
 			expect(parts).toContainEqual(
 				expect.objectContaining({
 					type: 'tool-call',
-					toolName: 'todos__todos_list',
+					toolName: 'honeycrisp__folders_list',
 				}),
 			);
 			expect(parts).toContainEqual(
 				expect.objectContaining({
 					type: 'tool-result',
-					toolName: 'todos__todos_list',
+					toolName: 'honeycrisp__folders_list',
 					isError: false,
 				}),
 			);
@@ -1339,10 +1342,9 @@ describe('sidecar end-to-end smoke', () => {
 				env: {
 					...process.env,
 					EPICENTER_APPS_DIST: appsDist,
-					EPICENTER_QUERY_INFERENCE_URL: 'http://127.0.0.1:1/v1',
-					EPICENTER_QUERY_MODEL: 'unused-model',
+					EPICENTER_HOME_INFERENCE_URL: 'http://127.0.0.1:1/v1',
+					EPICENTER_HOME_MODEL: 'unused-model',
 					EPICENTER_DATA_DIR: testDataDir(),
-					EPICENTER_QUERY_DATA_DIR: testDataDir(),
 				},
 				stdin: 'pipe',
 				stdout: 'pipe',
@@ -1381,10 +1383,9 @@ describe('sidecar end-to-end smoke', () => {
 				env: {
 					...process.env,
 					EPICENTER_APPS_DIST: appsDist,
-					EPICENTER_QUERY_INFERENCE_URL: 'http://127.0.0.1:1/v1',
-					EPICENTER_QUERY_MODEL: 'unused-model',
+					EPICENTER_HOME_INFERENCE_URL: 'http://127.0.0.1:1/v1',
+					EPICENTER_HOME_MODEL: 'unused-model',
 					EPICENTER_DATA_DIR: testDataDir(),
-					EPICENTER_QUERY_DATA_DIR: testDataDir(),
 				},
 				stdin: 'pipe',
 				stdout: 'pipe',

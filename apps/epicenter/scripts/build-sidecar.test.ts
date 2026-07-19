@@ -2,7 +2,7 @@
  * Epicenter Bun Host Packaging Tests
  *
  * Verifies the compiled Bun child runs without a system Bun on PATH, accepts
- * only the fixed production boot contract, finds packaged Query and Whispering
+ * only the fixed production boot contract, finds packaged Home and Whispering
  * assets through the Rust-supplied resource path, and exits when the parent
  * pipe closes.
  */
@@ -83,10 +83,9 @@ test('compiled production host serves packaged apps and exits on parent EOF', as
 		env: {
 			EPICENTER_DEV_PORT: '49152',
 			EPICENTER_DATA_DIR: dataDir,
-			EPICENTER_QUERY_DATA_DIR: dataDir,
 			EPICENTER_APPS_DIST: join(appDir, 'dist'),
-			EPICENTER_QUERY_INFERENCE_URL: 'http://127.0.0.1:1/v1',
-			EPICENTER_QUERY_MODEL: 'unused-model',
+			EPICENTER_HOME_INFERENCE_URL: 'http://127.0.0.1:1/v1',
+			EPICENTER_HOME_MODEL: 'unused-model',
 			PATH: '',
 			PORT: '49153',
 		},
@@ -110,11 +109,9 @@ test('compiled production host serves packaged apps and exits on parent EOF', as
 			port: PRODUCTION_PORT,
 		});
 
-		const query = await fetch(
-			`http://127.0.0.1:${PRODUCTION_PORT}/apps/query/`,
-		);
+		const query = await fetch(`http://127.0.0.1:${PRODUCTION_PORT}/apps/home/`);
 		expect(query.status).toBe(200);
-		expect(await query.text()).toContain('<title>Query</title>');
+		expect(await query.text()).toContain('<title>Home</title>');
 		const whispering = await fetch(
 			`http://127.0.0.1:${PRODUCTION_PORT}/apps/whispering/`,
 		);

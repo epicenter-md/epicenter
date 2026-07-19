@@ -227,5 +227,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0148](0148-blobs-use-opaque-identifiers-rather-than-content-hashes.md) | Blobs use opaque identifiers rather than content hashes | Accepted |
 | [0149](0149-local-blob-stores-are-canonical-and-remote-replication-is-explicit.md) | Local blob stores are canonical and remote replication is explicit | Accepted |
 | [0150](0150-whispering-uploads-operator-readable-audio.md) | Whispering uploads operator-readable audio | Accepted |
+| [0151](0151-local-workspace-stores-use-owner-first-directories.md) | Local workspace stores use owner-first directories | Proposed |
+| [0152](0152-epicenter-home-is-a-shell-above-workspaces.md) | Epicenter Home is a shell above workspaces | Proposed |
 
 When you add an ADR, add its row here.

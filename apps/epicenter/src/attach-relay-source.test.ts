@@ -1,7 +1,7 @@
 /**
  * AttachRelay source plane and desktop-offline behavior (ADR-0115 wave 6).
  *
- * The wave's product sentence: a phone attached to the desktop Query
+ * The wave's product sentence: a phone attached to the desktop Home
  * session can ask a question that uses a desktop-local read-only source, receive
  * the streamed answer over the trusted relay, and later see the finished
  * transcript even when the desktop is offline; it cannot start a new local-source
@@ -36,6 +36,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createAgentMessageDocumentStore } from '@epicenter/chat';
 import {
 	createAttachRelayBunServer,
 	createBunRooms,
@@ -50,17 +51,18 @@ import type {
 	AgentMessage,
 	EngineChunk,
 } from '@epicenter/workspace/agent';
-import { bunLocalPersistence } from '@epicenter/workspace/node';
+import { createDeviceBunWorkspaceRuntime } from '@epicenter/workspace/sqlite/bun';
 import { canAskLocalSource } from './attach-host-status.ts';
 import { createAttachRelayClient } from './attach-relay-client.ts';
 import {
 	attachHostToRelay,
 	type RelayHostSocket,
 } from './attach-relay-host.ts';
-import { createQueryHost, type QueryHost } from './host.ts';
+import type { HomeHost } from './host.ts';
 import type { LocalSourceMessage } from './local-source-catalog.ts';
-import type { QueryServerEvent } from './server.ts';
-import { queryWorkspace } from './workspace.ts';
+import type { HomeServerEvent } from './server.ts';
+import { createOwnedTestHomeHost } from './test-home-host.ts';
+import { conversationsWorkspace } from './workspace.ts';
 
 const HOST_ID = 'host-mac';
 /**
@@ -92,8 +94,8 @@ function testDataDir(): string {
 function createSourceHost(
 	dataDir: string,
 	engine: AgentEngine,
-): Promise<QueryHost> {
-	return createQueryHost({
+): Promise<HomeHost> {
+	return createOwnedTestHomeHost({
 		dataDir,
 		model: 'test-model',
 		engine,
@@ -145,6 +147,7 @@ function serveSelfHostRelay(): {
 		fetch: (req) => app.fetch(req, {} as never),
 		websocket: mergeBunWebSocketHandlers({
 			rooms: bunRooms.websocket,
+			documents: { message() {} },
 			attach: attachRelay.websocket,
 		}),
 	});
@@ -163,20 +166,20 @@ async function grantFor(
 /** Resolve on the first snapshot matching `predicate`, checking the latest first. */
 function nextClientSnapshot(
 	client: {
-		latest(): QueryServerEvent | undefined;
-		subscribe(l: (e: QueryServerEvent) => void): () => void;
+		latest(): HomeServerEvent | undefined;
+		subscribe(l: (e: HomeServerEvent) => void): () => void;
 	},
-	predicate: (event: QueryServerEvent) => boolean,
+	predicate: (event: HomeServerEvent) => boolean,
 	description: string,
 	timeoutMs = 5000,
-): Promise<QueryServerEvent> {
+): Promise<HomeServerEvent> {
 	return new Promise((resolve, reject) => {
 		let unsubscribe = () => {};
 		const timer = setTimeout(() => {
 			unsubscribe();
 			reject(new Error(`timed out waiting for ${description}`));
 		}, timeoutMs);
-		const settle = (event: QueryServerEvent) => {
+		const settle = (event: HomeServerEvent) => {
 			if (!predicate(event)) return;
 			clearTimeout(timer);
 			unsubscribe();
@@ -190,7 +193,7 @@ function nextClientSnapshot(
 
 const settledWith =
 	(text: string) =>
-	(event: QueryServerEvent): boolean => {
+	(event: HomeServerEvent): boolean => {
 		const conversation = event.snapshot.conversation;
 		const last = conversation.messages.at(-1);
 		return (
@@ -223,7 +226,7 @@ function capturingHostSocket(
 const wait = (ms: number): Promise<void> =>
 	new Promise((resolve) => setTimeout(resolve, ms));
 
-async function settleHost(host: QueryHost): Promise<void> {
+async function settleHost(host: HomeHost): Promise<void> {
 	for (let i = 0; i < 500 && host.snapshot().conversation.isGenerating; i++) {
 		await wait(5);
 	}
@@ -240,34 +243,24 @@ async function readTranscript(dataDir: string): Promise<{
 	tableNames: string[];
 	messages: AgentMessage[];
 }> {
-	const replica = queryWorkspace.connect(null, {
-		persistence: bunLocalPersistence({ dir: dataDir }),
+	await using runtime = createDeviceBunWorkspaceRuntime({
+		workspacesRoot: join(dataDir, 'workspaces'),
 	});
-	await replica.storage.whenLoaded;
-	try {
-		const tableNames = Object.keys(replica.tables);
-		const rows = replica.tables.conversations.scan().rows;
-		let latest = rows[0];
-		for (const row of rows) {
-			if (!latest || row.updatedAt > latest.updatedAt) latest = row;
-		}
-		if (!latest) return { tableNames, messages: [] };
-		const store = replica.tables.conversations.docs.messages.open(latest.id);
-		try {
-			await store.whenLoaded;
-			return {
-				tableNames,
-				messages: [...store.entries()].map((entry) => entry.val),
-			};
-		} finally {
-			// The child doc must be disposed before the replica, or the replica's
-			// `whenDisposed` waits on an open child flush forever.
-			store[Symbol.dispose]();
-		}
-	} finally {
-		replica[Symbol.dispose]();
-		await replica.storage.whenDisposed;
+	const replica = await runtime.open(conversationsWorkspace);
+	const tableNames = Object.keys(replica.tables);
+	const rows = (await replica.tables.conversations.list()).rows;
+	let latest = rows[0];
+	for (const row of rows) {
+		if (!latest || row.updatedAt > latest.updatedAt) latest = row;
 	}
+	if (!latest) return { tableNames, messages: [] };
+	using store = createAgentMessageDocumentStore(
+		await replica.tables.conversations.document.open(latest.id),
+	);
+	return {
+		tableNames,
+		messages: [...store.entries()].map((entry) => entry.val),
+	};
 }
 
 const textParts = (messages: AgentMessage[]): string[] =>
@@ -284,7 +277,7 @@ const toolResults = (messages: AgentMessage[]) =>
 
 describe('AttachRelay source plane (ADR-0115 wave 6)', () => {
 	test('a remote ask reads a host local source over endpoint-addressed relay frames', async () => {
-		await using host: QueryHost = await createSourceHost(
+		await using host: HomeHost = await createSourceHost(
 			testDataDir(),
 			sourceReadingEngine(),
 		);
@@ -375,7 +368,7 @@ describe('AttachRelay source plane (ADR-0115 wave 6)', () => {
 		// from the directory status, not from the client's own relay socket (the
 		// phone can be connected to the relay while the desktop is not, which is the
 		// `unreachable` state itself).
-		await using host: QueryHost = await createSourceHost(
+		await using host: HomeHost = await createSourceHost(
 			testDataDir(),
 			sourceReadingEngine(),
 		);
@@ -442,7 +435,7 @@ describe('AttachRelay source plane (ADR-0115 wave 6)', () => {
 		// source mints no workspace row of its own.
 		const dataDir = testDataDir();
 		const host = await createSourceHost(dataDir, sourceReadingEngine());
-		host.handleCommand({ type: 'send', content: 'find the gate code' });
+		await host.handleCommand({ type: 'send', content: 'find the gate code' });
 		await settleHost(host);
 		// The desktop goes offline: the process ends and flushes the transcript.
 		await host[Symbol.asyncDispose]();

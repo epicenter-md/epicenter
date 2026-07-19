@@ -1,6 +1,6 @@
 /**
- * The Bun-owned Epicenter origin: trusted SPA documents, Query APIs, and the
- * Query session WebSocket. The launch credential can only mint short-lived
+ * The Bun-owned Epicenter origin: trusted SPA documents, Home APIs, and the
+ * Home session WebSocket. The launch credential can only mint short-lived
  * browser sessions at the bootstrap route; it never appears in a URL or
  * durable browser storage.
  */
@@ -16,9 +16,9 @@ import { createBunWebSocket } from 'hono/bun';
 import { getCookie, setCookie } from 'hono/cookie';
 import { Ok } from 'wellcrafted/result';
 import {
-	parseQueryCommand,
-	type QueryHost,
-	type QuerySessionSnapshot,
+	type HomeHost,
+	type HomeSessionSnapshot,
+	parseHomeCommand,
 } from './host.ts';
 import {
 	BOOTSTRAP_ROUTE,
@@ -31,18 +31,18 @@ import {
 import type { EpicenterStaticAssets } from './static-assets.ts';
 import { PLACEHOLDER_SURFACE_PAGES } from './surface-pages.ts';
 
-export type QueryServerEvent = {
+export type HomeServerEvent = {
 	type: 'snapshot';
-	snapshot: QuerySessionSnapshot;
+	snapshot: HomeSessionSnapshot;
 };
 
-export type QuerySessionResponse = {
+export type HomeSessionResponse = {
 	tools: AgentToolDefinition[];
-	snapshot: QuerySessionSnapshot;
+	snapshot: HomeSessionSnapshot;
 };
 
-export type QueryServerOptions = {
-	host: QueryHost;
+export type HomeServerOptions = {
+	host: HomeHost;
 	/** Exact active origin, including the Rust-selected explicit port. */
 	origin: string;
 	/** Per-launch credential received from Rust over stdin. */
@@ -57,14 +57,14 @@ export type QueryServerOptions = {
 const SESSION_COOKIE = 'epicenter_session';
 const MAX_BROWSER_SESSIONS = 32;
 
-export function createQueryServer({
+export function createHomeServer({
 	host,
 	origin,
 	launchToken,
 	staticAssets,
 	workspaceOwner,
 	blobs,
-}: QueryServerOptions) {
+}: HomeServerOptions) {
 	if (launchToken === '') {
 		throw new Error('Epicenter refuses to serve without a launch token.');
 	}
@@ -72,7 +72,7 @@ export function createQueryServer({
 	const activeHost = activeUrl.host;
 	const sessionHashes = new Set<string>();
 	const surfacePages = {
-		query: staticAssets.queryPage,
+		home: staticAssets.homePage,
 		whispering: staticAssets.whisperingPage,
 		...PLACEHOLDER_SURFACE_PAGES,
 	} satisfies Record<SurfaceId, string>;
@@ -122,7 +122,7 @@ export function createQueryServer({
 	});
 
 	for (const surface of [
-		SURFACE_ROUTES.query,
+		SURFACE_ROUTES.home,
 		SURFACE_ROUTES.mail,
 		SURFACE_ROUTES.books,
 	]) {
@@ -152,7 +152,7 @@ export function createQueryServer({
 		}
 		await next();
 	};
-	app.use('/api/query/*', requireSession);
+	app.use('/api/home/*', requireSession);
 	app.use('/api/workspaces/*', requireSession);
 	app.use('/api/local-blobs/*', requireSession);
 	app.use(SESSION_STREAM_ROUTE.pattern, async (c, next) => {
@@ -164,7 +164,7 @@ export function createQueryServer({
 		c.json({
 			tools: host.toolDefinitions(),
 			snapshot: host.snapshot(),
-		} satisfies QuerySessionResponse),
+		} satisfies HomeSessionResponse),
 	);
 
 	app.put(LOCAL_BLOB_ROUTE.pattern, async (c) => {
@@ -292,7 +292,7 @@ export function createQueryServer({
 		upgradeWebSocket(() => {
 			let unsubscribe: (() => void) | undefined;
 			const push = (ws: { send(data: string): void }) => {
-				const event: QueryServerEvent = {
+				const event: HomeServerEvent = {
 					type: 'snapshot',
 					snapshot: host.snapshot(),
 				};
@@ -304,9 +304,9 @@ export function createQueryServer({
 					push(ws);
 				},
 				onMessage(event, ws) {
-					const command = parseQueryCommand(parseFrame(event.data));
+					const command = parseHomeCommand(parseFrame(event.data));
 					if (!command) return;
-					host.handleCommand(command);
+					void host.handleCommand(command);
 					push(ws);
 				},
 				onClose() {

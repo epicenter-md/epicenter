@@ -72,7 +72,7 @@ test('offline Whispering scalar edits converge in both directions', async () => 
 
 	try {
 		await using firstRuntime = createAccountBunWorkspaceRuntime({
-			storageRoot: join(root, 'first'),
+			workspacesRoot: join(root, 'first'),
 			account,
 			recordPollIntervalMs: 20,
 		});
@@ -90,7 +90,7 @@ test('offline Whispering scalar edits converge in both directions', async () => 
 		});
 		online = true;
 		await using secondRuntime = createAccountBunWorkspaceRuntime({
-			storageRoot: join(root, 'second'),
+			workspacesRoot: join(root, 'second'),
 			account,
 			recordPollIntervalMs: 20,
 		});
