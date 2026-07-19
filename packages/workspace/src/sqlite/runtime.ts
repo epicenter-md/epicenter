@@ -1,5 +1,5 @@
 import type { WireRowIntent } from '@epicenter/row-sync';
-import type { SqliteDatabase, SqliteValue } from '@epicenter/sqlite';
+import type { SqliteDatabase, SqliteRow, SqliteValue } from '@epicenter/sqlite';
 import type * as Y from '@y/y';
 import type { Static, TSchema } from 'typebox';
 import type { Result } from 'wellcrafted/result';
@@ -124,6 +124,20 @@ export type Workspace<TLens extends WorkspaceLens> = {
 	readonly sync: WorkspaceSync | null;
 };
 
+/** Schema-opaque ID-owned handle for transport hosts and other trust boundaries. */
+export type RawWorkspace = {
+	readonly id: string;
+	read(table: string, rowId: string): JsonObject | undefined;
+	list(table: string): { rowId: string; fields: JsonObject }[];
+	admit(intent: WireRowIntent): void;
+	sql(query: string, parameters: readonly SqliteValue[]): SqliteRow[];
+	readonly document: {
+		open(table: string, rowId: string): Promise<RowDocument<unknown>>;
+	};
+	/** Account synchronization, or `null` for a local-only workspace. */
+	readonly sync: WorkspaceSync | null;
+};
+
 type OpenedOwner = {
 	owner: WorkspaceOwner;
 	store: CanonicalStore;
@@ -134,6 +148,7 @@ type OpenedOwner = {
 type RuntimeEntry = {
 	id: string;
 	views: Map<WorkspaceLens, Workspace<WorkspaceLens>>;
+	raw?: RawWorkspace;
 	abortController?: AbortController;
 	ownerPromise?: Promise<OpenedOwner>;
 };
@@ -212,13 +227,45 @@ export function createWorkspaceRuntime({
 		return entry.ownerPromise;
 	}
 
+	function createRaw(entry: RuntimeEntry, opened: OpenedOwner): RawWorkspace {
+		return Object.freeze({
+			id: entry.id,
+			read(table: string, rowId: string) {
+				assertOpen();
+				return opened.store.read(table, rowId);
+			},
+			list(table: string) {
+				assertOpen();
+				return opened.store.list(table);
+			},
+			admit(intent: WireRowIntent) {
+				assertOpen();
+				opened.store.admit(intent);
+			},
+			sql(query: string, parameters: readonly SqliteValue[]) {
+				assertOpen();
+				return opened.store.sql(query, parameters);
+			},
+			document: Object.freeze({
+				open(table: string, rowId: string) {
+					assertOpen();
+					return opened.documents.open({ table, rowId });
+				},
+			}),
+			get sync() {
+				assertOpen();
+				return opened.sync;
+			},
+		});
+	}
+
 	function createView<TLens extends WorkspaceLens>(
 		lens: TLens,
-		opened: OpenedOwner,
+		raw: RawWorkspace,
 	): Workspace<TLens> {
-		const rows = createCanonicalRowsView(opened.store, lens.tables);
+		const rows = createCanonicalRowsView(raw, lens.tables);
 		const canonicalKv: CanonicalKv<KvDefinitions> = createCanonicalKvView(
-			opened.store,
+			raw,
 			lens.kv as KvDefinitions,
 		);
 		const tables = Object.fromEntries(
@@ -248,10 +295,7 @@ export function createWorkspaceRuntime({
 					document: Object.freeze({
 						async open(rowId: string) {
 							assertOpen();
-							return opened.documents.open({
-								table: name,
-								rowId,
-							});
+							return raw.document.open(name, rowId);
 						},
 					}),
 				}),
@@ -279,7 +323,7 @@ export function createWorkspaceRuntime({
 			kv,
 			get sync() {
 				assertOpen();
-				return opened.sync;
+				return raw.sync;
 			},
 			async sql<TResultSchema extends TSchema>(
 				query: string,
@@ -292,7 +336,28 @@ export function createWorkspaceRuntime({
 		}) as Workspace<TLens>;
 	}
 
+	async function openRaw(workspaceId: string): Promise<RawWorkspace> {
+		assertOpen();
+		let entry = entries.get(workspaceId);
+		if (!entry) {
+			entry = { id: workspaceId, views: new Map() };
+			entries.set(workspaceId, entry);
+		}
+		if (entry.raw) return entry.raw;
+		let opened: OpenedOwner;
+		try {
+			opened = await openedFor(entry);
+		} catch (cause) {
+			if (entries.get(workspaceId) === entry) entries.delete(workspaceId);
+			entry.abortController?.abort(cause);
+			throw cause;
+		}
+		entry.raw ??= createRaw(entry, opened);
+		return entry.raw;
+	}
+
 	return {
+		openRaw,
 		async open<TLens extends WorkspaceLens>(
 			lens: TLens,
 		): Promise<Workspace<TLens>> {
@@ -301,28 +366,19 @@ export function createWorkspaceRuntime({
 			if (existing) {
 				const cached = existing.views.get(lens);
 				if (cached) return cached as Workspace<TLens>;
-				const opened = await openedFor(existing);
+				const raw = await openRaw(lens.id);
 				const raced = existing.views.get(lens);
 				if (raced) return raced as Workspace<TLens>;
-				const view = createView(lens, opened);
+				const view = createView(lens, raw);
 				existing.views.set(lens, view as Workspace<WorkspaceLens>);
 				return view;
 			}
-			const entry: RuntimeEntry = { id: lens.id, views: new Map() };
-			entries.set(lens.id, entry);
-			let opened: OpenedOwner;
-			try {
-				opened = await openedFor(entry);
-			} catch (cause) {
-				if (entries.get(lens.id) === entry) {
-					entries.delete(lens.id);
-				}
-				entry.abortController?.abort(cause);
-				throw cause;
-			}
+			const raw = await openRaw(lens.id);
+			const entry = entries.get(lens.id);
+			if (!entry) throw new Error(`Workspace '${lens.id}' failed to open`);
 			const raced = entry.views.get(lens);
 			if (raced) return raced as Workspace<TLens>;
-			const view = createView(lens, opened);
+			const view = createView(lens, raw);
 			entry.views.set(lens, view as Workspace<WorkspaceLens>);
 			return view;
 		},

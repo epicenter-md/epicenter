@@ -35,7 +35,10 @@ import {
 } from './sidecar-runtime.ts';
 import { deriveAppCatalog, loadStaticAssets } from './static-assets.ts';
 import { conversationsWorkspace } from './workspace.ts';
-import { createEpicenterWorkspaceOwner } from './workspace-owner.ts';
+import {
+	BUILT_IN_WORKSPACE_IDS,
+	createEpicenterWorkspaceOwner,
+} from './workspace-owner.ts';
 
 async function main(): Promise<void> {
 	const parentPipe = watchParentPipe(Bun.stdin.stream());
@@ -66,6 +69,7 @@ async function main(): Promise<void> {
 		}
 		workspaceOwner = createEpicenterWorkspaceOwner(
 			join(epicenterDataDir, 'workspaces'),
+			BUILT_IN_WORKSPACE_IDS,
 		);
 		const [honeycrisp, conversations] = await Promise.all([
 			workspaceOwner.open(honeycrispWorkspace),

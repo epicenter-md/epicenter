@@ -1,6 +1,13 @@
+import {
+	RESERVED_KV_ROW_ID,
+	RESERVED_KV_TABLE,
+	type WireRowIntent,
+} from '@epicenter/row-sync';
 import type { SqliteValue } from '@epicenter/sqlite';
+import { customAlphabet } from 'nanoid';
 import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
+import { Ok } from 'wellcrafted/result';
 import {
 	createDocumentRuntime,
 	decodeDocumentBytes,
@@ -9,9 +16,14 @@ import {
 import {
 	type DesktopRecordOperation,
 	type DesktopWorkspaceResponse,
-	decodeDesktopRecordResult,
 	desktopWorkspaceUrl,
 } from './desktop-protocol.js';
+import { compileKvLens, KvReadError, KvWriteError } from './kv-definition.js';
+import {
+	compileTableLens,
+	type JsonObject,
+	type JsonValue,
+} from './lens-definition.js';
 import type { Workspace, WorkspaceTables } from './runtime.js';
 import type { WorkspaceLens } from './workspace-lens.js';
 
@@ -19,6 +31,8 @@ type DefinitionTables<TDefinition> =
 	TDefinition extends WorkspaceLens<infer TTables> ? TTables : never;
 
 type RowAddress = { table: string; rowId: string };
+
+const mintRowId = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 24);
 
 type DesktopInvalidationMessage =
 	| { type: 'records-changed'; workspaceId: string }
@@ -38,10 +52,10 @@ type DesktopRuntimeBroadcastChannel = {
 };
 
 type BoundWorkspace = {
-	definition: WorkspaceLens;
-	handle: Workspace<WorkspaceLens>;
-	/** The one host open handshake; resolves with the ready handle. */
-	opened: Promise<Workspace<WorkspaceLens>>;
+	views: Map<WorkspaceLens, Workspace<WorkspaceLens>>;
+	/** The one host open handshake shared by every lens over this ID. */
+	opened: Promise<void>;
+	documents: ReturnType<typeof createDocumentRuntime>;
 	revokeRows(addresses: RowAddress[]): void;
 	revokeDocuments(cause: Error): void;
 	applyDocumentUpdate(address: RowAddress, update: Uint8Array): void;
@@ -125,26 +139,20 @@ export function createDesktopWorkspaceRuntime({
 			);
 		}
 		if (
-			operation.kind === 'create' ||
-			operation.kind === 'update' ||
-			operation.kind === 'delete' ||
-			operation.kind === 'kv-set' ||
-			operation.kind === 'kv-unset' ||
+			operation.kind === 'admit-intent' ||
 			operation.kind === 'persist-document-update'
 		) {
 			emitRecordsChanged(workspaceId, true);
 		}
-		return decodeDesktopRecordResult(operation, envelope.data) as TResult;
+		return envelope.data as TResult;
 	};
 
 	function assertOpen(): void {
 		if (disposed) throw new Error('Desktop workspace runtime is disposed');
 	}
 
-	function createHandle<TDefinition extends WorkspaceLens>(
-		definition: TDefinition,
-	): {
-		handle: Workspace<TDefinition>;
+	function createBinding(workspaceId: string): {
+		documents: ReturnType<typeof createDocumentRuntime>;
 		revokeRows(addresses: RowAddress[]): void;
 		revokeDocuments(cause: Error): void;
 		applyDocumentUpdate(address: RowAddress, update: Uint8Array): void;
@@ -152,7 +160,7 @@ export function createDesktopWorkspaceRuntime({
 		const documents = createDocumentRuntime({
 			async persistUpdate(table, rowId, update) {
 				const encoded = encodeDocumentBytes(update);
-				await request(definition.id, {
+				await request(workspaceId, {
 					kind: 'persist-document-update',
 					table,
 					rowId,
@@ -163,20 +171,20 @@ export function createDesktopWorkspaceRuntime({
 				// document is reopened.
 				invalidationChannel?.postMessage({
 					type: 'document-updated',
-					workspaceId: definition.id,
+					workspaceId,
 					address: { table, rowId },
 					update: encoded,
 				} satisfies DesktopInvalidationMessage);
 			},
 			readCurrentRow(table, rowId) {
-				return request(definition.id, {
+				return request(workspaceId, {
 					kind: 'read-current-row',
 					table,
 					rowId,
 				});
 			},
 			async readParts(table, rowId) {
-				const state = await request<string>(definition.id, {
+				const state = await request<string>(workspaceId, {
 					kind: 'read-current-document',
 					table,
 					rowId,
@@ -184,73 +192,182 @@ export function createDesktopWorkspaceRuntime({
 				return [decodeDocumentBytes(state)];
 			},
 		});
+		return {
+			documents,
+			revokeRows: documents.revoke,
+			revokeDocuments: documents.revokeAll,
+			applyDocumentUpdate(address, update) {
+				documents.applyRelayedUpdate(address, update);
+			},
+		};
+	}
+
+	function createView<TDefinition extends WorkspaceLens>(
+		definition: TDefinition,
+		documents: ReturnType<typeof createDocumentRuntime>,
+	): Workspace<TDefinition> {
 		const tables = Object.fromEntries(
-			Object.keys(definition.tables).map((table) => [
-				table,
-				Object.freeze({
-					get(id: string) {
-						return request(definition.id, { kind: 'get', table, id });
-					},
-					list() {
-						return request(definition.id, { kind: 'list', table });
-					},
-					create(input: Record<string, unknown>) {
-						return request(definition.id, {
-							kind: 'create',
-							table,
-							input,
-						});
-					},
-					update(id: string, changes: Record<string, unknown>) {
-						const set: Record<string, unknown> = {};
-						const unset: string[] = [];
-						for (const [name, value] of Object.entries(changes)) {
-							if (value === undefined) unset.push(name);
-							else set[name] = value;
-						}
-						return request(definition.id, {
-							kind: 'update',
-							table,
-							id,
-							set,
-							unset,
-						});
-					},
-					async delete(id: string) {
-						await request<void>(definition.id, {
-							kind: 'delete',
-							table,
-							id,
-						});
-						documents.revoke([{ table, rowId: id }]);
-						invalidationChannel?.postMessage({
-							type: 'rows-deleted',
-							workspaceId: definition.id,
-							addresses: [{ table, rowId: id }],
-						} satisfies DesktopInvalidationMessage);
-					},
-					document: Object.freeze({
-						open(rowId: string) {
-							return documents.open(table, rowId);
+			Object.entries(definition.tables).map(([table, tableDefinition]) => {
+				const lens = compileTableLens(tableDefinition);
+				return [
+					table,
+					Object.freeze({
+						async get(id: string) {
+							const fields = await request<JsonObject | undefined>(
+								definition.id,
+								{
+									kind: 'read-current-row',
+									table,
+									rowId: id,
+								},
+							);
+							return fields === undefined
+								? Ok(undefined)
+								: lens.project(table, id, fields);
 						},
+						async list() {
+							const current = await request<
+								{ rowId: string; fields: JsonObject }[]
+							>(definition.id, { kind: 'list-current-rows', table });
+							const rows: Record<string, unknown>[] = [];
+							const nonconforming = [];
+							for (const row of current) {
+								const result = lens.project(table, row.rowId, row.fields);
+								if (result.error === null) rows.push(result.data);
+								else nonconforming.push(result.error);
+							}
+							return { rows, nonconforming };
+						},
+						async create(input: Record<string, unknown>) {
+							const fields = lens.validateCreate(input);
+							const id = mintRowId();
+							await admit(definition.id, {
+								kind: 'create',
+								table,
+								rowId: id,
+								fields,
+							});
+							const projected = lens.project(table, id, fields);
+							if (projected.error !== null)
+								throw new Error(projected.error.message);
+							return projected.data;
+						},
+						async update(id: string, changes: Record<string, unknown>) {
+							const fields = lens.normalizeChanges(changes);
+							const before = await request<JsonObject | undefined>(
+								definition.id,
+								{
+									kind: 'read-current-row',
+									table,
+									rowId: id,
+								},
+							);
+							if (before === undefined) return Ok(undefined);
+							if (
+								Object.keys(fields.set).length > 0 ||
+								fields.unset.length > 0
+							) {
+								await admit(definition.id, {
+									kind: 'update',
+									table,
+									rowId: id,
+									fields,
+								});
+							}
+							const current = await request<JsonObject | undefined>(
+								definition.id,
+								{
+									kind: 'read-current-row',
+									table,
+									rowId: id,
+								},
+							);
+							return current === undefined
+								? Ok(undefined)
+								: lens.project(table, id, current);
+						},
+						async delete(id: string) {
+							const current = await request<JsonObject | undefined>(
+								definition.id,
+								{
+									kind: 'read-current-row',
+									table,
+									rowId: id,
+								},
+							);
+							if (current === undefined) return;
+							await admit(definition.id, {
+								kind: 'delete',
+								table,
+								rowId: id,
+							});
+							documents.revoke([{ table, rowId: id }]);
+							invalidationChannel?.postMessage({
+								type: 'rows-deleted',
+								workspaceId: definition.id,
+								addresses: [{ table, rowId: id }],
+							} satisfies DesktopInvalidationMessage);
+						},
+						document: Object.freeze({
+							open(rowId: string) {
+								return documents.open(table, rowId);
+							},
+						}),
 					}),
-				}),
-			]),
+				];
+			}),
 		) as unknown as WorkspaceTables<DefinitionTables<TDefinition>>;
 
+		const kvLens = compileKvLens(definition.kv);
+		function requireKv(key: string) {
+			const compiled = kvLens.get(key);
+			if (!compiled) throw new Error(`Unknown kv key '${key}'`);
+			return compiled;
+		}
+		async function readKvMap(): Promise<JsonObject> {
+			return request(definition.id, { kind: 'kv-read-map' });
+		}
 		const kv = Object.freeze({
-			get(key: string) {
-				return request(definition.id, { kind: 'kv-get', key });
+			async get(key: string) {
+				requireKv(key);
+				const map = await readKvMap();
+				if (!Object.hasOwn(map, key)) return Ok(undefined);
+				const raw = map[key] as JsonValue;
+				if (!requireKv(key).check(raw)) {
+					return KvReadError.NonconformingKvValue({ key, raw });
+				}
+				return Ok(structuredClone(raw));
 			},
-			set(key: string, value: unknown) {
-				return request(definition.id, { kind: 'kv-set', key, value });
+			async set(key: string, value: unknown) {
+				if (!requireKv(key).check(value)) {
+					return KvWriteError.InvalidKvWrite({
+						key,
+						reason: 'value does not satisfy the declared schema',
+					});
+				}
+				await admit(definition.id, {
+					kind: 'update',
+					table: RESERVED_KV_TABLE,
+					rowId: RESERVED_KV_ROW_ID,
+					fields: {
+						set: { [key]: structuredClone(value) as never },
+						unset: [],
+					},
+				});
+				return Ok(undefined);
 			},
 			async unset(key: string) {
-				await request<void>(definition.id, { kind: 'kv-unset', key });
+				requireKv(key);
+				await admit(definition.id, {
+					kind: 'update',
+					table: RESERVED_KV_TABLE,
+					rowId: RESERVED_KV_ROW_ID,
+					fields: { set: {}, unset: [key] },
+				});
 			},
 		});
 
-		const handle = Object.freeze({
+		return Object.freeze({
 			id: definition.id,
 			tables,
 			kv: kv as never,
@@ -274,14 +391,13 @@ export function createDesktopWorkspaceRuntime({
 				return rows as Static<TResultSchema>[];
 			},
 		}) as unknown as Workspace<TDefinition>;
-		return {
-			handle,
-			revokeRows: documents.revoke,
-			revokeDocuments: documents.revokeAll,
-			applyDocumentUpdate(address, update) {
-				documents.applyRelayedUpdate(address, update);
-			},
-		};
+	}
+
+	async function admit(
+		workspaceId: string,
+		intent: WireRowIntent,
+	): Promise<void> {
+		await request<void>(workspaceId, { kind: 'admit-intent', intent });
 	}
 
 	return Object.freeze({
@@ -296,22 +412,25 @@ export function createDesktopWorkspaceRuntime({
 			assertOpen();
 			const existing = workspaces.get(definition.id);
 			if (existing) {
-				if (existing.definition !== definition) {
-					throw new Error(
-						`Workspace '${definition.id}' is already bound to another definition in this runtime`,
-					);
-				}
-				return existing.opened as Promise<Workspace<TDefinition>>;
+				const cached = existing.views.get(definition);
+				if (cached) return Promise.resolve(cached as Workspace<TDefinition>);
+				return existing.opened.then(() => {
+					const raced = existing.views.get(definition);
+					if (raced) return raced as Workspace<TDefinition>;
+					const view = createView(definition, existing.documents);
+					existing.views.set(definition, view as Workspace<WorkspaceLens>);
+					return view;
+				});
 			}
-			const binding = createHandle(definition);
+			const binding = createBinding(definition.id);
 			const bound: BoundWorkspace = {
-				definition,
 				...binding,
+				views: new Map(),
 				opened: undefined as never,
 			};
 			workspaces.set(definition.id, bound);
 			bound.opened = request<void>(definition.id, { kind: 'open' }).then(
-				() => binding.handle,
+				() => undefined,
 				(cause) => {
 					if (workspaces.get(definition.id) === bound) {
 						workspaces.delete(definition.id);
@@ -319,7 +438,11 @@ export function createDesktopWorkspaceRuntime({
 					throw cause;
 				},
 			);
-			return bound.opened as Promise<Workspace<TDefinition>>;
+			return bound.opened.then(() => {
+				const view = createView(definition, bound.documents);
+				bound.views.set(definition, view as Workspace<WorkspaceLens>);
+				return view;
+			});
 		},
 		async [Symbol.asyncDispose]() {
 			if (disposed) return;

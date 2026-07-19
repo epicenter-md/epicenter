@@ -76,15 +76,14 @@ export function createDeviceBunWorkspaceRuntime({
 	});
 	return Object.freeze({
 		open: runtime.open,
+		openRaw: runtime.openRaw,
 		async capture(definition: WorkspaceLens) {
 			await runtime.open(definition);
 			await runtime.captureDurability(definition.id);
 			return runtime.captureLocal(definition.id);
 		},
 		/** A Device export is the local capture; there is no authority to settle. */
-		async export(
-			definition: WorkspaceLens,
-		): Promise<LogicalWorkspaceExport> {
+		async export(definition: WorkspaceLens): Promise<LogicalWorkspaceExport> {
 			await runtime.open(definition);
 			await runtime.captureDurability(definition.id);
 			return {
@@ -114,14 +113,13 @@ export function createAccountBunWorkspaceRuntime({
 	});
 	return Object.freeze({
 		open: runtime.open,
+		openRaw: runtime.openRaw,
 		async add(definition: WorkspaceLens, copy: LogicalWorkspaceCopy) {
 			await runtime.open(definition);
 			await runtime.whenReady(definition.id);
 			await runtime.addToAccount(definition.id, copy);
 		},
-		async export(
-			definition: WorkspaceLens,
-		): Promise<LogicalWorkspaceExport> {
+		async export(definition: WorkspaceLens): Promise<LogicalWorkspaceExport> {
 			await runtime.open(definition);
 			return runtime.exportAccount(definition.id);
 		},
@@ -334,6 +332,7 @@ function createBunRuntimeWithPersistence({
 	let isDisposed = false;
 	return Object.freeze({
 		open: runtime.open,
+		openRaw: runtime.openRaw,
 		captureDurability: runtime.captureDurability,
 		whenReady: runtime.whenReady,
 		async captureLocal(workspaceId: string): Promise<LogicalWorkspaceCopy> {

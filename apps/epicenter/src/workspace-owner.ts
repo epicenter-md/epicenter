@@ -1,18 +1,19 @@
-import { honeycrispWorkspace } from '@epicenter/honeycrisp';
-import { skillsWorkspace } from '@epicenter/skills';
-import { whisperingWorkspace } from '@epicenter/whispering/workspace-contract';
 import { createDesktopWorkspaceOwner } from '@epicenter/workspace/sqlite/desktop-owner';
-import { conversationsWorkspace } from './workspace.ts';
 
-/** The executable workspace lineage statically linked into the Bun sidecar. */
-export function createEpicenterWorkspaceOwner(workspacesRoot: string) {
+export const BUILT_IN_WORKSPACE_IDS = Object.freeze([
+	'epicenter-conversations',
+	'epicenter-honeycrisp',
+	'epicenter-skills',
+	'epicenter-whispering',
+]);
+
+/** The Bun-side schema-opaque owner over the startup-derived workspace inventory. */
+export function createEpicenterWorkspaceOwner(
+	workspacesRoot: string,
+	workspaceIds: readonly string[],
+) {
 	return createDesktopWorkspaceOwner({
 		workspacesRoot,
-		definitions: [
-			conversationsWorkspace,
-			honeycrispWorkspace,
-			skillsWorkspace,
-			whisperingWorkspace,
-		],
+		workspaceIds,
 	});
 }

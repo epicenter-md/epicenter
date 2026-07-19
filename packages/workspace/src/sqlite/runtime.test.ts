@@ -435,9 +435,10 @@ test("different lenses share one ID-owned owner, mutations, documents, sync, and
     },
   });
   try {
-    const [first, second] = await Promise.all([
+    const [first, second, raw] = await Promise.all([
       runtime.open(definition),
       runtime.open(reportingLens),
+      runtime.openRaw(definition.id),
     ]);
     expect(ownerOpens).toBe(1);
     expect(first).not.toBe(second);
@@ -450,6 +451,10 @@ test("different lenses share one ID-owned owner, mutations, documents, sync, and
     expect(expectOk(await second.tables.notes.get(row.id))).toEqual({
       id: row.id,
       title: "Shared",
+    });
+    expect(raw.read("notes", row.id)).toEqual({
+      title: "Shared",
+      archived: true,
     });
     expectOk(
       await second.tables.notes.update(row.id, {

@@ -1,21 +1,21 @@
+import type { WireRowIntent } from '@epicenter/row-sync';
 import type { SqliteValue } from '@epicenter/sqlite';
 import {
 	defineErrors,
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import { isResult, Ok, type Result } from 'wellcrafted/result';
+import type { Result } from 'wellcrafted/result';
 
 export const DESKTOP_WORKSPACE_ROUTE = '/api/workspaces/:workspaceId/records';
 
 export type DesktopRecordOperation =
 	/** Acquire the workspace's SQLite owner on the host; the WebView open handshake. */
 	| { kind: 'open' }
-	| { kind: 'get'; table: string; id: string }
-	| { kind: 'kv-get'; key: string }
-	| { kind: 'kv-set'; key: string; value: unknown }
-	| { kind: 'kv-unset'; key: string }
 	| { kind: 'read-current-row'; table: string; rowId: string }
+	| { kind: 'list-current-rows'; table: string }
+	| { kind: 'admit-intent'; intent: WireRowIntent }
+	| { kind: 'kv-read-map' }
 	| { kind: 'read-current-document'; table: string; rowId: string }
 	| {
 			kind: 'persist-document-update';
@@ -23,16 +23,6 @@ export type DesktopRecordOperation =
 			rowId: string;
 			update: string;
 	  }
-	| { kind: 'list'; table: string }
-	| { kind: 'create'; table: string; input: Record<string, unknown> }
-	| {
-			kind: 'update';
-			table: string;
-			id: string;
-			set: Record<string, unknown>;
-			unset: string[];
-	  }
-	| { kind: 'delete'; table: string; id: string }
 	| {
 			kind: 'sql';
 			query: string;
@@ -55,46 +45,6 @@ export const DesktopWorkspaceError = defineErrors({
 export type DesktopWorkspaceError = InferErrors<typeof DesktopWorkspaceError>;
 
 export type DesktopWorkspaceResponse = Result<unknown, DesktopWorkspaceError>;
-
-/** Preserve optional row Results across JSON, which cannot encode undefined. */
-export function encodeDesktopRecordResult(
-	operation: DesktopRecordOperation,
-	result: unknown,
-): unknown {
-	if (
-		isOptionalRowOperation(operation) &&
-		isResult(result) &&
-		result.error === null &&
-		result.data === undefined
-	) {
-		return Ok(null);
-	}
-	return result;
-}
-
-/** Restore the public undefined absence value from its wire-only null. */
-export function decodeDesktopRecordResult(
-	operation: DesktopRecordOperation,
-	result: unknown,
-): unknown {
-	if (
-		isOptionalRowOperation(operation) &&
-		isResult(result) &&
-		result.error === null &&
-		result.data === null
-	) {
-		return Ok(undefined);
-	}
-	return result;
-}
-
-function isOptionalRowOperation(operation: DesktopRecordOperation): boolean {
-	return (
-		operation.kind === 'get' ||
-		operation.kind === 'update' ||
-		operation.kind === 'kv-get'
-	);
-}
 
 export function desktopWorkspaceUrl(
 	baseUrl: string,

@@ -4,7 +4,10 @@ import { createDesktopAuthAuthority } from './desktop-auth-authority.ts';
 import { createHomeHost, type HomeHost, type HomeHostInputs } from './host.ts';
 import type { ConversationsWorkspace } from './workspace.ts';
 import { conversationsWorkspace } from './workspace.ts';
-import { createEpicenterWorkspaceOwner } from './workspace-owner.ts';
+import {
+	BUILT_IN_WORKSPACE_IDS,
+	createEpicenterWorkspaceOwner,
+} from './workspace-owner.ts';
 
 type OwnedTestHomeHostOptions = HomeHostInputs & {
 	/** Fixture root only. Production has no separate Home data directory. */
@@ -54,6 +57,7 @@ export async function createOwnedTestHomeHostBundle(
 		options;
 	const workspaceOwner = createEpicenterWorkspaceOwner(
 		workspacesRoot ?? join(dataDir, 'workspaces'),
+		BUILT_IN_WORKSPACE_IDS,
 	);
 	try {
 		const [honeycrisp, conversations] = await Promise.all([

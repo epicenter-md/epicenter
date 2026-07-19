@@ -1,7 +1,7 @@
 /**
  * Desktop workspace owner integration.
  *
- * Two independent same-origin clients use one statically linked Bun owner.
+ * Two independent same-origin clients use one schema-opaque Bun owner.
  * Row deletion revokes peer document handles, client disposal revokes its own
  * handles without closing owner state, and a new owner reopens the same
  * canonical records after a full server restart.
@@ -18,10 +18,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { generateBlobId } from '@epicenter/blobs';
 import { createBunBlobStore } from '@epicenter/blobs/bun';
-import { InstantString } from '@epicenter/field';
+import { field, InstantString } from '@epicenter/field';
 import { skillsWorkspace } from '@epicenter/skills';
 import { whisperingWorkspace } from '@epicenter/whispering/workspace-contract';
-import { defineWorkspace } from '@epicenter/workspace/sqlite';
+import { defineTable, defineWorkspace } from '@epicenter/workspace/sqlite';
 import { createDesktopWorkspaceRuntime } from '@epicenter/workspace/sqlite/desktop';
 import { isResult } from 'wellcrafted/result';
 import { BOOTSTRAP_ROUTE } from './routes.ts';
@@ -215,14 +215,19 @@ test('two clients invalidate documents, disconnect independently, and survive re
 			await expect(client.open(unknownDefinition)).rejects.toThrow(
 				'Unknown workspace',
 			);
-			const conflictingDefinition = defineWorkspace({
+			const alternateSkillsLens = defineWorkspace({
 				id: skillsWorkspace.id,
-				tables: skillsWorkspace.tables,
+				tables: {
+					skills: defineTable({ fields: { name: field.string() } }),
+				},
 			});
-			// A conflicting rebind is a programming error and throws directly.
-			expect(() => client.open(conflictingDefinition)).toThrow(
-				'already bound to another definition',
-			);
+			const alternateSkills = await client.open(alternateSkillsLens);
+			expect(
+				(await alternateSkills.tables.skills.get(survivingSkill.id)).data,
+			).toEqual({
+				id: survivingSkill.id,
+				name: 'Surviving',
+			});
 			await expect(
 				skills.sql("UPDATE skills SET name = 'Raw write'", [], {} as never),
 			).rejects.toThrow('only SELECT');
