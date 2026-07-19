@@ -168,6 +168,12 @@ Then set the `BLOBS_S3_*` values from `.env.example` (endpoint
 `http://localhost:7070`). Your blobs land as ordinary files under
 `.data/blobs/epicenter-blobs/`.
 
+Browser replicas upload and download through short-lived presigned object-store
+URLs. The bucket CORS policy must allow each trusted application origin to use
+`GET` and `PUT`, and must allow the `Content-Type` and `If-None-Match` request
+headers. This is deployment configuration, not Worker CORS: a missing
+`If-None-Match` allowance makes immutable browser uploads fail at preflight.
+
 The server runs the same portable S3 client against versitygw, Garage, AWS S3, or
 R2; the store is endpoint-as-config, so swapping it is a config change, never a
 code change. There is no filesystem blob backend in the codebase by design: the

@@ -33,7 +33,7 @@ services/
 |   |-- types.ts
 |   |-- index.browser.ts
 |   `-- index.tauri.ts
-|-- blob-store/
+|-- blobs/
 |-- download/
 |-- http/
 |-- recorder/

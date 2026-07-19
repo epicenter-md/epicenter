@@ -8,7 +8,7 @@ These examples are not an ownership map. Check call sites before changing a modu
 
 | Module             | Shape    | What it observes                                           |
 | ------------------ | -------- | ---------------------------------------------------------- |
-| `audio.ts`         | query    | Playback URLs from blob storage                            |
+| `audio.ts`         | query    | Derived local and historical remote availability           |
 | `download.ts`      | mutation | Download service lifecycle                                 |
 | `transcription.ts` | mutation | Transcription operation lifecycle and transcribing status   |
 | `client.ts`        | infra    | `QueryClient` + `defineQuery` / `defineMutation` factories |
@@ -19,8 +19,8 @@ These examples are not an ownership map. Check call sites before changing a modu
 import { rpc } from '$lib/rpc';
 
 // Reactive read in a component
-const audio = createQuery(() =>
-  rpc.audio.getPlaybackUrl(() => recordingId).options,
+const availability = createQuery(() =>
+  rpc.audio.availability(() => recording).options,
 );
 
 // Reactive mutation observed in batch UI
@@ -81,14 +81,19 @@ Keep each adapter file in source-of-truth order:
 
 ```ts
 export const audioKeys = defineKeys({
-  playbackUrl: (id: string) => ['audio', 'playbackUrl', id] as const,
+  availability: (id: RecordingId, audioBlobId: BlobId, uploadedAt: InstantString | null) =>
+    ['audio', 'availability', id, audioBlobId, uploadedAt] as const,
 });
 
 export const audio = {
-  getPlaybackUrl: (id: Accessor<string>) =>
+  availability: (recording: Accessor<Recording>) =>
     defineQuery({
-      queryKey: audioKeys.playbackUrl(id()),
-      queryFn: () => services.blobs.audio.ensurePlaybackUrl(id()),
+      queryKey: audioKeys.availability(
+        recording().id,
+        recording().audioBlobId,
+        recording().uploadedAt,
+      ),
+      queryFn: () => getRecordingAudioAvailability(recording()),
     }),
 };
 ```
@@ -97,7 +102,9 @@ Rules:
 
 - Define keys with `defineKeys` and export the key map beside the adapter that owns it.
 - Static key entries do not need `as const`; `defineKeys` preserves literal tuple types for them.
-- Key factories need `as const` when the literal positions matter, like `['audio', 'playbackUrl', id] as const`.
+- Key factories need `as const` when the literal positions matter, like `['audio', 'availability', id] as const`.
+- Disposable handles do not belong in TanStack Query. A mounted player owns one
+  `blobUrls.open` acquisition and disposes it before replacement or unmount.
 - Keep keys in the owning module. Only lift them into a standalone file when a separate layer genuinely must reference the same key without importing the owning adapter (for example, a web fallback that cannot pull in a Tauri-only module).
 - Keep adapter-specific errors local unless another module needs to name that exact error union.
 - Inline small single-use input objects. Name an input type only when it is reused, exported, large enough to obscure the function, or carries domain meaning. Put named input types immediately before the adapter namespace that uses them.
@@ -122,7 +129,7 @@ downloadRecording: defineMutation({
   mutationKey: downloadKeys.downloadRecording,
   mutationFn: async (recording: Recording) => {
     const { data: audioBlob, error } =
-      await services.blobs.audio.getBlob(recording.id);
+      await services.blobs.get(recording.audioBlobId);
     if (error !== null) return Err(error);
 
     return services.download.downloadBlob({

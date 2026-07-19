@@ -36,7 +36,17 @@ Confidentiality follows topology. On Cloud, the operator can read live attach fr
 
 ## Big files (audio, images) follow the same rule
 
-Workspace data rides the Yjs doc, but large binaries cannot (they would blow the CRDT's size caps), so audio and images go to a separate content-addressed blob store: an S3-compatible bucket reached through `packages/server/src/s3-blob-store.ts`. Those bytes are **not encrypted** either. The only cryptography on that path is plumbing, never secrecy: a SHA-256 that *names* each object by its content (addressing and dedup), the same digest reused as an integrity checksum the store verifies on upload, and SigV4 that signs the control-plane request. Reads are gated by auth plus a principal key prefix (`principals/<principalId>/blobs/<sha256>`) behind short-lived presigned URLs, not by concealing the bytes. So a blob's confidentiality equals a document's: whoever operates the bucket can read it. Hosted, that operator is Epicenter (R2); self-hosted, it is your own bucket (Garage, S3). Same topology answer, different storage. (R2 and S3 encrypt at rest under their own keys, which the operator reads straight through, so that changes nothing about who can read your blob.)
+Workspace data rides the row/document planes, but large binaries cannot, so
+audio and images go to a separate immutable blob store: an S3-compatible bucket
+reached through `packages/server/src/s3-blob-store.ts`. Those bytes are **not
+encrypted** either. Each object has a random opaque `BlobId`; SigV4 signs the
+short-lived upload or read capability, and `If-None-Match: *` prevents an
+existing ID from being overwritten. Reads are gated by auth plus a principal
+key prefix (`principals/<principalId>/blobs/<blobId>`), not by concealing the
+bytes. A blob's confidentiality therefore equals a document's: whoever operates
+the bucket can read it. Hosted, that operator is Epicenter (R2); self-hosted, it
+is your own bucket (Garage, S3). R2 and S3 encryption at rest does not change
+who can read through the operator's credentials.
 
 One configuration is easy to get wrong here. The blob store is a service the star calls, not a part of the sync topology, so the bytes follow the store's endpoint, not the doc's home. A blob's upload URL is minted by whichever star is running, and the bytes land in that star's bucket. Self-host the docs but point blobs at Epicenter's blob service, and your media lands in Epicenter's R2, readable by Epicenter, the same trust as hosted docs, even though the doc itself never left your box. To keep media private on self-host, point the store at your own S3 (`BLOBS_S3_ENDPOINT`). A service only ever sees what you hand it; for the blob service, what you hand it is the bytes.
 

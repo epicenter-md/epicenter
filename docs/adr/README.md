@@ -224,5 +224,8 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0145](0145-one-account-authority-owns-every-workspace-and-one-socket-per-open-row-document.md) | One account authority owns every workspace and one socket per open row document | Proposed |
 | [0146](0146-row-documents-use-one-yjs-14-major-and-runtime-native-update-logs.md) | Row documents use one Yjs 14 major and runtime-native update logs | Proposed |
 | [0147](0147-cross-plane-transfer-and-recovery-use-logical-coordination-not-atomic-snapshots.md) | Cross-plane transfer and recovery use logical coordination, not atomic snapshots | Proposed |
+| [0148](0148-blobs-use-opaque-identifiers-rather-than-content-hashes.md) | Blobs use opaque identifiers rather than content hashes | Accepted |
+| [0149](0149-local-blob-stores-are-canonical-and-remote-replication-is-explicit.md) | Local blob stores are canonical and remote replication is explicit | Accepted |
+| [0150](0150-whispering-uploads-operator-readable-audio.md) | Whispering uploads operator-readable audio | Accepted |
 
 When you add an ADR, add its row here.

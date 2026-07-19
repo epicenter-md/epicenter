@@ -30,7 +30,7 @@ settings.set('recording.trigger', 'vad');
 
 ### `recordings.svelte.ts`
 
-Recording metadata backed by the server-authoritative canonical record map. The state module maintains a bounded app-level cache and refreshes after local writes or installed remote record changes. Audio blobs remain separate; use `$lib/rpc/audio` for playback URLs and `services.blobs.audio` for raw blob access.
+Recording metadata backed by structural workspace row ids. The state module maintains an app-level cache and refreshes after local writes or installed remote record changes. Audio blobs remain separate and are addressed by each row's `audioBlobId`; use `$lib/rpc/audio` for playback URLs and `services.blobs` for raw blob access.
 
 ```typescript
 import { InstantString } from '@epicenter/field';
@@ -42,7 +42,11 @@ const recording = recordings.get(id);
 const sorted = recordings.sorted; // newest first
 
 // Writes are async and refresh the app-level cache after commit.
-await recordings.set(recording);
+const created = await recordings.create({
+	audioBlobId,
+	uploadedAt: null,
+	// remaining recording fields
+});
 await recordings.update(id, {
 	transcript,
 	transcription: { status: 'completed', completedAt: InstantString.now() },

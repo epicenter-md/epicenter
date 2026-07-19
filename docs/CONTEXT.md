@@ -168,9 +168,9 @@ shapes, see `docs/adr/`.
   carries scalar fields or the reserved KV representation, never document
   updates. The workspace authority orders accepted intents and folds them into
   confirmed scalar state.
-- **Blob**: immutable content addressed outside workspace rows and KV. Rows and
-  KV may reference blobs; row-owned documents are bounded interactive CRDT
-  state, not a media or large-file plane.
+- **Blob**: immutable bytes addressed by an opaque `BlobId` outside workspace
+  rows and KV. Rows and KV may reference blobs; row-owned documents are bounded
+  interactive CRDT state, not a media or large-file plane.
 - **Canonical workspace runtime**: the greenfield two-plane lane. Runtime-native
   SQLite owns queryable scalar rows, TEMP views, and read-only SQL. Runtime-native
   Yjs 14 providers own lazy row documents. The public workspace handle composes
