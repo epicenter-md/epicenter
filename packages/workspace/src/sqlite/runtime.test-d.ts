@@ -27,14 +27,13 @@ const definition = defineWorkspace({
 
 declare const runtime: WorkspaceRuntime;
 const workspace = await runtime.open(definition);
-await workspace.opened;
 const row = await workspace.tables.notes.create({ title: 'typed' });
 await workspace.tables.notes.update(row.id, { archived: undefined });
 await workspace.tables.notes.document.open(row.id);
 await workspace.kv.set('theme', 'dark');
 
-// @ts-expect-error opening readiness is runtime-owned
-workspace.opened = Promise.resolve();
+// @ts-expect-error a ready handle carries no pre-ready readiness surface
+workspace.opened;
 
 const nullableSync: WorkspaceSync | null = workspace.sync;
 if (nullableSync) {

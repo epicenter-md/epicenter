@@ -4,12 +4,14 @@
 	import * as Modal from '@epicenter/ui/modal';
 	import { deliverRecipeResult } from '$lib/operations/delivery';
 	import { runRecipe } from '$lib/operations/run-recipe';
-	import { sound } from '$lib/operations/sound';
+	import { playSoundIfEnabled } from '$lib/operations/sound';
 	import { report } from '$lib/report';
 	import { isBuiltinRecipeId } from '$lib/state/builtin-recipes';
 	import { recipePicker } from '$lib/state/recipe-picker.svelte';
-	import { recipes } from '$lib/state/recipes.svelte';
 	import type { Recipe } from '$lib/workspace';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 
 	/**
 	 * The in-app Recipe picker: a command palette the `openRecipePicker` /
@@ -26,7 +28,7 @@
 			title: `Running ${recipe.name}...`,
 			description: 'Reshaping your text with AI.',
 		});
-		const { data, error } = await runRecipe({ input, recipe });
+		const { data, error } = await runRecipe(app, { input, recipe });
 		if (error) {
 			loading.reject({
 				title: `Couldn't run ${recipe.name}`,
@@ -35,8 +37,8 @@
 			});
 			return;
 		}
-		await sound.playSoundIfEnabled('recipeComplete');
-		const { notice } = await deliverRecipeResult({
+		await playSoundIfEnabled(app, 'recipeComplete');
+		const { notice } = await deliverRecipeResult(app, {
 			text: data,
 			recordingId: null,
 		});
@@ -59,7 +61,7 @@
 			<Command.List>
 				<Command.Empty>No recipes found.</Command.Empty>
 				<Command.Group>
-					{#each recipes.pickable as recipe (recipe.id)}
+					{#each app.recipes.pickable as recipe (recipe.id)}
 						<Command.Item value={recipe.name} onSelect={() => run(recipe)}>
 							{#if recipe.icon}
 								<span aria-hidden="true">{recipe.icon}</span>

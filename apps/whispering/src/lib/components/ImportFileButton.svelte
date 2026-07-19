@@ -3,6 +3,9 @@
 	import FileUpIcon from '@lucide/svelte/icons/file-up';
 	import { IMPORT_ACCEPT } from '$lib/constants/import-formats';
 	import { importFiles } from '$lib/operations/import';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 
 	let { class: className }: { class?: string } = $props();
 
@@ -16,7 +19,7 @@
 		const files = Array.from(event.currentTarget.files ?? []);
 		// Reset so picking the same file again still fires `change`.
 		event.currentTarget.value = '';
-		if (files.length > 0) await importFiles({ files });
+		if (files.length > 0) await importFiles(app, { files });
 	}
 </script>
 

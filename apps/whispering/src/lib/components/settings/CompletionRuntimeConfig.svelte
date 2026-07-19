@@ -12,9 +12,11 @@
 	} from '$lib/constants/inference';
 	import { resolveCompletionState } from '$lib/operations/completion';
 	import { describeCompletionReadiness } from '$lib/operations/completion-target';
-	import { settings } from '$lib/state/settings.svelte';
 	import AdvancedDisclosure from './AdvancedDisclosure.svelte';
 	import ProviderConfigFields from './ProviderConfigFields.svelte';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 
 	// The Text stage of the capture pipeline: the AI destination Polish and every
 	// Recipe send transcript text to. This surface owns the routing decision
@@ -23,9 +25,9 @@
 	// readiness are read from the same resolved state the call path uses, so what
 	// the user sees here is exactly what the pipeline will do.
 
-	const provider = $derived(settings.get('completion.provider'));
+	const provider = $derived(app.settings.get('completion.provider'));
 	const readiness = $derived(
-		describeCompletionReadiness(provider, resolveCompletionState()),
+		describeCompletionReadiness(provider, resolveCompletionState(app)),
 	);
 
 	// Fixed-list providers offer a model picker; free-form ones (OpenRouter,
@@ -40,7 +42,7 @@
 	);
 
 	function selectProvider(next: InferenceProviderId) {
-		settings.set('completion.provider', next);
+		app.settings.set('completion.provider', next);
 		// A model id from the previous provider would 404 the next completion.
 		// Default fixed-list providers to their first model; free-form providers
 		// (OpenRouter, Custom) have `models: null` and keep whatever the user
@@ -49,9 +51,9 @@
 		const models = INFERENCE[next].models;
 		if (
 			models &&
-			!(models as readonly string[]).includes(settings.get('completion.model'))
+			!(models as readonly string[]).includes(app.settings.get('completion.model'))
 		) {
-			settings.set('completion.model', models[0]);
+			app.settings.set('completion.model', models[0]);
 		}
 	}
 </script>
@@ -94,11 +96,11 @@
 				<Field.Label for="completion-model">Model</Field.Label>
 				<Select.Root
 					type="single"
-					bind:value={() => settings.get('completion.model'),
-						(value) => settings.set('completion.model', value)}
+					bind:value={() => app.settings.get('completion.model'),
+						(value) => app.settings.set('completion.model', value)}
 				>
 					<Select.Trigger id="completion-model" class="w-full">
-						{settings.get('completion.model') || 'Select a model'}
+						{app.settings.get('completion.model') || 'Select a model'}
 					</Select.Trigger>
 					<Select.Content>
 						{#each modelItems as item (item.value)}
@@ -120,11 +122,11 @@
 				id="completion-model"
 				placeholder="e.g. llama3.1"
 				autocomplete="off"
-				value={settings.get('completion.model')}
+				value={app.settings.get('completion.model')}
 				onblur={(e) => {
 					const next = e.currentTarget.value;
-					if (next !== settings.get('completion.model'))
-						settings.set('completion.model', next);
+					if (next !== app.settings.get('completion.model'))
+						app.settings.set('completion.model', next);
 				}}
 			/>
 			<Field.Description>

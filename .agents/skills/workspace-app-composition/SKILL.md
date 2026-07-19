@@ -228,9 +228,20 @@ where the workspace is built.
 
 | Workspace built | Reachable in | Gate |
 | --- | --- | --- |
-| Eager module singleton with route loads: todos, whispering, skills, matter | a route `load` | `load`: `await x.whenReady` (matter: `ensureHydrated()`) |
+| Ready application opened in a mounted layout: whispering | the (app) layout component | raw `{#await opening}` with `WorkspaceBootFailure` in `{:catch}`; the fulfilled branch mounts the typed context provider |
+| Eager module singleton with route loads: todos, skills, matter | a route `load` | `load`: `await x.whenReady` (matter: `ensureHydrated()`) |
 | Eager module singleton, gate in the root layout: honeycrisp, vocab, opensidian | the root layout | `<WorkspaceGate pending={<app>.whenReady} onForgetDevice onSignOut>` |
 | Extension entrypoint behind async storage: tab-manager | the component | outer `{#await boot.whenReady}`, then `WorkspaceGate` |
+
+Whispering is the ready-application exemplar for SQLite workspace apps: the
+runtime's `open()` is asynchronous and resolves only with a ready handle, so
+the app acquires one transactional `openWhisperingApplication(...)` promise
+during layout initialisation and lets the raw `{#await}` own pending, ready,
+and failure. Descendants receive the ready application through a typed
+`createContext` provider; there is no module-scope boot, no half-open handle,
+and no `whenReady` accessor on the application itself. Apps still on the
+module-singleton shape (honeycrisp, skills) bridge with an app-owned deferred
+workspace view over the one open promise until their own migration.
 
 - Correctness gates (404 / redirect / param) always go in `load`; only `load`
   can `error()` / `redirect()` (matter `vault/[id]`).

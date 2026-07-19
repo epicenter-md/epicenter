@@ -9,6 +9,9 @@
 	import { CAPTURE_SURFACE_OPTIONS } from '$lib/constants/audio';
 	import { selectCaptureSurface } from '$lib/operations/recording';
 	import { captureSurface } from '$lib/state/capture-surface.svelte';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 
 	let { class: className }: { class?: string } = $props();
 
@@ -16,7 +19,7 @@
 
 	const current = $derived(
 		CAPTURE_SURFACE_OPTIONS.find(
-			(surface) => surface.value === captureSurface.current,
+			(surface) => surface.value === captureSurface.current(app),
 		),
 	);
 </script>
@@ -44,13 +47,13 @@
 			<Command.List>
 				<Command.Group>
 					{#each CAPTURE_SURFACE_OPTIONS as surface (surface.value)}
-						{@const isSelected = captureSurface.current === surface.value}
+						{@const isSelected = captureSurface.current(app) === surface.value}
 						{@const SurfaceIcon = surface.Icon}
 						<Command.Item
 							value={surface.value}
 							onSelect={async () => {
 								combobox.closeAndFocusTrigger();
-								await selectCaptureSurface(surface.value);
+								await selectCaptureSurface(app, surface.value);
 							}}
 							class="flex items-center gap-2 px-2 py-2"
 						>

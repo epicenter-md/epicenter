@@ -20,7 +20,7 @@ export const platformCommands = [
 		// only arms a command on keydown when `on` includes 'Pressed'; without it the
 		// in-app shortcut would never fire. The handler guard runs once, on release.
 		on: ['Pressed', 'Released'],
-		run: (state?: ShortcutEventState) => {
+		run: (_app, state?: ShortcutEventState) => {
 			if (state === 'Released' || state === undefined) openRecipePicker();
 		},
 	},

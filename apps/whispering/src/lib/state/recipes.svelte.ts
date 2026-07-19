@@ -1,96 +1,38 @@
-import type { RowLensError } from '@epicenter/workspace/sqlite';
 import { nanoid } from 'nanoid/non-secure';
-import { onWhisperingRecordsChanged, whispering } from '#platform/whispering';
-import { BUILTIN_RECIPES } from '$lib/state/builtin-recipes';
+import { createSubscriber } from 'svelte/reactivity';
+import type { WhisperingApplication } from '$lib/whispering/application';
 import type { Recipe } from '$lib/workspace';
 
-function createRecipes() {
-	let rows = $state.raw<Recipe[]>([]);
-	let nonconforming = $state.raw<RowLensError[]>([]);
-	let loadError = $state.raw<unknown>(null);
-	let canonicalIdBySourceId = new Map<string, string>();
-	let refreshGeneration = 0;
-	const sorted = $derived(
-		rows.toSorted((left, right) => left.name.localeCompare(right.name)),
-	);
-	const pickable = $derived([...BUILTIN_RECIPES, ...sorted]);
+export type Recipes = ReturnType<typeof createRecipes>;
 
-	async function refresh(): Promise<void> {
-		const generation = ++refreshGeneration;
-		const nextRows: Recipe[] = [];
-		const nextNonconforming: RowLensError[] = [];
-		const nextCanonicalIds = new Map<string, string>();
-		try {
-			const listed = await whispering.tables.recipes.list();
-			for (const { id: canonicalId, sourceId, ...recipe } of listed.rows) {
-				if (nextCanonicalIds.has(sourceId)) {
-					throw new Error(`Duplicate recipe source id '${sourceId}'`);
-				}
-				nextCanonicalIds.set(sourceId, canonicalId);
-				nextRows.push({ id: sourceId, ...recipe });
-			}
-			nextNonconforming.push(...listed.nonconforming);
-			if (generation !== refreshGeneration) return;
-			rows = nextRows;
-			nonconforming = nextNonconforming;
-			canonicalIdBySourceId = nextCanonicalIds;
-			loadError = null;
-		} catch (cause) {
-			if (generation === refreshGeneration) loadError = cause;
-			throw cause;
-		}
-	}
-
-	const whenReady = refresh();
-	// Rejection is observed by gating surfaces when present; never as an
-	// unhandled-rejection event (the boot failure is already on the gate).
-	void whenReady.catch(() => undefined);
-	const unsubscribe = onWhisperingRecordsChanged(
-		() => void refresh().catch(() => undefined),
-	);
-	// This module is a singleton; without this, each hot reload leaves the old
-	// instance's listener registered beside the new one.
-	if (import.meta.hot) import.meta.hot.dispose(unsubscribe);
-
+/** Adds Svelte dependency tracking to the UI-free recipes namespace. */
+export function createRecipes({
+	recipes,
+}: Pick<WhisperingApplication, 'recipes'>) {
+	const track = createSubscriber((update) => recipes.subscribe(update));
 	return {
-		whenReady,
-		get pickable(): Recipe[] {
-			return pickable;
+		get pickable() {
+			track();
+			return recipes.pickable;
 		},
 		get count() {
-			return rows.length;
+			track();
+			return recipes.count;
 		},
 		get nonconforming() {
-			return nonconforming;
+			track();
+			return recipes.nonconforming;
 		},
 		get loadError() {
-			return loadError;
+			track();
+			return recipes.loadError;
 		},
-		async set(recipe: Recipe): Promise<void> {
-			const { id: sourceId, ...value } = recipe;
-			const canonicalId = canonicalIdBySourceId.get(sourceId);
-			if (canonicalId) {
-				const result = await whispering.tables.recipes.update(
-					canonicalId,
-					value,
-				);
-				if (result.error !== null) throw result.error;
-			} else {
-				await whispering.tables.recipes.create({ sourceId, ...value });
-			}
-			await refresh();
-		},
-		async delete(id: string): Promise<void> {
-			const canonicalId = canonicalIdBySourceId.get(id);
-			if (!canonicalId) return;
-			await whispering.tables.recipes.delete(canonicalId);
-			await refresh();
-		},
-		refresh,
+		set: recipes.set,
+		delete: recipes.delete,
+		refresh: recipes.refresh,
+		subscribe: recipes.subscribe,
 	};
 }
-
-export const recipes = createRecipes();
 
 export function generateDefaultRecipe(): Recipe {
 	return { id: nanoid(), name: '', instructions: '', icon: null };

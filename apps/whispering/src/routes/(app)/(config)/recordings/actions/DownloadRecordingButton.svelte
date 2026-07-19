@@ -5,8 +5,10 @@
 	import { createMutation } from '@tanstack/svelte-query';
 	import type { ComponentProps } from 'svelte';
 	import { report } from '$lib/report';
-	import { rpc } from '$lib/rpc';
 	import type { Recording } from '$lib/state/recordings.svelte';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 
 	/**
 	 * Downloads a single recording's audio. Shared by the compact row action
@@ -26,7 +28,7 @@
 	} = $props();
 
 	const downloadRecording = createMutation(
-		() => rpc.download.downloadRecording.options,
+		() => app.rpc.download.downloadRecording.options,
 	);
 
 	function download() {

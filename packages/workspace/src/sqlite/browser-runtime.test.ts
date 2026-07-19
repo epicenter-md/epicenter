@@ -4,7 +4,7 @@
  * Verifies the page-side Worker protocol without opening OPFS.
  *
  * Key behaviors:
- * - open returns one stable handle with one observable opening promise
+ * - open resolves only with a ready, stable handle; failure rejects terminally
  * - list and update use the public row verbs
  * - KV observation re-reads changed values and detaches cleanly
  * - current-state transport actions cross the boundary
@@ -185,44 +185,42 @@ function createRuntime() {
 	});
 }
 
-test('open returns a stable handle whose opened promise reports readiness', async () => {
+test('open resolves only with a ready handle and reopening is stable', async () => {
 	FakeWorker.openMode = 'defer';
 	await using runtime = createRuntime();
-	const workspace = runtime.open(definition);
-	// The handle is stable: reopening yields the same object before and
-	// after readiness.
-	expect(runtime.open(definition)).toBe(workspace);
-	expect(runtime.open(definition).opened).toBe(workspace.opened);
 	let ready = false;
-	const readiness = workspace.opened.then(() => {
+	const opening = runtime.open(definition).then((handle) => {
 		ready = true;
+		return handle;
 	});
-	// A call made before readiness queues and completes once storage answers.
-	const queuedList = workspace.tables.notes.list();
+	// Reopening before readiness shares the one storage-opening attempt.
+	expect(runtime.open(definition)).toBe(runtime.open(definition));
 	await Promise.resolve();
 	await Promise.resolve();
 	expect(ready).toBe(false);
 	expect(FakeWorker.latest?.operations[0]).toEqual({ kind: 'open' });
 	FakeWorker.latest?.resolveOpen();
-	await readiness;
-	await queuedList;
-	expect(runtime.open(definition)).toBe(workspace);
+	const workspace = await opening;
+	await workspace.tables.notes.list();
+	// The handle is stable: reopening resolves the same object.
+	expect(await runtime.open(definition)).toBe(workspace);
+	expect(
+		FakeWorker.latest?.operations.filter(({ kind }) => kind === 'open'),
+	).toEqual([{ kind: 'open' }]);
 });
 
-test('failed acquisition is terminal: opened rejects once and open never retries', async () => {
+test('failed acquisition is terminal: open rejects and never retries', async () => {
 	FakeWorker.openMode = 'reject';
 	await using runtime = createRuntime();
-	const workspace = runtime.open(definition);
-	const failure = await workspace.opened.then(
+	const failure = await runtime.open(definition).then(
 		() => undefined,
 		(cause: unknown) => cause,
 	);
 	expect(failure).toBeInstanceOf(Error);
 	expect(isWorkspaceStorageHeldError(failure)).toBe(true);
-	// The same handle and the same terminal rejection, with no second
-	// acquisition attempt behind a later open.
-	expect(runtime.open(definition)).toBe(workspace);
-	await expect(workspace.opened).rejects.toThrow('held by another tab');
+	// The same terminal rejection, with no second acquisition attempt behind
+	// a later open.
+	await expect(runtime.open(definition)).rejects.toThrow('held by another tab');
 	expect(
 		FakeWorker.latest?.operations.filter(({ kind }) => kind === 'open'),
 	).toEqual([{ kind: 'open' }]);
@@ -241,7 +239,7 @@ test('Account manifest owns only Account storage and never references Device', a
 		},
 		createBroadcastChannel: () => undefined,
 	});
-	await accountRuntime.open(definition).opened;
+	await accountRuntime.open(definition);
 	const accountManifest = FakeWorker.latest?.manifests[0];
 	const accountStorageKey = accountManifest?.storageKey;
 	expect(accountStorageKey).toBeString();
@@ -251,7 +249,7 @@ test('Account manifest owns only Account storage and never references Device', a
 
 	await accountRuntime[Symbol.asyncDispose]();
 	await using deviceRuntime = createRuntime();
-	await deviceRuntime.open(definition).opened;
+	await deviceRuntime.open(definition);
 	expect(FakeWorker.latest?.manifests[0]?.storageKey).not.toBe(
 		accountStorageKey,
 	);
@@ -262,7 +260,6 @@ test('Device capture/delete and Account add are explicit logical actions', async
 	let copy: Awaited<ReturnType<ReturnType<typeof createRuntime>['capture']>>;
 	{
 		await using device = createRuntime();
-		device.open(definition);
 		copy = await device.capture(definition);
 		expect(copy.rows[0]).toMatchObject({
 			table: 'notes',
@@ -286,7 +283,6 @@ test('Device capture/delete and Account add are explicit logical actions', async
 		},
 		createBroadcastChannel: () => undefined,
 	});
-	account.open(definition);
 	await account.add(definition, copy);
 	expect(FakeWorker.latest?.operations.at(-1)).toEqual({
 		kind: 'logical-add',
@@ -296,7 +292,6 @@ test('Device capture/delete and Account add are explicit logical actions', async
 
 test('Device export reports a null settlement over the local capture', async () => {
 	await using runtime = createRuntime();
-	runtime.open(definition);
 	const exported = await runtime.export(definition);
 	expect(exported.settlement).toBeNull();
 	expect(exported.rows[0]).toMatchObject({ table: 'notes', rowId: ROW_ID });
@@ -318,7 +313,7 @@ test('Account export settles first, then captures visible state with page docume
 		},
 		createBroadcastChannel: () => undefined,
 	});
-	const workspace = runtime.open(definition);
+	const workspace = await runtime.open(definition);
 	{
 		using document = await workspace.tables.notes.document.open(ROW_ID);
 		document.get('content').insert(0, 'export me');
@@ -337,7 +332,7 @@ test('Account export settles first, then captures visible state with page docume
 
 test('page sends list and update operations', async () => {
 	await using runtime = createRuntime();
-	const workspace = runtime.open(definition);
+	const workspace = await runtime.open(definition);
 	await workspace.tables.notes.list();
 	await workspace.tables.notes.update('aaaaaaaaaaaaaaaaaaaaaaaa', {
 		title: 'changed',
@@ -356,7 +351,7 @@ test('page sends list and update operations', async () => {
 
 test('browser row documents use the page-owned IndexedDB provider', async () => {
 	await using runtime = createRuntime();
-	const workspace = runtime.open(definition);
+	const workspace = await runtime.open(definition);
 	using document = await workspace.tables.notes.document.open(ROW_ID);
 	document.get('content').insert(0, 'local');
 	await document.whenDurable();
@@ -384,7 +379,7 @@ test('worker transport uses the workspace record routes', async () => {
 		},
 		createBroadcastChannel: () => undefined,
 	});
-	const workspace = runtime.open(definition);
+	const workspace = await runtime.open(definition);
 	await workspace.tables.notes.list();
 	for (const action of ['push', 'pull', 'acquire'] as const) {
 		FakeWorker.latest?.emit({
@@ -419,7 +414,7 @@ test('settlement is one scalar Worker operation', async () => {
 		},
 		createBroadcastChannel: () => undefined,
 	});
-	const workspace = runtime.open(definition);
+	const workspace = await runtime.open(definition);
 	expect(await workspace.sync?.settle()).toEqual({ outcome: 'caught-up' });
 	expect(FakeWorker.latest?.operations.at(-1)).toEqual({ kind: 'sync-settle' });
 });
@@ -437,7 +432,7 @@ test('Account sync status is reactive across the Worker boundary', async () => {
 		},
 		createBroadcastChannel: () => undefined,
 	});
-	const workspace = runtime.open(definition);
+	const workspace = await runtime.open(definition);
 	const statuses: unknown[] = [];
 	const unsubscribe = workspace.sync?.onStatusChange((status) => {
 		statuses.push(status);
@@ -499,7 +494,7 @@ test('browser transport serializes only known interruptions as retryable', async
 		},
 		createBroadcastChannel: () => undefined,
 	});
-	runtime.open(definition);
+	await runtime.open(definition);
 	const actions = ['push', 'pull', 'acquire'] as const;
 	for (const action of actions) {
 		FakeWorker.latest?.emit({

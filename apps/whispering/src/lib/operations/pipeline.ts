@@ -6,15 +6,14 @@ import {
 } from '$lib/operations/delivery';
 import { uploadRecordingAudio } from '$lib/operations/recording-audio';
 import { polishWillRun, runPolish } from '$lib/operations/run-polish';
-import { sound } from '$lib/operations/sound';
+import { playSoundIfEnabled } from '$lib/operations/sound';
 import { transcribeAndPersist } from '$lib/operations/transcribe';
 import { saveRecordingHistory } from '$lib/operations/transcription-history';
 import { report } from '$lib/report';
 import { services } from '$lib/services';
 import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
 import { polishHud } from '$lib/state/polish-hud.svelte';
-import { recordings } from '$lib/state/recordings.svelte';
-import { settings } from '$lib/state/settings.svelte';
+import type { WhisperingApp } from '$lib/whispering/context';
 import type { Recording } from '$lib/workspace';
 
 /**
@@ -38,11 +37,10 @@ type PipelineInput = {
  *
  * `deliverySource` only shapes the success copy (recording vs file import).
  */
-export async function processRecordingPipeline({
-	audioBlobId,
-	durationMs,
-	deliverySource = 'recording',
-}: PipelineInput) {
+export async function processRecordingPipeline(
+	app: WhisperingApp,
+	{ audioBlobId, durationMs, deliverySource = 'recording' }: PipelineInput,
+) {
 	const now = InstantString.now();
 
 	// A live dictation (not a file import) drives the dictation pill. The
@@ -54,7 +52,7 @@ export async function processRecordingPipeline({
 
 	let recording: Recording;
 	try {
-		recording = await recordings.create({
+		recording = await app.recordings.create({
 			audioBlobId,
 			uploadedAt: null,
 			title: '',
@@ -76,10 +74,10 @@ export async function processRecordingPipeline({
 		throw cause;
 	}
 
-	if (settings.get('recording.autoUpload')) {
+	if (app.settings.get('recording.autoUpload')) {
 		// One new row earns one best-effort attempt. Manual upload calls the same
 		// operation; there is no history scan, queue, persisted failure, or retry.
-		void uploadRecordingAudio(recording)
+		void uploadRecordingAudio(app, recording)
 			.then(({ error }) => {
 				if (error !== null) {
 					report.info({
@@ -103,7 +101,7 @@ export async function processRecordingPipeline({
 			});
 
 	const { data: transcription, error: transcribeError } =
-		await transcribeAndPersist(recording.id, audioBlobId);
+		await transcribeAndPersist(app, recording.id, audioBlobId);
 
 	if (transcribeError) {
 		if (isDictation) {
@@ -133,14 +131,14 @@ export async function processRecordingPipeline({
 	// import has no pill to cancel from and keeps its own progress toast. The pill
 	// shows the HUD only when an AI pass actually runs (not in speed mode); begin/end
 	// bracket the call so the controller is dropped on success, failure, or abort.
-	const willPolish = polishWillRun(transcribedText);
+	const willPolish = polishWillRun(app, transcribedText);
 	const showPolishHud = willPolish && isDictation;
 	let signal: AbortSignal | undefined;
 	if (showPolishHud) {
 		dictationLifecycle.markPolishing();
 		signal = polishHud.begin();
 	}
-	const { data: polishedText, error: polishError } = await runPolish({
+	const { data: polishedText, error: polishError } = await runPolish(app, {
 		input: transcribedText,
 		signal,
 	});
@@ -162,7 +160,7 @@ export async function processRecordingPipeline({
 	// already left `polishedTranscript` null, so speed mode (no AI call) and a
 	// polish failure (the fallback delivers the raw words) need no second write.
 	if (willPolish && !polishError) {
-		const polishedHistory = await saveRecordingHistory(recording.id, {
+		const polishedHistory = await saveRecordingHistory(app, recording.id, {
 			polishedTranscript: polishedText,
 		});
 		if (polishedHistory.error !== null) history = polishedHistory;
@@ -170,9 +168,9 @@ export async function processRecordingPipeline({
 
 	// The transcript is "ready" once it is polished and about to be delivered, so
 	// the completion sound and the resolved loading notice both fire here.
-	sound.playSoundIfEnabled('transcriptionComplete');
+	void playSoundIfEnabled(app, 'transcriptionComplete');
 	const { outcome: transcriptDelivery, notice: transcribeNotice } =
-		await deliverTranscriptionResult({
+		await deliverTranscriptionResult(app, {
 			text: deliveredText,
 			source: deliverySource,
 		});

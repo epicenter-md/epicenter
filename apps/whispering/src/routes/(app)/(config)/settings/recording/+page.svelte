@@ -16,7 +16,6 @@
 	import { services } from '$lib/services';
 	import { asDeviceIdentifier } from '@epicenter/recorder';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
-	import { settings } from '$lib/state/settings.svelte';
 	import { os } from '#platform/os';
 	import { manualRecorderConfig } from '#platform/manual-recorder-config';
 	import { tauri } from '#platform/tauri';
@@ -24,11 +23,14 @@
 	import { exportRecordingsMarkdown } from '$lib/whispering/recordings-markdown-export';
 	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
 	import VadSelectRecordingDevice from './VadSelectRecordingDevice.svelte';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 
 	const exportRecordings = createMutation(() =>
 		resultMutationOptions({
 			mutationKey: ['recordings', 'export'],
-			mutationFn: exportRecordingsMarkdown,
+			mutationFn: () => exportRecordingsMarkdown(app),
 		}),
 	);
 </script>
@@ -43,7 +45,7 @@
 	<Field.Separator />
 	<Field.Group>
 		<SettingSelect
-			store={settings}
+			store={app.settings}
 			key="recording.trigger"
 			label="Recording Trigger"
 			items={RECORDING_TRIGGER_OPTIONS}
@@ -66,7 +68,7 @@
 			/>
 		{/if}
 
-		{#if settings.get('recording.trigger') === 'manual'}
+		{#if app.settings.get('recording.trigger') === 'manual'}
 			<ManualSelectRecordingDevice
 				bind:selected={() => {
 					const selected = manualRecorderConfig.deviceId;
@@ -74,7 +76,7 @@
 					},
 					(selected) => (manualRecorderConfig.deviceId = selected)}
 			/>
-		{:else if settings.get('recording.trigger') === 'vad'}
+		{:else if app.settings.get('recording.trigger') === 'vad'}
 			{#if os.isLinux}
 				<Alert.Root variant="destructive">
 					<InfoIcon class="size-4" />
@@ -129,7 +131,7 @@
 			/>
 		{/if}
 
-		{#if settings.get('recording.trigger') === 'manual'}
+		{#if app.settings.get('recording.trigger') === 'manual'}
 			{#if !tauri}
 				<SettingSelect
 					store={deviceConfig}

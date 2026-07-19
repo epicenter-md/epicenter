@@ -23,18 +23,19 @@ const update = mock(
 		Ok(recording),
 );
 
-mock.module('$lib/state/recordings.svelte', () => ({
-	recordings: { update },
-}));
-
 const { recordTranscriptionOutcome, saveRecordingHistory } = await import(
 	'./transcription-history.js'
 );
+type WhisperingApp = import('$lib/whispering/context').WhisperingApp;
+
+const app = { recordings: { update } } as unknown as WhisperingApp;
 
 test('conforming updated row confirms the history save', async () => {
 	update.mockImplementationOnce(async () => Ok(recording));
 	expectOk(
-		await saveRecordingHistory(recordingId, { transcript: 'saved transcript' }),
+		await saveRecordingHistory(app, recordingId, {
+			transcript: 'saved transcript',
+		}),
 	);
 	expect(update).toHaveBeenLastCalledWith(recordingId, {
 		transcript: 'saved transcript',
@@ -48,7 +49,9 @@ test('rejected update becomes RecordingHistoryError', async () => {
 	});
 
 	const error = expectErr(
-		await saveRecordingHistory(recordingId, { transcript: 'delivered text' }),
+		await saveRecordingHistory(app, recordingId, {
+			transcript: 'delivered text',
+		}),
 	);
 	expect(error).toMatchObject({
 		name: 'SaveUnconfirmed',
@@ -61,7 +64,9 @@ test('missing row becomes an unconfirmed history save', async () => {
 	update.mockImplementationOnce(async () => Ok(undefined));
 
 	const error = expectErr(
-		await saveRecordingHistory(recordingId, { transcript: 'delivered text' }),
+		await saveRecordingHistory(app, recordingId, {
+			transcript: 'delivered text',
+		}),
 	);
 	expect(error.name).toBe('SaveUnconfirmed');
 });
@@ -71,7 +76,9 @@ test('projection error becomes an unconfirmed history save', async () => {
 	update.mockImplementationOnce(async () => Err(cause));
 
 	const error = expectErr(
-		await saveRecordingHistory(recordingId, { transcript: 'delivered text' }),
+		await saveRecordingHistory(app, recordingId, {
+			transcript: 'delivered text',
+		}),
 	);
 	expect(error).toMatchObject({ name: 'SaveUnconfirmed', cause });
 });
@@ -80,7 +87,7 @@ test('successful transcription carries its history Result', async () => {
 	update.mockImplementationOnce(async () => Ok(recording));
 
 	const success = expectOk(
-		await recordTranscriptionOutcome(recordingId, Ok('usable text')),
+		await recordTranscriptionOutcome(app, recordingId, Ok('usable text')),
 	);
 	expect(success.text).toBe('usable text');
 	expectOk(success.history);
@@ -98,6 +105,7 @@ test('provider error remains primary when its failed marker cannot be saved', as
 
 	const error = expectErr(
 		await recordTranscriptionOutcome(
+			app,
 			recordingId,
 			Err(providerError),
 			createLogger('test/transcription-history', sink),

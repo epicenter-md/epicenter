@@ -51,20 +51,20 @@ const runtime = createAccountBrowserWorkspaceRuntime({
 		if (isWorkspaceStorageMovedError(cause)) movedNotice = cause.message;
 	},
 });
-// The same infallible-module boot contract the production apps use: open()
-// returns the stable handle synchronously, handle.opened reports readiness,
-// success flags dataset.ready, and a rejection (for example held storage)
-// flags dataset.bootError with the error's contract name instead of
-// blanking the page.
-const workspace: WorkspaceHandle<typeof definition> = runtime.open(definition);
-let draft: RowDocument | undefined;
-workspace.opened.then(
-	() => {
+// The same ready-application boot contract the production apps use: open()
+// resolves only with a ready handle, success flags dataset.ready and installs
+// the driver, and a rejection (for example held storage) flags
+// dataset.bootError with the error's contract name instead of blanking the
+// page. The driver exists only after readiness; the harness awaits
+// dataset.ready before calling it.
+void runtime.open(definition).then(
+	(workspace) => {
 		document.body.dataset.ready = 'true';
 		const status = document.querySelector('#status');
 		if (status) {
 			status.textContent = 'Production Browser workspace runtime ready';
 		}
+		window.productionBrowserRuntime = createDriver(workspace);
 	},
 	(cause: unknown) => {
 		document.body.dataset.bootError =
@@ -74,70 +74,75 @@ workspace.opened.then(
 	},
 );
 
-window.productionBrowserRuntime = {
-	movedNotice() {
-		return movedNotice;
-	},
-	create(title: string) {
-		return workspace.tables.notes.create({ title });
-	},
-	get(id: string) {
-		return workspace.tables.notes.get(id);
-	},
-	delete(id: string) {
-		return workspace.tables.notes.delete(id);
-	},
-	sql() {
-		return workspace.sql(
-			'SELECT id, title FROM notes ORDER BY id',
-			[],
-			Type.Object({ id: Type.String(), title: Type.String() }),
-		);
-	},
-	async openDraft(noteId: string) {
-		draft ??= await workspace.tables.notes.document.open(noteId);
-		return draft.get('draft').toString();
-	},
-	async writeDraft(value: string) {
-		if (!draft) throw new Error('Draft is not open');
-		const root = draft.get('draft');
-		root.delete(0, root.length);
-		root.insert(0, value);
-		await draft.whenDurable();
-	},
-	readDraft() {
-		if (!draft) throw new Error('Draft is not open');
-		try {
-			return { text: draft.get('draft').toString() };
-		} catch (cause) {
-			return {
-				revoked: cause instanceof Error ? cause.message : String(cause),
-			};
-		}
-	},
-	draftConnectionPhase() {
-		if (!draft) return undefined;
-		return rowDocumentConnection(draft)?.status.phase;
-	},
-	closeDraft() {
-		if (!draft) return;
-		draft[Symbol.dispose]();
-		draft = undefined;
-	},
-	changeCount() {
-		return changes;
-	},
-	async settle() {
-		const sync = workspace.sync;
-		if (!sync) throw new Error('Workspace has no synchronization');
-		return sync.settle();
-	},
-	async dispose() {
-		draft?.[Symbol.dispose]();
-		draft = undefined;
-		await runtime[Symbol.asyncDispose]();
-	},
-};
+function createDriver(
+	workspace: WorkspaceHandle<typeof definition>,
+): Window['productionBrowserRuntime'] {
+	let draft: RowDocument | undefined;
+	return {
+		movedNotice() {
+			return movedNotice;
+		},
+		create(title: string) {
+			return workspace.tables.notes.create({ title });
+		},
+		get(id: string) {
+			return workspace.tables.notes.get(id);
+		},
+		delete(id: string) {
+			return workspace.tables.notes.delete(id);
+		},
+		sql() {
+			return workspace.sql(
+				'SELECT id, title FROM notes ORDER BY id',
+				[],
+				Type.Object({ id: Type.String(), title: Type.String() }),
+			);
+		},
+		async openDraft(noteId: string) {
+			draft ??= await workspace.tables.notes.document.open(noteId);
+			return draft.get('draft').toString();
+		},
+		async writeDraft(value: string) {
+			if (!draft) throw new Error('Draft is not open');
+			const root = draft.get('draft');
+			root.delete(0, root.length);
+			root.insert(0, value);
+			await draft.whenDurable();
+		},
+		readDraft() {
+			if (!draft) throw new Error('Draft is not open');
+			try {
+				return { text: draft.get('draft').toString() };
+			} catch (cause) {
+				return {
+					revoked: cause instanceof Error ? cause.message : String(cause),
+				};
+			}
+		},
+		draftConnectionPhase() {
+			if (!draft) return undefined;
+			return rowDocumentConnection(draft)?.status.phase;
+		},
+		closeDraft() {
+			if (!draft) return;
+			draft[Symbol.dispose]();
+			draft = undefined;
+		},
+		changeCount() {
+			return changes;
+		},
+		async settle() {
+			const sync = workspace.sync;
+			if (!sync) throw new Error('Workspace has no synchronization');
+			return sync.settle();
+		},
+		async dispose() {
+			draft?.[Symbol.dispose]();
+			draft = undefined;
+			await runtime[Symbol.asyncDispose]();
+		},
+	};
+}
 
 declare global {
 	interface Window {

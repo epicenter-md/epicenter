@@ -7,8 +7,10 @@
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import FolderPlusIcon from '@lucide/svelte/icons/folder-plus';
 	import PlusIcon from '@lucide/svelte/icons/plus';
-	import { honeycrisp } from '$lib/honeycrisp';
+	import { getHoneycrispApp } from '$lib/context.js';
 	import { runHoneycrispMutation } from '$lib/mutation.js';
+
+	const honeycrisp = getHoneycrispApp();
 
 	let isOpen = $state(false);
 

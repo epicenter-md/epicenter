@@ -6,6 +6,7 @@ import {
 } from '$lib/operations/recording';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 import { getRecordingShortcutLabel } from '$lib/utils/recording-shortcut';
+import type { WhisperingApp } from '$lib/whispering/context';
 import type { RecordingActionController } from './recording-action-controller';
 
 /**
@@ -22,21 +23,23 @@ import type { RecordingActionController } from './recording-action-controller';
  * Call from a component's init: it creates TanStack mutations, which need the
  * component query-client context.
  */
-export function createManualRecordingController(): RecordingActionController {
+export function createManualRecordingController(
+	app: WhisperingApp,
+): RecordingActionController {
 	const startMutation = createMutation(() => ({
 		// The record button is the `manual` source (the default); wrap so the
 		// mutation takes no variables rather than inferring the optional `source`.
-		mutationFn: () => startManualRecording(),
+		mutationFn: () => startManualRecording(app),
 	}));
 	const stopMutation = createMutation(() => ({
-		mutationFn: stopManualRecording,
+		mutationFn: () => stopManualRecording(app),
 	}));
 
 	const isStarting = $derived(startMutation.isPending);
 	const isStopping = $derived(stopMutation.isPending);
 	const isRecording = $derived(manualRecorder.state === 'RECORDING');
 	const button = $derived(MANUAL_RECORDING_BUTTON[manualRecorder.state]);
-	const shortcutLabel = $derived(getRecordingShortcutLabel('manual'));
+	const shortcutLabel = $derived(getRecordingShortcutLabel(app, 'manual'));
 
 	const description = $derived.by(() => {
 		if (isStarting) return 'Opening microphone input';

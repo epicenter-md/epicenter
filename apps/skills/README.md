@@ -11,10 +11,12 @@ AGPL-3.0 licensed.
 
 ## Workspace composition
 
-`src/lib/skills/client.ts` creates the Browser runtime and opens the inert
-`skillsWorkspace` definition from `@epicenter/skills`. Record lenses validate
-canonical JSON when it is read. Rows that do not conform stay stored and appear
-in the UI's invalid-record count rather than being silently deleted or migrated.
+The mounted root layout calls `openSkillsApplication()`, renders its stable boot
+promise with Svelte's `{#await}` block, and provides only the fully opened and
+hydrated application to descendants. Importing Skills modules does not open
+storage. Record lenses validate canonical JSON when it is read. Rows that do not
+conform stay stored and appear in the UI's invalid-record count rather than
+being silently deleted or migrated.
 
 The app uses runtime-owned structural record IDs. Each valid skill and reference
 also carries a stable `sourceId` in its JSON payload for domain-level references.

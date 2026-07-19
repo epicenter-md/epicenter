@@ -46,10 +46,9 @@
 	import { createRawSnippet } from 'svelte';
 	import { PATHS } from '$lib/services/fs-paths';
 	import { report } from '$lib/report';
-	import { rpc } from '$lib/rpc';
 	import { tauri } from '#platform/tauri';
 	import { deleteRecordingsWithConfirmation } from '$lib/operations/recordings';
-	import { type Recording, recordings } from '$lib/state/recordings.svelte';
+	import type { Recording } from '$lib/state/recordings.svelte';
 	import type { RecordingId } from '$lib/workspace';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
 	import RecordingTranscriptCell from './RecordingTranscriptCell.svelte';
@@ -57,6 +56,9 @@
 	import RecordingStorageBadge from './RecordingStorageBadge.svelte';
 	import TranscriptionStatusBadge from './TranscriptionStatusBadge.svelte';
 	import RecordingRowActions from './actions/RecordingRowActions.svelte';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 
 	/**
 	 * Returns a cell renderer for an instant, optionally using a row-owned
@@ -97,7 +99,7 @@
 	}
 
 	const transcribeRecordings = createMutation(
-		() => rpc.transcription.transcribeRecordings.options,
+		() => app.rpc.transcription.transcribeRecordings.options,
 	);
 
 	function displayTranscript(recording: Recording): string {
@@ -250,7 +252,7 @@
 	const table = createSvelteTable({
 		getRowId: (originalRow) => originalRow.id,
 		get data() {
-			return recordings.sorted;
+			return app.recordings.sorted;
 		},
 		columns,
 		getCoreRowModel: getCoreRowModel(),
@@ -457,7 +459,7 @@
 							<EllipsisIcon class="size-4" />
 						{:else if selectedRecordingRows.some(
 							(recording) =>
-								recordings.get(recording.original.id)?.transcription?.status ===
+								app.recordings.get(recording.original.id)?.transcription?.status ===
 								'completed',
 						)}
 							<RetryTranscriptionIcon class="size-4" />
@@ -532,6 +534,7 @@
 						size="icon"
 						onclick={() =>
 							deleteRecordingsWithConfirmation(
+								app,
 								selectedRecordingRows.map(({ original }) => original),
 							)}
 					>

@@ -9,8 +9,10 @@
 	import { SettingSwitch } from '$lib/components/settings';
 	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
 	import type { BooleanSettingKey } from '$lib/state/settings.svelte';
-	import { settings } from '$lib/state/settings.svelte';
 	import { tauri } from '#platform/tauri';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 
 	// One scope's full output delivery UI: copy to clipboard, paste at cursor (with
 	// its macOS Accessibility notice), and the dependent "press Enter" sub-toggle.
@@ -81,7 +83,7 @@
 	</div>
 {/if}
 
-{#if tauri && settings.get(delivery.cursor)}
+{#if tauri && app.settings.get(delivery.cursor)}
 	<div class:opacity-50={dictationCapability.needsAccessibility}>
 		<SettingSwitch
 			key={delivery.enter}

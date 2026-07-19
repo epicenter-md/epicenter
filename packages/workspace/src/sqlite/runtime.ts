@@ -114,8 +114,6 @@ export type WorkspaceKv<TKv extends KvDefinitions> = {
 
 export type WorkspaceHandle<TDefinition extends WorkspaceDefinition> = {
 	readonly id: TDefinition['id'];
-	/** Resolves when this handle's one eager storage-opening attempt completes. */
-	readonly opened: Promise<void>;
 	readonly tables: WorkspaceTables<DefinitionTables<TDefinition>>;
 	readonly kv: WorkspaceKv<DefinitionKv<TDefinition>>;
 	readonly sql: WorkspaceSql;
@@ -275,9 +273,6 @@ export function createWorkspaceRuntime({
 
 		return Object.freeze({
 			id: definition.id,
-			// Native handles are constructed only after their owner opens, so this
-			// is already fulfilled when the asynchronous open() returns.
-			opened: Promise.resolve(),
 			tables: Object.freeze(tables),
 			kv,
 			sync,

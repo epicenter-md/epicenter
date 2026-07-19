@@ -4,8 +4,9 @@
 	import * as SectionHeader from '@epicenter/ui/section-header';
 	import DatabaseIcon from '@lucide/svelte/icons/database';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
-	import { recipes } from '$lib/state/recipes.svelte';
-	import { recordings } from '$lib/state/recordings.svelte';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 
 	// ── Metrics ────────────────────────────────────────────────────────────────
 
@@ -13,11 +14,11 @@
 		function snapshot() {
 			return {
 				tables: [
-					{ label: 'Recordings', count: recordings.count },
-					{ label: 'Recipes', count: recipes.count },
+					{ label: 'Recordings', count: app.recordings.count },
+					{ label: 'Recipes', count: app.recipes.count },
 				],
 				nonconforming:
-					recordings.nonconforming.length + recipes.nonconforming.length,
+					app.recordings.nonconforming.length + app.recipes.nonconforming.length,
 			};
 		}
 

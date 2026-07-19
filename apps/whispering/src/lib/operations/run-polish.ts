@@ -13,7 +13,7 @@ import {
 import { describePolishDestination } from '$lib/operations/completion-target';
 import { resolveTranscriptionLocalityFromConfig } from '$lib/operations/transcription-target';
 import { deviceConfig } from '$lib/state/device-config.svelte';
-import { settings } from '$lib/state/settings.svelte';
+import type { WhisperingApp } from '$lib/whispering/context';
 
 export const RunPolishError = defineErrors({
 	/**
@@ -45,9 +45,9 @@ export type RunPolishError = InferErrors<typeof RunPolishError>;
  */
 export type PolishStatus = 'off' | 'on' | 'needs-key';
 
-export function polishStatus(): PolishStatus {
-	if (!settings.get('polish.enabled')) return 'off';
-	return resolveCompletionState().canRun ? 'on' : 'needs-key';
+export function polishStatus(app: WhisperingApp): PolishStatus {
+	if (!app.settings.get('polish.enabled')) return 'off';
+	return resolveCompletionState(app).canRun ? 'on' : 'needs-key';
 }
 
 /**
@@ -57,15 +57,15 @@ export function polishStatus(): PolishStatus {
  * derived sentence instead of each reconstructing it from settings and the
  * resolved completion target. Read at use per ADR 0012.
  */
-export function polishDestination(): string {
+export function polishDestination(app: WhisperingApp): string {
 	return describePolishDestination(
 		resolveTranscriptionLocalityFromConfig({
-			service: settings.get('transcription.service'),
+			service: app.settings.get('transcription.service'),
 			getDeviceConfig: deviceConfig.get,
 			sessionBaseUrl: auth.deployment.baseURL,
 		}),
-		settings.get('completion.provider'),
-		resolveCompletionState(),
+		app.settings.get('completion.provider'),
+		resolveCompletionState(app),
 	);
 }
 
@@ -76,8 +76,8 @@ export function polishDestination(): string {
  * an AI call is really about to happen (no flicker in speed mode or an
  * unconfigured install); `runPolish` reads it too.
  */
-export function polishWillRun(input: string): boolean {
-	return polishStatus() === 'on' && input.trim().length > 0;
+export function polishWillRun(app: WhisperingApp, input: string): boolean {
+	return polishStatus(app) === 'on' && input.trim().length > 0;
 }
 
 /**
@@ -96,19 +96,22 @@ export function polishWillRun(input: string): boolean {
  * text. On a genuine AI failure the raw input rides along in the error so
  * delivery can still proceed.
  */
-export async function runPolish({
-	input,
-	signal,
-}: {
-	input: string;
-	signal?: AbortSignal;
-}): Promise<Result<string, RunPolishError>> {
-	if (!polishWillRun(input)) return Ok(input);
+export async function runPolish(
+	app: WhisperingApp,
+	{
+		input,
+		signal,
+	}: {
+		input: string;
+		signal?: AbortSignal;
+	},
+): Promise<Result<string, RunPolishError>> {
+	if (!polishWillRun(app, input)) return Ok(input);
 
-	const result = await completeWithGlobalDefault({
+	const result = await completeWithGlobalDefault(app, {
 		systemPrompt: buildPolishSystemPrompt(
-			settings.get('polish.instructions'),
-			settings.get('dictionary'),
+			app.settings.get('polish.instructions'),
+			app.settings.get('dictionary'),
 		),
 		userPrompt: input,
 		signal,

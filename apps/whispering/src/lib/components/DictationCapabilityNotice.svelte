@@ -5,6 +5,9 @@
 	import { accessibilityGuide } from '$lib/components/MacosAccessibilityGuideDialog.svelte';
 	import { outputWritesToCursor } from '$lib/operations/delivery';
 	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 
 	// A home banner that fires ONLY when something the user configured is broken,
 	// never as a feature pitch. The dictation capability Rust owns already encodes
@@ -29,7 +32,7 @@
 	const cursorPasteNotFiring = $derived(
 		dictationCapability.needsAccessibility &&
 			!dictationCapability.isStale &&
-			outputWritesToCursor(),
+			outputWritesToCursor(app),
 	);
 </script>
 

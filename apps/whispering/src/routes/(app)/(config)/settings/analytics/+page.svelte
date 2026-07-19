@@ -3,8 +3,10 @@
 	import * as Card from '@epicenter/ui/card';
 	import * as SectionHeader from '@epicenter/ui/section-header';
 	import { SettingSwitch } from '$lib/components/settings';
-	import { analytics } from '$lib/operations/analytics';
-	import { settings } from '$lib/state/settings.svelte';
+	import { logAnalyticsEvent } from '$lib/operations/analytics';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 </script>
 
 <div class="space-y-8">
@@ -14,7 +16,7 @@
 			<SectionHeader.Title level={3} class="text-xl tracking-tight"
 				>Analytics</SectionHeader.Title
 			>
-			{#if settings.get('analytics.enabled')}
+			{#if app.settings.get('analytics.enabled')}
 				<Badge
 					variant="outline"
 					class="text-xs text-green-700 dark:text-green-400 border-green-200 dark:border-green-400/30"
@@ -45,7 +47,7 @@
 				onCheckedChange={(checked) => {
 					// Log the change (only actually sends if analytics is now enabled).
 					if (checked) {
-						analytics.logEvent({
+						void logAnalyticsEvent(app, {
 							type: 'settings_changed',
 							section: 'analytics',
 						});
@@ -142,7 +144,7 @@
 
 	<!-- Status Footer -->
 	<div class="flex items-center gap-2 text-xs">
-		{#if settings.get('analytics.enabled')}
+		{#if app.settings.get('analytics.enabled')}
 			<div class="flex items-center gap-2 text-green-700 dark:text-green-400">
 				<div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
 				<span class="font-medium">Analytics active</span>

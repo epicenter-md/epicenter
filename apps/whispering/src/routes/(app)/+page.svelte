@@ -31,15 +31,17 @@
 		getTranscriptionReadiness,
 	} from '$lib/settings/transcription-validation';
 	import { captureSurface } from '$lib/state/capture-surface.svelte';
-	import { recordings } from '$lib/state/recordings.svelte';
+	import { getWhisperingApp } from '$lib/whispering/context';
 	import { tauri } from '#platform/tauri';
 	import ManualRecordingAction from './_components/ManualRecordingAction.svelte';
 	import PolishStatusLink from './_components/PolishStatusLink.svelte';
 	import RecordingResult from './_components/RecordingResult.svelte';
 	import VadRecordingAction from './_components/VadRecordingAction.svelte';
 
-	const latestRecording = $derived(recordings.sorted[0]);
-	const transcriptionReadiness = $derived(getTranscriptionReadiness());
+	const app = getWhisperingApp();
+
+	const latestRecording = $derived(app.recordings.sorted[0]);
+	const transcriptionReadiness = $derived(getTranscriptionReadiness(app));
 	// Home is onboarding, not configuration: when transcription is not ready, ask
 	// for only the one required credential inline. A cloud provider needs a single
 	// API key, so we render just that field (via `secretsOnly`) and delegate the
@@ -48,7 +50,7 @@
 	// heavy for the record screen, so those route to Privacy & Processing instead
 	// of rendering a second setup surface here.
 	const inlineKeyProvider = $derived.by(() => {
-		const provider = getSelectedTranscriptionProvider();
+		const provider = getSelectedTranscriptionProvider(app);
 		return provider?.access === 'key' ? provider : null;
 	});
 	const PageError = defineErrors({
@@ -118,7 +120,7 @@
 						}
 
 						if (files.length > 0) {
-							await importFiles({ files });
+							await importFiles(app, { files });
 						}
 					},
 				);
@@ -173,10 +175,10 @@
 	{:else}
 		<ToggleGroup.Root
 			type="single"
-			bind:value={() => captureSurface.current,
+			bind:value={() => captureSurface.current(app),
 				(surface) => {
 					if (!surface) return;
-					void selectCaptureSurface(surface as CaptureSurface);
+					void selectCaptureSurface(app, surface as CaptureSurface);
 				}}
 			class="w-full"
 		>
@@ -192,7 +194,7 @@
 			{/each}
 		</ToggleGroup.Root>
 
-		{#if captureSurface.current === 'manual'}
+		{#if captureSurface.current(app) === 'manual'}
 			<div class="flex w-full flex-col items-center gap-3">
 				<ManualRecordingAction>
 					{#snippet status()}
@@ -200,7 +202,7 @@
 					{/snippet}
 				</ManualRecordingAction>
 			</div>
-		{:else if captureSurface.current === 'vad'}
+		{:else if captureSurface.current(app) === 'vad'}
 			<div class="flex w-full flex-col items-center gap-3">
 				<VadRecordingAction>
 					{#snippet status()}
@@ -208,7 +210,7 @@
 					{/snippet}
 				</VadRecordingAction>
 			</div>
-		{:else if captureSurface.current === 'import'}
+		{:else if captureSurface.current(app) === 'import'}
 			<div class="flex w-full flex-col items-center gap-4">
 				<FileDropZone
 					accept={IMPORT_ACCEPT}
@@ -216,7 +218,7 @@
 					maxFileSize={MAX_IMPORT_FILE_SIZE}
 					onUpload={async (files) => {
 						if (files.length > 0) {
-							await importFiles({ files });
+							await importFiles(app, { files });
 						}
 					}}
 					onFileRejected={({ file, reason }) => {
@@ -243,7 +245,7 @@
 				transcript={latestRecording.polishedTranscript ?? latestRecording.transcript}
 				rows={1}
 				onDelete={() => {
-					deleteRecordingsWithConfirmation(latestRecording);
+					deleteRecordingsWithConfirmation(app, latestRecording);
 				}}
 			/>
 		{/if}

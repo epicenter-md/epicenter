@@ -14,7 +14,8 @@
  * @example
  * ```svelte
  * <script>
- *   import { honeycrisp } from '$lib/honeycrisp';
+ *   import { getHoneycrispApp } from '$lib/context';
+ *   const honeycrisp = getHoneycrispApp();
  * </script>
  *
  * {#each honeycrisp.state.view.currentNotes as note (note.id)}

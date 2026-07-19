@@ -11,7 +11,7 @@ import { auth } from '#platform/auth';
 import { customFetch } from '#platform/http';
 import { tauri } from '#platform/tauri';
 import type { SupportedLanguage } from '$lib/constants/languages';
-import { analytics } from '$lib/operations/analytics';
+import { logAnalyticsEvent } from '$lib/operations/analytics';
 import {
 	recordTranscriptionOutcome,
 	type TranscriptionSuccess,
@@ -29,7 +29,7 @@ import {
 } from '$lib/services/transcription/providers';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { type SecretKey, secrets } from '$lib/state/secrets.svelte';
-import { settings } from '$lib/state/settings.svelte';
+import type { WhisperingApp } from '$lib/whispering/context';
 import type { RecordingId } from '$lib/workspace';
 
 /**
@@ -120,90 +120,91 @@ function secretApiKey(key: SecretKey): string | undefined {
  * clients because they do not speak the wire (Deepgram's raw body + `Authorization:
  * Token`, ElevenLabs' `xi-api-key`, Mistral's `context_bias`); ADR-0060 blesses it.
  */
-const UPLOAD_DISPATCH = {
-	// Epicenter (`session`) STT: the transport is the signed-in session fetch against
-	// the deployment you are bonded to (`auth.deployment.baseURL`, so a self-hosted instance's own
-	// gateway is used when connected to one), never a stored key. Both deployables mount
-	// this gateway on their house key; a hosted deployment meters it (ADR-0100), a
-	// self-host deployment does not. The model is fixed by the gateway.
-	epicenter: {
-		kind: 'wire',
-		resolve: () => ({
-			fetch: auth.fetch,
-			baseURL: API_ROUTES.ai.baseUrl(auth.deployment.baseURL),
-		}),
-		model: () => PROVIDERS.epicenter.model,
-	},
-	OpenAI: {
-		kind: 'wire',
-		resolve: () =>
-			resolveConnection(
-				{
-					baseUrl:
-						deviceConfig.get(PROVIDERS.OpenAI.endpointConfigKey) ||
-						'https://api.openai.com/v1',
-					apiKey: secretApiKey(PROVIDERS.OpenAI.apiKeyConfigKey),
-				},
-				customFetch,
-			),
-		model: () => settings.get(PROVIDERS.OpenAI.modelSettingKey),
-	},
-	Groq: {
-		kind: 'wire',
-		resolve: () =>
-			resolveConnection(
-				{
-					baseUrl:
-						deviceConfig.get(PROVIDERS.Groq.endpointConfigKey) ||
-						'https://api.groq.com/openai/v1',
-					apiKey: secretApiKey(PROVIDERS.Groq.apiKeyConfigKey),
-				},
-				customFetch,
-			),
-		model: () => settings.get(PROVIDERS.Groq.modelSettingKey),
-	},
-	speaches: {
-		kind: 'wire',
-		resolve: () =>
-			resolveConnection(
-				{
-					baseUrl: `${deviceConfig.get(PROVIDERS.speaches.endpointConfigKey)}/v1`,
-				},
-				customFetch,
-			),
-		model: () => deviceConfig.get(PROVIDERS.speaches.modelIdConfigKey),
-	},
-	ElevenLabs: {
-		kind: 'bespoke',
-		transcribe: (audio, { prompt, spokenLanguage }) =>
-			ElevenLabsTranscriptionServiceLive.transcribe(audio, {
-				prompt,
-				spokenLanguage,
-				apiKey: secretApiKey(PROVIDERS.ElevenLabs.apiKeyConfigKey) ?? '',
-				modelName: settings.get(PROVIDERS.ElevenLabs.modelSettingKey),
+const uploadDispatch = (app: WhisperingApp) =>
+	({
+		// Epicenter (`session`) STT: the transport is the signed-in session fetch against
+		// the deployment you are bonded to (`auth.deployment.baseURL`, so a self-hosted instance's own
+		// gateway is used when connected to one), never a stored key. Both deployables mount
+		// this gateway on their house key; a hosted deployment meters it (ADR-0100), a
+		// self-host deployment does not. The model is fixed by the gateway.
+		epicenter: {
+			kind: 'wire',
+			resolve: () => ({
+				fetch: auth.fetch,
+				baseURL: API_ROUTES.ai.baseUrl(auth.deployment.baseURL),
 			}),
-	},
-	Deepgram: {
-		kind: 'bespoke',
-		transcribe: (audio, { prompt, spokenLanguage }) =>
-			DeepgramTranscriptionServiceLive.transcribe(audio, {
-				prompt,
-				spokenLanguage,
-				apiKey: secretApiKey(PROVIDERS.Deepgram.apiKeyConfigKey) ?? '',
-				modelName: settings.get(PROVIDERS.Deepgram.modelSettingKey),
-			}),
-	},
-	Mistral: {
-		kind: 'bespoke',
-		transcribe: (audio, { prompt, spokenLanguage }) =>
-			MistralTranscriptionServiceLive.transcribe(audio, {
-				prompt,
-				spokenLanguage,
-				apiKey: secretApiKey(PROVIDERS.Mistral.apiKeyConfigKey) ?? '',
-				modelName: settings.get(PROVIDERS.Mistral.modelSettingKey),
-			}),
-	},
-} satisfies Record<UploadProviderId, UploadDispatch>;
+			model: () => PROVIDERS.epicenter.model,
+		},
+		OpenAI: {
+			kind: 'wire',
+			resolve: () =>
+				resolveConnection(
+					{
+						baseUrl:
+							deviceConfig.get(PROVIDERS.OpenAI.endpointConfigKey) ||
+							'https://api.openai.com/v1',
+						apiKey: secretApiKey(PROVIDERS.OpenAI.apiKeyConfigKey),
+					},
+					customFetch,
+				),
+			model: () => app.settings.get(PROVIDERS.OpenAI.modelSettingKey),
+		},
+		Groq: {
+			kind: 'wire',
+			resolve: () =>
+				resolveConnection(
+					{
+						baseUrl:
+							deviceConfig.get(PROVIDERS.Groq.endpointConfigKey) ||
+							'https://api.groq.com/openai/v1',
+						apiKey: secretApiKey(PROVIDERS.Groq.apiKeyConfigKey),
+					},
+					customFetch,
+				),
+			model: () => app.settings.get(PROVIDERS.Groq.modelSettingKey),
+		},
+		speaches: {
+			kind: 'wire',
+			resolve: () =>
+				resolveConnection(
+					{
+						baseUrl: `${deviceConfig.get(PROVIDERS.speaches.endpointConfigKey)}/v1`,
+					},
+					customFetch,
+				),
+			model: () => deviceConfig.get(PROVIDERS.speaches.modelIdConfigKey),
+		},
+		ElevenLabs: {
+			kind: 'bespoke',
+			transcribe: (audio, { prompt, spokenLanguage }) =>
+				ElevenLabsTranscriptionServiceLive.transcribe(audio, {
+					prompt,
+					spokenLanguage,
+					apiKey: secretApiKey(PROVIDERS.ElevenLabs.apiKeyConfigKey) ?? '',
+					modelName: app.settings.get(PROVIDERS.ElevenLabs.modelSettingKey),
+				}),
+		},
+		Deepgram: {
+			kind: 'bespoke',
+			transcribe: (audio, { prompt, spokenLanguage }) =>
+				DeepgramTranscriptionServiceLive.transcribe(audio, {
+					prompt,
+					spokenLanguage,
+					apiKey: secretApiKey(PROVIDERS.Deepgram.apiKeyConfigKey) ?? '',
+					modelName: app.settings.get(PROVIDERS.Deepgram.modelSettingKey),
+				}),
+		},
+		Mistral: {
+			kind: 'bespoke',
+			transcribe: (audio, { prompt, spokenLanguage }) =>
+				MistralTranscriptionServiceLive.transcribe(audio, {
+					prompt,
+					spokenLanguage,
+					apiKey: secretApiKey(PROVIDERS.Mistral.apiKeyConfigKey) ?? '',
+					modelName: app.settings.get(PROVIDERS.Mistral.modelSettingKey),
+				}),
+		},
+	}) satisfies Record<UploadProviderId, UploadDispatch>;
 
 /**
  * Materialize the bytes for an upload transcription. On Tauri, Rust reads the
@@ -211,6 +212,7 @@ const UPLOAD_DISPATCH = {
  * blob is uploaded as-is.
  */
 async function loadForUpload(
+	app: WhisperingApp,
 	audioBlobId: BlobId,
 ): Promise<Result<Blob, TranscriptionError>> {
 	if (tauri) {
@@ -221,9 +223,9 @@ async function loadForUpload(
 			title: 'Audio compression skipped',
 			description: `${error}. Uploading uncompressed audio instead.`,
 		});
-		analytics.logEvent({
+		void logAnalyticsEvent(app, {
 			type: 'compression_failed',
-			provider: settings.get('transcription.service'),
+			provider: app.settings.get('transcription.service'),
 			error_message: error,
 		});
 	}
@@ -244,12 +246,13 @@ async function loadForUpload(
  * saved file when possible, falling back to the raw blob.
  */
 export async function transcribeAudio(
+	app: WhisperingApp,
 	audioBlobId: BlobId,
 ): Promise<Result<string, TranscriptionError>> {
-	const selectedService = settings.get('transcription.service');
+	const selectedService = app.settings.get('transcription.service');
 
 	const startTime = Date.now();
-	analytics.logEvent({
+	void logAnalyticsEvent(app, {
 		type: 'transcription_requested',
 		provider: selectedService,
 	});
@@ -258,19 +261,19 @@ export async function transcribeAudio(
 	// to `OnDeviceProviderId` in one arm and `UploadProviderId` in the other, so each
 	// helper receives an already-narrowed id and neither re-checks.
 	const transcriptionResult = isOnDeviceProviderId(selectedService)
-		? await transcribeOnDevice(audioBlobId, selectedService)
-		: await transcribeViaUpload(audioBlobId, selectedService);
+		? await transcribeOnDevice(app, audioBlobId, selectedService)
+		: await transcribeViaUpload(app, audioBlobId, selectedService);
 
 	const duration = Date.now() - startTime;
 	if (transcriptionResult.error) {
-		analytics.logEvent({
+		void logAnalyticsEvent(app, {
 			type: 'transcription_failed',
 			provider: selectedService,
 			error_name: transcriptionResult.error.name,
 			error_message: transcriptionResult.error.message,
 		});
 	} else {
-		analytics.logEvent({
+		void logAnalyticsEvent(app, {
 			type: 'transcription_completed',
 			provider: selectedService,
 			duration,
@@ -288,12 +291,14 @@ export async function transcribeAudio(
  * through here, so they share one history-write policy.
  */
 export async function transcribeAndPersist(
+	app: WhisperingApp,
 	recordingId: RecordingId,
 	audioBlobId: BlobId,
 ): Promise<Result<TranscriptionSuccess, TranscriptionError>> {
 	return recordTranscriptionOutcome(
+		app,
 		recordingId,
-		await transcribeAudio(audioBlobId),
+		await transcribeAudio(app, audioBlobId),
 	);
 }
 
@@ -310,10 +315,10 @@ export async function transcribeAndPersist(
  * `language`/`initialPrompt` are inference params, irrelevant to loading, so
  * they are sent null.
  */
-export function prewarmOnDeviceModel(): void {
+export function prewarmOnDeviceModel(app: WhisperingApp): void {
 	if (!tauri) return;
 
-	const selectedService = settings.get('transcription.service');
+	const selectedService = app.settings.get('transcription.service');
 	if (!isOnDeviceProviderId(selectedService)) return;
 
 	const modelId = deviceConfig.get(PROVIDERS[selectedService].modelConfigKey);
@@ -342,6 +347,7 @@ function withDictionaryTerms(prompt: string, dictionary: string[]): string {
 }
 
 async function transcribeOnDevice(
+	app: WhisperingApp,
 	audioBlobId: BlobId,
 	selectedService: OnDeviceProviderId,
 ): Promise<Result<string, TranscriptionError>> {
@@ -362,10 +368,10 @@ async function transcribeOnDevice(
 	// so there is no ambient config to go stale. `auto` language and an empty
 	// prompt map to the wire's "unset" (an omitted optional field). The Dictionary
 	// terms fold into the prompt so local recognition spells them the user's way.
-	const language = settings.get('transcription.language');
+	const language = app.settings.get('transcription.language');
 	const prompt = withDictionaryTerms(
-		settings.get('transcription.prompt'),
-		settings.get('dictionary'),
+		app.settings.get('transcription.prompt'),
+		app.settings.get('dictionary'),
 	);
 	return tauri.transcription.transcribeRecording(audioBlobId, {
 		modelId,
@@ -375,10 +381,14 @@ async function transcribeOnDevice(
 }
 
 async function transcribeViaUpload(
+	app: WhisperingApp,
 	audioBlobId: BlobId,
 	selectedService: UploadProviderId,
 ): Promise<Result<string, TranscriptionError>> {
-	const { data: audio, error: loadError } = await loadForUpload(audioBlobId);
+	const { data: audio, error: loadError } = await loadForUpload(
+		app,
+		audioBlobId,
+	);
 	if (loadError) return Err(loadError);
 
 	// `auto` language and an empty prompt map to the wire's "unset" (omitted from
@@ -386,12 +396,12 @@ async function transcribeViaUpload(
 	// and the server answers 401, surfaced as a RequestFailed carrying that detail.
 	// The Dictionary terms fold into the prompt so cloud recognition spells them
 	// the user's way.
-	const spokenLanguage = settings.get('transcription.language');
+	const spokenLanguage = app.settings.get('transcription.language');
 	const prompt = withDictionaryTerms(
-		settings.get('transcription.prompt'),
-		settings.get('dictionary'),
+		app.settings.get('transcription.prompt'),
+		app.settings.get('dictionary'),
 	);
-	const entry = UPLOAD_DISPATCH[selectedService];
+	const entry = uploadDispatch(app)[selectedService];
 	switch (entry.kind) {
 		case 'wire': {
 			const result = await transcribe(audio, entry.resolve(), {

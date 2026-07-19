@@ -7,8 +7,10 @@
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import { honeycrisp } from '$lib/honeycrisp';
+	import { getHoneycrispApp } from '$lib/context.js';
 	import { runHoneycrispMutation } from '$lib/mutation.js';
+
+	const honeycrisp = getHoneycrispApp();
 
 	let { folder }: { folder: Folder } = $props();
 

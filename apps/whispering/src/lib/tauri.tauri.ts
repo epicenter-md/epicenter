@@ -298,6 +298,10 @@ const autostart = {
 let shortcutListenerPromise: ReturnType<
 	typeof events.globalShortcutTriggered.listen
 > | null = null;
+/** The latest registration's dispatcher; chord events always hit the current app. */
+let onShortcutTriggered:
+	| ((commandId: string, state: 'Pressed' | 'Released') => void)
+	| null = null;
 
 const keyboard = {
 	/**
@@ -308,12 +312,15 @@ const keyboard = {
 	 * refused upstream, so nothing reaches here but chords. Carbon's
 	 * `RegisterEventHotKey` needs no Accessibility grant.
 	 */
-	registerChords: async (chords: GlobalShortcutRegistration[]) => {
+	registerChords: async (
+		chords: GlobalShortcutRegistration[],
+		onTrigger: (commandId: string, state: 'Pressed' | 'Released') => void,
+	) => {
+		onShortcutTriggered = onTrigger;
 		if (!shortcutListenerPromise) {
 			shortcutListenerPromise = events.globalShortcutTriggered.listen(
-				async ({ payload }) => {
-					const { dispatchCommandTrigger } = await import('$lib/commands');
-					dispatchCommandTrigger(payload.commandId, payload.state);
+				({ payload }) => {
+					onShortcutTriggered?.(payload.commandId, payload.state);
 				},
 			);
 		}

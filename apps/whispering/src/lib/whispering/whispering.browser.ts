@@ -1,28 +1,21 @@
 import { auth } from '#platform/auth';
-import { openWhisperingApplication } from './whispering.active';
+import { log } from '$lib/report';
+import type { WhisperingDependencies } from './application';
 import { createWhisperingBrowserRuntime } from './whispering.browser-runtime';
 
-// Construction is synchronous and infallible: handles are real singletons at
-// module scope, operations queue behind storage acquisition, and the one
-// fallible thing (`whisperingBoot`) is a promise the root layout's
-// WorkspaceGate awaits. Nothing here may top-level await storage work: a
-// module-evaluation rejection would blank the page before any error surface
-// could mount (scripts/check-boot-purity.ts guards this).
-const application = openWhisperingApplication({
-	createRuntime(onRecordsChanged) {
-		return createWhisperingBrowserRuntime({ auth, onRecordsChanged });
-	},
+/**
+ * The web build's application dependencies. Pure data and factories: nothing
+ * here opens storage or starts fallible work. The (app) layout passes this to
+ * `openWhisperingApplication` inside the mounted Svelte root, where the raw
+ * `{#await}` owns the acquisition from its first microtask.
+ */
+export const whisperingPlatform: WhisperingDependencies = {
+	createRuntime: (onRecordsChanged) =>
+		createWhisperingBrowserRuntime({ auth, onRecordsChanged }),
 	defaultTranscriptionService: 'OpenAI',
-});
-
-export const whispering = application.whispering;
-export const skills = application.skills;
-export const settingsDefaults = application.settingsDefaults;
-export const onWhisperingRecordsChanged = (listener: () => void) =>
-	application.onRecordsChanged(whispering.id, listener);
-/** Resolves when both workspaces' storage is open; rejects terminally. */
-export const whisperingBoot: Promise<void> = application.opened;
-
-if (import.meta.hot) {
-	import.meta.hot.dispose(() => void application[Symbol.asyncDispose]());
-}
+	reportBackgroundError: (cause) =>
+		log.warn(
+			cause instanceof Error ? cause : new Error(String(cause)),
+			'Whispering application background failure',
+		),
+};

@@ -4,6 +4,9 @@
 	import { projectLifecycleToStatus } from '$lib/recording-pill/projection';
 	import { webPillLevel } from '$lib/recording-pill/web-level.svelte';
 	import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 
 	const status = $derived(projectLifecycleToStatus(dictationLifecycle.current));
 </script>
@@ -14,9 +17,9 @@
 		<RecordingPill
 			{status}
 			level={webPillLevel.level}
-			onStop={() => dispatchPillAction('stop')}
-			onCancel={() => dispatchPillAction('cancel')}
-			onShipRaw={() => dispatchPillAction('ship-raw')}
+			onStop={() => dispatchPillAction(app, 'stop')}
+			onCancel={() => dispatchPillAction(app, 'cancel')}
+			onShipRaw={() => dispatchPillAction(app, 'ship-raw')}
 		/>
 	</div>
 {/if}

@@ -11,6 +11,9 @@
 	import { projectLifecycleToStatus } from '$lib/recording-pill/projection';
 	import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
 	import { tauriOnly } from '$lib/tauri.tauri';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 
 	const log = createLogger('whispering/dictation-indicator');
 	const status = $derived(projectLifecycleToStatus(dictationLifecycle.current));
@@ -38,7 +41,7 @@
 		};
 
 		void recordingOverlayAction
-			.listen((event) => dispatchPillAction(event.payload))
+			.listen((event) => dispatchPillAction(app, event.payload))
 			.then(trackUnlistener)
 			.catch(warn);
 		void revealMainWindow

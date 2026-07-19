@@ -1,6 +1,7 @@
 import { onMount } from 'svelte';
 import { tauri } from '#platform/tauri';
-import { shortcuts } from '$lib/platform/shortcuts';
+import { createAppShortcuts } from '$lib/platform/shortcuts';
+import type { WhisperingApp } from '$lib/whispering/context';
 
 /**
  * Register the current shortcut bindings on every backend this build runs.
@@ -13,9 +14,9 @@ import { shortcuts } from '$lib/platform/shortcuts';
  * fire-and-forget here. Unmount unregisters the desktop plugin chords. The
  * in-app keydown listener is owned by `listenForLocalShortcuts`.
  */
-export function synchronizeShortcuts(): void {
+export function synchronizeShortcuts(app: WhisperingApp): void {
 	onMount(() => {
-		void shortcuts.sync();
+		void createAppShortcuts(app).sync();
 		return () => {
 			void tauri?.keyboard.unregisterChords();
 		};

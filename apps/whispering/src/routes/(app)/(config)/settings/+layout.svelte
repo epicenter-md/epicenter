@@ -6,8 +6,10 @@
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import { report } from '$lib/report';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
-	import { settings } from '$lib/state/settings.svelte';
 	import SidebarNav from './SidebarNav.svelte';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 
 	let { children } = $props();
 </script>
@@ -34,7 +36,7 @@
 						'This will reset all settings to their default values. This action cannot be undone.',
 					confirm: { text: 'Reset Settings', variant: 'destructive' },
 					onConfirm: () => {
-						settings.reset();
+						app.settings.reset();
 						deviceConfig.reset();
 						report.success({
 							title: 'Settings reset',

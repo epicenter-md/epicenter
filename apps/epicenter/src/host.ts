@@ -215,10 +215,7 @@ export async function createHomeHost(
 	// the composed surface; the prefix must not contain `__`.
 	const honeycrisp = options.honeycrisp;
 	const conversations = options.conversations.tables.conversations;
-	await Promise.all([
-		honeycrisp.tables.folders.list(),
-		options.conversations.opened,
-	]);
+	await honeycrisp.tables.folders.list();
 	const catalogs: ToolCatalog[] = [
 		namespaceToolCatalog('honeycrisp', createHoneycrispCatalog(honeycrisp)),
 	];

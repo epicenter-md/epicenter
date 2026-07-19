@@ -1,4 +1,4 @@
-import type { Shortcuts } from './types';
+import type { CreateSystemShortcuts } from './types';
 
 /**
  * Web build of `#platform/system-shortcuts`: there is no system-global shortcut
@@ -8,4 +8,4 @@ import type { Shortcuts } from './types';
  * system store that does not exist. The Tauri impl supplies the real backend.
  * See ADR-0052.
  */
-export const systemShortcuts: Shortcuts | null = null;
+export const createSystemShortcuts: CreateSystemShortcuts | null = null;

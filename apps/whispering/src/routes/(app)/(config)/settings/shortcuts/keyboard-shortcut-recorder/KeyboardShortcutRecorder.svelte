@@ -8,7 +8,8 @@
 	import XIcon from '@lucide/svelte/icons/x';
 	import { type Command, commands } from '$lib/commands';
 	import { os } from '#platform/os';
-	import { shortcuts } from '$lib/platform/shortcuts';
+	import { createAppShortcuts } from '$lib/platform/shortcuts';
+	import { getWhisperingApp } from '$lib/whispering/context';
 	import { report } from '$lib/report';
 	import {
 		isEmptyBinding,
@@ -26,6 +27,8 @@
 	const { command }: { command: Command } = $props();
 
 	// At most one focused and one global binding per command, so up to two chips.
+	const shortcuts = createAppShortcuts(getWhisperingApp());
+
 	const bindings = $derived(shortcuts.current(command.id));
 	const chips = $derived(
 		(['focused', 'global'] as const)

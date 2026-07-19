@@ -1,26 +1,22 @@
 <script lang="ts">
-	import {
-		StorageMovedScreen,
-		storageMoved,
-	} from '@epicenter/app-shell/storage-moved';
-	import { WorkspaceGate } from '@epicenter/app-shell/workspace-gate';
 	import { Toaster } from '@epicenter/ui/sonner';
-	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { ModeWatcher } from 'mode-watcher';
 	import { onMount } from 'svelte';
 	import { auth } from '#platform/auth';
 	import { onNavigate } from '$app/navigation';
 	import { FlushEditsOnHide } from '@epicenter/svelte';
 	import { reloadOnPrincipalChange } from '@epicenter/svelte/auth';
-	import { queryClient } from '$lib/rpc/client';
-	import { whisperingReady } from '$lib/whispering/whispering-ready';
 	import '@epicenter/ui/app.css';
 	// Whispering's brand overrides, layered after the shared theme so they win.
 	// Keep this import last among the stylesheets.
 	import '../app.css';
-	import * as Tooltip from '@epicenter/ui/tooltip';
 
 	let { children } = $props();
+
+	// The root layout serves every surface: the (app) group, the auth
+	// callback, and the recording-overlay webview. It owns chrome only; the
+	// (app) layout owns the application boot, so the other surfaces never
+	// open SQLite.
 
 	// Option A: the active preset is picked once at boot; a
 	// principal identity change reloads so the next boot rebuilds the right doc.
@@ -44,16 +40,7 @@
 
 <svelte:head> <title>Whispering</title> </svelte:head>
 
-{#if storageMoved.current}
-	<StorageMovedScreen />
-{:else}
-	<WorkspaceGate pending={whisperingReady} onSignOut={() => auth.signOut()}>
-		<QueryClientProvider client={queryClient}>
-			<!-- Uses UI package defaults (300ms delay, 150ms skip) -->
-			<Tooltip.Provider> {@render children()} </Tooltip.Provider>
-		</QueryClientProvider>
-	</WorkspaceGate>
-{/if}
+{@render children()}
 
 <Toaster
 	offset={16}

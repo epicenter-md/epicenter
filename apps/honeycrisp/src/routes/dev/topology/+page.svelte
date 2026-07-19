@@ -24,7 +24,9 @@
 	import { InstantString } from '@epicenter/field';
 	import { onDestroy } from 'svelte';
 	import { auth } from '#platform/auth';
-	import { honeycrisp } from '$lib/honeycrisp';
+	import { getHoneycrispApp } from '$lib/context.js';
+
+	const honeycrisp = getHoneycrispApp();
 
 	const COUNTS = [1, 2, 4, 8];
 	const TITLE_PREFIX = 'Topology harness';

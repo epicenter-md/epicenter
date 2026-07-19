@@ -2,8 +2,8 @@
  * Schema-opaque canonical records and release-local workspace lenses.
  *
  * `runtime.open(definition)` binds release-local table and KV lenses to the
- * canonical row store. Browser and desktop runtimes return the stable handle
- * synchronously; its `opened` promise reports the one storage-opening attempt.
+ * canonical row store. Every runtime's `open` is asynchronous and resolves
+ * only with a ready handle; acquisition failures reject the open promise.
  * Every ordinary row owns one lazy document capability.
  */
 

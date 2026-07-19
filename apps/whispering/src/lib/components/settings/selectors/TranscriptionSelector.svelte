@@ -24,10 +24,12 @@
 	} from '$lib/settings/transcription-validation';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { localModels } from '$lib/state/local-models.svelte';
-	import { settings } from '$lib/state/settings.svelte';
 	import { auth } from '#platform/auth';
 	import { tauri } from '#platform/tauri';
 	import ModelRow from './ModelRow.svelte';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 
 	let {
 		class: className,
@@ -52,11 +54,11 @@
 	// The two-source union of routes usable right now (downloaded on-device GGUFs
 	// unioned with signed-in session, keyed, and endpoint providers). Each leaf owns
 	// its own label, so the trigger just reads the active one.
-	const leaves = $derived(readyModels());
+	const leaves = $derived(readyModels(app));
 	const activeLeaf = $derived(leaves.find((leaf) => leaf.isActive));
 
-	const selectedService = $derived(getSelectedTranscriptionService());
-	const readiness = $derived(getTranscriptionReadiness());
+	const selectedService = $derived(getSelectedTranscriptionService(app));
+	const readiness = $derived(getTranscriptionReadiness(app));
 	const isSelectedServiceReady = $derived(readiness.isReady);
 	const showConfigurationWarning = $derived(
 		variant === 'pipeline'
@@ -120,7 +122,7 @@
 			});
 			return;
 		}
-		settings.set('transcription.service', 'local');
+		app.settings.set('transcription.service', 'local');
 		deviceConfig.set('transcription.local.selectedModel', result.data.modelId);
 		toast.success(
 			result.data.outcome === 'already-installed'

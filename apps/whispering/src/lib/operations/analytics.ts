@@ -1,13 +1,14 @@
 import { services } from '$lib/services';
 import type { Event } from '$lib/services/analytics/types';
-import { settings } from '$lib/state/settings.svelte';
+import type { WhisperingApp } from '$lib/whispering/context';
 
 /**
  * Log an anonymous analytics event if analytics is enabled in settings.
  */
-export const analytics = {
-	logEvent: async (event: Event) => {
-		if (!settings.get('analytics.enabled')) return;
-		await services.analytics.logEvent(event);
-	},
-};
+export async function logAnalyticsEvent(
+	app: WhisperingApp,
+	event: Event,
+): Promise<void> {
+	if (!app.settings.get('analytics.enabled')) return;
+	await services.analytics.logEvent(event);
+}

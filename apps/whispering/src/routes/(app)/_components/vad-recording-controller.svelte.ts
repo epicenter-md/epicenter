@@ -3,6 +3,7 @@ import { VAD_RECORDING_BUTTON } from '$lib/constants/audio';
 import { toggleVadRecording } from '$lib/operations/recording';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 import { getRecordingShortcutLabel } from '$lib/utils/recording-shortcut';
+import type { WhisperingApp } from '$lib/whispering/context';
 import type { RecordingActionController } from './recording-action-controller';
 
 /**
@@ -14,14 +15,16 @@ import type { RecordingActionController } from './recording-action-controller';
  *
  * Call from a component's init: it creates a TanStack mutation.
  */
-export function createVadRecordingController(): RecordingActionController {
+export function createVadRecordingController(
+	app: WhisperingApp,
+): RecordingActionController {
 	const toggleMutation = createMutation(() => ({
-		mutationFn: toggleVadRecording,
+		mutationFn: () => toggleVadRecording(app),
 	}));
 
 	const isListening = $derived(vadRecorder.state !== 'IDLE');
 	const button = $derived(VAD_RECORDING_BUTTON[vadRecorder.state]);
-	const shortcutLabel = $derived(getRecordingShortcutLabel('vad'));
+	const shortcutLabel = $derived(getRecordingShortcutLabel(app, 'vad'));
 
 	const description = $derived.by(() => {
 		if (toggleMutation.isPending) return 'Updating voice activation';

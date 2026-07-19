@@ -7,7 +7,7 @@ import {
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { localModels } from '$lib/state/local-models.svelte';
 import { secrets } from '$lib/state/secrets.svelte';
-import { settings } from '$lib/state/settings.svelte';
+import type { WhisperingApp } from '$lib/whispering/context';
 
 function hasValue(value: string) {
 	return value.trim() !== '';
@@ -34,10 +34,10 @@ export function isLocalSelectionRunnable(): LocalSelectionState {
 	return localModels.find(id)?.downloaded ? 'ready' : 'missing';
 }
 
-export function getSelectedTranscriptionProvider():
-	| TranscriptionProviderEntry
-	| undefined {
-	const selectedServiceId = settings.get('transcription.service');
+export function getSelectedTranscriptionProvider(
+	app: WhisperingApp,
+): TranscriptionProviderEntry | undefined {
+	const selectedServiceId = app.settings.get('transcription.service');
 	return TRANSCRIPTION_PROVIDERS.find((s) => s.id === selectedServiceId);
 }
 
@@ -53,10 +53,10 @@ function isTranscriptionServiceAvailable(
  *
  * @returns The selected transcription service, or undefined if none selected or invalid
  */
-export function getSelectedTranscriptionService():
-	| TranscriptionProviderEntry
-	| undefined {
-	const service = getSelectedTranscriptionProvider();
+export function getSelectedTranscriptionService(
+	app: WhisperingApp,
+): TranscriptionProviderEntry | undefined {
+	const service = getSelectedTranscriptionProvider(app);
 	if (service && !isTranscriptionServiceAvailable(service)) return undefined;
 	return service;
 }
@@ -99,8 +99,10 @@ export type TranscriptionReadiness = {
 	primaryIssue: string | null;
 };
 
-export function getTranscriptionReadiness(): TranscriptionReadiness {
-	const service = getSelectedTranscriptionProvider();
+export function getTranscriptionReadiness(
+	app: WhisperingApp,
+): TranscriptionReadiness {
+	const service = getSelectedTranscriptionProvider(app);
 	if (!service) {
 		return { isReady: false, primaryIssue: 'Choose a transcription service.' };
 	}

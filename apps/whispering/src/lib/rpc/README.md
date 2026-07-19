@@ -1,6 +1,6 @@
 # RPC Layer
 
-Thin TanStack adapters over services, state, or operations. Each module here adds the things components need to observe work reactively: cache keys for queries, mutation lifecycle state, and cache invalidation. Folder name matches the exported barrel: `import { rpc } from '$lib/rpc'`.
+Thin TanStack adapters over services, state, or operations. Each module here adds the things components need to observe work reactively: cache keys for queries, mutation lifecycle state, and cache invalidation. The namespace is application-bound: `createWhisperingRpc(app)` is built once by `WhisperingAppProvider`, and components read it as `getWhisperingApp().rpc`.
 
 ## Current modules
 
@@ -13,10 +13,12 @@ These examples are not an ownership map. Check call sites before changing a modu
 | `transcription.ts` | mutation | Transcription operation lifecycle and transcribing status   |
 | `client.ts`        | infra    | `QueryClient` + `defineQuery` / `defineMutation` factories |
 
-## The `rpc` barrel
+## The `rpc` namespace
 
 ```ts
-import { rpc } from '$lib/rpc';
+import { getWhisperingApp } from '$lib/whispering/context';
+
+const { rpc } = getWhisperingApp(); // component initialisation
 
 // Reactive read in a component
 const availability = createQuery(() =>

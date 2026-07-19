@@ -2,9 +2,11 @@
 	import type { NoteId } from '@epicenter/honeycrisp';
 	import { Loading } from '@epicenter/ui/loading';
 	import HoneycripEditor from '$lib/editor/Editor.svelte';
-	import { honeycrisp } from '$lib/honeycrisp';
+	import { getHoneycrispApp } from '$lib/context.js';
 	import { runHoneycrispMutation } from '$lib/mutation.js';
 	import DocumentSyncStatus from './DocumentSyncStatus.svelte';
+
+	const honeycrisp = getHoneycrispApp();
 
 	let { noteId, focusRequest }: { noteId: NoteId; focusRequest: number } =
 		$props();

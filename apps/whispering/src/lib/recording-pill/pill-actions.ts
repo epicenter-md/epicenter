@@ -6,6 +6,7 @@ import {
 import type { RecordingPillAction } from '$lib/recording-pill/model';
 import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
 import { polishHud } from '$lib/state/polish-hud.svelte';
+import type { WhisperingApp } from '$lib/whispering/context';
 
 /**
  * The pill's control gestures, mapped to operations in one place. Both pill
@@ -19,7 +20,10 @@ import { polishHud } from '$lib/state/polish-hud.svelte';
  * in-flight completion through `polishHud` rather than a recorder (ADR-0099).
  * There is no retry gesture: a failed dictation is retried from its recordings row.
  */
-export function dispatchPillAction(action: RecordingPillAction): void {
+export function dispatchPillAction(
+	app: WhisperingApp,
+	action: RecordingPillAction,
+): void {
 	// Ship-raw fires during the polishing phase (capture already idle), so it sits
 	// ahead of the live-capture guard below.
 	if (action === 'ship-raw') {
@@ -29,9 +33,9 @@ export function dispatchPillAction(action: RecordingPillAction): void {
 	const { capture } = dictationLifecycle.current;
 	if (capture.kind !== 'recording') return;
 	if (capture.trigger === 'manual') {
-		if (action === 'cancel') void cancelRecording();
-		else void stopManualRecording();
+		if (action === 'cancel') void cancelRecording(app);
+		else void stopManualRecording(app);
 		return;
 	}
-	if (action === 'stop') void stopVadRecording();
+	if (action === 'stop') void stopVadRecording(app);
 }

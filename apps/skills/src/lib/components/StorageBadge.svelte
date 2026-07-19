@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { Database } from '@lucide/svelte';
-	import { skillsState } from '$lib/state/skills-state.svelte';
+	import { getSkillsApp } from '$lib/context.js';
+
+	const { state: skillsState } = getSkillsApp();
 </script>
 
 <div

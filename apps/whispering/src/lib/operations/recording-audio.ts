@@ -15,7 +15,8 @@ import {
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import { auth } from '#platform/auth';
 import { services } from '$lib/services';
-import { type Recording, recordings } from '$lib/state/recordings.svelte';
+import type { Recording } from '$lib/state/recordings.svelte';
+import type { WhisperingApp } from '$lib/whispering/context';
 
 export type RecordingAudioAvailability =
 	| 'local-only'
@@ -80,13 +81,15 @@ type RecordingAudioDependencies = {
 	now(): Exclude<Recording['uploadedAt'], null>;
 };
 
-const liveDependencies: RecordingAudioDependencies = {
-	blobs: services.blobs,
-	replica: services.blobReplica,
-	isSignedIn: () => auth.state.status === 'signed-in',
-	updateRecording: (id, changes) => recordings.update(id, changes),
-	now: InstantString.now,
-};
+function liveDependencies(app: WhisperingApp): RecordingAudioDependencies {
+	return {
+		blobs: services.blobs,
+		replica: services.blobReplica,
+		isSignedIn: () => auth.state.status === 'signed-in',
+		updateRecording: (id, changes) => app.recordings.update(id, changes),
+		now: InstantString.now,
+	};
+}
 
 function requireReplica(
 	recording: Pick<Recording, 'id'>,
@@ -102,10 +105,11 @@ function requireReplica(
 
 /** Whether this runtime currently has both identity and a remote copy adapter. */
 export function canUseRecordingAudioReplica(
+	app: WhisperingApp,
 	dependencies: Pick<
 		RecordingAudioDependencies,
 		'isSignedIn' | 'replica'
-	> = liveDependencies,
+	> = liveDependencies(app),
 ): boolean {
 	return dependencies.isSignedIn() && dependencies.replica !== null;
 }
@@ -136,7 +140,9 @@ async function setUploadedAt(
 /** Derive storage availability from local bytes and the last successful upload. */
 export async function getRecordingAudioAvailability(
 	recording: Pick<Recording, 'audioBlobId' | 'uploadedAt'>,
-	dependencies: Pick<RecordingAudioDependencies, 'blobs'> = liveDependencies,
+	dependencies: Pick<RecordingAudioDependencies, 'blobs'> = {
+		blobs: services.blobs,
+	},
 ): Promise<Result<RecordingAudioAvailability, BlobStoreFailed>> {
 	const { error } = await dependencies.blobs.stat(recording.audioBlobId);
 	if (error === null) {
@@ -152,8 +158,9 @@ export async function getRecordingAudioAvailability(
 
 /** Copy one local recording to the online replica and then record success. */
 export async function uploadRecordingAudio(
+	app: WhisperingApp,
 	recording: Pick<Recording, 'id' | 'audioBlobId' | 'uploadedAt'>,
-	dependencies: RecordingAudioDependencies = liveDependencies,
+	dependencies: RecordingAudioDependencies = liveDependencies(app),
 ): Promise<
 	Result<
 		void,
@@ -187,8 +194,9 @@ export async function uploadRecordingAudio(
 
 /** Copy an explicitly uploaded recording back into the local store. */
 export async function downloadRecordingAudio(
+	app: WhisperingApp,
 	recording: Pick<Recording, 'id' | 'audioBlobId' | 'uploadedAt'>,
-	dependencies: RecordingAudioDependencies = liveDependencies,
+	dependencies: RecordingAudioDependencies = liveDependencies(app),
 ): Promise<
 	Result<
 		void,
@@ -219,8 +227,9 @@ export async function downloadRecordingAudio(
 
 /** Remove device bytes only after an online copy has succeeded. */
 export async function removeLocalRecordingAudio(
+	app: WhisperingApp,
 	recording: Pick<Recording, 'id' | 'audioBlobId' | 'uploadedAt'>,
-	dependencies: RecordingAudioDependencies = liveDependencies,
+	dependencies: RecordingAudioDependencies = liveDependencies(app),
 ): Promise<
 	Result<
 		void,
@@ -255,8 +264,9 @@ export async function removeLocalRecordingAudio(
  * `RemoteBlobNotFound` result and the user may retry deletion.
  */
 export async function purgeRecordingAudio(
+	app: WhisperingApp,
 	recording: Pick<Recording, 'id' | 'audioBlobId' | 'uploadedAt'>,
-	dependencies: RecordingAudioDependencies = liveDependencies,
+	dependencies: RecordingAudioDependencies = liveDependencies(app),
 ): Promise<Result<void, BlobReplicaFailed | RecordingAudioError>> {
 	if (recording.uploadedAt === null) return Ok(undefined);
 	const { data: replica, error: unavailable } = requireReplica(

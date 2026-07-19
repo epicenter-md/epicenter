@@ -1,15 +1,10 @@
 import { os } from '#platform/os';
-import { systemShortcuts } from '#platform/system-shortcuts';
+import { createSystemShortcuts } from '#platform/system-shortcuts';
 import type { Command } from '$lib/commands';
-import { focusedShortcuts } from '$lib/platform/focused-shortcuts';
+import { createFocusedShortcuts } from '$lib/platform/focused-shortcuts';
 import type { Shortcuts } from '$lib/platform/types';
 import { keyBindingToLabel } from '$lib/utils/key-binding';
-
-/**
- * The backend the one-label helper reads: the system (global) key leads on desktop
- * because it fires from anywhere; web has only the focused backend.
- */
-const primaryShortcuts = systemShortcuts ?? focusedShortcuts;
+import type { WhisperingApp } from '$lib/whispering/context';
 
 /**
  * Preference order for the shortcut that starts each recording mode: the first
@@ -49,6 +44,12 @@ function shortcutLabelFor(
  * primary backend. Recording controllers use this to know whether a shortcut
  * exists without teaching shortcut configuration on the recording surface.
  */
-export function getRecordingShortcutLabel(mode: RecordingShortcutMode): string {
-	return shortcutLabelFor(primaryShortcuts, mode);
+export function getRecordingShortcutLabel(
+	app: WhisperingApp,
+	mode: RecordingShortcutMode,
+): string {
+	return shortcutLabelFor(
+		createSystemShortcuts?.(app) ?? createFocusedShortcuts(app),
+		mode,
+	);
 }

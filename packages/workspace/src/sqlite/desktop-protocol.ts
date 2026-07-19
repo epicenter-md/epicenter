@@ -9,6 +9,8 @@ import { isResult, Ok, type Result } from 'wellcrafted/result';
 export const DESKTOP_WORKSPACE_ROUTE = '/api/workspaces/:workspaceId/records';
 
 export type DesktopRecordOperation =
+	/** Acquire the workspace's SQLite owner on the host; the WebView open handshake. */
+	| { kind: 'open' }
 	| { kind: 'get'; table: string; id: string }
 	| { kind: 'kv-get'; key: string }
 	| { kind: 'kv-set'; key: string; value: unknown }

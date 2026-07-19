@@ -5,10 +5,11 @@ import {
 	MAX_IMPORT_FILE_SIZE,
 	MAX_IMPORT_FILES,
 } from '$lib/constants/import-formats';
-import { analytics } from '$lib/operations/analytics';
+import { logAnalyticsEvent } from '$lib/operations/analytics';
 import { finalizeAudioBlob } from '$lib/operations/local-audio';
 import { processRecordingPipeline } from '$lib/operations/pipeline';
 import { report } from '$lib/report';
+import type { WhisperingApp } from '$lib/whispering/context';
 
 type RejectedImportFile = { file: File; reason: string };
 
@@ -85,7 +86,10 @@ function partitionByImportPolicy(files: File[]) {
  * importing a file never touches `recording.trigger`. Works on web (the file
  * picker) and desktop (the picker plus drag-and-drop).
  */
-export async function importFiles({ files }: { files: File[] }): Promise<void> {
+export async function importFiles(
+	app: WhisperingApp,
+	{ files }: { files: File[] },
+): Promise<void> {
 	const { valid, rejected } = partitionByImportPolicy(files);
 
 	if (rejected.length > 0) {
@@ -110,12 +114,12 @@ export async function importFiles({ files }: { files: File[] }): Promise<void> {
 				return;
 			}
 
-			analytics.logEvent({
+			void logAnalyticsEvent(app, {
 				type: 'file_import_completed',
 				blob_size: file.size,
 			});
 
-			await processRecordingPipeline({
+			await processRecordingPipeline(app, {
 				audioBlobId: finalized.data.audioBlobId,
 				durationMs: null,
 				deliverySource: 'import',

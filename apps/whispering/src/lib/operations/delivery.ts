@@ -8,7 +8,7 @@ import {
 	type Sink,
 } from '$lib/operations/sink';
 import type { Notice } from '$lib/report';
-import { settings } from '$lib/state/settings.svelte';
+import type { WhisperingApp } from '$lib/whispering/context';
 
 // The reach types live in their own `delivery-reach` module next to their ADR
 // docstrings; re-exported here so callers keep one delivery import.
@@ -32,8 +32,10 @@ type OutputScope = (typeof OUTPUT_SCOPES)[number];
  * Accessibility grant, which is the one fact the tap supervisor holds the tap to
  * track. Call inside a reactive scope to stay live as the toggles change.
  */
-export function outputWritesToCursor(): boolean {
-	return OUTPUT_SCOPES.some((scope) => settings.get(`output.${scope}.cursor`));
+export function outputWritesToCursor(app: WhisperingApp): boolean {
+	return OUTPUT_SCOPES.some((scope) =>
+		app.settings.get(`output.${scope}.cursor`),
+	);
 }
 
 /**
@@ -61,17 +63,20 @@ export type DeliveryResult = {
  * path reads the outcome to drive the pill; file import and row actions show
  * the notice.
  */
-export async function deliverTranscriptionResult({
-	text,
-	source = 'recording',
-}: {
-	text: string;
-	source?: TranscriptionSource;
-}): Promise<DeliveryResult> {
+export async function deliverTranscriptionResult(
+	app: WhisperingApp,
+	{
+		text,
+		source = 'recording',
+	}: {
+		text: string;
+		source?: TranscriptionSource;
+	},
+): Promise<DeliveryResult> {
 	return deliverToSink({
 		text,
 		successCopy: TRANSCRIPTION_SUCCESS_COPY[source],
-		sink: resolveSettingsSink('transcription'),
+		sink: resolveSettingsSink(app, 'transcription'),
 		// A transcription always belongs to a recording, so its history is reachable.
 		linkedRecording: true,
 	});
@@ -84,29 +89,37 @@ export async function deliverTranscriptionResult({
  * selection): only a recording-anchored run offers a "go to recordings" action,
  * since an ad-hoc run has no history to open.
  */
-export async function deliverRecipeResult({
-	text,
-	recordingId,
-}: {
-	text: string;
-	recordingId: string | null;
-}): Promise<DeliveryResult> {
+export async function deliverRecipeResult(
+	app: WhisperingApp,
+	{
+		text,
+		recordingId,
+	}: {
+		text: string;
+		recordingId: string | null;
+	},
+): Promise<DeliveryResult> {
 	return deliverToSink({
 		text,
 		successCopy: '🔄 Recipe complete',
-		sink: resolveSettingsSink('recipe'),
+		sink: resolveSettingsSink(app, 'recipe'),
 		linkedRecording: recordingId !== null,
 	});
 }
 
-function resolveSettingsSink(settingsScope: OutputScope): Sink {
-	const cursorRequested = settings.get(`output.${settingsScope}.cursor`);
-	const clipboardRequested = settings.get(`output.${settingsScope}.clipboard`);
+function resolveSettingsSink(
+	app: WhisperingApp,
+	settingsScope: OutputScope,
+): Sink {
+	const cursorRequested = app.settings.get(`output.${settingsScope}.cursor`);
+	const clipboardRequested = app.settings.get(
+		`output.${settingsScope}.clipboard`,
+	);
 
 	return cursorRequested
 		? createCursorSink({
 				keepOnClipboard: clipboardRequested,
-				pressEnter: settings.get(`output.${settingsScope}.enter`),
+				pressEnter: app.settings.get(`output.${settingsScope}.enter`),
 			})
 		: clipboardRequested
 			? clipboardSink

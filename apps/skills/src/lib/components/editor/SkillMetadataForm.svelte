@@ -4,11 +4,11 @@
 	import * as Field from '@epicenter/ui/field';
 	import { Input } from '@epicenter/ui/input';
 	import { Textarea } from '@epicenter/ui/textarea';
-	import {
-		type SkillMetadataUpdate,
-		skillsState,
-	} from '$lib/state/skills-state.svelte';
+	import { getSkillsApp } from '$lib/context.js';
+	import type { SkillMetadataUpdate } from '$lib/state/skills-state.svelte';
 	import { validateSkill } from '$lib/utils/validation';
+
+	const { state: skillsState } = getSkillsApp();
 
 	let { skill }: { skill: Skill } = $props();
 

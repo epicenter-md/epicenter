@@ -40,6 +40,8 @@ type DesktopRuntimeBroadcastChannel = {
 type BoundWorkspace = {
 	definition: WorkspaceDefinition;
 	handle: WorkspaceHandle<WorkspaceDefinition>;
+	/** The one host open handshake; resolves with the ready handle. */
+	opened: Promise<WorkspaceHandle<WorkspaceDefinition>>;
 	revokeRows(addresses: RowAddress[]): void;
 	revokeDocuments(cause: Error): void;
 	applyDocumentUpdate(address: RowAddress, update: Uint8Array): void;
@@ -250,9 +252,6 @@ export function createDesktopWorkspaceRuntime({
 
 		const handle = Object.freeze({
 			id: definition.id,
-			// The desktop host owns acquisition, so the WebView handle is open as
-			// soon as it is bound to the request transport.
-			opened: Promise.resolve(),
 			tables,
 			kv: kv as never,
 			async sql<TResultSchema extends TSchema>(
@@ -286,9 +285,14 @@ export function createDesktopWorkspaceRuntime({
 	}
 
 	return Object.freeze({
+		/**
+		 * Opens the workspace and resolves only after the host confirms its
+		 * SQLite owner is acquired. A failed handshake rejects and unbinds, so
+		 * a later `open` performs a fresh handshake against the host.
+		 */
 		open<TDefinition extends WorkspaceDefinition>(
 			definition: TDefinition,
-		): WorkspaceHandle<TDefinition> {
+		): Promise<WorkspaceHandle<TDefinition>> {
 			assertOpen();
 			const existing = workspaces.get(definition.id);
 			if (existing) {
@@ -297,14 +301,25 @@ export function createDesktopWorkspaceRuntime({
 						`Workspace '${definition.id}' is already bound to another definition in this runtime`,
 					);
 				}
-				return existing.handle as WorkspaceHandle<TDefinition>;
+				return existing.opened as Promise<WorkspaceHandle<TDefinition>>;
 			}
 			const binding = createHandle(definition);
-			workspaces.set(definition.id, {
+			const bound: BoundWorkspace = {
 				definition,
 				...binding,
-			});
-			return binding.handle;
+				opened: undefined as never,
+			};
+			workspaces.set(definition.id, bound);
+			bound.opened = request<void>(definition.id, { kind: 'open' }).then(
+				() => binding.handle,
+				(cause) => {
+					if (workspaces.get(definition.id) === bound) {
+						workspaces.delete(definition.id);
+					}
+					throw cause;
+				},
+			);
+			return bound.opened as Promise<WorkspaceHandle<TDefinition>>;
 		},
 		async [Symbol.asyncDispose]() {
 			if (disposed) return;

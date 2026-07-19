@@ -12,15 +12,17 @@
 		uploadRecordingAudio,
 	} from '$lib/operations/recording-audio';
 	import { report } from '$lib/report';
-	import { rpc } from '$lib/rpc';
 	import { queryClient } from '$lib/rpc/client';
 	import { services } from '$lib/services';
 	import type { Recording } from '$lib/state/recordings.svelte';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 
 	let { recording }: { recording: Recording } = $props();
 
 	const availability = createQuery(
-		() => rpc.audio.availability(() => recording).options,
+		() => app.rpc.audio.availability(() => recording).options,
 	);
 	const canUseReplica = $derived(
 		services.blobReplica !== null && auth.state.status === 'signed-in',
@@ -36,21 +38,21 @@
 	const upload = createMutation(() =>
 		resultMutationOptions({
 			mutationKey: ['recordingAudio', 'upload', recording.id],
-			mutationFn: () => uploadRecordingAudio(recording),
+			mutationFn: () => uploadRecordingAudio(app, recording),
 			onSuccess: invalidateAvailability,
 		}),
 	);
 	const download = createMutation(() =>
 		resultMutationOptions({
 			mutationKey: ['recordingAudio', 'download', recording.id],
-			mutationFn: () => downloadRecordingAudio(recording),
+			mutationFn: () => downloadRecordingAudio(app, recording),
 			onSuccess: invalidateAvailability,
 		}),
 	);
 	const removeLocal = createMutation(() =>
 		resultMutationOptions({
 			mutationKey: ['recordingAudio', 'removeLocal', recording.id],
-			mutationFn: () => removeLocalRecordingAudio(recording),
+			mutationFn: () => removeLocalRecordingAudio(app, recording),
 			onSuccess: invalidateAvailability,
 		}),
 	);

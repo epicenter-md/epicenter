@@ -7,7 +7,7 @@ import {
 } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Err, isErr, Ok, type Result, tryAsync } from 'wellcrafted/result';
-import { recordings } from '$lib/state/recordings.svelte';
+import type { WhisperingApp } from '$lib/whispering/context';
 import type { Recording, RecordingId } from '$lib/workspace';
 
 const defaultLog = createLogger('whispering/transcription-history');
@@ -40,11 +40,12 @@ export type TranscriptionSuccess = {
  * history save rather than a definitive failed write.
  */
 export async function saveRecordingHistory(
+	app: WhisperingApp,
 	recordingId: RecordingId,
 	changes: Partial<Omit<Recording, 'id' | 'audioBlobId'>>,
 ): Promise<Result<void, RecordingHistoryError>> {
 	const { data: update, error: updateError } = await tryAsync({
-		try: () => recordings.update(recordingId, changes),
+		try: () => app.recordings.update(recordingId, changes),
 		catch: (cause) =>
 			RecordingHistoryError.SaveUnconfirmed({ recordingId, cause }),
 	});
@@ -68,19 +69,24 @@ export async function saveRecordingHistory(
 
 /** Record a provider outcome without letting secondary history failure replace it. */
 export async function recordTranscriptionOutcome<TError extends AnyTaggedError>(
+	app: WhisperingApp,
 	recordingId: RecordingId,
 	transcription: Result<string, TError>,
 	log: Logger = defaultLog,
 ): Promise<Result<TranscriptionSuccess, TError>> {
 	if (isErr(transcription)) {
 		const error = transcription.error;
-		const { error: historyError } = await saveRecordingHistory(recordingId, {
-			transcription: {
-				status: 'failed',
-				completedAt: InstantString.now(),
-				error: extractErrorMessage(error),
+		const { error: historyError } = await saveRecordingHistory(
+			app,
+			recordingId,
+			{
+				transcription: {
+					status: 'failed',
+					completedAt: InstantString.now(),
+					error: extractErrorMessage(error),
+				},
 			},
-		});
+		);
 		if (historyError !== null) {
 			log.warn(new Error(historyError.message, { cause: historyError }));
 		}
@@ -88,7 +94,7 @@ export async function recordTranscriptionOutcome<TError extends AnyTaggedError>(
 	}
 
 	const text = transcription.data;
-	const history = await saveRecordingHistory(recordingId, {
+	const history = await saveRecordingHistory(app, recordingId, {
 		transcript: text,
 		polishedTranscript: null,
 		transcription: {

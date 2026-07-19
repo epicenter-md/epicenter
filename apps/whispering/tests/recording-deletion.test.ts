@@ -22,6 +22,7 @@ mock.module('@epicenter/ui/confirmation-dialog', () => ({
 }));
 
 mock.module('$lib/report', () => ({
+	log: { warn: mock() },
 	report: { error: mock(), success: mock() },
 }));
 
@@ -36,11 +37,11 @@ mock.module('#platform/auth', () => ({
 	auth: { state: { status: 'signed-out' } },
 }));
 
-mock.module('$lib/state/recordings.svelte', () => ({
-	recordings: { delete: mock() },
-}));
-
 const { deleteRecordings } = await import('../src/lib/operations/recordings');
+type WhisperingApp = import('../src/lib/whispering/context').WhisperingApp;
+
+// The explicit dependencies below own every effect; the app is never touched.
+const app = { recordings: { delete: mock() } } as unknown as WhisperingApp;
 
 const recording = {
 	id: 'recording-1' as RecordingId,
@@ -51,7 +52,7 @@ const recording = {
 test('blob deletion completes before its synced row is deleted', async () => {
 	const events: string[] = [];
 
-	const result = await deleteRecordings(recording, {
+	const result = await deleteRecordings(app, recording, {
 		canPurgeRemote: () => false,
 		blobs: {
 			async delete(id) {
@@ -72,7 +73,7 @@ test('blob deletion completes before its synced row is deleted', async () => {
 test('blob deletion failure preserves synced recording rows', async () => {
 	const rowDeletes: RecordingId[] = [];
 
-	const result = await deleteRecordings(recording, {
+	const result = await deleteRecordings(app, recording, {
 		canPurgeRemote: () => false,
 		blobs: {
 			async delete() {
@@ -102,7 +103,7 @@ test('uploaded audio is purged and unmarked before local bytes and rows are dele
 	const uploaded = { ...recording, uploadedAt: InstantString.now() };
 
 	expectOk(
-		await deleteRecordings(uploaded, {
+		await deleteRecordings(app, uploaded, {
 			canPurgeRemote: () => true,
 			async purgeRemote() {
 				events.push('remote');
@@ -132,7 +133,7 @@ test('a later failure reports the recordings already deleted', async () => {
 	const events: string[] = [];
 
 	const error = expectErr(
-		await deleteRecordings([recording, second], {
+		await deleteRecordings(app, [recording, second], {
 			canPurgeRemote: () => true,
 			purgeRemote: async () => Ok(undefined),
 			blobs: {
@@ -173,7 +174,7 @@ test('mixed deletion without a replica leaves every selected recording untouched
 	};
 
 	const error = expectErr(
-		await deleteRecordings([recording, uploaded], {
+		await deleteRecordings(app, [recording, uploaded], {
 			canPurgeRemote: () => false,
 			async purgeRemote() {
 				events.push('remote');

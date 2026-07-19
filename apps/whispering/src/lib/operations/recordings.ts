@@ -12,7 +12,8 @@ import {
 import { type Result, tryAsync } from 'wellcrafted/result';
 import { report } from '$lib/report';
 import { services } from '$lib/services';
-import { type Recording, recordings } from '$lib/state/recordings.svelte';
+import type { Recording } from '$lib/state/recordings.svelte';
+import type { WhisperingApp } from '$lib/whispering/context';
 import {
 	canUseRecordingAudioReplica,
 	purgeRecordingAudio,
@@ -56,12 +57,16 @@ type RecordingDeletionDependencies = {
 	deleteRow(id: Recording['id']): Promise<void>;
 };
 
-const liveDeletionDependencies: RecordingDeletionDependencies = {
-	blobs: services.blobs,
-	canPurgeRemote: canUseRecordingAudioReplica,
-	purgeRemote: purgeRecordingAudio,
-	deleteRow: (id) => recordings.delete(id),
-};
+function liveDeletionDependencies(
+	app: WhisperingApp,
+): RecordingDeletionDependencies {
+	return {
+		blobs: services.blobs,
+		canPurgeRemote: () => canUseRecordingAudioReplica(app),
+		purgeRemote: (recording) => purgeRecordingAudio(app, recording),
+		deleteRow: (id) => app.recordings.delete(id),
+	};
+}
 
 /**
  * Delete recording blobs before their canonical records.
@@ -72,10 +77,11 @@ const liveDeletionDependencies: RecordingDeletionDependencies = {
  * the completed prefix.
  */
 export async function deleteRecordings(
+	app: WhisperingApp,
 	toDelete:
 		| Pick<Recording, 'id' | 'audioBlobId' | 'uploadedAt'>
 		| Array<Pick<Recording, 'id' | 'audioBlobId' | 'uploadedAt'>>,
-	dependencies: RecordingDeletionDependencies = liveDeletionDependencies,
+	dependencies: RecordingDeletionDependencies = liveDeletionDependencies(app),
 ): Promise<
 	Result<
 		void,
@@ -132,6 +138,7 @@ export async function deleteRecordings(
 }
 
 export function deleteRecordingsWithConfirmation(
+	app: WhisperingApp,
 	toDelete: Recording | Recording[],
 	{ onSuccess }: { onSuccess?: () => void } = {},
 ) {
@@ -150,7 +157,7 @@ export function deleteRecordingsWithConfirmation(
 			variant: 'destructive',
 		},
 		onConfirm: async () => {
-			const { error } = await deleteRecordings(arr);
+			const { error } = await deleteRecordings(app, arr);
 			if (error !== null) {
 				report.error({ title: `Failed to delete ${noun}`, cause: error });
 				return;

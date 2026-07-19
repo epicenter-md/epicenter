@@ -35,13 +35,15 @@
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { localModels } from '$lib/state/local-models.svelte';
 	import { recordingActive } from '$lib/state/recording-active.svelte';
-	import { settings } from '$lib/state/settings.svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
 	import { auth } from '#platform/auth';
 	import { tauri } from '#platform/tauri';
 	import AdvancedDisclosure from './AdvancedDisclosure.svelte';
 	import LocalModelSelector from './LocalModelSelector.svelte';
 	import ProviderConfigFields from './ProviderConfigFields.svelte';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 
 	// The Audio stage of the capture pipeline: the transcription setup catalog.
 	// Unlike the recorder switcher, this surface only *sets things up* (sign in,
@@ -52,7 +54,7 @@
 	// Like {@link CompletionRuntimeConfig}, it owns its routing surface and takes no
 	// props, so the page renders it as `<TranscriptionRuntimeConfig />`.
 
-	const activeService = $derived(settings.get('transcription.service'));
+	const activeService = $derived(app.settings.get('transcription.service'));
 
 	/** The access family of the currently active route; drives the "Active" badge. */
 	const activeAccess = $derived(PROVIDERS[activeService].access);
@@ -89,7 +91,7 @@
 
 	const spokenLanguageLabel = $derived(
 		SUPPORTED_LANGUAGES_OPTIONS.find(
-			(i) => i.value === settings.get('transcription.language'),
+			(i) => i.value === app.settings.get('transcription.language'),
 		)?.label,
 	);
 
@@ -252,13 +254,13 @@
 				<Select.Root
 					type="single"
 					bind:value={
-						() => settings.get(entry.modelSettingKey),
-						(v) => settings.set(entry.modelSettingKey, v)
+						() => app.settings.get(entry.modelSettingKey),
+						(v) => app.settings.set(entry.modelSettingKey, v)
 					}
 				>
 					<Select.Trigger id="{entry.id}-model" class="w-full">
 						{modelItems.find(
-							(item) => item.value === settings.get(entry.modelSettingKey),
+							(item) => item.value === app.settings.get(entry.modelSettingKey),
 						)?.label ?? 'Select a model'}
 					</Select.Trigger>
 					<Select.Content>
@@ -496,8 +498,8 @@
 		<Select.Root
 			type="single"
 			bind:value={
-				() => settings.get('transcription.language'),
-				(v) => settings.set('transcription.language', v as SupportedLanguage)
+				() => app.settings.get('transcription.language'),
+				(v) => app.settings.set('transcription.language', v as SupportedLanguage)
 			}
 			disabled={!currentServiceCapabilities.supportsLanguage}
 		>
@@ -528,11 +530,11 @@
 			id="transcription-prompt"
 			placeholder="e.g., This is an academic lecture about quantum physics with technical terms like 'eigenvalue' and 'Schrödinger'"
 			disabled={!currentServiceCapabilities.supportsPrompt}
-			value={settings.get('transcription.prompt')}
+			value={app.settings.get('transcription.prompt')}
 			onblur={(e) => {
 				const next = e.currentTarget.value;
-				if (next !== settings.get('transcription.prompt'))
-					settings.set('transcription.prompt', next);
+				if (next !== app.settings.get('transcription.prompt'))
+					app.settings.set('transcription.prompt', next);
 			}}
 		/>
 		<Field.Description>

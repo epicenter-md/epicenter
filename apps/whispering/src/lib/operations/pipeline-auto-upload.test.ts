@@ -38,11 +38,11 @@ mock.module('$lib/operations/delivery', () => ({
 }));
 mock.module('$lib/operations/run-polish', () => ({
 	polishWillRun: () => willPolish,
-	runPolish: async ({ input }: { input: string }) =>
+	runPolish: async (_app: unknown, { input }: { input: string }) =>
 		Ok(willPolish ? 'polished transcript' : input),
 }));
 mock.module('$lib/operations/sound', () => ({
-	sound: { playSoundIfEnabled: mock() },
+	playSoundIfEnabled: mock(async () => Ok(undefined)),
 }));
 mock.module('$lib/operations/transcribe', () => ({
 	transcribeAndPersist: async () =>
@@ -55,6 +55,7 @@ mock.module('$lib/operations/transcription-history', () => ({
 	saveRecordingHistory,
 }));
 mock.module('$lib/report', () => ({
+	log: { warn: mock() },
 	report: {
 		info: reportInfo,
 		error: mock(),
@@ -75,7 +76,11 @@ mock.module('$lib/state/dictation-lifecycle.svelte', () => ({
 mock.module('$lib/state/polish-hud.svelte', () => ({
 	polishHud: { begin: mock(), end: mock() },
 }));
-mock.module('$lib/state/recordings.svelte', () => ({
+const { processRecordingPipeline } = await import('./pipeline.js');
+type WhisperingApp = import('$lib/whispering/context').WhisperingApp;
+
+const app = {
+	settings: { get: () => autoUpload },
 	recordings: {
 		async create(fields: Record<string, unknown>) {
 			if (createError !== null) throw createError;
@@ -83,12 +88,7 @@ mock.module('$lib/state/recordings.svelte', () => ({
 		},
 		update: mock(async () => Ok(undefined)),
 	},
-}));
-mock.module('$lib/state/settings.svelte', () => ({
-	settings: { get: () => autoUpload },
-}));
-
-const { processRecordingPipeline } = await import('./pipeline.js');
+} as unknown as WhisperingApp;
 
 afterEach(() => {
 	autoUpload = true;
@@ -99,7 +99,7 @@ afterEach(() => {
 });
 
 test('auto-upload attempts once for each new row only when enabled', async () => {
-	await processRecordingPipeline({
+	await processRecordingPipeline(app, {
 		audioBlobId: generateBlobId(),
 		durationMs: 100,
 		deliverySource: 'import',
@@ -108,7 +108,7 @@ test('auto-upload attempts once for each new row only when enabled', async () =>
 	expect(uploadRecordingAudio).toHaveBeenCalledTimes(1);
 
 	autoUpload = false;
-	await processRecordingPipeline({
+	await processRecordingPipeline(app, {
 		audioBlobId: generateBlobId(),
 		durationMs: 100,
 		deliverySource: 'import',
@@ -123,7 +123,7 @@ test('a failed row creation removes the already-finalized local blob', async () 
 	const audioBlobId = generateBlobId();
 
 	await expect(
-		processRecordingPipeline({
+		processRecordingPipeline(app, {
 			audioBlobId,
 			durationMs: 100,
 			deliverySource: 'import',
@@ -141,7 +141,7 @@ test('history failure warns after delivering the usable transcription', async ()
 	const deliveriesBefore = deliverTranscriptionResult.mock.calls.length;
 	const noticesBefore = reportInfo.mock.calls.length;
 
-	await processRecordingPipeline({
+	await processRecordingPipeline(app, {
 		audioBlobId: generateBlobId(),
 		durationMs: 100,
 		deliverySource: 'recording',
@@ -150,7 +150,7 @@ test('history failure warns after delivering the usable transcription', async ()
 	expect(deliverTranscriptionResult).toHaveBeenCalledTimes(
 		deliveriesBefore + 1,
 	);
-	expect(deliverTranscriptionResult).toHaveBeenLastCalledWith({
+	expect(deliverTranscriptionResult).toHaveBeenLastCalledWith(app, {
 		text: 'transcript',
 		source: 'recording',
 	});
@@ -170,7 +170,7 @@ test('polished history failure still delivers polished text and warns', async ()
 	const deliveriesBefore = deliverTranscriptionResult.mock.calls.length;
 	const noticesBefore = reportInfo.mock.calls.length;
 
-	await processRecordingPipeline({
+	await processRecordingPipeline(app, {
 		audioBlobId: generateBlobId(),
 		durationMs: 100,
 		deliverySource: 'recording',
@@ -179,7 +179,7 @@ test('polished history failure still delivers polished text and warns', async ()
 	expect(deliverTranscriptionResult).toHaveBeenCalledTimes(
 		deliveriesBefore + 1,
 	);
-	expect(deliverTranscriptionResult).toHaveBeenLastCalledWith({
+	expect(deliverTranscriptionResult).toHaveBeenLastCalledWith(app, {
 		text: 'polished transcript',
 		source: 'recording',
 	});
@@ -198,13 +198,13 @@ test('polished history success does not hide an earlier raw history error', asyn
 	};
 	const noticesBefore = reportInfo.mock.calls.length;
 
-	await processRecordingPipeline({
+	await processRecordingPipeline(app, {
 		audioBlobId: generateBlobId(),
 		durationMs: 100,
 		deliverySource: 'recording',
 	});
 
-	expect(saveRecordingHistory).toHaveBeenLastCalledWith('recording-1', {
+	expect(saveRecordingHistory).toHaveBeenLastCalledWith(app, 'recording-1', {
 		polishedTranscript: 'polished transcript',
 	});
 	expect(reportInfo).toHaveBeenCalledTimes(noticesBefore + 1);

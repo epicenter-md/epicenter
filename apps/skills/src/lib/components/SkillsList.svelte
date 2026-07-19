@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Empty from '@epicenter/ui/empty';
-	import { skillsState } from '$lib/state/skills-state.svelte';
+	import { getSkillsApp } from '$lib/context.js';
 	import SkillListItem from './SkillListItem.svelte';
 	import InlineNameInput from './tree/InlineNameInput.svelte';
+
+	const { state: skillsState } = getSkillsApp();
 
 	let renamingSkillId = $state<string | null>(null);
 	const isEditing = $derived(renamingSkillId !== null);

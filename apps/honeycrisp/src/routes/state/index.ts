@@ -6,9 +6,11 @@ import { createView } from './view.svelte.js';
 export function createHoneycrispState({
 	honeycrisp,
 	onRecordsChanged,
+	reportBackgroundError,
 }: {
 	honeycrisp: HoneycrispWorkspace;
 	onRecordsChanged(listener: () => void): () => void;
+	reportBackgroundError(cause: unknown): void;
 }) {
 	let notes!: ReturnType<typeof createNotes>;
 	const folders = createFolders({
@@ -19,9 +21,13 @@ export function createHoneycrispState({
 	const view = createView({ folders, notes });
 
 	const refresh = () => Promise.all([folders.refresh(), notes.refresh()]);
-	const whenReady = refresh().then(() => undefined);
-	const unsubscribe = onRecordsChanged(() => {
-		void refresh().catch(() => undefined);
+	let isDisposed = false;
+	let unsubscribe = () => {};
+	const whenReady = refresh().then(() => {
+		if (isDisposed) return;
+		unsubscribe = onRecordsChanged(() => {
+			void refresh().catch(reportBackgroundError);
+		});
 	});
 
 	return {
@@ -30,6 +36,7 @@ export function createHoneycrispState({
 		view,
 		whenReady,
 		[Symbol.dispose]() {
+			isDisposed = true;
 			unsubscribe();
 			view[Symbol.dispose]();
 		},

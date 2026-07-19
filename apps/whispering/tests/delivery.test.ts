@@ -18,14 +18,6 @@ mock.module('$lib/constants/urls', () => ({
 	WHISPERING_RECORDINGS_PATHNAME: '/apps/whispering/recordings',
 }));
 
-mock.module('$lib/state/settings.svelte', () => ({
-	settings: {
-		get(key: string) {
-			return settingsValues.get(key) ?? false;
-		},
-	},
-}));
-
 mock.module('$lib/operations/sink', () => ({
 	clipboardSink: {
 		kind: 'clipboard',
@@ -61,6 +53,15 @@ mock.module('$lib/operations/sink', () => ({
 const { deliverTranscriptionResult } = await import(
 	'../src/lib/operations/delivery'
 );
+type WhisperingApp = import('../src/lib/whispering/context').WhisperingApp;
+
+const app = {
+	settings: {
+		get(key: string) {
+			return settingsValues.get(key) ?? false;
+		},
+	},
+} as unknown as WhisperingApp;
 
 describe('transcription delivery', () => {
 	beforeEach(() => {
@@ -74,14 +75,14 @@ describe('transcription delivery', () => {
 	test('cursor off and clipboard on copies to the clipboard sink', async () => {
 		settingsValues.set('output.transcription.clipboard', true);
 
-		const result = await deliverTranscriptionResult({ text: 'hello' });
+		const result = await deliverTranscriptionResult(app, { text: 'hello' });
 
 		expect(result.outcome).toEqual({ reach: 'output' });
 		expect(delivered).toEqual(['clipboard:hello']);
 	});
 
 	test('cursor off and clipboard off delivers to history only', async () => {
-		const result = await deliverTranscriptionResult({ text: 'hello' });
+		const result = await deliverTranscriptionResult(app, { text: 'hello' });
 
 		expect(result.outcome).toEqual({ reach: 'output' });
 		expect(delivered).toEqual(['ledger:hello']);

@@ -3,6 +3,9 @@
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import { createVadRecordingController } from './vad-recording-controller.svelte';
 	import RecordingActionCard from './RecordingActionCard.svelte';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 
 	let {
 		status,
@@ -10,7 +13,7 @@
 		status: Snippet;
 	} = $props();
 
-	const rec = createVadRecordingController();
+	const rec = createVadRecordingController(app);
 </script>
 
 <RecordingActionCard

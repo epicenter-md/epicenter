@@ -5,8 +5,10 @@
 	import { Label } from '@epicenter/ui/label';
 	import { toast } from '@epicenter/ui/sonner';
 	import PlusIcon from '@lucide/svelte/icons/plus';
-	import { skillsState } from '$lib/state/skills-state.svelte';
+	import { getSkillsApp } from '$lib/context.js';
 	import { validateSkill } from '$lib/utils/validation';
+
+	const { state: skillsState } = getSkillsApp();
 
 	let isOpen = $state(false);
 	let name = $state('');

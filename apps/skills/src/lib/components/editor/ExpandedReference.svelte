@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { skills } from '$lib/skills/client';
+	import { getSkillsApp } from '$lib/context.js';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 
 	let { id }: { id: string } = $props();
+	const skills = getSkillsApp();
 
 	const lease = $derived(skills.tables.references.document.open(id));
 	$effect(() => {

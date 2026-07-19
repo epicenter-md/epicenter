@@ -2,8 +2,10 @@
 	import { Button } from '@epicenter/ui/button';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import { skillsState } from '$lib/state/skills-state.svelte';
+	import { getSkillsApp } from '$lib/context.js';
 	import ExpandedReference from './ExpandedReference.svelte';
+
+	const { state: skillsState } = getSkillsApp();
 
 	let expandedRefId = $state<string | null>(null);
 </script>

@@ -2,11 +2,13 @@
 	import { Button } from '@epicenter/ui/button';
 	import { CopyButton } from '@epicenter/ui/copy-button';
 	import * as InputGroup from '@epicenter/ui/input-group';
-	import { recordings } from '$lib/state/recordings.svelte';
 	import type { RecordingId } from '$lib/workspace';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import RecordingDetailModal from './RecordingDetailModal.svelte';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 
 	/**
 	 * The transcript column cell. Shows the transcript inline (or an "Empty
@@ -18,7 +20,7 @@
 	let { recordingId }: { recordingId: RecordingId } = $props();
 
 	let showOriginal = $state(false);
-	const recording = $derived(recordings.get(recordingId));
+	const recording = $derived(app.recordings.get(recordingId));
 	const hasDeliveredTranscript = $derived(!!recording?.polishedTranscript);
 	const transcript = $derived(
 		showOriginal

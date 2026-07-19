@@ -4,15 +4,26 @@ import {
 	type Skill,
 	scanReferences,
 	scanSkills,
+	type skillsWorkspace,
 } from '@epicenter/skills';
-import type { RowLensError } from '@epicenter/workspace/sqlite';
-import { onSkillsRecordsChanged, skills } from '$lib/skills/client';
+import type {
+	RowLensError,
+	WorkspaceHandle,
+} from '@epicenter/workspace/sqlite';
+
+type SkillsWorkspace = WorkspaceHandle<typeof skillsWorkspace>;
 
 export type SkillMetadataUpdate = Partial<
 	Pick<Skill, 'name' | 'description' | 'license' | 'compatibility'>
 >;
 
-function createSkillsState() {
+export function createSkillsState({
+	skills,
+	onRecordsChanged,
+}: {
+	skills: SkillsWorkspace;
+	onRecordsChanged(listener: () => void): () => void;
+}) {
 	let skillRows = $state.raw<Skill[]>([]);
 	let referenceRows = $state.raw<Reference[]>([]);
 	let nonconforming = $state.raw<RowLensError[]>([]);
@@ -36,7 +47,7 @@ function createSkillsState() {
 			: [],
 	);
 
-	async function refresh(): Promise<void> {
+	async function refresh({ throwOnError = false } = {}): Promise<void> {
 		const generation = ++refreshGeneration;
 		try {
 			const [skillScan, referenceScan] = await Promise.all([
@@ -53,12 +64,16 @@ function createSkillsState() {
 			loadError = null;
 		} catch (cause) {
 			if (generation === refreshGeneration) loadError = cause;
-			throw cause;
+			if (throwOnError) throw cause;
 		}
 	}
 
-	const whenReady = refresh();
-	onSkillsRecordsChanged(() => void refresh().catch(() => undefined));
+	let isDisposed = false;
+	let unsubscribe = () => {};
+	const whenReady = refresh({ throwOnError: true }).then(() => {
+		if (isDisposed) return;
+		unsubscribe = onRecordsChanged(() => void refresh());
+	});
 
 	return {
 		whenReady,
@@ -128,7 +143,10 @@ function createSkillsState() {
 			await skills.tables.references.delete(id);
 			await refresh();
 		},
+		[Symbol.dispose]() {
+			isDisposed = true;
+			refreshGeneration += 1;
+			unsubscribe();
+		},
 	};
 }
-
-export const skillsState = createSkillsState();

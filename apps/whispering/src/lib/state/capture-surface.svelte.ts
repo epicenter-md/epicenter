@@ -1,5 +1,5 @@
 import type { CaptureSurface } from '$lib/constants/audio';
-import { settings } from '$lib/state/settings.svelte';
+import type { WhisperingApp } from '$lib/whispering/context';
 
 /**
  * Which capture surface the home page and the config header are currently
@@ -23,11 +23,12 @@ let isImportSurfaceShowing = $state(false);
 
 export const captureSurface = {
 	/** The surface on screen now: `import` while the import overlay is open,
-	 *  otherwise the durable recording trigger. */
-	get current(): CaptureSurface {
+	 *  otherwise the durable recording trigger. Reactive when called inside a
+	 *  template, `$derived`, or `$effect`. */
+	current(app: WhisperingApp): CaptureSurface {
 		return isImportSurfaceShowing
 			? 'import'
-			: settings.get('recording.trigger');
+			: app.settings.get('recording.trigger');
 	},
 
 	/** Open the file-import overlay over the current trigger. */

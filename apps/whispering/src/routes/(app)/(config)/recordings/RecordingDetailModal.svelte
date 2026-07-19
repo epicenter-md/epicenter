@@ -15,13 +15,15 @@
 	import AudioBlobPlayer from '$lib/components/AudioBlobPlayer.svelte';
 	import { deleteRecordingsWithConfirmation } from '$lib/operations/recordings';
 	import { report } from '$lib/report';
-	import { rpc } from '$lib/rpc';
-	import { type Recording, recordings } from '$lib/state/recordings.svelte';
+	import type { Recording } from '$lib/state/recordings.svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
 	import DownloadRecordingButton from './actions/DownloadRecordingButton.svelte';
 	import TranscribeRecordingButton from './actions/TranscribeRecordingButton.svelte';
 	import RecordingStorageAction from './RecordingStorageAction.svelte';
 	import RecordingStorageBadge from './RecordingStorageBadge.svelte';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 
 	/**
 	 * The single detail surface for one recording: play it back, read and edit
@@ -73,7 +75,7 @@
 	 * local blob URLs.
 	 */
 	const audioAvailabilityQuery = createQuery(() => ({
-		...rpc.audio.availability(() => recording).options,
+		...app.rpc.audio.availability(() => recording).options,
 		enabled: isDialogOpen,
 	}));
 
@@ -111,7 +113,7 @@
 			return;
 		}
 
-		const { error } = await recordings.update(recording.id, {
+		const { error } = await app.recordings.update(recording.id, {
 			title: snapshot.title,
 			recordedAt: snapshot.recordedAt,
 			recordedAtZone: snapshot.recordedAtZone,
@@ -288,7 +290,7 @@
 			<Button
 				variant="destructive"
 				onclick={() =>
-					deleteRecordingsWithConfirmation($state.snapshot(recording), {
+					deleteRecordingsWithConfirmation(app, $state.snapshot(recording), {
 						onSuccess: () => {
 							isDialogOpen = false;
 						},

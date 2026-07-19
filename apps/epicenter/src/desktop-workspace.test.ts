@@ -51,12 +51,6 @@ test('two clients invalidate documents, disconnect independently, and survive re
 		const firstWhispering = await firstClient.open(whisperingWorkspace);
 		const secondWhispering = await secondClient.open(whisperingWorkspace);
 		await Promise.all([
-			firstSkills.opened,
-			secondSkills.opened,
-			firstWhispering.opened,
-			secondWhispering.opened,
-		]);
-		await Promise.all([
 			firstSkills.tables.skills.list(),
 			firstWhispering.tables.recordings.list(),
 		]);
@@ -213,15 +207,16 @@ test('two clients invalidate documents, disconnect independently, and survive re
 				id: 'not-statically-linked',
 				tables: skillsWorkspace.tables,
 			});
-			const unknown = await client.open(unknownDefinition);
-			await expect(
-				unknown.tables.skills.get(survivingSkill.id),
-			).rejects.toThrow('Unknown workspace');
+			// The open handshake is honest: a workspace the host does not own
+			// rejects at open, before any handle exists.
+			await expect(client.open(unknownDefinition)).rejects.toThrow(
+				'Unknown workspace',
+			);
 			const conflictingDefinition = defineWorkspace({
 				id: skillsWorkspace.id,
 				tables: skillsWorkspace.tables,
 			});
-			// open() is synchronous, so a conflicting rebind throws directly.
+			// A conflicting rebind is a programming error and throws directly.
 			expect(() => client.open(conflictingDefinition)).toThrow(
 				'already bound to another definition',
 			);

@@ -24,8 +24,8 @@ import {
 import type { TranscriptionServiceId } from '$lib/services/transcription/providers';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { localModels } from '$lib/state/local-models.svelte';
-import { settings } from '$lib/state/settings.svelte';
 import type { ModelInfo } from '$lib/tauri/commands.types';
+import type { WhisperingApp } from '$lib/whispering/context';
 import { isTranscriptionServiceConfigured } from './transcription-validation';
 
 /**
@@ -74,14 +74,14 @@ const REMOTE_ENTRIES = TRANSCRIPTION_PROVIDERS.filter(
 );
 
 /** A committed remote provider -> its one switcher leaf. */
-function toRemoteLeaf(entry: RemoteEntry): SwitcherLeaf {
+function toRemoteLeaf(app: WhisperingApp, entry: RemoteEntry): SwitcherLeaf {
 	const base = {
 		key: entry.id,
 		providerId: entry.id,
 		icon: entry.icon,
 		invertInDarkMode: entry.invertInDarkMode,
-		isActive: settings.get('transcription.service') === entry.id,
-		select: () => settings.set('transcription.service', entry.id),
+		isActive: app.settings.get('transcription.service') === entry.id,
+		select: () => app.settings.set('transcription.service', entry.id),
 	};
 	switch (entry.access) {
 		case 'session':
@@ -96,7 +96,8 @@ function toRemoteLeaf(entry: RemoteEntry): SwitcherLeaf {
 		case 'key': {
 			// The committed model (set once in setup) is the leaf; the provider is
 			// conveyed by the icon and the sublabel.
-			const model = settings.get(entry.modelSettingKey) || entry.defaultModel;
+			const model =
+				app.settings.get(entry.modelSettingKey) || entry.defaultModel;
 			return {
 				...base,
 				access: 'key',
@@ -121,7 +122,7 @@ function toRemoteLeaf(entry: RemoteEntry): SwitcherLeaf {
 }
 
 /** A downloaded on-device GGUF -> its one switcher leaf. */
-function toLocalLeaf(model: ModelInfo): SwitcherLeaf {
+function toLocalLeaf(app: WhisperingApp, model: ModelInfo): SwitcherLeaf {
 	return {
 		key: model.id,
 		providerId: 'local',
@@ -131,10 +132,10 @@ function toLocalLeaf(model: ModelInfo): SwitcherLeaf {
 		label: model.name,
 		keywords: `${model.id} ${model.name} ${model.description} local on-device offline gguf whisper private`,
 		isActive:
-			settings.get('transcription.service') === 'local' &&
+			app.settings.get('transcription.service') === 'local' &&
 			deviceConfig.get('transcription.local.selectedModel') === model.id,
 		select: () => {
-			settings.set('transcription.service', 'local');
+			app.settings.set('transcription.service', 'local');
 			deviceConfig.set('transcription.local.selectedModel', model.id);
 		},
 	};
@@ -146,12 +147,14 @@ function toLocalLeaf(model: ModelInfo): SwitcherLeaf {
  * on web). Membership is the store's own per-model `downloaded` verdict, never
  * the raw deviceConfig pointer.
  */
-export function readyModels(): SwitcherLeaf[] {
-	const remote = REMOTE_ENTRIES.filter(isTranscriptionServiceConfigured).map(
-		toRemoteLeaf,
-	);
+export function readyModels(app: WhisperingApp): SwitcherLeaf[] {
+	const remote = REMOTE_ENTRIES.filter((entry) =>
+		isTranscriptionServiceConfigured(entry),
+	).map((entry) => toRemoteLeaf(app, entry));
 	const onDevice = tauri
-		? localModels.models.filter((model) => model.downloaded).map(toLocalLeaf)
+		? localModels.models
+				.filter((model) => model.downloaded)
+				.map((model) => toLocalLeaf(app, model))
 		: [];
 	return [...onDevice, ...remote];
 }

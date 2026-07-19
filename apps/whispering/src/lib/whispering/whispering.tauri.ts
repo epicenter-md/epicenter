@@ -1,23 +1,19 @@
 import { createDesktopWorkspaceRuntime } from '@epicenter/workspace/sqlite/desktop';
-import { openWhisperingApplication } from './whispering.active';
+import { log } from '$lib/report';
+import type { WhisperingDependencies } from './application';
 
-// Same infallible-module contract as the browser leaf: synchronous handles,
-// operations queue behind the host's request transport, and the boot promise
-// is the one fallible surface the root gate awaits.
-const application = openWhisperingApplication({
+/**
+ * The Epicenter-hosted build's application dependencies. Pure data and
+ * factories: the WebView runtime performs its honest host open handshake only
+ * once `openWhisperingApplication` runs inside the mounted Svelte root.
+ */
+export const whisperingPlatform: WhisperingDependencies = {
 	createRuntime: (onRecordsChanged) =>
 		createDesktopWorkspaceRuntime({ onRecordsChanged }),
 	defaultTranscriptionService: 'local',
-});
-
-export const whispering = application.whispering;
-export const skills = application.skills;
-export const settingsDefaults = application.settingsDefaults;
-export const onWhisperingRecordsChanged = (listener: () => void) =>
-	application.onRecordsChanged(whispering.id, listener);
-/** Resolves when both workspaces' storage is open; rejects terminally. */
-export const whisperingBoot: Promise<void> = application.opened;
-
-if (import.meta.hot) {
-	import.meta.hot.dispose(() => void application[Symbol.asyncDispose]());
-}
+	reportBackgroundError: (cause) =>
+		log.warn(
+			cause instanceof Error ? cause : new Error(String(cause)),
+			'Whispering application background failure',
+		),
+};

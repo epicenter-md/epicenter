@@ -3,8 +3,10 @@
 	import KeyRoundIcon from '@lucide/svelte/icons/key-round';
 	import { whisperingPath } from '$lib/constants/urls';
 	import { polishStatus } from '$lib/operations/run-polish';
+	import { getWhisperingApp } from '$lib/whispering/context';
 
-	const status = $derived(polishStatus());
+	const app = getWhisperingApp();
+	const status = $derived(polishStatus(app));
 </script>
 
 {#if status === 'needs-key'}

@@ -1,13 +1,15 @@
 # State
 
-Singleton reactive state that stays in sync with the application. Unlike the rpc layer which uses stale-while-revalidate caching, state modules maintain live state that updates immediately and persists across the application lifecycle.
+Reactive state that stays in sync with the application. Unlike the rpc layer which uses stale-while-revalidate caching, state modules maintain live state that updates immediately and persists across the application lifecycle.
+
+Two shapes live here. Workspace-backed state (`settings`, `recordings`, `recipes`) is owned and hydrated by the UI-free application; these modules are thin Svelte reactivity adapters over that ready product API. Device/hardware state (`device-config`, recorders, lifecycle) remains module singletons.
 
 ## When to Use State vs RPC Layer
 
 | Aspect | `$lib/state/` | `$lib/rpc/` |
 |--------|----------------|---------------|
-| **Pattern** | Singleton reactive state | Stale-while-revalidate (TanStack Query) |
-| **State Location** | Module-level `$state` runes | TanStack Query cache |
+| **Pattern** | Application-owned domain state plus Svelte adapters | Stale-while-revalidate (TanStack Query) |
+| **State Location** | Ready `WhisperingApplication` | TanStack Query cache |
 | **Updates** | Immediate, live | Cached with background refresh |
 | **Use Case** | Hardware state, user preferences, live status, workspace table data | Data fetching, mutations, external API calls |
 | **Lifecycle** | Application lifetime | Managed by TanStack Query |
@@ -16,26 +18,30 @@ Singleton reactive state that stays in sync with the application. Unlike the rpc
 
 ### `settings.svelte.ts`
 
-Synced workspace settings backed by the canonical workspace KV lens (ADR-0130). Settings roam across devices through row sync. A SvelteMap provides per-key reactivity while product defaults remain release-local application policy.
+Synced workspace settings backed by the canonical workspace KV lens (ADR-0130). Settings roam across devices through row sync. The application core hydrates every key before the app resolves; `createSettingsView` wraps it with `createSubscriber` so reads are reactive. Product defaults remain release-local application policy.
 
 ```typescript
-import { settings } from '$lib/state/settings.svelte';
+import { getWhisperingApp } from '$lib/whispering/context';
+
+const app = getWhisperingApp(); // component initialisation
 
 // Read settings reactively (re-renders on change)
-const trigger = settings.get('recording.trigger');
+const trigger = app.settings.get('recording.trigger');
 
 // Update settings (writes to the document and syncs to other devices)
-settings.set('recording.trigger', 'vad');
+app.settings.set('recording.trigger', 'vad');
 ```
 
 ### `recordings.svelte.ts`
 
-Recording metadata backed by structural workspace row ids. The state module maintains an app-level cache and refreshes after local writes or installed remote record changes. Audio blobs remain separate and are addressed by each row's `audioBlobId`; use `$lib/rpc/audio` for playback URLs and `services.blobs` for raw blob access.
+Recording metadata backed by structural workspace row ids. The application namespace maintains the cache and refreshes after local writes or installed remote record changes; this module only makes its reads reactive. Audio blobs remain separate and are addressed by each row's `audioBlobId`.
 
 ```typescript
 import { InstantString } from '@epicenter/field';
 
-import { recordings } from '$lib/state/recordings.svelte';
+import { getWhisperingApp } from '$lib/whispering/context';
+
+const { recordings } = getWhisperingApp(); // component initialisation
 
 // Read recordings reactively
 const recording = recordings.get(id);
@@ -59,7 +65,9 @@ await recordings.delete(id);
 The on-demand Recipe library backed by canonical records. Each recipe is a single self-contained row (`name`, `instructions`, optional `icon`); built-in recipes are merged ahead of the user's saved rows.
 
 ```typescript
-import { recipes } from '$lib/state/recipes.svelte';
+import { getWhisperingApp } from '$lib/whispering/context';
+
+const { recipes } = getWhisperingApp(); // component initialisation
 
 const list = recipes.pickable; // built-ins followed by saved recipes
 await recipes.set({ id, name, instructions, icon: null });

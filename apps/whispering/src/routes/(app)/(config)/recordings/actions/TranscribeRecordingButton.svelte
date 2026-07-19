@@ -8,9 +8,11 @@
 	import type { ComponentProps } from 'svelte';
 	import { deliverTranscriptionResult } from '$lib/operations/delivery';
 	import { report } from '$lib/report';
-	import { sound } from '$lib/operations/sound';
-	import { rpc } from '$lib/rpc';
+	import { playSoundIfEnabled } from '$lib/operations/sound';
 	import type { Recording } from '$lib/state/recordings.svelte';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 
 	/**
 	 * The transcribe / retry button for a single recording.
@@ -35,7 +37,7 @@
 	} = $props();
 
 	const transcribeRecording = createMutation(
-		() => rpc.transcription.transcribeRecording.options,
+		() => app.rpc.transcription.transcribeRecording.options,
 	);
 
 	const transcriptionState = $derived.by(() => {
@@ -87,9 +89,9 @@
 				});
 			},
 			onSuccess: async ({ text, history }) => {
-				sound.playSoundIfEnabled('transcriptionComplete');
+				void playSoundIfEnabled(app, 'transcriptionComplete');
 
-				const { notice } = await deliverTranscriptionResult({
+				const { notice } = await deliverTranscriptionResult(app, {
 					text,
 				});
 				loading.resolve(notice);

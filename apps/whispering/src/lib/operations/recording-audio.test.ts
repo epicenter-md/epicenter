@@ -29,10 +29,6 @@ mock.module('#platform/auth', () => ({
 mock.module('$lib/services', () => ({
 	services: { blobs: {}, blobReplica: null },
 }));
-mock.module('$lib/state/recordings.svelte', () => ({
-	recordings: { update: mock() },
-}));
-
 const {
 	downloadRecordingAudio,
 	getRecordingAudioAvailability,
@@ -40,6 +36,10 @@ const {
 	removeLocalRecordingAudio,
 	uploadRecordingAudio,
 } = await import('./recording-audio.js');
+type WhisperingApp = import('$lib/whispering/context').WhisperingApp;
+
+// Every test supplies explicit dependencies, so the app is never touched.
+const app = { recordings: { update: mock() } } as unknown as WhisperingApp;
 
 const recording = {
 	id: 'recording-1' as RecordingId,
@@ -145,6 +145,7 @@ test('upload records uploadedAt only after the remote copy succeeds', async () =
 
 	expectOk(
 		await uploadRecordingAudio(
+			app,
 			recording,
 			dependencies({
 				replica,
@@ -164,6 +165,7 @@ test('failed upload leaves uploadedAt untouched for a later manual attempt', asy
 	const cause = new Error('offline');
 	const error = expectErr(
 		await uploadRecordingAudio(
+			app,
 			recording,
 			dependencies({
 				replica: stubReplica({
@@ -190,6 +192,7 @@ test('failed upload bookkeeping rolls back the newly written remote copy', async
 	const events: string[] = [];
 	const error = expectErr(
 		await uploadRecordingAudio(
+			app,
 			recording,
 			dependencies({
 				replica: stubReplica({
@@ -218,6 +221,7 @@ test('remove local refuses a recording without a known remote copy', async () =>
 	let deleted = false;
 	const error = expectErr(
 		await removeLocalRecordingAudio(
+			app,
 			recording,
 			dependencies({
 				blobs: stubBlobs({
@@ -240,6 +244,7 @@ test('remove local proves the remote copy immediately before deletion', async ()
 
 	expectOk(
 		await removeLocalRecordingAudio(
+			app,
 			uploaded,
 			dependencies({
 				replica: stubReplica({
@@ -265,6 +270,7 @@ test('download refuses a row that has never uploaded successfully', async () => 
 	let downloaded = false;
 	const error = expectErr(
 		await downloadRecordingAudio(
+			app,
 			recording,
 			dependencies({
 				replica: stubReplica({
@@ -286,6 +292,7 @@ test('a remote 404 clears the stale upload marker', async () => {
 	const uploaded = { ...recording, uploadedAt: InstantString.now() };
 	const error = expectErr(
 		await downloadRecordingAudio(
+			app,
 			uploaded,
 			dependencies({
 				replica: stubReplica({
@@ -314,6 +321,7 @@ test('purge clears uploadedAt after remote deletion succeeds', async () => {
 
 	expectOk(
 		await purgeRecordingAudio(
+			app,
 			uploaded,
 			dependencies({
 				replica: stubReplica({

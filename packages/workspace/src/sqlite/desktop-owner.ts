@@ -59,6 +59,9 @@ export function createDesktopWorkspaceOwner({
 		if (!opening) {
 			opening = runtime.open(definition);
 			handles.set(workspaceId, opening);
+			void opening.catch(() => {
+				if (handles.get(workspaceId) === opening) handles.delete(workspaceId);
+			});
 		}
 		return opening;
 	};
@@ -82,6 +85,8 @@ export function createDesktopWorkspaceOwner({
 		async execute(workspaceId: string, input: unknown): Promise<unknown> {
 			const operation = parseDesktopRecordOperation(input);
 			const workspace = await openRegistered(workspaceId);
+			// The awaited acquisition above IS the handshake's work.
+			if (operation.kind === 'open') return undefined;
 			if (operation.kind === 'sql') {
 				return workspace.sql(operation.query, operation.parameters, sqliteRows);
 			}
@@ -171,6 +176,8 @@ function parseDesktopRecordOperation(input: unknown): DesktopRecordOperation {
 	const table = typeof input.table === 'string' ? input.table : undefined;
 	const id = typeof input.id === 'string' ? input.id : undefined;
 	switch (input.kind) {
+		case 'open':
+			return { kind: 'open' };
 		case 'kv-get':
 		case 'kv-unset':
 			if (typeof input.key !== 'string') break;

@@ -8,11 +8,13 @@
 	import { ScrollArea } from '@epicenter/ui/scroll-area';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import SearchIcon from '@lucide/svelte/icons/search';
-	import { skillsState } from '$lib/state/skills-state.svelte';
+	import { getSkillsApp } from '$lib/context.js';
 	import NewSkillDialog from './dialogs/NewSkillDialog.svelte';
 	import SkillEditor from './editor/SkillEditor.svelte';
 	import SkillsList from './SkillsList.svelte';
 	import StorageBadge from './StorageBadge.svelte';
+
+	const { state: skillsState } = getSkillsApp();
 
 	let commandPaletteOpen = $state(false);
 

@@ -4,7 +4,9 @@
 	import * as ContextMenu from '@epicenter/ui/context-menu';
 	import * as Item from '@epicenter/ui/item';
 	import { cn } from '@epicenter/ui/utils';
-	import { skillsState } from '$lib/state/skills-state.svelte';
+	import { getSkillsApp } from '$lib/context.js';
+
+	const { state: skillsState } = getSkillsApp();
 
 	let {
 		skill,
