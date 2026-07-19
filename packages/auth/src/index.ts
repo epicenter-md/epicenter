@@ -17,6 +17,11 @@ export {
 	Principal,
 } from './auth-types.js';
 export {
+	type AuthFetchInput,
+	fetchWithBearer,
+	resolveTargetUrl,
+} from './bearer-fetch.js';
+export {
 	type Instance,
 	InstanceUrlError,
 	normalizeInstanceUrl,
@@ -44,13 +49,13 @@ export {
 	createOAuthCredentialAuthority,
 	type OAuthCredentialAuthority,
 } from './oauth-credential-authority.js';
-export { getProfileVia } from './read-api-session.js';
 export {
 	createSerializedPersistedAuthStorage,
 	createWebStoragePersistedAuthStorage,
 	loadPersistedAuthStorage,
 	type PersistedAuthStorage,
 } from './persisted-auth-storage.js';
+export { getProfileVia } from './read-api-session.js';
 export {
 	type CreateSameOriginCookieAuthConfig,
 	createSameOriginCookieAuth,

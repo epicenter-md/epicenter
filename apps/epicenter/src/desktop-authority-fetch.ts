@@ -6,43 +6,62 @@
  * attached to a request, which is what keeps WebView windows credential-free.
  */
 
-import type { AuthFetch } from '@epicenter/auth';
+import {
+	type AuthFetch,
+	type AuthFetchInput,
+	fetchWithBearer,
+	resolveTargetUrl,
+} from '@epicenter/auth';
 import type { DesktopAuthAuthority } from './desktop-auth-authority.ts';
 
 export function createDesktopAuthorityFetch(
-	desktopAuth: Pick<DesktopAuthAuthority, 'authorize' | 'reportRejected'>,
+	desktopAuth: Pick<
+		DesktopAuthAuthority,
+		'authorize' | 'baseURL' | 'reportRejected'
+	>,
 	{
 		fetch: fetchImpl = globalThis.fetch.bind(globalThis),
 	}: { fetch?: AuthFetch } = {},
 ): AuthFetch {
-	async function fetchWithAuthorization(
-		input: Request | string | URL,
+	const epicenterOrigin = new URL(desktopAuth.baseURL).origin;
+
+	async function fetchWithAuth(
+		input: AuthFetchInput,
 		init: RequestInit | undefined,
-		authorization: Awaited<ReturnType<typeof desktopAuth.authorize>>,
+		providedAuthorization?: Awaited<ReturnType<typeof desktopAuth.authorize>>,
 	) {
-		if (authorization.status !== 'authorized') {
-			// A bare request lets the deployment answer 401 itself, so callers
-			// see the same typed failure shape as an expired bearer.
-			return fetchImpl(input, init);
-		}
-		const headers = new Headers(
-			init?.headers ?? (input instanceof Request ? input.headers : undefined),
-		);
-		headers.set('authorization', `Bearer ${authorization.accessToken}`);
-		return fetchImpl(input, { ...init, headers });
+		let authorization = providedAuthorization;
+		const response = await fetchWithBearer({
+			input,
+			init,
+			fetch: fetchImpl,
+			baseURL: desktopAuth.baseURL,
+			epicenterOrigin,
+			resolveToken: async () => {
+				authorization ??= await desktopAuth.authorize();
+				return authorization.status === 'authorized'
+					? authorization.accessToken
+					: null;
+			},
+		});
+		return { authorization, response };
 	}
 
 	return async (input, init) => {
-		const first = await desktopAuth.authorize();
-		const response = await fetchWithAuthorization(input, init, first);
-		if (response.status !== 401) return response;
+		const first = await fetchWithAuth(input, init);
+		if (
+			first.response.status !== 401 ||
+			resolveTargetUrl(input, desktopAuth.baseURL)?.origin !== epicenterOrigin
+		) {
+			return first.response;
+		}
 
 		const refreshed = await desktopAuth.authorize({ forceRefresh: true });
-		if (refreshed.status !== 'authorized') return response;
-		const retry = await fetchWithAuthorization(input, init, refreshed);
-		if (retry.status === 401) {
+		if (refreshed.status !== 'authorized') return first.response;
+		const retry = await fetchWithAuth(input, init, refreshed);
+		if (retry.response.status === 401) {
 			desktopAuth.reportRejected(refreshed.tokenGeneration);
 		}
-		return retry;
+		return retry.response;
 	};
 }

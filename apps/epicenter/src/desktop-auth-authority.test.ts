@@ -7,7 +7,7 @@
  *
  * Key behaviors:
  * - Legacy persisted auth boots the hosted principal offline
- * - Authorization verifies once and returns a transient bearer generation
+ * - Host-owned authorization verifies once and stays outside every WebView
  * - Sign-out persists the next signed-out cell before requesting relaunch
  */
 

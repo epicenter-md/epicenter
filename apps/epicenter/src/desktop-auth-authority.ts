@@ -33,8 +33,9 @@ export type DesktopAuthBootSnapshot = {
 
 /**
  * Own the hosted desktop credential for one immutable process generation.
- * Windows receive only the boot snapshot and transient bearer grants through
- * the loopback broker. Account changes persist the next cell and relaunch.
+ * Windows receive only the boot snapshot and use same-origin account broker
+ * operations that never expose a bearer. Account changes persist the next cell
+ * and relaunch.
  */
 export function createDesktopAuthAuthority({
 	authCell,
