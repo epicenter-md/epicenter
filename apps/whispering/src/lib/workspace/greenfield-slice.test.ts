@@ -74,6 +74,9 @@ test('one runtime discards old sourceId rows and composes Skills documents', asy
 		const nonconforming = expectErr(
 			await whispering.tables.recordings.get(oldRecording.id),
 		);
+		if (nonconforming.name !== 'NonconformingRow') {
+			throw new Error(`Expected NonconformingRow, got ${nonconforming.name}`);
+		}
 		expect(nonconforming.issues).toContainEqual({
 			field: 'audioBlobId',
 			kind: 'missing',
