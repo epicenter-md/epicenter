@@ -96,10 +96,10 @@ bun <skill-dir>/scripts/delegate-claude.ts start --name <short-name>
 
 Write the complete packet to stdin, then close it (`Ctrl-D` on a PTY; piping
 the packet works the same). `--name` is optional; without it the launcher
-generates a unique `codex-delegate-*` name. The launcher uses Fable, high
-effort, and auto permission mode. It deliberately leaves normal Claude
-configuration enabled so project instructions, skills, plugins, hooks, and
-`/codex:rescue` remain available.
+generates a unique `codex-delegate-*` name. The launcher inherits Claude's
+configured default model and uses high effort and auto permission mode. It
+deliberately leaves normal Claude configuration enabled so project instructions,
+skills, plugins, hooks, and `/codex:rescue` remain available.
 
 Capture the `DELEGATE_CLAUDE_JOB_ID=<id>` line. Do not invent another job
 registry or status file. Background agents are a research preview, so the

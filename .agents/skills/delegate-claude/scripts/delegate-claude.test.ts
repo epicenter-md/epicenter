@@ -110,8 +110,8 @@ if (args[0] === '--bg' && args[1] === '--resume') {
   if (args[2] !== '${baseAgent.sessionId}' || args[3] !== 'pear') process.exit(9);
   console.log('backgrounded · a5b4a85d');
 } else if (args[0] === '--bg') {
-  const required = ['--model', 'fable', '--effort', 'high', '--permission-mode', 'auto', '--name', 'fixture'];
-  if (!required.every((value) => args.includes(value)) || args.at(-1) !== 'Mission: fixture') process.exit(7);
+  const required = ['--effort', 'high', '--permission-mode', 'auto', '--name', 'fixture'];
+  if (args.includes('--model') || !required.every((value) => args.includes(value)) || args.at(-1) !== 'Mission: fixture') process.exit(7);
   console.log(process.env.FIXTURE_LAUNCH_LINE ?? 'backgrounded · 7c5dcf5d · fixture');
 } else if (args[0] === 'stop') {
   console.log('stopped ' + args[1]);

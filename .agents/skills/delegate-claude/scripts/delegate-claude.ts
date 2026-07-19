@@ -181,8 +181,6 @@ async function start(args: string[]) {
 	const launchedAt = Date.now();
 	const result = runClaude([
 		'--bg',
-		'--model',
-		'fable',
 		'--effort',
 		'high',
 		'--permission-mode',
