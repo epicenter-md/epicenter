@@ -47,7 +47,7 @@ const OGG_SERIAL: u32 = 0x57_48_53_50; // "WHSP"
 /// Encode a mono f32 PCM buffer to an OGG/Opus blob.
 ///
 /// This is the canonical fast path for cloud uploads: the recorder
-/// consumer worker (and `read_artifact_samples`) always produce mono
+/// consumer worker (and `read_blob_samples`) always produce mono
 /// 16 kHz f32, so we resample to 48 kHz (libopus's internal rate) and
 /// encode straight into the OGG container. No WAV synthesis, no
 /// Symphonia round-trip, no detour.
@@ -255,7 +255,7 @@ mod tests {
 
     #[test]
     fn roundtrip_5s_sine_preserves_duration_and_frequency() {
-        // 5 s @ 16 kHz, 440 Hz sine. Roundtrip: WAV (cpal artifact shape) ->
+        // 5 s @ 16 kHz, 440 Hz sine. Roundtrip: WAV (CPAL blob shape) ->
         // decode_to_pcm16k_mono -> encode_pcm_to_opus_ogg -> decoder. This
         // mirrors what `encode_recording_for_upload` does at runtime.
         let secs = 5.0f32;

@@ -1,3 +1,4 @@
+import { type BlobId, parseBlobId } from '@epicenter/blobs';
 import {
 	asDeviceIdentifier,
 	type Device,
@@ -6,6 +7,7 @@ import {
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { createLogger } from 'wellcrafted/logger';
 import { Err, Ok, type Result } from 'wellcrafted/result';
+import { AudioBlobsLive } from '#platform/blobs';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { recorderErrorFromIpc } from '$lib/services/recorder/categorize-error';
 import {
@@ -112,14 +114,13 @@ const enumerateDevices = async (): Promise<Result<Device[], RecorderError>> => {
  * Rust via `get_current_recording_id` and reattaches a new
  * `RecordingSession` wrapper if Rust still has one going.
  *
- * Stop returns a `RecordingArtifact` handle: Rust writes the durable WAV
- * to `<appDataDir>/recordings/{id}.wav` and the JS side refers to the
- * recording by id from then on. There is no raw PCM on the wire.
+ * Stop atomically finalizes the durable WAV under `<appDataDir>/blobs/{id}`
+ * and returns only its blob id. There is no raw PCM on the wire.
  */
 function createCpalRecorder() {
 	let activeSession: RecordingSession | null = null;
 
-	function buildSession(recordingId: string) {
+	function buildSession(audioBlobId: BlobId, startedAtMs: number | null) {
 		const subscribers = new Set<(s: WhisperingRecordingState) => void>();
 		let currentState: WhisperingRecordingState = 'RECORDING';
 		let tauriUnlisten: Promise<UnlistenFn> | null = null;
@@ -162,10 +163,10 @@ function createCpalRecorder() {
 		};
 
 		const session = {
-			recordingId,
+			audioBlobId,
 
 			stop: async () => {
-				const { data: artifact, error: stopRecordingError } =
+				const { data: returnedId, error: stopRecordingError } =
 					await commands.stopRecording();
 				if (stopRecordingError !== null) {
 					const { error: closeError } = await commands.closeRecordingSession();
@@ -175,7 +176,7 @@ function createCpalRecorder() {
 					return RecorderError.StopFailed({ cause: stopRecordingError });
 				}
 
-				// Rust's `stop_recording` returns the artifact handle but does
+				// Rust's `stop_recording` returns only the committed blob id but does
 				// not close the worker; we still own the cpal stream and the
 				// worker thread. Send `close_recording_session` so Rust can
 				// join the worker and free the stream.
@@ -183,8 +184,21 @@ function createCpalRecorder() {
 				if (closeError !== null)
 					log.error(RecorderError.StopFailed({ cause: closeError }));
 				teardown(session);
+				const parsedId = parseBlobId(returnedId);
+				if (parsedId !== audioBlobId) {
+					return RecorderError.StopFailed({
+						cause: new Error('Native recorder returned an unexpected blob id.'),
+					});
+				}
+				const { data: blobStat, error: statError } =
+					await AudioBlobsLive.stat(audioBlobId);
+				if (statError !== null) return Err(statError);
 
-				return Ok({ kind: 'artifact', artifact });
+				return Ok({
+					audioBlobId,
+					durationMs: startedAtMs === null ? null : Date.now() - startedAtMs,
+					byteLength: blobStat.size,
+				});
 			},
 
 			cancel: async () => {
@@ -225,14 +239,20 @@ function createCpalRecorder() {
 			// probe Rust in case a recording session outlived a JS reload.
 			if (activeSession) return Ok(activeSession);
 
-			const { data: liveRecordingId, error: getIdError } =
+			const { data: liveBlobId, error: getIdError } =
 				await commands.getCurrentRecordingId();
 			if (getIdError !== null) {
 				return RecorderError.GetStateFailed({ cause: getIdError });
 			}
-			if (!liveRecordingId) return Ok(null);
+			if (!liveBlobId) return Ok(null);
+			const parsedId = parseBlobId(liveBlobId);
+			if (parsedId === undefined) {
+				return RecorderError.GetStateFailed({
+					cause: new Error('Native recorder returned an invalid blob id.'),
+				});
+			}
 
-			const rehydrated = buildSession(liveRecordingId);
+			const rehydrated = buildSession(parsedId, null);
 			activeSession = rehydrated;
 			return Ok(rehydrated);
 		},
@@ -247,7 +267,7 @@ function createCpalRecorder() {
 		// the export below publishes, so they still pass both arguments.
 		startRecording: async ({
 			selectedDeviceId,
-			recordingId,
+			audioBlobId,
 			sampleRate,
 		}: CpalRecordingParams) => {
 			const { error: permissionError } = await requestMicrophonePermission();
@@ -292,7 +312,7 @@ function createCpalRecorder() {
 			const { error: initRecordingSessionError } =
 				await commands.initRecordingSession(
 					deviceIdentifier,
-					recordingId,
+					audioBlobId,
 					sampleRateNum,
 				);
 			if (initRecordingSessionError !== null)
@@ -317,7 +337,7 @@ function createCpalRecorder() {
 				);
 			}
 
-			const session = buildSession(recordingId);
+			const session = buildSession(audioBlobId, Date.now());
 			activeSession = session;
 			return Ok({ session, deviceAcquisition: deviceOutcome });
 		},

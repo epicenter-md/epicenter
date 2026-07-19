@@ -1,6 +1,6 @@
+import type { BlobNotFound, BlobStoreFailed } from '@epicenter/blobs';
 import { defineKeys } from 'wellcrafted/query';
 import { Err, type Result } from 'wellcrafted/result';
-import type { BlobError } from '#platform/blob-store';
 import type { DownloadError } from '#platform/download';
 import { defineMutation } from '$lib/rpc/client';
 import { services } from '$lib/services';
@@ -15,9 +15,11 @@ export const download = {
 		mutationKey: downloadKeys.downloadRecording,
 		mutationFn: async (
 			recording: Recording,
-		): Promise<Result<void, BlobError | DownloadError>> => {
+		): Promise<
+			Result<void, BlobNotFound | BlobStoreFailed | DownloadError>
+		> => {
 			const { data: audioBlob, error: getAudioBlobError } =
-				await services.blobs.audio.getBlob(recording.id);
+				await services.blobs.get(recording.audioBlobId);
 
 			if (getAudioBlobError) return Err(getAudioBlobError);
 

@@ -2,7 +2,7 @@
  * Wire URL paths and Hono route patterns for the Epicenter API.
  *
  * The shared home for API route contracts whose domain has no dedicated shared
- * package of its own: the session projection, the content-addressed blob store,
+ * package of its own: the session projection, the blob HTTP surface,
  * and the OpenAI-compatible `/v1` inference gateways. This is not a registry of
  * every route in the repo. A route whose domain already owns a shared package
  * lives there instead, beside the protocol it belongs to: `@epicenter/sync`
@@ -42,13 +42,9 @@
  * ```
  */
 
-const stripTrailing = (s: string) => s.replace(/\/+$/, '');
+import { BLOB_ID_ROUTE_REGEX, type BlobId } from '@epicenter/blobs';
 
-/**
- * 64-character lowercase-hex sha256. A blob's id IS its content address, so
- * the route param is constrained to a well-formed digest.
- */
-export const SHA256_HEX_REGEX = '[a-f0-9]{64}';
+const stripTrailing = (s: string) => s.replace(/\/+$/, '');
 
 export const API_ROUTES = {
 	session: {
@@ -56,20 +52,20 @@ export const API_ROUTES = {
 		url: (baseURL: string) => `${stripTrailing(baseURL)}/api/session`,
 	},
 	/**
-	 * Content-addressed blob store. POST mints an upload ticket (presigned R2
-	 * PUT); GET on the collection lists; GET/DELETE by `:sha256` read/remove a
+	 * Opaque-id blob store. POST mints an upload ticket (presigned S3 PUT); GET
+	 * on the collection lists; GET/DELETE by `:blobId` read/remove a
 	 * blob. R2 is the only index: there is no database row. See
-	 * `docs/adr/0089-the-blob-store-is-a-presigned-s3-kernel-and-the-bucket-is-its-only-index.md`.
+	 * ADR-0089 (presigned S3 kernel) as amended by ADR-0148 (opaque BlobId).
 	 */
 	blobs: {
 		list: {
 			pattern: '/api/blobs',
 			url: (baseURL: string) => `${stripTrailing(baseURL)}/api/blobs`,
 		},
-		byHash: {
-			pattern: `/api/blobs/:sha256{${SHA256_HEX_REGEX}}`,
-			url: (baseURL: string, sha256: string) =>
-				`${stripTrailing(baseURL)}/api/blobs/${encodeURIComponent(sha256)}`,
+		byId: {
+			pattern: `/api/blobs/:blobId{${BLOB_ID_ROUTE_REGEX}}`,
+			url: (baseURL: string, blobId: BlobId) =>
+				`${stripTrailing(baseURL)}/api/blobs/${encodeURIComponent(blobId)}`,
 		},
 	},
 	ai: {

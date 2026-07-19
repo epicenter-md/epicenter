@@ -28,6 +28,9 @@ import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { generateBlobId } from '@epicenter/blobs';
+import { createBunBlobs } from '@epicenter/blobs/bun';
+import { desktopBlobUrl } from '@epicenter/blobs/http';
 import type { AgentEngine, EngineChunk } from '@epicenter/workspace/agent';
 import {
 	createQueryHost,
@@ -82,6 +85,10 @@ function testDataDir(): string {
 	return mkdtempSync(join(tmpdir(), 'query-server-test-'));
 }
 
+function createTestBlobs() {
+	return createBunBlobs({ directory: join(testDataDir(), 'blobs') });
+}
+
 function boundPort(server: { port?: number }): number {
 	if (server.port === undefined) throw new Error('server did not bind a port');
 	return server.port;
@@ -109,6 +116,7 @@ async function serveHost(host: QueryHost, page: string = PAGE) {
 		origin,
 		launchToken: TOKEN,
 		staticAssets: await createAppsDistFixture(page),
+		blobs: createTestBlobs(),
 	});
 	const server = Bun.serve({
 		hostname: '127.0.0.1',
@@ -312,6 +320,7 @@ describe('createQueryServer', () => {
 				origin: 'http://127.0.0.1:39130',
 				launchToken: '',
 				staticAssets,
+				blobs: createTestBlobs(),
 			}),
 		).toThrow(/launch token/);
 		for (const origin of [
@@ -326,6 +335,7 @@ describe('createQueryServer', () => {
 					origin,
 					launchToken: TOKEN,
 					staticAssets,
+					blobs: createTestBlobs(),
 				}),
 			).toThrow(/exact http:\/\/127\.0\.0\.1/);
 		}
@@ -797,6 +807,195 @@ describe('createQueryServer', () => {
 	});
 });
 
+describe('local blob routes', () => {
+	test('session authentication protects every local blob operation', async () => {
+		await using host = await createTestHost({
+			engine: scriptedEngine([[]]),
+		});
+		const server = await serveHost(host);
+		const id = generateBlobId();
+		try {
+			for (const method of ['GET', 'HEAD', 'PUT', 'DELETE']) {
+				const response = await fetch(
+					`${server.url.origin}${desktopBlobUrl(id)}`,
+					{ method },
+				);
+				expect(response.status).toBe(401);
+			}
+		} finally {
+			await server.stop(true);
+		}
+	});
+
+	test('put, head, byte-range forms, collision, and idempotent delete share one id', async () => {
+		await using host = await createTestHost({
+			engine: scriptedEngine([[]]),
+		});
+		const server = await serveHost(host);
+		const id = generateBlobId();
+		const url = `${server.url.origin}${desktopBlobUrl(id)}`;
+		const { cookie, origin } = authenticationFor(server);
+		try {
+			const put = await fetch(url, {
+				method: 'PUT',
+				headers: {
+					cookie,
+					'content-type': 'audio/test',
+					origin,
+				},
+				body: '0123456789',
+			});
+			expect(put.status).toBe(201);
+
+			const head = await fetch(url, {
+				method: 'HEAD',
+				headers: { cookie },
+			});
+			expect(head.status).toBe(200);
+			expect(head.headers.get('content-length')).toBe('10');
+			expect(head.headers.get('content-type')).toBe('audio/test');
+			expect(await head.text()).toBe('');
+
+			const range = await fetch(url, {
+				headers: { cookie, range: 'bytes=2-5' },
+			});
+			expect(range.status).toBe(206);
+			expect(range.headers.get('content-range')).toBe('bytes 2-5/10');
+			expect(await range.text()).toBe('2345');
+			const suffix = await fetch(url, {
+				headers: { cookie, range: 'bytes=-3' },
+			});
+			expect(suffix.status).toBe(206);
+			expect(suffix.headers.get('content-range')).toBe('bytes 7-9/10');
+			expect(await suffix.text()).toBe('789');
+			const oversizedSuffix = await fetch(url, {
+				headers: { cookie, range: 'bytes=-99' },
+			});
+			expect(oversizedSuffix.status).toBe(206);
+			expect(oversizedSuffix.headers.get('content-range')).toBe('bytes 0-9/10');
+			expect(await oversizedSuffix.text()).toBe('0123456789');
+			const openEnded = await fetch(url, {
+				headers: { cookie, range: 'bytes=6-' },
+			});
+			expect(openEnded.status).toBe(206);
+			expect(openEnded.headers.get('content-range')).toBe('bytes 6-9/10');
+			expect(await openEnded.text()).toBe('6789');
+			const clamped = await fetch(url, {
+				headers: { cookie, range: 'bytes=7-99' },
+			});
+			expect(clamped.status).toBe(206);
+			expect(clamped.headers.get('content-range')).toBe('bytes 7-9/10');
+			expect(await clamped.text()).toBe('789');
+			const unsatisfiable = await fetch(url, {
+				headers: { cookie, range: 'bytes=99-' },
+			});
+			expect(unsatisfiable.status).toBe(416);
+			expect(unsatisfiable.headers.get('content-range')).toBe('bytes */10');
+			for (const refusedRange of [
+				'bytes=',
+				'bytes=-',
+				'bytes=5-2',
+				'bytes=0-1,3-4',
+				'bytes = 0-1',
+				'items=0-1',
+			]) {
+				const refused = await fetch(url, {
+					headers: { cookie, range: refusedRange },
+				});
+				expect(refused.status).toBe(416);
+				expect(refused.headers.get('content-range')).toBe('bytes */10');
+			}
+
+			const emptyId = generateBlobId();
+			const emptyUrl = `${server.url.origin}${desktopBlobUrl(emptyId)}`;
+			expect(
+				(
+					await fetch(emptyUrl, {
+						method: 'PUT',
+						headers: { cookie, origin },
+						body: '',
+					})
+				).status,
+			).toBe(201);
+			const emptyRange = await fetch(emptyUrl, {
+				headers: { cookie, range: 'bytes=0-' },
+			});
+			expect(emptyRange.status).toBe(416);
+			expect(emptyRange.headers.get('content-range')).toBe('bytes */0');
+
+			const collision = await fetch(url, {
+				method: 'PUT',
+				headers: { cookie, 'content-type': 'audio/test', origin },
+				body: 'replacement',
+			});
+			expect(collision.status).toBe(409);
+
+			for (const expectedGetStatus of [404, 404]) {
+				const deleted = await fetch(url, {
+					method: 'DELETE',
+					headers: { cookie, origin },
+				});
+				expect(deleted.status).toBe(204);
+				const missing = await fetch(url, { headers: { cookie } });
+				expect(missing.status).toBe(expectedGetStatus);
+			}
+		} finally {
+			await server.stop(true);
+		}
+	});
+
+	test('hostile blob content is downloadable but cannot become same-origin code', async () => {
+		await using host = await createTestHost({
+			engine: scriptedEngine([[]]),
+		});
+		const server = await serveHost(host);
+		const id = generateBlobId();
+		const url = `${server.url.origin}${desktopBlobUrl(id)}`;
+		const { cookie, origin } = authenticationFor(server);
+		try {
+			expect(
+				(
+					await fetch(url, {
+						method: 'PUT',
+						headers: { cookie, 'content-type': 'text/html', origin },
+						body: '<script>globalThis.compromised = true</script>',
+					})
+				).status,
+			).toBe(201);
+
+			const response = await fetch(url, { headers: { cookie } });
+			expect(response.headers.get('content-disposition')).toBe('attachment');
+			expect(response.headers.get('content-security-policy')).toBe(
+				"sandbox; default-src 'none'",
+			);
+			expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+			expect(response.headers.get('cache-control')).toBe('no-store');
+			expect(response.headers.get('cross-origin-resource-policy')).toBe(
+				'same-origin',
+			);
+			expect(await response.text()).toContain('<script>');
+		} finally {
+			await server.stop(true);
+		}
+	});
+
+	test('path-hostile and foreign ids are rejected before filesystem access', async () => {
+		await using host = await createTestHost({
+			engine: scriptedEngine([[]]),
+		});
+		const server = await serveHost(host);
+		try {
+			const response = await fetch(
+				`${server.url.origin}/api/local-blobs/not-a-blob-id`,
+				{ headers: authenticatedHeaders(server) },
+			);
+			expect(response.status).toBe(400);
+		} finally {
+			await server.stop(true);
+		}
+	});
+});
+
 // ============================================================================
 // Built SPA Tests (the real vite build)
 // ============================================================================
@@ -1039,6 +1238,7 @@ describe('sidecar end-to-end smoke', () => {
 					EPICENTER_QUERY_INFERENCE_URL: `${inference.url.origin}/v1`,
 					EPICENTER_QUERY_MODEL: 'fake-model',
 					// Keep the host's replicas out of the real user data directory.
+					EPICENTER_DATA_DIR: testDataDir(),
 					EPICENTER_QUERY_DATA_DIR: testDataDir(),
 				},
 				stdin: 'pipe',
@@ -1141,6 +1341,7 @@ describe('sidecar end-to-end smoke', () => {
 					EPICENTER_APPS_DIST: appsDist,
 					EPICENTER_QUERY_INFERENCE_URL: 'http://127.0.0.1:1/v1',
 					EPICENTER_QUERY_MODEL: 'unused-model',
+					EPICENTER_DATA_DIR: testDataDir(),
 					EPICENTER_QUERY_DATA_DIR: testDataDir(),
 				},
 				stdin: 'pipe',
@@ -1182,6 +1383,7 @@ describe('sidecar end-to-end smoke', () => {
 					EPICENTER_APPS_DIST: appsDist,
 					EPICENTER_QUERY_INFERENCE_URL: 'http://127.0.0.1:1/v1',
 					EPICENTER_QUERY_MODEL: 'unused-model',
+					EPICENTER_DATA_DIR: testDataDir(),
 					EPICENTER_QUERY_DATA_DIR: testDataDir(),
 				},
 				stdin: 'pipe',

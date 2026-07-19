@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { Skeleton } from '@epicenter/ui/skeleton';
-	import { recordings } from '$lib/state/recordings.svelte';
+	import type { Recording } from '$lib/state/recordings.svelte';
+	import RecordingStorageAction from '../RecordingStorageAction.svelte';
 	import TranscribeRecordingButton from './TranscribeRecordingButton.svelte';
 
 	/**
@@ -13,15 +13,10 @@
 	 * the row lean stops it from re-offering what its neighboring columns and the
 	 * modal already do.
 	 */
-	let { recordingId }: { recordingId: string } = $props();
-
-	const recording = $derived(recordings.get(recordingId));
+	let { recording }: { recording: Recording } = $props();
 </script>
 
 <div class="flex items-center gap-1">
-	{#if !recording}
-		<Skeleton class="size-8" />
-	{:else}
-		<TranscribeRecordingButton {recording} />
-	{/if}
+	<TranscribeRecordingButton {recording} />
+	<RecordingStorageAction {recording} />
 </div>

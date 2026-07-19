@@ -11,7 +11,7 @@
  *    by a fake `Ok` wrap.
  *
  * 2. Provide the hand-rolled commands for raw byte traffic
- *    (`encodeRecordingForUpload` and `readRecordingArtifact`). The Rust side returns
+ *    (`encodeRecordingForUpload`). The Rust side returns
  *    `tauri::ipc::Response::new(opus_bytes)` for upload-cost reasons;
  *    tauri-specta cannot generate a typed binding for that shape because
  *    `Response` is not `specta::Type`. The handwritten wrapper here is the
@@ -86,26 +86,12 @@ const wrappedGen = Object.fromEntries(
  * struct. Error path is a plain string from Tauri's reject channel.
  */
 async function encodeRecordingForUpload(
-	recordingId: string,
+	audioBlobId: string,
 ): Promise<Result<ArrayBuffer, string>> {
 	try {
 		return Ok(
 			await rawInvoke<ArrayBuffer>('encode_recording_for_upload', {
-				recordingId,
-			}),
-		);
-	} catch (e) {
-		return Err(String(e));
-	}
-}
-
-async function readRecordingArtifact(
-	recordingId: string,
-): Promise<Result<ArrayBuffer, string>> {
-	try {
-		return Ok(
-			await rawInvoke<ArrayBuffer>('read_recording_artifact', {
-				recordingId,
+				audioBlobId,
 			}),
 		);
 	} catch (e) {
@@ -116,7 +102,6 @@ async function readRecordingArtifact(
 export const commands = {
 	...wrappedGen,
 	encodeRecordingForUpload,
-	readRecordingArtifact,
 };
 
 export type {
@@ -126,7 +111,6 @@ export type {
 	GlobalShortcutRegistration,
 	ModelInfo,
 	RecorderError as IpcRecorderError,
-	RecordingArtifact,
 	TranscriptionError,
 	TranscriptionSpec,
 } from './bindings.gen';

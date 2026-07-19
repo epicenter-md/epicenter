@@ -1,3 +1,4 @@
+import { BLOB_ID_ROUTE_REGEX, type BlobId } from '@epicenter/blobs';
 import { field } from '@epicenter/field';
 import {
 	defineTable,
@@ -6,6 +7,7 @@ import {
 } from '@epicenter/workspace/sqlite';
 import type { Static, TSchema } from 'typebox';
 import { Type } from 'typebox';
+import type { Brand } from 'wellcrafted/brand';
 import { RECORDING_TRIGGERS } from '../constants/audio/recording-triggers';
 import { INFERENCE_PROVIDER_IDS } from '../constants/inference-provider-ids';
 import { SUPPORTED_LANGUAGES } from '../constants/languages';
@@ -23,26 +25,34 @@ const TranscriptionOutcome = Type.Union([
 	}),
 ]);
 
+const recordingFields = {
+	/** Opaque local and remote identity for this recording's immutable audio. */
+	audioBlobId: field.string<BlobId>({
+		pattern: `^${BLOB_ID_ROUTE_REGEX}$`,
+	}),
+	/** Set only after a future explicit replica upload succeeds. */
+	uploadedAt: field.json(Type.Union([field.instant(), Type.Null()])),
+	title: field.string(),
+	recordedAt: field.instant(),
+	recordedAtZone: field.string(),
+	transcript: field.string(),
+	polishedTranscript: field.json(Type.Union([Type.String(), Type.Null()])),
+	duration: field.json(Type.Union([Type.Number(), Type.Null()])),
+	transcription: field.json(Type.Union([TranscriptionOutcome, Type.Null()])),
+} as const;
+
 export const recordingsTable = defineTable({
-	fields: {
-		/** Stable audio-artifact identity. The canonical record id stays structural. */
-		sourceId: field.string(),
-		title: field.string(),
-		recordedAt: field.instant(),
-		recordedAtZone: field.string(),
-		transcript: field.string(),
-		polishedTranscript: field.json(Type.Union([Type.String(), Type.Null()])),
-		duration: field.json(Type.Union([Type.Number(), Type.Null()])),
-		transcription: field.json(Type.Union([TranscriptionOutcome, Type.Null()])),
-	},
+	fields: recordingFields,
 });
 
-type RecordingRecord = RowFor<typeof recordingsTable>;
-
-/** App-facing recording identity remains the audio artifact id. */
-export type Recording = Omit<RecordingRecord, 'id' | 'sourceId'> & {
-	id: string;
+type RecordingFields = {
+	[K in keyof typeof recordingFields]: Static<(typeof recordingFields)[K]>;
 };
+
+/** Structural workspace identity, independent from the recording's audio blob. */
+export type RecordingId = string & Brand<'RecordingId'>;
+
+export type Recording = RecordingFields & { id: RecordingId };
 
 export const recipesTable = defineTable({
 	fields: {
@@ -90,6 +100,7 @@ export const whisperingSettingEntries = {
 	'output.recipe.enter': field.boolean(),
 	'recording.trigger': field.select(RECORDING_TRIGGERS),
 	'recording.pausePlayback': field.boolean(),
+	'recording.autoUpload': field.boolean(),
 	'transcription.service': field.select(TRANSCRIPTION_SERVICE_IDS),
 	'transcription.openai.model': field.string(),
 	'transcription.groq.model': field.string(),

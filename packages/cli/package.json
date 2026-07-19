@@ -32,6 +32,7 @@
 	},
 	"dependencies": {
 		"@epicenter/auth": "workspace:*",
+		"@epicenter/blobs": "workspace:*",
 		"@epicenter/client": "workspace:*",
 		"@epicenter/identity": "workspace:*",
 		"@epicenter/matter-core": "workspace:*",

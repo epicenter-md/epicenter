@@ -1,5 +1,5 @@
 /**
- * Portable S3 client for the content-addressed blob store.
+ * Portable S3 client for the opaque-id blob store.
  *
  * The whole module talks plain S3-over-HTTPS via `aws4fetch` (SigV4) — there is
  * NO Cloudflare Workers R2 binding here, by design. aws4fetch uses only `fetch`
@@ -11,34 +11,15 @@
  *
  * Blob bytes never pass through the server. PUT and GET are presigned and the
  * client talks to the store directly; only the cheap control-plane operations
- * (exists for dedup, list for the index, delete) are signed and made
+ * (exists for reads, list for the index, delete) are signed and made
  * server-side here. Grounded against the aws4fetch source and Cloudflare R2
  * docs; see
- * ADR-0089 (the blob store is a presigned-S3 kernel and the bucket is its only index).
+ * ADR-0089 (presigned S3 kernel) as amended by ADR-0148 (opaque BlobId).
  *
- * ── The two sha256 headers, which are easy to conflate ──────────────────────
- *
- *   x-amz-content-sha256  hex (or the literal `UNSIGNED-PAYLOAD`). The SigV4
- *                         *payload hash* in the canonical request. For a
- *                         presigned URL the body is unknown at sign time, so
- *                         aws4fetch uses `UNSIGNED-PAYLOAD` as the canonical
- *                         payload hash whenever `service === 's3' && signQuery`
- *                         (it does not emit a header). The client never resends
- *                         it. Pinning `service: 's3'` is what gates this AND the
- *                         single-encoded S3 canonical path, so it is required.
- *
- *   x-amz-checksum-sha256 base64 of the same 32-byte digest. The S3 *object
- *                         checksum*. R2 verifies the uploaded bytes against it
- *                         on a single PutObject and rejects a mismatch with
- *                         400 BadDigest. This is the integrity enforcement that
- *                         makes content addressing real: the object can only
- *                         appear under a key whose hash its bytes actually
- *                         match. It must be present BEFORE signing (so it enters
- *                         `X-Amz-SignedHeaders`) and resent verbatim by the
- *                         client.
- *
- * The blob's key uses the **hex** digest (the content address); the checksum
- * header uses the **base64** of that same digest. {@link hexToBase64} converts.
+ * Presigned PUTs use SigV4's `UNSIGNED-PAYLOAD`: the server never reads or
+ * hashes the bytes. `Content-Type` and `If-None-Match: *` are signed headers.
+ * The latter makes one opaque BlobId immutable at the object-store boundary:
+ * the first PUT wins and a repeated PUT receives 412 Precondition Failed.
  */
 
 import { AwsClient } from 'aws4fetch';
@@ -70,23 +51,6 @@ export type S3Object = { key: string; size: number; uploaded: string };
 
 /** The store handle returned by {@link createS3BlobStore}. */
 export type S3BlobStore = ReturnType<typeof createS3BlobStore>;
-
-/**
- * Convert a 64-char lowercase-hex sha256 to the base64 form S3 wants for
- * `x-amz-checksum-sha256`. Both encode the same 32-byte digest.
- */
-function hexToBase64(hex: string): string {
-	if (hex.length !== 64) {
-		throw new Error(`sha256 hex must be 64 chars, got ${hex.length}`);
-	}
-	const bytes = new Uint8Array(32);
-	for (let i = 0; i < 32; i++) {
-		bytes[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
-	}
-	let binary = '';
-	for (const byte of bytes) binary += String.fromCharCode(byte);
-	return btoa(binary);
-}
 
 /**
  * Build a blob store bound to one S3 endpoint/bucket. Construct per request
@@ -140,46 +104,38 @@ export function createS3BlobStore(config: S3BlobStoreConfig) {
 
 	return {
 		/**
-		 * Presign a PUT that the store will reject unless the uploaded bytes hash
-		 * to `sha256Hex`. `contentType` is pinned into the signature (via
-		 * `allHeaders`) so the stored object carries it; the client must echo
-		 * both `content-type` and `x-amz-checksum-sha256`.
+		 * Presign a create-only PUT. `contentType` and `If-None-Match: *` are
+		 * pinned into the signature, so the client must echo both verbatim.
 		 */
 		async presignPut({
 			key,
 			contentType,
-			sha256Hex,
 			expiresInSeconds,
 		}: {
 			key: string;
 			contentType: string;
-			sha256Hex: string;
 			expiresInSeconds: number;
 		}): Promise<PresignedPut> {
-			const checksumBase64 = hexToBase64(sha256Hex);
 			const url = objectUrl(key);
 			url.searchParams.set('X-Amz-Expires', String(expiresInSeconds));
 
-			const signed = await client.sign(
-				new Request(url, {
-					method: 'PUT',
-					headers: {
-						'content-type': contentType,
-						'x-amz-checksum-sha256': checksumBase64,
-					},
-				}),
+			const signed = await client.sign(url, {
+				method: 'PUT',
+				headers: {
+					'content-type': contentType,
+					'if-none-match': '*',
+				},
 				// signQuery: signature in the query string (a presigned URL).
-				// allHeaders: also pin `content-type` (otherwise unsignable, so
-				// the client could upload any type). The checksum header signs
-				// without it, but content-type needs it.
-				{ aws: { signQuery: true, allHeaders: true } },
-			);
+				// allHeaders: pin both content-type and if-none-match; aws4fetch
+				// otherwise excludes them from the canonical signed-header set.
+				aws: { signQuery: true, allHeaders: true },
+			});
 
 			return {
 				url: signed.url,
 				requiredHeaders: {
 					'content-type': contentType,
-					'x-amz-checksum-sha256': checksumBase64,
+					'if-none-match': '*',
 				},
 			};
 		},
@@ -201,9 +157,8 @@ export function createS3BlobStore(config: S3BlobStoreConfig) {
 		},
 
 		/**
-		 * HeadObject existence check: does this key already exist? Used for
-		 * content-addressed dedup (skip the upload if the object is already there)
-		 * and as the existence gate before a read. Size and upload time are the
+		 * HeadObject existence check: does this key already exist? Used as the
+		 * existence gate before a read. Size and upload time are the
 		 * `list` path's job, so this answers only the boolean the callers need.
 		 */
 		async exists(key: string): Promise<boolean> {
@@ -251,7 +206,7 @@ function xmlTag(xml: string, name: string): string | undefined {
  * Parse the fields we need out of an S3 ListObjectsV2 XML response.
  *
  * Direct extraction (not a full XML parse) is safe here because blob keys are
- * `principals/<principalId>/blobs/<sha256-hex>` — only `[a-z0-9/]`, never an
+ * `principals/<principalId>/blobs/<BlobId>`: only `[a-z0-9_/]`, never an
  * XML-special character, so no entity-unescaping is required. The continuation
  * token is opaque base64 and likewise carries no `<`, `>`, or `&`.
  */

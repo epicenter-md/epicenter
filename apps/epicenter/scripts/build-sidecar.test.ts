@@ -82,6 +82,7 @@ test('compiled production host serves packaged apps and exits on parent EOF', as
 	const sidecar = Bun.spawn([binary, '--runtime-mode=production'], {
 		env: {
 			EPICENTER_DEV_PORT: '49152',
+			EPICENTER_DATA_DIR: dataDir,
 			EPICENTER_QUERY_DATA_DIR: dataDir,
 			EPICENTER_APPS_DIST: join(appDir, 'dist'),
 			EPICENTER_QUERY_INFERENCE_URL: 'http://127.0.0.1:1/v1',

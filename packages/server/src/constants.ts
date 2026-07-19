@@ -9,11 +9,12 @@
 export const MAX_PAYLOAD_BYTES = 5 * 1024 * 1024;
 
 /**
- * Max content-addressed blob size (5 GiB).
+ * Max single-upload blob size (5 GiB).
  *
  * Blob bytes never pass through the Worker: the upload is a presigned PUT
  * straight to R2, so the ~100 MB Worker request-body cap does not apply. The
- * ceiling here is R2's single-PUT limit (~5 GiB); larger
+ * declared-size refusal here is early UX, not a security boundary because the
+ * content length is not signed. R2 enforces its single-PUT limit (~5 GiB); larger
  * objects need multipart (deferred) or the receipt's `external` location.
  * See ADR-0089 (the blob store is a presigned-S3 kernel and the bucket is its only index).
  */

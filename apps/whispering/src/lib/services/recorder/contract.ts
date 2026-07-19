@@ -1,4 +1,10 @@
 import type {
+	BlobAlreadyExists,
+	BlobId,
+	BlobNotFound,
+	BlobStoreFailed,
+} from '@epicenter/blobs';
+import type {
 	Device,
 	DeviceAcquisitionOutcome,
 	DeviceIdentifier,
@@ -68,7 +74,7 @@ export type RecorderError = InferErrors<typeof RecorderError>;
  */
 export type BaseRecordingParams = {
 	selectedDeviceId: DeviceIdentifier | null;
-	recordingId: string;
+	audioBlobId: BlobId;
 };
 
 /**
@@ -97,46 +103,18 @@ export type NavigatorRecordingParams = BaseRecordingParams & {
 	bitrateKbps: string;
 };
 
-/**
- * A durable recording artifact produced by a native recorder that writes the
- * encoded audio to disk: the handle is the canonical reference for
- * transcribe/upload/delete and JS never touches the bytes itself.
- *
- * This is the plain shape of the artifact. The tauri-specta CPAL recorder
- * produces a struct that is structurally identical to this type, so its result
- * satisfies {@link RecorderStopResult} without this contract importing the
- * generated bindings.
- */
-export type RecordingArtifact = {
-	id: string;
-	durationMs: number;
+/** Finalized local audio. Every platform has committed bytes before returning. */
+export type RecorderStopResult = {
+	audioBlobId: BlobId;
+	durationMs: number | null;
 	byteLength: number;
-	mimeType: string;
 };
 
-/**
- * Output of `RecordingSession.stop()`. One of two physical shapes:
- *
- * - `kind: 'artifact'`: a native recorder produced a durable file on disk; the
- *   handle is the canonical reference for transcribe/upload/delete. JS does not
- *   touch the bytes itself.
- * - `kind: 'blob'`: the browser MediaRecorder returned encoded container bytes
- *   (webm/opus, mp4/AAC) the JS side holds in memory. There is intentionally
- *   no `Float32Array` arm: raw PCM never exists as a general front-end value.
- *
- * `durationMs` lives on whichever arm naturally carries it (the native artifact
- * stat, the browser wall-clock measurement). Callers that synthesize a
- * `kind: 'blob'` result from outside the recorder (VAD, file uploads) have no
- * notion of duration at the recorder boundary and pass `null`.
- */
-export type RecorderStopResult =
-	| { kind: 'artifact'; artifact: RecordingArtifact }
-	| {
-			kind: 'blob';
-			blob: Blob;
-			recordingId: string;
-			durationMs: number | null;
-	  };
+export type RecorderStopError =
+	| RecorderError
+	| BlobAlreadyExists
+	| BlobNotFound
+	| BlobStoreFailed;
 
 /**
  * A live recording session returned by the recorder implementation that started it.
@@ -150,8 +128,8 @@ export type RecorderStopResult =
  * stop/cancel.
  */
 export type RecordingSession = {
-	readonly recordingId: string;
-	stop(): Promise<Result<RecorderStopResult, RecorderError>>;
+	readonly audioBlobId: BlobId;
+	stop(): Promise<Result<RecorderStopResult, RecorderStopError>>;
 	/**
 	 * Cancel the in-flight recording and discard it. Success carries no payload
 	 * (a live session can only resolve to "cancelled"); the caller's wrapper is

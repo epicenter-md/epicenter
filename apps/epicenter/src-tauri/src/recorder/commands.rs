@@ -1,12 +1,9 @@
-use crate::recorder::artifact::{
-    clear_artifacts, delete_artifacts, read_artifact_bytes, write_artifact, RecordingArtifact,
-};
+use crate::recorder::blob::write_blob;
 use crate::recorder::error::RecorderError;
 use crate::recorder::recorder::{Recorder, Result};
 use log::{debug, info, warn};
 use serde::Serialize;
 use std::sync::Mutex;
-use tauri::ipc::Response;
 use tauri::{AppHandle, Emitter, State};
 
 const RECORDER_STATE_CHANGED: &str = "recorder:state-changed";
@@ -88,18 +85,17 @@ pub async fn start_recording(
     Ok(())
 }
 
-/// Stop the recorder, write the canonical WAV artifact to
-/// `<appDataDir>/recordings/{id}.wav`, return the small JSON handle.
+/// Stop the recorder, atomically finalize the canonical WAV blob under
+/// `<appDataDir>/blobs/{id}`, and return only its id.
 ///
 /// JS never sees raw PCM samples on the wire: later operations look the
-/// file up by id (`transcribe_recording`, `encode_recording_for_upload`,
-/// and `delete_recording_artifacts`).
+/// blob up by id (`transcribe_recording` and `encode_recording_for_upload`).
 #[tauri::command]
 #[specta::specta]
 pub async fn stop_recording(
     recorder: State<'_, Mutex<Recorder>>,
     app_handle: AppHandle,
-) -> Result<RecordingArtifact> {
+) -> Result<String> {
     info!("Stopping recording");
     let (recording_id, samples) = {
         let mut recorder = recorder
@@ -115,15 +111,12 @@ pub async fn stop_recording(
     // Measured on the critical path on purpose: this synchronous write + fsync
     // is exactly the cost the parked handoff + async-persist optimization would
     // remove. The numbers here decide whether that optimization is worth it.
-    let artifact = crate::timing::measure("stop.wav_write+fsync", || {
-        write_artifact(&app_handle, &recording_id, &samples)
+    let blob_id = crate::timing::measure("stop.wav_write+fsync", || {
+        write_blob(&app_handle, &recording_id, &samples)
     })?;
     emit_recording_state(&app_handle, RecordingState::Idle);
-    info!(
-        "Recording stopped: id={}, duration_ms={}, bytes={}",
-        artifact.id, artifact.duration_ms, artifact.byte_length,
-    );
-    Ok(artifact)
+    info!("Recording stopped: blob_id={}", blob_id,);
+    Ok(blob_id)
 }
 
 #[tauri::command]
@@ -170,53 +163,4 @@ pub async fn get_current_recording_id(
         .lock()
         .map_err(|e| RecorderError::failed(format!("Failed to lock recorder: {e}")))?;
     Ok(recorder.get_current_recording_id())
-}
-
-/// Delete recording artifacts by id.
-///
-/// This is intentionally id-based instead of path-based. The recorder
-/// artifact module owns which files under the recordings directory are blobs,
-/// so TypeScript callers cannot accidentally delete markdown sidecars or
-/// arbitrary files. Missing artifacts are ignored to keep cleanup retryable.
-#[tauri::command]
-#[specta::specta]
-pub async fn delete_recording_artifacts(
-    recording_ids: Vec<String>,
-    app_handle: AppHandle,
-) -> Result<u32> {
-    info!("Deleting {} recording artifacts", recording_ids.len());
-    tokio::task::spawn_blocking(move || delete_artifacts(&app_handle, &recording_ids))
-        .await
-        .map_err(|e| RecorderError::failed(format!("Task join error: {e}")))?
-}
-
-/// Delete every recording artifact while preserving markdown sidecars.
-///
-/// Used by the blob store's `clear()` path. The Rust layer owns the directory
-/// scan because it has the same artifact matching rule used by targeted
-/// deletion and transcription lookup.
-#[tauri::command]
-#[specta::specta]
-pub async fn clear_recording_artifacts(app_handle: AppHandle) -> Result<u32> {
-    info!("Clearing recording artifacts");
-    tokio::task::spawn_blocking(move || clear_artifacts(&app_handle))
-        .await
-        .map_err(|e| RecorderError::failed(format!("Task join error: {e}")))?
-}
-
-/// Read one recording artifact as a raw IPC byte body.
-///
-/// This command deliberately accepts an app-owned id rather than a path. Its
-/// raw response lives outside tauri-specta and has a handwritten TypeScript
-/// wrapper, matching `encode_recording_for_upload`.
-#[tauri::command]
-pub async fn read_recording_artifact(
-    recording_id: String,
-    app_handle: AppHandle,
-) -> std::result::Result<Response, String> {
-    tauri::async_runtime::spawn_blocking(move || read_artifact_bytes(&app_handle, &recording_id))
-        .await
-        .map_err(|e| format!("background artifact read failed: {e}"))?
-        .map(Response::new)
-        .map_err(|e| e.to_string())
 }

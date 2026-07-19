@@ -40,13 +40,6 @@ export type ModelInfo = {
 	downloaded: boolean;
 };
 
-export type RecordingArtifact = {
-	id: string;
-	durationMs: number;
-	byteLength: number;
-	mimeType: string;
-};
-
 export type TranscriptionError =
 	| { name: 'AudioReadError'; message: string }
 	| { name: 'ModelLoadError'; message: string }

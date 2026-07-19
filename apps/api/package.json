@@ -32,6 +32,7 @@
 		"@better-auth/drizzle-adapter": "catalog:",
 		"@better-auth/oauth-provider": "catalog:",
 		"@epicenter/auth": "workspace:*",
+		"@epicenter/blobs": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/identity": "workspace:*",
 		"@epicenter/server": "workspace:*",

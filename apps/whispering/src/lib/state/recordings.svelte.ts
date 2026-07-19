@@ -1,5 +1,4 @@
 import type { RowLensError } from '@epicenter/workspace/sqlite';
-import { Ok } from 'wellcrafted/result';
 import { onWhisperingRecordsChanged, whispering } from '#platform/whispering';
 import type { Recording } from '$lib/workspace';
 
@@ -9,7 +8,6 @@ function createRecordings() {
 	let rows = $state.raw<Recording[]>([]);
 	let nonconforming = $state.raw<RowLensError[]>([]);
 	let loadError = $state.raw<unknown>(null);
-	let canonicalIdBySourceId = new Map<string, string>();
 	let refreshGeneration = 0;
 	const sorted = $derived(
 		rows.toSorted(
@@ -23,26 +21,27 @@ function createRecordings() {
 		const generation = ++refreshGeneration;
 		const nextRows: Recording[] = [];
 		const nextNonconforming: RowLensError[] = [];
-		const nextCanonicalIds = new Map<string, string>();
 		try {
 			const listed = await whispering.tables.recordings.list();
-			for (const { id: canonicalId, sourceId, ...recording } of listed.rows) {
-				if (nextCanonicalIds.has(sourceId)) {
-					throw new Error(`Duplicate recording source id '${sourceId}'`);
-				}
-				nextCanonicalIds.set(sourceId, canonicalId);
-				nextRows.push({ id: sourceId, ...recording });
+			for (const recording of listed.rows) {
+				nextRows.push(recording as Recording);
 			}
 			nextNonconforming.push(...listed.nonconforming);
 			if (generation !== refreshGeneration) return;
 			rows = nextRows;
 			nonconforming = nextNonconforming;
-			canonicalIdBySourceId = nextCanonicalIds;
 			loadError = null;
 		} catch (cause) {
 			if (generation === refreshGeneration) loadError = cause;
 			throw cause;
 		}
+	}
+
+	function refreshProjection(): void {
+		// A durable mutation and a projection refresh are different commits. Once
+		// SQLite accepts the write, callers must never mistake a later read failure
+		// for a failed mutation and run destructive compensation against live data.
+		void refresh().catch(() => undefined);
 	}
 
 	const whenReady = refresh();
@@ -72,48 +71,25 @@ function createRecordings() {
 		get loadError() {
 			return loadError;
 		},
-		get(id: string) {
+		get(id: Recording['id']) {
 			return rows.find((recording) => recording.id === id);
 		},
-		async set(recording: Recording): Promise<void> {
-			const { id: sourceId, ...value } = recording;
-			const canonicalId = canonicalIdBySourceId.get(sourceId);
-			if (canonicalId) {
-				const result = await whispering.tables.recordings.update(
-					canonicalId,
-					value,
-				);
-				if (result.error !== null) throw result.error;
-			} else {
-				await whispering.tables.recordings.create({ sourceId, ...value });
-			}
-			await refresh();
+		async create(value: Omit<Recording, 'id'>): Promise<Recording> {
+			const created = await whispering.tables.recordings.create(value);
+			refreshProjection();
+			return created as Recording;
 		},
-		async update(id: string, partial: Partial<Omit<Recording, 'id'>>) {
-			const canonicalId = canonicalIdBySourceId.get(id);
-			if (!canonicalId) return Ok(undefined);
-			const result = await whispering.tables.recordings.update(
-				canonicalId,
-				partial,
-			);
-			await refresh();
+		async update(
+			id: Recording['id'],
+			partial: Partial<Omit<Recording, 'id' | 'audioBlobId'>>,
+		) {
+			const result = await whispering.tables.recordings.update(id, partial);
+			refreshProjection();
 			return result;
 		},
-		async delete(id: string): Promise<void> {
-			const canonicalId = canonicalIdBySourceId.get(id);
-			if (!canonicalId) return;
-			await whispering.tables.recordings.delete(canonicalId);
-			await refresh();
-		},
-		async bulkDelete(ids: string[]): Promise<void> {
-			await Promise.all(
-				ids.map(async (id) => {
-					const canonicalId = canonicalIdBySourceId.get(id);
-					if (canonicalId)
-						await whispering.tables.recordings.delete(canonicalId);
-				}),
-			);
-			await refresh();
+		async delete(id: Recording['id']): Promise<void> {
+			await whispering.tables.recordings.delete(id);
+			refreshProjection();
 		},
 		refresh,
 	};

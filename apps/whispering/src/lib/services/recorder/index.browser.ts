@@ -1,9 +1,11 @@
+import type { BlobId } from '@epicenter/blobs';
 import {
 	cleanupRecordingStream,
 	enumerateDevices,
 	getRecordingStream,
 } from '@epicenter/recorder';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
+import { AudioBlobsLive } from '#platform/blobs';
 import {
 	type NavigatorRecordingParams,
 	RecorderError,
@@ -30,7 +32,7 @@ const TIMESLICE_MS = 1000;
  */
 function createBrowserRecorder(): RecorderService<NavigatorRecordingParams> {
 	function buildSession(args: {
-		recordingId: string;
+		audioBlobId: BlobId;
 		stream: MediaStream;
 		mediaRecorder: MediaRecorder;
 		recordedChunks: Blob[];
@@ -38,7 +40,7 @@ function createBrowserRecorder(): RecorderService<NavigatorRecordingParams> {
 		stopLevelMeter: () => void;
 	}) {
 		const {
-			recordingId,
+			audioBlobId,
 			stream,
 			mediaRecorder,
 			recordedChunks,
@@ -65,7 +67,7 @@ function createBrowserRecorder(): RecorderService<NavigatorRecordingParams> {
 		};
 
 		const recordingSession = {
-			recordingId,
+			audioBlobId,
 
 			stop: async () => {
 				const { data: blob, error: stopError } = await tryAsync({
@@ -84,11 +86,15 @@ function createBrowserRecorder(): RecorderService<NavigatorRecordingParams> {
 
 				const durationMs = Date.now() - startedAtMs;
 
+				if (stopError) {
+					teardown();
+					return Err(stopError);
+				}
+				const { error: putError } = await AudioBlobsLive.put(audioBlobId, blob);
 				teardown();
+				if (putError !== null) return Err(putError);
 
-				if (stopError) return Err(stopError);
-
-				return Ok({ kind: 'blob', blob, recordingId, durationMs });
+				return Ok({ audioBlobId, durationMs, byteLength: blob.size });
 			},
 
 			cancel: async () => {
@@ -135,7 +141,7 @@ function createBrowserRecorder(): RecorderService<NavigatorRecordingParams> {
 		},
 
 		startRecording: async (
-			{ selectedDeviceId, recordingId, bitrateKbps }: NavigatorRecordingParams,
+			{ selectedDeviceId, audioBlobId, bitrateKbps }: NavigatorRecordingParams,
 			{ onLevel }: RecordingCallbacks,
 		) => {
 			const { data: streamResult, error: acquireStreamError } =
@@ -187,7 +193,7 @@ function createBrowserRecorder(): RecorderService<NavigatorRecordingParams> {
 			const startedAtMs = Date.now();
 
 			const session = buildSession({
-				recordingId,
+				audioBlobId,
 				stream,
 				mediaRecorder,
 				recordedChunks,

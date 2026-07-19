@@ -1,21 +1,29 @@
 import type { Accessor } from '@tanstack/svelte-query';
 import { defineKeys } from 'wellcrafted/query';
+import { getRecordingAudioAvailability } from '$lib/operations/recording-audio';
 import { defineQuery } from '$lib/rpc/client';
-import { services } from '$lib/services';
+import type { Recording } from '$lib/state/recordings.svelte';
 
 export const audioKeys = defineKeys({
-	playbackUrl: (id: string) => ['audio', 'playbackUrl', id] as const,
+	availability: (
+		id: Recording['id'],
+		audioBlobId: Recording['audioBlobId'],
+		uploadedAt: Recording['uploadedAt'],
+	) => ['audio', 'availability', id, audioBlobId, uploadedAt] as const,
 });
 
 export const audio = {
-	/**
-	 * Get audio playback URL for a recording by ID.
-	 * Audio blobs are too large for Yjs CRDTs, so they're still served
-	 * from Dexie (web) / filesystem (desktop) via BlobStore.
-	 */
-	getPlaybackUrl: (id: Accessor<string>) =>
-		defineQuery({
-			queryKey: audioKeys.playbackUrl(id()),
-			queryFn: () => services.blobs.audio.ensurePlaybackUrl(id()),
-		}),
+	availability: (
+		recording: Accessor<Pick<Recording, 'id' | 'audioBlobId' | 'uploadedAt'>>,
+	) => {
+		const current = recording();
+		return defineQuery({
+			queryKey: audioKeys.availability(
+				current.id,
+				current.audioBlobId,
+				current.uploadedAt,
+			),
+			queryFn: () => getRecordingAudioAvailability(recording()),
+		});
+	},
 };

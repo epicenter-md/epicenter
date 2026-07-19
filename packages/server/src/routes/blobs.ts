@@ -1,14 +1,14 @@
 /**
- * Blobs sub-app: a content-addressed object store where S3 IS the index.
+ * Blobs sub-app: an opaque-id object store where S3 IS the index.
  *
  * Uniform principal-partitioned URL shape:
  *   POST   /api/blobs              authed: request an upload ticket
  *   GET    /api/blobs              authed: list the principal's blobs
- *   GET    /api/blobs/:sha256      authed: read (302 to presigned GET)
- *   DELETE /api/blobs/:sha256      authed: delete
+ *   GET    /api/blobs/:blobId      authed: read (302 to presigned GET)
+ *   DELETE /api/blobs/:blobId      authed: delete
  *
  * There is NO database row, NO queue, and NO event notification. The blob's
- * key IS its sha256 content address, so the store itself answers "does it
+ * key contains its caller-minted BlobId, so the store itself answers "does it
  * exist" (exists) and "what do I have" (list). Rich metadata (source URL,
  * references) lives in the documents that cite the blob, not here.
  *
@@ -16,18 +16,18 @@
  * via aws4fetch, no Cloudflare Workers R2 binding, so the identical route runs
  * on the hosted Worker (against R2) and in a self-hosted Node binary (against
  * Garage/S3). Uploads never pass through the server: POST mints a
- * presigned PUT and the client streams bytes straight to the store, which
- * enforces the sha256 checksum and rejects a mismatch. That removes the ~100 MB
- * Worker request-body ceiling and the in-server hashing cost. The object
- * appearing under its hash IS the record of a successful upload; no confirm
- * step.
+ * presigned create-only PUT and the client streams bytes straight to the store.
+ * That removes the ~100 MB Worker request-body ceiling and all hashing cost.
+ * The object appearing under its BlobId is the successful upload record; no
+ * confirm step.
  *
  * v1 is all-private: every route is auth gated (R2 public access is
  * bucket-level, so a public tier is a separate bucket, deferred). See
- * `docs/adr/0089-the-blob-store-is-a-presigned-s3-kernel-and-the-bucket-is-its-only-index.md`.
+ * ADR-0089 (presigned S3 kernel) as amended by ADR-0148 (opaque BlobId).
  */
 
-import { API_ROUTES, SHA256_HEX_REGEX } from '@epicenter/constants/api-routes';
+import { type BlobId, parseBlobId } from '@epicenter/blobs';
+import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { Hono, type MiddlewareHandler } from 'hono';
@@ -43,23 +43,19 @@ import {
 import type { Env } from '../types.js';
 import { BlobError } from './blob-errors.js';
 
-/** Anchored lowercase-hex sha256, built from the SAME {@link SHA256_HEX_REGEX}
- * the `:sha256` route param is constrained to. The route param is constrained by
- * Hono; the POST body's `sha256` is a plain field, so it is validated against
- * this here. One source of truth for the digest shape. */
-const SHA256_HEX = new RegExp(`^${SHA256_HEX_REGEX}$`);
-
 /** Presigned-URL lifetimes. Short: a presigned URL is a bearer token. */
 const PUT_TTL_SECONDS = 300;
 const GET_TTL_SECONDS = 120;
 
 /**
  * Body of an upload-ticket request. Shape is validated here; the domain
- * checks (hex format, positive integer size, ceiling) run in the handler so
- * they return structured `BlobError`s.
+ * checks (BlobId format, non-negative declared size, ceiling) run in the
+ * handler so they return structured `BlobError`s. `sizeBytes` is an early
+ * convenience refusal, not an integrity claim: S3 remains authoritative for
+ * the actual uploaded object size.
  */
 const TicketBody = type({
-	sha256: 'string',
+	blobId: 'string',
 	sizeBytes: 'number',
 	contentType: 'string',
 });
@@ -138,24 +134,24 @@ const requireBlobStore: MiddlewareHandler = createMiddleware<BlobEnv>(
 );
 
 const blobsApp = new Hono<BlobEnv>()
-	// POST: request an upload ticket (presigned PUT, or a duplicate hit).
+	// POST: request a create-only presigned PUT.
 	.post(
 		API_ROUTES.blobs.list.pattern,
 		describeRoute({
-			description:
-				'Request an upload ticket for a content-addressed blob (presigned S3 PUT).',
+			description: 'Request an upload ticket for an opaque-id blob.',
 			tags: ['blobs'],
 		}),
 		sValidator('json', TicketBody),
 		async (c) => {
 			const principalId = c.var.principal.id;
-			const { sha256, sizeBytes, contentType } = c.req.valid('json');
+			const { blobId: rawBlobId, sizeBytes, contentType } = c.req.valid('json');
+			const blobId = parseBlobId(rawBlobId);
 
-			if (!SHA256_HEX.test(sha256)) {
-				const err = BlobError.InvalidSha256({ value: sha256 });
+			if (!blobId) {
+				const err = BlobError.InvalidBlobId({ value: rawBlobId });
 				return c.json(err, err.error.status);
 			}
-			if (!Number.isInteger(sizeBytes) || sizeBytes <= 0) {
+			if (!Number.isInteger(sizeBytes) || sizeBytes < 0) {
 				const err = BlobError.InvalidSize({ value: sizeBytes });
 				return c.json(err, err.error.status);
 			}
@@ -167,30 +163,19 @@ const blobsApp = new Hono<BlobEnv>()
 				return c.json(err, err.error.status);
 			}
 
-			const key = blobKey(principalId, sha256);
-			const url = API_ROUTES.blobs.byHash.url(c.var.authBaseURL, sha256);
-
-			// Dedup within the principal boundary: if the object already exists, the
-			// upload is a no-op. Content addressing makes this safe and cheap (one
-			// HEAD).
-			if (await c.var.blobStore.exists(key)) {
-				return c.json({ status: 'duplicate' as const, url });
-			}
+			const key = blobKey(principalId, blobId);
+			const url = API_ROUTES.blobs.byId.url(c.var.authBaseURL, blobId);
 
 			const { url: uploadUrl, requiredHeaders } =
 				await c.var.blobStore.presignPut({
 					key,
 					contentType: contentType || 'application/octet-stream',
-					sha256Hex: sha256,
 					expiresInSeconds: PUT_TTL_SECONDS,
 				});
 
-			// The ticket carries only what the uploader acts on: the read URL (which
-			// ends in the sha256 the caller sent), the presigned PUT, and the signed
-			// headers to echo. The PUT's TTL rides inside `uploadUrl` as the standard
-			// `X-Amz-Expires` query param.
+			// The ticket carries only what the uploader acts on. The PUT is
+			// create-only; clients treat 412 as idempotent success for this BlobId.
 			return c.json({
-				status: 'upload' as const,
 				url,
 				uploadUrl,
 				requiredHeaders,
@@ -210,9 +195,9 @@ const blobsApp = new Hono<BlobEnv>()
 			return c.json(blobs);
 		},
 	)
-	// GET by hash: read (302 to short-TTL presigned GET).
+	// GET by id: read (302 to short-TTL presigned GET).
 	.get(
-		API_ROUTES.blobs.byHash.pattern,
+		API_ROUTES.blobs.byId.pattern,
 		describeRoute({
 			description:
 				'Read a blob: 302-redirect to a short-lived presigned GET URL.',
@@ -220,8 +205,9 @@ const blobsApp = new Hono<BlobEnv>()
 		}),
 		async (c) => {
 			const principalId = c.var.principal.id;
-			const sha256 = c.req.param('sha256');
-			const key = blobKey(principalId, sha256);
+			const blobId = parseBlobId(c.req.param('blobId'));
+			if (!blobId) return c.notFound();
+			const key = blobKey(principalId, blobId);
 			if (!(await c.var.blobStore.exists(key))) {
 				const err = BlobError.NotFound();
 				return c.json(err, err.error.status);
@@ -233,36 +219,36 @@ const blobsApp = new Hono<BlobEnv>()
 			return c.redirect(presignedGet, 302);
 		},
 	)
-	// DELETE by hash: principal-local, idempotent.
+	// DELETE by id: principal-local, idempotent.
 	.delete(
-		API_ROUTES.blobs.byHash.pattern,
+		API_ROUTES.blobs.byId.pattern,
 		describeRoute({
 			description: 'Delete a blob for the current principal.',
 			tags: ['blobs'],
 		}),
 		async (c) => {
 			const principalId = c.var.principal.id;
-			const sha256 = c.req.param('sha256');
-			await c.var.blobStore.delete(blobKey(principalId, sha256));
+			const blobId = parseBlobId(c.req.param('blobId'));
+			if (!blobId) return c.notFound();
+			await c.var.blobStore.delete(blobKey(principalId, blobId));
 			return c.body(null, 204);
 		},
 	);
 
 /**
- * Enumerate one principal's blobs by listing the store prefix. The sha256 is the
- * key minus the `principals/<principalId>/blobs/` prefix.
+ * Enumerate one principal's canonical blobs by listing the store prefix. Keys
+ * from the retired hash protocol are deliberately invisible.
  */
 async function listPrincipalBlobs(
 	store: S3BlobStore,
 	principalId: Env['Variables']['principal']['id'],
-): Promise<{ sha256: string; size: number; uploaded: string }[]> {
+): Promise<{ blobId: BlobId; size: number; uploaded: string }[]> {
 	const prefix = blobPrincipalPrefix(principalId);
 	const objects = await store.list(prefix);
-	return objects.map((obj) => ({
-		sha256: obj.key.slice(prefix.length),
-		size: obj.size,
-		uploaded: obj.uploaded,
-	}));
+	return objects.flatMap((obj) => {
+		const blobId = parseBlobId(obj.key.slice(prefix.length));
+		return blobId ? [{ blobId, size: obj.size, uploaded: obj.uploaded }] : [];
+	});
 }
 
 /**
@@ -292,6 +278,6 @@ export function mountBlobsApp<E extends Env = Env>(
 	];
 
 	app.use(API_ROUTES.blobs.list.pattern, ...chain);
-	app.on(['GET', 'DELETE'], API_ROUTES.blobs.byHash.pattern, ...chain);
+	app.on(['GET', 'DELETE'], API_ROUTES.blobs.byId.pattern, ...chain);
 	app.route('/', blobsApp);
 }

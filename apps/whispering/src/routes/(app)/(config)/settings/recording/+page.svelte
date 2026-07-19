@@ -13,12 +13,14 @@
 		SAMPLE_RATE_OPTIONS,
 	} from '$lib/constants/audio';
 	import { report } from '$lib/report';
+	import { services } from '$lib/services';
 	import { asDeviceIdentifier } from '@epicenter/recorder';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import { os } from '#platform/os';
 	import { manualRecorderConfig } from '#platform/manual-recorder-config';
 	import { tauri } from '#platform/tauri';
+	import { auth } from '#platform/auth';
 	import { exportRecordingsMarkdown } from '$lib/whispering/recordings-markdown-export';
 	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
 	import VadSelectRecordingDevice from './VadSelectRecordingDevice.svelte';
@@ -55,6 +57,14 @@
 			label="Pause playback while recording"
 			description="Whispering pauses media playing on your computer (music, video, browser tabs) while your voice is being captured, then tries to resume it after. In voice activated mode it pauses only while you actually speak, so music keeps playing between phrases. Works with most apps in your system media controls. A few can't be paused, and on macOS the resume can occasionally wake a different app that was already paused."
 		/>
+
+		{#if services.blobReplica !== null && auth.state.status === 'signed-in'}
+			<SettingSwitch
+				key="recording.autoUpload"
+				label="Upload new recordings"
+				description="After saving a new recording on this device, try once to copy its audio to your online storage. Failed uploads stay local and are not retried automatically."
+			/>
+		{/if}
 
 		{#if settings.get('recording.trigger') === 'manual'}
 			<ManualSelectRecordingDevice

@@ -10,6 +10,8 @@ import { expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { generateBlobId } from '@epicenter/blobs';
+import { createBunBlobs } from '@epicenter/blobs/bun';
 import { InstantString } from '@epicenter/field';
 import { skillsWorkspace } from '@epicenter/skills';
 import { whisperingWorkspace } from '@epicenter/whispering/workspace-contract';
@@ -54,7 +56,8 @@ test('two clients invalidate documents, disconnect independently, and survive re
 			expect(isResult(result)).toBeTrue();
 		}
 		const recording = await firstWhispering.tables.recordings.create({
-			sourceId: 'shared-recording',
+			audioBlobId: generateBlobId(),
+			uploadedAt: null,
 			title: 'Shared recording',
 			recordedAt: InstantString.now(),
 			recordedAtZone: 'UTC',
@@ -64,7 +67,8 @@ test('two clients invalidate documents, disconnect independently, and survive re
 			transcription: null,
 		});
 		const deletedRecording = await firstWhispering.tables.recordings.create({
-			sourceId: 'deleted-recording',
+			audioBlobId: generateBlobId(),
+			uploadedAt: null,
 			title: 'Delete me',
 			recordedAt: InstantString.now(),
 			recordedAtZone: 'UTC',
@@ -227,6 +231,7 @@ async function startDesktopServer(root: string) {
 		launchToken: TOKEN,
 		staticAssets: await testAssets(root),
 		workspaceOwner: owner,
+		blobs: createBunBlobs({ directory: join(root, 'blobs') }),
 	});
 	const server = Bun.serve({
 		hostname: '127.0.0.1',

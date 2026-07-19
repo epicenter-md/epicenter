@@ -2,13 +2,13 @@
  * Whispering Greenfield Workspace Slice Tests
  *
  * Exercises Whispering and Skills through one real Bun runtime. It proves that
- * stricter release-local lenses surface old JSON, app code repairs it through a
- * normal typed update, SQL remains read-only, and Skills text stays attached to
+ * stricter release-local lenses discard old recording rows, SQL remains
+ * read-only, and Skills text stays attached to
  * its owning row.
  *
  * Key behaviors:
  * - a historical recording remains stored but nonconforming under the new lens
- * - explicit app repair makes the row conform without a migration subsystem
+ * - no repair or compatibility reader revives the old sourceId row
  * - one runtime opens Whispering and Skills and keeps row documents isolated
  */
 
@@ -16,16 +16,24 @@ import { expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { generateBlobId } from '@epicenter/blobs';
 import { field, InstantString } from '@epicenter/field';
 import { skillsWorkspace } from '@epicenter/skills';
 import { defineTable, defineWorkspace } from '@epicenter/workspace/sqlite';
 import { createDeviceBunWorkspaceRuntime } from '@epicenter/workspace/sqlite/bun';
 import { Type } from 'typebox';
-import { expectErr, expectOk } from 'wellcrafted/testing';
+import { expectErr } from 'wellcrafted/testing';
 import { recordingsTable, whisperingWorkspace } from './definition';
 
-const { sourceId: _sourceId, ...historicalRecordingFields } =
-	recordingsTable.fields;
+const {
+	audioBlobId: _audioBlobId,
+	uploadedAt: _uploadedAt,
+	...sharedRecordingFields
+} = recordingsTable.fields;
+const historicalRecordingFields = {
+	...sharedRecordingFields,
+	sourceId: field.string(),
+};
 const historicalWhisperingWorkspace = defineWorkspace({
 	id: whisperingWorkspace.id,
 	tables: {
@@ -33,7 +41,7 @@ const historicalWhisperingWorkspace = defineWorkspace({
 	},
 });
 
-test('one runtime composes explicit recording repair, SQL, and Skills documents', async () => {
+test('one runtime discards old sourceId rows and composes Skills documents', async () => {
 	const storageRoot = mkdtempSync(
 		join(tmpdir(), 'epicenter-whispering-slice-'),
 	);
@@ -45,6 +53,7 @@ test('one runtime composes explicit recording repair, SQL, and Skills documents'
 			historicalWhisperingWorkspace,
 		);
 		const oldRecording = await historical.tables.recordings.create({
+			sourceId: 'artifact-1',
 			title: '',
 			recordedAt: InstantString.now(),
 			recordedAtZone: 'UTC',
@@ -66,33 +75,39 @@ test('one runtime composes explicit recording repair, SQL, and Skills documents'
 			await whispering.tables.recordings.get(oldRecording.id),
 		);
 		expect(nonconforming.issues).toContainEqual({
-			field: 'sourceId',
+			field: 'audioBlobId',
 			kind: 'missing',
-			message: "Missing required field 'sourceId'",
+			message: "Missing required field 'audioBlobId'",
 		});
-
-		// Explicit application repair is an ordinary typed update (ADR-0125).
-		const repaired = expectOk(
-			await whispering.tables.recordings.update(oldRecording.id, {
-				sourceId: 'artifact-1',
-			}),
-		);
-		expect(repaired?.sourceId).toBe('artifact-1');
+		const listed = await whispering.tables.recordings.list();
+		expect(listed.rows).toEqual([]);
+		expect(listed.nonconforming).toHaveLength(1);
+		const current = await whispering.tables.recordings.create({
+			audioBlobId: generateBlobId(),
+			uploadedAt: null,
+			title: '',
+			recordedAt: InstantString.now(),
+			recordedAtZone: 'UTC',
+			transcript: 'Current row',
+			polishedTranscript: null,
+			duration: null,
+			transcription: null,
+		});
 		expect(
 			await whispering.sql(
-				'SELECT id, sourceId, transcript FROM recordings',
-				[],
+				'SELECT id, audioBlobId, transcript FROM recordings WHERE id = ?',
+				[current.id],
 				Type.Object({
 					id: field.string(),
-					sourceId: field.string(),
+					audioBlobId: field.string(),
 					transcript: field.string(),
 				}),
 			),
 		).toEqual([
 			{
-				id: oldRecording.id,
-				sourceId: 'artifact-1',
-				transcript: 'Stored before source ids',
+				id: current.id,
+				audioBlobId: current.audioBlobId,
+				transcript: 'Current row',
 			},
 		]);
 

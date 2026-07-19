@@ -8,7 +8,7 @@ pub use config::{TranscriptionSpec, UnloadPolicy};
 pub use error::TranscriptionError;
 pub use model_cache::ModelCache;
 
-use crate::recorder::read_artifact_samples;
+use crate::recorder::read_blob_samples;
 use tauri::{AppHandle, State};
 
 /// Reconcile the current local-model unload policy into the native idle
@@ -21,20 +21,19 @@ pub fn set_unload_policy(policy: UnloadPolicy, model_cache: State<'_, ModelCache
     model_cache.set_unload_policy(policy);
 }
 
-/// Canonical transcribe-by-id path. Resolves the audio file under
-/// `<appDataDir>/recordings/{recordingId}.*` (cpal-written WAV,
-/// navigator-saved webm/opus/mp4, etc.), decodes, then runs inference using
+/// Canonical transcribe-by-id path. Resolves the canonical local blob,
+/// decodes it, then runs inference using
 /// the per-call transcription spec supplied by the frontend.
 #[tauri::command]
 #[specta::specta]
 pub async fn transcribe_recording(
-    recording_id: String,
+    audio_blob_id: String,
     spec: TranscriptionSpec,
     app_handle: AppHandle,
     model_cache: State<'_, ModelCache>,
 ) -> Result<String, TranscriptionError> {
     let samples = crate::timing::measure("transcribe.read+decode", || {
-        read_artifact_samples(&app_handle, &recording_id)
+        read_blob_samples(&app_handle, &audio_blob_id)
     })
     .map_err(|e| TranscriptionError::AudioReadError {
         message: e.to_string(),

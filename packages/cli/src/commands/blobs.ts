@@ -1,28 +1,28 @@
 /**
  * `epicenter blobs`: trade a file that does not fit in git for a durable
- * content-addressed URL. The sha256 rides inside the URL, so the documents
- * that cite it are the only manifest; nothing is recorded anywhere else.
+ * opaque-id URL. The caller mints the BlobId; S3 remains the only remote index.
  *
- *   add <file|url>      upload the bytes (hash -> ticket -> presigned PUT
+ *   add <file|url>      mint an id, then upload (ticket -> presigned PUT
  *                       straight to the store) and print the URL; writes
  *                       nothing to disk
  *   ls                  list the current principal's stored blobs (the store is the index)
- *   get <sha256|url>    download one blob by content address to a file
- *   rm  <sha256|url>    delete one blob from the store (breaks every citation)
+ *   get <blobId|url>    download one blob by id to a file
+ *   rm  <blobId|url>    delete one blob from the store (breaks every citation)
  *
  * Every subcommand is a direct cloud round-trip built from the resolved machine
  * auth client (the persisted OAuth cell, or a configured instance token for a
  * self-hosted star); none route through the local daemon, unlike `run`. See
- * `docs/adr/0091-blobs-trade-a-file-for-a-durable-content-addressed-url-documents-are-the-only-manifest.md`.
+ * Blob references remain application-owned; the remote bucket is only an
+ * optional byte replica.
  *
  * Exit codes: 1 for a local problem (auth, reading a source file), 2 when the
  * cloud round-trip itself fails.
  */
 
-import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import * as machineAuth from '@epicenter/auth/node';
+import { type BlobId, generateBlobId, parseBlobId } from '@epicenter/blobs';
 import { createEpicenterClient, type EpicenterClient } from '@epicenter/client';
 import mime from 'mime';
 import { extractErrorMessage } from 'wellcrafted/error';
@@ -36,7 +36,7 @@ const HTTP_URL = /^https?:\/\//i;
 
 const addCommand = cmd({
 	command: 'add <source>',
-	describe: 'Archive a file or http(s) URL and print its content-addressed URL',
+	describe: 'Upload a file or http(s) URL and print its blob URL',
 	builder: (yargs) =>
 		yargs
 			.positional('source', {
@@ -61,18 +61,19 @@ const addCommand = cmd({
 		const epicenter = await connectCloud();
 		if (!epicenter) return;
 
-		// A URL source goes to the SDK as-is: it fetches the bytes once and takes
-		// the content type from the response. A local file is read here and typed
-		// by its extension; `--content-type` overrides either.
+		// Source resolution belongs to the Bun shell. The portable client accepts
+		// only Blob/File bodies, so WebKit never needs request-stream semantics.
 		const { data: source, error: readError } = HTTP_URL.test(argv.source)
-			? Ok(argv.source)
+			? await readHttpUrl(argv.source)
 			: await readLocalFile(argv.source);
 		if (readError !== null) {
 			fail(readError);
 			return;
 		}
 
+		const blobId = generateBlobId();
 		const { data: result, error: uploadError } = await epicenter.blobs.add(
+			blobId,
 			source,
 			{ contentType: argv.contentType },
 		);
@@ -85,17 +86,13 @@ const addCommand = cmd({
 			console.log(result.url);
 			return;
 		}
-		output(
-			{ sha256: result.sha256, url: result.url, duplicate: result.duplicate },
-			{ format: argv.format },
-		);
+		output({ blobId: result.blobId, url: result.url }, { format: argv.format });
 	},
 });
 
 const lsCommand = cmd({
 	command: 'ls',
-	describe:
-		"List the current principal's stored blobs (content address, size, upload time)",
+	describe: "List the current principal's stored blobs (id, size, upload time)",
 	builder: (yargs) => yargs.options(formatOptions).strict(),
 	handler: async (argv) => {
 		const epicenter = await connectCloud();
@@ -112,23 +109,23 @@ const lsCommand = cmd({
 
 const getCommand = cmd({
 	command: 'get <blob>',
-	describe: 'Download a blob by content address and write it to a file',
+	describe: 'Download a blob by id and write it to a file',
 	builder: (yargs) =>
 		yargs
 			.positional('blob', {
 				type: 'string',
 				demandOption: true,
-				describe: 'A lowercase-hex sha256 content address, or a blob URL',
+				describe: 'A BlobId, or a blob URL containing one',
 			})
 			.option('output', {
 				alias: 'o',
 				type: 'string',
-				describe: 'Destination path (default: <sha256>.<ext> in the cwd)',
+				describe: 'Destination path (default: <blobId>.<ext> in the cwd)',
 			})
 			.options(formatOptions)
 			.strict(),
 	handler: async (argv) => {
-		const { data: sha256, error: parseError } = parseSha256(argv.blob);
+		const { data: blobId, error: parseError } = parseBlobReference(argv.blob);
 		if (parseError !== null) {
 			fail(parseError);
 			return;
@@ -137,7 +134,7 @@ const getCommand = cmd({
 		const epicenter = await connectCloud();
 		if (!epicenter) return;
 
-		const { data: res, error } = await epicenter.blobs.get(sha256);
+		const { data: res, error } = await epicenter.blobs.get(blobId);
 		if (error !== null) {
 			fail(error.message, { code: 2 });
 			return;
@@ -145,31 +142,20 @@ const getCommand = cmd({
 
 		const bytes = Buffer.from(await res.arrayBuffer());
 
-		// The store enforces the hash on write, but a download can still be
-		// truncated mid-flight; verify before we trust the bytes on disk.
-		const actual = createHash('sha256').update(bytes).digest('hex');
-		if (actual !== sha256) {
-			fail(
-				`downloaded bytes do not match their content address: expected ${sha256}, got ${actual}`,
-				{ code: 2 },
-			);
-			return;
-		}
-
 		// Content type rides on the stored object (pinned at upload), so it names
 		// the extension when the caller did not pick an output path.
 		const contentType =
 			res.headers.get('content-type') ?? 'application/octet-stream';
 		const ext = mime.getExtension(contentType);
 		const outputPath = path.resolve(
-			argv.output ?? (ext ? `${sha256}.${ext}` : sha256),
+			argv.output ?? (ext ? `${blobId}.${ext}` : blobId),
 		);
 		await fs.mkdir(path.dirname(outputPath), { recursive: true });
 		await fs.writeFile(outputPath, bytes);
 
 		output(
 			{
-				sha256,
+				blobId,
 				output: path.relative(process.cwd(), outputPath),
 				size_bytes: bytes.byteLength,
 				content_type: contentType,
@@ -183,18 +169,18 @@ const getCommand = cmd({
 const rmCommand = cmd({
 	command: 'rm <blob>',
 	describe:
-		'Delete a blob from the store by content address; every URL citing it breaks forever (idempotent)',
+		'Delete a blob from the store by id; every URL citing it breaks forever (idempotent)',
 	builder: (yargs) =>
 		yargs
 			.positional('blob', {
 				type: 'string',
 				demandOption: true,
-				describe: 'A lowercase-hex sha256 content address, or a blob URL',
+				describe: 'A BlobId, or a blob URL containing one',
 			})
 			.options(formatOptions)
 			.strict(),
 	handler: async (argv) => {
-		const { data: sha256, error: parseError } = parseSha256(argv.blob);
+		const { data: blobId, error: parseError } = parseBlobReference(argv.blob);
 		if (parseError !== null) {
 			fail(parseError);
 			return;
@@ -203,18 +189,18 @@ const rmCommand = cmd({
 		const epicenter = await connectCloud();
 		if (!epicenter) return;
 
-		const { error } = await epicenter.blobs.delete(sha256);
+		const { error } = await epicenter.blobs.delete(blobId);
 		if (error !== null) {
 			fail(error.message, { code: 2 });
 			return;
 		}
-		output({ sha256, deleted: true }, { format: argv.format });
+		output({ blobId, deleted: true }, { format: argv.format });
 	},
 });
 
 export const blobsCommand = cmd({
 	command: 'blobs <subcommand>',
-	describe: 'Archive and retrieve bytes in the content-addressed blob store',
+	describe: 'Upload and retrieve bytes in the remote blob store',
 	builder: (yargs) =>
 		yargs
 			.command(addCommand)
@@ -251,34 +237,50 @@ async function connectCloud(): Promise<EpicenterClient | null> {
 }
 
 /**
- * Accept a bare content address or a pasted blob URL and return the
- * lowercase-hex sha256. The URL form matches the read-URL shape
- * (`.../blobs/<sha256>`), so a citation can be pasted back verbatim to `get`
- * or `rm` without extracting the hash by hand.
+ * Accept a bare BlobId or a pasted blob URL. A citation can be pasted back
+ * verbatim to `get` or `rm` without extracting the id by hand.
  */
-function parseSha256(input: string): Result<string, string> {
-	if (/^[a-f0-9]{64}$/.test(input)) return Ok(input);
-	const fromUrl = input.match(/\/blobs\/([a-f0-9]{64})(?:[/?#]|$)/);
-	if (fromUrl?.[1]) return Ok(fromUrl[1]);
-	return Err(
-		`expected a 64-character lowercase-hex sha256 or a blob URL containing one, got: ${input}`,
-	);
+function parseBlobReference(input: string): Result<BlobId, string> {
+	const direct = parseBlobId(input);
+	if (direct) return Ok(direct);
+	const fromUrl = input.match(/\/blobs\/(blob_[a-z0-9]{21})(?:[/?#]|$)/)?.[1];
+	const parsed = parseBlobId(fromUrl);
+	return parsed
+		? Ok(parsed)
+		: Err(`expected a BlobId or a blob URL containing one, got: ${input}`);
 }
 
 /**
- * Read a local file into a Blob typed by its extension (via `mime`; the SDK
- * defaults an untyped Blob to `application/octet-stream`). The error channel
- * is a ready-to-print message so the handler has one failure path.
+ * Open a local file lazily as a BunFile typed by its extension. The bytes are
+ * streamed by the SDK rather than copied into the CLI process first.
  */
 async function readLocalFile(source: string): Promise<Result<Blob, string>> {
 	const localPath = path.resolve(source);
-	const { data: bytes, error } = await tryAsync({
-		try: () => fs.readFile(localPath),
+	const file = Bun.file(localPath, { type: mime.getType(localPath) ?? '' });
+	const { data: exists, error } = await tryAsync({
+		try: () => file.exists(),
 		catch: (cause) =>
 			Err(`could not read ${source}: ${extractErrorMessage(cause)}`),
 	});
 	if (error !== null) return Err(error);
-	return Ok(
-		new Blob([new Uint8Array(bytes)], { type: mime.getType(localPath) ?? '' }),
-	);
+	if (!exists) return Err(`could not read ${source}: file does not exist`);
+	return Ok(file);
+}
+
+/** Fetch a URL at the Bun CLI edge and adapt it to the portable Blob boundary. */
+async function readHttpUrl(source: string): Promise<Result<Blob, string>> {
+	const { data: response, error } = await tryAsync({
+		try: () => fetch(source),
+		catch: (cause) =>
+			Err(`could not fetch ${source}: ${extractErrorMessage(cause)}`),
+	});
+	if (error !== null) return Err(error);
+	if (!response.ok) {
+		return Err(`could not fetch ${source}: HTTP ${response.status}`);
+	}
+	return tryAsync({
+		try: () => response.blob(),
+		catch: (cause) =>
+			Err(`could not read ${source}: ${extractErrorMessage(cause)}`),
+	});
 }

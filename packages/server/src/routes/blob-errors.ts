@@ -3,11 +3,11 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
 /**
  * Structured error variants for the `/api/blobs` surface.
  *
- * The blob store is content-addressed: the upload is a presigned PUT straight
- * to R2 (the Worker never sees the bytes), and R2 itself is the index, so
+ * The blob store uses caller-minted opaque ids: the upload is a presigned PUT
+ * straight to R2 (the Worker never sees the bytes), and R2 itself is the index, so
  * there is no database row to conflict on. These variants cover only what the
  * Worker decides at ticket-mint and read time. See
- * ADR-0089 (the blob store is a presigned-S3 kernel and the bucket is its only index).
+ * ADR-0089 (presigned S3 kernel) as amended by ADR-0148 (opaque BlobId).
  *
  * Owned by the blobs route ({@link blobs.ts}), its only emitter. The serialized
  * envelope is `wellcrafted`'s `{ data: null, error: { name, message, ...fields } }`;
@@ -32,26 +32,26 @@ export const BlobError = defineErrors({
 		message: 'Blob storage is not configured for this deployment.',
 		status: 503 as const,
 	}),
-	/** `sha256` was not a 64-character lowercase hex digest. */
-	InvalidSha256: ({ value }: { value: string }) => ({
-		message: `Invalid sha256: '${value}'. Expected 64 lowercase hex characters.`,
+	/** `blobId` was not a canonical opaque BlobId. */
+	InvalidBlobId: ({ value }: { value: string }) => ({
+		message: `Invalid blobId: '${value}'. Expected blob_ followed by 21 lowercase alphanumeric characters.`,
 		status: 400 as const,
 		value,
 	}),
-	/** `sizeBytes` was missing, non-positive, or not an integer. */
+	/** `sizeBytes` was negative or not an integer. */
 	InvalidSize: ({ value }: { value: number }) => ({
-		message: `Invalid sizeBytes: ${value}. Expected a positive integer.`,
+		message: `Invalid sizeBytes: ${value}. Expected a non-negative integer.`,
 		status: 400 as const,
 		value,
 	}),
-	/** Declared `sizeBytes` exceeds the single-PUT ceiling. */
+	/** Declared `sizeBytes` exceeds the single-PUT ceiling. Advisory only. */
 	BlobTooLarge: ({ size, maxBytes }: { size: number; maxBytes: number }) => ({
 		message: `Blob exceeds ${maxBytes} byte limit (got ${size}). Larger objects need multipart or an external location.`,
 		status: 413 as const,
 		size,
 		maxBytes,
 	}),
-	/** No object exists at `principals/<principalId>/blobs/<sha256>`. */
+	/** No object exists at `principals/<principalId>/blobs/<blobId>`. */
 	NotFound: () => ({
 		message: 'Blob not found.',
 		status: 404 as const,

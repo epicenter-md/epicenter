@@ -8,6 +8,8 @@
  * code.
  */
 
+import { LOCAL_BLOB_PATH } from '@epicenter/blobs/http';
+
 const stripTrailing = (value: string) => value.replace(/\/+$/, '');
 
 function route(pattern: string) {
@@ -42,3 +44,6 @@ export const MAIL_ROUTE = SURFACE_ROUTES.mail;
 export const BOOKS_ROUTE = SURFACE_ROUTES.books;
 export const SESSION_ROUTE = route('/api/query/session');
 export const SESSION_STREAM_ROUTE = route('/api/query/session/stream');
+export const LOCAL_BLOB_ROUTE = {
+	pattern: `${LOCAL_BLOB_PATH}/:blobId`,
+} as const;

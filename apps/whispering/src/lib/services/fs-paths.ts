@@ -22,23 +22,15 @@ async function appDataPath(...segments: string[]) {
 
 export const PATHS = {
 	/**
-	 * Filesystem storage for recording audio blobs: `recordings/{id}.{ext}`.
+	 * Filesystem storage for local blobs: `blobs/{id}/`.
 	 * Local models are not here: Rust owns them end to end in the shared Hugging
 	 * Face cache (see `src-tauri/src/transcription/catalog.rs`), so JS never
 	 * resolves a model path.
 	 */
 	DB: {
-		/** `recordings/` directory containing audio files. */
-		async RECORDINGS() {
-			return appDataPath('recordings');
-		},
-		/** Path for a newly written recording: `recordings/{id}.{extension}`. */
-		async RECORDING_AUDIO(id: string, extension: string) {
-			return appDataPath('recordings', `${id}.${extension}`);
-		},
-		/** Path to an existing recording file given its full filename. */
-		async RECORDING_FILE(filename: string) {
-			return appDataPath('recordings', filename);
+		/** `blobs/` directory containing immutable local blob directories. */
+		async BLOBS() {
+			return appDataPath('blobs');
 		},
 	},
 };

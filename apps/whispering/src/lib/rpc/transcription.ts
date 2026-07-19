@@ -18,14 +18,17 @@ export const transcription = {
 	},
 	transcribeRecording: defineMutation({
 		mutationKey: transcriptionKeys.isTranscribing,
-		mutationFn: (recording: Recording) => transcribeAndPersist(recording.id),
+		mutationFn: (recording: Recording) =>
+			transcribeAndPersist(recording.id, recording.audioBlobId),
 	}),
 
 	transcribeRecordings: defineMutation({
 		mutationKey: transcriptionKeys.isTranscribing,
 		mutationFn: async (recordings: Recording[]) => {
 			const results = await Promise.all(
-				recordings.map((recording) => transcribeAndPersist(recording.id)),
+				recordings.map((recording) =>
+					transcribeAndPersist(recording.id, recording.audioBlobId),
+				),
 			);
 			return Ok(partitionResults(results));
 		},

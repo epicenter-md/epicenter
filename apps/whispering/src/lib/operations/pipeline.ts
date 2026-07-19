@@ -1,51 +1,48 @@
+import type { BlobId } from '@epicenter/blobs';
 import { InstantString } from '@epicenter/field';
-import { extractErrorMessage } from 'wellcrafted/error';
 import {
 	deliverTranscriptionResult,
 	type TranscriptionSource,
 } from '$lib/operations/delivery';
+import { uploadRecordingAudio } from '$lib/operations/recording-audio';
 import { polishWillRun, runPolish } from '$lib/operations/run-polish';
 import { sound } from '$lib/operations/sound';
 import { transcribeAndPersist } from '$lib/operations/transcribe';
 import { report } from '$lib/report';
 import { services } from '$lib/services';
-import type { RecorderStopResult } from '$lib/services/recorder/contract';
 import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
 import { polishHud } from '$lib/state/polish-hud.svelte';
 import { recordings } from '$lib/state/recordings.svelte';
+import { settings } from '$lib/state/settings.svelte';
+import type { Recording } from '$lib/workspace';
 
 /**
  * Argument shape for the pipeline. The recorder produces a
  * `RecorderStopResult`; the VAD path and file import path build the
- * equivalent shape with `kind: 'blob'`. `deliverySource` is forwarded
+ * equivalent finalized shape. `deliverySource` is forwarded
  * straight to delivery, so it shares delivery's `TranscriptionSource` type.
  */
 type PipelineInput = {
-	source: RecorderStopResult;
+	audioBlobId: BlobId;
 	durationMs: number | null;
 	deliverySource?: TranscriptionSource;
 };
 
 /**
- * Processes a recording through the full pipeline: persist artifact,
- * transcribe by id, then polish.
+ * Processes finalized local audio through row creation, transcription, and
+ * polishing.
  *
- * Audio bytes never live in pipeline state. For cpal sources Rust has
- * already written the durable artifact at
- * `<appDataDir>/recordings/{id}.wav` by the time we get here. For blob
- * sources (navigator MediaRecorder, VAD, file import) we persist the
- * bytes through the recordings blob store, then operate on the id.
+ * Audio bytes never live in pipeline state. Every acquisition path has
+ * committed the local blob before calling this operation.
  *
  * `deliverySource` only shapes the success copy (recording vs file import).
  */
 export async function processRecordingPipeline({
-	source,
+	audioBlobId,
 	durationMs,
 	deliverySource = 'recording',
 }: PipelineInput) {
 	const now = InstantString.now();
-	const recordingId =
-		source.kind === 'artifact' ? source.artifact.id : source.recordingId;
 
 	// A live dictation (not a file import) drives the dictation pill. The
 	// recorder is already idle by the time we get here, so the lifecycle hands
@@ -54,51 +51,45 @@ export async function processRecordingPipeline({
 	const isDictation = deliverySource === 'recording';
 	if (isDictation) dictationLifecycle.markTranscribing();
 
-	await recordings.set({
-		id: recordingId,
-		title: '',
-		recordedAt: now,
-		recordedAtZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-		transcript: '',
-		polishedTranscript: null,
-		duration: durationMs,
-		transcription: null,
-	});
-
-	if (source.kind === 'blob') {
-		const { error: saveError } = await services.blobs.audio.save(
-			recordingId,
-			source.blob,
-		);
-		if (saveError) {
-			// Transcription reads by id from disk: if the save failed there
-			// is nothing to transcribe. Bailing here surfaces the real
-			// failure instead of the misleading "no recording artifact
-			// found" the transcribe path would emit on the empty directory.
-			await recordings.update(recordingId, {
-				transcription: {
-					status: 'failed',
-					completedAt: InstantString.now(),
-					error: extractErrorMessage(saveError),
-				},
-			});
-			if (isDictation) {
-				// No toast in the dictation path: the failure goes to the notification
-				// (when unfocused) and the recordings row.
-				dictationLifecycle.markFailed({
-					tier: 'transcription',
-					error: saveError,
-				});
-			} else {
-				report.error({
-					title: 'Failed to save recording',
-					description:
-						'We could not write the recording bytes; transcription cannot continue.',
-					cause: saveError,
-				});
-			}
-			return;
+	let recording: Recording;
+	try {
+		recording = await recordings.create({
+			audioBlobId,
+			uploadedAt: null,
+			title: '',
+			recordedAt: now,
+			recordedAtZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+			transcript: '',
+			polishedTranscript: null,
+			duration: durationMs,
+			transcription: null,
+		});
+	} catch (cause) {
+		const { error: cleanupError } = await services.blobs.delete(audioBlobId);
+		if (cleanupError !== null) {
+			throw new AggregateError(
+				[cause, cleanupError],
+				'Could not create the recording row or clean up its finalized audio.',
+			);
 		}
+		throw cause;
+	}
+
+	if (settings.get('recording.autoUpload')) {
+		// One new row earns one best-effort attempt. Manual upload calls the same
+		// operation; there is no history scan, queue, persisted failure, or retry.
+		void uploadRecordingAudio(recording)
+			.then(({ error }) => {
+				if (error !== null) {
+					report.info({
+						title: 'Recording kept on this device',
+						description: error.message,
+					});
+				}
+			})
+			.catch((cause) => {
+				report.error({ title: 'Automatic upload failed', cause });
+			});
 	}
 
 	// File import has no pill, so it keeps a progress toast; the dictation path is
@@ -111,7 +102,7 @@ export async function processRecordingPipeline({
 			});
 
 	const { data: transcribedText, error: transcribeError } =
-		await transcribeAndPersist(recordingId);
+		await transcribeAndPersist(recording.id, audioBlobId);
 
 	if (transcribeError) {
 		if (isDictation) {
@@ -164,11 +155,11 @@ export async function processRecordingPipeline({
 
 	// Persist the polished transcript alongside the raw transcript so history
 	// shows what was actually delivered, with the original one click away. Only
-	// write when a Polish pass actually produced a result: `recordings.set`
+	// write when a Polish pass actually produced a result: row creation
 	// already left `polishedTranscript` null, so speed mode (no AI call) and a
 	// polish failure (the fallback delivers the raw words) need no second write.
 	if (willPolish && !polishError) {
-		await recordings.update(recordingId, { polishedTranscript: polishedText });
+		await recordings.update(recording.id, { polishedTranscript: polishedText });
 	}
 
 	// The transcript is "ready" once it is polished and about to be delivered, so

@@ -14,7 +14,6 @@ import type {
 	DownloadProgress,
 	IpcRecorderError,
 	ModelInfo,
-	RecordingArtifact,
 	TranscriptionError,
 	TranscriptionSpec,
 } from './commands';
@@ -24,7 +23,6 @@ import type {
 	DownloadProgress as SharedDownloadProgress,
 	IpcRecorderError as SharedIpcRecorderError,
 	ModelInfo as SharedModelInfo,
-	RecordingArtifact as SharedRecordingArtifact,
 	TranscriptionError as SharedTranscriptionError,
 	TranscriptionSpec as SharedTranscriptionSpec,
 } from './commands.types';
@@ -46,7 +44,6 @@ type _SharedContracts = Expect<
 			SharedDownloadProgress,
 			SharedIpcRecorderError,
 			SharedModelInfo,
-			SharedRecordingArtifact,
 			SharedTranscriptionError,
 			SharedTranscriptionSpec,
 		],
@@ -56,20 +53,19 @@ type _SharedContracts = Expect<
 			DownloadProgress,
 			IpcRecorderError,
 			ModelInfo,
-			RecordingArtifact,
 			TranscriptionError,
 			TranscriptionSpec,
 		]
 	>
 >;
 
-// stop_recording: fallible, returns the artifact struct. The error is the
+// stop_recording: fallible, returns the finalized blob id. The error is the
 // structured `RecorderError` IPC enum, not a bare string: this assertion is the
 // contract proof that the recorder boundary stays typed.
 type _StopRecording = Expect<
 	Equal<
 		ReturnType<typeof commands.stopRecording>,
-		Promise<Result<RecordingArtifact, IpcRecorderError>>
+		Promise<Result<string, IpcRecorderError>>
 	>
 >;
 
@@ -131,19 +127,6 @@ type _EncodeRecordingForUpload = Expect<
 		ReturnType<typeof commands.encodeRecordingForUpload>,
 		Promise<Result<ArrayBuffer, string>>
 	>
->;
-
-// read_recording_artifact: hand-rolled, raw bytes success path. The only
-// argument is the app-owned recording id; no filesystem path crosses IPC.
-type _ReadRecordingArtifact = Expect<
-	Equal<
-		ReturnType<typeof commands.readRecordingArtifact>,
-		Promise<Result<ArrayBuffer, string>>
-	>
->;
-
-type _ReadRecordingArtifactArgs = Expect<
-	Equal<Parameters<typeof commands.readRecordingArtifact>, [string]>
 >;
 
 // TranscriptionSpec is the per-call local transcription config.

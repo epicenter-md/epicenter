@@ -24,6 +24,7 @@
 		"typecheck:query": "tsc --noEmit && svelte-check --tsconfig ./tsconfig.json"
 	},
 	"dependencies": {
+		"@epicenter/blobs": "workspace:*",
 		"@epicenter/chat": "workspace:*",
 		"@epicenter/client": "workspace:*",
 		"@epicenter/field": "workspace:*",

@@ -1,4 +1,3 @@
-import { nanoid } from 'nanoid/non-secure';
 import {
 	IMPORTABLE_AUDIO_EXTENSIONS,
 	IMPORTABLE_MIME_PREFIXES,
@@ -7,6 +6,7 @@ import {
 	MAX_IMPORT_FILES,
 } from '$lib/constants/import-formats';
 import { analytics } from '$lib/operations/analytics';
+import { finalizeAudioBlob } from '$lib/operations/local-audio';
 import { processRecordingPipeline } from '$lib/operations/pipeline';
 import { report } from '$lib/report';
 
@@ -101,21 +101,22 @@ export async function importFiles({ files }: { files: File[] }): Promise<void> {
 
 	await Promise.all(
 		valid.map(async (file) => {
-			const arrayBuffer = await file.arrayBuffer();
-			const audioBlob = new Blob([arrayBuffer], { type: file.type });
+			const finalized = await finalizeAudioBlob(file);
+			if (finalized.error !== null) {
+				report.error({
+					title: 'Failed to save imported audio',
+					cause: finalized.error,
+				});
+				return;
+			}
 
 			analytics.logEvent({
 				type: 'file_import_completed',
-				blob_size: audioBlob.size,
+				blob_size: file.size,
 			});
 
 			await processRecordingPipeline({
-				source: {
-					kind: 'blob',
-					blob: audioBlob,
-					recordingId: nanoid(),
-					durationMs: null,
-				},
+				audioBlobId: finalized.data.audioBlobId,
 				durationMs: null,
 				deliverySource: 'import',
 			});

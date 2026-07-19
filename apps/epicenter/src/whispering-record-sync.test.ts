@@ -13,6 +13,7 @@ import { expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { generateBlobId } from '@epicenter/blobs';
 import { InstantString } from '@epicenter/field';
 import {
 	createBunAccountAuthorityRuntime,
@@ -77,7 +78,8 @@ test('offline Whispering scalar edits converge in both directions', async () => 
 		});
 		const first = await firstRuntime.open(whisperingWorkspace);
 		const recording = await first.tables.recordings.create({
-			sourceId: 'offline-recording',
+			audioBlobId: generateBlobId(),
+			uploadedAt: null,
 			title: 'Offline',
 			recordedAt: InstantString.now(),
 			recordedAtZone: 'UTC',

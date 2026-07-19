@@ -8,6 +8,8 @@
  * needed to change it because this entrypoint reads the env once.
  */
 
+import { join } from 'node:path';
+import { createBunBlobs } from '@epicenter/blobs/bun';
 import { type AgentEngine, createOpenAiAgentEngine } from '@epicenter/client';
 import {
 	createQueryHost,
@@ -41,8 +43,17 @@ async function main(): Promise<void> {
 		const { engine, model } = queryEngineFromEnvironment(process.env);
 
 		const dataDir = resolveQueryDataDir();
+		const epicenterDataDir = process.env.EPICENTER_DATA_DIR;
+		if (!epicenterDataDir) {
+			throw new Error(
+				'EPICENTER_DATA_DIR must name the Epicenter app data directory.',
+			);
+		}
 		host = await createQueryHost({ engine, model, dataDir });
 		workspaceOwner = createEpicenterWorkspaceOwner(dataDir);
+		const blobs = createBunBlobs({
+			directory: join(epicenterDataDir, 'blobs'),
+		});
 
 		const appsDist = process.env.EPICENTER_APPS_DIST;
 		if (!appsDist) {
@@ -58,6 +69,7 @@ async function main(): Promise<void> {
 			launchToken: boot.token,
 			staticAssets,
 			workspaceOwner,
+			blobs,
 		});
 
 		server = Bun.serve({

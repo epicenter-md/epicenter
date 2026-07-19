@@ -27,9 +27,8 @@ use audio::encode_recording_for_upload;
 
 pub mod recorder;
 use recorder::commands::{
-    cancel_recording, clear_recording_artifacts, close_recording_session,
-    delete_recording_artifacts, enumerate_recording_devices, get_current_recording_id,
-    init_recording_session, read_recording_artifact, start_recording, stop_recording,
+    cancel_recording, close_recording_session, enumerate_recording_devices,
+    get_current_recording_id, init_recording_session, start_recording, stop_recording,
 };
 use recorder::recorder::Recorder;
 
@@ -264,8 +263,6 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             start_recording,
             stop_recording,
             cancel_recording,
-            delete_recording_artifacts,
-            clear_recording_artifacts,
             transcribe_recording,
             prewarm_model,
             open_accessibility_settings,
@@ -320,11 +317,8 @@ pub fn run() {
     let port = configured_port();
     let specta_builder = make_specta_builder();
     let specta_handler = tauri_specta::Builder::invoke_handler(&specta_builder);
-    let native_handler = tauri::generate_handler![
-        get_runtime_info,
-        encode_recording_for_upload,
-        read_recording_artifact
-    ] as fn(tauri::ipc::Invoke<tauri::Wry>) -> bool;
+    let native_handler = tauri::generate_handler![get_runtime_info, encode_recording_for_upload]
+        as fn(tauri::ipc::Invoke<tauri::Wry>) -> bool;
     let log_plugin = tauri_plugin_log::Builder::new()
         .level(log::LevelFilter::Info)
         .level_for("epicenter::transcription", log::LevelFilter::Debug)
@@ -366,7 +360,7 @@ pub fn run() {
         .invoke_handler(move |invoke| {
             if matches!(
                 invoke.message.command(),
-                "get_runtime_info" | "encode_recording_for_upload" | "read_recording_artifact"
+                "get_runtime_info" | "encode_recording_for_upload"
             ) {
                 native_handler(invoke)
             } else {
@@ -591,12 +585,14 @@ fn start_once(app: &DesktopAppHandle) -> Result<()> {
 
 fn launch_host(app: &DesktopAppHandle, port: u16) -> Result<LaunchedHost> {
     let log = open_log_file(app)?;
-    let data_dir = app.path().app_data_dir()?.join("query");
+    let app_data_dir = app.path().app_data_dir()?;
+    let data_dir = app_data_dir.join("query");
     fs::create_dir_all(&data_dir)
         .with_context(|| format!("create Query data directory at {}", data_dir.display()))?;
 
     let mut command = host_command(app)?;
     command
+        .env("EPICENTER_DATA_DIR", &app_data_dir)
         .env("EPICENTER_QUERY_DATA_DIR", &data_dir)
         .env("EPICENTER_APPS_DIST", apps_dist(app)?)
         .stdin(Stdio::piped())

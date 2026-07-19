@@ -30,6 +30,7 @@ export function createWhisperingSettingDefaults(
 		'output.recipe.enter': false,
 		'recording.trigger': 'manual',
 		'recording.pausePlayback': false,
+		'recording.autoUpload': false,
 		'transcription.service': defaultTranscriptionService,
 		'transcription.openai.model': PROVIDERS.OpenAI.defaultModel,
 		'transcription.groq.model': PROVIDERS.Groq.defaultModel,

@@ -11,6 +11,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { generateBlobId } from '@epicenter/blobs';
 import { asPrincipalId, INSTANCE_PRINCIPAL_ID } from '@epicenter/identity';
 import { blobKey, blobPrincipalPrefix, doName } from './principal.js';
 
@@ -28,15 +29,13 @@ describe('doName', () => {
 
 describe('blobKey', () => {
 	test('per-user partitions blob objects under the user', () => {
-		expect(blobKey(userPrincipal, 'f'.repeat(64))).toBe(
-			`principals/abc/blobs/${'f'.repeat(64)}`,
-		);
+		const id = generateBlobId();
+		expect(blobKey(userPrincipal, id)).toBe(`principals/abc/blobs/${id}`);
 	});
 
 	test('instance partitions blob objects under the literal instance principal', () => {
-		expect(blobKey(instance, 'a'.repeat(64))).toBe(
-			`principals/instance/blobs/${'a'.repeat(64)}`,
-		);
+		const id = generateBlobId();
+		expect(blobKey(instance, id)).toBe(`principals/instance/blobs/${id}`);
 	});
 });
 

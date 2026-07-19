@@ -1,3 +1,4 @@
+import type { BlobId } from '@epicenter/blobs';
 import {
 	type ResolvedConnection,
 	resolveConnection,
@@ -31,6 +32,7 @@ import { deviceConfig } from '$lib/state/device-config.svelte';
 import { recordings } from '$lib/state/recordings.svelte';
 import { type SecretKey, secrets } from '$lib/state/secrets.svelte';
 import { settings } from '$lib/state/settings.svelte';
+import type { RecordingId } from '$lib/workspace';
 
 /**
  * The error any transcription path can surface. Deliberately `AnyTaggedError`
@@ -204,18 +206,16 @@ const UPLOAD_DISPATCH = {
 } satisfies Record<UploadProviderId, UploadDispatch>;
 
 /**
- * Materialize the bytes to upload for a non-on-device (upload) transcription. The
- * recording is already saved under `recordings/{id}.{ext}`; in Tauri we round-trip
- * through Rust's libopus to land on a compressed opus blob. On the web
- * there is no Rust, so we fetch the original bytes from the blob store and
- * upload them as-is.
+ * Materialize the bytes for an upload transcription. On Tauri, Rust reads the
+ * local blob and compresses it with libopus. On the web, the original local
+ * blob is uploaded as-is.
  */
 async function loadForUpload(
-	recordingId: string,
+	audioBlobId: BlobId,
 ): Promise<Result<Blob, TranscriptionError>> {
 	if (tauri) {
 		const { data: oggBytes, error } =
-			await tauri.transcription.encodeRecordingForUpload(recordingId);
+			await tauri.transcription.encodeRecordingForUpload(audioBlobId);
 		if (error === null) return Ok(new Blob([oggBytes], { type: 'audio/ogg' }));
 		report.info({
 			title: 'Audio compression skipped',
@@ -228,7 +228,7 @@ async function loadForUpload(
 		});
 	}
 
-	return services.blobs.audio.getBlob(recordingId);
+	return services.blobs.get(audioBlobId);
 }
 
 /**
@@ -236,15 +236,15 @@ async function loadForUpload(
  * point for transcription:
  *
  * - The cpal stop path saves the WAV via Rust and returns the id.
- * - The navigator / VAD / file import paths save the blob via the
- *   recordings blob store and pass the id here.
+ * - The navigator / VAD / file import paths commit the local blob and pass
+ *   its id here.
  *
  * Local transcription always goes through `transcribe_recording(id)`.
  * Upload (non-on-device) transcription uploads compressed bytes derived from the
  * saved file when possible, falling back to the raw blob.
  */
 export async function transcribeAudio(
-	recordingId: string,
+	audioBlobId: BlobId,
 ): Promise<Result<string, TranscriptionError>> {
 	const selectedService = settings.get('transcription.service');
 
@@ -258,8 +258,8 @@ export async function transcribeAudio(
 	// to `OnDeviceProviderId` in one arm and `UploadProviderId` in the other, so each
 	// helper receives an already-narrowed id and neither re-checks.
 	const transcriptionResult = isOnDeviceProviderId(selectedService)
-		? await transcribeOnDevice(recordingId, selectedService)
-		: await transcribeViaUpload(recordingId, selectedService);
+		? await transcribeOnDevice(audioBlobId, selectedService)
+		: await transcribeViaUpload(audioBlobId, selectedService);
 
 	const duration = Date.now() - startTime;
 	if (transcriptionResult.error) {
@@ -288,9 +288,10 @@ export async function transcribeAudio(
  * never drift between callers.
  */
 export async function transcribeAndPersist(
-	recordingId: string,
+	recordingId: RecordingId,
+	audioBlobId: BlobId,
 ): Promise<Result<string, TranscriptionError>> {
-	const { data: transcribedText, error } = await transcribeAudio(recordingId);
+	const { data: transcribedText, error } = await transcribeAudio(audioBlobId);
 	if (error) {
 		await recordings.update(recordingId, {
 			transcription: {
@@ -357,7 +358,7 @@ function withDictionaryTerms(prompt: string, dictionary: string[]): string {
 }
 
 async function transcribeOnDevice(
-	recordingId: string,
+	audioBlobId: BlobId,
 	selectedService: OnDeviceProviderId,
 ): Promise<Result<string, TranscriptionError>> {
 	if (!tauri) {
@@ -382,7 +383,7 @@ async function transcribeOnDevice(
 		settings.get('transcription.prompt'),
 		settings.get('dictionary'),
 	);
-	return tauri.transcription.transcribeRecording(recordingId, {
+	return tauri.transcription.transcribeRecording(audioBlobId, {
 		modelId,
 		language: language === 'auto' ? undefined : language,
 		initialPrompt: prompt || undefined,
@@ -390,10 +391,10 @@ async function transcribeOnDevice(
 }
 
 async function transcribeViaUpload(
-	recordingId: string,
+	audioBlobId: BlobId,
 	selectedService: UploadProviderId,
 ): Promise<Result<string, TranscriptionError>> {
-	const { data: audio, error: loadError } = await loadForUpload(recordingId);
+	const { data: audio, error: loadError } = await loadForUpload(audioBlobId);
 	if (loadError) return Err(loadError);
 
 	// `auto` language and an empty prompt map to the wire's "unset" (omitted from

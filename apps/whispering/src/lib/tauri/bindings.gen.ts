@@ -47,51 +47,24 @@ export const commands = {
 	startRecording: () =>
 		typedError<null, RecorderError>(__TAURI_INVOKE('start_recording')),
 	/**
-	 *  Stop the recorder, write the canonical WAV artifact to
-	 *  `<appDataDir>/recordings/{id}.wav`, return the small JSON handle.
+	 *  Stop the recorder, atomically finalize the canonical WAV blob under
+	 *  `<appDataDir>/blobs/{id}`, and return only its id.
 	 *
 	 *  JS never sees raw PCM samples on the wire: later operations look the
-	 *  file up by id (`transcribe_recording`, `encode_recording_for_upload`,
-	 *  and `delete_recording_artifacts`).
+	 *  blob up by id (`transcribe_recording` and `encode_recording_for_upload`).
 	 */
 	stopRecording: () =>
-		typedError<RecordingArtifact, RecorderError>(
-			__TAURI_INVOKE('stop_recording'),
-		),
+		typedError<string, RecorderError>(__TAURI_INVOKE('stop_recording')),
 	cancelRecording: () =>
 		typedError<null, RecorderError>(__TAURI_INVOKE('cancel_recording')),
 	/**
-	 *  Delete recording artifacts by id.
-	 *
-	 *  This is intentionally id-based instead of path-based. The recorder
-	 *  artifact module owns which files under the recordings directory are blobs,
-	 *  so TypeScript callers cannot accidentally delete markdown sidecars or
-	 *  arbitrary files. Missing artifacts are ignored to keep cleanup retryable.
-	 */
-	deleteRecordingArtifacts: (recordingIds: string[]) =>
-		typedError<number, RecorderError>(
-			__TAURI_INVOKE('delete_recording_artifacts', { recordingIds }),
-		),
-	/**
-	 *  Delete every recording artifact while preserving markdown sidecars.
-	 *
-	 *  Used by the blob store's `clear()` path. The Rust layer owns the directory
-	 *  scan because it has the same artifact matching rule used by targeted
-	 *  deletion and transcription lookup.
-	 */
-	clearRecordingArtifacts: () =>
-		typedError<number, RecorderError>(
-			__TAURI_INVOKE('clear_recording_artifacts'),
-		),
-	/**
-	 *  Canonical transcribe-by-id path. Resolves the audio file under
-	 *  `<appDataDir>/recordings/{recordingId}.*` (cpal-written WAV,
-	 *  navigator-saved webm/opus/mp4, etc.), decodes, then runs inference using
+	 *  Canonical transcribe-by-id path. Resolves the canonical local blob,
+	 *  decodes it, then runs inference using
 	 *  the per-call transcription spec supplied by the frontend.
 	 */
-	transcribeRecording: (recordingId: string, spec: TranscriptionSpec) =>
+	transcribeRecording: (audioBlobId: string, spec: TranscriptionSpec) =>
 		typedError<string, TranscriptionError>(
-			__TAURI_INVOKE('transcribe_recording', { recordingId, spec }),
+			__TAURI_INVOKE('transcribe_recording', { audioBlobId, spec }),
 		),
 	/**
 	 *  Prewarm the local model for `spec` so a following transcribe finds it
@@ -424,29 +397,6 @@ export type RecorderError =
 	 *  session lifecycle, internal). The frontend does not branch on these.
 	 */
 	| { name: 'Failed'; message: string };
-
-/**
- *  Serializable handle returned to the JS side. The id is the lookup key
- *  for every later operation; the rest is metadata the UI needs without
- *  having to read the file (duration for analytics, byteLength for artifact
- *  diagnostics, mimeType for the player).
- *
- *  `mime_type` is `String` rather than `&'static str` so specta's TS
- *  generator sees a stable serializable shape. The runtime cost is one short
- *  allocation per artifact write.
- *
- *  `duration_ms` and `byte_length` use `#[specta(type = Number<u64>)]`
- *  to opt out of specta's bigint guard: both stay well under
- *  `Number.MAX_SAFE_INTEGER` (2^53) for any plausible recording
- *  (duration in ms maxes at ~285,000 years; byte length is bounded by
- *  the filesystem).
- */
-export type RecordingArtifact = {
-	id: string;
-	durationMs: number;
-	byteLength: number;
-	mimeType: string;
-};
 
 export type TranscriptionError =
 	| { name: 'AudioReadError'; message: string }

@@ -1,3 +1,4 @@
+import type { BlobId } from '@epicenter/blobs';
 import { report } from '$lib/report';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 import { startManualRecording, stopManualRecordingById } from './recording';
@@ -32,7 +33,7 @@ type Session = {
 	/** Scopes every async continuation to the press that began it. */
 	id: number;
 	/** The recording this press started, or null until startup resolves. */
-	recordingId: string | null;
+	recordingId: BlobId | null;
 	/** A release that arrived before startup finished, honored once it exists. */
 	stopRequested: boolean;
 };

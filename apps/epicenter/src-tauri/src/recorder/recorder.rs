@@ -7,7 +7,7 @@
 //! │  - downmix to mono │ chunks │  - accumulate Vec   │
 //! │  - sample_tx.send  │        │  - resample (final) │
 //! └────────────────────┘        │  - pad short clips  │
-//!                               │  - emit artifact    │
+//!                               │  - finalize samples │
 //!                               └─────────────────────┘
 //! ```
 //!
@@ -15,8 +15,7 @@
 //! samples through an mpsc channel. The consumer worker accumulates,
 //! resamples to 16 kHz at finalize, pads sub-1s clips, and hands the
 //! resulting `Vec<f32>` (mono 16 kHz PCM) back to the command layer,
-//! which writes the durable WAV artifact and emits the small handle JS
-//! sees over IPC.
+//! which atomically writes the durable WAV blob and returns its id over IPC.
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, SampleFormat, Stream};
@@ -245,7 +244,7 @@ impl Recorder {
     }
 
     /// Session id without the is_recording gate. Used by `stop_recording`
-    /// to address the artifact write after the worker has already flipped
+    /// to address the blob write after the worker has already flipped
     /// the recording flag down.
     pub fn session_id(&self) -> Option<String> {
         self.current_recording_id.clone()
@@ -259,7 +258,7 @@ impl Drop for Recorder {
 }
 
 /// Consumer worker entrypoint. Accumulates mono samples, resamples to
-/// 16 kHz at finalize, pads short clips, emits the artifact. While recording,
+/// 16 kHz at finalize and pads short clips. While recording,
 /// also emits a throttled RMS level to the overlay window so its meter can
 /// reflect live mic activity (the JS side never sees the PCM, so the level has
 /// to originate here).

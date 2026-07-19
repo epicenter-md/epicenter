@@ -1,11 +1,12 @@
+import type { BlobId } from '@epicenter/blobs';
 import type { DeviceAcquisitionOutcome } from '@epicenter/recorder';
-import { nanoid } from 'nanoid/non-secure';
 import { manualRecorderConfig } from '#platform/manual-recorder-config';
 import { reportRecordingMicLevel } from '#platform/recording-mic-level';
 import { goto } from '$app/navigation';
 import type { CaptureSurface } from '$lib/constants/audio';
 import { whisperingPath } from '$lib/constants/urls';
 import { analytics } from '$lib/operations/analytics';
+import { finalizeAudioBlob } from '$lib/operations/local-audio';
 import { recordingMedia } from '$lib/operations/media';
 import { processRecordingPipeline } from '$lib/operations/pipeline';
 import { sound } from '$lib/operations/sound';
@@ -70,7 +71,7 @@ function isVadRecordingActive() {
  * this call was a no-op). Push-to-talk remembers that id to later stop only the
  * exact recording it owns; the button and toggle paths ignore the return.
  */
-export async function startManualRecording(): Promise<string | null> {
+export async function startManualRecording(): Promise<BlobId | null> {
 	settings.set('recording.trigger', 'manual');
 	// A new dictation is starting: clear any lingering failed/delivered state so
 	// the pill follows this attempt, not the last one.
@@ -98,7 +99,7 @@ export async function startManualRecording(): Promise<string | null> {
 
 	if (error) {
 		void recordingMedia.resume();
-		// The recording never started, so there is no artifact to recover: the
+		// The recording never started, so there is no blob to recover: the
 		// loudest tier. The pill glances it and the OS notification always fires, so
 		// there is no toast.
 		dictationLifecycle.markFailed({ tier: 'silent-loss', error });
@@ -112,7 +113,7 @@ export async function startManualRecording(): Promise<string | null> {
 
 	log.info('Recording started');
 	sound.playSoundIfEnabled('manual-start');
-	return manualRecorder.currentRecordingId;
+	return manualRecorder.currentAudioBlobId;
 }
 
 export async function stopManualRecording() {
@@ -126,10 +127,7 @@ export async function stopManualRecording() {
 		return;
 	}
 
-	const durationMs =
-		source.kind === 'artifact' ? source.artifact.durationMs : source.durationMs;
-	const byteLength =
-		source.kind === 'artifact' ? source.artifact.byteLength : source.blob.size;
+	const { audioBlobId, durationMs, byteLength } = source;
 
 	// The pill carries "stopped -> transcribing"; the transcript landing is the
 	// receipt. No per-step toast.
@@ -144,7 +142,7 @@ export async function stopManualRecording() {
 	});
 
 	await processRecordingPipeline({
-		source,
+		audioBlobId,
 		durationMs,
 	});
 }
@@ -155,10 +153,10 @@ export async function stopManualRecording() {
  * after its recording was supplanted by a toggle/button recording never stops the
  * wrong one. This is the idempotent stop push-to-talk routes every stop through.
  */
-export async function stopManualRecordingById(recordingId: string) {
+export async function stopManualRecordingById(recordingId: BlobId) {
 	if (
 		manualRecorder.state !== 'RECORDING' ||
-		manualRecorder.currentRecordingId !== recordingId
+		manualRecorder.currentAudioBlobId !== recordingId
 	) {
 		return;
 	}
@@ -284,13 +282,16 @@ export async function startVadRecording() {
 				blob_size: blob.size,
 			});
 
+			const finalized = await finalizeAudioBlob(blob);
+			if (finalized.error !== null) {
+				dictationLifecycle.markFailed({
+					tier: 'silent-loss',
+					error: finalized.error,
+				});
+				return;
+			}
 			await processRecordingPipeline({
-				source: {
-					kind: 'blob',
-					blob,
-					recordingId: nanoid(),
-					durationMs: null,
-				},
+				audioBlobId: finalized.data.audioBlobId,
 				durationMs: null,
 			});
 		},

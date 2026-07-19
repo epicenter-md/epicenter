@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { createEpicenterClient } from './index.js';
+import { BlobStoreError, type Blobs, generateBlobId } from '@epicenter/blobs';
+import { Ok } from 'wellcrafted/result';
+import { createBrowserBlobReplica, createEpicenterClient } from './index.js';
 
 const baseURL = 'https://api.epicenter.so';
 
@@ -29,6 +31,7 @@ describe('blobs.add fails closed', () => {
 		});
 
 		const { data, error } = await client.blobs.add(
+			generateBlobId(),
 			new Blob([new Uint8Array([1, 2, 3])], { type: 'text/plain' }),
 		);
 
@@ -39,6 +42,52 @@ describe('blobs.add fails closed', () => {
 		}
 		expect(putReached).toBe(false);
 		expect(ticketCalls).toHaveLength(1);
+	});
+
+	test('a store 412 is idempotent upload success for the same BlobId', async () => {
+		const id = generateBlobId();
+		const blob = new Blob(['bytes'], { type: 'text/plain' });
+		let storeInit: RequestInit | undefined;
+		globalThis.fetch = (async (
+			_input: string | URL | Request,
+			init?: RequestInit,
+		) => {
+			storeInit = init;
+			return new Response(null, { status: 412 });
+		}) as unknown as typeof fetch;
+		let ticketInit: RequestInit | undefined;
+		const client = createEpicenterClient({
+			baseURL,
+			fetch: async (_input, init) => {
+				ticketInit = init;
+				return Response.json({
+					url: `https://api.epicenter.so/api/blobs/${id}`,
+					uploadUrl: 'https://store.example.com/upload',
+					requiredHeaders: {
+						'content-type': 'text/plain',
+						'if-none-match': '*',
+					},
+				});
+			},
+		});
+
+		const { data, error } = await client.blobs.add(id, blob);
+
+		expect(error).toBeNull();
+		expect(JSON.parse(String(ticketInit?.body))).toEqual({
+			blobId: id,
+			sizeBytes: 5,
+			contentType: blob.type,
+		});
+		expect(storeInit?.body).toBe(blob);
+		expect(storeInit?.headers).toEqual({
+			'content-type': 'text/plain',
+			'if-none-match': '*',
+		});
+		expect(data).toEqual({
+			blobId: id,
+			url: `https://api.epicenter.so/api/blobs/${id}`,
+		});
 	});
 });
 
@@ -52,8 +101,8 @@ describe('blobs.get follows the 302 by hand', () => {
 		// A bearer-authed fetch pins `redirect: 'manual'`, so the server's 302
 		// surfaces raw. The client must read `Location` and hit the presigned URL
 		// through the global `fetch` (no bearer), then hand back the bytes.
-		const presignedUrl =
-			'https://store.example.com/principals/o/blobs/abc?sig=1';
+		const id = generateBlobId();
+		const presignedUrl = `https://store.example.com/principals/o/blobs/${id}?sig=1`;
 		const storeCalls: string[] = [];
 		globalThis.fetch = (async (input: string | URL | Request) => {
 			storeCalls.push(String(input));
@@ -72,7 +121,7 @@ describe('blobs.get follows the 302 by hand', () => {
 				}),
 		});
 
-		const { data, error } = await client.blobs.get('abc');
+		const { data, error } = await client.blobs.get(id);
 
 		expect(error).toBeNull();
 		expect(await data?.text()).toBe('blob bytes');
@@ -80,6 +129,7 @@ describe('blobs.get follows the 302 by hand', () => {
 	});
 
 	test('a redirect without a Location header fails closed', async () => {
+		const id = generateBlobId();
 		let storeReached = false;
 		globalThis.fetch = (async () => {
 			storeReached = true;
@@ -91,7 +141,7 @@ describe('blobs.get follows the 302 by hand', () => {
 			fetch: async () => new Response(null, { status: 302 }),
 		});
 
-		const { data, error } = await client.blobs.get('abc');
+		const { data, error } = await client.blobs.get(id);
 
 		expect(data).toBeNull();
 		expect(error?.name).toBe('RequestFailed');
@@ -102,6 +152,7 @@ describe('blobs.get follows the 302 by hand', () => {
 	});
 
 	test('a 2xx from a redirect-following fetch is returned as-is', async () => {
+		const id = generateBlobId();
 		// A cookie-authed browser fetch follows the redirect itself; the client
 		// must not fetch again.
 		let storeReached = false;
@@ -115,10 +166,120 @@ describe('blobs.get follows the 302 by hand', () => {
 			fetch: async () => new Response('blob bytes', { status: 200 }),
 		});
 
-		const { data, error } = await client.blobs.get('abc');
+		const { data, error } = await client.blobs.get(id);
 
 		expect(error).toBeNull();
 		expect(await data?.text()).toBe('blob bytes');
 		expect(storeReached).toBe(false);
 	});
 });
+
+describe('createBrowserBlobReplica', () => {
+	const originalFetch = globalThis.fetch;
+	afterEach(() => {
+		globalThis.fetch = originalFetch;
+	});
+
+	test('upload copies the local Blob under the same id', async () => {
+		const id = generateBlobId();
+		const localBlob = new Blob(['local'], { type: 'text/plain' });
+		let uploadedBody: BodyInit | null | undefined;
+		globalThis.fetch = (async (
+			_input: string | URL | Request,
+			init?: RequestInit,
+		) => {
+			uploadedBody = init?.body;
+			return new Response(null, { status: 200 });
+		}) as unknown as typeof fetch;
+		const client = createEpicenterClient({
+			baseURL,
+			fetch: async () =>
+				Response.json({
+					url: `${baseURL}/api/blobs/${id}`,
+					uploadUrl: 'https://store.example.com/upload',
+					requiredHeaders: {
+						'content-type': 'text/plain',
+						'if-none-match': '*',
+					},
+				}),
+		});
+		const replica = createBrowserBlobReplica({
+			blobs: stubBlobs({ get: async () => Ok(localBlob) }),
+			client,
+		});
+
+		const { error } = await replica.upload(id);
+
+		expect(error).toBeNull();
+		expect(uploadedBody).toBe(localBlob);
+	});
+
+	test('download consumes an immutable local collision as idempotent success', async () => {
+		const id = generateBlobId();
+		const original = new Blob(['original']);
+		const stored = original;
+		const blobs = stubBlobs({
+			put: async () => BlobStoreError.BlobAlreadyExists({ id }),
+			get: async () => Ok(stored),
+		});
+		const client = createEpicenterClient({
+			baseURL,
+			fetch: async () => new Response('remote'),
+		});
+		const replica = createBrowserBlobReplica({ blobs, client });
+
+		const { error } = await replica.download(id);
+
+		expect(error).toBeNull();
+		expect(stored).toBe(original);
+	});
+
+	test('download skips the remote when immutable local bytes already exist', async () => {
+		const id = generateBlobId();
+		let remoteReached = false;
+		const client = createEpicenterClient({
+			baseURL,
+			fetch: async () => {
+				remoteReached = true;
+				return new Response('remote');
+			},
+		});
+		const replica = createBrowserBlobReplica({
+			blobs: stubBlobs({
+				stat: async () => Ok({ size: 5, contentType: 'text/plain' }),
+			}),
+			client,
+		});
+
+		const { error } = await replica.download(id);
+
+		expect(error).toBeNull();
+		expect(remoteReached).toBe(false);
+	});
+
+	test('download maps a remote 404 to RemoteBlobNotFound', async () => {
+		const id = generateBlobId();
+		const client = createEpicenterClient({
+			baseURL,
+			fetch: async () => new Response('missing', { status: 404 }),
+		});
+		const replica = createBrowserBlobReplica({
+			blobs: stubBlobs(),
+			client,
+		});
+
+		const { error } = await replica.download(id);
+
+		expect(error?.name).toBe('RemoteBlobNotFound');
+	});
+});
+
+function stubBlobs(overrides: Partial<Blobs> = {}): Blobs {
+	return {
+		put: async () => Ok(undefined),
+		get: async (id) => BlobStoreError.BlobNotFound({ id }),
+		stat: async (id) => BlobStoreError.BlobNotFound({ id }),
+		delete: async () => Ok(undefined),
+		...overrides,
+	};
+}

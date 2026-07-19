@@ -50,9 +50,11 @@
 	import { tauri } from '#platform/tauri';
 	import { deleteRecordingsWithConfirmation } from '$lib/operations/recordings';
 	import { type Recording, recordings } from '$lib/state/recordings.svelte';
+	import type { RecordingId } from '$lib/workspace';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
 	import RecordingTranscriptCell from './RecordingTranscriptCell.svelte';
-	import RenderAudioUrl from './RenderAudioUrl.svelte';
+	import RecordingAudioCell from './RecordingAudioCell.svelte';
+	import RecordingStorageBadge from './RecordingStorageBadge.svelte';
 	import TranscriptionStatusBadge from './TranscriptionStatusBadge.svelte';
 	import RecordingRowActions from './actions/RecordingRowActions.svelte';
 
@@ -168,21 +170,34 @@
 					headerText: 'Transcript',
 				}),
 			cell: ({ row }) =>
-				renderComponent(RecordingTranscriptCell, { recordingId: row.id }),
+				renderComponent(RecordingTranscriptCell, {
+					recordingId: row.original.id,
+				}),
 		},
 		{
 			id: 'audio',
 			meta: { label: 'Audio' },
-			accessorFn: ({ id }) => id,
+			accessorFn: (recording) => recording,
 			header: ({ column }) =>
 				renderComponent(SortableTableHeader, {
 					column,
 					headerText: 'Audio',
 				}),
-			cell: ({ getValue }) => {
-				const id = getValue<string>();
-				return renderComponent(RenderAudioUrl, { id });
-			},
+			cell: ({ getValue }) =>
+				renderComponent(RecordingAudioCell, {
+					recording: getValue<Recording>(),
+				}),
+		},
+		{
+			id: 'storage',
+			meta: { label: 'Storage' },
+			accessorFn: (recording) => recording,
+			header: 'Storage',
+			enableSorting: false,
+			cell: ({ getValue }) =>
+				renderComponent(RecordingStorageBadge, {
+					recording: getValue<Recording>(),
+				}),
 		},
 		{
 			id: 'status',
@@ -192,7 +207,7 @@
 			enableSorting: false,
 			cell: ({ getValue }) =>
 				renderComponent(TranscriptionStatusBadge, {
-					recordingId: getValue<string>(),
+					recordingId: getValue<RecordingId>(),
 				}),
 		},
 		{
@@ -206,9 +221,7 @@
 				}),
 			cell: ({ getValue }) => {
 				const recording = getValue<Recording>();
-				return renderComponent(RecordingRowActions, {
-					recordingId: recording.id,
-				});
+				return renderComponent(RecordingRowActions, { recording });
 			},
 		},
 	] satisfies ColumnDef<Recording>[];
@@ -334,9 +347,9 @@
 		return transcriptions.join(delimiter);
 	});
 
-	async function openRecordingsFolder() {
+	async function openBlobsFolder() {
 		if (!tauri) return;
-		const { error } = await tauri.opener.openPath(await PATHS.DB.RECORDINGS());
+		const { error } = await tauri.opener.openPath(await PATHS.DB.BLOBS());
 		if (error) report.error({ title: 'Failed to open folder', cause: error });
 	}
 </script>
@@ -425,8 +438,9 @@
 						{#if transcribeRecordings.isPending}
 							<EllipsisIcon class="size-4" />
 						{:else if selectedRecordingRows.some(
-							({ id }) =>
-								recordings.get(id)?.transcription?.status === 'completed',
+							(recording) =>
+								recordings.get(recording.original.id)?.transcription?.status ===
+								'completed',
 						)}
 							<RetryTranscriptionIcon class="size-4" />
 						{:else}
@@ -509,10 +523,10 @@
 
 				{#if tauri}
 					<Button
-						tooltip="Open recordings folder"
+						tooltip="Open audio storage folder"
 						variant="outline"
 						size="icon"
-						onclick={openRecordingsFolder}
+						onclick={openBlobsFolder}
 					>
 						<ExternalLinkIcon class="size-4" />
 					</Button>
