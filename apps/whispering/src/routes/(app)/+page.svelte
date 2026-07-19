@@ -163,7 +163,7 @@
 			<SectionHeader.Title level={1} class="text-3xl">Whispering</SectionHeader.Title>
 		</div>
 		<SectionHeader.Description class="text-base">
-			Speech to text, without breaking your flow.
+			Press shortcut → speak → get text. Free and open source ❤️
 		</SectionHeader.Description>
 	</SectionHeader.Root>
 
