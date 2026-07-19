@@ -4,17 +4,14 @@ import {
 	deliverTranscriptionResult,
 	type TranscriptionSource,
 } from '$lib/operations/delivery';
-import { uploadRecordingAudio } from '$lib/operations/recording-audio';
 import { polishWillRun, runPolish } from '$lib/operations/run-polish';
 import { playSoundIfEnabled } from '$lib/operations/sound';
 import { transcribeAndPersist } from '$lib/operations/transcribe';
 import { saveRecordingHistory } from '$lib/operations/transcription-history';
 import { report } from '$lib/report';
-import { services } from '$lib/services';
 import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
 import { polishHud } from '$lib/state/polish-hud.svelte';
 import type { WhisperingApp } from '$lib/whispering/app';
-import type { Recording } from '$lib/workspace';
 
 /**
  * Argument shape for the pipeline. The recorder produces a
@@ -50,35 +47,24 @@ export async function processRecordingPipeline(
 	const isDictation = deliverySource === 'recording';
 	if (isDictation) dictationLifecycle.markTranscribing();
 
-	let recording: Recording;
-	try {
-		recording = await app.recordings.create({
-			audioBlobId,
-			uploadedAt: null,
-			title: '',
-			recordedAt: now,
-			recordedAtZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-			transcript: '',
-			polishedTranscript: null,
-			duration: durationMs,
-			transcription: null,
-		});
-	} catch (cause) {
-		const { error: cleanupError } =
-			await services.blobs.local.delete(audioBlobId);
-		if (cleanupError !== null) {
-			throw new AggregateError(
-				[cause, cleanupError],
-				'Could not create the recording row or clean up its finalized audio.',
-			);
-		}
-		throw cause;
-	}
+	// Row creation owns row/blob consistency: on failure it removes the
+	// already-committed audio and rethrows, so a lost row never strands bytes.
+	const recording = await app.recordings.create({
+		audioBlobId,
+		title: '',
+		recordedAt: now,
+		recordedAtZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+		transcript: '',
+		polishedTranscript: null,
+		duration: durationMs,
+		transcription: null,
+	});
 
 	if (app.settings.get('recording.autoUpload')) {
 		// One new row earns one best-effort attempt. Manual upload calls the same
-		// operation; there is no history scan, queue, persisted failure, or retry.
-		void uploadRecordingAudio(app, recording)
+		// workflow; there is no history scan, queue, persisted failure, or retry.
+		void app.recordings
+			.uploadAudio(recording.id)
 			.then(({ error }) => {
 				if (error !== null) {
 					report.info({

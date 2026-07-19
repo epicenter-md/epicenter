@@ -28,7 +28,7 @@
 	import { whisperingPath } from '$lib/constants/urls';
 	import { importFiles } from '$lib/operations/import';
 	import { selectCaptureSurface } from '$lib/operations/recording';
-	import { deleteRecordingsWithConfirmation } from '$lib/operations/recordings';
+	import { deleteRecordingsWithConfirmation } from '$lib/operations/delete-recordings';
 	import { report } from '$lib/report';
 	import {
 		getSelectedTranscriptionProvider,

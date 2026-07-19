@@ -1,25 +1,42 @@
+import { join } from 'node:path';
+import { createBunBlobStore } from '@epicenter/blobs/bun';
 import { createDeviceBunWorkspaceRuntime } from '@epicenter/workspace/sqlite/bun';
 import { consoleSink, type LogEvent } from 'wellcrafted/logger';
 import type { TranscriptionServiceId } from '../services/transcription/providers';
 import type { WhisperingAppDependencies } from './app';
 
 export type CreateWhisperingBunDependenciesOptions = {
-	workspacesRoot: string;
+	/**
+	 * The one caller-owned root for all persistent Whispering storage. Every
+	 * child path derives from it: the workspace runtime owns
+	 * `<dataDir>/device/<workspaceId>/store.sqlite3` and audio bytes live under
+	 * `<dataDir>/blobs/`.
+	 */
+	dataDir: string;
 	defaultTranscriptionService?: TranscriptionServiceId;
 };
 
 /**
  * Native dependencies for scripts and long-lived local agent hosts.
- * Construction is inert; SQLite opens only when the caller awaits
- * `openWhisperingApp`.
+ * Construction is inert; SQLite opens and directories appear only when the
+ * caller awaits `openWhisperingApp`. There is no remote blob capability: a
+ * standalone Bun host has no signed-in deployment, so remote audio workflows
+ * honestly refuse instead of pretending.
  */
 export function createWhisperingBunDependencies({
-	workspacesRoot,
+	dataDir,
 	defaultTranscriptionService = 'local',
 }: CreateWhisperingBunDependenciesOptions): WhisperingAppDependencies {
 	return {
 		createRuntime: (onRecordsChanged) =>
-			createDeviceBunWorkspaceRuntime({ workspacesRoot, onRecordsChanged }),
+			createDeviceBunWorkspaceRuntime({
+				workspacesRoot: dataDir,
+				onRecordsChanged,
+			}),
+		blobs: {
+			local: createBunBlobStore({ directory: join(dataDir, 'blobs') }),
+			remote: null,
+		},
 		defaultTranscriptionService,
 		reportBackgroundError(cause) {
 			consoleSink({

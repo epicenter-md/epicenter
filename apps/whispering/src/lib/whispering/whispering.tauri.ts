@@ -1,4 +1,5 @@
 import { createDesktopWorkspaceRuntime } from '@epicenter/workspace/sqlite/desktop';
+import { BlobsLive } from '#platform/blobs';
 import { log } from '$lib/report';
 import type { WhisperingAppDependencies } from './app';
 
@@ -10,6 +11,7 @@ import type { WhisperingAppDependencies } from './app';
 export const whisperingPlatform: WhisperingAppDependencies = {
 	createRuntime: (onRecordsChanged) =>
 		createDesktopWorkspaceRuntime({ onRecordsChanged }),
+	blobs: BlobsLive,
 	defaultTranscriptionService: 'local',
 	reportBackgroundError: (cause) =>
 		log.warn(

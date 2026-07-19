@@ -13,7 +13,6 @@
 		SAMPLE_RATE_OPTIONS,
 	} from '$lib/constants/audio';
 	import { report } from '$lib/report';
-	import { services } from '$lib/services';
 	import { asDeviceIdentifier } from '@epicenter/recorder';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { os } from '#platform/os';
@@ -59,7 +58,7 @@
 			description="Whispering pauses media playing on your computer (music, video, browser tabs) while your voice is being captured, then tries to resume it after. In voice activated mode it pauses only while you actually speak, so music keeps playing between phrases. Works with most apps in your system media controls. A few can't be paused, and on macOS the resume can occasionally wake a different app that was already paused."
 		/>
 
-		{#if services.blobs.remote !== null}
+		{#if app.recordings.remoteAvailable}
 			<SettingSwitch
 				key="recording.autoUpload"
 				label="Upload new recordings"

@@ -9,10 +9,13 @@ import {
 	whisperingWorkspace,
 } from '../workspace';
 import { createWhisperingRecipes, type WhisperingRecipes } from './recipes';
+import type { WhisperingBlobs } from './recording-audio';
 import {
 	createWhisperingRecordings,
 	type WhisperingRecordings,
 } from './recordings';
+
+export type { WhisperingBlobs } from './recording-audio';
 
 type AppRuntime = {
 	open<TDefinition extends WorkspaceDefinition>(
@@ -23,12 +26,13 @@ type AppRuntime = {
 
 /**
  * The environment-owned inputs for one app acquisition: how to build
- * the workspace runtime, and the platform's default transcription service.
- * The `#platform/whispering` leaves bind these per build; Bun scripts supply
- * their own.
+ * the workspace runtime, the composed blob capability, and the platform's
+ * default transcription service. The `#platform/whispering` leaves bind these
+ * per build; Bun scripts supply their own.
  */
 export type WhisperingAppDependencies = {
 	createRuntime(onRecordsChanged: (workspaceId: string) => void): AppRuntime;
+	blobs: WhisperingBlobs;
 	defaultTranscriptionService: TranscriptionServiceId;
 	reportBackgroundError(cause: unknown): void;
 };
@@ -84,6 +88,7 @@ function clone<TValue>(value: TValue): TValue {
 export async function openWhisperingApp(
 	{
 		createRuntime,
+		blobs,
 		defaultTranscriptionService,
 		reportBackgroundError,
 	}: WhisperingAppDependencies,
@@ -145,6 +150,7 @@ export async function openWhisperingApp(
 		);
 		const recordingsDomain = createWhisperingRecordings({
 			workspace: whispering,
+			blobs,
 			onRecordsChanged: (listener) => onRecordsChanged(whispering.id, listener),
 			reportBackgroundError,
 		});

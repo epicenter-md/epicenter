@@ -6,7 +6,6 @@ import { goto } from '$app/navigation';
 import type { CaptureSurface } from '$lib/constants/audio';
 import { whisperingPath } from '$lib/constants/urls';
 import { logAnalyticsEvent } from '$lib/operations/analytics';
-import { finalizeAudioBlob } from '$lib/operations/local-audio';
 import { recordingMedia } from '$lib/operations/media';
 import { processRecordingPipeline } from '$lib/operations/pipeline';
 import { playSoundIfEnabled } from '$lib/operations/sound';
@@ -287,7 +286,7 @@ export async function startVadRecording(app: WhisperingApp) {
 				blob_size: blob.size,
 			});
 
-			const finalized = await finalizeAudioBlob(blob);
+			const finalized = await app.recordings.storeAudio(blob);
 			if (finalized.error !== null) {
 				dictationLifecycle.markFailed({
 					tier: 'silent-loss',

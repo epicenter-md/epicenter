@@ -9,13 +9,7 @@
 		useQueryClient,
 	} from '@tanstack/svelte-query';
 	import { resultMutationOptions } from 'wellcrafted/query';
-	import {
-		downloadRecordingAudio,
-		removeLocalRecordingAudio,
-		uploadRecordingAudio,
-	} from '$lib/operations/recording-audio';
 	import { report } from '$lib/report';
-	import { services } from '$lib/services';
 	import type { Recording } from '$lib/state/recordings.svelte';
 	import {
 		getWhisperingApp,
@@ -31,7 +25,7 @@
 	const availability = createQuery(
 		() => queries.audio.availability(() => recording).options,
 	);
-	const canUseRemote = $derived(services.blobs.remote !== null);
+	const canUseRemote = $derived(app.recordings.remoteAvailable);
 
 	async function invalidateAvailability() {
 		await queryClient.invalidateQueries({
@@ -42,21 +36,21 @@
 	const upload = createMutation(() =>
 		resultMutationOptions({
 			mutationKey: ['recordingAudio', 'upload', recording.id],
-			mutationFn: () => uploadRecordingAudio(app, recording),
+			mutationFn: () => app.recordings.uploadAudio(recording.id),
 			onSuccess: invalidateAvailability,
 		}),
 	);
 	const download = createMutation(() =>
 		resultMutationOptions({
 			mutationKey: ['recordingAudio', 'download', recording.id],
-			mutationFn: () => downloadRecordingAudio(app, recording),
+			mutationFn: () => app.recordings.downloadAudio(recording.id),
 			onSuccess: invalidateAvailability,
 		}),
 	);
 	const removeLocal = createMutation(() =>
 		resultMutationOptions({
 			mutationKey: ['recordingAudio', 'removeLocal', recording.id],
-			mutationFn: () => removeLocalRecordingAudio(app, recording),
+			mutationFn: () => app.recordings.removeLocalAudio(recording.id),
 			onSuccess: invalidateAvailability,
 		}),
 	);

@@ -6,15 +6,14 @@ import { createTranscriptionQueries } from './transcription';
 
 /**
  * Cross-platform query namespace, bound to one ready app. Built once by
- * the UI session and read from context; query operations that do not touch the
- * app (audio availability, download) compose in unchanged.
+ * the UI session and read from context.
  */
 export function createWhisperingQueries(
 	app: WhisperingApp,
 	runtime: WhisperingQueryRuntime,
 ) {
 	return {
-		audio: createAudioQueries(runtime),
+		audio: createAudioQueries(app, runtime),
 		download: createDownloadQueries(runtime),
 		transcription: createTranscriptionQueries(app, runtime),
 	};

@@ -6,7 +6,6 @@ import {
 	MAX_IMPORT_FILES,
 } from '$lib/constants/import-formats';
 import { logAnalyticsEvent } from '$lib/operations/analytics';
-import { finalizeAudioBlob } from '$lib/operations/local-audio';
 import { processRecordingPipeline } from '$lib/operations/pipeline';
 import { report } from '$lib/report';
 import type { WhisperingApp } from '$lib/whispering/app';
@@ -105,7 +104,7 @@ export async function importFiles(
 
 	await Promise.all(
 		valid.map(async (file) => {
-			const finalized = await finalizeAudioBlob(file);
+			const finalized = await app.recordings.storeAudio(file);
 			if (finalized.error !== null) {
 				report.error({
 					title: 'Failed to save imported audio',

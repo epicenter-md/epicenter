@@ -13,7 +13,7 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import type { Snippet } from 'svelte';
 	import AudioBlobPlayer from '$lib/components/AudioBlobPlayer.svelte';
-	import { deleteRecordingsWithConfirmation } from '$lib/operations/recordings';
+	import { deleteRecordingsWithConfirmation } from '$lib/operations/delete-recordings';
 	import { report } from '$lib/report';
 	import type { Recording } from '$lib/state/recordings.svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';

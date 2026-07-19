@@ -15,10 +15,8 @@ import { Err, Ok } from 'wellcrafted/result';
 import type { RecordingId } from '$lib/workspace';
 
 let autoUpload = true;
-let createError: unknown = null;
 let willPolish = false;
-const uploadRecordingAudio = mock(async () => Ok(undefined));
-const deleteBlob = mock(async () => Ok(undefined));
+const uploadAudio = mock(async () => Ok(undefined));
 const deliverTranscriptionResult = mock(async () => ({
 	outcome: { reach: 'output' } as const,
 	notice: { title: 'done' },
@@ -30,9 +28,6 @@ const saveRecordingHistory = mock(async () =>
 	polishedHistoryError === null ? Ok(undefined) : Err(polishedHistoryError),
 );
 
-mock.module('$lib/operations/recording-audio', () => ({
-	uploadRecordingAudio,
-}));
 mock.module('$lib/operations/delivery', () => ({
 	deliverTranscriptionResult,
 }));
@@ -62,9 +57,6 @@ mock.module('$lib/report', () => ({
 		loading: () => ({ resolve: mock(), reject: mock() }),
 	},
 }));
-mock.module('$lib/services', () => ({
-	services: { blobs: { local: { delete: deleteBlob } } },
-}));
 mock.module('$lib/state/dictation-lifecycle.svelte', () => ({
 	dictationLifecycle: {
 		markTranscribing: mock(),
@@ -83,16 +75,15 @@ const app = {
 	settings: { get: () => autoUpload },
 	recordings: {
 		async create(fields: Record<string, unknown>) {
-			if (createError !== null) throw createError;
 			return { ...fields, id: 'recording-1' as RecordingId };
 		},
+		uploadAudio,
 		update: mock(async () => Ok(undefined)),
 	},
 } as unknown as WhisperingApp;
 
 afterEach(() => {
 	autoUpload = true;
-	createError = null;
 	willPolish = false;
 	historyError = null;
 	polishedHistoryError = null;
@@ -105,7 +96,8 @@ test('auto-upload attempts once for each new row only when enabled', async () =>
 		deliverySource: 'import',
 	});
 	await Promise.resolve();
-	expect(uploadRecordingAudio).toHaveBeenCalledTimes(1);
+	expect(uploadAudio).toHaveBeenCalledTimes(1);
+	expect(uploadAudio).toHaveBeenLastCalledWith('recording-1');
 
 	autoUpload = false;
 	await processRecordingPipeline(app, {
@@ -114,23 +106,7 @@ test('auto-upload attempts once for each new row only when enabled', async () =>
 		deliverySource: 'import',
 	});
 	await Promise.resolve();
-	expect(uploadRecordingAudio).toHaveBeenCalledTimes(1);
-});
-
-test('a failed row creation removes the already-finalized local blob', async () => {
-	const cause = new Error('row rejected');
-	createError = cause;
-	const audioBlobId = generateBlobId();
-
-	await expect(
-		processRecordingPipeline(app, {
-			audioBlobId,
-			durationMs: 100,
-			deliverySource: 'import',
-		}),
-	).rejects.toBe(cause);
-	expect(deleteBlob).toHaveBeenLastCalledWith(audioBlobId);
-	createError = null;
+	expect(uploadAudio).toHaveBeenCalledTimes(1);
 });
 
 test('history failure warns after delivering the usable transcription', async () => {

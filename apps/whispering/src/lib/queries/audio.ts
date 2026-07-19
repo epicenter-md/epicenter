@@ -1,8 +1,8 @@
 import type { Accessor } from '@tanstack/svelte-query';
 import { defineKeys } from 'wellcrafted/query';
-import { getRecordingAudioAvailability } from '$lib/operations/recording-audio';
 import type { WhisperingQueryRuntime } from '$lib/queries/client';
 import type { Recording } from '$lib/state/recordings.svelte';
+import type { WhisperingApp } from '$lib/whispering/app';
 
 export const audioKeys = defineKeys({
 	availability: (
@@ -12,9 +12,10 @@ export const audioKeys = defineKeys({
 	) => ['audio', 'availability', id, audioBlobId, uploadedAt] as const,
 });
 
-export function createAudioQueries({
-	defineQuery,
-}: Pick<WhisperingQueryRuntime, 'defineQuery'>) {
+export function createAudioQueries(
+	app: WhisperingApp,
+	{ defineQuery }: Pick<WhisperingQueryRuntime, 'defineQuery'>,
+) {
 	return {
 		availability: (
 			recording: Accessor<Pick<Recording, 'id' | 'audioBlobId' | 'uploadedAt'>>,
@@ -26,7 +27,7 @@ export function createAudioQueries({
 					current.audioBlobId,
 					current.uploadedAt,
 				),
-				queryFn: () => getRecordingAudioAvailability(recording()),
+				queryFn: () => app.recordings.audioAvailability(recording().id),
 			});
 		},
 	};

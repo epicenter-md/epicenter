@@ -123,6 +123,23 @@ const dependencies = (fake: ReturnType<typeof createFakeRuntime>) =>
 			fake.observeRecordsChanged(onRecordsChanged);
 			return fake.runtime;
 		},
+		blobs: {
+			local: {
+				async put() {
+					return Ok(undefined);
+				},
+				async get() {
+					return Ok(new Blob());
+				},
+				async stat() {
+					return Ok({ size: 0, contentType: 'application/octet-stream' });
+				},
+				async delete() {
+					return Ok(undefined);
+				},
+			},
+			remote: null,
+		},
 		defaultTranscriptionService: 'OpenAI',
 		reportBackgroundError: () => undefined,
 	}) as const;

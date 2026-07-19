@@ -47,7 +47,7 @@
 	import { PATHS } from '$lib/services/fs-paths';
 	import { report } from '$lib/report';
 	import { tauri } from '#platform/tauri';
-	import { deleteRecordingsWithConfirmation } from '$lib/operations/recordings';
+	import { deleteRecordingsWithConfirmation } from '$lib/operations/delete-recordings';
 	import type { Recording } from '$lib/state/recordings.svelte';
 	import type { RecordingId } from '$lib/workspace';
 	import { createCopyFn } from '$lib/utils/createCopyFn';

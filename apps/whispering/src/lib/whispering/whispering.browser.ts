@@ -1,4 +1,5 @@
 import { auth } from '#platform/auth';
+import { BlobsLive } from '#platform/blobs';
 import { log } from '$lib/report';
 import type { WhisperingAppDependencies } from './app';
 import { createWhisperingBrowserRuntime } from './whispering.browser-runtime';
@@ -12,6 +13,7 @@ import { createWhisperingBrowserRuntime } from './whispering.browser-runtime';
 export const whisperingPlatform: WhisperingAppDependencies = {
 	createRuntime: (onRecordsChanged) =>
 		createWhisperingBrowserRuntime({ auth, onRecordsChanged }),
+	blobs: BlobsLive,
 	defaultTranscriptionService: 'OpenAI',
 	reportBackgroundError: (cause) =>
 		log.warn(

@@ -34,7 +34,7 @@ app.settings.set('recording.trigger', 'vad');
 
 ### `recordings.svelte.ts`
 
-Recording metadata backed by structural workspace row ids. The app namespace maintains the cache and refreshes after local writes or installed remote record changes; this module only makes its reads reactive. Audio blobs remain separate and are addressed by each row's `audioBlobId`; use `$lib/queries/audio` for availability and `services.blobs.local` for raw blob access.
+Recording metadata backed by structural workspace row ids. The app namespace maintains the cache, owns row/blob consistency (`storeAudio`, `create` cleanup, `delete`, the audio workflows, and the `uploadedAt` marker), and refreshes after local writes or installed remote record changes; this module only makes its reads reactive. Use `$lib/queries/audio` for availability query identity and `services.blobSources` for playback.
 
 ```typescript
 import { InstantString } from '@epicenter/field';
@@ -48,15 +48,18 @@ const recording = recordings.get(id);
 const sorted = recordings.sorted; // newest first
 
 // Writes are async and refresh the app-level cache after commit.
+// `uploadedAt` is blob-state metadata owned by the audio workflows; creation
+// starts it at null and public updates cannot touch it.
+const stored = await recordings.storeAudio(blob);
 const created = await recordings.create({
-	audioBlobId,
-	uploadedAt: null,
+	audioBlobId: stored.data.audioBlobId,
 	// remaining recording fields
 });
 await recordings.update(id, {
 	transcript,
 	transcription: { status: 'completed', completedAt: InstantString.now() },
 });
+// Deletes the online copy (when one exists), the device copy, then the row.
 await recordings.delete(id);
 ```
 
