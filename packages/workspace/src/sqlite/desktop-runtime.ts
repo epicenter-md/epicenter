@@ -12,11 +12,11 @@ import {
 	decodeDesktopRecordResult,
 	desktopWorkspaceUrl,
 } from './desktop-protocol.js';
-import type { WorkspaceHandle, WorkspaceTables } from './runtime.js';
-import type { WorkspaceDefinition } from './runtime-definition.js';
+import type { Workspace, WorkspaceTables } from './runtime.js';
+import type { WorkspaceLens } from './workspace-lens.js';
 
 type DefinitionTables<TDefinition> =
-	TDefinition extends WorkspaceDefinition<infer TTables> ? TTables : never;
+	TDefinition extends WorkspaceLens<infer TTables> ? TTables : never;
 
 type RowAddress = { table: string; rowId: string };
 
@@ -38,10 +38,10 @@ type DesktopRuntimeBroadcastChannel = {
 };
 
 type BoundWorkspace = {
-	definition: WorkspaceDefinition;
-	handle: WorkspaceHandle<WorkspaceDefinition>;
+	definition: WorkspaceLens;
+	handle: Workspace<WorkspaceLens>;
 	/** The one host open handshake; resolves with the ready handle. */
-	opened: Promise<WorkspaceHandle<WorkspaceDefinition>>;
+	opened: Promise<Workspace<WorkspaceLens>>;
 	revokeRows(addresses: RowAddress[]): void;
 	revokeDocuments(cause: Error): void;
 	applyDocumentUpdate(address: RowAddress, update: Uint8Array): void;
@@ -141,10 +141,10 @@ export function createDesktopWorkspaceRuntime({
 		if (disposed) throw new Error('Desktop workspace runtime is disposed');
 	}
 
-	function createHandle<TDefinition extends WorkspaceDefinition>(
+	function createHandle<TDefinition extends WorkspaceLens>(
 		definition: TDefinition,
 	): {
-		handle: WorkspaceHandle<TDefinition>;
+		handle: Workspace<TDefinition>;
 		revokeRows(addresses: RowAddress[]): void;
 		revokeDocuments(cause: Error): void;
 		applyDocumentUpdate(address: RowAddress, update: Uint8Array): void;
@@ -273,7 +273,7 @@ export function createDesktopWorkspaceRuntime({
 				}
 				return rows as Static<TResultSchema>[];
 			},
-		}) as unknown as WorkspaceHandle<TDefinition>;
+		}) as unknown as Workspace<TDefinition>;
 		return {
 			handle,
 			revokeRows: documents.revoke,
@@ -290,9 +290,9 @@ export function createDesktopWorkspaceRuntime({
 		 * SQLite owner is acquired. A failed handshake rejects and unbinds, so
 		 * a later `open` performs a fresh handshake against the host.
 		 */
-		open<TDefinition extends WorkspaceDefinition>(
+		open<TDefinition extends WorkspaceLens>(
 			definition: TDefinition,
-		): Promise<WorkspaceHandle<TDefinition>> {
+		): Promise<Workspace<TDefinition>> {
 			assertOpen();
 			const existing = workspaces.get(definition.id);
 			if (existing) {
@@ -301,7 +301,7 @@ export function createDesktopWorkspaceRuntime({
 						`Workspace '${definition.id}' is already bound to another definition in this runtime`,
 					);
 				}
-				return existing.opened as Promise<WorkspaceHandle<TDefinition>>;
+				return existing.opened as Promise<Workspace<TDefinition>>;
 			}
 			const binding = createHandle(definition);
 			const bound: BoundWorkspace = {
@@ -319,7 +319,7 @@ export function createDesktopWorkspaceRuntime({
 					throw cause;
 				},
 			);
-			return bound.opened as Promise<WorkspaceHandle<TDefinition>>;
+			return bound.opened as Promise<Workspace<TDefinition>>;
 		},
 		async [Symbol.asyncDispose]() {
 			if (disposed) return;

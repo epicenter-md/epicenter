@@ -18,7 +18,7 @@ import {
 	createDeviceBunWorkspaceRuntime,
 } from './bun-runtime.js';
 import { defineTable } from './lens-definition.js';
-import { defineWorkspace } from './runtime-definition.js';
+import { defineWorkspace } from './workspace-lens.js';
 
 const notesWorkspace = defineWorkspace({
 	id: 'epicenter-runtime-test',

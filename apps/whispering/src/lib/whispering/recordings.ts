@@ -9,7 +9,7 @@ import {
 } from '@epicenter/blobs';
 import type {
 	RowLensError,
-	WorkspaceHandle,
+	Workspace,
 } from '@epicenter/workspace/sqlite';
 import {
 	defineErrors,
@@ -75,7 +75,7 @@ export type WhisperingRecordings = {
 		id: Recording['id'],
 		partial: Partial<Omit<Recording, 'id' | 'audioBlobId' | 'uploadedAt'>>,
 	): ReturnType<
-		WorkspaceHandle<
+		Workspace<
 			typeof whisperingWorkspace
 		>['tables']['recordings']['update']
 	>;
@@ -130,7 +130,7 @@ export function createWhisperingRecordings({
 	onRecordsChanged,
 	reportBackgroundError,
 }: {
-	workspace: WorkspaceHandle<typeof whisperingWorkspace>;
+	workspace: Workspace<typeof whisperingWorkspace>;
 	blobs: WhisperingBlobs;
 	onRecordsChanged(listener: () => void): () => void;
 	reportBackgroundError(cause: unknown): void;

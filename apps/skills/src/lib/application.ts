@@ -1,17 +1,17 @@
 import { skillsWorkspace } from '@epicenter/skills';
 import type {
-	WorkspaceDefinition,
-	WorkspaceHandle,
+	WorkspaceLens,
+	Workspace,
 } from '@epicenter/workspace/sqlite';
 import { createDeviceBrowserWorkspaceRuntime } from '@epicenter/workspace/sqlite/browser';
 import { createSkillsState } from './state/skills-state.svelte.js';
 
-type SkillsWorkspace = WorkspaceHandle<typeof skillsWorkspace>;
+type SkillsWorkspace = Workspace<typeof skillsWorkspace>;
 
 type ApplicationRuntime = {
-	open<TDefinition extends WorkspaceDefinition>(
+	open<TDefinition extends WorkspaceLens>(
 		definition: TDefinition,
-	): Promise<WorkspaceHandle<TDefinition>>;
+	): Promise<Workspace<TDefinition>>;
 	[Symbol.asyncDispose](): Promise<void>;
 };
 

@@ -6,7 +6,7 @@ import {
 	isWorkspaceStorageMovedError,
 	type RowDocument,
 	rowDocumentConnection,
-	type WorkspaceHandle,
+	type Workspace,
 } from '@epicenter/workspace/sqlite';
 import { createAccountBrowserWorkspaceRuntime } from '@epicenter/workspace/sqlite/browser';
 import { Type } from 'typebox';
@@ -75,7 +75,7 @@ void runtime.open(definition).then(
 );
 
 function createDriver(
-	workspace: WorkspaceHandle<typeof definition>,
+	workspace: Workspace<typeof definition>,
 ): Window['productionBrowserRuntime'] {
 	let draft: RowDocument | undefined;
 	return {

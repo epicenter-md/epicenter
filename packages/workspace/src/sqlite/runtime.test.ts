@@ -28,7 +28,7 @@ import type {
 import { defineTable } from "./lens-definition.js";
 import { initializeLocalWorkspaceStorage } from "./local-workspace-storage.js";
 import { createWorkspaceRuntime } from "./runtime.js";
-import { defineWorkspace } from "./runtime-definition.js";
+import { defineWorkspace } from "./workspace-lens.js";
 
 const definition = defineWorkspace({
   id: "runtime-test",

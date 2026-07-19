@@ -1,6 +1,6 @@
 import type {
-	WorkspaceDefinition,
-	WorkspaceHandle,
+	WorkspaceLens,
+	Workspace,
 } from '@epicenter/workspace/sqlite';
 import type { TranscriptionServiceId } from '../services/transcription/providers';
 import {
@@ -18,9 +18,9 @@ import {
 export type { WhisperingBlobs } from './recording-audio';
 
 type AppRuntime = {
-	open<TDefinition extends WorkspaceDefinition>(
+	open<TDefinition extends WorkspaceLens>(
 		definition: TDefinition,
-	): Promise<WorkspaceHandle<TDefinition>>;
+	): Promise<Workspace<TDefinition>>;
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
@@ -201,7 +201,7 @@ async function hydrateSettings({
 	isReleased,
 	reportBackgroundError,
 }: {
-	whispering: WorkspaceHandle<typeof whisperingWorkspace>;
+	whispering: Workspace<typeof whisperingWorkspace>;
 	defaults: WhisperingSettingValues;
 	subscribeRecordsChanged(listener: () => void): () => void;
 	isReleased(): boolean;

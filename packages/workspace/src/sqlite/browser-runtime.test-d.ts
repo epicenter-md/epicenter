@@ -4,7 +4,7 @@ import type {
 	createDeviceBrowserWorkspaceRuntime,
 } from './browser-runtime.js';
 import { defineTable } from './lens-definition.js';
-import { defineWorkspace } from './runtime-definition.js';
+import { defineWorkspace } from './workspace-lens.js';
 
 const definition = defineWorkspace({
 	id: 'browser-types',

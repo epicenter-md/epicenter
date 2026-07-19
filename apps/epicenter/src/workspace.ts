@@ -3,7 +3,7 @@
 import { conversationsTable } from '@epicenter/chat';
 import {
 	defineWorkspace,
-	type WorkspaceHandle,
+	type Workspace,
 } from '@epicenter/workspace/sqlite';
 
 export const conversationsWorkspace = defineWorkspace({
@@ -11,6 +11,6 @@ export const conversationsWorkspace = defineWorkspace({
 	tables: { conversations: conversationsTable },
 });
 
-export type ConversationsWorkspace = WorkspaceHandle<
+export type ConversationsWorkspace = Workspace<
 	typeof conversationsWorkspace
 >;

@@ -1,7 +1,7 @@
 # App-owned workspace lenses clean break
 
 **Date**: 2026-07-19
-**Status**: Draft
+**Status**: In Progress
 **Owner**: Epicenter workspace and desktop runtime
 **Branch**: `codex/sqlite-sync-architecture`
 **Decision owners**: [ADR-0156](../docs/adr/0156-applications-bring-workspace-lenses-runtimes-own-workspaces-by-id.md), [ADR-0157](../docs/adr/0157-read-only-sql-exposes-one-schema-opaque-row-relation.md), [ADR-0158](../docs/adr/0158-installed-apps-declare-workspace-ids-but-run-no-bun-modules.md)
@@ -364,8 +364,12 @@ new public APIs as selectable modes.
 
 ### Wave B: put typed views on the caller side
 
-- [ ] Rename `WorkspaceDefinition` to `WorkspaceLens` and
+- [x] Rename `WorkspaceDefinition` to `WorkspaceLens` and
   `WorkspaceHandle` to `Workspace` in one clean-break change.
+  > **Note**: Landed first, ahead of Wave A, because the pure rename compiles
+  > independently across the repo (including `examples/sqlite-workspace-browser`,
+  > which the consumer list above missed). `runtime-definition.ts` is now
+  > `workspace-lens.ts`.
 - [ ] Build table and KV adapters that validate/project around a raw owner.
 - [ ] Keep `runtime.open(lens)` as the only typed opening call.
 - [ ] Add same-ID, different-lens tests covering reads, patches, KV, documents,

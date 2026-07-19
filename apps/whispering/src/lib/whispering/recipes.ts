@@ -1,6 +1,6 @@
 import type {
 	RowLensError,
-	WorkspaceHandle,
+	Workspace,
 } from '@epicenter/workspace/sqlite';
 import { BUILTIN_RECIPES } from '../state/builtin-recipes';
 import type { Recipe, whisperingWorkspace } from '../workspace';
@@ -21,7 +21,7 @@ export function createWhisperingRecipes({
 	onRecordsChanged,
 	reportBackgroundError,
 }: {
-	workspace: WorkspaceHandle<typeof whisperingWorkspace>;
+	workspace: Workspace<typeof whisperingWorkspace>;
 	onRecordsChanged(listener: () => void): () => void;
 	reportBackgroundError(cause: unknown): void;
 }) {

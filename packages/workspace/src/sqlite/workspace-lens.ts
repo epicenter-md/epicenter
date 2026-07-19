@@ -6,10 +6,14 @@ import {
 
 type NoKv = Readonly<Record<never, never>>;
 
-declare const workspaceDefinitionParts: unique symbol;
+declare const workspaceLensParts: unique symbol;
 
-/** An inert imported workspace contract. The runtime owns every live resource. */
-export type WorkspaceDefinition<
+/**
+ * An inert application-owned lens over one schema-opaque workspace
+ * (ADR-0156). The runtime owns every live resource by Workspace ID; this
+ * value only carries the stable ID and this release's interpretation.
+ */
+export type WorkspaceLens<
 	TTables extends TableLensDefinitions = TableLensDefinitions,
 	TKv extends KvDefinitions = NoKv,
 > = {
@@ -17,7 +21,7 @@ export type WorkspaceDefinition<
 	tables: Readonly<TTables>;
 	/** This release's typed lens over the canonical KV map (ADR-0130). */
 	kv: Readonly<TKv>;
-	[workspaceDefinitionParts]: {
+	[workspaceLensParts]: {
 		tables: TTables;
 		kv: TKv;
 	};
@@ -35,7 +39,7 @@ export function defineWorkspace<
 	id: string;
 	tables: TTables;
 	kv?: TKv;
-}): WorkspaceDefinition<TTables, TKv> {
+}): WorkspaceLens<TTables, TKv> {
 	assertWorkspaceId(id);
 	assertPlainRecord(tablesInput, 'workspace tables');
 	for (const definition of Object.values(tablesInput)) {
@@ -48,7 +52,7 @@ export function defineWorkspace<
 		id,
 		tables: Object.freeze({ ...tablesInput }),
 		kv: Object.freeze({ ...kv }),
-	}) as WorkspaceDefinition<TTables, TKv>;
+	}) as WorkspaceLens<TTables, TKv>;
 }
 
 function assertWorkspaceId(id: string): void {

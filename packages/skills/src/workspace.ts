@@ -1,6 +1,6 @@
 import {
 	defineWorkspace,
-	type WorkspaceHandle,
+	type Workspace,
 } from '@epicenter/workspace/sqlite';
 import { SKILLS_WORKSPACE_ID } from './constants.js';
 import { referencesTable, skillsTable } from './tables.js';
@@ -17,4 +17,4 @@ export const skillsWorkspace = defineWorkspace({
 	},
 });
 
-export type SkillsWorkspace = WorkspaceHandle<typeof skillsWorkspace>;
+export type SkillsWorkspace = Workspace<typeof skillsWorkspace>;

@@ -23,7 +23,7 @@ import {
 	parseBlobId,
 } from '@epicenter/blobs';
 import { InstantString } from '@epicenter/field';
-import type { WorkspaceHandle } from '@epicenter/workspace/sqlite';
+import type { Workspace } from '@epicenter/workspace/sqlite';
 import { Ok } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import type { Recording, RecordingId, whisperingWorkspace } from '../workspace';
@@ -132,7 +132,7 @@ async function setup({
 					}),
 			},
 		},
-	} as unknown as WorkspaceHandle<typeof whisperingWorkspace>;
+	} as unknown as Workspace<typeof whisperingWorkspace>;
 
 	const domain = createWhisperingRecordings({
 		workspace,

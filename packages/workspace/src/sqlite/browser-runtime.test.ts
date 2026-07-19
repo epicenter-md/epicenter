@@ -24,7 +24,7 @@ import {
 	isWorkspaceStorageHeldError,
 } from './browser-runtime-protocol.js';
 import { defineTable } from './lens-definition.js';
-import { defineWorkspace } from './runtime-definition.js';
+import { defineWorkspace } from './workspace-lens.js';
 
 const NativeWorker = globalThis.Worker;
 const ROW_ID = 'aaaaaaaaaaaaaaaaaaaaaaaa';

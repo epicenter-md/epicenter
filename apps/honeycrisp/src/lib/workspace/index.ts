@@ -11,7 +11,7 @@ import {
 	defineTable,
 	defineWorkspace,
 	type RowFor,
-	type WorkspaceHandle,
+	type Workspace,
 } from '@epicenter/workspace/sqlite';
 
 /** Runtime-minted structural note row id. */
@@ -51,7 +51,7 @@ export const honeycrispWorkspace = defineWorkspace({
 	tables: { folders: foldersTable, notes: notesTable },
 });
 
-export type HoneycrispWorkspace = WorkspaceHandle<typeof honeycrispWorkspace>;
+export type HoneycrispWorkspace = Workspace<typeof honeycrispWorkspace>;
 
 /**
  * Delete a folder after best-effort re-parenting of its current notes.

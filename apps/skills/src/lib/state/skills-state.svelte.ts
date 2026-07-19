@@ -8,10 +8,10 @@ import {
 } from '@epicenter/skills';
 import type {
 	RowLensError,
-	WorkspaceHandle,
+	Workspace,
 } from '@epicenter/workspace/sqlite';
 
-type SkillsWorkspace = WorkspaceHandle<typeof skillsWorkspace>;
+type SkillsWorkspace = Workspace<typeof skillsWorkspace>;
 
 export type SkillMetadataUpdate = Partial<
 	Pick<Skill, 'name' | 'description' | 'license' | 'compatibility'>

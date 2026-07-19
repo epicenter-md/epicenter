@@ -34,11 +34,11 @@ import type {
 	WorkspaceSyncStatus,
 } from './canonical-sync-supervisor.js';
 import { CurrentStateTransportInterruption } from './current-state-transport.js';
-import type { WorkspaceHandle, WorkspaceTables } from './runtime.js';
-import type { WorkspaceDefinition } from './runtime-definition.js';
+import type { Workspace, WorkspaceTables } from './runtime.js';
+import type { WorkspaceLens } from './workspace-lens.js';
 
 type DefinitionTables<TDefinition> =
-	TDefinition extends WorkspaceDefinition<infer TTables> ? TTables : never;
+	TDefinition extends WorkspaceLens<infer TTables> ? TTables : never;
 
 type PendingRequest = {
 	resolve(value: unknown): void;
@@ -46,11 +46,11 @@ type PendingRequest = {
 };
 
 type BoundWorkspace = {
-	definition: WorkspaceDefinition;
+	definition: WorkspaceLens;
 	manifest: BrowserWorkspaceManifest;
-	handle: WorkspaceHandle<WorkspaceDefinition>;
+	handle: Workspace<WorkspaceLens>;
 	/** The one storage-opening attempt; resolves with the ready handle. */
-	opened: Promise<WorkspaceHandle<WorkspaceDefinition>>;
+	opened: Promise<Workspace<WorkspaceLens>>;
 	notifyRowsDeleted(addresses: RowAddress[]): void;
 	notifySyncStatus(status: WorkspaceSyncStatus): void;
 	notifyReady(): void;
@@ -116,14 +116,14 @@ export function createDeviceBrowserWorkspaceRuntime({
 	});
 	return Object.freeze({
 		open: runtime.open,
-		async capture(definition: WorkspaceDefinition) {
+		async capture(definition: WorkspaceLens) {
 			await runtime.open(definition);
 			await runtime.captureDurability(definition.id);
 			return runtime.captureLocal(definition.id);
 		},
 		/** A Device export is the local capture; there is no authority to settle. */
 		async export(
-			definition: WorkspaceDefinition,
+			definition: WorkspaceLens,
 		): Promise<LogicalWorkspaceExport> {
 			await runtime.open(definition);
 			await runtime.captureDurability(definition.id);
@@ -132,7 +132,7 @@ export function createDeviceBrowserWorkspaceRuntime({
 				...(await runtime.captureLocal(definition.id)),
 			};
 		},
-		async delete(definition: WorkspaceDefinition) {
+		async delete(definition: WorkspaceLens) {
 			await runtime.open(definition);
 			return runtime.deleteLocal(definition.id);
 		},
@@ -160,13 +160,13 @@ export function createAccountBrowserWorkspaceRuntime({
 	});
 	return Object.freeze({
 		open: runtime.open,
-		async add(definition: WorkspaceDefinition, copy: LogicalWorkspaceCopy) {
+		async add(definition: WorkspaceLens, copy: LogicalWorkspaceCopy) {
 			await runtime.open(definition);
 			await runtime.whenReady(definition.id);
 			return runtime.addToAccount(definition.id, copy);
 		},
 		async export(
-			definition: WorkspaceDefinition,
+			definition: WorkspaceLens,
 		): Promise<LogicalWorkspaceExport> {
 			await runtime.open(definition);
 			return runtime.exportAccount(definition.id);
@@ -408,7 +408,7 @@ function createBrowserRuntimeWithPersistence({
 		return owner.ready.promise.then(send);
 	}
 
-	function createHandle<TDefinition extends WorkspaceDefinition>(
+	function createHandle<TDefinition extends WorkspaceLens>(
 		definition: TDefinition,
 		manifest: BrowserWorkspaceManifest,
 	) {
@@ -610,7 +610,7 @@ function createBrowserRuntimeWithPersistence({
 					resultSchema,
 				});
 			},
-		}) as unknown as WorkspaceHandle<TDefinition>;
+		}) as unknown as Workspace<TDefinition>;
 		return {
 			handle,
 			notifyRowsDeleted,
@@ -646,9 +646,9 @@ function createBrowserRuntimeWithPersistence({
 		 * runtime: the Worker keeps the failure, every later `open` returns the
 		 * same rejection, and recovery is an explicit reload.
 		 */
-		open<TDefinition extends WorkspaceDefinition>(
+		open<TDefinition extends WorkspaceLens>(
 			definition: TDefinition,
-		): Promise<WorkspaceHandle<TDefinition>> {
+		): Promise<Workspace<TDefinition>> {
 			assertOpen();
 			const existing = workspaces.get(definition.id);
 			if (existing) {
@@ -657,7 +657,7 @@ function createBrowserRuntimeWithPersistence({
 						`Workspace '${definition.id}' is already bound to another definition in this runtime`,
 					);
 				}
-				return existing.opened as Promise<WorkspaceHandle<TDefinition>>;
+				return existing.opened as Promise<Workspace<TDefinition>>;
 			}
 			const manifest: BrowserWorkspaceManifest = {
 				workspaceId: definition.id,
@@ -689,7 +689,7 @@ function createBrowserRuntimeWithPersistence({
 					throw error;
 				},
 			);
-			return bound.opened as Promise<WorkspaceHandle<TDefinition>>;
+			return bound.opened as Promise<Workspace<TDefinition>>;
 		},
 		async captureLocal(workspaceId: string): Promise<LogicalWorkspaceCopy> {
 			const bound = workspaces.get(workspaceId);

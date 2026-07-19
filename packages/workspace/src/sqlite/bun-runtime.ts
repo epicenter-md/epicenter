@@ -40,7 +40,7 @@ import {
 import { classifyCurrentStateTransport } from './current-state-transport.js';
 import { initializeLocalWorkspaceStorage } from './local-workspace-storage.js';
 import { createWorkspaceRuntime } from './runtime.js';
-import type { WorkspaceDefinition } from './runtime-definition.js';
+import type { WorkspaceLens } from './workspace-lens.js';
 
 const ownedRoots = new Set<string>();
 
@@ -76,14 +76,14 @@ export function createDeviceBunWorkspaceRuntime({
 	});
 	return Object.freeze({
 		open: runtime.open,
-		async capture(definition: WorkspaceDefinition) {
+		async capture(definition: WorkspaceLens) {
 			await runtime.open(definition);
 			await runtime.captureDurability(definition.id);
 			return runtime.captureLocal(definition.id);
 		},
 		/** A Device export is the local capture; there is no authority to settle. */
 		async export(
-			definition: WorkspaceDefinition,
+			definition: WorkspaceLens,
 		): Promise<LogicalWorkspaceExport> {
 			await runtime.open(definition);
 			await runtime.captureDurability(definition.id);
@@ -92,7 +92,7 @@ export function createDeviceBunWorkspaceRuntime({
 				...(await runtime.captureLocal(definition.id)),
 			};
 		},
-		async delete(definition: WorkspaceDefinition) {
+		async delete(definition: WorkspaceLens) {
 			await runtime.open(definition);
 			await runtime.deleteLocal(definition.id);
 		},
@@ -114,13 +114,13 @@ export function createAccountBunWorkspaceRuntime({
 	});
 	return Object.freeze({
 		open: runtime.open,
-		async add(definition: WorkspaceDefinition, copy: LogicalWorkspaceCopy) {
+		async add(definition: WorkspaceLens, copy: LogicalWorkspaceCopy) {
 			await runtime.open(definition);
 			await runtime.whenReady(definition.id);
 			await runtime.addToAccount(definition.id, copy);
 		},
 		async export(
-			definition: WorkspaceDefinition,
+			definition: WorkspaceLens,
 		): Promise<LogicalWorkspaceExport> {
 			await runtime.open(definition);
 			return runtime.exportAccount(definition.id);

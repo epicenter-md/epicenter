@@ -38,7 +38,7 @@ import type {
 	TableLensDefinitions,
 } from './lens-definition.js';
 import { readLocalRow } from './local-workspace-storage.js';
-import type { WorkspaceDefinition } from './runtime-definition.js';
+import type { WorkspaceLens } from './workspace-lens.js';
 
 export type WorkspaceOwner<TAdmission extends void | Promise<void> = void> = {
 	sqlite: SqliteDatabase;
@@ -92,12 +92,12 @@ export type WorkspaceSql = <TResultSchema extends TSchema>(
 ) => Promise<Static<TResultSchema>[]>;
 
 type DefinitionTables<TDefinition> =
-	TDefinition extends WorkspaceDefinition<infer TTables, KvDefinitions>
+	TDefinition extends WorkspaceLens<infer TTables, KvDefinitions>
 		? TTables
 		: never;
 
 type DefinitionKv<TDefinition> =
-	TDefinition extends WorkspaceDefinition<TableLensDefinitions, infer TKv>
+	TDefinition extends WorkspaceLens<TableLensDefinitions, infer TKv>
 		? TKv
 		: never;
 
@@ -112,7 +112,7 @@ export type WorkspaceKv<TKv extends KvDefinitions> = {
 	unset<K extends keyof TKv & string>(key: K): Promise<void>;
 };
 
-export type WorkspaceHandle<TDefinition extends WorkspaceDefinition> = {
+export type Workspace<TDefinition extends WorkspaceLens> = {
 	readonly id: TDefinition['id'];
 	readonly tables: WorkspaceTables<DefinitionTables<TDefinition>>;
 	readonly kv: WorkspaceKv<DefinitionKv<TDefinition>>;
@@ -130,8 +130,8 @@ type OpenedOwner = {
 };
 
 type RuntimeEntry = {
-	definition: WorkspaceDefinition;
-	handle?: WorkspaceHandle<WorkspaceDefinition>;
+	definition: WorkspaceLens;
+	handle?: Workspace<WorkspaceLens>;
 	abortController?: AbortController;
 	ownerPromise?: Promise<OpenedOwner>;
 };
@@ -223,11 +223,11 @@ export function createWorkspaceRuntime({
 		return (await openedFor(entry)).rows;
 	}
 
-	function createHandle<TDefinition extends WorkspaceDefinition>(
+	function createHandle<TDefinition extends WorkspaceLens>(
 		definition: TDefinition,
 		entry: RuntimeEntry,
 		sync: WorkspaceSync | null,
-	): WorkspaceHandle<TDefinition> {
+	): Workspace<TDefinition> {
 		const tables = Object.fromEntries(
 			Object.keys(definition.tables).map((name) => [
 				name,
@@ -283,13 +283,13 @@ export function createWorkspaceRuntime({
 			) {
 				return (await rowsFor(entry)).sql(query, parameters, resultSchema);
 			},
-		}) as WorkspaceHandle<TDefinition>;
+		}) as Workspace<TDefinition>;
 	}
 
 	return {
-		async open<TDefinition extends WorkspaceDefinition>(
+		async open<TDefinition extends WorkspaceLens>(
 			definition: TDefinition,
-		): Promise<WorkspaceHandle<TDefinition>> {
+		): Promise<Workspace<TDefinition>> {
 			assertOpen();
 			const existing = entries.get(definition.id);
 			if (existing) {
@@ -300,14 +300,14 @@ export function createWorkspaceRuntime({
 				}
 				const opened = await openedFor(existing);
 				existing.handle ??= createHandle(definition, existing, opened.sync);
-				return existing.handle as WorkspaceHandle<TDefinition>;
+				return existing.handle as Workspace<TDefinition>;
 			}
 			const entry: RuntimeEntry = { definition };
 			entries.set(definition.id, entry);
 			try {
 				const opened = await openedFor(entry);
 				entry.handle = createHandle(definition, entry, opened.sync);
-				return entry.handle as WorkspaceHandle<TDefinition>;
+				return entry.handle as Workspace<TDefinition>;
 			} catch (cause) {
 				if (entries.get(definition.id) === entry) {
 					entries.delete(definition.id);

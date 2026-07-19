@@ -3,15 +3,15 @@ import {
 	honeycrispWorkspace,
 } from '@epicenter/honeycrisp';
 import type {
-	WorkspaceDefinition,
-	WorkspaceHandle,
+	WorkspaceLens,
+	Workspace,
 } from '@epicenter/workspace/sqlite';
 import { createHoneycrispState } from '../routes/state/index.js';
 
 type ApplicationRuntime = {
-	open<TDefinition extends WorkspaceDefinition>(
+	open<TDefinition extends WorkspaceLens>(
 		definition: TDefinition,
-	): Promise<WorkspaceHandle<TDefinition>>;
+	): Promise<Workspace<TDefinition>>;
 	[Symbol.asyncDispose](): Promise<void>;
 };
 

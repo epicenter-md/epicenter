@@ -1,7 +1,7 @@
 /**
  * Schema-opaque canonical records and release-local workspace lenses.
  *
- * `runtime.open(definition)` binds release-local table and KV lenses to the
+ * `runtime.open(lens)` binds release-local table and KV lenses to the
  * canonical row store. Every runtime's `open` is asynchronous and resolves
  * only with a ready handle; acquisition failures reject the open promise.
  * Every ordinary row owns one lazy document capability.
@@ -49,7 +49,7 @@ export {
 	type TableLensDefinitions,
 } from './lens-definition.js';
 export type {
-	WorkspaceHandle,
+	Workspace,
 	WorkspaceKv,
 	WorkspaceRuntime,
 	WorkspaceSql,
@@ -57,5 +57,5 @@ export type {
 } from './runtime.js';
 export {
 	defineWorkspace,
-	type WorkspaceDefinition,
-} from './runtime-definition.js';
+	type WorkspaceLens,
+} from './workspace-lens.js';

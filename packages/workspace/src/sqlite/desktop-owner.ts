@@ -17,15 +17,15 @@ import {
 	type DesktopRecordOperation,
 	encodeDesktopRecordResult,
 } from './desktop-protocol.js';
-import type { WorkspaceHandle } from './runtime.js';
-import type { WorkspaceDefinition } from './runtime-definition.js';
+import type { Workspace } from './runtime.js';
+import type { WorkspaceLens } from './workspace-lens.js';
 
 const sqliteRows = Type.Record(
 	Type.String(),
 	Type.Union([Type.String(), Type.Number(), Type.Null()]),
 );
 
-type ErasedWorkspace = WorkspaceHandle<WorkspaceDefinition>;
+type ErasedWorkspace = Workspace<WorkspaceLens>;
 type ErasedKv = {
 	get(key: string): Promise<unknown>;
 	set(key: string, value: unknown): Promise<unknown>;
@@ -38,9 +38,9 @@ export function createDesktopWorkspaceOwner({
 	definitions,
 }: {
 	workspacesRoot: string;
-	definitions: readonly WorkspaceDefinition[];
+	definitions: readonly WorkspaceLens[];
 }) {
-	const catalog = new Map<string, WorkspaceDefinition>();
+	const catalog = new Map<string, WorkspaceLens>();
 	for (const definition of definitions) {
 		if (catalog.has(definition.id)) {
 			throw new Error(`Duplicate desktop workspace '${definition.id}'`);
@@ -67,9 +67,9 @@ export function createDesktopWorkspaceOwner({
 	};
 
 	return Object.freeze({
-		async open<TDefinition extends WorkspaceDefinition>(
+		async open<TDefinition extends WorkspaceLens>(
 			definition: TDefinition,
-		): Promise<WorkspaceHandle<TDefinition>> {
+		): Promise<Workspace<TDefinition>> {
 			if (catalog.get(definition.id) !== definition) {
 				throw new Error(
 					`Desktop workspace '${definition.id}' is not registered with this definition`,
@@ -77,7 +77,7 @@ export function createDesktopWorkspaceOwner({
 			}
 			return (await openRegistered(
 				definition.id,
-			)) as WorkspaceHandle<TDefinition>;
+			)) as Workspace<TDefinition>;
 		},
 		hasWorkspace(workspaceId: string): boolean {
 			return catalog.has(workspaceId);
