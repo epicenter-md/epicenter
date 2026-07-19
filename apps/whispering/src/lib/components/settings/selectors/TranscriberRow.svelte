@@ -5,14 +5,14 @@
 	import CloudIcon from '@lucide/svelte/icons/cloud';
 	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
 	import ServerIcon from '@lucide/svelte/icons/server';
-	import type { SwitcherLeaf } from '$lib/settings/transcription-switcher';
+	import type { Transcriber } from '$lib/settings/transcription-switcher';
 
 	let {
-		leaf,
+		transcriber,
 		onSelect,
 	}: {
-		leaf: SwitcherLeaf;
-		/** Runs after `leaf.select()`; the popover uses it to close and refocus. */
+		transcriber: Transcriber;
+		/** Runs after `transcriber.select()`; the popover uses it to close and refocus. */
 		onSelect: () => void;
 	} = $props();
 
@@ -26,32 +26,41 @@
 		endpoint: { Icon: ServerIcon, label: 'Server' },
 	} as const;
 
-	const access = $derived(ACCESS_META[leaf.access]);
+	const access = $derived(ACCESS_META[transcriber.access]);
 </script>
 
 <Command.Item
-	value={leaf.keywords}
+	value={transcriber.keywords}
 	onSelect={() => {
-		leaf.select();
+		transcriber.select();
 		onSelect();
 	}}
 	class="flex items-center gap-2 px-2 py-2"
 >
 	<CheckIcon
-		class={cn('size-3.5 shrink-0', !leaf.isActive && 'text-transparent')}
+		class={cn('size-3.5 shrink-0', !transcriber.isActive && 'text-transparent')}
 	/>
 	<div
 		class={cn(
 			'size-4 shrink-0 flex items-center justify-center [&>svg]:size-full',
-			leaf.invertInDarkMode && 'dark:[&>svg]:invert dark:[&>svg]:brightness-90',
+			transcriber.invertInDarkMode &&
+				'dark:[&>svg]:invert dark:[&>svg]:brightness-90',
 		)}
 	>
-		{@html leaf.icon}
+		{@html transcriber.icon}
 	</div>
 	<div class="flex-1 min-w-0">
-		<div class="font-medium text-sm truncate">{leaf.label}</div>
-		{#if leaf.sublabel}
-			<div class="text-xs text-muted-foreground truncate">{leaf.sublabel}</div>
+		<div class="font-medium text-sm truncate">{transcriber.title}</div>
+		<!-- Preserve the exact model confirmation from #2337 in the expanded row;
+		the compact trigger only needs the transcriber identity. -->
+		{#if transcriber.modelId}
+			<div class="text-xs text-muted-foreground truncate">
+				{#if transcriber.endpointHost}
+					{transcriber.modelId} · {transcriber.endpointHost}
+				{:else}
+					{transcriber.modelId}
+				{/if}
+			</div>
 		{/if}
 	</div>
 	<div class="flex items-center gap-1 shrink-0 text-muted-foreground">

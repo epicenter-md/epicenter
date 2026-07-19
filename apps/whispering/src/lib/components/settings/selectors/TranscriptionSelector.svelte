@@ -17,7 +17,7 @@
 	import XIcon from '@lucide/svelte/icons/x';
 	import { goto } from '$app/navigation';
 	import { whisperingPath } from '$lib/constants/urls';
-	import { readyModels } from '$lib/settings/transcription-switcher';
+	import { readyTranscribers } from '$lib/settings/transcription-switcher';
 	import {
 		getSelectedTranscriptionService,
 		getTranscriptionReadiness,
@@ -26,7 +26,7 @@
 	import { localModels } from '$lib/state/local-models.svelte';
 	import { auth } from '#platform/auth';
 	import { tauri } from '#platform/tauri';
-	import ModelRow from './ModelRow.svelte';
+	import TranscriberRow from './TranscriberRow.svelte';
 	import { getWhisperingApp } from '$lib/whispering/context';
 
 	const app = getWhisperingApp();
@@ -51,11 +51,13 @@
 		iconViewTransitionName?: string;
 	} = $props();
 
-	// The two-source union of routes usable right now (downloaded on-device GGUFs
-	// unioned with signed-in session, keyed, and endpoint providers). Each leaf owns
-	// its own label, so the trigger just reads the active one.
-	const leaves = $derived(readyModels(app));
-	const activeLeaf = $derived(leaves.find((leaf) => leaf.isActive));
+	// The ready transcribers: downloaded on-device GGUFs unioned with configured
+	// session, keyed, and endpoint providers. Each transcriber owns its own title,
+	// so the trigger just reads the active one.
+	const transcribers = $derived(readyTranscribers(app));
+	const activeTranscriber = $derived(
+		transcribers.find((transcriber) => transcriber.isActive),
+	);
 
 	const selectedService = $derived(getSelectedTranscriptionService(app));
 	const readiness = $derived(getTranscriptionReadiness(app));
@@ -66,26 +68,30 @@
 			: !!selectedService && !isSelectedServiceReady,
 	);
 
-	// The pipeline trigger surfaces the active model as text, so it reads at a
-	// glance instead of relying on a hover tooltip. Falls back to the selected
-	// provider's label (when its model is not yet ready), then to a prompt.
+	// The pipeline trigger surfaces the active transcriber: a curated on-device
+	// model name or a remote provider name. Exact remote model ids stay in the
+	// expanded rows and settings.
 	const pipelineLabel = $derived(
-		activeLeaf?.label ?? selectedService?.label ?? 'Choose model',
+		activeTranscriber?.title ?? selectedService?.label ?? 'Choose model',
 	);
 
-	// The pipeline pill already shows the model name, so its tooltip describes the
-	// action rather than echoing the visible value. The standalone switcher keeps
-	// the value, since there it is the brand icon, not text, that is on screen.
+	// The pipeline pill already shows the transcriber name, so its tooltip
+	// describes the action. The icon-only standalone switcher keeps the exact
+	// configured context.
 	const triggerTooltip = $derived.by(() => {
 		if (variant === 'pipeline') {
 			return selectedService
 				? 'Change transcription model'
 				: 'Choose transcription model';
 		}
-		if (activeLeaf) {
-			return activeLeaf.sublabel
-				? `${activeLeaf.sublabel} - ${activeLeaf.label}`
-				: activeLeaf.label;
+		if (activeTranscriber) {
+			const model = activeTranscriber.modelId
+				? ` - ${activeTranscriber.modelId}`
+				: '';
+			const host = activeTranscriber.endpointHost
+				? ` · ${activeTranscriber.endpointHost}`
+				: '';
+			return `${activeTranscriber.title}${model}${host}`;
 		}
 		return selectedService
 			? selectedService.label
@@ -94,10 +100,10 @@
 
 	const combobox = useCombobox();
 
-	// `leaves` is empty only when nothing is set up and the user is signed out
-	// (a signed-in user always has the session leaf). Desktop leads with the private
-	// on-device download; web offers sign-in or an API key. Never auto-selects a
-	// remote provider.
+	// `transcribers` is empty only when nothing is set up and the user is signed
+	// out (a signed-in user always has the session transcriber). Desktop leads with
+	// the private on-device download; web offers sign-in or an API key. Never
+	// auto-selects a remote provider.
 	const recommended = $derived(
 		localModels.models.find((model) => model.recommended) ??
 			localModels.models[0],
@@ -209,7 +215,7 @@
 		{/snippet}
 	</Popover.Trigger>
 	<Popover.Content class="p-0">
-		{#if leaves.length === 0}
+		{#if transcribers.length === 0}
 			<!-- Signed out with nothing set up: privacy-forward on desktop, remote
 			setup on web. Never auto-selects a provider. -->
 			{#if tauri && recommended && recommendedState}
@@ -278,8 +284,11 @@
 				<Command.List class="max-h-[40vh]">
 					<Command.Empty>No model found.</Command.Empty>
 
-					{#each leaves as leaf (leaf.key)}
-						<ModelRow {leaf} onSelect={combobox.closeAndFocusTrigger} />
+					{#each transcribers as transcriber (transcriber.key)}
+						<TranscriberRow
+							{transcriber}
+							onSelect={combobox.closeAndFocusTrigger}
+						/>
 					{/each}
 
 					<Command.Separator />
