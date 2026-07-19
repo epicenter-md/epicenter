@@ -103,6 +103,52 @@ test('local Bun runtime reopens durable rows, KV, and documents', async () => {
 	}
 });
 
+test('Account add makes copied document snapshots durable in the owner log', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'epicenter-bun-add-doc-'));
+	const authorityState = openAuthority();
+	const { transport } = createTransport(authorityState.authority);
+	try {
+		let copy: Awaited<
+			ReturnType<ReturnType<typeof createDeviceBunWorkspaceRuntime>['capture']>
+		>;
+		{
+			await using device = createDeviceBunWorkspaceRuntime({
+				workspacesRoot: join(root, 'device'),
+			});
+			const workspace = await device.open(definition);
+			const row = await workspace.tables.notes.create({ title: 'Migrated' });
+			{
+				using document = await workspace.tables.notes.document.open(row.id);
+				document.get('editor').insert(0, 'carried over');
+				await document.whenDurable();
+			}
+			copy = await device.capture(definition.id);
+		}
+		expect(copy.rows[0]?.document).toBeInstanceOf(Uint8Array);
+		const migratedRowId = copy.rows[0]?.rowId ?? '';
+
+		await using account = createAccountBunWorkspaceRuntime({
+			workspacesRoot: join(root, 'account'),
+			account: {
+				deploymentId: 'https://example.test',
+				principalId: asPrincipalId('alice'),
+				transport: () => transport,
+			},
+			recordPollIntervalMs: 60_000,
+		});
+		await account.add(definition.id, copy);
+
+		// The row's document hydrates from the account's own log, proving add
+		// appended the snapshot locally with no renderer-side transient import.
+		const workspace = await account.open(definition);
+		using document = await workspace.tables.notes.document.open(migratedRowId);
+		expect(document.get('editor').toString()).toBe('carried over');
+	} finally {
+		authorityState.database.close();
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test('synchronized Bun runtime automatically pushes and pulls current state', async () => {
 	const root = mkdtempSync(join(tmpdir(), 'epicenter-bun-sync-'));
 	const authorityState = openAuthority();
@@ -459,11 +505,13 @@ test('Device delete revokes an open document handle before deleting storage', as
 		document.get('editor').insert(0, 'draft');
 		await document.whenDurable();
 
-		// Destructive cleanup disposes active leases first (ADR-0146): an open
+		// Destructive cleanup revokes and drains active handles first: an open
 		// handle must not turn explicit deletion into a partial failure that has
 		// already destroyed the scalar rows.
 		await device.delete(definition.id);
-		expect(() => document.get('editor')).toThrow('revoked');
+		expect(() => document.get('editor')).toThrow(
+			'Device workspace data was deleted',
+		);
 		expect((await workspace.tables.notes.list()).rows).toEqual([]);
 		const recaptured = await device.capture(definition.id);
 		expect(recaptured.rows).toEqual([]);

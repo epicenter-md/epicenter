@@ -1,10 +1,12 @@
 /**
  * Desktop workspace owner integration.
  *
- * Two independent same-origin clients use one schema-opaque Bun owner.
- * Row deletion revokes peer document handles, client disposal revokes its own
- * handles without closing owner state, and a new owner reopens the same
- * canonical records after a full server restart.
+ * One statically linked Bun owner serves WebView surfaces over the records
+ * route. Exactly one surface owns a workspace at a time: a newer surface's
+ * open displaces the previous owner, whose operations then fail with the
+ * shared moved error. Row documents persist through the owner's SQLite
+ * update log and survive a full server restart. Schema-opaque operations
+ * never carry a lens.
  */
 import { expect, test } from 'bun:test';
 import {
@@ -21,8 +23,15 @@ import { createBunBlobStore } from '@epicenter/blobs/bun';
 import { field, InstantString } from '@epicenter/field';
 import { skillsWorkspace } from '@epicenter/skills';
 import { whisperingWorkspace } from '@epicenter/whispering/workspace-contract';
-import { defineTable, defineWorkspace } from '@epicenter/workspace/sqlite';
-import { createDesktopWorkspaceRuntime } from '@epicenter/workspace/sqlite/desktop';
+import {
+	defineTable,
+	defineWorkspace,
+	isWorkspaceStorageMovedError,
+} from '@epicenter/workspace/sqlite';
+import {
+	type CreateDesktopWorkspaceRuntimeOptions,
+	createDesktopWorkspaceRuntime,
+} from '@epicenter/workspace/sqlite/desktop';
 import { isResult } from 'wellcrafted/result';
 import { BOOTSTRAP_ROUTE } from './routes.ts';
 import { createHomeServer } from './server.ts';
@@ -34,27 +43,21 @@ import {
 
 const TOKEN = 'desktop-workspace-test-token';
 
-test('two clients invalidate documents, disconnect independently, and survive restart', async () => {
+test('one surface owns a workspace, documents persist, and state survives restart', async () => {
 	const root = mkdtempSync(join(tmpdir(), 'epicenter-desktop-owner-'));
 	const createBroadcastChannel = createBroadcastChannelFactory();
 	const firstOperations: Record<string, unknown>[] = [];
 	try {
 		const firstServer = await startDesktopServer(root);
-		const firstClient = createClient(
-			firstServer.origin,
-			firstServer.cookie,
+		const movedNotices: { workspaceId: string; cause: Error }[] = [];
+		const firstClient = createClient(firstServer.origin, firstServer.cookie, {
 			createBroadcastChannel,
-			firstOperations,
-		);
-		const secondClient = createClient(
-			firstServer.origin,
-			firstServer.cookie,
-			createBroadcastChannel,
-		);
+			operations: firstOperations,
+			onBackgroundError: (cause, workspaceId) =>
+				movedNotices.push({ workspaceId, cause }),
+		});
 		const firstSkills = await firstClient.open(skillsWorkspace);
-		const secondSkills = await secondClient.open(skillsWorkspace);
 		const firstWhispering = await firstClient.open(whisperingWorkspace);
-		const secondWhispering = await secondClient.open(whisperingWorkspace);
 		await Promise.all([
 			firstSkills.tables.skills.list(),
 			firstWhispering.tables.recordings.list(),
@@ -73,8 +76,8 @@ test('two clients invalidate documents, disconnect independently, and survive re
 		}
 		expect(existsSync(join(root, 'workspace-runtime'))).toBeFalse();
 		for (const result of [
-			await secondSkills.tables.skills.get('missing'),
-			await secondSkills.tables.skills.update('missing', {
+			await firstSkills.tables.skills.get('missing'),
+			await firstSkills.tables.skills.update('missing', {
 				description: 'Still missing',
 			}),
 		]) {
@@ -93,20 +96,6 @@ test('two clients invalidate documents, disconnect independently, and survive re
 			duration: null,
 			transcription: null,
 		});
-		const deletedRecording = await firstWhispering.tables.recordings.create({
-			audioBlobId: generateBlobId(),
-			uploadedAt: null,
-			title: 'Delete me',
-			recordedAt: InstantString.now(),
-			recordedAtZone: 'UTC',
-			transcript: 'Temporary transcript',
-			polishedTranscript: null,
-			duration: null,
-			transcription: null,
-		});
-		expect(
-			(await secondWhispering.tables.recordings.get(recording.id)).data?.title,
-		).toBe('Shared recording');
 		expect(
 			(
 				await firstWhispering.tables.recordings.update(recording.id, {
@@ -114,10 +103,6 @@ test('two clients invalidate documents, disconnect independently, and survive re
 				})
 			).data?.transcript,
 		).toBe('Updated transcript');
-		await firstWhispering.tables.recordings.delete(deletedRecording.id);
-		expect(
-			(await firstWhispering.tables.recordings.get(deletedRecording.id)).data,
-		).toBeUndefined();
 
 		expect((await firstWhispering.kv.get('analytics.enabled')).data).toBe(
 			undefined,
@@ -128,40 +113,47 @@ test('two clients invalidate documents, disconnect independently, and survive re
 		expect(
 			(await firstWhispering.kv.get('analytics.enabled')).data,
 		).toBeFalse();
-		await firstWhispering.kv.unset('analytics.enabled');
-		expect((await firstWhispering.kv.get('analytics.enabled')).data).toBe(
-			undefined,
-		);
-		await firstWhispering.kv.set('analytics.enabled', false);
+
+		// Row documents persist through the owner's SQLite update log; a fresh
+		// handle hydrates committed content back over the same carrier.
 		const created = await firstSkills.tables.skills.create({
 			sourceId: 'shared-skill',
 			name: 'Shared',
 			description: 'One Bun owner',
 			updatedAt: InstantString.now(),
 		});
-		expect((await secondSkills.tables.skills.get(created.id)).data?.name).toBe(
-			'Shared',
+		{
+			using document = await firstSkills.tables.skills.document.open(
+				created.id,
+			);
+			document.get('content').insert(0, 'Desktop document');
+			await document.whenDurable();
+		}
+		{
+			using reopened = await firstSkills.tables.skills.document.open(
+				created.id,
+			);
+			expect(reopened.get('content').toString()).toBe('Desktop document');
+		}
+
+		// Deleting the row revokes the live handle and its durable log dies in
+		// the same owner transaction: a fresh open refuses the dead address.
+		const doomed = await firstSkills.tables.skills.create({
+			sourceId: 'doomed-skill',
+			name: 'Doomed',
+			description: 'To delete',
+			updatedAt: InstantString.now(),
+		});
+		using doomedDocument = await firstSkills.tables.skills.document.open(
+			doomed.id,
 		);
-		using firstDocument = await firstSkills.tables.skills.document.open(
-			created.id,
-		);
-		firstDocument.get('content').insert(0, 'Desktop document');
-		await firstDocument.whenDurable();
-		using secondDocument = await secondSkills.tables.skills.document.open(
-			created.id,
-		);
-		expect(secondDocument.get('content').toString()).toBe('Desktop document');
-		// A concurrent edit reaches the peer's already-open document without a
-		// reopen: the persisting client relays the update over the invalidation
-		// channel once the owner commits it.
-		firstDocument.get('content').insert('Desktop document'.length, ' for two');
-		await firstDocument.whenDurable();
-		expect(secondDocument.get('content').toString()).toBe(
-			'Desktop document for two',
-		);
-		await firstSkills.tables.skills.delete(created.id);
-		expect(() => firstDocument.get('content')).toThrow(/revoked/);
-		expect(() => secondDocument.get('content')).toThrow(/revoked/);
+		doomedDocument.get('content').insert(0, 'Gone soon');
+		await doomedDocument.whenDurable();
+		await firstSkills.tables.skills.delete(doomed.id);
+		expect(() => doomedDocument.get('content')).toThrow(/revoked/);
+		await expect(
+			firstSkills.tables.skills.document.open(doomed.id),
+		).rejects.toThrow(/absent row/);
 
 		const survivingSkill = await firstSkills.tables.skills.create({
 			sourceId: 'surviving-skill',
@@ -169,36 +161,83 @@ test('two clients invalidate documents, disconnect independently, and survive re
 			description: 'One Bun owner',
 			updatedAt: InstantString.now(),
 		});
-		using survivingDocument = await firstSkills.tables.skills.document.open(
-			survivingSkill.id,
+		{
+			using survivingDocument = await firstSkills.tables.skills.document.open(
+				survivingSkill.id,
+			);
+			survivingDocument.get('content').insert(0, 'Survives restart');
+			await survivingDocument.whenDurable();
+		}
+
+		// Newest surface wins: a second window's open displaces this surface
+		// for that workspace only. The displaced surface learns immediately
+		// over the surface channel, rejects later operations with the shared
+		// moved error, and keeps unrelated workspaces.
+		const secondClient = createClient(firstServer.origin, firstServer.cookie, {
+			createBroadcastChannel,
+		});
+		const secondSkills = await secondClient.open(skillsWorkspace);
+		expect(
+			(await secondSkills.tables.skills.get(survivingSkill.id)).data?.name,
+		).toBe('Surviving');
+		{
+			using stolenDocument = await secondSkills.tables.skills.document.open(
+				survivingSkill.id,
+			);
+			expect(stolenDocument.get('content').toString()).toBe('Survives restart');
+		}
+		await waitFor(() => movedNotices.length === 1);
+		expect(movedNotices[0]?.workspaceId).toBe('epicenter-skills');
+		expect(isWorkspaceStorageMovedError(movedNotices[0]?.cause)).toBe(true);
+		const displacedFailure = await firstSkills.tables.skills
+			.list()
+			.then(() => undefined)
+			.catch((cause: unknown) => cause);
+		expect(isWorkspaceStorageMovedError(displacedFailure)).toBe(true);
+		// The un-displaced workspace on the first surface keeps working.
+		expect(
+			(await firstWhispering.tables.recordings.get(recording.id)).data
+				?.transcript,
+		).toBe('Updated transcript');
+
+		// Without the surface channel, displacement still lands through the
+		// host: the stale surface's request fails with the same named error.
+		const isolatedClient = createClient(
+			firstServer.origin,
+			firstServer.cookie,
+			{ createBroadcastChannel: () => undefined },
 		);
-		survivingDocument.get('content').insert(0, 'Survives restart');
-		await survivingDocument.whenDurable();
+		const isolatedSkills = await isolatedClient.open(skillsWorkspace);
+		await isolatedSkills.tables.skills.list();
+		const reclaimingClient = createClient(
+			firstServer.origin,
+			firstServer.cookie,
+			{ createBroadcastChannel: () => undefined },
+		);
+		await (await reclaimingClient.open(skillsWorkspace)).tables.skills.list();
+		const hostFailure = await isolatedSkills.tables.skills
+			.list()
+			.then(() => undefined)
+			.catch((cause: unknown) => cause);
+		expect(isWorkspaceStorageMovedError(hostFailure)).toBe(true);
 
 		await firstClient[Symbol.asyncDispose]();
-		expect(() => survivingDocument.get('content')).toThrow(/disposed/);
-		await secondSkills.tables.skills.update(survivingSkill.id, {
-			description: 'Second client remains connected',
-		});
-		expect(
-			(await secondSkills.tables.skills.get(survivingSkill.id)).data
-				?.description,
-		).toBe('Second client remains connected');
 		await secondClient[Symbol.asyncDispose]();
+		await isolatedClient[Symbol.asyncDispose]();
+		await reclaimingClient[Symbol.asyncDispose]();
 		await firstServer.dispose();
+
 		const restarted = await startDesktopServer(root);
 		try {
-			const client = createClient(
-				restarted.origin,
-				restarted.cookie,
+			const client = createClient(restarted.origin, restarted.cookie, {
 				createBroadcastChannel,
-				firstOperations,
-			);
+				operations: firstOperations,
+			});
 			const skills = await client.open(skillsWorkspace);
 			const whispering = await client.open(whisperingWorkspace);
 			expect(
-				(await skills.tables.skills.get(survivingSkill.id)).data?.description,
-			).toBe('Second client remains connected');
+				(await skills.tables.skills.get(survivingSkill.id)).data?.name,
+			).toBe('Surviving');
 			expect(
 				(await whispering.tables.recordings.get(recording.id)).data?.transcript,
 			).toBe('Updated transcript');
@@ -259,6 +298,68 @@ test('two clients invalidate documents, disconnect independently, and survive re
 	}
 });
 
+test('host generations prevent delayed open inversion and disposal rejects pending work', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'epicenter-desktop-surface-races-'));
+	const createBroadcastChannel = createBroadcastChannelFactory();
+	try {
+		const server = await startDesktopServer(root);
+		try {
+			const firstResponse = Promise.withResolvers<void>();
+			const firstReached = Promise.withResolvers<void>();
+			const first = createClient(server.origin, server.cookie, {
+				createBroadcastChannel,
+				async interceptResponse(operation, response) {
+					if (operation.kind === 'open') {
+						firstReached.resolve();
+						await firstResponse.promise;
+					}
+					return response;
+				},
+			});
+			const delayedFirstOpen = first.open(skillsWorkspace);
+			await firstReached.promise;
+
+			const second = createClient(server.origin, server.cookie, {
+				createBroadcastChannel,
+			});
+			const secondSkills = await second.open(skillsWorkspace);
+			const delayedFailure = await delayedFirstOpen.then(
+				() => undefined,
+				(cause: unknown) => cause,
+			);
+			expect(isWorkspaceStorageMovedError(delayedFailure)).toBeTrue();
+			firstResponse.resolve();
+			expect((await secondSkills.tables.skills.list()).rows).toBeArray();
+
+			const pendingResponse = Promise.withResolvers<void>();
+			const pendingReached = Promise.withResolvers<void>();
+			const disposing = createClient(server.origin, server.cookie, {
+				createBroadcastChannel: () => undefined,
+				async interceptResponse(operation, response) {
+					if (operation.kind === 'list-current-rows') {
+						pendingReached.resolve();
+						await pendingResponse.promise;
+					}
+					return response;
+				},
+			});
+			const disposingSkills = await disposing.open(skillsWorkspace);
+			const pendingList = disposingSkills.tables.skills.list();
+			await pendingReached.promise;
+			await disposing[Symbol.asyncDispose]();
+			await expect(pendingList).rejects.toThrow('disposed');
+			pendingResponse.resolve();
+
+			await first[Symbol.asyncDispose]();
+			await second[Symbol.asyncDispose]();
+		} finally {
+			await server.dispose();
+		}
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 async function startDesktopServer(root: string) {
 	const probe = Bun.serve({
 		hostname: '127.0.0.1',
@@ -311,20 +412,34 @@ async function startDesktopServer(root: string) {
 function createClient(
 	origin: string,
 	cookie: string,
-	createBroadcastChannel: ReturnType<typeof createBroadcastChannelFactory>,
-	operations?: Record<string, unknown>[],
+	options: Pick<
+		CreateDesktopWorkspaceRuntimeOptions,
+		'createBroadcastChannel' | 'onBackgroundError'
+	> & {
+		interceptResponse?(
+			operation: { kind: string },
+			response: Response,
+		): Promise<Response>;
+		operations?: Record<string, unknown>[];
+	},
 ) {
+	const { interceptResponse, operations, ...runtimeOptions } = options;
 	return createDesktopWorkspaceRuntime({
 		baseUrl: origin,
-		createBroadcastChannel,
-		fetch(input, init) {
+		...runtimeOptions,
+		async fetch(input, init) {
 			if (operations && typeof init?.body === 'string') {
 				operations.push(JSON.parse(init.body) as Record<string, unknown>);
 			}
-			return fetch(input, {
+			const response = await fetch(input, {
 				...init,
 				headers: { ...init?.headers, cookie, origin },
 			});
+			if (!interceptResponse) return response;
+			const body = JSON.parse(String(init?.body)) as {
+				operation: { kind: string };
+			};
+			return interceptResponse(body.operation, response);
 		},
 	});
 }
@@ -354,6 +469,16 @@ function createBroadcastChannelFactory() {
 		channels.add(channel);
 		return channel;
 	};
+}
+
+async function waitFor(predicate: () => boolean): Promise<void> {
+	const deadline = Date.now() + 5_000;
+	while (!predicate()) {
+		if (Date.now() > deadline) {
+			throw new Error('Timed out waiting for desktop surface signal');
+		}
+		await Bun.sleep(10);
+	}
 }
 
 async function testAssets(root: string) {
