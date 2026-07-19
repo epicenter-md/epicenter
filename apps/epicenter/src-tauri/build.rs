@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 
 const COMMANDS: &[&str] = &[
     "get_runtime_info",
+    "open_app",
     "write_text",
     "simulate_enter_keystroke",
     "simulate_copy_keystroke",

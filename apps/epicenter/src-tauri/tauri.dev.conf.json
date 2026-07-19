@@ -5,6 +5,7 @@
 		"security": {
 			"capabilities": [
 				"trusted-epicenter-apps-development",
+				"trusted-app-windows-development",
 				"trusted-whispering-native-development",
 				"trusted-whispering-overlay-development"
 			]

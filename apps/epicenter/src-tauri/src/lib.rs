@@ -74,6 +74,10 @@ pub mod overlay;
 pub mod clipboard;
 
 const PRODUCT_NAME: &str = "Epicenter";
+/// Reserved label prefix for derived-catalog app windows (ADR-0153). One
+/// capability glob (`app-*`) grants every such window the fixed trusted-app
+/// authority, so no host-internal window label may ever start with it.
+const APP_WINDOW_PREFIX: &str = "app-";
 #[cfg(any(not(debug_assertions), test))]
 const PRODUCTION_PORT: u16 = 39_130;
 #[cfg(any(debug_assertions, test))]
@@ -247,9 +251,10 @@ enum FailureChoice {
     Quit,
 }
 
-/// The typed Whispering command and event contract. The raw audio response and
-/// Epicenter host-status command remain on Tauri's handwritten handler because
-/// their response shapes are outside this generated binding surface.
+/// The typed Whispering command and event contract. The raw audio response,
+/// Epicenter host-status command, and host-owned `open_app` remain on Tauri's
+/// handwritten handler because they are outside this generated Whispering
+/// binding surface.
 fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
     tauri_specta::Builder::<tauri::Wry>::new()
         .commands(tauri_specta::collect_commands![
@@ -313,12 +318,87 @@ fn get_runtime_info(state: State<'_, HostState>) -> std::result::Result<RuntimeI
     })
 }
 
+/// Open one derived-catalog app window. Rust validates the ID and derives the
+/// URL and label itself; the frontend never supplies a URL (ADR-0153). An
+/// unknown-but-valid ID opens a window that Bun answers with 404, which is the
+/// honest state of a catalog member that disappeared since the last restart.
+#[tauri::command]
+fn open_app(
+    app: DesktopAppHandle,
+    state: State<'_, HostState>,
+    app_id: String,
+) -> std::result::Result<(), String> {
+    let Some(id) = parse_app_id(&app_id) else {
+        return Err(format!(
+            "app id must match [a-z0-9-]+ and not name a built-in surface: {app_id}"
+        ));
+    };
+    let Some(token) = state.active_token() else {
+        return Err("the Epicenter host is not ready".to_string());
+    };
+    let port = state.port().map_err(|error| format!("{error:#}"))?;
+
+    let id = id.to_string();
+    app.clone()
+        .run_on_main_thread(move || {
+            if !app.state::<HostState>().token_is_active(&token) {
+                return;
+            }
+            if let Err(error) = ensure_app_window(&app, &id, port, &token) {
+                append_parent_log(&app, &format!("open {id} app window: {error:#}"));
+            }
+        })
+        .map_err(|error| format!("schedule the {app_id} app window: {error}"))
+}
+
+/// Accept exactly the derived-catalog ID contract: `[a-z0-9-]+`, excluding the
+/// built-in surface IDs, which keep their own labels and enumerated
+/// capabilities until they migrate into the catalog.
+fn parse_app_id(id: &str) -> Option<&str> {
+    let matches_pattern = !id.is_empty()
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-');
+    if !matches_pattern || Surface::from_id(id).is_some() {
+        return None;
+    }
+    Some(id)
+}
+
+fn app_window_label(id: &str) -> String {
+    format!("{APP_WINDOW_PREFIX}{id}")
+}
+
+fn ensure_app_window(app: &DesktopAppHandle, id: &str, port: u16, token: &str) -> Result<()> {
+    let label = app_window_label(id);
+    if let Some(window) = app.get_webview_window(&label) {
+        focus(window);
+        return Ok(());
+    }
+
+    let origin = origin(port);
+    let url: tauri::Url = format!("{origin}/apps/{id}/").parse()?;
+    let initialization_script = initialization_script(&origin, token)?;
+    let window = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
+        .title(format!("Epicenter: {id}"))
+        .inner_size(1100.0, 760.0)
+        .min_inner_size(680.0, 480.0)
+        .initialization_script(initialization_script)
+        .on_navigation(move |url| is_allowed_navigation(url, port))
+        .on_new_window(|_, _| NewWindowResponse::Deny)
+        .build()
+        .with_context(|| format!("create the {id} app WebView"))?;
+    focus(window);
+    Ok(())
+}
+
 pub fn run() {
     let port = configured_port();
     let specta_builder = make_specta_builder();
     let specta_handler = tauri_specta::Builder::invoke_handler(&specta_builder);
-    let native_handler = tauri::generate_handler![get_runtime_info, encode_recording_for_upload]
-        as fn(tauri::ipc::Invoke<tauri::Wry>) -> bool;
+    let native_handler =
+        tauri::generate_handler![get_runtime_info, encode_recording_for_upload, open_app]
+            as fn(tauri::ipc::Invoke<tauri::Wry>) -> bool;
     let log_plugin = tauri_plugin_log::Builder::new()
         .level(log::LevelFilter::Info)
         .level_for("epicenter::transcription", log::LevelFilter::Debug)
@@ -344,6 +424,7 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_os::init())
@@ -360,7 +441,7 @@ pub fn run() {
         .invoke_handler(move |invoke| {
             if matches!(
                 invoke.message.command(),
-                "get_runtime_info" | "encode_recording_for_upload"
+                "get_runtime_info" | "encode_recording_for_upload" | "open_app"
             ) {
                 native_handler(invoke)
             } else {
@@ -897,6 +978,13 @@ fn invalidate_surfaces(app: &DesktopAppHandle) {
                 }
             }
         }
+        // Derived-catalog app windows carry the dead host's launch token in
+        // their initialization script, so a restart must tear them down too.
+        for (label, window) in app.webview_windows() {
+            if label.starts_with(APP_WINDOW_PREFIX) && window.destroy().is_err() {
+                let _ = window.hide();
+            }
+        }
         #[cfg(target_os = "macos")]
         if let Some(window) = app.get_webview_window(overlay::WINDOW_LABEL) {
             if window.destroy().is_err() {
@@ -1211,6 +1299,96 @@ mod tests {
                 .map(|value| value.as_str().unwrap())
                 .collect::<Vec<_>>();
             assert_eq!(windows, expected);
+        }
+    }
+
+    #[test]
+    fn app_ids_accept_only_the_catalog_contract_outside_built_in_surfaces() {
+        for accepted in ["hello-http", "a", "notes2", "x-y-z", "0-"] {
+            assert_eq!(parse_app_id(accepted), Some(accepted));
+        }
+
+        for denied in [
+            "",
+            "Hello",
+            "hello_http",
+            "hello.http",
+            "hello/http",
+            "..",
+            "hello http",
+            "héllo",
+            // Built-in surfaces keep their own labels and capabilities until
+            // they migrate into the derived catalog.
+            "home",
+            "whispering",
+            "mail",
+            "books",
+        ] {
+            assert_eq!(parse_app_id(denied), None, "expected {denied:?} rejected");
+        }
+    }
+
+    #[test]
+    fn app_window_labels_are_reserved_and_never_collide_with_host_windows() {
+        assert_eq!(app_window_label("hello-http"), "app-hello-http");
+
+        let mut host_labels: Vec<&str> = Surface::ALL.map(Surface::id).to_vec();
+        host_labels.push("recording-overlay");
+        for label in host_labels {
+            assert!(
+                !label.starts_with(APP_WINDOW_PREFIX),
+                "host window label {label:?} must not match the app-* capability glob"
+            );
+        }
+    }
+
+    #[test]
+    fn app_window_capabilities_grant_the_glob_scoped_trusted_authority() {
+        for encoded in [
+            include_str!("../capabilities/trusted-app-windows-development.json"),
+            include_str!("../capabilities/trusted-app-windows-production.json"),
+        ] {
+            let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
+            assert_eq!(
+                capability["windows"],
+                serde_json::json!(["app-*"]),
+                "the app capability must apply to exactly the reserved app-* label glob"
+            );
+
+            let http = capability["permissions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|permission| permission["identifier"] == "http:default")
+                .expect("the app capability must scope the HTTP plugin");
+            let allowed: Vec<&str> = http["allow"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|entry| entry["url"].as_str().unwrap())
+                .collect();
+            assert_eq!(
+                allowed,
+                ["http://*", "https://*", "http://*:*", "https://*:*"],
+                "trusted app windows get unrestricted HTTP(S) egress and nothing else"
+            );
+        }
+    }
+
+    #[test]
+    fn built_in_surface_capabilities_expose_open_app_to_the_home_window() {
+        for encoded in [
+            include_str!("../capabilities/trusted-epicenter-apps-development.json"),
+            include_str!("../capabilities/trusted-epicenter-apps-production.json"),
+        ] {
+            let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
+            let windows = capability["windows"].as_array().unwrap();
+            assert!(
+                windows.contains(&serde_json::json!("home")),
+                "the home window must hold the surface capability to invoke open_app"
+            );
+            let permissions = capability["permissions"].as_array().unwrap();
+            assert!(permissions.contains(&serde_json::json!("allow-open-app")));
         }
     }
 

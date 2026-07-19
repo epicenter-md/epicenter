@@ -17,6 +17,7 @@
 		"security": {
 			"capabilities": [
 				"trusted-epicenter-apps-production",
+				"trusted-app-windows-production",
 				"trusted-whispering-native-production",
 				"trusted-whispering-overlay-production"
 			],
