@@ -3,9 +3,9 @@
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import { createVadRecordingController } from './vad-recording-controller.svelte';
 	import RecordingActionCard from './RecordingActionCard.svelte';
-	import { getWhisperingApplication } from '$lib/whispering/context';
+	import { getWhisperingApp } from '$lib/whispering/context';
 
-	const app = getWhisperingApplication();
+	const app = getWhisperingApp();
 
 	let {
 		footer,

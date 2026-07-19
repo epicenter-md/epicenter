@@ -13,7 +13,7 @@
 import type { createAppAuthClient } from '@epicenter/svelte/auth';
 import type { Command } from '$lib/commands';
 import type { KeyBinding } from '$lib/utils/key-binding';
-import type { WhisperingApplication } from '$lib/whispering/application';
+import type { WhisperingApp } from '$lib/whispering/app';
 
 /**
  * Why a binding cannot be assigned, as structured data rather than prose. The
@@ -71,11 +71,11 @@ export type Shortcuts = {
 
 /**
  * Contract for `#platform/system-shortcuts`: build the system-global backend
- * for one ready application, or `null` on platforms without one (web). The
- * factory closes over the application so plugin chord triggers dispatch into
+ * for one ready app, or `null` on platforms without one (web). The
+ * factory closes over the app so plugin chord triggers dispatch into
  * the command layer with it.
  */
-export type CreateSystemShortcuts = (app: WhisperingApplication) => Shortcuts;
+export type CreateSystemShortcuts = (app: WhisperingApp) => Shortcuts;
 
 /**
  * Contract for `#platform/auth`. Identical on web and Tauri: both build the

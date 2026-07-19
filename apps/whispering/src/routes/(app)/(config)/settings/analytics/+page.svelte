@@ -4,9 +4,9 @@
 	import * as SectionHeader from '@epicenter/ui/section-header';
 	import { SettingSwitch } from '$lib/components/settings';
 	import { logAnalyticsEvent } from '$lib/operations/analytics';
-	import { getWhisperingApplication } from '$lib/whispering/context';
+	import { getWhisperingApp } from '$lib/whispering/context';
 
-	const app = getWhisperingApplication();
+	const app = getWhisperingApp();
 </script>
 
 <div class="space-y-8">

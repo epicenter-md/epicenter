@@ -15,9 +15,9 @@
 	import { isBuiltinRecipeId } from '$lib/state/builtin-recipes';
 	import { generateDefaultRecipe } from '$lib/state/recipes.svelte';
 	import type { Recipe } from '$lib/workspace';
-	import { getWhisperingApplication } from '$lib/whispering/context';
+	import { getWhisperingApp } from '$lib/whispering/context';
 
-	const app = getWhisperingApplication();
+	const app = getWhisperingApp();
 
 	let editorOpen = $state(false);
 	let isEditing = $state(false);

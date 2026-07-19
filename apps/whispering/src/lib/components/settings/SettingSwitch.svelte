@@ -2,9 +2,9 @@
 	import * as Field from '@epicenter/ui/field';
 	import { Switch } from '@epicenter/ui/switch';
 	import type { BooleanSettingKey } from '$lib/state/settings.svelte';
-	import { getWhisperingApplication } from '$lib/whispering/context';
+	import { getWhisperingApp } from '$lib/whispering/context';
 
-	const app = getWhisperingApplication();
+	const app = getWhisperingApp();
 
 	let {
 		key,

@@ -9,10 +9,10 @@ import {
 	toggleVadRecording,
 } from '$lib/operations/recording';
 import type { Reach } from '$lib/utils/key-binding';
-import type { WhisperingApplication } from '$lib/whispering/application';
+import type { WhisperingApp } from '$lib/whispering/app';
 
 /**
- * Registry of available commands in the application.
+ * Registry of available commands in the app.
  * Defines what commands exist and how they're triggered (keyboard shortcuts,
  * voice, command palette, etc.).
  *
@@ -58,8 +58,8 @@ export type SatisfiedCommand = {
 	 * - ['Pressed', 'Released']: On both press and release
 	 */
 	on: ShortcutEventState[];
-	/** Every command runs against the ready application it was dispatched with. */
-	run: (app: WhisperingApplication, state?: ShortcutEventState) => void;
+	/** Every command runs against the ready app it was dispatched with. */
+	run: (app: WhisperingApp, state?: ShortcutEventState) => void;
 };
 
 /** Commands available in every build (browser and desktop). */
@@ -140,7 +140,7 @@ export type Command = (typeof commands)[number];
 
 export type CommandRunners = Record<Command['id'], Command['run']>;
 
-/** Command runners with the application already bound (the DevTools surface). */
+/** Command runners with the app already bound (the DevTools surface). */
 export type BoundCommandRunners = Record<
 	Command['id'],
 	(state?: ShortcutEventState) => void
@@ -156,7 +156,7 @@ export const commandRunners = commands.reduce<CommandRunners>(
 
 type TriggerTarget = {
 	on: readonly ShortcutEventState[];
-	run: (app: WhisperingApplication, state?: ShortcutEventState) => void;
+	run: (app: WhisperingApp, state?: ShortcutEventState) => void;
 };
 const triggerTargetById = new Map<string, TriggerTarget>(
 	commands.map((c) => [c.id, { on: c.on, run: c.run }]),
@@ -171,7 +171,7 @@ const triggerTargetById = new Map<string, TriggerTarget>(
  * `commandRunners` with no edge.
  */
 export function dispatchCommandTrigger(
-	app: WhisperingApplication,
+	app: WhisperingApp,
 	commandId: string,
 	state: ShortcutEventState,
 ) {

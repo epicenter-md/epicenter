@@ -22,7 +22,7 @@
 	/* svelte-ignore state_referenced_locally */
 	setWhisperingContext({
 		/* svelte-ignore state_referenced_locally */
-		application: session.application,
+		app: session.app,
 		/* svelte-ignore state_referenced_locally */
 		queries: session.queries,
 	});

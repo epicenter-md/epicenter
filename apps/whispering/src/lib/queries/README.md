@@ -2,7 +2,7 @@
 
 This directory is Whispering's Svelte/TanStack observation layer. It adds
 query identity, mutation lifecycle state, and cache invalidation around the
-UI-free `WhisperingApplication` and platform services.
+UI-free `WhisperingApp` and platform services.
 
 One `WhisperingUiSession` creates one `QueryClient` and one
 `WhisperingQueries` namespace. The fulfilled boot provider supplies both to
@@ -11,7 +11,7 @@ the ready descendant tree. There is no module-global client.
 ```text
 Svelte component
   -> WhisperingQueries
-  -> WhisperingApplication / operations / services
+  -> WhisperingApp / operations / services
 ```
 
 ## Ownership
@@ -20,11 +20,11 @@ Svelte component
 - `audio.ts` owns recording-audio availability query identity.
 - `download.ts` adapts the shared download mutation.
 - `transcription.ts` adapts shared transcription mutation identity.
-- `index.ts` composes those adapters for one ready application.
+- `index.ts` composes those adapters for one ready app.
 
-Application workflows stay in `$lib/operations` or on
-`WhisperingApplication`. Query modules do not become a second product API.
-Browser and Bun scripts use the application directly and do not depend on
+App workflows stay in `$lib/operations` or on
+`WhisperingApp`. Query modules do not become a second product API.
+Browser and Bun scripts use the app directly and do not depend on
 TanStack or Svelte.
 
 Components obtain the namespace during initialization:

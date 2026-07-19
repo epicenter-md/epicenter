@@ -7,9 +7,9 @@
 	import { report } from '$lib/report';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import SidebarNav from './SidebarNav.svelte';
-	import { getWhisperingApplication } from '$lib/whispering/context';
+	import { getWhisperingApp } from '$lib/whispering/context';
 
-	const app = getWhisperingApplication();
+	const app = getWhisperingApp();
 
 	let { children } = $props();
 </script>

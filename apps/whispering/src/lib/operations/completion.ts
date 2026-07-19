@@ -6,7 +6,7 @@ import {
 	resolveCompletionStateFromConfig,
 } from '$lib/operations/completion-target';
 import { deviceConfig } from '$lib/state/device-config.svelte';
-import type { WhisperingApplication } from '$lib/whispering/application';
+import type { WhisperingApp } from '$lib/whispering/app';
 
 /**
  * Resolve the single global completion state: what to call (`target`), whether
@@ -16,9 +16,7 @@ import type { WhisperingApplication } from '$lib/whispering/application';
  * stale. `target` is null when there is no base URL to talk to (Custom with no
  * endpoint configured), the one genuinely un-runnable state.
  */
-export function resolveCompletionState(
-	app: WhisperingApplication,
-): CompletionState {
+export function resolveCompletionState(app: WhisperingApp): CompletionState {
 	return resolveCompletionStateFromConfig({
 		provider: app.settings.get('completion.provider'),
 		getDeviceConfig: deviceConfig.get,
@@ -38,7 +36,7 @@ export function resolveCompletionState(
  * `signal` aborts the in-flight request (the Polish HUD's "ship raw" control).
  */
 export function completeWithGlobalDefault(
-	app: WhisperingApplication,
+	app: WhisperingApp,
 	{
 		systemPrompt,
 		userPrompt,

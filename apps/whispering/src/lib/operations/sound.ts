@@ -2,7 +2,7 @@ import { Ok, type Result } from 'wellcrafted/result';
 import type { WhisperingSoundNames } from '$lib/constants/sounds';
 import { services } from '$lib/services';
 import type { SoundError } from '$lib/services/sound';
-import type { WhisperingApplication } from '$lib/whispering/application';
+import type { WhisperingApp } from '$lib/whispering/app';
 
 const soundSettingKeyMap = {
 	'manual-start': 'sound.manualStart',
@@ -16,7 +16,7 @@ const soundSettingKeyMap = {
 } as const satisfies Record<WhisperingSoundNames, string>;
 
 export async function playSoundIfEnabled(
-	app: WhisperingApplication,
+	app: WhisperingApp,
 	soundName: WhisperingSoundNames,
 ): Promise<Result<void, SoundError>> {
 	if (!app.settings.get(soundSettingKeyMap[soundName])) {

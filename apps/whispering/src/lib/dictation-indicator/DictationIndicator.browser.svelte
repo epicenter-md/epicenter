@@ -4,9 +4,9 @@
 	import { projectLifecycleToStatus } from '$lib/recording-pill/projection';
 	import { webPillLevel } from '$lib/recording-pill/web-level.svelte';
 	import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
-	import { getWhisperingApplication } from '$lib/whispering/context';
+	import { getWhisperingApp } from '$lib/whispering/context';
 
-	const app = getWhisperingApplication();
+	const app = getWhisperingApp();
 
 	const status = $derived(projectLifecycleToStatus(dictationLifecycle.current));
 </script>

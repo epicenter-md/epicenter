@@ -5,30 +5,30 @@ import { createRecipes } from '../state/recipes.svelte';
 import { createRecordings } from '../state/recordings.svelte';
 import { createSettingsView } from '../state/settings.svelte';
 import {
-	openWhisperingApplication,
-	type WhisperingApplication,
-	type WhisperingDependencies,
-} from './application';
+	openWhisperingApp,
+	type WhisperingApp,
+	type WhisperingAppDependencies,
+} from './app';
 
-function createWhisperingUiSession(core: WhisperingApplication) {
-	const application: WhisperingApplication = {
+function createWhisperingUiSession(core: WhisperingApp) {
+	const app: WhisperingApp = {
 		...core,
 		settings: createSettingsView(core.settings),
 		recordings: createRecordings(core),
 		recipes: createRecipes(core),
 	};
 	const queryRuntime = createWhisperingQueryRuntime();
-	const queries = createWhisperingQueries(application, queryRuntime);
+	const queries = createWhisperingQueries(app, queryRuntime);
 	let disposal: Promise<void> | undefined;
 
 	return {
-		application,
+		app,
 		queries,
 		queryClient: queryRuntime.queryClient,
 		[Symbol.asyncDispose]() {
 			disposal ??= (async () => {
 				try {
-					await pushToTalk.dispose(application);
+					await pushToTalk.dispose(app);
 				} finally {
 					queryRuntime.queryClient.clear();
 					await core[Symbol.asyncDispose]();
@@ -42,10 +42,10 @@ function createWhisperingUiSession(core: WhisperingApplication) {
 export type WhisperingUiSession = ReturnType<typeof createWhisperingUiSession>;
 
 export async function openWhisperingUiSession(
-	dependencies: WhisperingDependencies,
+	dependencies: WhisperingAppDependencies,
 	signal: AbortSignal,
 ): Promise<WhisperingUiSession> {
-	const core = await openWhisperingApplication(dependencies, { signal });
+	const core = await openWhisperingApp(dependencies, { signal });
 	try {
 		return createWhisperingUiSession(core);
 	} catch (cause) {

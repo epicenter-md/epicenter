@@ -1,5 +1,5 @@
 /**
- * Whispering Application Acquisition Tests
+ * Whispering App Acquisition Tests
  *
  * Locks the transactional boot contract: resolve fully ready or reject fully
  * released, with abort covering both the in-flight and the resolve-after-abort
@@ -14,7 +14,7 @@
  */
 import { expect, test } from 'bun:test';
 import { Ok } from 'wellcrafted/result';
-import { openWhisperingApplication } from './application';
+import { openWhisperingApp } from './app';
 
 type FakeRuntimeOptions = {
 	failFor?: string[];
@@ -127,10 +127,10 @@ const dependencies = (fake: ReturnType<typeof createFakeRuntime>) =>
 		reportBackgroundError: () => undefined,
 	}) as const;
 
-test('resolves a ready application with hydrated settings', async () => {
+test('resolves a ready app with hydrated settings', async () => {
 	const fake = createFakeRuntime();
 	fake.kvValues.set('transcription.service', 'Groq');
-	await using app = await openWhisperingApplication(dependencies(fake));
+	await using app = await openWhisperingApp(dependencies(fake));
 	expect(fake.log).toEqual(['open:epicenter-whispering']);
 	// Stored value wins; unset keys fall back to platform defaults.
 	expect(app.settings.get('transcription.service')).toBe('Groq');
@@ -141,7 +141,7 @@ test('resolves a ready application with hydrated settings', async () => {
 
 test('a failed workspace open rejects fully released', async () => {
 	const fake = createFakeRuntime({ failFor: ['epicenter-whispering'] });
-	await expect(openWhisperingApplication(dependencies(fake))).rejects.toThrow(
+	await expect(openWhisperingApp(dependencies(fake))).rejects.toThrow(
 		'open failed for epicenter-whispering',
 	);
 	expect(fake.disposed).toBe(true);
@@ -151,7 +151,7 @@ test('does not resolve before recordings and recipes are hydrated', async () => 
 	const gate = Promise.withResolvers<void>();
 	const fake = createFakeRuntime({ projectionGate: gate.promise });
 	let settled = false;
-	const opening = openWhisperingApplication(dependencies(fake)).then((app) => {
+	const opening = openWhisperingApp(dependencies(fake)).then((app) => {
 		settled = true;
 		return app;
 	});
@@ -175,7 +175,7 @@ test('boot follows an invalidation that lands during initial projection hydratio
 		],
 	});
 	let settled = false;
-	const opening = openWhisperingApplication(dependencies(fake)).then((app) => {
+	const opening = openWhisperingApp(dependencies(fake)).then((app) => {
 		settled = true;
 		return app;
 	});
@@ -197,7 +197,7 @@ test('boot follows an invalidation that lands during settings hydration', async 
 	let currentGate = initial.promise;
 	const fake = createFakeRuntime({ kvGate: () => currentGate });
 	let settled = false;
-	const opening = openWhisperingApplication(dependencies(fake)).then((app) => {
+	const opening = openWhisperingApp(dependencies(fake)).then((app) => {
 		settled = true;
 		return app;
 	});
@@ -215,7 +215,7 @@ test('boot follows an invalidation that lands during settings hydration', async 
 
 test('projection collection identities change only after refresh', async () => {
 	const fake = createFakeRuntime();
-	await using app = await openWhisperingApplication(dependencies(fake));
+	await using app = await openWhisperingApp(dependencies(fake));
 	expect(app.recordings.sorted).toBe(app.recordings.sorted);
 	expect(app.recipes.pickable).toBe(app.recipes.pickable);
 });
@@ -224,7 +224,7 @@ test('an abort during acquisition releases and rejects', async () => {
 	const gate = Promise.withResolvers<void>();
 	const fake = createFakeRuntime({ openGate: gate.promise });
 	const controller = new AbortController();
-	const opening = openWhisperingApplication(dependencies(fake), {
+	const opening = openWhisperingApp(dependencies(fake), {
 		signal: controller.signal,
 	});
 	controller.abort(new Error('root unmounted'));
@@ -235,10 +235,10 @@ test('an abort during acquisition releases and rejects', async () => {
 	expect(fake.disposed).toBe(true);
 });
 
-test('after resolve the caller owns application disposal', async () => {
+test('after resolve the caller owns app disposal', async () => {
 	const fake = createFakeRuntime();
 	const controller = new AbortController();
-	const app = await openWhisperingApplication(dependencies(fake), {
+	const app = await openWhisperingApp(dependencies(fake), {
 		signal: controller.signal,
 	});
 	expect(fake.disposed).toBe(false);
@@ -252,7 +252,7 @@ test('after resolve the caller owns application disposal', async () => {
 test('concurrent disposal joins the same runtime close', async () => {
 	const gate = Promise.withResolvers<void>();
 	const fake = createFakeRuntime({ disposeGate: gate.promise });
-	const app = await openWhisperingApplication(dependencies(fake));
+	const app = await openWhisperingApp(dependencies(fake));
 	let secondSettled = false;
 	const first = app[Symbol.asyncDispose]();
 	const second = app[Symbol.asyncDispose]().then(() => {
@@ -268,7 +268,7 @@ test('concurrent disposal joins the same runtime close', async () => {
 
 test('settings writes are optimistic and notify subscribers', async () => {
 	const fake = createFakeRuntime();
-	await using app = await openWhisperingApplication(dependencies(fake));
+	await using app = await openWhisperingApp(dependencies(fake));
 	let notified = 0;
 	const unsubscribe = app.settings.subscribe(() => {
 		notified += 1;

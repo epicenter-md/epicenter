@@ -16,18 +16,18 @@ Whispering uses a clean three-layer architecture that shares one SPA between its
 
 ## Workspace Composition
 
-Whispering binds its inert workspace contract through one environment-owned SQLite runtime, acquired as one ready application inside the mounted Svelte root:
+Whispering binds its inert workspace contract through one environment-owned SQLite runtime, acquired as one ready app inside the mounted Svelte root:
 
 ```txt
 defineWorkspace()                       src/lib/workspace/contract.ts (inert schema)
-  -> openWhisperingApplication()        src/lib/whispering/application.ts (transactional async open)
+  -> openWhisperingApp()        src/lib/whispering/app.ts (transactional async open)
     -> #platform/whispering             whisperingPlatform: the per-build dependencies
-      -> openWhisperingUiSession()      src/lib/whispering/ui-session.ts (application + query runtime)
+      -> openWhisperingUiSession()      src/lib/whispering/ui-session.ts (app + query runtime)
         -> (app)/+layout.svelte         raw {#await} owns pending / ready / failed
           -> WhisperingUiSessionProvider      typed context for ready-only descendants
 ```
 
-`src/lib/workspace/contract.ts` defines the fixed workspace id, row tables, and KV settings schema with no platform APIs. `openWhisperingApplication(whisperingPlatform, { signal })` opens the Whispering workspace through the runtime the environment supplies, hydrates settings, recordings, and recipes, and resolves only with those UI-free product namespaces ready; any failure releases everything it opened and rejects. The (app) layout wraps that open in one UI session (`openWhisperingUiSession`), which composes the Svelte reactivity adapters, a session-scoped TanStack `QueryClient`, and the query namespace over the ready application, and owns their ordered disposal. The layout creates the session promise during component initialisation, so the `{#await}` observes it from the first microtask. The fulfilled branch mounts `WhisperingUiSessionProvider`, which only publishes the ready session: typed `getWhisperingApplication()` / `getWhisperingQueries()` context plus the session's query client. Boot retry is a full page reload; unmount/HMR aborts the acquisition, and the layout is the single owner of session disposal. Bun scripts import `@epicenter/whispering/application` and `@epicenter/whispering/application/bun`, then use the same product API: `await using app = await openWhisperingApplication(createWhisperingBunDependencies({ workspacesRoot }))`.
+`src/lib/workspace/contract.ts` defines the fixed workspace id, row tables, and KV settings schema with no platform APIs. `openWhisperingApp(whisperingPlatform, { signal })` opens the Whispering workspace through the runtime the environment supplies, hydrates settings, recordings, and recipes, and resolves only with those UI-free product namespaces ready; any failure releases everything it opened and rejects. The (app) layout wraps that open in one UI session (`openWhisperingUiSession`), which composes the Svelte reactivity adapters, a session-scoped TanStack `QueryClient`, and the query namespace over the ready app, and owns their ordered disposal. The layout creates the session promise during component initialisation, so the `{#await}` observes it from the first microtask. The fulfilled branch mounts `WhisperingUiSessionProvider`, which only publishes the ready session: typed `getWhisperingApp()` / `getWhisperingQueries()` context plus the session's query client. Boot retry is a full page reload; unmount/HMR aborts the acquisition, and the layout is the single owner of session disposal. Bun scripts import `@epicenter/whispering/app` and `@epicenter/whispering/app/bun`, then use the same product API: `await using app = await openWhisperingApp(createWhisperingBunDependencies({ workspacesRoot }))`.
 
 The `#platform/whispering` leaves are pure dependency bindings: the web build (`whispering.browser.ts`) selects the device or account browser runtime from the boot auth state (`whispering.browser-runtime.ts`); the Epicenter-hosted build (`whispering.tauri.ts`) uses the same-origin desktop workspace runtime, whose `open` performs an honest host acquisition handshake. Scalar rows live in runtime-native SQLite; row documents are lazy Yjs 14 documents behind the runtime's document provider (ADR-0144).
 
@@ -86,14 +86,14 @@ The codebase distinguishes two kinds of "which implementation" decisions and use
 
 ## Query Layer - Adding Reactivity and State Management
 
-The query layer (`$lib/queries`) is where TanStack Query reactivity gets injected on top of the ready application and pure services. One `WhisperingUiSession` owns one `QueryClient` and one `WhisperingQueries` namespace; there is no module-global client. Components reach both through context:
+The query layer (`$lib/queries`) is where TanStack Query reactivity gets injected on top of the ready app and pure services. One `WhisperingUiSession` owns one `QueryClient` and one `WhisperingQueries` namespace; there is no module-global client. Components reach both through context:
 
 ```svelte
 <script>
   import { createQuery } from '@tanstack/svelte-query';
-  import { getWhisperingApplication, getWhisperingQueries } from '$lib/whispering/context';
+  import { getWhisperingApp, getWhisperingQueries } from '$lib/whispering/context';
 
-  const app = getWhisperingApplication();
+  const app = getWhisperingApp();
   const queries = getWhisperingQueries();
 
   // Domain data: workspace state (reactive, no queries needed)
@@ -107,7 +107,7 @@ The query layer (`$lib/queries`) is where TanStack Query reactivity gets injecte
 </script>
 ```
 
-**Workspace State** - The UI-free application owns domain data (recordings, recipes, settings). Thin `$lib/state/*.svelte.ts` adapters add `createSubscriber` tracking, so components react to the same namespaces that Bun scripts use.
+**Workspace State** - The UI-free app owns domain data (recordings, recipes, settings). Thin `$lib/state/*.svelte.ts` adapters add `createSubscriber` tracking, so components react to the same namespaces that Bun scripts use.
 
 The query layer's role has narrowed to things that don't fit in workspace rows:
 

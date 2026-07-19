@@ -27,9 +27,9 @@
 	import { auth } from '#platform/auth';
 	import { tauri } from '#platform/tauri';
 	import ModelRow from './ModelRow.svelte';
-	import { getWhisperingApplication } from '$lib/whispering/context';
+	import { getWhisperingApp } from '$lib/whispering/context';
 
-	const app = getWhisperingApplication();
+	const app = getWhisperingApp();
 
 	let {
 		class: className,

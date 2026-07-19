@@ -57,11 +57,11 @@
 	import TranscriptionStatusBadge from './TranscriptionStatusBadge.svelte';
 	import RecordingRowActions from './actions/RecordingRowActions.svelte';
 	import {
-		getWhisperingApplication,
+		getWhisperingApp,
 		getWhisperingQueries,
 	} from '$lib/whispering/context';
 
-	const app = getWhisperingApplication();
+	const app = getWhisperingApp();
 	const queries = getWhisperingQueries();
 
 	/**

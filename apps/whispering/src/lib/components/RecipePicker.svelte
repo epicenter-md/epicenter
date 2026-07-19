@@ -9,9 +9,9 @@
 	import { isBuiltinRecipeId } from '$lib/state/builtin-recipes';
 	import { recipePicker } from '$lib/state/recipe-picker.svelte';
 	import type { Recipe } from '$lib/workspace';
-	import { getWhisperingApplication } from '$lib/whispering/context';
+	import { getWhisperingApp } from '$lib/whispering/context';
 
-	const app = getWhisperingApplication();
+	const app = getWhisperingApp();
 
 	/**
 	 * The in-app Recipe picker: a command palette the `openRecipePicker` /

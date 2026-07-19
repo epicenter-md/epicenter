@@ -18,11 +18,11 @@
 	import { services } from '$lib/services';
 	import type { Recording } from '$lib/state/recordings.svelte';
 	import {
-		getWhisperingApplication,
+		getWhisperingApp,
 		getWhisperingQueries,
 	} from '$lib/whispering/context';
 
-	const app = getWhisperingApplication();
+	const app = getWhisperingApp();
 	const queries = getWhisperingQueries();
 	const queryClient = useQueryClient();
 

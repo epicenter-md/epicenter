@@ -4,9 +4,9 @@
 	import * as SectionHeader from '@epicenter/ui/section-header';
 	import DatabaseIcon from '@lucide/svelte/icons/database';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
-	import { getWhisperingApplication } from '$lib/whispering/context';
+	import { getWhisperingApp } from '$lib/whispering/context';
 
-	const app = getWhisperingApplication();
+	const app = getWhisperingApp();
 
 	// ── Metrics ────────────────────────────────────────────────────────────────
 

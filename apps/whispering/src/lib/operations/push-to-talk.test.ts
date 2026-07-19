@@ -1,11 +1,11 @@
 import { expect, mock, test } from 'bun:test';
 import { type BlobId, generateBlobId } from '@epicenter/blobs';
-import type { WhisperingApplication } from '$lib/whispering/application';
+import type { WhisperingApp } from '$lib/whispering/app';
 
 let recorderState: 'STOPPED' | 'RECORDING' = 'STOPPED';
 let recorderIsStarting = false;
 const startManualRecording =
-	mock<(app: WhisperingApplication) => Promise<BlobId | null>>();
+	mock<(app: WhisperingApp) => Promise<BlobId | null>>();
 const stopManualRecordingById = mock(async () => {});
 
 mock.module('$lib/report', () => ({
@@ -28,7 +28,7 @@ mock.module('./recording', () => ({
 }));
 
 const { pushToTalk } = await import('./push-to-talk');
-const app = {} as WhisperingApplication;
+const app = {} as WhisperingApp;
 
 test('dispose stops an active push-to-talk recording before app teardown', async () => {
 	const recordingId = generateBlobId();
@@ -42,9 +42,9 @@ test('dispose stops an active push-to-talk recording before app teardown', async
 	recorderState = 'STOPPED';
 });
 
-test('dispose cannot retire another application session', async () => {
+test('dispose cannot retire another app session', async () => {
 	const recordingId = generateBlobId();
-	const otherApp = {} as WhisperingApplication;
+	const otherApp = {} as WhisperingApp;
 	const stopsBefore = stopManualRecordingById.mock.calls.length;
 	startManualRecording.mockImplementationOnce(async () => recordingId);
 

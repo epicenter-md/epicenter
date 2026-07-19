@@ -8,7 +8,7 @@ import {
 	isEmptyBinding,
 	type KeyBinding,
 } from '$lib/utils/key-binding';
-import type { WhisperingApplication } from '$lib/whispering/application';
+import type { WhisperingApp } from '$lib/whispering/app';
 import { createShortcuts } from './shortcuts.shared';
 import type { Shortcuts } from './types';
 
@@ -36,7 +36,7 @@ const EMPTY_BINDING: KeyBinding = { modifiers: [], keys: [] };
 
 export function createFocusedShortcuts({
 	settings,
-}: Pick<WhisperingApplication, 'settings'>): Shortcuts {
+}: Pick<WhisperingApp, 'settings'>): Shortcuts {
 	const readBinding = (id: Command['id']): KeyBinding | null => {
 		const binding = settings.get(localKey(id)) as KeyBinding;
 		return isEmptyBinding(binding) ? null : binding;

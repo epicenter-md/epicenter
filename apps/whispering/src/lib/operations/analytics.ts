@@ -1,12 +1,12 @@
 import { services } from '$lib/services';
 import type { Event } from '$lib/services/analytics/types';
-import type { WhisperingApplication } from '$lib/whispering/application';
+import type { WhisperingApp } from '$lib/whispering/app';
 
 /**
  * Log an anonymous analytics event if analytics is enabled in settings.
  */
 export async function logAnalyticsEvent(
-	app: WhisperingApplication,
+	app: WhisperingApp,
 	event: Event,
 ): Promise<void> {
 	if (!app.settings.get('analytics.enabled')) return;

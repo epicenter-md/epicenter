@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
-	import { getWhisperingApplication } from '$lib/whispering/context';
+	import { getWhisperingApp } from '$lib/whispering/context';
 	import { exposeDebugCommands } from '../_app-effects/expose-debug-commands';
 	import { listenForLocalShortcuts } from '../_app-effects/listen-for-local-shortcuts';
 	import { logAppStarted } from '../_app-effects/log-app-started';
@@ -14,7 +14,7 @@
 	// branch, so crossing a layout breakpoint never re-runs any of them. Each
 	// helper registers its own lifecycle with Svelte; any required teardown is
 	// scoped to this component through $effect cleanup or onMount unmount.
-	const app = getWhisperingApplication();
+	const app = getWhisperingApp();
 	exposeDebugCommands(app);
 	logAppStarted(app);
 	listenForLocalShortcuts(app);

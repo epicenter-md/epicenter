@@ -15,7 +15,7 @@ import {
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import { services } from '$lib/services';
 import type { Recording } from '$lib/state/recordings.svelte';
-import type { WhisperingApplication } from '$lib/whispering/application';
+import type { WhisperingApp } from '$lib/whispering/app';
 
 export type RecordingAudioAvailability =
 	| 'local-only'
@@ -85,9 +85,7 @@ type RecordingAudioDependencies = {
 	now(): Exclude<Recording['uploadedAt'], null>;
 };
 
-function liveDependencies(
-	app: WhisperingApplication,
-): RecordingAudioDependencies {
+function liveDependencies(app: WhisperingApp): RecordingAudioDependencies {
 	return {
 		blobs: services.blobs,
 		updateRecording: (id, changes) => app.recordings.update(id, changes),
@@ -152,7 +150,7 @@ export async function getRecordingAudioAvailability(
 
 /** Copy one local recording to the online remote and then record success. */
 export async function uploadRecordingAudio(
-	app: WhisperingApplication,
+	app: WhisperingApp,
 	recording: Pick<Recording, 'id' | 'audioBlobId' | 'uploadedAt'>,
 	dependencies: RecordingAudioDependencies = liveDependencies(app),
 ): Promise<
@@ -188,7 +186,7 @@ export async function uploadRecordingAudio(
 
 /** Copy an explicitly uploaded recording back into the local store. */
 export async function downloadRecordingAudio(
-	app: WhisperingApplication,
+	app: WhisperingApp,
 	recording: Pick<Recording, 'id' | 'audioBlobId' | 'uploadedAt'>,
 	dependencies: RecordingAudioDependencies = liveDependencies(app),
 ): Promise<
@@ -221,7 +219,7 @@ export async function downloadRecordingAudio(
 
 /** Remove device bytes only after an online copy has succeeded. */
 export async function removeLocalRecordingAudio(
-	app: WhisperingApplication,
+	app: WhisperingApp,
 	recording: Pick<Recording, 'id' | 'audioBlobId' | 'uploadedAt'>,
 	dependencies: RecordingAudioDependencies = liveDependencies(app),
 ): Promise<
@@ -258,7 +256,7 @@ export async function removeLocalRecordingAudio(
  * `RemoteBlobNotFound` result and the user may retry deletion.
  */
 export async function purgeRecordingAudio(
-	app: WhisperingApplication,
+	app: WhisperingApp,
 	recording: Pick<Recording, 'id' | 'audioBlobId' | 'uploadedAt'>,
 	dependencies: RecordingAudioDependencies = liveDependencies(app),
 ): Promise<Result<void, BlobRemoteFailed | RecordingAudioError>> {

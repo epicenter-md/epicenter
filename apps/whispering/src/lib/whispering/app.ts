@@ -14,7 +14,7 @@ import {
 	type WhisperingRecordings,
 } from './recordings';
 
-type ApplicationRuntime = {
+type AppRuntime = {
 	open<TDefinition extends WorkspaceDefinition>(
 		definition: TDefinition,
 	): Promise<WorkspaceHandle<TDefinition>>;
@@ -22,15 +22,13 @@ type ApplicationRuntime = {
 };
 
 /**
- * The environment-owned inputs for one application acquisition: how to build
+ * The environment-owned inputs for one app acquisition: how to build
  * the workspace runtime, and the platform's default transcription service.
  * The `#platform/whispering` leaves bind these per build; Bun scripts supply
  * their own.
  */
-export type WhisperingDependencies = {
-	createRuntime(
-		onRecordsChanged: (workspaceId: string) => void,
-	): ApplicationRuntime;
+export type WhisperingAppDependencies = {
+	createRuntime(onRecordsChanged: (workspaceId: string) => void): AppRuntime;
 	defaultTranscriptionService: TranscriptionServiceId;
 	reportBackgroundError(cause: unknown): void;
 };
@@ -57,7 +55,7 @@ export type WhisperingSettings = {
 	subscribe(listener: () => void): () => void;
 };
 
-export type WhisperingApplication = {
+export type WhisperingApp = {
 	readonly settings: WhisperingSettings;
 	readonly recordings: WhisperingRecordings;
 	readonly recipes: WhisperingRecipes;
@@ -70,27 +68,27 @@ function clone<TValue>(value: TValue): TValue {
 
 /**
  * One transactional asynchronous acquisition of a fully ready Whispering
- * application: it opens the Whispering workspace and hydrates settings,
+ * app: it opens the Whispering workspace and hydrates settings,
  * recordings, and recipes before resolving. Any failure releases everything
- * it opened and rejects; there is no half-open application state.
+ * it opened and rejects; there is no half-open app state.
  *
  * The caller owns observation: the root Svelte `{#await}` (or a script's
  * `await`) attaches to this promise the moment it exists, so a boot failure
  * always has an observer. Aborting `signal` releases an in-flight acquisition.
  * Once resolved, the caller owns disposal. The Svelte route wraps this core in
- * one UI session so shell work, query state, and the application close in one
+ * one UI session so shell work, query state, and the app close in one
  * ordered lifecycle. Boot retry is a full page reload.
  *
- * Scripts: `await using app = await openWhisperingApplication(bunDeps)`.
+ * Scripts: `await using app = await openWhisperingApp(bunDeps)`.
  */
-export async function openWhisperingApplication(
+export async function openWhisperingApp(
 	{
 		createRuntime,
 		defaultTranscriptionService,
 		reportBackgroundError,
-	}: WhisperingDependencies,
+	}: WhisperingAppDependencies,
 	{ signal }: { signal?: AbortSignal } = {},
-): Promise<WhisperingApplication> {
+): Promise<WhisperingApp> {
 	const recordListeners = new Map<string, Set<() => void>>();
 	const runtime = createRuntime((workspaceId) => {
 		for (const listener of recordListeners.get(workspaceId) ?? []) listener();
@@ -178,7 +176,7 @@ export async function openWhisperingApplication(
 		} catch (releaseCause) {
 			throw new AggregateError(
 				[cause, releaseCause],
-				'Whispering application acquisition and cleanup failed',
+				'Whispering app acquisition and cleanup failed',
 			);
 		}
 		throw cause;
@@ -186,7 +184,7 @@ export async function openWhisperingApplication(
 }
 
 /**
- * Read every setting into a synchronous cache before the application
+ * Read every setting into a synchronous cache before the app
  * resolves. The records-changed subscription starts before the first reads so
  * a change landing mid-hydration still triggers a re-read.
  */

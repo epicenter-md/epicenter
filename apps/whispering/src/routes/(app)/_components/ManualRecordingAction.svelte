@@ -3,9 +3,9 @@
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import { createManualRecordingController } from './manual-recording-controller.svelte';
 	import RecordingActionCard from './RecordingActionCard.svelte';
-	import { getWhisperingApplication } from '$lib/whispering/context';
+	import { getWhisperingApp } from '$lib/whispering/context';
 
-	const app = getWhisperingApplication();
+	const app = getWhisperingApp();
 
 	let {
 		footer,

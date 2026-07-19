@@ -17,7 +17,7 @@ import { deviceConfig } from '$lib/state/device-config.svelte';
 import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
-import type { WhisperingApplication } from '$lib/whispering/application';
+import type { WhisperingApp } from '$lib/whispering/app';
 
 /**
  * Surface the outcome of acquiring a recording device. A clean success is
@@ -72,7 +72,7 @@ function isVadRecordingActive() {
  * exact recording it owns; the button and toggle paths ignore the return.
  */
 export async function startManualRecording(
-	app: WhisperingApplication,
+	app: WhisperingApp,
 ): Promise<BlobId | null> {
 	app.settings.set('recording.trigger', 'manual');
 	// A new dictation is starting: clear any lingering failed/delivered state so
@@ -118,7 +118,7 @@ export async function startManualRecording(
 	return manualRecorder.currentAudioBlobId;
 }
 
-export async function stopManualRecording(app: WhisperingApplication) {
+export async function stopManualRecording(app: WhisperingApp) {
 	const { data: source, error } = await manualRecorder.stopRecording();
 
 	if (error) {
@@ -156,7 +156,7 @@ export async function stopManualRecording(app: WhisperingApplication) {
  * wrong one. This is the idempotent stop push-to-talk routes every stop through.
  */
 export async function stopManualRecordingById(
-	app: WhisperingApplication,
+	app: WhisperingApp,
 	recordingId: BlobId,
 ) {
 	if (
@@ -168,14 +168,14 @@ export async function stopManualRecordingById(
 	await stopManualRecording(app);
 }
 
-export function toggleManualRecording(app: WhisperingApplication) {
+export function toggleManualRecording(app: WhisperingApp) {
 	if (manualRecorder.state === 'RECORDING') {
 		return stopManualRecording(app);
 	}
 	return startManualRecording(app);
 }
 
-export async function cancelRecording(app: WhisperingApplication) {
+export async function cancelRecording(app: WhisperingApp) {
 	// Note: distinct from the low-level Tauri `commands.cancelRecording()` (CPAL
 	// stream teardown). This is the user-facing command: it decides what "cancel"
 	// means across the manual and VAD recorders.
@@ -221,7 +221,7 @@ export async function cancelRecording(app: WhisperingApplication) {
 let vadResumeTimer: ReturnType<typeof setTimeout> | undefined;
 const VAD_RESUME_DELAY_MS = 1500;
 
-function pausePlaybackForSpeech(app: WhisperingApplication) {
+function pausePlaybackForSpeech(app: WhisperingApp) {
 	clearTimeout(vadResumeTimer);
 	vadResumeTimer = undefined;
 	recordingMedia.pause(app);
@@ -252,7 +252,7 @@ function cancelPendingVadResume() {
 	vadResumeTimer = undefined;
 }
 
-export async function startVadRecording(app: WhisperingApplication) {
+export async function startVadRecording(app: WhisperingApp) {
 	app.settings.set('recording.trigger', 'vad');
 	// A new dictation session is starting: clear any lingering terminal state.
 	dictationLifecycle.reset();
@@ -322,7 +322,7 @@ export async function startVadRecording(app: WhisperingApplication) {
 	void playSoundIfEnabled(app, 'vad-start');
 }
 
-export async function stopVadRecording(app: WhisperingApplication) {
+export async function stopVadRecording(app: WhisperingApp) {
 	if (!isVadRecordingActive()) return;
 
 	log.info('Stopping voice activated capture');
@@ -346,7 +346,7 @@ export async function stopVadRecording(app: WhisperingApplication) {
 	void playSoundIfEnabled(app, 'vad-stop');
 }
 
-export function toggleVadRecording(app: WhisperingApplication) {
+export function toggleVadRecording(app: WhisperingApp) {
 	if (isVadRecordingActive()) {
 		return stopVadRecording(app);
 	}
@@ -361,7 +361,7 @@ export function toggleVadRecording(app: WhisperingApplication) {
  * two captures never overlap (`import` keeps neither recorder, so both stop).
  */
 export async function selectCaptureSurface(
-	app: WhisperingApplication,
+	app: WhisperingApp,
 	surface: CaptureSurface,
 ) {
 	// Flip the surface first so the tab/dropdown responds instantly; the live

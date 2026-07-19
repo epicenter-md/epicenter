@@ -1,14 +1,14 @@
 import { createContext } from 'svelte';
 import type { WhisperingQueries } from '$lib/queries';
-import type { WhisperingApplication } from './application';
+import type { WhisperingApp } from './app';
 
 /**
- * The ready application as descendants of the fulfilled boot branch see it:
+ * The ready app as descendants of the fulfilled boot branch see it:
  * the UI-free product namespaces wrapped with Svelte dependency tracking.
  * Operation modules receive this explicitly; components read it from context.
  */
 export type WhisperingContext = {
-	application: WhisperingApplication;
+	app: WhisperingApp;
 	queries: WhisperingQueries;
 };
 
@@ -22,8 +22,8 @@ const [getWhisperingContext, setWhisperingContext] =
 
 export { setWhisperingContext };
 
-export function getWhisperingApplication() {
-	return getWhisperingContext().application;
+export function getWhisperingApp() {
+	return getWhisperingContext().app;
 }
 
 export function getWhisperingQueries() {

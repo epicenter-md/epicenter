@@ -4,8 +4,8 @@
 	"version": "7.11.1",
 	"description": "Browser-deployable speech-to-text SPA hosted natively by Epicenter",
 	"exports": {
-		"./application": "./src/lib/whispering/application.ts",
-		"./application/bun": "./src/lib/whispering/application.bun.ts",
+		"./app": "./src/lib/whispering/app.ts",
+		"./app/bun": "./src/lib/whispering/app.bun.ts",
 		"./commands": "./src/lib/commands.ts",
 		"./workspace": "./src/lib/workspace/index.ts",
 		"./workspace-contract": "./src/lib/workspace/contract.ts"

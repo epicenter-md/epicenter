@@ -1,29 +1,29 @@
 # State
 
-Reactive state that stays in sync with the application. Unlike the query layer, which uses stale-while-revalidate caching, state modules maintain live state that updates immediately and persists across the application lifecycle.
+Reactive state that stays in sync with the app. Unlike the query layer, which uses stale-while-revalidate caching, state modules maintain live state that updates immediately and persists across the app lifecycle.
 
-Two shapes live here. Workspace-backed state (`settings`, `recordings`, `recipes`) is owned and hydrated by the UI-free application; these modules are thin Svelte reactivity adapters over that ready product API. Device/hardware state (`device-config`, recorders, lifecycle) remains module singletons.
+Two shapes live here. Workspace-backed state (`settings`, `recordings`, `recipes`) is owned and hydrated by the UI-free app; these modules are thin Svelte reactivity adapters over that ready product API. Device/hardware state (`device-config`, recorders, lifecycle) remains module singletons.
 
 ## When to Use State vs Query Layer
 
 | Aspect | `$lib/state/` | `$lib/queries/` |
 |--------|----------------|---------------|
-| **Pattern** | Application-owned domain state plus Svelte adapters | Stale-while-revalidate (TanStack Query) |
-| **State Location** | Ready `WhisperingApplication` | TanStack Query cache |
+| **Pattern** | App-owned domain state plus Svelte adapters | Stale-while-revalidate (TanStack Query) |
+| **State Location** | Ready `WhisperingApp` | TanStack Query cache |
 | **Updates** | Immediate, live | Cached with background refresh |
 | **Use Case** | Hardware state, user preferences, live status, workspace table data | Data fetching, mutations, external API calls |
-| **Lifecycle** | Application lifetime | Managed by TanStack Query |
+| **Lifecycle** | App lifetime | Managed by TanStack Query |
 
 ## Current State Modules
 
 ### `settings.svelte.ts`
 
-Synced workspace settings backed by the canonical workspace KV lens (ADR-0130). Settings roam across devices through row sync. The application core hydrates every key before the app resolves; `createSettingsView` wraps it with `createSubscriber` so reads are reactive. Product defaults remain release-local application policy.
+Synced workspace settings backed by the canonical workspace KV lens (ADR-0130). Settings roam across devices through row sync. The app core hydrates every key before the app resolves; `createSettingsView` wraps it with `createSubscriber` so reads are reactive. Product defaults remain release-local app policy.
 
 ```typescript
-import { getWhisperingApplication } from '$lib/whispering/context';
+import { getWhisperingApp } from '$lib/whispering/context';
 
-const app = getWhisperingApplication(); // component initialisation
+const app = getWhisperingApp(); // component initialisation
 
 // Read settings reactively (re-renders on change)
 const trigger = app.settings.get('recording.trigger');
@@ -34,14 +34,14 @@ app.settings.set('recording.trigger', 'vad');
 
 ### `recordings.svelte.ts`
 
-Recording metadata backed by structural workspace row ids. The application namespace maintains the cache and refreshes after local writes or installed remote record changes; this module only makes its reads reactive. Audio blobs remain separate and are addressed by each row's `audioBlobId`; use `$lib/queries/audio` for availability and `services.blobs.local` for raw blob access.
+Recording metadata backed by structural workspace row ids. The app namespace maintains the cache and refreshes after local writes or installed remote record changes; this module only makes its reads reactive. Audio blobs remain separate and are addressed by each row's `audioBlobId`; use `$lib/queries/audio` for availability and `services.blobs.local` for raw blob access.
 
 ```typescript
 import { InstantString } from '@epicenter/field';
 
-import { getWhisperingApplication } from '$lib/whispering/context';
+import { getWhisperingApp } from '$lib/whispering/context';
 
-const { recordings } = getWhisperingApplication(); // component initialisation
+const { recordings } = getWhisperingApp(); // component initialisation
 
 // Read recordings reactively
 const recording = recordings.get(id);
@@ -65,9 +65,9 @@ await recordings.delete(id);
 The on-demand Recipe library backed by canonical records. Each recipe is a single self-contained row (`name`, `instructions`, optional `icon`); built-in recipes are merged ahead of the user's saved rows.
 
 ```typescript
-import { getWhisperingApplication } from '$lib/whispering/context';
+import { getWhisperingApp } from '$lib/whispering/context';
 
-const { recipes } = getWhisperingApplication(); // component initialisation
+const { recipes } = getWhisperingApp(); // component initialisation
 
 const list = recipes.pickable; // built-ins followed by saved recipes
 await recipes.set({ id, name, instructions, icon: null });
@@ -125,7 +125,7 @@ Create a new state module when you need:
 
 1. **Live reactive state** that must update immediately (not stale-while-revalidate)
 2. **Singleton behavior** where only one instance should exist
-3. **Application-lifetime persistence** (not request-scoped)
+3. **App-lifetime persistence** (not request-scoped)
 4. **Hardware or system state** that can't be "refreshed" like data
 
 Use the query layer (`$lib/queries/`) instead when you need:

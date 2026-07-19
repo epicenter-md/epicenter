@@ -3,14 +3,14 @@ import { Ok, partitionResults } from 'wellcrafted/result';
 import { transcribeAndPersist } from '$lib/operations/transcribe';
 import type { WhisperingQueryRuntime } from '$lib/queries/client';
 import type { Recording } from '$lib/state/recordings.svelte';
-import type { WhisperingApplication } from '$lib/whispering/application';
+import type { WhisperingApp } from '$lib/whispering/app';
 
 export const transcriptionKeys = defineKeys({
 	isTranscribing: ['transcription', 'isTranscribing'],
 });
 
 export function createTranscriptionQueries(
-	app: WhisperingApplication,
+	app: WhisperingApp,
 	{
 		defineMutation,
 		queryClient,

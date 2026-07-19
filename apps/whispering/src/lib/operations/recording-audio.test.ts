@@ -1,7 +1,7 @@
 /**
  * Recording Audio Operations Tests
  *
- * Verifies the application policy over canonical local bytes and an optional
+ * Verifies the app policy over canonical local bytes and an optional
  * remote copy without persisting a second availability state machine.
  *
  * Key behaviors:
@@ -33,13 +33,12 @@ const {
 	removeLocalRecordingAudio,
 	uploadRecordingAudio,
 } = await import('./recording-audio.js');
-type WhisperingApplication =
-	import('$lib/whispering/application').WhisperingApplication;
+type WhisperingApp = import('$lib/whispering/app').WhisperingApp;
 
 // Every test supplies explicit dependencies, so the app is never touched.
 const app = {
 	recordings: { update: mock() },
-} as unknown as WhisperingApplication;
+} as unknown as WhisperingApp;
 
 const recording = {
 	id: 'recording-1' as RecordingId,

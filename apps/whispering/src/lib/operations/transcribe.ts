@@ -29,7 +29,7 @@ import {
 } from '$lib/services/transcription/providers';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { type SecretKey, secrets } from '$lib/state/secrets.svelte';
-import type { WhisperingApplication } from '$lib/whispering/application';
+import type { WhisperingApp } from '$lib/whispering/app';
 import type { RecordingId } from '$lib/workspace';
 
 /**
@@ -120,7 +120,7 @@ function secretApiKey(key: SecretKey): string | undefined {
  * clients because they do not speak the wire (Deepgram's raw body + `Authorization:
  * Token`, ElevenLabs' `xi-api-key`, Mistral's `context_bias`); ADR-0060 blesses it.
  */
-const uploadDispatch = (app: WhisperingApplication) =>
+const uploadDispatch = (app: WhisperingApp) =>
 	({
 		// Epicenter (`session`) STT: the transport is the signed-in session fetch against
 		// the deployment you are bonded to (`auth.deployment.baseURL`, so a self-hosted instance's own
@@ -212,7 +212,7 @@ const uploadDispatch = (app: WhisperingApplication) =>
  * blob is uploaded as-is.
  */
 async function loadForUpload(
-	app: WhisperingApplication,
+	app: WhisperingApp,
 	audioBlobId: BlobId,
 ): Promise<Result<Blob, TranscriptionError>> {
 	if (tauri) {
@@ -246,7 +246,7 @@ async function loadForUpload(
  * saved file when possible, falling back to the raw blob.
  */
 export async function transcribeAudio(
-	app: WhisperingApplication,
+	app: WhisperingApp,
 	audioBlobId: BlobId,
 ): Promise<Result<string, TranscriptionError>> {
 	const selectedService = app.settings.get('transcription.service');
@@ -291,7 +291,7 @@ export async function transcribeAudio(
  * through here, so they share one history-write policy.
  */
 export async function transcribeAndPersist(
-	app: WhisperingApplication,
+	app: WhisperingApp,
 	recordingId: RecordingId,
 	audioBlobId: BlobId,
 ): Promise<Result<TranscriptionSuccess, TranscriptionError>> {
@@ -315,7 +315,7 @@ export async function transcribeAndPersist(
  * `language`/`initialPrompt` are inference params, irrelevant to loading, so
  * they are sent null.
  */
-export function prewarmOnDeviceModel(app: WhisperingApplication): void {
+export function prewarmOnDeviceModel(app: WhisperingApp): void {
 	if (!tauri) return;
 
 	const selectedService = app.settings.get('transcription.service');
@@ -347,7 +347,7 @@ function withDictionaryTerms(prompt: string, dictionary: string[]): string {
 }
 
 async function transcribeOnDevice(
-	app: WhisperingApplication,
+	app: WhisperingApp,
 	audioBlobId: BlobId,
 	selectedService: OnDeviceProviderId,
 ): Promise<Result<string, TranscriptionError>> {
@@ -381,7 +381,7 @@ async function transcribeOnDevice(
 }
 
 async function transcribeViaUpload(
-	app: WhisperingApplication,
+	app: WhisperingApp,
 	audioBlobId: BlobId,
 	selectedService: UploadProviderId,
 ): Promise<Result<string, TranscriptionError>> {

@@ -13,7 +13,7 @@ import { type Result, tryAsync } from 'wellcrafted/result';
 import { report } from '$lib/report';
 import { services } from '$lib/services';
 import type { Recording } from '$lib/state/recordings.svelte';
-import type { WhisperingApplication } from '$lib/whispering/application';
+import type { WhisperingApp } from '$lib/whispering/app';
 import { purgeRecordingAudio, RecordingAudioError } from './recording-audio.js';
 
 export const RecordingDeletionError = defineErrors({
@@ -54,7 +54,7 @@ type RecordingDeletionDependencies = {
 };
 
 function liveDeletionDependencies(
-	app: WhisperingApplication,
+	app: WhisperingApp,
 ): RecordingDeletionDependencies {
 	return {
 		local: services.blobs.local,
@@ -73,7 +73,7 @@ function liveDeletionDependencies(
  * the completed prefix.
  */
 export async function deleteRecordings(
-	app: WhisperingApplication,
+	app: WhisperingApp,
 	toDelete:
 		| Pick<Recording, 'id' | 'audioBlobId' | 'uploadedAt'>
 		| Array<Pick<Recording, 'id' | 'audioBlobId' | 'uploadedAt'>>,
@@ -134,7 +134,7 @@ export async function deleteRecordings(
 }
 
 export function deleteRecordingsWithConfirmation(
-	app: WhisperingApplication,
+	app: WhisperingApp,
 	toDelete: Recording | Recording[],
 	{ onSuccess }: { onSuccess?: () => void } = {},
 ) {

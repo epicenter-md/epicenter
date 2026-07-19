@@ -14,9 +14,9 @@
 	import { describeCompletionReadiness } from '$lib/operations/completion-target';
 	import AdvancedDisclosure from './AdvancedDisclosure.svelte';
 	import ProviderConfigFields from './ProviderConfigFields.svelte';
-	import { getWhisperingApplication } from '$lib/whispering/context';
+	import { getWhisperingApp } from '$lib/whispering/context';
 
-	const app = getWhisperingApplication();
+	const app = getWhisperingApp();
 
 	// The Text stage of the capture pipeline: the AI destination Polish and every
 	// Recipe send transcript text to. This surface owns the routing decision

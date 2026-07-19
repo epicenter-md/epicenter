@@ -38,7 +38,7 @@
 	import { captureSurface } from '$lib/state/capture-surface.svelte';
 	import { getRecordingShortcutLabel } from '$lib/utils/recording-shortcut';
 	import { viewTransition } from '$lib/utils/viewTransitions';
-	import { getWhisperingApplication } from '$lib/whispering/context';
+	import { getWhisperingApp } from '$lib/whispering/context';
 	import studioMicrophone from '$lib/assets/studio-microphone.png';
 	import { tauri } from '#platform/tauri';
 	import CaptureBehaviorPopover from './_components/CaptureBehaviorPopover.svelte';
@@ -48,7 +48,7 @@
 	import RecordingResult from './_components/RecordingResult.svelte';
 	import VadRecordingAction from './_components/VadRecordingAction.svelte';
 
-	const app = getWhisperingApplication();
+	const app = getWhisperingApp();
 
 	const latestRecording = $derived(app.recordings.sorted[0]);
 	const transcriptionReadiness = $derived(getTranscriptionReadiness(app));

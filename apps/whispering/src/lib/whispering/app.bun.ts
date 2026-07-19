@@ -1,7 +1,7 @@
 import { createDeviceBunWorkspaceRuntime } from '@epicenter/workspace/sqlite/bun';
 import { consoleSink, type LogEvent } from 'wellcrafted/logger';
 import type { TranscriptionServiceId } from '../services/transcription/providers';
-import type { WhisperingDependencies } from './application';
+import type { WhisperingAppDependencies } from './app';
 
 export type CreateWhisperingBunDependenciesOptions = {
 	workspacesRoot: string;
@@ -11,12 +11,12 @@ export type CreateWhisperingBunDependenciesOptions = {
 /**
  * Native dependencies for scripts and long-lived local agent hosts.
  * Construction is inert; SQLite opens only when the caller awaits
- * `openWhisperingApplication`.
+ * `openWhisperingApp`.
  */
 export function createWhisperingBunDependencies({
 	workspacesRoot,
 	defaultTranscriptionService = 'local',
-}: CreateWhisperingBunDependenciesOptions): WhisperingDependencies {
+}: CreateWhisperingBunDependenciesOptions): WhisperingAppDependencies {
 	return {
 		createRuntime: (onRecordsChanged) =>
 			createDeviceBunWorkspaceRuntime({ workspacesRoot, onRecordsChanged }),
@@ -25,8 +25,8 @@ export function createWhisperingBunDependencies({
 			consoleSink({
 				ts: Date.now(),
 				level: 'error',
-				source: 'whispering/application',
-				message: 'Whispering application background failure',
+				source: 'whispering/app',
+				message: 'Whispering app background failure',
 				data: cause,
 			} satisfies LogEvent);
 		},

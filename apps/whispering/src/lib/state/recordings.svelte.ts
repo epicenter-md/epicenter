@@ -1,5 +1,5 @@
 import { createSubscriber } from 'svelte/reactivity';
-import type { WhisperingApplication } from '$lib/whispering/application';
+import type { WhisperingApp } from '$lib/whispering/app';
 import type { Recording } from '$lib/workspace';
 
 export type { Recording } from '$lib/workspace';
@@ -9,7 +9,7 @@ export type Recordings = ReturnType<typeof createRecordings>;
 /** Adds Svelte dependency tracking to the UI-free recordings namespace. */
 export function createRecordings({
 	recordings,
-}: Pick<WhisperingApplication, 'recordings'>) {
+}: Pick<WhisperingApp, 'recordings'>) {
 	const track = createSubscriber((update) => recordings.subscribe(update));
 	return {
 		get sorted() {

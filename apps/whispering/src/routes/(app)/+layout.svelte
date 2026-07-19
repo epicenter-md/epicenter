@@ -1,9 +1,9 @@
 <!--
 	The (app) route layout is the session root and the boot owner. It mounts
-	once and persists across navigation, so the application is acquired
+	once and persists across navigation, so the app is acquired
 	exactly once per launch: the raw {#await} below owns pending, fulfilled,
 	and failed rendering from the moment this component initialises, and the
-	fulfilled branch mounts the provider that supplies the ready application
+	fulfilled branch mounts the provider that supplies the ready app
 	to every descendant. AppEffects, GlobalDialogs, and the build-selected
 	DictationIndicator start exactly once, inside the ready subtree. Only the
 	nav chrome and ContentShell swap on a breakpoint change.
@@ -42,7 +42,7 @@
 	// Created during component initialisation, so the {#await} owns the
 	// acquisition before any failure can settle. Boot retry is a full page
 	// reload. Unmount/HMR aborts an in-flight acquisition; after fulfillment,
-	// this route owner drains shell, query, and application resources together.
+	// this route owner drains shell, query, and app resources together.
 	const owner = createWhisperingUiSessionOpening((signal) =>
 		openWhisperingUiSession(whisperingPlatform, signal),
 	);

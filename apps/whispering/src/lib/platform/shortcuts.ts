@@ -1,6 +1,6 @@
 import { createSystemShortcuts } from '#platform/system-shortcuts';
 import { commands } from '$lib/commands';
-import type { WhisperingApplication } from '$lib/whispering/application';
+import type { WhisperingApp } from '$lib/whispering/app';
 import { createFocusedShortcuts } from './focused-shortcuts';
 import { createReachRouter } from './reach-router';
 
@@ -13,7 +13,7 @@ import { createReachRouter } from './reach-router';
  * ones. On web `systemShortcuts` is `null`, so the router caps every binding at
  * focused reach.
  */
-export function createAppShortcuts(app: WhisperingApplication) {
+export function createAppShortcuts(app: WhisperingApp) {
 	return createReachRouter({
 		focused: createFocusedShortcuts(app),
 		global: createSystemShortcuts?.(app) ?? null,

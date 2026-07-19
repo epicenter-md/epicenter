@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { Badge } from '@epicenter/ui/badge';
 	import type { RecordingId } from '$lib/workspace';
-	import { getWhisperingApplication } from '$lib/whispering/context';
+	import { getWhisperingApp } from '$lib/whispering/context';
 
-	const app = getWhisperingApplication();
+	const app = getWhisperingApp();
 
 	// The recordings list is the durable failure log (ADR-0039): a failed
 	// transcription shows a clear badge plus the full error inline, the detail

@@ -26,10 +26,9 @@ const update = mock(
 const { recordTranscriptionOutcome, saveRecordingHistory } = await import(
 	'./transcription-history.js'
 );
-type WhisperingApplication =
-	import('$lib/whispering/application').WhisperingApplication;
+type WhisperingApp = import('$lib/whispering/app').WhisperingApp;
 
-const app = { recordings: { update } } as unknown as WhisperingApplication;
+const app = { recordings: { update } } as unknown as WhisperingApp;
 
 test('conforming updated row confirms the history save', async () => {
 	update.mockImplementationOnce(async () => Ok(recording));

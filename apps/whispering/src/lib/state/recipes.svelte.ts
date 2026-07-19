@@ -1,14 +1,12 @@
 import { nanoid } from 'nanoid/non-secure';
 import { createSubscriber } from 'svelte/reactivity';
-import type { WhisperingApplication } from '$lib/whispering/application';
+import type { WhisperingApp } from '$lib/whispering/app';
 import type { Recipe } from '$lib/workspace';
 
 export type Recipes = ReturnType<typeof createRecipes>;
 
 /** Adds Svelte dependency tracking to the UI-free recipes namespace. */
-export function createRecipes({
-	recipes,
-}: Pick<WhisperingApplication, 'recipes'>) {
+export function createRecipes({ recipes }: Pick<WhisperingApp, 'recipes'>) {
 	const track = createSubscriber((update) => recipes.subscribe(update));
 	return {
 		get pickable() {

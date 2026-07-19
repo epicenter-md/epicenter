@@ -5,9 +5,9 @@
 	import OutputDeliveryControls from '$lib/components/OutputDeliveryControls.svelte';
 	import { SettingSwitch } from '$lib/components/settings';
 	import { captureSurface } from '$lib/state/capture-surface.svelte';
-	import { getWhisperingApplication } from '$lib/whispering/context';
+	import { getWhisperingApp } from '$lib/whispering/context';
 
-	const app = getWhisperingApplication();
+	const app = getWhisperingApp();
 	let open = $state(false);
 
 	const pausePlaybackDescription = $derived.by(() => {

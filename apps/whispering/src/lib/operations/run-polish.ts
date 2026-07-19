@@ -13,7 +13,7 @@ import {
 import { describePolishDestination } from '$lib/operations/completion-target';
 import { resolveTranscriptionLocalityFromConfig } from '$lib/operations/transcription-target';
 import { deviceConfig } from '$lib/state/device-config.svelte';
-import type { WhisperingApplication } from '$lib/whispering/application';
+import type { WhisperingApp } from '$lib/whispering/app';
 
 export const RunPolishError = defineErrors({
 	/**
@@ -45,7 +45,7 @@ export type RunPolishError = InferErrors<typeof RunPolishError>;
  */
 export type PolishStatus = 'off' | 'on' | 'needs-key';
 
-export function polishStatus(app: WhisperingApplication): PolishStatus {
+export function polishStatus(app: WhisperingApp): PolishStatus {
 	if (!app.settings.get('polish.enabled')) return 'off';
 	return resolveCompletionState(app).canRun ? 'on' : 'needs-key';
 }
@@ -57,7 +57,7 @@ export function polishStatus(app: WhisperingApplication): PolishStatus {
  * derived sentence instead of each reconstructing it from settings and the
  * resolved completion target. Read at use per ADR 0012.
  */
-export function polishDestination(app: WhisperingApplication): string {
+export function polishDestination(app: WhisperingApp): string {
 	return describePolishDestination(
 		resolveTranscriptionLocalityFromConfig({
 			service: app.settings.get('transcription.service'),
@@ -76,10 +76,7 @@ export function polishDestination(app: WhisperingApplication): string {
  * an AI call is really about to happen (no flicker in speed mode or an
  * unconfigured install); `runPolish` reads it too.
  */
-export function polishWillRun(
-	app: WhisperingApplication,
-	input: string,
-): boolean {
+export function polishWillRun(app: WhisperingApp, input: string): boolean {
 	return polishStatus(app) === 'on' && input.trim().length > 0;
 }
 
@@ -100,7 +97,7 @@ export function polishWillRun(
  * delivery can still proceed.
  */
 export async function runPolish(
-	app: WhisperingApplication,
+	app: WhisperingApp,
 	{
 		input,
 		signal,

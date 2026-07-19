@@ -10,9 +10,9 @@
 	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
 	import type { BooleanSettingKey } from '$lib/state/settings.svelte';
 	import { tauri } from '#platform/tauri';
-	import { getWhisperingApplication } from '$lib/whispering/context';
+	import { getWhisperingApp } from '$lib/whispering/context';
 
-	const app = getWhisperingApplication();
+	const app = getWhisperingApp();
 
 	// One scope's full output delivery UI: copy to clipboard, paste at cursor (with
 	// its macOS Accessibility notice), and the dependent "press Enter" sub-toggle.

@@ -15,7 +15,7 @@
 
 	// The root layout serves every surface: the (app) group, the auth
 	// callback, and the recording-overlay webview. It owns chrome only; the
-	// (app) layout owns the application boot, so the other surfaces never
+	// (app) layout owns the app boot, so the other surfaces never
 	// open SQLite.
 
 	// Option A: the active preset is picked once at boot; a

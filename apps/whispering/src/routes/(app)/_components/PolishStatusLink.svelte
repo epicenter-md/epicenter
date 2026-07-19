@@ -4,9 +4,9 @@
 	import SparklesIcon from '@lucide/svelte/icons/sparkles';
 	import { whisperingPath } from '$lib/constants/urls';
 	import { polishStatus } from '$lib/operations/run-polish';
-	import { getWhisperingApplication } from '$lib/whispering/context';
+	import { getWhisperingApp } from '$lib/whispering/context';
 
-	const app = getWhisperingApplication();
+	const app = getWhisperingApp();
 	const status = $derived(polishStatus(app));
 	const triggerClass =
 		'inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md px-2 text-sm no-underline hover:bg-accent hover:no-underline';

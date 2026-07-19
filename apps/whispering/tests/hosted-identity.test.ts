@@ -2,7 +2,7 @@
  * Hosted SPA identity tests.
  *
  * Whispering is one SPA with browser and Epicenter build environments. It keeps
- * its application routes and platform adapters, while Epicenter owns the native
+ * its app routes and platform adapters, while Epicenter owns the native
  * desktop identity.
  */
 import { describe, expect, test } from 'bun:test';

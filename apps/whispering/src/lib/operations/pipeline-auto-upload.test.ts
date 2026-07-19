@@ -77,8 +77,7 @@ mock.module('$lib/state/polish-hud.svelte', () => ({
 	polishHud: { begin: mock(), end: mock() },
 }));
 const { processRecordingPipeline } = await import('./pipeline.js');
-type WhisperingApplication =
-	import('$lib/whispering/application').WhisperingApplication;
+type WhisperingApp = import('$lib/whispering/app').WhisperingApp;
 
 const app = {
 	settings: { get: () => autoUpload },
@@ -89,7 +88,7 @@ const app = {
 		},
 		update: mock(async () => Ok(undefined)),
 	},
-} as unknown as WhisperingApplication;
+} as unknown as WhisperingApp;
 
 afterEach(() => {
 	autoUpload = true;

@@ -5,7 +5,7 @@
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import { report } from '$lib/report';
 	import { createAppShortcuts } from '$lib/platform/shortcuts';
-	import { getWhisperingApplication } from '$lib/whispering/context';
+	import { getWhisperingApp } from '$lib/whispering/context';
 	import KeyboardShortcutRecorder from './keyboard-shortcut-recorder/KeyboardShortcutRecorder.svelte';
 	import ShortcutTable from './keyboard-shortcut-recorder/ShortcutTable.svelte';
 
@@ -14,7 +14,7 @@
 	// tab, decides whether a binding lands in the synced focused store or the
 	// per-device global store. Reset restores both stores to their defaults.
 	function reset() {
-		createAppShortcuts(getWhisperingApplication()).reset();
+		createAppShortcuts(getWhisperingApp()).reset();
 		report.success({
 			title: 'Shortcuts reset',
 			description: 'All shortcuts have been reset to defaults.',

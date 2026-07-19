@@ -1,5 +1,5 @@
 /**
- * URL and pathname constants for the Whispering application
+ * URL and pathname constants for the Whispering app
  */
 import { WHISPERING_BASE_PATHNAME } from '#platform/base-path';
 

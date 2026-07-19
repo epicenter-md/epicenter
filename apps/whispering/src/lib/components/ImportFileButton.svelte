@@ -3,9 +3,9 @@
 	import FileUpIcon from '@lucide/svelte/icons/file-up';
 	import { IMPORT_ACCEPT } from '$lib/constants/import-formats';
 	import { importFiles } from '$lib/operations/import';
-	import { getWhisperingApplication } from '$lib/whispering/context';
+	import { getWhisperingApp } from '$lib/whispering/context';
 
-	const app = getWhisperingApplication();
+	const app = getWhisperingApp();
 
 	let { class: className }: { class?: string } = $props();
 

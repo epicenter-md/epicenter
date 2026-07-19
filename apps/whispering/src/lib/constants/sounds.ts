@@ -1,5 +1,5 @@
 /**
- * Sound effect names used throughout the application
+ * Sound effect names used throughout the app
  */
 
 export type WhisperingSoundNames =

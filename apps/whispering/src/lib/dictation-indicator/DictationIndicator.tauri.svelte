@@ -11,9 +11,9 @@
 	import { projectLifecycleToStatus } from '$lib/recording-pill/projection';
 	import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
 	import { tauriOnly } from '$lib/tauri.tauri';
-	import { getWhisperingApplication } from '$lib/whispering/context';
+	import { getWhisperingApp } from '$lib/whispering/context';
 
-	const app = getWhisperingApplication();
+	const app = getWhisperingApp();
 
 	const log = createLogger('whispering/dictation-indicator');
 	const status = $derived(projectLifecycleToStatus(dictationLifecycle.current));
