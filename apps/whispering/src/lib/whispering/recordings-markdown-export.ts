@@ -2,7 +2,7 @@ import { strToU8, zipSync } from 'fflate';
 import yaml from 'js-yaml';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import { type DownloadError, DownloadServiceLive } from '#platform/download';
-import type { WhisperingApp } from '$lib/whispering/context';
+import type { WhisperingApplication } from '$lib/whispering/application';
 import type { Recording } from '$lib/workspace';
 
 function recordingToMarkdown(recording: Recording): string {
@@ -13,7 +13,7 @@ function recordingToMarkdown(recording: Recording): string {
 
 /** Export the current app-level recording projection as one inert zip. */
 export async function exportRecordingsMarkdown(
-	app: WhisperingApp,
+	app: WhisperingApplication,
 ): Promise<Result<{ written: number }, DownloadError>> {
 	await app.recordings.refresh();
 	const rows = app.recordings.sorted;

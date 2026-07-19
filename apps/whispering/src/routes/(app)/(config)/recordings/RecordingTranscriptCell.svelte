@@ -6,9 +6,9 @@
 	import { createCopyFn } from '$lib/utils/createCopyFn';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import RecordingDetailModal from './RecordingDetailModal.svelte';
-	import { getWhisperingApp } from '$lib/whispering/context';
+	import { getWhisperingApplication } from '$lib/whispering/context';
 
-	const app = getWhisperingApp();
+	const app = getWhisperingApplication();
 
 	/**
 	 * The transcript column cell. Shows the transcript inline (or an "Empty

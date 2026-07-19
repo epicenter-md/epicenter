@@ -1,7 +1,7 @@
 import { tauri } from '#platform/tauri';
 import { outputWritesToCursor } from '$lib/operations/delivery';
 import { report } from '$lib/report';
-import type { WhisperingApp } from '$lib/whispering/context';
+import type { WhisperingApplication } from '$lib/whispering/application';
 
 /**
  * Tell Rust whether delivery writes at the cursor. Cursor delivery uses a
@@ -11,7 +11,7 @@ import type { WhisperingApp } from '$lib/whispering/context';
  * with `delivery.ts`; reading it inside the `$effect` keeps the push live as the
  * output toggles change. Desktop only: the browser build registers nothing.
  */
-export function synchronizeAutoPasteIntent(app: WhisperingApp): void {
+export function synchronizeAutoPasteIntent(app: WhisperingApplication): void {
 	if (!tauri) return;
 	const t = tauri;
 

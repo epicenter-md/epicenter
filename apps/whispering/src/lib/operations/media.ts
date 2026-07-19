@@ -1,6 +1,6 @@
 import { tauri } from '#platform/tauri';
 import { log } from '$lib/report';
-import type { WhisperingApp } from '$lib/whispering/context';
+import type { WhisperingApplication } from '$lib/whispering/application';
 
 // The one best-effort side effect for recording: pause whatever the system is
 // playing while recording, resume it after. Recording never waits on this and
@@ -20,7 +20,7 @@ import type { WhisperingApp } from '$lib/whispering/context';
 
 let chain: Promise<string[]> = Promise.resolve([]);
 
-function shouldPausePlayback(app: WhisperingApp): boolean {
+function shouldPausePlayback(app: WhisperingApplication): boolean {
 	return Boolean(tauri && app.settings.get('recording.pausePlayback'));
 }
 
@@ -49,7 +49,7 @@ async function resumeSessions(sessions: string[]): Promise<void> {
 
 export const recordingMedia = {
 	/** Pause active playback if enabled. Fire-and-forget: recording never waits. */
-	pause(app: WhisperingApp): void {
+	pause(app: WhisperingApplication): void {
 		if (!shouldPausePlayback(app)) return;
 		// Already paused? Keep that set; otherwise pause what's playing now.
 		chain = chain.then(async (paused) =>

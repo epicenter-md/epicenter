@@ -53,7 +53,8 @@ mock.module('$lib/operations/sink', () => ({
 const { deliverTranscriptionResult } = await import(
 	'../src/lib/operations/delivery'
 );
-type WhisperingApp = import('../src/lib/whispering/context').WhisperingApp;
+type WhisperingApplication =
+	import('../src/lib/whispering/application').WhisperingApplication;
 
 const app = {
 	settings: {
@@ -61,7 +62,7 @@ const app = {
 			return settingsValues.get(key) ?? false;
 		},
 	},
-} as unknown as WhisperingApp;
+} as unknown as WhisperingApplication;
 
 describe('transcription delivery', () => {
 	beforeEach(() => {

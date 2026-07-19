@@ -6,7 +6,7 @@ import {
 import type { RecordingPillAction } from '$lib/recording-pill/model';
 import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
 import { polishHud } from '$lib/state/polish-hud.svelte';
-import type { WhisperingApp } from '$lib/whispering/context';
+import type { WhisperingApplication } from '$lib/whispering/application';
 
 /**
  * The pill's control gestures, mapped to operations in one place. Both pill
@@ -21,7 +21,7 @@ import type { WhisperingApp } from '$lib/whispering/context';
  * There is no retry gesture: a failed dictation is retried from its recordings row.
  */
 export function dispatchPillAction(
-	app: WhisperingApp,
+	app: WhisperingApplication,
 	action: RecordingPillAction,
 ): void {
 	// Ship-raw fires during the polishing phase (capture already idle), so it sits

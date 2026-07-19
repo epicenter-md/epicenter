@@ -9,7 +9,7 @@ import { logAnalyticsEvent } from '$lib/operations/analytics';
 import { finalizeAudioBlob } from '$lib/operations/local-audio';
 import { processRecordingPipeline } from '$lib/operations/pipeline';
 import { report } from '$lib/report';
-import type { WhisperingApp } from '$lib/whispering/context';
+import type { WhisperingApplication } from '$lib/whispering/application';
 
 type RejectedImportFile = { file: File; reason: string };
 
@@ -87,7 +87,7 @@ function partitionByImportPolicy(files: File[]) {
  * picker) and desktop (the picker plus drag-and-drop).
  */
 export async function importFiles(
-	app: WhisperingApp,
+	app: WhisperingApplication,
 	{ files }: { files: File[] },
 ): Promise<void> {
 	const { valid, rejected } = partitionByImportPolicy(files);

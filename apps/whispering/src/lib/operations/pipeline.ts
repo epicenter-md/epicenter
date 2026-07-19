@@ -13,7 +13,7 @@ import { report } from '$lib/report';
 import { services } from '$lib/services';
 import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
 import { polishHud } from '$lib/state/polish-hud.svelte';
-import type { WhisperingApp } from '$lib/whispering/context';
+import type { WhisperingApplication } from '$lib/whispering/application';
 import type { Recording } from '$lib/workspace';
 
 /**
@@ -38,7 +38,7 @@ type PipelineInput = {
  * `deliverySource` only shapes the success copy (recording vs file import).
  */
 export async function processRecordingPipeline(
-	app: WhisperingApp,
+	app: WhisperingApplication,
 	{ audioBlobId, durationMs, deliverySource = 'recording' }: PipelineInput,
 ) {
 	const now = InstantString.now();

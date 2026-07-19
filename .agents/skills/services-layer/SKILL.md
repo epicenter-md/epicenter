@@ -30,7 +30,7 @@ required to be pure functions. They must remain free of UI and app-owned policy:
 - expose the same contract from both sides of a `#platform/*` seam.
 
 `$lib/operations` usually reads app settings, chooses providers, and composes
-services. `$lib/rpc` adds shared query identity and observable lifecycle only
+services. `$lib/queries` adds shared query identity and observable lifecycle only
 when the UI needs it.
 
 The transcription directory also holds provider registry data and the

@@ -18,9 +18,9 @@
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
-	import { getWhisperingApp } from '$lib/whispering/context';
+	import { getWhisperingApplication } from '$lib/whispering/context';
 
-	const app = getWhisperingApp();
+	const app = getWhisperingApplication();
 
 	let { children } = $props();
 

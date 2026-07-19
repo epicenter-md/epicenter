@@ -33,10 +33,13 @@ const {
 	removeLocalRecordingAudio,
 	uploadRecordingAudio,
 } = await import('./recording-audio.js');
-type WhisperingApp = import('$lib/whispering/context').WhisperingApp;
+type WhisperingApplication =
+	import('$lib/whispering/application').WhisperingApplication;
 
 // Every test supplies explicit dependencies, so the app is never touched.
-const app = { recordings: { update: mock() } } as unknown as WhisperingApp;
+const app = {
+	recordings: { update: mock() },
+} as unknown as WhisperingApplication;
 
 const recording = {
 	id: 'recording-1' as RecordingId,

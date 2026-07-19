@@ -22,9 +22,9 @@
 	import { exportRecordingsMarkdown } from '$lib/whispering/recordings-markdown-export';
 	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
 	import VadSelectRecordingDevice from './VadSelectRecordingDevice.svelte';
-	import { getWhisperingApp } from '$lib/whispering/context';
+	import { getWhisperingApplication } from '$lib/whispering/context';
 
-	const app = getWhisperingApp();
+	const app = getWhisperingApplication();
 
 	const exportRecordings = createMutation(() =>
 		resultMutationOptions({

@@ -9,9 +9,9 @@
 	import { CAPTURE_SURFACE_OPTIONS } from '$lib/constants/audio';
 	import { selectCaptureSurface } from '$lib/operations/recording';
 	import { captureSurface } from '$lib/state/capture-surface.svelte';
-	import { getWhisperingApp } from '$lib/whispering/context';
+	import { getWhisperingApplication } from '$lib/whispering/context';
 
-	const app = getWhisperingApp();
+	const app = getWhisperingApplication();
 
 	let { class: className }: { class?: string } = $props();
 

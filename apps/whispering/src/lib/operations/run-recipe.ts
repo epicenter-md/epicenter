@@ -6,7 +6,7 @@ import {
 import { isErr, Ok, type Result } from 'wellcrafted/result';
 import { buildSystemPrompt } from '$lib/operations/build-system-prompt';
 import { completeWithGlobalDefault } from '$lib/operations/completion';
-import type { WhisperingApp } from '$lib/whispering/context';
+import type { WhisperingApplication } from '$lib/whispering/application';
 import type { Recipe } from '$lib/workspace';
 
 export const RunRecipeError = defineErrors({
@@ -32,7 +32,7 @@ export type RunRecipeError = InferErrors<typeof RunRecipeError>;
  * the caller; it owns delivery and any history bookkeeping.
  */
 export async function runRecipe(
-	app: WhisperingApp,
+	app: WhisperingApplication,
 	{
 		input,
 		recipe,

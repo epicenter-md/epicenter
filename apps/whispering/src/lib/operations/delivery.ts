@@ -8,7 +8,7 @@ import {
 	type Sink,
 } from '$lib/operations/sink';
 import type { Notice } from '$lib/report';
-import type { WhisperingApp } from '$lib/whispering/context';
+import type { WhisperingApplication } from '$lib/whispering/application';
 
 // The reach types live in their own `delivery-reach` module next to their ADR
 // docstrings; re-exported here so callers keep one delivery import.
@@ -32,7 +32,7 @@ type OutputScope = (typeof OUTPUT_SCOPES)[number];
  * Accessibility grant, which is the one fact the tap supervisor holds the tap to
  * track. Call inside a reactive scope to stay live as the toggles change.
  */
-export function outputWritesToCursor(app: WhisperingApp): boolean {
+export function outputWritesToCursor(app: WhisperingApplication): boolean {
 	return OUTPUT_SCOPES.some((scope) =>
 		app.settings.get(`output.${scope}.cursor`),
 	);
@@ -64,7 +64,7 @@ export type DeliveryResult = {
  * the notice.
  */
 export async function deliverTranscriptionResult(
-	app: WhisperingApp,
+	app: WhisperingApplication,
 	{
 		text,
 		source = 'recording',
@@ -90,7 +90,7 @@ export async function deliverTranscriptionResult(
  * since an ad-hoc run has no history to open.
  */
 export async function deliverRecipeResult(
-	app: WhisperingApp,
+	app: WhisperingApplication,
 	{
 		text,
 		recordingId,
@@ -108,7 +108,7 @@ export async function deliverRecipeResult(
 }
 
 function resolveSettingsSink(
-	app: WhisperingApp,
+	app: WhisperingApplication,
 	settingsScope: OutputScope,
 ): Sink {
 	const cursorRequested = app.settings.get(`output.${settingsScope}.cursor`);

@@ -9,7 +9,7 @@ import {
 	toggleVadRecording,
 } from '$lib/operations/recording';
 import type { Reach } from '$lib/utils/key-binding';
-import type { WhisperingApp } from '$lib/whispering/context';
+import type { WhisperingApplication } from '$lib/whispering/application';
 
 /**
  * Registry of available commands in the application.
@@ -59,7 +59,7 @@ export type SatisfiedCommand = {
 	 */
 	on: ShortcutEventState[];
 	/** Every command runs against the ready application it was dispatched with. */
-	run: (app: WhisperingApp, state?: ShortcutEventState) => void;
+	run: (app: WhisperingApplication, state?: ShortcutEventState) => void;
 };
 
 /** Commands available in every build (browser and desktop). */
@@ -156,7 +156,7 @@ export const commandRunners = commands.reduce<CommandRunners>(
 
 type TriggerTarget = {
 	on: readonly ShortcutEventState[];
-	run: (app: WhisperingApp, state?: ShortcutEventState) => void;
+	run: (app: WhisperingApplication, state?: ShortcutEventState) => void;
 };
 const triggerTargetById = new Map<string, TriggerTarget>(
 	commands.map((c) => [c.id, { on: c.on, run: c.run }]),
@@ -171,7 +171,7 @@ const triggerTargetById = new Map<string, TriggerTarget>(
  * `commandRunners` with no edge.
  */
 export function dispatchCommandTrigger(
-	app: WhisperingApp,
+	app: WhisperingApplication,
 	commandId: string,
 	state: ShortcutEventState,
 ) {

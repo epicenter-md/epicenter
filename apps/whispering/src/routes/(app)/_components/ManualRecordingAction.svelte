@@ -3,14 +3,14 @@
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import { createManualRecordingController } from './manual-recording-controller.svelte';
 	import RecordingActionCard from './RecordingActionCard.svelte';
-	import { getWhisperingApp } from '$lib/whispering/context';
+	import { getWhisperingApplication } from '$lib/whispering/context';
 
-	const app = getWhisperingApp();
+	const app = getWhisperingApplication();
 
 	let {
-		status,
+		footer,
 	}: {
-		status: Snippet;
+		footer: Snippet;
 	} = $props();
 
 	const rec = createManualRecordingController(app);
@@ -18,6 +18,6 @@
 
 <RecordingActionCard
 	controller={rec}
-	footer={status}
+	{footer}
 	iconViewTransitionName={viewTransition.recordingMode('manual')}
 />

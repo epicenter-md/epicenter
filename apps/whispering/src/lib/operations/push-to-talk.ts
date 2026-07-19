@@ -1,7 +1,7 @@
 import type { BlobId } from '@epicenter/blobs';
 import { log, report } from '$lib/report';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
-import type { WhisperingApp } from '$lib/whispering/context';
+import type { WhisperingApplication } from '$lib/whispering/application';
 import { startManualRecording, stopManualRecordingById } from './recording';
 
 /**
@@ -34,7 +34,7 @@ type Session = {
 	/** Scopes every async continuation to the press that began it. */
 	id: number;
 	/** The ready application whose command started this session. */
-	app: WhisperingApp;
+	app: WhisperingApplication;
 	/** The recording this press started, or null until startup resolves. */
 	recordingId: BlobId | null;
 	/** A release that arrived before startup finished, honored once it exists. */
@@ -68,7 +68,7 @@ function createPushToTalk() {
 	}
 
 	async function end(
-		app: WhisperingApp,
+		app: WhisperingApplication,
 		id: number,
 		options?: { capped?: boolean },
 	) {
@@ -84,7 +84,7 @@ function createPushToTalk() {
 		}
 	}
 
-	async function start(app: WhisperingApp) {
+	async function start(app: WhisperingApplication) {
 		// Drop a stale session whose recording already ended without a release, so a
 		// fresh press is never blocked by it.
 		if (sessionIsStale()) clearSession();
@@ -142,7 +142,7 @@ function createPushToTalk() {
 	 * completion honors), and when the recording already ended (clears the stale
 	 * session).
 	 */
-	async function stop(app: WhisperingApp) {
+	async function stop(app: WhisperingApplication) {
 		if (!session || session.app !== app) return; // not this app's hold
 		if (manualRecorder.state === 'RECORDING') return end(app, session.id);
 		if (manualRecorder.isStarting) {
@@ -152,7 +152,7 @@ function createPushToTalk() {
 		clearSession(); // not recording and not starting: ended by other means
 	}
 
-	async function dispose(app: WhisperingApp): Promise<void> {
+	async function dispose(app: WhisperingApplication): Promise<void> {
 		if (!session || session.app !== app) return;
 		if (pendingStart) {
 			session.stopRequested = true;

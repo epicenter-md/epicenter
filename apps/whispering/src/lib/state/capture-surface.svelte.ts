@@ -1,5 +1,5 @@
 import type { CaptureSurface } from '$lib/constants/audio';
-import type { WhisperingApp } from '$lib/whispering/context';
+import type { WhisperingApplication } from '$lib/whispering/application';
 
 /**
  * Which capture surface the home page and the config header are currently
@@ -25,7 +25,7 @@ export const captureSurface = {
 	/** The surface on screen now: `import` while the import overlay is open,
 	 *  otherwise the durable recording trigger. Reactive when called inside a
 	 *  template, `$derived`, or `$effect`. */
-	current(app: WhisperingApp): CaptureSurface {
+	current(app: WhisperingApplication): CaptureSurface {
 		return isImportSurfaceShowing
 			? 'import'
 			: app.settings.get('recording.trigger');

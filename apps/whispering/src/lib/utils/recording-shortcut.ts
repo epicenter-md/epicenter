@@ -4,7 +4,7 @@ import type { Command } from '$lib/commands';
 import { createFocusedShortcuts } from '$lib/platform/focused-shortcuts';
 import type { Shortcuts } from '$lib/platform/types';
 import { keyBindingToLabel } from '$lib/utils/key-binding';
-import type { WhisperingApp } from '$lib/whispering/context';
+import type { WhisperingApplication } from '$lib/whispering/application';
 
 /**
  * Preference order for the shortcut that starts each recording mode: the first
@@ -45,7 +45,7 @@ function shortcutLabelFor(
  * exists without teaching shortcut configuration on the recording surface.
  */
 export function getRecordingShortcutLabel(
-	app: WhisperingApp,
+	app: WhisperingApplication,
 	mode: RecordingShortcutMode,
 ): string {
 	return shortcutLabelFor(

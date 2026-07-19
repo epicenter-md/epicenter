@@ -6,7 +6,7 @@ import {
 } from '$lib/operations/recording';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 import { getRecordingShortcutLabel } from '$lib/utils/recording-shortcut';
-import type { WhisperingApp } from '$lib/whispering/context';
+import type { WhisperingApplication } from '$lib/whispering/application';
 import type { RecordingActionController } from './recording-action-controller';
 
 /**
@@ -24,7 +24,7 @@ import type { RecordingActionController } from './recording-action-controller';
  * component query-client context.
  */
 export function createManualRecordingController(
-	app: WhisperingApp,
+	app: WhisperingApplication,
 ): RecordingActionController {
 	const startMutation = createMutation(() => ({
 		// The record button is the `manual` source (the default); wrap so the

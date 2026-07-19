@@ -8,7 +8,7 @@
 
 	// The controller owns the state machine and every derived label/icon. The card
 	// only decides presentation: a spinner while pending, a destructive treatment
-	// while active, and one quiet output-status line below the toggle.
+	// while active, and the recording setup footer below the toggle.
 	let {
 		controller,
 		footer,
@@ -102,11 +102,11 @@
 		{/if}
 	</Button>
 
-	<!-- The status stays put across start/stop, so there is no height jump by
-	construction. Configuration belongs in Settings; this reports only the final
-	output mode and colors the exceptional unavailable state. -->
+	<!-- The setup stays put across start/stop, so there is no height jump by
+	construction. It exposes the few inputs worth checking before recording while
+	deeper configuration remains in Settings. -->
 	{#if footer}
-		<div class="flex justify-center px-5 pb-4">
+		<div class="border-border/60 border-t px-3 py-2">
 			{@render footer()}
 		</div>
 	{/if}

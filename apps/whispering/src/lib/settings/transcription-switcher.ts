@@ -25,7 +25,7 @@ import type { TranscriptionServiceId } from '$lib/services/transcription/provide
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { localModels } from '$lib/state/local-models.svelte';
 import type { ModelInfo } from '$lib/tauri/commands.types';
-import type { WhisperingApp } from '$lib/whispering/context';
+import type { WhisperingApplication } from '$lib/whispering/application';
 import { isTranscriptionServiceConfigured } from './transcription-validation';
 
 /**
@@ -74,7 +74,10 @@ const REMOTE_ENTRIES = TRANSCRIPTION_PROVIDERS.filter(
 );
 
 /** A committed remote provider -> its one switcher leaf. */
-function toRemoteLeaf(app: WhisperingApp, entry: RemoteEntry): SwitcherLeaf {
+function toRemoteLeaf(
+	app: WhisperingApplication,
+	entry: RemoteEntry,
+): SwitcherLeaf {
 	const base = {
 		key: entry.id,
 		providerId: entry.id,
@@ -122,7 +125,10 @@ function toRemoteLeaf(app: WhisperingApp, entry: RemoteEntry): SwitcherLeaf {
 }
 
 /** A downloaded on-device GGUF -> its one switcher leaf. */
-function toLocalLeaf(app: WhisperingApp, model: ModelInfo): SwitcherLeaf {
+function toLocalLeaf(
+	app: WhisperingApplication,
+	model: ModelInfo,
+): SwitcherLeaf {
 	return {
 		key: model.id,
 		providerId: 'local',
@@ -147,7 +153,7 @@ function toLocalLeaf(app: WhisperingApp, model: ModelInfo): SwitcherLeaf {
  * on web). Membership is the store's own per-model `downloaded` verdict, never
  * the raw deviceConfig pointer.
  */
-export function readyModels(app: WhisperingApp): SwitcherLeaf[] {
+export function readyModels(app: WhisperingApplication): SwitcherLeaf[] {
 	const remote = REMOTE_ENTRIES.filter((entry) =>
 		isTranscriptionServiceConfigured(entry),
 	).map((entry) => toRemoteLeaf(app, entry));

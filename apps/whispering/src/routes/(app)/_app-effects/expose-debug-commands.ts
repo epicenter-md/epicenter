@@ -1,13 +1,13 @@
 import { onMount } from 'svelte';
 import { goto } from '$app/navigation';
 import { type BoundCommandRunners, commandRunners } from '$lib/commands';
-import type { WhisperingApp } from '$lib/whispering/context';
+import type { WhisperingApplication } from '$lib/whispering/application';
 
 /**
  * Expose the command runners and router on `window` for DevTools poking while
  * the app surface is mounted, then restore whatever the host exposed before it.
  */
-export function exposeDebugCommands(app: WhisperingApp): void {
+export function exposeDebugCommands(app: WhisperingApplication): void {
 	onMount(() => {
 		const previousCommands = window.commands;
 		const previousGoto = window.goto;

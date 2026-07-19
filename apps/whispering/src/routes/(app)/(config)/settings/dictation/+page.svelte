@@ -10,9 +10,9 @@
 	import { AdvancedDisclosure, SettingSwitch } from '$lib/components/settings';
 	import { whisperingPath } from '$lib/constants/urls';
 	import { polishDestination, polishStatus } from '$lib/operations/run-polish';
-	import { getWhisperingApp } from '$lib/whispering/context';
+	import { getWhisperingApplication } from '$lib/whispering/context';
 
-	const app = getWhisperingApp();
+	const app = getWhisperingApplication();
 
 	const dictionary = $derived(app.settings.get('dictionary'));
 	// Intent (`polish.enabled`) and capability (a usable provider) are separate

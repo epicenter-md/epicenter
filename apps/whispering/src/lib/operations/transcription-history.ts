@@ -7,7 +7,7 @@ import {
 } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Err, isErr, Ok, type Result, tryAsync } from 'wellcrafted/result';
-import type { WhisperingApp } from '$lib/whispering/context';
+import type { WhisperingApplication } from '$lib/whispering/application';
 import type { Recording, RecordingId } from '$lib/workspace';
 
 const defaultLog = createLogger('whispering/transcription-history');
@@ -40,7 +40,7 @@ export type TranscriptionSuccess = {
  * history save rather than a definitive failed write.
  */
 export async function saveRecordingHistory(
-	app: WhisperingApp,
+	app: WhisperingApplication,
 	recordingId: RecordingId,
 	changes: Partial<Omit<Recording, 'id' | 'audioBlobId'>>,
 ): Promise<Result<void, RecordingHistoryError>> {
@@ -69,7 +69,7 @@ export async function saveRecordingHistory(
 
 /** Record a provider outcome without letting secondary history failure replace it. */
 export async function recordTranscriptionOutcome<TError extends AnyTaggedError>(
-	app: WhisperingApp,
+	app: WhisperingApplication,
 	recordingId: RecordingId,
 	transcription: Result<string, TError>,
 	log: Logger = defaultLog,

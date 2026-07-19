@@ -1,14 +1,19 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import { FileDropZone } from '@epicenter/ui/file-drop-zone';
+	import * as Kbd from '@epicenter/ui/kbd';
 	import { Link } from '@epicenter/ui/link';
+	import * as SectionHeader from '@epicenter/ui/section-header';
 	import * as ToggleGroup from '@epicenter/ui/toggle-group';
 	import type { UnlistenFn } from '@tauri-apps/api/event';
 	import { onDestroy, onMount } from 'svelte';
 	import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 	import { tryAsync } from 'wellcrafted/result';
 	import DictationCapabilityNotice from '$lib/components/DictationCapabilityNotice.svelte';
+	import { TranscriptionSelector } from '$lib/components/settings';
 	import ProviderConfigFields from '$lib/components/settings/ProviderConfigFields.svelte';
+	import ManualDeviceSelector from '$lib/components/settings/selectors/ManualDeviceSelector.svelte';
+	import VadDeviceSelector from '$lib/components/settings/selectors/VadDeviceSelector.svelte';
 	import {
 		CAPTURE_SURFACE_META,
 		CAPTURE_SURFACE_OPTIONS,
@@ -31,17 +36,27 @@
 		getTranscriptionReadiness,
 	} from '$lib/settings/transcription-validation';
 	import { captureSurface } from '$lib/state/capture-surface.svelte';
-	import { getWhisperingApp } from '$lib/whispering/context';
+	import { getRecordingShortcutLabel } from '$lib/utils/recording-shortcut';
+	import { viewTransition } from '$lib/utils/viewTransitions';
+	import { getWhisperingApplication } from '$lib/whispering/context';
+	import studioMicrophone from '$lib/assets/studio-microphone.png';
 	import { tauri } from '#platform/tauri';
+	import CaptureBehaviorPopover from './_components/CaptureBehaviorPopover.svelte';
+	import CapturePipeline from './_components/CapturePipeline.svelte';
 	import ManualRecordingAction from './_components/ManualRecordingAction.svelte';
 	import PolishStatusLink from './_components/PolishStatusLink.svelte';
 	import RecordingResult from './_components/RecordingResult.svelte';
 	import VadRecordingAction from './_components/VadRecordingAction.svelte';
 
-	const app = getWhisperingApp();
+	const app = getWhisperingApplication();
 
 	const latestRecording = $derived(app.recordings.sorted[0]);
 	const transcriptionReadiness = $derived(getTranscriptionReadiness(app));
+	const activeShortcut = $derived.by(() => {
+		const surface = captureSurface.current(app);
+		if (surface === 'import') return null;
+		return getRecordingShortcutLabel(app, surface);
+	});
 	// Home is onboarding, not configuration: when transcription is not ready, ask
 	// for only the one required credential inline. A cloud provider needs a single
 	// API key, so we render just that field (via `secretsOnly`) and delegate the
@@ -141,9 +156,18 @@
 <svelte:head> <title>Whispering</title> </svelte:head>
 
 <div
-	class="flex flex-1 flex-col items-center justify-start gap-4 w-full max-w-lg mx-auto px-4 pt-6 pb-24 sm:justify-center sm:py-0"
+	class="mx-auto flex w-full max-w-xl flex-1 flex-col items-center justify-start gap-5 px-4 pt-8 pb-24 sm:justify-center sm:py-12"
 >
-	<h1 class="sr-only">Dictate</h1>
+	<SectionHeader.Root class="flex flex-col items-center gap-2 text-center">
+		<div class="flex items-center gap-2.5">
+			<img src={studioMicrophone} alt="" class="size-10" />
+			<SectionHeader.Title level={1}>Whispering</SectionHeader.Title>
+		</div>
+		<SectionHeader.Description>
+			Dictate from anywhere, or record here.
+		</SectionHeader.Description>
+	</SectionHeader.Root>
+
 	<DictationCapabilityNotice />
 
 	{#if !transcriptionReadiness.isReady}
@@ -197,16 +221,36 @@
 		{#if captureSurface.current(app) === 'manual'}
 			<div class="flex w-full flex-col items-center gap-3">
 				<ManualRecordingAction>
-					{#snippet status()}
-						<PolishStatusLink />
+					{#snippet footer()}
+						<CapturePipeline>
+							<ManualDeviceSelector
+								iconViewTransitionName={viewTransition.pipeline.device}
+							/>
+							<TranscriptionSelector
+								variant="pipeline"
+								iconViewTransitionName={viewTransition.pipeline.transcription}
+							/>
+							<PolishStatusLink />
+							<CaptureBehaviorPopover />
+						</CapturePipeline>
 					{/snippet}
 				</ManualRecordingAction>
 			</div>
 		{:else if captureSurface.current(app) === 'vad'}
 			<div class="flex w-full flex-col items-center gap-3">
 				<VadRecordingAction>
-					{#snippet status()}
-						<PolishStatusLink />
+					{#snippet footer()}
+						<CapturePipeline>
+							<VadDeviceSelector
+								iconViewTransitionName={viewTransition.pipeline.device}
+							/>
+							<TranscriptionSelector
+								variant="pipeline"
+								iconViewTransitionName={viewTransition.pipeline.transcription}
+							/>
+							<PolishStatusLink />
+							<CaptureBehaviorPopover />
+						</CapturePipeline>
 					{/snippet}
 				</VadRecordingAction>
 			</div>
@@ -232,9 +276,13 @@
 					}}
 					class="h-32 sm:h-36 w-full"
 				/>
-				<div class="flex w-full justify-center">
+				<CapturePipeline class="rounded-xl bg-card px-3 py-2 shadow-sm">
+					<TranscriptionSelector
+						variant="pipeline"
+						iconViewTransitionName={viewTransition.pipeline.transcription}
+					/>
 					<PolishStatusLink />
-				</div>
+				</CapturePipeline>
 			</div>
 		{/if}
 
@@ -248,6 +296,19 @@
 					deleteRecordingsWithConfirmation(app, latestRecording);
 				}}
 			/>
+		{/if}
+
+		{#if captureSurface.current(app) !== 'import'}
+			<p class="text-muted-foreground text-center text-sm">
+				{#if activeShortcut}
+					Use <Kbd.Root>{activeShortcut}</Kbd.Root>
+					{tauri ? 'from any app.' : 'while this window is focused.'}
+					<Link href={whisperingPath('/settings/shortcuts')}>Configure shortcuts</Link>
+				{:else}
+					<Link href={whisperingPath('/settings/shortcuts')}>Set a shortcut</Link>
+					{tauri ? 'to dictate from any app.' : 'to start recording.'}
+				{/if}
+			</p>
 		{/if}
 
 		{#if !tauri}
