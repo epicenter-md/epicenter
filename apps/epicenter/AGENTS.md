@@ -3,7 +3,7 @@
 One desktop application host. Bun serves the trusted SPAs, APIs, WebSockets,
 and Home session; Rust owns native application mechanisms.
 
-Design authority: [ADR-0152](../../docs/adr/0152-epicenter-home-is-a-shell-above-workspaces.md) (Home sits above the workspace plane), [ADR-0151](../../docs/adr/0151-local-workspace-stores-use-owner-first-directories.md) (owner-scoped local stores), [ADR-0118](../../docs/adr/0118-epicenter-is-one-trusted-bun-hosted-spa-origin.md) (one trusted application origin), [ADR-0080](../../docs/adr/0080-the-super-app-is-a-desktop-host-cross-device-is-remote-access-to-the-session-not-a-per-app-capability-plane.md) (remote devices attach to the session, never to per-app endpoints), and [ADR-0113](../../docs/adr/0113-super-chat-session-commands-are-host-owned-transports-only-frame-them.md) (Home owns command semantics; transports only frame and deliver them).
+Design authority: [ADR-0153](../../docs/adr/0153-trusted-apps-are-source-built-static-catalog-members.md) (trusted source builds one static app catalog), [ADR-0152](../../docs/adr/0152-epicenter-home-is-a-shell-above-workspaces.md) (Home sits above the workspace plane), [ADR-0151](../../docs/adr/0151-local-workspace-stores-use-owner-first-directories.md) (owner-scoped local stores), [ADR-0118](../../docs/adr/0118-epicenter-is-one-trusted-bun-hosted-spa-origin.md) (one trusted application origin), [ADR-0080](../../docs/adr/0080-the-super-app-is-a-desktop-host-cross-device-is-remote-access-to-the-session-not-a-per-app-capability-plane.md) (remote devices attach to the session, never to per-app endpoints), and [ADR-0113](../../docs/adr/0113-super-chat-session-commands-are-host-owned-transports-only-frame-them.md) (Home owns command semantics; transports only frame and deliver them).
 
 ## Shape
 
@@ -19,6 +19,6 @@ Design authority: [ADR-0152](../../docs/adr/0152-epicenter-home-is-a-shell-above
 - No MCP for first-party in-process apps; MCP stays the boxed-app airlock (ADR-0081).
 - No loose in-process TypeScript tool modules in v1; future scripting starts from an out-of-process runner unless a new ADR explicitly accepts unsafe developer-mode host imports.
 - No bundled Tauri SPA plus side IPC; Bun serves the SPA and the API from one loopback origin.
-- No jsrepo production path until trust, pinning, and installed-state tracking are designed.
+- Source acquisition stays outside the desktop runtime and Epicenter CLI for the first source-built catalog. Git, JSRepo, archives, or file copies may populate a user-owned composition tree; Epicenter starts at explicit build admission (ADR-0153).
 - The loopback server always binds `127.0.0.1` and rejects every request without the per-launch token; this ships with the first server version, not later (ADR-0084).
 - No HTTP command route, Tauri IPC command path, stdio command protocol for the browser UI, generic synced command table, or transport-adapter framework until a real second consumer earns it. The current WebSocket is a session adapter, not the architecture.

@@ -34,6 +34,12 @@ shapes, see `docs/adr/`.
 - **Epicenter Home**: the trusted shell above registered workspaces. It owns
   navigation, assistant sessions, commands, approvals, and live interface
   state; durable data such as conversations lives in ordinary workspaces.
+- **Trusted app catalog**: the validated static SPAs Epicenter serves from one
+  origin and grants one fixed app-window authority. Bundled output supplies the
+  default catalog; user-built output may replace a member by app ID.
+- **App composition repository**: an ordinary user-owned Git tree whose
+  `apps/<id>` source members build the trusted app catalog. It is source, not
+  Epicenter app data, runtime installation state, or a permission registry.
 - **Device workspace**: a signed-out workspace owned only by the current device.
   Runtime-native SQLite owns its scalar rows; a runtime-native provider owns its
   row documents. It has no deployment, principal, credential, or sync transport.
