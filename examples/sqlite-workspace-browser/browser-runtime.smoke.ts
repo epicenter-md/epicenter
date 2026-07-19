@@ -242,7 +242,7 @@ try {
 	);
 	assert(
 		sqlRows.length === 2 && sqlRows.some(({ id }) => id === secondRow.id),
-		'stealing Worker SQL lens missed committed rows',
+		'stealing Worker SQL relation missed committed rows',
 	);
 	const stolenFailure = await first.evaluate(() =>
 		window.productionBrowserRuntime

@@ -205,7 +205,6 @@ type Workspace<TLens extends WorkspaceLens> = {
   readonly kv: WorkspaceKv<TLens>;
   readonly sync: WorkspaceSync;
   sql<T>(query: string, parameters: SqlParameters, result: StandardSchemaV1<T>): Promise<T[]>;
-  [Symbol.dispose](): void;
 };
 ```
 
@@ -242,12 +241,13 @@ createWorkspaceView(owner, lens)
   typed tables
   typed KV
   local SQL-result validation
-  view disposal/reference release
+  optional lens-identity memoization
 ```
 
 The raw owner cache is keyed by ID. Typed-view memoization may use lens object
-identity, but correctness must not depend on memoization. Disposing one view
-does not close the owner while another view or host lease remains.
+identity, but correctness must not depend on memoization. Typed views own no
+resources and have no disposal API; they remain usable until runtime disposal
+closes the one ID-owned raw owner.
 
 ### Raw operation boundary
 
@@ -281,8 +281,12 @@ intent overlay for synchronized replicas, and excludes the reserved KV row.
 Application queries must filter or join by `table_key` explicitly.
 
 The executor must prevent access to private schemas and reject all mutation.
-The existing read-only enforcement remains or becomes stricter. No result
-schema is serialized into a Worker manifest or desktop request.
+It compiles each bound query with SQLite `EXPLAIN`, permits only `OpenRead`
+targets belonging to `records`, and rejects `OpenWrite` and `VOpen`. Therefore
+table-valued and virtual-table reads such as `json_each` and `json_tree` are
+refused; scalar JSON functions remain supported. SELECT and WITH scalar queries
+that open no relation remain valid. No result schema is serialized into a
+Worker manifest or desktop request.
 
 The runtime reserves every physical relation. `records` is the only relation
 addressable through `Workspace.sql`; application table keys never become SQL
@@ -351,16 +355,20 @@ new public APIs as selectable modes.
 
 ### Wave A: establish raw canonical owners
 
-- [ ] Extract schema-opaque row and KV commands from
+- [x] Extract schema-opaque row and KV commands from
   `canonical-rows.ts` and `canonical-kv.ts` without changing persistence or sync
   behavior.
-- [ ] Create one raw owner entry keyed only by Workspace ID in
+- [x] Create one raw owner entry keyed only by Workspace ID in
   `runtime.ts`.
-- [ ] Keep synchronization, settlement, capture, row documents, and disposal on
+- [x] Keep synchronization, settlement, capture, row documents, and disposal on
   that entry.
-- [ ] Prove two raw callers share mutations and one lifecycle.
-- [ ] Stop constructing canonical storage from table or KV definitions.
-- [ ] Delete the definition field from the raw entry.
+- [x] Prove two raw callers share mutations and one lifecycle.
+- [x] Stop constructing canonical storage from table or KV definitions.
+- [x] Delete the definition field from the raw entry.
+  > **Note**: The core/Bun runtime now constructs one `CanonicalStore` from the
+  > ID-owned SQLite owner. The definition-bound row and KV constructors remain
+  > active only for the untouched browser and desktop transports;
+  > Waves C and D stop those imports before Wave G deletes the constructors.
 
 ### Wave B: put typed views on the caller side
 
@@ -370,11 +378,14 @@ new public APIs as selectable modes.
   > independently across the repo (including `examples/sqlite-workspace-browser`,
   > which the consumer list above missed). `runtime-definition.ts` is now
   > `workspace-lens.ts`.
-- [ ] Build table and KV adapters that validate/project around a raw owner.
-- [ ] Keep `runtime.open(lens)` as the only typed opening call.
-- [ ] Add same-ID, different-lens tests covering reads, patches, KV, documents,
-  synchronization identity, and independent disposal.
-- [ ] Replace rejection tests with read-time nonconformance tests.
+- [x] Build table and KV adapters that validate/project around a raw owner.
+- [x] Keep `runtime.open(lens)` as the only typed opening call.
+- [x] Add same-ID, different-lens tests covering reads, patches, KV, documents,
+  synchronization identity, view memoization, and one runtime-owned lifetime.
+- [x] Replace rejection tests with read-time nonconformance tests.
+  > **Note**: These completed Wave B items cover the core/Bun runtime. Browser
+  > and desktop retain their explicit lens-conflict assertions until their
+  > transport-specific cutovers in Waves C and D.
 - [ ] Migrate every application and script import.
 - [ ] Delete old exported names and equality assertions without aliases.
 
@@ -407,15 +418,26 @@ new public APIs as selectable modes.
 
 ### Wave E: replace lens-shaped SQL views
 
-- [ ] Install `records` on every workspace connection.
+- [x] Install `records` on every workspace connection.
+  > **Note**: Pulled into the core owner checkpoint because leaving per-lens
+  > TEMP views on a shared connection made Wave A/B behavior depend on which
+  > lens queried first. `CanonicalStore` now owns the schema-opaque relation
+  > and raw SQL execution; typed views only validate returned rows.
 - [ ] Route browser and desktop SQL calls as raw text, parameters, and rows.
 - [ ] Validate result rows in the calling JavaScript realm.
-- [ ] Rewrite the current test-only callers against `records`.
+- [x] Rewrite the current test-only callers against `records`.
+  > **Note**: Core runtime, Skills, Whispering, and the browser example now use
+  > `records`. The desktop `UPDATE skills` assertion remains intentionally: it
+  > proves that non-SELECT statements are refused and does not depend on a
+  > lens-shaped relation.
 - [ ] Verify private table access, writes, DDL, attachment, and mutating pragmas
   remain refused.
 - [ ] Delete per-table view generation, safe view-name machinery that no other
   feature uses, result-schema serialization, and every
   `__epicenter_projection_` name.
+  > **Note**: Core per-table view generation and every projection name are
+  > deleted. Browser result-schema serialization remains for Wave C, so this
+  > combined item stays unchecked.
 
 ### Wave F: derive installed-app workspace inventory
 

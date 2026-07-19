@@ -95,7 +95,11 @@ test('one runtime discards old sourceId rows and composes Skills documents', asy
 		});
 		expect(
 			await whispering.sql(
-				'SELECT id, audioBlobId, transcript FROM recordings WHERE id = ?',
+				`SELECT row_id AS id,
+				        json_extract(fields_json, '$.audioBlobId') AS audioBlobId,
+				        json_extract(fields_json, '$.transcript') AS transcript
+				   FROM records
+				  WHERE table_key = 'recordings' AND row_id = ?`,
 				[current.id],
 				Type.Object({
 					id: field.string(),
@@ -125,7 +129,7 @@ test('one runtime discards old sourceId rows and composes Skills documents', asy
 		expect(content.toString()).toBe('Return three concise bullets.');
 		await expect(
 			whispering.sql(
-				"DELETE FROM recordings WHERE id = 'forbidden'",
+				"DELETE FROM records WHERE row_id = 'forbidden'",
 				[],
 				Type.Object({}),
 			),

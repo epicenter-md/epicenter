@@ -2,14 +2,14 @@
  * Typed release-local KV lens over the reserved immortal row (ADR-0130/0132).
  * Unknown and nonconforming values remain untouched in the canonical map.
  */
-import {
-	foldFields,
-	RESERVED_KV_ROW_ID,
-	RESERVED_KV_TABLE,
-	type WireRowIntent,
-} from '@epicenter/row-sync';
+import { RESERVED_KV_ROW_ID, RESERVED_KV_TABLE } from '@epicenter/row-sync';
 import type { SqliteDatabase } from '@epicenter/sqlite';
 import { Ok, type Result } from 'wellcrafted/result';
+import {
+	type CanonicalStore,
+	type CanonicalStoreOptions,
+	createCanonicalStore,
+} from './canonical-store.js';
 import {
 	compileKvLens,
 	type KvDefinitions,
@@ -19,17 +19,9 @@ import {
 	KvWriteError,
 	type KvWriteError as KvWriteErrorType,
 } from './kv-definition.js';
-import type { JsonObject, JsonValue } from './lens-definition.js';
-import { readLocalRow } from './local-workspace-storage.js';
+import type { JsonValue } from './lens-definition.js';
 
-const ROWS_TABLE = 'rows';
-
-export type CanonicalKvOptions = {
-	/** Synchronized mode admits the reserved row's field-bearing update intent. */
-	admitIntent?(intent: WireRowIntent): void;
-	readCurrentRow?(table: string, rowId: string): JsonObject | undefined;
-	onLocalCommit?(): void;
-};
+export type CanonicalKvOptions = CanonicalStoreOptions;
 
 export type CanonicalKv<TDefinitions extends KvDefinitions> = {
 	get<K extends keyof TDefinitions & string>(
@@ -45,42 +37,29 @@ export type CanonicalKv<TDefinitions extends KvDefinitions> = {
 export function createCanonicalKv<const TDefinitions extends KvDefinitions>(
 	sqlite: SqliteDatabase,
 	definitions: TDefinitions,
-	{
-		admitIntent,
-		readCurrentRow = (table, rowId) => readLocalRow(sqlite, table, rowId),
-		onLocalCommit = () => undefined,
-	}: CanonicalKvOptions = {},
+	options?: CanonicalKvOptions,
+): CanonicalKv<TDefinitions> {
+	return createCanonicalKvView(
+		createCanonicalStore(sqlite, options),
+		definitions,
+	);
+}
+
+/** Open one release-local KV lens over a schema-opaque canonical store. */
+export function createCanonicalKvView<const TDefinitions extends KvDefinitions>(
+	store: CanonicalStore,
+	definitions: TDefinitions,
 ): CanonicalKv<TDefinitions> {
 	const lens = compileKvLens(definitions);
 
-	function readMap(): JsonObject {
-		return readCurrentRow(RESERVED_KV_TABLE, RESERVED_KV_ROW_ID) ?? {};
+	function readMap() {
+		return store.read(RESERVED_KV_TABLE, RESERVED_KV_ROW_ID) ?? {};
 	}
 
 	function requireDeclared(key: string): { check(value: unknown): boolean } {
 		const compiled = lens.get(key);
 		if (!compiled) throw new Error(`Unknown kv key '${key}'`);
 		return compiled;
-	}
-
-	function admit(intent: WireRowIntent): void {
-		if (admitIntent) {
-			admitIntent(structuredClone(intent));
-			return;
-		}
-		sqlite.transaction(() => {
-			const current = readCurrentRow(RESERVED_KV_TABLE, RESERVED_KV_ROW_ID);
-			const folded = foldFields(current, intent);
-			if (folded.kind !== 'fields') return;
-			sqlite.run(
-				`INSERT INTO "${ROWS_TABLE}"(table_key, row_id, fields_json)
-				 VALUES (?, ?, ?)
-				 ON CONFLICT(table_key, row_id) DO UPDATE SET
-					fields_json = excluded.fields_json`,
-				[RESERVED_KV_TABLE, RESERVED_KV_ROW_ID, JSON.stringify(folded.fields)],
-			);
-			onLocalCommit();
-		});
 	}
 
 	return {
@@ -105,7 +84,7 @@ export function createCanonicalKv<const TDefinitions extends KvDefinitions>(
 					reason: 'value does not satisfy the declared schema',
 				});
 			}
-			admit({
+			store.admit({
 				kind: 'update',
 				table: RESERVED_KV_TABLE,
 				rowId: RESERVED_KV_ROW_ID,
@@ -118,7 +97,7 @@ export function createCanonicalKv<const TDefinitions extends KvDefinitions>(
 		},
 		unset(key) {
 			requireDeclared(key);
-			admit({
+			store.admit({
 				kind: 'update',
 				table: RESERVED_KV_TABLE,
 				rowId: RESERVED_KV_ROW_ID,

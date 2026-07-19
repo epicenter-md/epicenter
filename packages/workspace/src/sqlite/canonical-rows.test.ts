@@ -15,10 +15,12 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { field } from '@epicenter/field';
+import { foldFields, type WireRowIntent } from '@epicenter/row-sync';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
+import { Type } from 'typebox';
 import { expectOk } from 'wellcrafted/testing';
 import { createCanonicalRows } from './canonical-rows.js';
-import { defineTable } from './lens-definition.js';
+import { defineTable, type JsonObject } from './lens-definition.js';
 import { initializeLocalWorkspaceStorage } from './local-workspace-storage.js';
 
 const definitions = {
@@ -73,5 +75,63 @@ test('local-only create, update, delete, and reopen preserve canonical state', (
 		database.close();
 	} finally {
 		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test('records exposes synchronized optimistic create, update, and delete state', () => {
+	const database = new Database(':memory:');
+	const sqlite = createBunSqliteAdapter(database);
+	initializeLocalWorkspaceStorage(sqlite);
+	sqlite.run(`CREATE TABLE intents (
+		table_key TEXT NOT NULL,
+		row_id TEXT NOT NULL,
+		PRIMARY KEY(table_key, row_id)
+	) WITHOUT ROWID, STRICT`);
+	const optimistic = new Map<string, JsonObject>();
+	const keyFor = (table: string, rowId: string) => `${table}:${rowId}`;
+	const records = createCanonicalRows(sqlite, definitions, {
+		admitIntent(intent: WireRowIntent) {
+			const key = keyFor(intent.table, intent.rowId);
+			switch (intent.kind) {
+				case 'create':
+					optimistic.set(key, intent.fields);
+					break;
+				case 'update': {
+					const folded = foldFields(optimistic.get(key), intent);
+					if (folded.kind === 'fields') optimistic.set(key, folded.fields);
+					break;
+				}
+				case 'delete':
+					optimistic.delete(key);
+					break;
+				default:
+					intent satisfies never;
+			}
+			sqlite.run(
+				`INSERT OR IGNORE INTO intents(table_key, row_id) VALUES (?, ?)`,
+				[intent.table, intent.rowId],
+			);
+		},
+		readCurrentRow(table, rowId) {
+			return optimistic.get(keyFor(table, rowId));
+		},
+	});
+	try {
+		const created = records.tables.notes.create({ title: 'Draft' });
+		expectOk(records.tables.notes.update(created.id, { archived: true }));
+		const resultSchema = Type.Object({
+			id: Type.String(),
+			archived: Type.Integer(),
+		});
+		const query = `SELECT row_id AS id,
+			json_extract(fields_json, '$.archived') AS archived
+			FROM records WHERE table_key = 'notes'`;
+		expect(records.sql(query, [], resultSchema)).toEqual([
+			{ id: created.id, archived: 1 },
+		]);
+		records.tables.notes.delete(created.id);
+		expect(records.sql(query, [], resultSchema)).toEqual([]);
+	} finally {
+		database.close();
 	}
 });

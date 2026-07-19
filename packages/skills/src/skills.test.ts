@@ -93,7 +93,12 @@ test('a stricter Skills lens exposes nonconformance until typed update repairs i
 		expect((await scanSkills(skills)).nonconforming).toEqual([]);
 		expect(
 			await skills.sql(
-				'SELECT id, sourceId, name FROM skills ORDER BY name',
+				`SELECT row_id AS id,
+				        json_extract(fields_json, '$.sourceId') AS sourceId,
+				        json_extract(fields_json, '$.name') AS name
+				   FROM records
+				  WHERE table_key = 'skills'
+				  ORDER BY name`,
 				[],
 				Type.Object({
 					id: Type.String(),

@@ -18,9 +18,16 @@ import {
 	type LogicalWorkspaceCopy,
 	withCapturedDocuments,
 } from './canonical-addition.js';
-import { type CanonicalKv, createCanonicalKv } from './canonical-kv.js';
-import type { CanonicalRows, CanonicalTable } from './canonical-rows.js';
-import { createCanonicalRows } from './canonical-rows.js';
+import { type CanonicalKv, createCanonicalKvView } from './canonical-kv.js';
+import {
+	type CanonicalRows,
+	type CanonicalTable,
+	createCanonicalRowsView,
+} from './canonical-rows.js';
+import {
+	type CanonicalStore,
+	createCanonicalStore,
+} from './canonical-store.js';
 import type {
 	WorkspaceOwnerSync,
 	WorkspaceSync,
@@ -91,15 +98,11 @@ export type WorkspaceSql = <TResultSchema extends TSchema>(
 	resultSchema: TResultSchema,
 ) => Promise<Static<TResultSchema>[]>;
 
-type DefinitionTables<TDefinition> =
-	TDefinition extends WorkspaceLens<infer TTables, KvDefinitions>
-		? TTables
-		: never;
+type LensTables<TLens> =
+	TLens extends WorkspaceLens<infer TTables, KvDefinitions> ? TTables : never;
 
-type DefinitionKv<TDefinition> =
-	TDefinition extends WorkspaceLens<TableLensDefinitions, infer TKv>
-		? TKv
-		: never;
+type LensKv<TLens> =
+	TLens extends WorkspaceLens<TableLensDefinitions, infer TKv> ? TKv : never;
 
 export type WorkspaceKv<TKv extends KvDefinitions> = {
 	get<K extends keyof TKv & string>(
@@ -112,10 +115,10 @@ export type WorkspaceKv<TKv extends KvDefinitions> = {
 	unset<K extends keyof TKv & string>(key: K): Promise<void>;
 };
 
-export type Workspace<TDefinition extends WorkspaceLens> = {
-	readonly id: TDefinition['id'];
-	readonly tables: WorkspaceTables<DefinitionTables<TDefinition>>;
-	readonly kv: WorkspaceKv<DefinitionKv<TDefinition>>;
+export type Workspace<TLens extends WorkspaceLens> = {
+	readonly id: TLens['id'];
+	readonly tables: WorkspaceTables<LensTables<TLens>>;
+	readonly kv: WorkspaceKv<LensKv<TLens>>;
 	readonly sql: WorkspaceSql;
 	/** Account synchronization, or `null` for a local-only workspace. */
 	readonly sync: WorkspaceSync | null;
@@ -123,15 +126,14 @@ export type Workspace<TDefinition extends WorkspaceLens> = {
 
 type OpenedOwner = {
 	owner: WorkspaceOwner;
-	rows: CanonicalRows;
-	kv: CanonicalKv<KvDefinitions>;
+	store: CanonicalStore;
 	documents: RowDocumentRuntime;
 	sync: WorkspaceSync | null;
 };
 
 type RuntimeEntry = {
-	definition: WorkspaceLens;
-	handle?: Workspace<WorkspaceLens>;
+	id: string;
+	views: Map<WorkspaceLens, Workspace<WorkspaceLens>>;
 	abortController?: AbortController;
 	ownerPromise?: Promise<OpenedOwner>;
 };
@@ -154,7 +156,7 @@ export function createWorkspaceRuntime({
 		entry.abortController ??= new AbortController();
 		entry.ownerPromise ??= (async () => {
 			const owner = await openWorkspaceOwner(
-				entry.definition.id,
+				entry.id,
 				entry.abortController?.signal ?? AbortSignal.abort(),
 			);
 			try {
@@ -175,22 +177,13 @@ export function createWorkspaceRuntime({
 					isLive: ({ table, rowId }) => currentRow(table, rowId) !== undefined,
 					...(owner.connectDocument ? { connect: owner.connectDocument } : {}),
 				});
-				const rows = createCanonicalRows(
-					owner.sqlite,
-					entry.definition.tables,
-					{
-						admitIntent: owner.admitIntent,
-						readCurrentRow: currentRow,
-						onLocalCommit: owner.onLocalCommit,
-						onRowsDeleted(addresses) {
-							for (const address of addresses) void documents.revoke(address);
-						},
-					},
-				);
-				const kv = createCanonicalKv(owner.sqlite, entry.definition.kv, {
+				const store = createCanonicalStore(owner.sqlite, {
 					admitIntent: owner.admitIntent,
 					readCurrentRow: currentRow,
 					onLocalCommit: owner.onLocalCommit,
+					onRowsDeleted(addresses) {
+						for (const address of addresses) void documents.revoke(address);
+					},
 				});
 				owner.subscribeRowsDeleted?.((addresses) => {
 					for (const address of addresses) void documents.revoke(address);
@@ -200,7 +193,7 @@ export function createWorkspaceRuntime({
 					await documents.captureDurabilityBarrier();
 					return withCapturedDocuments(copy, documentStore.capture);
 				});
-				return { owner, rows, kv, documents, sync };
+				return { owner, store, documents, sync };
 			} catch (cause) {
 				try {
 					await owner[Symbol.asyncDispose]();
@@ -219,37 +212,43 @@ export function createWorkspaceRuntime({
 		return entry.ownerPromise;
 	}
 
-	async function rowsFor(entry: RuntimeEntry): Promise<CanonicalRows> {
-		return (await openedFor(entry)).rows;
-	}
-
-	function createHandle<TDefinition extends WorkspaceLens>(
-		definition: TDefinition,
-		entry: RuntimeEntry,
-		sync: WorkspaceSync | null,
-	): Workspace<TDefinition> {
+	function createView<TLens extends WorkspaceLens>(
+		lens: TLens,
+		opened: OpenedOwner,
+	): Workspace<TLens> {
+		const rows = createCanonicalRowsView(opened.store, lens.tables);
+		const canonicalKv: CanonicalKv<KvDefinitions> = createCanonicalKvView(
+			opened.store,
+			lens.kv as KvDefinitions,
+		);
 		const tables = Object.fromEntries(
-			Object.keys(definition.tables).map((name) => [
+			Object.keys(lens.tables).map((name) => [
 				name,
 				Object.freeze({
 					async get(id: string) {
-						return tableFor(await rowsFor(entry), name).get(id);
+						assertOpen();
+						return tableFor(rows, name).get(id);
 					},
 					async list() {
-						return tableFor(await rowsFor(entry), name).list();
+						assertOpen();
+						return tableFor(rows, name).list();
 					},
 					async create(fields: Record<string, unknown>) {
-						return tableFor(await rowsFor(entry), name).create(fields);
+						assertOpen();
+						return tableFor(rows, name).create(fields);
 					},
 					async update(id: string, changes: Record<string, unknown>) {
-						return tableFor(await rowsFor(entry), name).update(id, changes);
+						assertOpen();
+						return tableFor(rows, name).update(id, changes);
 					},
 					async delete(id: string) {
-						tableFor(await rowsFor(entry), name).delete(id);
+						assertOpen();
+						tableFor(rows, name).delete(id);
 					},
 					document: Object.freeze({
 						async open(rowId: string) {
-							return (await openedFor(entry)).documents.open({
+							assertOpen();
+							return opened.documents.open({
 								table: name,
 								rowId,
 							});
@@ -257,64 +256,75 @@ export function createWorkspaceRuntime({
 					}),
 				}),
 			]),
-		) as unknown as WorkspaceTables<DefinitionTables<TDefinition>>;
+		) as unknown as WorkspaceTables<LensTables<TLens>>;
 
 		const kv = Object.freeze({
 			async get(key: string) {
-				return (await openedFor(entry)).kv.get(key);
+				assertOpen();
+				return canonicalKv.get(key);
 			},
 			async set(key: string, value: never) {
-				return (await openedFor(entry)).kv.set(key, value);
+				assertOpen();
+				return canonicalKv.set(key, value);
 			},
 			async unset(key: string) {
-				(await openedFor(entry)).kv.unset(key);
+				assertOpen();
+				canonicalKv.unset(key);
 			},
-		}) as WorkspaceKv<DefinitionKv<TDefinition>>;
+		}) as WorkspaceKv<LensKv<TLens>>;
 
 		return Object.freeze({
-			id: definition.id,
+			id: lens.id,
 			tables: Object.freeze(tables),
 			kv,
-			sync,
+			get sync() {
+				assertOpen();
+				return opened.sync;
+			},
 			async sql<TResultSchema extends TSchema>(
 				query: string,
 				parameters: readonly SqliteValue[],
 				resultSchema: TResultSchema,
 			) {
-				return (await rowsFor(entry)).sql(query, parameters, resultSchema);
+				assertOpen();
+				return rows.sql(query, parameters, resultSchema);
 			},
-		}) as Workspace<TDefinition>;
+		}) as Workspace<TLens>;
 	}
 
 	return {
-		async open<TDefinition extends WorkspaceLens>(
-			definition: TDefinition,
-		): Promise<Workspace<TDefinition>> {
+		async open<TLens extends WorkspaceLens>(
+			lens: TLens,
+		): Promise<Workspace<TLens>> {
 			assertOpen();
-			const existing = entries.get(definition.id);
+			const existing = entries.get(lens.id);
 			if (existing) {
-				if (existing.definition !== definition) {
-					throw new Error(
-						`Workspace '${definition.id}' is already bound to another definition in this runtime`,
-					);
-				}
+				const cached = existing.views.get(lens);
+				if (cached) return cached as Workspace<TLens>;
 				const opened = await openedFor(existing);
-				existing.handle ??= createHandle(definition, existing, opened.sync);
-				return existing.handle as Workspace<TDefinition>;
+				const raced = existing.views.get(lens);
+				if (raced) return raced as Workspace<TLens>;
+				const view = createView(lens, opened);
+				existing.views.set(lens, view as Workspace<WorkspaceLens>);
+				return view;
 			}
-			const entry: RuntimeEntry = { definition };
-			entries.set(definition.id, entry);
+			const entry: RuntimeEntry = { id: lens.id, views: new Map() };
+			entries.set(lens.id, entry);
+			let opened: OpenedOwner;
 			try {
-				const opened = await openedFor(entry);
-				entry.handle = createHandle(definition, entry, opened.sync);
-				return entry.handle as Workspace<TDefinition>;
+				opened = await openedFor(entry);
 			} catch (cause) {
-				if (entries.get(definition.id) === entry) {
-					entries.delete(definition.id);
+				if (entries.get(lens.id) === entry) {
+					entries.delete(lens.id);
 				}
 				entry.abortController?.abort(cause);
 				throw cause;
 			}
+			const raced = entry.views.get(lens);
+			if (raced) return raced as Workspace<TLens>;
+			const view = createView(lens, opened);
+			entry.views.set(lens, view as Workspace<WorkspaceLens>);
+			return view;
 		},
 		async captureDurability(workspaceId: string): Promise<void> {
 			const entry = entries.get(workspaceId);

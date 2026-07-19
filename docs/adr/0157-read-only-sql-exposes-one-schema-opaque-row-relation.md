@@ -29,10 +29,10 @@ row_id      TEXT
 fields_json TEXT
 ```
 
-The relation projects canonical current rows and hides the runtime's physical
-tables. `fields_json` is the complete canonical JSON object. The runtime may
-implement the relation as a connection-local view and may change its private
-schema without changing this contract.
+The relation is a connection-local TEMP table materialized from canonical
+current rows before each query. `fields_json` is the complete canonical JSON
+object. The runtime may change its private durable schema without changing
+this contract.
 
 Applications query the relation explicitly:
 
@@ -49,11 +49,23 @@ intent overlay for a synchronized replica. It excludes reserved runtime rows,
 including the internal KV map. How the runtime materializes that state is
 private and may differ between local-only and synchronized owners.
 
-SQL remains read-only. The runtime rejects writes, DDL, attachment, pragmas
-that mutate connection state, and access to private relations. Parameters and
-raw result rows may cross a browser Worker or desktop HTTP boundary. A result
-schema never crosses that boundary: the application validates returned rows in
-its own JavaScript realm.
+SQL remains read-only. Before execution, the runtime asks SQLite to compile the
+same bound statement with `EXPLAIN`. It permits only `OpenRead` instructions
+whose database and root-page pair belong to `records`, and rejects
+`OpenWrite` and `VOpen`. This structurally refuses access to durable runtime
+tables without maintaining a list of their names. SELECT and WITH statements
+that read `records`, and scalar queries that open no relation, remain valid.
+
+Table-valued and virtual-table reads are refused, including `json_each` and
+`json_tree`, because SQLite represents them with `VOpen` and gives the runtime
+no stable portable relation identity to authorize. Scalar JSON functions such
+as `json_extract` remain supported. This is an intentional fidelity refusal in
+exchange for making `records` the only addressable relation across every
+SQLite adapter.
+
+Parameters and raw result rows may cross a browser Worker or desktop HTTP
+boundary. A result schema never crosses that boundary: the application
+validates returned rows in its own JavaScript realm.
 
 There are no generated `notes`, `recordings`, or other lens-shaped SQL views.
 There is no per-lens view namespace, encoded lens identifier, schema hash, or
@@ -66,6 +78,8 @@ second SQLite connection created only to host another interpretation.
 - Several applications can query the same raw owner concurrently.
 - Queries must spell JSON extraction and filter by `table_key`; `FROM notes`
   convenience is intentionally lost.
+- Table-valued JSON traversal is unavailable; callers use scalar JSON
+  functions or typed table reads instead.
 - SQL callers can observe unknown and nonconforming values because the
   relation exposes honest canonical JSON. Their local result schema decides
   what the application accepts.

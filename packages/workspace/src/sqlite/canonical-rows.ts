@@ -1,13 +1,13 @@
-import {
-	foldFields,
-	isAdmissibleCanonicalRow,
-	type WireRowIntent,
-} from '@epicenter/row-sync';
-import type { SqliteDatabase, SqliteRow, SqliteValue } from '@epicenter/sqlite';
+import type { SqliteDatabase, SqliteValue } from '@epicenter/sqlite';
 import { customAlphabet } from 'nanoid';
 import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 import { Ok, type Result } from 'wellcrafted/result';
+import {
+	type CanonicalStore,
+	type CanonicalStoreOptions,
+	createCanonicalStore,
+} from './canonical-store.js';
 import {
 	type ConstrainedChanges,
 	type CreateInputFor,
@@ -18,10 +18,7 @@ import {
 	type TableLensDefinition,
 	type TableLensDefinitions,
 } from './lens-definition.js';
-import { listLocalRows, readLocalRow } from './local-workspace-storage.js';
 
-const ROWS_TABLE = 'rows';
-const DOCUMENTS_TABLE = 'documents';
 const ROW_ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
 const mintRowId = customAlphabet(ROW_ID_ALPHABET, 24);
 
@@ -47,36 +44,35 @@ export type CanonicalTables<TTables extends TableLensDefinitions> = {
 	[K in keyof TTables]: CanonicalTable<TTables[K]>;
 };
 
-export type CanonicalRowsOptions = {
-	/** Synchronized mode admits durable RowIntents instead of mutating confirmed rows. */
-	admitIntent?(intent: WireRowIntent): void;
-	/** Read confirmed state plus any synchronized optimistic overlay. */
-	readCurrentRow?(table: string, rowId: string): JsonObject | undefined;
-	onLocalCommit?(): void;
-	/** Revoke cached row documents as soon as local deletion changes liveness. */
-	onRowsDeleted?(addresses: { table: string; rowId: string }[]): void;
-};
+export type CanonicalRowsOptions = CanonicalStoreOptions;
 
-/** Open release-local table lenses over the canonical four-table SQLite owner. */
+/**
+ * Legacy definition-bound constructor retained until browser and desktop
+ * transports move onto schema-opaque stores in Waves C and D.
+ */
 export function createCanonicalRows<const TTables extends TableLensDefinitions>(
 	sqlite: SqliteDatabase,
 	definitions: TTables,
-	{
-		admitIntent,
-		readCurrentRow = (table, rowId) => readLocalRow(sqlite, table, rowId),
-		onLocalCommit = () => undefined,
-		onRowsDeleted = () => undefined,
-	}: CanonicalRowsOptions = {},
+	options?: CanonicalRowsOptions,
 ) {
+	return createCanonicalRowsView(
+		createCanonicalStore(sqlite, options),
+		definitions,
+	);
+}
+
+/** Open one release-local table lens over a schema-opaque canonical store. */
+export function createCanonicalRowsView<
+	const TTables extends TableLensDefinitions,
+>(store: CanonicalStore, definitions: TTables) {
 	assertDefinitions(definitions);
-	installTemporaryViews(sqlite, definitions);
 
 	const tables = Object.fromEntries(
 		Object.entries(definitions).map(([tableName, definition]) => {
 			const lens = compileTableLens(definition);
 			const table = {
 				get(id: string) {
-					const fields = readCurrentRow(tableName, id);
+					const fields = store.read(tableName, id);
 					return fields === undefined
 						? Ok(undefined)
 						: lens.project(tableName, id, fields);
@@ -98,33 +94,18 @@ export function createCanonicalRows<const TTables extends TableLensDefinitions>(
 				create(input: Record<string, unknown>) {
 					const fields = lens.validateCreate(input);
 					const id = mintRowId();
-					if (
-						!isAdmissibleCanonicalRow({ table: tableName, rowId: id, fields })
-					) {
-						throw new RangeError(
-							'Canonical row exceeds portable row-sync limits',
-						);
-					}
 					const intent = {
 						kind: 'create',
 						table: tableName,
 						rowId: id,
 						fields,
-					} satisfies WireRowIntent;
-					if (admitIntent) admitIntent(structuredClone(intent));
-					else {
-						sqlite.run(
-							`INSERT INTO "${ROWS_TABLE}"(table_key, row_id, fields_json)
-							 VALUES (?, ?, ?)`,
-							[tableName, id, JSON.stringify(fields)],
-						);
-						onLocalCommit();
-					}
+					} as const;
+					store.admit(intent);
 					return expectConforming(lens.project(tableName, id, fields));
 				},
 				update(id: string, changes: Record<string, unknown>) {
 					const normalized = lens.normalizeChanges(changes);
-					const current = readCurrentRow(tableName, id);
+					const current = store.read(tableName, id);
 					if (
 						Object.keys(normalized.set).length === 0 &&
 						normalized.unset.length === 0
@@ -138,20 +119,9 @@ export function createCanonicalRows<const TTables extends TableLensDefinitions>(
 						table: tableName,
 						rowId: id,
 						fields: normalized,
-					} satisfies WireRowIntent;
-					if (admitIntent) admitIntent(structuredClone(intent));
-					else {
-						const folded = foldFields(current, intent);
-						if (folded.kind === 'fields') {
-							sqlite.run(
-								`UPDATE "${ROWS_TABLE}" SET fields_json = ?
-								 WHERE table_key = ? AND row_id = ?`,
-								[JSON.stringify(folded.fields), tableName, id],
-							);
-							onLocalCommit();
-						}
-					}
-					const projected = readCurrentRow(tableName, id);
+					} as const;
+					store.admit(intent);
+					const projected = store.read(tableName, id);
 					return projected === undefined
 						? Ok(undefined)
 						: lens.project(tableName, id, projected);
@@ -161,24 +131,8 @@ export function createCanonicalRows<const TTables extends TableLensDefinitions>(
 						kind: 'delete',
 						table: tableName,
 						rowId: id,
-					} satisfies WireRowIntent;
-					if (admitIntent) admitIntent(intent);
-					else {
-						sqlite.transaction(() => {
-							sqlite.run(
-								`DELETE FROM "${ROWS_TABLE}"
-								 WHERE table_key = ? AND row_id = ?`,
-								[tableName, id],
-							);
-							sqlite.run(
-								`DELETE FROM "${DOCUMENTS_TABLE}"
-								 WHERE table_key = ? AND row_id = ?`,
-								[tableName, id],
-							);
-						});
-						onLocalCommit();
-					}
-					onRowsDeleted([{ table: tableName, rowId: id }]);
+					} as const;
+					store.admit(intent);
 				},
 			};
 			return [tableName, table];
@@ -187,47 +141,29 @@ export function createCanonicalRows<const TTables extends TableLensDefinitions>(
 
 	return {
 		tables,
-		/** Execute one validated read-only SELECT against current lens views. */
+		/** Execute one locally validated SELECT against the raw `records` relation. */
 		sql<TResultSchema extends TSchema>(
 			query: string,
 			parameters: readonly SqliteValue[],
 			resultSchema: TResultSchema,
 		): Static<TResultSchema>[] {
-			assertSelectStatement(query);
-			refreshTemporaryProjections(sqlite, definitions, listRows);
-			sqlite.run('PRAGMA query_only = ON');
-			try {
-				const rows = sqlite.all<SqliteRow>(query, parameters);
-				for (const [index, row] of rows.entries()) {
-					if (!Value.Check(resultSchema, row)) {
-						const issues = [...Value.Errors(resultSchema, row)]
-							.map((issue) => `${issue.instancePath}: ${issue.message}`)
-							.join('; ');
-						throw new TypeError(
-							`SQL row ${index} does not satisfy the result schema: ${issues}`,
-						);
-					}
+			const rows = store.sql(query, parameters);
+			for (const [index, row] of rows.entries()) {
+				if (!Value.Check(resultSchema, row)) {
+					const issues = [...Value.Errors(resultSchema, row)]
+						.map((issue) => `${issue.instancePath}: ${issue.message}`)
+						.join('; ');
+					throw new TypeError(
+						`SQL row ${index} does not satisfy the result schema: ${issues}`,
+					);
 				}
-				return rows as Static<TResultSchema>[];
-			} finally {
-				sqlite.run('PRAGMA query_only = OFF');
 			}
+			return rows as Static<TResultSchema>[];
 		},
 	};
 
 	function listRows(table: string): { rowId: string; fields: JsonObject }[] {
-		if (!admitIntent) return listLocalRows(sqlite, table);
-		const rowIds = sqlite.all<{ row_id: string }>(
-			`SELECT row_id FROM "${ROWS_TABLE}" WHERE table_key = ?
-			 UNION
-			 SELECT row_id FROM "intents" WHERE table_key = ?
-			 ORDER BY row_id`,
-			[table, table],
-		);
-		return rowIds.flatMap(({ row_id: rowId }) => {
-			const fields = readCurrentRow(table, rowId);
-			return fields === undefined ? [] : [{ rowId, fields }];
-		});
+		return store.list(table);
 	}
 }
 
@@ -258,114 +194,6 @@ function assertDefinitions(definitions: TableLensDefinitions): void {
 	}
 }
 
-function projectionTableName(table: string): string {
-	return `__epicenter_projection_${table}`;
-}
-
-function installTemporaryViews(
-	sqlite: SqliteDatabase,
-	definitions: TableLensDefinitions,
-): void {
-	for (const [tableName, definition] of Object.entries(definitions)) {
-		const projection = projectionTableName(tableName);
-		sqlite.run(`DROP VIEW IF EXISTS temp.${quoteIdentifier(tableName)}`);
-		sqlite.run(
-			`CREATE TEMP TABLE IF NOT EXISTS ${quoteIdentifier(projection)} (
-				row_id TEXT PRIMARY KEY,
-				fields_json TEXT NOT NULL CHECK(json_valid(fields_json))
-			) WITHOUT ROWID, STRICT`,
-		);
-		const lens = compileTableLens(definition);
-		const columns = [
-			'"row_id" AS "id"',
-			...[...lens.fields.values()].map(projectedSqlColumn),
-		];
-		sqlite.run(
-			`CREATE TEMP VIEW ${quoteIdentifier(tableName)} AS
-			 SELECT ${columns.join(', ')} FROM ${quoteIdentifier(projection)}`,
-		);
-	}
-}
-
-function refreshTemporaryProjections(
-	sqlite: SqliteDatabase,
-	definitions: TableLensDefinitions,
-	listRows: (table: string) => { rowId: string; fields: JsonObject }[],
-): void {
-	sqlite.transaction(() => {
-		for (const tableName of Object.keys(definitions)) {
-			const projection = projectionTableName(tableName);
-			sqlite.run(`DELETE FROM temp.${quoteIdentifier(projection)}`);
-			for (const row of listRows(tableName)) {
-				sqlite.run(
-					`INSERT INTO temp.${quoteIdentifier(projection)}(row_id, fields_json)
-					 VALUES (?, ?)`,
-					[row.rowId, JSON.stringify(row.fields)],
-				);
-			}
-		}
-	});
-}
-
-function projectedSqlColumn(field: {
-	name: string;
-	kind: import('@epicenter/field').Kind;
-}): string {
-	const path = quoteSqlLiteral(`$.${field.name}`);
-	const jsonTypes = sqlJsonTypes(field.kind).map(quoteSqlLiteral).join(', ');
-	return `CASE WHEN json_type("fields_json", ${path}) IN (${jsonTypes}) THEN json_extract("fields_json", ${path}) ELSE NULL END AS ${quoteIdentifier(field.name)}`;
-}
-
-function sqlJsonTypes(
-	kind: import('@epicenter/field').Kind,
-): readonly string[] {
-	switch (kind) {
-		case 'string':
-		case 'url':
-		case 'date':
-		case 'datetime':
-		case 'instant':
-		case 'select':
-		case 'reference':
-			return ['text'];
-		case 'integer':
-			return ['integer'];
-		case 'number':
-			return ['integer', 'real'];
-		case 'boolean':
-			return ['true', 'false'];
-		case 'tags':
-		case 'multiSelect':
-			return ['array'];
-		case 'json':
-			return [
-				'null',
-				'text',
-				'integer',
-				'real',
-				'true',
-				'false',
-				'array',
-				'object',
-			];
-		default:
-			return kind satisfies never;
-	}
-}
-
-function assertSelectStatement(query: string): void {
-	const trimmed = query.trim();
-	if (!/^SELECT(?:\s|$)/i.test(trimmed)) {
-		throw new Error('sql() accepts only SELECT statements');
-	}
-	if (trimmed.includes(';')) {
-		throw new Error('sql() accepts exactly one statement');
-	}
-	if (/(?:__epicenter|sqlite_|pragma_)/i.test(trimmed)) {
-		throw new Error('sql() cannot access runtime-private storage');
-	}
-}
-
 function assertSqlName(value: string, label: string): void {
 	if (
 		!/^[A-Za-z][A-Za-z0-9_]*$/.test(value) ||
@@ -384,12 +212,4 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 	}
 	const prototype = Object.getPrototypeOf(value);
 	return prototype === Object.prototype || prototype === null;
-}
-
-function quoteIdentifier(identifier: string): string {
-	return `"${identifier.replaceAll('"', '""')}"`;
-}
-
-function quoteSqlLiteral(value: string): string {
-	return `'${value.replaceAll("'", "''")}'`;
 }

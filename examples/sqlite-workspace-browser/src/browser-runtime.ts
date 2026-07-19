@@ -93,7 +93,11 @@ function createDriver(
 		},
 		sql() {
 			return workspace.sql(
-				'SELECT id, title FROM notes ORDER BY id',
+				`SELECT row_id AS id,
+				        json_extract(fields_json, '$.title') AS title
+				   FROM records
+				  WHERE table_key = 'notes'
+				  ORDER BY id`,
 				[],
 				Type.Object({ id: Type.String(), title: Type.String() }),
 			);
