@@ -1,9 +1,9 @@
 {
 	"$schema": "../gen/schemas/desktop-schema.json",
 	"identifier": "trusted-app-windows-development",
-	"description": "Grants every development derived-catalog app window (reserved app-* label glob) the first trusted-app authority slice: unrestricted HTTP(S) egress through the Tauri HTTP plugin (ADR-0153).",
+	"description": "Grants development trusted app windows unrestricted HTTP(S) egress through the Tauri HTTP plugin (ADR-0153). Whispering remains explicit until it joins the derived catalog.",
 	"local": false,
-	"windows": ["app-*"],
+	"windows": ["app-*", "whispering"],
 	"remote": {
 		"urls": ["http://127.0.0.1:*"]
 	},

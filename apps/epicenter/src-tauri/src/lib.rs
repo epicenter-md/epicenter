@@ -1544,7 +1544,7 @@ mod tests {
     }
 
     #[test]
-    fn app_window_capabilities_grant_the_glob_scoped_http_slice() {
+    fn trusted_app_capabilities_grant_the_shared_http_slice() {
         for encoded in [
             include_str!("../capabilities/trusted-app-windows-development.json"),
             include_str!("../capabilities/trusted-app-windows-production.json"),
@@ -1552,8 +1552,8 @@ mod tests {
             let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
             assert_eq!(
                 capability["windows"],
-                serde_json::json!(["app-*"]),
-                "the app capability must apply to exactly the reserved app-* label glob"
+                serde_json::json!(["app-*", "whispering"]),
+                "the trusted-app HTTP slice must cover catalog apps and transitional Whispering"
             );
 
             let http = capability["permissions"]
@@ -1572,6 +1572,24 @@ mod tests {
                 allowed,
                 ["http://*", "https://*", "http://*:*", "https://*:*"],
                 "the first trusted-app authority slice is unrestricted HTTP(S) egress"
+            );
+        }
+    }
+
+    #[test]
+    fn whispering_native_capabilities_do_not_duplicate_trusted_app_http() {
+        for encoded in [
+            include_str!("../capabilities/trusted-whispering-native-development.json"),
+            include_str!("../capabilities/trusted-whispering-native-production.json"),
+        ] {
+            let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
+            assert!(
+                capability["permissions"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|permission| permission["identifier"] != "http:default"),
+                "trusted-app HTTP belongs to the shared app capability, not Whispering native"
             );
         }
     }
