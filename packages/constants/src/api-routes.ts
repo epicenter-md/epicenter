@@ -52,13 +52,15 @@ export const API_ROUTES = {
 		url: (baseURL: string) => `${stripTrailing(baseURL)}/api/session`,
 	},
 	/**
-	 * Opaque-id blob store. POST mints an upload ticket (presigned S3 PUT); GET
-	 * on the collection lists; GET/DELETE by `:blobId` read/remove a
-	 * blob. R2 is the only index: there is no database row. See
-	 * ADR-0089 (presigned S3 kernel) as amended by ADR-0148 (opaque BlobId).
+	 * Opaque-id blob store. POST on the collection mints an upload ticket
+	 * (presigned S3 PUT); GET/DELETE by `:blobId` read/remove a blob. The
+	 * surface is address-only: callers act on BlobIds their own data already
+	 * knows, and there is no enumeration route. See ADR-0089 (presigned S3
+	 * kernel) as amended by ADR-0148 (opaque BlobId) and ADR-0154
+	 * (address-only access).
 	 */
 	blobs: {
-		list: {
+		collection: {
 			pattern: '/api/blobs',
 			url: (baseURL: string) => `${stripTrailing(baseURL)}/api/blobs`,
 		},

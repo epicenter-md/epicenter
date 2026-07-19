@@ -119,7 +119,7 @@ async function main() {
 		`epicenter blob smoke ${new Date().toISOString()} ${randHex(4)}\n`,
 	);
 	const blobId = generateBlobId();
-	const ticketRes = await fetch(API_ROUTES.blobs.list.url(BASE_URL), {
+	const ticketRes = await fetch(API_ROUTES.blobs.collection.url(BASE_URL), {
 		method: 'POST',
 		headers: { ...authHeaders, 'content-type': 'application/json' },
 		body: JSON.stringify({

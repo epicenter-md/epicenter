@@ -230,5 +230,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0151](0151-local-workspace-stores-use-owner-first-directories.md) | Local workspace stores use owner-first directories | Accepted |
 | [0152](0152-epicenter-home-is-a-shell-above-workspaces.md) | Epicenter Home is a shell above workspaces | Accepted |
 | [0153](0153-trusted-apps-are-source-built-static-catalog-members.md) | Trusted apps are source-built static catalog members | Accepted |
+| [0154](0154-blob-access-is-address-only.md) | Blob access is address-only | Accepted |
 
 When you add an ADR, add its row here.

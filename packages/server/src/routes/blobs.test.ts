@@ -18,21 +18,44 @@ afterEach(() => {
 	globalThis.fetch = originalFetch;
 });
 
-test('list route uses the principal from auth without a principal URL segment', async () => {
-	const app = new Hono().get(
-		API_ROUTES.blobs.list.pattern,
+test('collection route uses the principal from auth without a principal URL segment', async () => {
+	const app = new Hono().post(
+		API_ROUTES.blobs.collection.pattern,
 		(c) =>
 			new Response(JSON.stringify({ path: c.req.path }), {
 				headers: { 'content-type': 'application/json' },
 			}),
 	);
-	const url = API_ROUTES.blobs.list.url('https://x');
-	const res = await app.request(url);
+	const url = API_ROUTES.blobs.collection.url('https://x');
+	const res = await app.request(url, { method: 'POST' });
 
 	expect(res.status).toBe(200);
 	expect(new URL(url).pathname).toBe('/api/blobs');
 	const body = (await res.json()) as unknown;
 	expect(body).toEqual({ path: '/api/blobs' });
+});
+
+test('the collection has no enumeration route', async () => {
+	const app = new Hono<Env>();
+	mountBlobsApp(app, {
+		auth: async (c, next) => {
+			c.set('principal', { id: asPrincipalId('alice') });
+			c.set('authBaseURL', 'https://api.example.com');
+			await next();
+		},
+	});
+
+	const res = await app.request(
+		API_ROUTES.blobs.collection.url('https://api.example.com'),
+		{ method: 'GET' },
+		{
+			BLOBS_S3_ENDPOINT: 'https://example.r2.cloudflarestorage.com',
+			BLOBS_S3_ACCESS_KEY_ID: 'test-access-key',
+			BLOBS_S3_SECRET_ACCESS_KEY: 'test-secret-key',
+		},
+	);
+
+	expect(res.status).toBe(404);
 });
 
 test('by-id route accepts only canonical BlobIds', async () => {
@@ -63,7 +86,7 @@ test('upload ticket presigns directly without a HEAD request', async () => {
 	});
 	const blobId = generateBlobId();
 	const res = await app.request(
-		API_ROUTES.blobs.list.url('https://api.example.com'),
+		API_ROUTES.blobs.collection.url('https://api.example.com'),
 		{
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },

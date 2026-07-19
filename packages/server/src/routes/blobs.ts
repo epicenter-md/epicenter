@@ -1,16 +1,16 @@
 /**
- * Blobs sub-app: an opaque-id object store where S3 IS the index.
+ * Blobs sub-app: an address-only opaque-id object store.
  *
  * Uniform principal-partitioned URL shape:
  *   POST   /api/blobs              authed: request an upload ticket
- *   GET    /api/blobs              authed: list the principal's blobs
  *   GET    /api/blobs/:blobId      authed: read (302 to presigned GET)
  *   DELETE /api/blobs/:blobId      authed: delete
  *
- * There is NO database row, NO queue, and NO event notification. The blob's
- * key contains its caller-minted BlobId, so the store itself answers "does it
- * exist" (exists) and "what do I have" (list). Rich metadata (source URL,
- * references) lives in the documents that cite the blob, not here.
+ * There is NO database row, NO queue, NO event notification, and NO public
+ * enumeration: every route acts on a BlobId the caller already knows, and the
+ * application data citing a blob supplies its meaning (ADR-0154). Rich
+ * metadata (source URL, references) lives in the documents that cite the
+ * blob, not here.
  *
  * The store is a PORTABLE S3 client (`s3-blob-store.ts`): plain S3-over-HTTPS
  * via aws4fetch, no Cloudflare Workers R2 binding, so the identical route runs
@@ -26,7 +26,7 @@
  * ADR-0089 (presigned S3 kernel) as amended by ADR-0148 (opaque BlobId).
  */
 
-import { type BlobId, parseBlobId } from '@epicenter/blobs';
+import { parseBlobId } from '@epicenter/blobs';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
@@ -34,7 +34,7 @@ import { Hono, type MiddlewareHandler } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import { describeRoute } from 'hono-openapi';
 import { MAX_BLOB_BYTES } from '../constants.js';
-import { blobKey, blobPrincipalPrefix } from '../principal.js';
+import { blobKey } from '../principal.js';
 import {
 	createS3BlobStore,
 	type S3BlobStore,
@@ -136,7 +136,7 @@ const requireBlobStore: MiddlewareHandler = createMiddleware<BlobEnv>(
 const blobsApp = new Hono<BlobEnv>()
 	// POST: request a create-only presigned PUT.
 	.post(
-		API_ROUTES.blobs.list.pattern,
+		API_ROUTES.blobs.collection.pattern,
 		describeRoute({
 			description: 'Request an upload ticket for an opaque-id blob.',
 			tags: ['blobs'],
@@ -182,19 +182,6 @@ const blobsApp = new Hono<BlobEnv>()
 			});
 		},
 	)
-	// GET: list the principal's blobs (S3 is the index).
-	.get(
-		API_ROUTES.blobs.list.pattern,
-		describeRoute({
-			description: "List the current principal's blobs.",
-			tags: ['blobs'],
-		}),
-		async (c) => {
-			const principalId = c.var.principal.id;
-			const blobs = await listPrincipalBlobs(c.var.blobStore, principalId);
-			return c.json(blobs);
-		},
-	)
 	// GET by id: read (302 to short-TTL presigned GET).
 	.get(
 		API_ROUTES.blobs.byId.pattern,
@@ -236,22 +223,6 @@ const blobsApp = new Hono<BlobEnv>()
 	);
 
 /**
- * Enumerate one principal's canonical blobs by listing the store prefix. Keys
- * from the retired hash protocol are deliberately invisible.
- */
-async function listPrincipalBlobs(
-	store: S3BlobStore,
-	principalId: Env['Variables']['principal']['id'],
-): Promise<{ blobId: BlobId; size: number; uploaded: string }[]> {
-	const prefix = blobPrincipalPrefix(principalId);
-	const objects = await store.list(prefix);
-	return objects.flatMap((obj) => {
-		const blobId = parseBlobId(obj.key.slice(prefix.length));
-		return blobId ? [{ blobId, size: obj.size, uploaded: obj.uploaded }] : [];
-	});
-}
-
-/**
  * Mount the blobs surface on a deployment's server app.
  *
  * There is no public-read bypass in v1, so every route is
@@ -277,7 +248,7 @@ export function mountBlobsApp<E extends Env = Env>(
 		requireBlobStore,
 	];
 
-	app.use(API_ROUTES.blobs.list.pattern, ...chain);
+	app.use(API_ROUTES.blobs.collection.pattern, ...chain);
 	app.on(['GET', 'DELETE'], API_ROUTES.blobs.byId.pattern, ...chain);
 	app.route('/', blobsApp);
 }

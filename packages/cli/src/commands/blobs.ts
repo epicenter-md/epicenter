@@ -5,9 +5,12 @@
  *   add <file|url>      mint an id, then upload (ticket -> presigned PUT
  *                       straight to the store) and print the URL; writes
  *                       nothing to disk
- *   ls                  list the current principal's stored blobs (the store is the index)
  *   get <blobId|url>    download one blob by id to a file
  *   rm  <blobId|url>    delete one blob from the store (breaks every citation)
+ *
+ * Address-only by design (ADR-0154): every verb takes a BlobId the caller
+ * already holds. There is no `ls`; the documents citing a blob are the only
+ * inventory, so enumeration is a grep over your own data, not a store call.
  *
  * Every subcommand is a direct cloud round-trip built from the resolved machine
  * auth client (the persisted OAuth cell, or a configured instance token for a
@@ -87,23 +90,6 @@ const addCommand = cmd({
 			return;
 		}
 		output({ blobId: result.blobId, url: result.url }, { format: argv.format });
-	},
-});
-
-const lsCommand = cmd({
-	command: 'ls',
-	describe: "List the current principal's stored blobs (id, size, upload time)",
-	builder: (yargs) => yargs.options(formatOptions).strict(),
-	handler: async (argv) => {
-		const epicenter = await connectCloud();
-		if (!epicenter) return;
-
-		const { data: blobs, error } = await epicenter.blobs.list();
-		if (error !== null) {
-			fail(error.message, { code: 2 });
-			return;
-		}
-		output(blobs, { format: argv.format });
 	},
 });
 
@@ -204,10 +190,9 @@ export const blobsCommand = cmd({
 	builder: (yargs) =>
 		yargs
 			.command(addCommand)
-			.command(lsCommand)
 			.command(getCommand)
 			.command(rmCommand)
-			.demandCommand(1, 'Specify a subcommand: add, ls, get, rm'),
+			.demandCommand(1, 'Specify a subcommand: add, get, rm'),
 	handler: () => {},
 });
 

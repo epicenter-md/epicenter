@@ -67,9 +67,6 @@ export type EpicenterClientOptions = {
 // Blob types (opaque-id remote store; mirror the server response shapes)
 // ---------------------------------------------------------------------------
 
-/** One row of the current principal's blob listing (`GET /blobs`). */
-export type BlobRow = { blobId: BlobId; size: number; uploaded: string };
-
 /** Result of the client's `blobs.add`. */
 export type AddBlobResult = {
 	blobId: BlobId;
@@ -174,7 +171,7 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 				params.contentType || blob.type || 'application/octet-stream';
 
 			const { data: ticketRes, error: ticketError } = await request(
-				API_ROUTES.blobs.list.url(base),
+				API_ROUTES.blobs.collection.url(base),
 				{
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },
@@ -273,16 +270,6 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 				status: res.status,
 				detail,
 			});
-		},
-
-		async list(): Promise<Result<BlobRow[], ClientError>> {
-			const { data: res, error: reqError } = await request(
-				API_ROUTES.blobs.list.url(base),
-				undefined,
-				'GET /blobs',
-			);
-			if (reqError !== null) return Err(reqError);
-			return Ok((await res.json()) as BlobRow[]);
 		},
 
 		async delete(blobId: BlobId): Promise<Result<void, ClientError>> {
