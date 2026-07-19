@@ -1,23 +1,29 @@
 ---
 name: delegate-claude
-description: Launch and supervise one durable Claude Code implementation session from Codex. Use only when the user explicitly asks Codex to delegate, hand off, or run substantial work through Claude/Fable and wants Codex to monitor, intervene, and verify the result. Do not use for bounded architectural consultation; use consult-claude instead.
-disable-model-invocation: true
+description: Launch and supervise one durable Claude Code implementation session from Codex. Use when the user asks Codex to have Claude execute or hand off the implementation, or when implementation is authorized and the accepted direction is ambitious, exploratory, multi-file, or likely to benefit from a long-horizon worker; Codex may invoke it autonomously when the extra latency and quota are justified. Do not use to resolve product direction, for an obvious bounded fix, or to produce a copy-paste prompt; use consult-claude or handoff instead.
 ---
 
 # Delegate Claude
 
-Delegate one substantial task to a full Claude Code session while Codex remains
-responsible for supervision, user communication, verification, and final handoff.
-Claude Code's background supervisor owns durable process and conversation state.
+Delegate one substantial accepted mission to a full Claude Code session. Claude
+owns implementation decisions within that mission. Codex owns the escalation,
+user communication, supervision, reconciliation, independent verification, and
+final handoff. Claude Code's background supervisor owns durable process and
+conversation state.
 
 ## Keep the lanes separate
 
-Route by deliverable. If the deliverable is a memo about a synthesis Codex
-already assembled, use `consult-claude` even when the user says "hand off": that
-lane is fresh, tool-free, and never resumed. If the deliverable is a change in
-the repository (discovery, implementation, tests, iteration, resumable work),
-use this skill. Never weaken the consultation lane to obtain implementation
-behavior.
+Route by uncertainty and deliverable. Use `consult-claude` when product or
+architecture direction is still genuinely unresolved. Use this skill when the
+mission is accepted but finding and executing the implementation path requires
+sustained exploration. Use `handoff` only when the user wants a manual
+copy-paste prompt for another session.
+
+Codex may delegate autonomously when a durable independent worker materially
+reduces execution risk or interruption cost. Announce the delegation and why it
+earns the extra latency and quota before launch. Do not delegate merely because
+a diff is large, because the task is difficult, or to escape work Codex can
+complete directly with an obvious bounded fix.
 
 Run at most one delegated Claude session for the current task unless the user
 explicitly requests parallel delegation. A quiet session is not evidence that a
@@ -45,12 +51,20 @@ Sources:
 Current read:
   What Codex currently believes and why; identify what is not settled.
 
+Evolution:
+  User reactions, rejected approaches, and decisions that explain the mission.
+
+Recognition criteria:
+  What the user will recognize as right beyond mechanical test completion.
+
 Open questions:
   Decisions Claude should resolve or challenge from evidence.
 
 Authority:
-  The originating request's mutation scope. Do not push, deploy, merge, open a
-  PR, contact people, or mutate external systems unless explicitly authorized.
+  Claude owns local, reversible, evidence-dominated implementation decisions
+  within the originating request. It may challenge the mission and investigate
+  alternatives. It must return product, promise, material scope, destructive,
+  external-write, or new-authority forks to Codex rather than silently choosing.
 
 Codex posture:
   Use /codex:rescue where it buys evidence, focused implementation, or
@@ -65,9 +79,11 @@ Final packet:
   verification results, remaining risks, and every external action taken.
 ```
 
-Claude inherits the user's task scope, not broader authority. Preserve private
-context only when sending it to the locally authenticated Claude CLI is within
-the user's request.
+Give Claude relevance-complete context, not a token-starved task summary. Within
+the task, Claude may receive the same relevant repository and conversational
+context Codex has. Ask the user before crossing into unrelated private material,
+credentials, personal data, or broader external systems. Claude inherits the
+user's task scope, never broader mutation authority.
 
 ## Start one durable session
 
@@ -118,7 +134,9 @@ minute, and exits when the job finishes, fails, stops, disappears, or needs
 input. Exit codes: 0 done, 10 blocked, 1 failed or stopped, 3 no such job, 4
 three consecutive status-check failures (run `claude daemon status`, then
 restart the watcher). Poll the watcher session without launching other Claude
-commands while it is quiet. Update the user at least once per minute.
+commands while it is quiet. Update the user at least once per minute with
+meaningful progress, consequential discoveries, or the reason it is still
+working. Do not stream repetitive logs or ordinary implementation choices.
 
 Supervision is resumable, not continuous. If Codex's turn ends or the watcher
 session dies, the delegation is not lost: Claude's supervisor still owns the
@@ -139,11 +157,14 @@ Codex's context.
 ## Intervene deliberately
 
 When the watcher reports a block, read `claude logs <id>` first to see the
-question (logs are the session's raw terminal output). Codex may answer
-repository facts it can verify and ordinary implementation choices already
-implied by the task. Ask the user before answering product direction,
-destructive actions, external writes, production operations, new authority, or
-material scope expansion.
+question (logs are the session's raw terminal output). Codex may answer verified
+repository facts and choices that are local, reversible, evidence-dominated,
+and already inside the accepted mission. Claude has broad latitude to challenge
+the plan and recommend a stronger direction, but not to silently change the
+product. Bring user-visible promises, consequential taste choices, material
+ownership or scope changes, destructive actions, external writes, production
+operations, and new authority back to the user with Claude's recommendation
+and Codex's read.
 
 Deliver Codex's answer with the launcher:
 

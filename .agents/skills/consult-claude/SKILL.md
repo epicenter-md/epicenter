@@ -1,16 +1,20 @@
 ---
 name: consult-claude
-description: Give Claude one fresh, read-only adversarial consultation on Codex's current synthesis. Use only when the user explicitly invokes $consult-claude or unmistakably asks Codex to consult Claude on an uncompromising greenfield vision, architecture direction, or other bounded decision after Codex has gathered the relevant evidence and directional data.
-disable-model-invocation: true
+description: Give Claude one fresh, read-only adversarial memo on Codex's grounded synthesis. Use when the user asks Codex to consult Claude or when an independent reasoning trajectory would materially reduce risk in a high-stakes, ambiguous, architectural, product, planning, or clean-break decision; Codex may invoke it autonomously after forming an evidence-backed read. Do not use for implementation, an obvious bounded decision, or a continuing Claude conversation.
 ---
 
 # Consult Claude
 
-The consult-claude skill gives Claude one explicitly requested opportunity to
-attack Codex's decision-complete synthesis. Codex owns the user dialectic,
-packet, verification, reconciliation, and final judgment. Claude returns one
-adversarial memo. The runner keeps that fresh, tool-free consultation observable
-and bounded.
+The consult-claude skill gives Claude one fresh opportunity to attack Codex's
+decision-complete synthesis. The user owns product direction. Codex owns the
+user dialectic, escalation decision, packet, verification, reconciliation, and
+final recommendation. Claude owns one strong adversarial memo. The runner keeps
+that consultation tool-free, observable, and bounded.
+
+Codex may escalate autonomously when getting the judgment wrong would cost
+substantially more than the additional latency and quota. Announce the
+consultation and why it earns the escalation before starting it. Do not consult
+to avoid forming a grounded position first.
 
 ## Build the packet
 
@@ -23,9 +27,11 @@ Start every packet with this mandate:
 ```txt
 Mandate:
   Attack the synthesis as a whole. Surface inherited assumptions and hidden
-  compromises, articulate the strongest rival, and propose further collapse.
-  Return one decisive memo. Do not ask the user questions, inspect the
-  repository, use tools, implement, or continue the task.
+  compromises, articulate the strongest rival, test the important failure
+  modes, and recommend the best direction. Propose collapse or a clean break
+  when the evidence earns it, not as a default. Return one decisive memo. Do
+  not ask the user questions, inspect the repository, use tools, implement, or
+  continue the task.
 ```
 
 Then make the packet cold-start complete:
@@ -62,9 +68,12 @@ Stop:
   Answer this bounded problem. Do not implement or expand the task.
 ```
 
-Decision-complete does not mean short. Include the conversational history that
-explains the vision, but do not dump unrelated repository context or make
-Claude reconstruct facts Codex can establish locally.
+Decision-complete does not mean short. Give Claude relevance-complete context:
+the objective, evolution, user reactions, rejected ideas, evidence, constraints,
+and current reasoning needed to think from the same reality as Codex. Do not
+starve the packet into a conclusion-only summary or make Claude reconstruct
+facts Codex can establish locally. Exclude only context that is unrelated to the
+task.
 
 ## Run one attached consultation
 
@@ -81,13 +90,12 @@ or persisted session. It inherits the environment needed for local
 authentication. Do not add tools without revisiting that trust boundary.
 
 Sending the packet to the locally authenticated Claude CLI is an export of its
-contents. Include private context only when the user's request covers it,
-whether or not the runtime objects. If the runtime blocks export of private
-context, do not silently weaken the packet. Explain the boundary. Prefer
-routing the scoped network approval to the user. If the user chooses a
-sanitized consultation instead, remove private identifiers, paths, code,
-commits, and verbatim conversation, then run from a neutral temporary
-directory.
+contents. Within the task, Claude may receive the same relevant context Codex
+has, including private repository content and conversational history. Ask the
+user before crossing the task boundary into unrelated private material,
+credentials, personal data, or broader external systems. If the runtime blocks
+an in-scope export, do not silently weaken the packet. Explain the boundary and
+route any required approval to the user.
 
 ## Wait patiently
 
@@ -104,11 +112,17 @@ Codex's command session already owns waiting and cancellation.
 
 ## Reconcile the memo
 
-1. Report Claude's strongest argument accurately.
+1. State Claude's strongest recommendation accurately.
 2. Separate Claude's evidence from its opinion.
 3. Verify every material claim against local files or authoritative sources.
-4. Explain what survives verification and what changes in Codex's synthesis.
-5. Put the revised synthesis back into the user dialectic.
+4. State where Codex agrees, disagrees, or needs more evidence.
+5. Resolve obvious evidence-dominated consequences without ceremony.
+6. Bring genuine product, promise, ownership, or taste forks to the user.
+7. Put the revised synthesis back into the user dialectic.
+
+Do not smooth genuine disagreement into a compromise. When a product decision
+remains, present Claude's recommendation, Codex's read, and the concrete choice
+the user owns.
 
 Each consultation is fresh. A later checkpoint may request another consultation
 for a genuinely new synthesis, but never resume a Claude session or let Claude
