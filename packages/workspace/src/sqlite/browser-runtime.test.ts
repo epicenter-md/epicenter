@@ -415,7 +415,12 @@ test('Account add makes copied document snapshots durable owner-side', async () 
 	});
 	await account.add(definition.id, {
 		rows: [
-			{ table: 'notes', rowId: ROW_ID, fields: { title: 'Migrated' }, document: snapshot },
+			{
+				table: 'notes',
+				rowId: ROW_ID,
+				fields: { title: 'Migrated' },
+				document: snapshot,
+			},
 		],
 		kv: {},
 	});

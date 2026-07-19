@@ -44,7 +44,9 @@ export type CanonicalStoreOptions = {
 	 * so scalar death and document death commit together. Synchronized mode
 	 * never calls this; the replica owns its own lifecycle transactions.
 	 */
-	deleteDocumentRows?(addresses: readonly { table: string; rowId: string }[]): void;
+	deleteDocumentRows?(
+		addresses: readonly { table: string; rowId: string }[],
+	): void;
 	/** Revoke cached row documents as soon as local deletion changes liveness. */
 	onRowsDeleted?(addresses: { table: string; rowId: string }[]): void;
 };

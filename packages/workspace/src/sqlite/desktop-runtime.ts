@@ -113,15 +113,18 @@ export function createDesktopWorkspaceRuntime({
 		if (!bound) throw new Error(`Workspace '${workspaceId}' is not open`);
 		if (bound.moved) throw bound.moved;
 		const response = (async () => {
-			const fetched = await fetchInput(desktopWorkspaceUrl(origin, workspaceId), {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				credentials: 'same-origin',
-				body: JSON.stringify({
-					surfaceId,
-					operation,
-				} satisfies DesktopRecordRequest),
-			});
+			const fetched = await fetchInput(
+				desktopWorkspaceUrl(origin, workspaceId),
+				{
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					credentials: 'same-origin',
+					body: JSON.stringify({
+						surfaceId,
+						operation,
+					} satisfies DesktopRecordRequest),
+				},
+			);
 			const envelope = (await fetched.json()) as DesktopWorkspaceResponse;
 			if (!fetched.ok || envelope.error !== null) {
 				const failure = new Error(
@@ -308,7 +311,10 @@ export function createDesktopWorkspaceRuntime({
 			}
 			workspaces.clear();
 			if (failures.length > 0) {
-				throw new AggregateError(failures, 'Desktop row-document disposal failed');
+				throw new AggregateError(
+					failures,
+					'Desktop row-document disposal failed',
+				);
 			}
 		},
 	});

@@ -7,13 +7,14 @@
  * the view surfaces it as MissingRow for update and rejects delete, without a
  * silent success or an afterDelete side effect.
  */
+
+import { expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
 import type { WireRowIntent } from '@epicenter/row-sync';
-import { expect, test } from 'bun:test';
+import { createAsyncWorkspaceView } from './async-workspace-view.js';
+import { WORKSPACE_ROW_ABSENT_ERROR_NAME } from './canonical-store.js';
 import type { JsonObject } from './lens-definition.js';
 import { defineTable } from './lens-definition.js';
-import { WORKSPACE_ROW_ABSENT_ERROR_NAME } from './canonical-store.js';
-import { createAsyncWorkspaceView } from './async-workspace-view.js';
 import { defineWorkspace } from './workspace-lens.js';
 
 const lens = defineWorkspace({

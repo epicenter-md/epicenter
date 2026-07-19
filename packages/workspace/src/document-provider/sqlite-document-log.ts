@@ -118,9 +118,7 @@ export function createSqliteDocumentLog({
 			requireHealthy();
 			assertRowAddress(address);
 			try {
-				return readUpdates(address).map((stored) =>
-					updateBytes(stored.update),
-				);
+				return readUpdates(address).map((stored) => updateBytes(stored.update));
 			} catch (cause) {
 				throw poison(cause);
 			}
@@ -160,9 +158,7 @@ export function createSqliteDocumentLog({
 					}
 					const compacted = replay(covered);
 					try {
-						const baseline = new Uint8Array(
-							Y.encodeStateAsUpdateV2(compacted),
-						);
+						const baseline = new Uint8Array(Y.encodeStateAsUpdateV2(compacted));
 						database.run(
 							`DELETE FROM ${LOG_TABLE}
 							 WHERE table_name = ? AND row_id = ? AND sequence <= ?`,

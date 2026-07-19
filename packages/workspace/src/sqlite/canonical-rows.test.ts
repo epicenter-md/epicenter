@@ -57,7 +57,9 @@ test('updating or deleting an absent row refuses at the store admission boundary
 			expectErr(records.tables.notes.update(absentId, { title: 'x' })).name,
 		).toBe('MissingRow');
 		expect(
-			isWorkspaceRowAbsentError(refusal(() => records.tables.notes.delete(absentId))),
+			isWorkspaceRowAbsentError(
+				refusal(() => records.tables.notes.delete(absentId)),
+			),
 		).toBeTrue();
 
 		// A row that dies between an earlier read and admission still refuses:
@@ -151,27 +153,27 @@ test('records exposes synchronized optimistic create, update, and delete state',
 	const records = createCanonicalRowsView(
 		createCanonicalStore(sqlite, {
 			admitIntent(intent: WireRowIntent) {
-			const key = keyFor(intent.table, intent.rowId);
-			switch (intent.kind) {
-				case 'create':
-					optimistic.set(key, intent.fields);
-					break;
-				case 'update': {
-					const folded = foldFields(optimistic.get(key), intent);
-					if (folded.kind === 'fields') optimistic.set(key, folded.fields);
-					break;
+				const key = keyFor(intent.table, intent.rowId);
+				switch (intent.kind) {
+					case 'create':
+						optimistic.set(key, intent.fields);
+						break;
+					case 'update': {
+						const folded = foldFields(optimistic.get(key), intent);
+						if (folded.kind === 'fields') optimistic.set(key, folded.fields);
+						break;
+					}
+					case 'delete':
+						optimistic.delete(key);
+						break;
+					default:
+						intent satisfies never;
 				}
-				case 'delete':
-					optimistic.delete(key);
-					break;
-				default:
-					intent satisfies never;
-			}
-			sqlite.run(
-				`INSERT OR IGNORE INTO intents(table_key, row_id) VALUES (?, ?)`,
-				[intent.table, intent.rowId],
-			);
-		},
+				sqlite.run(
+					`INSERT OR IGNORE INTO intents(table_key, row_id) VALUES (?, ?)`,
+					[intent.table, intent.rowId],
+				);
+			},
 			readCurrentRow(table, rowId) {
 				return optimistic.get(keyFor(table, rowId));
 			},

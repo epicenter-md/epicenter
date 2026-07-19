@@ -150,7 +150,9 @@ test('a failed append stops the chain so no successor commits over a gap', async
 	const fixture = setup({
 		appendError: () => {
 			failures += 1;
-			return failures === 1 ? new Error('owner refused this append') : undefined;
+			return failures === 1
+				? new Error('owner refused this append')
+				: undefined;
 		},
 	});
 	const document = new Y.Doc();

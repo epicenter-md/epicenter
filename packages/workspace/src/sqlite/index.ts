@@ -14,7 +14,6 @@ export {
 } from '../document-provider/connection/index.js';
 export type { RowDocument } from '../document-provider/runtime/index.js';
 export { isDocumentRowAbsentError } from '../document-provider/sqlite-document-log.js';
-export { isWorkspaceRowAbsentError } from './canonical-store.js';
 export {
 	isWorkspaceStorageHeldError,
 	isWorkspaceStorageMovedError,
@@ -24,6 +23,7 @@ export type {
 	LogicalWorkspaceExport,
 	LogicalWorkspaceRow,
 } from './canonical-addition.js';
+export { isWorkspaceRowAbsentError } from './canonical-store.js';
 export type {
 	WorkspaceSync,
 	WorkspaceSyncPendingReason,

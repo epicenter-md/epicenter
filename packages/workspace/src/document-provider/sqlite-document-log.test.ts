@@ -86,9 +86,7 @@ test('append then load replays updates in order across reopen', () => {
 			database: context.database,
 			isRowLive: () => true,
 		});
-		expect(decodeText(reopened.load(address('written')))).toBe(
-			'durable value',
-		);
+		expect(decodeText(reopened.load(address('written')))).toBe('durable value');
 	} finally {
 		context.sqlite.close();
 	}
@@ -144,9 +142,7 @@ test('bounded compaction replaces the covered prefix with one compact update', (
 		try {
 			const target = address('compacted');
 			for (const character of ['a', 'b', 'c']) {
-				shared
-					.get('editor')
-					.insert(shared.get('editor').length, character);
+				shared.get('editor').insert(shared.get('editor').length, character);
 				context.log.append(
 					target,
 					new Uint8Array(Y.encodeStateAsUpdateV2(shared)),
