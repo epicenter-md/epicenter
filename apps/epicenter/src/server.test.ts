@@ -1237,8 +1237,8 @@ describe('sidecar end-to-end smoke', () => {
 					EPICENTER_APPS_DIST: appsDist,
 					// The engine POSTs `${baseURL}/chat/completions`, so the base
 					// carries the `/v1` prefix.
-					EPICENTER_HOME_INFERENCE_URL: `${inference.url.origin}/v1`,
-					EPICENTER_HOME_MODEL: 'fake-model',
+					EPICENTER_INFERENCE_URL: `${inference.url.origin}/v1`,
+					EPICENTER_INFERENCE_MODEL: 'fake-model',
 					// Keep the host's replicas out of the real user data directory.
 					EPICENTER_DATA_DIR: testDataDir(),
 				},
@@ -1342,8 +1342,8 @@ describe('sidecar end-to-end smoke', () => {
 				env: {
 					...process.env,
 					EPICENTER_APPS_DIST: appsDist,
-					EPICENTER_HOME_INFERENCE_URL: 'http://127.0.0.1:1/v1',
-					EPICENTER_HOME_MODEL: 'unused-model',
+					EPICENTER_INFERENCE_URL: 'http://127.0.0.1:1/v1',
+					EPICENTER_INFERENCE_MODEL: 'unused-model',
 					EPICENTER_DATA_DIR: testDataDir(),
 				},
 				stdin: 'pipe',
@@ -1383,8 +1383,8 @@ describe('sidecar end-to-end smoke', () => {
 				env: {
 					...process.env,
 					EPICENTER_APPS_DIST: appsDist,
-					EPICENTER_HOME_INFERENCE_URL: 'http://127.0.0.1:1/v1',
-					EPICENTER_HOME_MODEL: 'unused-model',
+					EPICENTER_INFERENCE_URL: 'http://127.0.0.1:1/v1',
+					EPICENTER_INFERENCE_MODEL: 'unused-model',
 					EPICENTER_DATA_DIR: testDataDir(),
 				},
 				stdin: 'pipe',

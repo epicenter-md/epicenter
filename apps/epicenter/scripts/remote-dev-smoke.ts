@@ -38,9 +38,9 @@ function createSmokeEngine(): {
 	model: string;
 	label: string;
 } {
-	const baseURL = process.env.EPICENTER_HOME_INFERENCE_URL;
-	const model = process.env.EPICENTER_HOME_MODEL;
-	const apiKey = process.env.EPICENTER_HOME_API_KEY;
+	const baseURL = process.env.EPICENTER_INFERENCE_URL;
+	const model = process.env.EPICENTER_INFERENCE_MODEL;
+	const apiKey = process.env.EPICENTER_INFERENCE_API_KEY;
 	if (baseURL && model) {
 		return {
 			model,
@@ -70,12 +70,12 @@ function createSmokeEngine(): {
 	return {
 		model: 'remote-dev-echo',
 		label:
-			'echo engine (set EPICENTER_HOME_INFERENCE_URL and EPICENTER_HOME_MODEL for a real model)',
+			'echo engine (set EPICENTER_INFERENCE_URL and EPICENTER_INFERENCE_MODEL for a real model)',
 		engine: async function* (): AsyncGenerator<EngineChunk> {
 			yield {
 				type: 'text-delta',
 				delta:
-					'Remote attach is connected. Set EPICENTER_HOME_INFERENCE_URL and EPICENTER_HOME_MODEL to try a real model and tools.',
+					'Remote attach is connected. Set EPICENTER_INFERENCE_URL and EPICENTER_INFERENCE_MODEL to try a real model and tools.',
 			};
 		},
 	};

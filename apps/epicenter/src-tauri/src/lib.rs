@@ -1197,6 +1197,24 @@ mod tests {
     }
 
     #[test]
+    fn trusted_application_capabilities_follow_the_surface_table() {
+        let expected = Surface::ALL.map(Surface::id);
+        for encoded in [
+            include_str!("../capabilities/trusted-epicenter-apps-development.json"),
+            include_str!("../capabilities/trusted-epicenter-apps-production.json"),
+        ] {
+            let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
+            let windows = capability["windows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_str().unwrap())
+                .collect::<Vec<_>>();
+            assert_eq!(windows, expected);
+        }
+    }
+
+    #[test]
     fn deep_links_accept_only_the_closed_surface_route_table() {
         for (url, expected) in [
             ("epicenter://surface/home", Surface::Home),

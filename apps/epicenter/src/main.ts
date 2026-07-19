@@ -84,13 +84,13 @@ async function main(): Promise<void> {
 		});
 		process.stdout.write(`${JSON.stringify(createReadyFrame(boot.port))}\n`);
 		lifecycleOwnsResources = true;
-		const queryHost = host;
+		const ownedHost = host;
 		const ownedWorkspaces = workspaceOwner;
 		await superviseSidecar({
 			server,
 			host: {
 				async [Symbol.asyncDispose]() {
-					await queryHost[Symbol.asyncDispose]();
+					await ownedHost[Symbol.asyncDispose]();
 					await ownedWorkspaces[Symbol.asyncDispose]();
 				},
 			},
@@ -109,9 +109,9 @@ async function main(): Promise<void> {
 export function homeEngineFromEnvironment(
 	environment: Record<string, string | undefined>,
 ): { engine: AgentEngine; model: string } {
-	const baseURL = environment.EPICENTER_HOME_INFERENCE_URL;
-	const model = environment.EPICENTER_HOME_MODEL;
-	const apiKey = environment.EPICENTER_HOME_API_KEY;
+	const baseURL = environment.EPICENTER_INFERENCE_URL;
+	const model = environment.EPICENTER_INFERENCE_MODEL;
+	const apiKey = environment.EPICENTER_INFERENCE_API_KEY;
 	if (!baseURL || !model) {
 		return {
 			model: 'unconfigured',
@@ -120,7 +120,7 @@ export function homeEngineFromEnvironment(
 					type: 'run-error',
 					code: 'stream-error',
 					message:
-						'Home needs an OpenAI-compatible endpoint. Set EPICENTER_HOME_INFERENCE_URL and EPICENTER_HOME_MODEL, then restart Epicenter.',
+						'Home needs an OpenAI-compatible endpoint. Set EPICENTER_INFERENCE_URL and EPICENTER_INFERENCE_MODEL, then restart Epicenter.',
 				};
 			},
 		};
