@@ -354,16 +354,6 @@ export function createBrowserBlobRemote({
 }
 
 /**
- * Compose the Bun filesystem store with the hosted remote blob surface.
- *
- * This is the desktop host's adapter (ADR-0149): upload hands the store's lazy
- * `BunFile` to the presigned PUT so recording bytes stream from disk, and
- * download writes the presigned GET's response stream straight into the store,
- * so a large object is never materialized in memory and never crosses WebView
- * IPC. The caller owns the authed fetch inside `client`; presigned vocabulary
- * stays inside `client.blobs`.
- */
-/**
  * The streaming surface the desktop remote needs from a host-owned store.
  * `BunBlobStore` satisfies it: `openFile` hands back a lazy file (a `Blob`
  * whose bytes load on demand) and `putResponse` writes a response stream.
@@ -381,6 +371,16 @@ export type HostBlobStore = {
 	stat(id: BlobId): Promise<Result<BlobStat, BlobNotFound | BlobStoreFailed>>;
 };
 
+/**
+ * Compose the Bun filesystem store with the hosted remote blob surface.
+ *
+ * This is the desktop host's adapter (ADR-0149): upload hands the store's lazy
+ * `BunFile` to the presigned PUT so recording bytes stream from disk, and
+ * download writes the presigned GET's response stream straight into the store,
+ * so a large object is never materialized in memory and never crosses WebView
+ * IPC. The caller owns the authed fetch inside `client`; presigned vocabulary
+ * stays inside `client.blobs`.
+ */
 export function createBunBlobRemote({
 	store,
 	client,
