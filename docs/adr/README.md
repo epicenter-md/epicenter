@@ -231,5 +231,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0152](0152-epicenter-home-is-a-shell-above-workspaces.md) | Epicenter Home is a shell above workspaces | Accepted |
 | [0153](0153-trusted-apps-are-source-built-static-catalog-members.md) | Trusted apps are source-built static catalog members | Accepted |
 | [0154](0154-blob-access-is-address-only.md) | Blob access is address-only | Accepted |
+| [0155](0155-epicenter-desktop-auth-is-one-credential-free-window-bun-authority.md) | Epicenter desktop auth is one Bun authority with credential-free windows | Accepted |
 
 When you add an ADR, add its row here.
