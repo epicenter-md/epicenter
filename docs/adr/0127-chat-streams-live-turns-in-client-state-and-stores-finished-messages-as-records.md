@@ -1,6 +1,7 @@
 # 0127. Chat streams live turns in client state and stores finished messages as records
 
-- **Status:** Proposed
+- **Status:** Superseded
+- **Superseded by:** [ADR-0152](0152-epicenter-home-is-a-shell-above-workspaces.md) (`@epicenter/chat` stores messages in each conversation row's owned document rather than a separate messages table)
 - **Date:** 2026-07-12
 - **Supersedes:** [ADR-0055](0055-conversation-storage-is-one-canonical-table-every-surface-syncs.md) (the canonical `@epicenter/chat` ownership and synchronized transcript promise carry forward; the keyed child-document store does not)
 - **Relates:** [ADR-0047](0047-the-agent-loop-runs-in-the-client-and-tools-are-dispatched-actions.md), [ADR-0123](0123-bounded-metadata-uses-record-authority-merge-sensitive-state-uses-lazy-child-documents.md), [ADR-0125](0125-record-definitions-are-release-local-lenses-and-never-migrate-user-data.md)
