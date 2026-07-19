@@ -1,14 +1,4 @@
-import {
-	RESERVED_KV_ROW_ID,
-	RESERVED_KV_TABLE,
-	sha256Hex,
-	type WireRowIntent,
-} from '@epicenter/row-sync';
-import type { SqliteValue } from '@epicenter/sqlite';
-import { customAlphabet } from 'nanoid';
-import type { Static, TSchema } from 'typebox';
-import { Value } from 'typebox/value';
-import { Ok } from 'wellcrafted/result';
+import { sha256Hex } from '@epicenter/row-sync';
 import { createBrowserIndexedDbDocumentStore } from '../document-provider/browser-indexed-db.js';
 import {
 	attachAuthenticatedDocumentConnection,
@@ -23,6 +13,7 @@ import {
 	deviceBrowserPersistenceKey,
 	type WorkspaceAccount,
 } from './account-runtime.js';
+import { createAsyncWorkspaceView } from './async-workspace-view.js';
 import type {
 	BrowserRecordOperation,
 	BrowserRowSyncBinding,
@@ -41,18 +32,8 @@ import type {
 	WorkspaceSyncStatus,
 } from './canonical-sync-supervisor.js';
 import { CurrentStateTransportInterruption } from './current-state-transport.js';
-import {
-	compileKvLens,
-	type KvDefinitions,
-	KvReadError,
-	KvWriteError,
-} from './kv-definition.js';
-import { compileTableLens, type JsonObject } from './lens-definition.js';
-import type { Workspace, WorkspaceTables } from './runtime.js';
+import type { Workspace } from './runtime.js';
 import type { WorkspaceLens } from './workspace-lens.js';
-
-type DefinitionTables<TDefinition> =
-	TDefinition extends WorkspaceLens<infer TTables> ? TTables : never;
 
 type PendingRequest = {
 	resolve(value: unknown): void;
@@ -80,9 +61,6 @@ type BoundWorkspace = {
 	captureDocuments(copy: LogicalWorkspaceCopy): Promise<LogicalWorkspaceCopy>;
 	importDocuments(copy: LogicalWorkspaceCopy): Promise<void>;
 };
-
-const ROW_ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
-const mintRowId = customAlphabet(ROW_ID_ALPHABET, 24);
 
 type RowAddress = { table: string; rowId: string };
 
@@ -562,173 +540,34 @@ function createBrowserRuntimeWithPersistence({
 		function createView<TDefinition extends WorkspaceLens>(
 			definition: TDefinition,
 		): Workspace<TDefinition> {
-			const tables = Object.fromEntries(
-				Object.entries(definition.tables).map(([table, tableDefinition]) => {
-					const lens = compileTableLens(tableDefinition);
-					return [
+			return createAsyncWorkspaceView(definition, {
+				read(table, rowId) {
+					return request(manifest, {
+						kind: 'read-current-row',
 						table,
-						Object.freeze({
-							async get(id: string) {
-								const fields = await request<JsonObject | undefined>(manifest, {
-									kind: 'read-current-row',
-									table,
-									rowId: id,
-								});
-								return fields === undefined
-									? Ok(undefined)
-									: lens.project(table, id, fields);
-							},
-							async list() {
-								const current = await request<
-									{ rowId: string; fields: JsonObject }[]
-								>(manifest, { kind: 'list-current-rows', table });
-								const rows: Record<string, unknown>[] = [];
-								const nonconforming = [];
-								for (const row of current) {
-									const projected = lens.project(table, row.rowId, row.fields);
-									if (projected.error === null) rows.push(projected.data);
-									else nonconforming.push(projected.error);
-								}
-								return { rows, nonconforming };
-							},
-							async create(input: Record<string, unknown>) {
-								const fields = lens.validateCreate(input);
-								const id = mintRowId();
-								await admit({ kind: 'create', table, rowId: id, fields });
-								const projected = lens.project(table, id, fields);
-								if (projected.error !== null)
-									throw new Error(projected.error.message);
-								return projected.data;
-							},
-							async update(id: string, changes: Record<string, unknown>) {
-								const normalized = lens.normalizeChanges(changes);
-								const current = await request<JsonObject | undefined>(
-									manifest,
-									{
-										kind: 'read-current-row',
-										table,
-										rowId: id,
-									},
-								);
-								if (
-									Object.keys(normalized.set).length === 0 &&
-									normalized.unset.length === 0
-								) {
-									return current === undefined
-										? Ok(undefined)
-										: lens.project(table, id, current);
-								}
-								await admit({
-									kind: 'update',
-									table,
-									rowId: id,
-									fields: normalized,
-								});
-								const fields = await request<JsonObject | undefined>(manifest, {
-									kind: 'read-current-row',
-									table,
-									rowId: id,
-								});
-								return fields === undefined
-									? Ok(undefined)
-									: lens.project(table, id, fields);
-							},
-							async delete(id: string) {
-								await admit({ kind: 'delete', table, rowId: id });
-								notifyRowsDeleted([{ table, rowId: id }]);
-							},
-							document: Object.freeze({
-								open(rowId: string) {
-									return documents.open({ table, rowId });
-								},
-							}),
-						}),
-					];
-				}),
-			) as unknown as WorkspaceTables<DefinitionTables<TDefinition>>;
-			const kvLens = compileKvLens(definition.kv as KvDefinitions);
-			const requireKv = (key: string) => {
-				const compiled = kvLens.get(key);
-				if (!compiled) throw new Error(`Unknown kv key '${key}'`);
-				return compiled;
-			};
-			const readKvMap = () =>
-				request<JsonObject>(manifest, { kind: 'kv-read-map' });
-			const kv = Object.freeze({
-				async get(key: string) {
-					const compiled = requireKv(key);
-					const map = await readKvMap();
-					if (!Object.hasOwn(map, key)) return Ok(undefined);
-					const raw = map[key];
-					return compiled.check(raw)
-						? Ok(structuredClone(raw))
-						: KvReadError.NonconformingKvValue({
-								key,
-								raw: structuredClone(raw) as never,
-							});
-				},
-				async set(key: string, value: unknown) {
-					const compiled = requireKv(key);
-					if (!compiled.check(value)) {
-						return KvWriteError.InvalidKvWrite({
-							key,
-							reason: 'value does not satisfy the declared schema',
-						});
-					}
-					await admit({
-						kind: 'update',
-						table: RESERVED_KV_TABLE,
-						rowId: RESERVED_KV_ROW_ID,
-						fields: {
-							set: { [key]: structuredClone(value) as never },
-							unset: [],
-						},
+						rowId,
 					});
-					return Ok(undefined);
 				},
-				async unset(key: string) {
-					requireKv(key);
-					await admit({
-						kind: 'update',
-						table: RESERVED_KV_TABLE,
-						rowId: RESERVED_KV_ROW_ID,
-						fields: { set: {}, unset: [key] },
-					});
+				list(table) {
+					return request(manifest, { kind: 'list-current-rows', table });
+				},
+				readKvMap() {
+					return request(manifest, { kind: 'kv-read-map' });
+				},
+				admit(intent) {
+					return request(manifest, { kind: 'admit-intent', intent });
+				},
+				sql(query, parameters) {
+					return request(manifest, { kind: 'sql', query, parameters });
+				},
+				openDocument(table, rowId) {
+					return documents.open({ table, rowId });
+				},
+				sync,
+				afterDelete(address) {
+					notifyRowsDeleted([address]);
 				},
 			});
-
-			return Object.freeze({
-				id: definition.id,
-				tables,
-				kv: kv as never,
-				sync,
-				async sql<TResultSchema extends TSchema>(
-					query: string,
-					parameters: readonly SqliteValue[],
-					resultSchema: TResultSchema,
-				): Promise<Static<TResultSchema>[]> {
-					const rows = await request<Record<string, unknown>[]>(manifest, {
-						kind: 'sql',
-						query,
-						parameters,
-					});
-					for (const [index, row] of rows.entries()) {
-						if (!Value.Check(resultSchema, row)) {
-							const issues = [...Value.Errors(resultSchema, row)]
-								.map((issue) => `${issue.instancePath}: ${issue.message}`)
-								.join('; ');
-							throw new TypeError(
-								`SQL row ${index} does not satisfy the result schema: ${issues}`,
-							);
-						}
-					}
-					return rows as Static<TResultSchema>[];
-				},
-			}) as Workspace<TDefinition>;
-		}
-
-		function admit(intent: WireRowIntent): Promise<void> {
-			return request(manifest, { kind: 'admit-intent', intent });
 		}
 
 		return {

@@ -1,13 +1,4 @@
-import {
-	RESERVED_KV_ROW_ID,
-	RESERVED_KV_TABLE,
-	type WireRowIntent,
-} from '@epicenter/row-sync';
-import type { SqliteValue } from '@epicenter/sqlite';
-import { customAlphabet } from 'nanoid';
-import type { Static, TSchema } from 'typebox';
-import { Value } from 'typebox/value';
-import { Ok } from 'wellcrafted/result';
+import { createAsyncWorkspaceView } from './async-workspace-view.js';
 import {
 	createDocumentRuntime,
 	decodeDocumentBytes,
@@ -18,21 +9,10 @@ import {
 	type DesktopWorkspaceResponse,
 	desktopWorkspaceUrl,
 } from './desktop-protocol.js';
-import { compileKvLens, KvReadError, KvWriteError } from './kv-definition.js';
-import {
-	compileTableLens,
-	type JsonObject,
-	type JsonValue,
-} from './lens-definition.js';
-import type { Workspace, WorkspaceTables } from './runtime.js';
+import type { Workspace } from './runtime.js';
 import type { WorkspaceLens } from './workspace-lens.js';
 
-type DefinitionTables<TDefinition> =
-	TDefinition extends WorkspaceLens<infer TTables> ? TTables : never;
-
 type RowAddress = { table: string; rowId: string };
-
-const mintRowId = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 24);
 
 type DesktopInvalidationMessage =
 	| { type: 'records-changed'; workspaceId: string }
@@ -206,198 +186,39 @@ export function createDesktopWorkspaceRuntime({
 		definition: TDefinition,
 		documents: ReturnType<typeof createDocumentRuntime>,
 	): Workspace<TDefinition> {
-		const tables = Object.fromEntries(
-			Object.entries(definition.tables).map(([table, tableDefinition]) => {
-				const lens = compileTableLens(tableDefinition);
-				return [
+		return createAsyncWorkspaceView(definition, {
+			read(table, rowId) {
+				return request(definition.id, {
+					kind: 'read-current-row',
 					table,
-					Object.freeze({
-						async get(id: string) {
-							const fields = await request<JsonObject | undefined>(
-								definition.id,
-								{
-									kind: 'read-current-row',
-									table,
-									rowId: id,
-								},
-							);
-							return fields === undefined
-								? Ok(undefined)
-								: lens.project(table, id, fields);
-						},
-						async list() {
-							const current = await request<
-								{ rowId: string; fields: JsonObject }[]
-							>(definition.id, { kind: 'list-current-rows', table });
-							const rows: Record<string, unknown>[] = [];
-							const nonconforming = [];
-							for (const row of current) {
-								const result = lens.project(table, row.rowId, row.fields);
-								if (result.error === null) rows.push(result.data);
-								else nonconforming.push(result.error);
-							}
-							return { rows, nonconforming };
-						},
-						async create(input: Record<string, unknown>) {
-							const fields = lens.validateCreate(input);
-							const id = mintRowId();
-							await admit(definition.id, {
-								kind: 'create',
-								table,
-								rowId: id,
-								fields,
-							});
-							const projected = lens.project(table, id, fields);
-							if (projected.error !== null)
-								throw new Error(projected.error.message);
-							return projected.data;
-						},
-						async update(id: string, changes: Record<string, unknown>) {
-							const fields = lens.normalizeChanges(changes);
-							const before = await request<JsonObject | undefined>(
-								definition.id,
-								{
-									kind: 'read-current-row',
-									table,
-									rowId: id,
-								},
-							);
-							if (before === undefined) return Ok(undefined);
-							if (
-								Object.keys(fields.set).length > 0 ||
-								fields.unset.length > 0
-							) {
-								await admit(definition.id, {
-									kind: 'update',
-									table,
-									rowId: id,
-									fields,
-								});
-							}
-							const current = await request<JsonObject | undefined>(
-								definition.id,
-								{
-									kind: 'read-current-row',
-									table,
-									rowId: id,
-								},
-							);
-							return current === undefined
-								? Ok(undefined)
-								: lens.project(table, id, current);
-						},
-						async delete(id: string) {
-							const current = await request<JsonObject | undefined>(
-								definition.id,
-								{
-									kind: 'read-current-row',
-									table,
-									rowId: id,
-								},
-							);
-							if (current === undefined) return;
-							await admit(definition.id, {
-								kind: 'delete',
-								table,
-								rowId: id,
-							});
-							documents.revoke([{ table, rowId: id }]);
-							invalidationChannel?.postMessage({
-								type: 'rows-deleted',
-								workspaceId: definition.id,
-								addresses: [{ table, rowId: id }],
-							} satisfies DesktopInvalidationMessage);
-						},
-						document: Object.freeze({
-							open(rowId: string) {
-								return documents.open(table, rowId);
-							},
-						}),
-					}),
-				];
-			}),
-		) as unknown as WorkspaceTables<DefinitionTables<TDefinition>>;
-
-		const kvLens = compileKvLens(definition.kv);
-		function requireKv(key: string) {
-			const compiled = kvLens.get(key);
-			if (!compiled) throw new Error(`Unknown kv key '${key}'`);
-			return compiled;
-		}
-		async function readKvMap(): Promise<JsonObject> {
-			return request(definition.id, { kind: 'kv-read-map' });
-		}
-		const kv = Object.freeze({
-			async get(key: string) {
-				requireKv(key);
-				const map = await readKvMap();
-				if (!Object.hasOwn(map, key)) return Ok(undefined);
-				const raw = map[key] as JsonValue;
-				if (!requireKv(key).check(raw)) {
-					return KvReadError.NonconformingKvValue({ key, raw });
-				}
-				return Ok(structuredClone(raw));
-			},
-			async set(key: string, value: unknown) {
-				if (!requireKv(key).check(value)) {
-					return KvWriteError.InvalidKvWrite({
-						key,
-						reason: 'value does not satisfy the declared schema',
-					});
-				}
-				await admit(definition.id, {
-					kind: 'update',
-					table: RESERVED_KV_TABLE,
-					rowId: RESERVED_KV_ROW_ID,
-					fields: {
-						set: { [key]: structuredClone(value) as never },
-						unset: [],
-					},
+					rowId,
 				});
-				return Ok(undefined);
 			},
-			async unset(key: string) {
-				requireKv(key);
-				await admit(definition.id, {
-					kind: 'update',
-					table: RESERVED_KV_TABLE,
-					rowId: RESERVED_KV_ROW_ID,
-					fields: { set: {}, unset: [key] },
-				});
+			list(table) {
+				return request(definition.id, { kind: 'list-current-rows', table });
+			},
+			readKvMap() {
+				return request(definition.id, { kind: 'kv-read-map' });
+			},
+			admit(intent) {
+				return request(definition.id, { kind: 'admit-intent', intent });
+			},
+			sql(query, parameters) {
+				return request(definition.id, { kind: 'sql', query, parameters });
+			},
+			openDocument(table, rowId) {
+				return documents.open(table, rowId);
+			},
+			sync: null,
+			afterDelete({ table, rowId }) {
+				documents.revoke([{ table, rowId }]);
+				invalidationChannel?.postMessage({
+					type: 'rows-deleted',
+					workspaceId: definition.id,
+					addresses: [{ table, rowId }],
+				} satisfies DesktopInvalidationMessage);
 			},
 		});
-
-		return Object.freeze({
-			id: definition.id,
-			tables,
-			kv: kv as never,
-			async sql<TResultSchema extends TSchema>(
-				query: string,
-				parameters: readonly SqliteValue[],
-				resultSchema: TResultSchema,
-			): Promise<Static<TResultSchema>[]> {
-				const rows = await request<unknown[]>(definition.id, {
-					kind: 'sql',
-					query,
-					parameters,
-				});
-				for (const [index, row] of rows.entries()) {
-					if (!Value.Check(resultSchema, row)) {
-						throw new TypeError(
-							`Desktop SQL row ${index} does not satisfy the result schema`,
-						);
-					}
-				}
-				return rows as Static<TResultSchema>[];
-			},
-		}) as unknown as Workspace<TDefinition>;
-	}
-
-	async function admit(
-		workspaceId: string,
-		intent: WireRowIntent,
-	): Promise<void> {
-		await request<void>(workspaceId, { kind: 'admit-intent', intent });
 	}
 
 	return Object.freeze({
