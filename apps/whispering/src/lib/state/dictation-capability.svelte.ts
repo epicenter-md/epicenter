@@ -1,3 +1,4 @@
+import { onMount } from 'svelte';
 import { tauri } from '#platform/tauri';
 import type { DictationCapability } from '$lib/tauri/commands.types';
 
@@ -19,13 +20,12 @@ type DictationCapabilityOverride =
  * it seeds the value once and then tracks the pushed event. The macOS notice and
  * the guide dialog both READ this single value.
  *
- * Off the desktop build there is no Rust tap and no gate, so `attach()` is a
+ * Off the desktop build there is no Rust tap and no gate, so `track()` is a
  * no-op and the value stays `unknown`; the browser build handles shortcuts with
  * in-app keydown and never mounts the macOS surfaces.
  */
 function createDictationCapability() {
 	let status = $state<DictationCapability>('unknown');
-	let detached = false;
 
 	// Dev-only override to exercise the notice/guide on any build (including web
 	// dev, where the real value is always `unknown`) without touching System
@@ -77,31 +77,36 @@ function createDictationCapability() {
 		},
 
 		/**
-		 * Seed the value from Rust and subscribe to changes. Returns a cleanup that
-		 * removes the subscription. Call once from the desktop runtime owners. The
-		 * seed is applied only while we are still `unknown`, so an event that lands
-		 * before the seed resolves is never clobbered by the stale seed.
+		 * Seed the value from Rust and subscribe to changes for the mounting
+		 * component's lifetime. Call once during `AppEffects` initialization; a
+		 * no-op off the desktop build. The seed is applied only while we are still
+		 * `unknown`, so an event that lands before the seed resolves is never
+		 * clobbered by the stale seed. The detach flag is per invocation, so a
+		 * late-resolving subscription from an unmounted lifetime can never leak
+		 * into or clobber a newer one.
 		 */
-		attach(): () => void {
-			if (!tauri) return () => {};
-			detached = false;
+		track(): void {
+			if (!tauri) return;
 			const t = tauri;
-			let unlisten: (() => void) | undefined;
-			void t.keyboard.getDictationCapability().then((capability) => {
-				if (!detached && status === 'unknown') status = capability;
-			});
-			void t.keyboard
-				.onDictationCapabilityChanged((capability) => {
-					status = capability;
-				})
-				.then((fn) => {
-					if (detached) fn();
-					else unlisten = fn;
+			onMount(() => {
+				let detached = false;
+				let unlisten: (() => void) | undefined;
+				void t.keyboard.getDictationCapability().then((capability) => {
+					if (!detached && status === 'unknown') status = capability;
 				});
-			return () => {
-				detached = true;
-				unlisten?.();
-			};
+				void t.keyboard
+					.onDictationCapabilityChanged((capability) => {
+						if (!detached) status = capability;
+					})
+					.then((fn) => {
+						if (detached) fn();
+						else unlisten = fn;
+					});
+				return () => {
+					detached = true;
+					unlisten?.();
+				};
+			});
 		},
 	};
 }

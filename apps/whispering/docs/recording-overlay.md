@@ -30,10 +30,11 @@ into Rust would split the source of truth, so we keep it in the main window.
   in-page pill on web.
 - **Tauri overlay** (`src/lib/recording-overlay/`): owns only the secondary-window
   event protocol and desktop mic-level transport. On desktop,
-  the Tauri implementation of `#platform/recording-overlay-owner` projects the
-  lifecycle, synchronizes the separate overlay window, and listens for overlay
-  actions and reveal requests. The browser implementation exports no runtime
-  owner because its pill is mounted directly in the app layout.
+  the Tauri implementation of `#platform/recording-overlay`
+  (`installRecordingOverlay`) projects the lifecycle, synchronizes the separate
+  overlay window, and listens for overlay actions and reveal requests. The
+  browser implementation exports `null` because its pill is mounted directly in
+  the app layout.
 - **Protocol** (`src/lib/recording-overlay/events.ts`): binds the shared pill
   model to Tauri event channels. The main window pushes a `status` to the overlay;
   the overlay pushes `action` (stop/cancel) and a `ready` handshake back. Actions

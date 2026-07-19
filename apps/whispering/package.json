@@ -45,9 +45,9 @@
 			"tauri": "./src/lib/recording-overlay/mic-level.tauri.ts",
 			"default": "./src/lib/recording-pill/mic-level.browser.ts"
 		},
-		"#platform/recording-overlay-owner": {
-			"tauri": "./src/routes/(app)/_runtime/attach-recording-overlay.tauri.svelte.ts",
-			"default": "./src/routes/(app)/_runtime/attach-recording-overlay.browser.ts"
+		"#platform/recording-overlay": {
+			"tauri": "./src/routes/(app)/_app-effects/install-recording-overlay.tauri.svelte.ts",
+			"default": "./src/routes/(app)/_app-effects/install-recording-overlay.browser.ts"
 		},
 		"#platform/text": {
 			"tauri": "./src/lib/services/text/index.tauri.ts",

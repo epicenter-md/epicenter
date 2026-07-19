@@ -2,7 +2,7 @@
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import { MediaQuery } from 'svelte/reactivity';
 	import { tauri } from '#platform/tauri';
-	import AppRuntime from './_components/AppRuntime.svelte';
+	import AppEffects from './_components/AppEffects.svelte';
 	import BottomNav from './_components/BottomNav.svelte';
 	import ContentShell from './_components/ContentShell.svelte';
 	import GlobalDialogs from './_components/GlobalDialogs.svelte';
@@ -19,11 +19,11 @@
 
 <!--
 	The (app) route layout is the session root. It mounts once and persists
-	across navigation and across the responsive branch below, so AppRuntime and
+	across navigation and across the responsive branch below, so AppEffects and
 	GlobalDialogs (rendered outside the {#if}) start exactly once per launch. Only
 	the nav chrome and ContentShell swap on a breakpoint change.
 -->
-<AppRuntime />
+<AppEffects />
 
 {#if isNarrow.current}
 	<div class="flex h-full min-h-svh flex-col">

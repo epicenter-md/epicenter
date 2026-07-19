@@ -8,12 +8,14 @@ import { deviceConfig } from '$lib/state/device-config.svelte';
  * throttle exactly when idle-eviction must fire to reclaim RAM). This is the
  * only transcription setting still pushed to Rust: everything else travels with
  * each transcribe call as a per-call `TranscriptionSpec`, so it cannot go stale.
+ * Desktop only: the browser build registers nothing.
  */
-export function attachUnloadPolicy() {
-	$effect(() => {
-		if (!tauri) return;
+export function synchronizeUnloadPolicy(): void {
+	if (!tauri) return;
+	const t = tauri;
 
-		void tauri.transcription
+	$effect(() => {
+		void t.transcription
 			.setUnloadPolicy(deviceConfig.get('transcription.localModelUnloadPolicy'))
 			.catch((cause) => {
 				report.error({
@@ -22,6 +24,4 @@ export function attachUnloadPolicy() {
 				});
 			});
 	});
-
-	return () => {};
 }

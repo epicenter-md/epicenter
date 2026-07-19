@@ -19,7 +19,7 @@ import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
  * warnings for a revoked or stale Accessibility grant are a different,
  * present-tense path and are untouched.
  */
-export function attachDictationExceptions() {
+export function notifyDictationFailures(): void {
 	// The failure's error object is stable for the life of one failure, so it is
 	// the identity that gates "have I already notified for this one". Each new
 	// failure mints a new error, so it notifies once.
@@ -43,6 +43,4 @@ export function attachDictationExceptions() {
 		// not a failure, and never reaches this projection.
 		osNotify(DICTATION_FAILURE_LABEL[outcome.tier], outcome.error.message);
 	});
-
-	return () => {};
 }

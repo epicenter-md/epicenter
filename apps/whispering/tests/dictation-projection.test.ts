@@ -1,9 +1,9 @@
 /**
  * Dictation Pill Projection Tests
  *
- * Locks the pure lifecycle projection shared by the browser host and Tauri
- * runtime owner. A live VAD meter remains primary, with speaking and prior
- * transcription represented as independent signals.
+ * Locks the pure lifecycle projection shared by the browser host and the
+ * Tauri overlay effect. A live VAD meter remains primary, with speaking and
+ * prior transcription represented as independent signals.
  *
  * Key behaviors:
  * - Idle lifecycle hides the pill

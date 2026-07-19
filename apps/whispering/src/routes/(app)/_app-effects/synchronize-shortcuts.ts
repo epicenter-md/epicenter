@@ -1,3 +1,4 @@
+import { onMount } from 'svelte';
 import { tauri } from '#platform/tauri';
 import { shortcuts } from '$lib/platform/shortcuts';
 
@@ -8,12 +9,15 @@ import { shortcuts } from '$lib/platform/shortcuts';
  * what makes in-app shortcuts work on desktop) and, on desktop, the global
  * bindings onto the plugin chords, whose own callbacks dispatch into the command
  * layer. On web the router has no system backend, so only the focused matcher is
- * pushed. Cleanup unregisters the desktop plugin chords. The in-app keydown
- * listener is owned by its own runtime owner (`attachLocalShortcutListener`).
+ * pushed. Each backend reports its own sync failure, so the promise is
+ * fire-and-forget here. Unmount unregisters the desktop plugin chords. The
+ * in-app keydown listener is owned by `listenForLocalShortcuts`.
  */
-export function attachShortcutSync() {
-	void shortcuts.sync();
-	return () => {
-		void tauri?.keyboard.unregisterChords();
-	};
+export function synchronizeShortcuts(): void {
+	onMount(() => {
+		void shortcuts.sync();
+		return () => {
+			void tauri?.keyboard.unregisterChords();
+		};
+	});
 }

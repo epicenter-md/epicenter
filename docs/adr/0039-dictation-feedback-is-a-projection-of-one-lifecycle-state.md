@@ -128,9 +128,9 @@ durable log and the home of retry.
   removed from the dictation flow, replaced by the OS notification plus the
   recordings row, which already owns retry.
 - The browser stops being a second model. `RecordingPillHost` reads the shared
-  lifecycle directly and mounts the shared pill; only the Tauri runtime owner
-  synchronizes a projected status through `recording-overlay/` transport into a
-  separate webview. Desktop and web are identical by construction rather than
+  lifecycle directly and mounts the shared pill; only the Tauri build's overlay
+  effect synchronizes a projected status through `recording-overlay/` transport
+  into a separate webview. Desktop and web are identical by construction rather than
   kept in sync by discipline.
 - One value has one set of consumers, so "what is my dictation doing" and "what
   failed" each have exactly one home (the pill, the recordings list). Toasts stop
