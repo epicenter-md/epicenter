@@ -6,6 +6,7 @@
  */
 
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { getProfileVia } from '@epicenter/auth';
 import { type BlobId, type BlobRemote, parseBlobId } from '@epicenter/blobs';
 import type { BunBlobStore } from '@epicenter/blobs/bun';
 import type { AgentToolDefinition } from '@epicenter/workspace/agent';
@@ -14,7 +15,6 @@ import { DesktopWorkspaceError } from '@epicenter/workspace/sqlite/desktop-owner
 import { type Context, Hono, type Next } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
 import { getCookie, setCookie } from 'hono/cookie';
-import { getProfileVia } from '@epicenter/auth';
 import { Ok } from 'wellcrafted/result';
 import type { DesktopAuthAuthority } from './desktop-auth-authority.ts';
 import { createDesktopAuthorityFetch } from './desktop-authority-fetch.ts';

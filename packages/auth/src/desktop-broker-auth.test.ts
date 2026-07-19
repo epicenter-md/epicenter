@@ -130,7 +130,10 @@ test('openWebSocket is denied permanently', async () => {
 
 	expect(
 		auth.openWebSocket('wss://api.epicenter.so/rooms'),
-	).rejects.toMatchObject({ permanence: 'permanent', code: 'auth-unavailable' });
+	).rejects.toMatchObject({
+		permanence: 'permanent',
+		code: 'auth-unavailable',
+	});
 });
 
 test('the self-hosted deployment projects its boot connection status', () => {

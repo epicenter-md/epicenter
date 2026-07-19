@@ -419,7 +419,6 @@ function stubBunStore(overrides: Partial<BunRemoteStore> = {}): BunRemoteStore {
 }
 
 function stubLocalStore(overrides: Partial<BlobStore> = {}): BlobStore {
-
 	return {
 		put: async () => Ok(undefined),
 		get: async (id) => BlobStoreError.BlobNotFound({ id }),
