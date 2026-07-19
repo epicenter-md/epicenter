@@ -383,37 +383,37 @@ new public APIs as selectable modes.
 - [x] Add same-ID, different-lens tests covering reads, patches, KV, documents,
   synchronization identity, view memoization, and one runtime-owned lifetime.
 - [x] Replace rejection tests with read-time nonconformance tests.
-  > **Note**: These completed Wave B items cover the core/Bun runtime. Browser
-  > and desktop retain their explicit lens-conflict assertions until their
-  > transport-specific cutovers in Waves C and D.
-- [ ] Migrate every application and script import.
-- [ ] Delete old exported names and equality assertions without aliases.
+- [x] Migrate every application and script import.
+- [x] Delete old exported names and equality assertions without aliases.
 
 ### Wave C: make browser transport schema-opaque
 
-- [ ] Replace `BrowserWorkspaceManifest` lens fields with Workspace ID and raw
+- [x] Replace `BrowserWorkspaceManifest` lens fields with Workspace ID and raw
   runtime configuration only.
-- [ ] Move table, KV, and SQL-result validation into `browser-runtime.ts`.
-- [ ] Make `browser-runtime-worker.ts` own only OPFS, raw commands,
-  synchronization, and documents.
-- [ ] Stop sending serialized table and KV lenses.
-- [ ] Verify Worker restart, two views over one ID, sync settlement, document
+- [x] Move table, KV, and SQL-result validation into the page realm.
+  > **Note**: Browser and desktop now share the package-local
+  > `createAsyncWorkspaceView` composer, so lens behavior has one owner while
+  > request transport and document lifecycle remain environment-specific.
+- [x] Make `browser-runtime-worker.ts` own only OPFS, raw commands, and scalar
+  synchronization; keep the one ID-owned row-document runtime in the page.
+- [x] Stop sending serialized table and KV lenses.
+- [x] Verify Worker restart, two views over one ID, sync settlement, document
   revocation, capture, add, and delete.
-- [ ] Delete `serializeTableLenses`, Worker definition reconstruction, manifest
+- [x] Delete `serializeTableLenses`, Worker definition reconstruction, manifest
   equality, and the Worker lens-conflict error.
 
 ### Wave D: make desktop transport schema-opaque
 
-- [ ] Replace `openDesktopWorkspaceOwner({ definitions })` with a raw owner plus
+- [x] Replace `openDesktopWorkspaceOwner({ definitions })` with a raw owner plus
   the derived static Workspace ID allowlist.
-- [ ] Move table, KV, and SQL-result validation into `desktop-runtime.ts` in the
-  webview realm.
-- [ ] Make desktop operations carry raw addresses and bounded JSON only.
-- [ ] Stop importing application lenses from
+- [x] Move table, KV, and SQL-result validation into the desktop page realm via
+  the shared asynchronous lens composer.
+- [x] Make desktop operations carry raw addresses and bounded JSON only.
+- [x] Stop importing application lenses from
   `apps/epicenter/src/workspace-owner.ts`.
-- [ ] Verify same-origin windows share one SQLite owner and different lenses
+- [x] Verify same-origin windows share one SQLite owner and different lenses
   can coexist.
-- [ ] Delete the definition catalog, desktop definition conflict assertion,
+- [x] Delete the definition catalog, desktop definition conflict assertion,
   and server-side typed handles.
 
 ### Wave E: replace lens-shaped SQL views
@@ -423,21 +423,18 @@ new public APIs as selectable modes.
   > TEMP views on a shared connection made Wave A/B behavior depend on which
   > lens queried first. `CanonicalStore` now owns the schema-opaque relation
   > and raw SQL execution; typed views only validate returned rows.
-- [ ] Route browser and desktop SQL calls as raw text, parameters, and rows.
-- [ ] Validate result rows in the calling JavaScript realm.
+- [x] Route browser and desktop SQL calls as raw text, parameters, and rows.
+- [x] Validate result rows in the calling JavaScript realm.
 - [x] Rewrite the current test-only callers against `records`.
   > **Note**: Core runtime, Skills, Whispering, and the browser example now use
   > `records`. The desktop `UPDATE skills` assertion remains intentionally: it
   > proves that non-SELECT statements are refused and does not depend on a
   > lens-shaped relation.
-- [ ] Verify private table access, writes, DDL, attachment, and mutating pragmas
+- [x] Verify private table access, writes, DDL, attachment, and mutating pragmas
   remain refused.
-- [ ] Delete per-table view generation, safe view-name machinery that no other
+- [x] Delete per-table view generation, safe view-name machinery that no other
   feature uses, result-schema serialization, and every
   `__epicenter_projection_` name.
-  > **Note**: Core per-table view generation and every projection name are
-  > deleted. Browser result-schema serialization remains for Wave C, so this
-  > combined item stays unchecked.
 
 ### Wave F: derive installed-app workspace inventory
 

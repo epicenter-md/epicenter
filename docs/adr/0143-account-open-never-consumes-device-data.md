@@ -3,6 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-07-17
 - **Supersedes:** [ADR-0139](0139-account-runtime-open-adds-device-state-through-native-intents.md)
+- **Amended by:** [ADR-0156](0156-applications-bring-workspace-lenses-runtimes-own-workspaces-by-id.md), which makes these lifecycle operations take a Workspace ID rather than an application lens.
 
 ## Context
 
@@ -36,9 +37,9 @@ Keep
 Browser and Bun runtimes expose the same owner-specific verbs:
 
 ```ts
-const copy = await device.capture(definition);
-await account.add(definition, copy);
-await device.delete(definition);
+const copy = await device.capture(workspaceId);
+await account.add(workspaceId, copy);
+await device.delete(workspaceId);
 
 // Keep performs no call.
 ```
