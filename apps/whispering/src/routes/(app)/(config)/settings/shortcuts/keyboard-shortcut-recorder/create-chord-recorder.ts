@@ -137,10 +137,7 @@ export function createChordRecorder({
 }
 
 /** Trailing-edge debounce with a cancel for teardown; last call's args win. */
-function debounce(
-	fn: () => void,
-	ms: number,
-): { (): void; cancel(): void } {
+function debounce(fn: () => void, ms: number): { (): void; cancel(): void } {
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	function debounced(): void {
 		if (timer !== undefined) clearTimeout(timer);

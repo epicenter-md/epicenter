@@ -91,6 +91,11 @@ export {
 // its own boot validation and resolves through `resolveAuthSecrets` (ADR-0076).
 export { CloudAuthBindings, mountCloudAuth } from './mount-cloud-auth.js';
 export { mountCloudDb } from './mount-cloud-db.js';
+// Reusable surfaces. Each `mount*` bundles auth + the route mount, accepting
+// only the deployment-controlled knobs (auth choice, optional policies). The
+// cloud's Better Auth surface (sessions, OAuth, `c.var.auth`) is bundled into
+// `mountCloudAuth`; an instance composes none of it (ADR-0075).
+export { blobPrincipalPrefix } from './principal.js';
 export {
 	CurrentStateRowAuthorityDurableObject,
 	createDurableObjectAccountAuthorities,
@@ -108,11 +113,6 @@ export { Room } from './room/backends/cloudflare/durable-object.js';
 // its own pool instead (the `@epicenter/server/bun` barrel omits both of these,
 // since their modules name Cloudflare bindings).
 export { createDurableObjectRooms } from './room/backends/cloudflare/registry.js';
-// Reusable surfaces. Each `mount*` bundles auth + the route mount, accepting
-// only the deployment-controlled knobs (auth choice, optional policies). The
-// cloud's Better Auth surface (sessions, OAuth, `c.var.auth`) is bundled into
-// `mountCloudAuth`; an instance composes none of it (ADR-0075).
-export { blobPrincipalPrefix } from './principal.js';
 export { mountBlobsApp, resolveDeploymentBlobStore } from './routes/blobs.js';
 export {
 	type AdmitFirstContact,

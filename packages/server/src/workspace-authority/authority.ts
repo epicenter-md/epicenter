@@ -660,7 +660,8 @@ function createWorkspaceAuthorityDocumentStore(
 					);
 
 					if (
-						nextSequence >= AUTHORITY_DOCUMENT_COMPACTION.updatesBeforeCompaction ||
+						nextSequence >=
+							AUTHORITY_DOCUMENT_COMPACTION.updatesBeforeCompaction ||
 						(stats?.bytes ?? 0) + candidate.byteLength >=
 							AUTHORITY_DOCUMENT_COMPACTION.updateBytesBeforeCompaction
 					) {
@@ -1019,4 +1020,3 @@ export function openAccountRowAuthority({
 		},
 	};
 }
-

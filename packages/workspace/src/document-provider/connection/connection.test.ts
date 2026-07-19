@@ -463,7 +463,6 @@ function socketHandshake(socket: FakeSocket, server: Y.Doc, doc: Y.Doc): void {
 	});
 }
 
-
 function flush(): Promise<void> {
 	return new Promise((resolve) => queueMicrotask(resolve));
 }

@@ -123,7 +123,10 @@ describe('provider-owned row document runtime', () => {
 		const fixture = setup();
 		fixture.store.resolveLoad(noteA);
 
-		await fixture.runtime.importUpdate(noteA, createUpdate('content', 'imported'));
+		await fixture.runtime.importUpdate(
+			noteA,
+			createUpdate('content', 'imported'),
+		);
 
 		// The import is persistence-only: no network connection was opened and
 		// the transient store lease was disposed once the bytes were durable.
@@ -144,7 +147,10 @@ describe('provider-owned row document runtime', () => {
 		fixture.store.resolveLoad(noteA);
 		using document = await opening;
 
-		await fixture.runtime.importUpdate(noteA, createUpdate('content', 'imported'));
+		await fixture.runtime.importUpdate(
+			noteA,
+			createUpdate('content', 'imported'),
+		);
 
 		expect(document.get('content').toString()).toBe('imported');
 		expect(fixture.store.attaches).toBe(1);

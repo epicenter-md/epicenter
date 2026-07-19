@@ -74,10 +74,7 @@ const REMOTE_ENTRIES = TRANSCRIPTION_PROVIDERS.filter(
 );
 
 /** A committed remote provider -> its one switcher leaf. */
-function toRemoteLeaf(
-	app: WhisperingApp,
-	entry: RemoteEntry,
-): SwitcherLeaf {
+function toRemoteLeaf(app: WhisperingApp, entry: RemoteEntry): SwitcherLeaf {
 	const base = {
 		key: entry.id,
 		providerId: entry.id,
@@ -125,10 +122,7 @@ function toRemoteLeaf(
 }
 
 /** A downloaded on-device GGUF -> its one switcher leaf. */
-function toLocalLeaf(
-	app: WhisperingApp,
-	model: ModelInfo,
-): SwitcherLeaf {
+function toLocalLeaf(app: WhisperingApp, model: ModelInfo): SwitcherLeaf {
 	return {
 		key: model.id,
 		providerId: 'local',

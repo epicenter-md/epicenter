@@ -51,28 +51,28 @@ import { API_BUN_DEV_PORT } from '@epicenter/constants/apps';
 import {
 	CloudAuthBindings,
 	type CloudEnv,
-	createBunRooms,
 	createBunAccountAuthorityRuntime,
+	createBunRooms,
 	createDb,
 	createServerApp,
 	listStorageObservations,
+	mergeBunWebSocketHandlers,
 	mountBlobsApp,
 	mountCloudAuth,
 	mountCloudDb,
 	mountCurrentStateRecordsApp,
-	mountWorkspaceDocumentsApp,
 	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
+	mountWorkspaceDocumentsApp,
 	type ResolveBearerPrincipal,
+	type ResolveDocumentPrincipal,
 	requireBearerPrincipal,
 	requireCookieOrBearerPrincipal,
-	resolveRequestOAuthPrincipal,
 	resolveRequestOAuthDocumentAuthorization,
-	withDocumentAuthorizationDeadline,
-	mergeBunWebSocketHandlers,
-	type ResolveDocumentPrincipal,
+	resolveRequestOAuthPrincipal,
 	ServerBindings,
+	withDocumentAuthorizationDeadline,
 } from '@epicenter/server/bun';
 import { type } from 'arktype';
 import pg from 'pg';
@@ -220,7 +220,8 @@ export function startBunApiServer(
 		admitFirstContact: (c, { principalId, workspaceId }) =>
 			admitRegisteredStorageFirstContact(
 				{
-					listObservations: () => listStorageObservations(c.var.db, principalId),
+					listObservations: () =>
+						listStorageObservations(c.var.db, principalId),
 				},
 				{ principalId, workspaceId },
 			),

@@ -11,10 +11,7 @@
 
 import { expect, test } from 'bun:test';
 import { asPrincipalId } from '@epicenter/identity';
-import {
-	type AccountDeletionStep,
-	runAccountDeletion,
-} from './service.js';
+import { type AccountDeletionStep, runAccountDeletion } from './service.js';
 
 const alice = asPrincipalId('alice');
 

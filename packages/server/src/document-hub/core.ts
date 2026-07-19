@@ -169,4 +169,3 @@ function tryClose(
 		// The connection is already gone; transport cleanup is best effort.
 	}
 }
-

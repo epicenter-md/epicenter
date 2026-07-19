@@ -381,7 +381,9 @@ test('first authority open deletes legacy authority tables', async () => {
 
 		const reopened = createBunAccountAuthorityRuntime({ dir: context.dir });
 		try {
-			await reopened.authorities.authority(alice).hasReplica(WORKSPACE, rid(100));
+			await reopened.authorities
+				.authority(alice)
+				.hasReplica(WORKSPACE, rid(100));
 		} finally {
 			reopened.close();
 		}
