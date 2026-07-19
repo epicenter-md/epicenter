@@ -13,7 +13,7 @@
  * auth client (the persisted OAuth cell, or a configured instance token for a
  * self-hosted star); none route through the local daemon, unlike `run`. See
  * Blob references remain application-owned; the remote bucket is only an
- * optional byte replica.
+ * explicit same-id remote copy.
  *
  * Exit codes: 1 for a local problem (auth, reading a source file), 2 when the
  * cloud round-trip itself fails.

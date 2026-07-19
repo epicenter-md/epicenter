@@ -28,7 +28,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { type BlobId, generateBlobId } from './blob-id.js';
-import { createBunBlobs } from './bun.js';
+import { createBunBlobStore } from './bun.js';
 
 const testDirectories: string[] = [];
 
@@ -43,7 +43,7 @@ afterEach(async () => {
 async function setup() {
 	const directory = await mkdtemp(join(tmpdir(), 'epicenter-bun-blobs-'));
 	testDirectories.push(directory);
-	return { blobs: createBunBlobs({ directory }), directory };
+	return { blobs: createBunBlobStore({ directory }), directory };
 }
 
 async function pathExists(path: string): Promise<boolean> {
@@ -76,7 +76,7 @@ async function setupHostilePathTarget() {
 		JSON.stringify({ contentType: 'text/plain', size: 13 }),
 	);
 	return {
-		blobs: createBunBlobs({ directory }),
+		blobs: createBunBlobStore({ directory }),
 		directory,
 		outside,
 		hostileId: '../outside' as BlobId,

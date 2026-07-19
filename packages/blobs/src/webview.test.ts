@@ -19,7 +19,7 @@ import { expectErr, expectOk } from 'wellcrafted/testing';
 import { generateBlobId } from './blob-id.js';
 import {
 	createWebviewBlobSources,
-	createWebviewBlobs,
+	createWebviewBlobStore,
 	desktopBlobUrl,
 } from './webview.js';
 
@@ -38,7 +38,7 @@ function setup(responses: Response[]) {
 		return response;
 	};
 	return {
-		blobs: createWebviewBlobs({ fetch: fetcher }),
+		blobs: createWebviewBlobStore({ fetch: fetcher }),
 		requestInits,
 		requests,
 	};

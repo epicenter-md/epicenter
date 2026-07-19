@@ -3,7 +3,7 @@
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import type { BlobId } from './blob-id.js';
 import type { BlobSources } from './blob-source.js';
-import { BlobStoreError, type Blobs } from './blobs.js';
+import { type BlobStore, BlobStoreError } from './blob-store.js';
 
 /** The desktop host path shared by its server and WebView adapter. */
 export const LOCAL_BLOB_PATH = '/api/local-blobs';
@@ -23,11 +23,11 @@ export function desktopBlobUrl(id: BlobId): string {
  * Relative URLs deliberately preserve the active loopback origin and its
  * HttpOnly session cookie.
  */
-export function createWebviewBlobs({
+export function createWebviewBlobStore({
 	fetch: fetcher = globalThis.fetch,
 }: {
 	fetch?: HttpFetch;
-} = {}): Blobs {
+} = {}): BlobStore {
 	async function request(id: BlobId, init: RequestInit) {
 		return tryAsync({
 			try: () =>
@@ -130,11 +130,11 @@ export function createWebviewBlobs({
  * something.
  */
 export function createWebviewBlobSources(
-	blobs: Pick<Blobs, 'stat'>,
+	local: Pick<BlobStore, 'stat'>,
 ): BlobSources {
 	return {
 		async open(id) {
-			const { error } = await blobs.stat(id);
+			const { error } = await local.stat(id);
 			if (error !== null) return Err(error);
 			return Ok({ url: desktopBlobUrl(id), [Symbol.dispose]() {} });
 		},

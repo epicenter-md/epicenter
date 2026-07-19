@@ -34,7 +34,7 @@ app.settings.set('recording.trigger', 'vad');
 
 ### `recordings.svelte.ts`
 
-Recording metadata backed by structural workspace row ids. The application namespace maintains the cache and refreshes after local writes or installed remote record changes; this module only makes its reads reactive. Audio blobs remain separate and are addressed by each row's `audioBlobId`.
+Recording metadata backed by structural workspace row ids. The application namespace maintains the cache and refreshes after local writes or installed remote record changes; this module only makes its reads reactive. Audio blobs remain separate and are addressed by each row's `audioBlobId`; use `$lib/rpc/audio` for playback URLs and `services.blobs.local` for raw blob access.
 
 ```typescript
 import { InstantString } from '@epicenter/field';

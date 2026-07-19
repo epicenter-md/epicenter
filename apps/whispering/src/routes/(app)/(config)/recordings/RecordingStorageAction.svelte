@@ -5,7 +5,6 @@
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { resultMutationOptions } from 'wellcrafted/query';
-	import { auth } from '#platform/auth';
 	import {
 		downloadRecordingAudio,
 		removeLocalRecordingAudio,
@@ -24,10 +23,7 @@
 	const availability = createQuery(
 		() => app.rpc.audio.availability(() => recording).options,
 	);
-	const canUseReplica = $derived(
-		services.blobReplica !== null && auth.state.status === 'signed-in',
-	);
-	const hasReplica = services.blobReplica !== null;
+	const canUseRemote = $derived(services.blobs.remote !== null);
 
 	async function invalidateAvailability() {
 		await queryClient.invalidateQueries({
@@ -62,12 +58,12 @@
 
 </script>
 
-{#if hasReplica && availability.data === 'local-only'}
+{#if availability.data === 'local-only'}
 	<Button
 		variant="outline"
 		size="icon-sm"
-		tooltip={canUseReplica ? 'Upload audio' : 'Sign in to upload audio'}
-		disabled={!canUseReplica || pending}
+		tooltip={canUseRemote ? 'Upload audio' : 'Online audio storage unavailable'}
+		disabled={!canUseRemote || pending}
 		onclick={() =>
 			upload.mutate(undefined, {
 				onSuccess: () => report.success({ title: 'Audio uploaded' }),
@@ -77,12 +73,14 @@
 	>
 		<CloudUploadIcon class="size-4" />
 	</Button>
-{:else if hasReplica && availability.data === 'remote-only'}
+{:else if availability.data === 'remote-only'}
 	<Button
 		variant="outline"
 		size="icon-sm"
-		tooltip={canUseReplica ? 'Download audio' : 'Sign in to download audio'}
-		disabled={!canUseReplica || pending}
+		tooltip={canUseRemote
+			? 'Download audio'
+			: 'Online audio storage unavailable'}
+		disabled={!canUseRemote || pending}
 		onclick={() =>
 			download.mutate(undefined, {
 				onSuccess: () => report.success({ title: 'Audio downloaded' }),
@@ -92,12 +90,12 @@
 	>
 		<CloudDownloadIcon class="size-4" />
 	</Button>
-{:else if hasReplica && availability.data === 'local-and-remote'}
+{:else if availability.data === 'local-and-remote'}
 	<Button
 		variant="outline"
 		size="icon-sm"
 		tooltip="Remove audio from this device"
-		disabled={pending}
+		disabled={!canUseRemote || pending}
 		onclick={() =>
 			removeLocal.mutate(undefined, {
 				onSuccess: () => report.success({ title: 'Local audio removed' }),

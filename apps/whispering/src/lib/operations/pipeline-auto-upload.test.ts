@@ -63,7 +63,7 @@ mock.module('$lib/report', () => ({
 	},
 }));
 mock.module('$lib/services', () => ({
-	services: { blobs: { delete: deleteBlob } },
+	services: { blobs: { local: { delete: deleteBlob } } },
 }));
 mock.module('$lib/state/dictation-lifecycle.svelte', () => ({
 	dictationLifecycle: {

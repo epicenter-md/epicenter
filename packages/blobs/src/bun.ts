@@ -6,10 +6,10 @@ import {
 	type BlobAlreadyExists,
 	type BlobNotFound,
 	type BlobStat,
+	type BlobStore,
 	BlobStoreError,
 	type BlobStoreFailed,
-	type Blobs,
-} from './blobs.js';
+} from './blob-store.js';
 
 const DATA_FILE = 'data';
 const METADATA_FILE = 'metadata.json';
@@ -30,7 +30,7 @@ type PutData = Blob | Request;
  * into the global store. Readers therefore see either no object or both its
  * body and metadata, never a partially written object.
  */
-export function createBunBlobs({ directory }: { directory: string }) {
+export function createBunBlobStore({ directory }: { directory: string }) {
 	const stagingDirectory = join(
 		directory,
 		STAGING_DIRECTORY,
@@ -216,7 +216,7 @@ export function createBunBlobs({ directory }: { directory: string }) {
 				return BlobStoreError.BlobStoreFailed({ id, cause });
 			}
 		},
-	} satisfies Blobs & {
+	} satisfies BlobStore & {
 		putRequest(
 			id: BlobId,
 			request: Request,
@@ -225,7 +225,7 @@ export function createBunBlobs({ directory }: { directory: string }) {
 	};
 }
 
-export type BunBlobs = ReturnType<typeof createBunBlobs>;
+export type BunBlobStore = ReturnType<typeof createBunBlobStore>;
 
 function normalizeContentType(contentType: string): string {
 	const normalized = contentType.trim();

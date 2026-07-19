@@ -75,7 +75,6 @@ capabilities after their platform imports resolve:
 ```typescript
 import { AnalyticsServiceLive } from '#platform/analytics';
 import {
-	BlobReplicaLive,
 	BlobsLive,
 	BlobSourcesLive,
 } from '#platform/blobs';
@@ -86,7 +85,6 @@ export const services = {
 	analytics: AnalyticsServiceLive,
 	text: TextServiceLive,
 	blobs: BlobsLive,
-	blobReplica: BlobReplicaLive,
 	blobSources: BlobSourcesLive,
 	download: DownloadServiceLive,
 	localShortcutManager: LocalShortcutManagerLive,

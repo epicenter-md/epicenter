@@ -28,13 +28,8 @@ mock.module('$lib/report', () => ({
 
 mock.module('$lib/services', () => ({
 	services: {
-		blobs: { delete: mock() },
-		blobReplica: null,
+		blobs: { local: { delete: mock() }, remote: null },
 	},
-}));
-
-mock.module('#platform/auth', () => ({
-	auth: { state: { status: 'signed-out' } },
 }));
 
 const { deleteRecordings } = await import('../src/lib/operations/recordings');
@@ -54,7 +49,7 @@ test('blob deletion completes before its synced row is deleted', async () => {
 
 	const result = await deleteRecordings(app, recording, {
 		canPurgeRemote: () => false,
-		blobs: {
+		local: {
 			async delete(id) {
 				events.push(`blob:${id}`);
 				return Ok(undefined);
@@ -75,7 +70,7 @@ test('blob deletion failure preserves synced recording rows', async () => {
 
 	const result = await deleteRecordings(app, recording, {
 		canPurgeRemote: () => false,
-		blobs: {
+		local: {
 			async delete() {
 				return BlobStoreError.BlobStoreFailed({
 					id: recording.audioBlobId,
@@ -109,7 +104,7 @@ test('uploaded audio is purged and unmarked before local bytes and rows are dele
 				events.push('remote');
 				return Ok(undefined);
 			},
-			blobs: {
+			local: {
 				async delete() {
 					events.push('local');
 					return Ok(undefined);
@@ -136,7 +131,7 @@ test('a later failure reports the recordings already deleted', async () => {
 		await deleteRecordings(app, [recording, second], {
 			canPurgeRemote: () => true,
 			purgeRemote: async () => Ok(undefined),
-			blobs: {
+			local: {
 				async delete(id) {
 					events.push(`blob:${id}`);
 					return id === second.audioBlobId
@@ -165,7 +160,7 @@ test('a later failure reports the recordings already deleted', async () => {
 	]);
 });
 
-test('mixed deletion without a replica leaves every selected recording untouched', async () => {
+test('mixed deletion without a remote leaves every selected recording untouched', async () => {
 	const events: string[] = [];
 	const uploaded = {
 		...recording,
@@ -180,7 +175,7 @@ test('mixed deletion without a replica leaves every selected recording untouched
 				events.push('remote');
 				return Ok(undefined);
 			},
-			blobs: {
+			local: {
 				async delete() {
 					events.push('local');
 					return Ok(undefined);
@@ -192,6 +187,6 @@ test('mixed deletion without a replica leaves every selected recording untouched
 		}),
 	);
 
-	expect(error.name).toBe('ReplicaUnavailable');
+	expect(error.name).toBe('RemoteUnavailable');
 	expect(events).toEqual([]);
 });

@@ -230,7 +230,7 @@ async function loadForUpload(
 		});
 	}
 
-	return services.blobs.get(audioBlobId);
+	return services.blobs.local.get(audioBlobId);
 }
 
 /**

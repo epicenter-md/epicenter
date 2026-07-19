@@ -1,7 +1,7 @@
 import type {
-	BlobReplicaFailed,
+	BlobRemoteFailed,
+	BlobStore,
 	BlobStoreFailed,
-	Blobs,
 } from '@epicenter/blobs';
 import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 import {
@@ -14,11 +14,7 @@ import { report } from '$lib/report';
 import { services } from '$lib/services';
 import type { Recording } from '$lib/state/recordings.svelte';
 import type { WhisperingApp } from '$lib/whispering/context';
-import {
-	canUseRecordingAudioReplica,
-	purgeRecordingAudio,
-	RecordingAudioError,
-} from './recording-audio.js';
+import { purgeRecordingAudio, RecordingAudioError } from './recording-audio.js';
 
 export const RecordingDeletionError = defineErrors({
 	RowDeleteFailed: ({ cause }: { cause: unknown }) => ({
@@ -49,11 +45,11 @@ export const RecordingDeletionError = defineErrors({
 export type RecordingDeletionError = InferErrors<typeof RecordingDeletionError>;
 
 type RecordingDeletionDependencies = {
-	blobs: Pick<Blobs, 'delete'>;
+	local: Pick<BlobStore, 'delete'>;
 	canPurgeRemote(): boolean;
 	purgeRemote(
 		recording: Pick<Recording, 'id' | 'audioBlobId' | 'uploadedAt'>,
-	): Promise<Result<void, BlobReplicaFailed | RecordingAudioError>>;
+	): Promise<Result<void, BlobRemoteFailed | RecordingAudioError>>;
 	deleteRow(id: Recording['id']): Promise<void>;
 };
 
@@ -61,8 +57,8 @@ function liveDeletionDependencies(
 	app: WhisperingApp,
 ): RecordingDeletionDependencies {
 	return {
-		blobs: services.blobs,
-		canPurgeRemote: () => canUseRecordingAudioReplica(app),
+		local: services.blobs.local,
+		canPurgeRemote: () => services.blobs.remote !== null,
 		purgeRemote: (recording) => purgeRecordingAudio(app, recording),
 		deleteRow: (id) => app.recordings.delete(id),
 	};
@@ -71,7 +67,7 @@ function liveDeletionDependencies(
 /**
  * Delete recording blobs before their canonical records.
  *
- * Replica availability is preflighted for the whole selection. Each recording
+ * Remote availability is preflighted for the whole selection. Each recording
  * then commits sequentially: online copy, device copy, row. If a later item
  * fails, earlier rows are already truthfully gone and the typed error reports
  * the completed prefix.
@@ -86,7 +82,7 @@ export async function deleteRecordings(
 	Result<
 		void,
 		| BlobStoreFailed
-		| BlobReplicaFailed
+		| BlobRemoteFailed
 		| RecordingAudioError
 		| RecordingDeletionError
 	>
@@ -94,7 +90,7 @@ export async function deleteRecordings(
 	const selected = Array.isArray(toDelete) ? toDelete : [toDelete];
 	const firstUploaded = selected.find(({ uploadedAt }) => uploadedAt !== null);
 	if (firstUploaded && !dependencies.canPurgeRemote()) {
-		return RecordingAudioError.ReplicaUnavailable({
+		return RecordingAudioError.RemoteUnavailable({
 			recordingId: firstUploaded.id,
 		});
 	}
@@ -111,7 +107,7 @@ export async function deleteRecordings(
 				});
 			}
 		}
-		const { error } = await dependencies.blobs.delete(recording.audioBlobId);
+		const { error } = await dependencies.local.delete(recording.audioBlobId);
 		if (error !== null) {
 			return RecordingDeletionError.DeletionFailed({
 				recordingId: recording.id,

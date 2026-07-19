@@ -14,7 +14,7 @@ import { expect, test } from 'bun:test';
 import { indexedDB } from 'fake-indexeddb';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { generateBlobId } from './blob-id.js';
-import { createBrowserBlobSources, createBrowserBlobs } from './browser.js';
+import { createBrowserBlobSources, createBrowserBlobStore } from './browser.js';
 
 let databaseSequence = 0;
 
@@ -22,7 +22,7 @@ function setup() {
 	const databaseName = `epicenter-browser-blobs-test-${databaseSequence++}`;
 	return {
 		databaseName,
-		blobs: createBrowserBlobs({ databaseName, indexedDb: indexedDB }),
+		blobs: createBrowserBlobStore({ databaseName, indexedDb: indexedDB }),
 	};
 }
 
@@ -49,7 +49,10 @@ test('put persists bytes and metadata across store instances', async () => {
 	const input = new Blob(['browser audio'], { type: 'audio/webm' });
 
 	expectOk(await blobs.put(id, input));
-	const reopened = createBrowserBlobs({ databaseName, indexedDb: indexedDB });
+	const reopened = createBrowserBlobStore({
+		databaseName,
+		indexedDb: indexedDB,
+	});
 	const stored = expectOk(await reopened.get(id));
 	const stat = expectOk(await reopened.stat(id));
 
@@ -159,7 +162,7 @@ test('IndexedDB failures return BlobStoreFailed with the original cause', async 
 			throw cause;
 		},
 	} as unknown as IDBFactory;
-	const blobs = createBrowserBlobs({ indexedDb: failingIndexedDb });
+	const blobs = createBrowserBlobStore({ indexedDb: failingIndexedDb });
 	const id = generateBlobId();
 
 	const error = expectErr(await blobs.get(id));
@@ -249,7 +252,7 @@ test('blocked database opens reject and close a later connection', async () => {
 		},
 	} as unknown as IDBFactory;
 	const id = generateBlobId();
-	const blobs = createBrowserBlobs({ indexedDb: blockedIndexedDb });
+	const blobs = createBrowserBlobStore({ indexedDb: blockedIndexedDb });
 
 	const error = expectErr(await blobs.get(id));
 	expect(error).toMatchObject({ name: 'BlobStoreFailed', id });

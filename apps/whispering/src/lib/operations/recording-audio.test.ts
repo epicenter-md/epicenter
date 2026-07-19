@@ -2,7 +2,7 @@
  * Recording Audio Operations Tests
  *
  * Verifies the application policy over canonical local bytes and an optional
- * remote replica without persisting a second availability state machine.
+ * remote copy without persisting a second availability state machine.
  *
  * Key behaviors:
  * - Local presence plus uploadedAt derives the four availability states
@@ -12,10 +12,10 @@
  */
 import { expect, mock, test } from 'bun:test';
 import {
-	type BlobReplica,
-	BlobReplicaError,
+	type BlobRemote,
+	BlobRemoteError,
+	type BlobStore,
 	BlobStoreError,
-	type Blobs,
 	generateBlobId,
 } from '@epicenter/blobs';
 import { InstantString } from '@epicenter/field';
@@ -23,11 +23,8 @@ import { Ok } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import type { Recording, RecordingId } from '$lib/workspace';
 
-mock.module('#platform/auth', () => ({
-	auth: { state: { status: 'signed-out' } },
-}));
 mock.module('$lib/services', () => ({
-	services: { blobs: {}, blobReplica: null },
+	services: { blobs: { local: {}, remote: null } },
 }));
 const {
 	downloadRecordingAudio,
@@ -47,7 +44,7 @@ const recording = {
 	uploadedAt: null,
 } satisfies Pick<Recording, 'id' | 'audioBlobId' | 'uploadedAt'>;
 
-function stubBlobs(overrides: Partial<Blobs> = {}): Blobs {
+function stubLocalStore(overrides: Partial<BlobStore> = {}): BlobStore {
 	return {
 		async put() {
 			return Ok(undefined);
@@ -65,7 +62,7 @@ function stubBlobs(overrides: Partial<Blobs> = {}): Blobs {
 	};
 }
 
-function stubReplica(overrides: Partial<BlobReplica> = {}): BlobReplica {
+function stubRemote(overrides: Partial<BlobRemote> = {}): BlobRemote {
 	return {
 		async upload() {
 			return Ok(undefined);
@@ -81,18 +78,16 @@ function stubReplica(overrides: Partial<BlobReplica> = {}): BlobReplica {
 }
 
 function dependencies({
-	blobs = stubBlobs(),
-	replica = stubReplica(),
+	local = stubLocalStore(),
+	remote = stubRemote(),
 	updateRecording = async () => Ok(undefined),
 }: {
-	blobs?: Blobs;
-	replica?: BlobReplica | null;
+	local?: BlobStore;
+	remote?: BlobRemote | null;
 	updateRecording?: () => Promise<{ error: unknown | null }>;
 } = {}) {
 	return {
-		blobs,
-		replica,
-		isSignedIn: () => true,
+		blobs: { local, remote },
 		updateRecording,
 		now: InstantString.now,
 	};
@@ -100,7 +95,7 @@ function dependencies({
 
 test('local presence and uploadedAt derive all four availability states', async () => {
 	const uploadedAt = InstantString.now();
-	const missing = stubBlobs({
+	const missing = stubLocalStore({
 		async stat() {
 			return BlobStoreError.BlobNotFound({ id: recording.audioBlobId });
 		},
@@ -108,14 +103,16 @@ test('local presence and uploadedAt derive all four availability states', async 
 
 	expect(
 		expectOk(
-			await getRecordingAudioAvailability(recording, { blobs: stubBlobs() }),
+			await getRecordingAudioAvailability(recording, {
+				blobs: { local: stubLocalStore(), remote: null },
+			}),
 		),
 	).toBe('local-only');
 	expect(
 		expectOk(
 			await getRecordingAudioAvailability(
 				{ ...recording, uploadedAt },
-				{ blobs: stubBlobs() },
+				{ blobs: { local: stubLocalStore(), remote: null } },
 			),
 		),
 	).toBe('local-and-remote');
@@ -123,20 +120,22 @@ test('local presence and uploadedAt derive all four availability states', async 
 		expectOk(
 			await getRecordingAudioAvailability(
 				{ ...recording, uploadedAt },
-				{ blobs: missing },
+				{ blobs: { local: missing, remote: null } },
 			),
 		),
 	).toBe('remote-only');
 	expect(
 		expectOk(
-			await getRecordingAudioAvailability(recording, { blobs: missing }),
+			await getRecordingAudioAvailability(recording, {
+				blobs: { local: missing, remote: null },
+			}),
 		),
 	).toBe('unavailable');
 });
 
 test('upload records uploadedAt only after the remote copy succeeds', async () => {
 	const events: string[] = [];
-	const replica = stubReplica({
+	const remote = stubRemote({
 		async upload() {
 			events.push('upload');
 			return Ok(undefined);
@@ -148,7 +147,7 @@ test('upload records uploadedAt only after the remote copy succeeds', async () =
 			app,
 			recording,
 			dependencies({
-				replica,
+				remote,
 				updateRecording: async () => {
 					events.push('row');
 					return Ok(undefined);
@@ -168,9 +167,9 @@ test('failed upload leaves uploadedAt untouched for a later manual attempt', asy
 			app,
 			recording,
 			dependencies({
-				replica: stubReplica({
+				remote: stubRemote({
 					async upload() {
-						return BlobReplicaError.BlobReplicaFailed({
+						return BlobRemoteError.BlobRemoteFailed({
 							id: recording.audioBlobId,
 							cause,
 						});
@@ -184,7 +183,7 @@ test('failed upload leaves uploadedAt untouched for a later manual attempt', asy
 		),
 	);
 
-	expect(error.name).toBe('BlobReplicaFailed');
+	expect(error.name).toBe('BlobRemoteFailed');
 	expect(updated).toBe(false);
 });
 
@@ -195,7 +194,7 @@ test('failed upload bookkeeping rolls back the newly written remote copy', async
 			app,
 			recording,
 			dependencies({
-				replica: stubReplica({
+				remote: stubRemote({
 					async upload() {
 						events.push('upload');
 						return Ok(undefined);
@@ -224,7 +223,7 @@ test('remove local refuses a recording without a known remote copy', async () =>
 			app,
 			recording,
 			dependencies({
-				blobs: stubBlobs({
+				local: stubLocalStore({
 					async delete() {
 						deleted = true;
 						return Ok(undefined);
@@ -247,13 +246,13 @@ test('remove local proves the remote copy immediately before deletion', async ()
 			app,
 			uploaded,
 			dependencies({
-				replica: stubReplica({
+				remote: stubRemote({
 					async upload() {
 						events.push('upload');
 						return Ok(undefined);
 					},
 				}),
-				blobs: stubBlobs({
+				local: stubLocalStore({
 					async delete() {
 						events.push('delete');
 						return Ok(undefined);
@@ -273,7 +272,7 @@ test('download refuses a row that has never uploaded successfully', async () => 
 			app,
 			recording,
 			dependencies({
-				replica: stubReplica({
+				remote: stubRemote({
 					async download() {
 						downloaded = true;
 						return Ok(undefined);
@@ -295,10 +294,10 @@ test('a remote 404 clears the stale upload marker', async () => {
 			app,
 			uploaded,
 			dependencies({
-				replica: stubReplica({
+				remote: stubRemote({
 					async download() {
 						events.push('download');
-						return BlobReplicaError.RemoteBlobNotFound({
+						return BlobRemoteError.RemoteBlobNotFound({
 							id: recording.audioBlobId,
 						});
 					},
@@ -324,7 +323,7 @@ test('purge clears uploadedAt after remote deletion succeeds', async () => {
 			app,
 			uploaded,
 			dependencies({
-				replica: stubReplica({
+				remote: stubRemote({
 					async purge() {
 						events.push('purge');
 						return Ok(undefined);

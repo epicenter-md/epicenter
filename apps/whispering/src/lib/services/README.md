@@ -119,7 +119,8 @@ platform imports resolve:
 export const services = {
 	analytics: AnalyticsServiceLive,
 	text: TextServiceLive,
-	blobs: { audio: AudioBlobStoreLive },
+	blobs: BlobsLive,
+	blobSources: BlobSourcesLive,
 	download: DownloadServiceLive,
 	localShortcutManager: LocalShortcutManagerLive,
 	sound: PlaySoundServiceLive,

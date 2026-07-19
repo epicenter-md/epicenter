@@ -9,7 +9,7 @@
  */
 
 import { join } from 'node:path';
-import { createBunBlobs } from '@epicenter/blobs/bun';
+import { createBunBlobStore } from '@epicenter/blobs/bun';
 import { type AgentEngine, createOpenAiAgentEngine } from '@epicenter/client';
 import { honeycrispWorkspace } from '@epicenter/honeycrisp';
 import { createHomeHost, type HomeHost } from './host.ts';
@@ -55,7 +55,7 @@ async function main(): Promise<void> {
 			workspaceOwner.open(conversationsWorkspace),
 		]);
 		host = await createHomeHost({ engine, model, honeycrisp, conversations });
-		const blobs = createBunBlobs({
+		const blobs = createBunBlobStore({
 			directory: join(epicenterDataDir, 'blobs'),
 		});
 

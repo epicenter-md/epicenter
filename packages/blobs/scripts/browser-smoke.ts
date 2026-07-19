@@ -30,7 +30,7 @@ try {
 	await page.goto(`http://127.0.0.1:${server.port}`);
 	const result = await page.evaluate(async () => {
 		const moduleUrl = '/blobs.js';
-		const { createBrowserBlobs, createBrowserBlobSources } = await import(
+		const { createBrowserBlobStore, createBrowserBlobSources } = await import(
 			moduleUrl
 		);
 		const fail = (error: unknown): never => {
@@ -43,7 +43,7 @@ try {
 		const id = 'blob_abcdefghijklmnopqrstu';
 		const databaseName = `epicenter-webkit-smoke-${crypto.randomUUID()}`;
 		const input = new Blob(['webkit bytes'], { type: 'audio/wav' });
-		const first = createBrowserBlobs({ databaseName });
+		const first = createBrowserBlobStore({ databaseName });
 		const put = await first.put(id, input);
 		if (put.error) fail(put.error);
 
@@ -53,7 +53,7 @@ try {
 		}
 
 		// Open a new store instance to prove persistence crosses application reload.
-		const reopened = createBrowserBlobs({ databaseName });
+		const reopened = createBrowserBlobStore({ databaseName });
 		const stat = await reopened.stat(id);
 		if (stat.error) fail(stat.error);
 		if (stat.data.size !== input.size || stat.data.contentType !== input.type) {

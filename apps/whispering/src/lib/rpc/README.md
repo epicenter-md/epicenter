@@ -132,7 +132,7 @@ downloadRecording: defineMutation({
   mutationKey: downloadKeys.downloadRecording,
   mutationFn: async (recording: Recording) => {
     const { data: audioBlob, error } =
-      await services.blobs.get(recording.audioBlobId);
+      await services.blobs.local.get(recording.audioBlobId);
     if (error !== null) return Err(error);
 
     return services.download.downloadBlob({

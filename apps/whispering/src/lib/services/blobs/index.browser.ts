@@ -1,27 +1,35 @@
-import type { BlobReplica, BlobSources, Blobs } from '@epicenter/blobs';
+import type { BlobRemote, BlobSources, BlobStore } from '@epicenter/blobs';
 import {
 	createBrowserBlobSources,
-	createBrowserBlobs,
+	createBrowserBlobStore,
 } from '@epicenter/blobs/browser';
 import {
-	createBrowserBlobReplica,
+	createBrowserBlobRemote,
 	createEpicenterClient,
 } from '@epicenter/client';
 import { auth } from '#platform/auth';
 
-export const BlobsLive: Blobs = createBrowserBlobs();
-export const BlobSourcesLive: BlobSources = createBrowserBlobSources(BlobsLive);
+const local = createBrowserBlobStore();
 const epicenterClient = createEpicenterClient({
 	baseURL: auth.deployment.baseURL,
 	fetch: auth.fetch,
 });
+const remote = createBrowserBlobRemote({ local, client: epicenterClient });
 
 /**
- * Browser-only remote copy adapter. Auth state remains live inside `auth.fetch`;
- * application operations still refuse calls while signed out so a missing
- * credential is a product state rather than an HTTP surprise.
+ * Browser composition: IndexedDB local bytes plus the hosted remote copy
+ * adapter. This module owns remote availability: the capability exists only
+ * while the session is signed in, so callers check one owner instead of
+ * pairing a platform null with auth state.
  */
-export const BlobReplicaLive: BlobReplica | null = createBrowserBlobReplica({
-	blobs: BlobsLive,
-	client: epicenterClient,
-});
+export const BlobsLive: {
+	local: BlobStore;
+	readonly remote: BlobRemote | null;
+} = {
+	local,
+	get remote() {
+		return auth.state.status === 'signed-in' ? remote : null;
+	},
+};
+
+export const BlobSourcesLive: BlobSources = createBrowserBlobSources(local);

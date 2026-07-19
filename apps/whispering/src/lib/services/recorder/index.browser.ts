@@ -90,7 +90,10 @@ function createBrowserRecorder(): RecorderService<NavigatorRecordingParams> {
 					teardown();
 					return Err(stopError);
 				}
-				const { error: putError } = await BlobsLive.put(audioBlobId, blob);
+				const { error: putError } = await BlobsLive.local.put(
+					audioBlobId,
+					blob,
+				);
 				teardown();
 				if (putError !== null) return Err(putError);
 

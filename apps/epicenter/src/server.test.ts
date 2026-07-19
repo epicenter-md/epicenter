@@ -29,7 +29,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generateBlobId } from '@epicenter/blobs';
-import { createBunBlobs } from '@epicenter/blobs/bun';
+import { createBunBlobStore } from '@epicenter/blobs/bun';
 import { desktopBlobUrl } from '@epicenter/blobs/webview';
 import type { AgentEngine, EngineChunk } from '@epicenter/workspace/agent';
 import type { HomeHost, HomeHostInputs } from './host.ts';
@@ -83,7 +83,7 @@ function testDataDir(): string {
 }
 
 function createTestBlobs() {
-	return createBunBlobs({ directory: join(testDataDir(), 'blobs') });
+	return createBunBlobStore({ directory: join(testDataDir(), 'blobs') });
 }
 
 function boundPort(server: { port?: number }): number {

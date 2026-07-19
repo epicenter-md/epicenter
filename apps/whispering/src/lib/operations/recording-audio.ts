@@ -1,9 +1,9 @@
 import type {
 	BlobNotFound,
-	BlobReplica,
-	BlobReplicaFailed,
+	BlobRemote,
+	BlobRemoteFailed,
+	BlobStore,
 	BlobStoreFailed,
-	Blobs,
 	RemoteBlobNotFound,
 } from '@epicenter/blobs';
 import { InstantString } from '@epicenter/field';
@@ -13,7 +13,6 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
-import { auth } from '#platform/auth';
 import { services } from '$lib/services';
 import type { Recording } from '$lib/state/recordings.svelte';
 import type { WhisperingApp } from '$lib/whispering/context';
@@ -25,7 +24,7 @@ export type RecordingAudioAvailability =
 	| 'unavailable';
 
 export const RecordingAudioError = defineErrors({
-	ReplicaUnavailable: ({ recordingId }: { recordingId: Recording['id'] }) => ({
+	RemoteUnavailable: ({ recordingId }: { recordingId: Recording['id'] }) => ({
 		message: 'Online audio storage is not available right now.',
 		recordingId,
 	}),
@@ -71,9 +70,14 @@ type RecordingRowUpdate = {
 };
 
 type RecordingAudioDependencies = {
-	blobs: Pick<Blobs, 'delete' | 'stat'>;
-	replica: BlobReplica | null;
-	isSignedIn(): boolean;
+	/**
+	 * The composed blob capability. `remote` is read at call time so its one
+	 * owner (the platform blobs module) keeps folding auth into availability.
+	 */
+	blobs: {
+		local: Pick<BlobStore, 'delete' | 'stat'>;
+		readonly remote: BlobRemote | null;
+	};
 	updateRecording(
 		id: Recording['id'],
 		changes: Pick<Recording, 'uploadedAt'>,
@@ -84,34 +88,22 @@ type RecordingAudioDependencies = {
 function liveDependencies(app: WhisperingApp): RecordingAudioDependencies {
 	return {
 		blobs: services.blobs,
-		replica: services.blobReplica,
-		isSignedIn: () => auth.state.status === 'signed-in',
 		updateRecording: (id, changes) => app.recordings.update(id, changes),
 		now: InstantString.now,
 	};
 }
 
-function requireReplica(
+function requireRemote(
 	recording: Pick<Recording, 'id'>,
 	dependencies: RecordingAudioDependencies,
-): Result<BlobReplica, RecordingAudioError> {
-	if (!dependencies.isSignedIn() || dependencies.replica === null) {
-		return RecordingAudioError.ReplicaUnavailable({
+): Result<BlobRemote, RecordingAudioError> {
+	const remote = dependencies.blobs.remote;
+	if (remote === null) {
+		return RecordingAudioError.RemoteUnavailable({
 			recordingId: recording.id,
 		});
 	}
-	return Ok(dependencies.replica);
-}
-
-/** Whether this runtime currently has both identity and a remote copy adapter. */
-export function canUseRecordingAudioReplica(
-	app: WhisperingApp,
-	dependencies: Pick<
-		RecordingAudioDependencies,
-		'isSignedIn' | 'replica'
-	> = liveDependencies(app),
-): boolean {
-	return dependencies.isSignedIn() && dependencies.replica !== null;
+	return Ok(remote);
 }
 
 async function setUploadedAt(
@@ -144,7 +136,7 @@ export async function getRecordingAudioAvailability(
 		blobs: services.blobs,
 	},
 ): Promise<Result<RecordingAudioAvailability, BlobStoreFailed>> {
-	const { error } = await dependencies.blobs.stat(recording.audioBlobId);
+	const { error } = await dependencies.blobs.local.stat(recording.audioBlobId);
 	if (error === null) {
 		return Ok(
 			recording.uploadedAt === null ? 'local-only' : 'local-and-remote',
@@ -156,7 +148,7 @@ export async function getRecordingAudioAvailability(
 	return Err(error);
 }
 
-/** Copy one local recording to the online replica and then record success. */
+/** Copy one local recording to the online remote and then record success. */
 export async function uploadRecordingAudio(
 	app: WhisperingApp,
 	recording: Pick<Recording, 'id' | 'audioBlobId' | 'uploadedAt'>,
@@ -164,17 +156,17 @@ export async function uploadRecordingAudio(
 ): Promise<
 	Result<
 		void,
-		BlobNotFound | BlobStoreFailed | BlobReplicaFailed | RecordingAudioError
+		BlobNotFound | BlobStoreFailed | BlobRemoteFailed | RecordingAudioError
 	>
 > {
 	if (recording.uploadedAt !== null) return Ok(undefined);
-	const { data: replica, error: unavailable } = requireReplica(
+	const { data: remote, error: unavailable } = requireRemote(
 		recording,
 		dependencies,
 	);
 	if (unavailable !== null) return Err(unavailable);
 
-	const { error: uploadError } = await replica.upload(recording.audioBlobId);
+	const { error: uploadError } = await remote.upload(recording.audioBlobId);
 	if (uploadError !== null) return Err(uploadError);
 	const markerResult = await setUploadedAt(
 		recording,
@@ -183,7 +175,7 @@ export async function uploadRecordingAudio(
 	);
 	if (markerResult.error === null) return markerResult;
 
-	const { error: purgeError } = await replica.purge(recording.audioBlobId);
+	const { error: purgeError } = await remote.purge(recording.audioBlobId);
 	if (purgeError === null) return markerResult;
 	return RecordingAudioError.UploadCompensationFailed({
 		recordingId: recording.id,
@@ -202,7 +194,7 @@ export async function downloadRecordingAudio(
 		void,
 		| RemoteBlobNotFound
 		| BlobStoreFailed
-		| BlobReplicaFailed
+		| BlobRemoteFailed
 		| RecordingAudioError
 	>
 > {
@@ -211,12 +203,12 @@ export async function downloadRecordingAudio(
 			recordingId: recording.id,
 		});
 	}
-	const { data: replica, error: unavailable } = requireReplica(
+	const { data: remote, error: unavailable } = requireRemote(
 		recording,
 		dependencies,
 	);
 	if (unavailable !== null) return Err(unavailable);
-	const result = await replica.download(recording.audioBlobId);
+	const result = await remote.download(recording.audioBlobId);
 	if (result.error?.name !== 'RemoteBlobNotFound') return result;
 
 	// A remote 404 proves the historical marker stale. Repair the row so the UI
@@ -233,7 +225,7 @@ export async function removeLocalRecordingAudio(
 ): Promise<
 	Result<
 		void,
-		BlobNotFound | BlobStoreFailed | BlobReplicaFailed | RecordingAudioError
+		BlobNotFound | BlobStoreFailed | BlobRemoteFailed | RecordingAudioError
 	>
 > {
 	if (recording.uploadedAt === null) {
@@ -241,7 +233,7 @@ export async function removeLocalRecordingAudio(
 			recordingId: recording.id,
 		});
 	}
-	const { data: replica, error: unavailable } = requireReplica(
+	const { data: remote, error: unavailable } = requireRemote(
 		recording,
 		dependencies,
 	);
@@ -250,9 +242,9 @@ export async function removeLocalRecordingAudio(
 	// `uploadedAt` is historical bookkeeping, not proof that the remote object
 	// still exists. Re-uploading is idempotent and proves a durable copy exists
 	// immediately before this operation destroys the local one.
-	const { error: uploadError } = await replica.upload(recording.audioBlobId);
+	const { error: uploadError } = await remote.upload(recording.audioBlobId);
 	if (uploadError !== null) return Err(uploadError);
-	return dependencies.blobs.delete(recording.audioBlobId);
+	return dependencies.blobs.local.delete(recording.audioBlobId);
 }
 
 /**
@@ -267,15 +259,15 @@ export async function purgeRecordingAudio(
 	app: WhisperingApp,
 	recording: Pick<Recording, 'id' | 'audioBlobId' | 'uploadedAt'>,
 	dependencies: RecordingAudioDependencies = liveDependencies(app),
-): Promise<Result<void, BlobReplicaFailed | RecordingAudioError>> {
+): Promise<Result<void, BlobRemoteFailed | RecordingAudioError>> {
 	if (recording.uploadedAt === null) return Ok(undefined);
-	const { data: replica, error: unavailable } = requireReplica(
+	const { data: remote, error: unavailable } = requireRemote(
 		recording,
 		dependencies,
 	);
 	if (unavailable !== null) return Err(unavailable);
 
-	const { error: purgeError } = await replica.purge(recording.audioBlobId);
+	const { error: purgeError } = await remote.purge(recording.audioBlobId);
 	if (purgeError !== null) return Err(purgeError);
 	return setUploadedAt(recording, null, dependencies);
 }

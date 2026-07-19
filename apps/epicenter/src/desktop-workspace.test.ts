@@ -17,7 +17,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { generateBlobId } from '@epicenter/blobs';
-import { createBunBlobs } from '@epicenter/blobs/bun';
+import { createBunBlobStore } from '@epicenter/blobs/bun';
 import { InstantString } from '@epicenter/field';
 import { skillsWorkspace } from '@epicenter/skills';
 import { whisperingWorkspace } from '@epicenter/whispering/workspace-contract';
@@ -254,7 +254,7 @@ async function startDesktopServer(root: string) {
 		launchToken: TOKEN,
 		staticAssets: await testAssets(root),
 		workspaceOwner: owner,
-		blobs: createBunBlobs({ directory: join(root, 'blobs') }),
+		blobs: createBunBlobStore({ directory: join(root, 'blobs') }),
 	});
 	const server = Bun.serve({
 		hostname: '127.0.0.1',

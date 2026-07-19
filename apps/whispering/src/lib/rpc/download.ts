@@ -19,7 +19,7 @@ export const download = {
 			Result<void, BlobNotFound | BlobStoreFailed | DownloadError>
 		> => {
 			const { data: audioBlob, error: getAudioBlobError } =
-				await services.blobs.get(recording.audioBlobId);
+				await services.blobs.local.get(recording.audioBlobId);
 
 			if (getAudioBlobError) return Err(getAudioBlobError);
 

@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { BlobStoreError, type Blobs, generateBlobId } from '@epicenter/blobs';
+import {
+	type BlobStore,
+	BlobStoreError,
+	generateBlobId,
+} from '@epicenter/blobs';
 import { Ok } from 'wellcrafted/result';
-import { createBrowserBlobReplica, createEpicenterClient } from './index.js';
+import { createBrowserBlobRemote, createEpicenterClient } from './index.js';
 
 const baseURL = 'https://api.epicenter.so';
 
@@ -174,7 +178,7 @@ describe('blobs.get follows the 302 by hand', () => {
 	});
 });
 
-describe('createBrowserBlobReplica', () => {
+describe('createBrowserBlobRemote', () => {
 	const originalFetch = globalThis.fetch;
 	afterEach(() => {
 		globalThis.fetch = originalFetch;
@@ -203,12 +207,12 @@ describe('createBrowserBlobReplica', () => {
 					},
 				}),
 		});
-		const replica = createBrowserBlobReplica({
-			blobs: stubBlobs({ get: async () => Ok(localBlob) }),
+		const remote = createBrowserBlobRemote({
+			local: stubLocalStore({ get: async () => Ok(localBlob) }),
 			client,
 		});
 
-		const { error } = await replica.upload(id);
+		const { error } = await remote.upload(id);
 
 		expect(error).toBeNull();
 		expect(uploadedBody).toBe(localBlob);
@@ -218,7 +222,7 @@ describe('createBrowserBlobReplica', () => {
 		const id = generateBlobId();
 		const original = new Blob(['original']);
 		const stored = original;
-		const blobs = stubBlobs({
+		const local = stubLocalStore({
 			put: async () => BlobStoreError.BlobAlreadyExists({ id }),
 			get: async () => Ok(stored),
 		});
@@ -226,9 +230,9 @@ describe('createBrowserBlobReplica', () => {
 			baseURL,
 			fetch: async () => new Response('remote'),
 		});
-		const replica = createBrowserBlobReplica({ blobs, client });
+		const remote = createBrowserBlobRemote({ local, client });
 
-		const { error } = await replica.download(id);
+		const { error } = await remote.download(id);
 
 		expect(error).toBeNull();
 		expect(stored).toBe(original);
@@ -244,14 +248,14 @@ describe('createBrowserBlobReplica', () => {
 				return new Response('remote');
 			},
 		});
-		const replica = createBrowserBlobReplica({
-			blobs: stubBlobs({
+		const remote = createBrowserBlobRemote({
+			local: stubLocalStore({
 				stat: async () => Ok({ size: 5, contentType: 'text/plain' }),
 			}),
 			client,
 		});
 
-		const { error } = await replica.download(id);
+		const { error } = await remote.download(id);
 
 		expect(error).toBeNull();
 		expect(remoteReached).toBe(false);
@@ -263,18 +267,18 @@ describe('createBrowserBlobReplica', () => {
 			baseURL,
 			fetch: async () => new Response('missing', { status: 404 }),
 		});
-		const replica = createBrowserBlobReplica({
-			blobs: stubBlobs(),
+		const remote = createBrowserBlobRemote({
+			local: stubLocalStore(),
 			client,
 		});
 
-		const { error } = await replica.download(id);
+		const { error } = await remote.download(id);
 
 		expect(error?.name).toBe('RemoteBlobNotFound');
 	});
 });
 
-function stubBlobs(overrides: Partial<Blobs> = {}): Blobs {
+function stubLocalStore(overrides: Partial<BlobStore> = {}): BlobStore {
 	return {
 		put: async () => Ok(undefined),
 		get: async (id) => BlobStoreError.BlobNotFound({ id }),

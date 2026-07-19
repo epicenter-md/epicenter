@@ -6,7 +6,7 @@ import type { Brand } from 'wellcrafted/brand';
  * @fileoverview BlobId: the one opaque identifier a blob carries everywhere.
  *
  * A blob is minted exactly one id at record time, and that same id names the
- * object in the local store, on the optional remote replica, and in the row
+ * object in the local store, on the optional remote, and in the row
  * that references it. The id is NOT a content hash: it says nothing about the
  * bytes, and SHA-256 or dedup never appear in this contract.
  *
@@ -49,7 +49,7 @@ export type BlobId = typeof BlobId.infer;
 
 /**
  * Mint a fresh {@link BlobId}. The only place a BlobId comes into existence;
- * every other appearance of the id (row cell, local store key, replica key)
+ * every other appearance of the id (row cell, local store key, remote key)
  * is a copy of a minted value or a parse of one via the {@link BlobId}
  * validator.
  */

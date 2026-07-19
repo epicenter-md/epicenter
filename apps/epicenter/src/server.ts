@@ -7,7 +7,7 @@
 
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { parseBlobId } from '@epicenter/blobs';
-import type { BunBlobs } from '@epicenter/blobs/bun';
+import type { BunBlobStore } from '@epicenter/blobs/bun';
 import type { AgentToolDefinition } from '@epicenter/workspace/agent';
 import type { DesktopWorkspaceOwner } from '@epicenter/workspace/sqlite/desktop-owner';
 import { DesktopWorkspaceError } from '@epicenter/workspace/sqlite/desktop-owner';
@@ -53,7 +53,7 @@ export type HomeServerOptions = {
 	appCatalog?: AppCatalog;
 	workspaceOwner?: DesktopWorkspaceOwner;
 	/** Canonical device-local bytes shared by every trusted app surface. */
-	blobs: BunBlobs;
+	blobs: BunBlobStore;
 };
 
 const SESSION_COOKIE = 'epicenter_session';

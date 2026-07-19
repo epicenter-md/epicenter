@@ -103,7 +103,6 @@ export const services = {
 	analytics: AnalyticsServiceLive,
 	text: TextServiceLive,
 	blobs: BlobsLive,
-	blobReplica: BlobReplicaLive,
 	blobSources: BlobSourcesLive,
 	download: DownloadServiceLive,
 	localShortcutManager: LocalShortcutManagerLive,

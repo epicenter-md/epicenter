@@ -7,7 +7,7 @@ import {
 	BlobSourceError,
 	type BlobSources,
 } from './blob-source.js';
-import { type BlobStat, BlobStoreError, type Blobs } from './blobs.js';
+import { type BlobStat, type BlobStore, BlobStoreError } from './blob-store.js';
 
 const DATABASE_VERSION = 1;
 const DATA_STORE = 'blob-data';
@@ -107,13 +107,13 @@ function isConstraintError(cause: unknown): boolean {
  * `Blob`, so this platform codec does not leak into application code. Writes
  * and deletes update both stores atomically, while `stat` reads only metadata.
  */
-export function createBrowserBlobs({
+export function createBrowserBlobStore({
 	databaseName = DEFAULT_DATABASE_NAME,
 	indexedDb = indexedDB,
 }: {
 	databaseName?: string;
 	indexedDb?: IDBFactory;
-} = {}): Blobs {
+} = {}): BlobStore {
 	return {
 		async put(id, blob) {
 			return tryAsync({
@@ -229,7 +229,7 @@ export function createBrowserBlobs({
  * is synchronous, though an already-started fetch of the URL may complete.
  */
 export function createBrowserBlobSources(
-	blobs: Pick<Blobs, 'get'>,
+	local: Pick<BlobStore, 'get'>,
 	{
 		createObjectUrl = URL.createObjectURL,
 		revokeObjectUrl = URL.revokeObjectURL,
@@ -240,7 +240,7 @@ export function createBrowserBlobSources(
 ): BlobSources {
 	return {
 		async open(id) {
-			const { data: blob, error } = await blobs.get(id);
+			const { data: blob, error } = await local.get(id);
 			if (error !== null) return Err(error);
 
 			const { data: url, error: urlError } = trySync({

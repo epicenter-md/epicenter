@@ -15,9 +15,9 @@
 import type { AuthFetch } from '@epicenter/auth';
 import {
 	type BlobId,
-	type BlobReplica,
-	BlobReplicaError,
-	type Blobs,
+	type BlobRemote,
+	BlobRemoteError,
+	type BlobStore,
 } from '@epicenter/blobs';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import {
@@ -306,29 +306,30 @@ export type EpicenterClient = ReturnType<typeof createEpicenterClient>;
 /**
  * Compose a Blob-valued local store with the hosted remote blob surface.
  *
- * This adapter is for browser-like runtimes where `Blobs.get` already returns
- * an in-process Blob. Epicenter Desktop uses a separate host-owned adapter so
- * large BunFile recordings stream directly to S3 without crossing WebView IPC.
+ * This adapter is for browser-like runtimes where `BlobStore.get` already
+ * returns an in-process Blob. Epicenter Desktop uses a separate host-owned
+ * adapter so large BunFile recordings stream directly to S3 without crossing
+ * WebView IPC.
  */
-export function createBrowserBlobReplica({
-	blobs,
+export function createBrowserBlobRemote({
+	local,
 	client,
 }: {
-	blobs: Blobs;
+	local: BlobStore;
 	client: EpicenterClient;
-}): BlobReplica {
+}): BlobRemote {
 	return {
 		async upload(id) {
-			const { data: blob, error: localError } = await blobs.get(id);
+			const { data: blob, error: localError } = await local.get(id);
 			if (localError !== null) return Err(localError);
 			const { error: remoteError } = await client.blobs.add(id, blob);
 			return remoteError === null
 				? Ok(undefined)
-				: BlobReplicaError.BlobReplicaFailed({ id, cause: remoteError });
+				: BlobRemoteError.BlobRemoteFailed({ id, cause: remoteError });
 		},
 
 		async download(id) {
-			const { error: statError } = await blobs.stat(id);
+			const { error: statError } = await local.stat(id);
 			if (statError === null) return Ok(undefined);
 			if (statError.name !== 'BlobNotFound') return Err(statError);
 
@@ -336,16 +337,16 @@ export function createBrowserBlobReplica({
 			if (remoteError !== null) {
 				return remoteError.name === 'RequestFailed' &&
 					remoteError.status === 404
-					? BlobReplicaError.RemoteBlobNotFound({ id })
-					: BlobReplicaError.BlobReplicaFailed({ id, cause: remoteError });
+					? BlobRemoteError.RemoteBlobNotFound({ id })
+					: BlobRemoteError.BlobRemoteFailed({ id, cause: remoteError });
 			}
 			const { data: blob, error: readError } = await tryAsync({
 				try: () => response.blob(),
-				catch: (cause) => BlobReplicaError.BlobReplicaFailed({ id, cause }),
+				catch: (cause) => BlobRemoteError.BlobRemoteFailed({ id, cause }),
 			});
 			if (readError !== null) return Err(readError);
 
-			const { error: putError } = await blobs.put(id, blob);
+			const { error: putError } = await local.put(id, blob);
 			if (putError === null || putError.name === 'BlobAlreadyExists') {
 				return Ok(undefined);
 			}
@@ -356,7 +357,7 @@ export function createBrowserBlobReplica({
 			const { error } = await client.blobs.delete(id);
 			return error === null
 				? Ok(undefined)
-				: BlobReplicaError.BlobReplicaFailed({ id, cause: error });
+				: BlobRemoteError.BlobRemoteFailed({ id, cause: error });
 		},
 	};
 }

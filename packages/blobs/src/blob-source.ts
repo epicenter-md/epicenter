@@ -6,14 +6,15 @@ import {
 } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type { BlobId } from './blob-id.js';
-import type { BlobNotFound, BlobStoreFailed } from './blobs.js';
+import type { BlobNotFound, BlobStoreFailed } from './blob-store.js';
 
 /**
  * @fileoverview The portable playback-source contract.
  *
  * A source turns a {@link BlobId} into a URL a media element (or download)
  * can consume right now, on this platform. It is a sibling capability beside
- * the byte store, not a method on `Blobs`: bytes are portable, URLs are not.
+ * the byte store, not a method on `BlobStore`: bytes are portable, URLs are
+ * not.
  *
  * Every source is a standard `Disposable`. The contract promises that release
  * is always safe and idempotent, not that every implementation allocates a

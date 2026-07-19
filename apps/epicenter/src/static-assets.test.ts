@@ -26,7 +26,7 @@ import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createBunBlobs } from '@epicenter/blobs/bun';
+import { createBunBlobStore } from '@epicenter/blobs/bun';
 import { BOOTSTRAP_ROUTE, SURFACE_ROUTES } from './routes.ts';
 import { createHomeServer } from './server.ts';
 import {
@@ -239,7 +239,7 @@ describe('home server catalog routes', () => {
 			launchToken: TOKEN,
 			staticAssets: await loadStaticAssets(appsDist),
 			appCatalog: await derive(catalogRoot),
-			blobs: createBunBlobs({
+			blobs: createBunBlobStore({
 				directory: join(tempDir('epicenter-blobs-'), 'blobs'),
 			}),
 		});

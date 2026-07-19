@@ -19,7 +19,6 @@
 	import { os } from '#platform/os';
 	import { manualRecorderConfig } from '#platform/manual-recorder-config';
 	import { tauri } from '#platform/tauri';
-	import { auth } from '#platform/auth';
 	import { exportRecordingsMarkdown } from '$lib/whispering/recordings-markdown-export';
 	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
 	import VadSelectRecordingDevice from './VadSelectRecordingDevice.svelte';
@@ -60,7 +59,7 @@
 			description="Whispering pauses media playing on your computer (music, video, browser tabs) while your voice is being captured, then tries to resume it after. In voice activated mode it pauses only while you actually speak, so music keeps playing between phrases. Works with most apps in your system media controls. A few can't be paused, and on macOS the resume can occasionally wake a different app that was already paused."
 		/>
 
-		{#if services.blobReplica !== null && auth.state.status === 'signed-in'}
+		{#if services.blobs.remote !== null}
 			<SettingSwitch
 				key="recording.autoUpload"
 				label="Upload new recordings"

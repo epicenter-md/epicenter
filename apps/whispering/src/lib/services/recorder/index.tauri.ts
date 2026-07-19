@@ -191,7 +191,7 @@ function createCpalRecorder() {
 					});
 				}
 				const { data: blobStat, error: statError } =
-					await BlobsLive.stat(audioBlobId);
+					await BlobsLive.local.stat(audioBlobId);
 				if (statError !== null) return Err(statError);
 
 				return Ok({

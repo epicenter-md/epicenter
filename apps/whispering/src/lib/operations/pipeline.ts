@@ -64,7 +64,8 @@ export async function processRecordingPipeline(
 			transcription: null,
 		});
 	} catch (cause) {
-		const { error: cleanupError } = await services.blobs.delete(audioBlobId);
+		const { error: cleanupError } =
+			await services.blobs.local.delete(audioBlobId);
 		if (cleanupError !== null) {
 			throw new AggregateError(
 				[cause, cleanupError],
