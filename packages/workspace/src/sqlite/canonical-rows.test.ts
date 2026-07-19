@@ -18,9 +18,12 @@ import { field } from '@epicenter/field';
 import { foldFields, type WireRowIntent } from '@epicenter/row-sync';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { Type } from 'typebox';
-import { expectOk } from 'wellcrafted/testing';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import { createCanonicalRowsView } from './canonical-rows.js';
-import { createCanonicalStore } from './canonical-store.js';
+import {
+	createCanonicalStore,
+	isWorkspaceRowAbsentError,
+} from './canonical-store.js';
 import { defineTable, type JsonObject } from './lens-definition.js';
 import { initializeLocalWorkspaceStorage } from './local-workspace-storage.js';
 
@@ -30,6 +33,61 @@ const definitions = {
 		optional: ['archived'],
 	}),
 };
+
+function refusal(run: () => void): unknown {
+	try {
+		run();
+		return undefined;
+	} catch (cause) {
+		return cause;
+	}
+}
+
+test('updating or deleting an absent row refuses at the store admission boundary', () => {
+	const database = new Database(':memory:');
+	const sqlite = createBunSqliteAdapter(database);
+	initializeLocalWorkspaceStorage(sqlite);
+	const store = createCanonicalStore(sqlite);
+	const records = createCanonicalRowsView(store, definitions);
+	const absentId = 'a'.repeat(24);
+	try {
+		// A never-present row refuses: update through the renderer read, delete
+		// through the owner guard (the view has no delete pre-check).
+		expect(
+			expectErr(records.tables.notes.update(absentId, { title: 'x' })).name,
+		).toBe('MissingRow');
+		expect(
+			isWorkspaceRowAbsentError(refusal(() => records.tables.notes.delete(absentId))),
+		).toBeTrue();
+
+		// A row that dies between an earlier read and admission still refuses:
+		// the owner guard re-checks liveness atomically at admit time.
+		const created = records.tables.notes.create({ title: 'A' });
+		expect(store.read('notes', created.id)).toEqual({ title: 'A' });
+		store.admit({ kind: 'delete', table: 'notes', rowId: created.id });
+		expect(
+			isWorkspaceRowAbsentError(
+				refusal(() =>
+					store.admit({
+						kind: 'update',
+						table: 'notes',
+						rowId: created.id,
+						fields: { set: { title: 'B' }, unset: [] },
+					}),
+				),
+			),
+		).toBeTrue();
+		expect(
+			isWorkspaceRowAbsentError(
+				refusal(() =>
+					store.admit({ kind: 'delete', table: 'notes', rowId: created.id }),
+				),
+			),
+		).toBeTrue();
+	} finally {
+		database.close();
+	}
+});
 
 test('local-only create, update, delete, and reopen preserve canonical state', () => {
 	const root = mkdtempSync(join(tmpdir(), 'epicenter-canonical-rows-'));

@@ -75,16 +75,18 @@ test('one surface owns a workspace, documents persist, and state survives restar
 			).toBeTrue();
 		}
 		expect(existsSync(join(root, 'workspace-runtime'))).toBeFalse();
-		for (const result of [
-			await firstSkills.tables.skills.get('missing'),
-			await firstSkills.tables.skills.update('missing', {
-				description: 'Still missing',
-			}),
-		]) {
-			expect(result).toEqual({ data: undefined, error: null });
-			expect(Object.hasOwn(result, 'data')).toBeTrue();
-			expect(isResult(result)).toBeTrue();
-		}
+		// Reading a missing row is lenient; the read is honest about absence.
+		const missingRead = await firstSkills.tables.skills.get('missing');
+		expect(missingRead).toEqual({ data: undefined, error: null });
+		expect(Object.hasOwn(missingRead, 'data')).toBeTrue();
+		expect(isResult(missingRead)).toBeTrue();
+		// Modifying a missing row refuses at the owner and carries the named
+		// MissingRow result across the schema-blind records route.
+		const missingUpdate = await firstSkills.tables.skills.update('missing', {
+			description: 'Still missing',
+		});
+		expect(missingUpdate.error?.name).toBe('MissingRow');
+		expect(isResult(missingUpdate)).toBeTrue();
 		const recording = await firstWhispering.tables.recordings.create({
 			audioBlobId: generateBlobId(),
 			uploadedAt: null,

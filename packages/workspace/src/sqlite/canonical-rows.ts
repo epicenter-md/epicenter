@@ -3,14 +3,17 @@ import { customAlphabet } from 'nanoid';
 import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 import { Ok, type Result } from 'wellcrafted/result';
-import type { CanonicalStore } from './canonical-store.js';
+import {
+	type CanonicalStore,
+	isWorkspaceRowAbsentError,
+} from './canonical-store.js';
 import {
 	type ConstrainedChanges,
 	type CreateInputFor,
 	compileTableLens,
 	type JsonObject,
 	type RowFor,
-	type RowLensError,
+	RowLensError,
 	type TableLensDefinition,
 	type TableLensDefinitions,
 } from './lens-definition.js';
@@ -85,13 +88,14 @@ export function createCanonicalRowsView<
 				update(id: string, changes: Record<string, unknown>) {
 					const normalized = lens.normalizeChanges(changes);
 					const current = store.read(tableName, id);
+					if (current === undefined) {
+						return RowLensError.MissingRow({ table: tableName, id });
+					}
 					if (
 						Object.keys(normalized.set).length === 0 &&
 						normalized.unset.length === 0
 					) {
-						return current === undefined
-							? Ok(undefined)
-							: lens.project(tableName, id, current);
+						return lens.project(tableName, id, current);
 					}
 					const intent = {
 						kind: 'update',
@@ -99,19 +103,25 @@ export function createCanonicalRowsView<
 						rowId: id,
 						fields: normalized,
 					} as const;
-					store.admit(intent);
+					try {
+						store.admit(intent);
+					} catch (cause) {
+						// The row can die between the read above and admission; the
+						// owner guard refuses it there, surfaced as the same result.
+						if (isWorkspaceRowAbsentError(cause)) {
+							return RowLensError.MissingRow({ table: tableName, id });
+						}
+						throw cause;
+					}
 					const projected = store.read(tableName, id);
 					return projected === undefined
-						? Ok(undefined)
+						? RowLensError.MissingRow({ table: tableName, id })
 						: lens.project(tableName, id, projected);
 				},
 				delete(id: string) {
-					const intent = {
-						kind: 'delete',
-						table: tableName,
-						rowId: id,
-					} as const;
-					store.admit(intent);
+					// The owner guard refuses a delete of an absent row with the
+					// named WorkspaceRowAbsentError; there is no silent success.
+					store.admit({ kind: 'delete', table: tableName, rowId: id });
 				},
 			};
 			return [tableName, table];

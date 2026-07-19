@@ -549,7 +549,9 @@ test("open accepts a nonconforming lens and reports nonconformance only on read"
 
     const incompatible = await runtime.open(numericTitleLens);
     const rowError = expectErr(await incompatible.tables.notes.get(row.id));
-    expect(rowError.name).toBe("NonconformingRow");
+    if (rowError.name !== "NonconformingRow") {
+      throw new Error(`Expected NonconformingRow, got ${rowError.name}`);
+    }
     expect(rowError.raw).toEqual({ title: "Text" });
     expect(expectErr(await incompatible.kv.get("theme")).name).toBe(
       "NonconformingKvValue",

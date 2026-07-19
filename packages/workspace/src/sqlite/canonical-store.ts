@@ -12,6 +12,27 @@ import { listLocalRows, readLocalRow } from './local-workspace-storage.js';
 
 const ROWS_TABLE = 'rows';
 
+/**
+ * Error name stamped on an update or delete refused because its row is not
+ * visibly live at admission time. The refusal is atomic with the check, so a
+ * row that disappears after a renderer-side read still fails, and the name
+ * survives the schema-blind Worker and HTTP carriers.
+ */
+export const WORKSPACE_ROW_ABSENT_ERROR_NAME = 'WorkspaceRowAbsentError';
+
+/** True when an error means an update or delete lost its race with row deletion. */
+export function isWorkspaceRowAbsentError(cause: unknown): boolean {
+	return (
+		cause instanceof Error && cause.name === WORKSPACE_ROW_ABSENT_ERROR_NAME
+	);
+}
+
+function rowAbsentError(table: string, rowId: string): Error {
+	const error = new Error(`Cannot modify absent row '${table}.${rowId}'`);
+	error.name = WORKSPACE_ROW_ABSENT_ERROR_NAME;
+	return error;
+}
+
 export type CanonicalStoreOptions = {
 	/** Synchronized mode admits durable RowIntents instead of mutating confirmed rows. */
 	admitIntent?(intent: WireRowIntent): void;
@@ -115,6 +136,20 @@ export function createCanonicalStore(
 			})
 		) {
 			throw new RangeError('Canonical row exceeds portable row-sync limits');
+		}
+		// The one guarded admission boundary shared by local, synchronized, and
+		// every transport: an update or delete of an absent row refuses here
+		// instead of admitting a speculative intent or silently no-op mutating.
+		// The reserved KV map row is immortal and upserts, so it is exempt.
+		if (
+			(intent.kind === 'update' || intent.kind === 'delete') &&
+			!(
+				intent.table === RESERVED_KV_TABLE &&
+				intent.rowId === RESERVED_KV_ROW_ID
+			) &&
+			readCurrentRow(intent.table, intent.rowId) === undefined
+		) {
+			throw rowAbsentError(intent.table, intent.rowId);
 		}
 		if (admitIntent) {
 			admitIntent(structuredClone(intent));

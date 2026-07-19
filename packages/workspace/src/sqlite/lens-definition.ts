@@ -108,6 +108,12 @@ export const RowLensError = defineErrors({
 		raw,
 		issues,
 	}),
+	/** An update targeted a row that is not visibly live at admission time. */
+	MissingRow: ({ table, id }: { table: string; id: string }) => ({
+		message: `Canonical row '${table}.${id}' does not exist`,
+		table,
+		id,
+	}),
 });
 export type RowLensError = InferErrors<typeof RowLensError>;
 

@@ -8,6 +8,7 @@ import { customAlphabet } from 'nanoid';
 import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 import { Ok } from 'wellcrafted/result';
+import { isWorkspaceRowAbsentError } from './canonical-store.js';
 import type { WorkspaceSync } from './canonical-sync-supervisor.js';
 import {
 	compileKvLens,
@@ -15,7 +16,11 @@ import {
 	KvReadError,
 	KvWriteError,
 } from './kv-definition.js';
-import { compileTableLens, type JsonObject } from './lens-definition.js';
+import {
+	compileTableLens,
+	type JsonObject,
+	RowLensError,
+} from './lens-definition.js';
 import type { Workspace, WorkspaceTables } from './runtime.js';
 import type { WorkspaceLens } from './workspace-lens.js';
 
@@ -74,26 +79,35 @@ export function createAsyncWorkspaceView<TLens extends WorkspaceLens>(
 					async update(id: string, changes: Record<string, unknown>) {
 						const fields = lens.normalizeChanges(changes);
 						const before = await client.read(table, id);
-						if (before === undefined) return Ok(undefined);
+						if (before === undefined) {
+							return RowLensError.MissingRow({ table, id });
+						}
 						if (
 							Object.keys(fields.set).length === 0 &&
 							fields.unset.length === 0
 						) {
 							return lens.project(table, id, before);
 						}
-						await client.admit({
-							kind: 'update',
-							table,
-							rowId: id,
-							fields,
-						});
+						try {
+							await client.admit({ kind: 'update', table, rowId: id, fields });
+						} catch (cause) {
+							// The row can die between the read above and admission; the
+							// owner guard refuses it there, surfaced as the same result.
+							if (isWorkspaceRowAbsentError(cause)) {
+								return RowLensError.MissingRow({ table, id });
+							}
+							throw cause;
+						}
 						const current = await client.read(table, id);
 						return current === undefined
-							? Ok(undefined)
+							? RowLensError.MissingRow({ table, id })
 							: lens.project(table, id, current);
 					},
 					async delete(id: string) {
-						if ((await client.read(table, id)) === undefined) return;
+						// No renderer-side pre-check: the owner guard atomically refuses
+						// a delete of an absent row with the named error, so a row that
+						// dies after any earlier read still fails instead of silently
+						// succeeding. afterDelete runs only once the delete commits.
 						await client.admit({ kind: 'delete', table, rowId: id });
 						client.afterDelete?.({ table, rowId: id });
 					},

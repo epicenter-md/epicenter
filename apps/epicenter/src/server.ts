@@ -12,6 +12,7 @@ import type { BunBlobStore } from '@epicenter/blobs/bun';
 import type { AgentToolDefinition } from '@epicenter/workspace/agent';
 import {
 	isDocumentRowAbsentError,
+	isWorkspaceRowAbsentError,
 	isWorkspaceStorageMovedError,
 } from '@epicenter/workspace/sqlite';
 import type { DesktopWorkspaceOwner } from '@epicenter/workspace/sqlite/desktop-owner';
@@ -463,6 +464,14 @@ export function createHomeServer({
 			if (isDocumentRowAbsentError(cause)) {
 				return c.json(
 					DesktopWorkspaceError.DocumentRowAbsentError({ workspaceId }),
+					409,
+				);
+			}
+			// A displaced-row update or delete refuses at the owner; carry the
+			// name so the WebView maps it to the same missing-row result.
+			if (isWorkspaceRowAbsentError(cause)) {
+				return c.json(
+					DesktopWorkspaceError.WorkspaceRowAbsentError({ workspaceId }),
 					409,
 				);
 			}

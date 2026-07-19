@@ -67,6 +67,11 @@ export const DesktopWorkspaceError = defineErrors({
 		message: `The document row in workspace '${workspaceId}' no longer exists.`,
 		workspaceId,
 	}),
+	/** An update or delete lost its race with scalar row deletion. */
+	WorkspaceRowAbsentError: ({ workspaceId }: { workspaceId: string }) => ({
+		message: `The row in workspace '${workspaceId}' no longer exists.`,
+		workspaceId,
+	}),
 });
 export type DesktopWorkspaceError = InferErrors<typeof DesktopWorkspaceError>;
 
