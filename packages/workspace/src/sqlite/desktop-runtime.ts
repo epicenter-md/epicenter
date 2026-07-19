@@ -1,29 +1,27 @@
+import { createDocumentStore } from '../document-provider/persistence.js';
+import { createRowDocumentRuntime } from '../document-provider/runtime/index.js';
 import { createAsyncWorkspaceView } from './async-workspace-view.js';
 import {
-	createDocumentRuntime,
-	decodeDocumentBytes,
-	encodeDocumentBytes,
-} from './canonical-documents.js';
+	isWorkspaceStorageMovedError,
+	WORKSPACE_STORAGE_MOVED_ERROR_NAME,
+} from './browser-runtime-protocol.js';
 import {
 	type DesktopRecordOperation,
+	type DesktopRecordRequest,
 	type DesktopWorkspaceResponse,
+	decodeDocumentBytes,
 	desktopWorkspaceUrl,
+	encodeDocumentBytes,
 } from './desktop-protocol.js';
 import type { Workspace } from './runtime.js';
 import type { WorkspaceLens } from './workspace-lens.js';
 
-type RowAddress = { table: string; rowId: string };
-
-type DesktopInvalidationMessage =
-	| { type: 'records-changed'; workspaceId: string }
-	| { type: 'rows-deleted'; workspaceId: string; addresses: RowAddress[] }
-	| {
-			type: 'document-updated';
-			workspaceId: string;
-			address: RowAddress;
-			/** Base64 document-provider transport encoding of one Yjs update. */
-			update: string;
-	  };
+type SurfaceOpenedMessage = {
+	type: 'workspace-surface-opened';
+	workspaceId: string;
+	surfaceId: string;
+	generation: number;
+};
 
 type DesktopRuntimeBroadcastChannel = {
 	onmessage: ((event: MessageEvent<unknown>) => void) | null;
@@ -35,10 +33,14 @@ type BoundWorkspace = {
 	views: Map<WorkspaceLens, Workspace<WorkspaceLens>>;
 	/** The one host open handshake shared by every lens over this ID. */
 	opened: Promise<void>;
-	documents: ReturnType<typeof createDocumentRuntime>;
-	revokeRows(addresses: RowAddress[]): void;
-	revokeDocuments(cause: Error): void;
-	applyDocumentUpdate(address: RowAddress, update: Uint8Array): void;
+	documents: ReturnType<typeof createRowDocumentRuntime>;
+	/** Set once this surface was displaced; every later operation throws it. */
+	moved: Error | undefined;
+	/** Host-issued claim generation; larger generations are newer surfaces. */
+	generation: number | undefined;
+	invalidated: Promise<never>;
+	markMoved(cause: Error, notify?: boolean): void;
+	disposeDocuments(): Promise<void>;
 };
 
 export type CreateDesktopWorkspaceRuntimeOptions = {
@@ -48,53 +50,57 @@ export type CreateDesktopWorkspaceRuntimeOptions = {
 		name: string,
 	): DesktopRuntimeBroadcastChannel | undefined;
 	onRecordsChanged?(workspaceId: string): void;
+	/**
+	 * Fired once per workspace when this surface is displaced by a newer one
+	 * (newest surface wins). The cause satisfies `isWorkspaceStorageMovedError`,
+	 * so apps flip the same blocking moved screen the browser runtime uses.
+	 */
+	onBackgroundError?(cause: Error, workspaceId: string): void;
 };
 
-/** Same-origin WebView client for one Bun-owned static workspace catalog. */
+/**
+ * Same-origin WebView client for one Bun-owned static workspace catalog.
+ *
+ * One runtime instance is one surface. Exactly one surface owns a workspace
+ * at a time: opening it here displaces any older surface, and being displaced
+ * rejects this runtime's pending and future operations for that workspace
+ * with the named moved error. There is no cross-window data relay.
+ */
 export function createDesktopWorkspaceRuntime({
 	baseUrl = location.origin,
 	fetch: fetchInput = globalThis.fetch,
 	createBroadcastChannel = defaultBroadcastChannel,
 	onRecordsChanged = () => undefined,
+	onBackgroundError = () => undefined,
 }: CreateDesktopWorkspaceRuntimeOptions = {}) {
 	const origin = new URL(baseUrl).origin;
+	const surfaceId = crypto.randomUUID();
 	const workspaces = new Map<string, BoundWorkspace>();
-	const invalidationChannel = createBroadcastChannel(
-		'epicenter-desktop-workspaces',
+	// The channel carries exactly one lifecycle signal: a newer surface opened
+	// a workspace, so a displaced sibling window can flip its moved screen
+	// immediately instead of on its next rejected request.
+	const surfaceChannel = createBroadcastChannel(
+		'epicenter-desktop-workspace-surfaces',
 	);
 	let disposed = false;
 
-	function emitRecordsChanged(workspaceId: string, broadcast: boolean): void {
-		if (broadcast) {
-			invalidationChannel?.postMessage({
-				type: 'records-changed',
-				workspaceId,
-			} satisfies DesktopInvalidationMessage);
-		}
-		onRecordsChanged(workspaceId);
-	}
-
-	if (invalidationChannel) {
-		invalidationChannel.onmessage = (event: MessageEvent<unknown>) => {
-			const message = parseInvalidationMessage(event.data);
-			if (!message || !workspaces.has(message.workspaceId)) return;
-			switch (message.type) {
-				case 'records-changed':
-					emitRecordsChanged(message.workspaceId, false);
-					return;
-				case 'rows-deleted':
-					workspaces.get(message.workspaceId)?.revokeRows(message.addresses);
-					return;
-				case 'document-updated':
-					workspaces
-						.get(message.workspaceId)
-						?.applyDocumentUpdate(
-							message.address,
-							decodeDocumentBytes(message.update),
-						);
-					emitRecordsChanged(message.workspaceId, false);
-					return;
+	if (surfaceChannel) {
+		surfaceChannel.onmessage = (event: MessageEvent<unknown>) => {
+			const message = parseSurfaceOpenedMessage(event.data);
+			if (!message || message.surfaceId === surfaceId) return;
+			const bound = workspaces.get(message.workspaceId);
+			if (
+				!bound ||
+				bound.moved ||
+				message.generation <= (bound.generation ?? 0)
+			) {
+				return;
 			}
+			const moved = new Error(
+				`Workspace '${message.workspaceId}' moved to a newer window`,
+			);
+			moved.name = WORKSPACE_STORAGE_MOVED_ERROR_NAME;
+			bound.markMoved(moved);
 		};
 	}
 
@@ -103,88 +109,103 @@ export function createDesktopWorkspaceRuntime({
 		operation: DesktopRecordOperation,
 	): Promise<TResult> => {
 		assertOpen();
-		const response = await fetchInput(
-			desktopWorkspaceUrl(origin, workspaceId),
-			{
+		const bound = workspaces.get(workspaceId);
+		if (!bound) throw new Error(`Workspace '${workspaceId}' is not open`);
+		if (bound.moved) throw bound.moved;
+		const response = (async () => {
+			const fetched = await fetchInput(desktopWorkspaceUrl(origin, workspaceId), {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				credentials: 'same-origin',
-				body: JSON.stringify(operation),
-			},
-		);
-		const envelope = (await response.json()) as DesktopWorkspaceResponse;
-		if (!response.ok || envelope.error !== null) {
-			throw new Error(
-				envelope.error?.message ?? `Desktop workspace HTTP ${response.status}`,
-			);
-		}
-		if (
-			operation.kind === 'admit-intent' ||
-			operation.kind === 'persist-document-update'
-		) {
-			emitRecordsChanged(workspaceId, true);
-		}
-		return envelope.data as TResult;
+				body: JSON.stringify({
+					surfaceId,
+					operation,
+				} satisfies DesktopRecordRequest),
+			});
+			const envelope = (await fetched.json()) as DesktopWorkspaceResponse;
+			if (!fetched.ok || envelope.error !== null) {
+				const failure = new Error(
+					envelope.error?.message ?? `Desktop workspace HTTP ${fetched.status}`,
+				);
+				if (envelope.error?.name) failure.name = envelope.error.name;
+				if (isWorkspaceStorageMovedError(failure)) {
+					workspaces.get(workspaceId)?.markMoved(failure);
+				}
+				throw failure;
+			}
+			assertOpen();
+			if (workspaces.get(workspaceId) !== bound || bound.moved) {
+				throw bound.moved ?? new Error(`Workspace '${workspaceId}' is closed`);
+			}
+			if (operation.kind === 'admit-intent') {
+				onRecordsChanged(workspaceId);
+			}
+			return envelope.data as TResult;
+		})();
+		return Promise.race([response, bound.invalidated]);
 	};
 
 	function assertOpen(): void {
 		if (disposed) throw new Error('Desktop workspace runtime is disposed');
 	}
 
-	function createBinding(workspaceId: string): {
-		documents: ReturnType<typeof createDocumentRuntime>;
-		revokeRows(addresses: RowAddress[]): void;
-		revokeDocuments(cause: Error): void;
-		applyDocumentUpdate(address: RowAddress, update: Uint8Array): void;
-	} {
-		const documents = createDocumentRuntime({
-			async persistUpdate(table, rowId, update) {
-				const encoded = encodeDocumentBytes(update);
-				await request(workspaceId, {
-					kind: 'persist-document-update',
-					table,
-					rowId,
-					update: encoded,
-				});
-				// Another client with this document open applies the update
-				// directly; without this, its cached Y.Doc goes stale until the
-				// document is reopened.
-				invalidationChannel?.postMessage({
-					type: 'document-updated',
-					workspaceId,
-					address: { table, rowId },
-					update: encoded,
-				} satisfies DesktopInvalidationMessage);
-			},
-			readCurrentRow(table, rowId) {
-				return request(workspaceId, {
+	function createBinding(
+		workspaceId: string,
+	): Omit<BoundWorkspace, 'views' | 'opened'> {
+		const invalidated = Promise.withResolvers<never>();
+		// A surface can remain current for its entire lifetime, so suppress the
+		// process-level unhandled-rejection warning until a request races this
+		// lifecycle promise.
+		void invalidated.promise.catch(() => undefined);
+		const documents = createRowDocumentRuntime({
+			// The host owns the durable update log inside the workspace's
+			// store.sqlite3; this surface carries only load and append over the
+			// same-origin records route.
+			store: createDocumentStore({
+				async load(address) {
+					const parts = await request<string[]>(workspaceId, {
+						kind: 'document-load',
+						table: address.table,
+						rowId: address.rowId,
+					});
+					return parts.map(decodeDocumentBytes);
+				},
+				async append(address, update) {
+					await request<void>(workspaceId, {
+						kind: 'document-append',
+						table: address.table,
+						rowId: address.rowId,
+						update: encodeDocumentBytes(update),
+					});
+				},
+			}),
+			isLive: async ({ table, rowId }) =>
+				(await request<Record<string, unknown> | undefined>(workspaceId, {
 					kind: 'read-current-row',
 					table,
 					rowId,
-				});
-			},
-			async readParts(table, rowId) {
-				const state = await request<string>(workspaceId, {
-					kind: 'read-current-document',
-					table,
-					rowId,
-				});
-				return [decodeDocumentBytes(state)];
-			},
+				})) !== undefined,
 		});
 		return {
 			documents,
-			revokeRows: documents.revoke,
-			revokeDocuments: documents.revokeAll,
-			applyDocumentUpdate(address, update) {
-				documents.applyRelayedUpdate(address, update);
+			moved: undefined,
+			generation: undefined,
+			invalidated: invalidated.promise,
+			markMoved(cause: Error, notify = true) {
+				const bound = workspaces.get(workspaceId);
+				if (!bound || bound.moved) return;
+				bound.moved = cause;
+				invalidated.reject(cause);
+				void documents.revokeAll(cause);
+				if (notify) onBackgroundError(cause, workspaceId);
 			},
+			disposeDocuments: documents[Symbol.asyncDispose],
 		};
 	}
 
 	function createView<TDefinition extends WorkspaceLens>(
 		definition: TDefinition,
-		documents: ReturnType<typeof createDocumentRuntime>,
+		documents: ReturnType<typeof createRowDocumentRuntime>,
 	): Workspace<TDefinition> {
 		return createAsyncWorkspaceView(definition, {
 			read(table, rowId) {
@@ -207,16 +228,11 @@ export function createDesktopWorkspaceRuntime({
 				return request(definition.id, { kind: 'sql', query, parameters });
 			},
 			openDocument(table, rowId) {
-				return documents.open(table, rowId);
+				return documents.open({ table, rowId });
 			},
 			sync: null,
 			afterDelete({ table, rowId }) {
-				documents.revoke([{ table, rowId }]);
-				invalidationChannel?.postMessage({
-					type: 'rows-deleted',
-					workspaceId: definition.id,
-					addresses: [{ table, rowId }],
-				} satisfies DesktopInvalidationMessage);
+				void documents.revoke({ table, rowId });
 			},
 		});
 	}
@@ -224,8 +240,9 @@ export function createDesktopWorkspaceRuntime({
 	return Object.freeze({
 		/**
 		 * Opens the workspace and resolves only after the host confirms its
-		 * SQLite owner is acquired. A failed handshake rejects and unbinds, so
-		 * a later `open` performs a fresh handshake against the host.
+		 * SQLite owner is acquired and this surface owns the workspace. A failed
+		 * handshake rejects and unbinds, so a later `open` performs a fresh
+		 * handshake against the host.
 		 */
 		open<TDefinition extends WorkspaceLens>(
 			definition: TDefinition,
@@ -250,8 +267,16 @@ export function createDesktopWorkspaceRuntime({
 				opened: undefined as never,
 			};
 			workspaces.set(definition.id, bound);
-			bound.opened = request<void>(definition.id, { kind: 'open' }).then(
-				() => undefined,
+			bound.opened = request<number>(definition.id, { kind: 'open' }).then(
+				(generation) => {
+					bound.generation = generation;
+					surfaceChannel?.postMessage({
+						type: 'workspace-surface-opened',
+						workspaceId: definition.id,
+						surfaceId,
+						generation,
+					} satisfies SurfaceOpenedMessage);
+				},
 				(cause) => {
 					if (workspaces.get(definition.id) === bound) {
 						workspaces.delete(definition.id);
@@ -269,9 +294,22 @@ export function createDesktopWorkspaceRuntime({
 			if (disposed) return;
 			disposed = true;
 			const cause = new Error('Desktop workspace runtime is disposed');
-			for (const bound of workspaces.values()) bound.revokeDocuments(cause);
+			for (const bound of workspaces.values()) {
+				bound.markMoved(cause, false);
+			}
+			surfaceChannel?.close();
+			const failures: unknown[] = [];
+			for (const bound of workspaces.values()) {
+				try {
+					await bound.disposeDocuments();
+				} catch (failure) {
+					failures.push(failure);
+				}
+			}
 			workspaces.clear();
-			invalidationChannel?.close();
+			if (failures.length > 0) {
+				throw new AggregateError(failures, 'Desktop row-document disposal failed');
+			}
 		},
 	});
 }
@@ -280,53 +318,27 @@ export type DesktopWorkspaceRuntime = ReturnType<
 	typeof createDesktopWorkspaceRuntime
 >;
 
-function parseInvalidationMessage(
+function parseSurfaceOpenedMessage(
 	value: unknown,
-): DesktopInvalidationMessage | undefined {
+): SurfaceOpenedMessage | undefined {
 	if (typeof value !== 'object' || value === null) return undefined;
 	const message = value as Record<string, unknown>;
-	if (typeof message.workspaceId !== 'string') return undefined;
-	if (message.type === 'records-changed') {
-		return {
-			type: message.type,
-			workspaceId: message.workspaceId,
-		};
-	}
 	if (
-		message.type === 'document-updated' &&
-		isRowAddress(message.address) &&
-		typeof message.update === 'string'
-	) {
-		return {
-			type: 'document-updated',
-			workspaceId: message.workspaceId,
-			address: message.address,
-			update: message.update,
-		};
-	}
-	if (
-		message.type !== 'rows-deleted' ||
-		!Array.isArray(message.addresses) ||
-		!message.addresses.every(isRowAddress)
+		message.type !== 'workspace-surface-opened' ||
+		typeof message.workspaceId !== 'string' ||
+		typeof message.surfaceId !== 'string' ||
+		typeof message.generation !== 'number' ||
+		!Number.isSafeInteger(message.generation) ||
+		message.generation < 1
 	) {
 		return undefined;
 	}
 	return {
-		type: 'rows-deleted',
+		type: 'workspace-surface-opened',
 		workspaceId: message.workspaceId,
-		addresses: message.addresses,
+		surfaceId: message.surfaceId,
+		generation: message.generation,
 	};
-}
-
-function isRowAddress(value: unknown): value is RowAddress {
-	return (
-		typeof value === 'object' &&
-		value !== null &&
-		'table' in value &&
-		typeof value.table === 'string' &&
-		'rowId' in value &&
-		typeof value.rowId === 'string'
-	);
 }
 
 function defaultBroadcastChannel(

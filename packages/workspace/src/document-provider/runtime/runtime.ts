@@ -1,8 +1,9 @@
 import * as Y from '@y/y';
-import type {
-	DocumentPersistenceLease,
-	DocumentStore,
-	RowAddress,
+import {
+	type DocumentPersistenceLease,
+	type DocumentStore,
+	type RowAddress,
+	rowAddressKey,
 } from '../persistence.js';
 
 export type RowDocumentConnectionLease<TConnection> = {
@@ -35,32 +36,6 @@ type CachedDocument<TConnection> = {
 	revoked: Error | undefined;
 };
 
-const ownedDocuments = new WeakMap<
-	RowDocument<unknown>,
-	CachedDocument<unknown>
->();
-
-/** Runtime-only bridge for transporting one hydrated row document. */
-export function encodeRowDocumentState(
-	document: RowDocument<unknown>,
-): Uint8Array {
-	const entry = ownedDocuments.get(document);
-	if (!entry) throw new TypeError('Row document is not owned by this runtime');
-	if (entry.revoked) throw entry.revoked;
-	return Y.encodeStateAsUpdate(entry.document);
-}
-
-/** Runtime-only bridge for applying one opaque transported update. */
-export function applyRowDocumentUpdate(
-	document: RowDocument<unknown>,
-	update: Uint8Array,
-): void {
-	const entry = ownedDocuments.get(document);
-	if (!entry) throw new TypeError('Row document is not owned by this runtime');
-	if (entry.revoked) throw entry.revoked;
-	Y.applyUpdate(entry.document, Uint8Array.from(update));
-}
-
 /**
  * Own independently loadable row documents above one workspace document store.
  *
@@ -90,18 +65,13 @@ export function createRowDocumentRuntime<TConnection = never>({
 		if (disposed) throw new Error('Row document runtime is disposed');
 	}
 
-	function keyOf(address: RowAddress): string {
-		assertAddress(address);
-		return JSON.stringify([address.table, address.rowId]);
-	}
-
 	function epochOf(key: string): number {
 		return epochs.get(key) ?? 0;
 	}
 
 	function requireCurrent(key: string, epoch: number): void {
 		if (epochOf(key) !== epoch) {
-			throw new Error('Row document was revoked while opening');
+			throw new Error('Row document was revoked during an active operation');
 		}
 	}
 
@@ -193,7 +163,7 @@ export function createRowDocumentRuntime<TConnection = never>({
 		address: RowAddress,
 	): Promise<CachedDocument<TConnection>> {
 		requireRuntimeOpen();
-		const key = keyOf(address);
+		const key = rowAddressKey(address);
 		const existing = cached.get(key);
 		if (existing) return Promise.resolve(existing);
 		const pending = opening.get(key);
@@ -212,7 +182,7 @@ export function createRowDocumentRuntime<TConnection = never>({
 	function createHandle(
 		entry: CachedDocument<TConnection>,
 	): RowDocument<TConnection> {
-		const key = keyOf(entry.address);
+		const key = rowAddressKey(entry.address);
 		let disposed = false;
 		entry.references += 1;
 
@@ -242,17 +212,12 @@ export function createRowDocumentRuntime<TConnection = never>({
 			[Symbol.dispose](): void {
 				if (disposed) return;
 				disposed = true;
-				// The transport bridge must refuse a disposed handle exactly like
-				// get/transact do; dropping the registry entry makes its lookup
-				// fail loudly.
-				ownedDocuments.delete(handle);
 				entry.references -= 1;
 				if (entry.references === 0 && entry.revoked === undefined) {
 					void startTeardown(key, entry).catch(() => undefined);
 				}
 			},
 		};
-		ownedDocuments.set(handle, entry);
 		return handle;
 	}
 
@@ -260,7 +225,7 @@ export function createRowDocumentRuntime<TConnection = never>({
 		address: RowAddress,
 		cause?: Error,
 	): Promise<void> {
-		const key = keyOf(address);
+		const key = rowAddressKey(address);
 		epochs.set(key, epochOf(key) + 1);
 		const pending = opening.get(key);
 		const entry = cached.get(key);
@@ -270,8 +235,8 @@ export function createRowDocumentRuntime<TConnection = never>({
 				new Error(
 					`Row document was revoked because '${address.table}.${address.rowId}' is no longer live`,
 				);
-			await startTeardown(key, entry);
 		}
+		if (entry) await startTeardown(key, entry);
 		await pending?.catch(() => undefined);
 	}
 
@@ -302,54 +267,13 @@ export function createRowDocumentRuntime<TConnection = never>({
 				),
 			);
 		},
-		/** Wait for the local durability cut of every document open right now. */
+		/** Wait for the local durability cut of every open document. */
 		captureDurabilityBarrier(): Promise<void> {
 			requireRuntimeOpen();
 			const cuts = [...cached.values()].map((entry) =>
 				entry.persistence.whenDurable(),
 			);
 			return Promise.all(cuts).then(() => undefined);
-		},
-		/**
-		 * Apply portable Yjs 14 state as ordinary locally durable document work.
-		 *
-		 * An already-open document receives the update live. A not-open document
-		 * imports through a transient persistence-only lease: no network
-		 * connection is opened and no cache entry survives, so importing many
-		 * documents (Device Add) leaves nothing behind for documents the
-		 * application never opened.
-		 */
-		async importUpdate(address: RowAddress, update: Uint8Array): Promise<void> {
-			requireRuntimeOpen();
-			const owned = new Uint8Array(update);
-			const key = keyOf(address);
-			const applyThroughLiveEntry = async (): Promise<boolean> => {
-				const entry =
-					cached.get(key) ?? (await opening.get(key)?.catch(() => undefined));
-				if (!entry || cached.get(key) !== entry || entry.revoked) return false;
-				Y.applyUpdateV2(entry.document, owned);
-				await entry.persistence.whenDurable();
-				return true;
-			};
-			if (await applyThroughLiveEntry()) return;
-			await closing.get(key);
-			await requireLive(address);
-			// An open() may have raced the liveness check; prefer its live entry
-			// over a second store attachment.
-			if (await applyThroughLiveEntry()) return;
-			const document = new Y.Doc({ gc: true });
-			const persistence = store.attach(copyAddress(address), document);
-			try {
-				await persistence.whenLoaded;
-				Y.applyUpdateV2(document, owned);
-				await persistence.whenDurable();
-			} finally {
-				try {
-					await persistence.dispose();
-				} finally {
-					document.destroy();
-				}
-			}
 		},
 		async [Symbol.asyncDispose](): Promise<void> {
 			if (disposal !== undefined) return disposal;
@@ -360,7 +284,7 @@ export function createRowDocumentRuntime<TConnection = never>({
 				for (const entry of [...cached.values()]) {
 					entry.revoked = new Error('Row document runtime is disposed');
 					try {
-						await startTeardown(keyOf(entry.address), entry);
+						await startTeardown(rowAddressKey(entry.address), entry);
 					} catch (cause) {
 						failures.push(cause);
 					}
@@ -376,17 +300,6 @@ export function createRowDocumentRuntime<TConnection = never>({
 			return disposal;
 		},
 	};
-}
-
-function assertAddress(address: RowAddress): void {
-	if (
-		typeof address.table !== 'string' ||
-		address.table.length === 0 ||
-		typeof address.rowId !== 'string' ||
-		address.rowId.length === 0
-	) {
-		throw new TypeError('Document row address must contain a table and row id');
-	}
 }
 
 function copyAddress(address: RowAddress): RowAddress {

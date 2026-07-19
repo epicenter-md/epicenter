@@ -1,3 +1,14 @@
+/**
+ * Row Document Runtime Tests
+ *
+ * Verifies hydration, caching, persistence durability, imports, revocation,
+ * and disposal across independently addressed Yjs row documents.
+ *
+ * Key behaviors:
+ * - Concurrent opens and imports never create overlapping leases per address
+ * - Durability barriers include admitted live and transient document work
+ * - Revocation and disposal stop in-flight lifecycle operations
+ */
 import { describe, expect, test } from 'bun:test';
 import * as Y from '@y/y';
 import type {
@@ -117,56 +128,6 @@ describe('provider-owned row document runtime', () => {
 		).rejects.toThrow("absent row 'notes.absent'");
 		expect(fixture.store.attaches).toBe(0);
 		expect(fixture.connections).toBe(0);
-	});
-
-	test('importing a not-open document leaves no connection, cache entry, or lease', async () => {
-		const fixture = setup();
-		fixture.store.resolveLoad(noteA);
-
-		await fixture.runtime.importUpdate(
-			noteA,
-			createUpdate('content', 'imported'),
-		);
-
-		// The import is persistence-only: no network connection was opened and
-		// the transient store lease was disposed once the bytes were durable.
-		expect(fixture.connections).toBe(0);
-		expect(fixture.events).toEqual(['persistence:notes/a']);
-		expect(fixture.store.durabilityCuts).toBe(1);
-
-		// Nothing was cached: a later open hydrates through a fresh attachment.
-		using document = await fixture.runtime.open(noteA);
-		expect(fixture.store.attaches).toBe(2);
-		expect(fixture.connections).toBe(1);
-		expect(document.get('content')).toBeDefined();
-	});
-
-	test('importing an already-open document applies through it without a second attach', async () => {
-		const fixture = setup();
-		const opening = fixture.runtime.open(noteA);
-		fixture.store.resolveLoad(noteA);
-		using document = await opening;
-
-		await fixture.runtime.importUpdate(
-			noteA,
-			createUpdate('content', 'imported'),
-		);
-
-		expect(document.get('content').toString()).toBe('imported');
-		expect(fixture.store.attaches).toBe(1);
-		expect(fixture.connections).toBe(1);
-	});
-
-	test('importing a document for an absent row is refused before persistence', async () => {
-		const fixture = setup({ live: (address) => address.rowId !== 'absent' });
-
-		await expect(
-			fixture.runtime.importUpdate(
-				{ table: 'notes', rowId: 'absent' },
-				createUpdate('content', 'imported'),
-			),
-		).rejects.toThrow("absent row 'notes.absent'");
-		expect(fixture.store.attaches).toBe(0);
 	});
 
 	test('structured addresses do not collide in the cache', async () => {
@@ -296,18 +257,6 @@ class FakeStore implements DocumentStore {
 		const loaded = this.#loads.get(key) ?? Promise.withResolvers<void>();
 		this.#loads.set(key, loaded);
 		loaded.resolve();
-	}
-
-	capture(): Promise<Uint8Array | undefined> {
-		return Promise.resolve(undefined);
-	}
-
-	delete(): Promise<void> {
-		return Promise.resolve();
-	}
-
-	deleteAll(): Promise<void> {
-		return Promise.resolve();
 	}
 }
 

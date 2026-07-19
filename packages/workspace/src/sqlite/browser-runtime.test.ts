@@ -11,10 +11,10 @@
  */
 
 import { afterEach, expect, test } from 'bun:test';
-import 'fake-indexeddb/auto';
 import { field } from '@epicenter/field';
 import { asPrincipalId } from '@epicenter/identity';
 import { RESERVED_KV_TABLE } from '@epicenter/row-sync';
+import * as Y from '@y/y';
 import { Type } from 'typebox';
 import {
 	createAccountBrowserWorkspaceRuntime,
@@ -24,6 +24,7 @@ import {
 	type BrowserRuntimeMessage,
 	type BrowserRuntimeRequest,
 	isWorkspaceStorageHeldError,
+	isWorkspaceStorageMovedError,
 } from './browser-runtime-protocol.js';
 import { defineTable } from './lens-definition.js';
 import { defineWorkspace } from './workspace-lens.js';
@@ -38,9 +39,14 @@ function neverOpenWebSocket(): Promise<WebSocket> {
 class FakeWorker {
 	static latest: FakeWorker | undefined;
 	static openMode: 'resolve' | 'defer' | 'reject' = 'resolve';
+	/** Mirrors the real Worker after a newer tab steals the storage lease. */
+	static stolen = false;
+	static deferDocumentAppend = false;
 	readonly operations: BrowserRuntimeRequest['operation'][] = [];
 	readonly manifests: BrowserRuntimeRequest['manifest'][] = [];
 	readonly transportResponses: { type: string; pendingReason?: string }[] = [];
+	/** Worker-owned durable document update log, keyed by row address. */
+	readonly documentLogs = new Map<string, Uint8Array[]>();
 	row: Record<string, unknown> | undefined = { title: 'Browser row' };
 	theme: unknown = 'light';
 	sqlRows: Record<string, unknown>[] = [];
@@ -49,6 +55,8 @@ class FakeWorker {
 	>();
 	private deferredOpen: BrowserRuntimeRequest | undefined;
 	private deferredSettlement: BrowserRuntimeRequest | undefined;
+	private deferredDocumentAppend: BrowserRuntimeRequest | undefined;
+	terminated = false;
 
 	constructor() {
 		FakeWorker.latest = this;
@@ -69,6 +77,17 @@ class FakeWorker {
 		}
 		this.operations.push(message.operation);
 		this.manifests.push(message.manifest);
+		if (FakeWorker.stolen) {
+			queueMicrotask(() => {
+				this.emit({
+					type: 'error',
+					id: message.id,
+					name: 'WorkspaceStorageMovedError',
+					message: 'Workspace storage moved to a newer tab',
+				});
+			});
+			return;
+		}
 		if (message.operation.kind === 'open') {
 			if (FakeWorker.openMode === 'defer') {
 				this.deferredOpen = message;
@@ -95,23 +114,58 @@ class FakeWorker {
 			this.finishSettlement();
 			return;
 		}
+		if (
+			message.operation.kind === 'document-append' &&
+			FakeWorker.deferDocumentAppend
+		) {
+			this.deferredDocumentAppend = message;
+			return;
+		}
 		const value = (() => {
 			switch (message.operation.kind) {
 				case 'logical-capture':
 				case 'capture-visible':
-				case 'sync-capture-recovery':
+				case 'sync-capture-recovery': {
+					// The real Worker folds each row's compact document state from
+					// its co-located SQLite log into the copy.
+					const document = this.captureDocument('notes', ROW_ID);
 					return {
 						rows: [
 							{
 								table: 'notes',
 								rowId: ROW_ID,
 								fields: { title: 'Browser row' },
+								...(document === undefined ? {} : { document }),
 							},
 						],
 						kv: { theme: 'light' },
 					};
-				case 'logical-add':
+				}
+				case 'document-load': {
+					const key = `${message.operation.table}\0${message.operation.rowId}`;
+					return (this.documentLogs.get(key) ?? []).map(
+						(update) => new Uint8Array(update),
+					);
+				}
+				case 'document-append': {
+					const key = `${message.operation.table}\0${message.operation.rowId}`;
+					const log = this.documentLogs.get(key) ?? [];
+					log.push(new Uint8Array(message.operation.update));
+					this.documentLogs.set(key, log);
 					return undefined;
+				}
+				case 'logical-add': {
+					// Mirrors the real Worker: after admitting scalar rows it appends
+					// each copied document snapshot into its own co-located log.
+					for (const row of message.operation.copy.rows) {
+						if (row.document === undefined) continue;
+						const key = `${row.table}\0${row.rowId}`;
+						const log = this.documentLogs.get(key) ?? [];
+						log.push(new Uint8Array(row.document));
+						this.documentLogs.set(key, log);
+					}
+					return undefined;
+				}
 				case 'logical-delete':
 					this.row = undefined;
 					this.theme = undefined;
@@ -161,6 +215,34 @@ class FakeWorker {
 		this.emit({ type: 'result', id: request.id, value: { isReady: true } });
 	}
 
+	resolveDocumentAppend(): void {
+		const request = this.deferredDocumentAppend;
+		if (!request || request.operation.kind !== 'document-append') {
+			throw new Error('No deferred document append request');
+		}
+		this.deferredDocumentAppend = undefined;
+		const key = `${request.operation.table}\0${request.operation.rowId}`;
+		const log = this.documentLogs.get(key) ?? [];
+		log.push(new Uint8Array(request.operation.update));
+		this.documentLogs.set(key, log);
+		this.emit({ type: 'result', id: request.id, value: undefined });
+	}
+
+	private captureDocument(
+		table: string,
+		rowId: string,
+	): Uint8Array | undefined {
+		const updates = this.documentLogs.get(`${table}\0${rowId}`);
+		if (!updates || updates.length === 0) return undefined;
+		const folded = new Y.Doc();
+		try {
+			for (const update of updates) Y.applyUpdateV2(folded, update);
+			return new Uint8Array(Y.encodeStateAsUpdateV2(folded));
+		} finally {
+			folded.destroy();
+		}
+	}
+
 	private finishSettlement(): void {
 		const request = this.deferredSettlement;
 		if (!request) return;
@@ -180,13 +262,17 @@ class FakeWorker {
 		}
 	}
 
-	terminate(): void {}
+	terminate(): void {
+		this.terminated = true;
+	}
 }
 
 afterEach(() => {
 	globalThis.Worker = NativeWorker;
 	FakeWorker.latest = undefined;
 	FakeWorker.openMode = 'resolve';
+	FakeWorker.stolen = false;
+	FakeWorker.deferDocumentAppend = false;
 });
 
 const definition = defineWorkspace({
@@ -309,6 +395,43 @@ test('Device capture/delete and Account add are explicit logical actions', async
 	});
 });
 
+test('Account add makes copied document snapshots durable owner-side', async () => {
+	globalThis.Worker = FakeWorker as unknown as typeof Worker;
+	const authored = new Y.Doc();
+	authored.get('content').insert(0, 'carried over');
+	const snapshot = new Uint8Array(Y.encodeStateAsUpdateV2(authored));
+	authored.destroy();
+
+	await using account = createAccountBrowserWorkspaceRuntime({
+		account: {
+			deploymentId: 'https://example.test',
+			principalId: asPrincipalId('alice'),
+			transport: {
+				baseUrl: 'https://example.test',
+				openWebSocket: neverOpenWebSocket,
+			},
+		},
+		createBroadcastChannel: () => undefined,
+	});
+	await account.add(definition.id, {
+		rows: [
+			{ table: 'notes', rowId: ROW_ID, fields: { title: 'Migrated' }, document: snapshot },
+		],
+		kv: {},
+	});
+
+	// The snapshot rode inside logical-add; the page never re-ships it as a
+	// separate document-append round trip.
+	const kinds = FakeWorker.latest?.operations.map(({ kind }) => kind);
+	expect(kinds).not.toContain('document-append');
+	expect(kinds?.at(-1)).toBe('logical-add');
+
+	// The owner made it durable, so opening the row hydrates the imported content.
+	const workspace = await account.open(definition);
+	using document = await workspace.tables.notes.document.open(ROW_ID);
+	expect(document.get('content').toString()).toBe('carried over');
+});
+
 test('Device export reports a null settlement over the local capture', async () => {
 	await using runtime = createRuntime();
 	const exported = await runtime.export(definition.id);
@@ -319,7 +442,7 @@ test('Device export reports a null settlement over the local capture', async () 
 	});
 });
 
-test('Account export settles first, then captures visible state with page documents', async () => {
+test('Account export settles first, then captures visible state with documents', async () => {
 	globalThis.Worker = FakeWorker as unknown as typeof Worker;
 	await using runtime = createAccountBrowserWorkspaceRuntime({
 		account: {
@@ -444,13 +567,21 @@ test('KV conformance is checked in the page realm over one raw map', async () =>
 	expect(FakeWorker.latest.operations.at(-1)).toEqual({ kind: 'kv-read-map' });
 });
 
-test('browser row documents use the page-owned IndexedDB provider', async () => {
+test('browser row documents persist through the Worker-owned update log', async () => {
 	await using runtime = createRuntime();
 	const workspace = await runtime.open(definition);
-	using document = await workspace.tables.notes.document.open(ROW_ID);
-	document.get('content').insert(0, 'local');
-	await document.whenDurable();
-	expect(document.get('content').toString()).toBe('local');
+	{
+		using document = await workspace.tables.notes.document.open(ROW_ID);
+		document.get('content').insert(0, 'local');
+		await document.whenDurable();
+		expect(document.get('content').toString()).toBe('local');
+	}
+	const kinds = FakeWorker.latest?.operations.map(({ kind }) => kind);
+	expect(kinds).toContain('document-load');
+	expect(kinds).toContain('document-append');
+	// A later open hydrates the same content back from the Worker's log.
+	using reopened = await workspace.tables.notes.document.open(ROW_ID);
+	expect(reopened.get('content').toString()).toBe('local');
 });
 
 test('worker transport uses the workspace record routes', async () => {
@@ -557,10 +688,102 @@ test('Account sync status is reactive across the Worker boundary', async () => {
 	expect(copy).toMatchObject({
 		rows: [{ table: 'notes', rowId: ROW_ID }],
 	});
-	// The page folds its locally durable IndexedDB document state into the
-	// Worker's scalar recovery copy (ADR-0142's compact document state).
+	// The Worker folds locally durable document state from its co-located
+	// SQLite log into the recovery copy (ADR-0142's compact document state).
 	expect(copy?.rows[0]?.document).toBeInstanceOf(Uint8Array);
 	unsubscribe?.();
+});
+
+test('a storage steal rejects document work with the moved error', async () => {
+	await using runtime = createRuntime();
+	const workspace = await runtime.open(definition);
+	using document = await workspace.tables.notes.document.open(ROW_ID);
+	FakeWorker.stolen = true;
+	document.get('content').insert(0, 'after steal');
+	const failure = await document.whenDurable().then(
+		() => undefined,
+		(cause: unknown) => cause,
+	);
+	expect(failure).toBeInstanceOf(Error);
+	expect(isWorkspaceStorageMovedError(failure)).toBe(true);
+});
+
+test('disposal drains admitted document appends before terminating the Worker', async () => {
+	const runtime = createRuntime();
+	const workspace = await runtime.open(definition);
+	const document = await workspace.tables.notes.document.open(ROW_ID);
+	FakeWorker.deferDocumentAppend = true;
+	document.get('content').insert(0, 'durable before shutdown');
+	const durability = document.whenDurable();
+	await waitFor(() =>
+		Boolean(
+			FakeWorker.latest?.operations.some(
+				(operation) => operation.kind === 'document-append',
+			),
+		),
+	);
+	const disposal = runtime[Symbol.asyncDispose]();
+	await Promise.resolve();
+	expect(FakeWorker.latest?.terminated).toBeFalse();
+	FakeWorker.latest?.resolveDocumentAppend();
+	const durabilityFailure = await durability.then(
+		() => undefined,
+		(cause: unknown) => cause,
+	);
+	expect(durabilityFailure).toBeInstanceOf(Error);
+	await disposal;
+	expect(FakeWorker.latest?.documentLogs.get(`notes\0${ROW_ID}`)).toHaveLength(
+		1,
+	);
+	expect(FakeWorker.latest?.terminated).toBeTrue();
+});
+
+test('storage-moved notification aborts a stalled authority fetch', async () => {
+	globalThis.Worker = FakeWorker as unknown as typeof Worker;
+	let signal: AbortSignal | undefined;
+	await using runtime = createAccountBrowserWorkspaceRuntime({
+		account: {
+			deploymentId: 'https://example.test',
+			principalId: asPrincipalId('alice'),
+			transport: {
+				baseUrl: 'https://example.test',
+				openWebSocket: neverOpenWebSocket,
+				fetch(_input, init) {
+					signal = init?.signal ?? undefined;
+					return new Promise<Response>((_resolve, reject) => {
+						signal?.addEventListener('abort', () => reject(signal?.reason), {
+							once: true,
+						});
+					});
+				},
+			},
+		},
+		createBroadcastChannel: () => undefined,
+	});
+	await runtime.open(definition);
+	FakeWorker.latest?.emit({
+		type: 'transport-request',
+		transportId: 1,
+		workspaceId: definition.id,
+		action: 'pull',
+		body: {},
+	});
+	await waitFor(() => signal !== undefined);
+	FakeWorker.latest?.emit({
+		type: 'background-error',
+		workspaceId: definition.id,
+		name: 'WorkspaceStorageMovedError',
+		message: 'Workspace storage moved to a newer tab',
+	});
+	await waitFor(() => signal?.aborted === true);
+	expect(signal?.aborted).toBeTrue();
+	await waitFor(() =>
+		Boolean(
+			FakeWorker.latest?.transportResponses.some(
+				(response) => response.type === 'transport-error',
+			),
+		),
+	);
 });
 
 test('browser transport serializes only known interruptions as retryable', async () => {

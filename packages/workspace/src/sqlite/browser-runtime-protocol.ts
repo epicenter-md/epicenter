@@ -60,6 +60,8 @@ export type BrowserRowSyncBinding = {
 export type BrowserRecordOperation =
 	| { kind: 'open' }
 	| { kind: 'read-current-row'; table: string; rowId: string }
+	| { kind: 'document-load'; table: string; rowId: string }
+	| { kind: 'document-append'; table: string; rowId: string; update: Uint8Array }
 	| { kind: 'list-current-rows'; table: string }
 	| { kind: 'admit-intent'; intent: WireRowIntent }
 	| { kind: 'kv-read-map' }

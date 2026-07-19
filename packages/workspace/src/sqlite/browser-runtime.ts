@@ -1,11 +1,10 @@
 import { sha256Hex } from '@epicenter/row-sync';
-import { createBrowserIndexedDbDocumentStore } from '../document-provider/browser-indexed-db.js';
 import {
 	attachAuthenticatedDocumentConnection,
 	type DocumentConnection,
 	rowDocumentWebSocketUrl,
 } from '../document-provider/connection/index.js';
-import type { DocumentStore } from '../document-provider/persistence.js';
+import { createDocumentStore } from '../document-provider/persistence.js';
 import { createRowDocumentRuntime } from '../document-provider/runtime/index.js';
 
 import {
@@ -14,17 +13,17 @@ import {
 	type WorkspaceAccount,
 } from './account-runtime.js';
 import { createAsyncWorkspaceView } from './async-workspace-view.js';
-import type {
-	BrowserRecordOperation,
-	BrowserRowSyncBinding,
-	BrowserRuntimeMessage,
-	BrowserRuntimeRequest,
-	BrowserWorkspaceManifest,
-} from './browser-runtime-protocol.js';
 import {
-	type LogicalWorkspaceCopy,
-	type LogicalWorkspaceExport,
-	withCapturedDocuments,
+	type BrowserRecordOperation,
+	type BrowserRowSyncBinding,
+	type BrowserRuntimeMessage,
+	type BrowserRuntimeRequest,
+	type BrowserWorkspaceManifest,
+	isWorkspaceStorageMovedError,
+} from './browser-runtime-protocol.js';
+import type {
+	LogicalWorkspaceCopy,
+	LogicalWorkspaceExport,
 } from './canonical-addition.js';
 import type {
 	WorkspaceSync,
@@ -57,9 +56,6 @@ type BoundWorkspace = {
 	revokeDocuments(cause: Error): Promise<void>;
 	captureDurability(): Promise<void>;
 	disposeDocuments(): Promise<void>;
-	deleteDocuments(): Promise<void>;
-	captureDocuments(copy: LogicalWorkspaceCopy): Promise<LogicalWorkspaceCopy>;
-	importDocuments(copy: LogicalWorkspaceCopy): Promise<void>;
 };
 
 type RowAddress = { table: string; rowId: string };
@@ -183,6 +179,7 @@ function createBrowserRuntimeWithPersistence({
 	const persistenceHash = sha256Hex(persistenceKey);
 	const transport = normalizeTransport(transportInput);
 	const pending = new Map<number, PendingRequest>();
+	const transportControllers = new Map<number, AbortController>();
 	const workspaces = new Map<string, BoundWorkspace>();
 	const invalidationChannel = createBroadcastChannel(
 		`epicenter-${persistenceHash}-records`,
@@ -254,6 +251,12 @@ function createBrowserRuntimeWithPersistence({
 					case 'background-error': {
 						const cause = new Error(message.message);
 						cause.name = message.name;
+						if (isWorkspaceStorageMovedError(cause)) {
+							for (const controller of transportControllers.values()) {
+								controller.abort(cause);
+							}
+							transportControllers.clear();
+						}
 						onBackgroundError(cause, message.workspaceId);
 						return;
 					}
@@ -292,6 +295,8 @@ function createBrowserRuntimeWithPersistence({
 		ownedWorker: Worker,
 		message: Extract<BrowserRuntimeMessage, { type: 'transport-request' }>,
 	): Promise<void> {
+		const controller = new AbortController();
+		transportControllers.set(message.transportId, controller);
 		try {
 			if (!transport) {
 				throw new Error('Browser workspace transport is not bound');
@@ -310,6 +315,7 @@ function createBrowserRuntimeWithPersistence({
 							'content-type': 'application/json',
 						},
 						credentials: transport.credentials,
+						signal: controller.signal,
 						body: JSON.stringify(message.body),
 					},
 				);
@@ -369,6 +375,8 @@ function createBrowserRuntimeWithPersistence({
 						: {}),
 				});
 			}
+		} finally {
+			transportControllers.delete(message.transportId);
 		}
 	}
 
@@ -463,17 +471,27 @@ function createBrowserRuntimeWithPersistence({
 			for (const listener of syncStatusListeners) listener(status);
 		}
 
-		const documentStore = lazyBrowserDocumentStore(
-			documentDatabaseName(persistenceHash, workspaceId),
-		);
-		async function captureDocuments(
-			copy: LogicalWorkspaceCopy,
-		): Promise<LogicalWorkspaceCopy> {
-			await documents.captureDurabilityBarrier();
-			return withCapturedDocuments(copy, documentStore.capture);
-		}
 		const documents = createRowDocumentRuntime<DocumentConnection>({
-			store: documentStore,
+			// The Worker owns the durable update log inside the same OPFS SQLite
+			// store as scalar state; the page carries only load and append across
+			// the message boundary, so a storage steal rejects document work the
+			// same way it rejects scalar work.
+			store: createDocumentStore({
+				load: (address) =>
+					request<readonly Uint8Array[]>(manifest, {
+						kind: 'document-load',
+						table: address.table,
+						rowId: address.rowId,
+					}),
+				async append(address, update) {
+					await request<void>(manifest, {
+						kind: 'document-append',
+						table: address.table,
+						rowId: address.rowId,
+						update,
+					});
+				},
+			}),
 			isLive: async ({ table, rowId }) =>
 				(await request<Record<string, unknown> | undefined>(manifest, {
 					kind: 'read-current-row',
@@ -519,12 +537,13 @@ function createBrowserRuntimeWithPersistence({
 						});
 					},
 					async captureRecovery() {
-						const copy = await request<LogicalWorkspaceCopy | null>(manifest, {
+						// The Worker folds each row's locally durable compact document
+						// state into the copy (ADR-0142); the page only waits for its
+						// admitted appends to commit before the capture reads the log.
+						await documents.captureDurabilityBarrier();
+						return request<LogicalWorkspaceCopy | null>(manifest, {
 							kind: 'sync-capture-recovery',
 						});
-						// The recovery copy carries each row's locally durable compact
-						// document state (ADR-0142); the Worker owns only rows and KV.
-						return copy === null ? null : captureDocuments(copy);
 					},
 					async startFresh() {
 						if (syncStatus.phase !== 'recovery-required') {
@@ -583,17 +602,6 @@ function createBrowserRuntimeWithPersistence({
 			},
 			captureDurability: documents.captureDurabilityBarrier,
 			disposeDocuments: documents[Symbol.asyncDispose],
-			deleteDocuments: documentStore.deleteAll,
-			captureDocuments,
-			async importDocuments(copy: LogicalWorkspaceCopy) {
-				for (const row of copy.rows) {
-					if (row.document === undefined) continue;
-					await documents.importUpdate(
-						{ table: row.table, rowId: row.rowId },
-						row.document,
-					);
-				}
-			},
 		};
 	}
 
@@ -673,10 +681,10 @@ function createBrowserRuntimeWithPersistence({
 					new Error(`Device workspace '${workspaceId}' is not open`),
 				);
 			}
-			const copy = await request<LogicalWorkspaceCopy>(bound.manifest, {
+			// The Worker folds durable document state into the copy.
+			return request<LogicalWorkspaceCopy>(bound.manifest, {
 				kind: 'logical-capture',
 			});
-			return bound.captureDocuments(copy);
 		},
 		async exportAccount(workspaceId: string): Promise<LogicalWorkspaceExport> {
 			const bound = workspaces.get(workspaceId);
@@ -694,10 +702,11 @@ function createBrowserRuntimeWithPersistence({
 			// Best effort: a pending settlement (offline, storage-limit) never
 			// blocks export; the outcome reports the quality of the scalar cut.
 			const settlement = await sync.settle();
+			await bound.captureDurability();
 			const copy = await request<LogicalWorkspaceCopy>(bound.manifest, {
 				kind: 'capture-visible',
 			});
-			return { settlement, ...(await bound.captureDocuments(copy)) };
+			return { settlement, ...copy };
 		},
 		captureDurability(workspaceId: string): Promise<void> {
 			const bound = workspaces.get(workspaceId);
@@ -721,11 +730,13 @@ function createBrowserRuntimeWithPersistence({
 			const bound = workspaces.get(workspaceId);
 			if (!bound)
 				throw new Error(`Device workspace '${workspaceId}' is not open`);
-			await request<void>(bound.manifest, { kind: 'logical-delete' });
+			// Revoke live handles first so already-captured edits drain into the
+			// Worker's log; logical-delete then removes rows and document logs in
+			// one owner-side transaction.
 			await bound.revokeDocuments(
 				new Error('Device workspace data was deleted'),
 			);
-			await bound.deleteDocuments();
+			await request<void>(bound.manifest, { kind: 'logical-delete' });
 		},
 		async addToAccount(
 			workspaceId: string,
@@ -737,25 +748,43 @@ function createBrowserRuntimeWithPersistence({
 					new Error(`Account workspace '${workspaceId}' is not open`),
 				);
 			}
+			// The Worker admits the scalar rows and appends each copied document
+			// snapshot into its own log inside this one logical-add; the page
+			// never re-ships document bytes it already sent in the copy.
 			await request(bound.manifest, { kind: 'logical-add', copy });
-			await bound.importDocuments(copy);
 		},
 		async [Symbol.asyncDispose](): Promise<void> {
 			if (isDisposed) return;
 			isDisposed = true;
-			worker?.terminate();
 			const cause = new Error('Browser workspace runtime is disposed');
-			// Revoke page-side row documents so retained handles fail loudly
-			// instead of queueing persistence at a terminated Worker.
+			for (const controller of transportControllers.values()) {
+				controller.abort(cause);
+			}
+			transportControllers.clear();
+			// Drain admitted document appends while their Worker is still alive.
+			// Terminating it first strands the persistence tail waiting for results
+			// that only the terminated Worker could deliver.
+			const failures: unknown[] = [];
 			for (const bound of workspaces.values()) {
-				await bound.disposeDocuments();
+				try {
+					await bound.disposeDocuments();
+				} catch (failure) {
+					failures.push(failure);
+				}
 				bound.rejectReadiness(cause);
 			}
 			ready?.reject(cause);
 			for (const request of pending.values()) request.reject(cause);
 			pending.clear();
+			worker?.terminate();
 			workspaces.clear();
 			invalidationChannel?.close();
+			if (failures.length > 0) {
+				throw new AggregateError(
+					failures,
+					'Browser row-document disposal failed',
+				);
+			}
 		},
 	};
 }
@@ -810,25 +839,6 @@ function normalizeTransport(
 		openWebSocket: input.openWebSocket,
 		headers,
 		credentials: input.credentials ?? 'same-origin',
-	};
-}
-
-function documentDatabaseName(
-	persistenceHash: string,
-	workspaceId: string,
-): string {
-	return `epicenter-${persistenceHash}-${sha256Hex(workspaceId)}-documents-v1`;
-}
-
-function lazyBrowserDocumentStore(databaseName: string): DocumentStore {
-	let store: DocumentStore | undefined;
-	const opened = () =>
-		(store ??= createBrowserIndexedDbDocumentStore({ databaseName }));
-	return {
-		attach: (address, document) => opened().attach(address, document),
-		capture: (address) => opened().capture(address),
-		delete: (address) => opened().delete(address),
-		deleteAll: () => opened().deleteAll(),
 	};
 }
 

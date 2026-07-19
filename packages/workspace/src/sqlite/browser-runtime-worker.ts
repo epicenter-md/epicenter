@@ -9,6 +9,10 @@ import sqlite3InitModule, {
 	type SAHPoolUtil,
 } from '@sqlite.org/sqlite-wasm';
 import {
+	createSqliteDocumentLog,
+	type SqliteDocumentLog,
+} from '../document-provider/sqlite-document-log.js';
+import {
 	type BrowserRecordOperation,
 	type BrowserRuntimeMessage,
 	type BrowserWorkerInbound,
@@ -25,7 +29,6 @@ import {
 	deleteLocalWorkspace,
 	logicalWorkspaceIntents,
 } from './canonical-addition.js';
-import { mergeDocumentUpdates } from './canonical-documents.js';
 import {
 	type CanonicalStore,
 	createCanonicalStore,
@@ -43,7 +46,10 @@ import {
 	CurrentStateTransportInterruption,
 	classifyCurrentStateTransport,
 } from './current-state-transport.js';
-import { initializeLocalWorkspaceStorage } from './local-workspace-storage.js';
+import {
+	initializeLocalWorkspaceStorage,
+	readLocalRow,
+} from './local-workspace-storage.js';
 
 type WorkerScope = {
 	postMessage(message: BrowserRuntimeMessage): void;
@@ -59,6 +65,7 @@ type OpenedRecords = {
 	pool: SAHPoolUtil;
 	sqlite: SqliteDatabase;
 	store: CanonicalStore;
+	documents: SqliteDocumentLog;
 	replica?: CurrentStateReplica;
 	sync?: CanonicalSyncSupervisor;
 	/** Held until Worker termination so this storage has one SQLite owner. */
@@ -185,10 +192,21 @@ async function openRecords(
 					database as unknown as BrowserSqliteDatabase,
 				);
 				if (!manifest.rowSync) initializeLocalWorkspaceStorage(sqlite);
+				// The log reads liveness through the replica projection when one
+				// exists (the closure runs only on appends, after both exist) and
+				// through confirmed local rows otherwise.
+				const documents = createSqliteDocumentLog({
+					database: sqlite,
+					isRowLive: ({ table, rowId }) =>
+						(replica
+							? replica.readCurrentRow(table, rowId)
+							: readLocalRow(sqlite, table, rowId)) !== undefined,
+				});
 				const replica = manifest.rowSync
 					? createCurrentStateReplica({
 							sqlite,
 							transport: createRecordTransport(manifest.workspaceId),
+							documents,
 							onRemoteCommit() {
 								scope.postMessage({
 									type: 'records-changed',
@@ -207,6 +225,7 @@ async function openRecords(
 				const store = createCanonicalStore(sqlite, {
 					admitIntent: replica?.admit,
 					readCurrentRow: replica?.readCurrentRow,
+					deleteDocumentRows: documents.deleteRows,
 				});
 				const sync = replica
 					? createCanonicalSyncSupervisor({
@@ -236,6 +255,7 @@ async function openRecords(
 					pool,
 					sqlite,
 					store,
+					documents,
 					replica,
 					sync,
 					retainedLease,
@@ -288,6 +308,15 @@ function markStolen(state: OpenedRecords): void {
 		`Workspace '${state.manifest.workspaceId}' storage moved to a newer tab`,
 	);
 	state.stolen.name = WORKSPACE_STORAGE_MOVED_ERROR_NAME;
+	// Notify the page before awaiting sync disposal. The page aborts any
+	// in-flight authority fetch, which lets an active sync run settle so this
+	// Worker can close SQLite and release its OPFS handles to the newer tab.
+	scope.postMessage({
+		type: 'background-error',
+		workspaceId: state.manifest.workspaceId,
+		name: state.stolen.name,
+		message: state.stolen.message,
+	});
 	tail = tail.then(async () => {
 		try {
 			await state.sync?.[Symbol.asyncDispose]();
@@ -306,13 +335,6 @@ function markStolen(state: OpenedRecords): void {
 			// Pause can fail if another database still uses the pool; the
 			// thief's acquisition retry loop absorbs the delay.
 		}
-		scope.postMessage({
-			type: 'background-error',
-			workspaceId: state.manifest.workspaceId,
-			name: state.stolen?.name ?? WORKSPACE_STORAGE_MOVED_ERROR_NAME,
-			message:
-				state.stolen?.message ?? 'Workspace storage moved to a newer tab',
-		});
 	});
 }
 
@@ -352,6 +374,17 @@ async function execute(
 			return { isReady: state.replica?.isReady() ?? true };
 		case 'read-current-row':
 			return store.read(operation.table, operation.rowId);
+		case 'document-load':
+			return state.documents.load({
+				table: operation.table,
+				rowId: operation.rowId,
+			});
+		case 'document-append':
+			state.documents.append(
+				{ table: operation.table, rowId: operation.rowId },
+				new Uint8Array(operation.update),
+			);
+			return undefined;
 		case 'list-current-rows':
 			return store.list(operation.table);
 		case 'admit-intent':
@@ -374,23 +407,34 @@ async function execute(
 			if (state.replica) {
 				throw new Error('Only Device workspaces expose logical capture');
 			}
-			return captureLocalWorkspace(state.sqlite, mergeDocumentUpdates);
+			return captureLocalWorkspace(state.sqlite, state.documents.capture);
 		case 'capture-visible':
 			if (!state.replica) {
 				throw new Error('Only Account workspaces expose visible capture');
 			}
 			return state.replica.captureVisible();
-		case 'logical-add':
+		case 'logical-add': {
 			if (!state.replica) {
 				throw new Error('Only Account workspaces accept logical additions');
 			}
 			state.replica.admitMany(logicalWorkspaceIntents(operation.copy));
+			// The rows are admitted and live now, so append each copied document
+			// snapshot straight into the co-located log. The page no longer
+			// re-ships these bytes as separate document-append round trips.
+			for (const row of operation.copy.rows) {
+				if (row.document === undefined) continue;
+				state.documents.append(
+					{ table: row.table, rowId: row.rowId },
+					row.document,
+				);
+			}
 			return undefined;
+		}
 		case 'logical-delete':
 			if (state.replica) {
 				throw new Error('Only Device workspaces expose logical deletion');
 			}
-			deleteLocalWorkspace(state.sqlite);
+			deleteLocalWorkspace(state.sqlite, state.documents.deleteAllRows);
 			return undefined;
 		case 'sql':
 			return store.sql(operation.query, operation.parameters);

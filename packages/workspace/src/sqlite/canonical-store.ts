@@ -11,7 +11,6 @@ import type { JsonObject } from './lens-definition.js';
 import { listLocalRows, readLocalRow } from './local-workspace-storage.js';
 
 const ROWS_TABLE = 'rows';
-const DOCUMENTS_TABLE = 'documents';
 
 export type CanonicalStoreOptions = {
 	/** Synchronized mode admits durable RowIntents instead of mutating confirmed rows. */
@@ -19,6 +18,12 @@ export type CanonicalStoreOptions = {
 	/** Read confirmed state plus any synchronized optimistic overlay. */
 	readCurrentRow?(table: string, rowId: string): JsonObject | undefined;
 	onLocalCommit?(): void;
+	/**
+	 * Delete durable document logs inside the local-mode delete transaction,
+	 * so scalar death and document death commit together. Synchronized mode
+	 * never calls this; the replica owns its own lifecycle transactions.
+	 */
+	deleteDocumentRows?(addresses: readonly { table: string; rowId: string }[]): void;
 	/** Revoke cached row documents as soon as local deletion changes liveness. */
 	onRowsDeleted?(addresses: { table: string; rowId: string }[]): void;
 };
@@ -30,6 +35,7 @@ export function createCanonicalStore(
 		admitIntent,
 		readCurrentRow = (table, rowId) => readLocalRow(sqlite, table, rowId),
 		onLocalCommit = () => undefined,
+		deleteDocumentRows = () => undefined,
 		onRowsDeleted = () => undefined,
 	}: CanonicalStoreOptions = {},
 ) {
@@ -165,11 +171,7 @@ export function createCanonicalStore(
 						 WHERE table_key = ? AND row_id = ?`,
 						[intent.table, intent.rowId],
 					);
-					sqlite.run(
-						`DELETE FROM "${DOCUMENTS_TABLE}"
-						 WHERE table_key = ? AND row_id = ?`,
-						[intent.table, intent.rowId],
-					);
+					deleteDocumentRows([{ table: intent.table, rowId: intent.rowId }]);
 				});
 				onLocalCommit();
 				onRowsDeleted([{ table: intent.table, rowId: intent.rowId }]);

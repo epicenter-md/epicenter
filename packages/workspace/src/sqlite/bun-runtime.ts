@@ -13,8 +13,10 @@ import {
 	attachAuthenticatedDocumentConnection,
 	rowDocumentWebSocketUrl,
 } from '../document-provider/connection/index.js';
-import { createNativeSqliteDocumentStore } from '../document-provider/native-sqlite.js';
-import type { DocumentStore } from '../document-provider/persistence.js';
+import {
+	createSqliteDocumentLog,
+	type SqliteDocumentLog,
+} from '../document-provider/sqlite-document-log.js';
 
 import {
 	accountStorageIdentity,
@@ -26,9 +28,7 @@ import {
 	type LogicalWorkspaceCopy,
 	type LogicalWorkspaceExport,
 	logicalWorkspaceIntents,
-	withCapturedDocuments,
 } from './canonical-addition.js';
-import { mergeDocumentUpdates } from './canonical-documents.js';
 import {
 	createCanonicalSyncSupervisor,
 	type WorkspaceSyncSettlement,
@@ -38,7 +38,10 @@ import {
 	createCurrentStateReplica,
 } from './current-state-replica.js';
 import { classifyCurrentStateTransport } from './current-state-transport.js';
-import { initializeLocalWorkspaceStorage } from './local-workspace-storage.js';
+import {
+	initializeLocalWorkspaceStorage,
+	readLocalRow,
+} from './local-workspace-storage.js';
 import { createWorkspaceRuntime } from './runtime.js';
 
 const ownedRoots = new Set<string>();
@@ -94,6 +97,14 @@ export function createDeviceBunWorkspaceRuntime({
 			await runtime.openRaw(workspaceId);
 			await runtime.deleteLocal(workspaceId);
 		},
+		/**
+		 * Owner-side document seam for a host that serves renderer surfaces
+		 * (the desktop WebView carrier). The renderer owns the live Y.Doc; the
+		 * host forwards only load and append into this runtime's log, where
+		 * append checks row liveness in the same transaction as its insert.
+		 */
+		loadDocument: runtime.loadDocument,
+		appendDocument: runtime.appendDocument,
 		[Symbol.asyncDispose]: runtime[Symbol.asyncDispose],
 	});
 }
@@ -148,7 +159,7 @@ function createBunRuntimeWithPersistence({
 		string,
 		{
 			sqlite: ReturnType<typeof createBunSqliteAdapter>;
-			documents: DocumentStore;
+			documents: SqliteDocumentLog;
 			notifyDeleted(addresses: { table: string; rowId: string }[]): void;
 			emitChanged(): void;
 		}
@@ -157,7 +168,7 @@ function createBunRuntimeWithPersistence({
 		string,
 		{
 			replica: ReturnType<typeof createCurrentStateReplica>;
-			documents: DocumentStore;
+			documents: SqliteDocumentLog;
 			settle(): Promise<WorkspaceSyncSettlement>;
 			wake(): void;
 			emitChanged(): void;
@@ -187,7 +198,6 @@ function createBunRuntimeWithPersistence({
 				database.exec('PRAGMA busy_timeout = 5000');
 				database.exec('PRAGMA journal_mode = WAL');
 				const sqlite = createBunSqliteAdapter(database);
-				const documents = createNativeSqliteDocumentStore({ database: sqlite });
 				const transport = await abortable(
 					Promise.resolve(recordTransport?.(workspaceId)),
 					signal,
@@ -210,6 +220,11 @@ function createBunRuntimeWithPersistence({
 				};
 				if (!transport) {
 					initializeLocalWorkspaceStorage(sqlite);
+					const documents = createSqliteDocumentLog({
+						database: sqlite,
+						isRowLive: ({ table, rowId }) =>
+							readLocalRow(sqlite, table, rowId) !== undefined,
+					});
 					const deletionListeners = new Set<
 						(addresses: { table: string; rowId: string }[]) => void
 					>();
@@ -229,7 +244,7 @@ function createBunRuntimeWithPersistence({
 					});
 					return {
 						sqlite,
-						documentStore: documents,
+						documentLog: documents,
 						onLocalCommit() {
 							queueMicrotask(emitRecordsChanged);
 						},
@@ -253,9 +268,17 @@ function createBunRuntimeWithPersistence({
 					pull: (request) => abortable(transport.pull(request), signal),
 					acquire: (request) => abortable(transport.acquire(request), signal),
 				};
+				// The log reads liveness through the replica's current projection;
+				// the closure is only invoked on appends, after both exist.
+				const documents = createSqliteDocumentLog({
+					database: sqlite,
+					isRowLive: ({ table, rowId }) =>
+						replica.readCurrentRow(table, rowId) !== undefined,
+				});
 				const replica = createCurrentStateReplica({
 					sqlite,
 					transport: cancellableTransport,
+					documents,
 					onRemoteCommit() {
 						emitRecordsChanged();
 					},
@@ -279,7 +302,7 @@ function createBunRuntimeWithPersistence({
 				});
 				return {
 					sqlite,
-					documentStore: documents,
+					documentLog: documents,
 					...(documentTransport
 						? {
 								connectDocument(address, document) {
@@ -329,37 +352,49 @@ function createBunRuntimeWithPersistence({
 	});
 
 	let isDisposed = false;
+	function deviceWorkspace(workspaceId: string) {
+		const state = localWorkspaces.get(workspaceId);
+		if (!state)
+			throw new Error(`Device workspace '${workspaceId}' is not open`);
+		return state;
+	}
 	return Object.freeze({
 		open: runtime.open,
 		openRaw: runtime.openRaw,
 		captureDurability: runtime.captureDurability,
 		whenReady: runtime.whenReady,
+		async loadDocument(
+			workspaceId: string,
+			address: { table: string; rowId: string },
+		): Promise<Uint8Array[]> {
+			return deviceWorkspace(workspaceId).documents.load(address);
+		},
+		async appendDocument(
+			workspaceId: string,
+			address: { table: string; rowId: string },
+			update: Uint8Array,
+		): Promise<void> {
+			deviceWorkspace(workspaceId).documents.append(address, update);
+		},
 		async captureLocal(workspaceId: string): Promise<LogicalWorkspaceCopy> {
-			const state = localWorkspaces.get(workspaceId);
-			if (!state)
-				throw new Error(`Device workspace '${workspaceId}' is not open`);
-			return withCapturedDocuments(
-				captureLocalWorkspace(state.sqlite, mergeDocumentUpdates),
-				state.documents.capture,
-			);
+			const state = deviceWorkspace(workspaceId);
+			return captureLocalWorkspace(state.sqlite, state.documents.capture);
 		},
 		async deleteLocal(workspaceId: string): Promise<void> {
-			const state = localWorkspaces.get(workspaceId);
-			if (!state)
-				throw new Error(`Device workspace '${workspaceId}' is not open`);
-			const addresses = captureLocalWorkspace(
-				state.sqlite,
-				mergeDocumentUpdates,
-			).rows.map(({ table, rowId }) => ({ table, rowId }));
-			deleteLocalWorkspace(state.sqlite);
-			state.notifyDeleted(addresses);
-			// Destructive cleanup disposes active leases before the store deletes
-			// (ADR-0146); the browser facade awaits the same revocation.
+			const state = deviceWorkspace(workspaceId);
+			// Revoke live handles first so already-captured edits drain into the
+			// log before deletion; then scalar and document death commit in one
+			// transaction.
 			await runtime.revokeDocuments(
 				workspaceId,
 				new Error('Device workspace data was deleted'),
 			);
-			await state.documents.deleteAll();
+			const addresses = state.sqlite.all<{ table: string; rowId: string }>(
+				`SELECT table_key AS "table", row_id AS "rowId" FROM "rows"
+				 ORDER BY table_key, row_id`,
+			);
+			deleteLocalWorkspace(state.sqlite, state.documents.deleteAllRows);
+			state.notifyDeleted(addresses);
 			state.emitChanged();
 		},
 		async exportAccount(workspaceId: string): Promise<LogicalWorkspaceExport> {
@@ -370,13 +405,8 @@ function createBunRuntimeWithPersistence({
 			// blocks export; the outcome reports the quality of the scalar cut.
 			const settlement = await state.settle();
 			await runtime.captureDurability(workspaceId);
-			return {
-				settlement,
-				...(await withCapturedDocuments(
-					state.replica.captureVisible(),
-					state.documents.capture,
-				)),
-			};
+			// captureVisible folds each row's compact document state owner-side.
+			return { settlement, ...state.replica.captureVisible() };
 		},
 		async addToAccount(
 			workspaceId: string,
@@ -386,13 +416,13 @@ function createBunRuntimeWithPersistence({
 			if (!state)
 				throw new Error(`Account workspace '${workspaceId}' is not open`);
 			state.replica.admitMany(logicalWorkspaceIntents(copy));
-			// The runtime importer applies through an already-open destination
-			// document (so retry-add never conflicts with its persistence lease)
-			// and otherwise imports through a disposed transient lease.
+			// The scalar rows are admitted and live, so the owner appends each
+			// copied document snapshot straight into its own log. Append checks
+			// row liveness in the same transaction as its insert, exactly like an
+			// ordinary edit; the renderer never sees a transient import document.
 			for (const row of copy.rows) {
 				if (row.document === undefined) continue;
-				await runtime.importDocument(
-					workspaceId,
+				state.documents.append(
 					{ table: row.table, rowId: row.rowId },
 					row.document,
 				);

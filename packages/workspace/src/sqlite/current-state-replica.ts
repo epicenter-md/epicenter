@@ -187,11 +187,15 @@ export function initializeCurrentStateReplicaSchema(
 	});
 }
 
-function resetCurrentStateReplicaSchema(sqlite: SqliteDatabase): void {
+function resetCurrentStateReplicaSchema(
+	sqlite: SqliteDatabase,
+	alsoInTransaction: () => void = () => undefined,
+): void {
 	sqlite.transaction(() => {
 		for (const table of Object.values(TABLES)) dropTable(sqlite, table);
 		createSchema(sqlite);
 		sqlite.run(`PRAGMA user_version = ${STORAGE_VERSION}`);
+		alsoInTransaction();
 	});
 }
 
@@ -300,6 +304,7 @@ function composeFieldChanges(
 export function createCurrentStateReplica({
 	sqlite,
 	transport,
+	documents,
 	onRemoteCommit = () => undefined,
 	onRowsDeleted = () => undefined,
 	onAcquisitionPromoted = () => undefined,
@@ -309,6 +314,20 @@ export function createCurrentStateReplica({
 }: {
 	sqlite: SqliteDatabase;
 	transport: CurrentStateReplicaTransport;
+	/**
+	 * Owner-side document lifecycle joined to this replica's row lifecycle.
+	 * `deleteRows`/`deleteAllRows` run inside the same transaction that ends
+	 * a row's projected visible life (local intent compaction, authority page
+	 * installation plus intent retirement, acquisition promotion, fresh
+	 * lineage), and `capture` folds compact document state into visible
+	 * captures. The replica stays ignorant of what a document is; it only
+	 * names the lifecycle moments.
+	 */
+	documents?: {
+		capture(address: RowAddress): Uint8Array | undefined;
+		deleteRows(addresses: readonly RowAddress[]): void;
+		deleteAllRows(): void;
+	};
 	onRemoteCommit?: () => void;
 	onRowsDeleted?: (addresses: RowAddress[]) => void;
 	onAcquisitionPromoted?: () => void;
@@ -418,6 +437,28 @@ export function createCurrentStateReplica({
 			current = projectIntent(current, storedIntentToWire(stored));
 		}
 		return current;
+	}
+
+	function uniqueAddresses(addresses: readonly RowAddress[]): RowAddress[] {
+		const unique = new Map<string, RowAddress>();
+		for (const address of addresses) {
+			unique.set(`${address.table}\u0000${address.rowId}`, address);
+		}
+		return [...unique.values()];
+	}
+
+	function readLiveAddresses(addresses: readonly RowAddress[]): RowAddress[] {
+		return uniqueAddresses(addresses).filter(
+			({ table, rowId }) => readCurrentRow(table, rowId) !== undefined,
+		);
+	}
+
+	function rowsWhoseVisibleLifeEnded(
+		previouslyLive: readonly RowAddress[],
+	): RowAddress[] {
+		return previouslyLive.filter(
+			({ table, rowId }) => readCurrentRow(table, rowId) === undefined,
+		);
 	}
 
 	function compactIntoOpen(
@@ -674,9 +715,8 @@ export function createCurrentStateReplica({
 	function installEntries(
 		target: InstallTarget,
 		entries: readonly PullEntry[],
-	): { changed: boolean; deleted: RowAddress[] } {
+	): boolean {
 		let changed = false;
-		const deleted: RowAddress[] = [];
 		for (const entry of entries) {
 			if (entry.kind !== 'deleted') continue;
 			const guard = readInstalledGuard(target.guards, entry.table, entry.rowId);
@@ -709,7 +749,6 @@ export function createCurrentStateReplica({
 			);
 			if (existed || entry.deletedSequence > guard) {
 				changed = true;
-				deleted.push({ table: entry.table, rowId: entry.rowId });
 			}
 		}
 
@@ -756,7 +795,7 @@ export function createCurrentStateReplica({
 				changed = true;
 			}
 		}
-		return { changed, deleted };
+		return changed;
 	}
 
 	function installPullPage({
@@ -791,19 +830,28 @@ export function createCurrentStateReplica({
 			if (replica.checkpoint !== after) {
 				throw new Error('Replica checkpoint changed before page installation');
 			}
-			const installed = installEntries(confirmedTarget, response.entries);
+			const retiresSealedIntents =
+				replica.sealed_digest !== null &&
+				response.receipt.acceptedRound === replica.retired_round + 1 &&
+				response.receipt.requestDigest === replica.sealed_digest &&
+				response.checkpoint >= response.receipt.appliedThrough;
+			const previouslyLive = readLiveAddresses([
+				...response.entries.map(({ table, rowId }) => ({ table, rowId })),
+				...(retiresSealedIntents
+					? readStoredIntents(1).map(({ table_key, row_id }) => ({
+							table: table_key,
+							rowId: row_id,
+						}))
+					: []),
+			]);
+			const changed = installEntries(confirmedTarget, response.entries);
 			sqlite.run(`UPDATE "${TABLES.replica}" SET checkpoint = ? WHERE id = 1`, [
 				response.checkpoint,
 			]);
 			if (response.checkpoint === through && replica.acquired === 0) {
 				sqlite.run(`UPDATE "${TABLES.replica}" SET acquired = 1 WHERE id = 1`);
 			}
-			if (
-				replica.sealed_digest !== null &&
-				response.receipt.acceptedRound === replica.retired_round + 1 &&
-				response.receipt.requestDigest === replica.sealed_digest &&
-				response.checkpoint >= response.receipt.appliedThrough
-			) {
+			if (retiresSealedIntents) {
 				sqlite.run(`DELETE FROM "${TABLES.intents}" WHERE sealed = 1`);
 				sqlite.run(
 					`UPDATE "${TABLES.replica}" SET
@@ -817,7 +865,9 @@ export function createCurrentStateReplica({
 					],
 				);
 			}
-			return installed;
+			const deleted = rowsWhoseVisibleLifeEnded(previouslyLive);
+			if (deleted.length > 0) documents?.deleteRows(deleted);
+			return { changed, deleted };
 		});
 	}
 
@@ -1038,6 +1088,7 @@ export function createCurrentStateReplica({
 					 )
 					 ORDER BY confirmed.table_key, confirmed.row_id`,
 				);
+				const previouslyLive = readLiveAddresses(removed);
 				sqlite.run(`DELETE FROM "${TABLES.rows}"`);
 				sqlite.run(
 					`INSERT INTO "${TABLES.rows}"(table_key, row_id, fields_json)
@@ -1058,7 +1109,11 @@ export function createCurrentStateReplica({
 					[cursor],
 				);
 				dropScratch(sqlite);
-				return removed;
+				const visiblyDeleted = rowsWhoseVisibleLifeEnded(previouslyLive);
+				if (visiblyDeleted.length > 0) {
+					documents?.deleteRows(visiblyDeleted);
+				}
+				return visiblyDeleted;
 			});
 			if (deleted.length > 0) onRowsDeleted(deleted);
 			onAcquisitionPromoted();
@@ -1094,6 +1149,12 @@ export function createCurrentStateReplica({
 		return captureLogicalWorkspace({
 			addresses,
 			readCurrentRow,
+			...(documents
+				? {
+						captureDocument: (address: RowAddress) =>
+							documents.capture(address),
+					}
+				: {}),
 		});
 	}
 
@@ -1111,7 +1172,11 @@ export function createCurrentStateReplica({
 			 UNION
 			 SELECT table_key AS "table", row_id AS "rowId" FROM "${TABLES.intents}"`,
 		);
-		resetCurrentStateReplicaSchema(sqlite);
+		// The fresh lineage starts empty, and conforming runtimes never reuse a
+		// row address across lifetimes (ADR-0145), so every local document log
+		// is dead weight after the reset. Unsynchronized document edits survive
+		// only through the explicit captureRecovery copy taken before this call.
+		resetCurrentStateReplicaSchema(sqlite, () => documents?.deleteAllRows());
 		onRowsDeleted(visibleAddresses);
 		onRemoteCommit();
 	}
@@ -1130,8 +1195,15 @@ export function createCurrentStateReplica({
 		}
 		const changed = intentChangesProjection(admitted);
 		if (!changed) return;
+		const address = { table: admitted.table, rowId: admitted.rowId };
+		const wasLive = readCurrentRow(address.table, address.rowId) !== undefined;
 		const sequence = replica.admission_head + 1;
 		compactIntoOpen(admitted, sequence);
+		// Intent compaction can reveal confirmed state below an open create. Only
+		// the actual visible-live to absent transition ends the document lifetime.
+		if (wasLive && readCurrentRow(address.table, address.rowId) === undefined) {
+			documents?.deleteRows([address]);
+		}
 		sqlite.run(
 			`UPDATE "${TABLES.replica}" SET admission_head = ? WHERE id = 1`,
 			[sequence],
