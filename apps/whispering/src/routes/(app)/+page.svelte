@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import { FileDropZone } from '@epicenter/ui/file-drop-zone';
-	import * as Kbd from '@epicenter/ui/kbd';
 	import { Link } from '@epicenter/ui/link';
 	import * as SectionHeader from '@epicenter/ui/section-header';
 	import * as ToggleGroup from '@epicenter/ui/toggle-group';
@@ -52,10 +51,10 @@
 
 	const latestRecording = $derived(app.recordings.sorted[0]);
 	const transcriptionReadiness = $derived(getTranscriptionReadiness(app));
-	const activeShortcut = $derived.by(() => {
+	const hasActiveShortcut = $derived.by(() => {
 		const surface = captureSurface.current(app);
-		if (surface === 'import') return null;
-		return getRecordingShortcutLabel(app, surface);
+		if (surface === 'import') return false;
+		return !!getRecordingShortcutLabel(app, surface);
 	});
 	// Home is onboarding, not configuration: when transcription is not ready, ask
 	// for only the one required credential inline. A cloud provider needs a single
@@ -160,11 +159,11 @@
 >
 	<SectionHeader.Root class="flex flex-col items-center gap-2 text-center">
 		<div class="flex items-center gap-2.5">
-			<img src={studioMicrophone} alt="" class="size-10" />
-			<SectionHeader.Title level={1}>Whispering</SectionHeader.Title>
+			<img src={studioMicrophone} alt="" class="size-8" />
+			<SectionHeader.Title level={1} class="text-3xl">Whispering</SectionHeader.Title>
 		</div>
-		<SectionHeader.Description>
-			Dictate from anywhere, or record here.
+		<SectionHeader.Description class="text-base">
+			Speech to text, without breaking your flow.
 		</SectionHeader.Description>
 	</SectionHeader.Root>
 
@@ -300,8 +299,8 @@
 
 		{#if captureSurface.current(app) !== 'import'}
 			<p class="text-muted-foreground text-center text-sm">
-				{#if activeShortcut}
-					Use <Kbd.Root>{activeShortcut}</Kbd.Root>
+				{#if hasActiveShortcut}
+					Your shortcut works
 					{tauri ? 'from any app.' : 'while this window is focused.'}
 					<Link href={whisperingPath('/settings/shortcuts')}>Configure shortcuts</Link>
 				{:else}
