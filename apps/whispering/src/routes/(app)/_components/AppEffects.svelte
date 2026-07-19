@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { installRecordingOverlay } from '#platform/recording-overlay';
 	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
 	import { exposeDebugCommands } from '../_app-effects/expose-debug-commands';
 	import { listenForLocalShortcuts } from '../_app-effects/listen-for-local-shortcuts';
@@ -18,7 +17,6 @@
 	logAppStarted();
 	listenForLocalShortcuts();
 	synchronizeShortcuts();
-	installRecordingOverlay?.();
 	notifyDictationFailures();
 	synchronizeUnloadPolicy();
 	synchronizeAutoPasteIntent();

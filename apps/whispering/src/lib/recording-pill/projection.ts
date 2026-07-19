@@ -10,9 +10,9 @@ import type { RecordingPillStatus } from './model.js';
  * desktop and the full failure detail lives on the recordings row and in the OS
  * notification.
  *
- * Shared by both pill mounts so desktop and web project identically: the Tauri
- * driver (`attach-recording-overlay`) sends the result over IPC; the web host
- * (`RecordingPillHost`) feeds it to the same component directly.
+ * Shared by both dictation-indicator implementations so desktop and web project
+ * identically: Tauri sends the result over IPC; the browser feeds it to the
+ * shared pill directly.
  */
 export function projectLifecycleToStatus(
 	lifecycle: DictationLifecycle,

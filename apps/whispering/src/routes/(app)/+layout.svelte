@@ -1,13 +1,12 @@
 <script lang="ts">
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import { MediaQuery } from 'svelte/reactivity';
-	import { tauri } from '#platform/tauri';
+	import DictationIndicator from '#platform/dictation-indicator';
 	import AppEffects from './_components/AppEffects.svelte';
 	import BottomNav from './_components/BottomNav.svelte';
 	import ContentShell from './_components/ContentShell.svelte';
 	import GlobalDialogs from './_components/GlobalDialogs.svelte';
 	import VerticalNav from './_components/VerticalNav.svelte';
-	import RecordingPillHost from '$lib/recording-pill/RecordingPillHost.svelte';
 
 	let { children } = $props();
 
@@ -19,9 +18,9 @@
 
 <!--
 	The (app) route layout is the session root. It mounts once and persists
-	across navigation and across the responsive branch below, so AppEffects and
-	GlobalDialogs (rendered outside the {#if}) start exactly once per launch. Only
-	the nav chrome and ContentShell swap on a breakpoint change.
+	across navigation and across the responsive branch below, so AppEffects,
+	GlobalDialogs, and the build-selected DictationIndicator start exactly once per
+	launch. Only the nav chrome and ContentShell swap on a breakpoint change.
 -->
 <AppEffects />
 
@@ -42,9 +41,4 @@
 {/if}
 
 <GlobalDialogs />
-
-{#if !tauri}
-	<!-- The browser dictation pill persists across navigation as a session-root
-	     sibling. Desktop uses the native overlay window instead. -->
-	<RecordingPillHost />
-{/if}
+<DictationIndicator />
