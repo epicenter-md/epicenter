@@ -16,13 +16,14 @@
 >
 > **Regenerate (deterministic per ref set, lossless):** `bun scripts/generate-spec-history.ts`. The totals track the refs this clone can see; `--all` is deliberate so the timeline recovers specs that only lived on unmerged or deleted branches.
 
-**1391 specs ever** (550 still in tree, 841 removed).
+**1392 specs ever** (550 still in tree, 842 removed).
 
 
 ## 2026
 
 | Date | Spec | State | Path |
 |------|------|-------|------|
+| 2026-07-19 | owner-scoped-workspace-stores | removed | specs/20260719T003311-owner-scoped-workspace-stores.md |
 | 2026-07-17 | workspace-root-cleanup | in tree | specs/20260717T120000-workspace-root-cleanup.md |
 | 2026-07-17 | hosted-storage-policy | removed | specs/20260717T004239-hosted-storage-policy.md |
 | 2026-07-16 | portable-workspace-tree-greenfield-dialectic | removed | specs/20260716T112345-portable-workspace-tree-greenfield-dialectic.md |

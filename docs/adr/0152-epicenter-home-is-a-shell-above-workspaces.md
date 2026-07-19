@@ -1,6 +1,6 @@
 # 0152. Epicenter Home is a shell above workspaces
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-19
 - **Amends:** [ADR-0055](0055-conversation-storage-is-one-canonical-table-every-surface-syncs.md), [ADR-0080](0080-the-super-app-is-a-desktop-host-cross-device-is-remote-access-to-the-session-not-a-per-app-capability-plane.md), [ADR-0118](0118-epicenter-is-one-trusted-bun-hosted-spa-origin.md)
 - **Relates:** [ADR-0055](0055-conversation-storage-is-one-canonical-table-every-surface-syncs.md), [ADR-0111](0111-super-chat-v1-exposes-built-in-epicenter-apps-and-defers-extension-surfaces.md)
