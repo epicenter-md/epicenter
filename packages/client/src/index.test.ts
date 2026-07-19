@@ -5,7 +5,11 @@ import {
 	generateBlobId,
 } from '@epicenter/blobs';
 import { Ok } from 'wellcrafted/result';
-import { createBrowserBlobRemote, createEpicenterClient } from './index.js';
+import {
+	createBrowserBlobRemote,
+	createBunBlobRemote,
+	createEpicenterClient,
+} from './index.js';
 
 const baseURL = 'https://api.epicenter.so';
 
@@ -278,7 +282,144 @@ describe('createBrowserBlobRemote', () => {
 	});
 });
 
+describe('createBunBlobRemote', () => {
+	const originalFetch = globalThis.fetch;
+	afterEach(() => {
+		globalThis.fetch = originalFetch;
+	});
+
+	test('upload streams the lazy local file to the presigned PUT', async () => {
+		const id = generateBlobId();
+		const file = new Blob(['lazy file bytes'], { type: 'audio/test' });
+		let uploadedBody: BodyInit | null | undefined;
+		globalThis.fetch = (async (
+			_input: string | URL | Request,
+			init?: RequestInit,
+		) => {
+			uploadedBody = init?.body;
+			return new Response(null, { status: 200 });
+		}) as unknown as typeof fetch;
+		const client = createEpicenterClient({
+			baseURL,
+			fetch: async () =>
+				Response.json({
+					url: `${baseURL}/api/blobs/${id}`,
+					uploadUrl: 'https://store.example.com/upload',
+					requiredHeaders: {
+						'content-type': 'audio/test',
+						'if-none-match': '*',
+					},
+				}),
+		});
+		const remote = createBunBlobRemote({
+			store: stubBunStore({
+				openFile: async () =>
+					Ok({ file, stat: { size: file.size, contentType: 'audio/test' } }),
+			}),
+			client,
+		});
+
+		const { error } = await remote.upload(id);
+
+		expect(error).toBeNull();
+		expect(uploadedBody).toBe(file);
+	});
+
+	test('upload without local bytes is a typed BlobNotFound', async () => {
+		const id = generateBlobId();
+		const client = createEpicenterClient({
+			baseURL,
+			fetch: async () => new Response(null, { status: 200 }),
+		});
+		const remote = createBunBlobRemote({ store: stubBunStore(), client });
+
+		const { error } = await remote.upload(id);
+
+		expect(error?.name).toBe('BlobNotFound');
+	});
+
+	test('download writes the remote response stream through the store', async () => {
+		const id = generateBlobId();
+		let written: Response | undefined;
+		const client = createEpicenterClient({
+			baseURL,
+			fetch: async () =>
+				new Response('remote bytes', {
+					headers: { 'content-type': 'audio/test' },
+				}),
+		});
+		const remote = createBunBlobRemote({
+			store: stubBunStore({
+				putResponse: async (_id, response) => {
+					written = response;
+					return Ok(undefined);
+				},
+			}),
+			client,
+		});
+
+		const { error } = await remote.download(id);
+
+		expect(error).toBeNull();
+		expect(await written?.text()).toBe('remote bytes');
+	});
+
+	test('download skips the remote when local bytes exist and maps a 404', async () => {
+		const id = generateBlobId();
+		let remoteReached = false;
+		const reachingClient = createEpicenterClient({
+			baseURL,
+			fetch: async () => {
+				remoteReached = true;
+				return new Response('missing', { status: 404 });
+			},
+		});
+
+		const alreadyLocal = createBunBlobRemote({
+			store: stubBunStore({
+				stat: async () => Ok({ size: 5, contentType: 'audio/test' }),
+			}),
+			client: reachingClient,
+		});
+		expect((await alreadyLocal.download(id)).error).toBeNull();
+		expect(remoteReached).toBe(false);
+
+		const missingRemote = createBunBlobRemote({
+			store: stubBunStore(),
+			client: reachingClient,
+		});
+		expect((await missingRemote.download(id)).error?.name).toBe(
+			'RemoteBlobNotFound',
+		);
+	});
+
+	test('purge maps a failed remote delete onto BlobRemoteFailed', async () => {
+		const id = generateBlobId();
+		const client = createEpicenterClient({
+			baseURL,
+			fetch: async () => new Response('nope', { status: 500 }),
+		});
+		const remote = createBunBlobRemote({ store: stubBunStore(), client });
+
+		const { error } = await remote.purge(id);
+
+		expect(error?.name).toBe('BlobRemoteFailed');
+	});
+});
+
+type BunRemoteStore = Parameters<typeof createBunBlobRemote>[0]['store'];
+
+function stubBunStore(overrides: Partial<BunRemoteStore> = {}): BunRemoteStore {
+	return {
+		openFile: async (id) => BlobStoreError.BlobNotFound({ id }),
+		putResponse: async () => Ok(undefined),
+		stat: async (id) => BlobStoreError.BlobNotFound({ id }),
+		...overrides,
+	};
+}
+
 function stubLocalStore(overrides: Partial<BlobStore> = {}): BlobStore {
+
 	return {
 		put: async () => Ok(undefined),
 		get: async (id) => BlobStoreError.BlobNotFound({ id }),

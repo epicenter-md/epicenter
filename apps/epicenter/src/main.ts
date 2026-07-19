@@ -10,12 +10,18 @@
 
 import { join } from 'node:path';
 import { createBunBlobStore } from '@epicenter/blobs/bun';
-import { type AgentEngine, createOpenAiAgentEngine } from '@epicenter/client';
+import {
+	type AgentEngine,
+	createBunBlobRemote,
+	createEpicenterClient,
+	createOpenAiAgentEngine,
+} from '@epicenter/client';
 import { honeycrispWorkspace } from '@epicenter/honeycrisp';
 import {
 	createDesktopAuthAuthority,
 	type DesktopAuthAuthority,
 } from './desktop-auth-authority.ts';
+import { createDesktopAuthorityFetch } from './desktop-authority-fetch.ts';
 import { createHomeHost, type HomeHost } from './host.ts';
 import { SURFACE_ROUTES } from './routes.ts';
 import { createHomeServer } from './server.ts';
@@ -69,6 +75,20 @@ async function main(): Promise<void> {
 		const blobs = createBunBlobStore({
 			directory: join(epicenterDataDir, 'blobs'),
 		});
+		// Identity is immutable per process generation, so remote availability
+		// is a boot-time fact: a signed-in generation composes the streaming
+		// remote over the authority's own deployment fetch, a signed-out one
+		// has none until sign-in relaunches the app.
+		const blobRemote =
+			desktopAuth.bootSnapshot.state.status === 'signed-in'
+				? createBunBlobRemote({
+						store: blobs,
+						client: createEpicenterClient({
+							baseURL: desktopAuth.baseURL,
+							fetch: createDesktopAuthorityFetch(desktopAuth),
+						}),
+					})
+				: null;
 
 		const appsDist = process.env.EPICENTER_APPS_DIST;
 		if (!appsDist) {
@@ -93,6 +113,7 @@ async function main(): Promise<void> {
 			workspaceOwner,
 			blobs,
 			desktopAuth,
+			blobRemote,
 		});
 
 		server = Bun.serve({

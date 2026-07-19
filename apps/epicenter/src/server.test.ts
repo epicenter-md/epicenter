@@ -28,7 +28,12 @@ import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { generateBlobId } from '@epicenter/blobs';
+import {
+	type BlobRemote,
+	BlobRemoteError,
+	generateBlobId,
+} from '@epicenter/blobs';
+import { Ok } from 'wellcrafted/result';
 import { createBunBlobStore } from '@epicenter/blobs/bun';
 import { desktopBlobUrl } from '@epicenter/blobs/webview';
 import type { AgentEngine, EngineChunk } from '@epicenter/workspace/agent';
@@ -117,7 +122,11 @@ function createTestHost(
 	});
 }
 
-async function serveHost(host: HomeHost, page: string = PAGE) {
+async function serveHost(
+	host: HomeHost,
+	page: string = PAGE,
+	blobRemote: BlobRemote | null = null,
+) {
 	const portProbe = Bun.serve({
 		hostname: '127.0.0.1',
 		port: 0,
@@ -133,6 +142,7 @@ async function serveHost(host: HomeHost, page: string = PAGE) {
 		staticAssets: await createAppsDistFixture(page),
 		blobs: createTestBlobs(),
 		desktopAuth: createTestDesktopAuth(),
+		blobRemote,
 	});
 	const server = Bun.serve({
 		hostname: '127.0.0.1',
@@ -339,6 +349,7 @@ describe('createHomeServer', () => {
 				staticAssets,
 				blobs: createTestBlobs(),
 				desktopAuth,
+				blobRemote: null,
 			}),
 		).toThrow(/launch token/);
 		for (const origin of [
@@ -355,6 +366,7 @@ describe('createHomeServer', () => {
 					staticAssets,
 					blobs: createTestBlobs(),
 					desktopAuth,
+					blobRemote: null,
 				}),
 			).toThrow(/exact http:\/\/127\.0\.0\.1/);
 		}
@@ -911,6 +923,100 @@ describe('local blob routes', () => {
 					{ method },
 				);
 				expect(response.status).toBe(401);
+			}
+		} finally {
+			await server.stop(true);
+		}
+	});
+
+	test('remote copy routes take only the blob id and map typed results', async () => {
+		await using host = await createTestHost({
+			engine: scriptedEngine([[]]),
+		});
+		const calls: { operation: string; id: string }[] = [];
+		const stubRemote: BlobRemote = {
+			async upload(id) {
+				calls.push({ operation: 'upload', id });
+				return Ok(undefined);
+			},
+			async download(id) {
+				calls.push({ operation: 'download', id });
+				return BlobRemoteError.RemoteBlobNotFound({ id });
+			},
+			async purge(id) {
+				calls.push({ operation: 'purge', id });
+				return BlobRemoteError.BlobRemoteFailed({
+					id,
+					cause: new Error('remote unreachable'),
+				});
+			},
+		};
+		const server = await serveHost(host, PAGE, stubRemote);
+		const id = generateBlobId();
+		const { cookie, origin } = authenticationFor(server);
+		const session = { headers: { cookie, origin } };
+		try {
+			const unauthenticated = await fetch(
+				`${server.url.origin}${desktopBlobUrl(id)}/upload`,
+				{ method: 'POST' },
+			);
+			expect(unauthenticated.status).toBe(401);
+			expect(calls).toHaveLength(0);
+
+			const invalidId = await fetch(
+				`${server.url.origin}/api/local-blobs/not-a-blob-id/upload`,
+				{ method: 'POST', ...session },
+			);
+			expect(invalidId.status).toBe(400);
+
+			// A caller-supplied body is dead weight, never a transfer target: the
+			// stub still receives only the path id.
+			const uploaded = await fetch(
+				`${server.url.origin}${desktopBlobUrl(id)}/upload`,
+				{
+					method: 'POST',
+					headers: { ...session.headers, 'content-type': 'application/json' },
+					body: JSON.stringify({ uploadUrl: 'https://evil.example/steal' }),
+				},
+			);
+			expect(uploaded.status).toBe(204);
+
+			const downloaded = await fetch(
+				`${server.url.origin}${desktopBlobUrl(id)}/download`,
+				{ method: 'POST', ...session },
+			);
+			expect(downloaded.status).toBe(404);
+
+			const purged = await fetch(
+				`${server.url.origin}${desktopBlobUrl(id)}/purge`,
+				{ method: 'POST', ...session },
+			);
+			expect(purged.status).toBe(502);
+
+			expect(calls).toEqual([
+				{ operation: 'upload', id },
+				{ operation: 'download', id },
+				{ operation: 'purge', id },
+			]);
+		} finally {
+			await server.stop(true);
+		}
+	});
+
+	test('a signed-out generation answers 503 for every remote copy operation', async () => {
+		await using host = await createTestHost({
+			engine: scriptedEngine([[]]),
+		});
+		const server = await serveHost(host);
+		const id = generateBlobId();
+		const { cookie, origin } = authenticationFor(server);
+		try {
+			for (const operation of ['upload', 'download', 'purge']) {
+				const response = await fetch(
+					`${server.url.origin}${desktopBlobUrl(id)}/${operation}`,
+					{ method: 'POST', headers: { cookie, origin } },
+				);
+				expect(response.status).toBe(503);
 			}
 		} finally {
 			await server.stop(true);

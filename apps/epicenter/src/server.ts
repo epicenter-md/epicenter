@@ -6,7 +6,7 @@
  */
 
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { parseBlobId } from '@epicenter/blobs';
+import { type BlobId, type BlobRemote, parseBlobId } from '@epicenter/blobs';
 import type { BunBlobStore } from '@epicenter/blobs/bun';
 import type { AgentToolDefinition } from '@epicenter/workspace/agent';
 import type { DesktopWorkspaceOwner } from '@epicenter/workspace/sqlite/desktop-owner';
@@ -29,6 +29,7 @@ import {
 	ACCOUNT_SIGN_IN_ROUTE,
 	ACCOUNT_SIGN_OUT_ROUTE,
 	BOOTSTRAP_ROUTE,
+	LOCAL_BLOB_REMOTE_ROUTES,
 	LOCAL_BLOB_ROUTE,
 	SESSION_ROUTE,
 	SESSION_STREAM_ROUTE,
@@ -63,6 +64,13 @@ export type HomeServerOptions = {
 	blobs: BunBlobStore;
 	/** One credential owner for every compiled desktop surface. */
 	desktopAuth: DesktopAuthAuthority;
+	/**
+	 * Host-owned remote copy capability over the same local bytes, or `null`
+	 * when this signed-out process generation has none. The composition root
+	 * builds it from the desktop authority, so these routes never see a
+	 * credential or a destination URL.
+	 */
+	blobRemote: BlobRemote | null;
 };
 
 const SESSION_COOKIE = 'epicenter_session';
@@ -78,6 +86,7 @@ export function createHomeServer({
 	workspaceOwner,
 	blobs,
 	desktopAuth,
+	blobRemote,
 }: HomeServerOptions) {
 	if (launchToken === '') {
 		throw new Error('Epicenter refuses to serve without a launch token.');
@@ -376,6 +385,53 @@ export function createHomeServer({
 		if (result.error !== null) return c.text('Blob store failed', 500);
 		return c.body(null, 204);
 	});
+
+	// Remote copy operations: the blob id in the path is the only input. The
+	// host's own deployment authority supplies the target and credential, so
+	// no request body, destination URL, or authorization header is read.
+	const requireBlobRemote = (
+		operate: (
+			remote: BlobRemote,
+			id: BlobId,
+		) => Promise<
+			| Awaited<ReturnType<BlobRemote['upload']>>
+			| Awaited<ReturnType<BlobRemote['download']>>
+			| Awaited<ReturnType<BlobRemote['purge']>>
+		>,
+	) => {
+		return async (c: Context) => {
+			const id = parseBlobId(c.req.param('blobId'));
+			if (id === undefined) return c.text('Invalid blob id', 400);
+			if (blobRemote === null) {
+				return c.text('Remote storage unavailable', 503);
+			}
+			const result = await operate(blobRemote, id);
+			if (result.error === null) return c.body(null, 204);
+			switch (result.error.name) {
+				case 'BlobNotFound':
+				case 'RemoteBlobNotFound':
+					return c.text(result.error.message, 404);
+				case 'BlobStoreFailed':
+					return c.text('Blob store failed', 500);
+				case 'BlobRemoteFailed':
+					return c.text('Remote operation failed', 502);
+				default:
+					return result.error satisfies never;
+			}
+		};
+	};
+	app.post(
+		LOCAL_BLOB_REMOTE_ROUTES.upload.pattern,
+		requireBlobRemote((remote, id) => remote.upload(id)),
+	);
+	app.post(
+		LOCAL_BLOB_REMOTE_ROUTES.download.pattern,
+		requireBlobRemote((remote, id) => remote.download(id)),
+	);
+	app.post(
+		LOCAL_BLOB_REMOTE_ROUTES.purge.pattern,
+		requireBlobRemote((remote, id) => remote.purge(id)),
+	);
 
 	app.post('/api/workspaces/:workspaceId/records', async (c) => {
 		if (!workspaceOwner)

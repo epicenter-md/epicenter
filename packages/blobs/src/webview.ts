@@ -2,6 +2,7 @@
 
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import type { BlobId } from './blob-id.js';
+import { type BlobRemote, BlobRemoteError } from './blob-remote.js';
 import type { BlobSources } from './blob-source.js';
 import { type BlobStore, BlobStoreError } from './blob-store.js';
 
@@ -114,6 +115,92 @@ export function createWebviewBlobStore({
 						`Local blob DELETE returned ${response.data.status}.`,
 					),
 				});
+			}
+			return Ok(undefined);
+		},
+	};
+}
+
+/**
+ * Create the WebView adapter for the desktop host's remote copy operations.
+ *
+ * Each verb is one same-origin POST that names only the blob id in its path;
+ * the request carries no body, destination, or authorization header. The Bun
+ * host owns the deployment credential, mints its own presigned operation, and
+ * streams bytes between its filesystem store and the remote, so no signed URL
+ * or bearer ever reaches this adapter. A 503 means this process generation
+ * has no remote capability (signed out); compositions gate on auth state so
+ * callers normally never see it.
+ */
+export function createWebviewBlobRemote({
+	fetch: fetcher = globalThis.fetch,
+}: {
+	fetch?: HttpFetch;
+} = {}): BlobRemote {
+	async function operate(
+		id: BlobId,
+		operation: 'upload' | 'download' | 'purge',
+	) {
+		return tryAsync({
+			try: () =>
+				fetcher(`${desktopBlobUrl(id)}/${operation}`, {
+					method: 'POST',
+					credentials: 'same-origin',
+					redirect: 'error',
+				}),
+			catch: (cause) => BlobRemoteError.BlobRemoteFailed({ id, cause }),
+		});
+	}
+
+	function operationFailed(id: BlobId, operation: string, status: number) {
+		return BlobRemoteError.BlobRemoteFailed({
+			id,
+			cause: new Error(`Host blob ${operation} returned ${status}.`),
+		});
+	}
+
+	return {
+		async upload(id) {
+			const response = await operate(id, 'upload');
+			if (response.error !== null) return Err(response.error);
+			if (response.data.status === 404) {
+				return BlobStoreError.BlobNotFound({ id });
+			}
+			if (response.data.status === 500) {
+				return BlobStoreError.BlobStoreFailed({
+					id,
+					cause: new Error('Host blob upload failed to read local bytes.'),
+				});
+			}
+			if (!response.data.ok) {
+				return operationFailed(id, 'upload', response.data.status);
+			}
+			return Ok(undefined);
+		},
+
+		async download(id) {
+			const response = await operate(id, 'download');
+			if (response.error !== null) return Err(response.error);
+			if (response.data.status === 404) {
+				return BlobRemoteError.RemoteBlobNotFound({ id });
+			}
+			if (response.data.status === 500) {
+				return BlobStoreError.BlobStoreFailed({
+					id,
+					cause: new Error('Host blob download failed to write local bytes.'),
+				});
+			}
+			if (!response.data.ok) {
+				return operationFailed(id, 'download', response.data.status);
+			}
+			return Ok(undefined);
+		},
+
+		async purge(id) {
+			const response = await operate(id, 'purge');
+			if (response.error !== null) return Err(response.error);
+			if (!response.data.ok) {
+				return operationFailed(id, 'purge', response.data.status);
 			}
 			return Ok(undefined);
 		},

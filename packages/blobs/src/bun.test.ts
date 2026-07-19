@@ -297,3 +297,17 @@ test('delete rejects a path-hostile runtime id before deleting outside the store
 	expect(expectErr(await blobs.delete(hostileId)).name).toBe('BlobStoreFailed');
 	expect(await readFile(join(outside, 'sentinel'), 'utf8')).toBe('untouched');
 });
+
+test('putResponse streams a response body under its content type', async () => {
+	const { blobs } = await setup();
+	const id = generateBlobId();
+	const response = new Response('response bytes', {
+		headers: { 'content-type': 'audio/test' },
+	});
+
+	expectOk(await blobs.putResponse(id, response));
+	const stat = expectOk(await blobs.stat(id));
+	expect(stat).toEqual({ contentType: 'audio/test', size: 14 });
+	const read = expectOk(await blobs.get(id));
+	expect(await read.text()).toBe('response bytes');
+});

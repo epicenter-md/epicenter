@@ -18,6 +18,7 @@ import { expect, test } from 'bun:test';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { generateBlobId } from './blob-id.js';
 import {
+	createWebviewBlobRemote,
 	createWebviewBlobSources,
 	createWebviewBlobStore,
 	desktopBlobUrl,
@@ -39,6 +40,7 @@ function setup(responses: Response[]) {
 	};
 	return {
 		blobs: createWebviewBlobStore({ fetch: fetcher }),
+		fetcher,
 		requestInits,
 		requests,
 	};
@@ -145,4 +147,50 @@ test('webview sources forward missing local bytes from the stat check', async ()
 
 	const error = expectErr(await sources.open(id));
 	expect(error).toMatchObject({ name: 'BlobNotFound', id });
+});
+
+test('remote operations post the id-only path with same-origin credentials', async () => {
+	const { fetcher, requests, requestInits } = setup([
+		new Response(null, { status: 204 }),
+		new Response(null, { status: 204 }),
+		new Response(null, { status: 204 }),
+	]);
+	const remote = createWebviewBlobRemote({ fetch: fetcher });
+	const id = generateBlobId();
+
+	expectOk(await remote.upload(id));
+	expectOk(await remote.download(id));
+	expectOk(await remote.purge(id));
+
+	expect(requests.map((request) => new URL(request.url).pathname)).toEqual([
+		`${desktopBlobUrl(id)}/upload`,
+		`${desktopBlobUrl(id)}/download`,
+		`${desktopBlobUrl(id)}/purge`,
+	]);
+	for (const request of requests) {
+		expect(request.method).toBe('POST');
+		expect(request.headers.get('authorization')).toBeNull();
+	}
+	for (const init of requestInits) {
+		expect(init.credentials).toBe('same-origin');
+		expect(init.body).toBeUndefined();
+	}
+});
+
+test('remote statuses map onto the typed blob vocabulary', async () => {
+	const { fetcher } = setup([
+		new Response('Blob not found', { status: 404 }),
+		new Response('Blob not found', { status: 404 }),
+		new Response('Blob store failed', { status: 500 }),
+		new Response('Remote operation failed', { status: 502 }),
+		new Response('Remote storage unavailable', { status: 503 }),
+	]);
+	const remote = createWebviewBlobRemote({ fetch: fetcher });
+	const id = generateBlobId();
+
+	expect(expectErr(await remote.upload(id)).name).toBe('BlobNotFound');
+	expect(expectErr(await remote.download(id)).name).toBe('RemoteBlobNotFound');
+	expect(expectErr(await remote.upload(id)).name).toBe('BlobStoreFailed');
+	expect(expectErr(await remote.download(id)).name).toBe('BlobRemoteFailed');
+	expect(expectErr(await remote.purge(id)).name).toBe('BlobRemoteFailed');
 });

@@ -14,10 +14,14 @@
 
 import type { AuthFetch } from '@epicenter/auth';
 import {
+	type BlobAlreadyExists,
 	type BlobId,
+	type BlobNotFound,
 	type BlobRemote,
 	BlobRemoteError,
+	type BlobStat,
 	type BlobStore,
+	type BlobStoreFailed,
 } from '@epicenter/blobs';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import {
@@ -334,6 +338,82 @@ export function createBrowserBlobRemote({
 			if (readError !== null) return Err(readError);
 
 			const { error: putError } = await local.put(id, blob);
+			if (putError === null || putError.name === 'BlobAlreadyExists') {
+				return Ok(undefined);
+			}
+			return Err(putError);
+		},
+
+		async purge(id) {
+			const { error } = await client.blobs.delete(id);
+			return error === null
+				? Ok(undefined)
+				: BlobRemoteError.BlobRemoteFailed({ id, cause: error });
+		},
+	};
+}
+
+/**
+ * Compose the Bun filesystem store with the hosted remote blob surface.
+ *
+ * This is the desktop host's adapter (ADR-0149): upload hands the store's lazy
+ * `BunFile` to the presigned PUT so recording bytes stream from disk, and
+ * download writes the presigned GET's response stream straight into the store,
+ * so a large object is never materialized in memory and never crosses WebView
+ * IPC. The caller owns the authed fetch inside `client`; presigned vocabulary
+ * stays inside `client.blobs`.
+ */
+/**
+ * The streaming surface the desktop remote needs from a host-owned store.
+ * `BunBlobStore` satisfies it: `openFile` hands back a lazy file (a `Blob`
+ * whose bytes load on demand) and `putResponse` writes a response stream.
+ */
+export type HostBlobStore = {
+	openFile(
+		id: BlobId,
+	): Promise<
+		Result<{ file: Blob; stat: BlobStat }, BlobNotFound | BlobStoreFailed>
+	>;
+	putResponse(
+		id: BlobId,
+		response: Response,
+	): Promise<Result<void, BlobAlreadyExists | BlobStoreFailed>>;
+	stat(id: BlobId): Promise<Result<BlobStat, BlobNotFound | BlobStoreFailed>>;
+};
+
+export function createBunBlobRemote({
+	store,
+	client,
+}: {
+	store: HostBlobStore;
+	client: EpicenterClient;
+}): BlobRemote {
+	return {
+		async upload(id) {
+			const { data: opened, error: localError } = await store.openFile(id);
+			if (localError !== null) return Err(localError);
+			const { error: remoteError } = await client.blobs.add(id, opened.file, {
+				contentType: opened.stat.contentType,
+			});
+			return remoteError === null
+				? Ok(undefined)
+				: BlobRemoteError.BlobRemoteFailed({ id, cause: remoteError });
+		},
+
+		async download(id) {
+			const { error: statError } = await store.stat(id);
+			if (statError === null) return Ok(undefined);
+			if (statError.name !== 'BlobNotFound') return Err(statError);
+
+			const { data: response, error: remoteError } = await client.blobs.get(id);
+			if (remoteError !== null) {
+				return remoteError.name === 'RequestFailed' &&
+					remoteError.status === 404
+					? BlobRemoteError.RemoteBlobNotFound({ id })
+					: BlobRemoteError.BlobRemoteFailed({ id, cause: remoteError });
+			}
+
+			const { error: putError } = await store.putResponse(id, response);
 			if (putError === null || putError.name === 'BlobAlreadyExists') {
 				return Ok(undefined);
 			}

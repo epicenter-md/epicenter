@@ -246,6 +246,7 @@ describe('home server catalog routes', () => {
 				directory: join(tempDir('epicenter-blobs-'), 'blobs'),
 			}),
 			desktopAuth: createTestDesktopAuth(),
+			blobRemote: null,
 		});
 		const server = Bun.serve({
 			hostname: '127.0.0.1',

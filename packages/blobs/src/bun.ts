@@ -21,7 +21,7 @@ type StoredMetadata = BlobStat;
 
 type BlobReadError = BlobNotFound | BlobStoreFailed;
 
-type PutData = Blob | Request;
+type PutData = Blob | Request | Response;
 
 /**
  * Bun's filesystem-backed local blob store.
@@ -188,6 +188,15 @@ export function createBunBlobStore({ directory }: { directory: string }) {
 			);
 		},
 
+		/** Store an HTTP response body without first materializing it as a Blob. */
+		putResponse(id: BlobId, response: Response) {
+			return putData(
+				id,
+				response,
+				response.headers.get('content-type') ?? DEFAULT_CONTENT_TYPE,
+			);
+		},
+
 		/** Open the lazy BunFile and its metadata for an HTTP file response. */
 		openFile(id: BlobId) {
 			return openBlob(id);
@@ -220,6 +229,10 @@ export function createBunBlobStore({ directory }: { directory: string }) {
 		putRequest(
 			id: BlobId,
 			request: Request,
+		): Promise<Result<void, BlobAlreadyExists | BlobStoreFailed>>;
+		putResponse(
+			id: BlobId,
+			response: Response,
 		): Promise<Result<void, BlobAlreadyExists | BlobStoreFailed>>;
 		openFile(id: BlobId): ReturnType<typeof openBlob>;
 	};
