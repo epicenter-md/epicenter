@@ -13,6 +13,7 @@ import { createBunBlobs } from '@epicenter/blobs/bun';
 import { type AgentEngine, createOpenAiAgentEngine } from '@epicenter/client';
 import { honeycrispWorkspace } from '@epicenter/honeycrisp';
 import { createHomeHost, type HomeHost } from './host.ts';
+import { SURFACE_ROUTES } from './routes.ts';
 import { createHomeServer } from './server.ts';
 import {
 	createReadyFrame,
@@ -21,7 +22,7 @@ import {
 	superviseSidecar,
 	watchParentPipe,
 } from './sidecar-runtime.ts';
-import { loadStaticAssets } from './static-assets.ts';
+import { deriveAppCatalog, loadStaticAssets } from './static-assets.ts';
 import { conversationsWorkspace } from './workspace.ts';
 import { createEpicenterWorkspaceOwner } from './workspace-owner.ts';
 
@@ -65,12 +66,19 @@ async function main(): Promise<void> {
 			);
 		}
 		const staticAssets = await loadStaticAssets(appsDist);
+		// Source-built catalog members live in host-owned app data; the
+		// built-in surfaces stay on the legacy closed layout for this slice.
+		const appCatalog = await deriveAppCatalog(
+			join(epicenterDataDir, 'app-catalog'),
+			{ reservedIds: Object.keys(SURFACE_ROUTES) },
+		);
 		const origin = `http://127.0.0.1:${boot.port}`;
 		const { app, websocket } = createHomeServer({
 			host,
 			origin,
 			launchToken: boot.token,
 			staticAssets,
+			appCatalog,
 			workspaceOwner,
 			blobs,
 		});

@@ -28,7 +28,7 @@ import {
 	SURFACE_ROUTES,
 	type SurfaceId,
 } from './routes.ts';
-import type { EpicenterStaticAssets } from './static-assets.ts';
+import type { AppCatalog, EpicenterStaticAssets } from './static-assets.ts';
 import { PLACEHOLDER_SURFACE_PAGES } from './surface-pages.ts';
 
 export type HomeServerEvent = {
@@ -49,6 +49,8 @@ export type HomeServerOptions = {
 	launchToken: string;
 	/** Release-built documents and the contained Whispering asset resolver. */
 	staticAssets: EpicenterStaticAssets;
+	/** Derived trusted app catalog (ADR-0153); absent means no members. */
+	appCatalog?: AppCatalog;
 	workspaceOwner?: DesktopWorkspaceOwner;
 	/** Canonical device-local bytes shared by every trusted app surface. */
 	blobs: BunBlobs;
@@ -62,6 +64,7 @@ export function createHomeServer({
 	origin,
 	launchToken,
 	staticAssets,
+	appCatalog = { apps: [] },
 	workspaceOwner,
 	blobs,
 }: HomeServerOptions) {
@@ -140,6 +143,20 @@ export function createHomeServer({
 		c.header('content-type', asset.contentType);
 		return c.body(asset.file.stream());
 	});
+	// Derived catalog members (ADR-0153). Reserved built-in IDs never reach
+	// this handler: the surface routes above win registration order and the
+	// catalog derivation refuses them.
+	app.get('/apps/:appId/*', async (c) => {
+		const member = appCatalog.apps.find(
+			(catalogApp) => catalogApp.id === c.req.param('appId'),
+		);
+		if (!member) return c.text('Not Found', 404);
+		const asset = await member.resolve(new URL(c.req.url).pathname);
+		if (!asset) return c.text('Not Found', 404);
+		c.header('cache-control', 'no-store');
+		c.header('content-type', asset.contentType);
+		return c.body(asset.file.stream());
+	});
 	app.get('/apps/*', (c) => c.text('Not Found', 404));
 
 	const requireSession = async (
@@ -152,6 +169,7 @@ export function createHomeServer({
 		}
 		await next();
 	};
+	app.use('/api/apps', requireSession);
 	app.use('/api/home/*', requireSession);
 	app.use('/api/workspaces/*', requireSession);
 	app.use('/api/local-blobs/*', requireSession);
@@ -165,6 +183,12 @@ export function createHomeServer({
 			tools: host.toolDefinitions(),
 			snapshot: host.snapshot(),
 		} satisfies HomeSessionResponse),
+	);
+
+	app.get('/api/apps', (c) =>
+		c.json({
+			apps: appCatalog.apps.map(({ id, title }) => ({ id, title })),
+		}),
 	);
 
 	app.put(LOCAL_BLOB_ROUTE.pattern, async (c) => {
