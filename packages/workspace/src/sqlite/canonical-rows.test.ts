@@ -20,6 +20,7 @@ import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { Type } from 'typebox';
 import { expectOk } from 'wellcrafted/testing';
 import { createCanonicalRows } from './canonical-rows.js';
+import { createCanonicalStore } from './canonical-store.js';
 import { defineTable, type JsonObject } from './lens-definition.js';
 import { initializeLocalWorkspaceStorage } from './local-workspace-storage.js';
 
@@ -133,5 +134,51 @@ test('records exposes synchronized optimistic create, update, and delete state',
 		expect(records.sql(query, [], resultSchema)).toEqual([]);
 	} finally {
 		database.close();
+	}
+});
+
+test('raw local and synchronized stores share portable intent admission', () => {
+	for (const synchronized of [false, true]) {
+		const database = new Database(':memory:');
+		const sqlite = createBunSqliteAdapter(database);
+		initializeLocalWorkspaceStorage(sqlite);
+		let forwarded = 0;
+		const store = createCanonicalStore(sqlite, {
+			...(synchronized
+				? {
+						admitIntent() {
+							forwarded += 1;
+						},
+					}
+				: {}),
+		});
+		try {
+			expect(() =>
+				store.admit({
+					kind: 'update',
+					table: 'notes',
+					rowId: '../outside',
+					fields: { set: { title: 'no' }, unset: [] },
+				}),
+			).toThrow('Invalid row intent');
+			expect(() =>
+				store.admit({
+					kind: 'create',
+					table: '__epicenter_private',
+					rowId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+					fields: {},
+				}),
+			).toThrow('Invalid row intent');
+			expect(() =>
+				store.admit({
+					kind: 'delete',
+					table: '__epicenter_kv',
+					rowId: 'workspace',
+				}),
+			).toThrow('Invalid row intent');
+			expect(forwarded).toBe(0);
+		} finally {
+			database.close();
+		}
 	}
 });

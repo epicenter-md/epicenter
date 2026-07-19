@@ -1,6 +1,7 @@
 import {
 	foldFields,
 	isAdmissibleCanonicalRow,
+	parseRowIntent,
 	RESERVED_KV_ROW_ID,
 	RESERVED_KV_TABLE,
 	type WireRowIntent,
@@ -98,6 +99,7 @@ export function createCanonicalStore(
 	}
 
 	function admit(intent: WireRowIntent): void {
+		intent = parseRowIntent(intent);
 		if (
 			intent.kind === 'create' &&
 			!isAdmissibleCanonicalRow({

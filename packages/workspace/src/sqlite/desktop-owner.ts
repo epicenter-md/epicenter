@@ -18,7 +18,7 @@ import {
 export { DesktopWorkspaceError } from './desktop-protocol.js';
 
 import type { DesktopRecordOperation } from './desktop-protocol.js';
-import type { WorkspaceLens } from './workspace-lens.js';
+import { assertWorkspaceId, type WorkspaceLens } from './workspace-lens.js';
 
 /** Bun-only schema-opaque owner over an explicit Workspace ID allowlist. */
 export function createDesktopWorkspaceOwner({
@@ -30,6 +30,7 @@ export function createDesktopWorkspaceOwner({
 }) {
 	const allowedWorkspaceIds = new Set<string>();
 	for (const workspaceId of workspaceIds) {
+		assertWorkspaceId(workspaceId);
 		if (allowedWorkspaceIds.has(workspaceId)) {
 			throw new Error(`Duplicate desktop workspace '${workspaceId}'`);
 		}

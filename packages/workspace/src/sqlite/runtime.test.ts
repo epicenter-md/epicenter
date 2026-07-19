@@ -187,6 +187,27 @@ test("failed owner acquisition rejects open and retries cleanly", async () => {
   }
 });
 
+test("openRaw refuses unsafe workspace IDs before owner acquisition", async () => {
+  let attempts = 0;
+  const runtime = createWorkspaceRuntime({
+    async openWorkspaceOwner() {
+      attempts += 1;
+      throw new Error("must not open");
+    },
+  });
+  try {
+    await expect(runtime.openRaw("../outside")).rejects.toThrow(
+      "Invalid workspace id",
+    );
+    await expect(runtime.openRaw("con")).rejects.toThrow(
+      "reserved device names",
+    );
+    expect(attempts).toBe(0);
+  } finally {
+    await runtime[Symbol.asyncDispose]();
+  }
+});
+
 test("local workspace exposes no synchronization capability", async () => {
   const database = new Database(":memory:");
   const runtime = createWorkspaceRuntime({

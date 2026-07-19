@@ -45,7 +45,7 @@ import type {
 	TableLensDefinitions,
 } from './lens-definition.js';
 import { readLocalRow } from './local-workspace-storage.js';
-import type { WorkspaceLens } from './workspace-lens.js';
+import { assertWorkspaceId, type WorkspaceLens } from './workspace-lens.js';
 
 export type WorkspaceOwner<TAdmission extends void | Promise<void> = void> = {
 	sqlite: SqliteDatabase;
@@ -338,6 +338,7 @@ export function createWorkspaceRuntime({
 
 	async function openRaw(workspaceId: string): Promise<RawWorkspace> {
 		assertOpen();
+		assertWorkspaceId(workspaceId);
 		let entry = entries.get(workspaceId);
 		if (!entry) {
 			entry = { id: workspaceId, views: new Map() };

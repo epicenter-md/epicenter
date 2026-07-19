@@ -55,7 +55,8 @@ export function defineWorkspace<
 	}) as WorkspaceLens<TTables, TKv>;
 }
 
-function assertWorkspaceId(id: string): void {
+/** Refuse IDs that cannot safely name one portable workspace owner. */
+export function assertWorkspaceId(id: string): void {
 	if (!/^[a-z][a-z0-9-]*$/.test(id)) {
 		throw new Error(
 			`Invalid workspace id '${id}'; use lowercase letters, digits, and hyphens`,
