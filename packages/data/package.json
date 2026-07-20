@@ -1,0 +1,37 @@
+{
+	"name": "@epicenter/data",
+	"version": "0.0.1",
+	"description": "Local-first scalar data protocol and SQLite replica.",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts",
+		"./browser": "./src/browser.ts",
+		"./browser-worker": "./src/browser-worker.ts",
+		"./bun": "./src/bun.ts",
+		"./desktop": "./src/desktop.ts",
+		"./desktop-owner": "./src/desktop-owner.ts",
+		"./protocol": "./src/protocol/index.ts"
+	},
+	"files": [
+		"src",
+		"!src/**/*.test.ts"
+	],
+	"license": "MIT",
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"test": "bun test"
+	},
+	"dependencies": {
+		"@epicenter/field": "workspace:*",
+		"@epicenter/sqlite": "workspace:*",
+		"@sqlite.org/sqlite-wasm": "catalog:",
+		"@y/y": "14.0.0-rc.24",
+		"nanoid": "catalog:",
+		"typebox": "catalog:",
+		"wellcrafted": "catalog:"
+	},
+	"devDependencies": {
+		"@types/bun": "catalog:",
+		"typescript": "catalog:"
+	}
+}
