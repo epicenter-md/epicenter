@@ -1,0 +1,46 @@
+# 0165. Browser origins contain independent Epicenter replicas
+
+- **Status:** Proposed
+- **Date:** 2026-07-20
+- **Relates:** [ADR-0161](0161-each-person-has-one-epicenter-replicated-on-each-adapter-boundary.md)
+
+## Context
+
+The product says a person has one Epicenter, but browser storage is isolated by
+origin and shared among tabs with platform-specific locking and worker limits.
+Pretending that every application can open one literal device file would make a
+false portability promise.
+
+## Decision
+
+Each browser origin stores its own complete local Epicenter replica. Tabs under
+that origin coordinate access through the narrowest primitives the SQLite
+adapter requires. Correctness rests on SQLite durability and adapter locks, not
+on BroadcastChannel delivery or one immortal owner tab.
+
+An origin cannot enumerate, open, migrate, or delete another origin's replica.
+Signed-in origins converge through the same principal authority. Origin never
+enters a table key, value key, row ID, document address, or public definition.
+
+The adapter may evolve among a dedicated worker, shared worker, Web Locks, or a
+native browser SQLite primitive without changing the Epicenter API. No tab,
+application, workspace, or database becomes the durable storage owner.
+
+## Consequences
+
+- "One replica per device" may mean several physical replicas in one browser
+  profile. This is an honest adapter constraint, not a second product concept.
+- Cross-origin local-only data cannot be discovered centrally. Signing in is
+  the only general convergence path.
+- Multi-tab behavior needs adapter conformance tests for concurrent writes,
+  crash recovery, lock release, and wake-up loss.
+
+## Considered alternatives
+
+- **One elected owner tab.** Rejected because suspension and crash handoff turn
+  tab lifetime into a storage protocol.
+- **BroadcastChannel as the state source.** Rejected because delivery is not
+  durable or guaranteed.
+- **Expose origin as a data owner.** Rejected because it leaks an adapter
+  constraint into every application address.
+

@@ -17,54 +17,44 @@ shapes, see `docs/adr/`.
   self-hosted instance resolves every valid operator bearer to the literal
   `instance` principal. Durable namespaces use `principals/<principalId>/...`.
   Billing is hosted-only and lives in `apps/api/worker/billing/`.
-- **Account**: the runtime handle for one resolved principal inside one
-  deployment. Credentials may rotate, but deployment identity plus `principalId`
-  is the stable data identity; transport is how the runtime syncs.
-- **Workspace**: one stable app-defined local-first data and sync unit. It owns
-  workspace KV and tables; each table owns rows; each ordinary row owns scalar
-  fields plus one latent lifecycle-bound document.
-- **Storage owner**: the Device or one Account that owns a local workspace
-  store. Device and Account with the same Workspace ID remain separate owners;
-  owner-wide lifecycle never crosses between them.
-- **Workspace store**: the runtime-private SQLite family for one storage owner
-  and Workspace ID. Bun stores it at
-  `workspaces/device/<WorkspaceId>/store.sqlite3` or
-  `workspaces/accounts/<AccountKey>/<WorkspaceId>/store.sqlite3`; it is not a
-  portable workspace export or an app-visible file capability.
-- **Epicenter Home**: the trusted shell above registered workspaces. It owns
+- **Account**: one resolved principal inside one deployment. Credentials may
+  rotate, but deployment identity plus `principalId` is the stable identity of
+  the person's synchronized Epicenter.
+- **Epicenter**: one person's logical body of rows, values, and row-owned
+  documents. Applications bind typed definitions to it; no workspace or
+  database identity exists beneath it.
+- **Replica**: one complete local or server copy of an Epicenter. A native
+  installation, browser origin, OS profile, or server actor may impose its own
+  physical replica, but that adapter boundary is not a product data owner.
+- **Epicenter store**: one runtime-private SQLite family backing a replica. Its
+  physical relations and format version are implementation details, not an
+  application SQL contract.
+- **Sync attachment**: the permanent binding from a local replica to one
+  principal. First sign-in adds synchronization to the existing replica;
+  signing out pauses it, and another principal requires a fresh replica or
+  explicit destructive clearing.
+- **Epicenter Home**: the trusted shell above typed application surfaces. It owns
   navigation, assistant sessions, commands, approvals, and live interface
-  state; durable data such as conversations lives in ordinary workspaces.
+  state; durable data such as conversations lives in ordinary tables and
+  values.
 - **Trusted app catalog**: the validated static SPAs Epicenter serves from one
   origin and grants one fixed app-window authority. Bundled output supplies the
   default catalog; user-built output may replace a member by app ID.
 - **App composition repository**: an ordinary user-owned Git tree whose
   `apps/<id>` source members build the trusted app catalog. It is source, not
   Epicenter app data, runtime installation state, or a permission registry.
-- **Device workspace**: a signed-out workspace owned only by the current device.
-  Runtime-native SQLite owns its scalar rows; a runtime-native provider owns its
-  row documents. It has no deployment, principal, credential, or sync transport.
-- **Account workspace**: a signed-in workspace inside the authenticated
-  principal's own partition. The route workspace id is a name in that
-  partition; no catalog, grant, or authorization lookup exists. Its scalar and
-  document stores remain independent client persistence owners.
-- **Adoption**: explicit Add, Delete, or Keep after sign-in. Add transfers
-  logical scalar state and documents through their native planes; source
-  deletion is a separate action after both destination stores are locally
-  durable.
-- **Account authority**: the one server runtime owner for everything an
-  authenticated principal stores: one actor and one SQLite database containing
-  every named workspace as a logical namespace. Its address derives
-  deterministically from the principal alone, so no request can reach another
-  principal's state. It orders scalar row synchronization and hosts the
-  separate row-document connections.
+- **Account authority**: the one server replica for everything an authenticated
+  principal stores. Its address derives from the principal alone. It orders
+  whole-Epicenter scalar synchronization and hosts separate lazy row-document
+  connections.
 - **Row-document connection**: one authenticated Yjs 14 WebSocket for one
-  currently open `(table key, row id)` inside a synchronized workspace. Its
-  structured route address is lifecycle identity, not a secret; it is separate
-  from scalar push, pull, acquisition, and settlement.
-- **Row liveness**: the authority-local fact that a row address is currently
-  live. Absence is a derived query, not durable state; deletion is a bounded
-  feed marker backed by acquisition, and conforming runtimes never re-mint a
-  deleted row id. Liveness is a lifecycle invariant, not a per-row ACL.
+  currently open `(qualified table key, row ID)`. Its structured route address
+  is lifecycle identity, not a secret; it is separate from the whole-Epicenter
+  scalar exchange.
+- **Row liveness**: the owner-local fact that a row address is currently
+  live. Deletion replaces scalar state with a permanent compact tombstone and
+  removes document bytes, so an offline replica cannot recreate that lifetime.
+  Liveness is a lifecycle invariant, not a per-row ACL.
 - **Star**: the one runnable program that holds your data, composing anchor,
   store, sync, and identity/auth into a deployment (ADR-0069). The star is the
   unit of self-host and the entire privacy question: Epicenter runs it (hosted)
@@ -78,25 +68,25 @@ shapes, see `docs/adr/`.
   user-run gives topology privacy, Epicenter-run is trusted plaintext. Privacy moves
   by relocating the anchor, never by a setting in the app.
 - **Relay**: moves bytes between a person's devices when they cannot reach each
-  other directly, then forgets. Blind to content in principle. *Fused with the anchor
-  today*: the hosted relay is one Cloudflare Durable Object that also holds and reads
+  other directly, then forgets. Blind to content in principle. _Fused with the anchor
+  today_: the hosted relay is one Cloudflare Durable Object that also holds and reads
   your plaintext (ADR-0035); separating the relay role from the anchor (ADR-0035) would
   let a blind relay route to an anchor you hold.
 - **Store**: the anchor's app-blind sibling for big binaries (audio, images),
   `put` / `get` / `has` by reference; the doc carries the reference, never the bytes
   (ADR-0035). Any S3-compatible endpoint (versitygw for dev, Garage for self-host).
-- **Trusted relay**: the server reads workspace plaintext. Zero-knowledge was
+- **Trusted relay**: the server reads Epicenter plaintext. Zero-knowledge was
   evaluated and rejected; the encryption layer was removed (ADR-0004).
 - **Node roles**: four distinct roles, separable even when one machine plays
-  several (ADR-0049): *client* runs the agent loop and binds the others;
-  *inference server* turns a prompt into tokens; *daemon* holds data and runs
-  dispatched tools but never infers; *relay/anchor* is content-blind coordination
+  several (ADR-0049): _client_ runs the agent loop and binds the others;
+  _inference server_ turns a prompt into tokens; _daemon_ holds data and runs
+  dispatched tools but never infers; _relay/anchor_ is content-blind coordination
   and never infers.
 - **Inference server**: the only node role that infers (ADR-0049). One stateless
   turn per request: given a prompt plus a tool catalog it streams tokens, returns
   the model's tool calls, and stops, leaving the client loop to execute them
   (ADR-0047). It sees the prompt and tools as accepted egress to the model
-  (ADR-0033), so it is *not* content-blind, unlike the relay, but it owns no loop,
+  (ADR-0033), so it is _not_ content-blind, unlike the relay, but it owns no loop,
   tool, or transcript. The wire is OpenAI-compatible (ADR-0050), so the box is
   swappable by base URL: Epicenter's metered gateway (house key, billed; it never
   accepts a provider key), a self-hosted gateway (your key or a local model), or
@@ -106,11 +96,11 @@ shapes, see `docs/adr/`.
 - **Deployable vs library**: one library, `packages/server`, consumed by two
   deployables: `apps/api` (hosted personal cloud) and `apps/self-host` (the
   community single-partition instance reference, not Epicenter-operated; ADR-0075).
-- **Cross-device planes**: cross-device work splits by responsibility. *Inference* (the
+- **Cross-device planes**: cross-device work splits by responsibility. _Inference_ (the
   chat brain) streams tokens from an OpenAI-compatible endpoint (ADR-0050),
-  over the inference seam. *Scalar sync* carries queryable rows and KV through
-  the row authority. *Document sync* carries lazy Yjs history and row-scoped
-  presence over row-document connections. *Invoke* (the agent's hands) is local
+  over the inference seam. _Scalar sync_ carries rows and values through the
+  Epicenter authority. _Document sync_ carries lazy Yjs history and row-scoped
+  presence over row-document connections. _Invoke_ (the agent's hands) is local
   to the host that owns the tool process, unless a future product re-earns a
   direct URL-addressed box surface.
 - **Infisical project**: the owner and access-control boundary. Each secret-using
@@ -133,66 +123,60 @@ shapes, see `docs/adr/`.
   environment. The monorepo root has no Infisical config, so local apps cannot
   silently inherit Epicenter's hosted/operator project.
 
-## Workspace API
+## Data API
 
-- **Workspace KV**: declared workspace-owned singleton values with no public row
-  identity, lifecycle, or query surface. Internally it may use a reserved row,
-  but public application code treats it as workspace-owned KV.
-- **Table key**: the permanent storage key that partitions rows in a workspace.
-  A release-local table name is not a rename lens over another key.
+- **Qualified data key**: the globally stable reverse-domain key carried by one
+  table or value definition, such as `so.epicenter.whispering.recordings`. It is
+  never automatically prefixed by an app, workspace, database, or binding.
+- **Table definition**: an inert release-local `defineTable({ key, fields })`
+  declaration that validates schema-opaque JSON. It does not create storage,
+  claim a complete schema, migrate, heal, rewrite, or grant access.
+- **Value definition**: an inert release-local `defineValue({ key, value })`
+  declaration for one typed singleton with `get`, `set`, and `unset`. It is not
+  a public arbitrary KV collection.
+- **Bound lens**: the synchronous borrowed view returned by
+  `epicenter.bind({ tables, values })`. The grouping has no durable identity or
+  lifecycle; only the Epicenter is disposable.
 - **Row**: one identified application value in a table. It is the public
-  lifecycle aggregate. Server deletion atomically tombstones its address and
-  removes its document state; disconnected clients revoke handles and clean up
-  retained local document bytes when they observe that deletion.
-- **Field key**: the exact permanent JSON key named by a table lens. There is no
+  lifecycle aggregate. Its globally unique runtime-minted ID is never reused.
+  Deletion installs a compact tombstone and removes document state.
+- **Row tombstone**: terminal scalar state proving that a qualified row address
+  was deleted. It carries no application payload and remains so an indefinitely
+  offline or restored replica cannot recreate that row lifetime. Value unset is
+  nonterminal latest state and may be replaced by a later set.
+- **Field key**: the exact permanent JSON key named by a table definition. There is no
   fallback key, alias, automatic rename, or storage default.
-- **Table lens**: a release-local `defineTable({ fields, optional })`
-  declaration that validates and projects canonical JSON. It does not migrate,
-  heal, rewrite, or version stored rows.
 - **Field**: one `field.*` validator for a present JSON value. Required versus
-  optional presence belongs to the table lens, not the field definition.
+  optional presence is expressed at the field use site with `optional(...)`.
 - **Row-owned document**: the latent collaborative document owned by a row.
   It has no public id, authority, or lifecycle independent from the row. Its
   runtime-native provider persists and synchronizes it independently from
   scalar row sync.
-- **Record**: not a platform lifecycle noun in the canonical workspace model.
+- **Record**: not a platform lifecycle noun in the canonical data model.
   Use row for the durable application aggregate, fields for JSON values, and
   document for the row-owned CRDT state. Historical docs and transitional code
   may still use record while they migrate.
 - **Conforming row**: a canonical row that satisfies the opened release's table
-  lens. `get()` returns a typed row or `undefined` inside `Result`, or a
-  `NonconformingRow` error; `scan()` returns conforming rows and
-  nonconforming diagnostics without hiding canonical data.
+  definition. Reads return typed rows while reporting nonconforming stored data
+  without hiding or silently repairing canonical state.
 - **Optional field unset**: patching an optional field with `undefined` removes
   that key. Canonical JSON never stores `undefined`; `null` remains an ordinary
   value when its field accepts null.
-- **Application repair**: ordinary bounded reads and typed patches authored by
-  the application. Repair is explicit, retryable application work, not a
-  workspace migration API or an effect of reading.
-- **Logical workspace copy**: coordinated scalar rows, KV, compact Yjs 14
-  document states, and explicit document-availability diagnostics. It is not an
-  exact cross-plane instant and contains no SQLite pages, provider databases,
-  actors, cursors, receipts, or mutation history.
-- **Connection-local SQL view**: one read-only explicit-column `TEMP VIEW`
-  installed from the current table lens whenever a SQLite connection opens. It
-  stores no rows, reflects canonical commits immediately, and disappears with
-  the connection.
+- **Table list**: one bounded local typed read with optional equality filters,
+  one ordering key, cursor, and limit. It may compile to private SQLite but
+  exposes no SQL or server query.
 - **Row document handle**: the revocable handle returned by a lazy row document
   open. It exposes application roots, local provider durability, and document
   connection status. Releasing the final handle may unload live Yjs state but
   never deletes persisted or synchronized content.
-- **Row intent**: one schema-blind `create`, `update`, or `delete` sync unit. It
-  carries scalar fields or the reserved KV representation, never document
-  updates. The workspace authority orders accepted intents and folds them into
-  confirmed scalar state.
-- **Blob**: immutable bytes addressed by an opaque `BlobId` outside workspace
-  rows and KV. Rows and KV may reference blobs; row-owned documents are bounded
-  interactive CRDT state, not a media or large-file plane.
-- **Canonical workspace runtime**: the greenfield two-plane lane. Runtime-native
-  SQLite owns queryable scalar rows, TEMP views, and read-only SQL. Runtime-native
-  Yjs 14 providers own lazy row documents. The public workspace handle composes
-  them without promising cross-plane atomicity. This lane uses `@y/y` 14 only;
-  it has no Yjs 13 dependency, persisted reader, alias, dual wire, or fallback.
+- **Scalar exchange**: the one whole-Epicenter HTTP operation that submits
+  bounded pending local changes and pages authority latest state. Push, pull,
+  and acquisition are not separate product or network operations.
+- **Blob**: immutable bytes addressed by an opaque `BlobId` outside Epicenter
+  scalar state. Rows and values may reference blobs; row-owned documents are
+  bounded interactive CRDT state, not a media or large-file plane.
+- **Data runtime**: one Epicenter replica composes typed table/value lenses and
+  lazy Yjs 14 row documents over one private store.
 - **Transitional root-Yjs workspace**: the still-active `@epicenter/workspace`
   lane used by apps not yet migrated. Its `defineKv`, definition-owned
   `create/connect/mount`, `.docs`, and `_v` behavior remain compatibility
@@ -225,7 +209,7 @@ shapes, see `docs/adr/`.
   accepted egress (not content-blind). Trust is per-agent, not global.
 - **Conversation loop**: the client-side loop that answers every conversation,
   streams the live turn into a snapshot the UI renders, and persists finished
-  messages as records (ADR-0047). It replaces the older doc-observing *answerer*
+  messages as records (ADR-0047). It replaces the older doc-observing _answerer_
   (a daemon that wrote the reply into the doc), which ADR-0047 removed. Two
   implementations exist, chosen by transcript reach (ADR-0048): a transcript that
   syncs across a person's peers uses the workspace loop (`createConversation`,
