@@ -2,10 +2,7 @@ import {
 	type HoneycrispWorkspace,
 	honeycrispWorkspace,
 } from '@epicenter/honeycrisp';
-import type {
-	WorkspaceLens,
-	Workspace,
-} from '@epicenter/workspace/sqlite';
+import type { Workspace, WorkspaceLens } from '@epicenter/workspace/sqlite';
 import { createHoneycrispState } from '../routes/state/index.js';
 
 type ApplicationRuntime = {
