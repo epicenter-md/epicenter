@@ -1,0 +1,76 @@
+/*
+ * The Ark's one reading theme. Every generated projection page references
+ * this stylesheet at its stable URL (/assets/theark.css); changing the theme
+ * is a redeploy of this Worker, never a rewrite of published HTML. Keep it
+ * small, low-dopamine, and readable in both color schemes.
+ */
+:root {
+	color-scheme: light dark;
+	--ink: #1c1b18;
+	--paper: #faf8f3;
+	--muted: #6d6a62;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--ink: #e8e4da;
+		--paper: #131215;
+		--muted: #94908a;
+	}
+}
+
+* {
+	box-sizing: border-box;
+}
+
+body {
+	margin: 0;
+	background: var(--paper);
+	color: var(--ink);
+	font-family: Georgia, "Times New Roman", serif;
+	font-size: 1.125rem;
+	line-height: 1.6;
+}
+
+main {
+	max-width: 40rem;
+	margin: 0 auto;
+	padding: 4rem 1.25rem 6rem;
+}
+
+h1,
+h2,
+h3 {
+	line-height: 1.25;
+	font-weight: 600;
+}
+
+a {
+	color: inherit;
+}
+
+img,
+video {
+	max-width: 100%;
+	height: auto;
+}
+
+pre {
+	overflow-x: auto;
+	padding: 1rem;
+	font-size: 0.875rem;
+	line-height: 1.5;
+}
+
+blockquote {
+	margin: 1.5rem 0;
+	padding-left: 1rem;
+	border-left: 2px solid var(--muted);
+	color: var(--muted);
+}
+
+footer {
+	margin-top: 4rem;
+	color: var(--muted);
+	font-size: 0.875rem;
+}

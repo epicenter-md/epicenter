@@ -236,5 +236,6 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0157](0157-read-only-sql-exposes-one-schema-opaque-row-relation.md) | Read-only SQL exposes one schema-opaque row relation | Accepted |
 | [0158](0158-installed-apps-declare-workspace-ids-but-run-no-bun-modules.md) | Installed apps declare workspace IDs but run no Bun modules | Proposed |
 | [0159](0159-row-documents-persist-in-one-owner-side-sqlite-update-log.md) | Row documents persist in one owner-side SQLite update log | Accepted |
+| [0160](0160-the-ark-public-plane-is-a-plain-worker-streaming-eu-r2-projections.md) | The Ark public plane is a plain Worker streaming EU R2 projections | Accepted |
 
 When you add an ADR, add its row here.
