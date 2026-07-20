@@ -37,14 +37,10 @@ export type FieldsFor<TFields extends FieldSchemas> = {
 declare const tableDefinitionParts: unique symbol;
 declare const valueDefinitionParts: unique symbol;
 
-export type TableDefinition<
-	TFields extends FieldSchemas = FieldSchemas,
-	TDocument extends boolean = boolean,
-> = {
+export type TableDefinition<TFields extends FieldSchemas = FieldSchemas> = {
 	key: string;
 	fields: TFields;
-	document: TDocument;
-	[tableDefinitionParts]: { fields: TFields; document: TDocument };
+	[tableDefinitionParts]: { fields: TFields };
 };
 
 export type ValueDefinition<TValueSchema extends TSchema = TSchema> = {
@@ -57,12 +53,12 @@ export type TableDefinitions = Record<string, TableDefinition>;
 export type ValueDefinitions = Record<string, ValueDefinition>;
 
 export type RowFor<TDefinition extends TableDefinition> =
-	TDefinition extends TableDefinition<infer TFields, boolean>
+	TDefinition extends TableDefinition<infer TFields>
 		? { id: string } & FieldsFor<TFields>
 		: never;
 
 export type CreateInputFor<TDefinition extends TableDefinition> =
-	TDefinition extends TableDefinition<infer TFields, boolean>
+	TDefinition extends TableDefinition<infer TFields>
 		? FieldsFor<TFields> & { id?: never }
 		: never;
 
@@ -70,7 +66,7 @@ export type ConstrainedUpdate<
 	TDefinition extends TableDefinition,
 	TChanges extends Record<string, unknown>,
 > =
-	TDefinition extends TableDefinition<infer TFields, boolean>
+	TDefinition extends TableDefinition<infer TFields>
 		? Record<Exclude<keyof TChanges, keyof TFields>, never> & {
 				[K in keyof TChanges]: K extends keyof TFields
 					? K extends OptionalFieldNames<TFields>
@@ -158,25 +154,13 @@ export function optional<TSchemaValue extends TSchema>(
 	return Optional(schema);
 }
 
-export function defineTable<const TFields extends FieldSchemas>(config: {
-	key: string;
-	fields: TFields & { id?: never };
-	document?: false;
-}): TableDefinition<TFields, false>;
-export function defineTable<const TFields extends FieldSchemas>(config: {
-	key: string;
-	fields: TFields & { id?: never };
-	document: true;
-}): TableDefinition<TFields, true>;
-export function defineTable({
+export function defineTable<const TFields extends FieldSchemas>({
 	key,
 	fields: fieldsInput,
-	document = false,
 }: {
 	key: string;
-	fields: FieldSchemas & { id?: never };
-	document?: boolean;
-}): TableDefinition {
+	fields: TFields & { id?: never };
+}): TableDefinition<TFields> {
 	assertQualifiedKey(key);
 	assertPlainObject(fieldsInput, 'Table fields');
 	if (Object.keys(fieldsInput).some((name) => name.toLowerCase() === 'id')) {
@@ -203,8 +187,7 @@ export function defineTable({
 	const definition = Object.freeze({
 		key,
 		fields: Object.freeze(fields),
-		document,
-	}) as TableDefinition;
+	}) as TableDefinition<TFields>;
 	compiledTables.set(
 		definition,
 		createCompiledTable(key, compiledFields, optionalFields),

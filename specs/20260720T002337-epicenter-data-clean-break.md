@@ -73,7 +73,6 @@ export const recordings = defineTable({
 export const conversations = defineTable({
   key: "so.epicenter.home.conversations",
   fields: { title: field.string() },
-  document: true,
 });
 
 export const language = defineValue({
@@ -187,17 +186,20 @@ A value is a typed singleton at one qualified key. Its surface is `get`, `set`,
 `unset`, and `subscribe`. Do not call it KV: the public object does not expose
 an arbitrary key-value collection.
 
-Row-owned Yjs documents are per-table opt-in: `defineTable({ ..., document:
-true })`. Only opted-in tables expose `openDocument(rowId)`, which checks
-liveness, returns a revocable handle, and lazily attaches document sync when
-synchronization is attached. Row deletion revokes the handle and removes
+Row-owned Yjs documents are universal: every live row latently owns exactly
+one document at the row's own address, and every table lens exposes
+`openDocument(rowId)`, which checks liveness, returns a revocable handle, and
+lazily attaches document sync when synchronization is attached. Row deletion,
+through any lens or through synchronization, revokes open handles and removes
 document bytes in the same transaction. The document is schema-free Yjs
-infrastructure: the flag declares availability only, never layout or touch
-policy, and there are no document IDs. Evidence for opt-in over a universal
-latent document: one of five scoped production tables uses documents, two of
-ten older definitions opted into `.docs()`, and a universal method would
-advertise meaningless capability on every lookup table while hiding which
-tables actually carry collaborative state.
+infrastructure with no document IDs and no layout or touch policy. There is no
+per-definition `document` declaration: definitions are borrowed release-local
+lenses, and both storage authorities already enforce the document lifecycle
+purely by row address and liveness, so a definition flag could only gate
+client-side API visibility while letting independently authored definitions
+sharing one qualified key disagree about a capability neither owns. Opening a
+document on a table that never uses one is inert: no bytes exist until the
+first update is persisted, and the row tombstone deletes whatever exists.
 
 ### Status and errors
 

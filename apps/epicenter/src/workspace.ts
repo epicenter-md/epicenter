@@ -14,7 +14,6 @@ export const conversationsTable = defineTable({
 		createdAt: field.instant(),
 		updatedAt: field.instant(),
 	},
-	document: true,
 });
 
 export const honeycrispFoldersTable = defineTable({
@@ -38,7 +37,6 @@ export const honeycrispNotesTable = defineTable({
 		deletedAt: optional(field.instant()),
 		wordCount: optional(field.number()),
 	},
-	document: true,
 });
 
 export const homeDefinitions = {

@@ -42,7 +42,6 @@ export const notesTable = defineTable({
 		deletedAt: optional(field.instant()),
 		wordCount: optional(field.number()),
 	},
-	document: true,
 });
 export type Note = RowFor<typeof notesTable>;
 

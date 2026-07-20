@@ -30,7 +30,6 @@ const TOKEN = 'desktop-data-test-token';
 const documentsTable = defineTable({
 	key: 'so.epicenter.tests.desktop-documents',
 	fields: { name: field.string(), updatedAt: field.instant() },
-	document: true,
 });
 
 test('WebView surfaces share one replica and state survives restart', async () => {

@@ -9,7 +9,6 @@ export type SerializedTableDefinition = {
 	key: string;
 	fields: Record<string, unknown>;
 	optionalFields: string[];
-	document: boolean;
 };
 
 export type SerializedValueDefinition = {

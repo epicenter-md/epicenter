@@ -54,7 +54,7 @@ export type ListPage<TDefinition extends TableDefinition> = {
 	nextCursor?: string;
 };
 
-type TableLensBase<TDefinition extends TableDefinition> = {
+export type TableLens<TDefinition extends TableDefinition> = {
 	create(fields: CreateInputFor<TDefinition>): Promise<RowFor<TDefinition>>;
 	get(id: string): Promise<Result<RowFor<TDefinition> | undefined, ReadError>>;
 	update<const TChanges extends Record<string, unknown>>(
@@ -64,13 +64,8 @@ type TableLensBase<TDefinition extends TableDefinition> = {
 	delete(id: string): Promise<boolean>;
 	list(options?: ListOptions<TDefinition>): Promise<ListPage<TDefinition>>;
 	subscribe(listener: (changedIds: string[]) => void): () => void;
+	openDocument(rowId: string): Promise<RowDocument>;
 };
-
-export type TableLens<TDefinition extends TableDefinition> =
-	TableLensBase<TDefinition> &
-		(TDefinition['document'] extends true
-			? { openDocument(rowId: string): Promise<RowDocument> }
-			: Record<never, never>);
 
 export type ValueLens<TDefinition extends ValueDefinition> = {
 	get(): Promise<Result<ValueFor<TDefinition> | undefined, ReadError>>;
@@ -300,14 +295,10 @@ export function createEpicenter({
 					if (listeners.size === 0) tableListeners.delete(definition.key);
 				};
 			},
-			...(definition.document
-				? {
-						openDocument(rowId: string) {
-							requireOpen();
-							return documents.open({ key: definition.key, rowId });
-						},
-					}
-				: {}),
+			openDocument(rowId: string) {
+				requireOpen();
+				return documents.open({ key: definition.key, rowId });
+			},
 		};
 		return Object.freeze(lens) as TableLens<TDefinition>;
 	}

@@ -335,13 +335,9 @@ export async function openBrowserEpicenter({
 					if (listeners.size === 0) tableListeners.delete(definition.key);
 				};
 			},
-			...(definition.document
-				? {
-						openDocument(rowId: string) {
-							return createPageDocument(serialized, rowId);
-						},
-					}
-				: {}),
+			openDocument(rowId: string) {
+				return createPageDocument(serialized, rowId);
+			},
 		};
 		return Object.freeze(lens) as TableLens<TDefinition>;
 	}
@@ -590,7 +586,6 @@ function serializeTableDefinition(
 		key: definition.key,
 		fields: cloneJson(definition.fields),
 		optionalFields: [...compiled.optional],
-		document: definition.document,
 	};
 }
 

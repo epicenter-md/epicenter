@@ -22,7 +22,6 @@ export const skillsTable = defineTable({
 		allowedTools: optional(field.string()),
 		updatedAt: field.instant(),
 	},
-	document: true,
 });
 
 export const referencesTable = defineTable({
@@ -32,7 +31,6 @@ export const referencesTable = defineTable({
 		path: field.string(),
 		updatedAt: field.instant(),
 	},
-	document: true,
 });
 
 export type Skill = RowFor<typeof skillsTable>;

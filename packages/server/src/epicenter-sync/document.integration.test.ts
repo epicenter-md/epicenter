@@ -50,7 +50,6 @@ const ADDRESS: DocumentAddress = {
 const definition = defineTable({
 	key: ADDRESS.key,
 	fields: { title: field.string() },
-	document: true,
 });
 
 type Local = {

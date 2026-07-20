@@ -88,7 +88,7 @@ type UntypedTableLens = {
 	update(rowId: string, patch: Record<string, unknown>): Promise<unknown>;
 	delete(rowId: string): Promise<boolean>;
 	list(options?: ListOptions<TableDefinition>): Promise<unknown>;
-	openDocument?(rowId: string): Promise<RowDocument>;
+	openDocument(rowId: string): Promise<RowDocument>;
 };
 
 type UntypedValueLens = {
@@ -339,9 +339,6 @@ export function createBrowserWorkerHost({
 		operation: Extract<BrowserOperation, { kind: 'document-open' }>,
 	): Promise<{ documentId: number; update: Uint8Array }> {
 		const lens = tableLens(epicenter, operation.definition);
-		if (lens.openDocument === undefined) {
-			throw new Error(`Table '${operation.definition.key}' has no document`);
-		}
 		const document = await lens.openDocument(operation.rowId);
 		const documentId = ++nextDocumentId;
 		const stopUpdates = observeRowDocumentUpdates(document, (update) => {
@@ -438,9 +435,7 @@ function deserializeTable(
 			? optional(typedSchema)
 			: typedSchema;
 	}
-	return definition.document
-		? defineTable({ key: definition.key, fields, document: true })
-		: defineTable({ key: definition.key, fields });
+	return defineTable({ key: definition.key, fields });
 }
 
 function tableLens(

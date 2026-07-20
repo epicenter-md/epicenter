@@ -29,7 +29,6 @@ export const conversationsTable = defineTable({
 		createdAt: field.instant(),
 		updatedAt: field.instant(),
 	},
-	document: true,
 });
 
 export type Conversation = RowFor<typeof conversationsTable>;

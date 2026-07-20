@@ -8,7 +8,8 @@
  * - Invalid and duplicate qualified keys fail before storage work
  * - Conforming rows and values round-trip while invalid stored data is classified
  * - Local and synchronized commits notify borrowed lenses
- * - Row documents persist locally and are revoked by row deletion
+ * - Row documents persist locally and are revoked by row deletion through any
+ *   lens, including one that never opened the document
  */
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
@@ -37,7 +38,6 @@ const notesDefinition = defineTable({
 		note: optional(field.string()),
 		label: optional(field.json(Type.Union([Type.String(), Type.Null()]))),
 	},
-	document: true,
 });
 
 const themeDefinition = defineValue({
@@ -353,6 +353,41 @@ test('row documents persist across opens and deletion revokes live handles', asy
 	await reopened[Symbol.asyncDispose]();
 	await expect(notes.openDocument(row.id)).rejects.toThrow('absent row');
 
+	await epicenter[Symbol.asyncDispose]();
+	rawDatabase.close();
+});
+
+test('deletion through an independently authored lens removes document bytes and revokes the other lens', async () => {
+	const { rawDatabase, database, epicenter } = setup();
+	const authorA = defineTable({
+		key: NOTES_KEY,
+		fields: { title: field.string(), rank: field.integer() },
+	});
+	const authorB = defineTable({
+		key: NOTES_KEY,
+		fields: { title: field.string() },
+	});
+	const lensA = epicenter.bind({ tables: { notes: authorA }, values: {} })
+		.tables.notes;
+	const lensB = epicenter.bind({ tables: { notes: authorB }, values: {} })
+		.tables.notes;
+
+	const row = await lensA.create({ title: 'shared', rank: 1 });
+	const document = await lensA.openDocument(row.id);
+	document.get('content').insert(0, 'cross-lens');
+	await document.whenDurable();
+
+	expect(await lensB.delete(row.id)).toBe(true);
+	expect(() => document.get('content')).toThrow('no longer live');
+	expect(
+		database.all<{ count: number }>(
+			`SELECT COUNT(*) AS count FROM document_updates
+			 WHERE qualified_key = ? AND row_id = ?`,
+			[NOTES_KEY, row.id],
+		)[0]?.count,
+	).toBe(0);
+	await expect(lensB.openDocument(row.id)).rejects.toThrow('absent row');
+	await document[Symbol.asyncDispose]();
 	await epicenter[Symbol.asyncDispose]();
 	rawDatabase.close();
 });

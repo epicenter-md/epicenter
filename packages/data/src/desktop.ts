@@ -170,9 +170,7 @@ export async function openDesktopEpicenter({
 				tableListeners.set(definition.key, listeners);
 				return () => listeners.delete(listener);
 			},
-			...(definition.document
-				? { openDocument: (rowId: string) => openDocument(serialized, rowId) }
-				: {}),
+			openDocument: (rowId: string) => openDocument(serialized, rowId),
 		};
 		return Object.freeze(lens) as TableLens<TDefinition>;
 	}
@@ -336,7 +334,6 @@ function serializeTableDefinition(
 		key: definition.key,
 		fields: cloneJson(definition.fields),
 		optionalFields: [...compiled.optional],
-		document: definition.document,
 	};
 }
 

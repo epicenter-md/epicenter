@@ -168,7 +168,6 @@ const notes = defineTable({
 		title: field.string(),
 		detail: optional(field.string()),
 	},
-	document: true,
 });
 
 const theme = defineValue({

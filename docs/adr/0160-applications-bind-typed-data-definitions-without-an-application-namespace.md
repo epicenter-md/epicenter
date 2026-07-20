@@ -58,9 +58,14 @@ release-local object property such as `recordings` is only an ergonomic TypeScri
 name; the definition's qualified key is the durable identity.
 
 Table rows have runtime-minted globally unique IDs that callers cannot replace
-or reuse. A table may expose one latent row-owned document for every live row;
-the document has no independent public ID or lifetime. Deleting the row revokes
-open handles and deletes its document state.
+or reuse. Every live row latently owns exactly one schema-free document at the
+row's own address; every table lens exposes `openDocument(rowId)`, and the
+document has no independent public ID or lifetime. Document existence is a
+property of durable row identity, never of a definition: definitions carry no
+document declaration, so independently authored definitions sharing one
+qualified key cannot disagree about the capability. Deleting the row, through
+any lens or through synchronization, revokes open handles and deletes its
+document state.
 
 Values are singleton values, not a second database. They use the same qualified
 key space and synchronization law as rows, with `get`, `set`, and `unset` as

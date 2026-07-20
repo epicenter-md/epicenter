@@ -1,8 +1,8 @@
 /**
  * Compile-time tests for the public typed Data API.
  *
- * These assertions prove row inference, create/update inputs, and document
- * capability gating directly from inert definitions.
+ * These assertions prove row inference, create/update inputs, and the
+ * universal row-document capability directly from inert definitions.
  */
 import { field } from '@epicenter/field';
 import { defineTable, type Epicenter, optional, type RowFor } from './index.js';
@@ -23,12 +23,6 @@ const ordinary = defineTable({
 	},
 });
 
-const documented = defineTable({
-	key: 'so.epicenter.types.documented',
-	fields: { title: field.string() },
-	document: true,
-});
-
 export type _RowDerivesRequiredAndOptionalFields = Expect<
 	Equal<
 		RowFor<typeof ordinary>,
@@ -38,13 +32,11 @@ export type _RowDerivesRequiredAndOptionalFields = Expect<
 
 declare const epicenter: Epicenter;
 const bound = epicenter.bind({
-	tables: { ordinary, documented },
+	tables: { ordinary },
 	values: {},
 });
 
-await bound.tables.documented.openDocument('aaaaaaaaaaaaaaaaaaaaaaaa');
-
-// @ts-expect-error Tables without document: true do not expose openDocument.
+// Every table lens exposes the row-owned document at the row's own address.
 await bound.tables.ordinary.openDocument('aaaaaaaaaaaaaaaaaaaaaaaa');
 
 await bound.tables.ordinary.create({ title: 'valid' });
