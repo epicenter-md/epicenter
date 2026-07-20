@@ -2,8 +2,9 @@
  * The Ark public delivery plane.
  *
  * One responsibility: resolve a public URL to a rebuildable projection object
- * in R2 and stream it. The publishing side (the Vault) writes the objects;
- * a publication appears by writing R2 keys, never by redeploying this Worker.
+ * in R2 and stream it. The Vault initiates Publish through an injected port;
+ * an authenticated Epicenter publisher writes the objects. A publication
+ * appears by writing R2 keys, never by redeploying this Worker.
  *
  * URL contract (the canonical artifact permalink is
  * `https://theark.so/braden/<artifact-slug>`):

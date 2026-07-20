@@ -5,8 +5,8 @@
 
 ## Context
 
-The Ark is the canonical public web home for approved Vault artifacts: frozen
-authored expressions with permanent, truthful permalinks
+The Ark is the canonical public web home for frozen Vault artifacts: exact
+authored expressions whose Publish was pressed, with permanent, truthful permalinks
 (`https://theark.so/braden/<artifact-slug>`). The Vault's publishing ADRs
 (its ADR-0059 and ADR-0064) settled the artifact semantics: one Markdown
 artifact owns its web, narration, and short-video outputs; the web projection
@@ -22,8 +22,8 @@ Vault ADRs continue to own artifact and projection semantics.
 **The Ark's public plane is `apps/theark`: a plain Cloudflare Worker in the
 Epicenter account that serves fixed deploy-time design assets from Workers
 Static Assets and streams rebuildable artifact projections from a dedicated
-EU-jurisdiction R2 bucket, `theark-projections`, that the publishing side
-writes and the Worker only reads.**
+EU-jurisdiction R2 bucket, `theark-projections`, that an authenticated Epicenter
+publisher writes and the Worker only reads.**
 
 Each concern has exactly one owner:
 
@@ -52,10 +52,12 @@ Each concern has exactly one owner:
   responses, so the Worker carries no byte-range implementation. The publisher
   owns bytes and content-type.
 - **A future authenticated creator application** (Epicenter login, workspace
-  access) is a separate deployable that publishes into the bucket. The public
-  plane holds none of its capabilities now: no auth, billing, Postgres,
-  Hyperdrive, Durable Objects, Epicenter blob-store bindings, or write
-  routes.
+  access) is a separate deployable that implements the Vault's injected
+  publisher port. It renders the complete frozen artifact, writes media first,
+  conditionally activates `index.html` last, verifies the canonical URL, and
+  returns only after the projection is public. The public plane holds none of
+  its capabilities now: no auth, billing, Postgres, Hyperdrive, Durable Objects,
+  Epicenter blob-store bindings, or write routes.
 
 The Worker is plain (`export default { fetch }`), not Hono: it has two route
 families and zero shared middleware, so a framework would own nothing. The
