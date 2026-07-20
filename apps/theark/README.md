@@ -63,31 +63,52 @@ The trusted publishing code lives beside the delivery Worker as library
 modules the Worker entry never imports, so the deployed public plane keeps
 zero write paths (see the ADR-0160 amendment):
 
-- `src/render.ts` is the constrained renderer: one pure, total function from a
+- `src/render.ts` is the constrained renderer: one pure function from a
   frozen-artifact-shaped input to one complete semantic HTML document. It
   emits no JavaScript and references only `/assets/theark.css` plus
-  root-absolute sibling media. Its explicit Markdown subset is documented in
-  the module header; everything outside the subset (raw HTML, executable URL
-  schemes, tables, deeper headings, foreign images) renders as visibly
-  escaped literal text. It never throws: Publish freezes the artifact before
-  projecting it, and projection HTML is disposable, so degraded output is
-  always recoverable by a renderer improvement plus a rebuild.
+  root-absolute sibling media. The page title is the frozen body's own lead
+  `# Title` heading (Vault ADR-0059: the lead H1 becomes the web title),
+  consumed as plain text and never duplicated into the article, so a mutable
+  page-row title can never leak into a frozen page. Below the lead title the
+  renderer is total: everything outside its explicit Markdown subset (raw
+  HTML, executable URL schemes, tables, deeper headings, foreign images)
+  renders as visibly escaped literal text, never a throw, because Publish
+  freezes before it projects and HTML is disposable. The one throw is a
+  missing lead title, which asserts a violated freeze-gate contract.
 - `src/publish.ts` is the publisher kernel: given an injected R2-shaped
-  object store, it reserves the `<identity>/<slug>` subtree with a
-  publicly-unroutable `.artifact` ownership marker (dotfiles fail the public
-  route allowlist by construction), writes generated media
-  (`video.mp4`/`narration.mp3`/`cover.png`, the complete media vocabulary),
-  renders and activates `index.html` last, and read-back-verifies every
-  object. Republish by the same artifact converges idempotently; any other
-  artifact is refused the slug forever. Keys are derived through the delivery
-  Worker's own `resolveProjection`, so the kernel cannot write an address the
-  Worker would refuse to serve.
+  object store, it atomically reserves the `<identity>/<slug>` subtree with a
+  publicly-unroutable `.artifact` ownership marker via create-if-absent (R2
+  `onlyIf: { etagDoesNotMatch: '*' }`), so two racing publishers cannot both
+  win. The marker records the private artifact id plus the immutable
+  expression digest (Vault ADR-0064; never `integrity_digest`): only an
+  exact match converges, another artifact is refused the slug forever, and
+  the same artifact with a different frozen expression is refused because a
+  permalink never changes its words. Generated HTML and media are not
+  hashed, so theme and output rebuilds stay free. It writes generated media
+  (`video.mp4`/`narration.mp3`/`cover.png`, the complete media vocabulary)
+  before activating `index.html` last, and read-back-verifies every object.
+  Keys are derived through the delivery Worker's own `resolveProjection`, so
+  the kernel cannot write an address the Worker would refuse to serve.
 
 The kernel runs wherever an authenticated caller holds bucket credentials: an
-operator CLI first, the Vault's injected `ArkPublisher` port behind it. That
-caller must supply the page `title` and receipt `publishedOn`, which the
-Vault port does not carry, and owns public-URL verification against the
-expected canonical URL.
+operator CLI first, the Vault's injected `ArkPublisher` port behind it. The
+caller supplies `publishedOn` (the date it declares for this publication and
+must record identically on the canonical receipt afterward; the receipt does
+not exist yet when the kernel runs) and `expressionDigest`, and owns
+public-URL verification against the expected canonical URL.
+
+Two Vault-side contract changes are required before the port can drive this
+kernel, both already implied by its own ADRs and neither implemented there
+yet:
+
+1. The freeze gate must validate that an artifact frozen with a canonical
+   Ark slug has a body opening with exactly one lead `# Title` heading
+   (ADR-0059 already states the lead H1 becomes the web title; nothing
+   enforces it at freeze).
+2. Freeze must mint the immutable expression-and-production-input digest
+   ADR-0064 specifies (its text notes the digest is "still absent") and the
+   Vault's `ArkPublisher` adapter must pass it, with `publishedOn`, through
+   to the kernel; the port today carries neither.
 
 ## Develop
 

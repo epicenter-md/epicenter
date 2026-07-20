@@ -8,14 +8,20 @@
  * subset below is the whole vocabulary, and everything outside it renders as
  * visibly escaped literal source text instead of throwing or emitting markup.
  *
- * Total, never throwing, is load-bearing: Publish freezes the artifact BEFORE
- * projecting it (Vault ADR-0065), so a renderer that rejects a frozen body
- * would strand it permanently unpublishable. Degraded output is recoverable:
+ * Totality below the title is load-bearing: Publish freezes the artifact
+ * BEFORE projecting it (Vault ADR-0065), so rejecting frozen content would
+ * strand it permanently unpublishable. Degraded output is recoverable:
  * projection HTML is disposable and rebuildable (Vault ADR-0064), so a later
- * renderer improvement plus a rebuild upgrades every published page.
+ * renderer improvement plus a rebuild upgrades every published page. The one
+ * structural requirement is the lead `# Title` heading that opens the body
+ * (Vault ADR-0059: the lead H1 becomes the web title); the Vault freeze gate
+ * owns that guarantee for every Ark-bound artifact, so the renderer throwing
+ * on its absence asserts a violated upstream contract, exactly like the
+ * kernel throwing on an unservable address.
  *
  * The Markdown subset (sized by the 68 frozen artifacts in the Vault):
- * - paragraphs; `#`/`##` -> h2, `###` -> h3 (h1 belongs to the artifact title)
+ * - the lead `# Title` opens the body and is consumed as the page title
+ * - below it: paragraphs; `#`/`##` -> h2, `###` -> h3
  * - single-level `-` and `1.` lists
  * - `>` blockquotes
  * - fenced code blocks (no highlighting; contents fully escaped)
@@ -32,10 +38,9 @@
  */
 
 /**
- * The frozen expression the renderer projects. The Vault's `ArkPublisher`
- * port hands over the frozen artifact and its resource folder; the caller
- * supplies `title` (from the artifact's page row) and `publishedOn` (the
- * receipt date) because the port does not carry them. Facets and byline are
+ * The frozen expression the renderer projects. The page title is not a field:
+ * it is the frozen body's own lead H1 (Vault ADR-0059), so a mutable page-row
+ * title can never leak into a frozen permanent page. Facets and byline are
  * deliberately absent: no facet page exists to link to and the identity is
  * already the first URL segment, so neither earns visible behavior yet.
  */
@@ -44,13 +49,22 @@ export type ArkArtifactPage = {
 	readonly identity: string;
 	/** Frozen permalink slug under the identity. */
 	readonly slug: string;
-	readonly title: string;
 	readonly subtitle?: string;
-	/** Calendar date on the publication receipt, `YYYY-MM-DD`. */
+	/**
+	 * Calendar date the caller declares for this publication, `YYYY-MM-DD`.
+	 * The caller records this same date on the canonical receipt after
+	 * publish returns; it is an input to the receipt, not a preexisting fact.
+	 */
 	readonly publishedOn: string;
-	/** Resonant artifacts show the brick diamond beside the date. */
+	/**
+	 * Resonant artifacts show the brick diamond beside the date. Presentation
+	 * metadata, not frozen words: a rebuild may legitimately refresh it.
+	 */
 	readonly resonant?: boolean;
-	/** The exact frozen Markdown-subset body. */
+	/**
+	 * The exact frozen Markdown-subset body, opening with the lead `# Title`
+	 * heading that becomes the page title (Vault ADR-0059).
+	 */
 	readonly body: string;
 	/** Which generated files exist beside the page. */
 	readonly media?: ArkMediaSet;
@@ -288,16 +302,40 @@ export function renderBody(body: string, coverUrl?: string): string {
 }
 
 /**
+ * The frozen body opens with the lead `# Title` (Vault ADR-0059: the lead H1
+ * becomes the web title). The line is consumed as plain text for the visible
+ * h1 and the document metadata; it is never re-rendered into the article
+ * body, and inline markup inside it is not interpreted.
+ */
+function splitLeadTitle(body: string): { title: string; rest: string } {
+	const lines = body.replaceAll('\r\n', '\n').split('\n');
+	let start = 0;
+	while (start < lines.length && (lines[start] ?? '').trim() === '') start += 1;
+	const lead = /^# (.+)$/.exec(lines[start] ?? '');
+	if (!lead) {
+		throw new Error(
+			'frozen body must open with its lead "# Title" heading (Vault ADR-0059); the Vault freeze gate owns this guarantee for Ark-bound artifacts',
+		);
+	}
+	return {
+		title: (lead[1] ?? '').trim(),
+		rest: lines.slice(start + 1).join('\n'),
+	};
+}
+
+/**
  * Render the complete artifact page document. The output references only
  * /assets/theark.css plus root-absolute sibling media, carries correct
- * canonical/OG metadata as static tags, and contains no JavaScript.
+ * canonical/OG metadata as static tags, and contains no JavaScript. Throws
+ * only when the body violates the lead-title contract above.
  */
 export function renderArtifactPage(page: ArkArtifactPage): string {
 	const canonical = `https://theark.so/${page.identity}/${page.slug}`;
 	const mediaBase = `/${page.identity}/${page.slug}`;
 	const coverUrl = page.media?.cover ? `${mediaBase}/cover.png` : undefined;
 
-	const title = escapeHtml(page.title);
+	const { title: leadTitle, rest } = splitLeadTitle(page.body);
+	const title = escapeHtml(leadTitle);
 	const head = [
 		'<meta charset="utf-8">',
 		'<meta name="viewport" content="width=device-width, initial-scale=1">',
@@ -361,7 +399,7 @@ export function renderArtifactPage(page: ArkArtifactPage): string {
 		'<article>',
 		...header,
 		...video,
-		renderBody(page.body, coverUrl),
+		renderBody(rest, coverUrl),
 		'<footer><a href="/">The Ark</a></footer>',
 		'</article>',
 		'</main>',

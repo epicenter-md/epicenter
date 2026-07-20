@@ -10,11 +10,16 @@
  * provable in-memory without credentials or production resources.
  *
  * Invariants owned here, and nowhere else:
- * - Reserve-first: a publicly-unroutable `.artifact` marker claims the
- *   `<identity>/<slug>` subtree for one private artifact id before any
- *   public byte lands. The marker is the entire collision registry: a second
- *   artifact publishing to the same slug is refused; the same artifact
- *   re-publishing (crash retry, theme rebuild) converges idempotently.
+ * - Reserve-first, atomically: a publicly-unroutable `.artifact` marker
+ *   claims the `<identity>/<slug>` subtree via create-if-absent before any
+ *   public byte lands, so two racing publishers cannot both win. The marker
+ *   records the private artifact id AND the immutable expression digest
+ *   (Vault ADR-0064: idempotent inserts key on the expression digest, never
+ *   `integrity_digest`). It is the entire collision registry: another
+ *   artifact is refused the slug forever; the same artifact with a different
+ *   frozen expression is refused (a permalink never changes its words); only
+ *   an exact match converges. Generated HTML and media are deliberately NOT
+ *   hashed, so theme rebuilds and free output rebuilds stay allowed.
  * - Route-last: generated media is written before `index.html`, so the page
  *   address only ever answers with its media already in place.
  * - Verification: every written object is read back and byte-compared before
@@ -33,7 +38,7 @@ import {
 
 /**
  * The minimal R2-shaped write contract the kernel needs. An `R2Bucket`
- * satisfies it with a two-line adapter; tests satisfy it with a Map.
+ * satisfies it with a thin adapter; tests satisfy it with a Map.
  */
 export type ArkObjectStore = {
 	get(key: string): Promise<Uint8Array | null>;
@@ -42,6 +47,17 @@ export type ArkObjectStore = {
 		value: Uint8Array,
 		options: { contentType: string },
 	): Promise<void>;
+	/**
+	 * Atomic create-if-absent; resolves false when the key already exists,
+	 * without touching the stored value. On R2 this is
+	 * `put(key, value, { onlyIf: { etagDoesNotMatch: '*' }, ... }) !== null`
+	 * (a failed precondition resolves null instead of writing).
+	 */
+	createExclusive(
+		key: string,
+		value: Uint8Array,
+		options: { contentType: string },
+	): Promise<boolean>;
 };
 
 /** Generated media bytes, keyed by the renderer's closed media vocabulary. */
@@ -58,6 +74,14 @@ const MEDIA_OBJECTS = [
 export type ArkPublication = {
 	/** Private artifact identity for ownership; never appears in public routes. */
 	readonly artifactId: string;
+	/**
+	 * The immutable expression-and-production-input digest (64 lowercase hex)
+	 * from Vault ADR-0064. It identifies the exact frozen expression, so a
+	 * retry converges and changed words are refused. Never `integrity_digest`
+	 * (a checklist-bound state checksum), and never a hash of generated
+	 * HTML/media (rebuilds must stay free).
+	 */
+	readonly expressionDigest: string;
 	/** The page input, minus `media`, which is derived from `files` here. */
 	readonly page: Omit<ArkArtifactPage, 'media'>;
 	readonly files?: ArkMediaFiles;
@@ -67,7 +91,7 @@ export type PublishedProjection = {
 	readonly url: string;
 	/** Every object key written, media first, page last. */
 	readonly keys: readonly string[];
-	/** True when the slug was already reserved by this same artifact. */
+	/** True when the slug was already reserved by this exact artifact and expression. */
 	readonly republished: boolean;
 };
 
@@ -94,17 +118,77 @@ async function putVerified(
 	}
 }
 
+/** What the ownership marker records about the slug's one publication. */
+type MarkerFacts = {
+	readonly artifact: string;
+	readonly expression: string;
+};
+
+const DIGEST_PATTERN = /^[a-f0-9]{64}$/;
+
+function parseMarker(key: string, bytes: Uint8Array): MarkerFacts {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(decoder.decode(bytes));
+	} catch {
+		throw new Error(
+			`${key}: unrecognized ownership marker; refusing to publish over it`,
+		);
+	}
+	if (
+		typeof parsed !== 'object' ||
+		parsed === null ||
+		typeof (parsed as MarkerFacts).artifact !== 'string' ||
+		typeof (parsed as MarkerFacts).expression !== 'string'
+	) {
+		throw new Error(
+			`${key}: unrecognized ownership marker; refusing to publish over it`,
+		);
+	}
+	const { artifact, expression } = parsed as MarkerFacts;
+	return { artifact, expression };
+}
+
+/**
+ * Refuse unless the recorded owner is exactly this artifact and this frozen
+ * expression. Anything else is permanent: another artifact never takes over
+ * a permalink, and the same artifact never changes its published words.
+ */
+function assertSameOwner(
+	pageAddress: string,
+	recorded: MarkerFacts,
+	claim: MarkerFacts,
+): void {
+	if (recorded.artifact !== claim.artifact) {
+		throw new Error(
+			`${pageAddress}: already published by another artifact (${recorded.artifact}); a frozen permalink is never reassigned`,
+		);
+	}
+	if (recorded.expression !== claim.expression) {
+		throw new Error(
+			`${pageAddress}: artifact ${claim.artifact} is already published with a different frozen expression (${recorded.expression}); a permalink never changes its words`,
+		);
+	}
+}
+
 /**
  * Render and publish one frozen artifact projection. Idempotent for the same
- * artifact id; refuses the slug for any other artifact. Throws on any
- * violated invariant; a throw after the marker is written leaves a reserved,
- * retryable subtree and never a half-activated page over wrong media.
+ * artifact id and expression digest; refuses the slug for anything else.
+ * Throws on any violated invariant; a throw after the marker is written
+ * leaves a reserved, retryable subtree and never a half-activated page over
+ * wrong media.
  */
 export async function publishProjection(
 	store: ArkObjectStore,
 	publication: ArkPublication,
 ): Promise<PublishedProjection> {
-	const { artifactId, page, files } = publication;
+	const { artifactId, expressionDigest, page, files } = publication;
+
+	if (!DIGEST_PATTERN.test(expressionDigest)) {
+		throw new Error(
+			`${artifactId}: expressionDigest must be 64 lowercase hex characters (Vault ADR-0064 expression digest, not integrity_digest)`,
+		);
+	}
 
 	// Route agreement: the delivery Worker's resolver is the single truth for
 	// which addresses exist. Anything it refuses, the kernel refuses to write.
@@ -116,26 +200,37 @@ export async function publishProjection(
 		);
 	}
 
-	// Reserve-first. The dotfile name is publicly unroutable by construction:
-	// the Worker's FILE_SEGMENT pattern refuses dotfiles, so the ownership
-	// marker can never be fetched through the public plane.
+	// Reserve-first, atomically. The dotfile name is publicly unroutable by
+	// construction: the Worker's FILE_SEGMENT pattern refuses dotfiles, so
+	// the ownership marker can never be fetched through the public plane.
+	const claim: MarkerFacts = {
+		artifact: artifactId,
+		expression: expressionDigest,
+	};
 	const markerKey = `${page.identity}/${page.slug}/.artifact`;
+	const markerBytes = encoder.encode(JSON.stringify(claim));
+
+	let republished: boolean;
 	const existingMarker = await store.get(markerKey);
-	const owner = existingMarker
-		? decoder.decode(existingMarker).trim()
-		: undefined;
-	if (owner !== undefined && owner !== artifactId) {
-		throw new Error(
-			`${pageAddress}: already published by another artifact (${owner}); a frozen permalink is never reassigned`,
-		);
-	}
-	if (owner === undefined) {
-		await putVerified(
-			store,
-			markerKey,
-			encoder.encode(artifactId),
-			'text/plain',
-		);
+	if (existingMarker) {
+		assertSameOwner(pageAddress, parseMarker(markerKey, existingMarker), claim);
+		republished = true;
+	} else {
+		const created = await store.createExclusive(markerKey, markerBytes, {
+			contentType: 'application/json',
+		});
+		if (created) {
+			republished = false;
+		} else {
+			// Lost the creation race. The winner is authoritative: converge if
+			// it was our own duplicate retry, refuse anything else.
+			const winner = await store.get(markerKey);
+			if (!winner) {
+				throw new Error(`${markerKey}: reservation race could not be resolved`);
+			}
+			assertSameOwner(pageAddress, parseMarker(markerKey, winner), claim);
+			republished = true;
+		}
 	}
 
 	// Media before the page, so activation is route-last.
@@ -166,6 +261,6 @@ export async function publishProjection(
 	return {
 		url: `https://theark.so${pageAddress}`,
 		keys,
-		republished: owner !== undefined,
+		republished,
 	};
 }

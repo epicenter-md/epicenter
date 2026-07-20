@@ -2,10 +2,11 @@
  * Publisher kernel tests.
  *
  * An in-memory store proves the whole authenticated orchestration without
- * credentials or production resources: reserve-first ownership, route-last
- * activation, idempotent retry, collision refusal, and read-back
- * verification. The final tests close the seam end to end: bytes written by
- * the kernel are served back through the delivery Worker's real
+ * credentials or production resources: atomic reserve-first ownership keyed
+ * on artifact id plus expression digest, route-last activation, idempotent
+ * retry, collision and changed-expression refusal, the creation race, and
+ * read-back verification. The final tests close the seam end to end: bytes
+ * written by the kernel are served back through the delivery Worker's real
  * `handleRequest` over the same store.
  */
 import { describe, expect, test } from 'bun:test';
@@ -30,22 +31,33 @@ function memoryStore() {
 			putOrder.push(key);
 			objects.set(key, { value, contentType });
 		},
+		// Mirrors R2 `onlyIf: { etagDoesNotMatch: '*' }`: an existing key makes
+		// the write a no-op that resolves unsuccessful.
+		async createExclusive(key, value, { contentType }) {
+			if (objects.has(key)) return false;
+			putOrder.push(key);
+			objects.set(key, { value, contentType });
+			return true;
+		},
 	};
 	return { store, objects, putOrder };
 }
 
 const bytes = (text: string) => new TextEncoder().encode(text);
+const DIGEST_A = 'ab'.repeat(32);
+const DIGEST_B = 'cd'.repeat(32);
+const MARKER_KEY = 'braden/first-artifact/.artifact';
 
 const publication = (
 	overrides: Partial<ArkPublication> = {},
 ): ArkPublication => ({
 	artifactId: '01880000-0000-7000-8000-000000000001',
+	expressionDigest: DIGEST_A,
 	page: {
 		identity: 'braden',
 		slug: 'first-artifact',
-		title: 'First Artifact',
 		publishedOn: '2026-07-20',
-		body: 'Frozen words.',
+		body: '# First Artifact\n\nFrozen words.',
 	},
 	...overrides,
 });
@@ -63,7 +75,7 @@ describe('publishProjection', () => {
 		});
 
 		expect(putOrder).toEqual([
-			'braden/first-artifact/.artifact',
+			MARKER_KEY,
 			'braden/first-artifact/video.mp4',
 			'braden/first-artifact/narration.mp3',
 			'braden/first-artifact/cover.png',
@@ -86,21 +98,34 @@ describe('publishProjection', () => {
 		);
 	});
 
+	test('the marker records artifact id and expression digest', async () => {
+		const { store, objects } = memoryStore();
+		await publishProjection(store, publication());
+		const marker = JSON.parse(
+			new TextDecoder().decode(objects.get(MARKER_KEY)?.value),
+		);
+		expect(marker).toEqual({
+			artifact: '01880000-0000-7000-8000-000000000001',
+			expression: DIGEST_A,
+		});
+	});
+
 	test('a text-only publication writes exactly the marker and the page', async () => {
 		const { store, putOrder } = memoryStore();
 		await publishProjection(store, publication());
-		expect(putOrder).toEqual([
-			'braden/first-artifact/.artifact',
-			'braden/first-artifact/index.html',
-		]);
+		expect(putOrder).toEqual([MARKER_KEY, 'braden/first-artifact/index.html']);
 	});
 
-	test('republishing the same artifact converges without re-reserving', async () => {
+	test('republishing the same artifact and expression converges without re-reserving', async () => {
 		const { store, putOrder } = memoryStore();
 		await publishProjection(store, publication());
 		const retry = await publishProjection(store, publication());
 		expect(retry.republished).toBe(true);
-		expect(putOrder.filter((key) => key.endsWith('.artifact'))).toHaveLength(1);
+		// The page was rewritten (theme rebuilds stay free); the marker was not.
+		expect(putOrder.filter((key) => key === MARKER_KEY)).toHaveLength(1);
+		expect(putOrder.filter((key) => key.endsWith('index.html'))).toHaveLength(
+			2,
+		);
 	});
 
 	test('a different artifact can never take over a frozen permalink', async () => {
@@ -114,6 +139,43 @@ describe('publishProjection', () => {
 			),
 		).rejects.toThrow('already published by another artifact');
 		expect(putOrder).toHaveLength(writesBefore);
+	});
+
+	test('the same artifact with a different frozen expression is refused', async () => {
+		const { store, putOrder } = memoryStore();
+		await publishProjection(store, publication());
+		const writesBefore = putOrder.length;
+		await expect(
+			publishProjection(store, publication({ expressionDigest: DIGEST_B })),
+		).rejects.toThrow('different frozen expression');
+		expect(putOrder).toHaveLength(writesBefore);
+	});
+
+	test('refuses a malformed expression digest before touching the store', async () => {
+		const { store, putOrder } = memoryStore();
+		for (const expressionDigest of [
+			'',
+			'not-hex',
+			'AB'.repeat(32),
+			'ab'.repeat(31),
+		]) {
+			await expect(
+				publishProjection(store, publication({ expressionDigest })),
+			).rejects.toThrow('64 lowercase hex');
+		}
+		expect(putOrder).toEqual([]);
+	});
+
+	test('refuses to publish over an unrecognized ownership marker', async () => {
+		const { store, objects, putOrder } = memoryStore();
+		objects.set(MARKER_KEY, {
+			value: bytes('legacy-or-corrupt'),
+			contentType: 'text/plain',
+		});
+		await expect(publishProjection(store, publication())).rejects.toThrow(
+			'unrecognized ownership marker',
+		);
+		expect(putOrder).toEqual([]);
 	});
 
 	test('refuses addresses the delivery Worker would refuse to serve', async () => {
@@ -149,6 +211,69 @@ describe('publishProjection', () => {
 
 	test('the ownership marker is publicly unroutable by construction', () => {
 		expect(resolveProjection('/braden/first-artifact/.artifact')).toBeNull();
+	});
+});
+
+// ============================================================================
+// The reservation race
+// ============================================================================
+
+/**
+ * A store where a competitor lands its marker between this publisher's
+ * absence check and its atomic create, so `createExclusive` must lose.
+ */
+function racingStore(competitorMarker: object) {
+	const { store, objects, putOrder } = memoryStore();
+	const raced: ArkObjectStore = {
+		...store,
+		async createExclusive(key, value, options) {
+			if (!objects.has(key)) {
+				objects.set(key, {
+					value: bytes(JSON.stringify(competitorMarker)),
+					contentType: 'application/json',
+				});
+				return false;
+			}
+			return store.createExclusive(key, value, options);
+		},
+	};
+	return { store: raced, objects, putOrder };
+}
+
+describe('reservation race', () => {
+	test('losing the atomic create to another artifact refuses with zero public writes', async () => {
+		const { store, putOrder } = racingStore({
+			artifact: '01880000-0000-7000-8000-00000000beef',
+			expression: DIGEST_B,
+		});
+		await expect(publishProjection(store, publication())).rejects.toThrow(
+			'already published by another artifact',
+		);
+		expect(putOrder).toEqual([]);
+	});
+
+	test('losing the atomic create to our own duplicate retry converges', async () => {
+		const { store, putOrder } = racingStore({
+			artifact: '01880000-0000-7000-8000-000000000001',
+			expression: DIGEST_A,
+		});
+		const result = await publishProjection(store, publication());
+		expect(result.republished).toBe(true);
+		expect(putOrder).toEqual(['braden/first-artifact/index.html']);
+	});
+
+	test('createExclusive never overwrites an existing key', async () => {
+		const { store, objects } = memoryStore();
+		await store.createExclusive(MARKER_KEY, bytes('first'), {
+			contentType: 'application/json',
+		});
+		const second = await store.createExclusive(MARKER_KEY, bytes('second'), {
+			contentType: 'application/json',
+		});
+		expect(second).toBe(false);
+		expect(new TextDecoder().decode(objects.get(MARKER_KEY)?.value)).toBe(
+			'first',
+		);
 	});
 });
 
@@ -198,11 +323,10 @@ describe('publish-to-read round trip', () => {
 				page: {
 					identity: 'braden',
 					slug: 'first-artifact',
-					title: 'First Artifact',
 					subtitle: 'The words as released',
 					publishedOn: '2026-07-20',
 					resonant: true,
-					body: 'Frozen words with a [link](https://example.com).\n\n> Kept exactly.',
+					body: '# First Artifact\n\nFrozen words with a [link](https://example.com).\n\n> Kept exactly.',
 				},
 			}),
 			files: { video: bytes('vvv'), cover: bytes('ccc') },
@@ -231,7 +355,7 @@ describe('publish-to-read round trip', () => {
 	test('the ownership marker never serves publicly even though it exists', async () => {
 		const { store, objects } = memoryStore();
 		const { url } = await publishProjection(store, publication());
-		expect(objects.has('braden/first-artifact/.artifact')).toBe(true);
+		expect(objects.has(MARKER_KEY)).toBe(true);
 		const response = await handleRequest(
 			new Request(`${url}/.artifact`),
 			workerEnvOver(objects),

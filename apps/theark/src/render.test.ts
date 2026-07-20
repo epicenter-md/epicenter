@@ -1,11 +1,13 @@
 /**
  * Constrained renderer tests.
  *
- * These pin the whole public HTML contract: the explicit Markdown subset, the
- * escape-everything-else refusal behavior, static canonical/OG metadata, and
- * the no-JavaScript guarantee. The renderer is total: hostile or unsupported
- * input degrades to visible escaped text, never markup and never a throw,
- * because Publish freezes before it projects and HTML is rebuildable.
+ * These pin the whole public HTML contract: the lead-title ownership (Vault
+ * ADR-0059: the lead H1 becomes the web title), the explicit Markdown
+ * subset, the escape-everything-else refusal behavior, static canonical/OG
+ * metadata, and the no-JavaScript guarantee. Below the lead title the
+ * renderer is total: hostile or unsupported input degrades to visible
+ * escaped text, never markup and never a throw, because Publish freezes
+ * before it projects and HTML is rebuildable.
  */
 import { describe, expect, test } from 'bun:test';
 
@@ -14,9 +16,8 @@ import { type ArkArtifactPage, renderArtifactPage, renderBody } from './render';
 const page = (overrides: Partial<ArkArtifactPage> = {}): ArkArtifactPage => ({
 	identity: 'braden',
 	slug: 'first-artifact',
-	title: 'First Artifact',
 	publishedOn: '2026-07-20',
-	body: 'Frozen words.',
+	body: '# First Artifact\n\nFrozen words.',
 	...overrides,
 });
 
@@ -38,6 +39,35 @@ describe('renderArtifactPage', () => {
 
 	test('is deterministic', () => {
 		expect(renderArtifactPage(page())).toBe(renderArtifactPage(page()));
+	});
+
+	test('the lead H1 is the frozen body: consumed as title, never duplicated', () => {
+		const html = renderArtifactPage(page());
+		expect(html.match(/First Artifact/g)?.length).toBe(3); // <title>, og:title, <h1>
+		expect(html).not.toContain('<h2>First Artifact</h2>');
+	});
+
+	test('blank lines before the lead title are tolerated', () => {
+		const html = renderArtifactPage(page({ body: '\n\n# Padded\n\nWords.' }));
+		expect(html).toContain('<h1>Padded</h1>');
+		expect(html).toContain('<p>Words.</p>');
+	});
+
+	test('a body without its lead title violates the freeze-gate contract and throws', () => {
+		expect(() => renderArtifactPage(page({ body: 'No title here.' }))).toThrow(
+			'lead "# Title" heading (Vault ADR-0059)',
+		);
+		expect(() => renderArtifactPage(page({ body: '## Not a lead' }))).toThrow(
+			'Vault ADR-0059',
+		);
+	});
+
+	test('inline markup in the lead title is not interpreted', () => {
+		const html = renderArtifactPage(
+			page({ body: '# A *literal* title\n\nWords.' }),
+		);
+		expect(html).toContain('<h1>A *literal* title</h1>');
+		expect(html).toContain('<title>A *literal* title · The Ark</title>');
 	});
 
 	test('canonical and OG metadata are static tags with the permalink', () => {
@@ -106,7 +136,10 @@ describe('renderArtifactPage', () => {
 
 	test('title metadata is attribute-escaped', () => {
 		const html = renderArtifactPage(
-			page({ title: 'Ampersands & "quotes"', subtitle: '<b>sub</b>' }),
+			page({
+				body: '# Ampersands & "quotes"\n\nWords.',
+				subtitle: '<b>sub</b>',
+			}),
 		);
 		expect(html).toContain(
 			'<title>Ampersands &amp; &quot;quotes&quot; · The Ark</title>',
@@ -137,20 +170,20 @@ describe('renderArtifactPage', () => {
 	test('never emits JavaScript, even from hostile input', () => {
 		const html = renderArtifactPage(
 			page({
-				title: '<script>alert(1)</script>',
-				body: '<script>alert(2)</script>\n\n[x](javascript:alert(3))',
+				body: '# <script>alert(1)</script>\n\n<script>alert(2)</script>\n\n[x](javascript:alert(3))',
 			}),
 		);
 		expect(html).not.toContain('<script');
 		expect(html).not.toContain('href="javascript');
 		// The refused constructs stay visible as escaped literal text.
+		expect(html).toContain('<h1>&lt;script&gt;alert(1)&lt;/script&gt;</h1>');
 		expect(html).toContain('&lt;script&gt;alert(2)&lt;/script&gt;');
 		expect(html).toContain('<p>[x](javascript:alert(3))</p>');
 	});
 });
 
 // ============================================================================
-// Markdown subset
+// Markdown subset (body below the lead title)
 // ============================================================================
 
 describe('renderBody', () => {
@@ -160,7 +193,7 @@ describe('renderBody', () => {
 		);
 	});
 
-	test('headings demote below the artifact title; deeper stays literal', () => {
+	test('headings below the lead demote; deeper stays literal', () => {
 		expect(renderBody('# Top')).toBe('<h2>Top</h2>');
 		expect(renderBody('## Section')).toBe('<h2>Section</h2>');
 		expect(renderBody('### Detail')).toBe('<h3>Detail</h3>');

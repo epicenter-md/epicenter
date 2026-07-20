@@ -138,26 +138,43 @@ is unchanged: no write route, no auth, no new bindings.
 
 Ownership within the publishing side:
 
-- **The renderer is total.** Publish freezes the artifact before projecting
-  it, so a renderer that rejects a frozen body would strand it permanently.
-  Everything outside the explicit Markdown subset (raw HTML, executable URL
-  schemes, tables, foreign images) renders as visibly escaped literal text.
-  Degradation is recoverable because projection HTML is disposable (Vault
-  ADR-0064): improve the renderer, rebuild the pages.
-- **The kernel owns route-last activation, idempotent retry, and collision
-  refusal.** One publicly-unroutable in-bucket ownership marker
-  (`<identity>/<slug>/.artifact`, holding the private artifact id; dotfiles
-  fail the public route allowlist by construction) is the entire route
-  registry the Decision's consequences called for. Reserve first, media next,
-  `index.html` last, read-back verification on every object. No second
-  database.
+- **The title is the frozen body's lead H1** (Vault ADR-0059: the lead H1
+  becomes the web title). The renderer consumes it as plain text for the
+  visible heading and document metadata; a mutable page-row title never
+  reaches a frozen page.
+- **The renderer is total below the lead title.** Publish freezes the
+  artifact before projecting it, so rejecting frozen content would strand it
+  permanently. Everything outside the explicit Markdown subset (raw HTML,
+  executable URL schemes, tables, foreign images) renders as visibly escaped
+  literal text. Degradation is recoverable because projection HTML is
+  disposable (Vault ADR-0064): improve the renderer, rebuild the pages. The
+  one structural throw is a missing lead title, which the Vault freeze gate
+  must make unreachable for Ark-bound artifacts.
+- **The kernel owns atomic reservation, route-last activation, idempotent
+  retry, and collision refusal.** One publicly-unroutable in-bucket
+  ownership marker (`<identity>/<slug>/.artifact`; dotfiles fail the public
+  route allowlist by construction) is the entire route registry the
+  Decision's consequences called for. It is claimed by atomic
+  create-if-absent (R2 conditional put, `onlyIf: { etagDoesNotMatch: '*' }`)
+  so racing publishers cannot both win, and it records the private artifact
+  id plus the immutable expression digest of Vault ADR-0064 (never
+  `integrity_digest`). Only an exact id-and-digest match converges; another
+  artifact, or the same artifact with different frozen words, is refused.
+  Generated HTML and media are not hashed, so theme and output rebuilds stay
+  free. Media writes precede `index.html`; every object is
+  read-back-verified. No second database.
 - **The generated media vocabulary is closed**: `video.mp4`,
   `narration.mp3`, `cover.png` from the conditional short-video renderer.
   There is no general upload pipeline.
 - **The caller owns credentials and public-URL verification.** The Vault's
   injected `ArkPublisher` port hands over the frozen artifact; the caller
-  must also supply the page title and receipt date (the port carries
-  neither) and verifies the expected canonical URL after the kernel returns.
+  must also supply the declared publication date (recorded on the canonical
+  receipt only after publish succeeds, so it is an input here, not a
+  preexisting fact) and the expression digest, and verifies the expected
+  canonical URL after the kernel returns. The port carries neither today,
+  and the Vault does not yet mint the ADR-0064 digest or enforce the
+  lead-title freeze gate; both are prerequisites for wiring the port to this
+  kernel and are recorded in the app README.
 
 An authenticated network endpoint (in `apps/api` or elsewhere) remains
 possible later; it would be a thin authenticated shell over this same kernel,
