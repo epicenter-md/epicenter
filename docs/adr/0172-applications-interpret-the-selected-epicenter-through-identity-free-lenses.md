@@ -51,6 +51,12 @@ selected Epicenter. A lens is not a permission boundary. App installation and
 uninstall never create or delete durable stores, and no installed-app workspace
 inventory survives.
 
+A lens also cannot mint a durable logical database identity under any noun.
+There is no `defineDatabase({ id })`, database ID or `database_id` column,
+named-database catalog, or per-application partition beneath the selected
+owner. Renaming the refused workspace plurality to "database" does not readmit
+it.
+
 ## Consequences
 
 - Two apps can interpret the same table differently without negotiating a

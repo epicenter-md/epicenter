@@ -1,8 +1,12 @@
 # Epicenter architecture
 
-Epicenter is a local-first workspace platform. Apps define stable workspace
-families, clients keep complete local data, and a hosted or self-hosted star
-keeps devices synchronized while they sleep.
+Epicenter is a local-first platform: a collection of apps over one shared
+data layer. The accepted destination is one Epicenter per person, interpreted
+by trusted apps through identity-free lenses (Proposed ADRs 0160 through 0182
+and `docs/CONTEXT.md`). The shipped runtime this page maps still organizes
+data into app-defined workspaces while that migration lands. Clients keep
+complete local data, and a hosted or self-hosted star keeps devices
+synchronized while they sleep.
 
 This page is the five-minute map. Durable decisions live in
 [`docs/adr`](adr/README.md). Shared vocabulary lives in
