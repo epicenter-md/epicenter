@@ -180,6 +180,19 @@ describe('renderArtifactPage', () => {
 		expect(html).toContain('&lt;script&gt;alert(2)&lt;/script&gt;');
 		expect(html).toContain('<p>[x](javascript:alert(3))</p>');
 	});
+
+	test('route values stay attribute data even when a caller violates the path contract', () => {
+		const html = renderArtifactPage(
+			page({
+				identity: 'braden"><script>alert(1)</script>',
+				media: { video: true, cover: true },
+			}),
+		);
+		expect(html).not.toContain('<script>');
+		expect(html).toContain(
+			'braden&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;',
+		);
+	});
 });
 
 // ============================================================================
@@ -198,6 +211,7 @@ describe('renderBody', () => {
 		expect(renderBody('## Section')).toBe('<h2>Section</h2>');
 		expect(renderBody('### Detail')).toBe('<h3>Detail</h3>');
 		expect(renderBody('#### Too deep')).toBe('<p>#### Too deep</p>');
+		expect(renderBody('# ')).toBe('<p># </p>');
 	});
 
 	test('single-level lists render; ordered and unordered stay distinct', () => {
@@ -242,6 +256,9 @@ describe('renderBody', () => {
 		expect(renderBody('[mail](mailto:braden@example.com)')).toBe(
 			'<p><a href="mailto:braden@example.com">mail</a></p>',
 		);
+		expect(renderBody('[path](https://example.com/*literal*)')).toBe(
+			'<p><a href="https://example.com/*literal*">path</a></p>',
+		);
 	});
 
 	test('executable and unknown schemes stay escaped literal text', () => {
@@ -277,6 +294,14 @@ describe('renderBody', () => {
 			renderBody('![the cover](cover.png)', '/braden/first-artifact/cover.png'),
 		).toBe(
 			'<p><img src="/braden/first-artifact/cover.png" alt="the cover"></p>',
+		);
+		expect(
+			renderBody(
+				'![*literal alt*](cover.png)',
+				'/braden/first-artifact/cover.png',
+			),
+		).toBe(
+			'<p><img src="/braden/first-artifact/cover.png" alt="*literal alt*"></p>',
 		);
 	});
 

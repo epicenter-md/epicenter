@@ -80,11 +80,13 @@ zero write paths (see the ADR-0160 amendment):
   publicly-unroutable `.artifact` ownership marker via create-if-absent (R2
   `onlyIf: { etagDoesNotMatch: '*' }`), so two racing publishers cannot both
   win. The marker records the private artifact id plus the immutable
-  expression digest (Vault ADR-0064; never `integrity_digest`): only an
-  exact match converges, another artifact is refused the slug forever, and
-  the same artifact with a different frozen expression is refused because a
-  permalink never changes its words. Generated HTML and media are not
-  hashed, so theme and output rebuilds stay free. It writes generated media
+  expression digest (Vault ADR-0064; never `integrity_digest`) and the first
+  declared publication date. Only an exact identity/expression match
+  converges; another artifact is refused the slug forever, and the same
+  artifact with a different frozen expression is refused because a permalink
+  never changes its words. A retry receives the first reserved date rather
+  than rewriting history. Generated HTML and media are not hashed, so theme
+  and output rebuilds stay free. It writes generated media
   (`video.mp4`/`narration.mp3`/`cover.png`, the complete media vocabulary)
   before activating `index.html` last, and read-back-verifies every object.
   Keys are derived through the delivery Worker's own `resolveProjection`, so
@@ -92,23 +94,24 @@ zero write paths (see the ADR-0160 amendment):
 
 The kernel runs wherever an authenticated caller holds bucket credentials: an
 operator CLI first, the Vault's injected `ArkPublisher` port behind it. The
-caller supplies `publishedOn` (the date it declares for this publication and
-must record identically on the canonical receipt afterward; the receipt does
-not exist yet when the kernel runs) and `expressionDigest`, and owns
-public-URL verification against the expected canonical URL.
+caller supplies a proposed `publishedOn` and the `expressionDigest`, owns
+public-URL verification against the expected canonical URL, and records the
+kernel's returned authoritative date on the receipt. An exact retry may return
+an earlier date already preserved by the route reservation.
 
-Two Vault-side contract changes are required before the port can drive this
-kernel, both already implied by its own ADRs and neither implemented there
-yet:
+The paired Vault publishing change owns the two cross-repository inputs this
+kernel requires:
 
 1. The freeze gate must validate that an artifact frozen with a canonical
    Ark slug has a body opening with exactly one lead `# Title` heading
    (ADR-0059 already states the lead H1 becomes the web title; nothing
    enforces it at freeze).
-2. Freeze must mint the immutable expression-and-production-input digest
-   ADR-0064 specifies (its text notes the digest is "still absent") and the
-   Vault's `ArkPublisher` adapter must pass it, with `publishedOn`, through
-   to the kernel; the port today carries neither.
+2. `artifactExpressionDigest` mints the immutable
+   expression-and-production-input digest ADR-0064 specifies and
+   `ArkProjection` carries it, together with the proposed publication date.
+
+The remaining seam is a credential-holding adapter from that Vault port to
+this kernel and its public-URL verification.
 
 ## Develop
 

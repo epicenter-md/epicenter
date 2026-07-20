@@ -82,8 +82,7 @@ describe('publishProjection', () => {
 			'braden/first-artifact/index.html',
 		]);
 		expect(result.url).toBe('https://theark.so/braden/first-artifact');
-		expect(result.republished).toBe(false);
-		expect(result.keys).toEqual(putOrder.slice(1));
+		expect(result.publishedOn).toBe('2026-07-20');
 		expect(objects.get('braden/first-artifact/video.mp4')?.contentType).toBe(
 			'video/mp4',
 		);
@@ -107,6 +106,7 @@ describe('publishProjection', () => {
 		expect(marker).toEqual({
 			artifact: '01880000-0000-7000-8000-000000000001',
 			expression: DIGEST_A,
+			publishedOn: '2026-07-20',
 		});
 	});
 
@@ -120,12 +120,29 @@ describe('publishProjection', () => {
 		const { store, putOrder } = memoryStore();
 		await publishProjection(store, publication());
 		const retry = await publishProjection(store, publication());
-		expect(retry.republished).toBe(true);
+		expect(retry.publishedOn).toBe('2026-07-20');
 		// The page was rewritten (theme rebuilds stay free); the marker was not.
 		expect(putOrder.filter((key) => key === MARKER_KEY)).toHaveLength(1);
 		expect(putOrder.filter((key) => key.endsWith('index.html'))).toHaveLength(
 			2,
 		);
+	});
+
+	test('an exact retry preserves the first reservation date', async () => {
+		const { store, objects } = memoryStore();
+		await publishProjection(store, publication());
+		const retry = await publishProjection(
+			store,
+			publication({
+				page: { ...publication().page, publishedOn: '2026-07-21' },
+			}),
+		);
+		expect(retry.publishedOn).toBe('2026-07-20');
+		expect(
+			new TextDecoder().decode(
+				objects.get('braden/first-artifact/index.html')?.value,
+			),
+		).toContain('datetime="2026-07-20"');
 	});
 
 	test('a different artifact can never take over a frozen permalink', async () => {
@@ -163,6 +180,17 @@ describe('publishProjection', () => {
 				publishProjection(store, publication({ expressionDigest })),
 			).rejects.toThrow('64 lowercase hex');
 		}
+		expect(putOrder).toEqual([]);
+	});
+
+	test('refuses a malformed publication date before touching the store', async () => {
+		const { store, putOrder } = memoryStore();
+		await expect(
+			publishProjection(store, {
+				...publication(),
+				page: { ...publication().page, publishedOn: 'someday' },
+			}),
+		).rejects.toThrow('YYYY-MM-DD');
 		expect(putOrder).toEqual([]);
 	});
 
@@ -245,6 +273,7 @@ describe('reservation race', () => {
 		const { store, putOrder } = racingStore({
 			artifact: '01880000-0000-7000-8000-00000000beef',
 			expression: DIGEST_B,
+			publishedOn: '2026-07-20',
 		});
 		await expect(publishProjection(store, publication())).rejects.toThrow(
 			'already published by another artifact',
@@ -256,9 +285,10 @@ describe('reservation race', () => {
 		const { store, putOrder } = racingStore({
 			artifact: '01880000-0000-7000-8000-000000000001',
 			expression: DIGEST_A,
+			publishedOn: '2026-07-19',
 		});
 		const result = await publishProjection(store, publication());
-		expect(result.republished).toBe(true);
+		expect(result.publishedOn).toBe('2026-07-19');
 		expect(putOrder).toEqual(['braden/first-artifact/index.html']);
 	});
 

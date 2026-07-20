@@ -121,37 +121,44 @@ function formatDate(publishedOn: string): string {
 	return `${month} ${Number(match[3])}, ${match[1]}`;
 }
 
-/** Only these schemes may become anchors; anything else stays literal text. */
-const LINK_PATTERN = /\[([^\]]+)\]\((https:\/\/|http:\/\/|mailto:)([^)\s]*)\)/g;
+/**
+ * Closed inline vocabulary. Matching source tokens before emitting tags keeps
+ * later emphasis handling away from generated attributes.
+ */
+const INLINE_PATTERN =
+	/`([^`\n]+)`|!\[([^\]\n]*)\]\(cover\.png\)|\[([^\]\n]+)\]\(((?:https?:\/\/|mailto:)[^)\s]*)\)|\*\*([^*\n]+)\*\*|\*([^*\n]+)\*/g;
 
 /**
- * Inline transforms over already-escaped text. Code spans are carved out
- * first so their contents never receive link/emphasis markup.
+ * Parse inline source tokens, then escape at final emission. Generated tags
+ * never re-enter another regex transform, so punctuation in an href or image
+ * alt cannot manufacture markup inside an attribute.
  */
 function renderInline(text: string, coverUrl: string | undefined): string {
-	return text
-		.split(/(`[^`]+`)/)
-		.map((part) => {
-			const codeSpan = /^`([^`]+)`$/.exec(part);
-			if (codeSpan) return `<code>${escapeHtml(codeSpan[1] ?? '')}</code>`;
-			let html = escapeHtml(part);
-			if (coverUrl !== undefined) {
-				// The only publishable image is the artifact's own cover.
-				html = html.replaceAll(
-					/!\[([^\]]*)\]\(cover\.png\)/g,
-					(_, alt: string) => `<img src="${coverUrl}" alt="${alt}">`,
-				);
-			}
-			html = html.replace(
-				LINK_PATTERN,
-				(_, label: string, scheme: string, rest: string) =>
-					`<a href="${scheme}${rest}">${label}</a>`,
-			);
-			html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-			html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-			return html;
-		})
-		.join('');
+	let html = '';
+	let cursor = 0;
+	for (const match of text.matchAll(INLINE_PATTERN)) {
+		const start = match.index;
+		html += escapeHtml(text.slice(cursor, start));
+		const [source, code, alt, label, url, strong, emphasis] = match;
+		if (code !== undefined) {
+			html += `<code>${escapeHtml(code)}</code>`;
+		} else if (alt !== undefined) {
+			html +=
+				coverUrl === undefined
+					? escapeHtml(source)
+					: `<img src="${escapeHtml(coverUrl)}" alt="${escapeHtml(alt)}">`;
+		} else if (label !== undefined && url !== undefined) {
+			html += `<a href="${escapeHtml(url)}">${renderInline(label, undefined)}</a>`;
+		} else if (strong !== undefined) {
+			html += `<strong>${renderInline(strong, undefined)}</strong>`;
+		} else if (emphasis !== undefined) {
+			html += `<em>${escapeHtml(emphasis)}</em>`;
+		} else {
+			html += escapeHtml(source);
+		}
+		cursor = start + source.length;
+	}
+	return html + escapeHtml(text.slice(cursor));
 }
 
 type Block =
@@ -160,6 +167,8 @@ type Block =
 	| { kind: 'heading'; level: 2 | 3; text: string }
 	| { kind: 'list'; ordered: boolean; items: string[] }
 	| { kind: 'rule' };
+
+const HEADING_PATTERN = /^(#{1,3}) (.+)$/;
 
 function parseBlocks(body: string): Block[] {
 	const lines = body.replaceAll('\r\n', '\n').split('\n');
@@ -185,7 +194,7 @@ function parseBlocks(body: string): Block[] {
 			continue;
 		}
 
-		const heading = /^(#{1,3}) (.+)$/.exec(line);
+		const heading = HEADING_PATTERN.exec(line);
 		if (heading) {
 			// `#` demotes to h2: the page h1 is the artifact title. `####`+ fails
 			// the pattern and stays a literal paragraph.
@@ -236,7 +245,7 @@ function parseBlocks(body: string): Block[] {
 			if (
 				current.trim() === '' ||
 				/^```/.test(current) ||
-				/^(#{1,3}) /.test(current) ||
+				HEADING_PATTERN.test(current) ||
 				/^---\s*$/.test(current) ||
 				unordered.test(current) ||
 				ordered.test(current) ||
@@ -343,12 +352,12 @@ export function renderArtifactPage(page: ArkArtifactPage): string {
 		...(page.subtitle
 			? [`<meta name="description" content="${escapeHtml(page.subtitle)}">`]
 			: []),
-		`<link rel="canonical" href="${canonical}">`,
+		`<link rel="canonical" href="${escapeHtml(canonical)}">`,
 		'<link rel="icon" href="/favicon.svg" type="image/svg+xml">',
 		'<link rel="stylesheet" href="/assets/theark.css">',
 		'<meta property="og:type" content="article">',
 		`<meta property="og:title" content="${title}">`,
-		`<meta property="og:url" content="${canonical}">`,
+		`<meta property="og:url" content="${escapeHtml(canonical)}">`,
 		...(page.subtitle
 			? [
 					`<meta property="og:description" content="${escapeHtml(page.subtitle)}">`,
@@ -357,7 +366,9 @@ export function renderArtifactPage(page: ArkArtifactPage): string {
 		// OG images must be absolute; everything else on the page is
 		// root-relative so the document is origin-portable for local preview.
 		...(coverUrl
-			? [`<meta property="og:image" content="https://theark.so${coverUrl}">`]
+			? [
+					`<meta property="og:image" content="${escapeHtml(`https://theark.so${coverUrl}`)}">`,
+				]
 			: []),
 		`<meta property="article:published_time" content="${escapeHtml(page.publishedOn)}">`,
 	];
@@ -382,8 +393,8 @@ export function renderArtifactPage(page: ArkArtifactPage): string {
 		? [
 				'<figure class="artifact-video">',
 				`<video controls playsinline preload="metadata"${
-					coverUrl ? ` poster="${coverUrl}"` : ''
-				} src="${mediaBase}/video.mp4"></video>`,
+					coverUrl ? ` poster="${escapeHtml(coverUrl)}"` : ''
+				} src="${escapeHtml(`${mediaBase}/video.mp4`)}"></video>`,
 				'</figure>',
 			]
 		: [];

@@ -89,10 +89,8 @@ export type ArkPublication = {
 
 export type PublishedProjection = {
 	readonly url: string;
-	/** Every object key written, media first, page last. */
-	readonly keys: readonly string[];
-	/** True when the slug was already reserved by this exact artifact and expression. */
-	readonly republished: boolean;
+	/** The first reservation's date; exact retries preserve this value. */
+	readonly publishedOn: string;
 };
 
 const encoder = new TextEncoder();
@@ -122,9 +120,11 @@ async function putVerified(
 type MarkerFacts = {
 	readonly artifact: string;
 	readonly expression: string;
+	readonly publishedOn: string;
 };
 
 const DIGEST_PATTERN = /^[a-f0-9]{64}$/;
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 function parseMarker(key: string, bytes: Uint8Array): MarkerFacts {
 	let parsed: unknown;
@@ -139,14 +139,16 @@ function parseMarker(key: string, bytes: Uint8Array): MarkerFacts {
 		typeof parsed !== 'object' ||
 		parsed === null ||
 		typeof (parsed as MarkerFacts).artifact !== 'string' ||
-		typeof (parsed as MarkerFacts).expression !== 'string'
+		typeof (parsed as MarkerFacts).expression !== 'string' ||
+		typeof (parsed as MarkerFacts).publishedOn !== 'string' ||
+		!DATE_PATTERN.test((parsed as MarkerFacts).publishedOn)
 	) {
 		throw new Error(
 			`${key}: unrecognized ownership marker; refusing to publish over it`,
 		);
 	}
-	const { artifact, expression } = parsed as MarkerFacts;
-	return { artifact, expression };
+	const { artifact, expression, publishedOn } = parsed as MarkerFacts;
+	return { artifact, expression, publishedOn };
 }
 
 /**
@@ -189,6 +191,11 @@ export async function publishProjection(
 			`${artifactId}: expressionDigest must be 64 lowercase hex characters (Vault ADR-0064 expression digest, not integrity_digest)`,
 		);
 	}
+	if (!DATE_PATTERN.test(page.publishedOn)) {
+		throw new Error(
+			`${artifactId}: publishedOn must be a YYYY-MM-DD calendar date`,
+		);
+	}
 
 	// Route agreement: the delivery Worker's resolver is the single truth for
 	// which addresses exist. Anything it refuses, the kernel refuses to write.
@@ -206,21 +213,22 @@ export async function publishProjection(
 	const claim: MarkerFacts = {
 		artifact: artifactId,
 		expression: expressionDigest,
+		publishedOn: page.publishedOn,
 	};
 	const markerKey = `${page.identity}/${page.slug}/.artifact`;
 	const markerBytes = encoder.encode(JSON.stringify(claim));
 
-	let republished: boolean;
+	let reservation: MarkerFacts;
 	const existingMarker = await store.get(markerKey);
 	if (existingMarker) {
-		assertSameOwner(pageAddress, parseMarker(markerKey, existingMarker), claim);
-		republished = true;
+		reservation = parseMarker(markerKey, existingMarker);
+		assertSameOwner(pageAddress, reservation, claim);
 	} else {
 		const created = await store.createExclusive(markerKey, markerBytes, {
 			contentType: 'application/json',
 		});
 		if (created) {
-			republished = false;
+			reservation = claim;
 		} else {
 			// Lost the creation race. The winner is authoritative: converge if
 			// it was our own duplicate retry, refuse anything else.
@@ -228,13 +236,12 @@ export async function publishProjection(
 			if (!winner) {
 				throw new Error(`${markerKey}: reservation race could not be resolved`);
 			}
-			assertSameOwner(pageAddress, parseMarker(markerKey, winner), claim);
-			republished = true;
+			reservation = parseMarker(markerKey, winner);
+			assertSameOwner(pageAddress, reservation, claim);
 		}
 	}
 
 	// Media before the page, so activation is route-last.
-	const keys: string[] = [];
 	const media: { video?: boolean; narration?: boolean; cover?: boolean } = {};
 	for (const [name, fileName, contentType] of MEDIA_OBJECTS) {
 		const bytes = files?.[name];
@@ -245,22 +252,23 @@ export async function publishProjection(
 			throw new Error(`${fileAddress}: not a servable media address`);
 		}
 		await putVerified(store, resolvedFile.key, bytes, contentType);
-		keys.push(resolvedFile.key);
 		media[name] = true;
 	}
 
-	const html = renderArtifactPage({ ...page, media });
+	const html = renderArtifactPage({
+		...page,
+		publishedOn: reservation.publishedOn,
+		media,
+	});
 	await putVerified(
 		store,
 		resolved.key,
 		encoder.encode(html),
 		'text/html; charset=utf-8',
 	);
-	keys.push(resolved.key);
 
 	return {
 		url: `https://theark.so${pageAddress}`,
-		keys,
-		republished,
+		publishedOn: reservation.publishedOn,
 	};
 }

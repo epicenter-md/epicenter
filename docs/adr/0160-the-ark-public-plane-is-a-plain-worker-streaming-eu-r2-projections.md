@@ -157,24 +157,25 @@ Ownership within the publishing side:
   Decision's consequences called for. It is claimed by atomic
   create-if-absent (R2 conditional put, `onlyIf: { etagDoesNotMatch: '*' }`)
   so racing publishers cannot both win, and it records the private artifact
-  id plus the immutable expression digest of Vault ADR-0064 (never
-  `integrity_digest`). Only an exact id-and-digest match converges; another
-  artifact, or the same artifact with different frozen words, is refused.
-  Generated HTML and media are not hashed, so theme and output rebuilds stay
-  free. Media writes precede `index.html`; every object is
+  id, the immutable expression digest of Vault ADR-0064 (never
+  `integrity_digest`), and the first declared publication date. Only an exact
+  id-and-digest match converges; another artifact, or the same artifact with
+  different frozen words, is refused. An exact retry reuses the first date
+  rather than rewriting published history. Generated HTML and media are not
+  hashed, so theme and output rebuilds stay free. Media writes precede
+  `index.html`; every object is
   read-back-verified. No second database.
 - **The generated media vocabulary is closed**: `video.mp4`,
   `narration.mp3`, `cover.png` from the conditional short-video renderer.
   There is no general upload pipeline.
 - **The caller owns credentials and public-URL verification.** The Vault's
   injected `ArkPublisher` port hands over the frozen artifact; the caller
-  must also supply the declared publication date (recorded on the canonical
-  receipt only after publish succeeds, so it is an input here, not a
-  preexisting fact) and the expression digest, and verifies the expected
-  canonical URL after the kernel returns. The port carries neither today,
-  and the Vault does not yet mint the ADR-0064 digest or enforce the
-  lead-title freeze gate; both are prerequisites for wiring the port to this
-  kernel and are recorded in the app README.
+  must also supply the proposed publication date and expression digest, and
+  verifies the expected canonical URL after the kernel returns. The paired
+  Vault change enforces the lead-title freeze gate, computes the source-only
+  expression digest, carries both inputs through `ArkProjection`, and records
+  the authoritative date returned by the reservation. The remaining seam is
+  the credential-holding adapter itself.
 
 An authenticated network endpoint (in `apps/api` or elsewhere) remains
 possible later; it would be a thin authenticated shell over this same kernel,
