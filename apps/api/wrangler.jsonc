@@ -50,13 +50,6 @@
 				"name": "ROOM",
 				"class_name": "Room"
 			},
-			// One AttachRelay actor per (principalId, hostId) pair holds the live
-			// Super Chat rendezvous sockets (ADR-0115). It stores no frames and owns
-			// no ctx.storage; the DO is a pure socket router.
-			{
-				"name": "ATTACH_RELAY",
-				"class_name": "AttachRelay"
-			},
 			// One SQLite-backed account authority per authenticated principal; named
 			// workspaces are rows inside it. The Worker derives the DO name from the
 			// principal alone after authentication.
@@ -66,9 +59,7 @@
 			}
 		]
 	},
-	// SQLite-backed DO: persistent storage survives hibernation. AttachRelay
-	// stores nothing, but new DO classes take the SQLite storage backend (the
-	// modern default) whether or not they touch it.
+	// SQLite-backed DOs use persistent storage that survives hibernation.
 	"migrations": [
 		{
 			"tag": "v1",
@@ -93,6 +84,10 @@
 			"tag": "v5",
 			"new_sqlite_classes": ["CurrentStateRowAuthorityDurableObject"],
 			"deleted_classes": ["RowAuthorityDurableObject"]
+		},
+		{
+			"tag": "v6",
+			"deleted_classes": ["AttachRelay"]
 		}
 	],
 	// --- Secrets (set via `wrangler secret put`, typed via `wrangler types`) ---

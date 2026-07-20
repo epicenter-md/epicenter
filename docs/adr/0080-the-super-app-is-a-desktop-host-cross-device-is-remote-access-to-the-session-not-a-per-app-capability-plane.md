@@ -1,6 +1,6 @@
 # 0080. The super app is a desktop host; cross-device is remote access to the session, not a per-app capability plane
 
-- **Status:** Accepted (the desktop-host decision is settled; the [Trigger to revisit](#trigger-to-revisit) is resolved by [ADR-0115](0115-super-chat-remote-attach-rides-an-endpoint-addressed-trusted-relay.md): Epicenter operates an endpoint-addressed trusted AttachRelay)
+- **Status:** Accepted (the desktop-host decision is settled; [ADR-0178](0178-live-remote-home-control-is-deferred-until-it-has-a-shipped-workflow.md) withdraws the unshipped AttachRelay and defers live remote Home control)
 - **Date:** 2026-06-30
 - **Relates:** [ADR-0079](0079-cross-device-is-two-planes-epicenter-syncs-the-crdt-the-box-is-reached-directly.md) (this refines its capability plane: the super app does not consume it), [ADR-0047](0047-the-agent-loop-runs-in-the-client-and-tools-are-dispatched-actions.md) (the agent loop runs in the client), [ADR-0021](0021-actions-are-the-only-surface-that-crosses-a-process-boundary.md) (actions cross process boundaries), [ADR-0072](0072-local-books-ships-as-a-standalone-cli-the-daemon-surface-is-deferred.md) (Local Books is off the mesh, a local MCP verb facade), [ADR-0073](0073-tools-speak-mcp-natively-epicenter-owns-only-the-transport-mcp-lacks.md) (tools speak MCP), [ADR-0078](0078-inference-is-a-url-addressed-connection-the-relay-floor-carries-only-tools.md) (inference is a URL connection), [ADR-0004](0004-trust-the-relay-reject-zero-knowledge.md) (the relay reads plaintext)
 
@@ -39,9 +39,13 @@ Is mass-market remote access to the super app a committed product goal, that is,
 
 The trigger fired yes: turnkey phone attach after Epicenter sign-in is a committed direction. It is delivered by the endpoint-addressed trusted AttachRelay (ADR-0115). The relay forwards live Super Chat bytes between two of the principal's endpoints, addressed by `principalId`, `hostId`, `deviceId`, and `attachId`; it stores no frames and exposes no route/capability/tool surface. Hosted Cloud is trusted for live frames, and self-host is the privacy answer. This is not a per-app capability plane and does not resurrect the relay floor (ADR-0086). The "thin per-tool reach versus full session" question stays closed: the full host session is the one reachable surface, per this ADR's decision 2.
 
+### Update 2026-07-19: live remote control is deferred (ADR-0178)
+
+The product never connected the desktop Home host or shipped a remote client. ADR-0178 therefore withdraws AttachRelay instead of preserving a speculative transport. Durable conversation history remains in the selected Epicenter. A future live remote workflow must earn its discovery, authorization, UI, liveness, and transport together.
+
 ## Considered alternatives
 
 - **A mobile-native super app (build-time bundling, or a thin client per app).** Rejected. It requires a mobile and browser WASM materializer, per-app cross-device reach, and per-box identity, the exact complexity this decision deletes, to deliver a phone experience that remote-into-host delivers over one channel.
 - **Keep the per-app capability plane (ADR-0079 as-is) as the super app's cross-device mechanism.** Refined away. Reaching N apps as individually addressed endpoints is more apparatus than reaching one host as a session, and because the super app composes apps locally it never needs them addressable over a network.
-- **A content-readable hosted session broker (the Codex or Claude remote pattern).** Accepted by ADR-0115's amendment, but only as an endpoint-addressed Super Chat attach relay, not as a generic remote capability broker. This is the privacy-equals-self-host stance applied to live Super Chat frames.
+- **A content-readable hosted session broker (the Codex or Claude remote pattern).** Accepted by ADR-0115, then withdrawn by ADR-0178 because no complete remote workflow shipped. A future broker remains possible only as a Home-specific transport, never as a generic remote capability plane.
 - **A bespoke remote-session protocol.** Rejected. Remote-into-a-host is a solved, off-the-shelf shape (Tailscale SSH, a tunneled web terminal, the Codex and Claude remote patterns). Epicenter should reuse it, not rebuild it.
