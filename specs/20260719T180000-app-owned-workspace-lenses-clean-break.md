@@ -486,6 +486,10 @@ rewriting history again:
   dangling pointer, missing `catalog.json`, member set mismatch, missing
   index); first-run ENOENT still boots; the running-process promotion test
   stays green.
+- [ ] Upgrade notice: an existing selection in today's root-member layout is
+  not migrated or dual-read. Before first launch of this wave, republish it
+  with the new publisher or remove `current` to boot the shipped defaults.
+  The startup error names both recoveries if an old selection remains.
 - Proof: `bun test apps/epicenter/src/app-catalog.test.ts
   apps/epicenter/src/static-assets.test.ts`; Rust `cargo test` for the frame
   parser; typecheck.
@@ -527,33 +531,44 @@ until Wave 3, so each step is independently shippable.
 
 Gated on Waves 1-2 and Decisions Needed 2.
 
+#### Wave 3a: build and cut over without deleting the old implementation
+
 - [ ] Compose the active catalog as shipped default members (from the packaged
-  apps directory, now containing per-member `catalog.json` metadata generated
-  at build time) shadowed by the selected generation; delete `reservedIds`.
-- [ ] Serve every member through the one generic route; delete the surface
-  loop, the Whispering branch, `SESSION_SHELL`, `injectAuthBootstrap`,
-  `surfacePages`, CSP hashing (fixed policy from the Wave 2 gate),
-  `loadStaticAssets`, `EpicenterStaticAssets`, `WHISPERING_PREFIX`, and the
-  `staticAssets` server option.
-- [ ] `/api/apps` lists all members (bundled included) from the manifest.
-- [ ] Rust: one validated app-window path for every member; labels follow the
-  one `app-<id>` pattern; migrate the Whispering-targeted capability files,
-  tray items, shortcut event target, and the hidden-startup and
-  recording-overlay windows (host mechanisms, kept, retargeted); delete the
-  closed surface enum, built-in refusals in `open_app`, the enumerated
-  capability label lists, and the built-in deep-link table in favor of the
-  validated-ID pattern.
-- [ ] Delete `SURFACE_ROUTES` surface entries and `PLACEHOLDER_SURFACE_PAGES`
-  (Mail and Books placeholders die; they return as real members when they
-  exist).
-- [ ] Tests: rewrite the served-document assertions (no injection, no shell);
-  keep containment, fallback, and 404 behavior assertions; Rust window/label
-  tests follow the single path.
-- Proof: full `bun test` for `apps/epicenter`, Rust `cargo test`, packaged
-  sidecar smoke, deep-link smoke, live desktop run (user gate).
-- Rollback checkpoint: land Bun serving (3a) and Rust window/capability
-  unification (3b) as separate commits; URLs never change, so 3a can ship
-  while Rust still opens the same `/apps/<id>/` paths through the old path.
+  apps directory, now containing generated metadata) shadowed by the selected
+  generation. `/api/apps` lists that one logical catalog.
+- [ ] Route every member through the generic contained resolver and fixed CSP.
+  Stop importing and calling the built-in surface loader, document rewriter,
+  and placeholder-page path, but leave their implementation on disk.
+- [ ] Rust: add one validated app-window path for every member; labels follow
+  the one `app-<id>` pattern. Retarget Whispering's capabilities, tray items,
+  shortcut event, hidden-startup window, recording overlay, and deep links.
+  Stop calling the closed built-in path, but leave it on disk.
+- [ ] Rewrite tests to exercise only the new paths while the old code remains
+  available for a one-revert rollback.
+
+#### Wave 3b: verify the cutover
+
+- [ ] Run the full `apps/epicenter` Bun suite and Rust suite, packaged sidecar
+  smoke, deep-link smoke, and a live desktop run (user gate).
+- [ ] Verify Home, Whispering, one installed app, tray recording, overlay, and
+  deep links all enter through `/apps/<id>/` and the one window-label rule.
+- [ ] Re-grep imports and callers to prove the old serving and window families
+  are unreachable. A failure returns to 3a; deletion does not begin.
+
+#### Wave 3c: delete the proven-unused family
+
+- [ ] Delete the surface loop, Whispering branch, `SESSION_SHELL`,
+  `injectAuthBootstrap`, `surfacePages`, CSP hashing, `loadStaticAssets`,
+  `EpicenterStaticAssets`, `WHISPERING_PREFIX`, `staticAssets` server option,
+  `reservedIds`, `SURFACE_ROUTES` surface entries, and
+  `PLACEHOLDER_SURFACE_PAGES` (Mail and Books return only as real members).
+- [ ] Delete the Rust closed surface enum, built-in refusals in `open_app`,
+  enumerated capability label lists, and built-in deep-link table.
+- [ ] Re-run the complete 3b proof after deletion.
+- Rollback checkpoint: 3a and its tests are one Bun commit; the Rust cutover is
+  a second commit; 3b is the deletion gate; 3c contains deletion-only commits.
+  URLs do not change, so either cutover can be reverted independently before
+  deletion.
 
 ### Wave 4: ADR-0158 declarations and admission
 
