@@ -9,7 +9,9 @@
  *   root, discovered by {@link deriveAppCatalog}. IDs are the direct folder
  *   names, metadata is derived from validated output, and every member is
  *   served below `/apps/<id>/` by the same contained resolver the legacy
- *   Whispering path uses.
+ *   Whispering path uses. The root a process serves is one immutable
+ *   generation directory selected once at startup; `app-catalog.ts` owns
+ *   that selection and the promotion protocol.
  *
  * Both paths resolve every request below one real directory and check again
  * after symlinks are resolved.

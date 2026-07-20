@@ -17,6 +17,7 @@
 		"build:whispering": "bun run --cwd ../whispering build:epicenter",
 		"clean:dist": "bun run scripts/clean-dist.ts",
 		"build:desktop": "bun run build && bun run build:sidecar",
+		"catalog:publish": "bun run scripts/publish-app-catalog.ts",
 		"desktop:build": "tauri build",
 		"test": "bun test",
 		"tauri": "tauri",

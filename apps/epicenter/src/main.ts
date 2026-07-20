@@ -18,6 +18,7 @@ import {
 } from '@epicenter/client';
 import { honeycrispWorkspace } from '@epicenter/honeycrisp';
 import { createDesktopWorkspaceOwner } from '@epicenter/workspace/sqlite/desktop-owner';
+import { loadActiveAppCatalog } from './app-catalog.ts';
 import {
 	createDesktopAuthAuthority,
 	type DesktopAuthAuthority,
@@ -34,7 +35,7 @@ import {
 	superviseSidecar,
 	watchParentPipe,
 } from './sidecar-runtime.ts';
-import { deriveAppCatalog, loadStaticAssets } from './static-assets.ts';
+import { loadStaticAssets } from './static-assets.ts';
 import { conversationsWorkspace } from './workspace.ts';
 import { BUILT_IN_WORKSPACE_IDS } from './workspace-owner.ts';
 
@@ -101,7 +102,9 @@ async function main(): Promise<void> {
 		const staticAssets = await loadStaticAssets(appsDist);
 		// Source-built catalog members live in host-owned app data; the
 		// built-in surfaces stay on the legacy closed layout for this slice.
-		const appCatalog = await deriveAppCatalog(
+		// The generation selected here is what this process serves for its
+		// whole lifetime; promotions apply at the next restart (ADR-0153).
+		const appCatalog = await loadActiveAppCatalog(
 			join(epicenterDataDir, 'app-catalog'),
 			{ reservedIds: Object.keys(SURFACE_ROUTES) },
 		);
