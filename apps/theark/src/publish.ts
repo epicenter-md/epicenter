@@ -207,9 +207,10 @@ export async function publishProjection(
 		);
 	}
 
-	// Reserve-first, atomically. The dotfile name is publicly unroutable by
-	// construction: the Worker's FILE_SEGMENT pattern refuses dotfiles, so
-	// the ownership marker can never be fetched through the public plane.
+	// Reserve-first, atomically. The marker name is publicly unroutable by
+	// construction: the Worker's closed media vocabulary can never name
+	// `.artifact`, so the ownership marker cannot be fetched through the
+	// public plane.
 	const claim: MarkerFacts = {
 		artifact: artifactId,
 		expression: expressionDigest,

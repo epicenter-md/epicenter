@@ -8,6 +8,8 @@
  *
  * Key behaviors:
  * - URL to R2 key mapping: each artifact owns one page-and-media subtree
+ * - Only the closed media vocabulary (video.mp4, narration.mp3, cover.png)
+ *   names a file projection; every other filename is 404 before touching R2
  * - Hostile paths (traversal, encoding, uppercase) 404 before touching R2
  * - Trailing slashes 308-redirect to the slashless canonical URL
  * - Only GET and HEAD are allowed; conditional reads behave
@@ -108,11 +110,25 @@ describe('resolveProjection', () => {
 		});
 	});
 
-	test('artifact output lives beside its human-readable permalink', () => {
-		expect(resolveProjection('/braden/first-artifact/video.mp4')).toEqual({
-			key: 'braden/first-artifact/video.mp4',
-			isPage: false,
-		});
+	test('the closed media vocabulary resolves beside its human-readable permalink', () => {
+		for (const file of ['video.mp4', 'narration.mp3', 'cover.png']) {
+			expect(resolveProjection(`/braden/first-artifact/${file}`)).toEqual({
+				key: `braden/first-artifact/${file}`,
+				isPage: false,
+			});
+		}
+	});
+
+	test('filenames outside the closed media vocabulary are refused', () => {
+		for (const file of [
+			'blob.bin',
+			'notes.txt',
+			'cover.jpg',
+			'video.mp4.bak',
+			'poster.png',
+		]) {
+			expect(resolveProjection(`/braden/first-artifact/${file}`)).toBeNull();
+		}
 	});
 
 	test('rejects uppercase, underscores, dotfiles, double dots, and empty segments', () => {
@@ -139,7 +155,7 @@ describe('resolveProjection', () => {
 	test('rejects syntactically valid paths that exceed the R2 key limit', () => {
 		expect(resolveProjection(`/braden/${'a'.repeat(1010)}`)).toBeNull();
 		expect(
-			resolveProjection(`/braden/slug/${'a'.repeat(1010)}.png`),
+			resolveProjection(`/braden/${'a'.repeat(1010)}/video.mp4`),
 		).toBeNull();
 	});
 });
@@ -258,11 +274,20 @@ test('HEAD on a missing projection has a 404 status and empty body', async () =>
 	expect(await response.text()).toBe('');
 });
 
-test('artifact output without stored content-type falls back to octet-stream', async () => {
-	const key = 'braden/first-artifact/blob.bin';
+test('media without stored content-type falls back to octet-stream', async () => {
+	const key = 'braden/first-artifact/video.mp4';
 	const { fetch } = setup({ [key]: { data: 'binary' } });
-	const response = await fetch('/braden/first-artifact/blob.bin');
+	const response = await fetch('/braden/first-artifact/video.mp4');
 	expect(response.headers.get('content-type')).toBe('application/octet-stream');
+});
+
+test('media outside the closed vocabulary 404s even when a stray object exists', async () => {
+	const { fetch, requestedKeys } = setup({
+		'braden/first-artifact/blob.bin': { data: 'stray' },
+	});
+	const response = await fetch('/braden/first-artifact/blob.bin');
+	expect(response.status).toBe(404);
+	expect(requestedKeys).toEqual([]);
 });
 
 test('stored content-type wins over the fallback', async () => {

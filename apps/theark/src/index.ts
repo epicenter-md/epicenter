@@ -13,10 +13,11 @@
  *   /<identity>[/<slug-or-facet>]         R2 `<path>/index.html`
  *   /<identity>/<artifact-slug>/<file>    R2 `<path>/<file>`
  *
- * A pretty segment is lowercase-hyphenated ([a-z0-9-]); a file segment adds
- * dot-separated extensions. Anything else is 404 before R2 is consulted, so
- * traversal or encoded surprises never become object keys. Trailing slashes
- * 308-redirect to the slashless canonical form.
+ * A pretty segment is lowercase-hyphenated ([a-z0-9-]); a file segment must be
+ * exactly one of the three generated media names (the closed vocabulary
+ * below). Anything else is 404 before R2 is consulted, so traversal, encoded
+ * surprises, or a stray bucket object never become public addresses. Trailing
+ * slashes 308-redirect to the slashless canonical form.
  *
  * Only GET and HEAD exist. There is no write route, no auth, no API: the
  * bucket binding's write capability is deliberately unused (see the ADR).
@@ -34,7 +35,15 @@
 const PROJECTION_CACHE_CONTROL = 'public, max-age=300, must-revalidate';
 
 const PRETTY_SEGMENT = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const FILE_SEGMENT = /^[a-z0-9][a-z0-9-]*(?:\.[a-z0-9]+)+$/;
+/**
+ * The complete generated-media vocabulary. There is no general upload
+ * pipeline, so no other filename can ever name a projection; refusing the
+ * rest here means even a stray object at another key is publicly unroutable.
+ * The publisher kernel derives every key it writes through
+ * `resolveProjection`, so this set and the kernel's media list cannot drift
+ * apart without publishing failing loudly.
+ */
+const MEDIA_FILES = new Set(['video.mp4', 'narration.mp3', 'cover.png']);
 const RESERVED_IDENTITIES = new Set(['assets']);
 // The Assets binding resolves by pathname. A deliberately non-public host
 // prevents its internal fetch from re-entering this Worker's workers.dev or
@@ -63,8 +72,7 @@ export function resolveProjection(pathname: string): ResolvedProjection | null {
 		segments.length === 3 &&
 		PRETTY_SEGMENT.test(segments[0] ?? '') &&
 		PRETTY_SEGMENT.test(segments[1] ?? '') &&
-		FILE_SEGMENT.test(segments[2] ?? '') &&
-		segments[2] !== 'index.html'
+		MEDIA_FILES.has(segments[2] ?? '')
 	) {
 		const key = segments.join('/');
 		if (key.length > 1024) return null;

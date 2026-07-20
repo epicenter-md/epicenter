@@ -27,12 +27,14 @@ Canonical artifact permalinks are `https://theark.so/braden/<artifact-slug>`.
 | `/assets/theark.css`, `/favicon.svg` | Static Assets, literal paths |
 | `/<identity>` | R2 `<identity>/index.html`, as a person route |
 | `/<identity>/<slug-or-facet>` | R2 `<identity>/<slug-or-facet>/index.html`, as an artifact permalink or facet route |
-| `/<identity>/<artifact-slug>/<file.ext>` | R2 `<identity>/<artifact-slug>/<file.ext>`, as generated media belonging to that expression |
+| `/<identity>/<artifact-slug>/<file>` | R2 `<identity>/<artifact-slug>/<file>`, where `<file>` is exactly `video.mp4`, `narration.mp3`, or `cover.png` |
 
 A human-readable page route has one or two lowercase-hyphenated segments. An
 artifact's generated files live directly beneath its permanent permalink, so
-the public URL tree and R2 tree say the same thing. Because the canonical page
-URL is slashless, generated HTML must use root-absolute media URLs such as
+the public URL tree and R2 tree say the same thing. The third segment is the
+closed generated-media vocabulary; no other filename resolves, so even a stray
+bucket object outside that set is publicly unroutable. Because the canonical
+page URL is slashless, generated HTML must use root-absolute media URLs such as
 `/braden/<slug>/video.mp4`; a bare `video.mp4` would resolve outside the artifact
 subtree. Explicit `index.html` aliases, percent-encoded aliases, the reserved
 `/assets` identity, and anything outside these exact families are 404 before R2

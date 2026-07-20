@@ -36,11 +36,15 @@ Each concern has exactly one owner:
 - **R2 owns one generated public subtree per expression.** Person, facet, and
   artifact pages map to `<identity>[/<slug-or-facet>]/index.html`; generated
   media lives beside its artifact page at
-  `<identity>/<artifact-slug>/<file>`. The public path and object key therefore
+  `<identity>/<artifact-slug>/<file>`, where `<file>` is exactly one of the
+  closed generated set (`video.mp4`, `narration.mp3`, `cover.png`). The public
+  path and object key therefore
   describe the same person and expression, and no internal artifact UUID leaks
   into the public product. Because canonical page URLs are slashless, the
   constrained renderer emits root-absolute media URLs under that subtree rather
-  than bare relative filenames. Explicit `index.html` aliases are refused.
+  than bare relative filenames. Explicit `index.html` aliases and any filename
+  outside the closed media set are refused, so even a stray bucket object is
+  publicly unroutable.
   Pages and media ship by writing objects; the Worker validates every path
   against these exact allowlists before any key is formed and streams bodies
   without buffering.
