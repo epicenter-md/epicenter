@@ -96,6 +96,12 @@ mode.
 - Read-only SQL exposes only
   `rows(table_key, row_id, fields_json)`, performs no full-dataset refresh, and
   never performs hidden synchronization.
+- The live desktop/Bun database is inspectable in place: an external read-only
+  connection sees the same stable `rows` relation. No surface claims direct
+  live-file writes synchronize; the detached artifact is the editable form.
+- No second durable database identity exists under any noun: no
+  `defineDatabase`, `DatabaseId`, `database_id` column, named-database catalog,
+  per-application partition, or database route parameter.
 - Scalar conflict resolution remains authority acceptance order. Pull
   checkpoints are lower bounds, not exact historical snapshots.
 - Scalar deletion markers and exact-retry state are bounded. A replica below
@@ -352,6 +358,17 @@ optimistic scalar work. It excludes KV and every private relation. SQL is
 read-only and sees one stable local SQLite transaction. It performs no network
 work and may observe mixed remote acceptance times across rows.
 
+`rows` is also readable in place. On desktop and Bun the live
+`epicenter.sqlite3` contains a relation named `rows` (table or view), so
+read-only inspection works with ordinary SQLite tools or through an
+owner-level native reader (an `openEpicenterReader()`-style call with no
+database ID and no application definition). External connections are read-only
+(`query_only`). Direct writes to the live file are unsupported and never
+synchronize; synchronized mutations enter only through the typed TypeScript
+API, and the detached portable artifact remains the formally editable surface
+(ADR-0162). The browser keeps the same `rows` semantics through the SQL API
+without a filesystem-path promise.
+
 The executor permits `SELECT` and `WITH`, bound parameters, scalar JSON
 functions, CTEs, joins, grouping, and aggregation. It rejects writes, DDL,
 `ATTACH`, private relations, mutating or private-layout pragmas, and virtual
@@ -526,6 +543,16 @@ Also refused: partial replication, query subscriptions, permission-aware
 fanout, scalar history, per-field causal clocks, event sourcing, SQLite
 WAL/page/session replication, reactive SQL automation, all-device discovery,
 automatic sign-in merge, compatibility aliases, and hidden fallback readers.
+
+Also refused: any second durable database identity under a renamed noun. No
+`defineDatabase({ id })`, `DatabaseId`, `database_id` column,
+`__epicenter_databases` catalog table, per-application database partition,
+`/api/databases/:databaseId/*` route, or definition-derived TEMP SQL view
+enters the destination. The rejected named-database proposal's useful ideas
+survive only in their adapted one-owner form: one physical SQLite store per
+selected owner, an incrementally maintained inspectable `rows` relation,
+structural read-only statement guarding, an owner-level native reader, and
+portability as the one `.epicenter` artifact.
 
 ## ADR Dependency Ledger
 
@@ -726,6 +753,8 @@ Build:
 
 - Implement `rows` directly over the chosen incremental visible-state
   representation.
+- Materialize `rows` inside the live desktop/Bun database file (table or view)
+  and add the owner-level native read-only reader.
 - Add structural read-only authorization and keep result validation in the
   caller realm.
 
@@ -739,6 +768,9 @@ Prove:
 - Writes, DDL, `ATTACH`, private tables, unsafe pragmas, and virtual opens fail.
 - Query setup performs zero full-dataset copies or refresh writes at all
   benchmark sizes.
+- An external read-only SQLite connection and the owner-level native reader
+  both see current `rows` content in the live desktop/Bun file without any
+  refresh step.
 
 Remove:
 
