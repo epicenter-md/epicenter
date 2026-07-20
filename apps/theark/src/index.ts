@@ -36,6 +36,10 @@ const PRETTY_SEGMENT = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const FILE_SEGMENT = /^[a-z0-9][a-z0-9-]*(?:\.[a-z0-9]+)+$/;
 const ARTIFACT_ID =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+// The Assets binding resolves by pathname. A deliberately non-public host
+// prevents its internal fetch from re-entering this Worker's workers.dev or
+// custom-domain route (Cloudflare error 1042).
+const ASSET_ORIGIN = 'https://theark-assets.internal';
 
 type ResolvedProjection = {
 	key: string;
@@ -114,7 +118,11 @@ function resolveRange(
 }
 
 async function serveNotFound(request: Request, env: Env): Promise<Response> {
-	const page = await env.ASSETS.fetch(new URL('/not-found.html', request.url));
+	const page = await env.ASSETS.fetch(
+		new Request(`${ASSET_ORIGIN}/not-found.html`, {
+			method: request.method,
+		}),
+	);
 	return new Response(request.method === 'HEAD' ? null : page.body, {
 		status: 404,
 		headers: {
@@ -148,7 +156,7 @@ export async function handleRequest(
 	// any artifact exists, R2 is empty but the network root must still answer.
 	if (url.pathname === '/') {
 		return env.ASSETS.fetch(
-			new Request(new URL('/home.html', url).toString(), {
+			new Request(`${ASSET_ORIGIN}/home.html`, {
 				method: request.method,
 			}),
 		);
