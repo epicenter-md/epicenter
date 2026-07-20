@@ -1,38 +1,46 @@
+/**
+ * Data value Svelte adapter tests.
+ *
+ * Key behaviors:
+ * - Initial load reads the bound value
+ * - Assigning current writes through the ValueLens
+ */
+
 import { expect, test } from 'bun:test';
+import { defineValue, type ValueLens } from '@epicenter/data';
 import { field } from '@epicenter/field';
-import { defineKv, type Kv } from '@epicenter/workspace';
+import { Ok } from 'wellcrafted/result';
 import { fromKv } from './from-kv.svelte.js';
 
-test('KV binding reads synchronously and observes one declared key', () => {
-	const definitions = {
-		theme: defineKv(
-			field.select(['light', 'dark']),
-			(): 'light' | 'dark' => 'light',
-		),
-	};
-	const values = new Map<string, unknown>();
-	const observers = new Map<string, (change: unknown) => void>();
-	let unobserved = false;
-	const kv = {
-		get: (key: string) => values.get(key) ?? definitions.theme.defaultValue(),
-		set: (key: string, value: unknown) => {
-			values.set(key, value);
-			observers.get(key)?.({ type: 'set', value });
-		},
-		observe(key: string, callback: (change: unknown) => void) {
-			observers.set(key, callback);
-			return () => {
-				unobserved = true;
-			};
-		},
-	} as unknown as Kv<typeof definitions>;
+(globalThis as unknown as { $state: unknown }).$state = Object.assign(
+	<TValue>(value: TValue) => value,
+	{ raw: <TValue>(value: TValue) => value },
+);
 
-	const theme = fromKv(kv, 'theme');
-	// Absent reads as the effective default, synchronously.
+const themeDefinition = defineValue({
+	key: 'so.epicenter.test.svelte.theme',
+	value: field.select(['light', 'dark']),
+});
+
+test('value binding loads and writes through the lens', async () => {
+	let value: 'light' | 'dark' | undefined = 'light';
+	const lens = {
+		get: async () => Ok(value),
+		set: async (next: 'light' | 'dark') => {
+			value = next;
+		},
+		unset: async () => {
+			value = undefined;
+		},
+		subscribe: () => () => {},
+	} satisfies ValueLens<typeof themeDefinition>;
+
+	const theme = fromKv(lens);
+	await theme.whenReady;
 	expect(theme.current).toBe('light');
 
 	theme.current = 'dark';
+	await Promise.resolve();
 	expect(theme.current).toBe('dark');
-	expect(values.get('theme')).toBe('dark');
-	void unobserved;
+	expect(String(value)).toBe('dark');
 });

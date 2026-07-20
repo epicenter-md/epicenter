@@ -1,72 +1,76 @@
 import type {
-	BaseRow,
-	ReadonlyTable,
-	TableNewerWriterError,
-	TableParseError,
-} from '@epicenter/workspace';
+	NonconformingRowError,
+	RowFor,
+	TableDefinition,
+	TableLens,
+} from '@epicenter/data';
 import { createSubscriber } from 'svelte/reactivity';
 
-/**
- * A read-only reactive view of a workspace table: the conforming rows plus the
- * table's two issue buckets, all driven by one `observe()` subscription.
- *
- * The view holds no state. Every surface reads live through the table, so it can
- * never disagree with storage and there is nothing to dispose. Reads inside an
- * effect (a component, a `$derived`) re-run when the table changes; reads outside
- * one return the current value without subscribing.
- */
-export type ReadonlyTableView<TRow extends BaseRow> = {
-	/**
-	 * Every conforming row, recomputed once per change. The array is the view's
-	 * memoized scan, shared between reads, so the type is `readonly`: mutating it
-	 * (e.g. `.sort()`) in place would corrupt that shared value and is a compile
-	 * error. Take a copy first, e.g. `all.toSorted(...)`.
-	 */
-	readonly all: readonly TRow[];
-	/** Stored entries this binary should understand but cannot parse. */
-	readonly nonconforming: readonly TableParseError[];
-	/** Stored entries written by a newer binary than this one. */
-	readonly newerWriter: readonly TableNewerWriterError[];
-	/** A single conforming row by id, or `undefined` if absent or unreadable. */
-	byId(id: string): TRow | undefined;
+export type ReadonlyTableView<TDefinition extends TableDefinition> = {
+	readonly all: readonly RowFor<TDefinition>[];
+	readonly nonconforming: readonly NonconformingRowError[];
+	readonly loadError: unknown;
+	readonly whenReady: Promise<void>;
+	byId(id: string): RowFor<TDefinition> | undefined;
+	refresh(): Promise<void>;
 };
 
-/**
- * Create a read-only reactive view of an exact-schema workspace table.
- *
- * The view reads through the table instead of maintaining a second row mirror.
- * Its one ref-counted subscription invalidates both the memoized list and point
- * reads after local writes, remote pulls, snapshots, and imports.
- *
- * @deprecated Removed with the Yjs record table after app migration. The
- * canonical SQLite runtime's tables are asynchronous and need their own
- * adapter (owned by the first migrating app's cutover).
- */
-export function fromTable<TRow extends BaseRow>(
-	table: ReadonlyTable<TRow>,
-): ReadonlyTableView<TRow> {
-	const subscribe = createSubscriber((update) => table.observe(update));
-	// One scan feeds every list surface and recomputes once per change. Reading
-	// `scanned` is what registers the dependency, so the list getters need no
-	// separate `subscribe()` call.
-	const scanned = $derived.by(() => {
-		subscribe();
-		return table.scan();
-	});
+/** Create a reactive classified view over one bound Data table lens. */
+export function fromTable<TDefinition extends TableDefinition>(
+	table: TableLens<TDefinition>,
+): ReadonlyTableView<TDefinition> {
+	let rows = $state.raw<RowFor<TDefinition>[]>([]);
+	let nonconforming = $state.raw<NonconformingRowError[]>([]);
+	let loadError = $state.raw<unknown>(null);
+	let refreshGeneration = 0;
+
+	async function refresh(): Promise<void> {
+		const generation = ++refreshGeneration;
+		try {
+			const nextRows: RowFor<TDefinition>[] = [];
+			const nextNonconforming: NonconformingRowError[] = [];
+			let cursor: string | undefined;
+			do {
+				const page = await table.list({ cursor, limit: 100 });
+				nextRows.push(...page.rows);
+				nextNonconforming.push(...page.nonconforming);
+				cursor = page.nextCursor;
+			} while (cursor !== undefined);
+			if (generation !== refreshGeneration) return;
+			rows = nextRows;
+			nonconforming = nextNonconforming;
+			loadError = null;
+		} catch (cause) {
+			if (generation === refreshGeneration) loadError = cause;
+			throw cause;
+		}
+	}
+
+	const subscribe = createSubscriber((update) =>
+		table.subscribe(() => {
+			void refresh().then(update, update);
+		}),
+	);
+	const whenReady = refresh();
 
 	return {
 		get all() {
-			return scanned.rows;
+			subscribe();
+			return rows;
 		},
 		get nonconforming() {
-			return scanned.nonconforming;
-		},
-		get newerWriter() {
-			return scanned.newerWriter;
-		},
-		byId(id: string): TRow | undefined {
 			subscribe();
-			return table.get(id).data ?? undefined;
+			return nonconforming;
 		},
+		get loadError() {
+			subscribe();
+			return loadError;
+		},
+		whenReady,
+		byId(id: string) {
+			subscribe();
+			return rows.find((row) => row.id === id);
+		},
+		refresh,
 	};
 }
