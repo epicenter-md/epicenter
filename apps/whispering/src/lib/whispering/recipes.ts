@@ -1,14 +1,11 @@
-import type {
-	RowLensError,
-	Workspace,
-} from '@epicenter/workspace/sqlite';
+import type { NonconformingRowError, TableLens } from '@epicenter/data';
 import { BUILTIN_RECIPES } from '../state/builtin-recipes';
-import type { Recipe, whisperingWorkspace } from '../workspace';
+import type { Recipe, recipesTable } from '../workspace';
 
 export type WhisperingRecipes = {
 	readonly pickable: Recipe[];
 	readonly count: number;
-	readonly nonconforming: RowLensError[];
+	readonly nonconforming: NonconformingRowError[];
 	readonly loadError: unknown;
 	set(recipe: Recipe): Promise<void>;
 	delete(id: string): Promise<void>;
@@ -17,17 +14,15 @@ export type WhisperingRecipes = {
 };
 
 export function createWhisperingRecipes({
-	workspace,
-	onRecordsChanged,
+	table,
 	reportBackgroundError,
 }: {
-	workspace: Workspace<typeof whisperingWorkspace>;
-	onRecordsChanged(listener: () => void): () => void;
+	table: TableLens<typeof recipesTable>;
 	reportBackgroundError(cause: unknown): void;
 }) {
 	let rows: Recipe[] = [];
 	let pickable: Recipe[] = BUILTIN_RECIPES;
-	let nonconforming: RowLensError[] = [];
+	let nonconforming: NonconformingRowError[] = [];
 	let loadError: unknown = null;
 	let canonicalIdBySourceId = new Map<string, string>();
 	let refreshGeneration = 0;
@@ -42,12 +37,24 @@ export function createWhisperingRecipes({
 		while (!isDisposed) {
 			const generation = refreshGeneration;
 			try {
-				const listed = await workspace.tables.recipes.list();
+				const listedRows: Awaited<ReturnType<typeof table.list>>['rows'] = [];
+				const listedNonconforming: NonconformingRowError[] = [];
+				let cursor: string | undefined;
+				do {
+					const page = await table.list({
+						orderBy: { field: 'name', direction: 'asc' },
+						cursor,
+						limit: 100,
+					});
+					listedRows.push(...page.rows);
+					listedNonconforming.push(...page.nonconforming);
+					cursor = page.nextCursor;
+				} while (cursor !== undefined);
 				if (isDisposed) return;
 				if (generation !== refreshGeneration) continue;
 				const nextRows: Recipe[] = [];
 				const nextCanonicalIds = new Map<string, string>();
-				for (const { id: canonicalId, sourceId, ...recipe } of listed.rows) {
+				for (const { id: canonicalId, sourceId, ...recipe } of listedRows) {
 					if (nextCanonicalIds.has(sourceId)) {
 						throw new Error(`Duplicate recipe source id '${sourceId}'`);
 					}
@@ -61,7 +68,7 @@ export function createWhisperingRecipes({
 						left.name.localeCompare(right.name),
 					),
 				];
-				nonconforming = listed.nonconforming;
+				nonconforming = listedNonconforming;
 				canonicalIdBySourceId = nextCanonicalIds;
 				loadError = null;
 				notify();
@@ -77,7 +84,7 @@ export function createWhisperingRecipes({
 		}
 	}
 
-	const unsubscribeRecords = onRecordsChanged(() => void refresh());
+	const unsubscribeRecords = table.subscribe(() => void refresh());
 	const ready = refresh({ rethrow: true });
 	const recipes: WhisperingRecipes = {
 		get pickable() {
@@ -96,20 +103,17 @@ export function createWhisperingRecipes({
 			const { id: sourceId, ...value } = recipe;
 			const canonicalId = canonicalIdBySourceId.get(sourceId);
 			if (canonicalId) {
-				const result = await workspace.tables.recipes.update(
-					canonicalId,
-					value,
-				);
+				const result = await table.update(canonicalId, value);
 				if (result.error !== null) throw result.error;
 			} else {
-				await workspace.tables.recipes.create({ sourceId, ...value });
+				await table.create({ sourceId, ...value });
 			}
 			await refresh();
 		},
 		async delete(id) {
 			const canonicalId = canonicalIdBySourceId.get(id);
 			if (!canonicalId) return;
-			await workspace.tables.recipes.delete(canonicalId);
+			await table.delete(canonicalId);
 			await refresh();
 		},
 		refresh,

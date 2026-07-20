@@ -6,6 +6,6 @@ export {
 	recipesTable,
 	recordingsTable,
 	type WhisperingSettingValues,
-	whisperingSettingEntries,
-	whisperingWorkspace,
+	whisperingDefinitions,
+	whisperingSettingValues,
 } from './definition';

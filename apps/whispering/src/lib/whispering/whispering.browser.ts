@@ -2,7 +2,7 @@ import { auth } from '#platform/auth';
 import { BlobsLive } from '#platform/blobs';
 import { log } from '$lib/report';
 import type { WhisperingAppDependencies } from './app';
-import { createWhisperingBrowserRuntime } from './whispering.browser-runtime';
+import { openWhisperingBrowserEpicenter } from './whispering.browser-runtime';
 
 /**
  * The web build's app dependencies. Pure data and factories: nothing
@@ -11,8 +11,15 @@ import { createWhisperingBrowserRuntime } from './whispering.browser-runtime';
  * `{#await}` owns the acquisition from its first microtask.
  */
 export const whisperingPlatform: WhisperingAppDependencies = {
-	createRuntime: (onRecordsChanged) =>
-		createWhisperingBrowserRuntime({ auth, onRecordsChanged }),
+	openEpicenter: () =>
+		openWhisperingBrowserEpicenter({
+			auth,
+			reportBackgroundError: (cause) =>
+				log.warn(
+					cause instanceof Error ? cause : new Error(String(cause)),
+					'Whispering sync failure',
+				),
+		}),
 	blobs: BlobsLive,
 	defaultTranscriptionService: 'OpenAI',
 	reportBackgroundError: (cause) =>

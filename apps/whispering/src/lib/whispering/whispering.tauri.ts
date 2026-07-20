@@ -1,5 +1,4 @@
-import { storageMoved } from '@epicenter/app-shell/storage-moved';
-import { createDesktopWorkspaceRuntime } from '@epicenter/workspace/sqlite/desktop';
+import { openBrowserEpicenter } from '@epicenter/data/browser';
 import { BlobsLive } from '#platform/blobs';
 import { log } from '$lib/report';
 import type { WhisperingAppDependencies } from './app';
@@ -10,13 +9,7 @@ import type { WhisperingAppDependencies } from './app';
  * once `openWhisperingApp` runs inside the mounted Svelte root.
  */
 export const whisperingPlatform: WhisperingAppDependencies = {
-	createRuntime: (onRecordsChanged) =>
-		createDesktopWorkspaceRuntime({
-			onRecordsChanged,
-			// A newer window's open displaces this surface; the shared moved
-			// screen blocks it exactly like a stolen browser tab.
-			onBackgroundError: storageMoved.observe,
-		}),
+	openEpicenter: openBrowserEpicenter,
 	blobs: BlobsLive,
 	defaultTranscriptionService: 'local',
 	reportBackgroundError: (cause) =>

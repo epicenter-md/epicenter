@@ -5,24 +5,24 @@ import type { Recipe } from '$lib/workspace';
 
 export type Recipes = ReturnType<typeof createRecipes>;
 
-/** Adds Svelte dependency tracking to the UI-free recipes namespace. */
+/** Bridges committed recipes-table invalidations into Svelte tracking. */
 export function createRecipes({ recipes }: Pick<WhisperingApp, 'recipes'>) {
-	const track = createSubscriber((update) => recipes.subscribe(update));
+	const invalidate = createSubscriber((update) => recipes.subscribe(update));
 	return {
 		get pickable() {
-			track();
+			invalidate();
 			return recipes.pickable;
 		},
 		get count() {
-			track();
+			invalidate();
 			return recipes.count;
 		},
 		get nonconforming() {
-			track();
+			invalidate();
 			return recipes.nonconforming;
 		},
 		get loadError() {
-			track();
+			invalidate();
 			return recipes.loadError;
 		},
 		set: recipes.set,

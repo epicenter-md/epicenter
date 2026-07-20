@@ -1,297 +1,120 @@
-/**
- * Whispering App Acquisition Tests
- *
- * Locks the transactional boot contract: resolve fully ready or reject fully
- * released, with abort covering both the in-flight and the resolve-after-abort
- * race.
- *
- * Key behaviors:
- * - Success resolves only after the workspace opens and settings hydrate
- * - Any open failure disposes the runtime and rejects
- * - An abort during acquisition releases everything and rejects
- * - A resolve that races an abort still releases
- * - Settings are optimistic with re-read repair and notify subscribers
- */
+/** Whispering app acquisition tests over the real Bun Data runtime. */
 import { expect, test } from 'bun:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { BlobStore } from '@epicenter/blobs';
+import { openBunEpicenter } from '@epicenter/data/bun';
 import { Ok } from 'wellcrafted/result';
-import { openWhisperingApp } from './app';
+import { openWhisperingApp, type WhisperingAppDependencies } from './app';
 
-type FakeRuntimeOptions = {
-	failFor?: string[];
-	openGate?: Promise<void>;
-	projectionGate?: Promise<void>;
-	projectionGates?: Promise<void>[];
-	kvGate?: () => Promise<void>;
-	disposeGate?: Promise<void>;
+const local: BlobStore = {
+	async put() {
+		return Ok(undefined);
+	},
+	async get() {
+		return Ok(new Blob());
+	},
+	async stat() {
+		return Ok({ size: 0, contentType: 'application/octet-stream' });
+	},
+	async delete() {
+		return Ok(undefined);
+	},
 };
 
-function createFakeRuntime({
-	failFor = [],
-	openGate,
-	projectionGate,
-	projectionGates = [],
-	kvGate,
-	disposeGate,
-}: FakeRuntimeOptions = {}) {
-	const kvValues = new Map<string, unknown>();
-	const log: string[] = [];
-	let disposed = false;
-	let disposeCalls = 0;
-	let onRecordsChanged: (workspaceId: string) => void = () => {};
-	let projectionCall = 0;
-	let kvCalls = 0;
-	const waitForProjection = async () => {
-		await (projectionGates[projectionCall++] ?? projectionGate);
-	};
-	const runtime = {
-		open: async (definition: { id: string }) => {
-			log.push(`open:${definition.id}`);
-			await openGate;
-			if (failFor.includes(definition.id)) {
-				throw new Error(`open failed for ${definition.id}`);
-			}
-			return {
-				id: definition.id,
-				tables: {
-					recordings: {
-						list: async () => {
-							await waitForProjection();
-							return { rows: [], nonconforming: [] };
-						},
-					},
-					recipes: {
-						list: async () => {
-							await waitForProjection();
-							return { rows: [], nonconforming: [] };
-						},
-					},
-				},
-				sql: async () => [],
-				sync: null,
-				kv: {
-					get: async (key: string) => {
-						kvCalls += 1;
-						await kvGate?.();
-						return Ok(kvValues.get(key));
-					},
-					set: async (key: string, value: unknown) => {
-						if (disposed) throw new Error('runtime disposed');
-						kvValues.set(key, value);
-						return Ok(undefined);
-					},
-					unset: async (key: string) => {
-						kvValues.delete(key);
-					},
-				},
-			} as never;
-		},
-		[Symbol.asyncDispose]: async () => {
-			disposeCalls += 1;
-			await disposeGate;
-			disposed = true;
-			log.push('dispose');
-		},
-	};
+function dependencies(
+	root: string,
+	overrides: Partial<WhisperingAppDependencies> = {},
+): WhisperingAppDependencies {
 	return {
-		runtime,
-		kvValues,
-		log,
-		get disposed() {
-			return disposed;
-		},
-		get disposeCalls() {
-			return disposeCalls;
-		},
-		get projectionCalls() {
-			return projectionCall;
-		},
-		get kvCalls() {
-			return kvCalls;
-		},
-		observeRecordsChanged(listener: (workspaceId: string) => void) {
-			onRecordsChanged = listener;
-		},
-		emitRecordsChanged() {
-			onRecordsChanged('epicenter-whispering');
-		},
+		openEpicenter: () => openBunEpicenter({ directory: root }),
+		blobs: { local, remote: null },
+		defaultTranscriptionService: 'OpenAI',
+		reportBackgroundError: () => undefined,
+		...overrides,
 	};
 }
 
-const dependencies = (fake: ReturnType<typeof createFakeRuntime>) =>
-	({
-		createRuntime: (onRecordsChanged: (workspaceId: string) => void) => {
-			fake.observeRecordsChanged(onRecordsChanged);
-			return fake.runtime;
-		},
-		blobs: {
-			local: {
-				async put() {
-					return Ok(undefined);
-				},
-				async get() {
-					return Ok(new Blob());
-				},
-				async stat() {
-					return Ok({ size: 0, contentType: 'application/octet-stream' });
-				},
-				async delete() {
-					return Ok(undefined);
-				},
-			},
-			remote: null,
-		},
-		defaultTranscriptionService: 'OpenAI',
-		reportBackgroundError: () => undefined,
-	}) as const;
-
-test('resolves a ready app with hydrated settings', async () => {
-	const fake = createFakeRuntime();
-	fake.kvValues.set('transcription.service', 'Groq');
-	await using app = await openWhisperingApp(dependencies(fake));
-	expect(fake.log).toEqual(['open:epicenter-whispering']);
-	// Stored value wins; unset keys fall back to platform defaults.
-	expect(app.settings.get('transcription.service')).toBe('Groq');
-	expect(app.settings.get('recording.autoUpload')).toBe(
-		app.settings.getDefault('recording.autoUpload'),
-	);
+test('resolves a ready facade with release-local setting defaults', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'whispering-app-ready-'));
+	try {
+		await using app = await openWhisperingApp(dependencies(root));
+		expect(app.settings.get('transcription.service')).toBe('OpenAI');
+		expect(app.settings.get('recording.autoUpload')).toBe(false);
+		expect(app.recordings.count).toBe(0);
+		expect(app.recipes.count).toBe(0);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
 });
 
-test('a failed workspace open rejects fully released', async () => {
-	const fake = createFakeRuntime({ failFor: ['epicenter-whispering'] });
-	await expect(openWhisperingApp(dependencies(fake))).rejects.toThrow(
-		'open failed for epicenter-whispering',
-	);
-	expect(fake.disposed).toBe(true);
+test('settings writes are optimistic, subscribed, and durable', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'whispering-app-settings-'));
+	try {
+		{
+			await using app = await openWhisperingApp(dependencies(root));
+			let notifications = 0;
+			const stop = app.settings.subscribe(() => {
+				notifications += 1;
+			});
+			app.settings.set('recording.autoUpload', true);
+			expect(app.settings.get('recording.autoUpload')).toBe(true);
+			expect(notifications).toBeGreaterThan(0);
+			stop();
+			await Bun.sleep(10);
+		}
+		await using reopened = await openWhisperingApp(dependencies(root));
+		expect(reopened.settings.get('recording.autoUpload')).toBe(true);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
 });
 
-test('does not resolve before recordings and recipes are hydrated', async () => {
+test('an Epicenter open failure rejects without a half-open facade', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'whispering-app-failure-'));
+	const cause = new Error('open failed');
+	try {
+		await expect(
+			openWhisperingApp(
+				dependencies(root, {
+					openEpicenter: () => Promise.reject(cause),
+				}),
+			),
+		).rejects.toBe(cause);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test('abort wins an in-flight Epicenter acquisition and late open is released', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'whispering-app-abort-'));
 	const gate = Promise.withResolvers<void>();
-	const fake = createFakeRuntime({ projectionGate: gate.promise });
-	let settled = false;
-	const opening = openWhisperingApp(dependencies(fake)).then((app) => {
-		settled = true;
-		return app;
-	});
-	await Promise.resolve();
-	expect(settled).toBe(false);
-	gate.resolve();
-	await using app = await opening;
-	expect(app.recordings.count).toBe(0);
-	expect(app.recipes.count).toBe(0);
-});
-
-test('boot follows an invalidation that lands during initial projection hydration', async () => {
-	const initial = Promise.withResolvers<void>();
-	const replacement = Promise.withResolvers<void>();
-	const fake = createFakeRuntime({
-		projectionGates: [
-			initial.promise,
-			initial.promise,
-			replacement.promise,
-			replacement.promise,
-		],
-	});
-	let settled = false;
-	const opening = openWhisperingApp(dependencies(fake)).then((app) => {
-		settled = true;
-		return app;
-	});
-	while (fake.projectionCalls < 2) await Promise.resolve();
-	fake.emitRecordsChanged();
-	while (fake.projectionCalls < 4) await Promise.resolve();
-	initial.resolve();
-	await Promise.resolve();
-	await Promise.resolve();
-	expect(settled).toBe(false);
-	replacement.resolve();
-	await using app = await opening;
-	expect(app.recordings.count).toBe(0);
-});
-
-test('boot follows an invalidation that lands during settings hydration', async () => {
-	const initial = Promise.withResolvers<void>();
-	const replacement = Promise.withResolvers<void>();
-	let currentGate = initial.promise;
-	const fake = createFakeRuntime({ kvGate: () => currentGate });
-	let settled = false;
-	const opening = openWhisperingApp(dependencies(fake)).then((app) => {
-		settled = true;
-		return app;
-	});
-	while (fake.kvCalls === 0) await Promise.resolve();
-	currentGate = replacement.promise;
-	fake.emitRecordsChanged();
-	initial.resolve();
-	await Promise.resolve();
-	await Promise.resolve();
-	expect(settled).toBe(false);
-	replacement.resolve();
-	await using app = await opening;
-	expect(app.settings.loadError).toBeNull();
-});
-
-test('projection collection identities change only after refresh', async () => {
-	const fake = createFakeRuntime();
-	await using app = await openWhisperingApp(dependencies(fake));
-	expect(app.recordings.sorted).toBe(app.recordings.sorted);
-	expect(app.recipes.pickable).toBe(app.recipes.pickable);
-});
-
-test('an abort during acquisition releases and rejects', async () => {
-	const gate = Promise.withResolvers<void>();
-	const fake = createFakeRuntime({ openGate: gate.promise });
+	let disposed = false;
 	const controller = new AbortController();
-	const opening = openWhisperingApp(dependencies(fake), {
-		signal: controller.signal,
-	});
-	controller.abort(new Error('root unmounted'));
-	await Promise.resolve();
-	expect(fake.disposed).toBe(true);
-	gate.resolve();
-	await expect(opening).rejects.toThrow('root unmounted');
-	expect(fake.disposed).toBe(true);
-});
-
-test('after resolve the caller owns app disposal', async () => {
-	const fake = createFakeRuntime();
-	const controller = new AbortController();
-	const app = await openWhisperingApp(dependencies(fake), {
-		signal: controller.signal,
-	});
-	expect(fake.disposed).toBe(false);
-	controller.abort();
-	await Promise.resolve();
-	expect(fake.disposed).toBe(false);
-	await app[Symbol.asyncDispose]();
-	expect(fake.disposed).toBe(true);
-});
-
-test('concurrent disposal joins the same runtime close', async () => {
-	const gate = Promise.withResolvers<void>();
-	const fake = createFakeRuntime({ disposeGate: gate.promise });
-	const app = await openWhisperingApp(dependencies(fake));
-	let secondSettled = false;
-	const first = app[Symbol.asyncDispose]();
-	const second = app[Symbol.asyncDispose]().then(() => {
-		secondSettled = true;
-	});
-	await Promise.resolve();
-	expect(fake.disposeCalls).toBe(1);
-	expect(secondSettled).toBe(false);
-	gate.resolve();
-	await Promise.all([first, second]);
-	expect(secondSettled).toBe(true);
-});
-
-test('settings writes are optimistic and notify subscribers', async () => {
-	const fake = createFakeRuntime();
-	await using app = await openWhisperingApp(dependencies(fake));
-	let notified = 0;
-	const unsubscribe = app.settings.subscribe(() => {
-		notified += 1;
-	});
-	app.settings.set('recording.autoUpload', true);
-	expect(app.settings.get('recording.autoUpload')).toBe(true);
-	expect(notified).toBe(1);
-	unsubscribe();
+	try {
+		const opening = openWhisperingApp(
+			dependencies(root, {
+				openEpicenter: async () => {
+					await gate.promise;
+					const epicenter = await openBunEpicenter({ directory: root });
+					return {
+						...epicenter,
+						async [Symbol.asyncDispose]() {
+							disposed = true;
+							await epicenter[Symbol.asyncDispose]();
+						},
+					};
+				},
+			}),
+			{ signal: controller.signal },
+		);
+		controller.abort(new Error('root unmounted'));
+		await expect(opening).rejects.toThrow('root unmounted');
+		gate.resolve();
+		while (!disposed) await Bun.sleep(1);
+		expect(Boolean(disposed)).toBe(true);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
 });

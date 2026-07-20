@@ -1,143 +1,138 @@
-/**
- * Whispering Greenfield Workspace Slice Tests
- *
- * Exercises Whispering and Skills through one real Bun runtime. It proves that
- * stricter release-local lenses discard old recording rows, SQL remains
- * read-only, and Skills text stays attached to
- * its owning row.
- *
- * Key behaviors:
- * - a historical recording remains stored but nonconforming under the new lens
- * - no repair or compatibility reader revives the old sourceId row
- * - one runtime opens Whispering and Skills and keeps row documents isolated
- */
-
+/** Whispering's real @epicenter/data slice over Bun SQLite replicas. */
 import { expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { generateBlobId } from '@epicenter/blobs';
-import { field, InstantString } from '@epicenter/field';
-import { skillsWorkspace } from '@epicenter/skills';
-import { defineTable, defineWorkspace } from '@epicenter/workspace/sqlite';
-import { createDeviceBunWorkspaceRuntime } from '@epicenter/workspace/sqlite/bun';
-import { Type } from 'typebox';
-import { expectErr } from 'wellcrafted/testing';
-import { recordingsTable, whisperingWorkspace } from './definition';
+import { openBunEpicenter } from '@epicenter/data/bun';
+import { InstantString } from '@epicenter/field';
+import { expectOk } from 'wellcrafted/testing';
+import { createBunEpicenterSyncRuntime } from '../../../../../packages/server/src/epicenter-sync/bun';
+import { recordingsTable, whisperingSettingValues } from './definition';
 
-const {
-	audioBlobId: _audioBlobId,
-	uploadedAt: _uploadedAt,
-	...sharedRecordingFields
-} = recordingsTable.fields;
-const historicalRecordingFields = {
-	...sharedRecordingFields,
-	sourceId: field.string(),
-};
-const historicalWhisperingWorkspace = defineWorkspace({
-	id: whisperingWorkspace.id,
-	tables: {
-		recordings: defineTable({ fields: historicalRecordingFields }),
-	},
-});
+function recording(title: string, recordedAt: InstantString) {
+	return {
+		audioBlobId: generateBlobId(),
+		uploadedAt: null,
+		title,
+		recordedAt,
+		recordedAtZone: 'UTC',
+		transcript: '',
+		polishedTranscript: null,
+		duration: null,
+		transcription: null,
+	};
+}
 
-test('one runtime discards old sourceId rows and composes Skills documents', async () => {
-	const storageRoot = mkdtempSync(
-		join(tmpdir(), 'epicenter-whispering-slice-'),
-	);
+test('settings values set, get, unset, and subscribe through a composed lens', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'whispering-data-settings-'));
 	try {
-		const historicalRuntime = createDeviceBunWorkspaceRuntime({
-			workspacesRoot: storageRoot,
-		});
-		const historical = await historicalRuntime.open(
-			historicalWhisperingWorkspace,
-		);
-		const oldRecording = await historical.tables.recordings.create({
-			sourceId: 'artifact-1',
-			title: '',
-			recordedAt: InstantString.now(),
-			recordedAtZone: 'UTC',
-			transcript: 'Stored before source ids',
-			polishedTranscript: null,
-			duration: null,
-			transcription: null,
-		});
-		await historicalRuntime[Symbol.asyncDispose]();
-
-		await using runtime = createDeviceBunWorkspaceRuntime({
-			workspacesRoot: storageRoot,
-		});
-		const [whispering, skills] = await Promise.all([
-			runtime.open(whisperingWorkspace),
-			runtime.open(skillsWorkspace),
-		]);
-		const nonconforming = expectErr(
-			await whispering.tables.recordings.get(oldRecording.id),
-		);
-		if (nonconforming.name !== 'NonconformingRow') {
-			throw new Error(`Expected NonconformingRow, got ${nonconforming.name}`);
-		}
-		expect(nonconforming.issues).toContainEqual({
-			field: 'audioBlobId',
-			kind: 'missing',
-			message: "Missing required field 'audioBlobId'",
-		});
-		const listed = await whispering.tables.recordings.list();
-		expect(listed.rows).toEqual([]);
-		expect(listed.nonconforming).toHaveLength(1);
-		const current = await whispering.tables.recordings.create({
-			audioBlobId: generateBlobId(),
-			uploadedAt: null,
-			title: '',
-			recordedAt: InstantString.now(),
-			recordedAtZone: 'UTC',
-			transcript: 'Current row',
-			polishedTranscript: null,
-			duration: null,
-			transcription: null,
+		await using epicenter = await openBunEpicenter({ directory: root });
+		const values = epicenter.bind({
+			tables: {},
+			values: whisperingSettingValues,
+		}).values;
+		let changes = 0;
+		const stop = values['transcription.language'].subscribe(() => {
+			changes += 1;
 		});
 		expect(
-			await whispering.sql(
-				`SELECT row_id AS id,
-				        json_extract(fields_json, '$.audioBlobId') AS audioBlobId,
-				        json_extract(fields_json, '$.transcript') AS transcript
-				   FROM records
-				  WHERE table_key = 'recordings' AND row_id = ?`,
-				[current.id],
-				Type.Object({
-					id: field.string(),
-					audioBlobId: field.string(),
-					transcript: field.string(),
-				}),
-			),
-		).toEqual([
-			{
-				id: current.id,
-				audioBlobId: current.audioBlobId,
-				transcript: 'Current row',
-			},
-		]);
-
-		const skill = await skills.tables.skills.create({
-			sourceId: 'portable-summarizer',
-			name: 'summarizer',
-			description: 'Summarize the selected transcript',
-			updatedAt: InstantString.now(),
-		});
-		await using instructions = await skills.tables.skills.document.open(
-			skill.id,
-		);
-		const content = instructions.get('content');
-		content.insert(0, 'Return three concise bullets.');
-		expect(content.toString()).toBe('Return three concise bullets.');
-		await expect(
-			whispering.sql(
-				"DELETE FROM records WHERE row_id = 'forbidden'",
-				[],
-				Type.Object({}),
-			),
-		).rejects.toThrow(/only SELECT/i);
+			expectOk(await values['transcription.language'].get()),
+		).toBeUndefined();
+		await values['transcription.language'].set('en');
+		expect(expectOk(await values['transcription.language'].get())).toBe('en');
+		await values['transcription.language'].unset();
+		expect(
+			expectOk(await values['transcription.language'].get()),
+		).toBeUndefined();
+		expect(changes).toBe(2);
+		stop();
 	} finally {
-		rmSync(storageRoot, { recursive: true, force: true });
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test('two borrowed lenses compose recordings CRUD with stable list ordering', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'whispering-data-composition-'));
+	try {
+		await using epicenter = await openBunEpicenter({ directory: root });
+		const recordings = epicenter.bind({
+			tables: { recordings: recordingsTable },
+			values: {},
+		}).tables.recordings;
+		const settings = epicenter.bind({
+			tables: {},
+			values: { language: whisperingSettingValues['transcription.language'] },
+		}).values;
+		const older = await recordings.create(
+			recording(
+				'older',
+				InstantString.fromDate(new Date('2026-07-20T01:00:00.000Z')),
+			),
+		);
+		const newer = await recordings.create(
+			recording(
+				'newer',
+				InstantString.fromDate(new Date('2026-07-20T02:00:00.000Z')),
+			),
+		);
+		expect(
+			(
+				await recordings.list({
+					orderBy: { field: 'recordedAt', direction: 'desc' },
+					limit: 1,
+				})
+			).rows,
+		).toEqual([newer]);
+		expect(
+			expectOk(await recordings.update(older.id, { title: 'updated' }))?.title,
+		).toBe('updated');
+		expect(await recordings.delete(newer.id)).toBe(true);
+		expect(expectOk(await recordings.get(newer.id))).toBeUndefined();
+		await settings.language.set('fr');
+		expect(expectOk(await settings.language.get())).toBe('fr');
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test('first sign-in freezes attachment and converges through the in-process authority', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'whispering-data-attach-'));
+	const authority = createBunEpicenterSyncRuntime({
+		dir: join(root, 'authority'),
+	});
+	try {
+		await using first = await openBunEpicenter({
+			directory: join(root, 'first'),
+		});
+		await using second = await openBunEpicenter({
+			directory: join(root, 'second'),
+		});
+		const firstLanguage = first.bind({
+			tables: {},
+			values: { language: whisperingSettingValues['transcription.language'] },
+		}).values.language;
+		const secondLanguage = second.bind({
+			tables: {},
+			values: { language: whisperingSettingValues['transcription.language'] },
+		}).values.language;
+		await firstLanguage.set('de');
+		const attachment = Object.freeze({
+			deploymentId: 'https://example.com/',
+			principalId: 'principal-a',
+		});
+		const exchange = authority.locateAuthority('principal-a' as never);
+		expectOk(await first.attachSync({ ...attachment, exchange }));
+		expectOk(await second.attachSync({ ...attachment, exchange }));
+		expect(expectOk(await secondLanguage.get())).toBe('de');
+		const refused = await second.attachSync({
+			deploymentId: attachment.deploymentId,
+			principalId: 'principal-b',
+			exchange: authority.locateAuthority('principal-b' as never),
+		});
+		expect(refused.error?.name).toBe('WrongAttachment');
+	} finally {
+		authority.close();
+		rmSync(root, { recursive: true, force: true });
 	}
 });

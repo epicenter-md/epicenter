@@ -7,17 +7,14 @@ import {
 	generateBlobId,
 	type RemoteBlobNotFound,
 } from '@epicenter/blobs';
-import type {
-	RowLensError,
-	Workspace,
-} from '@epicenter/workspace/sqlite';
+import type { NonconformingRowError, TableLens } from '@epicenter/data';
 import {
 	defineErrors,
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, type Result, tryAsync } from 'wellcrafted/result';
-import type { Recording, whisperingWorkspace } from '../workspace';
+import type { Recording, recordingsTable } from '../workspace';
 import {
 	createRecordingAudio,
 	type RecordingAudioAvailability,
@@ -56,7 +53,7 @@ export type RecordingDeletionError = InferErrors<typeof RecordingDeletionError>;
 export type WhisperingRecordings = {
 	readonly sorted: Recording[];
 	readonly count: number;
-	readonly nonconforming: RowLensError[];
+	readonly nonconforming: NonconformingRowError[];
 	readonly loadError: unknown;
 	/** Whether the environment currently has an online audio copy capability. */
 	readonly remoteAvailable: boolean;
@@ -74,11 +71,7 @@ export type WhisperingRecordings = {
 	update(
 		id: Recording['id'],
 		partial: Partial<Omit<Recording, 'id' | 'audioBlobId' | 'uploadedAt'>>,
-	): ReturnType<
-		Workspace<
-			typeof whisperingWorkspace
-		>['tables']['recordings']['update']
-	>;
+	): ReturnType<TableLens<typeof recordingsTable>['update']>;
 	delete(
 		toDelete: Recording['id'] | Recording['id'][],
 	): Promise<Result<void, RecordingAudioError | RecordingDeletionError>>;
@@ -125,19 +118,17 @@ export type WhisperingRecordings = {
  * one deletion path: online copy, then device copy, then row.
  */
 export function createWhisperingRecordings({
-	workspace,
+	table,
 	blobs,
-	onRecordsChanged,
 	reportBackgroundError,
 }: {
-	workspace: Workspace<typeof whisperingWorkspace>;
+	table: TableLens<typeof recordingsTable>;
 	blobs: WhisperingBlobs;
-	onRecordsChanged(listener: () => void): () => void;
 	reportBackgroundError(cause: unknown): void;
 }) {
 	let rows: Recording[] = [];
 	let sorted: Recording[] = [];
-	let nonconforming: RowLensError[] = [];
+	let nonconforming: NonconformingRowError[] = [];
 	let loadError: unknown = null;
 	let refreshGeneration = 0;
 	let isDisposed = false;
@@ -149,7 +140,7 @@ export function createWhisperingRecordings({
 	const audio = createRecordingAudio({
 		blobs,
 		updateUploadedAt: async (id, uploadedAt) => {
-			const result = await workspace.tables.recordings.update(id, {
+			const result = await table.update(id, {
 				uploadedAt,
 			});
 			// Write the marker through to the cache before this workflow resolves,
@@ -168,12 +159,24 @@ export function createWhisperingRecordings({
 		while (!isDisposed) {
 			const generation = refreshGeneration;
 			try {
-				const listed = await workspace.tables.recordings.list();
+				const nextRows: Recording[] = [];
+				const nextNonconforming: NonconformingRowError[] = [];
+				let cursor: string | undefined;
+				do {
+					const page = await table.list({
+						orderBy: { field: 'recordedAt', direction: 'desc' },
+						cursor,
+						limit: 100,
+					});
+					nextRows.push(...(page.rows as Recording[]));
+					nextNonconforming.push(...page.nonconforming);
+					cursor = page.nextCursor;
+				} while (cursor !== undefined);
 				if (isDisposed) return;
 				if (generation !== refreshGeneration) continue;
-				rows = listed.rows as Recording[];
-				sorted = sortRows(rows);
-				nonconforming = listed.nonconforming;
+				rows = nextRows;
+				sorted = nextRows;
+				nonconforming = nextNonconforming;
 				loadError = null;
 				notify();
 			} catch (cause) {
@@ -274,7 +277,11 @@ export function createWhisperingRecordings({
 				});
 			}
 			const { error: rowError } = await tryAsync({
-				try: () => workspace.tables.recordings.delete(recording.id),
+				try: async () => {
+					if (!(await table.delete(recording.id))) {
+						throw new Error(`Recording row ${recording.id} was already absent`);
+					}
+				},
 				catch: (cause) => RecordingDeletionError.RowDeleteFailed({ cause }),
 			});
 			if (rowError !== null) {
@@ -291,7 +298,7 @@ export function createWhisperingRecordings({
 		return Ok(undefined);
 	}
 
-	const unsubscribeRecords = onRecordsChanged(() => void refresh());
+	const unsubscribeRecords = table.subscribe(() => void refresh());
 	const ready = refresh({ rethrow: true });
 	const recordings: WhisperingRecordings = {
 		get sorted() {
@@ -321,7 +328,7 @@ export function createWhisperingRecordings({
 		async create(value) {
 			let created: Recording;
 			try {
-				created = (await workspace.tables.recordings.create({
+				created = (await table.create({
 					...value,
 					uploadedAt: null,
 				})) as Recording;
@@ -355,7 +362,7 @@ export function createWhisperingRecordings({
 				uploadedAt: _uploadedAt,
 				...changes
 			} = partial as Partial<Recording>;
-			const result = await workspace.tables.recordings.update(id, changes);
+			const result = await table.update(id, changes);
 			if (result.error === null && result.data !== undefined) {
 				applyRowToCache(result.data as Recording);
 			}

@@ -6,26 +6,26 @@ export type { Recording } from '$lib/workspace';
 
 export type Recordings = ReturnType<typeof createRecordings>;
 
-/** Adds Svelte dependency tracking to the UI-free recordings namespace. */
+/** Bridges committed recordings-table invalidations into Svelte tracking. */
 export function createRecordings({
 	recordings,
 }: Pick<WhisperingApp, 'recordings'>) {
-	const track = createSubscriber((update) => recordings.subscribe(update));
+	const invalidate = createSubscriber((update) => recordings.subscribe(update));
 	return {
 		get sorted() {
-			track();
+			invalidate();
 			return recordings.sorted;
 		},
 		get count() {
-			track();
+			invalidate();
 			return recordings.count;
 		},
 		get nonconforming() {
-			track();
+			invalidate();
 			return recordings.nonconforming;
 		},
 		get loadError() {
-			track();
+			invalidate();
 			return recordings.loadError;
 		},
 		// Availability follows the platform's reactive auth state, which the
@@ -34,7 +34,7 @@ export function createRecordings({
 			return recordings.remoteAvailable;
 		},
 		get(id: Recording['id']) {
-			track();
+			invalidate();
 			return recordings.get(id);
 		},
 		storeAudio: recordings.storeAudio,

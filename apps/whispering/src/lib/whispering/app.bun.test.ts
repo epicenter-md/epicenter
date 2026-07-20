@@ -45,11 +45,7 @@ test('one dataDir roots SQLite and blobs behind the shared app contract', async 
 		expect(recording.uploadedAt).toBeNull();
 
 		// Every persistent path derives from the one supplied root.
-		expect(
-			existsSync(
-				join(dataDir, 'device', 'epicenter-whispering', 'store.sqlite3'),
-			),
-		).toBe(true);
+		expect(existsSync(join(dataDir, 'epicenter.sqlite3'))).toBe(true);
 		expect(existsSync(join(dataDir, 'blobs', stored.audioBlobId))).toBe(true);
 
 		// No signed-in deployment means no remote capability, honestly.

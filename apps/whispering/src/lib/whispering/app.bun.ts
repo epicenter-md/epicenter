@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { createBunBlobStore } from '@epicenter/blobs/bun';
-import { createDeviceBunWorkspaceRuntime } from '@epicenter/workspace/sqlite/bun';
+import { openBunEpicenter } from '@epicenter/data/bun';
 import { consoleSink, type LogEvent } from 'wellcrafted/logger';
 import type { TranscriptionServiceId } from '../services/transcription/providers';
 import type { WhisperingAppDependencies } from './app';
@@ -8,9 +8,8 @@ import type { WhisperingAppDependencies } from './app';
 export type CreateWhisperingBunDependenciesOptions = {
 	/**
 	 * The one caller-owned root for all persistent Whispering storage. Every
-	 * child path derives from it: the workspace runtime owns
-	 * `<dataDir>/device/<workspaceId>/store.sqlite3` and audio bytes live under
-	 * `<dataDir>/blobs/`.
+	 * child path derives from it: Data owns `<dataDir>/epicenter.sqlite3` and
+	 * audio bytes live under `<dataDir>/blobs/`.
 	 */
 	dataDir: string;
 	defaultTranscriptionService?: TranscriptionServiceId;
@@ -28,11 +27,7 @@ export function createWhisperingBunDependencies({
 	defaultTranscriptionService = 'local',
 }: CreateWhisperingBunDependenciesOptions): WhisperingAppDependencies {
 	return {
-		createRuntime: (onRecordsChanged) =>
-			createDeviceBunWorkspaceRuntime({
-				workspacesRoot: dataDir,
-				onRecordsChanged,
-			}),
+		openEpicenter: () => openBunEpicenter({ directory: dataDir }),
 		blobs: {
 			local: createBunBlobStore({ directory: join(dataDir, 'blobs') }),
 			remote: null,
