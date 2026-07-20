@@ -7,10 +7,7 @@ import {
 	generateBlobId,
 	type RemoteBlobNotFound,
 } from '@epicenter/blobs';
-import type {
-	RowLensError,
-	Workspace,
-} from '@epicenter/workspace/sqlite';
+import type { RowLensError, Workspace } from '@epicenter/workspace/sqlite';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -75,9 +72,7 @@ export type WhisperingRecordings = {
 		id: Recording['id'],
 		partial: Partial<Omit<Recording, 'id' | 'audioBlobId' | 'uploadedAt'>>,
 	): ReturnType<
-		Workspace<
-			typeof whisperingWorkspace
-		>['tables']['recordings']['update']
+		Workspace<typeof whisperingWorkspace>['tables']['recordings']['update']
 	>;
 	delete(
 		toDelete: Recording['id'] | Recording['id'][],

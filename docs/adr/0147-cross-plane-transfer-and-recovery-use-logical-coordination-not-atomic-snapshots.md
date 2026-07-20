@@ -1,7 +1,8 @@
 # 0147. Cross-plane transfer and recovery use logical coordination, not atomic snapshots
 
-- **Status:** Proposed
+- **Status:** Superseded
 - **Date:** 2026-07-17
+- **Superseded by:** [ADR-0165](0165-export-captures-the-complete-durable-state-of-one-selected-owner.md), [ADR-0166](0166-import-initializes-an-empty-owner-or-explicitly-replaces-the-whole-owner.md), and [ADR-0169](0169-scalar-convergence-retains-one-bounded-deletion-and-retry-horizon.md)
 - **Amends:** [ADR-0122](0122-logical-records-are-portable-sqlite-files-and-views-are-runtime-state.md), [ADR-0142](0142-bootstrap-history-gaps-and-lineage-mismatches-have-distinct-recovery.md), [ADR-0143](0143-account-open-never-consumes-device-data.md)
 
 ## Context

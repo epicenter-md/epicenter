@@ -1,7 +1,4 @@
-import type {
-	WorkspaceLens,
-	Workspace,
-} from '@epicenter/workspace/sqlite';
+import type { Workspace, WorkspaceLens } from '@epicenter/workspace/sqlite';
 import type { TranscriptionServiceId } from '../services/transcription/providers';
 import {
 	createWhisperingSettingDefaults,
