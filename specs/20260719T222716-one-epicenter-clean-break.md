@@ -633,30 +633,6 @@ Remove:
 - Append a new Cloudflare migration that deletes the class. Never rewrite its
   historical creation migration.
 
-### Wave B: retire every generic Room producer and actor
-
-Build:
-
-- Move any surviving product behavior to row-owned Yjs 14 documents.
-
-Stop importing:
-
-- Remove or migrate the legacy Yjs 13 workspace producers, including Tab
-  Manager and Opensidian mounts, before changing the server route.
-- Stop hosted and self-hosted deployments from mounting `/api/rooms/:roomId`.
-
-Prove:
-
-- Every remaining product document opens through its table key and row ID.
-- Hosted and self-hosted document smokes pass with no generic Room route.
-
-Remove:
-
-- Delete the Room actor, both backends, registry, update logs, route, bindings,
-  migrations, package exports, dependencies, tests, and documentation.
-- Append a new Cloudflare migration that deletes the class. Never allocate the
-  Room and Epicenter class migration tags on parallel branches.
-
 ### Wave 0: establish proof harnesses
 
 Build:
@@ -719,6 +695,47 @@ Remove:
 
 Primary paths: `packages/workspace/src/sqlite/{workspace-lens,runtime,bun-runtime,browser-runtime,browser-runtime-worker,desktop-owner,desktop-runtime,account-runtime,local-workspace-storage}.ts`
 and `apps/epicenter/src/{main,server,workspace-owner}.ts`.
+
+### Wave B: retire every generic Room producer and actor
+
+This wave follows the selected-owner runtime because migrated application UI
+needs owner selection, readiness, status, and whole-owner forget semantics. Do
+not preserve the old `Collaboration` or `wipe()` surfaces through adapters.
+
+Build:
+
+- Move shared app-shell chat from `@epicenter/chat/legacy-root-yjs` to the
+  canonical conversations table and row-document message store.
+- Migrate Vocab, Tab Manager, and Opensidian to the selected-owner SQLite
+  runtime. Migrate `@epicenter/filesystem` before Opensidian.
+- Keep browser-owned ephemeral state device-local. Put durable scalar state in
+  rows and KV, and collaborative content in each live row's document.
+
+Stop importing:
+
+- Delete the unused Tab Manager and Opensidian daemon mounts and their package
+  exports instead of porting them.
+- Remove every shipped `connectDoc`, `openCollaboration`, `roomWsUrl`,
+  `legacy-root-yjs`, and `.mount()` Room producer.
+- Stop hosted and self-hosted deployments from mounting `/api/rooms/:roomId`.
+
+Prove:
+
+- Every remaining product document opens through its table key and row ID.
+- Vocab, Tab Manager, Opensidian, shared chat, and filesystem persistence tests
+  pass across restart and row deletion.
+- Hosted and self-hosted document smokes pass with no generic Room route.
+
+Remove:
+
+- Delete the Room actor, both backends, registry, update logs, route, bindings,
+  package exports, dependencies, tests, and current documentation.
+- Delete the legacy root-Yjs collaboration client only after local-only callers
+  such as Todos and in-memory callers such as Wiki have migrated or explicitly
+  retained a smaller local-only primitive.
+- Append a new Cloudflare migration that deletes the class. Never rewrite its
+  historical creation migration or allocate Room and Epicenter migration tags
+  on parallel branches.
 
 ### Wave 2: replace the SQL relation
 
