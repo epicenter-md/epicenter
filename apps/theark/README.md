@@ -89,8 +89,11 @@ zero write paths (see the ADR-0160 amendment):
   never changes its words. A retry receives the first reserved date rather
   than rewriting history. Generated HTML and media are not hashed, so theme
   and output rebuilds stay free. It writes generated media
-  (`video.mp4`/`narration.mp3`/`cover.png`, the complete media vocabulary)
-  before activating `index.html` last, and read-back-verifies every object.
+  (`video.mp4`/`narration.mp3`/`cover.png`, the complete media vocabulary the
+  reader also enforces) before activating `index.html` last. A store `put` is
+  a checked durable write by contract (the adapter has R2 verify a content
+  checksum server-side); the kernel never re-downloads objects to prove its
+  own writes, and end-to-end proof is the caller's public-URL verification.
   Keys are derived through the delivery Worker's own `resolveProjection`, so
   the kernel cannot write an address the Worker would refuse to serve.
 

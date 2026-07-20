@@ -167,8 +167,11 @@ Ownership within the publishing side:
   different frozen words, is refused. An exact retry reuses the first date
   rather than rewriting published history. Generated HTML and media are not
   hashed, so theme and output rebuilds stay free. Media writes precede
-  `index.html`; every object is
-  read-back-verified. No second database.
+  `index.html`. A store put is a checked durable write by contract (the
+  credential-holding adapter has R2 verify a content checksum server-side);
+  the kernel never re-downloads objects to prove its own writes, and the
+  caller proves the end result by fetching the canonical public URL. No
+  second database.
 - **The generated media vocabulary is closed**: `video.mp4`,
   `narration.mp3`, `cover.png` from the conditional short-video renderer.
   There is no general upload pipeline.

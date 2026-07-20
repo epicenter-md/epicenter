@@ -4,8 +4,8 @@
  * An in-memory store proves the whole authenticated orchestration without
  * credentials or production resources: atomic reserve-first ownership keyed
  * on artifact id plus expression digest, route-last activation, idempotent
- * retry, collision and changed-expression refusal, the creation race, and
- * read-back verification. The final tests close the seam end to end: bytes
+ * retry, collision and changed-expression refusal, and the creation race.
+ * The final tests close the seam end to end: bytes
  * written by the kernel are served back through the delivery Worker's real
  * `handleRequest` over the same store.
  */
@@ -221,20 +221,6 @@ describe('publishProjection', () => {
 			).rejects.toThrow('not a servable artifact address');
 		}
 		expect(putOrder).toEqual([]);
-	});
-
-	test('read-back verification catches a store that lies', async () => {
-		const { store } = memoryStore();
-		const lying: ArkObjectStore = {
-			...store,
-			async get(key) {
-				// Honest about the unclaimed marker, corrupt on every read-back.
-				return key.endsWith('.artifact') ? null : bytes('corrupted');
-			},
-		};
-		await expect(publishProjection(lying, publication())).rejects.toThrow(
-			'read-back after write did not match',
-		);
 	});
 
 	test('the ownership marker is publicly unroutable by construction', () => {

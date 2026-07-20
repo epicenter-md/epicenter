@@ -22,9 +22,12 @@
  *   hashed, so theme rebuilds and free output rebuilds stay allowed.
  * - Route-last: generated media is written before `index.html`, so the page
  *   address only ever answers with its media already in place.
- * - Verification: every written object is read back and byte-compared before
- *   the kernel reports success. Public-URL verification stays with the
- *   caller, which knows the expected URL (the Vault port's contract).
+ * - Verification boundary: a resolved `put` IS the write proof. The store
+ *   contract requires a checked durable write (have R2 verify a content
+ *   checksum server-side; never a kernel re-download of regenerable bytes).
+ *   End-to-end proof stays with the caller, which fetches the expected
+ *   canonical public URL after the kernel returns (the Vault port's
+ *   contract).
  * - Route agreement: keys are derived through the delivery Worker's own
  *   `resolveProjection`, so the kernel cannot write an object the Worker
  *   would refuse to serve.
@@ -42,6 +45,12 @@ import {
  */
 export type ArkObjectStore = {
 	get(key: string): Promise<Uint8Array | null>;
+	/**
+	 * Durable checked write: resolve only after the backing store confirmed
+	 * the write succeeded. Adapters should pass a content checksum (R2 `md5`,
+	 * S3 `Content-MD5`) so the store verifies the bytes server-side; the
+	 * kernel never re-reads objects to prove its own writes.
+	 */
 	put(
 		key: string,
 		value: Uint8Array,
@@ -95,26 +104,6 @@ export type PublishedProjection = {
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
-
-function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
-	if (left.length !== right.length) return false;
-	return left.every((byte, index) => byte === right[index]);
-}
-
-async function putVerified(
-	store: ArkObjectStore,
-	key: string,
-	value: Uint8Array,
-	contentType: string,
-): Promise<void> {
-	await store.put(key, value, { contentType });
-	const readBack = await store.get(key);
-	if (!readBack || !bytesEqual(readBack, value)) {
-		throw new Error(
-			`${key}: read-back after write did not match written bytes`,
-		);
-	}
-}
 
 /** What the ownership marker records about the slug's one publication. */
 type MarkerFacts = {
@@ -252,7 +241,7 @@ export async function publishProjection(
 		if (!resolvedFile) {
 			throw new Error(`${fileAddress}: not a servable media address`);
 		}
-		await putVerified(store, resolvedFile.key, bytes, contentType);
+		await store.put(resolvedFile.key, bytes, { contentType });
 		media[name] = true;
 	}
 
@@ -261,12 +250,9 @@ export async function publishProjection(
 		publishedOn: reservation.publishedOn,
 		media,
 	});
-	await putVerified(
-		store,
-		resolved.key,
-		encoder.encode(html),
-		'text/html; charset=utf-8',
-	);
+	await store.put(resolved.key, encoder.encode(html), {
+		contentType: 'text/html; charset=utf-8',
+	});
 
 	return {
 		url: `https://theark.so${pageAddress}`,
