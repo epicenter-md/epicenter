@@ -39,6 +39,8 @@
 
 ## One person. One Epicenter.
 
+This is the destination.
+
 The conventional model is one database per app, run by the vendor. Every app
 you adopt opens another silo. Every app you abandon strands another slice of
 your life: the notes in one company's cloud, the transcripts in another's, the
@@ -77,10 +79,11 @@ per-app cloud can offer:
   query it with plain SQL; take a complete portable export whenever you want.
 - **Yours to keep.** Apps may change or disappear. Your work, memory, and
   accumulated context stay useful, because they never lived inside the app.
-- **More private, more personal.** Data stays on your devices instead of
-  scattering across vendor clouds, and each app can build on the context the
-  others created: transcripts inform notes, saved tabs become drafts, an
-  assistant sees the whole picture without an integration per app.
+- **More private, more personal.** Data stays together on your devices instead
+  of scattering across a different vendor cloud for every app. Each app can
+  build on the context the others created: transcripts inform notes, saved tabs
+  become drafts, and an assistant sees the whole picture without an integration
+  per app.
 
 Sync, when you turn it on, runs through your account's server: hosted
 Epicenter if you want convenience, self-hosted if you want the server in your

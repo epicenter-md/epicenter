@@ -29,10 +29,11 @@ are rows. When an app changes or disappears, the person's work, memory, and
 accumulated context stay useful, because they never lived inside the app.
 
 Shared local context is the payoff, twice over. More private, because the data
-stays on the person's devices instead of scattering across vendor clouds. More
-personal, because each app can see the context the others created: your
-transcripts can inform your notes, your saved tabs can become drafts, and an
-assistant can work across all of it without an integration per app.
+stays together on the person's devices instead of scattering across a different
+vendor cloud for every app. More personal, because each app can see the context
+the others created: your transcripts can inform your notes, your saved tabs can
+become drafts, and an assistant can work across all of it without an integration
+per app.
 
 Precision rule: "one database per person" is the product shorthand, and it is
 the shorthand to lead with. The technical claim behind it stays exact: one
