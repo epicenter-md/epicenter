@@ -1,5 +1,6 @@
 <script lang="ts" module>
-	import { type CalendarDateString, IanaTimeZone } from '@epicenter/workspace';
+	import type { CalendarDateString } from '@epicenter/field';
+	import type { IanaTimeZone } from './iana-time-zone.js';
 
 	export type CalendarDateChoice = {
 		label: string;
@@ -37,11 +38,12 @@
 
 <script lang="ts">
 	import * as Command from '../command/index.js';
+	import { currentIanaTimeZone } from './iana-time-zone.js';
 	import { parseInZone } from './parse.js';
 
 	let {
 		placeholder = 'E.g. "tomorrow" or "next friday"',
-		timeZone = IanaTimeZone.current(),
+		timeZone = currentIanaTimeZone(),
 		onChoice,
 	}: NaturalLanguageCalendarDateInputProps = $props();
 

@@ -1,5 +1,13 @@
+/**
+ * Natural-language date parsing tests.
+ *
+ * Key behaviors:
+ * - Wall-clock phrases resolve in the selected IANA zone
+ * - Relative-hour phrases remain zone-independent
+ */
+
 import { describe, expect, it } from 'bun:test';
-import type { IanaTimeZone } from '@epicenter/workspace';
+import type { IanaTimeZone } from './iana-time-zone.js';
 import { parseInZone } from './parse.js';
 
 const LA = 'America/Los_Angeles' as IanaTimeZone;
@@ -26,7 +34,7 @@ describe('parseInZone', () => {
 			timeZone: LA,
 		});
 		expect(out).toHaveLength(1);
-		expect(out[0]!.date.toISOString()).toBe('2026-05-27T00:00:00.000Z');
+		expect(out[0]?.date.toISOString()).toBe('2026-05-27T00:00:00.000Z');
 	});
 
 	it('resolves "tomorrow at 5pm" in New York (EDT, UTC-4)', () => {
@@ -37,7 +45,7 @@ describe('parseInZone', () => {
 			timeZone: NY,
 		});
 		expect(out).toHaveLength(1);
-		expect(out[0]!.date.toISOString()).toBe('2026-05-26T21:00:00.000Z');
+		expect(out[0]?.date.toISOString()).toBe('2026-05-26T21:00:00.000Z');
 	});
 
 	it('resolves "tomorrow at 5pm" in Tokyo (JST, UTC+9)', () => {
@@ -50,7 +58,7 @@ describe('parseInZone', () => {
 			timeZone: TOKYO,
 		});
 		expect(out).toHaveLength(1);
-		expect(out[0]!.date.toISOString()).toBe('2026-05-27T08:00:00.000Z');
+		expect(out[0]?.date.toISOString()).toBe('2026-05-27T08:00:00.000Z');
 	});
 
 	it('treats "in 2 hours" as relative to referenceNow regardless of zone', () => {
@@ -65,7 +73,7 @@ describe('parseInZone', () => {
 			referenceNow,
 			timeZone: TOKYO,
 		});
-		expect(inLA[0]!.date.toISOString()).toBe('2026-05-25T19:00:00.000Z');
-		expect(inTokyo[0]!.date.toISOString()).toBe('2026-05-25T19:00:00.000Z');
+		expect(inLA[0]?.date.toISOString()).toBe('2026-05-25T19:00:00.000Z');
+		expect(inTokyo[0]?.date.toISOString()).toBe('2026-05-25T19:00:00.000Z');
 	});
 });
