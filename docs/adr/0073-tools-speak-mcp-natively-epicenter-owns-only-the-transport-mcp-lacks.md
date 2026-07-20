@@ -91,3 +91,7 @@ ADR-0079 split cross-device into two planes, and ADR-0086 resolved the trigger: 
 ### Update (2026-07-07): the AttachRelay is not the relay floor
 
 [ADR-0115](0115-super-chat-remote-attach-rides-an-endpoint-addressed-trusted-relay.md) adds a hosted relay for Super Chat remote attach, and it is a historical-guardrail reminder that the organs above stay deleted. The AttachRelay is endpoint-addressed (`principalId`, `hostId`, `deviceId`, `attachId`), forwards live Super Chat bytes, stores no frames, and exposes no route name, no route table, no MCP-over-relay platform surface, no `exposedRoutes`, and no CLI capability verbs. It does not resurrect the channel layer; it carries one live session between two of the principal's endpoints. The reserved "project any `defineActions` to an in-process MCP server" seam (the `kind` discriminant on the gateway `Route`) stays unbuilt.
+
+### Update (2026-07-19): the unshipped AttachRelay is withdrawn
+
+[ADR-0178](0178-live-remote-home-control-is-deferred-until-it-has-a-shipped-workflow.md) withdraws AttachRelay because no complete remote Home workflow shipped. This does not reopen the relay floor. A future live Home transport must still remain Home-specific and earn its whole workflow before Epicenter reserves another relay surface.

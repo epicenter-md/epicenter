@@ -33,10 +33,7 @@
  * way).
  *
  * Surface: session + rooms + inference + blobs behind the operator bearer, zero
- * billing, no dashboard SPA, no auth surface. Remote Super Chat attach is the one
- * exception (ADR-0115): an attach connect carries a revocable per-device
- * grant instead of the operator token, and the operator token administers that
- * device allowlist through `/attach/grants`. The blob store is a portable
+ * billing, no dashboard SPA, no auth surface. The blob store is a portable
  * content-addressed media store over any S3 (your own MinIO/Garage/R2); it is
  * mounted by default and answers 503 until `BLOBS_S3_*` is set, exactly as the
  * inference gateway answers 503 until a provider house key is set. Owning your
@@ -49,18 +46,13 @@ import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { assertStrongToken } from '@epicenter/auth';
 import {
-	createAttachRelayBunServer,
 	createBunAccountAuthorityRuntime,
 	createBunRooms,
-	createDeviceGrantStore,
 	createEnvTokenResolver,
 	createServerApp,
 	mergeBunWebSocketHandlers,
-	mountAttachGrantsApp,
-	mountAttachRelayApp,
 	mountBlobsApp,
 	mountCurrentStateRecordsApp,
-	mountHostDirectoryApp,
 	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
@@ -147,16 +139,6 @@ export function startSelfHostServer(): void {
 	const bunRecords = createBunAccountAuthorityRuntime({
 		dir: join(dataDir, 'records'),
 	});
-	// The AttachRelay coordinator for this instance (ADR-0115): the
-	// endpoint-addressed byte forwarder. It shares this process's one `Bun.serve`
-	// with the rooms backend (see the merged websocket handler below).
-	const attachRelay = createAttachRelayBunServer();
-	// The revocable per-device attach allowlist (ADR-0115). Attach connects
-	// resolve against this, not the operator token: a device pairs once (the
-	// operator mints it a grant, below), presents that grant on connect, and loses
-	// access the moment the operator revokes it. In-memory, so a restart re-pairs
-	// devices; persisting grants beside the rooms is deferred.
-	const attachGrants = createDeviceGrantStore();
 
 	const app = createServerApp({
 		// The instance composes no Postgres (no Better Auth), so it never calls
@@ -191,36 +173,6 @@ export function startSelfHostServer(): void {
 		auth,
 		resolveAuthorities: () => bunRecords.authorities,
 	});
-	// The AttachRelay upgrade (`/attach`), WS-aware and gated by a per-device grant
-	// (ADR-0115), not the operator token: a connect resolves against the
-	// device-grant store, and the instance principal is stamped server-side so a
-	// query `principalId` can never point an attach at another partition (ADR-0075).
-	// A revoked or never-minted grant fails the handshake closed. Cloud attach is
-	// not built.
-	mountAttachRelayApp(app, {
-		resolveBearerPrincipal: attachGrants.resolveBearerPrincipal,
-		// One in-process coordinator for this instance; the env is unused (Bun
-		// binds its backend at boot, not per request). The Cloud Worker instead
-		// returns a Durable Object registry keyed on its bound namespace.
-		resolveRelay: () => attachRelay,
-	});
-	// The operator's device-grant admin surface (`/attach/grants`), gated by the
-	// operator token, NOT a grant: the operator mints a grant per device (the
-	// desktop host's own device included), lists them, and revokes one to cut a
-	// device off. This is where "the desktop approves a device" lives on an
-	// instance (ADR-0115 clause 3); minting the secret here is the pairing step.
-	mountAttachGrantsApp(app, { auth, grants: attachGrants });
-	// The client's host-discovery read (`GET /attach/hosts`, ADR-0115 clause 3),
-	// gated by a per-device grant (the same credential a client attaches with, NOT
-	// the operator token): a paired phone lists this instance's desktop hosts and
-	// their `online`/`offline` liveness, then attaches to one. The directory is the
-	// relay's own retained membership joined with its live host set; the principal
-	// is stamped server-side, so a client only ever reads the instance principal's
-	// hosts. No write route: a host publishes itself by connecting as a host.
-	mountHostDirectoryApp(app, {
-		resolveBearerPrincipal: attachGrants.resolveBearerPrincipal,
-		resolveHostDirectory: () => attachRelay.hostDirectory,
-	});
 	// Inference spends the operator's house key on every request. Cap the burn
 	// rate so a leaked or overused bearer cannot run the provider bill up
 	// unbounded between invoices. This is the in-process backstop; the real
@@ -248,21 +200,18 @@ export function startSelfHostServer(): void {
 	const server = Bun.serve({
 		port,
 		fetch: (req) => app.fetch(req, env),
-		// Rooms and the attach relay both need WebSockets on this one port, but
-		// `Bun.serve` takes ONE handler. Each backend tags its `ws.data` with a
-		// `surface`, so this merged handler forwards every socket to its owner
-		// without blending their state.
+		// Rooms and row documents both need WebSockets on this one port. Each
+		// backend tags its `ws.data` with a `surface`, so the merged handler forwards
+		// every socket to its owner without blending their state.
 		websocket: mergeBunWebSocketHandlers({
 			rooms: bunRooms.websocket,
 			documents: bunRecords.websocket,
-			attach: attachRelay.websocket,
 		}),
 	});
 	// `server` only exists once `Bun.serve` returns; hand it to both backends so
 	// each `handleUpgrade` can call `server.upgrade` on the shared server.
 	bunRooms.bindServer(server);
 	bunRecords.bindServer(server);
-	attachRelay.bindServer(server);
 
 	// Close authority databases and their sockets before the process dies so WAL
 	// checkpoints land and clients see a clean 1001 instead of a dropped TCP.

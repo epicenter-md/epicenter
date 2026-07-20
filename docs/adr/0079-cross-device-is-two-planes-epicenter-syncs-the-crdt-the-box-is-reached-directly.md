@@ -42,6 +42,8 @@ Whether the relay floor's capability layer is deleted or kept and productized tu
 
 Update 2026-07-02: the deletion trigger fired. Whispering is wired into the sync plane (ADR-0088/ADR-0094 one-connect boot), and turnkey box-access never became a committed goal (ADR-0086). The channel layer is deleted: the 4-frame protocol, channel router, relay acceptor, account room, route table, MCP gateway catalog, presence `exposedRoutes`, and the CLI `tools`/`call`/`--relay-expose` surface. A future hosted remote is the ADR-0080 endpoint-addressed session relay, not a resurrection of this layer. That relay is now decided in [ADR-0115](0115-super-chat-remote-attach-rides-an-endpoint-addressed-trusted-relay.md): the AttachRelay, addressed by `principalId`, `hostId`, `deviceId`, and `attachId`, a live endpoint-addressed trusted session channel and explicitly not the route-addressed capability plane deleted here.
 
+Update 2026-07-19: [ADR-0178](0178-live-remote-home-control-is-deferred-until-it-has-a-shipped-workflow.md) withdraws the unshipped AttachRelay and defers live remote Home control. The durable sync plane remains. The direct box and generic capability planes remain refused until a complete workflow earns a specific replacement.
+
 ## Considered alternatives
 
 - **Keep one Epicenter-routed transport for sync and tools (the relay floor, ADR-0073 Invariant 5).** Rejected as the default: it has zero consumers, conflates two planes with different requirements, and keeps Epicenter in the path of your own box for no privacy or cost benefit.

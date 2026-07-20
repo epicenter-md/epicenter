@@ -15,16 +15,13 @@
 
 import { PRODUCTION_API_URL } from '@epicenter/constants/apps';
 import {
-	AttachRelay,
 	type CloudEnv,
 	CurrentStateRowAuthorityDurableObject,
 	connectHyperdriveDb,
 	createDurableObjectAccountAuthorities,
-	createDurableObjectAttachRelay,
 	createDurableObjectRooms,
 	createServerApp,
 	listStorageObservations,
-	mountAttachRelayApp,
 	mountBlobsApp,
 	mountCloudAuth,
 	mountCloudDb,
@@ -185,20 +182,6 @@ mountCurrentStateRecordsApp(app, {
 // Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver, not
 // a prebuilt wrapper.
 mountRoomsApp(app, { resolveBearerPrincipal: resolveRequestOAuthPrincipal });
-// Remote Super Chat attach (ADR-0115): the endpoint-addressed relay that forwards
-// live session bytes between a signed-in desktop host and a signed-in client of
-// the same principal. Like rooms it is WS-aware and resolves the OAuth bearer
-// itself; the principal is stamped server-side, never the query. The transport is
-// a Durable Object per `(principalId, hostId)` pair, bound here at the app edge
-// where this Worker's generated `ATTACH_RELAY` binding is typed (ADR-0066, the
-// same edge as ROOM). On Cloud a signed-in bearer is the whole attach
-// authorization: no device-grant store, pairing ceremony, or QR (self-host keeps
-// per-device grants because it has no account substrate).
-mountAttachRelayApp(app, {
-	resolveBearerPrincipal: resolveRequestOAuthPrincipal,
-	resolveRelay: (env) =>
-		createDurableObjectAttachRelay((env as Cloudflare.Env).ATTACH_RELAY),
-});
 // Content-addressed blob store (supersedes the retired assets surface). v1 is
 // unmetered (no Autumn policy): Autumn's check() denies by default with no plan
 // attached, so deferred quota means not calling it. When storage is billed, a
@@ -250,4 +233,4 @@ app.get('/billing', (c) => c.redirect('/dashboard'));
 export default {
 	fetch: app.fetch,
 };
-export { AttachRelay, CurrentStateRowAuthorityDurableObject, Room };
+export { CurrentStateRowAuthorityDurableObject, Room };

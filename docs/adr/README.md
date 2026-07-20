@@ -156,7 +156,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0077](0077-parsed-row-memoization-belongs-to-the-table-the-svelte-adapter-is-a-stateless-view.md) | Parsed-row memoization belongs to the table; the Svelte adapter is a stateless view | Accepted |
 | [0078](0078-inference-is-a-url-addressed-connection-the-relay-floor-carries-only-tools.md) | Inference is a URL-addressed connection reached through a direct endpoint or gateway | Accepted (relay-floor tool carrier superseded by ADR-0079/0086) |
 | [0079](0079-cross-device-is-two-planes-epicenter-syncs-the-crdt-the-box-is-reached-directly.md) | Cross-device is two planes: Epicenter syncs the CRDT, the box is reached directly as a URL-addressed connection | Accepted (capability-layer deletion landed 2026-07-02) |
-| [0080](0080-the-super-app-is-a-desktop-host-cross-device-is-remote-access-to-the-session-not-a-per-app-capability-plane.md) | The super app is a desktop host; cross-device is remote access to the session, not a per-app capability plane | Accepted (the desktop-host decision is settled; a hosted session broker for turnkey mobile remote is the open product question) |
+| [0080](0080-the-super-app-is-a-desktop-host-cross-device-is-remote-access-to-the-session-not-a-per-app-capability-plane.md) | The super app is a desktop host; cross-device is remote access to the session, not a per-app capability plane | Accepted (the desktop-host decision is settled; live remote Home control is deferred by 0178) |
 | [0081](0081-per-upstream-oauth-concurrency-decides-mirror-topology.md) | Per-upstream OAuth concurrency decides whether a materialized mirror is box-owned (Local Books) or device-local (Gmail), not a property of "cloud-upstream apps" as a category | Proposed |
 | [0082](0082-local-mail-mirror-is-push-free-polling-collapsing-hosted-vs-self-host-to-one-oauth-client-id.md) | Local Mail's mirror is push-free CDC polling; hosted vs self-host collapses to one OAuth Client ID | Proposed |
 | [0083](0083-apps-email-is-refused-local-mail-is-the-only-gmail-client.md) | `apps/email` is refused; Local Mail is the only Gmail client | Accepted |
@@ -191,7 +191,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0112](0112-the-cli-watcher-is-not-a-callable-action-server.md) | The CLI watcher is not a callable action server | Accepted |
 | [0113](0113-super-chat-session-commands-are-host-owned-transports-only-frame-them.md) | Super Chat session commands are host-owned; transports only frame them | Accepted |
 | [0114](0114-hosted-auth-surfaces-are-plain-tool-logins-not-marketing-pages.md) | Hosted auth surfaces are plain tool logins, not marketing pages | Accepted |
-| [0115](0115-super-chat-remote-attach-rides-an-endpoint-addressed-trusted-relay.md) | Super Chat remote attach rides an endpoint-addressed trusted AttachRelay; one consumer, not the deleted route-addressed relay floor | Accepted |
+| [0115](0115-super-chat-remote-attach-rides-an-endpoint-addressed-trusted-relay.md) | Super Chat remote attach rides an endpoint-addressed trusted AttachRelay; one consumer, not the deleted route-addressed relay floor | Superseded by 0178 |
 | [0116](0116-local-mail-is-desktop-first-one-bun-engine-no-background-mail-service.md) | Local Mail is desktop-first: one Bun engine, no background mail service, the open app owns the sync loop | Accepted |
 | [0117](0117-global-shortcut-input-is-plugin-chords-only-and-the-macos-tap-is-just-the-paste-grant-watcher.md) | Global shortcut input is plugin chords only, and the macOS tap is just the paste grant watcher | Accepted |
 | [0118](0118-epicenter-is-one-trusted-bun-hosted-spa-origin.md) | Epicenter is one trusted Bun-hosted SPA origin | Accepted |
@@ -254,7 +254,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0175](0175-one-epicenter-durable-object-owns-one-principals-accepted-state.md) | One Epicenter Durable Object owns one principal's accepted state | Proposed |
 | [0176](0176-the-hosted-product-lives-in-apps-hosted-and-deploys-as-epicenter.md) | The hosted product lives in apps/hosted and deploys as epicenter | Proposed |
 | [0177](0177-the-generic-room-actor-is-withdrawn.md) | The generic Room actor is withdrawn | Proposed |
-| [0178](0178-live-remote-home-control-is-deferred-until-it-has-a-shipped-workflow.md) | Live remote Home control is deferred until it has a shipped workflow | Proposed |
+| [0178](0178-live-remote-home-control-is-deferred-until-it-has-a-shipped-workflow.md) | Live remote Home control is deferred until it has a shipped workflow | Accepted |
 | [0179](0179-owner-data-routes-are-id-free-and-specific-to-each-synchronization-plane.md) | Owner-data routes are ID-free and specific to each synchronization plane | Proposed |
 | [0180](0180-home-conversations-belong-to-the-selected-epicenter.md) | Home conversations belong to the selected Epicenter | Proposed |
 | [0181](0181-owner-selection-is-the-boot-and-storage-decision.md) | Owner selection is the boot and storage decision | Proposed |
