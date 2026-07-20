@@ -1,13 +1,12 @@
 /**
- * Greenfield Skills Workspace Tests
+ * Skills Data Tests
  *
- * Exercises the real package definition through the Bun workspace runtime.
+ * Exercises the real package definitions through the Bun Data runtime.
  * The tests prove release-local nonconformance, explicit typed repair,
- * read-only SQL lenses, row documents, and honest filesystem ids.
+ * row documents and honest filesystem ids.
  *
  * Key behaviors:
  * - a stricter release surfaces old canonical JSON until an explicit patch repairs it
- * - SQL projects only the current lens after repair
  * - row documents persist under their owning structural row ids
  * - agentskills.io metadata ids round-trip as payload source ids
  */
@@ -22,57 +21,49 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { defineTable, type RowDocument } from '@epicenter/data';
+import { openBunEpicenter } from '@epicenter/data/bun';
 import { field, InstantString } from '@epicenter/field';
-import {
-	defineTable,
-	defineWorkspace,
-	type RowDocument,
-} from '@epicenter/workspace/sqlite';
-import { createDeviceBunWorkspaceRuntime } from '@epicenter/workspace/sqlite/bun';
-import { Type } from 'typebox';
 import { expectErr, expectOk } from 'wellcrafted/testing';
-import { SKILLS_WORKSPACE_ID } from './constants.js';
 import { exportSkillsToDisk, importSkillsFromDisk } from './node.js';
 import { getSkill, listSkills, scanSkills } from './services.js';
-import { skillsWorkspace } from './workspace.js';
+import { skillsDefinitions } from './workspace.js';
 
-const historicalSkillsWorkspace = defineWorkspace({
-	id: SKILLS_WORKSPACE_ID,
-	tables: {
-		skills: defineTable({
-			fields: {
-				name: field.string(),
-				description: field.string(),
-				updatedAt: field.instant(),
-			},
-		}),
+const historicalSkillsTable = defineTable({
+	key: 'so.epicenter.skills.skills',
+	fields: {
+		name: field.string(),
+		description: field.string(),
+		updatedAt: field.instant(),
 	},
 });
 
 test('a stricter Skills lens exposes nonconformance until typed update repairs it', async () => {
 	const storageRoot = mkdtempSync(join(tmpdir(), 'epicenter-skills-'));
+	const path = join(storageRoot, 'epicenter.sqlite3');
 	try {
-		const historicalRuntime = createDeviceBunWorkspaceRuntime({
-			workspacesRoot: storageRoot,
+		const historicalEpicenter = await openBunEpicenter({ path });
+		const historical = historicalEpicenter.bind({
+			tables: { skills: historicalSkillsTable },
+			values: {},
 		});
-		const historical = await historicalRuntime.open(historicalSkillsWorkspace);
 		const oldSkill = await historical.tables.skills.create({
 			name: 'writing-voice',
 			description: 'Write directly',
 			updatedAt: InstantString.now(),
 		});
-		await historicalRuntime[Symbol.asyncDispose]();
+		await historicalEpicenter[Symbol.asyncDispose]();
 
-		await using runtime = createDeviceBunWorkspaceRuntime({
-			workspacesRoot: storageRoot,
-		});
-		const skills = await runtime.open(skillsWorkspace);
-		expect(await getSkill(skills, 'missing')).toEqual({
+		await using epicenter = await openBunEpicenter({ path });
+		const skills = epicenter.bind(skillsDefinitions);
+		expect(await getSkill(skills, 'aaaaaaaaaaaaaaaaaaaaaaaa')).toEqual({
 			skill: undefined,
 			instructions: undefined,
 			nonconforming: [],
 		});
 		const error = expectErr(await skills.tables.skills.get(oldSkill.id));
+		expect(error.name).toBe('NonconformingRow');
+		if (error.name !== 'NonconformingRow') throw new Error(error.message);
 		expect(error.issues).toContainEqual({
 			field: 'sourceId',
 			kind: 'missing',
@@ -91,30 +82,7 @@ test('a stricter Skills lens exposes nonconformance until typed update repairs i
 		);
 		expect(repaired?.id).toBe(oldSkill.id);
 		expect((await scanSkills(skills)).nonconforming).toEqual([]);
-		expect(
-			await skills.sql(
-				`SELECT row_id AS id,
-				        json_extract(fields_json, '$.sourceId') AS sourceId,
-				        json_extract(fields_json, '$.name') AS name
-				   FROM records
-				  WHERE table_key = 'skills'
-				  ORDER BY name`,
-				[],
-				Type.Object({
-					id: Type.String(),
-					sourceId: Type.String(),
-					name: Type.String(),
-				}),
-			),
-		).toEqual([
-			{
-				id: oldSkill.id,
-				sourceId: 'agentskills-writing-voice',
-				name: 'writing-voice',
-			},
-		]);
-
-		await using instructions = await skills.tables.skills.document.open(
+		await using instructions = await skills.tables.skills.openDocument(
 			oldSkill.id,
 		);
 		writeDocumentText(instructions, 'Keep the answer concise.');
@@ -124,7 +92,7 @@ test('a stricter Skills lens exposes nonconformance until typed update repairs i
 			description: 'Another skill',
 			updatedAt: InstantString.now(),
 		});
-		await using otherInstructions = await skills.tables.skills.document.open(
+		await using otherInstructions = await skills.tables.skills.openDocument(
 			another.id,
 		);
 		expect(otherInstructions.get('content').toString()).toBe('');
@@ -150,6 +118,7 @@ test('filesystem import stores metadata id as sourceId instead of structural id'
 	const inputRoot = join(root, 'input');
 	const outputRoot = join(root, 'output');
 	try {
+		mkdirSync(storageRoot, { recursive: true });
 		const skillRoot = join(inputRoot, 'writing-voice');
 		mkdirSync(join(skillRoot, 'references'), { recursive: true });
 		writeFileSync(
@@ -157,12 +126,12 @@ test('filesystem import stores metadata id as sourceId instead of structural id'
 			'---\ndescription: Write directly\nmetadata:\n  id: portable-writing-voice\n---\n\nUse plain language.\n',
 		);
 		writeFileSync(join(skillRoot, 'references', 'examples.md'), '# Examples\n');
-		await using runtime = createDeviceBunWorkspaceRuntime({
-			workspacesRoot: storageRoot,
+		await using epicenter = await openBunEpicenter({
+			path: join(storageRoot, 'epicenter.sqlite3'),
 		});
-		const skills = await runtime.open(skillsWorkspace);
+		const skills = epicenter.bind(skillsDefinitions);
 		const imported = await importSkillsFromDisk({
-			workspace: skills,
+			data: skills,
 			dir: inputRoot,
 		});
 		expect(imported.created).toBe(1);
@@ -172,7 +141,7 @@ test('filesystem import stores metadata id as sourceId instead of structural id'
 		expect(skill?.id).not.toBe('portable-writing-voice');
 
 		const exported = await exportSkillsToDisk({
-			workspace: skills,
+			data: skills,
 			dir: outputRoot,
 		});
 		expect(exported).toMatchObject({ exported: 1, nonconforming: [] });

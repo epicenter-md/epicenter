@@ -1,7 +1,7 @@
 /** Pure parsing for the agentskills.io SKILL.md representation. */
 
+import type { JsonValue } from '@epicenter/data/protocol';
 import { InstantString } from '@epicenter/field';
-import type { JsonValue } from '@epicenter/workspace/sqlite';
 import { parse as parseYaml } from 'yaml';
 
 function splitFrontmatter(content: string) {

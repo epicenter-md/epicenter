@@ -1,20 +1,20 @@
 # @epicenter/skills
 
-`@epicenter/skills` declares one inert Skills workspace contract and ordinary
+`@epicenter/skills` declares inert Skills data definitions and ordinary
 services over an already opened handle. The package does not open storage,
 construct browser or Node runtimes, expose Yjs GUIDs, or register actions.
 
 ```ts
 import {
 	listSkills,
-	skillsWorkspace,
+	skillsDefinitions,
 } from '@epicenter/skills';
-import { createDeviceBunWorkspaceRuntime } from '@epicenter/workspace/sqlite/bun';
+import { openBunEpicenter } from '@epicenter/data/bun';
 
-await using runtime = createDeviceBunWorkspaceRuntime({
-	workspacesRoot: '/app/data/workspaces',
+await using epicenter = await openBunEpicenter({
+	path: '/app/data/epicenter.sqlite3',
 });
-const skills = await runtime.open(skillsWorkspace);
+const skills = epicenter.bind(skillsDefinitions);
 const catalog = await listSkills(skills);
 ```
 
@@ -29,7 +29,7 @@ Each skill and reference row owns one document. The skill document stores its
 instructions; the reference document stores its Markdown body:
 
 ```ts
-await using instructions = await skills.tables.skills.document.open(skill.id);
+await using instructions = await skills.tables.skills.openDocument(skill.id);
 const content = instructions.get('content');
 instructions.transact(() => content.insert(0, '# Instructions'));
 await instructions.whenDurable();
@@ -46,7 +46,7 @@ ordinary writes.
 
 The `@epicenter/skills/node` subpath exports `importSkillsFromDisk` and
 `exportSkillsToDisk`. Both receive an opened Skills handle. They do not create a
-Node-specific workspace or own runtime lifecycle.
+Node-specific Data runtime or own runtime lifecycle.
 
 ## License
 

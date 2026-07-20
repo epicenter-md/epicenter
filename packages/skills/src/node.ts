@@ -1,9 +1,9 @@
-/** Filesystem import and export over a caller-owned Skills workspace handle. */
+/** Filesystem import and export over caller-bound Skills data. */
 
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { RowDocument } from '@epicenter/data';
 import { InstantString } from '@epicenter/field';
-import type { RowDocument } from '@epicenter/workspace/sqlite';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -13,7 +13,7 @@ import { parseSkillMd } from './parse.js';
 import { serializeSkillMd } from './serialize.js';
 import { scanReferences, scanSkills } from './services.js';
 import type { Reference, Skill } from './tables.js';
-import type { SkillsWorkspace } from './workspace.js';
+import type { SkillsData } from './workspace.js';
 
 export const SkillsIoError = defineErrors({
 	ScanDirectoryFailed: ({ dir, cause }: { dir: string; cause: unknown }) => ({
@@ -30,10 +30,10 @@ export type SkillsIoError = InferErrors<typeof SkillsIoError>;
  * structural record ids.
  */
 export async function importSkillsFromDisk({
-	workspace,
+	data,
 	dir,
 }: {
-	workspace: SkillsWorkspace;
+	data: SkillsData;
 	dir: string;
 }) {
 	const entries = await readdir(dir, { withFileTypes: true });
@@ -51,12 +51,13 @@ export async function importSkillsFromDisk({
 				}
 			}),
 	);
-	const skillsScan = await scanSkills(workspace);
-	const referencesScan = await scanReferences(workspace);
+	const skillsScan = await scanSkills(data);
+	const referencesScan = await scanReferences(data);
 	const skillsBySourceId = new Map<string, { id: string }>(
 		skillsScan.skills.map((skill) => [skill.sourceId, { id: skill.id }]),
 	);
 	for (const error of skillsScan.nonconforming) {
+		if (error.name !== 'NonconformingRow') continue;
 		const sourceId = error.raw.sourceId;
 		if (typeof sourceId === 'string' && !skillsBySourceId.has(sourceId)) {
 			skillsBySourceId.set(sourceId, { id: error.id });
@@ -69,6 +70,7 @@ export async function importSkillsFromDisk({
 		]),
 	);
 	for (const error of referencesScan.nonconforming) {
+		if (error.name !== 'NonconformingRow') continue;
 		const { skillId, path } = error.raw;
 		if (typeof skillId === 'string' && typeof path === 'string') {
 			const key = referenceKey(skillId, path);
@@ -102,7 +104,7 @@ export async function importSkillsFromDisk({
 		const existing = skillsBySourceId.get(sourceId);
 		let skill: Skill;
 		if (existing) {
-			const repaired = await workspace.tables.skills.update(existing.id, input);
+			const repaired = await data.tables.skills.update(existing.id, input);
 			if (repaired.error !== null || repaired.data === undefined) {
 				throw new Error(
 					repaired.error?.message ?? `Skill '${existing.id}' disappeared`,
@@ -111,7 +113,7 @@ export async function importSkillsFromDisk({
 			skill = repaired.data;
 			updated += 1;
 		} else {
-			skill = await workspace.tables.skills.create(input);
+			skill = await data.tables.skills.create(input);
 			skillsBySourceId.set(sourceId, { id: skill.id });
 			created += 1;
 		}
@@ -123,9 +125,7 @@ export async function importSkillsFromDisk({
 				'utf8',
 			);
 		}
-		await using instructions = await workspace.tables.skills.document.open(
-			skill.id,
-		);
+		await using instructions = await data.tables.skills.openDocument(skill.id);
 		writeDocumentText(instructions, read.instructions);
 
 		const referencesPath = join(read.skillPath, 'references');
@@ -143,14 +143,14 @@ export async function importSkillsFromDisk({
 				const key = referenceKey(skill.id, path);
 				const existingReference = referencesByOwnerAndPath.get(key);
 				const reference = existingReference
-					? await repairReference(workspace, existingReference, path)
-					: await workspace.tables.references.create({
+					? await repairReference(data, existingReference, path)
+					: await data.tables.references.create({
 							skillId: skill.id,
 							path,
 							updatedAt: InstantString.now(),
 						});
 				referencesByOwnerAndPath.set(key, reference);
-				await using document = await workspace.tables.references.document.open(
+				await using document = await data.tables.references.openDocument(
 					reference.id,
 				);
 				writeDocumentText(document, content);
@@ -170,20 +170,20 @@ export async function importSkillsFromDisk({
 
 /** Publish every conforming skill to agentskills.io folders. */
 export async function exportSkillsToDisk({
-	workspace,
+	data,
 	dir,
 }: {
-	workspace: SkillsWorkspace;
+	data: SkillsData;
 	dir: string;
 }) {
-	const skillsScan = await scanSkills(workspace);
-	const referencesScan = await scanReferences(workspace);
+	const skillsScan = await scanSkills(data);
+	const referencesScan = await scanReferences(data);
 	const skillNames = new Set(skillsScan.skills.map((skill) => skill.name));
 	await Promise.all(
 		skillsScan.skills.map(async (skill) => {
 			const skillDir = join(dir, skill.name);
 			await mkdir(skillDir, { recursive: true });
-			await using instructions = await workspace.tables.skills.document.open(
+			await using instructions = await data.tables.skills.openDocument(
 				skill.id,
 			);
 			await writeFile(
@@ -199,7 +199,7 @@ export async function exportSkillsToDisk({
 			await mkdir(referencesDir, { recursive: true });
 			await Promise.all(
 				references.map(async (reference) => {
-					await using content = await workspace.tables.references.document.open(
+					await using content = await data.tables.references.openDocument(
 						reference.id,
 					);
 					await writeFile(
@@ -237,11 +237,11 @@ export async function exportSkillsToDisk({
 }
 
 async function repairReference(
-	workspace: SkillsWorkspace,
+	data: SkillsData,
 	reference: { id: string },
 	path: string,
 ): Promise<Reference> {
-	const repaired = await workspace.tables.references.update(reference.id, {
+	const repaired = await data.tables.references.update(reference.id, {
 		path,
 		updatedAt: InstantString.now(),
 	});

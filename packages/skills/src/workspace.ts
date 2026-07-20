@@ -1,20 +1,19 @@
-import {
-	defineWorkspace,
-	type Workspace,
-} from '@epicenter/workspace/sqlite';
-import { SKILLS_WORKSPACE_ID } from './constants.js';
+import type { BoundData } from '@epicenter/data';
 import { referencesTable, skillsTable } from './tables.js';
 
 /**
  * The inert Skills contract. A caller binds it through its environment-owned
  * runtime and passes the resulting handle to ordinary application services.
  */
-export const skillsWorkspace = defineWorkspace({
-	id: SKILLS_WORKSPACE_ID,
+export const skillsDefinitions = {
 	tables: {
 		skills: skillsTable,
 		references: referencesTable,
 	},
-});
+	values: {},
+} as const;
 
-export type SkillsWorkspace = Workspace<typeof skillsWorkspace>;
+export type SkillsData = BoundData<
+	typeof skillsDefinitions.tables,
+	typeof skillsDefinitions.values
+>;

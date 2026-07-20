@@ -24,8 +24,8 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"@epicenter/data": "workspace:*",
 		"@epicenter/field": "workspace:*",
-		"@epicenter/workspace": "workspace:*",
 		"wellcrafted": "catalog:",
 		"typebox": "catalog:",
 		"yaml": "^2.8.0"
