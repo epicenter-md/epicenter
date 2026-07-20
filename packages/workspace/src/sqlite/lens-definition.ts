@@ -235,6 +235,23 @@ export function compileTableLens(
 	return compiled;
 }
 
+/** Validate the SQLite-facing names and definitions carried by one table lens map. */
+export function assertTableLensDefinitions(
+	definitions: TableLensDefinitions,
+): void {
+	assertPlainObject(definitions, 'Table lenses');
+	const sqliteNames = new Set<string>();
+	for (const [name, definition] of Object.entries(definitions)) {
+		assertSqlTableName(name);
+		const sqliteName = name.toLowerCase();
+		if (sqliteNames.has(sqliteName)) {
+			throw new Error(`Table '${name}' collides with another table in SQLite`);
+		}
+		sqliteNames.add(sqliteName);
+		compileTableLens(definition);
+	}
+}
+
 function createCompiledLens(
 	fields: ReadonlyMap<string, CompiledLensField>,
 	optional: ReadonlySet<string>,
@@ -385,6 +402,18 @@ function assertLensName(value: string, label: string): void {
 	) {
 		throw new Error(
 			`Invalid ${label} '${value}'; use letters, digits, and underscores and do not use the internal prefix`,
+		);
+	}
+}
+
+function assertSqlTableName(value: string): void {
+	if (
+		!/^[A-Za-z][A-Za-z0-9_]*$/.test(value) ||
+		value.startsWith('__epicenter_') ||
+		value.toLowerCase().startsWith('sqlite_')
+	) {
+		throw new Error(
+			`Invalid table name '${value}'; use letters, digits, and underscores and do not use reserved SQLite or internal prefixes`,
 		);
 	}
 }

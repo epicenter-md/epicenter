@@ -339,6 +339,7 @@ test('runtime composes row, document, KV, and SQL capabilities', async () => {
 	});
 	try {
 		const workspace = await runtime.open(definition);
+		expect(Object.isFrozen(workspace.tables)).toBeTrue();
 		const created = await workspace.tables.notes.create({ title: 'Draft' });
 		expect(
 			expectOk(

@@ -1,6 +1,5 @@
 import { createDocumentStore } from '../document-provider/persistence.js';
 import { createRowDocumentRuntime } from '../document-provider/runtime/index.js';
-import { createAsyncWorkspaceView } from './async-workspace-view.js';
 import {
 	isWorkspaceStorageMovedError,
 	WORKSPACE_STORAGE_MOVED_ERROR_NAME,
@@ -15,6 +14,7 @@ import {
 } from './desktop-protocol.js';
 import type { Workspace } from './runtime.js';
 import type { WorkspaceLens } from './workspace-lens.js';
+import { createWorkspaceView } from './workspace-view.js';
 
 type SurfaceOpenedMessage = {
 	type: 'workspace-surface-opened';
@@ -210,7 +210,7 @@ export function createDesktopWorkspaceRuntime({
 		definition: TDefinition,
 		documents: ReturnType<typeof createRowDocumentRuntime>,
 	): Workspace<TDefinition> {
-		return createAsyncWorkspaceView(definition, {
+		return createWorkspaceView(definition, {
 			read(table, rowId) {
 				return request(definition.id, {
 					kind: 'read-current-row',

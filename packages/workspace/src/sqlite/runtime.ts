@@ -1,4 +1,5 @@
 import type { WireRowIntent } from '@epicenter/row-sync';
+import { RESERVED_KV_ROW_ID, RESERVED_KV_TABLE } from '@epicenter/row-sync';
 import type { SqliteDatabase, SqliteRow, SqliteValue } from '@epicenter/sqlite';
 import type * as Y from '@y/y';
 import type { Static, TSchema } from 'typebox';
@@ -21,12 +22,6 @@ import {
 	type LogicalWorkspaceCopy,
 	withCapturedDocuments,
 } from './canonical-addition.js';
-import { type CanonicalKv, createCanonicalKvView } from './canonical-kv.js';
-import {
-	type CanonicalRows,
-	type CanonicalTable,
-	createCanonicalRowsView,
-} from './canonical-rows.js';
 import {
 	type CanonicalStore,
 	createCanonicalStore,
@@ -43,12 +38,16 @@ import type {
 } from './kv-definition.js';
 import type {
 	ConstrainedChanges,
+	CreateInputFor,
 	JsonObject,
+	RowFor,
+	RowLensError,
 	TableLensDefinition,
 	TableLensDefinitions,
 } from './lens-definition.js';
 import { readLocalRow } from './local-workspace-storage.js';
 import { assertWorkspaceId, type WorkspaceLens } from './workspace-lens.js';
+import { createWorkspaceView } from './workspace-view.js';
 
 export type WorkspaceOwner<TAdmission extends void | Promise<void> = void> = {
 	sqlite: SqliteDatabase;
@@ -78,15 +77,18 @@ export type WorkspaceOwnerFactory = (
 ) => Promise<WorkspaceOwner>;
 
 type AsyncCanonicalTable<TDefinition extends TableLensDefinition> = {
-	get(id: string): Promise<ReturnType<CanonicalTable<TDefinition>['get']>>;
-	list(): Promise<ReturnType<CanonicalTable<TDefinition>['list']>>;
-	create(
-		fields: Parameters<CanonicalTable<TDefinition>['create']>[0],
-	): Promise<ReturnType<CanonicalTable<TDefinition>['create']>>;
+	get(
+		id: string,
+	): Promise<Result<RowFor<TDefinition> | undefined, RowLensError>>;
+	list(): Promise<{
+		rows: RowFor<TDefinition>[];
+		nonconforming: RowLensError[];
+	}>;
+	create(fields: CreateInputFor<TDefinition>): Promise<RowFor<TDefinition>>;
 	update<const TChanges extends Record<string, unknown>>(
 		id: string,
 		changes: TChanges & ConstrainedChanges<TDefinition, TChanges>,
-	): Promise<ReturnType<CanonicalTable<TDefinition>['get']>>;
+	): Promise<Result<RowFor<TDefinition> | undefined, RowLensError>>;
 	delete(id: string): Promise<void>;
 	document: { open(rowId: string): Promise<RowDocument> };
 };
@@ -277,77 +279,19 @@ export function createWorkspaceRuntime({
 		lens: TLens,
 		raw: RawWorkspace,
 	): Workspace<TLens> {
-		const rows = createCanonicalRowsView(raw, lens.tables);
-		const canonicalKv: CanonicalKv<KvDefinitions> = createCanonicalKvView(
-			raw,
-			lens.kv as KvDefinitions,
-		);
-		const tables = Object.fromEntries(
-			Object.keys(lens.tables).map((name) => [
-				name,
-				Object.freeze({
-					async get(id: string) {
-						assertOpen();
-						return tableFor(rows, name).get(id);
-					},
-					async list() {
-						assertOpen();
-						return tableFor(rows, name).list();
-					},
-					async create(fields: Record<string, unknown>) {
-						assertOpen();
-						return tableFor(rows, name).create(fields);
-					},
-					async update(id: string, changes: Record<string, unknown>) {
-						assertOpen();
-						return tableFor(rows, name).update(id, changes);
-					},
-					async delete(id: string) {
-						assertOpen();
-						tableFor(rows, name).delete(id);
-					},
-					document: Object.freeze({
-						async open(rowId: string) {
-							assertOpen();
-							return raw.document.open(name, rowId);
-						},
-					}),
-				}),
-			]),
-		) as unknown as WorkspaceTables<LensTables<TLens>>;
-
-		const kv = Object.freeze({
-			async get(key: string) {
-				assertOpen();
-				return canonicalKv.get(key);
+		return createWorkspaceView(lens, {
+			read: raw.read,
+			list: raw.list,
+			readKvMap() {
+				return raw.read(RESERVED_KV_TABLE, RESERVED_KV_ROW_ID) ?? {};
 			},
-			async set(key: string, value: never) {
-				assertOpen();
-				return canonicalKv.set(key, value);
-			},
-			async unset(key: string) {
-				assertOpen();
-				canonicalKv.unset(key);
-			},
-		}) as WorkspaceKv<LensKv<TLens>>;
-
-		return Object.freeze({
-			id: lens.id,
-			tables: Object.freeze(tables),
-			kv,
+			admit: raw.admit,
+			sql: raw.sql,
+			openDocument: raw.document.open,
 			get sync() {
-				assertOpen();
 				return raw.sync;
 			},
-			async sql<TResultSchema extends TSchema>(
-				query: string,
-				parameters: readonly SqliteValue[],
-				resultSchema: TResultSchema,
-			) {
-				assertOpen();
-				return rows.sql(query, parameters, resultSchema);
-			},
-		}) as Workspace<TLens>;
+		});
 	}
 
 	async function openRaw(workspaceId: string): Promise<RawWorkspace> {
@@ -450,15 +394,6 @@ export function createWorkspaceRuntime({
 }
 
 export type WorkspaceRuntime = ReturnType<typeof createWorkspaceRuntime>;
-
-function tableFor(
-	records: CanonicalRows,
-	name: string,
-): CanonicalTable<TableLensDefinition> {
-	const table = records.tables[name];
-	if (!table) throw new Error(`Canonical table '${name}' is missing`);
-	return table;
-}
 
 function bindWorkspaceSync(
 	ownerSync: WorkspaceOwnerSync | undefined,

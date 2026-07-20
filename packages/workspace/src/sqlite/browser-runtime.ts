@@ -12,7 +12,6 @@ import {
 	deviceBrowserPersistenceKey,
 	type WorkspaceAccount,
 } from './account-runtime.js';
-import { createAsyncWorkspaceView } from './async-workspace-view.js';
 import {
 	type BrowserRecordOperation,
 	type BrowserRowSyncBinding,
@@ -33,6 +32,7 @@ import type {
 import { CurrentStateTransportInterruption } from './current-state-transport.js';
 import type { Workspace } from './runtime.js';
 import { assertWorkspaceId, type WorkspaceLens } from './workspace-lens.js';
+import { createWorkspaceView } from './workspace-view.js';
 
 type PendingRequest = {
 	resolve(value: unknown): void;
@@ -559,7 +559,7 @@ function createBrowserRuntimeWithPersistence({
 		function createView<TDefinition extends WorkspaceLens>(
 			definition: TDefinition,
 		): Workspace<TDefinition> {
-			return createAsyncWorkspaceView(definition, {
+			return createWorkspaceView(definition, {
 				read(table, rowId) {
 					return request(manifest, {
 						kind: 'read-current-row',

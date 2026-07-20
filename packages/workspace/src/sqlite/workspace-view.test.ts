@@ -1,5 +1,5 @@
 /**
- * Async Workspace View Tests
+ * Workspace View Tests
  *
  * The transport-facing lens composer must refuse a missing-row update or
  * delete even when the row disappears between its renderer-side read and the
@@ -11,11 +11,11 @@
 import { expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
 import type { WireRowIntent } from '@epicenter/row-sync';
-import { createAsyncWorkspaceView } from './async-workspace-view.js';
 import { WORKSPACE_ROW_ABSENT_ERROR_NAME } from './canonical-store.js';
 import type { JsonObject } from './lens-definition.js';
 import { defineTable } from './lens-definition.js';
 import { defineWorkspace } from './workspace-lens.js';
+import { createWorkspaceView } from './workspace-view.js';
 
 const lens = defineWorkspace({
 	id: 'async-view-test',
@@ -38,7 +38,7 @@ type FakeClientOptions = {
 function createView(options: FakeClientOptions) {
 	const deletions: { table: string; rowId: string }[] = [];
 	const admitted: WireRowIntent[] = [];
-	const view = createAsyncWorkspaceView(lens, {
+	const view = createWorkspaceView(lens, {
 		async read(table, rowId) {
 			return options.read(table, rowId);
 		},
