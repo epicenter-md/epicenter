@@ -10,9 +10,11 @@
 
 The generic Room actor predates row-owned Yjs documents. The accepted Epicenter
 model now gives each ordinary row one latent document synchronized through the
-selected owner's actor. Tab Manager, Opensidian, and the legacy workspace API
-still produce Room traffic, but none requires Room as a distinct product
-concept; they are inherited consumers that must leave before deletion.
+selected owner's actor. Tab Manager, Vocab, Opensidian, and the legacy workspace
+API still produce Room traffic, but none requires Room as a distinct product
+concept; they are inherited consumers that must leave before deletion. The Tab
+Manager and Opensidian daemon mounts have no live repository caller and are
+deleted rather than ported.
 Cross-principal collaboration would require new ownership and authorization
 semantics that the current Room does not provide.
 
@@ -36,8 +38,10 @@ Room.
   composition branch.
 - There is one durable collaboration address: table key, row ID, and document.
 - Existing generic-room imports and tests are deleted rather than redirected.
-- Tab Manager, Opensidian, and the legacy Yjs 13 workspace family must leave the
-  Room route before its actor is removed.
+- Tab Manager, Vocab, Opensidian, and the legacy Yjs 13 workspace family must
+  leave the Room route before its actor is removed.
+- The unused Tab Manager and Opensidian daemon mounts disappear instead of
+  earning a second canonical runtime.
 
 ## Considered alternatives
 
