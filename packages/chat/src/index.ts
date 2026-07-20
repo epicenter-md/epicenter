@@ -1,50 +1,45 @@
 /**
- * Canonical conversation domain and SQLite workspace lens.
+ * Canonical conversation domain and Data definition.
  *
- * Each product binds this table through its own Device or Account workspace.
+ * Each product binds this definition through its Data runtime.
  * Finished messages live in the row-owned Yjs 14 document under one `messages`
  * map; live turns remain client state.
  */
 
-import { field } from '@epicenter/field';
-import type {
-	AgentMessage,
-	AgentMessageStore,
-} from '@epicenter/workspace/agent';
+import type { AgentMessage, AgentMessageStore } from '@epicenter/agent';
 import {
 	defineTable,
 	type RowDocument,
 	type RowFor,
-	type WorkspaceTables,
-} from '@epicenter/workspace/sqlite';
+	type TableLens,
+} from '@epicenter/data';
+import { field } from '@epicenter/field';
 import type { Brand } from 'wellcrafted/brand';
 
 export type ConversationId = string & Brand<'ConversationId'>;
-
-export const generateConversationId = (): ConversationId =>
-	crypto.randomUUID() as ConversationId;
 
 export const asConversationId = (value: string): ConversationId =>
 	value as ConversationId;
 
 export const conversationsTable = defineTable({
+	key: 'so.epicenter.chat.conversations',
 	fields: {
 		title: field.string(),
 		model: field.string(),
 		createdAt: field.instant(),
 		updatedAt: field.instant(),
 	},
+	document: true,
 });
 
 export type Conversation = RowFor<typeof conversationsTable>;
 
-export type ConversationsTable = WorkspaceTables<{
-	conversations: typeof conversationsTable;
-}>['conversations'];
+export type ConversationsTable = TableLens<typeof conversationsTable>;
 
 export type AgentMessageDocumentStore = AgentMessageStore & {
 	/** Wait for every message write issued before this call to reach local storage. */
 	whenDurable(): Promise<void>;
+	[Symbol.asyncDispose](): Promise<void>;
 };
 
 /** Bind the agent loop's by-id store to one canonical row document. */
@@ -53,6 +48,7 @@ export function createAgentMessageDocumentStore(
 ): AgentMessageDocumentStore {
 	const messages = document.get('messages');
 	let disposed = false;
+	let disposal: Promise<void> | undefined;
 	const requireOpen = () => {
 		if (disposed) throw new Error('Agent message store is disposed');
 	};
@@ -80,7 +76,14 @@ export function createAgentMessageDocumentStore(
 		[Symbol.dispose]() {
 			if (disposed) return;
 			disposed = true;
-			document[Symbol.dispose]();
+			disposal = document[Symbol.asyncDispose]();
+		},
+		async [Symbol.asyncDispose]() {
+			if (!disposed) {
+				disposed = true;
+				disposal = document[Symbol.asyncDispose]();
+			}
+			await disposal;
 		},
 	};
 }

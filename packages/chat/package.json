@@ -4,8 +4,7 @@
 	"version": "0.1.0",
 	"type": "module",
 	"exports": {
-		".": "./src/index.ts",
-		"./legacy-root-yjs": "./src/legacy-root-yjs.ts"
+		".": "./src/index.ts"
 	},
 	"files": [
 		"src",
@@ -17,8 +16,9 @@
 		"test": "bun test"
 	},
 	"dependencies": {
+		"@epicenter/agent": "workspace:*",
+		"@epicenter/data": "workspace:*",
 		"@epicenter/field": "workspace:*",
-		"@epicenter/workspace": "workspace:*",
 		"wellcrafted": "catalog:"
 	},
 	"devDependencies": {
