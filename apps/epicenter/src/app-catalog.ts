@@ -30,8 +30,16 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import { cp, mkdir, readdir, rename, rm, stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import {
+	cp,
+	mkdir,
+	readdir,
+	realpath,
+	rename,
+	rm,
+	stat,
+} from 'node:fs/promises';
+import { isAbsolute, join, relative, sep } from 'node:path';
 import { type AppCatalog, deriveAppCatalog } from './static-assets.ts';
 
 const CURRENT_POINTER = 'current';
@@ -70,9 +78,10 @@ export async function loadActiveAppCatalog(
  * must satisfy the member contract (ADR-0153 direct-folder ID, not a reserved
  * built-in surface, `index.html` present); one refused entry fails the whole
  * promotion so a typo cannot silently drop an app. The pointer is replaced
- * only after the complete generation exists, so the failure modes are a
- * dot-prefixed staging orphan or an unselected generation, never a partial
- * selection. The new generation takes effect at the next full restart.
+ * only after the complete generation exists. Failed copies and validations
+ * clean their staging paths; a failure after the generation rename may leave
+ * a complete unselected generation, never a partial selection. The new
+ * generation takes effect at the next full restart.
  */
 export async function promoteAppCatalogCandidate(
 	catalogRoot: string,
@@ -82,19 +91,31 @@ export async function promoteAppCatalogCandidate(
 	if (!(await stat(candidateRoot).catch(() => undefined))?.isDirectory()) {
 		throw new Error(`Candidate catalog is not a directory: ${candidateRoot}`);
 	}
+	await mkdir(catalogRoot, { recursive: true });
+	const candidate = await realpath(candidateRoot);
+	const catalog = await realpath(catalogRoot);
+	if (
+		isSameOrDescendant(candidate, catalog) ||
+		isSameOrDescendant(catalog, candidate)
+	) {
+		throw new Error(
+			`Candidate catalog and host catalog directories must not overlap: ${candidateRoot}`,
+		);
+	}
 
 	const generation = `${Date.now()}-${randomBytes(4).toString('hex')}`;
-	const generationsRoot = join(catalogRoot, GENERATIONS_DIRECTORY);
+	const generationsRoot = join(catalog, GENERATIONS_DIRECTORY);
 	const staging = join(generationsRoot, `.staging-${generation}`);
+	const pointerStaging = join(catalog, `.${CURRENT_POINTER}-${generation}`);
 	await mkdir(generationsRoot, { recursive: true });
-	await cp(candidateRoot, staging, {
-		recursive: true,
-		dereference: true,
-		errorOnExist: true,
-		force: false,
-	});
 
 	try {
+		await cp(candidate, staging, {
+			recursive: true,
+			dereference: true,
+			errorOnExist: true,
+			force: false,
+		});
 		const expected = (await readdir(staging))
 			.filter((name) => !name.startsWith('.'))
 			.sort();
@@ -108,15 +129,22 @@ export async function promoteAppCatalogCandidate(
 		}
 
 		await rename(staging, join(generationsRoot, generation));
-		const pointerStaging = join(
-			catalogRoot,
-			`.${CURRENT_POINTER}-${generation}`,
-		);
 		await Bun.write(pointerStaging, `${generation}\n`);
-		await rename(pointerStaging, join(catalogRoot, CURRENT_POINTER));
+		await rename(pointerStaging, join(catalog, CURRENT_POINTER));
 		return { generation, apps: apps.map(({ id, title }) => ({ id, title })) };
 	} catch (error) {
-		await rm(staging, { recursive: true, force: true });
+		await Promise.all([
+			rm(staging, { recursive: true, force: true }),
+			rm(pointerStaging, { force: true }),
+		]);
 		throw error;
 	}
+}
+
+function isSameOrDescendant(parent: string, child: string): boolean {
+	const path = relative(parent, child);
+	return (
+		path === '' ||
+		(path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path))
+	);
 }

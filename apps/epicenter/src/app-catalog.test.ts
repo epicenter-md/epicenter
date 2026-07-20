@@ -206,6 +206,32 @@ describe('promoteAppCatalogCandidate', () => {
 		expect(generations).toHaveLength(1);
 	});
 
+	test('a failed copy cleans staging and path overlap is refused before copying', async () => {
+		const root = tempDir('epicenter-catalog-root-');
+		const broken = candidateWith('notes');
+		symlinkSync(join(broken, 'missing.js'), join(broken, 'notes', 'broken.js'));
+		await expect(
+			promoteAppCatalogCandidate(root, broken, RESERVED),
+		).rejects.toThrow();
+		expect(readdirSync(join(root, 'generations'))).toEqual([]);
+
+		const outerCandidate = candidateWith('notes');
+		await expect(
+			promoteAppCatalogCandidate(
+				join(outerCandidate, 'catalog'),
+				outerCandidate,
+				RESERVED,
+			),
+		).rejects.toThrow('must not overlap');
+
+		const outerCatalog = tempDir('epicenter-catalog-root-');
+		const innerCandidate = join(outerCatalog, 'candidate');
+		writeApp(innerCandidate, 'notes');
+		await expect(
+			promoteAppCatalogCandidate(outerCatalog, innerCandidate, RESERVED),
+		).rejects.toThrow('must not overlap');
+	});
+
 	test('an empty candidate promotes an empty catalog (uninstall leaves data, not apps)', async () => {
 		const root = tempDir('epicenter-catalog-root-');
 		await promoteAppCatalogCandidate(root, candidateWith('notes'), RESERVED);
