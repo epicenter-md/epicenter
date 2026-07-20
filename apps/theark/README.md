@@ -49,15 +49,45 @@ refuses executable per-artifact code while allowing the shared stylesheet,
 images, fonts, and media.
 
 The second path segment is one shared publisher-owned namespace: a facet and an
-artifact cannot both own `/braden/codes`. The future authenticated publisher
-must refuse cross-owner collisions, reserve a route forever to its first
-artifact owner, write media first, and conditionally activate `index.html` last.
-The delivery Worker deliberately has no route registry.
+artifact cannot both own `/braden/codes`. The publisher kernel (below) refuses
+cross-owner collisions, reserves a route forever to its first artifact owner,
+writes media first, and activates `index.html` last. The delivery Worker
+deliberately has no route registry.
 
 This Worker deliberately has **no** auth, billing, Postgres, Durable Objects,
-Epicenter blob-store access, write routes, or renderer plugins. A future
-authenticated creator application publishes *into* the bucket; it does not
-live here.
+Epicenter blob-store access, write routes, or renderer plugins.
+
+## Publishing side: renderer and kernel
+
+The trusted publishing code lives beside the delivery Worker as library
+modules the Worker entry never imports, so the deployed public plane keeps
+zero write paths (see the ADR-0160 amendment):
+
+- `src/render.ts` is the constrained renderer: one pure, total function from a
+  frozen-artifact-shaped input to one complete semantic HTML document. It
+  emits no JavaScript and references only `/assets/theark.css` plus
+  root-absolute sibling media. Its explicit Markdown subset is documented in
+  the module header; everything outside the subset (raw HTML, executable URL
+  schemes, tables, deeper headings, foreign images) renders as visibly
+  escaped literal text. It never throws: Publish freezes the artifact before
+  projecting it, and projection HTML is disposable, so degraded output is
+  always recoverable by a renderer improvement plus a rebuild.
+- `src/publish.ts` is the publisher kernel: given an injected R2-shaped
+  object store, it reserves the `<identity>/<slug>` subtree with a
+  publicly-unroutable `.artifact` ownership marker (dotfiles fail the public
+  route allowlist by construction), writes generated media
+  (`video.mp4`/`narration.mp3`/`cover.png`, the complete media vocabulary),
+  renders and activates `index.html` last, and read-back-verifies every
+  object. Republish by the same artifact converges idempotently; any other
+  artifact is refused the slug forever. Keys are derived through the delivery
+  Worker's own `resolveProjection`, so the kernel cannot write an address the
+  Worker would refuse to serve.
+
+The kernel runs wherever an authenticated caller holds bucket credentials: an
+operator CLI first, the Vault's injected `ArkPublisher` port behind it. That
+caller must supply the page `title` and receipt `publishedOn`, which the
+Vault port does not carry, and owns public-URL verification against the
+expected canonical URL.
 
 ## Develop
 

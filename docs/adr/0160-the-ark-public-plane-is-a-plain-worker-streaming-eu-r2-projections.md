@@ -118,3 +118,48 @@ zero. If Cloudflare ships read-only R2 bindings, adopt them.
 - **Reuse `epicenter-blobs` or the Epicenter API Worker.** Lost: the public
   plane must not hold private-plane capabilities, and the private blob store
   is a different product boundary with different lifecycle and jurisdiction.
+
+## Amendment (2026-07-20): the publisher is colocated code, not a separate deployable
+
+The Decision above deferred publishing to "a future authenticated creator
+application," a separate deployable with Epicenter login. That framing
+predates the Vault's Publish collapse (its ADR-0065) and does not survive
+contact with it. Authentication is a property of the caller holding bucket
+credentials, not of a deployable: the only real publisher today is an
+operator at a terminal with Cloudflare credentials, and a network endpoint
+would invent a wire schema with zero network callers.
+
+**The trusted constrained renderer and the publisher kernel are Ark-owned
+library modules in `apps/theark` (`src/render.ts`, `src/publish.ts`) that the
+public Worker entry never imports.** The theme stylesheet and the HTML shape
+it styles must evolve together (a theme rebuild is "re-render every page,
+redeploy the stylesheet"), so they live in one app. The deployed public plane
+is unchanged: no write route, no auth, no new bindings.
+
+Ownership within the publishing side:
+
+- **The renderer is total.** Publish freezes the artifact before projecting
+  it, so a renderer that rejects a frozen body would strand it permanently.
+  Everything outside the explicit Markdown subset (raw HTML, executable URL
+  schemes, tables, foreign images) renders as visibly escaped literal text.
+  Degradation is recoverable because projection HTML is disposable (Vault
+  ADR-0064): improve the renderer, rebuild the pages.
+- **The kernel owns route-last activation, idempotent retry, and collision
+  refusal.** One publicly-unroutable in-bucket ownership marker
+  (`<identity>/<slug>/.artifact`, holding the private artifact id; dotfiles
+  fail the public route allowlist by construction) is the entire route
+  registry the Decision's consequences called for. Reserve first, media next,
+  `index.html` last, read-back verification on every object. No second
+  database.
+- **The generated media vocabulary is closed**: `video.mp4`,
+  `narration.mp3`, `cover.png` from the conditional short-video renderer.
+  There is no general upload pipeline.
+- **The caller owns credentials and public-URL verification.** The Vault's
+  injected `ArkPublisher` port hands over the frozen artifact; the caller
+  must also supply the page title and receipt date (the port carries
+  neither) and verifies the expected canonical URL after the kernel returns.
+
+An authenticated network endpoint (in `apps/api` or elsewhere) remains
+possible later; it would be a thin authenticated shell over this same kernel,
+adopted only when a caller exists that cannot hold bucket credentials
+directly.
