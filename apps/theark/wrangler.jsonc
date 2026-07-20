@@ -48,16 +48,15 @@
 		}
 	],
 	// --- Custom domain: theark.so ---
-	// Commented out until theark.so's DNS is delegated to Cloudflare; today the
-	// domain sits on registrar nameservers, so a deploy with this route would
-	// fail to attach. Uncomment after delegation; deploy then auto-creates the
-	// DNS record.
-	// "routes": [
-	// 	{
-	// 		"pattern": "theark.so",
-	// 		"custom_domain": true
-	// 	}
-	// ],
+	// The Worker is the origin for every path on the canonical hostname.
+	// Deploying this source-of-truth route lets Cloudflare own the DNS record and
+	// certificate lifecycle; there is no parallel dashboard-owned route.
+	"routes": [
+		{
+			"pattern": "theark.so",
+			"custom_domain": true
+		}
+	],
 	"observability": {
 		"enabled": true
 	}

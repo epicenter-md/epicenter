@@ -127,14 +127,13 @@ bun run --cwd apps/theark typegen     # regenerate worker-configuration.d.ts aft
 bun dev:theark                        # wrangler dev (see note below)
 ```
 
-## Deploy prerequisites (external actions, in order)
+## Deploy
 
-1. Create the EU-jurisdiction bucket (jurisdiction is permanent; the bucket
-   must not be created without it):
-   `bun x wrangler r2 bucket create theark-projections --jurisdiction eu`
-2. Delegate `theark.so` DNS to Cloudflare (today it sits on registrar
-   nameservers), then uncomment the `routes` block in `wrangler.jsonc`.
-3. `bun run --cwd apps/theark deploy`
+The one-time infrastructure prerequisites are an EU-jurisdiction
+`theark-projections` bucket and an active Cloudflare zone for `theark.so`.
+Jurisdiction is permanent once the bucket is created. `wrangler.jsonc` owns the
+canonical custom domain, R2 binding, fixed asset bundle, and Worker deployment:
 
-Until DNS is delegated, the Worker can deploy without the route and serve on
-its `workers.dev` URL.
+```bash
+bun run --cwd apps/theark deploy
+```
