@@ -47,9 +47,19 @@ The boundary is semantic, never size-based. Yjs document bytes do not move into
 `blobs/` when large, and a small recording does not move into SQLite. Private
 physical tables and the live file itself are not the portable format.
 
+The live database is directly inspectable but never directly writable. On
+desktop and Bun, a person or external tool may open `epicenter.sqlite3`
+read-only and query the one stable, lens-independent `rows` relation that
+ADR-0163 defines; every other relation in the file stays private and free to
+change. Synchronized mutations enter only through Epicenter's typed TypeScript
+API. A direct write to the live file is unsupported and never synchronizes;
+deliberate offline editing belongs to the detached portable artifact
+(ADR-0162).
+
 Browser storage uses the same ownership model through its platform-native
 SQLite and blob backends even when it cannot expose this literal filesystem
-tree.
+tree. The browser preserves the same read-only `rows` semantics through the
+SQL API; it promises semantic access, not a filesystem path.
 
 ## Consequences
 

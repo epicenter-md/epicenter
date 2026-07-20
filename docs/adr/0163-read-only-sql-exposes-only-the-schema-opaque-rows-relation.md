@@ -33,10 +33,22 @@ transaction. SQL performs no hidden network work and does not claim an exact
 historical server checkpoint; different remotely accepted rows may become
 visible locally at different times.
 
-The runtime may implement `rows` as a protected table, view, or isolated query
-connection. That representation is private. Every implementation must make the
-relation incrementally readable: executing a query cannot rebuild or reinsert
-the complete visible dataset first.
+`rows` is also readable in place. On desktop and Bun, the live
+`epicenter.sqlite3` file itself contains a relation named `rows` (a real table
+or a view over private tables), so a person can open the database read-only
+with ordinary SQLite tools, or through an owner-level native reader (an
+`openEpicenterReader()`-style call that takes no database ID and no
+application definition), and query the same relation the API exposes. External
+connections are read-only (`query_only`); the platform supports no external
+write path to the live file, and a direct write never synchronizes (ADR-0161).
+In the browser, `rows` keeps the same semantics through the SQL API without a
+filesystem-path promise.
+
+Behind that name, the backing representation is private. Where no direct file
+access exists, the runtime may serve `rows` through an isolated query
+connection. Every implementation must make the relation incrementally
+readable: executing a query cannot rebuild or reinsert the complete visible
+dataset first.
 
 Only read-only `SELECT` and `WITH` statements are accepted. The executor compiles
 the bound statement and proves that it can address only `rows`; it rejects DDL,
@@ -53,6 +65,8 @@ returned rows there.
 
 - Several lenses can query the same local owner without registration or name
   collisions.
+- Live data is inspectable in place, read-only, without an export step.
+  Deliberate editing stays with the detached portable artifact (ADR-0162).
 - Queries spell JSON extraction and filter by permanent `table_key` values.
 - `rows` replaces `records` without a compatibility alias.
 - Table-valued JSON traversal is outside v1. A measured caller may reopen the

@@ -21,8 +21,9 @@ One selected owner owns exactly one Epicenter. A hosted deployment resolves the
 authenticated principal and therefore the Epicenter. A self-hosted instance
 resolves every valid bearer to its literal `instance` principal. Explicit local
 use selects one independent local Epicenter. There is no `EpicenterId`,
-`WorkspaceId`, platform workspace catalog, or second Epicenter beneath one
-owner.
+`WorkspaceId`, `DatabaseId`, platform workspace or database catalog, or second
+Epicenter beneath one owner. Renaming the plurality does not readmit it: a
+named logical database is the same refused axis.
 
 An Epicenter contains current rows, typed KV, one latent row-owned Yjs document
 per ordinary row, and owner-scoped immutable blobs. Rows are addressed by their
