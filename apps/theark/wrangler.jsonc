@@ -3,9 +3,7 @@
 	"name": "theark",
 	"main": "src/index.ts",
 	"compatibility_date": "2026-07-19",
-	// No compatibility flags. The Worker has zero dependencies and touches no
-	// Node built-ins, so `nodejs_compat` would enable modules nothing imports.
-	// Add it only when a real dependency needs a node:* module.
+	"compatibility_flags": ["nodejs_compat"],
 	//
 	// --- Static assets: fixed deploy-time design only ---
 	// `public/` holds the constrained creator theme (ADR: theark public plane):
@@ -25,8 +23,8 @@
 		"html_handling": "none"
 	},
 	// --- R2: generated public projections, EU jurisdiction ---
-	// The publishing side (the Vault) writes immutable projection objects under
-	// `routes/<path>`; this Worker only resolves and streams them. Jurisdiction
+	// The publishing side writes human routes under `routes/` and artifact
+	// outputs under `artifacts/`; this Worker only resolves and streams them. Jurisdiction
 	// is a bucket property, not Worker placement: create the bucket with
 	//   bunx wrangler r2 bucket create theark-projections --jurisdiction eu
 	// (jurisdiction is permanent once created). The binding has write

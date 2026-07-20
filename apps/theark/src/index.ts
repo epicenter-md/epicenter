@@ -8,9 +8,9 @@
  * URL contract (the canonical artifact permalink is
  * `https://theark.so/braden/<artifact-slug>`):
  *
- *   /                        deploy-time home shell from static assets
- *   /<pretty>[/<pretty>...]  R2 `routes/<path>/index.html`, served as a page
- *   /<pretty>/.../<file.ext> R2 `routes/<path>`, served as an immutable asset
+ *   /                              deploy-time home shell from static assets
+ *   /<identity>[/<slug-or-facet>]  R2 `routes/<path>/index.html`
+ *   /_artifacts/<uuid>/<file.ext>  R2 `artifacts/<uuid>/<file.ext>`
  *
  * A pretty segment is lowercase-hyphenated ([a-z0-9-]); a file segment adds
  * dot-separated extensions. Anything else is 404 before R2 is consulted, so
@@ -34,6 +34,8 @@ const PROJECTION_CACHE_CONTROL = 'public, max-age=300, must-revalidate';
 
 const PRETTY_SEGMENT = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const FILE_SEGMENT = /^[a-z0-9][a-z0-9-]*(?:\.[a-z0-9]+)+$/;
+const ARTIFACT_ID =
+	/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 type ResolvedProjection = {
 	key: string;
@@ -43,32 +45,39 @@ type ResolvedProjection = {
 
 /**
  * Map a slashless pathname to its R2 object key, or null when the path can
- * never name a projection. Validation is an allowlist: every segment must be
- * a pretty segment, except the last, which may instead be a file segment.
- * Segments decode individually, so an encoded slash stays inside its segment
- * and fails the allowlist instead of aliasing a different path.
+ * never name a projection. Human-readable routes and immutable artifact
+ * outputs occupy disjoint namespaces: a route has one or two pretty
+ * segments, while an output is addressed only through its UUIDv7 artifact
+ * identity. Percent-encoded aliases are refused so every accepted pathname
+ * is already its one canonical ASCII spelling.
  */
 export function resolveProjection(pathname: string): ResolvedProjection | null {
-	const segments: string[] = [];
-	for (const raw of pathname.slice(1).split('/')) {
-		try {
-			segments.push(decodeURIComponent(raw));
-		} catch {
-			return null;
-		}
+	if (!pathname.startsWith('/') || pathname.includes('%')) return null;
+	const segments = pathname.slice(1).split('/');
+
+	if (
+		segments.length === 3 &&
+		segments[0] === '_artifacts' &&
+		ARTIFACT_ID.test(segments[1] ?? '') &&
+		FILE_SEGMENT.test(segments[2] ?? '')
+	) {
+		return {
+			key: `artifacts/${segments[1]}/${segments[2]}`,
+			isPage: false,
+		};
 	}
-	const lastIndex = segments.length - 1;
-	for (const [index, segment] of segments.entries()) {
-		if (PRETTY_SEGMENT.test(segment)) continue;
-		if (index === lastIndex && FILE_SEGMENT.test(segment)) continue;
-		return null;
+
+	if (
+		(segments.length === 1 || segments.length === 2) &&
+		segments.every((segment) => PRETTY_SEGMENT.test(segment))
+	) {
+		return {
+			key: `routes/${segments.join('/')}/index.html`,
+			isPage: true,
+		};
 	}
-	const isPage = !segments[lastIndex]?.includes('.');
-	const path = segments.join('/');
-	return {
-		key: isPage ? `routes/${path}/index.html` : `routes/${path}`,
-		isPage,
-	};
+
+	return null;
 }
 
 function projectionHeaders(
@@ -118,87 +127,103 @@ async function serveNotFound(request: Request, env: Env): Promise<Response> {
 	});
 }
 
-export default {
-	async fetch(request, env): Promise<Response> {
-		if (request.method !== 'GET' && request.method !== 'HEAD') {
-			return new Response('Method Not Allowed', {
-				status: 405,
-				headers: { allow: 'GET, HEAD' },
-			});
-		}
+function isUnsatisfiableRange(error: unknown): boolean {
+	return error instanceof Error && error.message.includes('(10039)');
+}
 
-		const url = new URL(request.url);
+export async function handleRequest(
+	request: Request,
+	env: Env,
+): Promise<Response> {
+	if (request.method !== 'GET' && request.method !== 'HEAD') {
+		return new Response('Method Not Allowed', {
+			status: 405,
+			headers: { allow: 'GET, HEAD' },
+		});
+	}
 
-		// The home shell is a deploy-time design asset, not a projection: before
-		// any artifact exists, R2 is empty but the root must still answer. The
-		// person route can take over `/` later by generating into a route the
-		// Worker already serves; nothing here needs to change for that.
-		if (url.pathname === '/') {
-			return env.ASSETS.fetch(
-				new Request(new URL('/home.html', url).toString(), {
-					method: request.method,
-				}),
-			);
-		}
+	const url = new URL(request.url);
 
-		if (url.pathname.endsWith('/')) {
-			const canonical = new URL(url);
-			canonical.pathname = url.pathname.replace(/\/+$/, '') || '/';
-			return Response.redirect(canonical.toString(), 308);
-		}
+	// The home shell is a deploy-time design asset, not a projection: before
+	// any artifact exists, R2 is empty but the network root must still answer.
+	if (url.pathname === '/') {
+		return env.ASSETS.fetch(
+			new Request(new URL('/home.html', url).toString(), {
+				method: request.method,
+			}),
+		);
+	}
 
-		const projection = resolveProjection(url.pathname);
-		if (!projection) return serveNotFound(request, env);
+	if (url.pathname.endsWith('/')) {
+		const canonical = new URL(url);
+		canonical.pathname = url.pathname.replace(/\/+$/, '') || '/';
+		return Response.redirect(canonical.toString(), 308);
+	}
 
-		if (request.method === 'HEAD') {
-			const object = await env.PROJECTIONS.head(projection.key);
-			if (!object) return serveNotFound(request, env);
-			const headers = projectionHeaders(object, projection);
-			headers.set('content-length', String(object.size));
-			return new Response(null, { status: 200, headers });
-		}
+	const projection = resolveProjection(url.pathname);
+	if (!projection) return serveNotFound(request, env);
 
-		let object: R2Object | R2ObjectBody | null;
-		try {
-			object = await env.PROJECTIONS.get(projection.key, {
-				onlyIf: request.headers,
-				range: request.headers,
-			});
-		} catch (error) {
-			// R2 rejects a malformed or unsatisfiable Range instead of returning
-			// null; anything else is a real failure and should surface as one.
-			if (request.headers.has('range')) {
-				return new Response('Range Not Satisfiable', { status: 416 });
-			}
-			throw error;
-		}
+	if (request.method === 'HEAD') {
+		const object = await env.PROJECTIONS.head(projection.key);
 		if (!object) return serveNotFound(request, env);
-
 		const headers = projectionHeaders(object, projection);
+		headers.set('content-length', String(object.size));
+		return new Response(null, { status: 200, headers });
+	}
 
-		if (!('body' in object)) {
-			// A precondition from `onlyIf` failed. Reads send If-None-Match or
-			// If-Modified-Since (304); anything stricter is a 412.
-			const wantsNotModified =
-				request.headers.has('if-none-match') ||
-				request.headers.has('if-modified-since');
-			return new Response(null, {
-				status: wantsNotModified ? 304 : 412,
+	let object: R2Object | R2ObjectBody | null;
+	try {
+		object = await env.PROJECTIONS.get(projection.key, {
+			onlyIf: request.headers,
+			range: request.headers,
+		});
+	} catch (error) {
+		// R2 rejects a malformed or unsatisfiable Range instead of returning
+		// null. Only its documented range error becomes 416; an unrelated R2
+		// failure must remain a 5xx rather than being mislabeled as client input.
+		if (request.headers.has('range') && isUnsatisfiableRange(error)) {
+			const metadata = await env.PROJECTIONS.head(projection.key);
+			const headers = new Headers({ 'accept-ranges': 'bytes' });
+			if (metadata) {
+				headers.set('content-range', `bytes */${metadata.size}`);
+			}
+			return new Response('Range Not Satisfiable', {
+				status: 416,
 				headers,
 			});
 		}
+		throw error;
+	}
+	if (!object) return serveNotFound(request, env);
 
-		if (object.range && request.headers.has('range')) {
-			const { offset, length } = resolveRange(object.range, object.size);
-			headers.set(
-				'content-range',
-				`bytes ${offset}-${offset + length - 1}/${object.size}`,
-			);
-			headers.set('content-length', String(length));
-			return new Response(object.body, { status: 206, headers });
-		}
+	const headers = projectionHeaders(object, projection);
 
-		headers.set('content-length', String(object.size));
-		return new Response(object.body, { status: 200, headers });
-	},
+	if (!('body' in object)) {
+		// A precondition from `onlyIf` failed. Reads send If-None-Match or
+		// If-Modified-Since (304); anything stricter is a 412.
+		const wantsNotModified =
+			request.headers.has('if-none-match') ||
+			request.headers.has('if-modified-since');
+		return new Response(null, {
+			status: wantsNotModified ? 304 : 412,
+			headers,
+		});
+	}
+
+	if (object.range && request.headers.has('range')) {
+		const { offset, length } = resolveRange(object.range, object.size);
+		headers.set(
+			'content-range',
+			`bytes ${offset}-${offset + length - 1}/${object.size}`,
+		);
+		headers.set('content-length', String(length));
+		return new Response(object.body, { status: 206, headers });
+	}
+
+	headers.set('content-length', String(object.size));
+	return new Response(object.body, { status: 200, headers });
+}
+
+export default {
+	fetch: handleRequest,
 } satisfies ExportedHandler<Env>;

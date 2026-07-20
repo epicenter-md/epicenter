@@ -7,7 +7,7 @@
  * routing, key-mapping, and streaming-header invariants without Miniflare.
  *
  * Key behaviors:
- * - URL to R2 key mapping: pretty paths get `/index.html`, file paths are literal
+ * - URL to R2 key mapping: human routes and artifact outputs stay disjoint
  * - Hostile paths (traversal, encoding, uppercase) 404 before touching R2
  * - Trailing slashes 308-redirect to the slashless canonical URL
  * - Only GET and HEAD are allowed; conditional and Range reads behave
@@ -15,7 +15,9 @@
  */
 import { describe, expect, test } from 'bun:test';
 
-import worker, { resolveProjection } from './index';
+import { handleRequest, resolveProjection } from './index';
+
+const ARTIFACT_ID = '019f79b2-a3f1-7000-97ea-04851c5323f2';
 
 type StoredObject = {
 	data: string;
@@ -118,12 +120,7 @@ function setup(objects: Record<string, StoredObject> = {}) {
 	};
 
 	const fetch = (path: string, init?: RequestInit) =>
-		worker.fetch(
-			new Request(`https://theark.so${path}`, init) as unknown as Parameters<
-				typeof worker.fetch
-			>[0],
-			env as unknown as Env,
-		);
+		handleRequest(new Request(`https://theark.so${path}`, init), env as Env);
 	return { fetch, requestedKeys };
 }
 
@@ -146,9 +143,9 @@ describe('resolveProjection', () => {
 		});
 	});
 
-	test('file segment maps to the literal object key', () => {
-		expect(resolveProjection('/braden/first-artifact/video.mp4')).toEqual({
-			key: 'routes/braden/first-artifact/video.mp4',
+	test('artifact output maps through its immutable UUIDv7 namespace', () => {
+		expect(resolveProjection(`/_artifacts/${ARTIFACT_ID}/video.mp4`)).toEqual({
+			key: `artifacts/${ARTIFACT_ID}/video.mp4`,
 			isPage: false,
 		});
 	});
@@ -156,17 +153,24 @@ describe('resolveProjection', () => {
 	test('rejects uppercase, underscores, dotfiles, double dots, and empty segments', () => {
 		expect(resolveProjection('/Braden/foo')).toBeNull();
 		expect(resolveProjection('/braden/some_slug')).toBeNull();
-		expect(resolveProjection('/braden/.hidden')).toBeNull();
-		expect(resolveProjection('/braden/a..b')).toBeNull();
+		expect(resolveProjection(`/_artifacts/${ARTIFACT_ID}/.hidden`)).toBeNull();
+		expect(resolveProjection(`/_artifacts/${ARTIFACT_ID}/a..b`)).toBeNull();
 		expect(resolveProjection('/braden//foo')).toBeNull();
 	});
 
-	test('rejects a dotted segment anywhere but the leaf', () => {
-		expect(resolveProjection('/braden/file.mp4/extra')).toBeNull();
+	test('rejects route file aliases, arbitrary route depth, and non-v7 artifact IDs', () => {
+		expect(resolveProjection('/braden/first-artifact/index.html')).toBeNull();
+		expect(resolveProjection('/braden/first-artifact/extra')).toBeNull();
+		expect(
+			resolveProjection(
+				'/_artifacts/019f79b2-a3f1-6000-97ea-04851c5323f2/video.mp4',
+			),
+		).toBeNull();
 	});
 
-	test('rejects undecodable percent-encoding', () => {
+	test('rejects percent-encoded aliases', () => {
 		expect(resolveProjection('/braden/%zz')).toBeNull();
+		expect(resolveProjection('/br%61den/first-artifact')).toBeNull();
 	});
 });
 
@@ -273,19 +277,19 @@ test('HEAD on a missing projection has a 404 status and empty body', async () =>
 	expect(await response.text()).toBe('');
 });
 
-test('file object without stored content-type falls back to octet-stream', async () => {
-	const key = 'routes/braden/first-artifact/blob.bin';
+test('artifact output without stored content-type falls back to octet-stream', async () => {
+	const key = `artifacts/${ARTIFACT_ID}/blob.bin`;
 	const { fetch } = setup({ [key]: { data: 'binary' } });
-	const response = await fetch('/braden/first-artifact/blob.bin');
+	const response = await fetch(`/_artifacts/${ARTIFACT_ID}/blob.bin`);
 	expect(response.headers.get('content-type')).toBe('application/octet-stream');
 });
 
 test('stored content-type wins over the fallback', async () => {
-	const key = 'routes/braden/first-artifact/cover.png';
+	const key = `artifacts/${ARTIFACT_ID}/cover.png`;
 	const { fetch } = setup({
 		[key]: { data: 'png-bytes', contentType: 'image/png' },
 	});
-	const response = await fetch('/braden/first-artifact/cover.png');
+	const response = await fetch(`/_artifacts/${ARTIFACT_ID}/cover.png`);
 	expect(response.headers.get('content-type')).toBe('image/png');
 });
 
@@ -319,13 +323,13 @@ test('failing If-Match returns 412', async () => {
 	expect(response.status).toBe(412);
 });
 
-const VIDEO_KEY = 'routes/braden/first-artifact/video.mp4';
+const VIDEO_KEY = `artifacts/${ARTIFACT_ID}/video.mp4`;
 
 test('bounded range returns 206 with content-range and the exact slice', async () => {
 	const { fetch } = setup({
 		[VIDEO_KEY]: { data: '0123456789', contentType: 'video/mp4' },
 	});
-	const response = await fetch('/braden/first-artifact/video.mp4', {
+	const response = await fetch(`/_artifacts/${ARTIFACT_ID}/video.mp4`, {
 		headers: { range: 'bytes=0-4' },
 	});
 	expect(response.status).toBe(206);
@@ -338,7 +342,7 @@ test('suffix range returns the final bytes', async () => {
 	const { fetch } = setup({
 		[VIDEO_KEY]: { data: '0123456789', contentType: 'video/mp4' },
 	});
-	const response = await fetch('/braden/first-artifact/video.mp4', {
+	const response = await fetch(`/_artifacts/${ARTIFACT_ID}/video.mp4`, {
 		headers: { range: 'bytes=-3' },
 	});
 	expect(response.status).toBe(206);
@@ -350,8 +354,9 @@ test('unsatisfiable range returns 416', async () => {
 	const { fetch } = setup({
 		[VIDEO_KEY]: { data: '0123456789', contentType: 'video/mp4' },
 	});
-	const response = await fetch('/braden/first-artifact/video.mp4', {
+	const response = await fetch(`/_artifacts/${ARTIFACT_ID}/video.mp4`, {
 		headers: { range: 'bytes=99-' },
 	});
 	expect(response.status).toBe(416);
+	expect(response.headers.get('content-range')).toBe('bytes */10');
 });

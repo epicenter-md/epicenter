@@ -1,6 +1,6 @@
 # 0160. The Ark public plane is a plain Worker streaming EU R2 projections
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-19
 
 ## Context
@@ -33,13 +33,16 @@ Each concern has exactly one owner:
   the per-file asset limit. `html_handling` is `none` because the Worker owns
   canonical pretty URLs and the asset shells must stay fetchable at literal
   `.html` paths.
-- **R2 owns generated projections** under one key contract: URL path
-  `/<segments>` maps to `routes/<segments>/index.html` for pretty paths and
-  to the literal `routes/<segments>` when the last segment has a file
-  extension. Pages and per-artifact media (cover, short video) ship by
-  writing objects; the Worker validates segments against a strict lowercase
-  allowlist before any key is formed, streams bodies without buffering, and
-  answers GET/HEAD with correct ETag, conditional, and Range behavior.
+- **R2 owns generated projections** under two disjoint key families.
+  Human-readable person, facet, and artifact routes map to
+  `routes/<identity>[/<slug-or-facet>]/index.html`. Generated artifact outputs
+  map from `/_artifacts/<uuidv7>/<file>` to `artifacts/<uuidv7>/<file>`.
+  Separating route identity from artifact identity prevents `index.html`
+  aliases and keeps media addresses stable independently of human-readable
+  routing. Pages and per-artifact media ship by writing objects; the Worker
+  validates every path against these exact allowlists before any key is formed,
+  streams bodies without buffering, and answers GET/HEAD with correct ETag,
+  conditional, and Range behavior.
 - **The Worker owns delivery policy only**: one cache policy
   (`public, max-age=300, must-revalidate`, since projection bytes are
   regenerable and never a second authored source), `no-store` for absence,
@@ -73,10 +76,10 @@ zero. If Cloudflare ships read-only R2 bindings, adopt them.
   content. Theme changes are Worker redeploys and propagate to every page
   within the cache TTL, because generated HTML references the stable
   `/assets/theark.css` URL rather than a hashed one.
-- The strict segment allowlist means hostile paths die before touching R2,
-  but it also constrains the publisher: identities, slugs, and file names
-  must be lowercase-hyphenated ASCII. That matches the Vault's authored slug
-  contract.
+- The strict route allowlist means hostile and percent-encoded alias paths die
+  before touching R2. Public identities and slugs must be lowercase-hyphenated
+  ASCII, and artifact-output paths must carry the artifact's UUIDv7 identity.
+  That matches the Vault's authored slug and artifact identity contracts.
 - The public plane cannot serve per-artifact interactive code, by
   construction; a genuinely interactive product needs its own boundary.
 - The `theark.so` custom-domain route stays commented out until DNS is

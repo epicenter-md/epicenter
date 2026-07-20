@@ -25,14 +25,18 @@ Canonical artifact permalinks are `https://theark.so/braden/<artifact-slug>`.
 | --- | --- |
 | `/` | `public/home.html` (deploy-time shell) |
 | `/assets/theark.css`, `/favicon.svg` | Static Assets, literal paths |
-| `/<pretty>[/<pretty>...]` | R2 `routes/<path>/index.html`, as a page |
-| `/<pretty>/.../<file.ext>` | R2 `routes/<path>`, as an immutable asset (video, cover image) |
+| `/<identity>` | R2 `routes/<identity>/index.html`, as a person route |
+| `/<identity>/<slug-or-facet>` | R2 `routes/<identity>/<slug-or-facet>/index.html`, as an artifact permalink or facet route |
+| `/_artifacts/<uuidv7>/<file.ext>` | R2 `artifacts/<uuidv7>/<file.ext>`, as an artifact output |
 
-A pretty segment matches `[a-z0-9]+(-[a-z0-9]+)*`; a file segment adds
-dot-separated extensions and is only valid as the last segment. Anything else
-is 404 before R2 is consulted. Trailing slashes 308-redirect to the slashless
-form. Only GET and HEAD are allowed. Range, `If-None-Match`/`If-Match`, and
-HEAD behave per HTTP so short-video files stream correctly.
+A human-readable route has one or two lowercase-hyphenated segments. Artifact
+outputs instead live beneath a reserved `/_artifacts/` prefix and the artifact's
+immutable UUIDv7 identity. This separation prevents `index.html` aliases and
+keeps output identity independent from a human-readable route. Percent-encoded
+aliases and anything outside these exact families are 404 before R2 is
+consulted. Trailing slashes 308-redirect to the slashless form. Only GET and HEAD
+are allowed. Range, `If-None-Match`/`If-Match`, and HEAD behave per HTTP so
+short-video files stream correctly.
 
 Delivery policy is Worker-owned: every projection is served with
 `cache-control: public, max-age=300, must-revalidate` (bytes at a key are
@@ -52,12 +56,6 @@ bun run --cwd apps/theark typecheck
 bun run --cwd apps/theark typegen     # regenerate worker-configuration.d.ts after wrangler.jsonc changes
 bun dev:theark                        # wrangler dev (see note below)
 ```
-
-Note: the repo's pinned wrangler (4.80.0) bundles a workerd older than this
-app's compatibility date, so `wrangler dev` and `wrangler check startup` fail
-locally with a runtime-start error until the catalog wrangler is bumped.
-`wrangler types`, `bun test`, `typecheck`, and `wrangler deploy --dry-run`
-are unaffected, and real deploys validate the date server-side.
 
 ## Deploy prerequisites (external actions, in order)
 

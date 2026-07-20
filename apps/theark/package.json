@@ -13,6 +13,7 @@
 	},
 	"devDependencies": {
 		"@types/bun": "catalog:",
+		"@types/node": "catalog:",
 		"typescript": "catalog:",
 		"wrangler": "catalog:"
 	},
