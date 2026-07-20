@@ -11,7 +11,7 @@
 		AgentMessage,
 		AgentToolCallPart,
 		AgentToolResultPart,
-	} from '@epicenter/workspace/agent';
+	} from '@epicenter/agent';
 	import type { ConversationHandle } from './agent-chat.svelte.js';
 
 	let {

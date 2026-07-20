@@ -12,22 +12,20 @@
 	"exports": {
 		"./account-popover": "./src/account-popover/index.ts",
 		"./agent-chat": "./src/agent-chat/index.ts",
-		"./inference-picker": "./src/inference-picker/index.ts",
-		"./sign-in-migration": "./src/sign-in-migration/index.ts",
-		"./storage-moved": "./src/storage-moved/index.ts",
-		"./workspace-gate": "./src/workspace-gate/index.ts"
+		"./inference-picker": "./src/inference-picker/index.ts"
 	},
 	"scripts": {
 		"typecheck": "svelte-check --tsconfig ./tsconfig.json",
 		"test": "bun test"
 	},
 	"dependencies": {
+		"@epicenter/agent": "workspace:*",
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/chat": "workspace:*",
 		"@epicenter/client": "workspace:*",
+		"@epicenter/data": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/ui": "workspace:*",
-		"@epicenter/workspace": "workspace:*",
 		"@lucide/svelte": "catalog:",
 		"@standard-schema/spec": "catalog:",
 		"@tanstack/svelte-query": "catalog:",

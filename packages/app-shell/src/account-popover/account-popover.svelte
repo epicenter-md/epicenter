@@ -1,15 +1,14 @@
 <script lang="ts">
 	import type { AuthClient, InstanceSetting } from '@epicenter/auth';
+	import type { Epicenter, SyncStatus } from '@epicenter/data';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Popover from '@epicenter/ui/popover';
 	import { toast, toastOnError } from '@epicenter/ui/sonner';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import type { Collaboration, SyncStatus } from '@epicenter/workspace';
 	import CircleUser from '@lucide/svelte/icons/circle-user';
 	import DatabaseZap from '@lucide/svelte/icons/database-zap';
 	import LogOut from '@lucide/svelte/icons/log-out';
-	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import Server from '@lucide/svelte/icons/server';
 	import {
 		createMutation,
@@ -32,11 +31,8 @@
 	/**
 	 * Shared account popover.
 	 *
-	 * Renders auth identity and sign-out. When a collaboration runtime is
-	 * present, it also renders sync status from the three fields it actually
-	 * needs (`status`, `onStatusChange`, `reconnect`) rather than the full
-	 * `Collaboration` value, so RPC, peers, and presence do not leak into the
-	 * account UI surface.
+	 * Renders auth identity and sign-out. When a Data runtime is present, it also
+	 * renders scalar sync status from its narrow observation surface.
 	 *
 	 * Mount once in each app's root layout, alongside `<ConfirmationDialog />`
 	 * and inside a `<Tooltip.Provider>`: the trigger pill renders a tooltip,
@@ -50,13 +46,9 @@
 		 */
 		auth: AuthClient;
 		/**
-		 * Sync surface slice from the binding's optional `collaboration`.
-		 * Omit it until Cloud sync is attached.
+		 * Scalar Data sync surface. Omit it when the app has no replicated data.
 		 */
-		collaboration?: Pick<
-			Collaboration,
-			'status' | 'onStatusChange' | 'reconnect'
-		>;
+		dataSync?: Pick<Epicenter, 'syncStatus' | 'subscribeSyncStatus'>;
 		/** Noun describing what gets synced, e.g. "tabs" or "notes". */
 		syncNoun: string;
 		/**
@@ -72,8 +64,8 @@
 		disabledReason?: string;
 		/**
 		 * If provided, exposes a Forget this device button. The callback is
-		 * the destructive primitive (typically the workspace bundle's
-		 * `wipe()`). The popover confirms with the user, awaits the
+		 * the destructive primitive that clears the local replica. The popover
+		 * confirms with the user, awaits the
 		 * callback, then reloads the page; reload after wipe is universal
 		 * in this context so the component owns it rather than asking
 		 * every caller to remember.
@@ -96,7 +88,7 @@
 
 	let {
 		auth,
-		collaboration,
+		dataSync,
 		syncNoun,
 		onForgetDevice,
 		disabledReason,
@@ -129,7 +121,7 @@
 	// Optimistic boot (ADR-0075) leaves a self-host user signed-in even when the box
 	// is unreachable, so they usually never see the sign-in panel's connection copy.
 	// Surface the unreachable state here instead. `auth.state` still says signed-in
-	// (local workspace identity is known); this line only explains that the
+	// (local identity is known); this line only explains that the
 	// configured server is offline in this runtime, and local work is unaffected, so
 	// it reads muted. A `rejected` token is not handled here: it drops `state` to
 	// signed-out (see `createInstanceTokenAuth`), which reveals the sign-in panel
@@ -179,12 +171,12 @@
 	);
 
 	$effect(() => {
-		if (!collaboration) {
+		if (!dataSync) {
 			syncStatus = undefined;
 			return;
 		}
-		syncStatus = collaboration.status;
-		const unsubscribe = collaboration.onStatusChange((status) => {
+		syncStatus = dataSync.syncStatus;
+		const unsubscribe = dataSync.subscribeSyncStatus((status) => {
 			syncStatus = status;
 		});
 		return unsubscribe;
@@ -195,43 +187,47 @@
 	// reuses the same dot, and the tooltip adds the action hint. Dot tones
 	// are theme tokens (success connected, warning pulse in flight, muted
 	// offline, destructive failed).
-	const sync = $derived.by(() => {
+	const syncDisplay = $derived.by(() => {
 		if (!syncStatus) return undefined;
-		switch (syncStatus.phase) {
-			case 'connected':
+		switch (syncStatus.state) {
+			case 'idle':
 				return {
-					label: 'Connected',
+					label: 'Synced',
 					dot: 'bg-success',
-					tooltip: 'Connected',
+					tooltip: 'Synced',
 				};
-			case 'connecting':
+			case 'syncing':
 				return {
-					label: 'Connecting…',
+					label: 'Syncing…',
 					dot: 'bg-warning animate-pulse',
-					tooltip:
-						syncStatus.retries > 0
-							? `Reconnecting (retry ${syncStatus.retries})…`
-							: 'Connecting…',
+					tooltip: 'Syncing…',
 				};
 			case 'offline':
 				return {
 					label: 'Offline',
 					dot: 'bg-muted-foreground',
-					tooltip: 'Offline. Click to reconnect',
+					tooltip: 'Offline. Sync will retry automatically',
 				};
-			case 'failed':
+			case 'authentication-required':
 				return {
-					label: 'Failed',
+					label: 'Sign in required',
 					dot: 'bg-destructive',
-					tooltip: 'Authentication failed. Click to reconnect',
+					tooltip: 'Sign in to resume syncing',
+				};
+			case 'local':
+				return {
+					label: 'Local only',
+					dot: 'bg-muted-foreground',
+					tooltip: 'Stored on this device',
 				};
 		}
 	});
 
 	const tooltip = $derived.by(() => {
 		if (disabledReason) return disabledReason;
-		if (!isSignedIn) return sync ? 'Sign in to sync across devices' : 'Sign in';
-		return sync ? `Account · ${sync.tooltip}` : 'Account';
+		if (!isSignedIn)
+			return syncDisplay ? 'Sign in to sync across devices' : 'Sign in';
+		return syncDisplay ? `Account · ${syncDisplay.tooltip}` : 'Account';
 	});
 	// The dot is presence for sync: it appears only when a signed-in account
 	// has a sync surface attached. Signed out renders a dimmed glyph instead
@@ -239,7 +235,7 @@
 	const triggerDot = $derived.by(() => {
 		if (!isSignedIn) return undefined;
 		if (signOut.isPending) return 'bg-warning animate-pulse';
-		return sync?.dot;
+		return syncDisplay?.dot;
 	});
 
 	function openInstanceModal() {
@@ -321,14 +317,14 @@
 				{#if disabledReason}
 					<p class="text-xs text-muted-foreground">{disabledReason}</p>
 				{/if}
-				{#if collaboration && sync}
+				{#if dataSync && syncDisplay}
 					<!-- Same dot as the trigger, beside its meaning: this line is
 					     the legend for the trigger's presence badge. -->
 					<div
 						class="border-t pt-3 flex items-center gap-1.5 text-xs text-muted-foreground"
 					>
-						<span class="size-2 shrink-0 rounded-full {sync.dot}"></span>
-						<span>Sync: {sync.label}</span>
+						<span class="size-2 shrink-0 rounded-full {syncDisplay.dot}"></span>
+						<span>Sync: {syncDisplay.label}</span>
 					</div>
 				{/if}
 				<div class="border-t pt-3 flex gap-2">
@@ -342,17 +338,6 @@
 						>
 							<Server class="size-3.5" />
 							Change instance
-						</Button>
-					{/if}
-					{#if collaboration && syncStatus?.phase !== 'connected'}
-						<Button
-							variant="outline"
-							size="sm"
-							class="flex-1"
-							onclick={() => collaboration.reconnect()}
-						>
-							<RefreshCw class="size-3.5" />
-							Reconnect
 						</Button>
 					{/if}
 					<Button

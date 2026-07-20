@@ -38,23 +38,24 @@
  */
 
 import {
-	asConversationId,
-	type Conversation,
-	type ConversationId,
-	generateConversationId,
-} from '@epicenter/chat';
-import type { ConversationsTable } from '@epicenter/chat/legacy-root-yjs';
-import { createOpenAiAgentEngine } from '@epicenter/client';
-import { bindAgentConversation, fromTable } from '@epicenter/svelte';
-import { generateId, InstantString } from '@epicenter/workspace';
-import {
 	type AgentToolCall,
 	type Approval,
 	agentMessageText,
 	createConversation as createAgentConversation,
 	defaultApprovalDecision,
 	type ToolCatalog,
-} from '@epicenter/workspace/agent';
+} from '@epicenter/agent';
+import {
+	asConversationId,
+	type Conversation,
+	type ConversationId,
+	type ConversationsTable,
+	createAgentMessageDocumentStore,
+} from '@epicenter/chat';
+import { createOpenAiAgentEngine } from '@epicenter/client';
+import type { RowDocument } from '@epicenter/data';
+import { InstantString } from '@epicenter/field';
+import { bindAgentConversation, fromTable } from '@epicenter/svelte';
 import { SvelteMap } from 'svelte/reactivity';
 import type { InferenceConnections } from '../inference-picker/connections.svelte.js';
 
@@ -80,8 +81,8 @@ export type ConversationHandle = NonNullable<AgentChatState['active']>;
 /**
  * What the agent can do: the persona and capabilities an app gives its chat
  * loop. Grouped because every field varies with the app, not the device or the
- * route. The workspace handles, connections, and active-conversation source the
- * loop also needs are passed separately; they have different owners.
+ * route. The Data handles, connections, and active-conversation source the loop
+ * also needs are passed separately; they have different owners.
  */
 export type AgentKit = {
 	/** The layered system prompts an answer is generated under, read per turn. */
@@ -96,7 +97,8 @@ export type AgentKit = {
 
 export function createAgentChatState({
 	table,
-	whenLoaded,
+	openConversationDocument,
+	reportBackgroundError,
 	connections,
 	activeConversation,
 	agent: {
@@ -106,10 +108,12 @@ export function createAgentChatState({
 		decideApproval = defaultApprovalDecision,
 	},
 }: {
-	/** The conversations table handle (`workspace.tables.conversations`). */
+	/** The bound conversations table. */
 	table: ConversationsTable;
-	/** Resolves once the synced doc has loaded; guarantees one conversation. */
-	whenLoaded: Promise<unknown>;
+	/** Open a locally durable, host-connected document for one conversation. */
+	openConversationDocument: (id: ConversationId) => Promise<RowDocument>;
+	/** Report failures from subscription-driven refreshes and metadata writes. */
+	reportBackgroundError(cause: unknown): void;
 	/** The device connection registry (ADR-0059); resolves a model to a transport. */
 	connections: InferenceConnections;
 	/** The active-conversation source; defaults to internal `$state`. */
@@ -140,15 +144,24 @@ export function createAgentChatState({
 		conversationId: ConversationId,
 		patch: Partial<Omit<Conversation, 'id'>>,
 	) {
-		table.update(conversationId, { ...patch, updatedAt: InstantString.now() });
+		void table
+			.update(conversationId, {
+				...patch,
+				updatedAt: InstantString.now(),
+			})
+			.then((result) => {
+				if (result.error !== null) reportBackgroundError(result.error);
+			}, reportBackgroundError);
 	}
 
 	// ── Handle Registry (one handle per conversation row) ──────────────
 
 	const handles = new SvelteMap<
 		ConversationId,
-		ReturnType<typeof createConversationHandle>
+		Awaited<ReturnType<typeof createConversationHandle>>
 	>();
+	const openingHandles = new Set<ConversationId>();
+	let disposed = false;
 
 	/** The conversation list for a picker: handles sorted most-recent first. */
 	const conversationList = $derived(
@@ -157,7 +170,7 @@ export function createAgentChatState({
 		),
 	);
 
-	function createConversationHandle(conversationId: ConversationId) {
+	async function createConversationHandle(conversationId: ConversationId) {
 		let inputValue = $state('');
 		let dismissedError = $state<string | null>(null);
 
@@ -188,7 +201,9 @@ export function createAgentChatState({
 		// mid-conversation model switch takes effect on the next answer.
 		const convo = bindAgentConversation(
 			createAgentConversation({
-				store: table.docs.messages.open(conversationId),
+				store: createAgentMessageDocumentStore(
+					await openConversationDocument(conversationId),
+				),
 				engine: createOpenAiAgentEngine({
 					// The conversation's model (ADR-0055) is resolved per turn against this
 					// device's connection set (ADR-0059), so a switch lands on the next
@@ -212,7 +227,7 @@ export function createAgentChatState({
 							pendingApproval = { call, resolve };
 						}),
 				},
-				generateId,
+				generateId: () => crypto.randomUUID(),
 			}),
 		);
 
@@ -398,7 +413,7 @@ export function createAgentChatState({
 			},
 
 			delete() {
-				deleteConversation(conversationId);
+				return deleteConversation(conversationId);
 			},
 		};
 	}
@@ -413,15 +428,32 @@ export function createAgentChatState({
 	 * Mirror the table into the handle registry: open a handle for every row,
 	 * dispose one whose row is gone, and keep a live conversation selected.
 	 */
-	function reconcileHandles() {
-		for (const id of handles.keys()) {
-			if (!table.has(id)) destroyConversation(id);
-		}
-		for (const id of conversationsView.all.map((c) => c.id)) {
-			const conversationId = asConversationId(id);
-			if (!handles.has(conversationId)) {
-				handles.set(conversationId, createConversationHandle(conversationId));
+	async function ensureHandle(conversationId: ConversationId): Promise<void> {
+		if (handles.has(conversationId) || openingHandles.has(conversationId))
+			return;
+		openingHandles.add(conversationId);
+		try {
+			const handle = await createConversationHandle(conversationId);
+			if (disposed || conversationsView.byId(conversationId) === undefined) {
+				handle[Symbol.dispose]();
+				return;
 			}
+			handles.set(conversationId, handle);
+		} finally {
+			openingHandles.delete(conversationId);
+		}
+	}
+
+	async function reconcileHandles() {
+		await conversationsView.refresh();
+		const liveIds = new Set(
+			conversationsView.all.map(({ id }) => asConversationId(id)),
+		);
+		for (const id of handles.keys()) {
+			if (!liveIds.has(id)) destroyConversation(id);
+		}
+		for (const conversationId of liveIds) {
+			await ensureHandle(conversationId);
 		}
 
 		// Keep the selection pointed at a live handle.
@@ -430,52 +462,51 @@ export function createAgentChatState({
 		if (mostRecent) selection.select(mostRecent.id);
 	}
 
-	const _unobserve = table.observe(() => {
-		reconcileHandles();
+	const stopTable = table.subscribe(() => {
+		void reconcileHandles().catch(reportBackgroundError);
 	});
 
-	// Once the synced doc has loaded, mirror it in and guarantee a conversation
-	// to land in (a fresh install has none).
-	void whenLoaded.then(() => {
-		reconcileHandles();
-		if (conversationList.length === 0) createConversation();
-	});
-
-	reconcileHandles();
+	// Once the table has loaded, mirror it in and guarantee a conversation to land
+	// in (a fresh install has none).
+	void conversationsView.whenReady
+		.then(async () => {
+			await reconcileHandles();
+			if (conversationList.length === 0) await createConversation();
+		})
+		.catch(reportBackgroundError);
 
 	// ── Conversation CRUD ────────────────────────────────────────────
 
 	/**
 	 * Open a new conversation, carrying the active conversation's model choice
-	 * forward, and select it. The handle is created synchronously so the UI never
-	 * sees a momentarily-missing active conversation.
+	 * forward, and select it after its row document is ready.
 	 */
-	function createConversation(): ConversationId {
-		const id = generateConversationId();
+	async function createConversation(): Promise<ConversationId> {
 		const nowIso = InstantString.now();
 		const current =
 			selection.current === null ? undefined : handles.get(selection.current);
 
-		table.set({
-			id,
+		const row = await table.create({
 			title: 'New Chat',
 			model: current?.model ?? defaultModel,
 			createdAt: nowIso,
 			updatedAt: nowIso,
 		});
-		if (!handles.has(id)) handles.set(id, createConversationHandle(id));
+		const id = asConversationId(row.id);
+		await reconcileHandles();
 		selection.select(id);
 		return id;
 	}
 
-	function deleteConversation(conversationId: ConversationId) {
-		table.delete(conversationId);
+	async function deleteConversation(conversationId: ConversationId) {
+		await table.delete(conversationId);
+		await conversationsView.refresh();
 		destroyConversation(conversationId);
 
 		if (selection.current === conversationId) {
 			const next = conversationList[0];
 			if (next) selection.select(next.id);
-			else createConversation();
+			else await createConversation();
 		}
 	}
 
@@ -483,7 +514,8 @@ export function createAgentChatState({
 
 	return {
 		[Symbol.dispose]() {
-			_unobserve();
+			disposed = true;
+			stopTable();
 			for (const id of [...handles.keys()]) destroyConversation(id);
 		},
 

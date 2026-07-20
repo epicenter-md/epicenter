@@ -9,11 +9,7 @@
 	nav chrome and ContentShell swap on a breakpoint change.
 -->
 <script lang="ts">
-	import {
-		StorageMovedScreen,
-		storageMoved,
-	} from '@epicenter/app-shell/storage-moved';
-	import { WorkspaceBootFailure } from '@epicenter/app-shell/workspace-gate';
+	import { Button } from '@epicenter/ui/button';
 	import { Loading } from '@epicenter/ui/loading';
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import * as Tooltip from '@epicenter/ui/tooltip';
@@ -55,43 +51,45 @@
 			);
 		});
 	onDestroy(dispose);
-	$effect(() => {
-		if (storageMoved.current) dispose();
-	});
 </script>
 
-{#if storageMoved.current}
-	<StorageMovedScreen />
-{:else}
-	{#await opening}
-		<Loading class="h-dvh" />
-	{:then session}
-		<WhisperingUiSessionProvider {session}>
-			<!-- Uses UI package defaults (300ms delay, 150ms skip) -->
-			<Tooltip.Provider>
-				<AppEffects />
+{#await opening}
+	<Loading class="h-dvh" />
+{:then session}
+	<WhisperingUiSessionProvider {session}>
+		<!-- Uses UI package defaults (300ms delay, 150ms skip) -->
+		<Tooltip.Provider>
+			<AppEffects />
 
-				{#if isNarrow.current}
-					<div class="flex h-full min-h-svh flex-col">
-						<div class="flex-1 pb-14">
-							<ContentShell>{@render children()}</ContentShell>
-						</div>
-						<BottomNav />
+			{#if isNarrow.current}
+				<div class="flex h-full min-h-svh flex-col">
+					<div class="flex-1 pb-14">
+						<ContentShell>{@render children()}</ContentShell>
 					</div>
-				{:else}
-					<Sidebar.Provider bind:open={sidebarOpen}>
-						<VerticalNav />
-						<Sidebar.Inset>
-							<ContentShell>{@render children()}</ContentShell>
-						</Sidebar.Inset>
-					</Sidebar.Provider>
-				{/if}
+					<BottomNav />
+				</div>
+			{:else}
+				<Sidebar.Provider bind:open={sidebarOpen}>
+					<VerticalNav />
+					<Sidebar.Inset>
+						<ContentShell>{@render children()}</ContentShell>
+					</Sidebar.Inset>
+				</Sidebar.Provider>
+			{/if}
 
-				<GlobalDialogs />
-				<DictationIndicator />
-			</Tooltip.Provider>
-		</WhisperingUiSessionProvider>
-	{:catch error}
-		<WorkspaceBootFailure {error} onSignOut={() => auth.signOut()} />
-	{/await}
-{/if}
+			<GlobalDialogs />
+			<DictationIndicator />
+		</Tooltip.Provider>
+	</WhisperingUiSessionProvider>
+{:catch error}
+	<div class="flex h-dvh flex-col items-center justify-center gap-4 p-8 text-center">
+		<h1 class="text-lg font-semibold">Whispering could not start</h1>
+		<p class="text-muted-foreground max-w-md text-sm">
+			{error instanceof Error ? error.message : String(error)}
+		</p>
+		<div class="flex gap-2">
+			<Button onclick={() => location.reload()}>Reload</Button>
+			<Button variant="outline" onclick={() => auth.signOut()}>Sign out</Button>
+		</div>
+	</div>
+{/await}

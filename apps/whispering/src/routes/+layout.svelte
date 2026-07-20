@@ -1,11 +1,8 @@
 <script lang="ts">
 	import { Toaster } from '@epicenter/ui/sonner';
 	import { ModeWatcher } from 'mode-watcher';
-	import { onMount } from 'svelte';
-	import { auth } from '#platform/auth';
 	import { onNavigate } from '$app/navigation';
 	import { FlushEditsOnHide } from '@epicenter/svelte';
-	import { reloadOnPrincipalChange } from '@epicenter/svelte/auth';
 	import '@epicenter/ui/app.css';
 	// Whispering's brand overrides, layered after the shared theme so they win.
 	// Keep this import last among the stylesheets.
@@ -17,10 +14,6 @@
 	// callback, and the recording-overlay webview. It owns chrome only; the
 	// (app) layout owns the app boot, so the other surfaces never
 	// open SQLite.
-
-	// Option A: the active preset is picked once at boot; a
-	// principal identity change reloads so the next boot rebuilds the right doc.
-	onMount(() => reloadOnPrincipalChange(auth));
 
 	onNavigate((navigation) => {
 		if (!document.startViewTransition) return;

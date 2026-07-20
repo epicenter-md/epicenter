@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { AgentMessage } from '@epicenter/workspace/agent';
+	import type { AgentMessage } from '@epicenter/agent';
 	import type { Snippet } from 'svelte';
 	import {
 		CrossDeviceModelGap,
