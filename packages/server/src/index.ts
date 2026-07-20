@@ -61,6 +61,11 @@ export {
 	type StorageSourceKind,
 	upsertStorageObservation,
 } from './db/storage-data.js';
+export {
+	createDurableObjectAccountAuthorities,
+	EpicenterAuthority,
+	mountCloudflareEpicenterSyncApp,
+} from './epicenter-sync/cloudflare.js';
 // An opt-in burn-rate cap for the inference `policies` seam: caps requests per
 // principal partition so a shared house key cannot be run up unbounded (ADR-0076).
 export { rateLimit } from './middleware/rate-limit.js';
@@ -96,14 +101,6 @@ export { mountCloudDb } from './mount-cloud-db.js';
 // cloud's Better Auth surface (sessions, OAuth, `c.var.auth`) is bundled into
 // `mountCloudAuth`; an instance composes none of it (ADR-0075).
 export { blobPrincipalPrefix } from './principal.js';
-export {
-	CurrentStateRowAuthorityDurableObject,
-	createDurableObjectAccountAuthorities,
-} from './records/current-state-cloudflare.js';
-export type {
-	AccountAuthorities,
-	AccountAuthority,
-} from './records/current-state-contracts.js';
 // Re-export the Cloudflare Durable Object class so each deployment's
 // wrangler.jsonc can resolve `class_name: "Room"` against this entrypoint.
 export { Room } from './room/backends/cloudflare/durable-object.js';
@@ -114,15 +111,10 @@ export { Room } from './room/backends/cloudflare/durable-object.js';
 // since their modules name Cloudflare bindings).
 export { createDurableObjectRooms } from './room/backends/cloudflare/registry.js';
 export { mountBlobsApp, resolveDeploymentBlobStore } from './routes/blobs.js';
-export {
-	type AdmitFirstContact,
-	mountCurrentStateRecordsApp,
-} from './routes/current-state-records.js';
 export { mountInferenceApp } from './routes/inference.js';
 export { mountRoomsApp } from './routes/rooms.js';
 export { mountSessionApp } from './routes/session.js';
 export { mountTranscriptionApp } from './routes/transcription.js';
-export { mountWorkspaceDocumentsApp } from './routes/workspace-documents.js';
 // Parent app. Wires the portable per-request lifecycle (origin + trust, CORS,
 // CSRF, the rooms registry) and returns the `Hono` every surface mounts onto. It
 // takes `resolveRooms` (the one runtime-specific portable concern) and an

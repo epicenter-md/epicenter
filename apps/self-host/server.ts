@@ -50,7 +50,7 @@ import { join, resolve } from 'node:path';
 import { assertStrongToken } from '@epicenter/auth';
 import {
 	createAttachRelayBunServer,
-	createBunAccountAuthorityRuntime,
+	createBunEpicenterSyncRuntime,
 	createBunRooms,
 	createDeviceGrantStore,
 	createEnvTokenResolver,
@@ -59,13 +59,12 @@ import {
 	mountAttachGrantsApp,
 	mountAttachRelayApp,
 	mountBlobsApp,
-	mountCurrentStateRecordsApp,
+	mountBunEpicenterSyncApp,
 	mountHostDirectoryApp,
 	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
 	mountTranscriptionApp,
-	mountWorkspaceDocumentsApp,
 	rateLimit,
 	requireBearerPrincipal,
 	ServerBindings,
@@ -144,7 +143,7 @@ export function startSelfHostServer(): void {
 	// first open deliberately drops legacy authority tables: synchronized
 	// authority state resets, while unrelated local-only workspace storage is
 	// untouched.
-	const bunRecords = createBunAccountAuthorityRuntime({
+	const epicenterSync = createBunEpicenterSyncRuntime({
 		dir: join(dataDir, 'records'),
 	});
 	// The AttachRelay coordinator for this instance (ADR-0115): the
@@ -181,15 +180,12 @@ export function startSelfHostServer(): void {
 	mountSessionApp(app, { auth });
 	// Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver.
 	mountRoomsApp(app, { resolveBearerPrincipal });
-	mountWorkspaceDocumentsApp(app, {
+	mountBunEpicenterSyncApp(app, {
+		auth,
 		resolveDocumentPrincipal: withDocumentAuthorizationDeadline(
 			resolveBearerPrincipal,
 		),
-		resolveAuthorities: () => bunRecords.authorities,
-	});
-	mountCurrentStateRecordsApp(app, {
-		auth,
-		resolveAuthorities: () => bunRecords.authorities,
+		runtime: epicenterSync,
 	});
 	// The AttachRelay upgrade (`/attach`), WS-aware and gated by a per-device grant
 	// (ADR-0115), not the operator token: a connect resolves against the
@@ -254,20 +250,20 @@ export function startSelfHostServer(): void {
 		// without blending their state.
 		websocket: mergeBunWebSocketHandlers({
 			rooms: bunRooms.websocket,
-			documents: bunRecords.websocket,
+			documents: epicenterSync.websocket,
 			attach: attachRelay.websocket,
 		}),
 	});
 	// `server` only exists once `Bun.serve` returns; hand it to both backends so
 	// each `handleUpgrade` can call `server.upgrade` on the shared server.
 	bunRooms.bindServer(server);
-	bunRecords.bindServer(server);
+	epicenterSync.bindServer(server);
 	attachRelay.bindServer(server);
 
 	// Close authority databases and their sockets before the process dies so WAL
 	// checkpoints land and clients see a clean 1001 instead of a dropped TCP.
 	const shutdown = () => {
-		bunRecords.close();
+		epicenterSync.close();
 		void server.stop(true);
 		process.exit(0);
 	};

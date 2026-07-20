@@ -63,6 +63,10 @@
 			{
 				"name": "RECORDS",
 				"class_name": "CurrentStateRowAuthorityDurableObject"
+			},
+			{
+				"name": "EPICENTER_SYNC",
+				"class_name": "EpicenterAuthority"
 			}
 		]
 	},
@@ -93,6 +97,10 @@
 			"tag": "v5",
 			"new_sqlite_classes": ["CurrentStateRowAuthorityDurableObject"],
 			"deleted_classes": ["RowAuthorityDurableObject"]
+		},
+		{
+			"tag": "v6",
+			"new_sqlite_classes": ["EpicenterAuthority"]
 		}
 	],
 	// --- Secrets (set via `wrangler secret put`, typed via `wrangler types`) ---

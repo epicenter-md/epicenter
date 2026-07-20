@@ -22,18 +22,16 @@
 
 import { assertStrongToken } from '@epicenter/auth';
 import {
-	CurrentStateRowAuthorityDurableObject,
-	createDurableObjectAccountAuthorities,
 	createDurableObjectRooms,
 	createEnvTokenResolver,
 	createServerApp,
+	EpicenterAuthority,
 	mountBlobsApp,
-	mountCurrentStateRecordsApp,
+	mountCloudflareEpicenterSyncApp,
 	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
 	mountTranscriptionApp,
-	mountWorkspaceDocumentsApp,
 	type ResolveBearerPrincipal,
 	Room,
 	rateLimit,
@@ -85,19 +83,17 @@ app.get('/', (c) =>
 mountSessionApp(app, { auth });
 // Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver.
 mountRoomsApp(app, { resolveBearerPrincipal });
-mountWorkspaceDocumentsApp(app, {
+mountCloudflareEpicenterSyncApp(app, {
+	auth,
 	resolveDocumentPrincipal: withDocumentAuthorizationDeadline(
 		resolveBearerPrincipal,
 	),
-	resolveAuthorities: (env) =>
-		createDurableObjectAccountAuthorities((env as Cloudflare.Env).RECORDS),
-});
-// Records use one SQLite authority for the instance principal. This deployment has no hosted
-// allowance policy, so first push goes directly to the instance authority.
-mountCurrentStateRecordsApp(app, {
-	auth,
-	resolveAuthorities: (env) =>
-		createDurableObjectAccountAuthorities((env as Cloudflare.Env).RECORDS),
+	resolveNamespace: (env) =>
+		(
+			env as Cloudflare.Env & {
+				EPICENTER_SYNC: DurableObjectNamespace<EpicenterAuthority>;
+			}
+		).EPICENTER_SYNC,
 });
 // Cap the inference burn rate so a leaked or overused bearer cannot run the
 // operator's house key up unbounded. Per-isolate on Cloudflare (approximate);
@@ -120,4 +116,4 @@ mountTranscriptionApp(app, {
 mountBlobsApp(app, { auth });
 
 export default app;
-export { CurrentStateRowAuthorityDurableObject, Room };
+export { EpicenterAuthority, Room };

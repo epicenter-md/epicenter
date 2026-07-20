@@ -51,20 +51,18 @@ import { API_BUN_DEV_PORT } from '@epicenter/constants/apps';
 import {
 	CloudAuthBindings,
 	type CloudEnv,
-	createBunAccountAuthorityRuntime,
+	createBunEpicenterSyncRuntime,
 	createBunRooms,
 	createDb,
 	createServerApp,
-	listStorageObservations,
 	mergeBunWebSocketHandlers,
 	mountBlobsApp,
+	mountBunEpicenterSyncApp,
 	mountCloudAuth,
 	mountCloudDb,
-	mountCurrentStateRecordsApp,
 	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
-	mountWorkspaceDocumentsApp,
 	type ResolveBearerPrincipal,
 	type ResolveDocumentPrincipal,
 	requireBearerPrincipal,
@@ -76,7 +74,6 @@ import {
 } from '@epicenter/server/bun';
 import { type } from 'arktype';
 import pg from 'pg';
-import { admitRegisteredStorageFirstContact } from './worker/storage/service.js';
 import { buildEpicenterTrustedOrigins } from './worker/trusted-origins.js';
 
 /**
@@ -145,7 +142,7 @@ export function startBunApiServer(
 	// Keep the operator-selected directory stable, but the replacement authority
 	// deliberately drops the legacy table family on first open. There is no
 	// compatibility reader or receipt migration across this protocol reset.
-	const bunRecords = createBunAccountAuthorityRuntime({
+	const epicenterSync = createBunEpicenterSyncRuntime({
 		dir: join(dataDir, 'records'),
 	});
 
@@ -207,24 +204,10 @@ export function startBunApiServer(
 	mountSessionApp(app, { auth: cookieOrBearer });
 	// Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver.
 	mountRoomsApp(app, { resolveBearerPrincipal });
-	mountWorkspaceDocumentsApp(app, {
-		resolveDocumentPrincipal,
-		resolveAuthorities: () => bunRecords.authorities,
-	});
-	mountCurrentStateRecordsApp(app, {
+	mountBunEpicenterSyncApp(app, {
 		auth: bearer,
-		resolveAuthorities: () => bunRecords.authorities,
-		// This runtime deliberately omits Autumn, so it cannot decide the Cloud
-		// account allowance. It may resume an existing client-owned identity, but
-		// never grants a genuinely new hosted capability by bypass.
-		admitFirstContact: (c, { principalId, workspaceId }) =>
-			admitRegisteredStorageFirstContact(
-				{
-					listObservations: () =>
-						listStorageObservations(c.var.db, principalId),
-				},
-				{ principalId, workspaceId },
-			),
+		resolveDocumentPrincipal,
+		runtime: epicenterSync,
 	});
 	mountInferenceApp(app, { auth: bearer });
 	mountBlobsApp(app, { auth: cookieOrBearer });
@@ -238,18 +221,18 @@ export function startBunApiServer(
 		fetch: (req) => app.fetch(req, env),
 		websocket: mergeBunWebSocketHandlers({
 			rooms: bunRooms.websocket,
-			documents: bunRecords.websocket,
+			documents: epicenterSync.websocket,
 		}),
 	});
 	// `server` only exists once `Bun.serve` returns; hand it to the room registry
 	// so `handleUpgrade` can call `server.upgrade`.
 	bunRooms.bindServer(server);
-	bunRecords.bindServer(server);
+	epicenterSync.bindServer(server);
 
 	// Close authority databases and their sockets before the process dies so WAL
 	// checkpoints land and clients see a clean 1001 instead of a dropped TCP.
 	const shutdown = () => {
-		bunRecords.close();
+		epicenterSync.close();
 		void server.stop(true);
 		process.exit(0);
 	};

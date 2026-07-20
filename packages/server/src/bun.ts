@@ -85,6 +85,11 @@ export {
 	listStorageObservations,
 	type StorageObservation,
 } from './db/storage-data.js';
+export {
+	type BunEpicenterSyncRuntime,
+	createBunEpicenterSyncRuntime,
+	mountBunEpicenterSyncApp,
+} from './epicenter-sync/bun.js';
 // Merge several Bun `WebSocketHandler`s onto one `Bun.serve`, dispatching each
 // socket to its backend by a `surface` tag (rooms + attach relay on one port).
 export { mergeBunWebSocketHandlers } from './merge-bun-websocket-handlers.js';
@@ -103,29 +108,15 @@ export {
 // merged into the cloud Bun host's boot validation.
 export { CloudAuthBindings, mountCloudAuth } from './mount-cloud-auth.js';
 export { mountCloudDb } from './mount-cloud-db.js';
-export {
-	type BunAccountAuthorityRuntime,
-	type BunWorkspaceDocumentSocketData,
-	createBunAccountAuthorityRuntime,
-} from './records/current-state-bun.js';
-export type {
-	AccountAuthorities,
-	AccountAuthority,
-} from './records/current-state-contracts.js';
 // The Bun room backend: an in-process Rooms map + bun:sqlite update log,
 // plus the Bun `websocket` handler and `bindServer` the entry wires. Its `.rooms`
 // is what a Bun entry passes as `createServerApp`'s `resolveRooms`.
 export { createBunRooms } from './room/backends/bun/registry.js';
 export { mountBlobsApp } from './routes/blobs.js';
-export {
-	type AdmitFirstContact,
-	mountCurrentStateRecordsApp,
-} from './routes/current-state-records.js';
 export { mountInferenceApp } from './routes/inference.js';
 export { mountRoomsApp } from './routes/rooms.js';
 export { mountSessionApp } from './routes/session.js';
 export { mountTranscriptionApp } from './routes/transcription.js';
-export { mountWorkspaceDocumentsApp } from './routes/workspace-documents.js';
 export { createServerApp } from './server-app.js';
 // The portable env contract as both arktype schema (value) and inferred type;
 // the Bun entry validates `process.env` against it at boot (merging its own
