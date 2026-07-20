@@ -1,14 +1,15 @@
 # `@epicenter/server`
 
 `@epicenter/server` is the AGPL server engine shared by the hosted and
-self-hosted deployments. It owns the durable workspace authority: scalar
-first-push registration, pull, acquisition, compaction, and the complete server-side
-SQLite transaction domain.
+self-hosted deployments. It owns the Epicenter authority: the one scalar
+sync exchange, row-document sockets, and the complete server-side SQLite
+transaction domain.
 
-Portable scalar wire parsing and field folding live in MIT
-`@epicenter/row-sync`. Embedded SQLite API normalization lives in MIT
-`@epicenter/sqlite`. Neither package owns server schema or authority lifecycle.
+Portable wire parsing and latest-state folding live in MIT
+`@epicenter/data` (the `./protocol` export). Embedded SQLite API
+normalization lives in MIT `@epicenter/sqlite`. Neither package owns server
+schema or authority lifecycle.
 
-The current scalar authority implementation is in
-`src/workspace-authority/authority.ts`. Runtime-specific Bun and Durable Object
-owners open that same implementation through `src/records/`.
+The authority implementation is in `src/epicenter-sync/authority.ts`.
+Runtime-specific Bun and Durable Object owners open that same implementation
+through `src/epicenter-sync/bun.ts` and `src/epicenter-sync/cloudflare.ts`.

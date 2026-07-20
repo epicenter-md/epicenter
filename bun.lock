@@ -891,38 +891,6 @@
         "typescript": "catalog:",
       },
     },
-    "packages/database-address": {
-      "name": "@epicenter/database-address",
-      "version": "0.0.1",
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
-    "packages/database-control": {
-      "name": "@epicenter/database-control",
-      "version": "0.0.1",
-      "dependencies": {
-        "@epicenter/database-address": "workspace:*",
-        "typebox": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
-    "packages/database-migration": {
-      "name": "@epicenter/database-migration",
-      "version": "0.0.1",
-      "dependencies": {
-        "@epicenter/database-address": "workspace:*",
-        "@epicenter/sqlite": "workspace:*",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
     "packages/document-sync": {
       "name": "@epicenter/document-sync",
       "version": "0.0.1",
@@ -1042,11 +1010,8 @@
         "@epicenter/blobs": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/data": "workspace:*",
-        "@epicenter/database-address": "workspace:*",
-        "@epicenter/database-control": "workspace:*",
         "@epicenter/document-sync": "workspace:*",
         "@epicenter/identity": "workspace:*",
-        "@epicenter/row-sync": "workspace:*",
         "@epicenter/sqlite": "workspace:*",
         "@epicenter/sync": "workspace:*",
         "@epicenter/workspace": "workspace:*",
@@ -1584,12 +1549,6 @@
     "@epicenter/constants": ["@epicenter/constants@workspace:packages/constants"],
 
     "@epicenter/data": ["@epicenter/data@workspace:packages/data"],
-
-    "@epicenter/database-address": ["@epicenter/database-address@workspace:packages/database-address"],
-
-    "@epicenter/database-control": ["@epicenter/database-control@workspace:packages/database-control"],
-
-    "@epicenter/database-migration": ["@epicenter/database-migration@workspace:packages/database-migration"],
 
     "@epicenter/document-sync": ["@epicenter/document-sync@workspace:packages/document-sync"],
 

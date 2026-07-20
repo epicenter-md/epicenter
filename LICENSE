@@ -33,6 +33,13 @@ entirely MIT; the boundary is enforced by 'bun run check:licenses'.
                                                          field schema kinds
     - packages/chat             (@epicenter/chat)        toolkit-internal
                                                          chat primitives
+    - packages/sqlite           (@epicenter/sqlite)      portable embedded
+                                                         SQLite adapter contract
+    - packages/row-sync         (@epicenter/row-sync)    scalar row protocol
+    - packages/data             (@epicenter/data)        typed local-first
+                                                         Epicenter replica and sync
+    - packages/document-sync    (@epicenter/document-sync) row-document sync plane
+    - packages/agent            (@epicenter/agent)       UI-free agent loop
 
 ================================================================================
 2. GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)
