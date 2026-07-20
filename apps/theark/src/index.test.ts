@@ -360,3 +360,16 @@ test('unsatisfiable range returns 416', async () => {
 	expect(response.status).toBe(416);
 	expect(response.headers.get('content-range')).toBe('bytes */10');
 });
+
+test('malformed and multi-part ranges return 416', async () => {
+	const { fetch } = setup({
+		[VIDEO_KEY]: { data: '0123456789', contentType: 'video/mp4' },
+	});
+	for (const range of ['bytes=oops', 'bytes=0-1,4-5']) {
+		const response = await fetch(`/_artifacts/${ARTIFACT_ID}/video.mp4`, {
+			headers: { range },
+		});
+		expect(response.status).toBe(416);
+		expect(response.headers.get('content-range')).toBe('bytes */10');
+	}
+});

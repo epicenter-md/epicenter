@@ -103,18 +103,33 @@ function projectionHeaders(
 	return headers;
 }
 
-/** Normalize R2's satisfied range shapes to an absolute offset and length. */
-function resolveRange(
-	range: R2Range,
+/** Resolve the one HTTP byte-range form The Ark supports. */
+function resolveByteRange(
+	header: string,
 	size: number,
-): { offset: number; length: number } {
-	if ('suffix' in range) {
-		const length = Math.min(range.suffix, size);
+): { offset: number; length: number } | null {
+	const match = /^bytes=(\d*)-(\d*)$/.exec(header);
+	if (!match || (!match[1] && !match[2])) return null;
+
+	if (!match[1]) {
+		const suffix = Number(match[2]);
+		if (!Number.isSafeInteger(suffix) || suffix <= 0) return null;
+		const length = Math.min(suffix, size);
 		return { offset: size - length, length };
 	}
-	const offset = range.offset ?? 0;
-	const length = Math.min(range.length ?? size - offset, size - offset);
-	return { offset, length };
+
+	const offset = Number(match[1]);
+	const requestedEnd = match[2] ? Number(match[2]) : size - 1;
+	if (
+		!Number.isSafeInteger(offset) ||
+		!Number.isSafeInteger(requestedEnd) ||
+		offset >= size ||
+		requestedEnd < offset
+	) {
+		return null;
+	}
+	const end = Math.min(requestedEnd, size - 1);
+	return { offset, length: end - offset + 1 };
 }
 
 async function serveNotFound(request: Request, env: Env): Promise<Response> {
@@ -218,8 +233,17 @@ export async function handleRequest(
 		});
 	}
 
-	if (object.range && request.headers.has('range')) {
-		const { offset, length } = resolveRange(object.range, object.size);
+	const rangeHeader = request.headers.get('range');
+	if (rangeHeader) {
+		const range = resolveByteRange(rangeHeader, object.size);
+		if (!range) {
+			headers.set('content-range', `bytes */${object.size}`);
+			return new Response('Range Not Satisfiable', {
+				status: 416,
+				headers,
+			});
+		}
+		const { offset, length } = range;
 		headers.set(
 			'content-range',
 			`bytes ${offset}-${offset + length - 1}/${object.size}`,
