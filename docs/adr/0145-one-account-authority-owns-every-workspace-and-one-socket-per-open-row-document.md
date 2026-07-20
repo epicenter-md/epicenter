@@ -1,7 +1,8 @@
 # 0145. One account authority owns every workspace and one socket per open row document
 
-- **Status:** Proposed
+- **Status:** Superseded
 - **Date:** 2026-07-18
+- **Superseded by:** [ADR-0160](0160-one-principal-owns-exactly-one-epicenter.md)
 - **Amends:** server document ownership from
   [ADR-0133](0133-row-authority-stores-documents-as-sequence-addressed-update-logs.md);
   the generic room-address consequences of

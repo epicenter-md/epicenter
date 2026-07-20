@@ -143,7 +143,7 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0064](0064-the-local-books-mirror-keeps-one-realm-cdc-cursor-table-existence-is-the-per-entity-init-latch.md) | The Local Books mirror keeps one realm CDC cursor; table existence is the per-entity init latch | Accepted |
 | [0065](0065-matter-is-a-standalone-disk-as-truth-tool-its-sqlite-is-a-read-only-query-surface.md) | Matter is a standalone disk-as-truth tool; its SQLite mirror is a first-class read-only query surface under `epicenter matter` | Accepted |
 | [0066](0066-runtime-portability-is-per-concern-injection-not-a-runtime-object.md) | Runtime portability is per-concern injection, not a runtime object | Accepted |
-| [0067](0067-auth-owns-the-session-endpoint-the-data-client-is-owner-scoped.md) | Auth owns the `/api/session` endpoint; the data client is owner-scoped and receives `ownerId` at construction | Accepted (amended by 0092) |
+| [0067](0067-auth-owns-the-session-endpoint-the-data-client-is-owner-scoped.md) | Auth owns the `/api/session` endpoint; the data client is owner-scoped and receives `ownerId` at construction | Accepted (amended by 0092 and 0179) |
 | [0068](0068-privacy-is-a-deployment-not-a-product-feature.md) | Privacy is a deployment, not a product feature; the hosted app carries zero privacy-configuration surface | Accepted |
 | [0069](0069-epicenter-is-one-runnable-star-plus-services-called-by-url-and-token.md) | Epicenter is one runnable program (the star) plus a la carte services addressed by base URL and token | Accepted |
 | [0070](0070-self-host-adds-no-new-ownership-or-auth-mode.md) | Self-host adds no new ownership or auth mode: single-user is a preset, and only the credential source varies | Superseded by [0075](0075-self-host-is-a-single-partition-instance-behind-one-operator-supplied-bearer.md) |
@@ -221,9 +221,9 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0142](0142-bootstrap-history-gaps-and-lineage-mismatches-have-distinct-recovery.md) | Bootstrap, history gaps, and lineage mismatches have distinct recovery | Accepted |
 | [0143](0143-account-open-never-consumes-device-data.md) | Account open never consumes Device data | Accepted |
 | [0144](0144-scalar-rows-and-row-documents-synchronize-through-independent-client-planes.md) | Scalar rows and row documents synchronize through independent client planes | Proposed |
-| [0145](0145-one-account-authority-owns-every-workspace-and-one-socket-per-open-row-document.md) | One account authority owns every workspace and one socket per open row document | Proposed |
+| [0145](0145-one-account-authority-owns-every-workspace-and-one-socket-per-open-row-document.md) | One account authority owns every workspace and one socket per open row document | Superseded by 0160 |
 | [0146](0146-row-documents-use-one-yjs-14-major-and-runtime-native-update-logs.md) | Row documents use one Yjs 14 major and runtime-native update logs | Proposed |
-| [0147](0147-cross-plane-transfer-and-recovery-use-logical-coordination-not-atomic-snapshots.md) | Cross-plane transfer and recovery use logical coordination, not atomic snapshots | Proposed |
+| [0147](0147-cross-plane-transfer-and-recovery-use-logical-coordination-not-atomic-snapshots.md) | Cross-plane transfer and recovery use logical coordination, not atomic snapshots | Superseded by 0165, 0166, and 0169 |
 | [0148](0148-blobs-use-opaque-identifiers-rather-than-content-hashes.md) | Blobs use opaque identifiers rather than content hashes | Accepted |
 | [0149](0149-local-blob-stores-are-canonical-and-remote-replication-is-explicit.md) | Local blob stores are canonical and remote replication is explicit | Accepted |
 | [0150](0150-whispering-uploads-operator-readable-audio.md) | Whispering uploads operator-readable audio | Accepted |
@@ -234,7 +234,30 @@ Each option and the one reason it lost. Terse. This is not the spec.
 | [0155](0155-epicenter-desktop-auth-is-one-credential-free-window-bun-authority.md) | Epicenter desktop auth is one Bun authority with credential-free windows | Accepted |
 | [0156](0156-applications-bring-workspace-lenses-runtimes-own-workspaces-by-id.md) | Applications bring workspace lenses; runtimes own workspaces by ID | Accepted |
 | [0157](0157-read-only-sql-exposes-one-schema-opaque-row-relation.md) | Read-only SQL exposes one schema-opaque row relation | Accepted |
-| [0158](0158-installed-apps-declare-workspace-ids-but-run-no-bun-modules.md) | Installed apps declare workspace IDs but run no Bun modules | Proposed |
+| [0158](0158-installed-apps-declare-workspace-ids-but-run-no-bun-modules.md) | Installed apps declare workspace IDs but run no Bun modules | Superseded by 0172 |
 | [0159](0159-row-documents-persist-in-one-owner-side-sqlite-update-log.md) | Row documents persist in one owner-side SQLite update log | Accepted |
+| [0160](0160-one-principal-owns-exactly-one-epicenter.md) | One principal owns exactly one Epicenter | Proposed |
+| [0161](0161-each-local-owner-persists-one-sqlite-database-and-one-blob-directory.md) | Each local owner persists one SQLite database and one blob directory | Proposed |
+| [0162](0162-portability-is-a-frozen-editable-projection-of-one-selected-owner.md) | Portability is a frozen editable projection of one selected owner | Proposed |
+| [0163](0163-read-only-sql-exposes-only-the-schema-opaque-rows-relation.md) | Read-only SQL exposes only the schema-opaque rows relation | Proposed |
+| [0164](0164-accepted-membership-gates-immutable-s3-blobs.md) | Accepted membership gates immutable S3 blobs | Proposed |
+| [0165](0165-export-captures-the-complete-durable-state-of-one-selected-owner.md) | Export captures the complete durable state of one selected owner | Proposed |
+| [0166](0166-import-initializes-an-empty-owner-or-explicitly-replaces-the-whole-owner.md) | Import initializes an empty owner or explicitly replaces the whole owner | Proposed |
+| [0167](0167-row-documents-persist-as-one-compact-baseline-plus-a-bounded-tail.md) | Row documents persist as one compact baseline plus a bounded tail | Proposed |
+| [0168](0168-a-row-document-update-leaves-its-owner-only-after-persistence-commits.md) | A row-document update leaves its owner only after persistence commits | Proposed |
+| [0169](0169-scalar-convergence-retains-one-bounded-deletion-and-retry-horizon.md) | Scalar convergence retains one bounded deletion and retry horizon | Proposed |
+| [0170](0170-scalar-settlement-is-a-lower-bound-result.md) | Scalar settlement is a lower-bound Result | Proposed |
+| [0171](0171-tables-mutate-rows-through-create-update-and-delete.md) | Tables mutate rows through create, update, and delete | Proposed |
+| [0172](0172-applications-interpret-the-selected-epicenter-through-identity-free-lenses.md) | Applications interpret the selected Epicenter through identity-free lenses | Proposed |
+| [0173](0173-remote-blob-transfer-is-explicit-create-only-and-one-shot.md) | Remote blob transfer is explicit, create-only, and one-shot | Proposed |
+| [0174](0174-applications-own-row-and-blob-aggregate-deletion.md) | Applications own row-and-blob aggregate deletion | Proposed |
+| [0175](0175-one-epicenter-durable-object-owns-one-principals-accepted-state.md) | One Epicenter Durable Object owns one principal's accepted state | Proposed |
+| [0176](0176-the-hosted-product-lives-in-apps-hosted-and-deploys-as-epicenter.md) | The hosted product lives in apps/hosted and deploys as epicenter | Proposed |
+| [0177](0177-the-generic-room-actor-is-withdrawn.md) | The generic Room actor is withdrawn | Proposed |
+| [0178](0178-live-remote-home-control-is-deferred-until-it-has-a-shipped-workflow.md) | Live remote Home control is deferred until it has a shipped workflow | Proposed |
+| [0179](0179-owner-data-routes-are-id-free-and-specific-to-each-synchronization-plane.md) | Owner-data routes are ID-free and specific to each synchronization plane | Proposed |
+| [0180](0180-home-conversations-belong-to-the-selected-epicenter.md) | Home conversations belong to the selected Epicenter | Proposed |
+| [0181](0181-owner-selection-is-the-boot-and-storage-decision.md) | Owner selection is the boot and storage decision | Proposed |
+| [0182](0182-background-scalar-synchronization-owns-retries-and-reactive-status.md) | Background scalar synchronization owns retries and reactive status | Proposed |
 
 When you add an ADR, add its row here.
