@@ -1,7 +1,7 @@
 /**
  * The Ark public delivery plane.
  *
- * One responsibility: resolve a public URL to an immutable projection object
+ * One responsibility: resolve a public URL to a rebuildable projection object
  * in R2 and stream it. The publishing side (the Vault) writes the objects;
  * a publication appears by writing R2 keys, never by redeploying this Worker.
  *
@@ -9,8 +9,8 @@
  * `https://theark.so/braden/<artifact-slug>`):
  *
  *   /                              deploy-time home shell from static assets
- *   /<identity>[/<slug-or-facet>]  R2 `routes/<path>/index.html`
- *   /_artifacts/<uuid>/<file.ext>  R2 `artifacts/<uuid>/<file.ext>`
+ *   /<identity>[/<slug-or-facet>]         R2 `<path>/index.html`
+ *   /<identity>/<artifact-slug>/<file>    R2 `<path>/<file>`
  *
  * A pretty segment is lowercase-hyphenated ([a-z0-9-]); a file segment adds
  * dot-separated extensions. Anything else is 404 before R2 is consulted, so
@@ -34,8 +34,7 @@ const PROJECTION_CACHE_CONTROL = 'public, max-age=300, must-revalidate';
 
 const PRETTY_SEGMENT = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const FILE_SEGMENT = /^[a-z0-9][a-z0-9-]*(?:\.[a-z0-9]+)+$/;
-const ARTIFACT_ID =
-	/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const RESERVED_IDENTITIES = new Set(['assets']);
 // The Assets binding resolves by pathname. A deliberately non-public host
 // prevents its internal fetch from re-entering this Worker's workers.dev or
 // custom-domain route (Cloudflare error 1042).
@@ -49,24 +48,27 @@ type ResolvedProjection = {
 
 /**
  * Map a slashless pathname to its R2 object key, or null when the path can
- * never name a projection. Human-readable routes and immutable artifact
- * outputs occupy disjoint namespaces: a route has one or two pretty
- * segments, while an output is addressed only through its UUIDv7 artifact
- * identity. Percent-encoded aliases are refused so every accepted pathname
- * is already its one canonical ASCII spelling.
+ * never name a projection. Every artifact owns one public subtree: its page
+ * lives at `/<identity>/<slug>` and its generated files live immediately
+ * beneath that permalink. Percent-encoded aliases are refused so every
+ * accepted pathname is already its one canonical ASCII spelling.
  */
 export function resolveProjection(pathname: string): ResolvedProjection | null {
 	if (!pathname.startsWith('/') || pathname.includes('%')) return null;
 	const segments = pathname.slice(1).split('/');
+	if (RESERVED_IDENTITIES.has(segments[0] ?? '')) return null;
 
 	if (
 		segments.length === 3 &&
-		segments[0] === '_artifacts' &&
-		ARTIFACT_ID.test(segments[1] ?? '') &&
-		FILE_SEGMENT.test(segments[2] ?? '')
+		PRETTY_SEGMENT.test(segments[0] ?? '') &&
+		PRETTY_SEGMENT.test(segments[1] ?? '') &&
+		FILE_SEGMENT.test(segments[2] ?? '') &&
+		segments[2] !== 'index.html'
 	) {
+		const key = segments.join('/');
+		if (key.length > 1024) return null;
 		return {
-			key: `artifacts/${segments[1]}/${segments[2]}`,
+			key,
 			isPage: false,
 		};
 	}
@@ -75,8 +77,10 @@ export function resolveProjection(pathname: string): ResolvedProjection | null {
 		(segments.length === 1 || segments.length === 2) &&
 		segments.every((segment) => PRETTY_SEGMENT.test(segment))
 	) {
+		const key = `${segments.join('/')}/index.html`;
+		if (key.length > 1024) return null;
 		return {
-			key: `routes/${segments.join('/')}/index.html`,
+			key,
 			isPage: true,
 		};
 	}
@@ -98,38 +102,12 @@ function projectionHeaders(
 	}
 	headers.set('etag', object.httpEtag);
 	headers.set('cache-control', PROJECTION_CACHE_CONTROL);
-	headers.set('accept-ranges', 'bytes');
+	headers.set(
+		'content-security-policy',
+		"default-src 'none'; style-src 'self'; img-src 'self' data:; media-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+	);
 	headers.set('x-content-type-options', 'nosniff');
 	return headers;
-}
-
-/** Resolve the one HTTP byte-range form The Ark supports. */
-function resolveByteRange(
-	header: string,
-	size: number,
-): { offset: number; length: number } | null {
-	const match = /^bytes=(\d*)-(\d*)$/.exec(header);
-	if (!match || (!match[1] && !match[2])) return null;
-
-	if (!match[1]) {
-		const suffix = Number(match[2]);
-		if (!Number.isSafeInteger(suffix) || suffix <= 0) return null;
-		const length = Math.min(suffix, size);
-		return { offset: size - length, length };
-	}
-
-	const offset = Number(match[1]);
-	const requestedEnd = match[2] ? Number(match[2]) : size - 1;
-	if (
-		!Number.isSafeInteger(offset) ||
-		!Number.isSafeInteger(requestedEnd) ||
-		offset >= size ||
-		requestedEnd < offset
-	) {
-		return null;
-	}
-	const end = Math.min(requestedEnd, size - 1);
-	return { offset, length: end - offset + 1 };
 }
 
 async function serveNotFound(request: Request, env: Env): Promise<Response> {
@@ -148,10 +126,6 @@ async function serveNotFound(request: Request, env: Env): Promise<Response> {
 			'x-content-type-options': 'nosniff',
 		},
 	});
-}
-
-function isUnsatisfiableRange(error: unknown): boolean {
-	return error instanceof Error && error.message.includes('(10039)');
 }
 
 export async function handleRequest(
@@ -194,29 +168,9 @@ export async function handleRequest(
 		return new Response(null, { status: 200, headers });
 	}
 
-	let object: R2Object | R2ObjectBody | null;
-	try {
-		object = await env.PROJECTIONS.get(projection.key, {
-			onlyIf: request.headers,
-			range: request.headers,
-		});
-	} catch (error) {
-		// R2 rejects a malformed or unsatisfiable Range instead of returning
-		// null. Only its documented range error becomes 416; an unrelated R2
-		// failure must remain a 5xx rather than being mislabeled as client input.
-		if (request.headers.has('range') && isUnsatisfiableRange(error)) {
-			const metadata = await env.PROJECTIONS.head(projection.key);
-			const headers = new Headers({ 'accept-ranges': 'bytes' });
-			if (metadata) {
-				headers.set('content-range', `bytes */${metadata.size}`);
-			}
-			return new Response('Range Not Satisfiable', {
-				status: 416,
-				headers,
-			});
-		}
-		throw error;
-	}
+	const object = await env.PROJECTIONS.get(projection.key, {
+		onlyIf: request.headers,
+	});
 	if (!object) return serveNotFound(request, env);
 
 	const headers = projectionHeaders(object, projection);
@@ -231,25 +185,6 @@ export async function handleRequest(
 			status: wantsNotModified ? 304 : 412,
 			headers,
 		});
-	}
-
-	const rangeHeader = request.headers.get('range');
-	if (rangeHeader) {
-		const range = resolveByteRange(rangeHeader, object.size);
-		if (!range) {
-			headers.set('content-range', `bytes */${object.size}`);
-			return new Response('Range Not Satisfiable', {
-				status: 416,
-				headers,
-			});
-		}
-		const { offset, length } = range;
-		headers.set(
-			'content-range',
-			`bytes ${offset}-${offset + length - 1}/${object.size}`,
-		);
-		headers.set('content-length', String(length));
-		return new Response(object.body, { status: 206, headers });
 	}
 
 	headers.set('content-length', String(object.size));

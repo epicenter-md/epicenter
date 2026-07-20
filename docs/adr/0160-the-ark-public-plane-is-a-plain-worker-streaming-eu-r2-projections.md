@@ -21,7 +21,7 @@ Vault ADRs continue to own artifact and projection semantics.
 
 **The Ark's public plane is `apps/theark`: a plain Cloudflare Worker in the
 Epicenter account that serves fixed deploy-time design assets from Workers
-Static Assets and streams immutable artifact projections from a dedicated
+Static Assets and streams rebuildable artifact projections from a dedicated
 EU-jurisdiction R2 bucket, `theark-projections`, that the publishing side
 writes and the Worker only reads.**
 
@@ -33,21 +33,24 @@ Each concern has exactly one owner:
   the per-file asset limit. `html_handling` is `none` because the Worker owns
   canonical pretty URLs and the asset shells must stay fetchable at literal
   `.html` paths.
-- **R2 owns generated projections** under two disjoint key families.
-  Human-readable person, facet, and artifact routes map to
-  `routes/<identity>[/<slug-or-facet>]/index.html`. Generated artifact outputs
-  map from `/_artifacts/<uuidv7>/<file>` to `artifacts/<uuidv7>/<file>`.
-  Separating route identity from artifact identity prevents `index.html`
-  aliases and keeps media addresses stable independently of human-readable
-  routing. Pages and per-artifact media ship by writing objects; the Worker
-  validates every path against these exact allowlists before any key is formed,
-  streams bodies without buffering, and answers GET/HEAD with correct ETag,
-  conditional, and Range behavior.
+- **R2 owns one generated public subtree per expression.** Person, facet, and
+  artifact pages map to `<identity>[/<slug-or-facet>]/index.html`; generated
+  media lives beside its artifact page at
+  `<identity>/<artifact-slug>/<file>`. The public path and object key therefore
+  describe the same person and expression, and no internal artifact UUID leaks
+  into the public product. Because canonical page URLs are slashless, the
+  constrained renderer emits root-absolute media URLs under that subtree rather
+  than bare relative filenames. Explicit `index.html` aliases are refused.
+  Pages and media ship by writing objects; the Worker validates every path
+  against these exact allowlists before any key is formed and streams bodies
+  without buffering.
 - **The Worker owns delivery policy only**: one cache policy
   (`public, max-age=300, must-revalidate`, since projection bytes are
   regenerable and never a second authored source), `no-store` for absence,
-  and 308 trailing-slash canonicalization. The publisher owns bytes and
-  content-type.
+  308 trailing-slash canonicalization, and a CSP that refuses executable
+  per-artifact code. Workers Caching serves Range requests from cached full
+  responses, so the Worker carries no byte-range implementation. The publisher
+  owns bytes and content-type.
 - **A future authenticated creator application** (Epicenter login, workspace
   access) is a separate deployable that publishes into the bucket. The public
   plane holds none of its capabilities now: no auth, billing, Postgres,
@@ -78,10 +81,17 @@ zero. If Cloudflare ships read-only R2 bindings, adopt them.
   `/assets/theark.css` URL rather than a hashed one.
 - The strict route allowlist means hostile and percent-encoded alias paths die
   before touching R2. Public identities and slugs must be lowercase-hyphenated
-  ASCII, and artifact-output paths must carry the artifact's UUIDv7 identity.
-  That matches the Vault's authored slug and artifact identity contracts.
-- The public plane cannot serve per-artifact interactive code, by
-  construction; a genuinely interactive product needs its own boundary.
+  ASCII; `assets` is reserved for deploy-time static design. Artifact UUIDv7
+  values remain private authored-row identities rather than a second public
+  routing vocabulary.
+- The second segment is one publisher-owned route namespace. Facets and
+  artifacts cannot claim the same `(identity, segment)`. The publisher reserves
+  first ownership, refuses cross-owner overwrites and duplicate media names,
+  writes media first, and conditionally activates `index.html` last. The Worker
+  remains ignorant of ownership. Rebuilds may replace bytes only for the same
+  private artifact owner.
+- The trusted constrained renderer plus the Worker's CSP refuse per-artifact
+  interactive code; a genuinely interactive product needs its own boundary.
 - The `theark.so` custom-domain route stays commented out until DNS is
   delegated to Cloudflare; until then deploys serve on `workers.dev`.
 - Writes to the bucket are governed by review of this app plus the
@@ -92,6 +102,11 @@ zero. If Cloudflare ships read-only R2 bindings, adopt them.
 - **Hono.** Lost: no repeated route or middleware behavior exists for it to
   own; a dependency with zero earned value on a security-sensitive public
   surface.
+- **Expose generated files through `/_artifacts/<uuidv7>/<file>`.** Lost: this
+  creates a second public identity for one expression, leaks a private row ID,
+  and makes future identity aliases govern two unrelated URL families. The
+  permanent artifact permalink already gives every generated file a truthful
+  home.
 - **Serve projections from Static Assets.** Lost: publishing would require a
   redeploy, and short videos can exceed the per-file asset limit.
 - **A second Worker or public bucket domain to make reads

@@ -7,7 +7,7 @@ of content:
    the one constrained reading theme (`/assets/theark.css`), the favicon, and
    the home and not-found shells. Changing the theme is a redeploy of this
    Worker.
-2. **Immutable public artifact projections** streamed from the
+2. **Rebuildable public artifact projections** streamed from the
    `theark-projections` R2 bucket (EU jurisdiction). The publishing side (the
    Vault) writes projection objects; a publication appears by writing R2 keys,
    never by redeploying this Worker.
@@ -25,23 +25,34 @@ Canonical artifact permalinks are `https://theark.so/braden/<artifact-slug>`.
 | --- | --- |
 | `/` | `public/home.html` (deploy-time shell) |
 | `/assets/theark.css`, `/favicon.svg` | Static Assets, literal paths |
-| `/<identity>` | R2 `routes/<identity>/index.html`, as a person route |
-| `/<identity>/<slug-or-facet>` | R2 `routes/<identity>/<slug-or-facet>/index.html`, as an artifact permalink or facet route |
-| `/_artifacts/<uuidv7>/<file.ext>` | R2 `artifacts/<uuidv7>/<file.ext>`, as an artifact output |
+| `/<identity>` | R2 `<identity>/index.html`, as a person route |
+| `/<identity>/<slug-or-facet>` | R2 `<identity>/<slug-or-facet>/index.html`, as an artifact permalink or facet route |
+| `/<identity>/<artifact-slug>/<file.ext>` | R2 `<identity>/<artifact-slug>/<file.ext>`, as generated media belonging to that expression |
 
-A human-readable route has one or two lowercase-hyphenated segments. Artifact
-outputs instead live beneath a reserved `/_artifacts/` prefix and the artifact's
-immutable UUIDv7 identity. This separation prevents `index.html` aliases and
-keeps output identity independent from a human-readable route. Percent-encoded
-aliases and anything outside these exact families are 404 before R2 is
-consulted. Trailing slashes 308-redirect to the slashless form. Only GET and HEAD
-are allowed. Range, `If-None-Match`/`If-Match`, and HEAD behave per HTTP so
-short-video files stream correctly.
+A human-readable page route has one or two lowercase-hyphenated segments. An
+artifact's generated files live directly beneath its permanent permalink, so
+the public URL tree and R2 tree say the same thing. Because the canonical page
+URL is slashless, generated HTML must use root-absolute media URLs such as
+`/braden/<slug>/video.mp4`; a bare `video.mp4` would resolve outside the artifact
+subtree. Explicit `index.html` aliases, percent-encoded aliases, the reserved
+`/assets` identity, and anything outside these exact families are 404 before R2
+is consulted. Trailing slashes 308-redirect to the slashless form. Only GET and
+HEAD are allowed. Cloudflare Workers Caching owns byte-range delivery from the
+Worker's full streamed responses; conditional reads and HEAD remain Worker/R2
+behavior.
 
 Delivery policy is Worker-owned: every projection is served with
 `cache-control: public, max-age=300, must-revalidate` (bytes at a key are
 regenerable, so nothing is `immutable`), and missing objects are `no-store`
-so a new publication is visible immediately.
+so a new publication is visible immediately. The Worker also applies a CSP that
+refuses executable per-artifact code while allowing the shared stylesheet,
+images, fonts, and media.
+
+The second path segment is one shared publisher-owned namespace: a facet and an
+artifact cannot both own `/braden/codes`. The future authenticated publisher
+must refuse cross-owner collisions, reserve a route forever to its first
+artifact owner, write media first, and conditionally activate `index.html` last.
+The delivery Worker deliberately has no route registry.
 
 This Worker deliberately has **no** auth, billing, Postgres, Durable Objects,
 Epicenter blob-store access, write routes, or renderer plugins. A future
