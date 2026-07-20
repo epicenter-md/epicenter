@@ -62,6 +62,18 @@ describe('renderArtifactPage', () => {
 		);
 	});
 
+	test('a whitespace-only or space-led lead title is the same violation, exactly as the Vault gate refuses it', () => {
+		expect(() => renderArtifactPage(page({ body: '#  \n\nWords.' }))).toThrow(
+			'Vault ADR-0059',
+		);
+		expect(() =>
+			renderArtifactPage(page({ body: '#  Space-led title\n\nWords.' })),
+		).toThrow('Vault ADR-0059');
+		// Trailing whitespace after a real title stays legal in both gates.
+		const html = renderArtifactPage(page({ body: '# Trailing  \n\nWords.' }));
+		expect(html).toContain('<h1>Trailing</h1>');
+	});
+
 	test('inline markup in the lead title is not interpreted', () => {
 		const html = renderArtifactPage(
 			page({ body: '# A *literal* title\n\nWords.' }),

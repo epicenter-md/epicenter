@@ -314,20 +314,24 @@ export function renderBody(body: string, coverUrl?: string): string {
  * The frozen body opens with the lead `# Title` (Vault ADR-0059: the lead H1
  * becomes the web title). The line is consumed as plain text for the visible
  * h1 and the document metadata; it is never re-rendered into the article
- * body, and inline markup inside it is not interpreted.
+ * body, and inline markup inside it is not interpreted. The accepted pattern
+ * is character-identical to the Vault freeze gate's own check, so the two
+ * gates cannot disagree: the captured title must contain non-whitespace, and
+ * a whitespace-only `#  ` heading is the same contract violation here as a
+ * missing one, never an empty page title.
  */
 function splitLeadTitle(body: string): { title: string; rest: string } {
 	const lines = body.replaceAll('\r\n', '\n').split('\n');
 	let start = 0;
 	while (start < lines.length && (lines[start] ?? '').trim() === '') start += 1;
-	const lead = /^# (.+)$/.exec(lines[start] ?? '');
+	const lead = /^# (\S(?:.*\S)?)\s*$/.exec(lines[start] ?? '');
 	if (!lead) {
 		throw new Error(
 			'frozen body must open with its lead "# Title" heading (Vault ADR-0059); the Vault freeze gate owns this guarantee for Ark-bound artifacts',
 		);
 	}
 	return {
-		title: (lead[1] ?? '').trim(),
+		title: lead[1] ?? '',
 		rest: lines.slice(start + 1).join('\n'),
 	};
 }
