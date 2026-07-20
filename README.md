@@ -141,10 +141,10 @@ The developer toolkit is MIT: build anything on it, including closed-source and 
 
 The hard problem with local-first apps is synchronization. If each device has
 its own SQLite file, how do you keep them in sync?
-[`@epicenter/workspace`](packages/workspace) answers with two planes: bounded
-JSON rows live directly in runtime-native SQLite, while each row may own a
-lazy Yjs 14 document for collaborative rich content. SQLite is the queryable
-scalar source, not a mirror of one giant in-memory document.
+[`@epicenter/workspace`](packages/workspace) is moving to a two-plane answer:
+bounded JSON rows live directly in runtime-native SQLite, while each row may
+own a lazy Yjs 14 document for collaborative rich content. SQLite is the
+queryable scalar source, not a mirror of one giant in-memory document.
 
 | Package | Role | License |
 | --- | --- | --- |
