@@ -9,6 +9,36 @@ export type SqliteValue = string | number | null | Uint8Array;
 export type SqliteRow = Record<string, SqliteValue | ArrayBuffer>;
 
 /**
+ * Opening existing durable storage requires a newer or explicit converter.
+ *
+ * Openers throw this before running schema DDL or persistent pragmas. The
+ * storage owner decides whether to migrate, export, or ask the user to upgrade;
+ * a generic SQLite adapter never repairs or recreates the file implicitly.
+ */
+export class StorageUpgradeRequiredError extends Error {
+	override readonly name = 'StorageUpgradeRequired';
+
+	constructor(
+		readonly storage: string,
+		readonly reason: string,
+	) {
+		super(`${storage} requires an explicit storage upgrade: ${reason}`);
+	}
+}
+
+/** Narrow an unknown opener failure without depending on `instanceof`. */
+export function isStorageUpgradeRequiredError(
+	cause: unknown,
+): cause is StorageUpgradeRequiredError {
+	return (
+		typeof cause === 'object' &&
+		cause !== null &&
+		'name' in cause &&
+		cause.name === 'StorageUpgradeRequired'
+	);
+}
+
+/**
  * The complete runtime-specific embedded SQLite boundary.
  *
  * Transactions are synchronous because every supported embedded SQLite engine

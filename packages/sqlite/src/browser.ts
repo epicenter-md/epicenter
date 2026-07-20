@@ -17,6 +17,18 @@ export type BrowserSqliteDatabase = {
 export function createBrowserSqliteAdapter(
 	database: BrowserSqliteDatabase,
 ): SqliteDatabase {
+	let transactionDepth = 0;
+	let savepointSequence = 0;
+
+	function invoke<TResult>(run: () => TResult): TResult {
+		transactionDepth += 1;
+		try {
+			return run();
+		} finally {
+			transactionDepth -= 1;
+		}
+	}
+
 	return {
 		run(sql, parameters = []): void {
 			database.exec({ sql, bind: parameters });
@@ -32,7 +44,21 @@ export function createBrowserSqliteAdapter(
 			return resultRows as TRow[];
 		},
 		transaction<TResult>(run: () => TResult): TResult {
-			return database.transaction('IMMEDIATE', run);
+			if (transactionDepth === 0) {
+				return database.transaction('IMMEDIATE', () => invoke(run));
+			}
+
+			const savepoint = `epicenter_nested_${savepointSequence++}`;
+			database.exec({ sql: `SAVEPOINT ${savepoint}` });
+			try {
+				const result = invoke(run);
+				database.exec({ sql: `RELEASE ${savepoint}` });
+				return result;
+			} catch (cause) {
+				database.exec({ sql: `ROLLBACK TO ${savepoint}` });
+				database.exec({ sql: `RELEASE ${savepoint}` });
+				throw cause;
+			}
 		},
 	};
 }

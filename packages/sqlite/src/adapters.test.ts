@@ -126,4 +126,23 @@ for (const [name, open] of adapters) {
 			close();
 		}
 	});
+
+	test(`${name}: nested transaction failure rolls back the outer transaction`, () => {
+		const { database, close } = open();
+		try {
+			database.run('CREATE TABLE nested_values(value TEXT NOT NULL)');
+			expect(() =>
+				database.transaction(() => {
+					database.run("INSERT INTO nested_values VALUES ('outer')");
+					database.transaction(() => {
+						database.run("INSERT INTO nested_values VALUES ('inner')");
+					});
+					throw new Error('outer rollback');
+				}),
+			).toThrow('outer rollback');
+			expect(database.all('SELECT * FROM nested_values')).toEqual([]);
+		} finally {
+			close();
+		}
+	});
 }
