@@ -1,7 +1,4 @@
-import {
-	defineWorkspace,
-	type Workspace,
-} from '@epicenter/workspace/sqlite';
+import { defineWorkspace, type Workspace } from '@epicenter/workspace/sqlite';
 import { SKILLS_WORKSPACE_ID } from './constants.js';
 import { referencesTable, skillsTable } from './tables.js';
 
