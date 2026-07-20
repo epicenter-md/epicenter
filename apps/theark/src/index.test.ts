@@ -88,7 +88,7 @@ function setup(objects: Record<string, StoredObject> = {}) {
 
 	const fetch = (path: string, init?: RequestInit) =>
 		handleRequest(new Request(`https://theark.so${path}`, init), env as Env);
-	return { fetch, requestedKeys };
+	return { fetch, requestedKeys, env: env as Env };
 }
 
 // ============================================================================
@@ -201,6 +201,19 @@ test('trailing slash 308-redirects to the slashless canonical URL', async () => 
 	const response = await fetch('/braden/foo/');
 	expect(response.status).toBe(308);
 	expect(response.headers.get('location')).toBe('https://theark.so/braden/foo');
+	expect(requestedKeys).toEqual([]);
+});
+
+test('canonical redirects stay HTTPS when Cloudflare presents an internal HTTP URL', async () => {
+	const { env, requestedKeys } = setup();
+	const response = await handleRequest(
+		new Request('http://theark.epicenter.workers.dev/braden/foo/'),
+		env,
+	);
+	expect(response.status).toBe(308);
+	expect(response.headers.get('location')).toBe(
+		'https://theark.epicenter.workers.dev/braden/foo',
+	);
 	expect(requestedKeys).toEqual([]);
 });
 

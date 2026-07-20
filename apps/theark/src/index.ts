@@ -162,6 +162,10 @@ export async function handleRequest(
 
 	if (url.pathname.endsWith('/')) {
 		const canonical = new URL(url);
+		// The Ark is HTTPS-only. Cloudflare may present an internal `http:` URL
+		// to the Worker even when the public request arrived over TLS, so never
+		// let that implementation detail become a downgrade redirect.
+		canonical.protocol = 'https:';
 		canonical.pathname = url.pathname.replace(/\/+$/, '') || '/';
 		return Response.redirect(canonical.toString(), 308);
 	}
