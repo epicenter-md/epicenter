@@ -21,11 +21,11 @@ import type {
 	AgentMessagePart,
 	Approval,
 	EngineChunk,
-} from '@epicenter/workspace/agent';
-import { createDeviceBunWorkspaceRuntime } from '@epicenter/workspace/sqlite/bun';
+} from '@epicenter/agent';
+import { openBunEpicenter } from '@epicenter/data/bun';
 import { type HomeHostInputs, parseHomeCommand } from './host.ts';
 import { createOwnedTestHomeHost } from './test-home-host.ts';
-import { conversationsWorkspace } from './workspace.ts';
+import { conversationsTable } from './workspace.ts';
 
 const FIXTURE = new URL('../test-fixtures/mini-mcp-server.ts', import.meta.url)
 	.pathname;
@@ -93,11 +93,14 @@ function toolResults(parts: AgentMessagePart[]) {
 
 /** Read the conversation rows a disposed host left behind in its data dir. */
 async function readConversationRows(dataDir: string) {
-	await using runtime = createDeviceBunWorkspaceRuntime({
-		workspacesRoot: join(dataDir, 'workspaces'),
+	await using epicenter = await openBunEpicenter({
+		directory: join(dataDir, 'data'),
 	});
-	const replica = await runtime.open(conversationsWorkspace);
-	return (await replica.tables.conversations.list()).rows;
+	const conversations = epicenter.bind({
+		tables: { conversations: conversationsTable },
+		values: {},
+	}).tables.conversations;
+	return (await conversations.list()).rows;
 }
 
 describe('createHomeHost', () => {
@@ -456,16 +459,13 @@ describe('createHomeHost', () => {
 				let creates = 0;
 				return {
 					...workspace,
-					tables: {
-						...workspace.tables,
-						conversations: {
-							...workspace.tables.conversations,
-							async create(input) {
-								if (creates++ > 0) {
-									throw new Error('injected create failure');
-								}
-								return workspace.tables.conversations.create(input);
-							},
+					conversations: {
+						...workspace.conversations,
+						async create(input) {
+							if (creates++ > 0) {
+								throw new Error('injected create failure');
+							}
+							return workspace.conversations.create(input);
 						},
 					},
 				};

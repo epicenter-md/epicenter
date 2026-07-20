@@ -6,21 +6,21 @@
  */
 
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import type { AgentToolDefinition } from '@epicenter/agent';
 import { getProfileVia } from '@epicenter/auth';
 import { type BlobId, type BlobRemote, parseBlobId } from '@epicenter/blobs';
 import type { BunBlobStore } from '@epicenter/blobs/bun';
-import type { AgentToolDefinition } from '@epicenter/workspace/agent';
 import {
-	isDocumentRowAbsentError,
-	isWorkspaceRowAbsentError,
-	isWorkspaceStorageMovedError,
-} from '@epicenter/workspace/sqlite';
-import type { DesktopWorkspaceOwner } from '@epicenter/workspace/sqlite/desktop-owner';
-import { DesktopWorkspaceError } from '@epicenter/workspace/sqlite/desktop-owner';
+	DESKTOP_EPICENTER_ROUTE,
+	type DesktopResponse,
+} from '@epicenter/data/desktop';
+import {
+	type DesktopEpicenterOwner,
+	EPICENTER_STORAGE_MOVED_ERROR_NAME,
+} from '@epicenter/data/desktop-owner';
 import { type Context, Hono, type Next } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
 import { getCookie, setCookie } from 'hono/cookie';
-import { Ok } from 'wellcrafted/result';
 import type { DesktopAuthAuthority } from './desktop-auth-authority.ts';
 import { createDesktopAuthorityFetch } from './desktop-authority-fetch.ts';
 import {
@@ -64,7 +64,7 @@ export type HomeServerOptions = {
 	staticAssets: EpicenterStaticAssets;
 	/** Derived trusted app catalog (ADR-0153); absent means no members. */
 	appCatalog?: AppCatalog;
-	workspaceOwner?: DesktopWorkspaceOwner;
+	dataOwner?: DesktopEpicenterOwner;
 	/** Canonical device-local bytes shared by every trusted app surface. */
 	blobs: BunBlobStore;
 	/** One credential owner for every compiled desktop surface. */
@@ -88,7 +88,7 @@ export function createHomeServer({
 	launchToken,
 	staticAssets,
 	appCatalog = { apps: [] },
-	workspaceOwner,
+	dataOwner,
 	blobs,
 	desktopAuth,
 	blobRemote,
@@ -270,7 +270,7 @@ export function createHomeServer({
 
 	app.use('/api/apps', requireBrowserSession);
 	app.use('/api/home/*', requireBrowserSession);
-	app.use('/api/workspaces/*', requireBrowserSession);
+	app.use(DESKTOP_EPICENTER_ROUTE, requireBrowserSession);
 	app.use('/api/local-blobs/*', requireBrowserSession);
 	app.use(SESSION_STREAM_ROUTE.pattern, async (c, next) => {
 		if (c.req.header('origin') !== origin) return c.text('Forbidden', 403);
@@ -438,44 +438,33 @@ export function createHomeServer({
 		requireBlobRemote((remote, id) => remote.purge(id)),
 	);
 
-	app.post('/api/workspaces/:workspaceId/records', async (c) => {
-		if (!workspaceOwner)
-			return c.json(DesktopWorkspaceError.OwnerUnavailable(), 404);
-		const workspaceId = c.req.param('workspaceId');
-		if (!workspaceOwner.hasWorkspace(workspaceId)) {
+	app.post(DESKTOP_EPICENTER_ROUTE, async (c) => {
+		if (!dataOwner) {
 			return c.json(
-				DesktopWorkspaceError.UnknownWorkspace({ workspaceId }),
+				{
+					data: null,
+					error: {
+						name: 'DesktopEpicenterUnavailable',
+						message: 'The desktop Epicenter owner is unavailable.',
+					},
+				} satisfies DesktopResponse,
 				404,
 			);
 		}
 		try {
-			return c.json(
-				Ok(await workspaceOwner.execute(workspaceId, await c.req.json())),
-			);
+			return c.json({
+				data: (await dataOwner.execute(await c.req.json())) ?? null,
+				error: null,
+			} satisfies DesktopResponse);
 		} catch (cause) {
-			// A displaced surface's request carries the shared moved-error name
-			// so the WebView can flip its blocking moved screen.
-			if (isWorkspaceStorageMovedError(cause)) {
-				return c.json(
-					DesktopWorkspaceError.WorkspaceStorageMovedError({ workspaceId }),
-					409,
-				);
-			}
-			if (isDocumentRowAbsentError(cause)) {
-				return c.json(
-					DesktopWorkspaceError.DocumentRowAbsentError({ workspaceId }),
-					409,
-				);
-			}
-			// A displaced-row update or delete refuses at the owner; carry the
-			// name so the WebView maps it to the same missing-row result.
-			if (isWorkspaceRowAbsentError(cause)) {
-				return c.json(
-					DesktopWorkspaceError.WorkspaceRowAbsentError({ workspaceId }),
-					409,
-				);
-			}
-			return c.json(DesktopWorkspaceError.InvalidRequest({ cause }), 400);
+			const error = {
+				name: cause instanceof Error ? cause.name : 'Error',
+				message: cause instanceof Error ? cause.message : String(cause),
+			};
+			return c.json(
+				{ data: null, error } satisfies DesktopResponse,
+				error.name === EPICENTER_STORAGE_MOVED_ERROR_NAME ? 409 : 400,
+			);
 		}
 	});
 

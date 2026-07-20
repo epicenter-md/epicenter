@@ -36,7 +36,8 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createAgentMessageDocumentStore } from '@epicenter/chat';
+import type { AgentEngine, AgentMessage, EngineChunk } from '@epicenter/agent';
+import { openBunEpicenter } from '@epicenter/data/bun';
 import {
 	createAttachRelayBunServer,
 	createBunRooms,
@@ -46,12 +47,7 @@ import {
 	mergeBunWebSocketHandlers,
 	mountAttachRelayApp,
 } from '@epicenter/server/bun';
-import type {
-	AgentEngine,
-	AgentMessage,
-	EngineChunk,
-} from '@epicenter/workspace/agent';
-import { createDeviceBunWorkspaceRuntime } from '@epicenter/workspace/sqlite/bun';
+import { createAgentMessageDocumentStore } from './agent-message-store.ts';
 import { canAskLocalSource } from './attach-host-status.ts';
 import { createAttachRelayClient } from './attach-relay-client.ts';
 import {
@@ -62,7 +58,7 @@ import type { HomeHost } from './host.ts';
 import type { LocalSourceMessage } from './local-source-catalog.ts';
 import type { HomeServerEvent } from './server.ts';
 import { createOwnedTestHomeHost } from './test-home-host.ts';
-import { conversationsWorkspace } from './workspace.ts';
+import { conversationsTable } from './workspace.ts';
 
 const HOST_ID = 'host-mac';
 /**
@@ -243,19 +239,22 @@ async function readTranscript(dataDir: string): Promise<{
 	tableNames: string[];
 	messages: AgentMessage[];
 }> {
-	await using runtime = createDeviceBunWorkspaceRuntime({
-		workspacesRoot: join(dataDir, 'workspaces'),
+	await using epicenter = await openBunEpicenter({
+		directory: join(dataDir, 'data'),
 	});
-	const replica = await runtime.open(conversationsWorkspace);
-	const tableNames = Object.keys(replica.tables);
-	const rows = (await replica.tables.conversations.list()).rows;
+	const conversations = epicenter.bind({
+		tables: { conversations: conversationsTable },
+		values: {},
+	}).tables.conversations;
+	const tableNames = ['conversations'];
+	const rows = (await conversations.list()).rows;
 	let latest = rows[0];
 	for (const row of rows) {
 		if (!latest || row.updatedAt > latest.updatedAt) latest = row;
 	}
 	if (!latest) return { tableNames, messages: [] };
 	using store = createAgentMessageDocumentStore(
-		await replica.tables.conversations.document.open(latest.id),
+		await conversations.openDocument(latest.id),
 	);
 	return {
 		tableNames,

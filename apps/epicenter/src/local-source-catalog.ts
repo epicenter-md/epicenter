@@ -35,7 +35,7 @@ import type {
 	AgentToolDefinition,
 	AgentToolOutcome,
 	ToolCatalog,
-} from '@epicenter/workspace/agent';
+} from '@epicenter/agent';
 
 /** One message a local source read returns: who sent it, its text, and when. */
 export type LocalSourceMessage = {

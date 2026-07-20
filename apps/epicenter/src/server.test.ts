@@ -28,6 +28,7 @@ import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { AgentEngine, EngineChunk } from '@epicenter/agent';
 import {
 	type BlobRemote,
 	BlobRemoteError,
@@ -35,7 +36,6 @@ import {
 } from '@epicenter/blobs';
 import { createBunBlobStore } from '@epicenter/blobs/bun';
 import { desktopBlobUrl } from '@epicenter/blobs/webview';
-import type { AgentEngine, EngineChunk } from '@epicenter/workspace/agent';
 import { Ok } from 'wellcrafted/result';
 import type { HomeHost, HomeHostInputs } from './host.ts';
 import {

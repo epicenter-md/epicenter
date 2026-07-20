@@ -33,6 +33,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { AgentEngine, EngineChunk } from '@epicenter/agent';
 import {
 	createAttachRelayBunServer,
 	createBunRooms,
@@ -46,7 +47,6 @@ import {
 	mountHostDirectoryApp,
 	requireBearerPrincipal,
 } from '@epicenter/server/bun';
-import type { AgentEngine, EngineChunk } from '@epicenter/workspace/agent';
 import { createAttachRelayClient } from './attach-relay-client.ts';
 import {
 	attachHostToRelay,

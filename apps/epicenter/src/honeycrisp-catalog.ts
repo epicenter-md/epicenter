@@ -1,13 +1,10 @@
-import {
-	deleteHoneycrispFolder,
-	type HoneycrispWorkspace,
-} from '@epicenter/honeycrisp';
 import type {
 	AgentToolCall,
 	AgentToolDefinition,
 	AgentToolOutcome,
 	ToolCatalog,
-} from '@epicenter/workspace/agent';
+} from '@epicenter/agent';
+import type { HoneycrispData } from './workspace.ts';
 
 const LIST_FOLDERS_TOOL: AgentToolDefinition = {
 	name: 'folders_list',
@@ -46,11 +43,11 @@ const DELETE_FOLDER_TOOL: AgentToolDefinition = {
 
 /** Adapt Honeycrisp's async row operation to the Home host's tool boundary. */
 export function createHoneycrispCatalog(
-	workspace: HoneycrispWorkspace,
+	workspace: HoneycrispData,
 ): ToolCatalog {
 	async function resolve(call: AgentToolCall): Promise<AgentToolOutcome> {
 		if (call.toolName === LIST_FOLDERS_TOOL.name) {
-			const { rows, nonconforming } = await workspace.tables.folders.list();
+			const { rows, nonconforming } = await workspace.folders.list();
 			if (nonconforming.length > 0) {
 				return {
 					content: 'Some Honeycrisp folders do not conform to this release.',
@@ -64,7 +61,7 @@ export function createHoneycrispCatalog(
 			if (name === undefined) {
 				return { content: 'A "name" string is required.', isError: true };
 			}
-			const folder = await workspace.tables.folders.create({
+			const folder = await workspace.folders.create({
 				name,
 				sortOrder: 0,
 			});
@@ -103,6 +100,21 @@ export function createHoneycrispCatalog(
 		],
 		resolve,
 	};
+}
+
+async function deleteHoneycrispFolder(
+	workspace: HoneycrispData,
+	folderId: string,
+): Promise<void> {
+	const { rows } = await workspace.notes.list();
+	for (const note of rows) {
+		if (note.folderId !== folderId) continue;
+		const result = await workspace.notes.update(note.id, {
+			folderId: undefined,
+		});
+		if (result.error !== null) throw result.error;
+	}
+	await workspace.folders.delete(folderId);
 }
 
 function readFolderId(input: AgentToolCall['input']): string | undefined {

@@ -15,7 +15,7 @@
  * Run: bun run apps/query/src/session-client.ts ws://127.0.0.1:<port> <token>
  */
 
-import type { AgentMessage } from '@epicenter/workspace/agent';
+import type { AgentMessage } from '@epicenter/agent';
 import { SESSION_STREAM_ROUTE } from './routes.ts';
 import type { HomeServerEvent } from './server.ts';
 

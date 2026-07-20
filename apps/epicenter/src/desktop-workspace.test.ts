@@ -1,13 +1,4 @@
-/**
- * Desktop workspace owner integration.
- *
- * One statically linked Bun owner serves WebView surfaces over the records
- * route. Exactly one surface owns a workspace at a time: a newer surface's
- * open displaces the previous owner, whose operations then fail with the
- * shared moved error. Row documents persist through the owner's SQLite
- * update log and survive a full server restart. Schema-opaque operations
- * never carry a lens.
- */
+/** Desktop Data RPC integration over one Bun-owned Epicenter replica. */
 import { expect, test } from 'bun:test';
 import {
 	existsSync,
@@ -20,19 +11,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { generateBlobId } from '@epicenter/blobs';
 import { createBunBlobStore } from '@epicenter/blobs/bun';
+import { defineTable } from '@epicenter/data';
+import {
+	type OpenDesktopEpicenterOptions,
+	openDesktopEpicenter,
+} from '@epicenter/data/desktop';
 import { field, InstantString } from '@epicenter/field';
-import { skillsWorkspace } from '@epicenter/skills';
-import { whisperingWorkspace } from '@epicenter/whispering/workspace-contract';
-import {
-	defineTable,
-	defineWorkspace,
-	isWorkspaceStorageMovedError,
-} from '@epicenter/workspace/sqlite';
-import {
-	type CreateDesktopWorkspaceRuntimeOptions,
-	createDesktopWorkspaceRuntime,
-} from '@epicenter/workspace/sqlite/desktop';
-import { isResult } from 'wellcrafted/result';
+import { whisperingDefinitions } from '@epicenter/whispering/workspace-contract';
 import { BOOTSTRAP_ROUTE } from './routes.ts';
 import { createHomeServer } from './server.ts';
 import { loadStaticAssets } from './static-assets.ts';
@@ -41,53 +26,33 @@ import {
 	createTestDesktopAuth,
 } from './test-home-host.ts';
 
-const TOKEN = 'desktop-workspace-test-token';
+const TOKEN = 'desktop-data-test-token';
+const documentsTable = defineTable({
+	key: 'so.epicenter.tests.desktop-documents',
+	fields: { name: field.string(), updatedAt: field.instant() },
+	document: true,
+});
 
-test('one surface owns a workspace, documents persist, and state survives restart', async () => {
-	const root = mkdtempSync(join(tmpdir(), 'epicenter-desktop-owner-'));
-	const createBroadcastChannel = createBroadcastChannelFactory();
-	const firstOperations: Record<string, unknown>[] = [];
+test('WebView surfaces share one replica and state survives restart', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'epicenter-desktop-data-'));
+	const operations: Record<string, unknown>[] = [];
 	try {
 		const firstServer = await startDesktopServer(root);
-		const movedNotices: { workspaceId: string; cause: Error }[] = [];
-		const firstClient = createClient(firstServer.origin, firstServer.cookie, {
-			createBroadcastChannel,
-			operations: firstOperations,
-			onBackgroundError: (cause, workspaceId) =>
-				movedNotices.push({ workspaceId, cause }),
+		const first = await createClient(
+			firstServer.origin,
+			firstServer.fetch,
+			operations,
+		);
+		const firstData = first.bind({
+			tables: {
+				recordings: whisperingDefinitions.tables.recordings,
+				documents: documentsTable,
+			},
+			values: {
+				analytics: whisperingDefinitions.values['analytics.enabled'],
+			},
 		});
-		const firstSkills = await firstClient.open(skillsWorkspace);
-		const firstWhispering = await firstClient.open(whisperingWorkspace);
-		await Promise.all([
-			firstSkills.tables.skills.list(),
-			firstWhispering.tables.recordings.list(),
-		]);
-		for (const workspaceId of [
-			'epicenter-conversations',
-			'epicenter-honeycrisp',
-			'epicenter-skills',
-			'epicenter-whispering',
-		]) {
-			expect(
-				existsSync(
-					join(root, 'workspaces', 'device', workspaceId, 'store.sqlite3'),
-				),
-			).toBeTrue();
-		}
-		expect(existsSync(join(root, 'workspace-runtime'))).toBeFalse();
-		// Reading a missing row is lenient; the read is honest about absence.
-		const missingRead = await firstSkills.tables.skills.get('missing');
-		expect(missingRead).toEqual({ data: undefined, error: null });
-		expect(Object.hasOwn(missingRead, 'data')).toBeTrue();
-		expect(isResult(missingRead)).toBeTrue();
-		// Modifying a missing row refuses at the owner and carries the named
-		// MissingRow result across the schema-blind records route.
-		const missingUpdate = await firstSkills.tables.skills.update('missing', {
-			description: 'Still missing',
-		});
-		expect(missingUpdate.error?.name).toBe('MissingRow');
-		expect(isResult(missingUpdate)).toBeTrue();
-		const recording = await firstWhispering.tables.recordings.create({
+		const recording = await firstData.tables.recordings.create({
 			audioBlobId: generateBlobId(),
 			uploadedAt: null,
 			title: 'Shared recording',
@@ -100,196 +65,65 @@ test('one surface owns a workspace, documents persist, and state survives restar
 		});
 		expect(
 			(
-				await firstWhispering.tables.recordings.update(recording.id, {
+				await firstData.tables.recordings.update(recording.id, {
 					transcript: 'Updated transcript',
 				})
 			).data?.transcript,
 		).toBe('Updated transcript');
+		await firstData.values.analytics.set(false);
 
-		expect((await firstWhispering.kv.get('analytics.enabled')).data).toBe(
-			undefined,
-		);
-		expect(
-			(await firstWhispering.kv.set('analytics.enabled', false)).error,
-		).toBe(null);
-		expect(
-			(await firstWhispering.kv.get('analytics.enabled')).data,
-		).toBeFalse();
-
-		// Row documents persist through the owner's SQLite update log; a fresh
-		// handle hydrates committed content back over the same carrier.
-		const created = await firstSkills.tables.skills.create({
-			sourceId: 'shared-skill',
-			name: 'Shared',
-			description: 'One Bun owner',
+		const row = await firstData.tables.documents.create({
+			name: 'Shared document',
 			updatedAt: InstantString.now(),
 		});
 		{
-			using document = await firstSkills.tables.skills.document.open(
-				created.id,
+			await using document = await firstData.tables.documents.openDocument(
+				row.id,
 			);
 			document.get('content').insert(0, 'Desktop document');
 			await document.whenDurable();
 		}
-		{
-			using reopened = await firstSkills.tables.skills.document.open(
-				created.id,
-			);
-			expect(reopened.get('content').toString()).toBe('Desktop document');
-		}
 
-		// Deleting the row revokes the live handle and its durable log dies in
-		// the same owner transaction: a fresh open refuses the dead address.
-		const doomed = await firstSkills.tables.skills.create({
-			sourceId: 'doomed-skill',
-			name: 'Doomed',
-			description: 'To delete',
-			updatedAt: InstantString.now(),
+		// A second WebView binds the same qualified definitions to the same host
+		// replica. There is no Device/Account or per-workspace adoption ceremony.
+		const second = await createClient(firstServer.origin, firstServer.fetch);
+		const secondData = second.bind({
+			tables: { recordings: whisperingDefinitions.tables.recordings },
+			values: {},
 		});
-		using doomedDocument = await firstSkills.tables.skills.document.open(
-			doomed.id,
-		);
-		doomedDocument.get('content').insert(0, 'Gone soon');
-		await doomedDocument.whenDurable();
-		await firstSkills.tables.skills.delete(doomed.id);
-		expect(() => doomedDocument.get('content')).toThrow(/revoked/);
-		await expect(
-			firstSkills.tables.skills.document.open(doomed.id),
-		).rejects.toThrow(/absent row/);
-
-		const survivingSkill = await firstSkills.tables.skills.create({
-			sourceId: 'surviving-skill',
-			name: 'Surviving',
-			description: 'One Bun owner',
-			updatedAt: InstantString.now(),
-		});
-		{
-			using survivingDocument = await firstSkills.tables.skills.document.open(
-				survivingSkill.id,
-			);
-			survivingDocument.get('content').insert(0, 'Survives restart');
-			await survivingDocument.whenDurable();
-		}
-
-		// Newest surface wins: a second window's open displaces this surface
-		// for that workspace only. The displaced surface learns immediately
-		// over the surface channel, rejects later operations with the shared
-		// moved error, and keeps unrelated workspaces.
-		const secondClient = createClient(firstServer.origin, firstServer.cookie, {
-			createBroadcastChannel,
-		});
-		const secondSkills = await secondClient.open(skillsWorkspace);
 		expect(
-			(await secondSkills.tables.skills.get(survivingSkill.id)).data?.name,
-		).toBe('Surviving');
-		{
-			using stolenDocument = await secondSkills.tables.skills.document.open(
-				survivingSkill.id,
-			);
-			expect(stolenDocument.get('content').toString()).toBe('Survives restart');
-		}
-		await waitFor(() => movedNotices.length === 1);
-		expect(movedNotices[0]?.workspaceId).toBe('epicenter-skills');
-		expect(isWorkspaceStorageMovedError(movedNotices[0]?.cause)).toBe(true);
-		const displacedFailure = await firstSkills.tables.skills
-			.list()
-			.then(() => undefined)
-			.catch((cause: unknown) => cause);
-		expect(isWorkspaceStorageMovedError(displacedFailure)).toBe(true);
-		// The un-displaced workspace on the first surface keeps working.
-		expect(
-			(await firstWhispering.tables.recordings.get(recording.id)).data
-				?.transcript,
+			(await secondData.tables.recordings.get(recording.id)).data?.transcript,
 		).toBe('Updated transcript');
+		expect(
+			(await firstData.tables.recordings.get(recording.id)).data?.title,
+		).toBe('Shared recording');
 
-		// Without the surface channel, displacement still lands through the
-		// host: the stale surface's request fails with the same named error.
-		const isolatedClient = createClient(
-			firstServer.origin,
-			firstServer.cookie,
-			{ createBroadcastChannel: () => undefined },
-		);
-		const isolatedSkills = await isolatedClient.open(skillsWorkspace);
-		await isolatedSkills.tables.skills.list();
-		const reclaimingClient = createClient(
-			firstServer.origin,
-			firstServer.cookie,
-			{ createBroadcastChannel: () => undefined },
-		);
-		await (await reclaimingClient.open(skillsWorkspace)).tables.skills.list();
-		const hostFailure = await isolatedSkills.tables.skills
-			.list()
-			.then(() => undefined)
-			.catch((cause: unknown) => cause);
-		expect(isWorkspaceStorageMovedError(hostFailure)).toBe(true);
-
-		await firstClient[Symbol.asyncDispose]();
-		await secondClient[Symbol.asyncDispose]();
-		await isolatedClient[Symbol.asyncDispose]();
-		await reclaimingClient[Symbol.asyncDispose]();
+		await first[Symbol.asyncDispose]();
+		await second[Symbol.asyncDispose]();
 		await firstServer.dispose();
+		expect(existsSync(join(root, 'data', 'epicenter.sqlite3'))).toBeTrue();
 
 		const restarted = await startDesktopServer(root);
 		try {
-			const client = createClient(restarted.origin, restarted.cookie, {
-				createBroadcastChannel,
-				operations: firstOperations,
+			const client = await createClient(restarted.origin, restarted.fetch);
+			const data = client.bind({
+				tables: {
+					recordings: whisperingDefinitions.tables.recordings,
+					documents: documentsTable,
+				},
+				values: {
+					analytics: whisperingDefinitions.values['analytics.enabled'],
+				},
 			});
-			const skills = await client.open(skillsWorkspace);
-			const whispering = await client.open(whisperingWorkspace);
 			expect(
-				(await skills.tables.skills.get(survivingSkill.id)).data?.name,
-			).toBe('Surviving');
-			expect(
-				(await whispering.tables.recordings.get(recording.id)).data?.transcript,
+				(await data.tables.recordings.get(recording.id)).data?.transcript,
 			).toBe('Updated transcript');
-			expect((await whispering.kv.get('analytics.enabled')).data).toBeFalse();
-			using restartedDocument = await skills.tables.skills.document.open(
-				survivingSkill.id,
-			);
-			expect(restartedDocument.get('content').toString()).toBe(
-				'Survives restart',
-			);
-			const unknownDefinition = defineWorkspace({
-				id: 'not-statically-linked',
-				tables: skillsWorkspace.tables,
-			});
-			// The open handshake is honest: a workspace the host does not own
-			// rejects at open, before any handle exists.
-			await expect(client.open(unknownDefinition)).rejects.toThrow(
-				'Unknown workspace',
-			);
-			const alternateSkillsLens = defineWorkspace({
-				id: skillsWorkspace.id,
-				tables: {
-					skills: defineTable({ fields: { name: field.string() } }),
-				},
-			});
-			const alternateSkills = await client.open(alternateSkillsLens);
-			expect(
-				(await alternateSkills.tables.skills.get(survivingSkill.id)).data,
-			).toEqual({
-				id: survivingSkill.id,
-				name: 'Surviving',
-			});
-			const nonconformingLens = defineWorkspace({
-				id: skillsWorkspace.id,
-				tables: {
-					skills: defineTable({ fields: { name: field.number() } }),
-				},
-			});
-			const nonconformingSkills = await client.open(nonconformingLens);
-			expect(
-				(await nonconformingSkills.tables.skills.get(survivingSkill.id)).error
-					?.name,
-			).toBe('NonconformingRow');
-			await expect(
-				skills.sql("UPDATE skills SET name = 'Raw write'", [], {} as never),
-			).rejects.toThrow('only SELECT');
-			for (const operation of firstOperations) {
-				expect(operation).not.toHaveProperty('lens');
-				expect(operation).not.toHaveProperty('tables');
-				expect(operation).not.toHaveProperty('resultSchema');
+			expect((await data.values.analytics.get()).data).toBeFalse();
+			await using document = await data.tables.documents.openDocument(row.id);
+			expect(document.get('content').toString()).toBe('Desktop document');
+			for (const request of operations) {
+				expect(request).not.toHaveProperty('lens');
+				expect(request).not.toHaveProperty('workspaceId');
 			}
 			await client[Symbol.asyncDispose]();
 		} finally {
@@ -300,81 +134,11 @@ test('one surface owns a workspace, documents persist, and state survives restar
 	}
 });
 
-test('host generations prevent delayed open inversion and disposal rejects pending work', async () => {
-	const root = mkdtempSync(join(tmpdir(), 'epicenter-desktop-surface-races-'));
-	const createBroadcastChannel = createBroadcastChannelFactory();
-	try {
-		const server = await startDesktopServer(root);
-		try {
-			const firstResponse = Promise.withResolvers<void>();
-			const firstReached = Promise.withResolvers<void>();
-			const first = createClient(server.origin, server.cookie, {
-				createBroadcastChannel,
-				async interceptResponse(operation, response) {
-					if (operation.kind === 'open') {
-						firstReached.resolve();
-						await firstResponse.promise;
-					}
-					return response;
-				},
-			});
-			const delayedFirstOpen = first.open(skillsWorkspace);
-			await firstReached.promise;
-
-			const second = createClient(server.origin, server.cookie, {
-				createBroadcastChannel,
-			});
-			const secondSkills = await second.open(skillsWorkspace);
-			const delayedFailure = await delayedFirstOpen.then(
-				() => undefined,
-				(cause: unknown) => cause,
-			);
-			expect(isWorkspaceStorageMovedError(delayedFailure)).toBeTrue();
-			firstResponse.resolve();
-			expect((await secondSkills.tables.skills.list()).rows).toBeArray();
-
-			const pendingResponse = Promise.withResolvers<void>();
-			const pendingReached = Promise.withResolvers<void>();
-			const disposing = createClient(server.origin, server.cookie, {
-				createBroadcastChannel: () => undefined,
-				async interceptResponse(operation, response) {
-					if (operation.kind === 'list-current-rows') {
-						pendingReached.resolve();
-						await pendingResponse.promise;
-					}
-					return response;
-				},
-			});
-			const disposingSkills = await disposing.open(skillsWorkspace);
-			const pendingList = disposingSkills.tables.skills.list();
-			await pendingReached.promise;
-			await disposing[Symbol.asyncDispose]();
-			await expect(pendingList).rejects.toThrow('disposed');
-			pendingResponse.resolve();
-
-			await first[Symbol.asyncDispose]();
-			await second[Symbol.asyncDispose]();
-		} finally {
-			await server.dispose();
-		}
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
 async function startDesktopServer(root: string) {
-	const probe = Bun.serve({
-		hostname: '127.0.0.1',
-		port: 0,
-		fetch: () => new Response(),
-	});
-	const port = probe.port;
-	await probe.stop(true);
-	if (!port) throw new Error('Port probe did not bind');
-	const origin = `http://127.0.0.1:${port}`;
-	const { host, workspaceOwner: owner } = await createOwnedTestHomeHostBundle({
-		dataDir: join(root, 'home'),
-		workspacesRoot: join(root, 'workspaces'),
+	const origin = 'http://127.0.0.1:39130';
+	const { host, dataOwner } = await createOwnedTestHomeHostBundle({
+		dataDir: root,
+		workspacesRoot: join(root, 'data'),
 		model: 'test',
 		engine: async function* () {},
 	});
@@ -383,104 +147,59 @@ async function startDesktopServer(root: string) {
 		origin,
 		launchToken: TOKEN,
 		staticAssets: await testAssets(root),
-		workspaceOwner: owner,
+		dataOwner,
 		blobs: createBunBlobStore({ directory: join(root, 'blobs') }),
 		desktopAuth: createTestDesktopAuth(),
 		blobRemote: null,
 	});
-	const server = Bun.serve({
-		hostname: '127.0.0.1',
-		port,
-		fetch: app.fetch,
-		websocket,
-	});
-	const bootstrap = await fetch(`${origin}${BOOTSTRAP_ROUTE.pattern}`, {
+	void websocket;
+	const bootstrap = await app.request(`${origin}${BOOTSTRAP_ROUTE.pattern}`, {
 		method: 'POST',
-		headers: { authorization: `Bearer ${TOKEN}`, origin },
+		headers: {
+			authorization: `Bearer ${TOKEN}`,
+			host: '127.0.0.1:39130',
+			origin,
+		},
 	});
 	const cookie = bootstrap.headers.get('set-cookie')?.split(';', 1)[0];
 	if (!cookie) throw new Error('Desktop bootstrap did not set a cookie');
 	return {
 		origin,
-		cookie,
+		async fetch(input: Parameters<typeof fetch>[0], init?: RequestInit) {
+			return await app.request(input, {
+				...init,
+				headers: {
+					...init?.headers,
+					cookie,
+					host: '127.0.0.1:39130',
+					origin,
+				},
+			});
+		},
 		async dispose() {
-			await server.stop(true);
 			await host[Symbol.asyncDispose]();
-			await owner[Symbol.asyncDispose]();
+			await dataOwner[Symbol.asyncDispose]();
 		},
 	};
 }
 
 function createClient(
 	origin: string,
-	cookie: string,
-	options: Pick<
-		CreateDesktopWorkspaceRuntimeOptions,
-		'createBroadcastChannel' | 'onBackgroundError'
-	> & {
-		interceptResponse?(
-			operation: { kind: string },
-			response: Response,
-		): Promise<Response>;
-		operations?: Record<string, unknown>[];
-	},
+	request: (
+		input: Parameters<typeof fetch>[0],
+		init?: RequestInit,
+	) => Promise<Response>,
+	operations?: Record<string, unknown>[],
 ) {
-	const { interceptResponse, operations, ...runtimeOptions } = options;
-	return createDesktopWorkspaceRuntime({
+	return openDesktopEpicenter({
 		baseUrl: origin,
-		...runtimeOptions,
 		async fetch(input, init) {
 			if (operations && typeof init?.body === 'string') {
 				operations.push(JSON.parse(init.body) as Record<string, unknown>);
 			}
-			const response = await fetch(input, {
-				...init,
-				headers: { ...init?.headers, cookie, origin },
-			});
-			if (!interceptResponse) return response;
-			const body = JSON.parse(String(init?.body)) as {
-				operation: { kind: string };
-			};
-			return interceptResponse(body.operation, response);
+			return request(input, init);
 		},
-	});
-}
-
-function createBroadcastChannelFactory() {
-	type TestChannel = {
-		name: string;
-		onmessage: ((event: MessageEvent<unknown>) => void) | null;
-		postMessage(message: unknown): void;
-		close(): void;
-	};
-	const channels = new Set<TestChannel>();
-	return (name: string): TestChannel => {
-		const channel: TestChannel = {
-			name,
-			onmessage: null,
-			postMessage(message) {
-				for (const peer of channels) {
-					if (peer === channel || peer.name !== name) continue;
-					peer.onmessage?.({ data: structuredClone(message) } as MessageEvent);
-				}
-			},
-			close() {
-				channels.delete(channel);
-			},
-		};
-		channels.add(channel);
-		return channel;
-	};
-}
-
-async function waitFor(predicate: () => boolean): Promise<void> {
-	const deadline = Date.now() + 5_000;
-	while (!predicate()) {
-		if (Date.now() > deadline) {
-			throw new Error('Timed out waiting for desktop surface signal');
-		}
-		await Bun.sleep(10);
-	}
+	} satisfies OpenDesktopEpicenterOptions);
 }
 
 async function testAssets(root: string) {

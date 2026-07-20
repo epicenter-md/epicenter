@@ -9,7 +9,7 @@
  * (Hono, Bun WebSocket glue, node builtins) enters the browser bundle.
  */
 
-import type { ConversationSnapshot } from '@epicenter/workspace/agent';
+import type { ConversationSnapshot } from '@epicenter/agent';
 import type {
 	HomeClientCommand,
 	HomeInvocation,

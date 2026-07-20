@@ -2,7 +2,7 @@
 	import type {
 		AgentMessage,
 		ConversationSnapshot,
-	} from '@epicenter/workspace/agent';
+	} from '@epicenter/agent';
 	import * as Chat from '@epicenter/ui/chat';
 	import * as Empty from '@epicenter/ui/empty';
 

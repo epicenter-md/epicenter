@@ -10,13 +10,6 @@
  */
 
 import {
-	type AgentMessageDocumentStore,
-	type Conversation,
-	createAgentMessageDocumentStore,
-} from '@epicenter/chat';
-import type { HoneycrispWorkspace } from '@epicenter/honeycrisp';
-import { generateId, InstantString } from '@epicenter/workspace';
-import {
 	type AgentEngine,
 	type AgentToolCall,
 	type AgentToolDefinition,
@@ -29,7 +22,12 @@ import {
 	namespaceToolCatalog,
 	resolveApprovedToolCall,
 	type ToolCatalog,
-} from '@epicenter/workspace/agent';
+} from '@epicenter/agent';
+import { InstantString } from '@epicenter/field';
+import {
+	type AgentMessageDocumentStore,
+	createAgentMessageDocumentStore,
+} from './agent-message-store.ts';
 import { createHoneycrispCatalog } from './honeycrisp-catalog.js';
 import {
 	createLocalSourceCatalog,
@@ -39,7 +37,11 @@ import {
 	createStdioMcpCatalog,
 	type StdioMcpCatalogOptions,
 } from './stdio-mcp-catalog.ts';
-import type { ConversationsWorkspace } from './workspace.ts';
+import type {
+	Conversation,
+	ConversationsData,
+	HoneycrispData,
+} from './workspace.ts';
 
 export type HomeHostInputs = {
 	/** The inference backend driving the loop (BYOK, local, or scripted). */
@@ -70,9 +72,9 @@ export type HomeHostInputs = {
 
 export type HomeHostOptions = HomeHostInputs & {
 	/** Canonical Honeycrisp handle opened by the one desktop workspace owner. */
-	honeycrisp: HoneycrispWorkspace;
+	honeycrisp: HoneycrispData;
 	/** Home conversation workspace opened by the same desktop owner. */
-	conversations: ConversationsWorkspace;
+	conversations: ConversationsData;
 };
 
 export type PendingApproval = {
@@ -214,8 +216,8 @@ export async function createHomeHost(
 	// Arm A: in-process apps. Each namespace keeps same-named verbs distinct in
 	// the composed surface; the prefix must not contain `__`.
 	const honeycrisp = options.honeycrisp;
-	const conversations = options.conversations.tables.conversations;
-	await honeycrisp.tables.folders.list();
+	const conversations = options.conversations.conversations;
+	await honeycrisp.folders.list();
 	const catalogs: ToolCatalog[] = [
 		namespaceToolCatalog('honeycrisp', createHoneycrispCatalog(honeycrisp)),
 	];
@@ -273,14 +275,14 @@ export async function createHomeHost(
 			engine: options.engine,
 			tools,
 			approval,
-			generateId,
+			generateId: () => crypto.randomUUID(),
 		});
 
 	// The row's document is the loop's message store (ADR-0152):
 	// finished messages land there and survive restarts. Loaded before the
 	// loop starts so a first send never races the replayed history.
 	let activeStore = createAgentMessageDocumentStore(
-		await conversations.document.open(activeConversation.id),
+		await conversations.openDocument(activeConversation.id),
 	);
 	let conversation = buildConversation(activeStore);
 	// One relay subscription that survives `clear` swapping the conversation;
@@ -316,7 +318,7 @@ export async function createHomeHost(
 	let disposing = false;
 	const runInvocation = (toolName: string, input: AgentToolCall['input']) => {
 		const invocation: HomeInvocation = {
-			id: generateId(),
+			id: crypto.randomUUID(),
 			toolName,
 			status: 'running',
 			requestedAt: Date.now(),
@@ -381,7 +383,7 @@ export async function createHomeHost(
 				let nextStore: AgentMessageDocumentStore;
 				try {
 					nextStore = createAgentMessageDocumentStore(
-						await conversations.document.open(nextConversationRow.id),
+						await conversations.openDocument(nextConversationRow.id),
 					);
 				} catch (cause) {
 					await conversations.delete(nextConversationRow.id);
@@ -475,7 +477,7 @@ function createSessionApproval(notify: () => void) {
 			return defaultApprovalDecision(call, definition);
 		},
 		request(call, definition) {
-			const id = generateId();
+			const id = crypto.randomUUID();
 			const prompt: PendingApproval = {
 				id,
 				toolCallId: call.toolCallId,

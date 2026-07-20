@@ -1,19 +1,15 @@
 import { join } from 'node:path';
-import { honeycrispWorkspace } from '@epicenter/honeycrisp';
-import { createDesktopWorkspaceOwner } from '@epicenter/workspace/sqlite/desktop-owner';
+import { createDesktopEpicenterOwner } from '@epicenter/data/desktop-owner';
 import { createDesktopAuthAuthority } from './desktop-auth-authority.ts';
 import { createHomeHost, type HomeHost, type HomeHostInputs } from './host.ts';
-import type { ConversationsWorkspace } from './workspace.ts';
-import { conversationsWorkspace } from './workspace.ts';
-import { BUILT_IN_WORKSPACE_IDS } from './workspace-owner.ts';
+import type { ConversationsData } from './workspace.ts';
+import { homeDefinitions } from './workspace.ts';
 
 type OwnedTestHomeHostOptions = HomeHostInputs & {
 	/** Fixture root only. Production has no separate Home data directory. */
 	dataDir: string;
 	workspacesRoot?: string;
-	wrapConversations?: (
-		workspace: ConversationsWorkspace,
-	) => ConversationsWorkspace;
+	wrapConversations?: (workspace: ConversationsData) => ConversationsData;
 };
 
 /** A signed-out desktop authority over a no-op native port, for server tests. */
@@ -38,12 +34,12 @@ export function createTestDesktopAuth() {
 export async function createOwnedTestHomeHost(
 	options: OwnedTestHomeHostOptions,
 ): Promise<HomeHost> {
-	const { host, workspaceOwner } = await createOwnedTestHomeHostBundle(options);
+	const { host, dataOwner } = await createOwnedTestHomeHostBundle(options);
 	return Object.freeze({
 		...host,
 		async [Symbol.asyncDispose]() {
 			await host[Symbol.asyncDispose]();
-			await workspaceOwner[Symbol.asyncDispose]();
+			await dataOwner[Symbol.asyncDispose]();
 		},
 	});
 }
@@ -53,23 +49,20 @@ export async function createOwnedTestHomeHostBundle(
 ) {
 	const { dataDir, workspacesRoot, wrapConversations, ...hostOptions } =
 		options;
-	const workspaceOwner = createDesktopWorkspaceOwner({
-		workspacesRoot: workspacesRoot ?? join(dataDir, 'workspaces'),
-		workspaceIds: BUILT_IN_WORKSPACE_IDS,
+	const dataOwner = await createDesktopEpicenterOwner({
+		directory: workspacesRoot ?? join(dataDir, 'data'),
 	});
 	try {
-		const [honeycrisp, conversations] = await Promise.all([
-			workspaceOwner.open(honeycrispWorkspace),
-			workspaceOwner.open(conversationsWorkspace),
-		]);
+		const home = dataOwner.epicenter.bind(homeDefinitions).tables;
+		const conversations = { conversations: home.conversations };
 		const host = await createHomeHost({
 			...hostOptions,
-			honeycrisp,
+			honeycrisp: { folders: home.folders, notes: home.notes },
 			conversations: wrapConversations?.(conversations) ?? conversations,
 		});
-		return { host, workspaceOwner };
+		return { host, dataOwner };
 	} catch (cause) {
-		await workspaceOwner[Symbol.asyncDispose]();
+		await dataOwner[Symbol.asyncDispose]();
 		throw cause;
 	}
 }

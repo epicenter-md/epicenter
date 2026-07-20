@@ -16,8 +16,10 @@ import {
 	createEpicenterClient,
 	createOpenAiAgentEngine,
 } from '@epicenter/client';
-import { honeycrispWorkspace } from '@epicenter/honeycrisp';
-import { createDesktopWorkspaceOwner } from '@epicenter/workspace/sqlite/desktop-owner';
+import type { SyncCredentialProvider } from '@epicenter/data';
+import { createDesktopEpicenterOwner } from '@epicenter/data/desktop-owner';
+import { parseExchangeResponse } from '@epicenter/data/protocol';
+import { connectRowDocument } from '@epicenter/document-sync';
 import { loadActiveAppCatalog } from './app-catalog.ts';
 import {
 	createDesktopAuthAuthority,
@@ -36,14 +38,13 @@ import {
 	watchParentPipe,
 } from './sidecar-runtime.ts';
 import { loadStaticAssets } from './static-assets.ts';
-import { conversationsWorkspace } from './workspace.ts';
-import { BUILT_IN_WORKSPACE_IDS } from './workspace-owner.ts';
+import { homeDefinitions } from './workspace.ts';
 
 async function main(): Promise<void> {
 	const parentPipe = watchParentPipe(Bun.stdin.stream());
 	let host: HomeHost | undefined;
-	let workspaceOwner:
-		| ReturnType<typeof createDesktopWorkspaceOwner>
+	let dataOwner:
+		| Awaited<ReturnType<typeof createDesktopEpicenterOwner>>
 		| undefined;
 	let desktopAuth: DesktopAuthAuthority | undefined;
 	let server: ReturnType<typeof Bun.serve> | undefined;
@@ -53,10 +54,11 @@ async function main(): Promise<void> {
 		const runtimeMode = parseRuntimeMode(Bun.argv);
 		const boot = parseBootFrame(await parentPipe.bootLine, runtimeMode);
 		const nativeAuthPort = createNativeAuthPort({ parentPipe });
-		desktopAuth = createDesktopAuthAuthority({
+		const auth = createDesktopAuthAuthority({
 			authCell: boot.authCell,
 			nativeAuthPort,
 		});
+		desktopAuth = auth;
 
 		const { engine, model } = homeEngineFromEnvironment(process.env);
 
@@ -66,15 +68,56 @@ async function main(): Promise<void> {
 				'EPICENTER_DATA_DIR must name the Epicenter app data directory.',
 			);
 		}
-		workspaceOwner = createDesktopWorkspaceOwner({
-			workspacesRoot: join(epicenterDataDir, 'workspaces'),
-			workspaceIds: BUILT_IN_WORKSPACE_IDS,
+		const authorityFetch = createDesktopAuthorityFetch(auth);
+		const documentCredentials = createDesktopSyncCredentials();
+		if (auth.bootSnapshot.state.status === 'signed-in') {
+			await documentCredentials.refresh(auth);
+		}
+		const nodeId = crypto.randomUUID();
+		dataOwner = await createDesktopEpicenterOwner({
+			directory: join(epicenterDataDir, 'data'),
+			...(auth.bootSnapshot.state.status === 'signed-in'
+				? {
+						connectDocument: (document) =>
+							connectRowDocument({
+								document,
+								baseUrl: auth.baseURL,
+								credentials: documentCredentials,
+								nodeId,
+							}),
+					}
+				: {}),
 		});
-		const [honeycrisp, conversations] = await Promise.all([
-			workspaceOwner.open(honeycrispWorkspace),
-			workspaceOwner.open(conversationsWorkspace),
-		]);
-		host = await createHomeHost({ engine, model, honeycrisp, conversations });
+		if (auth.bootSnapshot.state.status === 'signed-in') {
+			const syncUrl = new URL('/api/sync/v1', auth.baseURL);
+			const attached = await dataOwner.epicenter.attachSync({
+				deploymentId: new URL(auth.baseURL).href,
+				principalId: auth.bootSnapshot.state.principalId,
+				credentials: documentCredentials,
+				exchange: async (request) => {
+					await documentCredentials.refresh(auth);
+					const response = await authorityFetch(syncUrl, {
+						method: 'POST',
+						headers: { 'content-type': 'application/json' },
+						body: JSON.stringify(request),
+					});
+					if (!response.ok) {
+						throw new Error(`Epicenter sync failed (${response.status})`);
+					}
+					const parsed = parseExchangeResponse(await response.json());
+					if (parsed.error !== null) throw parsed.error;
+					return parsed.data;
+				},
+			});
+			if (attached.error !== null) throw attached.error;
+		}
+		const home = dataOwner.epicenter.bind(homeDefinitions).tables;
+		host = await createHomeHost({
+			engine,
+			model,
+			honeycrisp: { folders: home.folders, notes: home.notes },
+			conversations: { conversations: home.conversations },
+		});
 		const blobs = createBunBlobStore({
 			directory: join(epicenterDataDir, 'blobs'),
 		});
@@ -83,12 +126,12 @@ async function main(): Promise<void> {
 		// remote over the authority's own deployment fetch, a signed-out one
 		// has none until sign-in relaunches the app.
 		const blobRemote =
-			desktopAuth.bootSnapshot.state.status === 'signed-in'
+			auth.bootSnapshot.state.status === 'signed-in'
 				? createBunBlobRemote({
 						store: blobs,
 						client: createEpicenterClient({
-							baseURL: desktopAuth.baseURL,
-							fetch: createDesktopAuthorityFetch(desktopAuth),
+							baseURL: auth.baseURL,
+							fetch: createDesktopAuthorityFetch(auth),
 						}),
 					})
 				: null;
@@ -115,9 +158,9 @@ async function main(): Promise<void> {
 			launchToken: boot.token,
 			staticAssets,
 			appCatalog,
-			workspaceOwner,
+			dataOwner,
 			blobs,
-			desktopAuth,
+			desktopAuth: auth,
 			blobRemote,
 		});
 
@@ -131,15 +174,15 @@ async function main(): Promise<void> {
 		process.stdout.write(`${JSON.stringify(createReadyFrame(boot.port))}\n`);
 		lifecycleOwnsResources = true;
 		const ownedHost = host;
-		const ownedWorkspaces = workspaceOwner;
-		const ownedDesktopAuth = desktopAuth;
+		const ownedData = dataOwner;
+		const ownedDesktopAuth = auth;
 		await superviseSidecar({
 			server,
 			host: {
 				async [Symbol.asyncDispose]() {
 					ownedDesktopAuth[Symbol.dispose]();
 					await ownedHost[Symbol.asyncDispose]();
-					await ownedWorkspaces[Symbol.asyncDispose]();
+					await ownedData[Symbol.asyncDispose]();
 				},
 			},
 			parentPipe,
@@ -150,10 +193,34 @@ async function main(): Promise<void> {
 			if (server) await server.stop(true);
 			desktopAuth?.[Symbol.dispose]();
 			if (host) await host[Symbol.asyncDispose]();
-			if (workspaceOwner) await workspaceOwner[Symbol.asyncDispose]();
+			if (dataOwner) await dataOwner[Symbol.asyncDispose]();
 			await parentPipe.cancel();
 		}
 	}
+}
+
+function createDesktopSyncCredentials(): SyncCredentialProvider & {
+	refresh(authority: DesktopAuthAuthority): Promise<void>;
+} {
+	let bearer: string | undefined;
+	const listeners = new Set<() => void>();
+	return {
+		get: () => bearer,
+		subscribe(listener) {
+			listeners.add(listener);
+			return () => listeners.delete(listener);
+		},
+		async refresh(authority) {
+			const authorization = await authority.authorize();
+			const next =
+				authorization.status === 'authorized'
+					? authorization.accessToken
+					: undefined;
+			if (next === bearer) return;
+			bearer = next;
+			for (const listener of listeners) listener();
+		},
+	};
 }
 
 export function homeEngineFromEnvironment(
