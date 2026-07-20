@@ -15,13 +15,11 @@
  * the rewritten value at upgrade time (also verified).
  *
  * Shared by every Bun WebSocket surface that carries a `bearer.<token>`
- * subprotocol a browser upgrade cannot otherwise send safely: the rooms backend
- * (`room/backends/bun/registry.ts`) and the AttachRelay transport
- * (`attach-relay/bun-server.ts`). Each surface guarantees a main-subprotocol
- * offer on every path that upgrades (the route refuses offers without it), so
- * the sanitized header is `epicenter` exactly; the delete branch is defense in
- * depth for a client that offered only non-main protocols: no header, nothing
- * to auto-echo.
+ * subprotocol a browser upgrade cannot otherwise send safely. Each surface
+ * guarantees a main-subprotocol offer on every path that upgrades, so the
+ * sanitized header is `epicenter` exactly; the delete branch is defense in depth
+ * for a client that offered only non-main protocols: no header, nothing to
+ * auto-echo.
  */
 
 import { MAIN_SUBPROTOCOL, parseSubprotocols } from '@epicenter/sync';

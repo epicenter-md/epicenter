@@ -88,7 +88,7 @@ function serverNotBound(): Promise<Response> {
  * code/reason its `open` handler fires immediately (the auth layer rejecting a
  * WebSocket upgrade through {@link Rooms.rejectUpgrade}). The `surface` tag lets
  * {@link mergeBunWebSocketHandlers} route this socket to the rooms backend when
- * it shares one `Bun.serve` with the attach relay; it is a server-side dispatch
+ * it shares one `Bun.serve` with row documents; it is a server-side dispatch
  * discriminant, never a wire field.
  */
 export type BunRoomSocketData = { surface: 'rooms' } & (

@@ -1,18 +1,13 @@
 /**
- * Merge the two Bun `WebSocketHandler`s a self-hosted instance serves, the
- * rooms backend and the AttachRelay, into the one handler `Bun.serve` accepts,
- * dispatching each socket to its owner by the `surface` tag on `ws.data`.
+ * Merge the room and row-document `WebSocketHandler`s into the one handler
+ * `Bun.serve` accepts, dispatching each socket to its owner by the `surface` tag
+ * on `ws.data`.
  *
  * `Bun.serve` accepts exactly ONE `websocket` handler, but a Bun host that
- * serves both the rooms surface and the AttachRelay needs both on one port and
- * one server (a WebSocket cannot pick a port after connecting). Each backend
- * owns a DISJOINT `ws.data` shape (`createBunRooms` tags `surface: 'rooms'`,
- * `createAttachRelayBunServer` tags `surface: 'attach'`) and its own coordinator
- * state, so this merge never blends the two: it reads the tag stamped at
- * `server.upgrade` time and forwards every lifecycle callback to the one handler
- * that owns that socket. The `surface` tag is a server-side dispatch discriminant
- * on `ws.data`, never a wire or addressing field: it never reaches a relay frame,
- * so it is not the "channel router" ADR-0115 forbids.
+ * serves both surfaces needs both on one port and one server. Each backend owns
+ * a disjoint `ws.data` shape and its own coordinator state, so this merge reads
+ * the tag stamped at `server.upgrade` time and forwards every lifecycle callback
+ * to the one handler that owns that socket.
  *
  * This is a two-surface merge on purpose, not a generic N-way router: a Bun
  * instance has exactly these two WebSocket surfaces, and a third one earns a new
@@ -22,14 +17,12 @@
  */
 
 import type { ServerWebSocket, WebSocketHandler } from 'bun';
-import type { AttachRelaySocketData } from './attach-relay/bun-server.js';
 import type { BunWorkspaceDocumentSocketData } from './records/current-state-bun.js';
 import type { BunRoomSocketData } from './room/backends/bun/registry.js';
 
 /** The two disjoint `ws.data` shapes this merged handler dispatches between. */
 export type MergedSocketData =
 	| BunRoomSocketData
-	| AttachRelaySocketData
 	| BunWorkspaceDocumentSocketData;
 
 /**
@@ -43,16 +36,13 @@ export type MergedSocketData =
 export function mergeBunWebSocketHandlers(handlers: {
 	rooms: WebSocketHandler<BunRoomSocketData>;
 	documents: WebSocketHandler<BunWorkspaceDocumentSocketData>;
-	attach?: WebSocketHandler<AttachRelaySocketData>;
 }): WebSocketHandler<MergedSocketData> {
 	const pick = (
 		ws: ServerWebSocket<MergedSocketData>,
 	): WebSocketHandler<MergedSocketData> =>
 		(ws.data.surface === 'rooms'
 			? handlers.rooms
-			: ws.data.surface === 'workspace-document'
-				? handlers.documents
-				: handlers.attach) as WebSocketHandler<MergedSocketData>;
+			: handlers.documents) as WebSocketHandler<MergedSocketData>;
 
 	return {
 		open(ws) {
