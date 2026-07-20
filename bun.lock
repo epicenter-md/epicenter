@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -92,20 +91,20 @@
       "name": "@epicenter/epicenter",
       "version": "0.0.1",
       "dependencies": {
+        "@epicenter/agent": "workspace:*",
         "@epicenter/auth": "workspace:*",
         "@epicenter/blobs": "workspace:*",
-        "@epicenter/chat": "workspace:*",
         "@epicenter/client": "workspace:*",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/data": "workspace:*",
+        "@epicenter/document-sync": "workspace:*",
         "@epicenter/field": "workspace:*",
-        "@epicenter/honeycrisp": "workspace:*",
         "@epicenter/server": "workspace:*",
         "@epicenter/skills": "workspace:*",
         "@epicenter/sync": "workspace:*",
         "@epicenter/todos": "workspace:*",
         "@epicenter/ui": "workspace:*",
         "@epicenter/whispering": "workspace:*",
-        "@epicenter/workspace": "workspace:*",
         "@modelcontextprotocol/sdk": "catalog:",
         "@tauri-apps/api": "catalog:",
         "hono": "catalog:",
@@ -583,11 +582,11 @@
         "@epicenter/blobs": "workspace:*",
         "@epicenter/client": "workspace:*",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/data": "workspace:*",
         "@epicenter/field": "workspace:*",
         "@epicenter/recorder": "workspace:*",
         "@epicenter/skills": "workspace:*",
         "@epicenter/svelte": "workspace:*",
-        "@epicenter/workspace": "workspace:*",
         "@mistralai/mistralai": "^1.9.18",
         "@standard-schema/spec": "catalog:",
         "@tanstack/svelte-query": "catalog:",
@@ -695,6 +694,19 @@
       "name": "@epicenter/ops",
       "dependencies": {
         "@epicenter/constants": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/agent": {
+      "name": "@epicenter/agent",
+      "version": "0.0.1",
+      "dependencies": {
+        "@epicenter/agent-protocol": "workspace:*",
+        "typebox": "catalog:",
+        "wellcrafted": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -859,6 +871,67 @@
         "vite": "catalog:",
       },
     },
+    "packages/data": {
+      "name": "@epicenter/data",
+      "version": "0.0.1",
+      "dependencies": {
+        "@epicenter/field": "workspace:*",
+        "@epicenter/sqlite": "workspace:*",
+        "@sqlite.org/sqlite-wasm": "catalog:",
+        "@y/y": "14.0.0-rc.24",
+        "nanoid": "catalog:",
+        "typebox": "catalog:",
+        "wellcrafted": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/database-address": {
+      "name": "@epicenter/database-address",
+      "version": "0.0.1",
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/database-control": {
+      "name": "@epicenter/database-control",
+      "version": "0.0.1",
+      "dependencies": {
+        "@epicenter/database-address": "workspace:*",
+        "typebox": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/database-migration": {
+      "name": "@epicenter/database-migration",
+      "version": "0.0.1",
+      "dependencies": {
+        "@epicenter/database-address": "workspace:*",
+        "@epicenter/sqlite": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/document-sync": {
+      "name": "@epicenter/document-sync",
+      "version": "0.0.1",
+      "dependencies": {
+        "@epicenter/data": "workspace:*",
+        "@y/y": "14.0.0-rc.24",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/encryption": {
       "name": "@epicenter/encryption",
       "version": "0.3.0",
@@ -965,6 +1038,10 @@
         "@epicenter/auth": "workspace:*",
         "@epicenter/blobs": "workspace:*",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/data": "workspace:*",
+        "@epicenter/database-address": "workspace:*",
+        "@epicenter/database-control": "workspace:*",
+        "@epicenter/document-sync": "workspace:*",
         "@epicenter/identity": "workspace:*",
         "@epicenter/row-sync": "workspace:*",
         "@epicenter/sqlite": "workspace:*",
@@ -1480,6 +1557,8 @@
 
     "@emoji-mart/data": ["@emoji-mart/data@1.2.1", "", {}, "sha512-no2pQMWiBy6gpBEiqGeU77/bFejDqUTRY7KX+0+iur13op3bqUsXdnwoZs6Xb1zbv0gAj5VvS1PWoUUckSr5Dw=="],
 
+    "@epicenter/agent": ["@epicenter/agent@workspace:packages/agent"],
+
     "@epicenter/agent-protocol": ["@epicenter/agent-protocol@workspace:packages/agent-protocol"],
 
     "@epicenter/api": ["@epicenter/api@workspace:apps/api"],
@@ -1499,6 +1578,16 @@
     "@epicenter/client": ["@epicenter/client@workspace:packages/client"],
 
     "@epicenter/constants": ["@epicenter/constants@workspace:packages/constants"],
+
+    "@epicenter/data": ["@epicenter/data@workspace:packages/data"],
+
+    "@epicenter/database-address": ["@epicenter/database-address@workspace:packages/database-address"],
+
+    "@epicenter/database-control": ["@epicenter/database-control@workspace:packages/database-control"],
+
+    "@epicenter/database-migration": ["@epicenter/database-migration@workspace:packages/database-migration"],
+
+    "@epicenter/document-sync": ["@epicenter/document-sync@workspace:packages/document-sync"],
 
     "@epicenter/encryption": ["@epicenter/encryption@workspace:packages/encryption"],
 
