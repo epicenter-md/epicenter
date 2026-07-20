@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -501,6 +500,15 @@
         "typescript": "catalog:",
         "vite": "catalog:",
         "wxt": "^0.20.26",
+      },
+    },
+    "apps/theark": {
+      "name": "@epicenter/theark",
+      "version": "0.0.1",
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+        "wrangler": "catalog:",
       },
     },
     "apps/todos": {
@@ -1549,6 +1557,8 @@
     "@epicenter/sync": ["@epicenter/sync@workspace:packages/sync"],
 
     "@epicenter/tab-manager": ["@epicenter/tab-manager@workspace:apps/tab-manager"],
+
+    "@epicenter/theark": ["@epicenter/theark@workspace:apps/theark"],
 
     "@epicenter/todos": ["@epicenter/todos@workspace:apps/todos"],
 

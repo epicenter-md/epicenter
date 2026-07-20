@@ -148,6 +148,7 @@
 		"dev:self-host": "bun run --cwd apps/self-host dev",
 		"dev:skills": "bun run --cwd apps/skills dev",
 		"dev:tab-manager": "bun run --filter @epicenter/api --filter @epicenter/tab-manager dev",
+		"dev:theark": "bun run --cwd apps/theark dev",
 		"dev:tab-manager:ui": "bun run --cwd apps/tab-manager dev",
 		"dev:todos": "bun run --cwd apps/todos dev",
 		"dev:vocab": "bun run --filter @epicenter/api --filter @epicenter/vocab dev",
