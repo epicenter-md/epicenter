@@ -1,18 +1,18 @@
 /**
- * Honeycrisp's inert SQLite workspace contract.
+ * Honeycrisp's inert Data definitions.
  *
  * Runtimes own storage, synchronization, and document lifecycles. This module
- * owns only stable workspace identity, release-local row lenses, and the one
+ * owns only qualified keys, release-local row lenses, and the one
  * multi-row folder deletion operation shared by the UI and desktop host.
  */
 
-import { field } from '@epicenter/field';
 import {
+	type BoundData,
 	defineTable,
-	defineWorkspace,
+	optional,
 	type RowFor,
-	type Workspace,
-} from '@epicenter/workspace/sqlite';
+} from '@epicenter/data';
+import { field } from '@epicenter/field';
 
 /** Runtime-minted structural note row id. */
 export type NoteId = string;
@@ -21,37 +21,41 @@ export type NoteId = string;
 export type FolderId = string;
 
 export const foldersTable = defineTable({
+	key: 'so.epicenter.honeycrisp.folders',
 	fields: {
 		name: field.string(),
-		icon: field.string(),
+		icon: optional(field.string()),
 		sortOrder: field.number(),
 	},
-	optional: ['icon'],
 });
 export type Folder = RowFor<typeof foldersTable>;
 
 export const notesTable = defineTable({
+	key: 'so.epicenter.honeycrisp.notes',
 	fields: {
-		folderId: field.string(),
+		folderId: optional(field.string()),
 		title: field.string(),
 		preview: field.string(),
 		pinned: field.boolean(),
 		createdAt: field.instant(),
 		updatedAt: field.instant(),
-		deletedAt: field.instant(),
-		wordCount: field.number(),
+		deletedAt: optional(field.instant()),
+		wordCount: optional(field.number()),
 	},
-	optional: ['folderId', 'deletedAt', 'wordCount'],
+	document: true,
 });
 export type Note = RowFor<typeof notesTable>;
 
-/** Honeycrisp's schema-opaque canonical workspace and this release's lenses. */
-export const honeycrispWorkspace = defineWorkspace({
-	id: 'epicenter-honeycrisp',
+/** Honeycrisp's inert definitions for this release. */
+export const honeycrispDefinitions = {
 	tables: { folders: foldersTable, notes: notesTable },
-});
+	values: {},
+} as const;
 
-export type HoneycrispWorkspace = Workspace<typeof honeycrispWorkspace>;
+export type HoneycrispData = BoundData<
+	typeof honeycrispDefinitions.tables,
+	typeof honeycrispDefinitions.values
+>;
 
 /**
  * Delete a folder after best-effort re-parenting of its current notes.
@@ -61,16 +65,20 @@ export type HoneycrispWorkspace = Workspace<typeof honeycrispWorkspace>;
  * be retried without knowingly leaving a dangling folder id.
  */
 export async function deleteHoneycrispFolder(
-	workspace: HoneycrispWorkspace,
+	data: HoneycrispData,
 	folderId: FolderId,
 ): Promise<void> {
-	const { rows } = await workspace.tables.notes.list();
-	for (const note of rows) {
-		if (note.folderId !== folderId) continue;
-		const result = await workspace.tables.notes.update(note.id, {
-			folderId: undefined,
-		});
-		if (result.error !== null) throw result.error;
-	}
-	await workspace.tables.folders.delete(folderId);
+	let cursor: string | undefined;
+	do {
+		const page = await data.tables.notes.list({ cursor, limit: 100 });
+		for (const note of page.rows) {
+			if (note.folderId !== folderId) continue;
+			const result = await data.tables.notes.update(note.id, {
+				folderId: undefined,
+			});
+			if (result.error !== null) throw result.error;
+		}
+		cursor = page.nextCursor;
+	} while (cursor !== undefined);
+	await data.tables.folders.delete(folderId);
 }

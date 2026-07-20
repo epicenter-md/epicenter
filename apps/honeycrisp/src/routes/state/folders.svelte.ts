@@ -1,31 +1,42 @@
+import type { NonconformingRowError } from '@epicenter/data';
 import {
 	deleteHoneycrispFolder,
 	type Folder,
 	type FolderId,
-	type HoneycrispWorkspace,
+	type HoneycrispData,
 } from '@epicenter/honeycrisp';
-import type { RowLensError } from '@epicenter/workspace/sqlite';
 import { searchParams } from './search-params.svelte.js';
 
 export function createFolders({
 	honeycrisp,
 	refreshNotes,
 }: {
-	honeycrisp: HoneycrispWorkspace;
+	honeycrisp: HoneycrispData;
 	refreshNotes(): Promise<void>;
 }) {
 	let rows = $state.raw<Folder[]>([]);
-	let nonconforming = $state.raw<RowLensError[]>([]);
+	let nonconforming = $state.raw<NonconformingRowError[]>([]);
 	let loadError = $state.raw<unknown>(null);
 	let refreshGeneration = 0;
 
 	async function refresh(): Promise<void> {
 		const generation = ++refreshGeneration;
 		try {
-			const scan = await honeycrisp.tables.folders.list();
+			const nextRows: Folder[] = [];
+			const nextNonconforming: NonconformingRowError[] = [];
+			let cursor: string | undefined;
+			do {
+				const page = await honeycrisp.tables.folders.list({
+					cursor,
+					limit: 100,
+				});
+				nextRows.push(...page.rows);
+				nextNonconforming.push(...page.nonconforming);
+				cursor = page.nextCursor;
+			} while (cursor !== undefined);
 			if (generation !== refreshGeneration) return;
-			rows = scan.rows;
-			nonconforming = scan.nonconforming;
+			rows = nextRows;
+			nonconforming = nextNonconforming;
 			loadError = null;
 		} catch (cause) {
 			if (generation === refreshGeneration) loadError = cause;

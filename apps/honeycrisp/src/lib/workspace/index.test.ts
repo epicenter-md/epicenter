@@ -1,5 +1,5 @@
 /**
- * Honeycrisp SQLite Workspace Tests
+ * Honeycrisp Data Tests
  *
  * Exercises Honeycrisp's inert definition through the real Bun row runtime.
  *
@@ -14,17 +14,17 @@ import { expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { openBunEpicenter } from '@epicenter/data/bun';
 import { InstantString } from '@epicenter/field';
-import { createDeviceBunWorkspaceRuntime } from '@epicenter/workspace/sqlite/bun';
-import { deleteHoneycrispFolder, honeycrispWorkspace } from './index.js';
+import { deleteHoneycrispFolder, honeycrispDefinitions } from './index.js';
 
 test('runtime-minted rows support optional fields and folder re-parenting', async () => {
 	const storageRoot = mkdtempSync(join(tmpdir(), 'epicenter-honeycrisp-'));
 	try {
-		await using runtime = createDeviceBunWorkspaceRuntime({
-			workspacesRoot: storageRoot,
+		await using epicenter = await openBunEpicenter({
+			path: join(storageRoot, 'epicenter.sqlite3'),
 		});
-		const honeycrisp = await runtime.open(honeycrispWorkspace);
+		const honeycrisp = epicenter.bind(honeycrispDefinitions);
 		const folder = await honeycrisp.tables.folders.create({
 			name: 'Projects',
 			sortOrder: 0,
@@ -63,10 +63,10 @@ test('note body documents remain durable across runtime reopen', async () => {
 	try {
 		let noteId: string;
 		{
-			await using runtime = createDeviceBunWorkspaceRuntime({
-				workspacesRoot: storageRoot,
+			await using epicenter = await openBunEpicenter({
+				path: join(storageRoot, 'epicenter.sqlite3'),
 			});
-			const honeycrisp = await runtime.open(honeycrispWorkspace);
+			const honeycrisp = epicenter.bind(honeycrispDefinitions);
 			const now = InstantString.now();
 			const note = await honeycrisp.tables.notes.create({
 				title: 'Durable body',
@@ -76,17 +76,19 @@ test('note body documents remain durable across runtime reopen', async () => {
 				updatedAt: now,
 			});
 			noteId = note.id;
-			using document = await honeycrisp.tables.notes.document.open(note.id);
+			await using document = await honeycrisp.tables.notes.openDocument(
+				note.id,
+			);
 			const body = document.get('body');
 			document.transact(() => body.insert(0, 'Persisted body'));
 			await document.whenDurable();
 		}
 
-		await using reopenedRuntime = createDeviceBunWorkspaceRuntime({
-			workspacesRoot: storageRoot,
+		await using reopenedEpicenter = await openBunEpicenter({
+			path: join(storageRoot, 'epicenter.sqlite3'),
 		});
-		const reopened = await reopenedRuntime.open(honeycrispWorkspace);
-		using document = await reopened.tables.notes.document.open(noteId);
+		const reopened = reopenedEpicenter.bind(honeycrispDefinitions);
+		await using document = await reopened.tables.notes.openDocument(noteId);
 		expect(document.get('body').toString()).toBe('Persisted body');
 	} finally {
 		rmSync(storageRoot, { recursive: true, force: true });
@@ -96,10 +98,10 @@ test('note body documents remain durable across runtime reopen', async () => {
 test('deleting a note revokes its open body document', async () => {
 	const storageRoot = mkdtempSync(join(tmpdir(), 'epicenter-honeycrisp-'));
 	try {
-		await using runtime = createDeviceBunWorkspaceRuntime({
-			workspacesRoot: storageRoot,
+		await using epicenter = await openBunEpicenter({
+			path: join(storageRoot, 'epicenter.sqlite3'),
 		});
-		const honeycrisp = await runtime.open(honeycrispWorkspace);
+		const honeycrisp = epicenter.bind(honeycrispDefinitions);
 		const now = InstantString.now();
 		const note = await honeycrisp.tables.notes.create({
 			title: 'Delete me',
@@ -108,7 +110,7 @@ test('deleting a note revokes its open body document', async () => {
 			createdAt: now,
 			updatedAt: now,
 		});
-		using document = await honeycrisp.tables.notes.document.open(note.id);
+		await using document = await honeycrisp.tables.notes.openDocument(note.id);
 
 		await honeycrisp.tables.notes.delete(note.id);
 

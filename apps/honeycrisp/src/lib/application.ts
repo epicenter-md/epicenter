@@ -1,56 +1,64 @@
+import type { Epicenter, RowDocument, SyncStatus } from '@epicenter/data';
+import type { connectRowDocument } from '@epicenter/document-sync';
 import {
-	type HoneycrispWorkspace,
-	honeycrispWorkspace,
+	type HoneycrispData,
+	honeycrispDefinitions,
 } from '@epicenter/honeycrisp';
-import type {
-	WorkspaceLens,
-	Workspace,
-} from '@epicenter/workspace/sqlite';
 import { createHoneycrispState } from '../routes/state/index.js';
 
 type ApplicationRuntime = {
-	open<TDefinition extends WorkspaceLens>(
-		definition: TDefinition,
-	): Promise<Workspace<TDefinition>>;
+	epicenter: Epicenter;
+	connectDocument(document: RowDocument): ReturnType<typeof connectRowDocument>;
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
 export type HoneycrispDependencies = {
-	createRuntime(
-		onRecordsChanged: (workspaceId: string) => void,
-	): ApplicationRuntime;
+	openEpicenter(): Promise<ApplicationRuntime>;
 	reportBackgroundError(cause: unknown): void;
 };
 
-export type HoneycrispApplication = HoneycrispWorkspace & {
+export type HoneycrispNoteDocument = {
+	document: RowDocument;
+	connection: ReturnType<typeof connectRowDocument>;
+	[Symbol.asyncDispose](): Promise<void>;
+};
+
+export type HoneycrispApplication = HoneycrispData & {
 	state: ReturnType<typeof createHoneycrispState>;
+	readonly syncStatus: SyncStatus;
+	subscribeSyncStatus(listener: (status: SyncStatus) => void): () => void;
+	openNoteDocument(noteId: string): Promise<HoneycrispNoteDocument>;
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
 /** Open one fully acquired and hydrated Honeycrisp application. */
 export async function openHoneycrispApplication(
-	{ createRuntime, reportBackgroundError }: HoneycrispDependencies,
+	{ openEpicenter, reportBackgroundError }: HoneycrispDependencies,
 	{ signal }: { signal?: AbortSignal } = {},
 ): Promise<HoneycrispApplication> {
-	const recordsChangedListeners = new Set<() => void>();
-	const runtime = createRuntime((workspaceId) => {
-		if (workspaceId !== honeycrispWorkspace.id) return;
-		for (const listener of recordsChangedListeners) listener();
-	});
+	let runtime: ApplicationRuntime | undefined;
 	let state: ReturnType<typeof createHoneycrispState> | undefined;
+	const documents = new Set<HoneycrispNoteDocument>();
 	let releasePromise: Promise<void> | undefined;
 	const release = (): Promise<void> => {
 		releasePromise ??= (async () => {
 			signal?.removeEventListener('abort', onAbort);
-			recordsChangedListeners.clear();
 			const failures: unknown[] = [];
+			for (const document of documents) {
+				try {
+					await document[Symbol.asyncDispose]();
+				} catch (cause) {
+					failures.push(cause);
+				}
+			}
+			documents.clear();
 			try {
 				state?.[Symbol.dispose]();
 			} catch (cause) {
 				failures.push(cause);
 			}
 			try {
-				await runtime[Symbol.asyncDispose]();
+				await runtime?.[Symbol.asyncDispose]();
 			} catch (cause) {
 				failures.push(cause);
 			}
@@ -74,21 +82,49 @@ export async function openHoneycrispApplication(
 
 	try {
 		signal?.throwIfAborted();
-		const workspace = await untilAbort(runtime.open(honeycrispWorkspace));
+		runtime = await untilAbort(openEpicenter());
 		signal?.throwIfAborted();
+		const activeRuntime = runtime;
+		const data = activeRuntime.epicenter.bind(honeycrispDefinitions);
 		state = createHoneycrispState({
-			honeycrisp: workspace,
-			onRecordsChanged(listener) {
-				recordsChangedListeners.add(listener);
-				return () => recordsChangedListeners.delete(listener);
-			},
+			honeycrisp: data,
 			reportBackgroundError,
 		});
 		await untilAbort(state.whenReady);
 		signal?.throwIfAborted();
 		return Object.freeze({
-			...workspace,
+			...data,
 			state,
+			get syncStatus() {
+				return activeRuntime.epicenter.syncStatus;
+			},
+			subscribeSyncStatus(listener: (status: SyncStatus) => void) {
+				return activeRuntime.epicenter.subscribeSyncStatus(listener);
+			},
+			async openNoteDocument(noteId: string) {
+				const document = await data.tables.notes.openDocument(noteId);
+				let connection: ReturnType<typeof connectRowDocument>;
+				try {
+					connection = activeRuntime.connectDocument(document);
+				} catch (cause) {
+					await document[Symbol.asyncDispose]();
+					throw cause;
+				}
+				let disposed = false;
+				const opened: HoneycrispNoteDocument = {
+					document,
+					connection,
+					async [Symbol.asyncDispose]() {
+						if (disposed) return;
+						disposed = true;
+						documents.delete(opened);
+						connection.dispose();
+						await document[Symbol.asyncDispose]();
+					},
+				};
+				documents.add(opened);
+				return opened;
+			},
 			[Symbol.asyncDispose]: release,
 		});
 	} catch (cause) {

@@ -1,15 +1,13 @@
-import type { HoneycrispWorkspace } from '@epicenter/honeycrisp';
+import type { HoneycrispData } from '@epicenter/honeycrisp';
 import { createFolders } from './folders.svelte.js';
 import { createNotes } from './notes.svelte.js';
 import { createView } from './view.svelte.js';
 
 export function createHoneycrispState({
 	honeycrisp,
-	onRecordsChanged,
 	reportBackgroundError,
 }: {
-	honeycrisp: HoneycrispWorkspace;
-	onRecordsChanged(listener: () => void): () => void;
+	honeycrisp: HoneycrispData;
 	reportBackgroundError(cause: unknown): void;
 }) {
 	let notes!: ReturnType<typeof createNotes>;
@@ -21,14 +19,13 @@ export function createHoneycrispState({
 	const view = createView({ folders, notes });
 
 	const refresh = () => Promise.all([folders.refresh(), notes.refresh()]);
-	let isDisposed = false;
-	let unsubscribe = () => {};
-	const whenReady = refresh().then(() => {
-		if (isDisposed) return;
-		unsubscribe = onRecordsChanged(() => {
-			void refresh().catch(reportBackgroundError);
-		});
+	const stopFolders = honeycrisp.tables.folders.subscribe(() => {
+		void folders.refresh().catch(reportBackgroundError);
 	});
+	const stopNotes = honeycrisp.tables.notes.subscribe(() => {
+		void notes.refresh().catch(reportBackgroundError);
+	});
+	const whenReady = refresh();
 
 	return {
 		folders,
@@ -36,8 +33,8 @@ export function createHoneycrispState({
 		view,
 		whenReady,
 		[Symbol.dispose]() {
-			isDisposed = true;
-			unsubscribe();
+			stopFolders();
+			stopNotes();
 			view[Symbol.dispose]();
 		},
 	};

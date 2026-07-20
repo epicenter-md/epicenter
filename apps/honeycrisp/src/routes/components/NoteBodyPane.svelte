@@ -11,12 +11,12 @@
 	let { noteId, focusRequest }: { noteId: NoteId; focusRequest: number } =
 		$props();
 
-	const lease = $derived(honeycrisp.tables.notes.document.open(noteId));
+	const lease = $derived(honeycrisp.openNoteDocument(noteId));
 	$effect(() => {
 		const openedLease = lease;
 		return () =>
 			void openedLease.then(
-				(opened) => opened[Symbol.dispose](),
+				(opened) => opened[Symbol.asyncDispose](),
 				() => undefined,
 			);
 	});
@@ -24,11 +24,11 @@
 
 {#await lease}
 	<Loading class="h-full" />
-{:then document}
+{:then opened}
 	<div class="flex h-full flex-col">
 		<div class="min-h-0 flex-1">
 			<HoneycripEditor
-				yxmlfragment={document.get('body')}
+				yxmlfragment={opened.document.get('body')}
 				{focusRequest}
 				onContentChange={(change) =>
 					runHoneycrispMutation(
@@ -37,6 +37,6 @@
 					)}
 			/>
 		</div>
-		<DocumentSyncStatus {document} />
+		<DocumentSyncStatus connection={opened.connection} />
 	</div>
 {/await}

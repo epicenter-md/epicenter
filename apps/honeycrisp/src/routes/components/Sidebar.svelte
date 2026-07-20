@@ -21,6 +21,7 @@
 			<div class="flex items-center gap-1">
 				<AccountPopover
 					{auth}
+					dataSync={honeycrisp}
 					syncNoun="notes"
 					instanceConnect={{ appName: 'Honeycrisp', setting: instanceSetting }}
 				/>

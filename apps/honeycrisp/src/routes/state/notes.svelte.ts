@@ -1,15 +1,12 @@
+import type { ConstrainedUpdate, NonconformingRowError } from '@epicenter/data';
 import { InstantString } from '@epicenter/field';
 import type {
 	FolderId,
-	HoneycrispWorkspace,
+	HoneycrispData,
 	Note,
 	NoteId,
 	notesTable,
 } from '@epicenter/honeycrisp';
-import type {
-	ConstrainedChanges,
-	RowLensError,
-} from '@epicenter/workspace/sqlite';
 import type { createFolders } from './folders.svelte.js';
 import { searchParams } from './search-params.svelte.js';
 
@@ -18,10 +15,10 @@ export function createNotes({
 	honeycrisp,
 }: {
 	folders: ReturnType<typeof createFolders>;
-	honeycrisp: HoneycrispWorkspace;
+	honeycrisp: HoneycrispData;
 }) {
 	let rows = $state.raw<Note[]>([]);
-	let nonconforming = $state.raw<RowLensError[]>([]);
+	let nonconforming = $state.raw<NonconformingRowError[]>([]);
 	let loadError = $state.raw<unknown>(null);
 	let refreshGeneration = 0;
 
@@ -40,10 +37,18 @@ export function createNotes({
 	async function refresh(): Promise<void> {
 		const generation = ++refreshGeneration;
 		try {
-			const scan = await honeycrisp.tables.notes.list();
+			const nextRows: Note[] = [];
+			const nextNonconforming: NonconformingRowError[] = [];
+			let cursor: string | undefined;
+			do {
+				const page = await honeycrisp.tables.notes.list({ cursor, limit: 100 });
+				nextRows.push(...page.rows);
+				nextNonconforming.push(...page.nonconforming);
+				cursor = page.nextCursor;
+			} while (cursor !== undefined);
 			if (generation !== refreshGeneration) return;
-			rows = scan.rows;
-			nonconforming = scan.nonconforming;
+			rows = nextRows;
+			nonconforming = nextNonconforming;
 			loadError = null;
 		} catch (cause) {
 			if (generation === refreshGeneration) loadError = cause;
@@ -53,7 +58,7 @@ export function createNotes({
 
 	async function update<const TChanges extends Record<string, unknown>>(
 		noteId: NoteId,
-		changes: TChanges & ConstrainedChanges<typeof notesTable, TChanges>,
+		changes: TChanges & ConstrainedUpdate<typeof notesTable, TChanges>,
 	): Promise<void> {
 		const result = await honeycrisp.tables.notes.update(noteId, changes);
 		if (result.error !== null) throw result.error;

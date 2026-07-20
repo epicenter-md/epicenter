@@ -15,15 +15,12 @@
 -->
 <script lang="ts">
 	import type { Note } from '@epicenter/honeycrisp';
+	import type { DocumentConnectionStatus } from '@epicenter/document-sync';
 	import { Button } from '@epicenter/ui/button';
-	import {
-		type DocumentConnectionStatus,
-		type RowDocument,
-		rowDocumentConnection,
-	} from '@epicenter/workspace/sqlite';
 	import { InstantString } from '@epicenter/field';
 	import { onDestroy } from 'svelte';
 	import { auth } from '#platform/auth';
+	import type { HoneycrispNoteDocument } from '$lib/application.js';
 	import { getHoneycrispApp } from '$lib/context.js';
 
 	const honeycrisp = getHoneycrispApp();
@@ -38,7 +35,7 @@
 	type Panel = {
 		rowId: string;
 		title: string;
-		document: RowDocument | undefined;
+		opened: HoneycrispNoteDocument | undefined;
 		status: DocumentConnectionStatus | undefined;
 		/** Times the connection re-entered `connected` (reconnect counter). */
 		connectedCount: number;
@@ -57,9 +54,9 @@
 	const isSignedIn = $derived(auth.state.status === 'signed-in');
 
 	function refreshPanel(panel: Panel): void {
-		if (!panel.document) return;
+		if (!panel.opened) return;
 		try {
-			panel.text = panel.document.get('harness').toString();
+			panel.text = panel.opened.document.get('harness').toString();
 		} catch (cause) {
 			panel.revoked = cause instanceof Error ? cause.message : String(cause);
 			panel.unsubscribe?.();
@@ -68,9 +65,19 @@
 		panels = [...panels];
 	}
 
+	async function listAllNotes(): Promise<Note[]> {
+		const notes: Note[] = [];
+		let cursor: string | undefined;
+		do {
+			const page = await honeycrisp.tables.notes.list({ cursor, limit: 100 });
+			notes.push(...page.rows);
+			cursor = page.nextCursor;
+		} while (cursor !== undefined);
+		return notes;
+	}
+
 	async function ensureRows(count: number): Promise<Note[]> {
-		const { rows } = await honeycrisp.tables.notes.list();
-		const mine = rows
+		const mine = (await listAllNotes())
 			.filter((note) => note.title.startsWith(TITLE_PREFIX))
 			.sort((a, b) => a.title.localeCompare(b.title));
 		for (let index = mine.length; index < count; index += 1) {
@@ -91,7 +98,7 @@
 		const generation = ++openGeneration;
 		for (const panel of panels) {
 			panel.unsubscribe?.();
-			panel.document?.[Symbol.dispose]();
+			void panel.opened?.[Symbol.asyncDispose]();
 		}
 		panels = [];
 		const rows = await ensureRows(count);
@@ -99,7 +106,7 @@
 		const next: Panel[] = rows.map((note) => ({
 			rowId: note.id,
 			title: note.title,
-			document: undefined,
+			opened: undefined,
 			status: undefined,
 			connectedCount: 0,
 			text: '',
@@ -112,27 +119,24 @@
 		await Promise.all(
 			next.map(async (panel) => {
 				try {
-					const document = await honeycrisp.tables.notes.document.open(
-						panel.rowId,
-					);
+					const opened = await honeycrisp.openNoteDocument(panel.rowId);
 					if (generation !== openGeneration) {
-						document[Symbol.dispose]();
+						await opened[Symbol.asyncDispose]();
 						return;
 					}
-					panel.document = document;
-					const connection = rowDocumentConnection(document);
-					panel.status = connection?.status;
-					const offStatus = connection?.onStatusChange((status) => {
+					panel.opened = opened;
+					panel.status = opened.connection.status;
+					const offStatus = opened.connection.subscribeStatus((status) => {
 						if (
-							status.phase === 'connected' &&
-							panel.status?.phase !== 'connected'
+							status === 'connected' &&
+							panel.status !== 'connected'
 						) {
 							panel.connectedCount += 1;
 						}
 						panel.status = status;
 						panels = [...panels];
 					});
-					const text = document.get('harness');
+					const text = opened.document.get('harness');
 					const observer = () => {
 						panel.lastChangeAt = new Date().toLocaleTimeString();
 						refreshPanel(panel);
@@ -157,10 +161,10 @@
 	}
 
 	function edit(panel: Panel): void {
-		if (!panel.document) return;
+		if (!panel.opened) return;
 		try {
-			const text = panel.document.get('harness');
-			panel.document.transact(() => {
+			const text = panel.opened.document.get('harness');
+			panel.opened.document.transact(() => {
 				text.insert(
 					text.length,
 					`${text.length === 0 ? '' : '\n'}${location.hostname} ${new Date().toISOString()}`,
@@ -201,11 +205,10 @@
 		openGeneration += 1;
 		for (const panel of panels) {
 			panel.unsubscribe?.();
-			panel.document?.[Symbol.dispose]();
+			void panel.opened?.[Symbol.asyncDispose]();
 		}
 		panels = [];
-		const { rows } = await honeycrisp.tables.notes.list();
-		for (const note of rows) {
+		for (const note of await listAllNotes()) {
 			if (!note.title.startsWith(TITLE_PREFIX)) continue;
 			await honeycrisp.tables.notes.delete(note.id);
 		}
@@ -233,23 +236,23 @@
 		if (pulseTimer) clearInterval(pulseTimer);
 		for (const panel of panels) {
 			panel.unsubscribe?.();
-			panel.document?.[Symbol.dispose]();
+			void panel.opened?.[Symbol.asyncDispose]();
 		}
 	});
 
 	function phaseLabel(status: DocumentConnectionStatus | undefined): string {
-		if (!status) return 'no transport (signed out)';
-		switch (status.phase) {
+		if (!status) return 'not opened';
+		switch (status) {
 			case 'connecting':
-				return `connecting (attempt ${status.attempt})`;
-			case 'pending':
-				return `pending retry in ${status.retryInMs}ms (${status.reason})`;
+				return 'connecting';
 			case 'connected':
 				return 'connected';
-			case 'document-full':
-				return `document-full (${status.recoverable ? 'recoverable' : 'not recoverable'})`;
-			case 'terminal':
-				return `terminal (${status.reason})`;
+			case 'offline':
+				return 'offline';
+			case 'authentication-required':
+				return 'authentication required';
+			case 'revoked':
+				return 'revoked';
 			case 'disposed':
 				return 'disposed';
 		}
@@ -289,7 +292,7 @@
 		</Button>
 	</div>
 	<p class="text-xs text-muted-foreground">
-		Connected {panels.filter((panel) => panel.status?.phase === 'connected')
+		Connected {panels.filter((panel) => panel.status === 'connected')
 			.length}/{panels.length}. Background the app, wait, foreground: every
 		panel must reconnect and show edits made meanwhile. Delete a row from the
 		other device: its panel must show revoked.

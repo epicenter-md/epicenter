@@ -17,10 +17,10 @@ Single-route SvelteKit app with a three-pane layout: sidebar (folders) → note 
 Honeycrisp defines one inert workspace contract (`id: "epicenter-honeycrisp"`) and opens it through a page-owned runtime:
 
 ```txt
-honeycrispWorkspace
+honeycrispDefinitions
   shared isomorphic definition: id and release-local row lenses
 
-createHoneycrispBrowserRuntime()
+openHoneycrispBrowserEpicenter()
   browser runtime: device or account SQLite ownership and sync
 ```
 
@@ -30,7 +30,7 @@ This was a clean break from the legacy root-Yjs and IndexedDB model. Honeycrisp 
 
 ### Rich-text editing
 
-Each note row owns one document. `NoteBodyPane.svelte` opens it through `honeycrisp.tables.notes.document.open(noteId)`, reads the application-owned `body` root, and disposes the lease when the pane unmounts. ProseMirror binds to that Yjs 14 type through `@y/prosemirror`.
+Each note row owns one document. `NoteBodyPane.svelte` opens it through `honeycrisp.openNoteDocument(noteId)`, reads the application-owned `body` root, and disposes the handle when the pane unmounts. ProseMirror binds to that Yjs 14 type through `@y/prosemirror`.
 
 User edits extract the title, preview, and word count and write them back to the note row with an explicit `updatedAt`. Binding-origin transactions do not update metadata, so opening or remotely hydrating a note does not make it look newly edited.
 
@@ -71,7 +71,7 @@ Google sign-in is optional. The app opens immediately against device storage. A 
 | `deletedAt` | `InstantString` (optional, soft delete) |
 | `wordCount` | `number` (optional) |
 
-Each note's body lives in a row-owned document opened by `honeycrisp.tables.notes.document.open(noteId)`. The editor owns the `body` root name and the handle's lifecycle.
+Each note's body lives in a row-owned document opened by `honeycrisp.openNoteDocument(noteId)`. The editor owns the `body` root name and the handle's lifecycle.
 
 Honeycrisp currently has no workspace KV schema. View selection, sorting, and URL state live in the Svelte state layer.
 
@@ -110,7 +110,8 @@ This starts the desktop app on port 5175 alongside the local API on `localhost:8
 - `@y/y` 14: row-owned note body documents
 - [Tailwind CSS](https://tailwindcss.com): styling
 - [Better Auth](https://better-auth.com): authentication
-- `@epicenter/workspace`: canonical SQLite rows, row documents, and sync
+- `@epicenter/data`: canonical SQLite rows, values, and local row documents
+- `@epicenter/document-sync`: network synchronization for open row documents
 - `@epicenter/svelte`: auth and browser lifecycle helpers
 - `@epicenter/ui`: shadcn-svelte component library
 
