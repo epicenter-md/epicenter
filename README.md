@@ -3,10 +3,10 @@
     <img width="200" src="https://github.com/user-attachments/assets/9e210c52-2740-43b6-af3f-e6eaf4b5c397" alt="Epicenter">
   </a>
   <h1 align="center">Epicenter</h1>
-  <p align="center"><strong>Local-first apps that write to files you own.</strong></p>
-  <p align="center">Your data lives on your machine as plain Markdown and SQLite: grep it, version it, open it in Obsidian. When an app stops mattering, your files don't.</p>
+  <p align="center"><strong>What if you could manage your entire digital life in one SQLite database?</strong></p>
+  <p align="center">Epicenter is a collection of local-first apps built around a simple inversion: the database belongs to the person, not the application.</p>
+  <p align="center">Your notes, settings, documents, conversations, and history stay together on your devices. Each app gives you a different way to work with the same underlying data.</p>
   <p align="center">Start with <a href="https://whispering.epicenter.so">Whispering in the browser</a>, or run it as a native surface inside <a href="apps/epicenter">Epicenter</a>.</p>
-  <p align="center">Run the apps freely under AGPL-3.0; build on the developer toolkit freely under MIT. <a href="#license">What that means</a>.</p>
 </p>
 
 <p align="center">
@@ -25,17 +25,96 @@
 </p>
 
 <p align="center">
+  <a href="#one-person-one-epicenter">The Model</a> |
+  <a href="#what-were-building">Status</a> |
   <a href="#whispering">Whispering</a> |
+  <a href="#apps">Apps</a> |
   <a href="#build-with-the-toolkit">Toolkit</a> |
-  <a href="#how-it-works">How It Works</a> |
-  <a href="#status">Status</a> |
   <a href="#trust-boundaries">Trust</a> |
-  <a href="#repo-map">Repo Map</a> |
   <a href="#development">Development</a> |
   <a href="#license">License</a>
 </p>
 
 ---
+
+## One person. One Epicenter.
+
+The conventional model is one database per app, run by the vendor. Every app
+you adopt opens another silo. Every app you abandon strands another slice of
+your life: the notes in one company's cloud, the transcripts in another's, the
+history gone when a startup folds.
+
+Epicenter is built on the opposite premise. One person owns one logical
+database: their Epicenter. Each device keeps a full SQLite replica of it, with
+media and attachments beside it as ordinary files. Apps don't bring their own
+databases; they bring typed views over yours.
+
+```mermaid
+flowchart TB
+    subgraph apps ["Trusted apps"]
+        W["Whispering"]
+        N["Notes"]
+        T["Tabs"]
+    end
+    E[("Your Epicenter<br/>one logical database")]
+    W --> E
+    N --> E
+    T --> E
+    subgraph devices ["Your devices"]
+        L[("laptop<br/>SQLite replica")]
+        P[("phone<br/>SQLite replica")]
+        D[("desktop<br/>SQLite replica")]
+    end
+    E <--> L
+    E <--> P
+    E <--> D
+```
+
+Because everything lives in one place you control, you get properties no
+per-app cloud can offer:
+
+- **Yours to inspect.** It's SQLite. Open your own database read-only and
+  query it with plain SQL; take a complete portable export whenever you want.
+- **Yours to keep.** Apps may change or disappear. Your work, memory, and
+  accumulated context stay useful, because they never lived inside the app.
+- **More private, more personal.** Data stays on your devices instead of
+  scattering across vendor clouds, and each app can build on the context the
+  others created: transcripts inform notes, saved tabs become drafts, an
+  assistant sees the whole picture without an integration per app.
+
+Sync, when you turn it on, runs through your account's server: hosted
+Epicenter if you want convenience, self-hosted if you want the server in your
+own hands.
+
+The bet underneath all of it: the person, not the vendor, should be the
+permanent center of their digital life.
+
+## What we're building
+
+That model is the accepted destination, and this section is the honest line
+between it and today.
+
+Shipped now:
+
+- **Whispering**, in the browser and as a native surface inside the Epicenter
+  desktop host.
+- **Epicenter**, the Tauri desktop host that serves trusted app surfaces.
+- **Matter**, a standalone typed grid over folders of Markdown you own.
+- The **hosted API** and a community-supported **self-host reference**.
+
+In progress:
+
+- The one-database architecture above is decided and recorded (Proposed ADRs
+  0160 through 0182 and the one-Epicenter clean-break spec in this repo), but
+  the shipped data layer still organizes storage into per-app workspaces keyed
+  by ID. The migration deletes that second identity wave by wave.
+- Read-only live SQL over one stable `rows` relation and the portable
+  `.epicenter` export are part of that migration, not shipped behavior yet.
+
+Until those waves land, read the model section as direction. The current
+truth: local-first storage and sync work today through `@epicenter/workspace`;
+"one SQLite database per person" is what it is converging to, in the open, in
+this repo.
 
 ## Whispering
 
@@ -45,120 +124,7 @@ Press record, speak, optionally transform the transcript, and copy or deliver th
 
 [Open Whispering](https://whispering.epicenter.so) | [Read the app architecture](apps/whispering)
 
-## Build With The Toolkit
-
-The developer toolkit is MIT: build anything on it, including closed-source and commercial products, and you own what you build, with no obligation back to Epicenter. These are the packages meant to leave this repo: [`@epicenter/workspace`](packages/workspace), [`@epicenter/ui`](packages/ui), [`@epicenter/filesystem`](packages/filesystem), and [`@epicenter/sync`](packages/sync). They are pre-1.0 and tuned for our own apps, so treat them as fork-and-own rather than a stability-guaranteed SDK for now.
-
-The hard problem with local-first apps is synchronization. If each device has
-its own SQLite file or Markdown folder, how do you keep them in sync?
-[`@epicenter/workspace`](packages/workspace) is moving to a two-plane answer:
-bounded JSON rows live directly in runtime-native SQLite, while each row may
-own a lazy Yjs 14 document for collaborative rich content. SQLite remains the
-queryable scalar source rather than a mirror of one giant in-memory document.
-
-Alongside typed tables, local persistence, collaboration hooks, and validated actions, the package gives apps materializers, the writers that project state to disk.
-
-```typescript
-import { field } from '@epicenter/field';
-import { createWorkspace, defineTable } from '@epicenter/workspace';
-
-const notes = defineTable({
-  id: field.string(),
-  title: field.string(),
-  body: field.string(),
-});
-
-const workspace = createWorkspace({
-  id: 'notes',
-  tables: { notes },
-  kv: {},
-});
-
-workspace.tables.notes.set({
-  id: '1',
-  title: 'Hello',
-  body: 'Follow up on the README framing.',
-});
-
-// Materializers can project that row to Markdown files and SQLite rows.
-```
-
-[Read the workspace package docs](packages/workspace/README.md)
-
-## How It Works
-
-Epicenter separates app-owned data from user-owned Markdown. App output belongs under `apps/<name>/`; folders you own stay ordinary Markdown.
-
-```txt
-workspace/
-|-- apps/<name>/        generated app output; read, grep, quote, copy
-|-- .epicenter/         machine state; ignore
-|-- journal/            your Markdown; edit, commit, curate, publish
-|-- ideas/              your Markdown
-`-- publish/            your publishable artifacts
-```
-
-The rule is simple: `apps/<name>/` is for reading app output, not hand-editing it. To change app data, use the app or a CLI action validated against the app's schema. To keep something forever, copy it into a folder you own.
-
-Your folders are ordinary Markdown: grep them, open them in Obsidian, version them with Git, publish them with whatever static site stack you like.
-
-```txt
-purpose-built app
-  -> SQLite scalar rows for local queries and synchronization
-  -> lazy row-owned Yjs 14 documents for collaborative content
-  -> Markdown projection for human reading
-  -> curated Markdown when something is worth keeping
-```
-
-SQLite handles bounded rows, local SQL, and scalar synchronization. Yjs handles
-lazy rich documents, offline document edits, and live collaboration. Markdown
-gives you files you can read, quote, copy, version, and publish. This clean
-break is recorded in Proposed ADRs 0144 through 0147 and is still being
-implemented; the current package README labels the old and new paths explicitly.
-
-A generated Markdown projection is meant to be boring on purpose (this is the target shape):
-
-```md
----
-id: note_123
-title: Morning capture
-source: app
-updatedAt: "2026-06-10T16:49:59.180Z"
----
-Follow up on the README framing.
-```
-
-Matter applies the same SQLite-mirror idea to the folders you own: it keeps a disposable `matter.sqlite` mirror of each managed folder, so agents and scripts can query your Markdown as SQL:
-
-```bash
-sqlite3 matter.sqlite 'select "name" from "journal" limit 5;'
-```
-
-## Status
-
-Whispering is independently deployable as a browser SPA and is also mounted inside the Epicenter desktop host. Epicenter is the only native runtime; Whispering no longer ships a standalone desktop shell.
-
-The shared workspace for tabs, notes, drafts, and publishing is being built in public around `@epicenter/workspace`. [Matter](apps/matter) is an early app for user-owned Markdown folders: it edits ordinary Markdown directly and keeps `matter.sqlite` as a query mirror. Other app folders are public research and prototypes.
-
-## Trust Boundaries
-
-Pick the trust model you want.
-
-| Path | What leaves your device |
-| --- | --- |
-| Whispering in Epicenter with local GGUF transcription | Audio stays on your device. Transcripts and settings use Epicenter's local desktop storage. |
-| Whispering with a cloud transcription provider | Audio goes from your device to the provider you choose. Epicenter servers are not in that transcription path. |
-| Whispering transformations | Transcript text goes to the LLM provider you choose when you enable that step. |
-| Hosted Epicenter API or sync | Workspace updates, account/session data, and enabled hosted feature requests go to Epicenter servers. |
-| Self-hosted deployable | You control the server, secrets, deployment, and infrastructure boundary. |
-
-Signed-in workspace sync sends your Yjs updates to a trusted relay that reads them in plaintext. On hosted Epicenter the relay is ours, so that data sits inside our trust boundary; self-hosting puts the relay on infrastructure you control, so Epicenter never holds it. See the [trust model](docs/trust-model.md) for the details, including where this is heading with the anchor.
-
-The detailed privacy notes for Whispering live in [apps/whispering](apps/whispering).
-
-## Repo Map
-
-### Product And Workspace Surfaces
+## Apps
 
 | Surface | Status | Notes |
 | --- | --- | --- |
@@ -169,13 +135,20 @@ The detailed privacy notes for Whispering live in [apps/whispering](apps/whisper
 | [Self-host](apps/self-host) | Reference deployable | Community-supported single-partition instance without hosted billing. |
 | Other app folders | Research and prototypes | Useful history and experiments, not the current product lineup. |
 
-### Packages
+## Build With The Toolkit
 
-These packages carry the main architecture.
+The developer toolkit is MIT: build anything on it, including closed-source and commercial products, and you own what you build, with no obligation back to Epicenter. These are the packages meant to leave this repo: [`@epicenter/workspace`](packages/workspace), [`@epicenter/ui`](packages/ui), [`@epicenter/filesystem`](packages/filesystem), and [`@epicenter/sync`](packages/sync). They are pre-1.0 and tuned for our own apps, so treat them as fork-and-own rather than a stability-guaranteed SDK for now.
+
+The hard problem with local-first apps is synchronization. If each device has
+its own SQLite file, how do you keep them in sync?
+[`@epicenter/workspace`](packages/workspace) answers with two planes: bounded
+JSON rows live directly in runtime-native SQLite, while each row may own a
+lazy Yjs 14 document for collaborative rich content. SQLite is the queryable
+scalar source, not a mirror of one giant in-memory document.
 
 | Package | Role | License |
 | --- | --- | --- |
-| [`@epicenter/workspace`](packages/workspace) | Typed workspace API, queryable scalar replicas, lazy row documents, local persistence, actions, and runtime composition. | MIT |
+| [`@epicenter/workspace`](packages/workspace) | Typed data API, queryable scalar replicas, lazy row documents, local persistence, actions, and runtime composition. | MIT |
 | [`@epicenter/row-sync`](packages/row-sync) | Portable scalar row protocol, admission, deterministic field folding, and exact-retry digests. It owns no authority database. | MIT |
 | [`@epicenter/sqlite`](packages/sqlite) | Neutral embedded-SQLite driver and Browser, Bun, and Durable Object adapters. It owns no product schema. | MIT |
 | [`@epicenter/sync`](packages/sync) | Yjs document protocol encoding and provider behavior, separate from scalar row synchronization. | MIT |
@@ -183,6 +156,24 @@ These packages carry the main architecture.
 | [`@epicenter/filesystem`](packages/filesystem) | POSIX-style virtual filesystem helpers over workspace data. | MIT |
 | [`@epicenter/server`](packages/server) | Shared Hono server library composed by the hosted API and self-host reference deployable. | AGPL-3.0-or-later |
 | [`@epicenter/cli`](packages/cli) | The `epicenter` command and local or hosted API workflows. | AGPL-3.0-or-later |
+
+[Read the workspace package docs](packages/workspace/README.md)
+
+## Trust Boundaries
+
+Pick the trust model you want.
+
+| Path | What leaves your device |
+| --- | --- |
+| Whispering in Epicenter with local GGUF transcription | Audio stays on your device. Transcripts and settings use Epicenter's local desktop storage. |
+| Whispering with a cloud transcription provider | Audio goes from your device to the provider you choose. Epicenter servers are not in that transcription path. |
+| Whispering transformations | Transcript text goes to the LLM provider you choose when you enable that step. |
+| Hosted Epicenter API or sync | Synchronized data, account/session data, and enabled hosted feature requests go to Epicenter servers. |
+| Self-hosted deployable | You control the server, secrets, deployment, and infrastructure boundary. |
+
+Signed-in sync sends your updates to a trusted relay that reads them in plaintext. On hosted Epicenter the relay is ours, so that data sits inside our trust boundary; self-hosting puts the relay on infrastructure you control, so Epicenter never holds it. See the [trust model](docs/trust-model.md) for the details.
+
+The detailed privacy notes for Whispering live in [apps/whispering](apps/whispering).
 
 ## Architecture
 
@@ -248,7 +239,7 @@ bun run check
 
 ## Design Notes
 
-Implementation specs and design notes live in [specs/](specs). Start with [docs/README.md](docs/README.md) and [specs/README.md](specs/README.md).
+Durable decisions live in [docs/adr/](docs/adr); shared vocabulary in [docs/CONTEXT.md](docs/CONTEXT.md); in-flight implementation specs in [specs/](specs). Start with [docs/README.md](docs/README.md).
 
 ## Contributing
 
@@ -277,5 +268,5 @@ See the root [LICENSE](LICENSE), [FINANCIAL_SUSTAINABILITY.md](FINANCIAL_SUSTAIN
 </p>
 
 <p align="center">
-  <sub>When an app stops mattering, your files don't. Local-first, open source, built on Yjs.</sub>
+  <sub>One person. One Epicenter. Local-first, open source.</sub>
 </p>
