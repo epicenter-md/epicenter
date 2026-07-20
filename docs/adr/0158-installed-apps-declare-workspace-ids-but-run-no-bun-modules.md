@@ -64,11 +64,13 @@ later decision that honestly chooses either fully trusted Bun modules or a real
 runtime sandbox; a request-scoped TypeScript parameter alone is neither.
 
 The build command validates a complete candidate, including static `dist/`
-outputs and derived Workspace ID metadata, then replaces the derived catalog
-atomically. The running catalog never hot reloads. A successful replacement
-takes effect only after a full Epicenter restart. Uninstall removes the app and
-its declarations from the next catalog but leaves every workspace intact and
-dormant.
+outputs and derived Workspace ID metadata, then publishes it as a new immutable
+catalog generation. It atomically replaces one small `current` pointer only
+after that generation is complete. A process resolves `current` once at startup
+and keeps serving the selected generation directory for its whole lifetime.
+Publication therefore cannot hot-swap its files. A new generation takes effect
+only after a full Epicenter restart. Uninstall publishes a generation without
+the app or its declarations but leaves every workspace intact and dormant.
 
 ## Consequences
 

@@ -65,10 +65,21 @@ an explicit trust confirmation, runs `bun install --frozen-lockfile` and
 `bun run build` from each app root, validates every output, and copies the
 complete result into a host-owned derived catalog directory. The confirmation
 states that dependency installation and build scripts may execute arbitrary
-code as the current user. A failed build or validation leaves the
-active catalog unchanged. A successful build replaces the active derived
-catalog atomically and takes effect after Epicenter restarts. Git, not a catalog
-generation manager, owns rollback: revert the source and rebuild.
+code as the current user. A failed build or validation leaves the selected
+catalog unchanged. A successful build publishes one complete immutable
+generation beneath the host-owned catalog root, then atomically replaces a
+small `current` pointer. Each process resolves that pointer once at startup and
+binds its asset resolvers to the selected generation directory. Publication
+never mutates an existing generation, so a running process cannot observe a
+partial or newly promoted catalog. The new generation takes effect after
+Epicenter restarts.
+
+Generation IDs are opaque, sortable identifiers, not content hashes. Their job
+is to fence one process lifetime from later publication, not to prove artifact
+identity or provide rollback. Old generations are not deleted automatically
+because another running process may still serve one. Git owns rollback: revert
+the source and publish a fresh generation. Explicit maintenance may remove
+generations only when no process can still reference them.
 
 The editable composition repository never lives inside Epicenter's app-data
 tree. The build command receives it explicitly, initially from its working
@@ -140,6 +151,8 @@ code and must stop before the build confirmation.
   tools or host-owned services.
 - Built outputs are never served from the editable source tree. Partial edits
   and failed builds cannot change the active catalog.
+- Published generations accumulate until explicit maintenance proves they are
+  no longer referenced by a running process.
 - Prebuilt third-party distribution to non-developers is a different product.
   It would require publisher trust and artifact signing and must be decided in
   a later ADR rather than added as installer convenience.
@@ -182,8 +195,19 @@ After that proof:
   with ambient machine authority.
 - **Serve app output directly from the composition tree.** Rejected because an
   incomplete edit or failed build could become live runtime code.
+- **Atomically replace one stable catalog directory.** Rejected because a
+  running resolver reads asset paths on every request. Replacing that directory
+  would hot-swap files inside an already-running process even if the directory
+  rename itself were atomic.
+- **Content-address catalog generations.** Rejected because the generation ID
+  is a lifetime fence, not an integrity or distribution primitive. An opaque ID
+  avoids hashing every asset while immutable directories provide the required
+  activation behavior.
 - **Keep a current and previous generation manager.** Rejected because an
-  atomic successful replacement plus Git revert and rebuild provides one clear
+  atomic successful publication plus Git revert and rebuild provides one clear
   recovery path without durable generation state.
+- **Delete the previous generation during publication.** Rejected because a
+  process that started before publication may still serve it. Safe reclamation
+  needs an explicit proof that no process retains the generation.
 - **Broker outbound HTTP semantically.** Rejected because it recreates grants
   without creating an honest isolation boundary.

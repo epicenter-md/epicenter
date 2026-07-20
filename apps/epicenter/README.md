@@ -32,6 +32,31 @@ open 'epicenter://surface/whispering'
 open 'epicenter://surface/home'
 ```
 
+## Publish a source-built app catalog
+
+The promotion command accepts already-built static outputs. It does not install
+dependencies, run build scripts, or read application source. The candidate
+directory contains one `dist` result per app:
+
+```text
+candidate/
+|-- notes/
+|   `-- index.html
+`-- timeline/
+    `-- index.html
+```
+
+Publish it from the repository root:
+
+```bash
+bun run --cwd apps/epicenter catalog:publish -- ./candidate --data-dir ./tmp/epicenter-data
+```
+
+Epicenter copies and validates the complete candidate, stores it as an
+immutable generation, and atomically selects it for the next launch. A running
+process keeps serving the generation it selected at startup. Restart Epicenter
+to activate the new catalog.
+
 ## Build and verify
 
 ```bash
