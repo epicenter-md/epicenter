@@ -33,7 +33,7 @@ The law has three independent protocol realizations:
 | Plane | Durable local work | Authority proof |
 | --- | --- | --- |
 | Scalar | latest-state intent in the scalar outbox | matching accepted-batch receipt |
-| Document | Yjs update log plus local publication state vector | post-commit authority state vector covering the local vector |
+| Document | bounded Yjs baseline-plus-tail chain plus a dirty revision and optional frozen `inflight` payload | post-commit receipt for the exact frozen `inflight` bytes |
 | Blob | immutable local bytes plus a row-addressed publication record | accepted content digest at the live row address |
 
 These are independent convergence units, not one transaction. They share one
@@ -42,25 +42,60 @@ authority-lifetime changes, status, and disposal. They retain separate payload
 stores, admission rules, bounds, acknowledgements, and wire versions. There is
 no generic `outbox(kind, payload)` and no whole-Epicenter transport batch.
 
-A local document update appends its Yjs V2 bytes and advances its local state
-vector in the same SQLite transaction. Closing the last live handle destroys
-the in-memory `Y.Doc` but leaves that publication obligation intact. A
-background drain hydrates only dirty documents, sends the missing state, and
-records the authority's state vector only after the authority commits. The
-obligation is clear only when the authority vector covers the current local
-vector; a concurrent local edit therefore remains pending without a revision
-allocator or compare-and-clear race.
+A local document update appends its Yjs V2 bytes and advances a lightweight
+row-local publication revision in one SQLite transaction. It marks that revision
+dirty but does not copy or continually re-merge the update into a second pending
+BLOB. The document chain remains the one durable source from which publication
+bytes are derived.
+
+The publication record contains:
+
+```txt
+revision  monotonic row-local revision advanced by each local document update
+dirty     whether revision includes work not yet proven at the authority
+inflight  optional exact frozen V2 payload, digest, and captured revision
+```
+
+When a dirty row has no payload in flight, the owner reads its document chain
+and revision in one SQLite snapshot, hydrates the current document, and uses the
+authority's last known state vector only as a transfer hint when encoding the V2
+update to submit. It freezes those exact bytes, their digest, and the captured
+revision into `inflight` only if the revision still matches. A racing edit makes
+that comparison fail or advances the revision after the freeze; it never changes
+the immutable retry image.
+
+After the authority has applied and committed the submitted update, it returns
+a document publication receipt binding the active authority lifetime, complete
+row address, document protocol version, and digest of the exact frozen payload.
+The owner clears `inflight` only when every receipt field matches its stored
+retry image. It marks the row clean only when the current revision still equals
+the captured revision; otherwise the newer dirty revision enters another freeze
+and publication attempt. A lost receipt causes the same bytes to be sent again.
+Yjs update application is idempotent, so the authority can commit the same
+semantic state and return the same proof without retaining permanent request
+history.
+
+State vectors remain transfer hints. An endpoint may use one to compute state
+the other endpoint lacks, but never as authority-durability proof: a delete-only
+Yjs update can change document meaning without advancing the struct clocks a
+state vector records. V2 difference encoding still carries the delete set in
+the frozen payload. Closing the last live handle destroys the in-memory `Y.Doc`
+but leaves the SQLite revision and any in-flight retry image intact. A
+background drain therefore publishes dirty documents without depending on open
+handles.
 
 Document publication is outbound and automatic. Remote document state remains
 lazy and arrives when the row document is next opened. A realtime connection
-for an open document may reduce edit latency and carry ephemeral presence, but
-it is an overlay, not the only durability path. Closing an application surface
-must never strand accepted document work.
+for an open document may reduce edit latency, but it is an overlay, not the only
+durability path. The first document protocol carries no awareness or presence.
+Closing an application surface must never strand accepted document work.
 
 Every exchange is bound to one opaque authority-lifetime identity. Restore
 creates a new lifetime, refuses old replicas, and invalidates prior authority
-proof. Replicas reacquire scalar state, treat document authority vectors as
-unknown, and reevaluate blob obligations against the restored live rows.
+proof. Superseded replicas discard scalar intents, document chains and
+publication records, and blob obligations from the old lifetime before they
+reacquire the restored Epicenter. Unpublished work is intentionally abandoned;
+Restore never reinterprets an old obligation against the successor.
 Backups contain accepted authority state only; pending work on an offline
 device is not part of a Backup.
 
@@ -75,8 +110,8 @@ device is not part of a Backup.
   enter that batch merely to make the implementation look unified.
 - Closed documents can converge without eager inbound hydration or permanent
   live `Y.Doc` instances.
-- A realtime document socket may report connection and presence, but those
-  observations do not prove authority durability.
+- A realtime document socket may report connection and low-latency convergence,
+  but those observations do not prove authority durability.
 - Oversized or otherwise refused work remains visibly pending or parked at its
   address. Epicenter never reports it as synchronized and never spins one
   failing address through a global retry loop.

@@ -3,7 +3,7 @@
 - **Status:** Proposed
 - **Date:** 2026-07-17
 - **Amends:** [ADR-0135](0135-row-documents-have-application-owned-roots.md)
-- **Amended by:** [ADR-0159](0159-row-documents-persist-in-one-owner-side-sqlite-update-log.md) — the per-runtime `DocumentStore` implementations collapse to one owner-side SQLite update log plus one shared attachment over a load/append seam; capture and deletion move to the owner. The Yjs-14-only rule, bounds, and `document-full` semantics stand.
+- **Amended by:** [ADR-0159](0159-row-documents-persist-in-one-owner-side-sqlite-update-log.md) (the per-runtime `DocumentStore` implementations collapse to one owner-side SQLite update log plus one shared attachment over a load/append seam; capture and deletion move to the owner), [ADR-0174](0174-row-documents-project-as-nullable-compact-cells-and-persist-as-bounded-live-chains.md) (every live owner stores a bounded baseline-plus-tail chain while logical artifacts project one compact document cell). The Yjs-14-only rule, bounds, and `document-full` semantics stand.
 
 ## Context
 
@@ -56,9 +56,11 @@ The authority bounds accepted document state with one compound bound owned by
 one canonical encoded state: `stateBytes = 1_048_576` and
 `stateStructs = 131_072` (`encodeStateAsUpdateV2` byte length and
 `decodeUpdateV2` struct count). The authority enforces it exactly on the
-post-candidate state inside the append transaction, refuses struct-dense
-candidates with a streaming pre-apply count before hydration allocates for
-them, and never mutates committed state on refusal. The frame envelope derives
+post-candidate state inside the append transaction and never mutates committed
+state on refusal. The current Yjs decoder materializes decoded structures; this
+decision therefore claims no streaming precheck. Before this ADR becomes
+Accepted, maximal valid and maliciously dense fixtures must prove a safe peak
+decode-and-hydration memory envelope in workerd. The frame envelope derives
 from the bound (`header + 2 x stateBytes`); measured diffs never exceeded
 canonical state across sliced, delete-set-heavy, and pending shapes.
 
@@ -69,6 +71,10 @@ struct). Every measured real producer shape stays under ~50 structs/KiB and
 crosses the byte bound first; extremely format-dense text such as
 per-character marks (~154 structs/KiB) can legitimately hit the structural
 wall below the byte bound, so a structural refusal is never treated as abuse.
+The exact 131,072 ceiling remains Proposed until the maintained rich-text
+editor passes a durable workload covering typing, formatting, undo, deletion,
+and several offline clients; the product refusal is bounded accepted structure,
+not loyalty to an unverified constant.
 
 If a locally valid document grows beyond the bound, local persistence and
 logical export remain available while the connection reports one non-terminal

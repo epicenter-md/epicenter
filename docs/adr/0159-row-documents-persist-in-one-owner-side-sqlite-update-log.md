@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-19
+- **Amended by:** [ADR-0174](0174-row-documents-project-as-nullable-compact-cells-and-persist-as-bounded-live-chains.md) (the private update log is a bounded baseline-plus-tail representation of one logical row document cell on every live owner)
 - **Amends:** [ADR-0144](0144-scalar-rows-and-row-documents-synchronize-through-independent-client-planes.md) (the browser document owner is no longer IndexedDB), [ADR-0146](0146-row-documents-use-one-yjs-14-major-and-runtime-native-update-logs.md) (the per-runtime store contract collapses to one shared implementation over one seam)
 - **Relates:** [ADR-0110](0110-edit-write-timing-follows-the-value-owner-there-is-no-debounce-tier.md), [ADR-0142](0142-bootstrap-history-gaps-and-lineage-mismatches-have-distinct-recovery.md), [ADR-0145](0145-one-account-authority-owns-every-workspace-and-one-socket-per-open-row-document.md), [ADR-0151](0151-local-workspace-stores-use-owner-first-directories.md)
 
@@ -68,10 +69,10 @@ handles (Home's conversation store) are not surfaces and are unaffected.
 This is a greenfield cut with no migration: the IndexedDB row-document store,
 the single-BLOB `documents` table, the desktop temp-open document bridge, and
 every compatibility or fallback reader are deleted. Local Device storage is
-version 3 and any other stored version fails loudly. Remote planes are
-unchanged: the scalar row protocol and the `document-v3` wire, bounds, and
-authority semantics of ADR-0145/0146 are untouched, and the two planes remain
-remotely eventual, never atomic.
+version 3 and any other stored version fails loudly. Remote scalar and document
+planes remain independently eventual, never atomic. ADR-0174 replaces the
+authority document persistence and compaction mechanics; it does not change
+this ADR's local owner-side SQLite decision.
 
 ## Consequences
 
