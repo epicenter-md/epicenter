@@ -3,7 +3,7 @@
 - **Status:** In Progress
 - **Date:** 2026-07-20
 - **Program:** greenfield breaking replacement
-- **Decision owners:** [ADR-0160](../docs/adr/0160-lenses-interpret-durable-namespaces-without-creating-lifecycle-scopes.md), [ADR-0161](../docs/adr/0161-each-person-has-one-epicenter-replicated-on-each-adapter-boundary.md), [ADR-0162](../docs/adr/0162-epicenter-home-owns-relational-inspection-applications-receive-no-sql.md), [ADR-0163](../docs/adr/0163-latest-scalar-state-synchronizes-through-one-epicenter-exchange.md), [ADR-0164](../docs/adr/0164-scalar-facts-converge-independently-epicenter-refuses-distributed-transactions.md), [ADR-0165](../docs/adr/0165-browser-origins-contain-independent-epicenter-replicas.md), [ADR-0166](../docs/adr/0166-data-document-sync-and-agent-replace-workspace.md), [ADR-0167](../docs/adr/0167-a-portable-epicenter-is-an-identity-free-export-of-one-authority-cut.md), and [ADR-0168](../docs/adr/0168-lenses-are-complete-pure-json-interpretations.md)
+- **Decision owners:** [ADR-0160](../docs/adr/0160-lenses-interpret-durable-namespaces-without-creating-lifecycle-scopes.md), [ADR-0161](../docs/adr/0161-each-person-has-one-epicenter-replicated-on-each-adapter-boundary.md), [ADR-0162](../docs/adr/0162-epicenter-home-owns-relational-inspection-applications-receive-no-sql.md), [ADR-0163](../docs/adr/0163-latest-scalar-state-synchronizes-through-one-epicenter-exchange.md), [ADR-0164](../docs/adr/0164-scalar-facts-converge-independently-epicenter-refuses-distributed-transactions.md), [ADR-0165](../docs/adr/0165-browser-origins-contain-independent-epicenter-replicas.md), [ADR-0166](../docs/adr/0166-data-document-sync-and-agent-replace-workspace.md), [ADR-0167](../docs/adr/0167-a-portable-epicenter-is-an-identity-free-export-of-one-authority-cut.md), [ADR-0168](../docs/adr/0168-lenses-are-complete-pure-json-interpretations.md), and [ADR-0169](../docs/adr/0169-row-references-are-non-enforcing-table-interpretations.md)
 
 ## Product sentence
 
@@ -625,6 +625,8 @@ weaken the ADR destination above:
    in the active app catalog, whether standalone Lens artifacts have a separate
    folder, and what uninstall removes. Discovery provenance must not enter data
    addresses or make a Lens authoritative.
-3. **Structured row references.** Decide the exact pure JSON field-schema shape
-   for a reference target. Any target must name namespace plus table explicitly
-   and must not smuggle application or Lens identity into the address.
+3. **Structured row references.** ADR-0169 fixes references as non-enforcing
+   table interpretations and removes them from the destination field
+   vocabulary. Decide the exact pure JSON table metadata shape, typed query
+   ergonomics, and Matter replacement before deleting the current shared
+   `field.reference()` implementation.
