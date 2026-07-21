@@ -15,6 +15,7 @@ import {
 	computeProvenanceIdentity,
 	createManifest,
 	decideResume,
+	deriveSeedHashes,
 	type ProvenanceConfig,
 	parseManifest,
 	persistManifest,
@@ -25,6 +26,7 @@ import {
 import { buildSeedEstimators } from './estimators.js';
 import { type ProbePlan, probeIdFor } from './probe-plan.js';
 import { buildCompleteRaw } from './raw-schema.test-support.js';
+import { makeTrace } from './trace.js';
 
 const CONFIG: ProvenanceConfig = {
 	sourceVersion: 'f50a9c7d8a',
@@ -99,6 +101,8 @@ function seedRecord(seedId: number): SeedRecord {
 	const raw = buildCompleteRaw(
 		completenessExpectations(CONFIG, seedIndex),
 	) as SeedRecord['raw'];
+	const traceOptions = CONFIG.traceOptions[seedIndex];
+	if (traceOptions === undefined) throw new Error(`unknown seed ${seedId}`);
 	return {
 		seedId,
 		estimators: buildSeedEstimators(
@@ -106,13 +110,7 @@ function seedRecord(seedId: number): SeedRecord {
 			computeProvenanceIdentity(CONFIG),
 			seedId,
 		),
-		hashes: {
-			trace: 'a'.repeat(64),
-			traceAdmissible: '1',
-			traceV1Bound: '1',
-			auxiliary: 'b'.repeat(64),
-			auxiliaryV1Bound: '1',
-		},
+		hashes: deriveSeedHashes(makeTrace(traceOptions)),
 		raw,
 	};
 }
@@ -421,7 +419,7 @@ describe('atomic persistence and schema-validated cross-process resume', () => {
 		expect(parseManifest(JSON.stringify(bad))).toBeNull();
 	});
 
-	test('binding hashes are closed booleans with retained trace and auxiliary digests', () => {
+	test('binding hashes are reconstructed from each seed instead of trusted', () => {
 		const valid = commitSeed(createManifest(CONFIG), seedRecord(1000));
 		for (const mutate of [
 			(record: SeedRecord) => {
@@ -444,6 +442,27 @@ describe('atomic persistence and schema-validated cross-process resume', () => {
 			mutate(head(hostile.completedSeeds));
 			expect(parseManifest(JSON.stringify(hostile))).toBeNull();
 		}
+		for (const mutate of [
+			(record: SeedRecord) => {
+				record.hashes.trace = 'f'.repeat(64);
+			},
+			(record: SeedRecord) => {
+				record.hashes.auxiliary = 'e'.repeat(64);
+			},
+			(record: SeedRecord) => {
+				record.hashes.traceV1Bound =
+					record.hashes.traceV1Bound === '1' ? '0' : '1';
+			},
+		]) {
+			const hostile = structuredClone(valid);
+			mutate(head(hostile.completedSeeds));
+			expect(parseManifest(JSON.stringify(hostile))).toBeNull();
+		}
+		const forgedCommit = seedRecord(1000);
+		forgedCommit.hashes.trace = 'f'.repeat(64);
+		expect(() => commitSeed(createManifest(CONFIG), forgedCommit)).toThrow(
+			/mismatched binding hashes/,
+		);
 	});
 
 	test('a manifest with a seed missing raw observation arrays is refused', () => {

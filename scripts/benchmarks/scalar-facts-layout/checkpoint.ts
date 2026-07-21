@@ -28,6 +28,7 @@ import {
 	canonicalize,
 	utf8ByteLength,
 } from '../../../packages/data/src/protocol/v1/canonical.js';
+import { allAuxiliaryBound, makeAuxiliaryTraces } from './auxiliary-traces.js';
 import { CANDIDATE_IDS } from './candidates.js';
 import {
 	type EstimatorRaw,
@@ -42,7 +43,8 @@ import {
 	validateSeedRawClosed,
 } from './raw-schema.js';
 import { buildSeedSchedule } from './schedule.js';
-import type { TraceOptions } from './trace.js';
+import { makeTrace, type Trace, type TraceOptions } from './trace.js';
+import { pilotLimits, verifyTraceV1Binding } from './v1-binding.js';
 
 /**
  * Everything that must be identical for two runs to share a checkpoint. Any
@@ -126,6 +128,49 @@ export type SeedHashes = {
 	auxiliary: string;
 	auxiliaryV1Bound: '0' | '1';
 };
+
+/** Derive every persisted seed hash and binding flag from the frozen trace. */
+export function deriveSeedHashes(trace: Trace): SeedHashes {
+	const limits = pilotLimits();
+	const binding = verifyTraceV1Binding(trace, limits);
+	const auxiliary = makeAuxiliaryTraces(trace, limits);
+	const auxiliaryContent = Object.fromEntries(
+		Object.entries(auxiliary).map(([key, value]) => [
+			key,
+			{
+				count: value.count,
+				digestHex: value.digestHex,
+				v1Bound: value.v1Bound,
+			},
+		]),
+	);
+	return {
+		trace: trace.measure().digestHex,
+		traceAdmissible: trace.calibration.traceAdmissible ? '1' : '0',
+		traceV1Bound: binding.bound ? '1' : '0',
+		auxiliary: new Sha256Stream()
+			.update(['auxiliary-traces', canonicalize(auxiliaryContent)].join('|'))
+			.digestHex(),
+		auxiliaryV1Bound: allAuxiliaryBound(auxiliary) ? '1' : '0',
+	};
+}
+
+function seedHashesEqual(left: SeedHashes, right: SeedHashes): boolean {
+	return (Object.keys(left) as Array<keyof SeedHashes>).every(
+		(key) => left[key] === right[key],
+	);
+}
+
+function expectedSeedHashes(
+	config: ProvenanceConfig,
+	seedIndex: number,
+): SeedHashes {
+	const options = config.traceOptions[seedIndex];
+	if (options === undefined) {
+		throw new Error(`trace options for seed index ${seedIndex} are missing`);
+	}
+	return deriveSeedHashes(makeTrace(options));
+}
 
 export type SeedRecord = {
 	seedId: number;
@@ -408,13 +453,17 @@ export function commitSeed(
 	if (
 		seedIndex < 0 ||
 		seedIndex !== manifest.completedSeeds.length ||
+		!seedHashesEqual(
+			record.hashes,
+			expectedSeedHashes(manifest.config, seedIndex),
+		) ||
 		!validateSeedCompleteness(
 			record.raw,
 			completenessExpectations(manifest.config, seedIndex),
 		).complete
 	) {
 		throw new Error(
-			`refusing to commit incomplete raw observations or an out-of-order seed ${seedLabel}`,
+			`refusing to commit mismatched binding hashes, incomplete raw observations, or an out-of-order seed ${seedLabel}`,
 		);
 	}
 	return {
@@ -616,6 +665,15 @@ export function parseManifest(serialized: string): PilotManifest | null {
 	for (const seed of record.completedSeeds as SeedRecord[]) {
 		const seedIndex = config.seedIds.indexOf(seed.seedId);
 		if (seedIndex < 0) return null;
+		try {
+			if (
+				!seedHashesEqual(seed.hashes, expectedSeedHashes(config, seedIndex))
+			) {
+				return null;
+			}
+		} catch {
+			return null;
+		}
 		const expectations = completenessExpectations(config, seedIndex);
 		if (!validateSeedCompleteness(seed.raw, expectations).complete) return null;
 	}

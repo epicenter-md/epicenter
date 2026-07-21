@@ -40,7 +40,6 @@ import { join } from 'node:path';
 
 import { canonicalize } from '../../../packages/data/src/protocol/v1/canonical.js';
 import {
-	allAuxiliaryBound,
 	DEFAULT_AUXILIARY_OPTIONS,
 	makeAuxiliaryTraces,
 } from './auxiliary-traces.js';
@@ -49,6 +48,7 @@ import {
 	commitSeed,
 	completenessExpectations,
 	createManifest,
+	deriveSeedHashes,
 	type PilotManifest,
 	type ProvenanceConfig,
 	parseManifest,
@@ -92,7 +92,7 @@ import {
 } from './schedule.js';
 import type { Address, Fact, RowAddress } from './trace.js';
 import { factsForPresentTarget, makeTrace, type Trace } from './trace.js';
-import { pilotLimits, verifyTraceV1Binding } from './v1-binding.js';
+import { pilotLimits } from './v1-binding.js';
 
 type Owner = (typeof RAW_OWNERS)[number];
 const OWNERS = RAW_OWNERS;
@@ -2144,7 +2144,6 @@ function main(): void {
 
 	const sourceVersion = resolveSourceVersion();
 	const dir = mkdtempSync(join(tmpdir(), 'scalar-pilot-'));
-	const manifestPath = join(dir, 'manifest.json');
 	const startedMs = performance.now();
 	let preserveRunDirectory = false;
 
@@ -2192,7 +2191,6 @@ function main(): void {
 	const profile: Profile = { ...SMOKE, seedCount: options.seedCount };
 
 	try {
-		const limits = pilotLimits();
 		const seedIds = Array.from(
 			{ length: profile.seedCount },
 			(_, s) => BASE_SEED + s,
@@ -2372,35 +2370,11 @@ function main(): void {
 					);
 				}
 
-				const traceBinding = verifyTraceV1Binding(trace, limits);
-				const auxiliary = makeAuxiliaryTraces(trace, limits);
-				const auxiliaryBound = allAuxiliaryBound(auxiliary);
-				const auxiliaryDigest = digestOf(
-					'auxiliary-traces',
-					canonicalize(
-						Object.fromEntries(
-							Object.entries(auxiliary).map(([key, value]) => [
-								key,
-								{
-									count: value.count,
-									digestHex: value.digestHex,
-									v1Bound: value.v1Bound,
-								},
-							]),
-						),
-					),
-				);
 				const estimators = buildSeedEstimators(raw, manifest.identity, seedId);
 				const record = {
 					seedId,
 					estimators,
-					hashes: {
-						trace: trace.measure().digestHex,
-						traceAdmissible: trace.calibration.traceAdmissible ? '1' : '0',
-						traceV1Bound: traceBinding.bound ? '1' : '0',
-						auxiliary: auxiliaryDigest,
-						auxiliaryV1Bound: auxiliaryBound ? '1' : '0',
-					},
+					hashes: deriveSeedHashes(trace),
 					raw,
 				} satisfies SeedRecord;
 				// Persist every durable manifest FIRST, then delete the retained set. A
@@ -2411,7 +2385,6 @@ function main(): void {
 					record,
 					persist: (m) => {
 						try {
-							persistManifest(manifestPath, m);
 							persistManifest(evidenceManifestPath, m);
 						} catch (error) {
 							checkpointPersistenceFailed = true;
@@ -2509,9 +2482,6 @@ function main(): void {
 			allBlocks.every(
 				(b) => b.warmupMs.length === 3 && b.warmupMs.every((w) => w > 0),
 			);
-		// Whole-seed completeness compares every block against the single exact
-		// Williams schedule owner, including position, predecessor, and boundary.
-		const balanced = committedComplete;
 		const reopenPerCell = new Map<string, number>();
 		for (const r of allReopens) {
 			const key = `${r.owner}/${r.candidate}/reopen`;
@@ -2538,8 +2508,38 @@ function main(): void {
 					t.transactions === profile.tailTransactions &&
 					t.samplesMs.length === profile.tailTransactions,
 			);
-		const ownerWorkloadsExecuted = committedComplete;
-		const rawObservationsRetained = committedComplete;
+		// The frozen exact-envelope gate: a bounded smoke can never pass it, so it can
+		// never be method-validated even when every other gate is green.
+		const exactEnvelopeConformant =
+			executed && oracleReproduced && isExactEnvelope(profile);
+		// The checkpoint-boundary signal is not truthful (WAL shrink under-counts and a
+		// measurement checkpoint would perturb the workload), so this gate fails.
+		const checkpointBoundariesTruthful =
+			allTails.length > 0 && allTails.every((t) => t.checkpointSignalTruthful);
+
+		const proofInputs: ProofGateInputs = {
+			oracleWitnessReproduced: oracleReproduced,
+			traceAdmissible,
+			traceV1Bound,
+			auxiliaryV1Bound,
+			provenanceMatches: verifyProvenanceRoundTrip(
+				evidenceManifestPath,
+				provenance,
+			),
+			estimatorsComplete,
+			seedEvidenceComplete: committedComplete,
+			calibrationMet,
+			warmupsRun,
+			integrityOk,
+			reopenObservationsSufficient: reopenSufficient,
+			deterministicResetProven: resetProven,
+			headroomPreflightPassed: headroom.passed,
+			exactEnvelopeConformant,
+			checkpointBoundariesTruthful,
+		};
+		const method = validateMethod(proofInputs);
+
+		const durationMs = performance.now() - startedMs;
 		const expectedCounts = seedIds.reduce(
 			(total, _seedId, seedIndex) => {
 				const perSeed = expectedObservationCounts(
@@ -2560,56 +2560,6 @@ function main(): void {
 				cells: 0,
 			},
 		);
-		const actualCounts = {
-			probes: allProbes.length,
-			blocks: allBlocks.length,
-			boundaries: allBoundaries.length,
-			reopens: allReopens.length,
-			tails: allTails.length,
-			macros: allMacros.length,
-			cells: allCells.length,
-		};
-		const observationCountsExact =
-			committedComplete &&
-			(Object.keys(expectedCounts) as Array<keyof typeof expectedCounts>).every(
-				(key) => actualCounts[key] === expectedCounts[key],
-			) &&
-			allBlocks.reduce((count, block) => count + block.warmupMs.length, 0) ===
-				expectedCounts.blocks * 3 &&
-			allTails.reduce((count, tail) => count + tail.samplesMs.length, 0) ===
-				expectedCounts.tails * profile.tailTransactions;
-		// The frozen exact-envelope gate: a bounded smoke can never pass it, so it can
-		// never be method-validated even when every other gate is green.
-		const exactEnvelopeConformant =
-			executed && oracleReproduced && isExactEnvelope(profile);
-		// The checkpoint-boundary signal is not truthful (WAL shrink under-counts and a
-		// measurement checkpoint would perturb the workload), so this gate fails.
-		const checkpointBoundariesTruthful =
-			allTails.length > 0 && allTails.every((t) => t.checkpointSignalTruthful);
-
-		const proofInputs: ProofGateInputs = {
-			oracleWitnessReproduced: oracleReproduced,
-			traceAdmissible,
-			traceV1Bound,
-			auxiliaryV1Bound,
-			provenanceMatches: verifyProvenanceRoundTrip(manifestPath, provenance),
-			estimatorsComplete,
-			balanced,
-			calibrationMet,
-			warmupsRun,
-			integrityOk,
-			reopenObservationsSufficient: reopenSufficient,
-			deterministicResetProven: resetProven,
-			headroomPreflightPassed: headroom.passed,
-			ownerWorkloadsExecuted,
-			rawObservationsRetained,
-			observationCountsExact,
-			exactEnvelopeConformant,
-			checkpointBoundariesTruthful,
-		};
-		const method = validateMethod(proofInputs);
-
-		const durationMs = performance.now() - startedMs;
 		const rawObservationCounts = {
 			probes: allProbes.length,
 			calibrations: allCalibrations.length,
@@ -2711,11 +2661,11 @@ function countByOwnerMetric(
 }
 
 function verifyProvenanceRoundTrip(
-	manifestPath: string,
+	evidenceManifestPath: string,
 	provenance: ProvenanceConfig,
 ): boolean {
-	if (!existsSync(manifestPath)) return false;
-	const reloaded = parseManifest(readFileSync(manifestPath, 'utf8'));
+	if (!existsSync(evidenceManifestPath)) return false;
+	const reloaded = parseManifest(readFileSync(evidenceManifestPath, 'utf8'));
 	return (
 		reloaded !== null &&
 		reloaded.identity === createManifest(provenance).identity

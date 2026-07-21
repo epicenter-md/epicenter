@@ -15,6 +15,7 @@ import {
 	completenessExpectations,
 	computeProvenanceIdentity,
 	createManifest,
+	deriveSeedHashes,
 	type PilotManifest,
 	type ProvenanceConfig,
 	type SeedRecord,
@@ -109,6 +110,8 @@ const CONFIG: ProvenanceConfig = {
 };
 
 function seedRecord(): SeedRecord {
+	const traceOptions = CONFIG.traceOptions[0];
+	if (traceOptions === undefined) throw new Error('missing test trace options');
 	const raw = buildCompleteRaw(
 		completenessExpectations(CONFIG, 0),
 	) as SeedRecord['raw'];
@@ -119,13 +122,7 @@ function seedRecord(): SeedRecord {
 			computeProvenanceIdentity(CONFIG),
 			1000,
 		),
-		hashes: {
-			trace: 'a'.repeat(64),
-			traceAdmissible: '1',
-			traceV1Bound: '1',
-			auxiliary: 'b'.repeat(64),
-			auxiliaryV1Bound: '1',
-		},
+		hashes: deriveSeedHashes(makeTrace(traceOptions)),
 		raw,
 	};
 }

@@ -39,8 +39,8 @@ export type ProofGateInputs = {
 	provenanceMatches: boolean;
 	/** Every identity-closed seed estimator exactly matches retained raw observations. */
 	estimatorsComplete: boolean;
-	/** Read-metric position and carryover are balanced across the executed Williams design. */
-	balanced: boolean;
+	/** Every seed is closed, count-exact, schedule-balanced, and complete for every owner workload. */
+	seedEvidenceComplete: boolean;
 	/** Every RECORDED timed block met the 20 ms floor at the frozen operation count. */
 	calibrationMet: boolean;
 	/** Untimed warmup batches ran immediately before each recorded timed block. */
@@ -49,16 +49,10 @@ export type ProofGateInputs = {
 	integrityOk: boolean;
 	/** At least the required balanced close/open reopen observations were recorded per cell. */
 	reopenObservationsSufficient: boolean;
-	/** A recorded byte-equivalent reset proved no candidate inherited another's state. */
+	/** Every mutating tail started from a recorded byte-equivalent deterministic reset. */
 	deterministicResetProven: boolean;
 	/** The headroom preflight passed BEFORE retaining the envelope databases, with a 25% margin. */
 	headroomPreflightPassed: boolean;
-	/** Every declared owner-specific metric and mutating-tail experiment was executed and recorded. */
-	ownerWorkloadsExecuted: boolean;
-	/** Raw per-block, reopen, and checkpoint identities and observations were retained. */
-	rawObservationsRetained: boolean;
-	/** Every raw array and nested warmup/tail count exactly matches frozen owners. */
-	observationCountsExact: boolean;
 	/**
 	 * The run's dimensions match the frozen exact-envelope pilot: exactly 1,000,000
 	 * final-present addresses, exactly 536,870,912 proxy bytes, four fresh seeds,
@@ -121,10 +115,10 @@ function gatesOf(inputs: ProofGateInputs): GateStatus[] {
 				'every identity-closed seed estimator exactly matches retained raw observations',
 		},
 		{
-			name: 'balance',
-			passed: inputs.balanced,
+			name: 'seed-evidence-complete',
+			passed: inputs.seedEvidenceComplete,
 			detail:
-				'read-metric position and carryover are balanced in the executed design',
+				'every retained seed is closed, count-exact, schedule-balanced, and complete for every declared owner workload',
 		},
 		{
 			name: 'calibration',
@@ -144,34 +138,16 @@ function gatesOf(inputs: ProofGateInputs): GateStatus[] {
 			detail: 'the required balanced reopen observations were recorded',
 		},
 		{
-			name: 'cross-candidate-isolation',
+			name: 'deterministic-reset',
 			passed: inputs.deterministicResetProven,
 			detail:
-				'a recorded deterministic reset proved no candidate inherited another cache or checkpoint state',
+				'every mutating tail began from a recorded byte-equivalent deterministic reset',
 		},
 		{
 			name: 'headroom',
 			passed: inputs.headroomPreflightPassed,
 			detail:
 				'the headroom preflight passed before retaining the envelope databases',
-		},
-		{
-			name: 'owner-workloads',
-			passed: inputs.ownerWorkloadsExecuted,
-			detail:
-				'every declared owner-specific metric and mutating-tail experiment was executed',
-		},
-		{
-			name: 'raw-observations',
-			passed: inputs.rawObservationsRetained,
-			detail:
-				'raw per-block, reopen, and checkpoint observations were retained',
-		},
-		{
-			name: 'exact-observation-counts',
-			passed: inputs.observationCountsExact,
-			detail:
-				'every raw array and nested warmup/tail count exactly matches the frozen config, trace, and schedule owners',
 		},
 		{
 			name: 'exact-envelope',
