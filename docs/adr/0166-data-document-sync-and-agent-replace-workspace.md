@@ -15,7 +15,7 @@ the package would preserve a miscellaneous dependency owner under another noun.
 Three concrete capability packages replace the surviving Workspace families:
 
 ```txt
-@epicenter/data           definitions, typed lenses, local replica, scalar sync
+@epicenter/data           pure JSON Lenses, typed access, local replica, scalar sync
 @epicenter/document-sync row-document protocol, persistence, and presence
 @epicenter/agent          UI-free agent loop over an explicit data interface
 ```
@@ -29,12 +29,12 @@ lenses.
 
 No `database-address`, `database-control`, or `database-migration` package
 survives. There are no database addresses, controls, or migrations to own.
-Qualified data keys and row IDs live at the narrowest shared protocol boundary
-that actually consumes them.
+Structured namespace, table, value, and row addresses live at the narrowest
+shared protocol boundary that actually consumes them.
 
-The root-Yjs Workspace API, workspace daemon and mount families, live SQL,
-database experiments, compatibility barrels, aliases, and migration bridges are
-deleted after retained callers stop importing them and the replacement verifies.
+The root-Yjs Workspace API, workspace daemon and mount families, application SQL
+escape hatches, database experiments, compatibility barrels, aliases, and
+migration bridges are deleted after retained callers stop importing them and the replacement verifies.
 `packages/workspace` is then deleted. Git, not a legacy runtime package,
 preserves removed source.
 
@@ -62,4 +62,3 @@ stated zero-legacy-data premise.
   proving that the old graph is unreachable.
 - **Pre-split every possible leaf package.** Rejected because packages must earn
   themselves through real independent consumers and dependency direction.
-

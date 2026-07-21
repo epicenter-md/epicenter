@@ -3,12 +3,13 @@
 - **Status:** In Progress
 - **Date:** 2026-07-20
 - **Program:** greenfield breaking replacement
-- **Decision owners:** [ADR-0160](../docs/adr/0160-applications-bind-typed-data-definitions-without-an-application-namespace.md), [ADR-0161](../docs/adr/0161-each-person-has-one-epicenter-replicated-on-each-adapter-boundary.md), [ADR-0162](../docs/adr/0162-live-epicenter-stores-expose-no-sql.md), [ADR-0163](../docs/adr/0163-latest-scalar-state-synchronizes-through-one-epicenter-exchange.md), [ADR-0165](../docs/adr/0165-browser-origins-contain-independent-epicenter-replicas.md), and [ADR-0166](../docs/adr/0166-data-document-sync-and-agent-replace-workspace.md)
+- **Decision owners:** [ADR-0160](../docs/adr/0160-lenses-interpret-durable-namespaces-without-creating-lifecycle-scopes.md), [ADR-0161](../docs/adr/0161-each-person-has-one-epicenter-replicated-on-each-adapter-boundary.md), [ADR-0162](../docs/adr/0162-epicenter-home-owns-relational-inspection-applications-receive-no-sql.md), [ADR-0163](../docs/adr/0163-latest-scalar-state-synchronizes-through-one-epicenter-exchange.md), [ADR-0164](../docs/adr/0164-scalar-facts-converge-independently-epicenter-refuses-distributed-transactions.md), [ADR-0165](../docs/adr/0165-browser-origins-contain-independent-epicenter-replicas.md), [ADR-0166](../docs/adr/0166-data-document-sync-and-agent-replace-workspace.md), [ADR-0167](../docs/adr/0167-a-portable-epicenter-is-an-identity-free-export-of-one-authority-cut.md), and [ADR-0168](../docs/adr/0168-lenses-are-complete-pure-json-interpretations.md)
 
 ## Product sentence
 
 Epicenter persists and synchronizes one person's rows, values, and row-owned
-documents; applications bind typed definitions to that shared data.
+documents; applications bind pure JSON Lenses over durable namespaces in that
+shared data.
 
 ## Accepted premises
 
@@ -23,8 +24,13 @@ documents; applications bind typed definitions to that shared data.
 - Every attached replica synchronizes the person's whole Epicenter.
 - One person has one logical Epicenter and one server authority.
 - Each adapter isolation boundary has one complete local replica.
-- Applications and definition groups have no durable storage identity.
-- Live stores expose no SQL. Offline inspection is separate.
+- Namespaces structure durable addresses only. They never create storage,
+  ownership, lifecycle, transaction, export, or synchronization scopes.
+- Applications receive no SQL. Epicenter Home owns human and agent relational
+  inspection over the logical Epicenter.
+- Scalar facts converge independently. Epicenter exposes no public
+  multi-address transaction and promises no atomic remote visibility across
+  scalar addresses.
 - Row IDs are globally unique, runtime-minted, and never reused.
 - Compact row tombstones are permanent synchronization facts.
 
@@ -61,57 +67,75 @@ nonterminal: a later set may replace it.
 ## Public destination
 
 ```ts
-export const recordings = defineTable({
-  key: "so.epicenter.whispering.recordings",
-  fields: {
-    createdAt: field.instant(),
-    transcript: field.string(),
-    note: optional(field.string()),
+export const whisperingLens = defineLens({
+  namespace: "so.epicenter.whispering",
+  title: "Whispering",
+  description: "Recordings and transcription settings.",
+  tables: {
+    recordings: defineTable({
+      title: "Recordings",
+      fields: {
+        createdAt: field.instant(),
+        transcript: field.string(),
+        note: field.string(),
+      },
+      optional: ["note"],
+    }),
+  },
+  values: {
+    language: defineValue({
+      title: "Language",
+      value: field.string(),
+    }),
   },
 });
 
-export const conversations = defineTable({
-  key: "so.epicenter.home.conversations",
-  fields: { title: field.string() },
-});
-
-export const language = defineValue({
-  key: "so.epicenter.whispering.transcription.language",
-  value: field.string(),
+export const homeLens = defineLens({
+  namespace: "so.epicenter.home",
+  title: "Epicenter Home",
+  description: "Conversations and Home-owned data.",
+  tables: {
+    conversations: defineTable({
+      title: "Conversations",
+      fields: { title: field.string() },
+      optional: [],
+    }),
+  },
+  values: {},
 });
 
 await using epicenter = await openEpicenter(options);
 
-const whispering = epicenter.bind({
-  tables: { recordings, conversations },
-  values: { language },
+const data = epicenter.bind({
+  whispering: whisperingLens,
+  home: homeLens,
 });
 
-const recording = await whispering.tables.recordings.create({
+const recording = await data.whispering.tables.recordings.create({
   createdAt: Temporal.Now.instant(),
   transcript: "Hello",
 });
 
-const found = await whispering.tables.recordings.get(recording.id);
-const page = await whispering.tables.recordings.list({
+const found = await data.whispering.tables.recordings.get(recording.id);
+const page = await data.whispering.tables.recordings.list({
   orderBy: { field: "createdAt", direction: "desc" },
   limit: 100,
 });
 // page is { rows, nonconforming, nextCursor? }
-await whispering.tables.recordings.update(recording.id, {
+await data.whispering.tables.recordings.update(recording.id, {
   note: undefined,
 });
 
-const stopRecordings = whispering.tables.recordings.subscribe((changedIds) => {
+const stopRecordings = data.whispering.tables.recordings.subscribe((changedIds) => {
   // fires after committed local or synchronized changes
 });
-const stopLanguage = whispering.values.language.subscribe(() => {});
+const stopLanguage = data.whispering.values.language.subscribe(() => {});
 
-await using document = await whispering.tables.conversations.openDocument(
+await using document = await data.home.tables.conversations.openDocument(
   conversationId,
 );
-await whispering.values.language.set("en");
-await whispering.values.language.unset();
+await data.whispering.values.language.set("en");
+await data.whispering.values.language.unset();
 
 await epicenter.attachSync(session);
 ```
@@ -140,21 +164,28 @@ enrollment is not built: a modified client uploading its own data into a
 different principal it holds valid credentials for is self-harm confined to
 that principal's data, matching the existing non-conforming-client stance.
 
-### Definitions
+### Lenses and definitions
 
-`defineTable` and `defineValue` return inert definitions. Each owns one globally
-qualified durable key. There is no automatic prefix, app ID, database ID,
-workspace ID, schema registry, or complete model.
+`defineLens`, `defineTable`, and `defineValue` return canonical pure JSON. A
+Lens interprets one durable namespace; its `namespace`, `title`, and
+`description` are required. The property names under `tables` and `values` are
+the durable local keys. There is no redundant definition `key`, independent
+Lens ID, database ID, workspace ID, schema registry, or complete model.
 
-`epicenter.bind({ tables, values })` validates duplicate durable keys and returns
-a synchronous borrowed lens whose property names come from the input object.
-Binding performs no I/O and creates no durable state. Direct binding of a single
-definition may be added only if a real caller is clearer than the grouped form;
-do not ship two equivalent conventions speculatively.
+One application may bind several Lenses. Property names in that outer binding
+are ergonomic aliases only. Multiple partial Lenses may interpret the same
+namespace or address; none becomes canonical. Binding validates each Lens,
+performs no I/O, creates no durable state, and returns synchronous borrowed
+typed access.
 
-Qualified keys should use reverse-domain ownership and a final domain noun, for
-example `so.epicenter.whispering.recordings`. Freeze the grammar once in the
-protocol leaf. Do not create a namespace or prefix helper in the public API.
+The authoring helpers constrain `optional` entries to the table's field keys.
+`parseLens(unknown)` validates the same closed JSON shape, supported field
+vocabulary, and semantic cross-field rules for artifacts read from disk. A
+runtime validator is derived and ephemeral, never persisted as Lens state.
+
+Namespace keys use collision-resistant reverse-domain naming. Table and value
+keys are short local identifiers. Freeze their bounded grammar once at the
+shared protocol boundary without concatenating them into one prefixed string.
 
 ### Tables and values
 
@@ -182,7 +213,7 @@ runtimes. Evidence: Whispering bridges three observable domains into Svelte
 through `createSubscriber` today; a replicated store without invalidation
 cannot support any live UI.
 
-A value is a typed singleton at one qualified key. Its surface is `get`, `set`,
+A value is a typed singleton at one structured value address. Its surface is `get`, `set`,
 `unset`, and `subscribe`. Do not call it KV: the public object does not expose
 an arbitrary key-value collection.
 
@@ -197,7 +228,7 @@ per-definition `document` declaration: definitions are borrowed release-local
 lenses, and both storage authorities already enforce the document lifecycle
 purely by row address and liveness, so a definition flag could only gate
 client-side API visibility while letting independently authored definitions
-sharing one qualified key disagree about a capability neither owns. Opening a
+sharing one structured row address disagree about a capability neither owns. Opening a
 document on a table that never uses one is inert: no bytes exist until the
 first update is persisted, and the row tombstone deletes whatever exists.
 
@@ -216,16 +247,16 @@ boundaries, not around every expected collection operation by reflex.
 ## One logical address space
 
 ```txt
-table row  (qualified table key, row ID)
-value      (qualified value key)
-document   (qualified table key, row ID)
+table row  (namespace key, table key, row ID)
+value      (namespace key, value key)
+document   (namespace key, table key, row ID)
 ```
 
-Application identity does not participate. Two applications compose by
-importing and binding the same definition. Different definitions with the same
-qualified key intentionally address the same stored state and may interpret it
-differently across releases. Definition validation never rewrites canonical
-state.
+Address kind distinguishes rows from values, so their local keys need not share
+one flat key space. Two applications compose by declaring or installing Lenses
+that name the same structured address. Different Lenses may interpret that
+stored state differently across releases. Lens validation never rewrites
+canonical state.
 
 ## Minimal physical model
 
@@ -243,7 +274,7 @@ replicas
   replica ID, last accepted local batch, request digest, receipt
 
 state
-  address kind, qualified key, optional row ID,
+  address kind, namespace key, table-or-value key, optional row ID,
   live-or-deleted state, JSON payload when live, changed sequence
 
 document updates
@@ -287,11 +318,10 @@ deletion from nonterminal value unset through the discriminator.
 
 Each store's metadata is one explicit single-row table with named columns, not
 `PRAGMA user_version` (unsupported on Durable Object SQLite) and not key-value
-rows. A permanent row tombstone costs roughly 158 bytes with a 31-byte
-qualified key (paid twice: state B-tree plus sequence index), about 151 MiB at
-one million deletions; acceptable against the 10 GB authority ceiling and
-realistic personal deletion volume, and far smaller than the acknowledgment,
-retention, and acquisition machinery it deletes.
+rows. The structured representation must be measured at the one-million-address
+conformance envelope. Do not carry forward the earlier byte estimate for a flat
+qualified key. The proof must include both namespace repetition and any compact
+dictionary encoding chosen by a private live store.
 
 Row deletion changes the latest state to a terminal tombstone and removes the
 payload and row-document bytes. Later create and update operations for that row
@@ -299,6 +329,13 @@ address are no-ops. It does not append to a separate retired-row family. Value
 unset stores payload-free latest state that a later set may replace.
 
 ## Scalar synchronization
+
+The semantic contract is fixed at independently convergent addresses and one
+whole-Epicenter synchronization scope. The transport mechanism below is the
+current protocol candidate, not a reason to assume that batches, checkpoints,
+receipts, cursors, or authority sequences have earned permanent product status.
+ADR-0163 remains Proposed until an adversarial protocol review either proves
+this candidate or replaces it with a smaller mechanism.
 
 One endpoint synchronizes the complete scalar Epicenter:
 
@@ -355,7 +392,7 @@ protocol floors.
 ## Row-document synchronization
 
 Keep one authenticated WebSocket per currently open row document. Its route
-contains the qualified table key and row ID. Frames carry Yjs protocol data,
+contains the namespace key, table key, and row ID. Frames carry Yjs protocol data,
 not mutable subscriptions. Scalar liveness gates open and update acceptance.
 
 Do not multiplex until iPhone Safari and installed-PWA smoke tests demonstrate
@@ -368,16 +405,29 @@ convergence but does not share retention or cursor semantics with scalar sync.
 
 ## SQL, inspection, and export
 
-The live runtime has no SQL surface. Remove TEMP views, CTE injection, guarded
-SQL, query-only connections, projection DTOs, and public raw relation names.
+Applications have no SQL surface. Remove application-facing raw connections,
+CTE injection, guarded SQL, projection DTOs, and dependencies on private
+physical relation names.
 
-For native debugging, stop or checkpoint the owner, copy the SQLite file and
-sidecars safely, and inspect the copy as a private versioned implementation.
-This workflow is documentation or tooling, not an application API.
+Epicenter Home owns trusted human and agent relational inspection. It reaches a
+live Epicenter through the storage owner, or opens an inert portable artifact,
+and presents the stable logical relations:
 
-Do not implement capture, import, merge, recovery, or queryable export in this
-wave. If a concrete portability workflow returns, design one whole-Epicenter
-logical artifact from that workflow. It must not resurrect database scope.
+```sql
+rows(namespace_key, table_key, row_id, fields_json)
+values(namespace_key, value_key, value_json)
+```
+
+Installed Lenses provide typed interpretations for Home's table browser. The
+naming, collision behavior, and lifetime of optional Lens-generated friendly
+SQL views remain open and are not implementation prerequisites for raw logical
+inspection.
+
+ADR-0167 defines portability as an identity-free artifact containing one
+selected owner's complete accepted current logical state. It represents the
+same logical Epicenter but is not the live replica file. Do not implement
+export or initialization in this wave. When implementation is authorized, it
+must not resurrect database scope, generic merge, or synchronization lineage.
 
 ## Target package graph
 
@@ -395,7 +445,7 @@ Candidate packages:
 
 ```txt
 @epicenter/data
-  defineTable, defineValue, bind, local replica, sync attachment
+  defineLens, parseLens, defineTable, defineValue, bind, local replica, sync attachment
 
 @epicenter/document-sync
   row-document protocol, persistence, connection, presence
@@ -437,7 +487,8 @@ and manifest dependencies. Do not leave a compatibility barrel.
 - Inventory exact retained Workspace callers and classify each as migrate,
   delete, or temporarily break. Done; the caller map, schema inventory, API
   evidence, and identity trace live in `tmp/architecture-evidence/`.
-- Freeze the qualified-key grammar and local principal-attachment invariant.
+- Freeze the structured namespace/local-key grammar and local
+  principal-attachment invariant.
 
 Rollback point: docs and tests only.
 
@@ -454,7 +505,8 @@ Rollback point: the old path still exists and no caller imports the new core.
 
 ### Wave 3: build typed Data
 
-- Implement qualified `defineTable`, `defineValue`, and one `bind` convention.
+- Implement pure JSON `defineLens`, `parseLens`, nested table/value definitions,
+  structured addresses, and one multi-Lens `bind` convention.
 - Implement table CRUD, bounded `list`, value operations, observation, and
   nonconforming read behavior.
 - Bind row-owned documents through Document Sync.
@@ -482,7 +534,8 @@ either way).
 - Migrate Agent through its explicit data interface.
 - Remove imports of database-address, database-control, database-migration, and
   provisional database inventory/scheduler code.
-- Remove live SQL callers and examples instead of adapting them.
+- Remove application SQL callers and examples. Route Home's trusted inspection
+  through the live storage owner instead of a public application API.
 
 At the end of this wave, no retained manifest or source file imports Workspace.
 Workspace remains on disk but unreachable.
@@ -492,6 +545,12 @@ Workspace remains on disk but unreachable.
 - Run targeted package tests and typechecks after each migrated owner.
 - Run the complete monorepo tests, typechecks, lint/format, licenses, package
   graph, docs hygiene, and API path checks.
+- Prove the whole-replica trade at 1,000,000 live scalar addresses and 512 MiB
+  of canonical encoded logical state. Measure authority scan, transfer,
+  browser and native installation, reopen, and peak memory. Inject crashes
+  between pages and prove durable progress resumes without reinstalling prior
+  pages. Treat this as a conformance envelope, not a hard product limit or a
+  protocol constant.
 - Smoke first sign-in with local data, sign-out/reopen, same-principal sign-in,
   wrong-principal refusal, two-device convergence, offline deletion, and browser
   multi-tab writes.
@@ -524,7 +583,8 @@ push, pull, acquire as separate public/network operations
 retention floors, acquisition scratch, lineage recovery
 per-database clear, capture, merge, reset, export state machines
 permanent retired-row relation separate from latest state
-live SQL, TEMP views, CTE injection, projection DTOs
+application SQL escape hatches, private-schema dependencies, projection DTOs
+flat qualified data keys, redundant table/value key properties
 generic authority scheduler
 workspace compatibility barrel
 ```
@@ -534,8 +594,9 @@ workspace compatibility barrel
 The destination is recognizable when a new reader can answer these questions
 without learning historical vocabulary:
 
-- What data do I define? A table or a value with a qualified key.
-- How do I use several definitions? Bind them together as one borrowed lens.
+- What data do I define? A pure JSON Lens for one namespace, with tables and
+  values whose property names complete durable addresses.
+- How do I use several namespaces? Bind several borrowed Lenses.
 - Who owns the data? One person through one Epicenter.
 - Where is it stored? One complete replica per adapter isolation boundary.
 - What happens on first sign-in? The current replica permanently attaches and
@@ -545,7 +606,25 @@ without learning historical vocabulary:
 - How does scalar sync work? One whole-Epicenter latest-state exchange.
 - How do documents sync? Lazily, one connection per open row document.
 - Can applications run SQL on the live store? No.
+- Who can inspect relationally? Epicenter Home, for people and agents, over one
+  stable logical model.
 - What replaces Workspace? Data, Document Sync, and Agent.
 
 If an answer needs database IDs, workspace IDs, prefixes, catalogs, acquisition,
 protocol floors, migration, or two local owners, the clean break is incomplete.
+
+## Open decisions after the destination freeze
+
+These questions must be resolved before their implementation wave. They do not
+weaken the ADR destination above:
+
+1. **Friendly Lens SQL views.** Decide whether Home needs generated SQL names in
+   addition to the raw `rows` and `values` relations, and if so how installation
+   aliases, collisions, quoting, and ephemeral lifetime work.
+2. **Lens discovery and activation.** Decide whether app-bundled Lenses live only
+   in the active app catalog, whether standalone Lens artifacts have a separate
+   folder, and what uninstall removes. Discovery provenance must not enter data
+   addresses or make a Lens authoritative.
+3. **Structured row references.** Decide the exact pure JSON field-schema shape
+   for a reference target. Any target must name namespace plus table explicitly
+   and must not smuggle application or Lens identity into the address.

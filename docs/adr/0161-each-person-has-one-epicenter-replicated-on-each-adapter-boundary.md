@@ -44,9 +44,10 @@ database inventory, alias, grant, rekey map, or per-database lifecycle exists.
 
 The private SQLite schema has one format/version root plus relations for current
 scalar state, replica progress, pending local work, and row-document updates as
-needed by the adapter. Application data addresses contain only a qualified data
-key and, for tables, a row ID. Private relation names and layouts are adapter
-implementation details, not native-reader contracts.
+needed by the adapter. Application data addresses contain an address kind,
+namespace key, table or value key, and, for rows, a row ID. A namespace never
+changes the whole-replica boundary. Private relation names and layouts are
+adapter implementation details, not native-reader contracts.
 
 ## Consequences
 
@@ -55,6 +56,13 @@ implementation details, not native-reader contracts.
 - A signed-in device downloads the whole Epicenter. Selective replication must
   not return without a measured product need because it would reintroduce a
   durable scope axis.
+- Every attached adapter pays the storage and transfer cost of the whole
+  Epicenter. The implementation must prove this trade at a conformance envelope
+  of 1,000,000 live scalar addresses and 512 MiB of canonical encoded logical
+  state. This is a design and test envelope, not a hard product limit or a wire
+  constant.
+- Refusing partial replication deletes query subscriptions, replication
+  buckets, authorization-aware fanout, and per-replica scope state.
 - First sign-in can converge two independently edited histories. Globally unique
   row IDs make the ordinary case a union; the synchronization conflict rules
   still decide same-address edits, value writes, and Yjs documents.
@@ -71,4 +79,3 @@ implementation details, not native-reader contracts.
 - **One physical file literally shared by every app and browser origin.**
   Rejected because sandbox and origin isolation make that impossible; adapters
   may replicate the same logical Epicenter without changing its public model.
-

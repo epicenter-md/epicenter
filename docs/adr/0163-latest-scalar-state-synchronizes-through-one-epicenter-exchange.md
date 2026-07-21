@@ -13,12 +13,19 @@ zero-legacy-data launch permit a smaller protocol. The remaining hard case is
 deletion: a replica may stay offline indefinitely and later present state that
 was deleted elsewhere.
 
+[ADR-0164](0164-scalar-facts-converge-independently-epicenter-refuses-distributed-transactions.md)
+fixes the semantic unit at one independently convergent scalar address and
+refuses commit semantics for transport grouping. The sequence, receipt,
+pagination, and checkpoint-like mechanisms below remain a Proposed protocol
+candidate until adversarial review proves that each one is necessary.
+
 ## Decision
 
 Every scalar address stores exactly one winning latest-state record at the
 authority: either live state or a deletion state. Each accepted change receives
-a monotonically increasing authority sequence. Values use their qualified key
-as the address; rows use `(qualified table key, globally unique row ID)`.
+a monotonically increasing authority sequence. Values use
+`(namespace key, value key)` as the address; rows use
+`(namespace key, table key, globally unique row ID)`.
 
 A row tombstone is terminal synchronization state, not an application row. It
 retains the address and winning version but no deleted payload or document

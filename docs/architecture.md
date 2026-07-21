@@ -9,6 +9,12 @@ This page is the five-minute map. Durable decisions live in
 [`docs/CONTEXT.md`](CONTEXT.md). Package-owned current behavior belongs in
 package READMEs and code.
 
+The greenfield replacement destination is documented in
+[`One Epicenter, namespaces, and Lenses`](architecture/one-epicenter-namespaces-and-lenses.md).
+Its ADRs are decision-complete but remain Proposed until the implementation
+lands. This page continues to describe the active Workspace architecture during
+that replacement.
+
 ## The stack
 
 Apps compose middleware and core packages. Dependencies point downward; product

@@ -21,22 +21,23 @@ shapes, see `docs/adr/`.
   rotate, but deployment identity plus `principalId` is the stable identity of
   the person's synchronized Epicenter.
 - **Epicenter**: one person's logical body of rows, values, and row-owned
-  documents. Applications bind typed definitions to it; no workspace or
-  database identity exists beneath it.
+  documents. Applications bind typed Lenses to it; no workspace or database
+  lifecycle exists beneath it.
 - **Replica**: one complete local or server copy of an Epicenter. A native
   installation, browser origin, OS profile, or server actor may impose its own
   physical replica, but that adapter boundary is not a product data owner.
-- **Epicenter store**: one runtime-private SQLite family backing a replica. Its
+- **Epicenter store**: one runtime-private storage family backing a replica. Its
   physical relations and format version are implementation details, not an
-  application SQL contract.
+  application SQL contract. Home may expose the stable logical inspection model
+  through the store owner.
 - **Sync attachment**: the permanent binding from a local replica to one
   principal. First sign-in adds synchronization to the existing replica;
   signing out pauses it, and another principal requires a fresh replica or
   explicit destructive clearing.
 - **Epicenter Home**: the trusted shell above typed application surfaces. It owns
-  navigation, assistant sessions, commands, approvals, and live interface
-  state; durable data such as conversations lives in ordinary tables and
-  values.
+  navigation, assistant sessions, commands, approvals, and human and agent
+  relational inspection; durable data such as conversations lives in ordinary
+  tables and values.
 - **Trusted app catalog**: the validated static SPAs Epicenter serves from one
   origin and grants one fixed app-window authority. Bundled output supplies the
   default catalog; user-built output may replace a member by app ID.
@@ -48,7 +49,7 @@ shapes, see `docs/adr/`.
   whole-Epicenter scalar synchronization and hosts separate lazy row-document
   connections.
 - **Row-document connection**: one authenticated Yjs 14 WebSocket for one
-  currently open `(qualified table key, row ID)`. Its structured route address
+  currently open `(namespace key, table key, row ID)`. Its structured route address
   is lifecycle identity, not a secret; it is separate from the whole-Epicenter
   scalar exchange.
 - **Row liveness**: the owner-local fact that a row address is currently
@@ -125,29 +126,38 @@ shapes, see `docs/adr/`.
 
 ## Data API
 
-- **Qualified data key**: the globally stable reverse-domain key carried by one
-  table or value definition, such as `so.epicenter.whispering.recordings`. It is
-  never automatically prefixed by an app, workspace, database, or binding.
-- **Table definition**: an inert release-local `defineTable({ key, fields })`
-  declaration that validates schema-opaque JSON. It does not create storage,
-  claim a complete schema, migrate, heal, rewrite, or grant access.
-- **Value definition**: an inert release-local `defineValue({ key, value })`
-  declaration for one typed singleton with `get`, `set`, and `unset`. It is not
-  a public arbitrary KV collection.
-- **Bound lens**: the synchronous borrowed view returned by
-  `epicenter.bind({ tables, values })`. The grouping has no durable identity or
-  lifecycle; only the Epicenter is disposable.
+- **Namespace key**: the durable reverse-domain coordinate at the front of a
+  row or value address, such as `so.epicenter.whispering`. It structures
+  addresses only and never creates a lifecycle, ownership, or sync scope.
+- **Local data key**: the exact property name under a Lens's `tables` or
+  `values`, such as `recordings` or `language`. Renaming it addresses different
+  data; it is not an ergonomic alias.
+- **Row address**: `(namespace key, table key, row ID)`, distinguished from a
+  value address by its address kind. A row-owned document reuses this address.
+- **Value address**: `(namespace key, value key)`, distinguished from a row
+  address by its address kind.
+- **Lens**: a pure JSON, partial, release-local interpretation of exactly one
+  namespace. Lenses may overlap and are never authoritative schemas, owners, or
+  lifecycle boundaries.
+- **Table definition**: the pure JSON value under one Lens table property. It
+  validates schema-opaque row fields but does not create storage, migrate, heal,
+  rewrite, or grant access.
+- **Value definition**: the pure JSON value under one Lens value property for
+  one typed singleton with `get`, `set`, and `unset`.
+- **Bound lens**: the synchronous borrowed typed view returned when a Lens binds
+  to an open Epicenter. It creates no storage and owns no disposal.
 - **Row**: one identified application value in a table. It is the public
   lifecycle aggregate. Its globally unique runtime-minted ID is never reused.
   Deletion installs a compact tombstone and removes document state.
-- **Row tombstone**: terminal scalar state proving that a qualified row address
+- **Row tombstone**: terminal scalar state proving that a structured row address
   was deleted. It carries no application payload and remains so an indefinitely
   offline or restored replica cannot recreate that row lifetime. Value unset is
   nonterminal latest state and may be replaced by a later set.
-- **Field key**: the exact permanent JSON key named by a table definition. There is no
-  fallback key, alias, automatic rename, or storage default.
-- **Field**: one `field.*` validator for a present JSON value. Required versus
-  optional presence is expressed at the field use site with `optional(...)`.
+- **Field key**: the exact permanent JSON key named by a table definition. There
+  is no fallback key, alias, automatic rename, or storage default.
+- **Field**: one `field.*` schema for a present JSON value. Table fields are
+  required by default; a table's `optional` key array names fields that may be
+  absent. Missing and `null` remain distinct.
 - **Row-owned document**: the latent collaborative document owned by a row.
   It has no public id, authority, or lifecycle independent from the row. Its
   runtime-native provider persists and synchronizes it independently from
@@ -162,9 +172,9 @@ shapes, see `docs/adr/`.
 - **Optional field unset**: patching an optional field with `undefined` removes
   that key. Canonical JSON never stores `undefined`; `null` remains an ordinary
   value when its field accepts null.
-- **Table list**: one bounded local typed read with optional equality filters,
-  one ordering key, cursor, and limit. It may compile to private SQLite but
-  exposes no SQL or server query.
+- **Table list**: one bounded local typed application read with optional
+  equality filters, one ordering key, cursor, and limit. Applications receive
+  no SQL; Epicenter Home separately owns relational inspection.
 - **Row document handle**: the revocable handle returned by a lazy row document
   open. It exposes application roots, local provider durability, and document
   connection status. Releasing the final handle may unload live Yjs state but

@@ -20,7 +20,8 @@ on BroadcastChannel delivery or one immortal owner tab.
 
 An origin cannot enumerate, open, migrate, or delete another origin's replica.
 Signed-in origins converge through the same principal authority. Origin never
-enters a table key, value key, row ID, document address, or public definition.
+enters a namespace key, table key, value key, row ID, document address, or
+public Lens.
 
 The adapter may evolve among a dedicated worker, shared worker, Web Locks, or a
 native browser SQLite primitive without changing the Epicenter API. No tab,
@@ -43,4 +44,3 @@ application, workspace, or database becomes the durable storage owner.
   durable or guaranteed.
 - **Expose origin as a data owner.** Rejected because it leaks an adapter
   constraint into every application address.
-
