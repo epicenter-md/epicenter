@@ -15,7 +15,14 @@
  * tampered manifest is refused rather than trusted.
  */
 
-import { renameSync, writeFileSync } from 'node:fs';
+import {
+	closeSync,
+	fsyncSync,
+	openSync,
+	renameSync,
+	writeFileSync,
+} from 'node:fs';
+import { dirname } from 'node:path';
 
 import {
 	canonicalize,
@@ -90,7 +97,7 @@ export type ProvenanceConfig = {
 	executionSettings: ExecutionSettings;
 	/** A canonical digest of the trace options (workload identity). */
 	workloadDigest: string;
-	/** A canonical digest of the auxiliary-trace options and their bound hashes. */
+	/** A canonical digest of auxiliary-trace construction options; seed records retain content digests. */
 	auxiliaryDigest: string;
 };
 
@@ -112,12 +119,20 @@ export type SeedRaw = EstimatorRaw & {
 };
 
 /** One committed seed's evidence, the unit a resume may skip. */
+export type SeedHashes = {
+	trace: string;
+	traceAdmissible: '0' | '1';
+	traceV1Bound: '0' | '1';
+	auxiliary: string;
+	auxiliaryV1Bound: '0' | '1';
+};
+
 export type SeedRecord = {
 	seedId: number;
 	/** Identity-closed seed-level estimators, each recomputable from retained raw. */
 	estimators: SeedEstimator[];
 	/** Provenance hashes captured for this seed (trace, auxiliary, integrity). */
-	hashes: Record<string, string>;
+	hashes: SeedHashes;
 	/** The complete raw per-seed observations, persisted so resume covers this seed. */
 	raw: SeedRaw;
 };
@@ -354,6 +369,24 @@ export function decideResume(
 }
 
 /**
+ * Parse an existing checkpoint and require exact compatibility with the current
+ * run. A present checkpoint is never treated like an absent one: malformed or
+ * identity-mismatched evidence refuses before the caller can overwrite it.
+ */
+export function requireCompatibleManifest(
+	serialized: string,
+	currentConfig: ProvenanceConfig,
+): { manifest: PilotManifest; completedSeedIds: number[] } {
+	const manifest = parseManifest(serialized);
+	if (manifest === null) {
+		throw new Error('existing checkpoint is invalid; refusing to overwrite it');
+	}
+	const decision = decideResume(manifest, currentConfig);
+	if (!decision.canResume) throw new Error(decision.reason);
+	return { manifest, completedSeedIds: decision.completedSeedIds };
+}
+
+/**
  * Commit one whole seed to the manifest, returning a new manifest. Refuses to
  * commit a partial seed (missing estimators) or a duplicate seed id, so a resume
  * point is always a complete seed.
@@ -398,12 +431,27 @@ function isValidSeedRecord(
 	const r = record as Record<string, unknown>;
 	if (!hasExactKeys(r, ['seedId', 'estimators', 'hashes', 'raw'])) return false;
 	if (!Number.isInteger(r.seedId)) return false;
-	if (!hasExactKeys(r.hashes, ['trace', 'traceBound', 'auxiliaryBound'])) {
+	if (
+		!hasExactKeys(r.hashes, [
+			'trace',
+			'traceAdmissible',
+			'traceV1Bound',
+			'auxiliary',
+			'auxiliaryV1Bound',
+		])
+	) {
 		return false;
 	}
 	const hashes = r.hashes as Record<string, unknown>;
-	for (const key of Object.keys(hashes)) {
-		if (!isNonEmptyString(hashes[key])) return false;
+	const isSha256 = (value: unknown) =>
+		typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
+	if (!isSha256(hashes.trace) || !isSha256(hashes.auxiliary)) return false;
+	for (const key of [
+		'traceAdmissible',
+		'traceV1Bound',
+		'auxiliaryV1Bound',
+	] as const) {
+		if (hashes[key] !== '0' && hashes[key] !== '1') return false;
 	}
 	// Every observation is validated against its CLOSED shape (exact keys, enums,
 	// finite numbers, id shapes). Completeness (exact counts) is checked separately
@@ -467,13 +515,59 @@ export function serializeManifest(manifest: PilotManifest): string {
 }
 
 /**
- * Persist a manifest atomically: write a temp file then rename over the target,
- * so a crash mid-write never leaves a truncated manifest a later run would trust.
+ * Persist a manifest durably and atomically: write a temp file, synchronize its
+ * bytes, rename over the target, then synchronize the containing directory. A
+ * crash cannot expose a trusted partial file or lose the committed rename while
+ * the caller deletes the retained seed databases.
  */
-export function persistManifest(path: string, manifest: PilotManifest): void {
+type ManifestPersistence = {
+	writeFile(path: string, contents: string): void;
+	openForSync(path: string): number;
+	sync(fileDescriptor: number): void;
+	close(fileDescriptor: number): void;
+	rename(from: string, to: string): void;
+};
+
+const manifestPersistence: ManifestPersistence = {
+	writeFile: writeFileSync,
+	openForSync: (path) => openSync(path, 'r'),
+	sync: fsyncSync,
+	close: closeSync,
+	rename: renameSync,
+};
+
+function syncPath(path: string, persistence: ManifestPersistence): void {
+	const fileDescriptor = persistence.openForSync(path);
+	let syncFailure: unknown;
+	try {
+		persistence.sync(fileDescriptor);
+	} catch (cause) {
+		syncFailure = cause;
+	}
+	try {
+		persistence.close(fileDescriptor);
+	} catch (closeFailure) {
+		if (syncFailure !== undefined) {
+			throw new AggregateError(
+				[syncFailure, closeFailure],
+				`failed to synchronize and close '${path}'`,
+			);
+		}
+		throw closeFailure;
+	}
+	if (syncFailure !== undefined) throw syncFailure;
+}
+
+export function persistManifest(
+	path: string,
+	manifest: PilotManifest,
+	persistence: ManifestPersistence = manifestPersistence,
+): void {
 	const temp = `${path}.tmp`;
-	writeFileSync(temp, serializeManifest(manifest));
-	renameSync(temp, path);
+	persistence.writeFile(temp, serializeManifest(manifest));
+	syncPath(temp, persistence);
+	persistence.rename(temp, path);
+	syncPath(dirname(path), persistence);
 }
 
 /**

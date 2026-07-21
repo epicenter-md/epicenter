@@ -7,7 +7,7 @@
  * when they exactly equal a fresh reduction of the retained raw observations.
  */
 
-export const ESTIMATOR_FAMILIES = [
+const ESTIMATOR_FAMILIES = [
 	'balanced-read-block',
 	'balanced-reopen-series',
 	'macro-total',
@@ -16,7 +16,7 @@ export const ESTIMATOR_FAMILIES = [
 ] as const;
 export type EstimatorFamily = (typeof ESTIMATOR_FAMILIES)[number];
 
-export const ESTIMATOR_STATISTICS = [
+const ESTIMATOR_STATISTICS = [
 	'medianElapsedMs',
 	'totalElapsedMs',
 	'throughputPerSec',

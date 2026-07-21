@@ -15,9 +15,9 @@
  * facts it can establish and never predicts a future ADR-readiness contract.
  *
  * Correctness note (spec/audit): a candidate reproducing the analytical, V1-bound
- * oracle witness is the INDEPENDENT correctness proof. Candidates agreeing with
- * one another, or a reopened database agreeing with itself, is cross-candidate or
- * reopen CONSISTENCY, not independent correctness; those are separate gates.
+ * oracle witness is the INDEPENDENT correctness proof. When every candidate
+ * reproduces that witness, mutual consistency follows by equality and does not
+ * earn a duplicate gate. Reopen consistency remains a separate observation.
  */
 
 export type GateStatus = {
@@ -29,8 +29,12 @@ export type GateStatus = {
 export type ProofGateInputs = {
 	/** INDEPENDENT correctness: every cell reproduced the analytical V1-bound oracle witness. */
 	oracleWitnessReproduced: boolean;
-	/** CONSISTENCY, not correctness: candidates agree with each other where compared. */
-	crossCandidateConsistent: boolean;
+	/** Every retained trace hit its declared logical-state target within the fact ceiling. */
+	traceAdmissible: boolean;
+	/** Every retained trace admitted under the private V1 kernel and byte oracle. */
+	traceV1Bound: boolean;
+	/** Every retained auxiliary V1-shaped record admitted under the private kernel. */
+	auxiliaryV1Bound: boolean;
 	/** The run's source and config identity match the persisted checkpoint. */
 	provenanceMatches: boolean;
 	/** Every identity-closed seed estimator exactly matches retained raw observations. */
@@ -88,9 +92,22 @@ function gatesOf(inputs: ProofGateInputs): GateStatus[] {
 				'every cell reproduced the analytical V1-bound oracle witness (independent correctness)',
 		},
 		{
-			name: 'cross-candidate-consistency',
-			passed: inputs.crossCandidateConsistent,
-			detail: 'candidates agree with one another where compared (consistency)',
+			name: 'trace-admissible',
+			passed: inputs.traceAdmissible,
+			detail:
+				'every retained seed trace hit its logical-state target within the fact ceiling',
+		},
+		{
+			name: 'trace-v1-binding',
+			passed: inputs.traceV1Bound,
+			detail:
+				'every retained seed trace admitted and byte-agreed with the V1 kernel',
+		},
+		{
+			name: 'auxiliary-v1-binding',
+			passed: inputs.auxiliaryV1Bound,
+			detail:
+				'every retained auxiliary V1-shaped record admitted under the V1 kernel',
 		},
 		{
 			name: 'provenance',

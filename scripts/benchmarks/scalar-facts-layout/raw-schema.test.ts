@@ -10,6 +10,7 @@ import { describe, expect, test } from 'bun:test';
 import { CANDIDATE_IDS } from './candidates.js';
 import { type ProbePlan, probeIdFor } from './probe-plan.js';
 import {
+	buildIdFor,
 	type CompletenessExpectations,
 	expectedObservationCounts,
 	isValidBlock,
@@ -123,6 +124,23 @@ describe('closed per-observation validators', () => {
 				elapsedMs: 1,
 				witnessDigest: 'w',
 				witnessMatchesOracle: true,
+			}),
+		).toBe(true);
+		expect(
+			isValidTail({
+				owner: 'replica',
+				metric: 'monotonicInstallTail',
+				candidate: 'unified-inline',
+				transactions: 2,
+				samplesMs: [0.1, 0.2],
+				p50Ms: 0.1,
+				p95Ms: 0.2,
+				p99Ms: 0.2,
+				throughputPerSec: 10,
+				resetVerified: true,
+				warmupTransactions: 3,
+				walDeltaDiagnostic: 0,
+				checkpointSignalTruthful: false,
 			}),
 		).toBe(true);
 		expect(
@@ -413,7 +431,7 @@ describe('hostile audit escapes are refused', () => {
 		expect(validateSeedCompleteness(raw, EXP).complete).toBe(false);
 	});
 
-	test('an inconsistent buildId for one cell is rejected', () => {
+	test('an inconsistent buildId for one block is rejected', () => {
 		const raw = complete() as { blocks: { buildId: string }[] };
 		head(raw.blocks).buildId = 's0/replica/split-normalized';
 		expect(validateSeedCompleteness(raw, EXP).complete).toBe(false);
@@ -508,12 +526,18 @@ describe('hostile audit escapes are refused', () => {
 					b.candidate = tmp.candidate;
 					b.letter = tmp.letter;
 					b.sequenceLabel = tmp.sequenceLabel;
-					a.buildId = `s${SEED_INDEX}/${owner}/${a.candidate}`;
-					b.buildId = `s${SEED_INDEX}/${owner}/${b.candidate}`;
+					a.buildId = buildIdFor('config-a', 1000, owner, a.candidate);
+					b.buildId = buildIdFor('config-a', 1000, owner, b.candidate);
+				}
+				const ordered = group.toSorted((a, b) => a.ordinal - b.ordinal);
+				for (let index = 0; index < ordered.length; index += 1) {
+					const block = ordered[index];
+					if (block === undefined) continue;
+					block.predecessor =
+						index === 0 ? null : (ordered[index - 1]?.candidate ?? null);
 				}
 			}
 		}
-		for (const b of raw.blocks) b.predecessor = 'forged';
 		expect(validateSeedCompleteness(raw, EXP).complete).toBe(false);
 	});
 

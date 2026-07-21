@@ -12,7 +12,9 @@ import { type ProofGateInputs, validateMethod } from './evidence-status.js';
 
 const ALL_GATES_PASS: ProofGateInputs = {
 	oracleWitnessReproduced: true,
-	crossCandidateConsistent: true,
+	traceAdmissible: true,
+	traceV1Bound: true,
+	auxiliaryV1Bound: true,
 	provenanceMatches: true,
 	estimatorsComplete: true,
 	balanced: true,
@@ -31,7 +33,9 @@ const ALL_GATES_PASS: ProofGateInputs = {
 
 const EXPECTED_GATE: Record<keyof ProofGateInputs, string> = {
 	oracleWitnessReproduced: 'oracle-correctness',
-	crossCandidateConsistent: 'cross-candidate-consistency',
+	traceAdmissible: 'trace-admissible',
+	traceV1Bound: 'trace-v1-binding',
+	auxiliaryV1Bound: 'auxiliary-v1-binding',
 	provenanceMatches: 'provenance',
 	estimatorsComplete: 'seed-estimators',
 	balanced: 'balance',

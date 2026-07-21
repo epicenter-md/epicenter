@@ -15,10 +15,12 @@ import { join } from 'node:path';
 import type { Candidate } from './candidates.js';
 import {
 	buildRetainedSet,
+	cleanupRetainedAfterSeed,
 	cleanupRetainedSet,
 	openExisting,
 	type RetainedSet,
 	reopenRetained,
+	resolveArtifactPath,
 	retainedKey,
 	withEphemeralDatabase,
 } from './pilot.js';
@@ -52,6 +54,17 @@ const REOPEN_CANDIDATE: Candidate = {
 	relation: 'unified',
 	coordinates: 'inline',
 };
+
+describe('report ownership', () => {
+	test('the default report is outside the disposable run directory', () => {
+		expect(resolveArtifactPath('/tmp/run', null, 'report.json')).toBe(
+			'/tmp/run.report.json',
+		);
+		expect(
+			resolveArtifactPath('/tmp/run', '/chosen/report.json', 'report.json'),
+		).toBe('/chosen/report.json');
+	});
+});
 
 function reopenHarness(failOnce: Set<string>) {
 	const attempts: string[] = [];
@@ -129,6 +142,41 @@ describe('eight-database retained lifetime', () => {
 });
 
 describe('cleanup failure ownership', () => {
+	test('a seed failure stays first when retained cleanup also fails', () => {
+		const primary = new Error('workload failed');
+		const { set } = reopenHarness(new Set(['close']));
+		let caught: unknown;
+		try {
+			cleanupRetainedAfterSeed(set, {
+				seedFailure: primary,
+				preserveForCheckpointRecovery: false,
+			});
+		} catch (error) {
+			caught = error;
+		}
+		expect(caught).toBeInstanceOf(AggregateError);
+		expect((caught as AggregateError).errors[0]).toBe(primary);
+		expect(set.cleanedUp).toBe(false);
+		cleanupRetainedSet(set, () => undefined);
+	});
+
+	test('checkpoint persistence failure retains every database for recovery', () => {
+		const { set } = reopenHarness(new Set());
+		cleanupRetainedAfterSeed(set, {
+			seedFailure: new Error('directory fsync failed'),
+			preserveForCheckpointRecovery: true,
+		});
+		expect(set.cleanedUp).toBe(false);
+		expect(set.handles.size).toBe(1);
+		for (const handle of set.handles.values()) {
+			expect(handle.cleanup).toEqual({
+				finalized: false,
+				closed: false,
+				removed: false,
+			});
+		}
+	});
+
 	test('every operation and later handle continues while close and removal failures remain retryable', () => {
 		const attempts: string[] = [];
 		const failOnce = new Set([

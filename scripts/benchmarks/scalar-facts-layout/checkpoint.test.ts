@@ -5,7 +5,7 @@
  */
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -18,6 +18,7 @@ import {
 	type ProvenanceConfig,
 	parseManifest,
 	persistManifest,
+	requireCompatibleManifest,
 	type SeedRecord,
 	serializeManifest,
 } from './checkpoint.js';
@@ -105,7 +106,13 @@ function seedRecord(seedId: number): SeedRecord {
 			computeProvenanceIdentity(CONFIG),
 			seedId,
 		),
-		hashes: { trace: 'abc', traceBound: '1', auxiliaryBound: '1' },
+		hashes: {
+			trace: 'a'.repeat(64),
+			traceAdmissible: '1',
+			traceV1Bound: '1',
+			auxiliary: 'b'.repeat(64),
+			auxiliaryV1Bound: '1',
+		},
 		raw,
 	};
 }
@@ -113,8 +120,10 @@ function seedRecord(seedId: number): SeedRecord {
 describe('provenance identity', () => {
 	test('is stable and order-independent', () => {
 		const a = computeProvenanceIdentity(CONFIG);
-		// A reordered but equal config canonicalizes identically.
-		const reordered: ProvenanceConfig = { ...CONFIG };
+		// Reversing top-level insertion order must not affect canonical identity.
+		const reordered = Object.fromEntries(
+			Object.entries(CONFIG).toReversed(),
+		) as ProvenanceConfig;
 		expect(computeProvenanceIdentity(reordered)).toBe(a);
 	});
 
@@ -300,6 +309,68 @@ describe('atomic persistence and schema-validated cross-process resume', () => {
 		expect(reloaded?.completedSeeds.map((s) => s.seedId)).toEqual([1000]);
 	});
 
+	test('durable persistence synchronizes the temp file before rename and the directory after', () => {
+		const calls: string[] = [];
+		const descriptors = new Map<number, string>();
+		let nextDescriptor = 1;
+		persistManifest('/evidence/manifest.json', createManifest(CONFIG), {
+			writeFile(path) {
+				calls.push(`write:${path}`);
+			},
+			openForSync(path) {
+				const descriptor = nextDescriptor++;
+				descriptors.set(descriptor, path);
+				calls.push(`open:${path}`);
+				return descriptor;
+			},
+			sync(descriptor) {
+				calls.push(`sync:${descriptors.get(descriptor)}`);
+			},
+			close(descriptor) {
+				calls.push(`close:${descriptors.get(descriptor)}`);
+			},
+			rename(from, to) {
+				calls.push(`rename:${from}->${to}`);
+			},
+		});
+		expect(calls).toEqual([
+			'write:/evidence/manifest.json.tmp',
+			'open:/evidence/manifest.json.tmp',
+			'sync:/evidence/manifest.json.tmp',
+			'close:/evidence/manifest.json.tmp',
+			'rename:/evidence/manifest.json.tmp->/evidence/manifest.json',
+			'open:/evidence',
+			'sync:/evidence',
+			'close:/evidence',
+		]);
+	});
+
+	test('a temp-file sync failure prevents the committed rename', () => {
+		const calls: string[] = [];
+		expect(() =>
+			persistManifest('/evidence/manifest.json', createManifest(CONFIG), {
+				writeFile() {
+					calls.push('write');
+				},
+				openForSync() {
+					calls.push('open');
+					return 1;
+				},
+				sync() {
+					calls.push('sync');
+					throw new Error('fsync failed');
+				},
+				close() {
+					calls.push('close');
+				},
+				rename() {
+					calls.push('rename');
+				},
+			}),
+		).toThrow('fsync failed');
+		expect(calls).toEqual(['write', 'open', 'sync', 'close']);
+	});
+
 	test('cross-process resume: reload from disk, resume, and skip committed seeds', () => {
 		const path = join(tempDir(), 'manifest.json');
 		// "Process A" commits seeds 1000 and 1001, then persists and exits.
@@ -348,6 +419,31 @@ describe('atomic persistence and schema-validated cross-process resume', () => {
 			],
 		};
 		expect(parseManifest(JSON.stringify(bad))).toBeNull();
+	});
+
+	test('binding hashes are closed booleans with retained trace and auxiliary digests', () => {
+		const valid = commitSeed(createManifest(CONFIG), seedRecord(1000));
+		for (const mutate of [
+			(record: SeedRecord) => {
+				record.hashes.traceAdmissible = '2' as '1';
+			},
+			(record: SeedRecord) => {
+				record.hashes.traceV1Bound = 'yes' as '1';
+			},
+			(record: SeedRecord) => {
+				record.hashes.auxiliaryV1Bound = 'yes' as '1';
+			},
+			(record: SeedRecord) => {
+				record.hashes.trace = '';
+			},
+			(record: SeedRecord) => {
+				record.hashes.auxiliary = '';
+			},
+		]) {
+			const hostile = structuredClone(valid);
+			mutate(head(hostile.completedSeeds));
+			expect(parseManifest(JSON.stringify(hostile))).toBeNull();
+		}
 	});
 
 	test('a manifest with a seed missing raw observation arrays is refused', () => {
@@ -444,7 +540,6 @@ describe('atomic persistence and schema-validated cross-process resume', () => {
 		const manifest = commitSeed(createManifest(CONFIG), seedRecord(1000));
 		const serialized = JSON.parse(serializeManifest(manifest));
 		serialized.completedSeeds[0].seedId = 9999; // not in seedIds
-		writeFileSync(join(tempDir(), 'm.json'), JSON.stringify(serialized));
 		expect(parseManifest(JSON.stringify(serialized))).toBeNull();
 	});
 
@@ -498,6 +593,19 @@ describe('resume decisions', () => {
 			workloadDigest: 'changed',
 		});
 		expect(decision.canResume).toBe(false);
+	});
+
+	test('a present invalid or incompatible checkpoint refuses instead of starting fresh', () => {
+		expect(() => requireCompatibleManifest('{', CONFIG)).toThrow(
+			/refusing to overwrite/,
+		);
+		const prior = commitSeed(createManifest(CONFIG), seedRecord(1000));
+		expect(() =>
+			requireCompatibleManifest(serializeManifest(prior), {
+				...CONFIG,
+				sourceVersion: 'changed',
+			}),
+		).toThrow(/identity mismatch/);
 	});
 });
 

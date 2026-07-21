@@ -49,11 +49,11 @@ import {
 	commitSeed,
 	completenessExpectations,
 	createManifest,
-	decideResume,
 	type PilotManifest,
 	type ProvenanceConfig,
 	parseManifest,
 	persistManifest,
+	requireCompatibleManifest,
 	type SeedRecord,
 } from './checkpoint.js';
 import { buildSeedEstimators, estimatorsMatchRaw } from './estimators.js';
@@ -267,6 +267,15 @@ function parseCli(argv: readonly string[]): CliOptions {
 		}
 	}
 	return options;
+}
+
+/** Keep the default report beside, not inside, the disposable run directory. */
+export function resolveArtifactPath(
+	runDirectory: string,
+	explicitPath: string | null,
+	fileName: string,
+): string {
+	return explicitPath ?? `${runDirectory}.${fileName}`;
 }
 
 function resolveSourceVersion(): string {
@@ -795,7 +804,7 @@ function buildOwnerDatabase(
 
 // --- Seed-level retained eight-database set (spec: retain all eight per seed) --
 
-export type RetainedHandle = {
+type RetainedHandle = {
 	owner: Owner;
 	candidate: string;
 	buildId: string;
@@ -816,6 +825,96 @@ export type RetainedSet = {
 };
 export function retainedKey(owner: Owner, candidate: string): string {
 	return `${owner}/${candidate}`;
+}
+
+type RegisteredBuildHandle = {
+	db: Database;
+	path: string;
+	store?: LayoutStore;
+	cleanup: { finalized: boolean; closed: boolean; removed: boolean };
+};
+
+function cleanupRegisteredBuildHandles(
+	records: readonly RegisteredBuildHandle[],
+): unknown[] {
+	const errors: unknown[] = [];
+	for (const record of records) {
+		if (!record.cleanup.finalized && !record.cleanup.closed) {
+			try {
+				record.store?.finalize();
+				record.cleanup.finalized = true;
+			} catch (cause) {
+				errors.push(cause);
+			}
+		}
+		if (!record.cleanup.closed) {
+			try {
+				record.db.close();
+				record.cleanup.closed = true;
+			} catch (cause) {
+				errors.push(
+					new Error(
+						`Failed to close rollback database '${record.path}'; the file was retained`,
+						{ cause },
+					),
+				);
+			}
+		}
+		if (record.cleanup.closed && !record.cleanup.removed) {
+			try {
+				removeDatabase(record.path);
+				record.cleanup.removed = true;
+			} catch (cause) {
+				errors.push(cause);
+			}
+		}
+	}
+	return errors;
+}
+
+/**
+ * A failed retained-set build whose rollback still owns live resources. Callers
+ * can retry cleanup without relying on an out-of-band reference to an injected
+ * database handle.
+ */
+export class RetainedBuildError extends AggregateError {
+	readonly buildError: unknown;
+	readonly #records: readonly RegisteredBuildHandle[];
+
+	constructor(
+		buildError: unknown,
+		cleanupErrors: readonly unknown[],
+		records: readonly RegisteredBuildHandle[],
+	) {
+		super(
+			[buildError, ...cleanupErrors],
+			'buildRetainedSet failed and some opened retained databases could not be cleaned up',
+		);
+		this.buildError = buildError;
+		this.#records = records;
+	}
+
+	get cleanupComplete(): boolean {
+		return this.#records.every(
+			(record) => record.cleanup.closed && record.cleanup.removed,
+		);
+	}
+
+	get pendingPaths(): string[] {
+		return this.#records
+			.filter((record) => !record.cleanup.closed || !record.cleanup.removed)
+			.map((record) => record.path);
+	}
+
+	retryCleanup(): void {
+		const cleanupErrors = cleanupRegisteredBuildHandles(this.#records);
+		if (cleanupErrors.length > 0) {
+			throw new AggregateError(
+				[this.buildError, ...cleanupErrors],
+				'buildRetainedSet rollback cleanup remains incomplete',
+			);
+		}
+	}
 }
 
 /**
@@ -845,7 +944,7 @@ export function buildRetainedSet(
 	// Every database whose file has been OPENED is registered here immediately,
 	// before its risky populate stage. Rollback owns the in-progress handle too, so
 	// a populate failure never leaves the just-opened connection or file behind.
-	const registered: { db: Database; path: string; store?: LayoutStore }[] = [];
+	const registered: RegisteredBuildHandle[] = [];
 	try {
 		for (const owner of OWNERS) {
 			for (const candidate of CANDIDATES) {
@@ -853,9 +952,10 @@ export function buildRetainedSet(
 				const buildId = buildIdFor(configIdentity, seedId, owner, candidate.id);
 				// Stage one: open the file and register the closeable handle FIRST.
 				const { db } = openOne(path);
-				const record: { db: Database; path: string; store?: LayoutStore } = {
+				const record: RegisteredBuildHandle = {
 					db,
 					path,
+					cleanup: { finalized: false, closed: false, removed: false },
 				};
 				registered.push(record);
 				// Stage two: the risky populate. A throw here still leaves `record`
@@ -878,39 +978,10 @@ export function buildRetainedSet(
 		// Finalize and close are attempted independently. Removal requires a successful
 		// close, so rollback never unlinks a database that may still be live. The
 		// original population error is preserved first in the aggregate.
-		const cleanupErrors: unknown[] = [];
-		for (const record of registered) {
-			try {
-				record.store?.finalize();
-			} catch (finalizeError) {
-				cleanupErrors.push(finalizeError);
-			}
-			let closed = false;
-			try {
-				record.db.close();
-				closed = true;
-			} catch (cause) {
-				cleanupErrors.push(
-					new Error(
-						`Failed to close rollback database '${record.path}'; the file was retained`,
-						{ cause },
-					),
-				);
-			}
-			if (closed) {
-				try {
-					removeDatabase(record.path);
-				} catch (removeError) {
-					cleanupErrors.push(removeError);
-				}
-			}
-		}
+		const cleanupErrors = cleanupRegisteredBuildHandles(registered);
 		handles.clear();
 		if (cleanupErrors.length > 0) {
-			throw new AggregateError(
-				[buildError, ...cleanupErrors],
-				'buildRetainedSet failed and some opened retained databases could not be cleaned up',
-			);
+			throw new RetainedBuildError(buildError, cleanupErrors, registered);
 		}
 		throw buildError;
 	}
@@ -971,6 +1042,31 @@ export function cleanupRetainedSet(
 			cleanupErrors,
 			'One or more retained databases could not be fully cleaned up',
 		);
+	}
+}
+
+/**
+ * Complete a seed's retained cleanup without letting a cleanup failure erase the
+ * workload or persistence failure that caused stack unwinding.
+ */
+export function cleanupRetainedAfterSeed(
+	set: RetainedSet,
+	options: {
+		seedFailure: unknown;
+		preserveForCheckpointRecovery: boolean;
+	},
+): void {
+	if (options.preserveForCheckpointRecovery) return;
+	try {
+		cleanupRetainedSet(set);
+	} catch (cleanupError) {
+		if (options.seedFailure !== undefined) {
+			throw new AggregateError(
+				[options.seedFailure, cleanupError],
+				'seed failed and retained cleanup was also incomplete',
+			);
+		}
+		throw cleanupError;
 	}
 }
 
@@ -1122,7 +1218,7 @@ type SeedContext = {
 	raw: SeedRawObservations;
 };
 
-export type OwnerRunResult =
+type OwnerRunResult =
 	| { status: 'COMPLETE' }
 	| {
 			status: 'INCOMPLETE';
@@ -1725,7 +1821,7 @@ function estimateWallSeconds(
 	return Math.ceil(perSeed * profile.seedCount);
 }
 
-export type ExactEnvelopeEstimate = {
+type ExactEnvelopeEstimate = {
 	probeFacts: number;
 	exactFacts: number;
 	exactPresent: number;
@@ -2054,7 +2150,11 @@ function main(): void {
 				estimate,
 			};
 			const serialized = `${JSON.stringify(report, null, 2)}\n`;
-			const outputPath = options.output ?? join(dir, 'estimate.json');
+			const outputPath = resolveArtifactPath(
+				dir,
+				options.output,
+				'estimate.json',
+			);
 			writeFileSync(outputPath, serialized);
 			process.stdout.write(
 				[
@@ -2069,7 +2169,7 @@ function main(): void {
 					.join(''),
 			);
 		} finally {
-			if (options.output !== null && !options.keepArtifacts) {
+			if (!options.keepArtifacts) {
 				rmSync(dir, { recursive: true, force: true });
 			}
 		}
@@ -2100,14 +2200,12 @@ function main(): void {
 			? `${options.output}.manifest.json`
 			: null;
 		if (priorManifestPath !== null && existsSync(priorManifestPath)) {
-			const prior = parseManifest(readFileSync(priorManifestPath, 'utf8'));
-			if (prior !== null) {
-				const decision = decideResume(prior, provenance);
-				if (decision.canResume) {
-					manifest = prior;
-					resumedSeedIds = decision.completedSeedIds;
-				}
-			}
+			const resumed = requireCompatibleManifest(
+				readFileSync(priorManifestPath, 'utf8'),
+				provenance,
+			);
+			manifest = resumed.manifest;
+			resumedSeedIds = resumed.completedSeedIds;
 		}
 
 		const headroom = headroomPreflight(
@@ -2118,7 +2216,11 @@ function main(): void {
 		// A failed headroom preflight aborts BEFORE any seed begins: no seed commits,
 		// so every committed seed is always a complete seed.
 		if (!headroom.passed) {
-			const outputPath = options.output ?? join(dir, 'report.json');
+			const outputPath = resolveArtifactPath(
+				dir,
+				options.output,
+				'report.json',
+			);
 			const refusal = {
 				kind: 'scalar-facts-layout-headroom-refusal',
 				refusedToRun: true,
@@ -2164,16 +2266,32 @@ function main(): void {
 			// path never deletes before commit; a refused or failed seed deletes its
 			// uncommitted temporary set without committing partial data.
 			let retained: RetainedSet | null = null;
+			let seedFailure: unknown;
+			let checkpointPersistenceFailed = false;
 			try {
 				const facts = finalFacts(trace);
-				retained = buildRetainedSet(
-					dir,
-					s,
-					manifest.identity,
-					seedId,
-					facts,
-					trace,
-				);
+				try {
+					retained = buildRetainedSet(
+						dir,
+						s,
+						manifest.identity,
+						seedId,
+						facts,
+						trace,
+					);
+				} catch (error) {
+					if (error instanceof RetainedBuildError && !error.cleanupComplete) {
+						try {
+							error.retryCleanup();
+						} catch (retryError) {
+							throw new AggregateError(
+								[error, retryError],
+								'seed build failed and retained rollback cleanup remained incomplete',
+							);
+						}
+					}
+					throw error;
+				}
 				raw.lifecycle.peakRetained = retained.peakLive;
 				const ctx: SeedContext = {
 					dir,
@@ -2206,10 +2324,12 @@ function main(): void {
 						),
 						resumedSeedIds,
 					});
-					const outputPath =
-						options.output ?? join(dir, 'calibration-incomplete.json');
+					const outputPath = resolveArtifactPath(
+						dir,
+						options.output,
+						'calibration-incomplete.json',
+					);
 					const reportHash = persistJsonAtomically(outputPath, artifact);
-					if (options.output === null) preserveRunDirectory = true;
 					process.stdout.write(
 						`calibration INCOMPLETE: ${artifact.reason}\n  report: ${outputPath}\n  report sha256: ${reportHash}\n`,
 					);
@@ -2237,11 +2357,23 @@ function main(): void {
 					);
 				}
 
-				const traceBound =
-					trace.calibration.traceAdmissible &&
-					verifyTraceV1Binding(trace, limits).bound;
-				const auxiliaryBound = allAuxiliaryBound(
-					makeAuxiliaryTraces(trace, limits),
+				const traceBinding = verifyTraceV1Binding(trace, limits);
+				const auxiliary = makeAuxiliaryTraces(trace, limits);
+				const auxiliaryBound = allAuxiliaryBound(auxiliary);
+				const auxiliaryDigest = digestOf(
+					'auxiliary-traces',
+					canonicalize(
+						Object.fromEntries(
+							Object.entries(auxiliary).map(([key, value]) => [
+								key,
+								{
+									count: value.count,
+									digestHex: value.digestHex,
+									v1Bound: value.v1Bound,
+								},
+							]),
+						),
+					),
 				);
 				const estimators = buildSeedEstimators(raw, manifest.identity, seedId);
 				const record = {
@@ -2249,29 +2381,44 @@ function main(): void {
 					estimators,
 					hashes: {
 						trace: trace.measure().digestHex,
-						traceBound: traceBound ? '1' : '0',
-						auxiliaryBound: auxiliaryBound ? '1' : '0',
+						traceAdmissible: trace.calibration.traceAdmissible ? '1' : '0',
+						traceV1Bound: traceBinding.bound ? '1' : '0',
+						auxiliary: auxiliaryDigest,
+						auxiliaryV1Bound: auxiliaryBound ? '1' : '0',
 					},
 					raw,
 				} satisfies SeedRecord;
 				// Persist every durable manifest FIRST, then delete the retained set. A
-				// write failure leaves all eight databases retained and the seed
-				// uncommitted (the finally block cleans them up on abort).
+				// write failure leaves all eight databases and the run directory retained
+				// for recovery; no cleanup path may erase the evidence boundary.
 				manifest = persistSeedCheckpoint({
 					manifest,
 					record,
 					persist: (m) => {
-						persistManifest(manifestPath, m);
-						if (priorManifestPath !== null)
-							persistManifest(priorManifestPath, m);
+						try {
+							persistManifest(manifestPath, m);
+							if (priorManifestPath !== null)
+								persistManifest(priorManifestPath, m);
+						} catch (error) {
+							checkpointPersistenceFailed = true;
+							preserveRunDirectory = true;
+							throw error;
+						}
 					},
 				});
 				cleanupRetainedSet(retained);
+			} catch (error) {
+				seedFailure = error;
+				throw error;
 			} finally {
 				// Retry any unfinished cleanup. A successful persist already updated
-				// `manifest`, so a cleanup failure cannot hide or revert that commit.
+				// `manifest`, so a cleanup failure cannot hide or revert that commit. If
+				// the seed already failed, retain that error first in the aggregate.
 				if (retained !== null && !retained.cleanedUp) {
-					cleanupRetainedSet(retained);
+					cleanupRetainedAfterSeed(retained, {
+						seedFailure,
+						preserveForCheckpointRecovery: checkpointPersistenceFailed,
+					});
 				}
 			}
 		}
@@ -2323,6 +2470,15 @@ function main(): void {
 					seed.seedId,
 				),
 			);
+		const traceAdmissible =
+			committedComplete &&
+			committed.every((seed) => seed.hashes.traceAdmissible === '1');
+		const traceV1Bound =
+			committedComplete &&
+			committed.every((seed) => seed.hashes.traceV1Bound === '1');
+		const auxiliaryV1Bound =
+			committedComplete &&
+			committed.every((seed) => seed.hashes.auxiliaryV1Bound === '1');
 
 		// Gates derived from retained observation completeness and content.
 		const executed =
@@ -2419,7 +2575,9 @@ function main(): void {
 
 		const proofInputs: ProofGateInputs = {
 			oracleWitnessReproduced: oracleReproduced,
-			crossCandidateConsistent: oracleReproduced,
+			traceAdmissible,
+			traceV1Bound,
+			auxiliaryV1Bound,
 			provenanceMatches: verifyProvenanceRoundTrip(manifestPath, provenance),
 			estimatorsComplete,
 			balanced,
@@ -2496,7 +2654,7 @@ function main(): void {
 		};
 		const serialized = `${JSON.stringify(report, null, 2)}\n`;
 		const reportHash = new Sha256Stream().update(serialized).digestHex();
-		const outputPath = options.output ?? join(dir, 'report.json');
+		const outputPath = resolveArtifactPath(dir, options.output, 'report.json');
 		writeFileSync(outputPath, serialized);
 
 		process.stdout.write(

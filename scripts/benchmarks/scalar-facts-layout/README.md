@@ -40,7 +40,9 @@ refuses to run. The frozen pilot is not implemented to contract yet.
 
 The pilot reports method validation, named proof refusals, and identity-closed
 seed estimators. It does not estimate a winner or emit candidate ranking,
-contrast, feasibility, SLO, or final-readiness output.
+contrast, candidate feasibility, SLO, or final-readiness output. The refused
+exact profile reports only whether disk and wall-time admission appear feasible
+enough to justify a later deliberate launch.
 
 **Open contract gaps (not done), tracked for the next passes:**
 
@@ -97,9 +99,10 @@ hashing, scheduling, and method validation are portable to browser runtimes.
 - `checkpoint.ts`: atomically persisted, schema-validated, cross-process
   per-seed checkpointing. Identity binds the exact source, whole config,
   per-seed trace inputs, per-candidate DDL hashes, limits digest, runtime and SQLite
-  versions, execution settings, and workload and auxiliary digests; resume happens
-  only at a committed whole-seed boundary and fails closed on any mismatch,
-  truncation, or partial seed.
+  versions, execution settings, workload and auxiliary-option digests, and
+  per-seed trace and auxiliary content digests; resume happens only at a committed
+  whole-seed boundary and fails closed on any mismatch, truncation, or partial
+  seed.
 - `probe-plan.ts`: the layout-independent owner of deterministic probe sources.
   It derives exact indexed ranges, 48 non-empty traversal pages, trace-derived
   page digests, phase item digests, and final probe ids from frozen trace options.
@@ -123,9 +126,9 @@ hashing, scheduling, and method validation are portable to browser runtimes.
   V1-bound oracle witness (exact current-fact count, exact current-protocol-fact
   bytes, and one ordered SHA-256 over the current facts). The oracle is a
   closed-form function of the trace, not a peer read path.
-- **Consistency, not correctness**: candidates agreeing with one another, or a
-  reopened database agreeing with itself, is cross-candidate / reopen consistency.
-  It is a separate proof gate and never stands in for the oracle correctness proof.
+- **Consistency, not correctness**: when every candidate reproduces the same
+  independent oracle, mutual consistency follows by equality. It does not earn a
+  duplicate proof gate. Reopen consistency remains a separate observation.
 
 ## Two distinct byte measures (ADR-0161, ADR-0167)
 

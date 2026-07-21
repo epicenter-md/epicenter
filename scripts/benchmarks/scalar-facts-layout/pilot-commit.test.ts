@@ -26,6 +26,7 @@ import {
 	type CalibrationObservation,
 	cleanupRetainedSet,
 	persistSeedCheckpoint,
+	RetainedBuildError,
 } from './pilot.js';
 import { buildCompleteRaw } from './raw-schema.test-support.js';
 import { evaluateCalibrationTrials } from './schedule.js';
@@ -118,7 +119,13 @@ function seedRecord(): SeedRecord {
 			computeProvenanceIdentity(CONFIG),
 			1000,
 		),
-		hashes: { trace: 't', traceBound: '1', auxiliaryBound: '1' },
+		hashes: {
+			trace: 'a'.repeat(64),
+			traceAdmissible: '1',
+			traceV1Bound: '1',
+			auxiliary: 'b'.repeat(64),
+			auxiliaryV1Bound: '1',
+		},
 		raw,
 	};
 }
@@ -380,14 +387,11 @@ describe('partial construction rollback', () => {
 		expect(opened.every((r) => !existsSync(r.path))).toBe(true);
 	});
 
-	test('a close failure keeps that file while later rollback records still close and remove', () => {
+	test('a close failure keeps retry ownership while later rollback records continue', () => {
 		const dir = tempDir();
 		const facts = finalFacts(tinyTrace());
 		const trace = tinyTrace();
-		const opened: Array<{
-			path: string;
-			closeForCleanup: () => void;
-		}> = [];
+		const opened: Array<{ path: string }> = [];
 		let closeCalls = 0;
 		const openOne = (path: string) => {
 			const db = new Database(path);
@@ -402,7 +406,7 @@ describe('partial construction rollback', () => {
 				}
 				return realClose();
 			};
-			opened.push({ path, closeForCleanup: realClose });
+			opened.push({ path });
 			return { db };
 		};
 		let populateCalls = 0;
@@ -428,7 +432,7 @@ describe('partial construction rollback', () => {
 			caught = error;
 		}
 
-		expect(caught).toBeInstanceOf(AggregateError);
+		expect(caught).toBeInstanceOf(RetainedBuildError);
 		const first = opened[0];
 		if (first === undefined)
 			throw new Error('expected the failed-close record');
@@ -446,7 +450,13 @@ describe('partial construction rollback', () => {
 			true,
 		);
 
-		first.closeForCleanup();
-		rmSync(first.path, { force: true });
+		const retainedError = caught as RetainedBuildError;
+		expect(retainedError.cleanupComplete).toBe(false);
+		expect(retainedError.pendingPaths).toEqual([first.path]);
+		retainedError.retryCleanup();
+		expect(closeCalls).toBe(5);
+		expect(retainedError.cleanupComplete).toBe(true);
+		expect(retainedError.pendingPaths).toEqual([]);
+		expect(opened.every((record) => !existsSync(record.path))).toBe(true);
 	});
 });

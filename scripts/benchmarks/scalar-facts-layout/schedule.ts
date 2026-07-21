@@ -41,7 +41,7 @@ export const WILLIAMS_SEQUENCES: readonly (readonly Letter[])[] = [
  * `A B D C` (ends C) then `C D B A` (starts C), and `B C A D` (ends D) then
  * `D A C B` (starts D).
  */
-export const SELF_TRANSITION_PAIRS: readonly (readonly [number, number])[] = [
+const SELF_TRANSITION_PAIRS: readonly (readonly [number, number])[] = [
 	[0, 2],
 	[1, 3],
 ];
@@ -185,8 +185,7 @@ export type CalibrationDecision =
 			reason: string;
 	  };
 
-export const CALIBRATION_TRIALS_PER_ROUND =
-	WILLIAMS_SEQUENCES.length * LETTERS.length;
+const CALIBRATION_TRIALS_PER_ROUND = WILLIAMS_SEQUENCES.length * LETTERS.length;
 
 export type CalibrationSlot = Omit<
 	CalibrationTrial,

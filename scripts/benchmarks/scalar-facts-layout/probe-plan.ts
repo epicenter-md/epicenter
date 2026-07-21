@@ -9,7 +9,7 @@ import { pilotLimits } from './v1-binding.js';
 export const PROBE_PHASES = ['calibration', 'warmup', 'timed'] as const;
 export type ProbePhase = (typeof PROBE_PHASES)[number];
 
-export const PROBE_RANGES: Record<
+const PROBE_RANGES: Record<
 	ProbePhase,
 	{
 		rowOffset: number;
