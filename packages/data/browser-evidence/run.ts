@@ -583,7 +583,7 @@ async function runEngine({
 						(status) => status.started,
 						'hung sync exchange',
 					);
-					await Promise.all([
+					const [sameTabRow, peerRow] = await Promise.all([
 						first.evaluate(
 							({ title, writer }) =>
 								window.browserEvidence.create(title, writer),
@@ -598,6 +598,27 @@ async function runEngine({
 					const snapshot = await second.evaluate(() =>
 						window.browserEvidence.snapshot(),
 					);
+					const hungStatus = await first.evaluate(() =>
+						window.browserEvidence.hungSyncStatus(),
+					);
+					assert(
+						hungStatus.started && hungStatus.hungOutcome === undefined,
+						'Hung sync exchange settled before the continuity witness',
+					);
+					assert(
+						sameTabRow.id !== peerRow.id,
+						'Hung sync continuity writes returned the same row ID',
+					);
+					const sameTabRowOccurrences = snapshot.rows.filter(
+						({ id }) => id === sameTabRow.id,
+					).length;
+					const peerRowOccurrences = snapshot.rows.filter(
+						({ id }) => id === peerRow.id,
+					).length;
+					assert(
+						sameTabRowOccurrences === 1 && peerRowOccurrences === 1,
+						'Hung sync continuity snapshot did not contain both writes exactly once',
+					);
 					await Promise.all([
 						first.evaluate(() => window.browserEvidence.dispose()),
 						second.evaluate(() => window.browserEvidence.dispose()),
@@ -605,6 +626,14 @@ async function runEngine({
 					return {
 						parameters: [
 							{ name: 'exchangeStarted', value: true },
+							{ name: 'exchangePending', value: true },
+							{ name: 'sameTabRowId', value: sameTabRow.id },
+							{ name: 'peerRowId', value: peerRow.id },
+							{
+								name: 'sameTabRowOccurrences',
+								value: sameTabRowOccurrences,
+							},
+							{ name: 'peerRowOccurrences', value: peerRowOccurrences },
 							{ name: 'claim', value: 'local-rpc-continuity-only' },
 						],
 						proofs: snapshotProofs(snapshot),

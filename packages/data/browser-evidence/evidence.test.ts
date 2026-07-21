@@ -141,6 +141,11 @@ function completeEvidence(): BrowserEngineEvidence {
 			),
 			cell('hung-sync-continuity', [
 				{ name: 'exchangeStarted', value: true },
+				{ name: 'exchangePending', value: true },
+				{ name: 'sameTabRowId', value: 'a'.repeat(24) },
+				{ name: 'peerRowId', value: 'b'.repeat(24) },
+				{ name: 'sameTabRowOccurrences', value: 1 },
+				{ name: 'peerRowOccurrences', value: 1 },
 				{ name: 'claim', value: 'local-rpc-continuity-only' },
 			]),
 			cell('tab-close-continuity', [
@@ -209,6 +214,93 @@ test('browser evidence requires cell-specific witnesses before provisional', () 
 			assertBrowserEngineEvidence({ ...evidence, cells, overall: 'invalid' }),
 		).toThrow(`passed cell '${original.id}'`);
 	}
+});
+
+test('hung sync continuity requires two distinct writes witnessed exactly once', () => {
+	const evidence = completeEvidence();
+	const hung = evidence.cells.find(({ id }) => id === 'hung-sync-continuity');
+	if (hung === undefined) throw new Error('Expected hung sync evidence cell');
+
+	const cases = [
+		{
+			name: 'missing peer row ID',
+			parameters: hung.parameters.filter(({ name }) => name !== 'peerRowId'),
+		},
+		{
+			name: 'same row ID for both writes',
+			parameters: hung.parameters.map((parameter) =>
+				parameter.name === 'peerRowId'
+					? { ...parameter, value: 'a'.repeat(24) }
+					: parameter,
+			),
+		},
+		{
+			name: 'peer row ID is not an admitted row ID',
+			parameters: hung.parameters.map((parameter) =>
+				parameter.name === 'peerRowId'
+					? { ...parameter, value: 'not-a-row-id' }
+					: parameter,
+			),
+		},
+		{
+			name: 'peer row absent from snapshot',
+			parameters: hung.parameters.map((parameter) =>
+				parameter.name === 'peerRowOccurrences'
+					? { ...parameter, value: 0 }
+					: parameter,
+			),
+		},
+		{
+			name: 'peer row duplicated in snapshot',
+			parameters: hung.parameters.map((parameter) =>
+				parameter.name === 'peerRowOccurrences'
+					? { ...parameter, value: 2 }
+					: parameter,
+			),
+		},
+		{
+			name: 'exchange settled before snapshot',
+			parameters: hung.parameters.map((parameter) =>
+				parameter.name === 'exchangePending'
+					? { ...parameter, value: false }
+					: parameter,
+			),
+		},
+	];
+
+	for (const scenario of cases) {
+		const cells = evidence.cells.map((cell) =>
+			cell.id === hung.id
+				? { ...cell, parameters: scenario.parameters }
+				: cell,
+		);
+		expect(classifyEvidence('chromium', cells), scenario.name).toBe('invalid');
+		expect(() =>
+			assertBrowserEngineEvidence({ ...evidence, cells, overall: 'invalid' }),
+		).toThrow("passed cell 'hung-sync-continuity'");
+	}
+});
+
+test('browser evidence rejects duplicate parameter names', () => {
+	const evidence = completeEvidence();
+	const cells = evidence.cells.map((cell) =>
+		cell.id === 'hung-sync-continuity'
+			? {
+					...cell,
+					parameters: [
+						...cell.parameters,
+						{ name: 'exchangePending', value: false },
+					],
+				}
+			: cell,
+	);
+
+	expect(classifyEvidence('chromium', cells)).toBe('invalid');
+	expect(() =>
+		assertBrowserEngineEvidence({ ...evidence, cells, overall: 'invalid' }),
+	).toThrow(
+		"cell 'hung-sync-continuity' has duplicate parameters: exchangePending",
+	);
 });
 
 test('browser evidence rejects feature and optional-cell overclaims', () => {

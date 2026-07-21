@@ -177,6 +177,12 @@ export function assertBrowserEngineEvidence(
 	for (const cell of value.cells) {
 		if (seen.has(cell.id)) issues.push(`duplicate cell '${cell.id}'`);
 		seen.add(cell.id);
+		const duplicateParameters = duplicateParameterNames(cell);
+		if (duplicateParameters.length > 0) {
+			issues.push(
+				`cell '${cell.id}' has duplicate parameters: ${duplicateParameters.join(', ')}`,
+			);
+		}
 		if (durationBetween(cell.startedAt, cell.endedAt) !== cell.durationMs) {
 			issues.push(
 				`cell '${cell.id}' duration must equal its timestamp interval`,
@@ -233,6 +239,8 @@ export function classifyEvidence(
 ): BrowserEngineEvidence['overall'] {
 	const ids = cells.map(({ id }) => id);
 	if (new Set(ids).size !== ids.length) return 'invalid';
+	if (cells.some((cell) => duplicateParameterNames(cell).length > 0))
+		return 'invalid';
 	if (cells.some(({ outcome }) => outcome === 'failed')) return 'invalid';
 	if (
 		cells.some(
@@ -318,11 +326,10 @@ function passedCellWitnessIssues(cell: EvidenceCell): string[] {
 			}
 			break;
 		case 'hung-sync-continuity':
-			if (
-				parameter(cell, 'exchangeStarted') !== true ||
-				parameter(cell, 'claim') !== 'local-rpc-continuity-only'
-			) {
-				issues.push(`passed cell '${cell.id}' requires its bounded sync claim`);
+			if (!hasHungSyncContinuityWitness(cell)) {
+				issues.push(
+					`passed cell '${cell.id}' requires a pending exchange and two distinct writes witnessed exactly once`,
+				);
 			}
 			break;
 		case 'tab-close-continuity':
@@ -357,6 +364,21 @@ function passedCellWitnessIssues(cell: EvidenceCell): string[] {
 	return issues;
 }
 
+function hasHungSyncContinuityWitness(cell: EvidenceCell): boolean {
+	const sameTabRowId = parameter(cell, 'sameTabRowId');
+	const peerRowId = parameter(cell, 'peerRowId');
+	return (
+		parameter(cell, 'exchangeStarted') === true &&
+		parameter(cell, 'exchangePending') === true &&
+		isRowId(sameTabRowId) &&
+		isRowId(peerRowId) &&
+		sameTabRowId !== peerRowId &&
+		parameter(cell, 'sameTabRowOccurrences') === 1 &&
+		parameter(cell, 'peerRowOccurrences') === 1 &&
+		parameter(cell, 'claim') === 'local-rpc-continuity-only'
+	);
+}
+
 function hasContinuationWriteWitness(cell: EvidenceCell): boolean {
 	const beforeRowCount = parameter(cell, 'beforeRowCount');
 	const reopenedRowCount = parameter(cell, 'reopenedRowCount');
@@ -388,6 +410,20 @@ function parameter(
 	name: string,
 ): string | number | boolean | undefined {
 	return cell.parameters.find((candidate) => candidate.name === name)?.value;
+}
+
+function duplicateParameterNames(cell: EvidenceCell): string[] {
+	const seen = new Set<string>();
+	const duplicates = new Set<string>();
+	for (const { name } of cell.parameters) {
+		if (seen.has(name)) duplicates.add(name);
+		seen.add(name);
+	}
+	return [...duplicates];
+}
+
+function isRowId(value: unknown): value is string {
+	return typeof value === 'string' && /^[0-9a-z]{24}$/.test(value);
 }
 
 function isSha256(value: unknown): value is string {
