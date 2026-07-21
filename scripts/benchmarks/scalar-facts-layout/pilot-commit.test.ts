@@ -397,11 +397,11 @@ describe('partial construction rollback', () => {
 			const db = new Database(path);
 			const realClose = db.close.bind(db);
 			const shouldFail = opened.length === 0;
-			let failed = false;
+			let failuresRemaining = shouldFail ? 2 : 0;
 			db.close = () => {
 				closeCalls += 1;
-				if (shouldFail && !failed) {
-					failed = true;
+				if (failuresRemaining > 0) {
+					failuresRemaining -= 1;
 					throw new Error('close boom');
 				}
 				return realClose();
@@ -453,8 +453,15 @@ describe('partial construction rollback', () => {
 		const retainedError = caught as RetainedBuildError;
 		expect(retainedError.cleanupComplete).toBe(false);
 		expect(retainedError.pendingPaths).toEqual([first.path]);
-		retainedError.retryCleanup();
+		expect(() => retainedError.retryCleanup()).toThrow(
+			/rollback cleanup remains incomplete/,
+		);
 		expect(closeCalls).toBe(5);
+		expect(retainedError.cleanupComplete).toBe(false);
+		expect(retainedError.pendingPaths).toEqual([first.path]);
+		expect(existsSync(first.path)).toBe(true);
+		retainedError.retryCleanup();
+		expect(closeCalls).toBe(6);
 		expect(retainedError.cleanupComplete).toBe(true);
 		expect(retainedError.pendingPaths).toEqual([]);
 		expect(opened.every((record) => !existsSync(record.path))).toBe(true);

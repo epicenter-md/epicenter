@@ -20,7 +20,7 @@ import {
 	openExisting,
 	type RetainedSet,
 	reopenRetained,
-	resolveArtifactPath,
+	resolveEvidenceArtifactPaths,
 	retainedKey,
 	withEphemeralDatabase,
 } from './pilot.js';
@@ -56,13 +56,17 @@ const REOPEN_CANDIDATE: Candidate = {
 };
 
 describe('report ownership', () => {
-	test('the default report is outside the disposable run directory', () => {
-		expect(resolveArtifactPath('/tmp/run', null, 'report.json')).toBe(
-			'/tmp/run.report.json',
-		);
+	test('the report and its manifest mirror are outside the disposable run directory', () => {
+		expect(resolveEvidenceArtifactPaths('/tmp/run', null)).toEqual({
+			report: '/tmp/run.report.json',
+			manifest: '/tmp/run.report.json.manifest.json',
+		});
 		expect(
-			resolveArtifactPath('/tmp/run', '/chosen/report.json', 'report.json'),
-		).toBe('/chosen/report.json');
+			resolveEvidenceArtifactPaths('/tmp/run', '/chosen/report.json'),
+		).toEqual({
+			report: '/chosen/report.json',
+			manifest: '/chosen/report.json.manifest.json',
+		});
 	});
 });
 

@@ -270,12 +270,25 @@ function parseCli(argv: readonly string[]): CliOptions {
 }
 
 /** Keep the default report beside, not inside, the disposable run directory. */
-export function resolveArtifactPath(
+function resolveArtifactPath(
 	runDirectory: string,
 	explicitPath: string | null,
 	fileName: string,
 ): string {
 	return explicitPath ?? `${runDirectory}.${fileName}`;
+}
+
+/** Keep the resumable manifest beside the final report under the same owner. */
+export function resolveEvidenceArtifactPaths(
+	runDirectory: string,
+	explicitReportPath: string | null,
+): { report: string; manifest: string } {
+	const report = resolveArtifactPath(
+		runDirectory,
+		explicitReportPath,
+		'report.json',
+	);
+	return { report, manifest: `${report}.manifest.json` };
 }
 
 function resolveSourceVersion(): string {
@@ -2196,12 +2209,11 @@ function main(): void {
 
 		let manifest: PilotManifest = createManifest(provenance);
 		let resumedSeedIds: number[] = [];
-		const priorManifestPath = options.output
-			? `${options.output}.manifest.json`
-			: null;
-		if (priorManifestPath !== null && existsSync(priorManifestPath)) {
+		const { report: reportPath, manifest: evidenceManifestPath } =
+			resolveEvidenceArtifactPaths(dir, options.output);
+		if (existsSync(evidenceManifestPath)) {
 			const resumed = requireCompatibleManifest(
-				readFileSync(priorManifestPath, 'utf8'),
+				readFileSync(evidenceManifestPath, 'utf8'),
 				provenance,
 			);
 			manifest = resumed.manifest;
@@ -2284,6 +2296,9 @@ function main(): void {
 						try {
 							error.retryCleanup();
 						} catch (retryError) {
+							// A still-live connection owns its file. Keep the directory so the
+							// outer finally cannot unlink that file during stack unwinding.
+							preserveRunDirectory = true;
 							throw new AggregateError(
 								[error, retryError],
 								'seed build failed and retained rollback cleanup remained incomplete',
@@ -2397,8 +2412,7 @@ function main(): void {
 					persist: (m) => {
 						try {
 							persistManifest(manifestPath, m);
-							if (priorManifestPath !== null)
-								persistManifest(priorManifestPath, m);
+							persistManifest(evidenceManifestPath, m);
 						} catch (error) {
 							checkpointPersistenceFailed = true;
 							preserveRunDirectory = true;
@@ -2654,8 +2668,7 @@ function main(): void {
 		};
 		const serialized = `${JSON.stringify(report, null, 2)}\n`;
 		const reportHash = new Sha256Stream().update(serialized).digestHex();
-		const outputPath = resolveArtifactPath(dir, options.output, 'report.json');
-		writeFileSync(outputPath, serialized);
+		writeFileSync(reportPath, serialized);
 
 		process.stdout.write(
 			[
@@ -2666,7 +2679,8 @@ function main(): void {
 				`  headroom: ${headroom.passed} (perDB=${headroom.perDatabaseBytes}B, need=${headroom.requiredBytes}B, wallEst=${headroom.wallTimeEstimateSeconds ?? '?'}s)`,
 				`  method validated: ${method.methodValidated}${profile.exact ? '' : ' (UNREACHABLE for a smoke: exact-envelope gate fails)'}`,
 				`  failing gates: ${method.proofRefusals.map((r) => r.split(':')[0]).join(', ') || 'none'}`,
-				`  report: ${outputPath}`,
+				`  report: ${reportPath}`,
+				`  manifest: ${evidenceManifestPath}`,
 				`  report sha256: ${reportHash}`,
 			]
 				.map((line) => `${line}\n`)
