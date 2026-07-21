@@ -84,11 +84,13 @@ export type BrowserExchangeResult =
 	| {
 			type: 'exchange-result';
 			transportId: number;
+			transportKey: number;
 			response: ExchangeResponse;
 	  }
 	| {
 			type: 'exchange-error';
 			transportId: number;
+			transportKey: number;
 			name: string;
 			message: string;
 	  };
@@ -128,6 +130,16 @@ export type BrowserWorkerMessage =
 			transportId: number;
 			transportKey: number;
 			request: ExchangeRequest;
-	  };
+	  }
+	| {
+			type: 'exchange-cancel';
+			transportId: number;
+			transportKey: number;
+	  }
+	| {
+			type: 'exchange-retire';
+			transportKey: number;
+	  }
+	| { type: 'client-revoked'; name: string; message: string };
 
 export type BrowserInvalidationSignal = Omit<BrowserInvalidation, 'broadcast'>;
