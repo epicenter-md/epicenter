@@ -53,6 +53,23 @@ storage debris, never resurrectable product state. The runtime does not inspect
 schema-opaque application citations and cannot use them as a garbage-collection
 oracle while the row remains live.
 
+First-attachment `Discard local data` applies the same boundary to the whole
+unattached replica. One SQLite transaction removes scalar state, document
+chains, publication obligations, and accepted blob membership while recording
+the permanent principal attachment. Authority hydration begins only after that
+transaction commits. The owner then reclaims raw blob files idempotently. A
+crash may leave files with no live SQLite owner, but those bytes are debris and
+cannot reappear as product state.
+
+A raw blob file is usable only when its bytes verify against the digest
+currently owned by SQLite. Delayed `Discard` cleanup targets the pre-clear
+physical generation or an equivalent immutable file identity. It can neither
+satisfy nor delete a blob owner created later by authority hydration at the same
+row address. A private blob-root generation switched by the logical transaction
+is one valid implementation. Digest-qualified immutable paths are valid only
+when cleanup rechecks or leases current SQLite ownership so it cannot delete a
+presently owned equal-digest file.
+
 ## Consequences
 
 - Browser documents already receive OPFS durability through SQLite; moving
@@ -65,6 +82,10 @@ oracle while the row remains live.
   filesystem adapters are one implementation.
 - Blob-file cleanup may lag the logical deletion transaction. That lag costs
   storage only and cannot restore a deleted row.
+- Whole-replica `Discard` is logically atomic without pretending SQLite can
+  atomically delete external files. The attachment record and empty logical
+  state commit together; physical reclamation follows the same debris rule as
+  row deletion.
 
 ## Acceptance evidence
 
@@ -73,6 +94,14 @@ document chains remain transactional SQLite state, blob bytes remain streamable
 raw files, and row deletion cannot resurrect either medium. Failure injection
 must leave a complete committed SQLite state plus either valid row-owned blob
 bytes or removable debris, never live bytes for a deleted row.
+
+The same failure injection covers first-attachment `Discard`: hydration never
+starts before the logical clear and attachment commit, a failed transaction
+preserves the intact unattached replica, and a committed transaction exposes no
+live local row or obligation even when raw-file reclamation is interrupted.
+Same-address hydration with equal and different blob digests must prove that
+old-generation cleanup cannot satisfy or delete the new owner before or after a
+crash.
 
 Physical measurements are adapter-specific. Evidence from native SQLite and
 browser OPFS reports the database and the file-level measurements that the

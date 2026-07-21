@@ -72,15 +72,36 @@ Refused promise:
 > One physical replica can switch among several principals while preserving a
 > separate anonymous dataset and offering automatic merge choices.
 
-The first sign-in permanently attaches the current local replica to one
-principal and converges its existing content. Signing out pauses sync without
-changing ownership. Another principal requires a fresh replica or explicit
-destructive clearing.
+Authentication first resolves the principal. Before the first successful
+attachment permanently binds the current local replica to that principal, a
+person whose unattached replica contains logical state or durable obligations,
+including tombstones, makes one whole-replica choice:
+
+- **Bring local data:** retain the replica and converge its scalar, document,
+  and blob work through the ordinary plane-specific laws.
+- **Discard local data:** clear the replica's logical state and obligations in
+  the same transaction that records the permanent attachment, then hydrate the
+  principal's existing Epicenter. Reclaim orphan raw blob files idempotently
+  afterward.
+
+An empty replica attaches directly. Both paths produce the same single attached
+replica. `Bring` converges into the remote authority without replacing it as a
+whole; `Discard` leaves the remote authority unchanged. Neither path is Restore.
+Signing out pauses sync without changing ownership. Another principal requires
+a fresh replica; clearing an attached replica's data never changes its
+attachment.
 
 This refusal deletes Device-versus-Account owners, profile catalogs, adoption
-modes, per-owner directories, rekeying, aliases, parallel data handles, merge
-choice UI, and account-switch recovery. The user loss is that switching people
-inside one installation is not a seamless toggle.
+modes, per-owner directories, rekeying, aliases, parallel data handles,
+per-item merge-choice UI, and account-switch recovery. The one pre-attachment
+choice is binary and whole-replica; it is not a second ownership or migration
+system. The user loss is that switching people inside one installation is not a
+seamless toggle.
+
+`Bring` includes local deletions. A brought row tombstone terminally deletes a
+shared remote live row through the same authority fold as any other offline
+deletion. A pre-existing remote tombstone likewise remains final. The product
+does not infer which branch is newer from wall-clock time.
 
 Permanent row tombstones within one authority lifetime are the companion
 asymmetric trade. A small durable record per row deletion deletes acknowledgment
@@ -178,6 +199,22 @@ runtime shape. There are no Device and Account runtime types.
 to the same stable principal identity. Credentials may rotate; the attachment
 does not. The call starts or resumes background synchronization and returns no
 second Epicenter.
+
+The environment owner resolves `Bring local data` versus `Discard local data`
+before the first attachment when local content exists. The exact UI and method
+shape may follow the host, but the durable transition is fixed. `Bring` records
+the attachment without rewriting local state; pre-existing pending scalar
+intents, dirty document revisions, and blob publication records become eligible
+for ordinary synchronization only after the authority lifetime is learned.
+Attachment never reconstructs work by scanning visible state. `Discard` clears
+local scalar state, document chains, publication records, and blob membership
+while recording the attachment in one SQLite transaction. Hydration begins only
+after commit. Raw blob files are external to SQLite and are reclaimed
+idempotently afterward; a crash may leave storage debris but never live product
+state. Cleanup targets only a pre-clear physical generation or equivalent
+immutable identity, while every usable blob file must verify against SQLite's
+current digest. Same-address hydration can therefore neither adopt stale bytes
+nor lose its new bytes to delayed cleanup.
 
 The attachment record is exactly `{ deploymentId, principalId }`, persisted in
 the local replica's metadata inside the same durable transaction that enables
@@ -714,6 +751,16 @@ their struct clocks, but the frozen V2 payload still carries the delete set.
 Closing a document destroys its live `Y.Doc` and any realtime connection but
 never deletes the publication obligation.
 
+First-attachment `Bring local data` preserves the exact local Yjs V2 state and
+its causal struct identities. The normal background drain submits it to the
+same authority join used after attachment. Shared history deduplicates, genuine
+concurrent branches converge, stale common history cannot replace newer
+accepted state, and exact retries are idempotent. Runtime-minted globally unique
+row IDs make independently created rows a union and a shared row ID represents
+shared lineage under ordinary Epicenter operation. The attach path never adds
+an external import policy, flattens documents to visible content, inventories
+collisions, or offers keep/replace/merge choices.
+
 Inbound document state stays lazy. An unopened document is not eagerly
 hydrated merely because another device changed it. Opening the document
 performs state-vector exchange and may attach a realtime collaboration overlay
@@ -744,6 +791,12 @@ digest idempotently, and clears the obligation only after the active authority
 accepts matching bytes at the live row address. A different digest at an
 occupied live row is refused or parked. Other replicas fetch the row's bytes on
 demand; they do not mirror every authority blob eagerly.
+
+First-attachment `Bring local data` uses the same write-once publication law. A
+new row publishes normally; an equal digest at a shared live row is idempotent;
+a different digest is refused or parked; and a remote terminal row tombstone
+wins. `Discard local data` removes local membership and publication records in
+the logical clear, then reclaims raw files through the ordinary debris rule.
 
 There is no blob metadata store, application upload state, explicit remote
 copy API, or generic outbox payload. Row deletion installs terminal scalar
@@ -1084,6 +1137,10 @@ Rollback point: the old path still exists and no caller imports the new core.
   nullable SHA-256 state, and durable automatic publication records.
 - Bind open row documents through the separately owned realtime collaboration
   overlay.
+- Implement the one-time whole-replica first-attachment gate. `Bring` must
+  retain and drain existing plane-specific obligations without an import path.
+  `Discard` must commit the logical clear and attachment together before
+  hydration, with idempotent raw-file reclamation afterward.
 - Add browser and native adapter conformance tests.
 
 Rollback point: production callers still use Workspace.
@@ -1145,6 +1202,8 @@ Workspace remains on disk but unreachable.
   | Hibernation and reopen | SQLite alone reconstructs state and outstanding publication work                          |
   | Restore race           | Work commits before activation or receives lifetime mismatch; it never crosses lifetimes  |
   | Backup cut             | The nullable compact cell decodes to exactly the accepted authority document              |
+  | First-attach Bring     | Exact local V2 state joins through ordinary acceptance; stale history cannot roll back     |
+  | First-attach Discard   | Logical clear and attachment commit together before hydration; file debris stays inert     |
 
 - Prove representative present-state stress at 1,000,000 final-present scalar
   addresses and 512 MiB of the versioned scalar-fields-and-values benchmark
@@ -1159,9 +1218,14 @@ Workspace remains on disk but unreachable.
   Prove same-digest retry, different-digest refusal, row-terminal cleanup,
   byte-complete Backup capture, crash recovery during pin/copy/verify/seal, and
   round-trip restoration without consulting a membership manifest.
-- Smoke first sign-in with local data, sign-out/reopen, same-principal sign-in,
-  wrong-principal refusal, two-device convergence, offline deletion, and browser
-  multi-tab writes.
+- Smoke first sign-in with empty local state, `Bring local data`, and
+  `Discard local data`; prove the choice is available only while nonempty and
+  unattached, may reappear after cancellation or failed attachment, and never
+  returns after attachment commits. Cover a crash after `Bring` attachment but
+  before lifetime discovery or first submission, plus same-address hydration
+  racing pre-clear blob cleanup. Also cover sign-out/reopen, same-principal
+  sign-in, wrong-principal refusal, two-device convergence, offline deletion,
+  and browser multi-tab writes.
 - After the realtime topology dialectic freezes, verify its chosen shape on
   iPhone Safari and an installed PWA at realistic simultaneous document counts.
 
@@ -1211,8 +1275,10 @@ without learning historical vocabulary:
 - How do I use several namespaces? Bind several borrowed Lenses.
 - Who owns the data? One person through one Epicenter.
 - Where is it stored? One complete replica per adapter isolation boundary.
-- What happens on first sign-in? The current replica permanently attaches and
-  converges.
+- What happens on first sign-in? An empty replica attaches directly. A nonempty
+  replica either brings all local data through ordinary convergence or discards
+  all local logical state before it permanently attaches. Neither path replaces
+  the remote authority.
 - How does deletion survive an offline device? The latest state is a permanent
   compact tombstone within the active authority lifetime.
 - How is state preserved over time? As sealed, byte-complete Backups, never as

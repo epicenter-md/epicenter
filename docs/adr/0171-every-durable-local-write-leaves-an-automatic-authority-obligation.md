@@ -69,6 +69,18 @@ authority-lifetime changes, status, and disposal. They retain separate payload
 stores, admission rules, bounds, acknowledgements, and wire versions. There is
 no generic `outbox(kind, payload)` and no whole-Epicenter transport batch.
 
+An unattached replica records the same plane-specific durable work while it
+operates offline, but cannot seal or send work against an authority lifetime it
+has not learned. If first attachment chooses `Bring local data`, attachment
+preserves the existing pending scalar intents, dirty document revisions, and
+finalized blob publication records. After the authority lifetime is learned,
+the ordinary drains make that work eligible to seal and send. Attachment never
+reconstructs an obligation from visible state. There is no first-import outbox,
+migration receipt, or second acceptance path. If first attachment chooses
+`Discard local data`, one local transaction removes those logical states and
+obligations while recording the permanent attachment before authority hydration
+starts.
+
 A local document update appends its Yjs V2 bytes and advances a lightweight
 row-local publication revision in one SQLite transaction. It marks that revision
 dirty but does not copy or continually re-merge the update into a second pending
@@ -155,6 +167,10 @@ device is not part of a Backup.
 - A device that never reconnects can still lose its unpublished work during a
   user-authorized Restore. This is the accepted limit of an authority Backup,
   not a hidden synchronization mode.
+- An unattached person's explicit `Discard local data` also abandons unpublished
+  work, but only before the replica has an authority owner. `Bring local data`
+  preserves that work and drains it through the same proof-bearing operations
+  used after attachment.
 
 ## Acceptance evidence
 
@@ -169,7 +185,14 @@ following laws across the three planes:
 - no connection, state vector, sequence watermark, or fanout observation can clear an
   obligation without its plane-specific post-commit proof;
 - a row deletion racing document or blob publication cannot resurrect row-owned
-  state; and
+  state;
+- first-attachment `Bring` retains every pre-attachment obligation until its
+  ordinary plane-specific proof, and a brought row deletion removes or refuses
+  row-owned document and blob work regardless of which plane reaches the
+  authority first, while `Discard` removes every logical obligation in the same
+  transaction that records attachment;
+- a crash after `Bring` commits attachment but before lifetime discovery,
+  sealing, or first submission preserves the exact pending work; and
 - a Restore linearization either accepts work in the outgoing lifetime or
   refuses it, while every later retry from that lifetime is rejected.
 

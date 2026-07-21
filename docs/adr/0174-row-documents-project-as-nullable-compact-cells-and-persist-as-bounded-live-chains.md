@@ -81,6 +81,21 @@ candidate, enforces the canonical post-candidate byte and struct bounds from
 ADR-0146, commits the bounded representation, and only then acknowledges and
 best-effort fans out the update.
 
+First-attachment `Bring local data` preserves each local document's exact Yjs
+V2 state and causal struct identities. The ordinary background publication
+drain submits that state to the same authority acceptance operation. Shared
+history deduplicates, genuine concurrent branches join, and stale common
+history cannot replace newer accepted state. The attachment path never flattens
+a document to visible JSON or text and reauthors it as new operations.
+
+Runtime-minted globally unique row IDs make independently created rows a union.
+A shared row ID therefore denotes one causal row lineage under ordinary
+Epicenter operation. The attachment path adds no external import policy,
+document-lineage identifier, collision inventory, replacement choice, or
+special import mode. A remote terminal row tombstone still refuses document
+admission. First-attachment `Discard local data` removes the local chain and
+publication obligation before authority hydration.
+
 A wire-valid candidate may be too large for one adapter's tail-entry limit even
 when the resulting canonical document is within its product bounds. In that
 case the owner hydrates and validates the candidate, then atomically stores the
@@ -120,6 +135,9 @@ receipt semantics.
   post-commit publication receipt owns that proof.
 - A single principal authority remains the lifecycle and transaction owner.
   Per-document Durable Objects are not introduced merely to host live sockets.
+- First attachment reuses the normal Yjs join and publication proof. It does
+  not create a second document merge path or ask the person to adjudicate
+  causal history.
 
 The durable publication obligation is the first implementation requirement for
 bound refusal: a refused document remains dirty or in flight and can never make
@@ -137,6 +155,9 @@ Before this ADR becomes Accepted, maintained tests must prove:
   unresolved dependencies;
 - duplicate and reordered valid updates converge, while a local edit racing an
   exact frozen publication payload cannot be cleared by that payload's receipt;
+- stale common-history state cannot roll back newer accepted content or
+  resurrect deleted Yjs structs, duplicate exact first-attachment publication
+  is idempotent, and concurrent shared-lineage branches converge;
 - failures at every SQLite compaction boundary leave either the old complete
   chain or the new complete baseline, never a partial replacement;
 - a transport update larger than the physical tail-entry limit is admitted as
@@ -167,6 +188,10 @@ constant without reopening the bounded-structure product refusal.
   client cannot prove its replacement covers concurrent authority branches.
   Verifying that claim requires the same trusted Yjs join the authority already
   performs.
+- **Replace or choose documents during first attachment.** Rejected because
+  exact Yjs joining already preserves shared history and concurrent branches.
+  Replacement loses valid offline work, while a keep/replace/merge inventory
+  turns importer provenance into a user-facing conflict system.
 - **Make the authority an opaque update mailbox.** Rejected because it gives up
   bounded accepted state, canonical bounds enforcement, and one complete
   authority document for Backup.

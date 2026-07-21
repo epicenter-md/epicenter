@@ -180,6 +180,19 @@ settles a later row-present intent as superseded without resurrection. A
 row-absent intent installs or preserves the tombstone. Value-present replaces
 the value; value-absent installs or preserves the reversible unset.
 
+Every pre-attachment scalar write already records its ordinary compacted
+pending intent. When an unattached replica chooses `Bring local data` under
+ADR-0161, attachment preserves those intents, learns the authority lifetime,
+and makes them eligible to seal. It never derives intents by scanning visible
+state. Independently minted row IDs ordinarily form a union. At a shared live
+address, the brought intent is ordinary newer desired state: disjoint top-level
+row-field patches compose, and a brought value or same-field patch may replace
+the current live value when the authority folds it. A terminal row tombstone
+still settles a brought row-present intent as superseded. Conversely, a brought
+row-absent intent is an ordinary offline deletion and installs a terminal
+tombstone over a shared live row. First attachment adds no import operation,
+historical fact replay, timestamp comparison, or conflict record.
+
 Before sealing, the replica compacts pending work to at most one intent per
 address. One replica has at most one sealed submission in flight:
 
@@ -329,6 +342,9 @@ present logical-state bytes.
   windows, baseline acquisition, and replica acknowledgement catalogs.
 - The local store must preserve confirmed facts beneath optimistic work. A
   pending-address discard branch violates the protocol.
+- First attachment reuses the same desired-state algebra. It does not replay
+  another authority's facts or sequences and does not add scalar migration
+  semantics to V1.
 
 ## Acceptance evidence
 
@@ -345,6 +361,13 @@ Before this ADR becomes Accepted, shared model and adapter tests must prove:
 - a fresh replica learns present facts, row tombstones, and value unsets from
   zero without an acquisition mode;
 - exact submission retry applies semantic intents once and detects a fork;
+- first-attachment `Bring` composes disjoint row-field patches, resolves direct
+  live collisions through ordinary authority ordering, lets a brought deletion
+  terminally delete a shared live row, and cannot resurrect an existing terminal
+  row tombstone;
+- pre-attachment create, patch, unset, and delete intents survive attachment and
+  a crash before lifetime discovery or first submission without reconstruction
+  from visible state;
 - every touched address returns one current fact, while parked results remain
   stable across exact retry;
 - authority fact changes, sequences, retry metadata, parked results, and result

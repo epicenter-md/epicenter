@@ -41,6 +41,16 @@ Row deletion is the only terminal distributed blob deletion. It revokes the
 row's scalar state, document, blob slot, and future publication at one durable
 row address. Physical byte cleanup may finish later and remains idempotent.
 
+First-attachment `Bring local data` uses this same publication law. A locally
+minted row ordinarily introduces a new live row and publishes its finalized
+bytes. At a shared live row, an equal digest is idempotent and a different
+digest is refused or parked; first attachment does not add blob replacement or
+merge semantics. A remote terminal row tombstone refuses the slot.
+`Discard local data` removes local blob membership and publication obligations
+before attachment, then reclaims only the pre-clear physical file identity under
+ADR-0172's debris rule. Later hydration of the same row address never adopts an
+unverified stale file and cannot make that file a target of delayed cleanup.
+
 The private live store may use the digest in a filename or transfer key, but no
 physical path is part of logical identity. A portable or inspection row exposes
 the accepted digest as nullable platform state beside the row's scalar fields
@@ -65,6 +75,8 @@ membership inventory.
   row. No blob-membership manifest or separate portable blobs relation exists.
 - Authority publication remains a separate streamed transfer even though the
   blob shares its row's lifecycle.
+- First attachment adds no blob-import protocol. `Bring` publishes through the
+  ordinary row-addressed obligation; `Discard` clears the unattached slot.
 
 ## Considered alternatives
 
