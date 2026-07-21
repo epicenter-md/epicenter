@@ -27,48 +27,34 @@
  * exact current-protocol-fact bytes, one ordered SHA-256 in ascending sequence)
  * over every current fact, never against a layout's own read path.
  */
-import { CryptoHasher } from 'bun';
-
-import { canonicalize } from '../../../packages/data/src/protocol/v1/canonical.js';
-
-export type JsonValue =
-	| string
-	| number
-	| boolean
-	| null
-	| JsonValue[]
-	| { [key: string]: JsonValue };
-export type JsonObject = { [key: string]: JsonValue };
-
-export type RowAddress = {
-	kind: 'row';
-	namespace: string;
-	table: string;
-	rowId: string;
-};
-export type ValueAddress = { kind: 'value'; namespace: string; value: string };
-export type Address = RowAddress | ValueAddress;
+import {
+	canonicalize,
+	utf8ByteLength,
+} from '../../../packages/data/src/protocol/v1/canonical.js';
+import { Sha256Stream } from './portable-hash.js';
 
 /**
- * A closed benchmark fact that cannot form an invalid V1 fact: a present row
- * carries `fields`, a present value carries `content`, and an absent fact of
- * either kind carries neither. Mirrors the private V1 Fact shape.
+ * The trace's fact and address shapes ARE the private V1 kernel shapes, imported
+ * rather than mirrored. Every generated fact is therefore a `Fact` the V1 parser
+ * would accept, and `v1-binding.ts` proves that at runtime against `parseFact`
+ * and `encodedFactBytes`. Re-exported so downstream benchmark modules and tests
+ * share one fact vocabulary with the protocol they measure.
  */
-export type Fact =
-	| {
-			address: RowAddress;
-			sequence: number;
-			presence: 'present';
-			fields: JsonObject;
-	  }
-	| { address: RowAddress; sequence: number; presence: 'absent' }
-	| {
-			address: ValueAddress;
-			sequence: number;
-			presence: 'present';
-			content: JsonValue;
-	  }
-	| { address: ValueAddress; sequence: number; presence: 'absent' };
+export type {
+	Address,
+	Fact,
+	JsonObject,
+	JsonValue,
+	RowAddress,
+	ValueAddress,
+} from '../../../packages/data/src/protocol/v1/index.js';
+
+import type {
+	Address,
+	Fact,
+	JsonObject,
+	JsonValue,
+} from '../../../packages/data/src/protocol/v1/index.js';
 
 export type TraceOptions = {
 	facts: number;
@@ -139,8 +125,10 @@ export function hash32(seed: number, index: number): number {
 	return (h ^ (h >>> 16)) >>> 0;
 }
 
+/** UTF-8 byte length via the kernel's exact encoder, so trace byte measures and
+ * the V1 encoded-byte oracle come from one function. */
 export function utf8Len(text: string): number {
-	return Buffer.byteLength(text, 'utf8');
+	return utf8ByteLength(text);
 }
 
 /** Count of j in [0, n) with j % m === r. */
@@ -157,54 +145,14 @@ export function addressKey(address: Address): string {
 
 /**
  * The exact V1 canonical bytes of a fact: the kernel's RFC 8785 encoder over the
- * real Fact shape. A future physical runner must reconstruct this shape from
- * each candidate independently so the oracle remains a cross-check rather than
- * a shared read-path helper.
+ * real Fact shape. Because the trace `Fact` IS the kernel `Fact` and `canonicalize`
+ * sorts object keys, this is exactly the string the kernel's `encodedFactBytes`
+ * hashes, so `utf8Len(canonicalFactRecord(fact)) === encodedFactBytes(fact)`.
+ * `v1-binding.ts` proves that identity, making this a true oracle cross-check and
+ * not merely a private re-encoding.
  */
 export function canonicalFactRecord(fact: Fact): string {
-	if (fact.presence === 'absent') {
-		const address =
-			fact.address.kind === 'row'
-				? {
-						kind: 'row',
-						namespace: fact.address.namespace,
-						rowId: fact.address.rowId,
-						table: fact.address.table,
-					}
-				: {
-						kind: 'value',
-						namespace: fact.address.namespace,
-						value: fact.address.value,
-					};
-		return canonicalize({
-			address,
-			presence: 'absent',
-			sequence: fact.sequence,
-		});
-	}
-	if ('fields' in fact) {
-		return canonicalize({
-			address: {
-				kind: 'row',
-				namespace: fact.address.namespace,
-				rowId: fact.address.rowId,
-				table: fact.address.table,
-			},
-			fields: fact.fields,
-			presence: 'present',
-			sequence: fact.sequence,
-		});
-	}
-	return canonicalize({
-		address: {
-			kind: 'value',
-			namespace: fact.address.namespace,
-			value: fact.address.value,
-		},
-		content: fact.content,
-		presence: 'present',
-		sequence: fact.sequence,
-	});
+	return canonicalize(fact);
 }
 
 /**
@@ -378,10 +326,15 @@ type Calibration = {
 	achievedLogicalStateBytes: number;
 	/** Upper bound on any current protocol fact (build or final), for the ceiling gate. */
 	maxProtocolFactBytesBound: number;
-	/** True only if the logical target is hit AND no fact exceeds maxEncodedFactBytes. */
-	qualifying: boolean;
-	/** Why a run does not qualify, when it does not. */
-	disqualifiedBy: 'none' | 'logical-target' | 'fact-ceiling';
+	/**
+	 * True only if the logical byte target is hit AND no fact exceeds
+	 * maxEncodedFactBytes. This is a NARROW trace-construction flag: the corpus is
+	 * admissible as a workload source. It is not an ADR/evidence-cell
+	 * qualification and never implies a layout, cell, or run is decision-eligible.
+	 */
+	traceAdmissible: boolean;
+	/** Why the trace is not admissible, when it is not. */
+	inadmissibleBecause: 'none' | 'logical-target' | 'fact-ceiling';
 };
 
 export type Trace = {
@@ -514,8 +467,8 @@ export function makeTrace(options: TraceOptions): Trace {
 				baseLogicalBytes,
 				achievedLogicalStateBytes: achieved,
 				maxProtocolFactBytesBound: bound,
-				qualifying: logicalOk && ceilingOk,
-				disqualifiedBy: !logicalOk
+				traceAdmissible: logicalOk && ceilingOk,
+				inadmissibleBecause: !logicalOk
 					? 'logical-target'
 					: ceilingOk
 						? 'none'
@@ -611,7 +564,7 @@ export function makeTrace(options: TraceOptions): Trace {
 	}
 
 	function measure(): Measures {
-		const hasher = new CryptoHasher('sha256');
+		const hasher = new Sha256Stream();
 		let currentCount = 0;
 		let currentProtocolFactBytes = 0;
 		let maxProtocolFactBytes = 0;
@@ -638,7 +591,7 @@ export function makeTrace(options: TraceOptions): Trace {
 		}
 		return {
 			currentCount,
-			digestHex: hasher.digest('hex'),
+			digestHex: hasher.digestHex(),
 			currentProtocolFactBytes,
 			maxProtocolFactBytes,
 			presentCount,
@@ -773,15 +726,15 @@ export function factsForPresentTarget(
 /**
  * One ordered SHA-256 over a fact sequence, framed by UTF-8 byte length so no
  * two records can concatenate into a third. Count and exact current-protocol
- * bytes accompany the digest. A future physical runner can feed independently
- * reconstructed `ORDER BY sequence` records here and must reproduce all three.
+ * bytes accompany the digest; a candidate scan feeds `ORDER BY sequence` records
+ * here and must reproduce all three.
  */
 export function factSetDigest(facts: Iterable<Fact>): {
 	count: number;
 	bytes: number;
 	digestHex: string;
 } {
-	const hasher = new CryptoHasher('sha256');
+	const hasher = new Sha256Stream();
 	let count = 0;
 	let bytes = 0;
 	for (const fact of facts) {
@@ -791,7 +744,7 @@ export function factSetDigest(facts: Iterable<Fact>): {
 		count += 1;
 		bytes += recordBytes;
 	}
-	return { count, bytes, digestHex: hasher.digest('hex') };
+	return { count, bytes, digestHex: hasher.digestHex() };
 }
 
 function gcd(a: number, b: number): number {
@@ -803,132 +756,4 @@ function gcd(a: number, b: number): number {
 		x = t;
 	}
 	return x;
-}
-
-// ---------------------------------------------------------------------------
-// Self-test: a small in-memory fold, kept only for correctness assertions.
-// ---------------------------------------------------------------------------
-
-class SmokeOracle {
-	private readonly current = new Map<string, Fact>();
-	apply(fact: Fact): void {
-		const key = addressKey(fact.address);
-		const prior = this.current.get(key);
-		if (prior === undefined) {
-			this.current.set(key, fact);
-			return;
-		}
-		if (fact.sequence < prior.sequence) return;
-		if (fact.sequence === prior.sequence) {
-			if (canonicalFactRecord(fact) !== canonicalFactRecord(prior))
-				throw new Error('equal sequence, different content');
-			return;
-		}
-		if (
-			prior.address.kind === 'row' &&
-			prior.presence === 'absent' &&
-			fact.presence === 'present'
-		)
-			return;
-		this.current.set(key, fact);
-	}
-	get(address: Address): Fact | undefined {
-		return this.current.get(addressKey(address));
-	}
-}
-
-/** Independent self-tests of the fold law and analytical/streamed agreement. */
-export function traceSelfTest(): string[] {
-	const failures: string[] = [];
-	const rowA: RowAddress = {
-		kind: 'row',
-		namespace: 'so.epicenter.ns00',
-		table: 'collection0000',
-		rowId: rowIdOf(1),
-	};
-	const valA: ValueAddress = {
-		kind: 'value',
-		namespace: 'so.epicenter.ns00',
-		value: 'settingx',
-	};
-
-	const o1 = new SmokeOracle();
-	o1.apply({
-		address: rowA,
-		sequence: 1,
-		presence: 'present',
-		fields: { a: 1 },
-	});
-	o1.apply({ address: rowA, sequence: 2, presence: 'absent' });
-	o1.apply({
-		address: rowA,
-		sequence: 3,
-		presence: 'present',
-		fields: { a: 2 },
-	});
-	if (o1.get(rowA)?.presence !== 'absent')
-		failures.push('row tombstone was resurrected by a later present');
-
-	const o2 = new SmokeOracle();
-	o2.apply({ address: valA, sequence: 1, presence: 'present', content: 'a' });
-	o2.apply({ address: valA, sequence: 2, presence: 'absent' });
-	o2.apply({ address: valA, sequence: 3, presence: 'present', content: 'b' });
-	const v = o2.get(valA);
-	if (!(v?.presence === 'present' && 'content' in v && v.content === 'b'))
-		failures.push('value unset did not resurrect on a later present');
-
-	const o3 = new SmokeOracle();
-	o3.apply({ address: valA, sequence: 5, presence: 'present', content: 'new' });
-	o3.apply({ address: valA, sequence: 3, presence: 'present', content: 'old' });
-	if (o3.get(valA)?.sequence !== 5) failures.push('applied a stale sequence');
-	let threw = false;
-	try {
-		o3.apply({
-			address: valA,
-			sequence: 5,
-			presence: 'present',
-			content: 'other',
-		});
-	} catch {
-		threw = true;
-	}
-	if (!threw) failures.push('accepted equal sequence with different content');
-
-	const trace = makeTrace({
-		facts: 900,
-		namespaceCount: 5,
-		tableCount: 16,
-		valueRatio: 0.1,
-		dataSeed: 12345,
-		maxEncodedFactBytes: 4096,
-		targetLogicalStateBytes: 900 * 120 + 777,
-	});
-	const folded = new SmokeOracle();
-	let maxSeq = 0;
-	const seenSeq = new Set<number>();
-	for (const fact of trace.events()) {
-		folded.apply(fact);
-		if (seenSeq.has(fact.sequence)) failures.push('duplicate emitted sequence');
-		seenSeq.add(fact.sequence);
-		maxSeq = Math.max(maxSeq, fact.sequence);
-	}
-	if (seenSeq.size !== maxSeq)
-		failures.push(
-			`sequences are not dense: ${seenSeq.size} distinct, max ${maxSeq}`,
-		);
-	for (let index = 0; index < trace.options.facts; index += 1) {
-		const analytical = trace.finalFactAt(index);
-		const viaFold = folded.get(analytical.address);
-		if (
-			viaFold === undefined ||
-			canonicalFactRecord(viaFold) !== canonicalFactRecord(analytical)
-		) {
-			failures.push(
-				`analytical oracle disagreed with the fold at index ${index}`,
-			);
-			break;
-		}
-	}
-
-	return failures;
 }

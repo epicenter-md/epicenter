@@ -7,10 +7,14 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { CryptoHasher } from 'bun';
 
-import { canonicalize } from '../../../packages/data/src/protocol/v1/canonical.js';
 import {
+	canonicalize,
+	sha256Hex,
+	utf8ByteLength,
+} from '../../../packages/data/src/protocol/v1/canonical.js';
+import {
+	type Address,
 	addressKey,
 	canonicalFactRecord,
 	type Fact,
@@ -20,7 +24,6 @@ import {
 	makeTrace,
 	presentCountFor,
 	type TraceOptions,
-	traceSelfTest,
 } from './trace.js';
 
 const BASE: Omit<TraceOptions, 'targetLogicalStateBytes'> = {
@@ -32,8 +35,156 @@ const BASE: Omit<TraceOptions, 'targetLogicalStateBytes'> = {
 	maxEncodedFactBytes: 4096,
 };
 
-test('the fold and analytical self-tests pass', () => {
-	expect(traceSelfTest()).toEqual([]);
+class SmokeOracle {
+	private readonly current = new Map<string, Fact>();
+
+	apply(fact: Fact): void {
+		const key = addressKey(fact.address);
+		const prior = this.current.get(key);
+		if (prior === undefined) {
+			this.current.set(key, fact);
+			return;
+		}
+		if (fact.sequence < prior.sequence) return;
+		if (fact.sequence === prior.sequence) {
+			if (canonicalFactRecord(fact) !== canonicalFactRecord(prior))
+				throw new Error('equal sequence, different content');
+			return;
+		}
+		if (
+			prior.address.kind === 'row' &&
+			prior.presence === 'absent' &&
+			fact.presence === 'present'
+		)
+			return;
+		this.current.set(key, fact);
+	}
+
+	get(address: Address): Fact | undefined {
+		return this.current.get(addressKey(address));
+	}
+}
+
+const ROW_ADDRESS: Address = {
+	kind: 'row',
+	namespace: 'so.epicenter.ns00',
+	table: 'collection0000',
+	rowId: 'a'.repeat(24),
+};
+const VALUE_ADDRESS: Address = {
+	kind: 'value',
+	namespace: 'so.epicenter.ns00',
+	value: 'settingx',
+};
+
+describe('independent fold laws', () => {
+	test('a row tombstone cannot be resurrected', () => {
+		const oracle = new SmokeOracle();
+		oracle.apply({
+			address: ROW_ADDRESS,
+			sequence: 1,
+			presence: 'present',
+			fields: { a: 1 },
+		});
+		oracle.apply({ address: ROW_ADDRESS, sequence: 2, presence: 'absent' });
+		oracle.apply({
+			address: ROW_ADDRESS,
+			sequence: 3,
+			presence: 'present',
+			fields: { a: 2 },
+		});
+		expect(oracle.get(ROW_ADDRESS)?.presence).toBe('absent');
+	});
+
+	test('a value unset can be resurrected by a later value', () => {
+		const oracle = new SmokeOracle();
+		oracle.apply({
+			address: VALUE_ADDRESS,
+			sequence: 1,
+			presence: 'present',
+			content: 'a',
+		});
+		oracle.apply({ address: VALUE_ADDRESS, sequence: 2, presence: 'absent' });
+		oracle.apply({
+			address: VALUE_ADDRESS,
+			sequence: 3,
+			presence: 'present',
+			content: 'b',
+		});
+		expect(oracle.get(VALUE_ADDRESS)).toEqual({
+			address: VALUE_ADDRESS,
+			sequence: 3,
+			presence: 'present',
+			content: 'b',
+		});
+	});
+
+	test('a stale sequence cannot replace the current value', () => {
+		const oracle = new SmokeOracle();
+		oracle.apply({
+			address: VALUE_ADDRESS,
+			sequence: 5,
+			presence: 'present',
+			content: 'new',
+		});
+		oracle.apply({
+			address: VALUE_ADDRESS,
+			sequence: 3,
+			presence: 'present',
+			content: 'old',
+		});
+		expect(oracle.get(VALUE_ADDRESS)?.sequence).toBe(5);
+	});
+
+	test('equal sequences with different content are rejected', () => {
+		const oracle = new SmokeOracle();
+		oracle.apply({
+			address: VALUE_ADDRESS,
+			sequence: 5,
+			presence: 'present',
+			content: 'first',
+		});
+		expect(() =>
+			oracle.apply({
+				address: VALUE_ADDRESS,
+				sequence: 5,
+				presence: 'present',
+				content: 'other',
+			}),
+		).toThrow('equal sequence, different content');
+	});
+});
+
+test('the analytical oracle agrees with an independent event fold', () => {
+	const trace = makeTrace({
+		facts: 900,
+		namespaceCount: 5,
+		tableCount: 16,
+		valueRatio: 0.1,
+		dataSeed: 12345,
+		maxEncodedFactBytes: 4096,
+		targetLogicalStateBytes: 900 * 120 + 777,
+	});
+	const folded = new SmokeOracle();
+	const sequences = new Set<number>();
+	let maxSequence = 0;
+	for (const fact of trace.events()) {
+		folded.apply(fact);
+		sequences.add(fact.sequence);
+		maxSequence = Math.max(maxSequence, fact.sequence);
+	}
+
+	expect(sequences.size).toBe(maxSequence);
+	for (let index = 0; index < trace.options.facts; index += 1) {
+		const analytical = trace.finalFactAt(index);
+		const viaFold = folded.get(analytical.address);
+		expect(viaFold).toBeDefined();
+		if (viaFold !== undefined) {
+			expect(canonicalFactRecord(viaFold)).toBe(
+				canonicalFactRecord(analytical),
+			);
+		}
+	}
 });
 
 describe('exact calibration to present logical-state bytes', () => {
@@ -47,7 +198,7 @@ describe('exact calibration to present logical-state bytes', () => {
 	]) {
 		test(`hits ${targetLogicalStateBytes} present bytes exactly`, () => {
 			const trace = makeTrace({ ...BASE, targetLogicalStateBytes });
-			expect(trace.calibration.qualifying).toBe(true);
+			expect(trace.calibration.traceAdmissible).toBe(true);
 			expect(trace.calibration.achievedLogicalStateBytes).toBe(
 				targetLogicalStateBytes,
 			);
@@ -57,9 +208,10 @@ describe('exact calibration to present logical-state bytes', () => {
 		});
 	}
 
-	test('a target below the minimal present frame is non-qualifying', () => {
+	test('a target below the minimal present frame is not trace-admissible', () => {
 		expect(
-			makeTrace({ ...BASE, targetLogicalStateBytes: 1 }).calibration.qualifying,
+			makeTrace({ ...BASE, targetLogicalStateBytes: 1 }).calibration
+				.traceAdmissible,
 		).toBe(false);
 	});
 });
@@ -239,14 +391,14 @@ describe('max fact-size ceiling gate (ADR-0163)', () => {
 		maxEncodedFactBytes: 1_000_000,
 	}).calibration.maxProtocolFactBytesBound;
 
-	test('a ceiling exactly at the bound qualifies', () => {
+	test('a ceiling exactly at the bound is trace-admissible', () => {
 		const trace = makeTrace({
 			...BASE,
 			targetLogicalStateBytes: BASE.facts * 300,
 			maxEncodedFactBytes: bound,
 		});
-		expect(trace.calibration.qualifying).toBe(true);
-		expect(trace.calibration.disqualifiedBy).toBe('none');
+		expect(trace.calibration.traceAdmissible).toBe(true);
+		expect(trace.calibration.inadmissibleBecause).toBe('none');
 	});
 
 	test('a ceiling one byte under the bound refuses', () => {
@@ -255,8 +407,8 @@ describe('max fact-size ceiling gate (ADR-0163)', () => {
 			targetLogicalStateBytes: BASE.facts * 300,
 			maxEncodedFactBytes: bound - 1,
 		});
-		expect(trace.calibration.qualifying).toBe(false);
-		expect(trace.calibration.disqualifiedBy).toBe('fact-ceiling');
+		expect(trace.calibration.traceAdmissible).toBe(false);
+		expect(trace.calibration.inadmissibleBecause).toBe('fact-ceiling');
 	});
 });
 
@@ -274,10 +426,11 @@ describe('digest framing uses UTF-8 byte length', () => {
 		};
 		const record = canonicalFactRecord(fact);
 		// A multibyte payload makes UTF-16 length differ from UTF-8 length.
-		expect(record.length).not.toBe(Buffer.byteLength(record, 'utf8'));
-		const hasher = new CryptoHasher('sha256');
-		hasher.update(`${Buffer.byteLength(record, 'utf8')}:${record}\n`);
-		expect(factSetDigest([fact]).digestHex).toBe(hasher.digest('hex'));
+		expect(record.length).not.toBe(utf8ByteLength(record));
+		// Independent oracle: the kernel's one-shot sha256Hex over the same framed
+		// string must equal the trace's streaming digest.
+		const framed = `${utf8ByteLength(record)}:${record}\n`;
+		expect(factSetDigest([fact]).digestHex).toBe(sha256Hex(framed));
 	});
 });
 
