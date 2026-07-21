@@ -22,6 +22,15 @@ Every Epicenter row logically contains scalar fields and zero or one persisted
 Yjs document. The document has no identity or lifecycle outside its row. Blob
 membership remains independently owned by the blob ADRs.
 
+```txt
+one logical row
+├── scalar fields
+└── nullable Yjs document
+        |
+        +--> live private form: compact baseline + bounded update tail
+        `--> artifact form:     one self-contained compact V2 update
+```
+
 Inspection, Backup, and every portable Epicenter project the document directly
 on the logical row:
 
@@ -111,6 +120,39 @@ receipt semantics.
   post-commit publication receipt owns that proof.
 - A single principal authority remains the lifecycle and transaction owner.
   Per-document Durable Objects are not introduced merely to host live sockets.
+
+The durable publication obligation is the first implementation requirement for
+bound refusal: a refused document remains dirty or in flight and can never make
+Epicenter report the address as synchronized. The structured address-scoped
+observation and its Home presentation may land later in the implementation
+wave. Until they do, this ADR remains Proposed; applications do not receive a
+temporary mutation error or a manual settlement action.
+
+## Acceptance evidence
+
+Before this ADR becomes Accepted, maintained tests must prove:
+
+- applying the compact baseline and tail is state-equivalent to the logical
+  document before and after compaction, including deletion-only state and
+  unresolved dependencies;
+- duplicate and reordered valid updates converge, while a local edit racing an
+  exact frozen publication payload cannot be cleared by that payload's receipt;
+- failures at every SQLite compaction boundary leave either the old complete
+  chain or the new complete baseline, never a partial replacement;
+- a transport update larger than the physical tail-entry limit is admitted as
+  a compact baseline when its resulting document remains within product bounds;
+- byte and struct fixtures immediately below, at, and above each proposed
+  product bound return deterministic acceptance or a structured parked
+  observation without mutating committed authority state on refusal;
+- row deletion, handle closure, process restart, hibernation, and Restore obey
+  the same document lifecycle; and
+- Backup and portable projection produce one nullable compact V2 cell whose
+  decoded state equals the authority's accepted document at the selected cut.
+
+The exact struct ceiling requires a maintained rich-text workload covering
+typing, formatting, undo, deletion, and multiple offline clients, plus maximal
+valid and maliciously dense fixtures in workerd. This evidence may revise the
+constant without reopening the bounded-structure product refusal.
 
 ## Considered alternatives
 

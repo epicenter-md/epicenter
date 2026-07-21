@@ -276,6 +276,13 @@ diagnostics. Status is observation, not settlement. Do not expose `settle`,
 `synchronizeThrough`, protocol floors, lineage recovery, database transitions,
 or storage migration errors.
 
+The protocol and persistence path may land before the polished status surface.
+During that interval, the durable dirty or in-flight obligation remains the
+source of truth and the runtime must not report the address as synchronized.
+Structured parked details and Home presentation complete the wave; they do not
+justify a second publication path, a thrown editor mutation, or a manual retry
+button.
+
 Ordinary `get` absence is `undefined`; ordinary delete reports whether a row
 was deleted. Use typed Results at unsafe storage, validation, auth, and network
 boundaries, not around every expected collection operation by reflex.
@@ -652,9 +659,22 @@ Rollback point: the old path still exists and no caller imports the new core.
   structured addresses, and one multi-Lens `bind` convention.
 - Implement table CRUD, bounded `list`, value operations, observation, and
   nonconforming read behavior.
-- Persist row-owned Yjs updates and document publication vectors in SQLite.
-- Build the runtime-owned document publication drain and post-commit
-  state-vector acknowledgement without depending on open handles.
+- Prove compact Yjs baseline-plus-tail equivalence in a runtime-independent
+  model, then persist the bounded chain in each SQLite adapter.
+- Implement atomic count-and-byte compaction and the direct-to-baseline path for
+  transient updates too large for one physical tail row.
+- Add the local dirty revision and immutable in-flight publication image. Prove
+  its crash and racing-edit transitions against a fake authority before adding
+  networking.
+- Implement one authority document-acceptance transaction: check row liveness,
+  apply the candidate, enforce post-candidate bounds, compact when required,
+  commit, and return the exact payload receipt.
+- Attach the runtime-owned background drain to that operation without depending
+  on open handles. Then route the realtime overlay through the same operation;
+  it earns no second acknowledgement or persistence path.
+- Preserve structured parked refusal details and expose them through Data and
+  Epicenter Home. This presentation may follow the core protocol, but no
+  intermediate implementation may report refused work as synchronized.
 - Replace browser IndexedDB blobs with row-scoped OPFS files, content-digest
   identity, and durable automatic publication records.
 - Bind open row documents through the separately owned realtime collaboration
@@ -694,6 +714,31 @@ Workspace remains on disk but unreachable.
 - Run targeted package tests and typechecks after each migrated owner.
 - Run the complete monorepo tests, typechecks, lint/format, licenses, package
   graph, docs hygiene, and API path checks.
+- Reuse one document state-machine suite across Bun SQLite, browser OPFS SQLite,
+  the Cloudflare Durable Object authority, and the self-host authority. Add
+  adapter-specific tests only for storage and lifecycle behavior the shared
+  suite cannot express.
+- Cover the document protocol with the following canonical narratives. Do not
+  multiply every data shape, crash point, topology, and adapter into a full
+  Cartesian product: use property tests for update shapes, deterministic fault
+  injection for transaction boundaries, and pairwise adapter coverage around
+  these end-to-end stories.
+
+  | Narrative | Required proof |
+  | --- | --- |
+  | Ordinary edit | Local commit survives closure; authority commit precedes receipt and fanout |
+  | Delete-only edit | Exact receipt proves the submitted delete set even when the state vector does not advance |
+  | Racing local edit | Receipt clears only its captured revision; later work remains dirty |
+  | Lost acknowledgement | Exact bytes retry idempotently without permanent request history |
+  | Concurrent clients | Reordered valid updates converge through the authority join |
+  | Compaction failure | Reopen sees the old chain or new baseline, never a partial state |
+  | Oversized tail entry | Valid bounded state stores directly as a compact baseline |
+  | Product-bound refusal | Below, at, and above byte and struct limits are deterministic and visibly parked |
+  | Row deletion race | Neither publication nor fanout resurrects the document |
+  | Hibernation and reopen | SQLite alone reconstructs state and outstanding publication work |
+  | Restore race | Work commits before activation or receives lifetime mismatch; it never crosses lifetimes |
+  | Backup cut | The nullable compact cell decodes to exactly the accepted authority document |
+
 - Prove the whole-replica trade at 1,000,000 live scalar addresses and 512 MiB
   of canonical encoded logical state. Measure authority scan, transfer,
   browser and native installation, reopen, and peak memory. Inject crashes

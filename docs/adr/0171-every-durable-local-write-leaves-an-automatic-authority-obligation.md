@@ -28,6 +28,33 @@ and row-owned blob operations. They do not call `sync`, `publish`, `upload`,
 `download`, `purge`, or a remote-settlement barrier. Synchronization status is
 observation, never an action.
 
+```txt
+application write
+      |
+      v
+local SQLite transaction
+  durable state + authority obligation
+      |
+      v
+one runtime-owned drain
+      |
+      +--> scalar acceptance
+      +--> document acceptance  <--- optional low-latency WebSocket
+      `--> blob acceptance
+                  |
+                  v
+          authority commit
+                  |
+                  v
+        plane-specific receipt
+                  |
+                  v
+       conditional local clear
+```
+
+The receipt proves a committed authority fact. The transport that carried the
+request or response has no durable meaning.
+
 The law has three independent protocol realizations:
 
 | Plane | Durable local work | Authority proof |
@@ -121,6 +148,27 @@ device is not part of a Backup.
 - A device that never reconnects can still lose its unpublished work during a
   user-authorized Restore. This is the accepted limit of an authority Backup,
   not a hidden synchronization mode.
+
+## Acceptance evidence
+
+Before this ADR becomes Accepted, one shared protocol suite must prove the
+following laws across the three planes:
+
+- a crash after the local write cannot erase the authority obligation;
+- a crash or lost response after authority commit cannot create a false clean
+  state, and an exact retry is idempotent;
+- scalar or document work created while an earlier attempt is in flight remains
+  pending after the earlier receipt arrives;
+- no connection, state vector, cursor, or fanout observation can clear an
+  obligation without its plane-specific post-commit proof;
+- a row deletion racing document or blob publication cannot resurrect row-owned
+  state; and
+- a Restore linearization either accepts work in the outgoing lifetime or
+  refuses it, while every later retry from that lifetime is rejected.
+
+Each storage adapter runs the same state-machine fixtures. Transport tests then
+prove that background exchange and realtime document delivery enter the same
+authority acceptance operation rather than two semantic paths.
 
 ## Considered alternatives
 
