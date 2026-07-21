@@ -19,9 +19,11 @@ to avoid forming a grounded position first.
 
 ## Ground the challenge
 
-Read enough evidence to state a positive synthesis before consulting. Give
-Claude the sources and directional data that explain that synthesis, but do not
-close the record around Codex's evidence selection. Preserve verbatim user
+Read enough evidence to make Codex's working model explicit before consulting.
+Give Claude the sources and conversation history that explain how the working
+model evolved, but do not close the record around Codex's evidence selection.
+When consulting inside a dialectic, include the live shared model and how the
+working model and user's ideal came into contact. Preserve verbatim user
 reactions when summarizing them would flatten the user's taste.
 
 Start every packet with this mandate:
@@ -50,17 +52,20 @@ Mission:
   The bounded subject or design problem.
 
 Evolution:
-  How the vision changed during the Codex-user dialectic.
+  How the working model changed. When a dialectic is active, how the live
+  shared model changed.
 
-Directional data:
-  Selected user reactions, rejected framings, and recognition criteria.
+User ideal and divergences:
+  Selected questions, reactions, rejected framings, and recognition criteria
+  when they are part of the originating conversation.
 
 Starting evidence:
   Established excerpts, diffs, command output, paths, and durable decisions.
   Include decisive context directly and name sources Claude should inspect.
 
-Current synthesis:
-  Codex's positive model and reasoning.
+Working model:
+  Codex's explicit grounded model and the path from evidence to its conclusions
+  or proposal.
 
 Strongest rival:
   The best competing vision or objection Codex can already articulate.
@@ -131,7 +136,8 @@ Codex's command session already owns waiting and cancellation.
 4. State where Codex agrees, disagrees, or needs more evidence.
 5. Resolve obvious evidence-dominated consequences without ceremony.
 6. Bring genuine product, promise, ownership, or taste forks to the user.
-7. Put the revised synthesis back into the user dialectic.
+7. Return Claude's challenge to the originating workflow. When a dialectic is
+   active, put it back into the live shared model and continue the conversation.
 
 Do not smooth genuine disagreement into a compromise. When a product decision
 remains, present Claude's recommendation, Codex's read, and the concrete choice
