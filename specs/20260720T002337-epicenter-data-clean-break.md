@@ -3,7 +3,7 @@
 - **Status:** In Progress
 - **Date:** 2026-07-20
 - **Program:** greenfield breaking replacement
-- **Decision owners:** [ADR-0160](../docs/adr/0160-lenses-interpret-durable-namespaces-without-creating-lifecycle-scopes.md), [ADR-0161](../docs/adr/0161-each-person-has-one-epicenter-replicated-on-each-adapter-boundary.md), [ADR-0162](../docs/adr/0162-epicenter-home-owns-relational-inspection-applications-receive-no-sql.md), [ADR-0163](../docs/adr/0163-latest-scalar-state-synchronizes-through-one-epicenter-exchange.md), [ADR-0164](../docs/adr/0164-scalar-facts-converge-independently-epicenter-refuses-distributed-transactions.md), [ADR-0165](../docs/adr/0165-browser-origins-contain-independent-epicenter-replicas.md), [ADR-0166](../docs/adr/0166-data-document-sync-and-agent-replace-workspace.md), [ADR-0167](../docs/adr/0167-a-portable-epicenter-is-an-identity-free-export-of-one-authority-cut.md), [ADR-0168](../docs/adr/0168-lenses-are-complete-pure-json-interpretations.md), [ADR-0169](../docs/adr/0169-row-references-are-non-enforcing-table-interpretations.md), and [ADR-0170](../docs/adr/0170-one-live-epicenter-has-sealed-backups-and-restore-creates-a-fresh-authority-lifetime.md)
+- **Decision owners:** [ADR-0160](../docs/adr/0160-lenses-interpret-durable-namespaces-without-creating-lifecycle-scopes.md), [ADR-0161](../docs/adr/0161-each-person-has-one-epicenter-replicated-on-each-adapter-boundary.md), [ADR-0162](../docs/adr/0162-epicenter-home-owns-relational-inspection-applications-receive-no-sql.md), [ADR-0163](../docs/adr/0163-latest-scalar-state-synchronizes-through-one-epicenter-exchange.md), [ADR-0164](../docs/adr/0164-scalar-facts-converge-independently-epicenter-refuses-distributed-transactions.md), [ADR-0165](../docs/adr/0165-browser-origins-contain-independent-epicenter-replicas.md), [ADR-0166](../docs/adr/0166-data-document-sync-and-agent-replace-workspace.md), [ADR-0167](../docs/adr/0167-a-portable-epicenter-is-an-identity-free-export-of-one-authority-cut.md), [ADR-0168](../docs/adr/0168-lenses-are-complete-pure-json-interpretations.md), [ADR-0169](../docs/adr/0169-row-references-are-non-enforcing-table-interpretations.md), [ADR-0170](../docs/adr/0170-one-live-epicenter-has-sealed-backups-and-restore-creates-a-fresh-authority-lifetime.md), [ADR-0171](../docs/adr/0171-every-durable-local-write-leaves-an-automatic-authority-obligation.md), [ADR-0172](../docs/adr/0172-sqlite-stores-convergent-facts-and-documents-raw-files-store-blob-bytes.md), and [ADR-0173](../docs/adr/0173-finalized-row-owned-blobs-use-content-digests-as-identity.md)
 
 ## Product sentence
 
@@ -38,6 +38,14 @@ shared data.
   inert, immutable, byte-complete, downloadable, and never synchronizable.
 - Restore creates and atomically activates a fresh authority lifetime. It never
   reactivates a superseded authority lifetime or merges into the live Epicenter.
+- Every locally durable scalar, document, or blob write leaves durable evidence
+  of what the authority is owed. One Epicenter runtime owner drains those
+  obligations automatically and applications expose no sync or publish action.
+- SQLite stores scalar state, Yjs update logs, and publication evidence. Raw
+  files store row-owned immutable blob bytes. Browser SQLite itself lives in
+  OPFS.
+- A finalized blob is addressed by its row address and SHA-256 digest. An
+  incomplete capture has no permanent blob identity.
 
 If any premise changes before merge, stop. Do not hide the change behind an
 alias, migration bridge, optional scope, or second runtime.
@@ -228,7 +236,9 @@ an arbitrary key-value collection.
 Row-owned Yjs documents are universal: every live row latently owns exactly
 one document at the row's own address, and every table lens exposes
 `openDocument(rowId)`, which checks liveness, returns a revocable handle, and
-lazily attaches document sync when synchronization is attached. Row deletion,
+lazily attaches the realtime collaboration overlay when synchronization is
+attached. Durable outbound publication does not depend on that handle or
+connection remaining open. Row deletion,
 through any lens or through synchronization, revokes open handles and removes
 document bytes in the same transaction. The document is schema-free Yjs
 infrastructure with no document IDs and no layout or touch policy. There is no
@@ -244,9 +254,10 @@ first update is persisted, and the row tombstone deletes whatever exists.
 
 Expose only states a maintained UI actually distinguishes. A starting candidate
 is `local`, `syncing`, `idle`, `offline`, and `authentication-required`, plus a
-generic last error for diagnostics. Status is observation, not settlement. Do
-not expose `settle`, `synchronizeThrough`, protocol floors, lineage recovery,
-database transitions, or storage migration errors.
+generic last error, pending counts, and address-scoped parked work for
+diagnostics. Status is observation, not settlement. Do not expose `settle`,
+`synchronizeThrough`, protocol floors, lineage recovery, database transitions,
+or storage migration errors.
 
 Ordinary `get` absence is `undefined`; ordinary delete reports whether a row
 was deleted. Use typed Results at unsafe storage, validation, auth, and network
@@ -276,7 +287,7 @@ Authority responsibilities:
 
 ```txt
 metadata
-  physical format version and next authority sequence
+  physical format version, active authority lifetime, next authority sequence
 
 replicas
   replica ID, last accepted local batch, request digest, receipt
@@ -287,6 +298,9 @@ state
 
 document updates
   row address, ordered baseline-or-update bytes
+
+blob bytes
+  row address and SHA-256 digest, stored outside SQLite
 ```
 
 Local responsibilities:
@@ -294,7 +308,7 @@ Local responsibilities:
 ```txt
 metadata
   physical format version, replica ID, optional attached principal,
-  last fully applied authority sequence
+  attached authority lifetime, last fully applied authority sequence
 
 state
   the same latest live-or-deleted scalar shape
@@ -304,6 +318,16 @@ outbox
 
 document updates
   row address, ordered baseline-or-update bytes
+
+document publication
+  row address, local state vector, last proven authority state vector,
+  optional parked reason
+
+blob publication
+  row address and digest for immutable bytes awaiting authority acceptance
+
+blob bytes
+  row-scoped immutable files outside SQLite
 ```
 
 Do not create `__epicenter_databases`, database aliases, retired-row tables,
@@ -392,24 +416,50 @@ There is no lineage-recovery protocol, acquisition mode, or recovery-required
 verdict. The only other refusal is a retryable storage-limit at the physical
 wall, unchanged from ADR-0145.
 
-The endpoint route carries scalar protocol version `v1`. Row-document sockets
-negotiate their own version, such as `epicenter-document-v1`. Physical SQLite
-format versions remain adapter-local. Do not persist a cross-product of
-protocol floors.
+The endpoint route carries scalar protocol version `v1`. Document publication
+and any row-document realtime connection negotiate their own versions.
+Physical SQLite format versions remain adapter-local. Do not persist a
+cross-product of protocol floors.
 
 ## Row-document synchronization
 
-Keep one authenticated WebSocket per currently open row document. Its route
-contains the namespace key, table key, and row ID. Frames carry Yjs protocol data,
-not mutable subscriptions. Scalar liveness gates open and update acceptance.
+Local document durability and authority publication are separate facts. Every
+local Yjs update appends its V2 bytes and advances the document's local state
+vector in one SQLite transaction. A runtime-owned background drain enumerates
+dirty addresses without requiring an application handle, hydrates one dirty
+document at a time, sends only state missing at the authority, and receives the
+authority's post-commit state vector. The local obligation clears only when
+that vector covers the current local vector. Closing a document destroys its
+live `Y.Doc` and any realtime connection but never deletes the obligation.
 
-Do not multiplex until iPhone Safari and installed-PWA smoke tests demonstrate
-that realistic simultaneous document counts fail. If multiplexing becomes
-necessary, replace the one-document topology; do not retain both modes.
+Inbound document state stays lazy. An unopened document is not eagerly
+hydrated merely because another device changed it. Opening the document
+performs state-vector exchange and may attach a realtime collaboration overlay
+for low-latency peer edits and ephemeral presence. That overlay cannot be the
+only authority-publication path, and connection or initial-sync status cannot
+stand in for a durable authority acknowledgement.
 
-The authority stores no permanently live `Y.Doc`. It may hydrate compact state
-for admission and state-vector exchange. Compaction must preserve document
-convergence but does not share retention or cursor semantics with scalar sync.
+The exact realtime topology remains open for the live-collaboration dialectic.
+One fixed-address socket per open row is the leading candidate; multiplexing
+must replace it rather than coexist if measured browser socket limits earn the
+extra subscription machinery. The authority stores no permanently live
+`Y.Doc`. It may hydrate compact state for admission, publication, and
+state-vector exchange. Compaction preserves convergence but shares no scalar
+cursor or transport-batch semantics.
+
+## Blob synchronization
+
+Finalized immutable bytes live as raw row-scoped files. SQLite records only
+the row address and SHA-256 digest still owed to the authority. The runtime
+publishes those bytes automatically, retries idempotently, and clears the
+record only after the active authority accepts matching bytes at the live row
+address. Other replicas fetch cited bytes on demand; they do not mirror every
+authority blob eagerly.
+
+There is no blob metadata store, application upload state, explicit remote
+copy API, or generic outbox payload. Row deletion installs terminal scalar
+deletion state, removes document and publication records transactionally, and
+then reclaims the row's blob directory idempotently.
 
 ## SQL, inspection, and export
 
@@ -574,6 +624,8 @@ Rollback point: docs and tests only.
 - Implement the local replica schema, outbox, cursor installation, and sync
   attachment.
 - Prove that one local store reopens identically and refuses another principal.
+- Bind every exchange and receipt to one authority-lifetime identity and prove
+  restored authorities refuse stale cursors and batches.
 
 Rollback point: the old path still exists and no caller imports the new core.
 
@@ -583,7 +635,13 @@ Rollback point: the old path still exists and no caller imports the new core.
   structured addresses, and one multi-Lens `bind` convention.
 - Implement table CRUD, bounded `list`, value operations, observation, and
   nonconforming read behavior.
-- Bind row-owned documents through Document Sync.
+- Persist row-owned Yjs updates and document publication vectors in SQLite.
+- Build the runtime-owned document publication drain and post-commit
+  state-vector acknowledgement without depending on open handles.
+- Replace browser IndexedDB blobs with row-scoped OPFS files, content-digest
+  identity, and durable automatic publication records.
+- Bind open row documents through the separately owned realtime collaboration
+  overlay.
 - Add browser and native adapter conformance tests.
 
 Rollback point: production callers still use Workspace.
@@ -628,8 +686,8 @@ Workspace remains on disk but unreachable.
 - Smoke first sign-in with local data, sign-out/reopen, same-principal sign-in,
   wrong-principal refusal, two-device convergence, offline deletion, and browser
   multi-tab writes.
-- Verify one to eight simultaneous document sockets on iPhone Safari and an
-  installed PWA before reconsidering multiplexing.
+- After the realtime topology dialectic freezes, verify its chosen shape on
+  iPhone Safari and an installed PWA at realistic simultaneous document counts.
 
 Rollback point: restore imports to the old on-disk path if proof fails.
 
@@ -682,7 +740,12 @@ without learning historical vocabulary:
 - What does Restore do? It creates a fresh authority lifetime from one complete
   Backup or uploaded portable Epicenter and invalidates every old replica.
 - How does scalar sync work? One whole-Epicenter latest-state exchange.
-- How do documents sync? Lazily, one connection per open row document.
+- How do documents sync? Local updates publish automatically after handles
+  close; remote state hydrates lazily when a document opens.
+- What are document WebSockets for? Optional low-latency collaboration and
+  ephemeral presence, never the sole durability path.
+- How do blobs sync? Row-scoped immutable bytes publish automatically and
+  download on demand.
 - Can applications run SQL on the live store? No.
 - Who can inspect relationally? Epicenter Home, for people and agents, over one
   stable logical model.
@@ -708,3 +771,8 @@ weaken the ADR destination above:
    vocabulary. Decide the exact pure JSON table metadata shape, typed query
    ergonomics, and Matter replacement before deleting the current shared
    `field.reference()` implementation.
+4. **Realtime row-document topology.** Decide whether the live overlay uses
+   one fixed-address WebSocket per open row, one multiplexed connection, or no
+   dedicated overlay until a concrete collaborative surface ships. Preserve
+   automatic background publication, lazy inbound hydration, post-commit
+   authority proof, and ephemeral presence under every option.

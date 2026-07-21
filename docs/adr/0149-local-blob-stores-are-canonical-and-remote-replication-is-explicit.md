@@ -1,7 +1,8 @@
 # 0149. Local blob stores are canonical and remote replication is explicit
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-07-18
+- **Superseded by:** [ADR-0171](0171-every-durable-local-write-leaves-an-automatic-authority-obligation.md)
 
 ## Context
 
