@@ -1,154 +1,211 @@
 # scalar-facts-layout
 
-A diagnostic instrument for one narrow question in Wave 2b: how might the
-**confirmed scalar-facts table(s)** of the local replica and the server
-authority store their structured coordinates and relation split, measured on
-Bun `bun:sqlite` with a legacy initial-payload stress profile. It is never a
-logical-state proxy or a frozen conformance run; see the qualification note
-below.
+A measurement-method instrument for one narrow question in Wave 2b: how should
+the scalar state tables of the local replica and the server authority store their
+structured coordinates and relation split? It is intended to measure Bun
+`bun:sqlite` at the conformance envelope. The current executable validates only
+the bounded method wiring described below.
 
-It records conformance, storage, and workload observations. It never selects,
-ranks, recommends, or freezes a layout.
+## Evidence and decision separation (read first)
 
-Implementation status: only the exact analytical trace and its tests are
-modular today. The parent `scalar-facts-layout.ts` still owns the older corpus
-and runner. The parent remains a legacy conformance and storage diagnostic until
-the exact trace, owner-specific auxiliary states, layouts, and measurement
-method are connected behind one CLI.
+Per ADR-0161 and `specs/20260720T002337-epicenter-data-clean-break.md` (424-444,
+555-562), **evidence never selects, ranks, recommends, applies a tie-break, or
+returns a candidate id.** Nothing in this directory produces a winner. The
+human ADR process, not this code, decides. Any future classifier, absolute SLO
+policy, or final-evidence readiness contract needs its own product decision and
+owner; none is predicted here.
 
-## Scope (deliberately narrow)
+Two consequences are enforced mechanically here:
 
-This tool compares four candidate layouts of the **confirmed-facts table only**,
-across two axes:
+- A **measurement-method pilot** validates the method. It is never
+  decision-eligible and can never make evidence ADR-ready. Its only product is
+  `methodValidated` plus explicit proof refusals (`evidence-status.ts`), and
+  `methodValidated` is derived from RECORDED operations, never a hardcoded
+  boolean.
+- Final-evidence readiness and absolute performance SLO policy are absent. Their
+  thresholds and state model are unmade ADR/product choices, so this pilot emits
+  no guessed readiness status or placeholder policy.
 
-- relation layout: one unified `facts` table, or separate `row_facts` /
-  `value_facts` tables;
-- coordinate layout: inline structured coordinates, or a normalized
-  `coordinates` dictionary keyed by `(kind, namespace, local_key)`.
+## Executable status: a BOUNDED SMOKE, not yet the frozen pilot
 
-It compares those four candidates against two owners with distinct workloads:
-the **replica** (monotonic install, point reads, traversal, overlay,
-tombstone-driven document cleanup) and the **authority** (ordered feed,
-submission settlement, exact-retry, fold reads).
+`pilot.ts` `--profile smoke` (default) exercises the method wiring at bounded
+scale but is **not** the frozen exact-envelope pilot and can **never** be
+method-validated: the `exact-envelope` gate (exactly 1,000,000 present addresses,
+512 MiB proxy, four seeds, three cycles) fails, and the `checkpoint-truthful`
+gate fails because there is no truthful non-perturbing autocheckpoint boundary
+signal yet (WAL shrink is not one; a measurement checkpoint would perturb the
+workload). `--profile pilot` measures a bounded probe, extrapolates the disk and
+wall-time to the exact envelope, enforces the eight-hour cap and headroom, and
+refuses to run. The frozen pilot is not implemented to contract yet.
 
-### What this instrument does NOT decide
+The pilot reports method validation, named proof refusals, and identity-closed
+seed estimators. It does not estimate a winner or emit candidate ranking,
+contrast, feasibility, SLO, or final-readiness output.
 
-The spec's physical-format break carries structured identity through confirmed
-facts, pending intents, sealed submission state, parked diagnostics, and
-document-liveness joins (spec Wave 2b, lines 847-864). Whether the
-inline-vs-normalized coordinate *encoding* is a schema-wide choice binding every
-address-bearing table is **source-silent**, and the non-facts stores
-(sealed-submission ledger, document publication, blob publication, blob bytes,
-metadata) are not yet designed in detail.
+**Open contract gaps (not done), tracked for the next passes:**
 
-Therefore this instrument:
+- Faithful owner operations: `foldPointRead` must be an authority-fold read,
+  cleanup must delete only document-owning rows, and settlement must consume real
+  sealed V1 work and update retry/parked/settlement state.
+- A truthful post-commit WAL-index checkpoint observation, or the pilot stays
+  BLOCKED pending a native hook.
+- Closed config/seed identities for every macro, tail, boundary, warmup batch,
+  and checkpoint event. Database builds, calibration trials, and phase-disjoint
+  calibration/warmup/timed probe plans are closed, and exact counts are derived,
+  but the remaining event identities are not yet all first-class raw fields.
+- An independent in-range oracle witness for the bounded traversal statement.
+  The retained trace-derived traversal pages and page digests prove the intended
+  phase identity and disjointness; the full scan proves candidate correctness,
+  but neither witnesses what that separate candidate-store SQL path returned.
+- A separately invocable, config-frozen, headroom/time-gated exact run distinct
+  from `--estimate-only`, with the extrapolation validated at two bounded sizes.
+- Frozen final-run config emission with disjoint final seed ids, only from a
+  valid pilot.
 
-- measures **only** the confirmed-facts table layout;
-- scopes its storage metric to the **candidate-varying tables** (`facts`, plus
-  `coordinates` for the normalized candidates), so the normalized-vs-inline
-  delta is not diluted or biased by fixture tables hard-wired to one encoding;
-- **refuses to freeze** the schema-wide coordinate encoding or the layout of any
-  non-facts store, and says so in its own report.
+**Method validation is not evidence readiness.** The pilot deliberately emits no
+readiness status. Browser OPFS, Cloudflare Durable Object, full-envelope final
+data, and selected absolute performance policy remain external requirements for
+any later ADR-ready evidence contract.
 
-If Wave 2b intends a single schema-wide coordinate representation across every
-address-bearing table, this instrument is the wrong shape and must be extended
-(candidates, workloads, and constraint proofs) across those tables before any
-freeze. That is an open ownership fork returned to Codex.
+## Modular pilot architecture
 
-## Legacy diagnostic by construction
+The modular exact-trace pilot is a set of cohesive, independently tested modules.
+Bun owns only the local runner and SQLite lifecycle; trace generation, framing,
+hashing, scheduling, and method validation are portable to browser runtimes.
 
-Bun can decide native schema and query-plan evidence but cannot qualify OPFS,
-storage quota, WebKit, worker locks, mobile memory, backgrounding, or Durable
-Object SQLite. Per ADR-0161 (65-68) and ADR-0163 (305-307), the exact V1
-constants and the physical layout must be chosen by the browser, Bun, and
-Cloudflare scale proof before ADR-0163 is Accepted. This tool reports a
-`legacy-bun-diagnostic` summary with `decisionEligible: false`; it does not emit
-the frozen classifier's `invalid`, `incomplete`, `provisional`, or
-`ready-for-ADR-review` statuses. The live diagnostic report uses schema version
-4. The retained historical schema-v3 artifact has incompatible fields and is
-documented separately under `docs/benchmarks/scalar-facts-layout/`.
+- `portable-hash.ts`: a streaming SHA-256, byte-identical to the V1 kernel's
+  `sha256Hex`, plus `utf8ByteLength`. Removes the Bun `CryptoHasher`/`Buffer`
+  dependence so the workload hashes reproduce in a browser.
+- `trace.ts`: the deterministic corpus, aging events, and the analytical oracle.
+  Its `Fact`/`Address` types ARE the private V1 kernel types, and its byte oracle
+  is the kernel encoder, so it cannot emit a fact the protocol would reject.
+- `v1-binding.ts`: proves, against the real kernel `parseFact`/`encodedFactBytes`,
+  that representative generated facts admit and that the trace byte oracle equals
+  the kernel's. This binding is the **independent correctness proof**.
+- `auxiliary-traces.ts`: owner-specific pending, sealed, parked, document, and
+  retry traces, each deterministic, hashed, and bound to the V1 intent/submission/
+  parked shapes. The coordinate-layout decision applies to every address-bearing
+  owner table, so no universal owner claim is admissible without these.
+- `schedule.ts`: the balanced Williams read schedule (three cycles, self-transition
+  pairs, seed-rotated letter mapping, recorded idle+reopen boundaries) and the
+  retained actual power-of-two calibration contract. Each operation-count round
+  is one exact sixteen-trial Williams design. The first all-clear round selects;
+  cap exhaustion retains a named `INCOMPLETE` artifact with no fallback count.
+- `estimators.ts`: reduces each owner, metric family, candidate, seed, and config
+  identity independently, and accepts persisted estimators only when they exactly
+  match a fresh reduction of retained raw observations.
+- `checkpoint.ts`: atomically persisted, schema-validated, cross-process
+  per-seed checkpointing. Identity binds the exact source, whole config,
+  per-seed trace inputs, per-candidate DDL hashes, limits digest, runtime and SQLite
+  versions, execution settings, and workload and auxiliary digests; resume happens
+  only at a committed whole-seed boundary and fails closed on any mismatch,
+  truncation, or partial seed.
+- `probe-plan.ts`: the layout-independent owner of deterministic probe sources.
+  It derives exact indexed ranges, 48 non-empty traversal pages, trace-derived
+  page digests, phase item digests, and final probe ids from frozen trace options.
+  The runner and checkpoint validation both consume these reconstructed plans.
+- `raw-schema.ts`: closed raw-observation shapes, exact gap-free temporal replay,
+  config/seed/owner/candidate-bound build identities, and content-addressed probe
+  plans compared field-for-field with the reconstructed deterministic owner.
+  Calibration, warmup, and timed traversal use distinct sequence-bounded pages;
+  the pilot does not claim candidate execution of those pages is independently
+  witnessed yet.
+- `layouts.ts`: the four SQLite candidate stores. Coordinates are an immutable
+  append-only dictionary; normalized fact tables enforce coordinate kind and
+  row_id shape; install is monotonic and tombstone-dominant; storage counts every
+  candidate-owned btree including autoindexes. `layouts-invariants.test.ts` proves
+  each with direct hostile SQL.
+- `evidence-status.ts`: method validation and named proof refusals only.
 
-### The 512 MiB / 1,000,000-live-address target is not a portability guarantee
+## Correctness vs consistency
 
-No fixed 512 MiB portability guarantee is defensible. Treat it as a
-**conditional normal-profile qualification** where runtime quota admits, with
-peak headroom and quota-refusal atomic recovery measured. The tiers are:
+- **Independent correctness**: a candidate store reproduces the analytical,
+  V1-bound oracle witness (exact current-fact count, exact current-protocol-fact
+  bytes, and one ordered SHA-256 over the current facts). The oracle is a
+  closed-form function of the trace, not a peer read path.
+- **Consistency, not correctness**: candidates agreeing with one another, or a
+  reopened database agreeing with itself, is cross-candidate / reopen consistency.
+  It is a separate proof gate and never stands in for the oracle correctness proof.
 
-- Legacy smoke diagnostic: 5,000 current facts / approximately 1 MiB initial
-  payload.
-- physical mobile floor: 250k / 128 MiB (physical iOS Safari and Android).
-- conditional normal profile: 1,000,000 live addresses / 512 MiB where quota
-  admits.
-- informational desktop stress: 2M / 1 GiB.
-- private/incognito is a **negative** compatibility/refusal test (persistence
-  denied), never a durable qualification cell.
+## Two distinct byte measures (ADR-0161, ADR-0167)
 
-### Why the 512 MiB *logical* target cannot be claimed here
-
-ADR-0161 states the target as 1,000,000 live scalar addresses and 512 MiB of
-canonical encoded **logical state**. ADR-0167 defines logical state as present
-rows and values only, explicitly excluding authority sequences and terminal
-tombstones, but it leaves the exact canonical logical-state encoding an unfrozen
-implementation decision ("the exact container, seal, and physical filename
-encoding remain implementation decisions until a round-trip proof chooses
-them"). This legacy parent therefore **cannot claim the 512 MiB logical
-qualification**. Its `initialPayloadBytes` field sums payload strings while the
-initial facts are installed, before aging introduces rewrites, tombstones, and
-unsets. It is only a workload-size diagnostic, not final-present logical state
-or current protocol-fact bytes. The modular `trace.ts` owns those two exact byte
-measures.
-
-## Measurement honesty
-
-The legacy report retains three distinct diagnostics:
-
-1. **initial payload bytes**: payload-string bytes generated for the initial
-   facts before the aged workload. This is neither canonical logical-state size
-   nor protocol size.
-2. **steady physical DB footprint**: on-disk page bytes after checkpoint/settle.
-3. **phase WAL sizes**: bounded file-size observations around declared phases,
-   not cumulative write amplification.
-
-The parent prints no logical-state amplification or protocol-overhead ratio.
-Those require the exact modular trace and the predeclared measurement method.
-
-## Diagnostic summary only
-
-The parent runner retains each owner, candidate, repetition, metric, and storage
-observation. It checks matrix completeness and correctness, then reports a
-non-decision-eligible legacy diagnostic summary. Missing cells and failed
-conformance remain visible. No materiality band, Pareto filter, candidate
-ordering, or fallback tie-break is part of this runner.
-
-## Oracle boundary
-
-The modular `trace.ts` defines the analytical streaming oracle required by a
-future maintained runner. Its final current fact is a closed-form function of
-the address index, and its three-part witness contains the exact current-fact
-count, exact current-protocol-fact bytes, and one ordered SHA-256 over facts in
-ascending sequence. `trace.test.ts` validates that oracle against a small
-map-backed fold, including row tombstone non-resurrection and every declared
-lifecycle.
-
-The legacy parent does not import that trace or reproduce its witness. It checks
-physical constraints, SQLite integrity, close/reopen stability, and
-cross-candidate semantic-hash agreement over its own deterministic corpus.
-Cross-candidate agreement is not an independent oracle, which is another reason
-the diagnostic is not decision-eligible. The parent reports its own namespace,
-table, value, and lifecycle cardinalities only as legacy fixture diagnostics.
+The trace keeps present-logical-state bytes (the ADR-0167 proxy, the 512 MiB /
+1,000,000-live-address target quantity) separate from current-protocol-fact bytes
+(a storage and workload diagnostic over every current fact, including terminal
+absences). `trace.calibration.traceAdmissible` is a narrow trace-construction
+flag (the corpus hit its byte target and no fact exceeds the ceiling); it is not
+an ADR/evidence-cell qualification and never implies a cell is decision-eligible.
 
 ## Determinism
 
-Seeded PRNG only; no wall-clock or `Math.random`. Namespace and table are chosen
-by two independently salted hashes (never one correlated modulo). Paired
-candidates within one repetition see exactly the same trace; each repetition
-draws an independent data seed. The legacy full diagnostic uses five builds, but
-it is not the four-seed measurement-method pilot. Short operations retain raw
-samples.
+Seeded PRNG only; no wall clock or `Math.random` in the workload.
+Paired candidates within one seed see exactly the same trace; each seed is an
+independent outer unit. Same seed and config reproduce byte-identical trace
+identity, schedule, estimator inputs, and method gates.
 
-## Files
+## Historical monolith (`scalar-facts-layout.ts`): decision-disabled
 
-- `scalar-facts-layout.ts` (legacy parent): CLI, profiles, argument parsing,
-  conformance/storage report, and a non-decision-eligible diagnostic summary.
-- `trace.ts`: deterministic corpus, aging events, and the independent oracle.
-- `trace.test.ts`: analytical-oracle, determinism, and exact-byte tests.
+The parent `scalar-facts-layout.ts` retains the first benchmark implementation and
+its 2026-07-21 Bun/native full run. It is retained as **provisional evidence
+only** and is **decision-disabled**: it issues no recommendation and its latency
+estimator was found inadequate by two independent reviews. It predates and does
+not use the modular exact trace.
+
+Its storage numbers are **whole-database, post-phase-WAL page evidence**, not
+candidate-table-only true filesystem peaks: they measure the entire database file
+(including fixture tables and WAL state after a phase) rather than the isolated
+candidate-varying tables' peak filesystem bytes. Treat the roughly 20% normalized
+storage finding as directional whole-database evidence at this envelope, not a
+frozen candidate-table peak.
+
+### Legacy scope and refusals
+
+The monolith compares the four relation and coordinate layouts only for the
+confirmed-facts table. It exercises replica and authority workloads, but it does
+not design or qualify pending intents, sealed submissions, parked diagnostics,
+document publication, blob publication, blob bytes, or metadata. It therefore
+cannot freeze a schema-wide coordinate representation or any non-facts layout.
+The modular pilot closes more owner-specific traces, but it is still only a
+method pilot and does not select a layout.
+
+The retained artifact reports `legacy-bun-diagnostic` with
+`decisionEligible: false`. It cannot qualify browser OPFS behavior, quota,
+WebKit, worker locks, mobile memory and backgrounding, or Durable Object SQLite.
+Its live schema is version 4; the historical schema-version-3 artifact under
+`docs/benchmarks/scalar-facts-layout/` has an incompatible shape.
+
+### Legacy profile is not a portability guarantee
+
+The 1,000,000-live-address / 512 MiB target is a conditional normal profile only
+where runtime quota admits it. The broader proof still needs these distinct
+tiers:
+
+- legacy smoke diagnostic: 5,000 current facts and approximately 1 MiB of
+  initial payload;
+- physical mobile floor: 250,000 live addresses and 128 MiB on physical iOS
+  Safari and Android;
+- conditional normal profile: 1,000,000 live addresses and 512 MiB where quota
+  admits;
+- informational desktop stress: 2,000,000 live addresses and 1 GiB;
+- private or incognito mode: a negative persistence-refusal test, never a
+  durable qualification cell.
+
+The monolith's `initialPayloadBytes` sums payload strings while it installs the
+initial facts. It is not ADR-0167 present-logical-state bytes and is not current
+protocol-fact bytes. Aging later adds rewrites, tombstones, and unsets. Only the
+modular trace owns those two exact byte measures.
+
+### Legacy measurement and oracle limits
+
+The monolith retains three diagnostics: initial payload bytes, steady physical
+database pages after checkpoint and settle, and phase WAL file sizes. Phase WAL
+sizes are bounded observations around named phases, not cumulative write
+amplification. The report intentionally emits no logical-state amplification or
+protocol-overhead ratio.
+
+It retains every owner, candidate, repetition, metric, and storage observation,
+checks matrix completeness and physical conformance, and reports no materiality
+band, Pareto filter, ordering, fallback, or winner. Its semantic witness is
+cross-candidate agreement over its own deterministic corpus. That is a
+consistency check, not the modular trace's independent analytical oracle, and is
+another reason the legacy diagnostic cannot become decision evidence.
