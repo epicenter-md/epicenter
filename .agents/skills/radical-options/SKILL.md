@@ -1,6 +1,6 @@
 ---
 name: radical-options
-description: "Use when a task seems trapped inside the current abstraction, an abstraction feels poorly designed, a fix keeps spreading across layers, or the user asks to think bigger, redesign from scratch, mentally inline, go up a level, or consider radical options. Forces a higher-level pass before coding: state the current path, invent the cleanest from-scratch option, inline suspicious layers, find asymmetric deletions, and choose the option that makes the system easiest to explain."
+description: "Use when a task seems trapped inside the current abstraction, an abstraction feels poorly designed, a proposed change looks like a band-aid, a fix keeps spreading across layers, or the user asks to think bigger, reconsider the whole unit, redesign from scratch, mentally inline, go up a level, or consider radical options. Forces a higher-level pass before editing: identify the largest relevant unit, state the current path, invent the cleanest from-scratch option, inline suspicious layers, find asymmetric deletions, and choose the option that makes the system easiest to explain."
 ---
 
 # Radical Options
@@ -23,7 +23,7 @@ mostly first-read clarity.
 
 ## The Ritual
 
-Do this before coding when the skill triggers.
+Do this before editing when the skill triggers.
 
 ```txt
 Current path:
@@ -46,8 +46,26 @@ Decision:
   because ...
 ```
 
-Write this out when discussing a design or spec. For tiny code edits, it can be
-a short internal pass, but still let the result steer the implementation.
+Write this out when discussing a design or spec. For narrow edits, it can be a
+short internal pass, but still let the result steer the implementation.
+
+## Find The Largest Relevant Unit
+
+Let the shape of the problem determine the frame. Start at the narrow symptom,
+then move outward until the surrounding unit explains what the change should
+be:
+
+```txt
+prose    sentence -> paragraph -> section -> document
+code     expression -> function -> module -> public surface -> workflow
+skills   rule -> section -> SKILL.md -> skill cluster
+```
+
+Read that unit end to end. Describe how it would look if the new context had
+always been known, then compare that ideal with the current shape. Choose a
+local edit only after this comparison shows that it is the coherent result. Do
+not choose it merely because it minimizes the diff. The pass may confirm a
+small change or reveal that the surrounding unit should be rewritten.
 
 ## Start From The Ideal Call Site
 

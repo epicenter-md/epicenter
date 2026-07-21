@@ -24,6 +24,8 @@ Git hygiene: Stage specific files only. Never use `git add .` or `git add -A`. D
 
 Review posture: Be direct about flawed assumptions, weak designs, and regressions. Do not agree just to be agreeable.
 
+Coherent edits: Do not default to the smallest local patch. Before changing code, prose, or agent instructions, identify the largest relevant unit whose shape controls the problem, then reconsider that unit as if the new context had always been known. The correct result may still be a small diff, but minimizing the diff is not the goal.
+
 Script suffix convention: `:local` suffix scripts work on a fresh clone without Infisical login (they read committed config like `wrangler.jsonc`). `:remote` suffix scripts wrap with `infisical run --env=prod` and require Infisical authentication; treat them as production admin operations.
 
 Library logging: Do not use direct `console.*` in library code. Use `wellcrafted/logger`, except in CLIs, tests, and benchmarks.
