@@ -19,7 +19,8 @@
 	],
 	"license": "MIT",
 	"scripts": {
-		"typecheck": "tsc --noEmit",
+		"evidence:browser": "bun browser-evidence/run.ts --profile smoke",
+		"typecheck": "tsc --noEmit && tsc --noEmit -p browser-evidence/tsconfig.json",
 		"test": "bun test"
 	},
 	"dependencies": {
@@ -33,6 +34,8 @@
 	},
 	"devDependencies": {
 		"@types/bun": "catalog:",
-		"typescript": "catalog:"
+		"playwright": "^1.61.1",
+		"typescript": "catalog:",
+		"vite": "catalog:"
 	}
 }

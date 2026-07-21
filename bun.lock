@@ -888,7 +888,9 @@
       },
       "devDependencies": {
         "@types/bun": "catalog:",
+        "playwright": "^1.61.1",
         "typescript": "catalog:",
+        "vite": "catalog:",
       },
     },
     "packages/document-sync": {
