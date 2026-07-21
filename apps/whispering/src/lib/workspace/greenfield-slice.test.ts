@@ -52,7 +52,7 @@ test('settings values set, get, unset, and subscribe through a composed lens', a
 	}
 });
 
-test('two borrowed lenses compose recordings CRUD with stable list ordering', async () => {
+test('two borrowed lenses compose recordings CRUD with application ordering', async () => {
 	const root = mkdtempSync(join(tmpdir(), 'whispering-data-composition-'));
 	try {
 		await using epicenter = await openBunEpicenter({ directory: root });
@@ -76,14 +76,12 @@ test('two borrowed lenses compose recordings CRUD with stable list ordering', as
 				InstantString.fromDate(new Date('2026-07-20T02:00:00.000Z')),
 			),
 		);
+		const scanned = await recordings.scan();
 		expect(
-			(
-				await recordings.list({
-					orderBy: { field: 'recordedAt', direction: 'desc' },
-					limit: 1,
-				})
-			).rows,
-		).toEqual([newer]);
+			scanned.rows.toSorted((left, right) =>
+				right.recordedAt.localeCompare(left.recordedAt),
+			)[0],
+		).toEqual(newer);
 		expect(
 			expectOk(await recordings.update(older.id, { title: 'updated' }))?.title,
 		).toBe('updated');

@@ -26,14 +26,14 @@ import {
 	type RowDocument,
 	registerRowDocumentConnectionTarget,
 } from './documents.js';
-import type {
-	BoundData,
-	Epicenter,
-	EpicenterSyncSession,
-	ListOptions,
-	ListPage,
-	TableLens,
-	ValueLens,
+import {
+	type BoundData,
+	createTableReadMethods,
+	type Epicenter,
+	type EpicenterSyncSession,
+	type TableEntriesPage,
+	type TableLens,
+	type ValueLens,
 } from './epicenter.js';
 import type { JsonValue } from './protocol/index.js';
 import type { SyncStatus } from './sync-supervisor.js';
@@ -285,6 +285,12 @@ export async function openBrowserEpicenter({
 		definition: TDefinition,
 	): TableLens<TDefinition> {
 		const serialized = serializeTableDefinition(definition);
+		const readEntriesPage = (after?: string) =>
+			request<TableEntriesPage<TDefinition>>({
+				kind: 'table-entries-page',
+				definition: serialized,
+				...(after === undefined ? {} : { after }),
+			});
 		const lens = {
 			create(fields: CreateInputFor<TDefinition>) {
 				return request<RowFor<TDefinition>>({
@@ -318,13 +324,7 @@ export async function openBrowserEpicenter({
 					rowId,
 				});
 			},
-			list(options: ListOptions<TDefinition> = {}) {
-				return request<ListPage<TDefinition>>({
-					kind: 'table-list',
-					definition: serialized,
-					options,
-				});
-			},
+			...createTableReadMethods(readEntriesPage),
 			subscribe(listener: (changedIds: string[]) => void) {
 				requireOpen();
 				const listeners = tableListeners.get(definition.key) ?? new Set();

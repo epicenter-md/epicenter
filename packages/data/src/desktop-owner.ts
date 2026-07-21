@@ -18,14 +18,18 @@ import {
 	encodeRowDocumentState,
 	type RowDocument,
 } from './documents.js';
-import type { Epicenter, ListOptions } from './epicenter.js';
+import {
+	type Epicenter,
+	type InternalTableLens,
+	readTableEntriesPage,
+} from './epicenter.js';
 
 type UntypedTableLens = {
 	create(fields: Record<string, unknown>): Promise<unknown>;
 	get(rowId: string): Promise<unknown>;
 	update(rowId: string, patch: Record<string, unknown>): Promise<unknown>;
 	delete(rowId: string): Promise<boolean>;
-	list(options?: ListOptions<TableDefinition>): Promise<unknown>;
+	[readTableEntriesPage](after?: string): Promise<unknown>;
 	openDocument(rowId: string): Promise<RowDocument>;
 };
 
@@ -104,9 +108,9 @@ export async function createDesktopEpicenterOwner({
 				return tableLens(epicenter, operation.definition).delete(
 					operation.rowId,
 				);
-			case 'table-list':
-				return tableLens(epicenter, operation.definition).list(
-					operation.options as ListOptions<TableDefinition>,
+			case 'table-entries-page':
+				return tableLens(epicenter, operation.definition)[readTableEntriesPage](
+					operation.after,
 				);
 			case 'value-get':
 				return valueLens(epicenter, operation.definition).get();
@@ -187,7 +191,7 @@ function tableLens(
 	return epicenter.bind({
 		tables: { target: deserializeTable(definition) },
 		values: {},
-	}).tables.target as UntypedTableLens;
+	}).tables.target as InternalTableLens<TableDefinition>;
 }
 
 function valueLens(

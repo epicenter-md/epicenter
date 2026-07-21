@@ -23,12 +23,12 @@ import {
 	type RowDocument,
 	registerRowDocumentConnectionTarget,
 } from './documents.js';
-import type {
-	BoundData,
-	ListOptions,
-	ListPage,
-	TableLens,
-	ValueLens,
+import {
+	type BoundData,
+	createTableReadMethods,
+	type TableEntriesPage,
+	type TableLens,
+	type ValueLens,
 } from './epicenter.js';
 import type { JsonValue } from './protocol/index.js';
 
@@ -119,6 +119,12 @@ export async function openDesktopEpicenter({
 		definition: TDefinition,
 	): TableLens<TDefinition> {
 		const serialized = serializeTableDefinition(definition);
+		const readEntriesPage = (after?: string) =>
+			request<TableEntriesPage<TDefinition>>({
+				kind: 'table-entries-page',
+				definition: serialized,
+				...(after === undefined ? {} : { after }),
+			});
 		const lens = {
 			async create(fields: CreateInputFor<TDefinition>) {
 				const row = await request<RowFor<TDefinition>>({
@@ -157,13 +163,7 @@ export async function openDesktopEpicenter({
 				if (deleted) notifyTable(definition.key, rowId);
 				return deleted;
 			},
-			list(options: ListOptions<TDefinition> = {}) {
-				return request<ListPage<TDefinition>>({
-					kind: 'table-list',
-					definition: serialized,
-					options,
-				});
-			},
+			...createTableReadMethods(readEntriesPage),
 			subscribe(listener: (changedIds: string[]) => void) {
 				const listeners = tableListeners.get(definition.key) ?? new Set();
 				listeners.add(listener);

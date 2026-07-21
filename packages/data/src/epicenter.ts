@@ -1,4 +1,4 @@
-import type { SqliteDatabase, SqliteRow, SqliteValue } from '@epicenter/sqlite';
+import type { SqliteDatabase, SqliteRow } from '@epicenter/sqlite';
 import { customAlphabet } from 'nanoid';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
@@ -19,11 +19,7 @@ import {
 	type ValueFor,
 } from './definitions.js';
 import { createDocumentRuntime, type RowDocument } from './documents.js';
-import {
-	canonicalJson,
-	type JsonObject,
-	type JsonValue,
-} from './protocol/index.js';
+import type { JsonObject } from './protocol/index.js';
 import type { Exchange, Replica, ReplicaError } from './replica/index.js';
 import {
 	createSyncSupervisor,
@@ -33,26 +29,19 @@ import {
 } from './sync-supervisor.js';
 
 const mintRowId = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 24);
-const DEFAULT_LIST_LIMIT = 100;
-const MAX_LIST_LIMIT = 1_000;
+const ENTRIES_PAGE_SIZE = 100;
 
 type ReadError = DataReadError | ReplicaError;
 
-export type ListOptions<TDefinition extends TableDefinition> = {
-	where?: Partial<RowFor<TDefinition>>;
-	orderBy?: {
-		field: keyof RowFor<TDefinition> & string;
-		direction: 'asc' | 'desc';
-	};
-	cursor?: string;
-	limit?: number;
-};
-
-export type ListPage<TDefinition extends TableDefinition> = {
+export type TableScan<TDefinition extends TableDefinition> = {
 	rows: RowFor<TDefinition>[];
 	nonconforming: NonconformingRowError[];
-	nextCursor?: string;
 };
+
+export type TableEntry<TDefinition extends TableDefinition> = Result<
+	RowFor<TDefinition>,
+	NonconformingRowError
+>;
 
 export type TableLens<TDefinition extends TableDefinition> = {
 	create(fields: CreateInputFor<TDefinition>): Promise<RowFor<TDefinition>>;
@@ -62,7 +51,36 @@ export type TableLens<TDefinition extends TableDefinition> = {
 		patch: TChanges & ConstrainedUpdate<TDefinition, TChanges>,
 	): Promise<Result<RowFor<TDefinition> | undefined, ReadError>>;
 	delete(id: string): Promise<boolean>;
-	list(options?: ListOptions<TDefinition>): Promise<ListPage<TDefinition>>;
+	/**
+	 * Materialize the complete classified table in stable row-ID order.
+	 *
+	 * Use this when the caller needs the whole table in memory, such as a local
+	 * UI cache. Use {@link entries} for repair, export, or another workflow that
+	 * should keep memory bounded while it visits every stored entry.
+	 *
+	 * @example
+	 * ```ts
+	 * const { rows, nonconforming } = await notes.scan();
+	 * ```
+	 */
+	scan(): Promise<TableScan<TDefinition>>;
+	/**
+	 * Stream every live row in stable row-ID order without materializing the
+	 * table. The runtime fetches bounded internal pages and keeps continuation
+	 * state private; callers may stop iteration early.
+	 *
+	 * Entries are ordinary Results: conforming rows are `Ok`, while rows that the
+	 * current Lens cannot interpret are `Err(NonconformingRow)` with raw JSON.
+	 * The traversal observes live state rather than a database snapshot.
+	 *
+	 * @example
+	 * ```ts
+	 * for await (const entry of notes.entries()) {
+	 *   if (entry.error !== null) report(entry.error);
+	 * }
+	 * ```
+	 */
+	entries(): AsyncIterable<TableEntry<TDefinition>>;
 	subscribe(listener: (changedIds: string[]) => void): () => void;
 	openDocument(rowId: string): Promise<RowDocument>;
 };
@@ -108,17 +126,49 @@ const DataRuntimeError = defineErrors({
 type ListedStateRow = SqliteRow & {
 	row_id: string;
 	json_payload: string;
-	order_value: SqliteValue;
 };
 
-type ListCursor = {
-	key: string;
-	field: string;
-	direction: 'asc' | 'desc';
-	query: string;
-	value: string | number | null;
-	id: string;
+export type TableEntriesPage<TDefinition extends TableDefinition> = {
+	entries: TableEntry<TDefinition>[];
+	nextAfter?: string;
 };
+
+export const readTableEntriesPage: unique symbol = Symbol(
+	'epicenter.readTableEntriesPage',
+);
+
+export type InternalTableLens<TDefinition extends TableDefinition> =
+	TableLens<TDefinition> & {
+		[readTableEntriesPage](
+			after?: string,
+		): Promise<TableEntriesPage<TDefinition>>;
+	};
+
+export function createTableReadMethods<TDefinition extends TableDefinition>(
+	readPage: (after?: string) => Promise<TableEntriesPage<TDefinition>>,
+): Pick<TableLens<TDefinition>, 'scan' | 'entries'> {
+	async function* entries(): AsyncIterable<TableEntry<TDefinition>> {
+		let after: string | undefined;
+		do {
+			const page = await readPage(after);
+			yield* page.entries;
+			after = page.nextAfter;
+		} while (after !== undefined);
+	}
+
+	return {
+		async scan() {
+			const rows: RowFor<TDefinition>[] = [];
+			const nonconforming: NonconformingRowError[] = [];
+			for await (const entry of entries()) {
+				if (entry.error === null) rows.push(entry.data);
+				else nonconforming.push(entry.error);
+			}
+			return { rows, nonconforming };
+		},
+		entries,
+	};
+}
 
 /** Create the adapter-agnostic Data runtime over one already-open replica. */
 export function createEpicenter({
@@ -216,6 +266,10 @@ export function createEpicenter({
 		definition: TDefinition,
 	): TableLens<TDefinition> {
 		const compiled = compileTableDefinition(definition);
+		const readEntriesPage = async (after?: string) => {
+			requireOpen();
+			return listEntriesPage(definition, compiled, after);
+		};
 
 		const lens = {
 			async create(input: Record<string, unknown>) {
@@ -281,10 +335,8 @@ export function createEpicenter({
 				if (written.error !== null) throw written.error;
 				return written.data.applied;
 			},
-			async list(options: ListOptions<TDefinition> = {}) {
-				requireOpen();
-				return listRows(definition, compiled, options);
-			},
+			...createTableReadMethods(readEntriesPage),
+			[readTableEntriesPage]: readEntriesPage,
 			subscribe(listener: (changedIds: string[]) => void) {
 				requireOpen();
 				const listeners = tableListeners.get(definition.key) ?? new Set();
@@ -300,7 +352,7 @@ export function createEpicenter({
 				return documents.open({ key: definition.key, rowId });
 			},
 		};
-		return Object.freeze(lens) as TableLens<TDefinition>;
+		return Object.freeze(lens) as InternalTableLens<TDefinition>;
 	}
 
 	function createValueLens<TDefinition extends ValueDefinition>(
@@ -377,124 +429,44 @@ export function createEpicenter({
 		},
 	});
 
-	function listRows<TDefinition extends TableDefinition>(
+	function listEntriesPage<TDefinition extends TableDefinition>(
 		definition: TDefinition,
 		compiled: ReturnType<typeof compileTableDefinition>,
-		options: ListOptions<TDefinition>,
-	): ListPage<TDefinition> {
-		const limit = options.limit ?? DEFAULT_LIST_LIMIT;
-		if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_LIST_LIMIT) {
-			throw new RangeError(
-				`List limit must be an integer between 1 and ${MAX_LIST_LIMIT}`,
-			);
-		}
-		const orderField = options.orderBy?.field ?? 'id';
-		const direction = options.orderBy?.direction ?? 'asc';
-		if (orderField !== 'id' && !compiled.fields.has(orderField)) {
-			throw new Error(`Unknown order field '${orderField}'`);
-		}
-		if (direction !== 'asc' && direction !== 'desc') {
-			throw new Error(`Invalid order direction '${direction}'`);
-		}
-
-		const where: string[] = [
+		after?: string,
+	): TableEntriesPage<TDefinition> {
+		const where = [
 			"address_kind = 'row'",
 			'qualified_key = ?',
 			"status = 'live'",
 		];
-		const parameters: SqliteValue[] = [definition.key];
-		for (const [field, value] of Object.entries(options.where ?? {})) {
-			if (value === undefined) {
-				throw new TypeError(`Where field '${field}' cannot be undefined`);
-			}
-			if (field === 'id') {
-				where.push('row_id = ?');
-				parameters.push(value as string);
-				continue;
-			}
-			const schema = compiled.fields.get(field);
-			if (schema === undefined)
-				throw new Error(`Unknown where field '${field}'`);
-			if (!schema.check(value)) {
-				throw new TypeError(`Invalid where value for '${field}'`);
-			}
-			where.push(
-				'json_type(json_payload, ?) IS NOT NULL AND json_extract(json_payload, ?) IS ?',
-			);
-			parameters.push(`$.${field}`, `$.${field}`, sqliteValue(value));
+		const parameters: (string | number)[] = [definition.key];
+		if (after !== undefined) {
+			where.push('row_id > ?');
+			parameters.push(after);
 		}
-
-		const query = canonicalJson(options.where ?? {});
-		const orderExpression =
-			orderField === 'id'
-				? 'row_id'
-				: `json_extract(json_payload, '$.${orderField}')`;
-		const cursor =
-			options.cursor === undefined ? undefined : decodeCursor(options.cursor);
-		if (cursor !== undefined) {
-			if (
-				cursor.key !== definition.key ||
-				cursor.field !== orderField ||
-				cursor.direction !== direction ||
-				cursor.query !== query
-			) {
-				throw new Error('List cursor does not match this query');
-			}
-			where.push(cursorPredicate(orderExpression, direction, cursor.value));
-			if (cursor.value === null) {
-				parameters.push(cursor.id);
-			} else {
-				parameters.push(cursor.value, cursor.value, cursor.id);
-			}
-		}
-
-		parameters.push(limit + 1);
+		parameters.push(ENTRIES_PAGE_SIZE + 1);
 		const stored = database.all<ListedStateRow>(
-			`SELECT row_id, json_payload, ${orderExpression} AS order_value
+			`SELECT row_id, json_payload
 			 FROM state
 			 WHERE ${where.join(' AND ')}
-			 ORDER BY ${orderExpression} ${direction.toUpperCase()}, row_id ASC
+			 ORDER BY row_id ASC
 			 LIMIT ?`,
 			parameters,
 		);
-		const hasNext = stored.length > limit;
-		const pageRows = hasNext ? stored.slice(0, limit) : stored;
-		const rows: RowFor<TDefinition>[] = [];
-		const nonconforming: NonconformingRowError[] = [];
+		const hasNext = stored.length > ENTRIES_PAGE_SIZE;
+		const pageRows = hasNext ? stored.slice(0, ENTRIES_PAGE_SIZE) : stored;
+		const entries: TableEntry<TDefinition>[] = [];
 		for (const row of pageRows) {
 			const payload = JSON.parse(row.json_payload) as JsonObject;
 			const projected = compiled.project(row.row_id, payload);
-			if (projected.error === null) {
-				rows.push(projected.data as RowFor<TDefinition>);
-			} else {
-				nonconforming.push(projected.error);
-			}
+			entries.push(projected as TableEntry<TDefinition>);
 		}
 		const last = pageRows.at(-1);
 		return {
-			rows,
-			nonconforming,
-			...(hasNext && last !== undefined
-				? {
-						nextCursor: encodeCursor({
-							key: definition.key,
-							field: orderField,
-							direction,
-							query,
-							value: cursorValue(last.order_value),
-							id: last.row_id,
-						}),
-					}
-				: {}),
+			entries,
+			...(hasNext && last !== undefined ? { nextAfter: last.row_id } : {}),
 		};
 	}
-}
-
-function cursorValue(value: SqliteValue): string | number | null {
-	if (value instanceof Uint8Array) {
-		throw new Error('List ordering produced an unsupported binary value');
-	}
-	return value;
 }
 
 export type Epicenter = ReturnType<typeof createEpicenter>;
@@ -526,59 +498,4 @@ function rememberDefinition(
 		);
 	}
 	keys.set(key, propertyName);
-}
-
-function sqliteValue(value: unknown): SqliteValue {
-	if (
-		value === null ||
-		typeof value === 'string' ||
-		typeof value === 'number'
-	) {
-		return value;
-	}
-	if (typeof value === 'boolean') return value ? 1 : 0;
-	return JSON.stringify(value as JsonValue);
-}
-
-function cursorPredicate(
-	expression: string,
-	direction: 'asc' | 'desc',
-	value: SqliteValue,
-): string {
-	if (value === null) {
-		return direction === 'asc'
-			? `((${expression}) IS NOT NULL OR ((${expression}) IS NULL AND row_id > ?))`
-			: `((${expression}) IS NULL AND row_id > ?)`;
-	}
-	return direction === 'asc'
-		? `((${expression}) > ? OR ((${expression}) IS ? AND row_id > ?))`
-		: `((${expression}) < ? OR (${expression}) IS NULL OR ((${expression}) IS ? AND row_id > ?))`;
-}
-
-function encodeCursor(cursor: ListCursor): string {
-	return encodeURIComponent(JSON.stringify(cursor));
-}
-
-function decodeCursor(cursor: string): ListCursor {
-	try {
-		const parsed = JSON.parse(
-			decodeURIComponent(cursor),
-		) as Partial<ListCursor>;
-		if (
-			typeof parsed.key !== 'string' ||
-			typeof parsed.field !== 'string' ||
-			(parsed.direction !== 'asc' && parsed.direction !== 'desc') ||
-			typeof parsed.query !== 'string' ||
-			typeof parsed.id !== 'string' ||
-			parsed.value === undefined ||
-			(typeof parsed.value !== 'string' &&
-				typeof parsed.value !== 'number' &&
-				parsed.value !== null)
-		) {
-			throw new Error('invalid cursor shape');
-		}
-		return parsed as ListCursor;
-	} catch (cause) {
-		throw new Error('Invalid list cursor', { cause });
-	}
 }

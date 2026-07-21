@@ -159,23 +159,12 @@ export function createWhisperingRecordings({
 		while (!isDisposed) {
 			const generation = refreshGeneration;
 			try {
-				const nextRows: Recording[] = [];
-				const nextNonconforming: NonconformingRowError[] = [];
-				let cursor: string | undefined;
-				do {
-					const page = await table.list({
-						orderBy: { field: 'recordedAt', direction: 'desc' },
-						cursor,
-						limit: 100,
-					});
-					nextRows.push(...(page.rows as Recording[]));
-					nextNonconforming.push(...page.nonconforming);
-					cursor = page.nextCursor;
-				} while (cursor !== undefined);
+				const { rows: nextRows, nonconforming: nextNonconforming } =
+					await table.scan();
 				if (isDisposed) return;
 				if (generation !== refreshGeneration) continue;
-				rows = nextRows;
-				sorted = nextRows;
+				rows = nextRows as Recording[];
+				sorted = sortRows(rows);
 				nonconforming = nextNonconforming;
 				loadError = null;
 				notify();

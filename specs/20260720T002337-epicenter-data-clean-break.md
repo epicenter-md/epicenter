@@ -133,11 +133,11 @@ const recording = await data.whispering.tables.recordings.create({
 });
 
 const found = await data.whispering.tables.recordings.get(recording.id);
-const page = await data.whispering.tables.recordings.list({
-  orderBy: { field: "createdAt", direction: "desc" },
-  limit: 100,
-});
-// page is { rows, nonconforming, nextCursor? }
+const { rows, nonconforming } =
+  await data.whispering.tables.recordings.scan();
+for await (const entry of data.whispering.tables.recordings.entries()) {
+  // entry is Result<Recording, NonconformingRowError>
+}
 await data.whispering.tables.recordings.update(recording.id, {
   note: undefined,
 });
@@ -227,15 +227,17 @@ or another collision-equivalent ID. Callers cannot supply `id` to `create`.
 Optional field `undefined` means remove the field and is lowered before JSON
 serialization. `null` remains an ordinary accepted value.
 
-Use one bounded `list` surface for ordinary equality filters, ordering, cursor,
-and limit. Do not preserve both `scan` and `query` unless conformance diagnostics
-prove they are two real workflows. Reads report nonconforming stored data
-without silently repairing it. The page shape is
-`{ rows, nonconforming, nextCursor? }`; ordering is stable with the row ID as
-the final tie-break, and a cursor observes continuing live state, not a
-snapshot. Callers that need everything loop pages; evidence shows every current
-production read is exhaustive and only one flow (client-side substring search)
-needs anything beyond this vocabulary, and it stays client-side.
+Expose one complete classified traversal through two terminal shapes. `scan()`
+materializes `{ rows, nonconforming }`. `entries()` streams
+`Result<Row, NonconformingRowError>` values in stable row ID order. The runtime
+uses bounded internal pages, but callers neither construct nor donate cursors.
+Traversal observes continuing live state rather than a snapshot.
+
+There is no public filter, arbitrary field order, limit, cursor, or page shape.
+Every current production read is exhaustive, and application-specific sorting
+and substring search stay client-side. A future Lens may declare pure JSON
+indexes and earn an index-scoped query surface, but this decision does not
+freeze that syntax or promise unindexed predicates.
 
 Tables and values expose committed-change observation: `subscribe` on a bound
 table receives the changed row IDs after a committed local write or an
@@ -657,7 +659,8 @@ Rollback point: the old path still exists and no caller imports the new core.
 
 - Implement pure JSON `defineLens`, `parseLens`, nested table/value definitions,
   structured addresses, and one multi-Lens `bind` convention.
-- Implement table CRUD, bounded `list`, value operations, observation, and
+- Implement table CRUD, classified `scan` and `entries`, value operations,
+  observation, and
   nonconforming read behavior.
 - Prove compact Yjs baseline-plus-tail equivalence in a runtime-independent
   model, then persist the bounded chain in each SQLite adapter.

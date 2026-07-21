@@ -27,15 +27,8 @@ export function fromTable<TDefinition extends TableDefinition>(
 	async function refresh(): Promise<void> {
 		const generation = ++refreshGeneration;
 		try {
-			const nextRows: RowFor<TDefinition>[] = [];
-			const nextNonconforming: NonconformingRowError[] = [];
-			let cursor: string | undefined;
-			do {
-				const page = await table.list({ cursor, limit: 100 });
-				nextRows.push(...page.rows);
-				nextNonconforming.push(...page.nonconforming);
-				cursor = page.nextCursor;
-			} while (cursor !== undefined);
+			const { rows: nextRows, nonconforming: nextNonconforming } =
+				await table.scan();
 			if (generation !== refreshGeneration) return;
 			rows = nextRows;
 			nonconforming = nextNonconforming;

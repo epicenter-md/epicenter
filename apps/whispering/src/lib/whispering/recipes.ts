@@ -37,19 +37,8 @@ export function createWhisperingRecipes({
 		while (!isDisposed) {
 			const generation = refreshGeneration;
 			try {
-				const listedRows: Awaited<ReturnType<typeof table.list>>['rows'] = [];
-				const listedNonconforming: NonconformingRowError[] = [];
-				let cursor: string | undefined;
-				do {
-					const page = await table.list({
-						orderBy: { field: 'name', direction: 'asc' },
-						cursor,
-						limit: 100,
-					});
-					listedRows.push(...page.rows);
-					listedNonconforming.push(...page.nonconforming);
-					cursor = page.nextCursor;
-				} while (cursor !== undefined);
+				const { rows: listedRows, nonconforming: listedNonconforming } =
+					await table.scan();
 				if (isDisposed) return;
 				if (generation !== refreshGeneration) continue;
 				const nextRows: Recipe[] = [];

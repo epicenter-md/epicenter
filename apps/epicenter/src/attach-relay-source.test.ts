@@ -247,7 +247,7 @@ async function readTranscript(dataDir: string): Promise<{
 		values: {},
 	}).tables.conversations;
 	const tableNames = ['conversations'];
-	const rows = (await conversations.list()).rows;
+	const rows = (await conversations.scan()).rows;
 	let latest = rows[0];
 	for (const row of rows) {
 		if (!latest || row.updatedAt > latest.updatedAt) latest = row;

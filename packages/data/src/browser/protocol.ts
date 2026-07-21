@@ -40,9 +40,9 @@ export type BrowserOperation =
 			rowId: string;
 	  }
 	| {
-			kind: 'table-list';
+			kind: 'table-entries-page';
 			definition: SerializedTableDefinition;
-			options: unknown;
+			after?: string;
 	  }
 	| {
 			kind: 'value-get';

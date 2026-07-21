@@ -47,7 +47,7 @@ export function createHoneycrispCatalog(
 ): ToolCatalog {
 	async function resolve(call: AgentToolCall): Promise<AgentToolOutcome> {
 		if (call.toolName === LIST_FOLDERS_TOOL.name) {
-			const { rows, nonconforming } = await workspace.folders.list();
+			const { rows, nonconforming } = await workspace.folders.scan();
 			if (nonconforming.length > 0) {
 				return {
 					content: 'Some Honeycrisp folders do not conform to this release.',
@@ -106,8 +106,9 @@ async function deleteHoneycrispFolder(
 	workspace: HoneycrispData,
 	folderId: string,
 ): Promise<void> {
-	const { rows } = await workspace.notes.list();
-	for (const note of rows) {
+	for await (const entry of workspace.notes.entries()) {
+		if (entry.error !== null) continue;
+		const note = entry.data;
 		if (note.folderId !== folderId) continue;
 		const result = await workspace.notes.update(note.id, {
 			folderId: undefined,

@@ -43,8 +43,8 @@ test('runtime-minted rows support optional fields and folder re-parenting', asyn
 		expect(note.id).not.toBe(folder.id);
 		await deleteHoneycrispFolder(honeycrisp, folder.id);
 
-		const folders = await honeycrisp.tables.folders.list();
-		const notes = await honeycrisp.tables.notes.list();
+		const folders = await honeycrisp.tables.folders.scan();
+		const notes = await honeycrisp.tables.notes.scan();
 		expect(folders.rows).toEqual([]);
 		expect(notes.nonconforming).toEqual([]);
 		expect(notes.rows).toHaveLength(1);

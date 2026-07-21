@@ -100,7 +100,7 @@ async function readConversationRows(dataDir: string) {
 		tables: { conversations: conversationsTable },
 		values: {},
 	}).tables.conversations;
-	return (await conversations.list()).rows;
+	return (await conversations.scan()).rows;
 }
 
 describe('createHomeHost', () => {

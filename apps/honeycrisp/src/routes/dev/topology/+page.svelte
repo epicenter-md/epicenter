@@ -66,14 +66,7 @@
 	}
 
 	async function listAllNotes(): Promise<Note[]> {
-		const notes: Note[] = [];
-		let cursor: string | undefined;
-		do {
-			const page = await honeycrisp.tables.notes.list({ cursor, limit: 100 });
-			notes.push(...page.rows);
-			cursor = page.nextCursor;
-		} while (cursor !== undefined);
-		return notes;
+		return (await honeycrisp.tables.notes.scan()).rows;
 	}
 
 	async function ensureRows(count: number): Promise<Note[]> {

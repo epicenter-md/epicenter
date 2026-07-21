@@ -1,7 +1,7 @@
 /**
  * Typed Data API Tests
  *
- * Verifies inert definitions, grouped binding, typed scalar CRUD and paging,
+ * Verifies inert definitions, grouped binding, classified scalar traversal,
  * committed observation, and local row-document persistence over Bun SQLite.
  *
  * Key behaviors:
@@ -95,7 +95,7 @@ test('bind rejects duplicate qualified keys across tables and values', async () 
 	rawDatabase.close();
 });
 
-test('table CRUD lowers undefined and list pages with a row-id tie-break', async () => {
+test('table CRUD lowers undefined and scan returns stable row-ID order', async () => {
 	const { rawDatabase, epicenter } = setup();
 	const notes = epicenter.bind({
 		tables: { notes: notesDefinition },
@@ -126,39 +126,16 @@ test('table CRUD lowers undefined and list pages with a row-id tie-break', async
 		expectOk(await notes.update('zzzzzzzzzzzzzzzzzzzzzzzz', { rank: 3 })),
 	).toBeUndefined();
 
-	const firstPage = await notes.list({
-		where: { rank: 1 },
-		orderBy: { field: 'rank', direction: 'asc' },
-		limit: 1,
-	});
-	expect(firstPage.rows).toHaveLength(1);
-	expect(firstPage.nextCursor).toBeDefined();
-	const secondPage = await notes.list({
-		where: { rank: 1 },
-		orderBy: { field: 'rank', direction: 'asc' },
-		cursor: firstPage.nextCursor,
-		limit: 1,
-	});
-	expect(secondPage.rows).toHaveLength(1);
-	expect(secondPage.nextCursor).toBeUndefined();
-	expect([...firstPage.rows, ...secondPage.rows].map((row) => row.id)).toEqual(
-		[first.id, second.id].sort(),
-	);
-	await expect(
-		notes.list({
-			where: { rank: 2 },
-			orderBy: { field: 'rank', direction: 'asc' },
-			cursor: firstPage.nextCursor,
-			limit: 1,
-		}),
-	).rejects.toThrow('does not match this query');
 	const nullLabel = await notes.create({
 		title: 'null label',
 		rank: 3,
 		label: null,
 	});
-	const nullMatches = await notes.list({ where: { label: null } });
-	expect(nullMatches.rows.map((row) => row.id)).toEqual([nullLabel.id]);
+	const scanned = await notes.scan();
+	expect(scanned.nonconforming).toEqual([]);
+	expect(scanned.rows.map(({ id }) => id)).toEqual(
+		[first.id, second.id, third.id, nullLabel.id].sort(),
+	);
 
 	expect(await notes.delete(first.id)).toBe(true);
 	expect(await notes.delete(first.id)).toBe(false);
@@ -199,9 +176,15 @@ test('stored schema-invalid rows and values are reported without repair', async 
 		id: REMOTE_ROW_A,
 		issues: [{ field: 'title', kind: 'invalid' }],
 	});
-	const page = await bound.tables.notes.list();
-	expect(page.rows).toEqual([]);
-	expect(page.nonconforming).toHaveLength(1);
+	const scanned = await bound.tables.notes.scan();
+	expect(scanned.rows).toEqual([]);
+	expect(scanned.nonconforming).toHaveLength(1);
+	const entries = [];
+	for await (const entry of bound.tables.notes.entries()) entries.push(entry);
+	expect(entries).toHaveLength(1);
+	const [entry] = entries;
+	if (entry === undefined) throw new Error('Expected one table entry');
+	expect(expectErr(entry)).toMatchObject({ id: REMOTE_ROW_A });
 	expect(expectErr(await bound.values.theme.get()).name).toBe(
 		'NonconformingValue',
 	);
@@ -209,6 +192,34 @@ test('stored schema-invalid rows and values are reported without repair', async 
 		title: 42,
 		rank: 1,
 	});
+
+	await epicenter[Symbol.asyncDispose]();
+	rawDatabase.close();
+});
+
+test('entries streams every classified row across internal pages', async () => {
+	const { rawDatabase, replica, epicenter } = setup();
+	const notes = epicenter.bind({
+		tables: { notes: notesDefinition },
+		values: {},
+	}).tables.notes;
+	const ids = Array.from({ length: 105 }, (_, index) =>
+		String(index).padStart(24, '0'),
+	);
+	for (const [rank, id] of ids.entries()) {
+		expectOk(
+			replica.write({
+				kind: 'create',
+				key: NOTES_KEY,
+				rowId: id,
+				fields: { title: `Note ${rank}`, rank },
+			}),
+		);
+	}
+
+	const streamed = [];
+	for await (const entry of notes.entries()) streamed.push(expectOk(entry));
+	expect(streamed.map(({ id }) => id)).toEqual(ids);
 
 	await epicenter[Symbol.asyncDispose]();
 	rawDatabase.close();

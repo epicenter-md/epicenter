@@ -70,8 +70,33 @@ const tasks = defineTable({
 });
 ```
 
-This lets title and status patches compose. It also preserves the current
-`list` support for top-level equality filters and ordering.
+This lets title and status patches compose. Table traversal is complete and
+classified; applications sort or filter the returned rows locally.
+
+## Read complete tables
+
+Use `scan()` when the complete table belongs in memory:
+
+```ts
+const { rows, nonconforming } = await tasks.scan();
+```
+
+Use `entries()` when work can proceed one classified row at a time:
+
+```ts
+for await (const entry of tasks.entries()) {
+	if (entry.error !== null) {
+		report(entry.error);
+		continue;
+	}
+	await exportTask(entry.data);
+}
+```
+
+Both traverse live rows in stable row ID order. `entries()` fetches bounded
+pages internally, so callers can stop early or keep memory bounded without
+constructing cursors. `scan()` consumes that traversal to completion and groups
+the same `Result` values. Traversal observes live state, not a snapshot.
 
 Use one JSON field when the complete bounded object is the honest replacement
 unit:
@@ -106,14 +131,11 @@ row
 
 This pattern is useful for a coherent state machine outcome, a bounded config
 object, or another value whose inner properties should never merge
-independently. It has two important costs:
+independently. It has one important cost:
 
-1. The current query API cannot filter or order by properties inside `value`.
-   Anything that must be filtered, sorted, or referenced belongs at the top
-   level.
-2. A small inner edit sends the complete `value` in the local change. Atomic
-   JSON is almost free in steady-state storage, but its edit cost is
-   proportional to the whole payload.
+A small inner edit sends the complete `value` in the local change. Atomic JSON
+is almost free in steady-state storage, but its edit cost is proportional to
+the whole payload.
 
 For one named singleton, use `defineValue` instead of inventing a one-row
 table:

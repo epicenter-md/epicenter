@@ -67,17 +67,14 @@ export async function deleteHoneycrispFolder(
 	data: HoneycrispData,
 	folderId: FolderId,
 ): Promise<void> {
-	let cursor: string | undefined;
-	do {
-		const page = await data.tables.notes.list({ cursor, limit: 100 });
-		for (const note of page.rows) {
-			if (note.folderId !== folderId) continue;
-			const result = await data.tables.notes.update(note.id, {
-				folderId: undefined,
-			});
-			if (result.error !== null) throw result.error;
-		}
-		cursor = page.nextCursor;
-	} while (cursor !== undefined);
+	for await (const entry of data.tables.notes.entries()) {
+		if (entry.error !== null) continue;
+		const note = entry.data;
+		if (note.folderId !== folderId) continue;
+		const result = await data.tables.notes.update(note.id, {
+			folderId: undefined,
+		});
+		if (result.error !== null) throw result.error;
+	}
 	await data.tables.folders.delete(folderId);
 }

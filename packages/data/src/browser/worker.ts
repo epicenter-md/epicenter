@@ -24,7 +24,8 @@ import {
 import {
 	createEpicenter,
 	type Epicenter,
-	type ListOptions,
+	type InternalTableLens,
+	readTableEntriesPage,
 } from '../epicenter.js';
 import type { ExchangeRequest, ExchangeResponse } from '../protocol/index.js';
 import { openReplica, type Replica } from '../replica/index.js';
@@ -87,7 +88,7 @@ type UntypedTableLens = {
 	get(rowId: string): Promise<unknown>;
 	update(rowId: string, patch: Record<string, unknown>): Promise<unknown>;
 	delete(rowId: string): Promise<boolean>;
-	list(options?: ListOptions<TableDefinition>): Promise<unknown>;
+	[readTableEntriesPage](after?: string): Promise<unknown>;
 	openDocument(rowId: string): Promise<RowDocument>;
 };
 
@@ -271,10 +272,10 @@ export function createBrowserWorkerHost({
 				return tableLens(store.epicenter, operation.definition).delete(
 					operation.rowId,
 				);
-			case 'table-list':
-				return tableLens(store.epicenter, operation.definition).list(
-					operation.options as ListOptions<TableDefinition>,
-				);
+			case 'table-entries-page':
+				return tableLens(store.epicenter, operation.definition)[
+					readTableEntriesPage
+				](operation.after);
 			case 'value-get':
 				return valueLens(store.epicenter, operation.definition).get();
 			case 'value-set':
@@ -445,7 +446,7 @@ function tableLens(
 	return epicenter.bind({
 		tables: { target: deserializeTable(definition) },
 		values: {},
-	}).tables.target as UntypedTableLens;
+	}).tables.target as InternalTableLens<TableDefinition>;
 }
 
 function valueLens(

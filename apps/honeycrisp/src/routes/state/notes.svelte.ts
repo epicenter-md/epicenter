@@ -37,15 +37,8 @@ export function createNotes({
 	async function refresh(): Promise<void> {
 		const generation = ++refreshGeneration;
 		try {
-			const nextRows: Note[] = [];
-			const nextNonconforming: NonconformingRowError[] = [];
-			let cursor: string | undefined;
-			do {
-				const page = await honeycrisp.tables.notes.list({ cursor, limit: 100 });
-				nextRows.push(...page.rows);
-				nextNonconforming.push(...page.nonconforming);
-				cursor = page.nextCursor;
-			} while (cursor !== undefined);
+			const { rows: nextRows, nonconforming: nextNonconforming } =
+				await honeycrisp.tables.notes.scan();
 			if (generation !== refreshGeneration) return;
 			rows = nextRows;
 			nonconforming = nextNonconforming;

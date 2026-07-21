@@ -199,7 +199,7 @@ function bindTestData(epicenter: BrowserEpicenter) {
 	return epicenter.bind({ tables: { notes }, values: { theme } });
 }
 
-test('page CRUD, list, and value operations round-trip through the worker', async () => {
+test('page CRUD, scan, and value operations round-trip through the worker', async () => {
 	const { openTab } = await setup();
 	await using epicenter = await openTab();
 	const data = bindTestData(epicenter);
@@ -213,7 +213,7 @@ test('page CRUD, list, and value operations round-trip through the worker', asyn
 			detail: 'RPC',
 		}),
 	);
-	expect((await data.tables.notes.list()).rows).toEqual([
+	expect((await data.tables.notes.scan()).rows).toEqual([
 		{ id: created.id, title: 'Updated', detail: 'RPC' },
 	]);
 
@@ -245,7 +245,7 @@ test('a committed write invalidates subscribers in a second tab', async () => {
 	unsubscribe();
 });
 
-test('two tabs serialize concurrent writes without corruption', async () => {
+test('two tabs serialize writes and stream across internal RPC pages', async () => {
 	const { openTab } = await setup();
 	await using first = await openTab();
 	await using second = await openTab();
@@ -253,16 +253,19 @@ test('two tabs serialize concurrent writes without corruption', async () => {
 	const secondNotes = bindTestData(second).tables.notes;
 
 	const created = await Promise.all(
-		Array.from({ length: 24 }, (_, index) =>
+		Array.from({ length: 104 }, (_, index) =>
 			(index % 2 === 0 ? firstNotes : secondNotes).create({
 				title: `Note ${index}`,
 			}),
 		),
 	);
-	const page = await firstNotes.list({ limit: 100 });
-	expect(page.rows).toHaveLength(24);
-	expect(new Set(page.rows.map(({ id }) => id))).toHaveLength(24);
-	expect(page.rows.map(({ title }) => title).sort()).toEqual(
+	const streamed = [];
+	for await (const entry of firstNotes.entries()) {
+		streamed.push(expectOk(entry));
+	}
+	expect(streamed).toHaveLength(104);
+	expect(new Set(streamed.map(({ id }) => id))).toHaveLength(104);
+	expect(streamed.map(({ title }) => title).sort()).toEqual(
 		created.map(({ title }) => title).sort(),
 	);
 });

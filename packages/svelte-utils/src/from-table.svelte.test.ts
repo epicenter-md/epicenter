@@ -51,19 +51,19 @@ function createMockTable() {
 	const store = new Map<string, StoredEntry>();
 
 	const table = {
-		async list() {
-			const page = {
+		async scan() {
+			const scan = {
 				rows: [] as Row[],
 				nonconforming: [] as NonconformingRowError[],
 			};
 			for (const entry of store.values()) {
 				if (entry.kind === 'row') {
-					page.rows.push(entry.row);
+					scan.rows.push(entry.row);
 				} else {
-					page.nonconforming.push(entry.error);
+					scan.nonconforming.push(entry.error);
 				}
 			}
-			return page;
+			return scan;
 		},
 		subscribe() {
 			return () => {};

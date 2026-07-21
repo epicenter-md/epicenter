@@ -14,15 +14,7 @@ export type ReferencesScan = {
 
 /** Read the complete conforming skill catalog and surface invalid rows. */
 export async function scanSkills(data: SkillsData): Promise<SkillsScan> {
-	const skills: Skill[] = [];
-	const nonconforming: NonconformingRowError[] = [];
-	let cursor: string | undefined;
-	do {
-		const listed = await data.tables.skills.list({ cursor, limit: 100 });
-		skills.push(...listed.rows);
-		nonconforming.push(...listed.nonconforming);
-		cursor = listed.nextCursor;
-	} while (cursor !== undefined);
+	const { rows: skills, nonconforming } = await data.tables.skills.scan();
 	return { skills, nonconforming };
 }
 
@@ -30,15 +22,8 @@ export async function scanSkills(data: SkillsData): Promise<SkillsScan> {
 export async function scanReferences(
 	data: SkillsData,
 ): Promise<ReferencesScan> {
-	const references: Reference[] = [];
-	const nonconforming: NonconformingRowError[] = [];
-	let cursor: string | undefined;
-	do {
-		const listed = await data.tables.references.list({ cursor, limit: 100 });
-		references.push(...listed.rows);
-		nonconforming.push(...listed.nonconforming);
-		cursor = listed.nextCursor;
-	} while (cursor !== undefined);
+	const { rows: references, nonconforming } =
+		await data.tables.references.scan();
 	return { references, nonconforming };
 }
 

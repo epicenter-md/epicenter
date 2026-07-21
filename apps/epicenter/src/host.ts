@@ -217,7 +217,7 @@ export async function createHomeHost(
 	// the composed surface; the prefix must not contain `__`.
 	const honeycrisp = options.honeycrisp;
 	const conversations = options.conversations.conversations;
-	await honeycrisp.folders.list();
+	await honeycrisp.folders.scan();
 	const catalogs: ToolCatalog[] = [
 		namespaceToolCatalog('honeycrisp', createHoneycrispCatalog(honeycrisp)),
 	];
@@ -255,7 +255,7 @@ export async function createHomeHost(
 	// Resume the most recent session; a host with no history creates one durable
 	// blank conversation before opening its row document.
 	let latest: Conversation | undefined;
-	for (const row of (await conversations.list()).rows) {
+	for (const row of (await conversations.scan()).rows) {
 		if (latest === undefined || row.updatedAt > latest.updatedAt) latest = row;
 	}
 	const createConversationRow = () => {

@@ -31,9 +31,9 @@ export {
 	createEpicenter,
 	type Epicenter,
 	type EpicenterSyncSession,
-	type ListOptions,
-	type ListPage,
+	type TableEntry,
 	type TableLens,
+	type TableScan,
 	type ValueLens,
 } from './epicenter.js';
 export {
