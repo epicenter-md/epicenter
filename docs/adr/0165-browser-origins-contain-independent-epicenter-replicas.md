@@ -36,6 +36,27 @@ application, workspace, or database becomes the durable storage owner.
 - Multi-tab behavior needs adapter conformance tests for concurrent writes,
   crash recovery, lock release, and wake-up loss.
 
+## Acceptance evidence
+
+The ADR-0161 physical mobile floor completes on a clean physical iOS Safari
+origin and a clean physical Android Chrome origin. The conditional normal
+profile runs only where measured storage availability admits it. A quota denial
+does not prove capacity. It supplies honest refusal evidence only when the
+previously committed prefix and durable progress survive restart unchanged.
+Private or incognito storage is a negative refusal environment, never a durable
+qualification environment. The maintained benchmark contract owns exact
+footprint measurement and outcome classification.
+
+Qualification must also cover concurrent tabs, Worker termination, lock
+release, backgrounding, restart, and clean ownership handoff. Playwright WebKit
+does not replace physical Safari evidence.
+
+The current adapter requires cooperative page disconnect and does not infer
+death from silence. Browser suspension makes silence ambiguous, while a
+`MessagePort` supplies no durable peer-lifetime signal. Worker termination and
+vanished-page recovery therefore remain unresolved qualification work, not
+evidence supplied by the in-process lifecycle tests.
+
 ## Considered alternatives
 
 - **One elected owner tab.** Rejected because suspension and crash handoff turn

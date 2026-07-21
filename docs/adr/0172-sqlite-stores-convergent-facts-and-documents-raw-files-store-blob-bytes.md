@@ -2,6 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-07-20
+- **Amended by:** [ADR-0174](0174-row-documents-project-as-nullable-compact-cells-and-persist-as-bounded-live-chains.md) (document logs become bounded baseline-plus-tail chains and publication stores exact retry evidence rather than authority vectors)
 - **Amends:** [ADR-0151](0151-local-workspace-stores-use-owner-first-directories.md), [ADR-0159](0159-row-documents-persist-in-one-owner-side-sqlite-update-log.md)
 - **Relates:** [ADR-0171](0171-every-durable-local-write-leaves-an-automatic-authority-obligation.md)
 
@@ -20,11 +21,12 @@ One local Epicenter owner uses the same conceptual layout in every runtime:
 Epicenter storage root
 ├── epicenter.sqlite3
 │   ├── scalar state and pending intents
-│   ├── Yjs document update logs
-│   ├── document publication vectors
-│   └── blob publication records
+│   ├── bounded Yjs document baseline-plus-tail chains
+│   ├── exact document publication retry evidence
+│   ├── accepted nullable blob digests
+│   └── pending blob publication records
 └── blobs/
-    └── row-scoped immutable byte files
+    └── at most one immutable byte file per live row
 ```
 
 The browser stores this layout in OPFS and keeps one Worker-owned SQLite
@@ -39,16 +41,17 @@ log. Epicenter does not invent raw per-document files, record framing,
 truncation recovery, compaction swaps, or cross-medium row-liveness checks.
 
 Raw files own blob bytes because blobs are immutable, potentially large, and
-streamed. SQLite stores only the small row-addressed obligation needed to
-publish those bytes. Filename, media type, application meaning, and other blob
-interpretation belong to application citations, not sidecar metadata in the
-blob store.
+streamed. SQLite records the accepted nullable SHA-256 for each row's universal
+zero-or-one blob slot and the small obligation needed to publish newly accepted
+bytes. Filename, media type, application meaning, and other interpretation
+belong to application citations, not sidecar metadata in the blob store.
 
 The SQLite row-deletion transaction ends the logical life of the row and
 removes its document log and pending publication records. The owner then
-deletes the row's blob directory idempotently. Raw bytes without a live row and
-application citation are unreachable storage debris, never resurrectable
-product state.
+deletes the row's blob file idempotently. Raw bytes without a live row are
+storage debris, never resurrectable product state. The runtime does not inspect
+schema-opaque application citations and cannot use them as a garbage-collection
+oracle while the row remains live.
 
 ## Consequences
 
@@ -62,6 +65,23 @@ product state.
   filesystem adapters are one implementation.
 - Blob-file cleanup may lag the logical deletion transaction. That lag costs
   storage only and cannot restore a deleted row.
+
+## Acceptance evidence
+
+Before this ADR becomes Accepted, each storage adapter must prove that bounded
+document chains remain transactional SQLite state, blob bytes remain streamable
+raw files, and row deletion cannot resurrect either medium. Failure injection
+must leave a complete committed SQLite state plus either valid row-owned blob
+bytes or removable debris, never live bytes for a deleted row.
+
+Physical measurements are adapter-specific. Evidence from native SQLite and
+browser OPFS reports the database and the file-level measurements that the
+adapter can observe. Cloudflare Durable Object evidence reports its exposed
+database size, SQL row counts, execution cost, and platform-limit refusals; it
+does not invent WAL, temporary-file, or storage-root measurements that the
+managed runtime does not expose. ADR-0161's scalar-only layout evidence remains
+separate and does not cap document chains, raw blob bytes, or choose a scalar
+layout.
 
 ## Considered alternatives
 
