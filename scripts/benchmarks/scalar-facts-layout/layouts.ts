@@ -477,7 +477,7 @@ export function createLayoutStore(
 		namespace: string,
 		localKey: string,
 	): number {
-		const key = `${kind} ${namespace} ${localKey}`;
+		const key = `${kind}\u0000${namespace}\u0000${localKey}`;
 		const cached = coordinateCache.get(key);
 		if (cached !== undefined) return cached;
 		if (coordinateInsert === null || coordinateSelect === null) {
