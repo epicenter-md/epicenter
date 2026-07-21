@@ -140,26 +140,39 @@ not the live replica file and it never exports one namespace independently.
 
 Applications use the type-safe Data API and receive no SQL escape hatch.
 Epicenter Home owns relational inspection for people and agents over live and
-portable Epicenters. The stable logical scalar relations are:
+portable Epicenters. The stable lossless relations inside a Home inspection
+session are:
 
 ```sql
-rows(namespace_key, table_key, row_id, fields_json)
-values(namespace_key, value_key, value_json)
+_epicenter_rows(namespace_key, table_key, row_id, fields_json)
+_epicenter_values(namespace_key, value_key, value_json)
 ```
 
 These are logical relations, not a promise about a live adapter's private
-physical schema. Installed Lenses let Home render the same rows and values as
-typed tables.
+physical schema. They preserve unknown and nonconforming data. Home may select
+one installed Lens for the active inspection session. The store owner then
+creates one read-only connection-local TEMP view per declared table, so SQL can
+query `recordings`, `notes`, or another Lens table without repeating JSON
+extraction. One interpretation may contain many table views; a second Lens is
+selected later rather than merged into the same unqualified SQL namespace.
+
+Ordinary application Lens binding creates no views and exposes no supported SQL
+API. Native Home reaches the Bun-owned store. Every desktop catalog SPA already
+shares one trusted origin under ADR-0118, so that API boundary is not a per-SPA
+sandbox. A future standalone browser Home may route inspection through its
+existing storage-owner Worker; it never opens a second OPFS connection. Web
+inspection requires a dedicated trusted first-party Home origin that does not
+cohost untrusted application code, plus an owner-side trust check. A missing
+typed application method is not a web security boundary. The decision permits
+that surface but does not require shipping it.
 
 ## Still open
 
-Three presentation and composition choices remain deliberately unfrozen:
+Two presentation and composition choices remain deliberately unfrozen:
 
-1. Whether Home should generate friendly Lens SQL views, and how their aliases,
-   collisions, quoting, and ephemeral lifetime work.
-2. Whether app-bundled Lenses live only with the active app catalog or whether
+1. Whether app-bundled Lenses live only with the active app catalog or whether
    standalone installed Lenses have a separate discovery folder and lifecycle.
-3. The exact pure JSON table metadata shape and typed reference-navigation
+2. The exact pure JSON table metadata shape and typed reference-navigation
    ergonomics for the non-enforcing row references settled by ADR-0169.
    References are not field kinds or integrity constraints.
 

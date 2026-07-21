@@ -39,6 +39,10 @@ shapes, see `docs/adr/`.
   navigation, assistant sessions, commands, approvals, and human and agent
   relational inspection; durable data such as conversations lives in ordinary
   tables and values.
+- **Home inspection session**: the store-owner-mediated read-only SQL capability
+  supported only by Epicenter Home. One store owner exposes at most one active
+  friendly Lens interpretation; ordinary application Lens binding creates no
+  SQL state.
 - **Trusted app catalog**: the validated static SPAs Epicenter serves from one
   origin and grants one fixed app-window authority. Bundled output supplies the
   default catalog; user-built output may replace a member by app ID.
@@ -148,6 +152,14 @@ shapes, see `docs/adr/`.
   one typed singleton with `get`, `set`, and `unset`.
 - **Bound lens**: the synchronous borrowed typed view returned when a Lens binds
   to an open Epicenter. It creates no storage and owns no disposal.
+- **Raw inspection relations**: the reserved lossless `_epicenter_rows` and
+  `_epicenter_values` SQL relations exposed only inside a Home inspection
+  session. They preserve unknown and nonconforming data without freezing the
+  private SQLite layout.
+- **Friendly Lens views**: the explicit-column read-only TEMP views created for
+  the one Lens selected by an active Home inspection session. They are
+  connection-local interpretations, not application APIs, stored rows, indexes,
+  or namespace lifecycle.
 - **Row**: one identified application value in a table. It is the public
   lifecycle aggregate over scalar fields, zero or one persisted Yjs document,
   and zero or one immutable blob. Its globally unique runtime-minted ID is never

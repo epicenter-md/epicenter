@@ -813,10 +813,11 @@ physical relation names.
 
 Epicenter Home owns trusted human and agent relational inspection. It reaches a
 live Epicenter through the storage owner, or opens an inert portable artifact,
-and presents the stable logical relations:
+and opens one read-only inspection session. The stable lossless relations in
+that session are:
 
 ```sql
-rows(
+_epicenter_rows(
   namespace_key,
   table_key,
   row_id,
@@ -824,7 +825,7 @@ rows(
   document_update_v2 BLOB NULL,
   blob_sha256 TEXT NULL
 )
-values(namespace_key, value_key, value_json)
+_epicenter_values(namespace_key, value_key, value_json)
 ```
 
 `document_update_v2` is one self-contained compact V2 update for the complete
@@ -833,10 +834,35 @@ are platform-owned row structure outside Lens fields. This logical projection
 does not replace the private live bounded chain or exact publication retry
 evidence.
 
-Installed Lenses provide typed interpretations for Home's table browser. The
-naming, collision behavior, and lifetime of optional Lens-generated friendly
-SQL views remain open and are not implementation prerequisites for raw logical
-inspection.
+The session has zero or one selected Lens interpretation. This bounds one
+unqualified SQL namespace to one coherent interpretation; it is a semantic
+naming rule, not an OPFS or SQLite capacity limit. Selecting a Lens creates one
+explicit-column, read-only TEMP view per declared table, using the durable
+local table key as its SQL name. One interpretation may contain many table
+views. Home never merges two overlapping Lenses into one namespace; it closes
+or replaces the first interpretation before selecting another. A concurrent
+second inspection session receives a typed busy refusal.
+The owner quotes generated identifiers, reserves `_epicenter_` and SQLite
+internal names, and rejects table keys that collide under SQLite's ASCII
+case-insensitive identifier comparison. It never aliases a durable local key.
+
+Application Lens binding remains unrelated: applications may bind several
+overlapping Lenses through typed APIs and create no SQL state. Native Home uses
+the Bun-owned store. Every desktop catalog SPA already shares one trusted
+origin under ADR-0118, so the supported application API is not a per-SPA
+sandbox. A future standalone browser Home may route the same capability through
+its existing storage-owner Worker and never opens a second OPFS connection.
+Web inspection requires a dedicated trusted first-party Home origin that does
+not cohost untrusted application code, plus an owner-side trust check; omission
+from the typed application API is not a web security boundary. The ADR permits
+that surface without requiring it to ship.
+
+The owner creates and drops the raw and friendly TEMP views only between
+statements on its existing SQLite connection. The views store no rows, add no
+indexes or triggers, and disappear when the session is replaced or closed.
+The raw relations remain the lossless path for unknown and nonconforming data.
+Each statement receives an ordinary consistent SQLite read; several statements
+may observe intervening committed writes rather than one durable snapshot.
 
 ADR-0167 defines portability as an identity-free artifact containing one
 selected owner's complete accepted current logical state. It represents the
@@ -1315,19 +1341,16 @@ protocol floors, migration, or two local owners, the clean break is incomplete.
 These questions must be resolved before their implementation wave. They do not
 weaken the ADR destination above:
 
-1. **Friendly Lens SQL views.** Decide whether Home needs generated SQL names in
-   addition to the raw `rows` and `values` relations, and if so how installation
-   aliases, collisions, quoting, and ephemeral lifetime work.
-2. **Lens discovery and activation.** Decide whether app-bundled Lenses live only
+1. **Lens discovery and activation.** Decide whether app-bundled Lenses live only
    in the active app catalog, whether standalone Lens artifacts have a separate
    folder, and what uninstall removes. Discovery provenance must not enter data
    addresses or make a Lens authoritative.
-3. **Structured row references.** ADR-0169 fixes references as non-enforcing
+2. **Structured row references.** ADR-0169 fixes references as non-enforcing
    table interpretations and removes them from the destination field
    vocabulary. Decide the exact pure JSON table metadata shape, typed
    reference-navigation ergonomics, and Matter replacement before deleting the
    current shared `field.reference()` implementation.
-4. **Realtime row-document topology.** Decide whether the live overlay uses
+3. **Realtime row-document topology.** Decide whether the live overlay uses
    one fixed-address WebSocket per open row, one multiplexed connection, or no
    dedicated overlay until a concrete collaborative surface ships. Preserve
    automatic background publication, lazy inbound hydration, post-commit
