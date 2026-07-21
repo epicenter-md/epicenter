@@ -617,8 +617,8 @@ export function makeTrace(options: TraceOptions): Trace {
 			if (isValue(index, valueCount)) {
 				values += 1;
 				if (isInitialAbsent(index, valueCount)) initialAbsentThenPresent += 1;
-				else if (isResurrected(index, valueCount)) valueResurrections += 1;
-				else if (isUnset(index, valueCount)) valueUnsets += 1;
+				if (isUnset(index, valueCount)) valueUnsets += 1;
+				if (isResurrected(index, valueCount)) valueResurrections += 1;
 			} else {
 				rows += 1;
 				tables.add(
@@ -721,30 +721,6 @@ export function factsForPresentTarget(
 		else lo = mid + 1;
 	}
 	return presentCountFor(lo, valueRatio) === presentTarget ? lo : null;
-}
-
-/**
- * One ordered SHA-256 over a fact sequence, framed by UTF-8 byte length so no
- * two records can concatenate into a third. Count and exact current-protocol
- * bytes accompany the digest; a candidate scan feeds `ORDER BY sequence` records
- * here and must reproduce all three.
- */
-export function factSetDigest(facts: Iterable<Fact>): {
-	count: number;
-	bytes: number;
-	digestHex: string;
-} {
-	const hasher = new Sha256Stream();
-	let count = 0;
-	let bytes = 0;
-	for (const fact of facts) {
-		const record = canonicalFactRecord(fact);
-		const recordBytes = utf8Len(record);
-		hasher.update(`${recordBytes}:${record}\n`);
-		count += 1;
-		bytes += recordBytes;
-	}
-	return { count, bytes, digestHex: hasher.digestHex() };
 }
 
 function gcd(a: number, b: number): number {

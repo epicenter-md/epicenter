@@ -58,11 +58,24 @@ export class Sha256Stream {
 	private blockLength = 0;
 	private totalBytes = 0;
 	private finalized = false;
+	/** A trailing UTF-16 high surrogate that may pair with the next string chunk. */
+	private pendingHighSurrogate: string | null = null;
 	private readonly words = new Uint32Array(64);
 
 	update(chunk: string): this {
 		if (this.finalized) throw new Error('Sha256Stream was already finalized');
-		const bytes = textEncoder.encode(chunk);
+		let text = `${this.pendingHighSurrogate ?? ''}${chunk}`;
+		this.pendingHighSurrogate = null;
+		const trailing = text.charCodeAt(text.length - 1);
+		if (trailing >= 0xd800 && trailing <= 0xdbff) {
+			this.pendingHighSurrogate = text.slice(-1);
+			text = text.slice(0, -1);
+		}
+		this.appendBytes(textEncoder.encode(text));
+		return this;
+	}
+
+	private appendBytes(bytes: Uint8Array): void {
 		this.totalBytes += bytes.length;
 		let offset = 0;
 		// Top off any partial block first, transform whole 64-byte blocks in place,
@@ -86,11 +99,14 @@ export class Sha256Stream {
 			this.block.set(bytes.subarray(offset), 0);
 			this.blockLength = bytes.length - offset;
 		}
-		return this;
 	}
 
 	digestHex(): string {
 		if (this.finalized) throw new Error('Sha256Stream was already finalized');
+		if (this.pendingHighSurrogate !== null) {
+			this.appendBytes(textEncoder.encode(this.pendingHighSurrogate));
+			this.pendingHighSurrogate = null;
+		}
 		this.finalized = true;
 		const bitLength = this.totalBytes * 8;
 		// One 0x80 byte, zero padding, then the 64-bit big-endian bit length. The

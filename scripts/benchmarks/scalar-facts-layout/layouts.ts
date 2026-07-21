@@ -5,9 +5,10 @@
  * `row_facts` / `value_facts`) and coordinate layout (inline structured
  * coordinates, or a normalized `coordinates` dictionary). The confirmed-facts DDL
  * is the proven shape from the historical monolith. The coordinate decision
- * applies to EVERY address-bearing owner table, so the auxiliary tables (pending
- * intents, parked work, row documents) carry the same inline-vs-normalized choice
- * and share the one coordinates dictionary under the normalized candidates.
+ * applies to EVERY address-bearing owner table, so pending intents, sealed
+ * submissions, parked work, row documents, and retry-parked work carry the same
+ * inline-vs-normalized choice and share the one coordinates dictionary under the
+ * normalized candidates.
  *
  * The store maps the V1-bound trace `Fact` to columns, installs confirmed facts
  * monotonically, populates the auxiliary tables from the auxiliary traces, and
@@ -33,6 +34,19 @@ export { CANDIDATES, type Candidate } from './candidates.js';
 const SAFE_SEQUENCE_MAX = Number.MAX_SAFE_INTEGER;
 const PAGE_SIZE = 4096;
 const CACHE_KIB = 16 * 1024;
+
+const auxiliaryTextCheck = (column: string) =>
+	`typeof(${column}) = 'text' AND length(${column}) > 0`;
+const auxiliaryRowIdCheck = (column: string) =>
+	`typeof(${column}) = 'text' AND length(${column}) = 24 AND ${column} NOT GLOB '*[^a-z0-9]*'`;
+
+function auxiliaryAddressRowIdCheck(kind: string, rowId: string): string {
+	return `CASE ${kind}
+		WHEN 'row' THEN ${auxiliaryRowIdCheck(rowId)}
+		WHEN 'value' THEN typeof(${rowId}) = 'text' AND ${rowId} = ''
+		ELSE 0
+	END`;
+}
 
 /** One confirmed fact projected to physical columns. */
 type Row = {
@@ -238,6 +252,26 @@ function confirmedFactsDdl(candidate: Candidate): string {
 	`;
 }
 
+function normalizedAuxiliaryAddressTriggers(
+	table: string,
+	rowOnly = false,
+): string {
+	const shape = rowOnly
+		? `(SELECT kind FROM coordinates WHERE coordinate_id = NEW.coordinate_id) = 'row'
+			AND ${auxiliaryRowIdCheck('NEW.row_id')}`
+		: auxiliaryAddressRowIdCheck(
+				'(SELECT kind FROM coordinates WHERE coordinate_id = NEW.coordinate_id)',
+				'NEW.row_id',
+			);
+	return `
+		CREATE TRIGGER ${table}_address_insert BEFORE INSERT ON ${table}
+		WHEN NOT (${shape})
+		BEGIN SELECT RAISE(ABORT, '${table} has an invalid address shape'); END;
+		CREATE TRIGGER ${table}_address_update BEFORE UPDATE OF coordinate_id, row_id ON ${table}
+		WHEN NOT (${shape})
+		BEGIN SELECT RAISE(ABORT, '${table} has an invalid address shape'); END;`;
+}
+
 /** Coordinate dictionary plus coordinate-aware auxiliary tables. */
 function coordinateAndAuxiliaryDdl(candidate: Candidate): string {
 	const normalized = candidate.coordinates === 'normalized';
@@ -263,7 +297,10 @@ function coordinateAndAuxiliaryDdl(candidate: Candidate): string {
 	// honor the same coordinate decision as the confirmed facts.
 	const addr = normalized
 		? 'coordinate_id INTEGER NOT NULL REFERENCES coordinates(coordinate_id), row_id TEXT NOT NULL'
-		: 'kind TEXT NOT NULL, namespace TEXT NOT NULL, local_key TEXT NOT NULL, row_id TEXT NOT NULL';
+		: `kind TEXT NOT NULL CHECK (typeof(kind) = 'text' AND kind IN ('row', 'value')),
+			namespace TEXT NOT NULL CHECK (${auxiliaryTextCheck('namespace')}),
+			local_key TEXT NOT NULL CHECK (${auxiliaryTextCheck('local_key')}),
+			row_id TEXT NOT NULL CHECK (${auxiliaryAddressRowIdCheck('kind', 'row_id')})`;
 	const addrPk = normalized
 		? '(coordinate_id, row_id)'
 		: '(kind, namespace, local_key, row_id)';
@@ -272,10 +309,21 @@ function coordinateAndAuxiliaryDdl(candidate: Candidate): string {
 		: 'kind, namespace, local_key, row_id';
 	const docAddr = normalized
 		? 'coordinate_id INTEGER NOT NULL REFERENCES coordinates(coordinate_id), row_id TEXT NOT NULL'
-		: 'namespace TEXT NOT NULL, table_key TEXT NOT NULL, row_id TEXT NOT NULL';
+		: `namespace TEXT NOT NULL CHECK (${auxiliaryTextCheck('namespace')}),
+			table_key TEXT NOT NULL CHECK (${auxiliaryTextCheck('table_key')}),
+			row_id TEXT NOT NULL CHECK (${auxiliaryRowIdCheck('row_id')})`;
 	const docPk = normalized
 		? '(coordinate_id, row_id)'
 		: '(namespace, table_key, row_id)';
+	const normalizedAddressTriggers = normalized
+		? [
+				normalizedAuxiliaryAddressTriggers('pending_intents'),
+				normalizedAuxiliaryAddressTriggers('parked_work'),
+				normalizedAuxiliaryAddressTriggers('row_documents', true),
+				normalizedAuxiliaryAddressTriggers('sealed_submissions'),
+				normalizedAuxiliaryAddressTriggers('retry_parked'),
+			].join('\n')
+		: '';
 	return `
 		${coordinates}
 		CREATE TABLE pending_intents (
@@ -317,6 +365,7 @@ function coordinateAndAuxiliaryDdl(candidate: Candidate): string {
 			limit_bytes INTEGER NOT NULL,
 			PRIMARY KEY (replica_id, ${addrPkColumns})
 		) WITHOUT ROWID;
+		${normalizedAddressTriggers}
 	`;
 }
 
@@ -371,7 +420,7 @@ export type LayoutStore = {
 	traverse(afterSequence: number, throughSequence: number): number;
 	/** Read the confirmed fact plus any replica pending-intent overlay for an address. */
 	overlayRead(address: Address): { confirmed: 0 | 1; pending: 0 | 1 };
-	/** Authority resume feed: rows with sequence greater than a watermark, ordered. */
+	/** Count a bounded authority resume feed after the sequence watermark. */
 	resumeFeed(afterSequence: number, limit: number): number;
 	/** Authority exact-retry settlement read: the replica's ledger and parked count. */
 	retrySettlementRead(replicaId: string): { found: 0 | 1; parked: number };
@@ -383,9 +432,10 @@ export type LayoutStore = {
 	 */
 	deleteRowWithDocument(address: RowAddress, sequence: number): void;
 	/**
-	 * Authority submission settlement: fold each intent into a confirmed fact at a
-	 * fresh monotonic sequence and record the replica retry ledger, in one
-	 * transaction. Returns the next free sequence.
+	 * Bounded authority-settlement scaffold: install each supplied fact at a fresh
+	 * monotonic sequence and record the replica retry ledger in one transaction.
+	 * This does not consume the sealed V1 work that the final operation requires.
+	 * Returns the next free sequence.
 	 */
 	settleSubmission(
 		replicaId: string,
@@ -761,8 +811,9 @@ export function createLayoutStore(
 			run();
 		},
 		settleSubmission(replicaId, intents, baseSequence, requestHash) {
-			// Fold each intent into a confirmed fact at a fresh monotonic sequence and
-			// record the replica retry ledger, in one transaction (authority settlement).
+			// Install each supplied fact at a fresh monotonic sequence and record the
+			// replica retry ledger in one transaction. The final operation must instead
+			// consume sealed V1 work, as documented in the benchmark's open gaps.
 			let sequence = baseSequence;
 			const run = database.transaction(() => {
 				for (const intent of intents) {

@@ -1,8 +1,8 @@
 /**
- * The owner operations must do real, distinct owner-specific work: overlay reads
- * against replica pending state, resume feed and settlement against authority
- * state, row-tombstone-plus-document cleanup in one transaction, and exact-retry
- * settlement reads. These back the owner metrics the pilot times.
+ * The bounded owner-operation scaffold exercises replica overlays, authority
+ * resume/retry reads, failure-atomic row-document cleanup, and fact-shaped
+ * settlement inputs. It does not claim the final settlement contract's sealed V1
+ * work consumption, which remains an explicit README gap.
  */
 
 import { Database } from 'bun:sqlite';
@@ -69,18 +69,19 @@ describe('replica overlay read sees pending state', () => {
 	}
 });
 
-describe('authority resume feed and settlement read', () => {
+describe('authority resume feed count and retry-state read', () => {
 	for (const candidate of CANDIDATES) {
 		test(candidate.id, () => {
 			const t = trace();
 			const { store, aux } = build(candidate, t, 'authority');
-			// Resume feed from sequence 0 returns up to the requested limit, in order.
+			// The public operation exposes the bounded result count, not row order.
 			expect(store.resumeFeed(0, 100)).toBe(100);
 			// The retry ledger the authority owns is readable per replica.
-			const replicaId = at(aux.retry.entries, 0).replicaId;
+			const retry = at(aux.retry.entries, 0);
+			const replicaId = retry.replicaId;
 			const read = store.retrySettlementRead(replicaId);
 			expect(read.found).toBe(1);
-			expect(read.parked).toBeGreaterThanOrEqual(0);
+			expect(read.parked).toBe(retry.parked.length);
 		});
 	}
 });
@@ -145,6 +146,21 @@ describe('row tombstone plus document cleanup is one transaction', () => {
 				table: docRow.tk,
 				rowId: docRow.rid,
 			};
+			const documentCountStatement = db.prepare(
+				candidate.coordinates === 'normalized'
+					? 'SELECT COUNT(*) AS n FROM row_documents d JOIN coordinates c USING(coordinate_id) WHERE c.namespace=? AND c.local_key=? AND d.row_id=?'
+					: 'SELECT COUNT(*) AS n FROM row_documents WHERE namespace=? AND table_key=? AND row_id=?',
+			);
+			const documentCount = (): number =>
+				(
+					documentCountStatement.get(
+						address.namespace,
+						address.table,
+						address.rowId,
+					) as {
+						n: number;
+					}
+				).n;
 			const maxSeq = (
 				db
 					.prepare(
@@ -154,24 +170,28 @@ describe('row tombstone plus document cleanup is one transaction', () => {
 					)
 					.get() as { m: number }
 			).m;
+			const beforeFact = store.pointRead(address);
+			expect(beforeFact?.present).toBe(1);
+			expect(documentCount()).toBe(1);
+
+			// Force the second operation to fail after the tombstone write. Both the
+			// confirmed fact and document must return to their pre-transaction state.
+			db.exec(`CREATE TRIGGER refuse_document_delete BEFORE DELETE ON row_documents
+				BEGIN SELECT RAISE(ABORT, 'injected document delete failure'); END;`);
+			expect(() => store.deleteRowWithDocument(address, maxSeq + 1)).toThrow();
+			expect(store.pointRead(address)).toEqual(beforeFact);
+			expect(documentCount()).toBe(1);
+			db.exec('DROP TRIGGER refuse_document_delete');
+
 			store.deleteRowWithDocument(address, maxSeq + 1);
 			// The row is now a terminal tombstone and its document bytes are gone.
 			expect(store.pointRead(address)?.present).toBe(0);
-			const remaining = (
-				db
-					.prepare(
-						candidate.coordinates === 'normalized'
-							? 'SELECT COUNT(*) AS n FROM row_documents d JOIN coordinates c USING(coordinate_id) WHERE c.namespace=? AND c.local_key=? AND d.row_id=?'
-							: 'SELECT COUNT(*) AS n FROM row_documents WHERE namespace=? AND table_key=? AND row_id=?',
-					)
-					.get(address.namespace, address.table, address.rowId) as { n: number }
-			).n;
-			expect(remaining).toBe(0);
+			expect(documentCount()).toBe(0);
 		});
 	}
 });
 
-describe('authority submission settlement folds intents at fresh sequences', () => {
+describe('authority settlement installs supplied facts at fresh sequences', () => {
 	for (const candidate of CANDIDATES) {
 		test(candidate.id, () => {
 			const t = trace();
@@ -205,8 +225,11 @@ describe('authority submission settlement folds intents at fresh sequences', () 
 			);
 			expect(next).toBe(maxSeq + 1 + 3);
 			// Each settled intent is now a present confirmed fact.
-			for (const intent of intents) {
-				expect(store.pointRead(intent.address)?.present).toBe(1);
+			for (const [index, intent] of intents.entries()) {
+				expect(store.pointRead(intent.address)).toEqual({
+					present: 1,
+					sequence: maxSeq + 1 + index,
+				});
 			}
 			expect(store.retrySettlementRead('replica0000000000000000ab').found).toBe(
 				1,

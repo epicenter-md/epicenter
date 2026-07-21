@@ -59,6 +59,19 @@ describe('the trace is bound to the V1 kernel', () => {
 		expect(report.shapes.rowAbsent).toBeGreaterThan(0);
 		expect(report.shapes.valuePresent).toBeGreaterThan(0);
 		expect(report.shapes.valueAbsent).toBeGreaterThan(0);
+		expect(
+			Object.values(report.shapes).reduce((sum, count) => sum + count, 0),
+		).toBe(BASE.facts);
+		// Even a tiny stride must include the first occurrence of every event shape,
+		// including the late absent cohorts beyond the initial-install prefix.
+		const tinySample = verifyTraceV1Binding(trace(), pilotLimits(), {
+			sampleSize: 2,
+		});
+		expect(tinySample.bound).toBe(true);
+		expect(tinySample.eventShapes.rowPresent).toBeGreaterThan(0);
+		expect(tinySample.eventShapes.rowAbsent).toBeGreaterThan(0);
+		expect(tinySample.eventShapes.valuePresent).toBeGreaterThan(0);
+		expect(tinySample.eventShapes.valueAbsent).toBeGreaterThan(0);
 	});
 
 	test('a corpus missing an absent shape fails the binding (non-vacuous)', () => {

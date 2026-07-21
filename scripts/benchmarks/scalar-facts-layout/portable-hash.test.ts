@@ -44,15 +44,25 @@ describe('byte-identical to the kernel sha256Hex', () => {
 
 describe('chunk-boundary independence', () => {
 	test('the digest depends only on concatenated bytes, not chunk splits', () => {
-		const whole = `${'y'.repeat(200)}€${'z'.repeat(133)}`;
+		const whole = `${'y'.repeat(200)}€😀${'z'.repeat(133)}`;
 		const reference = sha256Hex(whole);
-		// Split at every boundary from 0..length, including inside the multibyte glyph.
-		for (let cut = 0; cut <= whole.length; cut += 7) {
+		// Split at every UTF-16 boundary, including between the emoji's surrogate halves.
+		for (let cut = 0; cut <= whole.length; cut += 1) {
 			const hasher = new Sha256Stream();
 			hasher.update(whole.slice(0, cut));
 			hasher.update(whole.slice(cut));
 			expect(hasher.digestHex()).toBe(reference);
 		}
+	});
+
+	test('a buffered high surrogate retains normal lone-surrogate encoding', () => {
+		const whole = 'before\ud83dafter';
+		expect(
+			new Sha256Stream().update('before\ud83d').update('after').digestHex(),
+		).toBe(sha256Hex(whole));
+		expect(new Sha256Stream().update('\ud83d').digestHex()).toBe(
+			sha256Hex('\ud83d'),
+		);
 	});
 
 	test('many tiny chunks equal one big chunk', () => {

@@ -8,17 +8,12 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import {
-	canonicalize,
-	sha256Hex,
-	utf8ByteLength,
-} from '../../../packages/data/src/protocol/v1/canonical.js';
+import { canonicalize } from '../../../packages/data/src/protocol/v1/canonical.js';
 import {
 	type Address,
 	addressKey,
 	canonicalFactRecord,
 	type Fact,
-	factSetDigest,
 	factsForPresentTarget,
 	logicalRecord,
 	makeTrace,
@@ -77,7 +72,7 @@ const VALUE_ADDRESS: Address = {
 	value: 'settingx',
 };
 
-describe('independent fold laws', () => {
+describe('independent test-oracle fold laws', () => {
 	test('a row tombstone cannot be resurrected', () => {
 		const oracle = new SmokeOracle();
 		oracle.apply({
@@ -316,37 +311,6 @@ describe('dense unique sequences', () => {
 	});
 });
 
-describe('strong ordered digest', () => {
-	const trace = makeTrace({
-		...BASE,
-		targetLogicalStateBytes: BASE.facts * 200,
-	});
-	const facts: Fact[] = [];
-	for (let index = 0; index < 200; index += 1)
-		facts.push(trace.finalFactAt(index));
-	const base = factSetDigest(facts);
-
-	test('a single changed record changes the digest', () => {
-		const changed = facts.slice();
-		const f = changed[3];
-		if (f === undefined) throw new Error('missing sample');
-		changed[3] = { ...f, sequence: f.sequence + 1_000_000 };
-		expect(factSetDigest(changed).digestHex).not.toBe(base.digestHex);
-	});
-	test('a missing record changes count and digest', () => {
-		const w = factSetDigest(facts.slice(1));
-		expect(w.count).toBe(base.count - 1);
-		expect(w.digestHex).not.toBe(base.digestHex);
-	});
-	test('a duplicated record changes count and digest', () => {
-		const first = facts[0];
-		if (first === undefined) throw new Error('missing sample');
-		const w = factSetDigest([first, ...facts]);
-		expect(w.count).toBe(base.count + 1);
-		expect(w.digestHex).not.toBe(base.digestHex);
-	});
-});
-
 describe('actual V1 canonical bytes', () => {
 	test('a fact record is the kernel canonicalize of the real Fact shape', () => {
 		const fact: Fact = {
@@ -412,28 +376,6 @@ describe('max fact-size ceiling gate (ADR-0163)', () => {
 	});
 });
 
-describe('digest framing uses UTF-8 byte length', () => {
-	test('a multibyte record is framed by its UTF-8 length', () => {
-		const fact: Fact = {
-			address: {
-				kind: 'value',
-				namespace: 'so.epicenter.ns00',
-				value: 'settingu',
-			},
-			sequence: 1,
-			presence: 'present',
-			content: '€uro\u{1f600}',
-		};
-		const record = canonicalFactRecord(fact);
-		// A multibyte payload makes UTF-16 length differ from UTF-8 length.
-		expect(record.length).not.toBe(utf8ByteLength(record));
-		// Independent oracle: the kernel's one-shot sha256Hex over the same framed
-		// string must equal the trace's streaming digest.
-		const framed = `${utf8ByteLength(record)}:${record}\n`;
-		expect(factSetDigest([fact]).digestHex).toBe(sha256Hex(framed));
-	});
-});
-
 describe('terminal rows carry a representative initial payload', () => {
 	test('a later-tombstoned row still has a non-empty initial body', () => {
 		const trace = makeTrace({
@@ -462,10 +404,11 @@ describe('terminal rows carry a representative initial payload', () => {
 
 describe('lifecycle coverage', () => {
 	test('the corpus exercises every aging lifecycle', () => {
-		const observed = makeTrace({
+		const trace = makeTrace({
 			...BASE,
 			targetLogicalStateBytes: BASE.facts * 200,
-		}).observed();
+		});
+		const observed = trace.observed();
 		expect(observed.rewrites).toBeGreaterThan(0);
 		expect(observed.rowTombstones).toBeGreaterThan(0);
 		expect(observed.valueUnsets).toBeGreaterThan(0);
@@ -473,6 +416,13 @@ describe('lifecycle coverage', () => {
 		expect(observed.initialAbsentThenPresent).toBeGreaterThan(0);
 		expect(observed.finalPresent + observed.finalAbsent).toBe(BASE.facts);
 		expect(observed.values + observed.rows).toBe(BASE.facts);
+		expect(Array.from(trace.events())).toHaveLength(
+			observed.facts +
+				observed.rewrites +
+				observed.rowTombstones +
+				observed.valueUnsets +
+				observed.valueResurrections,
+		);
 	});
 });
 

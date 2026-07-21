@@ -99,6 +99,13 @@ export type V1BindingReport = {
 		valuePresent: number;
 		valueAbsent: number;
 	};
+	/** Checked build/aging event shapes, sampled across the full lifecycle. */
+	eventShapes: {
+		rowPresent: number;
+		rowAbsent: number;
+		valuePresent: number;
+		valueAbsent: number;
+	};
 	/** First few human-readable reasons the binding failed, empty when bound. */
 	failures: string[];
 };
@@ -124,10 +131,8 @@ function shapeOf(fact: Fact): keyof V1BindingReport['shapes'] {
 function checkFact(
 	fact: Fact,
 	limits: ValidatedLimits,
-	shapes: V1BindingReport['shapes'],
 	failures: string[],
 ): boolean {
-	shapes[shapeOf(fact)] += 1;
 	const record = canonicalFactRecord(fact);
 	const traceBytes = utf8Len(record);
 	const kernelBytes = encodedFactBytes(fact);
@@ -218,28 +223,52 @@ export function verifyTraceV1Binding(
 		shapes[shape] += 1;
 		const firstOfShape = !parseChecked[shape];
 		if (firstOfShape || strideSet.has(index)) {
-			if (!checkFact(fact, limits, shapes, failures)) allPassed = false;
+			if (!checkFact(fact, limits, failures)) allPassed = false;
 			parseChecked[shape] = true;
 			checkedFacts += 1;
 		}
 	}
 
-	// Build/aging events: a prefix so the pre-final present facts (initial payload,
-	// phase-1 rewrites, phase-2 resurrections) are parse-checked too, not only final
-	// state. Their shape hits accumulate in a separate counter so the reported
-	// distribution stays exactly the final-corpus scan above.
-	let seen = 0;
+	// Build/aging events: a deterministic stride over the entire lifecycle, not a
+	// prefix that can stop inside initial installation on a large trace. Their shape
+	// hits accumulate separately so the reported distribution remains exactly the
+	// final-corpus scan above.
+	const observed = trace.observed();
+	const eventCount =
+		observed.facts +
+		observed.rewrites +
+		observed.rowTombstones +
+		observed.valueUnsets +
+		observed.valueResurrections;
+	const eventStride = new Set(stridedIndices(eventCount, options.sampleSize));
 	const eventShapes = {
 		rowPresent: 0,
 		rowAbsent: 0,
 		valuePresent: 0,
 		valueAbsent: 0,
 	};
+	const checkedEventShapes = {
+		rowPresent: false,
+		rowAbsent: false,
+		valuePresent: false,
+		valueAbsent: false,
+	};
+	let eventIndex = 0;
 	for (const fact of trace.events()) {
-		if (seen >= options.sampleSize) break;
-		if (!checkFact(fact, limits, eventShapes, failures)) allPassed = false;
-		checkedFacts += 1;
-		seen += 1;
+		const shape = shapeOf(fact);
+		if (!checkedEventShapes[shape] || eventStride.has(eventIndex)) {
+			eventShapes[shape] += 1;
+			if (!checkFact(fact, limits, failures)) allPassed = false;
+			checkedEventShapes[shape] = true;
+			checkedFacts += 1;
+		}
+		eventIndex += 1;
+	}
+	if (eventIndex !== eventCount) {
+		allPassed = false;
+		failures.push(
+			`event count disagreed with the analytical lifecycle: iterated ${eventIndex}, expected ${eventCount}`,
+		);
 	}
 
 	// A corpus that never exercised a shape must not pass vacuously: require all
@@ -260,5 +289,5 @@ export function verifyTraceV1Binding(
 		);
 	}
 
-	return { bound: allPassed, checkedFacts, shapes, failures };
+	return { bound: allPassed, checkedFacts, shapes, eventShapes, failures };
 }

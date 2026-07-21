@@ -37,13 +37,13 @@ const BASE: Omit<TraceOptions, 'targetLogicalStateBytes'> = {
 
 const EXPECTED_DDL_HASHES: Readonly<Record<string, string>> = {
 	'unified-inline':
-		'4ee46a69403c6ed7cf0cfd767370708ccf3a05753db3255e89a88b2de8f3dd8c',
+		'1093bb463ec2a950bd08d1d2629c78c72f176dc46bcb298f5741194b6e167ab8',
 	'unified-normalized':
-		'92fb00af3b6deae10fca1df676b4f96037b4165c7b09c0385e8a61fcfbd3dfbc',
+		'64415cedefddd379b04366bb36f59be76d52dc1d50efb0d5b7c1d3a14cd7f803',
 	'split-inline':
-		'5ebceb75a3edf16043f3890cd42e6318e8aeeece6dc4d86f8b84deecb8e61859',
+		'237ea825ee1d189d5d395c25afdd37e08b2043a95a9bfefd1cfb9188953f0e58',
 	'split-normalized':
-		'701a374bd3c07f2cb1b494e0049a94c5606e24dc0e34fda2c0cc136b0c267722',
+		'253ba69ee8377d315275de39808f4bb1724ca60c0ad856d66111fb354dcfee83',
 };
 
 function trace(seed = 3): Trace {

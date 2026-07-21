@@ -7,6 +7,7 @@
  * - a value unset is non-terminal and may be replaced;
  * - unified normalized must not hold multiple physical rows for one value address;
  * - split normalized must reject a fact referencing the wrong coordinate kind;
+ * - every auxiliary table must reject malformed or mismatched addresses;
  * - coordinates are immutable, so no UPDATE/DELETE/REPLACE can reinterpret a fact.
  */
 
@@ -126,6 +127,136 @@ describe('coordinates are immutable (normalized candidates)', () => {
 			).toThrow();
 			// The fact still reads as a present row: nothing was reinterpreted.
 			expect(store.pointRead(rowAddr(ID_A))?.present).toBe(1);
+		});
+	}
+});
+
+describe('auxiliary tables enforce structured address invariants', () => {
+	for (const candidate of CANDIDATES) {
+		test(`${candidate.id}: hostile inserts cannot bypass address shape`, () => {
+			const { db } = fresh(candidate);
+			if (candidate.coordinates === 'inline') {
+				expect(() =>
+					db.run(
+						'INSERT INTO pending_intents (kind,namespace,local_key,row_id,present,payload) VALUES (?,?,?,?,?,?)',
+						['other', 'ns', 'key', '', 0, null],
+					),
+				).toThrow();
+				expect(() =>
+					db.run(
+						'INSERT INTO pending_intents (kind,namespace,local_key,row_id,present,payload) VALUES (?,?,?,?,?,?)',
+						['value', 'ns', 'key', ID_A, 0, null],
+					),
+				).toThrow();
+				expect(() =>
+					db.run(
+						'INSERT INTO parked_work (kind,namespace,local_key,row_id,code,measured_bytes,limit_bytes) VALUES (?,?,?,?,?,?,?)',
+						['row', '', 'key', ID_A, 'code', 2, 1],
+					),
+				).toThrow();
+				expect(() =>
+					db.run(
+						'INSERT INTO sealed_submissions (kind,namespace,local_key,row_id,submission_number,present,payload) VALUES (?,?,?,?,?,?,?)',
+						['row', 'ns', '', ID_A, 1, 0, null],
+					),
+				).toThrow();
+				expect(() =>
+					db.run(
+						'INSERT INTO retry_parked (replica_id,kind,namespace,local_key,row_id,code,measured_bytes,limit_bytes) VALUES (?,?,?,?,?,?,?,?)',
+						['replica', 'row', 'ns', 'key', 'short', 'code', 2, 1],
+					),
+				).toThrow();
+				expect(() =>
+					db.run(
+						'INSERT INTO row_documents (namespace,table_key,row_id,baseline,tail) VALUES (?,?,?,?,?)',
+						['ns', 'table', 'short', new Uint8Array(), new Uint8Array()],
+					),
+				).toThrow();
+				expect(() =>
+					db.run(
+						'INSERT INTO row_documents (namespace,table_key,row_id,baseline,tail) VALUES (?,?,?,?,?)',
+						['ns', '', ID_A, new Uint8Array(), new Uint8Array()],
+					),
+				).toThrow();
+				return;
+			}
+
+			for (const values of [
+				['other', 'ns', 'key'],
+				['row', '', 'key'],
+				['row', 'ns', ''],
+			] as const) {
+				expect(() =>
+					db.run(
+						'INSERT INTO coordinates (kind,namespace,local_key) VALUES (?,?,?)',
+						[...values],
+					),
+				).toThrow();
+			}
+			db.run(
+				"INSERT INTO coordinates (kind,namespace,local_key) VALUES ('row','ns','table'),('value','ns','setting')",
+			);
+			const rowCoordinate = (
+				db
+					.prepare(
+						"SELECT coordinate_id AS id FROM coordinates WHERE kind='row'",
+					)
+					.get() as { id: number }
+			).id;
+			const valueCoordinate = (
+				db
+					.prepare(
+						"SELECT coordinate_id AS id FROM coordinates WHERE kind='value'",
+					)
+					.get() as { id: number }
+			).id;
+
+			expect(() =>
+				db.run(
+					'INSERT INTO pending_intents (coordinate_id,row_id,present,payload) VALUES (?,?,?,?)',
+					[rowCoordinate, '', 0, null],
+				),
+			).toThrow();
+			expect(() =>
+				db.run(
+					'INSERT INTO parked_work (coordinate_id,row_id,code,measured_bytes,limit_bytes) VALUES (?,?,?,?,?)',
+					[valueCoordinate, ID_A, 'code', 2, 1],
+				),
+			).toThrow();
+			expect(() =>
+				db.run(
+					'INSERT INTO sealed_submissions (coordinate_id,row_id,submission_number,present,payload) VALUES (?,?,?,?,?)',
+					[rowCoordinate, 'short', 1, 0, null],
+				),
+			).toThrow();
+			expect(() =>
+				db.run(
+					'INSERT INTO retry_parked (replica_id,coordinate_id,row_id,code,measured_bytes,limit_bytes) VALUES (?,?,?,?,?,?)',
+					['replica', valueCoordinate, ID_A, 'code', 2, 1],
+				),
+			).toThrow();
+			expect(() =>
+				db.run(
+					'INSERT INTO row_documents (coordinate_id,row_id,baseline,tail) VALUES (?,?,?,?)',
+					[valueCoordinate, ID_A, new Uint8Array(), new Uint8Array()],
+				),
+			).toThrow();
+
+			// UPDATE cannot bypass the same kind/row-id and row-document rules.
+			db.run(
+				'INSERT INTO pending_intents (coordinate_id,row_id,present,payload) VALUES (?,?,?,?)',
+				[rowCoordinate, ID_A, 0, null],
+			);
+			expect(() =>
+				db.run('UPDATE pending_intents SET coordinate_id=?', [valueCoordinate]),
+			).toThrow();
+			db.run(
+				'INSERT INTO row_documents (coordinate_id,row_id,baseline,tail) VALUES (?,?,?,?)',
+				[rowCoordinate, ID_A, new Uint8Array(), new Uint8Array()],
+			);
+			expect(() =>
+				db.run('UPDATE row_documents SET coordinate_id=?', [valueCoordinate]),
+			).toThrow();
 		});
 	}
 });
