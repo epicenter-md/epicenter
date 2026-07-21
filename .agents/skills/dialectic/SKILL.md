@@ -34,7 +34,7 @@ Do not treat these as separate phases.
 
 - Use [one-sentence-test](../one-sentence-test/SKILL.md) to compress the shared
   model once it is substantially coherent.
-- Hand a settled destination to
+- Hand an accepted greenfield destination to
   [greenfield-clean-breaks](../greenfield-clean-breaks/SKILL.md) when the
   current system must be worked backward into owner changes, deletion waves,
   and asymmetric refusals.
@@ -138,7 +138,8 @@ consequences become visible. A durable constraint may rule out both.
 Resolve differences by finding the premise, value, distinction, or consequence
 that makes the models diverge. Preserve disagreement while it remains real.
 Do not hide competing models behind "or", "also", "sometimes", or compatibility
-language merely to produce agreement.
+language merely to produce agreement, and do not begin backward planning until
+the divergence is resolved.
 
 If the conversation stalls, state the exact divergence, explain what evidence
 or decision would resolve it, and recommend a side. Repository investigation
@@ -152,6 +153,11 @@ participants can reason forward from it, anticipate its important
 consequences, and recognize what would violate it. They do not need identical
 private models or matching words.
 
+The accepted destination should normally be an uncompromised greenfield
+vision: the system worth building with inherited implementation choices
+suspended. This defines the end state; it does not yet plan the path through
+the current system.
+
 Do not infer convergence from silence, fatigue, partial approval, or the
 absence of another objection. Ask the user to recognize the complete model,
 including its important refusals and consequences. A consequential mismatch or
@@ -161,7 +167,7 @@ Once recognized, freeze the live model into a compact destination artifact:
 
 ```txt
 Accepted destination:
-  One concrete product or system sentence.
+  One concrete, uncompromising product or system sentence.
 
 Mental model:
   The central objects, verbs, boundaries, and owner.
@@ -174,6 +180,10 @@ Refusals and non-goals:
 
 Consequences:
   The important tradeoffs and implications the user accepted.
+
+Recognition test:
+  What would be observably true if this destination existed, and what would
+  clearly violate it.
 ```
 
 If the artifact cannot stay succinct, run the one-sentence test and continue
@@ -188,8 +198,9 @@ Thinking-only request:
   Return the accepted destination and stop.
 
 Existing-system replacement:
-  Load greenfield-clean-breaks, bring the full current system back into view,
-  and work backward through owner changes, deletion waves, verification, and
+  Treat the accepted destination as the uncompromised greenfield vision. Load
+  greenfield-clean-breaks, bring the full current system back into view, and
+  work backward through owner changes, deletion waves, verification, and
   old-path removal.
 
 Durable architectural decision:
@@ -209,6 +220,7 @@ Did I make the reasoning inhabitable rather than only state conclusions?
 Did the user's questions and reactions materially update the shared model?
 Did I expose and pressure the most important divergence or consequence?
 Can both participants reason forward from the resulting model?
-Did the user explicitly recognize its destination, refusals, and consequences?
+Did the user explicitly recognize its destination, refusals, consequences, and
+recognition test?
 Is the next move clearly thinking-only, clean-break execution, or ADR capture?
 ```
