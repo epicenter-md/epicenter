@@ -188,6 +188,21 @@ Lens interprets one durable namespace; its `namespace`, `title`, and
 the durable local keys. There is no redundant definition `key`, independent
 Lens ID, database ID, workspace ID, schema registry, or complete model.
 
+The property names under a table's `fields` object are likewise the exact
+permanent field keys. The nested field value is only its JSON Schema and
+semantic annotations; a `field.*` schema alone is not an identified field and
+has no redundant `id` or `key`. This key comes from the Lens definition even
+when an optional row does not contain a value for it. Changing `title` is a
+display rename. Changing the object key addresses a new field and any data copy
+or removal is explicit application work. Row ID remains separate runtime-minted
+structural identity and cannot be declared in `fields`.
+
+One identity rule holds throughout: the containing owner supplies identity. A
+Lens supplies its namespace, definition maps supply durable table, value, and
+field keys, and the runtime supplies row IDs. A Lens interprets these names; it
+does not rename them. Only the outer multi-Lens binding uses ergonomic member
+aliases because those names identify no durable data.
+
 One application may bind several Lenses. Property names in that outer binding
 are ergonomic aliases only. Multiple partial Lenses may interpret the same
 namespace or address; none becomes canonical. Binding validates each Lens,
@@ -196,8 +211,10 @@ typed access.
 
 The authoring helpers constrain `optional` entries to the table's field keys.
 `parseLens(unknown)` validates the same closed JSON shape, supported field
-vocabulary, and semantic cross-field rules for artifacts read from disk. A
-runtime validator is derived and ephemeral, never persisted as Lens state.
+vocabulary, and semantic cross-field rules for artifacts read from disk. It
+rejects a nested field `id` or `key` rather than accepting a second identity
+namespace. A runtime validator is derived and ephemeral, never persisted as
+Lens state.
 
 Namespace keys use collision-resistant reverse-domain naming. Table and value
 keys are short local identifiers. Freeze their bounded grammar once at the
@@ -716,7 +733,7 @@ retention floors, acquisition scratch, lineage recovery
 per-database clear, capture, merge, reset, export state machines
 permanent retired-row relation separate from latest state
 application SQL escape hatches, private-schema dependencies, projection DTOs
-flat qualified data keys, redundant table/value key properties
+flat qualified data keys, redundant table/value/field key properties
 generic authority scheduler
 workspace compatibility barrel
 ```
@@ -728,6 +745,10 @@ without learning historical vocabulary:
 
 - What data do I define? A pure JSON Lens for one namespace, with tables and
   values whose property names complete durable addresses.
+- Where does field identity live? In each member name of a table's `fields`
+  object, never in a nested `id` or `key`.
+- Does a Lens rename durable data? No. Application-local projection owns private
+  code-facing names.
 - How do I use several namespaces? Bind several borrowed Lenses.
 - Who owns the data? One person through one Epicenter.
 - Where is it stored? One complete replica per adapter isolation boundary.

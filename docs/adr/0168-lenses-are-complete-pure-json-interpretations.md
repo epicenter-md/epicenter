@@ -25,6 +25,36 @@ They preserve literal keys and derive ergonomic static types, but return the
 same canonical JSON shape accepted from disk. TypeBox field builders are
 canonicalized into their JSON Schema representation at this boundary.
 
+Member names in the Lens's definition maps carry durable identity. In this
+definition:
+
+```json
+{
+  "fields": {
+    "transcript": {
+      "type": "string",
+      "title": "Transcript"
+    }
+  }
+}
+```
+
+`transcript` is the exact permanent field key, while the nested object is only
+the present-value schema and its semantic annotations. `field.string()` alone
+does not define an identified field; the containing `fields` entry does. It
+does not repeat that key in an `id` or `key` property. This does not require
+every stored row to contain `transcript`: the table's `optional` list decides
+whether that key may be absent when the Lens interprets a row. The
+runtime-owned row ID is separate structural identity and cannot appear in
+`fields`.
+
+This follows one identity rule across the model: the containing owner supplies
+identity. The Lens supplies its namespace, the `tables` and `values` objects
+supply their durable local keys, the `fields` object supplies field keys, and
+the runtime supplies row IDs. A Lens contains no name mapping at any level. The
+outer object passed to a multi-Lens bind may use ergonomic aliases only because
+those member names identify no durable data.
+
 `parseLens(unknown)` is the single legitimacy law for arbitrary Lens JSON. It:
 
 1. validates the closed outer Lens, table, and value structures;
@@ -34,8 +64,9 @@ canonicalized into their JSON Schema representation at this boundary.
 
 Those semantic checks include namespace and local-key grammar, unknown or
 duplicate optional field names, and any future cross-field constraints. Invalid
-installed Lenses remain visible as broken artifacts with a concrete parse error;
-Home does not silently discard them.
+installed Lenses remain visible as broken artifacts with a concrete parse error.
+The closed field vocabulary rejects a nested `id` or `key`; Home does not
+silently discard either property.
 
 Every Lens requires `namespace`, `title`, and `description`. Every table and
 value requires `title`; their descriptions and field-level title and description
@@ -59,11 +90,16 @@ later only if it changes neither Lens validity nor observable semantics.
   an application's JavaScript.
 - TypeScript and JSON have one semantic representation rather than parallel
   source and manifest formats.
+- A field's name in application code, stored JSON, diagnostics, and Home
+  inspection is always the same permanent key.
 - Any valid parsed Lens can reconstruct all runtime validation behavior.
 - Optionality is explicit, type-safe for authors, and directly checkable from
   untrusted JSON.
 - UI preferences can evolve independently without making a data interpretation
   look different merely because it was installed on another device.
+- Changing a field's application property name changes which stored key it
+  addresses. A code-facing rename that must not touch storage is ordinary local
+  projection in application code, not Lens configuration.
 
 ## Considered alternatives
 
@@ -72,6 +108,19 @@ later only if it changes neither Lens validity nor observable semantics.
   currently resemble JSON Schema.
 - **Store source code and execute it to recover a Lens.** Rejected because Home
   must inspect untrusted installed artifacts without granting code execution.
+- **Give every field a required nested `id` and treat its object key as an
+  ergonomic alias.** A required ID would map deterministically to one storage
+  key, and `parseLens` could reject duplicates. It is rejected because durable
+  keys are the interoperation vocabulary: raw inspection, diagnostics, agents,
+  references, and other Lenses over the same table must still speak the stored
+  key. A per-Lens alias therefore disappears exactly where sharing happens and
+  buys only a private code-facing rename that application-local projection
+  already provides. It would also make fields the only address coordinate with
+  two names and would either wrap every field schema or put identity metadata
+  inside a schema that describes stored values only ([ADR-0169](0169-row-references-are-non-enforcing-table-interpretations.md)).
+  This design refuses that rename promise: change `title` for display, project
+  locally for code ergonomics, or use a new field key with explicit writes when
+  stored data must move.
 - **Use nullable schemas instead of optional fields.** Rejected because `null`
   is a value while absence is a row-shape fact.
 - **Persist or require compiled validators.** Rejected because they are derived

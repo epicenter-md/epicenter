@@ -153,8 +153,11 @@ shapes, see `docs/adr/`.
   was deleted. It carries no application payload and remains so an indefinitely
   offline or restored replica cannot recreate that row lifetime. Value unset is
   nonterminal latest state and may be replaced by a later set.
-- **Field key**: the exact permanent JSON key named by a table definition. There
-  is no fallback key, alias, automatic rename, or storage default.
+- **Field key**: the exact permanent member name under a table definition's
+  `fields` object. The Lens supplies it even when an optional row has no value
+  for that key. A field schema has no separate `id` or `key`; there is no
+  fallback key, alias, automatic rename, or storage default. The containing
+  definition supplies identity just as the runtime supplies a row's ID.
 - **Field**: one `field.*` schema for a present JSON value. Table fields are
   required by default; a table's `optional` key array names fields that may be
   absent. Missing and `null` remain distinct.
