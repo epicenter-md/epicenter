@@ -65,7 +65,8 @@ Cloudflare scale proof before ADR-0163 is Accepted. This tool reports a
 `legacy-bun-diagnostic` summary with `decisionEligible: false`; it does not emit
 the frozen classifier's `invalid`, `incomplete`, `provisional`, or
 `ready-for-ADR-review` statuses. The live diagnostic report uses schema version
-4.
+4. The retained historical schema-v3 artifact has incompatible fields and is
+documented separately under `docs/benchmarks/scalar-facts-layout/`.
 
 ### The 512 MiB / 1,000,000-live-address target is not a portability guarantee
 
