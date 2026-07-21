@@ -1,26 +1,28 @@
 ---
 name: consult-claude
-description: Give Claude one fresh, read-only adversarial memo on Codex's grounded synthesis. Use when the user asks Codex to consult Claude or when an independent reasoning trajectory would materially reduce risk in a high-stakes, ambiguous, architectural, product, planning, or clean-break decision; Codex may invoke it autonomously after forming an evidence-backed read. Do not use for implementation, an obvious bounded decision, or a continuing Claude conversation.
+description: Give Claude one fresh, read-only, evidence-seeking adversarial memo on Codex's grounded synthesis. Use when the user asks Codex to consult Claude or when an independent investigation would materially reduce risk in a high-stakes, ambiguous, architectural, product, planning, or clean-break decision; Codex may invoke it autonomously after forming an evidence-backed read. Do not use for implementation, an obvious bounded decision, or a continuing Claude conversation.
 ---
 
 # Consult Claude
 
-The consult-claude skill gives Claude one fresh opportunity to attack Codex's
-decision-complete synthesis. The user owns product direction. Codex owns the
-user dialectic, escalation decision, packet, verification, reconciliation, and
-final recommendation. Claude owns one strong adversarial memo. The runner keeps
-that consultation tool-free, observable, and bounded.
+Consult Claude gives one fresh reasoning trajectory enough read access to
+investigate and attack Codex's grounded synthesis. The user owns product
+direction. Codex owns the user dialectic, consultation boundary,
+reconciliation, and final recommendation. Claude owns the independent
+investigation and one evidence-backed adversarial memo. The runner enforces
+read-only authority and a bounded lifetime.
 
 Codex may escalate autonomously when getting the judgment wrong would cost
 substantially more than the additional latency and quota. Announce the
 consultation and why it earns the escalation before starting it. Do not consult
 to avoid forming a grounded position first.
 
-## Build the packet
+## Ground the challenge
 
-Read the evidence Claude should not have to rediscover. Include content rather
-than only paths because Claude has no file tools. Preserve selected verbatim
-directional data when Codex's summary would smooth away the user's taste.
+Read enough evidence to state a positive synthesis before consulting. Give
+Claude the sources and directional data that explain that synthesis, but do not
+close the record around Codex's evidence selection. Preserve verbatim user
+reactions when summarizing them would flatten the user's taste.
 
 Start every packet with this mandate:
 
@@ -29,9 +31,16 @@ Mandate:
   Attack the synthesis as a whole. Surface inherited assumptions and hidden
   compromises, articulate the strongest rival, test the important failure
   modes, and recommend the best direction. Propose collapse or a clean break
-  when the evidence earns it, not as a default. Return one decisive memo. Do
-  not ask the user questions, inspect the repository, use tools, implement, or
-  continue the task.
+  when the evidence earns it, not as a default.
+
+  Treat the supplied evidence as a grounded starting point, not a closed
+  record. Inspect relevant repository sources and authoritative documentation
+  when doing so could verify, falsify, or materially improve the synthesis.
+  Report consequential discoveries with precise source locations and
+  distinguish discovered evidence from your interpretation.
+
+  Return one decisive memo. Do not edit files, run mutating operations, ask the
+  user questions, implement, or continue the task.
 ```
 
 Then make the packet cold-start complete:
@@ -46,17 +55,18 @@ Evolution:
 Directional data:
   Selected user reactions, rejected framings, and recognition criteria.
 
-Evidence:
-  Relevant excerpts, diffs, command output, paths, and durable decisions.
+Starting evidence:
+  Established excerpts, diffs, command output, paths, and durable decisions.
+  Include decisive context directly and name sources Claude should inspect.
 
 Current synthesis:
   Codex's positive model and reasoning.
 
-Competing case:
-  The strongest rival vision or objection.
+Strongest rival:
+  The best competing vision or objection Codex can already articulate.
 
-Tensions:
-  What remains uncertain or may still hide an inherited constraint.
+Investigation questions:
+  Facts, assumptions, and architectural boundaries that remain open to attack.
 
 Constraints:
   Product promises, ownership boundaries, security limits, and refusals.
@@ -68,14 +78,12 @@ Stop:
   Answer this bounded problem. Do not implement or expand the task.
 ```
 
-Decision-complete does not mean short. Give Claude relevance-complete context:
-the objective, evolution, user reactions, rejected ideas, evidence, constraints,
-and current reasoning needed to think from the same reality as Codex. Do not
-starve the packet into a conclusion-only summary or make Claude reconstruct
-facts Codex can establish locally. Exclude only context that is unrelated to the
-task.
+Give Claude relevance-complete direction, not a conclusion-only summary or a
+repository dump. Point it at the strongest starting sources so investigation
+can follow consequential leads instead of repeating Codex's entire discovery
+pass.
 
-## Run one attached consultation
+## Run one read-only investigation
 
 Prerequisites: Bun and a current, authenticated Claude CLI on macOS or Linux.
 Resolve this skill's directory from its loaded `SKILL.md` path. Start
@@ -85,17 +93,21 @@ raw, non-echoing mode. Write the complete packet to stdin, then send the EOT
 character (`Ctrl-D`). The runner accepts no prompt arguments and creates no
 files.
 
-The runner starts Claude in safe mode with no tools, browser, project discovery,
-or persisted session. It inherits the environment needed for local
-authentication. Do not add tools without revisiting that trust boundary.
+The runner starts a high-effort Claude turn in safe mode with an explicit tool
+allowlist and plan permission mode. Claude may read and search files, use
+read-only shell commands, and consult public web sources. It cannot edit files
+or persist the session. Safe mode prevents project instructions, skills,
+plugins, hooks, MCP servers, and other hidden configuration from shaping the
+independent trajectory, so the packet must name the repository instructions
+and sources that matter.
 
-Sending the packet to the locally authenticated Claude CLI is an export of its
-contents. Within the task, Claude may receive the same relevant context Codex
-has, including private repository content and conversational history. Ask the
-user before crossing the task boundary into unrelated private material,
-credentials, personal data, or broader external systems. If the runtime blocks
-an in-scope export, do not silently weaken the packet. Explain the boundary and
-route any required approval to the user.
+Read-only protects repository integrity, not confidentiality. Sending the
+packet and running tools exports their relevant contents to the locally
+authenticated Claude provider. Keep investigation inside the task's repository
+and subject. Do not direct Claude into credentials, environment files, personal
+data, unrelated private material, or broader external systems. Ask the user
+before crossing that boundary. If the runtime blocks required in-scope access,
+do not silently weaken the investigation; explain the boundary.
 
 ## Wait patiently
 
@@ -113,8 +125,9 @@ Codex's command session already owns waiting and cancellation.
 ## Reconcile the memo
 
 1. State Claude's strongest recommendation accurately.
-2. Separate Claude's evidence from its opinion.
-3. Verify every material claim against local files or authoritative sources.
+2. Separate starting evidence, newly discovered evidence, and Claude's opinion.
+3. Verify every material discovery against local files or authoritative
+   sources.
 4. State where Codex agrees, disagrees, or needs more evidence.
 5. Resolve obvious evidence-dominated consequences without ceremony.
 6. Bring genuine product, promise, ownership, or taste forks to the user.
