@@ -3,7 +3,7 @@
 - **Status:** In Progress
 - **Date:** 2026-07-20
 - **Program:** greenfield breaking replacement
-- **Decision owners:** [ADR-0160](../docs/adr/0160-lenses-interpret-durable-namespaces-without-creating-lifecycle-scopes.md), [ADR-0161](../docs/adr/0161-each-person-has-one-epicenter-replicated-on-each-adapter-boundary.md), [ADR-0162](../docs/adr/0162-epicenter-home-owns-relational-inspection-applications-receive-no-sql.md), [ADR-0163](../docs/adr/0163-latest-scalar-state-synchronizes-through-one-epicenter-exchange.md), [ADR-0164](../docs/adr/0164-scalar-facts-converge-independently-epicenter-refuses-distributed-transactions.md), [ADR-0165](../docs/adr/0165-browser-origins-contain-independent-epicenter-replicas.md), [ADR-0166](../docs/adr/0166-data-document-sync-and-agent-replace-workspace.md), [ADR-0167](../docs/adr/0167-a-portable-epicenter-is-an-identity-free-export-of-one-authority-cut.md), [ADR-0168](../docs/adr/0168-lenses-are-complete-pure-json-interpretations.md), and [ADR-0169](../docs/adr/0169-row-references-are-non-enforcing-table-interpretations.md)
+- **Decision owners:** [ADR-0160](../docs/adr/0160-lenses-interpret-durable-namespaces-without-creating-lifecycle-scopes.md), [ADR-0161](../docs/adr/0161-each-person-has-one-epicenter-replicated-on-each-adapter-boundary.md), [ADR-0162](../docs/adr/0162-epicenter-home-owns-relational-inspection-applications-receive-no-sql.md), [ADR-0163](../docs/adr/0163-latest-scalar-state-synchronizes-through-one-epicenter-exchange.md), [ADR-0164](../docs/adr/0164-scalar-facts-converge-independently-epicenter-refuses-distributed-transactions.md), [ADR-0165](../docs/adr/0165-browser-origins-contain-independent-epicenter-replicas.md), [ADR-0166](../docs/adr/0166-data-document-sync-and-agent-replace-workspace.md), [ADR-0167](../docs/adr/0167-a-portable-epicenter-is-an-identity-free-export-of-one-authority-cut.md), [ADR-0168](../docs/adr/0168-lenses-are-complete-pure-json-interpretations.md), [ADR-0169](../docs/adr/0169-row-references-are-non-enforcing-table-interpretations.md), and [ADR-0170](../docs/adr/0170-one-live-epicenter-has-sealed-backups-and-restore-creates-a-fresh-authority-lifetime.md)
 
 ## Product sentence
 
@@ -32,7 +32,12 @@ shared data.
   multi-address transaction and promises no atomic remote visibility across
   scalar addresses.
 - Row IDs are globally unique, runtime-minted, and never reused.
-- Compact row tombstones are permanent synchronization facts.
+- Compact row tombstones are permanent synchronization facts within one
+  authority lifetime.
+- One person has one live Epicenter and zero or more sealed Backups. A Backup is
+  inert, immutable, byte-complete, downloadable, and never synchronizable.
+- Restore creates and atomically activates a fresh authority lifetime. It never
+  reactivates a superseded authority lifetime or merges into the live Epicenter.
 
 If any premise changes before merge, stop. Do not hide the change behind an
 alias, migration bridge, optional scope, or second runtime.
@@ -58,11 +63,14 @@ modes, per-owner directories, rekeying, aliases, parallel data handles, merge
 choice UI, and account-switch recovery. The user loss is that switching people
 inside one installation is not a seamless toggle.
 
-Permanent row tombstones are the companion asymmetric trade. A small durable
-record per row deletion deletes acknowledgment catalogs, deletion-retention
-floors, baseline acquisition, stale-replica recovery, and the possibility that
-an old offline replica resurrects a deleted row. Value unset remains
-nonterminal: a later set may replace it.
+Permanent row tombstones within one authority lifetime are the companion
+asymmetric trade. A small durable record per row deletion deletes acknowledgment
+catalogs, deletion-retention floors, baseline acquisition, stale-replica
+recovery, and the possibility that an old offline replica resurrects a deleted
+row. Value unset remains nonterminal: a later set may replace it. A deliberate
+Restore starts a fresh lifetime from complete logical state and invalidates
+every old replica; it is the only operation that leaves the old tombstones
+behind.
 
 ## Public destination
 
@@ -429,6 +437,72 @@ same logical Epicenter but is not the live replica file. Do not implement
 export or initialization in this wave. When implementation is authorized, it
 must not resurrect database scope, generic merge, or synchronization lineage.
 
+## Backups and authority replacement
+
+ADR-0170 turns the portable representation into one recovery model:
+
+```txt
+One principal
+├── one live Epicenter
+│   └── one active authority lifetime
+└── zero or more sealed Backups
+```
+
+Backups are host-visible, immutable portable Epicenters. They are complete
+through the selected authority cut, including every blob byte that authority
+owns. They may be listed through metadata, downloaded, restored, and deleted.
+They are never live databases, synchronization targets, browsable host-side
+application stores, partial exports, or merge inputs.
+
+The host control plane owns active-lifetime selection and Backup lifecycle
+outside the replaceable authority. Hosted, self-hosted, and local-only hosts
+provide the same conceptual owner without sharing a physical schema.
+
+Restore accepts one Backup or validated uploaded portable Epicenter, builds a
+fresh authority, and atomically replaces the active pointer only after complete
+validation and construction. Every old replica is refused and must erase and
+reacquire. Restore does not automatically preserve the outgoing authority; the
+person chooses Back up first when that state should survive.
+
+Work backward in these dependency-ordered waves. Container encoding, registry
+schema, object-store layout, physical deduplication, quotas, and UI texture stay
+open until their owning wave proves them:
+
+1. **Prove the portable substrate.** Specify and round-trip one complete logical
+   artifact across scalar rows, values, compact documents, and authority-owned
+   blobs. Validate integrity and stream the 512 MiB conformance envelope without
+   exposing a live private SQLite schema.
+2. **Bind synchronization to one authority lifetime.** Introduce one opaque,
+   equality-only lifetime identity and refuse every scalar, document, and blob
+   operation from a superseded lifetime. Do not expose lifetime order or history
+   as product API.
+3. **Build sealed Backups.** Capture a stable authority cut, publish registry
+   metadata only after the artifact is complete, and implement list, download,
+   and independent deletion. A deleted Backup must affect neither the live
+   Epicenter nor another Backup.
+4. **Build Restore beside the active path.** Validate a Backup or uploaded
+   portable artifact, construct the successor without mutating the current
+   authority, then atomically close acceptance against the outgoing lifetime and
+   activate the successor under a fresh lifetime identity. Every in-flight
+   scalar, document, or blob operation is either durably accepted before this
+   linearization point or refused; none may acknowledge success afterward.
+5. **Stop the old lifetime before deletion.** After activation, route all new
+   work to the successor and prove old replicas receive the lifetime-mismatch
+   refusal. Keep the superseded private authority only as a temporary cleanup
+   hold during verification. It can never become active again and is never a
+   user-visible Backup.
+6. **Verify before physical deletion.** Inject failures during capture,
+   validation, blob streaming, successor construction, pointer activation,
+   replica reset, and full reacquisition. Race in-flight scalar writes, document
+   updates, and blob operations against activation. Only then delete the
+   superseded private authority and prove that an explicitly retained Backup
+   still restores.
+
+The user-visible product needs only `Back up`, `Download`, `Restore`, and
+`Delete`. Clearing tombstones, destructive rollback, edited-artifact
+replacement, and synchronization reset are consequences of Restore, not
+separate protocols.
+
 ## Target package graph
 
 ```txt
@@ -602,7 +676,11 @@ without learning historical vocabulary:
 - What happens on first sign-in? The current replica permanently attaches and
   converges.
 - How does deletion survive an offline device? The latest state is a permanent
-  compact tombstone.
+  compact tombstone within the active authority lifetime.
+- How is state preserved over time? As sealed, byte-complete Backups, never as
+  additional live Epicenters.
+- What does Restore do? It creates a fresh authority lifetime from one complete
+  Backup or uploaded portable Epicenter and invalidates every old replica.
 - How does scalar sync work? One whole-Epicenter latest-state exchange.
 - How do documents sync? Lazily, one connection per open row document.
 - Can applications run SQL on the live store? No.

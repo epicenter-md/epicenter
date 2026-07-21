@@ -59,7 +59,7 @@ relations, and physical encodings remain implementation decisions until a
 round-trip proof chooses them. Neither encoding may become the private schema
 of a live store.
 
-The platform exposes three portability verbs:
+The portable representation supports three substrate operations:
 
 ```txt
 Export current logical state
@@ -70,6 +70,13 @@ Initialize an empty Epicenter
 Initialization validates the complete artifact, preserves logical row and blob
 identities, and creates a fresh authority and synchronization lifetime. It does
 not preserve a relationship with the source.
+
+[ADR-0170](0170-one-live-epicenter-has-sealed-backups-and-restore-creates-a-fresh-authority-lifetime.md)
+gives this representation a product lifecycle. A host-managed `Backup` is one
+sealed portable Epicenter. `Back up` creates one, `Download` materializes it for
+external custody or inspection, and `Restore` initializes a fresh authority
+lifetime from a Backup or validated uploaded artifact. Restore replaces the live
+authority rather than merging into it.
 
 ## Consequences
 
@@ -83,6 +90,9 @@ not preserve a relationship with the source.
   failure-atomic initialization, blob integrity, and round-trip equivalence.
 - Export does not require exact-checkpoint semantics for ordinary live replicas.
   The selected authority owns the stable export cut.
+- A host-managed Backup and a downloaded portable artifact carry the same logical
+  portable Epicenter, but container and storage layout remain implementation
+  details.
 
 ## Considered alternatives
 
@@ -92,7 +102,8 @@ not preserve a relationship with the source.
 - **Coordinate every device before export.** Rejected because it creates a
   distributed settlement and backup system and cannot complete while a device
   remains offline.
-- **Import into a nonempty Epicenter.** Rejected because schema-opaque state has
-  no generic merge law. Application-specific imports remain application logic.
+- **Merge or import into a nonempty Epicenter.** Rejected because schema-opaque
+  state has no generic merge law. ADR-0170 Restore replaces the authority with a
+  fresh lifetime instead; application-specific imports remain application logic.
 - **Preserve synchronization lineage across initialization.** Rejected because
   the artifact moves logical data, not an authority lifetime.

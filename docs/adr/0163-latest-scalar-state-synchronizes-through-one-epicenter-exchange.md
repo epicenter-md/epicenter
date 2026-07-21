@@ -30,9 +30,10 @@ a monotonically increasing authority sequence. Values use
 A row tombstone is terminal synchronization state, not an application row. It
 retains the address and winning version but no deleted payload or document
 bytes. Row IDs are never reused by conforming runtimes; later create and update
-operations at a tombstoned address are no-ops. Row tombstones remain permanently
-unless a future compaction design proves, with a different protocol, that no
-offline or restored replica can resurrect the address.
+operations at a tombstoned address are no-ops. Row tombstones remain permanent
+within one authority lifetime. [ADR-0170](0170-one-live-epicenter-has-sealed-backups-and-restore-creates-a-fresh-authority-lifetime.md)
+permits discarding them only by replacing that entire lifetime from a complete
+Backup, which invalidates every old replica.
 
 An unset value also has a payload-free latest state so replicas can observe the
 unset, but it is not terminal: a later accepted `set` replaces it. Row and value
@@ -84,9 +85,10 @@ socket limits require it.
   communicate deletion. The tombstone supplies the missing causal winner.
 - New replicas start at sequence zero and learn the current latest state without
   a separate acquisition protocol.
-- The authority retains one compact tombstone for every deleted row address.
-  This is the deliberate storage cost of indefinite offline correctness. An
-  unset value occupies one latest-state record only until a later set.
+- The authority retains one compact tombstone for every row address deleted
+  during its lifetime. This is the deliberate storage cost of indefinite
+  offline correctness within that lifetime. An unset value occupies one
+  latest-state record only until a later set.
 
 ## Considered alternatives
 
