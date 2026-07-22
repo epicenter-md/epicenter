@@ -7,7 +7,7 @@ description: Give Claude one fresh, read-only, evidence-seeking adversarial memo
 
 Consult Claude gives one fresh reasoning trajectory enough read access to
 investigate and attack Codex's grounded synthesis. The user owns product
-direction. Codex owns the user dialectic, consultation boundary,
+decisions. Codex stewards the user dialectic, consultation boundary,
 reconciliation, and final recommendation. Claude owns the independent
 investigation and one evidence-backed adversarial memo. The runner enforces
 read-only authority and a bounded lifetime.
@@ -22,9 +22,10 @@ to avoid forming a grounded position first.
 Read enough evidence to make Codex's working model explicit before consulting.
 Give Claude the sources and conversation history that explain how the working
 model evolved, but do not close the record around Codex's evidence selection.
-When consulting inside a dialectic, include the live shared model and how the
-working model and user's ideal came into contact. Preserve verbatim user
-reactions when summarizing them would flatten the user's taste.
+When consulting inside a dialectic, include the live shared model, the relevant
+parts of both participants' private models, and how the conversation changed
+them. Preserve verbatim user reactions when summarizing them would flatten an
+important distinction, contribution, or expression of taste.
 
 Start every packet with this mandate:
 
@@ -55,9 +56,9 @@ Evolution:
   How the working model changed. When a dialectic is active, how the live
   shared model changed.
 
-User ideal and divergences:
-  Selected questions, reactions, rejected framings, and recognition criteria
-  when they are part of the originating conversation.
+User contributions and divergences:
+  Selected evidence, interpretations, questions, reactions, rejected framings,
+  desired outcomes, and recognition criteria from the originating conversation.
 
 Starting evidence:
   Established excerpts, diffs, command output, paths, and durable decisions.

@@ -8,13 +8,14 @@ description: "Greenfield clean-break review and execution for starting from an u
 Use this skill as an operating mode, not a cleanup checklist. Start with the uncompromised greenfield vision, then work backward to the deletion waves, owner changes, and verification needed to make that vision real. The current software is evidence, not a constraint. Previously resolved decisions can be reopened when they make the final system harder to explain, own, test, or delete.
 
 When the destination remains genuinely exploratory or disputed, run
-[dialectic](../dialectic/SKILL.md) until the live shared model converges into an
-explicitly accepted destination. Do not add a dialectic round to a settled
-request. A Dialectic handoff is the accepted greenfield vision: adopt it as the
-fixed point and work backward. Implementation difficulty does not reopen it;
-an external constraint or desired outcome that materially changes it returns
-to Dialectic. This skill owns the backward transition and execution after the
-destination is clear.
+[dialectic](../dialectic/SKILL.md) until the conversation converges. Dialectic
+may end with a shared explanatory model or an explicitly accepted destination;
+this skill accepts only the destination handoff. Do not add a dialectic round
+to a settled request. Adopt the accepted greenfield vision as the fixed point
+and work backward. Implementation difficulty does not reopen it; an external
+constraint or desired outcome that materially changes it returns to Dialectic.
+This skill owns the backward transition and execution after the destination is
+clear.
 
 Two pillars:
 
