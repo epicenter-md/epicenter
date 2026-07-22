@@ -1,232 +1,205 @@
 ---
 name: dialectic
-description: "Help two participants with rich private models converge through naturally paced, intellectually led conversation on either a shared explanatory model or an explicitly accepted destination before planning or implementation. Use when the user wants to discover what they think, understand a subject together, develop an uncompromising vision, receive iterative synthesis and pushback, explore an architecture or product model before a plan exists, or says to use dialectic. Do not use for interrogating an existing plan, comparing one bounded implementation choice, or ordinary implementation with a settled destination."
+description: "Help two participants with rich private models use concrete proposals and directional reactions to make latent taste legible, converging through a naturally paced conversation on either a shared explanatory model or an explicitly accepted destination before planning or implementation. Use when the user wants to discover what they think, understand a subject together, develop an uncompromising vision, receive iterative synthesis and pushback, or explore an architecture or product model before a plan exists. Do not use for interrogating an existing plan, comparing one bounded implementation choice, or ordinary implementation with a settled destination."
 ---
 
 # Dialectic
 
-Use conversation to bring two rich private models into enough contact that both
-participants can reason from a live shared model.
+Bring two rich private models into enough contact that both participants can
+reason from a live shared model.
 
 ```txt
-agent's private model  <── conversational moves ──>  user's private model
-                                  │
-                                  v
-                         live shared model
-                                  │
-                                  v
-                         further conversation
+agent's private model  <── small conversational contributions ──>  user's private model
+                                      │
+                                      v
+                             live shared model
 ```
 
-Both participants may contribute evidence, interpretation, values, causal
-reasoning, possibilities, examples, taste, and refusals. Neither needs to state
-their whole model. The live shared model is the part they have made mutually
-visible and can now question or build from together.
+Neither participant needs to state their whole model. The conversation works by
+making one useful part visible, letting the other participant respond, and
+updating what is shared.
 
-The agent supplies intellectual leadership by grounding claims, forming
-coherent proposals, revealing useful leanings, and choosing the next useful
-move. The user supplies intellectual leadership through their own account of
-reality and possibility, including questions, corrections, distinctions,
-reactions, and desired outcomes. Do not reduce either participant to a fixed
-role.
+## Expose The Smallest Useful Part
 
-## Compose With
+Carry the larger model privately. In each response, expose only the smallest
+useful part that gives the user something meaningful to respond to.
 
-- Use [one-sentence-test](../one-sentence-test/SKILL.md) whenever one concrete
-  sentence could reveal whether the models agree. Either participant may offer
-  the sentence. Treat the other participant's reaction as evidence about the
-  model; never require a formal teach-back.
-- Hand an accepted greenfield destination to
-  [greenfield-clean-breaks](../greenfield-clean-breaks/SKILL.md) when an
-  existing system must be worked backward into owner changes, deletion waves,
-  and asymmetric refusals.
-- Use [grill-me](../grill-me/SKILL.md) instead when a plan already exists and
-  the job is to interrogate its decision tree.
-- Use [ui-design](../ui-design/SKILL.md) for UI-specific product design that
-  must become a buildable interface.
+Make exactly one contribution. It may be:
 
-## Ground The Conversation
+- a synthesis;
+- a distinction;
+- a consequence;
+- a disagreement;
+- a proposal;
+- a grounded explanation;
+- or a question.
 
-Gather enough evidence to make the agent's private model honest. Inspect the
-repository when facts affect the explanation, feasibility, or a real product
-promise. Use external sources when outside behavior affects correctness.
-Distinguish what evidence establishes from interpretation, assumption, and
-proposed consequence whenever that difference matters to the live tension.
+State it naturally, then stop. Do not complete the whole argument, enumerate
+every implication, pre-answer likely objections, or recap the entire shared
+model. What remains can become the next turn.
 
-Let the user supply evidence and explanation too. Question either participant's
-claim when its basis matters. Authority follows the kind and strength of the
-claim, not a permanent assignment of reality to the agent and desire to the
-user.
+If the contribution is a question, give only the context required to make that
+question useful. If the contribution is not a question, do not append one to
+solicit a response. A synthesis, distinction, consequence, disagreement, or
+proposal already gives the user something to react to. The explicit recognition
+test at convergence is the only time to present a model and ask for judgment in
+the same turn.
 
-Keep current reality in view when building a shared explanatory model. When
-building a chosen destination, let evidence constrain what is possible without
-quietly turning inherited APIs, names, compatibility paths, package boundaries,
-prior plans, helper shapes, or implementation effort into requirements. Preserve
-only external constraints and explicit promises the user chooses to keep.
+Closely related ideas are still separate contributions when the user would need
+to hold both in mind to respond. Give the first one that makes the second useful,
+then wait. Combine only what must be understood together to keep the present
+contribution honest.
 
-Do not print an evidence ledger by default. Bring forward the evidence needed
-for the conversational move at hand.
+Write for the ear. Prefer a few connected sentences over a report, framework,
+or menu of options. Expand when the user asks for more. Do not mistake a rich
+private model for an obligation to display it.
 
-## Steer Through Natural Moves
+## Run One Conversational Loop
 
-Begin with the clearest useful contribution, not a questionnaire. Carry the
-larger model, choose the conversational move needed now, reveal the useful part
-of the agent's model, draw out the useful part of the user's, and pause.
+For each turn:
 
-A move may:
+1. Update the live shared model from what the user just said.
+2. Choose the most useful unresolved edge the user can engage now.
+3. Make one contribution that advances or tests that edge.
+4. Leave room for the user's response.
 
-- explain a missing connection;
-- ask one or several closely related questions;
-- interpret what the user's reaction changes;
-- offer a positive synthesis or a one-sentence model;
-- reveal the agent's leaning and brief reasoning;
-- expose a consequence, tension, refusal, or real fork.
+Begin with a useful contribution, not a questionnaire. Choose a question when
+its answer could reveal or change the model. Choose a position when the agent's
+view would give the user something more meaningful to react to than an empty
+prompt.
 
-Do not perform every move in every response. Match the move to what the user
-actually said and to the kind of question they asked. Use formatting when it
-makes the thought easier to follow, not to turn the turn into a report.
-
-Optimize for conversational pacing, not completeness per turn. Write for the
-ear. Say enough for the user to respond intelligently, then give them room to
-respond. Expand when the user asks for more or when leaving something out would
-make the current contribution misleading.
-
-Continue from what is already shared. Do not recap settled ground merely to
-show that the agent remembers it. When the model changes, make the important
-movement or consequence clear without narrating every internal reasoning step.
-
-Questions should help reveal or change the model, but they do not need to carry
-the whole dialectic. When the agent has a useful position, state it naturally
-so the user can react to a real view instead of answering an empty prompt.
-Several questions are appropriate when they belong to the same conversational
-move. Multiple options are appropriate only when the model contains a real
-fork; recommend one when the evidence and values support a recommendation.
-
-Use a one-sentence model as a probe at any point:
+A concrete one-sentence model is often enough:
 
 ```txt
 Here is my current one-sentence model: ...
 ```
 
-The sentence is not automatically a conclusion. Let the other participant
-accept it, revise a word, reject its premise, or offer a rival sentence. The
-difference often identifies the next useful edge of the conversation.
+Treat the user's acceptance, revision, or rejection as evidence. The sentence
+is a probe, not an automatic conclusion or a request for formal teach-back.
 
-## Reconcile Without Flattening
+Continue from what is already shared. Do not recap settled ground to demonstrate
+memory. When the model changes, name the change or its immediate consequence,
+not every reasoning step behind it.
 
-Do not average the models merely to produce agreement. The agent's account may
-be rejected. The user's account may change when a hidden consequence appears.
-Evidence may rule out both. Find the premise, value, distinction, or consequence
-that produces a real divergence, and preserve the disagreement while it remains
-real.
+## Treat Reactions As Directional Data
 
-Apply pressure at conversational scale. Choose a consequential edge the user
-can presently engage rather than unloading every implication the agent can see.
-If the conversation stalls, name the unresolved divergence, say what evidence
-or decision could resolve it, and reveal the agent's current recommendation.
+A user's reaction is not merely feedback on the last contribution. It is
+evidence about taste the user may not yet be able to state directly. Concrete
+proposals create contrast; reactions such as "closer," "too ornate," "right
+structure, wrong premise," or an unstructured explanation reveal different
+boundaries within the user's private model.
 
-A shared explanatory model may preserve an explicit uncertainty when the
-uncertainty is itself understood. A chosen destination may not hide a
-consequential mismatch behind "or", "also", "sometimes", or compatibility
-language. Do not begin backward planning until that mismatch is resolved.
+Do not flatten that evidence into a scalar score or obey only its surface form.
+Interpret which distinction the reaction exposes, update the live shared model,
+and make the next contribution more discriminating. The purpose is not to make
+each proposal more agreeable in isolation. It is to help both participants
+articulate what "right" means and converge on a model or destination the user
+could not have fully specified in advance.
+
+## Lead And Ground
+
+Both participants may contribute evidence, interpretation, values, causal
+reasoning, possibilities, examples, taste, and refusals. The agent supplies
+intellectual leadership by grounding consequential claims, forming coherent
+proposals, revealing useful leanings, and choosing the next edge. The user
+supplies intellectual leadership through their own account of reality and
+possibility. Do not reduce either participant to a fixed role.
+
+Inspect the repository or external sources when facts materially affect the
+model. Distinguish evidence from interpretation or assumption when the
+difference matters to the current edge. Bring forward only the grounding needed
+for the present contribution; do not print an evidence ledger by default.
+
+When shaping a destination, let evidence constrain what is possible without
+quietly treating inherited APIs, names, compatibility paths, package
+boundaries, prior plans, or implementation effort as requirements. Preserve
+only external constraints and explicit promises the user chooses to keep.
+
+## Keep Real Tension Alive
+
+Do not average the models merely to produce agreement. Find the premise, value,
+distinction, or consequence that creates the divergence. Apply pressure to one
+consequential edge at a time.
+
+If the conversation stalls, name the unresolved divergence and the one decision
+or piece of evidence most likely to move it. Reveal the agent's current leaning.
+
+A shared explanation may preserve understood uncertainty. A chosen destination
+may not hide a consequential mismatch behind `or`, `also`, `sometimes`, or
+compatibility language. Do not plan backward from a destination that still
+contains such a mismatch.
 
 ## Recognize Convergence
 
-Convergence means the live shared model is generative: both participants can
-reason forward from it, anticipate its important consequences, and recognize
-what would contradict it. They need not have identical private models or use
-identical words.
+Convergence means the shared model is generative: both participants can reason
+forward from it, anticipate important consequences, and recognize what would
+contradict it. It does not require identical private models or identical words.
 
-Do not infer convergence from silence, fatigue, partial approval, or the
-absence of another objection. Once the model appears complete, ask the user to
-recognize it, including its important uncertainty, refusals, or consequences.
-A consequential caveat begins another conversational move.
+Do not infer convergence from silence, fatigue, partial approval, or the absence
+of another objection. When the model appears complete, present its shortest
+honest form and ask the user to recognize or revise it. A consequential caveat
+starts another conversational turn.
 
-Freeze the result according to what the dialectic produced.
+Freeze only what the conversation produced.
 
-### Shared explanatory model
-
-```txt
-Shared model:
-  One concrete sentence that explains the subject.
-
-Grounding:
-  The decisive facts and causal connections.
-
-Consequences:
-  What both participants can now reason forward to.
-
-Open uncertainty:
-  What remains genuinely unknown, if anything.
-
-Recognition test:
-  What this model explains and what would contradict it.
-```
-
-Return the compact shared model and stop. Do not manufacture a plan or a
-product destination from a thinking-only conversation.
-
-### Chosen destination
+For a shared explanatory model, return:
 
 ```txt
-Accepted destination:
-  One concrete, uncompromising product or system sentence.
-
-Mental model:
-  The central objects, verbs, boundaries, and owner.
-
-Hard constraints:
-  What must remain true because of desired outcomes or external reality.
-
-Refusals and non-goals:
-  What the destination deliberately does not preserve.
-
-Consequences:
-  The important tradeoffs and implications both participants recognize.
-
-Recognition test:
-  What would be observably true if this destination existed and what would
-  clearly violate it.
+Shared model: one concrete sentence.
+Grounding: the decisive facts and causal connection.
+Consequences: what follows from the model.
+Open uncertainty: what remains genuinely unknown, if anything.
+Recognition test: what the model explains and what would contradict it.
 ```
 
-If either frozen model cannot stay succinct, use the one-sentence test as the
-next conversational move and continue the dialectic.
+For a chosen destination, return:
 
-## Transition
+```txt
+Accepted destination: one concrete, uncompromising sentence.
+Mental model: the central objects, verbs, boundaries, and owner.
+Hard constraints: desired outcomes and external realities that must remain true.
+Refusals: what the destination deliberately does not preserve.
+Consequences: the important tradeoffs both participants recognize.
+Recognition test: what would prove or violate the destination.
+```
+
+Keep either result compact. If it cannot stay compact, continue the dialectic
+with the smallest unresolved part instead of printing a large provisional
+model.
+
+## Hand Off Only What Converged
 
 After a shared explanatory model, return it and stop unless the user asks for a
 new kind of work.
 
-After a chosen destination:
+After an accepted destination:
 
-```txt
-Thinking-only request:
-  Return the accepted destination and stop.
-
-Existing-system replacement:
-  Treat the accepted destination as the uncompromised greenfield vision. Load
-  greenfield-clean-breaks, bring the full current system back into view, and
-  work backward through owner changes, deletion waves, verification, and
-  old-path removal.
-
-Durable architectural decision:
-  Preserve the settled decision and rationale in an ADR when the repository
+- Stop after returning it for a thinking-only request.
+- Use [greenfield-clean-breaks](../greenfield-clean-breaks/SKILL.md) when an
+  existing system must be worked backward into owner changes, deletion waves,
+  and refusals.
+- Preserve a durable architectural decision in an ADR when the repository
   workflow calls for one.
-```
 
-Do not implement early to create artificial momentum. Implementation follows
-the accepted destination unless the user explicitly asks to collapse the
-design loop and proceed with a stated assumption.
+Use [grill-me](../grill-me/SKILL.md) instead when a plan already exists and the
+job is to interrogate its decision tree. Use [ui-design](../ui-design/SKILL.md)
+when an accepted UI destination must become a buildable interface.
 
-## Completion Check
+Do not implement early to create momentum. Implementation follows an accepted
+destination unless the user explicitly asks to proceed with a stated
+assumption.
+
+## Check The Conversation
+
+Before each response, ask:
 
 ```txt
-Did both participants' private models materially shape the conversation?
-Did the agent ground consequential claims and reveal useful leanings?
-Did each response make a natural move and leave room for the next one?
-Did the conversation preserve real disagreement or uncertainty without
-flattening it?
-Can both participants reason forward from the shared result?
-Did the user explicitly recognize the explanatory model or chosen destination?
-Does the exit stop cleanly or hand only an accepted destination to execution?
+What is the smallest useful part I can expose now?
+Does this response make exactly one contribution?
+Can the user respond without holding several new ideas at once?
+Am I leaving the rest for later?
 ```
+
+Before exiting, also confirm that both participants shaped the result, real
+disagreement or uncertainty was preserved, and the user explicitly recognized
+the final model or destination.
