@@ -23,17 +23,17 @@ export type ConnectionStatus = 'connecting' | 'open' | 'closed';
 const RECONNECT_DELAY_MS = 1500;
 
 export function createSession({ ready }: { ready: Promise<void> }) {
-	let snapshot = $state<ConversationSnapshot>({
+	let snapshot = $state.raw<ConversationSnapshot>({
 		messages: [],
 		streaming: null,
 		isThinking: false,
 		isGenerating: false,
 		error: null,
 	});
-	let pendingApprovals = $state<PendingApproval[]>([]);
-	let invocations = $state<HomeInvocation[]>([]);
+	let pendingApprovals = $state.raw<PendingApproval[]>([]);
+	let invocations = $state.raw<HomeInvocation[]>([]);
 	let connection = $state<ConnectionStatus>('connecting');
-	let tools = $state<HomeSessionResponse['tools']>([]);
+	let tools = $state.raw<HomeSessionResponse['tools']>([]);
 
 	let socket: WebSocket | undefined;
 

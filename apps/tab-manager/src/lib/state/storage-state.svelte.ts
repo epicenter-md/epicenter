@@ -65,7 +65,7 @@ export function createStorageState<TSchema extends StandardSchemaV1>(
 
 	const item = storage.defineItem<T>(key, { fallback });
 
-	let value = $state<T>(fallback);
+	let value = $state.raw<T>(fallback);
 	const watchers = new Set<(value: T) => void>();
 
 	function setValue(next: T) {

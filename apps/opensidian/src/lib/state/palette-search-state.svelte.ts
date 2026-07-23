@@ -27,7 +27,7 @@ export function createPaletteSearchState({
 	let searchQuery = $state('');
 
 	// Content search results (updated via debounce)
-	let contentResults = $state<CommandPaletteItem[]>([]);
+	let contentResults = $state.raw<CommandPaletteItem[]>([]);
 	let isSearching = $state(false);
 
 	// ── File items (instant, in-memory) ─────────────────────────────

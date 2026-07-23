@@ -229,7 +229,7 @@
 
 	let element: HTMLDivElement | undefined = $state();
 	let view: EditorView | undefined = $state();
-	let activeFormats = $state({
+	let activeFormats = $state.raw({
 		bold: false,
 		italic: false,
 		underline: false,

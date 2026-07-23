@@ -48,7 +48,7 @@ function createLocalModels() {
 	// CATALOG STATE. `null` until the first load so the UI can tell "loading"
 	// from "empty". Each entry carries its own `downloaded` verdict from the one
 	// Rust scan, so "ready" is a pure read with no second source to drift from.
-	let models = $state<ModelInfo[] | null>(null);
+	let models = $state.raw<ModelInfo[] | null>(null);
 
 	// IN-FLIGHT TRANSFERS, keyed by model id. The map IS the re-entry gate: a key
 	// present means a transfer owns that model, cleared only when that same run

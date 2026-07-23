@@ -69,7 +69,7 @@
 		let isOpen = $state(false);
 		let isPending = $state(false);
 		let inputText = $state('');
-		let options = $state<ConfirmationDialogOptions | null>(null);
+		let options = $state.raw<ConfirmationDialogOptions | null>(null);
 
 		return {
 			get isOpen() {

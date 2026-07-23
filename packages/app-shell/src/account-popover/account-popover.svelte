@@ -95,7 +95,7 @@
 		instanceConnect,
 	}: AccountPopoverProps = $props();
 
-	let syncStatus = $state<SyncStatus>();
+	let syncStatus = $state.raw<SyncStatus>();
 	let popoverOpen = $state(false);
 	let instanceModalOpen = $state(false);
 	// Set for one close only, when the "configure instance" link hands off to the

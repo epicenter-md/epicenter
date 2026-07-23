@@ -53,7 +53,7 @@
 	let open = $state(false);
 	// The combo held so far this session, so the popover can preview its reach
 	// before the user releases. `null` between sessions.
-	let previewBinding = $state<KeyBinding | null>(null);
+	let previewBinding = $state.raw<KeyBinding | null>(null);
 	const preview = $derived.by(() => {
 		if (!previewBinding || isEmptyBinding(previewBinding)) return null;
 		return {

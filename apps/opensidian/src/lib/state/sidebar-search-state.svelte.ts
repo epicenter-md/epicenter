@@ -43,7 +43,7 @@ export function createSidebarSearchState({
 
 	// Mutable state
 	let searchQuery = $state('');
-	let fileGroups = $state<FileGroup[]>([]);
+	let fileGroups = $state.raw<FileGroup[]>([]);
 	let isSearching = $state(false);
 	let totalResults = $state(0);
 	let totalFiles = $state(0);

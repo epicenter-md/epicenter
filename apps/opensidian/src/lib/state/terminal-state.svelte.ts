@@ -50,8 +50,8 @@ export function createTerminalState({
 		schema: type('boolean'),
 		defaultValue: false,
 	});
-	let history = $state<TerminalEntry[]>([]);
-	let commandHistory = $state<string[]>([]);
+	let history = $state.raw<TerminalEntry[]>([]);
+	let commandHistory = $state.raw<string[]>([]);
 	let historyIndex = $state(-1);
 	let running = $state(false);
 

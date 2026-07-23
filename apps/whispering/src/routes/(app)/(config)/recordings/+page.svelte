@@ -237,7 +237,7 @@
 		schema: type({ desc: 'boolean', id: 'string' }).array(),
 		defaultValue: [{ id: 'recordedAt', desc: true }],
 	});
-	let columnFilters = $state<ColumnFiltersState>([]);
+	let columnFilters = $state.raw<ColumnFiltersState>([]);
 	let columnVisibility = createPersistedState({
 		key: 'whispering-recordings-data-table-column-visibility',
 		schema: type('Record<string, boolean>'),
@@ -250,7 +250,10 @@
 		schema: type('Record<string, boolean>'),
 		defaultValue: {},
 	});
-	let pagination = $state<PaginationState>({ pageIndex: 0, pageSize: 10 });
+	let pagination = $state.raw<PaginationState>({
+		pageIndex: 0,
+		pageSize: 10,
+	});
 	let globalFilter = $state('');
 
 	const table = createSvelteTable({

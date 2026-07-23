@@ -14,7 +14,7 @@
 		viewTransitionName?: string;
 	} = $props();
 
-	let handle = $state<BlobSource | null>(null);
+	let handle = $state.raw<BlobSource | null>(null);
 
 	// The source outlives any lexical scope (`using` cannot span a component
 	// lifetime), so effect teardown owns the manual [Symbol.dispose]() call.

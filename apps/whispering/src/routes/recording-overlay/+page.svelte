@@ -20,7 +20,7 @@
 	// pushes the current status over a Tauri event and we render from that, and
 	// control gestures go back over Tauri events. The pill itself
 	// (`RecordingPill`) is platform-free; this route owns the IPC glue.
-	let status = $state<RecordingPillStatus | null>(null);
+	let status = $state.raw<RecordingPillStatus | null>(null);
 
 	// Live, smoothed mic loudness, 0 (silent) to 1 (loud). Driven by the
 	// `mic-level` event: VAD frames in JS for voice-activated capture, the Rust

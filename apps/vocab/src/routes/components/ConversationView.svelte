@@ -27,7 +27,11 @@
 	// handle directly.
 	const isGenerating = $derived(active?.isLoading ?? false);
 
-	let saveAffordance = $state<{ text: string; x: number; y: number } | null>(
+	let saveAffordance = $state.raw<{
+		text: string;
+		x: number;
+		y: number;
+	} | null>(
 		null,
 	);
 
@@ -90,7 +94,7 @@
 	 * memory only. Nothing here is persisted; a chosen span reaches the pool solely
 	 * through `entriesState.save` (ADR-0102). One open at a time, like the selection
 	 * affordance above. */
-	let entryCandidateRequest = $state<{
+	let entryCandidateRequest = $state.raw<{
 		messageId: string;
 		status: 'loading' | 'ready' | 'error';
 		candidates: string[];

@@ -23,7 +23,7 @@
 	let body = $state('');
 	let dueDate = $state<CalendarDateString | null>(null);
 	let dueOpen = $state(false);
-	let pickedContexts = $state<ContextSlug[]>([]);
+	let pickedContexts = $state.raw<ContextSlug[]>([]);
 	let contextOpen = $state(false);
 
 	// Default a new todo's contexts to whichever context is being viewed, so

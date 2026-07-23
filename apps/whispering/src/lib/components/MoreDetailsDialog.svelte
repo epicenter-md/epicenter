@@ -3,8 +3,8 @@
 		let isOpen = $state(false);
 		let title = $state<string>('');
 		let description = $state<string>('');
-		let content = $state<unknown>(null);
-		let buttons = $state<
+		let content = $state.raw<unknown>(null);
+		let buttons = $state.raw<
 			{
 				label: string;
 				onClick: () => void;

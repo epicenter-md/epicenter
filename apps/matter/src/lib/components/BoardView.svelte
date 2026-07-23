@@ -47,7 +47,7 @@
 	// The card being dragged, held in state rather than serialized through the drag
 	// payload: it is a card this board just rendered, so its identity never leaves the
 	// process and `drop` acts on a trusted card, not an arbitrary browser payload.
-	let draggedCard = $state<BoardCard>();
+	let draggedCard = $state.raw<BoardCard>();
 	let moveAnnouncement = $state('');
 
 	function canDropOn(columnValue: string | null): boolean {

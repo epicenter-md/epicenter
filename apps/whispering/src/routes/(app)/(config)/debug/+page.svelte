@@ -22,7 +22,7 @@
 			};
 		}
 
-		let current = $state(snapshot());
+		let current = $state.raw(snapshot());
 
 		return {
 			get current() {

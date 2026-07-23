@@ -184,7 +184,7 @@ export function createAgentChatState({
 		// The tool call the loop is waiting on a decision for, or null. A mutation
 		// pauses the loop here (the present human is the gate, ADR-0047); a query,
 		// or a tool the app's policy auto-approved, never lands here.
-		let pendingApproval = $state<{
+		let pendingApproval = $state.raw<{
 			call: AgentToolCall;
 			resolve: (approved: boolean) => void;
 		} | null>(null);

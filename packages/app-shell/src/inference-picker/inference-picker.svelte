@@ -61,7 +61,7 @@
 
 	// Discovery state for the connect form.
 	let discovering = $state(false);
-	let discovered = $state<string[] | null>(null);
+	let discovered = $state.raw<string[] | null>(null);
 	// A tailored, per-variant message when discovery fails (401 vs unreachable vs
 	// malformed), or null when discovery has not failed.
 	let discoveryError = $state<string | null>(null);
