@@ -44,10 +44,6 @@
 				"class_name": "Room"
 			},
 			{
-				"name": "RECORDS",
-				"class_name": "CurrentStateRowAuthorityDurableObject"
-			},
-			{
 				"name": "EPICENTER_SYNC",
 				"class_name": "EpicenterAuthority"
 			}
@@ -65,11 +61,15 @@
 		{
 			"tag": "v3",
 			"new_sqlite_classes": ["EpicenterAuthority"]
+		},
+		{
+			"tag": "v4",
+			"deleted_classes": ["CurrentStateRowAuthorityDurableObject"]
 		}
 	]
 
 	// No Hyperdrive binding: the instance composes no Postgres (no Better Auth or
-	// telemetry). ROOM and RECORDS are its complete durable substrate
+	// telemetry). ROOM and EPICENTER_SYNC are its complete durable substrate
 	// (ADR-0075). No workspace catalog exists: the authority derives from the
 	// principal alone (ADR-0092, ADR-0145).
 }

@@ -90,7 +90,8 @@ type EpicenterAuthorityCalls = {
 // Drift guard: the class must keep satisfying the declared stub contract, or
 // the structural cast below would silently hide the mismatch.
 type AssertImplementsCalls<_T extends EpicenterAuthorityCalls> = never;
-type _EpicenterAuthorityContractCheck = AssertImplementsCalls<EpicenterAuthority>;
+type _EpicenterAuthorityContractCheck =
+	AssertImplementsCalls<EpicenterAuthority>;
 
 type EpicenterAuthorityNamespace = {
 	getByName(name: string): unknown;
@@ -109,10 +110,7 @@ function stubFor(
 	) as EpicenterAuthorityCalls;
 }
 
-/**
- * Preserve the hosted account-deletion caller while its route remains outside
- * this cutover wave. The caller supplies the namespace it intends to sweep.
- */
+/** Adapt the principal-named authority namespace for hosted account deletion. */
 export function createDurableObjectAccountAuthorities(
 	namespace: DeletableAuthorityNamespace,
 ) {

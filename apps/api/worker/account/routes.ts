@@ -119,7 +119,7 @@ export function mountAccountDeletionApi(app: Hono<CloudEnv>): void {
 			const principalId = c.var.principal.id;
 			const authority = () =>
 				createDurableObjectAccountAuthorities(
-					(c.env as Cloudflare.Env).RECORDS,
+					(c.env as Cloudflare.Env).EPICENTER_SYNC,
 				).authority(principalId);
 			const sweepBlobs = async () => {
 				const store = resolveDeploymentBlobStore(c.env);
