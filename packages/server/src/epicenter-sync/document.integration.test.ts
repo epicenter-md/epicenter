@@ -221,7 +221,7 @@ test('restart resumes dirty publication from SQLite', async () => {
 	}
 });
 
-test('a second replica pulls accepted state and owes nothing outbound', async () => {
+test('two replicas edit and pull the same document without owing inbound work', async () => {
 	const server = openServer();
 	const author = openClient();
 	const reader = openClient();
@@ -252,6 +252,30 @@ test('a second replica pulls accepted state and owes nothing outbound', async ()
 		// Accepted inbound state never creates an outbound obligation.
 		expect(publicationRow(reader.database, row.id)).toBeUndefined();
 
+		// The reader edits that same document and publishes it automatically.
+		readerDocument.transact(() =>
+			readerDocument.get('content').insert(11, ' and reader'),
+		);
+		await waitFor(() => {
+			const record = publicationRow(reader.database, row.id);
+			return (
+				record !== undefined && record.accepted_revision === record.revision
+			);
+		}, 'reader publication');
+
+		// The original author explicitly pulls the accepted merge. Applying those
+		// inbound bytes must not advance its already-settled publication revision.
+		const authorDocument = await author.notes.openDocument(row.id);
+		expectOk(await authorDocument.pull());
+		expect(authorDocument.get('content').toString()).toBe(
+			'from author and reader',
+		);
+		expect(publicationRow(author.database, row.id)).toEqual({
+			revision: 1,
+			accepted_revision: 1,
+			sync_issue: null,
+		});
+
 		// An unchanged repeat pull transfers no document body.
 		let bodies = 0;
 		const countingTransports = createHttpDocumentTransports({
@@ -274,6 +298,7 @@ test('a second replica pulls accepted state and owes nothing outbound', async ()
 		expect(unchanged.kind).toBe('unchanged');
 		expect(bodies).toBe(1);
 
+		await authorDocument[Symbol.asyncDispose]();
 		await readerDocument[Symbol.asyncDispose]();
 	} finally {
 		await author.epicenter[Symbol.asyncDispose]();

@@ -101,33 +101,13 @@ bun dev:honeycrisp
 
 This starts the desktop app on port 5175 alongside the local API on `localhost:8787`, which auth and sync expect. `bun dev:honeycrisp:ui` runs the browser UI without the API or Tauri shell.
 
-### Two-client sync demo
+### Manual two-client check
 
-One command boots a disposable self-hosted authority, serves this app once, and
-converges two independent browser replicas through that authority:
-
-```bash
-bun run --cwd apps/honeycrisp demo:two-client
-```
-
-It holds the origin fixed and varies only the browser storage partition, which
-is what makes the two replicas independent (ADR-0177). So it proves both halves
-of that boundary at once: a second tab in the *same* partition is refused
-immediately by the Web Lock, while a client in a *different* partition on the
-same origin opens fine and converges only by synchronizing through the
-authority. Two isolated browser profiles are just how the run obtains a second
-partition; that is a proof recipe, not a supported topology.
-
-Development exercises the production contract rather than a development-only
-one. The pages reach the authority at its own origin, so the run asserts that
-no request took a same-origin `/api` path, that every response carried
-`Access-Control-Allow-Origin` for exactly this origin, that the instance bearer
-authenticated every request, and that ETag revision headers were exercised.
-There is deliberately no Vite proxy: the authority trusts this one exact origin
-through `TRUSTED_BROWSER_ORIGINS`, exactly as a deployed instance does.
-
-The instance data and both browser profiles live in a temporary directory that
-is removed on success and kept on failure.
+To exercise two independent browser replicas, open the Honeycrisp web UI in two
+isolated browser profiles. Point both at one self-hosted authority that includes
+the UI origin in `TRUSTED_BROWSER_ORIGINS`. Do not use two ordinary tabs in one
+profile: they share a storage partition, so the second owner is refused by
+design (ADR-0177).
 
 ---
 
