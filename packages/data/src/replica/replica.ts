@@ -254,8 +254,15 @@ function storeRecord(database: SqliteDatabase, record: SyncRecord): void {
 		],
 	);
 	if (record.kind === 'row-deleted') {
+		// Scalar death, document death, and obligation death commit together:
+		// a deleted row can never leave orphaned bytes or a dirty publication
+		// that would republish content for a dead address (ADR-0174).
 		database.run(
 			'DELETE FROM document_updates WHERE qualified_key = ? AND row_id = ?',
+			[record.key, record.rowId],
+		);
+		database.run(
+			'DELETE FROM document_publication WHERE qualified_key = ? AND row_id = ?',
 			[record.key, record.rowId],
 		);
 	}
@@ -789,7 +796,7 @@ export function openReplica({
 	try {
 		const tables = database.all<SqliteRow & { name: string }>(
 			`SELECT name FROM sqlite_schema
-			WHERE type = 'table' AND name IN ('metadata', 'state', 'outbox', 'document_updates')`,
+			WHERE type = 'table' AND name IN ('metadata', 'state', 'outbox', 'document_updates', 'document_publication')`,
 		);
 		if (tables.length === 0) {
 			const replicaId = mintReplicaId();

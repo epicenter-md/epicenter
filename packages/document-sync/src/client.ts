@@ -1,4 +1,5 @@
 import {
+	acceptedDocumentOrigin,
 	type DocumentAddress,
 	type RowDocument,
 	rowDocumentConnectionTarget,
@@ -20,7 +21,11 @@ const SOCKET_OPEN = 1;
 const SOCKET_CLOSED = 3;
 const BASE_RETRY_MS = 500;
 const MAX_RETRY_MS = 30_000;
-const remoteOrigin = Symbol('epicenter-document-sync-remote');
+// Frames arriving on this socket are authority-accepted state: the server
+// sends sync-response and update only after its own commit. Applying them
+// with the shared accepted origin persists them locally without minting a
+// publication obligation (ADR-0174).
+const remoteOrigin = acceptedDocumentOrigin;
 
 export type DocumentClientSocket = {
 	readonly readyState: number;

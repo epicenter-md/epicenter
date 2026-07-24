@@ -17,6 +17,7 @@ export {
 	type ValueFor,
 } from './definitions.js';
 export {
+	acceptedDocumentOrigin,
 	applyRowDocumentUpdate,
 	type DocumentAddress,
 	encodeRowDocumentState,
