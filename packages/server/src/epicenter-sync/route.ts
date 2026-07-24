@@ -33,31 +33,36 @@ export function createEpicenterSyncApp<E extends Env = Env>(
 ): Hono<E> {
 	const app = new Hono<E>();
 	return app.post('/api/sync/v1', async (c) => {
+		const declaredLength = Number(c.req.raw.headers.get('content-length'));
+		if (
+			Number.isFinite(declaredLength) &&
+			declaredLength > MAX_SYNC_REQUEST_BYTES
+		) {
+			return c.json({ error: 'request-too-large' } as const, 413);
+		}
+		let payload: unknown;
 		try {
-			const declaredLength = Number(c.req.raw.headers.get('content-length'));
-			if (
-				Number.isFinite(declaredLength) &&
-				declaredLength > MAX_SYNC_REQUEST_BYTES
-			) {
-				return c.json({ error: 'request-too-large' } as const, 413);
-			}
 			const text = await c.req.raw.text();
 			if (new TextEncoder().encode(text).byteLength > MAX_SYNC_REQUEST_BYTES) {
 				return c.json({ error: 'request-too-large' } as const, 413);
 			}
-			const parsed = parseExchangeRequest(JSON.parse(text));
-			if (parsed.error !== null) {
-				return c.json({ error: 'invalid-request' } as const, 400);
-			}
-			return c.json(
-				await locateAuthority(c.var.principal.id, c.env)(parsed.data),
-			);
+			payload = JSON.parse(text);
 		} catch (cause) {
+			// Reading and decoding the body is the only part of this handler
+			// whose failure is the caller's fault, so it is the only part this
+			// translation covers. Anything else, including a bug or a storage
+			// failure inside the authority below, must reach Hono's error
+			// boundary as a 500 rather than be reported as invalid input.
 			if (cause instanceof SyntaxError || cause instanceof TypeError) {
 				return c.json({ error: 'invalid-request' } as const, 400);
 			}
 			throw cause;
 		}
+		const parsed = parseExchangeRequest(payload);
+		if (parsed.error !== null) {
+			return c.json({ error: 'invalid-request' } as const, 400);
+		}
+		return c.json(await locateAuthority(c.var.principal.id, c.env)(parsed.data));
 	});
 }
 

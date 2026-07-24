@@ -129,9 +129,11 @@ export function createEpicenterDocumentStore(
 					try {
 						Y.applyUpdateV2(document, update, hydrationOrigin);
 					} catch {
-						// Only the candidate's own decode/apply failure is a refusal
-						// of the request; hydration or storage failure above throws
-						// as an operational error instead.
+						// The narrowest try this transaction can hold: it covers the
+						// untrusted candidate and nothing else, so hydration of
+						// committed history and every storage write stay operational
+						// errors that throw. Yjs is the validator here, so anything
+						// it rejects is treated as bad input.
 						return { outcome: 'invalid-update' };
 					}
 					const encoded = new Uint8Array(Y.encodeStateAsUpdateV2(document));

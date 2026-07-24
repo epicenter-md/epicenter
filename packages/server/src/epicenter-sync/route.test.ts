@@ -7,6 +7,7 @@
  * Key behaviors:
  * - Valid exchanges resolve the authenticated principal's authority
  * - Malformed and oversized JSON never call the authority
+ * - A failing authority is a server fault, never reported as bad input
  */
 import { expect, test } from 'bun:test';
 
@@ -87,4 +88,31 @@ test('malformed and oversized requests are refused before authority lookup', asy
 	expect(oversized.status).toBe(413);
 	expect(context.principals).toEqual([]);
 	expect(context.exchanges).toBe(0);
+});
+
+test('an authority that throws a TypeError is a 500, not an invalid request', async () => {
+	// The route translates SyntaxError and TypeError from decoding the body
+	// into a 400. A bug inside the authority throws the same constructors, so
+	// it must stay outside that translation or every server fault would be
+	// reported to the client as its own bad input.
+	const app = new Hono<Env>();
+	app.use('*', async (c, next) => {
+		c.set('principal', { id: asPrincipalId('alice') });
+		await next();
+	});
+	app.route(
+		'/',
+		createEpicenterSyncApp(() => () => {
+			throw new TypeError('authority is broken');
+		}),
+	);
+	const response = await app.request('/api/sync/v1', {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({
+			replicaId: 'rrrrrrrrrrrrrrrrrrrrrrrr',
+			after: 0,
+		}),
+	});
+	expect(response.status).toBe(500);
 });
