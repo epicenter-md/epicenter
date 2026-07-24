@@ -17,7 +17,10 @@ import {
 	type RoundReceipt,
 	rowRoundDigest,
 } from '@epicenter/row-sync';
-import type { SqliteDatabase } from '@epicenter/sqlite';
+import {
+	type SqliteDatabase,
+	StorageUpgradeRequiredError,
+} from '@epicenter/sqlite';
 import {
 	captureLogicalWorkspace,
 	type LogicalWorkspaceCopy,
@@ -35,6 +38,76 @@ const TABLES = {
 	scratchRows: 'acquisition_scratch_rows',
 	scratchGuards: 'acquisition_scratch_guards',
 } as const;
+export const CURRENT_STATE_REPLICA_SCHEMA_OBJECTS = Object.values(TABLES).map(
+	(name) => ({ type: 'table', name }) as const,
+);
+
+const DURABLE_SCHEMA = [
+	{
+		name: TABLES.rows,
+		sql: `
+			CREATE TABLE "${TABLES.rows}" (
+				table_key TEXT NOT NULL,
+				row_id TEXT NOT NULL,
+				fields_json TEXT NOT NULL CHECK(json_valid(fields_json)),
+				PRIMARY KEY(table_key, row_id)
+			) WITHOUT ROWID, STRICT
+		`,
+	},
+	{
+		name: TABLES.guards,
+		sql: `
+			CREATE TABLE "${TABLES.guards}" (
+				table_key TEXT NOT NULL,
+				row_id TEXT NOT NULL,
+				installed_sequence INTEGER NOT NULL CHECK(installed_sequence > 0),
+				PRIMARY KEY(table_key, row_id)
+			) WITHOUT ROWID, STRICT
+		`,
+	},
+	{
+		name: TABLES.intents,
+		sql: `
+			CREATE TABLE "${TABLES.intents}" (
+				table_key TEXT NOT NULL,
+				row_id TEXT NOT NULL,
+				sealed INTEGER NOT NULL CHECK(sealed IN (0, 1)),
+				birth_sequence INTEGER NOT NULL CHECK(birth_sequence > 0),
+				kind TEXT NOT NULL CHECK(kind IN ('create', 'update', 'delete')),
+				fields_json TEXT CHECK(fields_json IS NULL OR json_valid(fields_json)),
+				PRIMARY KEY(table_key, row_id, sealed),
+				CHECK((kind = 'delete' AND fields_json IS NULL) OR
+					(kind != 'delete' AND fields_json IS NOT NULL))
+			) WITHOUT ROWID, STRICT
+		`,
+	},
+	{
+		name: TABLES.replica,
+		sql: `
+			CREATE TABLE "${TABLES.replica}" (
+				id INTEGER PRIMARY KEY CHECK(id = 1),
+				replica_id TEXT NOT NULL,
+				retired_round INTEGER NOT NULL CHECK(retired_round >= 0),
+				retired_digest TEXT,
+				retired_through INTEGER NOT NULL CHECK(retired_through >= 0),
+				checkpoint INTEGER NOT NULL CHECK(checkpoint >= 0),
+				admission_head INTEGER NOT NULL CHECK(admission_head >= 0),
+				sealed_digest TEXT,
+				acquired INTEGER NOT NULL CHECK(acquired IN (0, 1)),
+				recovery_required INTEGER NOT NULL CHECK(recovery_required IN (0, 1)),
+				CHECK(
+					(retired_round = 0 AND retired_digest IS NULL AND
+						retired_through = 0)
+					OR
+					(retired_round > 0 AND retired_digest IS NOT NULL AND
+						retired_through > 0)
+				)
+			) STRICT
+		`,
+	},
+] as const;
+
+type CurrentStateReplicaSchemaState = 'empty' | 'current';
 
 type StoredReplica = {
 	replica_id: string;
@@ -108,56 +181,7 @@ function dropScratch(sqlite: SqliteDatabase): void {
 }
 
 function createSchema(sqlite: SqliteDatabase): void {
-	sqlite.run(`
-		CREATE TABLE "${TABLES.rows}" (
-			table_key TEXT NOT NULL,
-			row_id TEXT NOT NULL,
-			fields_json TEXT NOT NULL CHECK(json_valid(fields_json)),
-			PRIMARY KEY(table_key, row_id)
-		) WITHOUT ROWID, STRICT
-	`);
-	sqlite.run(`
-		CREATE TABLE "${TABLES.guards}" (
-			table_key TEXT NOT NULL,
-			row_id TEXT NOT NULL,
-			installed_sequence INTEGER NOT NULL CHECK(installed_sequence > 0),
-			PRIMARY KEY(table_key, row_id)
-		) WITHOUT ROWID, STRICT
-	`);
-	sqlite.run(`
-		CREATE TABLE "${TABLES.intents}" (
-			table_key TEXT NOT NULL,
-			row_id TEXT NOT NULL,
-			sealed INTEGER NOT NULL CHECK(sealed IN (0, 1)),
-			birth_sequence INTEGER NOT NULL CHECK(birth_sequence > 0),
-			kind TEXT NOT NULL CHECK(kind IN ('create', 'update', 'delete')),
-			fields_json TEXT CHECK(fields_json IS NULL OR json_valid(fields_json)),
-			PRIMARY KEY(table_key, row_id, sealed),
-			CHECK((kind = 'delete' AND fields_json IS NULL) OR
-				(kind != 'delete' AND fields_json IS NOT NULL))
-		) WITHOUT ROWID, STRICT
-	`);
-	sqlite.run(`
-		CREATE TABLE "${TABLES.replica}" (
-			id INTEGER PRIMARY KEY CHECK(id = 1),
-			replica_id TEXT NOT NULL,
-			retired_round INTEGER NOT NULL CHECK(retired_round >= 0),
-			retired_digest TEXT,
-			retired_through INTEGER NOT NULL CHECK(retired_through >= 0),
-			checkpoint INTEGER NOT NULL CHECK(checkpoint >= 0),
-			admission_head INTEGER NOT NULL CHECK(admission_head >= 0),
-			sealed_digest TEXT,
-			acquired INTEGER NOT NULL CHECK(acquired IN (0, 1)),
-			recovery_required INTEGER NOT NULL CHECK(recovery_required IN (0, 1)),
-			CHECK(
-				(retired_round = 0 AND retired_digest IS NULL AND
-					retired_through = 0)
-				OR
-				(retired_round > 0 AND retired_digest IS NOT NULL AND
-					retired_through > 0)
-			)
-		) STRICT
-	`);
+	for (const { sql } of DURABLE_SCHEMA) sqlite.run(sql);
 	sqlite.run(
 		`
 		INSERT INTO "${TABLES.replica}"(
@@ -170,16 +194,85 @@ function createSchema(sqlite: SqliteDatabase): void {
 	);
 }
 
-/** Reset only this synchronized Account file. Device storage never calls this. */
+function normalizedSchemaSql(sql: string): string {
+	return sql.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Classify synchronized Account scalar storage without changing it.
+ *
+ * Scratch tables are deliberately outside the durable schema. A caller may
+ * remove them only after every owner of the containing SQLite store has
+ * accepted its own durable schema.
+ */
+export function inspectCurrentStateReplicaSchema(
+	sqlite: SqliteDatabase,
+): CurrentStateReplicaSchemaState {
+	const version =
+		sqlite.all<{ user_version: number }>('PRAGMA user_version')[0]
+			?.user_version ?? 0;
+	if (version === 0) {
+		const names = CURRENT_STATE_REPLICA_SCHEMA_OBJECTS.map(({ name }) => name);
+		const placeholders = names.map(() => '?').join(', ');
+		const ownedObjects = sqlite.all<{ name: string }>(
+			`SELECT name FROM sqlite_master
+			 WHERE name IN (${placeholders}) OR tbl_name IN (${placeholders})
+			 ORDER BY type, name`,
+			[...names, ...names],
+		);
+		if (ownedObjects.length === 0) return 'empty';
+		throw new StorageUpgradeRequiredError(
+			'Account replica storage',
+			`version zero contains existing objects: ${ownedObjects
+				.map(({ name }) => name)
+				.join(', ')}`,
+		);
+	}
+	const durableNames = DURABLE_SCHEMA.map(({ name }) => name);
+	const actual = sqlite.all<{ type: string; name: string; sql: string | null }>(
+		`SELECT type, name, sql FROM sqlite_master
+		 WHERE name IN (${durableNames.map(() => '?').join(', ')})
+		    OR (tbl_name IN (${durableNames.map(() => '?').join(', ')})
+		        AND type IN ('index', 'trigger'))
+		 ORDER BY type, name`,
+		[...durableNames, ...durableNames],
+	);
+
+	if (version !== STORAGE_VERSION) {
+		throw new StorageUpgradeRequiredError(
+			'Account replica storage',
+			`expected format ${STORAGE_VERSION}, found ${version}`,
+		);
+	}
+
+	const isCurrent =
+		actual.length === DURABLE_SCHEMA.length &&
+		DURABLE_SCHEMA.every((expected) => {
+			const stored = actual.find(
+				({ type, name }) => type === 'table' && name === expected.name,
+			);
+			return (
+				stored !== undefined &&
+				stored.sql !== null &&
+				normalizedSchemaSql(stored.sql) === normalizedSchemaSql(expected.sql)
+			);
+		});
+	if (!isCurrent) {
+		throw new StorageUpgradeRequiredError(
+			'Account replica storage',
+			'format marker is current but the durable scalar schema is not exact',
+		);
+	}
+	return 'current';
+}
+
+/** Initialize empty storage or clean scratch after read-only store validation. */
 export function initializeCurrentStateReplicaSchema(
 	sqlite: SqliteDatabase,
 ): void {
+	const state = inspectCurrentStateReplicaSchema(sqlite);
 	sqlite.transaction(() => {
-		const version =
-			sqlite.all<{ user_version: number }>('PRAGMA user_version')[0]
-				?.user_version ?? 0;
-		if (version !== STORAGE_VERSION) {
-			for (const table of Object.values(TABLES)) dropTable(sqlite, table);
+		if (state === 'empty') {
 			createSchema(sqlite);
 			sqlite.run(`PRAGMA user_version = ${STORAGE_VERSION}`);
 		}

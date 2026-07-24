@@ -8,12 +8,16 @@
 
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
-import type { SqliteDatabase } from '@epicenter/sqlite';
+import {
+	isStorageUpgradeRequiredError,
+	type SqliteDatabase,
+} from '@epicenter/sqlite';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import * as Y from '@y/y';
 import type { RowAddress } from './persistence.js';
 import {
 	createSqliteDocumentLog,
+	inspectSqliteDocumentLogSchema,
 	isDocumentRowAbsentError,
 } from './sqlite-document-log.js';
 
@@ -72,6 +76,38 @@ function countUpdates(database: SqliteDatabase, target: RowAddress): number {
 		)[0]?.count ?? 0
 	);
 }
+
+test('partial document schema refuses without repair', () => {
+	const sqlite = new Database(':memory:', { strict: true });
+	const database = createBunSqliteAdapter(sqlite);
+	try {
+		database.run(
+			`CREATE TABLE ${LOG_TABLE} (
+				sequence INTEGER PRIMARY KEY,
+				sentinel TEXT NOT NULL
+			)`,
+		);
+		database.run(`INSERT INTO ${LOG_TABLE} VALUES (1, 'preserved')`);
+
+		let failure: unknown;
+		try {
+			inspectSqliteDocumentLogSchema(database);
+		} catch (cause) {
+			failure = cause;
+		}
+		expect(isStorageUpgradeRequiredError(failure)).toBe(true);
+		expect(
+			database.all<{ sentinel: string }>(`SELECT sentinel FROM ${LOG_TABLE}`),
+		).toEqual([{ sentinel: 'preserved' }]);
+		expect(
+			database.all<{ name: string }>(
+				"SELECT name FROM sqlite_schema WHERE type = 'index' AND name = 'workspace_document_updates_address'",
+			),
+		).toEqual([]);
+	} finally {
+		sqlite.close();
+	}
+});
 
 test('append then load replays updates in order across reopen', () => {
 	const context = setup();

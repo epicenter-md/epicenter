@@ -1,9 +1,70 @@
-import type { SqliteDatabase } from '@epicenter/sqlite';
+import {
+	type SqliteDatabase,
+	StorageUpgradeRequiredError,
+} from '@epicenter/sqlite';
 import * as Y from '@y/y';
 import { assertRowAddress, type RowAddress } from './persistence.js';
 
 const LOG_TABLE = 'workspace_document_updates';
+const LOG_INDEX = 'workspace_document_updates_address';
+export const SQLITE_DOCUMENT_LOG_SCHEMA_OBJECTS = [
+	{ type: 'table', name: LOG_TABLE },
+	{ type: 'index', name: LOG_INDEX },
+] as const;
 const DEFAULT_COMPACTION_THRESHOLD = 64;
+
+const CREATE_LOG_TABLE = `CREATE TABLE ${LOG_TABLE} (
+	sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+	table_name TEXT NOT NULL,
+	row_id TEXT NOT NULL,
+	update_bytes BLOB NOT NULL
+)`;
+
+const CREATE_LOG_INDEX = `CREATE INDEX ${LOG_INDEX}
+	ON ${LOG_TABLE}(table_name, row_id, sequence)`;
+
+function normalizeSql(sql: string | null): string {
+	return (sql ?? '').replaceAll(/\s+/g, ' ').trim();
+}
+
+/** Read-only classification of the document-log-owned SQLite objects. */
+export function inspectSqliteDocumentLogSchema(
+	database: SqliteDatabase,
+): 'empty' | 'current' {
+	const objects = database.all<{ name: string; sql: string | null }>(
+		`SELECT name, sql FROM sqlite_schema
+		 WHERE tbl_name = ? OR name = ?
+		 ORDER BY name`,
+		[LOG_TABLE, LOG_INDEX],
+	);
+	if (objects.length === 0) return 'empty';
+
+	const expected = new Map([
+		[LOG_TABLE, normalizeSql(CREATE_LOG_TABLE)],
+		[LOG_INDEX, normalizeSql(CREATE_LOG_INDEX)],
+	]);
+	if (
+		objects.length !== expected.size ||
+		objects.some(({ name, sql }) => expected.get(name) !== normalizeSql(sql))
+	) {
+		throw new StorageUpgradeRequiredError(
+			'SQLite document log',
+			'document update table or index does not match the current format',
+		);
+	}
+	return 'current';
+}
+
+/** Create the document log only after a read-only classification accepts it. */
+export function initializeSqliteDocumentLogSchema(
+	database: SqliteDatabase,
+): void {
+	if (inspectSqliteDocumentLogSchema(database) === 'current') return;
+	database.transaction(() => {
+		database.run(CREATE_LOG_TABLE);
+		database.run(CREATE_LOG_INDEX);
+	});
+}
 
 /**
  * Error name stamped on an append refused because its row is no longer live.
@@ -62,20 +123,7 @@ export function createSqliteDocumentLog({
 		throw new TypeError('Document compaction threshold must be at least two');
 	}
 
-	database.transaction(() => {
-		database.run(
-			`CREATE TABLE IF NOT EXISTS ${LOG_TABLE} (
-				sequence INTEGER PRIMARY KEY AUTOINCREMENT,
-				table_name TEXT NOT NULL,
-				row_id TEXT NOT NULL,
-				update_bytes BLOB NOT NULL
-			)`,
-		);
-		database.run(
-			`CREATE INDEX IF NOT EXISTS workspace_document_updates_address
-			 ON ${LOG_TABLE}(table_name, row_id, sequence)`,
-		);
-	});
+	initializeSqliteDocumentLogSchema(database);
 
 	let failure: Error | undefined;
 

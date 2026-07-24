@@ -38,11 +38,9 @@ import {
 	createCurrentStateReplica,
 } from './current-state-replica.js';
 import { classifyCurrentStateTransport } from './current-state-transport.js';
-import {
-	initializeLocalWorkspaceStorage,
-	readLocalRow,
-} from './local-workspace-storage.js';
+import { readLocalRow } from './local-workspace-storage.js';
 import { createWorkspaceRuntime } from './runtime.js';
+import { initializeWorkspaceStorageSchema } from './workspace-storage-schema.js';
 
 const ownedRoots = new Set<string>();
 
@@ -195,13 +193,17 @@ function createBunRuntimeWithPersistence({
 			try {
 				mkdirSync(dirname(path), { recursive: true });
 				database = new Database(path, { create: true });
-				database.exec('PRAGMA busy_timeout = 5000');
-				database.exec('PRAGMA journal_mode = WAL');
 				const sqlite = createBunSqliteAdapter(database);
 				const transport = await abortable(
 					Promise.resolve(recordTransport?.(workspaceId)),
 					signal,
 				);
+				initializeWorkspaceStorageSchema(
+					sqlite,
+					transport ? 'account' : 'device',
+				);
+				database.exec('PRAGMA busy_timeout = 5000');
+				database.exec('PRAGMA journal_mode = WAL');
 				let ownerDisposed = false;
 				const reportSyncError = (cause: unknown): void => {
 					try {
@@ -219,7 +221,6 @@ function createBunRuntimeWithPersistence({
 					}
 				};
 				if (!transport) {
-					initializeLocalWorkspaceStorage(sqlite);
 					const documents = createSqliteDocumentLog({
 						database: sqlite,
 						isRowLive: ({ table, rowId }) =>
