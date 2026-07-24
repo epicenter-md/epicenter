@@ -9,7 +9,7 @@ export {
 	isQualifiedKey,
 	isRuntimeId,
 } from './admission.js';
-export { canonicalJson, sha256Hex } from './canonical.js';
+export { canonicalJson, sha256Hex, sha256HexBytes } from './canonical.js';
 export { type FoldResult, foldChange } from './fold.js';
 export {
 	type Batch,

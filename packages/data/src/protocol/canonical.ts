@@ -42,7 +42,10 @@ function wordAt(words: Uint32Array, index: number): number {
 }
 
 export function sha256Hex(input: string): string {
-	const message = new TextEncoder().encode(input);
+	return sha256HexBytes(new TextEncoder().encode(input));
+}
+
+export function sha256HexBytes(message: Uint8Array): string {
 	const bitLength = message.length * 8;
 	const paddedLength = (((message.length + 8) >> 6) + 1) << 6;
 	const padded = new Uint8Array(paddedLength);
