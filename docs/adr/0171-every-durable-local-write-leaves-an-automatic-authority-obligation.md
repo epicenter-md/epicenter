@@ -1,7 +1,8 @@
 # 0171. Every durable local write leaves an automatic authority obligation
 
 - **Status:** Proposed
-- **Date:** 2026-07-20
+- **Date:** 2026-07-20 (revised 2026-07-24: document publication is HTTP-only
+  and settles by revision, not by an exact frozen payload and digest receipt)
 - **Supersedes:** [ADR-0144](0144-scalar-rows-and-row-documents-synchronize-through-independent-client-planes.md), [ADR-0149](0149-local-blob-stores-are-canonical-and-remote-replication-is-explicit.md)
 - **Amends:** [ADR-0146](0146-row-documents-use-one-yjs-14-major-and-runtime-native-update-logs.md), [ADR-0159](0159-row-documents-persist-in-one-owner-side-sqlite-update-log.md), [ADR-0163](0163-scalar-sync-separates-fact-reads-from-numbered-intent-submissions.md), [ADR-0170](0170-one-live-epicenter-has-sealed-backups-and-restore-creates-a-fresh-authority-lifetime.md)
 
@@ -39,7 +40,7 @@ local SQLite transaction
 one runtime-owned drain
       |
       +--> scalar acceptance
-      +--> document acceptance  <--- optional low-latency WebSocket
+      +--> document acceptance
       `--> blob acceptance
                   |
                   v
@@ -57,11 +58,11 @@ request or response has no durable meaning.
 
 The law has three independent protocol realizations:
 
-| Plane    | Durable local work                                                                                | Authority proof                                           |
-| -------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| Scalar   | compacted desired-state intent in the scalar outbox                                               | current authority fact for every touched address          |
-| Document | bounded Yjs baseline-plus-tail chain plus a dirty revision and optional frozen `inflight` payload | post-commit receipt for the exact frozen `inflight` bytes |
-| Blob     | one immutable local byte stream plus its row-addressed publication record                         | accepted SHA-256 for the live row's blob slot             |
+| Plane    | Durable local work                                                        | Authority proof                                       |
+| -------- | ------------------------------------------------------------------------- | ----------------------------------------------------- |
+| Scalar   | compacted desired-state intent in the scalar outbox                       | current authority fact for every touched address      |
+| Document | bounded Yjs baseline-plus-tail chain plus a monotonic dirty revision      | acceptance acknowledgement for one captured revision  |
+| Blob     | one immutable local byte stream plus its row-addressed publication record | accepted SHA-256 for the live row's blob slot         |
 
 These are independent convergence units, not one transaction. They share one
 runtime lifecycle owner for attachment, credentials, wakeups, retry, backoff,
@@ -90,38 +91,36 @@ bytes are derived.
 The publication record contains:
 
 ```txt
-revision  monotonic row-local revision advanced by each local document update
-dirty     whether revision includes work not yet proven at the authority
-inflight  optional exact frozen V2 payload, digest, and captured revision
+revision           monotonic row-local revision advanced by each local update
+accepted revision  highest revision the authority has acknowledged accepting
+issue              optional terminal address-scoped condition (`too-large`)
 ```
 
-When a dirty row has no payload in flight, the owner reads its document chain
-and revision in one SQLite snapshot, hydrates the current document, and uses the
-authority's last known state vector only as a transfer hint when encoding the V2
-update to submit. It freezes those exact bytes, their digest, and the captured
-revision into `inflight` only if the revision still matches. A racing edit makes
-that comparison fail or advances the revision after the freeze; it never changes
-the immutable retry image.
+The address owes publication whenever `revision > accepted revision` and no
+terminal issue is recorded. To publish, the owner reads the chain and current
+revision in one SQLite snapshot, hydrates the current document, encodes one
+complete V2 update, and submits it with the captured revision over an ordinary
+HTTP request. Nothing is frozen: a racing edit simply advances `revision`
+past the captured value, and the next attempt reconstructs newer state.
 
-After the authority has applied and committed the submitted update, it returns
-a document publication receipt binding the active authority lifetime, complete
-row address, document protocol version, and digest of the exact frozen payload.
-The owner clears `inflight` only when every receipt field matches its stored
-retry image. It marks the row clean only when the current revision still equals
-the captured revision; otherwise the newer dirty revision enters another freeze
-and publication attempt. A lost receipt causes the same bytes to be sent again.
-Yjs update application is idempotent, so the authority can commit the same
-semantic state and return the same proof without retaining permanent request
-history.
+When the authority has applied and committed the candidate, it acknowledges
+acceptance. The owner then advances `accepted revision` through the captured
+revision and no further: acceptance of revision N can never clear revision
+N+1, so work authored during the request stays owed. A lost acknowledgement
+leaves the address dirty and a later attempt resubmits reconstructed current
+state. Yjs update application is commutative and idempotent, so repeated or
+overlapping submissions converge at the authority without duplication.
+Semantic idempotency, not exact-byte replay, owns retry safety; there is no
+frozen retry image, no payload digest, and no receipt binding lifetime,
+address, protocol version, and digest.
 
 State vectors remain transfer hints. An endpoint may use one to compute state
-the other endpoint lacks, but never as authority-durability proof: a delete-only
-Yjs update can change document meaning without advancing the struct clocks a
-state vector records. V2 difference encoding still carries the delete set in
-the frozen payload. Closing the last live handle destroys the in-memory `Y.Doc`
-but leaves the SQLite revision and any in-flight retry image intact. A
-background drain therefore publishes dirty documents without depending on open
-handles.
+the other endpoint lacks, but never as authority-durability proof or change
+detection: a delete-only Yjs update can change document meaning without
+advancing the struct clocks a state vector records. V2 difference encoding
+still carries the delete set. Closing the last live handle destroys the
+in-memory `Y.Doc` but leaves the SQLite revision intact. A background drain
+therefore publishes dirty documents without depending on open handles.
 
 A row's blob publication is also write-once. The authority accepts an absent
 slot with digest A, treats a retry of A as idempotent, and refuses or parks a
@@ -130,10 +129,15 @@ after the authority acknowledges matching bytes at the active lifetime and row
 address. New bytes require a new row rather than another blob member or mutable
 replacement protocol.
 
-Document publication is outbound and automatic. Remote document state remains
-lazy and arrives when the row document is next opened. A realtime connection
-for an open document may reduce edit latency, but it is an overlay, not the only
-durability path. The first document protocol carries no awareness or presence.
+Document publication is outbound, automatic, and HTTP-only. One
+workspace-owned scheduler wakes after local document work, briefly coalesces
+edits, discovers dirty addresses from SQLite, and publishes each dirty
+document through an ordinary per-document HTTP request with bounded
+concurrency. A slower safety wake resumes crash, restart, credential, and
+transient-failure recovery. Remote document state remains lazy: an
+application explicitly asks an open document to pull newer authority-accepted
+state, and a closed document receives no document-body downloads. There is no
+document WebSocket, no presence protocol, and no second outbound carrier.
 Closing an application surface must never strand accepted document work.
 
 Every exchange is bound to one opaque authority-lifetime identity. Restore
@@ -156,11 +160,13 @@ device is not part of a Backup.
   not enter it merely to make the implementation look unified.
 - Closed documents can converge without eager inbound hydration or permanent
   live `Y.Doc` instances.
-- A realtime document socket may report connection and low-latency convergence,
-  but those observations do not prove authority durability.
-- Oversized or otherwise refused work remains visibly pending or parked at its
-  address. Epicenter never reports it as synchronized and never spins one
-  failing address through a global retry loop.
+- An oversized document is an exceptional terminal condition for that Yjs
+  lineage, recorded as one durable address-scoped issue. The document remains
+  locally durable and locally usable, Epicenter stops publishing that lineage,
+  and the application owns presentation and recovery. One terminal address
+  never blocks other dirty addresses, and Epicenter never reports the address
+  as synchronized. Transport and storage failures, by contrast, remain
+  retryable operational failures.
 - Row deletion remains terminal. Its local transaction installs scalar
   deletion state and removes document state and pending publication evidence;
   later byte cleanup cannot resurrect the row.
@@ -179,10 +185,11 @@ following laws across the three planes:
 
 - a crash after the local write cannot erase the authority obligation;
 - a crash or lost response after authority commit cannot create a false clean
-  state, and an exact retry is idempotent;
+  state, and a retry that reconstructs and resubmits current state is
+  semantically idempotent;
 - scalar or document work created while an earlier attempt is in flight remains
   pending after the earlier authority proof arrives;
-- no connection, state vector, sequence watermark, or fanout observation can clear an
+- no connection, state vector, or sequence watermark observation can clear an
   obligation without its plane-specific post-commit proof;
 - a row deletion racing document or blob publication cannot resurrect row-owned
   state;
@@ -196,9 +203,10 @@ following laws across the three planes:
 - a Restore linearization either accepts work in the outgoing lifetime or
   refuses it, while every later retry from that lifetime is rejected.
 
-Each storage adapter runs the same state-machine fixtures. Transport tests then
-prove that background exchange and realtime document delivery enter the same
-authority acceptance operation rather than two semantic paths.
+Each storage adapter runs the same state-machine fixtures. Transport tests
+then prove that document publication has exactly one carrier and one authority
+acceptance operation, and that an explicit inbound pull never creates or
+clears an outbound obligation.
 
 ## Considered alternatives
 
@@ -212,3 +220,17 @@ authority acceptance operation rather than two semantic paths.
   unrelated bounds, and suggests cross-plane commit semantics.
 - **Eagerly mirror every remote document and blob.** Rejected because outbound
   durability does not require hydrating or downloading unopened row content.
+- **Freeze an exact retry image and settle against a digest-bound receipt.**
+  Rejected because Yjs semantic idempotency already makes reconstructed
+  resubmission safe. The frozen payload, digest, receipt parser, and the
+  parked/re-arm state machine that guarded them deleted more correctness than
+  they added; the accepted trade is that a retry may transmit newer state than
+  the failed attempt carried.
+- **Publish or settle over an open document's WebSocket.** Rejected because a
+  second carrier producing candidates and clearing obligations duplicates the
+  publication engine's rules at a different lifecycle. The accepted trade is
+  roughly one second of inbound latency for open documents, owned by an
+  explicit application pull, in exchange for one publication path.
+- **One giant atomic multi-document HTTP batch.** Rejected because per-address
+  acceptance, bounds, and failure isolation are the unit of correctness;
+  coalescing happens in the scheduler, not on the wire.
