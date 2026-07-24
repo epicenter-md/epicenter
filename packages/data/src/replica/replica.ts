@@ -85,6 +85,22 @@ export const ReplicaError = defineErrors({
 		message: `Replica change subscriber threw: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
+	/**
+	 * A synchronization cycle threw instead of returning a Result: a programming
+	 * bug, or an injected dependency (a credential provider, a scheduler, an
+	 * exchange or publish carrier) that rejected outside its own Result
+	 * adaptation.
+	 *
+	 * Deliberately its own variant. Folding an unexpected throw into
+	 * `TransportFailed` would claim the network was at fault and hand it the
+	 * transport retry policy, which turns a bug into a hot retry loop and hides
+	 * it behind an "offline" status the user cannot act on. The original throw
+	 * stays on `cause`.
+	 */
+	SyncFaulted: ({ cause }: { cause: unknown }) => ({
+		message: `Sync faulted unexpectedly: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
 });
 export type ReplicaError = InferErrors<typeof ReplicaError>;
 
@@ -438,6 +454,23 @@ function createReplica(
 		}
 	}
 
+	/**
+	 * Wake the outbox subscribers for a committed local write.
+	 *
+	 * Contained exactly like {@link notify}: these listeners start background
+	 * synchronization, so letting one throw would surface an unrelated sync
+	 * failure as the local write's own rejection.
+	 */
+	function notifyOutbox(): void {
+		for (const listener of outboxListeners) {
+			try {
+				listener();
+			} catch (cause) {
+				log.error(ReplicaError.SubscriberThrew({ cause }));
+			}
+		}
+	}
+
 	function changeOf(value: Change | SyncRecord): ReplicaChange {
 		return 'rowId' in value
 			? { kind: 'row', key: value.key, rowId: value.rowId }
@@ -540,7 +573,7 @@ function createReplica(
 		if (result.error === null && result.data.applied)
 			notify([changeOf(parsed)]);
 		if (result.error === null && result.data.applied) {
-			for (const listener of outboxListeners) listener();
+			notifyOutbox();
 		}
 		return result;
 	}

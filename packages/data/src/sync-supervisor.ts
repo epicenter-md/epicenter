@@ -3,7 +3,7 @@ import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Ok, type Result } from 'wellcrafted/result';
 
 import type { PublishDocument } from './documents.js';
-import type { Exchange, Replica, ReplicaError } from './replica/index.js';
+import { type Exchange, type Replica, ReplicaError } from './replica/index.js';
 
 const DEFAULT_EXCHANGE_INTERVAL_MS = 30_000;
 const DEFAULT_DOCUMENT_COALESCE_MS = 250;
@@ -106,14 +106,36 @@ export function createSyncSupervisor({
 		);
 	}
 
+	/**
+	 * Run one teardown step so a throwing injected canceller or unsubscribe
+	 * cannot strand the rest.
+	 *
+	 * These run on every path that retires a wake: attach, a credential change,
+	 * and disposal. Owning the containment here rather than at each call site is
+	 * what makes "cancelling a wake never throws into a caller" one rule instead
+	 * of a habit, and it keeps a half-disposed supervisor (still subscribed to
+	 * the outbox, still waking a dead session) from being reachable.
+	 */
+	function retire(what: string, step: () => void): void {
+		try {
+			step();
+		} catch (cause) {
+			log.error(
+				new Error(`Sync supervisor could not retire ${what}`, { cause }),
+			);
+		}
+	}
+
 	function cancelWake(): void {
-		cancelScheduled?.();
+		const cancel = cancelScheduled;
 		cancelScheduled = undefined;
+		if (cancel !== undefined) retire('the scheduled wake', cancel);
 	}
 
 	function cancelDocumentWake(): void {
-		cancelDocumentCoalesce?.();
+		const cancel = cancelDocumentCoalesce;
 		cancelDocumentCoalesce = undefined;
+		if (cancel !== undefined) retire('the document wake', cancel);
 	}
 
 	function scheduleWake(delayMs: number): void {
@@ -128,6 +150,26 @@ export function createSyncSupervisor({
 		const delay = Math.min(BASE_RETRY_MS * 2 ** retryAttempt, MAX_RETRY_MS);
 		retryAttempt += 1;
 		return delay;
+	}
+
+	/**
+	 * Update status and retry policy for one failed cycle. The single owner of
+	 * that transition, so a cycle reports its failure exactly once whether the
+	 * failure arrived as a typed Result or as an unexpected throw.
+	 */
+	function reportFailure(failure: ReplicaError): void {
+		const error = new Error(extractErrorMessage(failure), {
+			cause: failure,
+		});
+		setStatus({ state: 'offline', lastError: error });
+		// Transport trouble retries with backoff; every other failure
+		// still gets the periodic safety wake so recovery never depends
+		// on another local write happening.
+		if (failure.name === 'TransportFailed') {
+			scheduleWake(retryDelay());
+		} else {
+			scheduleWake(exchangeIntervalMs);
+		}
 	}
 
 	async function drain(
@@ -154,20 +196,6 @@ export function createSyncSupervisor({
 				return Ok(undefined);
 			}
 			setStatus({ state: 'syncing', lastError: status.lastError });
-			const reportFailure = (failure: ReplicaError): void => {
-				const error = new Error(extractErrorMessage(failure), {
-					cause: failure,
-				});
-				setStatus({ state: 'offline', lastError: error });
-				// Transport trouble retries with backoff; every other failure
-				// still gets the periodic safety wake so recovery never depends
-				// on another local write happening.
-				if (failure.name === 'TransportFailed') {
-					scheduleWake(retryDelay());
-				} else {
-					scheduleWake(exchangeIntervalMs);
-				}
-			};
 			if (fullCycle) {
 				lastResult = await replica.synchronize(session.exchange);
 				if (activeGeneration !== generation || isDisposed) return lastResult;
@@ -193,17 +221,50 @@ export function createSyncSupervisor({
 		return lastResult;
 	}
 
+	/**
+	 * Run one drain to completion without ever rejecting.
+	 *
+	 * This is the supervisor's single failure boundary. Expected synchronization
+	 * trouble already arrives as a typed Result; only a bug or a throwing
+	 * injected dependency reaches the catch. Either way the caller receives a
+	 * Result, which is what lets background wakes discard this promise safely
+	 * and lets a generation continuation chain off it without being dropped.
+	 */
+	async function runDrain(
+		activeGeneration: number,
+	): Promise<Result<void, ReplicaError>> {
+		try {
+			return await drain(activeGeneration);
+		} catch (cause) {
+			const faulted = ReplicaError.SyncFaulted({ cause });
+			// Reported once, here, because no call site owns this promise.
+			log.error(faulted.error);
+			try {
+				reportFailure(faulted.error);
+			} catch (reportCause) {
+				// A throwing scheduler or status subscriber must not turn the
+				// failure boundary itself into an unhandled rejection.
+				log.error(
+					new Error('Sync failure reporting threw', { cause: reportCause }),
+				);
+			}
+			return faulted;
+		}
+	}
+
 	function startDrain(): Promise<Result<void, ReplicaError>> {
 		if (isDisposed || session === undefined)
 			return Promise.resolve(Ok(undefined));
 		if (running !== undefined) {
 			return runningGeneration === generation
 				? running
-				: running.then(() => startDrain());
+				: // Safe because `running` cannot reject: a rejected continuation
+					// here would drop the queued generation change entirely.
+					running.then(() => startDrain());
 		}
 		const activeGeneration = generation;
 		runningGeneration = activeGeneration;
-		running = drain(activeGeneration).finally(() => {
+		running = runDrain(activeGeneration).finally(() => {
 			running = undefined;
 			runningGeneration = undefined;
 			if (
@@ -292,9 +353,12 @@ export function createSyncSupervisor({
 			generation += 1;
 			cancelWake();
 			cancelDocumentWake();
-			stopCredentials?.();
+			const stopNextCredentials = stopCredentials;
 			stopCredentials = undefined;
-			stopOutbox();
+			if (stopNextCredentials !== undefined) {
+				retire('the credential subscription', stopNextCredentials);
+			}
+			retire('the outbox subscription', stopOutbox);
 			session = undefined;
 			listeners.clear();
 		},
