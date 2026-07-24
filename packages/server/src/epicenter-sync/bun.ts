@@ -9,23 +9,22 @@ import type {
 import type { DocumentAddress } from '@epicenter/document-sync';
 import type { PrincipalId } from '@epicenter/identity';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
-import type { Server } from 'bun';
 import type { Hono, MiddlewareHandler } from 'hono';
 
-import type { Env, ResolveDocumentPrincipal } from '../types.js';
+import type { Env } from '../types.js';
 import { openEpicenterSyncAuthority } from './authority.js';
 import {
-	type BunEpicenterDocumentSocketData,
-	createBunEpicenterDocumentBinding,
-} from './document-bun.js';
-import {
-	mountEpicenterSyncRoute,
-	resolveEpicenterDocumentUpgrade,
-} from './route.js';
+	createEpicenterDocumentStore,
+	type DocumentAppendOutcome,
+	type DocumentReadOutcome,
+	type EpicenterDocumentStore,
+} from './document-store.js';
+import { mountDocumentSyncRoute, mountEpicenterSyncRoute } from './route.js';
 
 type OpenPrincipalAuthority = {
 	raw: Database;
 	exchange(request: ExchangeRequest): ExchangeResponse;
+	documents: EpicenterDocumentStore;
 };
 
 function encodePathComponent(value: string): string {
@@ -59,7 +58,6 @@ function readDatabaseSize(database: Database): number {
 export function createBunEpicenterSyncRuntime({ dir }: { dir: string }) {
 	mkdirSync(dir, { recursive: true });
 	const authorities = new Map<PrincipalId, OpenPrincipalAuthority>();
-	let server: Server<BunEpicenterDocumentSocketData> | undefined;
 	let closed = false;
 
 	function load(principalId: PrincipalId): OpenPrincipalAuthority {
@@ -78,7 +76,13 @@ export function createBunEpicenterSyncRuntime({ dir }: { dir: string }) {
 				database,
 				readDatabaseSize: () => readDatabaseSize(raw),
 			});
-			const opened = { raw, exchange: authority.exchange };
+			const opened = {
+				raw,
+				exchange: authority.exchange,
+				documents: createEpicenterDocumentStore(database, {
+					readDatabaseSize: () => readDatabaseSize(raw),
+				}),
+			};
 			authorities.set(principalId, opened);
 			return opened;
 		} catch (cause) {
@@ -87,57 +91,24 @@ export function createBunEpicenterSyncRuntime({ dir }: { dir: string }) {
 		}
 	}
 
-	const documents = createBunEpicenterDocumentBinding({
-		locateDatabase: (principalId) =>
-			createBunSqliteAdapter(load(principalId as PrincipalId).raw),
-	});
-
-	function exchange(principalId: PrincipalId, request: ExchangeRequest) {
-		const response = load(principalId).exchange(request);
-		if ('refusal' in response || request.batch === undefined) return response;
-		for (const change of request.batch.changes) {
-			if (change.kind !== 'delete') continue;
-			documents.closeRow(principalId, {
-				key: change.key,
-				rowId: change.rowId,
-			});
-		}
-		return response;
-	}
-
 	return {
 		locateAuthority: (principalId: PrincipalId) => (request: ExchangeRequest) =>
-			exchange(principalId, request),
-		websocket: documents.websocket,
-		bindServer(bound: Server<BunEpicenterDocumentSocketData>): void {
-			server = bound;
-		},
-		acceptDocumentUpgrade({
-			request,
-			principalId,
-			address,
-			authorizationExpiresAt,
-		}: {
-			request: Request;
-			principalId: string;
-			address: DocumentAddress;
-			authorizationExpiresAt: number;
-		}): Response {
-			if (server === undefined) {
-				return new Response('Epicenter document server not bound', {
-					status: 500,
-				});
-			}
-			return documents.handleAuthorizedUpgrade(request, server, {
-				principalId,
-				address,
-				authorizationExpiresAt,
-			});
-		},
+			load(principalId).exchange(request),
+		publishDocument: (
+			principalId: PrincipalId,
+			address: DocumentAddress,
+			update: Uint8Array,
+		): DocumentAppendOutcome =>
+			load(principalId).documents.appendIfLive(address, update),
+		pullDocument: (
+			principalId: PrincipalId,
+			address: DocumentAddress,
+			sinceVersion: number | undefined,
+		): DocumentReadOutcome =>
+			load(principalId).documents.read(address, sinceVersion),
 		close(): void {
 			if (closed) return;
 			closed = true;
-			documents.closeAll();
 			for (const authority of authorities.values()) authority.raw.close();
 			authorities.clear();
 		},
@@ -148,16 +119,14 @@ export type BunEpicenterSyncRuntime = ReturnType<
 	typeof createBunEpicenterSyncRuntime
 >;
 
-/** Mount the Bun scalar exchange and row-document WebSocket route. */
+/** Mount the Bun scalar exchange and row-document HTTP sync routes. */
 export function mountBunEpicenterSyncApp<E extends Env = Env>(
 	app: Hono<E>,
 	{
 		auth,
-		resolveDocumentPrincipal,
 		runtime,
 	}: {
 		auth: MiddlewareHandler<E>;
-		resolveDocumentPrincipal: ResolveDocumentPrincipal<E>;
 		runtime: BunEpicenterSyncRuntime;
 	},
 ): void {
@@ -165,17 +134,11 @@ export function mountBunEpicenterSyncApp<E extends Env = Env>(
 		auth,
 		locateAuthority: runtime.locateAuthority,
 	});
-	app.get('/api/sync/v1/documents/:key/:rowId', async (c) => {
-		const authorization = await resolveEpicenterDocumentUpgrade(
-			c,
-			resolveDocumentPrincipal,
-		);
-		if (authorization === undefined) {
-			return new Response('WebSocket upgrade refused', { status: 401 });
-		}
-		return runtime.acceptDocumentUpgrade({
-			request: c.req.raw,
-			...authorization,
-		});
+	mountDocumentSyncRoute(app, {
+		auth,
+		publish: (principalId, address, update) =>
+			runtime.publishDocument(principalId, address, update),
+		pull: (principalId, address, sinceVersion) =>
+			runtime.pullDocument(principalId, address, sinceVersion),
 	});
 }

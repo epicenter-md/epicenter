@@ -1,11 +1,11 @@
 /**
  * Cloudflare Epicenter Authority Tests
  *
- * Verifies the new Durable Object authority through its fetch boundary using a
+ * Verifies the Durable Object authority through its typed RPC surface using a
  * fake SQLite-backed Durable Object storage implementation.
  *
  * Key behaviors:
- * - Scalar exchange executes through Durable Object fetch
+ * - Scalar exchange executes through the authority RPC method
  * - Accepted state and replica receipts survive actor restart
  */
 import { Database } from 'bun:sqlite';
@@ -91,30 +91,16 @@ test('exchange state and receipt survive Durable Object restart', async () => {
 	const owned = setupStorage();
 	const state = {
 		storage: owned.storage,
-		getWebSockets: () => [],
 	} as unknown as DurableObjectState;
 	try {
 		let authority = new EpicenterAuthority(state, {} as Cloudflare.Env);
-		const accepted = await authority.fetch(
-			new Request('https://epicenter-authority.internal/', {
-				method: 'POST',
-				body: JSON.stringify(requestBody()),
-			}),
-		);
-		expect(accepted.status).toBe(200);
-		expect((await accepted.json()) as unknown).toMatchObject({
+		expect(authority.exchange(requestBody())).toMatchObject({
 			receipt: { seq: 1, appliedThrough: 1 },
 			through: 1,
 		});
 
 		authority = new EpicenterAuthority(state, {} as Cloudflare.Env);
-		const retried = await authority.fetch(
-			new Request('https://epicenter-authority.internal/', {
-				method: 'POST',
-				body: JSON.stringify(requestBody()),
-			}),
-		);
-		expect((await retried.json()) as unknown).toMatchObject({
+		expect(authority.exchange(requestBody())).toMatchObject({
 			receipt: { seq: 1, appliedThrough: 1 },
 			through: 1,
 			records: [

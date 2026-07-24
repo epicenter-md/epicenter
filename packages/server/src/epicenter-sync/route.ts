@@ -2,12 +2,23 @@ import type {
 	ExchangeRequest,
 	ExchangeResponse,
 } from '@epicenter/data/protocol';
-import { parseExchangeRequest } from '@epicenter/data/protocol';
+import {
+	parseExchangeRequest,
+	parseQualifiedKey,
+	parseRowId,
+} from '@epicenter/data/protocol';
+import {
+	DOCUMENT_MAX_TRANSFER_BYTES,
+	type DocumentAddress,
+} from '@epicenter/document-sync';
 import type { PrincipalId } from '@epicenter/identity';
-import { type Context, Hono, type MiddlewareHandler } from 'hono';
+import { Hono, type MiddlewareHandler } from 'hono';
 
-import type { Env, ResolveDocumentPrincipal } from '../types.js';
-import { verifyDocumentUpgrade } from './document-server.js';
+import type { Env } from '../types.js';
+import type {
+	DocumentAppendOutcome,
+	DocumentReadOutcome,
+} from './document-store.js';
 
 const MAX_SYNC_REQUEST_BYTES = 1_048_576;
 
@@ -50,6 +61,120 @@ export function createEpicenterSyncApp<E extends Env = Env>(
 	});
 }
 
+export type DocumentPublishDispatch<E extends Env = Env> = (
+	principalId: PrincipalId,
+	address: DocumentAddress,
+	update: Uint8Array,
+	env: E['Bindings'],
+) => DocumentAppendOutcome | Promise<DocumentAppendOutcome>;
+
+export type DocumentPullDispatch<E extends Env = Env> = (
+	principalId: PrincipalId,
+	address: DocumentAddress,
+	sinceVersion: number | undefined,
+	env: E['Bindings'],
+) => DocumentReadOutcome | Promise<DocumentReadOutcome>;
+
+function parseAddress(key: string, rowId: string): DocumentAddress | undefined {
+	if (
+		parseQualifiedKey(key).error !== null ||
+		parseRowId(rowId).error !== null
+	) {
+		return undefined;
+	}
+	return { key, rowId };
+}
+
+function documentETag(version: number): string {
+	return `"${version}"`;
+}
+
+function parseIfNoneMatch(header: string | undefined): number | undefined {
+	const matched = header === undefined ? null : /^"(\d{1,15})"$/.exec(header);
+	return matched === null ? undefined : Number(matched[1]);
+}
+
+/** Create the authenticated document publish and pull sub-app. */
+export function createDocumentSyncApp<E extends Env = Env>({
+	publish,
+	pull,
+}: {
+	publish: DocumentPublishDispatch<E>;
+	pull: DocumentPullDispatch<E>;
+}): Hono<E> {
+	const app = new Hono<E>();
+	app.post('/api/sync/v1/documents/:key/:rowId', async (c) => {
+		const address = parseAddress(c.req.param('key'), c.req.param('rowId'));
+		if (address === undefined) {
+			return c.json({ error: 'invalid-request' } as const, 400);
+		}
+		const declaredLength = Number(c.req.raw.headers.get('content-length'));
+		if (
+			Number.isFinite(declaredLength) &&
+			declaredLength > DOCUMENT_MAX_TRANSFER_BYTES
+		) {
+			return c.json({ error: 'request-too-large' } as const, 413);
+		}
+		const body = new Uint8Array(await c.req.raw.arrayBuffer());
+		if (body.byteLength === 0) {
+			return c.json({ error: 'invalid-request' } as const, 400);
+		}
+		if (body.byteLength > DOCUMENT_MAX_TRANSFER_BYTES) {
+			return c.json({ error: 'request-too-large' } as const, 413);
+		}
+		const result = await publish(c.var.principal.id, address, body, c.env);
+		if (result.outcome === 'invalid-update') {
+			return c.json({ error: 'invalid-update' } as const, 400);
+		}
+		return c.json({ outcome: result.outcome } as const);
+	});
+	app.get('/api/sync/v1/documents/:key/:rowId', async (c) => {
+		const address = parseAddress(c.req.param('key'), c.req.param('rowId'));
+		if (address === undefined) {
+			return c.json({ error: 'invalid-request' } as const, 400);
+		}
+		const sinceVersion = parseIfNoneMatch(c.req.header('if-none-match'));
+		const result = await pull(c.var.principal.id, address, sinceVersion, c.env);
+		if (result.kind === 'not-live') {
+			return c.json({ error: 'not-live' } as const, 404);
+		}
+		const headers = { etag: documentETag(result.version) };
+		if (result.kind === 'unchanged') {
+			return c.body(null, 304, headers);
+		}
+		if (result.state === undefined) {
+			return c.body(null, 204, headers);
+		}
+		return c.body(result.state.slice().buffer as ArrayBuffer, 200, {
+			...headers,
+			'content-type': 'application/octet-stream',
+		});
+	});
+	return app;
+}
+
+/**
+ * Mount the bearer-authenticated document synchronization ingress: POST
+ * publishes one candidate into the authority acceptance operation, GET pulls
+ * accepted state with a conditional version so unchanged documents transfer
+ * no body (ADR-0174).
+ */
+export function mountDocumentSyncRoute<E extends Env = Env>(
+	app: Hono<E>,
+	{
+		auth,
+		publish,
+		pull,
+	}: {
+		auth: MiddlewareHandler<E>;
+		publish: DocumentPublishDispatch<E>;
+		pull: DocumentPullDispatch<E>;
+	},
+): void {
+	app.use('/api/sync/v1/documents/:key/:rowId', auth);
+	app.route('/', createDocumentSyncApp<E>({ publish, pull }));
+}
+
 /** Mount the bearer-authenticated scalar exchange. */
 export function mountEpicenterSyncRoute<E extends Env = Env>(
 	app: Hono<E>,
@@ -63,32 +188,4 @@ export function mountEpicenterSyncRoute<E extends Env = Env>(
 ): void {
 	app.use('/api/sync/v1', auth);
 	app.route('/', createEpicenterSyncApp<E>(locateAuthority));
-}
-
-/** Resolve a document bearer with the deployment's existing upgrade-time policy. */
-export async function resolveEpicenterDocumentUpgrade<E extends Env>(
-	c: Context<E>,
-	resolveDocumentPrincipal: ResolveDocumentPrincipal<E>,
-) {
-	let authorization:
-		| {
-				principalId: PrincipalId;
-				authorizationExpiresAt: number;
-		  }
-		| undefined;
-	const verified = await verifyDocumentUpgrade({
-		request: c.req.raw,
-		resolveBearer: async (bearer) => {
-			const resolution = await resolveDocumentPrincipal(c, bearer);
-			if (resolution.error !== null) return undefined;
-			authorization = {
-				principalId: resolution.data.principal.id,
-				authorizationExpiresAt: resolution.data.authorizationExpiresAt,
-			};
-			return authorization.principalId;
-		},
-	});
-	return verified.error === null && authorization !== undefined
-		? { ...authorization, address: verified.data.address }
-		: undefined;
 }

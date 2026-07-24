@@ -4,13 +4,14 @@ import {
 	StorageUpgradeRequiredError,
 } from '@epicenter/sqlite';
 
-export const AUTHORITY_FORMAT_VERSION = 1;
+export const AUTHORITY_FORMAT_VERSION = 2;
 
 const AUTHORITY_TABLES = [
 	'metadata',
 	'replicas',
 	'state',
 	'document_updates',
+	'document_versions',
 ] as const;
 
 const SCHEMA = [
@@ -60,6 +61,17 @@ const SCHEMA = [
 		update_sequence INTEGER NOT NULL CHECK (update_sequence > 0),
 		update_bytes BLOB NOT NULL,
 		PRIMARY KEY (qualified_key, row_id, update_sequence)
+	) WITHOUT ROWID, STRICT`,
+	// The per-address acceptance counter behind conditional pulls: it advances
+	// with every accepted append, so an unchanged value proves an unchanged
+	// document without hydrating or transferring it (ADR-0174).
+	`CREATE TABLE document_versions (
+		qualified_key TEXT NOT NULL,
+		row_id TEXT NOT NULL CHECK (
+			length(row_id) = 24 AND row_id NOT GLOB '*[^a-z0-9]*'
+		),
+		version INTEGER NOT NULL CHECK (version > 0),
+		PRIMARY KEY (qualified_key, row_id)
 	) WITHOUT ROWID, STRICT`,
 ] as const;
 

@@ -1,432 +1,452 @@
 /**
- * Epicenter Row-Document Synchronization Tests
+ * Epicenter Row-Document HTTP Synchronization Tests
  *
- * Drives the public Document Sync client against the runtime-agnostic server
- * handler over real Bun SQLite authority and local replica stores.
- *
- * Key behaviors:
- * - Two clients converge live and after an offline edit
- * - Scalar deletion closes authority sockets and local revocation stops retry
- * - Compound-bound refusal appends nothing and closes retryably
- * - Presence and upgrade authentication obey the document-v1 wire
+ * Drives the real client runtime (@epicenter/data) against the mounted Bun
+ * authority routes over HTTP: automatic durable publication, restart
+ * resumption, explicit conditional pull, terminal bound refusal, deletion
+ * racing publication, and authority-side compaction.
  */
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-import {
-	createEpicenter,
-	defineTable,
-	openReplica,
-	type Replica,
-	type RowDocument,
-} from '@epicenter/data';
-import { batchDigest } from '@epicenter/data/protocol';
-import {
-	connectRowDocument,
-	DOCUMENT_SUBPROTOCOL,
-	type DocumentAddress,
-	type DocumentClientSocket,
-	type DocumentPeer,
-	decodeDocumentFrame,
-	encodeDocumentFrame,
-} from '@epicenter/document-sync';
+import { Principal } from '@epicenter/auth';
+import { createEpicenter, defineTable, openReplica } from '@epicenter/data';
+import { parseExchangeResponse } from '@epicenter/data/protocol';
+import { createHttpDocumentTransports } from '@epicenter/document-sync';
 import { field } from '@epicenter/field';
+import { asPrincipalId } from '@epicenter/identity';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import * as Y from '@y/y';
-import { expectErr, expectOk } from 'wellcrafted/testing';
+import { Hono } from 'hono';
+import { expectOk } from 'wellcrafted/testing';
 
-import { openEpicenterSyncAuthority } from './authority.js';
+import type { Env } from '../types.js';
 import {
-	createEpicenterDocumentServer,
-	type EpicenterDocumentServer,
-	type EpicenterDocumentSocket,
-	verifyDocumentUpgrade,
-} from './document-server.js';
+	createBunEpicenterSyncRuntime,
+	mountBunEpicenterSyncApp,
+} from './bun.js';
 
-const ADDRESS: DocumentAddress = {
-	key: 'so.epicenter.tests.documents',
-	rowId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
-};
+const PRINCIPAL_ID = asPrincipalId('alice');
+const NOTES_KEY = 'so.epicenter.tests.notes';
 const definition = defineTable({
-	key: ADDRESS.key,
+	key: NOTES_KEY,
 	fields: { title: field.string() },
 });
 
-type Local = {
-	raw: Database;
-	replica: Replica;
-	epicenter: ReturnType<typeof createEpicenter>;
-	document: RowDocument;
-};
-
-async function openLocal(): Promise<Local> {
-	const raw = new Database(':memory:');
-	const database = createBunSqliteAdapter(raw);
-	const replica = expectOk(openReplica({ database }));
-	expectOk(
-		replica.write({
-			kind: 'create',
-			key: ADDRESS.key,
-			rowId: ADDRESS.rowId,
-			fields: { title: 'document' },
-		}),
-	);
-	const epicenter = createEpicenter({ replica, database });
-	const document = await epicenter
-		.bind({ tables: { documents: definition }, values: {} })
-		.tables.documents.openDocument(ADDRESS.rowId);
-	return { raw, replica, epicenter, document };
+function openServer() {
+	const dir = mkdtempSync(join(tmpdir(), 'epicenter-doc-integration-'));
+	const runtime = createBunEpicenterSyncRuntime({ dir });
+	const app = new Hono<Env>();
+	mountBunEpicenterSyncApp(app, {
+		runtime,
+		auth: async (c, next) => {
+			if (c.req.header('authorization') !== 'Bearer token') {
+				return new Response(null, { status: 401 });
+			}
+			c.set('principal', Principal.assert({ id: PRINCIPAL_ID }));
+			await next();
+		},
+	});
+	const authorizedFetch = async (url: URL, init: RequestInit) =>
+		app.request(url.toString(), {
+			...init,
+			headers: {
+				...(init.headers as Record<string, string> | undefined),
+				authorization: 'Bearer token',
+			},
+		});
+	return {
+		app,
+		runtime,
+		authorizedFetch,
+		session: {
+			deploymentId: 'https://authority.test/',
+			principalId: PRINCIPAL_ID as string,
+			exchange: async (request: unknown) => {
+				const response = await app.request('/api/sync/v1', {
+					method: 'POST',
+					headers: {
+						'content-type': 'application/json',
+						authorization: 'Bearer token',
+					},
+					body: JSON.stringify(request),
+				});
+				if (!response.ok) {
+					throw new Error(`Epicenter sync failed (${response.status})`);
+				}
+				const parsed = parseExchangeResponse(await response.json());
+				if (parsed.error !== null) throw parsed.error;
+				return parsed.data;
+			},
+			...createHttpDocumentTransports({
+				baseUrl: 'https://authority.test/',
+				fetch: authorizedFetch,
+			}),
+		},
+		cleanup() {
+			runtime.close();
+			rmSync(dir, { recursive: true, force: true });
+		},
+	};
 }
 
-function openAuthority() {
-	const raw = new Database(':memory:');
+function openClient(path = ':memory:') {
+	const raw = new Database(path, { strict: true });
 	const database = createBunSqliteAdapter(raw);
-	const scalar = openEpicenterSyncAuthority({ database });
-	const changes = [
-		{
-			kind: 'create' as const,
-			key: ADDRESS.key,
-			rowId: ADDRESS.rowId,
-			fields: { title: 'document' },
-		},
-	];
-	scalar.exchange({
-		replicaId: 'serverseed00000000000000',
-		after: 0,
-		batch: { seq: 1, digest: batchDigest(changes), changes },
-	});
+	const replica = expectOk(openReplica({ database }));
+	const epicenter = createEpicenter({ replica, database });
 	return {
 		raw,
 		database,
-		scalar,
-		documents: createEpicenterDocumentServer({ database, clock: () => 123 }),
+		epicenter,
+		notes: epicenter.bind({ tables: { notes: definition }, values: {} }).tables
+			.notes,
 	};
 }
 
-class InProcessClientSocket implements DocumentClientSocket {
-	readyState = 1;
-	protocol = DOCUMENT_SUBPROTOCOL;
-	binaryType = 'arraybuffer';
-	onopen: (() => void) | null = null;
-	onmessage: ((event: { data: unknown }) => void) | null = null;
-	onerror: (() => void) | null = null;
-	onclose:
-		| ((event: { code: number; reason: string; wasClean: boolean }) => void)
-		| null = null;
-
-	constructor(
-		private readonly server: EpicenterDocumentServer,
-		private readonly address: DocumentAddress,
-		readonly serverSocket: EpicenterDocumentSocket,
-	) {}
-
-	send(data: Uint8Array): void {
-		this.server.receive(this.serverSocket, this.address, data);
-	}
-
-	close(): void {
-		if (this.readyState === 3) return;
-		this.readyState = 3;
-		this.server.disconnect(this.serverSocket);
-		this.onclose?.({ code: 1000, reason: '', wasClean: true });
-	}
-
-	serverSend(data: Uint8Array): void {
-		this.onmessage?.({ data: new Uint8Array(data) });
-	}
-
-	serverClose(): void {
-		if (this.readyState === 3) return;
-		this.readyState = 3;
-		this.onclose?.({ code: 1000, reason: '', wasClean: true });
-	}
+function publicationRow(
+	database: ReturnType<typeof createBunSqliteAdapter>,
+	rowId: string,
+) {
+	return database.all<{
+		revision: number;
+		accepted_revision: number;
+		sync_issue: string | null;
+	}>(
+		`SELECT revision, accepted_revision, sync_issue
+		 FROM document_publication WHERE qualified_key = ? AND row_id = ?`,
+		[NOTES_KEY, rowId],
+	)[0];
 }
 
-function inProcessOpener(
-	server: EpicenterDocumentServer,
-	opened: InProcessClientSocket[],
-) {
-	return async (url: URL, protocols: string[]) => {
-		const request = new Request(url, {
-			headers: {
-				upgrade: 'websocket',
-				'sec-websocket-protocol': protocols.join(', '),
+async function waitFor(
+	check: () => boolean | Promise<boolean>,
+	label = 'condition',
+): Promise<void> {
+	for (let attempt = 0; attempt < 400; attempt += 1) {
+		if (await check()) return;
+		await Bun.sleep(5);
+	}
+	throw new Error(`Timed out waiting for ${label}`);
+}
+
+test('a local edit publishes automatically over HTTP and settles', async () => {
+	const server = openServer();
+	const client = openClient();
+	try {
+		expectOk(await client.epicenter.attachSync(server.session));
+		const row = await client.notes.create({ title: 'auto publish' });
+		const document = await client.notes.openDocument(row.id);
+		document.transact(() => document.get('content').insert(0, 'typed text'));
+
+		await waitFor(() => {
+			const record = publicationRow(client.database, row.id);
+			return (
+				record !== undefined && record.accepted_revision === record.revision
+			);
+		}, 'publication settlement');
+
+		const pulled = server.runtime.pullDocument(
+			PRINCIPAL_ID,
+			{ key: NOTES_KEY, rowId: row.id },
+			undefined,
+		);
+		if (pulled.kind !== 'state' || pulled.state === undefined) {
+			throw new Error('Expected accepted authority state');
+		}
+		const hydrated = new Y.Doc();
+		try {
+			Y.applyUpdateV2(hydrated, pulled.state);
+			expect(hydrated.get('content').toString()).toBe('typed text');
+		} finally {
+			hydrated.destroy();
+		}
+		await document[Symbol.asyncDispose]();
+	} finally {
+		await client.epicenter[Symbol.asyncDispose]();
+		client.raw.close();
+		server.cleanup();
+	}
+});
+
+test('restart resumes dirty publication from SQLite', async () => {
+	const server = openServer();
+	const dir = mkdtempSync(join(tmpdir(), 'epicenter-doc-client-'));
+	const path = join(dir, 'client.sqlite');
+	let rowId: string;
+	try {
+		{
+			// First run: durable local work with no attached session.
+			const client = openClient(path);
+			const row = await client.notes.create({ title: 'offline note' });
+			rowId = row.id;
+			const document = await client.notes.openDocument(row.id);
+			document.transact(() =>
+				document.get('content').insert(0, 'written offline'),
+			);
+			await document[Symbol.asyncDispose]();
+			expect(publicationRow(client.database, row.id)?.accepted_revision).toBe(
+				0,
+			);
+			await client.epicenter[Symbol.asyncDispose]();
+			client.raw.close();
+		}
+
+		// Second run: attaching alone resumes and publishes the owed work.
+		const reopened = openClient(path);
+		try {
+			expectOk(await reopened.epicenter.attachSync(server.session));
+			await waitFor(() => {
+				const record = publicationRow(reopened.database, rowId);
+				return (
+					record !== undefined && record.accepted_revision === record.revision
+				);
+			}, 'resumed publication');
+			const pulled = server.runtime.pullDocument(
+				PRINCIPAL_ID,
+				{ key: NOTES_KEY, rowId },
+				undefined,
+			);
+			expect(pulled.kind).toBe('state');
+		} finally {
+			await reopened.epicenter[Symbol.asyncDispose]();
+			reopened.raw.close();
+		}
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+		server.cleanup();
+	}
+});
+
+test('a second replica pulls accepted state and owes nothing outbound', async () => {
+	const server = openServer();
+	const author = openClient();
+	const reader = openClient();
+	try {
+		expectOk(await author.epicenter.attachSync(server.session));
+		const row = await author.notes.create({ title: 'shared note' });
+		const document = await author.notes.openDocument(row.id);
+		document.transact(() => document.get('content').insert(0, 'from author'));
+		await waitFor(() => {
+			const record = publicationRow(author.database, row.id);
+			return (
+				record !== undefined && record.accepted_revision === record.revision
+			);
+		}, 'author publication');
+		await document[Symbol.asyncDispose]();
+
+		// The reader learns the row through the scalar exchange, opens its
+		// local (empty) document, and explicitly pulls the accepted body.
+		expectOk(await reader.epicenter.attachSync(server.session));
+		await waitFor(
+			async () => expectOk(await reader.notes.get(row.id)) !== undefined,
+			'scalar row arrival',
+		);
+		const readerDocument = await reader.notes.openDocument(row.id);
+		expect(readerDocument.get('content').toString()).toBe('');
+		expectOk(await readerDocument.pull());
+		expect(readerDocument.get('content').toString()).toBe('from author');
+		// Accepted inbound state never creates an outbound obligation.
+		expect(publicationRow(reader.database, row.id)).toBeUndefined();
+
+		// An unchanged repeat pull transfers no document body.
+		let bodies = 0;
+		const countingTransports = createHttpDocumentTransports({
+			baseUrl: 'https://authority.test/',
+			fetch: async (url, init) => {
+				const response = await server.authorizedFetch(url, init);
+				if (response.status === 200) bodies += 1;
+				return response;
 			},
 		});
-		const verified = expectOk(
-			await verifyDocumentUpgrade({
-				request,
-				resolveBearer: (token) =>
-					token === 'token' ? 'principal-a' : undefined,
-			}),
-		);
-		expect(server.admit(verified.address)).toBe(true);
-		let client: InProcessClientSocket;
-		const serverSocket: EpicenterDocumentSocket = {
-			send(data) {
-				client.serverSend(data);
-			},
-			close() {
-				client.serverClose();
-			},
-		};
-		client = new InProcessClientSocket(server, verified.address, serverSocket);
-		opened.push(client);
-		return client;
-	};
-}
+		const versioned = await countingTransports.pullDocument({
+			address: { key: NOTES_KEY, rowId: row.id },
+			sinceVersion: undefined,
+		});
+		if (versioned.kind !== 'state') throw new Error('Expected state');
+		const unchanged = await countingTransports.pullDocument({
+			address: { key: NOTES_KEY, rowId: row.id },
+			sinceVersion: versioned.version,
+		});
+		expect(unchanged.kind).toBe('unchanged');
+		expect(bodies).toBe(1);
 
-function credentials() {
-	return { get: () => 'token' };
-}
-
-async function waitFor(check: () => boolean): Promise<void> {
-	for (let attempt = 0; attempt < 100; attempt += 1) {
-		if (check()) return;
-		await Bun.sleep(1);
+		await readerDocument[Symbol.asyncDispose]();
+	} finally {
+		await author.epicenter[Symbol.asyncDispose]();
+		await reader.epicenter[Symbol.asyncDispose]();
+		author.raw.close();
+		reader.raw.close();
+		server.cleanup();
 	}
-	throw new Error('Timed out waiting for document convergence');
-}
-
-test('two clients on one row document converge', async () => {
-	const authority = openAuthority();
-	const first = await openLocal();
-	const second = await openLocal();
-	const opened: InProcessClientSocket[] = [];
-	const openSocket = inProcessOpener(authority.documents, opened);
-	const firstConnection = connectRowDocument({
-		document: first.document,
-		baseUrl: 'https://example.com/',
-		credentials: credentials(),
-		nodeId: 'first',
-		openSocket,
-	});
-	const secondConnection = connectRowDocument({
-		document: second.document,
-		baseUrl: 'https://example.com/',
-		credentials: credentials(),
-		nodeId: 'second',
-		openSocket,
-	});
-	await Promise.all([
-		firstConnection.whenConnected,
-		secondConnection.whenConnected,
-	]);
-	first.document.get('content').insert(0, 'hello');
-	await waitFor(() => second.document.get('content').toString() === 'hello');
-	expect(first.document.get('content').toString()).toBe('hello');
-	firstConnection.dispose();
-	secondConnection.dispose();
-	await first.document[Symbol.asyncDispose]();
-	await second.document[Symbol.asyncDispose]();
-	await first.epicenter[Symbol.asyncDispose]();
-	await second.epicenter[Symbol.asyncDispose]();
-	first.raw.close();
-	second.raw.close();
-	authority.raw.close();
 });
 
-test('offline edit converges through reconnect state-vector exchange', async () => {
-	const authority = openAuthority();
-	const first = await openLocal();
-	const second = await openLocal();
-	const opened: InProcessClientSocket[] = [];
-	const tasks: Array<() => void> = [];
-	const openSocket = inProcessOpener(authority.documents, opened);
-	const firstConnection = connectRowDocument({
-		document: first.document,
-		baseUrl: 'https://example.com/',
-		credentials: credentials(),
-		nodeId: 'first',
-		openSocket,
-	});
-	const secondConnection = connectRowDocument({
-		document: second.document,
-		baseUrl: 'https://example.com/',
-		credentials: credentials(),
-		nodeId: 'second',
-		openSocket,
-		schedule(task) {
-			tasks.push(task);
-			return () => undefined;
-		},
-	});
-	await Promise.all([
-		firstConnection.whenConnected,
-		secondConnection.whenConnected,
-	]);
-	opened[1]?.serverClose();
-	second.document.get('content').insert(0, 'offline');
-	expect(first.document.get('content').toString()).toBe('');
-	expect(tasks).toHaveLength(1);
-	tasks.shift()?.();
-	await waitFor(() => first.document.get('content').toString() === 'offline');
-	firstConnection.dispose();
-	secondConnection.dispose();
-	await first.document[Symbol.asyncDispose]();
-	await second.document[Symbol.asyncDispose]();
-	await first.epicenter[Symbol.asyncDispose]();
-	await second.epicenter[Symbol.asyncDispose]();
-	first.raw.close();
-	second.raw.close();
-	authority.raw.close();
+test('deletion racing publication cannot resurrect the document', async () => {
+	const server = openServer();
+	const author = openClient();
+	const deleter = openClient();
+	try {
+		expectOk(await author.epicenter.attachSync(server.session));
+		const row = await author.notes.create({ title: 'doomed' });
+		await waitFor(() => {
+			const pulled = server.runtime.pullDocument(
+				PRINCIPAL_ID,
+				{ key: NOTES_KEY, rowId: row.id },
+				undefined,
+			);
+			return pulled.kind !== 'not-live';
+		}, 'row arrival at authority');
+
+		// Another replica deletes the row at the authority first.
+		expectOk(await deleter.epicenter.attachSync(server.session));
+		await waitFor(
+			async () => expectOk(await deleter.notes.get(row.id)) !== undefined,
+			'row arrival at deleter',
+		);
+		expect(await deleter.notes.delete(row.id)).toBe(true);
+		await waitFor(() => {
+			const pulled = server.runtime.pullDocument(
+				PRINCIPAL_ID,
+				{ key: NOTES_KEY, rowId: row.id },
+				undefined,
+			);
+			return pulled.kind === 'not-live';
+		}, 'deletion arrival at authority');
+
+		// A late in-flight publication for the dead address is refused and
+		// leaves no document bytes behind.
+		const authored = new Y.Doc();
+		let update: Uint8Array;
+		try {
+			authored.get('content').insert(0, 'late edit');
+			update = new Uint8Array(Y.encodeStateAsUpdateV2(authored));
+		} finally {
+			authored.destroy();
+		}
+		const outcome = server.runtime.publishDocument(
+			PRINCIPAL_ID,
+			{ key: NOTES_KEY, rowId: row.id },
+			update,
+		);
+		expect(outcome).toEqual({ outcome: 'not-live' });
+		expect(
+			server.runtime.pullDocument(
+				PRINCIPAL_ID,
+				{ key: NOTES_KEY, rowId: row.id },
+				undefined,
+			).kind,
+		).toBe('not-live');
+	} finally {
+		await author.epicenter[Symbol.asyncDispose]();
+		await deleter.epicenter[Symbol.asyncDispose]();
+		author.raw.close();
+		deleter.raw.close();
+		server.cleanup();
+	}
 });
 
-test('row deletion closes sockets and local deletion revokes the connector', async () => {
-	const authority = openAuthority();
-	const local = await openLocal();
-	const opened: InProcessClientSocket[] = [];
-	const tasks: Array<() => void> = [];
-	const connection = connectRowDocument({
-		document: local.document,
-		baseUrl: 'https://example.com/',
-		credentials: credentials(),
-		nodeId: 'first',
-		openSocket: inProcessOpener(authority.documents, opened),
-		schedule(task) {
-			tasks.push(task);
-			return () => undefined;
-		},
-	});
-	await connection.whenConnected;
-	const deletion = {
-		kind: 'delete' as const,
-		key: ADDRESS.key,
-		rowId: ADDRESS.rowId,
-	};
-	const changes = [deletion];
-	authority.scalar.exchange({
-		replicaId: 'serverseed00000000000000',
-		after: 1,
-		batch: { seq: 2, digest: batchDigest(changes), changes },
-	});
-	authority.documents.closeRow(ADDRESS);
-	expect(opened[0]?.readyState).toBe(3);
-	expect(tasks).toHaveLength(1);
-	expectOk(local.replica.write(deletion));
-	expect(connection.status).toBe('revoked');
-	expect(() => local.document.get('content')).toThrow('no longer live');
-	await local.document[Symbol.asyncDispose]();
-	await local.epicenter[Symbol.asyncDispose]();
-	local.raw.close();
-	authority.raw.close();
-});
+test('an oversized candidate is refused terminally without blocking others', async () => {
+	const server = openServer();
+	const client = openClient();
+	try {
+		expectOk(await client.epicenter.attachSync(server.session));
+		const big = await client.notes.create({ title: 'too big' });
+		const small = await client.notes.create({ title: 'fine' });
 
-test('over-bound update closes retryably without mutating the update log', () => {
-	const authority = openAuthority();
-	let closed = false;
-	const frames: Uint8Array[] = [];
-	const socket: EpicenterDocumentSocket = {
-		send: (data) => frames.push(data),
-		close: () => {
-			closed = true;
-		},
-	};
-	authority.documents.receive(
-		socket,
-		ADDRESS,
-		encodeDocumentFrame({
-			kind: 'sync-request',
-			stateVector: Y.encodeStateVector(new Y.Doc()),
-		}),
-	);
-	expect(frames.map((frame) => decodeDocumentFrame(frame).kind)).toContain(
-		'sync-response',
-	);
-	const before = authority.database.all<{ count: number }>(
-		'SELECT COUNT(*) AS count FROM document_updates',
-	)[0]?.count;
-	const oversized = new Y.Doc();
-	oversized.get('content').insert(0, 'x'.repeat(1_048_577));
-	authority.documents.receive(
-		socket,
-		ADDRESS,
-		encodeDocumentFrame({
-			kind: 'update',
-			update: Y.encodeStateAsUpdateV2(oversized),
-		}),
-	);
-	expect(closed).toBe(true);
-	expect(
-		authority.database.all<{ count: number }>(
-			'SELECT COUNT(*) AS count FROM document_updates',
-		)[0]?.count,
-	).toBe(before);
-	oversized.destroy();
-	authority.raw.close();
-});
+		const bigDocument = await client.notes.openDocument(big.id);
+		bigDocument.transact(() =>
+			bigDocument.get('content').insert(0, 'x'.repeat(1_100_000)),
+		);
+		const smallDocument = await client.notes.openDocument(small.id);
+		smallDocument.transact(() =>
+			smallDocument.get('content').insert(0, 'small enough'),
+		);
 
-test('presence publishes the other peer for the same row address', async () => {
-	const authority = openAuthority();
-	const first = await openLocal();
-	const second = await openLocal();
-	const opened: InProcessClientSocket[] = [];
-	const openSocket = inProcessOpener(authority.documents, opened);
-	const firstConnection = connectRowDocument({
-		document: first.document,
-		baseUrl: 'https://example.com/',
-		credentials: credentials(),
-		nodeId: 'first',
-		openSocket,
-	});
-	const seen: DocumentPeer[][] = [];
-	firstConnection.subscribePresence((peers) => seen.push([...peers]));
-	const secondConnection = connectRowDocument({
-		document: second.document,
-		baseUrl: 'https://example.com/',
-		credentials: credentials(),
-		nodeId: 'second',
-		agentId: 'resident',
-		openSocket,
-	});
-	await Promise.all([
-		firstConnection.whenConnected,
-		secondConnection.whenConnected,
-	]);
-	await waitFor(() =>
-		seen.some((peers) => peers.some((peer) => peer.nodeId === 'second')),
-	);
-	expect(seen.at(-1)).toContainEqual({
-		nodeId: 'second',
-		connectedAt: 123,
-		agentId: 'resident',
-	});
-	firstConnection.dispose();
-	secondConnection.dispose();
-	await first.document[Symbol.asyncDispose]();
-	await second.document[Symbol.asyncDispose]();
-	await first.epicenter[Symbol.asyncDispose]();
-	await second.epicenter[Symbol.asyncDispose]();
-	first.raw.close();
-	second.raw.close();
-	authority.raw.close();
-});
+		await waitFor(() => {
+			const refused = publicationRow(client.database, big.id);
+			const settled = publicationRow(client.database, small.id);
+			return (
+				refused?.sync_issue === 'too-large' &&
+				settled !== undefined &&
+				settled.accepted_revision === settled.revision
+			);
+		}, 'terminal refusal beside settlement');
 
-test('wrong document subprotocol or missing bearer is refused at upgrade', async () => {
-	const wrong = await verifyDocumentUpgrade({
-		request: new Request(
-			`https://example.com/api/sync/v1/documents/${ADDRESS.key}/${ADDRESS.rowId}`,
-			{
-				headers: {
-					upgrade: 'websocket',
-					'sec-websocket-protocol': 'epicenter-document-v2, bearer.token',
-				},
-			},
-		),
-		resolveBearer: () => 'principal-a',
-	});
-	expect(expectErr(wrong).name).toBe('InvalidSubprotocol');
-	const missing = await verifyDocumentUpgrade({
-		request: new Request(
-			`https://example.com/api/sync/v1/documents/${ADDRESS.key}/${ADDRESS.rowId}`,
-			{
-				headers: {
-					upgrade: 'websocket',
-					'sec-websocket-protocol': DOCUMENT_SUBPROTOCOL,
-				},
-			},
-		),
-		resolveBearer: () => 'principal-a',
-	});
-	expect(expectErr(missing).name).toBe('InvalidSubprotocol');
+		// The refused lineage stays locally durable and observable while the
+		// authority keeps no bytes for it.
+		expect(await bigDocument.syncIssue()).toEqual({ kind: 'too-large' });
+		expect(bigDocument.get('content').length).toBe(1_100_000);
+		expect(
+			server.runtime.pullDocument(
+				PRINCIPAL_ID,
+				{ key: NOTES_KEY, rowId: big.id },
+				undefined,
+			),
+		).toMatchObject({ kind: 'state', state: undefined });
+
+		await bigDocument[Symbol.asyncDispose]();
+		await smallDocument[Symbol.asyncDispose]();
+	} finally {
+		await client.epicenter[Symbol.asyncDispose]();
+		client.raw.close();
+		server.cleanup();
+	}
+}, 20_000);
+
+test('the authority compacts a covered chain into one baseline', async () => {
+	const server = openServer();
+	const client = openClient();
+	try {
+		expectOk(await client.epicenter.attachSync(server.session));
+		const row = await client.notes.create({ title: 'compact' });
+		await waitFor(() => {
+			const pulled = server.runtime.pullDocument(
+				PRINCIPAL_ID,
+				{ key: NOTES_KEY, rowId: row.id },
+				undefined,
+			);
+			return pulled.kind !== 'not-live';
+		}, 'row arrival at authority');
+
+		const authored = new Y.Doc();
+		try {
+			for (let index = 0; index < 70; index += 1) {
+				authored
+					.get('content')
+					.insert(authored.get('content').length, `entry ${index};`);
+				const outcome = server.runtime.publishDocument(
+					PRINCIPAL_ID,
+					{ key: NOTES_KEY, rowId: row.id },
+					new Uint8Array(Y.encodeStateAsUpdateV2(authored)),
+				);
+				expect(outcome).toEqual({ outcome: 'accepted' });
+			}
+			const pulled = server.runtime.pullDocument(
+				PRINCIPAL_ID,
+				{ key: NOTES_KEY, rowId: row.id },
+				undefined,
+			);
+			if (pulled.kind !== 'state' || pulled.state === undefined) {
+				throw new Error('Expected accepted authority state');
+			}
+			const hydrated = new Y.Doc();
+			try {
+				Y.applyUpdateV2(hydrated, pulled.state);
+				expect(hydrated.get('content').toString()).toBe(
+					authored.get('content').toString(),
+				);
+			} finally {
+				hydrated.destroy();
+			}
+		} finally {
+			authored.destroy();
+		}
+	} finally {
+		await client.epicenter[Symbol.asyncDispose]();
+		client.raw.close();
+		server.cleanup();
+	}
 });

@@ -41,7 +41,6 @@ export { ATTACH_RELAY_ROUTE } from './attach-relay/route.js';
 // / `assertStrongToken`) live in `@epicenter/auth`.
 export {
 	createEnvTokenResolver,
-	withDocumentAuthorizationDeadline,
 } from './auth/instance-token.js';
 // The OAuth resource-boundary error union the bearer resolver emits (401
 // `InvalidToken` / 503 `ServerError`). Re-exported so a deployment's own bearer
@@ -84,7 +83,6 @@ export { rateLimit } from './middleware/rate-limit.js';
 export {
 	requireBearerPrincipal,
 	requireCookieOrBearerPrincipal,
-	resolveRequestOAuthDocumentAuthorization,
 	resolveRequestOAuthPrincipal,
 } from './middleware/require-auth.js';
 // The cloud-only relational layer, in two halves the cloud installs after
@@ -131,8 +129,6 @@ export { ServerBindings } from './server-bindings.js';
 // seam the deployment closes its auth wrappers over.
 export type {
 	CloudEnv,
-	DocumentAuthorization,
 	Env,
 	ResolveBearerPrincipal,
-	ResolveDocumentPrincipal,
 } from './types.js';

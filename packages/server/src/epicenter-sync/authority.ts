@@ -160,6 +160,10 @@ function storeRecord(database: SqliteDatabase, record: SyncRecord): void {
 			'DELETE FROM document_updates WHERE qualified_key = ? AND row_id = ?',
 			[record.key, record.rowId],
 		);
+		database.run(
+			'DELETE FROM document_versions WHERE qualified_key = ? AND row_id = ?',
+			[record.key, record.rowId],
+		);
 	}
 }
 
