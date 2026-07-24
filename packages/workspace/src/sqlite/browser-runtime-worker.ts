@@ -46,10 +46,8 @@ import {
 	CurrentStateTransportInterruption,
 	classifyCurrentStateTransport,
 } from './current-state-transport.js';
-import {
-	initializeLocalWorkspaceStorage,
-	readLocalRow,
-} from './local-workspace-storage.js';
+import { readLocalRow } from './local-workspace-storage.js';
+import { initializeWorkspaceStorageSchema } from './workspace-storage-schema.js';
 
 type WorkerScope = {
 	postMessage(message: BrowserRuntimeMessage): void;
@@ -180,6 +178,13 @@ async function openRecords(
 				database = new pool.OpfsSAHPoolDb(
 					`/epicenter-${manifest.storageKey}.sqlite3`,
 				);
+				const sqlite = createBrowserSqliteAdapter(
+					database as unknown as BrowserSqliteDatabase,
+				);
+				initializeWorkspaceStorageSchema(
+					sqlite,
+					manifest.rowSync ? 'account' : 'device',
+				);
 				// EXTRA extends FULL by syncing rollback-journal deletion in DELETE
 				// mode, strengthening the configured local commit boundary.
 				database.exec(`
@@ -188,10 +193,6 @@ async function openRecords(
 					PRAGMA synchronous = EXTRA;
 					PRAGMA temp_store = MEMORY;
 				`);
-				const sqlite = createBrowserSqliteAdapter(
-					database as unknown as BrowserSqliteDatabase,
-				);
-				if (!manifest.rowSync) initializeLocalWorkspaceStorage(sqlite);
 				// The log reads liveness through the replica projection when one
 				// exists (the closure runs only on appends, after both exist) and
 				// through confirmed local rows otherwise.
@@ -436,8 +437,6 @@ async function execute(
 			}
 			deleteLocalWorkspace(state.sqlite, state.documents.deleteAllRows);
 			return undefined;
-		case 'sql':
-			return store.sql(operation.query, operation.parameters);
 		default:
 			return operation satisfies never;
 	}

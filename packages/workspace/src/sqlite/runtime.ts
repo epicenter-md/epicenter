@@ -1,8 +1,7 @@
 import type { WireRowIntent } from '@epicenter/row-sync';
 import { RESERVED_KV_ROW_ID, RESERVED_KV_TABLE } from '@epicenter/row-sync';
-import type { SqliteDatabase, SqliteRow, SqliteValue } from '@epicenter/sqlite';
+import type { SqliteDatabase } from '@epicenter/sqlite';
 import type * as Y from '@y/y';
-import type { Static, TSchema } from 'typebox';
 import type { Result } from 'wellcrafted/result';
 import {
 	createDocumentStore,
@@ -97,12 +96,6 @@ export type WorkspaceTables<TTables extends TableLensDefinitions> = {
 	[K in keyof TTables]: AsyncCanonicalTable<TTables[K]>;
 };
 
-export type WorkspaceSql = <TResultSchema extends TSchema>(
-	query: string,
-	parameters: readonly SqliteValue[],
-	resultSchema: TResultSchema,
-) => Promise<Static<TResultSchema>[]>;
-
 type LensTables<TLens> =
 	TLens extends WorkspaceLens<infer TTables, KvDefinitions> ? TTables : never;
 
@@ -124,7 +117,6 @@ export type Workspace<TLens extends WorkspaceLens> = {
 	readonly id: TLens['id'];
 	readonly tables: WorkspaceTables<LensTables<TLens>>;
 	readonly kv: WorkspaceKv<LensKv<TLens>>;
-	readonly sql: WorkspaceSql;
 	/** Account synchronization, or `null` for a local-only workspace. */
 	readonly sync: WorkspaceSync | null;
 };
@@ -135,7 +127,6 @@ export type RawWorkspace = {
 	read(table: string, rowId: string): JsonObject | undefined;
 	list(table: string): { rowId: string; fields: JsonObject }[];
 	admit(intent: WireRowIntent): void;
-	sql(query: string, parameters: readonly SqliteValue[]): SqliteRow[];
 	readonly document: {
 		open(table: string, rowId: string): Promise<RowDocument<unknown>>;
 	};
@@ -258,10 +249,6 @@ export function createWorkspaceRuntime({
 				assertOpen();
 				opened.store.admit(intent);
 			},
-			sql(query: string, parameters: readonly SqliteValue[]) {
-				assertOpen();
-				return opened.store.sql(query, parameters);
-			},
 			document: Object.freeze({
 				open(table: string, rowId: string) {
 					assertOpen();
@@ -286,7 +273,6 @@ export function createWorkspaceRuntime({
 				return raw.read(RESERVED_KV_TABLE, RESERVED_KV_ROW_ID) ?? {};
 			},
 			admit: raw.admit,
-			sql: raw.sql,
 			openDocument: raw.document.open,
 			get sync() {
 				return raw.sync;

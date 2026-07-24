@@ -227,9 +227,6 @@ export function createDesktopWorkspaceRuntime({
 			admit(intent) {
 				return request(definition.id, { kind: 'admit-intent', intent });
 			},
-			sql(query, parameters) {
-				return request(definition.id, { kind: 'sql', query, parameters });
-			},
 			openDocument(table, rowId) {
 				return documents.open({ table, rowId });
 			},

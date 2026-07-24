@@ -1,5 +1,4 @@
 import type { WireRowIntent } from '@epicenter/row-sync';
-import type { SqliteValue } from '@epicenter/sqlite';
 import type { LogicalWorkspaceCopy } from './canonical-addition.js';
 import type {
 	WorkspaceSyncSettlement,
@@ -76,12 +75,7 @@ export type BrowserRecordOperation =
 	| { kind: 'logical-capture' }
 	| { kind: 'capture-visible' }
 	| { kind: 'logical-add'; copy: LogicalWorkspaceCopy }
-	| { kind: 'logical-delete' }
-	| {
-			kind: 'sql';
-			query: string;
-			parameters: readonly SqliteValue[];
-	  };
+	| { kind: 'logical-delete' };
 
 export type BrowserRuntimeRequest = {
 	id: number;

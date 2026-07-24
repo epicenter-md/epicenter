@@ -15,7 +15,6 @@ import { field } from '@epicenter/field';
 import { asPrincipalId } from '@epicenter/identity';
 import { RESERVED_KV_TABLE } from '@epicenter/row-sync';
 import * as Y from '@y/y';
-import { Type } from 'typebox';
 import {
 	createAccountBrowserWorkspaceRuntime,
 	createDeviceBrowserWorkspaceRuntime,
@@ -49,7 +48,6 @@ class FakeWorker {
 	readonly documentLogs = new Map<string, Uint8Array[]>();
 	row: Record<string, unknown> | undefined = { title: 'Browser row' };
 	theme: unknown = 'light';
-	sqlRows: Record<string, unknown>[] = [];
 	private readonly messageListeners = new Set<
 		(event: MessageEvent<BrowserRuntimeMessage>) => void
 	>();
@@ -197,8 +195,6 @@ class FakeWorker {
 					}
 					return undefined;
 				}
-				case 'sql':
-					return this.sqlRows;
 				default:
 					return undefined;
 			}
@@ -534,7 +530,7 @@ test('same workspace ID supports divergent page-local lenses over one owner', as
 	});
 });
 
-test('row and SQL conformance are checked only in the page realm', async () => {
+test('row conformance is checked only in the page realm', async () => {
 	await using runtime = createRuntime();
 	const workspace = await runtime.open(definition);
 	if (!FakeWorker.latest) throw new Error('Expected fake Worker');
@@ -544,22 +540,6 @@ test('row and SQL conformance are checked only in the page realm', async () => {
 	const listed = await workspace.tables.notes.list();
 	expect(listed.rows).toEqual([]);
 	expect(listed.nonconforming).toHaveLength(1);
-
-	FakeWorker.latest.sqlRows = [{ title: 42 }];
-	await expect(
-		workspace.sql(
-			'SELECT title FROM records',
-			[],
-			Type.Object({ title: Type.String() }),
-		),
-	).rejects.toThrow('SQL row 0 does not satisfy the result schema');
-	const sqlOperation = FakeWorker.latest.operations.at(-1);
-	expect(sqlOperation).toEqual({
-		kind: 'sql',
-		query: 'SELECT title FROM records',
-		parameters: [],
-	});
-	expect(sqlOperation).not.toHaveProperty('resultSchema');
 });
 
 test('KV conformance is checked in the page realm over one raw map', async () => {

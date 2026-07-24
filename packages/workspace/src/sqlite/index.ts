@@ -54,7 +54,6 @@ export type {
 	Workspace,
 	WorkspaceKv,
 	WorkspaceRuntime,
-	WorkspaceSql,
 	WorkspaceTables,
 } from './runtime.js';
 export {

@@ -576,9 +576,6 @@ function createBrowserRuntimeWithPersistence({
 				admit(intent) {
 					return request(manifest, { kind: 'admit-intent', intent });
 				},
-				sql(query, parameters) {
-					return request(manifest, { kind: 'sql', query, parameters });
-				},
 				openDocument(table, rowId) {
 					return documents.open({ table, rowId });
 				},

@@ -84,9 +84,6 @@ export function createDesktopWorkspaceOwner({
 					moved.name = WORKSPACE_STORAGE_MOVED_ERROR_NAME;
 					throw moved;
 				}
-				if (operation.kind === 'sql') {
-					return workspace.sql(operation.query, operation.parameters);
-				}
 				if (operation.kind === 'kv-read-map') {
 					return workspace.read(RESERVED_KV_TABLE, RESERVED_KV_ROW_ID) ?? {};
 				}
@@ -185,24 +182,6 @@ function parseDesktopRecordOperation(input: unknown): DesktopRecordOperation {
 		case 'list-current-rows':
 			if (!table) break;
 			return { kind: 'list-current-rows', table };
-		case 'sql':
-			if (
-				typeof input.query !== 'string' ||
-				!Array.isArray(input.parameters) ||
-				!input.parameters.every(
-					(value) =>
-						value === null ||
-						typeof value === 'string' ||
-						typeof value === 'number',
-				)
-			) {
-				break;
-			}
-			return {
-				kind: 'sql',
-				query: input.query,
-				parameters: input.parameters,
-			};
 	}
 	throw new TypeError('Invalid desktop record operation');
 }

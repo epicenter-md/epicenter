@@ -1,5 +1,4 @@
 import type { WireRowIntent } from '@epicenter/row-sync';
-import type { SqliteValue } from '@epicenter/sqlite';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -23,11 +22,6 @@ export type DesktopRecordOperation =
 			table: string;
 			rowId: string;
 			update: string;
-	  }
-	| {
-			kind: 'sql';
-			query: string;
-			parameters: readonly SqliteValue[];
 	  };
 
 /**

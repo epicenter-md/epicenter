@@ -8,7 +8,7 @@
  * - open eagerly acquires storage and retries failed initialization
  * - table CRUD exposes create/update/delete/get/list
  * - every table exposes the singular row document capability
- * - KV and validated read-only SQL remain available
+ * - KV remains available
  * - synchronized owners expose one fixed workspace sync capability
  * - settlement waits for the invocation-time document durability barrier
  * - same-ID lenses share one raw owner and report nonconformance on read
@@ -18,7 +18,6 @@ import { expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import * as Y from '@y/y';
-import { Type } from 'typebox';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import type { LogicalWorkspaceCopy } from './canonical-addition.js';
 import type {
@@ -355,68 +354,6 @@ test('runtime composes row, document, KV, and SQL capabilities', async () => {
 
 		expectOk(await workspace.kv.set('theme', 'dark'));
 		expect(expectOk(await workspace.kv.get('theme'))).toBe('dark');
-		const rows = await workspace.sql(
-			`SELECT table_key,
-              row_id AS id,
-              json_extract(fields_json, '$.title') AS title
-         FROM records`,
-			[],
-			Type.Object({
-				table_key: Type.String(),
-				id: Type.String(),
-				title: Type.String(),
-			}),
-		);
-		expect(rows).toEqual([
-			{ table_key: 'notes', id: created.id, title: 'Draft' },
-		]);
-		await expect(
-			workspace.sql('SELECT * FROM rows', [], Type.Any()),
-		).rejects.toThrow('cannot access runtime-private storage');
-		await expect(
-			workspace.sql("SELECT * FROM 'rows'", [], Type.Any()),
-		).rejects.toThrow('cannot access runtime-private storage');
-		database.exec('CREATE TABLE unrelated(secret TEXT)');
-		await expect(
-			workspace.sql('SELECT * FROM unrelated', [], Type.Any()),
-		).rejects.toThrow('cannot access runtime-private storage');
-		expect(
-			await workspace.sql(
-				`WITH visible AS (SELECT row_id FROM records)
-         SELECT row_id AS id FROM visible`,
-				[],
-				Type.Object({ id: Type.String() }),
-			),
-		).toEqual([{ id: created.id }]);
-		expect(
-			await workspace.sql(
-				'SELECT 1 AS value',
-				[],
-				Type.Object({ value: Type.Integer() }),
-			),
-		).toEqual([{ value: 1 }]);
-		await expect(
-			workspace.sql(
-				'SELECT records.row_id FROM records JOIN json_each(records.fields_json)',
-				[],
-				Type.Any(),
-			),
-		).rejects.toThrow('accepts only read-only records queries');
-		await expect(
-			workspace.sql(
-				'SELECT * FROM __epicenter_records_projection',
-				[],
-				Type.Any(),
-			),
-		).rejects.toThrow('no such table');
-		await expect(
-			workspace.sql(
-				`SELECT json_extract(fields_json, '$.title') AS title FROM records`,
-				[],
-				Type.Object({ title: Type.Number() }),
-			),
-		).rejects.toThrow('does not satisfy the result schema');
-
 		await workspace.tables.notes.delete(created.id);
 		expect(
 			expectOk(await workspace.tables.notes.get(created.id)),
@@ -499,20 +436,8 @@ test('different lenses share one ID-owned owner, mutations, documents, sync, and
 			tags: ['shared'],
 		});
 
-		const rawQuery = `SELECT table_key, row_id, fields_json
-                        FROM records
-                       WHERE table_key = ?`;
-		const rawResult = Type.Object({
-			table_key: Type.String(),
-			row_id: Type.String(),
-			fields_json: Type.String(),
-		});
-		expect(await first.sql(rawQuery, ['notes'], rawResult)).toHaveLength(1);
 		const empty = await runtime.open(emptyLens);
-		expect(await empty.sql(rawQuery, ['notes'], rawResult)).toHaveLength(1);
-		await expect(
-			empty.sql('SELECT id FROM notes', [], Type.Object({ id: Type.String() })),
-		).rejects.toThrow('no such table: notes');
+		expect(empty.tables).toEqual({});
 
 		expectOk(await second.kv.set('theme', 'blue'));
 		expect(expectErr(await first.kv.get('theme')).name).toBe(

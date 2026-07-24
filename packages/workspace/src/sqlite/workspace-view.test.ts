@@ -52,9 +52,6 @@ function createView(options: FakeClientOptions) {
 			admitted.push(intent);
 			options.admit(intent);
 		},
-		async sql(): Promise<unknown[]> {
-			return [];
-		},
 		async openDocument() {
 			return undefined;
 		},

@@ -6,7 +6,7 @@ import {
 	RESERVED_KV_TABLE,
 	type WireRowIntent,
 } from '@epicenter/row-sync';
-import type { SqliteDatabase, SqliteRow, SqliteValue } from '@epicenter/sqlite';
+import type { SqliteDatabase } from '@epicenter/sqlite';
 import type { JsonObject } from './lens-definition.js';
 import { listLocalRows, readLocalRow } from './local-workspace-storage.js';
 
@@ -62,11 +62,6 @@ export function createCanonicalStore(
 		onRowsDeleted = () => undefined,
 	}: CanonicalStoreOptions = {},
 ) {
-	installRecordsRelation();
-	const allowedReadTargets = readTargets(
-		sqlite.all<SqliteProgramRow>('EXPLAIN SELECT * FROM records'),
-	);
-
 	function read(table: string, rowId: string): JsonObject | undefined {
 		return readCurrentRow(table, rowId);
 	}
@@ -84,47 +79,6 @@ export function createCanonicalStore(
 			const fields = readCurrentRow(table, rowId);
 			return fields === undefined ? [] : [{ rowId, fields }];
 		});
-	}
-
-	function listAll(): {
-		tableKey: string;
-		rowId: string;
-		fields: JsonObject;
-	}[] {
-		const addresses = admitIntent
-			? sqlite.all<{ table_key: string; row_id: string }>(
-					`SELECT table_key, row_id FROM "${ROWS_TABLE}"
-					 WHERE table_key <> ?
-					 UNION
-					 SELECT table_key, row_id FROM "intents"
-					 WHERE table_key <> ?
-					 ORDER BY table_key, row_id`,
-					[RESERVED_KV_TABLE, RESERVED_KV_TABLE],
-				)
-			: sqlite.all<{ table_key: string; row_id: string }>(
-					`SELECT table_key, row_id FROM "${ROWS_TABLE}"
-					 WHERE table_key <> ? ORDER BY table_key, row_id`,
-					[RESERVED_KV_TABLE],
-				);
-		return addresses.flatMap(({ table_key: tableKey, row_id: rowId }) => {
-			const fields = readCurrentRow(tableKey, rowId);
-			return fields === undefined ? [] : [{ tableKey, rowId, fields }];
-		});
-	}
-
-	function sql(query: string, parameters: readonly SqliteValue[]): SqliteRow[] {
-		assertSelectStatement(query);
-		assertProgramReadsOnlyRecords(
-			sqlite.all<SqliteProgramRow>(`EXPLAIN ${query}`, parameters),
-			allowedReadTargets,
-		);
-		refreshRecordsRelation();
-		sqlite.run('PRAGMA query_only = ON');
-		try {
-			return sqlite.all<SqliteRow>(query, parameters);
-		} finally {
-			sqlite.run('PRAGMA query_only = OFF');
-		}
 	}
 
 	function admit(intent: WireRowIntent): void {
@@ -219,74 +173,7 @@ export function createCanonicalStore(
 		}
 	}
 
-	return { read, list, admit, sql };
-
-	function installRecordsRelation(): void {
-		sqlite.run(
-			`CREATE TEMP TABLE IF NOT EXISTS records (
-				table_key   TEXT NOT NULL,
-				row_id      TEXT NOT NULL,
-				fields_json TEXT NOT NULL CHECK(json_valid(fields_json)),
-				PRIMARY KEY(table_key, row_id)
-			) WITHOUT ROWID, STRICT`,
-		);
-	}
-
-	function refreshRecordsRelation(): void {
-		const rows = listAll();
-		sqlite.transaction(() => {
-			sqlite.run('DELETE FROM temp.records');
-			for (const row of rows) {
-				sqlite.run(
-					`INSERT INTO temp.records
-						(table_key, row_id, fields_json)
-					 VALUES (?, ?, ?)`,
-					[row.tableKey, row.rowId, JSON.stringify(row.fields)],
-				);
-			}
-		});
-	}
+	return { read, list, admit };
 }
 
 export type CanonicalStore = ReturnType<typeof createCanonicalStore>;
-
-type SqliteProgramRow = SqliteRow & {
-	opcode: string;
-	p2: number;
-	p3: number;
-};
-
-function assertSelectStatement(query: string): void {
-	const trimmed = query.trim();
-	if (!/^(?:SELECT|WITH)(?:\s|$)/i.test(trimmed)) {
-		throw new Error('sql() accepts only SELECT statements and CTEs');
-	}
-	if (trimmed.includes(';')) {
-		throw new Error('sql() accepts exactly one statement');
-	}
-}
-
-function readTargets(program: readonly SqliteProgramRow[]): Set<string> {
-	return new Set(
-		program
-			.filter(({ opcode }) => opcode === 'OpenRead')
-			.map(({ p2, p3 }) => `${p3}:${p2}`),
-	);
-}
-
-function assertProgramReadsOnlyRecords(
-	program: readonly SqliteProgramRow[],
-	allowedReadTargets: ReadonlySet<string>,
-): void {
-	for (const instruction of program) {
-		if (instruction.opcode === 'OpenWrite' || instruction.opcode === 'VOpen') {
-			throw new Error('sql() accepts only read-only records queries');
-		}
-		if (
-			instruction.opcode === 'OpenRead' &&
-			!allowedReadTargets.has(`${instruction.p3}:${instruction.p2}`)
-		) {
-			throw new Error('sql() cannot access runtime-private storage');
-		}
-	}
-}

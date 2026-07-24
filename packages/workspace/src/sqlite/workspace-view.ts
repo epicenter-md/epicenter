@@ -3,10 +3,7 @@ import {
 	RESERVED_KV_TABLE,
 	type WireRowIntent,
 } from '@epicenter/row-sync';
-import type { SqliteValue } from '@epicenter/sqlite';
 import { customAlphabet } from 'nanoid';
-import type { Static, TSchema } from 'typebox';
-import { Value } from 'typebox/value';
 import { Ok } from 'wellcrafted/result';
 import { isWorkspaceRowAbsentError } from './canonical-store.js';
 import type { WorkspaceSync } from './canonical-sync-supervisor.js';
@@ -35,10 +32,6 @@ type WorkspaceViewClient = {
 	list(table: string): MaybePromise<{ rowId: string; fields: JsonObject }[]>;
 	readKvMap(): MaybePromise<JsonObject>;
 	admit(intent: WireRowIntent): MaybePromise<void>;
-	sql(
-		query: string,
-		parameters: readonly SqliteValue[],
-	): MaybePromise<unknown[]>;
 	openDocument(table: string, rowId: string): Promise<unknown>;
 	readonly sync: WorkspaceSync | null;
 	afterDelete?(address: { table: string; rowId: string }): void;
@@ -193,24 +186,6 @@ export function createWorkspaceView<TLens extends WorkspaceLens>(
 		kv: kv as never,
 		get sync() {
 			return client.sync;
-		},
-		async sql<TResultSchema extends TSchema>(
-			query: string,
-			parameters: readonly SqliteValue[],
-			resultSchema: TResultSchema,
-		): Promise<Static<TResultSchema>[]> {
-			const rows = await client.sql(query, parameters);
-			for (const [index, row] of rows.entries()) {
-				if (!Value.Check(resultSchema, row)) {
-					const issues = [...Value.Errors(resultSchema, row)]
-						.map((issue) => `${issue.instancePath}: ${issue.message}`)
-						.join('; ');
-					throw new TypeError(
-						`SQL row ${index} does not satisfy the result schema: ${issues}`,
-					);
-				}
-			}
-			return rows as Static<TResultSchema>[];
 		},
 	}) as Workspace<TLens>;
 }
