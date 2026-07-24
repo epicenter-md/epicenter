@@ -167,6 +167,7 @@
         "@tauri-apps/cli": "catalog:",
         "@types/bun": "catalog:",
         "mode-watcher": "catalog:",
+        "playwright": "^1.61.1",
         "svelte": "catalog:",
         "svelte-check": "catalog:",
         "svelte-sonner": "catalog:",

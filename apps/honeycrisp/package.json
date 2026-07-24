@@ -15,6 +15,7 @@
 	},
 	"scripts": {
 		"dev": "bun run dev:desktop",
+		"demo:two-client": "bun demo/two-client-sync.ts",
 		"dev:web": "vite dev",
 		"dev:desktop": "tauri dev",
 		"build": "NODE_ENV=production vite build",
@@ -23,7 +24,7 @@
 		"prepare": "svelte-kit sync || echo ''",
 		"test": "bun test",
 		"tauri": "tauri",
-		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
+		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && tsc --noEmit -p demo/tsconfig.json"
 	},
 	"devDependencies": {
 		"@epicenter/ui": "workspace:*",
@@ -36,6 +37,7 @@
 		"@tauri-apps/cli": "catalog:",
 		"@types/bun": "catalog:",
 		"mode-watcher": "catalog:",
+		"playwright": "^1.61.1",
 		"svelte": "catalog:",
 		"svelte-check": "catalog:",
 		"svelte-sonner": "catalog:",
