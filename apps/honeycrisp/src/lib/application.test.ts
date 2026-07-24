@@ -40,9 +40,6 @@ function createRuntime(scanFolders: () => Promise<never>) {
 				syncStatus: { state: 'local', lastError: undefined },
 				subscribeSyncStatus: () => () => {},
 			},
-			connectDocument: () => {
-				throw new Error('unreachable');
-			},
 			async [Symbol.asyncDispose]() {
 				releases += 1;
 			},

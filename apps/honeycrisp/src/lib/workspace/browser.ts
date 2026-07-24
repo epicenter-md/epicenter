@@ -1,19 +1,12 @@
 import type { SyncAuthClient } from '@epicenter/auth';
-import type {
-	Exchange,
-	RowDocument,
-	SyncCredentialProvider,
-} from '@epicenter/data';
+import type { Exchange, SyncCredentialProvider } from '@epicenter/data';
 import { openBrowserEpicenter } from '@epicenter/data/browser';
 import { parseExchangeResponse } from '@epicenter/data/protocol';
-import {
-	connectRowDocument,
-	type DocumentClientSocket,
-} from '@epicenter/document-sync';
+import { createHttpDocumentTransports } from '@epicenter/document-sync';
 
 type WorkspaceAuth = Pick<
 	SyncAuthClient,
-	'state' | 'deployment' | 'fetch' | 'openWebSocket' | 'onStateChange'
+	'state' | 'deployment' | 'fetch' | 'onStateChange'
 >;
 
 function deploymentUrl(baseUrl: string): URL {
@@ -63,6 +56,10 @@ export async function openHoneycrispBrowserEpicenter({
 			deploymentId: deploymentUrl(auth.deployment.baseURL).href,
 			principalId: state.principalId,
 			exchange,
+			...createHttpDocumentTransports({
+				baseUrl: auth.deployment.baseURL,
+				fetch: (url, init) => auth.fetch(url, init),
+			}),
 			credentials,
 		});
 		if (attached.error !== null) throw attached.error;
@@ -77,23 +74,9 @@ export async function openHoneycrispBrowserEpicenter({
 	const stopAuth = auth.onStateChange(() => {
 		void attachSignedIn().catch(reportBackgroundError);
 	});
-	const nodeId = crypto.randomUUID();
 
 	return Object.freeze({
 		epicenter,
-		connectDocument(document: RowDocument) {
-			return connectRowDocument({
-				document,
-				baseUrl: auth.deployment.baseURL,
-				credentials,
-				nodeId,
-				openSocket: async (url, protocols) =>
-					(await auth.openWebSocket(
-						url,
-						protocols,
-					)) as unknown as DocumentClientSocket,
-			});
-		},
 		async [Symbol.asyncDispose]() {
 			stopAuth();
 			await epicenter[Symbol.asyncDispose]();

@@ -1,5 +1,4 @@
 import type { Epicenter, RowDocument, SyncStatus } from '@epicenter/data';
-import type { connectRowDocument } from '@epicenter/document-sync';
 import {
 	type HoneycrispData,
 	honeycrispDefinitions,
@@ -8,7 +7,6 @@ import { createHoneycrispState } from '../routes/state/index.js';
 
 type ApplicationRuntime = {
 	epicenter: Epicenter;
-	connectDocument(document: RowDocument): ReturnType<typeof connectRowDocument>;
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
@@ -19,7 +17,6 @@ export type HoneycrispDependencies = {
 
 export type HoneycrispNoteDocument = {
 	document: RowDocument;
-	connection: ReturnType<typeof connectRowDocument>;
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
@@ -102,23 +99,16 @@ export async function openHoneycrispApplication(
 				return activeRuntime.epicenter.subscribeSyncStatus(listener);
 			},
 			async openNoteDocument(noteId: string) {
+				// Opening hydrates locally durable state only; remote refresh is
+				// an explicit pull the view performs after this resolves.
 				const document = await data.tables.notes.openDocument(noteId);
-				let connection: ReturnType<typeof connectRowDocument>;
-				try {
-					connection = activeRuntime.connectDocument(document);
-				} catch (cause) {
-					await document[Symbol.asyncDispose]();
-					throw cause;
-				}
 				let disposed = false;
 				const opened: HoneycrispNoteDocument = {
 					document,
-					connection,
 					async [Symbol.asyncDispose]() {
 						if (disposed) return;
 						disposed = true;
 						documents.delete(opened);
-						connection.dispose();
 						await document[Symbol.asyncDispose]();
 					},
 				};
