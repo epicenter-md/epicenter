@@ -1,9 +1,33 @@
 import type {
+	DocumentAddress,
+	DocumentPublishOutcome,
+	DocumentPullResponse,
+} from '../documents.js';
+import type {
 	ExchangeRequest,
 	ExchangeResponse,
 	JsonValue,
 } from '../protocol/index.js';
 import type { SyncState } from '../sync-supervisor.js';
+
+/**
+ * One network call the worker asks the sync-attached page to perform on its
+ * behalf. The page owns credentials and fetch; the worker owns the replica,
+ * the documents, and every synchronization decision.
+ */
+export type SessionTransportRequest =
+	| { kind: 'exchange'; request: ExchangeRequest }
+	| { kind: 'document-publish'; address: DocumentAddress; update: Uint8Array }
+	| {
+			kind: 'document-pull';
+			address: DocumentAddress;
+			sinceVersion: string | undefined;
+	  };
+
+export type SessionTransportResponse =
+	| { kind: 'exchange'; response: ExchangeResponse }
+	| { kind: 'document-publish'; outcome: DocumentPublishOutcome }
+	| { kind: 'document-pull'; response: DocumentPullResponse };
 
 export type SerializedTableDefinition = {
 	key: string;
@@ -63,6 +87,8 @@ export type BrowserOperation =
 			rowId: string;
 	  }
 	| { kind: 'document-update'; documentId: number; update: Uint8Array }
+	| { kind: 'document-pull'; documentId: number }
+	| { kind: 'document-issue'; documentId: number }
 	| { kind: 'document-close'; documentId: number }
 	| {
 			kind: 'attach-sync';
@@ -70,6 +96,8 @@ export type BrowserOperation =
 			deploymentId: string;
 			principalId: string;
 			hasCredentials: boolean;
+			canPublishDocuments: boolean;
+			canPullDocuments: boolean;
 	  }
 	| { kind: 'sync-credentials'; transportKey: number; hasCredentials: boolean }
 	| { kind: 'disconnect' };
@@ -80,22 +108,22 @@ export type BrowserRequest = {
 	operation: BrowserOperation;
 };
 
-export type BrowserExchangeResult =
+export type BrowserTransportResult =
 	| {
-			type: 'exchange-result';
+			type: 'transport-result';
 			transportId: number;
 			transportKey: number;
-			response: ExchangeResponse;
+			response: SessionTransportResponse;
 	  }
 	| {
-			type: 'exchange-error';
+			type: 'transport-error';
 			transportId: number;
 			transportKey: number;
 			name: string;
 			message: string;
 	  };
 
-export type BrowserWorkerInbound = BrowserRequest | BrowserExchangeResult;
+export type BrowserWorkerInbound = BrowserRequest | BrowserTransportResult;
 
 export type BrowserInvalidation = {
 	type: 'invalidation';
@@ -126,18 +154,18 @@ export type BrowserWorkerMessage =
 			lastError?: string;
 	  }
 	| {
-			type: 'exchange-request';
+			type: 'transport-request';
 			transportId: number;
 			transportKey: number;
-			request: ExchangeRequest;
+			request: SessionTransportRequest;
 	  }
 	| {
-			type: 'exchange-cancel';
+			type: 'transport-cancel';
 			transportId: number;
 			transportKey: number;
 	  }
 	| {
-			type: 'exchange-retire';
+			type: 'transport-retire';
 			transportKey: number;
 	  }
 	| { type: 'client-revoked'; name: string; message: string };

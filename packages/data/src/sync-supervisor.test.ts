@@ -115,6 +115,7 @@ test('local write triggers an exchange without waiting for the interval', async 
 		title: 'wake',
 	});
 	await waitFor(() => exchanges > initial);
+	await waitFor(() => epicenter.syncStatus.state === 'idle');
 	expect(epicenter.syncStatus.state).toBe('idle');
 	await epicenter[Symbol.asyncDispose]();
 	raw.close();
@@ -172,6 +173,47 @@ test('credential absence pauses and reports authentication-required', async () =
 	expect(exchanges).toBe(1);
 	credentials.set(undefined);
 	expect(epicenter.syncStatus.state).toBe('authentication-required');
+	await epicenter[Symbol.asyncDispose]();
+	raw.close();
+});
+
+test('rapid document edits inside the coalesce window become one publication', async () => {
+	const { raw, epicenter, scheduled } = setup();
+	let publishes = 0;
+	expectOk(
+		await epicenter.attachSync({
+			deploymentId: 'https://example.com/',
+			principalId: 'principal-a',
+			exchange: successfulResponse,
+			publishDocument: () => {
+				publishes += 1;
+				return 'accepted';
+			},
+		}),
+	);
+	await waitFor(() => epicenter.syncStatus.state === 'idle');
+	const notesTable = epicenter.bind({ tables: { notes }, values: {} }).tables
+		.notes;
+	const row = await notesTable.create({ title: 'coalesce' });
+	await waitFor(() => epicenter.syncStatus.state === 'idle');
+
+	const baseline = scheduled.length;
+	const document = await notesTable.openDocument(row.id);
+	document.transact(() => document.get('content').insert(0, 'a'));
+	document.transact(() => document.get('content').insert(1, 'b'));
+	document.transact(() => document.get('content').insert(2, 'c'));
+	await Bun.sleep(1);
+
+	// Three dirty wakes coalesce into exactly one scheduled document drain.
+	const pending = scheduled.slice(baseline).filter((entry) => !entry.cancelled);
+	expect(pending).toHaveLength(1);
+	expect(publishes).toBe(0);
+	pending[0]?.task();
+	await waitFor(() => publishes === 1);
+	await waitFor(() => epicenter.syncStatus.state === 'idle');
+	expect(publishes).toBe(1);
+
+	await document[Symbol.asyncDispose]();
 	await epicenter[Symbol.asyncDispose]();
 	raw.close();
 });

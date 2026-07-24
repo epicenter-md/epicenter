@@ -1,18 +1,24 @@
 import type { SqliteDatabase, SqliteRow } from '@epicenter/sqlite';
 import * as Y from '@y/y';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
+import { Ok, type Result } from 'wellcrafted/result';
 
-import { sha256HexBytes } from './protocol/index.js';
-import type { Replica } from './replica/index.js';
+import { type Replica, ReplicaError } from './replica/index.js';
 
 const COMPACTION_THRESHOLD = 64;
+const PUBLISH_CONCURRENCY = 4;
 const hydrationOrigin = Object.freeze({ kind: 'epicenter-document-hydration' });
 
 /**
  * The one transaction origin that marks an applied update as authority
- * accepted. Only bytes the authority has already committed and fanned out may
- * carry it: the persist listener stores them durably without minting a new
- * publication obligation. Everything else, whatever its origin value, is
- * locally authored work that must reach the authority (ADR-0174).
+ * accepted. Only bytes the authority has already committed may carry it: the
+ * persist listener stores them durably without minting a new publication
+ * obligation. Everything else, whatever its origin value, is locally authored
+ * work that must reach the authority (ADR-0174).
  */
 export const acceptedDocumentOrigin = Object.freeze({
 	kind: 'epicenter-authority-accepted',
@@ -25,27 +31,77 @@ export const acceptedDocumentOrigin = Object.freeze({
  */
 export type DocumentUpdateSource = 'local' | 'accepted';
 
-/** One immutable frozen publication attempt (ADR-0171 retry image). */
-export type DocumentPublicationImage = {
+/**
+ * The durable terminal condition for one document address, or null when the
+ * address has none. `too-large` means the authority refused the lineage at
+ * its hard resource bound: the document stays locally durable and usable,
+ * Epicenter stops publishing it, and the application owns presentation and
+ * recovery (ADR-0174).
+ */
+export type DocumentSyncIssue = { kind: 'too-large' } | null;
+
+/**
+ * One publication attempt's outcome from the authority acceptance operation.
+ * `accepted` settles the captured revision; `not-live` reports the row's
+ * terminal absence and resolves through scalar deletion; `too-large` records
+ * the terminal address-scoped issue. Transport and server failures are thrown
+ * by the carrier, not encoded here (ADR-0174).
+ */
+export type DocumentPublishOutcome = 'accepted' | 'not-live' | 'too-large';
+
+/**
+ * The one outbound carrier seam: transport the current encoded state of one
+ * dirty document to the authority acceptance operation over HTTP. A thrown
+ * error means retryable transport or server failure; the drain backs off and
+ * a later attempt reconstructs and resends current state. Yjs semantic
+ * idempotency owns retry safety (ADR-0171).
+ */
+export type PublishDocument = (request: {
+	address: DocumentAddress;
 	update: Uint8Array;
-	digest: string;
-	revision: number;
-};
+}) => DocumentPublishOutcome | Promise<DocumentPublishOutcome>;
+
+/** One explicit pull's transport answer for an open document. */
+export type DocumentPullResponse =
+	| { kind: 'unchanged' }
+	| { kind: 'state'; version: string; update: Uint8Array }
+	| { kind: 'not-live' };
+
+/**
+ * The one inbound transport seam: fetch authority-accepted state newer than
+ * `sinceVersion` (an opaque authority version, undefined on the first pull).
+ * A thrown error means transport or server failure. Pulling never publishes
+ * local work (ADR-0174).
+ */
+export type PullDocument = (request: {
+	address: DocumentAddress;
+	sinceVersion: string | undefined;
+}) => DocumentPullResponse | Promise<DocumentPullResponse>;
+
+export const DocumentPullError = defineErrors({
+	TransportFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Document pull failed: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	NotAttached: () => ({
+		message: 'No attached sync session can pull documents',
+	}),
+	RowNotLive: () => ({
+		message: 'The authority reports this row is no longer live',
+	}),
+});
+export type DocumentPullError = InferErrors<typeof DocumentPullError>;
 
 export type DocumentPublicationStatus = {
 	revision: number;
 	acceptedRevision: number;
-	parkedRevision: number | undefined;
-	inflightDigest: string | undefined;
+	issue: DocumentSyncIssue;
 };
 
 type StoredPublication = SqliteRow & {
 	revision: number;
 	accepted_revision: number;
-	parked_revision: number | null;
-	inflight_revision: number | null;
-	inflight_digest: string | null;
-	inflight_update: Uint8Array | ArrayBuffer | null;
+	sync_issue: string | null;
 };
 
 export type DocumentAddress = { key: string; rowId: string };
@@ -60,7 +116,8 @@ type DocumentEntry = {
 	document: LiveDocument;
 	references: number;
 	revoked: Error | undefined;
-	revocationListeners: Set<(error: Error) => void>;
+	pulledVersion: string | undefined;
+	pulling: Promise<Result<void, DocumentPullError>> | undefined;
 	stopPersistence(): void;
 };
 
@@ -75,10 +132,8 @@ type LiveDocument = Y.Doc & {
 export type RowDocumentConnectionTarget = {
 	address: DocumentAddress;
 	applyUpdate(update: Uint8Array, origin?: unknown): void;
-	encodeStateVector(): Uint8Array;
-	encodeStateAsUpdate(stateVector?: Uint8Array): Uint8Array;
+	encodeStateAsUpdate(): Uint8Array;
 	observe(listener: UpdateListener): () => void;
-	subscribeRevocation(listener: (error: Error) => void): () => void;
 };
 
 const rowDocumentAccess = new WeakMap<
@@ -100,18 +155,35 @@ export type RowDocument = {
 		origin?: unknown,
 	): TValue;
 	whenDurable(): Promise<void>;
+	/**
+	 * Explicitly fetch newer authority-accepted state for this open document.
+	 * Never publishes local work, never blocks local editing, and is safe to
+	 * call repeatedly; overlapping calls share one in-flight pull. A failure
+	 * leaves the locally durable document open and usable (ADR-0174).
+	 */
+	pull(): Promise<Result<void, DocumentPullError>>;
+	/** The durable terminal publication issue for this address, if any. */
+	syncIssue(): Promise<DocumentSyncIssue>;
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
 export function createDocumentRuntime({
 	database,
 	replica,
+	getPullTransport,
 }: {
 	database: SqliteDatabase;
 	replica: Replica;
+	/**
+	 * Resolve the currently attached session's pull transport at call time, or
+	 * undefined when no session can pull. Owned by the composing runtime so
+	 * document handles stay valid across attach and detach.
+	 */
+	getPullTransport?: () => PullDocument | undefined;
 }) {
 	const entries = new Map<string, DocumentEntry>();
 	const opening = new Map<string, Promise<DocumentEntry>>();
+	const publicationDirtyListeners = new Set<() => void>();
 	let isDisposed = false;
 
 	function addressKey({ key, rowId }: DocumentAddress): string {
@@ -155,8 +227,7 @@ export function createDocumentRuntime({
 		address: DocumentAddress,
 	): StoredPublication | undefined {
 		return database.all<StoredPublication>(
-			`SELECT revision, accepted_revision, parked_revision,
-			        inflight_revision, inflight_digest, inflight_update
+			`SELECT revision, accepted_revision, sync_issue
 			 FROM document_publication
 			 WHERE qualified_key = ? AND row_id = ?`,
 			[address.key, address.rowId],
@@ -212,6 +283,9 @@ export function createDocumentRuntime({
 						revision = revision + 1`,
 					[address.key, address.rowId],
 				);
+				queueMicrotask(() => {
+					for (const listener of publicationDirtyListeners) listener();
+				});
 			}
 			const updates = readUpdates(address);
 			if (updates.length < COMPACTION_THRESHOLD) return;
@@ -239,11 +313,27 @@ export function createDocumentRuntime({
 		const document = new Y.Doc({ gc: true }) as LiveDocument;
 		const persist = (update: Uint8Array, origin: unknown) => {
 			if (origin === hydrationOrigin) return;
-			append(
-				address,
-				update,
-				origin === acceptedDocumentOrigin ? 'accepted' : 'local',
-			);
+			try {
+				append(
+					address,
+					update,
+					origin === acceptedDocumentOrigin ? 'accepted' : 'local',
+				);
+			} catch (cause) {
+				// Fail closed: the live document now holds work durable storage
+				// refused, so the handle is revoked after this transaction rather
+				// than silently diverging from SQLite (ADR-0171).
+				queueMicrotask(() =>
+					revokeWith(
+						address,
+						new Error(
+							`Row document storage failed for '${address.key}.${address.rowId}'`,
+							{ cause },
+						),
+					),
+				);
+				throw cause;
+			}
 		};
 		document.on('updateV2', persist);
 		try {
@@ -260,7 +350,8 @@ export function createDocumentRuntime({
 				document,
 				references: 0,
 				revoked: undefined,
-				revocationListeners: new Set(),
+				pulledVersion: undefined,
+				pulling: undefined,
 				stopPersistence() {
 					document.off('updateV2', persist);
 				},
@@ -297,6 +388,71 @@ export function createDocumentRuntime({
 		entry.document.destroy();
 	}
 
+	function isEntryCurrent(entry: DocumentEntry): boolean {
+		return (
+			!isDisposed &&
+			entry.revoked === undefined &&
+			entries.get(addressKey(entry.address)) === entry
+		);
+	}
+
+	function revokeWith(address: DocumentAddress, error: Error): void {
+		const entry = entries.get(addressKey(address));
+		if (entry === undefined || entry.revoked !== undefined) return;
+		entry.revoked = error;
+		destroyEntry(entry);
+	}
+
+	function pullEntry(
+		entry: DocumentEntry,
+	): Promise<Result<void, DocumentPullError>> {
+		// Overlapping pulls share one in-flight request; the next call after
+		// completion issues a fresh one. Repeated application of the same
+		// accepted state is semantically idempotent, so sharing is safe.
+		entry.pulling ??= (async () => {
+			try {
+				const transport = getPullTransport?.();
+				if (transport === undefined) return DocumentPullError.NotAttached();
+				let response: DocumentPullResponse;
+				try {
+					response = await transport({
+						address: { ...entry.address },
+						sinceVersion: entry.pulledVersion,
+					});
+				} catch (cause) {
+					return DocumentPullError.TransportFailed({ cause });
+				}
+				// A pull that resolves after disposal or revocation must not
+				// mutate the document; its result is simply dropped.
+				if (!isEntryCurrent(entry)) return Ok(undefined);
+				switch (response.kind) {
+					case 'unchanged':
+						return Ok(undefined);
+					case 'not-live':
+						// Scalar row-liveness owns the terminal deletion; the next
+						// scalar exchange installs it and revokes this document.
+						return DocumentPullError.RowNotLive();
+					case 'state': {
+						// The accepted origin persists these bytes locally without
+						// minting a publication obligation.
+						Y.applyUpdateV2(
+							entry.document,
+							new Uint8Array(response.update),
+							acceptedDocumentOrigin,
+						);
+						entry.pulledVersion = response.version;
+						return Ok(undefined);
+					}
+					default:
+						return response satisfies never;
+				}
+			} finally {
+				entry.pulling = undefined;
+			}
+		})();
+		return entry.pulling;
+	}
+
 	function createHandle(entry: DocumentEntry): RowDocument {
 		let isHandleDisposed = false;
 		entry.references += 1;
@@ -321,6 +477,16 @@ export function createDocumentRuntime({
 			async whenDurable(): Promise<void> {
 				requireUsable();
 			},
+			async pull(): Promise<Result<void, DocumentPullError>> {
+				requireUsable();
+				return pullEntry(entry);
+			},
+			async syncIssue(): Promise<DocumentSyncIssue> {
+				requireUsable();
+				return readPublication(entry.address)?.sync_issue === 'too-large'
+					? { kind: 'too-large' }
+					: null;
+			},
 			async [Symbol.asyncDispose](): Promise<void> {
 				if (isHandleDisposed) return;
 				isHandleDisposed = true;
@@ -336,39 +502,108 @@ export function createDocumentRuntime({
 				requireUsable();
 				Y.applyUpdateV2(entry.document, new Uint8Array(update), origin);
 			},
-			encodeStateVector() {
+			encodeStateAsUpdate() {
 				requireUsable();
-				return new Uint8Array(Y.encodeStateVector(entry.document));
-			},
-			encodeStateAsUpdate(stateVector) {
-				requireUsable();
-				return new Uint8Array(
-					Y.encodeStateAsUpdateV2(entry.document, stateVector),
-				);
+				return new Uint8Array(Y.encodeStateAsUpdateV2(entry.document));
 			},
 			observe(listener) {
 				requireUsable();
 				entry.document.on('updateV2', listener);
 				return () => entry.document.off('updateV2', listener);
 			},
-			subscribeRevocation(listener) {
-				if (entry.revoked !== undefined) {
-					listener(entry.revoked);
-					return () => undefined;
-				}
-				entry.revocationListeners.add(listener);
-				return () => entry.revocationListeners.delete(listener);
-			},
 		});
 		return handle;
 	}
 
-	return {
+	const runtime = {
 		async open(address: DocumentAddress): Promise<RowDocument> {
 			const entry = await entryFor(address);
 			requireRuntimeOpen();
 			if (entry.revoked !== undefined) throw entry.revoked;
 			return createHandle(entry);
+		},
+		/**
+		 * Observe new local publication work. Fires after the transaction that
+		 * advanced an obligation commits, so a subscriber that immediately
+		 * drains reads the durable revision it was woken for.
+		 */
+		subscribePublicationDirty(listener: () => void): () => void {
+			publicationDirtyListeners.add(listener);
+			return () => publicationDirtyListeners.delete(listener);
+		},
+		/**
+		 * Publish every currently dirty address once through the supplied
+		 * carrier with bounded concurrency: capture the current state and
+		 * revision, transport it, and settle or record the outcome. One pass
+		 * per call; the supervisor owns wake pacing, coalescing, and retry.
+		 */
+		async drainPublications(
+			publish: PublishDocument,
+		): Promise<Result<void, ReplicaError>> {
+			let queue: DocumentAddress[];
+			try {
+				queue = runtime.publication.listDirty();
+			} catch (cause) {
+				return ReplicaError.StorageFailed({ operation: 'document-drain', cause });
+			}
+			let transportFailure: { cause: unknown } | undefined;
+			let storageFailure: { cause: unknown } | undefined;
+			const workers = Array.from(
+				{ length: Math.min(PUBLISH_CONCURRENCY, queue.length) },
+				async () => {
+					while (transportFailure === undefined && !isDisposed) {
+						const address = queue.shift();
+						if (address === undefined) return;
+						let captured: { update: Uint8Array; revision: number } | undefined;
+						try {
+							captured = runtime.publication.capture(address);
+						} catch (cause) {
+							// One unreadable address must not starve the other dirty
+							// addresses; the failure is reported after the pass.
+							storageFailure ??= { cause };
+							continue;
+						}
+						if (captured === undefined) continue;
+						let outcome: DocumentPublishOutcome;
+						try {
+							outcome = await publish({ address, update: captured.update });
+						} catch (cause) {
+							transportFailure ??= { cause };
+							return;
+						}
+						if (isDisposed) return;
+						try {
+							switch (outcome) {
+								case 'accepted':
+									runtime.publication.settle(address, captured.revision);
+									break;
+								case 'not-live':
+									// Scalar deletion owns removing the whole record; until
+									// it arrives the address simply stays dirty.
+									break;
+								case 'too-large':
+									runtime.publication.recordIssue(address);
+									break;
+								default:
+									outcome satisfies never;
+							}
+						} catch (cause) {
+							storageFailure ??= { cause };
+						}
+					}
+				},
+			);
+			await Promise.all(workers);
+			if (transportFailure !== undefined) {
+				return ReplicaError.TransportFailed(transportFailure);
+			}
+			if (storageFailure !== undefined) {
+				return ReplicaError.StorageFailed({
+					operation: 'document-drain',
+					cause: storageFailure.cause,
+				});
+			}
+			return Ok(undefined);
 		},
 		/**
 		 * The durable authority-publication obligation for row documents
@@ -378,13 +613,12 @@ export function createDocumentRuntime({
 		 * never through an open document handle.
 		 */
 		publication: {
-			/** Addresses owing publication, stable address order, parked excluded. */
+			/** Addresses owing publication, stable order, terminal issues excluded. */
 			listDirty(): DocumentAddress[] {
 				return database
 					.all<SqliteRow & { qualified_key: string; row_id: string }>(
 						`SELECT qualified_key, row_id FROM document_publication
-						 WHERE revision > accepted_revision
-						   AND (parked_revision IS NULL OR revision > parked_revision)
+						 WHERE revision > accepted_revision AND sync_issue IS NULL
 						 ORDER BY qualified_key, row_id`,
 					)
 					.map(({ qualified_key, row_id }) => ({
@@ -393,113 +627,58 @@ export function createDocumentRuntime({
 					}));
 			},
 			/**
-			 * Freeze one immutable publication attempt for a dirty address, or
-			 * return the already frozen image so a lost response retries the
-			 * exact same bytes. Chain read, hydration, and freeze share one
-			 * transaction; a racing local edit lands as a newer revision and
-			 * never mutates the frozen image.
+			 * Read one dirty address's current complete state and the revision it
+			 * covers, in one transaction. Nothing is frozen: a racing local edit
+			 * advances the revision and the next capture reconstructs newer
+			 * state. Returns undefined when the address owes nothing.
 			 */
-			freeze(address: DocumentAddress): DocumentPublicationImage | undefined {
+			capture(
+				address: DocumentAddress,
+			): { update: Uint8Array; revision: number } | undefined {
 				return database.transaction(() => {
 					const record = readPublication(address);
-					if (!record || record.revision <= record.accepted_revision) {
-						return undefined;
-					}
 					if (
-						record.inflight_revision !== null &&
-						record.inflight_digest !== null &&
-						record.inflight_update !== null
-					) {
-						return {
-							update: copyBytes(record.inflight_update),
-							digest: record.inflight_digest,
-							revision: record.inflight_revision,
-						};
-					}
-					if (
-						record.parked_revision !== null &&
-						record.revision <= record.parked_revision
+						record === undefined ||
+						record.revision <= record.accepted_revision ||
+						record.sync_issue !== null
 					) {
 						return undefined;
 					}
 					const updates = readUpdates(address);
 					if (updates.length === 0) return undefined;
 					const hydrated = replay(updates);
-					let complete: Uint8Array;
 					try {
-						complete = new Uint8Array(Y.encodeStateAsUpdateV2(hydrated));
+						return {
+							update: new Uint8Array(Y.encodeStateAsUpdateV2(hydrated)),
+							revision: record.revision,
+						};
 					} finally {
 						hydrated.destroy();
 					}
-					const image: DocumentPublicationImage = {
-						update: complete,
-						digest: sha256HexBytes(complete),
-						revision: record.revision,
-					};
-					database.run(
-						`UPDATE document_publication SET
-							inflight_revision = ?, inflight_digest = ?, inflight_update = ?
-						 WHERE qualified_key = ? AND row_id = ?`,
-						[
-							image.revision,
-							image.digest,
-							image.update,
-							address.key,
-							address.rowId,
-						],
-					);
-					return image;
 				});
 			},
 			/**
-			 * Clear the frozen image only when the post-commit receipt matches
-			 * its digest exactly, and mark the address clean only when no newer
-			 * local revision arrived after the freeze. A stale or foreign
-			 * receipt changes nothing; a lost receipt retries the same bytes.
+			 * Advance the accepted revision through one captured revision and no
+			 * further. Acceptance of revision N never clears N+1, so work
+			 * authored during the request stays owed and republishes.
 			 */
-			settle(address: DocumentAddress, receipt: { digest: string }): void {
-				database.transaction(() => {
-					const record = readPublication(address);
-					if (!record || record.inflight_digest !== receipt.digest) return;
-					database.run(
-						`UPDATE document_publication SET
-							accepted_revision = max(accepted_revision, inflight_revision),
-							parked_revision = NULL,
-							inflight_revision = NULL,
-							inflight_digest = NULL,
-							inflight_update = NULL
-						 WHERE qualified_key = ? AND row_id = ?`,
-						[address.key, address.rowId],
-					);
-				});
-			},
-			/**
-			 * Record a bound refusal for the current revision. The address stays
-			 * durably owed but leaves the drain until a later local edit
-			 * advances past the parked revision (ADR-0174 parked work).
-			 */
-			park(address: DocumentAddress): void {
+			settle(address: DocumentAddress, revision: number): void {
 				database.run(
 					`UPDATE document_publication SET
-						parked_revision = revision,
-						inflight_revision = NULL,
-						inflight_digest = NULL,
-						inflight_update = NULL
+						accepted_revision = max(accepted_revision, min(?, revision))
 					 WHERE qualified_key = ? AND row_id = ?`,
-					[address.key, address.rowId],
+					[revision, address.key, address.rowId],
 				);
 			},
 			/**
-			 * Drop the frozen retry image without settling, keeping the address
-			 * dirty. Used when the authority reports the row not live; the
-			 * scalar plane delivers the deletion that removes the whole record.
+			 * Record the terminal too-large condition for this lineage. The
+			 * address leaves automatic publication permanently; the application
+			 * owns recovery, typically by moving content to a fresh row
+			 * (ADR-0174).
 			 */
-			clearInflight(address: DocumentAddress): void {
+			recordIssue(address: DocumentAddress): void {
 				database.run(
-					`UPDATE document_publication SET
-						inflight_revision = NULL,
-						inflight_digest = NULL,
-						inflight_update = NULL
+					`UPDATE document_publication SET sync_issue = 'too-large'
 					 WHERE qualified_key = ? AND row_id = ?`,
 					[address.key, address.rowId],
 				);
@@ -511,37 +690,31 @@ export function createDocumentRuntime({
 				return {
 					revision: record.revision,
 					acceptedRevision: record.accepted_revision,
-					parkedRevision: record.parked_revision ?? undefined,
-					inflightDigest: record.inflight_digest ?? undefined,
+					issue:
+						record.sync_issue === 'too-large' ? { kind: 'too-large' } : null,
 				};
 			},
 		},
 		revoke(address: DocumentAddress): void {
-			const entry = entries.get(addressKey(address));
-			if (entry === undefined) return;
-			entry.revoked = new Error(
-				`Row document was revoked because '${address.key}.${address.rowId}' is no longer live`,
+			revokeWith(
+				address,
+				new Error(
+					`Row document was revoked because '${address.key}.${address.rowId}' is no longer live`,
+				),
 			);
-			for (const listener of entry.revocationListeners) {
-				listener(entry.revoked);
-			}
-			entry.revocationListeners.clear();
-			destroyEntry(entry);
 		},
 		async [Symbol.asyncDispose](): Promise<void> {
 			if (isDisposed) return;
 			isDisposed = true;
+			publicationDirtyListeners.clear();
 			await Promise.allSettled(opening.values());
 			for (const entry of [...entries.values()]) {
 				entry.revoked = new Error('Epicenter document runtime is disposed');
-				for (const listener of entry.revocationListeners) {
-					listener(entry.revoked);
-				}
-				entry.revocationListeners.clear();
 				destroyEntry(entry);
 			}
 		},
 	};
+	return runtime;
 }
 
 function requireRowDocumentAccess(
@@ -574,7 +747,7 @@ export function observeRowDocumentUpdates(
 	return requireRowDocumentAccess(document).observe(listener);
 }
 
-/** Expose the narrow transport seam for one locally owned row document. */
+/** Read the registered adapter seam for one row document handle. */
 export function rowDocumentConnectionTarget(
 	document: RowDocument,
 ): RowDocumentConnectionTarget {

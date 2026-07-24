@@ -565,7 +565,10 @@ test('document disposal reports persistence and close failures together', async 
 	expect(failure).toBeInstanceOf(AggregateError);
 	expect((failure as AggregateError).errors).toHaveLength(2);
 	expect((failure as AggregateError).errors).toEqual([
-		expect.objectContaining({ message: 'Injected persistence failure' }),
+		expect.objectContaining({
+			message:
+				'Row document persistence failed; the handle is closed to protect durable state',
+		}),
 		expect.objectContaining({ message: 'Injected close failure' }),
 	]);
 	await epicenter[Symbol.asyncDispose]();
@@ -864,7 +867,7 @@ test('exchange cancellation requires both generation and transport key', async (
 	stallNext = true;
 	await bindTestData(epicenter).tables.notes.create({ title: 'Correlate' });
 	await waitFor(() => releaseExchange !== undefined);
-	const request = lastMessageOfType(tab.workerMessages, 'exchange-request');
+	const request = lastMessageOfType(tab.workerMessages, 'transport-request');
 	if (
 		request === undefined ||
 		typeof request.transportId !== 'number' ||
@@ -872,19 +875,19 @@ test('exchange cancellation requires both generation and transport key', async (
 	)
 		throw new Error('Expected a correlated exchange request');
 	tab.sendWorkerMessage({
-		type: 'exchange-cancel',
+		type: 'transport-cancel',
 		transportId: request.transportId + 1,
 		transportKey: request.transportKey,
 	});
 	tab.sendWorkerMessage({
-		type: 'exchange-cancel',
+		type: 'transport-cancel',
 		transportId: request.transportId,
 		transportKey: request.transportKey + 1,
 	});
 	releaseExchange?.();
 	await waitFor(
 		() =>
-			lastMessageOfType(tab.pageMessages, 'exchange-result')?.transportId ===
+			lastMessageOfType(tab.pageMessages, 'transport-result')?.transportId ===
 			request.transportId,
 	);
 });
@@ -1717,14 +1720,14 @@ test('retired transports can reattach repeatedly without reviving old callbacks'
 		attachment.stallNext = true;
 		const retirementsBeforeWrite = countMessages(
 			tab.workerMessages,
-			'exchange-retire',
+			'transport-retire',
 		);
 		await bindTestData(epicenter).tables.notes.create({
 			title: `Retire ${index}`,
 		});
 		await waitFor(
 			() =>
-				countMessages(tab.workerMessages, 'exchange-retire') >
+				countMessages(tab.workerMessages, 'transport-retire') >
 				retirementsBeforeWrite,
 		);
 		await waitFor(
@@ -1771,7 +1774,7 @@ test('replacing an in-flight transport terminally retires its callback capabilit
 	await waitFor(() => firstExchanges >= 2);
 	const retirementsBeforeReplacement = countMessages(
 		tab.workerMessages,
-		'exchange-retire',
+		'transport-retire',
 	);
 
 	expectOk(
@@ -1787,7 +1790,7 @@ test('replacing an in-flight transport terminally retires its callback capabilit
 			1_000,
 		),
 	);
-	expect(countMessages(tab.workerMessages, 'exchange-retire')).toBe(
+	expect(countMessages(tab.workerMessages, 'transport-retire')).toBe(
 		retirementsBeforeReplacement + 1,
 	);
 	const firstAfterReplacement = firstExchanges;
@@ -1869,7 +1872,7 @@ test('disposing a page cancels its active exchange generation', async () => {
 	await waitFor(() => releaseExchange !== undefined);
 	const activeRequest = lastMessageOfType(
 		tab.workerMessages,
-		'exchange-request',
+		'transport-request',
 	);
 	const exchangesAtDisposal = exchanges;
 	const disposal = tab.epicenter[Symbol.asyncDispose]();
@@ -1883,7 +1886,7 @@ test('disposing a page cancels its active exchange generation', async () => {
 	)
 		throw new Error('Expected an active exchange request');
 	tab.sendWorkerMessage({
-		type: 'exchange-request',
+		type: 'transport-request',
 		transportId: Number.MAX_SAFE_INTEGER,
 		transportKey: activeRequest.transportKey,
 		request: activeRequest.request,
@@ -1891,10 +1894,10 @@ test('disposing a page cancels its active exchange generation', async () => {
 	await Promise.resolve();
 	expect(exchanges).toBe(exchangesAtDisposal);
 	await disposal;
-	const resultsAtDisposal = countMessages(tab.pageMessages, 'exchange-result');
+	const resultsAtDisposal = countMessages(tab.pageMessages, 'transport-result');
 	releaseExchange?.();
 	await Bun.sleep(10);
-	expect(countMessages(tab.pageMessages, 'exchange-result')).toBe(
+	expect(countMessages(tab.pageMessages, 'transport-result')).toBe(
 		resultsAtDisposal,
 	);
 });

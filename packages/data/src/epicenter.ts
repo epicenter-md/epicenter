@@ -18,14 +18,18 @@ import {
 	type ValueDefinitions,
 	type ValueFor,
 } from './definitions.js';
-import { createDocumentRuntime, type RowDocument } from './documents.js';
+import {
+	createDocumentRuntime,
+	type PullDocument,
+	type RowDocument,
+} from './documents.js';
 import type { JsonObject } from './protocol/index.js';
-import type { Exchange, Replica, ReplicaError } from './replica/index.js';
+import type { Replica, ReplicaError } from './replica/index.js';
 import {
 	createSyncSupervisor,
-	type SyncCredentialProvider,
 	type SyncSchedule,
 	type SyncStatus,
+	type SyncSupervisorSession,
 } from './sync-supervisor.js';
 
 const mintRowId = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 24);
@@ -105,11 +109,16 @@ export type BoundData<
 	values: { [K in keyof TValues]: ValueLens<TValues[K]> };
 };
 
-export type EpicenterSyncSession = {
+export type EpicenterSyncSession = SyncSupervisorSession & {
 	deploymentId: string;
 	principalId: string;
-	exchange: Exchange;
-	credentials?: SyncCredentialProvider;
+	/**
+	 * The session's inbound HTTP carrier for explicit document pulls. Owned
+	 * here rather than by the supervisor: the supervisor drives outbound
+	 * drains, while pulls are application-driven through open handles. When
+	 * absent, `document.pull()` reports that no attached session can pull.
+	 */
+	pullDocument?: PullDocument;
 };
 
 export type CreateEpicenterOptions = {
@@ -184,14 +193,51 @@ export function createEpicenter({
 	syncIntervalMs,
 	scheduleSync,
 }: CreateEpicenterOptions) {
-	const documents = createDocumentRuntime({ database, replica });
+	let activeSession: EpicenterSyncSession | undefined;
+	const documents = createDocumentRuntime({
+		database,
+		replica,
+		getPullTransport: () => {
+			const transport = activeSession?.pullDocument;
+			if (transport === undefined) return undefined;
+			return async (request) => {
+				const response = await transport(request);
+				// A pull that finds the row dead converges through the scalar
+				// row-liveness owner: the next exchange installs the deletion
+				// and revokes the document.
+				if (response.kind === 'not-live') void sync.requestExchange();
+				return response;
+			};
+		},
+	});
 	const sync = createSyncSupervisor({
 		replica,
+		// Documents drain under the supervisor's one scheduler, retry policy,
+		// and status surface: after the scalar exchange in a full cycle, and
+		// alone in a coalesced document-only wake.
+		drainDocuments: (session) => {
+			const publish = session.publishDocument;
+			if (publish === undefined) return Promise.resolve(Ok(undefined));
+			return documents.drainPublications(async (request) => {
+				const outcome = await publish(request);
+				// A dead row converges through the scalar row-liveness owner; ask
+				// for the exchange that installs the deletion promptly instead of
+				// waiting for the periodic cycle.
+				if (outcome === 'not-live') void sync.requestExchange();
+				return outcome;
+			});
+		},
 		...(syncIntervalMs === undefined
 			? {}
 			: { exchangeIntervalMs: syncIntervalMs }),
 		...(scheduleSync === undefined ? {} : { schedule: scheduleSync }),
 		log,
+	});
+	// A committed local document append wakes the coalesced document drain;
+	// a later runtime resumes unfinished work from SQLite without waiting for
+	// this signal.
+	const stopPublicationWake = documents.subscribePublicationDirty(() => {
+		sync.requestDocumentDrain();
 	});
 	const tableListeners = new Map<string, Set<(changedIds: string[]) => void>>();
 	const valueListeners = new Map<string, Set<() => void>>();
@@ -409,6 +455,7 @@ export function createEpicenter({
 		requireOpen();
 		const attached = replica.attach(session);
 		if (attached.error !== null) return attached;
+		activeSession = session;
 		return sync.attach(session);
 	}
 
@@ -425,7 +472,9 @@ export function createEpicenter({
 		async [Symbol.asyncDispose](): Promise<void> {
 			if (isDisposed) return;
 			isDisposed = true;
+			activeSession = undefined;
 			stopReplicaSubscription();
+			stopPublicationWake();
 			sync.dispose();
 			tableListeners.clear();
 			valueListeners.clear();

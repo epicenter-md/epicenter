@@ -45,7 +45,7 @@ export function sha256Hex(input: string): string {
 	return sha256HexBytes(new TextEncoder().encode(input));
 }
 
-export function sha256HexBytes(message: Uint8Array): string {
+function sha256HexBytes(message: Uint8Array): string {
 	const bitLength = message.length * 8;
 	const paddedLength = (((message.length + 8) >> 6) + 1) << 6;
 	const padded = new Uint8Array(paddedLength);

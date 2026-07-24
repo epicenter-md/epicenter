@@ -239,6 +239,7 @@ export async function openDesktopEpicenter({
 				}
 			}
 		};
+		let persistFailure: Error | undefined;
 		const persist = (update: Uint8Array, origin: unknown) => {
 			if (origin === remoteDocumentOrigin) return;
 			persistenceTail = persistenceTail.then(() =>
@@ -246,6 +247,13 @@ export async function openDesktopEpicenter({
 					kind: 'document-update',
 					documentId: opened.documentId,
 					update: encodeBytes(update),
+				}).catch((cause) => {
+					// Fail closed: once the owner has missed an edit, later edits
+					// would silently diverge from durable state.
+					persistFailure ??= new Error(
+						'Row document persistence failed; the handle is closed to protect durable state',
+						{ cause },
+					);
 				}),
 			);
 		};
@@ -258,7 +266,24 @@ export async function openDesktopEpicenter({
 			transact: document.transact.bind(document),
 			async whenDurable() {
 				await persistenceTail;
+				if (persistFailure !== undefined) throw persistFailure;
 				if (refreshFailure !== undefined) throw refreshFailure;
+			},
+			async pull() {
+				// The Bun owner runs the pull: overlap safety, the version cache,
+				// and the accepted-origin apply all live with the owner document.
+				await persistenceTail;
+				if (persistFailure !== undefined) throw persistFailure;
+				return request<Awaited<ReturnType<RowDocument['pull']>>>({
+					kind: 'document-pull',
+					documentId: opened.documentId,
+				});
+			},
+			async syncIssue() {
+				return request<Awaited<ReturnType<RowDocument['syncIssue']>>>({
+					kind: 'document-issue',
+					documentId: opened.documentId,
+				});
 			},
 			async [Symbol.asyncDispose]() {
 				if (disposed) return;
@@ -281,14 +306,12 @@ export async function openDesktopEpicenter({
 			applyUpdate(update, origin) {
 				Y.applyUpdateV2(document, update, origin);
 			},
-			encodeStateVector: () => new Uint8Array(Y.encodeStateVector(document)),
-			encodeStateAsUpdate: (stateVector) =>
-				new Uint8Array(Y.encodeStateAsUpdateV2(document, stateVector)),
+			encodeStateAsUpdate: () =>
+				new Uint8Array(Y.encodeStateAsUpdateV2(document)),
 			observe(listener) {
 				document.on('updateV2', listener);
 				return () => document.off('updateV2', listener);
 			},
-			subscribeRevocation: () => () => undefined,
 		});
 		documents.add(handle);
 		return handle;

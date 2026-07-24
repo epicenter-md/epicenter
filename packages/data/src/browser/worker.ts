@@ -31,12 +31,14 @@ import {
 import type { ExchangeRequest, ExchangeResponse } from '../protocol/index.js';
 import { openReplica, type Replica } from '../replica/index.js';
 import type {
-	BrowserExchangeResult,
 	BrowserOperation,
+	BrowserTransportResult,
 	BrowserWorkerInbound,
 	BrowserWorkerMessage,
 	SerializedTableDefinition,
 	SerializedValueDefinition,
+	SessionTransportRequest,
+	SessionTransportResponse,
 } from './protocol.js';
 import {
 	acquireBrowserStorageLease,
@@ -77,7 +79,7 @@ type Client = {
 		number,
 		{
 			transportKey: number;
-			resolve(value: unknown): void;
+			resolve(value: SessionTransportResponse): void;
 			reject(cause: unknown): void;
 		}
 	>;
@@ -85,6 +87,8 @@ type Client = {
 		number,
 		{
 			hasCredentials: boolean;
+			canPublishDocuments: boolean;
+			canPullDocuments: boolean;
 		}
 	>;
 };
@@ -269,7 +273,7 @@ export function createBrowserWorkerHost({
 		client.syncTransportRetirement = undefined;
 	}
 
-	function cancelExchange(
+	function cancelTransport(
 		client: Client,
 		transportId: number,
 		transportKey: number,
@@ -277,7 +281,7 @@ export function createBrowserWorkerHost({
 		sendToClient(
 			client,
 			{
-				type: 'exchange-cancel',
+				type: 'transport-cancel',
 				transportId,
 				transportKey,
 			},
@@ -298,11 +302,11 @@ export function createBrowserWorkerHost({
 		for (const [transportId, pending] of client.transports) {
 			if (pending.transportKey !== transportKey) continue;
 			client.transports.delete(transportId);
-			cancelExchange(client, transportId, transportKey);
+			cancelTransport(client, transportId, transportKey);
 			pending.reject(new Error('Browser sync transport was retired'));
 		}
 		client.credentials.delete(transportKey);
-		sendToClient(client, { type: 'exchange-retire', transportKey });
+		sendToClient(client, { type: 'transport-retire', transportKey });
 		notifySyncCredentials();
 	}
 
@@ -349,16 +353,29 @@ export function createBrowserWorkerHost({
 		},
 	};
 
-	async function exchangeThroughLiveClient(
-		request: ExchangeRequest,
-	): Promise<ExchangeResponse> {
+	async function callThroughLiveClient(
+		request: SessionTransportRequest,
+	): Promise<SessionTransportResponse> {
 		let lastFailure: unknown;
 		for (const client of syncClients()) {
 			const transportKey = client.syncTransportKey;
 			if (transportKey === undefined) continue;
-			if (!client.credentials.get(transportKey)?.hasCredentials) continue;
+			const capability = client.credentials.get(transportKey);
+			if (capability === undefined || !capability.hasCredentials) continue;
+			if (
+				request.kind === 'document-publish' &&
+				!capability.canPublishDocuments
+			) {
+				continue;
+			}
+			if (request.kind === 'document-pull' && !capability.canPullDocuments) {
+				continue;
+			}
 			try {
-				const response = await exchange(client, transportKey, request);
+				const response = await callTransport(client, transportKey, request);
+				if (response.kind !== request.kind) {
+					throw new Error('Browser sync transport answered the wrong request');
+				}
 				markSyncTransportLive(client, transportKey);
 				return response;
 			} catch (cause) {
@@ -368,9 +385,19 @@ export function createBrowserWorkerHost({
 				lastFailure = cause;
 			}
 		}
-		throw new Error('No live browser sync transport completed the exchange', {
+		throw new Error('No live browser sync transport completed the request', {
 			cause: lastFailure,
 		});
+	}
+
+	async function exchangeThroughLiveClient(
+		request: ExchangeRequest,
+	): Promise<ExchangeResponse> {
+		const response = await callThroughLiveClient({ kind: 'exchange', request });
+		if (response.kind !== 'exchange') {
+			throw new Error('Browser sync transport answered the wrong request');
+		}
+		return response.response;
 	}
 
 	async function openedStore(client: Client): Promise<BrowserWorkerStore> {
@@ -622,7 +649,7 @@ export function createBrowserWorkerHost({
 		client.terminalCause = cause;
 		cancelTransportRetirement(client);
 		for (const [transportId, pending] of client.transports) {
-			cancelExchange(client, transportId, pending.transportKey);
+			cancelTransport(client, transportId, pending.transportKey);
 			pending.reject(cause);
 		}
 		client.transports.clear();
@@ -774,6 +801,16 @@ export function createBrowserWorkerHost({
 				);
 				return undefined;
 			}
+			case 'document-pull': {
+				const entry = client.documents.get(operation.documentId);
+				if (entry === undefined) throw new Error('Row document is not open');
+				return entry.document.pull();
+			}
+			case 'document-issue': {
+				const entry = client.documents.get(operation.documentId);
+				if (entry === undefined) throw new Error('Row document is not open');
+				return entry.document.syncIssue();
+			}
 			case 'document-close':
 				await closeDocument(client, operation.documentId);
 				return undefined;
@@ -810,6 +847,8 @@ export function createBrowserWorkerHost({
 			const previousTransportKey = client.syncTransportKey;
 			client.credentials.set(operation.transportKey, {
 				hasCredentials: operation.hasCredentials,
+				canPublishDocuments: operation.canPublishDocuments,
+				canPullDocuments: operation.canPullDocuments,
 			});
 			client.syncTransportKey = operation.transportKey;
 			client.syncAttachmentOrder = ++nextSyncAttachmentOrder;
@@ -826,6 +865,28 @@ export function createBrowserWorkerHost({
 				deploymentId: operation.deploymentId,
 				principalId: operation.principalId,
 				exchange: exchangeThroughLiveClient,
+				publishDocument: async ({ address, update }) => {
+					const response = await callThroughLiveClient({
+						kind: 'document-publish',
+						address,
+						update: new Uint8Array(update),
+					});
+					if (response.kind !== 'document-publish') {
+						throw new Error('Browser sync transport answered the wrong request');
+					}
+					return response.outcome;
+				},
+				pullDocument: async ({ address, sinceVersion }) => {
+					const response = await callThroughLiveClient({
+						kind: 'document-pull',
+						address,
+						sinceVersion,
+					});
+					if (response.kind !== 'document-pull') {
+						throw new Error('Browser sync transport answered the wrong request');
+					}
+					return response.response;
+				},
 				credentials: syncCredentials,
 			});
 			if (client.isDisconnected) {
@@ -881,16 +942,16 @@ export function createBrowserWorkerHost({
 		}
 	}
 
-	function exchange(
+	function callTransport(
 		client: Client,
 		transportKey: number,
-		request: ExchangeRequest,
-	): Promise<ExchangeResponse> {
+		request: SessionTransportRequest,
+	): Promise<SessionTransportResponse> {
 		const transportId = ++nextTransportId;
-		return new Promise<ExchangeResponse>((resolve, reject) => {
+		return new Promise<SessionTransportResponse>((resolve, reject) => {
 			const timeout = setTimeout(() => {
 				if (!client.transports.delete(transportId)) return;
-				cancelExchange(client, transportId, transportKey);
+				cancelTransport(client, transportId, transportKey);
 				quarantineSyncTransport(client, transportKey);
 				reject(new Error('Browser sync transport timed out'));
 			}, exchangeTimeoutMs);
@@ -898,7 +959,7 @@ export function createBrowserWorkerHost({
 				transportKey,
 				resolve(value) {
 					clearTimeout(timeout);
-					resolve(value as ExchangeResponse);
+					resolve(value);
 				},
 				reject(cause) {
 					clearTimeout(timeout);
@@ -907,7 +968,7 @@ export function createBrowserWorkerHost({
 			});
 			if (
 				!sendToClient(client, {
-					type: 'exchange-request',
+					type: 'transport-request',
 					transportId,
 					transportKey,
 					request,
@@ -921,15 +982,15 @@ export function createBrowserWorkerHost({
 		});
 	}
 
-	function handleExchangeResult(
+	function handleTransportResult(
 		client: Client,
-		message: BrowserExchangeResult,
+		message: BrowserTransportResult,
 	): void {
 		const pending = client.transports.get(message.transportId);
 		if (pending === undefined) return;
 		if (pending.transportKey !== message.transportKey) return;
 		client.transports.delete(message.transportId);
-		if (message.type === 'exchange-result') {
+		if (message.type === 'transport-result') {
 			markSyncTransportLive(client, message.transportKey);
 			pending.resolve(message.response);
 		} else {
@@ -973,10 +1034,10 @@ export function createBrowserWorkerHost({
 		port.addEventListener('message', ({ data: message }) => {
 			if (client.isDisconnected) return;
 			if (
-				message.type === 'exchange-result' ||
-				message.type === 'exchange-error'
+				message.type === 'transport-result' ||
+				message.type === 'transport-error'
 			) {
-				handleExchangeResult(client, message);
+				handleTransportResult(client, message);
 				return;
 			}
 			const respond = async (): Promise<void> => {
@@ -1022,7 +1083,11 @@ export function createBrowserWorkerHost({
 			};
 			if (
 				message.operation.kind === 'attach-sync' ||
-				message.operation.kind === 'disconnect'
+				message.operation.kind === 'disconnect' ||
+				// A pull awaits the network through a page transport; running it
+				// on the local queue would stall every SQLite RPC behind it. The
+				// document runtime owns pull overlap and disposal safety.
+				message.operation.kind === 'document-pull'
 			) {
 				void respond();
 				return;

@@ -1,6 +1,6 @@
 import type { SqliteDatabase } from '@epicenter/sqlite';
 
-export const REPLICA_FORMAT_VERSION = 2;
+export const REPLICA_FORMAT_VERSION = 3;
 
 const SCHEMA = [
 	`CREATE TABLE metadata (
@@ -59,26 +59,18 @@ const SCHEMA = [
 	) WITHOUT ROWID, STRICT`,
 	// The durable authority obligation for one row document (ADR-0171/0174):
 	// `revision` advances with every locally authored append in the same
-	// transaction; `accepted_revision` advances only on an exact digest-bound
-	// publication receipt; the optional inflight columns freeze one immutable
-	// retry image. `parked_revision` records a bound refusal so one failing
-	// address does not spin; a later local edit advances `revision` past it
-	// and re-arms the drain.
+	// transaction; `accepted_revision` advances only when the authority
+	// acknowledges accepting a captured revision, and never past a newer local
+	// revision. `sync_issue` records the terminal `too-large` condition that
+	// permanently removes the address from automatic publication.
 	`CREATE TABLE document_publication (
 		qualified_key TEXT NOT NULL,
 		row_id TEXT NOT NULL,
 		revision INTEGER NOT NULL CHECK (revision > 0),
 		accepted_revision INTEGER NOT NULL
 			CHECK (accepted_revision >= 0 AND accepted_revision <= revision),
-		parked_revision INTEGER
-			CHECK (parked_revision IS NULL OR parked_revision <= revision),
-		inflight_revision INTEGER
-			CHECK (inflight_revision IS NULL OR inflight_revision <= revision),
-		inflight_digest TEXT,
-		inflight_update BLOB,
-		PRIMARY KEY (qualified_key, row_id),
-		CHECK ((inflight_revision IS NULL) = (inflight_digest IS NULL)),
-		CHECK ((inflight_revision IS NULL) = (inflight_update IS NULL))
+		sync_issue TEXT CHECK (sync_issue IN ('too-large')),
+		PRIMARY KEY (qualified_key, row_id)
 	) WITHOUT ROWID, STRICT`,
 ] as const;
 

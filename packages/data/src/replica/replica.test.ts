@@ -150,7 +150,7 @@ test('fresh open mints identity and reopen preserves it', () => {
 	const first = expectOk(openReplica({ database: adapter }));
 	const firstMetadata = expectOk(first.metadata());
 	expect(firstMetadata.replicaId).toMatch(/^[a-z0-9]{24}$/);
-	expect(firstMetadata.formatVersion).toBe(2);
+	expect(firstMetadata.formatVersion).toBe(3);
 	const reopened = expectOk(openReplica({ database: adapter }));
 	expect(expectOk(reopened.metadata())).toEqual(firstMetadata);
 	database.close();

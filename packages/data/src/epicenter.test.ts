@@ -505,17 +505,23 @@ test('installed synchronized deletion removes document bytes and revokes handles
 	expectOk(
 		await epicenter.attachSync({
 			...session,
-			exchange: () => ({
+			// The local document edit below wakes an extra exchange cycle, so
+			// the fixture honors the contract: it never re-serves a page the
+			// replica already applied.
+			exchange: (request) => ({
 				through: 1,
-				records: [
-					{
-						kind: 'row',
-						key: NOTES_KEY,
-						rowId: REMOTE_ROW_A,
-						changedSequence: 1,
-						fields: { title: 'remote document', rank: 1 },
-					},
-				],
+				records:
+					request.after >= 1
+						? []
+						: [
+								{
+									kind: 'row',
+									key: NOTES_KEY,
+									rowId: REMOTE_ROW_A,
+									changedSequence: 1,
+									fields: { title: 'remote document', rank: 1 },
+								},
+							],
 				next: null,
 			}),
 		}),
@@ -525,16 +531,19 @@ test('installed synchronized deletion removes document bytes and revokes handles
 	expectOk(
 		await epicenter.attachSync({
 			...session,
-			exchange: () => ({
+			exchange: (request) => ({
 				through: 2,
-				records: [
-					{
-						kind: 'row-deleted',
-						key: NOTES_KEY,
-						rowId: REMOTE_ROW_A,
-						changedSequence: 2,
-					},
-				],
+				records:
+					request.after >= 2
+						? []
+						: [
+								{
+									kind: 'row-deleted',
+									key: NOTES_KEY,
+									rowId: REMOTE_ROW_A,
+									changedSequence: 2,
+								},
+							],
 				next: null,
 			}),
 		}),

@@ -42,7 +42,6 @@ type UntypedValueLens = {
 type OpenDocument = {
 	surfaceId: string;
 	document: RowDocument;
-	connection: { dispose(): void } | undefined;
 };
 
 export const EPICENTER_STORAGE_MOVED_ERROR_NAME = 'EpicenterStorageMovedError';
@@ -50,10 +49,8 @@ export const EPICENTER_STORAGE_MOVED_ERROR_NAME = 'EpicenterStorageMovedError';
 /** Open the one Bun-owned desktop Epicenter and its trusted-surface RPC owner. */
 export async function createDesktopEpicenterOwner({
 	directory,
-	connectDocument,
 }: {
 	directory: string;
-	connectDocument?: (document: RowDocument) => { dispose(): void };
 }) {
 	const epicenter = await openBunEpicenter({ directory });
 	const surfaces = new Map<string, number>();
@@ -66,7 +63,6 @@ export async function createDesktopEpicenterOwner({
 		const opened = documents.get(documentId);
 		if (opened === undefined) return;
 		documents.delete(documentId);
-		opened.connection?.dispose();
 		await opened.document[Symbol.asyncDispose]();
 	}
 
@@ -126,7 +122,6 @@ export async function createDesktopEpicenterOwner({
 					documents.set(documentId, {
 						surfaceId,
 						document,
-						connection: connectDocument?.(document),
 					});
 					return {
 						documentId,
@@ -148,6 +143,16 @@ export async function createDesktopEpicenterOwner({
 				if (opened === undefined) throw new Error('Row document is not open');
 				return encodeBytes(encodeRowDocumentState(opened.document));
 			}
+			case 'document-pull': {
+				const opened = documents.get(operation.documentId);
+				if (opened === undefined) throw new Error('Row document is not open');
+				return opened.document.pull();
+			}
+			case 'document-issue': {
+				const opened = documents.get(operation.documentId);
+				if (opened === undefined) throw new Error('Row document is not open');
+				return opened.document.syncIssue();
+			}
 			case 'document-close':
 				await closeDocument(operation.documentId);
 				return undefined;
@@ -160,6 +165,14 @@ export async function createDesktopEpicenterOwner({
 		epicenter,
 		execute(input: unknown): Promise<unknown> {
 			const request = parseDesktopRequest(input);
+			// A pull awaits the network; running it on the local queue would
+			// stall every SQLite operation behind it. The document runtime owns
+			// pull overlap and disposal safety.
+			if (request.operation.kind === 'document-pull') {
+				return Promise.resolve().then(() =>
+					executeOperation(request.surfaceId, request.operation),
+				);
+			}
 			const execution = operationTail.then(() =>
 				executeOperation(request.surfaceId, request.operation),
 			);

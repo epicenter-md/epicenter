@@ -1,12 +1,13 @@
 /**
- * Row-Document Publication Obligation Tests
+ * Row-Document Publication and Pull Tests
  *
  * Verifies the durable authority-publication record that ADR-0171/0174 attach
  * to locally authored document work: local appends advance the obligation in
- * the append transaction, authority-accepted installs never mint one, freeze
- * produces an immutable digest-bound retry image, settle requires the exact
- * digest, park removes an address from the drain until a later local edit
- * re-arms it, and row deletion removes chain and obligation together.
+ * the append transaction, authority-accepted installs never mint one, capture
+ * reconstructs current state so retries are semantically idempotent, settling
+ * revision N never clears N+1, `too-large` records a terminal address-scoped
+ * issue, row deletion removes chain and obligation together, and explicit
+ * pulls deliver accepted state without creating outbound work.
  */
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
@@ -20,6 +21,8 @@ import {
 	applyRowDocumentUpdate,
 	createDocumentRuntime,
 	type DocumentAddress,
+	type DocumentPullResponse,
+	type PullDocument,
 } from './documents.js';
 import { openReplica } from './replica/index.js';
 
@@ -36,11 +39,15 @@ function address(seed: string): DocumentAddress {
 	return { key: NOTES_KEY, rowId: rowId(seed) };
 }
 
-function setup() {
+function setup({ pull }: { pull?: PullDocument } = {}) {
 	const rawDatabase = new Database(':memory:', { strict: true });
 	const database = createBunSqliteAdapter(rawDatabase);
 	const replica = expectOk(openReplica({ database }));
-	const documents = createDocumentRuntime({ database, replica });
+	const documents = createDocumentRuntime({
+		database,
+		replica,
+		...(pull === undefined ? {} : { getPullTransport: () => pull }),
+	});
 	function createRow(target: DocumentAddress): void {
 		expectOk(
 			replica.write({
@@ -84,8 +91,7 @@ test('local edits advance the obligation; accepted installs never do', async () 
 		expect(context.documents.publication.status(target)).toEqual({
 			revision: 1,
 			acceptedRevision: 0,
-			parkedRevision: undefined,
-			inflightDigest: undefined,
+			issue: null,
 		});
 		expect(context.documents.publication.listDirty()).toEqual([target]);
 
@@ -125,31 +131,31 @@ test('an accepted-only document never enters the drain', async () => {
 	}
 });
 
-test('freeze produces one immutable digest-bound retry image', async () => {
+test('capture reads current state; a racing edit advances the revision', async () => {
 	const context = setup();
 	try {
-		const target = address('freeze');
+		const target = address('capture');
 		context.createRow(target);
 		const document = await context.documents.open(target);
-		document.transact(() => document.get('content').insert(0, 'frozen'));
+		document.transact(() => document.get('content').insert(0, 'first'));
 
-		const image = context.documents.publication.freeze(target);
-		expect(image).toBeDefined();
-		expect(image?.revision).toBe(1);
-		expect(image?.digest).toMatch(/^[0-9a-f]{64}$/);
+		const first = context.documents.publication.capture(target);
+		expect(first?.revision).toBe(1);
 
-		// A lost response retries the exact same bytes.
-		const retried = context.documents.publication.freeze(target);
-		expect(retried?.digest).toBe(image?.digest);
-		expect(retried?.update).toEqual(image?.update);
+		// A racing local edit advances the revision; the next capture
+		// reconstructs the newer complete state instead of replaying old bytes.
+		document.transact(() => document.get('content').insert(5, ' race'));
+		const second = context.documents.publication.capture(target);
+		expect(second?.revision).toBe(2);
+		expect(second?.update).not.toEqual(first?.update);
 
-		// A racing local edit lands as a newer revision without touching the
-		// frozen image.
-		document.transact(() => document.get('content').insert(6, ' race'));
-		const during = context.documents.publication.freeze(target);
-		expect(during?.digest).toBe(image?.digest);
-		expect(during?.revision).toBe(1);
-		expect(context.documents.publication.status(target)?.revision).toBe(2);
+		const hydrated = new Y.Doc();
+		try {
+			Y.applyUpdateV2(hydrated, second?.update ?? new Uint8Array());
+			expect(hydrated.get('content').toString()).toBe('first race');
+		} finally {
+			hydrated.destroy();
+		}
 
 		await document[Symbol.asyncDispose]();
 	} finally {
@@ -157,43 +163,33 @@ test('freeze produces one immutable digest-bound retry image', async () => {
 	}
 });
 
-test('settle requires the exact digest and never clears newer local work', async () => {
+test('settling revision N never clears revision N+1', async () => {
 	const context = setup();
 	try {
 		const target = address('settle');
 		context.createRow(target);
 		const document = await context.documents.open(target);
 		document.transact(() => document.get('content').insert(0, 'one'));
-		const image = context.documents.publication.freeze(target);
-		if (image === undefined) throw new Error('expected a frozen image');
+		const captured = context.documents.publication.capture(target);
+		if (captured === undefined) throw new Error('expected a capture');
 
-		// A foreign receipt changes nothing.
-		context.documents.publication.settle(target, { digest: 'not-the-digest' });
-		expect(context.documents.publication.status(target)?.inflightDigest).toBe(
-			image.digest,
-		);
-
-		// A racing edit after the freeze keeps the address dirty through the
-		// matching receipt: acceptance proves revision 1, not revision 2.
+		// Work authored while revision 1 is in flight stays owed through its
+		// acceptance: the authority proved revision 1, not revision 2.
 		document.transact(() => document.get('content').insert(3, ' two'));
-		context.documents.publication.settle(target, { digest: image.digest });
+		context.documents.publication.settle(target, captured.revision);
 		expect(context.documents.publication.status(target)).toEqual({
 			revision: 2,
 			acceptedRevision: 1,
-			parkedRevision: undefined,
-			inflightDigest: undefined,
+			issue: null,
 		});
 		expect(context.documents.publication.listDirty()).toEqual([target]);
 
 		// Publishing the newer revision settles it completely.
-		const next = context.documents.publication.freeze(target);
-		if (next === undefined) throw new Error('expected a second image');
+		const next = context.documents.publication.capture(target);
+		if (next === undefined) throw new Error('expected a second capture');
 		expect(next.revision).toBe(2);
-		context.documents.publication.settle(target, { digest: next.digest });
+		context.documents.publication.settle(target, next.revision);
 		expect(context.documents.publication.listDirty()).toEqual([]);
-		expect(context.documents.publication.status(target)?.acceptedRevision).toBe(
-			2,
-		);
 
 		await document[Symbol.asyncDispose]();
 	} finally {
@@ -201,57 +197,26 @@ test('settle requires the exact digest and never clears newer local work', async
 	}
 });
 
-test('park removes the address from the drain until a later local edit', async () => {
+test('too-large records a terminal issue that later edits do not resume', async () => {
 	const context = setup();
 	try {
-		const target = address('parked');
+		const target = address('toolarge');
 		context.createRow(target);
 		const document = await context.documents.open(target);
-		document.transact(() => document.get('content').insert(0, 'too big'));
-		context.documents.publication.freeze(target);
+		document.transact(() => document.get('content').insert(0, 'huge'));
 
-		context.documents.publication.park(target);
+		context.documents.publication.recordIssue(target);
 		expect(context.documents.publication.listDirty()).toEqual([]);
-		expect(context.documents.publication.status(target)).toEqual({
-			revision: 1,
-			acceptedRevision: 0,
-			parkedRevision: 1,
-			inflightDigest: undefined,
+		expect(context.documents.publication.capture(target)).toBeUndefined();
+		expect(await document.syncIssue()).toEqual({ kind: 'too-large' });
+
+		// The lineage stays locally durable and editable, but a later edit
+		// does not silently resume publication (ADR-0174).
+		document.transact(() => document.get('content').insert(0, 'still local'));
+		expect(context.documents.publication.listDirty()).toEqual([]);
+		expect(context.documents.publication.status(target)?.issue).toEqual({
+			kind: 'too-large',
 		});
-		// Parked is not synchronized: the obligation record survives.
-		expect(context.documents.publication.freeze(target)).toBeUndefined();
-
-		// A later local edit advances past the parked revision and re-arms.
-		document.transact(() => document.get('content').insert(0, 'shrunk'));
-		expect(context.documents.publication.listDirty()).toEqual([target]);
-		expect(context.documents.publication.freeze(target)?.revision).toBe(2);
-
-		await document[Symbol.asyncDispose]();
-	} finally {
-		context.rawDatabase.close();
-	}
-});
-
-test('clearInflight drops the retry image but keeps the address dirty', async () => {
-	const context = setup();
-	try {
-		const target = address('clear-inflight');
-		context.createRow(target);
-		const document = await context.documents.open(target);
-		document.transact(() => document.get('content').insert(0, 'owed'));
-		const image = context.documents.publication.freeze(target);
-
-		context.documents.publication.clearInflight(target);
-		expect(
-			context.documents.publication.status(target)?.inflightDigest,
-		).toBeUndefined();
-		expect(context.documents.publication.listDirty()).toEqual([target]);
-
-		// A later settle against the dropped image is inert.
-		context.documents.publication.settle(target, {
-			digest: image?.digest ?? '',
-		});
-		expect(context.documents.publication.listDirty()).toEqual([target]);
 
 		await document[Symbol.asyncDispose]();
 	} finally {
@@ -287,29 +252,280 @@ test('row deletion removes the obligation in the same transaction as the chain',
 	}
 });
 
-test('compaction preserves the frozen retry image and the obligation record', async () => {
+test('compaction preserves the obligation record and its revisions', async () => {
 	const context = setup();
 	try {
-		const target = address('compact-inflight');
+		const target = address('compact');
 		context.createRow(target);
 		const document = await context.documents.open(target);
-		document.transact(() => document.get('content').insert(0, 'a'));
-		const image = context.documents.publication.freeze(target);
-		if (image === undefined) throw new Error('expected a frozen image');
-
-		// Drive the chain across the compaction threshold while the image is
-		// in flight.
-		for (let index = 0; index < 63; index += 1) {
+		for (let index = 0; index < 64; index += 1) {
 			document.transact(() =>
 				document.get('content').insert(document.get('content').length, 'b'),
 			);
 		}
 		expect(context.chainLength(target)).toBe(1);
-		const retried = context.documents.publication.freeze(target);
-		expect(retried?.digest).toBe(image.digest);
-		expect(retried?.revision).toBe(1);
 		expect(context.documents.publication.status(target)?.revision).toBe(64);
+		expect(context.documents.publication.capture(target)?.revision).toBe(64);
 
+		await document[Symbol.asyncDispose]();
+	} finally {
+		context.rawDatabase.close();
+	}
+});
+
+test('drain settles accepted work, records too-large, and keeps not-live dirty', async () => {
+	const context = setup();
+	try {
+		const settled = address('drainsettles');
+		const refused = address('draintoolarge');
+		const dead = address('drainnotlive');
+		for (const target of [settled, refused, dead]) {
+			context.createRow(target);
+			const document = await context.documents.open(target);
+			document.transact(() => document.get('content').insert(0, 'owed'));
+			await document[Symbol.asyncDispose]();
+		}
+
+		const published: string[] = [];
+		const outcome = await context.documents.drainPublications(
+			({ address: target }) => {
+				published.push(target.rowId);
+				if (target.rowId === settled.rowId) return 'accepted';
+				if (target.rowId === refused.rowId) return 'too-large';
+				return 'not-live';
+			},
+		);
+		expect(outcome.error).toBeNull();
+		expect(published.toSorted()).toEqual(
+			[settled.rowId, refused.rowId, dead.rowId].toSorted(),
+		);
+
+		expect(context.documents.publication.status(settled)).toEqual({
+			revision: 1,
+			acceptedRevision: 1,
+			issue: null,
+		});
+		// The bound refusal is terminal for the lineage and blocks nothing else.
+		expect(context.documents.publication.status(refused)?.issue).toEqual({
+			kind: 'too-large',
+		});
+		// The not-live address stays dirty; the scalar plane will deliver the
+		// deletion that removes the whole record.
+		expect(context.documents.publication.status(dead)).toEqual({
+			revision: 1,
+			acceptedRevision: 0,
+			issue: null,
+		});
+		expect(context.documents.publication.listDirty()).toEqual([dead]);
+	} finally {
+		context.rawDatabase.close();
+	}
+});
+
+test('transport interruption keeps work owed; the retry sends current state', async () => {
+	const context = setup();
+	try {
+		const target = address('draininterrupted');
+		context.createRow(target);
+		const document = await context.documents.open(target);
+		document.transact(() => document.get('content').insert(0, 'one'));
+
+		const failing = await context.documents.drainPublications(() => {
+			throw new Error('connection dropped');
+		});
+		expect(failing.error?.name).toBe('TransportFailed');
+		expect(context.documents.publication.listDirty()).toEqual([target]);
+
+		// An edit between attempts means the retry reconstructs and submits
+		// newer state; nothing pins the failed attempt's exact bytes.
+		document.transact(() => document.get('content').insert(3, ' two'));
+		const sent: Uint8Array[] = [];
+		const retried = await context.documents.drainPublications(({ update }) => {
+			sent.push(update);
+			return 'accepted';
+		});
+		expect(retried.error).toBeNull();
+		const hydrated = new Y.Doc();
+		try {
+			Y.applyUpdateV2(hydrated, sent[0] ?? new Uint8Array());
+			expect(hydrated.get('content').toString()).toBe('one two');
+		} finally {
+			hydrated.destroy();
+		}
+		expect(context.documents.publication.listDirty()).toEqual([]);
+
+		await document[Symbol.asyncDispose]();
+	} finally {
+		context.rawDatabase.close();
+	}
+});
+
+test('repeated publication of the same state is semantically idempotent', async () => {
+	const context = setup();
+	try {
+		const target = address('idempotent');
+		context.createRow(target);
+		const document = await context.documents.open(target);
+		document.transact(() => document.get('content').insert(0, 'same'));
+		const captured = context.documents.publication.capture(target);
+		if (captured === undefined) throw new Error('expected a capture');
+
+		// The authority applying the same full-state update twice converges to
+		// one identical document: a lost acknowledgement retries safely.
+		const authority = new Y.Doc({ gc: true });
+		try {
+			Y.applyUpdateV2(authority, new Uint8Array(captured.update));
+			const once = new Uint8Array(Y.encodeStateAsUpdateV2(authority));
+			Y.applyUpdateV2(authority, new Uint8Array(captured.update));
+			const twice = new Uint8Array(Y.encodeStateAsUpdateV2(authority));
+			expect(twice).toEqual(once);
+			expect(authority.get('content').toString()).toBe('same');
+		} finally {
+			authority.destroy();
+		}
+
+		await document[Symbol.asyncDispose]();
+	} finally {
+		context.rawDatabase.close();
+	}
+});
+
+test('pull applies accepted state without minting an outbound obligation', async () => {
+	const remote = encodeText('remote content');
+	const pulls: { sinceVersion: string | undefined }[] = [];
+	const context = setup({
+		pull: async ({ sinceVersion }) => {
+			pulls.push({ sinceVersion });
+			if (sinceVersion === 'v1') return { kind: 'unchanged' };
+			return { kind: 'state', version: 'v1', update: remote };
+		},
+	});
+	try {
+		const target = address('pullaccepts');
+		context.createRow(target);
+		const document = await context.documents.open(target);
+
+		const first = await document.pull();
+		expect(first.error).toBeNull();
+		expect(document.get('content').toString()).toBe('remote content');
+		// Accepted inbound bytes are durable but owe nothing outbound.
+		expect(context.chainLength(target)).toBe(1);
+		expect(context.documents.publication.status(target)).toBeUndefined();
+
+		// The second pull presents the cached version and transfers no body.
+		const second = await document.pull();
+		expect(second.error).toBeNull();
+		expect(pulls).toEqual([
+			{ sinceVersion: undefined },
+			{ sinceVersion: 'v1' },
+		]);
+
+		await document[Symbol.asyncDispose]();
+	} finally {
+		context.rawDatabase.close();
+	}
+});
+
+test('overlapping pulls share one in-flight request', async () => {
+	let resolveTransport: ((response: DocumentPullResponse) => void) | undefined;
+	let calls = 0;
+	const context = setup({
+		pull: () => {
+			calls += 1;
+			return new Promise<DocumentPullResponse>((resolve) => {
+				resolveTransport = resolve;
+			});
+		},
+	});
+	try {
+		const target = address('pulloverlap');
+		context.createRow(target);
+		const document = await context.documents.open(target);
+
+		const first = document.pull();
+		const second = document.pull();
+		expect(calls).toBe(1);
+		resolveTransport?.({
+			kind: 'state',
+			version: 'v1',
+			update: encodeText('merged'),
+		});
+		expect((await first).error).toBeNull();
+		expect((await second).error).toBeNull();
+		expect(document.get('content').toString()).toBe('merged');
+
+		await document[Symbol.asyncDispose]();
+	} finally {
+		context.rawDatabase.close();
+	}
+});
+
+test('a pull that resolves after disposal cannot mutate the document', async () => {
+	let resolveTransport: ((response: DocumentPullResponse) => void) | undefined;
+	const context = setup({
+		pull: () =>
+			new Promise<DocumentPullResponse>((resolve) => {
+				resolveTransport = resolve;
+			}),
+	});
+	try {
+		const target = address('pulllate');
+		context.createRow(target);
+		const document = await context.documents.open(target);
+		const pending = document.pull();
+		await document[Symbol.asyncDispose]();
+
+		resolveTransport?.({
+			kind: 'state',
+			version: 'v9',
+			update: encodeText('too late'),
+		});
+		// The late result is dropped; nothing was applied or persisted.
+		expect((await pending).error).toBeNull();
+		expect(context.chainLength(target)).toBe(0);
+	} finally {
+		context.rawDatabase.close();
+	}
+});
+
+test('pull reports failures without closing the local document', async () => {
+	let mode: 'offline' | 'not-live' = 'offline';
+	const context = setup({
+		pull: async () => {
+			if (mode === 'offline') throw new Error('network unreachable');
+			return { kind: 'not-live' };
+		},
+	});
+	try {
+		const target = address('pullfails');
+		context.createRow(target);
+		const document = await context.documents.open(target);
+
+		const offline = await document.pull();
+		expect(offline.error?.name).toBe('TransportFailed');
+
+		mode = 'not-live';
+		const dead = await document.pull();
+		expect(dead.error?.name).toBe('RowNotLive');
+
+		// Failures leave the locally durable document open and editable.
+		document.transact(() => document.get('content').insert(0, 'still mine'));
+		expect(document.get('content').toString()).toBe('still mine');
+
+		await document[Symbol.asyncDispose]();
+	} finally {
+		context.rawDatabase.close();
+	}
+});
+
+test('pull without an attached session reports NotAttached', async () => {
+	const context = setup();
+	try {
+		const target = address('pullunattached');
+		context.createRow(target);
+		const document = await context.documents.open(target);
+		const result = await document.pull();
+		expect(result.error?.name).toBe('NotAttached');
 		await document[Symbol.asyncDispose]();
 	} finally {
 		context.rawDatabase.close();

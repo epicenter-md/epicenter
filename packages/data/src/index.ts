@@ -20,11 +20,16 @@ export {
 	acceptedDocumentOrigin,
 	applyRowDocumentUpdate,
 	type DocumentAddress,
+	DocumentPullError,
+	type DocumentPullResponse,
+	type DocumentPublishOutcome,
+	type DocumentSyncIssue,
 	encodeRowDocumentState,
 	observeRowDocumentUpdates,
+	type PublishDocument,
+	type PullDocument,
 	type RowDocument,
 	type RowDocumentConnectionTarget,
-	rowDocumentConnectionTarget,
 } from './documents.js';
 export {
 	type BoundData,
