@@ -107,43 +107,53 @@ export function createSyncSupervisor({
 	}
 
 	/**
-	 * Run one teardown step so a throwing injected canceller or unsubscribe
-	 * cannot strand the rest.
+	 * Call an injected dependency without letting it escape.
 	 *
-	 * These run on every path that retires a wake: attach, a credential change,
-	 * and disposal. Owning the containment here rather than at each call site is
-	 * what makes "cancelling a wake never throws into a caller" one rule instead
-	 * of a habit, and it keeps a half-disposed supervisor (still subscribed to
-	 * the outbox, still waking a dead session) from being reachable.
+	 * The supervisor calls out to code it does not own on nearly every path: the
+	 * scheduler and its canceller, the credential provider, the unsubscribes, and
+	 * the logger. Any of them can throw, and most are reached from a background
+	 * wake or a teardown step where a throw has no owner: it would surface as an
+	 * unrelated caller's failure, or strand the rest of a teardown and leave a
+	 * half-disposed supervisor still waking a dead session.
+	 *
+	 * One rule instead of a habit at each call site: crossing out of the
+	 * supervisor is contained, and the failure is logged rather than propagated.
 	 */
-	function retire(what: string, step: () => void): void {
+	function contain(what: string, step: () => void): void {
 		try {
 			step();
 		} catch (cause) {
-			log.error(
-				new Error(`Sync supervisor could not retire ${what}`, { cause }),
-			);
+			try {
+				log.error(new Error(`Sync supervisor could not ${what}`, { cause }));
+			} catch {
+				// The logger is itself injected. If reporting fails there is nowhere
+				// left to report it, and it must not become the caller's problem.
+			}
 		}
 	}
 
 	function cancelWake(): void {
 		const cancel = cancelScheduled;
 		cancelScheduled = undefined;
-		if (cancel !== undefined) retire('the scheduled wake', cancel);
+		if (cancel !== undefined) contain('cancel the scheduled wake', cancel);
 	}
 
 	function cancelDocumentWake(): void {
 		const cancel = cancelDocumentCoalesce;
 		cancelDocumentCoalesce = undefined;
-		if (cancel !== undefined) retire('the document wake', cancel);
+		if (cancel !== undefined) contain('cancel the document wake', cancel);
 	}
 
 	function scheduleWake(delayMs: number): void {
 		cancelWake();
-		cancelScheduled = schedule(() => {
-			cancelScheduled = undefined;
-			void requestExchange();
-		}, delayMs);
+		// A scheduler that throws leaves this cycle with no wake rather than
+		// turning a completed cycle into a reported failure.
+		contain('schedule the next wake', () => {
+			cancelScheduled = schedule(() => {
+				cancelScheduled = undefined;
+				void requestExchange();
+			}, delayMs);
+		});
 	}
 
 	function retryDelay(): number {
@@ -237,16 +247,16 @@ export function createSyncSupervisor({
 			return await drain(activeGeneration);
 		} catch (cause) {
 			const faulted = ReplicaError.SyncFaulted({ cause });
-			// Reported once, here, because no call site owns this promise.
-			log.error(faulted.error);
-			try {
-				reportFailure(faulted.error);
-			} catch (reportCause) {
-				// A throwing scheduler or status subscriber must not turn the
-				// failure boundary itself into an unhandled rejection.
-				log.error(
-					new Error('Sync failure reporting threw', { cause: reportCause }),
-				);
+			// A retired or disposed cycle reports nothing and schedules nothing,
+			// matching the guards the Result path applies before `reportFailure`.
+			// Without this, disposal would end holding a live retry timer and a
+			// superseded generation could clobber the current status.
+			if (activeGeneration === generation && !isDisposed) {
+				// Reported once, here, because no call site owns this promise.
+				contain('report a failed sync cycle', () => {
+					log.error(faulted.error);
+					reportFailure(faulted.error);
+				});
 			}
 			return faulted;
 		}
@@ -301,20 +311,28 @@ export function createSyncSupervisor({
 		}, documentCoalesceMs);
 	}
 
+	/**
+	 * Contained end to end because this runs as the credential provider's own
+	 * subscriber: a throw here (most likely from `get`) would otherwise land in
+	 * whatever rotated the token, blaming an auth refresh for a sync fault.
+	 */
 	function credentialsChanged(): void {
-		if (isDisposed || session === undefined) return;
-		generation += 1;
-		cancelWake();
-		cancelDocumentWake();
-		if (!hasCredentials()) {
-			runRequested = false;
-			setStatus({
-				state: 'authentication-required',
-				lastError: undefined,
-			});
-			return;
-		}
-		void requestExchange();
+		contain('handle a credential change', () => {
+			if (isDisposed || session === undefined) return;
+			generation += 1;
+			cancelWake();
+			cancelDocumentWake();
+			if (!hasCredentials()) {
+				runRequested = false;
+				documentsRequested = false;
+				setStatus({
+					state: 'authentication-required',
+					lastError: undefined,
+				});
+				return;
+			}
+			void requestExchange();
+		});
 	}
 
 	return {
@@ -325,7 +343,17 @@ export function createSyncSupervisor({
 			generation += 1;
 			cancelWake();
 			cancelDocumentWake();
-			stopCredentials?.();
+			const stopPreviousCredentials = stopCredentials;
+			stopCredentials = undefined;
+			if (stopPreviousCredentials !== undefined) {
+				// Contained like disposal's: a throwing unsubscribe must not leave
+				// this half-attached, with the generation bumped and the old
+				// subscription still live.
+				contain(
+					'stop the previous credential subscription',
+					stopPreviousCredentials,
+				);
+			}
 			session = nextSession;
 			stopCredentials =
 				nextSession.credentials?.subscribe?.(credentialsChanged);
@@ -356,9 +384,9 @@ export function createSyncSupervisor({
 			const stopNextCredentials = stopCredentials;
 			stopCredentials = undefined;
 			if (stopNextCredentials !== undefined) {
-				retire('the credential subscription', stopNextCredentials);
+				contain('stop the credential subscription', stopNextCredentials);
 			}
-			retire('the outbox subscription', stopOutbox);
+			contain('stop the outbox subscription', stopOutbox);
 			session = undefined;
 			listeners.clear();
 		},

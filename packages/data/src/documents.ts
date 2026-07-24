@@ -5,6 +5,7 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
+import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 
 import { type Replica, ReplicaError } from './replica/index.js';
@@ -190,6 +191,7 @@ export function createDocumentRuntime({
 	database,
 	replica,
 	getPullTransport,
+	log = createLogger('data/documents'),
 }: {
 	database: SqliteDatabase;
 	replica: Replica;
@@ -199,11 +201,30 @@ export function createDocumentRuntime({
 	 * document handles stay valid across attach and detach.
 	 */
 	getPullTransport?: () => PullDocument | undefined;
+	log?: Logger;
 }) {
 	const entries = new Map<string, DocumentEntry>();
 	const opening = new Map<string, Promise<DocumentEntry>>();
 	const publicationDirtyListeners = new Set<() => void>();
 	let isDisposed = false;
+
+	/**
+	 * Wake the publication-dirty subscribers for a committed local append.
+	 *
+	 * Contained per listener: this runs inside a `queueMicrotask` with no
+	 * caller, so an escaping throw becomes an uncaught exception rather than
+	 * anything a call site could own. The subscriber is the sync supervisor's
+	 * coalesced document wake, whose own failures belong to the supervisor.
+	 */
+	function notifyPublicationDirty(): void {
+		for (const listener of publicationDirtyListeners) {
+			try {
+				listener();
+			} catch (cause) {
+				log.error(ReplicaError.SubscriberThrew({ cause }).error);
+			}
+		}
+	}
 
 	function addressKey({ key, rowId }: DocumentAddress): string {
 		return JSON.stringify([key, rowId]);
@@ -302,9 +323,7 @@ export function createDocumentRuntime({
 						revision = revision + 1`,
 					[address.key, address.rowId],
 				);
-				queueMicrotask(() => {
-					for (const listener of publicationDirtyListeners) listener();
-				});
+				queueMicrotask(notifyPublicationDirty);
 			}
 			const updates = readUpdates(address);
 			if (updates.length < COMPACTION_THRESHOLD) return;

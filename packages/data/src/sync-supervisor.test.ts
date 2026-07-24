@@ -588,3 +588,71 @@ test('a background wake failure cannot surface as the local write rejecting', as
 	await epicenter[Symbol.asyncDispose]();
 	raw.close();
 });
+
+test('a throwing scheduler does not turn a successful cycle into a reported failure', async () => {
+	const raw = new Database(':memory:');
+	const database = createBunSqliteAdapter(raw);
+	const replica = expectOk(openReplica({ database }));
+	const rejections = trackUnhandledRejections();
+	// The tail of a successful cycle schedules the periodic safety wake.
+	const schedule: SyncSchedule = () => {
+		throw new Error('scheduler exploded');
+	};
+	const epicenter = createEpicenter({
+		replica,
+		database,
+		scheduleSync: schedule,
+		syncIntervalMs: 60_000,
+	});
+
+	expectOk(
+		await epicenter.attachSync({
+			deploymentId: 'https://example.com/',
+			principalId: 'principal-a',
+			exchange: successfulResponse,
+		}),
+	);
+	await settle();
+
+	// A cycle that actually synchronized must not be reported as offline.
+	expect(epicenter.syncStatus.state).toBe('idle');
+	expect(rejections.seen).toEqual([]);
+	rejections.stop();
+	await epicenter[Symbol.asyncDispose]();
+	raw.close();
+});
+
+test('disposal during a failing drain leaves no retry scheduled', async () => {
+	const { raw, epicenter, scheduled } = setup();
+	const rejections = trackUnhandledRejections();
+	const gate = createGate();
+	let exchanges = 0;
+	const attached = epicenter.attachSync({
+		deploymentId: 'https://example.com/',
+		principalId: 'principal-a',
+		async exchange(request) {
+			exchanges += 1;
+			if (exchanges === 1) {
+				await gate.promise;
+				// Fails only after disposal has already begun.
+				throw new Error('carrier exploded');
+			}
+			return successfulResponse(request);
+		},
+	});
+	await waitFor(() => exchanges === 1);
+
+	const disposal = epicenter[Symbol.asyncDispose]();
+	const liveBeforeFault = scheduled.filter((entry) => !entry.cancelled).length;
+	gate.open();
+	await attached;
+	await disposal;
+	await settle();
+
+	// A disposed supervisor must not end holding a live retry timer.
+	const liveAfterFault = scheduled.filter((entry) => !entry.cancelled).length;
+	expect(liveAfterFault).toBe(liveBeforeFault);
+	expect(rejections.seen).toEqual([]);
+	rejections.stop();
+	raw.close();
+});
