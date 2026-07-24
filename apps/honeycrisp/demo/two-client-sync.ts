@@ -164,13 +164,17 @@ async function observe(page: Page, text: string): Promise<number> {
 	throw new Error(`Timed out waiting for '${text}' to arrive`);
 }
 
-const instance = startProcess('authority', ['bun', 'apps/self-host/server.ts'], {
-	INSTANCE_TOKEN: token,
-	PORT: String(authorityPort),
-	DATA_DIR: join(workDir, 'authority-data'),
-	// The one exact origin the authority trusts. Production sets the same var.
-	TRUSTED_BROWSER_ORIGINS: origin,
-});
+const instance = startProcess(
+	'authority',
+	['bun', 'apps/self-host/server.ts'],
+	{
+		INSTANCE_TOKEN: token,
+		PORT: String(authorityPort),
+		DATA_DIR: join(workDir, 'authority-data'),
+		// The one exact origin the authority trusts. Production sets the same var.
+		TRUSTED_BROWSER_ORIGINS: origin,
+	},
+);
 const ui = startProcess(
 	'honeycrisp',
 	[
@@ -249,7 +253,10 @@ try {
 		`every authority response allowed exactly ${origin} (${wire.length} responses)`,
 	);
 	const withEtag = wire.filter((entry) => entry.etag !== undefined);
-	check(withEtag.length > 0, `ETag revision headers exercised (${withEtag.length})`);
+	check(
+		withEtag.length > 0,
+		`ETag revision headers exercised (${withEtag.length})`,
+	);
 	check(
 		wire.every((entry) => entry.status !== 401 && entry.status !== 403),
 		'the instance bearer authenticated every request',
@@ -274,6 +281,8 @@ try {
 }
 
 process.stdout.write(
-	failures.length === 0 ? '\ntwo-client demo: passed\n' : '\ntwo-client demo: FAILED\n',
+	failures.length === 0
+		? '\ntwo-client demo: passed\n'
+		: '\ntwo-client demo: FAILED\n',
 );
 process.exit(exitCode);
