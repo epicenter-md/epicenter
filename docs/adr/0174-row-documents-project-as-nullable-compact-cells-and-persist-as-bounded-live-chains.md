@@ -1,7 +1,9 @@
 # 0174. Row documents project as nullable compact cells and persist as bounded live chains
 
 - **Status:** Proposed
-- **Date:** 2026-07-20
+- **Date:** 2026-07-20 (revised 2026-07-23: closed documents finish
+  publishing local work; remote content hydrates on open and then converges
+  live)
 - **Supersedes:** the document-plane persistence, exact-byte retention, no-cache, and presence mechanics of [ADR-0145](0145-one-account-authority-owns-every-workspace-and-one-socket-per-open-row-document.md), plus [ADR-0159](0159-row-documents-persist-in-one-owner-side-sqlite-update-log.md)'s statement that remote authority mechanics remain unchanged. ADR-0161 already removes the workspace ownership axis; the principal authority and fixed-address-socket proposals remain independent.
 - **Amends:** [ADR-0145](0145-one-account-authority-owns-every-workspace-and-one-socket-per-open-row-document.md) (the authority is the trusted document joiner and compactor), [ADR-0146](0146-row-documents-use-one-yjs-14-major-and-runtime-native-update-logs.md) (every live owner uses the same bounded baseline-plus-tail law), [ADR-0159](0159-row-documents-persist-in-one-owner-side-sqlite-update-log.md) (the update log is a private physical representation of one logical row cell), [ADR-0172](0172-sqlite-stores-convergent-facts-and-documents-raw-files-store-blob-bytes.md) (document publication stores exact retry evidence rather than authority vectors)
 - **Relates:** [ADR-0162](0162-epicenter-home-owns-relational-inspection-applications-receive-no-sql.md), [ADR-0167](0167-a-portable-epicenter-is-an-identity-free-export-of-one-authority-cut.md), [ADR-0171](0171-every-durable-local-write-leaves-an-automatic-authority-obligation.md)
@@ -15,6 +17,12 @@ incremental update forever would make storage and hydration unbounded. Client
 checkpoints cannot safely replace authority state because one client cannot
 prove that its snapshot includes every concurrent branch the authority already
 accepted.
+
+Durable convergence and live collaboration need one acceptance law but not one
+delivery schedule. A locally authored update must not become stranded when its
+document handle closes. Conversely, continuously downloading every remote
+document body would spend storage, bandwidth, and lifecycle machinery on
+documents no application is using.
 
 ## Decision
 
@@ -81,6 +89,28 @@ candidate, enforces the canonical post-candidate byte and struct bounds from
 ADR-0146, commits the bounded representation, and only then acknowledges and
 best-effort fans out the update.
 
+Every locally authored document update persists before publication and remains
+a durable authority obligation independently of the in-memory document
+lifecycle. The runtime publishes that work continuously when possible. Closing
+the last handle may request a best-effort flush, but it neither waits for
+network settlement nor cancels unfinished work. A later runtime resumes the
+same obligation from SQLite.
+
+Inbound document content is lazy. A replica does not continuously download
+remote Yjs state for a closed document. Opening the document first catches up
+from accepted authority state, then receives authority-accepted updates live
+until the last handle closes. Closing ends live delivery only. Scalar facts may
+still arrive in the background so the replica can observe row creation,
+metadata changes, and terminal deletion without hydrating the document body.
+
+Live delivery is a lower-latency mode of the same synchronization contract, not
+a speculative peer path or a second settlement system. A local author may see
+its own durably persisted edit immediately. Other replicas see that edit only
+after the authority accepts and commits it. The carrier may use a dedicated
+socket, a multiplexed connection, or another wakeup mechanism without changing
+admission, durability, receipts, bounds, deletion, or authority-lifetime
+semantics.
+
 First-attachment `Bring local data` preserves each local document's exact Yjs
 V2 state and causal struct identities. The ordinary background publication
 drain submits that state to the same authority acceptance operation. Shared
@@ -131,8 +161,18 @@ receipt semantics.
   state only; it never captures unpublished work from a replica.
 - The authority can produce one compact accepted document for Backup without
   trusting a client checkpoint or waiting for every replica to reconnect.
-- Realtime fanout lowers latency but never proves durability. ADR-0171's exact
-  post-commit publication receipt owns that proof.
+- Locally authored document work continues publishing after the document
+  closes and across process restart. Handle lifetime cannot determine whether
+  an edit reaches the authority.
+- Closed remote documents consume no continuous Yjs download or subscription.
+  Opening may pay a catch-up delay before live collaboration begins.
+- Realtime fanout lowers latency for an open document but creates no second
+  meaning of acceptance or settlement. ADR-0171's exact post-commit
+  publication receipt owns durable proof.
+- A document that was never hydrated or explicitly retained for offline use
+  may be unavailable when first opened without a connection. Offline policy
+  may retain selected documents, but it does not turn every closed document
+  into a background subscription.
 - A single principal authority remains the lifecycle and transaction owner.
   Per-document Durable Objects are not introduced merely to host live sockets.
 - First attachment reuses the normal Yjs join and publication proof. It does
@@ -155,6 +195,13 @@ Before this ADR becomes Accepted, maintained tests must prove:
   unresolved dependencies;
 - duplicate and reordered valid updates converge, while a local edit racing an
   exact frozen publication payload cannot be cleared by that payload's receipt;
+- closing the last document handle before, during, and after publication never
+  loses or cancels a durable local obligation, and process restart resumes it;
+- a closed remote document receives no document body updates, opening catches
+  up to accepted authority state before live delivery, and closing stops that
+  delivery without affecting outbound settlement;
+- peers never observe a candidate before its authority commit, while the local
+  author may continue from its own durable local state;
 - stale common-history state cannot roll back newer accepted content or
   resurrect deleted Yjs structs, duplicate exact first-attachment publication
   is idempotent, and concurrent shared-lineage branches converge;
@@ -198,3 +245,15 @@ constant without reopening the bounded-structure product refusal.
 - **Use one Durable Object per document.** Rejected because it separates the
   document from row deletion and account Backup, requiring revocation,
   enumeration, and cross-object lifecycle machinery.
+- **Continuously mirror every remote document body.** Rejected because
+  cross-device continuity does not require background hydration of content the
+  application has not opened. Lazy catch-up preserves the product promise
+  without a workspace-wide document feed.
+- **Make handle closure responsible for publication.** Rejected because a
+  process can close while offline or terminate before a final request settles.
+  The durable SQLite obligation, not a graceful lifecycle callback, owns
+  eventual publication.
+- **Broadcast speculative peer updates before authority acceptance.** Rejected
+  because recipients could display state that later fails row-liveness, bounds,
+  or authority-lifetime admission. Live delivery begins after the same commit
+  that background publication must earn.
