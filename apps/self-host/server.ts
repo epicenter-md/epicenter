@@ -83,6 +83,7 @@ import { resolveSelfHostTrustedOrigins } from './trusted-origins.js';
 const InstanceBindings = ServerBindings.merge({
 	'PORT?': 'string',
 	'API_PUBLIC_ORIGIN?': 'string',
+	'TRUSTED_BROWSER_ORIGINS?': 'string',
 	'DATA_DIR?': 'string',
 	'INSTANCE_TOKEN?': 'string',
 });
@@ -133,6 +134,14 @@ export function startSelfHostServer(): void {
 	// The auth origin must match where the process actually listens. Default to
 	// localhost; an operator overrides it with their own domain.
 	const origin = env.API_PUBLIC_ORIGIN ?? `http://localhost:${port}`;
+	// Resolve the CORS trust set once, at boot, beside the origin it extends: a
+	// malformed `TRUSTED_BROWSER_ORIGINS` must refuse to start, not throw on
+	// every request. (The Worker entry has no boot, so it resolves per request
+	// from the same function.)
+	const trustedOrigins = resolveSelfHostTrustedOrigins(
+		origin,
+		env.TRUSTED_BROWSER_ORIGINS,
+	);
 
 	// One data directory for this host's room and record SQLite files.
 	const dataDir = resolve(env.DATA_DIR ?? './.data');
@@ -163,10 +172,11 @@ export function startSelfHostServer(): void {
 		resolveRooms: () => bunRooms.rooms,
 		identity: {
 			resolveOrigin: () => origin,
-			// A self-host trusts its OWN origin and the Tauri desktop client, never
-			// Epicenter cloud's. Shared with `worker/index.ts` so the two runtimes
-			// cannot drift.
-			resolveTrustedOrigins: resolveSelfHostTrustedOrigins,
+			// A self-host trusts its OWN origin, the Tauri desktop client, and any
+			// exact browser origins the operator configured, never Epicenter
+			// cloud's. Resolved at boot above, from the same function
+			// `worker/index.ts` calls, so the two runtimes cannot drift.
+			resolveTrustedOrigins: () => trustedOrigins,
 		},
 	});
 

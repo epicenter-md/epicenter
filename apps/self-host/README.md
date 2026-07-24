@@ -29,6 +29,11 @@ authorities as `bun:sqlite` files on local disk under `DATA_DIR`. The
 destination shape is even simpler: one instance principal, one authority
 database file containing every named workspace. Persist the whole directory.
 
+If a browser app is hosted on a different origin from the instance, set
+`TRUSTED_BROWSER_ORIGINS` to a comma-separated list of exact origins, for
+example `https://notes.example.com`. Same-origin clients and the Tauri desktop
+client need no additional entry. Paths and wildcard origins are rejected.
+
 ### Use TLS
 
 A static bearer over plaintext HTTP is total compromise: anyone who sees one request can capture the token and replay it forever. Terminate TLS in front of the box (Caddy, nginx, a Cloudflare Tunnel) and serve the instance over HTTPS. A homelab on a trusted LAN behind its own boundary is your call, but the moment the box is reachable over the open internet, plain `http://` hands out the keys.

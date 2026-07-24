@@ -10,7 +10,10 @@
 	"vars": {
 		// API_PUBLIC_ORIGIN: this instance's public origin. Self-hosters set
 		// their own domain here; it is the token audience and Better Auth baseURL.
-		"API_PUBLIC_ORIGIN": "https://instance.example.com"
+		"API_PUBLIC_ORIGIN": "https://instance.example.com",
+		// Comma-separated exact origins of separately hosted browser clients.
+		// Leave empty when clients are same-origin or Tauri.
+		"TRUSTED_BROWSER_ORIGINS": ""
 	},
 
 	// --- Deployment-owned secrets ---

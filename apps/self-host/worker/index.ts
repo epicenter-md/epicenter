@@ -53,7 +53,11 @@ const app = createServerApp({
 		// A self-host trusts its OWN origin and the Tauri desktop client, never
 		// Epicenter cloud's. Shared with `server.ts` so the two runtimes cannot
 		// drift. The instance has no Better Auth and no cookies at all.
-		resolveTrustedOrigins: resolveSelfHostTrustedOrigins,
+		resolveTrustedOrigins: (baseURL, env) =>
+			resolveSelfHostTrustedOrigins(
+				baseURL,
+				(env as Cloudflare.Env).TRUSTED_BROWSER_ORIGINS,
+			),
 	},
 });
 

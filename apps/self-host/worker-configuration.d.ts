@@ -34,6 +34,7 @@ declare namespace Cloudflare {
 		// is the operator-supplied bearer (a `wrangler secret put` secret) the
 		// edge resolver constant-time compares each request.
 		API_PUBLIC_ORIGIN: string;
+		TRUSTED_BROWSER_ORIGINS: string;
 		INSTANCE_TOKEN: string;
 	}
 }

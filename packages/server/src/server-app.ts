@@ -48,9 +48,12 @@ export type Identity = {
 	 * Better Auth's redirect allow-list. The library hardcodes none: `apps/api`
 	 * supplies the Epicenter app origins, a self-host supplies its own. Receives
 	 * the resolved `baseURL` so a deployment can include its own origin without
-	 * restating it.
+	 * restating it, and the per-request `env` so a deployment whose trust set is
+	 * operator-configured can read its own binding. A deployment that resolves
+	 * its trust set at boot (any Bun host) should close over the result and
+	 * ignore both parameters.
 	 */
-	resolveTrustedOrigins: (baseURL: string) => string[];
+	resolveTrustedOrigins: (baseURL: string, env: ServerBindings) => string[];
 };
 
 /**
@@ -96,7 +99,7 @@ export function createServerApp<E extends Env = Env>({
 	app.use('*', async (c, next) => {
 		const baseURL = resolveOrigin(c.env);
 		c.set('authBaseURL', baseURL);
-		c.set('trustedOrigins', resolveTrustedOrigins(baseURL));
+		c.set('trustedOrigins', resolveTrustedOrigins(baseURL, c.env));
 		await next();
 	});
 
