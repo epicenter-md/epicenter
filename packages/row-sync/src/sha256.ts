@@ -39,8 +39,7 @@ export function sha256Hex(input: string): string {
 	return sha256HexBytes(new TextEncoder().encode(input));
 }
 
-/** Compute the SHA-256 digest of raw bytes as lowercase hex. */
-export function sha256HexBytes(message: Uint8Array): string {
+function sha256HexBytes(message: Uint8Array): string {
 	// Pad to a multiple of 64 bytes: 0x80, zeros, then the 64-bit bit length.
 	const bitLength = message.length * 8;
 	const paddedLength = (((message.length + 8) >> 6) + 1) << 6;
