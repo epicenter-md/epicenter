@@ -1,7 +1,7 @@
 {
 	"name": "@epicenter/document-sync",
 	"version": "0.0.1",
-	"description": "Row-document synchronization protocol and client connection.",
+	"description": "Row-document HTTP synchronization protocol and transports.",
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts"
