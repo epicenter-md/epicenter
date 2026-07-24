@@ -2,7 +2,7 @@ import * as Y from '@y/y';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import type {
-	BrowserInvalidationSignal,
+	BrowserInvalidation,
 	BrowserOperation,
 	BrowserWorkerInbound,
 	BrowserWorkerMessage,
@@ -56,12 +56,6 @@ type ClientMessagePort = {
 	close?(): void;
 };
 
-type RuntimeBroadcastChannel = {
-	onmessage: ((event: { data: unknown }) => void) | null;
-	postMessage(message: unknown): void;
-	close(): void;
-};
-
 type PageDocument = {
 	apply(update: Uint8Array): void;
 	revoke(message: string): void;
@@ -79,36 +73,30 @@ type SessionTransports = Pick<
 >;
 
 export type OpenBrowserEpicenterOptions = {
-	createSharedWorker?(): {
+	createWorker?(): {
 		port: ClientMessagePort;
 		addEventListener?(
 			type: 'error',
 			listener: (event: { message?: string }) => void,
 		): void;
 	};
-	createBroadcastChannel?(name: string): RuntimeBroadcastChannel | undefined;
 	log?: Logger;
 };
 
 const remoteDocumentOrigin = Object.freeze({ kind: 'browser-document-remote' });
-const INVALIDATION_CHANNEL = 'epicenter-data-invalidation-v1';
 
 /** Open the page-side proxy for this origin's worker-owned Epicenter replica. */
 export async function openBrowserEpicenter({
-	createSharedWorker = defaultSharedWorker,
-	createBroadcastChannel = defaultBroadcastChannel,
+	createWorker,
 	log = createLogger('data/browser'),
 }: OpenBrowserEpicenterOptions = {}): Promise<Epicenter> {
 	if (isEpicenterDesktopSurface()) return openDesktopEpicenter();
-	const worker = createSharedWorker();
+	const worker = (createWorker ?? defaultDedicatedWorker)();
 	const port = worker.port;
 	const pending = new Map<number, PendingRequest>();
 	const tableListeners = new Map<string, Set<(changedIds: string[]) => void>>();
 	const valueListeners = new Map<string, Set<() => void>>();
 	const documents = new Map<number, PageDocument>();
-	const seenInvalidations = new Set<string>();
-	const seenOrder: string[] = [];
-	const invalidationChannel = createBroadcastChannel(INVALIDATION_CHANNEL);
 	const transports = new Map<number, SessionTransports>();
 	const transportTails = new Map<number, Promise<void>>();
 	const pendingTransports = new Map<number, PageTransport>();
@@ -197,21 +185,11 @@ export async function openBrowserEpicenter({
 		return sendRequest(operation);
 	}
 
-	function rememberInvalidation(token: string): boolean {
-		if (seenInvalidations.has(token)) return false;
-		seenInvalidations.add(token);
-		seenOrder.push(token);
-		const expired = seenOrder.length > 1_024 ? seenOrder.shift() : undefined;
-		if (expired !== undefined) seenInvalidations.delete(expired);
-		return true;
-	}
-
-	function notifyInvalidation(signal: BrowserInvalidationSignal): void {
-		if (!rememberInvalidation(signal.token)) return;
-		if (signal.change.kind === 'table') {
-			for (const listener of tableListeners.get(signal.change.key) ?? []) {
+	function notifyInvalidation(change: BrowserInvalidation['change']): void {
+		if (change.kind === 'table') {
+			for (const listener of tableListeners.get(change.key) ?? []) {
 				try {
-					listener([...signal.change.rowIds]);
+					listener([...change.rowIds]);
 				} catch (cause) {
 					log.error(
 						new Error(`Data subscriber threw: ${extractErrorMessage(cause)}`, {
@@ -222,7 +200,7 @@ export async function openBrowserEpicenter({
 			}
 			return;
 		}
-		for (const listener of valueListeners.get(signal.change.key) ?? []) {
+		for (const listener of valueListeners.get(change.key) ?? []) {
 			try {
 				listener();
 			} catch (cause) {
@@ -241,7 +219,10 @@ export async function openBrowserEpicenter({
 	): Promise<SessionTransportResponse> {
 		switch (request.kind) {
 			case 'exchange':
-				return { kind: 'exchange', response: await session.exchange(request.request) };
+				return {
+					kind: 'exchange',
+					response: await session.exchange(request.request),
+				};
 			case 'document-publish': {
 				if (session.publishDocument === undefined)
 					throw new Error('Sync session cannot publish documents');
@@ -331,12 +312,6 @@ export async function openBrowserEpicenter({
 
 	port.addEventListener('message', ({ data: message }) => {
 		switch (message.type) {
-			case 'client-revoked': {
-				const cause = new Error(message.message);
-				cause.name = message.name;
-				failWorker(cause);
-				return;
-			}
 			case 'result':
 				pending.get(message.id)?.resolve(message.value);
 				return;
@@ -346,16 +321,9 @@ export async function openBrowserEpicenter({
 				pending.get(message.id)?.reject(cause);
 				return;
 			}
-			case 'invalidation': {
-				const signal: BrowserInvalidationSignal = {
-					type: 'invalidation',
-					token: message.token,
-					change: message.change,
-				};
-				notifyInvalidation(signal);
-				if (message.broadcast) invalidationChannel?.postMessage(signal);
+			case 'invalidation':
+				notifyInvalidation(message.change);
 				return;
-			}
 			case 'document-update':
 				documents.get(message.documentId)?.apply(message.update);
 				return;
@@ -383,35 +351,15 @@ export async function openBrowserEpicenter({
 					}
 				}
 				return;
-			case 'transport-retire':
-				for (const [transportId, pendingTransport] of pendingTransports) {
-					if (pendingTransport.transportKey !== message.transportKey) continue;
-					pendingTransport.isCanceled = true;
-					pendingTransports.delete(transportId);
-				}
-				transportTails.delete(message.transportKey);
-				transports.delete(message.transportKey);
-				if (activeTransportKey === message.transportKey) {
-					activeTransportKey = undefined;
-					stopCredentials?.();
-					stopCredentials = undefined;
-				}
-				return;
 			default:
 				message satisfies never;
 		}
 	});
 	worker.addEventListener?.('error', ({ message }) => {
-		const cause = new Error(message || 'Browser Epicenter SharedWorker failed');
+		const cause = new Error(message || 'Browser Epicenter worker failed');
 		failWorker(cause);
 	});
 	port.start?.();
-
-	if (invalidationChannel !== undefined) {
-		invalidationChannel.onmessage = ({ data }) => {
-			if (isInvalidationSignal(data)) notifyInvalidation(data);
-		};
-	}
 
 	try {
 		await request<void>({ kind: 'open' });
@@ -779,11 +727,6 @@ export async function openBrowserEpicenter({
 		syncStatusListeners.clear();
 		documents.clear();
 		try {
-			invalidationChannel?.close();
-		} catch (cause) {
-			failures.push(cause);
-		}
-		try {
 			closePort();
 		} catch (cause) {
 			failures.push(cause);
@@ -862,78 +805,55 @@ function rememberDefinition(
 	keys.set(key, propertyName);
 }
 
-function isInvalidationSignal(
-	value: unknown,
-): value is BrowserInvalidationSignal {
-	if (typeof value !== 'object' || value === null) return false;
-	const message = value as Partial<BrowserInvalidationSignal>;
-	if (message.type !== 'invalidation' || typeof message.token !== 'string') {
-		return false;
-	}
-	if (typeof message.change !== 'object' || message.change === null)
-		return false;
-	return (
-		(message.change.kind === 'value' &&
-			typeof message.change.key === 'string') ||
-		(message.change.kind === 'table' &&
-			typeof message.change.key === 'string' &&
-			Array.isArray(message.change.rowIds) &&
-			message.change.rowIds.every((rowId) => typeof rowId === 'string'))
-	);
-}
-
-function defaultSharedWorker(): {
+function defaultDedicatedWorker(): {
 	port: ClientMessagePort;
 	addEventListener(
 		type: 'error',
 		listener: (event: { message?: string }) => void,
 	): void;
 } {
-	const SharedWorkerConstructor = (
+	const WorkerConstructor = (
 		globalThis as {
-			SharedWorker?: new (
+			Worker?: new (
 				url: URL,
 				options: { type: 'module'; name: string },
 			) => {
-				port: ClientMessagePort;
+				postMessage(message: BrowserWorkerInbound): void;
+				addEventListener(
+					type: 'message',
+					listener: (event: { data: BrowserWorkerMessage }) => void,
+				): void;
 				addEventListener(
 					type: 'error',
 					listener: (event: { message?: string }) => void,
 				): void;
+				terminate(): void;
 			};
 		}
-	).SharedWorker;
-	if (SharedWorkerConstructor === undefined) {
-		throw new Error('SharedWorker is required for browser Epicenter storage');
+	).Worker;
+	if (WorkerConstructor === undefined) {
+		throw new Error('Worker is required for browser Epicenter storage');
 	}
-	return new SharedWorkerConstructor(
-		new URL('./browser-worker.ts', import.meta.url),
+	const worker = new WorkerConstructor(
+		new URL('./browser-dedicated-worker.ts', import.meta.url),
 		{
 			type: 'module',
 			name: 'epicenter-data',
 		},
 	);
-}
-
-function defaultBroadcastChannel(
-	name: string,
-): RuntimeBroadcastChannel | undefined {
-	if (typeof BroadcastChannel === 'undefined') return undefined;
-	const channel = new BroadcastChannel(name);
-	const runtime: RuntimeBroadcastChannel = {
-		onmessage: null,
-		postMessage(message) {
-			channel.postMessage(message);
+	return {
+		port: {
+			postMessage: (message) => worker.postMessage(message),
+			addEventListener: (type, listener) =>
+				worker.addEventListener(type, listener),
+			close: () => worker.terminate(),
 		},
-		close() {
-			channel.close();
-		},
+		addEventListener: (type, listener) =>
+			worker.addEventListener(type, listener),
 	};
-	channel.onmessage = ({ data }) => runtime.onmessage?.({ data });
-	return runtime;
 }
 
-export type { ClientMessagePort, RuntimeBroadcastChannel };
+export type { ClientMessagePort };
 
 function isEpicenterDesktopSurface(): boolean {
 	const document = (

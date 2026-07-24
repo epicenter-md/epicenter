@@ -6,12 +6,11 @@ import {
 import type { ExchangeResponse } from '@epicenter/data/protocol';
 import { field } from '@epicenter/field';
 
-import {
-	type BrowserEvidenceDriver,
-	CONTROL_CHANNEL,
-	type EvidenceFeatures,
-	type EvidenceSnapshot,
-	type HungSyncStatus,
+import type {
+	BrowserEvidenceDriver,
+	EvidenceFeatures,
+	EvidenceSnapshot,
+	HungSyncStatus,
 } from './contract.js';
 
 declare global {
@@ -30,9 +29,7 @@ const notesDefinition = defineTable({
 
 let epicenter: BrowserEpicenter | undefined;
 let data: ReturnType<typeof bindEvidenceData> | undefined;
-let workerName: string | undefined;
-let stopInvalidations: (() => void) | undefined;
-let invalidations: string[] = [];
+let controlledWorker: Worker | undefined;
 let hungStarted = false;
 let hungOutcome: string | undefined;
 
@@ -110,7 +107,7 @@ async function features(): Promise<EvidenceFeatures> {
 	const estimate = await navigator.storage?.estimate?.();
 	return {
 		secureContext: globalThis.isSecureContext,
-		sharedWorker: typeof SharedWorker !== 'undefined',
+		dedicatedWorker: typeof Worker !== 'undefined',
 		opfs: navigator.storage?.getDirectory !== undefined,
 		webLocks: navigator.locks !== undefined,
 		syncAccessHandle: await probeSyncAccessHandle(),
@@ -125,30 +122,40 @@ async function features(): Promise<EvidenceFeatures> {
 
 async function open(nextWorkerName: string): Promise<void> {
 	if (epicenter !== undefined) await dispose();
-	workerName = nextWorkerName;
 	epicenter = await openBrowserEpicenter({
-		createSharedWorker: () => {
-			if (typeof SharedWorker === 'undefined') {
-				throw new Error('SharedWorker is unavailable');
+		createWorker: () => {
+			if (typeof Worker === 'undefined') {
+				throw new Error('Dedicated Worker is unavailable');
 			}
-			return new SharedWorker(
+			const worker = new Worker(
 				new URL('./controlled-worker.ts', import.meta.url),
 				{ type: 'module', name: nextWorkerName },
 			);
+			controlledWorker = worker;
+			return {
+				port: {
+					postMessage: (message) => worker.postMessage(message),
+					addEventListener: (type, listener) =>
+						worker.addEventListener(type, listener),
+					close: () => worker.terminate(),
+				},
+				addEventListener: (type, listener) =>
+					worker.addEventListener(type, listener),
+			};
 		},
 	});
 	data = bindEvidenceData(epicenter);
 }
 
 async function dispose(): Promise<void> {
-	stopInvalidations?.();
-	stopInvalidations = undefined;
-	invalidations = [];
 	const opened = epicenter;
+	const worker = controlledWorker;
 	epicenter = undefined;
 	data = undefined;
-	workerName = undefined;
-	if (opened !== undefined) await opened[Symbol.asyncDispose]();
+	controlledWorker = undefined;
+	if (opened === undefined) worker?.terminate();
+	else await opened[Symbol.asyncDispose]();
+	await waitForStorageLeaseRelease();
 }
 
 async function create(title: string, writer: string): Promise<{ id: string }> {
@@ -208,20 +215,6 @@ async function readDocument(rowId: string): Promise<string> {
 	}
 }
 
-function startInvalidationCapture(): void {
-	stopInvalidations?.();
-	invalidations = [];
-	stopInvalidations = requireData().tables.notes.subscribe((ids) => {
-		invalidations.push(...ids);
-	});
-}
-
-function takeInvalidations(): string[] {
-	const captured = invalidations;
-	invalidations = [];
-	return captured;
-}
-
 function startHungSync(): void {
 	const opened = epicenter;
 	if (opened === undefined)
@@ -253,37 +246,28 @@ function hungSyncStatus(): HungSyncStatus {
 }
 
 async function terminateWorker(): Promise<void> {
-	const target = workerName;
-	if (target === undefined) {
+	const worker = controlledWorker;
+	if (worker === undefined) {
 		throw new Error('Only a controlled evidence worker can be terminated');
 	}
-	const channel = new BroadcastChannel(CONTROL_CHANNEL);
-	try {
-		await new Promise<void>((resolve, reject) => {
-			const timer = setTimeout(
-				() =>
-					reject(
-						new Error('Controlled SharedWorker did not acknowledge close'),
-					),
-				5_000,
-			);
-			channel.onmessage = ({ data: message }) => {
-				if (
-					typeof message !== 'object' ||
-					message === null ||
-					!('type' in message) ||
-					message.type !== 'terminating' ||
-					!('workerName' in message) ||
-					message.workerName !== target
-				)
-					return;
-				clearTimeout(timer);
-				resolve();
-			};
-			channel.postMessage({ type: 'terminate', workerName: target });
-		});
-	} finally {
-		channel.close();
+	epicenter = undefined;
+	data = undefined;
+	controlledWorker = undefined;
+	worker.terminate();
+	await waitForStorageLeaseRelease();
+}
+
+async function waitForStorageLeaseRelease(): Promise<void> {
+	const deadline = Date.now() + 5_000;
+	while (
+		(await navigator.locks.query()).held?.some(
+			({ name }) => name === 'epicenter-data-sqlite',
+		)
+	) {
+		if (Date.now() >= deadline) {
+			throw new Error('DedicatedWorker did not release its storage lease');
+		}
+		await new Promise((resolve) => setTimeout(resolve, 25));
 	}
 }
 
@@ -296,10 +280,7 @@ window.browserEvidence = Object.freeze({
 	snapshot,
 	setDocument,
 	readDocument,
-	startInvalidationCapture,
-	takeInvalidations,
 	startHungSync,
 	hungSyncStatus,
 	terminateWorker,
-	visibilityState: () => document.visibilityState,
 });

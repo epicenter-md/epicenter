@@ -62,49 +62,31 @@ export type BrowserWorkerStore = {
 	dispose(): Promise<void>;
 };
 
-type Client = {
-	port: MessagePortLike;
-	documents: Map<number, WorkerDocument>;
-	disconnection: Promise<void> | undefined;
-	isDisconnected: boolean;
-	storeClosure:
-		| { lifecycle: StoreLifecycle | undefined; drain: Promise<void> }
-		| undefined;
-	terminalCause: Error | undefined;
-	syncTransportKey: number | undefined;
-	syncAttachmentOrder: number;
-	syncTransportAvailable: boolean;
-	syncTransportRetirement: ReturnType<typeof setTimeout> | undefined;
-	transports: Map<
-		number,
-		{
-			transportKey: number;
-			resolve(value: SessionTransportResponse): void;
-			reject(cause: unknown): void;
-		}
-	>;
-	credentials: Map<
-		number,
-		{
-			hasCredentials: boolean;
-			canPublishDocuments: boolean;
-			canPullDocuments: boolean;
-		}
-	>;
-};
-
 type WorkerDocument = {
 	address: { key: string; rowId: string };
 	document: RowDocument;
 	stopUpdates(): void;
 };
 
+/**
+ * The page's current sync attachment.
+ *
+ * `transportKey` is a generation, not a route. One page re-attaches whenever
+ * the account changes (sign-in, sign-out, switching principal), and a network
+ * call issued under the previous attachment must never resolve into the new
+ * one. Everything keyed by it exists to fence those stale results, never to
+ * choose between simultaneous transports: there is only ever one page.
+ */
+type SyncAttachment = {
+	transportKey: number;
+	hasCredentials: boolean;
+	canPublishDocuments: boolean;
+	canPullDocuments: boolean;
+};
+
 type StoreLifecycle = {
-	token: object;
 	controller: AbortController;
 	ready: Promise<BrowserWorkerStore>;
-	closed: Promise<void>;
-	resolveClosed(): void;
 	store: BrowserWorkerStore | undefined;
 	disposal: Promise<unknown[]> | undefined;
 	stopReplicaSubscription: (() => void) | undefined;
@@ -150,92 +132,111 @@ export async function settleBrowserCleanup({
 	if (failures.length > 1) throw new AggregateError(failures, message);
 }
 
-export function createBrowserWorkerHost({
-	openStore = openBrowserWorkerStore,
-	hostId = crypto.randomUUID(),
-	exchangeTimeoutMs = DEFAULT_EXCHANGE_TIMEOUT_MS,
-	transportRetirementMs = Math.max(exchangeTimeoutMs * 2, 1_000),
-	log = createLogger('data/browser-worker'),
-}: {
-	openStore?: (options: {
-		onStolen(): void;
-		signal: AbortSignal;
-	}) => Promise<BrowserWorkerStore>;
-	hostId?: string;
-	exchangeTimeoutMs?: number;
-	transportRetirementMs?: number;
-	log?: Logger;
-} = {}) {
-	const clients = new Set<Client>();
+/**
+ * Serve one page from this worker.
+ *
+ * One browser page owns one dedicated worker, which owns one Epicenter replica
+ * and one OPFS SQLite database. A competing same-origin owner is refused by the
+ * Web Lock in {@link acquireBrowserStorageLease} rather than admitted here, so
+ * this host models exactly one connection for its whole life: no client
+ * registry, no routing, no election between transports, no failover, and no
+ * last-connected bookkeeping. Ownership passes to a new page only after this
+ * one disposes and releases the lock.
+ *
+ * The page is the network: it holds the credentials and performs every
+ * authenticated call on the worker's behalf. When a call fails, it fails, and
+ * the sync supervisor that owns durability decides whether to retry. This host
+ * never retries an exchange itself, because there is nowhere else to send it.
+ */
+export function serveBrowserEpicenter(
+	port: MessagePortLike,
+	{
+		openStore = openBrowserWorkerStore,
+		exchangeTimeoutMs = DEFAULT_EXCHANGE_TIMEOUT_MS,
+		log = createLogger('data/browser-worker'),
+	}: {
+		openStore?: (options: {
+			signal: AbortSignal;
+		}) => Promise<BrowserWorkerStore>;
+		exchangeTimeoutMs?: number;
+		log?: Logger;
+	} = {},
+): void {
+	const documents = new Map<number, WorkerDocument>();
 	const documentClosures = new Set<Promise<void>>();
 	const syncCredentialListeners = new Set<() => void>();
+	// Correlates one in-flight page request with its response. Concurrent calls
+	// share the port, so the id is how a result finds its caller.
+	const transports = new Map<
+		number,
+		{
+			transportKey: number;
+			resolve(value: SessionTransportResponse): void;
+			reject(cause: unknown): void;
+		}
+	>();
+	let syncAttachment: SyncAttachment | undefined;
 	let storeLifecycle: StoreLifecycle | undefined;
+	let storeClosure:
+		| { lifecycle: StoreLifecycle | undefined; drain: Promise<void> }
+		| undefined;
+	let disconnection: Promise<void> | undefined;
+	let terminalCause: Error | undefined;
+	let isDisconnected = false;
+	let isPortClosed = false;
 	let requestTail = Promise.resolve();
 	let nextDocumentId = 0;
 	let nextTransportId = 0;
-	let nextInvalidationId = 0;
-	let nextSyncAttachmentOrder = 0;
-	let isStolen = false;
 
 	function logCleanupFailures(message: string, failures: unknown[]): void {
 		if (failures.length === 0) return;
 		log.error(new AggregateError(failures, message));
 	}
 
-	function closePort(port: MessagePortLike): void {
+	function closePort(): void {
+		if (isPortClosed) return;
+		isPortClosed = true;
 		try {
 			port.close?.();
 		} catch (cause) {
-			log.error(new Error('Browser client port cleanup failed', { cause }));
+			log.error(new Error('Browser page port cleanup failed', { cause }));
 		}
 	}
 
-	function sendToClient(
-		client: Client,
+	function send(
 		message: BrowserWorkerMessage,
 		{ afterDisconnect = false }: { afterDisconnect?: boolean } = {},
 	): boolean {
-		if (client.isDisconnected && !afterDisconnect) return false;
+		if (isDisconnected && !afterDisconnect) return false;
 		try {
-			client.port.postMessage(message);
+			port.postMessage(message);
 			return true;
 		} catch (cause) {
-			const failure = new Error('Browser Epicenter client port failed', {
+			const failure = new Error('Browser Epicenter page port failed', {
 				cause,
 			});
-			if (client.disconnection === undefined) {
-				scheduleTerminalReclamation(client, failure, false);
-			}
-			closePort(client.port);
+			if (disconnection === undefined) failOwner(failure);
+			closePort();
 			return false;
 		}
 	}
 
-	function scheduleTerminalReclamation(
-		client: Client,
-		cause: Error,
-		notifyPage: boolean,
-	): void {
-		if (client.isDisconnected) return;
-		if (notifyPage) {
-			try {
-				client.port.postMessage({
-					type: 'client-revoked',
-					name: cause.name,
-					message: cause.message,
-				});
-			} catch {
-				// Cleanup below owns an unreachable port.
-			}
-		}
-		markClientTerminal(client, cause);
-		setTimeout(() => closePort(client.port), 0);
+	/**
+	 * Tear down after the page became unreachable. Nothing is notified: the only
+	 * party that could receive a message is the page whose port just failed.
+	 */
+	function failOwner(cause: Error): void {
+		if (isDisconnected) return;
+		markTerminal(cause);
+		setTimeout(() => closePort(), 0);
 		void (async () => {
 			try {
-				await performDisconnect(client);
-			} catch (cause) {
+				await performDisconnect();
+			} catch (cleanupCause) {
 				log.error(
-					new Error('Browser client terminal cleanup failed', { cause }),
+					new Error('Browser page terminal cleanup failed', {
+						cause: cleanupCause,
+					}),
 				);
 			}
 		})();
@@ -252,98 +253,39 @@ export function createBrowserWorkerHost({
 		return result;
 	}
 
-	function syncClients(): Client[] {
-		return [...clients]
-			.filter((client) => client.syncTransportKey !== undefined)
-			.sort(
-				(left, right) =>
-					Number(right.syncTransportAvailable) -
-						Number(left.syncTransportAvailable) ||
-					right.syncAttachmentOrder - left.syncAttachmentOrder,
-			);
-	}
-
 	function notifySyncCredentials(): void {
 		for (const listener of syncCredentialListeners) listener();
 	}
 
-	function cancelTransportRetirement(client: Client): void {
-		if (client.syncTransportRetirement === undefined) return;
-		clearTimeout(client.syncTransportRetirement);
-		client.syncTransportRetirement = undefined;
-	}
-
-	function cancelTransport(
-		client: Client,
-		transportId: number,
-		transportKey: number,
-	): void {
-		sendToClient(
-			client,
-			{
-				type: 'transport-cancel',
-				transportId,
-				transportKey,
-			},
+	function cancelTransport(transportId: number, transportKey: number): void {
+		send(
+			{ type: 'transport-cancel', transportId, transportKey },
 			{ afterDisconnect: true },
 		);
 	}
 
-	function retireTransportCapability(
-		client: Client,
-		transportKey: number,
-	): void {
-		if (client.syncTransportKey === transportKey) {
-			cancelTransportRetirement(client);
-			client.syncTransportKey = undefined;
-			client.syncAttachmentOrder = 0;
-			client.syncTransportAvailable = false;
+	/**
+	 * Retire one attachment generation: fail everything still in flight under it
+	 * and cancel those exact page callbacks. Called when a newer attachment
+	 * supersedes this one and when an attachment fails, so a superseded
+	 * credential can never satisfy a later request.
+	 */
+	function retireAttachment(transportKey: number): void {
+		if (syncAttachment?.transportKey === transportKey) {
+			syncAttachment = undefined;
 		}
-		for (const [transportId, pending] of client.transports) {
+		for (const [transportId, pending] of transports) {
 			if (pending.transportKey !== transportKey) continue;
-			client.transports.delete(transportId);
-			cancelTransport(client, transportId, transportKey);
+			transports.delete(transportId);
+			cancelTransport(transportId, transportKey);
 			pending.reject(new Error('Browser sync transport was retired'));
 		}
-		client.credentials.delete(transportKey);
-		sendToClient(client, { type: 'transport-retire', transportKey });
 		notifySyncCredentials();
-	}
-
-	function retireSyncTransport(client: Client, transportKey: number): void {
-		if (
-			client.syncTransportKey !== transportKey ||
-			client.syncTransportAvailable
-		)
-			return;
-		retireTransportCapability(client, transportKey);
-	}
-
-	function quarantineSyncTransport(client: Client, transportKey: number): void {
-		if (client.syncTransportKey !== transportKey) return;
-		client.syncTransportAvailable = false;
-		client.syncAttachmentOrder = 0;
-		// MessagePort has no remote-close event. Retire only the sync capability:
-		// the same page may still have a healthy local-data RPC connection.
-		client.syncTransportRetirement ??= setTimeout(
-			() => retireSyncTransport(client, transportKey),
-			transportRetirementMs,
-		);
-	}
-
-	function markSyncTransportLive(client: Client, transportKey: number): void {
-		if (client.syncTransportKey !== transportKey) return;
-		cancelTransportRetirement(client);
-		client.syncTransportAvailable = true;
-		client.syncAttachmentOrder = ++nextSyncAttachmentOrder;
 	}
 
 	const syncCredentials = {
 		get(): string | undefined {
-			return syncClients().some((client) => {
-				const key = client.syncTransportKey;
-				return key !== undefined && client.credentials.get(key)?.hasCredentials;
-			})
+			return syncAttachment?.hasCredentials === true
 				? 'page-owned-credential'
 				: undefined;
 		},
@@ -353,82 +295,48 @@ export function createBrowserWorkerHost({
 		},
 	};
 
-	async function callThroughLiveClient(
+	async function callSyncTransport(
 		request: SessionTransportRequest,
 	): Promise<SessionTransportResponse> {
-		let lastFailure: unknown;
-		for (const client of syncClients()) {
-			const transportKey = client.syncTransportKey;
-			if (transportKey === undefined) continue;
-			const capability = client.credentials.get(transportKey);
-			if (capability === undefined || !capability.hasCredentials) continue;
-			if (
-				request.kind === 'document-publish' &&
-				!capability.canPublishDocuments
-			) {
-				continue;
-			}
-			if (request.kind === 'document-pull' && !capability.canPullDocuments) {
-				continue;
-			}
-			try {
-				const response = await callTransport(client, transportKey, request);
-				if (response.kind !== request.kind) {
-					throw new Error('Browser sync transport answered the wrong request');
-				}
-				markSyncTransportLive(client, transportKey);
-				return response;
-			} catch (cause) {
-				if (client.syncTransportKey === transportKey) {
-					client.syncAttachmentOrder = 0;
-				}
-				lastFailure = cause;
-			}
+		const attachment = syncAttachment;
+		if (attachment === undefined || !attachment.hasCredentials) {
+			throw new Error('No browser sync transport is attached');
 		}
-		throw new Error('No live browser sync transport completed the request', {
-			cause: lastFailure,
-		});
+		if (
+			request.kind === 'document-publish' &&
+			!attachment.canPublishDocuments
+		) {
+			throw new Error('Browser sync transport cannot publish documents');
+		}
+		if (request.kind === 'document-pull' && !attachment.canPullDocuments) {
+			throw new Error('Browser sync transport cannot pull documents');
+		}
+		const response = await callTransport(attachment.transportKey, request);
+		if (response.kind !== request.kind) {
+			throw new Error('Browser sync transport answered the wrong request');
+		}
+		return response;
 	}
 
-	async function exchangeThroughLiveClient(
+	async function exchangeThroughPage(
 		request: ExchangeRequest,
 	): Promise<ExchangeResponse> {
-		const response = await callThroughLiveClient({ kind: 'exchange', request });
+		const response = await callSyncTransport({ kind: 'exchange', request });
 		if (response.kind !== 'exchange') {
 			throw new Error('Browser sync transport answered the wrong request');
 		}
 		return response.response;
 	}
 
-	async function openedStore(client: Client): Promise<BrowserWorkerStore> {
-		requireConnected(client);
-		if (isStolen) throw storageMovedError();
-		const current = storeLifecycle;
-		if (current !== undefined) {
-			if (!current.controller.signal.aborted) return current.ready;
-			await current.closed;
-			requireConnected(client);
-			return openedStore(client);
-		}
-
-		const token = {};
+	async function openedStore(): Promise<BrowserWorkerStore> {
+		requireConnected();
+		if (storeLifecycle !== undefined) return storeLifecycle.ready;
 		const controller = new AbortController();
-		const closed = Promise.withResolvers<void>();
+		let lifecycle: StoreLifecycle;
 		const ready = Promise.resolve()
-			.then(() =>
-				openStore({
-					onStolen() {
-						markStolen();
-					},
-					signal: controller.signal,
-				}),
-			)
+			.then(() => openStore({ signal: controller.signal }))
 			.then(async (store) => {
-				if (
-					controller.signal.aborted ||
-					storeLifecycle?.token !== token ||
-					isStolen
-				) {
+				if (controller.signal.aborted) {
 					try {
 						await store.dispose();
 					} catch (cause) {
@@ -436,12 +344,7 @@ export function createBrowserWorkerHost({
 							new Error('Late browser store disposal failed', { cause }),
 						);
 					}
-					if (isStolen) throw storageMovedError();
 					throw storeClosingError(controller.signal.reason);
-				}
-				const lifecycle = storeLifecycle;
-				if (lifecycle?.token !== token) {
-					throw new Error('Browser store lifecycle was replaced while opening');
 				}
 				let stopReplica: (() => void) | undefined;
 				let stopStatus: (() => void) | undefined;
@@ -455,7 +358,13 @@ export function createBrowserWorkerHost({
 									rowIds: [change.rowId],
 								});
 								const row = store.replica.readRow(change.key, change.rowId);
-								if (row.error === null && row.data === undefined) {
+								if (row.error !== null) {
+									// Liveness is unknowable this pass, so open documents
+									// keep running rather than being revoked on a guess.
+									// Reported because this read is what a pull's
+									// `RowNotLive` is waiting on.
+									log.error(row.error);
+								} else if (row.data === undefined) {
 									void revokeDocuments(change.key, change.rowId);
 								}
 								continue;
@@ -464,17 +373,15 @@ export function createBrowserWorkerHost({
 						}
 					});
 					stopStatus = store.epicenter.subscribeSyncStatus((status) => {
-						for (const client of clients) {
-							sendToClient(client, {
-								type: 'sync-status',
-								state: status.state,
-								...(status.lastError === undefined
-									? {}
-									: { lastError: status.lastError.message }),
-							});
-						}
+						send({
+							type: 'sync-status',
+							state: status.state,
+							...(status.lastError === undefined
+								? {}
+								: { lastError: status.lastError.message }),
+						});
 					});
-					if (controller.signal.aborted || storeLifecycle?.token !== token) {
+					if (controller.signal.aborted) {
 						throw storeClosingError(controller.signal.reason);
 					}
 					lifecycle.stopReplicaSubscription = stopReplica;
@@ -505,28 +412,15 @@ export function createBrowserWorkerHost({
 					);
 				}
 			});
-		const lifecycle: StoreLifecycle = {
-			token,
+		lifecycle = {
 			controller,
 			ready,
-			closed: closed.promise,
-			resolveClosed: closed.resolve,
 			store: undefined,
 			disposal: undefined,
 			stopReplicaSubscription: undefined,
 			stopSyncStatusSubscription: undefined,
 		};
 		storeLifecycle = lifecycle;
-		void ready
-			.then(
-				() => undefined,
-				() => undefined,
-			)
-			.then(() => {
-				if (!controller.signal.aborted && lifecycle.store !== undefined) return;
-				if (storeLifecycle?.token === token) storeLifecycle = undefined;
-				closed.resolve();
-			});
 		return ready;
 	}
 
@@ -535,56 +429,22 @@ export function createBrowserWorkerHost({
 			| { kind: 'table'; key: string; rowIds: string[] }
 			| { kind: 'value'; key: string },
 	): void {
-		const token = `${hostId}:${++nextInvalidationId}`;
-		let broadcaster: Client | undefined;
-		for (const client of clients) {
-			const delivered = sendToClient(client, {
-				type: 'invalidation',
-				token,
-				change,
-				broadcast: broadcaster === undefined,
-			});
-			if (delivered) broadcaster ??= client;
-		}
+		send({ type: 'invalidation', change });
 	}
 
 	async function revokeDocuments(key: string, rowId: string): Promise<void> {
 		const message = `Row document was revoked because '${key}.${rowId}' is no longer live`;
 		const closures: Promise<void>[] = [];
-		for (const client of clients) {
-			for (const [documentId, entry] of client.documents) {
-				if (entry.address.key !== key || entry.address.rowId !== rowId)
-					continue;
-				sendToClient(client, {
-					type: 'document-revoked',
-					documentId,
-					message,
-				});
-				closures.push(closeDocument(client, documentId));
-			}
+		for (const [documentId, entry] of documents) {
+			if (entry.address.key !== key || entry.address.rowId !== rowId) continue;
+			send({ type: 'document-revoked', documentId, message });
+			closures.push(closeDocument(documentId));
 		}
 		const failures: unknown[] = [];
 		for (const result of await Promise.allSettled(closures)) {
 			if (result.status === 'rejected') failures.push(result.reason);
 		}
 		logCleanupFailures('Browser document revocation cleanup', failures);
-	}
-
-	function markStolen(): void {
-		if (isStolen) return;
-		isStolen = true;
-		const cause = storageMovedError();
-		const connected = [...clients];
-		if (connected.length === 0) {
-			void disposeStore(storeLifecycle).then((failures) => {
-				if (failures.length > 0)
-					logCleanupFailures('Browser store cleanup', failures);
-			});
-			return;
-		}
-		for (const client of connected) {
-			scheduleTerminalReclamation(client, cause, true);
-		}
 	}
 
 	function trackClosure(cleanup: () => Promise<void>): Promise<void> {
@@ -612,10 +472,10 @@ export function createBrowserWorkerHost({
 		return failures;
 	}
 
-	function closeDocument(client: Client, documentId: number): Promise<void> {
-		const entry = client.documents.get(documentId);
+	function closeDocument(documentId: number): Promise<void> {
+		const entry = documents.get(documentId);
 		if (entry === undefined) return Promise.resolve();
-		client.documents.delete(documentId);
+		documents.delete(documentId);
 		const failures: unknown[] = [];
 		try {
 			entry.stopUpdates();
@@ -636,66 +496,60 @@ export function createBrowserWorkerHost({
 	}
 
 	function disconnect(
-		client: Client,
-		cause = new Error('Browser Epicenter client disconnected'),
+		cause = new Error('Browser Epicenter page disconnected'),
 	): Promise<void> {
-		markClientTerminal(client, cause);
-		return performDisconnect(client);
+		markTerminal(cause);
+		return performDisconnect();
 	}
 
-	function markClientTerminal(client: Client, cause: Error): void {
-		if (client.isDisconnected) return;
-		client.isDisconnected = true;
-		client.terminalCause = cause;
-		cancelTransportRetirement(client);
-		for (const [transportId, pending] of client.transports) {
-			cancelTransport(client, transportId, pending.transportKey);
+	/**
+	 * Enter the terminal state. The page leaving IS the store closing: there is
+	 * no other connection whose presence could keep SQLite open, so ownership is
+	 * always released here and the Web Lock is free for the next page.
+	 */
+	function markTerminal(cause: Error): void {
+		if (isDisconnected) return;
+		isDisconnected = true;
+		terminalCause = cause;
+		for (const [transportId, pending] of transports) {
+			cancelTransport(transportId, pending.transportKey);
 			pending.reject(cause);
 		}
-		client.transports.clear();
-		client.credentials.clear();
-		client.syncTransportKey = undefined;
-		client.syncAttachmentOrder = 0;
-		client.syncTransportAvailable = false;
-		for (const documentId of [...client.documents.keys()]) {
-			void closeDocument(client, documentId);
-		}
-		clients.delete(client);
-		if (clients.size === 0) {
-			const lifecycle = storeLifecycle;
-			client.storeClosure = {
-				lifecycle,
-				drain: lifecycle?.store === undefined ? Promise.resolve() : requestTail,
-			};
-			lifecycle?.controller.abort(storeClosingError());
-		}
+		transports.clear();
+		syncAttachment = undefined;
+		for (const documentId of [...documents.keys()])
+			void closeDocument(documentId);
+		const lifecycle = storeLifecycle;
+		storeClosure = {
+			lifecycle,
+			drain: lifecycle?.store === undefined ? Promise.resolve() : requestTail,
+		};
+		lifecycle?.controller.abort(storeClosingError());
 		notifySyncCredentials();
 	}
 
-	function performDisconnect(client: Client): Promise<void> {
-		client.disconnection ??= finishDisconnect(client);
-		return client.disconnection;
+	function performDisconnect(): Promise<void> {
+		disconnection ??= finishDisconnect();
+		return disconnection;
 	}
 
-	function requireConnected(client: Client): void {
-		if (!client.isDisconnected) return;
-		throw (
-			client.terminalCause ?? new Error('Browser Epicenter client disconnected')
-		);
+	function requireConnected(): void {
+		if (!isDisconnected) return;
+		throw terminalCause ?? new Error('Browser Epicenter page disconnected');
 	}
 
-	async function finishDisconnect(client: Client): Promise<void> {
+	async function finishDisconnect(): Promise<void> {
 		const failures = await settleDocumentClosures();
-		if (client.storeClosure !== undefined) {
+		if (storeClosure !== undefined) {
 			// Store acquisition owns an AbortSignal and is safe to terminate outside
 			// the local queue. Once opened, SQLite and document operations must finish
-			// before their shared store is disposed.
-			await client.storeClosure.drain;
-			failures.push(...(await disposeStore(client.storeClosure.lifecycle)));
+			// before their store is disposed.
+			await storeClosure.drain;
+			failures.push(...(await disposeStore(storeClosure.lifecycle)));
 		}
 		if (failures.length === 1) throw failures[0];
 		if (failures.length > 1) {
-			throw new AggregateError(failures, 'Browser client cleanup failed');
+			throw new AggregateError(failures, 'Browser page cleanup failed');
 		}
 	}
 
@@ -714,6 +568,17 @@ export function createBrowserWorkerHost({
 	): Promise<unknown[]> {
 		const failures: unknown[] = [];
 		lifecycle.controller.abort(storeClosingError());
+		// The page terminates its dedicated worker as soon as disconnect returns.
+		// Let the abort-aware opener finish releasing any partially acquired
+		// lease or database before acknowledging that terminal request.
+		if (lifecycle.store === undefined) {
+			try {
+				await lifecycle.ready;
+			} catch {
+				// Opening failure is returned to its original RPC. This cleanup
+				// path only owns resources the opener managed to publish.
+			}
+		}
 		const store = lifecycle.store;
 		if (store === undefined) return failures;
 		const stopReplica = lifecycle.stopReplicaSubscription;
@@ -734,29 +599,21 @@ export function createBrowserWorkerHost({
 			await store.dispose();
 		} catch (cause) {
 			failures.push(cause);
-		} finally {
-			if (storeLifecycle?.token === lifecycle.token) {
-				storeLifecycle = undefined;
-			}
-			lifecycle.resolveClosed();
 		}
 		return failures;
 	}
 
-	async function executeLocal(
-		client: Client,
-		operation: BrowserOperation,
-	): Promise<unknown> {
+	async function executeLocal(operation: BrowserOperation): Promise<unknown> {
 		if (operation.kind === 'disconnect') {
-			await disconnect(client);
+			await disconnect();
 			return undefined;
 		}
-		requireConnected(client);
+		requireConnected();
 		if (operation.kind === 'attach-sync') {
 			throw new Error('Sync attachment cannot run as a local RPC');
 		}
-		const store = await openedStore(client);
-		requireConnected(client);
+		const store = await openedStore();
+		requireConnected();
 		switch (operation.kind) {
 			case 'open':
 				return undefined;
@@ -790,9 +647,9 @@ export function createBrowserWorkerHost({
 			case 'value-unset':
 				return valueLens(store.epicenter, operation.definition).unset();
 			case 'document-open':
-				return openDocument(client, store.epicenter, operation);
+				return openDocument(store.epicenter, operation);
 			case 'document-update': {
-				const entry = client.documents.get(operation.documentId);
+				const entry = documents.get(operation.documentId);
 				if (entry === undefined) throw new Error('Row document is not open');
 				applyRowDocumentUpdate(
 					entry.document,
@@ -802,27 +659,23 @@ export function createBrowserWorkerHost({
 				return undefined;
 			}
 			case 'document-pull': {
-				const entry = client.documents.get(operation.documentId);
+				const entry = documents.get(operation.documentId);
 				if (entry === undefined) throw new Error('Row document is not open');
 				return entry.document.pull();
 			}
 			case 'document-issue': {
-				const entry = client.documents.get(operation.documentId);
+				const entry = documents.get(operation.documentId);
 				if (entry === undefined) throw new Error('Row document is not open');
 				return entry.document.syncIssue();
 			}
 			case 'document-close':
-				await closeDocument(client, operation.documentId);
+				await closeDocument(operation.documentId);
 				return undefined;
 			case 'sync-credentials': {
-				const credential = client.credentials.get(operation.transportKey);
-				if (credential === undefined) return undefined;
-				credential.hasCredentials = operation.hasCredentials;
-				client.syncTransportAvailable = true;
-				cancelTransportRetirement(client);
-				if (operation.hasCredentials) {
-					client.syncAttachmentOrder = ++nextSyncAttachmentOrder;
+				if (syncAttachment?.transportKey !== operation.transportKey) {
+					return undefined;
 				}
+				syncAttachment.hasCredentials = operation.hasCredentials;
 				notifySyncCredentials();
 				return undefined;
 			}
@@ -832,30 +685,26 @@ export function createBrowserWorkerHost({
 	}
 
 	async function attachSync(
-		client: Client,
 		operation: Extract<BrowserOperation, { kind: 'attach-sync' }>,
 	): Promise<Awaited<ReturnType<Epicenter['attachSync']>>> {
 		const store = await serializeLocal(async () => {
-			requireConnected(client);
-			const opened = await openedStore(client);
-			requireConnected(client);
+			requireConnected();
+			const opened = await openedStore();
+			requireConnected();
 			const accepted = opened.replica.attach({
 				deploymentId: operation.deploymentId,
 				principalId: operation.principalId,
 			});
 			if (accepted.error !== null) return { accepted, opened };
-			const previousTransportKey = client.syncTransportKey;
-			client.credentials.set(operation.transportKey, {
+			const previousTransportKey = syncAttachment?.transportKey;
+			syncAttachment = {
+				transportKey: operation.transportKey,
 				hasCredentials: operation.hasCredentials,
 				canPublishDocuments: operation.canPublishDocuments,
 				canPullDocuments: operation.canPullDocuments,
-			});
-			client.syncTransportKey = operation.transportKey;
-			client.syncAttachmentOrder = ++nextSyncAttachmentOrder;
-			client.syncTransportAvailable = true;
-			cancelTransportRetirement(client);
+			};
 			if (previousTransportKey !== undefined) {
-				retireTransportCapability(client, previousTransportKey);
+				retireAttachment(previousTransportKey);
 			}
 			return { accepted, opened };
 		});
@@ -864,72 +713,75 @@ export function createBrowserWorkerHost({
 			const attached = await store.opened.epicenter.attachSync({
 				deploymentId: operation.deploymentId,
 				principalId: operation.principalId,
-				exchange: exchangeThroughLiveClient,
+				exchange: exchangeThroughPage,
 				publishDocument: async ({ address, update }) => {
-					const response = await callThroughLiveClient({
+					const response = await callSyncTransport({
 						kind: 'document-publish',
 						address,
 						update: new Uint8Array(update),
 					});
 					if (response.kind !== 'document-publish') {
-						throw new Error('Browser sync transport answered the wrong request');
+						throw new Error(
+							'Browser sync transport answered the wrong request',
+						);
 					}
 					return response.outcome;
 				},
 				pullDocument: async ({ address, sinceVersion }) => {
-					const response = await callThroughLiveClient({
+					const response = await callSyncTransport({
 						kind: 'document-pull',
 						address,
 						sinceVersion,
 					});
 					if (response.kind !== 'document-pull') {
-						throw new Error('Browser sync transport answered the wrong request');
+						throw new Error(
+							'Browser sync transport answered the wrong request',
+						);
 					}
 					return response.response;
 				},
 				credentials: syncCredentials,
 			});
-			if (client.isDisconnected) {
-				throw new Error('Browser Epicenter client disconnected');
+			if (isDisconnected) {
+				throw new Error('Browser Epicenter page disconnected');
 			}
 			if (attached.error !== null) {
-				retireTransportCapability(client, operation.transportKey);
+				retireAttachment(operation.transportKey);
 			}
 			return attached;
 		} catch (cause) {
-			retireTransportCapability(client, operation.transportKey);
+			retireAttachment(operation.transportKey);
 			throw cause;
 		}
 	}
 
 	async function openDocument(
-		client: Client,
 		epicenter: Epicenter,
 		operation: Extract<BrowserOperation, { kind: 'document-open' }>,
 	): Promise<{ documentId: number; update: Uint8Array }> {
 		const lens = tableLens(epicenter, operation.definition);
 		const document = await lens.openDocument(operation.rowId);
-		if (client.isDisconnected) {
+		if (isDisconnected) {
 			try {
 				await trackDocumentClosure(document);
 			} catch (cause) {
 				log.error(new Error('Late browser document cleanup failed', { cause }));
 				throw cause;
 			}
-			requireConnected(client);
+			requireConnected();
 		}
 		const documentId = ++nextDocumentId;
 		let stopUpdates: (() => void) | undefined;
 		try {
 			stopUpdates = observeRowDocumentUpdates(document, (update) => {
-				sendToClient(client, {
+				send({
 					type: 'document-update',
 					documentId,
 					update: new Uint8Array(update),
 				});
 			});
 			const update = encodeRowDocumentState(document);
-			client.documents.set(documentId, {
+			documents.set(documentId, {
 				address: { key: operation.definition.key, rowId: operation.rowId },
 				document,
 				stopUpdates,
@@ -943,19 +795,20 @@ export function createBrowserWorkerHost({
 	}
 
 	function callTransport(
-		client: Client,
 		transportKey: number,
 		request: SessionTransportRequest,
 	): Promise<SessionTransportResponse> {
 		const transportId = ++nextTransportId;
 		return new Promise<SessionTransportResponse>((resolve, reject) => {
+			// A page-owned fetch can hang forever. Fail the exchange and let the
+			// sync supervisor decide about retrying; there is no second transport
+			// to fall back to, so failing fast is the whole policy.
 			const timeout = setTimeout(() => {
-				if (!client.transports.delete(transportId)) return;
-				cancelTransport(client, transportId, transportKey);
-				quarantineSyncTransport(client, transportKey);
+				if (!transports.delete(transportId)) return;
+				cancelTransport(transportId, transportKey);
 				reject(new Error('Browser sync transport timed out'));
 			}, exchangeTimeoutMs);
-			client.transports.set(transportId, {
+			transports.set(transportId, {
 				transportKey,
 				resolve(value) {
 					clearTimeout(timeout);
@@ -967,137 +820,85 @@ export function createBrowserWorkerHost({
 				},
 			});
 			if (
-				!sendToClient(client, {
-					type: 'transport-request',
-					transportId,
-					transportKey,
-					request,
-				})
+				!send({ type: 'transport-request', transportId, transportKey, request })
 			) {
 				clearTimeout(timeout);
-				client.transports.delete(transportId);
-				quarantineSyncTransport(client, transportKey);
-				reject(new Error('Browser Epicenter client port failed'));
+				transports.delete(transportId);
+				reject(new Error('Browser Epicenter page port failed'));
 			}
 		});
 	}
 
-	function handleTransportResult(
-		client: Client,
-		message: BrowserTransportResult,
-	): void {
-		const pending = client.transports.get(message.transportId);
+	function handleTransportResult(message: BrowserTransportResult): void {
+		const pending = transports.get(message.transportId);
 		if (pending === undefined) return;
+		// A result minted under a superseded attachment is not an answer to the
+		// current one.
 		if (pending.transportKey !== message.transportKey) return;
-		client.transports.delete(message.transportId);
+		transports.delete(message.transportId);
 		if (message.type === 'transport-result') {
-			markSyncTransportLive(client, message.transportKey);
 			pending.resolve(message.response);
-		} else {
-			const cause = new Error(message.message);
-			cause.name = message.name;
-			pending.reject(cause);
-		}
-	}
-
-	function connect(port: MessagePortLike): void {
-		if (isStolen) {
-			const cause = storageMovedError();
-			try {
-				port.postMessage({
-					type: 'client-revoked',
-					name: cause.name,
-					message: cause.message,
-				});
-			} catch {
-				// The refused page is already unreachable.
-			} finally {
-				setTimeout(() => closePort(port), 0);
-			}
 			return;
 		}
-		const client: Client = {
-			port,
-			documents: new Map(),
-			disconnection: undefined,
-			isDisconnected: false,
-			storeClosure: undefined,
-			terminalCause: undefined,
-			syncTransportKey: undefined,
-			syncAttachmentOrder: 0,
-			syncTransportAvailable: false,
-			syncTransportRetirement: undefined,
-			transports: new Map(),
-			credentials: new Map(),
-		};
-		clients.add(client);
-		port.addEventListener('message', ({ data: message }) => {
-			if (client.isDisconnected) return;
-			if (
-				message.type === 'transport-result' ||
-				message.type === 'transport-error'
-			) {
-				handleTransportResult(client, message);
-				return;
-			}
-			const respond = async (): Promise<void> => {
-				try {
-					const value =
-						message.operation.kind === 'attach-sync'
-							? await attachSync(client, message.operation)
-							: await executeLocal(client, message.operation);
-					if (
-						!client.isDisconnected ||
-						message.operation.kind === 'disconnect'
-					) {
-						sendToClient(
-							client,
-							{ type: 'result', id: message.id, value },
-							{ afterDisconnect: message.operation.kind === 'disconnect' },
-						);
-					}
-				} catch (cause) {
-					if (
-						!client.isDisconnected ||
-						message.operation.kind === 'disconnect'
-					) {
-						const delivered = sendToClient(
-							client,
-							{
-								type: 'error',
-								id: message.id,
-								name: cause instanceof Error ? cause.name : 'Error',
-								message: cause instanceof Error ? cause.message : String(cause),
-							},
-							{ afterDisconnect: message.operation.kind === 'disconnect' },
-						);
-						if (!delivered && message.operation.kind === 'disconnect') {
-							log.error(
-								new Error('Browser disconnect result was unreachable', {
-									cause,
-								}),
-							);
-						}
-					}
-				}
-			};
-			if (
-				message.operation.kind === 'attach-sync' ||
-				message.operation.kind === 'disconnect' ||
-				// A pull awaits the network through a page transport; running it
-				// on the local queue would stall every SQLite RPC behind it. The
-				// document runtime owns pull overlap and disposal safety.
-				message.operation.kind === 'document-pull'
-			) {
-				void respond();
-				return;
-			}
-			void serializeLocal(respond);
-		});
-		port.start?.();
+		const cause = new Error(message.message);
+		cause.name = message.name;
+		pending.reject(cause);
 	}
 
-	return Object.freeze({ connect });
+	port.addEventListener('message', ({ data: message }) => {
+		if (isDisconnected) return;
+		if (
+			message.type === 'transport-result' ||
+			message.type === 'transport-error'
+		) {
+			handleTransportResult(message);
+			return;
+		}
+		const respond = async (): Promise<void> => {
+			try {
+				const value =
+					message.operation.kind === 'attach-sync'
+						? await attachSync(message.operation)
+						: await executeLocal(message.operation);
+				if (!isDisconnected || message.operation.kind === 'disconnect') {
+					send(
+						{ type: 'result', id: message.id, value },
+						{ afterDisconnect: message.operation.kind === 'disconnect' },
+					);
+				}
+			} catch (cause) {
+				if (!isDisconnected || message.operation.kind === 'disconnect') {
+					const delivered = send(
+						{
+							type: 'error',
+							id: message.id,
+							name: cause instanceof Error ? cause.name : 'Error',
+							message: cause instanceof Error ? cause.message : String(cause),
+						},
+						{ afterDisconnect: message.operation.kind === 'disconnect' },
+					);
+					if (!delivered && message.operation.kind === 'disconnect') {
+						log.error(
+							new Error('Browser disconnect result was unreachable', { cause }),
+						);
+					}
+				}
+			}
+		};
+		if (
+			message.operation.kind === 'attach-sync' ||
+			message.operation.kind === 'disconnect' ||
+			// A pull awaits the network through the page transport; running it on
+			// the local queue would stall every SQLite RPC behind it. The document
+			// runtime owns pull overlap and disposal safety.
+			message.operation.kind === 'document-pull'
+		) {
+			void respond();
+			return;
+		}
+		void serializeLocal(respond);
+	});
+	port.start?.();
 }
 
 function deserializeTable(
@@ -1138,12 +939,6 @@ function valueLens(
 	}).values.target as UntypedValueLens;
 }
 
-function storageMovedError(): Error {
-	const cause = new Error('Browser Epicenter storage moved to a newer owner');
-	cause.name = 'EpicenterStorageMovedError';
-	return cause;
-}
-
 function storeClosingError(cause?: unknown): Error {
 	return new Error('Browser Epicenter store opening was aborted', { cause });
 }
@@ -1152,10 +947,8 @@ let sqliteModule: Awaited<ReturnType<typeof sqlite3InitModule>> | undefined;
 let sahPool: SAHPoolUtil | undefined;
 
 async function openBrowserWorkerStore({
-	onStolen,
 	signal,
 }: {
-	onStolen(): void;
 	signal: AbortSignal;
 }): Promise<BrowserWorkerStore> {
 	let lease: BrowserStorageLease | undefined;
@@ -1165,7 +958,7 @@ async function openBrowserWorkerStore({
 		signal.throwIfAborted();
 		lease = await acquireBrowserStorageLease(
 			navigator.locks as unknown as LockManagerPort,
-			{ onStolen, signal },
+			{ signal },
 		);
 		signal.throwIfAborted();
 		sqliteModule ??= await sqlite3InitModule();

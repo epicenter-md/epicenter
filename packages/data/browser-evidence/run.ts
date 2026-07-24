@@ -29,7 +29,6 @@ import {
 	type EvidenceEngine,
 	evidenceInjectionFor,
 } from './evidence.js';
-import { createObservationAccumulator } from './observations.js';
 
 const evidenceDir = import.meta.dirname;
 const repoRoot = resolve(evidenceDir, '../../..');
@@ -279,7 +278,7 @@ async function runEngine({
 	const cells: EvidenceCell[] = [];
 	let features: EvidenceFeatures = {
 		secureContext: false,
-		sharedWorker: false,
+		dedicatedWorker: false,
 		opfs: false,
 		webLocks: false,
 		syncAccessHandle: false,
@@ -392,7 +391,7 @@ async function runEngine({
 						cause.message.includes('Missing required OPFS APIs')
 					) {
 						throw new UnsupportedEvidence(
-							'The real SharedWorker SQLite SAH-pool path reports missing OPFS APIs',
+							'The real DedicatedWorker SQLite SAH-pool path reports missing OPFS APIs',
 						);
 					}
 					throw cause;
@@ -419,12 +418,10 @@ async function runEngine({
 		if (featureCell?.outcome !== 'passed') {
 			for (const id of [
 				'crud-durability-reload',
-				'concurrent-tabs-invalidation',
+				'second-owner-refusal',
 				'hung-sync-continuity',
-				'tab-close-continuity',
 				'worker-termination-lock-handoff',
 				'persistent-profile-relaunch',
-				'hidden-tab-continuity',
 			] as const) {
 				await runCell(id, () => {
 					throw new UnsupportedEvidence('Feature admission did not pass');
@@ -483,79 +480,43 @@ async function runEngine({
 				}
 			});
 
-			await runCell('concurrent-tabs-invalidation', async () => {
-				const workerName = `${runId}-${engineName}-concurrent`;
+			await runCell('second-owner-refusal', async () => {
 				const first = await openPage();
 				const second = await openPage();
 				try {
-					await Promise.all([
-						first.evaluate(
-							(name) => window.browserEvidence.open(name),
-							workerName,
-						),
-						second.evaluate(
-							(name) => window.browserEvidence.open(name),
-							workerName,
-						),
-					]);
-					await second.evaluate(() =>
-						window.browserEvidence.startInvalidationCapture(),
+					await first.evaluate(
+						(name) => window.browserEvidence.open(name),
+						`${runId}-${engineName}-first-owner`,
 					);
-					const created = await Promise.all(
-						Array.from({ length: 12 }, (_, index) => {
-							const page = index % 2 === 0 ? first : second;
-							return page.evaluate(
-								({ title, writer }) =>
-									window.browserEvidence.create(title, writer),
-								{
-									title: `${runId}-concurrent-${index}`,
-									writer: index % 2 === 0 ? 'first' : 'second',
-								},
-							);
-						}),
+					await first.evaluate(
+						({ title, writer }) => window.browserEvidence.create(title, writer),
+						{ title: `${runId}-first-owner`, writer: 'first-owner' },
 					);
-					const ids = created.map(({ id }) => id);
-					const observations = createObservationAccumulator();
-					const observed = await waitFor(
-						async () => {
-							return observations.append(
-								await second.evaluate(() =>
-									window.browserEvidence.takeInvalidations(),
-								),
-							);
-						},
-						(value) => ids.every((id) => value.includes(id)),
-						'cross-tab invalidations',
+					const firstSnapshot = await first.evaluate(() =>
+						window.browserEvidence.snapshot(),
 					);
-					const [firstSnapshot, secondSnapshot] = await Promise.all([
-						first.evaluate(() => window.browserEvidence.snapshot()),
-						second.evaluate(() => window.browserEvidence.snapshot()),
-					]);
+					const refusalMessage = await second.evaluate(async (name) => {
+						try {
+							await window.browserEvidence.open(name);
+							await window.browserEvidence.snapshot();
+							return undefined;
+						} catch (cause) {
+							return cause instanceof Error ? cause.message : String(cause);
+						}
+					}, `${runId}-${engineName}-refused-owner`);
+					const expected =
+						'Browser Epicenter is already open in another tab for this origin';
 					assert(
-						firstSnapshot.semanticSha256 === secondSnapshot.semanticSha256,
-						'Concurrent tabs did not converge',
-					);
-					assert(
-						ids.every(
-							(id) => observed.filter((value) => value === id).length === 1,
-						),
-						'An invalidation was missing or duplicated',
+						refusalMessage === expected,
+						`Second same-origin owner refusal differed: ${String(refusalMessage)}`,
 					);
 					await Promise.all([
 						first.evaluate(() => window.browserEvidence.dispose()),
 						second.evaluate(() => window.browserEvidence.dispose()),
 					]);
 					return {
-						parameters: [
-							{
-								name: 'peerSemanticSha256',
-								value: secondSnapshot.semanticSha256,
-							},
-						],
-						proofs: {
-							...snapshotProofs(firstSnapshot),
-							invalidationCount: observed.length,
-						},
+						parameters: [{ name: 'refusalMessage', value: refusalMessage }],
+						proofs: snapshotProofs(firstSnapshot),
 					};
 				} finally {
 					await Promise.allSettled([first.close(), second.close()]);
@@ -563,133 +524,58 @@ async function runEngine({
 			});
 
 			await runCell('hung-sync-continuity', async () => {
-				const workerName = `${runId}-${engineName}-hung`;
-				const first = await openPage();
-				const second = await openPage();
+				const page = await openPage();
 				try {
-					await Promise.all([
-						first.evaluate(
-							(name) => window.browserEvidence.open(name),
-							workerName,
-						),
-						second.evaluate(
-							(name) => window.browserEvidence.open(name),
-							workerName,
-						),
-					]);
-					await first.evaluate(() => window.browserEvidence.startHungSync());
+					await page.evaluate(
+						(name) => window.browserEvidence.open(name),
+						`${runId}-${engineName}-hung`,
+					);
+					await page.evaluate(() => window.browserEvidence.startHungSync());
 					await waitFor(
-						() => first.evaluate(() => window.browserEvidence.hungSyncStatus()),
+						() => page.evaluate(() => window.browserEvidence.hungSyncStatus()),
 						(status) => status.started,
 						'hung sync exchange',
 					);
-					const [sameTabRow, peerRow] = await Promise.all([
-						first.evaluate(
-							({ title, writer }) =>
-								window.browserEvidence.create(title, writer),
-							{ title: `${runId}-hung-same-tab`, writer: 'hung' },
-						),
-						second.evaluate(
-							({ title, writer }) =>
-								window.browserEvidence.create(title, writer),
-							{ title: `${runId}-hung-peer`, writer: 'peer' },
-						),
-					]);
-					const snapshot = await second.evaluate(() =>
+					const sameTabRow = await page.evaluate(
+						({ title, writer }) => window.browserEvidence.create(title, writer),
+						{ title: `${runId}-hung-same-owner`, writer: 'hung' },
+					);
+					const snapshot = await page.evaluate(() =>
 						window.browserEvidence.snapshot(),
 					);
-					const hungStatus = await first.evaluate(() =>
+					const hungStatus = await page.evaluate(() =>
 						window.browserEvidence.hungSyncStatus(),
 					);
 					assert(
 						hungStatus.started && hungStatus.hungOutcome === undefined,
 						'Hung sync exchange settled before the continuity witness',
 					);
-					assert(
-						sameTabRow.id !== peerRow.id,
-						'Hung sync continuity writes returned the same row ID',
-					);
 					const sameTabRowOccurrences = snapshot.rows.filter(
 						({ id }) => id === sameTabRow.id,
 					).length;
-					const peerRowOccurrences = snapshot.rows.filter(
-						({ id }) => id === peerRow.id,
-					).length;
 					assert(
-						sameTabRowOccurrences === 1 && peerRowOccurrences === 1,
-						'Hung sync continuity snapshot did not contain both writes exactly once',
+						sameTabRowOccurrences === 1,
+						'Hung sync continuity snapshot did not contain the same-owner write exactly once',
 					);
-					await Promise.all([
-						first.evaluate(() => window.browserEvidence.dispose()),
-						second.evaluate(() => window.browserEvidence.dispose()),
-					]);
+					await page.evaluate(() => window.browserEvidence.dispose());
 					return {
 						parameters: [
 							{ name: 'exchangeStarted', value: true },
 							{ name: 'exchangePending', value: true },
 							{ name: 'sameTabRowId', value: sameTabRow.id },
-							{ name: 'peerRowId', value: peerRow.id },
 							{
 								name: 'sameTabRowOccurrences',
 								value: sameTabRowOccurrences,
 							},
-							{ name: 'peerRowOccurrences', value: peerRowOccurrences },
-							{ name: 'claim', value: 'local-rpc-continuity-only' },
+							{
+								name: 'claim',
+								value: 'same-owner-local-rpc-continuity-only',
+							},
 						],
 						proofs: snapshotProofs(snapshot),
 					};
 				} finally {
-					await Promise.allSettled([first.close(), second.close()]);
-				}
-			});
-
-			await runCell('tab-close-continuity', async () => {
-				const workerName = `${runId}-${engineName}-tab-close`;
-				const vanished = await openPage();
-				const survivor = await openPage();
-				try {
-					await Promise.all([
-						vanished.evaluate(
-							(name) => window.browserEvidence.open(name),
-							workerName,
-						),
-						survivor.evaluate(
-							(name) => window.browserEvidence.open(name),
-							workerName,
-						),
-					]);
-					const firstRow = await vanished.evaluate(
-						({ title, writer }) => window.browserEvidence.create(title, writer),
-						{ title: `${runId}-vanished-tab`, writer: 'vanished' },
-					);
-					await vanished.close();
-					await survivor.evaluate(
-						({ title, writer }) => window.browserEvidence.create(title, writer),
-						{ title: `${runId}-surviving-tab`, writer: 'survivor' },
-					);
-					const retained = await survivor.evaluate(
-						(rowId) => window.browserEvidence.get(rowId),
-						firstRow.id,
-					);
-					assert(
-						retained?.id === firstRow.id,
-						'Surviving tab lost the committed row',
-					);
-					const snapshot = await survivor.evaluate(() =>
-						window.browserEvidence.snapshot(),
-					);
-					await survivor.evaluate(() =>
-						window.browserEvidence.terminateWorker(),
-					);
-					return {
-						parameters: [
-							{ name: 'claim', value: 'surviving-tab-continuity-only' },
-							{ name: 'cleanup', value: 'controlled-worker-close' },
-						],
-						proofs: snapshotProofs(snapshot),
-					};
-				} finally {
-					await Promise.allSettled([vanished.close(), survivor.close()]);
+					await page.close();
 				}
 			});
 
@@ -814,63 +700,6 @@ async function runEngine({
 					await afterPage.close();
 				}
 			});
-
-			await runCell('hidden-tab-continuity', async () => {
-				const workerName = `${runId}-${engineName}-hidden`;
-				const background = await openPage();
-				const foreground = await openPage();
-				try {
-					await Promise.all([
-						background.evaluate(
-							(name) => window.browserEvidence.open(name),
-							workerName,
-						),
-						foreground.evaluate(
-							(name) => window.browserEvidence.open(name),
-							workerName,
-						),
-					]);
-					await foreground.bringToFront();
-					const state = await waitFor(
-						() =>
-							background.evaluate(() =>
-								window.browserEvidence.visibilityState(),
-							),
-						(value) => value === 'hidden',
-						'background tab visibility',
-						1_000,
-					).catch(() => {
-						throw new UnsupportedEvidence(
-							'The headless engine did not expose a hidden tab state',
-						);
-					});
-					const row = await background.evaluate(
-						({ title, writer }) => window.browserEvidence.create(title, writer),
-						{ title: `${runId}-hidden-tab`, writer: 'hidden' },
-					);
-					const observed = await foreground.evaluate(
-						(rowId) => window.browserEvidence.get(rowId),
-						row.id,
-					);
-					assert(
-						observed?.id === row.id,
-						'Foreground tab missed hidden-tab write',
-					);
-					const snapshot = await foreground.evaluate(() =>
-						window.browserEvidence.snapshot(),
-					);
-					await Promise.all([
-						background.evaluate(() => window.browserEvidence.dispose()),
-						foreground.evaluate(() => window.browserEvidence.dispose()),
-					]);
-					return {
-						parameters: [{ name: 'visibilityState', value: state }],
-						proofs: snapshotProofs(snapshot),
-					};
-				} finally {
-					await Promise.allSettled([background.close(), foreground.close()]);
-				}
-			});
 		}
 
 		await runCell('synthetic-page-freeze', () => {
@@ -894,7 +723,7 @@ async function runEngine({
 			.filter(Boolean)
 			.map((line) => line.slice(3));
 		const evidence: BrowserEngineEvidence = {
-			schemaVersion: 'epicenter-browser-engine-evidence/v1',
+			schemaVersion: 'epicenter-browser-engine-evidence/v2',
 			kind: 'epicenter-browser-engine-evidence',
 			scope: 'pre-physical-browser-engine',
 			decisionEligible: false,
@@ -927,10 +756,10 @@ async function runEngine({
 				'Semantic hashes are within-run reopen and convergence witnesses; generated row IDs prevent cross-run or cross-engine comparison.',
 				'Playwright WebKit is not branded Safari and supplies no physical Safari evidence.',
 				'Desktop browser engines do not qualify iOS Safari or Android Chrome storage capacity.',
-				'Hidden-tab evidence does not reproduce OS suspension, memory pressure, or mobile background eviction.',
-				'Tab-close continuity does not prove silent stale-client reclamation or page death inference.',
+				'Second-owner refusal proves fail-fast ownership exclusion, not concurrent same-origin tab access.',
+				'Worker termination proves browser-engine lease release, not graceful shutdown of in-flight writes.',
 				'Persistent WebKit origin evidence does not prove profile isolation.',
-				'The fixture injects a statically bundled public browser-worker entry; it does not qualify the library default worker URL through every consuming bundler.',
+				'The fixture injects a statically bundled public dedicated-worker entry; it does not qualify the library default worker URL through every consuming bundler.',
 			],
 			overall: classifyEvidence(engineName, cells),
 		};

@@ -127,11 +127,9 @@ export type BrowserWorkerInbound = BrowserRequest | BrowserTransportResult;
 
 export type BrowserInvalidation = {
 	type: 'invalidation';
-	token: string;
 	change:
 		| { kind: 'table'; key: string; rowIds: string[] }
 		| { kind: 'value'; key: string };
-	broadcast: boolean;
 };
 
 export type BrowserWorkerMessage =
@@ -163,11 +161,4 @@ export type BrowserWorkerMessage =
 			type: 'transport-cancel';
 			transportId: number;
 			transportKey: number;
-	  }
-	| {
-			type: 'transport-retire';
-			transportKey: number;
-	  }
-	| { type: 'client-revoked'; name: string; message: string };
-
-export type BrowserInvalidationSignal = Omit<BrowserInvalidation, 'broadcast'>;
+	  };

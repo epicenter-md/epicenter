@@ -1,8 +1,6 @@
-export const CONTROL_CHANNEL = 'epicenter-data-browser-evidence-control-v1';
-
 export type EvidenceFeatures = {
 	secureContext: boolean;
-	sharedWorker: boolean;
+	dedicatedWorker: boolean;
 	opfs: boolean;
 	webLocks: boolean;
 	syncAccessHandle: boolean;
@@ -34,10 +32,7 @@ export type BrowserEvidenceDriver = {
 	snapshot(): Promise<EvidenceSnapshot>;
 	setDocument(rowId: string, content: string): Promise<string>;
 	readDocument(rowId: string): Promise<string>;
-	startInvalidationCapture(): void;
-	takeInvalidations(): string[];
 	startHungSync(): void;
 	hungSyncStatus(): HungSyncStatus;
 	terminateWorker(): Promise<void>;
-	visibilityState(): DocumentVisibilityState;
 };

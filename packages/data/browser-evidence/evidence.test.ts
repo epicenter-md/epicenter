@@ -14,7 +14,7 @@ import {
 
 function validEvidence(): BrowserEngineEvidence {
 	return {
-		schemaVersion: 'epicenter-browser-engine-evidence/v1',
+		schemaVersion: 'epicenter-browser-engine-evidence/v2',
 		kind: 'epicenter-browser-engine-evidence',
 		scope: 'pre-physical-browser-engine',
 		decisionEligible: false,
@@ -43,7 +43,7 @@ function validEvidence(): BrowserEngineEvidence {
 		},
 		features: {
 			secureContext: true,
-			sharedWorker: true,
+			dedicatedWorker: true,
 			opfs: true,
 			webLocks: true,
 			syncAccessHandle: true,
@@ -130,27 +130,19 @@ function completeEvidence(): BrowserEngineEvidence {
 				],
 				{ rowCount: 1, semanticSha256: sha, documentSha256: 'e'.repeat(64) },
 			),
-			cell(
-				'concurrent-tabs-invalidation',
-				[{ name: 'peerSemanticSha256', value: sha }],
+			cell('second-owner-refusal', [
 				{
-					rowCount: 1,
-					semanticSha256: sha,
-					invalidationCount: 12,
+					name: 'refusalMessage',
+					value:
+						'Browser Epicenter is already open in another tab for this origin',
 				},
-			),
+			]),
 			cell('hung-sync-continuity', [
 				{ name: 'exchangeStarted', value: true },
 				{ name: 'exchangePending', value: true },
 				{ name: 'sameTabRowId', value: 'a'.repeat(24) },
-				{ name: 'peerRowId', value: 'b'.repeat(24) },
 				{ name: 'sameTabRowOccurrences', value: 1 },
-				{ name: 'peerRowOccurrences', value: 1 },
-				{ name: 'claim', value: 'local-rpc-continuity-only' },
-			]),
-			cell('tab-close-continuity', [
-				{ name: 'claim', value: 'surviving-tab-continuity-only' },
-				{ name: 'cleanup', value: 'controlled-worker-close' },
+				{ name: 'claim', value: 'same-owner-local-rpc-continuity-only' },
 			]),
 			cell(
 				'worker-termination-lock-handoff',
@@ -172,9 +164,6 @@ function completeEvidence(): BrowserEngineEvidence {
 				],
 				{ rowCount: 2, semanticSha256: continuedSha },
 			),
-			cell('hidden-tab-continuity', [
-				{ name: 'visibilityState', value: 'hidden' },
-			]),
 		],
 		overall: 'provisional',
 	};
@@ -216,44 +205,36 @@ test('browser evidence requires cell-specific witnesses before provisional', () 
 	}
 });
 
-test('hung sync continuity requires two distinct writes witnessed exactly once', () => {
+test('hung sync continuity requires one same-owner write witnessed exactly once', () => {
 	const evidence = completeEvidence();
 	const hung = evidence.cells.find(({ id }) => id === 'hung-sync-continuity');
 	if (hung === undefined) throw new Error('Expected hung sync evidence cell');
 
 	const cases = [
 		{
-			name: 'missing peer row ID',
-			parameters: hung.parameters.filter(({ name }) => name !== 'peerRowId'),
+			name: 'missing same-owner row ID',
+			parameters: hung.parameters.filter(({ name }) => name !== 'sameTabRowId'),
 		},
 		{
-			name: 'same row ID for both writes',
+			name: 'same-owner row ID is not admitted',
 			parameters: hung.parameters.map((parameter) =>
-				parameter.name === 'peerRowId'
-					? { ...parameter, value: 'a'.repeat(24) }
-					: parameter,
-			),
-		},
-		{
-			name: 'peer row ID is not an admitted row ID',
-			parameters: hung.parameters.map((parameter) =>
-				parameter.name === 'peerRowId'
+				parameter.name === 'sameTabRowId'
 					? { ...parameter, value: 'not-a-row-id' }
 					: parameter,
 			),
 		},
 		{
-			name: 'peer row absent from snapshot',
+			name: 'same-owner row absent from snapshot',
 			parameters: hung.parameters.map((parameter) =>
-				parameter.name === 'peerRowOccurrences'
+				parameter.name === 'sameTabRowOccurrences'
 					? { ...parameter, value: 0 }
 					: parameter,
 			),
 		},
 		{
-			name: 'peer row duplicated in snapshot',
+			name: 'same-owner row duplicated in snapshot',
 			parameters: hung.parameters.map((parameter) =>
-				parameter.name === 'peerRowOccurrences'
+				parameter.name === 'sameTabRowOccurrences'
 					? { ...parameter, value: 2 }
 					: parameter,
 			),
@@ -270,9 +251,7 @@ test('hung sync continuity requires two distinct writes witnessed exactly once',
 
 	for (const scenario of cases) {
 		const cells = evidence.cells.map((cell) =>
-			cell.id === hung.id
-				? { ...cell, parameters: scenario.parameters }
-				: cell,
+			cell.id === hung.id ? { ...cell, parameters: scenario.parameters } : cell,
 		);
 		expect(classifyEvidence('chromium', cells), scenario.name).toBe('invalid');
 		expect(() =>
@@ -327,7 +306,7 @@ test('browser evidence rejects feature and optional-cell overclaims', () => {
 			cells: [...evidence.cells, optional],
 			overall: 'invalid',
 		}),
-	).toThrow('has no frozen v1 witness contract');
+	).toThrow('has no frozen v2 witness contract');
 });
 
 test('browser evidence assertion binds provenance and derived status', () => {

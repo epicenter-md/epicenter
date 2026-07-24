@@ -29,7 +29,7 @@ Epicenter storage root
     └── at most one immutable byte file per live row
 ```
 
-The browser stores this layout in OPFS and keeps one Worker-owned SQLite
+The browser stores this layout in OPFS and keeps one DedicatedWorker-owned SQLite
 connection behind the storage lease. Native runtimes use native SQLite and the
 native filesystem with the same ownership law. OPFS is the filesystem; it is
 not an alternative database engine.

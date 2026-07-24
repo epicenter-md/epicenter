@@ -11,12 +11,10 @@ const EvidenceEngineSchema = Type.Union([
 const EvidenceCellIdSchema = Type.Union([
 	Type.Literal('feature-admission'),
 	Type.Literal('crud-durability-reload'),
-	Type.Literal('concurrent-tabs-invalidation'),
+	Type.Literal('second-owner-refusal'),
 	Type.Literal('hung-sync-continuity'),
-	Type.Literal('tab-close-continuity'),
 	Type.Literal('worker-termination-lock-handoff'),
 	Type.Literal('persistent-profile-relaunch'),
-	Type.Literal('hidden-tab-continuity'),
 	Type.Literal('synthetic-page-freeze'),
 	Type.Literal('synthetic-quota-refusal'),
 ]);
@@ -24,12 +22,10 @@ const EvidenceCellIdSchema = Type.Union([
 const mandatoryCellIds = [
 	'feature-admission',
 	'crud-durability-reload',
-	'concurrent-tabs-invalidation',
+	'second-owner-refusal',
 	'hung-sync-continuity',
-	'tab-close-continuity',
 	'worker-termination-lock-handoff',
 	'persistent-profile-relaunch',
-	'hidden-tab-continuity',
 ] as const;
 const optionalCellIds = [
 	'synthetic-page-freeze',
@@ -50,7 +46,6 @@ const EvidenceProofsSchema = Type.Object(
 		rowCount: Type.Optional(Type.Integer({ minimum: 0 })),
 		semanticSha256: Type.Optional(Type.String({ pattern: '^[0-9a-f]{64}$' })),
 		documentSha256: Type.Optional(Type.String({ pattern: '^[0-9a-f]{64}$' })),
-		invalidationCount: Type.Optional(Type.Integer({ minimum: 0 })),
 		storageUsageBytes: Type.Optional(Type.Integer({ minimum: 0 })),
 		storageQuotaBytes: Type.Optional(Type.Integer({ minimum: 0 })),
 	},
@@ -70,10 +65,9 @@ const EvidenceCellSchema = Type.Object(
 		id: EvidenceCellIdSchema,
 		injection: Type.Union([
 			Type.Literal('none'),
-			Type.Literal('tab-close'),
+			Type.Literal('second-owner'),
 			Type.Literal('worker-close'),
 			Type.Literal('browser-relaunch'),
-			Type.Literal('hidden-tab'),
 			Type.Literal('cdp-freeze'),
 			Type.Literal('cdp-quota'),
 		]),
@@ -95,7 +89,7 @@ const EvidenceCellSchema = Type.Object(
 
 export const BrowserEngineEvidenceSchema = Type.Object(
 	{
-		schemaVersion: Type.Literal('epicenter-browser-engine-evidence/v1'),
+		schemaVersion: Type.Literal('epicenter-browser-engine-evidence/v2'),
 		kind: Type.Literal('epicenter-browser-engine-evidence'),
 		scope: Type.Literal('pre-physical-browser-engine'),
 		decisionEligible: Type.Literal(false),
@@ -131,7 +125,7 @@ export const BrowserEngineEvidenceSchema = Type.Object(
 		features: Type.Object(
 			{
 				secureContext: Type.Boolean(),
-				sharedWorker: Type.Boolean(),
+				dedicatedWorker: Type.Boolean(),
 				opfs: Type.Boolean(),
 				webLocks: Type.Boolean(),
 				syncAccessHandle: Type.Boolean(),
@@ -268,14 +262,12 @@ export function evidenceInjectionFor(
 	id: EvidenceCellId,
 ): EvidenceCell['injection'] {
 	switch (id) {
-		case 'tab-close-continuity':
-			return 'tab-close';
+		case 'second-owner-refusal':
+			return 'second-owner';
 		case 'worker-termination-lock-handoff':
 			return 'worker-close';
 		case 'persistent-profile-relaunch':
 			return 'browser-relaunch';
-		case 'hidden-tab-continuity':
-			return 'hidden-tab';
 		case 'synthetic-page-freeze':
 			return 'cdp-freeze';
 		case 'synthetic-quota-refusal':
@@ -292,7 +284,7 @@ function durationBetween(startedAt: string, endedAt: string): number {
 function passedCellWitnessIssues(cell: EvidenceCell): string[] {
 	if (!isMandatoryEvidenceCell(cell.id)) {
 		return [
-			`passed optional cell '${cell.id}' has no frozen v1 witness contract`,
+			`passed optional cell '${cell.id}' has no frozen v2 witness contract`,
 		];
 	}
 	const issues: string[] = [];
@@ -313,32 +305,18 @@ function passedCellWitnessIssues(cell: EvidenceCell): string[] {
 				);
 			}
 			break;
-		case 'concurrent-tabs-invalidation':
-			if (cell.proofs.invalidationCount !== 12) {
-				issues.push(
-					`passed cell '${cell.id}' requires exactly 12 invalidations`,
-				);
-			}
+		case 'second-owner-refusal':
 			if (
-				parameter(cell, 'peerSemanticSha256') !== cell.proofs.semanticSha256
+				parameter(cell, 'refusalMessage') !==
+				'Browser Epicenter is already open in another tab for this origin'
 			) {
-				issues.push(`passed cell '${cell.id}' requires its peer witness`);
+				issues.push(`passed cell '${cell.id}' requires the owner refusal`);
 			}
 			break;
 		case 'hung-sync-continuity':
 			if (!hasHungSyncContinuityWitness(cell)) {
 				issues.push(
-					`passed cell '${cell.id}' requires a pending exchange and two distinct writes witnessed exactly once`,
-				);
-			}
-			break;
-		case 'tab-close-continuity':
-			if (
-				parameter(cell, 'claim') !== 'surviving-tab-continuity-only' ||
-				parameter(cell, 'cleanup') !== 'controlled-worker-close'
-			) {
-				issues.push(
-					`passed cell '${cell.id}' requires its continuity-only claim`,
+					`passed cell '${cell.id}' requires a pending exchange and one same-owner write witnessed exactly once`,
 				);
 			}
 			break;
@@ -353,11 +331,6 @@ function passedCellWitnessIssues(cell: EvidenceCell): string[] {
 				);
 			}
 			break;
-		case 'hidden-tab-continuity':
-			if (parameter(cell, 'visibilityState') !== 'hidden') {
-				issues.push(`passed cell '${cell.id}' requires hidden visibility`);
-			}
-			break;
 		default:
 			break;
 	}
@@ -366,16 +339,12 @@ function passedCellWitnessIssues(cell: EvidenceCell): string[] {
 
 function hasHungSyncContinuityWitness(cell: EvidenceCell): boolean {
 	const sameTabRowId = parameter(cell, 'sameTabRowId');
-	const peerRowId = parameter(cell, 'peerRowId');
 	return (
 		parameter(cell, 'exchangeStarted') === true &&
 		parameter(cell, 'exchangePending') === true &&
 		isRowId(sameTabRowId) &&
-		isRowId(peerRowId) &&
-		sameTabRowId !== peerRowId &&
 		parameter(cell, 'sameTabRowOccurrences') === 1 &&
-		parameter(cell, 'peerRowOccurrences') === 1 &&
-		parameter(cell, 'claim') === 'local-rpc-continuity-only'
+		parameter(cell, 'claim') === 'same-owner-local-rpc-continuity-only'
 	);
 }
 

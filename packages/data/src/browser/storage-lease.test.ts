@@ -5,29 +5,21 @@ import {
 	type LockManagerPort,
 } from './storage-lease.js';
 
-test('aborting a pending lease acquisition cancels the lock request', async () => {
+test('an already-aborted acquisition never requests the lock', async () => {
 	let callbackRan = false;
 	const locks: LockManagerPort = {
-		async request(_name, options, callback) {
-			const signal = options.signal;
-			if (signal === undefined) throw new Error('Expected an abort signal');
-			await new Promise<void>((_resolve, reject) => {
-				signal.addEventListener('abort', () => reject(signal.reason), {
-					once: true,
-				});
-			});
+		async request(_name, _options, callback) {
 			callbackRan = true;
-			await callback();
+			await callback({});
 		},
 	};
 	const controller = new AbortController();
-	const acquiring = acquireBrowserStorageLease(locks, {
-		signal: controller.signal,
-	});
 	const cause = new Error('Caller disconnected');
-
 	controller.abort(cause);
-	await expect(acquiring).rejects.toBe(cause);
+
+	await expect(
+		acquireBrowserStorageLease(locks, { signal: controller.signal }),
+	).rejects.toBe(cause);
 	expect(callbackRan).toBe(false);
 });
 
@@ -35,7 +27,7 @@ test('aborting after acquisition retains the lock until explicit release', async
 	const lockCompleted = Promise.withResolvers<void>();
 	const locks: LockManagerPort = {
 		async request(_name, _options, callback) {
-			await callback();
+			await callback({});
 			lockCompleted.resolve();
 		},
 	};
@@ -54,4 +46,16 @@ test('aborting after acquisition retains the lock until explicit release', async
 
 	await lease.release();
 	expect(completed).toBe(true);
+});
+
+test('a second owner is refused instead of waiting behind the active tab', async () => {
+	const locks: LockManagerPort = {
+		async request(_name, _options, callback) {
+			await callback(null);
+		},
+	};
+
+	await expect(acquireBrowserStorageLease(locks)).rejects.toThrow(
+		'Browser Epicenter is already open in another tab for this origin',
+	);
 });

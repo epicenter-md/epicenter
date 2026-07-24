@@ -6,7 +6,7 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./browser": "./src/browser.ts",
-		"./browser-worker": "./src/browser-worker.ts",
+		"./browser-dedicated-worker": "./src/browser-dedicated-worker.ts",
 		"./bun": "./src/bun.ts",
 		"./desktop": "./src/desktop.ts",
 		"./desktop-owner": "./src/desktop-owner.ts",
