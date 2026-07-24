@@ -68,7 +68,6 @@ import {
 	rateLimit,
 	requireBearerPrincipal,
 	ServerBindings,
-	withDocumentAuthorizationDeadline,
 } from '@epicenter/server/bun';
 import { type } from 'arktype';
 import { resolveSelfHostTrustedOrigins } from './trusted-origins.js';
@@ -182,9 +181,6 @@ export function startSelfHostServer(): void {
 	mountRoomsApp(app, { resolveBearerPrincipal });
 	mountBunEpicenterSyncApp(app, {
 		auth,
-		resolveDocumentPrincipal: withDocumentAuthorizationDeadline(
-			resolveBearerPrincipal,
-		),
 		runtime: epicenterSync,
 	});
 	// The AttachRelay upgrade (`/attach`), WS-aware and gated by a per-device grant
@@ -250,14 +246,12 @@ export function startSelfHostServer(): void {
 		// without blending their state.
 		websocket: mergeBunWebSocketHandlers({
 			rooms: bunRooms.websocket,
-			documents: epicenterSync.websocket,
 			attach: attachRelay.websocket,
 		}),
 	});
 	// `server` only exists once `Bun.serve` returns; hand it to both backends so
 	// each `handleUpgrade` can call `server.upgrade` on the shared server.
 	bunRooms.bindServer(server);
-	epicenterSync.bindServer(server);
 	attachRelay.bindServer(server);
 
 	// Close authority databases and their sockets before the process dies so WAL

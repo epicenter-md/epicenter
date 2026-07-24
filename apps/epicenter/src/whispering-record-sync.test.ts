@@ -14,7 +14,6 @@ import {
 } from '@epicenter/server/bun';
 import { whisperingDefinitions } from '@epicenter/whispering/workspace-contract';
 import { type Context, Hono, type Next } from 'hono';
-import { Ok } from 'wellcrafted/result';
 
 const PRINCIPAL_ID = 'whispering-test-person';
 
@@ -31,11 +30,6 @@ test('offline Whispering scalar edits converge in both directions', async () => 
 			context.set('principal', Principal.assert({ id: PRINCIPAL_ID }));
 			await next();
 		},
-		resolveDocumentPrincipal: async () =>
-			Ok({
-				principal: Principal.assert({ id: PRINCIPAL_ID }),
-				authorizationExpiresAt: Date.now() + 60_000,
-			}),
 	});
 	const exchange = async (request: unknown) => {
 		if (!online) throw new Error('Simulated offline transport');

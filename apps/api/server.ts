@@ -64,13 +64,10 @@ import {
 	mountRoomsApp,
 	mountSessionApp,
 	type ResolveBearerPrincipal,
-	type ResolveDocumentPrincipal,
 	requireBearerPrincipal,
 	requireCookieOrBearerPrincipal,
-	resolveRequestOAuthDocumentAuthorization,
 	resolveRequestOAuthPrincipal,
 	ServerBindings,
-	withDocumentAuthorizationDeadline,
 } from '@epicenter/server/bun';
 import { type } from 'arktype';
 import pg from 'pg';
@@ -116,7 +113,6 @@ const ApiBunBindings = ServerBindings.merge(CloudAuthBindings).merge({
 export function startBunApiServer(
 	opts: {
 		resolveBearerPrincipal?: ResolveBearerPrincipal<CloudEnv>;
-		resolveDocumentPrincipal?: ResolveDocumentPrincipal<CloudEnv>;
 	} = {},
 ): void {
 	// Validate this Bun host's environment once, at boot. The validated result IS
@@ -164,11 +160,6 @@ export function startBunApiServer(
 	// keeps the real OAuth bearer resolver. Each protected wrapper closes over it.
 	const resolveBearerPrincipal =
 		opts.resolveBearerPrincipal ?? resolveRequestOAuthPrincipal;
-	const resolveDocumentPrincipal =
-		opts.resolveDocumentPrincipal ??
-		(opts.resolveBearerPrincipal
-			? withDocumentAuthorizationDeadline(opts.resolveBearerPrincipal)
-			: resolveRequestOAuthDocumentAuthorization);
 	const cookieOrBearer = requireCookieOrBearerPrincipal(resolveBearerPrincipal);
 	const bearer = requireBearerPrincipal(resolveBearerPrincipal);
 	const serveAuthUiShell = () =>
@@ -206,7 +197,6 @@ export function startBunApiServer(
 	mountRoomsApp(app, { resolveBearerPrincipal });
 	mountBunEpicenterSyncApp(app, {
 		auth: bearer,
-		resolveDocumentPrincipal,
 		runtime: epicenterSync,
 	});
 	mountInferenceApp(app, { auth: bearer });
@@ -221,13 +211,11 @@ export function startBunApiServer(
 		fetch: (req) => app.fetch(req, env),
 		websocket: mergeBunWebSocketHandlers({
 			rooms: bunRooms.websocket,
-			documents: epicenterSync.websocket,
 		}),
 	});
 	// `server` only exists once `Bun.serve` returns; hand it to the room registry
 	// so `handleUpgrade` can call `server.upgrade`.
 	bunRooms.bindServer(server);
-	epicenterSync.bindServer(server);
 
 	// Close authority databases and their sockets before the process dies so WAL
 	// checkpoints land and clients see a clean 1001 instead of a dropped TCP.

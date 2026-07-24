@@ -19,7 +19,7 @@ import {
 import type { SyncCredentialProvider } from '@epicenter/data';
 import { createDesktopEpicenterOwner } from '@epicenter/data/desktop-owner';
 import { parseExchangeResponse } from '@epicenter/data/protocol';
-import { connectRowDocument } from '@epicenter/document-sync';
+import { createHttpDocumentTransports } from '@epicenter/document-sync';
 import { loadActiveAppCatalog } from './app-catalog.ts';
 import {
 	createDesktopAuthAuthority,
@@ -73,20 +73,8 @@ async function main(): Promise<void> {
 		if (auth.bootSnapshot.state.status === 'signed-in') {
 			await documentCredentials.refresh(auth);
 		}
-		const nodeId = crypto.randomUUID();
 		dataOwner = await createDesktopEpicenterOwner({
 			directory: join(epicenterDataDir, 'data'),
-			...(auth.bootSnapshot.state.status === 'signed-in'
-				? {
-						connectDocument: (document) =>
-							connectRowDocument({
-								document,
-								baseUrl: auth.baseURL,
-								credentials: documentCredentials,
-								nodeId,
-							}),
-					}
-				: {}),
 		});
 		if (auth.bootSnapshot.state.status === 'signed-in') {
 			const syncUrl = new URL('/api/sync/v1', auth.baseURL);
@@ -108,6 +96,13 @@ async function main(): Promise<void> {
 					if (parsed.error !== null) throw parsed.error;
 					return parsed.data;
 				},
+				...createHttpDocumentTransports({
+					baseUrl: auth.baseURL,
+					fetch: async (url, init) => {
+						await documentCredentials.refresh(auth);
+						return authorityFetch(url, init);
+					},
+				}),
 			});
 			if (attached.error !== null) throw attached.error;
 		}

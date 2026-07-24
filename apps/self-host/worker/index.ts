@@ -36,7 +36,6 @@ import {
 	Room,
 	rateLimit,
 	requireBearerPrincipal,
-	withDocumentAuthorizationDeadline,
 } from '@epicenter/server';
 import { resolveSelfHostTrustedOrigins } from '../trusted-origins.js';
 
@@ -85,9 +84,6 @@ mountSessionApp(app, { auth });
 mountRoomsApp(app, { resolveBearerPrincipal });
 mountCloudflareEpicenterSyncApp(app, {
 	auth,
-	resolveDocumentPrincipal: withDocumentAuthorizationDeadline(
-		resolveBearerPrincipal,
-	),
 	resolveNamespace: (env) =>
 		(
 			env as Cloudflare.Env & {

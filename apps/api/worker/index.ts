@@ -34,7 +34,6 @@ import {
 	Room,
 	requireBearerPrincipal,
 	requireCookieOrBearerPrincipal,
-	resolveRequestOAuthDocumentAuthorization,
 	resolveRequestOAuthPrincipal,
 	type ServerBindings,
 } from '@epicenter/server';
@@ -140,7 +139,6 @@ mountCloudAuth(app, {
 mountSessionApp(app, { auth: cookieOrBearer });
 mountCloudflareEpicenterSyncApp(app, {
 	auth: bearer,
-	resolveDocumentPrincipal: resolveRequestOAuthDocumentAuthorization,
 	resolveNamespace: (env) =>
 		(
 			env as Cloudflare.Env & {
