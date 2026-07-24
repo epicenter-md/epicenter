@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-20
+- **Amended by:** [ADR-0177](0177-a-browser-replica-is-owned-by-a-storage-partition-and-origin-pair.md) — "origin" below names the ownership boundary imprecisely. The replica is owned by the storage partition the user agent resolves for the document paired with its origin, so two documents on the same origin in different partitions own independent replicas. Everything else here (one page, one DedicatedWorker, one Web Lock, immediate refusal, no coordination protocol) is unchanged.
 - **Relates:** [ADR-0161](0161-each-person-has-one-epicenter-replicated-on-each-adapter-boundary.md)
 
 ## Context
