@@ -5,13 +5,26 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import { Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 
 import { type Replica, ReplicaError } from './replica/index.js';
 
 const COMPACTION_THRESHOLD = 64;
 const PUBLISH_CONCURRENCY = 4;
 const hydrationOrigin = Object.freeze({ kind: 'epicenter-document-hydration' });
+
+/**
+ * Adapt one SQLite operation the drain owns. Every one of them fails for the
+ * same reason and reports the same way, which is what keeps the drain's other
+ * boundary, the carrier, visibly separate.
+ */
+function drainStorage<T>(run: () => T): Result<T, ReplicaError> {
+	return trySync({
+		try: run,
+		catch: (cause) =>
+			ReplicaError.StorageFailed({ operation: 'document-drain', cause }),
+	});
+}
 
 /**
  * The one transaction origin that marks an applied update as authority
@@ -158,8 +171,14 @@ export type RowDocument = {
 	/**
 	 * Explicitly fetch newer authority-accepted state for this open document.
 	 * Never publishes local work, never blocks local editing, and is safe to
-	 * call repeatedly; overlapping calls share one in-flight pull. A failure
-	 * leaves the locally durable document open and usable (ADR-0174).
+	 * call repeatedly; overlapping calls share one in-flight pull.
+	 *
+	 * Two channels, deliberately. An `Err` is a sync outcome the caller can
+	 * live with: it leaves the locally durable document open and usable
+	 * (ADR-0174). A rejection means this handle can no longer be used at all,
+	 * because it was disposed, revoked, or durable storage refused the
+	 * accepted state and closed the handle to protect what is already
+	 * committed.
 	 */
 	pull(): Promise<Result<void, DocumentPullError>>;
 	/** The durable terminal publication issue for this address, if any. */
@@ -413,15 +432,19 @@ export function createDocumentRuntime({
 			try {
 				const transport = getPullTransport?.();
 				if (transport === undefined) return DocumentPullError.NotAttached();
-				let response: DocumentPullResponse;
-				try {
-					response = await transport({
-						address: { ...entry.address },
-						sinceVersion: entry.pulledVersion,
-					});
-				} catch (cause) {
-					return DocumentPullError.TransportFailed({ cause });
-				}
+				// Only the carrier call is adapted. Applying the response below
+				// must stay outside this wrapper: a refused local append is a
+				// durability failure that revokes the handle, not a retryable
+				// transport failure.
+				const { data: response, error: transportError } = await tryAsync({
+					try: async () =>
+						transport({
+							address: { ...entry.address },
+							sinceVersion: entry.pulledVersion,
+						}),
+					catch: (cause) => DocumentPullError.TransportFailed({ cause }),
+				});
+				if (transportError !== null) return Err(transportError);
 				// A pull that resolves after disposal or revocation must not
 				// mutate the document; its result is simply dropped.
 				if (!isEntryCurrent(entry)) return Ok(undefined);
@@ -532,47 +555,57 @@ export function createDocumentRuntime({
 			return () => publicationDirtyListeners.delete(listener);
 		},
 		/**
-		 * Publish every currently dirty address once through the supplied
+		 * Attempt every currently dirty address once through the supplied
 		 * carrier with bounded concurrency: capture the current state and
 		 * revision, transport it, and settle or record the outcome. One pass
 		 * per call; the supervisor owns wake pacing, coalescing, and retry.
+		 *
+		 * The pass is a bounded attempt, not a guaranteed visit: the first
+		 * transport failure stops workers from claiming further addresses, and
+		 * disposal ends the pass wherever it stands. Whatever went unvisited
+		 * stays durably dirty for the next one.
 		 */
 		async drainPublications(
 			publish: PublishDocument,
 		): Promise<Result<void, ReplicaError>> {
-			let queue: DocumentAddress[];
-			try {
-				queue = runtime.publication.listDirty();
-			} catch (cause) {
-				return ReplicaError.StorageFailed({ operation: 'document-drain', cause });
-			}
-			let transportFailure: { cause: unknown } | undefined;
-			let storageFailure: { cause: unknown } | undefined;
+			const { data: queue, error: listError } = drainStorage(() =>
+				runtime.publication.listDirty(),
+			);
+			if (listError !== null) return Err(listError);
+			// One pass returns one failure, so each kind keeps its first. They
+			// stay separate because only a transport failure earns network
+			// backoff from the supervisor.
+			let transportFailure: ReplicaError | undefined;
+			let storageFailure: ReplicaError | undefined;
 			const workers = Array.from(
 				{ length: Math.min(PUBLISH_CONCURRENCY, queue.length) },
 				async () => {
 					while (transportFailure === undefined && !isDisposed) {
 						const address = queue.shift();
 						if (address === undefined) return;
-						let captured: { update: Uint8Array; revision: number } | undefined;
-						try {
-							captured = runtime.publication.capture(address);
-						} catch (cause) {
-							// One unreadable address must not starve the other dirty
-							// addresses; the failure is reported after the pass.
-							storageFailure ??= { cause };
+						const { data: captured, error: captureError } = drainStorage(() =>
+							runtime.publication.capture(address),
+						);
+						if (captureError !== null) {
+							// One address this pass cannot read must not starve the
+							// others; the failure is reported after the pass.
+							storageFailure ??= captureError;
 							continue;
 						}
 						if (captured === undefined) continue;
-						let outcome: DocumentPublishOutcome;
-						try {
-							outcome = await publish({ address, update: captured.update });
-						} catch (cause) {
-							transportFailure ??= { cause };
+						const { data: outcome, error: publishError } = await tryAsync({
+							try: async () => publish({ address, update: captured.update }),
+							catch: (cause) => ReplicaError.TransportFailed({ cause }),
+						});
+						if (publishError !== null) {
+							transportFailure ??= publishError;
 							return;
 						}
 						if (isDisposed) return;
-						try {
+						// Both settlement writes mean one thing when they fail, so
+						// they share a wrapper; the publish above keeps its own so a
+						// refused write is never reported as network trouble.
+						const { error: settlementError } = drainStorage(() => {
 							switch (outcome) {
 								case 'accepted':
 									runtime.publication.settle(address, captured.revision);
@@ -587,22 +620,14 @@ export function createDocumentRuntime({
 								default:
 									outcome satisfies never;
 							}
-						} catch (cause) {
-							storageFailure ??= { cause };
-						}
+						});
+						if (settlementError !== null) storageFailure ??= settlementError;
 					}
 				},
 			);
 			await Promise.all(workers);
-			if (transportFailure !== undefined) {
-				return ReplicaError.TransportFailed(transportFailure);
-			}
-			if (storageFailure !== undefined) {
-				return ReplicaError.StorageFailed({
-					operation: 'document-drain',
-					cause: storageFailure.cause,
-				});
-			}
+			if (transportFailure !== undefined) return Err(transportFailure);
+			if (storageFailure !== undefined) return Err(storageFailure);
 			return Ok(undefined);
 		},
 		/**

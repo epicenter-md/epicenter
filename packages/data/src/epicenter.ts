@@ -259,7 +259,14 @@ export function createEpicenter({
 			if (!ids.includes(change.rowId)) ids.push(change.rowId);
 			changedRows.set(change.key, ids);
 			const current = replica.readRow(change.key, change.rowId);
-			if (current.error === null && current.data === undefined) {
+			if (current.error !== null) {
+				// Liveness is unknowable this pass, so the open document keeps
+				// running rather than being revoked on a guess. Reported because
+				// this read is what a pull's `RowNotLive` is waiting on: left
+				// silent, a document the authority already called dead would stay
+				// open with nothing to say why.
+				log.error(current.error);
+			} else if (current.data === undefined) {
 				documents.revoke({ key: change.key, rowId: change.rowId });
 			}
 		}
