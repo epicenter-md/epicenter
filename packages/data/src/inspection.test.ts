@@ -19,6 +19,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { field } from '@epicenter/field';
+import { Type } from 'typebox';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 
 import { openBunEpicenter } from './bun.js';
@@ -43,6 +44,10 @@ const notesTable = defineTable({
 		title: field.string(),
 		pinned: field.boolean(),
 		wordCount: optional(field.number()),
+		tags: optional(field.tags()),
+		metadata: optional(
+			field.json(Type.Object({ score: Type.Number(), source: Type.String() })),
+		),
 	},
 });
 
@@ -152,6 +157,8 @@ describe('friendly Lens tables', () => {
 				'title',
 				'pinned',
 				'wordCount',
+				'tags',
+				'metadata',
 			]);
 			expect(result.rows[0]?.title).toBe('First');
 			// A boolean arrives as SQLite's 1/0, and an absent optional as NULL.
@@ -212,8 +219,8 @@ describe('friendly Lens tables', () => {
 		}
 	});
 
-	test('a nonconforming stored value surfaces as NULL, not as the wrong type', async () => {
-		await seed();
+	test('a nonconforming stored value remains visible while typed reads reject it', async () => {
+		const { data, first } = await seed();
 		// Write a number where the Lens declares text, behind the typed API.
 		const writer = new Database(path);
 		writer.run(
@@ -229,17 +236,86 @@ describe('friendly Lens tables', () => {
 			const titles = expectOk(
 				inspection.query('SELECT title FROM notes ORDER BY id'),
 			).rows.map((row) => row.title);
-			expect(titles).toContain(null);
-			expect(titles).not.toContain(42);
+			expect(titles).toContain(42);
 
-			// The raw relation still shows exactly what is stored.
-			const raw = expectOk(
-				inspection.query(
-					`SELECT fields_json FROM _epicenter_rows
-					 WHERE json_extract(fields_json, '$.title') = 42`,
-				),
+			// Inspection names and extracts fields; only the typed Lens API certifies
+			// that a row conforms and reports why this one does not.
+			expect((await data.tables.notes.get(first.id)).error?.name).toBe(
+				'NonconformingRow',
 			);
-			expect(raw.rows).toHaveLength(1);
+		} finally {
+			inspection.close();
+		}
+	});
+
+	test('arrays and objects project as composable JSON text', async () => {
+		const data = epicenter.bind(lens);
+		await data.tables.notes.create({
+			title: 'Structured',
+			pinned: true,
+			tags: ['local', 'important'],
+			metadata: { score: 7, source: 'import' },
+		});
+
+		const inspection = expectOk(openInspection({ path }));
+		try {
+			expectOk(inspection.selectLens(lens));
+			expect(
+				expectOk(
+					inspection.query(
+						`SELECT json_each.value AS tag
+						 FROM notes, json_each(notes.tags)
+						 ORDER BY tag`,
+					),
+				).rows,
+			).toEqual([{ tag: 'important' }, { tag: 'local' }]);
+			expect(
+				expectOk(
+					inspection.query(
+						`SELECT json_extract(metadata, '$.score') AS score
+						 FROM notes`,
+					),
+				).rows,
+			).toEqual([{ score: 7 }]);
+		} finally {
+			inspection.close();
+		}
+	});
+
+	test('friendly NULL collapses missing and JSON null while raw JSON distinguishes them', async () => {
+		await seed();
+		const writer = new Database(path);
+		writer.run(
+			`UPDATE main._replica_row_facts
+			 SET fields = json_set(fields, '$.wordCount', NULL)
+			 WHERE json_extract(fields, '$.title') = 'Second'`,
+		);
+		writer.close();
+
+		const inspection = expectOk(openInspection({ path }));
+		try {
+			expectOk(inspection.selectLens(lens));
+			expect(
+				expectOk(
+					inspection.query('SELECT title, wordCount FROM notes ORDER BY title'),
+				).rows,
+			).toEqual([
+				{ title: 'First', wordCount: null },
+				{ title: 'Second', wordCount: null },
+			]);
+			expect(
+				expectOk(
+					inspection.query(
+						`SELECT json_extract(fields_json, '$.title') AS title,
+						        json_type(fields_json, '$.wordCount') AS stored_type
+						 FROM _epicenter_rows
+						 ORDER BY title`,
+					),
+				).rows,
+			).toEqual([
+				{ title: 'First', stored_type: null },
+				{ title: 'Second', stored_type: 'null' },
+			]);
 		} finally {
 			inspection.close();
 		}

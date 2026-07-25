@@ -34,9 +34,7 @@
  * document bytes, and the raw relations are not a complete portable artifact.
  */
 import { Database } from 'bun:sqlite';
-import { recognize, storageOf } from '@epicenter/field';
 import type { SqliteValue } from '@epicenter/sqlite';
-import type { TSchema } from 'typebox';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -114,42 +112,21 @@ function quoteLiteral(value: string): string {
 }
 
 /**
- * The SQL for one declared field, guarded by its declared storage class.
+ * The SQL for one declared field.
  *
- * A stored value of the wrong JSON type surfaces as NULL rather than as itself.
- * A `title` column declared as text should not quietly show `42` because some
- * writer stored a number there: the friendly view claims the row conforms to the
- * Lens, and a value that does not conform has no honest cell to sit in. The raw
- * relation is where that row can still be seen exactly as stored.
+ * A friendly view is a Lens-addressed extraction, not a second validator.
+ * Whatever is stored appears as SQLite's natural JSON extraction type, including
+ * a value that does not conform to the selected Lens. Complete conformance stays
+ * owned by the typed Lens API, which can report structured issues instead of
+ * collapsing them into SQL NULL.
  *
  * Field names are constrained to `[A-Za-z][A-Za-z0-9_]*` at declaration, which
- * is what makes the generated JSON path safe to build by concatenation. The
- * column alias is quoted anyway, because quoting an identifier costs nothing and
- * removes the need to re-derive that argument at every read.
+ * makes the generated JSON path safe to build by concatenation. The column alias
+ * remains quoted because quoting an identifier costs nothing.
  */
-function fieldColumnSql(fieldName: string, schema: TSchema): string {
+function fieldColumnSql(fieldName: string): string {
 	const path = `'$.${fieldName}'`;
-	const extracted = `json_extract(f.fields, ${path})`;
-	const jsonType = `json_type(f.fields, ${path})`;
-	const recognized = recognize(schema);
-	const admitted =
-		recognized === null
-			? undefined
-			: storageOf(recognized.kind) === 'INTEGER'
-				? // `boolean` and `integer` both store as INTEGER, and JSON spells a
-					// boolean as its own type rather than as a number.
-					`(${jsonType}) IN ('integer', 'true', 'false')`
-				: storageOf(recognized.kind) === 'REAL'
-					? `(${jsonType}) IN ('integer', 'real')`
-					: `(${jsonType}) = 'text'`;
-	const guarded =
-		admitted === undefined
-			? // An unrecognized schema (the open `json` escape kind, or a schema this
-				// build does not classify) has no single storage class to guard, so the
-				// value passes through as stored.
-				extracted
-			: `CASE WHEN ${admitted} THEN ${extracted} END`;
-	return `${guarded} AS ${quoteIdentifier(fieldName)}`;
+	return `json_extract(f.fields, ${path}) AS ${quoteIdentifier(fieldName)}`;
 }
 
 /**
@@ -319,9 +296,7 @@ function createInspection(database: Database, bounds: InspectionBounds) {
 						for (const [tableName, definition] of Object.entries(lens.tables)) {
 							const columns = [
 								'f.row_id AS "id"',
-								...Object.entries(definition.fields).map(
-									([fieldName, schema]) => fieldColumnSql(fieldName, schema),
-								),
+								...Object.keys(definition.fields).map(fieldColumnSql),
 							];
 							database.run(
 								`CREATE TEMP VIEW ${quoteIdentifier(tableName)} AS

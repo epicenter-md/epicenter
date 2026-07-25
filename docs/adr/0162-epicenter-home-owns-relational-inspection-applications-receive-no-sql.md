@@ -80,10 +80,17 @@ my notes", and a tombstone is not a note. Deleted rows stay inspectable through
 `_epicenter_rows`, where absence is stated as data rather than hidden by a
 filter. There are no `includeDeleted` flags and no alternate view flavors.
 
-Columns are guarded by the declared field kind. Missing, JSON null, and
-wrong-base-type values project to SQL `NULL`, so a friendly table never presents
-a nonconforming value as though it conformed; the raw relation shows it exactly
-as stored.
+Friendly columns are Lens-addressed extraction, not validation. Each declared
+field projects `json_extract(fields, '$.<name>')` under its own name, so values
+appear as stored even when they do not conform to the selected Lens. The typed
+Lens API remains the sole conformance authority and can return structured issues
+instead of collapsing nonconformance into SQL `NULL`.
+
+SQLite extraction maps both a missing key and explicit JSON null to SQL `NULL`.
+The raw relation remains the honest fallback when that distinction matters:
+`json_type(fields_json, '$.<name>')` returns SQL `NULL` for a missing key and the
+text `'null'` for explicit JSON null. Arrays and objects project as JSON text and
+remain composable with SQLite JSON functions.
 
 The owner quotes every generated identifier. Beyond quoting, a Lens table name
 must be usable as a bare relation with no quoting at all, so admission refuses
@@ -142,6 +149,8 @@ may observe intervening committed writes or synchronized facts.
   arbitrary SQL or stabilizing the private live schema.
 - Friendly queries can use table-shaped relations without making release-local
   Lens columns durable storage schema.
+- Friendly view generation depends only on durable field names, so release-local
+  schema refinements do not change what inspection displays.
 - Raw queries can always address honest namespace, table, value, and row
   coordinates, including unknown and nonconforming data.
 - Multiple application Lenses remain independent from the one Home inspection
@@ -174,6 +183,12 @@ may observe intervening committed writes or synchronized facts.
 - **Expose only the raw relations.** Rejected because making every human and
   agent query repeat JSON extraction hides the relational interpretation Home
   already possesses.
+- **Guard friendly columns by declared field kind.** Rejected because a base-type
+  guard is a second, partial validator beside the compiled Lens validator. It
+  cannot enforce refinements such as enum membership, formats, patterns, or list
+  constraints, and it must be kept synchronized with every field kind. It also
+  confuses a materialized column's storage class with the JSON value type being
+  inspected, which incorrectly mapped array and arbitrary-JSON fields to text.
 - **Open one SQLite connection per Lens.** Rejected because Lens interpretation
   does not deserve another database owner. Browser SAH-pool storage also
   permits only one simultaneous connection, but the one-interpretation rule
