@@ -5,7 +5,13 @@
  * universal row-document capability directly from inert definitions.
  */
 import { field } from '@epicenter/field';
-import { defineTable, type Epicenter, optional, type RowFor } from './index.js';
+import {
+	defineLens,
+	defineTable,
+	type Epicenter,
+	optional,
+	type RowFor,
+} from './index.js';
 
 type Equal<TLeft, TRight> =
 	(<TValue>() => TValue extends TLeft ? 1 : 2) extends <
@@ -16,7 +22,6 @@ type Equal<TLeft, TRight> =
 type Expect<TValue extends true> = TValue;
 
 const ordinary = defineTable({
-	key: 'so.epicenter.types.ordinary',
 	fields: {
 		title: field.string(),
 		note: optional(field.string()),
@@ -31,10 +36,13 @@ export type _RowDerivesRequiredAndOptionalFields = Expect<
 >;
 
 declare const epicenter: Epicenter;
-const bound = epicenter.bind({
-	tables: { ordinary },
-	values: {},
-});
+const bound = epicenter.bind(
+	defineLens({
+		namespace: 'so.epicenter.types',
+		tables: { ordinary },
+		values: {},
+	}),
+);
 
 // Every table lens exposes the row-owned document at the row's own address.
 await bound.tables.ordinary.openDocument('aaaaaaaaaaaaaaaaaaaaaaaa');

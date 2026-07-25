@@ -11,10 +11,14 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 
 import {
+	DATA_ADDRESS_CEILINGS,
 	isJsonValue,
+	isLocalKey,
+	isNamespace,
 	type JsonObject,
 	type JsonValue,
-	parseQualifiedKey,
+	type RowAddress,
+	type ValueAddress,
 } from './protocol/index.js';
 
 type FieldSchemas = Record<string, TSchema>;
@@ -36,21 +40,44 @@ export type FieldsFor<TFields extends FieldSchemas> = {
 
 declare const tableDefinitionParts: unique symbol;
 declare const valueDefinitionParts: unique symbol;
+declare const lensParts: unique symbol;
 
 export type TableDefinition<TFields extends FieldSchemas = FieldSchemas> = {
-	key: string;
 	fields: TFields;
 	[tableDefinitionParts]: { fields: TFields };
 };
 
 export type ValueDefinition<TValueSchema extends TSchema = TSchema> = {
-	key: string;
 	value: TValueSchema;
 	[valueDefinitionParts]: TValueSchema;
 };
 
 export type TableDefinitions = Record<string, TableDefinition>;
 export type ValueDefinitions = Record<string, ValueDefinition>;
+
+/**
+ * One application's complete interpretation of one durable namespace
+ * (ADR-0160, ADR-0168).
+ *
+ * The namespace is declared exactly once, here. Each `tables` and `values`
+ * property name is the durable local key for that table or value: `notes` in
+ * `tables` addresses `{ kind: 'row', namespace, table: 'notes', rowId }`
+ * forever. There is no second `key` field to keep in step with the property
+ * name, and no rename operation: a different property name is a different
+ * address, and therefore different data.
+ *
+ * Row and value names occupy disjoint key spaces, so one namespace may declare
+ * both a `notes` table and a `notes` value.
+ */
+export type Lens<
+	TTables extends TableDefinitions = TableDefinitions,
+	TValues extends ValueDefinitions = ValueDefinitions,
+> = {
+	namespace: string;
+	tables: TTables;
+	values: TValues;
+	[lensParts]: { tables: TTables; values: TValues };
+};
 
 export type RowFor<TDefinition extends TableDefinition> =
 	TDefinition extends TableDefinition<infer TFields>
@@ -87,25 +114,30 @@ export type ConformanceIssue = {
 
 export const DataReadError = defineErrors({
 	NonconformingRow: ({
-		key,
-		id,
+		address,
 		raw,
 		issues,
 	}: {
-		key: string;
-		id: string;
+		address: RowAddress;
 		raw: JsonObject;
 		issues: readonly ConformanceIssue[];
 	}) => ({
-		message: `Stored row '${key}.${id}' does not satisfy the current definition`,
-		key,
-		id,
+		message: `Stored row '${address.namespace}/${address.table}/${address.rowId}' does not satisfy the current definition`,
+		address,
+		/** The structural row id, which is also `address.rowId`. */
+		id: address.rowId,
 		raw,
 		issues,
 	}),
-	NonconformingValue: ({ key, raw }: { key: string; raw: JsonValue }) => ({
-		message: `Stored value '${key}' does not satisfy the current definition`,
-		key,
+	NonconformingValue: ({
+		address,
+		raw,
+	}: {
+		address: ValueAddress;
+		raw: JsonValue;
+	}) => ({
+		message: `Stored value '${address.namespace}/${address.value}' does not satisfy the current definition`,
+		address,
 		raw,
 	}),
 });
@@ -132,7 +164,7 @@ export type CompiledTableDefinition = {
 	fields: ReadonlyMap<string, CompiledField>;
 	optional: ReadonlySet<string>;
 	project(
-		id: string,
+		address: RowAddress,
 		payload: JsonObject,
 	): Result<Record<string, unknown>, NonconformingRowError>;
 	validateCreate(input: Record<string, unknown>): JsonObject;
@@ -140,7 +172,10 @@ export type CompiledTableDefinition = {
 };
 
 export type CompiledValueDefinition = {
-	project(value: JsonValue): Result<unknown, NonconformingValueError>;
+	project(
+		address: ValueAddress,
+		value: JsonValue,
+	): Result<unknown, NonconformingValueError>;
 	validate(value: unknown): JsonValue;
 };
 
@@ -155,19 +190,17 @@ export function optional<TSchemaValue extends TSchema>(
 }
 
 export function defineTable<const TFields extends FieldSchemas>({
-	key,
 	fields: fieldsInput,
 }: {
-	key: string;
 	fields: TFields & { id?: never };
 }): TableDefinition<TFields> {
-	assertQualifiedKey(key);
 	assertPlainObject(fieldsInput, 'Table fields');
 	if (Object.keys(fieldsInput).some((name) => name.toLowerCase() === 'id')) {
 		throw new Error(
 			"Table definitions cannot declare the structural 'id' field",
 		);
 	}
+	assertNoCaseInsensitiveDuplicates(Object.keys(fieldsInput), 'field');
 
 	const fields: FieldSchemas = {};
 	const compiledFields = new Map<string, CompiledField>();
@@ -185,24 +218,20 @@ export function defineTable<const TFields extends FieldSchemas>({
 	}
 
 	const definition = Object.freeze({
-		key,
 		fields: Object.freeze(fields),
 	}) as TableDefinition<TFields>;
 	compiledTables.set(
 		definition,
-		createCompiledTable(key, compiledFields, optionalFields),
+		createCompiledTable(compiledFields, optionalFields),
 	);
 	return definition;
 }
 
 export function defineValue<const TSchemaValue extends TSchema>({
-	key,
 	value: authoredSchema,
 }: {
-	key: string;
 	value: TSchemaValue;
 }): ValueDefinition<TSchemaValue> {
-	assertQualifiedKey(key);
 	if (IsOptional(authoredSchema)) {
 		throw new Error('Singleton values cannot use optional(...)');
 	}
@@ -213,26 +242,70 @@ export function defineValue<const TSchemaValue extends TSchema>({
 	}
 	const check = compile(recognized.schema);
 	const definition = Object.freeze({
-		key,
 		value: freezeJson(schema),
 	}) as ValueDefinition<TSchemaValue>;
 	compiledValues.set(definition, {
-		project(value) {
+		project(address, value) {
 			return check(value)
 				? Ok(structuredClone(value))
 				: DataReadError.NonconformingValue({
-						key,
+						address,
 						raw: structuredClone(value),
 					});
 		},
 		validate(value) {
-			if (!check(value)) {
-				throw new TypeError(`Invalid value for '${key}'`);
-			}
+			if (!check(value)) throw new TypeError('Invalid singleton value');
 			return cloneJsonValue(value);
 		},
 	});
 	return definition;
+}
+
+/**
+ * Declare one application's interpretation of one durable namespace.
+ *
+ * Every table and value name must be usable as a SQL identifier, because a
+ * trusted inspection host mounts a selected Lens as logical relations named
+ * exactly after these properties (ADR-0162). SQL identifiers are
+ * case-insensitive, so two names differing only in case are refused here rather
+ * than colliding later at mount time.
+ */
+export function defineLens<
+	const TTables extends TableDefinitions,
+	const TValues extends ValueDefinitions,
+>({
+	namespace,
+	tables,
+	values,
+}: {
+	namespace: string;
+	tables: TTables;
+	values: TValues;
+}): Lens<TTables, TValues> {
+	if (!isNamespace(namespace, DATA_ADDRESS_CEILINGS)) {
+		throw new Error(
+			`Invalid namespace '${namespace}'; use two or more lowercase dot-separated labels`,
+		);
+	}
+	assertPlainObject(tables, 'Lens tables');
+	assertPlainObject(values, 'Lens values');
+	for (const [name, definition] of Object.entries(tables)) {
+		assertLocalKey(name, 'table');
+		compileTableDefinition(definition);
+	}
+	for (const [name, definition] of Object.entries(values)) {
+		assertLocalKey(name, 'value');
+		compileValueDefinition(definition);
+	}
+	// Row and value names live in disjoint address key spaces, so each kind is
+	// checked on its own rather than against one shared pool.
+	assertNoCaseInsensitiveDuplicates(Object.keys(tables), 'table');
+	assertNoCaseInsensitiveDuplicates(Object.keys(values), 'value');
+	return Object.freeze({
+		namespace,
+		tables: Object.freeze(tables),
+		values: Object.freeze(values),
+	}) as Lens<TTables, TValues>;
 }
 
 export function compileTableDefinition(
@@ -252,15 +325,14 @@ export function compileValueDefinition(
 }
 
 function createCompiledTable(
-	key: string,
 	fields: ReadonlyMap<string, CompiledField>,
 	optionalFields: ReadonlySet<string>,
 ): CompiledTableDefinition {
 	return {
 		fields,
 		optional: optionalFields,
-		project(id, payload) {
-			const projected: Record<string, unknown> = { id };
+		project(address, payload) {
+			const projected: Record<string, unknown> = { id: address.rowId };
 			const issues: ConformanceIssue[] = [];
 			for (const [name, field] of fields) {
 				if (!Object.hasOwn(payload, name)) {
@@ -287,8 +359,7 @@ function createCompiledTable(
 			return issues.length === 0
 				? Ok(projected)
 				: DataReadError.NonconformingRow({
-						key,
-						id,
+						address,
 						raw: structuredClone(payload),
 						issues,
 					});
@@ -334,9 +405,28 @@ function createCompiledTable(
 	};
 }
 
-function assertQualifiedKey(key: string): void {
-	if (parseQualifiedKey(key).error !== null) {
-		throw new Error(`Invalid qualified key '${key}'`);
+function assertLocalKey(name: string, label: 'table' | 'value'): void {
+	if (!isLocalKey(name, DATA_ADDRESS_CEILINGS)) {
+		throw new Error(
+			`Invalid ${label} name '${name}'; start with a letter and use letters, digits, and underscores`,
+		);
+	}
+}
+
+function assertNoCaseInsensitiveDuplicates(
+	names: readonly string[],
+	label: 'table' | 'value' | 'field',
+): void {
+	const seen = new Map<string, string>();
+	for (const name of names) {
+		const folded = name.toLowerCase();
+		const existing = seen.get(folded);
+		if (existing !== undefined) {
+			throw new Error(
+				`Ambiguous ${label} names '${existing}' and '${name}' differ only by case`,
+			);
+		}
+		seen.set(folded, name);
 	}
 }
 

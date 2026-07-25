@@ -10,6 +10,7 @@ import {
 	compileTableDefinition,
 	compileValueDefinition,
 	type DataReadError,
+	type Lens,
 	type NonconformingRowError,
 	type RowFor,
 	type TableDefinition,
@@ -23,7 +24,12 @@ import {
 	type PullDocument,
 	type RowDocument,
 } from './documents.js';
-import type { JsonObject } from './protocol/index.js';
+import {
+	canonicalJson,
+	type JsonObject,
+	type RowAddress,
+	type ValueAddress,
+} from './protocol/index.js';
 import type { Replica, ReplicaError } from './replica/index.js';
 import {
 	createSyncSupervisor,
@@ -137,10 +143,24 @@ const DataRuntimeError = defineErrors({
 	}),
 });
 
-type StoredStateRow = SqliteRow & {
+type StoredRowFact = SqliteRow & {
 	row_id: string;
-	json_payload: string;
+	fields: string;
 };
+
+/**
+ * Internal map keys for the per-table and per-value listener registries.
+ *
+ * These never leave memory. One Epicenter can bind several Lenses, so a
+ * listener registry keyed by local name alone would cross namespaces.
+ */
+function tableListenerKey(namespace: string, table: string): string {
+	return canonicalJson({ namespace, table });
+}
+
+function valueListenerKey(namespace: string, value: string): string {
+	return canonicalJson({ namespace, value });
+}
 
 export type TableEntriesPage<TDefinition extends TableDefinition> = {
 	entries: TableEntry<TDefinition>[];
@@ -250,15 +270,16 @@ export function createEpicenter({
 	const stopReplicaSubscription = replica.subscribe((changes) => {
 		const changedRows = new Map<string, string[]>();
 		const changedValues = new Set<string>();
-		for (const change of changes) {
-			if (change.kind === 'value') {
-				changedValues.add(change.key);
+		for (const address of changes) {
+			if (address.kind === 'value') {
+				changedValues.add(valueListenerKey(address.namespace, address.value));
 				continue;
 			}
-			const ids = changedRows.get(change.key) ?? [];
-			if (!ids.includes(change.rowId)) ids.push(change.rowId);
-			changedRows.set(change.key, ids);
-			const current = replica.readRow(change.key, change.rowId);
+			const key = tableListenerKey(address.namespace, address.table);
+			const ids = changedRows.get(key) ?? [];
+			if (!ids.includes(address.rowId)) ids.push(address.rowId);
+			changedRows.set(key, ids);
+			const current = replica.readRow(address);
 			if (current.error !== null) {
 				// Liveness is unknowable this pass, so the open document keeps
 				// running rather than being revoked on a guess. Reported because
@@ -267,7 +288,7 @@ export function createEpicenter({
 				// open with nothing to say why.
 				log.error(current.error);
 			} else if (current.data === undefined) {
-				documents.revoke({ key: change.key, rowId: change.rowId });
+				documents.revoke(address);
 			}
 		}
 		for (const [key, ids] of changedRows) {
@@ -290,28 +311,28 @@ export function createEpicenter({
 		}
 	});
 
+	/**
+	 * Bind one Lens over this runtime's replica.
+	 *
+	 * Each `tables` and `values` property name becomes the durable local key of
+	 * the address it reads and writes, under the Lens's single declared
+	 * namespace.
+	 */
 	function bind<
 		const TTables extends TableDefinitions,
 		const TValues extends ValueDefinitions,
-	>({
-		tables,
-		values,
-	}: {
-		tables: TTables;
-		values: TValues;
-	}): BoundData<TTables, TValues> {
+	>(lens: Lens<TTables, TValues>): BoundData<TTables, TValues> {
 		requireOpen();
-		assertDefinitionGroup(tables, values);
 		const boundTables = Object.fromEntries(
-			Object.entries(tables).map(([propertyName, definition]) => [
-				propertyName,
-				createTableLens(definition),
+			Object.entries(lens.tables).map(([table, definition]) => [
+				table,
+				createTableLens(lens.namespace, table, definition),
 			]),
 		);
 		const boundValues = Object.fromEntries(
-			Object.entries(values).map(([propertyName, definition]) => [
-				propertyName,
-				createValueLens(definition),
+			Object.entries(lens.values).map(([value, definition]) => [
+				value,
+				createValueLens(lens.namespace, value, definition),
 			]),
 		);
 		return Object.freeze({
@@ -321,75 +342,82 @@ export function createEpicenter({
 	}
 
 	function createTableLens<TDefinition extends TableDefinition>(
+		namespace: string,
+		table: string,
 		definition: TDefinition,
 	): TableLens<TDefinition> {
 		const compiled = compileTableDefinition(definition);
+		const listenerKey = tableListenerKey(namespace, table);
+		const addressOf = (rowId: string): RowAddress => ({
+			kind: 'row',
+			namespace,
+			table,
+			rowId,
+		});
 		const readEntriesPage = async (after?: string) => {
 			requireOpen();
-			return readEntriesPageFromDatabase(definition, compiled, after);
+			return readEntriesPageFromDatabase(
+				namespace,
+				table,
+				compiled,
+				after,
+			) as TableEntriesPage<TDefinition>;
 		};
 
-		const lens = {
+		const tableLens = {
 			async create(input: Record<string, unknown>) {
 				requireOpen();
 				const fields = compiled.validateCreate(input);
-				const id = mintRowId();
-				const written = replica.write({
-					kind: 'create',
-					key: definition.key,
-					rowId: id,
-					fields,
-				});
+				const address = addressOf(mintRowId());
+				const written = replica.write({ kind: 'create', address, fields });
 				if (written.error !== null) throw written.error;
 				if (!written.data.applied) {
 					throw new Error(
-						`Minted row '${definition.key}.${id}' already exists`,
+						`Minted row '${namespace}/${table}/${address.rowId}' already exists`,
 					);
 				}
-				const projected = compiled.project(id, fields);
+				const projected = compiled.project(address, fields);
 				if (projected.error !== null) throw projected.error;
 				return projected.data;
 			},
 			async get(id: string) {
 				requireOpen();
-				const stored = replica.readRow(definition.key, id);
+				const address = addressOf(id);
+				const stored = replica.readRow(address);
 				if (stored.error !== null) return stored;
 				return stored.data === undefined
 					? Ok(undefined)
-					: compiled.project(id, stored.data);
+					: compiled.project(address, stored.data);
 			},
 			async update(id: string, input: Record<string, unknown>) {
 				requireOpen();
 				const patch = compiled.normalizeUpdate(input);
-				const before = replica.readRow(definition.key, id);
+				const address = addressOf(id);
+				const before = replica.readRow(address);
 				if (before.error !== null) return before;
 				if (before.data === undefined) return Ok(undefined);
 				if (Object.keys(patch.set).length === 0 && patch.unset.length === 0) {
-					return compiled.project(id, before.data);
+					return compiled.project(address, before.data);
 				}
 				const written = replica.write({
 					kind: 'update',
-					key: definition.key,
-					rowId: id,
+					address,
 					fields: patch,
 				});
 				if (written.error !== null) return written;
-				const current = replica.readRow(definition.key, id);
+				const current = replica.readRow(address);
 				if (current.error !== null) return current;
 				return current.data === undefined
 					? Ok(undefined)
-					: compiled.project(id, current.data);
+					: compiled.project(address, current.data);
 			},
 			async delete(id: string) {
 				requireOpen();
-				const before = replica.readRow(definition.key, id);
+				const address = addressOf(id);
+				const before = replica.readRow(address);
 				if (before.error !== null) throw before.error;
 				if (before.data === undefined) return false;
-				const written = replica.write({
-					kind: 'delete',
-					key: definition.key,
-					rowId: id,
-				});
+				const written = replica.write({ kind: 'delete', address });
 				if (written.error !== null) throw written.error;
 				return written.data.applied;
 			},
@@ -397,60 +425,61 @@ export function createEpicenter({
 			[readTableEntriesPage]: readEntriesPage,
 			subscribe(listener: (changedIds: string[]) => void) {
 				requireOpen();
-				const listeners = tableListeners.get(definition.key) ?? new Set();
+				const listeners = tableListeners.get(listenerKey) ?? new Set();
 				listeners.add(listener);
-				tableListeners.set(definition.key, listeners);
+				tableListeners.set(listenerKey, listeners);
 				return () => {
 					listeners.delete(listener);
-					if (listeners.size === 0) tableListeners.delete(definition.key);
+					if (listeners.size === 0) tableListeners.delete(listenerKey);
 				};
 			},
 			openDocument(rowId: string) {
 				requireOpen();
-				return documents.open({ key: definition.key, rowId });
+				return documents.open(addressOf(rowId));
 			},
 		};
-		return Object.freeze(lens) as InternalTableLens<TDefinition>;
+		return Object.freeze(tableLens) as InternalTableLens<TDefinition>;
 	}
 
 	function createValueLens<TDefinition extends ValueDefinition>(
+		namespace: string,
+		value: string,
 		definition: TDefinition,
 	): ValueLens<TDefinition> {
 		const compiled = compileValueDefinition(definition);
+		const listenerKey = valueListenerKey(namespace, value);
+		const address: ValueAddress = { kind: 'value', namespace, value };
 		return Object.freeze({
 			async get() {
 				requireOpen();
-				const stored = replica.readValue(definition.key);
+				const stored = replica.readValue(address);
 				if (stored.error !== null) return stored;
 				return stored.data === undefined
 					? Ok(undefined)
-					: compiled.project(stored.data);
+					: compiled.project(address, stored.data);
 			},
-			async set(value: unknown) {
+			async set(content: unknown) {
 				requireOpen();
 				const written = replica.write({
 					kind: 'set',
-					key: definition.key,
-					value: compiled.validate(value),
+					address,
+					value: compiled.validate(content),
 				});
 				if (written.error !== null) throw written.error;
 			},
 			async unset() {
 				requireOpen();
-				const written = replica.write({
-					kind: 'unset',
-					key: definition.key,
-				});
+				const written = replica.write({ kind: 'unset', address });
 				if (written.error !== null) throw written.error;
 			},
 			subscribe(listener: () => void) {
 				requireOpen();
-				const listeners = valueListeners.get(definition.key) ?? new Set();
+				const listeners = valueListeners.get(listenerKey) ?? new Set();
 				listeners.add(listener);
-				valueListeners.set(definition.key, listeners);
+				valueListeners.set(listenerKey, listeners);
 				return () => {
 					listeners.delete(listener);
-					if (listeners.size === 0) valueListeners.delete(definition.key);
+					if (listeners.size === 0) valueListeners.delete(listenerKey);
 				};
 			},
 		}) as ValueLens<TDefinition>;
@@ -490,25 +519,22 @@ export function createEpicenter({
 		},
 	});
 
-	function readEntriesPageFromDatabase<TDefinition extends TableDefinition>(
-		definition: TDefinition,
+	function readEntriesPageFromDatabase(
+		namespace: string,
+		table: string,
 		compiled: ReturnType<typeof compileTableDefinition>,
 		after?: string,
-	): TableEntriesPage<TDefinition> {
-		const where = [
-			"address_kind = 'row'",
-			'qualified_key = ?',
-			"status = 'live'",
-		];
-		const parameters: (string | number)[] = [definition.key];
+	): TableEntriesPage<TableDefinition> {
+		const where = ['namespace = ?', 'table_name = ?', "presence = 'present'"];
+		const parameters: (string | number)[] = [namespace, table];
 		if (after !== undefined) {
 			where.push('row_id > ?');
 			parameters.push(after);
 		}
 		parameters.push(ENTRIES_PAGE_SIZE + 1);
-		const stored = database.all<StoredStateRow>(
-			`SELECT row_id, json_payload
-			 FROM state
+		const stored = database.all<StoredRowFact>(
+			`SELECT row_id, fields
+			 FROM row_facts
 			 WHERE ${where.join(' AND ')}
 			 ORDER BY row_id ASC
 			 LIMIT ?`,
@@ -516,11 +542,18 @@ export function createEpicenter({
 		);
 		const hasNext = stored.length > ENTRIES_PAGE_SIZE;
 		const pageRows = hasNext ? stored.slice(0, ENTRIES_PAGE_SIZE) : stored;
-		const entries: TableEntry<TDefinition>[] = [];
+		const entries: TableEntry<TableDefinition>[] = [];
 		for (const row of pageRows) {
-			const payload = JSON.parse(row.json_payload) as JsonObject;
-			const projected = compiled.project(row.row_id, payload);
-			entries.push(projected as TableEntry<TDefinition>);
+			const payload = JSON.parse(row.fields) as JsonObject;
+			const address: RowAddress = {
+				kind: 'row',
+				namespace,
+				table,
+				rowId: row.row_id,
+			};
+			entries.push(
+				compiled.project(address, payload) as TableEntry<TableDefinition>,
+			);
 		}
 		const last = pageRows.at(-1);
 		return {
@@ -531,32 +564,3 @@ export function createEpicenter({
 }
 
 export type Epicenter = ReturnType<typeof createEpicenter>;
-
-function assertDefinitionGroup(
-	tables: TableDefinitions,
-	values: ValueDefinitions,
-): void {
-	const keys = new Map<string, string>();
-	for (const [propertyName, definition] of Object.entries(tables)) {
-		compileTableDefinition(definition);
-		rememberDefinition(keys, definition.key, `tables.${propertyName}`);
-	}
-	for (const [propertyName, definition] of Object.entries(values)) {
-		compileValueDefinition(definition);
-		rememberDefinition(keys, definition.key, `values.${propertyName}`);
-	}
-}
-
-function rememberDefinition(
-	keys: Map<string, string>,
-	key: string,
-	propertyName: string,
-): void {
-	const existing = keys.get(key);
-	if (existing !== undefined) {
-		throw new Error(
-			`Duplicate qualified key '${key}' is bound by '${existing}' and '${propertyName}'`,
-		);
-	}
-	keys.set(key, propertyName);
-}

@@ -1,11 +1,12 @@
 /**
  * Typed Data API Tests
  *
- * Verifies inert definitions, grouped binding, classified scalar traversal,
+ * Verifies inert definitions, Lens binding, classified scalar traversal,
  * committed observation, and local row-document persistence over Bun SQLite.
  *
  * Key behaviors:
- * - Invalid and duplicate qualified keys fail before storage work
+ * - Invalid namespaces, invalid local names, and names colliding only by case
+ *   fail when the Lens is declared, before any storage work
  * - Conforming rows and values round-trip while invalid stored data is classified
  * - Local and synchronized commits notify borrowed lenses
  * - Row documents persist locally and are revoked by row deletion through any
@@ -21,17 +22,34 @@ import { createLogger, type Logger, memorySink } from 'wellcrafted/logger';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 
 import { openBunEpicenter } from './bun.js';
-import { defineTable, defineValue, optional } from './definitions.js';
+import {
+	defineLens,
+	defineTable,
+	defineValue,
+	optional,
+} from './definitions.js';
 import { createEpicenter, createTableReadMethods } from './epicenter.js';
 import { openReplica } from './replica/index.js';
 
-const NOTES_KEY = 'so.epicenter.tests.notes';
-const THEME_KEY = 'so.epicenter.tests.theme';
+const TEST_NAMESPACE = 'so.epicenter.tests';
 const REMOTE_ROW_A = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 const REMOTE_ROW_B = 'bbbbbbbbbbbbbbbbbbbbbbbb';
+const THEME_ADDRESS = {
+	kind: 'value',
+	namespace: TEST_NAMESPACE,
+	value: 'theme',
+} as const;
+
+function rowAddress(rowId: string) {
+	return {
+		kind: 'row',
+		namespace: TEST_NAMESPACE,
+		table: 'notes',
+		rowId,
+	} as const;
+}
 
 const notesDefinition = defineTable({
-	key: NOTES_KEY,
 	fields: {
 		title: field.string(),
 		rank: field.integer(),
@@ -41,7 +59,6 @@ const notesDefinition = defineTable({
 });
 
 const themeDefinition = defineValue({
-	key: THEME_KEY,
 	value: field.string(),
 });
 
@@ -53,16 +70,52 @@ function setup(log?: Logger) {
 	return { rawDatabase, database, replica, epicenter };
 }
 
-test('definitions reject invalid qualified keys and structural id fields', () => {
+test('definitions reject invalid lens coordinates and structural field names', () => {
 	expect(() =>
-		defineTable({ key: 'notes', fields: { title: field.string() } }),
-	).toThrow("Invalid qualified key 'notes'");
+		defineLens({
+			namespace: 'test',
+			tables: { notes: defineTable({ fields: { title: field.string() } }) },
+			values: {},
+		}),
+	).toThrow("Invalid namespace 'test'");
 	expect(() =>
-		defineValue({ key: 'Not.Qualified.Value', value: field.string() }),
-	).toThrow("Invalid qualified key 'Not.Qualified.Value'");
+		defineLens({
+			namespace: TEST_NAMESPACE,
+			tables: {
+				'not-valid': defineTable({ fields: { title: field.string() } }),
+			},
+			values: {},
+		}),
+	).toThrow("Invalid table name 'not-valid'");
+	expect(() =>
+		defineLens({
+			namespace: TEST_NAMESPACE,
+			tables: {},
+			values: {
+				'Not.Valid': defineValue({ value: field.string() }),
+			},
+		}),
+	).toThrow("Invalid value name 'Not.Valid'");
+	expect(() =>
+		defineLens({
+			namespace: TEST_NAMESPACE,
+			tables: {
+				Notes: defineTable({ fields: { title: field.string() } }),
+				notes: defineTable({ fields: { title: field.string() } }),
+			},
+			values: {},
+		}),
+	).toThrow("Ambiguous table names 'Notes' and 'notes' differ only by case");
 	expect(() =>
 		defineTable({
-			key: 'so.epicenter.tests.invalid-id',
+			fields: {
+				title: field.string(),
+				Title: field.string(),
+			},
+		}),
+	).toThrow("Ambiguous field names 'title' and 'Title' differ only by case");
+	expect(() =>
+		defineTable({
 			// @ts-expect-error The runtime guard is exercised despite the type error.
 			fields: { id: field.string() },
 		}),
@@ -71,36 +124,43 @@ test('definitions reject invalid qualified keys and structural id fields', () =>
 
 test('Bun factory opens the public runtime over an in-memory path', async () => {
 	await using epicenter = await openBunEpicenter({ path: ':memory:' });
-	const notes = epicenter.bind({
-		tables: { notes: notesDefinition },
-		values: {},
-	}).tables.notes;
+	const notes = epicenter.bind(
+		defineLens({
+			namespace: TEST_NAMESPACE,
+			tables: { notes: notesDefinition },
+			values: {},
+		}),
+	).tables.notes;
 	const row = await notes.create({ title: 'factory', rank: 1 });
 	expect(expectOk(await notes.get(row.id))).toEqual(row);
 });
 
-test('bind rejects duplicate qualified keys across tables and values', async () => {
+test('a table and value with the same local name do not collide', async () => {
 	const { rawDatabase, epicenter } = setup();
-	const sameKeyValue = defineValue({
-		key: NOTES_KEY,
-		value: field.string(),
-	});
-	expect(() =>
-		epicenter.bind({
+	const bound = epicenter.bind(
+		defineLens({
+			namespace: TEST_NAMESPACE,
 			tables: { notes: notesDefinition },
-			values: { duplicate: sameKeyValue },
+			values: { notes: defineValue({ value: field.string() }) },
 		}),
-	).toThrow("'tables.notes' and 'values.duplicate'");
+	);
+	const row = await bound.tables.notes.create({ title: 'row', rank: 1 });
+	await bound.values.notes.set('value');
+	expect(expectOk(await bound.tables.notes.get(row.id))).toEqual(row);
+	expect(expectOk(await bound.values.notes.get())).toBe('value');
 	await epicenter[Symbol.asyncDispose]();
 	rawDatabase.close();
 });
 
 test('table CRUD lowers undefined and scan returns stable row-ID order', async () => {
 	const { rawDatabase, epicenter } = setup();
-	const notes = epicenter.bind({
-		tables: { notes: notesDefinition },
-		values: {},
-	}).tables.notes;
+	const notes = epicenter.bind(
+		defineLens({
+			namespace: TEST_NAMESPACE,
+			tables: { notes: notesDefinition },
+			values: {},
+		}),
+	).tables.notes;
 	const localNotifications: string[][] = [];
 	const unsubscribe = notes.subscribe((ids) => localNotifications.push(ids));
 	const first = await notes.create({
@@ -158,21 +218,22 @@ test('stored nonconforming rows and values are reported without repair', async (
 	expectOk(
 		replica.write({
 			kind: 'create',
-			key: NOTES_KEY,
-			rowId: REMOTE_ROW_A,
+			address: rowAddress(REMOTE_ROW_A),
 			fields: { title: 42, rank: 1 },
 		}),
 	);
-	expectOk(replica.write({ kind: 'set', key: THEME_KEY, value: 42 }));
-	const bound = epicenter.bind({
-		tables: { notes: notesDefinition },
-		values: { theme: themeDefinition },
-	});
+	expectOk(replica.write({ kind: 'set', address: THEME_ADDRESS, value: 42 }));
+	const bound = epicenter.bind(
+		defineLens({
+			namespace: TEST_NAMESPACE,
+			tables: { notes: notesDefinition },
+			values: { theme: themeDefinition },
+		}),
+	);
 
 	const rowError = expectErr(await bound.tables.notes.get(REMOTE_ROW_A));
 	expect(rowError.name).toBe('NonconformingRow');
 	expect(rowError).toMatchObject({
-		key: NOTES_KEY,
 		id: REMOTE_ROW_A,
 		issues: [{ field: 'title', kind: 'invalid' }],
 	});
@@ -188,7 +249,7 @@ test('stored nonconforming rows and values are reported without repair', async (
 	expect(expectErr(await bound.values.theme.get()).name).toBe(
 		'NonconformingValue',
 	);
-	expect(expectOk(replica.readRow(NOTES_KEY, REMOTE_ROW_A))).toEqual({
+	expect(expectOk(replica.readRow(rowAddress(REMOTE_ROW_A)))).toEqual({
 		title: 42,
 		rank: 1,
 	});
@@ -199,10 +260,13 @@ test('stored nonconforming rows and values are reported without repair', async (
 
 test('entries streams every classified row across internal batches', async () => {
 	const { rawDatabase, replica, epicenter } = setup();
-	const notes = epicenter.bind({
-		tables: { notes: notesDefinition },
-		values: {},
-	}).tables.notes;
+	const notes = epicenter.bind(
+		defineLens({
+			namespace: TEST_NAMESPACE,
+			tables: { notes: notesDefinition },
+			values: {},
+		}),
+	).tables.notes;
 	const ids = Array.from({ length: 105 }, (_, index) =>
 		String(index).padStart(24, '0'),
 	);
@@ -210,8 +274,7 @@ test('entries streams every classified row across internal batches', async () =>
 		expectOk(
 			replica.write({
 				kind: 'create',
-				key: NOTES_KEY,
-				rowId: id,
+				address: rowAddress(id),
 				fields: { title: `Note ${rank}`, rank },
 			}),
 		);
@@ -253,10 +316,13 @@ test('the current keyset batcher observes inserts ahead of its row-ID boundary, 
 	// Adapter-mechanism coverage only: neither the batch size nor concurrent
 	// insertion visibility is part of the public traversal contract.
 	const { rawDatabase, replica, epicenter } = setup();
-	const notes = epicenter.bind({
-		tables: { notes: notesDefinition },
-		values: {},
-	}).tables.notes;
+	const notes = epicenter.bind(
+		defineLens({
+			namespace: TEST_NAMESPACE,
+			tables: { notes: notesDefinition },
+			values: {},
+		}),
+	).tables.notes;
 	const initialIds = Array.from({ length: 101 }, (_, index) =>
 		String(index + 100).padStart(24, '0'),
 	);
@@ -264,8 +330,7 @@ test('the current keyset batcher observes inserts ahead of its row-ID boundary, 
 		expectOk(
 			replica.write({
 				kind: 'create',
-				key: NOTES_KEY,
-				rowId: id,
+				address: rowAddress(id),
 				fields: { title: `Initial ${rank}`, rank },
 			}),
 		);
@@ -288,8 +353,7 @@ test('the current keyset batcher observes inserts ahead of its row-ID boundary, 
 		expectOk(
 			replica.write({
 				kind: 'create',
-				key: NOTES_KEY,
-				rowId,
+				address: rowAddress(rowId),
 				fields: { title, rank: 300 },
 			}),
 		);
@@ -316,10 +380,13 @@ test('the current keyset batcher observes inserts ahead of its row-ID boundary, 
 
 test('value operations validate, unset to absence, and notify local commits', async () => {
 	const { rawDatabase, epicenter } = setup();
-	const theme = epicenter.bind({
-		tables: {},
-		values: { theme: themeDefinition },
-	}).values.theme;
+	const theme = epicenter.bind(
+		defineLens({
+			namespace: TEST_NAMESPACE,
+			tables: {},
+			values: { theme: themeDefinition },
+		}),
+	).values.theme;
 	let changes = 0;
 	const unsubscribe = theme.subscribe(() => {
 		changes += 1;
@@ -330,7 +397,7 @@ test('value operations validate, unset to absence, and notify local commits', as
 	expect(expectOk(await theme.get())).toBe('dark');
 	await expect(
 		(theme.set as (value: unknown) => Promise<void>)(42),
-	).rejects.toThrow("Invalid value for 'so.epicenter.tests.theme'");
+	).rejects.toThrow('Invalid singleton value');
 	await theme.unset();
 	expect(expectOk(await theme.get())).toBeUndefined();
 	expect(changes).toBe(2);
@@ -345,10 +412,13 @@ test('value operations validate, unset to absence, and notify local commits', as
 test('throwing subscribers are logged without changing committed write results', async () => {
 	const { sink, events } = memorySink();
 	const { rawDatabase, epicenter } = setup(createLogger('test/data', sink));
-	const notes = epicenter.bind({
-		tables: { notes: notesDefinition },
-		values: {},
-	}).tables.notes;
+	const notes = epicenter.bind(
+		defineLens({
+			namespace: TEST_NAMESPACE,
+			tables: { notes: notesDefinition },
+			values: {},
+		}),
+	).tables.notes;
 	let laterSubscriberCalls = 0;
 	notes.subscribe(() => {
 		throw new Error('subscriber failed');
@@ -369,10 +439,13 @@ test('throwing subscribers are logged without changing committed write results',
 
 test('subscriptions fire once per installed synchronized transaction', async () => {
 	const { rawDatabase, epicenter } = setup();
-	const bound = epicenter.bind({
-		tables: { notes: notesDefinition },
-		values: { theme: themeDefinition },
-	});
+	const bound = epicenter.bind(
+		defineLens({
+			namespace: TEST_NAMESPACE,
+			tables: { notes: notesDefinition },
+			values: { theme: themeDefinition },
+		}),
+	);
 	const rowNotifications: string[][] = [];
 	let valueNotifications = 0;
 	bound.tables.notes.subscribe((ids) => rowNotifications.push(ids));
@@ -389,21 +462,19 @@ test('subscriptions fire once per installed synchronized transaction', async () 
 				records: [
 					{
 						kind: 'row',
-						key: NOTES_KEY,
-						rowId: REMOTE_ROW_A,
+						address: rowAddress(REMOTE_ROW_A),
 						changedSequence: 1,
 						fields: { title: 'A', rank: 1 },
 					},
 					{
 						kind: 'row',
-						key: NOTES_KEY,
-						rowId: REMOTE_ROW_B,
+						address: rowAddress(REMOTE_ROW_B),
 						changedSequence: 2,
 						fields: { title: 'B', rank: 2 },
 					},
 					{
 						kind: 'value',
-						key: THEME_KEY,
+						address: THEME_ADDRESS,
 						changedSequence: 3,
 						value: 'remote',
 					},
@@ -422,10 +493,13 @@ test('subscriptions fire once per installed synchronized transaction', async () 
 
 test('row documents persist across opens and deletion revokes live handles', async () => {
 	const { rawDatabase, database, epicenter } = setup();
-	const notes = epicenter.bind({
-		tables: { notes: notesDefinition },
-		values: {},
-	}).tables.notes;
+	const notes = epicenter.bind(
+		defineLens({
+			namespace: TEST_NAMESPACE,
+			tables: { notes: notesDefinition },
+			values: {},
+		}),
+	).tables.notes;
 	const row = await notes.create({ title: 'document', rank: 1 });
 	const first = await notes.openDocument(row.id);
 	first.get('content').insert(0, 'persisted');
@@ -437,8 +511,8 @@ test('row documents persist across opens and deletion revokes live handles', asy
 	expect(
 		database.all<{ count: number }>(
 			`SELECT COUNT(*) AS count FROM document_updates
-			 WHERE qualified_key = ? AND row_id = ?`,
-			[NOTES_KEY, row.id],
+			 WHERE namespace = ? AND table_name = ? AND row_id = ?`,
+			[TEST_NAMESPACE, 'notes', row.id],
 		)[0]?.count,
 	).toBe(1);
 	expect(await notes.delete(row.id)).toBe(true);
@@ -446,8 +520,8 @@ test('row documents persist across opens and deletion revokes live handles', asy
 	expect(
 		database.all<{ count: number }>(
 			`SELECT COUNT(*) AS count FROM document_updates
-			 WHERE qualified_key = ? AND row_id = ?`,
-			[NOTES_KEY, row.id],
+			 WHERE namespace = ? AND table_name = ? AND row_id = ?`,
+			[TEST_NAMESPACE, 'notes', row.id],
 		)[0]?.count,
 	).toBe(0);
 	await reopened[Symbol.asyncDispose]();
@@ -460,17 +534,25 @@ test('row documents persist across opens and deletion revokes live handles', asy
 test('deletion through an independently authored lens removes document bytes and revokes the other lens', async () => {
 	const { rawDatabase, database, epicenter } = setup();
 	const authorA = defineTable({
-		key: NOTES_KEY,
 		fields: { title: field.string(), rank: field.integer() },
 	});
 	const authorB = defineTable({
-		key: NOTES_KEY,
 		fields: { title: field.string() },
 	});
-	const lensA = epicenter.bind({ tables: { notes: authorA }, values: {} })
-		.tables.notes;
-	const lensB = epicenter.bind({ tables: { notes: authorB }, values: {} })
-		.tables.notes;
+	const lensA = epicenter.bind(
+		defineLens({
+			namespace: TEST_NAMESPACE,
+			tables: { notes: authorA },
+			values: {},
+		}),
+	).tables.notes;
+	const lensB = epicenter.bind(
+		defineLens({
+			namespace: TEST_NAMESPACE,
+			tables: { notes: authorB },
+			values: {},
+		}),
+	).tables.notes;
 
 	const row = await lensA.create({ title: 'shared', rank: 1 });
 	const document = await lensA.openDocument(row.id);
@@ -482,8 +564,8 @@ test('deletion through an independently authored lens removes document bytes and
 	expect(
 		database.all<{ count: number }>(
 			`SELECT COUNT(*) AS count FROM document_updates
-			 WHERE qualified_key = ? AND row_id = ?`,
-			[NOTES_KEY, row.id],
+			 WHERE namespace = ? AND table_name = ? AND row_id = ?`,
+			[TEST_NAMESPACE, 'notes', row.id],
 		)[0]?.count,
 	).toBe(0);
 	await expect(lensB.openDocument(row.id)).rejects.toThrow('absent row');
@@ -494,10 +576,13 @@ test('deletion through an independently authored lens removes document bytes and
 
 test('installed synchronized deletion removes document bytes and revokes handles', async () => {
 	const { rawDatabase, database, epicenter } = setup();
-	const notes = epicenter.bind({
-		tables: { notes: notesDefinition },
-		values: {},
-	}).tables.notes;
+	const notes = epicenter.bind(
+		defineLens({
+			namespace: TEST_NAMESPACE,
+			tables: { notes: notesDefinition },
+			values: {},
+		}),
+	).tables.notes;
 	const session = {
 		deploymentId: 'https://example.com/',
 		principalId: 'principal-a',
@@ -516,8 +601,7 @@ test('installed synchronized deletion removes document bytes and revokes handles
 						: [
 								{
 									kind: 'row',
-									key: NOTES_KEY,
-									rowId: REMOTE_ROW_A,
+									address: rowAddress(REMOTE_ROW_A),
 									changedSequence: 1,
 									fields: { title: 'remote document', rank: 1 },
 								},
@@ -539,8 +623,7 @@ test('installed synchronized deletion removes document bytes and revokes handles
 						: [
 								{
 									kind: 'row-deleted',
-									key: NOTES_KEY,
-									rowId: REMOTE_ROW_A,
+									address: rowAddress(REMOTE_ROW_A),
 									changedSequence: 2,
 								},
 							],
@@ -553,8 +636,8 @@ test('installed synchronized deletion removes document bytes and revokes handles
 	expect(
 		database.all<{ count: number }>(
 			`SELECT COUNT(*) AS count FROM document_updates
-			 WHERE qualified_key = ? AND row_id = ?`,
-			[NOTES_KEY, REMOTE_ROW_A],
+			 WHERE namespace = ? AND table_name = ? AND row_id = ?`,
+			[TEST_NAMESPACE, 'notes', REMOTE_ROW_A],
 		)[0]?.count,
 	).toBe(0);
 	await document[Symbol.asyncDispose]();
@@ -564,19 +647,50 @@ test('installed synchronized deletion removes document bytes and revokes handles
 
 test('two borrowed lenses over one definition address the same stored state', async () => {
 	const { rawDatabase, epicenter } = setup();
-	const first = epicenter.bind({
-		tables: { notes: notesDefinition },
-		values: { theme: themeDefinition },
-	});
-	const second = epicenter.bind({
-		tables: { sharedNotes: notesDefinition },
-		values: { sharedTheme: themeDefinition },
-	});
+	const first = epicenter.bind(
+		defineLens({
+			namespace: TEST_NAMESPACE,
+			tables: { notes: notesDefinition },
+			values: { theme: themeDefinition },
+		}),
+	);
+	const second = epicenter.bind(
+		defineLens({
+			namespace: TEST_NAMESPACE,
+			tables: { notes: notesDefinition },
+			values: { theme: themeDefinition },
+		}),
+	);
 	const row = await first.tables.notes.create({ title: 'shared', rank: 1 });
 	await first.values.theme.set('shared');
 
-	expect(expectOk(await second.tables.sharedNotes.get(row.id))).toEqual(row);
-	expect(expectOk(await second.values.sharedTheme.get())).toBe('shared');
+	expect(expectOk(await second.tables.notes.get(row.id))).toEqual(row);
+	expect(expectOk(await second.values.theme.get())).toBe('shared');
+
+	await epicenter[Symbol.asyncDispose]();
+	rawDatabase.close();
+});
+
+test('lenses with different namespaces isolate the same table name', async () => {
+	const { rawDatabase, epicenter } = setup();
+	const first = epicenter.bind(
+		defineLens({
+			namespace: 'so.epicenter.first',
+			tables: { notes: notesDefinition },
+			values: {},
+		}),
+	);
+	const second = epicenter.bind(
+		defineLens({
+			namespace: 'so.epicenter.second',
+			tables: { notes: notesDefinition },
+			values: {},
+		}),
+	);
+	const row = await first.tables.notes.create({ title: 'isolated', rank: 1 });
+
+	expect(expectOk(await first.tables.notes.get(row.id))).toEqual(row);
+	expect(expectOk(await second.tables.notes.get(row.id))).toBeUndefined();
 
 	await epicenter[Symbol.asyncDispose]();
 	rawDatabase.close();
