@@ -7,15 +7,7 @@ import { join } from 'node:path';
 import type { AgentMessage } from '@epicenter/agent';
 import { openBunEpicenter } from '@epicenter/data/bun';
 import { InstantString } from '@epicenter/field';
-import {
-	conversationsTable,
-	createAgentMessageDocumentStore,
-} from './index.js';
-
-const definitions = {
-	tables: { conversations: conversationsTable },
-	values: {},
-} as const;
+import { chatLens, createAgentMessageDocumentStore } from './index.js';
 
 const message: AgentMessage = {
 	id: 'message-1',
@@ -32,7 +24,7 @@ test('the agent store observes writes and survives a runtime restart', async () 
 			await using epicenter = await openBunEpicenter({
 				path: join(workspacesRoot, 'epicenter.sqlite3'),
 			});
-			const handle = epicenter.bind(definitions);
+			const handle = epicenter.bind(chatLens);
 			const now = InstantString.fromDate(new Date('2026-07-19T00:00:00.000Z'));
 			const row = await handle.tables.conversations.create({
 				title: 'New Chat',
@@ -55,7 +47,7 @@ test('the agent store observes writes and survives a runtime restart', async () 
 		await using reopened = await openBunEpicenter({
 			path: join(workspacesRoot, 'epicenter.sqlite3'),
 		});
-		const handle = reopened.bind(definitions);
+		const handle = reopened.bind(chatLens);
 		await using store = createAgentMessageDocumentStore(
 			await handle.tables.conversations.openDocument(rowId),
 		);

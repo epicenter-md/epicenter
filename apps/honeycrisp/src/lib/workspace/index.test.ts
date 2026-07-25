@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openBunEpicenter } from '@epicenter/data/bun';
 import { InstantString } from '@epicenter/field';
-import { deleteHoneycrispFolder, honeycrispDefinitions } from './index.js';
+import { deleteHoneycrispFolder, honeycrispLens } from './index.js';
 
 test('runtime-minted rows support optional fields and folder re-parenting', async () => {
 	const storageRoot = mkdtempSync(join(tmpdir(), 'epicenter-honeycrisp-'));
@@ -24,7 +24,7 @@ test('runtime-minted rows support optional fields and folder re-parenting', asyn
 		await using epicenter = await openBunEpicenter({
 			path: join(storageRoot, 'epicenter.sqlite3'),
 		});
-		const honeycrisp = epicenter.bind(honeycrispDefinitions);
+		const honeycrisp = epicenter.bind(honeycrispLens);
 		const folder = await honeycrisp.tables.folders.create({
 			name: 'Projects',
 			sortOrder: 0,
@@ -66,7 +66,7 @@ test('note body documents remain durable across runtime reopen', async () => {
 			await using epicenter = await openBunEpicenter({
 				path: join(storageRoot, 'epicenter.sqlite3'),
 			});
-			const honeycrisp = epicenter.bind(honeycrispDefinitions);
+			const honeycrisp = epicenter.bind(honeycrispLens);
 			const now = InstantString.now();
 			const note = await honeycrisp.tables.notes.create({
 				title: 'Durable body',
@@ -87,7 +87,7 @@ test('note body documents remain durable across runtime reopen', async () => {
 		await using reopenedEpicenter = await openBunEpicenter({
 			path: join(storageRoot, 'epicenter.sqlite3'),
 		});
-		const reopened = reopenedEpicenter.bind(honeycrispDefinitions);
+		const reopened = reopenedEpicenter.bind(honeycrispLens);
 		await using document = await reopened.tables.notes.openDocument(noteId);
 		expect(document.get('body').toString()).toBe('Persisted body');
 	} finally {
@@ -101,7 +101,7 @@ test('deleting a note revokes its open body document', async () => {
 		await using epicenter = await openBunEpicenter({
 			path: join(storageRoot, 'epicenter.sqlite3'),
 		});
-		const honeycrisp = epicenter.bind(honeycrispDefinitions);
+		const honeycrisp = epicenter.bind(honeycrispLens);
 		const now = InstantString.now();
 		const note = await honeycrisp.tables.notes.create({
 			title: 'Delete me',

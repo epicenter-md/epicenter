@@ -1,8 +1,5 @@
 import type { Epicenter, RowDocument, SyncStatus } from '@epicenter/data';
-import {
-	type HoneycrispData,
-	honeycrispDefinitions,
-} from '@epicenter/honeycrisp';
+import { type HoneycrispData, honeycrispLens } from '@epicenter/honeycrisp';
 import { createHoneycrispState } from '../routes/state/index.js';
 
 type ApplicationRuntime = {
@@ -82,7 +79,7 @@ export async function openHoneycrispApplication(
 		runtime = await untilAbort(openEpicenter());
 		signal?.throwIfAborted();
 		const activeRuntime = runtime;
-		const data = activeRuntime.epicenter.bind(honeycrispDefinitions);
+		const data = activeRuntime.epicenter.bind(honeycrispLens);
 		state = createHoneycrispState({
 			honeycrisp: data,
 			reportBackgroundError,

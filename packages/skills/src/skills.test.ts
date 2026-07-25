@@ -21,16 +21,15 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { defineTable, type RowDocument } from '@epicenter/data';
+import { defineLens, defineTable, type RowDocument } from '@epicenter/data';
 import { openBunEpicenter } from '@epicenter/data/bun';
 import { field, InstantString } from '@epicenter/field';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { exportSkillsToDisk, importSkillsFromDisk } from './node.js';
 import { getSkill, listSkills, scanSkills } from './services.js';
-import { skillsDefinitions } from './workspace.js';
+import { skillsLens } from './workspace.js';
 
 const historicalSkillsTable = defineTable({
-	key: 'so.epicenter.skills.skills',
 	fields: {
 		name: field.string(),
 		description: field.string(),
@@ -38,15 +37,18 @@ const historicalSkillsTable = defineTable({
 	},
 });
 
+const historicalSkillsLens = defineLens({
+	namespace: 'so.epicenter.skills',
+	tables: { skills: historicalSkillsTable },
+	values: {},
+});
+
 test('a stricter Skills lens exposes nonconformance until typed update repairs it', async () => {
 	const storageRoot = mkdtempSync(join(tmpdir(), 'epicenter-skills-'));
 	const path = join(storageRoot, 'epicenter.sqlite3');
 	try {
 		const historicalEpicenter = await openBunEpicenter({ path });
-		const historical = historicalEpicenter.bind({
-			tables: { skills: historicalSkillsTable },
-			values: {},
-		});
+		const historical = historicalEpicenter.bind(historicalSkillsLens);
 		const oldSkill = await historical.tables.skills.create({
 			name: 'writing-voice',
 			description: 'Write directly',
@@ -55,7 +57,7 @@ test('a stricter Skills lens exposes nonconformance until typed update repairs i
 		await historicalEpicenter[Symbol.asyncDispose]();
 
 		await using epicenter = await openBunEpicenter({ path });
-		const skills = epicenter.bind(skillsDefinitions);
+		const skills = epicenter.bind(skillsLens);
 		expect(await getSkill(skills, 'aaaaaaaaaaaaaaaaaaaaaaaa')).toEqual({
 			skill: undefined,
 			instructions: undefined,
@@ -129,7 +131,7 @@ test('filesystem import stores metadata id as sourceId instead of structural id'
 		await using epicenter = await openBunEpicenter({
 			path: join(storageRoot, 'epicenter.sqlite3'),
 		});
-		const skills = epicenter.bind(skillsDefinitions);
+		const skills = epicenter.bind(skillsLens);
 		const imported = await importSkillsFromDisk({
 			data: skills,
 			dir: inputRoot,

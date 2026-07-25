@@ -3,7 +3,7 @@ import { createDesktopEpicenterOwner } from '@epicenter/data/desktop-owner';
 import { createDesktopAuthAuthority } from './desktop-auth-authority.ts';
 import { createHomeHost, type HomeHost, type HomeHostInputs } from './host.ts';
 import type { ConversationsData } from './workspace.ts';
-import { homeDefinitions } from './workspace.ts';
+import { homeLens, honeycrispMirrorLens } from './workspace.ts';
 
 type OwnedTestHomeHostOptions = HomeHostInputs & {
 	/** Fixture root only. Production has no separate Home data directory. */
@@ -53,11 +53,11 @@ export async function createOwnedTestHomeHostBundle(
 		directory: workspacesRoot ?? join(dataDir, 'data'),
 	});
 	try {
-		const home = dataOwner.epicenter.bind(homeDefinitions).tables;
-		const conversations = { conversations: home.conversations };
+		const conversations = dataOwner.epicenter.bind(homeLens).tables;
+		const honeycrisp = dataOwner.epicenter.bind(honeycrispMirrorLens).tables;
 		const host = await createHomeHost({
 			...hostOptions,
-			honeycrisp: { folders: home.folders, notes: home.notes },
+			honeycrisp,
 			conversations: wrapConversations?.(conversations) ?? conversations,
 		});
 		return { host, dataOwner };

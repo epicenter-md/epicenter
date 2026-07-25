@@ -7,14 +7,14 @@ construct browser or Node runtimes, expose Yjs GUIDs, or register actions.
 ```ts
 import {
 	listSkills,
-	skillsDefinitions,
+	skillsLens,
 } from '@epicenter/skills';
 import { openBunEpicenter } from '@epicenter/data/bun';
 
 await using epicenter = await openBunEpicenter({
 	path: '/app/data/epicenter.sqlite3',
 });
-const skills = epicenter.bind(skillsDefinitions);
+const skills = epicenter.bind(skillsLens);
 const catalog = await listSkills(skills);
 ```
 

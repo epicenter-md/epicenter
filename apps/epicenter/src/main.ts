@@ -38,7 +38,7 @@ import {
 	watchParentPipe,
 } from './sidecar-runtime.ts';
 import { loadStaticAssets } from './static-assets.ts';
-import { homeDefinitions } from './workspace.ts';
+import { homeLens, honeycrispMirrorLens } from './workspace.ts';
 
 async function main(): Promise<void> {
 	const parentPipe = watchParentPipe(Bun.stdin.stream());
@@ -106,12 +106,11 @@ async function main(): Promise<void> {
 			});
 			if (attached.error !== null) throw attached.error;
 		}
-		const home = dataOwner.epicenter.bind(homeDefinitions).tables;
 		host = await createHomeHost({
 			engine,
 			model,
-			honeycrisp: { folders: home.folders, notes: home.notes },
-			conversations: { conversations: home.conversations },
+			honeycrisp: dataOwner.epicenter.bind(honeycrispMirrorLens).tables,
+			conversations: dataOwner.epicenter.bind(homeLens).tables,
 		});
 		const blobs = createBunBlobStore({
 			directory: join(epicenterDataDir, 'blobs'),
