@@ -30,10 +30,15 @@ trusted inspection host that wants to mount a Lens as logical relations
 
 Facts are stored in two relations, in both the replica and the authority:
 
-- `row_facts(namespace, table_name, row_id, presence, fields, changed_sequence)`,
-  primary key `(namespace, table_name, row_id)`.
-- `value_facts(namespace, value_name, presence, content, changed_sequence)`,
-  primary key `(namespace, value_name)`.
+- `_replica_row_facts(namespace, table_name, row_id, presence, fields,
+  authority_sequence)`, primary key `(namespace, table_name, row_id)`.
+- `_replica_value_facts(namespace, value_name, presence, content,
+  authority_sequence)`, primary key `(namespace, value_name)`.
+
+The authority mirrors both under an `_authority_` prefix. Every private relation
+carries an owner-naming prefix beginning with `_`, which a table name cannot
+begin with, so no Lens can name one and a trusted host can mount Lens tables as
+bare relations without any risk of collision.
 
 Address coordinates are stored inline as their own columns. There is no
 `qualified_key`, no `address_kind` discriminant column, and no `row_id` sentinel:
@@ -42,7 +47,7 @@ only `row_facts` has a `row_id` at all. `presence` is two-valued (`present`,
 obeys: absence is a terminal tombstone in `row_facts` and a reversible unset in
 `value_facts`.
 
-The local intent queues split the same way, into `row_outbox` and `value_outbox`,
+The local intent queues split the same way, into `_replica_row_outbox` and `_replica_value_outbox`,
 sharing one strictly increasing local sequence space. The sealed batch sequence
 is replica metadata and lives in `metadata.last_sealed_batch_sequence`.
 
@@ -94,19 +99,25 @@ Each law is now a column constraint or a missing column rather than a CHECK that
 re-derives legality from a discriminant. The sentinel and the negative-sequence
 pseudo-row are unrepresentable rather than merely discouraged.
 
-The cost is that any read ordered by `changed_sequence` spans both relations, so
+The cost is that any read ordered by `authority_sequence` spans both relations, so
 the exchange page and the batch sealer read a `UNION ALL` projection ordered by
 sequence. That projection carries a query-local discriminant (`fact_kind`,
 `intent_kind`) to say which branch a row came from; it is a derived label, not a
 resurrected storage column.
 
-`changed_sequence` is globally unique and increasing across both fact relations,
+`authority_sequence` is globally unique and increasing across both fact relations,
 and SQLite cannot express a cross-relation unique constraint. The guarantee comes
-from the authority's `metadata.next_sequence`, which the authority is the only
-writer of and only ever advances. Per-relation unique indexes still refuse a
+from the authority's `_authority_metadata.next_sequence`, which the authority
+is the only writer of and only ever advances. Per-relation unique indexes still refuse a
 duplicate within one relation, which is the failure a paging or fold bug would
 actually produce.
 
-Both physical formats clean-break: `REPLICA_FORMAT_VERSION` becomes 4 and
-`AUTHORITY_FORMAT_VERSION` becomes 3. No migration is provided and none is
+Both physical formats clean-break: `REPLICA_FORMAT_VERSION` becomes 6 and
+`AUTHORITY_FORMAT_VERSION` becomes 5. No migration is provided and none is
 intended; a non-current format is refused, not upgraded.
+
+Refused means refused. An opener treats any unrecognized table in the file as
+evidence of a different format, rather than asking only whether the relations it
+knows about are present. The weaker check reads a file full of a previous
+format's tables as empty and builds a second live schema beside it, orphaning
+the real data with no error anywhere.
