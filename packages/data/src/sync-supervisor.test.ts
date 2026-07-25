@@ -69,7 +69,7 @@ function successfulResponse(request: ExchangeRequest): ExchangeResponse {
 					},
 				}),
 		through: request.after,
-		records: [],
+		facts: [],
 		next: null,
 	};
 }

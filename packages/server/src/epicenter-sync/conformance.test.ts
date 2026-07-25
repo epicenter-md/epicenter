@@ -70,23 +70,25 @@ test('two replicas converge across row changes, deletion, value unset, and later
 
 	expectOk(
 		first.write({
-			kind: 'create',
+			verb: 'patch',
 			address: rowAddress(ROW_A),
-			fields: { title: 'keep', note: 'remove' },
+			set: { title: 'keep', note: 'remove' },
+			unset: [],
 		}),
 	);
 	expectOk(
 		first.write({
-			kind: 'create',
+			verb: 'patch',
 			address: rowAddress(ROW_B),
-			fields: { title: 'offline' },
+			set: { title: 'offline' },
+			unset: [],
 		}),
 	);
 	expectOk(
 		first.write({
-			kind: 'set',
+			verb: 'set',
 			address: valueAddress('value'),
-			value: 'first',
+			content: 'first',
 		}),
 	);
 	expectOk(await first.synchronize(authority.exchange));
@@ -94,20 +96,22 @@ test('two replicas converge across row changes, deletion, value unset, and later
 
 	expectOk(
 		second.write({
-			kind: 'update',
+			verb: 'patch',
 			address: rowAddress(ROW_A),
-			fields: { set: { title: 'updated' }, unset: ['note'] },
+			set: { title: 'updated' },
+			unset: ['note'],
 		}),
 	);
-	expectOk(second.write({ kind: 'delete', address: rowAddress(ROW_B) }));
-	expectOk(second.write({ kind: 'unset', address: valueAddress('value') }));
+	expectOk(second.write({ verb: 'delete', address: rowAddress(ROW_B) }));
+	expectOk(second.write({ verb: 'unset', address: valueAddress('value') }));
 	expectOk(await second.synchronize(authority.exchange));
 
 	expectOk(
 		first.write({
-			kind: 'update',
+			verb: 'patch',
 			address: rowAddress(ROW_B),
-			fields: { set: { title: 'stale-live' }, unset: [] },
+			set: { title: 'stale-live' },
+			unset: [],
 		}),
 	);
 	expectOk(await first.synchronize(authority.exchange));
@@ -119,9 +123,9 @@ test('two replicas converge across row changes, deletion, value unset, and later
 
 	expectOk(
 		first.write({
-			kind: 'set',
+			verb: 'set',
 			address: valueAddress('value'),
-			value: 'second',
+			content: 'second',
 		}),
 	);
 	expectOk(await first.synchronize(authority.exchange));
@@ -148,9 +152,15 @@ test('fresh sequence-zero replica drains full state through bounded pages', asyn
 		writerDatabase,
 		'wwwwwwwwwwwwwwwwwwwwwww1',
 	);
-	expectOk(writer.write({ kind: 'set', address: valueAddress('a'), value: 1 }));
-	expectOk(writer.write({ kind: 'set', address: valueAddress('b'), value: 2 }));
-	expectOk(writer.write({ kind: 'set', address: valueAddress('c'), value: 3 }));
+	expectOk(
+		writer.write({ verb: 'set', address: valueAddress('a'), content: 1 }),
+	);
+	expectOk(
+		writer.write({ verb: 'set', address: valueAddress('b'), content: 2 }),
+	);
+	expectOk(
+		writer.write({ verb: 'set', address: valueAddress('c'), content: 3 }),
+	);
 	expectOk(await writer.synchronize(authority.exchange));
 
 	const freshDatabase = new Database(':memory:');
@@ -183,10 +193,10 @@ test('dropped response retries the exact multi-change batch and applies it once'
 		'rrrrrrrrrrrrrrrrrrrrrrr1',
 	);
 	expectOk(
-		replica.write({ kind: 'set', address: valueAddress('a'), value: 1 }),
+		replica.write({ verb: 'set', address: valueAddress('a'), content: 1 }),
 	);
 	expectOk(
-		replica.write({ kind: 'set', address: valueAddress('b'), value: 2 }),
+		replica.write({ verb: 'set', address: valueAddress('b'), content: 2 }),
 	);
 	let firstRequest: ExchangeRequest | undefined;
 	const lost = await replica.synchronize((request) => {
@@ -231,18 +241,18 @@ test('forked replica remints its identity, resubmits, and converges', async () =
 		);
 		expectOk(
 			original.write({
-				kind: 'set',
+				verb: 'set',
 				address: valueAddress('value'),
-				value: 'base',
+				content: 'base',
 			}),
 		);
 		expectOk(await original.synchronize(authority.exchange));
 		copyFileSync(originalPath, copyPath);
 		expectOk(
 			original.write({
-				kind: 'set',
+				verb: 'set',
 				address: valueAddress('value'),
-				value: 'original',
+				content: 'original',
 			}),
 		);
 		expectOk(await original.synchronize(authority.exchange));
@@ -257,9 +267,9 @@ test('forked replica remints its identity, resubmits, and converges', async () =
 		const before = expectOk(copied.metadata()).replicaId;
 		expectOk(
 			copied.write({
-				kind: 'set',
+				verb: 'set',
 				address: valueAddress('value'),
-				value: 'copy',
+				content: 'copy',
 			}),
 		);
 		expectOk(await copied.synchronize(authority.exchange));
@@ -286,8 +296,12 @@ test('crash between page install and cursor advance converges on retry', async (
 		writerDatabase,
 		'wwwwwwwwwwwwwwwwwwwwwww2',
 	);
-	expectOk(writer.write({ kind: 'set', address: valueAddress('a'), value: 1 }));
-	expectOk(writer.write({ kind: 'set', address: valueAddress('b'), value: 2 }));
+	expectOk(
+		writer.write({ verb: 'set', address: valueAddress('a'), content: 1 }),
+	);
+	expectOk(
+		writer.write({ verb: 'set', address: valueAddress('b'), content: 2 }),
+	);
 	expectOk(await writer.synchronize(authority.exchange));
 
 	const replicaDatabase = new Database(':memory:');

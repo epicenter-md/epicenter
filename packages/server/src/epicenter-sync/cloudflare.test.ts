@@ -71,22 +71,23 @@ function setupStorage() {
 }
 
 function requestBody() {
-	const changes = [
+	const intents = [
 		{
-			kind: 'create' as const,
+			verb: 'patch' as const,
 			address: {
 				kind: 'row' as const,
 				namespace: 'so.epicenter.tests',
 				tableName: 'rows',
 				rowId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
 			},
-			fields: { title: 'Persisted' },
+			set: { title: 'Persisted' },
+			unset: [],
 		},
 	];
 	return {
 		replicaId: 'rrrrrrrrrrrrrrrrrrrrrrrr',
 		after: 0,
-		batch: { seq: 1, digest: batchDigest(changes), changes },
+		batch: { seq: 1, digest: batchDigest(intents), intents },
 	};
 }
 
@@ -107,9 +108,9 @@ test('exchange state and receipt survive Durable Object restart', async () => {
 		expect(authority.exchange(requestBody())).toMatchObject({
 			receipt: { seq: 1, appliedThrough: 1 },
 			through: 1,
-			records: [
+			facts: [
 				{
-					kind: 'row',
+					presence: 'present',
 					fields: { title: 'Persisted' },
 				},
 			],

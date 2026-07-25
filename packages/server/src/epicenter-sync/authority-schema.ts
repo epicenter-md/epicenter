@@ -4,7 +4,7 @@ import {
 	StorageUpgradeRequiredError,
 } from '@epicenter/sqlite';
 
-export const AUTHORITY_FORMAT_VERSION = 3;
+export const AUTHORITY_FORMAT_VERSION = 4;
 
 const AUTHORITY_TABLES = [
 	'metadata',
@@ -22,7 +22,7 @@ const AUTHORITY_TABLES = [
  * needs an `address_kind` column or an empty-string row id to say which laws
  * apply, because the relation itself says it.
  *
- * One invariant does span both relations: `changed_sequence` is globally unique
+ * One invariant does span both relations: `authority_sequence` is globally unique
  * and increasing across every fact this authority stores, because the exchange
  * page is a single sequence-ordered stream over the union of the two. SQLite
  * cannot express a cross-relation unique constraint, and the guarantee does not
@@ -59,27 +59,27 @@ const SCHEMA = [
 		),
 		presence TEXT NOT NULL CHECK (presence IN ('present', 'absent')),
 		fields TEXT,
-		changed_sequence INTEGER NOT NULL CHECK (changed_sequence >= 1),
+		authority_sequence INTEGER NOT NULL CHECK (authority_sequence >= 1),
 		PRIMARY KEY (namespace, table_name, row_id),
 		CHECK (
 			(presence = 'present' AND fields IS NOT NULL AND json_valid(fields)) OR
 			(presence = 'absent' AND fields IS NULL)
 		)
 	) WITHOUT ROWID, STRICT`,
-	'CREATE UNIQUE INDEX row_facts_changed_sequence ON row_facts(changed_sequence)',
+	'CREATE UNIQUE INDEX row_facts_authority_sequence ON row_facts(authority_sequence)',
 	`CREATE TABLE value_facts (
 		namespace TEXT NOT NULL,
 		value_name TEXT NOT NULL,
 		presence TEXT NOT NULL CHECK (presence IN ('present', 'absent')),
 		content TEXT,
-		changed_sequence INTEGER NOT NULL CHECK (changed_sequence >= 1),
+		authority_sequence INTEGER NOT NULL CHECK (authority_sequence >= 1),
 		PRIMARY KEY (namespace, value_name),
 		CHECK (
 			(presence = 'present' AND content IS NOT NULL AND json_valid(content)) OR
 			(presence = 'absent' AND content IS NULL)
 		)
 	) WITHOUT ROWID, STRICT`,
-	'CREATE UNIQUE INDEX value_facts_changed_sequence ON value_facts(changed_sequence)',
+	'CREATE UNIQUE INDEX value_facts_authority_sequence ON value_facts(authority_sequence)',
 	`CREATE TABLE document_updates (
 		namespace TEXT NOT NULL,
 		table_name TEXT NOT NULL,

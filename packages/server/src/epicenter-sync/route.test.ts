@@ -33,7 +33,7 @@ function setup() {
 			principals.push(principalId);
 			return () => {
 				exchanges += 1;
-				return { through: 0, records: [], next: null };
+				return { through: 0, facts: [], next: null };
 			};
 		}),
 	);
@@ -62,7 +62,7 @@ test('valid request resolves and calls the authenticated principal authority', a
 	expect(response.status).toBe(200);
 	expect((await response.json()) as unknown).toEqual({
 		through: 0,
-		records: [],
+		facts: [],
 		next: null,
 	});
 	expect(context.principals).toEqual([asPrincipalId('bob')]);

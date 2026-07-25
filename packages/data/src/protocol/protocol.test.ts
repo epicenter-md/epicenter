@@ -16,15 +16,15 @@ import {
 	addressesEqual,
 	addressKey,
 	batchDigest,
-	type Change,
 	DATA_ADDRESS_CEILINGS,
 	DATA_ADMISSION_LIMITS,
+	type Intent,
 	isAddress,
 	isRowAddress,
 	isValueAddress,
-	parseChange,
 	parseExchangeRequest,
 	parseExchangeResponse,
+	parseIntent,
 	parseReplicaId,
 	parseRowId,
 	sha256Hex,
@@ -142,52 +142,54 @@ describe('structured identifiers', () => {
 	});
 });
 
-describe('change and exchange admission', () => {
-	test('all five change variants parse and inputs are cloned', () => {
-		const changes: Change[] = [
-			{ kind: 'create', address: ROW_ADDRESS, fields: { title: 'A' } },
+describe('intent and exchange admission', () => {
+	test('all four intent verbs parse and inputs are cloned', () => {
+		const intents: Intent[] = [
+			{ verb: 'patch', address: ROW_ADDRESS, set: { title: 'A' }, unset: [] },
 			{
-				kind: 'update',
+				verb: 'patch',
 				address: ROW_ADDRESS,
-				fields: { set: { title: 'B' }, unset: ['old'] },
+				set: { title: 'B' },
+				unset: ['old'],
 			},
-			{ kind: 'delete', address: ROW_ADDRESS },
+			{ verb: 'delete', address: ROW_ADDRESS },
 			{
-				kind: 'set',
+				verb: 'set',
 				address: VALUE_ADDRESS,
-				value: { dark: true },
+				content: { dark: true },
 			},
-			{ kind: 'unset', address: VALUE_ADDRESS },
+			{ verb: 'unset', address: VALUE_ADDRESS },
 		];
-		for (const change of changes)
-			expect(expectOk(parseChange(change))).toEqual(change);
-		expect(expectOk(parseChange(changes[0]))).not.toBe(changes[0]);
+		for (const intent of intents)
+			expect(expectOk(parseIntent(intent))).toEqual(intent);
+		expect(expectOk(parseIntent(intents[0]))).not.toBe(intents[0]);
 	});
 
-	test('updates reject empty, duplicate, overlapping, and excessive unset keys', () => {
+	test('patches reject empty, duplicate, overlapping, and excessive unset keys', () => {
 		const update = (unset: string[], set: Record<string, string> = {}) => ({
-			kind: 'update',
+			verb: 'patch' as const,
 			address: ROW_ADDRESS,
-			fields: { set, unset },
+			set,
+			unset,
 		});
-		for (const change of [
+		for (const intent of [
 			update([]),
 			update(['x', 'x']),
 			update(['x'], { x: 'overlap' }),
 			update(
 				Array.from(
-					{ length: DATA_ADMISSION_LIMITS.unsetKeysPerChange + 1 },
+					{ length: DATA_ADMISSION_LIMITS.unsetKeysPerIntent + 1 },
 					(_, index) => `x${index}`,
 				),
 			),
 		]) {
-			expect(expectErr(parseChange(change)).name).toBe('Invalid');
+			expect(expectErr(parseIntent(intent)).name).toBe('Invalid');
 		}
 	});
 
 	test('exchange request binds a bounded batch and forbids batches on continuation pages', () => {
-		const changes = [{ kind: 'unset', address: VALUE_ADDRESS }] as const;
-		const batch = { seq: 1, digest: batchDigest(changes), changes };
+		const intents = [{ verb: 'unset', address: VALUE_ADDRESS }] as const;
+		const batch = { seq: 1, digest: batchDigest(intents), intents };
 		expect(
 			expectOk(
 				parseExchangeRequest({ replicaId: REPLICA_ID, after: 0, batch }),
@@ -206,20 +208,20 @@ describe('change and exchange admission', () => {
 	});
 
 	test('exchange responses reject records beyond fixed through and moving cursors', () => {
-		const record = {
-			kind: 'value',
+		const fact = {
+			presence: 'present',
 			address: VALUE_ADDRESS,
-			changedSequence: 2,
-			value: 'dark',
+			authoritySequence: 2,
+			content: 'dark',
 		} as const;
 		expect(
 			expectOk(
-				parseExchangeResponse({ through: 2, records: [record], next: null }),
+				parseExchangeResponse({ through: 2, facts: [fact], next: null }),
 			),
-		).toMatchObject({ records: [record] });
+		).toMatchObject({ facts: [fact] });
 		for (const response of [
-			{ through: 1, records: [record], next: null },
-			{ through: 2, records: [record], next: { through: 3, position: 2 } },
+			{ through: 1, facts: [fact], next: null },
+			{ through: 2, facts: [fact], next: { through: 3, position: 2 } },
 		]) {
 			expect(expectErr(parseExchangeResponse(response)).name).toBe('Invalid');
 		}
@@ -228,10 +230,10 @@ describe('change and exchange admission', () => {
 
 test('canonical batch digest and SHA-256 are deterministic', () => {
 	const left = [
-		{ kind: 'set', address: VALUE_ADDRESS, value: { b: 2, a: 1 } },
+		{ verb: 'set', address: VALUE_ADDRESS, content: { b: 2, a: 1 } },
 	] as const;
 	const right = [
-		{ kind: 'set', address: VALUE_ADDRESS, value: { a: 1, b: 2 } },
+		{ verb: 'set', address: VALUE_ADDRESS, content: { a: 1, b: 2 } },
 	] as const;
 	expect(batchDigest(left)).toBe(batchDigest(right));
 	expect(sha256Hex('abc')).toBe(

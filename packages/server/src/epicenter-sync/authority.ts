@@ -5,13 +5,13 @@ import {
 	DATA_ADMISSION_LIMITS,
 	type ExchangeResponse,
 	encodedJsonBytes,
-	foldChange,
+	type Fact,
+	foldIntent,
 	type JsonObject,
 	type JsonValue,
 	parseExchangeRequest,
 	type Receipt,
 	type RowAddress,
-	type Record as SyncRecord,
 	type ValueAddress,
 } from '@epicenter/data/protocol';
 import type { SqliteDatabase, SqliteRow } from '@epicenter/sqlite';
@@ -40,7 +40,7 @@ type FactRow = SqliteRow & {
 	row_id: string | null;
 	presence: string;
 	payload: string | null;
-	changed_sequence: number;
+	authority_sequence: number;
 };
 
 export type EpicenterSyncAuthority = {
@@ -83,7 +83,7 @@ function receiptFrom(row: ReplicaRow): Receipt {
 	};
 }
 
-function factRowToRecord(row: FactRow): SyncRecord {
+function factRowToFact(row: FactRow): Fact {
 	if (row.fact_kind === 'row') {
 		if (row.row_id === null) {
 			// `row_facts.row_id` is NOT NULL, so this is unreachable unless the
@@ -99,11 +99,15 @@ function factRowToRecord(row: FactRow): SyncRecord {
 			rowId: row.row_id,
 		};
 		return row.presence === 'absent'
-			? { kind: 'row-deleted', address, changedSequence: row.changed_sequence }
-			: {
-					kind: 'row',
+			? {
+					presence: 'absent',
 					address,
-					changedSequence: row.changed_sequence,
+					authoritySequence: row.authority_sequence,
+				}
+			: {
+					presence: 'present',
+					address,
+					authoritySequence: row.authority_sequence,
 					fields: JSON.parse(row.payload ?? 'null') as JsonObject,
 				};
 	}
@@ -113,12 +117,16 @@ function factRowToRecord(row: FactRow): SyncRecord {
 		valueName: row.local_key,
 	};
 	return row.presence === 'absent'
-		? { kind: 'value-unset', address, changedSequence: row.changed_sequence }
-		: {
-				kind: 'value',
+		? {
+				presence: 'absent',
 				address,
-				changedSequence: row.changed_sequence,
-				value: JSON.parse(row.payload ?? 'null') as JsonValue,
+				authoritySequence: row.authority_sequence,
+			}
+		: {
+				presence: 'present',
+				address,
+				authoritySequence: row.authority_sequence,
+				content: JSON.parse(row.payload ?? 'null') as JsonValue,
 			};
 }
 
@@ -127,14 +135,14 @@ function factRowToRecord(row: FactRow): SyncRecord {
  * every read that pages by sequence goes through this projection.
  */
 const FACTS_IN_RANGE = `
-	SELECT changed_sequence, 'row' AS fact_kind, namespace,
+	SELECT authority_sequence, 'row' AS fact_kind, namespace,
 		table_name AS local_key, row_id, presence, fields AS payload
-	FROM row_facts WHERE changed_sequence > ? AND changed_sequence <= ?
+	FROM row_facts WHERE authority_sequence > ? AND authority_sequence <= ?
 	UNION ALL
-	SELECT changed_sequence, 'value' AS fact_kind, namespace,
+	SELECT authority_sequence, 'value' AS fact_kind, namespace,
 		value_name AS local_key, NULL AS row_id, presence, content AS payload
-	FROM value_facts WHERE changed_sequence > ? AND changed_sequence <= ?
-	ORDER BY changed_sequence`;
+	FROM value_facts WHERE authority_sequence > ? AND authority_sequence <= ?
+	ORDER BY authority_sequence`;
 
 /**
  * Read the one current fact at an address.
@@ -145,26 +153,30 @@ const FACTS_IN_RANGE = `
 function readFact(
 	database: SqliteDatabase,
 	address: Address,
-): SyncRecord | undefined {
+): Fact | undefined {
 	if (address.kind === 'row') {
 		const row = database.all<
 			SqliteRow & {
 				presence: string;
 				fields: string | null;
-				changed_sequence: number;
+				authority_sequence: number;
 			}
 		>(
-			`SELECT presence, fields, changed_sequence
+			`SELECT presence, fields, authority_sequence
 			FROM row_facts WHERE namespace = ? AND table_name = ? AND row_id = ?`,
 			[address.namespace, address.tableName, address.rowId],
 		)[0];
 		if (row === undefined) return undefined;
 		return row.presence === 'absent'
-			? { kind: 'row-deleted', address, changedSequence: row.changed_sequence }
-			: {
-					kind: 'row',
+			? {
+					presence: 'absent',
 					address,
-					changedSequence: row.changed_sequence,
+					authoritySequence: row.authority_sequence,
+				}
+			: {
+					presence: 'present',
+					address,
+					authoritySequence: row.authority_sequence,
 					fields: JSON.parse(row.fields ?? 'null') as JsonObject,
 				};
 	}
@@ -172,45 +184,49 @@ function readFact(
 		SqliteRow & {
 			presence: string;
 			content: string | null;
-			changed_sequence: number;
+			authority_sequence: number;
 		}
 	>(
-		`SELECT presence, content, changed_sequence
+		`SELECT presence, content, authority_sequence
 		FROM value_facts WHERE namespace = ? AND value_name = ?`,
 		[address.namespace, address.valueName],
 	)[0];
 	if (row === undefined) return undefined;
 	return row.presence === 'absent'
-		? { kind: 'value-unset', address, changedSequence: row.changed_sequence }
-		: {
-				kind: 'value',
+		? {
+				presence: 'absent',
 				address,
-				changedSequence: row.changed_sequence,
-				value: JSON.parse(row.content ?? 'null') as JsonValue,
+				authoritySequence: row.authority_sequence,
+			}
+		: {
+				presence: 'present',
+				address,
+				authoritySequence: row.authority_sequence,
+				content: JSON.parse(row.content ?? 'null') as JsonValue,
 			};
 }
 
-function storeRecord(database: SqliteDatabase, record: SyncRecord): void {
-	if (record.kind === 'row' || record.kind === 'row-deleted') {
-		const { namespace, tableName, rowId } = record.address;
+function storeFact(database: SqliteDatabase, fact: Fact): void {
+	if (fact.address.kind === 'row') {
+		const { namespace, tableName, rowId } = fact.address;
 		database.run(
 			`INSERT INTO row_facts (
-				namespace, table_name, row_id, presence, fields, changed_sequence
+				namespace, table_name, row_id, presence, fields, authority_sequence
 			) VALUES (?, ?, ?, ?, ?, ?)
 			ON CONFLICT (namespace, table_name, row_id) DO UPDATE SET
 				presence = excluded.presence,
 				fields = excluded.fields,
-				changed_sequence = excluded.changed_sequence`,
+				authority_sequence = excluded.authority_sequence`,
 			[
 				namespace,
 				tableName,
 				rowId,
-				record.kind === 'row' ? 'present' : 'absent',
-				record.kind === 'row' ? JSON.stringify(record.fields) : null,
-				record.changedSequence,
+				fact.presence,
+				'fields' in fact ? JSON.stringify(fact.fields) : null,
+				fact.authoritySequence,
 			],
 		);
-		if (record.kind === 'row-deleted') {
+		if (fact.presence === 'absent') {
 			database.run(
 				'DELETE FROM document_updates WHERE namespace = ? AND table_name = ? AND row_id = ?',
 				[namespace, tableName, rowId],
@@ -222,21 +238,21 @@ function storeRecord(database: SqliteDatabase, record: SyncRecord): void {
 		}
 		return;
 	}
-	const { namespace, valueName } = record.address;
+	const { namespace, valueName } = fact.address;
 	database.run(
 		`INSERT INTO value_facts (
-			namespace, value_name, presence, content, changed_sequence
+			namespace, value_name, presence, content, authority_sequence
 		) VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT (namespace, value_name) DO UPDATE SET
 			presence = excluded.presence,
 			content = excluded.content,
-			changed_sequence = excluded.changed_sequence`,
+			authority_sequence = excluded.authority_sequence`,
 		[
 			namespace,
 			valueName,
-			record.kind === 'value' ? 'present' : 'absent',
-			record.kind === 'value' ? JSON.stringify(record.value) : null,
-			record.changedSequence,
+			fact.presence,
+			'content' in fact ? JSON.stringify(fact.content) : null,
+			fact.authoritySequence,
 		],
 	);
 }
@@ -247,7 +263,7 @@ function readPage(
 	through: number,
 	pageSize: number,
 	receipt: Receipt | undefined,
-): { through: number; records: SyncRecord[]; next: Cursor | null } {
+): { through: number; facts: Fact[]; next: Cursor | null } {
 	const available = database.all<FactRow>(`${FACTS_IN_RANGE} LIMIT ?`, [
 		position,
 		through,
@@ -255,21 +271,21 @@ function readPage(
 		through,
 		pageSize + 1,
 	]);
-	let records = available.slice(0, pageSize).map(factRowToRecord);
+	let facts = available.slice(0, pageSize).map(factRowToFact);
 	while (
-		records.length > 1 &&
+		facts.length > 1 &&
 		encodedJsonBytes({
 			...(receipt === undefined ? {} : { receipt }),
 			through,
-			records,
-			next: { through, position: records.at(-1)?.changedSequence ?? position },
+			facts,
+			next: { through, position: facts.at(-1)?.authoritySequence ?? position },
 		}) > DATA_ADMISSION_LIMITS.encodedPageBytes
 	) {
-		records = records.slice(0, -1);
+		facts = facts.slice(0, -1);
 	}
-	const lastPosition = records.at(-1)?.changedSequence ?? position;
+	const lastPosition = facts.at(-1)?.authoritySequence ?? position;
 	const hasMore =
-		available.length > records.length ||
+		available.length > facts.length ||
 		database.all<FactRow>(`${FACTS_IN_RANGE} LIMIT 1`, [
 			lastPosition,
 			through,
@@ -278,7 +294,7 @@ function readPage(
 		]).length > 0;
 	return {
 		through,
-		records,
+		facts,
 		next: hasMore ? { through, position: lastPosition } : null,
 	};
 }
@@ -286,13 +302,13 @@ function readPage(
 /** Open one principal-owned scalar sync authority over caller-owned SQLite. */
 export function openEpicenterSyncAuthority({
 	database,
-	pageSize = DATA_ADMISSION_LIMITS.recordsPerPage,
+	pageSize = DATA_ADMISSION_LIMITS.factsPerPage,
 	readDatabaseSize,
 }: OpenAuthorityOptions): EpicenterSyncAuthority {
 	if (
 		!Number.isInteger(pageSize) ||
 		pageSize < 1 ||
-		pageSize > DATA_ADMISSION_LIMITS.recordsPerPage
+		pageSize > DATA_ADMISSION_LIMITS.factsPerPage
 	) {
 		throw new RangeError('Authority page size is outside protocol limits');
 	}
@@ -308,8 +324,8 @@ export function openEpicenterSyncAuthority({
 				let metadata = readMetadata(database);
 
 				if (request.batch !== undefined) {
-					if (request.batch.digest !== batchDigest(request.batch.changes)) {
-						throw new TypeError('Batch digest does not match its changes');
+					if (request.batch.digest !== batchDigest(request.batch.intents)) {
+						throw new TypeError('Batch digest does not match its intents');
 					}
 					const stored = readReplica(database, request.replicaId);
 					const acceptedBatch = stored?.accepted_batch ?? 0;
@@ -331,14 +347,17 @@ export function openEpicenterSyncAuthority({
 							return { refusal: 'storage-limit' };
 						}
 						let nextSequence = metadata.next_sequence;
-						for (const change of request.batch.changes) {
-							const folded = foldChange(
-								readFact(database, change.address),
-								change,
+						for (const intent of request.batch.intents) {
+							const folded = foldIntent(
+								readFact(database, intent.address),
+								intent,
 								nextSequence,
 							);
 							if (folded.kind === 'noop') continue;
-							storeRecord(database, folded.record);
+							// The authority is the only writer of `next_sequence`, so an
+							// applied fold always carries a positive sequence and is a
+							// genuine authority fact rather than a local one.
+							storeFact(database, folded.fact as Fact);
 							nextSequence += 1;
 						}
 						const appliedThrough = nextSequence - 1;

@@ -11,8 +11,8 @@ import {
 import {
 	DATA_ADMISSION_LIMITS,
 	encodedJsonBytes,
-	isAdmissibleChange,
-	isAdmissibleRecord,
+	isAdmissibleFact,
+	isAdmissibleIntent,
 	isJsonValue,
 } from './admission.js';
 
@@ -55,98 +55,150 @@ const fieldKey = Type.String({
 	maxLength: DATA_ADMISSION_LIMITS.fieldKeyBytes,
 });
 
-const rowCreateSchema = Type.Object(
+/**
+ * Intents: what a replica is asking the authority to do at one address.
+ *
+ * An intent names a verb because it is a command, and a command's whole content
+ * is the action. There is deliberately no row `create` verb beside `patch`: a
+ * create and an update differ only in what the authority happens to be holding
+ * when the intent lands, which is a fact about the authority rather than about
+ * what the replica asked for. One `patch` folds over the live row, or over an
+ * empty object when the address has no fact at all, and is refused outright once
+ * the address carries a tombstone. That keeps row death terminal without a
+ * second verb whose only job was to encode "I believe this row is new".
+ */
+const rowPatchIntentSchema = Type.Object(
 	{
-		kind: Type.Literal('create'),
+		verb: Type.Literal('patch'),
 		address: RowAddressSchema,
+		set: jsonObjectSchema,
+		unset: Type.Array(fieldKey, {
+			maxItems: DATA_ADMISSION_LIMITS.unsetKeysPerIntent,
+		}),
+	},
+	CLOSED,
+);
+const rowDeleteIntentSchema = Type.Object(
+	{ verb: Type.Literal('delete'), address: RowAddressSchema },
+	CLOSED,
+);
+const valueSetIntentSchema = Type.Object(
+	{
+		verb: Type.Literal('set'),
+		address: ValueAddressSchema,
+		content: jsonValueSchema,
+	},
+	CLOSED,
+);
+const valueUnsetIntentSchema = Type.Object(
+	{ verb: Type.Literal('unset'), address: ValueAddressSchema },
+	CLOSED,
+);
+
+export const IntentSchema = Type.Union([
+	rowPatchIntentSchema,
+	rowDeleteIntentSchema,
+	valueSetIntentSchema,
+	valueUnsetIntentSchema,
+]);
+export type Intent = Static<typeof IntentSchema>;
+
+/**
+ * Facts: the authority's current state at one address.
+ *
+ * A fact carries `presence` rather than a verb because it describes a state, not
+ * an action: nothing about a stored row says whether it arrived by creation or
+ * by update. The two axes stay independent. Address `kind` answers what is
+ * addressed and supplies the law, so row absence is a terminal tombstone while
+ * value absence is a reversible unset. `presence` answers only whether the
+ * address currently exists, which cannot be read off the payload: an empty
+ * object is a present row and `null` is a present value.
+ *
+ * `authoritySequence` is the sequence the authority assigned when this current
+ * fact last changed. On the wire it is always positive and globally ordered
+ * across both address kinds, which is what lets one exchange page be a single
+ * ordered stream. A replica's own optimistic writes are not authority facts and
+ * do not appear here; see `LocalFact`.
+ */
+const rowPresentFactSchema = Type.Object(
+	{
+		presence: Type.Literal('present'),
+		address: RowAddressSchema,
+		authoritySequence: positiveSequence,
 		fields: jsonObjectSchema,
 	},
 	CLOSED,
 );
-const rowUpdateSchema = Type.Object(
+const rowAbsentFactSchema = Type.Object(
 	{
-		kind: Type.Literal('update'),
+		presence: Type.Literal('absent'),
 		address: RowAddressSchema,
-		fields: Type.Object(
-			{
-				set: jsonObjectSchema,
-				unset: Type.Array(fieldKey, {
-					maxItems: DATA_ADMISSION_LIMITS.unsetKeysPerChange,
-				}),
-			},
-			CLOSED,
-		),
+		authoritySequence: positiveSequence,
 	},
 	CLOSED,
 );
-const rowDeleteSchema = Type.Object(
-	{ kind: Type.Literal('delete'), address: RowAddressSchema },
-	CLOSED,
-);
-const valueSetSchema = Type.Object(
+const valuePresentFactSchema = Type.Object(
 	{
-		kind: Type.Literal('set'),
+		presence: Type.Literal('present'),
 		address: ValueAddressSchema,
-		value: jsonValueSchema,
+		authoritySequence: positiveSequence,
+		content: jsonValueSchema,
 	},
 	CLOSED,
 );
-const valueUnsetSchema = Type.Object(
-	{ kind: Type.Literal('unset'), address: ValueAddressSchema },
+const valueAbsentFactSchema = Type.Object(
+	{
+		presence: Type.Literal('absent'),
+		address: ValueAddressSchema,
+		authoritySequence: positiveSequence,
+	},
 	CLOSED,
 );
 
-export const ChangeSchema = Type.Union([
-	rowCreateSchema,
-	rowUpdateSchema,
-	rowDeleteSchema,
-	valueSetSchema,
-	valueUnsetSchema,
+export const FactSchema = Type.Union([
+	rowPresentFactSchema,
+	rowAbsentFactSchema,
+	valuePresentFactSchema,
+	valueAbsentFactSchema,
 ]);
-export type Change = Static<typeof ChangeSchema>;
+export type Fact = Static<typeof FactSchema>;
 
-const rowRecordSchema = Type.Object(
-	{
-		kind: Type.Literal('row'),
-		address: RowAddressSchema,
-		changedSequence: positiveSequence,
-		fields: jsonObjectSchema,
-	},
-	CLOSED,
-);
-const rowDeletedRecordSchema = Type.Object(
-	{
-		kind: Type.Literal('row-deleted'),
-		address: RowAddressSchema,
-		changedSequence: positiveSequence,
-	},
-	CLOSED,
-);
-const valueRecordSchema = Type.Object(
-	{
-		kind: Type.Literal('value'),
-		address: ValueAddressSchema,
-		changedSequence: positiveSequence,
-		value: jsonValueSchema,
-	},
-	CLOSED,
-);
-const valueUnsetRecordSchema = Type.Object(
-	{
-		kind: Type.Literal('value-unset'),
-		address: ValueAddressSchema,
-		changedSequence: positiveSequence,
-	},
-	CLOSED,
-);
-
-export const RecordSchema = Type.Union([
-	rowRecordSchema,
-	rowDeletedRecordSchema,
-	valueRecordSchema,
-	valueUnsetRecordSchema,
-]);
-export type Record = Static<typeof RecordSchema>;
+/**
+ * A replica's current view at one address, which is not always an authority
+ * fact.
+ *
+ * Structurally identical to {@link Fact} except in the one place they genuinely
+ * differ: `authoritySequence` may be `0`, meaning "the authority has not
+ * assigned one yet". That is what a local optimistic write looks like before an
+ * exchange settles it. The two types stay separate so that the wire keeps its
+ * real guarantee, a positive globally ordered sequence, instead of relaxing
+ * authority admission to accommodate a state only the local replica can be in.
+ * `parseFact` refuses a zero sequence, so a local fact can never be published as
+ * an authority fact by accident.
+ */
+export type LocalFact =
+	| {
+			presence: 'present';
+			address: Static<typeof RowAddressSchema>;
+			authoritySequence: number;
+			fields: JsonObject;
+	  }
+	| {
+			presence: 'absent';
+			address: Static<typeof RowAddressSchema>;
+			authoritySequence: number;
+	  }
+	| {
+			presence: 'present';
+			address: Static<typeof ValueAddressSchema>;
+			authoritySequence: number;
+			content: JsonValue;
+	  }
+	| {
+			presence: 'absent';
+			address: Static<typeof ValueAddressSchema>;
+			authoritySequence: number;
+	  };
 
 export const CursorSchema = Type.Object(
 	{ through: sequence, position: sequence },
@@ -162,9 +214,9 @@ export const BatchSchema = Type.Object(
 			maxLength: 64,
 			pattern: '^[a-f0-9]{64}$',
 		}),
-		changes: Type.Array(ChangeSchema, {
+		intents: Type.Array(IntentSchema, {
 			minItems: 1,
-			maxItems: DATA_ADMISSION_LIMITS.changesPerBatch,
+			maxItems: DATA_ADMISSION_LIMITS.intentsPerBatch,
 		}),
 	},
 	CLOSED,
@@ -200,8 +252,8 @@ const exchangeSuccessSchema = Type.Object(
 	{
 		receipt: Type.Optional(ReceiptSchema),
 		through: sequence,
-		records: Type.Array(RecordSchema, {
-			maxItems: DATA_ADMISSION_LIMITS.recordsPerPage,
+		facts: Type.Array(FactSchema, {
+			maxItems: DATA_ADMISSION_LIMITS.factsPerPage,
 		}),
 		next: Type.Union([CursorSchema, Type.Null()]),
 	},
@@ -254,20 +306,24 @@ export function parseReplicaId(
 		: ProtocolValidationError.Invalid({ boundary: 'replica id' });
 }
 
-export function parseChange(
+export function parseIntent(
 	value: unknown,
-): Result<Change, ProtocolValidationError> {
-	return Value.Check(ChangeSchema, value) && isAdmissibleChange(value)
+): Result<Intent, ProtocolValidationError> {
+	return Value.Check(IntentSchema, value) && isAdmissibleIntent(value)
 		? Ok(structuredClone(value))
-		: ProtocolValidationError.Invalid({ boundary: 'change' });
+		: ProtocolValidationError.Invalid({ boundary: 'intent' });
 }
 
-export function parseRecord(
+/**
+ * Admit one authority fact. A zero `authoritySequence` is refused here: only the
+ * local replica can be in that state, and {@link LocalFact} is where it lives.
+ */
+export function parseFact(
 	value: unknown,
-): Result<Record, ProtocolValidationError> {
-	return Value.Check(RecordSchema, value) && isAdmissibleRecord(value)
+): Result<Fact, ProtocolValidationError> {
+	return Value.Check(FactSchema, value) && isAdmissibleFact(value)
 		? Ok(structuredClone(value))
-		: ProtocolValidationError.Invalid({ boundary: 'record' });
+		: ProtocolValidationError.Invalid({ boundary: 'fact' });
 }
 
 export function parseExchangeRequest(
@@ -286,7 +342,7 @@ export function parseExchangeRequest(
 				value.cursor.position < value.after ||
 				value.cursor.position > value.cursor.through)) ||
 		(value.batch !== undefined &&
-			(!value.batch.changes.every(isAdmissibleChange) ||
+			(!value.batch.intents.every(isAdmissibleIntent) ||
 				encodedJsonBytes(value.batch) >
 					DATA_ADMISSION_LIMITS.encodedBatchBytes))
 	) {
@@ -304,21 +360,21 @@ export function parseExchangeResponse(
 	if ('refusal' in value) return Ok(structuredClone(value));
 	if (
 		encodedJsonBytes(value) > DATA_ADMISSION_LIMITS.encodedPageBytes ||
-		!value.records.every(isAdmissibleRecord) ||
-		value.records.some((record) => record.changedSequence > value.through) ||
-		value.records.some((record, index, records) => {
-			const prior = records[index - 1];
+		!value.facts.every(isAdmissibleFact) ||
+		value.facts.some((fact) => fact.authoritySequence > value.through) ||
+		value.facts.some((fact, index, facts) => {
+			const prior = facts[index - 1];
 			return (
-				prior !== undefined && record.changedSequence <= prior.changedSequence
+				prior !== undefined && fact.authoritySequence <= prior.authoritySequence
 			);
 		}) ||
 		(value.receipt !== undefined &&
 			value.receipt.appliedThrough > value.through) ||
 		(value.next !== null &&
-			(value.records.length === 0 ||
+			(value.facts.length === 0 ||
 				value.next.through !== value.through ||
 				value.next.position > value.through ||
-				value.next.position !== value.records.at(-1)?.changedSequence))
+				value.next.position !== value.facts.at(-1)?.authoritySequence))
 	) {
 		return ProtocolValidationError.Invalid({ boundary: 'exchange response' });
 	}

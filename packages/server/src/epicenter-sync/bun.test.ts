@@ -75,17 +75,18 @@ function exchange(app: Hono<Env>, body: unknown, authenticated = true) {
 }
 
 function createRequest() {
-	const changes = [
+	const intents = [
 		{
-			kind: 'create' as const,
+			verb: 'patch' as const,
 			address: ROW_ADDRESS,
-			fields: { title: 'Hello' },
+			set: { title: 'Hello' },
+			unset: [],
 		},
 	];
 	return {
 		replicaId: REPLICA_ID,
 		after: 0,
-		batch: { seq: 1, digest: batchDigest(changes), changes },
+		batch: { seq: 1, digest: batchDigest(intents), intents },
 	};
 }
 
@@ -128,9 +129,9 @@ test('mounted exchange stores and returns one principal row', async () => {
 		expect((await response.json()) as unknown).toMatchObject({
 			receipt: { seq: 1, appliedThrough: 1 },
 			through: 1,
-			records: [
+			facts: [
 				{
-					kind: 'row',
+					presence: 'present',
 					address: ROW_ADDRESS,
 					fields: { title: 'Hello' },
 				},
@@ -188,11 +189,11 @@ test('pulling a deleted row reports not-live', async () => {
 	const context = setup();
 	try {
 		await exchange(context.app, createRequest());
-		const changes = [{ kind: 'delete' as const, address: ROW_ADDRESS }];
+		const intents = [{ verb: 'delete' as const, address: ROW_ADDRESS }];
 		await exchange(context.app, {
 			replicaId: REPLICA_ID,
 			after: 1,
-			batch: { seq: 2, digest: batchDigest(changes), changes },
+			batch: { seq: 2, digest: batchDigest(intents), intents },
 		});
 		const pulled = await context.app.request(documentPath(), {
 			headers: { authorization: 'Bearer token' },

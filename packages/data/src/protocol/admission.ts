@@ -3,12 +3,7 @@ import {
 	isAdmissibleAddress,
 	isRuntimeId,
 } from './addresses.js';
-import type {
-	Change,
-	JsonObject,
-	JsonValue,
-	Record as SyncRecord,
-} from './schemas.js';
+import type { Fact, Intent, JsonObject, JsonValue } from './schemas.js';
 
 export const DATA_ADMISSION_LIMITS = {
 	/** Byte ceiling for the durable reverse-domain namespace coordinate. */
@@ -19,14 +14,14 @@ export const DATA_ADMISSION_LIMITS = {
 	valueNameBytes: 128,
 	rowIdLength: 24,
 	replicaIdLength: 24,
-	changesPerBatch: 64,
-	recordsPerPage: 64,
-	unsetKeysPerChange: 128,
+	intentsPerBatch: 64,
+	factsPerPage: 64,
+	unsetKeysPerIntent: 128,
 	fieldKeyBytes: 512,
 	jsonDepth: 16,
 	propertiesPerObject: 1_024,
-	encodedRecordBytes: 508 * 1024,
-	encodedChangeBytes: 700 * 1024,
+	encodedFactBytes: 508 * 1024,
+	encodedIntentBytes: 700 * 1024,
 	encodedBatchBytes: 768 * 1024,
 	encodedPageBytes: 8 * 1024 * 1024,
 } as const;
@@ -96,28 +91,25 @@ function isFieldKey(value: string): boolean {
 	);
 }
 
-export function isAdmissibleChange(change: Change): boolean {
-	if (!isAdmissibleAddress(change.address, DATA_ADDRESS_CEILINGS)) return false;
-	if (change.address.kind === 'row' && !isRuntimeId(change.address.rowId))
+export function isAdmissibleIntent(intent: Intent): boolean {
+	if (!isAdmissibleAddress(intent.address, DATA_ADDRESS_CEILINGS)) return false;
+	if (intent.address.kind === 'row' && !isRuntimeId(intent.address.rowId))
 		return false;
-	if (encodedJsonBytes(change) > DATA_ADMISSION_LIMITS.encodedChangeBytes)
+	if (encodedJsonBytes(intent) > DATA_ADMISSION_LIMITS.encodedIntentBytes)
 		return false;
 
-	switch (change.kind) {
-		case 'create':
-			return isJsonObject(change.fields);
-		case 'update': {
-			if (!isJsonObject(change.fields.set)) return false;
-			if (
-				Object.keys(change.fields.set).length === 0 &&
-				change.fields.unset.length === 0
-			)
+	switch (intent.verb) {
+		case 'patch': {
+			if (!isJsonObject(intent.set)) return false;
+			// An empty patch asks for nothing; it would still burn an authority
+			// sequence and wake every subscriber, so it is refused at the boundary.
+			if (Object.keys(intent.set).length === 0 && intent.unset.length === 0)
 				return false;
-			const unset = new Set(change.fields.unset);
+			const unset = new Set(intent.unset);
 			return (
-				unset.size === change.fields.unset.length &&
-				change.fields.unset.every(isFieldKey) &&
-				Object.keys(change.fields.set).every(
+				unset.size === intent.unset.length &&
+				intent.unset.every(isFieldKey) &&
+				Object.keys(intent.set).every(
 					(key) => isFieldKey(key) && !unset.has(key),
 				)
 			);
@@ -125,29 +117,35 @@ export function isAdmissibleChange(change: Change): boolean {
 		case 'delete':
 			return true;
 		case 'set':
-			return isJsonValue(change.value);
+			return isJsonValue(intent.content);
 		case 'unset':
 			return true;
 		default:
-			return change satisfies never;
+			return intent satisfies never;
 	}
 }
 
-export function isAdmissibleRecord(record: SyncRecord): boolean {
+/**
+ * Admit one authority fact.
+ *
+ * The positive-sequence check is the boundary between a local optimistic write
+ * and an authority fact: a replica stores `0` until an exchange assigns a real
+ * sequence, and that state must never reach the wire.
+ */
+export function isAdmissibleFact(fact: Fact): boolean {
 	if (
-		!isAdmissibleAddress(record.address, DATA_ADDRESS_CEILINGS) ||
-		!Number.isSafeInteger(record.changedSequence) ||
-		record.changedSequence < 1
+		!isAdmissibleAddress(fact.address, DATA_ADDRESS_CEILINGS) ||
+		!Number.isSafeInteger(fact.authoritySequence) ||
+		fact.authoritySequence < 1
 	) {
 		return false;
 	}
-	if (record.address.kind === 'row' && !isRuntimeId(record.address.rowId))
+	if (fact.address.kind === 'row' && !isRuntimeId(fact.address.rowId))
 		return false;
-	if (encodedJsonBytes(record) > DATA_ADMISSION_LIMITS.encodedRecordBytes)
+	if (encodedJsonBytes(fact) > DATA_ADMISSION_LIMITS.encodedFactBytes)
 		return false;
-	return record.kind === 'row'
-		? isJsonObject(record.fields)
-		: record.kind === 'value'
-			? isJsonValue(record.value)
-			: true;
+	if (fact.presence === 'absent') return true;
+	return 'fields' in fact
+		? isJsonObject(fact.fields)
+		: isJsonValue(fact.content);
 }

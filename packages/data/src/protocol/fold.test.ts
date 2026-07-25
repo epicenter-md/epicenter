@@ -11,11 +11,11 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-	type Change,
 	DATA_ADMISSION_LIMITS,
-	foldChange,
+	type Fact,
+	foldIntent,
+	type Intent,
 	type JsonObject,
-	type Record as SyncRecord,
 } from './index.js';
 
 const ROW_ID = 'abc123def456ghi789jkl012';
@@ -32,137 +32,132 @@ const VALUE_ADDRESS = {
 } as const;
 const row = (
 	fields: JsonObject = { title: 'A' },
-	changedSequence = 1,
-): SyncRecord => ({
-	kind: 'row',
+	authoritySequence = 1,
+): Fact => ({
+	presence: 'present',
 	address: ROW_ADDRESS,
-	changedSequence,
+	authoritySequence,
 	fields,
 });
-const deleted = (): SyncRecord => ({
-	kind: 'row-deleted',
+const deleted = (): Fact => ({
+	presence: 'absent',
 	address: ROW_ADDRESS,
-	changedSequence: 2,
+	authoritySequence: 2,
 });
-const value = (): SyncRecord => ({
-	kind: 'value',
+const value = (): Fact => ({
+	presence: 'present',
 	address: VALUE_ADDRESS,
-	changedSequence: 1,
-	value: 'dark',
+	authoritySequence: 1,
+	content: 'dark',
 });
-const unset = (): SyncRecord => ({
-	kind: 'value-unset',
+const unset = (): Fact => ({
+	presence: 'absent',
 	address: VALUE_ADDRESS,
-	changedSequence: 2,
+	authoritySequence: 2,
 });
 
 describe('row fold', () => {
 	const cases: Array<{
 		name: string;
-		current: SyncRecord | undefined;
-		change: Change;
+		current: Fact | undefined;
+		change: Intent;
 		expected: 'applied' | 'noop';
 	}> = [
 		{
-			name: 'create at absence applies',
+			// A patch at an address with no fact creates the row. This is what
+			// replaced the old `create` verb: the authority already knows whether
+			// the row exists, so the replica never has to claim it.
+			name: 'patch where no fact exists creates the row',
 			current: undefined,
 			change: {
-				kind: 'create',
+				verb: 'patch',
 				address: ROW_ADDRESS,
-				fields: { title: 'A' },
+				set: { title: 'A' },
+				unset: [],
 			},
 			expected: 'applied',
 		},
 		{
-			name: 'create at live is a no-op',
+			name: 'patch at a live row merges over it',
 			current: row(),
-			change: { kind: 'create', address: ROW_ADDRESS, fields: {} },
-			expected: 'noop',
-		},
-		{
-			name: 'create at tombstone is a no-op',
-			current: deleted(),
-			change: { kind: 'create', address: ROW_ADDRESS, fields: {} },
-			expected: 'noop',
-		},
-		{
-			name: 'update at absence is a no-op',
-			current: undefined,
 			change: {
-				kind: 'update',
+				verb: 'patch',
 				address: ROW_ADDRESS,
-				fields: { set: { x: 1 }, unset: [] },
+				set: { x: 1 },
+				unset: [],
 			},
-			expected: 'noop',
+			expected: 'applied',
 		},
 		{
-			name: 'update at tombstone is a no-op',
+			// The whole terminal-tombstone law. Nothing resurrects a deleted row,
+			// so a patch that lost the race to a concurrent delete stays lost.
+			name: 'patch at a tombstone is refused forever',
 			current: deleted(),
 			change: {
-				kind: 'update',
+				verb: 'patch',
 				address: ROW_ADDRESS,
-				fields: { set: { x: 1 }, unset: [] },
+				set: { x: 1 },
+				unset: [],
 			},
 			expected: 'noop',
 		},
 		{
 			name: 'delete at live applies',
 			current: row(),
-			change: { kind: 'delete', address: ROW_ADDRESS },
+			change: { verb: 'delete', address: ROW_ADDRESS },
 			expected: 'applied',
 		},
 		{
 			name: 'delete at absence is a no-op',
 			current: undefined,
-			change: { kind: 'delete', address: ROW_ADDRESS },
+			change: { verb: 'delete', address: ROW_ADDRESS },
 			expected: 'noop',
 		},
 		{
 			name: 'delete at tombstone is a no-op',
 			current: deleted(),
-			change: { kind: 'delete', address: ROW_ADDRESS },
+			change: { verb: 'delete', address: ROW_ADDRESS },
 			expected: 'noop',
 		},
 	];
 	for (const entry of cases) {
 		test(entry.name, () =>
-			expect(foldChange(entry.current, entry.change, 9).kind).toBe(
+			expect(foldIntent(entry.current, entry.change, 9).kind).toBe(
 				entry.expected,
 			),
 		);
 	}
 
 	test('update applies set then unset and receives the next sequence', () => {
-		const folded = foldChange(
+		const folded = foldIntent(
 			row({ title: 'A', keep: true }),
 			{
-				kind: 'update',
+				verb: 'patch',
 				address: ROW_ADDRESS,
-				fields: { set: { title: 'B', remove: 'set-first' }, unset: ['remove'] },
+				set: { title: 'B', remove: 'set-first' },
+				unset: ['remove'],
 			},
 			9,
 		);
 		expect(folded).toEqual({
 			kind: 'applied',
-			record: {
-				kind: 'row',
+			fact: {
+				presence: 'present',
 				address: ROW_ADDRESS,
-				changedSequence: 9,
+				authoritySequence: 9,
 				fields: { title: 'B', keep: true },
 			},
 		});
 	});
 
 	test('a composed row above the record capacity is a no-op', () => {
-		const folded = foldChange(
+		const folded = foldIntent(
 			row(),
 			{
-				kind: 'update',
+				verb: 'patch',
 				address: ROW_ADDRESS,
-				fields: {
-					set: { huge: 'x'.repeat(DATA_ADMISSION_LIMITS.encodedRecordBytes) },
-					unset: [],
-				},
+				set: { huge: 'x'.repeat(DATA_ADMISSION_LIMITS.encodedFactBytes) },
+				unset: [],
 			},
 			9,
 		);
@@ -174,40 +169,40 @@ describe('value fold', () => {
 	test('set always replaces absence, live, or unset', () => {
 		for (const current of [undefined, value(), unset()]) {
 			expect(
-				foldChange(
+				foldIntent(
 					current,
-					{ kind: 'set', address: VALUE_ADDRESS, value: 'light' },
+					{ verb: 'set', address: VALUE_ADDRESS, content: 'light' },
 					7,
 				),
 			).toEqual({
 				kind: 'applied',
-				record: {
-					kind: 'value',
+				fact: {
+					presence: 'present',
 					address: VALUE_ADDRESS,
-					changedSequence: 7,
-					value: 'light',
+					authoritySequence: 7,
+					content: 'light',
 				},
 			});
 		}
 	});
 
 	test('unset applies only at live and a later set revives it', () => {
-		const removed = foldChange(
+		const removed = foldIntent(
 			value(),
-			{ kind: 'unset', address: VALUE_ADDRESS },
+			{ verb: 'unset', address: VALUE_ADDRESS },
 			2,
 		);
-		expect(removed).toEqual({ kind: 'applied', record: unset() });
+		expect(removed).toEqual({ kind: 'applied', fact: unset() });
 		expect(
-			foldChange(undefined, { kind: 'unset', address: VALUE_ADDRESS }, 3).kind,
+			foldIntent(undefined, { verb: 'unset', address: VALUE_ADDRESS }, 3).kind,
 		).toBe('noop');
 		expect(
-			foldChange(unset(), { kind: 'unset', address: VALUE_ADDRESS }, 3).kind,
+			foldIntent(unset(), { verb: 'unset', address: VALUE_ADDRESS }, 3).kind,
 		).toBe('noop');
 		expect(
-			foldChange(
+			foldIntent(
 				unset(),
-				{ kind: 'set', address: VALUE_ADDRESS, value: 'again' },
+				{ verb: 'set', address: VALUE_ADDRESS, content: 'again' },
 				3,
 			).kind,
 		).toBe('applied');

@@ -21,11 +21,12 @@ import { expectErr, expectOk } from 'wellcrafted/testing';
 
 import {
 	batchDigest,
-	type Change,
 	type ExchangeRequest,
 	type ExchangeResponse,
-	foldChange,
-	type Record as SyncRecord,
+	type Fact,
+	foldIntent,
+	type Intent,
+	parseFact,
 } from '../protocol/index.js';
 import { openReplica } from './replica.js';
 
@@ -44,15 +45,15 @@ const VALUE_ADDRESS = {
 const DEPLOYMENT = 'https://example.com/';
 const PRINCIPAL = 'principal-a';
 
-function addressOf(value: Change | SyncRecord): string {
+function addressOf(value: Intent | Fact): string {
 	return JSON.stringify(value.address);
 }
 
 function createScriptedAuthority(pageSize = 64) {
 	let nextSequence = 1;
-	let appliedChanges = 0;
+	let appliedIntents = 0;
 	let conflicts = 0;
-	const state = new Map<string, SyncRecord>();
+	const state = new Map<string, Fact>();
 	const receipts = new Map<
 		string,
 		{ seq: number; digest: string; appliedThrough: number }
@@ -73,17 +74,17 @@ function createScriptedAuthority(pageSize = 64) {
 			} else if (request.batch.seq !== (prior?.seq ?? 0) + 1) {
 				conflicts += 1;
 				return { refusal: 'batch-conflict' };
-			} else if (request.batch.digest !== batchDigest(request.batch.changes)) {
+			} else if (request.batch.digest !== batchDigest(request.batch.intents)) {
 				conflicts += 1;
 				return { refusal: 'batch-conflict' };
 			} else {
-				for (const change of request.batch.changes) {
+				for (const change of request.batch.intents) {
 					const address = addressOf(change);
-					const folded = foldChange(state.get(address), change, nextSequence);
+					const folded = foldIntent(state.get(address), change, nextSequence);
 					if (folded.kind === 'applied') {
-						state.set(address, structuredClone(folded.record));
+						state.set(address, structuredClone(folded.fact));
 						nextSequence += 1;
-						appliedChanges += 1;
+						appliedIntents += 1;
 					}
 				}
 				receipt = {
@@ -100,41 +101,41 @@ function createScriptedAuthority(pageSize = 64) {
 		const eligible = [...state.values()]
 			.filter(
 				(record) =>
-					record.changedSequence > position &&
-					record.changedSequence <= through,
+					record.authoritySequence > position &&
+					record.authoritySequence <= through,
 			)
-			.sort((left, right) => left.changedSequence - right.changedSequence);
-		const records = eligible
+			.sort((left, right) => left.authoritySequence - right.authoritySequence);
+		const facts = eligible
 			.slice(0, pageSize)
-			.map((record) => structuredClone(record));
+			.map((fact) => structuredClone(fact));
 		const next =
 			eligible.length > pageSize
-				? { through, position: records.at(-1)?.changedSequence ?? position }
+				? { through, position: facts.at(-1)?.authoritySequence ?? position }
 				: null;
 		return {
 			...(receipt === undefined ? {} : { receipt }),
 			through,
-			records,
+			facts,
 			next,
 		};
 	}
 
 	return {
 		exchange,
-		submit(change: Change) {
-			const folded = foldChange(
-				state.get(addressOf(change)),
-				change,
+		submit(intent: Intent) {
+			const folded = foldIntent(
+				state.get(addressOf(intent)),
+				intent,
 				nextSequence,
 			);
 			if (folded.kind === 'applied') {
-				state.set(addressOf(change), structuredClone(folded.record));
+				state.set(addressOf(intent), structuredClone(folded.fact));
 				nextSequence += 1;
-				appliedChanges += 1;
+				appliedIntents += 1;
 			}
 		},
-		get appliedChanges() {
-			return appliedChanges;
+		get appliedIntents() {
+			return appliedIntents;
 		},
 		get conflicts() {
 			return conflicts;
@@ -157,7 +158,7 @@ test('fresh open mints identity and reopen preserves it', () => {
 	const first = expectOk(openReplica({ database: adapter }));
 	const firstMetadata = expectOk(first.metadata());
 	expect(firstMetadata.replicaId).toMatch(/^[a-z0-9]{24}$/);
-	expect(firstMetadata.formatVersion).toBe(4);
+	expect(firstMetadata.formatVersion).toBe(5);
 	const reopened = expectOk(openReplica({ database: adapter }));
 	expect(expectOk(reopened.metadata())).toEqual(firstMetadata);
 	database.close();
@@ -202,7 +203,7 @@ test('attachment is idempotent and another principal is refused before exchange'
 	let exchangeCalls = 0;
 	const result = await replica.synchronize(() => {
 		exchangeCalls += 1;
-		return { through: 0, records: [], next: null };
+		return { through: 0, facts: [], next: null };
 	});
 	expectOk(result);
 	expect(exchangeCalls).toBe(1);
@@ -235,24 +236,26 @@ test('local writes expose the optimistic overlay before authority receipt', () =
 	expect(
 		expectOk(
 			replica.write({
-				kind: 'create',
+				verb: 'patch',
 				address: ROW_ADDRESS,
-				fields: { title: 'A', old: true },
+				set: { title: 'A', old: true },
+				unset: [],
 			}),
 		).applied,
 	).toBe(true);
 	expect(
 		expectOk(
 			replica.write({
-				kind: 'update',
+				verb: 'patch',
 				address: ROW_ADDRESS,
-				fields: { set: { title: 'B' }, unset: ['old'] },
+				set: { title: 'B' },
+				unset: ['old'],
 			}),
 		).applied,
 	).toBe(true);
 	expect(expectOk(replica.readRow(ROW_ADDRESS))).toEqual({ title: 'B' });
 	expectOk(
-		replica.write({ kind: 'set', address: VALUE_ADDRESS, value: 'dark' }),
+		replica.write({ verb: 'set', address: VALUE_ADDRESS, content: 'dark' }),
 	);
 	expect(expectOk(replica.readValue(VALUE_ADDRESS))).toBe('dark');
 	database.close();
@@ -262,7 +265,7 @@ test('lost batch response retries exact bytes and authority applies once', async
 	const { database, replica } = setup();
 	const authority = createScriptedAuthority();
 	expectOk(
-		replica.write({ kind: 'set', address: VALUE_ADDRESS, value: 'dark' }),
+		replica.write({ verb: 'set', address: VALUE_ADDRESS, content: 'dark' }),
 	);
 	let loseFirstResponse = true;
 	const first = await replica.synchronize((request) => {
@@ -275,7 +278,7 @@ test('lost batch response retries exact bytes and authority applies once', async
 	});
 	expect(expectErr(first).name).toBe('TransportFailed');
 	expectOk(await replica.synchronize(authority.exchange));
-	expect(authority.appliedChanges).toBe(1);
+	expect(authority.appliedIntents).toBe(1);
 	expect(expectOk(replica.readValue(VALUE_ADDRESS))).toBe('dark');
 	database.close();
 });
@@ -284,13 +287,14 @@ test('multiple pending changes seal atomically and retry as one exact batch', as
 	const { database, replica } = setup();
 	const authority = createScriptedAuthority();
 	expectOk(
-		replica.write({ kind: 'set', address: VALUE_ADDRESS, value: 'dark' }),
+		replica.write({ verb: 'set', address: VALUE_ADDRESS, content: 'dark' }),
 	);
 	expectOk(
 		replica.write({
-			kind: 'create',
+			verb: 'patch',
 			address: ROW_ADDRESS,
-			fields: { title: 'batched' },
+			set: { title: 'batched' },
+			unset: [],
 		}),
 	);
 	let firstRequest: ExchangeRequest | undefined;
@@ -307,9 +311,9 @@ test('multiple pending changes seal atomically and retry as one exact batch', as
 			return authority.exchange(request);
 		}),
 	);
-	expect(firstRequest?.batch?.changes).toHaveLength(2);
+	expect(firstRequest?.batch?.intents).toHaveLength(2);
 	expect(retryRequest).toEqual(firstRequest);
-	expect(authority.appliedChanges).toBe(2);
+	expect(authority.appliedIntents).toBe(2);
 	expect(expectOk(replica.readValue(VALUE_ADDRESS))).toBe('dark');
 	expect(expectOk(replica.readRow(ROW_ADDRESS))).toEqual({ title: 'batched' });
 	database.close();
@@ -324,19 +328,19 @@ test('drained reopen preserves the next batch sequence and replica identity', as
 	);
 	const authority = createScriptedAuthority();
 	expectOk(
-		replica.write({ kind: 'set', address: VALUE_ADDRESS, value: 'first' }),
+		replica.write({ verb: 'set', address: VALUE_ADDRESS, content: 'first' }),
 	);
 	expectOk(await replica.synchronize(authority.exchange));
 	const identity = expectOk(replica.metadata()).replicaId;
 
 	const reopened = expectOk(openReplica({ database: adapter }));
 	expectOk(
-		reopened.write({ kind: 'set', address: VALUE_ADDRESS, value: 'second' }),
+		reopened.write({ verb: 'set', address: VALUE_ADDRESS, content: 'second' }),
 	);
 	expectOk(await reopened.synchronize(authority.exchange));
 	expect(expectOk(reopened.metadata()).replicaId).toBe(identity);
 	expect(authority.conflicts).toBe(0);
-	expect(authority.appliedChanges).toBe(2);
+	expect(authority.appliedIntents).toBe(2);
 	database.close();
 });
 
@@ -350,9 +354,9 @@ test('copied replica conflict remints identity, preserves cursor, and converges'
 		const authority = createScriptedAuthority();
 		expectOk(
 			original.write({
-				kind: 'set',
+				verb: 'set',
 				address: VALUE_ADDRESS,
-				value: 'baseline',
+				content: 'baseline',
 			}),
 		);
 		expectOk(await original.synchronize(authority.exchange));
@@ -360,9 +364,9 @@ test('copied replica conflict remints identity, preserves cursor, and converges'
 
 		expectOk(
 			original.write({
-				kind: 'set',
+				verb: 'set',
 				address: VALUE_ADDRESS,
-				value: 'original',
+				content: 'original',
 			}),
 		);
 		expectOk(await original.synchronize(authority.exchange));
@@ -376,7 +380,7 @@ test('copied replica conflict remints identity, preserves cursor, and converges'
 		);
 		const copiedBefore = expectOk(copied.metadata());
 		expectOk(
-			copied.write({ kind: 'set', address: VALUE_ADDRESS, value: 'copied' }),
+			copied.write({ verb: 'set', address: VALUE_ADDRESS, content: 'copied' }),
 		);
 		expectOk(await copied.synchronize(authority.exchange));
 		const copiedAfter = expectOk(copied.metadata());
@@ -418,7 +422,7 @@ test('crash after page install but before cursor advance re-exchanges idempotent
 		replica.attach({ deploymentId: DEPLOYMENT, principalId: PRINCIPAL }),
 	);
 	const authority = createScriptedAuthority(1);
-	authority.submit({ kind: 'set', address: VALUE_ADDRESS, value: 'remote' });
+	authority.submit({ verb: 'set', address: VALUE_ADDRESS, content: 'remote' });
 	const failed = await replica.synchronize(authority.exchange);
 	expect(expectErr(failed).name).toBe('StorageFailed');
 	expect(expectOk(replica.readValue(VALUE_ADDRESS))).toBe('remote');
@@ -426,5 +430,59 @@ test('crash after page install but before cursor advance re-exchanges idempotent
 	expectOk(await replica.synchronize(authority.exchange));
 	expect(expectOk(replica.metadata()).lastAppliedAuthoritySequence).toBe(1);
 	expect(expectOk(replica.readValue(VALUE_ADDRESS))).toBe('remote');
+	database.close();
+});
+
+test('a local optimistic fact sits at sequence 0 and is refused as an authority fact', () => {
+	// The boundary defect G describes. A replica's own write is a `LocalFact`
+	// whose authority sequence is 0, meaning "not assigned yet". That state is
+	// legal locally and illegal on the wire, so the two domains stay separate
+	// without relaxing authority admission to accommodate the local one.
+	const { database, replica } = setup();
+	expectOk(replica.write({ verb: 'set', address: VALUE_ADDRESS, content: 1 }));
+
+	const stored = database
+		.query<{ authority_sequence: number }, []>(
+			'SELECT authority_sequence FROM value_facts',
+		)
+		.get();
+	expect(stored?.authority_sequence).toBe(0);
+
+	// The same fact, offered as an authority fact, is refused.
+	expect(
+		expectErr(
+			parseFact({
+				presence: 'present',
+				address: VALUE_ADDRESS,
+				authoritySequence: 0,
+				content: 1,
+			}),
+		).name,
+	).toBe('Invalid');
+	// One is the smallest sequence an authority may assign.
+	expectOk(
+		parseFact({
+			presence: 'present',
+			address: VALUE_ADDRESS,
+			authoritySequence: 1,
+			content: 1,
+		}),
+	);
+	database.close();
+});
+
+test('a settled exchange replaces the local zero sequence with the authority one', async () => {
+	const { database, replica } = setup();
+	expectOk(replica.write({ verb: 'set', address: VALUE_ADDRESS, content: 1 }));
+
+	const authority = createScriptedAuthority();
+	expectOk(await replica.synchronize(authority.exchange));
+
+	const stored = database
+		.query<{ authority_sequence: number }, []>(
+			'SELECT authority_sequence FROM value_facts',
+		)
+		.get();
+	expect(stored?.authority_sequence).toBeGreaterThan(0);
 	database.close();
 });

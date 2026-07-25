@@ -371,11 +371,19 @@ export function createEpicenter({
 				requireOpen();
 				const fields = compiled.validateCreate(input);
 				const address = addressOf(mintRowId());
-				const written = replica.write({ kind: 'create', address, fields });
+				const written = replica.write({
+					verb: 'patch',
+					address,
+					set: fields,
+					unset: [],
+				});
 				if (written.error !== null) throw written.error;
 				if (!written.data.applied) {
+					// A freshly minted row id has no fact, so a refused patch means the
+					// address is already occupied or already a tombstone. Either way the
+					// mint collided, which a 24-character random id should never do.
 					throw new Error(
-						`Minted row '${namespace}/${tableName}/${address.rowId}' already exists`,
+						`Minted row '${namespace}/${tableName}/${address.rowId}' is already taken`,
 					);
 				}
 				const projected = compiled.project(address, fields);
@@ -402,9 +410,10 @@ export function createEpicenter({
 					return compiled.project(address, before.data);
 				}
 				const written = replica.write({
-					kind: 'update',
+					verb: 'patch',
 					address,
-					fields: patch,
+					set: patch.set,
+					unset: patch.unset,
 				});
 				if (written.error !== null) return written;
 				const current = replica.readRow(address);
@@ -419,7 +428,7 @@ export function createEpicenter({
 				const before = replica.readRow(address);
 				if (before.error !== null) throw before.error;
 				if (before.data === undefined) return false;
-				const written = replica.write({ kind: 'delete', address });
+				const written = replica.write({ verb: 'delete', address });
 				if (written.error !== null) throw written.error;
 				return written.data.applied;
 			},
@@ -463,15 +472,15 @@ export function createEpicenter({
 			async set(content: unknown) {
 				requireOpen();
 				const written = replica.write({
-					kind: 'set',
+					verb: 'set',
 					address,
-					value: compiled.validate(content),
+					content: compiled.validate(content),
 				});
 				if (written.error !== null) throw written.error;
 			},
 			async unset() {
 				requireOpen();
-				const written = replica.write({ kind: 'unset', address });
+				const written = replica.write({ verb: 'unset', address });
 				if (written.error !== null) throw written.error;
 			},
 			subscribe(listener: () => void) {

@@ -232,12 +232,13 @@ test('stored nonconforming rows and values are reported without repair', async (
 	const { rawDatabase, replica, epicenter } = setup();
 	expectOk(
 		replica.write({
-			kind: 'create',
+			verb: 'patch',
 			address: rowAddress(REMOTE_ROW_A),
-			fields: { title: 42, rank: 1 },
+			set: { title: 42, rank: 1 },
+			unset: [],
 		}),
 	);
-	expectOk(replica.write({ kind: 'set', address: THEME_ADDRESS, value: 42 }));
+	expectOk(replica.write({ verb: 'set', address: THEME_ADDRESS, content: 42 }));
 	const bound = epicenter.bind(
 		defineLens({
 			namespace: TEST_NAMESPACE,
@@ -288,9 +289,10 @@ test('entries streams every classified row across internal batches', async () =>
 	for (const [rank, id] of ids.entries()) {
 		expectOk(
 			replica.write({
-				kind: 'create',
+				verb: 'patch',
 				address: rowAddress(id),
-				fields: { title: `Note ${rank}`, rank },
+				set: { title: `Note ${rank}`, rank },
+				unset: [],
 			}),
 		);
 	}
@@ -344,9 +346,10 @@ test('the current keyset batcher observes inserts ahead of its row-ID boundary, 
 	for (const [rank, id] of initialIds.entries()) {
 		expectOk(
 			replica.write({
-				kind: 'create',
+				verb: 'patch',
 				address: rowAddress(id),
-				fields: { title: `Initial ${rank}`, rank },
+				set: { title: `Initial ${rank}`, rank },
+				unset: [],
 			}),
 		);
 	}
@@ -367,9 +370,10 @@ test('the current keyset batcher observes inserts ahead of its row-ID boundary, 
 	] as const) {
 		expectOk(
 			replica.write({
-				kind: 'create',
+				verb: 'patch',
 				address: rowAddress(rowId),
-				fields: { title, rank: 300 },
+				set: { title, rank: 300 },
+				unset: [],
 			}),
 		);
 	}
@@ -474,24 +478,24 @@ test('subscriptions fire once per installed synchronized transaction', async () 
 			principalId: 'principal-a',
 			exchange: () => ({
 				through: 3,
-				records: [
+				facts: [
 					{
-						kind: 'row',
+						presence: 'present',
 						address: rowAddress(REMOTE_ROW_A),
-						changedSequence: 1,
+						authoritySequence: 1,
 						fields: { title: 'A', rank: 1 },
 					},
 					{
-						kind: 'row',
+						presence: 'present',
 						address: rowAddress(REMOTE_ROW_B),
-						changedSequence: 2,
+						authoritySequence: 2,
 						fields: { title: 'B', rank: 2 },
 					},
 					{
-						kind: 'value',
+						presence: 'present',
 						address: THEME_ADDRESS,
-						changedSequence: 3,
-						value: 'remote',
+						authoritySequence: 3,
+						content: 'remote',
 					},
 				],
 				next: null,
@@ -610,14 +614,14 @@ test('installed synchronized deletion removes document bytes and revokes handles
 			// replica already applied.
 			exchange: (request) => ({
 				through: 1,
-				records:
+				facts:
 					request.after >= 1
 						? []
 						: [
 								{
-									kind: 'row',
+									presence: 'present',
 									address: rowAddress(REMOTE_ROW_A),
-									changedSequence: 1,
+									authoritySequence: 1,
 									fields: { title: 'remote document', rank: 1 },
 								},
 							],
@@ -632,14 +636,14 @@ test('installed synchronized deletion removes document bytes and revokes handles
 			...session,
 			exchange: (request) => ({
 				through: 2,
-				records:
+				facts:
 					request.after >= 2
 						? []
 						: [
 								{
-									kind: 'row-deleted',
+									presence: 'absent',
 									address: rowAddress(REMOTE_ROW_A),
-									changedSequence: 2,
+									authoritySequence: 2,
 								},
 							],
 				next: null,

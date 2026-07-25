@@ -1,6 +1,6 @@
 import type { SqliteDatabase } from '@epicenter/sqlite';
 
-export const REPLICA_FORMAT_VERSION = 4;
+export const REPLICA_FORMAT_VERSION = 5;
 
 /**
  * Row facts and value facts are separate relations because their laws differ,
@@ -21,7 +21,7 @@ export const REPLICA_FORMAT_VERSION = 4;
  * smuggled in as a negative-sequence pseudo-value at a reserved internal
  * address. The batch sequence is replica metadata, so it lives in `metadata`.
  *
- * `changed_sequence` uniqueness across both fact relations is an authority
+ * `authority_sequence` uniqueness across both fact relations is an authority
  * property, not a local one: local writes land at sequence 0 until an exchange
  * assigns authority sequences, so these indexes are non-unique here.
  */
@@ -49,27 +49,27 @@ const SCHEMA = [
 		),
 		presence TEXT NOT NULL CHECK (presence IN ('present', 'absent')),
 		fields TEXT,
-		changed_sequence INTEGER NOT NULL CHECK (changed_sequence >= 0),
+		authority_sequence INTEGER NOT NULL CHECK (authority_sequence >= 0),
 		PRIMARY KEY (namespace, table_name, row_id),
 		CHECK (
 			(presence = 'present' AND fields IS NOT NULL AND json_valid(fields)) OR
 			(presence = 'absent' AND fields IS NULL)
 		)
 	) WITHOUT ROWID, STRICT`,
-	'CREATE INDEX row_facts_changed_sequence ON row_facts(changed_sequence)',
+	'CREATE INDEX row_facts_authority_sequence ON row_facts(authority_sequence)',
 	`CREATE TABLE value_facts (
 		namespace TEXT NOT NULL,
 		value_name TEXT NOT NULL,
 		presence TEXT NOT NULL CHECK (presence IN ('present', 'absent')),
 		content TEXT,
-		changed_sequence INTEGER NOT NULL CHECK (changed_sequence >= 0),
+		authority_sequence INTEGER NOT NULL CHECK (authority_sequence >= 0),
 		PRIMARY KEY (namespace, value_name),
 		CHECK (
 			(presence = 'present' AND content IS NOT NULL AND json_valid(content)) OR
 			(presence = 'absent' AND content IS NULL)
 		)
 	) WITHOUT ROWID, STRICT`,
-	'CREATE INDEX value_facts_changed_sequence ON value_facts(changed_sequence)',
+	'CREATE INDEX value_facts_authority_sequence ON value_facts(authority_sequence)',
 	// The two local intent queues share one strictly increasing local sequence
 	// space so a sealed batch has a stable order across both address kinds.
 	// Cross-table uniqueness is the single local writer's invariant; each table
@@ -81,22 +81,22 @@ const SCHEMA = [
 		row_id TEXT NOT NULL CHECK (
 			length(row_id) = 24 AND row_id NOT GLOB '*[^a-z0-9]*'
 		),
-		presence TEXT NOT NULL CHECK (presence IN ('present', 'absent')),
+		verb TEXT NOT NULL CHECK (verb IN ('patch', 'delete')),
 		patch TEXT,
 		CHECK (
-			(presence = 'present' AND patch IS NOT NULL AND json_valid(patch)) OR
-			(presence = 'absent' AND patch IS NULL)
+			(verb = 'patch' AND patch IS NOT NULL AND json_valid(patch)) OR
+			(verb = 'delete' AND patch IS NULL)
 		)
 	) STRICT`,
 	`CREATE TABLE value_outbox (
 		local_sequence INTEGER PRIMARY KEY CHECK (local_sequence > 0),
 		namespace TEXT NOT NULL,
 		value_name TEXT NOT NULL,
-		presence TEXT NOT NULL CHECK (presence IN ('present', 'absent')),
+		verb TEXT NOT NULL CHECK (verb IN ('set', 'unset')),
 		content TEXT,
 		CHECK (
-			(presence = 'present' AND content IS NOT NULL AND json_valid(content)) OR
-			(presence = 'absent' AND content IS NULL)
+			(verb = 'set' AND content IS NOT NULL AND json_valid(content)) OR
+			(verb = 'unset' AND content IS NULL)
 		)
 	) STRICT`,
 	// Documents and blobs are owned by a row address, so they key on the exact

@@ -12,7 +12,7 @@
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 
-import { batchDigest, type Change } from '@epicenter/data/protocol';
+import { batchDigest, type Intent } from '@epicenter/data/protocol';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 
 import {
@@ -34,8 +34,8 @@ const VALUE_ADDRESS = {
 	valueName: 'value',
 } as const;
 
-function batch(seq: number, changes: Change[]) {
-	return { seq, digest: batchDigest(changes), changes };
+function batch(seq: number, intents: Intent[]) {
+	return { seq, digest: batchDigest(intents), intents };
 }
 
 function setup(options: { pageSize?: number; size?: () => number } = {}) {
@@ -68,7 +68,7 @@ test('fresh schema reopens and an unknown format is refused without rewrite', ()
 
 test('exact retry returns one receipt while fork, old batch, and gap conflict', () => {
 	const { raw, authority } = setup();
-	const first = batch(1, [{ kind: 'set', address: VALUE_ADDRESS, value: 1 }]);
+	const first = batch(1, [{ verb: 'set', address: VALUE_ADDRESS, content: 1 }]);
 	const accepted = authority.exchange({
 		replicaId: REPLICA,
 		after: 0,
@@ -77,7 +77,7 @@ test('exact retry returns one receipt while fork, old batch, and gap conflict', 
 	expect(
 		authority.exchange({ replicaId: REPLICA, after: 0, batch: first }),
 	).toEqual(accepted);
-	const fork = batch(1, [{ kind: 'set', address: VALUE_ADDRESS, value: 2 }]);
+	const fork = batch(1, [{ verb: 'set', address: VALUE_ADDRESS, content: 2 }]);
 	expect(
 		authority.exchange({ replicaId: REPLICA, after: 0, batch: fork }),
 	).toEqual({
@@ -89,9 +89,9 @@ test('exact retry returns one receipt while fork, old batch, and gap conflict', 
 			after: 0,
 			batch: batch(3, [
 				{
-					kind: 'set',
+					verb: 'set',
 					address: { ...VALUE_ADDRESS, valueName: 'other' },
-					value: 3,
+					content: 3,
 				},
 			]),
 		}),
@@ -106,18 +106,18 @@ test('exact retry returns one receipt while fork, old batch, and gap conflict', 
 
 test('fixed-through pages are ordered, bounded, and continue from position', () => {
 	const { raw, authority } = setup({ pageSize: 1 });
-	const changes: Change[] = [
-		{ kind: 'set', address: { ...VALUE_ADDRESS, valueName: 'a' }, value: 1 },
-		{ kind: 'set', address: { ...VALUE_ADDRESS, valueName: 'b' }, value: 2 },
-		{ kind: 'set', address: { ...VALUE_ADDRESS, valueName: 'c' }, value: 3 },
+	const intents: Intent[] = [
+		{ verb: 'set', address: { ...VALUE_ADDRESS, valueName: 'a' }, content: 1 },
+		{ verb: 'set', address: { ...VALUE_ADDRESS, valueName: 'b' }, content: 2 },
+		{ verb: 'set', address: { ...VALUE_ADDRESS, valueName: 'c' }, content: 3 },
 	];
 	const first = authority.exchange({
 		replicaId: REPLICA,
 		after: 0,
-		batch: batch(1, changes),
+		batch: batch(1, intents),
 	});
 	if ('refusal' in first) throw new Error(first.refusal);
-	expect(first.records).toHaveLength(1);
+	expect(first.facts).toHaveLength(1);
 	expect(first.through).toBe(3);
 	expect(first.next).not.toBeNull();
 	const second = authority.exchange({
@@ -127,7 +127,7 @@ test('fixed-through pages are ordered, bounded, and continue from position', () 
 	});
 	if ('refusal' in second) throw new Error(second.refusal);
 	expect(second.through).toBe(first.through);
-	expect(second.records[0]?.changedSequence).toBe(2);
+	expect(second.facts[0]?.authoritySequence).toBe(2);
 	raw.close();
 });
 
@@ -138,14 +138,14 @@ test('record replaced above through waits for the next exchange without skipping
 		after: 0,
 		batch: batch(1, [
 			{
-				kind: 'set',
+				verb: 'set',
 				address: { ...VALUE_ADDRESS, valueName: 'a' },
-				value: 'a1',
+				content: 'a1',
 			},
 			{
-				kind: 'set',
+				verb: 'set',
 				address: { ...VALUE_ADDRESS, valueName: 'b' },
-				value: 'b1',
+				content: 'b1',
 			},
 		]),
 	});
@@ -157,9 +157,9 @@ test('record replaced above through waits for the next exchange without skipping
 		after: 0,
 		batch: batch(2, [
 			{
-				kind: 'set',
+				verb: 'set',
 				address: { ...VALUE_ADDRESS, valueName: 'a' },
-				value: 'a2',
+				content: 'a2',
 			},
 		]),
 	});
@@ -169,17 +169,17 @@ test('record replaced above through waits for the next exchange without skipping
 		cursor: first.next,
 	});
 	if ('refusal' in remainder) throw new Error(remainder.refusal);
-	expect(remainder.records.map((record) => record.address)).toEqual([
+	expect(remainder.facts.map((record) => record.address)).toEqual([
 		{ ...VALUE_ADDRESS, valueName: 'b' },
 	]);
 	const next = authority.exchange({ replicaId: REPLICA, after: first.through });
 	if ('refusal' in next) throw new Error(next.refusal);
-	expect(next.records).toEqual([
+	expect(next.facts).toEqual([
 		{
-			kind: 'value',
+			presence: 'present',
 			address: { ...VALUE_ADDRESS, valueName: 'a' },
-			changedSequence: 3,
-			value: 'a2',
+			authoritySequence: 3,
+			content: 'a2',
 		},
 	]);
 	raw.close();
@@ -188,7 +188,7 @@ test('record replaced above through waits for the next exchange without skipping
 test('terminal row deletion removes document updates in the acceptance transaction', () => {
 	const { raw, authority } = setup();
 	const create = batch(1, [
-		{ kind: 'create', address: ROW_ADDRESS, fields: { title: 'live' } },
+		{ verb: 'patch', address: ROW_ADDRESS, set: { title: 'live' }, unset: [] },
 	]);
 	authority.exchange({ replicaId: REPLICA, after: 0, batch: create });
 	raw.run('INSERT INTO document_updates VALUES (?, ?, ?, 1, ?)', [
@@ -197,7 +197,7 @@ test('terminal row deletion removes document updates in the acceptance transacti
 		ROW_ADDRESS.rowId,
 		new Uint8Array([1]),
 	]);
-	const remove = batch(2, [{ kind: 'delete', address: ROW_ADDRESS }]);
+	const remove = batch(2, [{ verb: 'delete', address: ROW_ADDRESS }]);
 	authority.exchange({ replicaId: REPLICA, after: 1, batch: remove });
 	expect(
 		raw
@@ -222,27 +222,28 @@ test('row table and value with the same local name occupy separate facts', () =>
 		after: 0,
 		batch: batch(1, [
 			{
-				kind: 'create',
+				verb: 'patch',
 				address: sharedRowAddress,
-				fields: { title: 'row' },
+				set: { title: 'row' },
+				unset: [],
 			},
-			{ kind: 'set', address: sharedValueAddress, value: 'value' },
+			{ verb: 'set', address: sharedValueAddress, content: 'value' },
 		]),
 	});
 	if ('refusal' in response) throw new Error(response.refusal);
 
-	expect(response.records).toEqual([
+	expect(response.facts).toEqual([
 		{
-			kind: 'row',
+			presence: 'present',
 			address: sharedRowAddress,
-			changedSequence: 1,
+			authoritySequence: 1,
 			fields: { title: 'row' },
 		},
 		{
-			kind: 'value',
+			presence: 'present',
 			address: sharedValueAddress,
-			changedSequence: 2,
-			value: 'value',
+			authoritySequence: 2,
+			content: 'value',
 		},
 	]);
 	expect(
@@ -266,7 +267,7 @@ test('storage-limit refusal leaves no replica, fact, or sequence allocation', ()
 		replicaId: REPLICA,
 		after: 0,
 		batch: batch(1, [
-			{ kind: 'set', address: VALUE_ADDRESS, value: 'blocked' },
+			{ verb: 'set', address: VALUE_ADDRESS, content: 'blocked' },
 		]),
 	});
 	expect(response).toEqual({ refusal: 'storage-limit' });
@@ -279,9 +280,9 @@ test('storage-limit refusal leaves no replica, fact, or sequence allocation', ()
 		raw
 			.query<{ count: number }, []>(
 				`SELECT COUNT(*) AS count FROM (
-					SELECT changed_sequence FROM row_facts
+					SELECT authority_sequence FROM row_facts
 					UNION ALL
-					SELECT changed_sequence FROM value_facts
+					SELECT authority_sequence FROM value_facts
 				)`,
 			)
 			.get()?.count,
@@ -306,18 +307,18 @@ test('invalid request shape and mismatched digest throw without mutation', () =>
 			replicaId: REPLICA,
 			after: 0,
 			batch: {
-				...batch(1, [{ kind: 'set', address: VALUE_ADDRESS, value: 1 }]),
+				...batch(1, [{ verb: 'set', address: VALUE_ADDRESS, content: 1 }]),
 				digest: '0'.repeat(64),
 			},
 		}),
-	).toThrow('Batch digest does not match its changes');
+	).toThrow('Batch digest does not match its intents');
 	expect(
 		raw
 			.query<{ count: number }, []>(
 				`SELECT COUNT(*) AS count FROM (
-					SELECT changed_sequence FROM row_facts
+					SELECT authority_sequence FROM row_facts
 					UNION ALL
-					SELECT changed_sequence FROM value_facts
+					SELECT authority_sequence FROM value_facts
 				)`,
 			)
 			.get()?.count,

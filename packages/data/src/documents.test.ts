@@ -54,9 +54,10 @@ function setup({ pull }: { pull?: PullDocument } = {}) {
 	function createRow(target: RowAddress): void {
 		expectOk(
 			replica.write({
-				kind: 'create',
+				verb: 'patch',
 				address: target,
-				fields: { title: 'owned' },
+				set: { title: 'owned' },
+				unset: [],
 			}),
 		);
 	}
@@ -241,7 +242,7 @@ test('row deletion removes the obligation in the same transaction as the chain',
 
 		expectOk(
 			context.replica.write({
-				kind: 'delete',
+				verb: 'delete',
 				address: doomed,
 			}),
 		);

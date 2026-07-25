@@ -667,7 +667,7 @@ function acknowledge(request: ExchangeRequest): ExchangeResponse {
 					},
 				}),
 		through: request.after,
-		records: [],
+		facts: [],
 		next: null,
 	};
 }

@@ -12,22 +12,23 @@ import {
 	type Address,
 	addressKey,
 	batchDigest,
-	type Change,
 	DATA_ADDRESS_CEILINGS,
 	DATA_ADMISSION_LIMITS,
 	type ExchangeRequest,
 	type ExchangeResponse,
 	encodedJsonBytes,
-	foldChange,
+	type Fact,
+	foldIntent,
+	type Intent,
 	isRowAddress,
 	isValueAddress,
 	type JsonObject,
 	type JsonValue,
-	parseChange,
+	type LocalFact,
 	parseExchangeResponse,
+	parseIntent,
 	parseReplicaId,
 	type RowAddress,
-	type Record as SyncRecord,
 	type ValueAddress,
 } from '../protocol/index.js';
 import {
@@ -125,17 +126,17 @@ type RowFactRow = SqliteRow & {
 	namespace: string;
 	table_name: string;
 	row_id: string;
-	presence: string;
+	presence: 'present' | 'absent';
 	fields: string | null;
-	changed_sequence: number;
+	authority_sequence: number;
 };
 
 type ValueFactRow = SqliteRow & {
 	namespace: string;
 	value_name: string;
-	presence: string;
+	presence: 'present' | 'absent';
 	content: string | null;
-	changed_sequence: number;
+	authority_sequence: number;
 };
 
 type PendingRow = SqliteRow & {
@@ -144,7 +145,7 @@ type PendingRow = SqliteRow & {
 	namespace: string;
 	local_key: string;
 	row_id: string | null;
-	presence: string;
+	verb: string;
 	payload: string | null;
 };
 
@@ -199,7 +200,7 @@ function toMetadata(row: MetadataRow): ReplicaMetadata {
 	};
 }
 
-function rowFactToRecord(row: RowFactRow): SyncRecord {
+function rowFactRowToFact(row: RowFactRow): LocalFact {
 	const address: RowAddress = {
 		kind: 'row',
 		namespace: row.namespace,
@@ -207,72 +208,87 @@ function rowFactToRecord(row: RowFactRow): SyncRecord {
 		rowId: row.row_id,
 	};
 	return row.presence === 'absent'
-		? { kind: 'row-deleted', address, changedSequence: row.changed_sequence }
-		: {
-				kind: 'row',
+		? {
+				presence: 'absent',
 				address,
-				changedSequence: row.changed_sequence,
+				authoritySequence: row.authority_sequence,
+			}
+		: {
+				presence: 'present',
+				address,
+				authoritySequence: row.authority_sequence,
 				fields: JSON.parse(row.fields ?? 'null') as JsonObject,
 			};
 }
 
-function valueFactToRecord(row: ValueFactRow): SyncRecord {
+function valueFactRowToFact(row: ValueFactRow): LocalFact {
 	const address: ValueAddress = {
 		kind: 'value',
 		namespace: row.namespace,
 		valueName: row.value_name,
 	};
 	return row.presence === 'absent'
-		? { kind: 'value-unset', address, changedSequence: row.changed_sequence }
-		: {
-				kind: 'value',
+		? {
+				presence: 'absent',
 				address,
-				changedSequence: row.changed_sequence,
-				value: JSON.parse(row.content ?? 'null') as JsonValue,
+				authoritySequence: row.authority_sequence,
+			}
+		: {
+				presence: 'present',
+				address,
+				authoritySequence: row.authority_sequence,
+				content: JSON.parse(row.content ?? 'null') as JsonValue,
 			};
 }
 
+/**
+ * The replica's current view at one address.
+ *
+ * Deliberately a {@link LocalFact} rather than a wire {@link Fact}: a local
+ * optimistic write sits at `authority_sequence = 0` until an exchange settles
+ * it, which no authority fact is ever allowed to be.
+ */
 function readFact(
 	database: SqliteDatabase,
 	address: Address,
-): SyncRecord | undefined {
+): LocalFact | undefined {
 	if (address.kind === 'row') {
 		const row = database.all<RowFactRow>(
-			`SELECT namespace, table_name, row_id, presence, fields, changed_sequence
+			`SELECT namespace, table_name, row_id, presence, fields, authority_sequence
 			FROM row_facts WHERE namespace = ? AND table_name = ? AND row_id = ?`,
 			[address.namespace, address.tableName, address.rowId],
 		)[0];
-		return row === undefined ? undefined : rowFactToRecord(row);
+		return row === undefined ? undefined : rowFactRowToFact(row);
 	}
 	const row = database.all<ValueFactRow>(
-		`SELECT namespace, value_name, presence, content, changed_sequence
+		`SELECT namespace, value_name, presence, content, authority_sequence
 		FROM value_facts WHERE namespace = ? AND value_name = ?`,
 		[address.namespace, address.valueName],
 	)[0];
-	return row === undefined ? undefined : valueFactToRecord(row);
+	return row === undefined ? undefined : valueFactRowToFact(row);
 }
 
-function storeRecord(database: SqliteDatabase, record: SyncRecord): void {
-	if (record.kind === 'row' || record.kind === 'row-deleted') {
-		const { namespace, tableName, rowId } = record.address;
+function storeFact(database: SqliteDatabase, fact: LocalFact): void {
+	if (fact.address.kind === 'row') {
+		const { namespace, tableName, rowId } = fact.address;
 		database.run(
 			`INSERT INTO row_facts (
-				namespace, table_name, row_id, presence, fields, changed_sequence
+				namespace, table_name, row_id, presence, fields, authority_sequence
 			) VALUES (?, ?, ?, ?, ?, ?)
 			ON CONFLICT (namespace, table_name, row_id) DO UPDATE SET
 				presence = excluded.presence,
 				fields = excluded.fields,
-				changed_sequence = excluded.changed_sequence`,
+				authority_sequence = excluded.authority_sequence`,
 			[
 				namespace,
 				tableName,
 				rowId,
-				record.kind === 'row' ? 'present' : 'absent',
-				record.kind === 'row' ? JSON.stringify(record.fields) : null,
-				record.changedSequence,
+				fact.presence,
+				'fields' in fact ? JSON.stringify(fact.fields) : null,
+				fact.authoritySequence,
 			],
 		);
-		if (record.kind === 'row-deleted') {
+		if (fact.presence === 'absent') {
 			// Scalar death, document death, and obligation death commit together:
 			// a deleted row can never leave orphaned bytes or a dirty publication
 			// that would republish content for a dead address (ADR-0174).
@@ -287,69 +303,65 @@ function storeRecord(database: SqliteDatabase, record: SyncRecord): void {
 		}
 		return;
 	}
-	const { namespace, valueName } = record.address;
+	const { namespace, valueName } = fact.address;
 	database.run(
 		`INSERT INTO value_facts (
-			namespace, value_name, presence, content, changed_sequence
+			namespace, value_name, presence, content, authority_sequence
 		) VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT (namespace, value_name) DO UPDATE SET
 			presence = excluded.presence,
 			content = excluded.content,
-			changed_sequence = excluded.changed_sequence`,
+			authority_sequence = excluded.authority_sequence`,
 		[
 			namespace,
 			valueName,
-			record.kind === 'value' ? 'present' : 'absent',
-			record.kind === 'value' ? JSON.stringify(record.value) : null,
-			record.changedSequence,
+			fact.presence,
+			'content' in fact ? JSON.stringify(fact.content) : null,
+			fact.authoritySequence,
 		],
 	);
 }
 
-function enqueueChange(
+function enqueueIntent(
 	database: SqliteDatabase,
 	localSequence: number,
-	change: Change,
+	intent: Intent,
 ): void {
-	if (change.address.kind === 'row') {
-		const { namespace, tableName, rowId } = change.address;
-		const patch =
-			change.kind === 'create'
-				? JSON.stringify({ kind: 'create', fields: change.fields })
-				: change.kind === 'update'
-					? JSON.stringify({ kind: 'update', fields: change.fields })
-					: null;
+	if (intent.address.kind === 'row') {
+		const { namespace, tableName, rowId } = intent.address;
 		database.run(
 			`INSERT INTO row_outbox (
-				local_sequence, namespace, table_name, row_id, presence, patch
+				local_sequence, namespace, table_name, row_id, verb, patch
 			) VALUES (?, ?, ?, ?, ?, ?)`,
 			[
 				localSequence,
 				namespace,
 				tableName,
 				rowId,
-				change.kind === 'delete' ? 'absent' : 'present',
-				patch,
+				intent.verb,
+				intent.verb === 'patch'
+					? JSON.stringify({ set: intent.set, unset: intent.unset })
+					: null,
 			],
 		);
 		return;
 	}
-	const { namespace, valueName } = change.address;
+	const { namespace, valueName } = intent.address;
 	database.run(
 		`INSERT INTO value_outbox (
-			local_sequence, namespace, value_name, presence, content
+			local_sequence, namespace, value_name, verb, content
 		) VALUES (?, ?, ?, ?, ?)`,
 		[
 			localSequence,
 			namespace,
 			valueName,
-			change.kind === 'set' ? 'present' : 'absent',
-			change.kind === 'set' ? JSON.stringify(change.value) : null,
+			intent.verb,
+			intent.verb === 'set' ? JSON.stringify(intent.content) : null,
 		],
 	);
 }
 
-function pendingRowToChange(row: PendingRow): Change {
+function pendingRowToIntent(row: PendingRow): Intent {
 	if (row.intent_kind === 'row') {
 		if (row.row_id === null) {
 			// `row_outbox.row_id` is NOT NULL, so this is unreachable unless the
@@ -364,30 +376,24 @@ function pendingRowToChange(row: PendingRow): Change {
 			tableName: row.local_key,
 			rowId: row.row_id,
 		};
-		if (row.presence === 'absent') return { kind: 'delete', address };
+		if (row.verb === 'delete') return { verb: 'delete', address };
 		const patch = JSON.parse(row.payload ?? 'null') as {
-			kind: 'create' | 'update';
-			fields: JsonObject | { set: JsonObject; unset: string[] };
+			set: JsonObject;
+			unset: string[];
 		};
-		return patch.kind === 'create'
-			? { kind: 'create', address, fields: patch.fields as JsonObject }
-			: {
-					kind: 'update',
-					address,
-					fields: patch.fields as { set: JsonObject; unset: string[] },
-				};
+		return { verb: 'patch', address, set: patch.set, unset: patch.unset };
 	}
 	const address: ValueAddress = {
 		kind: 'value',
 		namespace: row.namespace,
 		valueName: row.local_key,
 	};
-	return row.presence === 'absent'
-		? { kind: 'unset', address }
+	return row.verb === 'unset'
+		? { verb: 'unset', address }
 		: {
-				kind: 'set',
+				verb: 'set',
 				address,
-				value: JSON.parse(row.payload ?? 'null') as JsonValue,
+				content: JSON.parse(row.payload ?? 'null') as JsonValue,
 			};
 }
 
@@ -400,23 +406,23 @@ function pendingRowToChange(row: PendingRow): Change {
  */
 const PENDING_QUERY = `
 	SELECT local_sequence, 'row' AS intent_kind, namespace,
-		table_name AS local_key, row_id, presence, patch AS payload
+		table_name AS local_key, row_id, verb, patch AS payload
 	FROM row_outbox
 	UNION ALL
 	SELECT local_sequence, 'value' AS intent_kind, namespace,
-		value_name AS local_key, NULL AS row_id, presence, content AS payload
+		value_name AS local_key, NULL AS row_id, verb, content AS payload
 	FROM value_outbox
 	ORDER BY local_sequence`;
 
-function pendingChanges(
+function pendingIntents(
 	database: SqliteDatabase,
 	limit: number,
-): { localSequence: number; change: Change }[] {
+): { localSequence: number; intent: Intent }[] {
 	return database
 		.all<PendingRow>(`${PENDING_QUERY} LIMIT ?`, [limit])
 		.map((row) => ({
 			localSequence: row.local_sequence,
-			change: pendingRowToChange(row),
+			intent: pendingRowToIntent(row),
 		}));
 }
 
@@ -453,43 +459,43 @@ function deletePending(
 	}
 }
 
-function installRecord(database: SqliteDatabase, record: SyncRecord): boolean {
-	if (hasPendingAddress(database, record.address)) return false;
-	const existing = readFact(database, record.address);
+function installFact(database: SqliteDatabase, fact: Fact): boolean {
+	if (hasPendingAddress(database, fact.address)) return false;
+	const existing = readFact(database, fact.address);
 	if (
 		existing !== undefined &&
-		existing.changedSequence >= record.changedSequence
+		existing.authoritySequence >= fact.authoritySequence
 	) {
 		return false;
 	}
-	storeRecord(database, record);
+	storeFact(database, fact);
 	return true;
 }
 
 function sealBatch(database: SqliteDatabase, lastSealedSequence: number) {
-	const pending = pendingChanges(
+	const pending = pendingIntents(
 		database,
-		DATA_ADMISSION_LIMITS.changesPerBatch,
+		DATA_ADMISSION_LIMITS.intentsPerBatch,
 	);
 	if (pending.length === 0) return undefined;
 	const seq = lastSealedSequence + 1;
 	const selected: number[] = [];
-	const changes: Change[] = [];
+	const intents: Intent[] = [];
 	for (const entry of pending) {
-		const candidate = [...changes, entry.change];
+		const candidate = [...intents, entry.intent];
 		if (
-			encodedJsonBytes({ seq, digest: '0'.repeat(64), changes: candidate }) >
+			encodedJsonBytes({ seq, digest: '0'.repeat(64), intents: candidate }) >
 			DATA_ADMISSION_LIMITS.encodedBatchBytes
 		) {
 			break;
 		}
 		selected.push(entry.localSequence);
-		changes.push(entry.change);
+		intents.push(entry.intent);
 	}
-	if (changes.length === 0)
-		throw new Error('One outbox change exceeds the batch admission limit');
+	if (intents.length === 0)
+		throw new Error('One outbox intent exceeds the batch admission limit');
 	return {
-		batch: { seq, digest: batchDigest(changes), changes },
+		batch: { seq, digest: batchDigest(intents), intents },
 		localSequences: selected,
 	};
 }
@@ -601,17 +607,24 @@ function createReplica(
 		}
 	}
 
-	function write(change: Change): Result<{ applied: boolean }, ReplicaError> {
-		const { data: parsed, error } = parseChange(change);
+	/**
+	 * Apply one local intent optimistically and queue it for the authority.
+	 *
+	 * The optimistic fact lands at authority sequence `0`, which is this
+	 * replica's way of saying "mine, not yet settled". The next exchange that
+	 * carries this address replaces it with the authority's own sequence.
+	 */
+	function write(intent: Intent): Result<{ applied: boolean }, ReplicaError> {
+		const { data: parsed, error } = parseIntent(intent);
 		if (error !== null)
-			return ReplicaError.InvalidInput({ boundary: 'change' });
+			return ReplicaError.InvalidInput({ boundary: 'intent' });
 		const result = storageResult('write', () =>
 			database.transaction(() => {
 				const current = readFact(database, parsed.address);
-				const folded = foldChange(current, parsed, 0);
+				const folded = foldIntent(current, parsed, 0);
 				if (folded.kind === 'noop') return { applied: false };
-				storeRecord(database, folded.record);
-				enqueueChange(database, nextLocalSequence, parsed);
+				storeFact(database, folded.fact);
+				enqueueIntent(database, nextLocalSequence, parsed);
 				nextLocalSequence += 1;
 				return { applied: true };
 			}),
@@ -642,9 +655,9 @@ function createReplica(
 			return ReplicaError.InvalidInput({ boundary: 'row address' });
 		}
 		return storageResult('read row', () => {
-			const record = readFact(database, address);
-			return record?.kind === 'row'
-				? structuredClone(record.fields)
+			const fact = readFact(database, address);
+			return fact !== undefined && 'fields' in fact
+				? structuredClone(fact.fields)
 				: undefined;
 		});
 	}
@@ -656,9 +669,9 @@ function createReplica(
 			return ReplicaError.InvalidInput({ boundary: 'value address' });
 		}
 		return storageResult('read value', () => {
-			const record = readFact(database, address);
-			return record?.kind === 'value'
-				? structuredClone(record.value)
+			const fact = readFact(database, address);
+			return fact !== undefined && 'content' in fact
+				? structuredClone(fact.content)
 				: undefined;
 		});
 	}
@@ -728,11 +741,11 @@ function createReplica(
 							// Renumber every pending intent from 1 in its existing order.
 							// The forked replica starts a fresh batch sequence, so the
 							// queue must start from a fresh local sequence too.
-							const pending = pendingChanges(database, Number.MAX_SAFE_INTEGER);
+							const pending = pendingIntents(database, Number.MAX_SAFE_INTEGER);
 							database.run('DELETE FROM row_outbox');
 							database.run('DELETE FROM value_outbox');
 							for (const [index, entry] of pending.entries()) {
-								enqueueChange(database, index + 1, entry.change);
+								enqueueIntent(database, index + 1, entry.intent);
 							}
 							nextLocalSequence = pending.length + 1;
 						}),
@@ -750,8 +763,8 @@ function createReplica(
 				const priorPosition =
 					cursor?.position ?? current.lastAppliedAuthoritySequence;
 				if (
-					response.records.some(
-						(record) => record.changedSequence <= priorPosition,
+					response.facts.some(
+						(fact) => fact.authoritySequence <= priorPosition,
 					) ||
 					(response.next !== null && response.next.position <= priorPosition)
 				) {
@@ -784,9 +797,9 @@ function createReplica(
 								[batch.seq],
 							);
 						}
-						for (const record of response.records) {
-							if (!installRecord(database, record)) continue;
-							changes.set(addressKey(record.address), record.address);
+						for (const fact of response.facts) {
+							if (!installFact(database, fact)) continue;
+							changes.set(addressKey(fact.address), fact.address);
 						}
 						return [...changes.values()];
 					}),
@@ -814,7 +827,7 @@ function createReplica(
 			if (didRecoverConflict) continue;
 			const pending = storageResult(
 				'check pending outbox',
-				() => pendingChanges(database, 1)[0],
+				() => pendingIntents(database, 1)[0],
 			);
 			if (pending.error !== null) return pending;
 			if (pending.data === undefined) return Ok(undefined);
