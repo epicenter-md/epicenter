@@ -3,13 +3,40 @@
 Portable scalar convergence protocol and SQLite-backed local replica for
 Epicenter data.
 
+## One Lens declares one namespace
+
+A Lens is one application's interpretation of one durable namespace. The
+namespace is declared exactly once, and each `tables` or `values` property name
+is the durable local name of that table or value:
+
+```ts
+const notesLens = defineLens({
+	namespace: 'com.example.notes',
+	tables: { notes: defineTable({ fields: { title: field.string() } }) },
+	values: { theme: defineValue({ value: field.string() }) },
+});
+
+const data = epicenter.bind(notesLens);
+```
+
+That makes `notes` address `{ kind: 'row', namespace: 'com.example.notes',
+table: 'notes', rowId }` forever. There is no second `key` to keep in step with
+the property name, and no rename: a different property name is a different
+address, and therefore different data.
+
+Table names and value names have different grammars, because they are consumed
+differently. A table name is one bare SQL identifier, since a trusted host
+mounts it as a relation. A value name is never a relation or a column, so it may
+carry dotted grouping such as `settings.sound.manualStart`; those dots are part
+of one opaque name and imply no nesting, prefix matching, or lifecycle.
+
 ## Physical storage is not the merge boundary
 
 Each table row is stored as one JSON payload in SQLite:
 
 ```txt
-state row
-└── json_payload TEXT
+row_facts row
+└── fields TEXT
     └── { "title": "Draft", "status": "open" }
 ```
 
@@ -62,7 +89,6 @@ Use ordinary top-level fields by default:
 
 ```ts
 const tasks = defineTable({
-	key: 'com.example.tasks',
 	fields: {
 		title: field.string(),
 		status: field.string(),
@@ -104,17 +130,17 @@ Use one JSON field when the complete bounded object is the honest replacement
 unit:
 
 ```ts
-const profilesDefinition = defineTable({
-	key: 'com.example.profiles',
-	fields: {
-		value: field.json(ProfileSchema),
+const exampleLens = defineLens({
+	namespace: 'com.example',
+	tables: {
+		profiles: defineTable({
+			fields: { value: field.json(ProfileSchema) },
+		}),
 	},
+	values: {},
 });
 
-const profiles = epicenter.bind({
-	tables: { profiles: profilesDefinition },
-	values: {},
-}).tables.profiles;
+const profiles = epicenter.bind(exampleLens).tables.profiles;
 
 await profiles.update(id, { value: nextProfile });
 ```
@@ -143,10 +169,7 @@ For one named singleton, use `defineValue` instead of inventing a one-row
 table:
 
 ```ts
-const shortcut = defineValue({
-	key: 'com.example.settings.shortcut',
-	value: field.json(ShortcutSchema),
-});
+const shortcut = defineValue({ value: field.json(ShortcutSchema) });
 ```
 
 Use the row-owned Yjs document only when replacement would erase independent
@@ -172,7 +195,6 @@ const Outcome = Type.Union([
 ]);
 
 const jobs = defineTable({
-	key: 'com.example.jobs',
 	fields: { outcome: field.json(Outcome) },
 });
 ```
