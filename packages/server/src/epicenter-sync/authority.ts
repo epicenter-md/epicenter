@@ -55,7 +55,7 @@ export type OpenAuthorityOptions = {
 
 function readMetadata(database: SqliteDatabase): MetadataRow {
 	const metadata = database.all<MetadataRow>(
-		'SELECT next_sequence FROM metadata WHERE singleton = 1',
+		'SELECT next_sequence FROM main._authority_metadata WHERE singleton = 1',
 	)[0];
 	if (metadata === undefined) throw new Error('Authority metadata is missing');
 	return metadata;
@@ -67,7 +67,7 @@ function readReplica(
 ): ReplicaRow | undefined {
 	return database.all<ReplicaRow>(
 		`SELECT accepted_batch, request_digest, receipt_sequence
-		FROM replicas WHERE replica_id = ?`,
+		FROM main._authority_replicas WHERE replica_id = ?`,
 		[replicaId],
 	)[0];
 }
@@ -137,11 +137,11 @@ function factRowToFact(row: FactRow): Fact {
 const FACTS_IN_RANGE = `
 	SELECT authority_sequence, 'row' AS fact_kind, namespace,
 		table_name AS local_key, row_id, presence, fields AS payload
-	FROM row_facts WHERE authority_sequence > ? AND authority_sequence <= ?
+	FROM main._authority_row_facts WHERE authority_sequence > ? AND authority_sequence <= ?
 	UNION ALL
 	SELECT authority_sequence, 'value' AS fact_kind, namespace,
 		value_name AS local_key, NULL AS row_id, presence, content AS payload
-	FROM value_facts WHERE authority_sequence > ? AND authority_sequence <= ?
+	FROM main._authority_value_facts WHERE authority_sequence > ? AND authority_sequence <= ?
 	ORDER BY authority_sequence`;
 
 /**
@@ -163,7 +163,7 @@ function readFact(
 			}
 		>(
 			`SELECT presence, fields, authority_sequence
-			FROM row_facts WHERE namespace = ? AND table_name = ? AND row_id = ?`,
+			FROM main._authority_row_facts WHERE namespace = ? AND table_name = ? AND row_id = ?`,
 			[address.namespace, address.tableName, address.rowId],
 		)[0];
 		if (row === undefined) return undefined;
@@ -188,7 +188,7 @@ function readFact(
 		}
 	>(
 		`SELECT presence, content, authority_sequence
-		FROM value_facts WHERE namespace = ? AND value_name = ?`,
+		FROM main._authority_value_facts WHERE namespace = ? AND value_name = ?`,
 		[address.namespace, address.valueName],
 	)[0];
 	if (row === undefined) return undefined;
@@ -210,7 +210,7 @@ function storeFact(database: SqliteDatabase, fact: Fact): void {
 	if (fact.address.kind === 'row') {
 		const { namespace, tableName, rowId } = fact.address;
 		database.run(
-			`INSERT INTO row_facts (
+			`INSERT INTO main._authority_row_facts (
 				namespace, table_name, row_id, presence, fields, authority_sequence
 			) VALUES (?, ?, ?, ?, ?, ?)
 			ON CONFLICT (namespace, table_name, row_id) DO UPDATE SET
@@ -240,7 +240,7 @@ function storeFact(database: SqliteDatabase, fact: Fact): void {
 	}
 	const { namespace, valueName } = fact.address;
 	database.run(
-		`INSERT INTO value_facts (
+		`INSERT INTO main._authority_value_facts (
 			namespace, value_name, presence, content, authority_sequence
 		) VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT (namespace, value_name) DO UPDATE SET
@@ -362,11 +362,11 @@ export function openEpicenterSyncAuthority({
 						}
 						const appliedThrough = nextSequence - 1;
 						database.run(
-							'UPDATE metadata SET next_sequence = ? WHERE singleton = 1',
+							'UPDATE main._authority_metadata SET next_sequence = ? WHERE singleton = 1',
 							[nextSequence],
 						);
 						database.run(
-							`INSERT INTO replicas (
+							`INSERT INTO main._authority_replicas (
 								replica_id, accepted_batch, request_digest, receipt_sequence
 							) VALUES (?, ?, ?, ?)
 							ON CONFLICT (replica_id) DO UPDATE SET

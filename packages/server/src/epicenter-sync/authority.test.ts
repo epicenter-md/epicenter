@@ -52,14 +52,16 @@ function setup(options: { pageSize?: number; size?: () => number } = {}) {
 test('fresh schema reopens and an unknown format is refused without rewrite', () => {
 	const { raw, database } = setup();
 	expect(() => openEpicenterSyncAuthority({ database })).not.toThrow();
-	raw.run('UPDATE metadata SET format_version = 99 WHERE singleton = 1');
+	raw.run(
+		'UPDATE main._authority_metadata SET format_version = 99 WHERE singleton = 1',
+	);
 	expect(() => openEpicenterSyncAuthority({ database })).toThrow(
 		'format 99 is not supported',
 	);
 	expect(
 		raw
 			.query<{ format_version: number }, []>(
-				'SELECT format_version FROM metadata',
+				'SELECT format_version FROM main._authority_metadata',
 			)
 			.get()?.format_version,
 	).toBe(99);
@@ -98,7 +100,9 @@ test('exact retry returns one receipt while fork, old batch, and gap conflict', 
 	).toEqual({ refusal: 'batch-conflict' });
 	expect(
 		raw
-			.query<{ count: number }, []>('SELECT COUNT(*) AS count FROM value_facts')
+			.query<{ count: number }, []>(
+				'SELECT COUNT(*) AS count FROM main._authority_value_facts',
+			)
 			.get()?.count,
 	).toBe(1);
 	raw.close();
@@ -207,8 +211,11 @@ test('terminal row deletion removes document updates in the acceptance transacti
 			.get()?.count,
 	).toBe(0);
 	expect(
-		raw.query<{ presence: string }, []>('SELECT presence FROM row_facts').get()
-			?.presence,
+		raw
+			.query<{ presence: string }, []>(
+				'SELECT presence FROM main._authority_row_facts',
+			)
+			.get()?.presence,
 	).toBe('absent');
 	raw.close();
 });
@@ -248,12 +255,16 @@ test('row table and value with the same local name occupy separate facts', () =>
 	]);
 	expect(
 		raw
-			.query<{ count: number }, []>('SELECT COUNT(*) AS count FROM row_facts')
+			.query<{ count: number }, []>(
+				'SELECT COUNT(*) AS count FROM main._authority_row_facts',
+			)
 			.get()?.count,
 	).toBe(1);
 	expect(
 		raw
-			.query<{ count: number }, []>('SELECT COUNT(*) AS count FROM value_facts')
+			.query<{ count: number }, []>(
+				'SELECT COUNT(*) AS count FROM main._authority_value_facts',
+			)
 			.get()?.count,
 	).toBe(1);
 	raw.close();
@@ -273,16 +284,18 @@ test('storage-limit refusal leaves no replica, fact, or sequence allocation', ()
 	expect(response).toEqual({ refusal: 'storage-limit' });
 	expect(
 		raw
-			.query<{ count: number }, []>('SELECT COUNT(*) AS count FROM replicas')
+			.query<{ count: number }, []>(
+				'SELECT COUNT(*) AS count FROM main._authority_replicas',
+			)
 			.get()?.count,
 	).toBe(0);
 	expect(
 		raw
 			.query<{ count: number }, []>(
 				`SELECT COUNT(*) AS count FROM (
-					SELECT authority_sequence FROM row_facts
+					SELECT authority_sequence FROM main._authority_row_facts
 					UNION ALL
-					SELECT authority_sequence FROM value_facts
+					SELECT authority_sequence FROM main._authority_value_facts
 				)`,
 			)
 			.get()?.count,
@@ -290,7 +303,7 @@ test('storage-limit refusal leaves no replica, fact, or sequence allocation', ()
 	expect(
 		raw
 			.query<{ next_sequence: number }, []>(
-				'SELECT next_sequence FROM metadata',
+				'SELECT next_sequence FROM main._authority_metadata',
 			)
 			.get()?.next_sequence,
 	).toBe(1);
@@ -316,12 +329,35 @@ test('invalid request shape and mismatched digest throw without mutation', () =>
 		raw
 			.query<{ count: number }, []>(
 				`SELECT COUNT(*) AS count FROM (
-					SELECT authority_sequence FROM row_facts
+					SELECT authority_sequence FROM main._authority_row_facts
 					UNION ALL
-					SELECT authority_sequence FROM value_facts
+					SELECT authority_sequence FROM main._authority_value_facts
 				)`,
 			)
 			.get()?.count,
 	).toBe(0);
+	raw.close();
+});
+
+test('a store holding a previous format is refused, not rebuilt beside it', () => {
+	// Same defect the replica had. Matching only the relations this format knows
+	// about reads an older store as empty and creates a second live schema next
+	// to it, orphaning the real data with no error anywhere.
+	const raw = new Database(':memory:');
+	const database = createBunSqliteAdapter(raw);
+	raw.run('CREATE TABLE state (qualified_key TEXT PRIMARY KEY, value TEXT)');
+
+	expect(() => openEpicenterSyncAuthority({ database })).toThrow(
+		'not the current format',
+	);
+	expect(
+		raw
+			.query<{ name: string }, []>(
+				`SELECT name FROM main.sqlite_schema
+				 WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`,
+			)
+			.all()
+			.map((row) => row.name),
+	).toEqual(['state']);
 	raw.close();
 });

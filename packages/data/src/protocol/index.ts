@@ -14,6 +14,7 @@ export {
 	isValueName,
 	type RowAddress,
 	RowAddressSchema,
+	SQLITE_UNUSABLE_AS_RELATION_NAME,
 	type ValueAddress,
 	ValueAddressSchema,
 } from './addresses.js';

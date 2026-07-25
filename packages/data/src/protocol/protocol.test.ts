@@ -240,3 +240,76 @@ test('canonical batch digest and SHA-256 are deterministic', () => {
 		'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
 	);
 });
+
+describe('table names stay usable as bare SQL relations', () => {
+	const admits = (tableName: string) =>
+		isRowAddress({ ...ROW_ADDRESS, tableName }, DATA_ADDRESS_CEILINGS);
+
+	test('a SQLite keyword is refused in any casing', () => {
+		// `SELECT * FROM order` is a syntax error no matter how the inspection
+		// host generates the view, so the name never becomes an address.
+		for (const keyword of [
+			'order',
+			'Order',
+			'SELECT',
+			'table',
+			'group',
+			'index',
+			'where',
+			'values',
+		]) {
+			expect(admits(keyword)).toBe(false);
+		}
+	});
+
+	test('keywords SQLite does accept as identifiers stay available', () => {
+		// Refusing every keyword would cost 88 perfectly usable names. The rule
+		// tracks what SQLite actually refuses, not what it lists as a keyword.
+		for (const keyword of [
+			'rows',
+			'row',
+			'key',
+			'view',
+			'first',
+			'range',
+			'filter',
+		]) {
+			expect(admits(keyword)).toBe(true);
+		}
+	});
+
+	test('SQLite reserved and Epicenter-occupied names are refused', () => {
+		for (const name of [
+			'sqlite_master',
+			'sqlite_schema',
+			'SQLite_Sequence',
+			'document_updates',
+			'document_publication',
+			'document_versions',
+		]) {
+			expect(admits(name)).toBe(false);
+		}
+	});
+
+	test('an underscore-prefixed name is unrepresentable, so private relations are unreachable', () => {
+		// This is what lets internal storage sit at `_replica_*` and `_epicenter_*`
+		// without any chance of a Lens naming one.
+		for (const name of ['_replica_row_facts', '_epicenter_rows', '_private']) {
+			expect(admits(name)).toBe(false);
+		}
+	});
+
+	test('ordinary names a Lens would actually declare still pass', () => {
+		for (const name of [
+			'notes',
+			'folders',
+			'conversations',
+			'orders',
+			'tableau',
+			'selected_rows',
+			'n1',
+		]) {
+			expect(admits(name)).toBe(true);
+		}
+	});
+});

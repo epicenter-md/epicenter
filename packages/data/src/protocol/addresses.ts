@@ -69,6 +69,52 @@ const VALUE_NAME = new RegExp(VALUE_NAME_PATTERN);
 const RUNTIME_ID = new RegExp(RUNTIME_ID_PATTERN);
 
 /**
+ * The SQLite keywords that cannot be a bare relation name.
+ *
+ * A table name is mounted as a bare relation by the trusted inspection host, and
+ * the promise is that `SELECT * FROM notes` needs no quoting. Some keywords
+ * break that promise: `SELECT * FROM order` is a syntax error however carefully
+ * the host generated the view. Refusing the name where it is declared is the
+ * only point where the author can still fix it; refusing later would mean a Lens
+ * that binds cleanly and then cannot be inspected.
+ *
+ * This is not the full keyword list, and deliberately so. SQLite accepts most of
+ * its own keywords as identifiers: `rows`, `key`, `view`, `first`, `range` and
+ * eighty-odd others parse fine unquoted, and refusing them would cost real
+ * names for no benefit. These are the ones measured to actually fail, so the
+ * rule matches the promise exactly rather than approximating it.
+ *
+ * The set is a property of SQLite's parser, so `addresses.test.ts` re-derives it
+ * against the linked SQLite and fails if the two ever disagree. A version that
+ * changes the set is then a loud test failure rather than a Lens that silently
+ * stops being inspectable.
+ */
+export const SQLITE_UNUSABLE_AS_RELATION_NAME: readonly string[] = `add all
+	alter and as autoincrement between case check collate commit constraint create
+	default deferrable delete distinct drop else escape except exists foreign from
+	group having if in index insert intersect into is isnull join limit not
+	nothing notnull null on or order primary references returning select set table
+	then to transaction union unique update using values when where`.split(/\s+/);
+
+const SQLITE_KEYWORDS = new Set(SQLITE_UNUSABLE_AS_RELATION_NAME);
+
+/**
+ * Bare relation names Epicenter storage still occupies.
+ *
+ * Every scalar relation now sits behind a `_replica_` or `_authority_` prefix,
+ * which this grammar already makes unreachable because a table name must begin
+ * with a letter. The row document relations have not moved yet, so their two
+ * bare names are reserved explicitly until they do. The list is expected to
+ * shrink to empty, never to grow: the fix for a future collision is to prefix
+ * the relation, not to extend this list.
+ */
+const RESERVED_TABLE_NAMES = new Set([
+	'document_updates',
+	'document_publication',
+	'document_versions',
+]);
+
+/**
  * Byte ceilings for the durable coordinates of an address.
  *
  * Kept as plain numbers rather than a limits object so both the live exchange
@@ -170,14 +216,32 @@ export function isNamespace(
 	);
 }
 
-/** Whether a durable table name is a bare SQL identifier within its ceiling. */
+/**
+ * Whether a durable table name is usable as a bare SQL relation.
+ *
+ * Stricter than the character pattern alone, because the pattern is not the
+ * whole promise. The promise is that a trusted host can mount this name and
+ * write `SELECT * FROM <name>` with no quoting and no collision, so three more
+ * things must hold: the name is not a SQLite keyword (case-insensitively), it
+ * does not enter SQLite's reserved `sqlite_` space, and it does not collide with
+ * a relation Epicenter storage already occupies.
+ *
+ * The same rule governs a Lens declaration and an address arriving on the wire.
+ * One grammar, checked in one place: a name a Lens may not declare is a name no
+ * peer may introduce either.
+ */
 export function isTableName(
 	value: string,
 	ceilings: AddressByteCeilings,
 ): boolean {
 	const bytes = utf8ByteLength(value);
+	if (bytes < 1 || bytes > ceilings.tableNameBytes) return false;
+	if (!TABLE_NAME.test(value)) return false;
+	const lowercased = value.toLowerCase();
 	return (
-		bytes >= 1 && bytes <= ceilings.tableNameBytes && TABLE_NAME.test(value)
+		!SQLITE_KEYWORDS.has(lowercased) &&
+		!lowercased.startsWith('sqlite_') &&
+		!RESERVED_TABLE_NAMES.has(lowercased)
 	);
 }
 

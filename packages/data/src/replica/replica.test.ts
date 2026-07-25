@@ -158,7 +158,7 @@ test('fresh open mints identity and reopen preserves it', () => {
 	const first = expectOk(openReplica({ database: adapter }));
 	const firstMetadata = expectOk(first.metadata());
 	expect(firstMetadata.replicaId).toMatch(/^[a-z0-9]{24}$/);
-	expect(firstMetadata.formatVersion).toBe(5);
+	expect(firstMetadata.formatVersion).toBe(6);
 	const reopened = expectOk(openReplica({ database: adapter }));
 	expect(expectOk(reopened.metadata())).toEqual(firstMetadata);
 	database.close();
@@ -443,7 +443,7 @@ test('a local optimistic fact sits at sequence 0 and is refused as an authority 
 
 	const stored = database
 		.query<{ authority_sequence: number }, []>(
-			'SELECT authority_sequence FROM value_facts',
+			'SELECT authority_sequence FROM main._replica_value_facts',
 		)
 		.get();
 	expect(stored?.authority_sequence).toBe(0);
@@ -480,9 +480,68 @@ test('a settled exchange replaces the local zero sequence with the authority one
 
 	const stored = database
 		.query<{ authority_sequence: number }, []>(
-			'SELECT authority_sequence FROM value_facts',
+			'SELECT authority_sequence FROM main._replica_value_facts',
 		)
 		.get();
 	expect(stored?.authority_sequence).toBeGreaterThan(0);
+	database.close();
+});
+
+test('a file holding a previous format is refused, not silently rebuilt beside it', () => {
+	// The defect this pins: asking only "are the relations I know about here?"
+	// reads a file full of an older format as empty, builds a second schema next
+	// to it, and orphans the real data invisibly. Open must refuse instead.
+	const database = new Database(':memory:');
+	const adapter = createBunSqliteAdapter(database);
+	database.run(
+		'CREATE TABLE state (qualified_key TEXT PRIMARY KEY, value TEXT)',
+	);
+	database.run('CREATE TABLE outbox (local_sequence INTEGER PRIMARY KEY)');
+
+	const opened = openReplica({ database: adapter });
+	expect(expectErr(opened).name).toBe('UnsupportedFormat');
+
+	// Nothing was created beside the legacy tables.
+	const tables = database
+		.query<{ name: string }, []>(
+			`SELECT name FROM main.sqlite_schema
+			 WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`,
+		)
+		.all()
+		.map((row) => row.name);
+	expect(tables).toEqual(['outbox', 'state']);
+	database.close();
+});
+
+test('a partially created current format is refused rather than completed', () => {
+	const database = new Database(':memory:');
+	const adapter = createBunSqliteAdapter(database);
+	database.run(
+		'CREATE TABLE main._replica_metadata (singleton INTEGER PRIMARY KEY)',
+	);
+
+	expect(expectErr(openReplica({ database: adapter })).name).toBe(
+		'UnsupportedFormat',
+	);
+	database.close();
+});
+
+test('a TEMP view cannot redirect an internal owner read', () => {
+	// Internal SQL is schema-qualified, so even a same-connection TEMP view named
+	// after a private relation cannot intercept it. The inspection host uses a
+	// separate connection as well, which is the stronger guarantee; this pins the
+	// qualification independently.
+	const { database, replica } = setup();
+	expectOk(
+		replica.write({ verb: 'set', address: VALUE_ADDRESS, content: 'real' }),
+	);
+
+	database.run(
+		`CREATE TEMP VIEW _replica_value_facts AS
+		 SELECT 'so.epicenter.settings' AS namespace, 'theme' AS value_name,
+		        'present' AS presence, '"hijacked"' AS content, 1 AS authority_sequence`,
+	);
+
+	expect(expectOk(replica.readValue(VALUE_ADDRESS))).toBe('real');
 	database.close();
 });

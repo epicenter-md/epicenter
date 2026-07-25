@@ -4,13 +4,21 @@ import {
 	StorageUpgradeRequiredError,
 } from '@epicenter/sqlite';
 
-export const AUTHORITY_FORMAT_VERSION = 4;
+export const AUTHORITY_FORMAT_VERSION = 5;
 
+/**
+ * Every relation a current authority store owns.
+ *
+ * The scalar relations carry the reserved `_authority_` prefix so ownership is
+ * readable straight from a schema dump and no unprefixed name can collide with
+ * them. The two `document_` relations keep their current names because the row
+ * document subsystem is being reworked separately.
+ */
 const AUTHORITY_TABLES = [
-	'metadata',
-	'replicas',
-	'row_facts',
-	'value_facts',
+	'_authority_metadata',
+	'_authority_replicas',
+	'_authority_row_facts',
+	'_authority_value_facts',
 	'document_updates',
 	'document_versions',
 ] as const;
@@ -32,12 +40,12 @@ const AUTHORITY_TABLES = [
  * paging or fold bug would actually produce.
  */
 const SCHEMA = [
-	`CREATE TABLE metadata (
+	`CREATE TABLE main._authority_metadata (
 		singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
 		format_version INTEGER NOT NULL,
 		next_sequence INTEGER NOT NULL CHECK (next_sequence >= 1)
 	) STRICT`,
-	`CREATE TABLE replicas (
+	`CREATE TABLE main._authority_replicas (
 		replica_id TEXT PRIMARY KEY CHECK (
 			length(replica_id) = 24 AND replica_id NOT GLOB '*[^a-z0-9]*'
 		),
@@ -51,7 +59,7 @@ const SCHEMA = [
 				request_digest NOT GLOB '*[^a-f0-9]*')
 		)
 	) WITHOUT ROWID, STRICT`,
-	`CREATE TABLE row_facts (
+	`CREATE TABLE main._authority_row_facts (
 		namespace TEXT NOT NULL,
 		table_name TEXT NOT NULL,
 		row_id TEXT NOT NULL CHECK (
@@ -66,8 +74,8 @@ const SCHEMA = [
 			(presence = 'absent' AND fields IS NULL)
 		)
 	) WITHOUT ROWID, STRICT`,
-	'CREATE UNIQUE INDEX row_facts_authority_sequence ON row_facts(authority_sequence)',
-	`CREATE TABLE value_facts (
+	'CREATE UNIQUE INDEX main._authority_row_facts_authority_sequence ON _authority_row_facts(authority_sequence)',
+	`CREATE TABLE main._authority_value_facts (
 		namespace TEXT NOT NULL,
 		value_name TEXT NOT NULL,
 		presence TEXT NOT NULL CHECK (presence IN ('present', 'absent')),
@@ -79,7 +87,7 @@ const SCHEMA = [
 			(presence = 'absent' AND content IS NULL)
 		)
 	) WITHOUT ROWID, STRICT`,
-	'CREATE UNIQUE INDEX value_facts_authority_sequence ON value_facts(authority_sequence)',
+	'CREATE UNIQUE INDEX main._authority_value_facts_authority_sequence ON _authority_value_facts(authority_sequence)',
 	`CREATE TABLE document_updates (
 		namespace TEXT NOT NULL,
 		table_name TEXT NOT NULL,
@@ -108,29 +116,37 @@ type MetadataRow = SqliteRow & { format_version: number };
 
 /** Initialize a fresh authority store or refuse a non-current physical format. */
 export function initializeAuthoritySchema(database: SqliteDatabase): void {
-	const tables = database.all<SqliteRow & { name: string }>(
-		`SELECT name FROM sqlite_schema
-		WHERE type = 'table' AND name IN (${AUTHORITY_TABLES.map(() => '?').join(', ')})`,
-		AUTHORITY_TABLES,
-	);
-	if (tables.length === 0) {
+	// "Fresh" must mean the store holds nothing, not merely nothing this format
+	// recognizes. Matching only the current names would treat a store full of a
+	// previous format's relations as empty and build a second schema beside it.
+	const present = database
+		.all<SqliteRow & { name: string }>(
+			`SELECT name FROM main.sqlite_schema
+			WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`,
+		)
+		.map((row) => row.name);
+	if (present.length === 0) {
 		database.transaction(() => {
 			for (const statement of SCHEMA) database.run(statement);
 			database.run(
-				'INSERT INTO metadata (singleton, format_version, next_sequence) VALUES (1, ?, 1)',
+				'INSERT INTO main._authority_metadata (singleton, format_version, next_sequence) VALUES (1, ?, 1)',
 				[AUTHORITY_FORMAT_VERSION],
 			);
 		});
 		return;
 	}
-	if (tables.length !== AUTHORITY_TABLES.length) {
+	const expected = new Set<string>(AUTHORITY_TABLES);
+	if (
+		present.length !== expected.size ||
+		!present.every((name) => expected.has(name))
+	) {
 		throw new StorageUpgradeRequiredError(
 			'Epicenter sync authority',
-			'authority schema is incomplete',
+			'authority schema is not the current format',
 		);
 	}
 	const metadata = database.all<MetadataRow>(
-		'SELECT format_version FROM metadata WHERE singleton = 1',
+		'SELECT format_version FROM main._authority_metadata WHERE singleton = 1',
 	)[0];
 	if (metadata?.format_version !== AUTHORITY_FORMAT_VERSION) {
 		throw new StorageUpgradeRequiredError(

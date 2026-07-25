@@ -1,6 +1,6 @@
 import type { SqliteDatabase } from '@epicenter/sqlite';
 
-export const REPLICA_FORMAT_VERSION = 5;
+export const REPLICA_FORMAT_VERSION = 6;
 
 /**
  * Row facts and value facts are separate relations because their laws differ,
@@ -26,7 +26,7 @@ export const REPLICA_FORMAT_VERSION = 5;
  * assigns authority sequences, so these indexes are non-unique here.
  */
 const SCHEMA = [
-	`CREATE TABLE metadata (
+	`CREATE TABLE main._replica_metadata (
 		singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
 		format_version INTEGER NOT NULL,
 		replica_id TEXT NOT NULL,
@@ -41,7 +41,7 @@ const SCHEMA = [
 			(attached_deployment IS NOT NULL AND attached_principal IS NOT NULL)
 		)
 	) STRICT`,
-	`CREATE TABLE row_facts (
+	`CREATE TABLE main._replica_row_facts (
 		namespace TEXT NOT NULL,
 		table_name TEXT NOT NULL,
 		row_id TEXT NOT NULL CHECK (
@@ -56,8 +56,8 @@ const SCHEMA = [
 			(presence = 'absent' AND fields IS NULL)
 		)
 	) WITHOUT ROWID, STRICT`,
-	'CREATE INDEX row_facts_authority_sequence ON row_facts(authority_sequence)',
-	`CREATE TABLE value_facts (
+	'CREATE INDEX main._replica_row_facts_authority_sequence ON _replica_row_facts(authority_sequence)',
+	`CREATE TABLE main._replica_value_facts (
 		namespace TEXT NOT NULL,
 		value_name TEXT NOT NULL,
 		presence TEXT NOT NULL CHECK (presence IN ('present', 'absent')),
@@ -69,12 +69,12 @@ const SCHEMA = [
 			(presence = 'absent' AND content IS NULL)
 		)
 	) WITHOUT ROWID, STRICT`,
-	'CREATE INDEX value_facts_authority_sequence ON value_facts(authority_sequence)',
+	'CREATE INDEX main._replica_value_facts_authority_sequence ON _replica_value_facts(authority_sequence)',
 	// The two local intent queues share one strictly increasing local sequence
 	// space so a sealed batch has a stable order across both address kinds.
 	// Cross-table uniqueness is the single local writer's invariant; each table
 	// still refuses a duplicate of its own.
-	`CREATE TABLE row_outbox (
+	`CREATE TABLE main._replica_row_outbox (
 		local_sequence INTEGER PRIMARY KEY CHECK (local_sequence > 0),
 		namespace TEXT NOT NULL,
 		table_name TEXT NOT NULL,
@@ -88,7 +88,7 @@ const SCHEMA = [
 			(verb = 'delete' AND patch IS NULL)
 		)
 	) STRICT`,
-	`CREATE TABLE value_outbox (
+	`CREATE TABLE main._replica_value_outbox (
 		local_sequence INTEGER PRIMARY KEY CHECK (local_sequence > 0),
 		namespace TEXT NOT NULL,
 		value_name TEXT NOT NULL,
@@ -127,13 +127,26 @@ const SCHEMA = [
 	) WITHOUT ROWID, STRICT`,
 ] as const;
 
-/** Every relation a current replica file owns. */
+/**
+ * Every relation a current replica file owns.
+ *
+ * The scalar relations live under the reserved `_replica_` prefix so no Lens
+ * table can ever name one: a table name must start with a letter (ADR-0178), so
+ * a leading underscore is unrepresentable in an address. That is what makes it
+ * safe for a trusted inspection host to install connection-local TEMP views
+ * named after Lens tables without any risk of shadowing internal storage.
+ *
+ * The two `document_` relations are the exception, and deliberately so: the row
+ * document subsystem is being reworked separately, so its physical names stay
+ * put for now. Until they move, the table-name grammar keeps a Lens
+ * from claiming those bare names.
+ */
 export const REPLICA_TABLES = [
-	'metadata',
-	'row_facts',
-	'value_facts',
-	'row_outbox',
-	'value_outbox',
+	'_replica_metadata',
+	'_replica_row_facts',
+	'_replica_value_facts',
+	'_replica_row_outbox',
+	'_replica_value_outbox',
 	'document_updates',
 	'document_publication',
 ] as const;
@@ -144,7 +157,7 @@ export function createReplicaSchema(
 ): void {
 	for (const statement of SCHEMA) database.run(statement);
 	database.run(
-		`INSERT INTO metadata (
+		`INSERT INTO main._replica_metadata (
 			singleton, format_version, replica_id, attached_deployment,
 			attached_principal, last_applied_authority_sequence,
 			last_sealed_batch_sequence

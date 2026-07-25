@@ -60,7 +60,7 @@ export function createEpicenterDocumentStore(
 	function isRowLive(address: RowAddress): boolean {
 		return (
 			database.all<SqliteRow>(
-				`SELECT 1 AS live FROM row_facts
+				`SELECT 1 AS live FROM main._authority_row_facts
 				 WHERE namespace = ? AND table_name = ? AND row_id = ?
 				   AND presence = 'present' LIMIT 1`,
 				[address.namespace, address.tableName, address.rowId],

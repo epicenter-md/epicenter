@@ -216,7 +216,7 @@ test('dropped response retries the exact multi-change batch and applies it once'
 	expect(
 		authorityDatabase
 			.query<{ next_sequence: number }, []>(
-				'SELECT next_sequence FROM metadata',
+				'SELECT next_sequence FROM main._authority_metadata',
 			)
 			.get()?.next_sequence,
 	).toBe(3);

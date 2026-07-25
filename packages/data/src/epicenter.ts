@@ -545,7 +545,7 @@ export function createEpicenter({
 		parameters.push(ENTRIES_PAGE_SIZE + 1);
 		const stored = database.all<StoredRowFact>(
 			`SELECT row_id, fields
-			 FROM row_facts
+			 FROM main._replica_row_facts
 			 WHERE ${where.join(' AND ')}
 			 ORDER BY row_id ASC
 			 LIMIT ?`,

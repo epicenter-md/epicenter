@@ -181,7 +181,7 @@ function readMetadata(database: SqliteDatabase): MetadataRow | undefined {
 		`SELECT format_version, replica_id, attached_deployment,
 			attached_principal, last_applied_authority_sequence,
 			last_sealed_batch_sequence
-		FROM metadata WHERE singleton = 1`,
+		FROM main._replica_metadata WHERE singleton = 1`,
 	)[0];
 }
 
@@ -255,14 +255,14 @@ function readFact(
 	if (address.kind === 'row') {
 		const row = database.all<RowFactRow>(
 			`SELECT namespace, table_name, row_id, presence, fields, authority_sequence
-			FROM row_facts WHERE namespace = ? AND table_name = ? AND row_id = ?`,
+			FROM main._replica_row_facts WHERE namespace = ? AND table_name = ? AND row_id = ?`,
 			[address.namespace, address.tableName, address.rowId],
 		)[0];
 		return row === undefined ? undefined : rowFactRowToFact(row);
 	}
 	const row = database.all<ValueFactRow>(
 		`SELECT namespace, value_name, presence, content, authority_sequence
-		FROM value_facts WHERE namespace = ? AND value_name = ?`,
+		FROM main._replica_value_facts WHERE namespace = ? AND value_name = ?`,
 		[address.namespace, address.valueName],
 	)[0];
 	return row === undefined ? undefined : valueFactRowToFact(row);
@@ -272,7 +272,7 @@ function storeFact(database: SqliteDatabase, fact: LocalFact): void {
 	if (fact.address.kind === 'row') {
 		const { namespace, tableName, rowId } = fact.address;
 		database.run(
-			`INSERT INTO row_facts (
+			`INSERT INTO main._replica_row_facts (
 				namespace, table_name, row_id, presence, fields, authority_sequence
 			) VALUES (?, ?, ?, ?, ?, ?)
 			ON CONFLICT (namespace, table_name, row_id) DO UPDATE SET
@@ -305,7 +305,7 @@ function storeFact(database: SqliteDatabase, fact: LocalFact): void {
 	}
 	const { namespace, valueName } = fact.address;
 	database.run(
-		`INSERT INTO value_facts (
+		`INSERT INTO main._replica_value_facts (
 			namespace, value_name, presence, content, authority_sequence
 		) VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT (namespace, value_name) DO UPDATE SET
@@ -330,7 +330,7 @@ function enqueueIntent(
 	if (intent.address.kind === 'row') {
 		const { namespace, tableName, rowId } = intent.address;
 		database.run(
-			`INSERT INTO row_outbox (
+			`INSERT INTO main._replica_row_outbox (
 				local_sequence, namespace, table_name, row_id, verb, patch
 			) VALUES (?, ?, ?, ?, ?, ?)`,
 			[
@@ -348,7 +348,7 @@ function enqueueIntent(
 	}
 	const { namespace, valueName } = intent.address;
 	database.run(
-		`INSERT INTO value_outbox (
+		`INSERT INTO main._replica_value_outbox (
 			local_sequence, namespace, value_name, verb, content
 		) VALUES (?, ?, ?, ?, ?)`,
 		[
@@ -407,11 +407,11 @@ function pendingRowToIntent(row: PendingRow): Intent {
 const PENDING_QUERY = `
 	SELECT local_sequence, 'row' AS intent_kind, namespace,
 		table_name AS local_key, row_id, verb, patch AS payload
-	FROM row_outbox
+	FROM main._replica_row_outbox
 	UNION ALL
 	SELECT local_sequence, 'value' AS intent_kind, namespace,
 		value_name AS local_key, NULL AS row_id, verb, content AS payload
-	FROM value_outbox
+	FROM main._replica_value_outbox
 	ORDER BY local_sequence`;
 
 function pendingIntents(
@@ -433,12 +433,12 @@ function hasPendingAddress(
 	const rows =
 		address.kind === 'row'
 			? database.all<SqliteRow>(
-					`SELECT 1 AS pending FROM row_outbox
+					`SELECT 1 AS pending FROM main._replica_row_outbox
 					WHERE namespace = ? AND table_name = ? AND row_id = ? LIMIT 1`,
 					[address.namespace, address.tableName, address.rowId],
 				)
 			: database.all<SqliteRow>(
-					`SELECT 1 AS pending FROM value_outbox
+					`SELECT 1 AS pending FROM main._replica_value_outbox
 					WHERE namespace = ? AND value_name = ? LIMIT 1`,
 					[address.namespace, address.valueName],
 				);
@@ -450,12 +450,14 @@ function deletePending(
 	localSequences: readonly number[],
 ): void {
 	for (const localSequence of localSequences) {
-		database.run('DELETE FROM row_outbox WHERE local_sequence = ?', [
-			localSequence,
-		]);
-		database.run('DELETE FROM value_outbox WHERE local_sequence = ?', [
-			localSequence,
-		]);
+		database.run(
+			'DELETE FROM main._replica_row_outbox WHERE local_sequence = ?',
+			[localSequence],
+		);
+		database.run(
+			'DELETE FROM main._replica_value_outbox WHERE local_sequence = ?',
+			[localSequence],
+		);
 	}
 }
 
@@ -508,8 +510,8 @@ function createReplica(
 	let nextLocalSequence =
 		(database.all<SqliteRow & { sequence: number }>(
 			`SELECT COALESCE(MAX(local_sequence), 0) AS sequence FROM (
-				SELECT local_sequence FROM row_outbox
-				UNION ALL SELECT local_sequence FROM value_outbox
+				SELECT local_sequence FROM main._replica_row_outbox
+				UNION ALL SELECT local_sequence FROM main._replica_value_outbox
 			)`,
 		)[0]?.sequence ?? 0) + 1;
 	const changeListeners = new Set<(changes: readonly Address[]) => void>();
@@ -581,7 +583,7 @@ function createReplica(
 					row.attached_principal === null
 				) {
 					database.run(
-						'UPDATE metadata SET attached_deployment = ?, attached_principal = ? WHERE singleton = 1',
+						'UPDATE main._replica_metadata SET attached_deployment = ?, attached_principal = ? WHERE singleton = 1',
 						[deploymentId, principalId],
 					);
 					return;
@@ -734,7 +736,7 @@ function createReplica(
 							if (parseReplicaId(replicaId).error !== null)
 								throw new Error('minted replica id is invalid');
 							database.run(
-								`UPDATE metadata SET replica_id = ?,
+								`UPDATE main._replica_metadata SET replica_id = ?,
 									last_sealed_batch_sequence = 0 WHERE singleton = 1`,
 								[replicaId],
 							);
@@ -742,8 +744,8 @@ function createReplica(
 							// The forked replica starts a fresh batch sequence, so the
 							// queue must start from a fresh local sequence too.
 							const pending = pendingIntents(database, Number.MAX_SAFE_INTEGER);
-							database.run('DELETE FROM row_outbox');
-							database.run('DELETE FROM value_outbox');
+							database.run('DELETE FROM main._replica_row_outbox');
+							database.run('DELETE FROM main._replica_value_outbox');
 							for (const [index, entry] of pending.entries()) {
 								enqueueIntent(database, index + 1, entry.intent);
 							}
@@ -793,7 +795,7 @@ function createReplica(
 						if (isFirstPage && batch !== undefined && sealed !== undefined) {
 							deletePending(database, sealed.localSequences);
 							database.run(
-								'UPDATE metadata SET last_sealed_batch_sequence = ? WHERE singleton = 1',
+								'UPDATE main._replica_metadata SET last_sealed_batch_sequence = ? WHERE singleton = 1',
 								[batch.seq],
 							);
 						}
@@ -815,7 +817,7 @@ function createReplica(
 				const advanced = storageResult('advance authority cursor', () =>
 					database.transaction(() => {
 						database.run(
-							'UPDATE metadata SET last_applied_authority_sequence = ? WHERE singleton = 1',
+							'UPDATE main._replica_metadata SET last_applied_authority_sequence = ? WHERE singleton = 1',
 							[response.through],
 						);
 					}),
@@ -867,18 +869,34 @@ export function openReplica({
 	log = createLogger('data/replica'),
 }: OpenReplicaOptions): Result<Replica, ReplicaError> {
 	try {
-		const tables = database.all<SqliteRow & { name: string }>(
-			`SELECT name FROM sqlite_schema
-			WHERE type = 'table' AND name IN (${REPLICA_TABLES.map(() => '?').join(', ')})`,
-			REPLICA_TABLES,
-		);
-		if (tables.length === 0) {
+		// "Fresh" has to mean the file holds nothing at all, not merely nothing
+		// this format recognizes. Asking only about the current relation names
+		// would read a file full of a previous format's tables as empty and build
+		// a second, parallel schema beside them: two live layouts in one file,
+		// each invisible to the other, and the older one silently orphaned.
+		//
+		// The replica owns its whole file, so any table it did not create is
+		// evidence of a different format. Connection-local TEMP views live in the
+		// `temp` schema and are never listed here.
+		const present = database
+			.all<SqliteRow & { name: string }>(
+				`SELECT name FROM main.sqlite_schema
+				WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`,
+			)
+			.map((row) => row.name);
+		if (present.length === 0) {
 			const replicaId = mintReplicaId();
 			if (parseReplicaId(replicaId).error !== null)
 				return ReplicaError.InvalidInput({ boundary: 'minted replica id' });
 			database.transaction(() => createReplicaSchema(database, replicaId));
-		} else if (tables.length !== REPLICA_TABLES.length) {
-			return ReplicaError.UnsupportedFormat({ found: null });
+		} else {
+			const expected = new Set<string>(REPLICA_TABLES);
+			const isCurrentFormat =
+				present.length === expected.size &&
+				present.every((name) => expected.has(name));
+			if (!isCurrentFormat) {
+				return ReplicaError.UnsupportedFormat({ found: null });
+			}
 		}
 		const row = readMetadata(database);
 		if (row === undefined)
