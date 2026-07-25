@@ -122,8 +122,10 @@ function quoteLiteral(value: string): string {
  * Lens, and a value that does not conform has no honest cell to sit in. The raw
  * relation is where that row can still be seen exactly as stored.
  *
- * Field names are already constrained to `[A-Za-z][A-Za-z0-9_]*`, so they are
- * safe inside both an identifier and a JSON path; they are quoted regardless.
+ * Field names are constrained to `[A-Za-z][A-Za-z0-9_]*` at declaration, which
+ * is what makes the generated JSON path safe to build by concatenation. The
+ * column alias is quoted anyway, because quoting an identifier costs nothing and
+ * removes the need to re-derive that argument at every read.
  */
 function fieldColumnSql(fieldName: string, schema: TSchema): string {
 	const path = `'$.${fieldName}'`;
@@ -169,9 +171,36 @@ const RAW_VIEWS = [
 		FROM main._replica_value_facts`,
 ] as const;
 
-/** Estimate a result's size the same way the host will serialize it. */
-function encodedBytes(rows: readonly InspectionRow[]): number {
-	return new TextEncoder().encode(JSON.stringify(rows)).byteLength;
+const textEncoder = new TextEncoder();
+
+/**
+ * Take rows until either bound is reached, measuring each row once.
+ *
+ * Measuring row by row rather than re-encoding the whole array after each drop
+ * keeps this linear. The obvious "pop until it fits" loop re-serializes every
+ * remaining row on every pop, which is quadratic exactly when the result is
+ * largest, which is the case the bound exists to handle.
+ */
+function boundRows(
+	all: readonly InspectionRow[],
+	bounds: InspectionBounds,
+): { rows: InspectionRow[]; truncated: boolean } {
+	const rows: InspectionRow[] = [];
+	// The two brackets of the JSON array the host will serialize.
+	let bytes = 2;
+	for (const row of all) {
+		if (rows.length >= bounds.maxRows) return { rows, truncated: true };
+		// The encoded row, plus the comma separating it from the previous one.
+		const rowBytes =
+			textEncoder.encode(JSON.stringify(row)).byteLength +
+			(rows.length === 0 ? 0 : 1);
+		if (bytes + rowBytes > bounds.maxResultBytes) {
+			return { rows, truncated: true };
+		}
+		bytes += rowBytes;
+		rows.push(row);
+	}
+	return { rows, truncated: false };
 }
 
 /**
@@ -236,22 +265,29 @@ function createInspection(database: Database, bounds: InspectionBounds) {
 					requireOpen();
 					dropFriendlyViews();
 					const namespace = quoteLiteral(lens.namespace);
-					for (const [tableName, definition] of Object.entries(lens.tables)) {
-						const columns = [
-							'f.row_id AS "id"',
-							...Object.entries(definition.fields).map(([fieldName, schema]) =>
-								fieldColumnSql(fieldName, schema),
-							),
-						];
-						database.run(
-							`CREATE TEMP VIEW ${quoteIdentifier(tableName)} AS
-								SELECT ${columns.join(', ')}
-								FROM main._replica_row_facts AS f
-								WHERE f.namespace = ${namespace}
-									AND f.table_name = ${quoteLiteral(tableName)}
-									AND f.presence = 'present'`,
-						);
-						mounted.push(tableName);
+					try {
+						for (const [tableName, definition] of Object.entries(lens.tables)) {
+							const columns = [
+								'f.row_id AS "id"',
+								...Object.entries(definition.fields).map(
+									([fieldName, schema]) => fieldColumnSql(fieldName, schema),
+								),
+							];
+							database.run(
+								`CREATE TEMP VIEW ${quoteIdentifier(tableName)} AS
+									SELECT ${columns.join(', ')}
+									FROM main._replica_row_facts AS f
+									WHERE f.namespace = ${namespace}
+										AND f.table_name = ${quoteLiteral(tableName)}
+										AND f.presence = 'present'`,
+							);
+							mounted.push(tableName);
+						}
+					} catch (cause) {
+						// A half-mounted interpretation is worse than none: some tables
+						// would answer and others would not, with nothing saying why.
+						dropFriendlyViews();
+						throw cause;
 					}
 					selected = lens.namespace;
 					return undefined;
@@ -296,17 +332,7 @@ function createInspection(database: Database, bounds: InspectionBounds) {
 					requireOpen();
 					const statement = database.prepare<InspectionRow, []>(sql);
 					try {
-						const all = statement.all();
-						const rows = all.slice(0, bounds.maxRows);
-						let truncated = all.length > rows.length;
-						while (
-							rows.length > 0 &&
-							encodedBytes(rows) > bounds.maxResultBytes
-						) {
-							rows.pop();
-							truncated = true;
-						}
-						return { rows, truncated };
+						return boundRows(statement.all(), bounds);
 					} finally {
 						statement.finalize();
 					}
