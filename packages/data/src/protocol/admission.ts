@@ -1,3 +1,8 @@
+import {
+	type AddressByteCeilings,
+	isAdmissibleAddress,
+	isRuntimeId,
+} from './addresses.js';
 import type {
 	Change,
 	JsonObject,
@@ -6,7 +11,10 @@ import type {
 } from './schemas.js';
 
 export const DATA_ADMISSION_LIMITS = {
-	qualifiedKeyBytes: 128,
+	/** Byte ceiling for the durable reverse-domain namespace coordinate. */
+	namespaceBytes: 128,
+	/** Byte ceiling for a durable local table or value name. */
+	localKeyBytes: 64,
 	rowIdLength: 24,
 	replicaIdLength: 24,
 	changesPerBatch: 64,
@@ -22,9 +30,12 @@ export const DATA_ADMISSION_LIMITS = {
 } as const;
 
 const textEncoder = new TextEncoder();
-const QUALIFIED_KEY =
-	/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?){2,}$/;
-const RUNTIME_ID = /^[a-z0-9]{24}$/;
+
+/** The address-coordinate ceilings this protocol admits. */
+export const DATA_ADDRESS_CEILINGS: AddressByteCeilings = {
+	namespaceBytes: DATA_ADMISSION_LIMITS.namespaceBytes,
+	localKeyBytes: DATA_ADMISSION_LIMITS.localKeyBytes,
+};
 
 export function encodedBytes(value: string): number {
 	return textEncoder.encode(value).byteLength;
@@ -32,19 +43,6 @@ export function encodedBytes(value: string): number {
 
 export function encodedJsonBytes(value: unknown): number {
 	return encodedBytes(JSON.stringify(value));
-}
-
-export function isQualifiedKey(value: string): boolean {
-	const bytes = encodedBytes(value);
-	return (
-		bytes >= 3 &&
-		bytes <= DATA_ADMISSION_LIMITS.qualifiedKeyBytes &&
-		QUALIFIED_KEY.test(value)
-	);
-}
-
-export function isRuntimeId(value: string): boolean {
-	return RUNTIME_ID.test(value);
 }
 
 function isJsonAtDepth(
@@ -96,8 +94,9 @@ function isFieldKey(value: string): boolean {
 }
 
 export function isAdmissibleChange(change: Change): boolean {
-	if (!isQualifiedKey(change.key)) return false;
-	if ('rowId' in change && !isRuntimeId(change.rowId)) return false;
+	if (!isAdmissibleAddress(change.address, DATA_ADDRESS_CEILINGS)) return false;
+	if (change.address.kind === 'row' && !isRuntimeId(change.address.rowId))
+		return false;
 	if (encodedJsonBytes(change) > DATA_ADMISSION_LIMITS.encodedChangeBytes)
 		return false;
 
@@ -133,13 +132,14 @@ export function isAdmissibleChange(change: Change): boolean {
 
 export function isAdmissibleRecord(record: SyncRecord): boolean {
 	if (
-		!isQualifiedKey(record.key) ||
+		!isAdmissibleAddress(record.address, DATA_ADDRESS_CEILINGS) ||
 		!Number.isSafeInteger(record.changedSequence) ||
 		record.changedSequence < 1
 	) {
 		return false;
 	}
-	if ('rowId' in record && !isRuntimeId(record.rowId)) return false;
+	if (record.address.kind === 'row' && !isRuntimeId(record.address.rowId))
+		return false;
 	if (encodedJsonBytes(record) > DATA_ADMISSION_LIMITS.encodedRecordBytes)
 		return false;
 	return record.kind === 'row'

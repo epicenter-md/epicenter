@@ -1,4 +1,23 @@
 export {
+	type Address,
+	type AddressByteCeilings,
+	AddressSchema,
+	addressesEqual,
+	addressKey,
+	isAddress,
+	isAdmissibleAddress,
+	isLocalKey,
+	isNamespace,
+	isRowAddress,
+	isRuntimeId,
+	isValueAddress,
+	type RowAddress,
+	RowAddressSchema,
+	type ValueAddress,
+	ValueAddressSchema,
+} from './addresses.js';
+export {
+	DATA_ADDRESS_CEILINGS,
 	DATA_ADMISSION_LIMITS,
 	encodedBytes,
 	encodedJsonBytes,
@@ -6,8 +25,6 @@ export {
 	isAdmissibleRecord,
 	isJsonObject,
 	isJsonValue,
-	isQualifiedKey,
-	isRuntimeId,
 } from './admission.js';
 export { canonicalJson, sha256Hex } from './canonical.js';
 export { type FoldResult, foldChange } from './fold.js';
@@ -30,12 +47,9 @@ export {
 	parseExchangeRequest,
 	parseExchangeResponse,
 	parseJsonValue,
-	parseQualifiedKey,
 	parseRecord,
 	parseReplicaId,
 	parseRowId,
-	type QualifiedKey,
-	QualifiedKeySchema,
 	type Receipt,
 	ReceiptSchema,
 	type Record,

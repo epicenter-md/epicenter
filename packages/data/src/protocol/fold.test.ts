@@ -18,34 +18,41 @@ import {
 	type Record as SyncRecord,
 } from './index.js';
 
-const KEY = 'so.epicenter.notes.rows';
-const VALUE_KEY = 'so.epicenter.settings.theme';
 const ROW_ID = 'abc123def456ghi789jkl012';
+const ROW_ADDRESS = {
+	kind: 'row',
+	namespace: 'so.epicenter.notes',
+	table: 'rows',
+	rowId: ROW_ID,
+} as const;
+const VALUE_ADDRESS = {
+	kind: 'value',
+	namespace: 'so.epicenter.settings',
+	value: 'theme',
+} as const;
 const row = (
 	fields: JsonObject = { title: 'A' },
 	changedSequence = 1,
 ): SyncRecord => ({
 	kind: 'row',
-	key: KEY,
-	rowId: ROW_ID,
+	address: ROW_ADDRESS,
 	changedSequence,
 	fields,
 });
 const deleted = (): SyncRecord => ({
 	kind: 'row-deleted',
-	key: KEY,
-	rowId: ROW_ID,
+	address: ROW_ADDRESS,
 	changedSequence: 2,
 });
 const value = (): SyncRecord => ({
 	kind: 'value',
-	key: VALUE_KEY,
+	address: VALUE_ADDRESS,
 	changedSequence: 1,
 	value: 'dark',
 });
 const unset = (): SyncRecord => ({
 	kind: 'value-unset',
-	key: VALUE_KEY,
+	address: VALUE_ADDRESS,
 	changedSequence: 2,
 });
 
@@ -61,8 +68,7 @@ describe('row fold', () => {
 			current: undefined,
 			change: {
 				kind: 'create',
-				key: KEY,
-				rowId: ROW_ID,
+				address: ROW_ADDRESS,
 				fields: { title: 'A' },
 			},
 			expected: 'applied',
@@ -70,13 +76,13 @@ describe('row fold', () => {
 		{
 			name: 'create at live is a no-op',
 			current: row(),
-			change: { kind: 'create', key: KEY, rowId: ROW_ID, fields: {} },
+			change: { kind: 'create', address: ROW_ADDRESS, fields: {} },
 			expected: 'noop',
 		},
 		{
 			name: 'create at tombstone is a no-op',
 			current: deleted(),
-			change: { kind: 'create', key: KEY, rowId: ROW_ID, fields: {} },
+			change: { kind: 'create', address: ROW_ADDRESS, fields: {} },
 			expected: 'noop',
 		},
 		{
@@ -84,8 +90,7 @@ describe('row fold', () => {
 			current: undefined,
 			change: {
 				kind: 'update',
-				key: KEY,
-				rowId: ROW_ID,
+				address: ROW_ADDRESS,
 				fields: { set: { x: 1 }, unset: [] },
 			},
 			expected: 'noop',
@@ -95,8 +100,7 @@ describe('row fold', () => {
 			current: deleted(),
 			change: {
 				kind: 'update',
-				key: KEY,
-				rowId: ROW_ID,
+				address: ROW_ADDRESS,
 				fields: { set: { x: 1 }, unset: [] },
 			},
 			expected: 'noop',
@@ -104,19 +108,19 @@ describe('row fold', () => {
 		{
 			name: 'delete at live applies',
 			current: row(),
-			change: { kind: 'delete', key: KEY, rowId: ROW_ID },
+			change: { kind: 'delete', address: ROW_ADDRESS },
 			expected: 'applied',
 		},
 		{
 			name: 'delete at absence is a no-op',
 			current: undefined,
-			change: { kind: 'delete', key: KEY, rowId: ROW_ID },
+			change: { kind: 'delete', address: ROW_ADDRESS },
 			expected: 'noop',
 		},
 		{
 			name: 'delete at tombstone is a no-op',
 			current: deleted(),
-			change: { kind: 'delete', key: KEY, rowId: ROW_ID },
+			change: { kind: 'delete', address: ROW_ADDRESS },
 			expected: 'noop',
 		},
 	];
@@ -133,8 +137,7 @@ describe('row fold', () => {
 			row({ title: 'A', keep: true }),
 			{
 				kind: 'update',
-				key: KEY,
-				rowId: ROW_ID,
+				address: ROW_ADDRESS,
 				fields: { set: { title: 'B', remove: 'set-first' }, unset: ['remove'] },
 			},
 			9,
@@ -143,8 +146,7 @@ describe('row fold', () => {
 			kind: 'applied',
 			record: {
 				kind: 'row',
-				key: KEY,
-				rowId: ROW_ID,
+				address: ROW_ADDRESS,
 				changedSequence: 9,
 				fields: { title: 'B', keep: true },
 			},
@@ -156,8 +158,7 @@ describe('row fold', () => {
 			row(),
 			{
 				kind: 'update',
-				key: KEY,
-				rowId: ROW_ID,
+				address: ROW_ADDRESS,
 				fields: {
 					set: { huge: 'x'.repeat(DATA_ADMISSION_LIMITS.encodedRecordBytes) },
 					unset: [],
@@ -173,12 +174,16 @@ describe('value fold', () => {
 	test('set always replaces absence, live, or unset', () => {
 		for (const current of [undefined, value(), unset()]) {
 			expect(
-				foldChange(current, { kind: 'set', key: VALUE_KEY, value: 'light' }, 7),
+				foldChange(
+					current,
+					{ kind: 'set', address: VALUE_ADDRESS, value: 'light' },
+					7,
+				),
 			).toEqual({
 				kind: 'applied',
 				record: {
 					kind: 'value',
-					key: VALUE_KEY,
+					address: VALUE_ADDRESS,
 					changedSequence: 7,
 					value: 'light',
 				},
@@ -187,17 +192,24 @@ describe('value fold', () => {
 	});
 
 	test('unset applies only at live and a later set revives it', () => {
-		const removed = foldChange(value(), { kind: 'unset', key: VALUE_KEY }, 2);
+		const removed = foldChange(
+			value(),
+			{ kind: 'unset', address: VALUE_ADDRESS },
+			2,
+		);
 		expect(removed).toEqual({ kind: 'applied', record: unset() });
 		expect(
-			foldChange(undefined, { kind: 'unset', key: VALUE_KEY }, 3).kind,
+			foldChange(undefined, { kind: 'unset', address: VALUE_ADDRESS }, 3).kind,
 		).toBe('noop');
-		expect(foldChange(unset(), { kind: 'unset', key: VALUE_KEY }, 3).kind).toBe(
-			'noop',
-		);
 		expect(
-			foldChange(unset(), { kind: 'set', key: VALUE_KEY, value: 'again' }, 3)
-				.kind,
+			foldChange(unset(), { kind: 'unset', address: VALUE_ADDRESS }, 3).kind,
+		).toBe('noop');
+		expect(
+			foldChange(
+				unset(),
+				{ kind: 'set', address: VALUE_ADDRESS, value: 'again' },
+				3,
+			).kind,
 		).toBe('applied');
 	});
 });

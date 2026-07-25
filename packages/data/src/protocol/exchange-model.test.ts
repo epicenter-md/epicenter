@@ -20,13 +20,27 @@ import {
 } from './index.js';
 
 const ROW_ID = 'aaaaaaaaaaaaaaaaaaaaaaaa';
-const KEY = 'so.epicenter.model.rows';
 const REPLICA_ID = 'rrrrrrrrrrrrrrrrrrrrrrrr';
 
+function rowAddress(rowId: string) {
+	return {
+		kind: 'row',
+		namespace: 'so.epicenter.model',
+		table: 'rows',
+		rowId,
+	} as const;
+}
+
+function valueAddress(value: string) {
+	return {
+		kind: 'value',
+		namespace: 'so.epicenter.model',
+		value,
+	} as const;
+}
+
 function addressOf(value: Change | SyncRecord): string {
-	return 'rowId' in value
-		? `row\0${value.key}\0${value.rowId}`
-		: `value\0${value.key}`;
+	return JSON.stringify(value.address);
 }
 
 function createAuthority() {
@@ -180,7 +194,7 @@ describe('fixed-through latest-state exchange', () => {
 				for (const key of order)
 					authority.submit({
 						kind: 'set',
-						key: `so.epicenter.model.${key}`,
+						address: valueAddress(key),
 						value: key,
 					});
 				const through = authority.maximumSequence;
@@ -195,7 +209,7 @@ describe('fixed-through latest-state exchange', () => {
 					if (pageNumber === 1 && overwritten !== undefined) {
 						authority.submit({
 							kind: 'set',
-							key: `so.epicenter.model.${overwritten}`,
+							address: valueAddress(overwritten),
 							value: 'new',
 						});
 					}
@@ -231,15 +245,15 @@ describe('fixed-through latest-state exchange', () => {
 	test('2. an early-page record overwritten above through appears next exchange', () => {
 		const authority = createAuthority();
 		const client = createClient();
-		authority.submit({ kind: 'set', key: 'so.epicenter.model.a', value: 'a1' });
-		authority.submit({ kind: 'set', key: 'so.epicenter.model.b', value: 'b1' });
+		authority.submit({ kind: 'set', address: valueAddress('a'), value: 'a1' });
+		authority.submit({ kind: 'set', address: valueAddress('b'), value: 'b1' });
 		const first = authority.page(0, undefined, 1);
 		client.install(first.records);
-		authority.submit({ kind: 'set', key: 'so.epicenter.model.a', value: 'a2' });
+		authority.submit({ kind: 'set', address: valueAddress('a'), value: 'a2' });
 		const last = authority.page(0, first.next ?? undefined, 1);
 		client.install(last.records);
 		client.complete(last.through);
-		const current = authority.get('value\0so.epicenter.model.a');
+		const current = authority.get(JSON.stringify(valueAddress('a')));
 		if (current === undefined) throw new Error('Expected current value');
 		expect(drain(authority, client, 1)).toEqual([current]);
 	});
@@ -247,7 +261,7 @@ describe('fixed-through latest-state exchange', () => {
 	test('3. retrying an identical local batch returns one receipt and applies once', () => {
 		const authority = createAuthority();
 		const changes: Change[] = [
-			{ kind: 'set', key: 'so.epicenter.model.a', value: 'a1' },
+			{ kind: 'set', address: valueAddress('a'), value: 'a1' },
 		];
 		const receipt = authority.applyBatch(REPLICA_ID, 1, changes);
 		expect(authority.applyBatch(REPLICA_ID, 1, changes)).toBe(receipt);
@@ -259,27 +273,24 @@ describe('fixed-through latest-state exchange', () => {
 		const client = createClient();
 		authority.submit({
 			kind: 'create',
-			key: KEY,
-			rowId: ROW_ID,
+			address: rowAddress(ROW_ID),
 			fields: { title: 'live' },
 		});
 		authority.submit({
 			kind: 'create',
-			key: KEY,
-			rowId: 'bbbbbbbbbbbbbbbbbbbbbbbb',
+			address: rowAddress('bbbbbbbbbbbbbbbbbbbbbbbb'),
 			fields: {},
 		});
 		authority.submit({
 			kind: 'delete',
-			key: KEY,
-			rowId: 'bbbbbbbbbbbbbbbbbbbbbbbb',
+			address: rowAddress('bbbbbbbbbbbbbbbbbbbbbbbb'),
 		});
 		authority.submit({
 			kind: 'set',
-			key: 'so.epicenter.model.value',
+			address: valueAddress('value'),
 			value: 1,
 		});
-		authority.submit({ kind: 'unset', key: 'so.epicenter.model.value' });
+		authority.submit({ kind: 'unset', address: valueAddress('value') });
 		drain(authority, client, 2);
 		expect(client.records()).toEqual(
 			authority
@@ -290,22 +301,24 @@ describe('fixed-through latest-state exchange', () => {
 
 	test('5. a terminal tombstone defeats offline create and update attempts', () => {
 		const authority = createAuthority();
-		authority.submit({ kind: 'create', key: KEY, rowId: ROW_ID, fields: {} });
-		authority.submit({ kind: 'delete', key: KEY, rowId: ROW_ID });
+		authority.submit({
+			kind: 'create',
+			address: rowAddress(ROW_ID),
+			fields: {},
+		});
+		authority.submit({ kind: 'delete', address: rowAddress(ROW_ID) });
 		const afterDelete = authority.maximumSequence;
 		expect(
 			authority.submit({
 				kind: 'create',
-				key: KEY,
-				rowId: ROW_ID,
+				address: rowAddress(ROW_ID),
 				fields: { stale: true },
 			}).kind,
 		).toBe('noop');
 		expect(
 			authority.submit({
 				kind: 'update',
-				key: KEY,
-				rowId: ROW_ID,
+				address: rowAddress(ROW_ID),
 				fields: { set: { stale: true }, unset: [] },
 			}).kind,
 		).toBe('noop');
@@ -316,8 +329,8 @@ describe('fixed-through latest-state exchange', () => {
 		const authority = createAuthority();
 		const client = createClient();
 		const changes: Change[] = [
-			{ kind: 'set', key: 'so.epicenter.model.a', value: 1 },
-			{ kind: 'set', key: 'so.epicenter.model.b', value: 2 },
+			{ kind: 'set', address: valueAddress('a'), value: 1 },
+			{ kind: 'set', address: valueAddress('b'), value: 2 },
 		];
 		authority.applyBatch(REPLICA_ID, 1, changes);
 		const first = authority.page(0, undefined, 1);
@@ -334,25 +347,25 @@ describe('fixed-through latest-state exchange', () => {
 		const client = createClient();
 		authority.submit({
 			kind: 'set',
-			key: 'so.epicenter.model.other',
+			address: valueAddress('other'),
 			value: 1,
 		});
 		authority.submit({
 			kind: 'set',
-			key: 'so.epicenter.model.boundary',
+			address: valueAddress('boundary'),
 			value: 1,
 		});
 		const first = authority.page(0, undefined, 1);
 		client.install(first.records);
 		authority.submit({
 			kind: 'set',
-			key: 'so.epicenter.model.boundary',
+			address: valueAddress('boundary'),
 			value: 2,
 		});
 		const last = authority.page(0, first.next ?? undefined, 1);
 		client.install(last.records);
 		client.complete(last.through);
-		const current = authority.get('value\0so.epicenter.model.boundary');
+		const current = authority.get(JSON.stringify(valueAddress('boundary')));
 		if (current === undefined)
 			throw new Error('Expected current boundary value');
 		expect(drain(authority, client, 1)).toEqual([current]);
@@ -361,13 +374,13 @@ describe('fixed-through latest-state exchange', () => {
 	test('8. continuous replacement cannot prevent fixed-through progress', () => {
 		const authority = createAuthority();
 		const client = createClient();
-		authority.submit({ kind: 'set', key: 'so.epicenter.model.hot', value: 0 });
+		authority.submit({ kind: 'set', address: valueAddress('hot'), value: 0 });
 		let prior = 0;
 		for (let index = 1; index <= 8; index += 1) {
 			const through = authority.maximumSequence;
 			authority.submit({
 				kind: 'set',
-				key: 'so.epicenter.model.hot',
+				address: valueAddress('hot'),
 				value: index,
 			});
 			const page = authority.page(
@@ -386,10 +399,10 @@ describe('fixed-through latest-state exchange', () => {
 	test('9. one last receipt accepts exact retry and rejects gaps or old batches', () => {
 		const authority = createAuthority();
 		const first: Change[] = [
-			{ kind: 'set', key: 'so.epicenter.model.a', value: 1 },
+			{ kind: 'set', address: valueAddress('a'), value: 1 },
 		];
 		const second: Change[] = [
-			{ kind: 'set', key: 'so.epicenter.model.b', value: 2 },
+			{ kind: 'set', address: valueAddress('b'), value: 2 },
 		];
 		authority.applyBatch(REPLICA_ID, 1, first);
 		authority.applyBatch(REPLICA_ID, 2, second);
