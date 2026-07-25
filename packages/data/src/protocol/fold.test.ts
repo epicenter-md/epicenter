@@ -22,13 +22,13 @@ const ROW_ID = 'abc123def456ghi789jkl012';
 const ROW_ADDRESS = {
 	kind: 'row',
 	namespace: 'so.epicenter.notes',
-	table: 'rows',
+	tableName: 'rows',
 	rowId: ROW_ID,
 } as const;
 const VALUE_ADDRESS = {
 	kind: 'value',
 	namespace: 'so.epicenter.settings',
-	value: 'theme',
+	valueName: 'theme',
 } as const;
 const row = (
 	fields: JsonObject = { title: 'A' },

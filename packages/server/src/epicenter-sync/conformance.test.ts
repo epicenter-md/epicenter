@@ -29,11 +29,16 @@ const ROW_A = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 const ROW_B = 'bbbbbbbbbbbbbbbbbbbbbbbb';
 
 function rowAddress(rowId: string) {
-	return { kind: 'row', namespace: NAMESPACE, table: 'rows', rowId } as const;
+	return {
+		kind: 'row',
+		namespace: NAMESPACE,
+		tableName: 'rows',
+		rowId,
+	} as const;
 }
 
-function valueAddress(value: string) {
-	return { kind: 'value', namespace: NAMESPACE, value } as const;
+function valueAddress(valueName: string) {
+	return { kind: 'value', namespace: NAMESPACE, valueName } as const;
 }
 
 function openAttachedReplica(raw: Database, replicaId: string) {

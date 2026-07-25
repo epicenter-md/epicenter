@@ -432,7 +432,7 @@ export function serveBrowserEpicenter(
 	}
 
 	async function revokeDocuments(address: RowAddress): Promise<void> {
-		const message = `Row document was revoked because '${address.namespace}/${address.table}/${address.rowId}' is no longer live`;
+		const message = `Row document was revoked because '${address.namespace}/${address.tableName}/${address.rowId}' is no longer live`;
 		const closures: Promise<void>[] = [];
 		for (const [documentId, entry] of documents) {
 			if (!addressesEqual(entry.address, address)) continue;
@@ -941,9 +941,9 @@ function valueLens(
 		defineLens({
 			namespace: definition.address.namespace,
 			tables: {},
-			values: { [definition.address.value]: valueDefinition },
+			values: { [definition.address.valueName]: valueDefinition },
 		}),
-	).values[definition.address.value] as UntypedValueLens;
+	).values[definition.address.valueName] as UntypedValueLens;
 }
 
 function storeClosingError(cause?: unknown): Error {

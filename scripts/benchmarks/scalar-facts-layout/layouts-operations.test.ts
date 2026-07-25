@@ -143,7 +143,7 @@ describe('row tombstone plus document cleanup is one transaction', () => {
 			const address = {
 				kind: 'row' as const,
 				namespace: docRow.ns,
-				table: docRow.tk,
+				tableName: docRow.tk,
 				rowId: docRow.rid,
 			};
 			const documentCountStatement = db.prepare(
@@ -155,7 +155,7 @@ describe('row tombstone plus document cleanup is one transaction', () => {
 				(
 					documentCountStatement.get(
 						address.namespace,
-						address.table,
+						address.tableName,
 						address.rowId,
 					) as {
 						n: number;
@@ -210,7 +210,7 @@ describe('authority settlement installs supplied facts at fresh sequences', () =
 				address: {
 					kind: 'row' as const,
 					namespace: 'so.epicenter.ns00',
-					table: 'collection0001',
+					tableName: 'collection0001',
 					rowId: (50_000_000 + k).toString(36).padStart(24, '0'),
 				},
 				sequence: 0,

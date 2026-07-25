@@ -203,7 +203,7 @@ function rowFactToRecord(row: RowFactRow): SyncRecord {
 	const address: RowAddress = {
 		kind: 'row',
 		namespace: row.namespace,
-		table: row.table_name,
+		tableName: row.table_name,
 		rowId: row.row_id,
 	};
 	return row.presence === 'absent'
@@ -220,7 +220,7 @@ function valueFactToRecord(row: ValueFactRow): SyncRecord {
 	const address: ValueAddress = {
 		kind: 'value',
 		namespace: row.namespace,
-		value: row.value_name,
+		valueName: row.value_name,
 	};
 	return row.presence === 'absent'
 		? { kind: 'value-unset', address, changedSequence: row.changed_sequence }
@@ -240,21 +240,21 @@ function readFact(
 		const row = database.all<RowFactRow>(
 			`SELECT namespace, table_name, row_id, presence, fields, changed_sequence
 			FROM row_facts WHERE namespace = ? AND table_name = ? AND row_id = ?`,
-			[address.namespace, address.table, address.rowId],
+			[address.namespace, address.tableName, address.rowId],
 		)[0];
 		return row === undefined ? undefined : rowFactToRecord(row);
 	}
 	const row = database.all<ValueFactRow>(
 		`SELECT namespace, value_name, presence, content, changed_sequence
 		FROM value_facts WHERE namespace = ? AND value_name = ?`,
-		[address.namespace, address.value],
+		[address.namespace, address.valueName],
 	)[0];
 	return row === undefined ? undefined : valueFactToRecord(row);
 }
 
 function storeRecord(database: SqliteDatabase, record: SyncRecord): void {
 	if (record.kind === 'row' || record.kind === 'row-deleted') {
-		const { namespace, table, rowId } = record.address;
+		const { namespace, tableName, rowId } = record.address;
 		database.run(
 			`INSERT INTO row_facts (
 				namespace, table_name, row_id, presence, fields, changed_sequence
@@ -265,7 +265,7 @@ function storeRecord(database: SqliteDatabase, record: SyncRecord): void {
 				changed_sequence = excluded.changed_sequence`,
 			[
 				namespace,
-				table,
+				tableName,
 				rowId,
 				record.kind === 'row' ? 'present' : 'absent',
 				record.kind === 'row' ? JSON.stringify(record.fields) : null,
@@ -278,16 +278,16 @@ function storeRecord(database: SqliteDatabase, record: SyncRecord): void {
 			// that would republish content for a dead address (ADR-0174).
 			database.run(
 				'DELETE FROM document_updates WHERE namespace = ? AND table_name = ? AND row_id = ?',
-				[namespace, table, rowId],
+				[namespace, tableName, rowId],
 			);
 			database.run(
 				'DELETE FROM document_publication WHERE namespace = ? AND table_name = ? AND row_id = ?',
-				[namespace, table, rowId],
+				[namespace, tableName, rowId],
 			);
 		}
 		return;
 	}
-	const { namespace, value } = record.address;
+	const { namespace, valueName } = record.address;
 	database.run(
 		`INSERT INTO value_facts (
 			namespace, value_name, presence, content, changed_sequence
@@ -298,7 +298,7 @@ function storeRecord(database: SqliteDatabase, record: SyncRecord): void {
 			changed_sequence = excluded.changed_sequence`,
 		[
 			namespace,
-			value,
+			valueName,
 			record.kind === 'value' ? 'present' : 'absent',
 			record.kind === 'value' ? JSON.stringify(record.value) : null,
 			record.changedSequence,
@@ -312,7 +312,7 @@ function enqueueChange(
 	change: Change,
 ): void {
 	if (change.address.kind === 'row') {
-		const { namespace, table, rowId } = change.address;
+		const { namespace, tableName, rowId } = change.address;
 		const patch =
 			change.kind === 'create'
 				? JSON.stringify({ kind: 'create', fields: change.fields })
@@ -326,7 +326,7 @@ function enqueueChange(
 			[
 				localSequence,
 				namespace,
-				table,
+				tableName,
 				rowId,
 				change.kind === 'delete' ? 'absent' : 'present',
 				patch,
@@ -334,7 +334,7 @@ function enqueueChange(
 		);
 		return;
 	}
-	const { namespace, value } = change.address;
+	const { namespace, valueName } = change.address;
 	database.run(
 		`INSERT INTO value_outbox (
 			local_sequence, namespace, value_name, presence, content
@@ -342,7 +342,7 @@ function enqueueChange(
 		[
 			localSequence,
 			namespace,
-			value,
+			valueName,
 			change.kind === 'set' ? 'present' : 'absent',
 			change.kind === 'set' ? JSON.stringify(change.value) : null,
 		],
@@ -361,7 +361,7 @@ function pendingRowToChange(row: PendingRow): Change {
 		const address: RowAddress = {
 			kind: 'row',
 			namespace: row.namespace,
-			table: row.local_key,
+			tableName: row.local_key,
 			rowId: row.row_id,
 		};
 		if (row.presence === 'absent') return { kind: 'delete', address };
@@ -380,7 +380,7 @@ function pendingRowToChange(row: PendingRow): Change {
 	const address: ValueAddress = {
 		kind: 'value',
 		namespace: row.namespace,
-		value: row.local_key,
+		valueName: row.local_key,
 	};
 	return row.presence === 'absent'
 		? { kind: 'unset', address }
@@ -429,12 +429,12 @@ function hasPendingAddress(
 			? database.all<SqliteRow>(
 					`SELECT 1 AS pending FROM row_outbox
 					WHERE namespace = ? AND table_name = ? AND row_id = ? LIMIT 1`,
-					[address.namespace, address.table, address.rowId],
+					[address.namespace, address.tableName, address.rowId],
 				)
 			: database.all<SqliteRow>(
 					`SELECT 1 AS pending FROM value_outbox
 					WHERE namespace = ? AND value_name = ? LIMIT 1`,
-					[address.namespace, address.value],
+					[address.namespace, address.valueName],
 				);
 	return rows.length > 0;
 }

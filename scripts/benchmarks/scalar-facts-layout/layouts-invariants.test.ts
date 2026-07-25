@@ -39,13 +39,13 @@ function fresh(candidate: Candidate) {
 const rowAddr = (rowId: string): RowAddress => ({
 	kind: 'row',
 	namespace: 'so.epicenter.ns00',
-	table: 'collection0001',
+	tableName: 'collection0001',
 	rowId,
 });
 const valueAddr = (value: string): ValueAddress => ({
 	kind: 'value',
 	namespace: 'so.epicenter.ns00',
-	value,
+	valueName,
 });
 const ID_A = 'a'.repeat(24);
 

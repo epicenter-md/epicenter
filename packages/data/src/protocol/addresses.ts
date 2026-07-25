@@ -8,6 +8,13 @@
  * space, so one namespace may name both a `notes` table and a `notes` value
  * without collision.
  *
+ * The coordinates are spelled `tableName` and `valueName` rather than `table`
+ * and `value`. Both read as the durable name they are at every call site, and
+ * neither can be misread as the thing it names: the old `address.value` invited
+ * the reading "the value stored here", which is the payload, not a coordinate.
+ * `value_name` and `table_name` are the matching SQL column names, so one
+ * vocabulary spans the typed API, the wire, and storage.
+ *
  * Namespace, table, and value are durable declarable names that a Lens authors.
  * Only `rowId` is runtime-minted. Renaming any coordinate produces a different
  * address, and therefore a different unit of convergence; there is no rename
@@ -102,7 +109,7 @@ export const RowAddressSchema = Type.Object(
 	{
 		kind: Type.Literal('row'),
 		namespace: namespaceSchema,
-		table: tableNameSchema,
+		tableName: tableNameSchema,
 		rowId: rowIdSchema,
 	},
 	CLOSED,
@@ -113,7 +120,7 @@ export const ValueAddressSchema = Type.Object(
 	{
 		kind: Type.Literal('value'),
 		namespace: namespaceSchema,
-		value: valueNameSchema,
+		valueName: valueNameSchema,
 	},
 	CLOSED,
 );
@@ -141,14 +148,14 @@ export function addressesEqual(left: Address, right: Address): boolean {
 		return (
 			right.kind === 'row' &&
 			left.namespace === right.namespace &&
-			left.table === right.table &&
+			left.tableName === right.tableName &&
 			left.rowId === right.rowId
 		);
 	}
 	return (
 		right.kind === 'value' &&
 		left.namespace === right.namespace &&
-		left.value === right.value
+		left.valueName === right.valueName
 	);
 }
 
@@ -203,8 +210,8 @@ export function isAdmissibleAddress(
 ): boolean {
 	if (!isNamespace(address.namespace, ceilings)) return false;
 	return address.kind === 'row'
-		? isTableName(address.table, ceilings)
-		: isValueName(address.value, ceilings);
+		? isTableName(address.tableName, ceilings)
+		: isValueName(address.valueName, ceilings);
 }
 
 /**

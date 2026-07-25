@@ -1736,7 +1736,7 @@ function applyTailTransaction(
 				address: {
 					kind: 'row',
 					namespace: 'so.epicenter.ns00',
-					table: 'collection0001',
+					tableName: 'collection0001',
 					rowId: rowId(offset),
 				},
 				sequence,
@@ -1755,7 +1755,7 @@ function applyTailTransaction(
 					: {
 							kind: 'row',
 							namespace: 'so.epicenter.ns00',
-							table: 'collection0001',
+							tableName: 'collection0001',
 							rowId: rowId(offset),
 						};
 			store.deleteRowWithDocument(address, sequence);
@@ -1766,7 +1766,7 @@ function applyTailTransaction(
 				address: {
 					kind: 'row',
 					namespace: 'so.epicenter.ns00',
-					table: 'collection0001',
+					tableName: 'collection0001',
 					rowId: rowId(offset + k),
 				},
 				sequence: 0,

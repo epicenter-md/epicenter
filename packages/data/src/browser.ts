@@ -198,7 +198,7 @@ export async function openBrowserEpicenter({
 		if (change.kind === 'row') {
 			for (const listener of tableListeners
 				.get(change.namespace)
-				?.get(change.table) ?? []) {
+				?.get(change.tableName) ?? []) {
 				try {
 					listener([change.rowId]);
 				} catch (cause) {
@@ -480,7 +480,7 @@ export async function openBrowserEpicenter({
 		const address: ValueAddress = {
 			kind: 'value',
 			namespace,
-			value: valueName,
+			valueName: valueName,
 		};
 		const listenerKey = addressKey(address);
 		const serialized = serializeValueDefinition(address, definition);
@@ -808,10 +808,10 @@ function cloneJson<TValue>(value: TValue): TValue {
 
 function rowAddress(
 	namespace: string,
-	table: string,
+	tableName: string,
 	rowId: string,
 ): RowAddress {
-	return { kind: 'row', namespace, table, rowId };
+	return { kind: 'row', namespace, tableName, rowId };
 }
 
 function defaultDedicatedWorker(): {

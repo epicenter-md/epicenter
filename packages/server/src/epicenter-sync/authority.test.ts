@@ -25,13 +25,13 @@ const NAMESPACE = 'so.epicenter.tests';
 const ROW_ADDRESS = {
 	kind: 'row',
 	namespace: NAMESPACE,
-	table: 'rows',
+	tableName: 'rows',
 	rowId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
 } as const;
 const VALUE_ADDRESS = {
 	kind: 'value',
 	namespace: NAMESPACE,
-	value: 'value',
+	valueName: 'value',
 } as const;
 
 function batch(seq: number, changes: Change[]) {
@@ -90,7 +90,7 @@ test('exact retry returns one receipt while fork, old batch, and gap conflict', 
 			batch: batch(3, [
 				{
 					kind: 'set',
-					address: { ...VALUE_ADDRESS, value: 'other' },
+					address: { ...VALUE_ADDRESS, valueName: 'other' },
 					value: 3,
 				},
 			]),
@@ -107,9 +107,9 @@ test('exact retry returns one receipt while fork, old batch, and gap conflict', 
 test('fixed-through pages are ordered, bounded, and continue from position', () => {
 	const { raw, authority } = setup({ pageSize: 1 });
 	const changes: Change[] = [
-		{ kind: 'set', address: { ...VALUE_ADDRESS, value: 'a' }, value: 1 },
-		{ kind: 'set', address: { ...VALUE_ADDRESS, value: 'b' }, value: 2 },
-		{ kind: 'set', address: { ...VALUE_ADDRESS, value: 'c' }, value: 3 },
+		{ kind: 'set', address: { ...VALUE_ADDRESS, valueName: 'a' }, value: 1 },
+		{ kind: 'set', address: { ...VALUE_ADDRESS, valueName: 'b' }, value: 2 },
+		{ kind: 'set', address: { ...VALUE_ADDRESS, valueName: 'c' }, value: 3 },
 	];
 	const first = authority.exchange({
 		replicaId: REPLICA,
@@ -137,8 +137,16 @@ test('record replaced above through waits for the next exchange without skipping
 		replicaId: REPLICA,
 		after: 0,
 		batch: batch(1, [
-			{ kind: 'set', address: { ...VALUE_ADDRESS, value: 'a' }, value: 'a1' },
-			{ kind: 'set', address: { ...VALUE_ADDRESS, value: 'b' }, value: 'b1' },
+			{
+				kind: 'set',
+				address: { ...VALUE_ADDRESS, valueName: 'a' },
+				value: 'a1',
+			},
+			{
+				kind: 'set',
+				address: { ...VALUE_ADDRESS, valueName: 'b' },
+				value: 'b1',
+			},
 		]),
 	});
 	if ('refusal' in first || first.next === null) {
@@ -148,7 +156,11 @@ test('record replaced above through waits for the next exchange without skipping
 		replicaId: REPLICA,
 		after: 0,
 		batch: batch(2, [
-			{ kind: 'set', address: { ...VALUE_ADDRESS, value: 'a' }, value: 'a2' },
+			{
+				kind: 'set',
+				address: { ...VALUE_ADDRESS, valueName: 'a' },
+				value: 'a2',
+			},
 		]),
 	});
 	const remainder = authority.exchange({
@@ -158,14 +170,14 @@ test('record replaced above through waits for the next exchange without skipping
 	});
 	if ('refusal' in remainder) throw new Error(remainder.refusal);
 	expect(remainder.records.map((record) => record.address)).toEqual([
-		{ ...VALUE_ADDRESS, value: 'b' },
+		{ ...VALUE_ADDRESS, valueName: 'b' },
 	]);
 	const next = authority.exchange({ replicaId: REPLICA, after: first.through });
 	if ('refusal' in next) throw new Error(next.refusal);
 	expect(next.records).toEqual([
 		{
 			kind: 'value',
-			address: { ...VALUE_ADDRESS, value: 'a' },
+			address: { ...VALUE_ADDRESS, valueName: 'a' },
 			changedSequence: 3,
 			value: 'a2',
 		},
@@ -181,7 +193,7 @@ test('terminal row deletion removes document updates in the acceptance transacti
 	authority.exchange({ replicaId: REPLICA, after: 0, batch: create });
 	raw.run('INSERT INTO document_updates VALUES (?, ?, ?, 1, ?)', [
 		NAMESPACE,
-		ROW_ADDRESS.table,
+		ROW_ADDRESS.tableName,
 		ROW_ADDRESS.rowId,
 		new Uint8Array([1]),
 	]);
@@ -203,8 +215,8 @@ test('terminal row deletion removes document updates in the acceptance transacti
 
 test('row table and value with the same local name occupy separate facts', () => {
 	const { raw, authority } = setup();
-	const sharedValueAddress = { ...VALUE_ADDRESS, value: 'shared' } as const;
-	const sharedRowAddress = { ...ROW_ADDRESS, table: 'shared' } as const;
+	const sharedValueAddress = { ...VALUE_ADDRESS, valueName: 'shared' } as const;
+	const sharedRowAddress = { ...ROW_ADDRESS, tableName: 'shared' } as const;
 	const response = authority.exchange({
 		replicaId: REPLICA,
 		after: 0,

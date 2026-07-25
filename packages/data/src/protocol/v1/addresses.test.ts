@@ -33,7 +33,7 @@ const row = (
 ): RowAddress => ({
 	kind: 'row',
 	namespace: 'so.epicenter.notes',
-	table: 'recordings',
+	tableName: 'recordings',
 	rowId: ROW_ID,
 	...overrides,
 });
@@ -42,7 +42,7 @@ const value = (
 ): ValueAddress => ({
 	kind: 'value',
 	namespace: 'so.epicenter.settings',
-	value: 'language',
+	valueName: 'language',
 	...overrides,
 });
 
@@ -52,15 +52,20 @@ describe('structured identity', () => {
 		expect(
 			addressesEqual(row(), row({ rowId: 'zzz123def456ghi789jkl012' })),
 		).toBe(false);
-		expect(addressesEqual(row(), row({ table: 'transcripts' }))).toBe(false);
+		expect(addressesEqual(row(), row({ tableName: 'transcripts' }))).toBe(
+			false,
+		);
 		expect(
 			addressesEqual(row(), row({ namespace: 'so.epicenter.other' })),
 		).toBe(false);
 	});
 
 	test('a row and a value with the same namespace and name are distinct', () => {
-		const rowAddress = row({ namespace: 'so.epicenter.x', table: 'name' });
-		const valueAddress = value({ namespace: 'so.epicenter.x', value: 'name' });
+		const rowAddress = row({ namespace: 'so.epicenter.x', tableName: 'name' });
+		const valueAddress = value({
+			namespace: 'so.epicenter.x',
+			valueName: 'name',
+		});
 		expect(addressesEqual(rowAddress, valueAddress)).toBe(false);
 		expect(addressKey(rowAddress)).not.toBe(addressKey(valueAddress));
 	});
@@ -68,7 +73,7 @@ describe('structured identity', () => {
 	test('addressKey is insertion-order independent and equal for equal addresses', () => {
 		const reordered = {
 			rowId: ROW_ID,
-			table: 'recordings',
+			tableName: 'recordings',
 			namespace: 'so.epicenter.notes',
 			kind: 'row',
 		} as Address;

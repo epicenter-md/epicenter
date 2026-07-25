@@ -87,10 +87,10 @@ export type DocumentPullDispatch<E extends Env = Env> = (
  */
 function addressFromPath(
 	namespace: string,
-	table: string,
+	tableName: string,
 	rowId: string,
 ): RowAddress | undefined {
-	const candidate = { kind: 'row', namespace, table, rowId } as const;
+	const candidate = { kind: 'row', namespace, tableName, rowId } as const;
 	return isRowAddress(candidate, DATA_ADDRESS_CEILINGS) ? candidate : undefined;
 }
 

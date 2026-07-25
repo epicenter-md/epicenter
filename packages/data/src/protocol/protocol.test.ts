@@ -35,13 +35,13 @@ const REPLICA_ID = 'rrrrrrrrrrrrrrrrrrrrrrrr';
 const ROW_ADDRESS = {
 	kind: 'row',
 	namespace: 'so.epicenter.notes',
-	table: 'rows',
+	tableName: 'rows',
 	rowId: ROW_ID,
 } as const;
 const VALUE_ADDRESS = {
 	kind: 'value',
 	namespace: 'so.epicenter.settings',
-	value: 'theme',
+	valueName: 'theme',
 } as const;
 
 describe('structured identifiers', () => {
@@ -55,8 +55,8 @@ describe('structured identifiers', () => {
 		for (const address of [
 			{ ...ROW_ADDRESS, namespace: 'single' },
 			{ ...ROW_ADDRESS, namespace: 'So.epicenter.notes' },
-			{ ...ROW_ADDRESS, table: 'my-notes' },
-			{ ...VALUE_ADDRESS, value: '_theme' },
+			{ ...ROW_ADDRESS, tableName: 'my-notes' },
+			{ ...VALUE_ADDRESS, valueName: '_theme' },
 		]) {
 			expect(isAddress(address, DATA_ADDRESS_CEILINGS)).toBe(false);
 		}
@@ -67,20 +67,23 @@ describe('structured identifiers', () => {
 		// A value name is never a relation or a column, so it may group with dots.
 		expect(
 			isValueAddress(
-				{ ...VALUE_ADDRESS, value: 'settings.output.transcription.clipboard' },
+				{
+					...VALUE_ADDRESS,
+					valueName: 'settings.output.transcription.clipboard',
+				},
 				DATA_ADDRESS_CEILINGS,
 			),
 		).toBe(true);
 		expect(
 			isRowAddress(
-				{ ...ROW_ADDRESS, table: 'settings.sound' },
+				{ ...ROW_ADDRESS, tableName: 'settings.sound' },
 				DATA_ADDRESS_CEILINGS,
 			),
 		).toBe(false);
 	});
 
 	test('a dotted value name has exactly one spelling', () => {
-		for (const value of [
+		for (const valueName of [
 			'.settings',
 			'settings.',
 			'settings..sound',
@@ -88,7 +91,7 @@ describe('structured identifiers', () => {
 			'settings._sound',
 		]) {
 			expect(
-				isValueAddress({ ...VALUE_ADDRESS, value }, DATA_ADDRESS_CEILINGS),
+				isValueAddress({ ...VALUE_ADDRESS, valueName }, DATA_ADDRESS_CEILINGS),
 			).toBe(false);
 		}
 	});
@@ -97,10 +100,10 @@ describe('structured identifiers', () => {
 		// The refusal this pins: a "parent" and a "child" spelling are simply two
 		// unrelated addresses. Nothing derives one from the other, and nothing may
 		// split a value name to find structure (ADR-0176 refuses prefix matching).
-		const parent = { ...VALUE_ADDRESS, value: 'settings.sound' } as const;
+		const parent = { ...VALUE_ADDRESS, valueName: 'settings.sound' } as const;
 		const child = {
 			...VALUE_ADDRESS,
-			value: 'settings.sound.manualStart',
+			valueName: 'settings.sound.manualStart',
 		} as const;
 		expect(isValueAddress(parent, DATA_ADDRESS_CEILINGS)).toBe(true);
 		expect(isValueAddress(child, DATA_ADDRESS_CEILINGS)).toBe(true);

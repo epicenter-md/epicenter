@@ -62,7 +62,7 @@ export type ValueDefinitions = Record<string, ValueDefinition>;
  *
  * The namespace is declared exactly once, here. Each `tables` and `values`
  * property name is the durable local key for that table or value: `notes` in
- * `tables` addresses `{ kind: 'row', namespace, table: 'notes', rowId }`
+ * `tables` addresses `{ kind: 'row', namespace, tableName: 'notes', rowId }`
  * forever. There is no second `key` field to keep in step with the property
  * name, and no rename operation: a different property name is a different
  * address, and therefore different data.
@@ -130,7 +130,7 @@ export const DataReadError = defineErrors({
 		raw: JsonObject;
 		issues: readonly ConformanceIssue[];
 	}) => ({
-		message: `Stored row '${address.namespace}/${address.table}/${address.rowId}' does not satisfy the current definition`,
+		message: `Stored row '${address.namespace}/${address.tableName}/${address.rowId}' does not satisfy the current definition`,
 		address,
 		/** The structural row id, which is also `address.rowId`. */
 		id: address.rowId,
@@ -144,7 +144,7 @@ export const DataReadError = defineErrors({
 		address: ValueAddress;
 		raw: JsonValue;
 	}) => ({
-		message: `Stored value '${address.namespace}/${address.value}' does not satisfy the current definition`,
+		message: `Stored value '${address.namespace}/${address.valueName}' does not satisfy the current definition`,
 		address,
 		raw,
 	}),

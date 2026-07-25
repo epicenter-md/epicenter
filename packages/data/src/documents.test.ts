@@ -37,7 +37,7 @@ function address(seed: string): RowAddress {
 	return {
 		kind: 'row',
 		namespace: 'so.epicenter.tests',
-		table: 'notes',
+		tableName: 'notes',
 		rowId: rowId(seed),
 	};
 }
@@ -65,7 +65,7 @@ function setup({ pull }: { pull?: PullDocument } = {}) {
 			database.all<{ count: number }>(
 				`SELECT COUNT(*) AS count FROM document_updates
 				 WHERE namespace = ? AND table_name = ? AND row_id = ?`,
-				[target.namespace, target.table, target.rowId],
+				[target.namespace, target.tableName, target.rowId],
 			)[0]?.count ?? 0
 		);
 	}

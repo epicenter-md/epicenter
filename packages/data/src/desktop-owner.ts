@@ -228,10 +228,10 @@ function valueLens(
 			namespace: definition.address.namespace,
 			tables: {},
 			values: {
-				[definition.address.value]: valueDefinition,
+				[definition.address.valueName]: valueDefinition,
 			},
 		}),
-	).values[definition.address.value] as UntypedValueLens;
+	).values[definition.address.valueName] as UntypedValueLens;
 }
 
 function deserializeTable(

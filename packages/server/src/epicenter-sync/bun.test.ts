@@ -34,7 +34,7 @@ const REPLICA_ID = 'rrrrrrrrrrrrrrrrrrrrrrrr';
 const ROW_ADDRESS = {
 	kind: 'row',
 	namespace: NAMESPACE,
-	table: TABLE,
+	tableName: TABLE,
 	rowId: ROW_ID,
 } as const;
 

@@ -63,13 +63,13 @@ class SmokeOracle {
 const ROW_ADDRESS: Address = {
 	kind: 'row',
 	namespace: 'so.epicenter.ns00',
-	table: 'collection0000',
+	tableName: 'collection0000',
 	rowId: 'a'.repeat(24),
 };
 const VALUE_ADDRESS: Address = {
 	kind: 'value',
 	namespace: 'so.epicenter.ns00',
-	value: 'settingx',
+	valueName: 'settingx',
 };
 
 describe('independent test-oracle fold laws', () => {
@@ -271,7 +271,7 @@ describe('two distinct byte measures (ADR-0167)', () => {
 			address: {
 				kind: 'value',
 				namespace: 'so.epicenter.ns00',
-				value: 'settingz',
+				valueName: 'settingz',
 			},
 			sequence: 42,
 			presence: 'present',
@@ -317,7 +317,7 @@ describe('actual V1 canonical bytes', () => {
 			address: {
 				kind: 'row',
 				namespace: 'so.epicenter.ns00',
-				table: 'collection0001',
+				tableName: 'collection0001',
 				rowId: '00000000000000000000000z',
 			},
 			sequence: 9,

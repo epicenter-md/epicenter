@@ -63,7 +63,7 @@ export function createEpicenterDocumentStore(
 				`SELECT 1 AS live FROM row_facts
 				 WHERE namespace = ? AND table_name = ? AND row_id = ?
 				   AND presence = 'present' LIMIT 1`,
-				[address.namespace, address.table, address.rowId],
+				[address.namespace, address.tableName, address.rowId],
 			).length === 1
 		);
 	}
@@ -72,7 +72,7 @@ export function createEpicenterDocumentStore(
 		return database.all<StoredUpdate>(
 			`SELECT update_sequence, update_bytes FROM document_updates
 			 WHERE namespace = ? AND table_name = ? AND row_id = ? ORDER BY update_sequence`,
-			[address.namespace, address.table, address.rowId],
+			[address.namespace, address.tableName, address.rowId],
 		);
 	}
 
@@ -81,7 +81,7 @@ export function createEpicenterDocumentStore(
 			database.all<SqliteRow & { version: number }>(
 				`SELECT version FROM document_versions
 				 WHERE namespace = ? AND table_name = ? AND row_id = ?`,
-				[address.namespace, address.table, address.rowId],
+				[address.namespace, address.tableName, address.rowId],
 			)[0]?.version ?? 0
 		);
 	}
@@ -145,7 +145,7 @@ export function createEpicenterDocumentStore(
 							`SELECT COALESCE(MAX(update_sequence), 0) + 1 AS sequence
 							 FROM document_updates
 							 WHERE namespace = ? AND table_name = ? AND row_id = ?`,
-							[address.namespace, address.table, address.rowId],
+							[address.namespace, address.tableName, address.rowId],
 						)[0]?.sequence ?? 1;
 					if (nextSequence >= COMPACTION_THRESHOLD) {
 						// Bounded baseline-plus-tail law (ADR-0146/0174): the covered
@@ -153,13 +153,13 @@ export function createEpicenterDocumentStore(
 						// includes the accepted candidate.
 						database.run(
 							'DELETE FROM document_updates WHERE namespace = ? AND table_name = ? AND row_id = ?',
-							[address.namespace, address.table, address.rowId],
+							[address.namespace, address.tableName, address.rowId],
 						);
 						database.run(
 							`INSERT INTO document_updates (
 								namespace, table_name, row_id, update_sequence, update_bytes
 							) VALUES (?, ?, ?, 1, ?)`,
-							[address.namespace, address.table, address.rowId, encoded],
+							[address.namespace, address.tableName, address.rowId, encoded],
 						);
 					} else {
 						database.run(
@@ -168,7 +168,7 @@ export function createEpicenterDocumentStore(
 							) VALUES (?, ?, ?, ?, ?)`,
 							[
 								address.namespace,
-								address.table,
+								address.tableName,
 								address.rowId,
 								nextSequence,
 								new Uint8Array(update),
@@ -181,7 +181,7 @@ export function createEpicenterDocumentStore(
 						) VALUES (?, ?, ?, 1)
 						ON CONFLICT (namespace, table_name, row_id) DO UPDATE SET
 							version = version + 1`,
-						[address.namespace, address.table, address.rowId],
+						[address.namespace, address.tableName, address.rowId],
 					);
 					return { outcome: 'accepted' };
 				} finally {

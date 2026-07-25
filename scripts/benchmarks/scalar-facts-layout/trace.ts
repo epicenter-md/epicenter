@@ -139,8 +139,8 @@ function countCongruent(n: number, m: number, r: number): number {
 
 export function addressKey(address: Address): string {
 	return address.kind === 'row'
-		? `row|${address.namespace}|${address.table}|${address.rowId}`
-		: `value|${address.namespace}|${address.value}`;
+		? `row|${address.namespace}|${address.tableName}|${address.rowId}`
+		: `value|${address.namespace}|${address.valueName}`;
 }
 
 /**
@@ -167,12 +167,12 @@ export function logicalRecord(fact: Fact): string | null {
 			fields: fact.fields,
 			namespaceKey: fact.address.namespace,
 			rowId: fact.address.rowId,
-			tableKey: fact.address.table,
+			tableKey: fact.address.tableName,
 		});
 	return canonicalize({
 		content: fact.content,
 		namespaceKey: fact.address.namespace,
-		valueKey: fact.address.value,
+		valueKey: fact.address.valueName,
 	});
 }
 
@@ -220,12 +220,12 @@ export function addressAt(index: number, options: TraceOptions): Address {
 		hash32(options.dataSeed ^ SALT_NS, index) % options.namespaceCount,
 	);
 	if (isValue(index, valueCount)) {
-		return { kind: 'value', namespace, value: valueLabel(index) };
+		return { kind: 'value', namespace, valueName: valueLabel(index) };
 	}
 	const table = tableLabel(
 		hash32(options.dataSeed ^ SALT_TABLE, index) % options.tableCount,
 	);
-	return { kind: 'row', namespace, table, rowId: rowIdOf(index) };
+	return { kind: 'row', namespace, tableName, rowId: rowIdOf(index) };
 }
 
 /** Fixed-size value content by class, so value facts never carry adjustable filler. */

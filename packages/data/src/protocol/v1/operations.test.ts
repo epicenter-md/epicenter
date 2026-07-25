@@ -48,13 +48,13 @@ const loneSurrogate = String.fromCharCode(0xdc00);
 const VALUE: ValueAddress = {
 	kind: 'value',
 	namespace: 'so.epicenter.settings',
-	value: 'language',
+	valueName: 'language',
 };
 const rowId = (index: number): string => String(index).padStart(24, 'a');
 const rowAt = (index: number): RowAddress => ({
 	kind: 'row',
 	namespace: 'so.epicenter.notes',
-	table: 'recordings',
+	tableName: 'recordings',
 	rowId: rowId(index),
 });
 const rowIntent = (index: number): Intent => ({
@@ -66,7 +66,7 @@ const rowIntent = (index: number): Intent => ({
 const valueAt = (key: string): ValueAddress => ({
 	kind: 'value',
 	namespace: 'so.epicenter.settings',
-	value: key,
+	valueName: key,
 });
 const vFact = (
 	address: ValueAddress,

@@ -238,7 +238,7 @@ export function createDocumentRuntime({
 	function requireRowLive(address: RowAddress): void {
 		if (isRowLive(address)) return;
 		throw new Error(
-			`Cannot open document for absent row '${address.namespace}/${address.table}/${address.rowId}'`,
+			`Cannot open document for absent row '${address.namespace}/${address.tableName}/${address.rowId}'`,
 		);
 	}
 
@@ -248,7 +248,7 @@ export function createDocumentRuntime({
 			 FROM document_updates
 			 WHERE namespace = ? AND table_name = ? AND row_id = ?
 			 ORDER BY update_sequence`,
-			[address.namespace, address.table, address.rowId],
+			[address.namespace, address.tableName, address.rowId],
 		);
 	}
 
@@ -263,7 +263,7 @@ export function createDocumentRuntime({
 			`SELECT revision, accepted_revision, sync_issue
 			 FROM document_publication
 			 WHERE namespace = ? AND table_name = ? AND row_id = ?`,
-			[address.namespace, address.table, address.rowId],
+			[address.namespace, address.tableName, address.rowId],
 		)[0];
 	}
 
@@ -294,7 +294,7 @@ export function createDocumentRuntime({
 					`SELECT COALESCE(MAX(update_sequence), 0) + 1 AS sequence
 					 FROM document_updates
 					 WHERE namespace = ? AND table_name = ? AND row_id = ?`,
-					[address.namespace, address.table, address.rowId],
+					[address.namespace, address.tableName, address.rowId],
 				)[0]?.sequence ?? 1;
 			database.run(
 				`INSERT INTO document_updates (
@@ -302,7 +302,7 @@ export function createDocumentRuntime({
 				) VALUES (?, ?, ?, ?, ?)`,
 				[
 					address.namespace,
-					address.table,
+					address.tableName,
 					address.rowId,
 					nextSequence,
 					new Uint8Array(update),
@@ -318,7 +318,7 @@ export function createDocumentRuntime({
 					) VALUES (?, ?, ?, 1, 0)
 					ON CONFLICT (namespace, table_name, row_id) DO UPDATE SET
 						revision = revision + 1`,
-					[address.namespace, address.table, address.rowId],
+					[address.namespace, address.tableName, address.rowId],
 				);
 				queueMicrotask(notifyPublicationDirty);
 			}
@@ -329,13 +329,13 @@ export function createDocumentRuntime({
 				const baseline = new Uint8Array(Y.encodeStateAsUpdateV2(compacted));
 				database.run(
 					'DELETE FROM document_updates WHERE namespace = ? AND table_name = ? AND row_id = ?',
-					[address.namespace, address.table, address.rowId],
+					[address.namespace, address.tableName, address.rowId],
 				);
 				database.run(
 					`INSERT INTO document_updates (
 						namespace, table_name, row_id, update_sequence, update_bytes
 					) VALUES (?, ?, ?, 1, ?)`,
-					[address.namespace, address.table, address.rowId, baseline],
+					[address.namespace, address.tableName, address.rowId, baseline],
 				);
 			} finally {
 				compacted.destroy();
@@ -668,7 +668,7 @@ export function createDocumentRuntime({
 					.map(({ namespace, table_name, row_id }) => ({
 						kind: 'row' as const,
 						namespace,
-						table: table_name,
+						tableName: table_name,
 						rowId: row_id,
 					}));
 			},
@@ -713,7 +713,7 @@ export function createDocumentRuntime({
 					`UPDATE document_publication SET
 						accepted_revision = max(accepted_revision, min(?, revision))
 					 WHERE namespace = ? AND table_name = ? AND row_id = ?`,
-					[revision, address.namespace, address.table, address.rowId],
+					[revision, address.namespace, address.tableName, address.rowId],
 				);
 			},
 			/**
@@ -726,7 +726,7 @@ export function createDocumentRuntime({
 				database.run(
 					`UPDATE document_publication SET sync_issue = 'too-large'
 					 WHERE namespace = ? AND table_name = ? AND row_id = ?`,
-					[address.namespace, address.table, address.rowId],
+					[address.namespace, address.tableName, address.rowId],
 				);
 			},
 			/** Durable obligation state for one address, or undefined if none. */

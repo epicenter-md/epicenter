@@ -117,7 +117,7 @@ export async function openDesktopEpicenter({
 	function notifyTable(address: RowAddress): void {
 		for (const listener of tableListeners
 			.get(address.namespace)
-			?.get(address.table) ?? [])
+			?.get(address.tableName) ?? [])
 			listener([address.rowId]);
 	}
 
@@ -196,7 +196,7 @@ export async function openDesktopEpicenter({
 		const address: ValueAddress = {
 			kind: 'value',
 			namespace,
-			value: valueName,
+			valueName: valueName,
 		};
 		const listenerKey = addressKey(address);
 		const serialized = serializeValueDefinition(address, definition);
@@ -400,10 +400,10 @@ function serializeValueDefinition(
 
 function rowAddress(
 	namespace: string,
-	table: string,
+	tableName: string,
 	rowId: string,
 ): RowAddress {
-	return { kind: 'row', namespace, table, rowId };
+	return { kind: 'row', namespace, tableName, rowId };
 }
 
 function cloneJson<TValue>(value: TValue): TValue {

@@ -57,7 +57,7 @@ function documentSyncUrl({
 	address: RowAddress;
 }): URL {
 	const url = new URL(baseUrl);
-	const segments = [address.namespace, address.table, address.rowId].map(
+	const segments = [address.namespace, address.tableName, address.rowId].map(
 		(segment) => encodeURIComponent(segment),
 	);
 	url.pathname = `/api/sync/v1/documents/${segments.join('/')}`;

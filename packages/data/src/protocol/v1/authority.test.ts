@@ -52,13 +52,13 @@ const REPLICA_B = 'ssssssssssssssssssssssss';
 const valueAt = (key: string): ValueAddress => ({
 	kind: 'value',
 	namespace: 'so.epicenter.settings',
-	value: key,
+	valueName: key,
 });
 const rowId = (index: number): string => String(index).padStart(24, 'a');
 const rowAt = (index: number): RowAddress => ({
 	kind: 'row',
 	namespace: 'so.epicenter.notes',
-	table: 'recordings',
+	tableName: 'recordings',
 	rowId: rowId(index),
 });
 const setValue = (key: string, content: string): Intent => ({
@@ -650,7 +650,7 @@ describe('ownership and mutation isolation', () => {
 		// Mutate the successor's copy of A's touched addresses.
 		const touched = ledgerA2?.touchedAddresses[0];
 		if (touched !== undefined && touched.kind === 'value')
-			touched.value = 'MUTATED';
+			touched.valueName = 'MUTATED';
 		// A's exact retry against the predecessor is unaffected.
 		const retry = expectOk(
 			submit(

@@ -64,7 +64,7 @@ function factToRow(fact: Fact): Row {
 		return {
 			kind: 'row',
 			namespace: fact.address.namespace,
-			localKey: fact.address.table,
+			localKey: fact.address.tableName,
 			rowId: fact.address.rowId,
 			present: fact.presence === 'present' ? 1 : 0,
 			payload:
@@ -77,7 +77,7 @@ function factToRow(fact: Fact): Row {
 	return {
 		kind: 'value',
 		namespace: fact.address.namespace,
-		localKey: fact.address.value,
+		localKey: fact.address.valueName,
 		rowId: '',
 		present: fact.presence === 'present' ? 1 : 0,
 		payload:
@@ -98,13 +98,13 @@ function addressColumns(address: Address): {
 		? {
 				kind: 'row',
 				namespace: address.namespace,
-				localKey: address.table,
+				localKey: address.tableName,
 				rowId: address.rowId,
 			}
 		: {
 				kind: 'value',
 				namespace: address.namespace,
-				localKey: address.value,
+				localKey: address.valueName,
 				rowId: '',
 			};
 }
@@ -594,13 +594,13 @@ export function createLayoutStore(
 			const id = coordinateId(
 				'row',
 				entry.address.namespace,
-				entry.address.table,
+				entry.address.tableName,
 			);
 			documentStmt.run(id, entry.address.rowId, baseline, tail);
 		} else {
 			documentStmt.run(
 				entry.address.namespace,
-				entry.address.table,
+				entry.address.tableName,
 				entry.address.rowId,
 				baseline,
 				tail,
@@ -664,11 +664,15 @@ export function createLayoutStore(
 	function deleteDocument(address: RowAddress): void {
 		if (normalized) {
 			documentDeleteStmt.run(
-				coordinateId('row', address.namespace, address.table),
+				coordinateId('row', address.namespace, address.tableName),
 				address.rowId,
 			);
 		} else {
-			documentDeleteStmt.run(address.namespace, address.table, address.rowId);
+			documentDeleteStmt.run(
+				address.namespace,
+				address.tableName,
+				address.rowId,
+			);
 		}
 	}
 
@@ -1003,7 +1007,7 @@ function buildPointStatements(prepare: Prepare, candidate: Candidate) {
 			const address: RowAddress = {
 				kind: 'row',
 				namespace: raw.namespace,
-				table: raw.local_key,
+				tableName: raw.local_key,
 				rowId: raw.row_id,
 			};
 			return raw.present === 1
@@ -1018,7 +1022,7 @@ function buildPointStatements(prepare: Prepare, candidate: Candidate) {
 		const address: ValueAddress = {
 			kind: 'value',
 			namespace: raw.namespace,
-			value: raw.local_key,
+			valueName: raw.local_key,
 		};
 		return raw.present === 1
 			? {

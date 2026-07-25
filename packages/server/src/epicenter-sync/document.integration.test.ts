@@ -47,7 +47,12 @@ const lens = defineLens({
 });
 
 function rowAddress(rowId: string) {
-	return { kind: 'row', namespace: NAMESPACE, table: TABLE, rowId } as const;
+	return {
+		kind: 'row',
+		namespace: NAMESPACE,
+		tableName: TABLE,
+		rowId,
+	} as const;
 }
 
 function openServer() {

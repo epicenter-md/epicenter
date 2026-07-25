@@ -77,7 +77,7 @@ function requestBody() {
 			address: {
 				kind: 'row' as const,
 				namespace: 'so.epicenter.tests',
-				table: 'rows',
+				tableName: 'rows',
 				rowId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
 			},
 			fields: { title: 'Persisted' },

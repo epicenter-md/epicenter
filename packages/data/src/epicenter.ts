@@ -154,12 +154,12 @@ type StoredRowFact = SqliteRow & {
  * These never leave memory. One Epicenter can bind several Lenses, so a
  * listener registry keyed by local name alone would cross namespaces.
  */
-function tableListenerKey(namespace: string, table: string): string {
-	return canonicalJson({ namespace, table });
+function tableListenerKey(namespace: string, tableName: string): string {
+	return canonicalJson({ namespace, tableName });
 }
 
-function valueListenerKey(namespace: string, value: string): string {
-	return canonicalJson({ namespace, value });
+function valueListenerKey(namespace: string, valueName: string): string {
+	return canonicalJson({ namespace, valueName });
 }
 
 export type TableEntriesPage<TDefinition extends TableDefinition> = {
@@ -272,10 +272,12 @@ export function createEpicenter({
 		const changedValues = new Set<string>();
 		for (const address of changes) {
 			if (address.kind === 'value') {
-				changedValues.add(valueListenerKey(address.namespace, address.value));
+				changedValues.add(
+					valueListenerKey(address.namespace, address.valueName),
+				);
 				continue;
 			}
-			const key = tableListenerKey(address.namespace, address.table);
+			const key = tableListenerKey(address.namespace, address.tableName);
 			const ids = changedRows.get(key) ?? [];
 			if (!ids.includes(address.rowId)) ids.push(address.rowId);
 			changedRows.set(key, ids);
@@ -324,15 +326,15 @@ export function createEpicenter({
 	>(lens: Lens<TTables, TValues>): BoundData<TTables, TValues> {
 		requireOpen();
 		const boundTables = Object.fromEntries(
-			Object.entries(lens.tables).map(([table, definition]) => [
-				table,
-				createTableLens(lens.namespace, table, definition),
+			Object.entries(lens.tables).map(([tableName, definition]) => [
+				tableName,
+				createTableLens(lens.namespace, tableName, definition),
 			]),
 		);
 		const boundValues = Object.fromEntries(
-			Object.entries(lens.values).map(([value, definition]) => [
-				value,
-				createValueLens(lens.namespace, value, definition),
+			Object.entries(lens.values).map(([valueName, definition]) => [
+				valueName,
+				createValueLens(lens.namespace, valueName, definition),
 			]),
 		);
 		return Object.freeze({
@@ -343,22 +345,22 @@ export function createEpicenter({
 
 	function createTableLens<TDefinition extends TableDefinition>(
 		namespace: string,
-		table: string,
+		tableName: string,
 		definition: TDefinition,
 	): TableLens<TDefinition> {
 		const compiled = compileTableDefinition(definition);
-		const listenerKey = tableListenerKey(namespace, table);
+		const listenerKey = tableListenerKey(namespace, tableName);
 		const addressOf = (rowId: string): RowAddress => ({
 			kind: 'row',
 			namespace,
-			table,
+			tableName,
 			rowId,
 		});
 		const readEntriesPage = async (after?: string) => {
 			requireOpen();
 			return readEntriesPageFromDatabase(
 				namespace,
-				table,
+				tableName,
 				compiled,
 				after,
 			) as TableEntriesPage<TDefinition>;
@@ -373,7 +375,7 @@ export function createEpicenter({
 				if (written.error !== null) throw written.error;
 				if (!written.data.applied) {
 					throw new Error(
-						`Minted row '${namespace}/${table}/${address.rowId}' already exists`,
+						`Minted row '${namespace}/${tableName}/${address.rowId}' already exists`,
 					);
 				}
 				const projected = compiled.project(address, fields);
@@ -443,12 +445,12 @@ export function createEpicenter({
 
 	function createValueLens<TDefinition extends ValueDefinition>(
 		namespace: string,
-		value: string,
+		valueName: string,
 		definition: TDefinition,
 	): ValueLens<TDefinition> {
 		const compiled = compileValueDefinition(definition);
-		const listenerKey = valueListenerKey(namespace, value);
-		const address: ValueAddress = { kind: 'value', namespace, value };
+		const listenerKey = valueListenerKey(namespace, valueName);
+		const address: ValueAddress = { kind: 'value', namespace, valueName };
 		return Object.freeze({
 			async get() {
 				requireOpen();
@@ -521,12 +523,12 @@ export function createEpicenter({
 
 	function readEntriesPageFromDatabase(
 		namespace: string,
-		table: string,
+		tableName: string,
 		compiled: ReturnType<typeof compileTableDefinition>,
 		after?: string,
 	): TableEntriesPage<TableDefinition> {
 		const where = ['namespace = ?', 'table_name = ?', "presence = 'present'"];
-		const parameters: (string | number)[] = [namespace, table];
+		const parameters: (string | number)[] = [namespace, tableName];
 		if (after !== undefined) {
 			where.push('row_id > ?');
 			parameters.push(after);
@@ -548,7 +550,7 @@ export function createEpicenter({
 			const address: RowAddress = {
 				kind: 'row',
 				namespace,
-				table,
+				tableName,
 				rowId: row.row_id,
 			};
 			entries.push(

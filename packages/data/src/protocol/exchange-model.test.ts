@@ -26,16 +26,16 @@ function rowAddress(rowId: string) {
 	return {
 		kind: 'row',
 		namespace: 'so.epicenter.model',
-		table: 'rows',
+		tableName: 'rows',
 		rowId,
 	} as const;
 }
 
-function valueAddress(value: string) {
+function valueAddress(valueName: string) {
 	return {
 		kind: 'value',
 		namespace: 'so.epicenter.model',
-		value,
+		valueName,
 	} as const;
 }
 

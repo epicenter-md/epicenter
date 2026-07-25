@@ -33,13 +33,13 @@ const loneSurrogate = String.fromCharCode(0xd800);
 const ROW: RowAddress = {
 	kind: 'row',
 	namespace: 'so.epicenter.notes',
-	table: 'recordings',
+	tableName: 'recordings',
 	rowId: 'abc123def456ghi789jkl012',
 };
 const VALUE: ValueAddress = {
 	kind: 'value',
 	namespace: 'so.epicenter.settings',
-	value: 'language',
+	valueName: 'language',
 };
 
 describe('four fact shapes', () => {

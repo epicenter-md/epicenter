@@ -37,14 +37,14 @@ const REMOTE_ROW_B = 'bbbbbbbbbbbbbbbbbbbbbbbb';
 const THEME_ADDRESS = {
 	kind: 'value',
 	namespace: TEST_NAMESPACE,
-	value: 'theme',
+	valueName: 'theme',
 } as const;
 
 function rowAddress(rowId: string) {
 	return {
 		kind: 'row',
 		namespace: TEST_NAMESPACE,
-		table: 'notes',
+		tableName: 'notes',
 		rowId,
 	} as const;
 }
