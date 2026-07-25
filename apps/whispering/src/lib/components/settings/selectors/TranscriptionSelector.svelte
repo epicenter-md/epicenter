@@ -128,7 +128,7 @@
 			});
 			return;
 		}
-		app.settings.set('transcription.service', 'local');
+		app.settings.set('settings.transcription.service', 'local');
 		deviceConfig.set('transcription.local.selectedModel', result.data.modelId);
 		toast.success(
 			result.data.outcome === 'already-installed'

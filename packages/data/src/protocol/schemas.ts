@@ -4,13 +4,16 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 
 import {
+	isRuntimeId,
+	RowAddressSchema,
+	ValueAddressSchema,
+} from './addresses.js';
+import {
 	DATA_ADMISSION_LIMITS,
 	encodedJsonBytes,
 	isAdmissibleChange,
 	isAdmissibleRecord,
 	isJsonValue,
-	isQualifiedKey,
-	isRuntimeId,
 } from './admission.js';
 
 const CLOSED = { additionalProperties: false } as const;
@@ -19,14 +22,6 @@ const positiveSequence = Type.Integer({
 	minimum: 1,
 	maximum: Number.MAX_SAFE_INTEGER,
 });
-
-export const QualifiedKeySchema = Type.String({
-	minLength: 3,
-	maxLength: DATA_ADMISSION_LIMITS.qualifiedKeyBytes,
-	pattern:
-		'^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?){2,}$',
-});
-export type QualifiedKey = Static<typeof QualifiedKeySchema>;
 
 export const RowIdSchema = Type.String({
 	minLength: 24,
@@ -63,8 +58,7 @@ const fieldKey = Type.String({
 const rowCreateSchema = Type.Object(
 	{
 		kind: Type.Literal('create'),
-		key: QualifiedKeySchema,
-		rowId: RowIdSchema,
+		address: RowAddressSchema,
 		fields: jsonObjectSchema,
 	},
 	CLOSED,
@@ -72,8 +66,7 @@ const rowCreateSchema = Type.Object(
 const rowUpdateSchema = Type.Object(
 	{
 		kind: Type.Literal('update'),
-		key: QualifiedKeySchema,
-		rowId: RowIdSchema,
+		address: RowAddressSchema,
 		fields: Type.Object(
 			{
 				set: jsonObjectSchema,
@@ -87,19 +80,19 @@ const rowUpdateSchema = Type.Object(
 	CLOSED,
 );
 const rowDeleteSchema = Type.Object(
-	{ kind: Type.Literal('delete'), key: QualifiedKeySchema, rowId: RowIdSchema },
+	{ kind: Type.Literal('delete'), address: RowAddressSchema },
 	CLOSED,
 );
 const valueSetSchema = Type.Object(
 	{
 		kind: Type.Literal('set'),
-		key: QualifiedKeySchema,
+		address: ValueAddressSchema,
 		value: jsonValueSchema,
 	},
 	CLOSED,
 );
 const valueUnsetSchema = Type.Object(
-	{ kind: Type.Literal('unset'), key: QualifiedKeySchema },
+	{ kind: Type.Literal('unset'), address: ValueAddressSchema },
 	CLOSED,
 );
 
@@ -115,8 +108,7 @@ export type Change = Static<typeof ChangeSchema>;
 const rowRecordSchema = Type.Object(
 	{
 		kind: Type.Literal('row'),
-		key: QualifiedKeySchema,
-		rowId: RowIdSchema,
+		address: RowAddressSchema,
 		changedSequence: positiveSequence,
 		fields: jsonObjectSchema,
 	},
@@ -125,8 +117,7 @@ const rowRecordSchema = Type.Object(
 const rowDeletedRecordSchema = Type.Object(
 	{
 		kind: Type.Literal('row-deleted'),
-		key: QualifiedKeySchema,
-		rowId: RowIdSchema,
+		address: RowAddressSchema,
 		changedSequence: positiveSequence,
 	},
 	CLOSED,
@@ -134,7 +125,7 @@ const rowDeletedRecordSchema = Type.Object(
 const valueRecordSchema = Type.Object(
 	{
 		kind: Type.Literal('value'),
-		key: QualifiedKeySchema,
+		address: ValueAddressSchema,
 		changedSequence: positiveSequence,
 		value: jsonValueSchema,
 	},
@@ -143,7 +134,7 @@ const valueRecordSchema = Type.Object(
 const valueUnsetRecordSchema = Type.Object(
 	{
 		kind: Type.Literal('value-unset'),
-		key: QualifiedKeySchema,
+		address: ValueAddressSchema,
 		changedSequence: positiveSequence,
 	},
 	CLOSED,
@@ -242,16 +233,6 @@ export const ProtocolValidationError = defineErrors({
 export type ProtocolValidationError = InferErrors<
 	typeof ProtocolValidationError
 >;
-
-export function parseQualifiedKey(
-	value: unknown,
-): Result<QualifiedKey, ProtocolValidationError> {
-	return typeof value === 'string' &&
-		Value.Check(QualifiedKeySchema, value) &&
-		isQualifiedKey(value)
-		? Ok(value)
-		: ProtocolValidationError.Invalid({ boundary: 'qualified key' });
-}
 
 export function parseRowId(
 	value: unknown,

@@ -26,10 +26,10 @@ import { getWhisperingApp } from '$lib/whispering/context';
 const app = getWhisperingApp(); // component initialisation
 
 // Read settings reactively (re-renders on change)
-const trigger = app.settings.get('recording.trigger');
+const trigger = app.settings.get('settings.recording.trigger');
 
 // Update settings (writes to the document and syncs to other devices)
-app.settings.set('recording.trigger', 'vad');
+app.settings.set('settings.recording.trigger', 'vad');
 ```
 
 ### `recordings.svelte.ts`

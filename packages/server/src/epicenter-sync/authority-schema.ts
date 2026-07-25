@@ -4,16 +4,33 @@ import {
 	StorageUpgradeRequiredError,
 } from '@epicenter/sqlite';
 
-export const AUTHORITY_FORMAT_VERSION = 2;
+export const AUTHORITY_FORMAT_VERSION = 3;
 
 const AUTHORITY_TABLES = [
 	'metadata',
 	'replicas',
-	'state',
+	'row_facts',
+	'value_facts',
 	'document_updates',
 	'document_versions',
 ] as const;
 
+/**
+ * The authority mirrors the replica's split fact relations (ADR-0163,
+ * ADR-0164): row facts carry a row id, an object payload, and a terminal
+ * tombstone; value facts carry any JSON and a reversible unset. Neither relation
+ * needs an `address_kind` column or an empty-string row id to say which laws
+ * apply, because the relation itself says it.
+ *
+ * One invariant does span both relations: `changed_sequence` is globally unique
+ * and increasing across every fact this authority stores, because the exchange
+ * page is a single sequence-ordered stream over the union of the two. SQLite
+ * cannot express a cross-relation unique constraint, and the guarantee does not
+ * come from one: it comes from `metadata.next_sequence`, which this authority is
+ * the only writer of and only ever advances. The per-relation unique indexes
+ * below still refuse a duplicate within one relation, which is the failure a
+ * paging or fold bug would actually produce.
+ */
 const SCHEMA = [
 	`CREATE TABLE metadata (
 		singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
@@ -34,44 +51,56 @@ const SCHEMA = [
 				request_digest NOT GLOB '*[^a-f0-9]*')
 		)
 	) WITHOUT ROWID, STRICT`,
-	`CREATE TABLE state (
-		address_kind TEXT NOT NULL CHECK (address_kind IN ('row', 'value')),
-		qualified_key TEXT NOT NULL,
-		row_id TEXT NOT NULL,
-		status TEXT NOT NULL CHECK (status IN ('live', 'deleted', 'unset')),
-		json_payload TEXT,
-		changed_sequence INTEGER NOT NULL CHECK (changed_sequence >= 1),
-		PRIMARY KEY (address_kind, qualified_key, row_id),
-		CHECK (
-			(address_kind = 'row' AND length(row_id) = 24 AND
-				row_id NOT GLOB '*[^a-z0-9]*' AND status IN ('live', 'deleted')) OR
-			(address_kind = 'value' AND row_id = '' AND status IN ('live', 'unset'))
+	`CREATE TABLE row_facts (
+		namespace TEXT NOT NULL,
+		table_name TEXT NOT NULL,
+		row_id TEXT NOT NULL CHECK (
+			length(row_id) = 24 AND row_id NOT GLOB '*[^a-z0-9]*'
 		),
+		presence TEXT NOT NULL CHECK (presence IN ('present', 'absent')),
+		fields TEXT,
+		changed_sequence INTEGER NOT NULL CHECK (changed_sequence >= 1),
+		PRIMARY KEY (namespace, table_name, row_id),
 		CHECK (
-			(status = 'live' AND json_payload IS NOT NULL AND json_valid(json_payload)) OR
-			(status IN ('deleted', 'unset') AND json_payload IS NULL)
+			(presence = 'present' AND fields IS NOT NULL AND json_valid(fields)) OR
+			(presence = 'absent' AND fields IS NULL)
 		)
 	) WITHOUT ROWID, STRICT`,
-	'CREATE UNIQUE INDEX state_changed_sequence ON state(changed_sequence)',
+	'CREATE UNIQUE INDEX row_facts_changed_sequence ON row_facts(changed_sequence)',
+	`CREATE TABLE value_facts (
+		namespace TEXT NOT NULL,
+		value_name TEXT NOT NULL,
+		presence TEXT NOT NULL CHECK (presence IN ('present', 'absent')),
+		content TEXT,
+		changed_sequence INTEGER NOT NULL CHECK (changed_sequence >= 1),
+		PRIMARY KEY (namespace, value_name),
+		CHECK (
+			(presence = 'present' AND content IS NOT NULL AND json_valid(content)) OR
+			(presence = 'absent' AND content IS NULL)
+		)
+	) WITHOUT ROWID, STRICT`,
+	'CREATE UNIQUE INDEX value_facts_changed_sequence ON value_facts(changed_sequence)',
 	`CREATE TABLE document_updates (
-		qualified_key TEXT NOT NULL,
+		namespace TEXT NOT NULL,
+		table_name TEXT NOT NULL,
 		row_id TEXT NOT NULL CHECK (
 			length(row_id) = 24 AND row_id NOT GLOB '*[^a-z0-9]*'
 		),
 		update_sequence INTEGER NOT NULL CHECK (update_sequence > 0),
 		update_bytes BLOB NOT NULL,
-		PRIMARY KEY (qualified_key, row_id, update_sequence)
+		PRIMARY KEY (namespace, table_name, row_id, update_sequence)
 	) WITHOUT ROWID, STRICT`,
 	// The per-address acceptance counter behind conditional pulls: it advances
 	// with every accepted append, so an unchanged value proves an unchanged
 	// document without hydrating or transferring it (ADR-0174).
 	`CREATE TABLE document_versions (
-		qualified_key TEXT NOT NULL,
+		namespace TEXT NOT NULL,
+		table_name TEXT NOT NULL,
 		row_id TEXT NOT NULL CHECK (
 			length(row_id) = 24 AND row_id NOT GLOB '*[^a-z0-9]*'
 		),
 		version INTEGER NOT NULL CHECK (version > 0),
-		PRIMARY KEY (qualified_key, row_id)
+		PRIMARY KEY (namespace, table_name, row_id)
 	) WITHOUT ROWID, STRICT`,
 ] as const;
 

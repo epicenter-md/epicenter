@@ -24,10 +24,17 @@ import { openEpicenterSyncAuthority } from './authority.js';
 
 const DEPLOYMENT = 'https://example.com/';
 const PRINCIPAL = 'principal-a';
-const KEY = 'so.epicenter.tests.rows';
-const VALUE_KEY = 'so.epicenter.tests.value';
+const NAMESPACE = 'so.epicenter.tests';
 const ROW_A = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 const ROW_B = 'bbbbbbbbbbbbbbbbbbbbbbbb';
+
+function rowAddress(rowId: string) {
+	return { kind: 'row', namespace: NAMESPACE, table: 'rows', rowId } as const;
+}
+
+function valueAddress(value: string) {
+	return { kind: 'value', namespace: NAMESPACE, value } as const;
+}
 
 function openAttachedReplica(raw: Database, replicaId: string) {
 	const replica = expectOk(
@@ -59,54 +66,66 @@ test('two replicas converge across row changes, deletion, value unset, and later
 	expectOk(
 		first.write({
 			kind: 'create',
-			key: KEY,
-			rowId: ROW_A,
+			address: rowAddress(ROW_A),
 			fields: { title: 'keep', note: 'remove' },
 		}),
 	);
 	expectOk(
 		first.write({
 			kind: 'create',
-			key: KEY,
-			rowId: ROW_B,
+			address: rowAddress(ROW_B),
 			fields: { title: 'offline' },
 		}),
 	);
-	expectOk(first.write({ kind: 'set', key: VALUE_KEY, value: 'first' }));
+	expectOk(
+		first.write({
+			kind: 'set',
+			address: valueAddress('value'),
+			value: 'first',
+		}),
+	);
 	expectOk(await first.synchronize(authority.exchange));
 	expectOk(await second.synchronize(authority.exchange));
 
 	expectOk(
 		second.write({
 			kind: 'update',
-			key: KEY,
-			rowId: ROW_A,
+			address: rowAddress(ROW_A),
 			fields: { set: { title: 'updated' }, unset: ['note'] },
 		}),
 	);
-	expectOk(second.write({ kind: 'delete', key: KEY, rowId: ROW_B }));
-	expectOk(second.write({ kind: 'unset', key: VALUE_KEY }));
+	expectOk(second.write({ kind: 'delete', address: rowAddress(ROW_B) }));
+	expectOk(second.write({ kind: 'unset', address: valueAddress('value') }));
 	expectOk(await second.synchronize(authority.exchange));
 
 	expectOk(
 		first.write({
 			kind: 'update',
-			key: KEY,
-			rowId: ROW_B,
+			address: rowAddress(ROW_B),
 			fields: { set: { title: 'stale-live' }, unset: [] },
 		}),
 	);
 	expectOk(await first.synchronize(authority.exchange));
-	expect(expectOk(first.readRow(KEY, ROW_A))).toEqual({ title: 'updated' });
-	expect(expectOk(first.readRow(KEY, ROW_B))).toBeUndefined();
-	expect(expectOk(first.readValue(VALUE_KEY))).toBeUndefined();
+	expect(expectOk(first.readRow(rowAddress(ROW_A)))).toEqual({
+		title: 'updated',
+	});
+	expect(expectOk(first.readRow(rowAddress(ROW_B)))).toBeUndefined();
+	expect(expectOk(first.readValue(valueAddress('value')))).toBeUndefined();
 
-	expectOk(first.write({ kind: 'set', key: VALUE_KEY, value: 'second' }));
+	expectOk(
+		first.write({
+			kind: 'set',
+			address: valueAddress('value'),
+			value: 'second',
+		}),
+	);
 	expectOk(await first.synchronize(authority.exchange));
 	expectOk(await second.synchronize(authority.exchange));
-	expect(expectOk(second.readRow(KEY, ROW_A))).toEqual({ title: 'updated' });
-	expect(expectOk(second.readRow(KEY, ROW_B))).toBeUndefined();
-	expect(expectOk(second.readValue(VALUE_KEY))).toBe('second');
+	expect(expectOk(second.readRow(rowAddress(ROW_A)))).toEqual({
+		title: 'updated',
+	});
+	expect(expectOk(second.readRow(rowAddress(ROW_B)))).toBeUndefined();
+	expect(expectOk(second.readValue(valueAddress('value')))).toBe('second');
 
 	firstDatabase.close();
 	secondDatabase.close();
@@ -124,15 +143,9 @@ test('fresh sequence-zero replica drains full state through bounded pages', asyn
 		writerDatabase,
 		'wwwwwwwwwwwwwwwwwwwwwww1',
 	);
-	expectOk(
-		writer.write({ kind: 'set', key: 'so.epicenter.tests.a', value: 1 }),
-	);
-	expectOk(
-		writer.write({ kind: 'set', key: 'so.epicenter.tests.b', value: 2 }),
-	);
-	expectOk(
-		writer.write({ kind: 'set', key: 'so.epicenter.tests.c', value: 3 }),
-	);
+	expectOk(writer.write({ kind: 'set', address: valueAddress('a'), value: 1 }));
+	expectOk(writer.write({ kind: 'set', address: valueAddress('b'), value: 2 }));
+	expectOk(writer.write({ kind: 'set', address: valueAddress('c'), value: 3 }));
 	expectOk(await writer.synchronize(authority.exchange));
 
 	const freshDatabase = new Database(':memory:');
@@ -145,9 +158,9 @@ test('fresh sequence-zero replica drains full state through bounded pages', asyn
 		}),
 	);
 	expect(calls).toBe(3);
-	expect(expectOk(fresh.readValue('so.epicenter.tests.a'))).toBe(1);
-	expect(expectOk(fresh.readValue('so.epicenter.tests.b'))).toBe(2);
-	expect(expectOk(fresh.readValue('so.epicenter.tests.c'))).toBe(3);
+	expect(expectOk(fresh.readValue(valueAddress('a')))).toBe(1);
+	expect(expectOk(fresh.readValue(valueAddress('b')))).toBe(2);
+	expect(expectOk(fresh.readValue(valueAddress('c')))).toBe(3);
 
 	freshDatabase.close();
 	writerDatabase.close();
@@ -165,10 +178,10 @@ test('dropped response retries the exact multi-change batch and applies it once'
 		'rrrrrrrrrrrrrrrrrrrrrrr1',
 	);
 	expectOk(
-		replica.write({ kind: 'set', key: 'so.epicenter.tests.a', value: 1 }),
+		replica.write({ kind: 'set', address: valueAddress('a'), value: 1 }),
 	);
 	expectOk(
-		replica.write({ kind: 'set', key: 'so.epicenter.tests.b', value: 2 }),
+		replica.write({ kind: 'set', address: valueAddress('b'), value: 2 }),
 	);
 	let firstRequest: ExchangeRequest | undefined;
 	const lost = await replica.synchronize((request) => {
@@ -211,11 +224,21 @@ test('forked replica remints its identity, resubmits, and converges', async () =
 			originalDatabase,
 			'ooooooooooooooooooooooo1',
 		);
-		expectOk(original.write({ kind: 'set', key: VALUE_KEY, value: 'base' }));
+		expectOk(
+			original.write({
+				kind: 'set',
+				address: valueAddress('value'),
+				value: 'base',
+			}),
+		);
 		expectOk(await original.synchronize(authority.exchange));
 		copyFileSync(originalPath, copyPath);
 		expectOk(
-			original.write({ kind: 'set', key: VALUE_KEY, value: 'original' }),
+			original.write({
+				kind: 'set',
+				address: valueAddress('value'),
+				value: 'original',
+			}),
 		);
 		expectOk(await original.synchronize(authority.exchange));
 
@@ -227,12 +250,18 @@ test('forked replica remints its identity, resubmits, and converges', async () =
 			}),
 		);
 		const before = expectOk(copied.metadata()).replicaId;
-		expectOk(copied.write({ kind: 'set', key: VALUE_KEY, value: 'copy' }));
+		expectOk(
+			copied.write({
+				kind: 'set',
+				address: valueAddress('value'),
+				value: 'copy',
+			}),
+		);
 		expectOk(await copied.synchronize(authority.exchange));
 		expect(expectOk(copied.metadata()).replicaId).not.toBe(before);
-		expect(expectOk(copied.readValue(VALUE_KEY))).toBe('copy');
+		expect(expectOk(copied.readValue(valueAddress('value')))).toBe('copy');
 		expectOk(await original.synchronize(authority.exchange));
-		expect(expectOk(original.readValue(VALUE_KEY))).toBe('copy');
+		expect(expectOk(original.readValue(valueAddress('value')))).toBe('copy');
 		copyDatabase.close();
 		originalDatabase.close();
 	} finally {
@@ -252,12 +281,8 @@ test('crash between page install and cursor advance converges on retry', async (
 		writerDatabase,
 		'wwwwwwwwwwwwwwwwwwwwwww2',
 	);
-	expectOk(
-		writer.write({ kind: 'set', key: 'so.epicenter.tests.a', value: 1 }),
-	);
-	expectOk(
-		writer.write({ kind: 'set', key: 'so.epicenter.tests.b', value: 2 }),
-	);
+	expectOk(writer.write({ kind: 'set', address: valueAddress('a'), value: 1 }));
+	expectOk(writer.write({ kind: 'set', address: valueAddress('b'), value: 2 }));
 	expectOk(await writer.synchronize(authority.exchange));
 
 	const replicaDatabase = new Database(':memory:');
@@ -291,8 +316,8 @@ test('crash between page install and cursor advance converges on retry', async (
 	expect(expectOk(replica.metadata()).lastAppliedAuthoritySequence).toBe(0);
 	expectOk(await replica.synchronize(authority.exchange));
 	expect(expectOk(replica.metadata()).lastAppliedAuthoritySequence).toBe(2);
-	expect(expectOk(replica.readValue('so.epicenter.tests.a'))).toBe(1);
-	expect(expectOk(replica.readValue('so.epicenter.tests.b'))).toBe(2);
+	expect(expectOk(replica.readValue(valueAddress('a')))).toBe(1);
+	expect(expectOk(replica.readValue(valueAddress('b')))).toBe(2);
 
 	replicaDatabase.close();
 	writerDatabase.close();

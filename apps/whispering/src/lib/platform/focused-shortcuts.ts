@@ -15,7 +15,7 @@ import type { Shortcuts } from './types';
 /**
  * The focused (in-app) shortcut backend: shortcuts that fire while the Whispering
  * window is focused, driven by the browser keydown matcher and stored in workspace
- * KV under `shortcut.*` as the structured `KeyBinding` the matcher and the system
+ * values under `settings.shortcut.*` as the structured `KeyBinding` the matcher and the system
  * tier already speak (via `field.json`; the global tier stores the same shape in
  * device-config). Read and written directly, with no string codec in between. A
  * stale value (a binding saved before this format) fails the cell's schema check
@@ -27,7 +27,7 @@ import type { Shortcuts } from './types';
  * desktop both run, on web this is the only one. See ADR-0052.
  */
 
-const localKey = (id: Command['id']) => `shortcut.${id}` as const;
+const localKey = (id: Command['id']) => `settings.shortcut.${id}` as const;
 
 // The cell schema validates stored `keys` structurally as `string[]`, while
 // `KeyBinding` narrows them to `Key[]`, so the read crosses that boundary with one

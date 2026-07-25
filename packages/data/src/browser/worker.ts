@@ -10,6 +10,7 @@ import type { TSchema } from 'typebox';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 
 import {
+	defineLens,
 	defineTable,
 	defineValue,
 	optional,
@@ -28,7 +29,13 @@ import {
 	type InternalTableLens,
 	readTableEntriesPage,
 } from '../epicenter.js';
-import type { ExchangeRequest, ExchangeResponse } from '../protocol/index.js';
+import {
+	type Address,
+	addressesEqual,
+	type ExchangeRequest,
+	type ExchangeResponse,
+	type RowAddress,
+} from '../protocol/index.js';
 import { openReplica, type Replica } from '../replica/index.js';
 import type {
 	BrowserOperation,
@@ -63,7 +70,7 @@ export type BrowserWorkerStore = {
 };
 
 type WorkerDocument = {
-	address: { key: string; rowId: string };
+	address: RowAddress;
 	document: RowDocument;
 	stopUpdates(): void;
 };
@@ -352,12 +359,8 @@ export function serveBrowserEpicenter(
 					stopReplica = store.replica.subscribe((changes) => {
 						for (const change of changes) {
 							if (change.kind === 'row') {
-								emitInvalidation({
-									kind: 'table',
-									key: change.key,
-									rowIds: [change.rowId],
-								});
-								const row = store.replica.readRow(change.key, change.rowId);
+								emitInvalidation(change);
+								const row = store.replica.readRow(change);
 								if (row.error !== null) {
 									// Liveness is unknowable this pass, so open documents
 									// keep running rather than being revoked on a guess.
@@ -365,11 +368,11 @@ export function serveBrowserEpicenter(
 									// `RowNotLive` is waiting on.
 									log.error(row.error);
 								} else if (row.data === undefined) {
-									void revokeDocuments(change.key, change.rowId);
+									void revokeDocuments(change);
 								}
 								continue;
 							}
-							emitInvalidation({ kind: 'value', key: change.key });
+							emitInvalidation(change);
 						}
 					});
 					stopStatus = store.epicenter.subscribeSyncStatus((status) => {
@@ -424,19 +427,15 @@ export function serveBrowserEpicenter(
 		return ready;
 	}
 
-	function emitInvalidation(
-		change:
-			| { kind: 'table'; key: string; rowIds: string[] }
-			| { kind: 'value'; key: string },
-	): void {
+	function emitInvalidation(change: Address): void {
 		send({ type: 'invalidation', change });
 	}
 
-	async function revokeDocuments(key: string, rowId: string): Promise<void> {
-		const message = `Row document was revoked because '${key}.${rowId}' is no longer live`;
+	async function revokeDocuments(address: RowAddress): Promise<void> {
+		const message = `Row document was revoked because '${address.namespace}/${address.table}/${address.rowId}' is no longer live`;
 		const closures: Promise<void>[] = [];
 		for (const [documentId, entry] of documents) {
-			if (entry.address.key !== key || entry.address.rowId !== rowId) continue;
+			if (!addressesEqual(entry.address, address)) continue;
 			send({ type: 'document-revoked', documentId, message });
 			closures.push(closeDocument(documentId));
 		}
@@ -623,16 +622,16 @@ export function serveBrowserEpicenter(
 				);
 			case 'table-get':
 				return tableLens(store.epicenter, operation.definition).get(
-					operation.rowId,
+					operation.address.rowId,
 				);
 			case 'table-update':
 				return tableLens(store.epicenter, operation.definition).update(
-					operation.rowId,
+					operation.address.rowId,
 					operation.patch,
 				);
 			case 'table-delete':
 				return tableLens(store.epicenter, operation.definition).delete(
-					operation.rowId,
+					operation.address.rowId,
 				);
 			case 'table-entries-page':
 				return tableLens(store.epicenter, operation.definition)[
@@ -760,7 +759,7 @@ export function serveBrowserEpicenter(
 		operation: Extract<BrowserOperation, { kind: 'document-open' }>,
 	): Promise<{ documentId: number; update: Uint8Array }> {
 		const lens = tableLens(epicenter, operation.definition);
-		const document = await lens.openDocument(operation.rowId);
+		const document = await lens.openDocument(operation.address.rowId);
 		if (isDisconnected) {
 			try {
 				await trackDocumentClosure(document);
@@ -782,7 +781,7 @@ export function serveBrowserEpicenter(
 			});
 			const update = encodeRowDocumentState(document);
 			documents.set(documentId, {
-				address: { key: operation.definition.key, rowId: operation.rowId },
+				address: operation.address,
 				document,
 				stopUpdates,
 			});
@@ -912,17 +911,23 @@ function deserializeTable(
 			? optional(typedSchema)
 			: typedSchema;
 	}
-	return defineTable({ key: definition.key, fields });
+	return defineTable({ fields });
 }
 
 function tableLens(
 	epicenter: Epicenter,
 	definition: SerializedTableDefinition,
 ): UntypedTableLens {
-	return epicenter.bind({
-		tables: { target: deserializeTable(definition) },
-		values: {},
-	}).tables.target as InternalTableLens<TableDefinition>;
+	// The serialized table name is the durable local key, so the reconstructed
+	// Lens must declare it under that exact property name. Binding under a fixed
+	// placeholder would address every proxied table identically.
+	return epicenter.bind(
+		defineLens({
+			namespace: definition.namespace,
+			tables: { [definition.table]: deserializeTable(definition) },
+			values: {},
+		}),
+	).tables[definition.table] as InternalTableLens<TableDefinition>;
 }
 
 function valueLens(
@@ -930,13 +935,15 @@ function valueLens(
 	definition: SerializedValueDefinition,
 ): UntypedValueLens {
 	const valueDefinition = defineValue({
-		key: definition.key,
 		value: definition.value as TSchema,
 	}) as ValueDefinition;
-	return epicenter.bind({
-		tables: {},
-		values: { target: valueDefinition },
-	}).values.target as UntypedValueLens;
+	return epicenter.bind(
+		defineLens({
+			namespace: definition.address.namespace,
+			tables: {},
+			values: { [definition.address.value]: valueDefinition },
+		}),
+	).values[definition.address.value] as UntypedValueLens;
 }
 
 function storeClosingError(cause?: unknown): Error {

@@ -1,3 +1,4 @@
+import { addressesEqual } from './addresses.js';
 import { isAdmissibleRecord } from './admission.js';
 import type { Change, JsonObject, Record as SyncRecord } from './schemas.js';
 
@@ -17,27 +18,22 @@ function applyIfAdmissible(
 		: { kind: 'noop', record: current };
 }
 
-function sameAddress(current: SyncRecord | undefined, change: Change): boolean {
-	if (current === undefined || current.key !== change.key) return false;
-	return 'rowId' in change
-		? 'rowId' in current && current.rowId === change.rowId
-		: !('rowId' in current);
-}
-
 export function foldChange(
 	current: SyncRecord | undefined,
 	change: Change,
 	nextSequence: number,
 ): FoldResult {
-	const existing = sameAddress(current, change) ? current : undefined;
+	const existing =
+		current !== undefined && addressesEqual(current.address, change.address)
+			? current
+			: undefined;
 	switch (change.kind) {
 		case 'create':
 			return existing === undefined
 				? applyIfAdmissible(
 						{
 							kind: 'row',
-							key: change.key,
-							rowId: change.rowId,
+							address: change.address,
 							changedSequence: nextSequence,
 							fields: structuredClone(change.fields),
 						},
@@ -66,8 +62,7 @@ export function foldChange(
 				? applyIfAdmissible(
 						{
 							kind: 'row-deleted',
-							key: change.key,
-							rowId: change.rowId,
+							address: change.address,
 							changedSequence: nextSequence,
 						},
 						existing,
@@ -77,7 +72,7 @@ export function foldChange(
 			return applyIfAdmissible(
 				{
 					kind: 'value',
-					key: change.key,
+					address: change.address,
 					changedSequence: nextSequence,
 					value: structuredClone(change.value),
 				},
@@ -88,7 +83,7 @@ export function foldChange(
 				? applyIfAdmissible(
 						{
 							kind: 'value-unset',
-							key: change.key,
+							address: change.address,
 							changedSequence: nextSequence,
 						},
 						existing,

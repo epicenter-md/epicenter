@@ -9,29 +9,37 @@ import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Ok, type Result, trySync } from 'wellcrafted/result';
 
 import {
+	type Address,
+	addressKey,
 	batchDigest,
 	type Change,
+	DATA_ADDRESS_CEILINGS,
 	DATA_ADMISSION_LIMITS,
 	type ExchangeRequest,
 	type ExchangeResponse,
 	encodedJsonBytes,
 	foldChange,
+	isRowAddress,
+	isValueAddress,
 	type JsonObject,
 	type JsonValue,
 	parseChange,
 	parseExchangeResponse,
-	parseQualifiedKey,
 	parseReplicaId,
-	parseRowId,
+	type RowAddress,
 	type Record as SyncRecord,
+	type ValueAddress,
 } from '../protocol/index.js';
-import { createReplicaSchema, REPLICA_FORMAT_VERSION } from './schema.js';
+import {
+	createReplicaSchema,
+	REPLICA_FORMAT_VERSION,
+	REPLICA_TABLES,
+} from './schema.js';
 
 const mintRuntimeId = customAlphabet(
 	'abcdefghijklmnopqrstuvwxyz0123456789',
 	24,
 );
-const OUTBOX_SEQUENCE_KEY = 'so.epicenter.internal.batch-sequence';
 
 export const ReplicaError = defineErrors({
 	StorageFailed: ({
@@ -110,24 +118,34 @@ type MetadataRow = SqliteRow & {
 	attached_deployment: string | null;
 	attached_principal: string | null;
 	last_applied_authority_sequence: number;
+	last_sealed_batch_sequence: number;
 };
 
-type StateRow = SqliteRow & {
-	address_kind: string;
-	qualified_key: string;
+type RowFactRow = SqliteRow & {
+	namespace: string;
+	table_name: string;
 	row_id: string;
-	status: string;
-	json_payload: string | null;
+	presence: string;
+	fields: string | null;
 	changed_sequence: number;
 };
 
-type OutboxRow = SqliteRow & {
+type ValueFactRow = SqliteRow & {
+	namespace: string;
+	value_name: string;
+	presence: string;
+	content: string | null;
+	changed_sequence: number;
+};
+
+type PendingRow = SqliteRow & {
 	local_sequence: number;
-	address_kind: string;
-	qualified_key: string;
-	row_id: string;
-	status: string;
-	json_payload: string | null;
+	intent_kind: string;
+	namespace: string;
+	local_key: string;
+	row_id: string | null;
+	presence: string;
+	payload: string | null;
 };
 
 export type ReplicaMetadata = {
@@ -147,10 +165,6 @@ export type OpenReplicaOptions = {
 	log?: Logger;
 };
 
-export type ReplicaChange =
-	| { kind: 'row'; key: string; rowId: string }
-	| { kind: 'value'; key: string };
-
 function storageResult<T>(
 	operation: string,
 	run: () => T,
@@ -164,7 +178,8 @@ function storageResult<T>(
 function readMetadata(database: SqliteDatabase): MetadataRow | undefined {
 	return database.all<MetadataRow>(
 		`SELECT format_version, replica_id, attached_deployment,
-			attached_principal, last_applied_authority_sequence
+			attached_principal, last_applied_authority_sequence,
+			last_sealed_batch_sequence
 		FROM metadata WHERE singleton = 1`,
 	)[0];
 }
@@ -184,247 +199,299 @@ function toMetadata(row: MetadataRow): ReplicaMetadata {
 	};
 }
 
-function scalarAddress(value: Change | SyncRecord): {
-	kind: 'row' | 'value';
-	key: string;
-	rowId: string;
-} {
-	return 'rowId' in value
-		? { kind: 'row', key: value.key, rowId: value.rowId }
-		: { kind: 'value', key: value.key, rowId: '' };
-}
-
-function stateRowToRecord(row: StateRow): SyncRecord {
-	if (row.address_kind === 'row') {
-		return row.status === 'deleted'
-			? {
-					kind: 'row-deleted',
-					key: row.qualified_key,
-					rowId: row.row_id,
-					changedSequence: row.changed_sequence,
-				}
-			: {
-					kind: 'row',
-					key: row.qualified_key,
-					rowId: row.row_id,
-					changedSequence: row.changed_sequence,
-					fields: JSON.parse(row.json_payload ?? 'null') as JsonObject,
-				};
-	}
-	return row.status === 'unset'
-		? {
-				kind: 'value-unset',
-				key: row.qualified_key,
-				changedSequence: row.changed_sequence,
-			}
+function rowFactToRecord(row: RowFactRow): SyncRecord {
+	const address: RowAddress = {
+		kind: 'row',
+		namespace: row.namespace,
+		table: row.table_name,
+		rowId: row.row_id,
+	};
+	return row.presence === 'absent'
+		? { kind: 'row-deleted', address, changedSequence: row.changed_sequence }
 		: {
-				kind: 'value',
-				key: row.qualified_key,
+				kind: 'row',
+				address,
 				changedSequence: row.changed_sequence,
-				value: JSON.parse(row.json_payload ?? 'null') as JsonValue,
+				fields: JSON.parse(row.fields ?? 'null') as JsonObject,
 			};
 }
 
-function readState(
+function valueFactToRecord(row: ValueFactRow): SyncRecord {
+	const address: ValueAddress = {
+		kind: 'value',
+		namespace: row.namespace,
+		value: row.value_name,
+	};
+	return row.presence === 'absent'
+		? { kind: 'value-unset', address, changedSequence: row.changed_sequence }
+		: {
+				kind: 'value',
+				address,
+				changedSequence: row.changed_sequence,
+				value: JSON.parse(row.content ?? 'null') as JsonValue,
+			};
+}
+
+function readFact(
 	database: SqliteDatabase,
-	change: Change,
+	address: Address,
 ): SyncRecord | undefined {
-	const address = scalarAddress(change);
-	const row = database.all<StateRow>(
-		`SELECT address_kind, qualified_key, row_id, status, json_payload, changed_sequence
-		FROM state WHERE address_kind = ? AND qualified_key = ? AND row_id = ?`,
-		[address.kind, address.key, address.rowId],
+	if (address.kind === 'row') {
+		const row = database.all<RowFactRow>(
+			`SELECT namespace, table_name, row_id, presence, fields, changed_sequence
+			FROM row_facts WHERE namespace = ? AND table_name = ? AND row_id = ?`,
+			[address.namespace, address.table, address.rowId],
+		)[0];
+		return row === undefined ? undefined : rowFactToRecord(row);
+	}
+	const row = database.all<ValueFactRow>(
+		`SELECT namespace, value_name, presence, content, changed_sequence
+		FROM value_facts WHERE namespace = ? AND value_name = ?`,
+		[address.namespace, address.value],
 	)[0];
-	return row === undefined ? undefined : stateRowToRecord(row);
+	return row === undefined ? undefined : valueFactToRecord(row);
 }
 
 function storeRecord(database: SqliteDatabase, record: SyncRecord): void {
-	const address = scalarAddress(record);
-	const status =
-		record.kind === 'row-deleted'
-			? 'deleted'
-			: record.kind === 'value-unset'
-				? 'unset'
-				: 'live';
-	const payload =
-		record.kind === 'row'
-			? JSON.stringify(record.fields)
-			: record.kind === 'value'
-				? JSON.stringify(record.value)
-				: null;
+	if (record.kind === 'row' || record.kind === 'row-deleted') {
+		const { namespace, table, rowId } = record.address;
+		database.run(
+			`INSERT INTO row_facts (
+				namespace, table_name, row_id, presence, fields, changed_sequence
+			) VALUES (?, ?, ?, ?, ?, ?)
+			ON CONFLICT (namespace, table_name, row_id) DO UPDATE SET
+				presence = excluded.presence,
+				fields = excluded.fields,
+				changed_sequence = excluded.changed_sequence`,
+			[
+				namespace,
+				table,
+				rowId,
+				record.kind === 'row' ? 'present' : 'absent',
+				record.kind === 'row' ? JSON.stringify(record.fields) : null,
+				record.changedSequence,
+			],
+		);
+		if (record.kind === 'row-deleted') {
+			// Scalar death, document death, and obligation death commit together:
+			// a deleted row can never leave orphaned bytes or a dirty publication
+			// that would republish content for a dead address (ADR-0174).
+			database.run(
+				'DELETE FROM document_updates WHERE namespace = ? AND table_name = ? AND row_id = ?',
+				[namespace, table, rowId],
+			);
+			database.run(
+				'DELETE FROM document_publication WHERE namespace = ? AND table_name = ? AND row_id = ?',
+				[namespace, table, rowId],
+			);
+		}
+		return;
+	}
+	const { namespace, value } = record.address;
 	database.run(
-		`INSERT INTO state (
-			address_kind, qualified_key, row_id, status, json_payload, changed_sequence
-		) VALUES (?, ?, ?, ?, ?, ?)
-		ON CONFLICT (address_kind, qualified_key, row_id) DO UPDATE SET
-			status = excluded.status,
-			json_payload = excluded.json_payload,
+		`INSERT INTO value_facts (
+			namespace, value_name, presence, content, changed_sequence
+		) VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT (namespace, value_name) DO UPDATE SET
+			presence = excluded.presence,
+			content = excluded.content,
 			changed_sequence = excluded.changed_sequence`,
 		[
-			address.kind,
-			address.key,
-			address.rowId,
-			status,
-			payload,
+			namespace,
+			value,
+			record.kind === 'value' ? 'present' : 'absent',
+			record.kind === 'value' ? JSON.stringify(record.value) : null,
 			record.changedSequence,
 		],
 	);
-	if (record.kind === 'row-deleted') {
-		// Scalar death, document death, and obligation death commit together:
-		// a deleted row can never leave orphaned bytes or a dirty publication
-		// that would republish content for a dead address (ADR-0174).
-		database.run(
-			'DELETE FROM document_updates WHERE qualified_key = ? AND row_id = ?',
-			[record.key, record.rowId],
-		);
-		database.run(
-			'DELETE FROM document_publication WHERE qualified_key = ? AND row_id = ?',
-			[record.key, record.rowId],
-		);
-	}
 }
 
-function encodeOutboxChange(change: Change): {
-	status: string;
-	payload: string | null;
-} {
-	switch (change.kind) {
-		case 'create':
-		case 'update':
-			return {
-				status: 'live',
-				payload: JSON.stringify({ kind: change.kind, fields: change.fields }),
-			};
-		case 'delete':
-			return { status: 'deleted', payload: null };
-		case 'set':
-			return { status: 'live', payload: JSON.stringify(change.value) };
-		case 'unset':
-			return { status: 'unset', payload: null };
-		default:
-			return change satisfies never;
+function enqueueChange(
+	database: SqliteDatabase,
+	localSequence: number,
+	change: Change,
+): void {
+	if (change.address.kind === 'row') {
+		const { namespace, table, rowId } = change.address;
+		const patch =
+			change.kind === 'create'
+				? JSON.stringify({ kind: 'create', fields: change.fields })
+				: change.kind === 'update'
+					? JSON.stringify({ kind: 'update', fields: change.fields })
+					: null;
+		database.run(
+			`INSERT INTO row_outbox (
+				local_sequence, namespace, table_name, row_id, presence, patch
+			) VALUES (?, ?, ?, ?, ?, ?)`,
+			[
+				localSequence,
+				namespace,
+				table,
+				rowId,
+				change.kind === 'delete' ? 'absent' : 'present',
+				patch,
+			],
+		);
+		return;
 	}
+	const { namespace, value } = change.address;
+	database.run(
+		`INSERT INTO value_outbox (
+			local_sequence, namespace, value_name, presence, content
+		) VALUES (?, ?, ?, ?, ?)`,
+		[
+			localSequence,
+			namespace,
+			value,
+			change.kind === 'set' ? 'present' : 'absent',
+			change.kind === 'set' ? JSON.stringify(change.value) : null,
+		],
+	);
 }
 
-function outboxRowToChange(row: OutboxRow): Change {
-	if (row.address_kind === 'row') {
-		if (row.status === 'deleted') {
-			return { kind: 'delete', key: row.qualified_key, rowId: row.row_id };
+function pendingRowToChange(row: PendingRow): Change {
+	if (row.intent_kind === 'row') {
+		if (row.row_id === null) {
+			// `row_outbox.row_id` is NOT NULL, so this is unreachable unless the
+			// union projection above is edited wrongly. Refuse rather than coerce
+			// to an empty string: that empty-row-id sentinel is exactly what the
+			// split relations exist to make unrepresentable.
+			throw new Error('A pending row intent is missing its row id');
 		}
-		const payload = JSON.parse(row.json_payload ?? 'null') as {
+		const address: RowAddress = {
+			kind: 'row',
+			namespace: row.namespace,
+			table: row.local_key,
+			rowId: row.row_id,
+		};
+		if (row.presence === 'absent') return { kind: 'delete', address };
+		const patch = JSON.parse(row.payload ?? 'null') as {
 			kind: 'create' | 'update';
 			fields: JsonObject | { set: JsonObject; unset: string[] };
 		};
-		return payload.kind === 'create'
-			? {
-					kind: 'create',
-					key: row.qualified_key,
-					rowId: row.row_id,
-					fields: payload.fields as JsonObject,
-				}
+		return patch.kind === 'create'
+			? { kind: 'create', address, fields: patch.fields as JsonObject }
 			: {
 					kind: 'update',
-					key: row.qualified_key,
-					rowId: row.row_id,
-					fields: payload.fields as { set: JsonObject; unset: string[] },
+					address,
+					fields: patch.fields as { set: JsonObject; unset: string[] },
 				};
 	}
-	return row.status === 'unset'
-		? { kind: 'unset', key: row.qualified_key }
+	const address: ValueAddress = {
+		kind: 'value',
+		namespace: row.namespace,
+		value: row.local_key,
+	};
+	return row.presence === 'absent'
+		? { kind: 'unset', address }
 		: {
 				kind: 'set',
-				key: row.qualified_key,
-				value: JSON.parse(row.json_payload ?? 'null') as JsonValue,
+				address,
+				value: JSON.parse(row.payload ?? 'null') as JsonValue,
 			};
+}
+
+/**
+ * One local-sequence-ordered view across both intent queues.
+ *
+ * The two relations keep their own shapes, so the union projects each onto the
+ * shared columns the sealer needs; `local_key` carries the table or value name
+ * and `row_id` is NULL for a value intent rather than an empty-string sentinel.
+ */
+const PENDING_QUERY = `
+	SELECT local_sequence, 'row' AS intent_kind, namespace,
+		table_name AS local_key, row_id, presence, patch AS payload
+	FROM row_outbox
+	UNION ALL
+	SELECT local_sequence, 'value' AS intent_kind, namespace,
+		value_name AS local_key, NULL AS row_id, presence, content AS payload
+	FROM value_outbox
+	ORDER BY local_sequence`;
+
+function pendingChanges(
+	database: SqliteDatabase,
+	limit: number,
+): { localSequence: number; change: Change }[] {
+	return database
+		.all<PendingRow>(`${PENDING_QUERY} LIMIT ?`, [limit])
+		.map((row) => ({
+			localSequence: row.local_sequence,
+			change: pendingRowToChange(row),
+		}));
 }
 
 function hasPendingAddress(
 	database: SqliteDatabase,
-	record: SyncRecord,
+	address: Address,
 ): boolean {
-	const address = scalarAddress(record);
-	return (
-		database.all<SqliteRow>(
-			`SELECT 1 AS pending FROM outbox
-		WHERE local_sequence > 0
-			AND address_kind = ? AND qualified_key = ? AND row_id = ? LIMIT 1`,
-			[address.kind, address.key, address.rowId],
-		).length > 0
-	);
+	const rows =
+		address.kind === 'row'
+			? database.all<SqliteRow>(
+					`SELECT 1 AS pending FROM row_outbox
+					WHERE namespace = ? AND table_name = ? AND row_id = ? LIMIT 1`,
+					[address.namespace, address.table, address.rowId],
+				)
+			: database.all<SqliteRow>(
+					`SELECT 1 AS pending FROM value_outbox
+					WHERE namespace = ? AND value_name = ? LIMIT 1`,
+					[address.namespace, address.value],
+				);
+	return rows.length > 0;
+}
+
+function deletePending(
+	database: SqliteDatabase,
+	localSequences: readonly number[],
+): void {
+	for (const localSequence of localSequences) {
+		database.run('DELETE FROM row_outbox WHERE local_sequence = ?', [
+			localSequence,
+		]);
+		database.run('DELETE FROM value_outbox WHERE local_sequence = ?', [
+			localSequence,
+		]);
+	}
 }
 
 function installRecord(database: SqliteDatabase, record: SyncRecord): boolean {
-	if (hasPendingAddress(database, record)) return false;
-	const address = scalarAddress(record);
-	const existing = database.all<StateRow>(
-		`SELECT address_kind, qualified_key, row_id, status, json_payload, changed_sequence
-		FROM state WHERE address_kind = ? AND qualified_key = ? AND row_id = ?`,
-		[address.kind, address.key, address.rowId],
-	)[0];
+	if (hasPendingAddress(database, record.address)) return false;
+	const existing = readFact(database, record.address);
 	if (
 		existing !== undefined &&
-		existing.changed_sequence >= record.changedSequence
-	)
+		existing.changedSequence >= record.changedSequence
+	) {
 		return false;
+	}
 	storeRecord(database, record);
 	return true;
 }
 
-function pendingOutboxRows(database: SqliteDatabase): OutboxRow[] {
-	return database.all<OutboxRow>(
-		`SELECT local_sequence, address_kind, qualified_key, row_id, status, json_payload
-		FROM outbox WHERE local_sequence > 0 ORDER BY local_sequence LIMIT ?`,
-		[DATA_ADMISSION_LIMITS.changesPerBatch],
+function sealBatch(database: SqliteDatabase, lastSealedSequence: number) {
+	const pending = pendingChanges(
+		database,
+		DATA_ADMISSION_LIMITS.changesPerBatch,
 	);
-}
-
-function sealBatch(database: SqliteDatabase) {
-	const rows = pendingOutboxRows(database);
-	if (rows.length === 0) return undefined;
-	const seq = readLastBatchSequence(database) + 1;
-	const selected: OutboxRow[] = [];
+	if (pending.length === 0) return undefined;
+	const seq = lastSealedSequence + 1;
+	const selected: number[] = [];
 	const changes: Change[] = [];
-	for (const row of rows) {
-		if (changes.length === DATA_ADMISSION_LIMITS.changesPerBatch) break;
-		const change = outboxRowToChange(row);
-		const candidate = [...changes, change];
+	for (const entry of pending) {
+		const candidate = [...changes, entry.change];
 		if (
 			encodedJsonBytes({ seq, digest: '0'.repeat(64), changes: candidate }) >
 			DATA_ADMISSION_LIMITS.encodedBatchBytes
 		) {
 			break;
 		}
-		selected.push(row);
-		changes.push(change);
+		selected.push(entry.localSequence);
+		changes.push(entry.change);
 	}
 	if (changes.length === 0)
 		throw new Error('One outbox change exceeds the batch admission limit');
 	return {
 		batch: { seq, digest: batchDigest(changes), changes },
-		localSequences: selected.map((row) => row.local_sequence),
+		localSequences: selected,
 	};
-}
-
-function readLastBatchSequence(database: SqliteDatabase): number {
-	return (
-		database.all<SqliteRow & { sequence: number }>(
-			`SELECT COALESCE(-MIN(local_sequence), 0) AS sequence
-			FROM outbox WHERE local_sequence < 0`,
-		)[0]?.sequence ?? 0
-	);
-}
-
-function rememberBatchSequence(
-	database: SqliteDatabase,
-	sequence: number,
-): void {
-	database.run('DELETE FROM outbox WHERE local_sequence < 0');
-	database.run(
-		`INSERT INTO outbox (
-			local_sequence, address_kind, qualified_key, row_id, status, json_payload
-		) VALUES (?, 'value', ?, '', 'unset', NULL)`,
-		[-sequence, OUTBOX_SEQUENCE_KEY],
-	);
 }
 
 function createReplica(
@@ -432,18 +499,17 @@ function createReplica(
 	mintReplica: () => string,
 	log: Logger,
 ) {
-	const maximumPendingSequence =
-		database.all<SqliteRow & { sequence: number }>(
-			'SELECT COALESCE(MAX(local_sequence), 0) AS sequence FROM outbox WHERE local_sequence > 0',
-		)[0]?.sequence ?? 0;
 	let nextLocalSequence =
-		Math.max(readLastBatchSequence(database), maximumPendingSequence) + 1;
-	const changeListeners = new Set<
-		(changes: readonly ReplicaChange[]) => void
-	>();
+		(database.all<SqliteRow & { sequence: number }>(
+			`SELECT COALESCE(MAX(local_sequence), 0) AS sequence FROM (
+				SELECT local_sequence FROM row_outbox
+				UNION ALL SELECT local_sequence FROM value_outbox
+			)`,
+		)[0]?.sequence ?? 0) + 1;
+	const changeListeners = new Set<(changes: readonly Address[]) => void>();
 	const outboxListeners = new Set<() => void>();
 
-	function notify(changes: readonly ReplicaChange[]): void {
+	function notify(changes: readonly Address[]): void {
 		if (changes.length === 0) return;
 		for (const listener of changeListeners) {
 			try {
@@ -469,12 +535,6 @@ function createReplica(
 				log.error(ReplicaError.SubscriberThrew({ cause }));
 			}
 		}
-	}
-
-	function changeOf(value: Change | SyncRecord): ReplicaChange {
-		return 'rowId' in value
-			? { kind: 'row', key: value.key, rowId: value.rowId }
-			: { kind: 'value', key: value.key };
 	}
 
 	function metadata(): Result<ReplicaMetadata, ReplicaError> {
@@ -547,39 +607,24 @@ function createReplica(
 			return ReplicaError.InvalidInput({ boundary: 'change' });
 		const result = storageResult('write', () =>
 			database.transaction(() => {
-				const current = readState(database, parsed);
+				const current = readFact(database, parsed.address);
 				const folded = foldChange(current, parsed, 0);
 				if (folded.kind === 'noop') return { applied: false };
 				storeRecord(database, folded.record);
-				const address = scalarAddress(parsed);
-				const encoded = encodeOutboxChange(parsed);
-				database.run(
-					`INSERT INTO outbox (
-						local_sequence, address_kind, qualified_key, row_id, status, json_payload
-					) VALUES (?, ?, ?, ?, ?, ?)`,
-					[
-						nextLocalSequence,
-						address.kind,
-						address.key,
-						address.rowId,
-						encoded.status,
-						encoded.payload,
-					],
-				);
+				enqueueChange(database, nextLocalSequence, parsed);
 				nextLocalSequence += 1;
 				return { applied: true };
 			}),
 		);
-		if (result.error === null && result.data.applied)
-			notify([changeOf(parsed)]);
 		if (result.error === null && result.data.applied) {
+			notify([parsed.address]);
 			notifyOutbox();
 		}
 		return result;
 	}
 
 	function subscribe(
-		listener: (changes: readonly ReplicaChange[]) => void,
+		listener: (changes: readonly Address[]) => void,
 	): () => void {
 		changeListeners.add(listener);
 		return () => changeListeners.delete(listener);
@@ -591,39 +636,28 @@ function createReplica(
 	}
 
 	function readRow(
-		key: string,
-		rowId: string,
+		address: RowAddress,
 	): Result<JsonObject | undefined, ReplicaError> {
-		if (
-			parseQualifiedKey(key).error !== null ||
-			parseRowId(rowId).error !== null
-		) {
+		if (!isRowAddress(address, DATA_ADDRESS_CEILINGS)) {
 			return ReplicaError.InvalidInput({ boundary: 'row address' });
 		}
 		return storageResult('read row', () => {
-			const row = database.all<StateRow>(
-				`SELECT address_kind, qualified_key, row_id, status, json_payload, changed_sequence
-				FROM state WHERE address_kind = 'row' AND qualified_key = ? AND row_id = ?`,
-				[key, rowId],
-			)[0];
-			if (row === undefined || row.status !== 'live') return undefined;
-			const record = stateRowToRecord(row);
-			return record.kind === 'row' ? structuredClone(record.fields) : undefined;
+			const record = readFact(database, address);
+			return record?.kind === 'row'
+				? structuredClone(record.fields)
+				: undefined;
 		});
 	}
 
-	function readValue(key: string): Result<JsonValue | undefined, ReplicaError> {
-		if (parseQualifiedKey(key).error !== null)
+	function readValue(
+		address: ValueAddress,
+	): Result<JsonValue | undefined, ReplicaError> {
+		if (!isValueAddress(address, DATA_ADDRESS_CEILINGS)) {
 			return ReplicaError.InvalidInput({ boundary: 'value address' });
+		}
 		return storageResult('read value', () => {
-			const row = database.all<StateRow>(
-				`SELECT address_kind, qualified_key, row_id, status, json_payload, changed_sequence
-				FROM state WHERE address_kind = 'value' AND qualified_key = ? AND row_id = ''`,
-				[key],
-			)[0];
-			if (row === undefined || row.status !== 'live') return undefined;
-			const record = stateRowToRecord(row);
-			return record.kind === 'value'
+			const record = readFact(database, address);
+			return record?.kind === 'value'
 				? structuredClone(record.value)
 				: undefined;
 		});
@@ -635,13 +669,17 @@ function createReplica(
 		let conflictRecoveries = 0;
 		while (true) {
 			let didRecoverConflict = false;
-			const metadataResult = metadata();
-			if (metadataResult.error !== null) return metadataResult;
-			if (metadataResult.data.attachment === undefined)
-				return ReplicaError.NotAttached();
+			const metadataRow = storageResult('read metadata', () => {
+				const row = readMetadata(database);
+				if (row === undefined) throw new Error('metadata singleton is missing');
+				return row;
+			});
+			if (metadataRow.error !== null) return metadataRow;
+			const current = toMetadata(metadataRow.data);
+			if (current.attachment === undefined) return ReplicaError.NotAttached();
 
 			const outboxResult = storageResult('seal batch', () =>
-				sealBatch(database),
+				sealBatch(database, metadataRow.data.last_sealed_batch_sequence),
 			);
 			if (outboxResult.error !== null) return outboxResult;
 			const sealed = outboxResult.data;
@@ -651,8 +689,8 @@ function createReplica(
 
 			while (true) {
 				const request: ExchangeRequest = {
-					replicaId: metadataResult.data.replicaId,
-					after: metadataResult.data.lastAppliedAuthoritySequence,
+					replicaId: current.replicaId,
+					after: current.lastAppliedAuthoritySequence,
 					...(isFirstPage && batch !== undefined ? { batch } : {}),
 					...(cursor === undefined ? {} : { cursor }),
 				};
@@ -683,24 +721,19 @@ function createReplica(
 							if (parseReplicaId(replicaId).error !== null)
 								throw new Error('minted replica id is invalid');
 							database.run(
-								'UPDATE metadata SET replica_id = ? WHERE singleton = 1',
+								`UPDATE metadata SET replica_id = ?,
+									last_sealed_batch_sequence = 0 WHERE singleton = 1`,
 								[replicaId],
 							);
-							const pending = database.all<OutboxRow>(
-								`SELECT local_sequence, address_kind, qualified_key, row_id, status, json_payload
-								FROM outbox WHERE local_sequence > 0 ORDER BY local_sequence`,
-							);
-							database.run('DELETE FROM outbox WHERE local_sequence < 0');
-							for (const row of pending)
-								database.run(
-									'UPDATE outbox SET local_sequence = ? WHERE local_sequence = ?',
-									[-row.local_sequence, row.local_sequence],
-								);
-							for (const [index, row] of pending.entries())
-								database.run(
-									'UPDATE outbox SET local_sequence = ? WHERE local_sequence = ?',
-									[index + 1, -row.local_sequence],
-								);
+							// Renumber every pending intent from 1 in its existing order.
+							// The forked replica starts a fresh batch sequence, so the
+							// queue must start from a fresh local sequence too.
+							const pending = pendingChanges(database, Number.MAX_SAFE_INTEGER);
+							database.run('DELETE FROM row_outbox');
+							database.run('DELETE FROM value_outbox');
+							for (const [index, entry] of pending.entries()) {
+								enqueueChange(database, index + 1, entry.change);
+							}
 							nextLocalSequence = pending.length + 1;
 						}),
 					);
@@ -715,7 +748,7 @@ function createReplica(
 					});
 				}
 				const priorPosition =
-					cursor?.position ?? metadataResult.data.lastAppliedAuthoritySequence;
+					cursor?.position ?? current.lastAppliedAuthoritySequence;
 				if (
 					response.records.some(
 						(record) => record.changedSequence <= priorPosition,
@@ -743,23 +776,17 @@ function createReplica(
 
 				const installed = storageResult('install exchange page', () =>
 					database.transaction(() => {
-						const changes = new Map<string, ReplicaChange>();
+						const changes = new Map<string, Address>();
 						if (isFirstPage && batch !== undefined && sealed !== undefined) {
-							for (const localSequence of sealed.localSequences) {
-								database.run('DELETE FROM outbox WHERE local_sequence = ?', [
-									localSequence,
-								]);
-							}
-							rememberBatchSequence(database, batch.seq);
+							deletePending(database, sealed.localSequences);
+							database.run(
+								'UPDATE metadata SET last_sealed_batch_sequence = ? WHERE singleton = 1',
+								[batch.seq],
+							);
 						}
 						for (const record of response.records) {
 							if (!installRecord(database, record)) continue;
-							const change = changeOf(record);
-							const address =
-								change.kind === 'row'
-									? `row\0${change.key}\0${change.rowId}`
-									: `value\0${change.key}`;
-							changes.set(address, change);
+							changes.set(addressKey(record.address), record.address);
 						}
 						return [...changes.values()];
 					}),
@@ -787,7 +814,7 @@ function createReplica(
 			if (didRecoverConflict) continue;
 			const pending = storageResult(
 				'check pending outbox',
-				() => pendingOutboxRows(database)[0],
+				() => pendingChanges(database, 1)[0],
 			);
 			if (pending.error !== null) return pending;
 			if (pending.data === undefined) return Ok(undefined);
@@ -829,14 +856,15 @@ export function openReplica({
 	try {
 		const tables = database.all<SqliteRow & { name: string }>(
 			`SELECT name FROM sqlite_schema
-			WHERE type = 'table' AND name IN ('metadata', 'state', 'outbox', 'document_updates', 'document_publication')`,
+			WHERE type = 'table' AND name IN (${REPLICA_TABLES.map(() => '?').join(', ')})`,
+			REPLICA_TABLES,
 		);
 		if (tables.length === 0) {
 			const replicaId = mintReplicaId();
 			if (parseReplicaId(replicaId).error !== null)
 				return ReplicaError.InvalidInput({ boundary: 'minted replica id' });
 			database.transaction(() => createReplicaSchema(database, replicaId));
-		} else if (!tables.some((table) => table.name === 'metadata')) {
+		} else if (tables.length !== REPLICA_TABLES.length) {
 			return ReplicaError.UnsupportedFormat({ found: null });
 		}
 		const row = readMetadata(database);

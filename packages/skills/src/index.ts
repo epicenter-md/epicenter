@@ -11,4 +11,4 @@ export {
 } from './services.js';
 export type { Reference, Skill } from './tables.js';
 export { referencesTable, skillsTable } from './tables.js';
-export { type SkillsData, skillsDefinitions } from './workspace.js';
+export { type SkillsData, skillsLens } from './workspace.js';

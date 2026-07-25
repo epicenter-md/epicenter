@@ -2,12 +2,13 @@
  * Honeycrisp's inert Data definitions.
  *
  * Runtimes own storage, synchronization, and document lifecycles. This module
- * owns only qualified keys, release-local row lenses, and the one
- * multi-row folder deletion operation shared by the UI and desktop host.
+ * owns only the Lens over Honeycrisp's namespace, release-local row lenses, and
+ * the one multi-row folder deletion operation shared by the UI and desktop host.
  */
 
 import {
 	type BoundData,
+	defineLens,
 	defineTable,
 	optional,
 	type RowFor,
@@ -21,7 +22,6 @@ export type NoteId = string;
 export type FolderId = string;
 
 export const foldersTable = defineTable({
-	key: 'so.epicenter.honeycrisp.folders',
 	fields: {
 		name: field.string(),
 		icon: optional(field.string()),
@@ -31,7 +31,6 @@ export const foldersTable = defineTable({
 export type Folder = RowFor<typeof foldersTable>;
 
 export const notesTable = defineTable({
-	key: 'so.epicenter.honeycrisp.notes',
 	fields: {
 		folderId: optional(field.string()),
 		title: field.string(),
@@ -45,15 +44,22 @@ export const notesTable = defineTable({
 });
 export type Note = RowFor<typeof notesTable>;
 
-/** Honeycrisp's inert definitions for this release. */
-export const honeycrispDefinitions = {
+/**
+ * Honeycrisp's inert Lens for this release.
+ *
+ * The namespace is declared once here. The `folders` and `notes` property names
+ * are the durable table names: they are what the row addresses carry, and what a
+ * trusted inspection host would mount as `SELECT * FROM notes`.
+ */
+export const honeycrispLens = defineLens({
+	namespace: 'so.epicenter.honeycrisp',
 	tables: { folders: foldersTable, notes: notesTable },
 	values: {},
-} as const;
+});
 
 export type HoneycrispData = BoundData<
-	typeof honeycrispDefinitions.tables,
-	typeof honeycrispDefinitions.values
+	typeof honeycrispLens.tables,
+	typeof honeycrispLens.values
 >;
 
 /**

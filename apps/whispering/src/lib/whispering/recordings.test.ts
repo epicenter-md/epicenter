@@ -9,6 +9,7 @@ import {
 	BlobStoreError,
 	generateBlobId,
 } from '@epicenter/blobs';
+import { defineLens } from '@epicenter/data';
 import { openBunEpicenter } from '@epicenter/data/bun';
 import { InstantString } from '@epicenter/field';
 import { Ok } from 'wellcrafted/result';
@@ -79,10 +80,13 @@ async function setup({
 } = {}) {
 	const root = mkdtempSync(join(tmpdir(), 'whispering-recordings-'));
 	const epicenter = await openBunEpicenter({ directory: root });
-	const table = epicenter.bind({
-		tables: { recordings: recordingsTable },
-		values: {},
-	}).tables.recordings;
+	const table = epicenter.bind(
+		defineLens({
+			namespace: 'so.epicenter.whispering',
+			tables: { recordings: recordingsTable },
+			values: {},
+		}),
+	).tables.recordings;
 	for (const row of seed) await table.create(row);
 	const domain = createWhisperingRecordings({
 		table,

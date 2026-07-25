@@ -34,15 +34,15 @@
 	const SCOPES = {
 		transcription: {
 			noun: 'transcript',
-			clipboard: 'output.transcription.clipboard',
-			cursor: 'output.transcription.cursor',
-			enter: 'output.transcription.enter',
+			clipboard: 'settings.output.transcription.clipboard',
+			cursor: 'settings.output.transcription.cursor',
+			enter: 'settings.output.transcription.enter',
 		},
 		recipe: {
 			noun: 'recipe output',
-			clipboard: 'output.recipe.clipboard',
-			cursor: 'output.recipe.cursor',
-			enter: 'output.recipe.enter',
+			clipboard: 'settings.output.recipe.clipboard',
+			cursor: 'settings.output.recipe.cursor',
+			enter: 'settings.output.recipe.enter',
 		},
 	} satisfies Record<
 		OutputScope,

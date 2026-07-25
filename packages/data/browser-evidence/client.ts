@@ -1,4 +1,4 @@
-import { defineTable } from '@epicenter/data';
+import { defineLens, defineTable } from '@epicenter/data';
 import {
 	type BrowserEpicenter,
 	openBrowserEpicenter,
@@ -19,12 +19,17 @@ declare global {
 	}
 }
 
-const notesDefinition = defineTable({
-	key: 'so.epicenter.evidence.notes',
-	fields: {
-		title: field.string(),
-		writer: field.string(),
+const evidenceLens = defineLens({
+	namespace: 'so.epicenter.evidence',
+	tables: {
+		notes: defineTable({
+			fields: {
+				title: field.string(),
+				writer: field.string(),
+			},
+		}),
 	},
+	values: {},
 });
 
 let epicenter: BrowserEpicenter | undefined;
@@ -34,7 +39,7 @@ let hungStarted = false;
 let hungOutcome: string | undefined;
 
 function bindEvidenceData(opened: BrowserEpicenter) {
-	return opened.bind({ tables: { notes: notesDefinition }, values: {} });
+	return opened.bind(evidenceLens);
 }
 
 function requireData(): ReturnType<typeof bindEvidenceData> {

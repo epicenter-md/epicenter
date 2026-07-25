@@ -1,16 +1,12 @@
-import type {
-	ExchangeRequest,
-	ExchangeResponse,
-} from '@epicenter/data/protocol';
 import {
+	DATA_ADDRESS_CEILINGS,
+	type ExchangeRequest,
+	type ExchangeResponse,
+	isRowAddress,
 	parseExchangeRequest,
-	parseQualifiedKey,
-	parseRowId,
+	type RowAddress,
 } from '@epicenter/data/protocol';
-import {
-	DOCUMENT_MAX_TRANSFER_BYTES,
-	type DocumentAddress,
-} from '@epicenter/document-sync';
+import { DOCUMENT_MAX_TRANSFER_BYTES } from '@epicenter/document-sync';
 import type { PrincipalId } from '@epicenter/identity';
 import { Hono, type MiddlewareHandler } from 'hono';
 
@@ -62,32 +58,40 @@ export function createEpicenterSyncApp<E extends Env = Env>(
 		if (parsed.error !== null) {
 			return c.json({ error: 'invalid-request' } as const, 400);
 		}
-		return c.json(await locateAuthority(c.var.principal.id, c.env)(parsed.data));
+		return c.json(
+			await locateAuthority(c.var.principal.id, c.env)(parsed.data),
+		);
 	});
 }
 
 export type DocumentPublishDispatch<E extends Env = Env> = (
 	principalId: PrincipalId,
-	address: DocumentAddress,
+	address: RowAddress,
 	update: Uint8Array,
 	env: E['Bindings'],
 ) => DocumentAppendOutcome | Promise<DocumentAppendOutcome>;
 
 export type DocumentPullDispatch<E extends Env = Env> = (
 	principalId: PrincipalId,
-	address: DocumentAddress,
+	address: RowAddress,
 	sinceVersion: number | undefined,
 	env: E['Bindings'],
 ) => DocumentReadOutcome | Promise<DocumentReadOutcome>;
 
-function parseAddress(key: string, rowId: string): DocumentAddress | undefined {
-	if (
-		parseQualifiedKey(key).error !== null ||
-		parseRowId(rowId).error !== null
-	) {
-		return undefined;
-	}
-	return { key, rowId };
+/**
+ * Read a row address out of the URL path.
+ *
+ * The three coordinates are three path segments, so the route never parses or
+ * splits a joined key. Hono has already percent-decoded each segment; the
+ * address grammar then admits or refuses it.
+ */
+function addressFromPath(
+	namespace: string,
+	table: string,
+	rowId: string,
+): RowAddress | undefined {
+	const candidate = { kind: 'row', namespace, table, rowId } as const;
+	return isRowAddress(candidate, DATA_ADDRESS_CEILINGS) ? candidate : undefined;
 }
 
 function documentETag(version: number): string {
@@ -108,8 +112,12 @@ export function createDocumentSyncApp<E extends Env = Env>({
 	pull: DocumentPullDispatch<E>;
 }): Hono<E> {
 	const app = new Hono<E>();
-	app.post('/api/sync/v1/documents/:key/:rowId', async (c) => {
-		const address = parseAddress(c.req.param('key'), c.req.param('rowId'));
+	app.post('/api/sync/v1/documents/:namespace/:table/:rowId', async (c) => {
+		const address = addressFromPath(
+			c.req.param('namespace'),
+			c.req.param('table'),
+			c.req.param('rowId'),
+		);
 		if (address === undefined) {
 			return c.json({ error: 'invalid-request' } as const, 400);
 		}
@@ -133,8 +141,12 @@ export function createDocumentSyncApp<E extends Env = Env>({
 		}
 		return c.json({ outcome: result.outcome } as const);
 	});
-	app.get('/api/sync/v1/documents/:key/:rowId', async (c) => {
-		const address = parseAddress(c.req.param('key'), c.req.param('rowId'));
+	app.get('/api/sync/v1/documents/:namespace/:table/:rowId', async (c) => {
+		const address = addressFromPath(
+			c.req.param('namespace'),
+			c.req.param('table'),
+			c.req.param('rowId'),
+		);
 		if (address === undefined) {
 			return c.json({ error: 'invalid-request' } as const, 400);
 		}
@@ -176,7 +188,7 @@ export function mountDocumentSyncRoute<E extends Env = Env>(
 		pull: DocumentPullDispatch<E>;
 	},
 ): void {
-	app.use('/api/sync/v1/documents/:key/:rowId', auth);
+	app.use('/api/sync/v1/documents/:namespace/:table/:rowId', auth);
 	app.route('/', createDocumentSyncApp<E>({ publish, pull }));
 }
 

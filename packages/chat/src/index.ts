@@ -8,6 +8,7 @@
 
 import type { AgentMessage, AgentMessageStore } from '@epicenter/agent';
 import {
+	defineLens,
 	defineTable,
 	type RowDocument,
 	type RowFor,
@@ -22,13 +23,18 @@ export const asConversationId = (value: string): ConversationId =>
 	value as ConversationId;
 
 export const conversationsTable = defineTable({
-	key: 'so.epicenter.chat.conversations',
 	fields: {
 		title: field.string(),
 		model: field.string(),
 		createdAt: field.instant(),
 		updatedAt: field.instant(),
 	},
+});
+
+export const chatLens = defineLens({
+	namespace: 'so.epicenter.chat',
+	tables: { conversations: conversationsTable },
+	values: {},
 });
 
 export type Conversation = RowFor<typeof conversationsTable>;

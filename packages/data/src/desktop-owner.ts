@@ -1,6 +1,7 @@
 import type { TSchema } from 'typebox';
 import { openBunEpicenter } from './bun.js';
 import {
+	defineLens,
 	defineTable,
 	defineValue,
 	optional,
@@ -94,15 +95,17 @@ export async function createDesktopEpicenterOwner({
 					operation.fields,
 				);
 			case 'table-get':
-				return tableLens(epicenter, operation.definition).get(operation.rowId);
+				return tableLens(epicenter, operation.definition).get(
+					operation.address.rowId,
+				);
 			case 'table-update':
 				return tableLens(epicenter, operation.definition).update(
-					operation.rowId,
+					operation.address.rowId,
 					operation.patch,
 				);
 			case 'table-delete':
 				return tableLens(epicenter, operation.definition).delete(
-					operation.rowId,
+					operation.address.rowId,
 				);
 			case 'table-entries-page':
 				return tableLens(epicenter, operation.definition)[readTableEntriesPage](
@@ -116,7 +119,7 @@ export async function createDesktopEpicenterOwner({
 				return valueLens(epicenter, operation.definition).unset();
 			case 'document-open': {
 				const lens = tableLens(epicenter, operation.definition);
-				const document = await lens.openDocument(operation.rowId);
+				const document = await lens.openDocument(operation.address.rowId);
 				try {
 					const documentId = ++nextDocumentId;
 					documents.set(documentId, {
@@ -201,25 +204,34 @@ function tableLens(
 	epicenter: Epicenter,
 	definition: SerializedTableDefinition,
 ): UntypedTableLens {
-	return epicenter.bind({
-		tables: { target: deserializeTable(definition) },
-		values: {},
-	}).tables.target as InternalTableLens<TableDefinition>;
+	// The serialized table name is the durable local key, so the reconstructed
+	// Lens must declare it under that exact property name. Binding under a fixed
+	// placeholder would address every proxied table identically.
+	return epicenter.bind(
+		defineLens({
+			namespace: definition.namespace,
+			tables: { [definition.table]: deserializeTable(definition) },
+			values: {},
+		}),
+	).tables[definition.table] as InternalTableLens<TableDefinition>;
 }
 
 function valueLens(
 	epicenter: Epicenter,
 	definition: SerializedValueDefinition,
 ): UntypedValueLens {
-	return epicenter.bind({
-		tables: {},
-		values: {
-			target: defineValue({
-				key: definition.key,
-				value: definition.value as TSchema,
-			}) as ValueDefinition,
-		},
-	}).values.target as UntypedValueLens;
+	const valueDefinition = defineValue({
+		value: definition.value as TSchema,
+	}) as ValueDefinition;
+	return epicenter.bind(
+		defineLens({
+			namespace: definition.address.namespace,
+			tables: {},
+			values: {
+				[definition.address.value]: valueDefinition,
+			},
+		}),
+	).values[definition.address.value] as UntypedValueLens;
 }
 
 function deserializeTable(
@@ -233,7 +245,7 @@ function deserializeTable(
 			? optional(typedSchema)
 			: typedSchema;
 	}
-	return defineTable({ key: definition.key, fields });
+	return defineTable({ fields });
 }
 
 function parseDesktopRequest(input: unknown): DesktopRequest {

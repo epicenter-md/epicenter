@@ -3,7 +3,6 @@ export {
 	type OpenReplicaOptions,
 	openReplica,
 	type Replica,
-	type ReplicaChange,
 	ReplicaError,
 	type ReplicaMetadata,
 } from './replica.js';

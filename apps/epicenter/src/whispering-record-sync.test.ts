@@ -12,7 +12,7 @@ import {
 	createBunEpicenterSyncRuntime,
 	mountBunEpicenterSyncApp,
 } from '@epicenter/server/bun';
-import { whisperingDefinitions } from '@epicenter/whispering/workspace-contract';
+import { whisperingLens } from '@epicenter/whispering/workspace-contract';
 import { type Context, Hono, type Next } from 'hono';
 
 const PRINCIPAL_ID = 'whispering-test-person';
@@ -53,7 +53,7 @@ test('offline Whispering scalar edits converge in both directions', async () => 
 		await using first = await openBunEpicenter({
 			directory: join(root, 'first'),
 		});
-		const firstRecordings = first.bind(whisperingDefinitions).tables.recordings;
+		const firstRecordings = first.bind(whisperingLens).tables.recordings;
 		const recording = await firstRecordings.create({
 			audioBlobId: generateBlobId(),
 			uploadedAt: null,
@@ -70,8 +70,7 @@ test('offline Whispering scalar edits converge in both directions', async () => 
 		await using second = await openBunEpicenter({
 			directory: join(root, 'second'),
 		});
-		const secondRecordings = second.bind(whisperingDefinitions).tables
-			.recordings;
+		const secondRecordings = second.bind(whisperingLens).tables.recordings;
 		expect((await first.attachSync(attachment)).error).toBeNull();
 		expect((await second.attachSync(attachment)).error).toBeNull();
 		expect((await secondRecordings.get(recording.id)).data?.transcript).toBe(

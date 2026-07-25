@@ -8,6 +8,7 @@ import {
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 
+import { addressKey, type RowAddress } from './protocol/index.js';
 import { type Replica, ReplicaError } from './replica/index.js';
 
 const COMPACTION_THRESHOLD = 64;
@@ -71,7 +72,7 @@ export type DocumentPublishOutcome = 'accepted' | 'not-live' | 'too-large';
  * idempotency owns retry safety (ADR-0171).
  */
 export type PublishDocument = (request: {
-	address: DocumentAddress;
+	address: RowAddress;
 	update: Uint8Array;
 }) => DocumentPublishOutcome | Promise<DocumentPublishOutcome>;
 
@@ -88,7 +89,7 @@ export type DocumentPullResponse =
  * local work (ADR-0174).
  */
 export type PullDocument = (request: {
-	address: DocumentAddress;
+	address: RowAddress;
 	sinceVersion: string | undefined;
 }) => DocumentPullResponse | Promise<DocumentPullResponse>;
 
@@ -118,15 +119,13 @@ type StoredPublication = SqliteRow & {
 	sync_issue: string | null;
 };
 
-export type DocumentAddress = { key: string; rowId: string };
-
 type StoredUpdate = SqliteRow & {
 	update_sequence: number;
 	update_bytes: Uint8Array | ArrayBuffer;
 };
 
 type DocumentEntry = {
-	address: DocumentAddress;
+	address: RowAddress;
 	document: LiveDocument;
 	references: number;
 	revoked: Error | undefined;
@@ -144,7 +143,7 @@ type LiveDocument = Y.Doc & {
 };
 
 export type RowDocumentConnectionTarget = {
-	address: DocumentAddress;
+	address: RowAddress;
 	applyUpdate(update: Uint8Array, origin?: unknown): void;
 	encodeStateAsUpdate(): Uint8Array;
 	observe(listener: UpdateListener): () => void;
@@ -226,34 +225,30 @@ export function createDocumentRuntime({
 		}
 	}
 
-	function addressKey({ key, rowId }: DocumentAddress): string {
-		return JSON.stringify([key, rowId]);
-	}
-
 	function requireRuntimeOpen(): void {
 		if (isDisposed) throw new Error('Epicenter document runtime is disposed');
 	}
 
-	function isRowLive({ key, rowId }: DocumentAddress): boolean {
-		const result = replica.readRow(key, rowId);
+	function isRowLive(address: RowAddress): boolean {
+		const result = replica.readRow(address);
 		if (result.error !== null) throw result.error;
 		return result.data !== undefined;
 	}
 
-	function requireRowLive(address: DocumentAddress): void {
+	function requireRowLive(address: RowAddress): void {
 		if (isRowLive(address)) return;
 		throw new Error(
-			`Cannot open document for absent row '${address.key}.${address.rowId}'`,
+			`Cannot open document for absent row '${address.namespace}/${address.table}/${address.rowId}'`,
 		);
 	}
 
-	function readUpdates(address: DocumentAddress): StoredUpdate[] {
+	function readUpdates(address: RowAddress): StoredUpdate[] {
 		return database.all<StoredUpdate>(
 			`SELECT update_sequence, update_bytes
 			 FROM document_updates
-			 WHERE qualified_key = ? AND row_id = ?
+			 WHERE namespace = ? AND table_name = ? AND row_id = ?
 			 ORDER BY update_sequence`,
-			[address.key, address.rowId],
+			[address.namespace, address.table, address.rowId],
 		);
 	}
 
@@ -263,14 +258,12 @@ export function createDocumentRuntime({
 			: new Uint8Array(value.slice(0));
 	}
 
-	function readPublication(
-		address: DocumentAddress,
-	): StoredPublication | undefined {
+	function readPublication(address: RowAddress): StoredPublication | undefined {
 		return database.all<StoredPublication>(
 			`SELECT revision, accepted_revision, sync_issue
 			 FROM document_publication
-			 WHERE qualified_key = ? AND row_id = ?`,
-			[address.key, address.rowId],
+			 WHERE namespace = ? AND table_name = ? AND row_id = ?`,
+			[address.namespace, address.table, address.rowId],
 		)[0];
 	}
 
@@ -288,28 +281,32 @@ export function createDocumentRuntime({
 	}
 
 	function append(
-		address: DocumentAddress,
+		address: RowAddress,
 		update: Uint8Array,
 		source: DocumentUpdateSource,
 	): void {
 		database.transaction(() => {
 			if (!isRowLive(address)) {
-				throw new Error(
-					`Cannot persist document update for absent row '${address.key}.${address.rowId}'`,
-				);
+				throw new Error(`Cannot persist document update for absent row '//'`);
 			}
 			const nextSequence =
 				database.all<SqliteRow & { sequence: number }>(
 					`SELECT COALESCE(MAX(update_sequence), 0) + 1 AS sequence
 					 FROM document_updates
-					 WHERE qualified_key = ? AND row_id = ?`,
-					[address.key, address.rowId],
+					 WHERE namespace = ? AND table_name = ? AND row_id = ?`,
+					[address.namespace, address.table, address.rowId],
 				)[0]?.sequence ?? 1;
 			database.run(
 				`INSERT INTO document_updates (
-					qualified_key, row_id, update_sequence, update_bytes
-				) VALUES (?, ?, ?, ?)`,
-				[address.key, address.rowId, nextSequence, new Uint8Array(update)],
+					namespace, table_name, row_id, update_sequence, update_bytes
+				) VALUES (?, ?, ?, ?, ?)`,
+				[
+					address.namespace,
+					address.table,
+					address.rowId,
+					nextSequence,
+					new Uint8Array(update),
+				],
 			);
 			// Durable bytes and their publication obligation commit together: a
 			// crash can never separate locally authored work from the revision
@@ -317,11 +314,11 @@ export function createDocumentRuntime({
 			if (source === 'local') {
 				database.run(
 					`INSERT INTO document_publication (
-						qualified_key, row_id, revision, accepted_revision
-					) VALUES (?, ?, 1, 0)
-					ON CONFLICT (qualified_key, row_id) DO UPDATE SET
+						namespace, table_name, row_id, revision, accepted_revision
+					) VALUES (?, ?, ?, 1, 0)
+					ON CONFLICT (namespace, table_name, row_id) DO UPDATE SET
 						revision = revision + 1`,
-					[address.key, address.rowId],
+					[address.namespace, address.table, address.rowId],
 				);
 				queueMicrotask(notifyPublicationDirty);
 			}
@@ -331,14 +328,14 @@ export function createDocumentRuntime({
 			try {
 				const baseline = new Uint8Array(Y.encodeStateAsUpdateV2(compacted));
 				database.run(
-					'DELETE FROM document_updates WHERE qualified_key = ? AND row_id = ?',
-					[address.key, address.rowId],
+					'DELETE FROM document_updates WHERE namespace = ? AND table_name = ? AND row_id = ?',
+					[address.namespace, address.table, address.rowId],
 				);
 				database.run(
 					`INSERT INTO document_updates (
-						qualified_key, row_id, update_sequence, update_bytes
-					) VALUES (?, ?, 1, ?)`,
-					[address.key, address.rowId, baseline],
+						namespace, table_name, row_id, update_sequence, update_bytes
+					) VALUES (?, ?, ?, 1, ?)`,
+					[address.namespace, address.table, address.rowId, baseline],
 				);
 			} finally {
 				compacted.destroy();
@@ -346,7 +343,7 @@ export function createDocumentRuntime({
 		});
 	}
 
-	function createEntry(address: DocumentAddress): DocumentEntry {
+	function createEntry(address: RowAddress): DocumentEntry {
 		requireRowLive(address);
 		const document = new Y.Doc({ gc: true }) as LiveDocument;
 		const persist = (update: Uint8Array, origin: unknown) => {
@@ -364,10 +361,7 @@ export function createDocumentRuntime({
 				queueMicrotask(() =>
 					revokeWith(
 						address,
-						new Error(
-							`Row document storage failed for '${address.key}.${address.rowId}'`,
-							{ cause },
-						),
+						new Error(`Row document storage failed for '//'`, { cause }),
 					),
 				);
 				throw cause;
@@ -403,7 +397,7 @@ export function createDocumentRuntime({
 		}
 	}
 
-	async function entryFor(address: DocumentAddress): Promise<DocumentEntry> {
+	async function entryFor(address: RowAddress): Promise<DocumentEntry> {
 		requireRuntimeOpen();
 		const cacheKey = addressKey(address);
 		const existing = entries.get(cacheKey);
@@ -434,7 +428,7 @@ export function createDocumentRuntime({
 		);
 	}
 
-	function revokeWith(address: DocumentAddress, error: Error): void {
+	function revokeWith(address: RowAddress, error: Error): void {
 		const entry = entries.get(addressKey(address));
 		if (entry === undefined || entry.revoked !== undefined) return;
 		entry.revoked = error;
@@ -558,7 +552,7 @@ export function createDocumentRuntime({
 	}
 
 	const runtime = {
-		async open(address: DocumentAddress): Promise<RowDocument> {
+		async open(address: RowAddress): Promise<RowDocument> {
 			const entry = await entryFor(address);
 			requireRuntimeOpen();
 			if (entry.revoked !== undefined) throw entry.revoked;
@@ -658,15 +652,23 @@ export function createDocumentRuntime({
 		 */
 		publication: {
 			/** Addresses owing publication, stable order, terminal issues excluded. */
-			listDirty(): DocumentAddress[] {
+			listDirty(): RowAddress[] {
 				return database
-					.all<SqliteRow & { qualified_key: string; row_id: string }>(
-						`SELECT qualified_key, row_id FROM document_publication
+					.all<
+						SqliteRow & {
+							namespace: string;
+							table_name: string;
+							row_id: string;
+						}
+					>(
+						`SELECT namespace, table_name, row_id FROM document_publication
 						 WHERE revision > accepted_revision AND sync_issue IS NULL
-						 ORDER BY qualified_key, row_id`,
+						 ORDER BY namespace, table_name, row_id`,
 					)
-					.map(({ qualified_key, row_id }) => ({
-						key: qualified_key,
+					.map(({ namespace, table_name, row_id }) => ({
+						kind: 'row' as const,
+						namespace,
+						table: table_name,
 						rowId: row_id,
 					}));
 			},
@@ -677,7 +679,7 @@ export function createDocumentRuntime({
 			 * state. Returns undefined when the address owes nothing.
 			 */
 			capture(
-				address: DocumentAddress,
+				address: RowAddress,
 			): { update: Uint8Array; revision: number } | undefined {
 				return database.transaction(() => {
 					const record = readPublication(address);
@@ -706,12 +708,12 @@ export function createDocumentRuntime({
 			 * further. Acceptance of revision N never clears N+1, so work
 			 * authored during the request stays owed and republishes.
 			 */
-			settle(address: DocumentAddress, revision: number): void {
+			settle(address: RowAddress, revision: number): void {
 				database.run(
 					`UPDATE document_publication SET
 						accepted_revision = max(accepted_revision, min(?, revision))
-					 WHERE qualified_key = ? AND row_id = ?`,
-					[revision, address.key, address.rowId],
+					 WHERE namespace = ? AND table_name = ? AND row_id = ?`,
+					[revision, address.namespace, address.table, address.rowId],
 				);
 			},
 			/**
@@ -720,15 +722,15 @@ export function createDocumentRuntime({
 			 * owns recovery, typically by moving content to a fresh row
 			 * (ADR-0174).
 			 */
-			recordIssue(address: DocumentAddress): void {
+			recordIssue(address: RowAddress): void {
 				database.run(
 					`UPDATE document_publication SET sync_issue = 'too-large'
-					 WHERE qualified_key = ? AND row_id = ?`,
-					[address.key, address.rowId],
+					 WHERE namespace = ? AND table_name = ? AND row_id = ?`,
+					[address.namespace, address.table, address.rowId],
 				);
 			},
 			/** Durable obligation state for one address, or undefined if none. */
-			status(address: DocumentAddress): DocumentPublicationStatus | undefined {
+			status(address: RowAddress): DocumentPublicationStatus | undefined {
 				const record = readPublication(address);
 				if (!record) return undefined;
 				return {
@@ -739,12 +741,10 @@ export function createDocumentRuntime({
 				};
 			},
 		},
-		revoke(address: DocumentAddress): void {
+		revoke(address: RowAddress): void {
 			revokeWith(
 				address,
-				new Error(
-					`Row document was revoked because '${address.key}.${address.rowId}' is no longer live`,
-				),
+				new Error(`Row document was revoked because '//' is no longer live`),
 			);
 		},
 		async [Symbol.asyncDispose](): Promise<void> {

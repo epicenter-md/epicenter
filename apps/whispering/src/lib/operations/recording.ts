@@ -73,7 +73,7 @@ function isVadRecordingActive() {
 export async function startManualRecording(
 	app: WhisperingApp,
 ): Promise<BlobId | null> {
-	app.settings.set('recording.trigger', 'manual');
+	app.settings.set('settings.recording.trigger', 'manual');
 	// A new dictation is starting: clear any lingering failed/delivered state so
 	// the pill follows this attempt, not the last one.
 	dictationLifecycle.reset();
@@ -180,7 +180,7 @@ export async function cancelRecording(app: WhisperingApp) {
 	// means across the manual and VAD recorders.
 	//
 	// Cancel aborts whichever capture is live, without touching
-	// `recording.trigger`: the chosen trigger (manual vs VAD) is a deliberate
+	// `settings.recording.trigger`: the chosen trigger (manual vs VAD) is a deliberate
 	// preference, not
 	// something a cancel keystroke should flip, so cancelling in VAD mode leaves
 	// you in VAD mode, idle and ready to listen again. This is also the global
@@ -252,7 +252,7 @@ function cancelPendingVadResume() {
 }
 
 export async function startVadRecording(app: WhisperingApp) {
-	app.settings.set('recording.trigger', 'vad');
+	app.settings.set('settings.recording.trigger', 'vad');
 	// A new dictation session is starting: clear any lingering terminal state.
 	dictationLifecycle.reset();
 	// A capture just started, so leave the import overlay if it was open (see
@@ -355,7 +355,7 @@ export function toggleVadRecording(app: WhisperingApp) {
 /**
  * Select a capture surface from the homepage tabs or the header dropdown.
  * `import` opens the transient import overlay without touching
- * `recording.trigger`; `manual`/`vad` close the overlay and switch the durable
+ * `settings.recording.trigger`; `manual`/`vad` close the overlay and switch the durable
  * trigger. Either way, a live capture on a different surface is stopped first so
  * two captures never overlap (`import` keeps neither recorder, so both stop).
  */
@@ -370,8 +370,8 @@ export async function selectCaptureSurface(
 		captureSurface.showImport();
 	} else {
 		captureSurface.dismissImport();
-		if (app.settings.get('recording.trigger') !== surface) {
-			app.settings.set('recording.trigger', surface);
+		if (app.settings.get('settings.recording.trigger') !== surface) {
+			app.settings.set('settings.recording.trigger', surface);
 		}
 	}
 

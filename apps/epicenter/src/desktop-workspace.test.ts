@@ -11,13 +11,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { generateBlobId } from '@epicenter/blobs';
 import { createBunBlobStore } from '@epicenter/blobs/bun';
-import { defineTable } from '@epicenter/data';
+import { defineLens, defineTable } from '@epicenter/data';
 import {
 	type OpenDesktopEpicenterOptions,
 	openDesktopEpicenter,
 } from '@epicenter/data/desktop';
 import { field, InstantString } from '@epicenter/field';
-import { whisperingDefinitions } from '@epicenter/whispering/workspace-contract';
+import { whisperingLens } from '@epicenter/whispering/workspace-contract';
 import { BOOTSTRAP_ROUTE } from './routes.ts';
 import { createHomeServer } from './server.ts';
 import { loadStaticAssets } from './static-assets.ts';
@@ -28,7 +28,6 @@ import {
 
 const TOKEN = 'desktop-data-test-token';
 const documentsTable = defineTable({
-	key: 'so.epicenter.tests.desktop-documents',
 	fields: { name: field.string(), updatedAt: field.instant() },
 });
 
@@ -42,15 +41,19 @@ test('WebView surfaces share one replica and state survives restart', async () =
 			firstServer.fetch,
 			operations,
 		);
-		const firstData = first.bind({
-			tables: {
-				recordings: whisperingDefinitions.tables.recordings,
-				documents: documentsTable,
-			},
-			values: {
-				analytics: whisperingDefinitions.values['analytics.enabled'],
-			},
-		});
+		const firstData = first.bind(
+			defineLens({
+				namespace: 'so.epicenter.whispering',
+				tables: {
+					recordings: whisperingLens.tables.recordings,
+					documents: documentsTable,
+				},
+				values: {
+					'settings.analytics.enabled':
+						whisperingLens.values['settings.analytics.enabled'],
+				},
+			}),
+		);
 		const recording = await firstData.tables.recordings.create({
 			audioBlobId: generateBlobId(),
 			uploadedAt: null,
@@ -69,7 +72,7 @@ test('WebView surfaces share one replica and state survives restart', async () =
 				})
 			).data?.transcript,
 		).toBe('Updated transcript');
-		await firstData.values.analytics.set(false);
+		await firstData.values['settings.analytics.enabled'].set(false);
 
 		const row = await firstData.tables.documents.create({
 			name: 'Shared document',
@@ -83,13 +86,16 @@ test('WebView surfaces share one replica and state survives restart', async () =
 			await document.whenDurable();
 		}
 
-		// A second WebView binds the same qualified definitions to the same host
+		// A second WebView binds the same lens to the same host
 		// replica. There is no Device/Account or per-workspace adoption ceremony.
 		const second = await createClient(firstServer.origin, firstServer.fetch);
-		const secondData = second.bind({
-			tables: { recordings: whisperingDefinitions.tables.recordings },
-			values: {},
-		});
+		const secondData = second.bind(
+			defineLens({
+				namespace: 'so.epicenter.whispering',
+				tables: { recordings: whisperingLens.tables.recordings },
+				values: {},
+			}),
+		);
 		expect(
 			(await secondData.tables.recordings.get(recording.id)).data?.transcript,
 		).toBe('Updated transcript');
@@ -105,19 +111,25 @@ test('WebView surfaces share one replica and state survives restart', async () =
 		const restarted = await startDesktopServer(root);
 		try {
 			const client = await createClient(restarted.origin, restarted.fetch);
-			const data = client.bind({
-				tables: {
-					recordings: whisperingDefinitions.tables.recordings,
-					documents: documentsTable,
-				},
-				values: {
-					analytics: whisperingDefinitions.values['analytics.enabled'],
-				},
-			});
+			const data = client.bind(
+				defineLens({
+					namespace: 'so.epicenter.whispering',
+					tables: {
+						recordings: whisperingLens.tables.recordings,
+						documents: documentsTable,
+					},
+					values: {
+						'settings.analytics.enabled':
+							whisperingLens.values['settings.analytics.enabled'],
+					},
+				}),
+			);
 			expect(
 				(await data.tables.recordings.get(recording.id)).data?.transcript,
 			).toBe('Updated transcript');
-			expect((await data.values.analytics.get()).data).toBeFalse();
+			expect(
+				(await data.values['settings.analytics.enabled'].get()).data,
+			).toBeFalse();
 			await using document = await data.tables.documents.openDocument(row.id);
 			expect(document.get('content').toString()).toBe('Desktop document');
 			for (const request of operations) {

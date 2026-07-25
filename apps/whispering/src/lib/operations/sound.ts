@@ -5,14 +5,14 @@ import type { SoundError } from '$lib/services/sound';
 import type { WhisperingApp } from '$lib/whispering/app';
 
 const soundSettingKeyMap = {
-	'manual-start': 'sound.manualStart',
-	'manual-stop': 'sound.manualStop',
-	'manual-cancel': 'sound.manualCancel',
-	'vad-start': 'sound.vadStart',
-	'vad-capture': 'sound.vadCapture',
-	'vad-stop': 'sound.vadStop',
-	transcriptionComplete: 'sound.transcriptionComplete',
-	recipeComplete: 'sound.recipeComplete',
+	'manual-start': 'settings.sound.manualStart',
+	'manual-stop': 'settings.sound.manualStop',
+	'manual-cancel': 'settings.sound.manualCancel',
+	'vad-start': 'settings.sound.vadStart',
+	'vad-capture': 'settings.sound.vadCapture',
+	'vad-stop': 'settings.sound.vadStop',
+	transcriptionComplete: 'settings.sound.transcriptionComplete',
+	recipeComplete: 'settings.sound.recipeComplete',
 } as const satisfies Record<WhisperingSoundNames, string>;
 
 export async function playSoundIfEnabled(

@@ -23,7 +23,7 @@ import { field } from '@epicenter/field';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 
-import { defineTable } from './definitions.js';
+import { defineLens, defineTable } from './definitions.js';
 import { createEpicenter } from './epicenter.js';
 import type { ExchangeRequest, ExchangeResponse } from './protocol/index.js';
 import { openReplica } from './replica/index.js';
@@ -33,7 +33,6 @@ import type {
 } from './sync-supervisor.js';
 
 const notes = defineTable({
-	key: 'so.epicenter.tests.supervisor-notes',
 	fields: { title: field.string() },
 });
 
@@ -168,9 +167,17 @@ test('local write triggers an exchange without waiting for the interval', async 
 		}),
 	);
 	const initial = exchanges;
-	await epicenter.bind({ tables: { notes }, values: {} }).tables.notes.create({
-		title: 'wake',
-	});
+	await epicenter
+		.bind(
+			defineLens({
+				namespace: 'so.epicenter.tests',
+				tables: { notes },
+				values: {},
+			}),
+		)
+		.tables.notes.create({
+			title: 'wake',
+		});
 	await waitFor(() => exchanges > initial);
 	await waitFor(() => epicenter.syncStatus.state === 'idle');
 	expect(epicenter.syncStatus.state).toBe('idle');
@@ -249,8 +256,13 @@ test('rapid document edits inside the coalesce window become one publication', a
 		}),
 	);
 	await waitFor(() => epicenter.syncStatus.state === 'idle');
-	const notesTable = epicenter.bind({ tables: { notes }, values: {} }).tables
-		.notes;
+	const notesTable = epicenter.bind(
+		defineLens({
+			namespace: 'so.epicenter.tests',
+			tables: { notes },
+			values: {},
+		}),
+	).tables.notes;
 	const row = await notesTable.create({ title: 'coalesce' });
 	await waitFor(() => epicenter.syncStatus.state === 'idle');
 
@@ -291,9 +303,17 @@ test('an unexpected dependency throw is reported as a fault, not a transport err
 
 	// The throw happens inside the drain, on a background wake nobody awaits.
 	credentials.explode();
-	await epicenter.bind({ tables: { notes }, values: {} }).tables.notes.create({
-		title: 'wake',
-	});
+	await epicenter
+		.bind(
+			defineLens({
+				namespace: 'so.epicenter.tests',
+				tables: { notes },
+				values: {},
+			}),
+		)
+		.tables.notes.create({
+			title: 'wake',
+		});
 	await waitFor(() => epicenter.syncStatus.state === 'offline');
 	await settle();
 
@@ -331,9 +351,17 @@ test('an outbox-triggered failure is owned, not left as an unhandled rejection',
 
 	isOffline = true;
 	// A committed local write wakes the drain through `void requestExchange()`.
-	await epicenter.bind({ tables: { notes }, values: {} }).tables.notes.create({
-		title: 'wake',
-	});
+	await epicenter
+		.bind(
+			defineLens({
+				namespace: 'so.epicenter.tests',
+				tables: { notes },
+				values: {},
+			}),
+		)
+		.tables.notes.create({
+			title: 'wake',
+		});
 	await waitFor(() => epicenter.syncStatus.state === 'offline');
 	await settle();
 
@@ -396,8 +424,13 @@ test('a document-coalescing wake failure is owned by the supervisor', async () =
 		}),
 	);
 	await waitFor(() => epicenter.syncStatus.state === 'idle');
-	const notesTable = epicenter.bind({ tables: { notes }, values: {} }).tables
-		.notes;
+	const notesTable = epicenter.bind(
+		defineLens({
+			namespace: 'so.epicenter.tests',
+			tables: { notes },
+			values: {},
+		}),
+	).tables.notes;
 	const row = await notesTable.create({ title: 'doc' });
 	await waitFor(() => epicenter.syncStatus.state === 'idle');
 
@@ -449,9 +482,17 @@ test('work queued during an active drain runs instead of being lost', async () =
 	await waitFor(() => exchanges === 1);
 
 	// A local write wakes the drain while the first cycle is still running.
-	await epicenter.bind({ tables: { notes }, values: {} }).tables.notes.create({
-		title: 'queued',
-	});
+	await epicenter
+		.bind(
+			defineLens({
+				namespace: 'so.epicenter.tests',
+				tables: { notes },
+				values: {},
+			}),
+		)
+		.tables.notes.create({
+			title: 'queued',
+		});
 	gate.open();
 	expectOk(await attached);
 
@@ -581,7 +622,13 @@ test('a background wake failure cannot surface as the local write rejecting', as
 
 	// The write must succeed on its own terms; sync trouble is not its failure.
 	const row = await epicenter
-		.bind({ tables: { notes }, values: {} })
+		.bind(
+			defineLens({
+				namespace: 'so.epicenter.tests',
+				tables: { notes },
+				values: {},
+			}),
+		)
 		.tables.notes.create({ title: 'write' });
 	expect(row.title).toBe('write');
 

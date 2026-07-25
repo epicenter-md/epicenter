@@ -85,8 +85,8 @@ function toRemoteTranscriber(
 		key: entry.id,
 		icon: entry.icon,
 		invertInDarkMode: entry.invertInDarkMode,
-		isActive: app.settings.get('transcription.service') === entry.id,
-		select: () => app.settings.set('transcription.service', entry.id),
+		isActive: app.settings.get('settings.transcription.service') === entry.id,
+		select: () => app.settings.set('settings.transcription.service', entry.id),
 	};
 	switch (entry.access) {
 		case 'session':
@@ -138,10 +138,10 @@ function toLocalTranscriber(app: WhisperingApp, model: ModelInfo): Transcriber {
 		title: model.name,
 		keywords: `${model.id} ${model.name} ${model.description} local on-device offline gguf whisper private`,
 		isActive:
-			app.settings.get('transcription.service') === 'local' &&
+			app.settings.get('settings.transcription.service') === 'local' &&
 			deviceConfig.get('transcription.local.selectedModel') === model.id,
 		select: () => {
-			app.settings.set('transcription.service', 'local');
+			app.settings.set('settings.transcription.service', 'local');
 			deviceConfig.set('transcription.local.selectedModel', model.id);
 		},
 	};

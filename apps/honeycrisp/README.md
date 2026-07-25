@@ -17,7 +17,7 @@ Single-route SvelteKit app with a three-pane layout: sidebar (folders) → note 
 Honeycrisp defines one inert workspace contract (`id: "epicenter-honeycrisp"`) and opens it through a page-owned runtime:
 
 ```txt
-honeycrispDefinitions
+honeycrispLens
   shared isomorphic definition: id and release-local row lenses
 
 openHoneycrispBrowserEpicenter()

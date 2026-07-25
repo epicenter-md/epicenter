@@ -82,7 +82,7 @@ function partitionByImportPolicy(files: File[]) {
 /**
  * Imports audio/video files and runs each through the transcription pipeline.
  * This is its own surface, separate from the microphone recording triggers:
- * importing a file never touches `recording.trigger`. Works on web (the file
+ * importing a file never touches `settings.recording.trigger`. Works on web (the file
  * picker) and desktop (the picker plus drag-and-drop).
  */
 export async function importFiles(

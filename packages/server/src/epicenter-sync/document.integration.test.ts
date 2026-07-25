@@ -13,7 +13,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { Principal } from '@epicenter/auth';
-import { createEpicenter, defineTable, openReplica } from '@epicenter/data';
+import {
+	createEpicenter,
+	defineLens,
+	defineTable,
+	openReplica,
+} from '@epicenter/data';
 import { parseExchangeResponse } from '@epicenter/data/protocol';
 import { createHttpDocumentTransports } from '@epicenter/document-sync';
 import { field } from '@epicenter/field';
@@ -30,11 +35,20 @@ import {
 } from './bun.js';
 
 const PRINCIPAL_ID = asPrincipalId('alice');
-const NOTES_KEY = 'so.epicenter.tests.notes';
+const NAMESPACE = 'so.epicenter.tests';
+const TABLE = 'notes';
 const definition = defineTable({
-	key: NOTES_KEY,
 	fields: { title: field.string() },
 });
+const lens = defineLens({
+	namespace: NAMESPACE,
+	tables: { notes: definition },
+	values: {},
+});
+
+function rowAddress(rowId: string) {
+	return { kind: 'row', namespace: NAMESPACE, table: TABLE, rowId } as const;
+}
 
 function openServer() {
 	const dir = mkdtempSync(join(tmpdir(), 'epicenter-doc-integration-'));
@@ -102,8 +116,7 @@ function openClient(path = ':memory:') {
 		raw,
 		database,
 		epicenter,
-		notes: epicenter.bind({ tables: { notes: definition }, values: {} }).tables
-			.notes,
+		notes: epicenter.bind(lens).tables.notes,
 	};
 }
 
@@ -117,8 +130,9 @@ function publicationRow(
 		sync_issue: string | null;
 	}>(
 		`SELECT revision, accepted_revision, sync_issue
-		 FROM document_publication WHERE qualified_key = ? AND row_id = ?`,
-		[NOTES_KEY, rowId],
+		 FROM document_publication
+		 WHERE namespace = ? AND table_name = ? AND row_id = ?`,
+		[NAMESPACE, TABLE, rowId],
 	)[0];
 }
 
@@ -151,7 +165,7 @@ test('a local edit publishes automatically over HTTP and settles', async () => {
 
 		const pulled = server.runtime.pullDocument(
 			PRINCIPAL_ID,
-			{ key: NOTES_KEY, rowId: row.id },
+			rowAddress(row.id),
 			undefined,
 		);
 		if (pulled.kind !== 'state' || pulled.state === undefined) {
@@ -207,7 +221,7 @@ test('restart resumes dirty publication from SQLite', async () => {
 			}, 'resumed publication');
 			const pulled = server.runtime.pullDocument(
 				PRINCIPAL_ID,
-				{ key: NOTES_KEY, rowId },
+				rowAddress(rowId),
 				undefined,
 			);
 			expect(pulled.kind).toBe('state');
@@ -287,12 +301,12 @@ test('two replicas edit and pull the same document without owing inbound work', 
 			},
 		});
 		const versioned = await countingTransports.pullDocument({
-			address: { key: NOTES_KEY, rowId: row.id },
+			address: rowAddress(row.id),
 			sinceVersion: undefined,
 		});
 		if (versioned.kind !== 'state') throw new Error('Expected state');
 		const unchanged = await countingTransports.pullDocument({
-			address: { key: NOTES_KEY, rowId: row.id },
+			address: rowAddress(row.id),
 			sinceVersion: versioned.version,
 		});
 		expect(unchanged.kind).toBe('unchanged');
@@ -319,7 +333,7 @@ test('deletion racing publication cannot resurrect the document', async () => {
 		await waitFor(() => {
 			const pulled = server.runtime.pullDocument(
 				PRINCIPAL_ID,
-				{ key: NOTES_KEY, rowId: row.id },
+				rowAddress(row.id),
 				undefined,
 			);
 			return pulled.kind !== 'not-live';
@@ -335,7 +349,7 @@ test('deletion racing publication cannot resurrect the document', async () => {
 		await waitFor(() => {
 			const pulled = server.runtime.pullDocument(
 				PRINCIPAL_ID,
-				{ key: NOTES_KEY, rowId: row.id },
+				rowAddress(row.id),
 				undefined,
 			);
 			return pulled.kind === 'not-live';
@@ -353,16 +367,13 @@ test('deletion racing publication cannot resurrect the document', async () => {
 		}
 		const outcome = server.runtime.publishDocument(
 			PRINCIPAL_ID,
-			{ key: NOTES_KEY, rowId: row.id },
+			rowAddress(row.id),
 			update,
 		);
 		expect(outcome).toEqual({ outcome: 'not-live' });
 		expect(
-			server.runtime.pullDocument(
-				PRINCIPAL_ID,
-				{ key: NOTES_KEY, rowId: row.id },
-				undefined,
-			).kind,
+			server.runtime.pullDocument(PRINCIPAL_ID, rowAddress(row.id), undefined)
+				.kind,
 		).toBe('not-live');
 	} finally {
 		await author.epicenter[Symbol.asyncDispose]();
@@ -405,11 +416,7 @@ test('an oversized candidate is refused terminally without blocking others', asy
 		expect(await bigDocument.syncIssue()).toEqual({ kind: 'too-large' });
 		expect(bigDocument.get('content').length).toBe(1_100_000);
 		expect(
-			server.runtime.pullDocument(
-				PRINCIPAL_ID,
-				{ key: NOTES_KEY, rowId: big.id },
-				undefined,
-			),
+			server.runtime.pullDocument(PRINCIPAL_ID, rowAddress(big.id), undefined),
 		).toMatchObject({ kind: 'state', state: undefined });
 
 		await bigDocument[Symbol.asyncDispose]();
@@ -430,7 +437,7 @@ test('the authority compacts a covered chain into one baseline', async () => {
 		await waitFor(() => {
 			const pulled = server.runtime.pullDocument(
 				PRINCIPAL_ID,
-				{ key: NOTES_KEY, rowId: row.id },
+				rowAddress(row.id),
 				undefined,
 			);
 			return pulled.kind !== 'not-live';
@@ -444,14 +451,14 @@ test('the authority compacts a covered chain into one baseline', async () => {
 					.insert(authored.get('content').length, `entry ${index};`);
 				const outcome = server.runtime.publishDocument(
 					PRINCIPAL_ID,
-					{ key: NOTES_KEY, rowId: row.id },
+					rowAddress(row.id),
 					new Uint8Array(Y.encodeStateAsUpdateV2(authored)),
 				);
 				expect(outcome).toEqual({ outcome: 'accepted' });
 			}
 			const pulled = server.runtime.pullDocument(
 				PRINCIPAL_ID,
-				{ key: NOTES_KEY, rowId: row.id },
+				rowAddress(row.id),
 				undefined,
 			);
 			if (pulled.kind !== 'state' || pulled.state === undefined) {

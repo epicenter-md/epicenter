@@ -40,8 +40,8 @@ test('resolves a ready facade with release-local setting defaults', async () => 
 	const root = mkdtempSync(join(tmpdir(), 'whispering-app-ready-'));
 	try {
 		await using app = await openWhisperingApp(dependencies(root));
-		expect(app.settings.get('transcription.service')).toBe('OpenAI');
-		expect(app.settings.get('recording.autoUpload')).toBe(false);
+		expect(app.settings.get('settings.transcription.service')).toBe('OpenAI');
+		expect(app.settings.get('settings.recording.autoUpload')).toBe(false);
 		expect(app.recordings.count).toBe(0);
 		expect(app.recipes.count).toBe(0);
 	} finally {
@@ -58,14 +58,14 @@ test('settings writes are optimistic, subscribed, and durable', async () => {
 			const stop = app.settings.subscribe(() => {
 				notifications += 1;
 			});
-			app.settings.set('recording.autoUpload', true);
-			expect(app.settings.get('recording.autoUpload')).toBe(true);
+			app.settings.set('settings.recording.autoUpload', true);
+			expect(app.settings.get('settings.recording.autoUpload')).toBe(true);
 			expect(notifications).toBeGreaterThan(0);
 			stop();
 			await Bun.sleep(10);
 		}
 		await using reopened = await openWhisperingApp(dependencies(root));
-		expect(reopened.settings.get('recording.autoUpload')).toBe(true);
+		expect(reopened.settings.get('settings.recording.autoUpload')).toBe(true);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

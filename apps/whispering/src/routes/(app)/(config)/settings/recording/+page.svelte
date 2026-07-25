@@ -44,7 +44,7 @@
 	<Field.Group>
 		<SettingSelect
 			store={app.settings}
-			key="recording.trigger"
+			key="settings.recording.trigger"
 			label="Recording Trigger"
 			items={RECORDING_TRIGGER_OPTIONS}
 			description="Choose how recording starts: {RECORDING_TRIGGER_OPTIONS.map(
@@ -53,20 +53,20 @@
 		/>
 
 		<SettingSwitch
-			key="recording.pausePlayback"
+			key="settings.recording.pausePlayback"
 			label="Pause playback while recording"
 			description="Whispering pauses media playing on your computer (music, video, browser tabs) while your voice is being captured, then tries to resume it after. In voice activated mode it pauses only while you actually speak, so music keeps playing between phrases. Works with most apps in your system media controls. A few can't be paused, and on macOS the resume can occasionally wake a different app that was already paused."
 		/>
 
 		{#if app.recordings.remoteAvailable}
 			<SettingSwitch
-				key="recording.autoUpload"
+				key="settings.recording.autoUpload"
 				label="Upload new recordings"
 				description="After saving a new recording on this device, try once to copy its audio to your online storage. Failed uploads stay local and are not retried automatically."
 			/>
 		{/if}
 
-		{#if app.settings.get('recording.trigger') === 'manual'}
+		{#if app.settings.get('settings.recording.trigger') === 'manual'}
 			<ManualSelectRecordingDevice
 				bind:selected={() => {
 					const selected = manualRecorderConfig.deviceId;
@@ -74,7 +74,7 @@
 					},
 					(selected) => (manualRecorderConfig.deviceId = selected)}
 			/>
-		{:else if app.settings.get('recording.trigger') === 'vad'}
+		{:else if app.settings.get('settings.recording.trigger') === 'vad'}
 			{#if os.isLinux}
 				<Alert.Root variant="destructive">
 					<InfoIcon class="size-4" />
@@ -129,7 +129,7 @@
 			/>
 		{/if}
 
-		{#if app.settings.get('recording.trigger') === 'manual'}
+		{#if app.settings.get('settings.recording.trigger') === 'manual'}
 			{#if !tauri}
 				<SettingSelect
 					store={deviceConfig}

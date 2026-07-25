@@ -29,16 +29,23 @@ import {
 } from '../protocol/index.js';
 import { openReplica } from './replica.js';
 
-const KEY = 'so.epicenter.notes.rows';
-const VALUE_KEY = 'so.epicenter.settings.theme';
 const ROW_ID = 'abc123def456ghi789jkl012';
+const ROW_ADDRESS = {
+	kind: 'row',
+	namespace: 'so.epicenter.notes',
+	table: 'rows',
+	rowId: ROW_ID,
+} as const;
+const VALUE_ADDRESS = {
+	kind: 'value',
+	namespace: 'so.epicenter.settings',
+	value: 'theme',
+} as const;
 const DEPLOYMENT = 'https://example.com/';
 const PRINCIPAL = 'principal-a';
 
 function addressOf(value: Change | SyncRecord): string {
-	return 'rowId' in value
-		? `row\0${value.key}\0${value.rowId}`
-		: `value\0${value.key}`;
+	return JSON.stringify(value.address);
 }
 
 function createScriptedAuthority(pageSize = 64) {
@@ -150,7 +157,7 @@ test('fresh open mints identity and reopen preserves it', () => {
 	const first = expectOk(openReplica({ database: adapter }));
 	const firstMetadata = expectOk(first.metadata());
 	expect(firstMetadata.replicaId).toMatch(/^[a-z0-9]{24}$/);
-	expect(firstMetadata.formatVersion).toBe(3);
+	expect(firstMetadata.formatVersion).toBe(4);
 	const reopened = expectOk(openReplica({ database: adapter }));
 	expect(expectOk(reopened.metadata())).toEqual(firstMetadata);
 	database.close();
@@ -229,8 +236,7 @@ test('local writes expose the optimistic overlay before authority receipt', () =
 		expectOk(
 			replica.write({
 				kind: 'create',
-				key: KEY,
-				rowId: ROW_ID,
+				address: ROW_ADDRESS,
 				fields: { title: 'A', old: true },
 			}),
 		).applied,
@@ -239,22 +245,25 @@ test('local writes expose the optimistic overlay before authority receipt', () =
 		expectOk(
 			replica.write({
 				kind: 'update',
-				key: KEY,
-				rowId: ROW_ID,
+				address: ROW_ADDRESS,
 				fields: { set: { title: 'B' }, unset: ['old'] },
 			}),
 		).applied,
 	).toBe(true);
-	expect(expectOk(replica.readRow(KEY, ROW_ID))).toEqual({ title: 'B' });
-	expectOk(replica.write({ kind: 'set', key: VALUE_KEY, value: 'dark' }));
-	expect(expectOk(replica.readValue(VALUE_KEY))).toBe('dark');
+	expect(expectOk(replica.readRow(ROW_ADDRESS))).toEqual({ title: 'B' });
+	expectOk(
+		replica.write({ kind: 'set', address: VALUE_ADDRESS, value: 'dark' }),
+	);
+	expect(expectOk(replica.readValue(VALUE_ADDRESS))).toBe('dark');
 	database.close();
 });
 
 test('lost batch response retries exact bytes and authority applies once', async () => {
 	const { database, replica } = setup();
 	const authority = createScriptedAuthority();
-	expectOk(replica.write({ kind: 'set', key: VALUE_KEY, value: 'dark' }));
+	expectOk(
+		replica.write({ kind: 'set', address: VALUE_ADDRESS, value: 'dark' }),
+	);
 	let loseFirstResponse = true;
 	const first = await replica.synchronize((request) => {
 		const response = authority.exchange(request);
@@ -267,19 +276,20 @@ test('lost batch response retries exact bytes and authority applies once', async
 	expect(expectErr(first).name).toBe('TransportFailed');
 	expectOk(await replica.synchronize(authority.exchange));
 	expect(authority.appliedChanges).toBe(1);
-	expect(expectOk(replica.readValue(VALUE_KEY))).toBe('dark');
+	expect(expectOk(replica.readValue(VALUE_ADDRESS))).toBe('dark');
 	database.close();
 });
 
 test('multiple pending changes seal atomically and retry as one exact batch', async () => {
 	const { database, replica } = setup();
 	const authority = createScriptedAuthority();
-	expectOk(replica.write({ kind: 'set', key: VALUE_KEY, value: 'dark' }));
+	expectOk(
+		replica.write({ kind: 'set', address: VALUE_ADDRESS, value: 'dark' }),
+	);
 	expectOk(
 		replica.write({
 			kind: 'create',
-			key: KEY,
-			rowId: ROW_ID,
+			address: ROW_ADDRESS,
 			fields: { title: 'batched' },
 		}),
 	);
@@ -300,8 +310,8 @@ test('multiple pending changes seal atomically and retry as one exact batch', as
 	expect(firstRequest?.batch?.changes).toHaveLength(2);
 	expect(retryRequest).toEqual(firstRequest);
 	expect(authority.appliedChanges).toBe(2);
-	expect(expectOk(replica.readValue(VALUE_KEY))).toBe('dark');
-	expect(expectOk(replica.readRow(KEY, ROW_ID))).toEqual({ title: 'batched' });
+	expect(expectOk(replica.readValue(VALUE_ADDRESS))).toBe('dark');
+	expect(expectOk(replica.readRow(ROW_ADDRESS))).toEqual({ title: 'batched' });
 	database.close();
 });
 
@@ -313,12 +323,16 @@ test('drained reopen preserves the next batch sequence and replica identity', as
 		replica.attach({ deploymentId: DEPLOYMENT, principalId: PRINCIPAL }),
 	);
 	const authority = createScriptedAuthority();
-	expectOk(replica.write({ kind: 'set', key: VALUE_KEY, value: 'first' }));
+	expectOk(
+		replica.write({ kind: 'set', address: VALUE_ADDRESS, value: 'first' }),
+	);
 	expectOk(await replica.synchronize(authority.exchange));
 	const identity = expectOk(replica.metadata()).replicaId;
 
 	const reopened = expectOk(openReplica({ database: adapter }));
-	expectOk(reopened.write({ kind: 'set', key: VALUE_KEY, value: 'second' }));
+	expectOk(
+		reopened.write({ kind: 'set', address: VALUE_ADDRESS, value: 'second' }),
+	);
 	expectOk(await reopened.synchronize(authority.exchange));
 	expect(expectOk(reopened.metadata()).replicaId).toBe(identity);
 	expect(authority.conflicts).toBe(0);
@@ -335,13 +349,21 @@ test('copied replica conflict remints identity, preserves cursor, and converges'
 		const original = setup(originalDatabase).replica;
 		const authority = createScriptedAuthority();
 		expectOk(
-			original.write({ kind: 'set', key: VALUE_KEY, value: 'baseline' }),
+			original.write({
+				kind: 'set',
+				address: VALUE_ADDRESS,
+				value: 'baseline',
+			}),
 		);
 		expectOk(await original.synchronize(authority.exchange));
 		copyFileSync(originalPath, copyPath);
 
 		expectOk(
-			original.write({ kind: 'set', key: VALUE_KEY, value: 'original' }),
+			original.write({
+				kind: 'set',
+				address: VALUE_ADDRESS,
+				value: 'original',
+			}),
 		);
 		expectOk(await original.synchronize(authority.exchange));
 
@@ -353,7 +375,9 @@ test('copied replica conflict remints identity, preserves cursor, and converges'
 			}),
 		);
 		const copiedBefore = expectOk(copied.metadata());
-		expectOk(copied.write({ kind: 'set', key: VALUE_KEY, value: 'copied' }));
+		expectOk(
+			copied.write({ kind: 'set', address: VALUE_ADDRESS, value: 'copied' }),
+		);
 		expectOk(await copied.synchronize(authority.exchange));
 		const copiedAfter = expectOk(copied.metadata());
 		expect(copiedAfter.replicaId).not.toBe(copiedBefore.replicaId);
@@ -361,7 +385,7 @@ test('copied replica conflict remints identity, preserves cursor, and converges'
 			copiedBefore.lastAppliedAuthoritySequence,
 		);
 		expect(authority.conflicts).toBe(1);
-		expect(expectOk(copied.readValue(VALUE_KEY))).toBe('copied');
+		expect(expectOk(copied.readValue(VALUE_ADDRESS))).toBe('copied');
 		copyDatabase.close();
 		originalDatabase.close();
 	} finally {
@@ -394,13 +418,13 @@ test('crash after page install but before cursor advance re-exchanges idempotent
 		replica.attach({ deploymentId: DEPLOYMENT, principalId: PRINCIPAL }),
 	);
 	const authority = createScriptedAuthority(1);
-	authority.submit({ kind: 'set', key: VALUE_KEY, value: 'remote' });
+	authority.submit({ kind: 'set', address: VALUE_ADDRESS, value: 'remote' });
 	const failed = await replica.synchronize(authority.exchange);
 	expect(expectErr(failed).name).toBe('StorageFailed');
-	expect(expectOk(replica.readValue(VALUE_KEY))).toBe('remote');
+	expect(expectOk(replica.readValue(VALUE_ADDRESS))).toBe('remote');
 	expect(expectOk(replica.metadata()).lastAppliedAuthoritySequence).toBe(0);
 	expectOk(await replica.synchronize(authority.exchange));
 	expect(expectOk(replica.metadata()).lastAppliedAuthoritySequence).toBe(1);
-	expect(expectOk(replica.readValue(VALUE_KEY))).toBe('remote');
+	expect(expectOk(replica.readValue(VALUE_ADDRESS))).toBe('remote');
 	database.close();
 });

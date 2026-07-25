@@ -20,13 +20,11 @@ import {
 	acceptedDocumentOrigin,
 	applyRowDocumentUpdate,
 	createDocumentRuntime,
-	type DocumentAddress,
 	type DocumentPullResponse,
 	type PullDocument,
 } from './documents.js';
+import type { RowAddress } from './protocol/index.js';
 import { openReplica } from './replica/index.js';
-
-const NOTES_KEY = 'so.epicenter.tests.notes';
 
 function rowId(seed: string): string {
 	return seed
@@ -35,8 +33,13 @@ function rowId(seed: string): string {
 		.slice(0, 24);
 }
 
-function address(seed: string): DocumentAddress {
-	return { key: NOTES_KEY, rowId: rowId(seed) };
+function address(seed: string): RowAddress {
+	return {
+		kind: 'row',
+		namespace: 'so.epicenter.tests',
+		table: 'notes',
+		rowId: rowId(seed),
+	};
 }
 
 function setup({ pull }: { pull?: PullDocument } = {}) {
@@ -48,22 +51,21 @@ function setup({ pull }: { pull?: PullDocument } = {}) {
 		replica,
 		...(pull === undefined ? {} : { getPullTransport: () => pull }),
 	});
-	function createRow(target: DocumentAddress): void {
+	function createRow(target: RowAddress): void {
 		expectOk(
 			replica.write({
 				kind: 'create',
-				key: target.key,
-				rowId: target.rowId,
+				address: target,
 				fields: { title: 'owned' },
 			}),
 		);
 	}
-	function chainLength(target: DocumentAddress): number {
+	function chainLength(target: RowAddress): number {
 		return (
 			database.all<{ count: number }>(
 				`SELECT COUNT(*) AS count FROM document_updates
-				 WHERE qualified_key = ? AND row_id = ?`,
-				[target.key, target.rowId],
+				 WHERE namespace = ? AND table_name = ? AND row_id = ?`,
+				[target.namespace, target.table, target.rowId],
 			)[0]?.count ?? 0
 		);
 	}
@@ -240,8 +242,7 @@ test('row deletion removes the obligation in the same transaction as the chain',
 		expectOk(
 			context.replica.write({
 				kind: 'delete',
-				key: doomed.key,
-				rowId: doomed.rowId,
+				address: doomed,
 			}),
 		);
 		expect(context.chainLength(doomed)).toBe(0);
