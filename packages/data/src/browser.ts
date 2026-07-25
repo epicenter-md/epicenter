@@ -16,6 +16,7 @@ import {
 	type CreateInputFor,
 	compileTableDefinition,
 	compileValueDefinition,
+	type Lens,
 	type RowFor,
 	type TableDefinition,
 	type TableDefinitions,
@@ -38,7 +39,12 @@ import {
 	type TableLens,
 	type ValueLens,
 } from './epicenter.js';
-import type { JsonValue } from './protocol/index.js';
+import {
+	addressKey,
+	type JsonValue,
+	type RowAddress,
+	type ValueAddress,
+} from './protocol/index.js';
 import type { SyncStatus } from './sync-supervisor.js';
 
 type PendingRequest = {
@@ -94,7 +100,10 @@ export async function openBrowserEpicenter({
 	const worker = (createWorker ?? defaultDedicatedWorker)();
 	const port = worker.port;
 	const pending = new Map<number, PendingRequest>();
-	const tableListeners = new Map<string, Set<(changedIds: string[]) => void>>();
+	const tableListeners = new Map<
+		string,
+		Map<string, Set<(changedIds: string[]) => void>>
+	>();
 	const valueListeners = new Map<string, Set<() => void>>();
 	const documents = new Map<number, PageDocument>();
 	const transports = new Map<number, SessionTransports>();
@@ -186,10 +195,12 @@ export async function openBrowserEpicenter({
 	}
 
 	function notifyInvalidation(change: BrowserInvalidation['change']): void {
-		if (change.kind === 'table') {
-			for (const listener of tableListeners.get(change.key) ?? []) {
+		if (change.kind === 'row') {
+			for (const listener of tableListeners
+				.get(change.namespace)
+				?.get(change.table) ?? []) {
 				try {
-					listener([...change.rowIds]);
+					listener([change.rowId]);
 				} catch (cause) {
 					log.error(
 						new Error(`Data subscriber threw: ${extractErrorMessage(cause)}`, {
@@ -200,7 +211,7 @@ export async function openBrowserEpicenter({
 			}
 			return;
 		}
-		for (const listener of valueListeners.get(change.key) ?? []) {
+		for (const listener of valueListeners.get(addressKey(change)) ?? []) {
 			try {
 				listener();
 			} catch (cause) {
@@ -372,25 +383,18 @@ export async function openBrowserEpicenter({
 	function bind<
 		const TTables extends TableDefinitions,
 		const TValues extends ValueDefinitions,
-	>({
-		tables,
-		values,
-	}: {
-		tables: TTables;
-		values: TValues;
-	}): BoundData<TTables, TValues> {
+	>(lens: Lens<TTables, TValues>): BoundData<TTables, TValues> {
 		requireOpen();
-		assertDefinitionGroup(tables, values);
 		const boundTables = Object.fromEntries(
-			Object.entries(tables).map(([propertyName, definition]) => [
-				propertyName,
-				createTableLens(definition),
+			Object.entries(lens.tables).map(([table, definition]) => [
+				table,
+				createTableLens(lens.namespace, table, definition),
 			]),
 		);
 		const boundValues = Object.fromEntries(
-			Object.entries(values).map(([propertyName, definition]) => [
-				propertyName,
-				createValueLens(definition),
+			Object.entries(lens.values).map(([value, definition]) => [
+				value,
+				createValueLens(lens.namespace, value, definition),
 			]),
 		);
 		return Object.freeze({
@@ -400,9 +404,13 @@ export async function openBrowserEpicenter({
 	}
 
 	function createTableLens<TDefinition extends TableDefinition>(
+		namespace: string,
+		table: string,
 		definition: TDefinition,
 	): TableLens<TDefinition> {
-		const serialized = serializeTableDefinition(definition);
+		const serialized = serializeTableDefinition(namespace, table, definition);
+		const tableListenerGroup = tableListeners.get(namespace) ?? new Map();
+		tableListeners.set(namespace, tableListenerGroup);
 		const readEntriesPage = (after?: string) =>
 			request<TableEntriesPage<TDefinition>>({
 				kind: 'table-entries-page',
@@ -418,39 +426,43 @@ export async function openBrowserEpicenter({
 				});
 			},
 			get(rowId: string) {
+				const address = rowAddress(namespace, table, rowId);
 				return request<Awaited<ReturnType<TableLens<TDefinition>['get']>>>({
 					kind: 'table-get',
 					definition: serialized,
-					rowId,
+					address,
 				});
 			},
 			update<const TChanges extends Record<string, unknown>>(
 				rowId: string,
 				patch: TChanges & ConstrainedUpdate<TDefinition, TChanges>,
 			) {
+				const address = rowAddress(namespace, table, rowId);
 				return request<Awaited<ReturnType<TableLens<TDefinition>['update']>>>({
 					kind: 'table-update',
 					definition: serialized,
-					rowId,
+					address,
 					patch,
 				});
 			},
 			delete(rowId: string) {
+				const address = rowAddress(namespace, table, rowId);
 				return request<boolean>({
 					kind: 'table-delete',
 					definition: serialized,
-					rowId,
+					address,
 				});
 			},
 			...createTableReadMethods(readEntriesPage),
 			subscribe(listener: (changedIds: string[]) => void) {
 				requireOpen();
-				const listeners = tableListeners.get(definition.key) ?? new Set();
+				const listeners = tableListenerGroup.get(table) ?? new Set();
 				listeners.add(listener);
-				tableListeners.set(definition.key, listeners);
+				tableListenerGroup.set(table, listeners);
 				return () => {
 					listeners.delete(listener);
-					if (listeners.size === 0) tableListeners.delete(definition.key);
+					if (listeners.size === 0) tableListenerGroup.delete(table);
+					if (tableListenerGroup.size === 0) tableListeners.delete(namespace);
 				};
 			},
 			openDocument(rowId: string) {
@@ -461,34 +473,48 @@ export async function openBrowserEpicenter({
 	}
 
 	function createValueLens<TDefinition extends ValueDefinition>(
+		namespace: string,
+		valueName: string,
 		definition: TDefinition,
 	): ValueLens<TDefinition> {
-		const serialized = serializeValueDefinition(definition);
+		const address: ValueAddress = {
+			kind: 'value',
+			namespace,
+			value: valueName,
+		};
+		const listenerKey = addressKey(address);
+		const serialized = serializeValueDefinition(address, definition);
 		return Object.freeze({
 			get() {
 				return request<Awaited<ReturnType<ValueLens<TDefinition>['get']>>>({
 					kind: 'value-get',
 					definition: serialized,
+					address,
 				});
 			},
 			set(value: ValueFor<TDefinition>) {
 				return request<void>({
 					kind: 'value-set',
 					definition: serialized,
+					address,
 					value: value as JsonValue,
 				});
 			},
 			unset() {
-				return request<void>({ kind: 'value-unset', definition: serialized });
+				return request<void>({
+					kind: 'value-unset',
+					definition: serialized,
+					address,
+				});
 			},
 			subscribe(listener: () => void) {
 				requireOpen();
-				const listeners = valueListeners.get(definition.key) ?? new Set();
+				const listeners = valueListeners.get(listenerKey) ?? new Set();
 				listeners.add(listener);
-				valueListeners.set(definition.key, listeners);
+				valueListeners.set(listenerKey, listeners);
 				return () => {
 					listeners.delete(listener);
-					if (listeners.size === 0) valueListeners.delete(definition.key);
+					if (listeners.size === 0) valueListeners.delete(listenerKey);
 				};
 			},
 		});
@@ -501,7 +527,7 @@ export async function openBrowserEpicenter({
 		const opened = await request<{ documentId: number; update: Uint8Array }>({
 			kind: 'document-open',
 			definition,
-			rowId,
+			address: rowAddress(definition.namespace, definition.table, rowId),
 		});
 		requireOpen();
 		const document = new Y.Doc({ gc: true });
@@ -600,7 +626,7 @@ export async function openBrowserEpicenter({
 			},
 		};
 		registerRowDocumentConnectionTarget(handle, {
-			address: { key: definition.key, rowId },
+			address: rowAddress(definition.namespace, definition.table, rowId),
 			applyUpdate(update, origin) {
 				requireUsable();
 				Y.applyUpdateV2(document, new Uint8Array(update), origin);
@@ -755,54 +781,37 @@ export async function openBrowserEpicenter({
 export type BrowserEpicenter = Awaited<ReturnType<typeof openBrowserEpicenter>>;
 
 function serializeTableDefinition(
+	namespace: string,
+	table: string,
 	definition: TableDefinition,
 ): SerializedTableDefinition {
 	const compiled = compileTableDefinition(definition);
 	return {
-		key: definition.key,
+		namespace,
+		table,
 		fields: cloneJson(definition.fields),
 		optionalFields: [...compiled.optional],
 	};
 }
 
 function serializeValueDefinition(
+	address: ValueAddress,
 	definition: ValueDefinition,
 ): SerializedValueDefinition {
 	compileValueDefinition(definition);
-	return { key: definition.key, value: cloneJson(definition.value) };
+	return { address, value: cloneJson(definition.value) };
 }
 
 function cloneJson<TValue>(value: TValue): TValue {
 	return JSON.parse(JSON.stringify(value)) as TValue;
 }
 
-function assertDefinitionGroup(
-	tables: TableDefinitions,
-	values: ValueDefinitions,
-): void {
-	const keys = new Map<string, string>();
-	for (const [propertyName, definition] of Object.entries(tables)) {
-		compileTableDefinition(definition);
-		rememberDefinition(keys, definition.key, `tables.${propertyName}`);
-	}
-	for (const [propertyName, definition] of Object.entries(values)) {
-		compileValueDefinition(definition);
-		rememberDefinition(keys, definition.key, `values.${propertyName}`);
-	}
-}
-
-function rememberDefinition(
-	keys: Map<string, string>,
-	key: string,
-	propertyName: string,
-): void {
-	const existing = keys.get(key);
-	if (existing !== undefined) {
-		throw new Error(
-			`Duplicate qualified key '${key}' is bound by '${existing}' and '${propertyName}'`,
-		);
-	}
-	keys.set(key, propertyName);
+function rowAddress(
+	namespace: string,
+	table: string,
+	rowId: string,
+): RowAddress {
+	return { kind: 'row', namespace, table, rowId };
 }
 
 function defaultDedicatedWorker(): {

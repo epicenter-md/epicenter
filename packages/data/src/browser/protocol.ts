@@ -1,12 +1,14 @@
 import type {
-	DocumentAddress,
 	DocumentPublishOutcome,
 	DocumentPullResponse,
 } from '../documents.js';
 import type {
+	Address,
 	ExchangeRequest,
 	ExchangeResponse,
 	JsonValue,
+	RowAddress,
+	ValueAddress,
 } from '../protocol/index.js';
 import type { SyncState } from '../sync-supervisor.js';
 
@@ -17,10 +19,10 @@ import type { SyncState } from '../sync-supervisor.js';
  */
 export type SessionTransportRequest =
 	| { kind: 'exchange'; request: ExchangeRequest }
-	| { kind: 'document-publish'; address: DocumentAddress; update: Uint8Array }
+	| { kind: 'document-publish'; address: RowAddress; update: Uint8Array }
 	| {
 			kind: 'document-pull';
-			address: DocumentAddress;
+			address: RowAddress;
 			sinceVersion: string | undefined;
 	  };
 
@@ -30,13 +32,14 @@ export type SessionTransportResponse =
 	| { kind: 'document-pull'; response: DocumentPullResponse };
 
 export type SerializedTableDefinition = {
-	key: string;
+	namespace: string;
+	table: string;
 	fields: Record<string, unknown>;
 	optionalFields: string[];
 };
 
 export type SerializedValueDefinition = {
-	key: string;
+	address: ValueAddress;
 	value: unknown;
 };
 
@@ -50,18 +53,18 @@ export type BrowserOperation =
 	| {
 			kind: 'table-get';
 			definition: SerializedTableDefinition;
-			rowId: string;
+			address: RowAddress;
 	  }
 	| {
 			kind: 'table-update';
 			definition: SerializedTableDefinition;
-			rowId: string;
+			address: RowAddress;
 			patch: Record<string, unknown>;
 	  }
 	| {
 			kind: 'table-delete';
 			definition: SerializedTableDefinition;
-			rowId: string;
+			address: RowAddress;
 	  }
 	| {
 			kind: 'table-entries-page';
@@ -71,20 +74,23 @@ export type BrowserOperation =
 	| {
 			kind: 'value-get';
 			definition: SerializedValueDefinition;
+			address: ValueAddress;
 	  }
 	| {
 			kind: 'value-set';
 			definition: SerializedValueDefinition;
+			address: ValueAddress;
 			value: JsonValue;
 	  }
 	| {
 			kind: 'value-unset';
 			definition: SerializedValueDefinition;
+			address: ValueAddress;
 	  }
 	| {
 			kind: 'document-open';
 			definition: SerializedTableDefinition;
-			rowId: string;
+			address: RowAddress;
 	  }
 	| { kind: 'document-update'; documentId: number; update: Uint8Array }
 	| { kind: 'document-pull'; documentId: number }
@@ -127,9 +133,7 @@ export type BrowserWorkerInbound = BrowserRequest | BrowserTransportResult;
 
 export type BrowserInvalidation = {
 	type: 'invalidation';
-	change:
-		| { kind: 'table'; key: string; rowIds: string[] }
-		| { kind: 'value'; key: string };
+	change: Address;
 };
 
 export type BrowserWorkerMessage =

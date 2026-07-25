@@ -23,7 +23,7 @@ import {
 	openBrowserEpicenter,
 } from './browser.js';
 import { createEpicenter } from './epicenter.js';
-import { defineTable, defineValue, optional } from './index.js';
+import { defineLens, defineTable, defineValue, optional } from './index.js';
 import type { ExchangeRequest, ExchangeResponse } from './protocol/index.js';
 import { openReplica } from './replica/index.js';
 
@@ -162,7 +162,6 @@ async function setup({
 }
 
 const notes = defineTable({
-	key: 'so.epicenter.test.notes',
 	fields: {
 		title: field.string(),
 		detail: optional(field.string()),
@@ -170,12 +169,17 @@ const notes = defineTable({
 });
 
 const theme = defineValue({
-	key: 'so.epicenter.test.theme',
 	value: field.string(),
 });
 
 function bindTestData(epicenter: BrowserEpicenter) {
-	return epicenter.bind({ tables: { notes }, values: { theme } });
+	return epicenter.bind(
+		defineLens({
+			namespace: 'so.epicenter.test',
+			tables: { notes },
+			values: { theme },
+		}),
+	);
 }
 
 test('page CRUD, subscriptions, scans, and values round-trip through its worker', async () => {
