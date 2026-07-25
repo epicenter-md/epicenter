@@ -13,6 +13,8 @@ import { describe, expect, test } from 'bun:test';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 
 import {
+	addressesEqual,
+	addressKey,
 	batchDigest,
 	type Change,
 	DATA_ADDRESS_CEILINGS,
@@ -58,6 +60,52 @@ describe('structured identifiers', () => {
 		]) {
 			expect(isAddress(address, DATA_ADDRESS_CEILINGS)).toBe(false);
 		}
+	});
+
+	test('a value name may be dotted but a table name may not', () => {
+		// A table name is mounted as a SQL relation, so it stays a bare identifier.
+		// A value name is never a relation or a column, so it may group with dots.
+		expect(
+			isValueAddress(
+				{ ...VALUE_ADDRESS, value: 'settings.output.transcription.clipboard' },
+				DATA_ADDRESS_CEILINGS,
+			),
+		).toBe(true);
+		expect(
+			isRowAddress(
+				{ ...ROW_ADDRESS, table: 'settings.sound' },
+				DATA_ADDRESS_CEILINGS,
+			),
+		).toBe(false);
+	});
+
+	test('a dotted value name has exactly one spelling', () => {
+		for (const value of [
+			'.settings',
+			'settings.',
+			'settings..sound',
+			'settings.1sound',
+			'settings._sound',
+		]) {
+			expect(
+				isValueAddress({ ...VALUE_ADDRESS, value }, DATA_ADDRESS_CEILINGS),
+			).toBe(false);
+		}
+	});
+
+	test('dots in a value name are opaque, not a hierarchy', () => {
+		// The refusal this pins: a "parent" and a "child" spelling are simply two
+		// unrelated addresses. Nothing derives one from the other, and nothing may
+		// split a value name to find structure (ADR-0176 refuses prefix matching).
+		const parent = { ...VALUE_ADDRESS, value: 'settings.sound' } as const;
+		const child = {
+			...VALUE_ADDRESS,
+			value: 'settings.sound.manualStart',
+		} as const;
+		expect(isValueAddress(parent, DATA_ADDRESS_CEILINGS)).toBe(true);
+		expect(isValueAddress(child, DATA_ADDRESS_CEILINGS)).toBe(true);
+		expect(addressesEqual(parent, child)).toBe(false);
+		expect(addressKey(parent)).not.toBe(addressKey(child));
 	});
 
 	test('namespace byte length stops at 128 bytes', () => {

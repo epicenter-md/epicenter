@@ -13,10 +13,23 @@
  * address, and therefore a different unit of convergence; there is no rename
  * operation and no alias.
  *
- * The local-key grammar deliberately requires a leading letter, which reserves
- * every `_`-prefixed relation name for internal use and keeps each legal table
- * name usable as a SQL identifier when a trusted inspection host mounts a Lens
- * as logical views (ADR-0162).
+ * Table names and value names have deliberately different grammars, because they
+ * are consumed differently (ADR-0162). A table name is mounted as a SQL relation
+ * by a trusted inspection host, so it must be a bare SQL identifier and
+ * `SELECT * FROM notes` must need no quoting. A value name is never a relation
+ * or a column; it is data in the raw value projection, so it may carry dotted
+ * grouping such as `settings.sound.manualStart`.
+ *
+ * Those dots are opaque. They are one durable name, not a path: they imply no
+ * nested storage, no wildcard or prefix matching, no inheritance, no namespace
+ * boundary, and no extra lifecycle. `settings.sound` and
+ * `settings.sound.manualStart` are two unrelated addresses that converge
+ * independently, exactly like any other pair (ADR-0164). Nothing may split a
+ * value name on `.` to derive meaning. ADR-0176 already refuses the query
+ * capabilities that prefix matching would require.
+ *
+ * Both grammars require a leading letter, which reserves every `_`-prefixed name
+ * for internal use.
  */
 
 import { type Static, Type } from 'typebox';
@@ -29,13 +42,23 @@ const CLOSED = { additionalProperties: false } as const;
 /** Reverse-domain namespace: two or more lowercase, dot-separated labels. */
 const NAMESPACE_PATTERN =
 	'^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$';
-/** A durable local table or value name: an identifier starting with a letter. */
-const LOCAL_KEY_PATTERN = '^[A-Za-z][A-Za-z0-9_]*$';
+/** A durable table name: one bare SQL identifier, so a mount needs no quoting. */
+const TABLE_NAME_PATTERN = '^[A-Za-z][A-Za-z0-9_]*$';
+/**
+ * A durable value name: one or more identifier segments joined by dots.
+ *
+ * The pattern admits no empty segment, leading dot, trailing dot, or repeated
+ * dot, so the name has exactly one spelling and no reader can mistake a
+ * degenerate form for structure.
+ */
+const VALUE_NAME_PATTERN =
+	'^[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*)*$';
 /** Runtime-minted 24-character lowercase alphanumeric row id. */
 const RUNTIME_ID_PATTERN = '^[a-z0-9]{24}$';
 
 const NAMESPACE = new RegExp(NAMESPACE_PATTERN);
-const LOCAL_KEY = new RegExp(LOCAL_KEY_PATTERN);
+const TABLE_NAME = new RegExp(TABLE_NAME_PATTERN);
+const VALUE_NAME = new RegExp(VALUE_NAME_PATTERN);
 const RUNTIME_ID = new RegExp(RUNTIME_ID_PATTERN);
 
 /**
@@ -47,7 +70,8 @@ const RUNTIME_ID = new RegExp(RUNTIME_ID_PATTERN);
  */
 export type AddressByteCeilings = {
 	namespaceBytes: number;
-	localKeyBytes: number;
+	tableNameBytes: number;
+	valueNameBytes: number;
 };
 
 const textEncoder = new TextEncoder();
@@ -60,9 +84,13 @@ const namespaceSchema = Type.String({
 	minLength: 3,
 	pattern: NAMESPACE_PATTERN,
 });
-const localKeySchema = Type.String({
+const tableNameSchema = Type.String({
 	minLength: 1,
-	pattern: LOCAL_KEY_PATTERN,
+	pattern: TABLE_NAME_PATTERN,
+});
+const valueNameSchema = Type.String({
+	minLength: 1,
+	pattern: VALUE_NAME_PATTERN,
 });
 const rowIdSchema = Type.String({
 	minLength: 24,
@@ -74,7 +102,7 @@ export const RowAddressSchema = Type.Object(
 	{
 		kind: Type.Literal('row'),
 		namespace: namespaceSchema,
-		table: localKeySchema,
+		table: tableNameSchema,
 		rowId: rowIdSchema,
 	},
 	CLOSED,
@@ -85,7 +113,7 @@ export const ValueAddressSchema = Type.Object(
 	{
 		kind: Type.Literal('value'),
 		namespace: namespaceSchema,
-		value: localKeySchema,
+		value: valueNameSchema,
 	},
 	CLOSED,
 );
@@ -135,13 +163,32 @@ export function isNamespace(
 	);
 }
 
-/** Whether a durable table or value name is well formed and within its ceiling. */
-export function isLocalKey(
+/** Whether a durable table name is a bare SQL identifier within its ceiling. */
+export function isTableName(
 	value: string,
 	ceilings: AddressByteCeilings,
 ): boolean {
 	const bytes = utf8ByteLength(value);
-	return bytes >= 1 && bytes <= ceilings.localKeyBytes && LOCAL_KEY.test(value);
+	return (
+		bytes >= 1 && bytes <= ceilings.tableNameBytes && TABLE_NAME.test(value)
+	);
+}
+
+/**
+ * Whether a durable value name is well formed and within its ceiling.
+ *
+ * Dotted grouping is admitted here and nowhere else. The dots stay opaque: this
+ * function validates the whole name and never splits it into segments a caller
+ * could act on.
+ */
+export function isValueName(
+	value: string,
+	ceilings: AddressByteCeilings,
+): boolean {
+	const bytes = utf8ByteLength(value);
+	return (
+		bytes >= 1 && bytes <= ceilings.valueNameBytes && VALUE_NAME.test(value)
+	);
 }
 
 /** Whether a runtime-minted row id has the permanent 24-character shape. */
@@ -156,8 +203,8 @@ export function isAdmissibleAddress(
 ): boolean {
 	if (!isNamespace(address.namespace, ceilings)) return false;
 	return address.kind === 'row'
-		? isLocalKey(address.table, ceilings)
-		: isLocalKey(address.value, ceilings);
+		? isTableName(address.table, ceilings)
+		: isValueName(address.value, ceilings);
 }
 
 /**

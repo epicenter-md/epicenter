@@ -55,15 +55,38 @@ Coordinates stay inline rather than interned behind a surrogate. If a future
 measurement earns interning, any `coordinate_id` remains an internal surrogate
 and never becomes a durable or wire identity.
 
-Durable local table and value names must be usable as SQL identifiers, because a
-trusted inspection host mounts a selected Lens as logical relations named exactly
-after the Lens property names. The grammar is therefore
-`^[A-Za-z][A-Za-z0-9_]*$`, which keeps idiomatic `camelCase` names legal and
-reserves every `_`-prefixed relation name for internal use. SQL identifiers are
-case-insensitive, so a Lens refuses two table names, or two value names, that
+Table names and value names have different grammars, because they are consumed
+differently.
+
+A trusted inspection host mounts a selected Lens as logical relations named
+exactly after the `tables` property names, so `SELECT * FROM notes` must need no
+quoting. A table name is therefore one bare SQL identifier,
+`^[A-Za-z][A-Za-z0-9_]*$`, which keeps idiomatic `camelCase` legal and reserves
+every `_`-prefixed relation name for internal use.
+
+A value name is never a relation and never a column: singleton values stay typed
+Lens values, and raw inspection exposes them as rows in `_epicenter_values`. It
+may therefore carry dotted grouping,
+`^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)*$`, so an application can name
+`settings.sound.manualStart` without inventing a namespace per settings subtree
+or splintering one application across many Lenses.
+
+Those dots are opaque. A dotted value name is one durable name, not a path. It
+implies no nested storage, no wildcard or prefix matching, no inheritance, no
+namespace boundary, and no extra lifecycle. `settings.sound` and
+`settings.sound.manualStart` are two unrelated addresses that converge
+independently like any other pair (ADR-0164). Nothing may split a value name on
+`.` to derive meaning, and ADR-0176 already refuses the query capabilities that
+prefix matching would require. The grammar admits no empty segment, leading dot,
+trailing dot, or repeated dot, so each name has exactly one spelling.
+
+SQL identifiers are case-insensitive, so a Lens refuses two table names that
 differ only in case, and a table refuses two field names that differ only in
-case. Row and value names occupy disjoint address key spaces, so one namespace
-may declare both a `notes` table and a `notes` value.
+case. That rule is deliberately not extended to value names: they are data, not
+identifiers, so two value names differing only in case are simply two addresses.
+
+Row and value names occupy disjoint address key spaces, so one namespace may
+declare both a `notes` table and a `notes` value.
 
 ## Consequences
 

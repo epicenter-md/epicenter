@@ -13,8 +13,9 @@ import { Ok, type Result } from 'wellcrafted/result';
 import {
 	DATA_ADDRESS_CEILINGS,
 	isJsonValue,
-	isLocalKey,
 	isNamespace,
+	isTableName,
+	isValueName,
 	type JsonObject,
 	type JsonValue,
 	type RowAddress,
@@ -68,6 +69,13 @@ export type ValueDefinitions = Record<string, ValueDefinition>;
  *
  * Row and value names occupy disjoint key spaces, so one namespace may declare
  * both a `notes` table and a `notes` value.
+ *
+ * The two kinds have different grammars because they are consumed differently
+ * (ADR-0162, ADR-0178). A table name must be a bare SQL identifier, since a
+ * trusted host mounts it as a relation. A value name is never a relation or a
+ * column, so it may carry opaque dotted grouping such as
+ * `settings.sound.manualStart`; those dots are part of one durable name and
+ * imply no nesting, prefix matching, or lifecycle of their own.
  */
 export type Lens<
 	TTables extends TableDefinitions = TableDefinitions,
@@ -290,17 +298,18 @@ export function defineLens<
 	assertPlainObject(tables, 'Lens tables');
 	assertPlainObject(values, 'Lens values');
 	for (const [name, definition] of Object.entries(tables)) {
-		assertLocalKey(name, 'table');
+		assertTableName(name);
 		compileTableDefinition(definition);
 	}
 	for (const [name, definition] of Object.entries(values)) {
-		assertLocalKey(name, 'value');
+		assertValueName(name);
 		compileValueDefinition(definition);
 	}
-	// Row and value names live in disjoint address key spaces, so each kind is
-	// checked on its own rather than against one shared pool.
+	// Only table names are checked for case-insensitive collision, because only
+	// they become SQL identifiers when a Lens is mounted. Value names are data in
+	// the raw value projection, never a relation or a column, so two value names
+	// differing only in case are simply two addresses (ADR-0162, ADR-0178).
 	assertNoCaseInsensitiveDuplicates(Object.keys(tables), 'table');
-	assertNoCaseInsensitiveDuplicates(Object.keys(values), 'value');
 	return Object.freeze({
 		namespace,
 		tables: Object.freeze(tables),
@@ -405,17 +414,25 @@ function createCompiledTable(
 	};
 }
 
-function assertLocalKey(name: string, label: 'table' | 'value'): void {
-	if (!isLocalKey(name, DATA_ADDRESS_CEILINGS)) {
+function assertTableName(name: string): void {
+	if (!isTableName(name, DATA_ADDRESS_CEILINGS)) {
 		throw new Error(
-			`Invalid ${label} name '${name}'; start with a letter and use letters, digits, and underscores`,
+			`Invalid table name '${name}'; start with a letter and use letters, digits, and underscores, because a table name is mounted as a SQL relation`,
+		);
+	}
+}
+
+function assertValueName(name: string): void {
+	if (!isValueName(name, DATA_ADDRESS_CEILINGS)) {
+		throw new Error(
+			`Invalid value name '${name}'; use dot-separated segments that each start with a letter, such as 'settings.sound.manualStart'`,
 		);
 	}
 }
 
 function assertNoCaseInsensitiveDuplicates(
 	names: readonly string[],
-	label: 'table' | 'value' | 'field',
+	label: 'table' | 'field',
 ): void {
 	const seen = new Map<string, string>();
 	for (const name of names) {

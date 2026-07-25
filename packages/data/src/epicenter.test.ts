@@ -92,10 +92,10 @@ test('definitions reject invalid lens coordinates and structural field names', (
 			namespace: TEST_NAMESPACE,
 			tables: {},
 			values: {
-				'Not.Valid': defineValue({ value: field.string() }),
+				'settings..sound': defineValue({ value: field.string() }),
 			},
 		}),
-	).toThrow("Invalid value name 'Not.Valid'");
+	).toThrow("Invalid value name 'settings..sound'");
 	expect(() =>
 		defineLens({
 			namespace: TEST_NAMESPACE,
@@ -114,6 +114,21 @@ test('definitions reject invalid lens coordinates and structural field names', (
 			},
 		}),
 	).toThrow("Ambiguous field names 'title' and 'Title' differ only by case");
+	// A value name may carry dotted grouping, and case-differing value names are
+	// two addresses rather than a collision: only table names become SQL
+	// relations and only field names become columns, so only those two need the
+	// case-insensitive rule (ADR-0178).
+	expect(() =>
+		defineLens({
+			namespace: TEST_NAMESPACE,
+			tables: {},
+			values: {
+				'settings.sound': defineValue({ value: field.string() }),
+				'settings.sound.manualStart': defineValue({ value: field.boolean() }),
+				'settings.Sound': defineValue({ value: field.string() }),
+			},
+		}),
+	).not.toThrow();
 	expect(() =>
 		defineTable({
 			// @ts-expect-error The runtime guard is exercised despite the type error.

@@ -39,12 +39,12 @@ export function isAdmissibleAddress(
 	address: Address,
 	limits: ValidatedLimits,
 ): boolean {
+	// The kernel's limits already carry one ceiling per coordinate kind, which is
+	// what the shared owner now expects, so this maps across without a branch.
 	return isAdmissibleAddressWithin(address, {
 		namespaceBytes: limits.maxNamespaceBytes,
-		localKeyBytes:
-			address.kind === 'row'
-				? limits.maxTableKeyBytes
-				: limits.maxValueKeyBytes,
+		tableNameBytes: limits.maxTableKeyBytes,
+		valueNameBytes: limits.maxValueKeyBytes,
 	});
 }
 
