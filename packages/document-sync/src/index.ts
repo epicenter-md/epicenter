@@ -2,7 +2,7 @@ export {
 	createHttpDocumentTransports,
 	DOCUMENT_BOUND,
 	DOCUMENT_MAX_TRANSFER_BYTES,
-	type DocumentAddress,
 	exceedsDocumentBound,
 	measureDocumentState,
+	type RowAddress,
 } from './protocol.js';

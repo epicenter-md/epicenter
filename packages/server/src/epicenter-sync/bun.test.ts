@@ -27,9 +27,16 @@ import {
 } from './bun.js';
 
 const PRINCIPAL_ID = asPrincipalId('alice');
-const KEY = 'so.epicenter.tests.documents';
+const NAMESPACE = 'so.epicenter.tests';
+const TABLE = 'documents';
 const ROW_ID = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 const REPLICA_ID = 'rrrrrrrrrrrrrrrrrrrrrrrr';
+const ROW_ADDRESS = {
+	kind: 'row',
+	namespace: NAMESPACE,
+	table: TABLE,
+	rowId: ROW_ID,
+} as const;
 
 function setup() {
 	const dir = mkdtempSync(join(tmpdir(), 'epicenter-sync-bun-route-'));
@@ -71,8 +78,7 @@ function createRequest() {
 	const changes = [
 		{
 			kind: 'create' as const,
-			key: KEY,
-			rowId: ROW_ID,
+			address: ROW_ADDRESS,
 			fields: { title: 'Hello' },
 		},
 	];
@@ -84,7 +90,7 @@ function createRequest() {
 }
 
 function documentPath(): string {
-	return `/api/sync/v1/documents/${encodeURIComponent(KEY)}/${ROW_ID}`;
+	return `/api/sync/v1/documents/${NAMESPACE}/${TABLE}/${ROW_ID}`;
 }
 
 function encodeContent(text: string): Uint8Array {
@@ -125,8 +131,7 @@ test('mounted exchange stores and returns one principal row', async () => {
 			records: [
 				{
 					kind: 'row',
-					key: KEY,
-					rowId: ROW_ID,
+					address: ROW_ADDRESS,
 					fields: { title: 'Hello' },
 				},
 			],
@@ -183,7 +188,7 @@ test('pulling a deleted row reports not-live', async () => {
 	const context = setup();
 	try {
 		await exchange(context.app, createRequest());
-		const changes = [{ kind: 'delete' as const, key: KEY, rowId: ROW_ID }];
+		const changes = [{ kind: 'delete' as const, address: ROW_ADDRESS }];
 		await exchange(context.app, {
 			replicaId: REPLICA_ID,
 			after: 1,

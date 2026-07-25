@@ -1,9 +1,8 @@
 import {
+	type Address,
 	batchDigest,
-	type Change,
 	type Cursor,
 	DATA_ADMISSION_LIMITS,
-	type ExchangeRequest,
 	type ExchangeResponse,
 	encodedJsonBytes,
 	foldChange,
@@ -11,7 +10,9 @@ import {
 	type JsonValue,
 	parseExchangeRequest,
 	type Receipt,
+	type RowAddress,
 	type Record as SyncRecord,
+	type ValueAddress,
 } from '@epicenter/data/protocol';
 import type { SqliteDatabase, SqliteRow } from '@epicenter/sqlite';
 
@@ -25,12 +26,20 @@ type ReplicaRow = SqliteRow & {
 	request_digest: string | null;
 	receipt_sequence: number;
 };
-type StateRow = SqliteRow & {
-	address_kind: string;
-	qualified_key: string;
-	row_id: string;
-	status: string;
-	json_payload: string | null;
+
+/**
+ * One row of the sequence-ordered union over both fact relations.
+ *
+ * `local_key` carries the table or value name, and `row_id` is NULL for a value
+ * fact rather than an empty-string sentinel.
+ */
+type FactRow = SqliteRow & {
+	fact_kind: string;
+	namespace: string;
+	local_key: string;
+	row_id: string | null;
+	presence: string;
+	payload: string | null;
 	changed_sequence: number;
 };
 
@@ -74,97 +83,162 @@ function receiptFrom(row: ReplicaRow): Receipt {
 	};
 }
 
-function stateRowToRecord(row: StateRow): SyncRecord {
-	if (row.address_kind === 'row') {
-		return row.status === 'deleted'
-			? {
-					kind: 'row-deleted',
-					key: row.qualified_key,
-					rowId: row.row_id,
-					changedSequence: row.changed_sequence,
-				}
+function factRowToRecord(row: FactRow): SyncRecord {
+	if (row.fact_kind === 'row') {
+		if (row.row_id === null) {
+			// `row_facts.row_id` is NOT NULL, so this is unreachable unless the
+			// union projection above is edited wrongly. Refuse rather than coerce
+			// to an empty string: that empty-row-id sentinel is exactly what the
+			// split relations exist to make unrepresentable.
+			throw new Error('A row fact is missing its row id');
+		}
+		const address: RowAddress = {
+			kind: 'row',
+			namespace: row.namespace,
+			table: row.local_key,
+			rowId: row.row_id,
+		};
+		return row.presence === 'absent'
+			? { kind: 'row-deleted', address, changedSequence: row.changed_sequence }
 			: {
 					kind: 'row',
-					key: row.qualified_key,
-					rowId: row.row_id,
+					address,
 					changedSequence: row.changed_sequence,
-					fields: JSON.parse(row.json_payload ?? 'null') as JsonObject,
+					fields: JSON.parse(row.payload ?? 'null') as JsonObject,
 				};
 	}
-	return row.status === 'unset'
-		? {
-				kind: 'value-unset',
-				key: row.qualified_key,
-				changedSequence: row.changed_sequence,
-			}
+	const address: ValueAddress = {
+		kind: 'value',
+		namespace: row.namespace,
+		value: row.local_key,
+	};
+	return row.presence === 'absent'
+		? { kind: 'value-unset', address, changedSequence: row.changed_sequence }
 		: {
 				kind: 'value',
-				key: row.qualified_key,
+				address,
 				changedSequence: row.changed_sequence,
-				value: JSON.parse(row.json_payload ?? 'null') as JsonValue,
+				value: JSON.parse(row.payload ?? 'null') as JsonValue,
 			};
 }
 
-function addressOf(value: SyncRecord | Change) {
-	return 'rowId' in value
-		? { kind: 'row', key: value.key, rowId: value.rowId }
-		: { kind: 'value', key: value.key, rowId: '' };
-}
+/**
+ * The exchange page is one sequence-ordered stream over both fact relations, so
+ * every read that pages by sequence goes through this projection.
+ */
+const FACTS_IN_RANGE = `
+	SELECT changed_sequence, 'row' AS fact_kind, namespace,
+		table_name AS local_key, row_id, presence, fields AS payload
+	FROM row_facts WHERE changed_sequence > ? AND changed_sequence <= ?
+	UNION ALL
+	SELECT changed_sequence, 'value' AS fact_kind, namespace,
+		value_name AS local_key, NULL AS row_id, presence, content AS payload
+	FROM value_facts WHERE changed_sequence > ? AND changed_sequence <= ?
+	ORDER BY changed_sequence`;
 
-function readRecord(
+/**
+ * Read the one current fact at an address.
+ *
+ * The address is already known here, so each branch selects only the payload and
+ * sequence and rebuilds the record around the caller's address.
+ */
+function readFact(
 	database: SqliteDatabase,
-	change: NonNullable<ExchangeRequest['batch']>['changes'][number],
+	address: Address,
 ): SyncRecord | undefined {
-	const address = addressOf(change);
-	const row = database.all<StateRow>(
-		`SELECT address_kind, qualified_key, row_id, status, json_payload, changed_sequence
-		FROM state WHERE address_kind = ? AND qualified_key = ? AND row_id = ?`,
-		[address.kind, address.key, address.rowId],
+	if (address.kind === 'row') {
+		const row = database.all<
+			SqliteRow & {
+				presence: string;
+				fields: string | null;
+				changed_sequence: number;
+			}
+		>(
+			`SELECT presence, fields, changed_sequence
+			FROM row_facts WHERE namespace = ? AND table_name = ? AND row_id = ?`,
+			[address.namespace, address.table, address.rowId],
+		)[0];
+		if (row === undefined) return undefined;
+		return row.presence === 'absent'
+			? { kind: 'row-deleted', address, changedSequence: row.changed_sequence }
+			: {
+					kind: 'row',
+					address,
+					changedSequence: row.changed_sequence,
+					fields: JSON.parse(row.fields ?? 'null') as JsonObject,
+				};
+	}
+	const row = database.all<
+		SqliteRow & {
+			presence: string;
+			content: string | null;
+			changed_sequence: number;
+		}
+	>(
+		`SELECT presence, content, changed_sequence
+		FROM value_facts WHERE namespace = ? AND value_name = ?`,
+		[address.namespace, address.value],
 	)[0];
-	return row === undefined ? undefined : stateRowToRecord(row);
+	if (row === undefined) return undefined;
+	return row.presence === 'absent'
+		? { kind: 'value-unset', address, changedSequence: row.changed_sequence }
+		: {
+				kind: 'value',
+				address,
+				changedSequence: row.changed_sequence,
+				value: JSON.parse(row.content ?? 'null') as JsonValue,
+			};
 }
 
 function storeRecord(database: SqliteDatabase, record: SyncRecord): void {
-	const address = addressOf(record);
-	const status =
-		record.kind === 'row-deleted'
-			? 'deleted'
-			: record.kind === 'value-unset'
-				? 'unset'
-				: 'live';
-	const payload =
-		record.kind === 'row'
-			? JSON.stringify(record.fields)
-			: record.kind === 'value'
-				? JSON.stringify(record.value)
-				: null;
+	if (record.kind === 'row' || record.kind === 'row-deleted') {
+		const { namespace, table, rowId } = record.address;
+		database.run(
+			`INSERT INTO row_facts (
+				namespace, table_name, row_id, presence, fields, changed_sequence
+			) VALUES (?, ?, ?, ?, ?, ?)
+			ON CONFLICT (namespace, table_name, row_id) DO UPDATE SET
+				presence = excluded.presence,
+				fields = excluded.fields,
+				changed_sequence = excluded.changed_sequence`,
+			[
+				namespace,
+				table,
+				rowId,
+				record.kind === 'row' ? 'present' : 'absent',
+				record.kind === 'row' ? JSON.stringify(record.fields) : null,
+				record.changedSequence,
+			],
+		);
+		if (record.kind === 'row-deleted') {
+			database.run(
+				'DELETE FROM document_updates WHERE namespace = ? AND table_name = ? AND row_id = ?',
+				[namespace, table, rowId],
+			);
+			database.run(
+				'DELETE FROM document_versions WHERE namespace = ? AND table_name = ? AND row_id = ?',
+				[namespace, table, rowId],
+			);
+		}
+		return;
+	}
+	const { namespace, value } = record.address;
 	database.run(
-		`INSERT INTO state (
-			address_kind, qualified_key, row_id, status, json_payload, changed_sequence
-		) VALUES (?, ?, ?, ?, ?, ?)
-		ON CONFLICT (address_kind, qualified_key, row_id) DO UPDATE SET
-			status = excluded.status,
-			json_payload = excluded.json_payload,
+		`INSERT INTO value_facts (
+			namespace, value_name, presence, content, changed_sequence
+		) VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT (namespace, value_name) DO UPDATE SET
+			presence = excluded.presence,
+			content = excluded.content,
 			changed_sequence = excluded.changed_sequence`,
 		[
-			address.kind,
-			address.key,
-			address.rowId,
-			status,
-			payload,
+			namespace,
+			value,
+			record.kind === 'value' ? 'present' : 'absent',
+			record.kind === 'value' ? JSON.stringify(record.value) : null,
 			record.changedSequence,
 		],
 	);
-	if (record.kind === 'row-deleted') {
-		database.run(
-			'DELETE FROM document_updates WHERE qualified_key = ? AND row_id = ?',
-			[record.key, record.rowId],
-		);
-		database.run(
-			'DELETE FROM document_versions WHERE qualified_key = ? AND row_id = ?',
-			[record.key, record.rowId],
-		);
-	}
 }
 
 function readPage(
@@ -174,15 +248,14 @@ function readPage(
 	pageSize: number,
 	receipt: Receipt | undefined,
 ): { through: number; records: SyncRecord[]; next: Cursor | null } {
-	const available = database.all<StateRow>(
-		`SELECT address_kind, qualified_key, row_id, status, json_payload, changed_sequence
-		FROM state
-		WHERE changed_sequence > ? AND changed_sequence <= ?
-		ORDER BY changed_sequence
-		LIMIT ?`,
-		[position, through, pageSize + 1],
-	);
-	let records = available.slice(0, pageSize).map(stateRowToRecord);
+	const available = database.all<FactRow>(`${FACTS_IN_RANGE} LIMIT ?`, [
+		position,
+		through,
+		position,
+		through,
+		pageSize + 1,
+	]);
+	let records = available.slice(0, pageSize).map(factRowToRecord);
 	while (
 		records.length > 1 &&
 		encodedJsonBytes({
@@ -197,11 +270,12 @@ function readPage(
 	const lastPosition = records.at(-1)?.changedSequence ?? position;
 	const hasMore =
 		available.length > records.length ||
-		database.all<SqliteRow>(
-			`SELECT 1 AS present FROM state
-			WHERE changed_sequence > ? AND changed_sequence <= ? LIMIT 1`,
-			[lastPosition, through],
-		).length > 0;
+		database.all<FactRow>(`${FACTS_IN_RANGE} LIMIT 1`, [
+			lastPosition,
+			through,
+			lastPosition,
+			through,
+		]).length > 0;
 	return {
 		through,
 		records,
@@ -259,7 +333,7 @@ export function openEpicenterSyncAuthority({
 						let nextSequence = metadata.next_sequence;
 						for (const change of request.batch.changes) {
 							const folded = foldChange(
-								readRecord(database, change),
+								readFact(database, change.address),
 								change,
 								nextSequence,
 							);

@@ -1,7 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-
-import type { ExchangeResponse } from '@epicenter/data/protocol';
-import type { DocumentAddress } from '@epicenter/document-sync';
+import type { ExchangeResponse, RowAddress } from '@epicenter/data/protocol';
 import type { PrincipalId } from '@epicenter/identity';
 import {
 	createDurableObjectSqliteAdapter,
@@ -50,14 +48,14 @@ export class EpicenterAuthority extends DurableObject {
 	}
 
 	publishDocument(
-		address: DocumentAddress,
+		address: RowAddress,
 		update: Uint8Array,
 	): DocumentAppendOutcome {
 		return this.documents.appendIfLive(address, new Uint8Array(update));
 	}
 
 	pullDocument(
-		address: DocumentAddress,
+		address: RowAddress,
 		sinceVersion: number | undefined,
 	): DocumentReadOutcome {
 		return this.documents.read(address, sinceVersion);
@@ -78,11 +76,11 @@ export class EpicenterAuthority extends DurableObject {
 type EpicenterAuthorityCalls = {
 	exchange(request: unknown): ExchangeResponse | Promise<ExchangeResponse>;
 	publishDocument(
-		address: DocumentAddress,
+		address: RowAddress,
 		update: Uint8Array,
 	): DocumentAppendOutcome | Promise<DocumentAppendOutcome>;
 	pullDocument(
-		address: DocumentAddress,
+		address: RowAddress,
 		sinceVersion: number | undefined,
 	): DocumentReadOutcome | Promise<DocumentReadOutcome>;
 };

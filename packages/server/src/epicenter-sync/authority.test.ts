@@ -21,8 +21,18 @@ import {
 } from './authority.js';
 
 const REPLICA = 'rrrrrrrrrrrrrrrrrrrrrrrr';
-const KEY = 'so.epicenter.tests.rows';
-const ROW_ID = 'aaaaaaaaaaaaaaaaaaaaaaaa';
+const NAMESPACE = 'so.epicenter.tests';
+const ROW_ADDRESS = {
+	kind: 'row',
+	namespace: NAMESPACE,
+	table: 'rows',
+	rowId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+} as const;
+const VALUE_ADDRESS = {
+	kind: 'value',
+	namespace: NAMESPACE,
+	value: 'value',
+} as const;
 
 function batch(seq: number, changes: Change[]) {
 	return { seq, digest: batchDigest(changes), changes };
@@ -58,9 +68,7 @@ test('fresh schema reopens and an unknown format is refused without rewrite', ()
 
 test('exact retry returns one receipt while fork, old batch, and gap conflict', () => {
 	const { raw, authority } = setup();
-	const first = batch(1, [
-		{ kind: 'set', key: 'so.epicenter.tests.value', value: 1 },
-	]);
+	const first = batch(1, [{ kind: 'set', address: VALUE_ADDRESS, value: 1 }]);
 	const accepted = authority.exchange({
 		replicaId: REPLICA,
 		after: 0,
@@ -69,9 +77,7 @@ test('exact retry returns one receipt while fork, old batch, and gap conflict', 
 	expect(
 		authority.exchange({ replicaId: REPLICA, after: 0, batch: first }),
 	).toEqual(accepted);
-	const fork = batch(1, [
-		{ kind: 'set', key: 'so.epicenter.tests.value', value: 2 },
-	]);
+	const fork = batch(1, [{ kind: 'set', address: VALUE_ADDRESS, value: 2 }]);
 	expect(
 		authority.exchange({ replicaId: REPLICA, after: 0, batch: fork }),
 	).toEqual({
@@ -82,13 +88,17 @@ test('exact retry returns one receipt while fork, old batch, and gap conflict', 
 			replicaId: REPLICA,
 			after: 0,
 			batch: batch(3, [
-				{ kind: 'set', key: 'so.epicenter.tests.other', value: 3 },
+				{
+					kind: 'set',
+					address: { ...VALUE_ADDRESS, value: 'other' },
+					value: 3,
+				},
 			]),
 		}),
 	).toEqual({ refusal: 'batch-conflict' });
 	expect(
 		raw
-			.query<{ count: number }, []>('SELECT COUNT(*) AS count FROM state')
+			.query<{ count: number }, []>('SELECT COUNT(*) AS count FROM value_facts')
 			.get()?.count,
 	).toBe(1);
 	raw.close();
@@ -97,9 +107,9 @@ test('exact retry returns one receipt while fork, old batch, and gap conflict', 
 test('fixed-through pages are ordered, bounded, and continue from position', () => {
 	const { raw, authority } = setup({ pageSize: 1 });
 	const changes: Change[] = [
-		{ kind: 'set', key: 'so.epicenter.tests.a', value: 1 },
-		{ kind: 'set', key: 'so.epicenter.tests.b', value: 2 },
-		{ kind: 'set', key: 'so.epicenter.tests.c', value: 3 },
+		{ kind: 'set', address: { ...VALUE_ADDRESS, value: 'a' }, value: 1 },
+		{ kind: 'set', address: { ...VALUE_ADDRESS, value: 'b' }, value: 2 },
+		{ kind: 'set', address: { ...VALUE_ADDRESS, value: 'c' }, value: 3 },
 	];
 	const first = authority.exchange({
 		replicaId: REPLICA,
@@ -127,8 +137,8 @@ test('record replaced above through waits for the next exchange without skipping
 		replicaId: REPLICA,
 		after: 0,
 		batch: batch(1, [
-			{ kind: 'set', key: 'so.epicenter.tests.a', value: 'a1' },
-			{ kind: 'set', key: 'so.epicenter.tests.b', value: 'b1' },
+			{ kind: 'set', address: { ...VALUE_ADDRESS, value: 'a' }, value: 'a1' },
+			{ kind: 'set', address: { ...VALUE_ADDRESS, value: 'b' }, value: 'b1' },
 		]),
 	});
 	if ('refusal' in first || first.next === null) {
@@ -138,7 +148,7 @@ test('record replaced above through waits for the next exchange without skipping
 		replicaId: REPLICA,
 		after: 0,
 		batch: batch(2, [
-			{ kind: 'set', key: 'so.epicenter.tests.a', value: 'a2' },
+			{ kind: 'set', address: { ...VALUE_ADDRESS, value: 'a' }, value: 'a2' },
 		]),
 	});
 	const remainder = authority.exchange({
@@ -147,15 +157,15 @@ test('record replaced above through waits for the next exchange without skipping
 		cursor: first.next,
 	});
 	if ('refusal' in remainder) throw new Error(remainder.refusal);
-	expect(remainder.records.map((record) => record.key)).toEqual([
-		'so.epicenter.tests.b',
+	expect(remainder.records.map((record) => record.address)).toEqual([
+		{ ...VALUE_ADDRESS, value: 'b' },
 	]);
 	const next = authority.exchange({ replicaId: REPLICA, after: first.through });
 	if ('refusal' in next) throw new Error(next.refusal);
 	expect(next.records).toEqual([
 		{
 			kind: 'value',
-			key: 'so.epicenter.tests.a',
+			address: { ...VALUE_ADDRESS, value: 'a' },
 			changedSequence: 3,
 			value: 'a2',
 		},
@@ -166,15 +176,16 @@ test('record replaced above through waits for the next exchange without skipping
 test('terminal row deletion removes document updates in the acceptance transaction', () => {
 	const { raw, authority } = setup();
 	const create = batch(1, [
-		{ kind: 'create', key: KEY, rowId: ROW_ID, fields: { title: 'live' } },
+		{ kind: 'create', address: ROW_ADDRESS, fields: { title: 'live' } },
 	]);
 	authority.exchange({ replicaId: REPLICA, after: 0, batch: create });
-	raw.run('INSERT INTO document_updates VALUES (?, ?, 1, ?)', [
-		KEY,
-		ROW_ID,
+	raw.run('INSERT INTO document_updates VALUES (?, ?, ?, 1, ?)', [
+		NAMESPACE,
+		ROW_ADDRESS.table,
+		ROW_ADDRESS.rowId,
 		new Uint8Array([1]),
 	]);
-	const remove = batch(2, [{ kind: 'delete', key: KEY, rowId: ROW_ID }]);
+	const remove = batch(2, [{ kind: 'delete', address: ROW_ADDRESS }]);
 	authority.exchange({ replicaId: REPLICA, after: 1, batch: remove });
 	expect(
 		raw
@@ -184,12 +195,58 @@ test('terminal row deletion removes document updates in the acceptance transacti
 			.get()?.count,
 	).toBe(0);
 	expect(
-		raw.query<{ status: string }, []>('SELECT status FROM state').get()?.status,
-	).toBe('deleted');
+		raw.query<{ presence: string }, []>('SELECT presence FROM row_facts').get()
+			?.presence,
+	).toBe('absent');
 	raw.close();
 });
 
-test('storage-limit refusal leaves no replica, state, or sequence allocation', () => {
+test('row table and value with the same local name occupy separate facts', () => {
+	const { raw, authority } = setup();
+	const sharedValueAddress = { ...VALUE_ADDRESS, value: 'shared' } as const;
+	const sharedRowAddress = { ...ROW_ADDRESS, table: 'shared' } as const;
+	const response = authority.exchange({
+		replicaId: REPLICA,
+		after: 0,
+		batch: batch(1, [
+			{
+				kind: 'create',
+				address: sharedRowAddress,
+				fields: { title: 'row' },
+			},
+			{ kind: 'set', address: sharedValueAddress, value: 'value' },
+		]),
+	});
+	if ('refusal' in response) throw new Error(response.refusal);
+
+	expect(response.records).toEqual([
+		{
+			kind: 'row',
+			address: sharedRowAddress,
+			changedSequence: 1,
+			fields: { title: 'row' },
+		},
+		{
+			kind: 'value',
+			address: sharedValueAddress,
+			changedSequence: 2,
+			value: 'value',
+		},
+	]);
+	expect(
+		raw
+			.query<{ count: number }, []>('SELECT COUNT(*) AS count FROM row_facts')
+			.get()?.count,
+	).toBe(1);
+	expect(
+		raw
+			.query<{ count: number }, []>('SELECT COUNT(*) AS count FROM value_facts')
+			.get()?.count,
+	).toBe(1);
+	raw.close();
+});
+
+test('storage-limit refusal leaves no replica, fact, or sequence allocation', () => {
 	const { raw, authority } = setup({
 		size: () => AUTHORITY_STORAGE_BYTE_CEILING,
 	});
@@ -197,7 +254,7 @@ test('storage-limit refusal leaves no replica, state, or sequence allocation', (
 		replicaId: REPLICA,
 		after: 0,
 		batch: batch(1, [
-			{ kind: 'set', key: 'so.epicenter.tests.value', value: 'blocked' },
+			{ kind: 'set', address: VALUE_ADDRESS, value: 'blocked' },
 		]),
 	});
 	expect(response).toEqual({ refusal: 'storage-limit' });
@@ -208,7 +265,13 @@ test('storage-limit refusal leaves no replica, state, or sequence allocation', (
 	).toBe(0);
 	expect(
 		raw
-			.query<{ count: number }, []>('SELECT COUNT(*) AS count FROM state')
+			.query<{ count: number }, []>(
+				`SELECT COUNT(*) AS count FROM (
+					SELECT changed_sequence FROM row_facts
+					UNION ALL
+					SELECT changed_sequence FROM value_facts
+				)`,
+			)
 			.get()?.count,
 	).toBe(0);
 	expect(
@@ -231,16 +294,20 @@ test('invalid request shape and mismatched digest throw without mutation', () =>
 			replicaId: REPLICA,
 			after: 0,
 			batch: {
-				...batch(1, [
-					{ kind: 'set', key: 'so.epicenter.tests.value', value: 1 },
-				]),
+				...batch(1, [{ kind: 'set', address: VALUE_ADDRESS, value: 1 }]),
 				digest: '0'.repeat(64),
 			},
 		}),
 	).toThrow('Batch digest does not match its changes');
 	expect(
 		raw
-			.query<{ count: number }, []>('SELECT COUNT(*) AS count FROM state')
+			.query<{ count: number }, []>(
+				`SELECT COUNT(*) AS count FROM (
+					SELECT changed_sequence FROM row_facts
+					UNION ALL
+					SELECT changed_sequence FROM value_facts
+				)`,
+			)
 			.get()?.count,
 	).toBe(0);
 	raw.close();

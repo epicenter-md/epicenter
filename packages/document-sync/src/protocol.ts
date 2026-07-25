@@ -1,12 +1,12 @@
 import type {
-	DocumentAddress,
 	DocumentPublishOutcome,
 	PublishDocument,
 	PullDocument,
+	RowAddress,
 } from '@epicenter/data';
 import * as Y from '@y/y';
 
-export type { DocumentAddress } from '@epicenter/data';
+export type { RowAddress } from '@epicenter/data';
 
 export const DOCUMENT_BOUND = {
 	stateBytes: 1_048_576,
@@ -41,24 +41,32 @@ export function exceedsDocumentBound(measure: {
 	);
 }
 
-/** The one HTTP route for a row document: POST publishes, GET pulls. */
+/**
+ * The one HTTP route for a row document: POST publishes, GET pulls.
+ *
+ * Each address coordinate is its own path segment, so no joined key is ever
+ * built or parsed. Every segment is percent-encoded even though the address
+ * grammar admits only URL-safe characters, because escaping is the transport's
+ * job and must not depend on the grammar staying narrow.
+ */
 function documentSyncUrl({
 	baseUrl,
 	address,
 }: {
 	baseUrl: string | URL;
-	address: DocumentAddress;
+	address: RowAddress;
 }): URL {
 	const url = new URL(baseUrl);
-	url.pathname = `/api/sync/v1/documents/${encodeURIComponent(address.key)}/${encodeURIComponent(address.rowId)}`;
+	const segments = [address.namespace, address.table, address.rowId].map(
+		(segment) => encodeURIComponent(segment),
+	);
+	url.pathname = `/api/sync/v1/documents/${segments.join('/')}`;
 	url.search = '';
 	url.hash = '';
 	return url;
 }
 
-function parseDocumentPublishOutcome(
-	value: unknown,
-): DocumentPublishOutcome {
+function parseDocumentPublishOutcome(value: unknown): DocumentPublishOutcome {
 	if (
 		typeof value === 'object' &&
 		value !== null &&
@@ -116,9 +124,7 @@ export function createHttpDocumentTransports({
 				{
 					method: 'GET',
 					headers:
-						sinceVersion === undefined
-							? {}
-							: { 'if-none-match': sinceVersion },
+						sinceVersion === undefined ? {} : { 'if-none-match': sinceVersion },
 				},
 			);
 			if (response.status === 304) return { kind: 'unchanged' };

@@ -17,7 +17,8 @@ import type { Env } from '../types.js';
 import { corsMiddleware } from './cors.js';
 
 const TRUSTED_ORIGIN = 'https://notes.example.com';
-const DOCUMENT_PATH = '/api/sync/v1/documents/table%3Anotes/row-1';
+const DOCUMENT_PATH =
+	'/api/sync/v1/documents/so.epicenter.test/notes/aaaaaaaaaaaaaaaaaaaaaaaa';
 
 function createCorsTestApp() {
 	const app = new Hono<Env>();

@@ -1,12 +1,11 @@
 import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-
 import type {
 	ExchangeRequest,
 	ExchangeResponse,
+	RowAddress,
 } from '@epicenter/data/protocol';
-import type { DocumentAddress } from '@epicenter/document-sync';
 import type { PrincipalId } from '@epicenter/identity';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import type { Hono, MiddlewareHandler } from 'hono';
@@ -96,13 +95,13 @@ export function createBunEpicenterSyncRuntime({ dir }: { dir: string }) {
 			load(principalId).exchange(request),
 		publishDocument: (
 			principalId: PrincipalId,
-			address: DocumentAddress,
+			address: RowAddress,
 			update: Uint8Array,
 		): DocumentAppendOutcome =>
 			load(principalId).documents.appendIfLive(address, update),
 		pullDocument: (
 			principalId: PrincipalId,
-			address: DocumentAddress,
+			address: RowAddress,
 			sinceVersion: number | undefined,
 		): DocumentReadOutcome =>
 			load(principalId).documents.read(address, sinceVersion),

@@ -74,8 +74,12 @@ function requestBody() {
 	const changes = [
 		{
 			kind: 'create' as const,
-			key: 'so.epicenter.tests.rows',
-			rowId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+			address: {
+				kind: 'row' as const,
+				namespace: 'so.epicenter.tests',
+				table: 'rows',
+				rowId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+			},
 			fields: { title: 'Persisted' },
 		},
 	];

@@ -15,7 +15,7 @@ import { asPrincipalId, type PrincipalId } from '@epicenter/identity';
 import { Hono } from 'hono';
 
 import type { Env } from '../types.js';
-import { createEpicenterSyncApp } from './route.js';
+import { createDocumentSyncApp, createEpicenterSyncApp } from './route.js';
 
 function setup() {
 	const principals: PrincipalId[] = [];
@@ -115,4 +115,31 @@ test('an authority that throws a TypeError is a 500, not an invalid request', as
 		}),
 	});
 	expect(response.status).toBe(500);
+});
+
+test('document routes refuse malformed namespace and table segments', async () => {
+	const app = new Hono<Env>();
+	app.use('*', async (c, next) => {
+		c.set('principal', { id: asPrincipalId('alice') });
+		await next();
+	});
+	app.route(
+		'/',
+		createDocumentSyncApp({
+			publish: () => ({ outcome: 'accepted' }),
+			pull: () => ({ kind: 'state', version: 0, state: undefined }),
+		}),
+	);
+	const rowId = 'aaaaaaaaaaaaaaaaaaaaaaaa';
+
+	const malformedNamespace = await app.request(
+		`/api/sync/v1/documents/invalid/notes/${rowId}`,
+	);
+	const malformedTable = await app.request(
+		`/api/sync/v1/documents/so.epicenter.test/not-valid/${rowId}`,
+		{ method: 'POST', body: new Uint8Array([1]) },
+	);
+
+	expect(malformedNamespace.status).toBe(400);
+	expect(malformedTable.status).toBe(400);
 });

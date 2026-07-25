@@ -1,5 +1,5 @@
+import type { RowAddress } from '@epicenter/data/protocol';
 import {
-	type DocumentAddress,
 	exceedsDocumentBound,
 	measureDocumentState,
 } from '@epicenter/document-sync';
@@ -57,31 +57,31 @@ export function createEpicenterDocumentStore(
 		readDatabaseSize?: () => number;
 	} = {},
 ) {
-	function isRowLive({ key, rowId }: DocumentAddress): boolean {
+	function isRowLive(address: RowAddress): boolean {
 		return (
 			database.all<SqliteRow>(
-				`SELECT 1 AS live FROM state
-				 WHERE address_kind = 'row' AND qualified_key = ? AND row_id = ?
-				   AND status = 'live' LIMIT 1`,
-				[key, rowId],
+				`SELECT 1 AS live FROM row_facts
+				 WHERE namespace = ? AND table_name = ? AND row_id = ?
+				   AND presence = 'present' LIMIT 1`,
+				[address.namespace, address.table, address.rowId],
 			).length === 1
 		);
 	}
 
-	function readUpdates(address: DocumentAddress): StoredUpdate[] {
+	function readUpdates(address: RowAddress): StoredUpdate[] {
 		return database.all<StoredUpdate>(
 			`SELECT update_sequence, update_bytes FROM document_updates
-			 WHERE qualified_key = ? AND row_id = ? ORDER BY update_sequence`,
-			[address.key, address.rowId],
+			 WHERE namespace = ? AND table_name = ? AND row_id = ? ORDER BY update_sequence`,
+			[address.namespace, address.table, address.rowId],
 		);
 	}
 
-	function readVersion(address: DocumentAddress): number {
+	function readVersion(address: RowAddress): number {
 		return (
 			database.all<SqliteRow & { version: number }>(
 				`SELECT version FROM document_versions
-				 WHERE qualified_key = ? AND row_id = ?`,
-				[address.key, address.rowId],
+				 WHERE namespace = ? AND table_name = ? AND row_id = ?`,
+				[address.namespace, address.table, address.rowId],
 			)[0]?.version ?? 0
 		);
 	}
@@ -113,7 +113,7 @@ export function createEpicenterDocumentStore(
 		 * while still advancing the version counter.
 		 */
 		appendIfLive(
-			address: DocumentAddress,
+			address: RowAddress,
 			update: Uint8Array,
 		): DocumentAppendOutcome {
 			if (
@@ -144,30 +144,31 @@ export function createEpicenterDocumentStore(
 						database.all<SqliteRow & { sequence: number }>(
 							`SELECT COALESCE(MAX(update_sequence), 0) + 1 AS sequence
 							 FROM document_updates
-							 WHERE qualified_key = ? AND row_id = ?`,
-							[address.key, address.rowId],
+							 WHERE namespace = ? AND table_name = ? AND row_id = ?`,
+							[address.namespace, address.table, address.rowId],
 						)[0]?.sequence ?? 1;
 					if (nextSequence >= COMPACTION_THRESHOLD) {
 						// Bounded baseline-plus-tail law (ADR-0146/0174): the covered
 						// chain atomically becomes one compact baseline that already
 						// includes the accepted candidate.
 						database.run(
-							'DELETE FROM document_updates WHERE qualified_key = ? AND row_id = ?',
-							[address.key, address.rowId],
+							'DELETE FROM document_updates WHERE namespace = ? AND table_name = ? AND row_id = ?',
+							[address.namespace, address.table, address.rowId],
 						);
 						database.run(
 							`INSERT INTO document_updates (
-								qualified_key, row_id, update_sequence, update_bytes
-							) VALUES (?, ?, 1, ?)`,
-							[address.key, address.rowId, encoded],
+								namespace, table_name, row_id, update_sequence, update_bytes
+							) VALUES (?, ?, ?, 1, ?)`,
+							[address.namespace, address.table, address.rowId, encoded],
 						);
 					} else {
 						database.run(
 							`INSERT INTO document_updates (
-								qualified_key, row_id, update_sequence, update_bytes
-							) VALUES (?, ?, ?, ?)`,
+								namespace, table_name, row_id, update_sequence, update_bytes
+							) VALUES (?, ?, ?, ?, ?)`,
 							[
-								address.key,
+								address.namespace,
+								address.table,
 								address.rowId,
 								nextSequence,
 								new Uint8Array(update),
@@ -176,11 +177,11 @@ export function createEpicenterDocumentStore(
 					}
 					database.run(
 						`INSERT INTO document_versions (
-							qualified_key, row_id, version
-						) VALUES (?, ?, 1)
-						ON CONFLICT (qualified_key, row_id) DO UPDATE SET
+							namespace, table_name, row_id, version
+						) VALUES (?, ?, ?, 1)
+						ON CONFLICT (namespace, table_name, row_id) DO UPDATE SET
 							version = version + 1`,
-						[address.key, address.rowId],
+						[address.namespace, address.table, address.rowId],
 					);
 					return { outcome: 'accepted' };
 				} finally {
@@ -194,7 +195,7 @@ export function createEpicenterDocumentStore(
 		 * hydrating or transferring the document body.
 		 */
 		read(
-			address: DocumentAddress,
+			address: RowAddress,
 			sinceVersion: number | undefined,
 		): DocumentReadOutcome {
 			return database.transaction((): DocumentReadOutcome => {
