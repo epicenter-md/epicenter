@@ -31,7 +31,12 @@ import {
 import { createDesktopEpicenterOwner } from './desktop-owner.js';
 import type { DesktopOperation } from './desktop-protocol.js';
 import type { Epicenter } from './epicenter.js';
-import { openInspection } from './inspection.js';
+import {
+	type InspectionRow,
+	measureRowBytes,
+	openInspection,
+	readBounded,
+} from './inspection.js';
 
 const notesTable = defineTable({
 	fields: {
@@ -499,4 +504,141 @@ test('inspection reads a live store without any journal-mode change', async () =
 	} finally {
 		inspection.close();
 	}
+});
+
+describe('result bounds stop the work, not just the result', () => {
+	/** Yield rows on demand, recording how many the reader actually pulled. */
+	function counted(total: number) {
+		const pulled = { count: 0 };
+		function* rows(): Generator<Record<string, string | number | null>> {
+			for (let index = 0; index < total; index += 1) {
+				pulled.count += 1;
+				yield { i: index };
+			}
+		}
+		return { pulled, rows: rows() };
+	}
+
+	const wide = { maxRows: 10, maxResultBytes: 8 * 1024 * 1024 };
+
+	test('exactly maxRows rows available is complete, not truncated', () => {
+		const { pulled, rows } = counted(10);
+		const result = readBounded(rows, wide);
+		expect(result.rows).toHaveLength(10);
+		expect(result.truncated).toBe(false);
+		expect(pulled.count).toBe(10);
+	});
+
+	test('one row beyond maxRows costs exactly one extra pull', () => {
+		// Knowing whether more exists requires asking once. It must not cost more.
+		const { pulled, rows } = counted(1_000);
+		const result = readBounded(rows, wide);
+		expect(result.rows).toHaveLength(10);
+		expect(result.truncated).toBe(true);
+		expect(pulled.count).toBe(11);
+	});
+
+	test('the byte bound also stops pulling', () => {
+		const { pulled, rows } = counted(1_000);
+		const result = readBounded(rows, { maxRows: 1_000, maxResultBytes: 40 });
+		expect(result.truncated).toBe(true);
+		expect(result.rows.length).toBeLessThan(10);
+		expect(pulled.count).toBe(result.rows.length + 1);
+	});
+
+	test('a huge result is never materialized', async () => {
+		// The defect this pins: draining the statement first lets SQLite build the
+		// entire result before either bound is consulted. Ten million rows take
+		// about 1.5 seconds and over a gigabyte to materialize on this machine, and
+		// well under a millisecond to step five rows from.
+		await seed();
+		const inspection = expectOk(
+			openInspection({
+				path,
+				bounds: { maxRows: 5, maxResultBytes: 8 * 1024 * 1024 },
+			}),
+		);
+		try {
+			const started = Bun.nanoseconds();
+			const result = expectOk(
+				inspection.query(
+					`WITH RECURSIVE g(i) AS (
+						SELECT 1 UNION ALL SELECT i + 1 FROM g WHERE i < 10000000
+					) SELECT i, 'padpadpadpadpadpadpadpad' AS p FROM g`,
+				),
+			);
+			const elapsedMs = (Bun.nanoseconds() - started) / 1e6;
+			expect(result.rows).toHaveLength(5);
+			expect(result.truncated).toBe(true);
+			expect(elapsedMs).toBeLessThan(400);
+		} finally {
+			inspection.close();
+		}
+	});
+});
+
+describe('byte accounting covers every cell type', () => {
+	test('each supported cell type is measured, and never as an empty object', () => {
+		// A BLOB is the case that matters: `bun:sqlite` hands back a `Uint8Array`,
+		// which `JSON.stringify` renders as an index-keyed object. Measuring its
+		// `byteLength` would undercount the response about eightfold, and treating
+		// it as `{}` would report almost nothing for an arbitrarily large payload.
+		const blob = new Uint8Array(64);
+		const measured = measureRowBytes({ b: blob });
+		const rendered = new TextEncoder().encode(
+			JSON.stringify({ b: blob }),
+		).byteLength;
+		expect(measured).toBeGreaterThanOrEqual(rendered);
+		expect(measured).toBeGreaterThan(64);
+
+		// An ArrayBuffer, which naive stringification renders as `{}`, is measured
+		// by its length rather than by that rendering.
+		expect(measureRowBytes({ b: new ArrayBuffer(64) })).toBeGreaterThan(64);
+
+		// Text, numbers, and null are measured at least as large as they render.
+		const rows: InspectionRow[] = [
+			{ s: 'hello' },
+			{ s: 'unicode: éèê' },
+			{ n: 1234567 },
+			{ n: -0.5 },
+			{ x: null },
+			{ a: 1, b: 'two', c: null },
+		];
+		for (const row of rows) {
+			expect(measureRowBytes(row)).toBeGreaterThanOrEqual(
+				new TextEncoder().encode(JSON.stringify(row)).byteLength,
+			);
+		}
+	});
+
+	test('a BLOB result is bounded by its rendered size, not its byte length', async () => {
+		await seed();
+		// 4 KiB of BLOB renders as roughly 36 KiB of JSON. A ceiling between the
+		// two proves the bound follows the response rather than the payload.
+		const inspection = expectOk(
+			openInspection({ path, bounds: { maxRows: 100, maxResultBytes: 8_000 } }),
+		);
+		try {
+			const result = expectOk(
+				inspection.query('SELECT zeroblob(4096) AS b FROM _epicenter_rows'),
+			);
+			expect(result.rows).toHaveLength(0);
+			expect(result.truncated).toBe(true);
+		} finally {
+			inspection.close();
+		}
+	});
+
+	test('a BLOB small enough for the ceiling still comes back', async () => {
+		await seed();
+		const inspection = expectOk(openInspection({ path }));
+		try {
+			const result = expectOk(inspection.query('SELECT zeroblob(8) AS b'));
+			expect(result.truncated).toBe(false);
+			expect(result.rows).toHaveLength(1);
+			expect(result.rows[0]?.b).toBeInstanceOf(Uint8Array);
+		} finally {
+			inspection.close();
+		}
+	});
 });

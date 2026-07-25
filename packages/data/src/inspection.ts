@@ -174,33 +174,83 @@ const RAW_VIEWS = [
 const textEncoder = new TextEncoder();
 
 /**
- * Take rows until either bound is reached, measuring each row once.
+ * An upper bound on the JSON size of one cell, without encoding it.
  *
- * Measuring row by row rather than re-encoding the whole array after each drop
- * keeps this linear. The obvious "pop until it fits" loop re-serializes every
- * remaining row on every pop, which is quadratic exactly when the result is
- * largest, which is the case the bound exists to handle.
+ * The bound exists to protect the host from a large response, so it has to
+ * measure what actually crosses the boundary and must never read low. Binary is
+ * where those two things diverge sharply: `bun:sqlite` returns a BLOB as a
+ * `Uint8Array`, and `JSON.stringify` renders that as an index-keyed object, so
+ * 32 bytes of BLOB become 268 bytes of JSON. Counting `byteLength` would
+ * undercount the response roughly eightfold, and counting the value as `{}`, as
+ * a naive `JSON.stringify` of an `ArrayBuffer` does, would report nearly zero
+ * for an arbitrarily large payload.
+ *
+ * So binary is charged its worst-case rendered size: per element, the quoted
+ * index, a colon, up to three digits of value, and a separator. Bounded above
+ * without touching the bytes, which keeps the measurement O(1) per cell.
  */
-function boundRows(
-	all: readonly InspectionRow[],
+function cellBytes(value: InspectionRow[string]): number {
+	if (value === null) return 4;
+	if (typeof value === 'number') return String(value).length;
+	if (typeof value === 'string') {
+		// The encoded text plus its two quotes. Escaping can add more, so this is
+		// a floor for pathological strings; the row ceiling bounds those.
+		return textEncoder.encode(value).byteLength + 2;
+	}
+	const length = value.byteLength;
+	if (length === 0) return 2;
+	const indexDigits = String(length - 1).length;
+	// `{` + `}` and, per element, `"<index>":<value>` plus one separator.
+	return 2 + length * (indexDigits + 2 + 1 + 3 + 1);
+}
+
+/**
+ * An upper bound on the JSON size of one row, including its keys.
+ *
+ * Exported because it defines the bound's accounting, which is a contract worth
+ * pinning directly rather than inferring by bisecting a ceiling.
+ */
+export function measureRowBytes(row: InspectionRow): number {
+	let bytes = 2;
+	for (const [column, value] of Object.entries(row)) {
+		// `"<column>":<value>` plus one separator.
+		bytes += textEncoder.encode(column).byteLength + 3 + cellBytes(value) + 1;
+	}
+	return bytes;
+}
+
+/**
+ * Read rows from a live statement, stopping as soon as a bound would be crossed.
+ *
+ * The bound has to hold before the rows exist, not after. Calling `all()` first
+ * and trimming the array afterwards lets SQLite materialize the entire result
+ * into memory, so a query returning millions of rows exhausts the host before
+ * either ceiling is consulted; the ceilings then only trim what already fits.
+ * Stepping the statement means the work stops at the bound.
+ *
+ * `truncated` stays exact. Reaching `maxRows` is not itself truncation, because
+ * a result of exactly that size is complete, so the loop reads one further row
+ * to learn whether another exists. That is the only over-read, and the
+ * remainder is never stepped.
+ */
+export function readBounded(
+	rows: Iterable<InspectionRow>,
 	bounds: InspectionBounds,
-): { rows: InspectionRow[]; truncated: boolean } {
-	const rows: InspectionRow[] = [];
+): InspectionResult {
+	const taken: InspectionRow[] = [];
 	// The two brackets of the JSON array the host will serialize.
 	let bytes = 2;
-	for (const row of all) {
-		if (rows.length >= bounds.maxRows) return { rows, truncated: true };
-		// The encoded row, plus the comma separating it from the previous one.
-		const rowBytes =
-			textEncoder.encode(JSON.stringify(row)).byteLength +
-			(rows.length === 0 ? 0 : 1);
-		if (bytes + rowBytes > bounds.maxResultBytes) {
-			return { rows, truncated: true };
+	for (const row of rows) {
+		if (taken.length >= bounds.maxRows) return { rows: taken, truncated: true };
+		// The row plus the comma separating it from the previous one.
+		const next = measureRowBytes(row) + (taken.length === 0 ? 0 : 1);
+		if (bytes + next > bounds.maxResultBytes) {
+			return { rows: taken, truncated: true };
 		}
-		bytes += rowBytes;
-		rows.push(row);
+		bytes += next;
+		taken.push(row);
 	}
-	return { rows, truncated: false };
+	return { rows: taken, truncated: false };
 }
 
 /**
@@ -325,6 +375,9 @@ function createInspection(database: Database, bounds: InspectionBounds) {
 		 * which `inspection.test.ts` pins against the real engine: a trailing
 		 * `INSERT` is never executed. The read-only connection refuses it anyway,
 		 * so a submitted write fails on two independent grounds.
+		 *
+		 * The statement is stepped rather than drained, so the bounds stop the work
+		 * instead of trimming its result.
 		 */
 		query(sql: string): Result<InspectionResult, InspectionError> {
 			return trySync({
@@ -332,7 +385,7 @@ function createInspection(database: Database, bounds: InspectionBounds) {
 					requireOpen();
 					const statement = database.prepare<InspectionRow, []>(sql);
 					try {
-						return boundRows(statement.all(), bounds);
+						return readBounded(statement.iterate(), bounds);
 					} finally {
 						statement.finalize();
 					}
