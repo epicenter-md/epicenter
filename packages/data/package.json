@@ -9,6 +9,7 @@
 		"./browser-dedicated-worker": "./src/browser-dedicated-worker.ts",
 		"./bun": "./src/bun.ts",
 		"./desktop": "./src/desktop.ts",
+		"./inspection": "./src/inspection.ts",
 		"./desktop-owner": "./src/desktop-owner.ts",
 		"./protocol": "./src/protocol/index.ts"
 	},

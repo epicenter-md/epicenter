@@ -1,0 +1,330 @@
+/**
+ * Native relational inspection over one live Epicenter (ADR-0162).
+ *
+ * The product sentence: Home runs ordinary read-only SQLite against a live
+ * Epicenter as though the selected Lens's logical tables were SQLite tables,
+ * including a literal `SELECT * FROM notes`. Not a dialect, not a query builder,
+ * not a subset: real SQLite, with real joins, aggregates, and expressions.
+ *
+ * Three decisions carry that:
+ *
+ * A dedicated connection. Inspection opens its own `bun:sqlite` handle on the
+ * same file with `readonly: true` and never borrows the store owner's writable
+ * one. Read-only at open is the write boundary, so there is no toggle to forget
+ * to restore and no window where submitted SQL runs against a writable handle.
+ * A connection cannot even promote itself: `PRAGMA journal_mode = WAL` fails on
+ * a read-only handle like any other write.
+ *
+ * Connection-local views. The raw relations and the friendly Lens tables are
+ * `TEMP` views, which live in this connection's own `temp` schema. The owner
+ * connection cannot see them, so nothing installed for inspection can redirect
+ * an internal read; closing the connection discards them with no cleanup step.
+ *
+ * Present rows only, in the friendly views. `SELECT * FROM notes` answers "what
+ * are my notes", and a tombstone is not a note. Deleted rows stay inspectable
+ * through `_epicenter_rows`, where `presence` is a column and absence is the
+ * honest answer rather than a hidden filter.
+ *
+ * What this is not: read-only stops mutation, not expense. A submitted query can
+ * still be slow or scan the whole store. This is a trusted-host capability with
+ * bounded results, not a sandbox for hostile SQL, and applications receive no
+ * SQL at all.
+ *
+ * Row documents and blobs are deliberately absent from V1. Nothing here projects
+ * document bytes, and the raw relations are not a complete portable artifact.
+ */
+import { Database } from 'bun:sqlite';
+import { recognize, storageOf } from '@epicenter/field';
+import type { SqliteValue } from '@epicenter/sqlite';
+import type { TSchema } from 'typebox';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
+import { type Result, trySync } from 'wellcrafted/result';
+
+import type { Lens } from './definitions.js';
+
+/** Rows returned to the host. Column names come from the submitted SQL. */
+export type InspectionRow = Record<string, SqliteValue | ArrayBuffer>;
+
+export type InspectionResult = {
+	rows: InspectionRow[];
+	/**
+	 * Whether the bound stopped the result short. The rows returned are correct
+	 * and complete up to the bound; there were simply more.
+	 */
+	truncated: boolean;
+};
+
+export const InspectionError = defineErrors({
+	OpenFailed: ({ path, cause }: { path: string; cause: unknown }) => ({
+		message: `Could not open '${path}' for inspection: ${extractErrorMessage(cause)}`,
+		path,
+		cause,
+	}),
+	Closed: () => ({ message: 'This inspection connection is closed' }),
+	/**
+	 * The submitted SQL failed. Deliberately one variant: a syntax error, an
+	 * unknown table, and an attempted write are all "your query did not run", and
+	 * SQLite's own message says which far better than a taxonomy would.
+	 */
+	QueryFailed: ({ cause }: { cause: unknown }) => ({
+		message: extractErrorMessage(cause),
+		cause,
+	}),
+});
+export type InspectionError = InferErrors<typeof InspectionError>;
+
+/**
+ * How much one statement may return.
+ *
+ * A row ceiling alone is not enough, because one row can hold a large JSON
+ * payload, so the byte ceiling stops a small number of very large rows too.
+ */
+export type InspectionBounds = {
+	maxRows: number;
+	maxResultBytes: number;
+};
+
+export const DEFAULT_INSPECTION_BOUNDS: InspectionBounds = {
+	maxRows: 1_000,
+	maxResultBytes: 8 * 1024 * 1024,
+};
+
+/**
+ * How long a read waits for a writer's commit before giving up.
+ *
+ * The owner's writes are short transactions, and a reader only ever blocks for
+ * the brief exclusive moment of a commit, so a small timeout absorbs normal
+ * contention. This is why inspection needs no journal-mode change: an ordinary
+ * rollback-journal database serves a concurrent reader fine.
+ */
+const BUSY_TIMEOUT_MS = 2_000;
+
+/** Quote one identifier for SQL. Doubling is SQLite's own escape. */
+function quoteIdentifier(name: string): string {
+	return `"${name.replaceAll('"', '""')}"`;
+}
+
+/** Quote one string literal for SQL. Doubling is SQLite's own escape. */
+function quoteLiteral(value: string): string {
+	return `'${value.replaceAll("'", "''")}'`;
+}
+
+/**
+ * The SQL for one declared field, guarded by its declared storage class.
+ *
+ * A stored value of the wrong JSON type surfaces as NULL rather than as itself.
+ * A `title` column declared as text should not quietly show `42` because some
+ * writer stored a number there: the friendly view claims the row conforms to the
+ * Lens, and a value that does not conform has no honest cell to sit in. The raw
+ * relation is where that row can still be seen exactly as stored.
+ *
+ * Field names are already constrained to `[A-Za-z][A-Za-z0-9_]*`, so they are
+ * safe inside both an identifier and a JSON path; they are quoted regardless.
+ */
+function fieldColumnSql(fieldName: string, schema: TSchema): string {
+	const path = `'$.${fieldName}'`;
+	const extracted = `json_extract(f.fields, ${path})`;
+	const jsonType = `json_type(f.fields, ${path})`;
+	const recognized = recognize(schema);
+	const admitted =
+		recognized === null
+			? undefined
+			: storageOf(recognized.kind) === 'INTEGER'
+				? // `boolean` and `integer` both store as INTEGER, and JSON spells a
+					// boolean as its own type rather than as a number.
+					`(${jsonType}) IN ('integer', 'true', 'false')`
+				: storageOf(recognized.kind) === 'REAL'
+					? `(${jsonType}) IN ('integer', 'real')`
+					: `(${jsonType}) = 'text'`;
+	const guarded =
+		admitted === undefined
+			? // An unrecognized schema (the open `json` escape kind, or a schema this
+				// build does not classify) has no single storage class to guard, so the
+				// value passes through as stored.
+				extracted
+			: `CASE WHEN ${admitted} THEN ${extracted} END`;
+	return `${guarded} AS ${quoteIdentifier(fieldName)}`;
+}
+
+/**
+ * The two reserved raw relations, which exist for every inspection connection
+ * whether or not a Lens is selected.
+ *
+ * These are a logical contract, not a promise about physical storage: the column
+ * names are the structured coordinates, and `presence` is exposed because
+ * absence is real state. A row tombstone and an unset value are both visible
+ * here, which is what makes this the honest fallback when a Lens interpretation
+ * cannot represent what is stored.
+ */
+const RAW_VIEWS = [
+	`CREATE TEMP VIEW _epicenter_rows AS
+		SELECT namespace, table_name, row_id, presence, fields AS fields_json
+		FROM main._replica_row_facts`,
+	`CREATE TEMP VIEW _epicenter_values AS
+		SELECT namespace, value_name, presence, content AS content_json
+		FROM main._replica_value_facts`,
+] as const;
+
+/** Estimate a result's size the same way the host will serialize it. */
+function encodedBytes(rows: readonly InspectionRow[]): number {
+	return new TextEncoder().encode(JSON.stringify(rows)).byteLength;
+}
+
+/**
+ * Open one read-only inspection connection on a live Epicenter file.
+ *
+ * The caller owns the lifetime and must `close()`. Nothing here is reachable
+ * from an application: the trusted native host decides who may inspect.
+ */
+export function openInspection({
+	path,
+	bounds = DEFAULT_INSPECTION_BOUNDS,
+}: {
+	path: string;
+	bounds?: InspectionBounds;
+}): Result<Inspection, InspectionError> {
+	return trySync({
+		try: () => {
+			const database = new Database(path, { readonly: true });
+			try {
+				database.run(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);
+				for (const statement of RAW_VIEWS) database.run(statement);
+				return createInspection(database, bounds);
+			} catch (cause) {
+				database.close();
+				throw cause;
+			}
+		},
+		catch: (cause) => InspectionError.OpenFailed({ path, cause }),
+	});
+}
+
+function createInspection(database: Database, bounds: InspectionBounds) {
+	/** The table names currently mounted as friendly views, in mount order. */
+	let mounted: string[] = [];
+	let selected: string | undefined;
+	let isClosed = false;
+
+	function requireOpen(): void {
+		if (isClosed) throw new Error('This inspection connection is closed');
+	}
+
+	function dropFriendlyViews(): void {
+		for (const tableName of mounted) {
+			database.run(`DROP VIEW IF EXISTS temp.${quoteIdentifier(tableName)}`);
+		}
+		mounted = [];
+		selected = undefined;
+	}
+
+	return {
+		/**
+		 * Mount one Lens's tables as friendly views on this connection.
+		 *
+		 * Exactly one interpretation is selected at a time. Selecting a different
+		 * Lens drops the previous views first, so two Lenses can never merge into
+		 * one unqualified namespace and a stale `notes` can never outlive the
+		 * interpretation that defined it.
+		 */
+		selectLens(lens: Lens): Result<void, InspectionError> {
+			return trySync({
+				try: () => {
+					requireOpen();
+					dropFriendlyViews();
+					const namespace = quoteLiteral(lens.namespace);
+					for (const [tableName, definition] of Object.entries(lens.tables)) {
+						const columns = [
+							'f.row_id AS "id"',
+							...Object.entries(definition.fields).map(([fieldName, schema]) =>
+								fieldColumnSql(fieldName, schema),
+							),
+						];
+						database.run(
+							`CREATE TEMP VIEW ${quoteIdentifier(tableName)} AS
+								SELECT ${columns.join(', ')}
+								FROM main._replica_row_facts AS f
+								WHERE f.namespace = ${namespace}
+									AND f.table_name = ${quoteLiteral(tableName)}
+									AND f.presence = 'present'`,
+						);
+						mounted.push(tableName);
+					}
+					selected = lens.namespace;
+					return undefined;
+				},
+				catch: (cause) => InspectionError.QueryFailed({ cause }),
+			});
+		},
+
+		/** Drop the friendly views, leaving the raw relations available. */
+		clearLens(): Result<void, InspectionError> {
+			return trySync({
+				try: () => {
+					requireOpen();
+					dropFriendlyViews();
+					return undefined;
+				},
+				catch: (cause) => InspectionError.QueryFailed({ cause }),
+			});
+		},
+
+		/** The namespace of the currently selected Lens, if any. */
+		get selectedNamespace(): string | undefined {
+			return selected;
+		},
+
+		/** The table names currently mounted as friendly views. */
+		get mountedTables(): readonly string[] {
+			return [...mounted];
+		},
+
+		/**
+		 * Run one read-only statement and return bounded rows.
+		 *
+		 * `prepare` compiles exactly one statement and ignores anything after it,
+		 * which `inspection.test.ts` pins against the real engine: a trailing
+		 * `INSERT` is never executed. The read-only connection refuses it anyway,
+		 * so a submitted write fails on two independent grounds.
+		 */
+		query(sql: string): Result<InspectionResult, InspectionError> {
+			return trySync({
+				try: () => {
+					requireOpen();
+					const statement = database.prepare<InspectionRow, []>(sql);
+					try {
+						const all = statement.all();
+						const rows = all.slice(0, bounds.maxRows);
+						let truncated = all.length > rows.length;
+						while (
+							rows.length > 0 &&
+							encodedBytes(rows) > bounds.maxResultBytes
+						) {
+							rows.pop();
+							truncated = true;
+						}
+						return { rows, truncated };
+					} finally {
+						statement.finalize();
+					}
+				},
+				catch: (cause) =>
+					isClosed
+						? InspectionError.Closed()
+						: InspectionError.QueryFailed({ cause }),
+			});
+		},
+
+		close(): void {
+			if (isClosed) return;
+			isClosed = true;
+			// TEMP views die with the connection, so there is nothing to unwind.
+			database.close();
+		},
+	};
+}
+
+export type Inspection = ReturnType<typeof createInspection>;

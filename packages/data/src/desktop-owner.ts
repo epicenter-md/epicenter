@@ -1,5 +1,6 @@
 import type { TSchema } from 'typebox';
-import { openBunEpicenter } from './bun.js';
+import type { Result } from 'wellcrafted/result';
+import { epicenterPath, openBunEpicenter } from './bun.js';
 import {
 	defineLens,
 	defineTable,
@@ -24,6 +25,12 @@ import {
 	type InternalTableLens,
 	readTableEntriesPage,
 } from './epicenter.js';
+import {
+	type Inspection,
+	type InspectionBounds,
+	type InspectionError,
+	openInspection,
+} from './inspection.js';
 
 type UntypedTableLens = {
 	create(fields: Record<string, unknown>): Promise<unknown>;
@@ -53,7 +60,8 @@ export async function createDesktopEpicenterOwner({
 }: {
 	directory: string;
 }) {
-	const epicenter = await openBunEpicenter({ directory });
+	const path = epicenterPath({ directory });
+	const epicenter = await openBunEpicenter({ path });
 	const surfaces = new Map<string, number>();
 	const documents = new Map<number, OpenDocument>();
 	let operationTail = Promise.resolve();
@@ -166,6 +174,22 @@ export async function createDesktopEpicenterOwner({
 
 	return Object.freeze({
 		epicenter,
+		/**
+		 * Open one read-only relational inspection connection on this store.
+		 *
+		 * Deliberately a method on the owner object rather than a `DesktopOperation`.
+		 * Application surfaces hold a message port and can only reach `execute`, so
+		 * "applications receive no SQL" (ADR-0162) is a consequence of the object
+		 * graph rather than a rule someone has to keep enforcing in a switch. Only
+		 * the native host, which constructed this owner, can call it.
+		 *
+		 * The caller owns the returned connection and must close it.
+		 */
+		openInspection(
+			bounds?: InspectionBounds,
+		): Result<Inspection, InspectionError> {
+			return openInspection(bounds === undefined ? { path } : { path, bounds });
+		},
 		execute(input: unknown): Promise<unknown> {
 			const request = parseDesktopRequest(input);
 			// A pull awaits the network; running it on the local queue would
