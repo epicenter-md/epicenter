@@ -3,7 +3,7 @@ import type { TranscriptionServiceId } from '../services/transcription/providers
 import {
 	createWhisperingSettingDefaults,
 	type WhisperingSettingValues,
-	whisperingDefinitions,
+	whisperingLens,
 } from '../workspace';
 import { createWhisperingRecipes, type WhisperingRecipes } from './recipes';
 import type { WhisperingBlobs } from './recording-audio';
@@ -15,8 +15,8 @@ import {
 export type { WhisperingBlobs } from './recording-audio';
 
 export type WhisperingData = BoundData<
-	typeof whisperingDefinitions.tables,
-	typeof whisperingDefinitions.values
+	typeof whisperingLens.tables,
+	typeof whisperingLens.values
 >;
 
 /** Environment-owned inputs for one fully acquired Whispering app. */
@@ -101,7 +101,7 @@ export async function openWhisperingApp(
 				return value;
 			}),
 		);
-		const whispering = opened.bind(whisperingDefinitions);
+		const whispering = opened.bind(whisperingLens);
 		const settingsDomain = createWhisperingSettings({
 			data: whispering,
 			defaults: createWhisperingSettingDefaults(defaultTranscriptionService),
@@ -172,7 +172,7 @@ function createWhisperingSettings({
 		for (const listener of listeners) listener();
 	};
 	const lens = <TKey extends SettingKey>(key: TKey) =>
-		data.values[key] as ValueLens<(typeof whisperingDefinitions.values)[TKey]>;
+		data.values[key] as ValueLens<(typeof whisperingLens.values)[TKey]>;
 
 	async function read<TKey extends SettingKey>(key: TKey) {
 		const result = await lens(key).get();

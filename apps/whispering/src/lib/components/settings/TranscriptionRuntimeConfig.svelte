@@ -49,12 +49,12 @@
 	// Unlike the recorder switcher, this surface only *sets things up* (sign in,
 	// add a key and pick a model, download a GGUF, enter a custom server); you pick
 	// which route is active in the recorder popover. So no section writes
-	// `transcription.service`; each just persists its own provider config. The
+	// `settings.transcription.service`; each just persists its own provider config. The
 	// active route is reflected read-only as an "Active" badge for orientation.
 	// Like {@link CompletionRuntimeConfig}, it owns its routing surface and takes no
 	// props, so the page renders it as `<TranscriptionRuntimeConfig />`.
 
-	const activeService = $derived(app.settings.get('transcription.service'));
+	const activeService = $derived(app.settings.get('settings.transcription.service'));
 
 	/** The access family of the currently active route; drives the "Active" badge. */
 	const activeAccess = $derived(PROVIDERS[activeService].access);
@@ -91,7 +91,7 @@
 
 	const spokenLanguageLabel = $derived(
 		SUPPORTED_LANGUAGES_OPTIONS.find(
-			(i) => i.value === app.settings.get('transcription.language'),
+			(i) => i.value === app.settings.get('settings.transcription.language'),
 		)?.label,
 	);
 
@@ -498,8 +498,8 @@
 		<Select.Root
 			type="single"
 			bind:value={
-				() => app.settings.get('transcription.language'),
-				(v) => app.settings.set('transcription.language', v as SupportedLanguage)
+				() => app.settings.get('settings.transcription.language'),
+				(v) => app.settings.set('settings.transcription.language', v as SupportedLanguage)
 			}
 			disabled={!currentServiceCapabilities.supportsLanguage}
 		>
@@ -530,11 +530,11 @@
 			id="transcription-prompt"
 			placeholder="e.g., This is an academic lecture about quantum physics with technical terms like 'eigenvalue' and 'Schrödinger'"
 			disabled={!currentServiceCapabilities.supportsPrompt}
-			value={app.settings.get('transcription.prompt')}
+			value={app.settings.get('settings.transcription.prompt')}
 			onblur={(e) => {
 				const next = e.currentTarget.value;
-				if (next !== app.settings.get('transcription.prompt'))
-					app.settings.set('transcription.prompt', next);
+				if (next !== app.settings.get('settings.transcription.prompt'))
+					app.settings.set('settings.transcription.prompt', next);
 			}}
 		/>
 		<Field.Description>

@@ -37,7 +37,7 @@ export function isLocalSelectionRunnable(): LocalSelectionState {
 export function getSelectedTranscriptionProvider(
 	app: WhisperingApp,
 ): TranscriptionProviderEntry | undefined {
-	const selectedServiceId = app.settings.get('transcription.service');
+	const selectedServiceId = app.settings.get('settings.transcription.service');
 	return TRANSCRIPTION_PROVIDERS.find((s) => s.id === selectedServiceId);
 }
 

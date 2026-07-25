@@ -19,7 +19,7 @@ export type {
 
 /**
  * The output scopes Whispering delivers into. Each has its own
- * clipboard/cursor/enter toggles under `output.<scope>.*`. Keeping the list in
+ * clipboard/cursor/enter toggles under `settings.output.<scope>.*`. Keeping the list in
  * one place lets delivery and the auto-paste intent derive from the same source
  * instead of hardcoding the scope names.
  */
@@ -34,7 +34,7 @@ type OutputScope = (typeof OUTPUT_SCOPES)[number];
  */
 export function outputWritesToCursor(app: WhisperingApp): boolean {
 	return OUTPUT_SCOPES.some((scope) =>
-		app.settings.get(`output.${scope}.cursor`),
+		app.settings.get(`settings.output.${scope}.cursor`),
 	);
 }
 
@@ -111,15 +111,17 @@ function resolveSettingsSink(
 	app: WhisperingApp,
 	settingsScope: OutputScope,
 ): Sink {
-	const cursorRequested = app.settings.get(`output.${settingsScope}.cursor`);
+	const cursorRequested = app.settings.get(
+		`settings.output.${settingsScope}.cursor`,
+	);
 	const clipboardRequested = app.settings.get(
-		`output.${settingsScope}.clipboard`,
+		`settings.output.${settingsScope}.clipboard`,
 	);
 
 	return cursorRequested
 		? createCursorSink({
 				keepOnClipboard: clipboardRequested,
-				pressEnter: app.settings.get(`output.${settingsScope}.enter`),
+				pressEnter: app.settings.get(`settings.output.${settingsScope}.enter`),
 			})
 		: clipboardRequested
 			? clipboardSink

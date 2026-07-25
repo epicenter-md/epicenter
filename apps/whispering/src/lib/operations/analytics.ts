@@ -9,6 +9,6 @@ export async function logAnalyticsEvent(
 	app: WhisperingApp,
 	event: Event,
 ): Promise<void> {
-	if (!app.settings.get('analytics.enabled')) return;
+	if (!app.settings.get('settings.analytics.enabled')) return;
 	await services.analytics.logEvent(event);
 }

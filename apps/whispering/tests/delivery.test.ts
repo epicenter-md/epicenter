@@ -67,13 +67,13 @@ describe('transcription delivery', () => {
 	beforeEach(() => {
 		delivered.length = 0;
 		settingsValues.clear();
-		settingsValues.set('output.transcription.clipboard', false);
-		settingsValues.set('output.transcription.cursor', false);
-		settingsValues.set('output.transcription.enter', false);
+		settingsValues.set('settings.output.transcription.clipboard', false);
+		settingsValues.set('settings.output.transcription.cursor', false);
+		settingsValues.set('settings.output.transcription.enter', false);
 	});
 
 	test('cursor off and clipboard on copies to the clipboard sink', async () => {
-		settingsValues.set('output.transcription.clipboard', true);
+		settingsValues.set('settings.output.transcription.clipboard', true);
 
 		const result = await deliverTranscriptionResult(app, { text: 'hello' });
 
