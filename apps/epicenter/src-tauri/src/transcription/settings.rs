@@ -22,6 +22,7 @@ use log::warn;
 use serde::{Deserialize, Serialize};
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
 use thiserror::Error;
 
@@ -163,18 +164,46 @@ impl LocalTranscriptionSettings {
     }
 }
 
-/// Write the settings file atomically: serialize to a sibling temp file, then
-/// rename over the target. A crash mid-write leaves the previous settings
-/// intact rather than a truncated file the next launch cannot parse.
+/// Write the settings file by replacing it: serialize to a unique sibling temp
+/// file, then rename that over the target. A crash mid-write leaves the previous
+/// settings intact rather than a truncated file the next launch cannot parse.
+///
+/// `std::fs::rename` is the right primitive on every platform Epicenter
+/// supports, and it supports being called again and again over an existing file.
+/// The std documentation states it "[r]enames a file or directory to a new name,
+/// replacing the original file if `to` already exists", implemented by `rename`
+/// on Unix and `MoveFileExW` or `SetFileInformationByHandle` on Windows. The one
+/// documented Windows restriction is that the destination must not be a
+/// directory, which a settings file never is. Repeated writes therefore need no
+/// delete-then-rename dance, which would be the unsafe version anyway: it opens
+/// a window where neither file exists.
+///
+/// The temp name carries the process id and a per-process counter, so two
+/// writers (or a retry after a crash) never contend for one scratch path, and a
+/// failed write cleans its own temp file up instead of leaving litter that a
+/// later run might mistake for real state.
 fn persist(path: &Path, stored: &Stored) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let temp = path.with_extension("json.tmp");
     let contents = serde_json::to_vec_pretty(stored)?;
-    std::fs::write(&temp, contents)?;
-    std::fs::rename(&temp, path)
+    let temp = path.with_extension(format!(
+        "{}.{}.tmp",
+        std::process::id(),
+        NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
+    ));
+    if let Err(error) = std::fs::write(&temp, contents) {
+        let _ = std::fs::remove_file(&temp);
+        return Err(error);
+    }
+    std::fs::rename(&temp, path).inspect_err(|_| {
+        let _ = std::fs::remove_file(&temp);
+    })
 }
+
+/// Distinguishes scratch files written by this process, so concurrent writes and
+/// retries never share a temp path.
+static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 
 #[cfg(test)]
 mod tests {
@@ -251,6 +280,36 @@ mod tests {
         );
 
         std::fs::remove_dir_all(path.parent().unwrap()).ok();
+    }
+
+    /// The settings file is rewritten on every administration act, so replacing
+    /// an existing file has to keep working, not just creating one.
+    #[test]
+    fn successive_writes_replace_the_file_and_leave_no_litter() {
+        let path = temp_path("successive");
+        let ids = catalog::model_ids();
+        let settings = LocalTranscriptionSettings::load(path.clone());
+
+        for id in &ids {
+            settings.set_active_model_id(Some(id.clone())).unwrap();
+        }
+        settings.set_unload_policy(UnloadPolicy::Immediately).unwrap();
+        settings.set_unload_policy(UnloadPolicy::Never).unwrap();
+
+        let reloaded = LocalTranscriptionSettings::load(path.clone());
+        assert_eq!(reloaded.active_model_id().as_ref(), ids.last());
+        assert_eq!(reloaded.unload_policy(), UnloadPolicy::Never);
+
+        let dir = path.parent().unwrap();
+        let leftovers: Vec<_> = std::fs::read_dir(dir)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.ends_with(".tmp"))
+            .collect();
+        assert!(leftovers.is_empty(), "temp files left behind: {leftovers:?}");
+
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]
