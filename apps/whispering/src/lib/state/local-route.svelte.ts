@@ -48,10 +48,6 @@ function createLocalRoute() {
 	}
 
 	return {
-		/** Whether the first read has landed. */
-		get loaded() {
-			return readiness !== undefined;
-		},
 		/** The host's answer, or `undefined` before the first read. */
 		get readiness() {
 			return readiness;
@@ -70,7 +66,6 @@ function createLocalRoute() {
 					}
 				: { supportsPrompt: true, supportsLanguage: true };
 		},
-		refresh,
 		/**
 		 * Send the user to Epicenter Home's model administration. The app shell
 		 * owns this navigation (ADR-0180); Whispering only asks for it, and the

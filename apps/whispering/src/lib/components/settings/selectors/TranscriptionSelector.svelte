@@ -3,19 +3,16 @@
 	import * as Command from '@epicenter/ui/command';
 	import * as Empty from '@epicenter/ui/empty';
 	import { useCombobox } from '@epicenter/ui/hooks';
-	import { Loading } from '@epicenter/ui/loading';
 	import * as Popover from '@epicenter/ui/popover';
 	import { cn } from '@epicenter/ui/utils';
 	import CaptionsIcon from '@lucide/svelte/icons/captions';
 	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
-	import HardDriveDownloadIcon from '@lucide/svelte/icons/hard-drive-download';
 	import MicIcon from '@lucide/svelte/icons/mic';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { goto } from '$app/navigation';
 	import { whisperingPath } from '$lib/constants/urls';
 	import { readyTranscribers } from '$lib/settings/transcription-switcher';
 	import {
-		getLocalRouteState,
 		getSelectedTranscriptionService,
 		getTranscriptionReadiness,
 	} from '$lib/settings/transcription-validation';
@@ -95,12 +92,6 @@
 
 	const combobox = useCombobox();
 
-	// `transcribers` is empty only when nothing is set up and the user is signed
-	// out (a signed-in user always has the session transcriber). On desktop the
-	// privacy-forward path is to set up a local model, which Epicenter Home owns
-	// (ADR-0180), so this surface points there instead of downloading one itself.
-	// Web has no local route at all and offers sign-in or an API key.
-	const localRouteState = $derived(getLocalRouteState());
 </script>
 
 {#snippet triggerBrandIcon(icon: string, invertInDarkMode: boolean, dimmed = false)}
@@ -181,57 +172,31 @@
 	</Popover.Trigger>
 	<Popover.Content class="p-0">
 		{#if transcribers.length === 0}
-			<!-- Signed out with nothing set up: privacy-forward on desktop, remote
-			setup on web. Never auto-selects a provider. -->
-			{#if tauri && localRouteState === 'loading'}
-				<Loading class="py-8" label="Checking the active local model" />
-			{:else if tauri}
-				<Empty.Root class="py-8">
-					<Empty.Media variant="icon">
-						<HardDriveDownloadIcon class="size-5" />
-					</Empty.Media>
-					<Empty.Title>Transcribe on this device</Empty.Title>
-					<Empty.Description>
-						Private, offline, and free. Epicenter Home is where you download a
-						local model and make it active; it then runs every local
-						transcription on this device.
-					</Empty.Description>
-					<Empty.Content class="flex flex-col gap-2">
-						<Button
-							variant="outline"
-							onclick={() => {
-								goto(whisperingPath('/settings/processing'));
-								combobox.closeAndFocusTrigger();
-							}}
-						>
-							Set up a cloud provider instead
-						</Button>
-					</Empty.Content>
-				</Empty.Root>
-			{:else}
-				<Empty.Root class="py-8">
-					<Empty.Media variant="icon">
-						<MicIcon class="size-5" />
-					</Empty.Media>
-					<Empty.Title>Set up transcription</Empty.Title>
-					<Empty.Description>
-						Sign in to Epicenter or add an API key to transcribe. Nothing
-						uploads your audio until you choose a provider.
-					</Empty.Description>
-					<Empty.Content class="flex flex-col gap-2">
-						<Button onclick={() => auth.startSignIn()}>Sign in to Epicenter</Button>
-						<Button
-							variant="outline"
-							onclick={() => {
-								goto(whisperingPath('/settings/processing'));
-								combobox.closeAndFocusTrigger();
-							}}
-						>
-							Add an API key
-						</Button>
-					</Empty.Content>
-				</Empty.Root>
-			{/if}
+			<!-- Web only. On desktop the local route is always a row, ready or not,
+			so there is always something to select and to be warned about, which is
+			what lets the warning happen before capture rather than after. -->
+			<Empty.Root class="py-8">
+				<Empty.Media variant="icon">
+					<MicIcon class="size-5" />
+				</Empty.Media>
+				<Empty.Title>Set up transcription</Empty.Title>
+				<Empty.Description>
+					Sign in to Epicenter or add an API key to transcribe. Nothing uploads
+					your audio until you choose a provider.
+				</Empty.Description>
+				<Empty.Content class="flex flex-col gap-2">
+					<Button onclick={() => auth.startSignIn()}>Sign in to Epicenter</Button>
+					<Button
+						variant="outline"
+						onclick={() => {
+							goto(whisperingPath('/settings/processing'));
+							combobox.closeAndFocusTrigger();
+						}}
+					>
+						Add an API key
+					</Button>
+				</Empty.Content>
+			</Empty.Root>
 		{:else}
 			<Command.Root loop>
 				<Command.Input placeholder="Search models..." class="h-9 text-sm" />
