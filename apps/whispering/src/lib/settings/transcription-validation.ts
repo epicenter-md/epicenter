@@ -14,23 +14,6 @@ function hasValue(value: string) {
 }
 
 /**
- * Whether the local route can run right now, as the host advises (ADR-0180).
- * Whispering owns the route choice; the host owns which model is active, so this
- * is a read of somebody else's readiness, never a selection and never a model.
- *
- *   - `loading`     first host read not back -> optimistic; don't flash a warning
- *   - `ready`       the route can run here
- *   - `unavailable` the host says it cannot, and supplies the sentence to show
- */
-export type LocalRouteState = 'ready' | 'unavailable' | 'loading';
-
-export function getLocalRouteState(): LocalRouteState {
-	const result = localRoute.result;
-	if (!result) return 'loading';
-	return result.error === null ? 'ready' : 'unavailable';
-}
-
-/**
  * The host's own sentence for why the local route cannot run, or `null` when it
  * can. Presented verbatim: the host reports the fact, and it is written to name
  * no model, because model identity is administration data (ADR-0180).

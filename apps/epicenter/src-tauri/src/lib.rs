@@ -23,6 +23,9 @@ use tauri_plugin_dialog::{
 use tauri_plugin_opener::OpenerExt;
 use tauri_specta::Event as _;
 
+/// The command list, shared with `build.rs` through `include!`. Only the tests
+/// read it from the crate, which is where the drift checks live.
+#[cfg(test)]
 mod command_names;
 
 pub mod audio;

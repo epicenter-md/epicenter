@@ -29,10 +29,7 @@
 		type ProviderAccess,
 	} from '$lib/services/transcription/providers';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
-	import {
-		getLocalRouteBlocker,
-		getLocalRouteState,
-	} from '$lib/settings/transcription-validation';
+	import { getLocalRouteBlocker } from '$lib/settings/transcription-validation';
 	import { localRoute } from '$lib/state/local-route.svelte';
 	import { recordingActive } from '$lib/state/recording-active.svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
@@ -73,7 +70,9 @@
 	// permissive (Whisper-class), and the runtime independently guards what it
 	// applies and reports it back. Gates the advanced fields, which apply to
 	// whichever route is active.
-	const localRouteState = $derived(getLocalRouteState());
+	// `undefined` while the first host read is in flight, which is neither ready
+	// nor blocked and must not flash a warning.
+	const localRouteChecked = $derived(localRoute.result !== undefined);
 	const localRouteBlocker = $derived(getLocalRouteBlocker());
 
 	const currentServiceCapabilities = $derived(
@@ -176,7 +175,7 @@
 		<Field.Content>
 			<Field.Label>On-device transcription</Field.Label>
 			<Field.Description>
-				{#if localRouteState === 'loading'}
+				{#if !localRouteChecked}
 					Checking whether this device can transcribe locally.
 				{:else if localRouteBlocker}
 					{localRouteBlocker}
@@ -186,9 +185,9 @@
 				{/if}
 			</Field.Description>
 		</Field.Content>
-		{#if localRouteState === 'ready'}
+		{#if localRouteChecked && !localRouteBlocker}
 			<Badge variant="secondary" class="text-xs">Ready</Badge>
-		{:else if localRouteState === 'unavailable'}
+		{:else if localRouteBlocker}
 			<Button
 				variant="outline"
 				size="sm"
