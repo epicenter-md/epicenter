@@ -32,11 +32,12 @@ open 'epicenter://surface/whispering'
 open 'epicenter://surface/home'
 ```
 
-## Publish a source-built app catalog
+## Publish an app catalog
 
 The promotion command accepts already-built static outputs. It does not install
-dependencies, run build scripts, or read application source. The candidate
-directory contains one `dist` result per app:
+dependencies, run build scripts, or read application source (ADR-0179). How the
+folders were produced, and by whom, is outside the contract. The candidate
+directory contains one built result per app:
 
 ```text
 candidate/
