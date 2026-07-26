@@ -19,60 +19,61 @@
  * surface that reports it is the dictation pill, which has nowhere to put a
  * recovery action, so the warning has to happen before the user speaks.
  *
- * Refreshed on window focus, because the answer changes in another window.
+ * Three states, and `checking` is genuinely separate from `unavailable`: a boot
+ * that has not answered yet must not flash a warning, and a host that refused
+ * must not read as ready. Refreshed on window focus, because the answer changes
+ * in another window.
  */
 import { tauri } from '#platform/tauri';
-import type { LocalTranscriptionReadiness } from '$lib/tauri/commands.types';
+import {
+	type LocalCapabilitiesResult,
+	readLocalCapabilities,
+} from '$lib/services/transcription/local-capabilities';
 
 function createLocalRoute() {
-	// `undefined` until the first read lands, so "checking" is distinguishable
-	// from "unavailable" and no warning flashes during boot.
-	let readiness = $state.raw<LocalTranscriptionReadiness | undefined>(
-		undefined,
-	);
+	// `undefined` until the first answer lands: "checking", which is neither
+	// ready nor unavailable.
+	let result = $state.raw<LocalCapabilitiesResult | undefined>(undefined);
+
+	// Bound once so the closure below cannot re-narrow a possibly-null seam.
+	const host = tauri;
 
 	async function refresh() {
-		if (!tauri) return;
-		readiness = await tauri.transcription.getLocalTranscriptionReadiness();
+		result = await readLocalCapabilities(
+			host ? () => host.transcription.getLocalTranscriptionReadiness() : null,
+		);
 	}
 
-	// `tauri` is the platform check, and it is enough here. adapter-static
-	// prerenders every page in Node, but the SSR pass resolves `#platform/tauri`
-	// under the server conditions, where the seam exports `null`, so neither the
-	// read nor the `window` access below is reachable without a real webview.
-	if (tauri) {
-		void refresh();
+	// `tauri` gates only the *listener*, not the read: off Tauri the read still
+	// runs and answers `host-unavailable`, so callers never platform-detect.
+	void refresh();
+	if (host) {
 		// A model activated, downloaded, or deleted in Home lands here when the
 		// user comes back to this window.
 		window.addEventListener('focus', () => void refresh());
 	}
 
 	return {
-		/** The host's answer, or `undefined` before the first read. */
-		get readiness() {
-			return readiness;
+		/** The host's answer, or `undefined` while the first read is in flight. */
+		get result() {
+			return result;
 		},
 		/**
-		 * What the route accepts. Permissive while unknown: the host guards the
-		 * real decision at use and reports which hints it applied, so an
-		 * optimistic field can only offer something that turns out to be ignored,
-		 * never misfeed the model.
+		 * What the route accepts. Permissive while unknown or unavailable: the
+		 * host guards the real decision at use and reports which hints it applied,
+		 * so an optimistic field can only offer something that turns out to be
+		 * ignored, never misfeed the model.
 		 */
 		get capabilities() {
-			return readiness?.status === 'ready'
-				? {
-						supportsPrompt: readiness.supportsPrompt,
-						supportsLanguage: readiness.supportsLanguage,
-					}
-				: { supportsPrompt: true, supportsLanguage: true };
+			return result?.data ?? { supportsPrompt: true, supportsLanguage: true };
 		},
 		/**
 		 * Send the user to Epicenter Home's model administration. The app shell
-		 * owns this navigation (ADR-0180); Whispering only asks for it, and the
+		 * owns this navigation (ADR-0181); Whispering only asks for it, and the
 		 * user still chooses what to do there.
 		 */
-		openModelAdministration() {
-			void tauri?.transcription.openModelAdministration();
+		openHomeTranscription() {
+			host?.transcription.openHomeTranscription();
 		},
 	};
 }

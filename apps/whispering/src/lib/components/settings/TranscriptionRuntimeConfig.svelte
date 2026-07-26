@@ -192,7 +192,7 @@
 			<Button
 				variant="outline"
 				size="sm"
-				onclick={() => localRoute.openModelAdministration()}
+				onclick={() => localRoute.openHomeTranscription()}
 			>
 				Open Home
 			</Button>

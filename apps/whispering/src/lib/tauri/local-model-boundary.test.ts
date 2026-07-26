@@ -31,6 +31,7 @@ describe('the local transcription boundary Whispering sits behind', () => {
 		for (const command of [
 			'getActiveModel',
 			'setActiveModel',
+			'takePendingHomeSection',
 			'listModels',
 			'downloadModel',
 			'deleteModel',
@@ -47,7 +48,7 @@ describe('the local transcription boundary Whispering sits behind', () => {
 			'getLocalTranscriptionReadiness',
 			'transcribeRecording',
 			'prewarmModel',
-			'openModelAdministration',
+			'openHomeTranscription',
 		]) {
 			expect(transcriptionNamespace).toContain(command);
 		}

@@ -51,6 +51,7 @@ import {
 	resultQueryOptions,
 } from 'wellcrafted/query';
 import { Ok, tryAsync } from 'wellcrafted/result';
+import { log } from '$lib/report';
 import type {
 	DictationCapability,
 	GlobalShortcutRegistration,
@@ -350,14 +351,55 @@ const media = {
 // transcribe on whichever model is active, and reads advisory readiness so it
 // can warn before capture. Choosing, downloading, and deleting models, and even
 // learning which model is active, belong to Epicenter Home (ADR-0180); no
-// Whispering window is granted those commands. `openModelAdministration` is
-// shell navigation, not administration: it opens Home and the user decides.
+// Whispering window is granted those commands.
+//
+// These are raw Tauri shapes and are internal on purpose. ADR-0181 replaces
+// them with one portable `epicenter` handle whose members are the same in every
+// runtime: this namespace becomes `epicenter.transcription`
+// (`capabilities()` / `transcribe()` / `prewarm()`) and the navigation below
+// becomes `epicenter.shell.openHome('transcription')`. Nothing here claims to
+// be that handle. What this wave does establish is the substrate it will wrap:
+// the host-side contract, and the two behaviours the SDK shape depends on, kept
+// here so the next wave moves them rather than redesigns them.
 const transcription = {
 	encodeRecordingForUpload: commands.encodeRecordingForUpload,
 	getLocalTranscriptionReadiness: commands.getLocalTranscriptionReadiness,
-	openModelAdministration: commands.openModelAdministration,
-	prewarmModel: commands.prewarmModel,
 	transcribeRecording: commands.transcribeRecording,
+
+	/**
+	 * A timing hint that transcription may be imminent. Synchronous and
+	 * outcome-free by contract (ADR-0181): this namespace owns the asynchronous
+	 * best-effort work and its diagnostics, so callers cannot forget to handle a
+	 * rejection and never branch on whether warming worked. A real problem
+	 * surfaces at transcribe with a message the user can act on.
+	 */
+	prewarmModel: (): void => {
+		void commands.prewarmModel().then(
+			(result) => {
+				if (result.error !== null) {
+					log.info('Prewarming the local model did not run', {
+						error: result.error,
+					});
+				}
+			},
+			(cause) => {
+				log.info('Prewarming the local model could not be requested', {
+					cause,
+				});
+			},
+		);
+	},
+
+	/**
+	 * Ask the shell to open Home's transcription section. Fire-and-forget for
+	 * the same reason: the outcome a caller cares about is the user arriving,
+	 * which is not something this promise reports.
+	 */
+	openHomeTranscription: (): void => {
+		void commands.openHome('transcription').catch((cause) => {
+			log.info('Opening Epicenter Home was refused', { cause });
+		});
+	},
 };
 
 // opener ------------------------------------------------------------

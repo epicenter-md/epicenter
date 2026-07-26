@@ -25,9 +25,9 @@ function hasValue(value: string) {
 export type LocalRouteState = 'ready' | 'unavailable' | 'loading';
 
 export function getLocalRouteState(): LocalRouteState {
-	const { readiness } = localRoute;
-	if (!readiness) return 'loading';
-	return readiness.status === 'ready' ? 'ready' : 'unavailable';
+	const result = localRoute.result;
+	if (!result) return 'loading';
+	return result.error === null ? 'ready' : 'unavailable';
 }
 
 /**
@@ -36,8 +36,7 @@ export function getLocalRouteState(): LocalRouteState {
  * no model, because model identity is administration data (ADR-0180).
  */
 export function getLocalRouteBlocker(): string | null {
-	const { readiness } = localRoute;
-	return readiness?.status === 'unavailable' ? readiness.message : null;
+	return localRoute.result?.error?.message ?? null;
 }
 
 export function getSelectedTranscriptionProvider(
