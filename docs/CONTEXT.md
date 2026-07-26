@@ -45,10 +45,18 @@ shapes, see `docs/adr/`.
   SQL state.
 - **Trusted app catalog**: the validated static SPAs Epicenter serves from one
   origin and grants one fixed app-window authority. Bundled output supplies the
-  default catalog; user-built output may replace a member by app ID.
-- **App composition repository**: an ordinary user-owned Git tree whose
-  `apps/<id>` source members build the trusted app catalog. It is source, not
-  Epicenter app data, runtime installation state, or a permission registry.
+  default catalog; admitted output may replace a member by app ID.
+- **Static-artifact admission**: the one boundary an app folder crosses to
+  become a catalog member. Epicenter validates and copies inert built files; it
+  never installs dependencies, runs an app's build system, or reads application
+  source. Provenance (publisher URL, self-hosted builder, local developer build,
+  offline media) changes nothing about the authority the served app receives,
+  and source sitting beside an artifact is an unverified claim, not evidence
+  (ADR-0179).
+- **Full app trust**: an admitted app runs *as* Epicenter. Its authority is the
+  shared origin and session, the OS-granted device access the webview already
+  holds, and the one app-window native command surface. Only the third is
+  enumerated in a capability file, and it is not a sandbox.
 - **Account authority**: the one server replica for everything an authenticated
   principal stores. Its address derives from the principal alone. It orders
   whole-Epicenter scalar synchronization and hosts separate lazy row-document

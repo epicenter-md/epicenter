@@ -1,7 +1,8 @@
 # 0153. Trusted apps are source-built static catalog members
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-07-19
+- **Superseded by:** [ADR-0179](0179-an-installed-app-is-an-inert-built-folder-admitted-through-one-static-artifact-boundary.md). Admission accepts an inert built folder from any provenance; the source-build mechanism, composition-root source convention, and build-time trust ceremony below are withdrawn. ADR-0179 restates the runtime trust model, immutable-generation catalog, and app-window authority that remain in force.
 - **Supersedes:** the future third-party installation shape in [ADR-0111](0111-super-chat-v1-exposes-built-in-epicenter-apps-and-defers-extension-surfaces.md). App installation does not begin with a runtime manifest, permission grant, or installed-app registry.
 - **Amends:** [ADR-0118](0118-epicenter-is-one-trusted-bun-hosted-spa-origin.md) at the app-admission and native-authority boundary, and [ADR-0152](0152-epicenter-home-is-a-shell-above-workspaces.md) at the deferred third-party installation boundary.
 - **Relates:** [ADR-0066](0066-runtime-portability-is-per-concern-injection-not-a-runtime-object.md), [ADR-0080](0080-the-super-app-is-a-desktop-host-cross-device-is-remote-access-to-the-session-not-a-per-app-capability-plane.md)

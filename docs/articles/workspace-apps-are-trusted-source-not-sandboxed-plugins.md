@@ -1,5 +1,20 @@
 # Workspace Apps Are Trusted Source, Not Sandboxed Plugins
 
+> **Historical: the thesis survived, the mechanism did not.** "Trusted, not
+> sandboxed" is still the decision ([ADR-0179](../adr/0179-an-installed-app-is-an-inert-built-folder-admitted-through-one-static-artifact-boundary.md)),
+> but every mechanism sketched below has since been refused. An installed app is
+> now an inert folder of already-built static files, admitted through one
+> boundary; Epicenter never runs jsrepo, never installs dependencies, never runs
+> an app's build system, and never reads its source, so the source folder is not
+> the install unit. There is no `daemon.ts` and no app-owned background runtime
+> (ADR-0179). There is no manifest, no consent-and-audit step, no per-app
+> capability grant like `fuji.entries_update`, and no "limited capabilities by
+> default" tier for community apps: a per-app permission list would advertise an
+> isolation boundary the shared origin does not have. Read the sections below on
+> manifests, capabilities, daemons, and the three-tier community model as
+> retrieval context only. What an admitted app actually gets, stated at full
+> width, is in ADR-0179.
+
 The point of an Epicenter workspace app is not that it is trapped in a box. The point is that you install the source code, audit it, edit it, build it, and run it as part of your local workspace. That is riskier than a sandboxed marketplace widget. It is also why the app can become a real workspace tool.
 
 Is lack of sandbox part of the appeal?
