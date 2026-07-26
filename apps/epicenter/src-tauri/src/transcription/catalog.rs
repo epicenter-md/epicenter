@@ -157,6 +157,43 @@ pub fn resolve_model_path(model_id: &str) -> Result<PathBuf, String> {
     })
 }
 
+/// The one active local model as **Home** sees it: its exact identity and
+/// whether its file is on this machine right now.
+///
+/// Administration data (ADR-0180). Home chooses the active model, so Home is
+/// told which one it is. Nothing here reports residency: `installed` is disk
+/// presence, and how many models are resident or warm stays host-private.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ActiveModel {
+    pub id: String,
+    pub name: String,
+    pub installed: bool,
+    pub supports_prompt: bool,
+    pub supports_language: bool,
+}
+
+/// Describe a stored model id against the catalog, or `None` when the id names
+/// no model this build ships. Both the settings store (to refuse an unknown
+/// choice) and `get_active_model` read through here, so there is one answer to
+/// "is this a real model".
+pub fn describe(model_id: &str) -> Option<ActiveModel> {
+    find(model_id).map(|entry| ActiveModel {
+        id: entry.id(),
+        name: entry.name.to_string(),
+        installed: entry.cached_path().is_some(),
+        supports_prompt: entry.supports_prompt,
+        supports_language: entry.supports_language,
+    })
+}
+
+/// Every catalog id. Exists for tests that need a real, resolvable identity
+/// without hard-coding one that the catalog could later drop.
+#[cfg(test)]
+pub fn model_ids() -> Vec<String> {
+    CATALOG.iter().map(|entry| entry.id()).collect()
+}
+
 /// A catalog model as the webview sees it: its identity, display fields, static
 /// capabilities, and whether it is already downloaded. The webview stores only
 /// `id` as the selection and reads capabilities to decide which inference fields

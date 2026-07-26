@@ -2,23 +2,66 @@ mod catalog;
 mod config;
 mod error;
 mod model_cache;
+mod settings;
 
-pub use catalog::{delete_model, download_model, list_models, CatalogError, ModelInfo};
-pub use config::{TranscriptionSpec, UnloadPolicy};
+pub use catalog::{
+    delete_model, download_model, list_models, ActiveModel, CatalogError, ModelInfo,
+};
+pub use config::TranscriptionSpec;
 pub use error::TranscriptionError;
 pub use model_cache::ModelCache;
+pub use settings::{LocalTranscriptionSettings, SettingsError, UnloadPolicy};
 
 use crate::recorder::read_blob_samples;
 use tauri::{AppHandle, State};
 
-/// Reconcile the current local-model unload policy into the native idle
-/// watcher. The frontend owns the value and pushes it on every change; Rust
-/// owns the clock. It carries no model identity, so it applies whether or not a
-/// model is selected.
+// ── Home: model administration ────────────────────────────────────────
+
+/// The active local model's identity and whether it can run right now, or
+/// `None` when nobody has chosen one.
+///
+/// **Administration only.** Home holds this grant because Home chooses the
+/// active model and must show which one that is (ADR-0180).
 #[tauri::command]
 #[specta::specta]
-pub fn set_unload_policy(policy: UnloadPolicy, model_cache: State<'_, ModelCache>) {
-    model_cache.set_unload_policy(policy);
+pub fn get_active_model(model_cache: State<'_, ModelCache>) -> Option<ActiveModel> {
+    model_cache
+        .settings()
+        .active_model_id()
+        .as_deref()
+        .and_then(catalog::describe)
+}
+
+/// Make `model_id` the active local model, or clear the choice with `null`.
+/// Home's administration write: the only way the active model changes.
+#[tauri::command]
+#[specta::specta]
+pub fn set_active_model(
+    model_id: Option<String>,
+    model_cache: State<'_, ModelCache>,
+) -> Result<(), SettingsError> {
+    model_cache.settings().set_active_model_id(model_id)
+}
+
+/// When the host drops the resident model.
+#[tauri::command]
+#[specta::specta]
+pub fn get_unload_policy(model_cache: State<'_, ModelCache>) -> UnloadPolicy {
+    model_cache.settings().unload_policy()
+}
+
+/// Set the unload policy. Host-owned and durable alongside the active model:
+/// Rust owns the idle clock because a backgrounded webview timer throttles
+/// exactly when idle eviction must fire (ADR-0012), and now owns the value too,
+/// so it applies from launch instead of waiting for a webview to reconcile it.
+/// It carries no model identity, so it applies whether or not a model is active.
+#[tauri::command]
+#[specta::specta]
+pub fn set_unload_policy(
+    policy: UnloadPolicy,
+    model_cache: State<'_, ModelCache>,
+) -> Result<(), SettingsError> {
+    model_cache.settings().set_unload_policy(policy)
 }
 
 /// Canonical transcribe-by-id path. Resolves the canonical local blob,

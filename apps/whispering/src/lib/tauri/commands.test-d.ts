@@ -14,6 +14,7 @@ import type {
 	DownloadProgress,
 	IpcRecorderError,
 	ModelInfo,
+	SettingsError,
 	TranscriptionError,
 	TranscriptionSpec,
 } from './commands';
@@ -95,10 +96,14 @@ type _TranscribeRecordingArgs = Expect<
 	>
 >;
 
-// set_unload_policy: infallible (Rust `()`). Stays plain Promise; no Result
-// wrap.
+// set_unload_policy: fallible now that the host stores the policy durably
+// (ADR-0180). A choice that cannot be made durable is reported rather than
+// silently applying for this run only.
 type _SetUnloadPolicy = Expect<
-	Equal<ReturnType<typeof commands.setUnloadPolicy>, Promise<void>>
+	Equal<
+		ReturnType<typeof commands.setUnloadPolicy>,
+		Promise<Result<null, SettingsError>>
+	>
 >;
 
 type _SetUnloadPolicyArg = Expect<

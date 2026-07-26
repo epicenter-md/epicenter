@@ -16,24 +16,3 @@ pub struct TranscriptionSpec {
     #[serde(default)]
     pub initial_prompt: Option<String>,
 }
-
-/// How long after the last transcription the resident model should be
-/// dropped. Mirrors the frontend `transcription.localModelUnloadPolicy`
-/// device setting; serde tags below match its wire format exactly.
-///
-/// `Immediately` is enforced synchronously at the end of each transcription;
-/// timed variants are enforced by the background idle watcher.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, specta::Type)]
-#[serde(rename_all = "snake_case")]
-pub enum UnloadPolicy {
-    Never,
-    Immediately,
-    #[serde(rename = "after_5_minutes")]
-    AfterFiveMinutes,
-    #[serde(rename = "after_30_minutes")]
-    AfterThirtyMinutes,
-}
-
-impl UnloadPolicy {
-    pub const DEFAULT: Self = Self::AfterFiveMinutes;
-}

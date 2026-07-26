@@ -1,10 +1,11 @@
 use super::catalog::resolve_model_path;
-use super::config::{TranscriptionSpec, UnloadPolicy};
+use super::config::TranscriptionSpec;
+use super::settings::{LocalTranscriptionSettings, UnloadPolicy};
 use super::error::TranscriptionError;
 use log::{debug, info, warn};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, Once, RwLock};
+use std::sync::{Arc, Mutex, MutexGuard, Once};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use transcribe_cpp::{
     Backend, Feature, Model, ModelOptions, RunExtension, RunOptions, WhisperRunOptions,
@@ -40,40 +41,29 @@ pub struct ModelCache {
     /// cache mutex during long inference.
     last_activity_ms: Arc<AtomicU64>,
 
-    /// Current unload policy for the idle watcher. The frontend reconciles this
-    /// value onto its own channel (`set_unload_policy`), independently of the
-    /// per-call transcription spec, so it reaches Rust whether or not a model
-    /// is selected.
-    unload_policy: Arc<RwLock<UnloadPolicy>>,
+    /// The host's device-local settings: which model is active, and when to drop
+    /// it. Durable and host-owned (ADR-0180), read at the point of use.
+    settings: Arc<LocalTranscriptionSettings>,
 }
 
 impl ModelCache {
-    pub fn new() -> Self {
+    pub fn new(settings: LocalTranscriptionSettings) -> Self {
         Self {
             cached: Arc::new(Mutex::new(None)),
             last_activity_ms: Arc::new(AtomicU64::new(now_millis())),
-            unload_policy: Arc::new(RwLock::new(UnloadPolicy::DEFAULT)),
+            settings: Arc::new(settings),
         }
+    }
+
+    /// The host-owned settings store, for the Home administration commands.
+    pub fn settings(&self) -> &LocalTranscriptionSettings {
+        &self.settings
     }
 
     // ── Runtime policy ────────────────────────────────────────────────
 
-    /// Reconcile the FE-owned unload policy into the idle clock. The frontend
-    /// owns the value and pushes it on every change; Rust owns the clock that
-    /// enforces it. It carries no model identity, so it applies whether or not a
-    /// model is selected.
-    pub fn set_unload_policy(&self, policy: UnloadPolicy) {
-        *self
-            .unload_policy
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = policy;
-    }
-
     fn current_policy(&self) -> UnloadPolicy {
-        *self
-            .unload_policy
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.settings.unload_policy()
     }
 
     // ── Transcribe ────────────────────────────────────────────────────

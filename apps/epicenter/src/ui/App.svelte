@@ -8,6 +8,7 @@
 	import { Spinner } from '@epicenter/ui/spinner';
 	import type { HomeInvocation } from '../host.ts';
 	import Composer from './Composer.svelte';
+	import LocalModelAdministration from './LocalModelAdministration.svelte';
 	import { readRuntimeInfo } from './runtime.ts';
 	import Transcript from './Transcript.svelte';
 	import { createSession } from './session.svelte.ts';
@@ -28,6 +29,10 @@
 		});
 
 	let toolsOpen = $state(false);
+	// Model administration is Home's, not any app's (ADR-0180). It opens from the
+	// header rather than living inline: it is a settings act, not part of the
+	// conversation.
+	let modelsOpen = $state(false);
 
 	const connectionIndicator = {
 		connecting: { label: 'Connecting', dot: 'bg-warning' },
@@ -134,11 +139,27 @@
 						</Command.Root>
 					</Popover.Content>
 				</Popover.Root>
+				{#if nativeStatus === 'connected'}
+					<Button
+						variant="outline"
+						size="sm"
+						aria-expanded={modelsOpen}
+						onclick={() => (modelsOpen = !modelsOpen)}
+					>
+						Local model
+					</Button>
+				{/if}
 				<Button variant="ghost" size="sm" onclick={() => session.clear()}>
 					New chat
 				</Button>
 			</div>
 		</header>
+
+		{#if modelsOpen && nativeStatus === 'connected'}
+			<section class="flex-none px-3 py-2" aria-label="Local transcription model">
+				<LocalModelAdministration />
+			</section>
+		{/if}
 
 		<Transcript snapshot={session.snapshot} />
 

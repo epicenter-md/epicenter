@@ -34,8 +34,9 @@ use recorder::recorder::Recorder;
 
 pub mod transcription;
 use transcription::{
-    delete_model, download_model, list_models, prewarm_model, set_unload_policy,
-    transcribe_recording, ModelCache,
+    delete_model, download_model, get_active_model, get_unload_policy, list_models, prewarm_model,
+    set_active_model, set_unload_policy, transcribe_recording, LocalTranscriptionSettings,
+    ModelCache,
 };
 
 pub mod command;
@@ -323,6 +324,9 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             request_accessibility_permission,
             get_microphone_permission,
             request_microphone_permission,
+            get_active_model,
+            set_active_model,
+            get_unload_policy,
             set_unload_policy,
             list_models,
             download_model,
@@ -345,14 +349,27 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
 
 #[cfg(test)]
 mod export_bindings {
+    /// Both consumers of this crate's typed command surface are generated from
+    /// the one builder, so neither can drift from Rust.
+    ///
+    /// Each file carries the whole surface because `tauri_specta` exports a
+    /// builder, not a slice of one. What a window may actually call is decided
+    /// by its capability file, not by which bindings it can import: Home's
+    /// `home-model-administration-*` capability grants exactly the local-model
+    /// administration commands (ADR-0180), and every other command in Home's
+    /// copy is denied at the IPC boundary.
+    const TARGETS: &[&str] = &[
+        "../../whispering/src/lib/tauri/bindings.gen.ts",
+        "../src/ui/bindings.gen.ts",
+    ];
+
     #[test]
     fn export_types() {
-        super::make_specta_builder()
-            .export(
-                specta_typescript::Typescript::default(),
-                "../../whispering/src/lib/tauri/bindings.gen.ts",
-            )
-            .expect("failed to export bindings");
+        for target in TARGETS {
+            super::make_specta_builder()
+                .export(specta_typescript::Typescript::default(), target)
+                .unwrap_or_else(|error| panic!("failed to export bindings to {target}: {error}"));
+        }
     }
 }
 
@@ -498,7 +515,16 @@ pub fn run() {
         .setup(move |app| {
             specta_builder.mount_events(app);
 
-            let cache = ModelCache::new();
+            // The active local model and the unload policy are device-local host
+            // state (ADR-0180), so they live beside the app's own config rather
+            // than in any workspace that could carry them to a machine without
+            // the model files or a compatible accelerator.
+            let settings = LocalTranscriptionSettings::load(
+                app.path()
+                    .app_config_dir()?
+                    .join("local-transcription.json"),
+            );
+            let cache = ModelCache::new(settings);
             cache.start_idle_watcher();
             app.manage(cache);
 
@@ -1591,6 +1617,41 @@ mod tests {
                     .all(|permission| permission["identifier"] != "http:default"),
                 "trusted-app HTTP belongs to the shared app capability, not Whispering native"
             );
+        }
+    }
+
+    /// Model administration is routed to Home and to no application window
+    /// (ADR-0180). This is wiring, not a sandbox: an app window runs as
+    /// Epicenter. What it proves is that the ownership the record describes is
+    /// the ownership the build actually wires.
+    #[test]
+    fn model_administration_is_routed_to_the_home_window() {
+        for encoded in [
+            include_str!("../capabilities/home-model-administration-development.json"),
+            include_str!("../capabilities/home-model-administration-production.json"),
+        ] {
+            let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
+            assert_eq!(
+                capability["windows"].as_array().unwrap(),
+                &vec![serde_json::json!("home")],
+                "model administration belongs to Home alone"
+            );
+            let permissions = capability["permissions"].as_array().unwrap();
+            for permission in [
+                "allow-list-models",
+                "allow-download-model",
+                "allow-cancel-download",
+                "allow-delete-model",
+                "allow-get-active-model",
+                "allow-set-active-model",
+                "allow-get-unload-policy",
+                "allow-set-unload-policy",
+            ] {
+                assert!(
+                    permissions.contains(&serde_json::json!(permission)),
+                    "Home must be able to invoke {permission}"
+                );
+            }
         }
     }
 

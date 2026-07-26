@@ -111,6 +111,7 @@ export type {
 	GlobalShortcutRegistration,
 	ModelInfo,
 	RecorderError as IpcRecorderError,
+	SettingsError,
 	TranscriptionError,
 	TranscriptionSpec,
 } from './bindings.gen';
