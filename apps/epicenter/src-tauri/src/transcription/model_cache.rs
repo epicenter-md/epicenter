@@ -2,7 +2,7 @@ use super::catalog::{describe, installed_model_path};
 use super::error::TranscriptionError;
 use super::settings::{LocalTranscriptionSettings, UnloadPolicy};
 use super::{
-    AppliedHints, LocalTranscript, LocalTranscriptionReadiness, TranscriptionHints,
+    AppliedHints, LocalTranscriptionReadiness, TranscriptionHints, TranscriptionOutcome,
     UnavailableReason,
 };
 use log::{debug, info, warn};
@@ -161,22 +161,18 @@ impl ModelCache {
         &self,
         samples: Vec<f32>,
         hints: TranscriptionHints,
-    ) -> Result<LocalTranscript, TranscriptionError> {
+    ) -> Result<TranscriptionOutcome, TranscriptionError> {
         // Resolve first: a caller with no active model deserves that error even
-        // when it happens to have sent silence.
+        // when it happens to have sent silence. The precondition is about this
+        // device being set up, and silence does not make it set up.
         let model = self.resolve_active()?;
-        let model_id = model.id;
+        let model_id = model.id.clone();
 
         if samples.is_empty() {
-            warn!("[Transcription] zero samples, returning empty transcript");
-            return Ok(LocalTranscript {
-                text: String::new(),
-                model_id,
-                applied: AppliedHints {
-                    language: hints.language,
-                    initial_prompt: false,
-                },
-            });
+            // No model is named and no hint is reported: nothing ran, so there is
+            // nothing honest to attribute this to.
+            warn!("[Transcription] zero samples, nothing to transcribe");
+            return Ok(TranscriptionOutcome::EmptyAudio);
         }
 
         let samples = sanitize_samples(samples);
@@ -188,7 +184,7 @@ impl ModelCache {
         );
 
         let inference_started = Instant::now();
-        let (text, applied) = self.run_loaded(&model_id, &hints, model.path, &samples)?;
+        let (text, applied) = self.run_loaded(&model, &hints, &samples)?;
 
         info!(
             "[Transcription] GGUF transcription complete: characters={} elapsed_ms={}",
@@ -196,7 +192,7 @@ impl ModelCache {
             inference_started.elapsed().as_millis(),
         );
         self.evict_if_immediate();
-        Ok(LocalTranscript {
+        Ok(TranscriptionOutcome::Transcribed {
             text,
             model_id,
             applied,
@@ -214,7 +210,7 @@ impl ModelCache {
     pub fn prewarm(&self) -> Result<(), TranscriptionError> {
         let model = self.resolve_active()?;
         self.touch_activity();
-        let _guard = self.ensure_loaded(&model.id, model.path)?;
+        let _guard = self.ensure_loaded(&model.id, model.path.clone())?;
         Ok(())
     }
 
@@ -277,19 +273,18 @@ impl ModelCache {
     /// the text alongside the hints the run actually applied.
     fn run_loaded(
         &self,
-        model_id: &str,
+        resolved: &ResolvedModel,
         hints: &TranscriptionHints,
-        model_path: PathBuf,
         samples: &[f32],
     ) -> Result<(String, AppliedHints), TranscriptionError> {
         self.touch_activity();
-        let guard = self.ensure_loaded(model_id, model_path)?;
+        let guard = self.ensure_loaded(&resolved.id, resolved.path.clone())?;
 
         let model = &guard.as_ref().expect("cache slot populated above").model;
         let started = Instant::now();
-        let result = run_gguf(model, samples, hints);
+        let result = run_gguf(model, samples, hints, resolved.supports_language);
         let elapsed_ms = started.elapsed().as_millis() as u64;
-        crate::timing_note!("model.inference {elapsed_ms}ms model={}", model_id);
+        crate::timing_note!("model.inference {elapsed_ms}ms model={}", resolved.id);
         self.touch_activity();
         // An inference failure leaves the model resident so the next call can
         // reuse it (the failure may be a transient FFI or input issue).
@@ -383,10 +378,42 @@ fn load_gguf_model(model_path: &Path) -> Result<Model, String> {
 /// decide what reaches the runtime, so the report cannot drift from the run: a
 /// prompt the active model will not take is reported as not applied rather than
 /// dropped in silence (ADR-0180).
+/// Decide which advisory hints actually reach the runtime, and report exactly
+/// those.
+///
+/// The whole point is that `applied` is derived from the same values that go
+/// into `RunOptions`, in one place, so the report cannot drift from the run.
+/// A hint the model cannot take is filtered here rather than handed over and
+/// silently ignored downstream.
+///
+/// `accepts_prompt` is runtime-authoritative (`Feature::InitialPrompt`), asked
+/// of the loaded model itself. `accepts_language` is the catalog's static
+/// verdict, because transcribe.cpp exposes no language feature query: its
+/// `Feature` enum covers prompt, temperature fallback, long form, cancellation,
+/// PNC, and ITN, and nothing about language. That is the most authoritative
+/// answer available, and it is the same value readiness reports, so what an
+/// application was told it could send is exactly what gets sent.
+fn plan_hints(
+    hints: &TranscriptionHints,
+    accepts_prompt: bool,
+    accepts_language: bool,
+) -> (Option<String>, Option<String>) {
+    let language = hints
+        .language
+        .clone()
+        .filter(|language| !language.is_empty() && accepts_language);
+    let initial_prompt = hints
+        .initial_prompt
+        .clone()
+        .filter(|prompt| !prompt.is_empty() && accepts_prompt);
+    (language, initial_prompt)
+}
+
 fn run_gguf(
     model: &Model,
     samples: &[f32],
     hints: &TranscriptionHints,
+    accepts_language: bool,
 ) -> Result<(String, AppliedHints), TranscriptionError> {
     let mut session = model
         .session()
@@ -395,26 +422,28 @@ fn run_gguf(
         })?;
 
     let accepts_prompt = session.model().supports(Feature::InitialPrompt);
-    let initial_prompt = hints
-        .initial_prompt
-        .as_ref()
-        .filter(|prompt| !prompt.is_empty() && accepts_prompt);
-    let family = initial_prompt.map(|prompt| {
-        RunExtension::Whisper(WhisperRunOptions {
-            initial_prompt: Some(prompt.clone()),
-            ..Default::default()
-        })
-    });
-    let applied = AppliedHints {
-        language: hints.language.clone(),
-        initial_prompt: initial_prompt.is_some(),
-    };
-    if hints.initial_prompt.is_some() && !accepts_prompt {
+    let (language, initial_prompt) = plan_hints(hints, accepts_prompt, accepts_language);
+    if hints.initial_prompt.is_some() && initial_prompt.is_none() {
         debug!("[Transcription] active model does not accept an initial prompt; not applied");
     }
+    if hints.language.is_some() && language.is_none() {
+        debug!("[Transcription] active model does not accept a language hint; not applied");
+    }
+
+    // `applied` mirrors `run_options` field for field: both are built from the
+    // same two values, so the transcript cannot report a hint the run did not get.
+    let applied = AppliedHints {
+        language: language.clone(),
+        initial_prompt: initial_prompt.is_some(),
+    };
     let run_options = RunOptions {
-        language: hints.language.clone(),
-        family,
+        language,
+        family: initial_prompt.map(|prompt| {
+            RunExtension::Whisper(WhisperRunOptions {
+                initial_prompt: Some(prompt),
+                ..Default::default()
+            })
+        }),
         ..Default::default()
     };
 
@@ -656,8 +685,78 @@ mod tests {
         }
     }
 
+    /// A language the active model cannot take must not be handed to the runtime
+    /// and must not be reported as applied. Reporting it would tell the user
+    /// their choice took effect when the recognizer never saw it.
+    #[test]
+    fn a_language_the_model_cannot_take_is_neither_sent_nor_claimed() {
+        let hints = TranscriptionHints {
+            language: Some("fr".to_string()),
+            initial_prompt: Some("Epicenter".to_string()),
+        };
+        let (language, prompt) = plan_hints(&hints, true, false);
+        assert_eq!(language, None, "an unsupported language is filtered out");
+        assert_eq!(prompt.as_deref(), Some("Epicenter"));
+    }
+
+    #[test]
+    fn a_prompt_the_model_cannot_take_is_neither_sent_nor_claimed() {
+        let hints = TranscriptionHints {
+            language: Some("fr".to_string()),
+            initial_prompt: Some("Epicenter".to_string()),
+        };
+        let (language, prompt) = plan_hints(&hints, false, true);
+        assert_eq!(language.as_deref(), Some("fr"));
+        assert_eq!(prompt, None, "an unsupported prompt is filtered out");
+    }
+
+    #[test]
+    fn supported_hints_pass_through_exactly() {
+        let hints = TranscriptionHints {
+            language: Some("fr".to_string()),
+            initial_prompt: Some("Epicenter".to_string()),
+        };
+        let (language, prompt) = plan_hints(&hints, true, true);
+        assert_eq!(language.as_deref(), Some("fr"));
+        assert_eq!(prompt.as_deref(), Some("Epicenter"));
+    }
+
+    #[test]
+    fn empty_hints_are_never_sent() {
+        let hints = TranscriptionHints {
+            language: Some(String::new()),
+            initial_prompt: Some(String::new()),
+        };
+        assert_eq!(plan_hints(&hints, true, true), (None, None));
+    }
+
     /// Failing closed means failing *inert*: a caller that hits the precondition
     /// must not find that the attempt adopted, downloaded, or substituted a model.
+    /// Empty audio ran no model, so the outcome must not name one or claim a
+    /// hint was applied. The precondition still comes first: silence does not
+    /// make an unconfigured device configured.
+    #[test]
+    fn empty_audio_claims_no_model_and_no_applied_hints() {
+        let cache = cache_with("empty-audio", None);
+        let error = cache
+            .transcribe(Vec::new(), TranscriptionHints::default())
+            .expect_err("no active model is still the first answer");
+        assert!(matches!(
+            error,
+            TranscriptionError::LocalRouteUnavailable { .. }
+        ));
+
+        // With a resolvable model the empty-audio outcome carries no attribution
+        // at all, which is the shape that cannot lie.
+        let outcome = TranscriptionOutcome::EmptyAudio;
+        let encoded = serde_json::to_string(&outcome).unwrap();
+        assert_eq!(encoded, "{\"outcome\":\"empty-audio\"}");
+        assert!(
+            !encoded.contains("modelId") && !encoded.contains("applied"),
+            "empty audio must not attribute a model or hints: {encoded}"
+        );
+    }
+
     #[test]
     fn a_failed_precondition_changes_no_host_state() {
         let cache = cache_with("inert", None);

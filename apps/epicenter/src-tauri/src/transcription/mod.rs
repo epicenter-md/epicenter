@@ -78,14 +78,17 @@ pub struct TranscriptionHints {
 
 /// Which advisory hints the run actually applied.
 ///
-/// A hint the active model cannot take is reported here rather than dropped in
-/// silence, so a caller can tell its user that the prompt did not reach the
-/// recognizer instead of wondering why it had no effect.
+/// Built from the exact values handed to the runtime, never from what the caller
+/// asked for. A hint the active model cannot take is reported as not applied
+/// rather than dropped in silence, so a caller can tell its user that the prompt
+/// or language did not reach the recognizer instead of wondering why it had no
+/// effect.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AppliedHints {
-    /// The language hint the runtime received. `None` means it autodetected,
-    /// either because the caller asked for autodetect or sent nothing.
+    /// The language hint the runtime received. `None` means it autodetected:
+    /// the caller asked for autodetect, sent nothing, or asked for a language
+    /// the active model does not take.
     pub language: Option<String>,
     /// Whether the caller's initial prompt reached the runtime. `false` when the
     /// caller sent none, or the active model does not accept one (Whisper does;
@@ -93,18 +96,25 @@ pub struct AppliedHints {
     pub initial_prompt: bool,
 }
 
-/// A finished local transcript.
+/// What a transcription request produced.
 ///
-/// `model_id` names the exact model that produced this text. Reporting it on
-/// every success is what makes an accidental substitution detectable: with the
-/// active model unchanged, identical ordinary requests must name the same model
-/// however the host arranges residency.
+/// Two outcomes because there are two honest stories. `transcribed` names the
+/// exact model that produced the text, which is what makes an accidental
+/// substitution detectable: with the active model unchanged, identical ordinary
+/// requests must name the same model however the host arranges residency.
+/// `empty-audio` reports that nothing ran, and deliberately carries no model and
+/// no applied hints, because claiming either would be claiming an inference that
+/// never happened.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, specta::Type)]
-#[serde(rename_all = "camelCase")]
-pub struct LocalTranscript {
-    pub text: String,
-    pub model_id: String,
-    pub applied: AppliedHints,
+#[serde(tag = "outcome", rename_all = "kebab-case", rename_all_fields = "camelCase")]
+pub enum TranscriptionOutcome {
+    Transcribed {
+        text: String,
+        model_id: String,
+        applied: AppliedHints,
+    },
+    /// The audio held no samples, so no model was loaded and no hint applied.
+    EmptyAudio,
 }
 
 // ── Home: model administration ────────────────────────────────────────
@@ -188,7 +198,7 @@ pub async fn transcribe_recording(
     hints: TranscriptionHints,
     app_handle: AppHandle,
     model_cache: State<'_, ModelCache>,
-) -> Result<LocalTranscript, TranscriptionError> {
+) -> Result<TranscriptionOutcome, TranscriptionError> {
     let samples = crate::timing::measure("transcribe.read+decode", || {
         read_blob_samples(&app_handle, &audio_blob_id)
     })

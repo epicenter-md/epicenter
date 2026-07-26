@@ -71,12 +71,17 @@ export type AppliedHints = {
 };
 
 /**
- * A finished local transcript. `modelId` names the exact model that produced the
- * text, which is what makes an accidental substitution detectable rather than
- * silent.
+ * What a transcription produced. `transcribed` names the exact model that made
+ * the text, which is what makes an accidental substitution detectable rather
+ * than silent. `empty-audio` carries neither a model nor applied hints, because
+ * no model ran and claiming one would be claiming an inference that never
+ * happened.
  */
-export type LocalTranscript = {
-	text: string;
-	modelId: string;
-	applied: AppliedHints;
-};
+export type TranscriptionOutcome =
+	| {
+			outcome: 'transcribed';
+			text: string;
+			modelId: string;
+			applied: AppliedHints;
+	  }
+	| { outcome: 'empty-audio' };

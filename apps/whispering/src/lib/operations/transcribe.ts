@@ -317,7 +317,7 @@ export function prewarmOnDeviceModel(app: WhisperingApp): void {
 	const selectedService = app.settings.get('settings.transcription.service');
 	if (!isOnDeviceProviderId(selectedService)) return;
 
-	void tauri.transcription.prewarmModel();
+	tauri.transcription.prewarmModel();
 }
 
 /**
@@ -364,28 +364,28 @@ async function transcribeOnDevice(
 		app.settings.get('settings.transcription.prompt'),
 		app.settings.get('settings.dictionary'),
 	);
-	const { data: transcript, error } =
+	const { data: outcome, error } =
 		await tauri.transcription.transcribeRecording(audioBlobId, {
 			language: language === 'auto' ? undefined : language,
 			initialPrompt: prompt || undefined,
 		});
 	if (error) return Err(error);
 
+	// Empty audio ran no model, so there is nothing to attribute and nothing to
+	// report as applied. An empty transcript is the honest result.
+	if (outcome.outcome === 'empty-audio') return Ok('');
+
 	// The host names the exact model on every success. Logging it is what turns
-	// an accidental substitution into something visible after the fact.
+	// an accidental substitution into something visible after the fact, and the
+	// applied hints say which of the caller's requests actually reached the
+	// recognizer: a prompt or language the active model cannot take is reported
+	// rather than silently dropped, so "my Dictionary had no effect" has an
+	// answer in the log instead of being a mystery.
 	log.info('Local transcription complete', {
-		modelId: transcript.modelId,
-		applied: transcript.applied,
+		modelId: outcome.modelId,
+		applied: outcome.applied,
 	});
-	// A prompt the active model cannot take is reported, not silently dropped, so
-	// "my Dictionary had no effect" has an answer in the log rather than being a
-	// mystery.
-	if (prompt && !transcript.applied.initialPrompt) {
-		log.info(
-			`The active local model (${transcript.modelId}) does not accept an initial prompt; your prompt and Dictionary terms were not applied.`,
-		);
-	}
-	return Ok(transcript.text);
+	return Ok(outcome.text);
 }
 
 async function transcribeViaUpload(

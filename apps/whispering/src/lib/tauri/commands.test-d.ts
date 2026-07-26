@@ -11,18 +11,18 @@ import type {
 	commands,
 	DictationCapability,
 	IpcRecorderError,
-	LocalTranscript,
 	LocalTranscriptionReadiness,
 	TranscriptionError,
 	TranscriptionHints,
+	TranscriptionOutcome,
 } from './commands';
 import type {
 	DictationCapability as SharedDictationCapability,
 	IpcRecorderError as SharedIpcRecorderError,
-	LocalTranscript as SharedLocalTranscript,
 	LocalTranscriptionReadiness as SharedLocalTranscriptionReadiness,
 	TranscriptionError as SharedTranscriptionError,
 	TranscriptionHints as SharedTranscriptionHints,
+	TranscriptionOutcome as SharedTranscriptionOutcome,
 } from './commands.types';
 
 // Helper: a no-op assertion that two types are equal.
@@ -39,18 +39,18 @@ type _SharedContracts = Expect<
 		[
 			SharedDictationCapability,
 			SharedIpcRecorderError,
-			SharedLocalTranscript,
 			SharedLocalTranscriptionReadiness,
 			SharedTranscriptionError,
 			SharedTranscriptionHints,
+			SharedTranscriptionOutcome,
 		],
 		[
 			DictationCapability,
 			IpcRecorderError,
-			LocalTranscript,
 			LocalTranscriptionReadiness,
 			TranscriptionError,
 			TranscriptionHints,
+			TranscriptionOutcome,
 		]
 	>
 >;
@@ -83,7 +83,7 @@ type _ResumePlayback = Expect<
 type _TranscribeRecording = Expect<
 	Equal<
 		ReturnType<typeof commands.transcribeRecording>,
-		Promise<Result<LocalTranscript, TranscriptionError>>
+		Promise<Result<TranscriptionOutcome, TranscriptionError>>
 	>
 >;
 
