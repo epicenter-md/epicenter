@@ -1,3 +1,5 @@
+# Automatically generated - DO NOT EDIT!
+
 [[permission]]
 identifier = "allow-is-autostart-enabled"
 description = "Enables the is_autostart_enabled command without any pre-configured scope."
