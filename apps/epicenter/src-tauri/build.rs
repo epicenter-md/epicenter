@@ -30,6 +30,8 @@ const COMMANDS: &[&str] = &[
     "get_microphone_permission",
     "request_microphone_permission",
     "get_active_model",
+    "get_local_transcription_readiness",
+    "open_model_administration",
     "set_active_model",
     "get_unload_policy",
     "set_unload_policy",

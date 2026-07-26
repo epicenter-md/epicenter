@@ -8,12 +8,14 @@
 		"urls": ["http://127.0.0.1:*"]
 	},
 	"permissions": [
+		"core:event:allow-listen",
 		"allow-list-models",
 		"allow-download-model",
 		"allow-cancel-download",
 		"allow-delete-model",
 		"allow-get-active-model",
 		"allow-set-active-model",
+		"allow-get-local-transcription-readiness",
 		"allow-get-unload-policy",
 		"allow-set-unload-policy"
 	]

@@ -5,7 +5,7 @@ import {
 	type TranscriptionProviderEntry,
 } from '$lib/services/transcription/provider-ui';
 import { deviceConfig } from '$lib/state/device-config.svelte';
-import { localModels } from '$lib/state/local-models.svelte';
+import { localRoute } from '$lib/state/local-route.svelte';
 import { secrets } from '$lib/state/secrets.svelte';
 import type { WhisperingApp } from '$lib/whispering/app';
 
@@ -14,24 +14,30 @@ function hasValue(value: string) {
 }
 
 /**
- * Active readiness for the on-device provider. `localModels` is the source of
- * truth for presence; the deviceConfig key only holds the pointer, so a stored
- * id can point at a GGUF that was deleted from the shared cache, never finished
- * downloading, or was selected on another device and never downloaded here. A
- * non-empty id is not a runnable model:
+ * Whether the local route can run right now, as the host advises (ADR-0180).
+ * Whispering owns the route choice; the host owns which model is active, so this
+ * is a read of somebody else's readiness, never a selection and never a model.
  *
- *   - `unset`   nothing chosen              -> zero-choice empty state
- *   - `loading` first Rust scan not back    -> optimistic; don't flash a warning
- *   - `missing` id set but not downloaded   -> nudge to re-download or pick another
- *   - `ready`   the stored id is downloaded here
+ *   - `loading`     first host read not back -> optimistic; don't flash a warning
+ *   - `ready`       the route can run here
+ *   - `unavailable` the host says it cannot, and supplies the sentence to show
  */
-export type LocalSelectionState = 'ready' | 'missing' | 'unset' | 'loading';
+export type LocalRouteState = 'ready' | 'unavailable' | 'loading';
 
-export function isLocalSelectionRunnable(): LocalSelectionState {
-	const id = deviceConfig.get('transcription.local.selectedModel');
-	if (!hasValue(id)) return 'unset';
-	if (!localModels.loaded) return 'loading';
-	return localModels.find(id)?.downloaded ? 'ready' : 'missing';
+export function getLocalRouteState(): LocalRouteState {
+	const { readiness } = localRoute;
+	if (!readiness) return 'loading';
+	return readiness.status === 'ready' ? 'ready' : 'unavailable';
+}
+
+/**
+ * The host's own sentence for why the local route cannot run, or `null` when it
+ * can. Presented verbatim: the host reports the fact, and it is written to name
+ * no model, because model identity is administration data (ADR-0180).
+ */
+export function getLocalRouteBlocker(): string | null {
+	const { readiness } = localRoute;
+	return readiness?.status === 'unavailable' ? readiness.message : null;
 }
 
 export function getSelectedTranscriptionProvider(
@@ -41,7 +47,7 @@ export function getSelectedTranscriptionProvider(
 	return TRANSCRIPTION_PROVIDERS.find((s) => s.id === selectedServiceId);
 }
 
-function isTranscriptionServiceAvailable(
+export function isTranscriptionServiceAvailable(
 	service: TranscriptionProviderEntry,
 ): boolean {
 	return Boolean(tauri) || service.access !== 'onDevice';
@@ -86,9 +92,13 @@ export function isTranscriptionServiceConfigured(
 				hasValue(deviceConfig.get(service.modelIdConfigKey))
 			);
 		case 'onDevice':
-			// Store-backed, not "a non-empty key": a stored id pointing at a
-			// deleted/never-downloaded GGUF must not pass as ready.
-			return isLocalSelectionRunnable() === 'ready';
+			// The local route needs no app-side configuration at all: there is no
+			// key, no endpoint, and no model for Whispering to set. On desktop it is
+			// always "configured", so it stays selectable even when the host cannot
+			// currently run it. That is deliberate (ADR-0180): a selectable route
+			// that warns is what lets the warning happen before capture, and hiding
+			// the route would leave the user with nothing to warn about.
+			return true;
 	}
 }
 
@@ -114,21 +124,14 @@ export function getTranscriptionReadiness(
 		};
 	}
 
-	// On-device readiness is store-backed and optimistic during the first scan:
-	// a not-yet-loaded catalog must not flash a warning for a model that will
-	// resolve to `ready` a tick later.
+	// On-device readiness is host-advised and optimistic during the first read: a
+	// not-yet-answered host must not flash a warning for a route that resolves to
+	// `ready` a tick later. The blocker is the host's own sentence, shown as-is.
 	if (service.access === 'onDevice') {
-		const runnable = isLocalSelectionRunnable();
-		if (runnable === 'ready' || runnable === 'loading') {
-			return { isReady: true, primaryIssue: null };
-		}
-		return {
-			isReady: false,
-			primaryIssue:
-				runnable === 'missing'
-					? `Your ${service.label} model is not downloaded. Download it again or pick another.`
-					: `Download a ${service.label} model to start transcribing.`,
-		};
+		const blocker = getLocalRouteBlocker();
+		return blocker === null
+			? { isReady: true, primaryIssue: null }
+			: { isReady: false, primaryIssue: blocker };
 	}
 
 	if (!isTranscriptionServiceConfigured(service)) {

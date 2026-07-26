@@ -3,7 +3,6 @@ import { type } from 'arktype';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { os } from '#platform/os';
 import { BITRATES_KBPS, DEFAULT_BITRATE_KBPS } from '$lib/constants/audio';
-import { LOCAL_MODEL_UNLOAD_POLICIES } from '$lib/constants/local-model-unload-policy';
 import { log, report } from '$lib/report';
 import type { KeyBinding } from '$lib/utils/key-binding';
 
@@ -128,28 +127,10 @@ const DEVICE_DEFINITIONS = {
 		'16000',
 	),
 
-	// ── Local model selection ─────────────────────────────────────────
-	/**
-	 * The selected local model's catalog id (`"{repoId}@{revision}/{filename}"`),
-	 * never a path. Rust owns the GGUF catalog and resolves the id to a
-	 * shared-HF-cache path at load time (`transcription::catalog`). Device-local
-	 * because the download lives on this machine's Hugging Face cache.
-	 */
-	'transcription.local.selectedModel': defineEntry(type('string'), ''),
-
-	// ── Local model lifecycle (per device: memory pressure is physical) ─
-	/**
-	 * When to drop the resident local transcription model. Pushed to Rust
-	 * on change via the `set_unload_policy` Tauri command; the Rust side
-	 * owns the actual eviction (synchronous for `immediately`, idle-watcher
-	 * for timed values). Device-local because the right answer depends on
-	 * available RAM (a 64 GB workstation and a 16 GB laptop want different
-	 * policies for the same workflow).
-	 */
-	'transcription.localModelUnloadPolicy': defineEntry(
-		type.enumerated(...LOCAL_MODEL_UNLOAD_POLICIES),
-		'after_5_minutes',
-	),
+	// Local transcription model selection and unload policy are deliberately
+	// absent: the host owns the one active local model and its lifecycle, and
+	// Epicenter Home administers both (ADR-0180). They are still device-local,
+	// just owned a layer down, where the model files and the accelerator are.
 
 	// ── Global OS shortcuts (device-specific, never synced) ───────────
 	// Structured KeyBinding (physical-key space) resolved to a plugin accelerator.
@@ -222,11 +203,14 @@ export const deviceConfig = createPersistedMap({
 	},
 });
 
-// Nothing here is migrated from a legacy format; both prior formats take a clean
-// break. Local model selections once lived under `transcription.*.modelPath` as
-// filesystem paths: those keys are simply orphaned now and the
-// `transcription.local.selectedModel` entry reads its default (empty). Global
-// shortcuts once stored accelerator strings under
-// the same key: a legacy value fails the `globalBinding` schema on read and falls
-// back to the default (see `createPersistedMap`). Either way upgrading users get
-// the new defaults, and we carry no parser for a format nothing writes anymore.
+// Nothing here is migrated from a legacy format, and retired keys are orphaned
+// rather than moved. Local model selections lived under
+// `transcription.local.selectedModel` (and before that `transcription.*.modelPath`),
+// and the unload policy under `transcription.localModelUnloadPolicy`; both are now
+// host-owned (ADR-0180) and their old localStorage entries are simply ignored. The
+// model files themselves are untouched in the shared Hugging Face cache, so
+// recovery is one choice in Epicenter Home rather than a re-download. Global
+// shortcuts once stored accelerator strings under the same key: a legacy value
+// fails the `globalBinding` schema on read and falls back to the default (see
+// `createPersistedMap`). Either way upgrading users get the new defaults, and we
+// carry no parser for a format nothing writes anymore.

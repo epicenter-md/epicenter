@@ -89,14 +89,9 @@ type OnDeviceProvider = {
 	access: Extract<ProviderAccess, 'onDevice'>;
 	label: string;
 	description: string;
-	/**
-	 * The device config key holding the selected model's catalog id
-	 * (`"{repoId}@{revision}/{filename}"`), never a path. Rust owns the catalog
-	 * and resolves the id to a shared-HF-cache path at load time. No static
-	 * `capabilities` here: local capability is per-GGUF, read from the Rust
-	 * `ModelInfo` (honest asymmetry vs. provider-wide cloud capability).
-	 */
-	modelConfigKey: DeviceConfigKey;
+	// No model pointer and no static `capabilities`: the host owns the one
+	// active local model (ADR-0180), and its per-model capability is read from
+	// that model at use, not declared provider-wide the way a cloud family's is.
 };
 
 type EndpointProvider = {
@@ -322,7 +317,6 @@ export const PROVIDERS = {
 		access: 'onDevice',
 		label: 'Local',
 		description: 'Private on-device transcription, no internet required',
-		modelConfigKey: 'transcription.local.selectedModel',
 	},
 
 	speaches: {

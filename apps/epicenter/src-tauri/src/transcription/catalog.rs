@@ -139,44 +139,51 @@ fn find_or_unknown(model_id: &str) -> Result<&'static CatalogEntry, CatalogError
     })
 }
 
-/// Resolve a stored model id to its on-disk GGUF path, or a user-facing message.
-/// The one place `transcribe_recording`/`prewarm_model` turn a selection into a
-/// path: an unknown id or a not-yet-downloaded model both fail here with a
-/// message the settings UI can act on.
-pub fn resolve_model_path(model_id: &str) -> Result<PathBuf, String> {
-    if model_id.is_empty() {
-        return Err("No local model selected. Choose a model in settings.".to_string());
-    }
-    let entry = find(model_id)
-        .ok_or_else(|| format!("Unknown local model \"{model_id}\". Pick a model in settings."))?;
-    entry.cached_path().ok_or_else(|| {
-        format!(
-            "The model \"{}\" is not downloaded yet. Download it in settings.",
-            entry.name
-        )
-    })
+/// The on-disk GGUF path for a model that is both in this build's catalog and
+/// present on this machine; `None` otherwise.
+///
+/// The one place `transcribe_recording`/`prewarm_model` turn the active model
+/// into a path. Deliberately a plain `Option`: an id outside the catalog and a
+/// model that is not downloaded are the same public answer ("the active model
+/// cannot run"), and the caller composes the user-facing message so that message
+/// never has to name a model. Resolution happens at the point of use, so a file
+/// that appears on disk after a failed load works on the very next call, and one
+/// deleted behind Epicenter's back is noticed on the very next call too.
+pub fn installed_model_path(model_id: &str) -> Option<PathBuf> {
+    find(model_id).and_then(CatalogEntry::cached_path)
 }
 
 /// The one active local model as **Home** sees it: its exact identity and
 /// whether its file is on this machine right now.
 ///
-/// Administration data (ADR-0180). Home chooses the active model, so Home is
-/// told which one it is. Nothing here reports residency: `installed` is disk
-/// presence, and how many models are resident or warm stays host-private.
+/// Administration data, not application data (ADR-0180). Home chooses the active
+/// model, so Home is told which one it is; an ordinary application never learns
+/// model identity and reads `get_local_transcription_readiness` instead. Nothing
+/// here reports residency: `installed` is disk presence, and how many models are
+/// resident or warm stays host-private.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ActiveModel {
     pub id: String,
+    /// The curated display name, so a caller can name the model in an error
+    /// without holding a catalog of its own.
     pub name: String,
+    /// Whether the model's file is present on this machine. Disk presence, the
+    /// same verdict `list_models` renders; never a statement about memory.
     pub installed: bool,
+    /// Whether this model accepts an initial prompt, so a caller knows whether
+    /// to offer the field at all. The runtime still guards the real decision at
+    /// use and reports what it applied, so a stale hint can only hide a field,
+    /// never misfeed the model.
     pub supports_prompt: bool,
+    /// Whether this model takes a spoken-language hint.
     pub supports_language: bool,
 }
 
 /// Describe a stored model id against the catalog, or `None` when the id names
 /// no model this build ships. Both the settings store (to refuse an unknown
-/// choice) and `get_active_model` read through here, so there is one answer to
-/// "is this a real model".
+/// choice) and `get_active_model` (to report identity and presence) read
+/// through here, so there is one answer to "is this a real model".
 pub fn describe(model_id: &str) -> Option<ActiveModel> {
     find(model_id).map(|entry| ActiveModel {
         id: entry.id(),
@@ -192,6 +199,13 @@ pub fn describe(model_id: &str) -> Option<ActiveModel> {
 #[cfg(test)]
 pub fn model_ids() -> Vec<String> {
     CATALOG.iter().map(|entry| entry.id()).collect()
+}
+
+/// Every catalog display name, so a test can assert that a message an
+/// application receives names none of them.
+#[cfg(test)]
+pub fn model_names() -> Vec<&'static str> {
+    CATALOG.iter().map(|entry| entry.name).collect()
 }
 
 /// A catalog model as the webview sees it: its identity, display fields, static

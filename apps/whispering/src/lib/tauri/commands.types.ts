@@ -7,11 +7,6 @@
  * against the generated bindings in `commands.test-d.ts`.
  */
 
-export type CatalogError =
-	| { name: 'UnknownModel'; message: string }
-	| { name: 'DownloadFailed'; message: string }
-	| { name: 'DeleteFailed'; message: string };
-
 export type DictationCapability =
 	| 'unknown'
 	| 'inactive'
@@ -19,35 +14,69 @@ export type DictationCapability =
 	| 'active'
 	| 'broken';
 
-export type DownloadProgress = {
-	bytesReceived: number | null;
-	totalBytes: number | null;
-};
-
 export type IpcRecorderError =
 	| { name: 'PermissionDenied'; message: string }
 	| { name: 'NoInputDevice'; message: string }
 	| { name: 'Failed'; message: string };
 
-export type ModelInfo = {
-	id: string;
-	name: string;
-	description: string;
-	sizeBytes: number | null;
-	supportsPrompt: boolean;
-	supportsLanguage: boolean;
-	recommended: boolean;
-	downloaded: boolean;
-};
+/** Why the local transcription route cannot run right now. */
+export type UnavailableReason = 'no-active-model' | 'active-model-unavailable';
+
+/**
+ * What an application may learn about the local transcription route: whether it
+ * is ready, and which advisory inputs it accepts. Never model identity, never
+ * inventory, never residency (ADR-0180).
+ *
+ * Advisory UI state, not a preflight gate. Transcription resolves the active
+ * model independently at the point of use, so this may be stale; `message` is a
+ * user-facing sentence that names no model.
+ */
+export type LocalTranscriptionReadiness =
+	| { status: 'ready'; supportsPrompt: boolean; supportsLanguage: boolean }
+	| { status: 'unavailable'; reason: UnavailableReason; message: string };
 
 export type TranscriptionError =
 	| { name: 'AudioReadError'; message: string }
+	// One precondition family: the local route cannot run at all. The two cases
+	// differ only as `reason` data, because the caller's job is the same either
+	// way. Load and inference failures below stay distinct: they are operational,
+	// not "you have not set this up".
+	| {
+			name: 'LocalRouteUnavailable';
+			reason: UnavailableReason;
+			message: string;
+	  }
 	| { name: 'ModelLoadError'; message: string }
-	| { name: 'TranscriptionError'; message: string }
-	| { name: 'ConfigError'; message: string };
+	| { name: 'TranscriptionError'; message: string };
 
-export type TranscriptionSpec = {
-	modelId: string;
+/**
+ * The advisory hints an application sends with a transcription. No model name:
+ * the host resolves the one active model at use, so an ordinary request cannot
+ * reassign the shared model cache (ADR-0180).
+ */
+export type TranscriptionHints = {
 	language?: string | null;
 	initialPrompt?: string | null;
+};
+
+/** Which advisory hints the run actually applied. */
+export type AppliedHints = {
+	/** The language hint the runtime received; `null` means it autodetected. */
+	language: string | null;
+	/**
+	 * Whether the initial prompt reached the runtime. `false` when none was sent
+	 * or the active model does not accept one.
+	 */
+	initialPrompt: boolean;
+};
+
+/**
+ * A finished local transcript. `modelId` names the exact model that produced the
+ * text, which is what makes an accidental substitution detectable rather than
+ * silent.
+ */
+export type LocalTranscript = {
+	text: string;
+	modelId: string;
+	applied: AppliedHints;
 };

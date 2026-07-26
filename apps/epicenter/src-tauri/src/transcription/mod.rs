@@ -1,5 +1,4 @@
 mod catalog;
-mod config;
 mod error;
 mod model_cache;
 mod settings;
@@ -7,13 +6,106 @@ mod settings;
 pub use catalog::{
     delete_model, download_model, list_models, ActiveModel, CatalogError, ModelInfo,
 };
-pub use config::TranscriptionSpec;
 pub use error::TranscriptionError;
 pub use model_cache::ModelCache;
 pub use settings::{LocalTranscriptionSettings, SettingsError, UnloadPolicy};
 
 use crate::recorder::read_blob_samples;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
+
+// ── Wire types ────────────────────────────────────────────────────────
+
+/// Why the local transcription route cannot run right now.
+///
+/// A compact reason, deliberately not a model. It is enough for an application
+/// to write an honest sentence and name Home as the fix, and it carries no
+/// identity, no inventory, and nothing about what is cached or resident.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum UnavailableReason {
+    /// Nobody has chosen an active local model on this device.
+    NoActiveModel,
+    /// A model is active, but it cannot run here: its file is not on this
+    /// machine, or it is not a model this build knows about.
+    ActiveModelUnavailable,
+}
+
+/// What an application may learn about the local transcription route: whether it
+/// is ready, and which advisory inputs it accepts.
+///
+/// Readiness and capability, never identity (ADR-0180). This is advisory UI
+/// state, not a preflight gate: a caller uses it to warn before capture and to
+/// decide whether to offer a prompt or language field, never to decide whether
+/// `transcribe_recording` may be called. Transcription resolves the active model
+/// independently at the point of use, so a stale read here can only produce a
+/// stale hint, never a wrong transcription.
+///
+/// That distinction is load-bearing because the shared Hugging Face cache can
+/// change outside Epicenter: a model deleted by another tool between this read
+/// and the next transcribe turns a `ready` answer stale, and the transcribe path
+/// still fails closed on its own.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, specta::Type)]
+#[serde(tag = "status", rename_all = "kebab-case", rename_all_fields = "camelCase")]
+pub enum LocalTranscriptionReadiness {
+    Ready {
+        /// Whether the active model accepts an initial prompt.
+        supports_prompt: bool,
+        /// Whether it takes a spoken-language hint.
+        supports_language: bool,
+    },
+    Unavailable {
+        reason: UnavailableReason,
+        /// A user-facing sentence that names no model.
+        message: String,
+    },
+}
+
+/// The advisory hints an application supplies with a transcription.
+///
+/// Model identity is deliberately absent (ADR-0180): the host resolves the one
+/// active model at use, so an ordinary request cannot reassign the shared model
+/// cache. Language and prompt stay application-owned and read-at-use, exactly as
+/// ADR-0012 left them; nothing here is retained between calls.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptionHints {
+    #[serde(default)]
+    pub language: Option<String>,
+    #[serde(default)]
+    pub initial_prompt: Option<String>,
+}
+
+/// Which advisory hints the run actually applied.
+///
+/// A hint the active model cannot take is reported here rather than dropped in
+/// silence, so a caller can tell its user that the prompt did not reach the
+/// recognizer instead of wondering why it had no effect.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AppliedHints {
+    /// The language hint the runtime received. `None` means it autodetected,
+    /// either because the caller asked for autodetect or sent nothing.
+    pub language: Option<String>,
+    /// Whether the caller's initial prompt reached the runtime. `false` when the
+    /// caller sent none, or the active model does not accept one (Whisper does;
+    /// the Parakeet family does not).
+    pub initial_prompt: bool,
+}
+
+/// A finished local transcript.
+///
+/// `model_id` names the exact model that produced this text. Reporting it on
+/// every success is what makes an accidental substitution detectable: with the
+/// active model unchanged, identical ordinary requests must name the same model
+/// however the host arranges residency.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalTranscript {
+    pub text: String,
+    pub model_id: String,
+    pub applied: AppliedHints,
+}
 
 // ── Home: model administration ────────────────────────────────────────
 
@@ -21,7 +113,10 @@ use tauri::{AppHandle, State};
 /// `None` when nobody has chosen one.
 ///
 /// **Administration only.** Home holds this grant because Home chooses the
-/// active model and must show which one that is (ADR-0180).
+/// active model and must show which one that is. Applications are not granted
+/// it and read `get_local_transcription_readiness` instead, which answers the
+/// question they actually have without handing them an identity they could
+/// start keying behaviour off.
 #[tauri::command]
 #[specta::specta]
 pub fn get_active_model(model_cache: State<'_, ModelCache>) -> Option<ActiveModel> {
@@ -64,17 +159,36 @@ pub fn set_unload_policy(
     model_cache.settings().set_unload_policy(policy)
 }
 
-/// Canonical transcribe-by-id path. Resolves the canonical local blob,
-/// decodes it, then runs inference using
-/// the per-call transcription spec supplied by the frontend.
+// ── Applications: readiness and transcribe ────────────────────────────
+
+/// Whether the local transcription route can run right now, and what it accepts.
+///
+/// The one ordinary application-facing read. It exists so an app can warn the
+/// user *before* they speak, which matters because the surface that reports a
+/// failure afterwards (a dictation pill) has nowhere to put a recovery action.
+/// Advisory only: it never mutates, and it is not a gate the caller must pass
+/// before transcribing.
+#[tauri::command]
+#[specta::specta]
+pub fn get_local_transcription_readiness(
+    model_cache: State<'_, ModelCache>,
+) -> LocalTranscriptionReadiness {
+    model_cache.readiness()
+}
+
+// ── Applications: transcribe ──────────────────────────────────────────
+
+/// Canonical transcribe-by-id path. Resolves the canonical local blob, decodes
+/// it, then runs inference on the **active** model with the caller's advisory
+/// hints. The caller names audio and hints; it does not name a model.
 #[tauri::command]
 #[specta::specta]
 pub async fn transcribe_recording(
     audio_blob_id: String,
-    spec: TranscriptionSpec,
+    hints: TranscriptionHints,
     app_handle: AppHandle,
     model_cache: State<'_, ModelCache>,
-) -> Result<String, TranscriptionError> {
+) -> Result<LocalTranscript, TranscriptionError> {
     let samples = crate::timing::measure("transcribe.read+decode", || {
         read_blob_samples(&app_handle, &audio_blob_id)
     })
@@ -83,30 +197,27 @@ pub async fn transcribe_recording(
     })?;
 
     let cache = model_cache.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || cache.transcribe(samples, spec))
+    tauri::async_runtime::spawn_blocking(move || cache.transcribe(samples, hints))
         .await
         .map_err(join_err)?
 }
 
-/// Prewarm the local model for `spec` so a following transcribe finds it
-/// warm. The frontend fires this fire-and-forget at capture start (manual
-/// record or VAD listen) for a local provider, overlapping the ~1 s model
-/// load with the user's speech instead of paying it after they stop.
+/// Prewarm the active local model so a following transcribe finds it warm. The
+/// frontend fires this fire-and-forget at capture start (manual record or VAD
+/// listen) for a local route, overlapping the ~1 s model load with the user's
+/// speech instead of paying it after they stop.
 ///
-/// Idempotent and cheap: a no-op when the exact model is already resident.
+/// Idempotent and cheap: a no-op when the active model is already resident.
 /// Shares the one load path with `transcribe_recording` (`ModelCache::prewarm`
 /// and `transcribe` both resolve through `ensure_loaded`), so the model warmed
-/// here is exactly the one transcribe will use, and a mid-recording model change
-/// simply reloads at transcribe time. A failure here is non-fatal: transcribe
-/// will load normally and surface any real error then.
+/// here is exactly the one transcribe will use, because there is only one. A
+/// failure here is non-fatal: transcribe will load normally and surface any real
+/// error then.
 #[tauri::command]
 #[specta::specta]
-pub async fn prewarm_model(
-    spec: TranscriptionSpec,
-    model_cache: State<'_, ModelCache>,
-) -> Result<(), TranscriptionError> {
+pub async fn prewarm_model(model_cache: State<'_, ModelCache>) -> Result<(), TranscriptionError> {
     let cache = model_cache.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || cache.prewarm(&spec))
+    tauri::async_runtime::spawn_blocking(move || cache.prewarm())
         .await
         .map_err(join_err)?
 }

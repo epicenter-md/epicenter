@@ -21,6 +21,7 @@ use tauri_plugin_dialog::{
     DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
 };
 use tauri_plugin_opener::OpenerExt;
+use tauri_specta::Event as _;
 
 pub mod audio;
 use audio::encode_recording_for_upload;
@@ -34,9 +35,9 @@ use recorder::recorder::Recorder;
 
 pub mod transcription;
 use transcription::{
-    delete_model, download_model, get_active_model, get_unload_policy, list_models, prewarm_model,
-    set_active_model, set_unload_policy, transcribe_recording, LocalTranscriptionSettings,
-    ModelCache,
+    delete_model, download_model, get_active_model, get_local_transcription_readiness,
+    get_unload_policy, list_models, prewarm_model, set_active_model, set_unload_policy,
+    transcribe_recording, LocalTranscriptionSettings, ModelCache,
 };
 
 pub mod command;
@@ -326,6 +327,8 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             request_microphone_permission,
             get_active_model,
             set_active_model,
+            get_local_transcription_readiness,
+            open_model_administration,
             get_unload_policy,
             set_unload_policy,
             list_models,
@@ -343,6 +346,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         .events(tauri_specta::collect_events![
             keyboard::DictationCapabilityEvent,
             GlobalShortcutTriggered,
+            RevealModelAdministration,
         ])
         .error_handling(tauri_specta::ErrorHandlingMode::Result)
 }
@@ -380,6 +384,29 @@ fn get_runtime_info(state: State<'_, HostState>) -> std::result::Result<RuntimeI
         product: PRODUCT_NAME,
         origin: origin(port),
     })
+}
+
+/// Ask Epicenter Home to reveal its local-model administration.
+///
+/// Emitted only by `open_model_administration`, so focusing the window and
+/// landing on the right panel are one act from the caller's point of view.
+#[derive(Clone, Debug, serde::Serialize, specta::Type, tauri_specta::Event)]
+pub struct RevealModelAdministration;
+
+/// Take the user to the one surface that can fix an unavailable local
+/// transcription route.
+///
+/// The app shell owns this navigation (ADR-0180). The host reports the fact that
+/// the route is unavailable, an application decides how to present it, and
+/// getting the user to Home is neither of their jobs: `open_app` deliberately
+/// refuses built-in surfaces, so without this an application could only tell the
+/// user where to go and hope. It mutates no transcription state: it opens a
+/// window, and the user still chooses.
+#[tauri::command]
+#[specta::specta]
+fn open_model_administration(app: DesktopAppHandle) {
+    request_surface(&app, Surface::Home);
+    let _ = RevealModelAdministration.emit_to(&app, Surface::Home.id());
 }
 
 /// Open one derived-catalog app window. Rust validates the ID and derives the
@@ -1623,9 +1650,25 @@ mod tests {
     /// Model administration is routed to Home and to no application window
     /// (ADR-0180). This is wiring, not a sandbox: an app window runs as
     /// Epicenter. What it proves is that the ownership the record describes is
-    /// the ownership the build actually wires.
+    /// the ownership the build actually wires, so "Whispering cannot pick a
+    /// model" does not quietly become false the next time a permission is
+    /// pasted into the wrong file.
     #[test]
-    fn model_administration_is_routed_to_the_home_window() {
+    fn model_administration_is_routed_to_home_and_away_from_applications() {
+        // `get_active_model` is in this list: model *identity* is administration
+        // data. An application reads readiness, which answers "can the route run
+        // and what does it accept" without naming a model (ADR-0180).
+        const ADMINISTRATION: &[&str] = &[
+            "allow-list-models",
+            "allow-download-model",
+            "allow-cancel-download",
+            "allow-delete-model",
+            "allow-get-active-model",
+            "allow-set-active-model",
+            "allow-get-unload-policy",
+            "allow-set-unload-policy",
+        ];
+
         for encoded in [
             include_str!("../capabilities/home-model-administration-development.json"),
             include_str!("../capabilities/home-model-administration-production.json"),
@@ -1637,19 +1680,37 @@ mod tests {
                 "model administration belongs to Home alone"
             );
             let permissions = capability["permissions"].as_array().unwrap();
-            for permission in [
-                "allow-list-models",
-                "allow-download-model",
-                "allow-cancel-download",
-                "allow-delete-model",
-                "allow-get-active-model",
-                "allow-set-active-model",
-                "allow-get-unload-policy",
-                "allow-set-unload-policy",
-            ] {
+            for permission in ADMINISTRATION {
                 assert!(
                     permissions.contains(&serde_json::json!(permission)),
                     "Home must be able to invoke {permission}"
+                );
+            }
+        }
+
+        for encoded in [
+            include_str!("../capabilities/trusted-whispering-native-development.json"),
+            include_str!("../capabilities/trusted-whispering-native-production.json"),
+        ] {
+            let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
+            let permissions = capability["permissions"].as_array().unwrap();
+            for permission in ADMINISTRATION {
+                assert!(
+                    !permissions.contains(&serde_json::json!(permission)),
+                    "an application must not administer models: {permission}"
+                );
+            }
+            // It still transcribes, still reads advisory readiness so it can warn
+            // before capture, and can still send the user to Home to fix it.
+            for permission in [
+                "allow-transcribe-recording",
+                "allow-prewarm-model",
+                "allow-get-local-transcription-readiness",
+                "allow-open-model-administration",
+            ] {
+                assert!(
+                    permissions.contains(&serde_json::json!(permission)),
+                    "Whispering must keep {permission}"
                 );
             }
         }

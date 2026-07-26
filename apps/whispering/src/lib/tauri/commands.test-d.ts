@@ -8,24 +8,21 @@
 
 import type { Result } from 'wellcrafted/result';
 import type {
-	CatalogError,
 	commands,
 	DictationCapability,
-	DownloadProgress,
 	IpcRecorderError,
-	ModelInfo,
-	SettingsError,
+	LocalTranscript,
+	LocalTranscriptionReadiness,
 	TranscriptionError,
-	TranscriptionSpec,
+	TranscriptionHints,
 } from './commands';
 import type {
-	CatalogError as SharedCatalogError,
 	DictationCapability as SharedDictationCapability,
-	DownloadProgress as SharedDownloadProgress,
 	IpcRecorderError as SharedIpcRecorderError,
-	ModelInfo as SharedModelInfo,
+	LocalTranscript as SharedLocalTranscript,
+	LocalTranscriptionReadiness as SharedLocalTranscriptionReadiness,
 	TranscriptionError as SharedTranscriptionError,
-	TranscriptionSpec as SharedTranscriptionSpec,
+	TranscriptionHints as SharedTranscriptionHints,
 } from './commands.types';
 
 // Helper: a no-op assertion that two types are equal.
@@ -40,22 +37,20 @@ type Equal<X, Y> =
 type _SharedContracts = Expect<
 	Equal<
 		[
-			SharedCatalogError,
 			SharedDictationCapability,
-			SharedDownloadProgress,
 			SharedIpcRecorderError,
-			SharedModelInfo,
+			SharedLocalTranscript,
+			SharedLocalTranscriptionReadiness,
 			SharedTranscriptionError,
-			SharedTranscriptionSpec,
+			SharedTranscriptionHints,
 		],
 		[
-			CatalogError,
 			DictationCapability,
-			DownloadProgress,
 			IpcRecorderError,
-			ModelInfo,
+			LocalTranscript,
+			LocalTranscriptionReadiness,
 			TranscriptionError,
-			TranscriptionSpec,
+			TranscriptionHints,
 		]
 	>
 >;
@@ -81,35 +76,49 @@ type _ResumePlayback = Expect<
 	Equal<ReturnType<typeof commands.resumePlayback>, Promise<void>>
 >;
 
-// transcribe_recording: fallible, takes recordingId plus the per-call spec.
+// transcribe_recording: fallible, takes the blob id plus advisory hints, and
+// answers with the text alongside the exact model that produced it. The absence
+// of a model argument here is the ADR-0180 invariant expressed at the type
+// level: an application cannot name a model, so it cannot change one.
 type _TranscribeRecording = Expect<
 	Equal<
 		ReturnType<typeof commands.transcribeRecording>,
-		Promise<Result<string, TranscriptionError>>
+		Promise<Result<LocalTranscript, TranscriptionError>>
 	>
 >;
 
 type _TranscribeRecordingArgs = Expect<
 	Equal<
 		Parameters<typeof commands.transcribeRecording>,
-		[string, TranscriptionSpec]
+		[string, TranscriptionHints]
 	>
 >;
 
-// set_unload_policy: fallible now that the host stores the policy durably
-// (ADR-0180). A choice that cannot be made durable is reported rather than
-// silently applying for this run only.
-type _SetUnloadPolicy = Expect<
+// prewarm_model: takes nothing. It warms the active model, the same one
+// transcribe will run, because there is only one.
+type _PrewarmModelArgs = Expect<
+	Equal<Parameters<typeof commands.prewarmModel>, []>
+>;
+
+// get_local_transcription_readiness: infallible and advisory. This is the whole
+// application-facing read of the local route, and the type is the boundary:
+// there is no model id, no name, and no inventory anywhere in it (ADR-0180).
+type _GetLocalTranscriptionReadiness = Expect<
 	Equal<
-		ReturnType<typeof commands.setUnloadPolicy>,
-		Promise<Result<null, SettingsError>>
+		ReturnType<typeof commands.getLocalTranscriptionReadiness>,
+		Promise<LocalTranscriptionReadiness>
 	>
 >;
 
-type _SetUnloadPolicyArg = Expect<
+type _ReadinessShape = Expect<
 	Equal<
-		Parameters<typeof commands.setUnloadPolicy>,
-		['never' | 'immediately' | 'after_5_minutes' | 'after_30_minutes']
+		LocalTranscriptionReadiness,
+		| { status: 'ready'; supportsPrompt: boolean; supportsLanguage: boolean }
+		| {
+				status: 'unavailable';
+				reason: 'no-active-model' | 'active-model-unavailable';
+				message: string;
+		  }
 	>
 >;
 
@@ -134,12 +143,12 @@ type _EncodeRecordingForUpload = Expect<
 	>
 >;
 
-// TranscriptionSpec is the per-call local transcription config.
-type _TranscriptionSpecShape = Expect<
+// TranscriptionHints is the per-call advisory input: language and prompt, and
+// deliberately no model.
+type _TranscriptionHintsShape = Expect<
 	Equal<
-		TranscriptionSpec,
+		TranscriptionHints,
 		{
-			modelId: string;
 			language?: string | null;
 			initialPrompt?: string | null;
 		}

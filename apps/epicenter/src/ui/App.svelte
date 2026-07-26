@@ -9,6 +9,7 @@
 	import type { HomeInvocation } from '../host.ts';
 	import Composer from './Composer.svelte';
 	import LocalModelAdministration from './LocalModelAdministration.svelte';
+	import { events } from './bindings.gen';
 	import { readRuntimeInfo } from './runtime.ts';
 	import Transcript from './Transcript.svelte';
 	import { createSession } from './session.svelte.ts';
@@ -33,6 +34,11 @@
 	// header rather than living inline: it is a settings act, not part of the
 	// conversation.
 	let modelsOpen = $state(false);
+	// An app whose local transcription is unavailable can send the user here.
+	// Focusing the window is the host's half; landing on the right panel is ours.
+	void events.revealModelAdministration.listen(() => {
+		modelsOpen = true;
+	});
 
 	const connectionIndicator = {
 		connecting: { label: 'Connecting', dot: 'bg-warning' },

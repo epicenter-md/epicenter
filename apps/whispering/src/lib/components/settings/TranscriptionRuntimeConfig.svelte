@@ -17,10 +17,6 @@
 		SUPPORTED_LANGUAGES_OPTIONS,
 		type SupportedLanguage,
 	} from '$lib/constants/languages';
-	import {
-		LOCAL_MODEL_UNLOAD_POLICY_OPTIONS,
-		type LocalModelUnloadPolicy,
-	} from '$lib/constants/local-model-unload-policy';
 	import { whisperingPath } from '$lib/constants/urls';
 	import { describeTranscriptionDestinationFromConfig } from '$lib/operations/transcription-target';
 	import {
@@ -33,13 +29,16 @@
 		type ProviderAccess,
 	} from '$lib/services/transcription/providers';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
-	import { localModels } from '$lib/state/local-models.svelte';
+	import {
+		getLocalRouteBlocker,
+		getLocalRouteState,
+	} from '$lib/settings/transcription-validation';
+	import { localRoute } from '$lib/state/local-route.svelte';
 	import { recordingActive } from '$lib/state/recording-active.svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
 	import { auth } from '#platform/auth';
 	import { tauri } from '#platform/tauri';
 	import AdvancedDisclosure from './AdvancedDisclosure.svelte';
-	import LocalModelSelector from './LocalModelSelector.svelte';
 	import ProviderConfigFields from './ProviderConfigFields.svelte';
 	import { getWhisperingApp } from '$lib/whispering/context';
 
@@ -70,35 +69,22 @@
 	);
 
 	// Cloud/self-hosted capability is provider-wide (static). Local capability is
-	// per-GGUF, read from the selected model's Rust `ModelInfo`; nothing selected
-	// yet defaults permissive (Whisper-class), and the runtime independently
-	// ignores a prompt a model does not accept. Gates the advanced fields, which
-	// apply to whichever route is active.
-	const currentServiceCapabilities = $derived.by(() => {
-		if (activeService === 'local') {
-			const model = localModels.find(
-				deviceConfig.get(PROVIDERS.local.modelConfigKey),
-			);
-			return {
-				supportsPrompt: model?.supportsPrompt ?? true,
-				supportsLanguage: model?.supportsLanguage ?? true,
-			};
-		}
-		return PROVIDERS[activeService].capabilities;
-	});
+	// per-model, read from the host's active model; no active model yet defaults
+	// permissive (Whisper-class), and the runtime independently guards what it
+	// applies and reports it back. Gates the advanced fields, which apply to
+	// whichever route is active.
+	const localRouteState = $derived(getLocalRouteState());
+	const localRouteBlocker = $derived(getLocalRouteBlocker());
 
-	const isLocalProvider = $derived(Boolean(tauri) && activeAccess === 'onDevice');
+	const currentServiceCapabilities = $derived(
+		activeService === 'local'
+			? localRoute.capabilities
+			: PROVIDERS[activeService].capabilities,
+	);
 
 	const spokenLanguageLabel = $derived(
 		SUPPORTED_LANGUAGES_OPTIONS.find(
 			(i) => i.value === app.settings.get('settings.transcription.language'),
-		)?.label,
-	);
-
-	const unloadPolicyLabel = $derived(
-		LOCAL_MODEL_UNLOAD_POLICY_OPTIONS.find(
-			(o) =>
-				o.value === deviceConfig.get('transcription.localModelUnloadPolicy'),
 		)?.label,
 	);
 
@@ -160,12 +146,7 @@
 			</div>
 
 			{#if section.access === 'onDevice'}
-				<LocalModelSelector
-					bind:value={
-						() => deviceConfig.get('transcription.local.selectedModel'),
-						(v) => deviceConfig.set('transcription.local.selectedModel', v)
-					}
-				/>
+				{@render onDeviceSection()}
 			{:else if section.access === 'session'}
 				{@render epicenterSection()}
 			{:else if section.access === 'key'}
@@ -184,6 +165,40 @@
 		<Field.Group>{@render advancedFields()}</Field.Group>
 	</AdvancedDisclosure>
 </Field.Group>
+
+{#snippet onDeviceSection()}
+	<!-- Whispering chooses the transcription route; Epicenter owns which local
+	     model runs and administers downloads, deletion, and the unload policy
+	     (ADR-0180). This section reports whether the route is ready and hands off
+	     to Home; it names no model, because model identity is administration data
+	     this app is not given. -->
+	<Field.Field orientation="horizontal">
+		<Field.Content>
+			<Field.Label>On-device transcription</Field.Label>
+			<Field.Description>
+				{#if localRouteState === 'loading'}
+					Checking whether this device can transcribe locally.
+				{:else if localRouteBlocker}
+					{localRouteBlocker}
+				{:else}
+					Ready. Epicenter runs local transcription on the model you chose in
+					Home, and reports which model produced each transcript.
+				{/if}
+			</Field.Description>
+		</Field.Content>
+		{#if localRouteState === 'ready'}
+			<Badge variant="secondary" class="text-xs">Ready</Badge>
+		{:else if localRouteState === 'unavailable'}
+			<Button
+				variant="outline"
+				size="sm"
+				onclick={() => localRoute.openModelAdministration()}
+			>
+				Open Home
+			</Button>
+		{/if}
+	</Field.Field>
+{/snippet}
 
 {#snippet epicenterSection()}
 	{#if isSignedIn}
@@ -454,45 +469,6 @@
 {/snippet}
 
 {#snippet advancedFields()}
-	{#if isLocalProvider}
-		<Field.Field>
-			<Field.Label for="local-model-unload-policy">
-				Unload Model When Idle
-			</Field.Label>
-			<Select.Root
-				type="single"
-				bind:value={
-					() => deviceConfig.get('transcription.localModelUnloadPolicy'),
-					(v) =>
-						deviceConfig.set(
-							'transcription.localModelUnloadPolicy',
-							v as LocalModelUnloadPolicy,
-						)
-				}
-			>
-				<Select.Trigger id="local-model-unload-policy" class="w-full">
-					{unloadPolicyLabel ?? 'Select a policy'}
-				</Select.Trigger>
-				<Select.Content>
-					{#each LOCAL_MODEL_UNLOAD_POLICY_OPTIONS as option}
-						<Select.Item value={option.value} label={option.label}>
-							<div class="flex flex-col gap-1 py-1">
-								<div class="font-medium">{option.label}</div>
-								<div class="text-sm text-muted-foreground">
-									{option.description}
-								</div>
-							</div>
-						</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Root>
-			<Field.Description>
-				Controls when Whispering drops the loaded transcription model from
-				memory. Lower memory means a fresh load on the next transcription.
-			</Field.Description>
-		</Field.Field>
-	{/if}
-
 	<Field.Field>
 		<Field.Label for="spoken-language">Spoken Language</Field.Label>
 		<Select.Root

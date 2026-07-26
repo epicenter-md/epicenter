@@ -38,7 +38,6 @@
  * See `specs/20260526T000140-collapse-tauri-only-services-into-namespace.md`.
  */
 
-import { Channel } from '@tauri-apps/api/core';
 import { appDataDir, basename, extname, join } from '@tauri-apps/api/path';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -54,7 +53,6 @@ import {
 import { Ok, tryAsync } from 'wellcrafted/result';
 import type {
 	DictationCapability,
-	DownloadProgress,
 	GlobalShortcutRegistration,
 } from '$lib/tauri/commands';
 import { commands, events } from '$lib/tauri/commands';
@@ -348,23 +346,18 @@ const media = {
 // `#platform/tauri` seam. Keeping the raw generated bindings here prevents a
 // browser build from retaining native invoke names merely because it shares the
 // orchestration module with Epicenter.
+// Transcription, not model administration: Whispering asks the host to
+// transcribe on whichever model is active, and reads advisory readiness so it
+// can warn before capture. Choosing, downloading, and deleting models, and even
+// learning which model is active, belong to Epicenter Home (ADR-0180); no
+// Whispering window is granted those commands. `openModelAdministration` is
+// shell navigation, not administration: it opens Home and the user decides.
 const transcription = {
 	encodeRecordingForUpload: commands.encodeRecordingForUpload,
-	listModels: commands.listModels,
-	downloadModel: (
-		modelId: string,
-		downloadId: string,
-		onProgress: (progress: DownloadProgress) => void,
-	) => {
-		const channel = new Channel<DownloadProgress>();
-		channel.onmessage = onProgress;
-		return commands.downloadModel(modelId, downloadId, channel);
-	},
-	deleteModel: commands.deleteModel,
-	cancelDownload: commands.cancelDownload,
+	getLocalTranscriptionReadiness: commands.getLocalTranscriptionReadiness,
+	openModelAdministration: commands.openModelAdministration,
 	prewarmModel: commands.prewarmModel,
 	transcribeRecording: commands.transcribeRecording,
-	setUnloadPolicy: commands.setUnloadPolicy,
 };
 
 // opener ------------------------------------------------------------

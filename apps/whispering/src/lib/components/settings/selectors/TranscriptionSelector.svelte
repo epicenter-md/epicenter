@@ -5,25 +5,20 @@
 	import { useCombobox } from '@epicenter/ui/hooks';
 	import { Loading } from '@epicenter/ui/loading';
 	import * as Popover from '@epicenter/ui/popover';
-	import { Progress } from '@epicenter/ui/progress';
-	import { toast } from '@epicenter/ui/sonner';
 	import { cn } from '@epicenter/ui/utils';
 	import CaptionsIcon from '@lucide/svelte/icons/captions';
 	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
-	import DownloadIcon from '@lucide/svelte/icons/download';
 	import HardDriveDownloadIcon from '@lucide/svelte/icons/hard-drive-download';
 	import MicIcon from '@lucide/svelte/icons/mic';
 	import PlusIcon from '@lucide/svelte/icons/plus';
-	import XIcon from '@lucide/svelte/icons/x';
 	import { goto } from '$app/navigation';
 	import { whisperingPath } from '$lib/constants/urls';
 	import { readyTranscribers } from '$lib/settings/transcription-switcher';
 	import {
+		getLocalRouteState,
 		getSelectedTranscriptionService,
 		getTranscriptionReadiness,
 	} from '$lib/settings/transcription-validation';
-	import { deviceConfig } from '$lib/state/device-config.svelte';
-	import { localModels } from '$lib/state/local-models.svelte';
 	import { auth } from '#platform/auth';
 	import { tauri } from '#platform/tauri';
 	import TranscriberRow from './TranscriberRow.svelte';
@@ -101,41 +96,11 @@
 	const combobox = useCombobox();
 
 	// `transcribers` is empty only when nothing is set up and the user is signed
-	// out (a signed-in user always has the session transcriber). Desktop leads with
-	// the private on-device download; web offers sign-in or an API key. Never
-	// auto-selects a remote provider.
-	const recommended = $derived(
-		localModels.models.find((model) => model.recommended) ??
-			localModels.models[0],
-	);
-	const recommendedState = $derived(
-		recommended ? localModels.stateOf(recommended) : null,
-	);
-
-	function formatSize(bytes: number | null): string {
-		if (!bytes) return '';
-		const mb = bytes / 1_000_000;
-		return mb >= 1000 ? `${(mb / 1000).toFixed(1)} GB` : `${Math.round(mb)} MB`;
-	}
-
-	async function downloadRecommended() {
-		if (!recommended) return;
-		const result = await localModels.download(recommended);
-		if (!result) return;
-		if (result.error) {
-			toast.error('Failed to download model', {
-				description: result.error.message,
-			});
-			return;
-		}
-		app.settings.set('settings.transcription.service', 'local');
-		deviceConfig.set('transcription.local.selectedModel', result.data.modelId);
-		toast.success(
-			result.data.outcome === 'already-installed'
-				? 'Model already downloaded and activated'
-				: 'Model downloaded and activated',
-		);
-	}
+	// out (a signed-in user always has the session transcriber). On desktop the
+	// privacy-forward path is to set up a local model, which Epicenter Home owns
+	// (ADR-0180), so this surface points there instead of downloading one itself.
+	// Web has no local route at all and offers sign-in or an API key.
+	const localRouteState = $derived(getLocalRouteState());
 </script>
 
 {#snippet triggerBrandIcon(icon: string, invertInDarkMode: boolean, dimmed = false)}
@@ -218,42 +183,31 @@
 		{#if transcribers.length === 0}
 			<!-- Signed out with nothing set up: privacy-forward on desktop, remote
 			setup on web. Never auto-selects a provider. -->
-			{#if tauri && recommended && recommendedState}
+			{#if tauri && localRouteState === 'loading'}
+				<Loading class="py-8" label="Checking the active local model" />
+			{:else if tauri}
 				<Empty.Root class="py-8">
 					<Empty.Media variant="icon">
 						<HardDriveDownloadIcon class="size-5" />
 					</Empty.Media>
 					<Empty.Title>Transcribe on this device</Empty.Title>
 					<Empty.Description>
-						Private, offline, and free. Download the recommended model to start.
+						Private, offline, and free. Epicenter Home is where you download a
+						local model and make it active; it then runs every local
+						transcription on this device.
 					</Empty.Description>
-					<Empty.Content>
-						{#if recommendedState.type === 'downloading'}
-							<div class="flex w-full max-w-xs flex-col items-center gap-2">
-								<Progress value={recommendedState.progress} class="h-2" />
-								<span class="text-sm text-muted-foreground">
-									Downloading {recommended.name}: {recommendedState.progress}%
-								</span>
-								<Button
-									variant="ghost"
-									size="sm"
-									onclick={() => localModels.cancel(recommended)}
-									disabled={recommendedState.cancelling}
-								>
-									<XIcon class="size-4" />
-									{recommendedState.cancelling ? 'Cancelling…' : 'Cancel'}
-								</Button>
-							</div>
-						{:else}
-							<Button onclick={downloadRecommended}>
-								<DownloadIcon class="size-4" />
-								Download {recommended.name} ({formatSize(recommended.sizeBytes)})
-							</Button>
-						{/if}
+					<Empty.Content class="flex flex-col gap-2">
+						<Button
+							variant="outline"
+							onclick={() => {
+								goto(whisperingPath('/settings/processing'));
+								combobox.closeAndFocusTrigger();
+							}}
+						>
+							Set up a cloud provider instead
+						</Button>
 					</Empty.Content>
 				</Empty.Root>
-			{:else if tauri && !localModels.loaded}
-				<Loading class="py-8" label="Loading on-device models" />
 			{:else}
 				<Empty.Root class="py-8">
 					<Empty.Media variant="icon">

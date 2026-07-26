@@ -16,14 +16,13 @@ import {
 	recordTranscriptionOutcome,
 	type TranscriptionSuccess,
 } from '$lib/operations/transcription-history';
-import { report } from '$lib/report';
+import { log, report } from '$lib/report';
 import { services } from '$lib/services';
 import { DeepgramTranscriptionServiceLive } from '$lib/services/transcription/cloud/deepgram';
 import { ElevenLabsTranscriptionServiceLive } from '$lib/services/transcription/cloud/elevenlabs';
 import { MistralTranscriptionServiceLive } from '$lib/services/transcription/cloud/mistral';
 import {
 	isOnDeviceProviderId,
-	type OnDeviceProviderId,
 	PROVIDERS,
 	type UploadProviderId,
 } from '$lib/services/transcription/providers';
@@ -57,9 +56,6 @@ const TranscriptionOperationError = defineErrors({
 	LocalTranscriptionUnavailableOnWeb: () => ({
 		message:
 			'Local transcription is only available in the desktop app. Choose a cloud or self-hosted provider on web.',
-	}),
-	LocalModelNotSelected: () => ({
-		message: 'Please select a local model in settings.',
 	}),
 });
 
@@ -261,7 +257,7 @@ export async function transcribeAudio(
 	// to `OnDeviceProviderId` in one arm and `UploadProviderId` in the other, so each
 	// helper receives an already-narrowed id and neither re-checks.
 	const transcriptionResult = isOnDeviceProviderId(selectedService)
-		? await transcribeOnDevice(app, audioBlobId, selectedService)
+		? await transcribeOnDevice(app, audioBlobId)
 		: await transcribeViaUpload(app, audioBlobId, selectedService);
 
 	const duration = Date.now() - startTime;
@@ -303,17 +299,17 @@ export async function transcribeAndPersist(
 }
 
 /**
- * Warm the selected local model the instant a capture begins, so the cold
+ * Warm the host's active local model the instant a capture begins, so the cold
  * load (~1 s) overlaps the user's speech instead of being paid after they
  * stop. Called fire-and-forget from the manual and VAD start paths.
  *
- * No-op unless we are on desktop with an on-device provider selected and a model
- * chosen: cloud/self-hosted have no on-device model to load, and web has no Rust.
- * It resolves the model exactly the way `transcribeOnDevice` does, so it warms
- * the same model transcription will use. Failures are swallowed on purpose:
- * the worst case is transcription loads the model itself, as it does today.
- * `language`/`initialPrompt` are inference params, irrelevant to loading, so
- * they are sent null.
+ * No-op unless we are on desktop with the local route selected: cloud and
+ * self-hosted have no on-device model to load, and web has no Rust. The host
+ * resolves the same active model here as it does at transcribe, because there is
+ * only one (ADR-0180), so what is warmed is what will run. Failures are
+ * swallowed on purpose: the worst case is transcription loads the model itself,
+ * and a real problem (no active model, not downloaded) surfaces there with a
+ * message the user can act on.
  */
 export function prewarmOnDeviceModel(app: WhisperingApp): void {
 	if (!tauri) return;
@@ -321,14 +317,7 @@ export function prewarmOnDeviceModel(app: WhisperingApp): void {
 	const selectedService = app.settings.get('settings.transcription.service');
 	if (!isOnDeviceProviderId(selectedService)) return;
 
-	const modelId = deviceConfig.get(PROVIDERS[selectedService].modelConfigKey);
-	if (!modelId) return;
-
-	void tauri.transcription.prewarmModel({
-		modelId,
-		language: null,
-		initialPrompt: null,
-	});
+	void tauri.transcription.prewarmModel();
 }
 
 /**
@@ -346,38 +335,57 @@ function withDictionaryTerms(prompt: string, dictionary: string[]): string {
 	return trimmed ? `${trimmed} ${glossary}` : glossary;
 }
 
+/**
+ * Transcribe on the host's one active local model.
+ *
+ * Whispering names audio and advisory hints; it does not name a model
+ * (ADR-0180). The host resolves the active model at the point of use and
+ * reports which model actually ran, so a model that appears on disk after a
+ * failed load works on the very next call, and no request can quietly change
+ * what the shared cache holds. Every failure mode here is the host's to
+ * describe: no active model, an active model that is not downloaded, a load or
+ * inference failure. Each arrives as a tagged error carrying a message that
+ * names the fix, so there is no frontend pre-check to drift from it.
+ */
 async function transcribeOnDevice(
 	app: WhisperingApp,
 	audioBlobId: BlobId,
-	selectedService: OnDeviceProviderId,
 ): Promise<Result<string, TranscriptionError>> {
 	if (!tauri) {
 		return TranscriptionOperationError.LocalTranscriptionUnavailableOnWeb();
 	}
 
-	// Rust owns model resolution and validation: it resolves this catalog id to a
-	// shared-HF-cache path and reports an unknown or not-downloaded model with a
-	// user-facing message. The FE keeps the one check Rust cannot make as well:
-	// "nothing selected yet" (instant, no IPC).
-	const modelId = deviceConfig.get(PROVIDERS[selectedService].modelConfigKey);
-	if (!modelId) {
-		return TranscriptionOperationError.LocalModelNotSelected();
-	}
-
-	// Read-at-use: the per-call spec is built right here, where it is consumed,
-	// so there is no ambient config to go stale. `auto` language and an empty
-	// prompt map to the wire's "unset" (an omitted optional field). The Dictionary
-	// terms fold into the prompt so local recognition spells them the user's way.
+	// Read-at-use: the hints are built right here, where they are consumed, so
+	// there is no ambient config to go stale. `auto` language and an empty prompt
+	// map to the wire's "unset" (an omitted optional field). The Dictionary terms
+	// fold into the prompt so local recognition spells them the user's way.
 	const language = app.settings.get('settings.transcription.language');
 	const prompt = withDictionaryTerms(
 		app.settings.get('settings.transcription.prompt'),
 		app.settings.get('settings.dictionary'),
 	);
-	return tauri.transcription.transcribeRecording(audioBlobId, {
-		modelId,
-		language: language === 'auto' ? undefined : language,
-		initialPrompt: prompt || undefined,
+	const { data: transcript, error } =
+		await tauri.transcription.transcribeRecording(audioBlobId, {
+			language: language === 'auto' ? undefined : language,
+			initialPrompt: prompt || undefined,
+		});
+	if (error) return Err(error);
+
+	// The host names the exact model on every success. Logging it is what turns
+	// an accidental substitution into something visible after the fact.
+	log.info('Local transcription complete', {
+		modelId: transcript.modelId,
+		applied: transcript.applied,
 	});
+	// A prompt the active model cannot take is reported, not silently dropped, so
+	// "my Dictionary had no effect" has an answer in the log rather than being a
+	// mystery.
+	if (prompt && !transcript.applied.initialPrompt) {
+		log.info(
+			`The active local model (${transcript.modelId}) does not accept an initial prompt; your prompt and Dictionary terms were not applied.`,
+		);
+	}
+	return Ok(transcript.text);
 }
 
 async function transcribeViaUpload(

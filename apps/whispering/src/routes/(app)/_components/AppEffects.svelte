@@ -7,7 +7,6 @@
 	import { notifyDictationFailures } from '../_app-effects/notify-dictation-failures.svelte';
 	import { synchronizeAutoPasteIntent } from '../_app-effects/synchronize-auto-paste-intent.svelte';
 	import { synchronizeShortcuts } from '../_app-effects/synchronize-shortcuts';
-	import { synchronizeUnloadPolicy } from '../_app-effects/synchronize-unload-policy.svelte';
 
 	// Headless component: mounts Whispering's page-lifetime listeners and
 	// reactive projections once, at the session root outside the responsive nav
@@ -20,7 +19,6 @@
 	listenForLocalShortcuts(app);
 	synchronizeShortcuts(app);
 	notifyDictationFailures();
-	synchronizeUnloadPolicy();
 	synchronizeAutoPasteIntent(app);
 	dictationCapability.track();
 </script>
