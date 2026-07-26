@@ -221,19 +221,25 @@ function createLocalModels() {
 		},
 
 		/**
-		 * Remove a downloaded model's file from the shared HF cache. Deleting the
-		 * active model's file clears the choice rather than quietly promoting
-		 * another one: there is no substitution, so the next transcription fails
-		 * with an actionable error until the user picks again.
+		 * Remove a downloaded model's file from the shared HF cache.
+		 *
+		 * One invoke, not two. Deleting the file and standing down the active
+		 * choice are one host operation, so this cannot half-succeed into a state
+		 * where the file is gone but the host still points at it. The host clears
+		 * rather than promoting another installed model: there is no substitution,
+		 * so the next transcription fails with an actionable error until the user
+		 * picks again.
 		 */
 		async remove(model: ModelInfo) {
 			const result = await commands.deleteModel(model.id);
 			if (result.status === 'error') {
 				error = result.error.message;
+				// The host may have removed the file before failing to clear the
+				// choice, so re-read rather than assuming nothing changed.
+				await refresh();
 				return;
 			}
 			error = null;
-			if (active?.id === model.id) await commands.setActiveModel(null);
 			await refresh();
 		},
 	};

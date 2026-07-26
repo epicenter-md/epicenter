@@ -4,10 +4,11 @@
 //!
 //! A model is identified by a stable `modelId` string rendered from its Hugging
 //! Face coordinate as `"{repo_id}@{revision}/{filename}"`. That id is an opaque
-//! catalog key: the webview stores it as the selection and passes it back to
-//! `transcribe_recording`; Rust resolves it to a coordinate by looking it up
-//! here, so an id that is not in the catalog is refused rather than parsed.
-//! (Custom drop-in GGUF is a later earned feature, not a compatibility path.)
+//! catalog key. Epicenter Home names it when it administers models, and the host
+//! stores the one active choice; applications never see it and never pass it to
+//! `transcribe_recording` (ADR-0180). An id outside this catalog is refused
+//! rather than parsed. (Custom drop-in GGUF is a later earned feature, not a
+//! compatibility path.)
 //!
 //! Storage is the shared Hugging Face cache (`~/.cache/huggingface/hub`,
 //! overridable by `HF_HOME`), owned by `hf-hub`: downloads stage, resume, and
@@ -208,10 +209,10 @@ pub fn model_names() -> Vec<&'static str> {
     CATALOG.iter().map(|entry| entry.name).collect()
 }
 
-/// A catalog model as the webview sees it: its identity, display fields, static
-/// capabilities, and whether it is already downloaded. The webview stores only
-/// `id` as the selection and reads capabilities to decide which inference fields
-/// to show; it never learns the coordinate.
+/// A catalog model as Home's administration view sees it: identity, display
+/// fields, static capabilities, and whether it is already downloaded. Home names
+/// `id` when it activates, downloads, or deletes a model; it never learns the
+/// Hugging Face coordinate. Applications see none of this.
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelInfo {
@@ -341,16 +342,46 @@ pub async fn download_model(
 }
 
 /// Remove a downloaded model's file from the shared HF cache, reclaiming its
-/// space. Best-effort: removes the snapshot pointer and its backing blob. A
+/// space, and stand down the active choice if this was it.
+///
+/// One host operation, not two invokes, because the host owns both halves: the
+/// file and the active-model setting live on the same side of the boundary, and
+/// splitting them would let a caller succeed at deleting and then fail (or
+/// forget) to clear, leaving an active model that cannot run and a UI that never
+/// learned. Clearing is deliberate rather than promoting another installed
+/// model: there is no substitution, so the next transcription fails with an
+/// actionable error until the user chooses again.
+///
+/// Best-effort on the file: removes the snapshot pointer and its backing blob. A
 /// no-op when the model is not downloaded. Other quantizations in the same repo
 /// are untouched (each is its own blob + pointer).
 #[tauri::command]
 #[specta::specta]
-pub fn delete_model(model_id: String) -> Result<(), CatalogError> {
+pub fn delete_model(
+    model_id: String,
+    model_cache: State<'_, crate::transcription::ModelCache>,
+) -> Result<(), CatalogError> {
     let entry = find_or_unknown(&model_id)?;
+    let settings = model_cache.settings();
+
+    let clear_active_choice = || -> Result<(), CatalogError> {
+        if settings.active_model_id().as_deref() != Some(model_id.as_str()) {
+            return Ok(());
+        }
+        settings
+            .set_active_model_id(None)
+            .map_err(|error| CatalogError::DeleteFailed {
+                message: format!(
+                    "Removed the model file, but could not clear it as the active model: {error}"
+                ),
+            })
+    };
 
     let Some(pointer) = entry.cached_path() else {
-        return Ok(());
+        // Nothing on disk, but it may still be the stored choice: a file deleted
+        // outside Epicenter leaves exactly that state, and this is where it gets
+        // reconciled.
+        return clear_active_choice();
     };
 
     // The pointer is a symlink into `blobs/{etag}`; resolve it before unlinking
@@ -365,5 +396,5 @@ pub fn delete_model(model_id: String) -> Result<(), CatalogError> {
         // model already reads as not-downloaded (its pointer is gone).
         let _ = std::fs::remove_file(blob);
     }
-    Ok(())
+    clear_active_choice()
 }
