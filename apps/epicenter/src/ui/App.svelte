@@ -9,7 +9,7 @@
 	import type { HomeInvocation } from '../host.ts';
 	import Composer from './Composer.svelte';
 	import LocalModelAdministration from './LocalModelAdministration.svelte';
-	import { events } from './bindings.gen';
+	import { commands, events } from './bindings.gen';
 	import { readRuntimeInfo } from './runtime.ts';
 	import Transcript from './Transcript.svelte';
 	import { createSession } from './session.svelte.ts';
@@ -35,10 +35,17 @@
 	// conversation.
 	let modelsOpen = $state(false);
 	// An app whose local transcription is unavailable can send the user here.
-	// Focusing the window is the host's half; landing on the right panel is ours.
-	void events.revealModelAdministration.listen(() => {
-		modelsOpen = true;
-	});
+	// The intent lives in the host, so this window claims it rather than being
+	// handed it: on mount (Home may have been absent or still booting when the
+	// request arrived) and again on each nudge (Home was already running). Taking
+	// is destructive, so however many nudges arrive, one request opens the
+	// section once.
+	async function claimPendingSection() {
+		const section = await commands.takePendingHomeSection();
+		if (section === 'transcription') modelsOpen = true;
+	}
+	void claimPendingSection();
+	void events.homeSectionPending.listen(() => void claimPendingSection());
 
 	const connectionIndicator = {
 		connecting: { label: 'Connecting', dot: 'bg-warning' },

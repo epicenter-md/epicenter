@@ -32,7 +32,7 @@
 		"allow-transcribe-recording",
 		"allow-prewarm-model",
 		"allow-get-local-transcription-readiness",
-		"allow-open-model-administration",
+		"allow-open-home",
 		"allow-open-accessibility-settings",
 		"allow-request-accessibility-permission",
 		"allow-get-microphone-permission",

@@ -23,6 +23,8 @@ use tauri_plugin_dialog::{
 use tauri_plugin_opener::OpenerExt;
 use tauri_specta::Event as _;
 
+mod command_names;
+
 pub mod audio;
 use audio::encode_recording_for_upload;
 
@@ -202,6 +204,10 @@ struct HostState {
     active_token: Mutex<Option<String>>,
     pending_surfaces: Mutex<Vec<Surface>>,
     pending_oauth_callback: Mutex<Option<String>>,
+    /// A section of Home an application asked the shell to open, held until Home
+    /// is able to claim it. Only the latest survives: two recovery nudges in a
+    /// row should land the user somewhere once, not queue a backlog.
+    pending_home_section: Mutex<Option<HomeSection>>,
     shutting_down: AtomicBool,
     starting: AtomicBool,
 }
@@ -215,6 +221,7 @@ impl HostState {
             active_token: Mutex::new(None),
             pending_surfaces: Mutex::new(Vec::new()),
             pending_oauth_callback: Mutex::new(None),
+            pending_home_section: Mutex::new(None),
             shutting_down: AtomicBool::new(false),
             starting: AtomicBool::new(false),
         }
@@ -244,6 +251,20 @@ impl HostState {
                 .lock()
                 .expect("pending surface lock poisoned"),
         )
+    }
+
+    fn queue_home_section(&self, section: HomeSection) {
+        *self
+            .pending_home_section
+            .lock()
+            .expect("pending home section lock poisoned") = Some(section);
+    }
+
+    fn take_home_section(&self) -> Option<HomeSection> {
+        self.pending_home_section
+            .lock()
+            .expect("pending home section lock poisoned")
+            .take()
     }
 
     fn queue_oauth_callback(&self, url: String) {
@@ -328,7 +349,8 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             get_active_model,
             set_active_model,
             get_local_transcription_readiness,
-            open_model_administration,
+            open_home,
+            take_pending_home_section,
             get_unload_policy,
             set_unload_policy,
             list_models,
@@ -346,7 +368,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         .events(tauri_specta::collect_events![
             keyboard::DictationCapabilityEvent,
             GlobalShortcutTriggered,
-            RevealModelAdministration,
+            HomeSectionPending,
         ])
         .error_handling(tauri_specta::ErrorHandlingMode::Result)
 }
@@ -386,27 +408,56 @@ fn get_runtime_info(state: State<'_, HostState>) -> std::result::Result<RuntimeI
     })
 }
 
-/// Ask Epicenter Home to reveal its local-model administration.
+/// A section of Epicenter Home an application can ask the shell to open.
 ///
-/// Emitted only by `open_model_administration`, so focusing the window and
-/// landing on the right panel are one act from the caller's point of view.
-#[derive(Clone, Debug, serde::Serialize, specta::Type, tauri_specta::Event)]
-pub struct RevealModelAdministration;
+/// A closed set, not a string-addressed destination: Home is a privileged
+/// built-in surface, so what an application may name inside it is enumerated
+/// here rather than parsed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum HomeSection {
+    /// Local transcription model administration.
+    Transcription,
+}
 
-/// Take the user to the one surface that can fix an unavailable local
-/// transcription route.
+/// A nudge telling an already-running Home to collect any pending section
+/// intent. It deliberately carries no section of its own: the intent lives in
+/// the host, and Home reads it with `take_pending_home_section`, so an event
+/// that arrives twice, late, or not at all cannot produce a different outcome.
+#[derive(Clone, Debug, serde::Serialize, specta::Type, tauri_specta::Event)]
+pub struct HomeSectionPending;
+
+/// Take the user to the surface that can fix an unavailable local transcription
+/// route.
 ///
-/// The app shell owns this navigation (ADR-0180). The host reports the fact that
-/// the route is unavailable, an application decides how to present it, and
-/// getting the user to Home is neither of their jobs: `open_app` deliberately
-/// refuses built-in surfaces, so without this an application could only tell the
-/// user where to go and hope. It mutates no transcription state: it opens a
-/// window, and the user still chooses.
+/// The app shell owns this navigation. The host reports that the route is
+/// unavailable, an application decides how to present it, and getting the user
+/// to Home is neither of their jobs: `open_app` deliberately refuses built-in
+/// surfaces, and that refusal stands.
+///
+/// The intent is recorded *before* any window work, which is what makes this
+/// safe against the state Home happens to be in. Home may be absent, still
+/// booting, hidden, or already open; in every case the intent is waiting when
+/// Home next asks for it, and the event below is only an optimization for the
+/// already-running case. Emitting the section directly would lose it whenever
+/// no listener existed yet, which is exactly the recovery path that matters.
+///
+/// It mutates no transcription state: it opens a window, and the user chooses.
 #[tauri::command]
 #[specta::specta]
-fn open_model_administration(app: DesktopAppHandle) {
+fn open_home(section: HomeSection, app: DesktopAppHandle) {
+    app.state::<HostState>().queue_home_section(section);
     request_surface(&app, Surface::Home);
-    let _ = RevealModelAdministration.emit_to(&app, Surface::Home.id());
+    let _ = HomeSectionPending.emit_to(&app, Surface::Home.id());
+}
+
+/// Claim the pending section intent, if any. Home calls this on mount and
+/// whenever it is nudged; taking is destructive, so one intent opens one
+/// section exactly once however many nudges arrive.
+#[tauri::command]
+#[specta::specta]
+fn take_pending_home_section(app: DesktopAppHandle) -> Option<HomeSection> {
+    app.state::<HostState>().take_home_section()
 }
 
 /// Open one derived-catalog app window. Rust validates the ID and derives the
@@ -1647,6 +1698,121 @@ mod tests {
         }
     }
 
+    /// The recovery path an application offers must survive Home not being
+    /// there yet. The intent is host state, so "Home is absent", "Home is still
+    /// booting", and "Home is open behind another window" are the same code
+    /// path: the intent waits until Home claims it.
+    #[test]
+    fn a_pending_home_section_waits_for_home_to_claim_it() {
+        let state = HostState::new(Ok(1));
+        assert_eq!(
+            state.take_home_section(),
+            None,
+            "nothing pending before anyone asks"
+        );
+
+        // Home absent or mid-boot: nobody is listening, and the intent survives.
+        state.queue_home_section(HomeSection::Transcription);
+        assert_eq!(
+            state.take_home_section(),
+            Some(HomeSection::Transcription),
+            "the intent is still there whenever Home gets around to asking"
+        );
+    }
+
+    /// Taking is destructive, so however many nudges arrive, one request opens
+    /// one section once. Without this a stale intent would reopen the panel on
+    /// some later unrelated mount.
+    #[test]
+    fn a_claimed_home_section_is_not_replayed() {
+        let state = HostState::new(Ok(1));
+        state.queue_home_section(HomeSection::Transcription);
+        assert!(state.take_home_section().is_some());
+        assert_eq!(
+            state.take_home_section(),
+            None,
+            "a claimed intent must not fire again"
+        );
+    }
+
+    /// Two recovery attempts in a row should land the user somewhere once.
+    #[test]
+    fn repeated_requests_collapse_to_one_pending_section() {
+        let state = HostState::new(Ok(1));
+        state.queue_home_section(HomeSection::Transcription);
+        state.queue_home_section(HomeSection::Transcription);
+        assert!(state.take_home_section().is_some());
+        assert_eq!(state.take_home_section(), None);
+    }
+
+    /// Every command a capability grants must exist, and every command the crate
+    /// exposes must be declared to the Tauri manifest. These are two hand-kept
+    /// lists today, and a grant for a command that does not exist is a silent
+    /// no-op rather than an error.
+    #[test]
+    fn capability_grants_name_only_commands_this_build_has() {
+        let declared: std::collections::BTreeSet<&str> =
+            crate::command_names::COMMANDS.iter().copied().collect();
+        for encoded in [
+            include_str!("../capabilities/home-model-administration-development.json"),
+            include_str!("../capabilities/home-model-administration-production.json"),
+            include_str!("../capabilities/trusted-whispering-native-development.json"),
+            include_str!("../capabilities/trusted-whispering-native-production.json"),
+        ] {
+            let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
+            for permission in capability["permissions"].as_array().unwrap() {
+                let Some(name) = permission.as_str() else {
+                    continue;
+                };
+                // Only app-owned grants are checked here; plugin and core
+                // permissions (`core:`, `dialog:`, ...) belong to their plugins.
+                let Some(command) = name.strip_prefix("allow-") else {
+                    continue;
+                };
+                if name.contains(':') {
+                    continue;
+                }
+                let command = command.replace('-', "_");
+                assert!(
+                    declared.contains(command.as_str()),
+                    "{name} grants a command this build does not declare: {command}"
+                );
+            }
+        }
+    }
+
+    /// The generated bindings are a committed artifact, so they can go stale
+    /// against the command list without anything failing to compile.
+    ///
+    /// Three commands are deliberately outside the generated surface: they ride
+    /// Tauri's handwritten handler because their shapes are not `specta::Type`
+    /// (raw bytes) or are host-owned rather than part of the app contract.
+    #[test]
+    fn generated_bindings_cover_every_declared_command() {
+        const HANDWRITTEN: &[&str] = &[
+            "get_runtime_info",
+            "encode_recording_for_upload",
+            "open_app",
+        ];
+        for bindings in [
+            include_str!("../../../whispering/src/lib/tauri/bindings.gen.ts"),
+            include_str!("../../src/ui/bindings.gen.ts"),
+        ] {
+            for command in crate::command_names::COMMANDS {
+                if HANDWRITTEN.contains(command) {
+                    continue;
+                }
+                // Either quote style: specta emits double quotes and the repo
+                // formatter rewrites them to single, so both are "fresh".
+                assert!(
+                    bindings.contains(&format!("'{command}'"))
+                        || bindings.contains(&format!("\"{command}\"")),
+                    "regenerate bindings: {command} is missing"
+                );
+            }
+        }
+    }
+
     /// Model administration is routed to Home and to no application window
     /// (ADR-0180). This is wiring, not a sandbox: an app window runs as
     /// Epicenter. What it proves is that the ownership the record describes is
@@ -1706,7 +1872,7 @@ mod tests {
                 "allow-transcribe-recording",
                 "allow-prewarm-model",
                 "allow-get-local-transcription-readiness",
-                "allow-open-model-administration",
+                "allow-open-home",
             ] {
                 assert!(
                     permissions.contains(&serde_json::json!(permission)),

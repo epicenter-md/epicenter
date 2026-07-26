@@ -9,6 +9,7 @@
 	},
 	"permissions": [
 		"core:event:allow-listen",
+		"allow-take-pending-home-section",
 		"allow-list-models",
 		"allow-download-model",
 		"allow-cancel-download",

@@ -63,7 +63,7 @@ export const commands = {
 	 *  hints. The caller names audio and hints; it does not name a model.
 	 */
 	transcribeRecording: (audioBlobId: string, hints: TranscriptionHints) =>
-		typedError<LocalTranscript, TranscriptionError>(
+		typedError<TranscriptionOutcome, TranscriptionError>(
 			__TAURI_INVOKE('transcribe_recording', { audioBlobId, hints }),
 		),
 	/**
@@ -182,18 +182,35 @@ export const commands = {
 			'get_local_transcription_readiness',
 		),
 	/**
-	 *  Take the user to the one surface that can fix an unavailable local
-	 *  transcription route.
+	 *  Take the user to the surface that can fix an unavailable local transcription
+	 *  route.
 	 *
-	 *  The app shell owns this navigation (ADR-0180). The host reports the fact that
-	 *  the route is unavailable, an application decides how to present it, and
-	 *  getting the user to Home is neither of their jobs: `open_app` deliberately
-	 *  refuses built-in surfaces, so without this an application could only tell the
-	 *  user where to go and hope. It mutates no transcription state: it opens a
-	 *  window, and the user still chooses.
+	 *  The app shell owns this navigation. The host reports that the route is
+	 *  unavailable, an application decides how to present it, and getting the user
+	 *  to Home is neither of their jobs: `open_app` deliberately refuses built-in
+	 *  surfaces, and that refusal stands.
+	 *
+	 *  The intent is recorded *before* any window work, which is what makes this
+	 *  safe against the state Home happens to be in. Home may be absent, still
+	 *  booting, hidden, or already open; in every case the intent is waiting when
+	 *  Home next asks for it, and the event below is only an optimization for the
+	 *  already-running case. Emitting the section directly would lose it whenever
+	 *  no listener existed yet, which is exactly the recovery path that matters.
+	 *
+	 *  It mutates no transcription state: it opens a window, and the user chooses.
 	 */
-	openModelAdministration: () =>
-		__TAURI_INVOKE<void>('open_model_administration'),
+	openHome: (section: HomeSection) =>
+		__TAURI_INVOKE<void>('open_home', { section }),
+	/**
+	 *  Claim the pending section intent, if any. Home calls this on mount and
+	 *  whenever it is nudged; taking is destructive, so one intent opens one
+	 *  section exactly once however many nudges arrive.
+	 */
+	takePendingHomeSection: () =>
+		__TAURI_INVOKE<
+			/**  Local transcription model administration. */
+			'transcription' | null
+		>('take_pending_home_section'),
 	/**  When the host drops the resident model. */
 	getUnloadPolicy: () => __TAURI_INVOKE<UnloadPolicy>('get_unload_policy'),
 	/**
@@ -229,7 +246,17 @@ export const commands = {
 		),
 	/**
 	 *  Remove a downloaded model's file from the shared HF cache, reclaiming its
-	 *  space. Best-effort: removes the snapshot pointer and its backing blob. A
+	 *  space, and stand down the active choice if this was it.
+	 *
+	 *  One host operation, not two invokes, because the host owns both halves: the
+	 *  file and the active-model setting live on the same side of the boundary, and
+	 *  splitting them would let a caller succeed at deleting and then fail (or
+	 *  forget) to clear, leaving an active model that cannot run and a UI that never
+	 *  learned. Clearing is deliberate rather than promoting another installed
+	 *  model: there is no substitution, so the next transcription fails with an
+	 *  actionable error until the user chooses again.
+	 *
+	 *  Best-effort on the file: removes the snapshot pointer and its backing blob. A
 	 *  no-op when the model is not downloaded. Other quantizations in the same repo
 	 *  are untouched (each is its own blob + pointer).
 	 */
@@ -298,9 +325,7 @@ export const events = {
 	globalShortcutTriggered: makeEvent<GlobalShortcutTriggered>(
 		'global-shortcut-triggered',
 	),
-	revealModelAdministration: makeEvent<RevealModelAdministration>(
-		'reveal-model-administration',
-	),
+	homeSectionPending: makeEvent<HomeSectionPending>('home-section-pending'),
 };
 
 /* Types */
@@ -340,14 +365,17 @@ export type ActiveModel = {
 /**
  *  Which advisory hints the run actually applied.
  *
- *  A hint the active model cannot take is reported here rather than dropped in
- *  silence, so a caller can tell its user that the prompt did not reach the
- *  recognizer instead of wondering why it had no effect.
+ *  Built from the exact values handed to the runtime, never from what the caller
+ *  asked for. A hint the active model cannot take is reported as not applied
+ *  rather than dropped in silence, so a caller can tell its user that the prompt
+ *  or language did not reach the recognizer instead of wondering why it had no
+ *  effect.
  */
 export type AppliedHints = {
 	/**
-	 *  The language hint the runtime received. `None` means it autodetected,
-	 *  either because the caller asked for autodetect or sent nothing.
+	 *  The language hint the runtime received. `None` means it autodetected:
+	 *  the caller asked for autodetect, sent nothing, or asked for a language
+	 *  the active model does not take.
 	 */
 	language: string | null;
 	/**
@@ -443,18 +471,23 @@ export type GlobalShortcutTriggered = {
 };
 
 /**
- *  A finished local transcript.
+ *  A section of Epicenter Home an application can ask the shell to open.
  *
- *  `model_id` names the exact model that produced this text. Reporting it on
- *  every success is what makes an accidental substitution detectable: with the
- *  active model unchanged, identical ordinary requests must name the same model
- *  however the host arranges residency.
+ *  A closed set, not a string-addressed destination: Home is a privileged
+ *  built-in surface, so what an application may name inside it is enumerated
+ *  here rather than parsed.
  */
-export type LocalTranscript = {
-	text: string;
-	modelId: string;
-	applied: AppliedHints;
-};
+export type HomeSection =
+	/**  Local transcription model administration. */
+	'transcription';
+
+/**
+ *  A nudge telling an already-running Home to collect any pending section
+ *  intent. It deliberately carries no section of its own: the intent lives in
+ *  the host, and Home reads it with `take_pending_home_section`, so an event
+ *  that arrives twice, late, or not at all cannot produce a different outcome.
+ */
+export type HomeSectionPending = null;
 
 /**
  *  What an application may learn about the local transcription route: whether it
@@ -500,10 +533,10 @@ export type LocalTranscriptionReadiness =
 export type MicrophonePermission = 'granted' | 'denied' | 'unknown';
 
 /**
- *  A catalog model as the webview sees it: its identity, display fields, static
- *  capabilities, and whether it is already downloaded. The webview stores only
- *  `id` as the selection and reads capabilities to decide which inference fields
- *  to show; it never learns the coordinate.
+ *  A catalog model as Home's administration view sees it: identity, display
+ *  fields, static capabilities, and whether it is already downloaded. Home names
+ *  `id` when it activates, downloads, or deletes a model; it never learns the
+ *  Hugging Face coordinate. Applications see none of this.
  */
 export type ModelInfo = {
 	id: string;
@@ -538,14 +571,6 @@ export type RecorderError =
 	 *  session lifecycle, internal). The frontend does not branch on these.
 	 */
 	| { name: 'Failed'; message: string };
-
-/**
- *  Ask Epicenter Home to reveal its local-model administration.
- *
- *  Emitted only by `open_model_administration`, so focusing the window and
- *  landing on the right panel are one act from the caller's point of view.
- */
-export type RevealModelAdministration = null;
 
 /**
  *  Failures the Home administration commands can report. Both are actionable:
@@ -596,6 +621,27 @@ export type TranscriptionHints = {
 	language?: string | null;
 	initialPrompt?: string | null;
 };
+
+/**
+ *  What a transcription request produced.
+ *
+ *  Two outcomes because there are two honest stories. `transcribed` names the
+ *  exact model that produced the text, which is what makes an accidental
+ *  substitution detectable: with the active model unchanged, identical ordinary
+ *  requests must name the same model however the host arranges residency.
+ *  `empty-audio` reports that nothing ran, and deliberately carries no model and
+ *  no applied hints, because claiming either would be claiming an inference that
+ *  never happened.
+ */
+export type TranscriptionOutcome =
+	| {
+			outcome: 'transcribed';
+			text: string;
+			modelId: string;
+			applied: AppliedHints;
+	  }
+	/**  The audio held no samples, so no model was loaded and no hint applied. */
+	| { outcome: 'empty-audio' };
 
 /**
  *  Why the local transcription route cannot run right now.
