@@ -1,4 +1,4 @@
-import { type BlobId, generateBlobId } from '@epicenter/blobs';
+import type { BlobId } from '@epicenter/blobs';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { defineKeys, resultQueryOptions } from 'wellcrafted/query';
 import { Err, Ok, type Result } from 'wellcrafted/result';
@@ -54,10 +54,6 @@ const manualRecorderKeys = defineKeys({
 function createManualRecorder() {
 	let _state = $state<WhisperingRecordingState>('IDLE');
 	let _current: RecordingSession | null = null;
-	// The blob id reserved for the live recording and its future workspace row.
-	// Null when idle; set while recording. The push-to-talk stop path reads it to
-	// stop only the exact recording it started, never one a later press supplanted.
-	let _currentAudioBlobId: BlobId | null = null;
 	let _unsubscribe: (() => void) | null = null;
 	// Synchronous in-flight guard for start. `_current` is not set until after
 	// two awaits (bootstrap + the service start), so without this a second
@@ -78,7 +74,6 @@ function createManualRecorder() {
 		_unsubscribe?.();
 		_unsubscribe = null;
 		_current = null;
-		_currentAudioBlobId = null;
 		_state = 'IDLE';
 	}
 
@@ -111,9 +106,16 @@ function createManualRecorder() {
 			return _state;
 		},
 
-		/** The live recording's id (only set while `state` is RECORDING, else null). */
+		/**
+		 * The live recording's id, or null when nothing is recording.
+		 *
+		 * Read off the session rather than mirrored here: the session is the thing
+		 * that knows its own id, and a copy could disagree with it. The
+		 * push-to-talk stop path uses this to stop only the exact recording it
+		 * started, never one a later press supplanted.
+		 */
 		get currentAudioBlobId(): BlobId | null {
-			return _currentAudioBlobId;
+			return _current?.audioBlobId ?? null;
 		},
 
 		/** True between a start request and the recording attaching (or failing). */
@@ -142,14 +144,12 @@ function createManualRecorder() {
 				const { error: bootstrapError } = await ensureBootstrapped();
 				if (bootstrapError) return Err(bootstrapError);
 				if (_current) return ManualRecorderError.AlreadyRecording();
-				const audioBlobId = generateBlobId();
-				const params = manualRecorderConfig.resolveStartParams(audioBlobId);
+				const params = manualRecorderConfig.resolveStartParams();
 				const { data, error: startRecordingError } =
 					await ManualRecorderLive.startRecording(params, callbacks);
 
 				if (startRecordingError) return Err(startRecordingError);
 
-				_currentAudioBlobId = audioBlobId;
 				attach(data.session);
 				return Ok(data.deviceAcquisition);
 			} finally {

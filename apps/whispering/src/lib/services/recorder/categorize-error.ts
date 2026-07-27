@@ -6,10 +6,11 @@ import type { IpcRecorderError } from '$lib/tauri/commands.types';
  * cross-cutting service `RecorderError`, or `null` to let the call site apply
  * its own verb (InitFailed at init, StartFailed at start, StopFailed at stop).
  *
- * Only the two cross-cutting cases override: a microphone permission denial and
- * a missing input device, which any recorder command can surface and which the
- * UI presents the same way regardless of which command hit them. Everything
- * else returns `null` so the call site keeps its contextual variant.
+ * Only the cross-cutting cases override, the ones whose meaning is the same
+ * whichever command surfaced them: a microphone permission denial, a missing
+ * input device, a recorder already in use, and a recording that has already
+ * ended. Everything else returns `null` so the call site keeps its contextual
+ * variant.
  *
  * The permission/no-device classification is owned by Rust
  * (`RecorderError::classify_cpal`), where cpal's typed errors and the OS access
@@ -22,6 +23,10 @@ export function recorderErrorFromIpc(error: IpcRecorderError) {
 			return RecorderError.MicrophonePermissionDenied({ cause: error });
 		case 'NoInputDevice':
 			return RecorderError.NoInputDevice({ cause: error });
+		case 'Busy':
+			return RecorderError.AlreadyRecording({ cause: error });
+		case 'NotRecording':
+			return RecorderError.NoActiveRecording({ cause: error });
 		case 'Failed':
 			// Generic recording failure: let the call site label it by verb
 			// (InitFailed at init, StartFailed at start, StopFailed at stop).

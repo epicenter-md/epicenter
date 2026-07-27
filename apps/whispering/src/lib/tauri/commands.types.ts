@@ -17,6 +17,13 @@ export type DictationCapability =
 export type IpcRecorderError =
 	| { name: 'PermissionDenied'; message: string }
 	| { name: 'NoInputDevice'; message: string }
+	/** Another window already holds the one host recorder. */
+	| { name: 'Busy'; message: string }
+	/**
+	 * The named recording is not this window's to end: already finished, not the
+	 * live one, or owned by another window.
+	 */
+	| { name: 'NotRecording'; message: string }
 	| { name: 'Failed'; message: string };
 
 /** Why the local transcription route cannot run right now. */

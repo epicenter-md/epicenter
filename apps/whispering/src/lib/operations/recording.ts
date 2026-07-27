@@ -139,7 +139,7 @@ export async function stopManualRecording(app: WhisperingApp) {
 	void logAnalyticsEvent(app, {
 		type: 'manual_recording_completed',
 		blob_size: byteLength,
-		duration: durationMs ?? undefined,
+		duration: durationMs,
 	});
 
 	await processRecordingPipeline(app, {

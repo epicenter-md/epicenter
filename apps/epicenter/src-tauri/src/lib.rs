@@ -33,8 +33,8 @@ use audio::encode_recording_for_upload;
 
 pub mod recorder;
 use recorder::commands::{
-    cancel_recording, close_recording_session, enumerate_recording_devices,
-    get_current_recording_id, init_recording_session, start_recording, stop_recording,
+    cancel_recording, cancel_recording_owned_by, current_recording, enumerate_recording_devices,
+    start_recording, stop_recording,
 };
 use recorder::recorder::Recorder;
 
@@ -336,13 +336,11 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             write_text,
             simulate_enter_keystroke,
             simulate_copy_keystroke,
-            get_current_recording_id,
             enumerate_recording_devices,
-            init_recording_session,
-            close_recording_session,
             start_recording,
             stop_recording,
             cancel_recording,
+            current_recording,
             transcribe_recording,
             prewarm_model,
             open_accessibility_settings,
@@ -533,8 +531,30 @@ fn ensure_app_window(app: &DesktopAppHandle, id: &str, port: u16, token: &str) -
         .on_new_window(|_, _| NewWindowResponse::Deny)
         .build()
         .with_context(|| format!("create the {id} app WebView"))?;
+    release_host_resources_on_destroy(&window);
     focus(window);
     Ok(())
+}
+
+/// Release the host resources a window owns once it is destroyed.
+///
+/// Only destruction, never hide or navigation: a hidden window still owns its
+/// recording (push-to-talk from the tray depends on that), and reload keeps the
+/// same label, which is exactly why `current_recording` exists. A destroyed
+/// window can no longer stop or cancel anything, so its recording would hold
+/// the one host recorder until the process exits.
+///
+/// Surface windows are hidden rather than destroyed when the user closes them,
+/// so this fires for them only on a host restart teardown. App windows have no
+/// close interception and are destroyed on close, which is the live path.
+fn release_host_resources_on_destroy(window: &WebviewWindow<Wry>) {
+    let app = window.app_handle().clone();
+    let label = window.label().to_string();
+    window.on_window_event(move |event| {
+        if matches!(event, WindowEvent::Destroyed) {
+            cancel_recording_owned_by(&app, &label);
+        }
+    });
 }
 
 pub fn run() {
@@ -1288,6 +1308,7 @@ fn ensure_surface(
             let _ = close_window.hide();
         }
     });
+    release_host_resources_on_destroy(&window);
     if reveal {
         focus(window);
     }

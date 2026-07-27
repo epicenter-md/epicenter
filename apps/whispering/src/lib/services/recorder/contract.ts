@@ -54,6 +54,28 @@ export const RecorderError = defineErrors({
 		message: `Failed to cancel recording: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
+	/**
+	 * Something else already holds the recorder. On desktop there is one host
+	 * recorder shared by every window, so this can mean another application
+	 * entirely, which is why the message does not assume it was this app.
+	 */
+	AlreadyRecording: ({ cause }: { cause?: unknown } = {}) => ({
+		message:
+			'Something is already recording. Stop that recording before starting a new one.',
+		cause,
+	}),
+	/**
+	 * The recording being stopped or cancelled is not this window's to end: it
+	 * already finished, it is not the live one, or another window owns it.
+	 *
+	 * Not necessarily a failure. A push-to-talk release that lands after its
+	 * recording was already supplanted sees this, and the right response is to
+	 * do nothing.
+	 */
+	NoActiveRecording: ({ cause }: { cause?: unknown } = {}) => ({
+		message: 'That recording has already ended.',
+		cause,
+	}),
 	StreamAcquisition: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to acquire recording stream: ${extractErrorMessage(cause)}`,
 		cause,
@@ -71,10 +93,14 @@ export type RecorderError = InferErrors<typeof RecorderError>;
  * This is config resolved from persisted settings (device, encoding). Live
  * caller callbacks are not config and travel separately in
  * {@link RecordingCallbacks}.
+ *
+ * The blob id is deliberately absent: the implementation that owns the capture
+ * mints it, and the caller learns it from {@link RecordingSession.audioBlobId}.
+ * On desktop that mint happens in Rust, because ownership of the one host
+ * recorder is decided there and an id asserted by a caller could not carry it.
  */
 export type BaseRecordingParams = {
 	selectedDeviceId: DeviceIdentifier | null;
-	audioBlobId: BlobId;
 };
 
 /**
@@ -89,9 +115,11 @@ export type RecordingCallbacks = {
 	 * Sink for live mic loudness (raw RMS, ~0 silent to ~0.3 loud speech),
 	 * called continuously while recording so the caller can draw a meter.
 	 *
-	 * The browser recorder taps its MediaStream to drive this. The CPAL recorder
-	 * reaches the same meter another way (emitting the level straight to the
-	 * overlay window), so its `startRecording` simply does not accept callbacks.
+	 * The browser recorder taps its MediaStream to drive this. The native
+	 * recorder cannot: the PCM never leaves Rust, so the host computes the level
+	 * and emits it to the window that owns the recording, and the Tauri
+	 * implementation forwards that event into this sink. Either way the caller
+	 * sees one quantity from one callback.
 	 */
 	onLevel: (level: number) => void;
 };
@@ -103,10 +131,14 @@ export type NavigatorRecordingParams = BaseRecordingParams & {
 	bitrateKbps: string;
 };
 
-/** Finalized local audio. Every platform has committed bytes before returning. */
+/**
+ * Finalized local audio. Every platform has committed bytes before returning,
+ * so every field is known: `durationMs` is the host's exact sample count on
+ * desktop and the measured capture window in the browser, never absent.
+ */
 export type RecorderStopResult = {
 	audioBlobId: BlobId;
-	durationMs: number | null;
+	durationMs: number;
 	byteLength: number;
 };
 
@@ -168,8 +200,7 @@ export type RecorderService<RecordingParams extends BaseRecordingParams> = {
 	 * and uses its `stop`/`cancel`/`subscribe` for the rest of the session.
 	 *
 	 * `params` is settings-derived config; `callbacks` are the caller's live
-	 * sinks. An implementation that satisfies the meter another way (e.g. a
-	 * native overlay) may take only `params` and ignore the callbacks.
+	 * sinks.
 	 */
 	startRecording(
 		params: RecordingParams,

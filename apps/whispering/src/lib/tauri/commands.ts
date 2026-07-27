@@ -109,6 +109,7 @@ export type {
 	GlobalShortcutRegistration,
 	LocalTranscriptionReadiness,
 	RecorderError as IpcRecorderError,
+	StoppedRecording,
 	TranscriptionError,
 	TranscriptionHints,
 	TranscriptionOutcome,

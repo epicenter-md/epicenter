@@ -7,7 +7,7 @@
 //! │  - downmix to mono │ chunks │  - accumulate Vec   │
 //! │  - sample_tx.send  │        │  - resample (final) │
 //! └────────────────────┘        │  - pad short clips  │
-//!                               │  - finalize samples │
+//!                               │  - emit mic level   │
 //!                               └─────────────────────┘
 //! ```
 //!
@@ -15,13 +15,28 @@
 //! samples through an mpsc channel. The consumer worker accumulates,
 //! resamples to 16 kHz at finalize, pads sub-1s clips, and hands the
 //! resulting `Vec<f32>` (mono 16 kHz PCM) back to the command layer,
-//! which atomically writes the durable WAV blob and returns its id over IPC.
+//! which writes the durable blob and returns its id over IPC.
+//!
+//! # One recorder, owned by the window that started it
+//!
+//! There is exactly one recorder for the whole host, and at most one
+//! recording in flight. A recording is addressed by the blob id the host
+//! minted for it and is owned by the window label that started it. Every
+//! lifecycle method takes both, so an application can only ever stop or
+//! cancel the recording it actually started: a competing `start` is refused
+//! with [`RecorderError::Busy`] rather than silently displacing the live one.
+//!
+//! The label identifies a *window*, not an application: navigation across
+//! `/apps/*` on the one loopback origin is permitted, so a window may change
+//! which app it is showing. Under ADR-0179's full-trust model that is enough,
+//! because ownership here exists for resource correctness, not isolation.
+//! Labels are assigned by Rust (`Surface::id`, `app_window_label`) and cannot
+//! be supplied by the frontend, which is what makes them usable at all.
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, SampleFormat, Stream};
 use log::{debug, error, info};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc};
+use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
@@ -37,13 +52,16 @@ pub type Result<T> = std::result::Result<T, RecorderError>;
 /// Target rate for every recording. Local GGUF transcription consumes 16 kHz
 /// mono; the cloud services accept Opus encoded from 48 kHz, reached via a
 /// second resample step inside `audio::encode_pcm_to_opus_ogg`.
-const TARGET_RATE: u32 = 16_000;
+pub(crate) const TARGET_RATE: u32 = 16_000;
 
-/// Overlay window label and event name for live mic levels. The recording
-/// overlay (a separate webview) renders these into its meter bars. Kept in
-/// sync with `RECORDING_OVERLAY_WINDOW_LABEL` and the `mic-level` channel in
-/// Whispering's `recording-overlay/events.ts`.
-const OVERLAY_WINDOW_LABEL: &str = "recording-overlay";
+/// Event name for live mic levels, emitted to the window that owns the
+/// recording so its meter can reflect mic activity. The JS side never sees the
+/// PCM, so the level has to originate here.
+///
+/// The owner window is the only recipient. An application that draws the meter
+/// somewhere else too (Whispering's recording overlay is a second webview)
+/// forwards it from there, which is what its VAD recorder already does for its
+/// own levels. The host does not name another application's windows.
 const MIC_LEVEL_EVENT: &str = "mic-level";
 
 /// Minimum gap between mic-level emits. ~20 Hz is smooth for a meter and keeps
@@ -58,33 +76,43 @@ const MIC_LEVEL_EMIT_INTERVAL: Duration = Duration::from_millis(50);
 const SHORT_RECORDING_PAD_SAMPLES: usize = 20_000;
 
 /// Worker-thread command channel.
+///
+/// Two variants for two genuinely different operations: `Stop` asks for the
+/// captured audio back, `Cancel` discards it. Both end the worker loop, so
+/// there is no third "shut down" message and no stopped-but-still-open state
+/// for a caller to observe.
 #[derive(Debug)]
 enum RecorderCmd {
-    Start(mpsc::Sender<()>),
     Stop(mpsc::Sender<Result<Vec<f32>>>),
-    Cancel(mpsc::Sender<Result<()>>),
-    Shutdown,
+    Cancel,
 }
 
-/// CPAL-backed audio recorder. Owns the consumer worker, the command
-/// channel, and the cpal stream's join handle for the active session.
+/// The one in-flight recording: its identity, its owner, and the worker
+/// carrying it.
+struct ActiveRecording {
+    /// The blob id the host minted at `start`. It names the blob this
+    /// recording will become; `cancel` burns it without ever writing one.
+    audio_blob_id: String,
+    /// Label of the window that called `start`. Stop is restricted to it.
+    owner_label: String,
+    cmd_tx: mpsc::Sender<RecorderCmd>,
+    worker: JoinHandle<()>,
+}
+
+/// CPAL-backed audio recorder.
+///
+/// `Option<ActiveRecording>` is the whole state machine: `Some` means a
+/// recording is in flight, `None` means idle. There is no separate "session
+/// opened but not recording" phase, which is why no atomic flag is needed to
+/// tell the two apart.
+#[derive(Default)]
 pub struct Recorder {
-    cmd_tx: Option<mpsc::Sender<RecorderCmd>>,
-    worker_handle: Option<JoinHandle<()>>,
-    is_recording: Arc<AtomicBool>,
-    /// Id passed in at `init_session`. Surfaced by `get_current_recording_id`
-    /// so a reloaded webview can reattach to the still-live Rust session.
-    current_recording_id: Option<String>,
+    active: Option<ActiveRecording>,
 }
 
 impl Recorder {
     pub fn new() -> Self {
-        Self {
-            cmd_tx: None,
-            worker_handle: None,
-            is_recording: Arc::new(AtomicBool::new(false)),
-            current_recording_id: None,
-        }
+        Self::default()
     }
 
     /// List available recording devices by name.
@@ -102,24 +130,35 @@ impl Recorder {
         Ok(devices)
     }
 
-    /// Initialize a recording session and spawn the consumer worker.
+    /// Open the input stream and begin capturing, in one step.
     ///
-    /// The cpal stream comes up immediately (mic permission prompt fires
-    /// here, not on first `start_recording`). The consumer worker
-    /// starts in an idle, drop-samples state until `start_recording`
-    /// flips its internal recording flag.
-    pub fn init_session(
+    /// Returns [`RecorderError::Busy`] when a recording is already in flight,
+    /// so a competing start is refused instead of displacing a recording some
+    /// other window is relying on.
+    ///
+    /// The device is resolved on the calling thread, where a missing mic or a
+    /// denied permission still classifies precisely. The cpal stream is then
+    /// built inside the worker (macOS requires the stream and the run loop
+    /// driving it to share a thread) and its outcome is reported back over
+    /// `ready_rx`, so a stream that fails to open surfaces as the real
+    /// classified error rather than as a dropped channel.
+    pub fn start(
         &mut self,
-        device_name: String,
-        recording_id: String,
+        device_name: &str,
+        audio_blob_id: String,
+        owner_label: String,
         preferred_sample_rate: Option<u32>,
         app_handle: AppHandle,
     ) -> Result<()> {
-        // Clean up any existing session before standing up a new one.
-        self.close_session()?;
+        if let Some(active) = &self.active {
+            return Err(RecorderError::busy(format!(
+                "a recording ({}) started by window '{}' is already in flight",
+                active.audio_blob_id, active.owner_label
+            )));
+        }
 
         let host = cpal::default_host();
-        let device = find_device(&host, &device_name)?;
+        let device = find_device(&host, device_name)?;
         let config = get_optimal_config(&device, preferred_sample_rate)?;
         let sample_format = config.sample_format();
         let device_rate = config.sample_rate();
@@ -131,147 +170,196 @@ impl Recorder {
             buffer_size: cpal::BufferSize::Default,
         };
 
-        // Fresh atomic each session so a stale clone from the previous
-        // worker can never flip a new stream's gate.
-        self.is_recording = Arc::new(AtomicBool::new(false));
-        let is_recording = self.is_recording.clone();
-
         let (sample_tx, sample_rx) = mpsc::channel::<Vec<f32>>();
         let (cmd_tx, cmd_rx) = mpsc::channel::<RecorderCmd>();
+        let (ready_tx, ready_rx) = mpsc::channel::<Result<()>>();
+        let meter_label = owner_label.clone();
 
-        let worker_handle = thread::spawn(move || {
-            // The stream is built inside the worker thread because macOS
-            // requires the cpal stream and the run-loop driving it to
-            // share a thread.
+        let worker = thread::spawn(move || {
             let stream = match build_input_stream(
                 &device,
                 stream_config,
                 sample_format,
                 device_channels,
                 sample_tx,
-            ) {
-                Ok(s) => s,
-                Err(e) => {
-                    error!("Failed to build stream: {e}");
+            )
+            .and_then(|stream| {
+                stream
+                    .play()
+                    .map_err(|e| RecorderError::classify_cpal("Failed to start stream", e))?;
+                Ok(stream)
+            }) {
+                Ok(stream) => {
+                    let _ = ready_tx.send(Ok(()));
+                    stream
+                }
+                Err(error) => {
+                    let _ = ready_tx.send(Err(error));
                     return;
                 }
             };
 
-            if let Err(e) = stream.play() {
-                error!("Failed to start stream: {e}");
-                return;
-            }
-
             info!("Audio stream started successfully");
-            run_consumer(sample_rx, cmd_rx, device_rate, is_recording, app_handle);
+            // Capture begins the moment the stream plays. Samples produced
+            // before the loop is entered wait in `sample_rx`, so nothing
+            // between `play()` and the first iteration is lost.
+            run_consumer(sample_rx, cmd_rx, device_rate, &meter_label, app_handle);
             drop(stream);
         });
 
-        self.cmd_tx = Some(cmd_tx);
-        self.worker_handle = Some(worker_handle);
-        self.current_recording_id = Some(recording_id);
+        match ready_rx.recv() {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                let _ = worker.join();
+                return Err(error);
+            }
+            Err(error) => {
+                let _ = worker.join();
+                return Err(RecorderError::failed(format!(
+                    "recorder worker exited before reporting stream readiness: {error}"
+                )));
+            }
+        }
 
         info!(
-            "Recording session initialized: {} Hz, {} channels",
-            device_rate, device_channels,
+            "Recording started: id={audio_blob_id}, owner={owner_label}, {device_rate} Hz, {device_channels} channels",
         );
-
+        self.active = Some(ActiveRecording {
+            audio_blob_id,
+            owner_label,
+            cmd_tx,
+            worker,
+        });
         Ok(())
     }
 
-    /// Start recording and wait for the worker to acknowledge.
-    pub fn start_recording(&mut self) -> Result<()> {
-        let tx = self
-            .cmd_tx
-            .as_ref()
-            .ok_or_else(|| RecorderError::failed("No recording session initialized"))?;
+    /// Stop the recording named by `audio_blob_id` and consume its mono 16 kHz
+    /// PCM. Restricted to the window that started it: only the owner may turn a
+    /// recording into a blob it can read.
+    pub fn stop(&mut self, audio_blob_id: &str, caller_label: &str) -> Result<Vec<f32>> {
+        self.require_owned(audio_blob_id, caller_label)?;
+        // Taken before the round trip: whether the worker answers or dies, this
+        // recording is over and the slot must be free for the next start.
+        let active = self.active.take().expect("ownership was just verified");
+
         let (reply_tx, reply_rx) = mpsc::channel();
-        tx.send(RecorderCmd::Start(reply_tx))
-            .map_err(|e| RecorderError::failed(format!("Failed to send start command: {e}")))?;
-        reply_rx.recv().map_err(|e| {
-            RecorderError::failed(format!("Failed to receive start confirmation: {e}"))
-        })?;
+        let sent = active.cmd_tx.send(RecorderCmd::Stop(reply_tx));
+        let samples = match sent {
+            Ok(()) => reply_rx
+                .recv()
+                .map_err(|e| RecorderError::failed(format!("Worker dropped stop reply: {e}")))?,
+            Err(e) => Err(RecorderError::failed(format!(
+                "Failed to send stop command: {e}"
+            ))),
+        };
+        let _ = active.worker.join();
+        samples
+    }
+
+    /// Cancel the recording named by `audio_blob_id`, discarding its audio.
+    ///
+    /// Restricted to the owner window, for the same reason `stop` is: a
+    /// recording another window is relying on must not vanish under it. The
+    /// host cancels through [`Recorder::cancel_owned_by`] instead, which is not
+    /// reachable over IPC.
+    pub fn cancel(&mut self, audio_blob_id: &str, caller_label: &str) -> Result<()> {
+        self.require_owned(audio_blob_id, caller_label)?;
+        let active = self.active.take().expect("ownership was just verified");
+        discard(active);
         Ok(())
     }
 
-    /// Stop recording and consume the worker's mono 16 kHz PCM.
-    pub fn stop_recording(&mut self) -> Result<Vec<f32>> {
-        let tx = self
-            .cmd_tx
+    /// Cancel the in-flight recording if `owner_label` owns it, returning the
+    /// burnt blob id. The host's own path, used when the owner window is
+    /// destroyed: the recording it owns can no longer be stopped by anyone, so
+    /// holding the single recorder slot for it would wedge every other window.
+    pub fn cancel_owned_by(&mut self, owner_label: &str) -> Option<String> {
+        let active = self
+            .active
+            .take_if(|active| active.owner_label == owner_label)?;
+        let audio_blob_id = active.audio_blob_id.clone();
+        discard(active);
+        Some(audio_blob_id)
+    }
+
+    /// The blob id of the recording `caller_label` owns, if any.
+    ///
+    /// Scoped to the caller rather than global: a window learns about its own
+    /// recording and nothing else. This is load-bearing, not recovery sugar.
+    /// Reloading a window does not destroy it, so a window that reloads
+    /// mid-recording still owns a live recording and needs the id back to stop
+    /// or cancel it.
+    pub fn current(&self, caller_label: &str) -> Option<String> {
+        self.active
             .as_ref()
-            .ok_or_else(|| RecorderError::failed("No recording session initialized"))?;
-        let (reply_tx, reply_rx) = mpsc::channel();
-        tx.send(RecorderCmd::Stop(reply_tx))
-            .map_err(|e| RecorderError::failed(format!("Failed to send stop command: {e}")))?;
-        reply_rx
-            .recv()
-            .map_err(|e| RecorderError::failed(format!("Worker dropped stop reply: {e}")))?
+            .filter(|active| active.owner_label == caller_label)
+            .map(|active| active.audio_blob_id.clone())
     }
 
-    /// Cancel the active recording, discarding any in-flight samples.
-    pub fn cancel_recording(&mut self) -> Result<()> {
-        if let Some(tx) = &self.cmd_tx {
-            let (reply_tx, reply_rx) = mpsc::channel();
-            let _ = tx.send(RecorderCmd::Cancel(reply_tx));
-            let _ = reply_rx.recv();
+    /// Whether any recording is in flight, for the host's tray indicator.
+    pub fn is_recording(&self) -> bool {
+        self.active.is_some()
+    }
+
+    /// The one ownership rule, in one place: the named recording must be live
+    /// and must belong to the calling window.
+    ///
+    /// Both failures collapse to `NotRecording`. The caller cannot act
+    /// differently on "no such recording" versus "not yours" (both mean "this
+    /// window has nothing to stop"), and the distinguishing detail still
+    /// travels in `message` for diagnostics.
+    fn require_owned(&self, audio_blob_id: &str, caller_label: &str) -> Result<()> {
+        let Some(active) = &self.active else {
+            return Err(RecorderError::not_recording(format!(
+                "no recording is in flight; '{audio_blob_id}' has already ended"
+            )));
+        };
+        if active.audio_blob_id != audio_blob_id {
+            return Err(RecorderError::not_recording(format!(
+                "the in-flight recording is not '{audio_blob_id}'"
+            )));
         }
-        self.close_session()?;
+        if active.owner_label != caller_label {
+            return Err(RecorderError::not_recording(format!(
+                "recording '{audio_blob_id}' is owned by window '{}', not '{caller_label}'",
+                active.owner_label
+            )));
+        }
         Ok(())
     }
+}
 
-    /// Tear down the session: shut down the worker, join the thread.
-    pub fn close_session(&mut self) -> Result<()> {
-        if let Some(tx) = self.cmd_tx.take() {
-            let _ = tx.send(RecorderCmd::Shutdown);
-        }
-        if let Some(handle) = self.worker_handle.take() {
-            let _ = handle.join();
-        }
-        self.current_recording_id = None;
-        debug!("Recording session closed");
-        Ok(())
-    }
-
-    /// Recording id of the active session, if any. Surfaced for the JS
-    /// reload-reattach path: only returns while the recorder is actively
-    /// capturing, so a stopped-but-not-closed session does not look live.
-    pub fn get_current_recording_id(&self) -> Option<String> {
-        if self.is_recording.load(Ordering::Acquire) {
-            self.current_recording_id.clone()
-        } else {
-            None
-        }
-    }
-
-    /// Session id without the is_recording gate. Used by `stop_recording`
-    /// to address the blob write after the worker has already flipped
-    /// the recording flag down.
-    pub fn session_id(&self) -> Option<String> {
-        self.current_recording_id.clone()
-    }
+/// End a recording without producing anything: tell the worker to drop its
+/// buffer, then join it so the cpal stream is released before returning.
+fn discard(active: ActiveRecording) {
+    // A send failure means the worker is already gone, which is the same
+    // outcome by another route, so it is not an error to report.
+    let _ = active.cmd_tx.send(RecorderCmd::Cancel);
+    let _ = active.worker.join();
+    debug!("Recording {} cancelled", active.audio_blob_id);
 }
 
 impl Drop for Recorder {
     fn drop(&mut self) {
-        let _ = self.close_session();
+        if let Some(active) = self.active.take() {
+            discard(active);
+        }
     }
 }
 
 /// Consumer worker entrypoint. Accumulates mono samples, resamples to
-/// 16 kHz at finalize and pads short clips. While recording,
-/// also emits a throttled RMS level to the overlay window so its meter can
-/// reflect live mic activity (the JS side never sees the PCM, so the level has
-/// to originate here).
+/// 16 kHz at finalize, pads short clips, returns the samples. While recording,
+/// also emits a throttled RMS level to the owner window so its meter can
+/// reflect live mic activity.
 fn run_consumer(
     sample_rx: mpsc::Receiver<Vec<f32>>,
     cmd_rx: mpsc::Receiver<RecorderCmd>,
     device_rate: u32,
-    is_recording: Arc<AtomicBool>,
+    owner_label: &str,
     app_handle: AppHandle,
 ) {
     use std::sync::mpsc::RecvTimeoutError;
 
-    let mut recording = false;
     let mut buffer: Vec<f32> = Vec::new();
     // Mic-level metering accumulators, averaged and flushed on an interval.
     let mut level_sumsq = 0f64;
@@ -281,56 +369,39 @@ fn run_consumer(
     loop {
         // Command channel has priority. Stop should respond fast even
         // when audio frames are arriving back-to-back.
-        if let Ok(cmd) = cmd_rx.try_recv() {
-            match cmd {
-                RecorderCmd::Start(reply) => {
-                    recording = true;
-                    is_recording.store(true, Ordering::Release);
-                    buffer.clear();
-                    level_sumsq = 0.0;
-                    level_count = 0;
-                    last_level_emit = Instant::now();
-                    let _ = reply.send(());
-                    continue;
-                }
-                RecorderCmd::Stop(reply) => {
-                    is_recording.store(false, Ordering::Release);
-                    let result = crate::timing::measure("finalize", || {
-                        finalize(std::mem::take(&mut buffer), device_rate)
-                    });
-                    let _ = reply.send(result);
-                    return;
-                }
-                RecorderCmd::Cancel(reply) => {
-                    is_recording.store(false, Ordering::Release);
-                    let _ = reply.send(Ok(()));
-                    return;
-                }
-                RecorderCmd::Shutdown => {
-                    is_recording.store(false, Ordering::Release);
-                    return;
-                }
+        match cmd_rx.try_recv() {
+            Ok(RecorderCmd::Stop(reply)) => {
+                let result = crate::timing::measure("finalize", || {
+                    finalize(std::mem::take(&mut buffer), device_rate)
+                });
+                let _ = reply.send(result);
+                return;
             }
+            Ok(RecorderCmd::Cancel) => return,
+            // The command sender is gone without a stop or a cancel, so nobody
+            // is left to receive this audio.
+            Err(mpsc::TryRecvError::Disconnected) => return,
+            Err(mpsc::TryRecvError::Empty) => {}
         }
 
         match sample_rx.recv_timeout(Duration::from_millis(20)) {
             Ok(samples) => {
-                if recording {
-                    for &sample in &samples {
-                        level_sumsq += (sample as f64) * (sample as f64);
-                    }
-                    level_count += samples.len();
-                    buffer.extend_from_slice(&samples);
+                for &sample in &samples {
+                    level_sumsq += (sample as f64) * (sample as f64);
+                }
+                level_count += samples.len();
+                buffer.extend_from_slice(&samples);
 
-                    if last_level_emit.elapsed() >= MIC_LEVEL_EMIT_INTERVAL && level_count > 0 {
-                        let rms = (level_sumsq / level_count as f64).sqrt() as f32;
-                        // Targeted emit to the overlay only; no error if it is
-                        // not open (e.g. overlay disabled), and never fatal.
-                        let _ = app_handle.emit_to(OVERLAY_WINDOW_LABEL, MIC_LEVEL_EVENT, rms);
-                        level_sumsq = 0.0;
-                        level_count = 0;
-                        last_level_emit = Instant::now();
-                    }
+                if last_level_emit.elapsed() >= MIC_LEVEL_EMIT_INTERVAL && level_count > 0 {
+                    let rms = (level_sumsq / level_count as f64).sqrt() as f32;
+                    // A targeted emit, never a broadcast: a level is about one
+                    // window's recording, and every other window is entitled
+                    // not to hear it. Not an error if the owner window is
+                    // hidden or gone, and never fatal.
+                    let _ = app_handle.emit_to(owner_label, MIC_LEVEL_EVENT, rms);
+                    level_sumsq = 0.0;
+                    level_count = 0;
+                    last_level_emit = Instant::now();
                 }
             }
             Err(RecvTimeoutError::Timeout) => continue,
@@ -579,6 +650,135 @@ fn downmix_u16(interleaved: &[u16], channels: usize) -> Vec<f32> {
 mod tests {
     use super::*;
 
+    /// Stand up an `ActiveRecording` without opening a microphone.
+    ///
+    /// The ownership rules are pure state, so they are tested against real
+    /// `Recorder` state rather than through cpal: a test that needs an input
+    /// device cannot run in CI, and the rules being checked have nothing to do
+    /// with audio.
+    ///
+    /// The stand-in worker exits on its first command, which is what
+    /// `run_consumer` does for both `Stop` and `Cancel`. That detail is
+    /// load-bearing rather than incidental: `discard` sends `Cancel` and then
+    /// joins while still holding `cmd_tx`, so a worker that looped waiting for
+    /// a second command would never see its channel close and the join would
+    /// hang forever.
+    fn recording_owned_by(recorder: &mut Recorder, audio_blob_id: &str, owner_label: &str) {
+        let (cmd_tx, cmd_rx) = mpsc::channel::<RecorderCmd>();
+        let worker = thread::spawn(move || {
+            let _ = cmd_rx.recv();
+        });
+        recorder.active = Some(ActiveRecording {
+            audio_blob_id: audio_blob_id.to_string(),
+            owner_label: owner_label.to_string(),
+            cmd_tx,
+            worker,
+        });
+    }
+
+    fn error_name(error: &RecorderError) -> &'static str {
+        match error {
+            RecorderError::PermissionDenied { .. } => "PermissionDenied",
+            RecorderError::NoInputDevice { .. } => "NoInputDevice",
+            RecorderError::Busy { .. } => "Busy",
+            RecorderError::NotRecording { .. } => "NotRecording",
+            RecorderError::Failed { .. } => "Failed",
+        }
+    }
+
+    #[test]
+    fn a_fresh_recorder_is_idle_and_owns_nothing() {
+        let recorder = Recorder::new();
+        assert!(!recorder.is_recording());
+        assert_eq!(recorder.current("whispering"), None);
+    }
+
+    #[test]
+    fn current_is_scoped_to_the_owning_window() {
+        let mut recorder = Recorder::new();
+        recording_owned_by(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes");
+
+        assert_eq!(
+            recorder.current("app-notes").as_deref(),
+            Some("blob_aaaaaaaaaaaaaaaaaaaaa"),
+        );
+        // A window that owns no recording learns nothing about one that exists.
+        assert_eq!(recorder.current("whispering"), None);
+    }
+
+    #[test]
+    fn a_non_owner_cannot_stop_or_cancel_and_the_recording_survives() {
+        let mut recorder = Recorder::new();
+        recording_owned_by(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes");
+
+        let stop = recorder
+            .stop("blob_aaaaaaaaaaaaaaaaaaaaa", "whispering")
+            .expect_err("a non-owner must not stop another window's recording");
+        assert_eq!(error_name(&stop), "NotRecording");
+
+        let cancel = recorder
+            .cancel("blob_aaaaaaaaaaaaaaaaaaaaa", "whispering")
+            .expect_err("a non-owner must not cancel another window's recording");
+        assert_eq!(error_name(&cancel), "NotRecording");
+
+        // The refusals left the owner's recording completely untouched.
+        assert!(recorder.is_recording());
+        assert_eq!(
+            recorder.current("app-notes").as_deref(),
+            Some("blob_aaaaaaaaaaaaaaaaaaaaa"),
+        );
+    }
+
+    #[test]
+    fn the_owner_cannot_stop_an_id_that_is_not_the_live_recording() {
+        let mut recorder = Recorder::new();
+        recording_owned_by(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes");
+
+        let error = recorder
+            .stop("blob_bbbbbbbbbbbbbbbbbbbbb", "app-notes")
+            .expect_err("a stale id must not stop whatever happens to be live");
+        assert_eq!(error_name(&error), "NotRecording");
+        assert!(recorder.is_recording());
+    }
+
+    #[test]
+    fn the_owner_can_cancel_and_the_slot_is_released() {
+        let mut recorder = Recorder::new();
+        recording_owned_by(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes");
+
+        recorder
+            .cancel("blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes")
+            .expect("the owner may cancel its own recording");
+
+        assert!(!recorder.is_recording());
+        assert_eq!(recorder.current("app-notes"), None);
+    }
+
+    #[test]
+    fn destroying_the_owner_window_cancels_only_its_own_recording() {
+        let mut recorder = Recorder::new();
+        recording_owned_by(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes");
+
+        // A different window closing leaves the recording alone.
+        assert_eq!(recorder.cancel_owned_by("whispering"), None);
+        assert!(recorder.is_recording());
+
+        assert_eq!(
+            recorder.cancel_owned_by("app-notes").as_deref(),
+            Some("blob_aaaaaaaaaaaaaaaaaaaaa"),
+        );
+        assert!(!recorder.is_recording());
+    }
+
+    #[test]
+    fn stopping_a_recording_that_already_ended_is_a_typed_refusal() {
+        let mut recorder = Recorder::new();
+        let error = recorder
+            .stop("blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes")
+            .expect_err("there is nothing to stop");
+        assert_eq!(error_name(&error), "NotRecording");
+    }
+
     #[test]
     fn downmix_stereo_to_mono_averages_pairs() {
         let stereo = vec![0.5_f32, -0.5, 1.0, -1.0];
@@ -591,5 +791,18 @@ mod tests {
         let input = vec![0.1_f32, 0.2, 0.3];
         let mono = downmix_f32(&input, 1);
         assert_eq!(mono, input);
+    }
+
+    #[test]
+    fn short_clips_are_padded_and_empty_ones_are_left_alone() {
+        let padded = finalize(vec![0.1; 100], TARGET_RATE).expect("finalize a short clip");
+        assert_eq!(padded.len(), SHORT_RECORDING_PAD_SAMPLES);
+
+        let empty = finalize(Vec::new(), TARGET_RATE).expect("finalize an empty clip");
+        assert!(empty.is_empty());
+
+        // Anything at or over a second is returned as captured.
+        let long = finalize(vec![0.1; TARGET_RATE as usize], TARGET_RATE).expect("finalize");
+        assert_eq!(long.len(), TARGET_RATE as usize);
     }
 }

@@ -1,4 +1,4 @@
-import type { BlobId } from '@epicenter/blobs';
+import { type BlobId, generateBlobId } from '@epicenter/blobs';
 import {
 	cleanupRecordingStream,
 	enumerateDevices,
@@ -29,6 +29,10 @@ const TIMESLICE_MS = 1000;
  *
  * Constructed via a factory so per-session lifecycle (stop/cancel/subscribe)
  * lives on the returned `RecordingSession`.
+ *
+ * The blob id is minted here, at the moment the capture starts, the way the
+ * host mints it on desktop: whoever owns the capture owns the id, and the
+ * caller reads it back off the session.
  */
 function createBrowserRecorder(): RecorderService<NavigatorRecordingParams> {
 	function buildSession(args: {
@@ -144,7 +148,7 @@ function createBrowserRecorder(): RecorderService<NavigatorRecordingParams> {
 		},
 
 		startRecording: async (
-			{ selectedDeviceId, audioBlobId, bitrateKbps }: NavigatorRecordingParams,
+			{ selectedDeviceId, bitrateKbps }: NavigatorRecordingParams,
 			{ onLevel }: RecordingCallbacks,
 		) => {
 			const { data: streamResult, error: acquireStreamError } =
@@ -196,7 +200,7 @@ function createBrowserRecorder(): RecorderService<NavigatorRecordingParams> {
 			const startedAtMs = Date.now();
 
 			const session = buildSession({
-				audioBlobId,
+				audioBlobId: generateBlobId(),
 				stream,
 				mediaRecorder,
 				recordedChunks,

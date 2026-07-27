@@ -12,6 +12,7 @@ import type {
 	DictationCapability,
 	IpcRecorderError,
 	LocalTranscriptionReadiness,
+	StoppedRecording,
 	TranscriptionError,
 	TranscriptionHints,
 	TranscriptionOutcome,
@@ -55,13 +56,80 @@ type _SharedContracts = Expect<
 	>
 >;
 
-// stop_recording: fallible, returns the finalized blob id. The error is the
-// structured `RecorderError` IPC enum, not a bare string: this assertion is the
-// contract proof that the recorder boundary stays typed.
+// The whole recording surface, pinned.
+//
+// Each of these commands takes an injected `tauri::WebviewWindow` in Rust, so
+// the host knows which window is calling without the caller being able to say.
+// Specta renders that parameter as nothing at all, and these argument
+// assertions are the proof: if the injection ever started leaking into the
+// generated signature, the arity here would stop matching.
+//
+// The errors are the structured `RecorderError` IPC enum, not bare strings, so
+// the recorder boundary stays typed.
+
+// start_recording: optional device and sample rate in, the host-minted blob id
+// out. The caller does not supply an id, because the host owns which recording
+// exists.
+type _StartRecordingArgs = Expect<
+	Equal<
+		Parameters<typeof commands.startRecording>,
+		[string | null, number | null]
+	>
+>;
+
+type _StartRecording = Expect<
+	Equal<
+		ReturnType<typeof commands.startRecording>,
+		Promise<Result<string, IpcRecorderError>>
+	>
+>;
+
+// stop_recording: names the recording to end, and answers with the committed
+// blob plus the host's exact duration and byte length. Neither is nullable,
+// because a stop that returns at all has already published the file.
+type _StopRecordingArgs = Expect<
+	Equal<Parameters<typeof commands.stopRecording>, [string]>
+>;
+
 type _StopRecording = Expect<
 	Equal<
 		ReturnType<typeof commands.stopRecording>,
-		Promise<Result<string, IpcRecorderError>>
+		Promise<Result<StoppedRecording, IpcRecorderError>>
+	>
+>;
+
+type _StoppedRecordingShape = Expect<
+	Equal<
+		StoppedRecording,
+		{ audioBlobId: string; durationMs: number; byteLength: number }
+	>
+>;
+
+// cancel_recording: names the recording to burn, and produces nothing. The
+// absence of a result type is the invariant: a cancel can never hand anyone a
+// blob.
+type _CancelRecordingArgs = Expect<
+	Equal<Parameters<typeof commands.cancelRecording>, [string]>
+>;
+
+type _CancelRecording = Expect<
+	Equal<
+		ReturnType<typeof commands.cancelRecording>,
+		Promise<Result<null, IpcRecorderError>>
+	>
+>;
+
+// current_recording: takes nothing, because the only window it could be asked
+// about is the one asking. That scoping lives in Rust with the injected window,
+// which is why there is no label parameter here to get wrong.
+type _CurrentRecordingArgs = Expect<
+	Equal<Parameters<typeof commands.currentRecording>, []>
+>;
+
+type _CurrentRecording = Expect<
+	Equal<
+		ReturnType<typeof commands.currentRecording>,
+		Promise<Result<string | null, IpcRecorderError>>
 	>
 >;
 

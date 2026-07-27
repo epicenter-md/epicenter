@@ -1,8 +1,14 @@
 //! Native recorder finalization into Epicenter's canonical local blob layout.
 //!
-//! The WebView supplies one opaque `BlobId`. Rust writes the complete WAV and
-//! metadata into a staging directory, fsyncs both files, and atomically renames
-//! the directory to `<appDataDir>/blobs/<BlobId>`. IPC returns only the id.
+//! Rust mints the opaque `BlobId` when a recording starts, writes the complete
+//! WAV and metadata into a staging directory, fsyncs both files, and atomically
+//! renames the directory to `<appDataDir>/blobs/<BlobId>`. Raw PCM never
+//! crosses the IPC boundary; an application holds only the id.
+//!
+//! The id exists before its blob does. `start` returns it, `stop` publishes the
+//! blob under it, and `cancel` burns it without a blob ever appearing. That is
+//! why this module mints and validates in the same place: the shape is one
+//! contract shared with `packages/blobs`, and the two mints must agree.
 
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
@@ -28,14 +34,56 @@ const METADATA_FILE: &str = "metadata.json";
 #[serde(rename_all = "camelCase")]
 struct BlobMetadata {
     content_type: &'static str,
-    size: u64,
+    /// Serializes as a plain JSON number, so the 32-bit width here is only the
+    /// RIFF bound this writer already enforces, not a change to the on-disk
+    /// metadata shape other blob writers produce.
+    size: u32,
+}
+
+/// `blob_` plus 21 characters of this alphabet, matching `generateBlobId` in
+/// `packages/blobs/src/blob-id.ts`. Every character is safe as a filesystem
+/// name, an S3 key segment, and a URL path segment, so the id is used verbatim
+/// as a storage key.
+const BLOB_ID_ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
+const BLOB_ID_BODY_LEN: usize = 21;
+
+/// Mint a fresh blob id for a recording that is about to start.
+///
+/// This is the second mint of the one BlobId shape; `generateBlobId` in
+/// `packages/blobs` is the other. They must produce the same shape, which
+/// `validate_blob_id` and the round-trip test below pin from this side.
+///
+/// Rejection sampling against a power-of-two mask rather than `byte % 36`,
+/// which would bias the first four letters. `getrandom` is the OS CSPRNG, the
+/// same source nanoid uses.
+pub(crate) fn mint_blob_id() -> Result<String, RecorderError> {
+    // 36 values need 6 bits; a 63 mask keeps the draw uniform and rejects the
+    // 28 of 64 patterns that fall outside the alphabet.
+    const MASK: u8 = 63;
+    let mut id = String::with_capacity("blob_".len() + BLOB_ID_BODY_LEN);
+    id.push_str("blob_");
+    let mut buffer = [0u8; 32];
+    while id.len() < "blob_".len() + BLOB_ID_BODY_LEN {
+        getrandom::fill(&mut buffer)
+            .map_err(|error| RecorderError::failed(format!("draw blob id bytes: {error}")))?;
+        for byte in buffer {
+            let index = (byte & MASK) as usize;
+            if index < BLOB_ID_ALPHABET.len() {
+                id.push(BLOB_ID_ALPHABET[index] as char);
+                if id.len() == "blob_".len() + BLOB_ID_BODY_LEN {
+                    break;
+                }
+            }
+        }
+    }
+    Ok(id)
 }
 
 fn validate_blob_id(id: &str) -> Result<(), RecorderError> {
     let body = id
         .strip_prefix("blob_")
         .ok_or_else(|| RecorderError::failed("blob id must start with 'blob_'"))?;
-    if body.len() != 21
+    if body.len() != BLOB_ID_BODY_LEN
         || !body
             .bytes()
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
@@ -58,8 +106,14 @@ fn blob_data_path(app: &AppHandle, id: &str) -> Result<PathBuf, RecorderError> {
     Ok(blobs_directory(app)?.join(id).join(DATA_FILE))
 }
 
-/// Finalize native samples as one immutable local blob and return only its id.
-pub fn write_blob(app: &AppHandle, id: &str, samples: &[f32]) -> Result<String, RecorderError> {
+/// Finalize native samples as one immutable local blob, returning the exact
+/// length of the published file. The caller already holds the id; the byte
+/// length is the one fact only this function learns.
+///
+/// `u32` rather than `u64` because a RIFF WAV states its own size in 32 bits
+/// and `write_pcm_as_wav` refuses anything larger, so a published blob cannot
+/// exceed it.
+pub fn write_blob(app: &AppHandle, id: &str, samples: &[f32]) -> Result<u32, RecorderError> {
     validate_blob_id(id)?;
     let root = blobs_directory(app)?;
     // Each writer owns a distinct staging subtree. Bun writes under
@@ -99,6 +153,8 @@ pub fn write_blob(app: &AppHandle, id: &str, samples: &[f32]) -> Result<String, 
                 RecorderError::failed(format!("stat staged blob {}: {error}", data_path.display()))
             })?
             .len();
+        let size = u32::try_from(size)
+            .map_err(|_| RecorderError::failed("published blob exceeds the RIFF size limit"))?;
         let metadata_path = staged_directory.join(METADATA_FILE);
         let metadata = serde_json::to_vec(&BlobMetadata {
             content_type: BLOB_CONTENT_TYPE,
@@ -128,11 +184,11 @@ pub fn write_blob(app: &AppHandle, id: &str, samples: &[f32]) -> Result<String, 
         })?;
         published = true;
         sync_directory(&root)?;
-        Ok(id.to_string())
+        Ok(size)
     })();
 
     match result {
-        Ok(id) => Ok(id),
+        Ok(size) => Ok(size),
         Err(error) => {
             let cleanup_target = if published {
                 &final_directory
@@ -251,5 +307,38 @@ mod tests {
         assert!(validate_blob_id("abcdefghijklmnopqrstu").is_err());
         assert!(validate_blob_id("blob_ABCDEFGHIJKLMNOPQRSTU").is_err());
         assert!(validate_blob_id("blob_abcdefghijklmnopqrs/u").is_err());
+    }
+
+    /// The mint/parse round trip, matching `blob-id.test.ts` on the other side
+    /// of the same contract. If either mint drifts from the shared shape, one
+    /// of the two round-trip tests fails rather than a blob path failing in
+    /// production.
+    #[test]
+    fn minted_ids_round_trip_through_validation() {
+        for _ in 0..1_000 {
+            let id = mint_blob_id().expect("mint a blob id");
+            assert_eq!(id.len(), "blob_".len() + BLOB_ID_BODY_LEN);
+            validate_blob_id(&id).expect("a minted id must parse");
+        }
+    }
+
+    /// Distinctness, and coverage of the whole alphabet. Rejection sampling is
+    /// easy to get subtly wrong in a way that silently narrows the alphabet, so
+    /// this asserts every character is reachable rather than only that ids
+    /// differ.
+    #[test]
+    fn minted_ids_are_distinct_and_span_the_alphabet() {
+        let mut seen_ids = std::collections::HashSet::new();
+        let mut seen_chars = std::collections::HashSet::new();
+        for _ in 0..2_000 {
+            let id = mint_blob_id().expect("mint a blob id");
+            seen_chars.extend(id["blob_".len()..].bytes());
+            assert!(seen_ids.insert(id), "minted a duplicate blob id");
+        }
+        assert_eq!(
+            seen_chars.len(),
+            BLOB_ID_ALPHABET.len(),
+            "some alphabet characters are unreachable"
+        );
     }
 }
