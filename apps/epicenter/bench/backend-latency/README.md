@@ -9,9 +9,54 @@ That collapse is only admissible if plain CPU inference is already fast enough
 on ordinary x64 hardware that nobody can feel the difference. This crate
 measures that, once per build posture, on identical inputs.
 
+It also falsifies live transcription preview at its authoritative boundary:
+batch transcription never fails, and never waits unboundedly, because an
+optional preview exists. Preview is revocable and may simply be absent. A
+second resident model is one useful optimization, not the gate.
+
 It is throwaway. It is not wired into the app build, CI, or the workspace, and
 nothing in `apps/epicenter/src-tauri` can reach it. Delete the directory when
 the decision is recorded.
+
+## Live preview go/no-go, precommitted before measurement
+
+The invariant is: **authoritative batch transcription never fails, and never
+waits unboundedly, because an optional preview exists. Preview is revocable and
+may simply be absent.**
+
+Live preview is EARNED only if all of these hold on the actual candidate
+artifacts:
+
+1. `supports_streaming` is true.
+2. Cooperative and forced revoke-to-lease-free are each at most **250 ms**, and
+   a same-model batch immediately after each revocation succeeds. A user is
+   already waiting for the real transcription to start; adding more than a
+   quarter second before inference is perceptible and not "preview" work.
+   Forced revocation must actually return `Error::Aborted`. Unsupported
+   `Feature::Cancellation` fails this criterion because the worst case is then
+   one entire in-flight `feed()`.
+3. Re-arm produces preview text within **1,000 ms** after either revocation.
+   Preview is normally revoked once per dictation, so an expensive restart
+   would erase its value on the next dictation.
+4. A **20-minute** looped-audio run reaches its target and finalizes, total RSS
+   growth is at most **256 MiB**, and the last minute's feed p95 is no more than
+   **2x** the first minute's p95. These finite bounds make early termination,
+   runaway memory, and context-driven latency drift explicit. Any declared
+   `max_audio_ms` below 20 minutes fails this product case.
+5. `stream_compute_rtf` is at most **0.5**, and time to first committed text is
+   less than **half** the streaming candidate's warm batch median. Otherwise
+   preview shows nothing meaningfully sooner than waiting and buys nothing.
+
+If any gating criterion fails, live preview is deleted and not implemented.
+This is a precommitment, not a hope to reinterpret the result after seeing it.
+
+### Non-gating optimization study
+
+The harness also reports whether two models fit, the second model's RSS and
+device-memory cost, and whether model A can run batch concurrently while model
+B streams. If that works, the common case need not revoke preview at all. If it
+does not, preview still stands or falls on same-model preemption. Dual residency
+failure does not by itself kill preview.
 
 ## The one command
 
@@ -31,6 +76,8 @@ One JSON object per invocation on stdout, appended to `--json` so a posture
 matrix accumulates into one comparable file. `--help` documents every flag.
 `--probe` reports the posture and the registered devices without loading a
 model, which is the fastest way to confirm a build is what you think it is.
+Pass `--probe --model /path/to/model.gguf` to load just that model and report
+`supports_streaming` without running inference.
 
 ## Read these three fields before any latency number
 
@@ -43,6 +90,101 @@ model, which is the fastest way to confirm a build is what you think it is.
 Pass `--assert-comparison-key <hex>` on every run after the first and a
 mismatched model, clip, backend, or thread count fails loudly instead of quietly
 producing a number that looks comparable and isn't.
+
+## The preview preemption command
+
+`--stream-model` selects the second question and changes the record schema to
+`epicenter.preview-preemption/1`. `--stream-model` is model B, the preview
+candidate used for the gating same-model revoke and batch proof. `--model` is
+model A for the non-gating dual-residency study. Both model paths and `--audio`
+are required.
+
+```sh
+TRANSCRIBE_CMAKE_ARGS="-DGGML_NATIVE=OFF" \
+  CARGO_TARGET_DIR=target-metal \
+  cargo build --release --features static-metal
+
+./target-metal/release/backend-latency \
+  --model /path/to/whisper-tiny-Q8_0.gguf \
+  --stream-model /path/to/parakeet-unified-en-0.6b-Q8_0.gguf \
+  --audio /path/to/speech_15s_16k_mono.wav \
+  --runs 5 --chunk-ms 320 --stream-minutes 2 \
+  --label "apple-silicon preview smoke"
+```
+
+The default 320 ms chunk is 5,120 samples at the required 16 kHz. Chunks are
+fed back-to-back without artificial sleeping. This measures compute capacity:
+whether feed plus finalize can keep up with incoming live audio. It does not
+simulate wall-clock realtime playback.
+
+The default two-minute long-stream leg is the reduced smoke mode. Run the
+precommitted survival gate with `--stream-minutes 20`. The harness loops the
+supplied clip to reach that duration. Looped audio establishes resource
+behavior, stream survival, and feed-latency drift; it does not establish
+transcription quality on natural 20-minute speech. The record always reports
+the requested and actual audio duration.
+
+## Read these fields before any streaming number
+
+| Field | Why it decides admissibility |
+| --- | --- |
+| `build.isa_pinned` | The same shippability check as the batch record. |
+| `runtime.device_count` | The same registered-backend check as the batch record. |
+| `comparison_key` | A streaming key hashes both model contents, decoded PCM, requested backend, thread count, run count, chunk size, and requested stream duration. Two streaming records are comparable only when this matches. |
+| `measurement.capability.supports_streaming` | `false` ends the proposal before timing can make it look attractive. |
+| `measurement.capability.supports_cancellation` | `false` means forced preemption is unsupported and the worst-case gate fails cleanly. |
+| `measurement.capability.max_audio_ms` | Model limit; `0` means no practical model-level limit. |
+| `measurement.capability.effective_max_audio_ms` | Effective session/stream limit after options are applied. |
+| `measurement.preemption.cooperative_between_feeds.signal_to_lease_free_ms` | Request-to-free time when the host stops feeding and resets the non-authoritative stream. |
+| `measurement.preemption.forced_mid_feed.signal_to_lease_free_ms` | Worst-case request-to-free time when a cancel token interrupts an in-flight feed. |
+| `measurement.preemption.*.same_model_batch_after_revocation.outcome` | Must be `succeeded`; this is the proof that timing ended with a genuinely free lease. |
+| `measurement.preemption.*.rearm.reset_plus_stream_to_text_ms` | Reset plus fresh stream-to-text cost after revocation. |
+| `measurement.long_stream.survived` | Must be true at 20 minutes; early offset and error remain in the record otherwise. |
+| `measurement.long_stream.buckets` | Per-minute feed p50/p95/max and memory snapshots expose drift and growth. |
+| `measurement.residency.instrument` | Names the RSS and device-memory instruments. On macOS it states explicitly that Metal unified memory may not be fully attributed to RSS. |
+| `measurement.concurrency.same_model_b.outcome` | Must be `busy`; otherwise the harness did not prove it held the stream lease. |
+| `measurement.concurrency.cross_model_a.outcome` | Non-gating optimization: success means dual residency can avoid revocation in the common case. |
+
+Residency is sampled before either load, after model A, after model B, while the
+stream is active, and after finalize. macOS RSS comes from
+`ps -o rss= -p <pid>` (KiB converted to bytes); Linux reads resident pages from
+`/proc/self/statm` and multiplies by `getconf PAGESIZE`.
+`Model::device().memory_free` supplies the live backend snapshot for each loaded
+model. Metal uses unified memory, so GPU allocations may not be fully attributed
+to process RSS; read both instruments and do not add them as though they were
+disjoint pools.
+
+If the operating environment refuses the RSS instrument, snapshots retain
+`rss_bytes: null` plus `rss_error` and the other measurements continue. The
+memory-growth gate is then UNRUN, not silently passed and not a harness crash.
+
+The short stream record reports every `feed()` latency plus p50, nearest-rank
+p95, and max; `stream_compute_rtf` is summed feed and finalize compute divided
+by clip duration. Time to first committed text is reported in both audio
+consumed and wall-clock milliseconds. The final committed text and digest make
+an empty or degenerate result visible.
+
+Preemption reports two paths. Cooperative revocation uses `Stream::reset()`
+after the current feed returns because preview is non-authoritative and paying
+`finalize()` decode cost would delay batch for text that will be discarded.
+Forced revocation installs a `CancelToken`, signals it from a second thread
+while `feed()` is in flight, then resets the failed stream. Both paths
+immediately run batch on the same model as the lease proof, then reset/open/feed
+a fresh stream until it produces text to price re-arm.
+
+There is an API observability defect in transcribe-cpp 0.1.2:
+`Session::was_aborted()` cannot be called while `Stream` holds its mutable
+session borrow, but dropping or resetting the stream clears the native
+per-stream flag. The harness therefore reports the direct `Error::Aborted`
+outcome and leaves `session_was_aborted` null with an explanation. It does not
+turn an unobservable flag into a guessed boolean.
+
+`supports_streaming == false` is a clean successful record:
+`preview_available` is false, stream and concurrency results are null, and
+`failure` remains null. It means the candidate cannot provide preview; it does
+not mean the harness crashed. Actual instrument, stream begin/feed, or
+concurrency failures retain the common `{ "stage", "message" }` failure shape
+and exit non-zero.
 
 ## The ISA trap, which is the real finding here
 
