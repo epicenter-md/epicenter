@@ -409,6 +409,74 @@ That is probably the right trade, since prewarm already hides the load that ADR
 called dominant, but it should be an accepted cost written down, not a surprise
 found later.
 
+## Preview preemption verdict: NOT EARNED
+
+**Live preview is not implemented.** Four of the five gating criteria cleared
+comfortably. The fifth did not clear, and the way it failed is the finding.
+
+All runs: M4 Max, `-DGGML_NATIVE=OFF`, 16 kHz mono real speech (11.5 s, looped
+for the long-stream leg). Preview candidate is
+**parakeet-unified-en-0.6b Q8_0**; model A for the residency study is
+whisper-tiny Q8_0. Whisper Small Q4_K_M and Parakeet TDT 0.6B v3 Q4_K_M are
+still absent from the local cache, so this is one candidate, not the catalog.
+
+| Gate | Bound | Measured | |
+| --- | --- | --- | --- |
+| 1 `supports_streaming` | true | true, and `Feature::Cancellation` also true | PASS |
+| 2 revoke to lease-free | <= 250 ms, batch after must succeed | cooperative 39-88 ms, forced 39-98 ms; forced returns `Error::Aborted`; same-model batch immediately after every revocation succeeded (211-403 ms), never `Busy` | PASS |
+| 3 re-arm to preview text | <= 1000 ms | 39-97 ms | PASS |
+| 4 20-minute survival | reaches target, RSS growth <= 256 MiB, last-minute p95 <= 2x first | reached 1,200,000 ms and finalized; RSS 1170 -> 1334 MiB, growth **164.5 MiB**; p95 133.2 -> 133.4 ms, ratio **1.00** | PASS |
+| 5 RTF and first text | RTF <= 0.5 and TTFT < half the candidate's warm batch median | RTF 0.108-0.224, comfortably clear. TTFT **straddles the threshold** | **NOT CLEARED** |
+
+Gate 5, every leg:
+
+| Leg | TTFT | half warm median | |
+| --- | --- | --- | --- |
+| static-cpu 20 min, machine busy | 115.0 ms | 105.3 ms | FAIL |
+| static-cpu 2 min smoke | 109.0 ms | 107.0 ms | FAIL |
+| static-cpu 20 min, machine quiet | 95.8 ms | 105.3 ms | PASS |
+| static-metal 2 min smoke | 159.7 ms | 179.3 ms | PASS |
+
+Two pass, two fail, every one of them within 10% of the line, on one machine
+with identical inputs. A gate that flips on run-to-run noise has not been
+cleared, and the direction of the flip is the wrong one: the failures are the
+runs where the machine was busy, which is the condition a real dictation
+competes under. The quiet run is the optimistic case, not the representative
+one.
+
+The one comfortable pass is the least trustworthy leg. In the `static-metal`
+build the runtime registered a `metal` device and then loaded the model with
+`model_backend: "CPU"` anyway, so Parakeet never ran on the GPU. That leg passes
+only because its *batch* baseline is worse (358 ms against 210 ms), which raises
+the threshold it is measured against. Preview did not get faster; the thing it
+is compared to got slower.
+
+Read plainly: on a short dictation the authoritative batch result already
+arrives in about 210 ms, and a preview that shows its first committed text at
+about 100 ms is not buying a user anything they would notice. Preview's value
+should grow with recording length, and this gate deliberately compares against
+the same clip's batch median, so a longer clip would be a different and more
+favorable question. **That reopening is legitimate, but it must be precommitted
+and run, not decided here after seeing these numbers.** Nothing in this table
+licenses building preview.
+
+### Non-gating optimization study
+
+Dual residency works and is not what preview rests on. Both models stayed
+resident; the second cost **1.03 GiB** of RSS. With a stream in flight on model
+B, a batch on model B correctly returned `Error::Busy` (which is what proves the
+lease is real), and a batch on model A **succeeded**, at 1.6-1.9x its
+uncontended latency. So the escape does exist, and it is an optimization on top
+of a preview that has not yet earned its place, not a reason to build one.
+
+### Instrument note
+
+The RSS figures come from a run outside the agent sandbox. `ps` is blocked
+inside it, so runs made there report `rss_bytes: null` with an explicit
+`rss_error`, and their memory columns establish nothing. Check that field before
+quoting any memory number. Device `memory_free` is useless for this on a CPU
+backend: it reports total system RAM and therefore a delta of zero.
+
 ## Measurements taken so far
 
 Apple Silicon only, and therefore **methodology proof, not evidence for the
