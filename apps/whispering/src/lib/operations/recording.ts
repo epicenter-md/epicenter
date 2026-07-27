@@ -11,6 +11,10 @@ import { processRecordingPipeline } from '$lib/operations/pipeline';
 import { playSoundIfEnabled } from '$lib/operations/sound';
 import { prewarmOnDeviceModel } from '$lib/operations/transcribe';
 import { log, report } from '$lib/report';
+import {
+	RecorderError,
+	type RecordingEndedReason,
+} from '$lib/services/recorder/contract';
 import { captureSurface } from '$lib/state/capture-surface.svelte';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
@@ -58,6 +62,33 @@ function reportDeviceAcquisitionOutcome(
 	}
 }
 
+/**
+ * What to say when a recording ends on its own. Each reason has a different
+ * recovery, which is the whole reason the host distinguishes them.
+ */
+const ENDED_NOTICE: Record<RecordingEndedReason, string> = {
+	deviceDisconnected:
+		'Your microphone disconnected, so the recording stopped and the audio was lost.',
+	permissionRevoked:
+		'Microphone access was turned off, so the recording stopped and the audio was lost.',
+	streamFailed:
+		'The microphone stopped working, so the recording stopped and the audio was lost.',
+};
+
+// Registered once, for every manual recording this module will ever hold,
+// including one recovered from the host after a reload. Capture death is the
+// only ending nobody asked for, so it is the only one that needs telling.
+manualRecorder.onEnded((reason) => {
+	void recordingMedia.resume();
+	const { error } = RecorderError.RecorderFailed({
+		cause: ENDED_NOTICE[reason],
+	});
+	// No blob was written and the captured audio is gone, which is exactly the
+	// silent-loss tier: there is nothing to retry and nothing to recover.
+	dictationLifecycle.markFailed({ tier: 'silent-loss', error });
+	report.error({ title: 'Recording stopped', cause: error });
+});
+
 function isVadRecordingActive() {
 	return (
 		vadRecorder.state === 'LISTENING' || vadRecorder.state === 'SPEECH_DETECTED'
@@ -91,12 +122,7 @@ export async function startManualRecording(
 	cancelPendingVadResume();
 	recordingMedia.pause(app);
 
-	// Feed the pill's meter the live mic level. On web the navigator recorder taps
-	// its stream to drive this; on desktop the CPAL worker emits the level from
-	// Rust straight to the overlay, so this callback is never invoked there.
-	const { data: outcome, error } = await manualRecorder.startRecording({
-		onLevel: reportRecordingMicLevel,
-	});
+	const { data: recording, error } = await manualRecorder.startRecording();
 
 	if (error) {
 		void recordingMedia.resume();
@@ -107,8 +133,12 @@ export async function startManualRecording(
 		return null;
 	}
 
+	// Feed the pill's meter the live mic level. The browser recorder taps its
+	// MediaStream; the native one forwards the level the host measures.
+	recording.onLevel(reportRecordingMicLevel);
+
 	// The pill shows the live recording; only a device fallback needs a notice.
-	reportDeviceAcquisitionOutcome(outcome, (deviceId) => {
+	reportDeviceAcquisitionOutcome(recording.device, (deviceId) => {
 		manualRecorderConfig.deviceId = deviceId;
 	});
 

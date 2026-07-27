@@ -370,6 +370,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             keyboard::DictationCapabilityEvent,
             GlobalShortcutTriggered,
             HomeSectionPending,
+            recorder::ended::RecordingEndedEvent,
         ])
         .error_handling(tauri_specta::ErrorHandlingMode::Result)
 }

@@ -28,21 +28,23 @@ export const commands = {
 		),
 	/**
 	 *  Start recording, returning the blob id the recording will be published
-	 *  under.
+	 *  under and the microphone it opened.
 	 *
 	 *  The id exists before its blob does: `stop` publishes the blob under it and
 	 *  `cancel` burns it with no blob ever written. The host mints it so ownership
 	 *  is decided here rather than asserted by a caller.
 	 *
-	 *  `device_identifier` is optional; `None` records from the system default. An
-	 *  application with no device picker passes nothing. Fails with `Busy` when
-	 *  another window is already recording.
+	 *  `device_identifier` is optional; `None` records from the system default, and
+	 *  a name that is no longer present falls back to the default rather than
+	 *  failing. Either way `device` reports what actually opened, so the caller
+	 *  never has to enumerate devices just to discover what it got. Fails with
+	 *  `Busy` when another window is already recording.
 	 */
 	startRecording: (
 		deviceIdentifier: string | null,
 		sampleRate: number | null,
 	) =>
-		typedError<string, RecorderError>(
+		typedError<StartedRecording, RecorderError>(
 			__TAURI_INVOKE('start_recording', { deviceIdentifier, sampleRate }),
 		),
 	/**
@@ -72,17 +74,25 @@ export const commands = {
 			__TAURI_INVOKE('cancel_recording', { audioBlobId }),
 		),
 	/**
-	 *  The blob id of the recording this window owns, or `null`.
+	 *  The recording this window owns, or `null`.
 	 *
 	 *  Reload does not destroy a window, so a window that reloads mid-recording
 	 *  still owns a live recording and would otherwise have no way to name it. This
 	 *  is the only reason the single recorder cannot wedge until the owner window
 	 *  is destroyed.
+	 *
+	 *  It answers with the same shape `start` does, so a recovered recording is
+	 *  indistinguishable from a freshly started one: the caller learns which
+	 *  microphone is running without having to have been the one that opened it.
 	 */
 	currentRecording: () =>
-		typedError<string | null, RecorderError>(
-			__TAURI_INVOKE('current_recording'),
-		),
+		typedError<
+			{
+				audioBlobId: string;
+				device: DeviceAcquisition;
+			} | null,
+			RecorderError
+		>(__TAURI_INVOKE('current_recording')),
 	/**
 	 *  Canonical transcribe-by-id path. Resolves the canonical local blob, decodes
 	 *  it, then runs inference on the **active** model with the caller's advisory
@@ -352,6 +362,7 @@ export const events = {
 		'global-shortcut-triggered',
 	),
 	homeSectionPending: makeEvent<HomeSectionPending>('home-section-pending'),
+	recordingEndedEvent: makeEvent<RecordingEndedEvent>('recording-ended-event'),
 };
 
 /* Types */
@@ -416,6 +427,23 @@ export type CatalogError =
 	| { name: 'UnknownModel'; message: string }
 	| { name: 'DownloadFailed'; message: string }
 	| { name: 'DeleteFailed'; message: string };
+
+/**
+ *  Which microphone a recording actually opened, and whether that was the one
+ *  asked for.
+ *
+ *  Serialized to match `DeviceAcquisitionOutcome` in `@epicenter/recorder`,
+ *  which the browser recorder already produces, so both platforms report device
+ *  acquisition in one shape.
+ */
+export type DeviceAcquisition =
+	/**  The requested device was found and opened. */
+	| { outcome: 'success'; deviceId: string }
+	/**
+	 *  A different device was opened. `device_id` is what actually recorded, so
+	 *  an application can say which microphone it is using and persist it.
+	 */
+	| { outcome: 'fallback'; reason: FallbackReason; deviceId: string };
 
 /**
  *  The single source of truth for whether Epicenter can paste a transcript at
@@ -483,6 +511,41 @@ export type DownloadProgress = {
 	/**  Grand total bytes for the whole model (sum of the catalog file sizes). */
 	totalBytes: number | null;
 };
+
+/**
+ *  Why the host ended a recording on its own.
+ *
+ *  This never describes a stop, a cancel, or an owner window being destroyed.
+ *  Those are endings someone asked for, and the caller already knows about them
+ *  from its own call returning.
+ */
+export type EndedReason =
+	/**
+	 *  The microphone went away while recording (`ErrorKind::DeviceNotAvailable`).
+	 *  The recovery is physical: reconnect it, or pick another input.
+	 */
+	| 'deviceDisconnected'
+	/**
+	 *  The OS withdrew microphone access mid-recording
+	 *  (`ErrorKind::PermissionDenied`). The device is still there and still
+	 *  works; the recovery is a permission toggle, which is why this is not
+	 *  folded into `DeviceDisconnected`.
+	 */
+	| 'permissionRevoked'
+	/**
+	 *  The capture stream failed for a reason the host cannot make actionable:
+	 *  the configuration was invalidated, the audio host vanished, a resource
+	 *  limit was hit, or the backend reported something cpal could not classify.
+	 *  One variant rather than five, because the person does the same thing
+	 *  about all of them.
+	 */
+	| 'streamFailed';
+
+export type FallbackReason =
+	/**  No device was requested, so the system default was used. */
+	| 'no-device-selected'
+	/**  The requested device is not present, so the system default was used. */
+	| 'preferred-device-unavailable';
 
 export type GlobalShortcutRegistration = {
 	commandId: string;
@@ -612,6 +675,21 @@ export type RecorderError =
 	| { name: 'Failed'; message: string };
 
 /**
+ *  Pushed to the window that owns a recording when the host ends it without
+ *  being asked. Carries the blob id so a window that has since started another
+ *  recording can tell which one died, and the reason so it can say something
+ *  true about what happened.
+ *
+ *  The blob id is burnt, exactly as it is by `cancel`: no blob is written and
+ *  the captured audio is discarded. See the module docs on
+ *  `commands::abandon_recording` for why.
+ */
+export type RecordingEndedEvent = {
+	audioBlobId: string;
+	reason: EndedReason;
+};
+
+/**
  *  Failures the Home administration commands can report. Both are actionable:
  *  the id is not a model this build knows, or the choice could not be made
  *  durable.
@@ -619,6 +697,18 @@ export type RecorderError =
 export type SettingsError =
 	| { name: 'UnknownModel'; message: string }
 	| { name: 'SaveFailed'; message: string };
+
+/**
+ *  What `start_recording` hands back: the id the recording will be published
+ *  under, and which microphone it actually opened.
+ *
+ *  Device acquisition rides on the started recording rather than arriving as a
+ *  sibling value, because it describes this recording and nothing else.
+ */
+export type StartedRecording = {
+	audioBlobId: string;
+	device: DeviceAcquisition;
+};
 
 /**
  *  What `stop_recording` hands back: the committed blob's id and the two facts

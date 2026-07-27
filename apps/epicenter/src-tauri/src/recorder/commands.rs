@@ -16,12 +16,14 @@
 //! a recording another window started.
 
 use crate::recorder::blob::{mint_blob_id, write_blob};
+use crate::recorder::ended::{EndedReason, RecordingEndedEvent};
 use crate::recorder::error::RecorderError;
-use crate::recorder::recorder::{Recorder, Result, TARGET_RATE};
-use log::{debug, info};
+use crate::recorder::recorder::{DeviceAcquisition, Recorder, Result, TARGET_RATE};
+use log::{debug, info, warn};
 use serde::Serialize;
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager, State, WebviewWindow};
+use tauri_specta::Event;
 
 /// What `stop_recording` hands back: the committed blob's id and the two facts
 /// only the host can state exactly.
@@ -52,12 +54,11 @@ pub struct StoppedRecording {
 /// Refresh the host's recording indicator from the recorder's own state, so the
 /// tray can never disagree with whether a recording exists.
 ///
-/// There is deliberately no companion event to the frontend. A window learns
-/// its recording ended from its own `stop`/`cancel` resolving, and the only
-/// host-initiated ending is the owner window being destroyed, which leaves
-/// nobody to tell. A global `recorder:state-changed` broadcast would also be
-/// actively wrong now: every other window would watch a recording it does not
-/// own go idle and tear down its own state.
+/// There is deliberately no companion state event. A window learns about every
+/// ending it asked for from its own `stop`/`cancel` resolving, and the one
+/// ending nobody asked for gets a targeted `RecordingEndedEvent` instead. A
+/// broadcast of recorder state would be actively wrong: every other window
+/// would watch a recording it does not own go idle and tear down its own.
 fn refresh_recording_indicator(app: &AppHandle, recorder: &Recorder) {
     crate::shell::set_tray_recording_state(app, recorder.is_recording());
 }
@@ -79,16 +80,30 @@ pub async fn enumerate_recording_devices(
     lock(&recorder)?.enumerate_devices()
 }
 
+/// What `start_recording` hands back: the id the recording will be published
+/// under, and which microphone it actually opened.
+///
+/// Device acquisition rides on the started recording rather than arriving as a
+/// sibling value, because it describes this recording and nothing else.
+#[derive(Debug, Clone, Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct StartedRecording {
+    pub audio_blob_id: String,
+    pub device: DeviceAcquisition,
+}
+
 /// Start recording, returning the blob id the recording will be published
-/// under.
+/// under and the microphone it opened.
 ///
 /// The id exists before its blob does: `stop` publishes the blob under it and
 /// `cancel` burns it with no blob ever written. The host mints it so ownership
 /// is decided here rather than asserted by a caller.
 ///
-/// `device_identifier` is optional; `None` records from the system default. An
-/// application with no device picker passes nothing. Fails with `Busy` when
-/// another window is already recording.
+/// `device_identifier` is optional; `None` records from the system default, and
+/// a name that is no longer present falls back to the default rather than
+/// failing. Either way `device` reports what actually opened, so the caller
+/// never has to enumerate devices just to discover what it got. Fails with
+/// `Busy` when another window is already recording.
 #[tauri::command]
 #[specta::specta]
 pub async fn start_recording(
@@ -97,7 +112,7 @@ pub async fn start_recording(
     recorder: State<'_, Mutex<Recorder>>,
     app_handle: AppHandle,
     window: WebviewWindow,
-) -> Result<String> {
+) -> Result<StartedRecording> {
     let owner_label = window.label().to_string();
     let audio_blob_id = mint_blob_id()?;
     info!(
@@ -105,15 +120,18 @@ pub async fn start_recording(
     );
 
     let mut recorder = lock(&recorder)?;
-    recorder.start(
-        device_identifier.as_deref().unwrap_or("default"),
+    let device = recorder.start(
+        device_identifier.as_deref(),
         audio_blob_id.clone(),
         owner_label,
         sample_rate,
         app_handle.clone(),
     )?;
     refresh_recording_indicator(&app_handle, &recorder);
-    Ok(audio_blob_id)
+    Ok(StartedRecording {
+        audio_blob_id,
+        device,
+    })
 }
 
 /// Stop the recording named by `audio_blob_id`, publish its blob, and report
@@ -192,20 +210,78 @@ pub async fn cancel_recording(
     cancelled
 }
 
-/// The blob id of the recording this window owns, or `null`.
+/// The recording this window owns, or `null`.
 ///
 /// Reload does not destroy a window, so a window that reloads mid-recording
 /// still owns a live recording and would otherwise have no way to name it. This
 /// is the only reason the single recorder cannot wedge until the owner window
 /// is destroyed.
+///
+/// It answers with the same shape `start` does, so a recovered recording is
+/// indistinguishable from a freshly started one: the caller learns which
+/// microphone is running without having to have been the one that opened it.
 #[tauri::command]
 #[specta::specta]
 pub async fn current_recording(
     recorder: State<'_, Mutex<Recorder>>,
     window: WebviewWindow,
-) -> Result<Option<String>> {
+) -> Result<Option<StartedRecording>> {
     debug!("Reading the current recording for {}", window.label());
-    Ok(lock(&recorder)?.current(window.label()))
+    Ok(lock(&recorder)?
+        .current(window.label())
+        .map(|(audio_blob_id, device)| StartedRecording {
+            audio_blob_id,
+            device,
+        }))
+}
+
+/// End a recording because its capture stream died, and tell the owner why.
+///
+/// Not a command: the host calls this from the cpal error callback's cleanup
+/// thread. Nobody asked for this ending, so unlike `stop` and `cancel` there is
+/// no call to return through, which is the entire reason a targeted event
+/// exists at all.
+///
+/// # The captured audio is discarded
+///
+/// No blob is written and the minted id is burnt, exactly as `cancel` does.
+/// That follows the accepted rule that a host-initiated ending never produces a
+/// blob (owner-window destruction already works this way), and it keeps `stop`
+/// as the one path that can hand an application bytes.
+///
+/// It is worth being plain that this is a product choice with a cost: a
+/// microphone unplugged eight minutes into a dictation loses eight minutes of
+/// speech that is sitting in the buffer at that moment. Recovering it is
+/// deliberately additive rather than assumed, because delivering a blob here
+/// would turn this event from a signal into a second result channel and commit
+/// the host to a partial-audio promise. Adding an optional id to the payload
+/// later changes no existing behavior.
+pub fn abandon_recording(app: &AppHandle, audio_blob_id: &str, reason: EndedReason) {
+    let Some(recorder) = app.try_state::<Mutex<Recorder>>() else {
+        return;
+    };
+    let Ok(mut recorder) = recorder.lock() else {
+        return;
+    };
+    // A no-op when the id is not the live recording: the stream error may have
+    // arrived after the owner already started another one, and cpal may report
+    // the same failure more than once.
+    let Some(owner_label) = recorder.abandon(audio_blob_id) else {
+        return;
+    };
+    warn!("Recording {audio_blob_id} ended unexpectedly ({reason:?}); owner={owner_label}");
+    refresh_recording_indicator(app, &recorder);
+    // Dropped rather than propagated: the recording is already over and the
+    // recorder already free, so a failure to notify cannot be repaired here.
+    // The owner discovers it on its next call either way.
+    if let Err(error) = (RecordingEndedEvent {
+        audio_blob_id: audio_blob_id.to_string(),
+        reason,
+    })
+    .emit_to(app, &owner_label)
+    {
+        warn!("Failed to notify '{owner_label}' that {audio_blob_id} ended: {error}");
+    }
 }
 
 /// Cancel whatever recording `owner_label` owns, because that window is gone.

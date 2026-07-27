@@ -7,11 +7,15 @@
  */
 
 import type { Result } from 'wellcrafted/result';
+import type { RecordingEndedReason } from '$lib/services/recorder/contract';
 import type {
 	commands,
+	DeviceAcquisition,
 	DictationCapability,
+	EndedReason,
 	IpcRecorderError,
 	LocalTranscriptionReadiness,
+	StartedRecording,
 	StoppedRecording,
 	TranscriptionError,
 	TranscriptionHints,
@@ -69,7 +73,8 @@ type _SharedContracts = Expect<
 
 // start_recording: optional device and sample rate in, the host-minted blob id
 // out. The caller does not supply an id, because the host owns which recording
-// exists.
+// exists, and it does not have to enumerate devices first, because the host
+// reports the microphone it actually opened.
 type _StartRecordingArgs = Expect<
 	Equal<
 		Parameters<typeof commands.startRecording>,
@@ -80,7 +85,25 @@ type _StartRecordingArgs = Expect<
 type _StartRecording = Expect<
 	Equal<
 		ReturnType<typeof commands.startRecording>,
-		Promise<Result<string, IpcRecorderError>>
+		Promise<Result<StartedRecording, IpcRecorderError>>
+	>
+>;
+
+type _StartedRecordingShape = Expect<
+	Equal<StartedRecording, { audioBlobId: string; device: DeviceAcquisition }>
+>;
+
+// Device acquisition never omits which device ran: both arms carry one, so a
+// caller can always say what it is recording from.
+type _DeviceAcquisitionShape = Expect<
+	Equal<
+		DeviceAcquisition,
+		| { outcome: 'success'; deviceId: string }
+		| {
+				outcome: 'fallback';
+				reason: 'no-device-selected' | 'preferred-device-unavailable';
+				deviceId: string;
+		  }
 	>
 >;
 
@@ -122,6 +145,10 @@ type _CancelRecording = Expect<
 // current_recording: takes nothing, because the only window it could be asked
 // about is the one asking. That scoping lives in Rust with the injected window,
 // which is why there is no label parameter here to get wrong.
+//
+// It answers in the same shape `start` does, which is what lets a recording
+// recovered after a reload be as capable as one just started rather than a
+// degraded stand-in.
 type _CurrentRecordingArgs = Expect<
 	Equal<Parameters<typeof commands.currentRecording>, []>
 >;
@@ -129,8 +156,17 @@ type _CurrentRecordingArgs = Expect<
 type _CurrentRecording = Expect<
 	Equal<
 		ReturnType<typeof commands.currentRecording>,
-		Promise<Result<string | null, IpcRecorderError>>
+		Promise<Result<StartedRecording | null, IpcRecorderError>>
 	>
+>;
+
+// The recorder contract is platform-neutral, so it cannot import the native
+// bindings; its `RecordingEndedReason` is a hand-written mirror of the host's
+// `EndedReason`. This is what keeps the two from drifting apart: adding a
+// reason in Rust without adding it to the contract would otherwise reach a
+// `Record` lookup that returns undefined at runtime.
+type _EndedReasonMirrorsTheHost = Expect<
+	Equal<RecordingEndedReason, EndedReason>
 >;
 
 // pause_playback / resume_playback: infallible across IPC. A platform failure

@@ -1,6 +1,7 @@
 import { type BlobId, generateBlobId } from '@epicenter/blobs';
 import {
 	cleanupRecordingStream,
+	type DeviceAcquisitionOutcome,
 	enumerateDevices,
 	getRecordingStream,
 } from '@epicenter/recorder';
@@ -10,9 +11,8 @@ import {
 	type NavigatorRecordingParams,
 	RecorderError,
 	type RecorderService,
-	type RecordingCallbacks,
-	type RecordingSession,
-	type RecordingState,
+	type Recording,
+	type RecordingEndedReason,
 } from '$lib/services/recorder/contract';
 
 /**
@@ -27,51 +27,64 @@ const TIMESLICE_MS = 1000;
  * `ManualRecorderLive` name backed by CPAL, so `manual-recorder.svelte.ts`
  * consumes one shape regardless of platform.
  *
- * Constructed via a factory so per-session lifecycle (stop/cancel/subscribe)
- * lives on the returned `RecordingSession`.
+ * Constructed via a factory so the whole lifecycle (stop, cancel, level, and
+ * unexpected ending) lives on the returned `Recording`.
  *
  * The blob id is minted here, at the moment the capture starts, the way the
  * host mints it on desktop: whoever owns the capture owns the id, and the
  * caller reads it back off the session.
  */
 function createBrowserRecorder(): RecorderService<NavigatorRecordingParams> {
-	function buildSession(args: {
+	function buildRecording(args: {
 		audioBlobId: BlobId;
+		device: DeviceAcquisitionOutcome;
 		stream: MediaStream;
 		mediaRecorder: MediaRecorder;
 		recordedChunks: Blob[];
 		startedAtMs: number;
-		stopLevelMeter: () => void;
-	}) {
+	}): Recording {
 		const {
 			audioBlobId,
+			device,
 			stream,
 			mediaRecorder,
 			recordedChunks,
 			startedAtMs,
-			stopLevelMeter,
 		} = args;
-		const subscribers = new Set<(s: RecordingState) => void>();
-		let currentState: RecordingState = 'RECORDING';
+		// Meter and ended sinks, attachable at any time rather than supplied at
+		// start, so this matches the native recorder's shape.
+		const levelHandlers = new Set<(level: number) => void>();
+		const endedHandlers = new Set<(reason: RecordingEndedReason) => void>();
+		let ended = false;
 
-		const notify = (state: RecordingState) => {
-			// Idempotent: same-state notifications collapse to a no-op. Keeps
-			// the teardown safe to call from multiple paths without double
-			// firing 'IDLE' (e.g. an external listener and an explicit
-			// teardown for the same transition).
-			if (currentState === state) return;
-			currentState = state;
-			for (const handler of subscribers) handler(state);
-		};
+		const stopLevelMeter = startMicLevelMeter(stream, (level) => {
+			for (const handler of levelHandlers) handler(level);
+		});
 
-		const teardown = () => {
+		const release = () => {
+			ended = true;
+			levelHandlers.clear();
+			endedHandlers.clear();
 			stopLevelMeter();
 			cleanupRecordingStream(stream);
-			notify('IDLE');
 		};
 
-		const recordingSession = {
+		// A browser capture dies when its track does: the microphone is
+		// unplugged or its permission is revoked. That is the same event the
+		// native recorder reports through the host, so it reaches callers the
+		// same way rather than surfacing as silence.
+		for (const track of stream.getAudioTracks()) {
+			track.addEventListener('ended', () => {
+				if (ended) return;
+				const handlers = [...endedHandlers];
+				release();
+				for (const handler of handlers) handler('deviceDisconnected');
+			});
+		}
+
+		return {
 			audioBlobId,
+			device,
 
 			stop: async () => {
 				const { data: blob, error: stopError } = await tryAsync({
@@ -85,20 +98,20 @@ function createBrowserRecorder(): RecorderService<NavigatorRecordingParams> {
 							});
 							mediaRecorder.stop();
 						}),
-					catch: (error) => RecorderError.StopFailed({ cause: error }),
+					catch: (error) => RecorderError.RecorderFailed({ cause: error }),
 				});
 
 				const durationMs = Date.now() - startedAtMs;
 
 				if (stopError) {
-					teardown();
+					release();
 					return Err(stopError);
 				}
 				const { error: putError } = await BlobsLive.local.put(
 					audioBlobId,
 					blob,
 				);
-				teardown();
+				release();
 				if (putError !== null) return Err(putError);
 
 				return Ok({ audioBlobId, durationMs, byteLength: blob.size });
@@ -111,29 +124,31 @@ function createBrowserRecorder(): RecorderService<NavigatorRecordingParams> {
 					try: () => mediaRecorder.stop(),
 					catch: () => Ok(undefined),
 				});
-				teardown();
+				release();
 
 				return Ok(undefined);
 			},
 
-			subscribe(handler) {
-				subscribers.add(handler);
-				// Fire current state immediately so callers don't have to mirror
-				// 'RECORDING' themselves at attach time.
-				handler(currentState);
+			onLevel(handler) {
+				if (ended) return () => {};
+				levelHandlers.add(handler);
 				return () => {
-					subscribers.delete(handler);
+					levelHandlers.delete(handler);
 				};
 			},
-		} satisfies RecordingSession;
 
-		return recordingSession;
+			onEnded(handler) {
+				if (ended) return () => {};
+				endedHandlers.add(handler);
+				return () => {
+					endedHandlers.delete(handler);
+				};
+			},
+		};
 	}
 
 	return {
-		resumeActiveSession: async (): Promise<
-			Result<RecordingSession | null, RecorderError>
-		> => {
+		current: async (): Promise<Result<Recording | null, RecorderError>> => {
 			// Browser state lives in this closure, so a JS reload zeroes it out;
 			// the MediaStream/MediaRecorder are also gone in that case.
 			return Ok(null);
@@ -142,21 +157,21 @@ function createBrowserRecorder(): RecorderService<NavigatorRecordingParams> {
 		enumerateDevices: async () => {
 			const { data: devices, error } = await enumerateDevices();
 			if (error) {
-				return RecorderError.EnumerateDevices({ cause: error });
+				return RecorderError.RecorderFailed({ cause: error });
 			}
 			return Ok(devices);
 		},
 
-		startRecording: async (
-			{ selectedDeviceId, bitrateKbps }: NavigatorRecordingParams,
-			{ onLevel }: RecordingCallbacks,
-		) => {
+		start: async ({
+			selectedDeviceId,
+			bitrateKbps,
+		}: NavigatorRecordingParams) => {
 			const { data: streamResult, error: acquireStreamError } =
 				await getRecordingStream({ selectedDeviceId });
 			if (acquireStreamError) {
 				return (
 					categorizeBrowserStreamError(acquireStreamError) ??
-					RecorderError.StreamAcquisition({ cause: acquireStreamError })
+					RecorderError.RecorderFailed({ cause: acquireStreamError })
 				);
 			}
 
@@ -169,7 +184,7 @@ function createBrowserRecorder(): RecorderService<NavigatorRecordingParams> {
 						bitsPerSecond: Number(bitrateKbps) * 1000,
 						mimeType,
 					}),
-				catch: (error) => RecorderError.InitFailed({ cause: error }),
+				catch: (error) => RecorderError.RecorderFailed({ cause: error }),
 			});
 
 			if (recorderError) {
@@ -184,14 +199,9 @@ function createBrowserRecorder(): RecorderService<NavigatorRecordingParams> {
 
 			// MediaRecorder.start can throw synchronously (e.g. NotSupportedError);
 			// without this the stream would leak with the mic indicator stuck on.
-			const { data: stopLevelMeter, error: startError } = trySync({
-				try: () => {
-					mediaRecorder.start(TIMESLICE_MS);
-					// Tap the same stream for the caller's meter. Independent of the
-					// MediaRecorder (both can read one stream), torn down with the session.
-					return startMicLevelMeter(stream, onLevel);
-				},
-				catch: (error) => RecorderError.StartFailed({ cause: error }),
+			const { error: startError } = trySync({
+				try: () => mediaRecorder.start(TIMESLICE_MS),
+				catch: (error) => RecorderError.RecorderFailed({ cause: error }),
 			});
 			if (startError) {
 				cleanupRecordingStream(stream);
@@ -199,16 +209,16 @@ function createBrowserRecorder(): RecorderService<NavigatorRecordingParams> {
 			}
 			const startedAtMs = Date.now();
 
-			const session = buildSession({
+			const recording = buildRecording({
 				audioBlobId: generateBlobId(),
+				device: deviceOutcome,
 				stream,
 				mediaRecorder,
 				recordedChunks,
 				startedAtMs,
-				stopLevelMeter,
 			});
 
-			return Ok({ session, deviceAcquisition: deviceOutcome });
+			return Ok(recording);
 		},
 	} satisfies RecorderService<NavigatorRecordingParams>;
 }

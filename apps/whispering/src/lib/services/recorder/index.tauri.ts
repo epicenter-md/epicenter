@@ -6,16 +6,15 @@ import {
 } from '@epicenter/recorder';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { recorderErrorFromIpc } from '$lib/services/recorder/categorize-error';
 import {
 	type BaseRecordingParams,
 	RecorderError,
 	type RecorderService,
-	type RecordingCallbacks,
-	type RecordingSession,
+	type Recording,
 } from '$lib/services/recorder/contract';
-import { commands } from '$lib/tauri/commands';
+import type { DeviceAcquisition as IpcDeviceAcquisition } from '$lib/tauri/commands';
+import { commands, events } from '$lib/tauri/commands';
 // This file is the Tauri impl, so it imports the non-null capability bag
 // directly from the Tauri marker rather than through the `#platform/tauri`
 // seam (which resolves to `null` under the web condition).
@@ -32,9 +31,26 @@ export type CpalRecordingParams = BaseRecordingParams & {
 /**
  * Live mic loudness, emitted by the Rust capture worker to the window that owns
  * the recording. The JS side never sees PCM, so the level has to originate
- * there; this is the one recording event that crosses the boundary.
+ * there.
  */
 const MIC_LEVEL_EVENT = 'mic-level';
+
+/**
+ * Brand the host's device name as a `DeviceIdentifier`. The two types are
+ * structurally identical; on desktop a device's name is its id, and this
+ * boundary is where that becomes a checked fact rather than a convention.
+ */
+function toDeviceAcquisition(
+	device: IpcDeviceAcquisition,
+): DeviceAcquisitionOutcome {
+	return device.outcome === 'success'
+		? { outcome: 'success', deviceId: asDeviceIdentifier(device.deviceId) }
+		: {
+				outcome: 'fallback',
+				reason: device.reason,
+				deviceId: asDeviceIdentifier(device.deviceId),
+			};
+}
 
 async function getMicrophonePermissionStatus(): Promise<
 	Result<boolean, RecorderError>
@@ -80,21 +96,17 @@ async function requestMicrophonePermission(): Promise<
 }
 
 /**
- * Enumerates available recording devices from the system.
+ * Enumerate recording devices, for a device picker. Starting a recording does
+ * not go through here: the host resolves and reports its own device.
  */
 const enumerateDevices = async (): Promise<Result<Device[], RecorderError>> => {
 	const { error: permissionError } = await requireMicrophonePermission();
 	if (permissionError) return Err(permissionError);
 
-	const { data: deviceNames, error: enumerateRecordingDevicesError } =
+	const { data: deviceNames, error: enumerateError } =
 		await commands.enumerateRecordingDevices();
-	if (enumerateRecordingDevicesError !== null) {
-		return (
-			recorderErrorFromIpc(enumerateRecordingDevicesError) ??
-			RecorderError.EnumerateDevices({
-				cause: enumerateRecordingDevicesError,
-			})
-		);
+	if (enumerateError !== null) {
+		return recorderErrorFromIpc(enumerateError);
 	}
 	// On desktop, device names serve as both ID and label
 	return Ok(
@@ -109,72 +121,73 @@ const enumerateDevices = async (): Promise<Result<Device[], RecorderError>> => {
  * CPAL recorder service backed by the host's one recorder.
  *
  * The host owns the recording. Rust mints the blob id at `start`, records which
- * window started it, and refuses a competing start rather than displacing a
- * recording some other window is relying on. So this file holds no lifecycle
- * invariant of its own: it names a recording by id on every call and lets Rust
- * answer whether that recording is still this window's to end.
+ * window started it, resolves the microphone, and refuses a competing start
+ * rather than displacing a recording some other window is relying on. So this
+ * file holds no lifecycle invariant of its own: it names a recording by id on
+ * every call and lets Rust answer whether that recording is still this
+ * window's to end.
  *
  * A recording outlives a JS reload, because the reload does not destroy the
- * window and the host keeps the capture running. `resumeActiveSession` asks the
- * host for the recording this window owns and rebuilds a wrapper around it.
- *
- * Stop atomically publishes the blob under the minted id and returns the
- * host's exact duration and byte length. There is no raw PCM on the wire.
+ * window and the host keeps capturing. `current()` asks the host for the
+ * recording this window owns and rebuilds a fully usable wrapper around it,
+ * meter included.
  */
-function createCpalRecorder() {
-	let activeSession: RecordingSession | null = null;
-
+function createCpalRecorder(): RecorderService<CpalRecordingParams> {
 	/**
 	 * Wrap a live host recording.
 	 *
-	 * `onLevel` is the caller's meter sink, present only when this window
-	 * started the recording: a session rebuilt after a reload has no caller to
-	 * feed, so its meter stays dark until the next recording.
+	 * Listeners are attached on demand rather than at construction, which is
+	 * what lets a recording recovered by `current()` be exactly as capable as
+	 * one just started: there is no callback that had to be supplied earlier.
 	 */
-	function buildSession(
+	function buildRecording(
 		audioBlobId: BlobId,
-		onLevel: ((level: number) => void) | null,
-	) {
-		const subscribers = new Set<(s: WhisperingRecordingState) => void>();
-		let currentState: WhisperingRecordingState = 'RECORDING';
-		let unlistenLevel: Promise<UnlistenFn> | null = onLevel
-			? listen<number>(MIC_LEVEL_EVENT, (event) => onLevel(event.payload))
-			: null;
+		device: DeviceAcquisitionOutcome,
+	): Recording {
+		// Every listener this recording opened, torn down together when it ends
+		// so a stopped recording cannot leave a live event subscription behind.
+		const unlisteners = new Set<Promise<UnlistenFn>>();
+		let ended = false;
 
-		// Takes `session` as an argument rather than closing over the const
-		// declared below, so it stays TDZ-safe if a future caller invokes
-		// teardown from a path declared above the `session = ...` initializer.
-		const teardown = (session: RecordingSession) => {
-			if (activeSession === session) activeSession = null;
-			if (unlistenLevel) {
-				void unlistenLevel.then((unlisten) => unlisten());
-				unlistenLevel = null;
+		const release = () => {
+			ended = true;
+			for (const unlisten of unlisteners) {
+				void unlisten.then((stop) => stop());
 			}
-			if (currentState === 'IDLE') return;
-			currentState = 'IDLE';
-			for (const handler of subscribers) handler('IDLE');
+			unlisteners.clear();
 		};
 
-		const session = {
+		/** Attach a host listener that stops when this recording ends. */
+		const track = (unlisten: Promise<UnlistenFn>) => {
+			if (ended) {
+				void unlisten.then((stop) => stop());
+				return () => {};
+			}
+			unlisteners.add(unlisten);
+			return () => {
+				unlisteners.delete(unlisten);
+				void unlisten.then((stop) => stop());
+			};
+		};
+
+		return {
 			audioBlobId,
+			device,
 
 			stop: async () => {
 				const { data: stopped, error: stopError } =
 					await commands.stopRecording(audioBlobId);
-				// Torn down either way: whether the host delivered a blob or
-				// refused, this window is no longer recording.
-				teardown(session);
+				// Released either way: whether the host delivered a blob or refused,
+				// this recording is over.
+				release();
 				if (stopError !== null) {
-					return (
-						recorderErrorFromIpc(stopError) ??
-						RecorderError.StopFailed({ cause: stopError })
-					);
+					return recorderErrorFromIpc(stopError);
 				}
 				// The id came back from the host that minted it, so parsing is a
 				// boundary formality rather than a round-trip assertion.
 				const parsedId = parseBlobId(stopped.audioBlobId);
 				if (parsedId === undefined) {
-					return RecorderError.StopFailed({
+					return RecorderError.RecorderFailed({
 						cause: new Error('The host returned an invalid blob id.'),
 					});
 				}
@@ -188,123 +201,74 @@ function createCpalRecorder() {
 			cancel: async () => {
 				const { error: cancelError } =
 					await commands.cancelRecording(audioBlobId);
-
-				// Tear down unconditionally first so this window can never wedge
-				// in RECORDING, even when the host refused.
-				teardown(session);
-
+				release();
 				if (cancelError !== null) {
-					return (
-						recorderErrorFromIpc(cancelError) ??
-						RecorderError.CancelFailed({ cause: cancelError })
-					);
+					return recorderErrorFromIpc(cancelError);
 				}
 				return Ok(undefined);
 			},
 
-			subscribe(handler) {
-				subscribers.add(handler);
-				// Fire current state immediately so callers don't have to mirror
-				// 'RECORDING' at attach time.
-				handler(currentState);
-				return () => {
-					subscribers.delete(handler);
-				};
-			},
-		} satisfies RecordingSession;
+			onLevel: (handler) =>
+				track(
+					listen<number>(MIC_LEVEL_EVENT, (event) => handler(event.payload)),
+				),
 
-		return session;
+			onEnded: (handler) =>
+				track(
+					events.recordingEndedEvent.listen((event) => {
+						// The host targets the owning window, but a window can outlive
+						// one recording and start another, so the id still has to match.
+						if (event.payload.audioBlobId !== audioBlobId) return;
+						release();
+						handler(event.payload.reason);
+					}),
+				),
+		};
 	}
 
 	return {
-		resumeActiveSession: async (): Promise<
-			Result<RecordingSession | null, RecorderError>
-		> => {
-			// If we still hold the in-memory pointer, prefer it; otherwise ask the
-			// host, in case a recording outlived a JS reload.
-			if (activeSession) return Ok(activeSession);
-
-			const { data: liveBlobId, error: currentError } =
+		current: async () => {
+			const { data: live, error: currentError } =
 				await commands.currentRecording();
 			if (currentError !== null) {
-				return RecorderError.GetStateFailed({ cause: currentError });
+				return recorderErrorFromIpc(currentError);
 			}
-			if (!liveBlobId) return Ok(null);
-			const parsedId = parseBlobId(liveBlobId);
+			if (!live) return Ok(null);
+			const parsedId = parseBlobId(live.audioBlobId);
 			if (parsedId === undefined) {
-				return RecorderError.GetStateFailed({
+				return RecorderError.RecorderFailed({
 					cause: new Error('The host returned an invalid blob id.'),
 				});
 			}
-
-			const rehydrated = buildSession(parsedId, null);
-			activeSession = rehydrated;
-			return Ok(rehydrated);
+			return Ok(buildRecording(parsedId, toDeviceAcquisition(live.device)));
 		},
 
 		enumerateDevices,
 
-		startRecording: async (
-			{ selectedDeviceId, sampleRate }: CpalRecordingParams,
-			{ onLevel }: RecordingCallbacks,
-		) => {
+		start: async ({ selectedDeviceId, sampleRate }: CpalRecordingParams) => {
 			const { error: permissionError } = await requestMicrophonePermission();
 			if (permissionError) return Err(permissionError);
 
-			const { data: devices, error: enumerateError } = await enumerateDevices();
-			if (enumerateError !== null) return Err(enumerateError);
-
-			const deviceIds = devices.map((d) => d.id);
-			const fallbackDeviceId = deviceIds.at(0);
-			// Empty device list: there is no microphone to fall back to, whether or
-			// not one was previously selected. Same condition, same recovery as a
-			// device that vanishes mid-open, so it surfaces the one NoInputDevice.
-			if (!fallbackDeviceId) {
-				return RecorderError.NoInputDevice();
-			}
-
-			const deviceOutcome: DeviceAcquisitionOutcome = (() => {
-				if (!selectedDeviceId) {
-					return {
-						outcome: 'fallback',
-						reason: 'no-device-selected',
-						deviceId: fallbackDeviceId,
-					};
-				}
-
-				if (deviceIds.includes(selectedDeviceId)) {
-					return { outcome: 'success', deviceId: selectedDeviceId };
-				}
-
-				return {
-					outcome: 'fallback',
-					reason: 'preferred-device-unavailable',
-					deviceId: fallbackDeviceId,
-				};
-			})();
-
 			const sampleRateNum = sampleRate ? Number.parseInt(sampleRate, 10) : null;
 
-			const { data: audioBlobId, error: startError } =
-				await commands.startRecording(deviceOutcome.deviceId, sampleRateNum);
+			// No device enumeration first: the host resolves the requested device,
+			// falls back to the system default when it is gone, and reports which
+			// one it opened.
+			const { data: started, error: startError } =
+				await commands.startRecording(selectedDeviceId, sampleRateNum);
 			if (startError !== null) {
-				return (
-					recorderErrorFromIpc(startError) ??
-					RecorderError.StartFailed({ cause: startError })
-				);
+				return recorderErrorFromIpc(startError);
 			}
-			const parsedId = parseBlobId(audioBlobId);
+			const parsedId = parseBlobId(started.audioBlobId);
 			if (parsedId === undefined) {
-				return RecorderError.StartFailed({
+				return RecorderError.RecorderFailed({
 					cause: new Error('The host returned an invalid blob id.'),
 				});
 			}
 
-			const session = buildSession(parsedId, onLevel);
-			activeSession = session;
-			return Ok({ session, deviceAcquisition: deviceOutcome });
+			return Ok(buildRecording(parsedId, toDeviceAcquisition(started.device)));
 		},
-	} satisfies RecorderService<CpalRecordingParams>;
+	};
 }
 
 export const ManualRecorderLive: RecorderService<CpalRecordingParams> =

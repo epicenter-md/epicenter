@@ -17,17 +17,12 @@ import {
 import type { Result } from 'wellcrafted/result';
 
 /**
- * Recorder lifecycle state. A plain union: the states are never validated at
- * runtime, only used as compile-time types. Emitted by
- * {@link RecordingSession.subscribe}.
+ * Recorder failures, named for what went wrong rather than which call surfaced
+ * it. A verb-prefixed variant per call site (`InitFailed`, `StartFailed`,
+ * `StopFailed`) told a caller only which function it had just invoked, which it
+ * already knew; what it could act on is the condition underneath.
  */
-export type RecordingState = 'IDLE' | 'RECORDING';
-
 export const RecorderError = defineErrors({
-	EnumerateDevices: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to enumerate recording devices: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
 	MicrophonePermissionDenied: ({ cause }: { cause?: unknown } = {}) => ({
 		message:
 			'Microphone access was denied. Please grant microphone permission in your system or browser settings and try again.',
@@ -36,22 +31,6 @@ export const RecorderError = defineErrors({
 	NoInputDevice: ({ cause }: { cause?: unknown } = {}) => ({
 		message:
 			"We couldn't find any microphone to record from. Please connect a microphone and try again.",
-		cause,
-	}),
-	InitFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to initialize the audio recorder: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	StartFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Unable to start recording: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	StopFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to stop recording: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	CancelFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to cancel recording: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 	/**
@@ -65,23 +44,25 @@ export const RecorderError = defineErrors({
 		cause,
 	}),
 	/**
-	 * The recording being stopped or cancelled is not this window's to end: it
+	 * The recording being stopped or cancelled is not this caller's to end: it
 	 * already finished, it is not the live one, or another window owns it.
 	 *
-	 * Not necessarily a failure. A push-to-talk release that lands after its
-	 * recording was already supplanted sees this, and the right response is to
-	 * do nothing.
+	 * Ordinarily benign. A push-to-talk release that lands after its recording
+	 * was already supplanted sees this, and doing nothing is correct. It stays a
+	 * typed failure rather than a silent success so a caller that genuinely did
+	 * expect a recording can still tell that there wasn't one.
 	 */
 	NoActiveRecording: ({ cause }: { cause?: unknown } = {}) => ({
 		message: 'That recording has already ended.',
 		cause,
 	}),
-	StreamAcquisition: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to acquire recording stream: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	GetStateFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to get recorder state: ${extractErrorMessage(cause)}`,
+	/**
+	 * The recorder could not do what was asked for a reason the caller cannot
+	 * act on differently: a device that will not open, a stream that will not
+	 * build, an IPC failure. The detail travels in `cause`.
+	 */
+	RecorderFailed: ({ cause }: { cause: unknown }) => ({
+		message: `The recorder failed: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 });
@@ -90,38 +71,15 @@ export type RecorderError = InferErrors<typeof RecorderError>;
 /**
  * Settings-derived parameters shared across manual recorder implementations.
  *
- * This is config resolved from persisted settings (device, encoding). Live
- * caller callbacks are not config and travel separately in
- * {@link RecordingCallbacks}.
+ * This is config resolved from persisted settings (device, encoding).
  *
  * The blob id is deliberately absent: the implementation that owns the capture
- * mints it, and the caller learns it from {@link RecordingSession.audioBlobId}.
- * On desktop that mint happens in Rust, because ownership of the one host
- * recorder is decided there and an id asserted by a caller could not carry it.
+ * mints it, and the caller learns it from {@link Recording.audioBlobId}. On
+ * desktop that mint happens in Rust, because ownership of the one host recorder
+ * is decided there and an id asserted by a caller could not carry it.
  */
 export type BaseRecordingParams = {
 	selectedDeviceId: DeviceIdentifier | null;
-};
-
-/**
- * Live callbacks supplied by the caller at the moment of starting, kept
- * separate from the settings-derived params config (a {@link BaseRecordingParams}
- * extension such as {@link NavigatorRecordingParams}) because a callback is not
- * a persisted setting. They are passed alongside the resolved params, never
- * merged into them.
- */
-export type RecordingCallbacks = {
-	/**
-	 * Sink for live mic loudness (raw RMS, ~0 silent to ~0.3 loud speech),
-	 * called continuously while recording so the caller can draw a meter.
-	 *
-	 * The browser recorder taps its MediaStream to drive this. The native
-	 * recorder cannot: the PCM never leaves Rust, so the host computes the level
-	 * and emits it to the window that owns the recording, and the Tauri
-	 * implementation forwards that event into this sink. Either way the caller
-	 * sees one quantity from one callback.
-	 */
-	onLevel: (level: number) => void;
 };
 
 /**
@@ -149,69 +107,84 @@ export type RecorderStopError =
 	| BlobStoreFailed;
 
 /**
- * A live recording session returned by the recorder implementation that started it.
+ * Why a recording ended without anyone asking it to.
  *
- * The `RecordingSession` is the unit of lifecycle: it owns its own teardown and
- * exposes per-session state changes.
- *
- * The `subscribe` handler is invoked synchronously with the current state on
- * subscribe (so callers don't have to mirror "I just started" themselves),
- * then again whenever the session transitions, ending with 'IDLE' on
- * stop/cancel.
+ * Mirrors the host's `EndedReason`. Each case is one the platform can actually
+ * distinguish and the person can act on differently: reconnect the microphone,
+ * restore a permission, or none of the above.
  */
-export type RecordingSession = {
+export type RecordingEndedReason =
+	| 'deviceDisconnected'
+	| 'permissionRevoked'
+	| 'streamFailed';
+
+/**
+ * A live recording, bound to the capture that produced it.
+ *
+ * `stop` and `cancel` take no id because this object already is the recording;
+ * the id it carries is passed to the host underneath. Holding one of these
+ * means a recording exists, which is why there is no state to subscribe to: a
+ * caller that wants "am I recording" asks whether it holds a Recording, and
+ * every ending it caused is the resolution of the call it made.
+ *
+ * The two handlers are the signals a caller genuinely cannot derive on its own:
+ * a level that only the capture layer can measure, and an ending nobody asked
+ * for. Both are attachable at any time, so a Recording recovered after a reload
+ * is as usable as one just started.
+ */
+export type Recording = {
 	readonly audioBlobId: BlobId;
+	/** Which microphone this recording actually opened. */
+	readonly device: DeviceAcquisitionOutcome;
 	stop(): Promise<Result<RecorderStopResult, RecorderStopError>>;
 	/**
-	 * Cancel the in-flight recording and discard it. Success carries no payload
-	 * (a live session can only resolve to "cancelled"); the caller's wrapper is
-	 * where the `cancelled` vs `no-recording` distinction is made.
+	 * Discard the recording. Success carries no payload: a cancel never produces
+	 * audio, on any platform.
 	 */
 	cancel(): Promise<Result<void, RecorderError>>;
-	subscribe(handler: (state: RecordingState) => void): () => void;
+	/**
+	 * Observe live mic loudness (raw RMS, ~0 silent to ~0.3 loud speech) for as
+	 * long as this recording runs. Returns an unsubscribe.
+	 *
+	 * The browser recorder taps its MediaStream for this. The native recorder
+	 * cannot, because the PCM never leaves Rust, so the host measures the level
+	 * and emits it to the window that owns the recording.
+	 */
+	onLevel(handler: (level: number) => void): () => void;
+	/**
+	 * Observe this recording ending on its own: the microphone was unplugged,
+	 * a permission was withdrawn, the capture stream failed. Returns an
+	 * unsubscribe.
+	 *
+	 * Never fires for a stop or a cancel, because those already resolve the call
+	 * that requested them. When it does fire the recording is over, its audio is
+	 * gone, and no blob was written.
+	 */
+	onEnded(handler: (reason: RecordingEndedReason) => void): () => void;
 };
 
 /**
- * Factory for recording sessions. Services no longer carry mutable
- * start/stop state directly; instead `startRecording` returns a RecordingSession
- * whose methods are bound to the implementation that produced it.
+ * Factory for recordings. The service holds no lifecycle state of its own; a
+ * `Recording` owns everything about the capture it represents.
  */
 export type RecorderService<RecordingParams extends BaseRecordingParams> = {
 	/**
-	 * Recover a RecordingSession that may have survived a JS reload.
+	 * The live recording this caller owns, or null.
 	 *
-	 * Native sessions can outlive a JS reload because the host process keeps the
-	 * stream; browser sessions cannot survive a reload and return null.
-	 *
-	 * Returns the live RecordingSession owned by this implementation, or null if none.
+	 * Native recordings outlive a JS reload because the host keeps capturing and
+	 * the window label survives; browser recordings cannot, and return null.
 	 */
-	resumeActiveSession(): Promise<
-		Result<RecordingSession | null, RecorderError>
-	>;
+	current(): Promise<Result<Recording | null, RecorderError>>;
 
 	/**
-	 * Enumerate available recording devices with their labels and identifiers
+	 * Enumerate available recording devices, for a picker. Starting does not
+	 * need this: `start` resolves and reports its own device.
 	 */
 	enumerateDevices(): Promise<Result<Device[], RecorderError>>;
 
 	/**
-	 * Start a new recording session, returning the RecordingSession handle along
-	 * with the device acquisition outcome. The caller holds the RecordingSession
-	 * and uses its `stop`/`cancel`/`subscribe` for the rest of the session.
-	 *
-	 * `params` is settings-derived config; `callbacks` are the caller's live
-	 * sinks.
+	 * Begin recording. The returned `Recording` carries the minted blob id and
+	 * the microphone actually opened, which may differ from the one requested.
 	 */
-	startRecording(
-		params: RecordingParams,
-		callbacks: RecordingCallbacks,
-	): Promise<
-		Result<
-			{
-				session: RecordingSession;
-				deviceAcquisition: DeviceAcquisitionOutcome;
-			},
-			RecorderError
-		>
-	>;
+	start(params: RecordingParams): Promise<Result<Recording, RecorderError>>;
 };

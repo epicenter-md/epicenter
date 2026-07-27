@@ -36,6 +36,7 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, SampleFormat, Stream};
 use log::{debug, error, info};
+use serde::Serialize;
 use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -95,6 +96,9 @@ struct ActiveRecording {
     audio_blob_id: String,
     /// Label of the window that called `start`. Stop is restricted to it.
     owner_label: String,
+    /// Which microphone this recording opened, so a window that reloads can be
+    /// told what it is recording from without reopening anything.
+    device: DeviceAcquisition,
     cmd_tx: mpsc::Sender<RecorderCmd>,
     worker: JoinHandle<()>,
 }
@@ -136,20 +140,25 @@ impl Recorder {
     /// so a competing start is refused instead of displacing a recording some
     /// other window is relying on.
     ///
-    /// The device is resolved on the calling thread, where a missing mic or a
-    /// denied permission still classifies precisely. The cpal stream is then
-    /// built inside the worker (macOS requires the stream and the run loop
-    /// driving it to share a thread) and its outcome is reported back over
-    /// `ready_rx`, so a stream that fails to open surfaces as the real
+    /// The device is resolved here rather than by the caller. A caller that
+    /// picked a device from a stale list would otherwise have to enumerate,
+    /// compare, and choose a substitute before it could start, duplicating a
+    /// decision the host has to be able to make anyway. The returned
+    /// [`DeviceAcquisition`] names the device actually opened, so an
+    /// application can tell the person what it fell back to and persist it.
+    ///
+    /// The cpal stream is built inside the worker (macOS requires the stream and
+    /// the run loop driving it to share a thread) and its outcome is reported
+    /// back over `ready_rx`, so a stream that fails to open surfaces as the real
     /// classified error rather than as a dropped channel.
     pub fn start(
         &mut self,
-        device_name: &str,
+        requested_device: Option<&str>,
         audio_blob_id: String,
         owner_label: String,
         preferred_sample_rate: Option<u32>,
         app_handle: AppHandle,
-    ) -> Result<()> {
+    ) -> Result<DeviceAcquisition> {
         if let Some(active) = &self.active {
             return Err(RecorderError::busy(format!(
                 "a recording ({}) started by window '{}' is already in flight",
@@ -158,7 +167,7 @@ impl Recorder {
         }
 
         let host = cpal::default_host();
-        let device = find_device(&host, device_name)?;
+        let (device, acquisition) = resolve_device(&host, requested_device)?;
         let config = get_optimal_config(&device, preferred_sample_rate)?;
         let sample_format = config.sample_format();
         let device_rate = config.sample_rate();
@@ -174,6 +183,8 @@ impl Recorder {
         let (cmd_tx, cmd_rx) = mpsc::channel::<RecorderCmd>();
         let (ready_tx, ready_rx) = mpsc::channel::<Result<()>>();
         let meter_label = owner_label.clone();
+        let failure_app = app_handle.clone();
+        let failure_blob_id = audio_blob_id.clone();
 
         let worker = thread::spawn(move || {
             let stream = match build_input_stream(
@@ -182,6 +193,8 @@ impl Recorder {
                 sample_format,
                 device_channels,
                 sample_tx,
+                failure_app,
+                failure_blob_id,
             )
             .and_then(|stream| {
                 stream
@@ -222,15 +235,34 @@ impl Recorder {
         }
 
         info!(
-            "Recording started: id={audio_blob_id}, owner={owner_label}, {device_rate} Hz, {device_channels} channels",
+            "Recording started: id={audio_blob_id}, owner={owner_label}, device={}, {device_rate} Hz, {device_channels} channels",
+            acquisition.device_id(),
         );
         self.active = Some(ActiveRecording {
             audio_blob_id,
             owner_label,
+            device: acquisition.clone(),
             cmd_tx,
             worker,
         });
-        Ok(())
+        Ok(acquisition)
+    }
+
+    /// End the recording named by `audio_blob_id` because its capture stream
+    /// died, returning the window that owned it so the host can tell it.
+    ///
+    /// Matched on the blob id, not just the owner: a stream error can arrive
+    /// after the owner already started a second recording, and killing that one
+    /// because its predecessor's hardware failed would be its own bug. A
+    /// non-matching id makes this a no-op, which also makes it idempotent when
+    /// cpal reports the same failure more than once.
+    pub fn abandon(&mut self, audio_blob_id: &str) -> Option<String> {
+        let active = self
+            .active
+            .take_if(|active| active.audio_blob_id == audio_blob_id)?;
+        let owner_label = active.owner_label.clone();
+        discard(active);
+        Some(owner_label)
     }
 
     /// Stop the recording named by `audio_blob_id` and consume its mono 16 kHz
@@ -289,11 +321,11 @@ impl Recorder {
     /// Reloading a window does not destroy it, so a window that reloads
     /// mid-recording still owns a live recording and needs the id back to stop
     /// or cancel it.
-    pub fn current(&self, caller_label: &str) -> Option<String> {
+    pub fn current(&self, caller_label: &str) -> Option<(String, DeviceAcquisition)> {
         self.active
             .as_ref()
             .filter(|active| active.owner_label == caller_label)
-            .map(|active| active.audio_blob_id.clone())
+            .map(|active| (active.audio_blob_id.clone(), active.device.clone()))
     }
 
     /// Whether any recording is in flight, for the host's tray indicator.
@@ -431,28 +463,112 @@ fn finalize(buffer: Vec<f32>, device_rate: u32) -> Result<Vec<f32>> {
     Ok(samples)
 }
 
-/// Find a recording device by name. Treats "default" case-insensitively.
-fn find_device(host: &cpal::Host, device_name: &str) -> Result<Device> {
-    if device_name.to_lowercase() == "default" {
-        return host
-            .default_input_device()
-            .ok_or_else(|| RecorderError::no_input_device("No default input device available"));
+/// Which microphone a recording actually opened, and whether that was the one
+/// asked for.
+///
+/// Serialized to match `DeviceAcquisitionOutcome` in `@epicenter/recorder`,
+/// which the browser recorder already produces, so both platforms report device
+/// acquisition in one shape.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
+#[serde(
+    tag = "outcome",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum DeviceAcquisition {
+    /// The requested device was found and opened.
+    Success { device_id: String },
+    /// A different device was opened. `device_id` is what actually recorded, so
+    /// an application can say which microphone it is using and persist it.
+    Fallback {
+        reason: FallbackReason,
+        device_id: String,
+    },
+}
+
+impl DeviceAcquisition {
+    pub fn device_id(&self) -> &str {
+        match self {
+            Self::Success { device_id } | Self::Fallback { device_id, .. } => device_id,
+        }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum FallbackReason {
+    /// No device was requested, so the system default was used.
+    NoDeviceSelected,
+    /// The requested device is not present, so the system default was used.
+    PreferredDeviceUnavailable,
+}
+
+/// Resolve the microphone to record from, falling back to the system default.
+///
+/// Falling back rather than failing is deliberate and preexisting: a saved
+/// device that is merely unplugged should not turn the record button into an
+/// error, and the application reports the substitution and persists it. What
+/// changed when this moved into Rust is only the fallback *target*. The
+/// TypeScript version fell back to whichever device cpal happened to enumerate
+/// first; this uses the system default, which is the device the person has
+/// actually chosen at the OS level. Both are silent substitutions reported the
+/// same way, so the user-visible contract is unchanged.
+fn resolve_device(
+    host: &cpal::Host,
+    requested: Option<&str>,
+) -> Result<(Device, DeviceAcquisition)> {
+    let default_device = || {
+        host.default_input_device().ok_or_else(|| {
+            RecorderError::no_input_device("No microphone is available to record from")
+        })
+    };
+
+    let Some(requested) = requested else {
+        let device = default_device()?;
+        let device_id = device_name(&device)?;
+        return Ok((
+            device,
+            DeviceAcquisition::Fallback {
+                reason: FallbackReason::NoDeviceSelected,
+                device_id,
+            },
+        ));
+    };
 
     let devices: Vec<_> = host
         .input_devices()
         .map_err(|e| RecorderError::classify_cpal("Failed to list input devices", e))?
         .collect();
     for device in devices {
-        if let Ok(desc) = device.description() {
-            if desc.name() == device_name {
-                return Ok(device);
-            }
+        if device.description().is_ok_and(|d| d.name() == requested) {
+            return Ok((
+                device,
+                DeviceAcquisition::Success {
+                    device_id: requested.to_string(),
+                },
+            ));
         }
     }
-    Err(RecorderError::no_input_device(format!(
-        "Device '{device_name}' not found"
-    )))
+
+    let device = default_device()?;
+    let device_id = device_name(&device)?;
+    Ok((
+        device,
+        DeviceAcquisition::Fallback {
+            reason: FallbackReason::PreferredDeviceUnavailable,
+            device_id,
+        },
+    ))
+}
+
+/// The name a device calls itself, which is also the id every other layer uses
+/// to refer to it. A device that cannot describe itself cannot be persisted as
+/// a choice, so this refuses rather than inventing a placeholder.
+fn device_name(device: &Device) -> Result<String> {
+    device
+        .description()
+        .map(|description| description.name().to_string())
+        .map_err(|e| RecorderError::classify_cpal("Failed to read the input device name", e))
 }
 
 /// Get the best supported configuration for voice recording.
@@ -567,8 +683,34 @@ fn build_input_stream(
     sample_format: SampleFormat,
     channels: u16,
     sample_tx: mpsc::Sender<Vec<f32>>,
+    failure_app: AppHandle,
+    failure_blob_id: String,
 ) -> Result<Stream> {
-    let err_fn = |err| error!("Audio stream error: {err}");
+    // A live stream error used to be logged and nothing else, which left the
+    // one recorder slot occupied, the tray claiming a recording, and the owner
+    // window waiting for audio that would never arrive. Now a terminal error
+    // ends the recording and tells the owner why.
+    //
+    // Only a terminal error: `ended::classify` returns `None` for the
+    // conditions cpal documents as survivable, so a routine audio-route change
+    // (plugging in headphones) no longer looks like a dead microphone.
+    //
+    // The cleanup runs on its own thread because it locks the recorder and
+    // joins the capture worker, neither of which may happen on the audio
+    // callback. This fires at most once per stream death and never on the
+    // sample path.
+    let err_fn = move |error: cpal::Error| {
+        let Some(reason) = crate::recorder::ended::classify(&error) else {
+            debug!("Audio stream reported a survivable condition, continuing: {error}");
+            return;
+        };
+        error!("Audio stream ended the recording: {error}");
+        let app = failure_app.clone();
+        let audio_blob_id = failure_blob_id.clone();
+        thread::spawn(move || {
+            crate::recorder::commands::abandon_recording(&app, &audio_blob_id, reason);
+        });
+    };
     let n_channels = channels as usize;
 
     let stream = match sample_format {
@@ -671,6 +813,9 @@ mod tests {
         recorder.active = Some(ActiveRecording {
             audio_blob_id: audio_blob_id.to_string(),
             owner_label: owner_label.to_string(),
+            device: DeviceAcquisition::Success {
+                device_id: "Test Microphone".to_string(),
+            },
             cmd_tx,
             worker,
         });
@@ -699,7 +844,7 @@ mod tests {
         recording_owned_by(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes");
 
         assert_eq!(
-            recorder.current("app-notes").as_deref(),
+            recorder.current("app-notes").map(|(id, _)| id).as_deref(),
             Some("blob_aaaaaaaaaaaaaaaaaaaaa"),
         );
         // A window that owns no recording learns nothing about one that exists.
@@ -724,7 +869,7 @@ mod tests {
         // The refusals left the owner's recording completely untouched.
         assert!(recorder.is_recording());
         assert_eq!(
-            recorder.current("app-notes").as_deref(),
+            recorder.current("app-notes").map(|(id, _)| id).as_deref(),
             Some("blob_aaaaaaaaaaaaaaaaaaaaa"),
         );
     }
@@ -768,6 +913,61 @@ mod tests {
             Some("blob_aaaaaaaaaaaaaaaaaaaaa"),
         );
         assert!(!recorder.is_recording());
+    }
+
+    /// The wedge this exists to prevent: before capture death released the
+    /// slot, a dead stream left `active` occupied forever, so no window could
+    /// ever start another recording and the tray kept claiming one was running.
+    #[test]
+    fn a_dead_capture_releases_the_slot_and_names_its_owner() {
+        let mut recorder = Recorder::new();
+        recording_owned_by(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes");
+
+        assert_eq!(
+            recorder.abandon("blob_aaaaaaaaaaaaaaaaaaaaa").as_deref(),
+            Some("app-notes"),
+            "abandoning must report the owner so the host can tell it"
+        );
+        assert!(
+            !recorder.is_recording(),
+            "the slot must be free for the next start"
+        );
+        assert_eq!(recorder.current("app-notes"), None);
+    }
+
+    /// A stream error can arrive after its recording already ended and the
+    /// owner started another one. Matching on the id keeps the late failure
+    /// from killing the innocent successor, and makes a repeated report a
+    /// no-op rather than a second teardown.
+    #[test]
+    fn abandoning_a_stale_id_leaves_the_live_recording_alone() {
+        let mut recorder = Recorder::new();
+        recording_owned_by(&mut recorder, "blob_bbbbbbbbbbbbbbbbbbbbb", "app-notes");
+
+        assert_eq!(recorder.abandon("blob_aaaaaaaaaaaaaaaaaaaaa"), None);
+        assert!(recorder.is_recording());
+        assert_eq!(
+            recorder.current("app-notes").map(|(id, _)| id).as_deref(),
+            Some("blob_bbbbbbbbbbbbbbbbbbbbb"),
+        );
+
+        // And the second report of the same failure finds nothing to do.
+        assert_eq!(
+            recorder.abandon("blob_bbbbbbbbbbbbbbbbbbbbb").as_deref(),
+            Some("app-notes")
+        );
+        assert_eq!(recorder.abandon("blob_bbbbbbbbbbbbbbbbbbbbb"), None);
+    }
+
+    /// A recovered recording has to be able to say which microphone is running,
+    /// or a window that reloaded would show a meter for a device it cannot name.
+    #[test]
+    fn current_reports_the_device_the_recording_opened() {
+        let mut recorder = Recorder::new();
+        recording_owned_by(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes");
+
+        let (_, device) = recorder.current("app-notes").expect("a live recording");
+        assert_eq!(device.device_id(), "Test Microphone");
     }
 
     #[test]

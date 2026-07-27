@@ -1,5 +1,6 @@
 pub mod blob;
 pub mod commands;
+pub mod ended;
 pub mod error;
 pub mod recorder;
 
