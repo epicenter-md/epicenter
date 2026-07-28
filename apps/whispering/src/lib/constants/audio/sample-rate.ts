@@ -26,16 +26,3 @@ export const SAMPLE_RATE_OPTIONS = SAMPLE_RATES.map((rate) => ({
 	value: rate,
 	label: `${SAMPLE_RATE_METADATA[rate].shortLabel} - ${SAMPLE_RATE_METADATA[rate].description}`,
 }));
-
-/**
- * The sample rate at which the cpal recorder emits captured PCM. The Rust
- * recorder resamples every device to this rate before handing samples to
- * the consumer worker. The user-facing `SAMPLE_RATES` setting above is a
- * hint that picks which cpal device config to open; it does not change the
- * recorder's output rate.
- *
- * Mirrored in:
- *   src-tauri/src/recorder/recorder.rs (`TARGET_RATE`)
- *   src-tauri/src/audio/command.rs (`RECORDER_OUTPUT_RATE`)
- */
-export const RECORDER_OUTPUT_RATE = 16_000;
