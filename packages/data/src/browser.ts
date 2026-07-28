@@ -821,29 +821,16 @@ function defaultDedicatedWorker(): {
 		listener: (event: { message?: string }) => void,
 	): void;
 } {
-	const WorkerConstructor = (
-		globalThis as {
-			Worker?: new (
-				url: URL,
-				options: { type: 'module'; name: string },
-			) => {
-				postMessage(message: BrowserWorkerInbound): void;
-				addEventListener(
-					type: 'message',
-					listener: (event: { data: BrowserWorkerMessage }) => void,
-				): void;
-				addEventListener(
-					type: 'error',
-					listener: (event: { message?: string }) => void,
-				): void;
-				terminate(): void;
-			};
-		}
-	).Worker;
-	if (WorkerConstructor === undefined) {
+	if (typeof Worker === 'undefined') {
 		throw new Error('Worker is required for browser Epicenter storage');
 	}
-	const worker = new WorkerConstructor(
+	// Written as a literal `new Worker(new URL('...', import.meta.url), ...)`
+	// because that exact syntax is what bundlers pattern-match to compile this
+	// worker into its own same-origin asset. Reaching the constructor through
+	// any alias still runs, but the build silently degrades to an inlined
+	// `data:` module that the desktop host's Content-Security-Policy refuses
+	// (ADR-0183), so first paint dies with no message worth reading.
+	const worker = new Worker(
 		new URL('./browser-dedicated-worker.ts', import.meta.url),
 		{
 			type: 'module',
