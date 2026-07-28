@@ -53,10 +53,13 @@ test('the browser entry emits its worker as a same-origin asset', async () => {
 			expect(asset.endsWith('.ts')).toBeFalse();
 		}
 
-		for (const file of files) {
-			expect(readFileSync(file, 'utf8')).not.toInclude(
-				'data:application/javascript',
-			);
+		// Nothing reconstructs the worker from an inline module beside the asset.
+		// The token has to be the one Vite actually writes: its inline-worker
+		// branch emits `data:text/javascript;charset=utf-8,` (and a Blob of the
+		// same type), never `application/javascript`, so a check spelled the
+		// other way reads as coverage while being unable to fire.
+		for (const file of files.filter((file) => file.endsWith('.js'))) {
+			expect(readFileSync(file, 'utf8')).not.toInclude('data:text/javascript');
 		}
 	} finally {
 		rmSync(outDir, { recursive: true, force: true });
