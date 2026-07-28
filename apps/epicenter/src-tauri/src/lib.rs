@@ -1917,6 +1917,29 @@ mod tests {
     }
 
     #[test]
+    fn each_build_selects_the_home_model_administration_capability() {
+        for (encoded, capability) in [
+            (
+                include_str!("../tauri.dev.conf.json"),
+                "home-model-administration-development",
+            ),
+            (
+                include_str!("../tauri.conf.json"),
+                "home-model-administration-production",
+            ),
+        ] {
+            let config: serde_json::Value = serde_json::from_str(encoded).unwrap();
+            let selected = config["app"]["security"]["capabilities"]
+                .as_array()
+                .unwrap();
+            assert!(
+                selected.contains(&serde_json::json!(capability)),
+                "{capability} exists but this build does not select it"
+            );
+        }
+    }
+
+    #[test]
     fn built_in_surface_capabilities_expose_open_app_to_the_home_window() {
         for encoded in [
             include_str!("../capabilities/trusted-epicenter-apps-development.json"),
