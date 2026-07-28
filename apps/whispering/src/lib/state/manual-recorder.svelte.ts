@@ -1,27 +1,20 @@
-import { type BlobId, generateBlobId } from '@epicenter/blobs';
+import type { BlobId } from '@epicenter/blobs';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { defineKeys, resultQueryOptions } from 'wellcrafted/query';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import { manualRecorderConfig } from '#platform/manual-recorder-config';
 import { ManualRecorderLive } from '#platform/recorder';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
-import type {
+import {
 	RecorderError,
-	RecordingCallbacks,
-	RecordingSession,
+	type Recording,
+	type RecordingEndedReason,
 } from '$lib/services/recorder/contract';
 
 const ManualRecorderError = defineErrors({
 	EnumerateDevicesFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to enumerate devices: ${extractErrorMessage(cause)}`,
 		cause,
-	}),
-	AlreadyRecording: () => ({
-		message:
-			'A recording is already in progress. Stop the current one before starting a new one.',
-	}),
-	NoActiveRecording: () => ({
-		message: 'No active recording session to stop. Start a recording first.',
 	}),
 });
 
@@ -39,86 +32,118 @@ const manualRecorderKeys = defineKeys({
  * - Operations: `manualRecorder.startRecording()` etc.
  * - Device enumeration as a TanStack Query for loading states in selectors
  *
- * Each recording is a `RecordingSession` object returned by the implementation
- * that started it. The RecordingSession owns its own stop/cancel/subscribe.
+ * A recording is a `Recording` object returned by the implementation that
+ * started it, and holding one is what "recording" means. `state` is derived
+ * from that rather than mirrored beside it, so the two can never disagree and
+ * there is no transition to miss.
  *
- * Subscription is per-RecordingSession rather than per-service. `attach()`
- * subscribes to the live RecordingSession and `detach()` cleans up on
- * stop/cancel.
- *
- * On Tauri, state is bootstrapped from CPAL's `resumeActiveSession` before
- * the first lifecycle operation because a Rust CPAL session can outlive a JS
- * reload. On web, the Navigator recorder returns null after reload.
+ * On Tauri the recorder is bootstrapped from `current()` before the first
+ * lifecycle operation, because a host recording can outlive a JS reload. On web
+ * `current()` always returns null after a reload.
  */
-
 function createManualRecorder() {
-	let _state = $state<WhisperingRecordingState>('IDLE');
-	let _current: RecordingSession | null = null;
-	// The blob id reserved for the live recording and its future workspace row.
-	// Null when idle; set while recording. The push-to-talk stop path reads it to
-	// stop only the exact recording it started, never one a later press supplanted.
-	let _currentAudioBlobId: BlobId | null = null;
-	let _unsubscribe: (() => void) | null = null;
+	// `$state.raw` because a Recording is replaced wholesale, never mutated
+	// field by field: reads should invalidate when the recording changes, not
+	// when something inside it does.
+	let _current = $state.raw<Recording | null>(null);
 	// Synchronous in-flight guard for start. `_current` is not set until after
 	// two awaits (bootstrap + the service start), so without this a second
 	// start firing in that window (e.g. a global shortcut pressed twice) would
 	// pass the `_current` check and orphan a second recording.
-	let _starting = false;
+	let _starting = $state(false);
+	let _stopEndedListener: (() => void) | null = null;
+	let _onEnded: ((reason: RecordingEndedReason) => void) | null = null;
 
-	function attach(session: RecordingSession) {
-		_unsubscribe?.();
-		_current = session;
-		_unsubscribe = session.subscribe((s) => {
-			_state = s;
-			if (s === 'IDLE') detach();
-		});
+	function hold(recording: Recording) {
+		_stopEndedListener?.();
+		_current = recording;
+		// The one ending a live caller cannot infer from its own calls: the
+		// capture died. Everything else that clears `_current` is a consequence
+		// of something this module asked for.
+		//
+		// The recording is deliberately *not* released here. Its capture is over
+		// but it still holds what it recorded, and dropping it would strand that
+		// audio in a host slot nothing could ever claim. Resolving it is the
+		// handler's job, through the ordinary stop or cancel.
+		//
+		// One subscription covers every way a capture can end, including one that
+		// already had when this recording was handed over: `onEnded` announces
+		// that too, so nothing here has to ask which way it found out.
+		_stopEndedListener = recording.onEnded((reason) => _onEnded?.(reason));
 	}
 
-	function detach() {
-		_unsubscribe?.();
-		_unsubscribe = null;
+	function release() {
+		_stopEndedListener?.();
+		_stopEndedListener = null;
 		_current = null;
-		_currentAudioBlobId = null;
-		_state = 'IDLE';
 	}
 
-	// Bootstrap: ask the platform recorder whether it owns a live session.
+	// Bootstrap: ask the platform recorder whether it owns a live recording.
 	// Navigator always returns null after a JS reload because its state lives
-	// in the closure; CPAL can return non-null because Rust keeps the stream
-	// alive.
+	// in the closure; CPAL can return non-null because the host keeps capturing.
 	//
 	// The promise is awaited before any stop/cancel/start runs. Without
 	// that gate, a user action that fires before bootstrap resolves sees a
 	// stale `_current === null` and either no-ops the cancel (leaking the
-	// Rust session) or double-starts on top of a rehydrated one.
+	// host recording) or double-starts on top of a rehydrated one.
 	let bootstrapped: Promise<Result<void, RecorderError>> | null = null;
 
 	function ensureBootstrapped() {
-		bootstrapped ??= ManualRecorderLive.resumeActiveSession().then((result) => {
+		bootstrapped ??= ManualRecorderLive.current().then((result) => {
 			const { data: found, error } = result;
 			if (error) {
 				bootstrapped = null;
 				return Err(error);
 			}
-			if (found) attach(found);
+			if (found) hold(found);
 			return Ok(undefined);
 		});
 		return bootstrapped;
 	}
 
 	return {
+		/**
+		 * Whether a manual recording is live, derived from holding a `Recording`.
+		 */
 		get state(): WhisperingRecordingState {
-			return _state;
+			return _current ? 'RECORDING' : 'IDLE';
 		},
 
-		/** The live recording's id (only set while `state` is RECORDING, else null). */
+		/**
+		 * The live recording's id, or null when nothing is recording.
+		 *
+		 * Read off the recording rather than mirrored here: the recording is the
+		 * thing that knows its own id, and a copy could disagree with it. The
+		 * push-to-talk stop path uses this to stop only the exact recording it
+		 * started, never one a later press supplanted.
+		 */
 		get currentAudioBlobId(): BlobId | null {
-			return _currentAudioBlobId;
+			return _current?.audioBlobId ?? null;
 		},
 
 		/** True between a start request and the recording attaching (or failing). */
 		get isStarting(): boolean {
 			return _starting;
+		},
+
+		/**
+		 * Feed the live recording's microphone level to a handler, including a
+		 * recording recovered after a reload. Returns an unsubscribe.
+		 */
+		onLevel(handler: (level: number) => void): () => void {
+			return _current?.onLevel(handler) ?? (() => {});
+		},
+
+		/**
+		 * What to do when a capture ends on its own. One handler, because losing a
+		 * capture has one app-level reaction.
+		 *
+		 * The handler is responsible for resolving the recording, which is still
+		 * held and still holds its audio. Doing nothing leaks the host's one
+		 * recorder slot until the window is destroyed.
+		 */
+		onEnded(handler: (reason: RecordingEndedReason) => void) {
+			_onEnded = handler;
 		},
 
 		enumerateDevices: {
@@ -133,25 +158,23 @@ function createManualRecorder() {
 			}),
 		},
 
-		async startRecording(callbacks: RecordingCallbacks) {
-			if (_starting) return ManualRecorderError.AlreadyRecording();
+		async startRecording() {
+			if (_starting || _current) return RecorderError.AlreadyRecording();
 			_starting = true;
 			try {
-				// Bootstrap may rehydrate a CPAL session that outlived a reload,
-				// so the `_current` check has to come after it.
+				// Bootstrap may rehydrate a host recording that outlived a reload,
+				// so the `_current` check has to come after it too.
 				const { error: bootstrapError } = await ensureBootstrapped();
 				if (bootstrapError) return Err(bootstrapError);
-				if (_current) return ManualRecorderError.AlreadyRecording();
-				const audioBlobId = generateBlobId();
-				const params = manualRecorderConfig.resolveStartParams(audioBlobId);
-				const { data, error: startRecordingError } =
-					await ManualRecorderLive.startRecording(params, callbacks);
+				if (_current) return RecorderError.AlreadyRecording();
 
-				if (startRecordingError) return Err(startRecordingError);
+				const params = manualRecorderConfig.resolveStartParams();
+				const { data: recording, error: startError } =
+					await ManualRecorderLive.start(params);
+				if (startError) return Err(startError);
 
-				_currentAudioBlobId = audioBlobId;
-				attach(data.session);
-				return Ok(data.deviceAcquisition);
+				hold(recording);
+				return Ok(recording);
 			} finally {
 				_starting = false;
 			}
@@ -160,15 +183,21 @@ function createManualRecorder() {
 		async stopRecording() {
 			const { error: bootstrapError } = await ensureBootstrapped();
 			if (bootstrapError) return Err(bootstrapError);
-			if (!_current) return ManualRecorderError.NoActiveRecording();
-			return _current.stop();
+			const recording = _current;
+			if (!recording) return RecorderError.NoActiveRecording();
+			// Released before the call resolves: this recording is over either
+			// way, and letting it linger would let a second stop address it.
+			release();
+			return recording.stop();
 		},
 
 		async cancelRecording() {
 			const { error: bootstrapError } = await ensureBootstrapped();
 			if (bootstrapError) return Err(bootstrapError);
-			if (!_current) return Ok({ status: 'no-recording' as const });
-			const { error } = await _current.cancel();
+			const recording = _current;
+			if (!recording) return Ok({ status: 'no-recording' as const });
+			release();
+			const { error } = await recording.cancel();
 			if (error) return Err(error);
 			return Ok({ status: 'cancelled' as const });
 		},

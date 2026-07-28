@@ -48,10 +48,15 @@ export const BlobId = type(new RegExp(`^${BLOB_ID_ROUTE_REGEX}$`)).as<
 export type BlobId = typeof BlobId.infer;
 
 /**
- * Mint a fresh {@link BlobId}. The only place a BlobId comes into existence;
- * every other appearance of the id (row cell, local store key, remote key)
- * is a copy of a minted value or a parse of one via the {@link BlobId}
- * validator.
+ * Mint a fresh {@link BlobId}. Every other appearance of the id in TypeScript
+ * (row cell, local store key, remote key) is a copy of a minted value or a
+ * parse of one via the {@link BlobId} validator.
+ *
+ * One other implementation mints this same shape: Epicenter's native recorder,
+ * in `apps/epicenter/src-tauri/src/recorder/blob.rs`, because the host decides
+ * which recording exists and hands the id back over IPC. The two mints must
+ * agree, and each side has a round-trip test against its own parse to keep them
+ * from drifting apart.
  */
 export function generateBlobId(): BlobId {
 	return `blob_${generateBody()}` as BlobId;

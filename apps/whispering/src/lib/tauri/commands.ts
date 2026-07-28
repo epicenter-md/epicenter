@@ -105,10 +105,15 @@ export const commands = {
 };
 
 export type {
+	DeviceAcquisition,
 	DictationCapability,
+	EndedReason,
 	GlobalShortcutRegistration,
+	HostRecording,
 	LocalTranscriptionReadiness,
+	MicrophonePermission,
 	RecorderError as IpcRecorderError,
+	StoppedRecording,
 	TranscriptionError,
 	TranscriptionHints,
 	TranscriptionOutcome,

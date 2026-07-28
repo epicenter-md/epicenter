@@ -44,7 +44,6 @@ tauri-plugin-dialog = "2.7"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-http = "2"
 tauri-plugin-log = "2"
-tauri-plugin-macos-permissions = "2.3.0"
 tauri-plugin-notification = "2"
 tauri-plugin-opener = "2.5"
 tauri-plugin-os = "2"
@@ -70,11 +69,13 @@ transcribe-cpp = { version = "0.1.0", default-features = false }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 accessibility-sys = "0.1.3"
+block2 = "0.6.2"
 core-foundation-sys = "0.8.7"
 core-foundation = "0.9"
 core-graphics = "0.22"
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSPasteboard", "NSPasteboardItem"] }
+objc2-av-foundation = { version = "0.3.2", default-features = false, features = ["std", "block2", "AVCaptureDevice", "AVMediaFormat"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSData", "NSArray"] }
 tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", rev = "a3122e894383aa068ec5365a42994e3ac94ba1b6" }
 transcribe-cpp = { version = "0.1.0", default-features = false, features = ["metal"] }

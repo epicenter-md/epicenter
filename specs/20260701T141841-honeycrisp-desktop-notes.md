@@ -128,7 +128,7 @@ Copy (proven, with sources):
 | CI release via `tauri-apps/tauri-action@v0` + updater signing + notarization secrets | `.github/workflows/release.whispering.yml:100-140` |
 | Headless `AppEffects` component mounting app-lifetime effect helpers once from the root layout | `apps/whispering/src/routes/(app)/_components/AppEffects.svelte` |
 
-Skip (audio/keystroke-specific or a tradeoff Honeycrisp does not share): NSPanel overlay, `macOSPrivateApi`, `tauri-plugin-macos-permissions`, the rdev keyboard tap and two-tier shortcut system, the dev codesign-runner dual identity, `write_text`/keystroke Rust commands, and Whispering's Shape B module singleton with `reloadOnOwnerChange` (a deliberate tradeoff for ~70 singleton importers; Honeycrisp's Shape A `WorkspaceGate` already handles identity changes more simply).
+Skip (audio/keystroke-specific or a tradeoff Honeycrisp does not share): NSPanel overlay, `macOSPrivateApi`, the AVFoundation microphone-permission command, the rdev keyboard tap and two-tier shortcut system, the dev codesign-runner dual identity, `write_text`/keystroke Rust commands, and Whispering's Shape B module singleton with `reloadOnOwnerChange` (a deliberate tradeoff for ~70 singleton importers; Honeycrisp's Shape A `WorkspaceGate` already handles identity changes more simply).
 
 ### External grounding verdicts
 
@@ -242,7 +242,7 @@ Tauri 2 shell, cloned from Whispering minus everything audio. Plugin ledger:
 | dialog, fs | with export (Phase 5) | not needed while notes live only in IndexedDB |
 | process | optional | |
 | notification, global-shortcut, autostart, clipboard-manager, tray | no | global-shortcut returns with quick-capture (v2); tray/autostart are not notes-app posture |
-| macos-permissions, nspanel, `macOSPrivateApi` | never | audio/keystroke apparatus |
+| microphone permissions, nspanel, `macOSPrivateApi` | never | audio/keystroke apparatus |
 
 Shell specifics:
 

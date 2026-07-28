@@ -58,9 +58,16 @@ that composition.
 
 Bun uploads stage under `.staging/bun/`; the Rust recorder stages native
 captures under `.staging/rust/`. Each operation removes its own staging
-directory when it fails. Neither writer sweeps abandoned directories at
-startup yet: safe crash cleanup needs an exclusive writer lease or equivalent
-liveness proof, otherwise one process could erase another live publication.
+directory when it fails.
+
+The Rust recorder additionally deletes `.staging/rust/` wholesale at host
+startup, because a recording is now written progressively and a host that dies
+mid-capture leaves a partial WAV behind (ADR-0184). That sweep is safe only
+because the subtree has exactly one writer and Epicenter is single-instance, so
+no live publication can be in it. It deletes and never promotes: a partial
+capture is not a blob and startup does not make it one. Bun has no equivalent
+sweep, and adding one would need the exclusive writer lease this deliberately
+does not require.
 
 ## Deliberately absent
 

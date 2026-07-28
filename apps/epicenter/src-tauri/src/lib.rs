@@ -33,8 +33,8 @@ use audio::encode_recording_for_upload;
 
 pub mod recorder;
 use recorder::commands::{
-    cancel_recording, close_recording_session, enumerate_recording_devices,
-    get_current_recording_id, init_recording_session, start_recording, stop_recording,
+    cancel_recording, cancel_recording_owned_by, current_recording, enumerate_recording_devices,
+    start_recording, stop_recording,
 };
 use recorder::recorder::Recorder;
 
@@ -336,13 +336,11 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             write_text,
             simulate_enter_keystroke,
             simulate_copy_keystroke,
-            get_current_recording_id,
             enumerate_recording_devices,
-            init_recording_session,
-            close_recording_session,
             start_recording,
             stop_recording,
             cancel_recording,
+            current_recording,
             transcribe_recording,
             prewarm_model,
             open_accessibility_settings,
@@ -372,6 +370,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             keyboard::DictationCapabilityEvent,
             GlobalShortcutTriggered,
             HomeSectionPending,
+            recorder::ended::RecordingEndedEvent,
         ])
         .error_handling(tauri_specta::ErrorHandlingMode::Result)
 }
@@ -533,8 +532,30 @@ fn ensure_app_window(app: &DesktopAppHandle, id: &str, port: u16, token: &str) -
         .on_new_window(|_, _| NewWindowResponse::Deny)
         .build()
         .with_context(|| format!("create the {id} app WebView"))?;
+    release_host_resources_on_destroy(&window);
     focus(window);
     Ok(())
+}
+
+/// Release the host resources a window owns once it is destroyed.
+///
+/// Only destruction, never hide or navigation: a hidden window still owns its
+/// recording (push-to-talk from the tray depends on that), and reload keeps the
+/// same label, which is exactly why `current_recording` exists. A destroyed
+/// window can no longer stop or cancel anything, so its recording would hold
+/// the one host recorder until the process exits.
+///
+/// Surface windows are hidden rather than destroyed when the user closes them,
+/// so this fires for them only on a host restart teardown. App windows have no
+/// close interception and are destroyed on close, which is the live path.
+fn release_host_resources_on_destroy(window: &WebviewWindow<Wry>) {
+    let app = window.app_handle().clone();
+    let label = window.label().to_string();
+    window.on_window_event(move |event| {
+        if matches!(event, WindowEvent::Destroyed) {
+            cancel_recording_owned_by(&app, &label);
+        }
+    });
 }
 
 pub fn run() {
@@ -564,7 +585,6 @@ pub fn run() {
             open_forwarded_deep_links(app, &args);
         }))
         .plugin(log_plugin)
-        .plugin(tauri_plugin_macos_permissions::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
@@ -595,6 +615,15 @@ pub fn run() {
         })
         .setup(move |app| {
             specta_builder.mount_events(app);
+
+            // A recording that was still capturing when a previous launch died
+            // left a partial WAV in the recorder's private staging. It is not a
+            // blob and never will be one, so it is deleted here and nothing
+            // else happens: no promotion, no repair, no notice. Owned by the
+            // recorder rather than by blob-store startup because `.staging/rust`
+            // is the recorder's alone (`packages/blobs` stages its own uploads
+            // under `.staging/bun` and cleans them per operation).
+            crate::recorder::blob::delete_stale_staging(app.handle());
 
             // The active local model and the unload policy are device-local host
             // state (ADR-0180), so they live beside the app's own config rather
@@ -1288,6 +1317,7 @@ fn ensure_surface(
             let _ = close_window.hide();
         }
     });
+    release_host_resources_on_destroy(&window);
     if reveal {
         focus(window);
     }
@@ -1701,6 +1731,41 @@ mod tests {
         }
     }
 
+    /// The `tauri-plugin-macos-permissions` plugin is gone from this build:
+    /// `command.rs` owns the two OS permission capabilities Epicenter exposes,
+    /// through AVFoundation and the Accessibility API directly.
+    ///
+    /// Its `macos-permissions:default` grant handed Whispering twelve unrelated
+    /// plugin commands (screen recording, input monitoring, full disk access,
+    /// camera) to reach the two it used. A grant naming a plugin this build does
+    /// not ship is a silent no-op, so nothing would fail if it were pasted back;
+    /// what it would do is describe an authority the app does not have. Both
+    /// Whispering surfaces are checked, not just the one that had it.
+    #[test]
+    fn no_whispering_capability_grants_the_deleted_permissions_plugin() {
+        for encoded in [
+            include_str!("../capabilities/trusted-whispering-native-development.json"),
+            include_str!("../capabilities/trusted-whispering-native-production.json"),
+            include_str!("../capabilities/trusted-whispering-overlay-development.json"),
+            include_str!("../capabilities/trusted-whispering-overlay-production.json"),
+        ] {
+            let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
+            for permission in capability["permissions"].as_array().unwrap() {
+                // Permissions are either a bare identifier string or an object
+                // with a scope; both spell the plugin the same way.
+                let identifier = permission
+                    .as_str()
+                    .or_else(|| permission["identifier"].as_str())
+                    .unwrap_or_default();
+                assert!(
+                    !identifier.starts_with("macos-permissions:"),
+                    "{} grants a plugin this build no longer ships",
+                    capability["identifier"].as_str().unwrap()
+                );
+            }
+        }
+    }
+
     /// The recovery path an application offers must survive Home not being
     /// there yet. The intent is host state, so "Home is absent", "Home is still
     /// booting", and "Home is open behind another window" are the same code
@@ -1882,6 +1947,29 @@ mod tests {
                     "Whispering must keep {permission}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn each_build_selects_the_home_model_administration_capability() {
+        for (encoded, capability) in [
+            (
+                include_str!("../tauri.dev.conf.json"),
+                "home-model-administration-development",
+            ),
+            (
+                include_str!("../tauri.conf.json"),
+                "home-model-administration-production",
+            ),
+        ] {
+            let config: serde_json::Value = serde_json::from_str(encoded).unwrap();
+            let selected = config["app"]["security"]["capabilities"]
+                .as_array()
+                .unwrap();
+            assert!(
+                selected.contains(&serde_json::json!(capability)),
+                "{capability} exists but this build does not select it"
+            );
         }
     }
 

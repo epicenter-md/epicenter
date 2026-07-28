@@ -70,6 +70,17 @@ const PAGE = '<!doctype html><html><body>Home test page</body></html>';
 const WHISPERING_PAGE =
 	'<!doctype html><html><body>Whispering test application</body></html>';
 
+/** Parse a Content-Security-Policy header into directive name to its token list. */
+function cspDirectives(header: string | null): Map<string, string[]> {
+	const directives = new Map<string, string[]>();
+	for (const directive of (header ?? '').split(';')) {
+		const [name, ...tokens] = directive.trim().split(/\s+/);
+		if (name !== undefined && name !== '') directives.set(name, tokens);
+	}
+	return directives;
+}
+
+/** Strip what the host stamps onto a surface, recovering the built page. */
 function withoutAuthBootstrap(page: string): string {
 	return page.replace(
 		/<script id="epicenter-auth-bootstrap" type="application\/json">[\s\S]*?<\/script>/,
@@ -184,6 +195,13 @@ function writeAppsDistFixture(homePage: string = PAGE): string {
 	writeFileSync(
 		join(root, 'whispering', 'vad', 'silero_vad_v5.onnx'),
 		'vad-model',
+	);
+	// The onnxruntime binary the VAD trigger compiles in the WebView. It belongs
+	// in the fixture because a policy that admits WebAssembly is only truthful if
+	// the WebAssembly it admits is actually served from this origin.
+	writeFileSync(
+		join(root, 'whispering', 'vad', 'ort-wasm-simd-threaded.wasm'),
+		'\0asm\x01\0\0\0',
 	);
 	return root;
 }
@@ -606,6 +624,55 @@ describe('createHomeServer', () => {
 			);
 			expect(page.headers.get('referrer-policy')).toBe('no-referrer');
 			expect(page.headers.get('x-frame-options')).toBe('DENY');
+		} finally {
+			await server.stop(true);
+		}
+	});
+
+	test('admits first-party WebAssembly without restoring eval', async () => {
+		await using host = await createTestHost({
+			engine: scriptedEngine([[]]),
+		});
+		const server = await serveHost(host);
+		try {
+			const page = await fetch(HOME_ROUTE.url(server.url.origin), {
+				headers: authenticatedHeaders(server),
+			});
+			const directives = cspDirectives(
+				page.headers.get('content-security-policy'),
+			);
+			const scriptSrc = directives.get('script-src') ?? [];
+
+			// Voice activity detection compiles onnxruntime in this WebView.
+			expect(scriptSrc).toContain("'wasm-unsafe-eval'");
+			// The narrow token and only the narrow token: `eval` and `new Function`
+			// stay refused, and inline scripts stay hash-pinned.
+			expect(scriptSrc).not.toContain("'unsafe-eval'");
+			expect(scriptSrc).not.toContain("'unsafe-inline'");
+			expect(
+				scriptSrc.some((token) => token.startsWith("'sha256-")),
+			).toBeTrue();
+
+			// Admitting WebAssembly must not have loosened anything else.
+			expect(directives.get('worker-src')).toEqual(["'self'", 'blob:']);
+			expect(directives.get('connect-src')).toEqual([
+				"'self'",
+				'ipc:',
+				'http://ipc.localhost',
+			]);
+			expect(directives.get('object-src')).toEqual(["'none'"]);
+			expect(directives.get('default-src')).toEqual(["'self'"]);
+
+			// The capability is real on this origin, not a token for its own sake:
+			// the binary the policy admits is served by this host.
+			const wasm = await fetch(
+				`${server.url.origin}/apps/whispering/vad/ort-wasm-simd-threaded.wasm`,
+				{ headers: authenticatedHeaders(server) },
+			);
+			expect(wasm.status).toBe(200);
+			expect(new Uint8Array(await wasm.arrayBuffer()).slice(0, 4)).toEqual(
+				new Uint8Array([0x00, 0x61, 0x73, 0x6d]),
+			);
 		} finally {
 			await server.stop(true);
 		}
@@ -1253,9 +1320,14 @@ describe('the built SPA', () => {
 			});
 			expect(response.status).toBe(200);
 			expect(withoutAuthBootstrap(await response.text())).toBe(page);
-			expect(response.headers.get('content-security-policy')).toMatch(
-				/script-src 'self' 'sha256-/,
-			);
+			const scriptSrc =
+				cspDirectives(response.headers.get('content-security-policy')).get(
+					'script-src',
+				) ?? [];
+			expect(
+				scriptSrc.some((token) => token.startsWith("'sha256-")),
+			).toBeTrue();
+			expect(scriptSrc).not.toContain("'unsafe-inline'");
 		} finally {
 			await server.stop(true);
 		}

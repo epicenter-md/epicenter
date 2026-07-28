@@ -500,6 +500,15 @@ export function createHomeServer({
 	return { app, websocket };
 }
 
+/**
+ * Stamp one served page with the one-shot auth bootstrap.
+ *
+ * This is the only thing the host injects. A surface parses the bootstrap and
+ * then removes it, because it carries an identity snapshot that has no business
+ * sitting in the DOM afterwards, and nothing else may read it: which replica a
+ * surface opens is decided by which build the host serves, not by what survives
+ * in its `<head>`.
+ */
 function injectAuthBootstrap(
 	page: string,
 	snapshot: DesktopAuthAuthority['bootSnapshot'],
@@ -603,7 +612,14 @@ function contentSecurityPolicy(page: string): string {
 		);
 	return [
 		"default-src 'self'",
-		`script-src 'self' ${scriptHashes.join(' ')}`,
+		// `'wasm-unsafe-eval'` permits WebAssembly compilation and nothing else:
+		// it does not restore `eval` or `new Function`, which is why it exists
+		// separately from `'unsafe-eval'`. Voice activity detection runs
+		// onnxruntime in this WebView over assets Epicenter itself ships, so
+		// WebAssembly is a first-party capability of the surface rather than
+		// something a policy is being bent to tolerate. Without it the browser
+		// refuses the compile and the recording trigger dies mid-boot.
+		`script-src 'self' 'wasm-unsafe-eval' ${scriptHashes.join(' ')}`,
 		"style-src 'self' 'unsafe-inline'",
 		"connect-src 'self' ipc: http://ipc.localhost",
 		"img-src 'self' data: blob:",

@@ -4,13 +4,15 @@
 //! internally tagged (`{ "name": "...", "message": "..." }`) so the TypeScript
 //! side switches on `error.name`.
 //!
-//! Only three variants, because the frontend only distinguishes three cases: a
-//! microphone permission denial (route the user to grant access), a missing
-//! input device (ask them to connect one), and everything else, which the
-//! frontend labels by the command that failed (init/start/stop) and shows the
-//! message for. A finer taxonomy (io vs config vs internal) was deliberately
-//! not modeled: the frontend would discard the distinction, so it would be a
-//! decorative name on a string. The detail still travels, in `message`.
+//! A variant exists only where the frontend acts differently: a microphone
+//! permission denial (route the user to grant access), a missing input device
+//! (ask them to connect one), a recorder already in use by another window
+//! (say so instead of stealing it), a recording that is not the caller's to end
+//! (a benign no-op for an idempotent stop), and everything else, which the
+//! frontend labels by the command that failed and shows the message for. A
+//! finer taxonomy (io vs config vs internal) was deliberately not modeled: the
+//! frontend would discard the distinction, so it would be a decorative name on
+//! a string. The detail still travels, in `message`.
 
 use cpal::{Error as CpalError, ErrorKind};
 use serde::{Deserialize, Serialize};
@@ -31,8 +33,21 @@ pub enum RecorderError {
     #[error("{message}")]
     NoInputDevice { message: String },
 
+    /// A recording started by some window is already in flight. There is one
+    /// host recorder, and a competing start is refused rather than silently
+    /// displacing a recording another window is relying on.
+    #[error("{message}")]
+    Busy { message: String },
+
+    /// The named recording is not this window's to end: it has already
+    /// finished, it is not the one in flight, or another window owns it. One
+    /// variant for all three because a caller cannot act differently on them,
+    /// and the distinguishing detail travels in `message`.
+    #[error("{message}")]
+    NotRecording { message: String },
+
     /// Any other recording failure (device config, stream build, filesystem,
-    /// session lifecycle, internal). The frontend does not branch on these.
+    /// internal). The frontend does not branch on these.
     #[error("{message}")]
     Failed { message: String },
 }
@@ -40,6 +55,18 @@ pub enum RecorderError {
 impl RecorderError {
     pub(crate) fn no_input_device(message: impl Into<String>) -> Self {
         Self::NoInputDevice {
+            message: message.into(),
+        }
+    }
+
+    pub(crate) fn busy(message: impl Into<String>) -> Self {
+        Self::Busy {
+            message: message.into(),
+        }
+    }
+
+    pub(crate) fn not_recording(message: impl Into<String>) -> Self {
+        Self::NotRecording {
             message: message.into(),
         }
     }
@@ -79,6 +106,8 @@ mod tests {
         match err {
             RecorderError::PermissionDenied { .. } => "PermissionDenied",
             RecorderError::NoInputDevice { .. } => "NoInputDevice",
+            RecorderError::Busy { .. } => "Busy",
+            RecorderError::NotRecording { .. } => "NotRecording",
             RecorderError::Failed { .. } => "Failed",
         }
     }
@@ -171,5 +200,16 @@ mod tests {
         .unwrap();
         assert_eq!(json["name"], "PermissionDenied");
         assert_eq!(json["message"], "denied");
+
+        // The two ownership refusals reach TypeScript by name like the rest:
+        // `Busy` is what a competing start sees, `NotRecording` is what an
+        // idempotent stop of an already-finished recording sees.
+        let json = serde_json::to_value(RecorderError::busy("already recording")).unwrap();
+        assert_eq!(json["name"], "Busy");
+        assert_eq!(json["message"], "already recording");
+
+        let json = serde_json::to_value(RecorderError::not_recording("not yours")).unwrap();
+        assert_eq!(json["name"], "NotRecording");
+        assert_eq!(json["message"], "not yours");
     }
 }

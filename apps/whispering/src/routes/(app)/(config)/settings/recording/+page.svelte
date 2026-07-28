@@ -7,11 +7,7 @@
 	import { createMutation } from '@tanstack/svelte-query';
 	import { resultMutationOptions } from 'wellcrafted/query';
 	import { SettingSelect, SettingSwitch } from '$lib/components/settings';
-	import {
-		BITRATE_OPTIONS,
-		RECORDING_TRIGGER_OPTIONS,
-		SAMPLE_RATE_OPTIONS,
-	} from '$lib/constants/audio';
+	import { BITRATE_OPTIONS, RECORDING_TRIGGER_OPTIONS } from '$lib/constants/audio';
 	import { report } from '$lib/report';
 	import { asDeviceIdentifier } from '@epicenter/recorder';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
@@ -129,24 +125,14 @@
 			/>
 		{/if}
 
-		{#if app.settings.get('settings.recording.trigger') === 'manual'}
-			{#if !tauri}
-				<SettingSelect
-					store={deviceConfig}
-					key="recording.navigator.bitrateKbps"
-					label="Bitrate"
-					items={BITRATE_OPTIONS}
-					description="The bitrate of the recording. Higher values mean better quality but larger file sizes."
-				/>
-			{:else}
-				<SettingSelect
-					store={deviceConfig}
-					key="recording.cpal.sampleRate"
-					label="Sample Rate"
-					items={SAMPLE_RATE_OPTIONS}
-					description="Higher sample rates provide better quality but create larger files"
-				/>
-			{/if}
+		{#if app.settings.get('settings.recording.trigger') === 'manual' && !tauri}
+			<SettingSelect
+				store={deviceConfig}
+				key="recording.navigator.bitrateKbps"
+				label="Bitrate"
+				items={BITRATE_OPTIONS}
+				description="The bitrate of the recording. Higher values mean better quality but larger file sizes."
+			/>
 		{/if}
 
 		<Field.Field>

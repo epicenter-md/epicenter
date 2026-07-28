@@ -22,10 +22,12 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use serde_json::{json, Map, Value};
-use transcribe_cpp::{Backend, Model, ModelOptions, RunOptions, SessionOptions};
+use transcribe_cpp::{Backend, Feature, Model, ModelOptions, RunOptions, SessionOptions};
 
 mod inputs;
 mod posture;
+mod residency;
+mod stream_mode;
 
 #[cfg(not(any(
     feature = "static-cpu",
@@ -46,13 +48,15 @@ compile_error!(
 compile_error!("the postures are mutually exclusive; pass --no-default-features and select one");
 
 const SCHEMA: &str = "epicenter.backend-latency/1";
+const STREAM_SCHEMA: &str = "epicenter.preview-preemption/1";
 
 const USAGE: &str = "\
 backend-latency: latency falsifier for Epicenter's transcription backend collapse
 
 USAGE
   backend-latency --model <GGUF> --audio <WAV> [options]
-  backend-latency --probe
+  backend-latency --model <GGUF> --stream-model <GGUF> --audio <WAV> [options]
+  backend-latency --probe [--model <GGUF>]
 
   Emits one JSON object per invocation on stdout (JSONL when appended). Exits
   non-zero on any failure, having emitted a record whose `failure` field says
@@ -62,12 +66,21 @@ REQUIRED (unless --probe)
   --model <PATH>     GGUF model file, e.g. whisper-small-Q4_K_M.gguf
   --audio <PATH>     16000 Hz mono WAV. Not resampled; mismatches are refused
                      so no converter sits inside the measurement.
+  --stream-model <PATH>
+                     second resident GGUF. Its presence selects the streaming
+                     concurrency falsifier; --model remains the batch model.
 
 OPTIONS
   --runs <N>         warm runs after the cold pair (default 5)
   --backend <NAME>   auto | cpu | cpu-accel | metal | vulkan | cuda
                      (default auto, which is what the collapse proposes)
   --threads <N>      CPU threads; 0 uses the library default (default 0)
+  --chunk-ms <N>     streaming feed chunk size in milliseconds (default 320).
+                     Only valid with --stream-model.
+  --stream-minutes <N>
+                     loop the supplied clip for this many minutes in the
+                     long-stream survival leg (default 2; use 20 for the full
+                     decision run). Only valid with --stream-model.
   --label <TEXT>     free text carried into the record, e.g. a machine name
   --json <PATH>      also append the record to this file
   --assert-comparison-key <HEX>
@@ -75,7 +88,8 @@ OPTIONS
                      it across a posture matrix so a mismatched model, clip,
                      backend, or thread count fails loudly instead of quietly
                      producing an incomparable number.
-  --probe            report build posture and registered devices, load nothing
+  --probe            report build posture and registered devices. With --model,
+                     also load it and report supports_streaming.
   --help
 
 READING THE RESULT
@@ -99,16 +113,25 @@ struct Args {
     label: Option<String>,
     json: Option<PathBuf>,
     expect_key: Option<String>,
+    chunk_ms: u32,
+    stream_minutes: f64,
 }
 
 /// What this invocation is for. An enum rather than two `Option`s plus a `bool`
 /// so "measuring without inputs" is unrepresentable instead of a runtime check:
 /// argument parsing is the one place that can fail on a missing path.
 enum Mode {
-    /// Report the posture and the registered devices. Loads nothing.
-    Probe,
+    /// Report the posture and devices, optionally loading one capability probe.
+    Probe {
+        model: Option<PathBuf>,
+    },
     Measure {
         model: PathBuf,
+        audio: PathBuf,
+    },
+    Stream {
+        model: PathBuf,
+        stream_model: PathBuf,
         audio: PathBuf,
     },
 }
@@ -138,7 +161,12 @@ fn main() -> ExitCode {
     };
 
     let mut record = Map::new();
-    record.insert("schema".into(), json!(SCHEMA));
+    let schema = if matches!(args.mode, Mode::Stream { .. }) {
+        STREAM_SCHEMA
+    } else {
+        SCHEMA
+    };
+    record.insert("schema".into(), json!(schema));
     record.insert("label".into(), json!(args.label));
     record.insert("build".into(), posture::build());
 
@@ -177,10 +205,35 @@ fn observe(args: &Args, record: &mut Map<String, Value>) -> Result<(), Failure> 
         posture::runtime(args.backend, args.threads),
     );
 
-    let Mode::Measure { model, audio } = &args.mode else {
+    if let Mode::Probe { model } = &args.mode {
         record.insert("probe".into(), json!(true));
+        if let Some(model_path) = model {
+            let model = Model::load_with(
+                model_path,
+                &ModelOptions {
+                    backend: args.backend,
+                    gpu_device: 0,
+                },
+            )
+            .map_err(|error| Failure {
+                stage: "model-load",
+                message: format!("load probe model {}: {error}", model_path.display()),
+            })?;
+            record.insert(
+                "model_probe".into(),
+                json!({
+                    "path": model_path.display().to_string(),
+                    "arch": model.arch(),
+                    "variant": model.variant(),
+                    "backend": model.backend(),
+                    "supports_streaming": model.capabilities().supports_streaming,
+                    "supports_cancellation": model.supports(Feature::Cancellation),
+                    "max_audio_ms": model.capabilities().max_audio_ms,
+                }),
+            );
+        }
         return Ok(());
-    };
+    }
 
     // Ask the library whether the request is satisfiable before spending a model
     // load on it. This is the probe that turns `--backend vulkan` on a machine
@@ -202,7 +255,12 @@ fn observe(args: &Args, record: &mut Map<String, Value>) -> Result<(), Failure> 
         });
     }
 
-    let (model_path, audio_path) = (model.as_path(), audio.as_path());
+    let (model_path, audio_path) = match &args.mode {
+        Mode::Measure { model, audio } | Mode::Stream { model, audio, .. } => {
+            (model.as_path(), audio.as_path())
+        }
+        Mode::Probe { .. } => unreachable!("probe returned above"),
+    };
     let (model_digest, model_bytes) =
         inputs::digest_file(model_path).map_err(|message| Failure {
             stage: "inputs",
@@ -236,7 +294,31 @@ fn observe(args: &Args, record: &mut Map<String, Value>) -> Result<(), Failure> 
     // Everything a comparison must hold constant, in one field. Two records are
     // comparable exactly when their keys match; the posture is deliberately
     // excluded, because differing postures is the entire point.
-    let comparison_key = comparison_key(&model_digest, &audio.digest, args);
+    let stream_model_input = if let Mode::Stream { stream_model, .. } = &args.mode {
+        let (digest, bytes) = inputs::digest_file(stream_model).map_err(|message| Failure {
+            stage: "inputs",
+            message,
+        })?;
+        record.insert(
+            "streaming_model".into(),
+            json!({
+                "path": stream_model.display().to_string(),
+                "file_bytes": bytes,
+                "digest64": digest,
+            }),
+        );
+        Some((stream_model.as_path(), digest))
+    } else {
+        None
+    };
+    let comparison_key = comparison_key(
+        &model_digest,
+        stream_model_input
+            .as_ref()
+            .map(|(_, digest)| digest.as_str()),
+        &audio.digest,
+        args,
+    );
     record.insert("comparison_key".into(), json!(comparison_key));
     if let Some(expected) = &args.expect_key {
         if expected != &comparison_key {
@@ -244,14 +326,35 @@ fn observe(args: &Args, record: &mut Map<String, Value>) -> Result<(), Failure> 
                 stage: "comparison",
                 message: format!(
                     "comparison key {comparison_key} does not match the required \
-                     {expected}; the model, clip, backend, thread count, or run \
-                     count differs from the rest of this matrix"
+                     {expected}; a model, clip, backend, thread count, run count, \
+                     streaming chunk size, or stream duration differs from the \
+                     rest of this matrix"
                 ),
             });
         }
     }
 
-    record.insert("measurement".into(), measure(model_path, &audio, args)?);
+    let measurement = match &args.mode {
+        Mode::Measure { .. } => measure(model_path, &audio, args)?,
+        Mode::Stream { .. } => {
+            let (stream_model_path, _) =
+                stream_model_input.expect("stream mode always digests its model");
+            stream_mode::measure(
+                model_path,
+                stream_model_path,
+                &audio,
+                &stream_mode::Options {
+                    backend: args.backend,
+                    threads: args.threads,
+                    runs: args.runs,
+                    chunk_ms: args.chunk_ms,
+                    stream_minutes: args.stream_minutes,
+                },
+            )?
+        }
+        Mode::Probe { .. } => unreachable!("probe returned above"),
+    };
+    record.insert("measurement".into(), measurement);
     Ok(())
 }
 
@@ -339,7 +442,7 @@ fn measure(model_path: &Path, audio: &inputs::Audio, args: &Args) -> Result<Valu
 }
 
 /// Median of an odd or even sample, `None` when there were no warm runs.
-fn median(values: &[f64]) -> Option<f64> {
+pub(crate) fn median(values: &[f64]) -> Option<f64> {
     if values.is_empty() {
         return None;
     }
@@ -360,15 +463,30 @@ fn mean(values: &[f64]) -> Option<f64> {
     Some(values.iter().sum::<f64>() / values.len() as f64)
 }
 
-fn comparison_key(model_digest: &str, audio_digest: &str, args: &Args) -> String {
+fn comparison_key(
+    model_digest: &str,
+    stream_model_digest: Option<&str>,
+    audio_digest: &str,
+    args: &Args,
+) -> String {
     let mut digest = inputs::Digest::new();
-    for part in [
+    let runs = args.runs.to_string();
+    let threads = args.threads.to_string();
+    let chunk_ms = args.chunk_ms.to_string();
+    let stream_minutes = args.stream_minutes.to_string();
+    let mut parts = vec![
         model_digest,
         audio_digest,
         posture::backend_name(args.backend),
-        &args.threads.to_string(),
-        &args.runs.to_string(),
-    ] {
+        &threads,
+        &runs,
+    ];
+    if let Some(stream_model_digest) = stream_model_digest {
+        parts.push(stream_model_digest);
+        parts.push(&chunk_ms);
+        parts.push(&stream_minutes);
+    }
+    for part in parts {
         digest.write(part.as_bytes());
         digest.write(b"\0");
     }
@@ -401,17 +519,22 @@ fn parse_args(raw: &[String]) -> Result<Args, String> {
     let mut args = Args {
         // Replaced below once the flags have been read; a bare invocation is
         // already handled as a usage error by the caller.
-        mode: Mode::Probe,
+        mode: Mode::Probe { model: None },
         runs: 5,
         backend: Backend::Auto,
         threads: 0,
         label: None,
         json: None,
         expect_key: None,
+        chunk_ms: 320,
+        stream_minutes: 2.0,
     };
     let mut model = None;
     let mut audio = None;
+    let mut stream_model = None;
     let mut probe = false;
+    let mut chunk_ms_set = false;
+    let mut stream_minutes_set = false;
 
     let mut index = 0;
     while index < raw.len() {
@@ -432,6 +555,7 @@ fn parse_args(raw: &[String]) -> Result<Args, String> {
             }
             "--model" => model = Some(PathBuf::from(value()?)),
             "--audio" => audio = Some(PathBuf::from(value()?)),
+            "--stream-model" => stream_model = Some(PathBuf::from(value()?)),
             "--label" => args.label = Some(value()?.to_string()),
             "--json" => args.json = Some(PathBuf::from(value()?)),
             "--assert-comparison-key" => args.expect_key = Some(value()?.to_string()),
@@ -448,6 +572,26 @@ fn parse_args(raw: &[String]) -> Result<Args, String> {
                     .parse()
                     .map_err(|_| format!("--threads expects an integer, got {text:?}"))?;
             }
+            "--chunk-ms" => {
+                let text = value()?;
+                args.chunk_ms = text
+                    .parse()
+                    .map_err(|_| format!("--chunk-ms expects a positive integer, got {text:?}"))?;
+                if args.chunk_ms == 0 {
+                    return Err("--chunk-ms must be greater than zero".into());
+                }
+                chunk_ms_set = true;
+            }
+            "--stream-minutes" => {
+                let text = value()?;
+                args.stream_minutes = text.parse().map_err(|_| {
+                    format!("--stream-minutes expects a positive number, got {text:?}")
+                })?;
+                if !args.stream_minutes.is_finite() || args.stream_minutes <= 0.0 {
+                    return Err("--stream-minutes must be finite and greater than zero".into());
+                }
+                stream_minutes_set = true;
+            }
             other => return Err(format!("unknown argument {other:?}")),
         }
         index += 2;
@@ -455,12 +599,26 @@ fn parse_args(raw: &[String]) -> Result<Args, String> {
 
     // The one place a missing input can be reported, so nothing downstream has
     // to re-check it.
-    args.mode = match (probe, model, audio) {
-        (true, _, _) => Mode::Probe,
-        (false, Some(model), Some(audio)) => Mode::Measure { model, audio },
-        (false, _, _) => {
+    args.mode = match (probe, model, stream_model, audio) {
+        (true, model, _, _) => Mode::Probe { model },
+        (false, Some(model), Some(stream_model), Some(audio)) => Mode::Stream {
+            model,
+            stream_model,
+            audio,
+        },
+        (false, Some(model), None, Some(audio)) => Mode::Measure { model, audio },
+        (false, _, _, _) => {
             return Err("--model and --audio are both required unless --probe is passed".into())
         }
     };
+    if chunk_ms_set && !matches!(args.mode, Mode::Stream { .. }) {
+        return Err("--chunk-ms is only valid with --stream-model".into());
+    }
+    if stream_minutes_set && !matches!(args.mode, Mode::Stream { .. }) {
+        return Err("--stream-minutes is only valid with --stream-model".into());
+    }
+    if matches!(args.mode, Mode::Stream { .. }) && args.runs == 0 {
+        return Err("--runs must be greater than zero in streaming mode".into());
+    }
     Ok(args)
 }

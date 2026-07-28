@@ -122,10 +122,6 @@ const DEVICE_DEFINITIONS = {
 		type.enumerated(...BITRATES_KBPS),
 		DEFAULT_BITRATE_KBPS,
 	),
-	'recording.cpal.sampleRate': defineEntry(
-		type("'16000' | '44100' | '48000'"),
-		'16000',
-	),
 
 	// Local transcription model selection and unload policy are deliberately
 	// absent: the host owns the one active local model and its lifecycle, and
@@ -208,9 +204,11 @@ export const deviceConfig = createPersistedMap({
 // `transcription.local.selectedModel` (and before that `transcription.*.modelPath`),
 // and the unload policy under `transcription.localModelUnloadPolicy`; both are now
 // host-owned (ADR-0180) and their old localStorage entries are simply ignored. The
-// model files themselves are untouched in the shared Hugging Face cache, so
-// recovery is one choice in Epicenter Home rather than a re-download. Global
-// shortcuts once stored accelerator strings under the same key: a legacy value
-// fails the `globalBinding` schema on read and falls back to the default (see
+// native recording rate also moved down to the host under ADR-0184, so the retired
+// `recording.cpal.sampleRate` entry is ignored rather than migrated. The model
+// files themselves are untouched in the shared Hugging Face cache, so recovery is
+// one choice in Epicenter Home rather than a re-download. Global shortcuts once
+// stored accelerator strings under the same key: a legacy value fails the
+// `globalBinding` schema on read and falls back to the default (see
 // `createPersistedMap`). Either way upgrading users get the new defaults, and we
 // carry no parser for a format nothing writes anymore.

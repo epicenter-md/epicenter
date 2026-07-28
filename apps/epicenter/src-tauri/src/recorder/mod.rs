@@ -1,12 +1,12 @@
 pub mod blob;
 pub mod commands;
+pub mod ended;
 pub mod error;
 pub mod recorder;
 
-pub use blob::{read_blob_samples, write_blob};
-pub use commands::{
-    cancel_recording, close_recording_session, enumerate_recording_devices,
-    get_current_recording_id, init_recording_session, start_recording, stop_recording,
-};
-pub use error::RecorderError;
-pub use recorder::Recorder;
+/// The one name reached through this module rather than its own: the
+/// transcription and upload paths read a finalized blob without otherwise
+/// knowing the recorder exists. Everything else (the commands, `Recorder`,
+/// `RecorderError`) is imported from the module that defines it, so re-exporting
+/// it here would only be a second way to spell the same import.
+pub use blob::read_blob_samples;
