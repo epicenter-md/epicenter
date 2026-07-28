@@ -227,8 +227,15 @@ function createCpalRecorder(): RecorderService<CpalRecordingParams> {
 				),
 
 			onEnded: (handler) => {
+				// Scoped to this subscription, not to the recording. Two of the three
+				// ways an ending reaches `announce` are asynchronous (a microtask, a
+				// `current` round trip), so an unsubscribe that lands in between must
+				// stop the handler from being called at all: a caller that let go has
+				// often already released the recording, and calling it anyway would
+				// have it stop something it no longer holds.
+				let subscribed = true;
 				const announce = (reason: RecordingEndedReason) => {
-					if (announcedEnded) return;
+					if (!subscribed || announcedEnded) return;
 					announcedEnded = true;
 					// The capture is over, so the level meter has nothing left to
 					// report and no further ending can arrive. The recording is
@@ -242,7 +249,9 @@ function createCpalRecorder(): RecorderService<CpalRecordingParams> {
 				// microtask so the caller has finished wiring up before it hears it.
 				if (endedReason !== null) {
 					queueMicrotask(() => announce(endedReason));
-					return () => {};
+					return () => {
+						subscribed = false;
+					};
 				}
 
 				const unlisten = events.recordingEndedEvent.listen((event) => {
@@ -265,13 +274,16 @@ function createCpalRecorder(): RecorderService<CpalRecordingParams> {
 				// once the listener is live covers exactly the gap the listener
 				// could not. Nothing is queued, acknowledged, or replayed.
 				void unlisten.then(async () => {
-					if (announcedEnded) return;
+					if (!subscribed || announcedEnded) return;
 					const { data: live } = await commands.currentRecording();
 					if (live?.audioBlobId !== audioBlobId) return;
 					if (live.endedReason !== null) announce(live.endedReason);
 				});
 
-				return untrack;
+				return () => {
+					subscribed = false;
+					untrack();
+				};
 			},
 		};
 	}
