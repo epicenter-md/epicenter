@@ -585,7 +585,6 @@ pub fn run() {
             open_forwarded_deep_links(app, &args);
         }))
         .plugin(log_plugin)
-        .plugin(tauri_plugin_macos_permissions::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
@@ -1729,6 +1728,41 @@ mod tests {
                     .all(|permission| permission["identifier"] != "http:default"),
                 "trusted-app HTTP belongs to the shared app capability, not Whispering native"
             );
+        }
+    }
+
+    /// The `tauri-plugin-macos-permissions` plugin is gone from this build:
+    /// `command.rs` owns the two OS permission capabilities Epicenter exposes,
+    /// through AVFoundation and the Accessibility API directly.
+    ///
+    /// Its `macos-permissions:default` grant handed Whispering twelve unrelated
+    /// plugin commands (screen recording, input monitoring, full disk access,
+    /// camera) to reach the two it used. A grant naming a plugin this build does
+    /// not ship is a silent no-op, so nothing would fail if it were pasted back;
+    /// what it would do is describe an authority the app does not have. Both
+    /// Whispering surfaces are checked, not just the one that had it.
+    #[test]
+    fn no_whispering_capability_grants_the_deleted_permissions_plugin() {
+        for encoded in [
+            include_str!("../capabilities/trusted-whispering-native-development.json"),
+            include_str!("../capabilities/trusted-whispering-native-production.json"),
+            include_str!("../capabilities/trusted-whispering-overlay-development.json"),
+            include_str!("../capabilities/trusted-whispering-overlay-production.json"),
+        ] {
+            let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
+            for permission in capability["permissions"].as_array().unwrap() {
+                // Permissions are either a bare identifier string or an object
+                // with a scope; both spell the plugin the same way.
+                let identifier = permission
+                    .as_str()
+                    .or_else(|| permission["identifier"].as_str())
+                    .unwrap_or_default();
+                assert!(
+                    !identifier.starts_with("macos-permissions:"),
+                    "{} grants a plugin this build no longer ships",
+                    capability["identifier"].as_str().unwrap()
+                );
+            }
         }
     }
 

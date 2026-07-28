@@ -45,46 +45,33 @@ function toDeviceAcquisition(
 			};
 }
 
-async function getMicrophonePermissionStatus(): Promise<
-	Result<boolean, RecorderError>
-> {
-	const { data: granted, error } =
-		await tauriOnly.permissions.microphone.check();
-	if (error) {
-		return RecorderError.MicrophonePermissionDenied({ cause: error });
-	}
-	return Ok(granted);
-}
-
+/**
+ * Read the OS microphone gate without disturbing it. For listing devices, where
+ * a system prompt would be an ambush: the user asked to see a picker, not to
+ * decide about their microphone.
+ */
 async function requireMicrophonePermission(): Promise<
 	Result<void, RecorderError>
 > {
-	const { data: granted, error } = await getMicrophonePermissionStatus();
-	if (error) return Err(error);
-	if (granted) return Ok(undefined);
-
-	return RecorderError.MicrophonePermissionDenied();
+	const { data: usable, error } =
+		await tauriOnly.permissions.microphone.check();
+	if (error) return RecorderError.MicrophonePermissionDenied({ cause: error });
+	if (!usable) return RecorderError.MicrophonePermissionDenied();
+	return Ok(undefined);
 }
 
+/**
+ * Ask for the microphone, prompting if the user has never been asked. One call:
+ * the host short-circuits when there is nothing to elicit and otherwise waits
+ * out the system prompt, so the status it answers with is the one in force.
+ */
 async function requestMicrophonePermission(): Promise<
 	Result<void, RecorderError>
 > {
-	const { data: alreadyGranted, error: checkError } =
-		await getMicrophonePermissionStatus();
-	if (checkError) return Err(checkError);
-	if (alreadyGranted) return Ok(undefined);
-
-	const { error: requestError } =
+	const { data: usable, error } =
 		await tauriOnly.permissions.microphone.request();
-	if (requestError) {
-		return RecorderError.MicrophonePermissionDenied({ cause: requestError });
-	}
-
-	const { data: grantedAfterRequest, error: recheckError } =
-		await getMicrophonePermissionStatus();
-	if (recheckError) return Err(recheckError);
-	if (!grantedAfterRequest) return RecorderError.MicrophonePermissionDenied();
-
+	if (error) return RecorderError.MicrophonePermissionDenied({ cause: error });
+	if (!usable) return RecorderError.MicrophonePermissionDenied();
 	return Ok(undefined);
 }
 

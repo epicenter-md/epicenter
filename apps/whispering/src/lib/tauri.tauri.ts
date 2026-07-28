@@ -55,6 +55,7 @@ import { log } from '$lib/report';
 import type {
 	DictationCapability,
 	GlobalShortcutRegistration,
+	MicrophonePermission,
 } from '$lib/tauri/commands';
 import { commands, events } from '$lib/tauri/commands';
 
@@ -128,12 +129,26 @@ const PermissionsError = defineErrors({
 	}),
 });
 
+/**
+ * Whether the OS microphone gate lets capture proceed.
+ *
+ * `granted` is the yes. `unknown` is also a yes: it means the platform has no
+ * such gate or no readable consent entry, and a reading we cannot make must not
+ * newly block a setup that was recording fine, so the recorder's stream-open
+ * fallback stays the classifier of a real denial. `denied` and `not_determined`
+ * are both no, and the difference between them is only what `request` can do
+ * about it, which is Rust's business.
+ */
+function isMicrophoneUsable(status: MicrophonePermission): boolean {
+	return status === 'granted' || status === 'unknown';
+}
+
 const permissions = {
 	accessibility: {
-		// Rust owns the platform dispatch (macOS prompts via the permissions
-		// plugin, elsewhere a no-op), so the FE just calls the command. The prompt
-		// cannot grant in place; the live grant is observed by the Rust tap
-		// supervisor, so the Result here only reports whether the nudge fired.
+		// Rust owns the platform dispatch (macOS raises the Accessibility prompt,
+		// elsewhere a no-op), so the FE just calls the command. The prompt cannot
+		// grant in place; the live grant is observed by the Rust tap supervisor,
+		// so the Result here only reports whether the nudge fired.
 		async request() {
 			return tryAsync({
 				try: () => commands.requestAccessibilityPermission(),
@@ -152,29 +167,32 @@ const permissions = {
 	},
 
 	microphone: {
-		// One transport for every platform: Rust owns "what does the OS say about
-		// mic access" (macOS via the permissions plugin, Windows via the consent
-		// store, `unknown` elsewhere). Only an explicit `denied` gates; `granted`
-		// and `unknown` both read as available, so a missing consent entry never
-		// newly blocks a setup that was recording fine, and the recorder's
-		// stream-open fallback still classifies any real denial.
+		// Rust owns "what does the OS say about mic access" (macOS via
+		// AVFoundation, Windows via the consent store, `unknown` elsewhere) and
+		// answers both calls with the same four-state status. This adapter is
+		// where that status stops: the app asks one question, "can I record", so
+		// nothing above here has to know which OS state produced the answer.
 		async check() {
 			return tryAsync({
 				try: async () =>
-					(await commands.getMicrophonePermission()) !== 'denied',
+					isMicrophoneUsable(await commands.getMicrophonePermission()),
 				catch: (error) => PermissionsError.CheckMicrophone({ cause: error }),
 			});
 		},
 
-		// Elicit a grant the way the platform allows (macOS prompt, Windows privacy
-		// page when denied); the caller re-checks afterward. No platform can grant
-		// in place, so this only reports whether the nudge itself succeeded.
+		// Ask once. macOS raises the system prompt when nobody has been asked yet
+		// and waits for the user's answer; every other platform and every settled
+		// status has nothing to elicit, so Rust returns the status that already
+		// holds (Windows also opening its privacy page on the way). Either way the
+		// returned status is the one in force after this call, so callers neither
+		// pre-check nor re-check.
 		async request() {
-			const { error } = await commands.requestMicrophonePermission();
+			const { data: status, error } =
+				await commands.requestMicrophonePermission();
 			if (error !== null) {
 				return PermissionsError.RequestMicrophone({ cause: error });
 			}
-			return Ok(undefined);
+			return Ok(isMicrophoneUsable(status));
 		},
 	},
 };

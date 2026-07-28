@@ -48,7 +48,6 @@
 		"dialog:allow-save",
 		"deep-link:default",
 		"log:default",
-		"macos-permissions:default",
 		"notification:default",
 		"opener:allow-default-urls",
 		"opener:allow-open-url",
