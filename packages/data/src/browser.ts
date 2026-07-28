@@ -24,7 +24,6 @@ import {
 	type ValueDefinitions,
 	type ValueFor,
 } from './definitions.js';
-import { isEpicenterDesktopSurface, openDesktopEpicenter } from './desktop.js';
 import {
 	type DocumentSyncIssue,
 	type RowDocument,
@@ -96,7 +95,6 @@ export async function openBrowserEpicenter({
 	createWorker,
 	log = createLogger('data/browser'),
 }: OpenBrowserEpicenterOptions = {}): Promise<Epicenter> {
-	if (isEpicenterDesktopSurface()) return openDesktopEpicenter();
 	const worker = (createWorker ?? defaultDedicatedWorker)();
 	const port = worker.port;
 	const pending = new Map<number, PendingRequest>();

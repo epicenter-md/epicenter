@@ -49,37 +49,14 @@ export type OpenDesktopEpicenterOptions = {
 const remoteDocumentOrigin = Object.freeze({ kind: 'desktop-document-remote' });
 
 /**
- * The `name` of the meta element the desktop host stamps onto every surface
- * page it serves. Exported so the host and this detector agree by construction
- * rather than by two string literals that drift.
- */
-export const DESKTOP_SURFACE_MARKER_NAME = 'epicenter-surface';
-
-/**
- * Whether this document is a surface served by the Epicenter desktop host, and
- * therefore reads and writes the host-owned replica instead of opening its own.
+ * Open one trusted WebView proxy to the Bun-owned desktop Epicenter.
  *
- * This asks for a marker that exists only to answer this question. An earlier
- * version inferred the answer from the presence of the auth bootstrap element,
- * which a surface parses and then removes because it carries an identity
- * snapshot. Storage routing silently became a race against unrelated auth
- * hygiene: whichever module ran second saw a different DOM and reached a
- * different conclusion. A marker nobody consumes cannot lose that race.
+ * A surface reaches this by being compiled for the desktop host, never by
+ * detecting one. The build that the host serves is selected by the `tauri`
+ * resolve condition, so the module that names this opener is already the answer
+ * to "is this a desktop surface"; asking the DOM the same question at runtime
+ * would only be a second, weaker copy of a fact the bundler already fixed.
  */
-export function isEpicenterDesktopSurface(): boolean {
-	const document = (
-		globalThis as {
-			document?: { querySelector(selectors: string): unknown };
-		}
-	).document;
-	if (document === undefined) return false;
-	const marker = document.querySelector(
-		`meta[name="${DESKTOP_SURFACE_MARKER_NAME}"]`,
-	);
-	return marker !== null && marker !== undefined;
-}
-
-/** Open one trusted WebView proxy to the Bun-owned desktop Epicenter. */
 export async function openDesktopEpicenter({
 	baseUrl = defaultOrigin(),
 	fetch: fetchInput = globalThis.fetch,
