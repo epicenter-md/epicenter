@@ -21,10 +21,17 @@ skill wins.
 
 ## Keep Editorial Judgment Human
 
-When revising prose the user owns, do not silently apply an agent-originated
-wording or cadence judgment. A direct user-specified replacement or a purely
-mechanical correction may proceed. For every new cut, replacement, reordering,
-or rhythmic change to the expression:
+Do not silently apply an agent-originated authorship move while drafting or
+revising prose the user owns. Authorship moves include new reactions, imagined
+reader objections, analogies, metaphors, dramatic reversals, aphorisms, and
+takeaways. A direct user-specified replacement, faithful expression of supplied
+material, or purely mechanical correction may proceed.
+
+When the destination carries a temporary `Draft Context`, record worthwhile
+editorial considerations under its `Author Notes` rather than silently
+installing proposed prose. Let those notes accumulate with the work instead of
+forcing them into a fixed up-front checklist. Then handle each selected
+wording, cadence, content, or structural candidate one at a time:
 
 1. Read the complete piece and carry the larger ear pass privately.
 2. Surface exactly one consequential candidate with the current wording, the
@@ -87,9 +94,12 @@ into a private note.
 ## Connect Ideas Without Headers
 
 Follow the structure chosen by the destination. When two ideas remain in one
-section, connect them with a bridge sentence. When the destination gives them
-separate sections, use a heading that names the real change. Do not create a
-new section merely to make the prose look organized.
+section, connect them only when the source or structure already supplies the
+relationship. Keep the connection direct and minimal; do not invent an
+objection, contrast, reaction, or claim merely to create a polished bridge.
+When the destination gives the ideas separate sections, use a heading that
+names the real change. Do not create a new section merely to make the prose look
+organized.
 
 ## Punctuation
 
@@ -110,12 +120,20 @@ tool, not the goal.
 
 1. Mark where the rhythm catches, the language becomes generic, or attention
    shifts away from what the writer cared about.
-2. Route agent-originated expression edits through the human decision loop
-   above without changing the thought's strength or emotional proportions.
-3. Remove recursive hedges and explanations of why the prose is hedging.
-4. When a problem requires adding, removing, reordering, promoting, or demoting
+2. Mark any sentence whose reaction, objection, analogy, or conclusion did not
+   come from the writer.
+3. Remove unsupported connective scaffolding rather than polishing it.
+4. Route worthwhile agent-originated expression edits through the human
+   decision loop above without changing the thought's strength or emotional
+   proportions.
+5. Remove recursive hedges and explanations of why the prose is hedging.
+6. When a problem requires adding, removing, reordering, promoting, or demoting
    material, return it to the destination skill instead of fixing it here.
-5. Stop when the writing sounds natural and specific, not merely smooth.
+7. Stop when the writing sounds natural and specific, not merely smooth.
+
+When the destination writing skill invokes its final authorship pass, use the
+complete transcript and author notes to catch lost voice before that skill
+removes the entire temporary context bundle.
 
 The final test is simple: did the voice make the intended thought easier to hear
 without changing what survived or how much it mattered?
