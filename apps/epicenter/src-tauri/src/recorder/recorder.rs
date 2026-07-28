@@ -835,6 +835,8 @@ fn run_capture(
         // when audio frames are arriving back-to-back.
         match cmd_rx.try_recv() {
             Ok(RecorderCmd::Stop(reply)) => {
+                drain_queued(&mut capture, &sample_rx);
+                report_dropped_chunks(dropped_chunks, audio_blob_id);
                 let _ = reply.send(capture.finish());
                 return CaptureOutcome::Resolved;
             }
@@ -844,7 +846,11 @@ fn run_capture(
             }
             // Capture is over but the recording is not: hand the staged file up
             // so it can wait for the owner to stop or cancel it.
-            Ok(RecorderCmd::EndCapture) => return CaptureOutcome::Unclaimed(capture),
+            Ok(RecorderCmd::EndCapture) => {
+                drain_queued(&mut capture, &sample_rx);
+                report_dropped_chunks(dropped_chunks, audio_blob_id);
+                return CaptureOutcome::Unclaimed(capture);
+            }
             // The command sender is gone without a stop or a cancel, so nobody
             // is left to claim this recording.
             Err(mpsc::TryRecvError::Disconnected) => {
@@ -854,17 +860,11 @@ fn run_capture(
             Err(mpsc::TryRecvError::Empty) => {}
         }
 
-        // Dropped chunks mean the disk stalled for longer than the queue can
-        // absorb, which is worth saying out loud but not worth saying fifty
-        // times a second. Swapped only when it is about to be reported, so no
-        // count is lost between reports.
+        // Dropped chunks are worth saying out loud but not worth saying fifty
+        // times a second, so they are reported on an interval, and once more
+        // before this returns so a drop just before a stop is never silent.
         if last_drop_report.elapsed() >= DROP_REPORT_INTERVAL {
-            let dropped = dropped_chunks.swap(0, Ordering::Relaxed);
-            if dropped > 0 {
-                warn!(
-                    "Recording {audio_blob_id} dropped {dropped} audio chunks: the staged writer is not keeping up with the microphone"
-                );
-            }
+            report_dropped_chunks(dropped_chunks, audio_blob_id);
             last_drop_report = Instant::now();
         }
 
@@ -918,6 +918,38 @@ fn run_capture(
             // reachable: keeping the recording claimable is the safe direction.
             Err(RecvTimeoutError::Disconnected) => return CaptureOutcome::Unclaimed(capture),
         }
+    }
+}
+
+/// Write everything the callback has already handed over.
+///
+/// The command channel is checked before the sample channel, so a stop can
+/// arrive with chunks still queued behind it. Those chunks are audio the
+/// microphone captured before the person asked to stop; finalizing without them
+/// would silently truncate the tail of every recording that stopped during a
+/// backlog. Anything the microphone produces *after* this is genuinely after the
+/// stop, and is not the recording.
+///
+/// A write failure here is not fatal to the stop: it means the disk is gone, and
+/// publishing the prefix that reached it beats failing the whole recording.
+fn drain_queued(capture: &mut StagedCapture, sample_rx: &mpsc::Receiver<Vec<i16>>) {
+    while let Ok(samples) = sample_rx.try_recv() {
+        if let Err(error) = capture.write(&samples) {
+            warn!("Could not write the last queued audio, publishing without it: {error}");
+            return;
+        }
+    }
+}
+
+/// Report and reset the chunks the callback had to drop, if any.
+///
+/// Swapped rather than read, so no count is lost between reports.
+fn report_dropped_chunks(dropped_chunks: &AtomicU32, audio_blob_id: &str) {
+    let dropped = dropped_chunks.swap(0, Ordering::Relaxed);
+    if dropped > 0 {
+        warn!(
+            "Recording {audio_blob_id} dropped {dropped} audio chunks: the staged writer is not keeping up with the microphone"
+        );
     }
 }
 
@@ -1969,7 +2001,7 @@ mod tests {
     /// thing being checked.
     #[test]
     fn a_capture_refuses_to_exceed_what_a_wav_can_describe() {
-        let limit = (MAX_WAV_DATA_BYTES / BYTES_PER_SAMPLE) as u32;
+        let limit = MAX_WAV_DATA_BYTES / BYTES_PER_SAMPLE;
 
         assert!(!would_exceed_wav_limit(0, limit as usize));
         assert!(would_exceed_wav_limit(0, limit as usize + 1));
@@ -1981,6 +2013,34 @@ mod tests {
         // Over twelve hours of mono capture, so this caps a runaway recording
         // rather than interrupting a meeting.
         assert!(limit / TEST_RATE > 12 * 3_600);
+    }
+
+    /// The tail of every recording that stops during a backlog. The command
+    /// channel has priority, so a stop can arrive with chunks the microphone
+    /// already handed over still queued behind it. Finalizing without them
+    /// truncates real speech, and because `try_send` accepted those chunks the
+    /// drop counter would never have said so.
+    #[test]
+    fn a_stop_writes_the_chunks_already_queued_behind_it() {
+        let root = staging_root();
+        let mut capture = capture_holding(&root, "blob_aaaaaaaaaaaaaaaaaaaaa", &[]);
+        let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<i16>>(CAPTURE_QUEUE_CHUNKS);
+
+        // Half a second the callback delivered but the writer never reached.
+        let queued = tone(TEST_RATE, 1);
+        for chunk in queued.chunks(512) {
+            sample_tx
+                .try_send(chunk.to_vec())
+                .expect("room in the queue");
+        }
+
+        drain_queued(&mut capture, &sample_rx);
+
+        let stopped = capture.finish().expect("finalize");
+        assert_eq!(
+            stopped.duration_ms, 1_000,
+            "queued audio must reach the file, not be dropped with the receiver"
+        );
     }
 
     /// Startup sweeps staging and only staging. A partial capture left by a dead

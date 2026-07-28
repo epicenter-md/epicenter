@@ -51,16 +51,23 @@ pub struct StoppedRecording {
     pub byte_length: u32,
 }
 
-/// Refresh the host's recording indicator from the recorder's own state, so the
-/// tray can never disagree with whether a microphone is open.
+/// Set the host's recording indicator to a state already read from the recorder.
+///
+/// **Never call this while holding the recorder lock.** It takes the flag rather
+/// than the recorder so that is hard to get wrong. `TrayIcon::set_icon` posts to
+/// the main thread and blocks until the main thread runs it
+/// (`run_item_main_thread!` in tauri 2.11), and the main thread takes this same
+/// mutex whenever a window is destroyed. A caller holding the lock across the
+/// tray update deadlocks the pair the first time they interleave: the background
+/// thread waits for a main thread that is waiting for its lock.
 ///
 /// There is deliberately no companion state event. A window learns about every
 /// ending it asked for from its own `stop`/`cancel` resolving, and the one
 /// ending nobody asked for gets a targeted `RecordingEndedEvent` instead. A
 /// broadcast of recorder state would be actively wrong: every other window
 /// would watch a recording it does not own go idle and tear down its own.
-fn refresh_recording_indicator(app: &AppHandle, recorder: &Recorder) {
-    crate::shell::set_tray_recording_state(app, recorder.is_capturing());
+fn set_recording_indicator(app: &AppHandle, capturing: bool) {
+    crate::shell::set_tray_recording_state(app, capturing);
 }
 
 fn lock<'a>(
@@ -107,15 +114,18 @@ pub async fn start_recording(
         "Starting recording: id={audio_blob_id}, owner={owner_label}, device={device_identifier:?}, sample_rate={sample_rate:?}",
     );
 
-    let mut recorder = lock(&recorder)?;
-    let started = recorder.start(
-        device_identifier.as_deref(),
-        audio_blob_id,
-        owner_label,
-        sample_rate,
-        app_handle.clone(),
-    )?;
-    refresh_recording_indicator(&app_handle, &recorder);
+    let (started, capturing) = {
+        let mut recorder = lock(&recorder)?;
+        let started = recorder.start(
+            device_identifier.as_deref(),
+            audio_blob_id,
+            owner_label,
+            sample_rate,
+            app_handle.clone(),
+        )?;
+        (started, recorder.is_capturing())
+    };
+    set_recording_indicator(&app_handle, capturing);
     Ok(started)
 }
 
@@ -136,20 +146,21 @@ pub async fn stop_recording(
     window: WebviewWindow,
 ) -> Result<StoppedRecording> {
     info!("Stopping recording {audio_blob_id}");
-    let stopping = {
+    let (stopping, capturing) = {
         let mut recorder = lock(&recorder)?;
         // `stop` takes the recording out of the slot without finishing it, so
         // the lock is released before the finalize and the fsync ladder below.
         // Holding the one host recorder across those syncs would block every
         // other window's start for no benefit.
         let stopping = recorder.stop(&audio_blob_id, window.label());
-        // Refreshed before the result is propagated, not after, because the
-        // two disagree. An ownership refusal leaves the recording running,
-        // while a successful take ends it. Reading the recorder rather than the
-        // result gets both right.
-        refresh_recording_indicator(&app_handle, &recorder);
-        stopping?
+        // Read before the result is propagated, not after, because the two
+        // disagree. An ownership refusal leaves the recording running, while a
+        // successful take ends it. Reading the recorder rather than the result
+        // gets both right.
+        (stopping, recorder.is_capturing())
     };
+    set_recording_indicator(&app_handle, capturing);
+    let stopping = stopping?;
 
     // A failure here loses the recording. There is nothing to retry against
     // (the staged file is deleted with the error and the slot is already free),
@@ -182,9 +193,12 @@ pub async fn cancel_recording(
     window: WebviewWindow,
 ) -> Result<()> {
     info!("Cancelling recording {audio_blob_id}");
-    let mut recorder = lock(&recorder)?;
-    let cancelled = recorder.cancel(&audio_blob_id, window.label());
-    refresh_recording_indicator(&app_handle, &recorder);
+    let (cancelled, capturing) = {
+        let mut recorder = lock(&recorder)?;
+        let cancelled = recorder.cancel(&audio_blob_id, window.label());
+        (cancelled, recorder.is_capturing())
+    };
+    set_recording_indicator(&app_handle, capturing);
     cancelled
 }
 
@@ -234,17 +248,21 @@ pub fn end_recording_capture(app: &AppHandle, audio_blob_id: &str, reason: Ended
     let Some(recorder) = app.try_state::<Mutex<Recorder>>() else {
         return;
     };
-    let Ok(mut recorder) = recorder.lock() else {
-        return;
-    };
-    // A no-op when the id is not the held recording or its capture already
-    // ended: the stream error may have arrived after the owner started another
-    // recording, and cpal may report the same failure more than once.
-    let Some(owner_label) = recorder.end_capture(audio_blob_id, reason) else {
-        return;
+    let (owner_label, capturing) = {
+        let Ok(mut recorder) = recorder.lock() else {
+            return;
+        };
+        // A no-op when the id is not the held recording or its capture already
+        // ended: the stream error may have arrived after the owner started
+        // another recording, and cpal may report the same failure more than
+        // once.
+        let Some(owner_label) = recorder.end_capture(audio_blob_id, reason) else {
+            return;
+        };
+        (owner_label, recorder.is_capturing())
     };
     warn!("Recording {audio_blob_id} lost its capture ({reason:?}); owner={owner_label}");
-    refresh_recording_indicator(app, &recorder);
+    set_recording_indicator(app, capturing);
     // Dropped rather than propagated: the capture is already over and there is
     // nothing to repair here. The owner discovers the same ended recording on
     // its next `current_recording` either way, which is what makes this event
@@ -281,11 +299,14 @@ pub fn cancel_recording_owned_by(app: &AppHandle, owner_label: &str) {
     let Some(recorder) = app.try_state::<Mutex<Recorder>>() else {
         return;
     };
-    let Ok(mut recorder) = recorder.lock() else {
-        return;
+    let capturing = {
+        let Ok(mut recorder) = recorder.lock() else {
+            return;
+        };
+        if let Some(audio_blob_id) = recorder.cancel_owned_by(owner_label) {
+            info!("Window '{owner_label}' was destroyed; cancelled recording {audio_blob_id}");
+        }
+        recorder.is_capturing()
     };
-    if let Some(audio_blob_id) = recorder.cancel_owned_by(owner_label) {
-        info!("Window '{owner_label}' was destroyed; cancelled recording {audio_blob_id}");
-    }
-    refresh_recording_indicator(app, &recorder);
+    set_recording_indicator(app, capturing);
 }

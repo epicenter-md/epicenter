@@ -288,8 +288,18 @@ impl StagedBlob {
 /// naming it, because any of those would make a recording surviving a host crash
 /// a promise the host would then have to keep.
 ///
-/// Safe to run unconditionally: Epicenter is single-instance, so no other
-/// process of this app owns a live staging directory under `.staging/rust`.
+/// Safe to run because `.staging/rust` has exactly one writer and Epicenter is
+/// single-instance, so the only process that could own a live staging directory
+/// here is this one, which has not started a recording yet.
+///
+/// That rests on `tauri_plugin_single_instance`, whose macOS socket handshake is
+/// racy enough that two processes launched in the same instant can both survive
+/// it. The window it opens is not reachable: a surviving second process runs
+/// this sweep during its own startup, milliseconds after the first, and the
+/// first cannot have staged a recording in that time because staging begins at
+/// `start_recording`, which needs a person. Probing process liveness through the
+/// pid embedded in each staged directory name would close it, and is not worth
+/// the platform-specific code for a race that cannot lose audio.
 pub fn delete_stale_staging(app: &AppHandle) {
     let Ok(root) = blobs_directory(app) else {
         return;
