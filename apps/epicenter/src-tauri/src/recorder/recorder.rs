@@ -950,6 +950,14 @@ fn run_capture<S>(
     }
 }
 
+/// How long the final drain will wait for a capture stream to finish closing.
+///
+/// Only ever spent when cpal's teardown outlives the handle we dropped (see
+/// [`close_capture_and_drain`]), which is a race against a device disconnect
+/// rather than the ordinary path. Long enough for that teardown, short enough
+/// that a stop cannot visibly hang on it.
+const CAPTURE_CLOSE_TIMEOUT: Duration = Duration::from_millis(50);
+
 /// Close the microphone, then write everything it already handed over.
 ///
 /// The order is the whole point. The command channel is checked before the
@@ -957,16 +965,25 @@ fn run_capture<S>(
 /// the microphone captured before the person asked to stop, which finalizing
 /// without would silently truncate the tail of every recording that stopped
 /// during a backlog. But draining a channel whose sender is still live only
-/// proves nothing had arrived *yet*; a callback firing between the last
-/// `try_recv` and the sender being dropped would enqueue a chunk that then dies
-/// with the receiver, and because `try_send` accepted it the drop counter would
-/// never say so.
+/// proves nothing had arrived *yet*; a callback firing between the last poll and
+/// the sender being dropped would enqueue a chunk that then dies with the
+/// receiver, and because `try_send` accepted it the drop counter would never say
+/// so.
 ///
-/// Closing the stream first removes that window. cpal stops the callback and
-/// drops the sender as part of dropping the stream, so a `try_recv` that yields
-/// nothing afterwards means the queue is empty *and* nothing more can arrive.
-/// Anything the microphone produced before that is in the file; there is nothing
-/// after it.
+/// So this does not poll for emptiness, it waits for the channel to prove itself
+/// closed. `Disconnected` is only reported once every sender is gone, and the
+/// sender lives inside the capture callback, so that answer means the queue is
+/// drained *and* nothing more can arrive. Nothing else establishes it: dropping
+/// the stream is what starts the teardown, but it does not always finish it
+/// here. cpal's macOS backend keeps the stream behind an `Arc` its disconnect
+/// monitor can transiently hold, so the `AudioUnit` teardown that frees the
+/// callback may complete on that thread a moment later.
+///
+/// The wait is bounded because that monitor is the one thing that could make it
+/// long, and a stop that hangs on a wedged audio backend is worse than a stop
+/// that gives up the last few milliseconds. Timing out is logged rather than
+/// silent, because it is the only path by which this returns without the
+/// guarantee.
 ///
 /// Generic over the stream because only its `Drop` matters here: nothing in this
 /// function calls a cpal method, and a test can supply any value whose drop
@@ -980,10 +997,24 @@ fn close_capture_and_drain<S>(
     sample_rx: &mpsc::Receiver<Vec<i16>>,
 ) {
     drop(stream);
-    while let Ok(samples) = sample_rx.try_recv() {
-        if let Err(error) = capture.write(&samples) {
-            warn!("Could not write the last queued audio, publishing without it: {error}");
-            return;
+    let deadline = Instant::now() + CAPTURE_CLOSE_TIMEOUT;
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        match sample_rx.recv_timeout(remaining) {
+            Ok(samples) => {
+                if let Err(error) = capture.write(&samples) {
+                    warn!("Could not write the last queued audio, publishing without it: {error}");
+                    return;
+                }
+            }
+            // Every sender is gone: the queue is empty and stays empty.
+            Err(mpsc::RecvTimeoutError::Disconnected) => return,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                warn!(
+                    "Capture stream did not finish closing within {CAPTURE_CLOSE_TIMEOUT:?}; publishing what reached the writer"
+                );
+                return;
+            }
         }
     }
 }
@@ -2120,9 +2151,9 @@ mod tests {
         );
     }
 
-    /// The drain is complete rather than best-effort only because the sender is
-    /// gone first: with it closed, an empty queue reports `Disconnected` rather
-    /// than `Empty`, so "nothing to read" means "nothing can arrive".
+    /// The drain waits for proof rather than for emptiness: only `Disconnected`
+    /// says every sender is gone, and an empty queue with a live sender says
+    /// nothing about what is about to arrive.
     #[test]
     fn a_closed_capture_channel_reports_disconnected_not_empty() {
         let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<i16>>(4);
@@ -2135,6 +2166,66 @@ mod tests {
             sample_rx.try_recv(),
             Err(mpsc::TryRecvError::Disconnected)
         ));
+    }
+
+    /// A sender that outlives the stream handle is the cpal macOS teardown race:
+    /// its disconnect monitor can hold the last `Arc`, so the callback and its
+    /// sender may be freed a moment after `drop(stream)` returns. The drain must
+    /// keep taking chunks across that gap rather than stopping at the first
+    /// empty poll, and must still return rather than wait forever.
+    #[test]
+    fn the_drain_waits_out_a_sender_that_outlives_the_stream_handle() {
+        let root = staging_root();
+        let mut capture = capture_holding(&root, "blob_aaaaaaaaaaaaaaaaaaaaa", &[]);
+        let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<i16>>(CAPTURE_QUEUE_CHUNKS);
+
+        // A second holder of the sender, standing in for cpal's monitor thread:
+        // it delivers the last of the audio and closes only after the drain has
+        // already found the queue empty once.
+        let lingering = sample_tx.clone();
+        let tail = tone(TEST_RATE, 1);
+        let straggler = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(5));
+            for chunk in tail.chunks(512) {
+                lingering.try_send(chunk.to_vec()).expect("room");
+            }
+        });
+
+        // Dropping the handle's own sender is not enough to end the drain.
+        close_capture_and_drain(sample_tx, &mut capture, &sample_rx);
+        straggler.join().expect("the straggler finished");
+
+        let stopped = capture.finish().expect("finalize");
+        assert_eq!(
+            stopped.duration_ms, 1_000,
+            "audio delivered while the stream was still closing must reach the file"
+        );
+    }
+
+    /// And the wait is bounded: a sender that never closes gives up the tail
+    /// rather than hanging the stop.
+    #[test]
+    fn the_drain_gives_up_on_a_capture_stream_that_never_closes() {
+        let root = staging_root();
+        let mut capture = capture_holding(&root, "blob_aaaaaaaaaaaaaaaaaaaaa", &tone(TEST_RATE, 2));
+        let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<i16>>(CAPTURE_QUEUE_CHUNKS);
+
+        let wedged = sample_tx.clone();
+        let started = Instant::now();
+        close_capture_and_drain(sample_tx, &mut capture, &sample_rx);
+        let waited = started.elapsed();
+
+        assert!(
+            waited >= CAPTURE_CLOSE_TIMEOUT && waited < CAPTURE_CLOSE_TIMEOUT * 4,
+            "the drain must give up on its own schedule, waited {waited:?}"
+        );
+        drop(wedged);
+
+        let stopped = capture.finish().expect("finalize");
+        assert_eq!(
+            stopped.duration_ms, 2_000,
+            "what was already written survives"
+        );
     }
 
     /// The one-recorder invariant across a stop. `stop` runs the whole worker
