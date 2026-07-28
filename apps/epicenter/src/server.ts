@@ -617,7 +617,14 @@ function contentSecurityPolicy(page: string): string {
 		);
 	return [
 		"default-src 'self'",
-		`script-src 'self' ${scriptHashes.join(' ')}`,
+		// `'wasm-unsafe-eval'` permits WebAssembly compilation and nothing else:
+		// it does not restore `eval` or `new Function`, which is why it exists
+		// separately from `'unsafe-eval'`. Voice activity detection runs
+		// onnxruntime in this WebView over assets Epicenter itself ships, so
+		// WebAssembly is a first-party capability of the surface rather than
+		// something a policy is being bent to tolerate. Without it the browser
+		// refuses the compile and the recording trigger dies mid-boot.
+		`script-src 'self' 'wasm-unsafe-eval' ${scriptHashes.join(' ')}`,
 		"style-src 'self' 'unsafe-inline'",
 		"connect-src 'self' ipc: http://ipc.localhost",
 		"img-src 'self' data: blob:",
