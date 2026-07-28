@@ -64,19 +64,22 @@ function reportDeviceAcquisitionOutcome(
 
 /**
  * What to say when a capture ends on its own. Each reason has a different
- * recovery, which is the whole reason the host distinguishes them. All three say
- * the audio survived, because it does: the recording is still ours and stopping
- * it publishes everything captured before the microphone went away.
+ * recovery, which is the whole reason the host distinguishes them.
+ *
+ * Each one says what happened to the *capture* and stops there. Saying the audio
+ * was kept would be promising an outcome nobody knows yet: claiming it runs
+ * through the ordinary stop, and a stop can still fail, most plausibly for
+ * `storageFailed`, where the disk that could not take the samples may not take
+ * the header patch either. The stop's own receipt (a transcript landing, or the
+ * failure the pipeline reports) is what tells the person how it went.
  */
 const ENDED_NOTICE: Record<RecordingEndedReason, string> = {
-	deviceDisconnected:
-		'Your microphone disconnected. We kept everything recorded up to that point.',
+	deviceDisconnected: 'Your microphone disconnected, so the recording stopped.',
 	permissionRevoked:
-		'Microphone access was turned off. We kept everything recorded up to that point.',
-	streamFailed:
-		'Your microphone stopped working. We kept everything recorded up to that point.',
+		'Microphone access was turned off, so the recording stopped.',
+	streamFailed: 'Your microphone stopped working, so the recording stopped.',
 	storageFailed:
-		"We couldn't keep writing the recording to disk. We kept everything recorded up to that point.",
+		"Epicenter couldn't keep writing the recording to disk, so it stopped.",
 };
 
 /**
@@ -89,6 +92,11 @@ const ENDED_NOTICE: Record<RecordingEndedReason, string> = {
  * route and lands in the history like any other. The alternative, throwing the
  * audio away and reporting a loss, was the previous behavior and is the loss
  * this whole design exists to stop.
+ *
+ * The stop can still fail, and then `stopManualRecording` reports the loss on
+ * its own terms. That is why the notice above describes the capture ending and
+ * says nothing about what became of the audio: two messages, one per fact, each
+ * sent when it is actually known.
  *
  * Session-scoped rather than registered at import, because claiming the audio
  * means running the pipeline, which needs the app. One handler replaces the

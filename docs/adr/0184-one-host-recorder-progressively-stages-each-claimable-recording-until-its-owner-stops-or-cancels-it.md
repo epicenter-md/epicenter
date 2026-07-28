@@ -34,11 +34,16 @@ stops or cancels it.
   keeps the one slot, keeps its staged bytes, and keeps its owner; `current`
   keeps reporting it, now carrying the reason. A competing `start` is refused
   with `Busy` until the owner resolves it or its window is destroyed.
-- **The ended signal carries nothing.** `onEnded(reason)` is best-effort
-  notification. It never carries audio, a blob, or a result, and missing it costs
-  nothing because `current` reports the same ended recording.
+- **The ended signal carries nothing.** `onEnded(reason)` never carries audio, a
+  blob, or a result. The ending is state, not a message the host owes anyone:
+  `current` reports it for as long as the recording is unresolved, so a client
+  that could not have observed the moment reads it instead. That read is the
+  whole mechanism; nothing is queued, acknowledged, or replayed.
 - **`stop` is the only publication path.** It finalizes and atomically publishes
-  whatever valid audio was captured, on either side of the capture ending.
+  whatever the staged file can still be made into, on either side of the capture
+  ending. It can also fail: a capture that ended because storage failed may not
+  be finalizable at all, and then `stop` reports the loss and releases the slot
+  rather than publishing a file whose header does not describe its bytes.
   `cancel` deletes staging and burns the id, and publishes nothing, ever.
 - **Host death loses active capture.** Startup deletes stale recorder staging and
   does nothing else with it.
@@ -62,6 +67,12 @@ This decision explicitly refuses, and these refusals are the reason it is small:
 - A microphone dying mid-recording no longer destroys the recording. What was
   captured before it died publishes through the ordinary stop, lands in history
   like any other dictation, and the person is told why it ended early.
+- Storage failure is the one ended reason whose audio may not survive after all.
+  A volume that could not take the samples may not take the header patch either,
+  and an unfinalizable file is not a recording. So the notice for an ending says
+  what happened to the *capture* and stops there, and the stop's own outcome is
+  what speaks for the audio: two facts, each stated when it is actually known,
+  rather than one promise made before either is.
 - One ended recording occupies the host's single recorder until its owner
   resolves it, so a window that ignores the ending blocks every other window from
   starting. That is the accepted cost of never silently discarding audio; owner
