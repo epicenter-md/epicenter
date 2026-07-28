@@ -107,11 +107,11 @@ export type RecorderStopError =
 	| BlobStoreFailed;
 
 /**
- * Why a recording ended without anyone asking it to.
+ * Why a recording's capture ended without anyone asking it to.
  *
  * Mirrors the host's `EndedReason`. Each case is one the platform can actually
  * distinguish and the person can act on differently: reconnect the microphone,
- * restore a permission, or none of the above.
+ * restore a permission, free some disk, or none of the above.
  */
 export type RecordingEndedReason =
 	| 'deviceDisconnected'
@@ -119,13 +119,18 @@ export type RecordingEndedReason =
 	| 'streamFailed';
 
 /**
- * A live recording, bound to the capture that produced it.
+ * A recording, bound to the capture that produced it.
  *
  * `stop` and `cancel` take no id because this object already is the recording;
  * the id it carries is passed to the host underneath. Holding one of these
  * means a recording exists, which is why there is no state to subscribe to: a
  * caller that wants "am I recording" asks whether it holds a Recording, and
  * every ending it caused is the resolution of the call it made.
+ *
+ * A recording outlives its capture. When the microphone dies the recording is
+ * still here, still holding what it captured, and still resolved the same two
+ * ways: `stop` publishes, `cancel` discards. Nothing else claims it, expires it,
+ * or hands its audio back through another door.
  *
  * The two handlers are the signals a caller genuinely cannot derive on its own:
  * a level that only the capture layer can measure, and an ending nobody asked
@@ -136,6 +141,21 @@ export type Recording = {
 	readonly audioBlobId: BlobId;
 	/** Which microphone this recording actually opened. */
 	readonly device: DeviceAcquisitionOutcome;
+	/**
+	 * Why this recording's capture already ended, or `null` while it is running.
+	 *
+	 * A snapshot taken when this object was built, which is the only thing it
+	 * usefully can be: a recording that ends later reports it through
+	 * {@link Recording.onEnded}. It is non-null only for a recording recovered
+	 * from a host that kept capturing while this JS was gone, which is exactly
+	 * the case a fresh `start` can never produce and a caller must not miss.
+	 */
+	readonly endedReason: RecordingEndedReason | null;
+	/**
+	 * Finalize and publish. The one path that turns a recording into bytes, on
+	 * either side of its capture ending: stopping a recording whose microphone
+	 * died publishes everything captured before it did.
+	 */
 	stop(): Promise<Result<RecorderStopResult, RecorderStopError>>;
 	/**
 	 * Discard the recording. Success carries no payload: a cancel never produces
@@ -152,13 +172,20 @@ export type Recording = {
 	 */
 	onLevel(handler: (level: number) => void): () => void;
 	/**
-	 * Observe this recording ending on its own: the microphone was unplugged,
-	 * a permission was withdrawn, the capture stream failed. Returns an
-	 * unsubscribe.
+	 * Observe this recording's capture ending on its own: the microphone was
+	 * unplugged, a permission was withdrawn, the capture stream failed. Returns
+	 * an unsubscribe.
 	 *
 	 * Never fires for a stop or a cancel, because those already resolve the call
-	 * that requested them. When it does fire the recording is over, its audio is
-	 * gone, and no blob was written.
+	 * that requested them. When it does fire the microphone is closed but the
+	 * recording is not finished: it still holds everything captured up to that
+	 * point, and `stop` still publishes it.
+	 *
+	 * A signal, not a result, and best-effort: it carries no audio and it is not
+	 * the only way to learn what happened. A caller that misses it (it reloaded,
+	 * it was not listening yet) finds the same recording through
+	 * {@link RecorderService.current} with {@link Recording.endedReason} set.
+	 * Nothing expires, so nothing has to be acknowledged.
 	 */
 	onEnded(handler: (reason: RecordingEndedReason) => void): () => void;
 };
@@ -169,10 +196,16 @@ export type Recording = {
  */
 export type RecorderService<RecordingParams extends BaseRecordingParams> = {
 	/**
-	 * The live recording this caller owns, or null.
+	 * The recording this caller owns, or null.
 	 *
-	 * Native recordings outlive a JS reload because the host keeps capturing and
-	 * the window label survives; browser recordings cannot, and return null.
+	 * Native recordings outlive a JS reload because the host keeps them and the
+	 * window label survives; browser recordings cannot, and return null. A pure
+	 * read on every platform: it resolves nothing, so asking twice answers twice.
+	 *
+	 * This is also how a caller finds a recording whose capture ended while it
+	 * was gone. The answer carries {@link Recording.endedReason}, and stopping it
+	 * publishes what it captured, so there is no separate restore or recovery
+	 * call to make.
 	 */
 	current(): Promise<Result<Recording | null, RecorderError>>;
 

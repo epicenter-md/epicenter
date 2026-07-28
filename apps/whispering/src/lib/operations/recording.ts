@@ -63,31 +63,44 @@ function reportDeviceAcquisitionOutcome(
 }
 
 /**
- * What to say when a recording ends on its own. Each reason has a different
- * recovery, which is the whole reason the host distinguishes them.
+ * What to say when a capture ends on its own. Each reason has a different
+ * recovery, which is the whole reason the host distinguishes them. All three say
+ * the audio survived, because it does: the recording is still ours and stopping
+ * it publishes everything captured before the microphone went away.
  */
 const ENDED_NOTICE: Record<RecordingEndedReason, string> = {
 	deviceDisconnected:
-		'Your microphone disconnected, so the recording stopped and the audio was lost.',
+		'Your microphone disconnected. We kept everything recorded up to that point.',
 	permissionRevoked:
-		'Microphone access was turned off, so the recording stopped and the audio was lost.',
+		'Microphone access was turned off. We kept everything recorded up to that point.',
 	streamFailed:
-		'The microphone stopped working, so the recording stopped and the audio was lost.',
+		'Your microphone stopped working. We kept everything recorded up to that point.',
 };
 
-// Registered once, for every manual recording this module will ever hold,
-// including one recovered from the host after a reload. Capture death is the
-// only ending nobody asked for, so it is the only one that needs telling.
-manualRecorder.onEnded((reason) => {
-	void recordingMedia.resume();
-	const { error } = RecorderError.RecorderFailed({
-		cause: ENDED_NOTICE[reason],
+/**
+ * React to a capture ending without anyone asking: tell the person why, then
+ * claim what it recorded.
+ *
+ * Capture death is the only ending nobody asked for, so it is the only one that
+ * needs telling. What it does *not* need is a recovery path of its own: the
+ * recording is still held, so it goes down the ordinary stop-and-transcribe
+ * route and lands in the history like any other. The alternative, throwing the
+ * audio away and reporting a loss, was the previous behavior and is the loss
+ * this whole design exists to stop.
+ *
+ * Session-scoped rather than registered at import, because claiming the audio
+ * means running the pipeline, which needs the app. One handler replaces the
+ * last, so a new UI session re-registering is not a leak.
+ */
+export function watchManualRecordingEnded(app: WhisperingApp): void {
+	manualRecorder.onEnded((reason) => {
+		const { error } = RecorderError.RecorderFailed({
+			cause: ENDED_NOTICE[reason],
+		});
+		report.error({ title: 'Recording stopped', cause: error });
+		void stopManualRecording(app);
 	});
-	// No blob was written and the captured audio is gone, which is exactly the
-	// silent-loss tier: there is nothing to retry and nothing to recover.
-	dictationLifecycle.markFailed({ tier: 'silent-loss', error });
-	report.error({ title: 'Recording stopped', cause: error });
-});
+}
 
 function isVadRecordingActive() {
 	return (

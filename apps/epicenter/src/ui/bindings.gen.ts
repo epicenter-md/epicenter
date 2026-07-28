@@ -44,7 +44,7 @@ export const commands = {
 		deviceIdentifier: string | null,
 		sampleRate: number | null,
 	) =>
-		typedError<StartedRecording, RecorderError>(
+		typedError<HostRecording, RecorderError>(
 			__TAURI_INVOKE('start_recording', { deviceIdentifier, sampleRate }),
 		),
 	/**
@@ -77,19 +77,28 @@ export const commands = {
 	 *  The recording this window owns, or `null`.
 	 *
 	 *  Reload does not destroy a window, so a window that reloads mid-recording
-	 *  still owns a live recording and would otherwise have no way to name it. This
+	 *  still owns that recording and would otherwise have no way to name it. This
 	 *  is the only reason the single recorder cannot wedge until the owner window
 	 *  is destroyed.
 	 *
-	 *  It answers with the same shape `start` does, so a recovered recording is
-	 *  indistinguishable from a freshly started one: the caller learns which
-	 *  microphone is running without having to have been the one that opened it.
+	 *  A pure read, and the same shape `start` returns, so a recovered recording is
+	 *  not a different kind of thing from a freshly started one: the caller learns
+	 *  which microphone it opened without having been the one that opened it, and
+	 *  learns from `endedReason` whether that microphone is still running. A
+	 *  recording whose capture died while the JS was gone is found here and stopped
+	 *  like any other, which publishes what it captured.
 	 */
 	currentRecording: () =>
 		typedError<
 			{
 				audioBlobId: string;
 				device: DeviceAcquisition;
+				/**
+				 *  `None` while capture is running. `Some` means capture is over and this
+				 *  recording is waiting to be stopped (publishing what it captured) or
+				 *  cancelled (discarding it).
+				 */
+				endedReason: EndedReason | null;
 			} | null,
 			RecorderError
 		>(__TAURI_INVOKE('current_recording')),
@@ -513,7 +522,7 @@ export type DownloadProgress = {
 };
 
 /**
- *  Why the host ended a recording on its own.
+ *  Why the host ended a recording's capture on its own.
  *
  *  This never describes a stop, a cancel, or an owner window being destroyed.
  *  Those are endings someone asked for, and the caller already knows about them
@@ -577,6 +586,25 @@ export type HomeSection =
  *  that arrives twice, late, or not at all cannot produce a different outcome.
  */
 export type HomeSectionPending = null;
+
+/**
+ *  The recording a window holds: the id it will publish under, the microphone
+ *  it opened, and whether its capture has already ended.
+ *
+ *  One shape for both `start` and `current`, so a recording recovered after a
+ *  reload is not a different kind of thing from one just started. `ended_reason`
+ *  is the one fact a fresh start can never carry and a recovered one might.
+ */
+export type HostRecording = {
+	audioBlobId: string;
+	device: DeviceAcquisition;
+	/**
+	 *  `None` while capture is running. `Some` means capture is over and this
+	 *  recording is waiting to be stopped (publishing what it captured) or
+	 *  cancelled (discarding it).
+	 */
+	endedReason: EndedReason | null;
+};
 
 /**
  *  What an application may learn about the local transcription route: whether it
@@ -675,14 +703,15 @@ export type RecorderError =
 	| { name: 'Failed'; message: string };
 
 /**
- *  Pushed to the window that owns a recording when the host ends it without
- *  being asked. Carries the blob id so a window that has since started another
- *  recording can tell which one died, and the reason so it can say something
- *  true about what happened.
+ *  Pushed to the window that owns a recording when the host ends its capture
+ *  without being asked. Carries the blob id so a window that has since started
+ *  another recording can tell which one lost its microphone, and the reason so
+ *  it can say something true about what happened.
  *
- *  The blob id is burnt, exactly as it is by `cancel`: no blob is written and
- *  the captured audio is discarded. See the module docs on
- *  `commands::abandon_recording` for why.
+ *  A signal, never a result. It carries no audio and no blob: the recording is
+ *  still the owner's, and `stop` publishes what it captured. Missing this event
+ *  costs nothing, because `current_recording` reports the same ended recording.
+ *  See `commands::end_recording_capture` for why.
  */
 export type RecordingEndedEvent = {
 	audioBlobId: string;
@@ -697,18 +726,6 @@ export type RecordingEndedEvent = {
 export type SettingsError =
 	| { name: 'UnknownModel'; message: string }
 	| { name: 'SaveFailed'; message: string };
-
-/**
- *  What `start_recording` hands back: the id the recording will be published
- *  under, and which microphone it actually opened.
- *
- *  Device acquisition rides on the started recording rather than arriving as a
- *  sibling value, because it describes this recording and nothing else.
- */
-export type StartedRecording = {
-	audioBlobId: string;
-	device: DeviceAcquisition;
-};
 
 /**
  *  What `stop_recording` hands back: the committed blob's id and the two facts

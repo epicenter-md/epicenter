@@ -13,9 +13,9 @@ import type {
 	DeviceAcquisition,
 	DictationCapability,
 	EndedReason,
+	HostRecording,
 	IpcRecorderError,
 	LocalTranscriptionReadiness,
-	StartedRecording,
 	StoppedRecording,
 	TranscriptionError,
 	TranscriptionHints,
@@ -85,12 +85,22 @@ type _StartRecordingArgs = Expect<
 type _StartRecording = Expect<
 	Equal<
 		ReturnType<typeof commands.startRecording>,
-		Promise<Result<StartedRecording, IpcRecorderError>>
+		Promise<Result<HostRecording, IpcRecorderError>>
 	>
 >;
 
-type _StartedRecordingShape = Expect<
-	Equal<StartedRecording, { audioBlobId: string; device: DeviceAcquisition }>
+// One shape for a started recording and a recovered one. `endedReason` is what
+// makes that possible: a recording whose capture died is the same recording with
+// a reason attached, not a second kind of thing arriving down a second channel.
+type _HostRecordingShape = Expect<
+	Equal<
+		HostRecording,
+		{
+			audioBlobId: string;
+			device: DeviceAcquisition;
+			endedReason: EndedReason | null;
+		}
+	>
 >;
 
 // Device acquisition never omits which device ran: both arms carry one, so a
@@ -148,7 +158,7 @@ type _CancelRecording = Expect<
 //
 // It answers in the same shape `start` does, which is what lets a recording
 // recovered after a reload be as capable as one just started rather than a
-// degraded stand-in.
+// degraded stand-in, including one whose capture already ended.
 type _CurrentRecordingArgs = Expect<
 	Equal<Parameters<typeof commands.currentRecording>, []>
 >;
@@ -156,7 +166,7 @@ type _CurrentRecordingArgs = Expect<
 type _CurrentRecording = Expect<
 	Equal<
 		ReturnType<typeof commands.currentRecording>,
-		Promise<Result<StartedRecording | null, IpcRecorderError>>
+		Promise<Result<HostRecording | null, IpcRecorderError>>
 	>
 >;
 

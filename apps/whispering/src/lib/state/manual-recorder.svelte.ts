@@ -60,10 +60,17 @@ function createManualRecorder() {
 		// The one ending a live caller cannot infer from its own calls: the
 		// capture died. Everything else that clears `_current` is a consequence
 		// of something this module asked for.
-		_stopEndedListener = recording.onEnded((reason) => {
-			release();
-			_onEnded?.(reason);
-		});
+		//
+		// The recording is deliberately *not* released here. Its capture is over
+		// but it still holds what it recorded, and dropping it would strand that
+		// audio in a host slot nothing could ever claim. Resolving it is the
+		// handler's job, through the ordinary stop or cancel.
+		_stopEndedListener = recording.onEnded((reason) => _onEnded?.(reason));
+		// A recording recovered from the host may have lost its capture while
+		// this JS was gone. The event announcing that is long past, so the
+		// snapshot it carries is how we learn, and it is announced identically:
+		// a caller never has to ask which of the two ways it found out.
+		if (recording.endedReason) _onEnded?.(recording.endedReason);
 	}
 
 	function release() {
@@ -129,8 +136,12 @@ function createManualRecorder() {
 		},
 
 		/**
-		 * What to do when a recording ends on its own. One handler, because
-		 * losing a capture has one app-level reaction.
+		 * What to do when a capture ends on its own. One handler, because losing a
+		 * capture has one app-level reaction.
+		 *
+		 * The handler is responsible for resolving the recording, which is still
+		 * held and still holds its audio. Doing nothing leaks the host's one
+		 * recorder slot until the window is destroyed.
 		 */
 		onEnded(handler: (reason: RecordingEndedReason) => void) {
 			_onEnded = handler;

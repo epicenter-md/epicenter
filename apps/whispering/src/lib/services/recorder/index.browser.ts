@@ -5,7 +5,7 @@ import {
 	enumerateDevices,
 	getRecordingStream,
 } from '@epicenter/recorder';
-import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
+import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 import { BlobsLive } from '#platform/blobs';
 import {
 	type NavigatorRecordingParams,
@@ -56,11 +56,33 @@ function createBrowserRecorder(): RecorderService<NavigatorRecordingParams> {
 		const levelHandlers = new Set<(level: number) => void>();
 		const endedHandlers = new Set<(reason: RecordingEndedReason) => void>();
 		let ended = false;
+		// When the capture stopped producing audio, if it stopped on its own.
+		// Wall clock is the only duration a browser capture has, so a recording
+		// claimed minutes after its microphone died must measure to the moment it
+		// died rather than to the moment someone got around to stopping it.
+		let capturedUntilMs: number | null = null;
 
 		const stopLevelMeter = startMicLevelMeter(stream, (level) => {
 			for (const handler of levelHandlers) handler(level);
 		});
 
+		/**
+		 * Resolves once the MediaRecorder has emitted its final chunk, whether
+		 * this caller stopped it or its stream died underneath it.
+		 *
+		 * Registered here rather than inside `stop`, because a capture that ends
+		 * on its own fires `stop` before anyone asks: a listener attached later
+		 * would wait for an event that already happened.
+		 */
+		const flushed = new Promise<void>((resolve) => {
+			if (mediaRecorder.state === 'inactive') {
+				resolve();
+				return;
+			}
+			mediaRecorder.addEventListener('stop', () => resolve(), { once: true });
+		});
+
+		/** Release the capture's resources. The recorded chunks are not touched. */
 		const release = () => {
 			ended = true;
 			levelHandlers.clear();
@@ -73,9 +95,15 @@ function createBrowserRecorder(): RecorderService<NavigatorRecordingParams> {
 		// unplugged or its permission is revoked. That is the same event the
 		// native recorder reports through the host, so it reaches callers the
 		// same way rather than surfacing as silence.
+		//
+		// It ends the capture, not the recording. Everything recorded up to here
+		// stays in `recordedChunks` and `stop` still publishes it, which is what
+		// keeps one lifecycle across both platforms: an app never has to ask which
+		// recorder it is holding to know whether its audio survived.
 		for (const track of stream.getAudioTracks()) {
 			track.addEventListener('ended', () => {
 				if (ended) return;
+				capturedUntilMs = Date.now();
 				const handlers = [...endedHandlers];
 				release();
 				for (const handler of handlers) handler('deviceDisconnected');
@@ -85,28 +113,30 @@ function createBrowserRecorder(): RecorderService<NavigatorRecordingParams> {
 		return {
 			audioBlobId,
 			device,
+			// Always null here. A browser recording only ever exists inside this
+			// closure, so the only caller holding one was present when it started
+			// and will hear `onEnded` if its track dies; there is no reload across
+			// which an already-ended recording could be handed back.
+			endedReason: null,
 
 			stop: async () => {
-				const { data: blob, error: stopError } = await tryAsync({
-					try: () =>
-						new Promise<Blob>((resolve) => {
-							mediaRecorder.addEventListener('stop', () => {
-								const audioBlob = new Blob(recordedChunks, {
-									type: mediaRecorder.mimeType,
-								});
-								resolve(audioBlob);
-							});
-							mediaRecorder.stop();
-						}),
-					catch: (error) => RecorderError.RecorderFailed({ cause: error }),
-				});
-
-				const durationMs = Date.now() - startedAtMs;
-
-				if (stopError) {
-					release();
-					return Err(stopError);
+				// A capture that already ended has nothing left to stop, and asking
+				// an inactive MediaRecorder to stop throws. Its chunks are still
+				// ours to publish, which is the whole point of getting here.
+				if (mediaRecorder.state !== 'inactive') {
+					const { error: stopError } = trySync({
+						try: () => mediaRecorder.stop(),
+						catch: (error) => RecorderError.RecorderFailed({ cause: error }),
+					});
+					if (stopError) {
+						release();
+						return Err(stopError);
+					}
 				}
+				await flushed;
+
+				const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType });
+				const durationMs = (capturedUntilMs ?? Date.now()) - startedAtMs;
 				const { error: putError } = await BlobsLive.local.put(
 					audioBlobId,
 					blob,
@@ -118,8 +148,9 @@ function createBrowserRecorder(): RecorderService<NavigatorRecordingParams> {
 			},
 
 			cancel: async () => {
-				// stop() throws if the recorder is already inactive; a cancel discards
-				// the recording anyway, so swallow it and always tear down.
+				// stop() throws if the recorder is already inactive, which is what a
+				// capture that died on its own leaves behind; a cancel discards the
+				// recording anyway, so swallow it and always tear down.
 				trySync({
 					try: () => mediaRecorder.stop(),
 					catch: () => Ok(undefined),

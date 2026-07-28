@@ -3,7 +3,7 @@
 //! ```text
 //! cpal callback thread          consumer worker thread
 //! ┌────────────────────┐  mpsc  ┌─────────────────────┐
-//! │ build_input_stream │ ─────▶ │ run_consumer        │
+//! │ build_input_stream │ ─────▶ │ run_capture         │
 //! │  - downmix to mono │ chunks │  - accumulate Vec   │
 //! │  - sample_tx.send  │        │  - resample (final) │
 //! └────────────────────┘        │  - pad short clips  │
@@ -26,6 +26,24 @@
 //! cancel the recording it actually started: a competing `start` is refused
 //! with [`RecorderError::Busy`] rather than silently displacing the live one.
 //!
+//! # An ended recording is still the owner's to claim
+//!
+//! Capture can stop without anyone asking: the microphone is unplugged, a
+//! permission is withdrawn, the stream dies. That releases the *device*, not the
+//! *recording*. [`Recorder::end_capture`] marks the recording ended, drops the
+//! cpal stream, and leaves everything else exactly where it was: the slot stays
+//! occupied, the audio stays in the worker, and [`Recorder::current`] keeps
+//! answering with the same recording plus the reason its capture ended.
+//!
+//! That is the whole interruption design. There is no pending-interruption
+//! inbox, no acknowledgement, no restore call, and no second channel that pushes
+//! audio at the owner. `stop` remains the one path that publishes a blob and
+//! `cancel` remains the one path that deletes staging, whether or not capture is
+//! still running when they are called. A competing `start` stays [`Busy`] until
+//! the owner resolves it, or until the owning window is destroyed.
+//!
+//! [`Busy`]: RecorderError::Busy
+//!
 //! The label identifies a *window*, not an application: navigation across
 //! `/apps/*` on the one loopback origin is permitted, so a window may change
 //! which app it is showing. Under ADR-0179's full-trust model that is enough,
@@ -43,6 +61,7 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
 use crate::audio::resample_mono;
+use crate::recorder::ended::EndedReason;
 use crate::recorder::error::RecorderError;
 
 /// Recorder result type. Errors cross the IPC boundary as the internally
@@ -78,19 +97,23 @@ const SHORT_RECORDING_PAD_SAMPLES: usize = 20_000;
 
 /// Worker-thread command channel.
 ///
-/// Two variants for two genuinely different operations: `Stop` asks for the
-/// captured audio back, `Cancel` discards it. Both end the worker loop, so
-/// there is no third "shut down" message and no stopped-but-still-open state
-/// for a caller to observe.
+/// `Stop` asks for the captured audio back and `Cancel` discards it; both end
+/// the worker. `EndCapture` ends neither: it tells the worker its capture is
+/// over so it can release the microphone and wait, still holding the audio, for
+/// the owner to stop or cancel it.
 #[derive(Debug)]
 enum RecorderCmd {
     Stop(mpsc::Sender<Result<Vec<f32>>>),
     Cancel,
+    EndCapture,
 }
 
-/// The one in-flight recording: its identity, its owner, and the worker
-/// carrying it.
-struct ActiveRecording {
+/// The one recording the recorder holds: its identity, its owner, and the
+/// worker carrying it.
+///
+/// "Held" rather than "in flight", because capture may already be over. The
+/// recording keeps this slot either way until its owner resolves it.
+struct HeldRecording {
     /// The blob id the host minted at `start`. It names the blob this
     /// recording will become; `cancel` burns it without ever writing one.
     audio_blob_id: String,
@@ -99,19 +122,41 @@ struct ActiveRecording {
     /// Which microphone this recording opened, so a window that reloads can be
     /// told what it is recording from without reopening anything.
     device: DeviceAcquisition,
+    /// `None` while capture is running. `Some` once capture ended on its own,
+    /// which is a fact about this recording and not a separate state machine:
+    /// everything else about it is unchanged.
+    ended_reason: Option<EndedReason>,
     cmd_tx: mpsc::Sender<RecorderCmd>,
     worker: JoinHandle<()>,
 }
 
 /// CPAL-backed audio recorder.
 ///
-/// `Option<ActiveRecording>` is the whole state machine: `Some` means a
-/// recording is in flight, `None` means idle. There is no separate "session
+/// `Option<HeldRecording>` is the whole state machine: `Some` means a recording
+/// occupies the one slot, `None` means idle. There is no separate "session
 /// opened but not recording" phase, which is why no atomic flag is needed to
-/// tell the two apart.
+/// tell the two apart, and no separate "interrupted" collection, because an
+/// interrupted recording is the same `Some` with a reason attached.
 #[derive(Default)]
 pub struct Recorder {
-    active: Option<ActiveRecording>,
+    active: Option<HeldRecording>,
+}
+
+/// The recording a window holds: the id it will publish under, the microphone
+/// it opened, and whether its capture has already ended.
+///
+/// One shape for both `start` and `current`, so a recording recovered after a
+/// reload is not a different kind of thing from one just started. `ended_reason`
+/// is the one fact a fresh start can never carry and a recovered one might.
+#[derive(Debug, Clone, Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct HostRecording {
+    pub audio_blob_id: String,
+    pub device: DeviceAcquisition,
+    /// `None` while capture is running. `Some` means capture is over and this
+    /// recording is waiting to be stopped (publishing what it captured) or
+    /// cancelled (discarding it).
+    pub ended_reason: Option<EndedReason>,
 }
 
 impl Recorder {
@@ -136,9 +181,12 @@ impl Recorder {
 
     /// Open the input stream and begin capturing, in one step.
     ///
-    /// Returns [`RecorderError::Busy`] when a recording is already in flight,
-    /// so a competing start is refused instead of displacing a recording some
-    /// other window is relying on.
+    /// Returns [`RecorderError::Busy`] when the slot is occupied, so a competing
+    /// start is refused instead of displacing a recording some other window is
+    /// relying on. A recording whose capture already ended still occupies it:
+    /// its audio is claimable until its owner stops or cancels it, and quietly
+    /// throwing that away to make room would be exactly the loss this design
+    /// exists to prevent.
     ///
     /// The device is resolved here rather than by the caller. A caller that
     /// picked a device from a stale list would otherwise have to enumerate,
@@ -158,13 +206,8 @@ impl Recorder {
         owner_label: String,
         preferred_sample_rate: Option<u32>,
         app_handle: AppHandle,
-    ) -> Result<DeviceAcquisition> {
-        if let Some(active) = &self.active {
-            return Err(RecorderError::busy(format!(
-                "a recording ({}) started by window '{}' is already in flight",
-                active.audio_blob_id, active.owner_label
-            )));
-        }
+    ) -> Result<HostRecording> {
+        self.require_free_slot()?;
 
         let host = cpal::default_host();
         let (device, acquisition) = resolve_device(&host, requested_device)?;
@@ -216,8 +259,15 @@ impl Recorder {
             // Capture begins the moment the stream plays. Samples produced
             // before the loop is entered wait in `sample_rx`, so nothing
             // between `play()` and the first iteration is lost.
-            run_consumer(sample_rx, cmd_rx, device_rate, &meter_label, app_handle);
+            let parked = run_capture(sample_rx, &cmd_rx, device_rate, &meter_label, app_handle);
+            // The microphone is released the instant capture is over, however it
+            // ended. A recording waiting to be claimed must not keep the device
+            // open, and the person should see the OS recording indicator go out
+            // when their microphone stops working.
             drop(stream);
+            if let Some(buffer) = parked {
+                await_resolution(buffer, device_rate, &cmd_rx);
+            }
         });
 
         match ready_rx.recv() {
@@ -238,36 +288,58 @@ impl Recorder {
             "Recording started: id={audio_blob_id}, owner={owner_label}, device={}, {device_rate} Hz, {device_channels} channels",
             acquisition.device_id(),
         );
-        self.active = Some(ActiveRecording {
-            audio_blob_id,
+        self.active = Some(HeldRecording {
+            audio_blob_id: audio_blob_id.clone(),
             owner_label,
             device: acquisition.clone(),
+            ended_reason: None,
             cmd_tx,
             worker,
         });
-        Ok(acquisition)
+        Ok(HostRecording {
+            audio_blob_id,
+            device: acquisition,
+            ended_reason: None,
+        })
     }
 
-    /// End the recording named by `audio_blob_id` because its capture stream
-    /// died, returning the window that owned it so the host can tell it.
+    /// Mark the recording named by `audio_blob_id` as ended because its capture
+    /// stopped on its own, returning the window that owns it so the host can
+    /// tell it.
+    ///
+    /// This ends the *capture*, not the recording. The worker releases the
+    /// microphone and keeps everything it captured, the slot stays occupied, and
+    /// [`Recorder::current`] keeps answering with the same recording. Only the
+    /// owner decides what happens to the audio, through `stop` or `cancel`.
     ///
     /// Matched on the blob id, not just the owner: a stream error can arrive
     /// after the owner already started a second recording, and killing that one
     /// because its predecessor's hardware failed would be its own bug. A
-    /// non-matching id makes this a no-op, which also makes it idempotent when
-    /// cpal reports the same failure more than once.
-    pub fn abandon(&mut self, audio_blob_id: &str) -> Option<String> {
-        let active = self
-            .active
-            .take_if(|active| active.audio_blob_id == audio_blob_id)?;
-        let owner_label = active.owner_label.clone();
-        discard(active);
-        Some(owner_label)
+    /// non-matching or already-ended id makes this a no-op, which is what makes
+    /// it idempotent when cpal reports the same failure more than once.
+    pub fn end_capture(&mut self, audio_blob_id: &str, reason: EndedReason) -> Option<String> {
+        let active = self.active.as_mut()?;
+        if active.audio_blob_id != audio_blob_id || active.ended_reason.is_some() {
+            return None;
+        }
+        active.ended_reason = Some(reason);
+        // Sent, never joined. This runs under the recorder lock, and the worker
+        // it is signalling may be mid-handoff with a `stop` that is waiting on
+        // that same lock; joining here would deadlock the pair. The channel is
+        // unbounded, so the send itself cannot block. A send failure means the
+        // worker is already gone, which is the same outcome by another route.
+        let _ = active.cmd_tx.send(RecorderCmd::EndCapture);
+        Some(active.owner_label.clone())
     }
 
     /// Stop the recording named by `audio_blob_id` and consume its mono 16 kHz
     /// PCM. Restricted to the window that started it: only the owner may turn a
     /// recording into a blob it can read.
+    ///
+    /// Works the same whether capture is still running or already ended. That is
+    /// the point of holding an ended recording: `stop` is the one publication
+    /// path, so the audio captured before a microphone died is reached by the
+    /// same call as the audio captured before the person let go of the button.
     pub fn stop(&mut self, audio_blob_id: &str, caller_label: &str) -> Result<Vec<f32>> {
         self.require_owned(audio_blob_id, caller_label)?;
         // Taken before the round trip: whether the worker answers or dies, this
@@ -314,27 +386,67 @@ impl Recorder {
         Some(audio_blob_id)
     }
 
-    /// The blob id of the recording `caller_label` owns, if any.
+    /// The recording `caller_label` owns, if any.
     ///
-    /// Scoped to the caller rather than global: a window learns about its own
-    /// recording and nothing else. This is load-bearing, not recovery sugar.
-    /// Reloading a window does not destroy it, so a window that reloads
-    /// mid-recording still owns a live recording and needs the id back to stop
-    /// or cancel it.
-    pub fn current(&self, caller_label: &str) -> Option<(String, DeviceAcquisition)> {
+    /// A pure read: it never resolves, repairs, or consumes anything, so calling
+    /// it twice answers twice with the same recording. Scoped to the caller
+    /// rather than global, so a window learns about its own recording and
+    /// nothing else.
+    ///
+    /// This is load-bearing, not recovery sugar. Reloading a window does not
+    /// destroy it, so a window that reloads mid-recording still owns that
+    /// recording and needs it back to stop or cancel it. The same call is how a
+    /// reload finds a recording whose capture died while the JS was gone: the
+    /// answer carries `ended_reason`, and stopping it still publishes what it
+    /// captured.
+    pub fn current(&self, caller_label: &str) -> Option<HostRecording> {
         self.active
             .as_ref()
             .filter(|active| active.owner_label == caller_label)
-            .map(|active| (active.audio_blob_id.clone(), active.device.clone()))
+            .map(|active| HostRecording {
+                audio_blob_id: active.audio_blob_id.clone(),
+                device: active.device.clone(),
+                ended_reason: active.ended_reason,
+            })
     }
 
-    /// Whether any recording is in flight, for the host's tray indicator.
-    pub fn is_recording(&self) -> bool {
-        self.active.is_some()
+    /// Whether a microphone is open right now, for the host's tray indicator.
+    ///
+    /// Deliberately not "is the slot occupied". A recording whose capture died
+    /// still holds the slot, but nothing is being captured, and a tray that kept
+    /// claiming otherwise would be lying about the microphone.
+    pub fn is_capturing(&self) -> bool {
+        self.active
+            .as_ref()
+            .is_some_and(|active| active.ended_reason.is_none())
     }
 
-    /// The one ownership rule, in one place: the named recording must be live
-    /// and must belong to the calling window.
+    /// The one admission rule, in one place: the slot must be empty.
+    ///
+    /// A recording whose capture already ended still occupies it. Reporting that
+    /// distinctly matters because the two look identical from outside and have
+    /// different remedies: waiting out a live recording, versus stopping or
+    /// cancelling one that is over.
+    ///
+    /// Sits beside [`Recorder::require_owned`] rather than inline in `start`,
+    /// because these are the recorder's two access rules and reading them
+    /// together is how the slot's whole policy stays legible.
+    fn require_free_slot(&self) -> Result<()> {
+        let Some(active) = &self.active else {
+            return Ok(());
+        };
+        let state = match active.ended_reason {
+            None => "is already in flight",
+            Some(_) => "has ended and is waiting to be stopped or cancelled",
+        };
+        Err(RecorderError::busy(format!(
+            "a recording ({}) started by window '{}' {state}",
+            active.audio_blob_id, active.owner_label
+        )))
+    }
+
+    /// The one ownership rule, in one place: the named recording must be the
+    /// one held and must belong to the calling window.
     ///
     /// Both failures collapse to `NotRecording`. The caller cannot act
     /// differently on "no such recording" versus "not yours" (both mean "this
@@ -343,7 +455,7 @@ impl Recorder {
     fn require_owned(&self, audio_blob_id: &str, caller_label: &str) -> Result<()> {
         let Some(active) = &self.active else {
             return Err(RecorderError::not_recording(format!(
-                "no recording is in flight; '{audio_blob_id}' has already ended"
+                "no recording is held; '{audio_blob_id}' has already been stopped or cancelled"
             )));
         };
         if active.audio_blob_id != audio_blob_id {
@@ -363,7 +475,7 @@ impl Recorder {
 
 /// End a recording without producing anything: tell the worker to drop its
 /// buffer, then join it so the cpal stream is released before returning.
-fn discard(active: ActiveRecording) {
+fn discard(active: HeldRecording) {
     // A send failure means the worker is already gone, which is the same
     // outcome by another route, so it is not an error to report.
     let _ = active.cmd_tx.send(RecorderCmd::Cancel);
@@ -379,17 +491,21 @@ impl Drop for Recorder {
     }
 }
 
-/// Consumer worker entrypoint. Accumulates mono samples, resamples to
-/// 16 kHz at finalize, pads short clips, returns the samples. While recording,
-/// also emits a throttled RMS level to the owner window so its meter can
-/// reflect live mic activity.
-fn run_consumer(
+/// Capture phase. Accumulates mono samples until the recording is resolved or
+/// its capture ends, emitting a throttled RMS level to the owner window so its
+/// meter can reflect live mic activity.
+///
+/// Returns `None` when the owner already resolved the recording (a `Stop` was
+/// answered, or a `Cancel` discarded the audio), and `Some(buffer)` when capture
+/// ended with the recording still unclaimed, which is the caller's cue to
+/// release the microphone and park on [`await_resolution`].
+fn run_capture(
     sample_rx: mpsc::Receiver<Vec<f32>>,
-    cmd_rx: mpsc::Receiver<RecorderCmd>,
+    cmd_rx: &mpsc::Receiver<RecorderCmd>,
     device_rate: u32,
     owner_label: &str,
     app_handle: AppHandle,
-) {
+) -> Option<Vec<f32>> {
     use std::sync::mpsc::RecvTimeoutError;
 
     let mut buffer: Vec<f32> = Vec::new();
@@ -403,16 +519,16 @@ fn run_consumer(
         // when audio frames are arriving back-to-back.
         match cmd_rx.try_recv() {
             Ok(RecorderCmd::Stop(reply)) => {
-                let result = crate::timing::measure("finalize", || {
-                    finalize(std::mem::take(&mut buffer), device_rate)
-                });
-                let _ = reply.send(result);
-                return;
+                reply_with_finalized(&reply, std::mem::take(&mut buffer), device_rate);
+                return None;
             }
-            Ok(RecorderCmd::Cancel) => return,
+            Ok(RecorderCmd::Cancel) => return None,
+            // Capture is over but the recording is not: hand the audio up so it
+            // can wait for the owner to stop or cancel it.
+            Ok(RecorderCmd::EndCapture) => return Some(std::mem::take(&mut buffer)),
             // The command sender is gone without a stop or a cancel, so nobody
             // is left to receive this audio.
-            Err(mpsc::TryRecvError::Disconnected) => return,
+            Err(mpsc::TryRecvError::Disconnected) => return None,
             Err(mpsc::TryRecvError::Empty) => {}
         }
 
@@ -437,9 +553,50 @@ fn run_consumer(
                 }
             }
             Err(RecvTimeoutError::Timeout) => continue,
-            Err(RecvTimeoutError::Disconnected) => return,
+            // The sample sender lives inside the cpal stream, which this
+            // worker's caller owns and drops only after this returns, so this is
+            // not reachable today. Park rather than discard if it ever becomes
+            // reachable: keeping the audio claimable is the safe direction.
+            Err(RecvTimeoutError::Disconnected) => return Some(std::mem::take(&mut buffer)),
         }
     }
+}
+
+/// Wait for the owner to resolve a recording whose capture is over.
+///
+/// The audio lives here, on this thread, and nowhere else. That is what makes
+/// "an ended recording is still the owner's to claim" true without a second
+/// place to store audio, a catch-up queue, or a restore call: the same `Stop`
+/// that a live recording answers is answered here, from the same buffer.
+fn await_resolution(mut buffer: Vec<f32>, device_rate: u32, cmd_rx: &mpsc::Receiver<RecorderCmd>) {
+    loop {
+        match cmd_rx.recv() {
+            Ok(RecorderCmd::Stop(reply)) => {
+                reply_with_finalized(&reply, std::mem::take(&mut buffer), device_rate);
+                return;
+            }
+            // Cancel drops the audio. A disconnected channel means the recorder
+            // itself is gone, which has the same effect and nobody left to tell.
+            Ok(RecorderCmd::Cancel) | Err(_) => return,
+            // `end_capture` refuses to signal an already-ended recording, so
+            // this cannot arrive twice; ignoring it keeps that a fact about the
+            // recorder rather than something this loop has to enforce.
+            Ok(RecorderCmd::EndCapture) => {}
+        }
+    }
+}
+
+/// Finalize a buffer and answer the `Stop` that asked for it.
+///
+/// A dropped reply channel is not an error to report: the only way it happens is
+/// the caller giving up on the round trip, and there is nobody left to tell.
+fn reply_with_finalized(
+    reply: &mpsc::Sender<Result<Vec<f32>>>,
+    buffer: Vec<f32>,
+    device_rate: u32,
+) {
+    let result = crate::timing::measure("finalize", || finalize(buffer, device_rate));
+    let _ = reply.send(result);
 }
 
 /// Resample to 16 kHz if needed, pad short clips, build the samples.
@@ -689,26 +846,26 @@ fn build_input_stream(
     // A live stream error used to be logged and nothing else, which left the
     // one recorder slot occupied, the tray claiming a recording, and the owner
     // window waiting for audio that would never arrive. Now a terminal error
-    // ends the recording and tells the owner why.
+    // ends the capture, releases the microphone, and tells the owner why, while
+    // the recording itself stays claimable.
     //
     // Only a terminal error: `ended::classify` returns `None` for the
     // conditions cpal documents as survivable, so a routine audio-route change
     // (plugging in headphones) no longer looks like a dead microphone.
     //
-    // The cleanup runs on its own thread because it locks the recorder and
-    // joins the capture worker, neither of which may happen on the audio
-    // callback. This fires at most once per stream death and never on the
-    // sample path.
+    // The bookkeeping runs on its own thread because it locks the recorder,
+    // which may not happen on the audio callback. This fires at most once per
+    // stream death and never on the sample path.
     let err_fn = move |error: cpal::Error| {
         let Some(reason) = crate::recorder::ended::classify(&error) else {
             debug!("Audio stream reported a survivable condition, continuing: {error}");
             return;
         };
-        error!("Audio stream ended the recording: {error}");
+        error!("Audio stream ended the capture: {error}");
         let app = failure_app.clone();
         let audio_blob_id = failure_blob_id.clone();
         thread::spawn(move || {
-            crate::recorder::commands::abandon_recording(&app, &audio_blob_id, reason);
+            crate::recorder::commands::end_recording_capture(&app, &audio_blob_id, reason);
         });
     };
     let n_channels = channels as usize;
@@ -792,30 +949,36 @@ fn downmix_u16(interleaved: &[u16], channels: usize) -> Vec<f32> {
 mod tests {
     use super::*;
 
-    /// Stand up an `ActiveRecording` without opening a microphone.
+    /// One second of captured audio, so a `stop` in these tests returns
+    /// something recognisable that `finalize` will not pad.
+    fn captured_audio() -> Vec<f32> {
+        vec![0.25; TARGET_RATE as usize]
+    }
+
+    /// Stand up a `HeldRecording` without opening a microphone.
     ///
-    /// The ownership rules are pure state, so they are tested against real
+    /// The lifecycle rules are pure state, so they are tested against real
     /// `Recorder` state rather than through cpal: a test that needs an input
     /// device cannot run in CI, and the rules being checked have nothing to do
     /// with audio.
     ///
-    /// The stand-in worker exits on its first command, which is what
-    /// `run_consumer` does for both `Stop` and `Cancel`. That detail is
-    /// load-bearing rather than incidental: `discard` sends `Cancel` and then
-    /// joins while still holding `cmd_tx`, so a worker that looped waiting for
-    /// a second command would never see its channel close and the join would
-    /// hang forever.
+    /// The stand-in worker is the real [`await_resolution`], parked on a canned
+    /// buffer. That is exactly the state a worker is in once its capture has
+    /// ended, so `stop` here exercises the real handoff rather than a mock of
+    /// it, and `discard`'s `Cancel`-then-join cannot hang: `await_resolution`
+    /// returns on `Cancel` and on a dropped channel.
     fn recording_owned_by(recorder: &mut Recorder, audio_blob_id: &str, owner_label: &str) {
         let (cmd_tx, cmd_rx) = mpsc::channel::<RecorderCmd>();
         let worker = thread::spawn(move || {
-            let _ = cmd_rx.recv();
+            await_resolution(captured_audio(), TARGET_RATE, &cmd_rx);
         });
-        recorder.active = Some(ActiveRecording {
+        recorder.active = Some(HeldRecording {
             audio_blob_id: audio_blob_id.to_string(),
             owner_label: owner_label.to_string(),
             device: DeviceAcquisition::Success {
                 device_id: "Test Microphone".to_string(),
             },
+            ended_reason: None,
             cmd_tx,
             worker,
         });
@@ -831,11 +994,22 @@ mod tests {
         }
     }
 
+    /// The blob id a `current` answer names, for the many assertions that only
+    /// care which recording came back.
+    fn current_id(recorder: &Recorder, caller_label: &str) -> Option<String> {
+        recorder
+            .current(caller_label)
+            .map(|recording| recording.audio_blob_id)
+    }
+
     #[test]
     fn a_fresh_recorder_is_idle_and_owns_nothing() {
         let recorder = Recorder::new();
-        assert!(!recorder.is_recording());
-        assert_eq!(recorder.current("whispering"), None);
+        assert!(!recorder.is_capturing());
+        assert!(recorder.current("whispering").is_none());
+        recorder
+            .require_free_slot()
+            .expect("an idle recorder admits a start");
     }
 
     #[test]
@@ -844,11 +1018,32 @@ mod tests {
         recording_owned_by(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes");
 
         assert_eq!(
-            recorder.current("app-notes").map(|(id, _)| id).as_deref(),
+            current_id(&recorder, "app-notes").as_deref(),
             Some("blob_aaaaaaaaaaaaaaaaaaaaa"),
         );
         // A window that owns no recording learns nothing about one that exists.
-        assert_eq!(recorder.current("whispering"), None);
+        assert!(recorder.current("whispering").is_none());
+    }
+
+    /// `current` is a read, not a claim. Two calls answer twice, because a
+    /// window that reloads twice must find the same recording both times.
+    #[test]
+    fn reading_the_current_recording_never_consumes_it() {
+        let mut recorder = Recorder::new();
+        recording_owned_by(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes");
+        recorder.end_capture(
+            "blob_aaaaaaaaaaaaaaaaaaaaa",
+            EndedReason::DeviceDisconnected,
+        );
+
+        for _ in 0..3 {
+            let recording = recorder.current("app-notes").expect("still held");
+            assert_eq!(recording.audio_blob_id, "blob_aaaaaaaaaaaaaaaaaaaaa");
+            assert_eq!(
+                recording.ended_reason,
+                Some(EndedReason::DeviceDisconnected)
+            );
+        }
     }
 
     #[test]
@@ -867,9 +1062,9 @@ mod tests {
         assert_eq!(error_name(&cancel), "NotRecording");
 
         // The refusals left the owner's recording completely untouched.
-        assert!(recorder.is_recording());
+        assert!(recorder.is_capturing());
         assert_eq!(
-            recorder.current("app-notes").map(|(id, _)| id).as_deref(),
+            current_id(&recorder, "app-notes").as_deref(),
             Some("blob_aaaaaaaaaaaaaaaaaaaaa"),
         );
     }
@@ -883,7 +1078,7 @@ mod tests {
             .stop("blob_bbbbbbbbbbbbbbbbbbbbb", "app-notes")
             .expect_err("a stale id must not stop whatever happens to be live");
         assert_eq!(error_name(&error), "NotRecording");
-        assert!(recorder.is_recording());
+        assert!(recorder.is_capturing());
     }
 
     #[test]
@@ -895,8 +1090,8 @@ mod tests {
             .cancel("blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes")
             .expect("the owner may cancel its own recording");
 
-        assert!(!recorder.is_recording());
-        assert_eq!(recorder.current("app-notes"), None);
+        assert!(!recorder.is_capturing());
+        assert!(recorder.current("app-notes").is_none());
     }
 
     #[test]
@@ -906,68 +1101,207 @@ mod tests {
 
         // A different window closing leaves the recording alone.
         assert_eq!(recorder.cancel_owned_by("whispering"), None);
-        assert!(recorder.is_recording());
+        assert!(recorder.is_capturing());
 
         assert_eq!(
             recorder.cancel_owned_by("app-notes").as_deref(),
             Some("blob_aaaaaaaaaaaaaaaaaaaaa"),
         );
-        assert!(!recorder.is_recording());
+        assert!(!recorder.is_capturing());
     }
 
-    /// The wedge this exists to prevent: before capture death released the
-    /// slot, a dead stream left `active` occupied forever, so no window could
-    /// ever start another recording and the tray kept claiming one was running.
+    /// A destroyed window can never claim its recording, so the host resolves it
+    /// by cancelling, whether or not its capture already ended. This is the one
+    /// route by which an ended recording releases the slot without its owner.
     #[test]
-    fn a_dead_capture_releases_the_slot_and_names_its_owner() {
+    fn destroying_the_owner_window_also_cancels_an_ended_recording() {
+        let mut recorder = Recorder::new();
+        recording_owned_by(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes");
+        recorder.end_capture("blob_aaaaaaaaaaaaaaaaaaaaa", EndedReason::StreamFailed);
+
+        assert_eq!(
+            recorder.cancel_owned_by("app-notes").as_deref(),
+            Some("blob_aaaaaaaaaaaaaaaaaaaaa"),
+        );
+        assert!(recorder.current("app-notes").is_none());
+        recorder
+            .require_free_slot()
+            .expect("the slot is free once the owner is gone");
+    }
+
+    /// The heart of the interruption design: a dead stream ends the capture and
+    /// nothing else. The audio is still there, the slot is still claimed, and the
+    /// owner still decides what happens to it.
+    #[test]
+    fn a_dead_capture_keeps_the_recording_claimable_and_names_its_owner() {
         let mut recorder = Recorder::new();
         recording_owned_by(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes");
 
         assert_eq!(
-            recorder.abandon("blob_aaaaaaaaaaaaaaaaaaaaa").as_deref(),
+            recorder
+                .end_capture(
+                    "blob_aaaaaaaaaaaaaaaaaaaaa",
+                    EndedReason::DeviceDisconnected
+                )
+                .as_deref(),
             Some("app-notes"),
-            "abandoning must report the owner so the host can tell it"
+            "ending a capture must report the owner so the host can tell it"
         );
-        assert!(
-            !recorder.is_recording(),
-            "the slot must be free for the next start"
+
+        // The microphone is closed, so the tray must stop claiming otherwise.
+        assert!(!recorder.is_capturing());
+
+        // Everything else is unchanged: same recording, same owner, now carrying
+        // the reason its capture ended.
+        let recording = recorder
+            .current("app-notes")
+            .expect("an ended recording is still the owner's");
+        assert_eq!(recording.audio_blob_id, "blob_aaaaaaaaaaaaaaaaaaaaa");
+        assert_eq!(recording.device.device_id(), "Test Microphone");
+        assert_eq!(
+            recording.ended_reason,
+            Some(EndedReason::DeviceDisconnected)
         );
-        assert_eq!(recorder.current("app-notes"), None);
     }
 
-    /// A stream error can arrive after its recording already ended and the
-    /// owner started another one. Matching on the id keeps the late failure
-    /// from killing the innocent successor, and makes a repeated report a
-    /// no-op rather than a second teardown.
+    /// The invariant that makes the slot safe: nothing may start on top of a
+    /// recording whose audio nobody has claimed yet.
     #[test]
-    fn abandoning_a_stale_id_leaves_the_live_recording_alone() {
+    fn an_ended_recording_still_refuses_a_competing_start() {
+        let mut recorder = Recorder::new();
+        recording_owned_by(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes");
+
+        let live = recorder
+            .require_free_slot()
+            .expect_err("a live recording refuses a start");
+        assert_eq!(error_name(&live), "Busy");
+
+        recorder.end_capture("blob_aaaaaaaaaaaaaaaaaaaaa", EndedReason::PermissionRevoked);
+
+        let ended = recorder
+            .require_free_slot()
+            .expect_err("an ended recording still holds the slot");
+        assert_eq!(error_name(&ended), "Busy");
+        // The two are distinguished in the message, because the remedies differ:
+        // wait for a live recording, resolve an ended one.
+        let RecorderError::Busy { message } = ended else {
+            panic!("expected Busy");
+        };
+        assert!(
+            message.contains("has ended"),
+            "a Busy refusal must say the recording is waiting to be resolved: {message}"
+        );
+    }
+
+    /// Stop is the one publication path, and it does not care whether the
+    /// microphone is still open: the eight minutes captured before a device died
+    /// come back through exactly the same call as a normal dictation.
+    #[test]
+    fn stopping_an_ended_recording_returns_what_it_captured() {
+        let mut recorder = Recorder::new();
+        recording_owned_by(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes");
+        recorder.end_capture(
+            "blob_aaaaaaaaaaaaaaaaaaaaa",
+            EndedReason::DeviceDisconnected,
+        );
+
+        let samples = recorder
+            .stop("blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes")
+            .expect("an ended recording is still the owner's to stop");
+        assert_eq!(samples, captured_audio());
+
+        // And stopping resolved it, so the slot is free again.
+        assert!(recorder.current("app-notes").is_none());
+        recorder
+            .require_free_slot()
+            .expect("a stopped recording releases the slot");
+    }
+
+    /// Cancel never publishes, on either side of a capture ending.
+    #[test]
+    fn cancelling_an_ended_recording_produces_nothing() {
+        let mut recorder = Recorder::new();
+        recording_owned_by(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes");
+        recorder.end_capture("blob_aaaaaaaaaaaaaaaaaaaaa", EndedReason::StreamFailed);
+
+        recorder
+            .cancel("blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes")
+            .expect("the owner may cancel an ended recording");
+        assert!(recorder.current("app-notes").is_none());
+    }
+
+    /// A non-owner must not be able to reach an ended recording either. The
+    /// window that started it is the only one that can decide its audio's fate.
+    #[test]
+    fn a_non_owner_cannot_resolve_an_ended_recording() {
+        let mut recorder = Recorder::new();
+        recording_owned_by(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes");
+        recorder.end_capture(
+            "blob_aaaaaaaaaaaaaaaaaaaaa",
+            EndedReason::DeviceDisconnected,
+        );
+
+        assert!(recorder.current("whispering").is_none());
+        let error = recorder
+            .stop("blob_aaaaaaaaaaaaaaaaaaaaa", "whispering")
+            .expect_err("only the owner may claim the audio");
+        assert_eq!(error_name(&error), "NotRecording");
+        assert!(recorder.current("app-notes").is_some());
+    }
+
+    /// A stream error can arrive after its recording was already resolved and
+    /// the owner started another one. Matching on the id keeps the late failure
+    /// from ending the innocent successor's capture, and makes a repeated report
+    /// a no-op rather than a second notification.
+    #[test]
+    fn ending_the_capture_of_a_stale_id_leaves_the_held_recording_alone() {
         let mut recorder = Recorder::new();
         recording_owned_by(&mut recorder, "blob_bbbbbbbbbbbbbbbbbbbbb", "app-notes");
 
-        assert_eq!(recorder.abandon("blob_aaaaaaaaaaaaaaaaaaaaa"), None);
-        assert!(recorder.is_recording());
         assert_eq!(
-            recorder.current("app-notes").map(|(id, _)| id).as_deref(),
+            recorder.end_capture("blob_aaaaaaaaaaaaaaaaaaaaa", EndedReason::StreamFailed),
+            None
+        );
+        assert!(recorder.is_capturing());
+        assert_eq!(
+            current_id(&recorder, "app-notes").as_deref(),
             Some("blob_bbbbbbbbbbbbbbbbbbbbb"),
         );
 
-        // And the second report of the same failure finds nothing to do.
+        // The first report of a real failure names the owner; the second finds
+        // the capture already ended and says nothing, so the owner is told once.
         assert_eq!(
-            recorder.abandon("blob_bbbbbbbbbbbbbbbbbbbbb").as_deref(),
+            recorder
+                .end_capture("blob_bbbbbbbbbbbbbbbbbbbbb", EndedReason::StreamFailed)
+                .as_deref(),
             Some("app-notes")
         );
-        assert_eq!(recorder.abandon("blob_bbbbbbbbbbbbbbbbbbbbb"), None);
+        assert_eq!(
+            recorder.end_capture(
+                "blob_bbbbbbbbbbbbbbbbbbbbb",
+                EndedReason::DeviceDisconnected
+            ),
+            None
+        );
+        // And the first reason stands: a repeat report cannot rewrite history.
+        assert_eq!(
+            recorder
+                .current("app-notes")
+                .and_then(|recording| recording.ended_reason),
+            Some(EndedReason::StreamFailed)
+        );
     }
 
-    /// A recovered recording has to be able to say which microphone is running,
+    /// A recovered recording has to be able to say which microphone it opened,
     /// or a window that reloaded would show a meter for a device it cannot name.
     #[test]
     fn current_reports_the_device_the_recording_opened() {
         let mut recorder = Recorder::new();
         recording_owned_by(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes");
 
-        let (_, device) = recorder.current("app-notes").expect("a live recording");
-        assert_eq!(device.device_id(), "Test Microphone");
+        let recording = recorder.current("app-notes").expect("a live recording");
+        assert_eq!(recording.device.device_id(), "Test Microphone");
+        assert_eq!(recording.ended_reason, None);
     }
 
     #[test]

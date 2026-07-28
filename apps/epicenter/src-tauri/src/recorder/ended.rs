@@ -6,6 +6,10 @@
 //! recorder kept its one slot occupied, the tray kept claiming a recording, and
 //! the owning window waited forever for audio that would never arrive.
 //!
+//! What ends is the capture, not the recording. The reason below travels to the
+//! owner so it can say something true about what happened; the audio captured up
+//! to that moment stays claimable until the owner stops or cancels it.
+//!
 //! # The taxonomy is exactly as fine as cpal's evidence
 //!
 //! Every variant below is one the host can actually tell apart from a typed
@@ -26,7 +30,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Why the host ended a recording on its own.
+/// Why the host ended a recording's capture on its own.
 ///
 /// This never describes a stop, a cancel, or an owner window being destroyed.
 /// Those are endings someone asked for, and the caller already knows about them
@@ -67,14 +71,15 @@ pub fn classify(error: &cpal::Error) -> Option<EndedReason> {
     }
 }
 
-/// Pushed to the window that owns a recording when the host ends it without
-/// being asked. Carries the blob id so a window that has since started another
-/// recording can tell which one died, and the reason so it can say something
-/// true about what happened.
+/// Pushed to the window that owns a recording when the host ends its capture
+/// without being asked. Carries the blob id so a window that has since started
+/// another recording can tell which one lost its microphone, and the reason so
+/// it can say something true about what happened.
 ///
-/// The blob id is burnt, exactly as it is by `cancel`: no blob is written and
-/// the captured audio is discarded. See the module docs on
-/// `commands::abandon_recording` for why.
+/// A signal, never a result. It carries no audio and no blob: the recording is
+/// still the owner's, and `stop` publishes what it captured. Missing this event
+/// costs nothing, because `current_recording` reports the same ended recording.
+/// See `commands::end_recording_capture` for why.
 #[derive(
     Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type, tauri_specta::Event,
 )]

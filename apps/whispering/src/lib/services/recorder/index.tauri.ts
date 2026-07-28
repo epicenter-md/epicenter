@@ -12,6 +12,7 @@ import {
 	RecorderError,
 	type RecorderService,
 	type Recording,
+	type RecordingEndedReason,
 } from '$lib/services/recorder/contract';
 import type { DeviceAcquisition as IpcDeviceAcquisition } from '$lib/tauri/commands';
 import { commands, events } from '$lib/tauri/commands';
@@ -143,6 +144,7 @@ function createCpalRecorder(): RecorderService<CpalRecordingParams> {
 	function buildRecording(
 		audioBlobId: BlobId,
 		device: DeviceAcquisitionOutcome,
+		endedReason: RecordingEndedReason | null,
 	): Recording {
 		// Every listener this recording opened, torn down together when it ends
 		// so a stopped recording cannot leave a live event subscription behind.
@@ -173,6 +175,7 @@ function createCpalRecorder(): RecorderService<CpalRecordingParams> {
 		return {
 			audioBlobId,
 			device,
+			endedReason,
 
 			stop: async () => {
 				const { data: stopped, error: stopError } =
@@ -240,7 +243,13 @@ function createCpalRecorder(): RecorderService<CpalRecordingParams> {
 					cause: new Error('The host returned an invalid blob id.'),
 				});
 			}
-			return Ok(buildRecording(parsedId, toDeviceAcquisition(live.device)));
+			return Ok(
+				buildRecording(
+					parsedId,
+					toDeviceAcquisition(live.device),
+					live.endedReason,
+				),
+			);
 		},
 
 		enumerateDevices,
@@ -266,7 +275,11 @@ function createCpalRecorder(): RecorderService<CpalRecordingParams> {
 				});
 			}
 
-			return Ok(buildRecording(parsedId, toDeviceAcquisition(started.device)));
+			// A freshly started recording never carries an ended reason: the host
+			// only just opened its microphone.
+			return Ok(
+				buildRecording(parsedId, toDeviceAcquisition(started.device), null),
+			);
 		},
 	};
 }
