@@ -119,6 +119,7 @@ fn blob_data_path(app: &AppHandle, id: &str) -> Result<PathBuf, RecorderError> {
 /// Created when a recording starts and resolved exactly once: [`Self::publish`]
 /// makes it the blob at its id, [`Self::discard`] deletes it and the id is never
 /// used again. Nothing else can name the directory in between.
+#[derive(Debug)]
 pub struct StagedBlob {
     id: String,
     /// `<appDataDir>/blobs`, kept so publication can fsync it after the rename.
@@ -406,8 +407,7 @@ mod tests {
         publish_bytes(root.path(), ID, b"the first bytes").expect("publish");
 
         let error = StagedBlob::stage(root.path().to_path_buf(), ID)
-            .err()
-            .expect("staging over a published blob must be refused");
+            .expect_err("staging over a published blob must be refused");
         assert!(
             error.to_string().contains("already exists"),
             "unexpected refusal: {error}"

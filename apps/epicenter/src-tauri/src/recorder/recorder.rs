@@ -163,7 +163,7 @@ const MIC_LEVEL_EMIT_INTERVAL: Duration = Duration::from_millis(50);
 /// the owner to stop or cancel it.
 #[derive(Debug)]
 enum RecorderCmd {
-    Stop(mpsc::Sender<Result<StoppedCapture>>),
+    Stop(mpsc::Sender<Result<FinalizedRecording>>),
     Cancel,
     EndCapture,
 }
@@ -284,9 +284,9 @@ impl StagedCapture {
     /// (its `BufWriter` still holds bytes it could not write, and the header on
     /// disk describes fewer than are there), so the staging it leaves behind is
     /// deleted here rather than offered as a partial result.
-    fn finish(mut self) -> Result<StoppedCapture> {
+    fn finish(mut self) -> Result<FinalizedRecording> {
         match self.finalize_wav() {
-            Ok(sample_count) => Ok(StoppedCapture {
+            Ok(sample_count) => Ok(FinalizedRecording {
                 staged: self.staged,
                 // Exact duration of what was written: the file's own sample
                 // count over the rate it was captured at. Bounded by the RIFF
@@ -341,9 +341,32 @@ impl StagedCapture {
 }
 
 /// A finalized staged WAV, on its way to becoming a blob.
-struct StoppedCapture {
+///
+/// The capture behind it is closed: its microphone is released, its worker has
+/// exited, and its bytes are complete on disk. Only publication is left, which
+/// is why this can safely cross out of the recorder lock.
+#[derive(Debug)]
+pub struct FinalizedRecording {
     staged: StagedBlob,
     duration_ms: u32,
+}
+
+impl FinalizedRecording {
+    /// Publish the staged bytes as the blob at their id.
+    ///
+    /// Deliberately not done under the recorder lock. This is the fsync ladder,
+    /// the slowest step in the whole lifecycle, and by the time it runs the
+    /// recording is finished and out of the slot: nothing another window does
+    /// can collide with it, because the next recording gets a different id.
+    pub fn publish(self) -> Result<RecordedAudio> {
+        // Measured on the critical path on purpose: the progressive writer moved
+        // most of the cost off it, and these numbers are what would reopen that.
+        let byte_length = crate::timing::measure("stop.publish", || self.staged.publish())?;
+        Ok(RecordedAudio {
+            duration_ms: self.duration_ms,
+            byte_length,
+        })
+    }
 }
 
 /// What a stopped recording committed: the two facts only the host can state
@@ -518,20 +541,23 @@ impl Recorder {
             // Capture begins the moment the stream plays. Samples produced
             // before the loop is entered wait in `sample_rx`, so nothing
             // between `play()` and the first iteration is lost.
+            // `run_capture` owns the stream and closes it the instant capture is
+            // over, however it ended. A recording waiting to be claimed must not
+            // keep the device open, the person should see the OS recording
+            // indicator go out when their microphone stops working, and the final
+            // drain is only complete once the sender is gone.
             let outcome = run_capture(
                 sample_rx,
                 &cmd_rx,
                 capture,
-                &dropped_chunks,
-                &worker_blob_id,
-                &meter_label,
-                app_handle,
+                stream,
+                CaptureContext {
+                    audio_blob_id: &worker_blob_id,
+                    owner_label: &meter_label,
+                    dropped_chunks: &dropped_chunks,
+                    app_handle,
+                },
             );
-            // The microphone is released the instant capture is over, however it
-            // ended. A recording waiting to be claimed must not keep the device
-            // open, and the person should see the OS recording indicator go out
-            // when their microphone stops working.
-            drop(stream);
             if let CaptureOutcome::Unclaimed(capture) = outcome {
                 await_resolution(capture, &cmd_rx);
             }
@@ -607,16 +633,35 @@ impl Recorder {
     /// the point of holding an ended recording: `stop` is the one publication
     /// path, so the audio captured before a microphone died is reached by the
     /// same call as the audio captured before the person let go of the button.
-    pub fn stop(&mut self, audio_blob_id: &str, caller_label: &str) -> Result<StoppingRecording> {
+    pub fn stop(&mut self, audio_blob_id: &str, caller_label: &str) -> Result<FinalizedRecording> {
         self.require_owned(audio_blob_id, caller_label)?;
         // Taken before the round trip: whether the worker answers or dies, this
         // recording is over and the slot must be free for the next start.
+        //
+        // The slot is nonetheless unavailable for the whole round trip, because
+        // `&mut self` here comes from the one recorder mutex and nothing else can
+        // acquire it until this returns. That is load-bearing: the worker is
+        // still holding an open cpal stream until it answers, and a `start` that
+        // slipped in beforehand would open a second microphone against a
+        // recorder that is supposed to have exactly one.
         let active = self.active.take().expect("ownership was just verified");
-        Ok(StoppingRecording {
-            audio_blob_id: active.audio_blob_id,
-            cmd_tx: active.cmd_tx,
-            worker: active.worker,
-        })
+
+        let (reply_tx, reply_rx) = mpsc::channel();
+        let finalized = match active.cmd_tx.send(RecorderCmd::Stop(reply_tx)) {
+            Ok(()) => reply_rx.recv().map_err(|e| {
+                RecorderError::failed(format!(
+                    "Worker dropped the stop reply for {audio_blob_id}: {e}"
+                ))
+            })?,
+            Err(e) => Err(RecorderError::failed(format!(
+                "Failed to send stop command: {e}"
+            ))),
+        };
+        // Joined, not detached: the worker closes the capture stream before it
+        // answers, and joining is what makes "the microphone is released" true
+        // by the time the slot is observably free.
+        let _ = active.worker.join();
+        finalized
     }
 
     /// Cancel the recording named by `audio_blob_id`, discarding its audio.
@@ -732,52 +777,6 @@ impl Recorder {
     }
 }
 
-/// A recording taken out of the slot and not yet finished.
-///
-/// The slot is released before the finish, deliberately. Finishing means
-/// finalizing a WAV and fsyncing it into place, and holding the one host
-/// recorder across those syncs would block every other window's `start` for no
-/// benefit: this recording is already out of the slot and the next one gets a
-/// different id, so nothing can collide.
-#[derive(Debug)]
-pub struct StoppingRecording {
-    audio_blob_id: String,
-    cmd_tx: mpsc::Sender<RecorderCmd>,
-    worker: JoinHandle<()>,
-}
-
-impl StoppingRecording {
-    /// Finalize the staged WAV and publish it, returning what the blob holds.
-    ///
-    /// This is the only path in the recorder that produces a blob. It works the
-    /// same for a recording that was still capturing and for one whose
-    /// microphone died an hour ago, because by here they are the same thing: a
-    /// staged file and a worker waiting to be asked for it.
-    pub fn finish(self) -> Result<RecordedAudio> {
-        let (reply_tx, reply_rx) = mpsc::channel();
-        let stopped = match self.cmd_tx.send(RecorderCmd::Stop(reply_tx)) {
-            Ok(()) => reply_rx.recv().map_err(|e| {
-                RecorderError::failed(format!(
-                    "Worker dropped the stop reply for {}: {e}",
-                    self.audio_blob_id
-                ))
-            })?,
-            Err(e) => Err(RecorderError::failed(format!(
-                "Failed to send stop command: {e}"
-            ))),
-        };
-        let _ = self.worker.join();
-        let stopped = stopped?;
-        // Measured on the critical path on purpose: the progressive writer moved
-        // most of the cost off it, and these numbers are what would reopen that.
-        let byte_length = crate::timing::measure("stop.publish", || stopped.staged.publish())?;
-        Ok(RecordedAudio {
-            duration_ms: stopped.duration_ms,
-            byte_length,
-        })
-    }
-}
-
 /// End a recording without producing anything: tell the worker to delete its
 /// staged bytes, then join it so the cpal stream is released before returning.
 fn discard(active: HeldRecording) {
@@ -794,6 +793,18 @@ impl Drop for Recorder {
             discard(active);
         }
     }
+}
+
+/// Who a capture belongs to, and how to reach them.
+///
+/// One value rather than four parameters, because none of it is about audio:
+/// it is the recording's identity and the two ways the worker speaks about it,
+/// a meter to the owner window and a failure report to the host.
+struct CaptureContext<'a> {
+    audio_blob_id: &'a str,
+    owner_label: &'a str,
+    dropped_chunks: &'a AtomicU32,
+    app_handle: AppHandle,
 }
 
 /// What the capture phase left behind.
@@ -813,16 +824,26 @@ enum CaptureOutcome {
 /// The staged capture is passed by value because whichever way this ends, it
 /// ends here: a `Stop` finalizes it, a `Cancel` deletes it, and anything else
 /// hands it back to be waited on.
-fn run_capture(
+///
+/// The cpal stream is passed by value for the same reason, and closed here
+/// rather than by the caller. Closing it is what makes the final drain complete
+/// rather than best-effort, so the two cannot be separated: see
+/// [`close_capture_and_drain`].
+fn run_capture<S>(
     sample_rx: mpsc::Receiver<Vec<i16>>,
     cmd_rx: &mpsc::Receiver<RecorderCmd>,
     mut capture: StagedCapture,
-    dropped_chunks: &AtomicU32,
-    audio_blob_id: &str,
-    owner_label: &str,
-    app_handle: AppHandle,
+    stream: S,
+    context: CaptureContext<'_>,
 ) -> CaptureOutcome {
     use std::sync::mpsc::RecvTimeoutError;
+
+    let CaptureContext {
+        audio_blob_id,
+        owner_label,
+        dropped_chunks,
+        app_handle,
+    } = context;
 
     // Mic-level metering accumulators, averaged and flushed on an interval.
     let mut level_sumsq = 0f64;
@@ -835,25 +856,27 @@ fn run_capture(
         // when audio frames are arriving back-to-back.
         match cmd_rx.try_recv() {
             Ok(RecorderCmd::Stop(reply)) => {
-                drain_queued(&mut capture, &sample_rx);
+                close_capture_and_drain(stream, &mut capture, &sample_rx);
                 report_dropped_chunks(dropped_chunks, audio_blob_id);
                 let _ = reply.send(capture.finish());
                 return CaptureOutcome::Resolved;
             }
             Ok(RecorderCmd::Cancel) => {
+                drop(stream);
                 capture.discard();
                 return CaptureOutcome::Resolved;
             }
             // Capture is over but the recording is not: hand the staged file up
             // so it can wait for the owner to stop or cancel it.
             Ok(RecorderCmd::EndCapture) => {
-                drain_queued(&mut capture, &sample_rx);
+                close_capture_and_drain(stream, &mut capture, &sample_rx);
                 report_dropped_chunks(dropped_chunks, audio_blob_id);
                 return CaptureOutcome::Unclaimed(capture);
             }
             // The command sender is gone without a stop or a cancel, so nobody
             // is left to claim this recording.
             Err(mpsc::TryRecvError::Disconnected) => {
+                drop(stream);
                 capture.discard();
                 return CaptureOutcome::Resolved;
             }
@@ -883,6 +906,9 @@ fn run_capture(
                     // capture ends here and the recording keeps whatever prefix
                     // reached the file.
                     error!("Recording {audio_blob_id} could not write its capture: {error}");
+                    // Closed without draining: the writes that would consume the
+                    // queue are the writes that are failing.
+                    drop(stream);
                     let app = app_handle.clone();
                     let id = audio_blob_id.to_string();
                     // On its own thread for the same reason the cpal error
@@ -916,23 +942,44 @@ fn run_capture(
             // worker's caller owns and drops only after this returns, so this is
             // not reachable today. Park rather than discard if it ever becomes
             // reachable: keeping the recording claimable is the safe direction.
-            Err(RecvTimeoutError::Disconnected) => return CaptureOutcome::Unclaimed(capture),
+            Err(RecvTimeoutError::Disconnected) => {
+                drop(stream);
+                return CaptureOutcome::Unclaimed(capture);
+            }
         }
     }
 }
 
-/// Write everything the callback has already handed over.
+/// Close the microphone, then write everything it already handed over.
 ///
-/// The command channel is checked before the sample channel, so a stop can
-/// arrive with chunks still queued behind it. Those chunks are audio the
-/// microphone captured before the person asked to stop; finalizing without them
-/// would silently truncate the tail of every recording that stopped during a
-/// backlog. Anything the microphone produces *after* this is genuinely after the
-/// stop, and is not the recording.
+/// The order is the whole point. The command channel is checked before the
+/// sample channel, so a stop arrives with chunks still queued behind it: audio
+/// the microphone captured before the person asked to stop, which finalizing
+/// without would silently truncate the tail of every recording that stopped
+/// during a backlog. But draining a channel whose sender is still live only
+/// proves nothing had arrived *yet*; a callback firing between the last
+/// `try_recv` and the sender being dropped would enqueue a chunk that then dies
+/// with the receiver, and because `try_send` accepted it the drop counter would
+/// never say so.
 ///
-/// A write failure here is not fatal to the stop: it means the disk is gone, and
+/// Closing the stream first removes that window. cpal stops the callback and
+/// drops the sender as part of dropping the stream, so a `try_recv` that yields
+/// nothing afterwards means the queue is empty *and* nothing more can arrive.
+/// Anything the microphone produced before that is in the file; there is nothing
+/// after it.
+///
+/// Generic over the stream because only its `Drop` matters here: nothing in this
+/// function calls a cpal method, and a test can supply any value whose drop
+/// closes the sender.
+///
+/// A write failure is not fatal to the stop: it means the disk is gone, and
 /// publishing the prefix that reached it beats failing the whole recording.
-fn drain_queued(capture: &mut StagedCapture, sample_rx: &mpsc::Receiver<Vec<i16>>) {
+fn close_capture_and_drain<S>(
+    stream: S,
+    capture: &mut StagedCapture,
+    sample_rx: &mpsc::Receiver<Vec<i16>>,
+) {
+    drop(stream);
     while let Ok(samples) = sample_rx.try_recv() {
         if let Err(error) = capture.write(&samples) {
             warn!("Could not write the last queued audio, publishing without it: {error}");
@@ -1407,14 +1454,14 @@ mod tests {
         });
     }
 
-    /// Stop a recording the way `stop_recording` does: take it out of the slot,
-    /// then finish it outside the lock.
+    /// Stop a recording the way `stop_recording` does: close the capture under
+    /// the recorder lock, then publish outside it.
     fn stop_and_publish(
         recorder: &mut Recorder,
         audio_blob_id: &str,
         caller_label: &str,
     ) -> Result<RecordedAudio> {
-        recorder.stop(audio_blob_id, caller_label)?.finish()
+        recorder.stop(audio_blob_id, caller_label)?.publish()
     }
 
     fn error_name(error: &RecorderError) -> &'static str {
@@ -2015,32 +2062,112 @@ mod tests {
         assert!(limit / TEST_RATE > 12 * 3_600);
     }
 
+    /// A stand-in for the cpal stream that delivers one last chunk as it closes.
+    ///
+    /// Real callbacks can fire while the device is being torn down, so the only
+    /// thing that makes a drain complete is the sender being gone before the
+    /// drain starts. This reproduces that ordering exactly: the farewell chunk
+    /// is enqueued during `drop`, so a drain that ran *before* the stream closed
+    /// would already have seen an empty queue and missed it.
+    struct ClosingStream {
+        sample_tx: Option<mpsc::SyncSender<Vec<i16>>>,
+        farewell: Vec<i16>,
+    }
+
+    impl Drop for ClosingStream {
+        fn drop(&mut self) {
+            let sample_tx = self.sample_tx.take().expect("dropped once");
+            let _ = sample_tx.try_send(std::mem::take(&mut self.farewell));
+            // And the sender goes with it, which is what turns a later
+            // `try_recv` from "nothing yet" into "nothing ever".
+        }
+    }
+
     /// The tail of every recording that stops during a backlog. The command
     /// channel has priority, so a stop can arrive with chunks the microphone
     /// already handed over still queued behind it. Finalizing without them
     /// truncates real speech, and because `try_send` accepted those chunks the
     /// drop counter would never have said so.
+    ///
+    /// The last quarter-second arrives *during* the close, which is the part a
+    /// drain-then-close ordering silently loses.
     #[test]
-    fn a_stop_writes_the_chunks_already_queued_behind_it() {
+    fn a_stop_writes_every_chunk_handed_over_including_during_the_close() {
         let root = staging_root();
         let mut capture = capture_holding(&root, "blob_aaaaaaaaaaaaaaaaaaaaa", &[]);
         let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<i16>>(CAPTURE_QUEUE_CHUNKS);
 
-        // Half a second the callback delivered but the writer never reached.
+        // Three quarters of a second the callback delivered but the writer never
+        // reached, then a final quarter delivered as the device closes.
         let queued = tone(TEST_RATE, 1);
-        for chunk in queued.chunks(512) {
+        let (already_queued, during_close) = queued.split_at(TEST_RATE as usize * 3 / 4);
+        for chunk in already_queued.chunks(512) {
             sample_tx
                 .try_send(chunk.to_vec())
                 .expect("room in the queue");
         }
+        let stream = ClosingStream {
+            sample_tx: Some(sample_tx),
+            farewell: during_close.to_vec(),
+        };
 
-        drain_queued(&mut capture, &sample_rx);
+        close_capture_and_drain(stream, &mut capture, &sample_rx);
 
         let stopped = capture.finish().expect("finalize");
         assert_eq!(
             stopped.duration_ms, 1_000,
-            "queued audio must reach the file, not be dropped with the receiver"
+            "every accepted chunk must reach the file, including one enqueued while the stream closed"
         );
+    }
+
+    /// The drain is complete rather than best-effort only because the sender is
+    /// gone first: with it closed, an empty queue reports `Disconnected` rather
+    /// than `Empty`, so "nothing to read" means "nothing can arrive".
+    #[test]
+    fn a_closed_capture_channel_reports_disconnected_not_empty() {
+        let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<i16>>(4);
+        assert!(matches!(
+            sample_rx.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+        drop(sample_tx);
+        assert!(matches!(
+            sample_rx.try_recv(),
+            Err(mpsc::TryRecvError::Disconnected)
+        ));
+    }
+
+    /// The one-recorder invariant across a stop. `stop` runs the whole worker
+    /// round trip, so by the time it returns the capture is closed and the
+    /// worker has exited. The slot can never be observed free while a microphone
+    /// is still open, because `&mut Recorder` exists only while the one recorder
+    /// mutex is held.
+    #[test]
+    fn a_stop_closes_the_capture_before_the_slot_is_free() {
+        let root = staging_root();
+        let mut recorder = Recorder::new();
+        recording_owned_by(
+            &mut recorder,
+            &root,
+            "blob_aaaaaaaaaaaaaaaaaaaaa",
+            "app-notes",
+        );
+
+        let finalized = recorder
+            .stop("blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes")
+            .expect("the owner may stop its recording");
+
+        // The worker is gone, not merely asked to go, and only now is the slot
+        // admissible again.
+        assert!(recorder.active.is_none());
+        recorder
+            .require_free_slot()
+            .expect("a stopped recording releases the slot");
+
+        // Publication is what happens after, outside any lock.
+        let recorded = finalized.publish().expect("publish");
+        assert_eq!(recorded.duration_ms, 1_000);
+        assert!(recorded.byte_length > 44);
     }
 
     /// Startup sweeps staging and only staging. A partial capture left by a dead
