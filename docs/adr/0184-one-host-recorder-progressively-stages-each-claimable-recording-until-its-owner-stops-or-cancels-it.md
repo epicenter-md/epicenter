@@ -83,7 +83,10 @@ This decision explicitly refuses, and these refusals are the reason it is small:
   rate is private mechanism, not contract.
 - A stalled disk costs dropped chunks (about ten milliseconds of audio each)
   rather than a stalled audio thread. Blocking the callback would not have saved
-  the recording and would have glitched every other sound on the machine.
+  the recording and would have glitched every other sound on the machine. A
+  capture device that will not finish closing costs the last few milliseconds of
+  tail on the same reasoning: a stop waits a bounded moment for the audio backend
+  to release the microphone, then publishes without it rather than hanging.
 - A recording is capped at what a RIFF header can describe, about twelve hours of
   mono capture. The writer refuses before the header would wrap.
 - ADR-0173 is unchanged and unamended. Staging is exactly its "temporary staging
