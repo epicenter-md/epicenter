@@ -105,7 +105,8 @@ semicolon, comma, or parentheses instead.
 ## Ear Pass
 
 Use the ear pass to verify the voice already established, not to begin a late
-rewrite. Read the draft at speaking speed.
+rewrite. Read the draft at speaking speed. Preserve the beat. Compression is a
+tool, not the goal.
 
 1. Mark where the rhythm catches, the language becomes generic, or attention
    shifts away from what the writer cared about.
