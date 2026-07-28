@@ -12,6 +12,7 @@ import { type BlobId, type BlobRemote, parseBlobId } from '@epicenter/blobs';
 import type { BunBlobStore } from '@epicenter/blobs/bun';
 import {
 	DESKTOP_EPICENTER_ROUTE,
+	DESKTOP_SURFACE_MARKER_NAME,
 	type DesktopResponse,
 } from '@epicenter/data/desktop';
 import {
@@ -100,8 +101,8 @@ export function createHomeServer({
 	const activeHost = activeUrl.host;
 	const sessionHashes = new Set<string>();
 	const surfacePages = {
-		home: injectAuthBootstrap(staticAssets.homePage, desktopAuth.bootSnapshot),
-		whispering: injectAuthBootstrap(
+		home: prepareSurfacePage(staticAssets.homePage, desktopAuth.bootSnapshot),
+		whispering: prepareSurfacePage(
 			staticAssets.whisperingPage,
 			desktopAuth.bootSnapshot,
 		),
@@ -500,16 +501,29 @@ export function createHomeServer({
 	return { app, websocket };
 }
 
-function injectAuthBootstrap(
+/**
+ * Stamp one served page with what the host owes a surface: a durable marker
+ * naming this document as host-served, and the one-shot auth bootstrap.
+ *
+ * The two are separate on purpose. A surface parses the bootstrap and then
+ * removes it, because it carries an identity snapshot that has no business
+ * sitting in the DOM afterwards. Anything that infers "the host is serving me"
+ * from that element therefore answers differently before and after an
+ * unrelated module reads it, which is a race, not a signal. The marker exists
+ * only to be read and is never consumed.
+ */
+function prepareSurfacePage(
 	page: string,
 	snapshot: DesktopAuthAuthority['bootSnapshot'],
 ): string {
 	const serialized = JSON.stringify(snapshot).replaceAll('<', '\\u003c');
-	const element = `<script id="epicenter-auth-bootstrap" type="application/json">${serialized}</script>`;
+	const injected =
+		`<meta name="${DESKTOP_SURFACE_MARKER_NAME}" content="desktop">` +
+		`<script id="epicenter-auth-bootstrap" type="application/json">${serialized}</script>`;
 	const head = page.search(/<\/head\s*>/i);
 	return head === -1
-		? page.replace(/<body\b/i, `${element}<body`)
-		: `${page.slice(0, head)}${element}${page.slice(head)}`;
+		? page.replace(/<body\b/i, `${injected}<body`)
+		: `${page.slice(0, head)}${injected}${page.slice(head)}`;
 }
 
 function blobResponseHeaders(contentType: string): Record<string, string> {

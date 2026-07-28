@@ -24,7 +24,7 @@ import {
 	type ValueDefinitions,
 	type ValueFor,
 } from './definitions.js';
-import { openDesktopEpicenter } from './desktop.js';
+import { isEpicenterDesktopSurface, openDesktopEpicenter } from './desktop.js';
 import {
 	type DocumentSyncIssue,
 	type RowDocument,
@@ -850,15 +850,3 @@ function defaultDedicatedWorker(): {
 }
 
 export type { ClientMessagePort };
-
-function isEpicenterDesktopSurface(): boolean {
-	const document = (
-		globalThis as {
-			document?: { getElementById(id: string): unknown };
-		}
-	).document;
-	return (
-		document?.getElementById('epicenter-auth-bootstrap') !== undefined &&
-		document?.getElementById('epicenter-auth-bootstrap') !== null
-	);
-}

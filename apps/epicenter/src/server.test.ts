@@ -36,6 +36,7 @@ import {
 } from '@epicenter/blobs';
 import { createBunBlobStore } from '@epicenter/blobs/bun';
 import { desktopBlobUrl } from '@epicenter/blobs/webview';
+import { DESKTOP_SURFACE_MARKER_NAME } from '@epicenter/data/desktop';
 import { Ok } from 'wellcrafted/result';
 import type { HomeHost, HomeHostInputs } from './host.ts';
 import {
@@ -70,11 +71,14 @@ const PAGE = '<!doctype html><html><body>Home test page</body></html>';
 const WHISPERING_PAGE =
 	'<!doctype html><html><body>Whispering test application</body></html>';
 
-function withoutAuthBootstrap(page: string): string {
-	return page.replace(
-		/<script id="epicenter-auth-bootstrap" type="application\/json">[\s\S]*?<\/script>/,
-		'',
-	);
+/** Strip everything the host stamps onto a surface, recovering the built page. */
+function withoutHostInjection(page: string): string {
+	return page
+		.replace(new RegExp(`<meta name="${DESKTOP_SURFACE_MARKER_NAME}"[^>]*>`), '')
+		.replace(
+			/<script id="epicenter-auth-bootstrap" type="application\/json">[\s\S]*?<\/script>/,
+			'',
+		);
 }
 
 const queryDir = fileURLToPath(new URL('..', import.meta.url));
@@ -425,7 +429,7 @@ describe('createHomeServer', () => {
 			const page = await fetch(HOME_ROUTE.url(server.url.origin), {
 				headers: authenticatedHeaders(server),
 			});
-			expect(withoutAuthBootstrap(await page.text())).toBe(PAGE);
+			expect(withoutHostInjection(await page.text())).toBe(PAGE);
 
 			const bareSession = await fetch(SESSION_ROUTE.url(server.url.origin));
 			expect(bareSession.status).toBe(401);
@@ -478,14 +482,28 @@ describe('createHomeServer', () => {
 			});
 			const queryPage = await query.text();
 			expect(queryPage).toContain('id="epicenter-auth-bootstrap"');
-			expect(withoutAuthBootstrap(queryPage)).toBe(PAGE);
+			expect(withoutHostInjection(queryPage)).toBe(PAGE);
 
 			const whispering = await fetch(WHISPERING_ROUTE.url(server.url.origin), {
 				headers: authenticatedHeaders(server),
 			});
 			const whisperingPage = await whispering.text();
 			expect(whisperingPage).toContain('id="epicenter-auth-bootstrap"');
-			expect(withoutAuthBootstrap(whisperingPage)).toBe(WHISPERING_PAGE);
+			expect(withoutHostInjection(whisperingPage)).toBe(WHISPERING_PAGE);
+			// A surface parses the auth bootstrap and removes it, then routes
+			// storage later. The marker that says "the host is serving you" has to
+			// outlive that read, or the surface opens its own replica instead of
+			// the host-owned one.
+			expect(whisperingPage).toContain(
+				`<meta name="${DESKTOP_SURFACE_MARKER_NAME}"`,
+			);
+			const afterBootstrapConsumed = whisperingPage.replace(
+				/<script id="epicenter-auth-bootstrap" type="application\/json">[\s\S]*?<\/script>/,
+				'',
+			);
+			expect(afterBootstrapConsumed).toContain(
+				`<meta name="${DESKTOP_SURFACE_MARKER_NAME}"`,
+			);
 			const whisperingAsset = await fetch(
 				`${server.url.origin}/apps/whispering/_app/immutable/entry.js?v=1`,
 				{ headers: authenticatedHeaders(server) },
@@ -503,7 +521,7 @@ describe('createHomeServer', () => {
 				`${server.url.origin}/apps/whispering/settings/transcription?tab=models`,
 				{ headers: authenticatedHeaders(server) },
 			);
-			expect(withoutAuthBootstrap(await clientRoute.text())).toBe(
+			expect(withoutHostInjection(await clientRoute.text())).toBe(
 				WHISPERING_PAGE,
 			);
 			const mail = await fetch(MAIL_ROUTE.url(server.url.origin), {
@@ -564,7 +582,7 @@ describe('createHomeServer', () => {
 				{ headers: authenticatedHeaders(server) },
 			);
 			expect(queryState.status).toBe(200);
-			expect(withoutAuthBootstrap(await queryState.text())).toBe(PAGE);
+			expect(withoutHostInjection(await queryState.text())).toBe(PAGE);
 
 			// URL fragments are browser state and are not sent in an HTTP request.
 			// The server therefore sees this as the one canonical Mail path.
@@ -1252,7 +1270,7 @@ describe('the built SPA', () => {
 				headers: authenticatedHeaders(server),
 			});
 			expect(response.status).toBe(200);
-			expect(withoutAuthBootstrap(await response.text())).toBe(page);
+			expect(withoutHostInjection(await response.text())).toBe(page);
 			expect(response.headers.get('content-security-policy')).toMatch(
 				/script-src 'self' 'sha256-/,
 			);
@@ -1470,7 +1488,7 @@ describe('sidecar end-to-end smoke', () => {
 			const served = await fetch(HOME_ROUTE.url(origin), {
 				headers: { cookie: cookie ?? '' },
 			});
-			expect(withoutAuthBootstrap(await served.text())).toBe(page);
+			expect(withoutHostInjection(await served.text())).toBe(page);
 
 			const session = await fetch(SESSION_ROUTE.url(origin), {
 				headers: { cookie: cookie ?? '' },
