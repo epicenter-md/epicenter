@@ -65,12 +65,11 @@ function createManualRecorder() {
 		// but it still holds what it recorded, and dropping it would strand that
 		// audio in a host slot nothing could ever claim. Resolving it is the
 		// handler's job, through the ordinary stop or cancel.
+		//
+		// One subscription covers every way a capture can end, including one that
+		// already had when this recording was handed over: `onEnded` announces
+		// that too, so nothing here has to ask which way it found out.
 		_stopEndedListener = recording.onEnded((reason) => _onEnded?.(reason));
-		// A recording recovered from the host may have lost its capture while
-		// this JS was gone. The event announcing that is long past, so the
-		// snapshot it carries is how we learn, and it is announced identically:
-		// a caller never has to ask which of the two ways it found out.
-		if (recording.endedReason) _onEnded?.(recording.endedReason);
 	}
 
 	function release() {

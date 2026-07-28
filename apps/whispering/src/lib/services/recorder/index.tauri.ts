@@ -155,6 +155,11 @@ function createCpalRecorder(): RecorderService<CpalRecordingParams> {
 		// another level or another ending, so it starts deaf rather than
 		// subscribing to events the host will not send.
 		let listening = endedReason === null;
+		// Whether this recording's caller has been told its capture ended. The
+		// ending can reach us three ways (the snapshot this was built from, the
+		// host event, a reconcile against `current`), and a caller must hear it
+		// exactly once.
+		let announcedEnded = false;
 
 		const stopListening = () => {
 			listening = false;
@@ -221,19 +226,53 @@ function createCpalRecorder(): RecorderService<CpalRecordingParams> {
 					listen<number>(MIC_LEVEL_EVENT, (event) => handler(event.payload)),
 				),
 
-			onEnded: (handler) =>
-				track(
-					events.recordingEndedEvent.listen((event) => {
-						// The host targets the owning window, but a window can outlive
-						// one recording and start another, so the id still has to match.
-						if (event.payload.audioBlobId !== audioBlobId) return;
-						// The capture is over, so the level meter has nothing left to
-						// report and this event cannot fire twice. The recording is
-						// still the caller's to stop.
-						stopListening();
-						handler(event.payload.reason);
-					}),
-				),
+			onEnded: (handler) => {
+				const announce = (reason: RecordingEndedReason) => {
+					if (announcedEnded) return;
+					announcedEnded = true;
+					// The capture is over, so the level meter has nothing left to
+					// report and no further ending can arrive. The recording is
+					// still the caller's to stop.
+					stopListening();
+					handler(reason);
+				};
+
+				// Already over when this recording was handed to us, which is what a
+				// reload finds when the capture died while the JS was gone. A
+				// microtask so the caller has finished wiring up before it hears it.
+				if (endedReason !== null) {
+					queueMicrotask(() => announce(endedReason));
+					return () => {};
+				}
+
+				const unlisten = events.recordingEndedEvent.listen((event) => {
+					// The host targets the owning window, but a window can outlive
+					// one recording and start another, so the id still has to match.
+					if (event.payload.audioBlobId !== audioBlobId) return;
+					announce(event.payload.reason);
+				});
+				const untrack = track(unlisten);
+
+				// `listen` installs asynchronously, so there is a window between this
+				// recording starting and the host being able to reach it. An ending
+				// that lands in that window is emitted to nobody, and the recording
+				// would then sit in the host's one slot with this app still showing
+				// it as live: a wedge, not a missed toast.
+				//
+				// Closed by reading state rather than by buffering the event. The
+				// ending is not a message the host owes us, it is a fact `current`
+				// reports for as long as the recording is unresolved, so one read
+				// once the listener is live covers exactly the gap the listener
+				// could not. Nothing is queued, acknowledged, or replayed.
+				void unlisten.then(async () => {
+					if (announcedEnded) return;
+					const { data: live } = await commands.currentRecording();
+					if (live?.audioBlobId !== audioBlobId) return;
+					if (live.endedReason !== null) announce(live.endedReason);
+				});
+
+				return untrack;
+			},
 		};
 	}
 

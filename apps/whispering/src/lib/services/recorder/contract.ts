@@ -182,11 +182,16 @@ export type Recording = {
 	 * recording is not finished: it still holds everything captured up to that
 	 * point, and `stop` still publishes it.
 	 *
-	 * A signal, not a result, and best-effort: it carries no audio and it is not
-	 * the only way to learn what happened. A caller that misses it (it reloaded,
-	 * it was not listening yet) finds the same recording through
-	 * {@link RecorderService.current} with {@link Recording.endedReason} set.
-	 * Nothing expires, so nothing has to be acknowledged.
+	 * A signal, not a result: it carries no audio. It is also not the only way
+	 * this fires. An ending is a fact the host reports for as long as the
+	 * recording is unresolved, not a message it owes anyone, so an implementation
+	 * that cannot have observed the moment (its listener was still installing, or
+	 * the recording was already ended when it was handed over) reads that state
+	 * and announces it here instead. Either way the handler runs exactly once,
+	 * and nothing is queued, acknowledged, or replayed to make that true.
+	 *
+	 * Resolving the recording afterwards is the caller's job. It still holds what
+	 * it captured, and on desktop it still holds the host's one recorder slot.
 	 */
 	onEnded(handler: (reason: RecordingEndedReason) => void): () => void;
 };
