@@ -15,10 +15,10 @@
 //! rules prevent is one window destroying, stopping, or collecting the blob of
 //! a recording another window started.
 
-use crate::recorder::blob::{mint_blob_id, write_blob};
+use crate::recorder::blob::mint_blob_id;
 use crate::recorder::ended::{EndedReason, RecordingEndedEvent};
 use crate::recorder::error::RecorderError;
-use crate::recorder::recorder::{HostRecording, Recorder, Result, TARGET_RATE};
+use crate::recorder::recorder::{HostRecording, Recorder, Result};
 use log::{debug, info, warn};
 use serde::Serialize;
 use std::sync::Mutex;
@@ -34,7 +34,7 @@ use tauri_specta::Event;
 /// contains, and it had no answer at all after a reload.
 ///
 /// Both are `u32` because the blob is a RIFF WAV and RIFF states its own sizes
-/// in 32 bits: `write_pcm_as_wav` already refuses anything larger. So `u32` is
+/// in 32 bits: the staged writer already refuses anything larger. So `u32` is
 /// the format's real bound rather than a convenient cap, and it renders in
 /// TypeScript as a plain `number` (specta widens `f64` to `number | null` to
 /// leave room for NaN, a value neither of these can hold).
@@ -42,10 +42,10 @@ use tauri_specta::Event;
 #[serde(rename_all = "camelCase")]
 pub struct StoppedRecording {
     pub audio_blob_id: String,
-    /// Exact duration of the committed audio: finalized sample count over the
-    /// 16 kHz target rate. This is the blob's own length, so a sub-second clip
-    /// padded at finalize reports the padded duration, which is what the file
-    /// actually holds.
+    /// Exact duration of the committed audio: the file's own sample count over
+    /// the rate it was captured at. This is the blob's length rather than how
+    /// long the button was held, so a sub-second clip padded at finalize reports
+    /// the padded duration, which is what the file actually holds.
     pub duration_ms: u32,
     /// Exact length of the published file on disk.
     pub byte_length: u32,
@@ -136,41 +136,34 @@ pub async fn stop_recording(
     window: WebviewWindow,
 ) -> Result<StoppedRecording> {
     info!("Stopping recording {audio_blob_id}");
-    let samples = {
+    let stopping = {
         let mut recorder = lock(&recorder)?;
-        // The recorder slot is released by `stop` itself, before the blob is
-        // written. The write below is the slow part (fsync), and holding the
-        // one host recorder across it would block every other window's start
-        // for no benefit: the samples are already in hand and the next
-        // recording gets a different id, so nothing can collide.
-        let stopped = recorder.stop(&audio_blob_id, window.label());
+        // `stop` takes the recording out of the slot without finishing it, so
+        // the lock is released before the finalize and the fsync ladder below.
+        // Holding the one host recorder across those syncs would block every
+        // other window's start for no benefit.
+        let stopping = recorder.stop(&audio_blob_id, window.label());
         // Refreshed before the result is propagated, not after, because the
         // two disagree. An ownership refusal leaves the recording running,
-        // while a worker that dies mid-handoff fails *and* ends it. Reading
-        // the recorder rather than the result gets both right.
+        // while a successful take ends it. Reading the recorder rather than the
+        // result gets both right.
         refresh_recording_indicator(&app_handle, &recorder);
-        stopped?
+        stopping?
     };
 
-    // Bounded by the same RIFF limit the writer enforces: a sample count that
-    // fits in `u32` is at most ~3.1 days of 16 kHz audio.
-    let duration_ms = (samples.len() as f64 / TARGET_RATE as f64 * 1000.0).round() as u32;
-    // Measured on the critical path on purpose: this synchronous write + fsync
-    // is exactly the cost the parked handoff + async-persist optimization would
-    // remove. The numbers here decide whether that optimization is worth it.
-    //
     // A failure here loses the recording. There is nothing to retry against
-    // (the samples are consumed and the slot is already free), so it surfaces
-    // as an error rather than pretending a blob exists.
-    let byte_length = crate::timing::measure("stop.wav_write+fsync", || {
-        write_blob(&app_handle, &audio_blob_id, &samples)
-    })?;
+    // (the staged file is deleted with the error and the slot is already free),
+    // so it surfaces as an error rather than pretending a blob exists.
+    let recorded = stopping.finish()?;
 
-    info!("Recording stopped: id={audio_blob_id}, {duration_ms} ms, {byte_length} bytes");
+    info!(
+        "Recording stopped: id={audio_blob_id}, {} ms, {} bytes",
+        recorded.duration_ms, recorded.byte_length
+    );
     Ok(StoppedRecording {
         audio_blob_id,
-        duration_ms,
-        byte_length,
+        duration_ms: recorded.duration_ms,
+        byte_length: recorded.byte_length,
     })
 }
 

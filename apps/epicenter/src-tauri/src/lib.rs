@@ -617,6 +617,15 @@ pub fn run() {
         .setup(move |app| {
             specta_builder.mount_events(app);
 
+            // A recording that was still capturing when a previous launch died
+            // left a partial WAV in the recorder's private staging. It is not a
+            // blob and never will be one, so it is deleted here and nothing
+            // else happens: no promotion, no repair, no notice. Owned by the
+            // recorder rather than by blob-store startup because `.staging/rust`
+            // is the recorder's alone (`packages/blobs` stages its own uploads
+            // under `.staging/bun` and cleans them per operation).
+            crate::recorder::blob::delete_stale_staging(app.handle());
+
             // The active local model and the unload policy are device-local host
             // state (ADR-0180), so they live beside the app's own config rather
             // than in any workspace that could carry them to a machine without

@@ -75,6 +75,8 @@ const ENDED_NOTICE: Record<RecordingEndedReason, string> = {
 		'Microphone access was turned off. We kept everything recorded up to that point.',
 	streamFailed:
 		'Your microphone stopped working. We kept everything recorded up to that point.',
+	storageFailed:
+		"We couldn't keep writing the recording to disk. We kept everything recorded up to that point.",
 };
 
 /**

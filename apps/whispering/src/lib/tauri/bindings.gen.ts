@@ -548,7 +548,19 @@ export type EndedReason =
 	 *  One variant rather than five, because the person does the same thing
 	 *  about all of them.
 	 */
-	| 'streamFailed';
+	| 'streamFailed'
+	/**
+	 *  The staged file could not be written any further: the disk filled, its
+	 *  volume went away, or the recording reached the longest audio a WAV can
+	 *  describe (about 12 hours of mono capture).
+	 *
+	 *  Kept apart from `StreamFailed` because the microphone is fine and the
+	 *  remedy is on the machine, not the hardware. The three storage causes are
+	 *  *not* kept apart from each other: whichever one it was, the recording is
+	 *  capped at what already reached disk and the next step is the same, so a
+	 *  finer split would be a decorative name on a message string.
+	 */
+	| 'storageFailed';
 
 export type FallbackReason =
 	/**  No device was requested, so the system default was used. */
@@ -737,7 +749,7 @@ export type SettingsError =
  *  contains, and it had no answer at all after a reload.
  *
  *  Both are `u32` because the blob is a RIFF WAV and RIFF states its own sizes
- *  in 32 bits: `write_pcm_as_wav` already refuses anything larger. So `u32` is
+ *  in 32 bits: the staged writer already refuses anything larger. So `u32` is
  *  the format's real bound rather than a convenient cap, and it renders in
  *  TypeScript as a plain `number` (specta widens `f64` to `number | null` to
  *  leave room for NaN, a value neither of these can hold).
@@ -745,10 +757,10 @@ export type SettingsError =
 export type StoppedRecording = {
 	audioBlobId: string;
 	/**
-	 *  Exact duration of the committed audio: finalized sample count over the
-	 *  16 kHz target rate. This is the blob's own length, so a sub-second clip
-	 *  padded at finalize reports the padded duration, which is what the file
-	 *  actually holds.
+	 *  Exact duration of the committed audio: the file's own sample count over
+	 *  the rate it was captured at. This is the blob's length rather than how
+	 *  long the button was held, so a sub-second clip padded at finalize reports
+	 *  the padded duration, which is what the file actually holds.
 	 */
 	durationMs: number;
 	/**  Exact length of the published file on disk. */

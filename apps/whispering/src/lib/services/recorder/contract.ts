@@ -116,7 +116,8 @@ export type RecorderStopError =
 export type RecordingEndedReason =
 	| 'deviceDisconnected'
 	| 'permissionRevoked'
-	| 'streamFailed';
+	| 'streamFailed'
+	| 'storageFailed';
 
 /**
  * A recording, bound to the capture that produced it.

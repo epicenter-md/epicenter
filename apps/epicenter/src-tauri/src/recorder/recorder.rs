@@ -1,21 +1,35 @@
 //! CPAL recorder built around a two-thread pipeline.
 //!
 //! ```text
-//! cpal callback thread          consumer worker thread
-//! ┌────────────────────┐  mpsc  ┌─────────────────────┐
-//! │ build_input_stream │ ─────▶ │ run_capture         │
-//! │  - downmix to mono │ chunks │  - accumulate Vec   │
-//! │  - sample_tx.send  │        │  - resample (final) │
-//! └────────────────────┘        │  - pad short clips  │
-//!                               │  - emit mic level   │
-//!                               └─────────────────────┘
+//! cpal callback thread            writer worker thread
+//! ┌──────────────────────┐  chan  ┌──────────────────────┐
+//! │ build_input_stream   │ ─────▶ │ run_capture          │
+//! │  - downmix to mono   │ bound  │  - hound WavWriter   │
+//! │  - convert to PCM16  │   ed   │  - pad short clips   │
+//! │  - try_send, or drop │        │  - emit mic level    │
+//! └──────────────────────┘        └──────────────────────┘
 //! ```
 //!
-//! The cpal callback never blocks: it downmixes to mono and ships
-//! samples through an mpsc channel. The consumer worker accumulates,
-//! resamples to 16 kHz at finalize, pads sub-1s clips, and hands the
-//! resulting `Vec<f32>` (mono 16 kHz PCM) back to the command layer,
-//! which writes the durable blob and returns its id over IPC.
+//! The cpal callback never blocks and never touches a file: it downmixes to
+//! mono, converts to PCM16, and hands the chunk to a **bounded** channel with
+//! `try_send`. A full channel drops the chunk, which is the only outcome that
+//! keeps a stalled disk from stalling the audio thread.
+//!
+//! The worker writes those chunks straight into a staged WAV as they arrive, so
+//! memory is flat in the recording's length rather than proportional to it. An
+//! hour-long meeting costs the same resident audio as a four-second dictation:
+//! one bounded queue and one `BufWriter`. That is the whole reason this path
+//! exists, and it is why there is no separate long-form mode for an application
+//! to select.
+//!
+//! # The staged file is at the device's rate, and that is private
+//!
+//! Capture writes mono PCM16 at whatever rate the microphone actually opened.
+//! Nothing resamples during capture, because a streaming resampler in the write
+//! path buys nothing: transcription already decodes arbitrary rates down to
+//! 16 kHz, and cloud upload already resamples to 48 kHz for Opus. So the rate a
+//! blob happens to be at is mechanism, not contract; no caller chooses it and no
+//! caller reads it.
 //!
 //! # One recorder, owned by the window that started it
 //!
@@ -32,7 +46,7 @@
 //! permission is withdrawn, the stream dies. That releases the *device*, not the
 //! *recording*. [`Recorder::end_capture`] marks the recording ended, drops the
 //! cpal stream, and leaves everything else exactly where it was: the slot stays
-//! occupied, the audio stays in the worker, and [`Recorder::current`] keeps
+//! occupied, the staged file stays on disk, and [`Recorder::current`] keeps
 //! answering with the same recording plus the reason its capture ended.
 //!
 //! That is the whole interruption design. There is no pending-interruption
@@ -53,14 +67,19 @@
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, SampleFormat, Stream};
-use log::{debug, error, info};
+use hound::{SampleFormat as WavSampleFormat, WavSpec, WavWriter};
+use log::{debug, error, info, warn};
 use serde::Serialize;
+use std::fs::OpenOptions;
+use std::io::BufWriter;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc;
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
-use crate::audio::resample_mono;
+use crate::recorder::blob::StagedBlob;
 use crate::recorder::ended::EndedReason;
 use crate::recorder::error::RecorderError;
 
@@ -69,10 +88,56 @@ use crate::recorder::error::RecorderError;
 /// on `error.name` instead of matching message text.
 pub type Result<T> = std::result::Result<T, RecorderError>;
 
-/// Target rate for every recording. Local GGUF transcription consumes 16 kHz
-/// mono; the cloud services accept Opus encoded from 48 kHz, reached via a
-/// second resample step inside `audio::encode_pcm_to_opus_ogg`.
-pub(crate) const TARGET_RATE: u32 = 16_000;
+/// The rate to ask a microphone for, when it can oblige. Local GGUF
+/// transcription consumes 16 kHz mono, so a device that opens there produces a
+/// staged file transcription can read without resampling at all. A device that
+/// cannot is opened at its own rate and nothing is lost: the decode path
+/// resamples whatever it finds.
+const PREFERRED_CAPTURE_RATE: u32 = 16_000;
+
+/// Bytes one PCM16 sample occupies in the staged file.
+const BYTES_PER_SAMPLE: u32 = 2;
+
+/// The most audio bytes one WAV can describe.
+///
+/// RIFF states its sizes in 32 bits, and `hound` counts written bytes in a `u32`
+/// it increments without checking, so a recording long enough to overflow it
+/// would silently wrap the header rather than fail. The writer refuses first.
+/// `36` is the header those bytes are added to (`update_header` in hound 3.5.1
+/// computes `data_len_offset + 4 - 8`, which is 36 for the PCM `fmt ` chunk this
+/// spec produces).
+///
+/// At 48 kHz mono PCM16 the ceiling is about 12.4 hours, well past any meeting
+/// this path is meant to carry, so it is a guard rail rather than a mode.
+const MAX_WAV_DATA_BYTES: u32 = u32::MAX - 36;
+
+/// How many callback chunks may wait for the writer.
+///
+/// cpal's default input buffer is on the order of 10 ms per callback across
+/// backends, so this is roughly two seconds of backlog: long enough to absorb a
+/// disk hiccup, short enough that the memory is a rounding error (a few hundred
+/// kilobytes even with unusually large buffers) and bounded no matter how long
+/// the recording runs. Deliberately private. It is a tuning constant, not a
+/// promise to any caller, and no application can act on it.
+const CAPTURE_QUEUE_CHUNKS: usize = 200;
+
+/// How often a backlogged writer may report dropped chunks.
+const DROP_REPORT_INTERVAL: Duration = Duration::from_secs(1);
+
+/// Whether appending `samples` more would take the file past what a WAV header
+/// can describe.
+///
+/// Widened to `u64` for the arithmetic, because the whole point is that the
+/// 32-bit answer is the one that lies.
+fn would_exceed_wav_limit(written_samples: u32, samples: usize) -> bool {
+    // Saturating throughout: every way this arithmetic can wrap produces a
+    // smaller number, which is the one direction that would answer "there is
+    // room" for a chunk there is no room for.
+    (written_samples as u64)
+        .saturating_add(samples as u64)
+        .saturating_mul(BYTES_PER_SAMPLE as u64)
+        > MAX_WAV_DATA_BYTES as u64
+}
 
 /// Event name for live mic levels, emitted to the window that owns the
 /// recording so its meter can reflect mic activity. The JS side never sees the
@@ -90,22 +155,212 @@ const MIC_LEVEL_EVENT: &str = "mic-level";
 /// dropped, so a brief loud transient still registers.
 const MIC_LEVEL_EMIT_INTERVAL: Duration = Duration::from_millis(50);
 
-/// Sub-1s recordings are padded to this many samples (at 16 kHz, so
-/// 1.25 s). Suppresses Whisper hallucination on near-silent short
-/// clips. Empty recordings (no samples ever delivered) are left empty.
-const SHORT_RECORDING_PAD_SAMPLES: usize = 20_000;
-
 /// Worker-thread command channel.
 ///
-/// `Stop` asks for the captured audio back and `Cancel` discards it; both end
-/// the worker. `EndCapture` ends neither: it tells the worker its capture is
-/// over so it can release the microphone and wait, still holding the audio, for
+/// `Stop` asks for the staged bytes back and `Cancel` deletes them; both end the
+/// worker. `EndCapture` ends neither: it tells the worker its capture is over so
+/// it can release the microphone and wait, still holding the staged file, for
 /// the owner to stop or cancel it.
 #[derive(Debug)]
 enum RecorderCmd {
-    Stop(mpsc::Sender<Result<Vec<f32>>>),
+    Stop(mpsc::Sender<Result<StoppedCapture>>),
     Cancel,
     EndCapture,
+}
+
+/// The staged WAV one capture is writing into.
+///
+/// Owned entirely by the worker thread, which is what lets the writer stay
+/// unsynchronized: nothing else can reach the file, so there is no lock between
+/// the audio path and the bytes.
+struct StagedCapture {
+    staged: StagedBlob,
+    /// `None` only after finalization, so the writer can be consumed by value
+    /// without leaving a half-alive one behind.
+    writer: Option<WavWriter<BufWriter<std::fs::File>>>,
+    device_rate: u32,
+}
+
+impl StagedCapture {
+    /// Open a staged WAV for a recording about to start.
+    ///
+    /// Mono PCM16 at the device's own rate. Mono because a dictation microphone
+    /// is one voice and the transcriber downmixes anyway; PCM16 because it
+    /// halves the file against f32 at a noise floor two orders of magnitude
+    /// below anything a microphone produces.
+    fn open(staged: StagedBlob, device_rate: u32) -> Result<Self> {
+        match Self::open_writer(&staged, device_rate) {
+            Ok(writer) => Ok(Self {
+                staged,
+                writer: Some(writer),
+                device_rate,
+            }),
+            // A staging directory nothing can write to is debris, not a
+            // recording waiting to happen.
+            Err(error) => {
+                staged.discard();
+                Err(error)
+            }
+        }
+    }
+
+    fn open_writer(
+        staged: &StagedBlob,
+        device_rate: u32,
+    ) -> Result<WavWriter<BufWriter<std::fs::File>>> {
+        let path = staged.data_path();
+        // `create_new` states the invariant rather than assuming it: the staging
+        // directory was made for this recording alone, moments ago.
+        let file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&path)
+            .map_err(|error| {
+                RecorderError::failed(format!("create staged capture {}: {error}", path.display()))
+            })?;
+        let spec = WavSpec {
+            channels: 1,
+            sample_rate: device_rate,
+            bits_per_sample: 16,
+            sample_format: WavSampleFormat::Int,
+        };
+        WavWriter::new(BufWriter::new(file), spec).map_err(|error| {
+            RecorderError::failed(format!("open wav writer {}: {error}", path.display()))
+        })
+    }
+
+    /// Samples written so far, straight from the writer's own count so the
+    /// duration and the padding decision can never disagree with the file.
+    fn written_samples(&self) -> u32 {
+        self.writer.as_ref().map_or(0, |writer| writer.len())
+    }
+
+    /// Append one callback's worth of mono PCM16.
+    ///
+    /// No flush and no header checkpoint: `BufWriter` writes when it fills, and
+    /// an `fsync` here would put disk latency on the path that has to keep up
+    /// with a microphone. Checkpointing the header would also imply this file is
+    /// recoverable after a host crash, which is exactly the promise the startup
+    /// sweep refuses to make.
+    fn write(&mut self, samples: &[i16]) -> Result<()> {
+        let Some(writer) = self.writer.as_mut() else {
+            return Err(RecorderError::failed(
+                "the staged capture is already finalized",
+            ));
+        };
+        if would_exceed_wav_limit(writer.len(), samples.len()) {
+            return Err(RecorderError::failed(
+                "the recording reached the longest audio a WAV file can describe",
+            ));
+        }
+        for &sample in samples {
+            writer
+                .write_sample(sample)
+                .map_err(|error| RecorderError::failed(format!("write staged capture: {error}")))?;
+        }
+        Ok(())
+    }
+
+    /// Pad a sub-second recording with silence to 1.25 seconds.
+    ///
+    /// A product behavior, not a format requirement: Whisper hallucinates
+    /// sentences into near-silent clips shorter than about a second. Expressed
+    /// in the device's rate because that is what the file is at; it used to be a
+    /// flat 20 000 samples, which was the same 1.25 s back when every recording
+    /// was resampled to 16 kHz before it was written.
+    ///
+    /// A recording that captured nothing is left empty. There is no speech to
+    /// protect, and padding it would turn "we heard nothing" into 1.25 s of
+    /// silence that looks like a real recording.
+    fn pad_if_short(&mut self) -> Result<()> {
+        let captured = self.written_samples();
+        if captured == 0 || captured >= self.device_rate {
+            return Ok(());
+        }
+        let target = self.device_rate + self.device_rate / 4;
+        let padding = vec![0i16; (target - captured) as usize];
+        self.write(&padding)
+    }
+
+    /// Finalize the WAV and hand the staged bytes back to be published.
+    ///
+    /// Consumes the capture either way. A finalize that fails cannot be retried
+    /// (its `BufWriter` still holds bytes it could not write, and the header on
+    /// disk describes fewer than are there), so the staging it leaves behind is
+    /// deleted here rather than offered as a partial result.
+    fn finish(mut self) -> Result<StoppedCapture> {
+        match self.finalize_wav() {
+            Ok(sample_count) => {
+                let duration_ms = duration_ms(sample_count, self.device_rate);
+                Ok(StoppedCapture {
+                    staged: self.staged,
+                    duration_ms,
+                })
+            }
+            Err(error) => {
+                self.staged.discard();
+                Err(error)
+            }
+        }
+    }
+
+    fn finalize_wav(&mut self) -> Result<u32> {
+        // Best effort, deliberately. Padding is a nicety for the transcriber,
+        // and a capture that ended because the disk filled will fail to write
+        // its silence too. Failing the whole stop over that would throw away
+        // speech that is already on disk, which is the exact loss this path
+        // exists to prevent.
+        if let Err(error) = self.pad_if_short() {
+            warn!("Could not pad a short recording, publishing it as captured: {error}");
+        }
+        let Some(writer) = self.writer.take() else {
+            return Err(RecorderError::failed(
+                "the staged capture is already finalized",
+            ));
+        };
+        // Read before `finalize` consumes the writer. This is the count hound
+        // will stamp into the header, and it counts only samples the writer
+        // accepted, so a capture that hit a write error reports its prefix.
+        let sample_count = writer.len();
+        // Checked, never left to `Drop`. hound patches the header on drop too,
+        // but a drop cannot report that the patch failed, and an unreported
+        // failure here is a silently truncated recording. A successful
+        // `finalize` also flushes, so every counted byte is on disk by the time
+        // this returns.
+        writer
+            .finalize()
+            .map_err(|error| RecorderError::failed(format!("finalize staged capture: {error}")))?;
+        Ok(sample_count)
+    }
+
+    /// Delete the staged bytes without finalizing them.
+    ///
+    /// The writer is dropped first so its file handle is closed before the
+    /// directory goes, which Windows requires and every platform prefers.
+    fn discard(self) {
+        drop(self.writer);
+        self.staged.discard();
+    }
+}
+
+/// A finalized staged WAV, on its way to becoming a blob.
+struct StoppedCapture {
+    staged: StagedBlob,
+    duration_ms: u32,
+}
+
+/// What a stopped recording committed: the two facts only the host can state
+/// exactly, once the blob is on disk.
+pub struct RecordedAudio {
+    pub duration_ms: u32,
+    pub byte_length: u32,
+}
+
+/// Exact duration of what was written: the file's own sample count over the rate
+/// it was captured at. Bounded by the RIFF ceiling the writer enforces, so it
+/// always fits in `u32`.
+fn duration_ms(sample_count: u32, device_rate: u32) -> u32 {
+    (sample_count as f64 / device_rate as f64 * 1000.0).round() as u32
 }
 
 /// The one recording the recorder holds: its identity, its owner, and the
@@ -222,12 +477,24 @@ impl Recorder {
             buffer_size: cpal::BufferSize::Default,
         };
 
-        let (sample_tx, sample_rx) = mpsc::channel::<Vec<f32>>();
+        // Staging is opened before the microphone, so a recording that cannot be
+        // written fails now rather than after an hour of captured speech.
+        let capture = StagedCapture::open(
+            StagedBlob::create(&app_handle, &audio_blob_id)?,
+            device_rate,
+        )?;
+
+        let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<i16>>(CAPTURE_QUEUE_CHUNKS);
         let (cmd_tx, cmd_rx) = mpsc::channel::<RecorderCmd>();
         let (ready_tx, ready_rx) = mpsc::channel::<Result<()>>();
+        let dropped_chunks = Arc::new(AtomicU32::new(0));
+        let sink = ChunkSink {
+            sample_tx,
+            dropped_chunks: Arc::clone(&dropped_chunks),
+        };
+        let on_error = capture_error_handler(app_handle.clone(), audio_blob_id.clone());
         let meter_label = owner_label.clone();
-        let failure_app = app_handle.clone();
-        let failure_blob_id = audio_blob_id.clone();
+        let worker_blob_id = audio_blob_id.clone();
 
         let worker = thread::spawn(move || {
             let stream = match build_input_stream(
@@ -235,9 +502,8 @@ impl Recorder {
                 stream_config,
                 sample_format,
                 device_channels,
-                sample_tx,
-                failure_app,
-                failure_blob_id,
+                sink,
+                on_error,
             )
             .and_then(|stream| {
                 stream
@@ -250,6 +516,9 @@ impl Recorder {
                     stream
                 }
                 Err(error) => {
+                    // Nothing was ever captured, so the staging this opened is
+                    // debris rather than a recording anyone could claim.
+                    capture.discard();
                     let _ = ready_tx.send(Err(error));
                     return;
                 }
@@ -259,14 +528,22 @@ impl Recorder {
             // Capture begins the moment the stream plays. Samples produced
             // before the loop is entered wait in `sample_rx`, so nothing
             // between `play()` and the first iteration is lost.
-            let parked = run_capture(sample_rx, &cmd_rx, device_rate, &meter_label, app_handle);
+            let outcome = run_capture(
+                sample_rx,
+                &cmd_rx,
+                capture,
+                &dropped_chunks,
+                &worker_blob_id,
+                &meter_label,
+                app_handle,
+            );
             // The microphone is released the instant capture is over, however it
             // ended. A recording waiting to be claimed must not keep the device
             // open, and the person should see the OS recording indicator go out
             // when their microphone stops working.
             drop(stream);
-            if let Some(buffer) = parked {
-                await_resolution(buffer, device_rate, &cmd_rx);
+            if let CaptureOutcome::Unclaimed(capture) = outcome {
+                await_resolution(capture, &cmd_rx);
             }
         });
 
@@ -340,24 +617,16 @@ impl Recorder {
     /// the point of holding an ended recording: `stop` is the one publication
     /// path, so the audio captured before a microphone died is reached by the
     /// same call as the audio captured before the person let go of the button.
-    pub fn stop(&mut self, audio_blob_id: &str, caller_label: &str) -> Result<Vec<f32>> {
+    pub fn stop(&mut self, audio_blob_id: &str, caller_label: &str) -> Result<StoppingRecording> {
         self.require_owned(audio_blob_id, caller_label)?;
         // Taken before the round trip: whether the worker answers or dies, this
         // recording is over and the slot must be free for the next start.
         let active = self.active.take().expect("ownership was just verified");
-
-        let (reply_tx, reply_rx) = mpsc::channel();
-        let sent = active.cmd_tx.send(RecorderCmd::Stop(reply_tx));
-        let samples = match sent {
-            Ok(()) => reply_rx
-                .recv()
-                .map_err(|e| RecorderError::failed(format!("Worker dropped stop reply: {e}")))?,
-            Err(e) => Err(RecorderError::failed(format!(
-                "Failed to send stop command: {e}"
-            ))),
-        };
-        let _ = active.worker.join();
-        samples
+        Ok(StoppingRecording {
+            audio_blob_id: active.audio_blob_id,
+            cmd_tx: active.cmd_tx,
+            worker: active.worker,
+        })
     }
 
     /// Cancel the recording named by `audio_blob_id`, discarding its audio.
@@ -473,8 +742,54 @@ impl Recorder {
     }
 }
 
-/// End a recording without producing anything: tell the worker to drop its
-/// buffer, then join it so the cpal stream is released before returning.
+/// A recording taken out of the slot and not yet finished.
+///
+/// The slot is released before the finish, deliberately. Finishing means
+/// finalizing a WAV and fsyncing it into place, and holding the one host
+/// recorder across those syncs would block every other window's `start` for no
+/// benefit: this recording is already out of the slot and the next one gets a
+/// different id, so nothing can collide.
+#[derive(Debug)]
+pub struct StoppingRecording {
+    audio_blob_id: String,
+    cmd_tx: mpsc::Sender<RecorderCmd>,
+    worker: JoinHandle<()>,
+}
+
+impl StoppingRecording {
+    /// Finalize the staged WAV and publish it, returning what the blob holds.
+    ///
+    /// This is the only path in the recorder that produces a blob. It works the
+    /// same for a recording that was still capturing and for one whose
+    /// microphone died an hour ago, because by here they are the same thing: a
+    /// staged file and a worker waiting to be asked for it.
+    pub fn finish(self) -> Result<RecordedAudio> {
+        let (reply_tx, reply_rx) = mpsc::channel();
+        let stopped = match self.cmd_tx.send(RecorderCmd::Stop(reply_tx)) {
+            Ok(()) => reply_rx.recv().map_err(|e| {
+                RecorderError::failed(format!(
+                    "Worker dropped the stop reply for {}: {e}",
+                    self.audio_blob_id
+                ))
+            })?,
+            Err(e) => Err(RecorderError::failed(format!(
+                "Failed to send stop command: {e}"
+            ))),
+        };
+        let _ = self.worker.join();
+        let stopped = stopped?;
+        // Measured on the critical path on purpose: the progressive writer moved
+        // most of the cost off it, and these numbers are what would reopen that.
+        let byte_length = crate::timing::measure("stop.publish", || stopped.staged.publish())?;
+        Ok(RecordedAudio {
+            duration_ms: stopped.duration_ms,
+            byte_length,
+        })
+    }
+}
+
+/// End a recording without producing anything: tell the worker to delete its
+/// staged bytes, then join it so the cpal stream is released before returning.
 fn discard(active: HeldRecording) {
     // A send failure means the worker is already gone, which is the same
     // outcome by another route, so it is not an error to report.
@@ -491,54 +806,108 @@ impl Drop for Recorder {
     }
 }
 
-/// Capture phase. Accumulates mono samples until the recording is resolved or
-/// its capture ends, emitting a throttled RMS level to the owner window so its
-/// meter can reflect live mic activity.
+/// What the capture phase left behind.
+enum CaptureOutcome {
+    /// The owner already resolved the recording: a `Stop` was answered from the
+    /// staged file, or a `Cancel` deleted it. Nothing is left to wait for.
+    Resolved,
+    /// Capture ended with the recording still unclaimed. The staged file is
+    /// intact and its owner may still stop or cancel it.
+    Unclaimed(StagedCapture),
+}
+
+/// Capture phase. Writes mono PCM16 into the staged WAV as it arrives, emitting
+/// a throttled RMS level to the owner window so its meter can reflect live mic
+/// activity.
 ///
-/// Returns `None` when the owner already resolved the recording (a `Stop` was
-/// answered, or a `Cancel` discarded the audio), and `Some(buffer)` when capture
-/// ended with the recording still unclaimed, which is the caller's cue to
-/// release the microphone and park on [`await_resolution`].
+/// The staged capture is passed by value because whichever way this ends, it
+/// ends here: a `Stop` finalizes it, a `Cancel` deletes it, and anything else
+/// hands it back to be waited on.
 fn run_capture(
-    sample_rx: mpsc::Receiver<Vec<f32>>,
+    sample_rx: mpsc::Receiver<Vec<i16>>,
     cmd_rx: &mpsc::Receiver<RecorderCmd>,
-    device_rate: u32,
+    mut capture: StagedCapture,
+    dropped_chunks: &AtomicU32,
+    audio_blob_id: &str,
     owner_label: &str,
     app_handle: AppHandle,
-) -> Option<Vec<f32>> {
+) -> CaptureOutcome {
     use std::sync::mpsc::RecvTimeoutError;
 
-    let mut buffer: Vec<f32> = Vec::new();
     // Mic-level metering accumulators, averaged and flushed on an interval.
     let mut level_sumsq = 0f64;
     let mut level_count = 0usize;
     let mut last_level_emit = Instant::now();
+    let mut last_drop_report = Instant::now();
 
     loop {
         // Command channel has priority. Stop should respond fast even
         // when audio frames are arriving back-to-back.
         match cmd_rx.try_recv() {
             Ok(RecorderCmd::Stop(reply)) => {
-                reply_with_finalized(&reply, std::mem::take(&mut buffer), device_rate);
-                return None;
+                let _ = reply.send(capture.finish());
+                return CaptureOutcome::Resolved;
             }
-            Ok(RecorderCmd::Cancel) => return None,
-            // Capture is over but the recording is not: hand the audio up so it
-            // can wait for the owner to stop or cancel it.
-            Ok(RecorderCmd::EndCapture) => return Some(std::mem::take(&mut buffer)),
+            Ok(RecorderCmd::Cancel) => {
+                capture.discard();
+                return CaptureOutcome::Resolved;
+            }
+            // Capture is over but the recording is not: hand the staged file up
+            // so it can wait for the owner to stop or cancel it.
+            Ok(RecorderCmd::EndCapture) => return CaptureOutcome::Unclaimed(capture),
             // The command sender is gone without a stop or a cancel, so nobody
-            // is left to receive this audio.
-            Err(mpsc::TryRecvError::Disconnected) => return None,
+            // is left to claim this recording.
+            Err(mpsc::TryRecvError::Disconnected) => {
+                capture.discard();
+                return CaptureOutcome::Resolved;
+            }
             Err(mpsc::TryRecvError::Empty) => {}
+        }
+
+        // Dropped chunks mean the disk stalled for longer than the queue can
+        // absorb, which is worth saying out loud but not worth saying fifty
+        // times a second. Swapped only when it is about to be reported, so no
+        // count is lost between reports.
+        if last_drop_report.elapsed() >= DROP_REPORT_INTERVAL {
+            let dropped = dropped_chunks.swap(0, Ordering::Relaxed);
+            if dropped > 0 {
+                warn!(
+                    "Recording {audio_blob_id} dropped {dropped} audio chunks: the staged writer is not keeping up with the microphone"
+                );
+            }
+            last_drop_report = Instant::now();
         }
 
         match sample_rx.recv_timeout(Duration::from_millis(20)) {
             Ok(samples) => {
                 for &sample in &samples {
-                    level_sumsq += (sample as f64) * (sample as f64);
+                    let normalized = sample as f64 / 32_768.0;
+                    level_sumsq += normalized * normalized;
                 }
                 level_count += samples.len();
-                buffer.extend_from_slice(&samples);
+
+                if let Err(error) = capture.write(&samples) {
+                    // A write that fails is terminal: the disk is full, the
+                    // volume vanished, or the recording hit the size a WAV can
+                    // describe. None of those get better by trying again, so the
+                    // capture ends here and the recording keeps whatever prefix
+                    // reached the file.
+                    error!("Recording {audio_blob_id} could not write its capture: {error}");
+                    let app = app_handle.clone();
+                    let id = audio_blob_id.to_string();
+                    // On its own thread for the same reason the cpal error
+                    // callback uses one: this locks the recorder, and a `stop`
+                    // may be holding that lock while waiting on this very
+                    // worker.
+                    thread::spawn(move || {
+                        crate::recorder::commands::end_recording_capture(
+                            &app,
+                            &id,
+                            EndedReason::StorageFailed,
+                        );
+                    });
+                    return CaptureOutcome::Unclaimed(capture);
+                }
 
                 if last_level_emit.elapsed() >= MIC_LEVEL_EMIT_INTERVAL && level_count > 0 {
                     let rms = (level_sumsq / level_count as f64).sqrt() as f32;
@@ -556,68 +925,43 @@ fn run_capture(
             // The sample sender lives inside the cpal stream, which this
             // worker's caller owns and drops only after this returns, so this is
             // not reachable today. Park rather than discard if it ever becomes
-            // reachable: keeping the audio claimable is the safe direction.
-            Err(RecvTimeoutError::Disconnected) => return Some(std::mem::take(&mut buffer)),
+            // reachable: keeping the recording claimable is the safe direction.
+            Err(RecvTimeoutError::Disconnected) => return CaptureOutcome::Unclaimed(capture),
         }
     }
 }
 
 /// Wait for the owner to resolve a recording whose capture is over.
 ///
-/// The audio lives here, on this thread, and nowhere else. That is what makes
-/// "an ended recording is still the owner's to claim" true without a second
-/// place to store audio, a catch-up queue, or a restore call: the same `Stop`
-/// that a live recording answers is answered here, from the same buffer.
-fn await_resolution(mut buffer: Vec<f32>, device_rate: u32, cmd_rx: &mpsc::Receiver<RecorderCmd>) {
+/// The staged file stays exactly as capture left it, and this thread is the only
+/// thing that can reach it. That is what makes "an ended recording is still the
+/// owner's to claim" true without a catch-up queue or a restore call: the same
+/// `Stop` a live recording answers is answered here, from the same file.
+fn await_resolution(capture: StagedCapture, cmd_rx: &mpsc::Receiver<RecorderCmd>) {
+    let mut capture = Some(capture);
     loop {
         match cmd_rx.recv() {
             Ok(RecorderCmd::Stop(reply)) => {
-                reply_with_finalized(&reply, std::mem::take(&mut buffer), device_rate);
+                if let Some(capture) = capture.take() {
+                    let _ = reply.send(capture.finish());
+                }
                 return;
             }
-            // Cancel drops the audio. A disconnected channel means the recorder
-            // itself is gone, which has the same effect and nobody left to tell.
-            Ok(RecorderCmd::Cancel) | Err(_) => return,
+            // Cancel deletes the staged bytes. A disconnected channel means the
+            // recorder itself is gone, which has the same effect and nobody left
+            // to tell.
+            Ok(RecorderCmd::Cancel) | Err(_) => {
+                if let Some(capture) = capture.take() {
+                    capture.discard();
+                }
+                return;
+            }
             // `end_capture` refuses to signal an already-ended recording, so
             // this cannot arrive twice; ignoring it keeps that a fact about the
             // recorder rather than something this loop has to enforce.
             Ok(RecorderCmd::EndCapture) => {}
         }
     }
-}
-
-/// Finalize a buffer and answer the `Stop` that asked for it.
-///
-/// A dropped reply channel is not an error to report: the only way it happens is
-/// the caller giving up on the round trip, and there is nobody left to tell.
-fn reply_with_finalized(
-    reply: &mpsc::Sender<Result<Vec<f32>>>,
-    buffer: Vec<f32>,
-    device_rate: u32,
-) {
-    let result = crate::timing::measure("finalize", || finalize(buffer, device_rate));
-    let _ = reply.send(result);
-}
-
-/// Resample to 16 kHz if needed, pad short clips, build the samples.
-fn finalize(buffer: Vec<f32>, device_rate: u32) -> Result<Vec<f32>> {
-    let samples = if device_rate == TARGET_RATE {
-        buffer
-    } else {
-        resample_mono(buffer, device_rate, TARGET_RATE)
-            .map_err(|e| RecorderError::failed(format!("resample failed: {e}")))?
-    };
-
-    let mut samples = samples;
-    let samples_per_second = TARGET_RATE as usize;
-    if !samples.is_empty()
-        && samples.len() < samples_per_second
-        && samples.len() < SHORT_RECORDING_PAD_SAMPLES
-    {
-        samples.resize(SHORT_RECORDING_PAD_SAMPLES, 0.0);
-    }
-
-    Ok(samples)
 }
 
 /// Which microphone a recording actually opened, and whether that was the one
@@ -736,7 +1080,7 @@ fn get_optimal_config(
     device: &Device,
     preferred_sample_rate: Option<u32>,
 ) -> Result<cpal::SupportedStreamConfig> {
-    let target_sample_rate = preferred_sample_rate.unwrap_or(TARGET_RATE);
+    let target_sample_rate = preferred_sample_rate.unwrap_or(PREFERRED_CAPTURE_RATE);
 
     // A device that yields no input configs is unusable as an input, whether the
     // query *errors* or returns *empty*: both mean "this mic can't tell us how to
@@ -831,73 +1175,97 @@ fn get_optimal_config(
     }))
 }
 
-/// Build the cpal input stream. The callback's only job is to downmix to
-/// mono f32 and send the chunk down `sample_tx`; the consumer worker owns
-/// everything else.
-fn build_input_stream(
-    device: &Device,
-    config: cpal::StreamConfig,
-    sample_format: SampleFormat,
-    channels: u16,
-    sample_tx: mpsc::Sender<Vec<f32>>,
-    failure_app: AppHandle,
-    failure_blob_id: String,
-) -> Result<Stream> {
-    // A live stream error used to be logged and nothing else, which left the
-    // one recorder slot occupied, the tray claiming a recording, and the owner
-    // window waiting for audio that would never arrive. Now a terminal error
-    // ends the capture, releases the microphone, and tells the owner why, while
-    // the recording itself stays claimable.
-    //
-    // Only a terminal error: `ended::classify` returns `None` for the
-    // conditions cpal documents as survivable, so a routine audio-route change
-    // (plugging in headphones) no longer looks like a dead microphone.
-    //
-    // The bookkeeping runs on its own thread because it locks the recorder,
-    // which may not happen on the audio callback. This fires at most once per
-    // stream death and never on the sample path.
-    let err_fn = move |error: cpal::Error| {
+/// Where a cpal callback puts a chunk: into the writer's queue, or on the floor.
+///
+/// One value rather than two parameters, because the counter is meaningless
+/// apart from the channel whose refusals it counts.
+struct ChunkSink {
+    sample_tx: mpsc::SyncSender<Vec<i16>>,
+    dropped_chunks: Arc<AtomicU32>,
+}
+
+impl ChunkSink {
+    /// Hand a chunk to the writer, or drop it and count it.
+    ///
+    /// `try_send` rather than `send`, because the alternative is blocking the
+    /// audio thread on a stalled disk, which does not save the recording and
+    /// does glitch every other sound on the machine. A drop costs one callback
+    /// of audio, roughly ten milliseconds, and the worker reports it.
+    fn hand_off(&self, chunk: Vec<i16>) {
+        if self.sample_tx.try_send(chunk).is_err() {
+            self.dropped_chunks.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
+/// What a live cpal stream error does to the recording it belongs to.
+///
+/// A stream error used to be logged and nothing else, which left the one
+/// recorder slot occupied, the tray claiming a recording, and the owner window
+/// waiting for audio that would never arrive. Now a terminal error ends the
+/// capture, releases the microphone, and tells the owner why, while the
+/// recording itself stays claimable.
+///
+/// Only a terminal error: [`ended::classify`] returns `None` for the conditions
+/// cpal documents as survivable, so a routine audio-route change (plugging in
+/// headphones) no longer looks like a dead microphone.
+///
+/// [`ended::classify`]: crate::recorder::ended::classify
+fn capture_error_handler(
+    app: AppHandle,
+    audio_blob_id: String,
+) -> impl Fn(cpal::Error) + Send + 'static {
+    move |error: cpal::Error| {
         let Some(reason) = crate::recorder::ended::classify(&error) else {
             debug!("Audio stream reported a survivable condition, continuing: {error}");
             return;
         };
         error!("Audio stream ended the capture: {error}");
-        let app = failure_app.clone();
-        let audio_blob_id = failure_blob_id.clone();
+        let app = app.clone();
+        let audio_blob_id = audio_blob_id.clone();
+        // On its own thread because this locks the recorder, which may not
+        // happen on an audio callback. It fires at most once per stream death
+        // and never on the sample path.
         thread::spawn(move || {
             crate::recorder::commands::end_recording_capture(&app, &audio_blob_id, reason);
         });
-    };
+    }
+}
+
+/// Build the cpal input stream. The callback's only job is to downmix to mono
+/// PCM16 and hand the chunk off; the worker owns the file and everything else.
+fn build_input_stream(
+    device: &Device,
+    config: cpal::StreamConfig,
+    sample_format: SampleFormat,
+    channels: u16,
+    sink: ChunkSink,
+    on_error: impl Fn(cpal::Error) + Send + 'static,
+) -> Result<Stream> {
     let n_channels = channels as usize;
 
     let stream = match sample_format {
         SampleFormat::F32 => device
             .build_input_stream(
                 config,
-                move |data: &[f32], _: &_| {
-                    let _ = sample_tx.send(downmix_f32(data, n_channels));
-                },
-                err_fn,
+                move |data: &[f32], _: &_| sink.hand_off(downmix_f32(data, n_channels)),
+                on_error,
                 None,
             )
             .map_err(|e| RecorderError::classify_cpal("Failed to build F32 stream", e))?,
         SampleFormat::I16 => device
             .build_input_stream(
                 config,
-                move |data: &[i16], _: &_| {
-                    let _ = sample_tx.send(downmix_i16(data, n_channels));
-                },
-                err_fn,
+                move |data: &[i16], _: &_| sink.hand_off(downmix_i16(data, n_channels)),
+                on_error,
                 None,
             )
             .map_err(|e| RecorderError::classify_cpal("Failed to build I16 stream", e))?,
         SampleFormat::U16 => device
             .build_input_stream(
                 config,
-                move |data: &[u16], _: &_| {
-                    let _ = sample_tx.send(downmix_u16(data, n_channels));
-                },
-                err_fn,
+                move |data: &[u16], _: &_| sink.hand_off(downmix_u16(data, n_channels)),
+                on_error,
                 None,
             )
             .map_err(|e| RecorderError::classify_cpal("Failed to build U16 stream", e))?,
@@ -911,48 +1279,81 @@ fn build_input_stream(
     Ok(stream)
 }
 
-fn downmix_f32(interleaved: &[f32], channels: usize) -> Vec<f32> {
+/// Average interleaved frames down to one channel.
+///
+/// Written per input format rather than through a shared f32 intermediate,
+/// because two of the three formats are already integers: routing them through
+/// f32 and back would add a rounding step to a conversion that has none.
+fn downmix_f32(interleaved: &[f32], channels: usize) -> Vec<i16> {
+    let to_pcm16 = |sample: f32| (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
+    if channels <= 1 {
+        return interleaved.iter().copied().map(to_pcm16).collect();
+    }
+    interleaved
+        .chunks_exact(channels)
+        .map(|frame| to_pcm16(frame.iter().sum::<f32>() / channels as f32))
+        .collect()
+}
+
+fn downmix_i16(interleaved: &[i16], channels: usize) -> Vec<i16> {
     if channels <= 1 {
         return interleaved.to_vec();
     }
     interleaved
         .chunks_exact(channels)
-        .map(|frame| frame.iter().sum::<f32>() / channels as f32)
+        // Summed as i32 so a loud stereo frame cannot overflow before it is
+        // averaged back into range.
+        .map(|frame| (frame.iter().map(|&s| s as i32).sum::<i32>() / channels as i32) as i16)
         .collect()
 }
 
-fn downmix_i16(interleaved: &[i16], channels: usize) -> Vec<f32> {
-    let scale = 1.0 / i16::MAX as f32;
+fn downmix_u16(interleaved: &[u16], channels: usize) -> Vec<i16> {
+    // u16 PCM is offset binary: 32768 is silence, so the conversion to signed
+    // PCM16 is exactly that subtraction.
+    let to_pcm16 = |sample: u16| sample as i32 - 32_768;
     if channels <= 1 {
-        return interleaved.iter().map(|&s| s as f32 * scale).collect();
+        return interleaved.iter().map(|&s| to_pcm16(s) as i16).collect();
     }
     interleaved
         .chunks_exact(channels)
-        .map(|frame| frame.iter().map(|&s| s as f32 * scale).sum::<f32>() / channels as f32)
-        .collect()
-}
-
-fn downmix_u16(interleaved: &[u16], channels: usize) -> Vec<f32> {
-    // u16 PCM: midpoint is 32768. Normalize to [-1, 1] via (x / max) * 2 - 1.
-    let half = u16::MAX as f32 * 0.5;
-    let to_f32 = |s: u16| (s as f32 / half) - 1.0;
-    if channels <= 1 {
-        return interleaved.iter().copied().map(to_f32).collect();
-    }
-    interleaved
-        .chunks_exact(channels)
-        .map(|frame| frame.iter().copied().map(to_f32).sum::<f32>() / channels as f32)
+        .map(|frame| (frame.iter().map(|&s| to_pcm16(s)).sum::<i32>() / channels as i32) as i16)
         .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::audio::decode_to_pcm16k_mono;
+    use tempfile::TempDir;
 
-    /// One second of captured audio, so a `stop` in these tests returns
-    /// something recognisable that `finalize` will not pad.
-    fn captured_audio() -> Vec<f32> {
-        vec![0.25; TARGET_RATE as usize]
+    /// The rate these tests capture at, chosen to be the common device rate
+    /// rather than the preferred one, so nothing accidentally passes because
+    /// capture and transcription happen to agree.
+    const TEST_RATE: u32 = 48_000;
+
+    /// A blobs root that disappears with the test.
+    fn staging_root() -> TempDir {
+        tempfile::tempdir().expect("a temporary blobs root")
+    }
+
+    /// One second of a 440 Hz tone as mono PCM16, so a published blob has
+    /// content a decoder can be checked against rather than just a length.
+    fn tone(rate: u32, seconds: u32) -> Vec<i16> {
+        (0..(rate * seconds))
+            .map(|index| {
+                let t = index as f32 / rate as f32;
+                ((2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.5 * i16::MAX as f32) as i16
+            })
+            .collect()
+    }
+
+    /// A staged capture holding `samples`, ready to be finished.
+    fn capture_holding(root: &TempDir, audio_blob_id: &str, samples: &[i16]) -> StagedCapture {
+        let staged =
+            StagedBlob::stage(root.path().to_path_buf(), audio_blob_id).expect("stage a blob");
+        let mut capture = StagedCapture::open(staged, TEST_RATE).expect("open a staged capture");
+        capture.write(samples).expect("write the capture");
+        capture
     }
 
     /// Stand up a `HeldRecording` without opening a microphone.
@@ -962,16 +1363,21 @@ mod tests {
     /// device cannot run in CI, and the rules being checked have nothing to do
     /// with audio.
     ///
-    /// The stand-in worker is the real [`await_resolution`], parked on a canned
-    /// buffer. That is exactly the state a worker is in once its capture has
-    /// ended, so `stop` here exercises the real handoff rather than a mock of
-    /// it, and `discard`'s `Cancel`-then-join cannot hang: `await_resolution`
-    /// returns on `Cancel` and on a dropped channel.
-    fn recording_owned_by(recorder: &mut Recorder, audio_blob_id: &str, owner_label: &str) {
+    /// The stand-in worker is the real [`await_resolution`], parked on a real
+    /// staged capture in a temporary blobs root. That is exactly the state a
+    /// worker is in once its capture has ended, so `stop` here finalizes and
+    /// publishes an actual WAV rather than a mock of one, and `discard`'s
+    /// `Cancel`-then-join cannot hang: `await_resolution` returns on `Cancel`
+    /// and on a dropped channel.
+    fn recording_owned_by(
+        recorder: &mut Recorder,
+        root: &TempDir,
+        audio_blob_id: &str,
+        owner_label: &str,
+    ) {
+        let capture = capture_holding(root, audio_blob_id, &tone(TEST_RATE, 1));
         let (cmd_tx, cmd_rx) = mpsc::channel::<RecorderCmd>();
-        let worker = thread::spawn(move || {
-            await_resolution(captured_audio(), TARGET_RATE, &cmd_rx);
-        });
+        let worker = thread::spawn(move || await_resolution(capture, &cmd_rx));
         recorder.active = Some(HeldRecording {
             audio_blob_id: audio_blob_id.to_string(),
             owner_label: owner_label.to_string(),
@@ -982,6 +1388,16 @@ mod tests {
             cmd_tx,
             worker,
         });
+    }
+
+    /// Stop a recording the way `stop_recording` does: take it out of the slot,
+    /// then finish it outside the lock.
+    fn stop_and_publish(
+        recorder: &mut Recorder,
+        audio_blob_id: &str,
+        caller_label: &str,
+    ) -> Result<RecordedAudio> {
+        recorder.stop(audio_blob_id, caller_label)?.finish()
     }
 
     fn error_name(error: &RecorderError) -> &'static str {
@@ -1014,8 +1430,14 @@ mod tests {
 
     #[test]
     fn current_is_scoped_to_the_owning_window() {
+        let root = staging_root();
         let mut recorder = Recorder::new();
-        recording_owned_by(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes");
+        recording_owned_by(
+            &mut recorder,
+            &root,
+            "blob_aaaaaaaaaaaaaaaaaaaaa",
+            "app-notes",
+        );
 
         assert_eq!(
             current_id(&recorder, "app-notes").as_deref(),
@@ -1029,8 +1451,14 @@ mod tests {
     /// window that reloads twice must find the same recording both times.
     #[test]
     fn reading_the_current_recording_never_consumes_it() {
+        let root = staging_root();
         let mut recorder = Recorder::new();
-        recording_owned_by(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes");
+        recording_owned_by(
+            &mut recorder,
+            &root,
+            "blob_aaaaaaaaaaaaaaaaaaaaa",
+            "app-notes",
+        );
         recorder.end_capture(
             "blob_aaaaaaaaaaaaaaaaaaaaa",
             EndedReason::DeviceDisconnected,
@@ -1048,8 +1476,14 @@ mod tests {
 
     #[test]
     fn a_non_owner_cannot_stop_or_cancel_and_the_recording_survives() {
+        let root = staging_root();
         let mut recorder = Recorder::new();
-        recording_owned_by(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes");
+        recording_owned_by(
+            &mut recorder,
+            &root,
+            "blob_aaaaaaaaaaaaaaaaaaaaa",
+            "app-notes",
+        );
 
         let stop = recorder
             .stop("blob_aaaaaaaaaaaaaaaaaaaaa", "whispering")
@@ -1071,8 +1505,14 @@ mod tests {
 
     #[test]
     fn the_owner_cannot_stop_an_id_that_is_not_the_live_recording() {
+        let root = staging_root();
         let mut recorder = Recorder::new();
-        recording_owned_by(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes");
+        recording_owned_by(
+            &mut recorder,
+            &root,
+            "blob_aaaaaaaaaaaaaaaaaaaaa",
+            "app-notes",
+        );
 
         let error = recorder
             .stop("blob_bbbbbbbbbbbbbbbbbbbbb", "app-notes")
@@ -1083,8 +1523,14 @@ mod tests {
 
     #[test]
     fn the_owner_can_cancel_and_the_slot_is_released() {
+        let root = staging_root();
         let mut recorder = Recorder::new();
-        recording_owned_by(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes");
+        recording_owned_by(
+            &mut recorder,
+            &root,
+            "blob_aaaaaaaaaaaaaaaaaaaaa",
+            "app-notes",
+        );
 
         recorder
             .cancel("blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes")
@@ -1096,8 +1542,14 @@ mod tests {
 
     #[test]
     fn destroying_the_owner_window_cancels_only_its_own_recording() {
+        let root = staging_root();
         let mut recorder = Recorder::new();
-        recording_owned_by(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes");
+        recording_owned_by(
+            &mut recorder,
+            &root,
+            "blob_aaaaaaaaaaaaaaaaaaaaa",
+            "app-notes",
+        );
 
         // A different window closing leaves the recording alone.
         assert_eq!(recorder.cancel_owned_by("whispering"), None);
@@ -1115,8 +1567,14 @@ mod tests {
     /// route by which an ended recording releases the slot without its owner.
     #[test]
     fn destroying_the_owner_window_also_cancels_an_ended_recording() {
+        let root = staging_root();
         let mut recorder = Recorder::new();
-        recording_owned_by(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes");
+        recording_owned_by(
+            &mut recorder,
+            &root,
+            "blob_aaaaaaaaaaaaaaaaaaaaa",
+            "app-notes",
+        );
         recorder.end_capture("blob_aaaaaaaaaaaaaaaaaaaaa", EndedReason::StreamFailed);
 
         assert_eq!(
@@ -1134,8 +1592,14 @@ mod tests {
     /// owner still decides what happens to it.
     #[test]
     fn a_dead_capture_keeps_the_recording_claimable_and_names_its_owner() {
+        let root = staging_root();
         let mut recorder = Recorder::new();
-        recording_owned_by(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes");
+        recording_owned_by(
+            &mut recorder,
+            &root,
+            "blob_aaaaaaaaaaaaaaaaaaaaa",
+            "app-notes",
+        );
 
         assert_eq!(
             recorder
@@ -1168,8 +1632,14 @@ mod tests {
     /// recording whose audio nobody has claimed yet.
     #[test]
     fn an_ended_recording_still_refuses_a_competing_start() {
+        let root = staging_root();
         let mut recorder = Recorder::new();
-        recording_owned_by(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes");
+        recording_owned_by(
+            &mut recorder,
+            &root,
+            "blob_aaaaaaaaaaaaaaaaaaaaa",
+            "app-notes",
+        );
 
         let live = recorder
             .require_free_slot()
@@ -1198,17 +1668,29 @@ mod tests {
     /// come back through exactly the same call as a normal dictation.
     #[test]
     fn stopping_an_ended_recording_returns_what_it_captured() {
+        let root = staging_root();
         let mut recorder = Recorder::new();
-        recording_owned_by(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes");
+        recording_owned_by(
+            &mut recorder,
+            &root,
+            "blob_aaaaaaaaaaaaaaaaaaaaa",
+            "app-notes",
+        );
         recorder.end_capture(
             "blob_aaaaaaaaaaaaaaaaaaaaa",
             EndedReason::DeviceDisconnected,
         );
 
-        let samples = recorder
-            .stop("blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes")
+        let recorded = stop_and_publish(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes")
             .expect("an ended recording is still the owner's to stop");
-        assert_eq!(samples, captured_audio());
+        assert_eq!(recorded.duration_ms, 1_000, "the captured second survived");
+        assert!(
+            root.path()
+                .join("blob_aaaaaaaaaaaaaaaaaaaaa")
+                .join("data")
+                .exists(),
+            "stopping an ended recording must publish what it captured"
+        );
 
         // And stopping resolved it, so the slot is free again.
         assert!(recorder.current("app-notes").is_none());
@@ -1220,8 +1702,14 @@ mod tests {
     /// Cancel never publishes, on either side of a capture ending.
     #[test]
     fn cancelling_an_ended_recording_produces_nothing() {
+        let root = staging_root();
         let mut recorder = Recorder::new();
-        recording_owned_by(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes");
+        recording_owned_by(
+            &mut recorder,
+            &root,
+            "blob_aaaaaaaaaaaaaaaaaaaaa",
+            "app-notes",
+        );
         recorder.end_capture("blob_aaaaaaaaaaaaaaaaaaaaa", EndedReason::StreamFailed);
 
         recorder
@@ -1234,8 +1722,14 @@ mod tests {
     /// window that started it is the only one that can decide its audio's fate.
     #[test]
     fn a_non_owner_cannot_resolve_an_ended_recording() {
+        let root = staging_root();
         let mut recorder = Recorder::new();
-        recording_owned_by(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes");
+        recording_owned_by(
+            &mut recorder,
+            &root,
+            "blob_aaaaaaaaaaaaaaaaaaaaa",
+            "app-notes",
+        );
         recorder.end_capture(
             "blob_aaaaaaaaaaaaaaaaaaaaa",
             EndedReason::DeviceDisconnected,
@@ -1255,8 +1749,14 @@ mod tests {
     /// a no-op rather than a second notification.
     #[test]
     fn ending_the_capture_of_a_stale_id_leaves_the_held_recording_alone() {
+        let root = staging_root();
         let mut recorder = Recorder::new();
-        recording_owned_by(&mut recorder, "blob_bbbbbbbbbbbbbbbbbbbbb", "app-notes");
+        recording_owned_by(
+            &mut recorder,
+            &root,
+            "blob_bbbbbbbbbbbbbbbbbbbbb",
+            "app-notes",
+        );
 
         assert_eq!(
             recorder.end_capture("blob_aaaaaaaaaaaaaaaaaaaaa", EndedReason::StreamFailed),
@@ -1296,8 +1796,14 @@ mod tests {
     /// or a window that reloaded would show a meter for a device it cannot name.
     #[test]
     fn current_reports_the_device_the_recording_opened() {
+        let root = staging_root();
         let mut recorder = Recorder::new();
-        recording_owned_by(&mut recorder, "blob_aaaaaaaaaaaaaaaaaaaaa", "app-notes");
+        recording_owned_by(
+            &mut recorder,
+            &root,
+            "blob_aaaaaaaaaaaaaaaaaaaaa",
+            "app-notes",
+        );
 
         let recording = recorder.current("app-notes").expect("a live recording");
         assert_eq!(recording.device.device_id(), "Test Microphone");
@@ -1315,28 +1821,215 @@ mod tests {
 
     #[test]
     fn downmix_stereo_to_mono_averages_pairs() {
-        let stereo = vec![0.5_f32, -0.5, 1.0, -1.0];
-        let mono = downmix_f32(&stereo, 2);
-        assert_eq!(mono, vec![0.0, 0.0]);
+        assert_eq!(downmix_f32(&[0.5, -0.5, 1.0, -1.0], 2), vec![0, 0]);
+        assert_eq!(downmix_i16(&[1000, 2000, -400, -600], 2), vec![1500, -500]);
+        // Offset binary: 32768 is silence, so an all-silence stereo frame is 0.
+        assert_eq!(
+            downmix_u16(&[32_768, 32_768, 65_535, 32_768], 2),
+            vec![0, 16_383]
+        );
     }
 
     #[test]
-    fn downmix_mono_is_identity() {
-        let input = vec![0.1_f32, 0.2, 0.3];
-        let mono = downmix_f32(&input, 1);
-        assert_eq!(mono, input);
+    fn downmix_mono_converts_without_averaging() {
+        // f32 scales into PCM16 and clamps rather than wrapping, which is the
+        // difference between a loud passage and a burst of noise.
+        assert_eq!(
+            downmix_f32(&[0.0, 1.0, -1.0, 2.0, -2.0], 1),
+            vec![0, i16::MAX, -i16::MAX, i16::MAX, -i16::MAX]
+        );
+        assert_eq!(downmix_i16(&[7, -7, 32_767], 1), vec![7, -7, 32_767]);
+        assert_eq!(
+            downmix_u16(&[0, 32_768, 65_535], 1),
+            vec![-32_768, 0, 32_767]
+        );
     }
 
+    /// The bounded queue is the reason capture cannot be stalled by a disk, so
+    /// what happens when it fills is worth pinning: the chunk is dropped and
+    /// counted, and the callback returns rather than blocking.
+    #[test]
+    fn a_full_capture_queue_drops_chunks_instead_of_blocking() {
+        let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<i16>>(2);
+        let dropped = AtomicU32::new(0);
+
+        for _ in 0..2 {
+            assert!(sample_tx.try_send(vec![1, 2, 3]).is_ok());
+        }
+        assert!(
+            sample_tx.try_send(vec![4, 5, 6]).is_err(),
+            "the queue must be bounded, not merely large"
+        );
+
+        // What the callback does with that refusal.
+        if sample_tx.try_send(vec![4, 5, 6]).is_err() {
+            dropped.fetch_add(1, Ordering::Relaxed);
+        }
+        assert_eq!(dropped.load(Ordering::Relaxed), 1);
+
+        // Draining makes room again, so a hiccup costs chunks rather than the
+        // recording.
+        drop(sample_rx.recv().expect("a queued chunk"));
+        assert!(sample_tx.try_send(vec![7, 8, 9]).is_ok());
+    }
+
+    /// The one product behavior the staged rewrite had to carry across: Whisper
+    /// hallucinates sentences into near-silent clips shorter than about a
+    /// second, so short recordings are padded. It is expressed at the device's
+    /// rate now, which is why the assertion is in seconds rather than samples.
     #[test]
     fn short_clips_are_padded_and_empty_ones_are_left_alone() {
-        let padded = finalize(vec![0.1; 100], TARGET_RATE).expect("finalize a short clip");
-        assert_eq!(padded.len(), SHORT_RECORDING_PAD_SAMPLES);
+        let root = staging_root();
 
-        let empty = finalize(Vec::new(), TARGET_RATE).expect("finalize an empty clip");
-        assert!(empty.is_empty());
+        let short = capture_holding(&root, "blob_aaaaaaaaaaaaaaaaaaaaa", &[64; 100])
+            .finish()
+            .expect("finish a short clip");
+        assert_eq!(short.duration_ms, 1_250);
 
-        // Anything at or over a second is returned as captured.
-        let long = finalize(vec![0.1; TARGET_RATE as usize], TARGET_RATE).expect("finalize");
-        assert_eq!(long.len(), TARGET_RATE as usize);
+        let empty = capture_holding(&root, "blob_bbbbbbbbbbbbbbbbbbbbb", &[])
+            .finish()
+            .expect("finish an empty clip");
+        assert_eq!(
+            empty.duration_ms, 0,
+            "a recording that captured nothing must not be padded into looking real"
+        );
+
+        // Anything at or over a second is kept exactly as captured.
+        let long = capture_holding(&root, "blob_ccccccccccccccccccccc", &tone(TEST_RATE, 2))
+            .finish()
+            .expect("finish a long clip");
+        assert_eq!(long.duration_ms, 2_000);
+    }
+
+    /// The end-to-end claim this whole path rests on: a staged mono PCM16 file
+    /// at the device's own rate is readable by the transcription decoder, which
+    /// produces the 16 kHz mono it wants. If this fails, capturing at the device
+    /// rate is not a valid refusal of the streaming resampler.
+    #[test]
+    fn a_published_capture_decodes_to_16_khz_mono() {
+        let root = staging_root();
+        let id = "blob_aaaaaaaaaaaaaaaaaaaaa";
+
+        let stopped = capture_holding(&root, id, &tone(TEST_RATE, 1))
+            .finish()
+            .expect("finish the capture");
+        assert_eq!(stopped.duration_ms, 1_000);
+        let byte_length = stopped.staged.publish().expect("publish the blob");
+
+        let published = root.path().join(id).join("data");
+        let bytes = std::fs::read(&published).expect("read the published blob");
+        assert_eq!(bytes.len() as u32, byte_length);
+        // 44-byte canonical PCM header plus one second of 48 kHz mono PCM16.
+        assert_eq!(bytes.len(), 44 + (TEST_RATE as usize * 2));
+
+        let samples = decode_to_pcm16k_mono(&bytes).expect("decode the published blob");
+        assert!(
+            samples.len().abs_diff(16_000) <= 1,
+            "expected about a second of 16 kHz mono, got {} samples",
+            samples.len()
+        );
+        // The tone survived: a decoded silent buffer would mean the header
+        // described bytes the writer never wrote.
+        let peak = samples.iter().fold(0f32, |peak, s| peak.max(s.abs()));
+        assert!(peak > 0.4, "the decoded tone is too quiet: peak {peak}");
+    }
+
+    /// Publication is atomic and one-way: nothing is readable at the id until
+    /// the rename, and a cancelled recording leaves no trace of either.
+    #[test]
+    fn staging_becomes_a_blob_only_at_publish_and_never_at_cancel() {
+        let root = staging_root();
+        let published_id = "blob_aaaaaaaaaaaaaaaaaaaaa";
+        let cancelled_id = "blob_bbbbbbbbbbbbbbbbbbbbb";
+
+        let capture = capture_holding(&root, published_id, &tone(TEST_RATE, 1));
+        assert!(
+            !root.path().join(published_id).exists(),
+            "a recording in progress must not be visible at its id"
+        );
+        capture
+            .finish()
+            .expect("finish")
+            .staged
+            .publish()
+            .expect("publish");
+        assert!(root.path().join(published_id).join("data").exists());
+        assert!(root
+            .path()
+            .join(published_id)
+            .join("metadata.json")
+            .exists());
+
+        capture_holding(&root, cancelled_id, &tone(TEST_RATE, 1)).discard();
+        assert!(
+            !root.path().join(cancelled_id).exists(),
+            "cancel must never publish"
+        );
+
+        // Both recordings are resolved, so no staging is left holding bytes.
+        let staged: Vec<_> = std::fs::read_dir(root.path().join(".staging").join("rust"))
+            .expect("the staging root")
+            .map(|entry| entry.expect("a staging entry").path())
+            .collect();
+        assert!(staged.is_empty(), "staging left behind: {staged:?}");
+    }
+
+    /// RIFF describes its sizes in 32 bits and hound increments its byte counter
+    /// without checking, so a recording long enough to overflow it would wrap
+    /// the header into describing a few bytes instead of four gigabytes. The
+    /// writer refuses first, which turns a corrupt file into a typed failure.
+    ///
+    /// Asserted as arithmetic. Reaching the boundary for real means writing four
+    /// gigabytes, which a test suite may not do, and the boundary is the whole
+    /// thing being checked.
+    #[test]
+    fn a_capture_refuses_to_exceed_what_a_wav_can_describe() {
+        let limit = (MAX_WAV_DATA_BYTES / BYTES_PER_SAMPLE) as u32;
+
+        assert!(!would_exceed_wav_limit(0, limit as usize));
+        assert!(would_exceed_wav_limit(0, limit as usize + 1));
+        assert!(!would_exceed_wav_limit(limit - 1, 1));
+        assert!(would_exceed_wav_limit(limit, 1));
+        // A ridiculous chunk cannot wrap its way back under the ceiling.
+        assert!(would_exceed_wav_limit(limit, usize::MAX));
+
+        // Over twelve hours of mono capture, so this caps a runaway recording
+        // rather than interrupting a meeting.
+        assert!(limit / TEST_RATE > 12 * 3_600);
+    }
+
+    /// Startup sweeps staging and only staging. A partial capture left by a dead
+    /// host is deleted; a blob that was published before the crash is a blob and
+    /// stays one.
+    #[test]
+    fn stale_staging_is_deleted_at_startup_and_published_blobs_are_not() {
+        let root = staging_root();
+        let published_id = "blob_aaaaaaaaaaaaaaaaaaaaa";
+        let abandoned_id = "blob_bbbbbbbbbbbbbbbbbbbbb";
+
+        capture_holding(&root, published_id, &tone(TEST_RATE, 1))
+            .finish()
+            .expect("finish")
+            .staged
+            .publish()
+            .expect("publish");
+        // A capture the host died in the middle of: staged, never finalized.
+        let abandoned = capture_holding(&root, abandoned_id, &tone(TEST_RATE, 1));
+        std::mem::forget(abandoned);
+
+        crate::recorder::blob::delete_staging_root(root.path());
+
+        assert!(
+            root.path().join(published_id).join("data").exists(),
+            "a published blob is not staging debris"
+        );
+        assert!(
+            !root.path().join(".staging").join("rust").exists(),
+            "the sweep must leave no staged capture behind"
+        );
+        assert!(
+            !root.path().join(abandoned_id).exists(),
+            "the sweep deletes; it never promotes a partial capture to a blob"
+        );
     }
 }
