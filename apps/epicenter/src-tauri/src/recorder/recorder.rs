@@ -472,14 +472,13 @@ impl Recorder {
         requested_device: Option<&str>,
         audio_blob_id: String,
         owner_label: String,
-        preferred_sample_rate: Option<u32>,
         app_handle: AppHandle,
     ) -> Result<HostRecording> {
         self.require_free_slot()?;
 
         let host = cpal::default_host();
         let (device, acquisition) = resolve_device(&host, requested_device)?;
-        let config = get_optimal_config(&device, preferred_sample_rate)?;
+        let config = get_optimal_config(&device)?;
         let sample_format = config.sample_format();
         let device_rate = config.sample_rate();
         let device_channels = config.channels();
@@ -1169,13 +1168,10 @@ fn device_name(device: &Device) -> Result<String> {
 
 /// Get the best supported configuration for voice recording.
 ///
-/// Prefers mono at the target rate (16 kHz default), falls back to stereo
-/// at the target rate, then to the closest supported rate.
-fn get_optimal_config(
-    device: &Device,
-    preferred_sample_rate: Option<u32>,
-) -> Result<cpal::SupportedStreamConfig> {
-    let target_sample_rate = preferred_sample_rate.unwrap_or(PREFERRED_CAPTURE_RATE);
+/// Prefers mono at the host's 16 kHz target, falls back to stereo at that rate,
+/// then to the closest supported rate.
+fn get_optimal_config(device: &Device) -> Result<cpal::SupportedStreamConfig> {
+    let target_sample_rate = PREFERRED_CAPTURE_RATE;
 
     // A device that yields no input configs is unusable as an input, whether the
     // query *errors* or returns *empty*: both mean "this mic can't tell us how to

@@ -22,14 +22,6 @@ import { commands, events } from '$lib/tauri/commands';
 import { tauriOnly } from '$lib/tauri.tauri';
 
 /**
- * Native (Rust/CPAL) recording parameters. Whispering-owned: the package
- * defines only the base params; the native sample-rate knob is this app's.
- */
-export type CpalRecordingParams = BaseRecordingParams & {
-	sampleRate: string;
-};
-
-/**
  * Live mic loudness, emitted by the Rust capture worker to the window that owns
  * the recording. The JS side never sees PCM, so the level has to originate
  * there.
@@ -133,7 +125,7 @@ const enumerateDevices = async (): Promise<Result<Device[], RecorderError>> => {
  * recording this window owns and rebuilds a fully usable wrapper around it,
  * meter included.
  */
-function createCpalRecorder(): RecorderService<CpalRecordingParams> {
+function createCpalRecorder(): RecorderService<BaseRecordingParams> {
 	/**
 	 * Wrap a live host recording.
 	 *
@@ -313,17 +305,15 @@ function createCpalRecorder(): RecorderService<CpalRecordingParams> {
 
 		enumerateDevices,
 
-		start: async ({ selectedDeviceId, sampleRate }: CpalRecordingParams) => {
+		start: async ({ selectedDeviceId }: BaseRecordingParams) => {
 			const { error: permissionError } = await requestMicrophonePermission();
 			if (permissionError) return Err(permissionError);
-
-			const sampleRateNum = sampleRate ? Number.parseInt(sampleRate, 10) : null;
 
 			// No device enumeration first: the host resolves the requested device,
 			// falls back to the system default when it is gone, and reports which
 			// one it opened.
 			const { data: started, error: startError } =
-				await commands.startRecording(selectedDeviceId, sampleRateNum);
+				await commands.startRecording(selectedDeviceId);
 			if (startError !== null) {
 				return recorderErrorFromIpc(startError);
 			}
@@ -343,5 +333,5 @@ function createCpalRecorder(): RecorderService<CpalRecordingParams> {
 	};
 }
 
-export const ManualRecorderLive: RecorderService<CpalRecordingParams> =
+export const ManualRecorderLive: RecorderService<BaseRecordingParams> =
 	createCpalRecorder();

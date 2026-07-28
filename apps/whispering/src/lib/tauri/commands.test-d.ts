@@ -71,15 +71,12 @@ type _SharedContracts = Expect<
 // The errors are the structured `RecorderError` IPC enum, not bare strings, so
 // the recorder boundary stays typed.
 
-// start_recording: optional device and sample rate in, the host-minted blob id
-// out. The caller does not supply an id, because the host owns which recording
-// exists, and it does not have to enumerate devices first, because the host
-// reports the microphone it actually opened.
+// start_recording: optional device in, the host-minted blob id out. The caller
+// does not supply an id, because the host owns which recording exists, and it
+// does not have to enumerate devices first, because the host reports the
+// microphone it actually opened.
 type _StartRecordingArgs = Expect<
-	Equal<
-		Parameters<typeof commands.startRecording>,
-		[string | null, number | null]
-	>
+	Equal<Parameters<typeof commands.startRecording>, [string | null]>
 >;
 
 type _StartRecording = Expect<

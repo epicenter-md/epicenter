@@ -40,12 +40,9 @@ export const commands = {
 	 *  never has to enumerate devices just to discover what it got. Fails with
 	 *  `Busy` when another window is already recording.
 	 */
-	startRecording: (
-		deviceIdentifier: string | null,
-		sampleRate: number | null,
-	) =>
+	startRecording: (deviceIdentifier: string | null) =>
 		typedError<HostRecording, RecorderError>(
-			__TAURI_INVOKE('start_recording', { deviceIdentifier, sampleRate }),
+			__TAURI_INVOKE('start_recording', { deviceIdentifier }),
 		),
 	/**
 	 *  Stop the recording named by `audio_blob_id`, publish its blob, and report

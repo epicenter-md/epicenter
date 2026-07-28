@@ -19,7 +19,7 @@ Rule of thumb: no computed behavior, no functions, no runtime schema objects. If
 
 ```
 constants/
-├── audio/                  # Recording settings: bitrate, sample-rate, triggers, button icons (folder + barrel)
+├── audio/                  # Recording settings: bitrate, triggers, button icons (folder + barrel)
 ├── icons/                  # Provider brand SVG assets
 ├── inference.ts            # Text-completion provider/model registry
 ├── languages.ts            # Supported transcription languages
@@ -47,7 +47,7 @@ Import from a domain's folder barrel, or directly from a flat file:
 
 ```typescript
 // Folder domains expose a barrel
-import { SAMPLE_RATE_OPTIONS } from '$lib/constants/audio';
+import { RECORDING_TRIGGER_OPTIONS } from '$lib/constants/audio';
 
 // Flat domains are imported directly
 import { SUPPORTED_LANGUAGES_OPTIONS } from '$lib/constants/languages';

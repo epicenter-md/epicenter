@@ -26,8 +26,9 @@ stops or cancels it.
 
 - **One path, no modes.** Every recording, four seconds or four hours, streams
   mono PCM16 into a private staged WAV as it is captured. Memory is flat in the
-  recording's length. Applications select nothing, see no PCM, and never learn
-  the staged rate.
+  recording's length. The host prefers 16 kHz and falls back to the closest rate
+  the selected device supports. Applications neither select nor persist a
+  capture rate, see no PCM, and never learn the staged rate.
 - **The recorder holds one recording, and holding it survives its capture.** A
   capture that ends without anyone asking (device disconnected, permission
   revoked, stream failed, storage failed) ends the capture only. The recording
@@ -77,10 +78,12 @@ This decision explicitly refuses, and these refusals are the reason it is small:
   resolves it, so a window that ignores the ending blocks every other window from
   starting. That is the accepted cost of never silently discarding audio; owner
   window destruction is the escape hatch, and it cancels.
-- Blobs are now mono PCM16 at the device's own rate rather than 16 kHz f32. No
-  caller changes: local transcription already decodes arbitrary rates to 16 kHz
-  and cloud upload already owns its own conversion to 48 kHz Opus. The staged
-  rate is private mechanism, not contract.
+- Blobs are mono PCM16 at the host-selected device rate rather than f32 held in
+  memory. The host prefers 16 kHz because retained audio primarily supports
+  transcription and review, then chooses the closest rate the device can
+  actually capture. Local transcription already decodes arbitrary rates to 16
+  kHz and cloud upload owns its own conversion to 48 kHz Opus. The staged rate
+  is private mechanism, not application config or contract.
 - A stalled disk costs dropped chunks (about ten milliseconds of audio each)
   rather than a stalled audio thread. Blocking the callback would not have saved
   the recording and would have glitched every other sound on the machine. A

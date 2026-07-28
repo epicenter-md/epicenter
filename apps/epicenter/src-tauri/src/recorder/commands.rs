@@ -128,7 +128,6 @@ pub async fn enumerate_recording_devices(
 #[specta::specta]
 pub async fn start_recording(
     device_identifier: Option<String>,
-    sample_rate: Option<u32>,
     recorder: State<'_, Mutex<Recorder>>,
     app_handle: AppHandle,
     window: WebviewWindow,
@@ -136,7 +135,7 @@ pub async fn start_recording(
     let owner_label = window.label().to_string();
     let audio_blob_id = mint_blob_id()?;
     info!(
-        "Starting recording: id={audio_blob_id}, owner={owner_label}, device={device_identifier:?}, sample_rate={sample_rate:?}",
+        "Starting recording: id={audio_blob_id}, owner={owner_label}, device={device_identifier:?}",
     );
 
     let started = {
@@ -145,7 +144,6 @@ pub async fn start_recording(
             device_identifier.as_deref(),
             audio_blob_id,
             owner_label,
-            sample_rate,
             app_handle.clone(),
         )?
     };
