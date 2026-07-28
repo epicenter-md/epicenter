@@ -1,6 +1,6 @@
 ---
 name: writing-voice
-description: Guide sentence-level expression while drafting or revising substantial prose so it sounds like the writer on their clearest day, preserving vocabulary, humor, certainty, emotional emphasis, and relative allocation of attention. Use for tone work, rewrites, UI copy, documentation, articles, messages, or writing that sounds generic, corporate, or AI-shaped.
+description: Guide sentence-level expression while drafting or revising substantial prose so it sounds like the writer on their clearest day, preserving vocabulary, humor, certainty, emotional emphasis, and relative allocation of attention. Use for tone work, rewrites, UI copy, documentation, articles, messages, writing that sounds generic, corporate, or AI-shaped, and human-gated wording workshops or ear passes where each consequential change must be proposed before editing.
 ---
 
 # Writing Voice
@@ -18,6 +18,26 @@ Do not add, remove, reorder, promote, or demote material as a voice choice. A
 voice edit may clarify what is already there. Return content and structure
 decisions to the destination skill; when the two conflict, the destination
 skill wins.
+
+## Keep Editorial Judgment Human
+
+When revising prose the user owns, do not silently apply an agent-originated
+wording or cadence judgment. A direct user-specified replacement or a purely
+mechanical correction may proceed. For every new cut, replacement, reordering,
+or rhythmic change to the expression:
+
+1. Read the complete piece and carry the larger ear pass privately.
+2. Surface exactly one consequential candidate with the current wording, the
+   proposed wording, and the reason for the change.
+3. Reveal a clear recommendation, then wait for the user's decision.
+4. Apply only the accepted change.
+5. Treat the reaction as evidence about the writer's taste. Preserve wording
+   whose apparent inefficiency performs a job the reaction reveals.
+6. Bring forward the next candidate only after the previous one resolves.
+
+Do not dump a checklist of every possible improvement or make several
+taste-sensitive edits under one approval. Stop when no consequential candidate
+remains.
 
 ## Preserve The Allocation Of Attention
 
@@ -89,8 +109,8 @@ rewrite. Read the draft at speaking speed.
 
 1. Mark where the rhythm catches, the language becomes generic, or attention
    shifts away from what the writer cared about.
-2. Make local expression edits without changing the thought's strength or
-   emotional proportions.
+2. Route agent-originated expression edits through the human decision loop
+   above without changing the thought's strength or emotional proportions.
 3. Remove recursive hedges and explanations of why the prose is hedging.
 4. When a problem requires adding, removing, reordering, promoting, or demoting
    material, return it to the destination skill instead of fixing it here.
