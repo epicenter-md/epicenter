@@ -146,22 +146,27 @@ function createCpalRecorder(): RecorderService<CpalRecordingParams> {
 		device: DeviceAcquisitionOutcome,
 		endedReason: RecordingEndedReason | null,
 	): Recording {
-		// Every listener this recording opened, torn down together when it ends
-		// so a stopped recording cannot leave a live event subscription behind.
+		// Every host listener this recording opened, torn down together the moment
+		// no more of them can fire: after a stop, a cancel, or the capture ending.
+		// This gates events, not the recording. A recording whose capture ended is
+		// still stoppable, and stopping it needs no listener.
 		const unlisteners = new Set<Promise<UnlistenFn>>();
-		let ended = false;
+		// A recording recovered with its capture already ended will never receive
+		// another level or another ending, so it starts deaf rather than
+		// subscribing to events the host will not send.
+		let listening = endedReason === null;
 
-		const release = () => {
-			ended = true;
+		const stopListening = () => {
+			listening = false;
 			for (const unlisten of unlisteners) {
 				void unlisten.then((stop) => stop());
 			}
 			unlisteners.clear();
 		};
 
-		/** Attach a host listener that stops when this recording ends. */
+		/** Attach a host listener that stops when this recording stops listening. */
 		const track = (unlisten: Promise<UnlistenFn>) => {
-			if (ended) {
+			if (!listening) {
 				void unlisten.then((stop) => stop());
 				return () => {};
 			}
@@ -180,9 +185,9 @@ function createCpalRecorder(): RecorderService<CpalRecordingParams> {
 			stop: async () => {
 				const { data: stopped, error: stopError } =
 					await commands.stopRecording(audioBlobId);
-				// Released either way: whether the host delivered a blob or refused,
-				// this recording is over.
-				release();
+				// Either way, whether the host delivered a blob or refused, this
+				// recording is resolved and nothing more will be sent about it.
+				stopListening();
 				if (stopError !== null) {
 					return recorderErrorFromIpc(stopError);
 				}
@@ -204,7 +209,7 @@ function createCpalRecorder(): RecorderService<CpalRecordingParams> {
 			cancel: async () => {
 				const { error: cancelError } =
 					await commands.cancelRecording(audioBlobId);
-				release();
+				stopListening();
 				if (cancelError !== null) {
 					return recorderErrorFromIpc(cancelError);
 				}
@@ -222,7 +227,10 @@ function createCpalRecorder(): RecorderService<CpalRecordingParams> {
 						// The host targets the owning window, but a window can outlive
 						// one recording and start another, so the id still has to match.
 						if (event.payload.audioBlobId !== audioBlobId) return;
-						release();
+						// The capture is over, so the level meter has nothing left to
+						// report and this event cannot fire twice. The recording is
+						// still the caller's to stop.
+						stopListening();
 						handler(event.payload.reason);
 					}),
 				),

@@ -229,12 +229,6 @@ impl StagedCapture {
         })
     }
 
-    /// Samples written so far, straight from the writer's own count so the
-    /// duration and the padding decision can never disagree with the file.
-    fn written_samples(&self) -> u32 {
-        self.writer.as_ref().map_or(0, |writer| writer.len())
-    }
-
     /// Append one callback's worth of mono PCM16.
     ///
     /// No flush and no header checkpoint: `BufWriter` writes when it fills, and
@@ -273,7 +267,9 @@ impl StagedCapture {
     /// protect, and padding it would turn "we heard nothing" into 1.25 s of
     /// silence that looks like a real recording.
     fn pad_if_short(&mut self) -> Result<()> {
-        let captured = self.written_samples();
+        // Straight from the writer's own count, so the padding decision can
+        // never disagree with the file.
+        let captured = self.writer.as_ref().map_or(0, |writer| writer.len());
         if captured == 0 || captured >= self.device_rate {
             return Ok(());
         }
@@ -290,13 +286,14 @@ impl StagedCapture {
     /// deleted here rather than offered as a partial result.
     fn finish(mut self) -> Result<StoppedCapture> {
         match self.finalize_wav() {
-            Ok(sample_count) => {
-                let duration_ms = duration_ms(sample_count, self.device_rate);
-                Ok(StoppedCapture {
-                    staged: self.staged,
-                    duration_ms,
-                })
-            }
+            Ok(sample_count) => Ok(StoppedCapture {
+                staged: self.staged,
+                // Exact duration of what was written: the file's own sample
+                // count over the rate it was captured at. Bounded by the RIFF
+                // ceiling the writer enforces, so it always fits in `u32`.
+                duration_ms: (sample_count as f64 / self.device_rate as f64 * 1000.0).round()
+                    as u32,
+            }),
             Err(error) => {
                 self.staged.discard();
                 Err(error)
@@ -354,13 +351,6 @@ struct StoppedCapture {
 pub struct RecordedAudio {
     pub duration_ms: u32,
     pub byte_length: u32,
-}
-
-/// Exact duration of what was written: the file's own sample count over the rate
-/// it was captured at. Bounded by the RIFF ceiling the writer enforces, so it
-/// always fits in `u32`.
-fn duration_ms(sample_count: u32, device_rate: u32) -> u32 {
-    (sample_count as f64 / device_rate as f64 * 1000.0).round() as u32
 }
 
 /// The one recording the recorder holds: its identity, its owner, and the
@@ -938,22 +928,17 @@ fn run_capture(
 /// owner's to claim" true without a catch-up queue or a restore call: the same
 /// `Stop` a live recording answers is answered here, from the same file.
 fn await_resolution(capture: StagedCapture, cmd_rx: &mpsc::Receiver<RecorderCmd>) {
-    let mut capture = Some(capture);
     loop {
         match cmd_rx.recv() {
             Ok(RecorderCmd::Stop(reply)) => {
-                if let Some(capture) = capture.take() {
-                    let _ = reply.send(capture.finish());
-                }
+                let _ = reply.send(capture.finish());
                 return;
             }
             // Cancel deletes the staged bytes. A disconnected channel means the
             // recorder itself is gone, which has the same effect and nobody left
             // to tell.
             Ok(RecorderCmd::Cancel) | Err(_) => {
-                if let Some(capture) = capture.take() {
-                    capture.discard();
-                }
+                capture.discard();
                 return;
             }
             // `end_capture` refuses to signal an already-ended recording, so
