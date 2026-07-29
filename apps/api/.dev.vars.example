@@ -17,9 +17,11 @@ BLOBS_S3_SECRET_ACCESS_KEY=
 # an explicit "not configured" state. TikTok calls the public half of the pair a
 # "client key", not a client id.
 #
-# Register this exact redirect URI in the TikTok developer portal for local dev:
-#   http://localhost:8787/api/integrations/tiktok/callback
-# (production is https://api.epicenter.so/api/integrations/tiktok/callback)
+# TikTok's Web Login Kit accepts HTTPS redirect URIs only, so raw localhost
+# cannot complete OAuth. Use the production callback for the sandbox canary:
+#   https://api.epicenter.so/api/integrations/tiktok/callback
+# or run local development behind a stable HTTPS tunnel and register that
+# tunnel's exact /api/integrations/tiktok/callback URI.
 TIKTOK_CLIENT_KEY=
 TIKTOK_CLIENT_SECRET=
 # 32 random bytes, base64url. Encrypts OAuth tokens at rest (AES-256-GCM). Its
