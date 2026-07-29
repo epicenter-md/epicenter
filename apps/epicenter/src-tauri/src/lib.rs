@@ -2045,66 +2045,32 @@ mod tests {
         }
     }
 
-    /// The public client is hand-written against this crate's command names
-    /// rather than generated from it, because what an app may call is a product
-    /// decision and a generator would export whatever the crate happens to
-    /// register. This is what keeps that hand-written list honest.
+    /// The seven commands must exist, or the grant above is a silent no-op and
+    /// the public client invokes into nothing.
     ///
-    /// Three artifacts have to agree, and each would otherwise drift silently:
-    /// the commands `@epicenter/app` invokes, the commands an app window is
-    /// granted, and the commands this crate actually exposes.
-    /// The client's `COMMANDS` map, as `(key, command)` pairs. The key is how
-    /// the client's own call sites name a command, so it is what locates one.
-    fn public_client_commands() -> Vec<(String, String)> {
-        const PROTOCOL: &str = include_str!("../../../../packages/app/src/protocol.ts");
-        PROTOCOL
-            .split_once("COMMANDS = {")
-            .expect("packages/app/src/protocol.ts must declare a COMMANDS map")
-            .1
-            .split_once("} as const;")
-            .expect("the COMMANDS map must be closed with `} as const;`")
-            .0
-            .lines()
-            .filter_map(|line| line.split_once(": '"))
-            .filter_map(|(key, rest)| Some((key, rest.split_once('\'')?.0)))
-            .map(|(key, command)| (key.trim().to_string(), command.to_string()))
-            .collect()
-    }
-
+    /// That the *client* invokes exactly these seven, with exactly the
+    /// arguments they deserialize, is proved in
+    /// `src/app-client-parity.test.ts`, where the capability, the generated
+    /// bindings, and the client are all ordinary values and both sides can be
+    /// driven through one fake IPC. This test used to parse the client's
+    /// TypeScript as text from here, which was weaker (it compared source
+    /// spelling, not what was sent) and fragile enough to pass or fail on how
+    /// the bindings happened to be formatted.
     #[test]
-    fn the_public_client_invokes_exactly_what_app_windows_are_granted() {
-        const PROTOCOL: &str = include_str!("../../../../packages/app/src/protocol.ts");
-
-        let named: std::collections::BTreeSet<String> = public_client_commands()
-            .into_iter()
-            .map(|(_, command)| command)
-            .collect();
-
-        let expected: std::collections::BTreeSet<String> = PUBLIC_CLIENT_COMMANDS
-            .iter()
-            .map(|command| command.to_string())
-            .collect();
-        assert_eq!(
-            named, expected,
-            "@epicenter/app and this crate disagree about the public command surface"
-        );
-
-        // Each of them has to be a command this build declares, or the grant
-        // above is a silent no-op and the client invokes into nothing.
+    fn the_public_client_surface_is_commands_this_build_declares() {
         let declared: std::collections::BTreeSet<&str> =
             crate::command_names::COMMANDS.iter().copied().collect();
-        for command in &named {
+        for command in PUBLIC_CLIENT_COMMANDS {
             assert!(
-                declared.contains(command.as_str()),
-                "@epicenter/app invokes {command}, which this build does not declare"
+                declared.contains(command),
+                "the app-window grant names {command}, which this build does not declare"
             );
         }
+    }
 
-        // The one event it subscribes to has to be the one the host emits.
-        assert!(
-            PROTOCOL.contains("'recording-ended-event'"),
-            "@epicenter/app must name the host's recording-ended event"
-        );
+    /// The one event an app window subscribes to has to be one the host emits.
+    #[test]
+    fn the_host_still_emits_the_recording_ended_event() {
         // Either quote style, for the same reason the binding freshness check
         // above accepts both: specta emits double quotes and the repo formatter
         // rewrites them to single.
@@ -2113,78 +2079,6 @@ mod tests {
             BINDINGS.contains("'recording-ended-event'")
                 || BINDINGS.contains("\"recording-ended-event\""),
             "the host no longer emits the event @epicenter/app subscribes to"
-        );
-    }
-
-    /// A command name that drifts fails loudly; an *argument* name that drifts
-    /// fails only when someone runs it, because Tauri deserializes arguments by
-    /// name and a missing one is a runtime error rather than a compile error.
-    ///
-    /// So each argument the generated bindings pass has to appear at the
-    /// client's own call site *for that command*. The bindings are the proxy
-    /// for Rust here, since they are generated from the same commands.
-    ///
-    /// Per call site, not anywhere in the client, and the difference is the
-    /// whole test. Every one of these commands is addressed by a blob id, so
-    /// `audioBlobId` appears all over the client; a check that only asked
-    /// whether a name occurred somewhere would happily accept
-    /// `start_recording` growing an `audioBlobId` parameter that `start()` has
-    /// never sent.
-    #[test]
-    fn the_public_client_names_the_arguments_these_commands_deserialize() {
-        const CLIENT: &str = concat!(
-            include_str!("../../../../packages/app/src/recording.ts"),
-            include_str!("../../../../packages/app/src/transcription.ts"),
-        );
-        const BINDINGS: &str = include_str!("../../src/ui/bindings.gen.ts");
-
-        let mut checked = 0;
-        for (key, command) in public_client_commands() {
-            // Matched on the quoted name alone, not on `(` plus the name: the
-            // formatter wraps a long invoke onto its own line, and specta emits
-            // double quotes where the formatter leaves single ones.
-            let Some(binding_site) = BINDINGS
-                .split_once(&format!("'{command}'"))
-                .or_else(|| BINDINGS.split_once(&format!("\"{command}\"")))
-                .map(|(_, rest)| rest)
-            else {
-                panic!("the generated bindings no longer invoke {command}");
-            };
-            // The call closes right after a command that takes nothing; one
-            // that takes arguments has an object literal before that `)`.
-            let Some(arguments) = binding_site
-                .split_once(')')
-                .and_then(|(call, _)| call.split_once('{'))
-                .and_then(|(_, fields)| fields.split_once('}'))
-                .map(|(fields, _)| fields)
-            else {
-                continue;
-            };
-
-            // The client names each command through `COMMANDS.<key>`, and the
-            // payload it sends follows on the way to that call's `);`.
-            let call = CLIENT
-                .split_once(&format!("COMMANDS.{key}"))
-                .map(|(_, rest)| rest)
-                .and_then(|rest| rest.split_once(");"))
-                .map(|(call, _)| call)
-                .unwrap_or_else(|| panic!("@epicenter/app never invokes COMMANDS.{key}"));
-
-            for argument in arguments
-                .split(',')
-                .map(str::trim)
-                .filter(|argument| !argument.is_empty())
-            {
-                assert!(
-                    call.contains(argument),
-                    "{command} deserializes an argument named `{argument}`, which @epicenter/app does not send at its `COMMANDS.{key}` call"
-                );
-                checked += 1;
-            }
-        }
-        assert!(
-            checked >= 3,
-            "expected to check the arguments of at least the three commands that take them, checked {checked}"
         );
     }
 

@@ -36,7 +36,8 @@
 		"prepack": "bun run build",
 		"typecheck": "tsc --noEmit",
 		"test": "bun test",
-		"verify:consumer": "bun run scripts/verify-external-consumer.ts"
+		"verify:consumer": "bun run scripts/verify-external-consumer.ts",
+		"prepare": "bun run build"
 	},
 	"dependencies": {
 		"@tauri-apps/api": "catalog:",

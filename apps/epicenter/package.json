@@ -46,6 +46,7 @@
 		"wellcrafted": "catalog:"
 	},
 	"devDependencies": {
+		"@epicenter/app": "workspace:*",
 		"@sveltejs/vite-plugin-svelte": "catalog:",
 		"@tailwindcss/vite": "catalog:",
 		"@tauri-apps/cli": "catalog:",
