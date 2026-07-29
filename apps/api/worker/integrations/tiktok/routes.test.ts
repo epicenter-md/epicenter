@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
 import type { CloudEnv } from '@epicenter/server';
+import { tiktokPublishAttempt } from '@epicenter/server/cloud-db';
 import { Hono } from 'hono';
 import { mountTikTokIntegrationApi } from './routes.js';
 
@@ -140,6 +141,40 @@ function request(
 ) {
 	return built.app.request(path, init, built.env);
 }
+
+/**
+ * A minimal but REAL MP4: `ftyp` plus `moov > mvhd` carrying the duration.
+ *
+ * Direct Post now fails closed when the length cannot be read, so these tests
+ * must hand the route a file whose duration actually parses. See
+ * mp4-duration.ts.
+ */
+function mp4Bytes(seconds: number): Uint8Array<ArrayBuffer> {
+	// Allocated over an explicit ArrayBuffer: `BlobPart` (and WebCrypto) exclude
+	// SharedArrayBuffer-backed views.
+	const alloc = (length: number) => new Uint8Array(new ArrayBuffer(length));
+	const box = (type: string, payload: Uint8Array) => {
+		const bytes = alloc(8 + payload.byteLength);
+		new DataView(bytes.buffer).setUint32(0, bytes.byteLength);
+		bytes.set(new TextEncoder().encode(type), 4);
+		bytes.set(payload, 8);
+		return bytes;
+	};
+	const mvhd = alloc(20);
+	const view = new DataView(mvhd.buffer);
+	view.setUint8(0, 0);
+	view.setUint32(12, 1000);
+	view.setUint32(16, seconds * 1000);
+	const ftyp = box('ftyp', alloc(8));
+	const moov = box('moov', box('mvhd', mvhd));
+	const out = alloc(ftyp.byteLength + moov.byteLength);
+	out.set(ftyp, 0);
+	out.set(moov, ftyp.byteLength);
+	return out;
+}
+
+/** A key that satisfies the server contract (see publish-intent.ts). */
+const VALID_KEY = 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d';
 
 // --- Authentication boundaries -------------------------------------------
 
@@ -341,20 +376,50 @@ test('a callback with an unknown or replayed state connects nothing', async () =
 	expect(location.searchParams.get('connected')).toBeNull();
 });
 
-test('a state minted by another Epicenter user cannot attach an account to this one', async () => {
-	const { db } = fakeDb({
-		deleteReturning: [
-			{
-				state: 's',
-				userId: 'user-who-started-it',
-				returnPath: '/dashboard/integrations',
-				expiresAt: new Date(Date.now() + 60_000),
-			},
-		],
-	});
+test('a state belonging to another Epicenter user matches nothing and attaches nothing', async () => {
+	// The delete is scoped by BOTH state and user_id, so a foreign user's
+	// callback selects no row at all. Modelled here the way Postgres behaves:
+	// no match, therefore no row returned, therefore nothing consumed and the
+	// real owner's in-flight ceremony is left intact.
+	const { db } = fakeDb({ deleteReturning: [] });
 	const built = createTikTokTestApp({
-		// A different signed-in user arrives at the callback.
 		session: freshSession('a-different-user'),
+		env: CONFIGURED_ENV,
+		db,
+	});
+
+	const realFetch = globalThis.fetch;
+	const tiktokCalls: string[] = [];
+	globalThis.fetch = (async (input: string | URL) => {
+		tiktokCalls.push(String(input));
+		return new Response('{}', { status: 200 });
+	}) as unknown as typeof globalThis.fetch;
+
+	try {
+		const res = await request(
+			built,
+			'/api/integrations/tiktok/callback?code=abc&state=s',
+		);
+
+		expect(res.status).toBe(302);
+		const location = new URL(res.headers.get('Location') ?? '', ORIGIN);
+		expect(location.searchParams.get('error') ?? '').toContain(
+			'different Epicenter account',
+		);
+		expect(location.searchParams.get('connected')).toBeNull();
+		// No code was exchanged: nothing reached TikTok.
+		expect(tiktokCalls).toHaveLength(0);
+	} finally {
+		globalThis.fetch = realFetch;
+	}
+});
+
+test('a callback with NO session consumes nothing and exchanges nothing', async () => {
+	// Session is resolved BEFORE the state is touched, so an unauthenticated hit
+	// on this URL cannot cancel anybody's in-flight ceremony.
+	const { db, state } = fakeDb({ deleteReturning: [] });
+	const built = createTikTokTestApp({
+		session: null,
 		env: CONFIGURED_ENV,
 		db,
 	});
@@ -366,10 +431,10 @@ test('a state minted by another Epicenter user cannot attach an account to this 
 
 	expect(res.status).toBe(302);
 	const location = new URL(res.headers.get('Location') ?? '', ORIGIN);
-	expect(location.searchParams.get('error') ?? '').toContain(
-		'different Epicenter account',
-	);
+	expect(location.searchParams.get('error') ?? '').toContain('Sign in');
 	expect(location.searchParams.get('connected')).toBeNull();
+	// Nothing was read or deleted.
+	expect(state.touched).toBe(false);
 });
 
 test('an expired state is refused even though it was consumed', async () => {
@@ -573,7 +638,7 @@ test('publish refuses a request with no video file', async () => {
 	});
 	const form = new FormData();
 	form.set('kind', 'draft_upload');
-	form.set('idempotencyKey', 'key-1');
+	form.set('idempotencyKey', VALID_KEY);
 
 	const res = await request(
 		built,
@@ -618,7 +683,7 @@ test('publish refuses a connection whose grant lacks the scope the request needs
 	});
 	const form = new FormData();
 	form.set('kind', 'direct_post');
-	form.set('idempotencyKey', 'key-1');
+	form.set('idempotencyKey', VALID_KEY);
 	form.set(
 		'video',
 		new File([new Uint8Array(10)], 'v.mp4', { type: 'video/mp4' }),
@@ -716,7 +781,7 @@ function liveDb(row: Record<string, unknown>) {
 			{
 				id: 'attempt-1',
 				connectionId: 'conn-1',
-				idempotencyKey: 'key-1',
+				idempotencyKey: VALID_KEY,
 				kind: 'direct_post',
 				publishId: null,
 				status: null,
@@ -772,10 +837,11 @@ async function publishWith(
 	try {
 		const body = new FormData();
 		body.set('kind', 'direct_post');
-		body.set('idempotencyKey', 'key-1');
+		body.set('idempotencyKey', VALID_KEY);
 		body.set(
 			'video',
-			new File([new Uint8Array(64)], 'v.mp4', { type: 'video/mp4' }),
+			// 30s, comfortably under the 600s ceiling CREATOR_INFO_BODY reports.
+			new File([mp4Bytes(30)], 'v.mp4', { type: 'video/mp4' }),
 		);
 		for (const [key, value] of Object.entries(form)) body.set(key, value);
 		const res = await request(
@@ -866,4 +932,354 @@ test('a compliant Direct Post reaches video/init', async () => {
 	expect(res.status).toBe(200);
 	expect(calls.some((url) => url.includes('creator_info/query'))).toBe(true);
 	expect(calls.some((url) => url.includes('video/init'))).toBe(true);
+});
+
+// --- Timeout retry cannot originate a second post ------------------------
+//
+// The end-to-end proof for the idempotency fix. `publishWith` uses a fresh
+// in-memory db per call; this one PERSISTS attempt rows across requests, which
+// is what lets the second submission collide with the first claim.
+
+/**
+ * A db that remembers claimed attempts and routes selects by TABLE, so the
+ * connection lookup and the conflicting-attempt read cannot answer each other.
+ */
+function statefulDb(connectionRow: Record<string, unknown>) {
+	const claimed = new Map<string, Record<string, unknown>>();
+	const statuses: string[] = [];
+
+	const rowsFor = (table: unknown): unknown[] =>
+		table === tiktokPublishAttempt ? [...claimed.values()] : [connectionRow];
+
+	const chain = (rows: unknown[]): unknown =>
+		Object.assign(Promise.resolve(rows), {
+			where: () => chain(rows),
+			orderBy: () => chain(rows),
+			limit: () => chain(rows),
+			returning: () => chain(rows),
+			for: () => chain(rows),
+		});
+
+	const db = {
+		select: () => ({ from: (table: unknown) => chain(rowsFor(table)) }),
+		delete: () => chain([]),
+		update: () => ({
+			set: (values: { status?: string }) => {
+				if (values.status) statuses.push(values.status);
+				return { where: async () => undefined };
+			},
+		}),
+		insert: () => ({
+			values: (value: Record<string, unknown>) => ({
+				onConflictDoNothing: () => ({
+					// The unique (connection_id, idempotency_key) index, modelled: a
+					// second insert under the same key returns NO row.
+					returning: async () => {
+						const key = String(value.idempotencyKey);
+						if (claimed.has(key)) return [];
+						claimed.set(key, { ...value, publishId: null, status: null });
+						return [claimed.get(key)];
+					},
+				}),
+			}),
+		}),
+		transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> =>
+			fn({
+				select: () => ({
+					from: () => ({
+						where: () => ({
+							for: () => ({ limit: async () => [connectionRow] }),
+						}),
+					}),
+				}),
+				update: () => ({ set: () => ({ where: async () => undefined }) }),
+			}),
+	};
+	return { db, claimed, statuses };
+}
+
+/** Drive one publish against a persistent db, with TikTok's calls stubbed. */
+async function submitPublish(
+	built: ReturnType<typeof createTikTokTestApp>,
+	idempotencyKey: string,
+) {
+	const body = new FormData();
+	body.set('kind', 'direct_post');
+	body.set('idempotencyKey', idempotencyKey);
+	body.set('title', 'A caption');
+	body.set('privacyLevel', 'PUBLIC_TO_EVERYONE');
+	body.set('video', new File([mp4Bytes(30)], 'v.mp4', { type: 'video/mp4' }));
+	return request(built, '/api/integrations/tiktok/connections/conn-1/publish', {
+		method: 'POST',
+		body,
+	});
+}
+
+test('a timeout retry sends the SAME key and cannot reach a second video/init', async () => {
+	const row = await liveConnectionRow(['video.publish']);
+	const { db, claimed, statuses } = statefulDb(row);
+	const built = createTikTokTestApp({
+		session: freshSession('user-1'),
+		env: CONFIGURED_ENV,
+		db,
+	});
+
+	const initCalls: string[] = [];
+	let initTimesOut = true;
+	const realFetch = globalThis.fetch;
+	globalThis.fetch = (async (input: string | URL) => {
+		const url = String(input);
+		if (url.includes('creator_info/query')) {
+			return new Response(JSON.stringify(CREATOR_INFO_BODY), { status: 200 });
+		}
+		if (url.includes('video/init')) {
+			initCalls.push(url);
+			if (initTimesOut) {
+				throw new Error('The operation was aborted due to timeout');
+			}
+			return new Response(
+				JSON.stringify({
+					data: { publish_id: 'pub-1', upload_url: 'https://upload/x' },
+					error: { code: 'ok' },
+				}),
+				{ status: 200 },
+			);
+		}
+		return new Response(null, { status: 200 });
+	}) as unknown as typeof globalThis.fetch;
+
+	try {
+		// The dashboard's keeper holds ONE key for this unchanged intent, so the
+		// retry below reuses it exactly as the browser would.
+		const first = await submitPublish(built, VALID_KEY);
+
+		expect(first.status).toBe(502);
+		const firstBody = (await first.json()) as {
+			error: { name: string; unresolved: boolean; attemptId: string };
+		};
+		// Ambiguous, NOT a clean failure: TikTok may have accepted the init.
+		expect(firstBody.error.name).toBe('PublishOutcomeUnknown');
+		expect(firstBody.error.unresolved).toBe(true);
+		expect(firstBody.error.attemptId).toBeTruthy();
+		expect(statuses).toContain('INIT_AMBIGUOUS');
+		expect(initCalls).toHaveLength(1);
+
+		// The natural retry. TikTok is healthy again, so nothing but the claim
+		// stands between this request and a SECOND irreversible post.
+		initTimesOut = false;
+		const second = await submitPublish(built, VALID_KEY);
+
+		expect(second.status).toBe(409);
+		const secondBody = (await second.json()) as {
+			error: { name: string; attemptId: string };
+		};
+		expect(secondBody.error.name).toBe('PublishAlreadyAttempted');
+		// THE POINT: init was reached exactly once across both submissions, and
+		// only one attempt exists.
+		expect(initCalls).toHaveLength(1);
+		expect(claimed.size).toBe(1);
+	} finally {
+		globalThis.fetch = realFetch;
+	}
+});
+
+test('a DIFFERENT key after a settled outcome is allowed to post again', async () => {
+	// The mirror of the test above: idempotency must not become a permanent lock.
+	// A new intent (new key) reaches init normally.
+	const row = await liveConnectionRow(['video.publish']);
+	const { db, claimed } = statefulDb(row);
+	const built = createTikTokTestApp({
+		session: freshSession('user-1'),
+		env: CONFIGURED_ENV,
+		db,
+	});
+
+	const initCalls: string[] = [];
+	const realFetch = globalThis.fetch;
+	globalThis.fetch = (async (input: string | URL) => {
+		const url = String(input);
+		if (url.includes('creator_info/query')) {
+			return new Response(JSON.stringify(CREATOR_INFO_BODY), { status: 200 });
+		}
+		if (url.includes('video/init')) initCalls.push(url);
+		return new Response(
+			JSON.stringify({
+				data: { publish_id: 'pub-1', upload_url: 'https://upload/x' },
+				error: { code: 'ok' },
+			}),
+			{ status: 200 },
+		);
+	}) as unknown as typeof globalThis.fetch;
+
+	try {
+		expect((await submitPublish(built, VALID_KEY)).status).toBe(200);
+		const second = await submitPublish(
+			built,
+			'f9e8d7c6-b5a4-4321-9876-0f1e2d3c4b5a',
+		);
+
+		expect(second.status).toBe(200);
+		expect(initCalls).toHaveLength(2);
+		expect(claimed.size).toBe(2);
+	} finally {
+		globalThis.fetch = realFetch;
+	}
+});
+
+test('a definite 4xx rejection records INIT_FAILED, not INIT_AMBIGUOUS', async () => {
+	const row = await liveConnectionRow(['video.publish']);
+	const { db, statuses } = statefulDb(row);
+	const built = createTikTokTestApp({
+		session: freshSession('user-1'),
+		env: CONFIGURED_ENV,
+		db,
+	});
+
+	const realFetch = globalThis.fetch;
+	globalThis.fetch = (async (input: string | URL) => {
+		const url = String(input);
+		if (url.includes('creator_info/query')) {
+			return new Response(JSON.stringify(CREATOR_INFO_BODY), { status: 200 });
+		}
+		return new Response(
+			JSON.stringify({
+				data: {},
+				error: { code: 'invalid_param', message: 'bad title' },
+			}),
+			{ status: 400 },
+		);
+	}) as unknown as typeof globalThis.fetch;
+
+	try {
+		const res = await submitPublish(built, VALID_KEY);
+
+		expect(res.status).toBe(502);
+		// TikTok understood and refused, so nothing was created: the honest record
+		// is a definite failure, and the response is the provider's own error.
+		expect(statuses).toContain('INIT_FAILED');
+		expect(statuses).not.toContain('INIT_AMBIGUOUS');
+		const body = (await res.json()) as { error: { name: string } };
+		expect(body.error.name).toBe('ProviderRejected');
+	} finally {
+		globalThis.fetch = realFetch;
+	}
+});
+
+// --- Idempotency key contract at the boundary ----------------------------
+
+test('an out-of-contract idempotency key is refused before anything is claimed', async () => {
+	for (const key of ['', 'short', 'has space', 'x'.repeat(200), 'quote"mark']) {
+		const { res, calls } = await publishWith({
+			title: 'A caption',
+			privacyLevel: 'PUBLIC_TO_EVERYONE',
+			idempotencyKey: key,
+		});
+		expect(res.status).toBe(400);
+		const body = (await res.json()) as { error: { message: string } };
+		expect(body.error.message).toContain('idempotencyKey');
+		// Refused before TikTok was contacted at all.
+		expect(calls).toHaveLength(0);
+	}
+});
+
+// --- Direct Post fails closed on unreadable duration ---------------------
+
+test('Direct Post refuses a video whose duration cannot be read', async () => {
+	// TikTok makes checking length a CLIENT responsibility, so an unparseable
+	// container is a check this surface did not perform, not one TikTok will
+	// perform for us.
+	const row = await liveConnectionRow(['video.publish']);
+	const { db } = statefulDb(row);
+	const built = createTikTokTestApp({
+		session: freshSession('user-1'),
+		env: CONFIGURED_ENV,
+		db,
+	});
+
+	const initCalls: string[] = [];
+	const realFetch = globalThis.fetch;
+	globalThis.fetch = (async (input: string | URL) => {
+		const url = String(input);
+		if (url.includes('creator_info/query')) {
+			return new Response(JSON.stringify(CREATOR_INFO_BODY), { status: 200 });
+		}
+		if (url.includes('video/init')) initCalls.push(url);
+		return new Response(null, { status: 200 });
+	}) as unknown as typeof globalThis.fetch;
+
+	try {
+		const body = new FormData();
+		body.set('kind', 'direct_post');
+		body.set('idempotencyKey', VALID_KEY);
+		body.set('title', 'A caption');
+		body.set('privacyLevel', 'PUBLIC_TO_EVERYONE');
+		// Not an MP4: duration is unknown.
+		body.set(
+			'video',
+			new File([new Uint8Array(new ArrayBuffer(64))], 'v.webm', {
+				type: 'video/mp4',
+			}),
+		);
+		const res = await request(
+			built,
+			'/api/integrations/tiktok/connections/conn-1/publish',
+			{ method: 'POST', body },
+		);
+
+		expect(res.status).toBe(409);
+		const parsed = (await res.json()) as { error: { field: string } };
+		expect(parsed.error.field).toBe('duration');
+		expect(initCalls).toHaveLength(0);
+	} finally {
+		globalThis.fetch = realFetch;
+	}
+});
+
+test('Direct Post refuses a video longer than the live account ceiling', async () => {
+	const row = await liveConnectionRow(['video.publish']);
+	const { db } = statefulDb(row);
+	const built = createTikTokTestApp({
+		session: freshSession('user-1'),
+		env: CONFIGURED_ENV,
+		db,
+	});
+
+	const initCalls: string[] = [];
+	const realFetch = globalThis.fetch;
+	globalThis.fetch = (async (input: string | URL) => {
+		const url = String(input);
+		if (url.includes('creator_info/query')) {
+			return new Response(JSON.stringify(CREATOR_INFO_BODY), { status: 200 });
+		}
+		if (url.includes('video/init')) initCalls.push(url);
+		return new Response(null, { status: 200 });
+	}) as unknown as typeof globalThis.fetch;
+
+	try {
+		const body = new FormData();
+		body.set('kind', 'direct_post');
+		body.set('idempotencyKey', VALID_KEY);
+		body.set('title', 'A caption');
+		body.set('privacyLevel', 'PUBLIC_TO_EVERYONE');
+		// 700s against the 600s ceiling CREATOR_INFO_BODY reports.
+		body.set(
+			'video',
+			new File([mp4Bytes(700)], 'v.mp4', { type: 'video/mp4' }),
+		);
+		const res = await request(
+			built,
+			'/api/integrations/tiktok/connections/conn-1/publish',
+			{ method: 'POST', body },
+		);
+
+		expect(res.status).toBe(409);
+		const parsed = (await res.json()) as {
+			error: { field: string; message: string };
+		};
+		expect(parsed.error.field).toBe('duration');
+		expect(parsed.error.message).toContain('600');
+		expect(initCalls).toHaveLength(0);
+	} finally {
+		globalThis.fetch = realFetch;
+	}
 });

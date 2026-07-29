@@ -62,7 +62,27 @@ export const postStatuses = [
 ] as const;
 export type TikTokPostStatusCode = (typeof postStatuses)[number];
 
+/**
+ * Whether a failure tells us the request DEFINITELY did not take effect.
+ *
+ * This distinction only matters for one call, but it matters enormously there:
+ * `video/init` is irreversible, so treating an ambiguous failure as a definite
+ * one invites a retry that publishes a second post. Every variant therefore
+ * declares which it is, rather than leaving callers to infer it from a message.
+ *
+ * - `rejected`: TikTok answered with its own `error.code` on a 4xx. The request
+ *   was understood and refused, so nothing was created.
+ * - `ambiguous`: we do not know. A timeout, a dropped connection, an
+ *   unparseable body, a 5xx, or a success envelope missing the field that names
+ *   what was created. TikTok may well have accepted the call.
+ */
+export type TikTokFailureCertainty = 'rejected' | 'ambiguous';
+
 export const TikTokApiError = defineErrors({
+	/**
+	 * The call never produced a readable answer: transport failure, timeout, or a
+	 * body we could not parse. ALWAYS ambiguous for a mutating call.
+	 */
 	RequestFailed: ({
 		endpoint,
 		reason,
@@ -73,8 +93,15 @@ export const TikTokApiError = defineErrors({
 		message: `TikTok ${endpoint} failed: ${reason}`,
 		endpoint,
 		reason,
+		certainty: 'ambiguous' as TikTokFailureCertainty,
 	}),
-	/** TikTok's v2 envelope reported a failure. `code` is TikTok's own string. */
+	/**
+	 * TikTok's v2 envelope reported a failure. `code` is TikTok's own string.
+	 *
+	 * `certainty` is `rejected` only for a 4xx: a client error means the request
+	 * was understood and refused. A 5xx is a server-side failure that may have
+	 * landed anyway, so it stays ambiguous even though the envelope parsed.
+	 */
 	ProviderRejected: ({
 		endpoint,
 		code,
@@ -94,7 +121,15 @@ export const TikTokApiError = defineErrors({
 		detail,
 		logId,
 		status,
+		certainty: (status >= 400 && status < 500
+			? 'rejected'
+			: 'ambiguous') as TikTokFailureCertainty,
 	}),
+	/**
+	 * A success envelope that is missing a field the caller cannot proceed
+	 * without. AMBIGUOUS by construction: TikTok said `ok`, so whatever the call
+	 * does may already have happened, we just cannot name the result.
+	 */
 	MalformedResponse: ({
 		endpoint,
 		field,
@@ -105,11 +140,24 @@ export const TikTokApiError = defineErrors({
 		message: `TikTok ${endpoint} response is missing ${field}.`,
 		endpoint,
 		field,
+		certainty: 'ambiguous' as TikTokFailureCertainty,
 	}),
 });
+
 export type TikTokApiError = import('wellcrafted/error').InferErrors<
 	typeof TikTokApiError
 >;
+
+/**
+ * True when a failure leaves the outcome UNKNOWN, so the caller must resolve it
+ * by reading remote state rather than by retrying.
+ */
+export function isAmbiguousFailure(error: {
+	certainty?: TikTokFailureCertainty;
+}): boolean {
+	// Default to ambiguous: an unclassified failure is not evidence of safety.
+	return error.certainty !== 'rejected';
+}
 
 /** What this account may do RIGHT NOW, in TikTok's own words. */
 export type TikTokCreatorInfo = {
