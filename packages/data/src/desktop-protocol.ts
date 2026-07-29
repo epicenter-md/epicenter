@@ -3,7 +3,7 @@ import type {
 	SerializedTableDefinition,
 	SerializedValueDefinition,
 } from './browser/protocol.js';
-import type { Address } from './protocol/index.js';
+import type { Address, RowAddress } from './protocol/index.js';
 
 export const DESKTOP_EPICENTER_ROUTE = '/api/data';
 
@@ -48,7 +48,27 @@ export type DesktopOperation =
 			| { kind: 'attach-sync' }
 			| { kind: 'sync-credentials' }
 			| { kind: 'document-update' }
+			| { kind: 'table-update' }
 	  >
+	/**
+	 * An update names what to write and what to remove, rather than carrying one
+	 * patch object with `undefined` holes in it.
+	 *
+	 * The browser adapter can keep the patch, because a MessagePort structured
+	 * clone preserves `undefined`. JSON does not: `JSON.stringify` drops a key
+	 * whose value is `undefined` entirely, so a patch that meant "remove this
+	 * optional field" arrived at the host as a patch that meant nothing, and the
+	 * field silently survived. Naming the two halves is the only way a JSON
+	 * carrier can say the difference, and it is also the shape the replica intent
+	 * already has.
+	 */
+	| {
+			kind: 'table-update';
+			definition: SerializedTableDefinition;
+			address: RowAddress;
+			set: Record<string, unknown>;
+			unset: string[];
+	  }
 	| { kind: 'document-update'; documentId: number; update: string }
 	| { kind: 'document-refresh'; documentId: number };
 

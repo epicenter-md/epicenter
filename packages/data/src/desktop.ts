@@ -287,7 +287,7 @@ export async function openDesktopEpicenter({
 					kind: 'table-update',
 					definition: serialized,
 					address,
-					patch,
+					...splitUpdate(patch),
 				});
 			},
 			delete(rowId: string) {
@@ -490,6 +490,28 @@ function defaultOrigin(): string {
 		throw new Error('Desktop Epicenter requires an explicit baseUrl');
 	}
 	return location.origin;
+}
+
+/**
+ * Split a patch into what to write and what to remove.
+ *
+ * `JSON.stringify` drops a key whose value is `undefined`, so a patch crossing
+ * this carrier cannot express "remove this optional field" by holding one. The
+ * two halves are named instead. Field names are not validated here: the host
+ * owns that judgment and reports it as an ordinary `Result`, and validating
+ * early would turn a typed refusal into a thrown error.
+ */
+function splitUpdate(patch: Record<string, unknown>): {
+	set: Record<string, unknown>;
+	unset: string[];
+} {
+	const set: Record<string, unknown> = {};
+	const unset: string[] = [];
+	for (const [name, value] of Object.entries(patch)) {
+		if (value === undefined) unset.push(name);
+		else set[name] = value;
+	}
+	return { set, unset };
 }
 
 function rowAddress(

@@ -111,7 +111,15 @@ export async function createDesktopEpicenterOwner({
 			case 'table-update':
 				return tableLens(epicenter, operation.definition).update(
 					operation.address.rowId,
-					operation.patch,
+					// The carrier named the two halves because JSON cannot hold an
+					// `undefined`; the lens takes one patch, so they are put back
+					// together here at the edge that has to speak both.
+					{
+						...operation.set,
+						...Object.fromEntries(
+							operation.unset.map((name) => [name, undefined]),
+						),
+					},
 				);
 			case 'table-delete':
 				return tableLens(epicenter, operation.definition).delete(

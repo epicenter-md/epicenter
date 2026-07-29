@@ -22,6 +22,7 @@ import {
 	openDesktopEpicenter,
 } from '@epicenter/data/desktop';
 import { field, InstantString } from '@epicenter/field';
+import { optional } from '@epicenter/lens';
 import { whisperingLens } from '@epicenter/whispering/workspace-contract';
 import { BOOTSTRAP_ROUTE } from './routes.ts';
 import { createHomeServer } from './server.ts';
@@ -33,7 +34,11 @@ import {
 
 const TOKEN = 'desktop-data-test-token';
 const documentsTable = defineTable({
-	fields: { name: field.string(), updatedAt: field.instant() },
+	fields: {
+		name: field.string(),
+		updatedAt: field.instant(),
+		note: optional(field.string()),
+	},
 });
 
 test('WebView surfaces share one replica and state survives restart', async () => {
@@ -142,6 +147,40 @@ test('WebView surfaces share one replica and state survives restart', async () =
 			await restarted.dispose();
 		}
 	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test('unsetting an optional field crosses the JSON carrier', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'epicenter-desktop-unset-'));
+	const server = await startDesktopServer(root);
+	try {
+		const client = await createClient(server);
+		const data = client.bind(sharedLens());
+		const row = await data.tables.documents.create({
+			name: 'Has a note',
+			updatedAt: InstantString.now(),
+			note: 'remove me',
+		});
+		expect((await data.tables.documents.get(row.id)).data?.note).toBe(
+			'remove me',
+		);
+
+		// `JSON.stringify` drops a key whose value is `undefined`, so a patch that
+		// carried one arrived at the host meaning nothing and the field survived.
+		// The carrier names the two halves for exactly this.
+		const cleared = await data.tables.documents.update(row.id, {
+			note: undefined,
+		});
+		expect(cleared.error).toBeNull();
+		expect(cleared.data?.name).toBe('Has a note');
+		expect(cleared.data && 'note' in cleared.data).toBeFalse();
+		const reread = await data.tables.documents.get(row.id);
+		expect(reread.data && 'note' in reread.data).toBeFalse();
+
+		await client[Symbol.asyncDispose]();
+	} finally {
+		await server.dispose();
 		rmSync(root, { recursive: true, force: true });
 	}
 });

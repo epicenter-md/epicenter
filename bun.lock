@@ -113,6 +113,7 @@
       },
       "devDependencies": {
         "@epicenter/app": "workspace:*",
+        "@epicenter/lens": "workspace:*",
         "@sveltejs/vite-plugin-svelte": "catalog:",
         "@tailwindcss/vite": "catalog:",
         "@tauri-apps/cli": "catalog:",

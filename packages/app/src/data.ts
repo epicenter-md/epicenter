@@ -231,6 +231,28 @@ function parseFrame(data: unknown): WireInvalidationFrame | undefined {
 }
 
 /**
+ * Split a patch into what to write and what to remove.
+ *
+ * `JSON.stringify` drops a key whose value is `undefined`, so a patch crossing
+ * this carrier cannot say "remove this optional field" by holding one. The two
+ * halves are named instead. Field names are not judged here: the host owns that
+ * and reports it as an ordinary failure, and refusing early would turn a typed
+ * decline into a thrown error.
+ */
+function splitUpdate(patch: Record<string, unknown>): {
+	set: Record<string, unknown>;
+	unset: string[];
+} {
+	const set: Record<string, unknown> = {};
+	const unset: string[] = [];
+	for (const [name, value] of Object.entries(patch)) {
+		if (value === undefined) unset.push(name);
+		else set[name] = value;
+	}
+	return { set, unset };
+}
+
+/**
  * Backoff for a loopback socket whose server is the same process tree.
  *
  * Short at the start because the common cause is the host restarting, which
@@ -459,7 +481,7 @@ async function bind<
 					kind: 'table-update',
 					definition: wire,
 					address: addressOf(rowId),
-					patch,
+					...splitUpdate(patch),
 				});
 				return answered.error !== null ? Err(answered.error) : answered.data;
 			},

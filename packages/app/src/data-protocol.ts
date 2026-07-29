@@ -8,11 +8,16 @@
  * on that closure to reuse eleven type aliases would be paying a very large
  * price for a very small saving.
  *
- * So the vocabulary is small, deliberately chosen, and proved rather than
- * assumed: `apps/epicenter` carries a drift test that checks every operation
- * kind and every field below against the host's own protocol, in both
- * directions. A field that appears on one side and not the other fails a test
- * rather than failing at runtime in someone's app.
+ * So the vocabulary is small and deliberately chosen, and it is checked by
+ * being used: `apps/epicenter/src/app-client-data-parity.test.ts` drives the
+ * published client through real same-origin HTTP and a real socket into the
+ * host's own data owner, and asserts on what the host actually did. An
+ * operation the host would not accept, or would interpret differently, fails
+ * there rather than in someone's app.
+ *
+ * That is acceptance and interpretation, not a field-by-field comparison of the
+ * two declarations. A field this client never sends is outside what driving it
+ * can observe, so adding one still needs its own coverage.
  *
  * What is deliberately absent: row documents. They are Yjs, and a client that
  * cannot depend on the replica runtime cannot honestly hand out a `Y.Doc`.
@@ -69,11 +74,19 @@ export type WireDataOperation =
 			definition: WireTableDefinition;
 			address: WireRowAddress;
 	  }
+	/**
+	 * An update names what to write and what to remove, rather than carrying one
+	 * patch object with `undefined` holes in it. `JSON.stringify` drops a key
+	 * whose value is `undefined`, so a patch that meant "remove this optional
+	 * field" would arrive meaning nothing at all, and the field would silently
+	 * survive.
+	 */
 	| {
 			kind: 'table-update';
 			definition: WireTableDefinition;
 			address: WireRowAddress;
-			patch: Record<string, unknown>;
+			set: Record<string, unknown>;
+			unset: string[];
 	  }
 	| {
 			kind: 'table-delete';
