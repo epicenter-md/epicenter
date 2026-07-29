@@ -158,6 +158,10 @@ export async function upsertConnection(
 				displayName: row.displayName,
 				username: row.username ?? null,
 				avatarUrl: row.avatarUrl ?? null,
+				// Refreshed like every other identity field. TikTok returns a union id
+				// only once the developer app is configured for it, so a connection
+				// made before that would otherwise keep a null forever.
+				unionId: row.unionId ?? null,
 				scopes: row.scopes,
 				accessTokenCiphertext: row.accessTokenCiphertext,
 				accessTokenExpiresAt: row.accessTokenExpiresAt,
