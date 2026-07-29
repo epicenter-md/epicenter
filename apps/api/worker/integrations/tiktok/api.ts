@@ -29,6 +29,17 @@ import { Ok, type Result } from 'wellcrafted/result';
 
 const OPEN_HOST = 'https://open.tiktokapis.com';
 
+/**
+ * Bounds on TikTok calls, so a stalled provider fails fast instead of holding a
+ * Worker invocation (and any resource it borrowed) open indefinitely.
+ *
+ * The upload gets a far larger budget than the JSON endpoints because it pushes
+ * up to one 64 MB chunk over a link Epicenter does not control, while every
+ * other call is a small request/response.
+ */
+const API_REQUEST_TIMEOUT_MS = 15_000;
+const UPLOAD_TIMEOUT_MS = 5 * 60_000;
+
 /** `title` accepts 2,200 UTF-16 code units, which is what `String.length` counts. */
 export const MAX_TITLE_LENGTH = 2_200;
 /** TikTok caps one upload chunk at 64 MB; the canary uploads a single chunk. */
@@ -229,6 +240,7 @@ export function createTikTokApi({
 						: {}),
 				},
 				...(method === 'POST' ? { body: JSON.stringify(body ?? {}) } : {}),
+				signal: AbortSignal.timeout(API_REQUEST_TIMEOUT_MS),
 			});
 		} catch (cause) {
 			return TikTokApiError.RequestFailed({
@@ -488,6 +500,7 @@ export function createTikTokApi({
 						'Content-Range': `bytes 0-${size - 1}/${size}`,
 					},
 					body: video,
+					signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
 				});
 			} catch (cause) {
 				return TikTokApiError.RequestFailed({

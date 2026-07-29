@@ -126,6 +126,24 @@ export async function ensureAccessToken({
 			);
 			if (decryptError) return Err(decryptError);
 
+			// KNOWN, ACCEPTED WINDOW. TikTok may rotate the refresh token here, and
+			// nothing can make that rotation atomic with the Postgres commit below:
+			// they are two systems with no shared transaction. If the refresh
+			// succeeds and the commit then fails (encryption error, lost connection,
+			// Worker eviction), Postgres rolls back to a refresh token TikTok may
+			// have just invalidated, and that connection is stranded.
+			//
+			// The consequence is bounded and honest: exactly one connection is
+			// affected, the next use surfaces the provider's rejection, and the
+			// remedy the UI already offers (reconnect the account) fully restores it.
+			// No token is lost silently and nothing else is corrupted.
+			//
+			// The window is kept as small as possible by committing immediately
+			// below with no intervening I/O. Closing it entirely would need a
+			// two-phase protocol (persist a pending-rotation record before calling
+			// TikTok, reconcile on the next read), which is materially more
+			// machinery than a rare, user-recoverable reconnect justifies today.
+			// Upgrade trigger: if stranded connections ever show up in practice.
 			const { data: grant, error: refreshError } =
 				await oauth.refresh(refreshToken);
 			if (refreshError) return Err(refreshError);

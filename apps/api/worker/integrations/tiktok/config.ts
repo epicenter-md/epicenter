@@ -29,10 +29,24 @@ export const TikTokBindings = type({
 	'TIKTOK_CLIENT_KEY?': 'string',
 	'TIKTOK_CLIENT_SECRET?': 'string',
 	'TIKTOK_TOKEN_ENCRYPTION_KEY?': 'string',
-	// Present only during a key rotation; see token-cipher.ts.
-	'TIKTOK_TOKEN_ENCRYPTION_KEY_V2?': 'string',
+	// Rotation keys are `TIKTOK_TOKEN_ENCRYPTION_KEY_V<n>` for any n > 1 and are
+	// discovered by name at runtime (see ROTATION_KEY_PATTERN), so a third or
+	// fourth rotation needs a new binding, not a code change. They are not
+	// enumerated here because arktype cannot express the open-ended family and
+	// pinning `_V2` alone would build in exactly the wall this avoids.
+	'+': 'ignore',
 });
 export type TikTokBindings = typeof TikTokBindings.infer;
+
+/**
+ * A rotation key binding and the ciphertext version it writes.
+ *
+ * `TIKTOK_TOKEN_ENCRYPTION_KEY` is version 1 and `..._V<n>` is version n, so
+ * rotating is: add `..._V<n+1>`, let refreshes carry rows forward onto it, then
+ * drop the key below it. Version numbers only ever climb, and every configured
+ * key stays available for decryption, so no rotation forces a reconnect.
+ */
+const ROTATION_KEY_PATTERN = /^TIKTOK_TOKEN_ENCRYPTION_KEY_V(\d+)$/;
 
 export const TikTokConfigError = defineErrors({
 	NotConfigured: ({ missing }: { missing: readonly string[] }) => ({
@@ -113,9 +127,21 @@ export async function resolveTikTokConfig(
 		return TikTokConfigError.NotConfigured({ missing });
 	}
 
-	const rotationKey = env.TIKTOK_TOKEN_ENCRYPTION_KEY_V2?.trim();
+	// Every configured rotation key, discovered by name so an Nth rotation is a
+	// new binding rather than an edit here. The cipher encrypts under the highest
+	// version and decrypts under any of them.
 	const keys: TokenKeyMaterial[] = [{ version: 1, base64Key: primaryKey }];
-	if (rotationKey) keys.push({ version: 2, base64Key: rotationKey });
+	for (const [binding, value] of Object.entries(
+		env as Record<string, string | undefined>,
+	)) {
+		const match = ROTATION_KEY_PATTERN.exec(binding);
+		const material = value?.trim();
+		if (!match?.[1] || !material) continue;
+		const version = Number(match[1]);
+		// Version 1 is the primary binding above; a `..._V1` would be a duplicate
+		// claim on the same version, which the cipher could not disambiguate.
+		if (version > 1) keys.push({ version, base64Key: material });
+	}
 
 	const { data: cipher, error } = await createTokenCipher(keys);
 	if (error) return { data: null, error };

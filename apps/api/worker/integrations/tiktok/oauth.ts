@@ -251,6 +251,21 @@ function readGrant(
 	});
 }
 
+/**
+ * Every token-endpoint call is bounded.
+ *
+ * This matters more here than anywhere else in the integration: `tokens.ts`
+ * calls `refresh` while HOLDING a Postgres row lock, so an unbounded fetch
+ * against a stalled TikTok would pin one Hyperdrive connection (and every
+ * waiter queued behind that row) for as long as TikTok stayed silent. A Worker
+ * has a finite connection budget, so "slow provider" would escalate into
+ * "database connections exhausted" across the whole deployment.
+ *
+ * Ten seconds is far beyond TikTok's normal token latency, so a timeout here
+ * means something is genuinely wrong and failing fast is the correct answer.
+ */
+const TOKEN_REQUEST_TIMEOUT_MS = 10_000;
+
 async function postForm(
 	url: string,
 	endpoint: string,
@@ -266,6 +281,7 @@ async function postForm(
 				'Cache-Control': 'no-cache',
 			},
 			body: new URLSearchParams(form).toString(),
+			signal: AbortSignal.timeout(TOKEN_REQUEST_TIMEOUT_MS),
 		});
 	} catch (cause) {
 		return TikTokOAuthError.RequestFailed({
