@@ -46,6 +46,7 @@ export type EpicenterHandle = {
 /** The one Epicenter handle. */
 export const epicenter: EpicenterHandle = { data, recording, transcription };
 
+export type { TableInvalidation } from '@epicenter/lens';
 export type {
 	BoundData,
 	DataNamespace,
@@ -54,7 +55,6 @@ export type {
 	TableScan,
 	ValueHandle,
 } from './data.js';
-export type { TableInvalidation } from '@epicenter/lens';
 export type {
 	AudioUnreadable,
 	BindDataError,
