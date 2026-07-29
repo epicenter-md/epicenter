@@ -2,9 +2,9 @@ import {
 	type ConstrainedUpdate,
 	type CreateInputFor,
 	createInvalidationDispatcher,
-	createObservationCarrier,
 	type Lens,
 	type ObservationSocket,
+	openObservationCarrier,
 	type RowFor,
 	serializeTableDefinition,
 	serializeValueDefinition,
@@ -106,20 +106,18 @@ export async function openDesktopEpicenter({
 		return envelope.data as TResult;
 	}
 
-	/** The observation carrier: one host-owned socket per surface. */
-	const carrier = createObservationCarrier({
-		observation,
-		dial: () => createObservationSocket(desktopEpicenterObserveUrl(baseUrl)),
-		redialDelayMs: reconnectDelayMs,
-		log,
-	});
-
 	// Order matters, and it is the whole of law 7. The carrier is established
 	// before this opener resolves, so by the time an app holds a handle it can
 	// subscribe and then read with nothing able to land in between. That is what
 	// buys the right to promise no initial fire: there is no gap to cover.
 	await request<void>({ kind: 'open' });
-	if (!(await carrier.open())) {
+	const carrier = await openObservationCarrier({
+		observation,
+		dial: () => createObservationSocket(desktopEpicenterObserveUrl(baseUrl)),
+		redialDelayMs: reconnectDelayMs,
+		log,
+	});
+	if (carrier === undefined) {
 		// `open` registered this surface before the carrier dial failed. Release
 		// that registration before rejecting the opener. Cleanup failure must not
 		// hide the carrier failure that explains why no handle was returned.

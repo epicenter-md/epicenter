@@ -26,8 +26,8 @@
  * `data` is the one capability with something to wait for. Recording and
  * transcription are thin calls over host commands, while a bound Lens promises
  * to report when its data may be stale, and that promise is only keepable once
- * its observation carrier exists. So `data.bind(lens)` is awaited, and what it
- * waits for is that Lens's liveness rather than any handle-wide session.
+ * the document's shared observation carrier exists. So `data.bind(lens)` is
+ * awaited without introducing any handle-wide session.
  */
 
 import { type DataNamespace, data } from './data.js';

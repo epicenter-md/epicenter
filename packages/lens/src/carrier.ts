@@ -21,10 +21,10 @@
  *   handles were listening across it, and a row deleted while the socket was
  *   down has left nothing behind to name.
  * - **Law 7, the carrier is established before the opener resolves.** {@link
- *   ObservationCarrier.open} settles once, on the first dial, and answers
- *   whether a carrier exists. That is what buys law 2: a caller that holds a
- *   handle can subscribe and then read with nothing able to land in between, so
- *   no initial fire is needed to cover a window that does not exist.
+ *   openObservationCarrier} answers only after the first dial settles. That is
+ *   what buys law 2: a caller that holds a handle can subscribe and then read
+ *   with nothing able to land in between, so no initial fire is needed to cover
+ *   a window that does not exist.
  */
 
 import type { Address } from './addresses.js';
@@ -80,15 +80,6 @@ export type ObservationFrame = {
 
 export type ObservationCarrier = {
 	/**
-	 * Dial, and resolve once the first attempt has settled.
-	 *
-	 * `true` means a carrier is established and every later drop will be redialed
-	 * behind the caller's back. `false` means the first dial failed and the
-	 * carrier has already closed itself, so a caller that is declining has
-	 * nothing left to tear down but its own host-side registration.
-	 */
-	open(): Promise<boolean>;
-	/**
 	 * Stop redialing, drop the socket, and release every listener.
 	 *
 	 * The dispatcher is cleared here because a dispatcher with no carrier can
@@ -110,7 +101,7 @@ function defaultObservationRedialDelayMs(attempt: number): number {
 	return Math.min(250 * 2 ** (attempt - 1), 5_000);
 }
 
-export function createObservationCarrier({
+export async function openObservationCarrier({
 	dial,
 	observation,
 	redialDelayMs = defaultObservationRedialDelayMs,
@@ -132,7 +123,7 @@ export function createObservationCarrier({
 	 * it forever.
 	 */
 	log?: InvalidationErrorReporter;
-}): ObservationCarrier {
+}): Promise<ObservationCarrier | undefined> {
 	let socket: ObservationSocket | undefined;
 	let redialTimer: unknown;
 	let failedAttempts = 0;
@@ -211,17 +202,15 @@ export function createObservationCarrier({
 		observation.clear();
 	}
 
-	return {
-		async open(): Promise<boolean> {
-			const established = await connect({ isInitial: true });
-			// A carrier that never opened has no handles to heal and no caller
-			// holding it. Stopping here is what keeps a declined open from leaving a
-			// redial loop running behind it.
-			if (!established) close();
-			return established;
-		},
-		close,
-	};
+	const established = await connect({ isInitial: true });
+	// A carrier that never opened has no handles to heal and no caller holding
+	// it. Stopping here is what keeps a declined open from leaving a redial loop
+	// running behind it.
+	if (!established) {
+		close();
+		return undefined;
+	}
+	return { close };
 }
 
 /**

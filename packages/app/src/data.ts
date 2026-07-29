@@ -20,8 +20,8 @@
  *
  * This does not reintroduce the `openEpicenter()` that ADR-0186 refused. There
  * is still no handle-wide session, no configuration, and no connection object
- * an app holds: `bind` is per Lens, and what it waits for is that Lens's
- * liveness.
+ * an app holds: `bind` is per Lens, and what it waits for is the document's
+ * shared observation carrier.
  *
  * # One carrier per document, however many Lenses
  *
@@ -49,11 +49,11 @@ import {
 	type ConstrainedUpdate,
 	type CreateInputFor,
 	createInvalidationDispatcher,
-	createObservationCarrier,
 	type InvalidationDispatcher,
 	type Lens,
 	type NonconformingRowError,
 	type ObservationCarrier,
+	openObservationCarrier,
 	type RowAddress,
 	type RowFor,
 	serializeTableDefinition,
@@ -295,7 +295,13 @@ async function openTransport(): Promise<Result<DataTransport, BindDataError>> {
 	const surfaceId = crypto.randomUUID();
 	const surface = { origin, surfaceId };
 	const observation = createInvalidationDispatcher();
-	const carrier = createObservationCarrier({
+
+	const opened = await request<void>(surface, { kind: 'open' });
+	if (opened.error !== null) return Err(opened.error);
+	// The carrier is established before this resolves. That ordering is the whole
+	// reason `bind` is asynchronous: once a caller holds a handle, subscribing and
+	// then reading cannot straddle a gap.
+	const carrier = await openObservationCarrier({
 		observation,
 		dial: () => {
 			if (typeof WebSocket === 'undefined') {
@@ -304,13 +310,7 @@ async function openTransport(): Promise<Result<DataTransport, BindDataError>> {
 			return new WebSocket(observeUrl(origin));
 		},
 	});
-
-	const opened = await request<void>(surface, { kind: 'open' });
-	if (opened.error !== null) return Err(opened.error);
-	// The carrier is established before this resolves. That ordering is the whole
-	// reason `bind` is asynchronous: once a caller holds a handle, subscribing and
-	// then reading cannot straddle a gap.
-	if (!(await carrier.open())) {
+	if (carrier === undefined) {
 		// `open` registered this surface before the carrier dial failed. Close that
 		// registration before declining, or every failed bind leaves a host-owned
 		// surface behind until the process exits.
