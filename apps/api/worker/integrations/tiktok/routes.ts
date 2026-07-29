@@ -1,12 +1,15 @@
 /**
- * Hosted TikTok connected-account surface: `/api/integrations/tiktok/*`.
+ * Hosted TikTok publishing surface: `/api/integrations/tiktok/*`.
  *
- * These routes connect, list, exercise, and disconnect TikTok CREATOR accounts a
- * signed-in Epicenter user has authorized for publishing. They are not, and must
- * never become, a way to sign in to Epicenter. Better Auth remains the only
- * login system; nothing here writes the `user`, `session`, or `account` tables.
- * See `db/schema/integrations.ts` for why TikTok is deliberately absent from
- * `socialProviders`.
+ * These routes connect a TikTok CREATOR account, post one video to it, follow
+ * that post to its outcome, and disconnect the account. Direct Post is the only
+ * publishing product: there is no inbox-draft path and no read-back of the
+ * creator's other posts (see TIKTOK_SCOPES in config.ts).
+ *
+ * They are not, and must never become, a way to sign in to Epicenter. Better
+ * Auth remains the only login system; nothing here writes the `user`, `session`,
+ * or `account` tables. See `db/schema/integrations.ts` for why TikTok is
+ * deliberately absent from `socialProviders`.
  *
  * Authentication is COOKIE-ONLY on every route. The integration is a dashboard
  * capability, so a leaked OAuth bearer cannot publish to a creator's TikTok or
@@ -33,7 +36,6 @@ import { nanoid } from 'nanoid';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import {
 	createTikTokApi,
-	type DirectPostInput,
 	isAmbiguousFailure,
 	MAX_SINGLE_CHUNK_BYTES,
 	privacyLevels,
@@ -66,6 +68,7 @@ import {
 	listConnections,
 	listPublishAttempts,
 	readConnection,
+	reconcileAttemptFromRemote,
 	recordAttemptOutcome,
 	toPublicConnection,
 	upsertConnection,
@@ -83,6 +86,14 @@ const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
 /** Where the dashboard's TikTok surface lives, and the only default return. */
 const DEFAULT_RETURN_PATH = '/dashboard/integrations';
+
+/**
+ * The one scope every publishing call needs. A creator can decline it on
+ * TikTok's consent screen, leaving a real connection that cannot publish, so
+ * every route that touches TikTok checks the GRANTED set rather than assuming
+ * the requested one.
+ */
+const DIRECT_POST_SCOPE = 'video.publish';
 
 const TikTokRouteError = defineErrors({
 	Unauthorized: () => ({ message: 'Session required' }),
@@ -441,9 +452,10 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 				configured: config !== null,
 				// The exact string that must be registered in the TikTok developer
 				// portal for THIS deployment, so the portal value is read off a live
-				// route instead of being retyped from memory.
+				// route instead of being retyped from memory. Shown only in the
+				// unconfigured-deployment state, which is an operator problem rather
+				// than part of the creator's product.
 				redirectUri: tiktokRedirectUri(c.var.authBaseURL),
-				requestedScopes: TIKTOK_SCOPES,
 				connections: rows.map(toPublicConnection),
 			});
 		},
@@ -511,11 +523,17 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 			}),
 	);
 
-	// --- Canary: exercise each requested scope -------------------------------
+	// --- Post to TikTok ------------------------------------------------------
 
 	/**
 	 * Resolve a connection plus a live access token, or the right HTTP failure.
-	 * Every scope-exercising route below starts here.
+	 * Every publishing route below starts here.
+	 *
+	 * The scope gate is a constant rather than a parameter, because there is one
+	 * publishing product and all three of its calls (`creator_info/query`,
+	 * `video/init`, `status/fetch`) are reachable with exactly `video.publish`.
+	 * A partial grant is refused with that scope NAMED, so the creator gets an
+	 * instruction instead of TikTok's generic permission error.
 	 */
 	async function openConnection(
 		c: Parameters<MiddlewareHandler<TikTokEnv>>[0],
@@ -524,13 +542,6 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 			clientSecret: string;
 			cipher: import('./token-cipher.js').TokenCipher;
 		},
-		/**
-		 * ANY of these satisfies the gate. Several TikTok endpoints are reachable
-		 * with either publishing scope: `creator_info/query` and `status/fetch`
-		 * serve both the draft and the Direct Post flows, so demanding one
-		 * specific scope would refuse a creator who granted only the other.
-		 */
-		acceptedScopes: readonly string[],
 	) {
 		const db = c.var.db as Db;
 		// This helper is shared across routes, so the param is not narrowed by a
@@ -546,14 +557,10 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 				failure: c.json(TikTokRouteError.ConnectionNotFound(), 404),
 			} as const;
 		}
-		// A partial grant is refused with the scope named, rather than letting
-		// TikTok answer a generic permission error the creator cannot act on.
-		if (!acceptedScopes.some((scope) => row.scopes.includes(scope))) {
+		if (!row.scopes.includes(DIRECT_POST_SCOPE)) {
 			return {
 				failure: c.json(
-					TikTokRouteError.ScopeNotGranted({
-						scope: acceptedScopes.join(' or '),
-					}),
+					TikTokRouteError.ScopeNotGranted({ scope: DIRECT_POST_SCOPE }),
 					403,
 				),
 			} as const;
@@ -588,32 +595,11 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 		session,
 		async (c) =>
 			withConfig(c, async (config) => {
-				const opened = await openConnection(c, config, [
-					'video.publish',
-					'video.upload',
-				]);
+				const opened = await openConnection(c, config);
 				if ('failure' in opened) return opened.failure;
 				const creatorInfo = await opened.api.readCreatorInfo();
 				if (creatorInfo.error) return c.json(creatorInfo, 502);
 				return c.json(creatorInfo.data);
-			}),
-	);
-
-	tiktok.get(
-		'/api/integrations/tiktok/connections/:id/videos',
-		describeRoute({
-			description:
-				"List the connected account's recent posts (video.list), used to verify a publish landed.",
-			tags: ['integrations', 'tiktok'],
-		}),
-		session,
-		async (c) =>
-			withConfig(c, async (config) => {
-				const opened = await openConnection(c, config, ['video.list']);
-				if ('failure' in opened) return opened.failure;
-				const listed = await opened.api.listVideos();
-				if (listed.error) return c.json(listed, 502);
-				return c.json({ videos: listed.data });
 			}),
 	);
 
@@ -635,34 +621,65 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 		},
 	);
 
+	/**
+	 * Read remote truth for one publishing task, and RECONCILE the durable
+	 * attempt row against it. This is how an ambiguous publish is resolved; never
+	 * by retrying it.
+	 *
+	 * The read and the write are one route on purpose. TikTok owns the outcome and
+	 * only tells us when asked, so the moment we ask is the only moment the stored
+	 * row can be corrected. Splitting them would leave the obvious failure this
+	 * subsystem had before: an attempt row frozen at `PROCESSING_UPLOAD` long
+	 * after TikTok finished, because the surface that learned the truth had no
+	 * business writing it down.
+	 *
+	 * A GET that writes is deliberate and safe here: every value written is
+	 * TikTok's own answer, so the write is idempotent, carries no caller input,
+	 * and re-reading a settled task changes nothing.
+	 */
 	tiktok.get(
 		'/api/integrations/tiktok/connections/:id/publish/:publishId',
 		describeRoute({
 			description:
-				'Read remote truth for one publishing task. This is how an ambiguous publish is resolved; never by retrying it.',
+				"Read TikTok's status for one publishing task and reconcile the recorded attempt against it. This is how an ambiguous publish is resolved; never by retrying it.",
 			tags: ['integrations', 'tiktok'],
 		}),
 		session,
 		async (c) =>
 			withConfig(c, async (config) => {
-				const opened = await openConnection(c, config, [
-					'video.upload',
-					'video.publish',
-				]);
+				const opened = await openConnection(c, config);
 				if ('failure' in opened) return opened.failure;
 				const publishId = c.req.param('publishId');
 				const status = await opened.api.readPostStatus(publishId);
 				if (status.error) return c.json(status, 502);
-				return c.json(status.data);
+
+				// Best-effort: TikTok's answer is the valuable part and is returned
+				// either way. A failed reconcile leaves the row stale, which the next
+				// read corrects, and is never a reason to withhold the outcome.
+				const recorded = await reconcileAttemptFromRemote(opened.db, {
+					connectionId: opened.row.id,
+					publishId,
+					status: status.data.code,
+					publicPostIds: status.data.publicPostIds,
+					failReason: status.data.failReason ?? null,
+				}).catch(() => false);
+
+				return c.json({
+					...status.data,
+					/**
+					 * Whether a local attempt row matched this publish id. False is the
+					 * documented pathological case where TikTok created the task but
+					 * recording its publish id failed, so the creator is told this
+					 * outcome is not being remembered.
+					 */
+					recorded,
+				});
 			}),
 	);
 
 	/**
-	 * The canary publish. One route covers both products because they differ only
-	 * in which init TikTok is asked for:
-	 *
-	 *   draft_upload (video.upload)  -> inbox draft; the creator posts it in-app
-	 *   direct_post  (video.publish) -> straight to the profile, irreversible
+	 * Direct Post: publish one video straight to the creator's profile.
+	 * Irreversible at TikTok, which is what every guard here exists for.
 	 *
 	 * The attempt row is claimed BEFORE TikTok is asked to start anything, so a
 	 * double-submitted form cannot originate two posts. A caller that loses the
@@ -672,7 +689,7 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 		'/api/integrations/tiktok/connections/:id/publish',
 		describeRoute({
 			description:
-				'Upload a video as an inbox draft (video.upload) or publish it directly (video.publish). Idempotent per idempotencyKey.',
+				"Publish a video directly to the connected creator's TikTok profile (video.publish). Idempotent per idempotencyKey.",
 			tags: ['integrations', 'tiktok'],
 		}),
 		session,
@@ -688,8 +705,6 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 					);
 				}
 
-				const kind =
-					form.kind === 'direct_post' ? 'direct_post' : 'draft_upload';
 				const idempotencyKey = form.idempotencyKey;
 				if (!isValidIdempotencyKey(idempotencyKey)) {
 					// Bounded on length and alphabet before it reaches a unique index.
@@ -718,12 +733,7 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 					);
 				}
 
-				// Publishing itself is the one place the exact scope matters: a
-				// Direct Post needs video.publish and an inbox draft needs
-				// video.upload, and neither substitutes for the other.
-				const opened = await openConnection(c, config, [
-					kind === 'direct_post' ? 'video.publish' : 'video.upload',
-				]);
+				const opened = await openConnection(c, config);
 				if ('failure' in opened) return opened.failure;
 				const { api, db, row } = opened;
 
@@ -732,70 +742,67 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 				// upload rather than trust a number the browser put in the form.
 				const bytes = new Uint8Array(await file.arrayBuffer());
 
-				// Direct Post settings are validated against a LIVE creator_info read,
-				// never against whatever the form claimed the options were.
-				let directPost: DirectPostInput | null = null;
-				if (kind === 'direct_post') {
-					const creator = await api.readCreatorInfo();
-					if (creator.error) return c.json(creator, 502);
+				// Settings are validated against a LIVE creator_info read, never
+				// against whatever the form claimed the options were.
+				const creator = await api.readCreatorInfo();
+				if (creator.error) return c.json(creator, 502);
 
-					const privacyLevel = form.privacyLevel;
-					if (
-						typeof privacyLevel !== 'string' ||
-						!(privacyLevels as readonly string[]).includes(privacyLevel)
-					) {
-						// Privacy is never defaulted: an absent or unknown value is a
-						// refusal, not a silent fallback to some safe-looking level.
-						return c.json(
-							TikTokRouteError.InvalidRequest({
-								detail: 'Choose who can see this post.',
-							}),
-							400,
-						);
-					}
-
-					// One owner for every Direct Post rule (direct-post-policy.ts): the
-					// creator's opt-ins, the commercial disclosure, the branded/private
-					// refusal, caption limits, and the duration ceiling. It also performs
-					// the opt-in to TikTok's `disable_*` translation, so that inversion
-					// exists in exactly one place.
-					const decided = validateDirectPost({
-						creatorInfo: creator.data,
-						choices: {
-							title: typeof form.title === 'string' ? form.title : '',
-							privacyLevel: privacyLevel as TikTokPrivacyLevel,
-							interactions: {
-								allowComment: readBoolean(form.allowComment),
-								allowDuet: readBoolean(form.allowDuet),
-								allowStitch: readBoolean(form.allowStitch),
-							},
-							commercial: {
-								disclosed: readBoolean(form.commercialContent),
-								yourBrand: readBoolean(form.yourBrand),
-								brandedContent: readBoolean(form.brandedContent),
-							},
-							aiGenerated: readBoolean(form.aiGenerated),
-							videoSize: file.size,
-							// null when the container is not MP4. For Direct Post the
-							// policy REFUSES that rather than deferring to TikTok:
-							// checking length is a documented client responsibility, so
-							// an unverifiable file fails closed. See mp4-duration.ts.
-							durationSec: readMp4DurationSec(bytes),
-						},
-					});
-					if ('violation' in decided) {
-						// 409: the request was well-formed but conflicts with what this
-						// account may currently post.
-						return c.json(
-							TikTokRouteError.CreatorSettingRefused({
-								detail: decided.violation.message,
-								field: decided.violation.field,
-							}),
-							409,
-						);
-					}
-					directPost = decided.input;
+				const privacyLevel = form.privacyLevel;
+				if (
+					typeof privacyLevel !== 'string' ||
+					!(privacyLevels as readonly string[]).includes(privacyLevel)
+				) {
+					// Privacy is never defaulted: an absent or unknown value is a
+					// refusal, not a silent fallback to some safe-looking level.
+					return c.json(
+						TikTokRouteError.InvalidRequest({
+							detail: 'Choose who can see this post.',
+						}),
+						400,
+					);
 				}
+
+				// One owner for every Direct Post rule (direct-post-policy.ts): the
+				// creator's opt-ins, the commercial disclosure, the branded/private
+				// refusal, caption limits, and the duration ceiling. It also performs
+				// the opt-in to TikTok's `disable_*` translation, so that inversion
+				// exists in exactly one place.
+				const decided = validateDirectPost({
+					creatorInfo: creator.data,
+					choices: {
+						title: typeof form.title === 'string' ? form.title : '',
+						privacyLevel: privacyLevel as TikTokPrivacyLevel,
+						interactions: {
+							allowComment: readBoolean(form.allowComment),
+							allowDuet: readBoolean(form.allowDuet),
+							allowStitch: readBoolean(form.allowStitch),
+						},
+						commercial: {
+							disclosed: readBoolean(form.commercialContent),
+							yourBrand: readBoolean(form.yourBrand),
+							brandedContent: readBoolean(form.brandedContent),
+						},
+						aiGenerated: readBoolean(form.aiGenerated),
+						videoSize: file.size,
+						// null when the container is not MP4. The policy REFUSES that
+						// rather than deferring to TikTok: checking length is a
+						// documented client responsibility, so an unverifiable file
+						// fails closed. See mp4-duration.ts.
+						durationSec: readMp4DurationSec(bytes),
+					},
+				});
+				if ('violation' in decided) {
+					// 409: the request was well-formed but conflicts with what this
+					// account may currently post.
+					return c.json(
+						TikTokRouteError.CreatorSettingRefused({
+							detail: decided.violation.message,
+							field: decided.violation.field,
+						}),
+						409,
+					);
+				}
+				const directPost = decided.input;
 
 				// The commit latch. Whoever inserts this row is the only caller that
 				// may reach `video/init` for this idempotency key.
@@ -803,7 +810,7 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 					id: nanoid(),
 					connectionId: row.id,
 					idempotencyKey,
-					kind,
+					kind: 'direct_post',
 				});
 				if (!claimed) {
 					return c.json(
@@ -816,10 +823,7 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 					);
 				}
 
-				const init =
-					directPost === null
-						? await api.initDraftUpload(file.size)
-						: await api.initDirectPost(directPost);
+				const init = await api.initDirectPost(directPost);
 				if (init.error) {
 					// NOT every init failure means nothing happened. A definite 4xx
 					// rejection means TikTok understood and refused, so no task exists.
@@ -898,13 +902,10 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 				return c.json({
 					attemptId: attempt.id,
 					publishId: init.data.publishId,
-					kind,
 					// Deliberately not "published". TikTok publishing is asynchronous
 					// and moderated; only a status read can say what happened.
 					message:
-						kind === 'direct_post'
-							? 'TikTok accepted the video and is processing the post. Poll its status to see the outcome.'
-							: 'TikTok accepted the video as a draft. Finish and post it from the TikTok app.',
+						'TikTok accepted the video and is processing the post. This can take a few minutes.',
 				});
 			}),
 	);

@@ -12,7 +12,6 @@ import {
 
 function intent(overrides: Partial<PublishIntent> = {}): PublishIntent {
 	return {
-		kind: 'direct_post',
 		connectionId: 'conn-1',
 		file: { name: 'clip.mp4', size: 1024, lastModified: 1_700_000_000_000 },
 		title: 'A caption',
@@ -112,7 +111,12 @@ test.each([
 	['an interaction opt-in', { allowComment: true }],
 	['a commercial disclosure', { commercialContent: true, yourBrand: true }],
 	['an AI declaration', { aiGenerated: true }],
-	['a different kind', { kind: 'draft_upload' as const }],
+	['a Duet opt-in', { allowDuet: true }],
+	['a Stitch opt-in', { allowStitch: true }],
+	[
+		'a branded-content disclosure',
+		{ commercialContent: true, brandedContent: true },
+	],
 ])('%s mints a new key', (_label, change) => {
 	const k = keeper();
 	const first = k.keyFor(intent());
@@ -132,23 +136,6 @@ test("editing back to the original intent returns to that intent's key", () => {
 	const restored = k.keyFor(intent());
 	expect(k.keyFor(intent())).toBe(restored);
 	expect(restored).not.toBe(original);
-});
-
-test('a draft upload ignores Direct Post fields when identifying the intent', () => {
-	// The inbox path sends no post_info, so a caption edit does not change what
-	// would be uploaded and must not orphan an in-flight claim.
-	const k = keeper();
-	const first = k.keyFor(intent({ kind: 'draft_upload' }));
-
-	const second = k.keyFor(
-		intent({
-			kind: 'draft_upload',
-			title: 'irrelevant here',
-			allowComment: true,
-		}),
-	);
-
-	expect(second).toBe(first);
 });
 
 test('the fingerprint cannot be forged by values containing the separator', () => {

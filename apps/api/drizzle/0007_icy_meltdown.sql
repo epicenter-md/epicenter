@@ -1,0 +1,1 @@
+ALTER TABLE "tiktok_publish_attempt" ADD COLUMN "public_post_ids" text[];

@@ -1,5 +1,10 @@
 /**
- * The TikTok Content Posting and Display API surface this integration uses.
+ * The TikTok Content Posting API surface this integration uses.
+ *
+ * Exactly one publishing product: Direct Post. The inbox-draft path
+ * (`video.upload`) and the Display API read-back (`video.list`) are deliberately
+ * absent; see TIKTOK_SCOPES in config.ts for why each was removed rather than
+ * left requested.
  *
  * Four properties of TikTok's v2 API shape everything here, and each one is a
  * correctness trap rather than a style preference:
@@ -42,7 +47,10 @@ const UPLOAD_TIMEOUT_MS = 5 * 60_000;
 
 /** `title` accepts 2,200 UTF-16 code units, which is what `String.length` counts. */
 export const MAX_TITLE_LENGTH = 2_200;
-/** TikTok caps one upload chunk at 64 MB; the canary uploads a single chunk. */
+/**
+ * TikTok caps one upload chunk at 64 MB, and this integration uploads exactly
+ * one chunk, so it is also the largest video a creator can post from here.
+ */
 export const MAX_SINGLE_CHUNK_BYTES = 64 * 1024 * 1024;
 
 export const privacyLevels = [
@@ -53,6 +61,15 @@ export const privacyLevels = [
 ] as const;
 export type TikTokPrivacyLevel = (typeof privacyLevels)[number];
 
+/**
+ * Every status `status/fetch` can answer with, parsed as TikTok's own vocabulary
+ * rather than re-coded into a local one.
+ *
+ * `SEND_TO_USER_INBOX` belongs to the inbox-draft product this integration no
+ * longer offers, and is kept in the accepted set anyway: the job here is to
+ * report what TikTok said, and turning an unexpected-but-real code into a
+ * MalformedResponse would hide a real answer behind a parse failure.
+ */
 export const postStatuses = [
 	'PROCESSING_UPLOAD',
 	'PROCESSING_DOWNLOAD',
@@ -187,15 +204,6 @@ export type TikTokPostStatus = {
 	failReason?: string;
 };
 
-export type TikTokVideo = {
-	id: string;
-	shareUrl: string;
-	title: string;
-	description: string;
-	/** Unix epoch seconds, TikTok's own creation clock. */
-	createTime: number;
-};
-
 /** The creator's explicit, current choices. There is no default for any of them. */
 export type DirectPostInput = {
 	title: string;
@@ -232,16 +240,6 @@ export function preservePostIds(body: string): string {
 
 function readString(value: unknown): string | null {
 	return typeof value === 'string' && value.length > 0 ? value : null;
-}
-
-function readEpochSeconds(value: unknown): number | null {
-	const parsed =
-		typeof value === 'number'
-			? value
-			: typeof value === 'string' && /^\d+$/.test(value)
-				? Number(value)
-				: Number.NaN;
-	return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
 }
 
 export type TikTokApi = ReturnType<typeof createTikTokApi>;
@@ -488,45 +486,6 @@ export function createTikTokApi({
 		},
 
 		/**
-		 * `video.upload`: send the video to the creator's TikTok inbox as a DRAFT.
-		 *
-		 * Nothing is published. The creator finishes and posts it inside the TikTok
-		 * app, which is why this path carries no `post_info` at all: privacy and
-		 * interaction settings are chosen there, not here.
-		 */
-		async initDraftUpload(
-			videoSize: number,
-		): Promise<
-			Result<{ publishId: string; uploadUrl: string }, TikTokApiError>
-		> {
-			const endpoint = 'v2/post/publish/inbox/video/init';
-			const { data, error } = await call(endpoint, {
-				source_info: {
-					source: 'FILE_UPLOAD',
-					video_size: videoSize,
-					chunk_size: videoSize,
-					total_chunk_count: 1,
-				},
-			});
-			if (error) return { data: null, error };
-			const publishId = readString(data.publish_id);
-			const uploadUrl = readString(data.upload_url);
-			if (!publishId) {
-				return TikTokApiError.MalformedResponse({
-					endpoint,
-					field: 'publish_id',
-				});
-			}
-			if (!uploadUrl) {
-				return TikTokApiError.MalformedResponse({
-					endpoint,
-					field: 'upload_url',
-				});
-			}
-			return Ok({ publishId, uploadUrl });
-		},
-
-		/**
 		 * PUT the bytes to the pre-signed URL `init` returned.
 		 *
 		 * The access token is deliberately ABSENT: that URL carries its own
@@ -600,82 +559,5 @@ export function createTikTokApi({
 				...(failReason === null ? {} : { failReason }),
 			});
 		},
-
-		/** `video.list`: the creator's own recent posts. Proves the scope works. */
-		async listVideos(
-			maxCount = 10,
-		): Promise<Result<TikTokVideo[], TikTokApiError>> {
-			const endpoint = 'v2/video/list';
-			const { data, error } = await call(
-				endpoint,
-				{ max_count: maxCount },
-				{
-					search: {
-						fields: [
-							'id',
-							'share_url',
-							'title',
-							'video_description',
-							'create_time',
-						].join(','),
-					},
-				},
-			);
-			if (error) return { data: null, error };
-			return Ok(readVideos(data));
-		},
-
-		/** `video.list`: read back exactly the posts a completed task named. */
-		async queryVideos(
-			videoIds: readonly string[],
-		): Promise<Result<TikTokVideo[], TikTokApiError>> {
-			const endpoint = 'v2/video/query';
-			const { data, error } = await call(
-				endpoint,
-				{ filters: { video_ids: [...videoIds] } },
-				{
-					search: {
-						fields: [
-							'id',
-							'share_url',
-							'title',
-							'video_description',
-							'create_time',
-						].join(','),
-					},
-				},
-			);
-			if (error) return { data: null, error };
-			return Ok(readVideos(data));
-		},
 	};
-}
-
-/**
- * Both video endpoints answer with the same `videos` array. A row missing an id
- * or a create time is skipped rather than fatal: a partially readable list is
- * still useful verification, and TikTok occasionally returns sparse rows for
- * posts mid-processing.
- */
-function readVideos(data: Record<string, unknown>): TikTokVideo[] {
-	const rows = Array.isArray(data.videos) ? data.videos : [];
-	const videos: TikTokVideo[] = [];
-	for (const row of rows) {
-		if (typeof row !== 'object' || row === null) continue;
-		const fields = row as Record<string, unknown>;
-		const id = readString(fields.id);
-		const createTime = readEpochSeconds(fields.create_time);
-		if (!id || createTime === null) continue;
-		videos.push({
-			id,
-			shareUrl: readString(fields.share_url) ?? '',
-			// Direct Post sends the caption as `title`; the Display API returns it as
-			// `title` on some posts and `video_description` on others, so both are
-			// carried rather than guessing which one TikTok chose.
-			title: readString(fields.title) ?? '',
-			description: readString(fields.video_description) ?? '',
-			createTime,
-		});
-	}
-	return videos;
 }

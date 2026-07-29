@@ -227,14 +227,11 @@ export function validateDirectPost({
 		};
 	}
 
-	// Duration FAILS CLOSED for Direct Post. TikTok's guidelines make checking
-	// the video length a client responsibility, so an unknown length is a check
-	// this surface did not perform, not a check TikTok will perform for us. The
-	// canary accepts MP4 only, so unparseable means the file is not what this
-	// path supports and must not reach the irreversible init.
-	//
-	// (The inbox draft path is separate and keeps its own contract: the creator
-	// finishes that post inside the TikTok app, which does its own checking.)
+	// Duration FAILS CLOSED. TikTok's guidelines make checking the video length a
+	// client responsibility, so an unknown length is a check this surface did not
+	// perform, not a check TikTok will perform for us. This integration accepts
+	// MP4 only, so unparseable means the file is not what this path supports and
+	// must not reach the irreversible init.
 	if (
 		choices.durationSec === null ||
 		!Number.isFinite(choices.durationSec) ||

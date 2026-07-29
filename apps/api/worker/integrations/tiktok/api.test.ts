@@ -1,5 +1,10 @@
 import { expect, test } from 'bun:test';
-import { createTikTokApi, isAmbiguousFailure, preservePostIds } from './api.js';
+import {
+	createTikTokApi,
+	type DirectPostInput,
+	isAmbiguousFailure,
+	preservePostIds,
+} from './api.js';
 
 type Call = {
 	url: string;
@@ -36,6 +41,25 @@ function apiWith(respond: (call: Call) => Response) {
 	return {
 		api: createTikTokApi({ accessToken: 'act.live', fetch: send }),
 		calls,
+	};
+}
+
+/**
+ * A valid Direct Post body, for tests about the CALL rather than about the
+ * choices. The failure-certainty tests below all exercise `initDirectPost`
+ * because it is the irreversible call whose ambiguity actually matters.
+ */
+function directPostInput(): DirectPostInput {
+	return {
+		title: 't',
+		privacyLevel: 'SELF_ONLY',
+		disableComment: true,
+		disableDuet: true,
+		disableStitch: true,
+		brandOrganic: false,
+		brandedContent: false,
+		isAigc: false,
+		videoSize: 10,
 	};
 }
 
@@ -242,23 +266,6 @@ test('initDirectPost sends the creator declarations TikTok requires', async () =
 	});
 });
 
-test('initDraftUpload targets the inbox endpoint and sends NO post_info', async () => {
-	const { api, calls } = apiWith(() =>
-		envelope({
-			publish_id: 'pub-2',
-			upload_url: 'https://upload.tiktok/presigned',
-		}),
-	);
-
-	const { data } = await api.initDraftUpload(2048);
-
-	expect(data?.publishId).toBe('pub-2');
-	expect(calls[0]?.url).toContain('/v2/post/publish/inbox/video/init/');
-	// Privacy and interaction settings are chosen by the creator in the TikTok
-	// app for a draft, so sending them here would be a lie about what was agreed.
-	expect(JSON.parse(calls[0]?.body ?? '{}').post_info).toBeUndefined();
-});
-
 test('uploadVideo PUTs the bytes WITHOUT the access token', async () => {
 	const { api, calls } = apiWith(() => new Response(null, { status: 201 }));
 	const bytes = new Uint8Array(new ArrayBuffer(10)).fill(7);
@@ -286,55 +293,6 @@ test('a rejected upload is a named failure', async () => {
 
 	expect(error?.name).toBe('RequestFailed');
 	expect(error?.message).toContain('413');
-});
-
-test('listVideos reads both title spellings TikTok uses', async () => {
-	const { api, calls } = apiWith(() =>
-		envelope({
-			videos: [
-				{
-					id: '111',
-					share_url: 'https://tiktok.com/@x/video/111',
-					title: 'From title',
-					create_time: 1_700_000_000,
-				},
-				{
-					id: '222',
-					share_url: 'https://tiktok.com/@x/video/222',
-					video_description: 'From description',
-					create_time: '1700000001',
-				},
-			],
-		}),
-	);
-
-	const { data } = await api.listVideos();
-
-	expect(calls[0]?.url).toContain('/v2/video/list/');
-	expect(data).toHaveLength(2);
-	expect(data?.[0]).toMatchObject({ id: '111', title: 'From title' });
-	// `create_time` arrives as a number on some rows and a string on others.
-	expect(data?.[1]).toMatchObject({
-		id: '222',
-		description: 'From description',
-		createTime: 1_700_000_001,
-	});
-});
-
-test('a video row missing an id is skipped rather than poisoning the list', async () => {
-	const { api } = apiWith(() =>
-		envelope({
-			videos: [
-				{ share_url: 'https://x', create_time: 1 },
-				{ id: '333', share_url: 'https://y', create_time: 2 },
-			],
-		}),
-	);
-
-	const { data } = await api.listVideos();
-
-	expect(data).toHaveLength(1);
-	expect(data?.[0]?.id).toBe('333');
 });
 
 test('readUserInfo never fabricates an email and falls back honestly for a blank name', async () => {
@@ -381,17 +339,7 @@ test('no API error message leaks the access token', async () => {
 test('a 4xx with TikTok error code is a DEFINITE rejection', async () => {
 	const { api } = apiWith(() => envelope({}, 400, 'invalid_param'));
 
-	const { error } = await api.initDirectPost({
-		title: 't',
-		privacyLevel: 'SELF_ONLY',
-		disableComment: true,
-		disableDuet: true,
-		disableStitch: true,
-		brandOrganic: false,
-		brandedContent: false,
-		isAigc: false,
-		videoSize: 10,
-	});
+	const { error } = await api.initDirectPost(directPostInput());
 
 	// Understood and refused: nothing was created, so a corrected retry is safe.
 	expect(error?.certainty).toBe('rejected');
@@ -403,7 +351,7 @@ test('a 5xx is AMBIGUOUS even though the envelope parsed', async () => {
 	// invite a retry that publishes twice.
 	const { api } = apiWith(() => envelope({}, 503, 'internal_error'));
 
-	const { error } = await api.initDraftUpload(10);
+	const { error } = await api.initDirectPost(directPostInput());
 
 	expect(error?.certainty).toBe('ambiguous');
 	expect(isAmbiguousFailure(error as never)).toBe(true);
@@ -415,7 +363,7 @@ test('a network failure or timeout is AMBIGUOUS', async () => {
 	}) as unknown as typeof globalThis.fetch;
 	const api = createTikTokApi({ accessToken: 'act.live', fetch: send });
 
-	const { error } = await api.initDraftUpload(10);
+	const { error } = await api.initDirectPost(directPostInput());
 
 	expect(error?.name).toBe('RequestFailed');
 	expect(isAmbiguousFailure(error as never)).toBe(true);
@@ -426,7 +374,7 @@ test('an unparseable body is AMBIGUOUS', async () => {
 		() => new Response('<html>gateway</html>', { status: 200 }),
 	);
 
-	const { error } = await api.initDraftUpload(10);
+	const { error } = await api.initDirectPost(directPostInput());
 
 	expect(isAmbiguousFailure(error as never)).toBe(true);
 });

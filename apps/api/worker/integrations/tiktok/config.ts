@@ -63,6 +63,25 @@ export type TikTokConfigError = import('wellcrafted/error').InferErrors<
  * consent screen lets a creator decline any of them individually, so the
  * GRANTED set is read back from the token response and stored per connection;
  * this list is only ever the request.
+ *
+ * Kept at the minimum the product actually exercises, because TikTok's app
+ * review guidelines hold this list to two rules at once: "Only request
+ * permissions and features that your app needs", and "All selected products and
+ * scopes must be clearly demonstrated in the video. If you don't need certain
+ * products or scopes, make sure to remove them before review." A scope nothing
+ * in the UI drives is therefore not merely untidy, it delays the review.
+ *
+ * Two scopes were deliberately REMOVED rather than left requested:
+ *
+ * - `video.list` (Display API) read the creator's recent posts back. It is not
+ *   how a publish is verified: `status/fetch` returns TikTok's own
+ *   `publicaly_available_post_id` for the exact task, which is a stronger fact
+ *   about THIS post than a list of recent uploads. Keeping it would have added a
+ *   second product to review, and a browse-your-own-posts surface is the
+ *   account-management framing the guidelines reject.
+ * - `video.upload` sent a video to the creator's TikTok inbox as a draft. It is
+ *   an alternative publishing product, not a step in Direct Post, and Direct
+ *   Post never calls it.
  */
 export const TIKTOK_SCOPES = [
 	/** Read the connected account's stable id, display name, and avatar. */
@@ -72,11 +91,11 @@ export const TIKTOK_SCOPES = [
 	 * `user.info.basic`, and multiple accounts can share a display name.
 	 */
 	'user.info.profile',
-	/** Read back posted videos to verify a publish actually landed. */
-	'video.list',
-	/** Send a video to the creator's TikTok inbox as an editable draft. */
-	'video.upload',
-	/** Direct Post: publish a video straight to the creator's profile. */
+	/**
+	 * Direct Post: read the account's current posting options
+	 * (`creator_info/query`), publish a video straight to the creator's profile,
+	 * and read that task's status back.
+	 */
 	'video.publish',
 ] as const;
 export type TikTokScope = (typeof TIKTOK_SCOPES)[number];

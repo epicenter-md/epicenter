@@ -59,7 +59,6 @@ export function isValidIdempotencyKey(value: unknown): value is string {
  * refuse the creator's actual intent as a duplicate.
  */
 export type PublishIntent = {
-	kind: 'direct_post' | 'draft_upload';
 	connectionId: string;
 	/** Identifies the chosen file without reading it: name, size, mtime. */
 	file: { name: string; size: number; lastModified: number } | null;
@@ -79,28 +78,28 @@ export type PublishIntent = {
  * produce the same fingerprint; any material difference produces a different
  * one.
  *
- * A draft upload deliberately ignores the Direct Post fields: the inbox path
- * sends no `post_info`, so a caption edit does not change what would be
- * uploaded and must not orphan an in-flight claim.
+ * EVERY published choice participates, with no exemptions. Direct Post sends all
+ * of them in `post_info`, so each one changes what would appear on the profile,
+ * and a field left out here would let an edited post silently reuse the previous
+ * post's claim.
  */
 export function fingerprintPublishIntent(intent: PublishIntent): string {
 	const file = intent.file
 		? `${intent.file.name}:${intent.file.size}:${intent.file.lastModified}`
 		: 'no-file';
-	const parts: string[] = [intent.kind, intent.connectionId, file];
-	if (intent.kind === 'direct_post') {
-		parts.push(
-			intent.title,
-			intent.privacyLevel,
-			String(intent.allowComment),
-			String(intent.allowDuet),
-			String(intent.allowStitch),
-			String(intent.commercialContent),
-			String(intent.yourBrand),
-			String(intent.brandedContent),
-			String(intent.aiGenerated),
-		);
-	}
+	const parts: string[] = [
+		intent.connectionId,
+		file,
+		intent.title,
+		intent.privacyLevel,
+		String(intent.allowComment),
+		String(intent.allowDuet),
+		String(intent.allowStitch),
+		String(intent.commercialContent),
+		String(intent.yourBrand),
+		String(intent.brandedContent),
+		String(intent.aiGenerated),
+	];
 	// Each part is length-prefixed, so the joined string parses back to exactly
 	// one tuple no matter what characters a caption contains. A plain separator
 	// would let a crafted title impersonate a different field layout.

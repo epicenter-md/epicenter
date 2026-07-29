@@ -13,8 +13,9 @@
  * already in memory for the single-chunk upload, so a small structural walk of
  * the ISO-BMFF box tree is exact for MP4 and needs no dependency.
  *
- * THE BOUNDARY, stated plainly: this reads MP4/ISO-BMFF only, which is what the
- * canary accepts (`video/mp4`). For any container it cannot parse it returns
+ * THE BOUNDARY, stated plainly: this reads MP4/ISO-BMFF only, which is the one
+ * container this integration accepts (`video/mp4`). For anything it cannot parse
+ * it returns
  * `null`, meaning UNKNOWN, never zero and never "fine". Callers must treat
  * `null` as "cannot enforce here" and let TikTok be the backstop, rather than
  * silently admitting the file as valid.

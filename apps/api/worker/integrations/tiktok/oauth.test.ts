@@ -34,7 +34,7 @@ const GRANT_BODY = {
 	refresh_token: 'rft.fresh',
 	refresh_expires_in: 31_536_000,
 	open_id: 'open-abc',
-	scope: 'user.info.basic,video.list,video.upload,video.publish',
+	scope: 'user.info.basic,user.info.profile,video.publish',
 };
 
 test('the authorize URL carries exactly the documented web parameters', () => {
@@ -143,8 +143,7 @@ test('exchangeCode posts exactly the documented web exchange body', async () => 
 	// The GRANTED scopes are parsed from the comma-separated `scope` string.
 	expect(data?.scopes).toEqual([
 		'user.info.basic',
-		'video.list',
-		'video.upload',
+		'user.info.profile',
 		'video.publish',
 	]);
 

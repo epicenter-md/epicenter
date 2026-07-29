@@ -187,9 +187,11 @@ test('every TikTok route refuses an unauthenticated request with 401', async () 
 		['/api/integrations/tiktok/connections', undefined],
 		['/api/integrations/tiktok/connections/conn-1', { method: 'DELETE' }],
 		['/api/integrations/tiktok/connections/conn-1/creator-info', undefined],
-		['/api/integrations/tiktok/connections/conn-1/videos', undefined],
 		['/api/integrations/tiktok/connections/conn-1/attempts', undefined],
 		['/api/integrations/tiktok/connections/conn-1/publish', { method: 'POST' }],
+		// Reads TikTok AND writes the reconciled attempt row, so an unauthenticated
+		// hit here must not reach either side.
+		['/api/integrations/tiktok/connections/conn-1/publish/pub-1', undefined],
 	];
 
 	for (const [path, init] of calls) {
@@ -294,8 +296,11 @@ test('connect returns a TikTok consent URL and binds a single-use state to this 
 		'https://www.tiktok.com/v2/auth/authorize/',
 	);
 	expect(authorize.searchParams.get('client_key')).toBe('client-key-123');
+	// Least privilege, asserted: exactly the three scopes the product exercises.
+	// TikTok's review guidelines require every requested scope to be demonstrated,
+	// so a fourth appearing here without a UI that drives it is a review failure.
 	expect(authorize.searchParams.get('scope')).toBe(
-		'user.info.basic,user.info.profile,video.list,video.upload,video.publish',
+		'user.info.basic,user.info.profile,video.publish',
 	);
 	expect(authorize.searchParams.get('redirect_uri')).toBe(
 		'https://api.epicenter.so/api/integrations/tiktok/callback',
@@ -486,7 +491,7 @@ test('a declined consent returns a readable message and connects nothing', async
 
 // --- Responses never carry tokens ----------------------------------------
 
-test('the connections response carries identity and scopes but no token material', async () => {
+test('the connections response names the creator, never a token or a provider id', async () => {
 	const { db } = fakeDb({
 		selectRows: [
 			{
@@ -522,15 +527,41 @@ test('the connections response carries identity and scopes but no token material
 	expect(raw).not.toContain('CIPHERTEXT-REFRESH');
 	expect(raw).not.toContain('Ciphertext');
 	const body = JSON.parse(raw) as {
-		connections: { openId: string; scopes: string[]; displayName: string }[];
+		connections: Record<string, unknown>[];
 	};
-	// The exact identity and the scopes actually granted ARE shown, so a creator
-	// with many accounts can tell which one they are about to post as.
+	// The creator is named by display name and @handle, which is what tells a
+	// creator with many accounts which one they are about to post as.
 	expect(body.connections[0]).toMatchObject({
-		openId: 'open-abc',
+		id: 'conn-1',
 		displayName: 'Braden',
-		scopes: ['user.info.basic', 'video.publish'],
+		username: 'braden',
+		// The one thing the UI needs from the grant: can this account be posted to.
+		canPost: true,
 	});
+	// TikTok's provider ids and its raw permission vocabulary do NOT reach the
+	// browser. A page that prints them reads as an internal utility, and neither
+	// is a fact a creator can act on.
+	expect(raw).not.toContain('open-abc');
+	expect(body.connections[0]).not.toHaveProperty('openId');
+	expect(body.connections[0]).not.toHaveProperty('unionId');
+	expect(body.connections[0]).not.toHaveProperty('scopes');
+});
+
+test('a connection that never granted video.publish reports canPost false', async () => {
+	// A creator can decline the publishing scope on TikTok's consent screen. That
+	// leaves a REAL connection that simply cannot post, which the UI has to be
+	// able to say without showing anybody a scope string.
+	const { db } = fakeDb({ selectRows: [connectionRow(['user.info.basic'])] });
+	const built = createTikTokTestApp({
+		session: freshSession('user-1'),
+		env: CONFIGURED_ENV,
+		db,
+	});
+
+	const res = await request(built, '/api/integrations/tiktok/connections');
+
+	const body = (await res.json()) as { connections: { canPost: boolean }[] };
+	expect(body.connections[0]?.canPost).toBe(false);
 });
 
 // --- Scope gating ---------------------------------------------------------
@@ -555,31 +586,29 @@ function connectionRow(scopes: string[]) {
 	};
 }
 
-test('creator info and publish status accept EITHER publishing scope', async () => {
-	// `creator_info/query` and `status/fetch` serve both the draft and the Direct
-	// Post flows, so demanding one specific scope would lock out a creator who
-	// granted only the other. Either scope reaches token custody (502 against
-	// this fake) instead of being refused at the gate with 403.
-	for (const grantedScope of ['video.upload', 'video.publish']) {
-		const { db } = fakeDb({ selectRows: [connectionRow([grantedScope])] });
-		const built = createTikTokTestApp({
-			session: freshSession('user-1'),
-			env: CONFIGURED_ENV,
-			db,
-		});
+test('every publishing route passes the gate on video.publish alone', async () => {
+	// One publishing product means one scope: `creator_info/query`, `video/init`
+	// and `status/fetch` are all reachable with exactly `video.publish`. Passing
+	// the gate means reaching token custody (502 against this fake) rather than
+	// being refused at 403.
+	const { db } = fakeDb({ selectRows: [connectionRow(['video.publish'])] });
+	const built = createTikTokTestApp({
+		session: freshSession('user-1'),
+		env: CONFIGURED_ENV,
+		db,
+	});
 
-		for (const path of [
-			'/api/integrations/tiktok/connections/conn-1/creator-info',
-			'/api/integrations/tiktok/connections/conn-1/publish/pub-1',
-		]) {
-			const res = await request(built, path);
-			expect(res.status).not.toBe(403);
-			expect(res.status).toBe(502);
-		}
+	for (const path of [
+		'/api/integrations/tiktok/connections/conn-1/creator-info',
+		'/api/integrations/tiktok/connections/conn-1/publish/pub-1',
+	]) {
+		const res = await request(built, path);
+		expect(res.status).not.toBe(403);
+		expect(res.status).toBe(502);
 	}
 });
 
-test('a connection granting neither publishing scope is still refused', async () => {
+test('a connection that did not grant video.publish is refused, with the scope named', async () => {
 	const { db } = fakeDb({ selectRows: [connectionRow(['user.info.basic'])] });
 	const built = createTikTokTestApp({
 		session: freshSession('user-1'),
@@ -595,8 +624,9 @@ test('a connection granting neither publishing scope is still refused', async ()
 	expect(res.status).toBe(403);
 	const body = (await res.json()) as { error: { name: string; scope: string } };
 	expect(body.error.name).toBe('ScopeNotGranted');
-	// Both acceptable scopes are named, so the remedy is actionable.
-	expect(body.error.scope).toBe('video.publish or video.upload');
+	// The scope is named so the remedy ("reconnect and approve this") is actionable
+	// rather than a generic permission error from TikTok.
+	expect(body.error.scope).toBe('video.publish');
 });
 
 // --- Publish guards -------------------------------------------------------
@@ -609,7 +639,6 @@ test('publish refuses a request with no idempotency key before touching TikTok',
 		db,
 	});
 	const form = new FormData();
-	form.set('kind', 'direct_post');
 	form.set(
 		'video',
 		new File([new Uint8Array(10)], 'v.mp4', { type: 'video/mp4' }),
@@ -637,7 +666,6 @@ test('publish refuses a request with no video file', async () => {
 		db,
 	});
 	const form = new FormData();
-	form.set('kind', 'draft_upload');
 	form.set('idempotencyKey', VALID_KEY);
 
 	const res = await request(
@@ -654,27 +682,10 @@ test('publish refuses a request with no video file', async () => {
 	expect(body.error.message).toContain('video file');
 });
 
-test('publish refuses a connection whose grant lacks the scope the request needs', async () => {
+test('publish refuses a connection whose grant lacks video.publish', async () => {
+	// The creator declined the publishing scope at the consent screen.
 	const { db } = fakeDb({
-		selectRows: [
-			{
-				id: 'conn-1',
-				userId: 'user-1',
-				openId: 'open-abc',
-				unionId: null,
-				displayName: 'Braden',
-				username: 'braden',
-				avatarUrl: null,
-				// The creator declined video.publish at the consent screen.
-				scopes: ['user.info.basic', 'video.upload'],
-				accessTokenCiphertext: 'v1.a.b',
-				accessTokenExpiresAt: new Date(Date.now() + 3_600_000),
-				refreshTokenCiphertext: 'v1.a.b',
-				refreshTokenExpiresAt: new Date(Date.now() + 3_600_000),
-				createdAt: new Date(),
-				updatedAt: new Date(),
-			},
-		],
+		selectRows: [connectionRow(['user.info.basic', 'user.info.profile'])],
 	});
 	const built = createTikTokTestApp({
 		session: freshSession('user-1'),
@@ -682,7 +693,6 @@ test('publish refuses a connection whose grant lacks the scope the request needs
 		db,
 	});
 	const form = new FormData();
-	form.set('kind', 'direct_post');
 	form.set('idempotencyKey', VALID_KEY);
 	form.set(
 		'video',
@@ -836,7 +846,6 @@ async function publishWith(
 
 	try {
 		const body = new FormData();
-		body.set('kind', 'direct_post');
 		body.set('idempotencyKey', VALID_KEY);
 		body.set(
 			'video',
@@ -1004,7 +1013,6 @@ async function submitPublish(
 	idempotencyKey: string,
 ) {
 	const body = new FormData();
-	body.set('kind', 'direct_post');
 	body.set('idempotencyKey', idempotencyKey);
 	body.set('title', 'A caption');
 	body.set('privacyLevel', 'PUBLIC_TO_EVERYONE');
@@ -1209,7 +1217,6 @@ test('Direct Post refuses a video whose duration cannot be read', async () => {
 
 	try {
 		const body = new FormData();
-		body.set('kind', 'direct_post');
 		body.set('idempotencyKey', VALID_KEY);
 		body.set('title', 'A caption');
 		body.set('privacyLevel', 'PUBLIC_TO_EVERYONE');
@@ -1257,7 +1264,6 @@ test('Direct Post refuses a video longer than the live account ceiling', async (
 
 	try {
 		const body = new FormData();
-		body.set('kind', 'direct_post');
 		body.set('idempotencyKey', VALID_KEY);
 		body.set('title', 'A caption');
 		body.set('privacyLevel', 'PUBLIC_TO_EVERYONE');
@@ -1282,4 +1288,150 @@ test('Direct Post refuses a video longer than the live account ceiling', async (
 	} finally {
 		globalThis.fetch = realFetch;
 	}
+});
+
+// --- Following a post to its outcome -------------------------------------
+//
+// The gap these close: before this, reading TikTok's status told the CREATOR
+// what happened but left the stored attempt frozen at whatever it was when the
+// request returned. A creator who reloaded saw "processing" forever, even though
+// TikTok had finished minutes earlier. The read is now also the write.
+
+/**
+ * Drive one status read against a stubbed `status/fetch`, capturing whatever the
+ * route tried to persist.
+ *
+ * `attemptMatched` models the two real cases: the ordinary one where the
+ * publish id belongs to a recorded attempt, and the documented pathological one
+ * where TikTok created the task but recording its publish id failed, so there is
+ * nothing local to reconcile.
+ */
+async function statusWith(
+	statusBody: string,
+	{
+		attemptMatched = true,
+		updateThrows = false,
+	}: { attemptMatched?: boolean; updateThrows?: boolean } = {},
+) {
+	const row = await liveConnectionRow(['video.publish']);
+	const base = liveDb(row);
+	const writes: Record<string, unknown>[] = [];
+	const db = {
+		...base.db,
+		// Only `reconcileAttemptFromRemote` reaches this: token custody updates
+		// through the transaction handle `liveDb` supplies.
+		update: () => ({
+			set: (values: Record<string, unknown>) => {
+				if (updateThrows) throw new Error('postgres is unreachable');
+				writes.push(values);
+				return {
+					where: () => ({
+						returning: async () =>
+							attemptMatched ? [{ id: 'attempt-1' }] : [],
+					}),
+				};
+			},
+		}),
+	};
+	const built = createTikTokTestApp({
+		session: freshSession('user-1'),
+		env: CONFIGURED_ENV,
+		db,
+	});
+
+	const realFetch = globalThis.fetch;
+	globalThis.fetch = (async () =>
+		new Response(statusBody, {
+			status: 200,
+		})) as unknown as typeof globalThis.fetch;
+	try {
+		const res = await request(
+			built,
+			'/api/integrations/tiktok/connections/conn-1/publish/pub-1',
+		);
+		return { res, writes };
+	} finally {
+		globalThis.fetch = realFetch;
+	}
+}
+
+test('a completed publish is written into the attempt row, not merely returned', async () => {
+	// A real post id is 19 digits, past Number.MAX_SAFE_INTEGER, and arrives as a
+	// bare JSON number. It must survive into the STORED row exactly, or the thing
+	// we saved names no post.
+	const { res, writes } = await statusWith(
+		'{"data":{"status":"PUBLISH_COMPLETE","publicaly_available_post_id":[7382910473829104721]},"error":{"code":"ok"}}',
+	);
+
+	expect(res.status).toBe(200);
+	const body = (await res.json()) as {
+		code: string;
+		publicPostIds: string[];
+		recorded: boolean;
+	};
+	expect(body.code).toBe('PUBLISH_COMPLETE');
+	expect(body.publicPostIds).toEqual(['7382910473829104721']);
+	expect(body.recorded).toBe(true);
+
+	// The durable row now agrees with TikTok. This is the assertion that would
+	// have failed before: the row kept saying PROCESSING_UPLOAD.
+	expect(writes).toHaveLength(1);
+	expect(writes[0]).toMatchObject({
+		status: 'PUBLISH_COMPLETE',
+		publicPostIds: ['7382910473829104721'],
+		failReason: null,
+	});
+});
+
+test("a failed publish records TikTok's own reason", async () => {
+	const { res, writes } = await statusWith(
+		'{"data":{"status":"FAILED","fail_reason":"picture_size_check_failed"},"error":{"code":"ok"}}',
+	);
+
+	expect(res.status).toBe(200);
+	expect(writes[0]).toMatchObject({
+		status: 'FAILED',
+		failReason: 'picture_size_check_failed',
+		// Read, and TikTok named no public post. An empty array is a different fact
+		// from `null` (never read), and the difference is why the column is nullable.
+		publicPostIds: [],
+	});
+});
+
+test('a status still in flight is recorded too, so a reload tracks TikTok', async () => {
+	const { writes } = await statusWith(
+		'{"data":{"status":"PROCESSING_DOWNLOAD"},"error":{"code":"ok"}}',
+	);
+
+	expect(writes[0]).toMatchObject({ status: 'PROCESSING_DOWNLOAD' });
+});
+
+test('a publish id matching no recorded attempt still returns TikTok’s answer', async () => {
+	// The documented window: TikTok created the task, persisting its publish id
+	// failed. There is nothing to reconcile, and the outcome is still the single
+	// most useful thing we can tell the creator.
+	const { res } = await statusWith(
+		'{"data":{"status":"PUBLISH_COMPLETE","publicaly_available_post_id":[7382910473829104721]},"error":{"code":"ok"}}',
+		{ attemptMatched: false },
+	);
+
+	expect(res.status).toBe(200);
+	const body = (await res.json()) as { code: string; recorded: boolean };
+	expect(body.code).toBe('PUBLISH_COMPLETE');
+	// Reported honestly rather than implied: this outcome is not being remembered.
+	expect(body.recorded).toBe(false);
+});
+
+test('a database failure never withholds the outcome TikTok reported', async () => {
+	// Losing the write is bad; withholding "your post is live" because the write
+	// failed is worse, and would push the creator toward posting again.
+	const { res } = await statusWith(
+		'{"data":{"status":"PUBLISH_COMPLETE","publicaly_available_post_id":[7382910473829104721]},"error":{"code":"ok"}}',
+		{ updateThrows: true },
+	);
+
+	expect(res.status).toBe(200);
+	const body = (await res.json()) as { code: string; recorded: boolean };
+	expect(body.code).toBe('PUBLISH_COMPLETE');
+	expect(body.recorded).toBe(false);
 });

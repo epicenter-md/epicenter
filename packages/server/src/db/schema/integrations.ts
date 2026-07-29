@@ -145,6 +145,11 @@ export const tiktokOauthState = pgTable(
  * loses the race and the caller is handed the first attempt's row instead.
  * An ambiguous outcome is then resolved by READING TikTok's status, never by
  * retrying the init.
+ *
+ * The row is also the DURABLE answer to "what happened to that post", which is
+ * why `status` and `public_post_ids` are reconciled from TikTok on every status
+ * read: a creator who reloads must not be shown a post still processing when
+ * TikTok finished it minutes ago.
  */
 export const tiktokPublishAttempt = pgTable(
 	'tiktok_publish_attempt',
@@ -155,7 +160,12 @@ export const tiktokPublishAttempt = pgTable(
 			.references(() => tiktokConnection.id, { onDelete: 'cascade' }),
 		/** Caller-supplied; one per intended post. */
 		idempotencyKey: text('idempotency_key').notNull(),
-		/** `direct_post` (video.publish) or `draft_upload` (video.upload). */
+		/**
+		 * Which Content Posting product created this row. Always `direct_post`:
+		 * Direct Post is the only publishing product this integration offers.
+		 * Retained rather than dropped because it records what a HISTORICAL row
+		 * actually did, including rows written while the inbox-draft path existed.
+		 */
 		kind: text('kind').notNull(),
 		/**
 		 * Null between the row being claimed and TikTok answering `video/init`.
@@ -163,8 +173,28 @@ export const tiktokPublishAttempt = pgTable(
 		 * may or may not have landed, and only TikTok can say.
 		 */
 		publishId: text('publish_id'),
-		/** Last status observed from `status/fetch`, or `INIT_FAILED`. */
+		/**
+		 * The last status observed, holding TikTok's OWN code from `status/fetch`
+		 * (`PROCESSING_UPLOAD`, `PUBLISH_COMPLETE`, `FAILED`, ...) or one of the
+		 * local codes for a failure TikTok's vocabulary cannot express. See
+		 * `attempt-status.ts`, which owns what each value means and which are
+		 * terminal.
+		 *
+		 * Reconciled from remote truth whenever the status is read, so a row cannot
+		 * sit at `PROCESSING_UPLOAD` after TikTok has finished the task.
+		 */
 		status: text('status'),
+		/**
+		 * TikTok's `publicaly_available_post_id` (its own misspelling) for a
+		 * completed task, which is the only fact that proves a PUBLIC delivery.
+		 *
+		 * Three distinguishable states, all of them meaningful: `null` means remote
+		 * status was never read; an empty array means it was read and TikTok named
+		 * no public post (a private post, or one still in moderation); a non-empty
+		 * array is the confirmed public post. Stored so a terminal outcome is read
+		 * locally forever instead of re-calling TikTok on every page load.
+		 */
+		publicPostIds: text('public_post_ids').array(),
 		failReason: text('fail_reason'),
 		createdAt: timestamp('created_at').defaultNow().notNull(),
 		updatedAt: timestamp('updated_at')
