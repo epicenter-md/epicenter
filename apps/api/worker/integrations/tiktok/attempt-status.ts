@@ -15,7 +15,7 @@
  * either polls a finished task forever or stops on a task still in flight.
  */
 
-import { postStatuses, type TikTokPostStatusCode } from './api.js';
+import type { TikTokPostStatusCode } from './api.js';
 
 /**
  * Statuses that describe a LOCAL failure, used only where TikTok never gave us
@@ -23,24 +23,26 @@ import { postStatuses, type TikTokPostStatusCode } from './api.js';
  *
  * These are not alternative names for TikTok states. Each one records something
  * that happened on Epicenter's side of the call, which is exactly the
- * information TikTok's vocabulary cannot express:
- *
- * - `INIT_FAILED`: TikTok understood `video/init` and definitively refused it,
- *   so no publishing task exists.
- * - `INIT_AMBIGUOUS`: `video/init` may or may not have created a task, and we
- *   cannot see which. Never retried; resolved by reading remote status.
- * - `UPLOAD_FAILED`: the task exists and the bytes may not have landed.
+ * information TikTok's vocabulary cannot express.
  */
-export const LOCAL_ATTEMPT_STATUSES = [
-	'INIT_FAILED',
-	'INIT_AMBIGUOUS',
-	'UPLOAD_FAILED',
-] as const;
-export type LocalAttemptStatus = (typeof LOCAL_ATTEMPT_STATUSES)[number];
+export type LocalAttemptStatus =
+	/** TikTok understood `video/init` and definitively refused it, so no task exists. */
+	| 'INIT_FAILED'
+	/**
+	 * `video/init` may or may not have created a task, and we cannot see which.
+	 * Never retried; resolved by reading remote status.
+	 */
+	| 'INIT_AMBIGUOUS'
+	/** The task exists and the bytes may not have landed. */
+	| 'UPLOAD_FAILED';
 
 /**
- * Every value the `status` column can hold. `null` is the fourth possibility and
- * means the row was claimed but `video/init` was never reached.
+ * Every value the `status` column can hold, which is what makes this module the
+ * vocabulary's owner rather than a description of it: `recordAttemptOutcome`
+ * accepts this type, so a status invented at a call site is a type error.
+ *
+ * `null` is the fourth possibility and means the row was claimed but
+ * `video/init` was never reached.
  */
 export type AttemptStatus = TikTokPostStatusCode | LocalAttemptStatus;
 
@@ -66,13 +68,6 @@ const TERMINAL_STATUSES: ReadonlySet<string> = new Set<AttemptStatus>([
  */
 export function isTerminalAttemptStatus(status: string | null): boolean {
 	return status !== null && TERMINAL_STATUSES.has(status);
-}
-
-/** Whether TikTok has a publishing task we can still ask about. */
-export function isTikTokStatus(status: string | null): boolean {
-	return (
-		status !== null && (postStatuses as readonly string[]).includes(status)
-	);
 }
 
 /**

@@ -29,6 +29,7 @@
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import { onDestroy, onMount } from 'svelte';
 	import {
+		type AttemptTone,
 		COMMERCIAL_LABELS,
 		createPublishIntentKeeper,
 		createSessionIntentKeyStore,
@@ -304,12 +305,19 @@
 		attempts.filter((attempt) => attempt.id !== tracked?.id),
 	);
 
-	const TONE_CLASS = {
+	/**
+	 * Styling keyed on the CONFIDENCE of a status, not on the status itself.
+	 *
+	 * Typed as a total `Record<AttemptTone, string>` on purpose: adding a tone to
+	 * `attempt-status.ts` then fails to compile here until this surface decides how
+	 * it looks, rather than rendering an unstyled new state as though it were fine.
+	 */
+	const TONE_CLASS: Record<AttemptTone, string> = {
 		pending: 'text-muted-foreground',
 		posted: 'text-foreground',
 		failed: 'text-destructive',
 		unknown: 'text-destructive',
-	} as const;
+	};
 
 	function report(error: { message: string }) {
 		toast.error(error.message);

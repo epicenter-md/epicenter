@@ -16,6 +16,7 @@ import {
 	tiktokPublishAttempt,
 } from '@epicenter/server/cloud-db';
 import { and, desc, eq, lt } from 'drizzle-orm';
+import type { AttemptStatus } from './attempt-status.js';
 
 /** A stored connection, tokens included as ciphertext. */
 export type StoredConnection = typeof tiktokConnection.$inferSelect;
@@ -274,6 +275,14 @@ export async function claimPublishAttempt(
 	return { claimed: false, attempt: existing[0] as PublishAttempt };
 }
 
+/**
+ * Record what Epicenter knows about an attempt it is driving.
+ *
+ * `status` is typed as `AttemptStatus` rather than `string` so the vocabulary
+ * `attempt-status.ts` describes is the vocabulary that can actually be written:
+ * a code invented at a call site does not compile, and cannot reach the UI as a
+ * status nothing knows how to describe.
+ */
 export async function recordAttemptOutcome(
 	db: Db,
 	{
@@ -284,7 +293,7 @@ export async function recordAttemptOutcome(
 	}: {
 		attemptId: string;
 		publishId?: string | null;
-		status?: string | null;
+		status?: AttemptStatus | null;
 		failReason?: string | null;
 	},
 ): Promise<void> {
