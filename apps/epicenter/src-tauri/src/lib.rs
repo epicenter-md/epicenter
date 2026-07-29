@@ -2106,6 +2106,70 @@ mod tests {
         );
     }
 
+    /// A command name that drifts fails loudly; an *argument* name that drifts
+    /// fails only when someone runs it, because Tauri deserializes arguments by
+    /// name and a missing one is a runtime error rather than a compile error.
+    ///
+    /// So each argument the generated bindings pass has to appear in the
+    /// client's source. The bindings are the proxy for Rust here, since they
+    /// are generated from the same commands.
+    ///
+    /// It checks presence across the client's capability modules together, not
+    /// per command, so be clear about what that does and does not buy. It
+    /// catches the direction that actually goes wrong on its own: a Rust
+    /// parameter is renamed, the bindings regenerate around it, and nothing
+    /// else notices that the client is now sending a key the host will not
+    /// read. It does not catch a client-side edit that leaves the old name
+    /// alive in a sibling module; the client's own tests assert the exact
+    /// payload per command, which is where that belongs.
+    #[test]
+    fn the_public_client_names_the_arguments_these_commands_deserialize() {
+        const CLIENT: &str = concat!(
+            include_str!("../../../../packages/app/src/recording.ts"),
+            include_str!("../../../../packages/app/src/transcription.ts"),
+        );
+        const BINDINGS: &str = include_str!("../../src/ui/bindings.gen.ts");
+
+        let mut checked = 0;
+        for command in PUBLIC_CLIENT_COMMANDS {
+            // Matched on the quoted name alone, not on `(` plus the name: the
+            // formatter wraps a long invoke onto its own line, and specta emits
+            // double quotes where the formatter leaves single ones.
+            let Some(site) = BINDINGS
+                .split_once(&format!("'{command}'"))
+                .or_else(|| BINDINGS.split_once(&format!("\"{command}\"")))
+                .map(|(_, rest)| rest)
+            else {
+                panic!("the generated bindings no longer invoke {command}");
+            };
+            // The call closes right after a command that takes nothing; one
+            // that takes arguments has an object literal before that `)`.
+            let Some(arguments) = site
+                .split_once(')')
+                .and_then(|(call, _)| call.split_once('{'))
+                .and_then(|(_, fields)| fields.split_once('}'))
+                .map(|(fields, _)| fields)
+            else {
+                continue;
+            };
+            for argument in arguments
+                .split(',')
+                .map(str::trim)
+                .filter(|argument| !argument.is_empty())
+            {
+                assert!(
+                    CLIENT.contains(argument),
+                    "{command} deserializes an argument named `{argument}`, which @epicenter/app never sends"
+                );
+                checked += 1;
+            }
+        }
+        assert!(
+            checked >= 3,
+            "expected to check the arguments of at least the three commands that take them, checked {checked}"
+        );
+    }
+
     #[test]
     fn each_build_selects_the_home_model_administration_capability() {
         for (encoded, capability) in [
