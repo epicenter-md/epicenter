@@ -11,19 +11,32 @@
  * - Short and full session IDs resolve to the same agent record
  * - working/blocked/terminal states map to watcher outcomes and exit codes
  * - `reply` stops the job and resumes the same conversation as a new job
+ * - Push and pull request authority is denied on every start and every resume
+ *   unless that invocation passes `--allow-external-writes`
+ * - `reply` refuses a working job unless the interruption is deliberate
  * - `CLAUDECODE=1` refuses reciprocal delegation
  */
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	chmodSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
 	classifyAgent,
+	EXTERNAL_WRITE_DENY_RULES,
 	findAgent,
 	findLaunchedByName,
+	NO_EXTERNAL_WRITES_PROMPT,
 	parseBackgroundId,
+	parseReplyArgs,
+	parseStartArgs,
 } from './delegate-claude';
 
 const baseAgent = {
@@ -98,20 +111,68 @@ describe('classifyAgent', () => {
 	});
 });
 
+describe('parseStartArgs', () => {
+	test('denies external writes unless the launch asks for them', () => {
+		expect(parseStartArgs([])?.allowExternalWrites).toBe(false);
+		expect(parseStartArgs(['--name', 'x'])?.allowExternalWrites).toBe(false);
+		expect(
+			parseStartArgs(['--name', 'x', '--allow-external-writes'])
+				?.allowExternalWrites,
+		).toBe(true);
+		expect(
+			parseStartArgs(['--allow-external-writes', '--name', 'x'])?.name,
+		).toBe('x');
+	});
+
+	test('generates a name and rejects unknown or malformed flags', () => {
+		expect(parseStartArgs([])?.name).toMatch(/^codex-delegate-/);
+		expect(parseStartArgs(['--name'])).toBeUndefined();
+		expect(parseStartArgs(['--allow-pushes'])).toBeUndefined();
+		expect(parseStartArgs(['fixture'])).toBeUndefined();
+		expect(parseStartArgs(['--name', 'a', '--name', 'b'])).toBeUndefined();
+		// Never swallow the authority flag as if it were the session name.
+		expect(
+			parseStartArgs(['--name', '--allow-external-writes']),
+		).toBeUndefined();
+	});
+});
+
+describe('parseReplyArgs', () => {
+	test('requires an ID and defaults both authorities off', () => {
+		expect(parseReplyArgs(['7c5dcf5d'])).toEqual({
+			id: '7c5dcf5d',
+			allowExternalWrites: false,
+			interrupt: false,
+		});
+		expect(parseReplyArgs([])).toBeUndefined();
+		expect(parseReplyArgs(['--interrupt'])).toBeUndefined();
+		expect(parseReplyArgs(['7c5dcf5d', '--yolo'])).toBeUndefined();
+	});
+
+	test('reads each authority independently', () => {
+		expect(
+			parseReplyArgs(['7c5dcf5d', '--interrupt'])?.allowExternalWrites,
+		).toBe(false);
+		expect(
+			parseReplyArgs(['7c5dcf5d', '--allow-external-writes'])?.interrupt,
+		).toBe(false);
+	});
+});
+
 describe('command lifecycle', () => {
 	test('starts, finds, watches, and reads one supervisor job', () => {
 		const fixtureDirectory = mkdtempSync(join(tmpdir(), 'delegate-claude-'));
 		const fakeClaude = join(fixtureDirectory, 'claude-fixture.ts');
+		const argsLog = join(fixtureDirectory, 'args.jsonl');
 		writeFileSync(
 			fakeClaude,
 			`#!/usr/bin/env bun
+import { appendFileSync } from 'node:fs';
 const args = process.argv.slice(2);
-if (args[0] === '--bg' && args[1] === '--resume') {
-  if (args[2] !== '${baseAgent.sessionId}' || args[3] !== 'pear') process.exit(9);
+appendFileSync(${JSON.stringify(argsLog)}, JSON.stringify(args) + '\\n');
+if (args[0] === '--bg' && args.includes('--resume')) {
   console.log('backgrounded · a5b4a85d');
 } else if (args[0] === '--bg') {
-  const required = ['--effort', 'high', '--permission-mode', 'auto', '--name', 'fixture'];
-  if (args.includes('--model') || !required.every((value) => args.includes(value)) || args.at(-1) !== 'Mission: fixture') process.exit(7);
   console.log(process.env.FIXTURE_LAUNCH_LINE ?? 'backgrounded · 7c5dcf5d · fixture');
 } else if (args[0] === 'stop') {
   console.log('stopped ' + args[1]);
@@ -128,6 +189,33 @@ if (args[0] === '--bg' && args[1] === '--resume') {
 `,
 		);
 		chmodSync(fakeClaude, 0o755);
+
+		/** Every `claude` invocation the launcher made, oldest first. */
+		const launches = () =>
+			readFileSync(argsLog, 'utf8')
+				.split('\n')
+				.filter(Boolean)
+				.map((line) => JSON.parse(line) as string[]);
+		/** `back(0)` is the newest invocation, `back(1)` the one before it. */
+		const back = (offset: number) => {
+			const all = launches();
+			return all[all.length - 1 - offset];
+		};
+		const lastLaunch = () => back(0);
+		const finalArg = (args: string[]) => args[args.length - 1];
+
+		/**
+		 * `--disallowed-tools` is variadic, so an argument that is not a flag
+		 * immediately after the rule list would be eaten as another rule.
+		 */
+		const expectExternalWritesDenied = (args: string[]) => {
+			const deny = args.indexOf('--disallowed-tools');
+			expect(deny).toBeGreaterThanOrEqual(0);
+			expect(args[deny + 1]).toBe(EXTERNAL_WRITE_DENY_RULES);
+			expect(args[deny + 2]?.startsWith('--')).toBe(true);
+			const guard = args.indexOf('--append-system-prompt');
+			expect(args[guard + 1]).toBe(NO_EXTERNAL_WRITES_PROMPT);
+		};
 
 		// The suite itself may run inside Claude Code; drop its recursion marker
 		// so only the dedicated refusal case sets it.
@@ -146,6 +234,23 @@ if (args[0] === '--bg' && args[1] === '--resume') {
 			});
 			expect(started.status).toBe(0);
 			expect(started.stdout).toContain('DELEGATE_CLAUDE_JOB_ID=7c5dcf5d');
+			const startArgs = lastLaunch();
+			expect(startArgs).toContain('--bg');
+			expect(startArgs).not.toContain('--model');
+			for (const flag of ['--effort', 'high', '--permission-mode', 'auto'])
+				expect(startArgs).toContain(flag);
+			expect(finalArg(startArgs)).toBe('Mission: fixture');
+			expectExternalWritesDenied(startArgs);
+
+			const permitted = spawnSync(
+				'bun',
+				[cli, 'start', '--name', 'fixture', '--allow-external-writes'],
+				{ encoding: 'utf8', env: environment, input: 'Mission: fixture' },
+			);
+			expect(permitted.status).toBe(0);
+			expect(lastLaunch()).not.toContain('--disallowed-tools');
+			expect(lastLaunch()).not.toContain('--append-system-prompt');
+			expect(permitted.stderr).toContain('External writes AUTHORIZED');
 
 			const recovered = spawnSync('bun', [cli, 'start', '--name', 'fixture'], {
 				encoding: 'utf8',
@@ -181,6 +286,35 @@ if (args[0] === '--bg' && args[1] === '--resume') {
 			});
 			expect(replied.status).toBe(0);
 			expect(replied.stdout).toContain('DELEGATE_CLAUDE_JOB_ID=a5b4a85d');
+			const resumeArgs = lastLaunch();
+			expect(resumeArgs).toContain('--resume');
+			expect(resumeArgs).toContain(baseAgent.sessionId);
+			expect(finalArg(resumeArgs)).toBe('pear');
+			// The reply never repeated `--allow-external-writes`, so the resumed
+			// conversation cannot inherit authority the first launch lacked.
+			expectExternalWritesDenied(resumeArgs);
+
+			const busy = spawnSync('bun', [cli, 'reply', '7c5dcf5d'], {
+				encoding: 'utf8',
+				env: { ...environment, FIXTURE_STATE: 'working' },
+				input: 'pear',
+			});
+			expect(busy.status).toBe(2);
+			expect(busy.stderr).toContain('still working');
+			expect(lastLaunch()).toContain('agents');
+
+			const interrupted = spawnSync(
+				'bun',
+				[cli, 'reply', '7c5dcf5d', '--interrupt'],
+				{
+					encoding: 'utf8',
+					env: { ...environment, FIXTURE_STATE: 'working' },
+					input: 'pear',
+				},
+			);
+			expect(interrupted.status).toBe(0);
+			expect(interrupted.stdout).toContain('DELEGATE_CLAUDE_JOB_ID=a5b4a85d');
+			expect(back(1)[0]).toBe('stop');
 
 			const nested = spawnSync('bun', [cli, 'start'], {
 				encoding: 'utf8',

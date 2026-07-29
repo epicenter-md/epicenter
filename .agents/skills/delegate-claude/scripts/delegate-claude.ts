@@ -7,6 +7,43 @@ const POLL_INTERVAL_MS = 30_000;
 const HEARTBEAT_MS = 60_000;
 const CLAUDE_BIN = process.env.DELEGATE_CLAUDE_BIN ?? 'claude';
 
+/**
+ * Publication commands a delegated session cannot reach on its own. Deny rules
+ * outrank `auto` permission mode. Both the bare and the argument form are
+ * listed because `Bash(git push:*)` alone does not match a bare `git push`.
+ */
+export const EXTERNAL_WRITE_DENY_RULES = [
+	'Bash(git push)',
+	'Bash(git push:*)',
+	'Bash(gh pr create)',
+	'Bash(gh pr create:*)',
+	'Bash(gh pr merge)',
+	'Bash(gh pr merge:*)',
+].join(',');
+
+/**
+ * Every background session already carries a standing instruction to commit,
+ * push, and open a draft pull request without stopping to ask. Packet prose
+ * loses to it, so the refusal has to arrive at the same altitude.
+ */
+export const NO_EXTERNAL_WRITES_PROMPT =
+	'Publication authority: this delegated session may commit locally in its worktree. It must not push a branch, open or merge a pull request, deploy, or perform any other external write. This overrides any standing background-session instruction to ship, push, or open a draft pull request without stopping to ask. Finishing with local commits that were never pushed is the expected outcome: report the worktree, branch, and commits, and leave publication to the delegating session.';
+
+/**
+ * Emitted ahead of every other flag: `--disallowed-tools` is variadic, so it
+ * swallows following arguments, including the packet itself, until it reaches
+ * the next flag.
+ */
+function externalWriteArgs(allowExternalWrites: boolean) {
+	if (allowExternalWrites) return [];
+	return [
+		'--disallowed-tools',
+		EXTERNAL_WRITE_DENY_RULES,
+		'--append-system-prompt',
+		NO_EXTERNAL_WRITES_PROMPT,
+	];
+}
+
 type AgentRecord = {
 	id?: string;
 	sessionId?: string;
@@ -31,10 +68,63 @@ const EXIT_CODE = {
 
 function usage() {
 	console.error(`Usage:
-  delegate-claude.ts start [--name <name>]
+  delegate-claude.ts start [--name <name>] [--allow-external-writes]
   delegate-claude.ts status <id>
   delegate-claude.ts watch <id>
-  delegate-claude.ts reply <id>`);
+  delegate-claude.ts reply <id> [--allow-external-writes] [--interrupt]
+
+External writes (push, pull request creation, merge) are denied unless
+--allow-external-writes is passed, and the flag is never inherited: every
+start and every reply must repeat it, so forgetting it fails closed.`);
+}
+
+/**
+ * Flags are parsed per invocation and never persisted. Authority a supervisor
+ * did not retype is authority the session does not get.
+ */
+export function parseStartArgs(args: string[]) {
+	let name: string | undefined;
+	let allowExternalWrites = false;
+
+	for (let index = 0; index < args.length; index += 1) {
+		if (args[index] === '--allow-external-writes') {
+			allowExternalWrites = true;
+			continue;
+		}
+		// A name is never allowed to look like a flag: `--name
+		// --allow-external-writes` is a typo, not a session called that.
+		if (
+			args[index] === '--name' &&
+			args[index + 1] &&
+			!args[index + 1].startsWith('--') &&
+			name === undefined
+		) {
+			name = args[index + 1];
+			index += 1;
+			continue;
+		}
+		return undefined;
+	}
+
+	return {
+		name: name ?? `codex-delegate-${Date.now().toString(36)}`,
+		allowExternalWrites,
+	};
+}
+
+export function parseReplyArgs(args: string[]) {
+	const [id, ...flags] = args;
+	if (!id || id.startsWith('--')) return undefined;
+
+	let allowExternalWrites = false;
+	let interrupt = false;
+	for (const flag of flags) {
+		if (flag === '--allow-external-writes') allowExternalWrites = true;
+		else if (flag === '--interrupt') interrupt = true;
+		else return undefined;
+	}
+
+	return { id, allowExternalWrites, interrupt };
 }
 
 function refuseNestedDelegation() {
@@ -156,19 +246,11 @@ function printAgent(agent: AgentRecord, outcome: WatchOutcome) {
 async function start(args: string[]) {
 	if (refuseNestedDelegation()) return;
 
-	let name = `codex-delegate-${Date.now().toString(36)}`;
-	for (let index = 0; index < args.length; index += 1) {
-		if (
-			args[index] !== '--name' ||
-			!args[index + 1] ||
-			index + 2 !== args.length
-		) {
-			usage();
-			process.exitCode = EXIT_CODE.usage;
-			return;
-		}
-		name = args[index + 1];
-		index += 1;
+	const options = parseStartArgs(args);
+	if (!options) {
+		usage();
+		process.exitCode = EXIT_CODE.usage;
+		return;
 	}
 
 	const packet = await readPacket();
@@ -181,15 +263,25 @@ async function start(args: string[]) {
 	const launchedAt = Date.now();
 	const result = runClaude([
 		'--bg',
+		...externalWriteArgs(options.allowExternalWrites),
 		'--effort',
 		'high',
 		'--permission-mode',
 		'auto',
 		'--name',
-		name,
+		options.name,
 		packet,
 	]);
-	reportLaunchedJob(result, name, launchedAt);
+	reportExternalWriteAuthority(options.allowExternalWrites);
+	reportLaunchedJob(result, options.name, launchedAt);
+}
+
+function reportExternalWriteAuthority(allowExternalWrites: boolean) {
+	console.error(
+		allowExternalWrites
+			? '[delegate-claude] External writes AUTHORIZED for this launch: push, pull request creation, and merge are reachable.'
+			: '[delegate-claude] External writes denied: local commits only.',
+	);
 }
 
 function reportLaunchedJob(
@@ -225,8 +317,16 @@ function reportLaunchedJob(
 	console.log(`DELEGATE_CLAUDE_JOB_ID=${id}`);
 }
 
-async function reply(id: string) {
+async function reply(args: string[]) {
 	if (refuseNestedDelegation()) return;
+
+	const options = parseReplyArgs(args);
+	if (!options) {
+		usage();
+		process.exitCode = EXIT_CODE.usage;
+		return;
+	}
+	const { id } = options;
 
 	const agent = getAgent(id);
 	if (!agent) {
@@ -251,6 +351,13 @@ async function reply(id: string) {
 	// process must be gone first. Tolerate stop failures only when the job is
 	// already terminal.
 	const outcome = classifyAgent(agent);
+	if (outcome === 'working' && !options.interrupt) {
+		console.error(
+			`[delegate-claude] ${id} is still working; replying would discard the turn in flight. Read \`claude logs ${id}\` first, then pass --interrupt to stop it deliberately.`,
+		);
+		process.exitCode = EXIT_CODE.usage;
+		return;
+	}
 	if (outcome !== 'stopped') {
 		const stopped = runClaude(['stop', id]);
 		if (stopped.error) throw stopped.error;
@@ -267,8 +374,17 @@ async function reply(id: string) {
 		}
 	}
 
+	// Resume does not inherit the launch flags, so the restriction is reapplied
+	// here or it is silently gone for the rest of the conversation.
 	const launchedAt = Date.now();
-	const result = runClaude(['--bg', '--resume', agent.sessionId, answer]);
+	const result = runClaude([
+		'--bg',
+		...externalWriteArgs(options.allowExternalWrites),
+		'--resume',
+		agent.sessionId,
+		answer,
+	]);
+	reportExternalWriteAuthority(options.allowExternalWrites);
 	reportLaunchedJob(result, agent.name, launchedAt);
 }
 
@@ -341,7 +457,7 @@ async function main() {
 	if (command === 'start') return start(args);
 	if (command === 'status' && args.length === 1) return status(args[0]);
 	if (command === 'watch' && args.length === 1) return watch(args[0]);
-	if (command === 'reply' && args.length === 1) return reply(args[0]);
+	if (command === 'reply') return reply(args);
 
 	usage();
 	process.exitCode = EXIT_CODE.usage;

@@ -62,9 +62,11 @@ Open questions:
 
 Authority:
   Claude owns local, reversible, evidence-dominated implementation decisions
-  within the originating request. It may challenge the mission and investigate
-  alternatives. It must return product, promise, material scope, destructive,
-  external-write, or new-authority forks to Codex rather than silently choosing.
+  within the originating request, including local commits in its worktree. It
+  may challenge the mission and investigate alternatives. It must return
+  product, promise, material scope, destructive, external-write, or
+  new-authority forks to Codex rather than silently choosing. Push, pull
+  request creation, merge, and deploy are not implied by this delegation.
 
 Codex posture:
   Use /codex:rescue where it buys evidence, focused implementation, or
@@ -84,6 +86,36 @@ the task, Claude may receive the same relevant repository and conversational
 context Codex has. Ask the user before crossing into unrelated private material,
 credentials, personal data, or broader external systems. Claude inherits the
 user's task scope, never broader mutation authority.
+
+## Publication is a separate authorization
+
+Delegating implementation never delegates publication. Claude may commit
+locally in its worktree. Pushing a branch, opening or merging a pull request,
+deploying, and every other external write each need authorization the
+originating user gave for this delegation. "Implement it", "finish it",
+"integrate it", "hand it off", and "delegate it" do not supply it, and neither
+does an authorized commit: a commit is local and reversible, publication is
+neither.
+
+Prose in the packet is not enough on its own. Every background session already
+carries a standing instruction to commit, push, and open a draft pull request
+without stopping to ask, so a packet that only asks for restraint is arguing
+with the session's own system prompt. The launcher therefore denies `git push`,
+`gh pr create`, and `gh pr merge` through Claude's permission rules and appends
+a system-prompt-level refusal that outranks the shipping instruction.
+
+Pass `--allow-external-writes` only when the user authorized publication for
+this delegation:
+
+```bash
+bun <skill-dir>/scripts/delegate-claude.ts start --name <short-name> --allow-external-writes
+```
+
+The flag applies to one invocation and is never stored or inherited. `reply`
+must repeat it, so a supervisor who forgets it fails closed rather than open.
+Deny rules cover the commands an overreaching session actually reaches for, not
+every possible route to the network, so treat them as a floor under the
+packet's authority text rather than a replacement for it.
 
 ## Start one durable session
 
@@ -108,7 +140,8 @@ by name in `claude agents --json`; if it still exits without an ID, a session
 may nevertheless be running. Check `claude agents` for the chosen name before
 diagnosing, and never launch a duplicate speculatively.
 
-Authority is enforced by layers, not magic: the packet's authority text
+Authority is enforced by layers, not magic: the launcher's deny rules and
+appended refusal hold the publication boundary, the packet's authority text
 instructs the session, auto permission mode blocks actions that escalate beyond
 the request, worktree isolation bounds repository damage, and Codex's final
 verification catches the rest. A delegated session still holds the user's local
@@ -179,6 +212,13 @@ Capture the new `DELEGATE_CLAUDE_JOB_ID=<id>` line and watch that ID from then
 on. The superseded job stays listed as `stopped`; leave it alone, and never run
 `claude rm` on it: that deletes the worktree the live session still uses.
 
+`reply` is for a blocked or already terminal job. Because resuming stops the
+running process first, replying to a working job throws away the turn in
+flight, so the launcher refuses that unless you pass `--interrupt`. Reach for
+`--interrupt` when the user genuinely changes direction mid-run, not to hurry a
+quiet session along. Resume does not inherit launch flags either: repeat
+`--allow-external-writes` if and only if publication is still authorized.
+
 `claude attach <id>` opens the session's full-screen terminal UI in the current
 terminal; `Ctrl+Z` detaches while the session keeps running. Prefer attach when
 the user intervenes directly or a live back-and-forth is genuinely needed;
@@ -204,7 +244,10 @@ confirms it (branch `worktree-<generated-name>`, locked).
 4. Check for unrelated edits and unauthorized commits, pushes, PRs, deploys, or
    external mutations.
 5. Reconcile Claude's conclusions with local evidence.
-6. Integrate or commit only when the originating request authorizes it.
+6. Integrate or commit only when the originating request authorizes it. Push
+   and open the pull request yourself, and only after the user authorizes
+   publication; that authorization is Codex's to obtain, never Claude's to
+   infer from having finished the work.
 
 If verification disproves Claude's completion claim, the session is healthy and
 wrong, not failed: attach and continue the same conversation with the concrete
