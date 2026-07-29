@@ -75,10 +75,10 @@ export type OpenDesktopEpicenterOptions = {
 /**
  * Backoff for a loopback socket whose server is the same process tree.
  *
- * Short at the start because the common cause is the host restarting its
- * server, which takes milliseconds; capped low because the cost of a redial
- * here is a localhost connection, and a surface that stays dark after sleep or
- * wake is a much worse outcome than a few extra attempts.
+ * Short at the start because the common cause is a transient loopback carrier
+ * gap; capped low because the cost of a redial here is a localhost connection,
+ * and a surface that stays dark after sleep or wake is a much worse outcome
+ * than a few extra attempts.
  */
 function defaultReconnectDelayMs(attempt: number): number {
 	return Math.min(250 * 2 ** (attempt - 1), 5_000);
@@ -207,15 +207,18 @@ export async function openDesktopEpicenter({
 
 	function scheduleReconnect(): void {
 		if (isDisposed || reconnectTimer !== undefined) return;
-		reconnectTimer = setTimeout(() => {
-			reconnectTimer = undefined;
-			if (isDisposed) return;
-			void connectObservation({ isInitial: false }).catch((cause) => {
-				log.error(
-					new Error('Desktop Epicenter observation redial failed', { cause }),
-				);
-			});
-		}, reconnectDelayMs(Math.max(failedAttempts, 1)));
+		reconnectTimer = setTimeout(
+			() => {
+				reconnectTimer = undefined;
+				if (isDisposed) return;
+				void connectObservation({ isInitial: false }).catch((cause) => {
+					log.error(
+						new Error('Desktop Epicenter observation redial failed', { cause }),
+					);
+				});
+			},
+			reconnectDelayMs(Math.max(failedAttempts, 1)),
+		);
 	}
 
 	// Order matters, and it is the whole of law 7. The carrier is established
@@ -223,7 +226,30 @@ export async function openDesktopEpicenter({
 	// subscribe and then read with nothing able to land in between. That is what
 	// buys the right to promise no initial fire: there is no gap to cover.
 	await request<void>({ kind: 'open' });
-	await connectObservation({ isInitial: true });
+	try {
+		await connectObservation({ isInitial: true });
+	} catch (cause) {
+		clearTimeout(reconnectTimer);
+		reconnectTimer = undefined;
+		socket?.close();
+		socket = undefined;
+		observation.clear();
+		// `open` registered this surface before the carrier dial failed. Release
+		// that registration before rejecting the opener. Cleanup failure must not
+		// hide the carrier failure that explains why no handle was returned.
+		try {
+			await request<void>({ kind: 'disconnect' });
+		} catch (disconnectCause) {
+			log.error(
+				new Error(
+					'Desktop Epicenter could not release a failed surface registration',
+					{ cause: disconnectCause },
+				),
+			);
+		}
+		isDisposed = true;
+		throw cause;
+	}
 
 	function bind<
 		const TTables extends TableDefinitions,

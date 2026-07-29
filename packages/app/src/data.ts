@@ -31,9 +31,9 @@
  */
 
 import {
-	createInvalidationDispatcher,
 	type ConstrainedUpdate,
 	type CreateInputFor,
+	createInvalidationDispatcher,
 	type Lens,
 	type NonconformingRowError,
 	type RowFor,
@@ -59,8 +59,8 @@ import {
 	type WireValueAddress,
 } from './data-protocol.js';
 import {
-	DataErrors,
 	type BindDataError,
+	DataErrors,
 	type DataOperationError,
 	type DataReadError,
 	HostErrors,
@@ -131,9 +131,7 @@ export type TableHandle<TDefinition extends TableDefinition> = {
 
 export type ValueHandle<TDefinition extends ValueDefinition> = {
 	get(): Promise<Result<ValueFor<TDefinition> | undefined, DataReadError>>;
-	set(
-		value: ValueFor<TDefinition>,
-	): Promise<Result<void, DataOperationError>>;
+	set(value: ValueFor<TDefinition>): Promise<Result<void, DataOperationError>>;
 	unset(): Promise<Result<void, DataOperationError>>;
 	/**
 	 * Report when this value may be stale.
@@ -255,9 +253,9 @@ function splitUpdate(patch: Record<string, unknown>): {
 /**
  * Backoff for a loopback socket whose server is the same process tree.
  *
- * Short at the start because the common cause is the host restarting, which
- * takes milliseconds; capped low because a surface that stays dark after sleep
- * or wake is far worse than a few extra localhost dials.
+ * Short at the start because the common cause is a transient loopback carrier
+ * gap; capped low because a surface that stays dark after sleep or wake is far
+ * worse than a few extra localhost dials.
  */
 function reconnectDelayMs(attempt: number): number {
 	return Math.min(250 * 2 ** (attempt - 1), 5_000);
@@ -380,7 +378,17 @@ async function bind<
 
 	const opened = await call<void>({ kind: 'open' });
 	if (opened.error !== null) return Err(opened.error);
-	if (!(await connect({ isInitial: true }))) {
+	const carrierOpened = await connect({ isInitial: true }).catch(() => false);
+	if (!carrierOpened) {
+		clearTimeout(reconnectTimer);
+		reconnectTimer = undefined;
+		socket?.close();
+		socket = undefined;
+		observation.clear();
+		// `open` registered this surface before the carrier dial failed. Close
+		// that registration before declining the bind, or every failed bind
+		// leaves a host-owned surface behind until the process exits.
+		await call<void>({ kind: 'disconnect' });
 		isClosed = true;
 		return DataErrors.DataUnavailable({
 			message:
@@ -441,14 +449,17 @@ async function bind<
 			rowId,
 		});
 
+		const readEntriesPage = (after?: string) =>
+			call<WireEntriesPage>({
+				kind: 'table-entries-page',
+				definition: wire,
+				...(after === undefined ? {} : { after }),
+			});
+
 		async function* entries(): AsyncIterable<TableEntry<TDefinition>> {
 			let after: string | undefined;
 			do {
-				const page = await call<WireEntriesPage>({
-					kind: 'table-entries-page',
-					definition: wire,
-					...(after === undefined ? {} : { after }),
-				});
+				const page = await readEntriesPage(after);
 				if (page.error !== null) throw page.error;
 				// The host already classified each entry as an ordinary Result; this
 				// only names the row type the caller's Lens gives it.
@@ -494,19 +505,17 @@ async function bind<
 			async scan() {
 				const rows: RowFor<TDefinition>[] = [];
 				const nonconforming: NonconformingRowError[] = [];
-				try {
-					for await (const entry of entries()) {
+				let after: string | undefined;
+				do {
+					const page = await readEntriesPage(after);
+					if (page.error !== null) return Err(page.error);
+					const entries = page.data.entries as TableEntry<TDefinition>[];
+					for (const entry of entries) {
 						if (entry.error === null) rows.push(entry.data);
 						else nonconforming.push(entry.error);
 					}
-				} catch (cause) {
-					return cause !== null &&
-						typeof cause === 'object' &&
-						'name' in cause &&
-						'message' in cause
-						? Err(cause as DataOperationError)
-						: DataErrors.DataFailed({ operation: 'table-scan', cause });
-				}
+					after = page.data.nextAfter;
+				} while (after !== undefined);
 				return Ok({ rows, nonconforming });
 			},
 			entries,
@@ -531,7 +540,8 @@ async function bind<
 			},
 			set: (value: ValueFor<TDefinition>) =>
 				call<void>({ kind: 'value-set', definition: wire, address, value }),
-			unset: () => call<void>({ kind: 'value-unset', definition: wire, address }),
+			unset: () =>
+				call<void>({ kind: 'value-unset', definition: wire, address }),
 			subscribe: (listener: () => void) =>
 				observation.subscribeValue(address, listener),
 		}) as ValueHandle<TDefinition>;
