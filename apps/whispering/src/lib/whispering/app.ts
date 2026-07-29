@@ -167,7 +167,21 @@ function createWhisperingSettings({
 	const values = new Map<SettingKey, unknown>();
 	const listeners = new Set<() => void>();
 	let loadError: unknown = null;
-	let refreshGeneration = 0;
+	/**
+	 * Per-key read generations.
+	 *
+	 * Every read of a key and every local write to it bumps that key's
+	 * generation, and a read installs its answer only if the generation it
+	 * started with is still current. That is what lets one key's slow read run
+	 * beside another key's write without either clobbering the other, and it is
+	 * per key because the reads are per key.
+	 */
+	const readGenerations = new Map<SettingKey, number>();
+	const bumpGeneration = (key: SettingKey): number => {
+		const next = (readGenerations.get(key) ?? 0) + 1;
+		readGenerations.set(key, next);
+		return next;
+	};
 	const notify = () => {
 		for (const listener of listeners) listener();
 	};
@@ -181,21 +195,42 @@ function createWhisperingSettings({
 		);
 	}
 
+	/**
+	 * Read every setting once, for boot and for an explicit reload.
+	 *
+	 * Still batched: at first paint nothing is known yet, so thirty-seven reads
+	 * issued together beat thirty-seven rounds of the same work.
+	 */
 	async function refreshAll(): Promise<void> {
-		refreshGeneration += 1;
-		while (!isReleased()) {
-			const generation = refreshGeneration;
-			const next = await Promise.all(
-				keys.map(async (key) => [key, await read(key)] as const),
-			);
-			if (isReleased()) return;
-			if (generation !== refreshGeneration) continue;
-			values.clear();
-			for (const [key, value] of next) values.set(key, value);
-			loadError = null;
-			notify();
-			return;
+		const started = new Map(keys.map((key) => [key, bumpGeneration(key)]));
+		const next = await Promise.all(
+			keys.map(async (key) => [key, await read(key)] as const),
+		);
+		if (isReleased()) return;
+		for (const [key, value] of next) {
+			if (readGenerations.get(key) !== started.get(key)) continue;
+			values.set(key, value);
 		}
+		loadError = null;
+		notify();
+	}
+
+	/**
+	 * Re-read one setting, because one setting is what moved.
+	 *
+	 * A value invalidation names the handle that changed and nothing smaller, so
+	 * the honest response is to re-read that handle. Re-reading all thirty-seven
+	 * on every change was thirty-seven reads per keystroke-sized edit, and it
+	 * scaled with how many settings exist rather than with what happened.
+	 */
+	async function refreshOne(key: SettingKey): Promise<void> {
+		const generation = bumpGeneration(key);
+		const value = await read(key);
+		if (isReleased()) return;
+		if (readGenerations.get(key) !== generation) return;
+		values.set(key, value);
+		loadError = null;
+		notify();
 	}
 
 	const inBackground = (work: Promise<unknown>): void => {
@@ -215,7 +250,7 @@ function createWhisperingSettings({
 	};
 
 	const stopValues = keys.map((key) =>
-		lens(key).subscribe(() => inBackground(refreshAll())),
+		lens(key).subscribe(() => inBackground(refreshOne(key))),
 	);
 	const ready = refreshAll();
 	const settings: WhisperingSettings = {
@@ -226,6 +261,7 @@ function createWhisperingSettings({
 			key: TKey,
 			value: WhisperingSettingValues[TKey],
 		) {
+			bumpGeneration(key);
 			values.set(key, clone(value));
 			notify();
 			inBackground(lens(key).set(clone(value)));
@@ -235,6 +271,7 @@ function createWhisperingSettings({
 		},
 		reset() {
 			for (const key of keys) {
+				bumpGeneration(key);
 				values.set(key, clone(defaults[key]));
 				inBackground(lens(key).unset());
 			}
@@ -253,7 +290,7 @@ function createWhisperingSettings({
 		settings,
 		ready,
 		dispose() {
-			refreshGeneration += 1;
+			for (const key of keys) bumpGeneration(key);
 			for (const stop of stopValues) stop();
 			listeners.clear();
 		},

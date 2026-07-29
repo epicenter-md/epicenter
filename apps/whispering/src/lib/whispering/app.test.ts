@@ -71,6 +71,58 @@ test('settings writes are optimistic, subscribed, and durable', async () => {
 	}
 });
 
+test('one changed setting rereads one setting, not every setting', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'whispering-app-fanout-'));
+	try {
+		const reads: string[] = [];
+		await using app = await openWhisperingApp(
+			dependencies(root, {
+				async openEpicenter() {
+					const epicenter = await openBunEpicenter({ directory: root });
+					return {
+						...epicenter,
+						bind(lens: Parameters<typeof epicenter.bind>[0]) {
+							const bound = epicenter.bind(lens);
+							return {
+								...bound,
+								values: Object.fromEntries(
+									Object.entries(bound.values).map(([name, value]) => [
+										name,
+										{
+											...value,
+											get() {
+												reads.push(name);
+												return value.get();
+											},
+										},
+									]),
+								),
+							};
+						},
+					} as typeof epicenter;
+				},
+			}),
+		);
+
+		// Boot reads every setting once, batched: nothing is known yet.
+		const bootReads = reads.length;
+		expect(bootReads).toBeGreaterThan(1);
+		reads.length = 0;
+
+		app.settings.set('settings.recording.autoUpload', true);
+		await Bun.sleep(25);
+
+		// The write's own invalidation rereads exactly the value that moved.
+		// Before this, it reread all of them, once per subscribed value.
+		expect(new Set(reads)).toEqual(
+			new Set(['settings.recording.autoUpload']),
+		);
+		expect(reads.length).toBeLessThan(bootReads);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test('an Epicenter open failure rejects without a half-open facade', async () => {
 	const root = mkdtempSync(join(tmpdir(), 'whispering-app-failure-'));
 	const cause = new Error('open failed');
