@@ -2,6 +2,10 @@ import { expect, test } from 'bun:test';
 import type { CloudEnv } from '@epicenter/server';
 import { tiktokPublishAttempt } from '@epicenter/server/cloud-db';
 import { Hono } from 'hono';
+import {
+	blocksNewPublish,
+	requiresManualResolution,
+} from './attempt-status.js';
 import { mountTikTokIntegrationApi } from './routes.js';
 
 const ORIGIN = 'https://api.epicenter.so';
@@ -35,8 +39,28 @@ function staleSession(userId = 'user-1'): FakeSession {
 }
 
 type DbScript = {
-	/** Rows returned by `select(...).from(...)...`. */
+	/** Rows returned by a select from any table other than the attempt table. */
 	selectRows?: unknown[];
+	/**
+	 * Rows already recorded in `tiktok_publish_attempt` for this connection.
+	 *
+	 * Two different queries read this table and they mean different things, so the
+	 * fake tells them apart by SHAPE, exactly as the real queries differ:
+	 *
+	 * - `listAttemptsBlockingNewPublish` ends at `.orderBy(...)`, and its SQL keeps
+	 *   only rows that block a new publish. The fake mirrors that with
+	 *   `blocksNewPublish`.
+	 * - `claimPublishAttempt` reads back one row by key and ends at `.limit(1)`, so
+	 *   it must see the row whatever its status.
+	 *
+	 * Keying on the call shape rather than on a call counter matters: a counter
+	 * cannot survive two requests against one fake, and the second request's
+	 * blocking read would silently go unfiltered.
+	 *
+	 * The SQL's own structure is verified separately in `store.test.ts`, so this
+	 * mirror exercises the ROUTE rather than proving the predicate.
+	 */
+	attemptRows?: unknown[];
 	/** Row returned by `delete(...).returning()` (state consumption). */
 	deleteReturning?: unknown[];
 	insertRows?: unknown[];
@@ -78,10 +102,33 @@ function fakeDb(script: DbScript = {}) {
 		return chain;
 	};
 	const thenableRows = chainOf;
+	/**
+	 * The attempt table, answering the blocking read by default and the
+	 * by-key read-back whenever `.limit(...)` narrows it. See DbScript.attemptRows.
+	 */
+	const attemptChain = (all: unknown[]): unknown => {
+		const blocking = all.filter((row) =>
+			blocksNewPublish((row as { status?: string | null }).status ?? null),
+		);
+		const chain = Object.assign(Promise.resolve(blocking), {
+			from: () => attemptChain(all),
+			where: () => attemptChain(all),
+			orderBy: () => attemptChain(all),
+			limit: () => chainOf(all),
+			returning: () => attemptChain(all),
+			for: () => attemptChain(all),
+		});
+		return chain;
+	};
 	const db = {
 		select: () => {
 			state.touched = true;
-			return thenableRows(script.selectRows ?? []);
+			return {
+				from: (table: unknown) =>
+					table === tiktokPublishAttempt
+						? attemptChain(script.attemptRows ?? [])
+						: chainOf(script.selectRows ?? []),
+			};
 		},
 		insert: () => {
 			state.touched = true;
@@ -957,9 +1004,6 @@ function statefulDb(connectionRow: Record<string, unknown>) {
 	const claimed = new Map<string, Record<string, unknown>>();
 	const statuses: string[] = [];
 
-	const rowsFor = (table: unknown): unknown[] =>
-		table === tiktokPublishAttempt ? [...claimed.values()] : [connectionRow];
-
 	const chain = (rows: unknown[]): unknown =>
 		Object.assign(Promise.resolve(rows), {
 			where: () => chain(rows),
@@ -969,12 +1013,54 @@ function statefulDb(connectionRow: Record<string, unknown>) {
 			for: () => chain(rows),
 		});
 
+	/**
+	 * The attempt table, told apart by call shape like `fakeDb`: the blocking read
+	 * ends at `.orderBy(...)` and is filtered, the by-key read-back ends at
+	 * `.limit(...)` and is not.
+	 */
+	const attemptChain = (): unknown => {
+		const all = [...claimed.values()];
+		const chainForAttempts = Object.assign(
+			Promise.resolve(
+				all.filter((row) =>
+					blocksNewPublish((row.status as string | null) ?? null),
+				),
+			),
+			{
+				where: () => attemptChain(),
+				orderBy: () => attemptChain(),
+				limit: () => chain(all),
+				returning: () => attemptChain(),
+				for: () => attemptChain(),
+			},
+		);
+		return chainForAttempts;
+	};
+
 	const db = {
-		select: () => ({ from: (table: unknown) => chain(rowsFor(table)) }),
+		select: () => ({
+			from: (table: unknown) =>
+				table === tiktokPublishAttempt
+					? attemptChain()
+					: chain([connectionRow]),
+		}),
 		delete: () => chain([]),
 		update: () => ({
-			set: (values: { status?: string }) => {
+			set: (values: { status?: string; publishId?: string | null }) => {
 				if (values.status) statuses.push(values.status);
+				/**
+				 * Applied to the claimed row, not just logged. The route records
+				 * PROCESSING_UPLOAD after a successful init, and a fake that left the
+				 * row at `null` would make every subsequent submit look blocked by an
+				 * unknown outcome that had in fact been answered.
+				 */
+				const latest = [...claimed.values()].at(-1);
+				if (latest) {
+					if (values.status) latest.status = values.status;
+					if (values.publishId !== undefined) {
+						latest.publishId = values.publishId;
+					}
+				}
 				return { where: async () => undefined };
 			},
 		}),
@@ -1079,11 +1165,20 @@ test('a timeout retry sends the SAME key and cannot reach a second video/init', 
 
 		expect(second.status).toBe(409);
 		const secondBody = (await second.json()) as {
-			error: { name: string; attemptId: string };
+			error: { name: string; blockingStatus: string | null };
 		};
-		expect(secondBody.error.name).toBe('PublishAlreadyAttempted');
-		// THE POINT: init was reached exactly once across both submissions, and
-		// only one attempt exists.
+		/**
+		 * Met by the BLOCK rather than by the idempotency latch, because the first
+		 * attempt recorded INIT_AMBIGUOUS and that outcome cannot be stated. The
+		 * block fires earlier (before `creator_info`, let alone `video/init`) and is
+		 * the stronger of the two guards: the latch stops this exact intent, while
+		 * the block stops ANY new post to the account until the unknown outcome is
+		 * settled.
+		 */
+		expect(secondBody.error.name).toBe('PublishBlockedByUnsettledOutcome');
+		expect(secondBody.error.blockingStatus).toBe('INIT_AMBIGUOUS');
+		// THE POINT, unchanged: init was reached exactly once across both
+		// submissions, and only one attempt exists.
 		expect(initCalls).toHaveLength(1);
 		expect(claimed.size).toBe(1);
 	} finally {
@@ -1440,28 +1535,6 @@ test('a database failure never withholds the outcome TikTok reported', async () 
 //
 // The hard invariant. These drive the exact sequences that could break it.
 
-/** A db whose publish-attempt insert CONFLICTS, modelling a same-key resubmit. */
-function collidingDb(
-	row: Record<string, unknown>,
-	existing: Record<string, unknown>,
-) {
-	const base = liveDb(row);
-	let selects = 0;
-	const db = {
-		...base.db,
-		// `ON CONFLICT DO NOTHING ... RETURNING` yields NO row when the key is
-		// already claimed, which is what makes the caller lose the race.
-		insert: () => chainReturning([]),
-		select: () => {
-			// First select is the connection lookup; the next is `claimPublishAttempt`
-			// reading back the row that already owns this key.
-			selects += 1;
-			return selects === 1 ? base.db.select() : chainReturning([existing]);
-		},
-	};
-	return { db };
-}
-
 /** A minimal awaitable drizzle-ish chain returning fixed rows. */
 function chainReturning(rows: unknown[]): unknown {
 	const chain: unknown = Object.assign(Promise.resolve(rows), {
@@ -1479,27 +1552,266 @@ function chainReturning(rows: unknown[]): unknown {
 	return chain;
 }
 
-async function resubmitAgainst(existingStatus: string | null) {
+/**
+ * Submit a publish while ONE prior attempt sits at `priorStatus`, counting how
+ * many times the irreversible `video/init` is reached.
+ *
+ * `submittedKey` decides which guard is under test. Reusing the prior attempt's
+ * key exercises the idempotency latch; a fresh key exercises the server-side
+ * block, which is the guard a direct client cannot skip.
+ */
+async function publishWithPriorAttempt({
+	priorStatus,
+	submittedKey,
+	priorKey = VALID_KEY,
+}: {
+	priorStatus: string | null;
+	submittedKey: string;
+	priorKey?: string;
+}) {
 	const row = await liveConnectionRow(['video.publish']);
-	const { db } = collidingDb(row, {
-		id: 'attempt-1',
+	const prior = {
+		id: 'attempt-prior',
 		connectionId: 'conn-1',
-		idempotencyKey: VALID_KEY,
+		idempotencyKey: priorKey,
 		kind: 'direct_post',
-		publishId: existingStatus === null ? null : 'pub-1',
-		status: existingStatus,
+		// Only an init that answered could have named a task.
+		publishId: priorStatus === 'UPLOAD_FAILED' ? 'pub-prior' : null,
+		status: priorStatus,
+	};
+	const base = fakeDb({
+		selectRows: [row],
+		attemptRows: [prior],
+		// `ON CONFLICT DO NOTHING ... RETURNING` yields no row when the key is
+		// already claimed, and a row when it is not.
+		insertRows: [],
 	});
+	const db = {
+		...base.db,
+		insert: () =>
+			submittedKey === priorKey
+				? chainReturning([])
+				: chainReturning([
+						{
+							id: 'attempt-new',
+							connectionId: 'conn-1',
+							idempotencyKey: submittedKey,
+							kind: 'direct_post',
+							publishId: null,
+							status: null,
+						},
+					]),
+		transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> =>
+			fn({
+				select: () => ({
+					from: () => ({
+						where: () => ({ for: () => ({ limit: async () => [row] }) }),
+					}),
+				}),
+				update: () => ({ set: () => ({ where: async () => undefined }) }),
+			}),
+	};
 	const built = createTikTokTestApp({
 		session: freshSession('user-1'),
 		env: CONFIGURED_ENV,
 		db,
 	});
 
+	const initCalls: string[] = [];
 	const realFetch = globalThis.fetch;
 	globalThis.fetch = (async (input: string | URL) => {
-		if (String(input).includes('creator_info/query')) {
+		const url = String(input);
+		if (url.includes('creator_info/query')) {
 			return new Response(JSON.stringify(CREATOR_INFO_BODY), { status: 200 });
 		}
+		if (url.includes('video/init')) initCalls.push(url);
+		return new Response(
+			JSON.stringify({
+				data: { publish_id: 'pub-new', upload_url: 'https://upload/x' },
+				error: { code: 'ok' },
+			}),
+			{ status: 200 },
+		);
+	}) as unknown as typeof globalThis.fetch;
+
+	try {
+		const body = new FormData();
+		body.set('idempotencyKey', submittedKey);
+		body.set('title', 'A caption');
+		body.set('privacyLevel', 'PUBLIC_TO_EVERYONE');
+		body.set('video', new File([mp4Bytes(30)], 'v.mp4', { type: 'video/mp4' }));
+		const res = await request(
+			built,
+			'/api/integrations/tiktok/connections/conn-1/publish',
+			{ method: 'POST', body },
+		);
+		return { res, initCalls };
+	} finally {
+		globalThis.fetch = realFetch;
+	}
+}
+
+const FRESH_KEY = 'b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e';
+
+// --- The block must live on the SERVER, not only in Svelte ---------------
+//
+// The dashboard derives its block from the attempt rows, but a browser deriving a
+// block is a courtesy, not a guarantee. A direct or hostile client changes one
+// field, mints a fresh idempotency key, and never runs that UI. The idempotency
+// latch does not catch it either: a new key is by definition a new claim, so
+// `video/init` would be reached a second time while the first outcome was still
+// unknown.
+
+test.each([
+	['a null status (Worker died before recording)', null],
+	['INIT_AMBIGUOUS (init answer lost)', 'INIT_AMBIGUOUS'],
+	['UPLOAD_FAILED (task exists, bytes may not have landed)', 'UPLOAD_FAILED'],
+	['a future TikTok status this build does not know', 'SOME_FUTURE_CODE'],
+])('a FRESH key is refused while a prior attempt sits at %s, and never reaches init', async (_label, priorStatus) => {
+	const { res, initCalls } = await publishWithPriorAttempt({
+		priorStatus: priorStatus as string | null,
+		submittedKey: FRESH_KEY,
+	});
+
+	expect(res.status).toBe(409);
+	const body = (await res.json()) as {
+		error: { name: string; code: string; message: string };
+	};
+	expect(body.error.name).toBe('PublishBlockedByUnsettledOutcome');
+	expect(body.error.code).toBe('BLOCKED_BY_UNSETTLED_OUTCOME');
+	// The creator-facing reason survives rather than a bare status code.
+	expect(body.error.message).toContain('second copy');
+	// The whole point: TikTok's irreversible call was never made.
+	expect(initCalls).toHaveLength(0);
+});
+
+test.each([
+	['PROCESSING_UPLOAD', 'PROCESSING_UPLOAD'],
+	['PROCESSING_DOWNLOAD', 'PROCESSING_DOWNLOAD'],
+	['PUBLISH_COMPLETE', 'PUBLISH_COMPLETE'],
+	['FAILED', 'FAILED'],
+	['INIT_FAILED', 'INIT_FAILED'],
+	['RESOLVED_NOT_POSTED', 'RESOLVED_NOT_POSTED'],
+])('a genuinely new consent still posts while a prior attempt sits at %s', async (_label, priorStatus) => {
+	// A post TikTok is processing, or one that settled either way, is a
+	// STATEABLE outcome. Blocking on those would stop a creator posting a second
+	// video for no safety gain.
+	const { res, initCalls } = await publishWithPriorAttempt({
+		priorStatus,
+		submittedKey: FRESH_KEY,
+	});
+
+	expect(res.status).toBe(200);
+	expect(initCalls).toHaveLength(1);
+});
+
+// --- The idempotency latch, for statuses that do not block ---------------
+
+test.each([
+	['PROCESSING_UPLOAD', 'PROCESSING_UPLOAD'],
+	['PROCESSING_DOWNLOAD', 'PROCESSING_DOWNLOAD'],
+])('a same-key resubmit against %s reports UNRESOLVED so the claim is kept', async (_label, priorStatus) => {
+	// These do not block, so the LATCH is what refuses. It must still report the
+	// outcome as unsettled: this intent has already committed a post, and a
+	// client that read the 409 as a definite refusal would release its key and
+	// let the next submit originate a second one.
+	const { res, initCalls } = await publishWithPriorAttempt({
+		priorStatus,
+		submittedKey: VALID_KEY,
+	});
+
+	expect(res.status).toBe(409);
+	const body = (await res.json()) as {
+		error: { name: string; unresolved: boolean; status: string | null };
+	};
+	expect(body.error.name).toBe('PublishAlreadyAttempted');
+	expect(body.error.unresolved).toBe(true);
+	expect(body.error.status).toBe(priorStatus);
+	expect(initCalls).toHaveLength(0);
+});
+
+test.each([
+	['PUBLISH_COMPLETE', 'PUBLISH_COMPLETE'],
+	['FAILED', 'FAILED'],
+	['INIT_FAILED', 'INIT_FAILED'],
+	['RESOLVED_NOT_POSTED', 'RESOLVED_NOT_POSTED'],
+])('a same-key resubmit against settled %s releases the claim', async (_label, priorStatus) => {
+	// This intent genuinely finished, so an identical repost is a deliberate
+	// second post rather than a duplicate.
+	const { res } = await publishWithPriorAttempt({
+		priorStatus,
+		submittedKey: VALID_KEY,
+	});
+
+	expect(res.status).toBe(409);
+	const body = (await res.json()) as { error: { unresolved: boolean } };
+	expect(body.error.unresolved).toBe(false);
+});
+
+test.each([
+	['a null status', null],
+	['INIT_AMBIGUOUS', 'INIT_AMBIGUOUS'],
+	['UPLOAD_FAILED', 'UPLOAD_FAILED'],
+])('a same-key resubmit against %s meets the BLOCK, which fires before the latch', async (_label, priorStatus) => {
+	// Both guards would refuse. The block runs first because it is the broader
+	// one, and it reaches zero provider calls.
+	const { res, initCalls } = await publishWithPriorAttempt({
+		priorStatus: priorStatus as string | null,
+		submittedKey: VALID_KEY,
+	});
+
+	expect(res.status).toBe(409);
+	const body = (await res.json()) as { error: { name: string } };
+	expect(body.error.name).toBe('PublishBlockedByUnsettledOutcome');
+	expect(initCalls).toHaveLength(0);
+});
+
+test('cross-account posting stays allowed while one account is blocked', async () => {
+	// The block is per-connection by design: an unknown outcome on one account
+	// cannot be duplicated by posting to a different one, so refusing here would
+	// punish without protecting anything.
+	const row = await liveConnectionRow(['video.publish']);
+	const base = fakeDb({
+		selectRows: [{ ...row, id: 'conn-2' }],
+		// conn-2's own attempt table is empty; the blocked account is conn-1.
+		attemptRows: [],
+		insertRows: [
+			{
+				id: 'attempt-2',
+				connectionId: 'conn-2',
+				idempotencyKey: FRESH_KEY,
+				kind: 'direct_post',
+				publishId: null,
+				status: null,
+			},
+		],
+	});
+	const db = {
+		...base.db,
+		transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> =>
+			fn({
+				select: () => ({
+					from: () => ({
+						where: () => ({ for: () => ({ limit: async () => [row] }) }),
+					}),
+				}),
+				update: () => ({ set: () => ({ where: async () => undefined }) }),
+			}),
+	};
+	const built = createTikTokTestApp({
+		session: freshSession('user-1'),
+		env: CONFIGURED_ENV,
+		db,
+	});
+
+	const initCalls: string[] = [];
+	const realFetch = globalThis.fetch;
+	globalThis.fetch = (async (input: string | URL) => {
+		const url = String(input);
+		if (url.includes('creator_info/query')) {
+			return new Response(JSON.stringify(CREATOR_INFO_BODY), { status: 200 });
+		}
+		if (url.includes('video/init')) initCalls.push(url);
 		return new Response(
 			JSON.stringify({
 				data: { publish_id: 'pub-2', upload_url: 'https://upload/x' },
@@ -1511,57 +1823,21 @@ async function resubmitAgainst(existingStatus: string | null) {
 
 	try {
 		const body = new FormData();
-		body.set('idempotencyKey', VALID_KEY);
+		body.set('idempotencyKey', FRESH_KEY);
 		body.set('title', 'A caption');
 		body.set('privacyLevel', 'PUBLIC_TO_EVERYONE');
 		body.set('video', new File([mp4Bytes(30)], 'v.mp4', { type: 'video/mp4' }));
 		const res = await request(
 			built,
-			'/api/integrations/tiktok/connections/conn-1/publish',
+			'/api/integrations/tiktok/connections/conn-2/publish',
 			{ method: 'POST', body },
 		);
-		return res;
+
+		expect(res.status).toBe(200);
+		expect(initCalls).toHaveLength(1);
 	} finally {
 		globalThis.fetch = realFetch;
 	}
-}
-
-test.each([
-	['a null status (Worker died before recording)', null],
-	['INIT_AMBIGUOUS (init answer lost)', 'INIT_AMBIGUOUS'],
-	['UPLOAD_FAILED (task exists, bytes may not have landed)', 'UPLOAD_FAILED'],
-	[
-		'PROCESSING_UPLOAD (already committed for this intent)',
-		'PROCESSING_UPLOAD',
-	],
-])('a same-key resubmit against %s reports UNRESOLVED so the claim is kept', async (_label, existingStatus) => {
-	const res = await resubmitAgainst(existingStatus as string | null);
-
-	expect(res.status).toBe(409);
-	const body = (await res.json()) as {
-		error: { name: string; unresolved: boolean; status: string | null };
-	};
-	expect(body.error.name).toBe('PublishAlreadyAttempted');
-	// Without this flag the client treats the 409 as a definite refusal and
-	// releases the idempotency key, and the NEXT submit originates a second
-	// post from one consent.
-	expect(body.error.unresolved).toBe(true);
-	expect(body.error.status).toBe(existingStatus);
-});
-
-test.each([
-	['PUBLISH_COMPLETE', 'PUBLISH_COMPLETE'],
-	['FAILED', 'FAILED'],
-	['INIT_FAILED', 'INIT_FAILED'],
-	['RESOLVED_NOT_POSTED', 'RESOLVED_NOT_POSTED'],
-])('a same-key resubmit against settled %s releases the claim', async (_label, existingStatus) => {
-	// The other direction: this intent genuinely finished, so an identical
-	// repost is a deliberate second post rather than a duplicate.
-	const res = await resubmitAgainst(existingStatus);
-
-	expect(res.status).toBe(409);
-	const body = (await res.json()) as { error: { unresolved: boolean } };
-	expect(body.error.unresolved).toBe(false);
 });
 
 // --- Disconnect must not destroy custody ---------------------------------
@@ -1649,21 +1925,32 @@ test('disconnect proceeds once every attempt has settled', async () => {
 
 // --- The only exit from an unpollable ambiguous attempt ------------------
 
-/** A db whose manual-resolution update reports whether a row moved. */
-function resolveDb(row: Record<string, unknown>, moved: boolean) {
-	const base = fakeDb({ selectRows: [row] });
+/**
+ * A db whose manual-resolution update honours the same allowlist the SQL does:
+ * the row moves only when no task was named AND no answer has arrived.
+ *
+ * Modelled rather than hardcoded to a boolean, because "which rows may a human
+ * overwrite" is the thing under test. `store.test.ts` verifies the SQL that
+ * enforces it, including its parenthesization.
+ */
+function resolveDb(
+	connection: Record<string, unknown>,
+	attempt: { status: string | null; publishId: string | null },
+) {
+	const base = fakeDb({ selectRows: [connection] });
 	const writes: Record<string, unknown>[] = [];
 	const db = {
 		...base.db,
 		update: () => ({
-			set: (values: Record<string, unknown>) => {
-				writes.push(values);
-				return {
-					where: () => ({
-						returning: async () => (moved ? [{ id: 'attempt-1' }] : []),
-					}),
-				};
-			},
+			set: (values: Record<string, unknown>) => ({
+				where: () => ({
+					returning: async () => {
+						if (!requiresManualResolution(attempt)) return [];
+						writes.push(values);
+						return [{ id: 'attempt-1' }];
+					},
+				}),
+			}),
 		}),
 	};
 	return { db, writes };
@@ -1694,7 +1981,7 @@ test('a creator can record that an unpollable attempt did post', async () => {
 	// Without this the honest block on INIT_AMBIGUOUS becomes a permanent trap:
 	// no publish id means nothing can be polled, so only a human can close it.
 	const row = await liveConnectionRow(['video.publish']);
-	const { db, writes } = resolveDb(row, true);
+	const { db, writes } = resolveDb(row, { status: null, publishId: null });
 
 	const res = await postResolution(db, 'RESOLVED_POSTED');
 
@@ -1705,7 +1992,10 @@ test('a creator can record that an unpollable attempt did post', async () => {
 
 test('a creator can record that an unpollable attempt did NOT post', async () => {
 	const row = await liveConnectionRow(['video.publish']);
-	const { db, writes } = resolveDb(row, true);
+	const { db, writes } = resolveDb(row, {
+		status: 'INIT_AMBIGUOUS',
+		publishId: null,
+	});
 
 	const res = await postResolution(db, 'RESOLVED_NOT_POSTED');
 
@@ -1716,7 +2006,7 @@ test('a creator can record that an unpollable attempt did NOT post', async () =>
 test('a resolution cannot claim TikTok’s own vocabulary', async () => {
 	// Writing PUBLISH_COMPLETE by hand would launder a guess into provider truth.
 	const row = await liveConnectionRow(['video.publish']);
-	const { db, writes } = resolveDb(row, true);
+	const { db, writes } = resolveDb(row, { status: null, publishId: null });
 
 	const res = await postResolution(db, 'PUBLISH_COMPLETE');
 
@@ -1728,7 +2018,11 @@ test('a resolution that lost the race to TikTok is refused', async () => {
 	// The store only moves a row that is still unsettled, so a status that
 	// arrived from TikTok in the meantime wins.
 	const row = await liveConnectionRow(['video.publish']);
-	const { db } = resolveDb(row, false);
+	// TikTok answered while the creator was deciding.
+	const { db } = resolveDb(row, {
+		status: 'PUBLISH_COMPLETE',
+		publishId: 'pub-1',
+	});
 
 	const res = await postResolution(db, 'RESOLVED_POSTED');
 
@@ -1743,4 +2037,227 @@ test('resolving an attempt on a connection you do not own reads as not found', a
 	const res = await postResolution(db, 'RESOLVED_POSTED');
 
 	expect(res.status).toBe(404);
+});
+
+// --- The block must live on the SERVER, not only in Svelte ---------------
+//
+// The dashboard derives its block from these rows, but a browser deriving a block
+// is a courtesy, not a guarantee. A direct or hostile client changes one field,
+// mints a fresh idempotency key, and walks past a UI that never runs. The
+// idempotency latch does not catch it either: a new key is by definition a new
+// claim, so `video/init` would be reached a second time while a prior outcome is
+// still unknown.
+
+/**
+ * Drive a publish with a FRESH key while a prior attempt sits at `priorStatus`,
+ * counting how many times `video/init` is reached.
+ */
+async function publishWhilePriorAttempt(priorStatus: string | null) {
+	const row = await liveConnectionRow(['video.publish']);
+	const base = liveDb(row);
+	let selects = 0;
+	const db = {
+		...base.db,
+		select: () => {
+			selects += 1;
+			// 1: the connection lookup. 2: listAttemptsBlockingNewPublish, which the
+			// route consults BEFORE claiming anything.
+			if (selects === 1) return base.db.select();
+			if (selects === 2) {
+				// Model the SQL predicate: a null status always blocks, and otherwise
+				// only a status that is neither settled nor known-processing does.
+				const blocks =
+					priorStatus === null ||
+					(!TERMINAL.includes(priorStatus) &&
+						!PROCESSING.includes(priorStatus));
+				return chainReturning(
+					blocks
+						? [
+								{
+									id: 'attempt-prior',
+									connectionId: 'conn-1',
+									idempotencyKey: 'an-older-key-000000',
+									publishId:
+										priorStatus === 'UPLOAD_FAILED' ? 'pub-prior' : null,
+									status: priorStatus,
+								},
+							]
+						: [],
+				);
+			}
+			return chainReturning([]);
+		},
+	};
+	const built = createTikTokTestApp({
+		session: freshSession('user-1'),
+		env: CONFIGURED_ENV,
+		db,
+	});
+
+	const initCalls: string[] = [];
+	const realFetch = globalThis.fetch;
+	globalThis.fetch = (async (input: string | URL) => {
+		const url = String(input);
+		if (url.includes('creator_info/query')) {
+			return new Response(JSON.stringify(CREATOR_INFO_BODY), { status: 200 });
+		}
+		if (url.includes('video/init')) initCalls.push(url);
+		return new Response(
+			JSON.stringify({
+				data: { publish_id: 'pub-new', upload_url: 'https://upload/x' },
+				error: { code: 'ok' },
+			}),
+			{ status: 200 },
+		);
+	}) as unknown as typeof globalThis.fetch;
+
+	try {
+		const body = new FormData();
+		// A genuinely NEW key, as a client that changed a field would send.
+		body.set('idempotencyKey', 'b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e');
+		body.set('title', 'A different caption entirely');
+		body.set('privacyLevel', 'PUBLIC_TO_EVERYONE');
+		body.set('video', new File([mp4Bytes(30)], 'v.mp4', { type: 'video/mp4' }));
+		const res = await request(
+			built,
+			'/api/integrations/tiktok/connections/conn-1/publish',
+			{ method: 'POST', body },
+		);
+		return { res, initCalls };
+	} finally {
+		globalThis.fetch = realFetch;
+	}
+}
+
+const TERMINAL = [
+	'PUBLISH_COMPLETE',
+	'FAILED',
+	'SEND_TO_USER_INBOX',
+	'INIT_FAILED',
+	'RESOLVED_POSTED',
+	'RESOLVED_NOT_POSTED',
+];
+const PROCESSING = ['PROCESSING_UPLOAD', 'PROCESSING_DOWNLOAD'];
+
+test.each([
+	['a null status (Worker died before recording)', null],
+	['INIT_AMBIGUOUS (init answer lost)', 'INIT_AMBIGUOUS'],
+	['UPLOAD_FAILED (task exists, bytes may not have landed)', 'UPLOAD_FAILED'],
+	['a future TikTok status this build does not know', 'SOME_FUTURE_CODE'],
+])('a NEW key is refused while a prior attempt sits at %s, and never reaches init', async (_label, priorStatus) => {
+	const { res, initCalls } = await publishWhilePriorAttempt(
+		priorStatus as string | null,
+	);
+
+	expect(res.status).toBe(409);
+	const body = (await res.json()) as {
+		error: { name: string; code: string; message: string };
+	};
+	expect(body.error.name).toBe('PublishBlockedByUnsettledOutcome');
+	expect(body.error.code).toBe('BLOCKED_BY_UNSETTLED_OUTCOME');
+	// The creator-facing reason survives, rather than a bare status code.
+	expect(body.error.message.length).toBeGreaterThan(20);
+	// The whole point: TikTok's irreversible call was never made.
+	expect(initCalls).toHaveLength(0);
+});
+
+test.each([
+	['PROCESSING_UPLOAD', 'PROCESSING_UPLOAD'],
+	['PROCESSING_DOWNLOAD', 'PROCESSING_DOWNLOAD'],
+	['PUBLISH_COMPLETE', 'PUBLISH_COMPLETE'],
+	['FAILED', 'FAILED'],
+	['INIT_FAILED', 'INIT_FAILED'],
+	['RESOLVED_NOT_POSTED', 'RESOLVED_NOT_POSTED'],
+])('a genuinely new consent still posts while a prior attempt sits at %s', async (_label, priorStatus) => {
+	// A post TikTok is processing, or one that has settled either way, is a
+	// stateable outcome. Blocking on those would stop a creator posting a second
+	// video for no safety gain.
+	const { res, initCalls } = await publishWhilePriorAttempt(priorStatus);
+
+	expect(res.status).toBe(200);
+	expect(initCalls).toHaveLength(1);
+});
+
+test('cross-account posting stays allowed while one account is blocked', async () => {
+	// The block is per-connection by design: an unknown outcome on one account
+	// cannot be duplicated by posting to a different one, so refusing here would
+	// punish without protecting anything.
+	const row = await liveConnectionRow(['video.publish']);
+	const base = liveDb({ ...row, id: 'conn-2' });
+	let selects = 0;
+	const db = {
+		...base.db,
+		select: () => {
+			selects += 1;
+			// The blocking query is scoped to conn-2, which has no unsettled attempts.
+			return selects === 1 ? base.db.select() : chainReturning([]);
+		},
+	};
+	const built = createTikTokTestApp({
+		session: freshSession('user-1'),
+		env: CONFIGURED_ENV,
+		db,
+	});
+
+	const initCalls: string[] = [];
+	const realFetch = globalThis.fetch;
+	globalThis.fetch = (async (input: string | URL) => {
+		const url = String(input);
+		if (url.includes('creator_info/query')) {
+			return new Response(JSON.stringify(CREATOR_INFO_BODY), { status: 200 });
+		}
+		if (url.includes('video/init')) initCalls.push(url);
+		return new Response(
+			JSON.stringify({
+				data: { publish_id: 'pub-2', upload_url: 'https://upload/x' },
+				error: { code: 'ok' },
+			}),
+			{ status: 200 },
+		);
+	}) as unknown as typeof globalThis.fetch;
+
+	try {
+		const body = new FormData();
+		body.set('idempotencyKey', 'c3d4e5f6-a7b8-4c9d-8e0f-1a2b3c4d5e6f');
+		body.set('title', 'A caption');
+		body.set('privacyLevel', 'PUBLIC_TO_EVERYONE');
+		body.set('video', new File([mp4Bytes(30)], 'v.mp4', { type: 'video/mp4' }));
+		const res = await request(
+			built,
+			'/api/integrations/tiktok/connections/conn-2/publish',
+			{ method: 'POST', body },
+		);
+
+		expect(res.status).toBe(200);
+		expect(initCalls).toHaveLength(1);
+	} finally {
+		globalThis.fetch = realFetch;
+	}
+});
+
+test.each([
+	['a post TikTok is still processing', 'PROCESSING_UPLOAD', null],
+	['a post TikTok is downloading', 'PROCESSING_DOWNLOAD', null],
+	['an upload failure whose task IS named', 'UPLOAD_FAILED', 'pub-1'],
+	['any row that names a task', null, 'pub-1'],
+	['an INIT_AMBIGUOUS row that names a task', 'INIT_AMBIGUOUS', 'pub-1'],
+	['a status this build has never seen', 'SOME_FUTURE_CODE', null],
+	['an outcome TikTok already gave', 'FAILED', null],
+])('a human cannot overwrite %s', async (_label, status, publishId) => {
+	/**
+	 * The old WHERE was `status NOT IN (terminal)`, which admitted every one of
+	 * these. Each would have let somebody's assertion replace state the provider
+	 * had reported or could still be asked about, which is the one thing a manual
+	 * resolution must never do.
+	 */
+	const row = await liveConnectionRow(['video.publish']);
+	const { db, writes } = resolveDb(row, {
+		status: status as string | null,
+		publishId: publishId as string | null,
+	});
+
+	const res = await postResolution(db, 'RESOLVED_NOT_POSTED');
+
+	expect(res.status).toBe(409);
+	expect(writes).toHaveLength(0);
 });

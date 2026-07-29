@@ -571,11 +571,24 @@
 				return;
 			}
 
-			// A definite refusal AFTER the attempt was claimed leaves that key spent,
-			// so release it and let a corrected post start a new intent. (Validation
-			// refusals happen before any claim, so releasing here is harmless.)
+			/**
+			 * A definite refusal. Nothing was created, so the key is spent and a
+			 * corrected post may start a new intent.
+			 *
+			 * Includes the server's own publish block, which refuses a new post while
+			 * a prior outcome is unknown. Releasing the key is still right there:
+			 * this request never reached `video/init`, and the block cannot be escaped
+			 * without an explicit resolution, so the next attempt cannot slip through.
+			 */
 			keeper.settle(connection.id);
 			report(error);
+			/**
+			 * Re-read the rows the server just refused against. The block is derived
+			 * from them, and the server may know about an attempt this tab has not
+			 * seen (another tab, or a Worker that recorded it after this page loaded),
+			 * so syncing is what makes the refusal visible rather than just a toast.
+			 */
+			await refreshAttempts();
 			return;
 		}
 

@@ -38,6 +38,46 @@ test('INIT_AMBIGUOUS blocks publishing and needs a human, not a status read', ()
 	expect(requiresManualResolution(attempt)).toBe(true);
 });
 
+// --- Exactly which rows a human may adjudicate ---------------------------
+//
+// This is an ALLOWLIST, and the store's SQL mirrors it. A human recording an
+// outcome must never be able to overwrite something the provider told us, or
+// something the provider could still be asked about.
+
+test.each([
+	['a claimed row with no answer at all', null],
+	['an init whose answer was lost', 'INIT_AMBIGUOUS'],
+])('%s is humanly resolvable when no task was named', (_label, status) => {
+	expect(requiresManualResolution({ status, publishId: null })).toBe(true);
+});
+
+test.each([
+	// Provider-observable: TikTok can still be asked, so a human must not preempt it.
+	['PROCESSING_UPLOAD', 'PROCESSING_UPLOAD'],
+	['PROCESSING_DOWNLOAD', 'PROCESSING_DOWNLOAD'],
+	['UPLOAD_FAILED', 'UPLOAD_FAILED'],
+	// Already answered by TikTok, or already settled by a human.
+	['PUBLISH_COMPLETE', 'PUBLISH_COMPLETE'],
+	['FAILED', 'FAILED'],
+	['INIT_FAILED', 'INIT_FAILED'],
+	['RESOLVED_POSTED', 'RESOLVED_POSTED'],
+	// A code this build has never seen. Fails closed: not resolvable by hand.
+	['a future TikTok status', 'SOME_FUTURE_CODE'],
+])('%s is NOT humanly resolvable', (_label, status) => {
+	expect(requiresManualResolution({ status, publishId: null })).toBe(false);
+});
+
+test('a row that names a task is never humanly resolvable, whatever its status', () => {
+	// A publish id means `status/fetch` can answer, so the honest remedy is to ask
+	// TikTok rather than to let somebody assert a result.
+	for (const status of [null, 'INIT_AMBIGUOUS', 'UPLOAD_FAILED']) {
+		expect(requiresManualResolution({ status, publishId: 'pub-1' })).toBe(
+			false,
+		);
+		expect(canReadRemoteStatus({ status, publishId: 'pub-1' })).toBe(true);
+	}
+});
+
 test('the INIT_AMBIGUOUS description never promises that checking status resolves it', () => {
 	const described = describeAttemptStatus('INIT_AMBIGUOUS');
 
@@ -52,6 +92,7 @@ test('UPLOAD_FAILED blocks publishing but IS resolvable, because a task exists',
 
 	expect(blocksNewPublish(attempt.status)).toBe(true);
 	expect(canReadRemoteStatus(attempt)).toBe(true);
+	// Ask TikTok, never a human: the task is named and therefore observable.
 	expect(requiresManualResolution(attempt)).toBe(false);
 });
 

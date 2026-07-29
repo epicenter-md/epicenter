@@ -69,6 +69,7 @@ import {
 	createOAuthState,
 	deleteConnection,
 	deleteExpiredOAuthStates,
+	listAttemptsBlockingNewPublish,
 	listConnections,
 	listPublishAttempts,
 	listUnsettledAttempts,
@@ -203,6 +204,36 @@ const TikTokRouteError = defineErrors({
 				: `This account has ${unsettled} posts whose outcomes are not settled. Resolve them before disconnecting, so their records are not lost.`,
 		unsettled,
 		code: 'UNSETTLED_PUBLISH',
+	}),
+	/**
+	 * A prior post to this account has an outcome nobody can state, so starting
+	 * another one is refused.
+	 *
+	 * The SERVER-side half of the block the dashboard also draws. That UI block is
+	 * a courtesy: a direct or hostile client changes one field, mints a fresh
+	 * idempotency key, and never runs it. The idempotency latch does not help
+	 * either, because a new key is by definition a new claim. Without this check,
+	 * one creator consent could reach `video/init` a second time while the first
+	 * outcome was still unknown.
+	 *
+	 * `unresolved` is deliberately FALSE. Nothing was created by THIS request, so
+	 * the caller's claim on its own key is spent and may be released; it is the
+	 * PRIOR attempt that is unknown, and the named code is what tells the client to
+	 * go look at it.
+	 */
+	PublishBlockedByUnsettledOutcome: ({
+		blockingAttemptId,
+		blockingStatus,
+	}: {
+		blockingAttemptId: string;
+		blockingStatus: string | null;
+	}) => ({
+		message:
+			'An earlier post to this account has an outcome Epicenter cannot confirm, so it may or may not be on the profile. Settle that one first: posting again now could put up a second copy.',
+		blockingAttemptId,
+		blockingStatus,
+		unresolved: false,
+		code: 'BLOCKED_BY_UNSETTLED_OUTCOME',
 	}),
 	/** A manual resolution that named something other than the two allowed outcomes. */
 	InvalidResolution: () => ({
@@ -853,6 +884,28 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 				const opened = await openConnection(c, config);
 				if ('failure' in opened) return opened.failure;
 				const { api, db, row } = opened;
+
+				/**
+				 * THE INVARIANT, enforced where a client cannot skip it: while a prior
+				 * post to this account has an outcome nobody can state, no new post
+				 * starts. Checked BEFORE `creator_info` and long before the irreversible
+				 * `video/init`, so a refusal costs TikTok nothing.
+				 *
+				 * Per CONNECTION on purpose. An unknown outcome on one account cannot be
+				 * duplicated by posting to a different one, so a cross-account block
+				 * would punish without protecting anything.
+				 */
+				const blocking = await listAttemptsBlockingNewPublish(db, row.id);
+				const firstBlocking = blocking[0];
+				if (firstBlocking) {
+					return c.json(
+						TikTokRouteError.PublishBlockedByUnsettledOutcome({
+							blockingAttemptId: firstBlocking.id,
+							blockingStatus: firstBlocking.status,
+						}),
+						409,
+					);
+				}
 
 				// The bytes are read ONCE, before validation, because the duration
 				// check below has to inspect the file this request will actually

@@ -100,10 +100,14 @@ const TERMINAL_STATUSES: ReadonlySet<string> = new Set<string>(
  * can state exactly what happened, so these are known-committed rather than
  * unknown.
  */
-const PROCESSING_STATUSES: ReadonlySet<string> = new Set<AttemptStatus>([
+export const PROCESSING_ATTEMPT_STATUSES = [
 	'PROCESSING_UPLOAD',
 	'PROCESSING_DOWNLOAD',
-]);
+] as const satisfies readonly AttemptStatus[];
+
+const PROCESSING_STATUSES: ReadonlySet<string> = new Set<string>(
+	PROCESSING_ATTEMPT_STATUSES,
+);
 
 /**
  * Whether this attempt has settled. An unrecognized status is NOT terminal, so a
@@ -158,16 +162,29 @@ export function canReadRemoteStatus(attempt: AttemptHandle): boolean {
 }
 
 /**
- * Whether only a human can close this out: it blocks publishing, and there is no
- * publish id to ask TikTok about.
+ * Whether only a human can close this out, as a strict ALLOWLIST of the two
+ * states that have no other exit.
  *
- * Reached by two real paths. `INIT_AMBIGUOUS` is the init whose answer was lost.
- * A `null` status is a Worker that died between a successful init and recording
- * its publish id. In both, TikTok may be holding a post nobody can name, and the
- * only way out is for the creator to look and tell us.
+ * Reached by exactly two real paths. `INIT_AMBIGUOUS` is the init whose answer
+ * was lost. A `null` status is a Worker that died between a successful init and
+ * recording its publish id. In both, TikTok may be holding a post nobody can
+ * name, so the creator looking and telling us is the only way out.
+ *
+ * Deliberately NOT "blocks publishing and has no publish id", which is what this
+ * used to say and which was too permissive in two directions. It admitted
+ * `UPLOAD_FAILED`, whose task IS named and therefore observable, and it admitted
+ * any status this build does not recognize. Both would let somebody's assertion
+ * overwrite state the provider can still be asked about, which is the one thing a
+ * human resolution must never do. `store.ts` enforces the same allowlist in SQL,
+ * so a caller cannot reach past this judgement.
+ *
+ * The `publishId === null` half is kept as well as the status allowlist: a row
+ * that names a task can always be polled, and asking TikTok beats letting anyone
+ * declare an answer.
  */
 export function requiresManualResolution(attempt: AttemptHandle): boolean {
-	return blocksNewPublish(attempt.status) && attempt.publishId === null;
+	if (attempt.publishId !== null) return false;
+	return attempt.status === null || attempt.status === 'INIT_AMBIGUOUS';
 }
 
 /**

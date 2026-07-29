@@ -19,6 +19,7 @@ import { and, desc, eq, isNull, lt, notInArray, or } from 'drizzle-orm';
 import {
 	type AttemptStatus,
 	type ManualResolution,
+	PROCESSING_ATTEMPT_STATUSES,
 	TERMINAL_ATTEMPT_STATUSES,
 } from './attempt-status.js';
 
@@ -364,6 +365,84 @@ export async function reconcileAttemptFromRemote(
 }
 
 /**
+ * The three safety predicates this module expresses in SQL.
+ *
+ * Named and exported so the grouping is reviewable and testable on its own
+ * (`store.test.ts` renders each through `PgDialect`). Both are compound
+ * `AND`/`OR` expressions where the parenthesization IS the rule: one misplaced
+ * pair turns "a human may settle an unanswered attempt" into "a human may
+ * overwrite a live post".
+ *
+ * Enforced in the WHERE rather than checked in a handler, so no caller can reach
+ * past them.
+ */
+
+/**
+ * Rows a HUMAN may adjudicate. A strict allowlist of the only two states with no
+ * other exit: nothing named a task, and nothing has answered.
+ *
+ * Deliberately not "anything non-terminal", which is what this used to be. That
+ * form admitted `PROCESSING_UPLOAD`, `PROCESSING_DOWNLOAD`, `UPLOAD_FAILED`, any
+ * row that already held a `publish_id`, and every status a future TikTok might
+ * introduce, so a creator's assertion could overwrite state the provider was
+ * still willing to answer for. Mirrors `requiresManualResolution`.
+ */
+export function humanlyResolvableInSql() {
+	return and(
+		// A named task can always be polled, so asking TikTok beats letting anyone
+		// declare a result.
+		isNull(tiktokPublishAttempt.publishId),
+		or(
+			// Claimed, then the Worker died before recording anything.
+			isNull(tiktokPublishAttempt.status),
+			// The init whose answer was lost, so no task id was ever returned.
+			eq(tiktokPublishAttempt.status, 'INIT_AMBIGUOUS'),
+		),
+	);
+}
+
+/**
+ * Rows whose outcome has not settled, which is what makes a disconnect refusable.
+ *
+ * Broader than {@link blocksNewPublishInSql} on purpose: a post TikTok is merely
+ * processing does not stop a new post, but it absolutely stops destroying the
+ * connection, because revoking the token removes any way to ever ask what became
+ * of it.
+ *
+ * Stated as an EXCLUSION of the settled statuses so it fails closed: a status this
+ * build has never seen counts as unsettled and refuses the disconnect.
+ */
+export function unsettledInSql() {
+	return or(
+		isNull(tiktokPublishAttempt.status),
+		notInArray(tiktokPublishAttempt.status, [...TERMINAL_ATTEMPT_STATUSES]),
+	);
+}
+
+/**
+ * Rows that must stop a NEW publish to this connection, with exactly the
+ * semantics of `blocksNewPublish`: a status of `null`, or one that is neither
+ * settled nor known to be processing at TikTok.
+ *
+ * Stated as EXCLUSIONS so it fails closed. Listing the blocking statuses instead
+ * would let a status this build has never seen pass as though it were finished,
+ * and the entire purpose of the block is that an outcome we cannot state stops
+ * publishing.
+ *
+ * A post TikTok is merely processing does NOT block: we can say exactly what
+ * happened to it, so a different post from a new consent is not a duplicate risk.
+ */
+export function blocksNewPublishInSql() {
+	return or(
+		isNull(tiktokPublishAttempt.status),
+		and(
+			notInArray(tiktokPublishAttempt.status, [...TERMINAL_ATTEMPT_STATUSES]),
+			notInArray(tiktokPublishAttempt.status, [...PROCESSING_ATTEMPT_STATUSES]),
+		),
+	);
+}
+
+/**
  * Every attempt on this connection that has NOT settled.
  *
  * This is what makes disconnect refusable. The attempt table cascades on the
@@ -372,10 +451,7 @@ export async function reconcileAttemptFromRemote(
  * destroys the ability to ever ask. Custody has to outlive the impulse to
  * disconnect.
  *
- * Read as `status IS NULL OR status NOT IN (terminal)` rather than by listing the
- * unsettled codes, so a status this build has never seen counts as unsettled and
- * the refusal FAILS CLOSED. Enumerating the unsettled set instead would let a
- * future TikTok code slip through as though it were finished.
+ * See {@link unsettledInSql} for the predicate and why it fails closed.
  */
 export async function listUnsettledAttempts(
 	db: Db,
@@ -387,12 +463,35 @@ export async function listUnsettledAttempts(
 		.where(
 			and(
 				eq(tiktokPublishAttempt.connectionId, connectionId),
-				or(
-					isNull(tiktokPublishAttempt.status),
-					notInArray(tiktokPublishAttempt.status, [
-						...TERMINAL_ATTEMPT_STATUSES,
-					]),
-				),
+				unsettledInSql(),
+			),
+		)
+		.orderBy(desc(tiktokPublishAttempt.createdAt));
+}
+
+/**
+ * Every attempt on this connection whose outcome forbids starting another post.
+ *
+ * The SERVER-side half of the publish block. The dashboard derives the same block
+ * from these rows, but a browser deriving a block is a courtesy, not a guarantee:
+ * a direct or hostile client can change one field, mint a fresh idempotency key,
+ * and walk straight past a UI that never runs. The idempotency latch does not
+ * catch that either, because a new key is by definition a new claim.
+ *
+ * So the route consults this BEFORE claiming, and one creator consent can produce
+ * at most one Direct Post whatever the client does.
+ */
+export async function listAttemptsBlockingNewPublish(
+	db: Db,
+	connectionId: string,
+): Promise<PublishAttempt[]> {
+	return db
+		.select()
+		.from(tiktokPublishAttempt)
+		.where(
+			and(
+				eq(tiktokPublishAttempt.connectionId, connectionId),
+				blocksNewPublishInSql(),
 			),
 		)
 		.orderBy(desc(tiktokPublishAttempt.createdAt));
@@ -405,10 +504,10 @@ export async function listUnsettledAttempts(
  * TikTok cannot be asked, and without this the creator would be blocked from
  * posting to that account forever.
  *
- * Guarded so a human cannot overwrite provider truth. The `WHERE` requires the
- * row to still be unsettled, which means a status that arrived from TikTok in the
- * meantime wins, and a double-submitted resolution is a no-op rather than a
- * rewrite. Returns whether a row actually moved.
+ * The WHERE is an allowlist (see `humanlyResolvableInSql`), so this can never
+ * overwrite a status TikTok supplied, a task TikTok could still be asked about,
+ * or a status this build does not recognize. A double-submitted resolution is a
+ * no-op rather than a rewrite. Returns whether a row actually moved.
  */
 export async function resolveAttemptManually(
 	db: Db,
@@ -429,12 +528,7 @@ export async function resolveAttemptManually(
 			and(
 				eq(tiktokPublishAttempt.id, attemptId),
 				eq(tiktokPublishAttempt.connectionId, connectionId),
-				or(
-					isNull(tiktokPublishAttempt.status),
-					notInArray(tiktokPublishAttempt.status, [
-						...TERMINAL_ATTEMPT_STATUSES,
-					]),
-				),
+				humanlyResolvableInSql(),
 			),
 		)
 		.returning({ id: tiktokPublishAttempt.id });
