@@ -131,6 +131,20 @@
 			onConfirm: async () => {
 				const { data, error } = await tiktokApi.disconnect(connection.id);
 				if (error) {
+					/**
+					 * The server REFUSES to disconnect while a post's outcome is
+					 * unsettled, because the attempt rows cascade on the connection and
+					 * revoking the token removes any way to ever ask TikTok what happened.
+					 * Surfaced with the account selected, so the unresolved post and the
+					 * controls that settle it are on screen rather than described in a
+					 * toast the creator has to act on from memory.
+					 */
+					if (
+						error.name === 'ServerRefused' &&
+						error.code === 'UNSETTLED_PUBLISH'
+					) {
+						selectedId = connection.id;
+					}
 					report(error);
 					throw error; // retryable: keep the dialog open
 				}

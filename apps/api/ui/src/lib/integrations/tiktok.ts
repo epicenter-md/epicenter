@@ -15,6 +15,7 @@ import type {
 	TikTokPostStatus,
 	TikTokPrivacyLevel,
 } from '$api/integrations/tiktok/api';
+import type { ManualResolution } from '$api/integrations/tiktok/attempt-status';
 import type { PublicConnection } from '$api/integrations/tiktok/store';
 import { auth } from '$lib/platform/auth';
 import { defineQuery } from '$lib/query/client';
@@ -217,6 +218,25 @@ export const tiktokApi = {
 		),
 
 	/**
+	 * Record what a creator found for an attempt that cannot be polled (no publish
+	 * id exists). The server stores it as a HUMAN's assertion, distinct from
+	 * TikTok's own status, and refuses to overwrite a status TikTok supplied since.
+	 */
+	resolveAttempt: (
+		connectionId: string,
+		attemptId: string,
+		outcome: ManualResolution,
+	) =>
+		send<{ status: ManualResolution }>(
+			`${BASE}/connections/${connectionId}/attempts/${attemptId}/resolve`,
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ outcome }),
+			},
+		),
+
+	/**
 	 * The form is sent as multipart so the video never has to be base64-inflated.
 	 * `idempotencyKey` is required by the server: it is what makes a repeated
 	 * submit unable to originate a second post.
@@ -244,35 +264,24 @@ export const tiktok = {
 };
 
 /**
- * A link to a published post, built from the creator's @handle and the post id
- * TikTok reported.
+ * What an attempt status MEANS, from the module both sides share.
  *
- * TikTok documents no permalink builder, so this is its canonical video URL
- * shape rather than a value the API handed back. The post id is always shown
- * beside the link for that reason: if the shape ever changes, the creator still
- * has the identifier TikTok actually returned. `null` when the handle is unknown
- * (the creator declined `user.info.profile`), because guessing a handle would
- * link at somebody else's profile.
- */
-export function tiktokPostUrl(
-	username: string | null,
-	postId: string,
-): string | null {
-	return username
-		? `https://www.tiktok.com/@${username}/video/${postId}`
-		: null;
-}
-
-/**
- * What an attempt status MEANS, from the module both sides share. The client must
- * not decide for itself which statuses are terminal: that judgement is what stops
- * polling, and getting it wrong either polls a finished task forever or abandons
- * one still in flight.
+ * The client must not decide any of this for itself. Which statuses are terminal
+ * is what stops polling; which of them BLOCK a new publish is what stands between
+ * one creator consent and two posts; and whether an attempt can be polled at all
+ * decides whether the remedy is a status read or a human looking at TikTok. Each
+ * is a safety judgement about an irreversible action, so all of them live beside
+ * the codes they describe.
  */
 export {
 	type AttemptTone,
+	blocksNewPublish,
+	canReadRemoteStatus,
 	describeAttemptStatus,
 	isTerminalAttemptStatus,
+	type ManualResolution,
+	pickAttemptToFollow,
+	requiresManualResolution,
 } from '$api/integrations/tiktok/attempt-status';
 /**
  * The Direct Post rules, re-exported from the sibling Worker module that

@@ -28,24 +28,29 @@
 	import CircleAlertIcon from '@lucide/svelte/icons/circle-alert';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import { onDestroy, onMount } from 'svelte';
+	import { createFollowGate } from '$lib/integrations/follow-gate';
 	import {
 		type AttemptTone,
+		blocksNewPublish,
 		COMMERCIAL_LABELS,
 		createPublishIntentKeeper,
 		createSessionIntentKeyStore,
 		DECLARATION_TEXT,
 		declarationFor,
 		describeAttemptStatus,
+		canReadRemoteStatus,
 		isAmbiguousPublishFailure,
 		isTerminalAttemptStatus,
+		type ManualResolution,
+		pickAttemptToFollow,
 		type PublicConnection,
 		type PublishAttempt,
 		type PublishIntent,
 		type PublishStatusView,
+		requiresManualResolution,
 		type TikTokCreatorInfo,
 		type TikTokPrivacyLevel,
 		tiktokApi,
-		tiktokPostUrl,
 	} from '$lib/integrations/tiktok';
 
 	const { connection }: { connection: PublicConnection } = $props();
@@ -133,15 +138,15 @@
 	 */
 	let unrecordedStatus = $state<PublishStatusView | null>(null);
 	/**
-	 * Set when a publish outcome is UNKNOWN. While this is set the surface stops
-	 * offering to post, because a new post is exactly the wrong response to
-	 * "TikTok may already have published this".
+	 * What the last submit reported, when the answer was not simply "accepted".
+	 *
+	 * Transient and for MESSAGING ONLY. The block itself is derived from the
+	 * durable rows below, because a message held in a variable does not survive a
+	 * reload, an account switch, or a closed tab, and the block has to.
 	 */
-	let unresolved = $state<{
-		attemptId: string | null;
-		publishId: string | null;
-		detail: string;
-	} | null>(null);
+	let submitNotice = $state<string | null>(null);
+	/** Which attempt the creator is recording an outcome for, while it is in flight. */
+	let resolving = $state<string | null>(null);
 
 	/**
 	 * Owns the idempotency key across retries AND across reloads. Backed by
@@ -163,9 +168,12 @@
 	 * The guidelines require the account that will receive the content to be named
 	 * from the latest creator info, not from whatever was stored at connect time.
 	 * The difference is real: a creator who renamed on TikTok since connecting
-	 * would otherwise be shown a name that no longer exists while approving an
-	 * irreversible post. The stored connection is the fallback, because it is what
-	 * we have before the read lands.
+	 * would otherwise be shown a name that no longer exists.
+	 *
+	 * The stored connection is a fallback for THIS HEADER ONLY, covering the moment
+	 * before the live read lands. The final confirmation in `confirmPost` refuses to
+	 * fall back at all: approving an irreversible post against a stale identity is
+	 * the failure this is guarding, and a header shown while loading is not that.
 	 */
 	const postingAs = $derived({
 		name: creatorInfo?.nickname || connection.displayName,
@@ -228,14 +236,33 @@
 		],
 	);
 
+	/**
+	 * The recorded attempt, if any, whose outcome we cannot state, and which
+	 * therefore forbids another publish to this account.
+	 *
+	 * Derived, not stored. `blocksNewPublish` fails closed on a status this build
+	 * does not recognize, so a future TikTok code blocks rather than slipping
+	 * through as though it were finished.
+	 */
+	const blockingAttempt = $derived(
+		attempts.find((attempt) => blocksNewPublish(attempt.status)) ?? null,
+	);
+
 	/** Every reason the post button stays disabled, in creator language. */
 	const blockers = $derived.by(() => {
 		const reasons: string[] = [];
-		// An unknown outcome blocks everything: TikTok may already have published
-		// this, so offering another post is the one thing not to do.
-		if (unresolved) {
+		/**
+		 * An unknown outcome blocks everything, and the block comes from the DURABLE
+		 * row rather than from a variable set when the submit failed. That is what
+		 * makes it survive a reload, an account switch, and a closed tab: the fact
+		 * that TikTok may be holding a post is recorded in Postgres, so it cannot be
+		 * escaped by refreshing the page.
+		 */
+		if (blockingAttempt) {
 			reasons.push(
-				'A previous post has an unknown outcome. Check it before posting again.',
+				requiresManualResolution(blockingAttempt)
+					? 'A previous post has an unknown outcome that only you can settle. Check TikTok and record what you found below.'
+					: 'A previous post has an unknown outcome. Check its status before posting again.',
 			);
 		}
 		if (!videoFile) reasons.push('Choose a video.');
@@ -377,12 +404,12 @@
 	// --- Following a task to its outcome -------------------------------------
 
 	/**
-	 * Cancels an in-flight follow loop. Incremented on every new follow and on
-	 * destroy, and compared after every `await`, so a loop whose token has moved
-	 * on stops touching state instead of writing into a surface that has changed
-	 * underneath it.
+	 * Ownership of the follow loop. A run stops being the owner when a newer follow
+	 * begins OR when this component is destroyed, and the gate is closed
+	 * permanently on destroy so a continuation that arrives late cannot open a new
+	 * run. See follow-gate.ts for the defect this prevents.
 	 */
-	let followToken = 0;
+	const gate = createFollowGate();
 
 	const sleep = (ms: number) =>
 		new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -396,7 +423,10 @@
 	 * left in.
 	 */
 	async function follow(publishId: string) {
-		const token = ++followToken;
+		const isCurrent = gate.begin();
+		// Checked BEFORE any state is touched, so a loop started from a continuation
+		// that resolved after teardown writes nothing at all.
+		if (!isCurrent()) return;
 		trackedPublishId = publishId;
 		following = true;
 		followGaveUp = false;
@@ -405,12 +435,12 @@
 		let round = 0;
 
 		try {
-			while (followToken === token) {
+			while (isCurrent()) {
 				const { data, error } = await tiktokApi.publishStatus(
 					connection.id,
 					publishId,
 				);
-				if (followToken !== token) return;
+				if (!isCurrent()) return;
 				if (error) {
 					// Failing to READ a status says nothing about the post itself, so this
 					// never becomes a publish failure. The manual check stays available.
@@ -420,7 +450,7 @@
 				followError = null;
 				unrecordedStatus = data.recorded ? null : data;
 				await refreshAttempts();
-				if (followToken !== token) return;
+				if (!isCurrent()) return;
 
 				// TikTok says nothing further will change, so stop asking.
 				if (isTerminalAttemptStatus(data.code)) {
@@ -432,10 +462,10 @@
 					 * unchanged retry must be allowed rather than refused as a duplicate
 					 * of a post that never existed.
 					 */
-					keeper.settle();
-					// The outcome is now KNOWN, so the "unknown outcome" warning that was
-					// blocking this surface no longer describes anything.
-					unresolved = null;
+					keeper.settle(connection.id);
+					// The outcome is now KNOWN. The block itself is derived from the row,
+					// which this poll just reconciled, so it lifts on its own.
+					submitNotice = null;
 					return;
 				}
 				if (Date.now() - startedAt >= FOLLOW_BUDGET_MS) {
@@ -448,7 +478,7 @@
 				);
 			}
 		} finally {
-			if (followToken === token) following = false;
+			if (isCurrent()) following = false;
 		}
 	}
 
@@ -522,40 +552,78 @@
 				const responseLost = error.name === 'RequestFailed';
 				const publishId =
 					error.name === 'ServerRefused' ? (error.publishId ?? null) : null;
-				unresolved = {
-					attemptId:
-						error.name === 'ServerRefused' ? (error.attemptId ?? null) : null,
-					publishId,
-					detail: responseLost
-						? 'The connection dropped before Epicenter saw TikTok’s answer, so this post may or may not have been created. Posting again reuses the same request, so it cannot post twice. Check below before doing anything else.'
-						: error.message,
-				};
-				// Deliberately NOT keeper.settle(): the key must survive so a retry
-				// collides with the claim instead of starting a new intent.
+				submitNotice = responseLost
+					? 'The connection dropped before Epicenter saw TikTok’s answer, so this post may or may not have been created. Posting again reuses the same request, so it cannot post twice. Check below before doing anything else.'
+					: error.message;
+				/**
+				 * Deliberately NOT `keeper.settle()`. The key must survive so a retry
+				 * collides with the claim instead of starting a new intent, and this
+				 * branch covers the same-key 409 as well: the server reports whether the
+				 * existing attempt has settled, and while it has not, this collision IS
+				 * the thing preventing a second post.
+				 */
 				await refreshAttempts();
 				// A publish id means TikTok DID create a task, so it can still be
-				// followed to a real answer even though the request failed.
+				// followed to a real answer even though this request failed. Without
+				// one, the durable row is the block and only a human can settle it.
 				if (publishId) follow(publishId);
-				toast.error(unresolved.detail, { duration: 15_000 });
+				toast.error(submitNotice, { duration: 15_000 });
 				return;
 			}
 
 			// A definite refusal AFTER the attempt was claimed leaves that key spent,
 			// so release it and let a corrected post start a new intent. (Validation
 			// refusals happen before any claim, so releasing here is harmless.)
-			keeper.settle();
+			keeper.settle(connection.id);
 			report(error);
 			return;
 		}
 
-		// Settled: this intent is done and the next post starts a new one.
-		keeper.settle();
-		unresolved = null;
+		// Accepted: this intent is delivered and the next post starts a new one.
+		keeper.settle(connection.id);
+		submitNotice = null;
 		unrecordedStatus = null;
 		toast.success(data.message);
 		await refreshAttempts();
 		// Immediately start following the exact task TikTok just created.
 		follow(data.publishId);
+	}
+
+	/**
+	 * Record what the creator found for an attempt nothing automated can settle.
+	 *
+	 * The only exit from `INIT_AMBIGUOUS` or a null status: no publish id exists,
+	 * so TikTok cannot be asked, and the block that protects the invariant would
+	 * otherwise be permanent. Confirmed explicitly, because saying "nothing was
+	 * posted" is what unlocks posting again.
+	 */
+	function confirmResolution(attemptId: string, outcome: ManualResolution) {
+		const posted = outcome === 'RESOLVED_POSTED';
+		confirmationDialog.open({
+			title: posted ? 'Record that it posted' : 'Record that nothing posted',
+			description: posted
+				? 'Epicenter will remember that this video is on the profile. It stays recorded as your own confirmation, not as something TikTok reported.'
+				: 'Epicenter will remember that nothing was posted, and will let you post to this account again. Only choose this after checking the TikTok app: if the post is actually there, posting again puts up a second copy.',
+			confirm: { text: posted ? 'It posted' : 'Nothing posted' },
+			onConfirm: async () => {
+				resolving = attemptId;
+				const { error } = await tiktokApi.resolveAttempt(
+					connection.id,
+					attemptId,
+					outcome,
+				);
+				resolving = null;
+				if (error) {
+					report(error);
+					throw error; // retryable: keep the dialog open
+				}
+				// A settled attempt releases this account's claim, so a corrected or
+				// repeated post starts a genuinely new intent.
+				keeper.settle(connection.id);
+				submitNotice = null;
+				await refreshAttempts();
+			},
+		});
 	}
 
 	/**
@@ -568,6 +636,19 @@
 			toast.error(blockers[0] ?? 'This post is not ready yet.');
 			return;
 		}
+		/**
+		 * The live read is REQUIRED here, with no fallback to the stored handle.
+		 * `creator_info` now fails closed when TikTok omits the username, so if this
+		 * is absent we genuinely do not know which account we are about to post as,
+		 * and naming the connect-time handle would invite approval of an
+		 * irreversible post against a stale identity.
+		 */
+		if (!creatorInfo) {
+			toast.error(
+				'Epicenter could not confirm which TikTok account this would post to. Reload and try again.',
+			);
+			return;
+		}
 		const audience = PRIVACY_LABELS[privacyLevel as TikTokPrivacyLevel];
 		const disclosure = commercialContent
 			? ` It will be labelled as ${[
@@ -577,11 +658,9 @@
 					.filter(Boolean)
 					.join(' and ')}.`
 			: '';
-		// Named from the live creator info, so the last screen before an
-		// irreversible post shows the account as TikTok describes it right now.
-		const handle = postingAs.handle
-			? `@${postingAs.handle}`
-			: postingAs.name;
+		// Named from the live creator info ONLY, so the last screen before an
+		// irreversible post shows the account exactly as TikTok describes it now.
+		const handle = `@${creatorInfo.username}`;
 		confirmationDialog.open({
 			title: 'Post to TikTok now',
 			description: `This posts to ${handle} immediately, visible to: ${audience}.${disclosure} ${declaration} Posting cannot be undone from Epicenter; you would have to delete the post in the TikTok app.`,
@@ -592,22 +671,29 @@
 
 	onMount(() => {
 		loadCreatorInfo();
-		// Resume following a post left in flight by an earlier visit. Without this
-		// the durable row would stay wherever it was when the tab closed, which is
-		// exactly the stale "processing" this surface must never show.
+		/**
+		 * Resume following a post left in flight by an earlier visit. Without this
+		 * the durable row would stay wherever it was when the tab closed, which is
+		 * exactly the stale "processing" this surface must never show.
+		 *
+		 * The gate check is load-bearing, not defensive tidiness: this continuation
+		 * runs after an `await`, and switching accounts or leaving the page during
+		 * that await used to start a ten-minute poll owned by a component that no
+		 * longer existed. `pickAttemptToFollow` only ever returns something that can
+		 * actually be polled, so this cannot spin on an attempt with no publish id.
+		 */
 		refreshAttempts().then(() => {
-			const live = attempts.find(
-				(attempt) =>
-					attempt.publishId !== null && !isTerminalAttemptStatus(attempt.status),
-			);
+			if (gate.isClosed) return;
+			const live = pickAttemptToFollow(attempts);
 			if (live?.publishId) follow(live.publishId);
 		});
 	});
 
 	onDestroy(() => {
-		// Stop the follow loop, and release the last preview URL (replacements are
-		// revoked in selectVideoFile).
-		followToken++;
+		// Closes the gate PERMANENTLY, which stops the follow loop and also stops the
+		// mount continuation below from starting one after teardown. Then release the
+		// last preview URL (replacements are revoked in selectVideoFile).
+		gate.close();
 		if (videoPreviewUrl) URL.revokeObjectURL(videoPreviewUrl);
 	});
 </script>
@@ -914,24 +1000,86 @@
 </Card.Root>
 
 <!--
-	An UNKNOWN outcome, shown prominently and without a "try again" affordance.
-	The remedy is reading status or checking TikTok, never posting again.
+	The DURABLE block. Read from the recorded attempt rather than from the last
+	submit, so it survives a reload, an account switch, and a closed tab: the fact
+	that TikTok may be holding a post lives in Postgres, not in a variable.
+
+	No "try again" affordance anywhere in it. When the attempt has no publish id
+	the only honest remedy is the creator looking at TikTok, so that is the only
+	thing offered.
 -->
-{#if unresolved}
+{#if blockingAttempt}
+	{@const described = describeAttemptStatus(blockingAttempt.status)}
 	<Alert.Root variant="destructive">
 		<CircleAlertIcon class="size-4" />
-		<Alert.Description class="space-y-1">
-			<p>{unresolved.detail}</p>
+		<Alert.Description class="space-y-2">
+			<p class="font-medium">{described.label}</p>
+			<p>{described.detail}</p>
+			{#if submitNotice}
+				<p class="text-xs">{submitNotice}</p>
+			{/if}
+			{#if blockingAttempt.publishId}
+				<p class="text-xs break-all">
+					TikTok task id: {blockingAttempt.publishId}
+				</p>
+			{/if}
 			<p class="text-xs">
-				Do not post again until this is resolved. Check the result below, or open
-				the TikTok app to see whether it landed.
+				Posting to this account is paused until this is settled, so one post
+				cannot become two.
 			</p>
+
+			{#if requiresManualResolution(blockingAttempt)}
+				<!--
+					There is no publish id, so nothing can be polled and only the creator
+					can close this out. Both answers are offered plainly, because guessing
+					on their behalf is exactly what the invariant forbids.
+				-->
+				<div class="flex flex-wrap items-center gap-2 pt-1">
+					<Button
+						variant="outline"
+						size="sm"
+						disabled={resolving === blockingAttempt.id}
+						onclick={() =>
+							blockingAttempt &&
+							confirmResolution(blockingAttempt.id, 'RESOLVED_POSTED')}
+					>
+						It is on the profile
+					</Button>
+					<Button
+						variant="outline"
+						size="sm"
+						disabled={resolving === blockingAttempt.id}
+						onclick={() =>
+							blockingAttempt &&
+							confirmResolution(blockingAttempt.id, 'RESOLVED_NOT_POSTED')}
+					>
+						Nothing was posted
+					</Button>
+				</div>
+			{:else}
+				<Button
+					variant="outline"
+					size="sm"
+					class="mt-1"
+					disabled={following}
+					onclick={() =>
+						blockingAttempt?.publishId && follow(blockingAttempt.publishId)}
+				>
+					<RefreshCwIcon class="size-3.5" />
+					Check its status
+				</Button>
+			{/if}
 		</Alert.Description>
 	</Alert.Root>
 {/if}
 
 <!-- The post being followed, from init through to TikTok's own terminal status -->
-{#if outcome && outcomeStatus}
+<!--
+	Suppressed when the followed attempt IS the blocking one: the alert above is
+	already saying this, with the remedy attached, and repeating the same status in
+	two cards reads as two different posts.
+-->
+{#if outcome && outcomeStatus && tracked?.id !== blockingAttempt?.id}
 	<Card.Root>
 		<Card.Header>
 			<Card.Title class="text-base">This post</Card.Title>
@@ -959,26 +1107,23 @@
 			{#if outcome.publicPostIds.length > 0}
 				<!--
 					The only fact that proves a PUBLIC delivery: TikTok reported a public
-					post id for this task. The id is shown beside the link because the
-					link's shape is Epicenter's, while the id is TikTok's.
+					post id for this task.
+
+					Shown as the exact id and nothing else. There used to be a link here,
+					built by assembling TikTok's canonical video URL out of the creator's
+					handle and this id. TikTok documents no permalink builder and returns
+					no URL from this endpoint, so that link was Epicenter's guess wearing
+					the provider's authority: right up until the URL shape changes, and
+					then a confident dead link on the one screen whose whole job is
+					telling the truth about what happened.
 				-->
 				<div class="flex flex-col gap-1">
 					{#each outcome.publicPostIds as postId (postId)}
-						{@const url = tiktokPostUrl(connection.username, postId)}
-						{#if url}
-							<a
-								class="text-sm underline"
-								href={url}
-								target="_blank"
-								rel="noreferrer noopener"
-							>
-								View this post on TikTok
-							</a>
-						{/if}
-						<span class="text-xs text-muted-foreground break-all">
-							TikTok post id: {postId}
-						</span>
+						<span class="text-sm break-all">TikTok post id: {postId}</span>
 					{/each}
+					<span class="text-xs text-muted-foreground">
+						Open the TikTok app to see the post itself.
+					</span>
 				</div>
 			{:else if outcome.status === 'PUBLISH_COMPLETE'}
 				<p class="text-xs text-muted-foreground">
@@ -1040,21 +1185,10 @@
 							</span>
 						</div>
 						{#if attempt.publicPostIds && attempt.publicPostIds.length > 0}
-							{@const url = tiktokPostUrl(
-								connection.username,
-								attempt.publicPostIds[0] ?? '',
-							)}
-							{#if url}
-								<a
-									class="text-xs underline"
-									href={url}
-									target="_blank"
-									rel="noreferrer noopener"
-								>
-									View on TikTok
-								</a>
-							{/if}
-						{:else if attempt.publishId && !isTerminalAttemptStatus(attempt.status)}
+							<span class="text-xs text-muted-foreground break-all">
+								TikTok post id: {attempt.publicPostIds.join(', ')}
+							</span>
+						{:else if canReadRemoteStatus(attempt)}
 							<button
 								type="button"
 								class="self-start text-xs underline"
