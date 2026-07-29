@@ -11,7 +11,8 @@
 ## Durable decisions (do not re-derive, read the ADRs)
 
 - **ADR-0081**: Gmail's OAuth policy permits up to 100 concurrent refresh tokens per account per Client ID, so each device may hold its own independent grant and mirror. This is what makes Local Mail possible at all without a box/relay, unlike Local Books.
-- **ADR-0082**: Sync is plain interval polling of `history.list`, never push/Pub/Sub/webhook, in either mode. Hosted vs self-host collapses to one override value, `GmailApp = { clientId?: string }`. Read the ADR before touching sync mechanics or the mode-selection UI; both are already decided.
+- **ADR-0082**: Sync is plain interval polling of `history.list`, never push/Pub/Sub/webhook. Read the ADR before touching sync mechanics; it is already decided.
+- **ADR-0188**: The Google application identity is a property of the shipped distribution, not of the selected Epicenter instance, and no Epicenter server touches the Gmail path. This replaced ADR-0082's original hosted-vs-self-host `GmailApp = { clientId?: string }` framing, which was the wrong axis. There is no mode-selection UI to build.
 
 ## The `local-books` mapping (read `apps/local-books` before writing any of this)
 
@@ -45,7 +46,7 @@ connectGmail(app: GmailApp)   — the one choke point, both modes
   → everything downstream (mail.db, poll loop, write-through) is identical
 ```
 
-Self-host operators must register their own Google Cloud project and OAuth client; reusing Epicenter's Client ID is refused (ADR-0082's "considered alternatives") because it would make self-host not actually sovereign from Epicenter's infrastructure.
+Superseded by ADR-0188: self-hosting an Epicenter instance does not oblige anyone to register a Google Cloud project. Sovereignty from Epicenter's infrastructure is already total, because no Epicenter server is in the Gmail path. What decides the Google application identity is which distribution shipped the binary: the official signed build carries Epicenter's own verified client, a fork carries its own, and a machine-wide BYO override stays available to anyone who wants their own identity and quota.
 
 ## Data model sketch
 
