@@ -222,7 +222,7 @@ export function addressAt(index: number, options: TraceOptions): Address {
 	if (isValue(index, valueCount)) {
 		return { kind: 'value', namespace, valueName: valueLabel(index) };
 	}
-	const table = tableLabel(
+	const tableName = tableLabel(
 		hash32(options.dataSeed ^ SALT_TABLE, index) % options.tableCount,
 	);
 	return { kind: 'row', namespace, tableName, rowId: rowIdOf(index) };
@@ -428,7 +428,7 @@ export function makeTrace(options: TraceOptions): Trace {
 			address: {
 				kind: 'row',
 				namespace: namespaceLabel(Math.max(0, options.namespaceCount - 1)),
-				table: tableLabel(Math.max(0, options.tableCount - 1)),
+				tableName: tableLabel(Math.max(0, options.tableCount - 1)),
 				rowId: rowIdOf(Math.max(0, facts - 1)),
 			},
 			sequence: Math.max(1, totalEvents),
