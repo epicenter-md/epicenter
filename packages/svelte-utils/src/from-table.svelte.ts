@@ -146,12 +146,33 @@ export function fromTable<TDefinition extends TableDefinition>(
 			: requestRowIds(invalidation.rowIds);
 	}
 
-	const subscribe = createSubscriber((update) =>
-		table.subscribe((invalidation) => {
+	/**
+	 * Observe before reading so a commit cannot land between the scan and the
+	 * subscription. Clearing the dormant cache is equally important: while the
+	 * last Svelte subscriber was absent, no invalidations were observed, so the
+	 * previous rows are no longer an honest answer.
+	 */
+	const subscribe = createSubscriber((update) => {
+		const stop = table.subscribe((invalidation) => {
 			void apply(invalidation).then(update, update);
-		}),
-	);
-	const whenReady = requestRescan();
+		});
+		rows = [];
+		nonconforming = [];
+		loadError = null;
+		void requestRescan().then(update, update);
+		return stop;
+	});
+
+	/**
+	 * Construction has no Svelte effect to own the initial subscription, so the
+	 * readiness scan uses a bounded observation period of its own. Invalidation
+	 * work joins the same serialized drain and therefore finishes before this
+	 * promise settles.
+	 */
+	const stopInitialObservation = table.subscribe((invalidation) => {
+		void apply(invalidation);
+	});
+	const whenReady = requestRescan().finally(stopInitialObservation);
 
 	return {
 		get all() {

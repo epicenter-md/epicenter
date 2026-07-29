@@ -1,20 +1,39 @@
 import { expect, mock, test } from 'bun:test';
 
+type SubscriberControl = {
+	activate(): void;
+	deactivate(): void;
+};
+
+const subscriberControls: SubscriberControl[] = [];
+
 /**
  * `createSubscriber` installs its subscription only from inside a Svelte
  * effect, and these are plain bun tests with no reactive runtime. Substituting
- * it with the two things it actually does here (start on first use, hand back a
- * teardown) is what lets the invalidation path be exercised without reshaping
- * the adapter around the test.
+ * it with its activation and teardown lifecycle lets the invalidation path and
+ * dormant-cache behavior be exercised without reshaping the adapter around the
+ * test.
  */
 mock.module('svelte/reactivity', () => ({
 	createSubscriber(start: (update: () => void) => () => void) {
 		let stop: (() => void) | undefined;
-		return () => {
-			stop ??= start(() => {});
+		const control = {
+			activate() {
+				stop ??= start(() => {});
+			},
+			deactivate() {
+				stop?.();
+				stop = undefined;
+			},
 		};
+		subscriberControls.push(control);
+		// These tests read getters imperatively, outside a Svelte effect. The real
+		// createSubscriber is also a no-op for those reads; tests activate the
+		// simulated effect explicitly through this control.
+		return () => {};
 	},
 }));
+
 import {
 	DataReadError,
 	defineTable,
@@ -31,7 +50,9 @@ import { fromTable } from './from-table.svelte.js';
  *
  * Key behaviors:
  * - Initial refresh classifies conforming and nonconforming rows
- * - Explicit refresh updates classified and point-read surfaces
+ * - Observation starts before each scan, including initial readiness
+ * - Reactivation discards a dormant cache and rescans
+ * - Row invalidations update only the rows they name
  */
 
 (globalThis as unknown as { $state: unknown }).$state = Object.assign(
@@ -45,6 +66,14 @@ import { fromTable } from './from-table.svelte.js';
  * microtask the mock table can produce.
  */
 const settle = () => Bun.sleep(1);
+
+async function activateLatestSubscriber(): Promise<SubscriberControl> {
+	const subscriber = subscriberControls.at(-1);
+	if (subscriber === undefined) throw new Error('No subscriber was created');
+	subscriber.activate();
+	await settle();
+	return subscriber;
+}
 
 const definition = defineTable({
 	fields: { name: field.string() },
@@ -79,17 +108,24 @@ function createMockTable() {
 	const listeners = new Set<(invalidation: TableInvalidation) => void>();
 	const reads = { scans: 0, gets: [] as string[] };
 	let getFailure: unknown;
+	let heldScan:
+		| { readonly promise: Promise<void>; readonly release: () => void }
+		| undefined;
 
 	const table = {
 		async scan() {
 			reads.scans += 1;
+			const snapshot = [...store.entries()].sort(([left], [right]) =>
+				left < right ? -1 : 1,
+			);
+			const gate = heldScan;
+			heldScan = undefined;
+			await gate?.promise;
 			const scan = {
 				rows: [] as Row[],
 				nonconforming: [] as NonconformingRowError[],
 			};
-			for (const id of [...store.keys()].sort()) {
-				const entry = store.get(id);
-				if (entry === undefined) continue;
+			for (const [, entry] of snapshot) {
 				if (entry.kind === 'row') scan.rows.push(entry.row);
 				else scan.nonconforming.push(entry.error);
 			}
@@ -117,6 +153,14 @@ function createMockTable() {
 		failGetsWith(error: unknown) {
 			getFailure = error;
 		},
+		holdNextScan() {
+			let release = () => {};
+			const promise = new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			heldScan = { promise, release };
+			return release;
+		},
 		invalidate(invalidation: TableInvalidation) {
 			for (const listener of listeners) listener(invalidation);
 		},
@@ -133,6 +177,45 @@ test('initial refresh classifies conforming and nonconforming rows', async () =>
 
 	expect(entries.all.map((r) => r.id)).toEqual(['ok']);
 	expect(entries.nonconforming.map((e) => e.id)).toEqual(['bad']);
+});
+
+test('initial scan observes a mutation that lands while the scan is in flight', async () => {
+	const mock = createMockTable();
+	mock.store.set('a', row('a', 'Before'));
+	const releaseScan = mock.holdNextScan();
+
+	const entries = fromTable(mock.table);
+	mock.store.set('a', row('a', 'After'));
+	mock.invalidate({ scope: 'rows', rowIds: ['a'] });
+	releaseScan();
+	await entries.whenReady;
+
+	expect(entries.byId('a')?.name).toBe('After');
+	expect(mock.reads.scans).toBe(1);
+	expect(mock.reads.gets).toEqual(['a']);
+});
+
+test('reactivation clears a dormant cache and rescans before exposing rows', async () => {
+	const mock = createMockTable();
+	mock.store.set('a', row('a', 'Before'));
+	const entries = fromTable(mock.table);
+	await entries.whenReady;
+	expect(entries.all.map((entry) => entry.name)).toEqual(['Before']);
+	const subscriber = subscriberControls.at(-1);
+	expect(subscriber).toBeDefined();
+
+	subscriber?.activate();
+	await settle();
+	subscriber?.deactivate();
+	mock.store.set('a', row('a', 'After'));
+	const releaseScan = mock.holdNextScan();
+	subscriber?.activate();
+
+	expect(entries.all).toEqual([]);
+	releaseScan();
+	await settle();
+	expect(entries.all.map((entry) => entry.name)).toEqual(['After']);
+	expect(mock.reads.scans).toBe(3);
 });
 
 test('explicit refresh updates classified and point-read surfaces', async () => {
@@ -158,15 +241,15 @@ test('a rows invalidation re-reads only the rows it names', async () => {
 	mock.store.set('b', row('b', 'Bo'));
 	const entries = fromTable(mock.table);
 	await entries.whenReady;
-	// Reading `all` installs the subscription, exactly as a component would.
+	await activateLatestSubscriber();
 	expect(entries.all.map((r) => r.id)).toEqual(['a', 'b']);
-	expect(mock.reads.scans).toBe(1);
+	expect(mock.reads.scans).toBe(2);
 
 	mock.store.set('b', row('b', 'Bea'));
 	mock.invalidate({ scope: 'rows', rowIds: ['b'] });
 	await settle();
 
-	expect(mock.reads.scans).toBe(1);
+	expect(mock.reads.scans).toBe(2);
 	expect(mock.reads.gets).toEqual(['b']);
 	expect(entries.byId('b')?.name).toBe('Bea');
 	expect(entries.all.map((r) => r.id)).toEqual(['a', 'b']);
@@ -178,7 +261,7 @@ test('a rows invalidation removes a row that is no longer live', async () => {
 	mock.store.set('b', row('b'));
 	const entries = fromTable(mock.table);
 	await entries.whenReady;
-	entries.all;
+	await activateLatestSubscriber();
 
 	mock.store.delete('a');
 	mock.invalidate({ scope: 'rows', rowIds: ['a'] });
@@ -193,7 +276,7 @@ test('a rows invalidation moves a newly nonconforming row into its bucket', asyn
 	mock.store.set('a', row('a'));
 	const entries = fromTable(mock.table);
 	await entries.whenReady;
-	entries.all;
+	await activateLatestSubscriber();
 
 	mock.store.set('a', nonconforming('a'));
 	mock.invalidate({ scope: 'rows', rowIds: ['a'] });
@@ -208,7 +291,7 @@ test('a rows invalidation moves a newly nonconforming row into its bucket', asyn
 	await settle();
 	expect(entries.nonconforming).toEqual([]);
 	expect(entries.byId('a')?.name).toBe('Recovered');
-	expect(mock.reads.scans).toBe(1);
+	expect(mock.reads.scans).toBe(2);
 });
 
 test('a table invalidation rescans and supersedes waiting row ids', async () => {
@@ -216,7 +299,7 @@ test('a table invalidation rescans and supersedes waiting row ids', async () => 
 	mock.store.set('a', row('a'));
 	const entries = fromTable(mock.table);
 	await entries.whenReady;
-	entries.all;
+	await activateLatestSubscriber();
 	mock.reads.gets.length = 0;
 
 	mock.store.set('c', row('c'));
@@ -224,7 +307,7 @@ test('a table invalidation rescans and supersedes waiting row ids', async () => 
 	mock.invalidate({ scope: 'table' });
 	await settle();
 
-	expect(mock.reads.scans).toBe(2);
+	expect(mock.reads.scans).toBe(3);
 	expect(entries.all.map((r) => r.id)).toEqual(['a', 'c']);
 });
 
@@ -233,7 +316,7 @@ test('an unreadable point read falls back to a rescan', async () => {
 	mock.store.set('a', row('a'));
 	const entries = fromTable(mock.table);
 	await entries.whenReady;
-	entries.all;
+	await activateLatestSubscriber();
 
 	mock.failGetsWith({ name: 'ReplicaUnavailable', message: 'storage gone' });
 	mock.store.set('b', row('b'));
@@ -242,7 +325,7 @@ test('an unreadable point read falls back to a rescan', async () => {
 
 	// The read could not answer, so the view asked the question it can always
 	// ask instead of reporting a failure the caller cannot act on.
-	expect(mock.reads.scans).toBe(2);
+	expect(mock.reads.scans).toBe(3);
 	expect(entries.all.map((r) => r.id)).toEqual(['a', 'b']);
 	expect(entries.loadError).toBeNull();
 });
