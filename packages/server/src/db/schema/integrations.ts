@@ -64,6 +64,26 @@ export const tiktokConnection = pgTable(
 		 * grant is visible instead of assumed.
 		 */
 		scopes: text('scopes').array().notNull(),
+		/**
+		 * Set when a disconnect has begun, and never cleared.
+		 *
+		 * A durable CLOSING state, not a convenience flag. Disconnect revokes the
+		 * token at TikTok and then deletes this row, and both steps take time during
+		 * which a concurrent publish could otherwise claim a slot, obtain a token,
+		 * and reach TikTok with a credential that is about to be revoked, leaving a
+		 * post whose only local record is being cascade-deleted.
+		 *
+		 * The publish claim reads this under the same row lock the disconnect takes,
+		 * so the two serialize: whichever gets the lock first wins, and the loser sees
+		 * the other's decision rather than a stale snapshot.
+		 *
+		 * Never cleared, so a disconnect interrupted between marking and deleting
+		 * leaves an account that refuses new posts and can be disconnected again.
+		 * That is the safe direction to fail: refusing to post to an account the
+		 * creator asked to disconnect costs nothing, while posting to it could not be
+		 * undone.
+		 */
+		closingAt: timestamp('closing_at'),
 		accessTokenCiphertext: text('access_token_ciphertext').notNull(),
 		accessTokenExpiresAt: timestamp('access_token_expires_at').notNull(),
 		refreshTokenCiphertext: text('refresh_token_ciphertext').notNull(),
@@ -208,6 +228,24 @@ export const tiktokPublishAttempt = pgTable(
 		 * array is the confirmed public post. Stored so a terminal outcome is read
 		 * locally forever instead of re-calling TikTok on every page load.
 		 */
+		/**
+		 * How long the request that claimed this row may still be working on it.
+		 *
+		 * Exists because the shape `(publish_id IS NULL, status IS NULL)` is ambiguous
+		 * between two opposite situations: a publish that is healthily in flight
+		 * between its claim and its first outcome write, and one whose Worker died and
+		 * will never write anything. Without a lease, a creator recording "nothing was
+		 * posted" on the second could land on the first, marking it settled while the
+		 * original request went on to publish.
+		 *
+		 * So the lease, not the shape, is what says ACTIVE. A human may adjudicate a
+		 * statusless attempt only once the lease has expired, and the outcome writers
+		 * refuse to overwrite a human's answer. See `attempt-status.ts`.
+		 *
+		 * NULL means the row predates leases, and therefore that no live request holds
+		 * it: the code that would have set one did not exist.
+		 */
+		leaseExpiresAt: timestamp('lease_expires_at'),
 		publicPostIds: text('public_post_ids').array(),
 		failReason: text('fail_reason'),
 		createdAt: timestamp('created_at').defaultNow().notNull(),

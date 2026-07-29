@@ -31,6 +31,7 @@
 	import { createFollowGate } from '$lib/integrations/follow-gate';
 	import {
 		type AttemptTone,
+		attemptPhase,
 		blocksNewPublish,
 		COMMERCIAL_LABELS,
 		createPublishIntentKeeper,
@@ -147,6 +148,16 @@
 	let submitNotice = $state<string | null>(null);
 	/** Which attempt the creator is recording an outcome for, while it is in flight. */
 	let resolving = $state<string | null>(null);
+	/**
+	 * A ticking clock, because whether an attempt may be adjudicated by hand depends
+	 * on a LEASE expiring rather than on anything arriving from the server.
+	 *
+	 * Without it, a page open across the moment a lease runs out would keep saying
+	 * "sending" forever: an attempt with no publish id is never polled, so nothing
+	 * else would re-render. The interval only runs while an active attempt is on
+	 * screen (see the effect below), so a settled surface costs nothing.
+	 */
+	let now = $state(Date.now());
 
 	/**
 	 * Owns the idempotency key across retries AND across reloads. Backed by
@@ -248,6 +259,26 @@
 		attempts.find((attempt) => blocksNewPublish(attempt.status)) ?? null,
 	);
 
+	/**
+	 * Whether a request is still allowed to be working on the blocking attempt.
+	 *
+	 * `active` is the healthy in-flight case and must NOT offer a manual outcome:
+	 * recording "nothing was posted" on a live publish is exactly how one consent
+	 * becomes a post the creator was told did not happen.
+	 */
+	const blockingPhase = $derived(
+		blockingAttempt ? attemptPhase(blockingAttempt, now) : null,
+	);
+
+	// Tick only while something is genuinely in flight.
+	$effect(() => {
+		if (blockingPhase !== 'active') return;
+		const timer = setInterval(() => {
+			now = Date.now();
+		}, 15_000);
+		return () => clearInterval(timer);
+	});
+
 	/** Every reason the post button stays disabled, in creator language. */
 	const blockers = $derived.by(() => {
 		const reasons: string[] = [];
@@ -260,9 +291,11 @@
 		 */
 		if (blockingAttempt) {
 			reasons.push(
-				requiresManualResolution(blockingAttempt)
-					? 'A previous post has an unknown outcome that only you can settle. Check TikTok and record what you found below.'
-					: 'A previous post has an unknown outcome. Check its status before posting again.',
+				blockingPhase === 'active'
+					? 'A post to this account is still being sent. Wait for it to finish.'
+					: requiresManualResolution(blockingAttempt, now)
+						? 'A previous post has an unknown outcome that only you can settle. Check TikTok and record what you found below.'
+						: 'A previous post has an unknown outcome. Check its status before posting again.',
 			);
 		}
 		if (!videoFile) reasons.push('Choose a video.');
@@ -1041,7 +1074,17 @@
 				cannot become two.
 			</p>
 
-			{#if requiresManualResolution(blockingAttempt)}
+			{#if blockingPhase === 'active'}
+				<!--
+					Still in flight. No remedy is offered on purpose: the request that owns
+					this attempt may be uploading right now, and letting anyone declare an
+					outcome for it is the race the lease exists to prevent.
+				-->
+				<p class="flex items-center gap-2 text-xs">
+					<Spinner class="size-3.5" />
+					Still sending. Epicenter will record the outcome when TikTok answers.
+				</p>
+			{:else if requiresManualResolution(blockingAttempt, now)}
 				<!--
 					There is no publish id, so nothing can be polled and only the creator
 					can close this out. Both answers are offered plainly, because guessing

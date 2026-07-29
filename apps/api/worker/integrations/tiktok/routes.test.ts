@@ -61,6 +61,24 @@ type DbScript = {
 	 * mirror exercises the ROUTE rather than proving the predicate.
 	 */
 	attemptRows?: unknown[];
+	/**
+	 * The connection row as seen INSIDE a transaction (`SELECT ... FOR UPDATE`).
+	 *
+	 * Separate from `selectRows` because token custody and the publish claim both
+	 * lock this row and the existing tests rely on custody seeing NOTHING (which is
+	 * how they stop before reaching TikTok). A test that wants the claim to proceed
+	 * supplies this.
+	 */
+	txConnectionRows?: unknown[];
+	/**
+	 * Rows returned by `update(...).returning()`.
+	 *
+	 * Defaults to ONE row, meaning the update matched. That matters now that the
+	 * outcome writers report whether they wrote: an empty default would read as
+	 * "refused because a human already settled this" and turn every successful
+	 * publish into a 502.
+	 */
+	updateReturning?: unknown[];
 	/** Row returned by `delete(...).returning()` (state consumption). */
 	deleteReturning?: unknown[];
 	insertRows?: unknown[];
@@ -140,7 +158,7 @@ function fakeDb(script: DbScript = {}) {
 		},
 		update: () => {
 			state.touched = true;
-			return thenableRows([]);
+			return thenableRows(script.updateReturning ?? [{ id: 'updated' }]);
 		},
 		/**
 		 * `ensureAccessToken` locks the row inside a transaction. The tx sees no
@@ -149,9 +167,26 @@ function fakeDb(script: DbScript = {}) {
 		 * BEFORE token custody, and tokens.test.ts owns the custody behavior
 		 * against a fake that models the row lock.
 		 */
+		/**
+		 * Two different callers open transactions here, so the handle models both:
+		 * `ensureAccessToken` locks the connection row (and sees nothing, so token
+		 * custody reports not-found and the route answers 502), and
+		 * `claimPublishSlot` locks the connection row, rechecks the block, and
+		 * inserts. Serialization itself is NOT modelled and cannot be: that property
+		 * belongs to Postgres and is proven in store.concurrency.test.ts.
+		 */
 		transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => {
 			state.touched = true;
-			return fn({ select: () => thenableRows([]) });
+			return fn({
+				select: () => ({
+					from: (table: unknown) =>
+						table === tiktokPublishAttempt
+							? attemptChain(script.attemptRows ?? [])
+							: chainOf(script.txConnectionRows ?? []),
+				}),
+				insert: () => thenableRows(script.insertRows ?? []),
+				update: () => thenableRows(script.selectRows ?? []),
+			});
 		},
 	};
 	return { db, inserted, state };
@@ -623,6 +658,8 @@ function connectionRow(scopes: string[]) {
 		displayName: 'Braden',
 		username: 'braden',
 		avatarUrl: null,
+		// Not being disconnected. A real row has NULL here.
+		closingAt: null,
 		scopes,
 		accessTokenCiphertext: 'v1.a.b',
 		accessTokenExpiresAt: new Date(Date.now() + 3_600_000),
@@ -802,6 +839,8 @@ async function liveConnectionRow(scopes = ['video.publish']) {
 		displayName: 'Braden',
 		username: 'braden',
 		avatarUrl: null,
+		// Not being disconnected. A real row has NULL here.
+		closingAt: null,
 		scopes,
 		accessTokenCiphertext: accessCiphertext as string,
 		// Comfortably fresh, so token custody never calls TikTok's token endpoint.
@@ -834,6 +873,10 @@ const CREATOR_INFO_BODY = {
 function liveDb(row: Record<string, unknown>) {
 	const base = fakeDb({
 		selectRows: [row],
+		// Locked inside the transaction by token custody AND by the publish claim,
+		// which issue the same `SELECT ... FOR UPDATE` and so cannot be told apart.
+		// Tests that want custody to stop early simply omit this.
+		txConnectionRows: [row],
 		insertRows: [
 			{
 				id: 'attempt-1',
@@ -845,19 +888,8 @@ function liveDb(row: Record<string, unknown>) {
 			},
 		],
 	});
-	const db = {
-		...base.db,
-		transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> =>
-			fn({
-				select: () => ({
-					from: () => ({
-						where: () => ({ for: () => ({ limit: async () => [row] }) }),
-					}),
-				}),
-				update: () => ({ set: () => ({ where: async () => undefined }) }),
-			}),
-	};
-	return { ...base, db };
+	// The base fake already models this transaction for both of its callers.
+	return base;
 }
 
 /** Drive one publish request with TikTok's network calls stubbed. */
@@ -1061,7 +1093,11 @@ function statefulDb(connectionRow: Record<string, unknown>) {
 						latest.publishId = values.publishId;
 					}
 				}
-				return { where: async () => undefined };
+				// `.returning()` matters: the outcome writers report whether a row moved,
+				// and an empty result means "a human already settled this".
+				return {
+					where: () => chain(latest ? [{ id: latest.id }] : []),
+				};
 			},
 		}),
 		insert: () => ({
@@ -1078,16 +1114,21 @@ function statefulDb(connectionRow: Record<string, unknown>) {
 				}),
 			}),
 		}),
+		/**
+		 * Serves token custody AND the publish claim, which issue the same locking
+		 * read. Inside the transaction the claim rechecks the block and inserts, so
+		 * the handle routes by table exactly as the outer db does.
+		 */
 		transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> =>
 			fn({
 				select: () => ({
-					from: () => ({
-						where: () => ({
-							for: () => ({ limit: async () => [connectionRow] }),
-						}),
-					}),
+					from: (table: unknown) =>
+						table === tiktokPublishAttempt
+							? attemptChain()
+							: chain([connectionRow]),
 				}),
-				update: () => ({ set: () => ({ where: async () => undefined }) }),
+				insert: () => db.insert(),
+				update: () => db.update(),
 			}),
 	};
 	return { db, claimed, statuses };
@@ -1535,6 +1576,26 @@ test('a database failure never withholds the outcome TikTok reported', async () 
 //
 // The hard invariant. These drive the exact sequences that could break it.
 
+/**
+ * The attempt table, told apart by call shape: the blocking recheck ends at
+ * `.orderBy`/`.limit(1)` after a filtered read, the by-key read-back is
+ * unfiltered. Mirrors `DbScript.attemptRows`.
+ */
+function attemptChainOver(all: unknown[]): unknown {
+	const blocking = all.filter((row) =>
+		blocksNewPublish((row as { status?: string | null }).status ?? null),
+	);
+	const chain = Object.assign(Promise.resolve(blocking), {
+		from: () => attemptChainOver(all),
+		where: () => attemptChainOver(all),
+		orderBy: () => attemptChainOver(all),
+		limit: () => chainReturning(all),
+		returning: () => attemptChainOver(all),
+		for: () => attemptChainOver(all),
+	});
+	return chain;
+}
+
 /** A minimal awaitable drizzle-ish chain returning fixed rows. */
 function chainReturning(rows: unknown[]): unknown {
 	const chain: unknown = Object.assign(Promise.resolve(rows), {
@@ -1586,29 +1647,34 @@ async function publishWithPriorAttempt({
 		// already claimed, and a row when it is not.
 		insertRows: [],
 	});
+	const claimInsert = () =>
+		submittedKey === priorKey
+			? chainReturning([])
+			: chainReturning([
+					{
+						id: 'attempt-new',
+						connectionId: 'conn-1',
+						idempotencyKey: submittedKey,
+						kind: 'direct_post',
+						publishId: null,
+						status: null,
+					},
+				]);
 	const db = {
 		...base.db,
-		insert: () =>
-			submittedKey === priorKey
-				? chainReturning([])
-				: chainReturning([
-						{
-							id: 'attempt-new',
-							connectionId: 'conn-1',
-							idempotencyKey: submittedKey,
-							kind: 'direct_post',
-							publishId: null,
-							status: null,
-						},
-					]),
+		insert: claimInsert,
 		transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> =>
 			fn({
 				select: () => ({
-					from: () => ({
-						where: () => ({ for: () => ({ limit: async () => [row] }) }),
-					}),
+					from: (table: unknown) =>
+						table === tiktokPublishAttempt
+							? // The claim's recheck, filtered the way the SQL filters, and then
+								// its by-key read-back (which ends at `.limit`) unfiltered.
+								attemptChainOver([prior])
+							: chainReturning([{ ...row, closingAt: null }]),
 				}),
-				update: () => ({ set: () => ({ where: async () => undefined }) }),
+				insert: claimInsert,
+				update: () => chainReturning([{ id: 'attempt-new' }]),
 			}),
 	};
 	const built = createTikTokTestApp({
@@ -1791,11 +1857,13 @@ test('cross-account posting stays allowed while one account is blocked', async (
 		transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> =>
 			fn({
 				select: () => ({
-					from: () => ({
-						where: () => ({ for: () => ({ limit: async () => [row] }) }),
-					}),
+					from: (table: unknown) =>
+						table === tiktokPublishAttempt
+							? chainReturning([])
+							: chainReturning([{ ...row, id: 'conn-2' }]),
 				}),
-				update: () => ({ set: () => ({ where: async () => undefined }) }),
+				insert: () => base.db.insert(),
+				update: () => chainReturning([{ id: 'attempt-2' }]),
 			}),
 	};
 	const built = createTikTokTestApp({
@@ -1843,23 +1911,40 @@ test('cross-account posting stays allowed while one account is blocked', async (
 // --- Disconnect must not destroy custody ---------------------------------
 
 /** A db that reports the given unsettled attempts for the disconnect check. */
+/**
+ * A db for the disconnect path, whose locking transaction models
+ * `beginConnectionClose`: lock the connection, read the unsettled attempts, then
+ * mark `closing_at`.
+ */
 function disconnectDb(row: Record<string, unknown>, unsettled: unknown[]) {
 	const base = fakeDb({ selectRows: [row] });
-	let selects = 0;
 	const deleted: string[] = [];
+	const marked: Record<string, unknown>[] = [];
 	const db = {
 		...base.db,
-		select: () => {
-			selects += 1;
-			// 1: the connection lookup. 2: listUnsettledAttempts.
-			return selects === 1 ? base.db.select() : chainReturning(unsettled);
-		},
 		delete: () => {
 			deleted.push('connection');
 			return chainReturning([{ id: 'conn-1' }]);
 		},
+		transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> =>
+			fn({
+				select: () => ({
+					from: (table: unknown) =>
+						table === tiktokPublishAttempt
+							? chainReturning(unsettled)
+							: chainReturning([{ ...row, closingAt: null }]),
+				}),
+				update: () => ({
+					set: (values: Record<string, unknown>) => {
+						marked.push(values);
+						return chainReturning([
+							{ ...row, closingAt: values.closingAt ?? new Date() },
+						]);
+					},
+				}),
+			}),
 	};
-	return { db, deleted };
+	return { db, deleted, marked };
 }
 
 test('disconnect is REFUSED while an attempt has no settled outcome', async () => {
@@ -1935,7 +2020,13 @@ test('disconnect proceeds once every attempt has settled', async () => {
  */
 function resolveDb(
 	connection: Record<string, unknown>,
-	attempt: { status: string | null; publishId: string | null },
+	attempt: {
+		status: string | null;
+		publishId: string | null;
+		/** Expired by default: these tests are about the status allowlist, and the
+		 * lease boundary itself is proven against real Postgres. */
+		leaseExpiresAt?: Date | null;
+	},
 ) {
 	const base = fakeDb({ selectRows: [connection] });
 	const writes: Record<string, unknown>[] = [];
@@ -1945,7 +2036,18 @@ function resolveDb(
 			set: (values: Record<string, unknown>) => ({
 				where: () => ({
 					returning: async () => {
-						if (!requiresManualResolution(attempt)) return [];
+						if (
+							!requiresManualResolution(
+								{
+									...attempt,
+									leaseExpiresAt:
+										attempt.leaseExpiresAt ?? new Date(Date.now() - 1_000),
+								},
+								Date.now(),
+							)
+						) {
+							return [];
+						}
 						writes.push(values);
 						return [{ id: 'attempt-1' }];
 					},
@@ -2037,202 +2139,6 @@ test('resolving an attempt on a connection you do not own reads as not found', a
 	const res = await postResolution(db, 'RESOLVED_POSTED');
 
 	expect(res.status).toBe(404);
-});
-
-// --- The block must live on the SERVER, not only in Svelte ---------------
-//
-// The dashboard derives its block from these rows, but a browser deriving a block
-// is a courtesy, not a guarantee. A direct or hostile client changes one field,
-// mints a fresh idempotency key, and walks past a UI that never runs. The
-// idempotency latch does not catch it either: a new key is by definition a new
-// claim, so `video/init` would be reached a second time while a prior outcome is
-// still unknown.
-
-/**
- * Drive a publish with a FRESH key while a prior attempt sits at `priorStatus`,
- * counting how many times `video/init` is reached.
- */
-async function publishWhilePriorAttempt(priorStatus: string | null) {
-	const row = await liveConnectionRow(['video.publish']);
-	const base = liveDb(row);
-	let selects = 0;
-	const db = {
-		...base.db,
-		select: () => {
-			selects += 1;
-			// 1: the connection lookup. 2: listAttemptsBlockingNewPublish, which the
-			// route consults BEFORE claiming anything.
-			if (selects === 1) return base.db.select();
-			if (selects === 2) {
-				// Model the SQL predicate: a null status always blocks, and otherwise
-				// only a status that is neither settled nor known-processing does.
-				const blocks =
-					priorStatus === null ||
-					(!TERMINAL.includes(priorStatus) &&
-						!PROCESSING.includes(priorStatus));
-				return chainReturning(
-					blocks
-						? [
-								{
-									id: 'attempt-prior',
-									connectionId: 'conn-1',
-									idempotencyKey: 'an-older-key-000000',
-									publishId:
-										priorStatus === 'UPLOAD_FAILED' ? 'pub-prior' : null,
-									status: priorStatus,
-								},
-							]
-						: [],
-				);
-			}
-			return chainReturning([]);
-		},
-	};
-	const built = createTikTokTestApp({
-		session: freshSession('user-1'),
-		env: CONFIGURED_ENV,
-		db,
-	});
-
-	const initCalls: string[] = [];
-	const realFetch = globalThis.fetch;
-	globalThis.fetch = (async (input: string | URL) => {
-		const url = String(input);
-		if (url.includes('creator_info/query')) {
-			return new Response(JSON.stringify(CREATOR_INFO_BODY), { status: 200 });
-		}
-		if (url.includes('video/init')) initCalls.push(url);
-		return new Response(
-			JSON.stringify({
-				data: { publish_id: 'pub-new', upload_url: 'https://upload/x' },
-				error: { code: 'ok' },
-			}),
-			{ status: 200 },
-		);
-	}) as unknown as typeof globalThis.fetch;
-
-	try {
-		const body = new FormData();
-		// A genuinely NEW key, as a client that changed a field would send.
-		body.set('idempotencyKey', 'b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e');
-		body.set('title', 'A different caption entirely');
-		body.set('privacyLevel', 'PUBLIC_TO_EVERYONE');
-		body.set('video', new File([mp4Bytes(30)], 'v.mp4', { type: 'video/mp4' }));
-		const res = await request(
-			built,
-			'/api/integrations/tiktok/connections/conn-1/publish',
-			{ method: 'POST', body },
-		);
-		return { res, initCalls };
-	} finally {
-		globalThis.fetch = realFetch;
-	}
-}
-
-const TERMINAL = [
-	'PUBLISH_COMPLETE',
-	'FAILED',
-	'SEND_TO_USER_INBOX',
-	'INIT_FAILED',
-	'RESOLVED_POSTED',
-	'RESOLVED_NOT_POSTED',
-];
-const PROCESSING = ['PROCESSING_UPLOAD', 'PROCESSING_DOWNLOAD'];
-
-test.each([
-	['a null status (Worker died before recording)', null],
-	['INIT_AMBIGUOUS (init answer lost)', 'INIT_AMBIGUOUS'],
-	['UPLOAD_FAILED (task exists, bytes may not have landed)', 'UPLOAD_FAILED'],
-	['a future TikTok status this build does not know', 'SOME_FUTURE_CODE'],
-])('a NEW key is refused while a prior attempt sits at %s, and never reaches init', async (_label, priorStatus) => {
-	const { res, initCalls } = await publishWhilePriorAttempt(
-		priorStatus as string | null,
-	);
-
-	expect(res.status).toBe(409);
-	const body = (await res.json()) as {
-		error: { name: string; code: string; message: string };
-	};
-	expect(body.error.name).toBe('PublishBlockedByUnsettledOutcome');
-	expect(body.error.code).toBe('BLOCKED_BY_UNSETTLED_OUTCOME');
-	// The creator-facing reason survives, rather than a bare status code.
-	expect(body.error.message.length).toBeGreaterThan(20);
-	// The whole point: TikTok's irreversible call was never made.
-	expect(initCalls).toHaveLength(0);
-});
-
-test.each([
-	['PROCESSING_UPLOAD', 'PROCESSING_UPLOAD'],
-	['PROCESSING_DOWNLOAD', 'PROCESSING_DOWNLOAD'],
-	['PUBLISH_COMPLETE', 'PUBLISH_COMPLETE'],
-	['FAILED', 'FAILED'],
-	['INIT_FAILED', 'INIT_FAILED'],
-	['RESOLVED_NOT_POSTED', 'RESOLVED_NOT_POSTED'],
-])('a genuinely new consent still posts while a prior attempt sits at %s', async (_label, priorStatus) => {
-	// A post TikTok is processing, or one that has settled either way, is a
-	// stateable outcome. Blocking on those would stop a creator posting a second
-	// video for no safety gain.
-	const { res, initCalls } = await publishWhilePriorAttempt(priorStatus);
-
-	expect(res.status).toBe(200);
-	expect(initCalls).toHaveLength(1);
-});
-
-test('cross-account posting stays allowed while one account is blocked', async () => {
-	// The block is per-connection by design: an unknown outcome on one account
-	// cannot be duplicated by posting to a different one, so refusing here would
-	// punish without protecting anything.
-	const row = await liveConnectionRow(['video.publish']);
-	const base = liveDb({ ...row, id: 'conn-2' });
-	let selects = 0;
-	const db = {
-		...base.db,
-		select: () => {
-			selects += 1;
-			// The blocking query is scoped to conn-2, which has no unsettled attempts.
-			return selects === 1 ? base.db.select() : chainReturning([]);
-		},
-	};
-	const built = createTikTokTestApp({
-		session: freshSession('user-1'),
-		env: CONFIGURED_ENV,
-		db,
-	});
-
-	const initCalls: string[] = [];
-	const realFetch = globalThis.fetch;
-	globalThis.fetch = (async (input: string | URL) => {
-		const url = String(input);
-		if (url.includes('creator_info/query')) {
-			return new Response(JSON.stringify(CREATOR_INFO_BODY), { status: 200 });
-		}
-		if (url.includes('video/init')) initCalls.push(url);
-		return new Response(
-			JSON.stringify({
-				data: { publish_id: 'pub-2', upload_url: 'https://upload/x' },
-				error: { code: 'ok' },
-			}),
-			{ status: 200 },
-		);
-	}) as unknown as typeof globalThis.fetch;
-
-	try {
-		const body = new FormData();
-		body.set('idempotencyKey', 'c3d4e5f6-a7b8-4c9d-8e0f-1a2b3c4d5e6f');
-		body.set('title', 'A caption');
-		body.set('privacyLevel', 'PUBLIC_TO_EVERYONE');
-		body.set('video', new File([mp4Bytes(30)], 'v.mp4', { type: 'video/mp4' }));
-		const res = await request(
-			built,
-			'/api/integrations/tiktok/connections/conn-2/publish',
-			{ method: 'POST', body },
-		);
-
-		expect(res.status).toBe(200);
-		expect(initCalls).toHaveLength(1);
-	} finally {
-		globalThis.fetch = realFetch;
-	}
 });
 
 test.each([

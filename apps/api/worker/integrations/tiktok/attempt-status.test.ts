@@ -1,12 +1,20 @@
 import { expect, test } from 'bun:test';
 import {
+	attemptPhase,
 	blocksNewPublish,
 	canReadRemoteStatus,
 	describeAttemptStatus,
 	isTerminalAttemptStatus,
+	PUBLISH_LEASE_MS,
 	pickAttemptToFollow,
 	requiresManualResolution,
 } from './attempt-status.js';
+
+const NOW = 1_800_000_000_000;
+/** A lease that has run out: nothing is working on this attempt any more. */
+const EXPIRED = new Date(NOW - 1_000);
+/** A lease still running: a request is mid-flight and owns this attempt. */
+const LIVE = new Date(NOW + PUBLISH_LEASE_MS);
 
 // --- A claimed row with no answer is UNKNOWN, never "nothing happened" ----
 
@@ -30,12 +38,74 @@ test('a claimed attempt with no status blocks a new publish', () => {
 // --- INIT_AMBIGUOUS cannot be polled, and must not pretend otherwise -----
 
 test('INIT_AMBIGUOUS blocks publishing and needs a human, not a status read', () => {
-	const attempt = { status: 'INIT_AMBIGUOUS', publishId: null };
+	const attempt = {
+		status: 'INIT_AMBIGUOUS',
+		publishId: null,
+		leaseExpiresAt: LIVE,
+	};
 
 	expect(blocksNewPublish(attempt.status)).toBe(true);
 	// There is no publish id, so there is no task to ask TikTok about.
 	expect(canReadRemoteStatus(attempt)).toBe(false);
-	expect(requiresManualResolution(attempt)).toBe(true);
+	// Resolvable even with a live lease: the request that wrote this status is the
+	// request that then returned, so nothing is still working on it.
+	expect(requiresManualResolution(attempt, NOW)).toBe(true);
+});
+
+// --- The lease, which the shape alone cannot supply -----------------------
+
+test('a statusless claim is ACTIVE while its lease runs, and abandoned after', () => {
+	/**
+	 * The ambiguity this exists to resolve: `(publish_id IS NULL, status IS NULL)`
+	 * is BOTH a healthy publish between its claim and its first outcome write, and
+	 * the wreckage of a Worker that died. Reading the first as the second lets a
+	 * creator mark a live request settled while it goes on to publish.
+	 */
+	const live = { status: null, publishId: null, leaseExpiresAt: LIVE };
+	const dead = { status: null, publishId: null, leaseExpiresAt: EXPIRED };
+
+	expect(attemptPhase(live, NOW)).toBe('active');
+	expect(attemptPhase(dead, NOW)).toBe('abandoned');
+	// Only the abandoned one may be adjudicated by hand.
+	expect(requiresManualResolution(live, NOW)).toBe(false);
+	expect(requiresManualResolution(dead, NOW)).toBe(true);
+	// Both still block a new publish: an active claim is exactly what serializes.
+	expect(blocksNewPublish(live.status)).toBe(true);
+	expect(blocksNewPublish(dead.status)).toBe(true);
+});
+
+test('an unreadable lease FAILS CLOSED to active', () => {
+	// The danger is letting somebody settle an attempt that is still running, so a
+	// date we cannot parse must not read as permission to do that.
+	const attempt = {
+		status: null,
+		publishId: null,
+		leaseExpiresAt: 'not-a-date',
+	};
+
+	expect(attemptPhase(attempt, NOW)).toBe('active');
+	expect(requiresManualResolution(attempt, NOW)).toBe(false);
+});
+
+test('a row from before leases existed counts as abandoned', () => {
+	// A NULL lease means the code that would have taken one did not exist, so no
+	// live request can be holding the row.
+	const attempt = { status: null, publishId: null, leaseExpiresAt: null };
+
+	expect(attemptPhase(attempt, NOW)).toBe('abandoned');
+	expect(requiresManualResolution(attempt, NOW)).toBe(true);
+});
+
+test('a status of any kind is ANSWERED regardless of the lease', () => {
+	for (const status of [
+		'PROCESSING_UPLOAD',
+		'PUBLISH_COMPLETE',
+		'UPLOAD_FAILED',
+	]) {
+		expect(
+			attemptPhase({ status, publishId: null, leaseExpiresAt: LIVE }, NOW),
+		).toBe('answered');
+	}
 });
 
 // --- Exactly which rows a human may adjudicate ---------------------------
@@ -48,7 +118,12 @@ test.each([
 	['a claimed row with no answer at all', null],
 	['an init whose answer was lost', 'INIT_AMBIGUOUS'],
 ])('%s is humanly resolvable when no task was named', (_label, status) => {
-	expect(requiresManualResolution({ status, publishId: null })).toBe(true);
+	expect(
+		requiresManualResolution(
+			{ status, publishId: null, leaseExpiresAt: EXPIRED },
+			NOW,
+		),
+	).toBe(true);
 });
 
 test.each([
@@ -64,16 +139,24 @@ test.each([
 	// A code this build has never seen. Fails closed: not resolvable by hand.
 	['a future TikTok status', 'SOME_FUTURE_CODE'],
 ])('%s is NOT humanly resolvable', (_label, status) => {
-	expect(requiresManualResolution({ status, publishId: null })).toBe(false);
+	expect(
+		requiresManualResolution(
+			{ status, publishId: null, leaseExpiresAt: EXPIRED },
+			NOW,
+		),
+	).toBe(false);
 });
 
 test('a row that names a task is never humanly resolvable, whatever its status', () => {
 	// A publish id means `status/fetch` can answer, so the honest remedy is to ask
 	// TikTok rather than to let somebody assert a result.
 	for (const status of [null, 'INIT_AMBIGUOUS', 'UPLOAD_FAILED']) {
-		expect(requiresManualResolution({ status, publishId: 'pub-1' })).toBe(
-			false,
-		);
+		expect(
+			requiresManualResolution(
+				{ status, publishId: 'pub-1', leaseExpiresAt: EXPIRED },
+				NOW,
+			),
+		).toBe(false);
 		expect(canReadRemoteStatus({ status, publishId: 'pub-1' })).toBe(true);
 	}
 });
@@ -93,7 +176,9 @@ test('UPLOAD_FAILED blocks publishing but IS resolvable, because a task exists',
 	expect(blocksNewPublish(attempt.status)).toBe(true);
 	expect(canReadRemoteStatus(attempt)).toBe(true);
 	// Ask TikTok, never a human: the task is named and therefore observable.
-	expect(requiresManualResolution(attempt)).toBe(false);
+	expect(
+		requiresManualResolution({ ...attempt, leaseExpiresAt: EXPIRED }, NOW),
+	).toBe(false);
 });
 
 // --- What blocks what ----------------------------------------------------

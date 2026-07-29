@@ -22,6 +22,9 @@ import {
 
 const dialect = new PgDialect();
 
+/** A fixed clock, so the rendered lease comparison is stable to assert on. */
+const NOW = new Date('2026-07-29T12:00:00.000Z');
+
 /**
  * The rendered predicate, with bind parameters substituted for readability.
  *
@@ -40,23 +43,42 @@ function render(where: SQL | undefined): string {
 
 // --- Which rows a human may adjudicate -----------------------------------
 
-test('human resolution is an allowlist: no task named, and no answer yet', () => {
-	const sql = render(humanlyResolvableInSql());
+test('human resolution is an allowlist: no task named, no answer, and no live lease', () => {
+	const sql = render(humanlyResolvableInSql(NOW));
 
-	// Both halves are required, and the status alternatives are GROUPED. Without
-	// the parentheses, `publish_id is null and status is null or status = '...'`
-	// parses as `(... and status is null) or status = 'INIT_AMBIGUOUS'`, which
-	// would match an INIT_AMBIGUOUS row that already names a task.
+	// Three guards, and the grouping is what keeps them from collapsing. The
+	// statusless arm carries its own lease condition, so a healthy publish
+	// mid-flight (status null, lease live) does not match while an abandoned one
+	// (status null, lease expired or absent) does.
+	expect(sql).toContain('"tiktok_publish_attempt"."publish_id" is null');
+	expect(sql).toContain('"tiktok_publish_attempt"."status" = "INIT_AMBIGUOUS"');
+	expect(sql).toContain('"tiktok_publish_attempt"."lease_expires_at" is null');
+	expect(sql).toContain('"tiktok_publish_attempt"."lease_expires_at" <');
+	// The lease condition is bound to the statusless arm, NOT applied to the whole
+	// predicate: an INIT_AMBIGUOUS row is resolvable whatever its lease says.
 	expect(sql).toBe(
-		'("tiktok_publish_attempt"."publish_id" is null and ("tiktok_publish_attempt"."status" is null or "tiktok_publish_attempt"."status" = "INIT_AMBIGUOUS"))',
+		'("tiktok_publish_attempt"."publish_id" is null and ("tiktok_publish_attempt"."status" = "INIT_AMBIGUOUS" or ("tiktok_publish_attempt"."status" is null and ("tiktok_publish_attempt"."lease_expires_at" is null or "tiktok_publish_attempt"."lease_expires_at" < "2026-07-29T12:00:00.000Z"))))',
 	);
+});
+
+test('the statusless arm can never match without consulting the lease', () => {
+	/**
+	 * The gap this closes: `(publish_id IS NULL, status IS NULL)` is ALSO the
+	 * healthy in-flight shape between a claim and its first outcome write, so an
+	 * allowlist on shape alone let a creator settle a publish that then went on to
+	 * post. The lease is the only thing that separates the two.
+	 */
+	const sql = render(humanlyResolvableInSql(NOW));
+	const statuslessArm = sql.slice(sql.indexOf('"status" is null'));
+
+	expect(statuslessArm).toContain('lease_expires_at');
 });
 
 test('human resolution names no status other than INIT_AMBIGUOUS', () => {
 	// An allowlist, not a "not terminal" exclusion. The exclusion form admitted
 	// PROCESSING_UPLOAD, UPLOAD_FAILED, and every status a future TikTok might
 	// introduce, letting an assertion overwrite provider-observable state.
-	const sql = render(humanlyResolvableInSql());
+	const sql = render(humanlyResolvableInSql(NOW));
 
 	expect(sql).not.toContain('not in');
 	for (const provider of [

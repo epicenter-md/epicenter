@@ -64,7 +64,8 @@ import {
 	MIN_IDEMPOTENCY_KEY_LENGTH,
 } from './publish-intent.js';
 import {
-	claimPublishAttempt,
+	beginConnectionClose,
+	claimPublishSlot,
 	consumeOAuthState,
 	createOAuthState,
 	deleteConnection,
@@ -72,7 +73,6 @@ import {
 	listAttemptsBlockingNewPublish,
 	listConnections,
 	listPublishAttempts,
-	listUnsettledAttempts,
 	readConnection,
 	reconcileAttemptFromRemote,
 	recordAttemptOutcome,
@@ -234,6 +234,20 @@ const TikTokRouteError = defineErrors({
 		blockingStatus,
 		unresolved: false,
 		code: 'BLOCKED_BY_UNSETTLED_OUTCOME',
+	}),
+	/**
+	 * A disconnect has begun for this account, so no new post may start.
+	 *
+	 * Durable rather than transient: `closing_at` is set under the same lock a
+	 * publish claim takes and is never cleared, so a disconnect interrupted between
+	 * marking and deleting leaves an account that refuses posts and can be
+	 * disconnected again. Refusing to post to an account the creator asked to
+	 * disconnect costs nothing; posting to it could not be undone.
+	 */
+	ConnectionClosing: () => ({
+		message:
+			'This account is being disconnected, so Epicenter will not start a new post to it.',
+		code: 'CONNECTION_CLOSING',
 	}),
 	/** A manual resolution that named something other than the two allowed outcomes. */
 	InvalidResolution: () => ({
@@ -547,33 +561,38 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 			withConfig(c, async (config) => {
 				const db = c.var.db as Db;
 				const connectionId = c.req.param('id');
-				const row = await readConnection(db, {
-					userId: c.var.tiktokUser.id,
-					connectionId,
-				});
-				if (!row) return c.json(TikTokRouteError.ConnectionNotFound(), 404);
 
 				/**
-				 * CUSTODY BEFORE CONVENIENCE. `tiktok_publish_attempt` cascades on the
-				 * connection, so deleting this row also deletes the only record that
-				 * TikTok may be holding a post, and revoking the token removes any
-				 * ability to ask again. An unsettled attempt therefore refuses the
-				 * disconnect outright instead of being silently discarded.
+				 * CUSTODY BEFORE CONVENIENCE, decided atomically.
+				 *
+				 * `tiktok_publish_attempt` cascades on the connection, so deleting this
+				 * row also deletes the only record that TikTok may be holding a post,
+				 * and revoking the token removes any ability to ask again. An unsettled
+				 * attempt therefore refuses the disconnect outright.
 				 *
 				 * "Unsettled" deliberately includes a post TikTok is still processing,
 				 * not just an unknown one: revocation mid-flight would leave a real post
 				 * on the profile with no local trace of where it came from.
+				 *
+				 * The check, and the durable `closing_at` mark that stops later
+				 * publishes, happen under the SAME row lock a publish claim takes, so the
+				 * two cannot interleave. See `beginConnectionClose`.
 				 */
-				const unsettled = await listUnsettledAttempts(db, row.id);
-				if (unsettled.length > 0) {
+				const closing = await beginConnectionClose(db, {
+					userId: c.var.tiktokUser.id,
+					connectionId,
+				});
+				if (closing.outcome === 'missing') {
+					return c.json(TikTokRouteError.ConnectionNotFound(), 404);
+				}
+				if (closing.outcome === 'unsettled') {
 					return c.json(
 						TikTokRouteError.ConnectionHasUnsettledPublish({
-							unsettled: unsettled.length,
+							unsettled: closing.unsettled,
 						}),
 						409,
 					);
 				}
-
 				const oauth = createTikTokOAuthClient({
 					clientKey: config.clientKey,
 					clientSecret: config.clientSecret,
@@ -886,22 +905,24 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 				const { api, db, row } = opened;
 
 				/**
-				 * THE INVARIANT, enforced where a client cannot skip it: while a prior
-				 * post to this account has an outcome nobody can state, no new post
-				 * starts. Checked BEFORE `creator_info` and long before the irreversible
-				 * `video/init`, so a refusal costs TikTok nothing.
+				 * ADVISORY fast path, not the guard. It exists only so the common
+				 * blocked case costs no provider call; the decision that matters is
+				 * remade under a row lock in `claimPublishSlot` below, because a check
+				 * separated from its insert by two statements is not a guard under
+				 * concurrency.
 				 *
 				 * Per CONNECTION on purpose. An unknown outcome on one account cannot be
 				 * duplicated by posting to a different one, so a cross-account block
 				 * would punish without protecting anything.
 				 */
-				const blocking = await listAttemptsBlockingNewPublish(db, row.id);
-				const firstBlocking = blocking[0];
-				if (firstBlocking) {
+				const advisoryBlock = (
+					await listAttemptsBlockingNewPublish(db, row.id)
+				).at(0);
+				if (advisoryBlock) {
 					return c.json(
 						TikTokRouteError.PublishBlockedByUnsettledOutcome({
-							blockingAttemptId: firstBlocking.id,
-							blockingStatus: firstBlocking.status,
+							blockingAttemptId: advisoryBlock.id,
+							blockingStatus: advisoryBlock.status,
 						}),
 						409,
 					);
@@ -974,29 +995,52 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 				}
 				const directPost = decided.input;
 
-				// The commit latch. Whoever inserts this row is the only caller that
-				// may reach `video/init` for this idempotency key.
-				const { claimed, attempt } = await claimPublishAttempt(db, {
+				/**
+				 * THE COMMIT LATCH, and the only one that counts. One serialized
+				 * transaction locks the connection row, rechecks the block, and inserts
+				 * the claim, so two concurrent requests carrying DIFFERENT idempotency
+				 * keys cannot both find nothing blocking and both proceed to TikTok's
+				 * irreversible init. Everything above this line is advisory.
+				 */
+				const slot = await claimPublishSlot(db, {
 					id: nanoid(),
+					userId: c.var.tiktokUser.id,
 					connectionId: row.id,
 					idempotencyKey,
-					kind: 'direct_post',
 				});
-				if (!claimed) {
+				if (slot.outcome === 'missing') {
+					return c.json(TikTokRouteError.ConnectionNotFound(), 404);
+				}
+				if (slot.outcome === 'closing') {
+					return c.json(TikTokRouteError.ConnectionClosing(), 409);
+				}
+				if (slot.outcome === 'blocked') {
+					// Lost the race to another publish, or to an outcome recorded between
+					// the advisory check and here.
 					return c.json(
-						TikTokRouteError.PublishAlreadyAttempted({
-							attemptId: attempt.id,
-							publishId: attempt.publishId,
-							status: attempt.status,
-							// NOT terminal, rather than "still ambiguous": a post TikTok is
-							// merely processing has already committed for THIS intent, so
-							// releasing the caller's claim would let an identical resubmit
-							// originate a second one.
-							unresolved: !isTerminalAttemptStatus(attempt.status),
+						TikTokRouteError.PublishBlockedByUnsettledOutcome({
+							blockingAttemptId: slot.attempt.id,
+							blockingStatus: slot.attempt.status,
 						}),
 						409,
 					);
 				}
+				if (slot.outcome === 'duplicate') {
+					return c.json(
+						TikTokRouteError.PublishAlreadyAttempted({
+							attemptId: slot.attempt.id,
+							publishId: slot.attempt.publishId,
+							status: slot.attempt.status,
+							// NOT terminal, rather than "still ambiguous": a post TikTok is
+							// merely processing has already committed for THIS intent, so
+							// releasing the caller's claim would let an identical resubmit
+							// originate a second one.
+							unresolved: !isTerminalAttemptStatus(slot.attempt.status),
+						}),
+						409,
+					);
+				}
+				const attempt = slot.attempt;
 
 				const init = await api.initDirectPost(directPost);
 				if (init.error) {
@@ -1036,11 +1080,29 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 				// lost. The caller is told the attempt is unresolved rather than being
 				// allowed to treat it as a fresh intent.
 				try {
-					await recordAttemptOutcome(db, {
+					const recorded = await recordAttemptOutcome(db, {
 						attemptId: attempt.id,
 						publishId: init.data.publishId,
 						status: 'PROCESSING_UPLOAD',
 					});
+					if (!recorded) {
+						/**
+						 * A creator recorded an outcome for this attempt while we were
+						 * mid-flight, which their answer wins. That can only happen if our
+						 * lease had expired, so the honest report is the same as any other
+						 * unrecordable outcome: TikTok has the task, and this row is not
+						 * tracking it.
+						 */
+						return c.json(
+							TikTokRouteError.PublishOutcomeUnknown({
+								attemptId: attempt.id,
+								publishId: init.data.publishId,
+								detail:
+									'TikTok accepted the post, but its record here had already been settled by hand, so this task is not being tracked.',
+							}),
+							502,
+						);
+					}
 				} catch (cause) {
 					return c.json(
 						TikTokRouteError.PublishOutcomeUnknown({

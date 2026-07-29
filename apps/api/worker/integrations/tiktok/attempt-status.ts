@@ -144,11 +144,64 @@ export function blocksNewPublish(status: string | null): boolean {
 	return status === null || !PROCESSING_STATUSES.has(status);
 }
 
-/** The shape both predicates below need: a status plus whether a task is named. */
+/** The shape the predicates below need: a status plus whether a task is named. */
 export type AttemptHandle = {
 	status: string | null;
 	publishId: string | null;
 };
+
+/**
+ * How long the request that claimed an attempt may still be working on it.
+ *
+ * Sized from the worst case the publish path can actually take: one
+ * `creator_info/query` (15s ceiling), one `video/init` (15s), and one chunk
+ * upload (5 minutes). Ten minutes leaves comfortable room above that while
+ * keeping the wait before a human may adjudicate an abandoned attempt tolerable.
+ *
+ * Too SHORT is the dangerous direction: a lease that expires while the original
+ * request is still uploading would let a creator mark the attempt settled while
+ * it goes on to publish.
+ */
+export const PUBLISH_LEASE_MS = 10 * 60_000;
+
+/** An attempt plus the lease that says whether anyone is still working on it. */
+export type AttemptLease = AttemptHandle & {
+	/**
+	 * When the claiming request's lease runs out. `null` means the row predates
+	 * leases, so no live request holds it.
+	 */
+	leaseExpiresAt: Date | string | null;
+};
+
+/**
+ * What is happening to an attempt right now.
+ *
+ * The distinction the shape alone cannot make. `(publish_id IS NULL, status IS
+ * NULL)` is BOTH the healthy in-flight state between a claim and its first
+ * outcome write, and the wreckage of a Worker that died before writing anything.
+ * Reading the shape as the second when it is the first is how a creator's "nothing
+ * was posted" lands on a request that then publishes.
+ *
+ * - `active`: a request holds a live lease. Nobody else may decide this.
+ * - `abandoned`: claimed, never answered, and the lease has run out.
+ * - `answered`: a status was written, by TikTok or by us or by a human.
+ */
+export type AttemptPhase = 'active' | 'abandoned' | 'answered';
+
+export function attemptPhase(attempt: AttemptLease, now: number): AttemptPhase {
+	if (attempt.status !== null) return 'answered';
+	const lease = attempt.leaseExpiresAt;
+	// A row from before leases existed cannot be held by a live request, because
+	// the code that would have taken the lease did not exist.
+	if (lease === null) return 'abandoned';
+	const expiresAt =
+		lease instanceof Date ? lease.getTime() : Date.parse(String(lease));
+	// An unreadable lease FAILS CLOSED to `active`: the danger is letting somebody
+	// settle an attempt that is still running, so an unparseable date must not be
+	// read as permission to do that.
+	if (!Number.isFinite(expiresAt)) return 'active';
+	return expiresAt > now ? 'active' : 'abandoned';
+}
 
 /**
  * Whether TikTok can still be asked about this attempt.
@@ -163,7 +216,7 @@ export function canReadRemoteStatus(attempt: AttemptHandle): boolean {
 
 /**
  * Whether only a human can close this out, as a strict ALLOWLIST of the two
- * states that have no other exit.
+ * states that have no other exit, and only once nothing is still working on it.
  *
  * Reached by exactly two real paths. `INIT_AMBIGUOUS` is the init whose answer
  * was lost. A `null` status is a Worker that died between a successful init and
@@ -181,10 +234,22 @@ export function canReadRemoteStatus(attempt: AttemptHandle): boolean {
  * The `publishId === null` half is kept as well as the status allowlist: a row
  * that names a task can always be polled, and asking TikTok beats letting anyone
  * declare an answer.
+ *
+ * The LEASE is the third guard, and the one the shape cannot supply. A statusless
+ * claim looks identical whether a request is mid-upload or long dead, so the lease
+ * is what separates them.
  */
-export function requiresManualResolution(attempt: AttemptHandle): boolean {
+export function requiresManualResolution(
+	attempt: AttemptLease,
+	now: number,
+): boolean {
 	if (attempt.publishId !== null) return false;
-	return attempt.status === null || attempt.status === 'INIT_AMBIGUOUS';
+	// Written by the very request that failed its init, which then returns, so
+	// nothing is still working on it and it needs no lease check.
+	if (attempt.status === 'INIT_AMBIGUOUS') return true;
+	// Otherwise only a claim nobody is working on any more, which the LEASE
+	// decides and the shape cannot.
+	return attemptPhase(attempt, now) === 'abandoned';
 }
 
 /**

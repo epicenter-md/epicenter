@@ -57,6 +57,13 @@
 			"when": 1785361583713,
 			"tag": "0007_icy_meltdown",
 			"breakpoints": true
+		},
+		{
+			"idx": 8,
+			"version": "7",
+			"when": 1785366630782,
+			"tag": "0008_yummy_kree",
+			"breakpoints": true
 		}
 	]
 }

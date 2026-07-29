@@ -50,6 +50,15 @@ export type PublishAttempt = {
 	publishId: string | null;
 	status: string | null;
 	/**
+	 * When the request that claimed this attempt stops being allowed to work on it.
+	 *
+	 * Needed on the client because it is what separates a publish healthily
+	 * in flight from one whose Worker died: both look like `(publishId: null,
+	 * status: null)`, and only the lease says which. The surface offers a manual
+	 * outcome for the second and refuses to for the first.
+	 */
+	leaseExpiresAt: string | null;
+	/**
 	 * `null` until remote status has been read once; an empty array once TikTok
 	 * has answered and named no public post.
 	 */
@@ -275,6 +284,7 @@ export const tiktok = {
  */
 export {
 	type AttemptTone,
+	attemptPhase,
 	blocksNewPublish,
 	canReadRemoteStatus,
 	describeAttemptStatus,
