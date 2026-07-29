@@ -156,6 +156,21 @@
 		),
 	);
 
+	/**
+	 * Who this post is going to, preferring the LIVE `creator_info` read.
+	 *
+	 * The guidelines require the account that will receive the content to be named
+	 * from the latest creator info, not from whatever was stored at connect time.
+	 * The difference is real: a creator who renamed on TikTok since connecting
+	 * would otherwise be shown a name that no longer exists while approving an
+	 * irreversible post. The stored connection is the fallback, because it is what
+	 * we have before the read lands.
+	 */
+	const postingAs = $derived({
+		name: creatorInfo?.nickname || connection.displayName,
+		handle: creatorInfo?.username || connection.username,
+	});
+
 	const maxDurationSec = $derived(creatorInfo?.maxVideoDurationSec ?? 0);
 	const durationExceeded = $derived(
 		videoDurationSec !== null &&
@@ -554,9 +569,11 @@
 					.filter(Boolean)
 					.join(' and ')}.`
 			: '';
-		const handle = connection.username
-			? `@${connection.username}`
-			: connection.displayName;
+		// Named from the live creator info, so the last screen before an
+		// irreversible post shows the account as TikTok describes it right now.
+		const handle = postingAs.handle
+			? `@${postingAs.handle}`
+			: postingAs.name;
 		confirmationDialog.open({
 			title: 'Post to TikTok now',
 			description: `This posts to ${handle} immediately, visible to: ${audience}.${disclosure} ${declaration} Posting cannot be undone from Epicenter; you would have to delete the post in the TikTok app.`,
@@ -600,8 +617,8 @@
 			<div class="flex flex-col">
 				<Card.Title>Post to TikTok</Card.Title>
 				<Card.Description>
-					Posting as {connection.displayName}{#if connection.username}
-						<span class="text-foreground">&nbsp;@{connection.username}</span>
+					Posting as {postingAs.name}{#if postingAs.handle}
+						<span class="text-foreground">&nbsp;@{postingAs.handle}</span>
 					{/if}
 				</Card.Description>
 			</div>
@@ -648,7 +665,9 @@
 					}}
 				/>
 				<p class="text-xs text-muted-foreground">
-					MP4, up to {maxDurationSec}s for this account.
+					MP4{maxDurationSec > 0
+						? `, up to ${maxDurationSec}s for this account`
+						: ''}.
 				</p>
 
 				{#if videoPreviewUrl}
@@ -681,7 +700,9 @@
 								? 'text-destructive'
 								: 'text-muted-foreground'}"
 						>
-							{Math.round(videoDurationSec)}s of {maxDurationSec}s allowed
+							{Math.round(videoDurationSec)}s{maxDurationSec > 0
+								? ` of ${maxDurationSec}s allowed`
+								: ''}
 						</p>
 					{:else if videoUnreadable}
 						<p class="text-xs text-muted-foreground">
