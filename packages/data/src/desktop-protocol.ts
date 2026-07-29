@@ -3,8 +3,39 @@ import type {
 	SerializedTableDefinition,
 	SerializedValueDefinition,
 } from './browser/protocol.js';
+import type { Address } from './protocol/index.js';
 
 export const DESKTOP_EPICENTER_ROUTE = '/api/data';
+
+/**
+ * The host-owned observation carrier for desktop surfaces.
+ *
+ * One socket per surface, on a bounded route below `/api/data`, carrying
+ * nothing but committed addresses. It is deliberately not general HTTP
+ * observation: ADR-0185 keeps an installed app's ordinary HTTP unobserved, and
+ * this socket observes Epicenter's own replica rather than an app's traffic.
+ */
+export const DESKTOP_EPICENTER_OBSERVE_ROUTE = '/api/data/observe';
+
+/**
+ * One committed replica notification on its way to every attached surface.
+ *
+ * The wire says only which addresses moved. It does not encode reconnection,
+ * reset, table scope, operation kind, or a revision cursor: a client that
+ * missed frames is the only party that knows which handles it was holding
+ * across the gap, so synthesizing the recovery is its job, not the host's.
+ */
+export type DesktopInvalidationFrame = {
+	type: 'invalidation';
+	changes: Address[];
+};
+
+/** The `ws:`/`wss:` URL of the observation carrier for one Epicenter origin. */
+export function desktopEpicenterObserveUrl(baseUrl: string): string {
+	const url = new URL(DESKTOP_EPICENTER_OBSERVE_ROUTE, baseUrl);
+	url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+	return url.toString();
+}
 
 /**
  * Desktop and browser adapters share the same definition and operation wire

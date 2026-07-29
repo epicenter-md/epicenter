@@ -37,12 +37,14 @@ export {
 	type CreateEpicenterOptions,
 	createEpicenter,
 	type Epicenter,
+	type LocalEpicenter,
 	type EpicenterSyncSession,
 	type TableEntry,
 	type TableLens,
 	type TableScan,
 	type ValueLens,
 } from './epicenter.js';
+export type { TableInvalidation } from './observation.js';
 export type {
 	Address,
 	RowAddress,

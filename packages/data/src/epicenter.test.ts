@@ -22,6 +22,7 @@ import { createLogger, type Logger, memorySink } from 'wellcrafted/logger';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 
 import { openBunEpicenter } from './bun.js';
+import type { TableInvalidation } from './observation.js';
 import {
 	defineLens,
 	defineTable,
@@ -176,8 +177,10 @@ test('table CRUD lowers undefined and scan returns stable row-ID order', async (
 			values: {},
 		}),
 	).tables.notes;
-	const localNotifications: string[][] = [];
-	const unsubscribe = notes.subscribe((ids) => localNotifications.push(ids));
+	const localNotifications: TableInvalidation[] = [];
+	const unsubscribe = notes.subscribe((invalidation) =>
+		localNotifications.push(invalidation),
+	);
 	const first = await notes.create({
 		title: 'first',
 		rank: 1,
@@ -216,12 +219,12 @@ test('table CRUD lowers undefined and scan returns stable row-ID order', async (
 	expect(await notes.delete(first.id)).toBe(false);
 	expect(expectOk(await notes.get(first.id))).toBeUndefined();
 	expect(localNotifications).toEqual([
-		[first.id],
-		[second.id],
-		[third.id],
-		[third.id],
-		[nullLabel.id],
-		[first.id],
+		{ scope: 'rows', rowIds: [first.id] },
+		{ scope: 'rows', rowIds: [second.id] },
+		{ scope: 'rows', rowIds: [third.id] },
+		{ scope: 'rows', rowIds: [third.id] },
+		{ scope: 'rows', rowIds: [nullLabel.id] },
+		{ scope: 'rows', rowIds: [first.id] },
 	]);
 	unsubscribe();
 	await epicenter[Symbol.asyncDispose]();
@@ -465,9 +468,11 @@ test('subscriptions fire once per installed synchronized transaction', async () 
 			values: { theme: themeDefinition },
 		}),
 	);
-	const rowNotifications: string[][] = [];
+	const rowNotifications: TableInvalidation[] = [];
 	let valueNotifications = 0;
-	bound.tables.notes.subscribe((ids) => rowNotifications.push(ids));
+	bound.tables.notes.subscribe((invalidation) =>
+		rowNotifications.push(invalidation),
+	);
 	bound.values.theme.subscribe(() => {
 		valueNotifications += 1;
 	});
@@ -502,7 +507,11 @@ test('subscriptions fire once per installed synchronized transaction', async () 
 			}),
 		}),
 	);
-	expect(rowNotifications).toEqual([[REMOTE_ROW_A, REMOTE_ROW_B]]);
+	// One batched authority install, one invalidation carrying both ids: law 3
+	// is what stops a sixty-four row exchange from becoming sixty-four scans.
+	expect(rowNotifications).toEqual([
+		{ scope: 'rows', rowIds: [REMOTE_ROW_A, REMOTE_ROW_B] },
+	]);
 	expect(valueNotifications).toBe(1);
 	expect(expectOk(await bound.values.theme.get())).toBe('remote');
 

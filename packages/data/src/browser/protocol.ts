@@ -131,9 +131,18 @@ export type BrowserTransportResult =
 
 export type BrowserWorkerInbound = BrowserRequest | BrowserTransportResult;
 
+/**
+ * One committed replica notification, forwarded whole.
+ *
+ * The frame carries the batch the replica emitted, not one message per address.
+ * A commit installing sixty-four rows crosses the port once, and the page's
+ * dispatcher is what turns it into at most one call per affected handle. Per
+ * address frames would have made a batched commit look like sixty-four
+ * independent commits to every listener downstream.
+ */
 export type BrowserInvalidation = {
 	type: 'invalidation';
-	change: Address;
+	changes: readonly Address[];
 };
 
 export type BrowserWorkerMessage =

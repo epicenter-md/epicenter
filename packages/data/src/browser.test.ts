@@ -187,8 +187,8 @@ test('page CRUD, subscriptions, scans, and values round-trip through its worker'
 	await using epicenter = await openPage();
 	const data = bindTestData(epicenter);
 	const invalidated: string[] = [];
-	const unsubscribe = data.tables.notes.subscribe((rowIds) => {
-		invalidated.push(...rowIds);
+	const unsubscribe = data.tables.notes.subscribe((invalidation) => {
+		if (invalidation.scope === 'rows') invalidated.push(...invalidation.rowIds);
 	});
 
 	const created = await data.tables.notes.create({ title: 'First' });

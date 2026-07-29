@@ -1,4 +1,5 @@
 import * as Y from '@y/y';
+import { createLogger, type Logger } from 'wellcrafted/logger';
 import {
 	type ConstrainedUpdate,
 	type CreateInputFor,
@@ -13,9 +14,11 @@ import {
 	type ValueFor,
 } from './definitions.js';
 import {
+	type DesktopInvalidationFrame,
 	type DesktopOperation,
 	type DesktopRequest,
 	type DesktopResponse,
+	desktopEpicenterObserveUrl,
 	desktopEpicenterUrl,
 	type SerializedTableDefinition,
 	type SerializedValueDefinition,
@@ -32,11 +35,30 @@ import {
 	type ValueLens,
 } from './epicenter.js';
 import {
-	addressKey,
-	type JsonValue,
-	type RowAddress,
-	type ValueAddress,
+	createInvalidationDispatcher,
+	type TableInvalidation,
+} from './observation.js';
+import type {
+	JsonValue,
+	RowAddress,
+	ValueAddress,
 } from './protocol/index.js';
+
+/**
+ * A socket this opener can drive. Narrower than `WebSocket` on purpose: the
+ * carrier uses four events and two methods, and naming them is what lets a test
+ * hand over a fake without a DOM.
+ */
+export type ObservationSocket = {
+	addEventListener(type: 'open', listener: () => void): void;
+	addEventListener(type: 'close', listener: () => void): void;
+	addEventListener(type: 'error', listener: () => void): void;
+	addEventListener(
+		type: 'message',
+		listener: (event: { data: unknown }) => void,
+	): void;
+	close(): void;
+};
 
 export type OpenDesktopEpicenterOptions = {
 	baseUrl?: string;
@@ -44,7 +66,30 @@ export type OpenDesktopEpicenterOptions = {
 		input: Parameters<typeof globalThis.fetch>[0],
 		init?: Parameters<typeof globalThis.fetch>[1],
 	) => Promise<Response>;
+	/**
+	 * Open the observation carrier. Defaults to a same-origin `WebSocket`, whose
+	 * session cookie and `Origin` header are what the host checks.
+	 */
+	createObservationSocket?(url: string): ObservationSocket;
+	/**
+	 * How long to wait before redialing after the carrier drops. Called with the
+	 * number of consecutive failures, starting at 1.
+	 */
+	reconnectDelayMs?(attempt: number): number;
+	log?: Logger;
 };
+
+/**
+ * Backoff for a loopback socket whose server is the same process tree.
+ *
+ * Short at the start because the common cause is the host restarting its
+ * server, which takes milliseconds; capped low because the cost of a redial
+ * here is a localhost connection, and a surface that stays dark after sleep or
+ * wake is a much worse outcome than a few extra attempts.
+ */
+function defaultReconnectDelayMs(attempt: number): number {
+	return Math.min(250 * 2 ** (attempt - 1), 5_000);
+}
 
 const remoteDocumentOrigin = Object.freeze({ kind: 'desktop-document-remote' });
 
@@ -60,13 +105,12 @@ const remoteDocumentOrigin = Object.freeze({ kind: 'desktop-document-remote' });
 export async function openDesktopEpicenter({
 	baseUrl = defaultOrigin(),
 	fetch: fetchInput = globalThis.fetch,
+	createObservationSocket = defaultObservationSocket,
+	reconnectDelayMs = defaultReconnectDelayMs,
+	log = createLogger('data/desktop'),
 }: OpenDesktopEpicenterOptions = {}) {
 	const surfaceId = crypto.randomUUID();
-	const tableListeners = new Map<
-		string,
-		Map<string, Set<(changedIds: string[]) => void>>
-	>();
-	const valueListeners = new Map<string, Set<() => void>>();
+	const observation = createInvalidationDispatcher({ log });
 	const documents = new Set<RowDocument>();
 	let isDisposed = false;
 
@@ -95,7 +139,98 @@ export async function openDesktopEpicenter({
 		return envelope.data as TResult;
 	}
 
+	/**
+	 * The observation carrier: one host-owned socket per surface.
+	 *
+	 * Every reconnection after the first is a gap. The wire cannot say what
+	 * happened during it, and a deletion that landed while the socket was down
+	 * leaves nothing behind to name, so on every reopen the client tells each
+	 * handle it still holds the strongest honest thing it can: tables may be
+	 * entirely stale, values may be stale. That is law 6, and it is why a
+	 * transient drop self-heals instead of forcing an app reload.
+	 */
+	let socket: ObservationSocket | undefined;
+	let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+	let failedAttempts = 0;
+
+	function connectObservation({
+		isInitial,
+	}: {
+		isInitial: boolean;
+	}): Promise<void> {
+		return new Promise<void>((resolve, reject) => {
+			if (isDisposed) return resolve();
+			let settled = false;
+			const next = createObservationSocket(desktopEpicenterObserveUrl(baseUrl));
+			socket = next;
+			next.addEventListener('open', () => {
+				failedAttempts = 0;
+				if (!settled) {
+					settled = true;
+					resolve();
+				}
+				// Deliberately after the initial open too? No: the first carrier
+				// precedes every subscription this surface can have made, so there
+				// is nothing to tell. Only a reopen has handles to heal.
+				if (!isInitial) observation.invalidateAll();
+			});
+			next.addEventListener('message', (event) => {
+				const frame = parseInvalidationFrame(event.data);
+				if (frame === undefined) return;
+				observation.deliver(frame.changes);
+			});
+			// `error` and `close` are one outcome here: the socket is gone and the
+			// only response is to redial. Browsers fire `error` before `close` on a
+			// failed dial, so scheduling from `close` alone would miss nothing and
+			// scheduling from both would double-dial.
+			next.addEventListener('close', () => {
+				if (socket !== next) return;
+				socket = undefined;
+				if (isDisposed) return;
+				failedAttempts += 1;
+				if (!settled) {
+					settled = true;
+					// The first dial is the one a caller is awaiting. Failing it here
+					// rather than silently retrying is what keeps law 7 honest: the
+					// opener resolves only once a carrier is actually established.
+					if (isInitial) {
+						reject(
+							new Error(
+								'Desktop Epicenter could not open its observation carrier',
+							),
+						);
+						return;
+					}
+					resolve();
+				}
+				scheduleReconnect();
+			});
+			next.addEventListener('error', () => {
+				// Left to `close`, which always follows. Registered so a browser
+				// does not report an unhandled socket error.
+			});
+		});
+	}
+
+	function scheduleReconnect(): void {
+		if (isDisposed || reconnectTimer !== undefined) return;
+		reconnectTimer = setTimeout(() => {
+			reconnectTimer = undefined;
+			if (isDisposed) return;
+			void connectObservation({ isInitial: false }).catch((cause) => {
+				log.error(
+					new Error('Desktop Epicenter observation redial failed', { cause }),
+				);
+			});
+		}, reconnectDelayMs(Math.max(failedAttempts, 1)));
+	}
+
+	// Order matters, and it is the whole of law 7. The carrier is established
+	// before this opener resolves, so by the time an app holds a handle it can
+	// subscribe and then read with nothing able to land in between. That is what
+	// buys the right to promise no initial fire: there is no gap to cover.
 	await request<void>({ kind: 'open' });
+	await connectObservation({ isInitial: true });
 
 	function bind<
 		const TTables extends TableDefinitions,
@@ -122,21 +257,12 @@ export async function openDesktopEpicenter({
 		}) as BoundData<TTables, TValues>;
 	}
 
-	function notifyTable(address: RowAddress): void {
-		for (const listener of tableListeners
-			.get(address.namespace)
-			?.get(address.tableName) ?? [])
-			listener([address.rowId]);
-	}
-
 	function createTableLens<TDefinition extends TableDefinition>(
 		namespace: string,
 		table: string,
 		definition: TDefinition,
 	): TableLens<TDefinition> {
 		const serialized = serializeTableDefinition(namespace, table, definition);
-		const tableListenerGroup = tableListeners.get(namespace) ?? new Map();
-		tableListeners.set(namespace, tableListenerGroup);
 		const readEntriesPage = (after?: string) =>
 			request<TableEntriesPage<TDefinition>>({
 				kind: 'table-entries-page',
@@ -144,14 +270,12 @@ export async function openDesktopEpicenter({
 				...(after === undefined ? {} : { after }),
 			});
 		const lens = {
-			async create(fields: CreateInputFor<TDefinition>) {
-				const row = await request<RowFor<TDefinition>>({
+			create(fields: CreateInputFor<TDefinition>) {
+				return request<RowFor<TDefinition>>({
 					kind: 'table-create',
 					definition: serialized,
 					fields,
 				});
-				notifyTable(rowAddress(namespace, table, row.id));
-				return row;
 			},
 			get(rowId: string) {
 				const address = rowAddress(namespace, table, rowId);
@@ -161,35 +285,30 @@ export async function openDesktopEpicenter({
 					address,
 				});
 			},
-			async update<const TChanges extends Record<string, unknown>>(
+			update<const TChanges extends Record<string, unknown>>(
 				rowId: string,
 				patch: TChanges & ConstrainedUpdate<TDefinition, TChanges>,
 			) {
 				const address = rowAddress(namespace, table, rowId);
-				const result = await request<
-					Awaited<ReturnType<TableLens<TDefinition>['update']>>
-				>({ kind: 'table-update', definition: serialized, address, patch });
-				if (result.error === null && result.data !== undefined) {
-					notifyTable(address);
-				}
-				return result;
+				return request<Awaited<ReturnType<TableLens<TDefinition>['update']>>>({
+					kind: 'table-update',
+					definition: serialized,
+					address,
+					patch,
+				});
 			},
-			async delete(rowId: string) {
+			delete(rowId: string) {
 				const address = rowAddress(namespace, table, rowId);
-				const deleted = await request<boolean>({
+				return request<boolean>({
 					kind: 'table-delete',
 					definition: serialized,
 					address,
 				});
-				if (deleted) notifyTable(address);
-				return deleted;
 			},
 			...createTableReadMethods(readEntriesPage),
-			subscribe(listener: (changedIds: string[]) => void) {
-				const listeners = tableListenerGroup.get(table) ?? new Set();
-				listeners.add(listener);
-				tableListenerGroup.set(table, listeners);
-				return () => listeners.delete(listener);
+			subscribe(listener: (invalidation: TableInvalidation) => void) {
+				requireOpen();
+				return observation.subscribeTable(namespace, table, listener);
 			},
 			openDocument: (rowId: string) => openDocument(serialized, rowId),
 		};
@@ -206,7 +325,6 @@ export async function openDesktopEpicenter({
 			namespace,
 			valueName: valueName,
 		};
-		const listenerKey = addressKey(address);
 		const serialized = serializeValueDefinition(address, definition);
 		return Object.freeze({
 			get: () =>
@@ -215,30 +333,24 @@ export async function openDesktopEpicenter({
 					definition: serialized,
 					address,
 				}),
-			async set(value: ValueFor<TDefinition>) {
-				await request<void>({
+			set(value: ValueFor<TDefinition>) {
+				return request<void>({
 					kind: 'value-set',
 					definition: serialized,
 					address,
 					value: value as JsonValue,
 				});
-				for (const listener of valueListeners.get(listenerKey) ?? [])
-					listener();
 			},
-			async unset() {
-				await request<void>({
+			unset() {
+				return request<void>({
 					kind: 'value-unset',
 					definition: serialized,
 					address,
 				});
-				for (const listener of valueListeners.get(listenerKey) ?? [])
-					listener();
 			},
 			subscribe(listener: () => void) {
-				const listeners = valueListeners.get(listenerKey) ?? new Set();
-				listeners.add(listener);
-				valueListeners.set(listenerKey, listeners);
-				return () => listeners.delete(listener);
+				requireOpen();
+				return observation.subscribeValue(address, listener);
 			},
 		});
 	}
@@ -370,8 +482,11 @@ export async function openDesktopEpicenter({
 			}
 			await request<void>({ kind: 'disconnect' });
 			isDisposed = true;
-			tableListeners.clear();
-			valueListeners.clear();
+			clearTimeout(reconnectTimer);
+			reconnectTimer = undefined;
+			socket?.close();
+			socket = undefined;
+			observation.clear();
 		},
 	});
 }
@@ -429,5 +544,49 @@ function encodeBytes(value: Uint8Array): string {
 	return btoa(binary);
 }
 
-export type { DesktopRequest, DesktopResponse } from './desktop-protocol.js';
-export { DESKTOP_EPICENTER_ROUTE } from './desktop-protocol.js';
+/**
+ * Read one carrier frame, or nothing when the host said something this client
+ * does not recognize. An unreadable frame is dropped rather than thrown: the
+ * carrier's job is liveness, and killing the socket over one bad message would
+ * turn a cosmetic mismatch into a surface that stops updating.
+ */
+function parseInvalidationFrame(
+	data: unknown,
+): DesktopInvalidationFrame | undefined {
+	if (typeof data !== 'string') return undefined;
+	try {
+		const parsed: unknown = JSON.parse(data);
+		if (
+			typeof parsed !== 'object' ||
+			parsed === null ||
+			!('type' in parsed) ||
+			parsed.type !== 'invalidation' ||
+			!('changes' in parsed) ||
+			!Array.isArray(parsed.changes)
+		) {
+			return undefined;
+		}
+		return parsed as DesktopInvalidationFrame;
+	} catch {
+		return undefined;
+	}
+}
+
+function defaultObservationSocket(url: string): ObservationSocket {
+	if (typeof WebSocket === 'undefined') {
+		throw new Error(
+			'Desktop Epicenter requires WebSocket for live data observation',
+		);
+	}
+	return new WebSocket(url);
+}
+
+export type {
+	DesktopInvalidationFrame,
+	DesktopRequest,
+	DesktopResponse,
+} from './desktop-protocol.js';
+export {
+	DESKTOP_EPICENTER_OBSERVE_ROUTE,
+	DESKTOP_EPICENTER_ROUTE,
+} from './desktop-protocol.js';

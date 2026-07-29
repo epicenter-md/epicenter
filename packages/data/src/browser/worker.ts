@@ -358,22 +358,21 @@ export function serveBrowserEpicenter(
 				try {
 					stopReplica = store.replica.subscribe((changes) => {
 						for (const change of changes) {
-							if (change.kind === 'row') {
-								emitInvalidation(change);
-								const row = store.replica.readRow(change);
-								if (row.error !== null) {
-									// Liveness is unknowable this pass, so open documents
-									// keep running rather than being revoked on a guess.
-									// Reported because this read is what a pull's
-									// `RowNotLive` is waiting on.
-									log.error(row.error);
-								} else if (row.data === undefined) {
-									void revokeDocuments(change);
-								}
-								continue;
+							if (change.kind !== 'row') continue;
+							const row = store.replica.readRow(change);
+							if (row.error !== null) {
+								// Liveness is unknowable this pass, so open documents
+								// keep running rather than being revoked on a guess.
+								// Reported because this read is what a pull's
+								// `RowNotLive` is waiting on.
+								log.error(row.error);
+							} else if (row.data === undefined) {
+								void revokeDocuments(change);
 							}
-							emitInvalidation(change);
 						}
+						// One frame for the whole commit. The page groups it; the
+						// worker never decides which handles exist.
+						emitInvalidation(changes);
 					});
 					stopStatus = store.epicenter.subscribeSyncStatus((status) => {
 						send({
@@ -427,8 +426,9 @@ export function serveBrowserEpicenter(
 		return ready;
 	}
 
-	function emitInvalidation(change: Address): void {
-		send({ type: 'invalidation', change });
+	function emitInvalidation(changes: readonly Address[]): void {
+		if (changes.length === 0) return;
+		send({ type: 'invalidation', changes });
 	}
 
 	async function revokeDocuments(address: RowAddress): Promise<void> {

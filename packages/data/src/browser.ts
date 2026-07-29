@@ -1,8 +1,6 @@
 import * as Y from '@y/y';
-import { extractErrorMessage } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import type {
-	BrowserInvalidation,
 	BrowserOperation,
 	BrowserWorkerInbound,
 	BrowserWorkerMessage,
@@ -39,10 +37,13 @@ import {
 	type ValueLens,
 } from './epicenter.js';
 import {
-	addressKey,
-	type JsonValue,
-	type RowAddress,
-	type ValueAddress,
+	createInvalidationDispatcher,
+	type TableInvalidation,
+} from './observation.js';
+import type {
+	JsonValue,
+	RowAddress,
+	ValueAddress,
 } from './protocol/index.js';
 import type { SyncStatus } from './sync-supervisor.js';
 
@@ -98,11 +99,7 @@ export async function openBrowserEpicenter({
 	const worker = (createWorker ?? defaultDedicatedWorker)();
 	const port = worker.port;
 	const pending = new Map<number, PendingRequest>();
-	const tableListeners = new Map<
-		string,
-		Map<string, Set<(changedIds: string[]) => void>>
-	>();
-	const valueListeners = new Map<string, Set<() => void>>();
+	const observation = createInvalidationDispatcher({ log });
 	const documents = new Map<number, PageDocument>();
 	const transports = new Map<number, SessionTransports>();
 	const transportTails = new Map<number, Promise<void>>();
@@ -190,36 +187,6 @@ export async function openBrowserEpicenter({
 	function request<TResult>(operation: BrowserOperation): Promise<TResult> {
 		requireOpen();
 		return sendRequest(operation);
-	}
-
-	function notifyInvalidation(change: BrowserInvalidation['change']): void {
-		if (change.kind === 'row') {
-			for (const listener of tableListeners
-				.get(change.namespace)
-				?.get(change.tableName) ?? []) {
-				try {
-					listener([change.rowId]);
-				} catch (cause) {
-					log.error(
-						new Error(`Data subscriber threw: ${extractErrorMessage(cause)}`, {
-							cause,
-						}),
-					);
-				}
-			}
-			return;
-		}
-		for (const listener of valueListeners.get(addressKey(change)) ?? []) {
-			try {
-				listener();
-			} catch (cause) {
-				log.error(
-					new Error(`Data subscriber threw: ${extractErrorMessage(cause)}`, {
-						cause,
-					}),
-				);
-			}
-		}
 	}
 
 	async function callSessionTransport(
@@ -331,7 +298,7 @@ export async function openBrowserEpicenter({
 				return;
 			}
 			case 'invalidation':
-				notifyInvalidation(message.change);
+				observation.deliver(message.changes);
 				return;
 			case 'document-update':
 				documents.get(message.documentId)?.apply(message.update);
@@ -407,8 +374,6 @@ export async function openBrowserEpicenter({
 		definition: TDefinition,
 	): TableLens<TDefinition> {
 		const serialized = serializeTableDefinition(namespace, table, definition);
-		const tableListenerGroup = tableListeners.get(namespace) ?? new Map();
-		tableListeners.set(namespace, tableListenerGroup);
 		const readEntriesPage = (after?: string) =>
 			request<TableEntriesPage<TDefinition>>({
 				kind: 'table-entries-page',
@@ -452,16 +417,9 @@ export async function openBrowserEpicenter({
 				});
 			},
 			...createTableReadMethods(readEntriesPage),
-			subscribe(listener: (changedIds: string[]) => void) {
+			subscribe(listener: (invalidation: TableInvalidation) => void) {
 				requireOpen();
-				const listeners = tableListenerGroup.get(table) ?? new Set();
-				listeners.add(listener);
-				tableListenerGroup.set(table, listeners);
-				return () => {
-					listeners.delete(listener);
-					if (listeners.size === 0) tableListenerGroup.delete(table);
-					if (tableListenerGroup.size === 0) tableListeners.delete(namespace);
-				};
+				return observation.subscribeTable(namespace, table, listener);
 			},
 			openDocument(rowId: string) {
 				return createPageDocument(serialized, rowId);
@@ -480,7 +438,6 @@ export async function openBrowserEpicenter({
 			namespace,
 			valueName: valueName,
 		};
-		const listenerKey = addressKey(address);
 		const serialized = serializeValueDefinition(address, definition);
 		return Object.freeze({
 			get() {
@@ -507,13 +464,7 @@ export async function openBrowserEpicenter({
 			},
 			subscribe(listener: () => void) {
 				requireOpen();
-				const listeners = valueListeners.get(listenerKey) ?? new Set();
-				listeners.add(listener);
-				valueListeners.set(listenerKey, listeners);
-				return () => {
-					listeners.delete(listener);
-					if (listeners.size === 0) valueListeners.delete(listenerKey);
-				};
+				return observation.subscribeValue(address, listener);
 			},
 		});
 	}
@@ -742,8 +693,7 @@ export async function openBrowserEpicenter({
 		for (const request of [...pending.values()]) {
 			request.reject(new Error('Browser Epicenter is disposed'));
 		}
-		tableListeners.clear();
-		valueListeners.clear();
+		observation.clear();
 		transports.clear();
 		pendingTransports.clear();
 		transportTails.clear();

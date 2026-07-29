@@ -1,6 +1,5 @@
 import type { SqliteDatabase, SqliteRow } from '@epicenter/sqlite';
 import { customAlphabet } from 'nanoid';
-import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Ok, type Result } from 'wellcrafted/result';
 
@@ -25,10 +24,14 @@ import {
 	type RowDocument,
 } from './documents.js';
 import {
-	canonicalJson,
-	type JsonObject,
-	type RowAddress,
-	type ValueAddress,
+	createInvalidationDispatcher,
+	type TableInvalidation,
+} from './observation.js';
+import type {
+	Address,
+	JsonObject,
+	RowAddress,
+	ValueAddress,
 } from './protocol/index.js';
 import type { Replica, ReplicaError } from './replica/index.js';
 import {
@@ -96,7 +99,22 @@ export type TableLens<TDefinition extends TableDefinition> = {
 	 * ```
 	 */
 	entries(): AsyncIterable<TableEntry<TDefinition>>;
-	subscribe(listener: (changedIds: string[]) => void): () => void;
+	/**
+	 * Report when rows reachable through this handle may be stale.
+	 *
+	 * Registration is synchronous, does no I/O, and never fires initially, so
+	 * subscribing and then reading is race-free without a first delivery to
+	 * discard. See {@link TableInvalidation} for the laws the payload obeys.
+	 *
+	 * @example
+	 * ```ts
+	 * const stop = notes.subscribe((invalidation) => {
+	 *   if (invalidation.scope === 'table') return void reload();
+	 *   for (const id of invalidation.rowIds) void reread(id);
+	 * });
+	 * ```
+	 */
+	subscribe(listener: (invalidation: TableInvalidation) => void): () => void;
 	openDocument(rowId: string): Promise<RowDocument>;
 };
 
@@ -104,6 +122,13 @@ export type ValueLens<TDefinition extends ValueDefinition> = {
 	get(): Promise<Result<ValueFor<TDefinition> | undefined, ReadError>>;
 	set(value: ValueFor<TDefinition>): Promise<void>;
 	unset(): Promise<void>;
+	/**
+	 * Report when this value may be stale.
+	 *
+	 * The listener takes no payload because a value has no smaller identity to
+	 * name: the handle already is the thing that changed. Re-read through
+	 * {@link ValueLens.get} to find out what it now holds.
+	 */
 	subscribe(listener: () => void): () => void;
 };
 
@@ -136,31 +161,10 @@ export type CreateEpicenterOptions = {
 	scheduleSync?: SyncSchedule;
 };
 
-const DataRuntimeError = defineErrors({
-	SubscriberThrew: ({ cause }: { cause: unknown }) => ({
-		message: `Data subscriber threw: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-});
-
 type StoredRowFact = SqliteRow & {
 	row_id: string;
 	fields: string;
 };
-
-/**
- * Internal map keys for the per-table and per-value listener registries.
- *
- * These never leave memory. One Epicenter can bind several Lenses, so a
- * listener registry keyed by local name alone would cross namespaces.
- */
-function tableListenerKey(namespace: string, tableName: string): string {
-	return canonicalJson({ namespace, tableName });
-}
-
-function valueListenerKey(namespace: string, valueName: string): string {
-	return canonicalJson({ namespace, valueName });
-}
 
 export type TableEntriesPage<TDefinition extends TableDefinition> = {
 	entries: TableEntry<TDefinition>[];
@@ -169,6 +173,23 @@ export type TableEntriesPage<TDefinition extends TableDefinition> = {
 
 export const readTableEntriesPage: unique symbol = Symbol(
 	'epicenter.readTableEntriesPage',
+);
+
+/**
+ * The committed-address stream, for the one host that has to forward it.
+ *
+ * Symbol-keyed for the same reason {@link readTableEntriesPage} is: an
+ * application surface holds a `BoundData`, and a raw `Address[]` stream is not
+ * something it should ever be able to reach. Only the process that constructed
+ * this runtime can name this symbol, and the only thing it does with the
+ * stream is put it on a carrier for surfaces that are not in this process.
+ *
+ * Subscribers here see exactly what the replica emitted: one batch per commit,
+ * across every namespace this runtime holds. Filtering to a Lens is the
+ * client's job, because only the client knows which handles exist.
+ */
+export const subscribeCommittedAddresses: unique symbol = Symbol(
+	'epicenter.subscribeCommittedAddresses',
 );
 
 export type InternalTableLens<TDefinition extends TableDefinition> =
@@ -259,8 +280,8 @@ export function createEpicenter({
 	const stopPublicationWake = documents.subscribePublicationDirty(() => {
 		sync.requestDocumentDrain();
 	});
-	const tableListeners = new Map<string, Set<(changedIds: string[]) => void>>();
-	const valueListeners = new Map<string, Set<() => void>>();
+	const observation = createInvalidationDispatcher({ log });
+	const commitListeners = new Set<(changes: readonly Address[]) => void>();
 	let isDisposed = false;
 
 	function requireOpen(): void {
@@ -268,19 +289,8 @@ export function createEpicenter({
 	}
 
 	const stopReplicaSubscription = replica.subscribe((changes) => {
-		const changedRows = new Map<string, string[]>();
-		const changedValues = new Set<string>();
 		for (const address of changes) {
-			if (address.kind === 'value') {
-				changedValues.add(
-					valueListenerKey(address.namespace, address.valueName),
-				);
-				continue;
-			}
-			const key = tableListenerKey(address.namespace, address.tableName);
-			const ids = changedRows.get(key) ?? [];
-			if (!ids.includes(address.rowId)) ids.push(address.rowId);
-			changedRows.set(key, ids);
+			if (address.kind === 'value') continue;
 			const current = replica.readRow(address);
 			if (current.error !== null) {
 				// Liveness is unknowable this pass, so the open document keeps
@@ -293,22 +303,16 @@ export function createEpicenter({
 				documents.revoke(address);
 			}
 		}
-		for (const [key, ids] of changedRows) {
-			for (const listener of tableListeners.get(key) ?? []) {
-				try {
-					listener([...ids]);
-				} catch (cause) {
-					log.error(DataRuntimeError.SubscriberThrew({ cause }));
-				}
-			}
-		}
-		for (const key of changedValues) {
-			for (const listener of valueListeners.get(key) ?? []) {
-				try {
-					listener();
-				} catch (cause) {
-					log.error(DataRuntimeError.SubscriberThrew({ cause }));
-				}
+		// Delivered after the liveness sweep, so a listener that re-reads on
+		// invalidation cannot observe a row whose document is still open while
+		// the replica already calls it dead.
+		observation.deliver(changes);
+		if (changes.length === 0) return;
+		for (const listener of [...commitListeners]) {
+			try {
+				listener(changes);
+			} catch (cause) {
+				log.error(new Error('Committed-address forwarder threw', { cause }));
 			}
 		}
 	});
@@ -349,7 +353,6 @@ export function createEpicenter({
 		definition: TDefinition,
 	): TableLens<TDefinition> {
 		const compiled = compileTableDefinition(definition);
-		const listenerKey = tableListenerKey(namespace, tableName);
 		const addressOf = (rowId: string): RowAddress => ({
 			kind: 'row',
 			namespace,
@@ -434,15 +437,9 @@ export function createEpicenter({
 			},
 			...createTableReadMethods(readEntriesPage),
 			[readTableEntriesPage]: readEntriesPage,
-			subscribe(listener: (changedIds: string[]) => void) {
+			subscribe(listener: (invalidation: TableInvalidation) => void) {
 				requireOpen();
-				const listeners = tableListeners.get(listenerKey) ?? new Set();
-				listeners.add(listener);
-				tableListeners.set(listenerKey, listeners);
-				return () => {
-					listeners.delete(listener);
-					if (listeners.size === 0) tableListeners.delete(listenerKey);
-				};
+				return observation.subscribeTable(namespace, tableName, listener);
 			},
 			openDocument(rowId: string) {
 				requireOpen();
@@ -458,7 +455,6 @@ export function createEpicenter({
 		definition: TDefinition,
 	): ValueLens<TDefinition> {
 		const compiled = compileValueDefinition(definition);
-		const listenerKey = valueListenerKey(namespace, valueName);
 		const address: ValueAddress = { kind: 'value', namespace, valueName };
 		return Object.freeze({
 			async get() {
@@ -485,13 +481,7 @@ export function createEpicenter({
 			},
 			subscribe(listener: () => void) {
 				requireOpen();
-				const listeners = valueListeners.get(listenerKey) ?? new Set();
-				listeners.add(listener);
-				valueListeners.set(listenerKey, listeners);
-				return () => {
-					listeners.delete(listener);
-					if (listeners.size === 0) valueListeners.delete(listenerKey);
-				};
+				return observation.subscribeValue(address, listener);
 			},
 		}) as ValueLens<TDefinition>;
 	}
@@ -509,6 +499,13 @@ export function createEpicenter({
 	return Object.freeze({
 		bind,
 		attachSync,
+		[subscribeCommittedAddresses](
+			listener: (changes: readonly Address[]) => void,
+		): () => void {
+			requireOpen();
+			commitListeners.add(listener);
+			return () => commitListeners.delete(listener);
+		},
 		get syncStatus(): SyncStatus {
 			return sync.status;
 		},
@@ -523,8 +520,8 @@ export function createEpicenter({
 			stopReplicaSubscription();
 			stopPublicationWake();
 			sync.dispose();
-			tableListeners.clear();
-			valueListeners.clear();
+			observation.clear();
+			commitListeners.clear();
 			await documents[Symbol.asyncDispose]();
 			await dispose();
 		},
@@ -574,4 +571,20 @@ export function createEpicenter({
 	}
 }
 
-export type Epicenter = ReturnType<typeof createEpicenter>;
+/**
+ * What any Epicenter engine offers a surface: the in-process runtime, the
+ * browser page proxy, and the desktop surface proxy all satisfy this.
+ *
+ * The committed-address stream is deliberately not part of it. Only the process
+ * that constructed a local runtime can forward commits onto a carrier, and a
+ * proxy has no commits of its own to forward: it is on the receiving end of
+ * someone else's. Leaving the symbol out of the shared type is what stops a
+ * proxy from having to pretend it can answer.
+ */
+export type Epicenter = Omit<
+	LocalEpicenter,
+	typeof subscribeCommittedAddresses
+>;
+
+/** One Epicenter runtime over a replica in this process. */
+export type LocalEpicenter = ReturnType<typeof createEpicenter>;

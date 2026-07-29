@@ -11,8 +11,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { generateBlobId } from '@epicenter/blobs';
 import { createBunBlobStore } from '@epicenter/blobs/bun';
-import { defineLens, defineTable } from '@epicenter/data';
 import {
+	defineLens,
+	defineTable,
+	type TableInvalidation,
+} from '@epicenter/data';
+import {
+	type ObservationSocket,
 	type OpenDesktopEpicenterOptions,
 	openDesktopEpicenter,
 } from '@epicenter/data/desktop';
@@ -36,11 +41,7 @@ test('WebView surfaces share one replica and state survives restart', async () =
 	const operations: Record<string, unknown>[] = [];
 	try {
 		const firstServer = await startDesktopServer(root);
-		const first = await createClient(
-			firstServer.origin,
-			firstServer.fetch,
-			operations,
-		);
+		const first = await createClient(firstServer, operations);
 		const firstData = first.bind(
 			defineLens({
 				namespace: 'so.epicenter.whispering',
@@ -88,7 +89,7 @@ test('WebView surfaces share one replica and state survives restart', async () =
 
 		// A second WebView binds the same lens to the same host
 		// replica. There is no Device/Account or per-workspace adoption ceremony.
-		const second = await createClient(firstServer.origin, firstServer.fetch);
+		const second = await createClient(firstServer);
 		const secondData = second.bind(
 			defineLens({
 				namespace: 'so.epicenter.whispering',
@@ -110,7 +111,7 @@ test('WebView surfaces share one replica and state survives restart', async () =
 
 		const restarted = await startDesktopServer(root);
 		try {
-			const client = await createClient(restarted.origin, restarted.fetch);
+			const client = await createClient(restarted);
 			const data = client.bind(
 				defineLens({
 					namespace: 'so.epicenter.whispering',
@@ -145,8 +146,154 @@ test('WebView surfaces share one replica and state survives restart', async () =
 	}
 });
 
+test('a write in one surface invalidates the same lens in another', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'epicenter-desktop-observe-'));
+	const server = await startDesktopServer(root);
+	try {
+		const writer = await createClient(server);
+		const reader = await createClient(server);
+		const writerData = writer.bind(sharedLens());
+		const readerData = reader.bind(sharedLens());
+
+		// Subscribe, then read. Registration is synchronous and never fires
+		// initially, so nothing can land in between and nothing has to be
+		// discarded.
+		const rowInvalidations: TableInvalidation[] = [];
+		let valueInvalidations = 0;
+		readerData.tables.documents.subscribe((invalidation) =>
+			rowInvalidations.push(invalidation),
+		);
+		readerData.values['settings.analytics.enabled'].subscribe(() => {
+			valueInvalidations += 1;
+		});
+		expect(rowInvalidations).toEqual([]);
+		expect(valueInvalidations).toBe(0);
+
+		const created = await writerData.tables.documents.create({
+			name: 'Written elsewhere',
+			updatedAt: InstantString.now(),
+		});
+		await waitFor(() => rowInvalidations.length > 0);
+
+		// Exactly one rows-scoped invalidation naming exactly the row that moved,
+		// and the reader can go and read it.
+		expect(rowInvalidations).toEqual([
+			{ scope: 'rows', rowIds: [created.id] },
+		]);
+		expect((await readerData.tables.documents.get(created.id)).data?.name).toBe(
+			'Written elsewhere',
+		);
+
+		// The writer hears about its own write through the same authoritative
+		// broadcast. There is no local echo left to double-fire it.
+		const writerInvalidations: TableInvalidation[] = [];
+		writerData.tables.documents.subscribe((invalidation) =>
+			writerInvalidations.push(invalidation),
+		);
+		await writerData.tables.documents.update(created.id, { name: 'Renamed' });
+		await waitFor(() => writerInvalidations.length > 0);
+		expect(writerInvalidations).toEqual([
+			{ scope: 'rows', rowIds: [created.id] },
+		]);
+
+		await writerData.values['settings.analytics.enabled'].set(false);
+		await waitFor(() => valueInvalidations > 0);
+		expect(valueInvalidations).toBe(1);
+		expect(
+			(await readerData.values['settings.analytics.enabled'].get()).data,
+		).toBeFalse();
+
+		await writer[Symbol.asyncDispose]();
+		await reader[Symbol.asyncDispose]();
+	} finally {
+		await server.dispose();
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test('a dropped carrier heals every handle it was holding', async () => {
+	const root = mkdtempSync(join(tmpdir(), 'epicenter-desktop-reconnect-'));
+	const server = await startDesktopServer(root);
+	try {
+		const sockets: ObservationSocket[] = [];
+		const client = await createClient(server, undefined, {
+			createObservationSocket: (url) => {
+				const socket = authenticatedSocket(url, server);
+				sockets.push(socket);
+				return socket;
+			},
+			reconnectDelayMs: () => 10,
+		});
+		const data = client.bind(sharedLens());
+		const rowInvalidations: TableInvalidation[] = [];
+		let valueInvalidations = 0;
+		data.tables.documents.subscribe((invalidation) =>
+			rowInvalidations.push(invalidation),
+		);
+		data.values['settings.analytics.enabled'].subscribe(() => {
+			valueInvalidations += 1;
+		});
+
+		// Drop the carrier from under the client. Whatever happened while it was
+		// down cannot be enumerated, and a deletion in that window would leave
+		// nothing behind to name.
+		expect(sockets).toHaveLength(1);
+		sockets[0]?.close();
+		await waitFor(() => rowInvalidations.length > 0);
+
+		expect(sockets.length).toBeGreaterThan(1);
+		expect(rowInvalidations).toEqual([{ scope: 'table' }]);
+		expect(valueInvalidations).toBe(1);
+
+		// And the healed carrier is a working one, not just a reopened socket.
+		const created = await data.tables.documents.create({
+			name: 'After the gap',
+			updatedAt: InstantString.now(),
+		});
+		await waitFor(() => rowInvalidations.length > 1);
+		expect(rowInvalidations.at(-1)).toEqual({
+			scope: 'rows',
+			rowIds: [created.id],
+		});
+
+		await client[Symbol.asyncDispose]();
+	} finally {
+		await server.dispose();
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+function sharedLens() {
+	return defineLens({
+		namespace: 'so.epicenter.whispering',
+		tables: { documents: documentsTable },
+		values: {
+			'settings.analytics.enabled':
+				whisperingLens.values['settings.analytics.enabled'],
+		},
+	});
+}
+
+async function waitFor(
+	condition: () => boolean,
+	timeoutMs = 2_000,
+): Promise<void> {
+	const deadline = Date.now() + timeoutMs;
+	while (!condition()) {
+		if (Date.now() > deadline) throw new Error('Timed out waiting for a change');
+		await Bun.sleep(5);
+	}
+}
+
 async function startDesktopServer(root: string) {
-	const origin = 'http://127.0.0.1:39130';
+	// A real listening server, not `app.request`. The observation carrier is a
+	// WebSocket, and a fetch-only harness cannot prove a socket reaches a second
+	// surface.
+	const probe = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: () => new Response() });
+	const port = probe.port;
+	await probe.stop(true);
+	const origin = `http://127.0.0.1:${port}`;
+	const authority = `127.0.0.1:${port}`;
 	const { host, dataOwner } = await createOwnedTestHomeHostBundle({
 		dataDir: root,
 		workspacesRoot: join(root, 'data'),
@@ -163,53 +310,74 @@ async function startDesktopServer(root: string) {
 		desktopAuth: createTestDesktopAuth(),
 		blobRemote: null,
 	});
-	void websocket;
-	const bootstrap = await app.request(`${origin}${BOOTSTRAP_ROUTE.pattern}`, {
+	const server = Bun.serve({
+		hostname: '127.0.0.1',
+		port,
+		fetch: app.fetch,
+		websocket,
+	});
+	const bootstrap = await fetch(BOOTSTRAP_ROUTE.url(origin), {
 		method: 'POST',
-		headers: {
-			authorization: `Bearer ${TOKEN}`,
-			host: '127.0.0.1:39130',
-			origin,
-		},
+		headers: { authorization: `Bearer ${TOKEN}`, origin },
 	});
 	const cookie = bootstrap.headers.get('set-cookie')?.split(';', 1)[0];
 	if (!cookie) throw new Error('Desktop bootstrap did not set a cookie');
 	return {
 		origin,
+		cookie,
+		authority,
 		async fetch(input: Parameters<typeof fetch>[0], init?: RequestInit) {
-			return await app.request(input, {
+			return await fetch(input, {
 				...init,
-				headers: {
-					...init?.headers,
-					cookie,
-					host: '127.0.0.1:39130',
-					origin,
-				},
+				headers: { ...init?.headers, cookie, origin },
 			});
 		},
 		async dispose() {
+			await server.stop(true);
 			await host[Symbol.asyncDispose]();
 			await dataOwner[Symbol.asyncDispose]();
 		},
 	};
 }
 
+type DesktopServer = Awaited<ReturnType<typeof startDesktopServer>>;
+
+/**
+ * The DOM's `WebSocket` types its second argument as subprotocols, while Bun's
+ * client accepts request headers there. A browser never needs this: it attaches
+ * the same-origin cookie and Origin itself.
+ */
+function authenticatedSocket(
+	url: string,
+	server: DesktopServer,
+): ObservationSocket & { close(): void } {
+	const SocketWithHeaders = WebSocket as unknown as new (
+		url: string,
+		options: { headers: Record<string, string> },
+	) => ObservationSocket & { close(): void };
+	return new SocketWithHeaders(url, {
+		headers: { cookie: server.cookie, origin: server.origin },
+	});
+}
+
 function createClient(
-	origin: string,
-	request: (
-		input: Parameters<typeof fetch>[0],
-		init?: RequestInit,
-	) => Promise<Response>,
+	server: DesktopServer,
 	operations?: Record<string, unknown>[],
+	overrides: Partial<OpenDesktopEpicenterOptions> = {},
 ) {
 	return openDesktopEpicenter({
-		baseUrl: origin,
+		baseUrl: server.origin,
 		async fetch(input, init) {
 			if (operations && typeof init?.body === 'string') {
 				operations.push(JSON.parse(init.body) as Record<string, unknown>);
 			}
-			return request(input, init);
+			return server.fetch(input, init);
 		},
+		// A browser attaches the session cookie and the Origin header to a
+		// same-origin handshake by itself. Bun's client does not, so the test
+		// supplies exactly what the host checks.
+		createObservationSocket: (url) => authenticatedSocket(url, server),
+		...overrides,
 	} satisfies OpenDesktopEpicenterOptions);
 }
 

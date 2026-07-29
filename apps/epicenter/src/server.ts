@@ -10,8 +10,11 @@ import type { AgentToolDefinition } from '@epicenter/agent';
 import { getProfileVia } from '@epicenter/auth';
 import { type BlobId, type BlobRemote, parseBlobId } from '@epicenter/blobs';
 import type { BunBlobStore } from '@epicenter/blobs/bun';
+import type { Address } from '@epicenter/data';
 import {
+	DESKTOP_EPICENTER_OBSERVE_ROUTE,
 	DESKTOP_EPICENTER_ROUTE,
+	type DesktopInvalidationFrame,
 	type DesktopResponse,
 } from '@epicenter/data/desktop';
 import {
@@ -271,6 +274,15 @@ export function createHomeServer({
 	app.use('/api/apps', requireBrowserSession);
 	app.use('/api/home/*', requireBrowserSession);
 	app.use(DESKTOP_EPICENTER_ROUTE, requireBrowserSession);
+	// The observation carrier is guarded exactly like the operations route it
+	// sits beside, plus the explicit Origin equality every WebSocket upgrade
+	// here carries: a browser always sends Origin on a handshake, so unlike a
+	// same-origin GET there is no reason to accept its absence.
+	app.use(DESKTOP_EPICENTER_OBSERVE_ROUTE, async (c, next) => {
+		if (!hasBrowserSession(c)) return c.text('Unauthorized', 401);
+		if (c.req.header('origin') !== origin) return c.text('Forbidden', 403);
+		await next();
+	});
 	app.use('/api/local-blobs/*', requireBrowserSession);
 	app.use(SESSION_STREAM_ROUTE.pattern, async (c, next) => {
 		if (c.req.header('origin') !== origin) return c.text('Forbidden', 403);
@@ -467,6 +479,53 @@ export function createHomeServer({
 			);
 		}
 	});
+
+	// One socket per trusted surface, carrying committed addresses and nothing
+	// else. This is Epicenter observing its own replica on behalf of the
+	// surfaces it serves, which is why it does not reopen ADR-0185: that record
+	// refuses observing an installed app's *ordinary* HTTP, and nothing here
+	// reports where an app went or what it sent.
+	app.get(
+		DESKTOP_EPICENTER_OBSERVE_ROUTE,
+		upgradeWebSocket(() => {
+			let unsubscribe: (() => void) | undefined;
+			return {
+				onOpen(_event, ws) {
+					if (!dataOwner) {
+						// Nothing to observe and nothing that will start: closing is
+						// honest, and the client's redial is bounded and cheap.
+						ws.close(1011, 'Desktop Epicenter is unavailable');
+						return;
+					}
+					unsubscribe = dataOwner.subscribeInvalidations(
+						(changes: readonly Address[]) => {
+							const frame: DesktopInvalidationFrame = {
+								type: 'invalidation',
+								changes: [...changes],
+							};
+							try {
+								ws.send(JSON.stringify(frame));
+							} catch (cause) {
+								// A send that fails has already lost a frame, and there is
+								// no way to know how much else this socket would drop. Fail
+								// into the client's reconnect path, which recovers by
+								// invalidating every handle it holds, rather than
+								// continuing on a carrier that silently skips commits.
+								unsubscribe?.();
+								unsubscribe = undefined;
+								ws.close(1011, 'Observation carrier failed');
+								void cause;
+							}
+						},
+					);
+				},
+				onClose() {
+					unsubscribe?.();
+					unsubscribe = undefined;
+				},
+			};
+		}),
+	);
 
 	app.get(
 		SESSION_STREAM_ROUTE.pattern,

@@ -1,4 +1,5 @@
 import type { TSchema } from 'typebox';
+import type { Address } from './protocol/index.js';
 import type { Result } from 'wellcrafted/result';
 import { epicenterPath, openBunEpicenter } from './bun.js';
 import {
@@ -24,6 +25,7 @@ import {
 	type Epicenter,
 	type InternalTableLens,
 	readTableEntriesPage,
+	subscribeCommittedAddresses,
 } from './epicenter.js';
 import {
 	type Inspection,
@@ -174,6 +176,21 @@ export async function createDesktopEpicenterOwner({
 
 	return Object.freeze({
 		epicenter,
+		/**
+		 * Forward every committed batch to one attached surface carrier.
+		 *
+		 * The owner deliberately keeps no per-table interest registry and no
+		 * per-surface filter. It does not know which Lenses a surface has bound,
+		 * and asking it to would mean surfaces registering interest, the host
+		 * holding that registration, and both agreeing about it forever. The
+		 * client already knows exactly which handles exist, so it does the
+		 * filtering and the host stays a pipe.
+		 */
+		subscribeInvalidations(
+			listener: (changes: readonly Address[]) => void,
+		): () => void {
+			return epicenter[subscribeCommittedAddresses](listener);
+		},
 		/**
 		 * Open one read-only relational inspection connection on this store.
 		 *

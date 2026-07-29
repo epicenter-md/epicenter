@@ -36,6 +36,7 @@ import {
 } from '@epicenter/blobs';
 import { createBunBlobStore } from '@epicenter/blobs/bun';
 import { desktopBlobUrl } from '@epicenter/blobs/webview';
+import { DESKTOP_EPICENTER_OBSERVE_ROUTE } from '@epicenter/data/desktop';
 import { Ok } from 'wellcrafted/result';
 import type { HomeHost, HomeHostInputs } from './host.ts';
 import {
@@ -592,6 +593,32 @@ describe('createHomeServer', () => {
 			);
 			expect(browserFragment.status).toBe(200);
 			expect(await browserFragment.text()).toContain('<h1>Mail</h1>');
+		} finally {
+			await server.stop(true);
+		}
+	});
+
+	test('guards the data observation carrier by session and exact origin', async () => {
+		await using host = await createTestHost({
+			engine: scriptedEngine([[]]),
+		});
+		const server = await serveHost(host);
+		try {
+			const url = `${server.url.origin}${DESKTOP_EPICENTER_OBSERVE_ROUTE}`;
+			const { cookie, origin } = authenticationFor(server);
+
+			const noSession = await fetch(url, { headers: { origin } });
+			expect(noSession.status).toBe(401);
+
+			// A browser always sends Origin on a WebSocket handshake, so unlike a
+			// same-origin GET there is no reason to accept its absence.
+			const noOrigin = await fetch(url, { headers: { cookie } });
+			expect(noOrigin.status).toBe(403);
+
+			const foreignOrigin = await fetch(url, {
+				headers: { cookie, origin: 'https://example.com' },
+			});
+			expect(foreignOrigin.status).toBe(403);
 		} finally {
 			await server.stop(true);
 		}
