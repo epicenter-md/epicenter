@@ -84,6 +84,16 @@ fn engine_command(app: &tauri::AppHandle) -> std::io::Result<Command> {
         command.arg("app").env("LOCAL_MAIL_UI_DIST", ui_dist);
         command
     };
+    // A packaged distribution may compile its Google Desktop client identity
+    // into this native shell. It is public application configuration, not a
+    // Gmail grant. The Bun engine still owns OAuth end to end, and an inherited
+    // GMAIL_* machine override takes precedence inside the engine (ADR-0188).
+    if let Some(client_id) = option_env!("LOCAL_MAIL_DISTRIBUTION_GMAIL_CLIENT_ID") {
+        command.env("LOCAL_MAIL_DISTRIBUTION_GMAIL_CLIENT_ID", client_id);
+    }
+    if let Some(client_secret) = option_env!("LOCAL_MAIL_DISTRIBUTION_GMAIL_CLIENT_SECRET") {
+        command.env("LOCAL_MAIL_DISTRIBUTION_GMAIL_CLIENT_SECRET", client_secret);
+    }
     // stdout piped so the shell can read the printed origin; stderr inherited so
     // the engine's sync/gmail logs stay visible in the launching terminal.
     command.stdout(Stdio::piped()).stderr(Stdio::inherit());

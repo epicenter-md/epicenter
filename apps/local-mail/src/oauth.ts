@@ -8,6 +8,7 @@ import { Ok, type Result } from 'wellcrafted/result';
 import type { AppConfig } from './config.ts';
 import { createGmailClient } from './gmail-client.ts';
 import {
+	type GmailCredentials,
 	gmailCredentialSource,
 	persistGmailProviderCredentials,
 	resolveGmailCredentials,
@@ -75,7 +76,7 @@ export const OAuthError = defineErrors({
 		configured: string;
 	}) => ({
 		message:
-			`The stored token was minted by OAuth client ${stored}, but GMAIL_CLIENT_ID is now ${configured}. ` +
+			`The stored token was minted by OAuth client ${stored}, but the configured OAuth client is now ${configured}. ` +
 			'Refreshing through a different client fails as invalid_grant; restore the original client id or run "local-mail connect" again.',
 		stored,
 		configured,
@@ -116,12 +117,12 @@ function httpOptions(config: AppConfig) {
 }
 
 /**
- * Resolve the BYO Gmail OAuth client lazily at the connect/refresh site rather
- * than eagerly in `loadConfig`, so credential-free verbs never read secrets.
+ * Resolve the Gmail OAuth client lazily at the connect/refresh site rather than
+ * eagerly in `loadConfig`, so credential-free verbs never read app identity.
  */
 function loadGmailCredentials(
 	config: AppConfig,
-): Result<{ clientId: string; clientSecret: string }, OAuthError> {
+): Result<GmailCredentials, OAuthError> {
 	try {
 		return Ok(resolveGmailCredentials(gmailCredentialSource(config.dataDir)));
 	} catch (cause) {
@@ -199,8 +200,8 @@ export async function runAuthorizationFlow(
 	config: AppConfig,
 	options: AuthorizationFlowOptions,
 ): GrantResult {
-	// Resolve the BYO OAuth keyset lazily; this is the connect path's only
-	// credentials read. Destructured so the narrowing survives the awaits.
+	// Resolve the OAuth keyset lazily; this is the connect path's only
+	// app-identity read. Destructured so the narrowing survives the awaits.
 	const { data: credentials, error: credentialsError } =
 		loadGmailCredentials(config);
 	if (credentialsError) return { data: null, error: credentialsError };

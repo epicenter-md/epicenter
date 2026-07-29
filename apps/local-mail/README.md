@@ -34,35 +34,36 @@ table.
 
 ## Commands
 
-Connect once. Every build today is bring-your-own: set one Google OAuth Desktop
-client pair as `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET`, then run the connect
-flow. Under ADR-0188 the official signed distribution will eventually supply an
-Epicenter-owned verified client so this step disappears for ordinary users, but
-that client is not provisioned yet, so there is no one-click path in any build:
+Connect once. A packaged distribution can supply its Google OAuth Desktop
+client identity through the native shell. The official Epicenter client is not
+provisioned in this repository yet, so source builds remain bring-your-own: set
+`GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET`, then run the connect flow.
 
 ```sh
 bun run src/bin.ts connect
 ```
 
-The client pair is machine-wide configuration, not Epicenter infrastructure and
-not a per-account setting: one identity serves every Gmail account connected on
-this machine. Because Google binds a refresh token to the client that minted it,
-changing the pair means reconnecting *every* account here; a stored grant is
-never reinterpreted under a new client, so a mismatch fails loudly on the next
-refresh instead of surfacing as Google's opaque `invalid_grant`. The client id
-and secret are public application configuration, not user secrets: the Gmail
-access and refresh tokens are the secrets, and they never leave this device.
-Epicenter Cloud and self-hosted Epicenter instances are not in the Gmail path at
-all, so which instance you select has no effect on any of this.
+One client identity serves every Gmail account connected on this machine. An
+explicit `GMAIL_*` pair is the machine-wide override and wins over the identity
+supplied by a packaged distribution. Because Google binds a refresh token to
+the client that minted it, changing the effective pair means reconnecting
+*every* account here; a stored grant is never reinterpreted under a new client,
+so a mismatch fails loudly on the next refresh instead of surfacing as Google's
+opaque `invalid_grant`. The client id and secret are public application
+configuration, not user secrets: the Gmail access and refresh tokens are the
+secrets, and they never leave this device. Epicenter Cloud and self-hosted
+Epicenter instances are not in the Gmail path at all, so which instance you
+select has no effect on any of this.
 
 Provide the pair however you keep local secrets for the first connect:
 an export, a local `.env`, or a secrets manager such as
 `infisical run --path=/apps/local-mail -- bun run src/bin.ts connect`. On the
-first successful connect or refresh, Local Mail caches the pair to a 0600
-`<data-dir>/provider.json` sibling to `credentials.json`. Every later run and
-every other git worktree on this machine reads it from there, so no per-worktree
-secrets config is needed. See [`.env.example`](.env.example) for the canonical
-names.
+first successful connect or refresh, Local Mail caches an explicit override to
+a 0600 `<data-dir>/provider.json` sibling to `credentials.json`. The
+distribution identity is never copied into that user-owned file. Every later
+run and every other git worktree on this machine reads the override from there,
+so no per-worktree config is needed. See [`.env.example`](.env.example) for the
+canonical override names.
 
 Local Mail requests `gmail.modify` so write-through label changes can round-trip
 through Gmail. Although Google grants send at the same OAuth layer, Local Mail
@@ -180,10 +181,12 @@ Tools:
 ## Config
 
 - `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET`: the machine-wide Google OAuth
-  Desktop client pair. The resolver reads them at connect/refresh from the
-  environment first, then `<data-dir>/provider.json`, which is cached as `0600`
-  on first connect. Missing credentials fail loudly naming the exact variables.
-  Changing the pair requires reconnecting every account on this machine.
+  Desktop client override. The resolver reads the pair atomically from the
+  environment first, then `<data-dir>/provider.json`. A packaged distribution
+  identity is the fallback and is never persisted as an override. Missing
+  credentials in a source build fail loudly naming the exact variables.
+  Changing the effective client requires reconnecting every account on this
+  machine.
 - `LOCAL_MAIL_ACCOUNT`: optional account override for `sync`, `query`, and
   `mcp`. Required only when more than one account is connected.
 - `LOCAL_MAIL_DIR`: data directory override.
@@ -217,8 +220,11 @@ stdio subprocess for the agent-facing protocol surface.
   opens a `WebviewUrl::External` window at it, owning only the window and the
   engine's lifetime (Rust never touches Gmail tokens, mail data, or the bearer).
   `bun run desktop:build` produces a local unsigned macOS `.app` with the compiled
-  Bun sidecar and bundled SPA resources; signing and notarization still need
-  Apple Developer credentials and config, as described in `src-tauri/README.md`.
+  Bun sidecar and bundled SPA resources. The shell can compile in the
+  distribution's public Google client identity, but no official Epicenter
+  identity is provisioned in this repository. Signing, notarization, and the
+  official Google client still need release configuration, as described in
+  `src-tauri/README.md`.
 - Send, reply, compose, drafts, trash, untrash, and permanent delete.
 - Thread-level modify and `messages.batchModify`. Triage is message-level.
 - FTS5. `LIKE` over `body_text` is enough for the current mirror size.
