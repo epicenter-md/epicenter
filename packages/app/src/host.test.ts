@@ -71,19 +71,43 @@ describe('no host', () => {
 });
 
 describe('reading a rejection', () => {
-	// Tauri's access-control layer rejects with a plain string when a window may
-	// not call a command. None of the commands this client invokes report their
-	// own failures that way, so a string means the call was never routed.
-	test('a bare string is the host refusing to route the call', async () => {
-		installHost(() =>
-			Promise.reject(
-				'start_recording not allowed. Permissions associated with this command: allow-start-recording',
-			),
-		);
+	// Every refusal Tauri writes says the command is "not allowed", in one of
+	// four wordings from one module.
+	test.each([
+		'start_recording not allowed. Permissions associated with this command: allow-start-recording',
+		'command not allowed on any window/webview/URL context',
+		'start_recording not allowed on window "app-notes", webview "app-notes", URL: http://127.0.0.1:39130/apps/notes/',
+		'start_recording not allowed on origin [http://evil.test]. Please create a capability that has this origin on the context field.',
+	])('a refusal reads as CapabilityUnavailable: %s', async (refusal) => {
+		installHost(() => Promise.reject(refusal));
 
 		const { error } = await epicenter.recording.start();
 		expect(error?.name).toBe('CapabilityUnavailable');
 		expect(error?.message).toContain('recording.start');
+	});
+
+	// The correction that matters most here. A bare string means the host
+	// rejected the call rather than the command reporting its own failure, but
+	// it does not mean the app lacks authority: Tauri serializes several
+	// framework failures the same way, and two of them are ordinary bugs.
+	// Reporting those as "unavailable" would describe a mistake as a
+	// permission, and an app author would go looking for a grant that is
+	// already there.
+	test.each([
+		[
+			'arguments the command could not deserialize',
+			'invalid args `audioBlobId` for command `stop_recording`: invalid type: null, expected a string',
+		],
+		[
+			'host state that was never registered',
+			'state not managed for field `recorder` on command `start_recording`. You must call `.manage()` before using this command',
+		],
+	])('%s is a failure, not unavailability', async (_case, rejection) => {
+		installHost(() => Promise.reject(rejection));
+
+		const { error } = await epicenter.recording.start();
+		expect(error?.name).toBe('RecordingFailed');
+		expect(error?.message).toContain(rejection);
 	});
 
 	// The command ran and reported a failure it names.

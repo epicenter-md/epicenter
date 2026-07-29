@@ -2053,21 +2053,31 @@ mod tests {
     /// Three artifacts have to agree, and each would otherwise drift silently:
     /// the commands `@epicenter/app` invokes, the commands an app window is
     /// granted, and the commands this crate actually exposes.
-    #[test]
-    fn the_public_client_invokes_exactly_what_app_windows_are_granted() {
+    /// The client's `COMMANDS` map, as `(key, command)` pairs. The key is how
+    /// the client's own call sites name a command, so it is what locates one.
+    fn public_client_commands() -> Vec<(String, String)> {
         const PROTOCOL: &str = include_str!("../../../../packages/app/src/protocol.ts");
-
-        let named: std::collections::BTreeSet<String> = PROTOCOL
+        PROTOCOL
             .split_once("COMMANDS = {")
             .expect("packages/app/src/protocol.ts must declare a COMMANDS map")
             .1
             .split_once("} as const;")
             .expect("the COMMANDS map must be closed with `} as const;`")
             .0
-            .split('\n')
+            .lines()
             .filter_map(|line| line.split_once(": '"))
-            .filter_map(|(_, rest)| rest.split_once('\''))
-            .map(|(command, _)| command.to_string())
+            .filter_map(|(key, rest)| Some((key, rest.split_once('\'')?.0)))
+            .map(|(key, command)| (key.trim().to_string(), command.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn the_public_client_invokes_exactly_what_app_windows_are_granted() {
+        const PROTOCOL: &str = include_str!("../../../../packages/app/src/protocol.ts");
+
+        let named: std::collections::BTreeSet<String> = public_client_commands()
+            .into_iter()
+            .map(|(_, command)| command)
             .collect();
 
         let expected: std::collections::BTreeSet<String> = PUBLIC_CLIENT_COMMANDS
@@ -2110,18 +2120,16 @@ mod tests {
     /// fails only when someone runs it, because Tauri deserializes arguments by
     /// name and a missing one is a runtime error rather than a compile error.
     ///
-    /// So each argument the generated bindings pass has to appear in the
-    /// client's source. The bindings are the proxy for Rust here, since they
-    /// are generated from the same commands.
+    /// So each argument the generated bindings pass has to appear at the
+    /// client's own call site *for that command*. The bindings are the proxy
+    /// for Rust here, since they are generated from the same commands.
     ///
-    /// It checks presence across the client's capability modules together, not
-    /// per command, so be clear about what that does and does not buy. It
-    /// catches the direction that actually goes wrong on its own: a Rust
-    /// parameter is renamed, the bindings regenerate around it, and nothing
-    /// else notices that the client is now sending a key the host will not
-    /// read. It does not catch a client-side edit that leaves the old name
-    /// alive in a sibling module; the client's own tests assert the exact
-    /// payload per command, which is where that belongs.
+    /// Per call site, not anywhere in the client, and the difference is the
+    /// whole test. Every one of these commands is addressed by a blob id, so
+    /// `audioBlobId` appears all over the client; a check that only asked
+    /// whether a name occurred somewhere would happily accept
+    /// `start_recording` growing an `audioBlobId` parameter that `start()` has
+    /// never sent.
     #[test]
     fn the_public_client_names_the_arguments_these_commands_deserialize() {
         const CLIENT: &str = concat!(
@@ -2131,11 +2139,11 @@ mod tests {
         const BINDINGS: &str = include_str!("../../src/ui/bindings.gen.ts");
 
         let mut checked = 0;
-        for command in PUBLIC_CLIENT_COMMANDS {
+        for (key, command) in public_client_commands() {
             // Matched on the quoted name alone, not on `(` plus the name: the
             // formatter wraps a long invoke onto its own line, and specta emits
             // double quotes where the formatter leaves single ones.
-            let Some(site) = BINDINGS
+            let Some(binding_site) = BINDINGS
                 .split_once(&format!("'{command}'"))
                 .or_else(|| BINDINGS.split_once(&format!("\"{command}\"")))
                 .map(|(_, rest)| rest)
@@ -2144,7 +2152,7 @@ mod tests {
             };
             // The call closes right after a command that takes nothing; one
             // that takes arguments has an object literal before that `)`.
-            let Some(arguments) = site
+            let Some(arguments) = binding_site
                 .split_once(')')
                 .and_then(|(call, _)| call.split_once('{'))
                 .and_then(|(_, fields)| fields.split_once('}'))
@@ -2152,14 +2160,24 @@ mod tests {
             else {
                 continue;
             };
+
+            // The client names each command through `COMMANDS.<key>`, and the
+            // payload it sends follows on the way to that call's `);`.
+            let call = CLIENT
+                .split_once(&format!("COMMANDS.{key}"))
+                .map(|(_, rest)| rest)
+                .and_then(|rest| rest.split_once(");"))
+                .map(|(call, _)| call)
+                .unwrap_or_else(|| panic!("@epicenter/app never invokes COMMANDS.{key}"));
+
             for argument in arguments
                 .split(',')
                 .map(str::trim)
                 .filter(|argument| !argument.is_empty())
             {
                 assert!(
-                    CLIENT.contains(argument),
-                    "{command} deserializes an argument named `{argument}`, which @epicenter/app never sends"
+                    call.contains(argument),
+                    "{command} deserializes an argument named `{argument}`, which @epicenter/app does not send at its `COMMANDS.{key}` call"
                 );
                 checked += 1;
             }

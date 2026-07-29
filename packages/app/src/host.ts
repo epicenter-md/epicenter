@@ -96,12 +96,30 @@ export async function observeHost<TPayload>(
 ): Promise<Result<() => void, HostError | HostRejection>> {
 	if (!hostIsReachable()) return HostErrors.HostUnavailable({ operation });
 	try {
+		// Two upstream lifecycle facts worth stating, because neither is
+		// fixable from here and both would otherwise look like oversights.
+		//
+		// `listen` registers the handler on the page (`transformCallback`)
+		// *before* it asks the host to start sending, and it has no cleanup
+		// path if that ask is refused. So a failed subscription strands one
+		// closure. Reaching into `__TAURI_INTERNALS__` to unregister it would
+		// trade a published API for a private one to reclaim one function, and
+		// the failure it cleans up after is a missing grant, which is a build
+		// mistake that fails once at startup rather than in a loop.
 		const unlisten = await listen<TPayload>(event, ({ payload }) =>
 			handler(payload),
 		);
-		// Unsubscribing is fire-and-forget by design: the caller is releasing
-		// something, and there is nothing it could do about a failure to stop
-		// listening except leak the handler it already stopped caring about.
+		// And unsubscribing is two steps that can half-succeed: the page's
+		// handler is dropped first, then the host is told to stop sending. If
+		// that second call fails, the host keeps a listener pointed at a
+		// handler that no longer exists, and it will keep doing so until the
+		// window is destroyed.
+		//
+		// This still hands back `() => void` rather than something a caller
+		// awaits and checks. A caller running this has already let go of the
+		// subscription; there is no repair it could attempt and no decision the
+		// outcome would change, and an app-window build grants the unlisten it
+		// needs, so the residue is a host-side record nobody reads.
 		return Ok(() => {
 			void Promise.resolve(unlisten()).catch(() => {});
 		});
@@ -128,6 +146,24 @@ export function nudgeHost(command: string, args?: Record<string, unknown>) {
 	void invoke(command, args).catch(() => {});
 }
 
+/**
+ * The marker every access-control refusal carries, and nothing else does.
+ *
+ * Tauri writes all four of its refusals in one module (`ipc/authority.rs`) and
+ * every one of them says the command is "not allowed": on no context at all, on
+ * this window and webview, on this origin, or with the permissions it found.
+ * They are diagnostics for a developer, not user-facing copy, so they are not
+ * localized and not formatted per platform.
+ *
+ * This is the conservative half of a deliberately asymmetric test. A refusal
+ * whose wording changes in a future Tauri stops being reported as
+ * `CapabilityUnavailable` and becomes an ordinary failure, which loses a
+ * distinction. The reverse mistake would state that an app was never granted an
+ * operation when it was, which is a claim someone would act on. Losing a
+ * distinction is the safe direction to fail.
+ */
+const REFUSED_MARKER = 'not allowed';
+
 function classify(
 	operation: string,
 	rejection: unknown,
@@ -136,8 +172,19 @@ function classify(
 	// `name` too, and treating `TypeError` as a command's typed failure would be
 	// exactly the "unknown bug becomes ordinary unavailability" mistake.
 	if (rejection instanceof Error) return Err({ domain: rejection });
+	// A string means the host rejected the call rather than the command
+	// reporting a failure of its own: these commands' failures are tagged
+	// objects. But it does not mean the call was refused. Tauri serializes
+	// several framework failures to strings through the same path, and two of
+	// them are ordinary bugs rather than missing authority: arguments this
+	// client sent that the command could not deserialize
+	// (`Error::InvalidArgs`), and host state that was never registered
+	// (`State::from_command`). Calling either of those "unavailable" would
+	// describe a mistake as a permission.
 	if (typeof rejection === 'string') {
-		return HostErrors.CapabilityUnavailable({ operation, cause: rejection });
+		return rejection.includes(REFUSED_MARKER)
+			? HostErrors.CapabilityUnavailable({ operation, cause: rejection })
+			: Err({ domain: rejection });
 	}
 	return Err({ domain: rejection });
 }
