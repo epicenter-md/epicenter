@@ -127,6 +127,29 @@ the same commit at different times through different code.
 - One more socket per desktop surface, on the same origin, session, and Origin
   check as every other host API. Per surface, not per Lens: an app that declares
   four namespaces still costs the host one registration and one socket.
+- **Every trusted surface receives every committed address batch, across every
+  namespace, and filters client-side.** This is the direct cost of refusing a
+  host interest registry, and it is larger than "two surfaces on one Lens see
+  each other's writes". A surface that has bound nothing still receives the
+  whole machine's write stream, so both the volume and the namespace metadata it
+  carries are global to the host rather than scoped to the app's interest: the
+  frame rate scales with total write activity, and the set of namespaces in use
+  is enumerable from what arrives. Under the ADR-0179/ADR-0183 full-trust model
+  this is a cost, not an exposure, and the refusal above stands. It is recorded
+  here so it is not rediscovered as a surprise, and so this record is not cited
+  as license for a broadcast where trust is not total.
+- **A surface that dies without disconnecting is retained until the host process
+  exits.** Membership is added by `open` and removed only by an explicit
+  `disconnect`, so a reloaded, crashed, or killed WebView leaves its registration
+  and every row document it opened behind. The host does receive one honest
+  death signal, the observation socket closing, but that socket carries no
+  surface identity, so nothing can attribute it. A retained member can issue
+  nothing, which is why this is a leak rather than a correctness failure.
+  Closing it means putting surface identity on the observe socket and treating
+  its close as a disconnect, which changes what the host knows about surface
+  lifetime and needs its own record. An unload-time `disconnect` is not that fix:
+  `pagehide` does not fire on crash or kill, and a request issued during unload
+  is not guaranteed to be sent.
 
 ## Considered alternatives
 

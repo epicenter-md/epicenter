@@ -54,7 +54,8 @@ type OpenDocument = {
 	document: RowDocument;
 };
 
-export const EPICENTER_SURFACE_NOT_OPEN_ERROR_NAME = 'EpicenterSurfaceNotOpenError';
+export const EPICENTER_SURFACE_NOT_OPEN_ERROR_NAME =
+	'EpicenterSurfaceNotOpenError';
 
 /** Open the one Bun-owned desktop Epicenter and its trusted-surface RPC owner. */
 export async function createDesktopEpicenterOwner({
@@ -67,10 +68,24 @@ export async function createDesktopEpicenterOwner({
 	/**
 	 * The surfaces that have opened and not yet disconnected.
 	 *
-	 * Membership is the whole of it. There is no generation, token, or epoch to
-	 * compare: a surface either holds an open registration or it does not, and an
-	 * operation from one that does not is refused. Nothing on the wire carries a
-	 * fencing token, so minting one here would only be a number nobody checks.
+	 * Membership is the whole of it. `open` adds a surface, `disconnect` removes
+	 * it along with every document that surface opened, and an operation from a
+	 * surface that is not a member is refused. There is no generation, token, or
+	 * epoch to compare, and nothing on the wire carries a fencing token, so
+	 * minting one here would only be a number nobody checks.
+	 *
+	 * Explicit disconnect is the only way out, which means a surface that dies
+	 * abruptly does not leave. A WebView reload, crash, or kill leaves its id in
+	 * this set and its {@link OpenDocument}s in `documents`, each holding a live
+	 * row document, until the host process exits. The observation socket dying is
+	 * the one honest death certificate the host receives, and it carries no
+	 * surface identity to attribute it to.
+	 *
+	 * That is a known retention cost rather than a correctness one: a stale
+	 * member can issue nothing, because the surface that could have named it is
+	 * gone. Closing it means putting identity on the observe socket and treating
+	 * its close as a disconnect, which is a change to what the host knows about
+	 * surface lifetime and belongs in its own record.
 	 */
 	const surfaces = new Set<string>();
 	const documents = new Map<number, OpenDocument>();
