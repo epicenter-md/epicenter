@@ -2167,3 +2167,28 @@ test.each([
 	expect(res.status).toBe(409);
 	expect(writes).toHaveLength(0);
 });
+
+test('a connection mid-disconnect is reported as closing, not merely unpostable', async () => {
+	// `closing_at` is never cleared, so an interrupted disconnect leaves an account
+	// that refuses posts. A creator who only discovered that by having a post
+	// refused would have no way to understand or fix it.
+	const { db } = fakeDb({
+		selectRows: [
+			{ ...connectionRow(['video.publish']), closingAt: new Date() },
+		],
+	});
+	const built = createTikTokTestApp({
+		session: freshSession('user-1'),
+		env: CONFIGURED_ENV,
+		db,
+	});
+
+	const res = await request(built, '/api/integrations/tiktok/connections');
+
+	const body = (await res.json()) as {
+		connections: { closing: boolean; canPost: boolean }[];
+	};
+	expect(body.connections[0]?.closing).toBe(true);
+	// Still a real grant: the refusal is about the disconnect, not the scope.
+	expect(body.connections[0]?.canPost).toBe(true);
+});

@@ -56,6 +56,15 @@ export type PublicConnection = {
 	avatarUrl: string | null;
 	/** Whether this account granted the scope Direct Post needs. */
 	canPost: boolean;
+	/**
+	 * Whether a disconnect has begun for this account.
+	 *
+	 * Surfaced because `closing_at` is never cleared: a disconnect interrupted
+	 * between marking and deleting leaves an account that refuses new posts, and a
+	 * creator who only learned that by having a post refused would have no idea
+	 * why. The list says so plainly and offers to finish the disconnect.
+	 */
+	closing: boolean;
 	accessTokenExpiresAt: string;
 	refreshTokenExpiresAt: string;
 	createdAt: string;
@@ -76,6 +85,7 @@ export function toPublicConnection(row: StoredConnection): PublicConnection {
 		username: row.username,
 		avatarUrl: row.avatarUrl,
 		canPost: row.scopes.includes(DIRECT_POST_SCOPE),
+		closing: row.closingAt !== null,
 		accessTokenExpiresAt: row.accessTokenExpiresAt.toISOString(),
 		refreshTokenExpiresAt: row.refreshTokenExpiresAt.toISOString(),
 		createdAt: row.createdAt.toISOString(),

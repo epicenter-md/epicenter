@@ -254,7 +254,17 @@
 									</div>
 								</div>
 								<div class="flex shrink-0 items-center gap-1">
-									{#if connection.canPost}
+									{#if connection.closing}
+										<!--
+											A disconnect began and did not finish. `closing_at` is never
+											cleared, so this account refuses new posts until the
+											disconnect completes; saying so here beats letting the
+											creator discover it by having a post refused.
+										-->
+										<span class="text-xs text-muted-foreground">
+											Disconnecting
+										</span>
+									{:else if connection.canPost}
 										<Button
 											variant={selectedId === connection.id
 												? 'secondary'
@@ -286,7 +296,7 @@
 										size="sm"
 										onclick={() => disconnect(connection)}
 									>
-										Disconnect
+										{connection.closing ? 'Finish disconnecting' : 'Disconnect'}
 									</Button>
 								</div>
 							</li>
