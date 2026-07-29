@@ -45,7 +45,11 @@ import {
 } from '@epicenter/server/cloud-db';
 import { eq } from 'drizzle-orm';
 import { Client, Pool } from 'pg';
-import { PUBLISH_LEASE_MS } from './attempt-status.js';
+import {
+	canReadRemoteStatus,
+	isTerminalAttemptStatus,
+	PUBLISH_LEASE_MS,
+} from './attempt-status.js';
 import {
 	beginConnectionClose,
 	claimPublishSlot,
@@ -65,21 +69,36 @@ const SCRATCH_DB = 'epicenter_tiktok_concurrency_test';
 const SCRATCH_URL = ADMIN_URL.replace(/\/[^/]*$/, `/${SCRATCH_DB}`);
 const MIGRATIONS_DIR = join(import.meta.dir, '../../../drizzle');
 
-async function postgresIsReachable(): Promise<boolean> {
+/**
+ * Whether this machine can actually host the proof.
+ *
+ * Probes the REAL precondition rather than mere connectivity: the scratch database
+ * has to be creatable. A role that can connect but cannot `CREATE DATABASE` would
+ * otherwise sail past a connectivity check and then fail every test in `beforeAll`,
+ * turning "this environment cannot run the proof" into "the code is broken".
+ */
+async function canHostTheProof(): Promise<boolean> {
 	const client = new Client({
 		connectionString: ADMIN_URL,
 		connectionTimeoutMillis: 2_000,
 	});
 	try {
 		await client.connect();
-		await client.end();
-		return true;
 	} catch {
 		return false;
 	}
+	try {
+		await client.query(`drop database if exists ${SCRATCH_DB} with (force)`);
+		await client.query(`create database ${SCRATCH_DB}`);
+		return true;
+	} catch {
+		return false;
+	} finally {
+		await client.end();
+	}
 }
 
-const reachable = await postgresIsReachable();
+const reachable = await canHostTheProof();
 /**
  * `test` when a database is present, `test.skip` otherwise. Named so a reader
  * scanning results can tell a genuine pass from an absent database.
@@ -87,7 +106,7 @@ const reachable = await postgresIsReachable();
 const dbTest = reachable ? test : test.skip;
 if (!reachable) {
 	console.warn(
-		`[tiktok] No Postgres at ${ADMIN_URL}: SKIPPING the concurrency proof. The publish serialization is UNPROVEN for this run.`,
+		`[tiktok] Cannot create a scratch database at ${ADMIN_URL}: SKIPPING the concurrency proof. The publish serialization is UNPROVEN for this run.`,
 	);
 }
 
@@ -114,13 +133,8 @@ async function applyMigrations(client: Client): Promise<void> {
 
 beforeAll(async () => {
 	if (!reachable) return;
-	const admin = new Client({ connectionString: ADMIN_URL });
-	await admin.connect();
-	// Dropped first so a previous run's rows can never be mistaken for this one's.
-	await admin.query(`drop database if exists ${SCRATCH_DB} with (force)`);
-	await admin.query(`create database ${SCRATCH_DB}`);
-	await admin.end();
-
+	// The probe above already dropped and recreated the scratch database, so a
+	// previous run's rows cannot be mistaken for this one's.
 	const scratch = new Client({ connectionString: SCRATCH_URL });
 	await scratch.connect();
 	await applyMigrations(scratch);
@@ -145,10 +159,19 @@ afterAll(async () => {
 
 let seq = 0;
 
-/** A user and one connected account, fresh per test so tests cannot interfere. */
+/**
+ * A user and one connected account, fresh per test so tests cannot interfere.
+ *
+ * Returns `aid`, which namespaces attempt ids to this connection. `id` on
+ * `tiktok_publish_attempt` is a GLOBAL primary key, and the concurrent races below
+ * commit a nondeterministic winner out of several candidate ids, so a later test
+ * reusing a bare name like `attempt-1` collides only on some runs. Namespacing
+ * removes that flake rather than hiding it behind a retry.
+ */
 async function seedConnection(): Promise<{
 	userId: string;
 	connectionId: string;
+	aid: (name: string) => string;
 }> {
 	seq += 1;
 	const userId = `user-${seq}`;
@@ -172,7 +195,11 @@ async function seedConnection(): Promise<{
 		refreshTokenCiphertext: 'v1.a.b',
 		refreshTokenExpiresAt: new Date(Date.now() + 3_600_000),
 	});
-	return { userId, connectionId };
+	return {
+		userId,
+		connectionId,
+		aid: (name: string) => `${connectionId}-${name}`,
+	};
 }
 
 // --- The race the reviewer identified ------------------------------------
@@ -194,17 +221,17 @@ dbTest(
 		 * one, and both are kept because this states the property and that one
 		 * enforces it.
 		 */
-		const { userId, connectionId } = await seedConnection();
+		const { userId, connectionId, aid } = await seedConnection();
 
 		const [first, second] = await Promise.all([
 			claimPublishSlot(db, {
-				id: 'attempt-a',
+				id: aid('a'),
 				userId,
 				connectionId,
 				idempotencyKey: 'key-aaaaaaaaaaaa',
 			}),
 			claimPublishSlot(db, {
-				id: 'attempt-b',
+				id: aid('b'),
 				userId,
 				connectionId,
 				idempotencyKey: 'key-bbbbbbbbbbbb',
@@ -238,12 +265,12 @@ dbTest(
 		 * deleting `.for('update')` and watching it go red. Treat it as the regression
 		 * guard for the serialization, not the two-way test above.
 		 */
-		const { userId, connectionId } = await seedConnection();
+		const { userId, connectionId, aid } = await seedConnection();
 
 		const results = await Promise.all(
 			Array.from({ length: 8 }, (_unused, index) =>
 				claimPublishSlot(db, {
-					id: `attempt-${index}`,
+					id: aid(`${index}`),
 					userId,
 					connectionId,
 					idempotencyKey: `key-${String(index).repeat(12)}`,
@@ -266,17 +293,17 @@ dbTest(
 	async () => {
 		// The unique index handles this one, and it must keep handling it: the second
 		// caller has to learn it lost rather than being told nothing is wrong.
-		const { userId, connectionId } = await seedConnection();
+		const { userId, connectionId, aid } = await seedConnection();
 
 		const results = await Promise.all([
 			claimPublishSlot(db, {
-				id: 'attempt-x',
+				id: aid('x'),
 				userId,
 				connectionId,
 				idempotencyKey: 'key-same-key-01',
 			}),
 			claimPublishSlot(db, {
-				id: 'attempt-y',
+				id: aid('y'),
 				userId,
 				connectionId,
 				idempotencyKey: 'key-same-key-01',
@@ -303,21 +330,21 @@ dbTest(
 	'a settled prior attempt does not block a genuinely new consent',
 	async () => {
 		// The mirror: serialization must not become a permanent lock.
-		const { userId, connectionId } = await seedConnection();
+		const { userId, connectionId, aid } = await seedConnection();
 		const first = await claimPublishSlot(db, {
-			id: 'attempt-1',
+			id: aid('1'),
 			userId,
 			connectionId,
 			idempotencyKey: 'key-first-00001',
 		});
 		expect(first.outcome).toBe('claimed');
 		await recordAttemptOutcome(db, {
-			attemptId: 'attempt-1',
+			attemptId: aid('1'),
 			status: 'PUBLISH_COMPLETE',
 		});
 
 		const second = await claimPublishSlot(db, {
-			id: 'attempt-2',
+			id: aid('2'),
 			userId,
 			connectionId,
 			idempotencyKey: 'key-second-0001',
@@ -336,11 +363,11 @@ dbTest('publish and disconnect cannot both succeed', async () => {
 	 * custody survives. If the disconnect wins, the claim sees `closing_at` and
 	 * refuses, so no post starts against a credential being revoked.
 	 */
-	const { userId, connectionId } = await seedConnection();
+	const { userId, connectionId, aid } = await seedConnection();
 
 	const [claim, close] = await Promise.all([
 		claimPublishSlot(db, {
-			id: 'attempt-race',
+			id: aid('race'),
 			userId,
 			connectionId,
 			idempotencyKey: 'key-race-000001',
@@ -367,12 +394,12 @@ dbTest('publish and disconnect cannot both succeed', async () => {
 });
 
 dbTest('once closing, every later claim refuses', async () => {
-	const { userId, connectionId } = await seedConnection();
+	const { userId, connectionId, aid } = await seedConnection();
 	const close = await beginConnectionClose(db, { userId, connectionId });
 	expect(close.outcome).toBe('closing');
 
 	const claim = await claimPublishSlot(db, {
-		id: 'attempt-after-close',
+		id: aid('after-close'),
 		userId,
 		connectionId,
 		idempotencyKey: 'key-afterclose1',
@@ -409,10 +436,10 @@ dbTest(
 );
 
 dbTest('a claim on another user’s connection reads as missing', async () => {
-	const { connectionId } = await seedConnection();
+	const { connectionId, aid } = await seedConnection();
 
 	const claim = await claimPublishSlot(db, {
-		id: 'attempt-foreign',
+		id: aid('foreign'),
 		userId: 'somebody-else',
 		connectionId,
 		idempotencyKey: 'key-foreign-001',
@@ -432,9 +459,9 @@ dbTest(
 		 * creator recording "nothing was posted" could land on the first, marking it
 		 * terminal while the original request went on to publish.
 		 */
-		const { userId, connectionId } = await seedConnection();
+		const { userId, connectionId, aid } = await seedConnection();
 		const claim = await claimPublishSlot(db, {
-			id: 'attempt-live',
+			id: aid('live'),
 			userId,
 			connectionId,
 			idempotencyKey: 'key-live-000001',
@@ -443,7 +470,7 @@ dbTest(
 
 		const resolved = await resolveAttemptManually(db, {
 			connectionId,
-			attemptId: 'attempt-live',
+			attemptId: aid('live'),
 			status: 'RESOLVED_NOT_POSTED',
 		});
 
@@ -451,7 +478,7 @@ dbTest(
 		const rows = await db
 			.select()
 			.from(tiktokPublishAttempt)
-			.where(eq(tiktokPublishAttempt.id, 'attempt-live'));
+			.where(eq(tiktokPublishAttempt.id, aid('live')));
 		// Untouched: still an active claim, not somebody's guess.
 		expect(rows[0]?.status).toBeNull();
 	},
@@ -462,9 +489,9 @@ dbTest(
 	async () => {
 		// The abandoned case: the Worker died, nothing will ever answer, and the
 		// creator is the only remaining source of truth.
-		const { userId, connectionId } = await seedConnection();
+		const { userId, connectionId, aid } = await seedConnection();
 		await claimPublishSlot(db, {
-			id: 'attempt-stale',
+			id: aid('stale'),
 			userId,
 			connectionId,
 			idempotencyKey: 'key-stale-00001',
@@ -473,7 +500,7 @@ dbTest(
 		const afterLease = new Date(Date.now() + PUBLISH_LEASE_MS + 1_000);
 		const resolved = await resolveAttemptManually(db, {
 			connectionId,
-			attemptId: 'attempt-stale',
+			attemptId: aid('stale'),
 			status: 'RESOLVED_NOT_POSTED',
 			now: afterLease,
 		});
@@ -482,7 +509,7 @@ dbTest(
 		const rows = await db
 			.select()
 			.from(tiktokPublishAttempt)
-			.where(eq(tiktokPublishAttempt.id, 'attempt-stale'));
+			.where(eq(tiktokPublishAttempt.id, aid('stale')));
 		expect(rows[0]?.status).toBe('RESOLVED_NOT_POSTED');
 	},
 );
@@ -490,22 +517,22 @@ dbTest(
 dbTest(
 	'a resolved attempt no longer blocks, so the creator can post again',
 	async () => {
-		const { userId, connectionId } = await seedConnection();
+		const { userId, connectionId, aid } = await seedConnection();
 		await claimPublishSlot(db, {
-			id: 'attempt-abandoned',
+			id: aid('abandoned'),
 			userId,
 			connectionId,
 			idempotencyKey: 'key-abandoned-1',
 		});
 		await resolveAttemptManually(db, {
 			connectionId,
-			attemptId: 'attempt-abandoned',
+			attemptId: aid('abandoned'),
 			status: 'RESOLVED_NOT_POSTED',
 			now: new Date(Date.now() + PUBLISH_LEASE_MS + 1_000),
 		});
 
 		const next = await claimPublishSlot(db, {
-			id: 'attempt-next',
+			id: aid('next'),
 			userId,
 			connectionId,
 			idempotencyKey: 'key-next-000001',
@@ -515,40 +542,87 @@ dbTest(
 	},
 );
 
-dbTest(
-	'an outcome write cannot overwrite a human’s recorded answer',
-	async () => {
-		// The other side of the lease: if a creator did settle an attempt, the original
-		// request must not quietly replace their answer when it finally writes.
-		const { userId, connectionId } = await seedConnection();
-		await claimPublishSlot(db, {
-			id: 'attempt-contested',
-			userId,
-			connectionId,
-			idempotencyKey: 'key-contested-1',
-		});
-		await resolveAttemptManually(db, {
-			connectionId,
-			attemptId: 'attempt-contested',
-			status: 'RESOLVED_POSTED',
-			now: new Date(Date.now() + PUBLISH_LEASE_MS + 1_000),
-		});
+dbTest('a GUESS cannot overwrite a human’s recorded answer', async () => {
+	// A creator who looked at TikTok knows more than our own inference does, so a
+	// write carrying no publish id must leave their answer alone.
+	const { userId, connectionId, aid } = await seedConnection();
+	await claimPublishSlot(db, {
+		id: aid('guess'),
+		userId,
+		connectionId,
+		idempotencyKey: 'key-guess-00001',
+	});
+	await resolveAttemptManually(db, {
+		connectionId,
+		attemptId: aid('guess'),
+		status: 'RESOLVED_POSTED',
+		now: new Date(Date.now() + PUBLISH_LEASE_MS + 1_000),
+	});
 
-		const wrote = await recordAttemptOutcome(db, {
-			attemptId: 'attempt-contested',
-			publishId: 'pub-late',
-			status: 'PROCESSING_UPLOAD',
-		});
+	const wrote = await recordAttemptOutcome(db, {
+		attemptId: aid('guess'),
+		status: 'INIT_AMBIGUOUS',
+	});
 
-		expect(wrote).toBe(false);
-		const rows = await db
-			.select()
-			.from(tiktokPublishAttempt)
-			.where(eq(tiktokPublishAttempt.id, 'attempt-contested'));
-		expect(rows[0]?.status).toBe('RESOLVED_POSTED');
-		expect(rows[0]?.publishId).toBeNull();
-	},
-);
+	expect(wrote).toBe(false);
+	const rows = await db
+		.select()
+		.from(tiktokPublishAttempt)
+		.where(eq(tiktokPublishAttempt.id, aid('guess')));
+	expect(rows[0]?.status).toBe('RESOLVED_POSTED');
+});
+
+dbTest('PROVIDER truth DOES overwrite a human’s recorded answer', async () => {
+	/**
+	 * The hole an adversarial concurrency review found, and the reason the guard is
+	 * about provenance rather than order.
+	 *
+	 * A publish stalls past its lease, a creator records "nothing was posted", and
+	 * then that publish's `video/init` succeeds after all. Refusing the write left
+	 * the row saying `RESOLVED_NOT_POSTED` with NO publish id while TikTok held a
+	 * real post, and because that status is terminal it also stopped blocking: the
+	 * creator was told nothing happened and then allowed to post again. A publish id
+	 * is TikTok's own word, so it has to win.
+	 */
+	const { userId, connectionId, aid } = await seedConnection();
+	await claimPublishSlot(db, {
+		id: aid('contested'),
+		userId,
+		connectionId,
+		idempotencyKey: 'key-contested-1',
+	});
+	await resolveAttemptManually(db, {
+		connectionId,
+		attemptId: aid('contested'),
+		status: 'RESOLVED_NOT_POSTED',
+		now: new Date(Date.now() + PUBLISH_LEASE_MS + 1_000),
+	});
+
+	const wrote = await recordAttemptOutcome(db, {
+		attemptId: aid('contested'),
+		publishId: 'pub-late',
+		status: 'PROCESSING_UPLOAD',
+	});
+
+	expect(wrote).toBe(true);
+	const rows = await db
+		.select()
+		.from(tiktokPublishAttempt)
+		.where(eq(tiktokPublishAttempt.id, aid('contested')));
+	/**
+	 * CUSTODY RESTORED, which is the whole point. The task is named again, so it can
+	 * be polled to its real outcome and will reconcile to whatever TikTok actually
+	 * did, instead of sitting on a creator's mistaken "nothing was posted" with no
+	 * handle to check.
+	 */
+	expect(rows[0]?.status).toBe('PROCESSING_UPLOAD');
+	expect(rows[0]?.publishId).toBe('pub-late');
+	// Reconcilable: the row is no longer terminal, and remote status keys on this id.
+	expect(isTerminalAttemptStatus(rows[0]?.status ?? null)).toBe(false);
+	expect(
+		canReadRemoteStatus(rows[0] ?? { status: null, publishId: null }),
+	).toBe(true);
+});
 
 dbTest('the FIRST outcome write on a fresh claim still lands', async () => {
 	/**
@@ -557,16 +631,16 @@ dbTest('the FIRST outcome write on a fresh claim still lands', async () => {
 	 * `IS NULL` arm would refuse the first write to every freshly claimed row and
 	 * break every publish. That failure is invisible to a mock.
 	 */
-	const { userId, connectionId } = await seedConnection();
+	const { userId, connectionId, aid } = await seedConnection();
 	await claimPublishSlot(db, {
-		id: 'attempt-fresh',
+		id: aid('fresh'),
 		userId,
 		connectionId,
 		idempotencyKey: 'key-fresh-00001',
 	});
 
 	const wrote = await recordAttemptOutcome(db, {
-		attemptId: 'attempt-fresh',
+		attemptId: aid('fresh'),
 		publishId: 'pub-fresh',
 		status: 'PROCESSING_UPLOAD',
 	});
@@ -575,28 +649,28 @@ dbTest('the FIRST outcome write on a fresh claim still lands', async () => {
 	const rows = await db
 		.select()
 		.from(tiktokPublishAttempt)
-		.where(eq(tiktokPublishAttempt.id, 'attempt-fresh'));
+		.where(eq(tiktokPublishAttempt.id, aid('fresh')));
 	expect(rows[0]?.status).toBe('PROCESSING_UPLOAD');
 	expect(rows[0]?.publishId).toBe('pub-fresh');
 });
 
 dbTest('the unique index on (connection, key) is the real one', async () => {
 	// The migrations, not a hand-written approximation, are what this file applies.
-	const { userId, connectionId } = await seedConnection();
+	const { userId, connectionId, aid } = await seedConnection();
 	await claimPublishSlot(db, {
-		id: 'attempt-u1',
+		id: aid('u1'),
 		userId,
 		connectionId,
 		idempotencyKey: 'key-unique-0001',
 	});
 	await recordAttemptOutcome(db, {
-		attemptId: 'attempt-u1',
+		attemptId: aid('u1'),
 		status: 'PUBLISH_COMPLETE',
 	});
 
 	// Same key again, now that nothing blocks: the index must still refuse it.
 	const again = await claimPublishSlot(db, {
-		id: 'attempt-u2',
+		id: aid('u2'),
 		userId,
 		connectionId,
 		idempotencyKey: 'key-unique-0001',

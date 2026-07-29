@@ -300,10 +300,23 @@ export async function claimPublishAttempt(
  * a code invented at a call site does not compile, and cannot reach the UI as a
  * status nothing knows how to describe.
  *
- * REFUSES to overwrite a human's answer. If a lease expired while this request was
- * somehow still alive, a creator may already have recorded an outcome, and their
- * statement is the one made with eyes on TikTok. Returns whether a row moved, so
- * the caller can report an unrecorded outcome instead of assuming it landed.
+ * Refuses to overwrite a human's answer with a GUESS, but not with provider truth.
+ *
+ * That distinction is the whole rule. A write carrying a `publishId` is TikTok
+ * telling us it created a task, which beats anything a creator inferred by
+ * looking: if they recorded "nothing was posted" they were simply wrong, and if
+ * they recorded "it posted" this is the same fact with the handle attached. A
+ * write WITHOUT a publish id (`INIT_FAILED`, `INIT_AMBIGUOUS`) is our own
+ * inference, and there a creator who actually checked TikTok knows more than we
+ * do, so their answer stands.
+ *
+ * Getting this backwards loses custody outright: refusing a provider-anchored
+ * write left the row saying `RESOLVED_NOT_POSTED` with no publish id while TikTok
+ * held a real post, and because that status is terminal it stopped blocking too,
+ * so the creator was told nothing happened AND allowed to post again.
+ *
+ * Returns whether a row moved, so a caller whose row has vanished can report an
+ * untracked task rather than assuming its write landed.
  */
 export async function recordAttemptOutcome(
 	db: Db,
@@ -319,6 +332,13 @@ export async function recordAttemptOutcome(
 		failReason?: string | null;
 	},
 ): Promise<boolean> {
+	/**
+	 * Whether this write is anchored in something TikTok said. A publish id only
+	 * ever comes from a successful `video/init`, so its presence is what separates
+	 * provider truth from our own inference.
+	 */
+	const carriesProviderTruth =
+		typeof publishId === 'string' && publishId.length > 0;
 	const rows = await db
 		.update(tiktokPublishAttempt)
 		.set({
@@ -331,18 +351,21 @@ export async function recordAttemptOutcome(
 			and(
 				eq(tiktokPublishAttempt.id, attemptId),
 				/**
-				 * A creator's recorded outcome is authoritative over anything this
-				 * request would write afterwards.
+				 * A creator's recorded outcome outranks our GUESSES, so a write with no
+				 * publish id must not clobber it. A provider-anchored write is exempt and
+				 * passes `undefined` here, which drizzle drops from the `AND`.
 				 *
 				 * The `IS NULL` arm is load-bearing, not defensive: in SQL
 				 * `NULL NOT IN (...)` evaluates to NULL rather than true, so a bare
 				 * `NOT IN` would refuse the FIRST write to every freshly claimed row and
 				 * break every publish.
 				 */
-				or(
-					isNull(tiktokPublishAttempt.status),
-					notInArray(tiktokPublishAttempt.status, [...MANUAL_RESOLUTIONS]),
-				),
+				carriesProviderTruth
+					? undefined
+					: or(
+							isNull(tiktokPublishAttempt.status),
+							notInArray(tiktokPublishAttempt.status, [...MANUAL_RESOLUTIONS]),
+						),
 			),
 		)
 		.returning({ id: tiktokPublishAttempt.id });
