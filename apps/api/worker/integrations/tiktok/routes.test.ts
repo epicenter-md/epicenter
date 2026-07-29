@@ -652,3 +652,218 @@ test('a connection belonging to another user reads as not found', async () => {
 
 	expect(res.status).toBe(404);
 });
+
+// --- Server-side Direct Post enforcement ---------------------------------
+//
+// These drive the real HTTP boundary with a connection whose token actually
+// decrypts, so the request reaches `creator_info/query` and the policy. They
+// exist because the dashboard cannot be trusted: a replayed or hand-built form
+// can claim anything, so the refusals below must hold with no UI involved.
+
+/** Encrypt a token under the same key CONFIGURED_ENV supplies. */
+async function liveConnectionRow(scopes = ['video.publish']) {
+	const { createTokenCipher } = await import('./token-cipher.js');
+	const { data: cipher } = await createTokenCipher([
+		{ version: 1, base64Key: KEY },
+	]);
+	const { data: accessCiphertext } = await (
+		cipher as NonNullable<typeof cipher>
+	).encrypt('act.live');
+	const { data: refreshCiphertext } = await (
+		cipher as NonNullable<typeof cipher>
+	).encrypt('rft.live');
+	return {
+		id: 'conn-1',
+		userId: 'user-1',
+		openId: 'open-abc',
+		unionId: null,
+		displayName: 'Braden',
+		username: 'braden',
+		avatarUrl: null,
+		scopes,
+		accessTokenCiphertext: accessCiphertext as string,
+		// Comfortably fresh, so token custody never calls TikTok's token endpoint.
+		accessTokenExpiresAt: new Date(Date.now() + 12 * 60 * 60 * 1000),
+		refreshTokenCiphertext: refreshCiphertext as string,
+		refreshTokenExpiresAt: new Date(Date.now() + 300 * 24 * 60 * 60 * 1000),
+		createdAt: new Date(),
+		updatedAt: new Date(),
+	};
+}
+
+const CREATOR_INFO_BODY = {
+	data: {
+		creator_username: 'braden',
+		creator_nickname: 'Braden',
+		privacy_level_options: ['PUBLIC_TO_EVERYONE', 'SELF_ONLY'],
+		comment_disabled: false,
+		duet_disabled: true,
+		stitch_disabled: false,
+		max_video_post_duration_sec: 600,
+	},
+	error: { code: 'ok' },
+};
+
+/**
+ * A db whose transaction hands back the locked row, so token custody succeeds,
+ * and whose insert returns a fresh publish-attempt row, so the idempotency
+ * claim is WON rather than looking already-taken.
+ */
+function liveDb(row: Record<string, unknown>) {
+	const base = fakeDb({
+		selectRows: [row],
+		insertRows: [
+			{
+				id: 'attempt-1',
+				connectionId: 'conn-1',
+				idempotencyKey: 'key-1',
+				kind: 'direct_post',
+				publishId: null,
+				status: null,
+			},
+		],
+	});
+	const db = {
+		...base.db,
+		transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> =>
+			fn({
+				select: () => ({
+					from: () => ({
+						where: () => ({ for: () => ({ limit: async () => [row] }) }),
+					}),
+				}),
+				update: () => ({ set: () => ({ where: async () => undefined }) }),
+			}),
+	};
+	return { ...base, db };
+}
+
+/** Drive one publish request with TikTok's network calls stubbed. */
+async function publishWith(
+	form: Record<string, string>,
+	{ scopes }: { scopes?: string[] } = {},
+) {
+	const row = await liveConnectionRow(scopes);
+	const { db } = liveDb(row);
+	const built = createTikTokTestApp({
+		session: freshSession('user-1'),
+		env: CONFIGURED_ENV,
+		db,
+	});
+
+	const realFetch = globalThis.fetch;
+	const calls: string[] = [];
+	globalThis.fetch = (async (input: string | URL) => {
+		const url = String(input);
+		calls.push(url);
+		if (url.includes('creator_info/query')) {
+			return new Response(JSON.stringify(CREATOR_INFO_BODY), { status: 200 });
+		}
+		// Reaching anything else means the policy admitted the request.
+		return new Response(
+			JSON.stringify({
+				data: { publish_id: 'pub-1', upload_url: 'https://upload/x' },
+				error: { code: 'ok' },
+			}),
+			{ status: 200 },
+		);
+	}) as unknown as typeof globalThis.fetch;
+
+	try {
+		const body = new FormData();
+		body.set('kind', 'direct_post');
+		body.set('idempotencyKey', 'key-1');
+		body.set(
+			'video',
+			new File([new Uint8Array(64)], 'v.mp4', { type: 'video/mp4' }),
+		);
+		for (const [key, value] of Object.entries(form)) body.set(key, value);
+		const res = await request(
+			built,
+			'/api/integrations/tiktok/connections/conn-1/publish',
+			{ method: 'POST', body },
+		);
+		return { res, calls };
+	} finally {
+		globalThis.fetch = realFetch;
+	}
+}
+
+test('server refuses branded content on a private post, with no UI involved', async () => {
+	const { res, calls } = await publishWith({
+		title: 'A caption',
+		privacyLevel: 'SELF_ONLY',
+		commercialContent: 'true',
+		brandedContent: 'true',
+	});
+
+	expect(res.status).toBe(409);
+	const body = (await res.json()) as {
+		error: { message: string; field: string };
+	};
+	expect(body.error.field).toBe('commercial');
+	expect(body.error.message).toContain('cannot be private');
+	// Refused BEFORE the irreversible init.
+	expect(calls.some((url) => url.includes('video/init'))).toBe(false);
+});
+
+test('server refuses a commercial disclosure with no kind chosen', async () => {
+	const { res, calls } = await publishWith({
+		title: 'A caption',
+		privacyLevel: 'PUBLIC_TO_EVERYONE',
+		commercialContent: 'true',
+	});
+
+	expect(res.status).toBe(409);
+	const body = (await res.json()) as { error: { field: string } };
+	expect(body.error.field).toBe('commercial');
+	expect(calls.some((url) => url.includes('video/init'))).toBe(false);
+});
+
+test('server refuses opting in to an interaction the account disabled', async () => {
+	// `duet_disabled: true` in CREATOR_INFO_BODY, read live at publish time.
+	const { res } = await publishWith({
+		title: 'A caption',
+		privacyLevel: 'PUBLIC_TO_EVERYONE',
+		allowDuet: 'true',
+	});
+
+	expect(res.status).toBe(409);
+	const body = (await res.json()) as {
+		error: { field: string; message: string };
+	};
+	expect(body.error.field).toBe('interactions');
+	expect(body.error.message).toContain('Duet');
+});
+
+test('server refuses a privacy level the account is not currently offered', async () => {
+	const { res } = await publishWith({
+		title: 'A caption',
+		privacyLevel: 'FOLLOWER_OF_CREATOR',
+	});
+
+	expect(res.status).toBe(409);
+	expect(((await res.json()) as { error: { field: string } }).error.field).toBe(
+		'privacyLevel',
+	);
+});
+
+test('server refuses a publish with no privacy level rather than defaulting one', async () => {
+	const { res } = await publishWith({ title: 'A caption' });
+
+	expect(res.status).toBe(400);
+	const body = (await res.json()) as { error: { message: string } };
+	expect(body.error.message).toContain('who can see this post');
+});
+
+test('a compliant Direct Post reaches video/init', async () => {
+	const { res, calls } = await publishWith({
+		title: 'A caption',
+		privacyLevel: 'PUBLIC_TO_EVERYONE',
+		allowComment: 'true',
+	});
+
+	expect(res.status).toBe(200);
+	expect(calls.some((url) => url.includes('creator_info/query'))).toBe(true);
+	expect(calls.some((url) => url.includes('video/init'))).toBe(true);
+});

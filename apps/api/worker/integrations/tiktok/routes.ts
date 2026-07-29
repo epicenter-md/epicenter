@@ -35,7 +35,6 @@ import {
 	createTikTokApi,
 	type DirectPostInput,
 	MAX_SINGLE_CHUNK_BYTES,
-	MAX_TITLE_LENGTH,
 	privacyLevels,
 	type TikTokPrivacyLevel,
 } from './api.js';
@@ -45,6 +44,8 @@ import {
 	type TikTokBindings,
 	tiktokRedirectUri,
 } from './config.js';
+import { validateDirectPost } from './direct-post-policy.js';
+import { readMp4DurationSec } from './mp4-duration.js';
 import {
 	buildAuthorizeUrl,
 	createOAuthStateValue,
@@ -94,9 +95,17 @@ const TikTokRouteError = defineErrors({
 	 * tampered form cannot post under settings TikTok would reject or, worse,
 	 * silently reinterpret.
 	 */
-	CreatorSettingRefused: ({ detail }: { detail: string }) => ({
+	CreatorSettingRefused: ({
+		detail,
+		field,
+	}: {
+		detail: string;
+		/** Which control to point the creator at; see DirectPostViolation. */
+		field?: string;
+	}) => ({
 		message: detail,
 		detail,
+		field,
 	}),
 	/** The connection lacks a scope this operation needs (a partial grant). */
 	ScopeNotGranted: ({ scope }: { scope: string }) => ({
@@ -680,81 +689,72 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 				if ('failure' in opened) return opened.failure;
 				const { api, db, row } = opened;
 
+				// The bytes are read ONCE, before validation, because the duration
+				// check below has to inspect the file this request will actually
+				// upload rather than trust a number the browser put in the form.
+				const bytes = new Uint8Array(await file.arrayBuffer());
+
 				// Direct Post settings are validated against a LIVE creator_info read,
 				// never against whatever the form claimed the options were.
 				let directPost: DirectPostInput | null = null;
 				if (kind === 'direct_post') {
 					const creator = await api.readCreatorInfo();
 					if (creator.error) return c.json(creator, 502);
-					const creatorInfo = creator.data;
-
-					const title = typeof form.title === 'string' ? form.title : '';
-					if (title.length === 0 || title.length > MAX_TITLE_LENGTH) {
-						return c.json(
-							TikTokRouteError.InvalidRequest({
-								detail: `A caption of 1 to ${MAX_TITLE_LENGTH} characters is required.`,
-							}),
-							400,
-						);
-					}
 
 					const privacyLevel = form.privacyLevel;
 					if (
 						typeof privacyLevel !== 'string' ||
 						!(privacyLevels as readonly string[]).includes(privacyLevel)
 					) {
+						// Privacy is never defaulted: an absent or unknown value is a
+						// refusal, not a silent fallback to some safe-looking level.
 						return c.json(
 							TikTokRouteError.InvalidRequest({
-								detail: 'A valid privacy level is required.',
+								detail: 'Choose who can see this post.',
 							}),
 							400,
 						);
 					}
-					if (
-						!creatorInfo.privacyLevelOptions.includes(
-							privacyLevel as TikTokPrivacyLevel,
-						)
-					) {
+
+					// One owner for every Direct Post rule (direct-post-policy.ts): the
+					// creator's opt-ins, the commercial disclosure, the branded/private
+					// refusal, caption limits, and the duration ceiling. It also performs
+					// the opt-in to TikTok's `disable_*` translation, so that inversion
+					// exists in exactly one place.
+					const decided = validateDirectPost({
+						creatorInfo: creator.data,
+						choices: {
+							title: typeof form.title === 'string' ? form.title : '',
+							privacyLevel: privacyLevel as TikTokPrivacyLevel,
+							interactions: {
+								allowComment: readBoolean(form.allowComment),
+								allowDuet: readBoolean(form.allowDuet),
+								allowStitch: readBoolean(form.allowStitch),
+							},
+							commercial: {
+								disclosed: readBoolean(form.commercialContent),
+								yourBrand: readBoolean(form.yourBrand),
+								brandedContent: readBoolean(form.brandedContent),
+							},
+							aiGenerated: readBoolean(form.aiGenerated),
+							videoSize: file.size,
+							// null when the container is not MP4, meaning "cannot enforce
+							// here"; TikTok stays the backstop. See mp4-duration.ts.
+							durationSec: readMp4DurationSec(bytes),
+						},
+					});
+					if ('violation' in decided) {
+						// 409: the request was well-formed but conflicts with what this
+						// account may currently post.
 						return c.json(
 							TikTokRouteError.CreatorSettingRefused({
-								detail: `TikTok does not currently offer "${privacyLevel}" for this account. Available: ${creatorInfo.privacyLevelOptions.join(', ')}.`,
+								detail: decided.violation.message,
+								field: decided.violation.field,
 							}),
 							409,
 						);
 					}
-
-					const disableComment = readBoolean(form.disableComment);
-					const disableDuet = readBoolean(form.disableDuet);
-					const disableStitch = readBoolean(form.disableStitch);
-					// An account-wide "off" is a CEILING: one post may not switch an
-					// interaction back on, and TikTok would reject or silently
-					// reinterpret the attempt.
-					for (const [label, accountDisabled, requestedEnabled] of [
-						['comments', creatorInfo.commentDisabled, !disableComment],
-						['Duet', creatorInfo.duetDisabled, !disableDuet],
-						['Stitch', creatorInfo.stitchDisabled, !disableStitch],
-					] as const) {
-						if (accountDisabled && requestedEnabled) {
-							return c.json(
-								TikTokRouteError.CreatorSettingRefused({
-									detail: `This TikTok account has ${label} switched off account-wide, so this post cannot enable it.`,
-								}),
-								409,
-							);
-						}
-					}
-
-					directPost = {
-						title,
-						privacyLevel: privacyLevel as TikTokPrivacyLevel,
-						disableComment,
-						disableDuet,
-						disableStitch,
-						brandOrganic: readBoolean(form.brandOrganic),
-						brandedContent: readBoolean(form.brandedContent),
-						isAigc: readBoolean(form.isAigc),
-						videoSize: file.size,
-					};
+					directPost = decided.input;
 				}
 
 				// The commit latch. Whoever inserts this row is the only caller that
@@ -799,7 +799,6 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 					status: 'PROCESSING_UPLOAD',
 				});
 
-				const bytes = new Uint8Array(await file.arrayBuffer());
 				const upload = await api.uploadVideo(init.data.uploadUrl, bytes);
 				if (upload.error) {
 					await recordAttemptOutcome(db, {

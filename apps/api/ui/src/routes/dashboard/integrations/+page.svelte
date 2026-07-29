@@ -31,8 +31,11 @@
 	import CircleAlertIcon from '@lucide/svelte/icons/circle-alert';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import { createQuery } from '@tanstack/svelte-query';
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import {
+		COMMERCIAL_LABELS,
+		DECLARATION_TEXT,
+		declarationFor,
 		type PublicConnection,
 		type TikTokCreatorInfo,
 		type TikTokPrivacyLevel,
@@ -68,14 +71,123 @@
 	let busy = $state(false);
 
 	let videoFile = $state<File | null>(null);
+	/** Object URL for the preview. Revoked whenever the file is replaced. */
+	let videoPreviewUrl = $state<string | null>(null);
+	/**
+	 * Decoded length of the SELECTED file, read from the preview element rather
+	 * than assumed. `null` until the browser reports metadata.
+	 */
+	let videoDurationSec = $state<number | null>(null);
+	let videoUnreadable = $state(false);
+
 	let title = $state('');
+	/** No default: TikTok requires the creator to pick an audience deliberately. */
 	let privacyLevel = $state<TikTokPrivacyLevel | ''>('');
-	let disableComment = $state(false);
-	let disableDuet = $state(false);
-	let disableStitch = $state(false);
-	let brandOrganic = $state(false);
+
+	// Interaction controls are OPT-IN and every one starts unchecked, which is
+	// how the content sharing guidelines require them to be presented.
+	let allowComment = $state(false);
+	let allowDuet = $state(false);
+	let allowStitch = $state(false);
+
+	// One commercial disclosure toggle, OFF by default. The two kinds only exist
+	// once it is on.
+	let commercialContent = $state(false);
+	let yourBrand = $state(false);
 	let brandedContent = $state(false);
-	let isAigc = $state(false);
+
+	/** A separate, permanent claim, independent of the commercial disclosure. */
+	let aiGenerated = $state(false);
+
+	const maxDurationSec = $derived(creatorInfo?.maxVideoDurationSec ?? 0);
+	const durationExceeded = $derived(
+		videoDurationSec !== null &&
+			maxDurationSec > 0 &&
+			videoDurationSec > maxDurationSec,
+	);
+
+	/** Branded content is only "selected" while the disclosure is actually on. */
+	const brandedSelected = $derived(commercialContent && brandedContent);
+
+	/**
+	 * The three opt-in interaction controls as data, so the markup renders one
+	 * shape three times instead of branching on a key inside the handler.
+	 */
+	const interactionRows = $derived([
+		{
+			key: 'comment',
+			label: 'Comment',
+			checked: allowComment,
+			unavailable: creatorInfo?.commentDisabled ?? false,
+			set: (next: boolean) => (allowComment = next),
+		},
+		{
+			key: 'duet',
+			label: 'Duet',
+			checked: allowDuet,
+			unavailable: creatorInfo?.duetDisabled ?? false,
+			set: (next: boolean) => (allowDuet = next),
+		},
+		{
+			key: 'stitch',
+			label: 'Stitch',
+			checked: allowStitch,
+			unavailable: creatorInfo?.stitchDisabled ?? false,
+			set: (next: boolean) => (allowStitch = next),
+		},
+	]);
+
+	/** Branded content cannot be private, so the pairing is blocked before submit. */
+	const brandedPrivateConflict = $derived(
+		commercialContent && brandedContent && privacyLevel === 'SELF_ONLY',
+	);
+	const commercialKindMissing = $derived(
+		commercialContent && !yourBrand && !brandedContent,
+	);
+
+	/** The exact agreement this configuration requires, shown before publishing. */
+	const declaration = $derived(
+		DECLARATION_TEXT[
+			declarationFor({
+				disclosed: commercialContent,
+				yourBrand,
+				brandedContent,
+			})
+		],
+	);
+
+	/** Every reason the Direct Post button stays disabled, in creator language. */
+	const directPostBlockers = $derived.by(() => {
+		const blockers: string[] = [];
+		if (!videoFile) blockers.push('Choose a video.');
+		if (title.trim().length === 0) blockers.push('Write a caption.');
+		if (!privacyLevel) blockers.push('Choose who can see this post.');
+		if (durationExceeded) {
+			blockers.push(
+				`This video is ${Math.round(videoDurationSec ?? 0)}s; this account allows at most ${maxDurationSec}s.`,
+			);
+		}
+		if (commercialKindMissing) {
+			blockers.push('Select Your brand, Branded content, or both.');
+		}
+		if (brandedPrivateConflict) {
+			blockers.push('Branded content cannot be private.');
+		}
+		return blockers;
+	});
+
+	/**
+	 * Swap in a newly chosen file: revoke the previous object URL so a long
+	 * session does not leak them, and reset the measured duration so a stale
+	 * length can never authorize a new file.
+	 */
+	function selectVideoFile(file: File | null) {
+		if (videoPreviewUrl) URL.revokeObjectURL(videoPreviewUrl);
+		videoFile = file;
+		videoPreviewUrl = file ? URL.createObjectURL(file) : null;
+		videoDurationSec = null;
+		videoUnreadable = false;
+	}
 
 	const PRIVACY_LABELS: Record<TikTokPrivacyLevel, string> = {
 		PUBLIC_TO_EVERYONE: 'Public to everyone',
@@ -121,6 +233,13 @@
 		}
 		toast.error(error.message);
 	}
+
+	// A preview object URL outlives the element unless it is revoked, so the last
+	// one is released when the page unmounts (replacements are revoked in
+	// selectVideoFile).
+	onDestroy(() => {
+		if (videoPreviewUrl) URL.revokeObjectURL(videoPreviewUrl);
+	});
 
 	// The callback returns here with ?connected=<id> or ?error=<message>. Surface
 	// it once, then strip the params so a reload does not re-toast a stale result.
@@ -189,12 +308,15 @@
 		creatorInfoLoading = false;
 		if (error) return report(error);
 		creatorInfo = data;
-		// Pre-select nothing the account may not actually choose.
+		// Nothing is pre-selected: privacy has no default, and every interaction
+		// opt-in returns to unchecked whenever the account's options are re-read.
 		privacyLevel = '';
-		// An account-wide "off" is a ceiling: reflect it and lock the control.
-		if (data.commentDisabled) disableComment = true;
-		if (data.duetDisabled) disableDuet = true;
-		if (data.stitchDisabled) disableStitch = true;
+		// An account-wide "off" is a ceiling. The control is greyed out below; the
+		// value is forced back to "not allowed" so a stale opt-in cannot survive a
+		// settings change the creator made on TikTok.
+		if (data.commentDisabled) allowComment = false;
+		if (data.duetDisabled) allowDuet = false;
+		if (data.stitchDisabled) allowStitch = false;
 	}
 
 	function selectConnection(connection: PublicConnection) {
@@ -227,12 +349,15 @@
 		if (kind === 'direct_post') {
 			form.set('title', title);
 			form.set('privacyLevel', privacyLevel);
-			form.set('disableComment', String(disableComment));
-			form.set('disableDuet', String(disableDuet));
-			form.set('disableStitch', String(disableStitch));
-			form.set('brandOrganic', String(brandOrganic));
-			form.set('brandedContent', String(brandedContent));
-			form.set('isAigc', String(isAigc));
+			// Sent as the creator's OPT-INS. The server owns the translation to
+			// TikTok's disable_* flags so the inversion lives in exactly one place.
+			form.set('allowComment', String(allowComment));
+			form.set('allowDuet', String(allowDuet));
+			form.set('allowStitch', String(allowStitch));
+			form.set('commercialContent', String(commercialContent));
+			form.set('yourBrand', String(commercialContent && yourBrand));
+			form.set('brandedContent', String(commercialContent && brandedContent));
+			form.set('aiGenerated', String(aiGenerated));
 		}
 		return form;
 	}
@@ -249,14 +374,28 @@
 		toast.success(data.message);
 	}
 
+	/**
+	 * The final, explicit consent. It restates the account, the audience, the
+	 * commercial declaration, and the agreement the creator is accepting, because
+	 * this is the last point before an irreversible publish.
+	 */
 	function confirmDirectPost(connectionId: string) {
-		if (!privacyLevel) {
-			toast.error('Choose who can see this post.');
+		if (directPostBlockers.length > 0) {
+			toast.error(directPostBlockers[0] ?? 'This post is not ready yet.');
 			return;
 		}
+		const audience = PRIVACY_LABELS[privacyLevel as TikTokPrivacyLevel];
+		const disclosure = commercialContent
+			? ` It will be labelled as ${[
+					yourBrand ? 'Promotional content' : null,
+					brandedContent ? 'Paid partnership' : null,
+				]
+					.filter(Boolean)
+					.join(' and ')}.`
+			: '';
 		confirmationDialog.open({
 			title: 'Post to TikTok now',
-			description: `This posts immediately to ${selected?.displayName ?? 'this account'} as "${PRIVACY_LABELS[privacyLevel as TikTokPrivacyLevel]}". Publishing cannot be undone from here; you would have to delete the post in the TikTok app.`,
+			description: `This posts immediately to ${selected?.displayName ?? 'this account'} as "${audience}".${disclosure} ${declaration} Publishing cannot be undone from here; you would have to delete the post in the TikTok app.`,
 			confirm: { text: 'Post now' },
 			onConfirm: () => publish('direct_post', connectionId),
 		});
@@ -459,9 +598,60 @@
 						accept="video/mp4"
 						class="text-sm"
 						onchange={(event) => {
-							videoFile = event.currentTarget.files?.[0] ?? null;
+							selectVideoFile(event.currentTarget.files?.[0] ?? null);
 						}}
 					/>
+
+					<!-- An ACTUAL preview of the selected video, required before publishing so
+					     the creator can confirm what they are posting. `loadedmetadata` is also
+					     where the real duration comes from. -->
+					{#if videoPreviewUrl}
+						<video
+							src={videoPreviewUrl}
+							controls
+							preload="metadata"
+							class="w-full max-w-sm rounded-md border bg-black"
+							onloadedmetadata={(event) => {
+								const seconds = event.currentTarget.duration;
+								videoDurationSec = Number.isFinite(seconds) ? seconds : null;
+								videoUnreadable = videoDurationSec === null;
+							}}
+							onerror={() => {
+								videoDurationSec = null;
+								videoUnreadable = true;
+							}}
+						>
+							<track kind="captions" />
+						</video>
+
+						{#if videoDurationSec !== null}
+							<p
+								class="text-xs {durationExceeded
+									? 'text-destructive'
+									: 'text-muted-foreground'}"
+							>
+								Length {Math.round(videoDurationSec)}s{maxDurationSec > 0
+									? ` of ${maxDurationSec}s allowed for this account`
+									: ''}
+							</p>
+						{:else if videoUnreadable}
+							<p class="text-xs text-muted-foreground">
+								This browser could not read the video's length. Epicenter checks it
+								again on the server, and TikTok checks it too.
+							</p>
+						{/if}
+
+						{#if durationExceeded}
+							<Alert.Root variant="destructive">
+								<CircleAlertIcon class="size-4" />
+								<Alert.Description>
+									This video is {Math.round(videoDurationSec ?? 0)} seconds, longer than
+									the {maxDurationSec} seconds this TikTok account can post. Trim it
+									before publishing.
+								</Alert.Description>
+							</Alert.Root>
+						{/if}
+					{/if}
 				</section>
 
 				<!-- 3. video.upload: draft to inbox -->
@@ -474,7 +664,7 @@
 					<Button
 						variant="outline"
 						class="self-start"
-						disabled={busy || !videoFile}
+						disabled={busy || !videoFile || durationExceeded}
 						onclick={() => publish('draft_upload', selected.id)}
 					>
 						Upload draft
@@ -484,94 +674,165 @@
 				<Separator />
 
 				<!-- 4. video.publish: Direct Post -->
-				<section class="flex flex-col gap-3">
+				<section class="flex flex-col gap-4">
 					<h3 class="text-sm font-medium">Post directly (video.publish)</h3>
 
 					<div class="flex flex-col gap-1.5">
 						<Label for="tiktok-title">Caption</Label>
+						<!-- Stays editable right up to publishing. -->
 						<Textarea id="tiktok-title" bind:value={title} rows={2} />
 					</div>
 
 					<div class="flex flex-col gap-1.5">
 						<Label for="tiktok-privacy">Who can see this post</Label>
-						<!-- Only levels TikTok currently offers this account are listed;
-						     the server re-checks against a live read before posting. -->
+						<!-- No default. Only levels TikTok currently offers this account are
+						     listed, and the server re-checks against a live read. -->
 						<select
 							id="tiktok-privacy"
 							bind:value={privacyLevel}
 							class="h-9 rounded-md border bg-background px-3 text-sm"
 							disabled={!creatorInfo}
 						>
-							<option value="">Select…</option>
+							<option value="">Select who can see this post…</option>
 							{#each creatorInfo?.privacyLevelOptions ?? [] as level (level)}
-								<option value={level}>{PRIVACY_LABELS[level]}</option>
+								<option value={level} disabled={level === 'SELF_ONLY' && brandedSelected}>
+									{PRIVACY_LABELS[level]}{level === 'SELF_ONLY' && brandedSelected
+										? ' (unavailable for branded content)'
+										: ''}
+								</option>
 							{/each}
 						</select>
 					</div>
 
+					<!-- Opt-IN interaction controls, all unchecked by default. One the account
+					     switched off account-wide is greyed out, because a single post cannot
+					     switch it back on. -->
 					<div class="flex flex-col gap-2">
-						<span class="text-sm font-medium">Interactions</span>
-						{#each [{ key: 'comment', label: 'Turn off comments', locked: creatorInfo?.commentDisabled ?? false }, { key: 'duet', label: 'Turn off Duet', locked: creatorInfo?.duetDisabled ?? false }, { key: 'stitch', label: 'Turn off Stitch', locked: creatorInfo?.stitchDisabled ?? false }] as row (row.key)}
-							<label class="flex items-center gap-2 text-sm">
+						<span class="text-sm font-medium">Allow users to</span>
+						{#each interactionRows as row (row.key)}
+							<label
+								class="flex items-center gap-2 text-sm {row.unavailable
+									? 'text-muted-foreground opacity-60'
+									: ''}"
+							>
 								<Checkbox
-									checked={row.key === 'comment'
-										? disableComment
-										: row.key === 'duet'
-											? disableDuet
-											: disableStitch}
-									disabled={row.locked}
-									onCheckedChange={(value) => {
-										const next = value === true;
-										if (row.key === 'comment') disableComment = next;
-										else if (row.key === 'duet') disableDuet = next;
-										else disableStitch = next;
-									}}
+									checked={row.checked}
+									disabled={row.unavailable}
+									onCheckedChange={(value) => row.set(value === true)}
 								/>
 								{row.label}
-								{#if row.locked}
-									<span class="text-xs text-muted-foreground">
-										(off account-wide; one post cannot turn it back on)
-									</span>
+								{#if row.unavailable}
+									<span class="text-xs">(turned off for this account on TikTok)</span>
 								{/if}
 							</label>
 						{/each}
 					</div>
 
-					<div class="flex flex-col gap-2">
-						<span class="text-sm font-medium">Content disclosures</span>
-						<p class="text-xs text-muted-foreground">
-							These are your claims about the post. Epicenter never guesses them.
-						</p>
-						<label class="flex items-center gap-2 text-sm">
+					<!-- ONE commercial disclosure toggle, off by default. The two kinds appear
+					     only once it is on. -->
+					<div class="flex flex-col gap-2 rounded-md border p-3">
+						<label class="flex items-start gap-2 text-sm font-medium">
 							<Checkbox
-								checked={brandOrganic}
-								onCheckedChange={(value) => (brandOrganic = value === true)}
+								checked={commercialContent}
+								onCheckedChange={(value) => {
+									commercialContent = value === true;
+									// Turning the disclosure off clears both kinds, so a hidden
+									// selection can never be published.
+									if (!commercialContent) {
+										yourBrand = false;
+										brandedContent = false;
+									}
+								}}
 							/>
-							Your brand (promotes your own business)
+							<span>
+								Disclose video content
+								<span class="block text-xs font-normal text-muted-foreground">
+									Turn on to declare that this post promotes a brand, product, or
+									service.
+								</span>
+							</span>
 						</label>
-						<label class="flex items-center gap-2 text-sm">
-							<Checkbox
-								checked={brandedContent}
-								onCheckedChange={(value) => (brandedContent = value === true)}
-							/>
-							Branded content (a paid partnership)
-						</label>
-						<label class="flex items-center gap-2 text-sm">
-							<Checkbox
-								checked={isAigc}
-								onCheckedChange={(value) => (isAigc = value === true)}
-							/>
-							AI-generated content (TikTok applies a permanent label)
-						</label>
+
+						{#if commercialContent}
+							<div class="flex flex-col gap-2 pl-6">
+								<label class="flex items-start gap-2 text-sm">
+									<Checkbox
+										checked={yourBrand}
+										onCheckedChange={(value) => (yourBrand = value === true)}
+									/>
+									<span>
+										{COMMERCIAL_LABELS.yourBrand.title}
+										<span class="block text-xs text-muted-foreground">
+											{COMMERCIAL_LABELS.yourBrand.explanation}
+										</span>
+									</span>
+								</label>
+								<label class="flex items-start gap-2 text-sm">
+									<Checkbox
+										checked={brandedContent}
+										onCheckedChange={(value) => (brandedContent = value === true)}
+									/>
+									<span>
+										{COMMERCIAL_LABELS.brandedContent.title}
+										<span class="block text-xs text-muted-foreground">
+											{COMMERCIAL_LABELS.brandedContent.explanation}
+										</span>
+									</span>
+								</label>
+
+								{#if commercialKindMissing}
+									<p class="text-xs text-destructive">
+										Select at least one: Your brand, Branded content, or both.
+									</p>
+								{/if}
+								{#if brandedPrivateConflict}
+									<p class="text-xs text-destructive">
+										Branded content cannot be private. Choose a different audience, or
+										turn off Branded content.
+									</p>
+								{/if}
+							</div>
+						{/if}
 					</div>
+
+					<label class="flex items-start gap-2 text-sm">
+						<Checkbox
+							checked={aiGenerated}
+							onCheckedChange={(value) => (aiGenerated = value === true)}
+						/>
+						<span>
+							AI-generated content
+							<span class="block text-xs text-muted-foreground">
+								TikTok applies a permanent AI-generated label. This is separate from
+								the commercial disclosure above.
+							</span>
+						</span>
+					</label>
+
+					<!-- The declaration this exact configuration requires. It changes with the
+					     commercial disclosure, so it is derived rather than fixed. -->
+					<p class="text-xs text-muted-foreground">{declaration}</p>
+
+					{#if directPostBlockers.length > 0}
+						<ul class="flex flex-col gap-1 text-xs text-muted-foreground">
+							{#each directPostBlockers as blocker (blocker)}
+								<li>{blocker}</li>
+							{/each}
+						</ul>
+					{/if}
 
 					<Button
 						class="self-start"
-						disabled={busy || !videoFile || !privacyLevel}
+						disabled={busy || directPostBlockers.length > 0}
 						onclick={() => confirmDirectPost(selected.id)}
 					>
 						Post to TikTok now
 					</Button>
+
+					<p class="text-xs text-muted-foreground">
+						TikTok processes and moderates posts after they are sent, which can take
+						several minutes. Check the status below to see the outcome.
+					</p>
 				</section>
 
 				<!-- 5. Resolve the outcome by reading, never by retrying -->

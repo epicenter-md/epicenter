@@ -192,3 +192,20 @@ export const tiktok = {
 		queryFn: () => tiktokApi.connections(),
 	}),
 };
+
+export type {
+	CommercialDisclosure,
+	DeclarationKind,
+	InteractionChoices,
+} from '$api/integrations/tiktok/direct-post-policy';
+/**
+ * The Direct Post rules, re-exported from the sibling Worker module that
+ * ENFORCES them. The dashboard renders the same label explanations and the same
+ * declaration sentence the server validates against, so the two cannot drift
+ * into describing different agreements.
+ */
+export {
+	COMMERCIAL_LABELS,
+	DECLARATION_TEXT,
+	declarationFor,
+} from '$api/integrations/tiktok/direct-post-policy';
