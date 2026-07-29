@@ -73,7 +73,7 @@ Options:
   -v, --version         Show version.
 
 Environment:
-  GMAIL_CLIENT_ID / GMAIL_CLIENT_SECRET   Google OAuth Desktop client keys.
+  GMAIL_CLIENT_ID / GMAIL_CLIENT_SECRET   Machine-wide Google OAuth client override.
   LOCAL_MAIL_ACCOUNT                      Account override when multiple are connected.
   LOCAL_MAIL_DIR                          Where the local copy lives.
   LOCAL_MAIL_TOKEN_FILE                   Override the credentials file path.

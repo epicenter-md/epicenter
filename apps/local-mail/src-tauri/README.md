@@ -48,8 +48,13 @@ one serves reads, both under their own ephemeral origins).
 
 ## Build a desktop bundle
 
+Set the public Google Desktop client identity that belongs to the distribution,
+then build:
+
 ```sh
-bun run desktop:build      # == tauri build, targets the macOS .app
+LOCAL_MAIL_DISTRIBUTION_GMAIL_CLIENT_ID=... \
+LOCAL_MAIL_DISTRIBUTION_GMAIL_CLIENT_SECRET=... \
+  bun run desktop:build
 ```
 
 `beforeBuildCommand` runs `bun run build:desktop` first, which builds the SPA
@@ -57,6 +62,13 @@ bun run desktop:build      # == tauri build, targets the macOS .app
 (`src-tauri/binaries/local-mail-engine-<target-triple>`, a `bun build --compile`
 binary, ~60MB). Tauri then bundles both into
 `src-tauri/target/release/bundle/macos/Local Mail.app`.
+
+Cargo compiles that pair into the native shell. At launch, the shell passes it
+to the Bun engine as public application configuration; OAuth, tokens, mail, and
+the SQLite mirror still never transit Rust. An inherited
+`GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` pair remains the machine-wide override
+and wins atomically. A source build without a compiled distribution identity
+must provide that override.
 
 How the packaged app differs from `tauri dev`:
 
