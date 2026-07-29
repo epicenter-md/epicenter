@@ -61,10 +61,9 @@ export function isHostRejection(
  * @internal
  */
 function hostIsReachable(): boolean {
-	return (
-		typeof window !== 'undefined' &&
-		typeof Reflect.get(window, '__TAURI_INTERNALS__') === 'object'
-	);
+	if (typeof window === 'undefined') return false;
+	const internals = Reflect.get(window, '__TAURI_INTERNALS__');
+	return typeof internals === 'object' && internals !== null;
 }
 
 /**
@@ -122,11 +121,11 @@ export async function observeHost<TPayload>(
  */
 export function nudgeHost(command: string, args?: Record<string, unknown>) {
 	if (!hostIsReachable()) return;
-	try {
-		void invoke(command, args).catch(() => {});
-	} catch {
-		// Nothing to report to: this call has no outcome by contract.
-	}
+	// `invoke` is async, so every failure arrives as a rejection. Swallowing it
+	// here is the whole contract: this call has no outcome, so there is nowhere
+	// to report to, and leaving it unhandled would surface in a caller's error
+	// reporting as something they cannot act on.
+	void invoke(command, args).catch(() => {});
 }
 
 function classify(

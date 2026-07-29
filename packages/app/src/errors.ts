@@ -135,14 +135,18 @@ export const TranscriptionErrors = defineErrors({
 	 */
 	TranscriptionUnavailable: ({
 		reason,
-		cause,
+		message,
 	}: {
 		reason: 'no-active-model' | 'active-model-unavailable';
-		cause: string;
+		/**
+		 * The host's own sentence, passed through rather than rewritten. It is
+		 * already written for a person and it names no model, and this client is
+		 * not better placed than the host to say why the route cannot run.
+		 */
+		message: string;
 	}) => ({
-		message: cause,
+		message,
 		reason,
-		cause,
 	}),
 	/** The recording's audio could not be read back. */
 	AudioUnreadable: ({

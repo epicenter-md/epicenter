@@ -116,8 +116,8 @@ export type TranscriptionNamespace = {
 	prewarm(): void;
 };
 
-function unavailable(reason: WireUnavailableReason, cause: string) {
-	return TranscriptionErrors.TranscriptionUnavailable({ reason, cause });
+function unavailable(reason: WireUnavailableReason, message: string) {
+	return TranscriptionErrors.TranscriptionUnavailable({ reason, message });
 }
 
 export const transcription: TranscriptionNamespace = {

@@ -25,6 +25,7 @@
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import {
 	type CurrentRecordingError,
+	type HostError,
 	type ObserveRecordingError,
 	RecordingErrors,
 	type ResolveRecordingError,
@@ -32,6 +33,7 @@ import {
 } from './errors.js';
 import {
 	callHost,
+	type HostRejection,
 	isHostRejection,
 	observeHost,
 	taggedMessage,
@@ -253,7 +255,7 @@ export const recording: RecordingNamespace = {
 function resolveFailure(
 	operation: string,
 	audioBlobId: string,
-	error: Parameters<typeof isHostRejection>[0],
+	error: HostError | HostRejection,
 ): Err<ResolveRecordingError> {
 	if (!isHostRejection(error)) return Err(error);
 	if (taggedName(error.domain) === 'NotRecording') {
