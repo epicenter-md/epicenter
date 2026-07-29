@@ -150,7 +150,6 @@
 		"dev:skills": "bun run --cwd apps/skills dev",
 		"dev:tab-manager": "bun run --filter @epicenter/api --filter @epicenter/tab-manager dev",
 		"dev:tab-manager:ui": "bun run --cwd apps/tab-manager dev",
-		"dev:todos": "bun run --cwd apps/todos dev",
 		"dev:vocab": "bun run --filter @epicenter/api --filter @epicenter/vocab dev",
 		"dev:vocab:ui": "bun run --cwd apps/vocab dev",
 		"dev:whispering": "bun run --filter @epicenter/api --filter @epicenter/whispering dev",

@@ -102,7 +102,6 @@
         "@epicenter/server": "workspace:*",
         "@epicenter/skills": "workspace:*",
         "@epicenter/sync": "workspace:*",
-        "@epicenter/todos": "workspace:*",
         "@epicenter/ui": "workspace:*",
         "@epicenter/whispering": "workspace:*",
         "@modelcontextprotocol/sdk": "catalog:",
@@ -503,36 +502,6 @@
         "typescript": "catalog:",
         "vite": "catalog:",
         "wxt": "^0.20.26",
-      },
-    },
-    "apps/todos": {
-      "name": "@epicenter/todos",
-      "version": "0.0.1",
-      "dependencies": {
-        "@epicenter/field": "workspace:*",
-        "@epicenter/svelte": "workspace:*",
-        "@epicenter/ui": "workspace:*",
-        "@epicenter/workspace": "workspace:*",
-        "@lucide/svelte": "catalog:",
-        "typebox": "catalog:",
-        "wellcrafted": "catalog:",
-        "yjs": "catalog:",
-      },
-      "devDependencies": {
-        "@epicenter/constants": "workspace:*",
-        "@epicenter/vite-config": "workspace:*",
-        "@sveltejs/adapter-static": "catalog:",
-        "@sveltejs/kit": "catalog:",
-        "@sveltejs/vite-plugin-svelte": "catalog:",
-        "@tailwindcss/vite": "catalog:",
-        "@types/bun": "catalog:",
-        "mode-watcher": "catalog:",
-        "svelte": "catalog:",
-        "svelte-check": "catalog:",
-        "svelte-sonner": "catalog:",
-        "tailwindcss": "catalog:",
-        "typescript": "catalog:",
-        "vite": "catalog:",
       },
     },
     "apps/vocab": {
@@ -1617,8 +1586,6 @@
     "@epicenter/sync": ["@epicenter/sync@workspace:packages/sync"],
 
     "@epicenter/tab-manager": ["@epicenter/tab-manager@workspace:apps/tab-manager"],
-
-    "@epicenter/todos": ["@epicenter/todos@workspace:apps/todos"],
 
     "@epicenter/ui": ["@epicenter/ui@workspace:packages/ui"],
 

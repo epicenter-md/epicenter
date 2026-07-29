@@ -229,7 +229,7 @@ where the workspace is built.
 | Workspace built | Reachable in | Gate |
 | --- | --- | --- |
 | Ready application opened in a mounted layout: whispering | the (app) layout component | raw `{#await opening}` with `WorkspaceBootFailure` in `{:catch}`; the fulfilled branch mounts the typed context provider |
-| Eager module singleton with route loads: todos, skills, matter | a route `load` | `load`: `await x.whenReady` (matter: `ensureHydrated()`) |
+| Eager module singleton with route loads: skills, matter | a route `load` | `load`: `await x.whenReady` (matter: `ensureHydrated()`) |
 | Eager module singleton, gate in the root layout: honeycrisp, vocab, opensidian | the root layout | `<WorkspaceGate pending={<app>.whenReady} onForgetDevice onSignOut>` |
 | Extension entrypoint behind async storage: tab-manager | the component | outer `{#await boot.whenReady}`, then `WorkspaceGate` |
 

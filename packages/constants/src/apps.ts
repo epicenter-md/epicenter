@@ -34,7 +34,6 @@ export const APPS = {
 		url: 'https://opensidian.com',
 		aliases: ['https://opensidian.epicenter.so'],
 	},
-	TODOS: { port: 5177, url: 'https://todos.epicenter.so' },
 	VOCAB: { port: 8888, url: 'https://vocab.epicenter.so' },
 } as const;
 
