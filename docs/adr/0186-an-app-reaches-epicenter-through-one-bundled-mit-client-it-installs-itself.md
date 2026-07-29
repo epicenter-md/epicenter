@@ -2,8 +2,8 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-28
-- **Amends:** [ADR-0181](0181-every-app-receives-one-portable-epicenter-capability-handle.md) at the delivery and namespace boundary: it settles how an app obtains the handle, which ADR-0181 left open, and adds `recording` to the initial capability set. The handle's shape, its refusal of optional namespaces, and its transcription rules are unchanged.
-- **Relates:** [ADR-0179](0179-an-installed-app-is-an-inert-built-folder-admitted-through-one-static-artifact-boundary.md), [ADR-0180](0180-epicenter-has-one-host-owned-active-local-transcription-model.md), [ADR-0184](0184-one-host-recorder-progressively-stages-each-claimable-recording-until-its-owner-stops-or-cancels-it.md)
+- **Amends:** [ADR-0181](0181-every-app-receives-one-portable-epicenter-capability-handle.md) at the delivery and namespace boundary: it settles how an app obtains the handle, which ADR-0181 left open, and adds `recording` to the initial capability set. The handle's shape, its refusal of optional namespaces, and its transcription rules are unchanged. Also [ADR-0179](0179-an-installed-app-is-an-inert-built-folder-admitted-through-one-static-artifact-boundary.md) at one bounded clause of the native command surface: recording and transcription reach every app window through the app-window capability file, so they no longer stay host-only or bound to Whispering. The admission boundary, the full-trust ceremony, and the refusal of per-app permissions and prompts are unchanged.
+- **Relates:** [ADR-0180](0180-epicenter-has-one-host-owned-active-local-transcription-model.md), [ADR-0184](0184-one-host-recorder-progressively-stages-each-claimable-recording-until-its-owner-stops-or-cancels-it.md)
 
 ## Context
 
@@ -110,8 +110,11 @@ runtime that this client deliberately does not depend on.
   drift test is what keeps them honest rather than a shared module, because the
   app is AGPL and the client is MIT.
 - Every installed app can now record and transcribe. That is a real widening of
-  what admission means, and it is the widening ADR-0179 already describes:
-  admission is the protection, and an admitted app runs as Epicenter.
+  the third source of authority ADR-0179 enumerates, and it withdraws that
+  record's statement that specialized native commands stay host-only or bound
+  to Whispering. The trust model underneath is unchanged and is what makes the
+  widening admissible: admission is the protection, and an admitted app runs as
+  Epicenter.
 - The first emitting package in this repository. The build step is small and
   the convention is now split: source-only for internal packages, compiled for
   the one we hand to strangers.

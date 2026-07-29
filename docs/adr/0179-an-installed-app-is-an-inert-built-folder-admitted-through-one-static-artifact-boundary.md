@@ -4,7 +4,7 @@
 - **Date:** 2026-07-25
 - **Supersedes:** [ADR-0153](0153-trusted-apps-are-source-built-static-catalog-members.md). Its source-build admission mechanism, composition-root source convention, and build-time trust ceremony are withdrawn; its runtime trust model, immutable-generation catalog, and app-window authority are restated below so this record stands alone. This record also carries forward ADR-0153's supersession of the future third-party installation shape in [ADR-0111](0111-super-chat-v1-exposes-built-in-epicenter-apps-and-defers-extension-surfaces.md): installation still does not begin with a runtime manifest, permission grant, or installed-app registry.
 - **Amends:** [ADR-0118](0118-epicenter-is-one-trusted-bun-hosted-spa-origin.md) at the app-admission and native-authority boundary, inheriting ADR-0153's reversal of its refusal of a generic outbound HTTP surface; and [ADR-0152](0152-epicenter-home-is-a-shell-above-workspaces.md) at the deferred third-party installation boundary. Both amendments pass through ADR-0153 unchanged in substance.
-- **Amended by:** [ADR-0183](0183-epicenter-mediates-the-effects-it-owns-and-names-the-rest-unmediated.md) at one bounded clause of the native command surface: unrestricted HTTP and HTTPS through the Tauri HTTP plugin is withdrawn in favor of one attributed host gateway. The admission boundary, the full-trust ceremony, and the refusal of per-app permissions and prompts are unchanged.
+- **Amended by:** [ADR-0183](0183-epicenter-mediates-the-effects-it-owns-and-names-the-rest-unmediated.md) at one bounded clause of the native command surface: unrestricted HTTP and HTTPS through the Tauri HTTP plugin is withdrawn in favor of one attributed host gateway; and [ADR-0186](0186-an-app-reaches-epicenter-through-one-bundled-mit-client-it-installs-itself.md) at the same clause, which adds recording and transcription to it, so specialized native commands no longer stay host-only or bound to Whispering. The admission boundary, the full-trust ceremony, and the refusal of per-app permissions and prompts are unchanged.
 - **Relates:** [ADR-0155](0155-epicenter-desktop-auth-is-one-credential-free-window-bun-authority.md), [ADR-0160](0160-lenses-interpret-durable-namespaces-without-creating-lifecycle-scopes.md), [ADR-0168](0168-lenses-are-complete-pure-json-interpretations.md), [ADR-0180](0180-epicenter-has-one-host-owned-active-local-transcription-model.md)
 
 ## Context
@@ -104,13 +104,17 @@ union of three things, and only the third is enumerated anywhere:
    direction. The durable part: there is no per-app device permission and no
    per-app prompt, so a request from an app window is a request from Epicenter.
 3. **The native command surface reachable from an app window.** Today that is
-   unrestricted HTTP and HTTPS through the Tauri HTTP plugin.
+   unrestricted HTTP and HTTPS through the Tauri HTTP plugin, plus the
+   recording and transcription operations the public `@epicenter/app` client
+   exposes (ADR-0186).
 
 Only the third is bounded by a capability file, and it is the smallest of the
 three. Presenting the app-window capability list as an app's sandbox would be
-false. Specialized native commands stay host-only or bound to a specific
-first-party surface (Whispering's recording and transcription commands) for
-API, resource, and lifecycle correctness, not as an isolation claim.
+false. What that file names is a product decision rather than an isolation
+one: an operation is in it because the client offers it to every app, and the
+native commands left out of it (model administration, device enumeration, the
+rest of Whispering's own surface) are held back for API, resource, and
+lifecycle correctness, not as a boundary.
 
 The protection is admission. A user who admits a folder is choosing to run that
 code as Epicenter.
