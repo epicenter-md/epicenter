@@ -75,7 +75,12 @@ export type ObservationSocket = {
  */
 export type ObservationFrame = {
 	type: 'invalidation';
-	changes: Address[];
+	/**
+	 * Read-only, because every producer of one already holds a committed batch it
+	 * must not mutate. A mutable array here would make each of them copy a
+	 * `readonly Address[]` per socket per commit purely to satisfy this type.
+	 */
+	changes: readonly Address[];
 };
 
 export type ObservationCarrier = {
@@ -122,8 +127,8 @@ export async function openObservationCarrier({
 	 * A socket that merely closed is ordinary and stays silent, and a failed open
 	 * is not reported here at all: it rejects with its cause attached, so the
 	 * caller already holds it. What is left is what only the loop can see, and
-	 * would otherwise see forever in silence: a redial that could not even
-	 * produce a socket.
+	 * would otherwise see forever in silence: a redial that could not produce a
+	 * socket, and a frame this client could not read.
 	 */
 	log?: InvalidationErrorReporter;
 }): Promise<ObservationCarrier> {
@@ -178,7 +183,7 @@ export async function openObservationCarrier({
 				settle();
 			});
 			next.addEventListener('message', (event) => {
-				const changes = readObservationFrame(event.data);
+				const changes = readObservationFrame(event.data, log);
 				if (changes !== undefined) observation.deliver(changes);
 			});
 			// `error` and `close` are one outcome here: the socket is gone and the
@@ -250,23 +255,76 @@ export async function openObservationCarrier({
  * An unreadable frame is dropped rather than thrown: the carrier's job is
  * liveness, and killing the socket over one bad message would turn a cosmetic
  * mismatch into a surface that stops updating.
+ *
+ * Keeping that promise means reading every address, not just the envelope
+ * around them. The dispatcher dereferences `kind`, `namespace`, `tableName`,
+ * `rowId`, and `valueName` off each element, so a well-formed envelope holding
+ * one malformed element would throw a `TypeError` out of the socket's `message`
+ * listener, where nothing is left to catch it.
+ *
+ * A frame with one bad address is dropped whole rather than filtered down to its
+ * readable elements. Law 1 lets invalidation over-report and never under-report,
+ * and a partial batch is exactly an under-report: it would tell a handle that
+ * three rows moved while quietly withholding a fourth.
  */
-function readObservationFrame(data: unknown): readonly Address[] | undefined {
+function readObservationFrame(
+	data: unknown,
+	log: InvalidationErrorReporter,
+): readonly Address[] | undefined {
 	if (typeof data !== 'string') return undefined;
+	let parsed: unknown;
 	try {
-		const parsed: unknown = JSON.parse(data);
-		if (
-			typeof parsed !== 'object' ||
-			parsed === null ||
-			!('type' in parsed) ||
-			parsed.type !== 'invalidation' ||
-			!('changes' in parsed) ||
-			!Array.isArray(parsed.changes)
-		) {
-			return undefined;
-		}
-		return (parsed as ObservationFrame).changes;
-	} catch {
+		parsed = JSON.parse(data);
+	} catch (cause) {
+		log.error(new Error('Observation frame was not JSON', { cause }));
 		return undefined;
 	}
+	if (
+		typeof parsed !== 'object' ||
+		parsed === null ||
+		!('type' in parsed) ||
+		parsed.type !== 'invalidation' ||
+		!('changes' in parsed) ||
+		!Array.isArray(parsed.changes)
+	) {
+		log.error(new Error('Observation frame was not an invalidation'));
+		return undefined;
+	}
+	const changes: unknown[] = parsed.changes;
+	if (!changes.every(isReadableAddress)) {
+		log.error(new Error('Observation frame named an unreadable address'));
+		return undefined;
+	}
+	return changes;
+}
+
+/**
+ * Whether one element of a frame can be read as an address.
+ *
+ * Structural rather than the durable address grammar, and deliberately so. What
+ * this has to buy is a safe dereference. The owner that admitted the write
+ * already checked the namespace shape, the SQL-safe table name, and the byte
+ * ceilings, so re-running that grammar over every address of every commit would
+ * charge the carrier's hot path for a second opinion about data this client
+ * could not repair either way.
+ */
+function isReadableAddress(value: unknown): value is Address {
+	if (typeof value !== 'object' || value === null) return false;
+	if (!('namespace' in value) || typeof value.namespace !== 'string') {
+		return false;
+	}
+	if (!('kind' in value)) return false;
+	if (value.kind === 'row') {
+		return (
+			'tableName' in value &&
+			typeof value.tableName === 'string' &&
+			'rowId' in value &&
+			typeof value.rowId === 'string'
+		);
+	}
+	return (
+		value.kind === 'value' &&
+		'valueName' in value &&
+		typeof value.valueName === 'string'
+	);
 }

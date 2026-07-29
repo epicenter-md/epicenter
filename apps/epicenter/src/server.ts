@@ -531,7 +531,7 @@ export function createHomeServer({
 						(changes: readonly Address[]) => {
 							const frame: DesktopInvalidationFrame = {
 								type: 'invalidation',
-								changes: [...changes],
+								changes,
 							};
 							try {
 								sendObservationFrame(ws, frame);
