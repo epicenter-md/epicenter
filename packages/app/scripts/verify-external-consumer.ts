@@ -31,6 +31,21 @@ import { join, resolve } from 'node:path';
 
 const packageDir = join(import.meta.dir, '..');
 const fixtureDir = join(packageDir, 'test-fixtures', 'consumer');
+const repoRoot = join(packageDir, '..', '..');
+
+/**
+ * The workspace packages this one depends on at runtime.
+ *
+ * `bun pm pack` resolves `workspace:*` to an exact version, so the packed
+ * manifest asks for `@epicenter/lens@x.y.z` exactly as it would after
+ * publication. Nothing has published that yet, so the fixture points those two
+ * names at locally packed tarballs through `overrides`. The app's own manifest
+ * is untouched: this stands in for the registry, not for the dependency.
+ */
+const WORKSPACE_DEPENDENCIES = [
+	{ name: '@epicenter/lens', dir: join(repoRoot, 'packages', 'lens'), build: true },
+	{ name: '@epicenter/field', dir: join(repoRoot, 'packages', 'field'), build: false },
+] as const;
 
 function usage(): never {
 	console.error(
@@ -100,16 +115,39 @@ async function run(command: string[], cwd: string, label: string) {
 
 const workspace = await mkdtemp(join(tmpdir(), 'epicenter-app-consumer-'));
 try {
-	console.log('Building and packing @epicenter/app');
+	const overrides: Record<string, string> = {};
+	for (const dependency of WORKSPACE_DEPENDENCIES) {
+		console.log(`Packing ${dependency.name}`);
+		if (dependency.build) {
+			await run(['bun', 'run', 'build'], dependency.dir, `${dependency.name} build`);
+		}
+		const before = new Set(await readdir(workspace));
+		await run(
+			['bun', 'pm', 'pack', '--destination', workspace],
+			dependency.dir,
+			`${dependency.name} pack`,
+		);
+		const packed = (await readdir(workspace)).find(
+			(name) => name.endsWith('.tgz') && !before.has(name),
+		);
+		if (!packed) {
+			console.error(`FAILED: packing ${dependency.name} produced no tarball`);
+			process.exit(1);
+		}
+		overrides[dependency.name] = join(workspace, packed);
+	}
+
+	console.log('\nBuilding and packing @epicenter/app');
 	await run(['bun', 'run', 'build'], packageDir, 'build');
+	const beforeApp = new Set(await readdir(workspace));
 	await run(
 		['bun', 'pm', 'pack', '--destination', workspace],
 		packageDir,
 		'pack',
 	);
 
-	const tarball = (await readdir(workspace)).find((name) =>
-		name.endsWith('.tgz'),
+	const tarball = (await readdir(workspace)).find(
+		(name) => name.endsWith('.tgz') && !beforeApp.has(name),
 	);
 	if (!tarball) {
 		console.error('FAILED: bun pm pack produced no tarball');
@@ -165,6 +203,15 @@ try {
 	console.log(`\nBuilding a foreign consumer in ${workspace}`);
 	const consumer = join(workspace, 'consumer');
 	await cp(fixtureDir, consumer, { recursive: true });
+	const consumerManifestPath = join(consumer, 'package.json');
+	const consumerManifest = (await Bun.file(consumerManifestPath).json()) as {
+		overrides?: Record<string, string>;
+	};
+	consumerManifest.overrides = overrides;
+	await Bun.write(
+		consumerManifestPath,
+		`${JSON.stringify(consumerManifest, null, '\t')}\n`,
+	);
 	await run(['bun', 'install'], consumer, 'install fixture toolchain');
 	await run(['bun', 'add', tarballPath], consumer, 'install the tarball');
 	await run(['bun', 'run', 'typecheck'], consumer, 'tsc --noEmit');
@@ -180,7 +227,11 @@ try {
 	const bundled = await Bun.file(
 		join(consumer, 'dist', 'assets', bundle),
 	).text();
-	for (const marker of ['start_recording', 'transcribe_recording']) {
+	for (const marker of [
+		'start_recording',
+		'transcribe_recording',
+		'/api/data',
+	]) {
 		if (!bundled.includes(marker)) {
 			console.error(`FAILED: the bundle does not contain ${marker}`);
 			process.exit(1);

@@ -19,11 +19,18 @@
  * no configuration, so there is nothing an opener could do except make every
  * app write a line that does nothing.
  *
- * Two capabilities today: {@link EpicenterHandle.recording} and
- * {@link EpicenterHandle.transcription}. Structured data and blobs are not
- * here yet.
+ * Three capabilities today: {@link EpicenterHandle.recording},
+ * {@link EpicenterHandle.transcription}, and {@link EpicenterHandle.data}.
+ * Blobs are not here yet.
+ *
+ * `data` is the one capability with something to wait for. Recording and
+ * transcription are thin calls over host commands, while a bound Lens promises
+ * to report when its data may be stale, and that promise is only keepable once
+ * its observation carrier exists. So `data.bind(lens)` is awaited, and what it
+ * waits for is that Lens's liveness rather than any handle-wide session.
  */
 
+import { type DataNamespace, data } from './data.js';
 import { type RecordingNamespace, recording } from './recording.js';
 import { type TranscriptionNamespace, transcription } from './transcription.js';
 
@@ -32,15 +39,31 @@ export type EpicenterHandle = {
 	recording: RecordingNamespace;
 	/** Turn a published recording into text on Epicenter's transcription route. */
 	transcription: TranscriptionNamespace;
+	/** Read and write structured data through a Lens this app declares. */
+	data: DataNamespace;
 };
 
 /** The one Epicenter handle. */
-export const epicenter: EpicenterHandle = { recording, transcription };
+export const epicenter: EpicenterHandle = { data, recording, transcription };
 
 export type {
+	BoundData,
+	DataNamespace,
+	TableEntry,
+	TableHandle,
+	TableScan,
+	ValueHandle,
+} from './data.js';
+export type { TableInvalidation } from '@epicenter/lens';
+export type {
 	AudioUnreadable,
+	BindDataError,
 	CapabilityUnavailable,
 	CurrentRecordingError,
+	DataFailed,
+	DataOperationError,
+	DataReadError,
+	DataUnavailable,
 	HostError,
 	HostUnavailable,
 	MicrophoneAccessDenied,

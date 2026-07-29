@@ -1,14 +1,15 @@
 /**
  * A dictation app, written the way an app author would write it.
  *
- * This file is the contract under test. It imports `@epicenter/app` and
- * nothing else: no `@tauri-apps/*`, no platform check, no `isTauri()`, no
- * dynamic import guard, and no mention of a transcription model. If any of
- * those became necessary, this file would stop compiling or stop being
- * honest, and the point of the client would be gone.
+ * This file is the contract under test. It imports `@epicenter/app` and its own
+ * app contract, and nothing else: no `@tauri-apps/*`, no platform check, no
+ * `isTauri()`, no dynamic import guard, no SQLite, no Yjs, and no mention of a
+ * transcription model. If any of those became necessary, this file would stop
+ * compiling or stop being honest, and the point of the client would be gone.
  */
 
 import { epicenter } from '@epicenter/app';
+import { notesContract } from './notes-contract.js';
 
 const status = document.querySelector<HTMLElement>('#status');
 const transcript = document.querySelector<HTMLElement>('#transcript');
@@ -110,4 +111,67 @@ if (capabilitiesError?.name === 'TranscriptionUnavailable') {
 	show(capabilitiesError.message);
 } else if (accepts?.supportsPrompt) {
 	document.querySelector<HTMLElement>('#prompt')?.removeAttribute('hidden');
+}
+
+/**
+ * Structured data, bound through the app's own contract.
+ *
+ * `bind` is the one awaited call in the client, and what it waits for is this
+ * Lens's liveness: once it resolves, subscribing and then reading cannot miss a
+ * change that landed in between.
+ */
+const { data: notes, error: bindError } = await epicenter.data.bind(notesContract);
+if (bindError) {
+	// Every reason binding can decline, named. There is no case for "not on
+	// desktop": that is `HostUnavailable`, like everything else.
+	switch (bindError.name) {
+		case 'HostUnavailable':
+			show('Open this app in Epicenter to keep notes.');
+			break;
+		case 'CapabilityUnavailable':
+			show('This app is not allowed to read data here.');
+			break;
+		case 'DataUnavailable':
+		case 'DataFailed':
+			show(bindError.message);
+			break;
+	}
+} else {
+	// Subscribe first, then read. Registration is synchronous and never fires
+	// initially, so nothing can land in the gap and nothing has to be discarded.
+	notes.tables.notes.subscribe((invalidation) => {
+		if (invalidation.scope === 'table') {
+			void renderEverything();
+			return;
+		}
+		for (const rowId of invalidation.rowIds) void rerender(rowId);
+	});
+	notes.values['settings.sortOrder'].subscribe(() => void renderEverything());
+
+	await renderEverything();
+
+	document.querySelector('#note')?.addEventListener('click', () => {
+		void notes.tables.notes.create({ title: 'Untitled', body: undefined });
+	});
+}
+
+async function renderEverything() {
+	const bound = notes;
+	if (!bound) return;
+	const { data: scanned, error } = await bound.tables.notes.scan();
+	if (error) return show(error.message);
+	const list = document.querySelector('#notes');
+	if (list) list.textContent = scanned.rows.map((note) => note.title).join(', ');
+	if (scanned.nonconforming.length > 0) {
+		show(`${scanned.nonconforming.length} note(s) this version cannot read.`);
+	}
+}
+
+async function rerender(rowId: string) {
+	const bound = notes;
+	if (!bound) return;
+	const { data: note, error } = await bound.tables.notes.get(rowId);
+	if (error) return show(error.message);
+	if (!note) return void renderEverything();
+	show(`Updated ${note.title}.`);
 }

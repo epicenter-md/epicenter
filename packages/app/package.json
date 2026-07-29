@@ -1,7 +1,7 @@
 {
 	"name": "@epicenter/app",
 	"version": "0.1.0",
-	"description": "The public Epicenter client: one typed capability handle for recording and transcription inside an installed Epicenter app.",
+	"description": "The public Epicenter client: one typed capability handle for recording, transcription, and structured data inside an installed Epicenter app.",
 	"type": "module",
 	"license": "MIT",
 	"repository": {
@@ -14,6 +14,7 @@
 		"epicenter",
 		"transcription",
 		"recording",
+		"data",
 		"local-first",
 		"sdk"
 	],
@@ -39,6 +40,7 @@
 		"prepare": "bun run build"
 	},
 	"dependencies": {
+		"@epicenter/lens": "workspace:*",
 		"@tauri-apps/api": "catalog:",
 		"wellcrafted": "catalog:"
 	},

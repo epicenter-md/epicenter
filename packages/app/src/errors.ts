@@ -20,6 +20,10 @@
  * worthless.
  */
 
+import type {
+	NonconformingRowError,
+	NonconformingValueError,
+} from '@epicenter/lens';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -230,3 +234,51 @@ export type TranscribeError =
 	| AudioUnreadable
 	| ModelLoadFailed
 	| TranscriptionFailed;
+
+/** @internal Structured data failures. */
+export const DataErrors = defineErrors({
+	/**
+	 * Epicenter is here, but its data runtime is not serving. The most common
+	 * cause is a host generation that has no store open yet; a retry after the
+	 * host settles is the recovery, and there is nothing an app can fix.
+	 */
+	DataUnavailable: ({ message }: { message: string }) => ({ message }),
+	/**
+	 * A data operation ran and failed. Invalid patches, unknown fields, refused
+	 * writes, and transport failures all land here with their cause attached,
+	 * because none of them is a claim that data is unavailable.
+	 */
+	DataFailed: ({
+		operation,
+		cause,
+	}: {
+		operation: string;
+		cause: unknown;
+	}) => ({
+		message: `Epicenter could not complete '${operation}': ${extractErrorMessage(cause)}`,
+		operation,
+		cause,
+	}),
+});
+
+export type DataUnavailable = InferError<typeof DataErrors.DataUnavailable>;
+export type DataFailed = InferError<typeof DataErrors.DataFailed>;
+
+/** What binding a Lens can decline with. */
+export type BindDataError = HostError | DataUnavailable | DataFailed;
+
+/** What a write, a delete, or a traversal can decline with. */
+export type DataOperationError = DataUnavailable | DataFailed;
+
+/**
+ * What a read can decline with.
+ *
+ * Wider than a write, by exactly the two failures that are about the stored
+ * value rather than the operation: a row or value that the app's current Lens
+ * cannot interpret. Those are reported rather than repaired, and they carry the
+ * raw JSON so an app can decide what to do about its own data.
+ */
+export type DataReadError =
+	| DataOperationError
+	| NonconformingRowError
+	| NonconformingValueError;

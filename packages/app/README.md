@@ -154,6 +154,78 @@ dropping one in silence.
 readiness call: there is no state to observe afterwards and nothing to branch
 on. Calling it changes what a later `transcribe` costs, never what it does.
 
+## Data
+
+An app declares its own durable namespace, tables, and values as a Lens, and
+binds it. The declaration is inert vocabulary from `@epicenter/lens`, so a
+shared contract module can be imported by two apps without either of them, or
+the contract itself, depending on this client.
+
+```ts
+// notes-contract.ts, imported by every app that reads these notes
+import { defineLens, defineTable, defineValue, field, optional } from '@epicenter/lens';
+
+export const notesContract = defineLens({
+	namespace: 'com.example.notes',
+	tables: {
+		notes: defineTable({
+			fields: { title: field.string(), body: optional(field.string()) },
+		}),
+	},
+	values: {
+		'settings.sortOrder': defineValue({ value: field.select(['newest', 'oldest']) }),
+	},
+});
+```
+
+```ts
+const { data: notes, error } = await epicenter.data.bind(notesContract);
+if (error) return show(error.message);
+
+const { data: created } = await notes.tables.notes.create({ title: 'Hello' });
+const { data: all } = await notes.tables.notes.scan();
+await notes.values['settings.sortOrder'].set('newest');
+```
+
+`bind` is the one call in this client you await for a connection, and what it
+waits for is that Lens's liveness rather than a handle-wide session. A bound
+handle promises to report when its data may be stale, and that promise is only
+keepable if the observation carrier already exists when you receive the handle.
+
+### Staleness
+
+Subscribe first, then read. Registration is synchronous, does no I/O, and never
+fires initially, so nothing can land in between and there is no first delivery
+to discard.
+
+```ts
+notes.tables.notes.subscribe((invalidation) => {
+	if (invalidation.scope === 'table') return void reloadEverything();
+	for (const rowId of invalidation.rowIds) void reread(rowId);
+});
+
+notes.values['settings.sortOrder'].subscribe(() => void rereadSortOrder());
+```
+
+A table can name the rows that moved; a value cannot, because a value has no
+smaller identity than itself. `{ scope: 'table' }` means the handle cannot name
+them, so everything reachable through it may have moved: it arrives after an
+observation gap, where a row deleted while the carrier was down left nothing
+behind to name.
+
+Three things follow. Invalidation may over-report and never under-reports, so
+ignoring the payload and re-reading everything is always correct. Delivery may
+duplicate, so converge idempotently. And one commit produces one call per
+affected handle, so a change touching sixty-four rows is one call carrying
+sixty-four ids, not sixty-four calls.
+
+Nothing is ever pushed to you. Invalidation says what may be stale; you re-read
+through the handle you already have. That keeps one copy of the data and leaves
+you in charge of what you cache.
+
+Row documents are not here. They are Yjs, and a client that does not depend on
+Epicenter's replica runtime cannot honestly hand one out.
+
 ## Failures
 
 Match on `error.name`.
@@ -171,14 +243,21 @@ Match on `error.name`.
 | `AudioUnreadable` | The recording's audio could not be read. |
 | `ModelLoadFailed` | A model was resolvable but would not load. |
 | `TranscriptionFailed` | Transcription ran and failed. |
+| `DataUnavailable` | Epicenter is here, but its data runtime is not serving. |
+| `DataFailed` | A data operation ran and failed. |
+| `NonconformingRow` | A stored row this app's current Lens cannot interpret. |
+| `NonconformingValue` | A stored value this app's current Lens cannot interpret. |
 
 Each operation's error type lists only the names it can actually produce, so
 `start()` never asks a caller to consider `NoSuchRecording`.
 
 ## What is not here
 
-Structured data and blobs. They are real Epicenter capabilities and they are not
-in this client yet; how they reach an app is undecided.
+Blobs. They are a real Epicenter capability and not in this client yet; how they
+reach an app is undecided.
+
+Also not here, from the data side: row documents, SQL or any query capability,
+cross-address transactions, and pushed row contents.
 
 Also deliberately absent, and not planned: device enumeration or selection, a
 microphone level stream, a long-form or meeting mode, live transcription
