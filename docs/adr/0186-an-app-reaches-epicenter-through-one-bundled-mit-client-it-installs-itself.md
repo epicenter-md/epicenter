@@ -92,9 +92,11 @@ runtime that this client deliberately does not depend on.
 
 ## Consequences
 
-- An app author runs one install and one import. Nothing about Epicenter
-  appears in their build configuration, which is what makes "write an Epicenter
-  app" a normal web development task.
+- An app author runs one install and one import. Nothing about the
+  `@epicenter/app` client appears in their build configuration, which is what
+  makes "write an Epicenter app" a normal web development task. The app's
+  finished static files still use relative URLs because the catalog serves them
+  below `/apps/<id>/` (ADR-0179).
 - The same import compiles and runs in an ordinary browser tab, so an app can
   be developed and tested outside the desktop host and degrade honestly inside
   it.

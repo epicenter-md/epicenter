@@ -7,9 +7,30 @@ Epicenter app the platform capabilities the host owns.
 bun add @epicenter/app
 ```
 
-Nothing else. No plugin, no import map, no build configuration, no
-`window.epicenter`. It is an ordinary package, and it works in any toolchain
-that can import ESM.
+Nothing else. No Epicenter plugin, import map, alias, SDK-specific build
+configuration, or `window.epicenter`. It is an ordinary package, and it works
+in any toolchain that can import ESM.
+
+## Build an installed app
+
+Epicenter admits an already-built folder with `index.html` at its root. It
+serves that folder below `/apps/<id>/`, so every built URL must be relative to
+the entry document rather than absolute from `/`.
+
+For Vite, set a relative base:
+
+```ts
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+	base: './',
+});
+```
+
+Build the app normally, then give Epicenter the resulting `dist` folder.
+Admission copies static files only. Epicenter never installs dependencies or
+runs an app's build scripts, and a newly admitted catalog takes effect after a
+full Epicenter restart.
 
 ## The handle
 
