@@ -43,6 +43,13 @@
 			"when": 1784308579193,
 			"tag": "0005_short_shinobi_shaw",
 			"breakpoints": true
+		},
+		{
+			"idx": 6,
+			"version": "7",
+			"when": 1785340895919,
+			"tag": "0006_mysterious_pixie",
+			"breakpoints": true
 		}
 	]
 }
