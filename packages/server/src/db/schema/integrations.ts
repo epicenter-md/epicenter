@@ -174,11 +174,25 @@ export const tiktokPublishAttempt = pgTable(
 		 */
 		publishId: text('publish_id'),
 		/**
-		 * The last status observed, holding TikTok's OWN code from `status/fetch`
-		 * (`PROCESSING_UPLOAD`, `PUBLISH_COMPLETE`, `FAILED`, ...) or one of the
-		 * local codes for a failure TikTok's vocabulary cannot express. See
-		 * `attempt-status.ts`, which owns what each value means and which are
-		 * terminal.
+		 * The last status observed. Three kinds of value, deliberately kept
+		 * distinguishable, because who decided an outcome is part of the outcome:
+		 *
+		 * - TikTok's OWN code from `status/fetch` (`PROCESSING_UPLOAD`,
+		 *   `PUBLISH_COMPLETE`, `FAILED`, ...).
+		 * - A local code for something on Epicenter's side that TikTok's vocabulary
+		 *   cannot express (`INIT_FAILED`, `INIT_AMBIGUOUS`, `UPLOAD_FAILED`).
+		 * - A creator's own adjudication (`RESOLVED_POSTED`, `RESOLVED_NOT_POSTED`),
+		 *   which is the only exit from an outcome that has no publish id and
+		 *   therefore can never be resolved by asking TikTok. Never written as
+		 *   `PUBLISH_COMPLETE`: a human's assertion must not be able to pass itself
+		 *   off as provider truth.
+		 *
+		 * `attempt-status.ts` owns what each value means, which are terminal, and
+		 * which block a new publish.
+		 *
+		 * NULL is not "nothing happened". The row is claimed BEFORE `video/init`, so
+		 * a Worker that dies after a successful init and before recording the publish
+		 * id leaves a null here with a post that may well exist.
 		 *
 		 * Reconciled from remote truth whenever the status is read, so a row cannot
 		 * sit at `PROCESSING_UPLOAD` after TikTok has finished the task.
