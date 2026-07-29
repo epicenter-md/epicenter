@@ -34,8 +34,11 @@
 	import { onDestroy, onMount } from 'svelte';
 	import {
 		COMMERCIAL_LABELS,
+		createPublishIntentKeeper,
 		DECLARATION_TEXT,
 		declarationFor,
+		type PublishAttempt,
+		type PublishIntent,
 		type PublicConnection,
 		type TikTokCreatorInfo,
 		type TikTokPrivacyLevel,
@@ -69,6 +72,25 @@
 	} | null>(null);
 	let statusLine = $state<string | null>(null);
 	let busy = $state(false);
+	let attempts = $state<PublishAttempt[]>([]);
+	/**
+	 * Set when a publish outcome is UNKNOWN. While this is set the surface stops
+	 * offering to post, because a new post is exactly the wrong response to
+	 * "TikTok may already have published this".
+	 */
+	let unresolved = $state<{
+		connectionId: string;
+		attemptId: string | null;
+		publishId: string | null;
+		detail: string;
+	} | null>(null);
+
+	/**
+	 * Owns the idempotency key across retries. Created once for the page: the
+	 * whole point is that it OUTLIVES a submission, so a timeout and its retry
+	 * send the same key.
+	 */
+	const keeper = createPublishIntentKeeper(() => crypto.randomUUID());
 
 	let videoFile = $state<File | null>(null);
 	/** Object URL for the preview. Revoked whenever the file is replaced. */
@@ -159,6 +181,13 @@
 	/** Every reason the Direct Post button stays disabled, in creator language. */
 	const directPostBlockers = $derived.by(() => {
 		const blockers: string[] = [];
+		// An unknown outcome blocks everything: TikTok may already have published
+		// this, so offering another post is the one thing not to do.
+		if (unresolved) {
+			blockers.push(
+				'A previous publish has an unknown outcome. Check its status before posting again.',
+			);
+		}
 		if (!videoFile) blockers.push('Choose a video.');
 		if (title.trim().length === 0) blockers.push('Write a caption.');
 		if (!privacyLevel) blockers.push('Choose who can see this post.');
@@ -324,7 +353,12 @@
 		videos = null;
 		lastPublish = null;
 		statusLine = null;
+		unresolved = null;
+		attempts = [];
+		// A different account is a different intent, so the old key is released.
+		keeper.settle();
 		loadCreatorInfo(connection.id);
+		refreshAttempts(connection.id);
 	}
 
 	async function loadVideos(connectionId: string) {
@@ -335,16 +369,53 @@
 		videos = data.videos;
 	}
 
-	function buildForm(kind: 'draft_upload' | 'direct_post'): FormData | null {
+	/**
+	 * Builds the intent this form currently describes. Handed to the keeper,
+	 * which returns the SAME idempotency key for as long as the intent is
+	 * unchanged, so a retry after a lost response reuses it.
+	 */
+	function currentIntent(
+		kind: 'draft_upload' | 'direct_post',
+		connectionId: string,
+	): PublishIntent {
+		return {
+			kind,
+			connectionId,
+			file: videoFile
+				? {
+						name: videoFile.name,
+						size: videoFile.size,
+						lastModified: videoFile.lastModified,
+					}
+				: null,
+			title,
+			privacyLevel,
+			allowComment,
+			allowDuet,
+			allowStitch,
+			commercialContent,
+			yourBrand: commercialContent && yourBrand,
+			brandedContent: commercialContent && brandedContent,
+			aiGenerated,
+		};
+	}
+
+	function buildForm(
+		kind: 'draft_upload' | 'direct_post',
+		connectionId: string,
+	): FormData | null {
 		if (!videoFile) {
 			toast.error('Choose a video file first.');
 			return null;
 		}
 		const form = new FormData();
 		form.set('kind', kind);
-		// One key per intended post. The server refuses a second init under the
-		// same key, so a double click cannot originate two posts.
-		form.set('idempotencyKey', crypto.randomUUID());
+		// NOT a fresh key per click. The keeper returns the key this intent
+		// already owns, so a retry after a timeout collides with the attempt the
+		// server already claimed instead of originating a second post. A new key
+		// is minted only when the intent materially changes, or after a settled
+		// outcome releases the old one.
+		form.set('idempotencyKey', keeper.keyFor(currentIntent(kind, connectionId)));
 		form.set('video', videoFile);
 		if (kind === 'direct_post') {
 			form.set('title', title);
@@ -362,16 +433,64 @@
 		return form;
 	}
 
-	async function publish(kind: 'draft_upload' | 'direct_post', connectionId: string) {
-		const form = buildForm(kind);
+	async function publish(
+		kind: 'draft_upload' | 'direct_post',
+		connectionId: string,
+	) {
+		const form = buildForm(kind, connectionId);
 		if (!form) return;
 		busy = true;
 		const { data, error } = await tiktokApi.publish(connectionId, form);
 		busy = false;
-		if (error) return report(error);
+
+		if (error) {
+			// An UNRESOLVED outcome is not a failure to retry. TikTok may have
+			// created the post, so the key is deliberately NOT released: the intent
+			// keeps its claim, the surface stops offering to post, and the remedy is
+			// to read the attempt's status.
+			// Narrowed by variant: only a server refusal can carry these fields, and a
+			// local fetch failure (RequestFailed) is never a confirmed provider call.
+			if (error.name === 'ServerRefused' && error.unresolved) {
+				unresolved = {
+					connectionId,
+					attemptId: error.attemptId ?? null,
+					publishId: error.publishId ?? null,
+					detail: error.message,
+				};
+				if (error.publishId) {
+					lastPublish = {
+						connectionId,
+						publishId: error.publishId,
+						kind,
+						message: error.message,
+					};
+				}
+				refreshAttempts(connectionId);
+				toast.error(error.message, { duration: 15_000 });
+				return;
+			}
+			// A definite refusal AFTER the attempt was claimed leaves that key spent,
+			// so release it and let a corrected post start a new intent. (Validation
+			// refusals happen before any claim, so releasing here is harmless.)
+			keeper.settle();
+			report(error);
+			return;
+		}
+
+		// Settled: this intent is done and the next post starts a new one.
+		keeper.settle();
+		unresolved = null;
 		lastPublish = { connectionId, ...data };
 		statusLine = null;
+		refreshAttempts(connectionId);
 		toast.success(data.message);
+	}
+
+	/** The recorded attempts, so an unresolved publish stays reconcilable. */
+	async function refreshAttempts(connectionId: string) {
+		const { data, error } = await tiktokApi.attempts(connectionId);
+		if (error) return;
+		attempts = data.attempts;
 	}
 
 	/**
@@ -664,7 +783,7 @@
 					<Button
 						variant="outline"
 						class="self-start"
-						disabled={busy || !videoFile || durationExceeded}
+						disabled={busy || !videoFile || durationExceeded || unresolved !== null}
 						onclick={() => publish('draft_upload', selected.id)}
 					>
 						Upload draft
@@ -835,6 +954,30 @@
 					</p>
 				</section>
 
+				<!-- An UNKNOWN outcome, shown prominently and without a "try again"
+				     affordance. The remedy is reading status or checking TikTok. -->
+				{#if unresolved}
+					<Alert.Root variant="destructive">
+						<CircleAlertIcon class="size-4" />
+						<Alert.Description class="space-y-1">
+							<p>{unresolved.detail}</p>
+							{#if unresolved.publishId}
+								<p class="text-xs break-all">
+									Publish id: {unresolved.publishId}
+								</p>
+							{/if}
+							{#if unresolved.attemptId}
+								<p class="text-xs break-all">Attempt: {unresolved.attemptId}</p>
+							{/if}
+							<p class="text-xs">
+								Do not post again until this is resolved. Check the recent posts below,
+								or open the TikTok app to see whether it landed.
+							</p>
+						</Alert.Description>
+					</Alert.Root>
+				{/if}
+
+
 				<!-- 5. Resolve the outcome by reading, never by retrying -->
 				{#if lastPublish}
 					<Separator />
@@ -856,6 +999,30 @@
 				{/if}
 
 				<Separator />
+
+				<!-- Every recorded attempt, so an unresolved publish stays reconcilable
+				     against TikTok rather than being invisible after a reload. -->
+				{#if attempts.length > 0}
+					<Separator />
+					<section class="flex flex-col gap-2">
+						<h3 class="text-sm font-medium">Publish attempts</h3>
+						<ul class="flex flex-col divide-y rounded-md border text-xs">
+							{#each attempts as attempt (attempt.id)}
+								<li class="flex flex-col gap-0.5 px-3 py-2">
+									<span class="font-medium">
+										{attempt.kind} · {attempt.status ?? 'claimed, not yet started'}
+									</span>
+									<span class="text-muted-foreground break-all">
+										publish id: {attempt.publishId ?? 'none recorded'}
+									</span>
+									{#if attempt.failReason}
+										<span class="text-destructive break-all">{attempt.failReason}</span>
+									{/if}
+								</li>
+							{/each}
+						</ul>
+					</section>
+				{/if}
 
 				<!-- 6. video.list -->
 				<section class="flex flex-col gap-2">

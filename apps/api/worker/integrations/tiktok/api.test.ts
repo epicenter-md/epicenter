@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { createTikTokApi, preservePostIds } from './api.js';
+import { createTikTokApi, isAmbiguousFailure, preservePostIds } from './api.js';
 
 type Call = {
 	url: string;
@@ -374,4 +374,85 @@ test('no API error message leaks the access token', async () => {
 
 	expect(error?.name).toBe('ProviderRejected');
 	expect(JSON.stringify(error)).not.toContain('act.live');
+});
+
+// --- Failure certainty: the distinction that guards an irreversible call ---
+
+test('a 4xx with TikTok error code is a DEFINITE rejection', async () => {
+	const { api } = apiWith(() => envelope({}, 400, 'invalid_param'));
+
+	const { error } = await api.initDirectPost({
+		title: 't',
+		privacyLevel: 'SELF_ONLY',
+		disableComment: true,
+		disableDuet: true,
+		disableStitch: true,
+		brandOrganic: false,
+		brandedContent: false,
+		isAigc: false,
+		videoSize: 10,
+	});
+
+	// Understood and refused: nothing was created, so a corrected retry is safe.
+	expect(error?.certainty).toBe('rejected');
+	expect(isAmbiguousFailure(error as never)).toBe(false);
+});
+
+test('a 5xx is AMBIGUOUS even though the envelope parsed', async () => {
+	// A server-side failure may have landed anyway. Treating it as definite would
+	// invite a retry that publishes twice.
+	const { api } = apiWith(() => envelope({}, 503, 'internal_error'));
+
+	const { error } = await api.initDraftUpload(10);
+
+	expect(error?.certainty).toBe('ambiguous');
+	expect(isAmbiguousFailure(error as never)).toBe(true);
+});
+
+test('a network failure or timeout is AMBIGUOUS', async () => {
+	const send = (async () => {
+		throw new Error('The operation was aborted due to timeout');
+	}) as unknown as typeof globalThis.fetch;
+	const api = createTikTokApi({ accessToken: 'act.live', fetch: send });
+
+	const { error } = await api.initDraftUpload(10);
+
+	expect(error?.name).toBe('RequestFailed');
+	expect(isAmbiguousFailure(error as never)).toBe(true);
+});
+
+test('an unparseable body is AMBIGUOUS', async () => {
+	const { api } = apiWith(
+		() => new Response('<html>gateway</html>', { status: 200 }),
+	);
+
+	const { error } = await api.initDraftUpload(10);
+
+	expect(isAmbiguousFailure(error as never)).toBe(true);
+});
+
+test('an `ok` envelope missing publish_id is AMBIGUOUS, not a clean failure', async () => {
+	// TikTok said ok, so the task may exist; we just cannot name it. This is the
+	// case most easily mistaken for "nothing happened".
+	const { api } = apiWith(() => envelope({ upload_url: 'https://upload/x' }));
+
+	const { error } = await api.initDirectPost({
+		title: 't',
+		privacyLevel: 'SELF_ONLY',
+		disableComment: true,
+		disableDuet: true,
+		disableStitch: true,
+		brandOrganic: false,
+		brandedContent: false,
+		isAigc: false,
+		videoSize: 10,
+	});
+
+	expect(error?.name).toBe('MalformedResponse');
+	expect(isAmbiguousFailure(error as never)).toBe(true);
+});
+
+test('an unclassified failure defaults to ambiguous', () => {
+	// Fail safe: absence of a certainty is not evidence that nothing happened.
+	expect(isAmbiguousFailure({})).toBe(true);
 });

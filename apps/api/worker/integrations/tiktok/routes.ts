@@ -30,10 +30,11 @@ import type { Hono, MiddlewareHandler } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import { describeRoute } from 'hono-openapi';
 import { nanoid } from 'nanoid';
-import { defineErrors } from 'wellcrafted/error';
+import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import {
 	createTikTokApi,
 	type DirectPostInput,
+	isAmbiguousFailure,
 	MAX_SINGLE_CHUNK_BYTES,
 	privacyLevels,
 	type TikTokPrivacyLevel,
@@ -51,6 +52,11 @@ import {
 	createOAuthStateValue,
 	createTikTokOAuthClient,
 } from './oauth.js';
+import {
+	isValidIdempotencyKey,
+	MAX_IDEMPOTENCY_KEY_LENGTH,
+	MIN_IDEMPOTENCY_KEY_LENGTH,
+} from './publish-intent.js';
 import {
 	claimPublishAttempt,
 	consumeOAuthState,
@@ -111,6 +117,28 @@ const TikTokRouteError = defineErrors({
 	ScopeNotGranted: ({ scope }: { scope: string }) => ({
 		message: `This TikTok account did not grant the "${scope}" permission. Reconnect it and approve that permission to use this.`,
 		scope,
+	}),
+	/**
+	 * The outcome of an irreversible publish is UNKNOWN. TikTok may have created
+	 * the task; we cannot see the answer. Never retried automatically: the remedy
+	 * is to read the attempt's status, and re-submitting the same intent collides
+	 * with the claim that is already recorded.
+	 */
+	PublishOutcomeUnknown: ({
+		attemptId,
+		publishId,
+		detail,
+	}: {
+		attemptId: string;
+		publishId: string | null;
+		detail: string;
+	}) => ({
+		message: `TikTok may have accepted this post, but Epicenter could not confirm it (${detail}). Check the attempt's status before trying again; do not re-submit.`,
+		attemptId,
+		publishId,
+		detail,
+		/** The client uses this to refuse an automatic retry. */
+		unresolved: true,
 	}),
 	/**
 	 * This idempotency key already claimed a publish. TikTok's `video/init` is
@@ -273,12 +301,32 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 			const query = c.req.query();
 			const db = c.var.db as Db;
 
-			// Consume the state EXACTLY ONCE, whatever else this callback turns out
-			// to be. `DELETE ... RETURNING` is both the read and the invalidation, so
-			// even a denied or malformed ceremony leaves nothing replayable behind.
+			// SESSION FIRST. Nothing is consumed, exchanged, or attached without a
+			// live session, so an unauthenticated hit on this URL cannot touch any
+			// stored state at all.
+			const current = await c.var.auth.api.getSession({
+				headers: c.req.raw.headers,
+				query: { disableCookieCache: true },
+			});
+			if (!current) {
+				return back(DEFAULT_RETURN_PATH, {
+					error:
+						'Sign in to Epicenter first, then connect the TikTok account again.',
+				});
+			}
+
+			// Consume the state EXACTLY ONCE, scoped to the signed-in user. Both
+			// halves matter: `DELETE ... RETURNING` is read and invalidation in one
+			// statement, and the `user_id` predicate means a leaked state replayed by
+			// a DIFFERENT signed-in user matches nothing, so it cannot cancel the
+			// real user's in-flight ceremony. This runs before the denial and
+			// malformed-link branches so no outcome leaves a replayable row behind.
 			const stateValue = query.state;
 			const stored = stateValue
-				? await consumeOAuthState(db, stateValue)
+				? await consumeOAuthState(db, {
+						state: stateValue,
+						userId: current.user.id,
+					})
 				: null;
 
 			// The creator declined, or TikTok refused.
@@ -296,29 +344,19 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 						'That TikTok authorization link was incomplete. Try connecting again.',
 				});
 			}
+			// No row for (this state, this user): already used, expired, forged, or
+			// started by a different Epicenter account. All four are the same answer,
+			// and none of them attach anything.
 			if (!stored) {
 				return back(DEFAULT_RETURN_PATH, {
 					error:
-						'That TikTok authorization link was already used or has expired. Try connecting again.',
+						'That TikTok authorization link was already used, has expired, or was started by a different Epicenter account. Try connecting again.',
 				});
 			}
 			if (stored.expiresAt.getTime() <= Date.now()) {
 				return back(stored.returnPath, {
 					error:
 						'That TikTok authorization took too long. Try connecting again.',
-				});
-			}
-
-			// Bind the callback to the browser that started it. A state minted while
-			// signed in as one user can never attach an account to another.
-			const current = await c.var.auth.api.getSession({
-				headers: c.req.raw.headers,
-				query: { disableCookieCache: true },
-			});
-			if (!current || current.user.id !== stored.userId) {
-				return back(DEFAULT_RETURN_PATH, {
-					error:
-						'You are signed in as a different Epicenter account than the one that started this connection. Nothing was connected.',
 				});
 			}
 
@@ -653,11 +691,11 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 				const kind =
 					form.kind === 'direct_post' ? 'direct_post' : 'draft_upload';
 				const idempotencyKey = form.idempotencyKey;
-				if (typeof idempotencyKey !== 'string' || idempotencyKey.length === 0) {
+				if (!isValidIdempotencyKey(idempotencyKey)) {
+					// Bounded on length and alphabet before it reaches a unique index.
 					return c.json(
 						TikTokRouteError.InvalidRequest({
-							detail:
-								'idempotencyKey is required so a repeated submit cannot originate a second post.',
+							detail: `idempotencyKey is required so a repeated submit cannot originate a second post, and must be ${MIN_IDEMPOTENCY_KEY_LENGTH} to ${MAX_IDEMPOTENCY_KEY_LENGTH} characters of [A-Za-z0-9._:-].`,
 						}),
 						400,
 					);
@@ -781,32 +819,78 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 						? await api.initDraftUpload(file.size)
 						: await api.initDirectPost(directPost);
 				if (init.error) {
+					// NOT every init failure means nothing happened. A definite 4xx
+					// rejection means TikTok understood and refused, so no task exists.
+					// A timeout, a dropped connection, a 5xx, or an `ok` envelope with
+					// no publish_id all mean TikTok MAY have accepted the irreversible
+					// init and we simply cannot see the answer. Collapsing those into
+					// one INIT_FAILED would invite a retry that publishes twice.
+					const ambiguous = isAmbiguousFailure(init.error);
 					await recordAttemptOutcome(db, {
 						attemptId: attempt.id,
-						status: 'INIT_FAILED',
+						status: ambiguous ? 'INIT_AMBIGUOUS' : 'INIT_FAILED',
 						failReason: init.error.message,
 					});
-					return c.json(init, 502);
+					if (!ambiguous) return c.json(init, 502);
+					return c.json(
+						TikTokRouteError.PublishOutcomeUnknown({
+							attemptId: attempt.id,
+							publishId: null,
+							detail: init.error.message,
+						}),
+						502,
+					);
 				}
 
 				// Init succeeded, so the task exists at TikTok even if everything
 				// after this fails. Record the publish id FIRST: it is the only
 				// handle on that task, and losing it is what makes an outcome
 				// unresolvable.
-				await recordAttemptOutcome(db, {
-					attemptId: attempt.id,
-					publishId: init.data.publishId,
-					status: 'PROCESSING_UPLOAD',
-				});
+				//
+				// UNAVOIDABLE WINDOW: TikTok has already created the task, and this
+				// write is a separate system that can fail. There is no two-phase
+				// commit available here because TikTok offers none. What IS guaranteed
+				// is that the attempt row was claimed BEFORE the init, so the same
+				// idempotency key still blocks a duplicate even when this write is
+				// lost. The caller is told the attempt is unresolved rather than being
+				// allowed to treat it as a fresh intent.
+				try {
+					await recordAttemptOutcome(db, {
+						attemptId: attempt.id,
+						publishId: init.data.publishId,
+						status: 'PROCESSING_UPLOAD',
+					});
+				} catch (cause) {
+					return c.json(
+						TikTokRouteError.PublishOutcomeUnknown({
+							attemptId: attempt.id,
+							// Returned even though it could not be persisted: it is the
+							// only handle on the task TikTok just created.
+							publishId: init.data.publishId,
+							detail: `TikTok accepted the post but Epicenter could not record it: ${extractErrorMessage(cause)}`,
+						}),
+						502,
+					);
+				}
 
 				const upload = await api.uploadVideo(init.data.uploadUrl, bytes);
 				if (upload.error) {
+					// The task exists either way, so this is never a reason to start a
+					// new one. Record what is known and point the caller at the status
+					// read; the bytes may or may not have landed.
 					await recordAttemptOutcome(db, {
 						attemptId: attempt.id,
-						status: 'FAILED',
+						status: 'UPLOAD_FAILED',
 						failReason: upload.error.message,
 					});
-					return c.json(upload, 502);
+					return c.json(
+						TikTokRouteError.PublishOutcomeUnknown({
+							attemptId: attempt.id,
+							publishId: init.data.publishId,
+							detail: upload.error.message,
+						}),
+						502,
+					);
 				}
 
 				return c.json({

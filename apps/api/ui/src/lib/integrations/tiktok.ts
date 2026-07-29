@@ -68,12 +68,31 @@ export const TikTokApiError = defineErrors({
 		status,
 		message,
 		code,
+		unresolved,
+		attemptId,
+		publishId,
 	}: {
 		endpoint: string;
 		status: number;
 		message: string;
 		code?: string;
-	}) => ({ message, endpoint, status, code }),
+		/**
+		 * True when the server could not determine whether an irreversible publish
+		 * took effect. The caller must NOT retry automatically; see
+		 * PublishOutcomeUnknown in the Worker routes.
+		 */
+		unresolved?: boolean;
+		attemptId?: string;
+		publishId?: string | null;
+	}) => ({
+		message,
+		endpoint,
+		status,
+		code,
+		unresolved,
+		attemptId,
+		publishId,
+	}),
 });
 export type TikTokApiError = import('wellcrafted/error').InferErrors<
 	typeof TikTokApiError
@@ -94,7 +113,13 @@ async function readResponse<T>(
 ): Promise<TikTokResult<T>> {
 	if (!res.ok) {
 		const body = (await res.json().catch(() => null)) as {
-			error?: { message?: string; code?: string };
+			error?: {
+				message?: string;
+				code?: string;
+				unresolved?: boolean;
+				attemptId?: string;
+				publishId?: string | null;
+			};
 			message?: string;
 		} | null;
 		return TikTokApiError.ServerRefused({
@@ -105,6 +130,12 @@ async function readResponse<T>(
 				body?.message ??
 				`Request failed with ${res.status}.`,
 			...(body?.error?.code ? { code: body.error.code } : {}),
+			// Carried through verbatim so the caller can refuse an automatic retry.
+			...(body?.error?.unresolved ? { unresolved: true } : {}),
+			...(body?.error?.attemptId ? { attemptId: body.error.attemptId } : {}),
+			...(body?.error?.publishId !== undefined
+				? { publishId: body.error.publishId }
+				: {}),
 		});
 	}
 	return tryAsync({
@@ -193,11 +224,6 @@ export const tiktok = {
 	}),
 };
 
-export type {
-	CommercialDisclosure,
-	DeclarationKind,
-	InteractionChoices,
-} from '$api/integrations/tiktok/direct-post-policy';
 /**
  * The Direct Post rules, re-exported from the sibling Worker module that
  * ENFORCES them. The dashboard renders the same label explanations and the same
@@ -209,3 +235,9 @@ export {
 	DECLARATION_TEXT,
 	declarationFor,
 } from '$api/integrations/tiktok/direct-post-policy';
+export type { PublishIntent } from '$api/integrations/tiktok/publish-intent';
+/**
+ * The idempotency-key lifecycle, from the module whose contract the server
+ * validates. The dashboard must not mint keys per click; see publish-intent.ts.
+ */
+export { createPublishIntentKeeper } from '$api/integrations/tiktok/publish-intent';
