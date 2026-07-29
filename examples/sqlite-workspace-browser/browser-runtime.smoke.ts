@@ -512,7 +512,7 @@ try {
 	for (const profile of profiles) {
 		rmSync(profile, { recursive: true, force: true });
 	}
-	rmSync(join(import.meta.dir, 'dist-browser-runtime'), {
+	rmSync(join(import.meta.dir, 'dist'), {
 		recursive: true,
 		force: true,
 	});

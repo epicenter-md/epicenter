@@ -10,7 +10,10 @@ export default defineConfig({
 	worker: { format: 'es' },
 	build: {
 		target: 'esnext',
-		outDir: 'dist-browser-runtime',
+		// `dist`, not a bespoke name: the repo's .gitignore and Biome's ignore
+		// list both already cover `dist`, and a name outside them leaves build
+		// output tracked by git and linted as source.
+		outDir: 'dist',
 		emptyOutDir: true,
 		rollupOptions: {
 			input: resolve(import.meta.dirname, 'browser-runtime.html'),
