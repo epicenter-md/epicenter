@@ -10,8 +10,10 @@
  * One handle, the same shape everywhere. An app imports it, uses it, and never
  * asks which platform it is on: whether a capability can run right now is a
  * typed `Result`, not a missing namespace or an optional method. In an ordinary
- * browser tab every operation answers `HostUnavailable`, which is a value an
- * app can render rather than a crash it has to guard.
+ * browser tab every fallible operation answers `HostUnavailable`, which is a
+ * value an app can render rather than a crash it has to guard. The one
+ * operation with no outcome, `transcription.prewarm()`, keeps its promise by
+ * doing nothing there, as it does anywhere.
  *
  * There is no `openEpicenter()`. The handle owns no connection, no session, and
  * no configuration, so there is nothing an opener could do except make every

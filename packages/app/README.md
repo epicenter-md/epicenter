@@ -34,18 +34,22 @@ if (transcribeError) return show(transcribeError.message);
 if (transcript.outcome === 'transcribed') show(transcript.text);
 ```
 
-Every operation returns a
+Every operation that can fail returns a
 [wellcrafted](https://github.com/wellcrafted-dev/wellcrafted) `Result`:
 `{ data, error }`, exactly one of which is null. Destructure it. Failures are
 values you render, not exceptions you catch.
+
+The one exception is `transcription.prewarm()`, which returns nothing because
+it has no outcome. It is described below.
 
 ## The handle exists everywhere
 
 The same import works in an ordinary browser tab, in a test, and during a server
 render. There is no `isTauri()`, no optional namespace, no dynamic import
-guard. Outside an Epicenter host, every operation answers a typed
+guard. Outside an Epicenter host, every fallible operation answers a typed
 `HostUnavailable` error, and app code that already handles errors already
-handles that:
+handles that (`prewarm()` does nothing at all, which is the same promise it
+makes everywhere):
 
 ```ts
 const { error } = await epicenter.recording.start();
