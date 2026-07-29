@@ -18,7 +18,7 @@
  * - Consecutive-failure counting resets on every successful open
  * - A reopen heals every subscribed handle once, and the first open heals none
  * - Closing during a pending redial stops the loop
- * - An unreadable frame is dropped and reported, never thrown at the socket
+ * - An unreadable frame broad-invalidates and is reported, never thrown
  */
 
 import { expect, test } from 'bun:test';
@@ -48,7 +48,7 @@ class FakeSocket implements ObservationSocket {
 		string,
 		((event: { data: unknown }) => void)[]
 	>();
-	isClosedByCarrier = false;
+	closeCalls = 0;
 
 	addEventListener(type: 'open', listener: () => void): void;
 	addEventListener(type: 'close', listener: () => void): void;
@@ -65,7 +65,7 @@ class FakeSocket implements ObservationSocket {
 	}
 
 	close(): void {
-		this.isClosedByCarrier = true;
+		this.closeCalls += 1;
 	}
 
 	/** Fire one lifecycle event the way a real socket would. */
@@ -287,7 +287,7 @@ test('closing twice is a no-op and closes the live socket once', async () => {
 
 	carrier.close();
 	carrier.close();
-	expect(script.socketAt(0).isClosedByCarrier).toBeTrue();
+	expect(script.socketAt(0).closeCalls).toBe(1);
 	await afterPendingTimers();
 	expect(script.sockets.length).toBe(1);
 });
@@ -352,7 +352,7 @@ test.each([
 			],
 		}),
 	],
-] as const)('%s is dropped rather than thrown at the socket', async (_case, payload) => {
+] as const)('%s falls back rather than throwing at the socket', async (_case, payload) => {
 	const observation = createInvalidationDispatcher();
 	const script = trackDials();
 	const opening = openObservationCarrier({
@@ -376,9 +376,10 @@ test.each([
 	// A throw here would escape the socket's `message` listener, where nothing
 	// is left to catch it.
 	expect(() => script.socketAt(0).send(payload)).not.toThrow();
-	// A frame that names one unreadable address is dropped whole: a partial
-	// batch would be an under-report, which law 1 forbids.
-	expect(seen).toEqual([]);
+	// A frame that names one unreadable address cannot be delivered partially
+	// or silently: either would under-report. Fall back to the strongest honest
+	// local statement instead.
+	expect(seen).toEqual([{ scope: 'table' }]);
 
 	// The socket survives it, so a cosmetic mismatch never becomes a surface
 	// that stops updating.
@@ -396,6 +397,7 @@ test.each([
 		}),
 	);
 	expect(seen).toEqual([
+		{ scope: 'table' },
 		{ scope: 'rows', rowIds: ['bbbbbbbbbbbbbbbbbbbbbbbb'] },
 	]);
 	expect(script.sockets.length).toBe(1);

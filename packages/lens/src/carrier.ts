@@ -190,7 +190,14 @@ export async function openObservationCarrier({
 			});
 			next.addEventListener('message', (event) => {
 				const changes = readObservationFrame(event.data, log);
-				if (changes !== undefined) observation.deliver(changes);
+				if (changes === undefined) {
+					// The host announced something this client could not interpret.
+					// Silence would under-report and violate law 1, so fall back to
+					// the strongest honest local claim while keeping the carrier live.
+					observation.invalidateAll();
+					return;
+				}
+				observation.deliver(changes);
 			});
 			// `error` and `close` are one outcome here: the socket is gone and the
 			// only response is to redial. Browsers fire `error` before `close` on a
@@ -258,9 +265,10 @@ export async function openObservationCarrier({
  * Read one carrier frame, or nothing when the host said something this client
  * does not recognize.
  *
- * An unreadable frame is dropped rather than thrown: the carrier's job is
- * liveness, and killing the socket over one bad message would turn a cosmetic
- * mismatch into a surface that stops updating.
+ * An unreadable frame is reported and converted to a full local invalidation
+ * rather than thrown: the carrier's job is liveness, and killing the socket
+ * over one bad message would turn a cosmetic mismatch into a surface that
+ * stops updating.
  *
  * Keeping that promise means reading every address, not just the envelope
  * around them. The dispatcher dereferences `kind`, `namespace`, `tableName`,
@@ -268,10 +276,10 @@ export async function openObservationCarrier({
  * one malformed element would throw a `TypeError` out of the socket's `message`
  * listener, where nothing is left to catch it.
  *
- * A frame with one bad address is dropped whole rather than filtered down to its
- * readable elements. Law 1 lets invalidation over-report and never under-report,
- * and a partial batch is exactly an under-report: it would tell a handle that
- * three rows moved while quietly withholding a fourth.
+ * A frame with one bad address is rejected whole rather than filtered down to
+ * its readable elements. The caller turns that rejection into
+ * `invalidateAll()`: law 1 allows over-reporting and forbids both a partial
+ * batch and a silent drop.
  */
 function readObservationFrame(
 	data: unknown,
