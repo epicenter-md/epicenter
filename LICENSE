@@ -71,7 +71,6 @@ who forks and distributes a modified binary shares the changes back.
                                                          reference Worker
     - apps/whispering            (@epicenter/whispering) desktop transcription
     - apps/honeycrisp            (@epicenter/honeycrisp) notes app
-    - apps/opensidian            (opensidian)            notes + terminal
     - apps/vocab                 (@epicenter/vocab)      mandarin chat
     - apps/tab-manager           (@epicenter/tab-manager) browser extension
     - apps/skills                (skills)                agent skill editor

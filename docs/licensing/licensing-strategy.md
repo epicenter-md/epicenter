@@ -69,7 +69,7 @@ Scenario 4 (a hosted competitor) is the one where the license is most load-beari
 
 ### Tier 2: AGPL-3.0
 
-**Applies to:** all apps (`apps/api`, `apps/self-host`, `apps/whispering`, `apps/honeycrisp`, `apps/opensidian`, `apps/vocab`, `apps/tab-manager`, `apps/skills`, `apps/reddit`, `apps/landing`, `apps/posthog-reverse-proxy`, `apps/matter`, `apps/wiki`, `apps/local-books`), `packages/cli`, and the internal packages `packages/auth`, `packages/svelte-utils`, `packages/app-shell`, `packages/skills`, `packages/constants`, `packages/server`, `packages/client`, `packages/matter-core`, `packages/vite-config`.
+**Applies to:** all apps (`apps/api`, `apps/self-host`, `apps/whispering`, `apps/honeycrisp`, `apps/vocab`, `apps/tab-manager`, `apps/skills`, `apps/reddit`, `apps/landing`, `apps/posthog-reverse-proxy`, `apps/matter`, `apps/wiki`, `apps/local-books`), `packages/cli`, and the internal packages `packages/auth`, `packages/svelte-utils`, `packages/app-shell`, `packages/skills`, `packages/constants`, `packages/server`, `packages/client`, `packages/matter-core`, `packages/vite-config`.
 
 **Rationale:**
 - `apps/api` (hosted cloud: sync server, auth, AI inference; serves the same-origin dashboard SPA from its `ui/`): the infrastructure a competitor would need to clone Epicenter Cloud. AGPL §13 means any hosted fork must publish source, including improvements, which destroys the economics of forking-and-hosting. `apps/self-host` is the self-hosted single-partition instance reference deployment.
@@ -138,7 +138,6 @@ All apps are AGPL-3.0. MIT is reserved for the embeddable toolkit libraries.
 | `apps/self-host` | AGPL-3.0 | Self-hosted single-partition instance reference deployment |
 | `apps/whispering` | AGPL-3.0 | Desktop transcription |
 | `apps/honeycrisp` | AGPL-3.0 | Notes app |
-| `apps/opensidian` | AGPL-3.0 | Note-taking with terminal |
 | `apps/vocab` | AGPL-3.0 | Vocabulary chat app |
 | `apps/tab-manager` | AGPL-3.0 | Browser extension |
 | `apps/skills` | AGPL-3.0 | Agent skill editor |

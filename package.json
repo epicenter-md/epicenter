@@ -143,8 +143,6 @@
 		"dev:landing": "bun run --cwd apps/landing dev",
 		"dev:matter": "bun run --cwd apps/matter dev",
 		"dev:matter:ui": "bun run --cwd apps/matter dev:web",
-		"dev:opensidian": "bun run --filter @epicenter/api --filter opensidian dev",
-		"dev:opensidian:ui": "bun run --cwd apps/opensidian dev",
 		"dev:posthog-reverse-proxy": "bun run --cwd apps/posthog-reverse-proxy dev",
 		"dev:self-host": "bun run --cwd apps/self-host dev",
 		"dev:skills": "bun run --cwd apps/skills dev",

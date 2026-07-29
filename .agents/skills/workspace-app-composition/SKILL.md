@@ -39,7 +39,7 @@ Two layouts ship today. Older single-platform apps keep the composition files
 flat at the package root; apps preparing for multi-platform builds nest the
 same files under `src/lib/workspace/` and add a `src/lib/platform/` seam.
 
-**Flat root** (opensidian, vocab):
+**Flat root** (vocab):
 
 ```txt
 apps/<app>/
@@ -93,10 +93,8 @@ factory as `.`; only apps with a live daemon consumer export a mount factory as
 }
 ```
 
-Opensidian additionally exports `"./browser": "./opensidian.browser.ts"`; the
-others do not export their browser factory. That asymmetry is honest, opensidian
-has a consumer that needs the bare browser factory and the others do not. Do not
-add a `./browser` export to the rest for symmetry's sake.
+No app exports its browser factory today. Add a `./browser` export only when
+a second package actually needs the bare factory, never for symmetry.
 
 ## Layers
 
@@ -230,7 +228,7 @@ where the workspace is built.
 | --- | --- | --- |
 | Ready application opened in a mounted layout: whispering | the (app) layout component | raw `{#await opening}` with `WorkspaceBootFailure` in `{:catch}`; the fulfilled branch mounts the typed context provider |
 | Eager module singleton with route loads: skills, matter | a route `load` | `load`: `await x.whenReady` (matter: `ensureHydrated()`) |
-| Eager module singleton, gate in the root layout: honeycrisp, vocab, opensidian | the root layout | `<WorkspaceGate pending={<app>.whenReady} onForgetDevice onSignOut>` |
+| Eager module singleton, gate in the root layout: honeycrisp, vocab | the root layout | `<WorkspaceGate pending={<app>.whenReady} onForgetDevice onSignOut>` |
 | Extension entrypoint behind async storage: tab-manager | the component | outer `{#await boot.whenReady}`, then `WorkspaceGate` |
 
 Whispering is the ready-application exemplar for SQLite workspace apps: the
@@ -340,15 +338,15 @@ reintroduce `resolve.extensions` suffixes or tsconfig `moduleSuffixes`.
 ## Daemon and Script Placement
 
 Daemon and script bindings are NOT in the app package. They live per-project
-under `workspaces/<app>/` (e.g. `playground/opensidian-e2e/workspaces/opensidian/daemon.ts`)
+under `workspaces/<app>/` (e.g. a project's `workspaces/tab-manager/daemon.ts`)
 and are registered through `epicenter.config.ts` at the Epicenter root:
 
 ```ts
 import { defineConfig } from '@epicenter/workspace';
-import opensidian from './workspaces/opensidian/daemon.ts';
+import tabManager from './workspaces/tab-manager/daemon.ts';
 
 export default defineConfig({
-	routes: [opensidian],
+	routes: [tabManager],
 });
 ```
 
@@ -387,8 +385,8 @@ lifecycle command is `epicenter daemon up`, not `epicenter serve`.
 - Reintroducing `resolve.extensions` suffixes or tsconfig `moduleSuffixes` for
   platform selection.
 - Dropping `...defaultClientConditions` from the Tauri `conditions` array.
-- Adding a `./browser` package export to honeycrisp/vocab for symmetry
-  with opensidian. Keep the asymmetry; only opensidian has a consumer for it.
+- Adding a `./browser` package export for symmetry. No app exports its browser
+  factory; add one only when a second package needs the bare factory.
 - Adding `./mount` back to honeycrisp. Honeycrisp's integration contract is the
   package `.` isomorphic workspace export.
 - Placing `daemon.ts` or `script.ts` inside the app package. They live under a

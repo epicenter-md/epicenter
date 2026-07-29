@@ -25,7 +25,7 @@ policy stays in the app that can name it.
 | APPS                                                                       |
 |                                                                            |
 | whispering   honeycrisp   epicenter   tab-manager   api   self-host        |
-| landing      local-books  local-mail  opensidian                           |
+| landing      local-books  local-mail                                       |
 +----------------------------------------------------------------------------+
                                       |
                                       v

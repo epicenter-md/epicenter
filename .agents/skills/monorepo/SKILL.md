@@ -57,7 +57,7 @@ problem in a place nobody looks.
 
 Start apps from the repo root, not by cd-ing into the app. Root
 `bun dev:<app>` runs every process the app needs; for apps that talk to the
-hosted API (tab-manager, honeycrisp, opensidian, vocab, whispering, and the
+hosted API (tab-manager, honeycrisp, vocab, whispering, and the
 api dashboard), it also starts `@epicenter/api` on `localhost:8787` via
 `bun run --filter`. Root `bun dev:<app>:ui` runs the app's frontend
 alone when that split exists; for Tauri apps, it maps to the package's
@@ -94,7 +94,7 @@ against the default hosted target.
 
 ```bash
 bun run cli:local auth login
-bun run cli:local up -C playground/opensidian-e2e
+bun run cli:local up -C <project-dir>
 ```
 
 The full targeting matrix (prod, published binary, per-target token storage)

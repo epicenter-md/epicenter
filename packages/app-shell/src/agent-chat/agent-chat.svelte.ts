@@ -1,6 +1,6 @@
 /**
- * Reactive AI chat state shared by every chat app (opensidian, tab-manager,
- * vocab): the conversation registry plus one client agent loop (ADR-0047) per
+ * Reactive AI chat state shared by every chat app (tab-manager, vocab): the
+ * conversation registry plus one client agent loop (ADR-0047) per
  * conversation, with each app's differences injected rather than forked.
  *
  * The conversation list is the synced `conversations` table (@epicenter/chat);
@@ -61,7 +61,7 @@ import type { InferenceConnections } from '../inference-picker/connections.svelt
 
 /**
  * Where the selected conversation lives, and how to change it. Injected so an
- * app can keep the active id in the URL (opensidian's `?chat=`) instead of in
+ * app can keep the active id in the URL (e.g. `?chat=`) instead of in
  * module state; omit it and the registry owns an internal `$state`. The `current`
  * getter must read a reactive source so the active handle recomputes on change.
  */
