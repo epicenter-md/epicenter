@@ -16,7 +16,7 @@
 >
 > **Regenerate (deterministic per ref set, lossless):** `bun scripts/generate-spec-history.ts`. The totals track the refs this clone can see; `--all` is deliberate so the timeline recovers specs that only lived on unmerged or deleted branches.
 
-**1397 specs ever** (548 still in tree, 849 removed).
+**1397 specs ever** (547 still in tree, 850 removed).
 
 
 ## 2026
@@ -117,7 +117,7 @@
 | 2026-06-18 | playback-pause-speaking-window | removed | apps/whispering/specs/20260618T113342-playback-pause-speaking-window.md |
 | 2026-06-18 | one-conversation-core-loop-and-doc-sink | removed | specs/20260618T113407-one-conversation-core-loop-and-doc-sink.md |
 | 2026-06-18 | keyboard-tap-foundation-research | removed | apps/whispering/specs/20260618T000000-keyboard-tap-foundation-research.md |
-| 2026-06-17 | brand-asset-pipeline | in tree | specs/20260617T100000-brand-asset-pipeline.md |
+| 2026-06-17 | brand-asset-pipeline | removed | specs/20260617T100000-brand-asset-pipeline.md |
 | 2026-06-17 | v2-coding-worker-sandbox-and-harness | in tree | specs/20260617T235900-v2-coding-worker-sandbox-and-harness.md |
 | 2026-06-17 | zhongwen-daemon-and-v0-exit | removed | specs/20260617T224538-zhongwen-daemon-and-v0-exit.md |
 | 2026-06-17 | desktop-audio-pipeline-greenfield | removed | apps/whispering/specs/20260617T170000-desktop-audio-pipeline-greenfield.md |

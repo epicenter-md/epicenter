@@ -462,8 +462,7 @@ rewriting history again:
   generation IDs as lifetime fences, no automatic deletion of old generations,
   and the three added rejected alternatives. It **Amends** ADR-0153.
 - [ ] Point this spec's decision-owner line at the new ADR.
-- Proof: `bun scripts/check-doc-paths.ts`, `bun scripts/check-doc-hygiene.ts`
-  (the stale Proposed ADR-0015 warning is pre-existing and unrelated).
+- Proof: `bun scripts/check-doc-paths.ts`, `bun scripts/check-doc-hygiene.ts`.
 - Rollback: revert the one docs commit.
 
 ### Wave 1: strict loading and the generated manifest

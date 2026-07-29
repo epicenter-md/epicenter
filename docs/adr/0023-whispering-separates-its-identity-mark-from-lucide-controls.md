@@ -29,8 +29,8 @@ the sidebar brand, the tray idle icon, and the current landing brand surfaces.
 Product/legal sign-off, or replacement with owned or permissively licensed art,
 is required before broader brand use, app-store marketing expansion, paid
 promotion, merchandise, or treating the drawing as Whispering's permanent mark.
-ADR 0015 can make the asset pipeline honest; it does not solve this licensing
-risk by itself. The studio mic reads as a brand object rather than another
+Consolidating the per-surface asset copies would make the pipeline honest; it
+would not solve this licensing risk by itself. The studio mic reads as a brand object rather than another
 control, which is why it remains the placeholder until owned art exists. It is
 decorative and static; it does not state-switch. The brand mark is never the
 same glyph as the action.
