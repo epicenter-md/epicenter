@@ -1,6 +1,6 @@
 # 0081. Per-upstream OAuth concurrency decides whether a materialized mirror is box-owned or device-local
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-06-30
 - **Relates:** [ADR-0079](0079-cross-device-is-two-planes-epicenter-syncs-the-crdt-the-box-is-reached-directly.md) (the box holds immovable, sensitive resources; this names which resources are actually forced to be box-only), [ADR-0061](0061-local-books-reads-facts-from-the-mirror-reports-live-and-writes-through-one-approved-verb.md) (Local Books serves facts from the mirror), [ADR-0064](0064-the-local-books-mirror-keeps-one-realm-cdc-cursor-table-existence-is-the-per-entity-init-latch.md) (one realm CDC cursor), [ADR-0075](0075-self-host-is-a-single-partition-instance-behind-one-operator-supplied-bearer.md) (self-host removes the third-party-operator constraint that would otherwise block replicating a mirror to other devices)
 
@@ -22,7 +22,7 @@ Checked directly against each provider's own behavior:
 ## Consequences
 
 - "Cloud-upstream apps refuse the mesh, materialize centrally" (the working assumption since ADR-0072/0073) is correct for Local Books by external necessity, and was never a universal law. Any future cloud-upstream app integration must check its upstream's own OAuth concurrency policy before assuming either topology; do not generalize Local Books' constraint or Gmail's freedom to a new provider without checking.
-- Gmail can ship as a genuinely independent per-device materializer from day one: no box, no always-on machine, no replication channel required for it to work standalone on a phone.
+- Gmail can ship as a genuinely independent per-device materializer: no box, no always-on machine, and no replication channel are needed for a device to hold its own grant and mirror. "Device" means a machine that can run the engine. This concurrency freedom never became a phone client: [ADR-0116](0116-local-mail-is-desktop-first-one-bun-engine-no-background-mail-service.md) makes Local Mail desktop-first, and [ADR-0098](0098-local-mail-state-round-trips-through-gmail.md) gives the phone Gmail's own app. What Google's ceiling buys is many desktops, not a mobile port.
 - Local Books on a device with no reachable box stays read-unavailable under today's model. Closing that gap requires either keeping the box reachable when needed (cheapest, already works) or building box-to-device mirror replication (new scope, not built, and only worth it if offline book-browsing on a device with no box access becomes a real product requirement).
 - ADR-0079's framing of "the box holds the heavy, immovable, sensitive resources" should be read as a per-resource fact to verify, not a default assumed for every future cloud-upstream integration.
 
