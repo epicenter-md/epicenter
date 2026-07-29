@@ -776,8 +776,10 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 							},
 							aiGenerated: readBoolean(form.aiGenerated),
 							videoSize: file.size,
-							// null when the container is not MP4, meaning "cannot enforce
-							// here"; TikTok stays the backstop. See mp4-duration.ts.
+							// null when the container is not MP4. For Direct Post the
+							// policy REFUSES that rather than deferring to TikTok:
+							// checking length is a documented client responsibility, so
+							// an unverifiable file fails closed. See mp4-duration.ts.
 							durationSec: readMp4DurationSec(bytes),
 						},
 					});

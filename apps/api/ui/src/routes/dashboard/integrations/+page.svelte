@@ -35,7 +35,9 @@
 	import {
 		COMMERCIAL_LABELS,
 		createPublishIntentKeeper,
+		createSessionIntentKeyStore,
 		DECLARATION_TEXT,
+		isAmbiguousPublishFailure,
 		declarationFor,
 		type PublishAttempt,
 		type PublishIntent,
@@ -86,11 +88,18 @@
 	} | null>(null);
 
 	/**
-	 * Owns the idempotency key across retries. Created once for the page: the
-	 * whole point is that it OUTLIVES a submission, so a timeout and its retry
-	 * send the same key.
+	 * Owns the idempotency key across retries AND across reloads. Backed by
+	 * sessionStorage because reloading is the natural reaction to a stalled
+	 * request, and a keeper that only lived in this module would lose the claim
+	 * exactly when it matters most. Degrades to in-memory when storage is
+	 * unavailable; see publish-intent.ts.
 	 */
-	const keeper = createPublishIntentKeeper(() => crypto.randomUUID());
+	const keeper = createPublishIntentKeeper(
+		() => crypto.randomUUID(),
+		createSessionIntentKeyStore(
+			typeof sessionStorage === 'undefined' ? null : sessionStorage,
+		),
+	);
 
 	let videoFile = $state<File | null>(null);
 	/** Object URL for the preview. Revoked whenever the file is replaced. */
@@ -444,20 +453,21 @@
 		busy = false;
 
 		if (error) {
-			// An UNRESOLVED outcome is not a failure to retry. TikTok may have
-			// created the post, so the key is deliberately NOT released: the intent
-			// keeps its claim, the surface stops offering to post, and the remedy is
-			// to read the attempt's status.
-			// Narrowed by variant: only a server refusal can carry these fields, and a
-			// local fetch failure (RequestFailed) is never a confirmed provider call.
-			if (error.name === 'ServerRefused' && error.unresolved) {
+			// The rule lives in publish-intent.ts so it is unit-tested rather than
+			// buried in a handler: a LOST BROWSER RESPONSE is ambiguous exactly like
+			// a server-reported one, because the request may have reached the Worker,
+			// which may have reached TikTok.
+			const responseLost = error.name === 'RequestFailed';
+			if (isAmbiguousPublishFailure(error)) {
 				unresolved = {
 					connectionId,
-					attemptId: error.attemptId ?? null,
-					publishId: error.publishId ?? null,
-					detail: error.message,
+					attemptId: error.name === 'ServerRefused' ? (error.attemptId ?? null) : null,
+					publishId: error.name === 'ServerRefused' ? (error.publishId ?? null) : null,
+					detail: responseLost
+						? 'The connection dropped before Epicenter saw TikTok\u2019s answer, so this post may or may not have been created. Retrying reuses the same request, so it cannot post twice. Check the attempts below before doing anything else.'
+						: error.message,
 				};
-				if (error.publishId) {
+				if (error.name === 'ServerRefused' && error.publishId) {
 					lastPublish = {
 						connectionId,
 						publishId: error.publishId,
@@ -465,10 +475,13 @@
 						message: error.message,
 					};
 				}
+				// Deliberately NOT keeper.settle(): the key must survive so a retry
+				// collides with the claim instead of starting a new intent.
 				refreshAttempts(connectionId);
-				toast.error(error.message, { duration: 15_000 });
+				toast.error(unresolved.detail, { duration: 15_000 });
 				return;
 			}
+
 			// A definite refusal AFTER the attempt was claimed leaves that key spent,
 			// so release it and let a corrected post start a new intent. (Validation
 			// refusals happen before any claim, so releasing here is harmless.)
