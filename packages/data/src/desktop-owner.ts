@@ -77,15 +77,16 @@ export async function createDesktopEpicenterOwner({
 	 * Explicit disconnect is the only way out, which means a surface that dies
 	 * abruptly does not leave. A WebView reload, crash, or kill leaves its id in
 	 * this set and its {@link OpenDocument}s in `documents`, each holding a live
-	 * row document, until the host process exits. The observation socket dying is
-	 * the one honest death certificate the host receives, and it carries no
-	 * surface identity to attribute it to.
+	 * row document, until the host process exits. Observation socket loss is the
+	 * only related signal the host receives, and it carries no surface identity
+	 * to attribute it to or proof that the surface died.
 	 *
 	 * That is a known retention cost rather than a correctness one: a stale
 	 * member can issue nothing, because the surface that could have named it is
-	 * gone. Closing it means putting identity on the observe socket and treating
-	 * its close as a disconnect, which is a change to what the host knows about
-	 * surface lifetime and belongs in its own record.
+	 * gone. Socket close cannot simply become `disconnect`: transient carrier
+	 * gaps are recoverable and the existing row-document handles must survive
+	 * them. Reclamation therefore needs a real lease or terminal-death protocol,
+	 * not an unload callback or a query parameter.
 	 */
 	const surfaces = new Set<string>();
 	const documents = new Map<number, OpenDocument>();

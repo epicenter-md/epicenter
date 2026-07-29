@@ -141,15 +141,17 @@ the same commit at different times through different code.
 - **A surface that dies without disconnecting is retained until the host process
   exits.** Membership is added by `open` and removed only by an explicit
   `disconnect`, so a reloaded, crashed, or killed WebView leaves its registration
-  and every row document it opened behind. The host does receive one honest
-  death signal, the observation socket closing, but that socket carries no
-  surface identity, so nothing can attribute it. A retained member can issue
-  nothing, which is why this is a leak rather than a correctness failure.
-  Closing it means putting surface identity on the observe socket and treating
-  its close as a disconnect, which changes what the host knows about surface
-  lifetime and needs its own record. An unload-time `disconnect` is not that fix:
-  `pagehide` does not fire on crash or kill, and a request issued during unload
-  is not guaranteed to be sent.
+  and every row document it opened behind. Observation socket loss is the only
+  related signal the host receives, but it carries neither surface identity nor
+  proof that the surface died, so nothing can attribute it. A retained member
+  can issue nothing, which is why this is a leak rather than a correctness
+  failure.
+  Socket close cannot simply become `disconnect`: a transient carrier gap is
+  recoverable under law 6, while disconnect disposes the row documents that
+  existing handles still name. Reclamation needs a lease or terminal-death
+  protocol that distinguishes those lifetimes. An unload-time `disconnect` is
+  not that protocol: `pagehide` does not fire on crash or kill, and a request
+  issued during unload is not guaranteed to be sent.
 
 ## Considered alternatives
 
