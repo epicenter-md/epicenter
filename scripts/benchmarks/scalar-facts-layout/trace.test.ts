@@ -329,7 +329,7 @@ describe('actual V1 canonical bytes', () => {
 				kind: 'row',
 				namespace: 'so.epicenter.ns00',
 				rowId: '00000000000000000000000z',
-				table: 'collection0001',
+				tableName: 'collection0001',
 			},
 			fields: { body: 'xx', ordinal: 5, phase: 1 },
 			presence: 'present',
