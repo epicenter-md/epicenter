@@ -22,8 +22,8 @@
  * here yet.
  */
 
-import { recording, type RecordingNamespace } from './recording.js';
-import { transcription, type TranscriptionNamespace } from './transcription.js';
+import { type RecordingNamespace, recording } from './recording.js';
+import { type TranscriptionNamespace, transcription } from './transcription.js';
 
 export type EpicenterHandle = {
 	/** Capture audio through Epicenter's host recorder. */
@@ -35,21 +35,6 @@ export type EpicenterHandle = {
 /** The one Epicenter handle. */
 export const epicenter: EpicenterHandle = { recording, transcription };
 
-export type {
-	PublishedRecording,
-	Recording,
-	RecordingEnded,
-	RecordingEndedReason,
-	RecordingNamespace,
-	Unsubscribe,
-} from './recording.js';
-export type {
-	AppliedHints,
-	Transcript,
-	TranscriptionCapabilities,
-	TranscriptionHints,
-	TranscriptionNamespace,
-} from './transcription.js';
 export type {
 	AudioUnreadable,
 	CapabilityUnavailable,
@@ -70,3 +55,18 @@ export type {
 	TranscriptionFailed,
 	TranscriptionUnavailable,
 } from './errors.js';
+export type {
+	PublishedRecording,
+	Recording,
+	RecordingEnded,
+	RecordingEndedReason,
+	RecordingNamespace,
+	Unsubscribe,
+} from './recording.js';
+export type {
+	AppliedHints,
+	Transcript,
+	TranscriptionCapabilities,
+	TranscriptionHints,
+	TranscriptionNamespace,
+} from './transcription.js';

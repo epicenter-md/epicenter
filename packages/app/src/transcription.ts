@@ -13,19 +13,25 @@
  * `transcribe` reads it back host-side.
  */
 
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import {
 	type TranscribeError,
 	type TranscriptionCapabilitiesError,
 	TranscriptionErrors,
 } from './errors.js';
-import { callHost, isHostRejection, nudgeHost, taggedMessage, taggedName } from './host.js';
+import {
+	callHost,
+	isHostRejection,
+	nudgeHost,
+	taggedMessage,
+	taggedName,
+} from './host.js';
 import {
 	COMMANDS,
 	type WireLocalTranscriptionReadiness,
 	type WireTranscriptionOutcome,
 	type WireUnavailableReason,
 } from './protocol.js';
-import { Err, Ok, type Result } from 'wellcrafted/result';
 
 /** What the transcription route currently accepts. */
 export type TranscriptionCapabilities = {

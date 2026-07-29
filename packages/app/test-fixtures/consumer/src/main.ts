@@ -92,7 +92,8 @@ async function finish(audioBlobId: string) {
 		});
 	if (transcribeError) return show(transcribeError.message);
 
-	if (result.outcome === 'empty-audio') return show('That recording was silent.');
+	if (result.outcome === 'empty-audio')
+		return show('That recording was silent.');
 	if (transcript) transcript.textContent = result.text;
 	show(`Transcribed with ${result.modelId}.`);
 }

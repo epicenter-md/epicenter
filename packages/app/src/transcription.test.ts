@@ -61,7 +61,9 @@ test('an unusable route is a failure of the capability, not a successful answer'
 	expect(data).toBeNull();
 	expect(error?.name).toBe('TranscriptionUnavailable');
 	expect(error).toMatchObject({ reason: 'no-active-model' });
-	expect(error?.message).toBe('Choose a transcription model in Epicenter Home.');
+	expect(error?.message).toBe(
+		'Choose a transcription model in Epicenter Home.',
+	);
 });
 
 test('transcribe names audio and hints, never a model', async () => {

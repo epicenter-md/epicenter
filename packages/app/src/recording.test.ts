@@ -116,7 +116,10 @@ test('stop publishes the audio it names', async () => {
 // something an app has to guess at.
 test('stopping a recording this app no longer holds is typed', async () => {
 	installHost({
-		reject: { name: 'NotRecording', message: 'that recording already finished' },
+		reject: {
+			name: 'NotRecording',
+			message: 'that recording already finished',
+		},
 	});
 
 	const { error } = await epicenter.recording.stop('blob_gone');

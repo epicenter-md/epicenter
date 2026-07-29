@@ -22,11 +22,12 @@
  * still correct, just less responsive.
  */
 
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import {
-	type ObserveRecordingError,
-	type ResolveRecordingError,
 	type CurrentRecordingError,
+	type ObserveRecordingError,
 	RecordingErrors,
+	type ResolveRecordingError,
 	type StartRecordingError,
 } from './errors.js';
 import {
@@ -43,7 +44,6 @@ import {
 	type WireRecordingEndedEvent,
 	type WireStoppedRecording,
 } from './protocol.js';
-import { Err, Ok, type Result } from 'wellcrafted/result';
 
 /** Why a capture ended on its own, and what the person can do about it. */
 export type RecordingEndedReason =

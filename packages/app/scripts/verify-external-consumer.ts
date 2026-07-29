@@ -51,7 +51,9 @@ async function run(command: string[], cwd: string, label: string) {
 	]);
 	await proc.exited;
 	if (proc.exitCode !== 0) {
-		console.error(`FAILED: ${label}\n$ ${command.join(' ')}\n${stdout}${stderr}`);
+		console.error(
+			`FAILED: ${label}\n$ ${command.join(' ')}\n${stdout}${stderr}`,
+		);
 		process.exit(1);
 	}
 	console.log(`  ok  ${label}`);
