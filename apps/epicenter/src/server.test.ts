@@ -119,9 +119,6 @@ describe('sendObservationFrame', () => {
 		expect(() =>
 			sendObservationFrame(
 				{
-					send() {
-						throw new Error('portable send must not be used');
-					},
 					raw: { send: () => status },
 				},
 				frame,
@@ -133,14 +130,17 @@ describe('sendObservationFrame', () => {
 		expect(() =>
 			sendObservationFrame(
 				{
-					send() {
-						throw new Error('portable send must not be used');
-					},
 					raw: { send: () => 42 },
 				},
 				frame,
 			),
 		).not.toThrow();
+	});
+
+	test('fails closed without Bun delivery status', () => {
+		expect(() =>
+			sendObservationFrame({}, frame),
+		).toThrow('no Bun delivery status');
 	});
 });
 

@@ -86,7 +86,6 @@ const MAX_BROWSER_SESSIONS = 32;
 const SESSION_SHELL = `<!doctype html><html><head><meta charset="utf-8"><title>Epicenter</title><script>window.__EPICENTER_SESSION_READY__.then(() => window.location.reload())</script></head><body></body></html>`;
 
 type ObservationWebSocket = {
-	send(data: string): void;
 	raw?: unknown;
 };
 
@@ -105,8 +104,7 @@ export function sendObservationFrame(
 ): void {
 	const payload = JSON.stringify(frame);
 	if (ws.raw === undefined) {
-		ws.send(payload);
-		return;
+		throw new Error('Observation carrier has no Bun delivery status');
 	}
 	const status = (ws.raw as { send(data: string): number }).send(payload);
 	if (status > 0) return;
