@@ -1,10 +1,8 @@
 import { expect, test } from 'bun:test';
 import {
 	buildAuthorizeUrl,
-	createCodeVerifier,
 	createOAuthStateValue,
 	createTikTokOAuthClient,
-	deriveCodeChallenge,
 } from './oauth.js';
 
 /** A fetch stand-in that records what it was called with. */
@@ -39,17 +37,13 @@ const GRANT_BODY = {
 	scope: 'user.info.basic,video.list,video.upload,video.publish',
 };
 
-test('the authorize URL comma-joins scopes and carries PKCE', async () => {
-	const verifier = createCodeVerifier();
-	const challenge = await deriveCodeChallenge(verifier);
-
+test('the authorize URL carries exactly the documented web parameters', () => {
 	const url = new URL(
 		buildAuthorizeUrl({
 			clientKey: 'client-key-123',
 			redirectUri: 'https://api.epicenter.so/api/integrations/tiktok/callback',
 			scopes: ['user.info.basic', 'video.publish'],
 			state: 'state-xyz',
-			codeChallenge: challenge,
 		}),
 	);
 
@@ -64,30 +58,68 @@ test('the authorize URL comma-joins scopes and carries PKCE', async () => {
 	expect(url.searchParams.get('client_id')).toBeNull();
 	expect(url.searchParams.get('response_type')).toBe('code');
 	expect(url.searchParams.get('state')).toBe('state-xyz');
-	expect(url.searchParams.get('code_challenge')).toBe(challenge);
-	expect(url.searchParams.get('code_challenge_method')).toBe('S256');
-	// The verifier itself must never leave the server.
-	expect(url.toString()).not.toContain(verifier);
+	expect(url.searchParams.get('redirect_uri')).toBe(
+		'https://api.epicenter.so/api/integrations/tiktok/callback',
+	);
+
+	// NO PKCE. TikTok's Login Kit for Web authorize contract lists client_key,
+	// scope, response_type, redirect_uri, state and optional disable_auto_auth;
+	// code_challenge is documented for the Desktop/mobile PUBLIC clients. This is
+	// a confidential client whose secret authenticates the exchange, so sending
+	// undocumented parameters would be hopeful at best and rejected at worst.
+	expect(url.searchParams.get('code_challenge')).toBeNull();
+	expect(url.searchParams.get('code_challenge_method')).toBeNull();
+
+	// Nothing beyond the documented set is sent.
+	expect([...url.searchParams.keys()].sort()).toEqual([
+		'client_key',
+		'redirect_uri',
+		'response_type',
+		'scope',
+		'state',
+	]);
 });
 
-test('state values and PKCE verifiers are unguessable and unique per ceremony', () => {
-	const states = new Set(
-		Array.from({ length: 50 }, () => createOAuthStateValue()),
+test('disable_auto_auth is opt-in and appears only when asked for', () => {
+	const withoutFlag = new URL(
+		buildAuthorizeUrl({
+			clientKey: 'ck',
+			redirectUri: 'https://x/cb',
+			scopes: ['user.info.basic'],
+			state: 's',
+		}),
 	);
-	const verifiers = new Set(
-		Array.from({ length: 50 }, () => createCodeVerifier()),
+	expect(withoutFlag.searchParams.get('disable_auto_auth')).toBeNull();
+
+	// Set when connecting, so a creator adding a SECOND account is shown consent
+	// instead of being silently re-authorized back into the first one.
+	const withFlag = new URL(
+		buildAuthorizeUrl({
+			clientKey: 'ck',
+			redirectUri: 'https://x/cb',
+			scopes: ['user.info.basic'],
+			state: 's',
+			disableAutoAuth: true,
+		}),
+	);
+	expect(withFlag.searchParams.get('disable_auto_auth')).toBe('1');
+});
+
+test('state values are unguessable and unique per ceremony', () => {
+	// With no PKCE, `state` carries the whole CSRF and session-fixation defense,
+	// so uniqueness and entropy are load-bearing rather than incidental.
+	const states = new Set(
+		Array.from({ length: 100 }, () => createOAuthStateValue()),
 	);
 
-	expect(states.size).toBe(50);
-	expect(verifiers.size).toBe(50);
-	// RFC 7636 requires a 43-128 character verifier.
-	for (const verifier of verifiers) {
-		expect(verifier.length).toBeGreaterThanOrEqual(43);
-		expect(verifier.length).toBeLessThanOrEqual(128);
+	expect(states.size).toBe(100);
+	for (const state of states) {
+		expect(state.length).toBeGreaterThanOrEqual(43);
+		expect(state).toMatch(/^[A-Za-z0-9_-]+$/);
 	}
 });
 
-test('exchangeCode posts the client secret and PKCE verifier, and reads the grant', async () => {
+test('exchangeCode posts exactly the documented web exchange body', async () => {
 	const { send, calls } = recordingFetch(() => jsonResponse(GRANT_BODY));
 	const oauth = createTikTokOAuthClient({
 		clientKey: 'ck',
@@ -98,7 +130,6 @@ test('exchangeCode posts the client secret and PKCE verifier, and reads the gran
 	const { data, error } = await oauth.exchangeCode({
 		code: 'auth-code',
 		redirectUri: 'https://api.epicenter.so/api/integrations/tiktok/callback',
-		codeVerifier: 'verifier-value',
 	});
 
 	expect(error).toBeNull();
@@ -122,7 +153,18 @@ test('exchangeCode posts the client secret and PKCE verifier, and reads the gran
 	expect(call?.form.get('grant_type')).toBe('authorization_code');
 	expect(call?.form.get('client_key')).toBe('ck');
 	expect(call?.form.get('client_secret')).toBe('cs');
-	expect(call?.form.get('code_verifier')).toBe('verifier-value');
+	expect(call?.form.get('redirect_uri')).toBe(
+		'https://api.epicenter.so/api/integrations/tiktok/callback',
+	);
+	// No code_verifier: TikTok's web token exchange does not specify one.
+	expect(call?.form.get('code_verifier')).toBeNull();
+	expect([...(call?.form.keys() ?? [])].sort()).toEqual([
+		'client_key',
+		'client_secret',
+		'code',
+		'grant_type',
+		'redirect_uri',
+	]);
 });
 
 test('a partial consent is reported as the narrower granted scope set', async () => {
@@ -138,7 +180,6 @@ test('a partial consent is reported as the narrower granted scope set', async ()
 	const { data } = await oauth.exchangeCode({
 		code: 'c',
 		redirectUri: 'https://x/cb',
-		codeVerifier: 'v',
 	});
 
 	// Requested four, granted one. The caller must store what was GRANTED.
@@ -165,7 +206,6 @@ test("TikTok's flat OAuth error body becomes a named provider rejection", async 
 	const { data, error } = await oauth.exchangeCode({
 		code: 'stale',
 		redirectUri: 'https://x/cb',
-		codeVerifier: 'v',
 	});
 
 	expect(data).toBeNull();
@@ -191,7 +231,6 @@ test('an error body returned with HTTP 200 is still a failure', async () => {
 	const { error } = await oauth.exchangeCode({
 		code: 'c',
 		redirectUri: 'https://x/cb',
-		codeVerifier: 'v',
 	});
 
 	expect(error?.name).toBe('ProviderRejected');
@@ -210,7 +249,6 @@ test('an empty `error` string on a success body is treated as success', async ()
 	const { data, error } = await oauth.exchangeCode({
 		code: 'c',
 		redirectUri: 'https://x/cb',
-		codeVerifier: 'v',
 	});
 
 	expect(error).toBeNull();
@@ -229,7 +267,6 @@ test('a 2xx grant missing refresh_token is refused rather than half-stored', asy
 	const { data, error } = await oauth.exchangeCode({
 		code: 'c',
 		redirectUri: 'https://x/cb',
-		codeVerifier: 'v',
 	});
 
 	expect(data).toBeNull();

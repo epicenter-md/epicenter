@@ -19,7 +19,6 @@ CREATE TABLE "tiktok_connection" (
 CREATE TABLE "tiktok_oauth_state" (
 	"state" text PRIMARY KEY NOT NULL,
 	"user_id" text NOT NULL,
-	"code_verifier" text NOT NULL,
 	"return_path" text NOT NULL,
 	"expires_at" timestamp NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL

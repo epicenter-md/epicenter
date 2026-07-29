@@ -265,20 +265,21 @@ test('connect returns a TikTok consent URL and binds a single-use state to this 
 	expect(authorize.searchParams.get('redirect_uri')).toBe(
 		'https://api.epicenter.so/api/integrations/tiktok/callback',
 	);
-	expect(authorize.searchParams.get('code_challenge_method')).toBe('S256');
 
-	// The state row is bound to the initiating Epicenter user and expires.
+	// The state row is bound to the initiating Epicenter user and expires. With
+	// no PKCE in the web flow, this binding plus single-use consumption IS the
+	// CSRF defense, so it is asserted directly.
 	const state = inserted[0] as {
 		state: string;
 		userId: string;
-		codeVerifier: string;
 		expiresAt: Date;
 	};
 	expect(state.userId).toBe('user-42');
 	expect(state.state).toBe(authorize.searchParams.get('state') ?? '');
 	expect(state.expiresAt.getTime()).toBeGreaterThan(Date.now());
-	// The PKCE verifier stays server-side; only its challenge travels.
-	expect(url).not.toContain(state.codeVerifier);
+	// No PKCE parameters reach TikTok's web authorize endpoint.
+	expect(authorize.searchParams.get('code_challenge')).toBeNull();
+	expect(authorize.searchParams.get('code_challenge_method')).toBeNull();
 });
 
 test('the client secret never reaches the browser', async () => {
@@ -346,7 +347,6 @@ test('a state minted by another Epicenter user cannot attach an account to this 
 			{
 				state: 's',
 				userId: 'user-who-started-it',
-				codeVerifier: 'v',
 				returnPath: '/dashboard/integrations',
 				expiresAt: new Date(Date.now() + 60_000),
 			},
@@ -378,7 +378,6 @@ test('an expired state is refused even though it was consumed', async () => {
 			{
 				state: 's',
 				userId: 'user-1',
-				codeVerifier: 'v',
 				returnPath: '/dashboard/integrations',
 				expiresAt: new Date(Date.now() - 1_000),
 			},

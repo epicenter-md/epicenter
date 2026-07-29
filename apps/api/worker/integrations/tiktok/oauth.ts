@@ -93,46 +93,56 @@ function toBase64Url(bytes: Uint8Array): string {
 		.replace(/=+$/, '');
 }
 
-/** A 32-byte PKCE verifier, base64url-encoded (43 chars, within RFC 7636's 43-128). */
-export function createCodeVerifier(): string {
-	return toBase64Url(
-		crypto.getRandomValues(new Uint8Array(new ArrayBuffer(32))),
-	);
-}
-
-/** An opaque, unguessable OAuth `state`. */
+/**
+ * An opaque, unguessable OAuth `state`: 32 bytes of CSPRNG output.
+ *
+ * With no PKCE in this flow (see {@link buildAuthorizeUrl}), `state` carries the
+ * full CSRF and session-fixation defense, so its unguessability matters. The
+ * rest of the defense is storage-side: the row is single-use
+ * (`DELETE ... RETURNING`), expiry-bound, and bound to the Epicenter user who
+ * started the ceremony.
+ */
 export function createOAuthStateValue(): string {
 	return toBase64Url(
 		crypto.getRandomValues(new Uint8Array(new ArrayBuffer(32))),
 	);
 }
 
-/** The S256 challenge for a verifier. TikTok supports PKCE on the web flow. */
-export async function deriveCodeChallenge(verifier: string): Promise<string> {
-	const digest = await crypto.subtle.digest(
-		'SHA-256',
-		new TextEncoder().encode(verifier),
-	);
-	return toBase64Url(new Uint8Array(digest));
-}
-
 /**
- * Where the creator is sent to authorize. Scopes are comma-joined because that
- * is what TikTok parses; a space-joined list is silently read as one unknown
- * scope and the consent screen comes back empty.
+ * Where the creator is sent to authorize.
+ *
+ * The parameter set is exactly what TikTok's Login Kit for Web documents:
+ * `client_key`, `scope`, `response_type`, `redirect_uri`, `state`, and the
+ * optional `disable_auto_auth`. Scopes are comma-joined because that is what
+ * TikTok parses; a space-joined list is silently read as one unknown scope and
+ * the consent screen comes back empty.
+ *
+ * NO PKCE. TikTok documents `code_challenge`/`code_challenge_method` for the
+ * Desktop and mobile flows, where the client is PUBLIC and cannot hold a
+ * secret. This is a CONFIDENTIAL web client: the client secret lives only on
+ * the Worker and authenticates the code exchange, which is the protection PKCE
+ * substitutes for when no secret exists. Sending PKCE parameters TikTok's web
+ * authorize contract does not list is at best ignored and at worst rejected, so
+ * they are absent rather than sent hopefully.
  */
 export function buildAuthorizeUrl({
 	clientKey,
 	redirectUri,
 	scopes,
 	state,
-	codeChallenge,
+	disableAutoAuth,
 }: {
 	clientKey: string;
 	redirectUri: string;
 	scopes: readonly string[];
 	state: string;
-	codeChallenge: string;
+	/**
+	 * Ask TikTok to always show the consent screen instead of silently
+	 * re-authorizing a already-approved account. Left off by default; the
+	 * connect flow sets it so a creator adding a SECOND account is never
+	 * auto-authorized back into the first one.
+	 */
+	disableAutoAuth?: boolean;
 }): string {
 	const url = new URL(AUTHORIZE_URL);
 	url.searchParams.set('client_key', clientKey);
@@ -140,8 +150,7 @@ export function buildAuthorizeUrl({
 	url.searchParams.set('response_type', 'code');
 	url.searchParams.set('redirect_uri', redirectUri);
 	url.searchParams.set('state', state);
-	url.searchParams.set('code_challenge', codeChallenge);
-	url.searchParams.set('code_challenge_method', 'S256');
+	if (disableAutoAuth) url.searchParams.set('disable_auto_auth', '1');
 	return url.toString();
 }
 
@@ -304,15 +313,20 @@ export function createTikTokOAuthClient({
 	fetch?: typeof globalThis.fetch;
 }) {
 	return {
-		/** Exchange an authorization code (plus its PKCE verifier) for a grant. */
+		/**
+		 * Exchange an authorization code for a grant.
+		 *
+		 * The body is exactly what TikTok's web `authorization_code` exchange
+		 * documents: `client_key`, `client_secret`, `code`, `grant_type`, and
+		 * `redirect_uri`. No `code_verifier`: this is a confidential client and the
+		 * secret is what authenticates the exchange (see {@link buildAuthorizeUrl}).
+		 */
 		async exchangeCode({
 			code,
 			redirectUri,
-			codeVerifier,
 		}: {
 			code: string;
 			redirectUri: string;
-			codeVerifier: string;
 		}): Promise<Result<TikTokTokenGrant, TikTokOAuthError>> {
 			const endpoint = 'oauth/token (authorization_code)';
 			const { data, error } = await postForm(
@@ -324,7 +338,6 @@ export function createTikTokOAuthClient({
 					code,
 					grant_type: 'authorization_code',
 					redirect_uri: redirectUri,
-					code_verifier: codeVerifier,
 				},
 				send,
 			);
