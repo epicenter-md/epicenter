@@ -64,10 +64,17 @@ export async function createDesktopEpicenterOwner({
 }) {
 	const path = epicenterPath({ directory });
 	const epicenter = await openBunEpicenter({ path });
-	const surfaces = new Map<string, number>();
+	/**
+	 * The surfaces that have opened and not yet disconnected.
+	 *
+	 * Membership is the whole of it. There is no generation, token, or epoch to
+	 * compare: a surface either holds an open registration or it does not, and an
+	 * operation from one that does not is refused. Nothing on the wire carries a
+	 * fencing token, so minting one here would only be a number nobody checks.
+	 */
+	const surfaces = new Set<string>();
 	const documents = new Map<number, OpenDocument>();
 	let operationTail = Promise.resolve();
-	let nextGeneration = 0;
 	let nextDocumentId = 0;
 
 	async function closeDocument(documentId: number): Promise<void> {
@@ -82,9 +89,8 @@ export async function createDesktopEpicenterOwner({
 		operation: DesktopOperation,
 	): Promise<unknown> {
 		if (operation.kind === 'open') {
-			const generation = ++nextGeneration;
-			surfaces.set(surfaceId, generation);
-			return generation;
+			surfaces.add(surfaceId);
+			return undefined;
 		}
 		if (operation.kind === 'disconnect') {
 			for (const [documentId, opened] of documents) {
@@ -94,7 +100,9 @@ export async function createDesktopEpicenterOwner({
 			return undefined;
 		}
 		if (!surfaces.has(surfaceId)) {
-			const cause = new Error('Desktop Epicenter moved to a newer surface');
+			const cause = new Error(
+				'Desktop Epicenter holds no open surface for this request',
+			);
 			cause.name = EPICENTER_STORAGE_MOVED_ERROR_NAME;
 			throw cause;
 		}
