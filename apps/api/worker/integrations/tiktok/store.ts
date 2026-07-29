@@ -73,23 +73,34 @@ export async function createOAuthState(
 }
 
 /**
- * Consume a state exactly once.
+ * Consume a state exactly once, for THIS user.
  *
  * `DELETE ... RETURNING` is the single-use guarantee: the delete and the read
  * are one statement, so two concurrent callbacks carrying the same state cannot
  * both receive a row. A replayed or forged state simply returns `null`.
  *
+ * `userId` is part of the WHERE, not a check afterwards, and that difference is
+ * the point. Matching on state alone would let a leaked state value be replayed
+ * by anyone signed in: the row would be deleted (cancelling the real user's
+ * in-flight ceremony) and only then found to belong to someone else. Scoping the
+ * delete means another user's callback matches nothing and destroys nothing.
+ *
  * Expiry is enforced by the CALLER against the returned `expiresAt` rather than
- * in the `WHERE`, so an expired state is still consumed (removed) instead of
- * being left behind for a later replay attempt.
+ * in the `WHERE`, so an expired state belonging to this user is still consumed
+ * (removed) instead of being left behind for a later replay attempt.
  */
 export async function consumeOAuthState(
 	db: Db,
-	state: string,
+	{ state, userId }: { state: string; userId: string },
 ): Promise<typeof tiktokOauthState.$inferSelect | null> {
 	const rows = await db
 		.delete(tiktokOauthState)
-		.where(eq(tiktokOauthState.state, state))
+		.where(
+			and(
+				eq(tiktokOauthState.state, state),
+				eq(tiktokOauthState.userId, userId),
+			),
+		)
 		.returning();
 	return rows[0] ?? null;
 }

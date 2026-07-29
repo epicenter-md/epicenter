@@ -385,3 +385,67 @@ test('a row encrypted under an older key version is re-encrypted forward on next
 	expect(state.row.accessTokenCiphertext).toStartWith('v2.');
 	expect(state.row.refreshTokenCiphertext).toStartWith('v2.');
 });
+
+test('a refresh that returns a DIFFERENT account fails closed and persists nothing', async () => {
+	// Nothing normal produces this. If it happens, continuing would mean holding
+	// credentials for account B on a row the dashboard names as account A, and
+	// the next publish would post to the wrong creator.
+	const cipher = await cipherV1();
+	const row = await buildRow(cipher, { accessExpiresInMs: -1000 });
+	const { db, state, counters } = fakeDb(row);
+	const { send } = refreshEndpoint({
+		access_token: 'act.rotated',
+		expires_in: 86_400,
+		refresh_token: 'rft.rotated',
+		refresh_expires_in: 31_536_000,
+		// The row is open-1.
+		open_id: 'someone-elses-account',
+		scope: 'user.info.basic,video.publish',
+	});
+
+	const { data, error } = await ensureAccessToken({
+		db,
+		cipher,
+		oauth: createTikTokOAuthClient({
+			clientKey: 'ck',
+			clientSecret: 'cs',
+			fetch: send,
+		}),
+		connectionId: 'conn-1',
+	});
+
+	expect(data).toBeNull();
+	expect(error?.name).toBe('ConnectionIdentityChanged');
+	expect(error).toMatchObject({
+		expectedOpenId: 'open-1',
+		actualOpenId: 'someone-elses-account',
+	});
+	// No token from the wrong account was written or returned.
+	expect(counters.updates).toBe(0);
+	expect(state.row.accessTokenCiphertext).toBe(row.accessTokenCiphertext);
+	expect(state.row.refreshTokenCiphertext).toBe(row.refreshTokenCiphertext);
+});
+
+test('a refresh for the SAME account proceeds normally', async () => {
+	// The guard must not fire on the ordinary path.
+	const cipher = await cipherV1();
+	const { db, state } = fakeDb(
+		await buildRow(cipher, { accessExpiresInMs: -1000 }),
+	);
+	const { send } = refreshEndpoint();
+
+	const { data, error } = await ensureAccessToken({
+		db,
+		cipher,
+		oauth: createTikTokOAuthClient({
+			clientKey: 'ck',
+			clientSecret: 'cs',
+			fetch: send,
+		}),
+		connectionId: 'conn-1',
+	});
+
+	expect(error).toBeNull();
+	expect(data?.openId).toBe('open-1');
+	expect(state.row.accessTokenCiphertext).toStartWith('v1.');
+});

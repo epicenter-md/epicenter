@@ -63,7 +63,8 @@ export type DirectPostChoices = {
 	videoSize: number;
 	/**
 	 * Seconds, or `null` when the container could not be parsed server-side.
-	 * `null` means "cannot enforce here", never "fine": see mp4-duration.ts.
+	 * For Direct Post `null` is a REFUSAL, not a pass: see the duration check in
+	 * validateDirectPost.
 	 */
 	durationSec: number | null;
 };
@@ -226,14 +227,39 @@ export function validateDirectPost({
 		};
 	}
 
-	// Only enforced when the duration is actually known. `null` means the
-	// container could not be parsed here, and inventing a pass or a fail from
-	// that would be worse than letting TikTok answer.
+	// Duration FAILS CLOSED for Direct Post. TikTok's guidelines make checking
+	// the video length a client responsibility, so an unknown length is a check
+	// this surface did not perform, not a check TikTok will perform for us. The
+	// canary accepts MP4 only, so unparseable means the file is not what this
+	// path supports and must not reach the irreversible init.
+	//
+	// (The inbox draft path is separate and keeps its own contract: the creator
+	// finishes that post inside the TikTok app, which does its own checking.)
 	if (
-		choices.durationSec !== null &&
-		creatorInfo.maxVideoDurationSec > 0 &&
-		choices.durationSec > creatorInfo.maxVideoDurationSec
+		choices.durationSec === null ||
+		!Number.isFinite(choices.durationSec) ||
+		choices.durationSec <= 0
 	) {
+		return {
+			violation: {
+				field: 'duration',
+				message:
+					'Epicenter could not read this video’s length. Direct Post requires an MP4 whose duration can be verified before publishing.',
+			},
+		};
+	}
+	// A missing or zero account ceiling is equally unverifiable: without a live
+	// maximum there is nothing to check the length against.
+	if (creatorInfo.maxVideoDurationSec <= 0) {
+		return {
+			violation: {
+				field: 'duration',
+				message:
+					'TikTok did not report a maximum video length for this account, so the length cannot be verified. Try again in a moment.',
+			},
+		};
+	}
+	if (choices.durationSec > creatorInfo.maxVideoDurationSec) {
 		return {
 			violation: {
 				field: 'duration',
