@@ -20,21 +20,32 @@
  * A host that declines can decline in three ways, and they are told apart by
  * the shape of what comes back rather than by matching on message text:
  *
- * - **A plain string.** Tauri's access-control layer rejects with a string
- *   (`InvokeError` wrapping a JSON string) when a window may not call a
- *   command. None of the commands this package invokes report a failure that
- *   way: theirs are tagged objects. So a string means the call was never
- *   routed, which is `CapabilityUnavailable`.
+ * - **A plain string.** Tauri serializes framework failures to strings, and one
+ *   of them is its access-control layer refusing to route the call. Only that
+ *   one is `CapabilityUnavailable`; see `REFUSED_MARKER` below.
  * - **A tagged object.** The command ran and reported a typed failure. It is
  *   handed back to the capability that asked for it, which knows which of its
  *   own names it maps to.
  * - **Anything else**, including an `Error` instance. Something broke that is
  *   not part of the contract. It travels as an opaque cause and each capability
  *   folds it into its own `*Failed` variant, never into an "unavailable".
+ *
+ * # Events are scoped to this window, never to "any"
+ *
+ * Subscriptions go through `getCurrentWebviewWindow().listen`, not the bare
+ * `listen` from `@tauri-apps/api/event`, and the difference is isolation rather
+ * than style. Bare `listen` registers the target `Any`, and Tauri's dispatcher
+ * short-circuits an `Any` listener past the emit's own filter
+ * (`match_any_or_filter`, `event/listener.rs`). A host that carefully emits to
+ * one owner's label would still reach every app window that happened to
+ * subscribe. Scoping to the current webview window registers
+ * `WebviewWindow { label }`, which the emit filter matches only when the label
+ * is this window's, so an app hears about its own recordings and no one
+ * else's.
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import { type HostError, HostErrors } from './errors.js';
 
@@ -106,8 +117,9 @@ export async function observeHost<TPayload>(
 		// trade a published API for a private one to reclaim one function, and
 		// the failure it cleans up after is a missing grant, which is a build
 		// mistake that fails once at startup rather than in a loop.
-		const unlisten = await listen<TPayload>(event, ({ payload }) =>
-			handler(payload),
+		const unlisten = await getCurrentWebviewWindow().listen<TPayload>(
+			event,
+			({ payload }) => handler(payload),
 		);
 		// And unsubscribing is two steps that can half-succeed: the page's
 		// handler is dropped first, then the host is told to stop sending. If
