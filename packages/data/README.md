@@ -180,6 +180,42 @@ that scalar replacement cannot.
 Large immutable bytes are a different concern. Keep them in a blob or file
 plane rather than turning a scalar JSON value into an opaque byte container.
 
+## Observe staleness
+
+A bound handle reports when data reachable through it may be stale. It never
+pushes contents: you re-read through the handle you already have, which keeps
+one copy of the data and leaves you in charge of what you cache.
+
+```ts
+const stop = tasks.subscribe((invalidation) => {
+	if (invalidation.scope === 'table') return void rescan();
+	for (const rowId of invalidation.rowIds) void reread(rowId);
+});
+
+const stopTheme = settings.subscribe(() => void rereadTheme());
+```
+
+A table can name the rows that moved; a value cannot, because a value has no
+smaller identity than itself. `{ scope: 'table' }` means the handle cannot name
+them, so everything reachable through it may have moved. It arrives after an
+observation carrier gap, where a row deleted while the carrier was down left
+nothing behind to name.
+
+The rules that make this usable (ADR-0187):
+
+- **Invalidation is a superset.** It may over-report and never under-reports, so
+  ignoring the payload and re-reading everything is always correct.
+- **Registration is synchronous, does no I/O, and never fires initially.**
+  Subscribe, then read: nothing can land in between, and there is no first
+  delivery to discard.
+- **One call per commit per table.** A commit touching sixty-four rows of one
+  table calls a listener once with sixty-four ids.
+- **Delivery may duplicate.** Converge idempotently.
+- **Table scope supersedes** any row ids still being processed.
+
+`@epicenter/svelte`'s `fromTable` already spends the ids for you: it point-reads
+the named rows and rescans only on table scope or when a read cannot answer.
+
 ## Unions are not migrations
 
 A discriminated union inside one JSON field keeps the discriminant and its
