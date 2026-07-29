@@ -7,6 +7,7 @@
 	import LogOutIcon from '@lucide/svelte/icons/log-out';
 	import MoonIcon from '@lucide/svelte/icons/moon';
 	import SunIcon from '@lucide/svelte/icons/sun';
+	import PlugIcon from '@lucide/svelte/icons/plug-2';
 	import UserIcon from '@lucide/svelte/icons/user';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { mode, toggleMode } from 'mode-watcher';
@@ -69,6 +70,12 @@
 			<DropdownMenu.Item onclick={() => goto('/dashboard/account')}>
 				<UserIcon class="mr-2 size-4" />
 				Account
+			</DropdownMenu.Item>
+			<!-- Separate from Account on purpose: that page is how you sign IN to
+			     Epicenter, this one is accounts Epicenter can post TO. -->
+			<DropdownMenu.Item onclick={() => goto('/dashboard/integrations')}>
+				<PlugIcon class="mr-2 size-4" />
+				Integrations
 			</DropdownMenu.Item>
 			<DropdownMenu.Item onclick={openBillingPortal}>
 				<CreditCardIcon class="mr-2 size-4" />
