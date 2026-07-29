@@ -54,7 +54,7 @@ type OpenDocument = {
 	document: RowDocument;
 };
 
-export const EPICENTER_STORAGE_MOVED_ERROR_NAME = 'EpicenterStorageMovedError';
+export const EPICENTER_SURFACE_NOT_OPEN_ERROR_NAME = 'EpicenterSurfaceNotOpenError';
 
 /** Open the one Bun-owned desktop Epicenter and its trusted-surface RPC owner. */
 export async function createDesktopEpicenterOwner({
@@ -103,7 +103,7 @@ export async function createDesktopEpicenterOwner({
 			const cause = new Error(
 				'Desktop Epicenter holds no open surface for this request',
 			);
-			cause.name = EPICENTER_STORAGE_MOVED_ERROR_NAME;
+			cause.name = EPICENTER_SURFACE_NOT_OPEN_ERROR_NAME;
 			throw cause;
 		}
 

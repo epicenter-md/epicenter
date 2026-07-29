@@ -46,6 +46,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { epicenter } from '@epicenter/app';
+import { DESKTOP_EPICENTER_ROUTE } from '@epicenter/data/desktop';
 import {
 	defineLens,
 	defineTable,
@@ -357,6 +358,37 @@ test('two bindings in one document share one host surface and one carrier', asyn
 			.map((each) => each.error),
 	).toEqual([null]);
 	await waitFor(() => carrier?.readyState === WebSocket.CLOSED);
+});
+
+test('an operation from a surface that never opened is refused with 409', async () => {
+	// The one refusal the host can produce that no client bug is needed to
+	// reach, and the only place its name is load-bearing: nothing branches on
+	// `EpicenterSurfaceNotOpenError`, but it crosses the wire and picks the
+	// status, so a rename that missed one side would be invisible otherwise.
+	//
+	// The operation carries nothing but its `kind`, which is the assertion:
+	// membership is checked before the operation is looked at, so a request from
+	// a surface the host does not hold never reaches the store at all.
+	const response = await fetch(
+		new URL(DESKTOP_EPICENTER_ROUTE, harness.origin),
+		{
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({
+				surfaceId: 'a-surface-that-never-opened',
+				operation: { kind: 'value-get' },
+			}),
+		},
+	);
+
+	expect(response.status).toBe(409);
+	const envelope = (await response.json()) as {
+		error: { name: string; message: string } | null;
+	};
+	expect(envelope.error?.name).toBe('EpicenterSurfaceNotOpenError');
+	expect(envelope.error?.message).toBe(
+		'Desktop Epicenter holds no open surface for this request',
+	);
 });
 
 test('a bound handle outside an Epicenter host declines instead of throwing', async () => {

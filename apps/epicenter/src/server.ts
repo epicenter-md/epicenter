@@ -19,7 +19,7 @@ import {
 } from '@epicenter/data/desktop';
 import {
 	type DesktopEpicenterOwner,
-	EPICENTER_STORAGE_MOVED_ERROR_NAME,
+	EPICENTER_SURFACE_NOT_OPEN_ERROR_NAME,
 } from '@epicenter/data/desktop-owner';
 import { type Context, Hono, type Next } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
@@ -505,7 +505,7 @@ export function createHomeServer({
 			};
 			return c.json(
 				{ data: null, error } satisfies DesktopResponse,
-				error.name === EPICENTER_STORAGE_MOVED_ERROR_NAME ? 409 : 400,
+				error.name === EPICENTER_SURFACE_NOT_OPEN_ERROR_NAME ? 409 : 400,
 			);
 		}
 	});
