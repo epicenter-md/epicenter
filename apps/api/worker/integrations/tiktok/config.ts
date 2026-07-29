@@ -65,8 +65,13 @@ export type TikTokConfigError = import('wellcrafted/error').InferErrors<
  * this list is only ever the request.
  */
 export const TIKTOK_SCOPES = [
-	/** Read the connected account's identity so the UI can name it exactly. */
+	/** Read the connected account's stable id, display name, and avatar. */
 	'user.info.basic',
+	/**
+	 * Read the exact @username. TikTok moved `username` out of
+	 * `user.info.basic`, and multiple accounts can share a display name.
+	 */
+	'user.info.profile',
 	/** Read back posted videos to verify a publish actually landed. */
 	'video.list',
 	/** Send a video to the creator's TikTok inbox as an editable draft. */
@@ -135,10 +140,10 @@ export async function resolveTikTokConfig(
 	// version and decrypts under any of them.
 	const keys: TokenKeyMaterial[] = [{ version: 1, base64Key: primaryKey }];
 	for (const [binding, value] of Object.entries(
-		env as Record<string, string | undefined>,
+		env as Record<string, unknown>,
 	)) {
 		const match = ROTATION_KEY_PATTERN.exec(binding);
-		const material = value?.trim();
+		const material = typeof value === 'string' ? value.trim() : null;
 		if (!match?.[1] || !material) continue;
 		const version = Number(match[1]);
 		// Version 1 is the primary binding above; a `..._V1` would be a duplicate

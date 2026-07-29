@@ -342,8 +342,9 @@ export function createTikTokApi({
 
 	return {
 		/**
-		 * `user.info.basic`. Also names the account the token belongs to, so the
-		 * connect callback needs no separate identity read.
+		 * `user.info.basic` plus `user.info.profile` for the exact username.
+		 * Also names the account the token belongs to, so the connect callback
+		 * needs no separate identity read.
 		 */
 		async readUserInfo(): Promise<Result<TikTokUserInfo, TikTokApiError>> {
 			const endpoint = 'v2/user/info';

@@ -295,7 +295,7 @@ test('connect returns a TikTok consent URL and binds a single-use state to this 
 	);
 	expect(authorize.searchParams.get('client_key')).toBe('client-key-123');
 	expect(authorize.searchParams.get('scope')).toBe(
-		'user.info.basic,video.list,video.upload,video.publish',
+		'user.info.basic,user.info.profile,video.list,video.upload,video.publish',
 	);
 	expect(authorize.searchParams.get('redirect_uri')).toBe(
 		'https://api.epicenter.so/api/integrations/tiktok/callback',

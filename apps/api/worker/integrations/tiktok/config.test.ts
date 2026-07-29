@@ -40,6 +40,17 @@ test('with only the primary key, ciphertext is written at version 1', async () =
 	expect(data?.cipher.activeVersion).toBe(1);
 });
 
+test('non-string Worker bindings are ignored while discovering rotation keys', async () => {
+	const { data, error } = await resolveTikTokConfig({
+		...BASE,
+		ROOM: { idFromName: () => null },
+		ASSETS: { fetch: () => new Response() },
+	} as Parameters<typeof resolveTikTokConfig>[0]);
+
+	expect(error).toBeNull();
+	expect(data?.cipher.activeVersion).toBe(1);
+});
+
 test('rotation is open-ended: a _V3 binding becomes the active version', async () => {
 	// The wall this guards against: hardcoding "the rotation key is v2" means a
 	// SECOND rotation has nowhere to go, and reusing the V2 binding would make
