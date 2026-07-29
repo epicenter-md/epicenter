@@ -1087,18 +1087,17 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 					});
 					if (!recorded) {
 						/**
-						 * A creator recorded an outcome for this attempt while we were
-						 * mid-flight, which their answer wins. That can only happen if our
-						 * lease had expired, so the honest report is the same as any other
-						 * unrecordable outcome: TikTok has the task, and this row is not
-						 * tracking it.
+						 * Provider truth carrying a publish id outranks a manual
+						 * resolution, so a miss here means the attempt row vanished
+						 * altogether. TikTok still has the task, but Epicenter no longer
+						 * has a durable row to reconcile.
 						 */
 						return c.json(
 							TikTokRouteError.PublishOutcomeUnknown({
 								attemptId: attempt.id,
 								publishId: init.data.publishId,
 								detail:
-									'TikTok accepted the post, but its record here had already been settled by hand, so this task is not being tracked.',
+									'TikTok accepted the post, but its local attempt record no longer exists, so this task is not being tracked.',
 							}),
 							502,
 						);

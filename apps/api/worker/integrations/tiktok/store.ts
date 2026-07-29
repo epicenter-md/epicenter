@@ -242,57 +242,6 @@ export async function deleteConnection(
 export type PublishAttempt = typeof tiktokPublishAttempt.$inferSelect;
 
 /**
- * Claim the right to originate one publish, or hand back the attempt that
- * already owns this idempotency key.
- *
- * `ON CONFLICT DO NOTHING` plus a follow-up read is the whole concurrency
- * control for TikTok's irreversible `video/init`: whoever inserts the row is
- * the only caller that may proceed to init, and every duplicate submit observes
- * `claimed: false` and reports the existing attempt instead of originating a
- * second post.
- */
-export async function claimPublishAttempt(
-	db: Db,
-	row: {
-		id: string;
-		connectionId: string;
-		idempotencyKey: string;
-		/**
-		 * Which Content Posting product this row records. One literal, not a union:
-		 * Direct Post is the only publishing product, so a caller has nothing to
-		 * choose and no branch reads this back.
-		 */
-		kind: 'direct_post';
-	},
-): Promise<{ claimed: boolean; attempt: PublishAttempt }> {
-	const inserted = await db
-		.insert(tiktokPublishAttempt)
-		.values(row)
-		.onConflictDoNothing({
-			target: [
-				tiktokPublishAttempt.connectionId,
-				tiktokPublishAttempt.idempotencyKey,
-			],
-		})
-		.returning();
-	const claimedRow = inserted[0];
-	if (claimedRow) return { claimed: true, attempt: claimedRow };
-
-	const existing = await db
-		.select()
-		.from(tiktokPublishAttempt)
-		.where(
-			and(
-				eq(tiktokPublishAttempt.connectionId, row.connectionId),
-				eq(tiktokPublishAttempt.idempotencyKey, row.idempotencyKey),
-			),
-		)
-		.limit(1);
-	// The insert conflicted, so the conflicting row exists.
-	return { claimed: false, attempt: existing[0] as PublishAttempt };
-}
-
-/**
  * Record what Epicenter knows about an attempt it is driving.
  *
  * `status` is typed as `AttemptStatus` rather than `string` so the vocabulary

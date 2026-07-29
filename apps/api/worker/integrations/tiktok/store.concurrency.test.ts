@@ -64,9 +64,17 @@ import {
 const ADMIN_URL =
 	process.env.TIKTOK_TEST_POSTGRES_URL ??
 	'postgres://postgres:postgres@localhost:5432/postgres';
-/** Dedicated, disposable, and deliberately not any database anyone develops against. */
-const SCRATCH_DB = 'epicenter_tiktok_concurrency_test';
-const SCRATCH_URL = ADMIN_URL.replace(/\/[^/]*$/, `/${SCRATCH_DB}`);
+/**
+ * Dedicated, disposable, and unique to this process.
+ *
+ * A fixed name plus `DROP DATABASE ... WITH (FORCE)` would make parallel test
+ * runs destroy each other's live database and could erase an unrelated
+ * developer-created database that happened to use the documented name.
+ */
+const SCRATCH_DB = `epicenter_tt_${process.pid}_${crypto.randomUUID().replaceAll('-', '').slice(0, 16)}`;
+const scratchUrl = new URL(ADMIN_URL);
+scratchUrl.pathname = `/${SCRATCH_DB}`;
+const SCRATCH_URL = scratchUrl.toString();
 const MIGRATIONS_DIR = join(import.meta.dir, '../../../drizzle');
 
 /**
