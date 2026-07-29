@@ -8,14 +8,6 @@ import {
 import type { Fact, Intent } from './schemas.js';
 
 export const DATA_ADMISSION_LIMITS = {
-	/** Byte ceiling for the durable reverse-domain namespace coordinate. */
-	namespaceBytes: 128,
-	/** Byte ceiling for a durable table name, which mounts as a SQL relation. */
-	tableNameBytes: 64,
-	/** Byte ceiling for a durable value name, which may carry dotted grouping. */
-	valueNameBytes: 128,
-	rowIdLength: 24,
-	replicaIdLength: 24,
 	intentsPerBatch: 64,
 	factsPerPage: 64,
 	unsetKeysPerIntent: 128,
