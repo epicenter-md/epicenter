@@ -1,45 +1,64 @@
 <script lang="ts">
-	import { SignInMigrationDialog } from '@epicenter/app-shell/sign-in-migration';
-	import { WorkspaceGate } from '@epicenter/app-shell/workspace-gate';
+	import { openVocabBrowserEpicenter } from '@epicenter/vocab/browser';
 	import { FlushEditsOnHide } from '@epicenter/svelte';
-	import { reloadOnPrincipalChange } from '@epicenter/svelte/auth';
+	import { Button } from '@epicenter/ui/button';
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
-	import { Toaster } from '@epicenter/ui/sonner';
+	import { Loading } from '@epicenter/ui/loading';
+	import { toast, Toaster } from '@epicenter/ui/sonner';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { ModeWatcher } from 'mode-watcher';
-	import { onMount } from 'svelte';
+	import { onDestroy } from 'svelte';
+	import { openVocabApplication } from '$lib/application';
 	import { auth } from '$lib/platform/auth';
-	import { signInMigration } from '$lib/migration/sign-in-migration';
-	import { vocab } from '$lib/vocab';
+	import VocabAppProvider from '$lib/VocabAppProvider.svelte';
 	import '../app.css';
 
 	let { children } = $props();
 
-	// Option A (ADR-0088): the doc is picked once at boot (the preset branch
-	// inside `openVocabBrowser`); a principal identity change reloads so the next
-	// boot rebuilds the right doc.
-	onMount(() => reloadOnPrincipalChange(auth));
+	function reportBackgroundError(cause: unknown) {
+		toast.error('Vocab background work failed', {
+			description: cause instanceof Error ? cause.message : String(cause),
+		});
+	}
 
-	// Signed-in only: prompt to migrate this device's local conversations into
-	// the account (no-op when signed out or when there is no local data). Fire
-	// and forget: `signInMigration.check()` owns its own once-per-boot guard.
-	onMount(() => {
-		void signInMigration.check();
-	});
+	const boot = new AbortController();
+	// One replica either way (ADR-0088): signing in attaches a sync session to
+	// the replica already open, so an identity change no longer reloads the page.
+	const opening = openVocabApplication(
+		{
+			openEpicenter: () =>
+				openVocabBrowserEpicenter({ auth, reportBackgroundError }),
+			reportBackgroundError,
+		},
+		{ signal: boot.signal },
+	);
+	onDestroy(() => boot.abort());
 </script>
 
 <svelte:head><title>Vocab</title></svelte:head>
 
-<WorkspaceGate
-	pending={vocab.whenReady}
-	onForgetDevice={() => vocab.wipe()}
-	onSignOut={() => auth.signOut()}
->
-	<Tooltip.Provider>{@render children?.()}</Tooltip.Provider>
-</WorkspaceGate>
+{#await opening}
+	<Loading class="h-dvh" />
+{:then application}
+	<VocabAppProvider {application}>
+		<Tooltip.Provider>{@render children?.()}</Tooltip.Provider>
+	</VocabAppProvider>
+{:catch error}
+	<div
+		class="flex h-dvh flex-col items-center justify-center gap-4 p-8 text-center"
+	>
+		<h1 class="text-lg font-semibold">Vocab could not start</h1>
+		<p class="text-muted-foreground max-w-md text-sm">
+			{error instanceof Error ? error.message : String(error)}
+		</p>
+		<div class="flex gap-2">
+			<Button onclick={() => location.reload()}>Reload</Button>
+			<Button variant="outline" onclick={() => auth.signOut()}>Sign out</Button>
+		</div>
+	</div>
+{/await}
 
 <Toaster />
 <ConfirmationDialog />
-<SignInMigrationDialog migration={signInMigration} />
 <ModeWatcher />
 <FlushEditsOnHide />

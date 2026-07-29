@@ -13,9 +13,11 @@
 	} from '$lib/entry-candidates';
 	import { auth } from '$lib/platform/auth';
 	import { inferenceConnections } from '$lib/state/inference-connections.svelte';
-	import { entriesState } from '$lib/state/entries.svelte';
+	import { getVocabApp } from '$lib/context';
 	import DictationButton from './DictationButton.svelte';
 	import ReadingMarkdown from './ReadingMarkdown.svelte';
+
+	const { entries } = getVocabApp();
 
 	let {
 		active,
@@ -82,7 +84,7 @@
 
 	function saveSelectedEntry() {
 		if (!saveAffordance) return;
-		entriesState.save(saveAffordance.text);
+		entries.save(saveAffordance.text);
 		document.getSelection()?.removeAllRanges();
 		saveAffordance = null;
 	}
@@ -92,7 +94,7 @@
 
 	/** The transient entry candidates for one settled message, held in component
 	 * memory only. Nothing here is persisted; a chosen span reaches the pool solely
-	 * through `entriesState.save` (ADR-0102). One open at a time, like the selection
+	 * through `entries.save` (ADR-0102). One open at a time, like the selection
 	 * affordance above. */
 	let entryCandidateRequest = $state.raw<{
 		messageId: string;
@@ -166,7 +168,7 @@
 	/** Whether a candidate is already in the pool, derived from entries so it is
 	 * never stored on the candidate and reflects a save immediately. */
 	function isEntrySaved(text: string): boolean {
-		return entriesState.entries.some((entry) => entry.text === text);
+		return entries.entries.some((entry) => entry.text === text);
 	}
 
 	/** Land a dictated transcript in the draft for review, appended to whatever is
@@ -280,7 +282,7 @@
 											? 'text-muted-foreground'
 											: 'hover:bg-accent'}"
 										disabled={saved}
-										onclick={() => entriesState.save(candidate)}
+										onclick={() => entries.save(candidate)}
 									>
 										{#if saved}<CheckIcon class="size-3" />{/if}
 										{candidate}
