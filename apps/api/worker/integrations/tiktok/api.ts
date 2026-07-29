@@ -95,6 +95,48 @@ export type TikTokPostStatusCode = (typeof postStatuses)[number];
  */
 export type TikTokFailureCertainty = 'rejected' | 'ambiguous';
 
+/**
+ * HTTP statuses that, WITH a genuine TikTok error code beside them, prove TikTok
+ * itself understood the request and declined to act on it.
+ *
+ * An allowlist rather than "any 4xx", because the 4xx class contains answers that
+ * prove nothing about whether the request was performed:
+ *
+ * - `408` is a timeout. The canonical case where the work may well have been
+ *   done and only the answer was lost.
+ * - `425 Too Early`, `499`, and assorted proxy-invented 4xx codes say something
+ *   about the connection, not about TikTok's decision.
+ *
+ * Everything listed here names a decision: malformed input, a rejected or
+ * expired credential, a forbidden action, a missing resource, a payload TikTok
+ * refused to accept, unprocessable content, or a rate limit. In each, no
+ * publishing task was created.
+ */
+const REFUSAL_STATUSES: ReadonlySet<number> = new Set([
+	400, 401, 403, 404, 405, 413, 415, 422, 429,
+]);
+
+/**
+ * Whether a readable failure PROVES TikTok refused, which is what makes a retry
+ * safe. Both halves are required:
+ *
+ * 1. A genuine `error.code` from TikTok's own v2 envelope. Without it we may be
+ *    reading a proxy, WAF, or load balancer that never reached TikTok at all, and
+ *    a synthesized `http_403` is our word, not the provider's.
+ * 2. A status on the allowlist above.
+ *
+ * Anything else is ambiguous, including every 5xx.
+ */
+function provesProviderRefusal({
+	providerCode,
+	status,
+}: {
+	providerCode: string | null;
+	status: number;
+}): boolean {
+	return providerCode !== null && REFUSAL_STATUSES.has(status);
+}
+
 export const TikTokApiError = defineErrors({
 	/**
 	 * The call never produced a readable answer: transport failure, timeout, or a
@@ -113,32 +155,36 @@ export const TikTokApiError = defineErrors({
 		certainty: 'ambiguous' as TikTokFailureCertainty,
 	}),
 	/**
-	 * TikTok's v2 envelope reported a failure. `code` is TikTok's own string.
+	 * The call produced a readable failure. `providerCode` is TikTok's own error
+	 * string when the response actually carried one, and `null` when it did not.
 	 *
-	 * `certainty` is `rejected` only for a 4xx: a client error means the request
-	 * was understood and refused. A 5xx is a server-side failure that may have
-	 * landed anyway, so it stays ambiguous even though the envelope parsed.
+	 * `certainty` FAILS CLOSED: `rejected` has to be EARNED, because it is the one
+	 * classification that licenses a corrected retry of an irreversible call.
+	 * Getting it wrong on a request that actually landed publishes twice, so
+	 * "definitely refused" requires positive proof rather than the absence of
+	 * evidence. See {@link provesProviderRefusal}.
 	 */
 	ProviderRejected: ({
 		endpoint,
-		code,
+		providerCode,
 		detail,
 		logId,
 		status,
 	}: {
 		endpoint: string;
-		code: string;
+		/** TikTok's own `error.code`, or null when the body carried none. */
+		providerCode: string | null;
 		detail: string;
 		logId?: string;
 		status: number;
 	}) => ({
-		message: `TikTok ${endpoint} rejected the request: ${detail} (${code})`,
+		message: `TikTok ${endpoint} rejected the request: ${detail} (${providerCode ?? `http_${status}`})`,
 		endpoint,
-		code,
+		code: providerCode ?? `http_${status}`,
 		detail,
 		logId,
 		status,
-		certainty: (status >= 400 && status < 500
+		certainty: (provesProviderRefusal({ providerCode, status })
 			? 'rejected'
 			: 'ambiguous') as TikTokFailureCertainty,
 	}),
@@ -322,7 +368,10 @@ export function createTikTokApi({
 		if (!response.ok || code !== 'ok') {
 			return TikTokApiError.ProviderRejected({
 				endpoint,
-				code: code ?? `http_${response.status}`,
+				// Passed through as null when absent rather than synthesized, because
+				// whether TikTok named a reason is exactly what decides if this failure
+				// proves a refusal.
+				providerCode: code,
 				detail: readString(errorFields.message) ?? `HTTP ${response.status}`,
 				...(readString(errorFields.log_id)
 					? { logId: errorFields.log_id as string }
@@ -418,15 +467,49 @@ export function createTikTokApi({
 					field: 'creator_nickname',
 				});
 			}
-			const flag = (key: string) =>
-				typeof data[key] === 'boolean' ? (data[key] as boolean) : false;
+			/**
+			 * The live @handle, REQUIRED rather than defaulted to ''. The final
+			 * confirmation names the account from this read, and an empty value there
+			 * used to fall back to the handle stored at connect time, which is exactly
+			 * the stale identity a creator must not approve an irreversible post
+			 * against.
+			 */
+			const username = readString(data.creator_username);
+			if (!username) {
+				return TikTokApiError.MalformedResponse({
+					endpoint,
+					field: 'creator_username',
+				});
+			}
+			/**
+			 * Interaction ceilings FAIL CLOSED. These were defaulted to `false`, which
+			 * reads as "the creator has not switched this off" and is the most
+			 * dangerous possible guess: the surface would offer an opt-in TikTok never
+			 * authorized, and the policy would then send `disable_comment: false` on a
+			 * post whose account forbids comments. An unreadable ceiling is a check we
+			 * did not perform, not a permission.
+			 */
+			const flags: Record<string, boolean> = {};
+			for (const key of [
+				'comment_disabled',
+				'duet_disabled',
+				'stitch_disabled',
+			]) {
+				if (typeof data[key] !== 'boolean') {
+					return TikTokApiError.MalformedResponse({ endpoint, field: key });
+				}
+				flags[key] = data[key] as boolean;
+			}
 			return Ok({
-				username: readString(data.creator_username) ?? '',
+				username,
 				nickname,
 				privacyLevelOptions: levels,
-				commentDisabled: flag('comment_disabled'),
-				duetDisabled: flag('duet_disabled'),
-				stitchDisabled: flag('stitch_disabled'),
+				commentDisabled: flags.comment_disabled ?? true,
+				duetDisabled: flags.duet_disabled ?? true,
+				stitchDisabled: flags.stitch_disabled ?? true,
+				// A missing or non-numeric ceiling stays 0, which the Direct Post policy
+				// refuses with a message naming the problem. Failing there rather than
+				// here keeps the creator's remedy ("try again in a moment") intact.
 				maxVideoDurationSec:
 					typeof data.max_video_post_duration_sec === 'number'
 						? data.max_video_post_duration_sec

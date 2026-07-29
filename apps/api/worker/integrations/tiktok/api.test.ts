@@ -189,6 +189,7 @@ test('readCreatorInfo surfaces the account ceilings the creator consents against
 test('an unrecognized privacy level is skipped, not fatal', async () => {
 	const { api } = apiWith(() =>
 		envelope({
+			creator_username: 'braden',
 			creator_nickname: 'Braden',
 			privacy_level_options: ['SELF_ONLY', 'SOME_FUTURE_LEVEL'],
 			comment_disabled: false,
@@ -207,6 +208,7 @@ test('an unrecognized privacy level is skipped, not fatal', async () => {
 test('creator info offering no usable privacy level is a malformed response', async () => {
 	const { api } = apiWith(() =>
 		envelope({
+			creator_username: 'braden',
 			creator_nickname: 'Braden',
 			privacy_level_options: [],
 			comment_disabled: false,
@@ -403,4 +405,159 @@ test('an `ok` envelope missing publish_id is AMBIGUOUS, not a clean failure', as
 test('an unclassified failure defaults to ambiguous', () => {
 	// Fail safe: absence of a certainty is not evidence that nothing happened.
 	expect(isAmbiguousFailure({})).toBe(true);
+});
+
+// --- Only a PROVEN provider refusal is definite ---------------------------
+//
+// `video/init` is irreversible, so "definitely refused" must be earned. It is
+// the one classification that permits a corrected retry, and getting it wrong on
+// a request that actually landed publishes twice.
+
+test('a 408 is AMBIGUOUS even though it is a 4xx', async () => {
+	// A timeout is the textbook case where the request may well have been
+	// processed. Classifying by status class alone called this definite.
+	const { api } = apiWith(() => envelope({}, 408, 'request_timeout'));
+
+	const { error } = await api.initDirectPost(directPostInput());
+
+	expect(error?.certainty).toBe('ambiguous');
+	expect(isAmbiguousFailure(error as never)).toBe(true);
+});
+
+test('a 4xx with NO TikTok error code is AMBIGUOUS, not a refusal', async () => {
+	// A proxy, WAF, or load balancer can answer 400/403 without ever reaching
+	// TikTok. Nothing in such a response proves TikTok refused anything, so it
+	// cannot license a retry.
+	const { api } = apiWith(
+		() =>
+			new Response(JSON.stringify({ message: 'Forbidden by edge' }), {
+				status: 403,
+				headers: { 'Content-Type': 'application/json' },
+			}),
+	);
+
+	const { error } = await api.initDirectPost(directPostInput());
+
+	expect(error?.certainty).toBe('ambiguous');
+	expect(isAmbiguousFailure(error as never)).toBe(true);
+});
+
+test('a 4xx carrying a real TikTok error code IS a definite refusal', async () => {
+	// TikTok understood the request and named why it refused, so no task exists.
+	const { api } = apiWith(() => envelope({}, 400, 'invalid_param'));
+
+	const { error } = await api.initDirectPost(directPostInput());
+
+	expect(error?.certainty).toBe('rejected');
+	expect(isAmbiguousFailure(error as never)).toBe(false);
+});
+
+test('a rate-limit refusal from TikTok is definite', async () => {
+	const { api } = apiWith(() => envelope({}, 429, 'spam_risk_too_many_posts'));
+
+	const { error } = await api.initDirectPost(directPostInput());
+
+	expect(error?.certainty).toBe('rejected');
+});
+
+// --- creator_info fails closed on anything it cannot read ----------------
+
+test('creator_info missing an interaction flag is MALFORMED, not "allowed"', async () => {
+	// Defaulting a missing `comment_disabled` to false would tell the creator
+	// comments are available and then publish an opt-in TikTok never authorized.
+	const { api } = apiWith(() =>
+		envelope({
+			creator_username: 'braden',
+			creator_nickname: 'Braden',
+			privacy_level_options: ['PUBLIC_TO_EVERYONE'],
+			duet_disabled: false,
+			stitch_disabled: false,
+			max_video_post_duration_sec: 600,
+		}),
+	);
+
+	const { data, error } = await api.readCreatorInfo();
+
+	expect(data).toBeNull();
+	expect(error?.name).toBe('MalformedResponse');
+	if (error?.name !== 'MalformedResponse')
+		throw new Error('expected malformed');
+	expect(error.field).toBe('comment_disabled');
+});
+
+test.each([
+	'duet_disabled',
+	'stitch_disabled',
+])('creator_info missing %s is MALFORMED', async (missing) => {
+	const flags: Record<string, boolean> = {
+		comment_disabled: false,
+		duet_disabled: false,
+		stitch_disabled: false,
+	};
+	delete flags[missing];
+	const { api } = apiWith(() =>
+		envelope({
+			creator_username: 'braden',
+			creator_nickname: 'Braden',
+			privacy_level_options: ['PUBLIC_TO_EVERYONE'],
+			...flags,
+			max_video_post_duration_sec: 600,
+		}),
+	);
+
+	const { error } = await api.readCreatorInfo();
+
+	expect(error?.name).toBe('MalformedResponse');
+	if (error?.name !== 'MalformedResponse') {
+		throw new Error('expected malformed');
+	}
+	expect(error.field).toBe(missing);
+});
+
+test('creator_info without a live username is MALFORMED', async () => {
+	// The final confirmation names the account from THIS read. An empty username
+	// there would have silently fallen back to a stored handle that may be stale.
+	const { api } = apiWith(() =>
+		envelope({
+			creator_nickname: 'Braden',
+			privacy_level_options: ['PUBLIC_TO_EVERYONE'],
+			comment_disabled: false,
+			duet_disabled: false,
+			stitch_disabled: false,
+			max_video_post_duration_sec: 600,
+		}),
+	);
+
+	const { data, error } = await api.readCreatorInfo();
+
+	expect(data).toBeNull();
+	expect(error?.name).toBe('MalformedResponse');
+	if (error?.name !== 'MalformedResponse')
+		throw new Error('expected malformed');
+	expect(error.field).toBe('creator_username');
+});
+
+test('a fully populated creator_info still reads cleanly', async () => {
+	const { api } = apiWith(() =>
+		envelope({
+			creator_username: 'braden',
+			creator_nickname: 'Braden',
+			privacy_level_options: ['PUBLIC_TO_EVERYONE', 'SELF_ONLY'],
+			comment_disabled: false,
+			duet_disabled: true,
+			stitch_disabled: false,
+			max_video_post_duration_sec: 600,
+		}),
+	);
+
+	const { data, error } = await api.readCreatorInfo();
+
+	expect(error).toBeNull();
+	expect(data).toMatchObject({
+		username: 'braden',
+		nickname: 'Braden',
+		duetDisabled: true,
+		commentDisabled: false,
+		maxVideoDurationSec: 600,
+	});
 });

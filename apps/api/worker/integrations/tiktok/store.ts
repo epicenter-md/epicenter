@@ -15,8 +15,12 @@ import {
 	tiktokOauthState,
 	tiktokPublishAttempt,
 } from '@epicenter/server/cloud-db';
-import { and, desc, eq, lt } from 'drizzle-orm';
-import type { AttemptStatus } from './attempt-status.js';
+import { and, desc, eq, isNull, lt, notInArray, or } from 'drizzle-orm';
+import {
+	type AttemptStatus,
+	type ManualResolution,
+	TERMINAL_ATTEMPT_STATUSES,
+} from './attempt-status.js';
 
 /** A stored connection, tokens included as ciphertext. */
 export type StoredConnection = typeof tiktokConnection.$inferSelect;
@@ -353,6 +357,84 @@ export async function reconcileAttemptFromRemote(
 			and(
 				eq(tiktokPublishAttempt.connectionId, connectionId),
 				eq(tiktokPublishAttempt.publishId, publishId),
+			),
+		)
+		.returning({ id: tiktokPublishAttempt.id });
+	return rows.length > 0;
+}
+
+/**
+ * Every attempt on this connection that has NOT settled.
+ *
+ * This is what makes disconnect refusable. The attempt table cascades on the
+ * connection, so deleting a connection with a live or unknown attempt destroys
+ * the only record that TikTok may be holding a post, and revoking the token
+ * destroys the ability to ever ask. Custody has to outlive the impulse to
+ * disconnect.
+ *
+ * Read as `status IS NULL OR status NOT IN (terminal)` rather than by listing the
+ * unsettled codes, so a status this build has never seen counts as unsettled and
+ * the refusal FAILS CLOSED. Enumerating the unsettled set instead would let a
+ * future TikTok code slip through as though it were finished.
+ */
+export async function listUnsettledAttempts(
+	db: Db,
+	connectionId: string,
+): Promise<PublishAttempt[]> {
+	return db
+		.select()
+		.from(tiktokPublishAttempt)
+		.where(
+			and(
+				eq(tiktokPublishAttempt.connectionId, connectionId),
+				or(
+					isNull(tiktokPublishAttempt.status),
+					notInArray(tiktokPublishAttempt.status, [
+						...TERMINAL_ATTEMPT_STATUSES,
+					]),
+				),
+			),
+		)
+		.orderBy(desc(tiktokPublishAttempt.createdAt));
+}
+
+/**
+ * Record a HUMAN's adjudication of an attempt nothing automated can resolve.
+ *
+ * The only way out of `INIT_AMBIGUOUS` or a null status: no publish id exists, so
+ * TikTok cannot be asked, and without this the creator would be blocked from
+ * posting to that account forever.
+ *
+ * Guarded so a human cannot overwrite provider truth. The `WHERE` requires the
+ * row to still be unsettled, which means a status that arrived from TikTok in the
+ * meantime wins, and a double-submitted resolution is a no-op rather than a
+ * rewrite. Returns whether a row actually moved.
+ */
+export async function resolveAttemptManually(
+	db: Db,
+	{
+		connectionId,
+		attemptId,
+		status,
+	}: {
+		connectionId: string;
+		attemptId: string;
+		status: ManualResolution;
+	},
+): Promise<boolean> {
+	const rows = await db
+		.update(tiktokPublishAttempt)
+		.set({ status, updatedAt: new Date() })
+		.where(
+			and(
+				eq(tiktokPublishAttempt.id, attemptId),
+				eq(tiktokPublishAttempt.connectionId, connectionId),
+				or(
+					isNull(tiktokPublishAttempt.status),
+					notInArray(tiktokPublishAttempt.status, [
+						...TERMINAL_ATTEMPT_STATUSES,
+					]),
+				),
 			),
 		)
 		.returning({ id: tiktokPublishAttempt.id });

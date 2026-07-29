@@ -42,6 +42,10 @@ import {
 	type TikTokPrivacyLevel,
 } from './api.js';
 import {
+	isManualResolution,
+	isTerminalAttemptStatus,
+} from './attempt-status.js';
+import {
 	resolveTikTokConfig,
 	TIKTOK_SCOPES,
 	type TikTokBindings,
@@ -67,9 +71,11 @@ import {
 	deleteExpiredOAuthStates,
 	listConnections,
 	listPublishAttempts,
+	listUnsettledAttempts,
 	readConnection,
 	reconcileAttemptFromRemote,
 	recordAttemptOutcome,
+	resolveAttemptManually,
 	toPublicConnection,
 	upsertConnection,
 } from './store.js';
@@ -155,21 +161,58 @@ const TikTokRouteError = defineErrors({
 	 * This idempotency key already claimed a publish. TikTok's `video/init` is
 	 * irreversible, so the second caller is told to READ the first attempt's
 	 * status rather than being allowed to originate another post.
+	 *
+	 * `unresolved` is the load-bearing field, and omitting it was a defect that
+	 * could publish twice from one consent. The client releases its idempotency
+	 * claim on any DEFINITE refusal, and a bare 409 looks exactly like one, so the
+	 * next submit minted a fresh key and sailed past the latch. It is therefore
+	 * true unless the existing attempt has actually SETTLED: while that attempt is
+	 * live or unknown, this collision is precisely the thing standing between one
+	 * consent and two posts.
 	 */
 	PublishAlreadyAttempted: ({
 		attemptId,
 		publishId,
 		status,
+		unresolved,
 	}: {
 		attemptId: string;
 		publishId: string | null;
 		status: string | null;
+		unresolved: boolean;
 	}) => ({
-		message:
-			'This publish was already attempted. Read its status rather than submitting again.',
+		message: unresolved
+			? 'This exact post was already submitted and its outcome is not settled yet. Follow that attempt instead of submitting again.'
+			: 'This exact post was already submitted and has finished. Change something, or start a new post.',
 		attemptId,
 		publishId,
 		status,
+		unresolved,
+	}),
+	/**
+	 * Disconnecting would destroy custody of a task that may exist at TikTok.
+	 *
+	 * The attempt rows cascade on the connection, and revoking the token removes
+	 * the ability to ever ask what happened, so this is refused rather than
+	 * warned about: "revoke and forget" is not a recoverable state.
+	 */
+	ConnectionHasUnsettledPublish: ({ unsettled }: { unsettled: number }) => ({
+		message:
+			unsettled === 1
+				? 'This account has a post whose outcome is not settled. Resolve it before disconnecting, so its record is not lost.'
+				: `This account has ${unsettled} posts whose outcomes are not settled. Resolve them before disconnecting, so their records are not lost.`,
+		unsettled,
+		code: 'UNSETTLED_PUBLISH',
+	}),
+	/** A manual resolution that named something other than the two allowed outcomes. */
+	InvalidResolution: () => ({
+		message:
+			'Record either that the post is on the profile, or that nothing was posted.',
+	}),
+	/** The attempt settled on its own before this resolution was recorded. */
+	AttemptAlreadySettled: () => ({
+		message:
+			'That post already has a settled outcome, so it was left as TikTok reported it.',
 	}),
 });
 
@@ -479,6 +522,27 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 				});
 				if (!row) return c.json(TikTokRouteError.ConnectionNotFound(), 404);
 
+				/**
+				 * CUSTODY BEFORE CONVENIENCE. `tiktok_publish_attempt` cascades on the
+				 * connection, so deleting this row also deletes the only record that
+				 * TikTok may be holding a post, and revoking the token removes any
+				 * ability to ask again. An unsettled attempt therefore refuses the
+				 * disconnect outright instead of being silently discarded.
+				 *
+				 * "Unsettled" deliberately includes a post TikTok is still processing,
+				 * not just an unknown one: revocation mid-flight would leave a real post
+				 * on the profile with no local trace of where it came from.
+				 */
+				const unsettled = await listUnsettledAttempts(db, row.id);
+				if (unsettled.length > 0) {
+					return c.json(
+						TikTokRouteError.ConnectionHasUnsettledPublish({
+							unsettled: unsettled.length,
+						}),
+						409,
+					);
+				}
+
 				const oauth = createTikTokOAuthClient({
 					clientKey: config.clientKey,
 					clientSecret: config.clientSecret,
@@ -618,6 +682,59 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 			});
 			if (!row) return c.json(TikTokRouteError.ConnectionNotFound(), 404);
 			return c.json({ attempts: await listPublishAttempts(db, row.id) });
+		},
+	);
+
+	/**
+	 * Record what a HUMAN found, for an attempt nothing automated can resolve.
+	 *
+	 * The only exit from `INIT_AMBIGUOUS` or a null status. Both mean TikTok may
+	 * hold a post that no publish id names: the call that would have returned one
+	 * is the call that failed, or the Worker died before recording it. Nothing can
+	 * be polled, so without this route the creator is blocked from posting to that
+	 * account permanently, and the honest block becomes a trap.
+	 *
+	 * Deliberately NOT authenticated as a fresh-session action. It records an
+	 * observation about a post the creator can already see in the TikTok app; it
+	 * changes no grant and reaches no provider.
+	 *
+	 * The stored status keeps the human's authorship visible
+	 * (`RESOLVED_POSTED`/`RESOLVED_NOT_POSTED`, never `PUBLISH_COMPLETE`), and the
+	 * store refuses to overwrite a status TikTok supplied in the meantime.
+	 */
+	tiktok.post(
+		'/api/integrations/tiktok/connections/:id/attempts/:attemptId/resolve',
+		describeRoute({
+			description:
+				'Record a creator-confirmed outcome for a publish attempt that has no publish id and therefore cannot be resolved by reading TikTok.',
+			tags: ['integrations', 'tiktok'],
+		}),
+		session,
+		async (c) => {
+			const db = c.var.db as Db;
+			const row = await readConnection(db, {
+				userId: c.var.tiktokUser.id,
+				connectionId: c.req.param('id'),
+			});
+			if (!row) return c.json(TikTokRouteError.ConnectionNotFound(), 404);
+
+			const body = await c.req.json().catch(() => ({}));
+			const outcome = (body as Record<string, unknown>).outcome;
+			if (!isManualResolution(outcome)) {
+				return c.json(TikTokRouteError.InvalidResolution(), 400);
+			}
+
+			const recorded = await resolveAttemptManually(db, {
+				connectionId: row.id,
+				attemptId: c.req.param('attemptId'),
+				status: outcome,
+			});
+			// A miss means the row settled on its own (or never existed for this
+			// connection). Either way TikTok's answer stands.
+			if (!recorded) {
+				return c.json(TikTokRouteError.AttemptAlreadySettled(), 409);
+			}
+			return c.json({ status: outcome });
 		},
 	);
 
@@ -818,6 +935,11 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 							attemptId: attempt.id,
 							publishId: attempt.publishId,
 							status: attempt.status,
+							// NOT terminal, rather than "still ambiguous": a post TikTok is
+							// merely processing has already committed for THIS intent, so
+							// releasing the caller's claim would let an identical resubmit
+							// originate a second one.
+							unresolved: !isTerminalAttemptStatus(attempt.status),
 						}),
 						409,
 					);

@@ -5,82 +5,195 @@
  * Deliberately not a state machine. There are no transitions here and nothing
  * decides what may follow what: TikTok owns the lifecycle of a publishing task,
  * and the attempt row stores TikTok's own code verbatim. This module answers
- * only the two questions both the Worker and the dashboard have to agree on:
+ * only the questions the Worker and the dashboard have to agree on:
  *
  * 1. Is this status TERMINAL, so polling stops and the durable row is final?
- * 2. What do we CALL it in front of a creator?
+ * 2. Does it BLOCK a new publish, or block disconnecting the account?
+ * 3. Can it be resolved by asking TikTok, or does it need a human?
+ * 4. What do we CALL it in front of a creator?
  *
- * Both answers live beside the codes they describe rather than in a Svelte
- * handler, because a client that invents its own terminal set is a client that
- * either polls a finished task forever or stops on a task still in flight.
+ * Every one of those answers lives beside the codes it describes rather than in
+ * a Svelte handler, because each is a safety judgement about an irreversible
+ * action. A client that decides for itself which statuses are terminal either
+ * polls a finished task forever or abandons a post still in flight; a client
+ * that decides for itself what blocks publishing can let one creator consent
+ * produce two posts.
+ *
+ * THE INVARIANT everything here serves: one explicit creator consent creates at
+ * most one Direct Post, and any outcome that MAY have committed stays visible
+ * and blocks another publish until it is explicitly and honestly resolved.
  */
 
 import type { TikTokPostStatusCode } from './api.js';
 
 /**
- * Statuses that describe a LOCAL failure, used only where TikTok never gave us
- * one of its own codes to store.
+ * Statuses that describe something on EPICENTER's side of the call, used where
+ * TikTok never gave us one of its own codes to store.
  *
- * These are not alternative names for TikTok states. Each one records something
- * that happened on Epicenter's side of the call, which is exactly the
- * information TikTok's vocabulary cannot express.
+ * These are not alternative names for TikTok states. Each records information
+ * TikTok's vocabulary cannot express.
  */
 export type LocalAttemptStatus =
 	/** TikTok understood `video/init` and definitively refused it, so no task exists. */
 	| 'INIT_FAILED'
 	/**
-	 * `video/init` may or may not have created a task, and we cannot see which.
-	 * Never retried; resolved by reading remote status.
+	 * `video/init` may or may not have created a task, and there is NO publish id
+	 * to ask about, because the call that would have returned one is the call that
+	 * failed. This is the one outcome nothing automated can ever resolve.
 	 */
 	| 'INIT_AMBIGUOUS'
-	/** The task exists and the bytes may not have landed. */
-	| 'UPLOAD_FAILED';
+	/** The task exists, and the bytes may not have landed. A publish id IS held. */
+	| 'UPLOAD_FAILED'
+	/**
+	 * A HUMAN checked TikTok and recorded that the post is there. Deliberately
+	 * distinct from `PUBLISH_COMPLETE`, which is TikTok's own word: this one is an
+	 * assertion by the creator and must never be presented as provider truth.
+	 */
+	| 'RESOLVED_POSTED'
+	/** A human checked TikTok and recorded that nothing was posted. */
+	| 'RESOLVED_NOT_POSTED';
 
 /**
  * Every value the `status` column can hold, which is what makes this module the
- * vocabulary's owner rather than a description of it: `recordAttemptOutcome`
- * accepts this type, so a status invented at a call site is a type error.
+ * vocabulary's owner rather than a description of it: the store's writers accept
+ * this type, so a status invented at a call site is a type error.
  *
- * `null` is the fourth possibility and means the row was claimed but
- * `video/init` was never reached.
+ * `null` is the further possibility, and it is NOT "nothing happened": see
+ * {@link describeAttemptStatus}.
  */
 export type AttemptStatus = TikTokPostStatusCode | LocalAttemptStatus;
 
+/** The two statuses a creator can record by hand, and nothing else. */
+export const MANUAL_RESOLUTIONS = [
+	'RESOLVED_POSTED',
+	'RESOLVED_NOT_POSTED',
+] as const;
+export type ManualResolution = (typeof MANUAL_RESOLUTIONS)[number];
+
+export function isManualResolution(value: unknown): value is ManualResolution {
+	return (MANUAL_RESOLUTIONS as readonly unknown[]).includes(value);
+}
+
 /**
- * Statuses after which nothing will change on its own, so polling must stop.
+ * Statuses after which nothing will change on its own, so polling stops and the
+ * durable row is final.
  *
- * `INIT_AMBIGUOUS` and `UPLOAD_FAILED` are deliberately NOT terminal: both mean
- * a task may exist at TikTok, and that task is exactly what remote status can
- * still resolve. Treating them as final is how a real post ends up recorded as
- * a failure.
+ * `INIT_AMBIGUOUS` and `UPLOAD_FAILED` are deliberately absent: both mean a task
+ * may exist at TikTok, and recording either as final is how a real post ends up
+ * remembered as a failure.
  */
-const TERMINAL_STATUSES: ReadonlySet<string> = new Set<AttemptStatus>([
+export const TERMINAL_ATTEMPT_STATUSES = [
 	'PUBLISH_COMPLETE',
 	'FAILED',
 	'SEND_TO_USER_INBOX',
 	'INIT_FAILED',
+	'RESOLVED_POSTED',
+	'RESOLVED_NOT_POSTED',
+] as const satisfies readonly AttemptStatus[];
+
+const TERMINAL_STATUSES: ReadonlySet<string> = new Set<string>(
+	TERMINAL_ATTEMPT_STATUSES,
+);
+
+/**
+ * Statuses where TikTok has told us it holds the task and is working on it. We
+ * can state exactly what happened, so these are known-committed rather than
+ * unknown.
+ */
+const PROCESSING_STATUSES: ReadonlySet<string> = new Set<AttemptStatus>([
+	'PROCESSING_UPLOAD',
+	'PROCESSING_DOWNLOAD',
 ]);
 
 /**
- * Whether this attempt has settled. An unrecognized status is treated as NOT
- * terminal, so a code this build has never seen keeps being polled rather than
- * being silently declared finished.
+ * Whether this attempt has settled. An unrecognized status is NOT terminal, so a
+ * code this build has never seen keeps being treated as live rather than
+ * silently declared finished.
+ *
+ * Two other rules are derived from this one rather than duplicated:
+ *
+ * - A same-key publish collision preserves the caller's idempotency claim unless
+ *   the existing attempt is terminal (routes.ts).
+ * - Disconnecting an account is refused while any attempt is non-terminal
+ *   (routes.ts), because revoking the token would destroy custody of a task that
+ *   may exist.
  */
 export function isTerminalAttemptStatus(status: string | null): boolean {
 	return status !== null && TERMINAL_STATUSES.has(status);
 }
 
 /**
+ * Whether this attempt must stop the creator from publishing again.
+ *
+ * The block is for outcomes we cannot STATE, not merely unfinished ones. A post
+ * TikTok is processing is known-committed: one consent made one post, and a
+ * different post from a new consent is not a duplicate risk. An attempt whose
+ * outcome is unknown is the opposite, and posting again is exactly the wrong
+ * move.
+ *
+ * FAILS CLOSED. An unrecognized status is neither terminal nor known-processing,
+ * so it blocks. "I do not know this word" is not evidence of safety when the
+ * action is irreversible.
+ */
+export function blocksNewPublish(status: string | null): boolean {
+	if (isTerminalAttemptStatus(status)) return false;
+	return status === null || !PROCESSING_STATUSES.has(status);
+}
+
+/** The shape both predicates below need: a status plus whether a task is named. */
+export type AttemptHandle = {
+	status: string | null;
+	publishId: string | null;
+};
+
+/**
+ * Whether TikTok can still be asked about this attempt.
+ *
+ * Requires a publish id, because that id IS the task: `status/fetch` takes
+ * nothing else. This is the distinction that makes `INIT_AMBIGUOUS` different in
+ * kind from every other unresolved status.
+ */
+export function canReadRemoteStatus(attempt: AttemptHandle): boolean {
+	return attempt.publishId !== null && !isTerminalAttemptStatus(attempt.status);
+}
+
+/**
+ * Whether only a human can close this out: it blocks publishing, and there is no
+ * publish id to ask TikTok about.
+ *
+ * Reached by two real paths. `INIT_AMBIGUOUS` is the init whose answer was lost.
+ * A `null` status is a Worker that died between a successful init and recording
+ * its publish id. In both, TikTok may be holding a post nobody can name, and the
+ * only way out is for the creator to look and tell us.
+ */
+export function requiresManualResolution(attempt: AttemptHandle): boolean {
+	return blocksNewPublish(attempt.status) && attempt.publishId === null;
+}
+
+/**
+ * The newest attempt a surface should resume polling, or `null`.
+ *
+ * Rows arrive newest first. An attempt that blocks publishing but cannot be
+ * polled is skipped here and handled by the block instead, so this never returns
+ * something `follow()` would spin on forever.
+ */
+export function pickAttemptToFollow<T extends AttemptHandle>(
+	attempts: readonly T[],
+): T | null {
+	return attempts.find((attempt) => canReadRemoteStatus(attempt)) ?? null;
+}
+
+/**
  * How an attempt reads to the creator: what to call it, and how confident that
  * answer is.
  *
- * `tone` is the honest confidence, and the UI styles from it rather than from
- * the code, so a new status cannot arrive looking like a success:
+ * `tone` is the honest confidence, and the UI styles from it rather than from the
+ * code, so a new status cannot arrive looking like a success:
  *
  * - `pending`: still moving. Nothing is decided.
- * - `posted`: TikTok says the post is live.
- * - `failed`: TikTok definitively did not post it.
- * - `unknown`: it may or may not have posted, and only TikTok can say.
+ * - `posted`: it is on the profile.
+ * - `failed`: it definitively is not.
+ * - `unknown`: it may or may not be, and only a look at TikTok can say.
  */
 export type AttemptTone = 'pending' | 'posted' | 'failed' | 'unknown';
 
@@ -90,6 +203,10 @@ export type AttemptDescription = {
 	/** One sentence telling the creator what, if anything, to do. */
 	detail: string;
 };
+
+/** What to tell a creator whose only remedy is to look at TikTok themselves. */
+const CHECK_TIKTOK =
+	'Open the TikTok app to see whether it is on the profile, then record what you found.';
 
 /**
  * The creator-facing reading of one attempt status.
@@ -104,10 +221,15 @@ export function describeAttemptStatus(
 	switch (status) {
 		case null:
 			return {
-				label: 'Not sent',
+				label: 'Outcome unknown',
 				tone: 'unknown',
-				detail:
-					'Epicenter recorded this post but never reached TikTok. Nothing was published.',
+				/**
+				 * NOT "nothing was published". The row is claimed BEFORE `video/init`,
+				 * so a Worker that died after a successful init and before recording the
+				 * publish id leaves exactly this row. There is no task id to ask about,
+				 * which is why this cannot be resolved by checking status.
+				 */
+				detail: `Epicenter never recorded TikTok's answer for this post, so it may or may not have been created. ${CHECK_TIKTOK}`,
 			};
 		case 'PROCESSING_UPLOAD':
 		case 'PROCESSING_DOWNLOAD':
@@ -148,22 +270,41 @@ export function describeAttemptStatus(
 			return {
 				label: 'Outcome unknown',
 				tone: 'unknown',
-				detail:
-					'Epicenter could not tell whether TikTok accepted this post. Check this account in the TikTok app before posting again.',
+				/**
+				 * Deliberately does NOT offer a status check. The failed call is the one
+				 * that would have returned a publish id, so there is nothing to ask
+				 * TikTok about. Telling the creator to "check status" here would send
+				 * them at a button that cannot answer.
+				 */
+				detail: `Epicenter could not tell whether TikTok accepted this post, and no task id was returned to ask about. ${CHECK_TIKTOK}`,
 			};
 		case 'UPLOAD_FAILED':
 			return {
 				label: 'Outcome unknown',
 				tone: 'unknown',
+				// This one DOES hold a publish id, so checking status is a real remedy.
 				detail:
-					'TikTok created the post but the video may not have finished uploading. Check status, or check this account in the TikTok app.',
+					'TikTok created the post but the video may not have finished uploading. Check its status, or open the TikTok app.',
+			};
+		case 'RESOLVED_POSTED':
+			return {
+				label: 'Posted (you confirmed it)',
+				tone: 'posted',
+				detail:
+					'You checked TikTok and recorded that this post is on the profile.',
+			};
+		case 'RESOLVED_NOT_POSTED':
+			return {
+				label: 'Not posted (you confirmed it)',
+				tone: 'failed',
+				detail:
+					'You checked TikTok and recorded that nothing was posted, so it is safe to post again.',
 			};
 		default:
 			return {
 				label: `Unrecognized status (${status})`,
 				tone: 'unknown',
-				detail:
-					'TikTok reported a status this version does not recognize. Check this account in the TikTok app.',
+				detail: `TikTok reported a status this version does not recognize. ${CHECK_TIKTOK}`,
 			};
 	}
 }

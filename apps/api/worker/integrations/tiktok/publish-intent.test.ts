@@ -6,6 +6,7 @@ import {
 	isAmbiguousPublishFailure,
 	isValidIdempotencyKey,
 	MAX_IDEMPOTENCY_KEY_LENGTH,
+	MAX_TRACKED_INTENT_CLAIMS,
 	type PublishIntent,
 	type StorageLike,
 } from './publish-intent.js';
@@ -68,14 +69,14 @@ test('an AMBIGUOUS outcome must not release the key', () => {
 
 	// (no settle here: outcome unknown)
 	expect(k.keyFor(intent())).toBe(key);
-	expect(k.peek()).toBe(key);
+	expect(k.peek('conn-1')).toBe(key);
 });
 
 test('a settled outcome releases the key so the next post is a new intent', () => {
 	const k = keeper();
 	const first = k.keyFor(intent());
 
-	k.settle();
+	k.settle('conn-1');
 	const second = k.keyFor(intent());
 
 	expect(second).not.toBe(first);
@@ -84,9 +85,9 @@ test('a settled outcome releases the key so the next post is a new intent', () =
 
 test('settle on an untouched keeper is harmless', () => {
 	const k = keeper();
-	k.settle();
+	k.settle('conn-1');
 
-	expect(k.peek()).toBeNull();
+	expect(k.peek('conn-1')).toBeNull();
 	expect(k.keyFor(intent())).toBe('key-1');
 });
 
@@ -182,7 +183,7 @@ test('every key the keeper produces satisfies the server contract', () => {
 	const k = createPublishIntentKeeper(() => crypto.randomUUID());
 
 	for (let i = 0; i < 20; i += 1) {
-		k.settle();
+		k.settle('conn-1');
 		expect(isValidIdempotencyKey(k.keyFor(intent()))).toBe(true);
 	}
 });
@@ -261,7 +262,7 @@ test('a settled outcome clears the session backing, so a reload starts fresh', (
 	const key = first.keyFor(intent());
 	expect(items.size).toBe(1);
 
-	first.settle();
+	first.settle('conn-1');
 	expect(items.size).toBe(0);
 
 	// Even the identical intent is a NEW post after a settled outcome.
@@ -277,8 +278,14 @@ test('the stored record contains only the fingerprint and the key', () => {
 	k.keyFor(intent());
 
 	const [entry] = [...items.values()];
-	const parsed = JSON.parse(entry as string) as Record<string, unknown>;
-	expect(Object.keys(parsed).sort()).toEqual(['fingerprint', 'key']);
+	const parsed = JSON.parse(entry as string) as Record<string, unknown>[];
+	// One slot holds the whole bounded list of unsettled claims.
+	expect(parsed).toHaveLength(1);
+	expect(Object.keys(parsed[0] ?? {}).sort()).toEqual([
+		'connectionId',
+		'fingerprint',
+		'key',
+	]);
 	// Nothing a server would trust, and nothing secret.
 	expect(entry).not.toContain('token');
 });
@@ -304,7 +311,7 @@ test('storage that is unavailable degrades to in-memory instead of throwing', ()
 	const key = k.keyFor(intent());
 	// The claim still holds for this page load, which is what a retry needs.
 	expect(k.keyFor(intent())).toBe(key);
-	expect(() => k.settle()).not.toThrow();
+	expect(() => k.settle('conn-1')).not.toThrow();
 });
 
 test('no storage at all behaves like an ordinary in-memory keeper', () => {
@@ -315,8 +322,8 @@ test('no storage at all behaves like an ordinary in-memory keeper', () => {
 
 	const key = k.keyFor(intent());
 	expect(k.keyFor(intent())).toBe(key);
-	k.settle();
-	expect(k.peek()).toBeNull();
+	k.settle('conn-1');
+	expect(k.peek('conn-1')).toBeNull();
 });
 
 test('a corrupted or hand-edited stored record is discarded, not trusted', () => {
@@ -368,11 +375,11 @@ test('a LOST BROWSER RESPONSE is ambiguous and preserves the key', () => {
 	const error = { name: 'RequestFailed' };
 
 	expect(isAmbiguousPublishFailure(error)).toBe(true);
-	if (!isAmbiguousPublishFailure(error)) k.settle();
+	if (!isAmbiguousPublishFailure(error)) k.settle('conn-1');
 
 	// The retry sends the identical key.
 	expect(k.keyFor(intent())).toBe(key);
-	expect(k.peek()).toBe(key);
+	expect(k.peek('conn-1')).toBe(key);
 });
 
 test('a server-reported unresolved outcome preserves the key', () => {
@@ -381,7 +388,7 @@ test('a server-reported unresolved outcome preserves the key', () => {
 	const error = { name: 'ServerRefused', unresolved: true };
 
 	expect(isAmbiguousPublishFailure(error)).toBe(true);
-	if (!isAmbiguousPublishFailure(error)) k.settle();
+	if (!isAmbiguousPublishFailure(error)) k.settle('conn-1');
 
 	expect(k.keyFor(intent())).toBe(key);
 });
@@ -394,7 +401,7 @@ test('a DEFINITE server refusal releases the key', () => {
 	const error = { name: 'ServerRefused', unresolved: undefined };
 
 	expect(isAmbiguousPublishFailure(error)).toBe(false);
-	if (!isAmbiguousPublishFailure(error)) k.settle();
+	if (!isAmbiguousPublishFailure(error)) k.settle('conn-1');
 
 	expect(k.keyFor(intent())).not.toBe(key);
 });
@@ -419,4 +426,138 @@ test('a lost response survives a reload: the retry still reuses the key', () => 
 
 	expect(afterReload.keyFor(intent())).toBe(before);
 	expect(n).toBe(1);
+});
+
+// --- One unsettled claim per connection ----------------------------------
+//
+// The keeper used to hold ONE claim. Switching accounts overwrote it, which
+// silently released a claim that may already have created a post: the next
+// submit on the first account would mint a fresh key and originate a second.
+
+test('two connections hold their claims at the same time', () => {
+	const k = keeper();
+
+	const first = k.keyFor(intent({ connectionId: 'conn-1' }));
+	const second = k.keyFor(intent({ connectionId: 'conn-2' }));
+
+	expect(first).not.toBe(second);
+	// Coming back to the first account recovers its claim rather than minting a
+	// third key.
+	expect(k.keyFor(intent({ connectionId: 'conn-1' }))).toBe(first);
+	expect(k.keyFor(intent({ connectionId: 'conn-2' }))).toBe(second);
+});
+
+test('settling one connection preserves every other unsettled claim', () => {
+	const k = keeper();
+	const first = k.keyFor(intent({ connectionId: 'conn-1' }));
+	const second = k.keyFor(intent({ connectionId: 'conn-2' }));
+
+	// conn-2 settled; conn-1's outcome is still unknown.
+	k.settle('conn-2');
+
+	expect(k.peek('conn-1')).toBe(first);
+	expect(k.peek('conn-2')).toBeNull();
+	// The unsettled claim is intact, so a retry on conn-1 still collides.
+	expect(k.keyFor(intent({ connectionId: 'conn-1' }))).toBe(first);
+	// And conn-2 is genuinely free to start a new intent.
+	expect(k.keyFor(intent({ connectionId: 'conn-2' }))).not.toBe(second);
+});
+
+test('switching accounts back and forth never releases a claim', () => {
+	const k = keeper();
+	const held = k.keyFor(intent({ connectionId: 'conn-1' }));
+
+	for (const id of ['conn-2', 'conn-3', 'conn-1', 'conn-2', 'conn-1']) {
+		k.keyFor(intent({ connectionId: id }));
+	}
+
+	expect(k.peek('conn-1')).toBe(held);
+});
+
+test('tracked claims are bounded, and the oldest is the one dropped', () => {
+	// Unbounded growth in sessionStorage is its own bug. The bound is chosen so a
+	// realistic number of accounts all keep their claims; beyond that, the
+	// least-recently-touched claim is evicted rather than a random one.
+	const k = keeper();
+	const oldest = k.keyFor(intent({ connectionId: 'conn-0' }));
+	expect(k.peek('conn-0')).toBe(oldest);
+
+	for (let i = 1; i <= MAX_TRACKED_INTENT_CLAIMS; i++) {
+		k.keyFor(intent({ connectionId: `conn-${i}` }));
+	}
+
+	// Pushed out by the bound.
+	expect(k.peek('conn-0')).toBeNull();
+	// The most recent are all still held.
+	expect(k.peek(`conn-${MAX_TRACKED_INTENT_CLAIMS}`)).not.toBeNull();
+});
+
+test('a claim survives a reload, per connection', () => {
+	const { storage } = fakeStorage();
+	let n = 0;
+	const build = () =>
+		createPublishIntentKeeper(
+			() => `a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c${String(++n).padStart(2, '0')}`,
+			createSessionIntentKeyStore(storage),
+		);
+
+	const before = build();
+	const one = before.keyFor(intent({ connectionId: 'conn-1' }));
+	const two = before.keyFor(intent({ connectionId: 'conn-2' }));
+
+	// A reload rebuilds the keeper from storage.
+	const after = build();
+
+	expect(after.keyFor(intent({ connectionId: 'conn-1' }))).toBe(one);
+	expect(after.keyFor(intent({ connectionId: 'conn-2' }))).toBe(two);
+});
+
+// --- The 409 that must NOT release the claim -----------------------------
+
+test('a lost response, then a same-key 409, leaves the claim held', () => {
+	// The sequence that could publish twice. Submit; the response is lost; the
+	// retry sends the same key; the server answers 409 because the attempt is
+	// already claimed. If that 409 reads as a DEFINITE refusal the key is
+	// released, and the next submit mints a fresh key that originates a second
+	// post from one consent.
+	const k = keeper();
+	const key = k.keyFor(intent());
+
+	// 1. Response lost. Ambiguous, so nothing settles.
+	const lost = { name: 'RequestFailed' as const };
+	if (!isAmbiguousPublishFailure(lost)) k.settle('conn-1');
+	expect(k.keyFor(intent())).toBe(key);
+
+	// 2. The retry collides with the existing claim. The server reports that the
+	//    existing attempt is not settled, so this is still unresolved.
+	const collision = {
+		name: 'ServerRefused' as const,
+		unresolved: true,
+		status: 409,
+	};
+	expect(isAmbiguousPublishFailure(collision)).toBe(true);
+	if (!isAmbiguousPublishFailure(collision)) k.settle('conn-1');
+
+	// The claim is intact, so a third submit still collides instead of posting.
+	expect(k.peek('conn-1')).toBe(key);
+	expect(k.keyFor(intent())).toBe(key);
+});
+
+test('a same-key 409 for an ALREADY SETTLED attempt does release the claim', () => {
+	// The other direction: the earlier attempt reached a terminal status, so this
+	// intent is genuinely finished and an identical repost is a deliberate second
+	// post rather than a duplicate.
+	const k = keeper();
+	const key = k.keyFor(intent());
+
+	const settledCollision = {
+		name: 'ServerRefused' as const,
+		unresolved: false,
+		status: 409,
+	};
+	expect(isAmbiguousPublishFailure(settledCollision)).toBe(false);
+	if (!isAmbiguousPublishFailure(settledCollision)) k.settle('conn-1');
+
+	expect(k.peek('conn-1')).toBeNull();
+	expect(k.keyFor(intent())).not.toBe(key);
 });
