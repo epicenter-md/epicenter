@@ -111,9 +111,11 @@ the same commit at different times through different code.
   the first cross-surface liveness promise Epicenter makes for `data`.
 - `data` is no longer deferred by ADR-0186. How the client is delivered is
   unchanged; what it can now deliver includes a bound Lens.
-- Sleep, wake, and a restarted host self-heal instead of forcing a reload. The
-  cost is that a reconnect rescans, which is the price of never claiming a
-  deletion did not happen.
+- A carrier gap within one host generation self-heals instead of forcing a
+  reload. The cost is that a reconnect rescans, which is the price of never
+  claiming a deletion did not happen. A full host-process restart invalidates
+  the browser session and surface registration, so it still requires a surface
+  reload; this transport does not introduce a second bootstrap protocol.
 - One more socket per desktop surface, on the same origin, session, and Origin
   check as every other host API.
 
@@ -148,5 +150,5 @@ the same commit at different times through different code.
   one question, and every consumer picks wrong once.
 - **A fail-closed desktop carrier.** This was the only clean way to delete table
   scope: if a gap is fatal, no invalidation ever has to describe one. Rejected
-  because a transient socket gap across sleep or a host restart should heal
-  itself rather than make a person reload their app.
+  because a transient socket gap within one host generation should heal itself
+  rather than make a person reload their app.
