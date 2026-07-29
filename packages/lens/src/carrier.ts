@@ -27,6 +27,8 @@
  *   between, so no initial fire is needed to cover a window that does not exist.
  */
 
+import { extractErrorMessage } from 'wellcrafted/error';
+
 import type { Address } from './addresses.js';
 import type {
 	InvalidationDispatcher,
@@ -159,9 +161,13 @@ export async function openObservationCarrier({
 				// coming to drive the redial from.
 				if (isOpening) {
 					isOpening = false;
-					openingFailure = new Error('Observation carrier could not dial', {
-						cause,
-					});
+					// The reason is in the message as well as the `cause`. A caller that
+					// wraps this and reports the wrapper's message, which both of them
+					// do, would otherwise say only that a dial failed.
+					openingFailure = new Error(
+						`Observation carrier could not dial: ${extractErrorMessage(cause)}`,
+						{ cause },
+					);
 				} else {
 					log.error(
 						new Error('Observation carrier could not redial', { cause }),
@@ -271,7 +277,10 @@ function readObservationFrame(
 	data: unknown,
 	log: InvalidationErrorReporter,
 ): readonly Address[] | undefined {
-	if (typeof data !== 'string') return undefined;
+	if (typeof data !== 'string') {
+		log.error(new Error('Observation frame was not text'));
+		return undefined;
+	}
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(data);

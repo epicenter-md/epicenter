@@ -134,7 +134,11 @@ test('an opener whose first dial throws rejects with the dial failure as its cau
 	});
 
 	const failure = await rejectionOf(opening);
-	expect(failure.message).toBe('Observation carrier could not dial');
+	// The reason is readable from the message alone, because every caller wraps
+	// this and reports the wrapper's message rather than walking `cause`.
+	expect(failure.message).toBe(
+		'Observation carrier could not dial: this environment has no WebSocket',
+	);
 	expect(failure.cause).toBe(cause);
 
 	// A carrier nobody holds has nothing to heal, so the loop must not have
@@ -409,13 +413,19 @@ test('an unreadable frame is reported rather than silently discarded', async () 
 	script.socketAt(0).emit('open');
 	const carrier = await opening;
 
+	// Every way a frame can be unreadable says so. A silent drop is the one
+	// outcome that leaves a surface quietly out of date with nothing to read.
+	script.socketAt(0).send(new Uint8Array([1, 2, 3]));
 	script.socketAt(0).send('{');
+	script.socketAt(0).send(JSON.stringify({ type: 'hello' }));
 	script
 		.socketAt(0)
 		.send(JSON.stringify({ type: 'invalidation', changes: [1] }));
 
 	expect(script.reported.map((error) => (error as Error).message)).toEqual([
+		'Observation frame was not text',
 		'Observation frame was not JSON',
+		'Observation frame was not an invalidation',
 		'Observation frame named an unreadable address',
 	]);
 	carrier.close();
