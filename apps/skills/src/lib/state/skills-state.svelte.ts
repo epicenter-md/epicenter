@@ -1,14 +1,12 @@
+import type { NonconformingRowError } from '@epicenter/data';
 import { InstantString } from '@epicenter/field';
 import {
 	type Reference,
 	type Skill,
+	type SkillsData,
 	scanReferences,
 	scanSkills,
-	type skillsWorkspace,
 } from '@epicenter/skills';
-import type { RowLensError, Workspace } from '@epicenter/workspace/sqlite';
-
-type SkillsWorkspace = Workspace<typeof skillsWorkspace>;
 
 export type SkillMetadataUpdate = Partial<
 	Pick<Skill, 'name' | 'description' | 'license' | 'compatibility'>
@@ -16,14 +14,14 @@ export type SkillMetadataUpdate = Partial<
 
 export function createSkillsState({
 	skills,
-	onRecordsChanged,
+	reportBackgroundError,
 }: {
-	skills: SkillsWorkspace;
-	onRecordsChanged(listener: () => void): () => void;
+	skills: SkillsData;
+	reportBackgroundError(cause: unknown): void;
 }) {
 	let skillRows = $state.raw<Skill[]>([]);
 	let referenceRows = $state.raw<Reference[]>([]);
-	let nonconforming = $state.raw<RowLensError[]>([]);
+	let nonconforming = $state.raw<NonconformingRowError[]>([]);
 	let loadError = $state.raw<unknown>(null);
 	let selectedSkillId = $state<string | null>(null);
 	let refreshGeneration = 0;
@@ -67,9 +65,22 @@ export function createSkillsState({
 
 	let isDisposed = false;
 	let unsubscribe = () => {};
+	// Both tables feed one view, so either invalidation re-reads both. The
+	// carrier already coalesces a committed batch into one notification per
+	// table; `refresh`'s generation guard drops whichever read loses the race.
 	const whenReady = refresh({ throwOnError: true }).then(() => {
 		if (isDisposed) return;
-		unsubscribe = onRecordsChanged(() => void refresh());
+		const stops = [
+			skills.tables.skills.subscribe(() => {
+				void refresh().catch(reportBackgroundError);
+			}),
+			skills.tables.skillReferences.subscribe(() => {
+				void refresh().catch(reportBackgroundError);
+			}),
+		];
+		unsubscribe = () => {
+			for (const stop of stops) stop();
+		};
 	});
 
 	return {
@@ -117,7 +128,7 @@ export function createSkillsState({
 		async deleteSkill(id: string): Promise<void> {
 			for (const reference of referenceRows) {
 				if (reference.skillId === id) {
-					await skills.tables.references.delete(reference.id);
+					await skills.tables.skillReferences.delete(reference.id);
 				}
 			}
 			await skills.tables.skills.delete(id);
@@ -128,7 +139,7 @@ export function createSkillsState({
 			await refresh();
 		},
 		async createReference(skillId: string, path: string): Promise<string> {
-			const reference = await skills.tables.references.create({
+			const reference = await skills.tables.skillReferences.create({
 				skillId,
 				path,
 				updatedAt: InstantString.now(),
@@ -137,7 +148,7 @@ export function createSkillsState({
 			return reference.id;
 		},
 		async deleteReference(id: string): Promise<void> {
-			await skills.tables.references.delete(id);
+			await skills.tables.skillReferences.delete(id);
 			await refresh();
 		},
 		[Symbol.dispose]() {

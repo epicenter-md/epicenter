@@ -21,7 +21,7 @@
 		"@epicenter/field": "workspace:*",
 		"@epicenter/skills": "workspace:*",
 		"@epicenter/ui": "workspace:*",
-		"@epicenter/workspace": "workspace:*",
+		"@epicenter/data": "workspace:*",
 		"shiki": "^3.7.0",
 		"@sveltejs/adapter-auto": "catalog:",
 		"@sveltejs/kit": "catalog:",
