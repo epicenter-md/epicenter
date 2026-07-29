@@ -474,9 +474,16 @@ test('switching accounts back and forth never releases a claim', () => {
 	expect(k.peek('conn-1')).toBe(held);
 });
 
+test('the bound sits comfortably above a real account fleet', () => {
+	// Eviction silently RELEASES a claim, which is the failure this mechanism
+	// exists to prevent, so the bound is a backstop rather than a capacity plan.
+	// The first real tenant posts to 12 to 14 accounts; the bound must not merely
+	// meet that.
+	expect(MAX_TRACKED_INTENT_CLAIMS).toBeGreaterThanOrEqual(32);
+});
+
 test('tracked claims are bounded, and the oldest is the one dropped', () => {
-	// Unbounded growth in sessionStorage is its own bug. The bound is chosen so a
-	// realistic number of accounts all keep their claims; beyond that, the
+	// Unbounded growth in sessionStorage is its own bug. Beyond the bound, the
 	// least-recently-touched claim is evicted rather than a random one.
 	const k = keeper();
 	const oldest = k.keyFor(intent({ connectionId: 'conn-0' }));

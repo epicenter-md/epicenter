@@ -153,12 +153,21 @@ export type IntentClaim = {
  * How many unsettled claims are remembered at once.
  *
  * Bounded because this lives in `sessionStorage` and an unbounded map is its own
- * defect. Well above the number of accounts anyone posts to in one sitting, so
- * eviction is a backstop rather than part of normal operation. Claims are kept
- * most-recently-touched first and the tail is what falls off, so the claim most
- * likely to still matter is the last to go.
+ * defect. The bound is a SAFETY BACKSTOP, not a capacity plan: evicting a claim
+ * silently releases it, and releasing a claim that may already have created a post
+ * is the failure this whole mechanism exists to prevent. So it has to sit
+ * comfortably above any real fleet rather than merely at it.
+ *
+ * The first real tenant posts to 12 to 14 accounts, and 32 leaves better than
+ * double that headroom while staying a few kilobytes of session storage.
+ * Simultaneous UNSETTLED claims are rare in any case: a claim is released as soon
+ * as its post settles, so reaching the bound means dozens of accounts each holding
+ * an unresolved outcome at the same moment.
+ *
+ * Claims are kept most-recently-touched first and the tail is what falls off, so
+ * the claim most likely to still matter is the last to go.
  */
-export const MAX_TRACKED_INTENT_CLAIMS = 12;
+export const MAX_TRACKED_INTENT_CLAIMS = 32;
 
 /**
  * Where a keeper remembers its unsettled claims across page loads.
