@@ -327,18 +327,47 @@ test('a video exactly at the ceiling is allowed', () => {
 	).toBe('A caption');
 });
 
-test('an UNKNOWN duration does not fabricate a pass or a fail', () => {
-	// The container could not be parsed server-side. Refusing would block valid
-	// posts and passing silently would be a false guarantee, so the policy simply
-	// does not decide and lets TikTok be the backstop.
-	const input = expectInput(
+test('an UNKNOWN duration FAILS CLOSED for Direct Post', () => {
+	// TikTok makes checking the video length a client responsibility, so an
+	// unreadable container means this surface did not perform a required check.
+	// Passing it through would make TikTok the backstop for something the audit
+	// path must verify itself.
+	const violation = expectViolation(
 		validateDirectPost({
 			choices: choices({ durationSec: null }),
-			creatorInfo: creatorInfo({ maxVideoDurationSec: 1 }),
+			creatorInfo: creatorInfo(),
 		}),
 	);
 
-	expect(input.videoSize).toBe(1024);
+	expect(violation.field).toBe('duration');
+	expect(violation.message).toContain('could not read');
+});
+
+test.each([
+	['zero', 0],
+	['negative', -5],
+	['not finite', Number.NaN],
+	['infinite', Number.POSITIVE_INFINITY],
+])('a %s duration is refused rather than treated as valid', (_label, value) => {
+	expect(
+		expectViolation(
+			validateDirectPost({
+				choices: choices({ durationSec: value }),
+				creatorInfo: creatorInfo(),
+			}),
+		).field,
+	).toBe('duration');
+});
+
+test('a missing account ceiling is refused: there is nothing to check against', () => {
+	expect(
+		expectViolation(
+			validateDirectPost({
+				choices: choices({ durationSec: 10 }),
+				creatorInfo: creatorInfo({ maxVideoDurationSec: 0 }),
+			}),
+		).field,
+	).toBe('duration');
 });
 
 test('a missing video is refused', () => {

@@ -50,6 +50,27 @@ export const TikTokTokenError = defineErrors({
 			'This TikTok connection has expired. Reconnect the account to keep publishing.',
 		connectionId,
 	}),
+	/**
+	 * The refreshed grant names a DIFFERENT TikTok account than the row it came
+	 * from. Nothing normal produces this: it means a provider anomaly or a
+	 * credential mixup, and the consequence of continuing would be operating
+	 * account B while the dashboard names account A. Fail closed.
+	 */
+	ConnectionIdentityChanged: ({
+		connectionId,
+		expectedOpenId,
+		actualOpenId,
+	}: {
+		connectionId: string;
+		expectedOpenId: string;
+		actualOpenId: string;
+	}) => ({
+		message:
+			'This TikTok connection now reports a different account. Disconnect it and reconnect the account you intend to use.',
+		connectionId,
+		expectedOpenId,
+		actualOpenId,
+	}),
 });
 export type TikTokTokenError = import('wellcrafted/error').InferErrors<
 	typeof TikTokTokenError
@@ -147,6 +168,17 @@ export async function ensureAccessToken({
 			const { data: grant, error: refreshError } =
 				await oauth.refresh(refreshToken);
 			if (refreshError) return Err(refreshError);
+
+			// The refreshed grant must still be the SAME TikTok account. Checked
+			// before anything is persisted or returned, so an anomaly cannot leave
+			// this row holding credentials for an account it does not name.
+			if (grant.openId !== row.openId) {
+				return TikTokTokenError.ConnectionIdentityChanged({
+					connectionId,
+					expectedOpenId: row.openId,
+					actualOpenId: grant.openId,
+				});
+			}
 
 			// Encrypt BOTH tokens before writing either. TikTok may have rotated the
 			// refresh token, and storing the new access token beside a stale refresh
