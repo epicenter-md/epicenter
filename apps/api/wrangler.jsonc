@@ -136,6 +136,32 @@
 			"BLOBS_S3_ACCESS_KEY_ID",
 			"BLOBS_S3_SECRET_ACCESS_KEY"
 		]
+		// --- TikTok connected publishing accounts: deliberately NOT listed ---
+		// `secrets` accepts only `required`, and a name listed there fails the
+		// DEPLOY when it is unset. The TikTok integration is register-when-present:
+		// while unconfigured it answers a named 503 and the dashboard renders an
+		// explicit "not configured" state, so it never reaches the bar this list
+		// exists for ("fail the deploy when the hosted edge is missing a provider
+		// the UI would show"). Blocking every deploy on TikTok app review finishing
+		// would be a strictly worse trade.
+		//
+		// Its four bindings are therefore declared beside their reader, as the
+		// arktype `TikTokBindings` in worker/integrations/tiktok/config.ts, the
+		// same edge-local shape `CloudAuthBindings` uses (ADR-0076):
+		//
+		//   TIKTOK_CLIENT_KEY, TIKTOK_CLIENT_SECRET
+		//     From the TikTok developer portal. TikTok calls the public half a
+		//     "client key", not a client id, on every endpoint.
+		//
+		//   TIKTOK_TOKEN_ENCRYPTION_KEY
+		//     32 random bytes, base64url: the AES-256-GCM key for OAuth tokens at
+		//     rest. Its OWN secret, never BETTER_AUTH_SECRET, so rotating the
+		//     session secret cannot strand every stored TikTok grant and a leak of
+		//     one is not a leak of both. Generate with:
+		//       bun -e "console.log(Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64url'))"
+		//
+		//   TIKTOK_TOKEN_ENCRYPTION_KEY_V2
+		//     Present only mid-rotation. See integrations/tiktok/token-cipher.ts.
 	},
 	// --- Hyperdrive: Postgres connection pool ---
 	// Create with: bunx wrangler hyperdrive create epicenter-db --connection-string="postgres://..."
