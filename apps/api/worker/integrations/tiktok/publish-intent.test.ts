@@ -1,10 +1,13 @@
 import { expect, test } from 'bun:test';
 import {
 	createPublishIntentKeeper,
+	createSessionIntentKeyStore,
 	fingerprintPublishIntent,
+	isAmbiguousPublishFailure,
 	isValidIdempotencyKey,
 	MAX_IDEMPOTENCY_KEY_LENGTH,
 	type PublishIntent,
+	type StorageLike,
 } from './publish-intent.js';
 
 function intent(overrides: Partial<PublishIntent> = {}): PublishIntent {
@@ -195,4 +198,238 @@ test('every key the keeper produces satisfies the server contract', () => {
 		k.settle();
 		expect(isValidIdempotencyKey(k.keyFor(intent()))).toBe(true);
 	}
+});
+
+// --- Surviving a reload --------------------------------------------------
+//
+// Reloading is the natural reaction to a stalled request, and would otherwise
+// be the easiest way to lose the claim and publish twice.
+
+/** A sessionStorage stand-in whose contents outlive a keeper instance. */
+function fakeStorage() {
+	const items = new Map<string, string>();
+	return {
+		items,
+		storage: {
+			getItem: (key: string) => items.get(key) ?? null,
+			setItem: (key: string, value: string) => {
+				items.set(key, value);
+			},
+			removeItem: (key: string) => {
+				items.delete(key);
+			},
+		} satisfies StorageLike,
+	};
+}
+
+test('a keeper rebuilt from the same session backing recovers the same key', () => {
+	const { storage } = fakeStorage();
+	let n = 0;
+	const build = () =>
+		createPublishIntentKeeper(
+			// Contract-valid: the store validates what it reads back, so a stub key
+			// shorter than the minimum would be discarded as corrupt.
+			() => `session-key-${++n}`,
+			createSessionIntentKeyStore(storage),
+		);
+
+	const before = build().keyFor(intent());
+	// The page reloads: a brand new keeper, same tab, same chosen file and
+	// settings.
+	const after = build().keyFor(intent());
+
+	expect(after).toBe(before);
+	expect(n).toBe(1);
+});
+
+test('a reload after a DIFFERENT intent still mints a new key', () => {
+	const { storage } = fakeStorage();
+	let n = 0;
+	const build = () =>
+		createPublishIntentKeeper(
+			// Contract-valid: the store validates what it reads back, so a stub key
+			// shorter than the minimum would be discarded as corrupt.
+			() => `session-key-${++n}`,
+			createSessionIntentKeyStore(storage),
+		);
+
+	const before = build().keyFor(intent());
+	const after = build().keyFor(intent({ title: 'a different caption' }));
+
+	expect(after).not.toBe(before);
+});
+
+test('a settled outcome clears the session backing, so a reload starts fresh', () => {
+	const { storage, items } = fakeStorage();
+	let n = 0;
+	const build = () =>
+		createPublishIntentKeeper(
+			// Contract-valid: the store validates what it reads back, so a stub key
+			// shorter than the minimum would be discarded as corrupt.
+			() => `session-key-${++n}`,
+			createSessionIntentKeyStore(storage),
+		);
+
+	const first = build();
+	const key = first.keyFor(intent());
+	expect(items.size).toBe(1);
+
+	first.settle();
+	expect(items.size).toBe(0);
+
+	// Even the identical intent is a NEW post after a settled outcome.
+	expect(build().keyFor(intent())).not.toBe(key);
+});
+
+test('the stored record contains only the fingerprint and the key', () => {
+	const { storage, items } = fakeStorage();
+	const k = createPublishIntentKeeper(
+		() => 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d',
+		createSessionIntentKeyStore(storage),
+	);
+	k.keyFor(intent());
+
+	const [entry] = [...items.values()];
+	const parsed = JSON.parse(entry as string) as Record<string, unknown>;
+	expect(Object.keys(parsed).sort()).toEqual(['fingerprint', 'key']);
+	// Nothing a server would trust, and nothing secret.
+	expect(entry).not.toContain('token');
+});
+
+test('storage that is unavailable degrades to in-memory instead of throwing', () => {
+	// Safari private mode and hardened profiles throw on setItem.
+	const hostile: StorageLike = {
+		getItem: () => {
+			throw new Error('storage disabled');
+		},
+		setItem: () => {
+			throw new Error('storage disabled');
+		},
+		removeItem: () => {
+			throw new Error('storage disabled');
+		},
+	};
+	const k = createPublishIntentKeeper(
+		() => crypto.randomUUID(),
+		createSessionIntentKeyStore(hostile),
+	);
+
+	const key = k.keyFor(intent());
+	// The claim still holds for this page load, which is what a retry needs.
+	expect(k.keyFor(intent())).toBe(key);
+	expect(() => k.settle()).not.toThrow();
+});
+
+test('no storage at all behaves like an ordinary in-memory keeper', () => {
+	const k = createPublishIntentKeeper(
+		() => crypto.randomUUID(),
+		createSessionIntentKeyStore(null),
+	);
+
+	const key = k.keyFor(intent());
+	expect(k.keyFor(intent())).toBe(key);
+	k.settle();
+	expect(k.peek()).toBeNull();
+});
+
+test('a corrupted or hand-edited stored record is discarded, not trusted', () => {
+	// A bad fingerprint would attach a live key to the wrong post.
+	for (const bad of [
+		'not json',
+		'{"fingerprint":"x"}',
+		'{"key":"a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"}',
+		'{"fingerprint":"x","key":"tooshort"}',
+		'{"fingerprint":123,"key":"a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"}',
+	]) {
+		const { storage, items } = fakeStorage();
+		items.set('epicenter.tiktok.publish-intent', bad);
+		const k = createPublishIntentKeeper(
+			() => 'f1e2d3c4-b5a6-4978-8b6c-5d4e3f2a1b0c',
+			createSessionIntentKeyStore(storage),
+		);
+
+		expect(k.keyFor(intent())).toBe('f1e2d3c4-b5a6-4978-8b6c-5d4e3f2a1b0c');
+	}
+});
+
+test('a recovered key still satisfies the server contract', () => {
+	const { storage } = fakeStorage();
+	createPublishIntentKeeper(
+		() => crypto.randomUUID(),
+		createSessionIntentKeyStore(storage),
+	).keyFor(intent());
+
+	const recovered = createPublishIntentKeeper(
+		() => crypto.randomUUID(),
+		createSessionIntentKeyStore(storage),
+	).keyFor(intent());
+
+	expect(isValidIdempotencyKey(recovered)).toBe(true);
+});
+
+// --- Which outcomes release the key --------------------------------------
+//
+// The rule the dashboard follows, tested here so it is not buried in a Svelte
+// handler where it went wrong once already.
+
+test('a LOST BROWSER RESPONSE is ambiguous and preserves the key', () => {
+	// The defect this replaces: only server-reported ambiguity preserved the
+	// key, so a dropped connection released it and the retry minted a new
+	// intent, which the server would have happily turned into a second post.
+	const k = keeper();
+	const key = k.keyFor(intent());
+	const error = { name: 'RequestFailed' };
+
+	expect(isAmbiguousPublishFailure(error)).toBe(true);
+	if (!isAmbiguousPublishFailure(error)) k.settle();
+
+	// The retry sends the identical key.
+	expect(k.keyFor(intent())).toBe(key);
+	expect(k.peek()).toBe(key);
+});
+
+test('a server-reported unresolved outcome preserves the key', () => {
+	const k = keeper();
+	const key = k.keyFor(intent());
+	const error = { name: 'ServerRefused', unresolved: true };
+
+	expect(isAmbiguousPublishFailure(error)).toBe(true);
+	if (!isAmbiguousPublishFailure(error)) k.settle();
+
+	expect(k.keyFor(intent())).toBe(key);
+});
+
+test('a DEFINITE server refusal releases the key', () => {
+	// Nothing was created, so a corrected post is a new intent and must not
+	// collide with the spent claim.
+	const k = keeper();
+	const key = k.keyFor(intent());
+	const error = { name: 'ServerRefused', unresolved: undefined };
+
+	expect(isAmbiguousPublishFailure(error)).toBe(false);
+	if (!isAmbiguousPublishFailure(error)) k.settle();
+
+	expect(k.keyFor(intent())).not.toBe(key);
+});
+
+test('a lost response survives a reload: the retry still reuses the key', () => {
+	// The two corrections together. Connection drops, creator reloads the page
+	// (the natural reaction), then retries.
+	const { storage } = fakeStorage();
+	let n = 0;
+	const build = () =>
+		createPublishIntentKeeper(
+			() => `session-key-${++n}`,
+			createSessionIntentKeyStore(storage),
+		);
+
+	const before = build().keyFor(intent());
+	// fetch rejected: ambiguous, so nothing is settled.
+	expect(isAmbiguousPublishFailure({ name: 'RequestFailed' })).toBe(true);
+
+	// ...page reload...
+	const afterReload = build();
+
+	expect(afterReload.keyFor(intent())).toBe(before);
+	expect(n).toBe(1);
 });

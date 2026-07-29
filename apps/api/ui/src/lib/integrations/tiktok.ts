@@ -240,4 +240,8 @@ export type { PublishIntent } from '$api/integrations/tiktok/publish-intent';
  * The idempotency-key lifecycle, from the module whose contract the server
  * validates. The dashboard must not mint keys per click; see publish-intent.ts.
  */
-export { createPublishIntentKeeper } from '$api/integrations/tiktok/publish-intent';
+export {
+	createPublishIntentKeeper,
+	createSessionIntentKeyStore,
+	isAmbiguousPublishFailure,
+} from '$api/integrations/tiktok/publish-intent';
