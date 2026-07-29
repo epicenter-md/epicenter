@@ -48,8 +48,9 @@ test('a directory that was never created still opens and persists', async () => 
 	expect(existsSync(join(root.directory, EPICENTER_FILE_NAME))).toBeTrue();
 
 	await using reopened = await openBunEpicenter({ directory: root.directory });
-	expect(expectOk(await reopened.bind(notesLens).tables.notes.get(created.id)))
-		.toEqual(created);
+	expect(
+		expectOk(await reopened.bind(notesLens).tables.notes.get(created.id)),
+	).toEqual(created);
 });
 
 test('a path whose parent directory does not exist opens the same way', async () => {
@@ -63,6 +64,7 @@ test('a path whose parent directory does not exist opens the same way', async ()
 	const created = await epicenter.bind(notesLens).tables.notes.create({
 		title: 'path boot',
 	});
-	expect(expectOk(await epicenter.bind(notesLens).tables.notes.get(created.id)))
-		.toEqual(created);
+	expect(
+		expectOk(await epicenter.bind(notesLens).tables.notes.get(created.id)),
+	).toEqual(created);
 });

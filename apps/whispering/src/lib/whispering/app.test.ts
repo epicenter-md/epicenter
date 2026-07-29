@@ -114,9 +114,7 @@ test('one changed setting rereads one setting, not every setting', async () => {
 
 		// The write's own invalidation rereads exactly the value that moved.
 		// Before this, it reread all of them, once per subscribed value.
-		expect(new Set(reads)).toEqual(
-			new Set(['settings.recording.autoUpload']),
-		);
+		expect(new Set(reads)).toEqual(new Set(['settings.recording.autoUpload']));
 		expect(reads.length).toBeLessThan(bootReads);
 	} finally {
 		rmSync(root, { recursive: true, force: true });

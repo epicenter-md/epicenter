@@ -111,9 +111,7 @@ const ApiBunBindings = ServerBindings.merge(CloudAuthBindings).merge({
  * identical across the two, so they cannot drift.
  */
 export function startBunApiServer(
-	opts: {
-		resolveBearerPrincipal?: ResolveBearerPrincipal<CloudEnv>;
-	} = {},
+	opts: { resolveBearerPrincipal?: ResolveBearerPrincipal<CloudEnv> } = {},
 ): void {
 	// Validate this Bun host's environment once, at boot. The validated result IS
 	// the typed env handed to the Hono app: no `as`-cast over `process.env`, no
