@@ -9,7 +9,6 @@ import {
 	type Workspace,
 } from '@epicenter/workspace/sqlite';
 import { createAccountBrowserWorkspaceRuntime } from '@epicenter/workspace/sqlite/browser';
-import { Type } from 'typebox';
 
 const params = new URLSearchParams(location.search);
 const apiOrigin = params.get('api');
@@ -91,16 +90,9 @@ function createDriver(
 		delete(id: string) {
 			return workspace.tables.notes.delete(id);
 		},
-		sql() {
-			return workspace.sql(
-				`SELECT row_id AS id,
-				        json_extract(fields_json, '$.title') AS title
-				   FROM records
-				  WHERE table_key = 'notes'
-				  ORDER BY id`,
-				[],
-				Type.Object({ id: Type.String(), title: Type.String() }),
-			);
+		async list() {
+			const { rows } = await workspace.tables.notes.list();
+			return [...rows].sort((a, b) => a.id.localeCompare(b.id));
 		},
 		async openDraft(noteId: string) {
 			draft ??= await workspace.tables.notes.document.open(noteId);
@@ -157,7 +149,7 @@ declare global {
 				error: unknown;
 			}>;
 			delete(id: string): Promise<void>;
-			sql(): Promise<Array<{ id: string; title: string }>>;
+			list(): Promise<Array<{ id: string; title: string }>>;
 			openDraft(noteId: string): Promise<string>;
 			writeDraft(value: string): Promise<void>;
 			readDraft(): { text?: string; revoked?: string };

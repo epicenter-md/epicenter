@@ -238,12 +238,12 @@ try {
 		crossRead.data?.title === 'first',
 		"stealing Worker did not read the previous owner's OPFS state",
 	);
-	const sqlRows = await second.evaluate(() =>
-		window.productionBrowserRuntime.sql(),
+	const stolenRows = await second.evaluate(() =>
+		window.productionBrowserRuntime.list(),
 	);
 	assert(
-		sqlRows.length === 2 && sqlRows.some(({ id }) => id === secondRow.id),
-		'stealing Worker SQL relation missed committed rows',
+		stolenRows.length === 2 && stolenRows.some(({ id }) => id === secondRow.id),
+		'stealing Worker table read missed committed rows',
 	);
 	const stolenFailure = await first.evaluate(() =>
 		window.productionBrowserRuntime
