@@ -117,8 +117,8 @@ Settled since the first draft: threads derive vs guard is no longer open. Derive
 ## Owner decisions this spec surfaces but does not make
 
 - ~~Flip ADR-0081/ADR-0082 from Proposed to Accepted, with two corrections at flip time.~~ Done 2026-07-29. Both corrections landed: ADR-0082 now rejects push on provisioning cost and names the Pub/Sub PULL subscription as the no-server upgrade path instead of rejecting the public-webhook strawman, and ADR-0081's "standalone on a phone" consequence now says what Google's ceiling actually buys, pointing at ADR-0116 and ADR-0098 for the phone story. ADR-0082's OAuth-client-identity half was split into ADR-0188 rather than accepted.
-- CASA Tier 2 quote before hosted mode ships a restricted scope publicly (client stays Testing mode until then; test-user refresh tokens die 7 days after issuance).
-- Secret-vault cross-device token sync (parent spec question 1).
+- Google verification for the official distribution's client before it ships `gmail.modify` publicly, and a decision on whether a third-party security assessment is owed at all: Google triggers it on server access to restricted data, which ADR-0188's device-only boundary avoids. Confirm before budgeting a CASA quote. Until a verified client exists the project stays in Testing mode, capped at ~100 test users, and test-user refresh tokens die 7 days after issuance.
+- ~~Secret-vault cross-device token sync (parent spec question 1).~~ Closed by ADR-0188: tokens stay device-local and never sync through a server, because a per-device grant is free under ADR-0081.
 
 ## Success Criteria
 
