@@ -85,6 +85,38 @@ const SESSION_COOKIE = 'epicenter_session';
 const MAX_BROWSER_SESSIONS = 32;
 const SESSION_SHELL = `<!doctype html><html><head><meta charset="utf-8"><title>Epicenter</title><script>window.__EPICENTER_SESSION_READY__.then(() => window.location.reload())</script></head><body></body></html>`;
 
+type ObservationWebSocket = {
+	send(data: string): void;
+	raw?: unknown;
+};
+
+/**
+ * Send one observation frame without erasing Bun's delivery status.
+ *
+ * Hono's portable `WSContext` intentionally exposes a void `send`, but this
+ * Bun-owned route needs to distinguish delivered, dropped, and backpressured
+ * frames. A non-positive native result is therefore a carrier failure: the
+ * caller closes it and reconnect recovery emits the strongest honest
+ * invalidation for every subscribed handle.
+ */
+export function sendObservationFrame(
+	ws: ObservationWebSocket,
+	frame: DesktopInvalidationFrame,
+): void {
+	const payload = JSON.stringify(frame);
+	if (ws.raw === undefined) {
+		ws.send(payload);
+		return;
+	}
+	const status = (ws.raw as { send(data: string): number }).send(payload);
+	if (status > 0) return;
+	throw new Error(
+		status === 0
+			? 'Observation frame was dropped'
+			: 'Observation carrier is backpressured',
+	);
+}
+
 export function createHomeServer({
 	host,
 	origin,
@@ -504,7 +536,7 @@ export function createHomeServer({
 								changes: [...changes],
 							};
 							try {
-								ws.send(JSON.stringify(frame));
+								sendObservationFrame(ws, frame);
 							} catch (cause) {
 								// A send that fails has already lost a frame, and there is
 								// no way to know how much else this socket would drop. Fail

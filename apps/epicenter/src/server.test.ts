@@ -54,6 +54,7 @@ import {
 } from './routes.ts';
 import {
 	createHomeServer,
+	sendObservationFrame,
 	type HomeServerEvent,
 	type HomeSessionResponse,
 } from './server.ts';
@@ -98,6 +99,50 @@ const serverAuthentication = new WeakMap<
 	TestServer,
 	{ cookie: string; origin: string }
 >();
+
+describe('sendObservationFrame', () => {
+	const frame = {
+		type: 'invalidation' as const,
+		changes: [
+			{
+				kind: 'value' as const,
+				namespace: 'test',
+				valueName: 'theme',
+			},
+		],
+	};
+
+	test.each([
+		[0, 'dropped'],
+		[-1, 'backpressured'],
+	])('rejects native send status %i as %s', (status, message) => {
+		expect(() =>
+			sendObservationFrame(
+				{
+					send() {
+						throw new Error('portable send must not be used');
+					},
+					raw: { send: () => status },
+				},
+				frame,
+			),
+		).toThrow(message);
+	});
+
+	test('accepts a positive native send status', () => {
+		expect(() =>
+			sendObservationFrame(
+				{
+					send() {
+						throw new Error('portable send must not be used');
+					},
+					raw: { send: () => 42 },
+				},
+				frame,
+			),
+		).not.toThrow();
+	});
+});
 
 function scriptedEngine(scripts: EngineChunk[][]): AgentEngine {
 	let step = 0;
