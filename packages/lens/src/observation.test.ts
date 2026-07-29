@@ -1,11 +1,10 @@
 import { expect, test } from 'bun:test';
 import { createLogger, memorySink } from 'wellcrafted/logger';
-
+import type { Address } from './addresses.js';
 import {
 	createInvalidationDispatcher,
 	type TableInvalidation,
 } from './observation.js';
-import type { Address } from './protocol/index.js';
 
 const NAMESPACE = 'so.epicenter.test';
 

@@ -1,7 +1,17 @@
 import type {
+	SerializedTableDefinition,
+	SerializedValueDefinition,
+} from '@epicenter/lens';
+import type {
 	DocumentPublishOutcome,
 	DocumentPullResponse,
 } from '../documents.js';
+
+export type {
+	SerializedTableDefinition,
+	SerializedValueDefinition,
+} from '@epicenter/lens';
+
 import type {
 	Address,
 	ExchangeRequest,
@@ -30,18 +40,6 @@ export type SessionTransportResponse =
 	| { kind: 'exchange'; response: ExchangeResponse }
 	| { kind: 'document-publish'; outcome: DocumentPublishOutcome }
 	| { kind: 'document-pull'; response: DocumentPullResponse };
-
-export type SerializedTableDefinition = {
-	namespace: string;
-	table: string;
-	fields: Record<string, unknown>;
-	optionalFields: string[];
-};
-
-export type SerializedValueDefinition = {
-	address: ValueAddress;
-	value: unknown;
-};
 
 export type BrowserOperation =
 	| { kind: 'open' }

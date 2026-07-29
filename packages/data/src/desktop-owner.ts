@@ -1,7 +1,3 @@
-import type { TSchema } from 'typebox';
-import type { Address } from './protocol/index.js';
-import type { Result } from 'wellcrafted/result';
-import { epicenterPath, openBunEpicenter } from './bun.js';
 import {
 	defineLens,
 	defineTable,
@@ -9,7 +5,10 @@ import {
 	optional,
 	type TableDefinition,
 	type ValueDefinition,
-} from './definitions.js';
+} from '@epicenter/lens';
+import type { TSchema } from 'typebox';
+import type { Result } from 'wellcrafted/result';
+import { epicenterPath, openBunEpicenter } from './bun.js';
 import type {
 	DesktopOperation,
 	DesktopRequest,
@@ -33,6 +32,7 @@ import {
 	type InspectionError,
 	openInspection,
 } from './inspection.js';
+import type { Address } from './protocol/index.js';
 
 type UntypedTableLens = {
 	create(fields: Record<string, unknown>): Promise<unknown>;

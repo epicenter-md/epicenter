@@ -34,6 +34,7 @@
  * document bytes, and the raw relations are not a complete portable artifact.
  */
 import { Database } from 'bun:sqlite';
+import type { Lens } from '@epicenter/lens';
 import type { SqliteValue } from '@epicenter/sqlite';
 import {
 	defineErrors,
@@ -41,8 +42,6 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { type Result, trySync } from 'wellcrafted/result';
-
-import type { Lens } from './definitions.js';
 
 /** Rows returned to the host. Column names come from the submitted SQL. */
 export type InspectionRow = Record<string, SqliteValue | ArrayBuffer>;

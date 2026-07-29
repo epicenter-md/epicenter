@@ -1,0 +1,48 @@
+{
+	"name": "@epicenter/lens",
+	"version": "0.1.0",
+	"description": "The inert Epicenter data-contract vocabulary for installed applications.",
+	"type": "module",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/EpicenterHQ/epicenter.git",
+		"directory": "packages/lens"
+	},
+	"homepage": "https://epicenter.so",
+	"keywords": [
+		"epicenter",
+		"local-first",
+		"schema",
+		"lens",
+		"sdk"
+	],
+	"sideEffects": false,
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist",
+		"src",
+		"!src/**/*.test.ts",
+		"LICENSE"
+	],
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json",
+		"typecheck": "tsc --noEmit",
+		"test": "bun test",
+		"prepare": "bun run build"
+	},
+	"dependencies": {
+		"@epicenter/field": "workspace:*",
+		"typebox": "catalog:",
+		"wellcrafted": "catalog:"
+	},
+	"devDependencies": {
+		"@types/bun": "catalog:",
+		"typescript": "catalog:"
+	}
+}

@@ -4,7 +4,6 @@ import {
 	Optional,
 	type Static,
 	type TOptional,
-	type TOptionalAdd,
 	type TSchema,
 } from 'typebox';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
@@ -12,15 +11,13 @@ import { Ok, type Result } from 'wellcrafted/result';
 
 import {
 	DATA_ADDRESS_CEILINGS,
-	isJsonValue,
 	isNamespace,
 	isTableName,
 	isValueName,
-	type JsonObject,
-	type JsonValue,
 	type RowAddress,
 	type ValueAddress,
-} from './protocol/index.js';
+} from './addresses.js';
+import { isJsonValue, type JsonObject, type JsonValue } from './json.js';
 
 type FieldSchemas = Record<string, TSchema>;
 
@@ -190,11 +187,22 @@ export type CompiledValueDefinition = {
 const compiledTables = new WeakMap<object, CompiledTableDefinition>();
 const compiledValues = new WeakMap<object, CompiledValueDefinition>();
 
-/** Mark one field as optional in a table definition. */
+/**
+ * Mark one field as optional in a table definition.
+ *
+ * Annotated as `TOptional<T>` rather than TypeBox's own `TOptionalAdd<T>`,
+ * which is what `Optional()` actually returns. The two agree for every schema
+ * this can be handed (`TOptionalAdd` only differs when the schema is already
+ * optional, and marking twice yields the same intersection), and `TOptional` is
+ * the name that has stayed exported across TypeBox 1.x. This package's `.d.ts`
+ * is compiled and published, so a consumer type-checks it against whatever
+ * TypeBox their own install resolved: naming a type that moved between minor
+ * versions turns our upgrade into their build failure.
+ */
 export function optional<TSchemaValue extends TSchema>(
 	schema: TSchemaValue,
-): TOptionalAdd<TSchemaValue> {
-	return Optional(schema);
+): TOptional<TSchemaValue> {
+	return Optional(schema) as TOptional<TSchemaValue>;
 }
 
 export function defineTable<const TFields extends FieldSchemas>({
@@ -255,10 +263,10 @@ export function defineValue<const TSchemaValue extends TSchema>({
 	compiledValues.set(definition, {
 		project(address, value) {
 			return check(value)
-				? Ok(structuredClone(value))
+				? Ok(cloneJsonValue(value))
 				: DataReadError.NonconformingValue({
 						address,
-						raw: structuredClone(value),
+						raw: cloneJsonValue(value),
 					});
 		},
 		validate(value) {
@@ -363,13 +371,13 @@ function createCompiledTable(
 					});
 					continue;
 				}
-				projected[name] = structuredClone(value);
+				projected[name] = cloneJsonValue(value);
 			}
 			return issues.length === 0
 				? Ok(projected)
 				: DataReadError.NonconformingRow({
 						address,
-						raw: structuredClone(payload),
+						raw: cloneJsonValue(payload),
 						issues,
 					});
 		},
@@ -484,7 +492,16 @@ function freezeJson<TValue>(value: TValue): TValue {
 	return Object.freeze(value);
 }
 
+function cloneJsonValue(value: JsonObject): JsonObject;
+function cloneJsonValue(value: JsonValue): JsonValue;
+function cloneJsonValue(value: unknown): JsonValue;
 function cloneJsonValue(value: unknown): JsonValue {
 	if (!isJsonValue(value)) throw new TypeError('Value must be finite JSON');
-	return structuredClone(value);
+	if (value === null || typeof value !== 'object') return value;
+	if (Array.isArray(value)) return value.map(cloneJsonValue);
+	const clone: JsonObject = {};
+	for (const [key, child] of Object.entries(value)) {
+		clone[key] = cloneJsonValue(child);
+	}
+	return clone;
 }

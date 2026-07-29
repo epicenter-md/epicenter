@@ -2,7 +2,7 @@
  * The kernel's view of structured scalar addresses (ADR-0160, ADR-0163).
  *
  * The address shape, grammar, identity, and equality have exactly one owner:
- * `../addresses.ts`. This module adds only what the kernel needs on top of that
+ * `@epicenter/lens`. This module adds only what the kernel needs on top of that
  * owner: a parse that enforces the kernel's defensive canonical-JSON shape check
  * and reports the kernel's own `ScalarProtocolError`, bounded by the kernel's
  * `ValidatedLimits` rather than the live exchange protocol's ceilings.
@@ -11,14 +11,14 @@
  * patterns are ASCII, so a lone UTF-16 surrogate can never appear in a
  * coordinate.
  */
-import { Value } from 'typebox/value';
-import { Ok, type Result } from 'wellcrafted/result';
 
 import {
 	type Address,
 	AddressSchema,
 	isAdmissibleAddress as isAdmissibleAddressWithin,
-} from '../addresses.js';
+} from '@epicenter/lens';
+import { Value } from 'typebox/value';
+import { Ok, type Result } from 'wellcrafted/result';
 import { isCanonicalJson } from './canonical.js';
 import { catchAsInvalid, ScalarProtocolError } from './errors.js';
 import type { ValidatedLimits } from './limits.js';
@@ -32,7 +32,7 @@ export {
 	RowAddressSchema,
 	type ValueAddress,
 	ValueAddressSchema,
-} from '../addresses.js';
+} from '@epicenter/lens';
 
 /** Semantic byte-length admission for an already structurally valid address. */
 export function isAdmissibleAddress(

@@ -11,10 +11,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { field } from '@epicenter/field';
+import { defineLens, defineTable } from '@epicenter/lens';
 import { expectOk } from 'wellcrafted/testing';
 
 import { EPICENTER_FILE_NAME, openBunEpicenter } from './bun.js';
-import { defineLens, defineTable } from './definitions.js';
 
 const notesLens = defineLens({
 	namespace: 'so.epicenter.tests',

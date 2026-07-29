@@ -20,10 +20,10 @@ import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 
 import { field } from '@epicenter/field';
+import { defineLens, defineTable } from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 
-import { defineLens, defineTable } from './definitions.js';
 import { createEpicenter } from './epicenter.js';
 import type { ExchangeRequest, ExchangeResponse } from './protocol/index.js';
 import { openReplica } from './replica/index.js';

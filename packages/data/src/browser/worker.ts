@@ -1,4 +1,12 @@
 import {
+	defineLens,
+	defineTable,
+	defineValue,
+	optional,
+	type TableDefinition,
+	type ValueDefinition,
+} from '@epicenter/lens';
+import {
 	type BrowserSqliteDatabase,
 	createBrowserSqliteAdapter,
 } from '@epicenter/sqlite/browser';
@@ -8,15 +16,6 @@ import sqlite3InitModule, {
 } from '@sqlite.org/sqlite-wasm';
 import type { TSchema } from 'typebox';
 import { createLogger, type Logger } from 'wellcrafted/logger';
-
-import {
-	defineLens,
-	defineTable,
-	defineValue,
-	optional,
-	type TableDefinition,
-	type ValueDefinition,
-} from '../definitions.js';
 import {
 	applyRowDocumentUpdate,
 	encodeRowDocumentState,

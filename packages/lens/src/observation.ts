@@ -37,10 +37,9 @@
  * enumerated: the row is gone, so there is nothing left to name it with.
  */
 
-import { createLogger, type Logger } from 'wellcrafted/logger';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 
-import { addressKey, type Address, type ValueAddress } from './protocol/index.js';
+import { type Address, addressKey, type ValueAddress } from './addresses.js';
 
 /**
  * What a table handle reports when rows reachable through it may be stale.
@@ -96,9 +95,27 @@ function tableKey(namespace: string, tableName: string): string {
  * cannot answer what a row now contains: a consumer that wants to know re-reads
  * through the handle it already has.
  */
+/**
+ * Where a contained subscriber failure goes.
+ *
+ * Structurally the one method this needs rather than `wellcrafted/logger`'s
+ * `Logger`, and deliberately so. This package's declarations are compiled and
+ * published, so every type they name is type-checked inside a stranger's
+ * project against their `lib` and their dependency versions. `Logger` reaches
+ * `AsyncDisposable`, which a consumer targeting ES2022 does not have, and a
+ * vocabulary package has no business dictating anyone's logging stack. A
+ * `wellcrafted` logger satisfies this shape, so callers that already have one
+ * pass it unchanged.
+ */
+export type InvalidationErrorReporter = {
+	error(error: unknown): void;
+};
+
 export function createInvalidationDispatcher({
-	log = createLogger('data/observation'),
-}: { log?: Logger } = {}) {
+	log = { error: () => undefined },
+}: {
+	log?: InvalidationErrorReporter;
+} = {}) {
 	const tableListeners = new Map<string, Set<TableInvalidationListener>>();
 	const valueListeners = new Map<string, Set<ValueInvalidationListener>>();
 

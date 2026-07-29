@@ -1,19 +1,21 @@
+import { isJsonValue, type JsonObject, type JsonValue } from '@epicenter/lens';
 import { type Static, Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 
+export type { JsonObject, JsonValue } from '@epicenter/lens';
+
 import {
 	isRuntimeId,
 	RowAddressSchema,
 	ValueAddressSchema,
-} from './addresses.js';
+} from '@epicenter/lens';
 import {
 	DATA_ADMISSION_LIMITS,
 	encodedJsonBytes,
 	isAdmissibleFact,
 	isAdmissibleIntent,
-	isJsonValue,
 } from './admission.js';
 
 const CLOSED = { additionalProperties: false } as const;
@@ -36,15 +38,6 @@ export const ReplicaIdSchema = Type.String({
 	pattern: '^[a-z0-9]{24}$',
 });
 export type ReplicaId = Static<typeof ReplicaIdSchema>;
-
-export type JsonValue =
-	| string
-	| number
-	| boolean
-	| null
-	| JsonValue[]
-	| JsonObject;
-export type JsonObject = { [key: string]: JsonValue };
 
 const jsonValueSchema = Type.Unsafe<JsonValue>({});
 const jsonObjectSchema = Type.Unsafe<JsonObject>(

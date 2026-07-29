@@ -16,19 +16,19 @@ import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 
 import { field } from '@epicenter/field';
+import {
+	defineLens,
+	defineTable,
+	defineValue,
+	optional,
+	type TableInvalidation,
+} from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import { Type } from 'typebox';
 import { createLogger, type Logger, memorySink } from 'wellcrafted/logger';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 
 import { openBunEpicenter } from './bun.js';
-import type { TableInvalidation } from './observation.js';
-import {
-	defineLens,
-	defineTable,
-	defineValue,
-	optional,
-} from './definitions.js';
 import { createEpicenter, createTableReadMethods } from './epicenter.js';
 import { openReplica } from './replica/index.js';
 

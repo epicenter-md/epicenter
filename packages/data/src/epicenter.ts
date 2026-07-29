@@ -1,32 +1,30 @@
-import type { SqliteDatabase, SqliteRow } from '@epicenter/sqlite';
-import { customAlphabet } from 'nanoid';
-import { createLogger, type Logger } from 'wellcrafted/logger';
-import { Ok, type Result } from 'wellcrafted/result';
-
 import {
 	type ConstrainedUpdate,
 	type CreateInputFor,
 	compileTableDefinition,
 	compileValueDefinition,
+	createInvalidationDispatcher,
 	type DataReadError,
 	type Lens,
 	type NonconformingRowError,
 	type RowFor,
 	type TableDefinition,
 	type TableDefinitions,
+	type TableInvalidation,
 	type ValueDefinition,
 	type ValueDefinitions,
 	type ValueFor,
-} from './definitions.js';
+} from '@epicenter/lens';
+import type { SqliteDatabase, SqliteRow } from '@epicenter/sqlite';
+import { customAlphabet } from 'nanoid';
+import { createLogger, type Logger } from 'wellcrafted/logger';
+import { Ok, type Result } from 'wellcrafted/result';
+
 import {
 	createDocumentRuntime,
 	type PullDocument,
 	type RowDocument,
 } from './documents.js';
-import {
-	createInvalidationDispatcher,
-	type TableInvalidation,
-} from './observation.js';
 import type {
 	Address,
 	JsonObject,

@@ -1,3 +1,4 @@
+export type { TableInvalidation } from '@epicenter/lens';
 export {
 	type ConformanceIssue,
 	type ConstrainedUpdate,
@@ -17,7 +18,7 @@ export {
 	type ValueDefinition,
 	type ValueDefinitions,
 	type ValueFor,
-} from './definitions.js';
+} from '@epicenter/lens';
 export {
 	acceptedDocumentOrigin,
 	applyRowDocumentUpdate,
@@ -44,7 +45,6 @@ export {
 	type TableScan,
 	type ValueLens,
 } from './epicenter.js';
-export type { TableInvalidation } from './observation.js';
 export type {
 	Address,
 	RowAddress,

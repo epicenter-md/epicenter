@@ -1,9 +1,11 @@
 import {
-	type AddressByteCeilings,
+	DATA_ADDRESS_CEILINGS,
 	isAdmissibleAddress,
+	isJsonObject,
+	isJsonValue,
 	isRuntimeId,
-} from './addresses.js';
-import type { Fact, Intent, JsonObject, JsonValue } from './schemas.js';
+} from '@epicenter/lens';
+import type { Fact, Intent } from './schemas.js';
 
 export const DATA_ADMISSION_LIMITS = {
 	/** Byte ceiling for the durable reverse-domain namespace coordinate. */
@@ -28,60 +30,12 @@ export const DATA_ADMISSION_LIMITS = {
 
 const textEncoder = new TextEncoder();
 
-/** The address-coordinate ceilings this protocol admits. */
-export const DATA_ADDRESS_CEILINGS: AddressByteCeilings = {
-	namespaceBytes: DATA_ADMISSION_LIMITS.namespaceBytes,
-	tableNameBytes: DATA_ADMISSION_LIMITS.tableNameBytes,
-	valueNameBytes: DATA_ADMISSION_LIMITS.valueNameBytes,
-};
-
 export function encodedBytes(value: string): number {
 	return textEncoder.encode(value).byteLength;
 }
 
 export function encodedJsonBytes(value: unknown): number {
 	return encodedBytes(JSON.stringify(value));
-}
-
-function isJsonAtDepth(
-	value: unknown,
-	depth: number,
-	ancestors: Set<object>,
-): value is JsonValue {
-	if (value === null || typeof value === 'string' || typeof value === 'boolean')
-		return true;
-	if (typeof value === 'number') return Number.isFinite(value);
-	if (
-		typeof value !== 'object' ||
-		depth >= DATA_ADMISSION_LIMITS.jsonDepth ||
-		ancestors.has(value)
-	) {
-		return false;
-	}
-	ancestors.add(value);
-	const prototype = Object.getPrototypeOf(value);
-	const isValid = Array.isArray(value)
-		? value.every((child) => isJsonAtDepth(child, depth + 1, ancestors))
-		: (prototype === Object.prototype || prototype === null) &&
-			Object.keys(value).length <= DATA_ADMISSION_LIMITS.propertiesPerObject &&
-			Object.values(value).every((child) =>
-				isJsonAtDepth(child, depth + 1, ancestors),
-			);
-	ancestors.delete(value);
-	return isValid;
-}
-
-export function isJsonValue(value: unknown): value is JsonValue {
-	return isJsonAtDepth(value, 0, new Set());
-}
-
-export function isJsonObject(value: unknown): value is JsonObject {
-	return (
-		typeof value === 'object' &&
-		value !== null &&
-		!Array.isArray(value) &&
-		isJsonValue(value)
-	);
 }
 
 function isFieldKey(value: string): boolean {

@@ -19,16 +19,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { field } from '@epicenter/field';
-import { Type } from 'typebox';
-import { expectErr, expectOk } from 'wellcrafted/testing';
-
-import { openBunEpicenter } from './bun.js';
 import {
 	defineLens,
 	defineTable,
 	defineValue,
 	optional,
-} from './definitions.js';
+} from '@epicenter/lens';
+import { Type } from 'typebox';
+import { expectErr, expectOk } from 'wellcrafted/testing';
+
+import { openBunEpicenter } from './bun.js';
 import { createDesktopEpicenterOwner } from './desktop-owner.js';
 import type { DesktopOperation } from './desktop-protocol.js';
 import type { Epicenter } from './epicenter.js';

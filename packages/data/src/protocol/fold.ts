@@ -1,4 +1,4 @@
-import { addressesEqual } from './addresses.js';
+import { addressesEqual } from '@epicenter/lens';
 import { isAdmissibleFact } from './admission.js';
 import type { Intent, JsonObject, LocalFact } from './schemas.js';
 

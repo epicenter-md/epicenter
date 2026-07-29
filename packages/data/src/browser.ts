@@ -1,3 +1,18 @@
+import {
+	type ConstrainedUpdate,
+	type CreateInputFor,
+	createInvalidationDispatcher,
+	type Lens,
+	type RowFor,
+	serializeTableDefinition,
+	serializeValueDefinition,
+	type TableDefinition,
+	type TableDefinitions,
+	type TableInvalidation,
+	type ValueDefinition,
+	type ValueDefinitions,
+	type ValueFor,
+} from '@epicenter/lens';
 import * as Y from '@y/y';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import type {
@@ -5,23 +20,9 @@ import type {
 	BrowserWorkerInbound,
 	BrowserWorkerMessage,
 	SerializedTableDefinition,
-	SerializedValueDefinition,
 	SessionTransportRequest,
 	SessionTransportResponse,
 } from './browser/protocol.js';
-import {
-	type ConstrainedUpdate,
-	type CreateInputFor,
-	compileTableDefinition,
-	compileValueDefinition,
-	type Lens,
-	type RowFor,
-	type TableDefinition,
-	type TableDefinitions,
-	type ValueDefinition,
-	type ValueDefinitions,
-	type ValueFor,
-} from './definitions.js';
 import {
 	type DocumentSyncIssue,
 	type RowDocument,
@@ -36,15 +37,7 @@ import {
 	type TableLens,
 	type ValueLens,
 } from './epicenter.js';
-import {
-	createInvalidationDispatcher,
-	type TableInvalidation,
-} from './observation.js';
-import type {
-	JsonValue,
-	RowAddress,
-	ValueAddress,
-} from './protocol/index.js';
+import type { JsonValue, RowAddress, ValueAddress } from './protocol/index.js';
 import type { SyncStatus } from './sync-supervisor.js';
 
 type PendingRequest = {
@@ -727,32 +720,6 @@ export async function openBrowserEpicenter({
 }
 
 export type BrowserEpicenter = Awaited<ReturnType<typeof openBrowserEpicenter>>;
-
-function serializeTableDefinition(
-	namespace: string,
-	table: string,
-	definition: TableDefinition,
-): SerializedTableDefinition {
-	const compiled = compileTableDefinition(definition);
-	return {
-		namespace,
-		table,
-		fields: cloneJson(definition.fields),
-		optionalFields: [...compiled.optional],
-	};
-}
-
-function serializeValueDefinition(
-	address: ValueAddress,
-	definition: ValueDefinition,
-): SerializedValueDefinition {
-	compileValueDefinition(definition);
-	return { address, value: cloneJson(definition.value) };
-}
-
-function cloneJson<TValue>(value: TValue): TValue {
-	return JSON.parse(JSON.stringify(value)) as TValue;
-}
 
 function rowAddress(
 	namespace: string,

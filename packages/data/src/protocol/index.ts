@@ -4,8 +4,12 @@ export {
 	AddressSchema,
 	addressesEqual,
 	addressKey,
+	canonicalJson,
+	DATA_ADDRESS_CEILINGS,
 	isAddress,
 	isAdmissibleAddress,
+	isJsonObject,
+	isJsonValue,
 	isNamespace,
 	isRowAddress,
 	isRuntimeId,
@@ -15,20 +19,17 @@ export {
 	type RowAddress,
 	RowAddressSchema,
 	SQLITE_UNUSABLE_AS_RELATION_NAME,
+	sha256Hex,
 	type ValueAddress,
 	ValueAddressSchema,
-} from './addresses.js';
+} from '@epicenter/lens';
 export {
-	DATA_ADDRESS_CEILINGS,
 	DATA_ADMISSION_LIMITS,
 	encodedBytes,
 	encodedJsonBytes,
 	isAdmissibleFact,
 	isAdmissibleIntent,
-	isJsonObject,
-	isJsonValue,
 } from './admission.js';
-export { canonicalJson, sha256Hex } from './canonical.js';
 export { type FoldResult, foldIntent } from './fold.js';
 export {
 	type Batch,
@@ -63,7 +64,7 @@ export {
 	RowIdSchema,
 } from './schemas.js';
 
-import { canonicalJson, sha256Hex } from './canonical.js';
+import { canonicalJson, sha256Hex } from '@epicenter/lens';
 import type { Intent } from './schemas.js';
 
 export function batchDigest(intents: readonly Intent[]): string {

@@ -1,18 +1,20 @@
-import * as Y from '@y/y';
-import { createLogger, type Logger } from 'wellcrafted/logger';
 import {
 	type ConstrainedUpdate,
 	type CreateInputFor,
-	compileTableDefinition,
-	compileValueDefinition,
+	createInvalidationDispatcher,
 	type Lens,
 	type RowFor,
+	serializeTableDefinition,
+	serializeValueDefinition,
 	type TableDefinition,
 	type TableDefinitions,
+	type TableInvalidation,
 	type ValueDefinition,
 	type ValueDefinitions,
 	type ValueFor,
-} from './definitions.js';
+} from '@epicenter/lens';
+import * as Y from '@y/y';
+import { createLogger, type Logger } from 'wellcrafted/logger';
 import {
 	type DesktopInvalidationFrame,
 	type DesktopOperation,
@@ -21,7 +23,6 @@ import {
 	desktopEpicenterObserveUrl,
 	desktopEpicenterUrl,
 	type SerializedTableDefinition,
-	type SerializedValueDefinition,
 } from './desktop-protocol.js';
 import {
 	type RowDocument,
@@ -34,15 +35,7 @@ import {
 	type TableLens,
 	type ValueLens,
 } from './epicenter.js';
-import {
-	createInvalidationDispatcher,
-	type TableInvalidation,
-} from './observation.js';
-import type {
-	JsonValue,
-	RowAddress,
-	ValueAddress,
-} from './protocol/index.js';
+import type { JsonValue, RowAddress, ValueAddress } from './protocol/index.js';
 
 /**
  * A socket this opener can drive. Narrower than `WebSocket` on purpose: the
@@ -499,38 +492,12 @@ function defaultOrigin(): string {
 	return location.origin;
 }
 
-function serializeTableDefinition(
-	namespace: string,
-	table: string,
-	definition: TableDefinition,
-): SerializedTableDefinition {
-	const compiled = compileTableDefinition(definition);
-	return {
-		namespace,
-		table,
-		fields: cloneJson(definition.fields),
-		optionalFields: [...compiled.optional],
-	};
-}
-
-function serializeValueDefinition(
-	address: ValueAddress,
-	definition: ValueDefinition,
-): SerializedValueDefinition {
-	compileValueDefinition(definition);
-	return { address, value: cloneJson(definition.value) };
-}
-
 function rowAddress(
 	namespace: string,
 	tableName: string,
 	rowId: string,
 ): RowAddress {
 	return { kind: 'row', namespace, tableName, rowId };
-}
-
-function cloneJson<TValue>(value: TValue): TValue {
-	return JSON.parse(JSON.stringify(value)) as TValue;
 }
 
 function decodeBytes(value: string): Uint8Array {

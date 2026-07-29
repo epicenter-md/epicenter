@@ -730,6 +730,7 @@
       "name": "@epicenter/app",
       "version": "0.1.0",
       "dependencies": {
+        "@epicenter/lens": "workspace:*",
         "@tauri-apps/api": "catalog:",
         "wellcrafted": "catalog:",
       },
@@ -892,6 +893,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@epicenter/field": "workspace:*",
+        "@epicenter/lens": "workspace:*",
         "@epicenter/sqlite": "workspace:*",
         "@sqlite.org/sqlite-wasm": "catalog:",
         "@y/y": "14.0.0-rc.24",
@@ -971,6 +973,19 @@
       "version": "0.3.0",
       "dependencies": {
         "arktype": "catalog:",
+        "wellcrafted": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/lens": {
+      "name": "@epicenter/lens",
+      "version": "0.1.0",
+      "dependencies": {
+        "@epicenter/field": "workspace:*",
+        "typebox": "catalog:",
         "wellcrafted": "catalog:",
       },
       "devDependencies": {
@@ -1582,6 +1597,8 @@
     "@epicenter/identity": ["@epicenter/identity@workspace:packages/identity"],
 
     "@epicenter/landing": ["@epicenter/landing@workspace:apps/landing"],
+
+    "@epicenter/lens": ["@epicenter/lens@workspace:packages/lens"],
 
     "@epicenter/local-books": ["@epicenter/local-books@workspace:apps/local-books"],
 
