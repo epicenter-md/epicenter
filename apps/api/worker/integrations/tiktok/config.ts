@@ -89,10 +89,13 @@ export const TIKTOK_CALLBACK_PATH = '/api/integrations/tiktok/callback';
 /**
  * The exact value that must be registered in the TikTok developer portal.
  * Derived from the deployment origin (`c.var.authBaseURL`) rather than
- * hardcoded, so production and local sandbox agree by construction:
+ * hardcoded, so each deployment derives its own callback:
  *
  *   production: https://api.epicenter.so/api/integrations/tiktok/callback
- *   local dev:  http://localhost:8787/api/integrations/tiktok/callback
+ *
+ * TikTok's Web Login Kit accepts HTTPS callbacks only. The ordinary local
+ * origin still derives an HTTP URL for diagnostics, but it cannot complete
+ * OAuth; use the deployed sandbox or a stable HTTPS tunnel for a live ceremony.
  */
 export function tiktokRedirectUri(origin: string): string {
 	return new URL(TIKTOK_CALLBACK_PATH, origin).toString();
