@@ -483,7 +483,13 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 			clientSecret: string;
 			cipher: import('./token-cipher.js').TokenCipher;
 		},
-		requiredScope: string,
+		/**
+		 * ANY of these satisfies the gate. Several TikTok endpoints are reachable
+		 * with either publishing scope: `creator_info/query` and `status/fetch`
+		 * serve both the draft and the Direct Post flows, so demanding one
+		 * specific scope would refuse a creator who granted only the other.
+		 */
+		acceptedScopes: readonly string[],
 	) {
 		const db = c.var.db as Db;
 		// This helper is shared across routes, so the param is not narrowed by a
@@ -501,10 +507,12 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 		}
 		// A partial grant is refused with the scope named, rather than letting
 		// TikTok answer a generic permission error the creator cannot act on.
-		if (!row.scopes.includes(requiredScope)) {
+		if (!acceptedScopes.some((scope) => row.scopes.includes(scope))) {
 			return {
 				failure: c.json(
-					TikTokRouteError.ScopeNotGranted({ scope: requiredScope }),
+					TikTokRouteError.ScopeNotGranted({
+						scope: acceptedScopes.join(' or '),
+					}),
 					403,
 				),
 			} as const;
@@ -539,7 +547,10 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 		session,
 		async (c) =>
 			withConfig(c, async (config) => {
-				const opened = await openConnection(c, config, 'video.publish');
+				const opened = await openConnection(c, config, [
+					'video.publish',
+					'video.upload',
+				]);
 				if ('failure' in opened) return opened.failure;
 				const creatorInfo = await opened.api.readCreatorInfo();
 				if (creatorInfo.error) return c.json(creatorInfo, 502);
@@ -557,7 +568,7 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 		session,
 		async (c) =>
 			withConfig(c, async (config) => {
-				const opened = await openConnection(c, config, 'video.list');
+				const opened = await openConnection(c, config, ['video.list']);
 				if ('failure' in opened) return opened.failure;
 				const listed = await opened.api.listVideos();
 				if (listed.error) return c.json(listed, 502);
@@ -593,7 +604,10 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 		session,
 		async (c) =>
 			withConfig(c, async (config) => {
-				const opened = await openConnection(c, config, 'video.upload');
+				const opened = await openConnection(c, config, [
+					'video.upload',
+					'video.publish',
+				]);
 				if ('failure' in opened) return opened.failure;
 				const publishId = c.req.param('publishId');
 				const status = await opened.api.readPostStatus(publishId);
@@ -663,9 +677,12 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 					);
 				}
 
-				const requiredScope =
-					kind === 'direct_post' ? 'video.publish' : 'video.upload';
-				const opened = await openConnection(c, config, requiredScope);
+				// Publishing itself is the one place the exact scope matters: a
+				// Direct Post needs video.publish and an inbox draft needs
+				// video.upload, and neither substitutes for the other.
+				const opened = await openConnection(c, config, [
+					kind === 'direct_post' ? 'video.publish' : 'video.upload',
+				]);
 				if ('failure' in opened) return opened.failure;
 				const { api, db, row } = opened;
 

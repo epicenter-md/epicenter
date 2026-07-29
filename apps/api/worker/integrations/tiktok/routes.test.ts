@@ -94,6 +94,17 @@ function fakeDb(script: DbScript = {}) {
 			state.touched = true;
 			return thenableRows([]);
 		},
+		/**
+		 * `ensureAccessToken` locks the row inside a transaction. The tx sees no
+		 * rows here, so token custody reports `ConnectionNotFound` and the route
+		 * answers 502. That is deliberate: these route tests exercise the gates
+		 * BEFORE token custody, and tokens.test.ts owns the custody behavior
+		 * against a fake that models the row lock.
+		 */
+		transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => {
+			state.touched = true;
+			return fn({ select: () => thenableRows([]) });
+		},
 	};
 	return { db, inserted, state };
 }
@@ -456,6 +467,72 @@ test('the connections response carries identity and scopes but no token material
 		displayName: 'Braden',
 		scopes: ['user.info.basic', 'video.publish'],
 	});
+});
+
+// --- Scope gating ---------------------------------------------------------
+
+/** A stored connection granting exactly the scopes given. */
+function connectionRow(scopes: string[]) {
+	return {
+		id: 'conn-1',
+		userId: 'user-1',
+		openId: 'open-abc',
+		unionId: null,
+		displayName: 'Braden',
+		username: 'braden',
+		avatarUrl: null,
+		scopes,
+		accessTokenCiphertext: 'v1.a.b',
+		accessTokenExpiresAt: new Date(Date.now() + 3_600_000),
+		refreshTokenCiphertext: 'v1.a.b',
+		refreshTokenExpiresAt: new Date(Date.now() + 3_600_000),
+		createdAt: new Date(),
+		updatedAt: new Date(),
+	};
+}
+
+test('creator info and publish status accept EITHER publishing scope', async () => {
+	// `creator_info/query` and `status/fetch` serve both the draft and the Direct
+	// Post flows, so demanding one specific scope would lock out a creator who
+	// granted only the other. Either scope reaches token custody (502 against
+	// this fake) instead of being refused at the gate with 403.
+	for (const grantedScope of ['video.upload', 'video.publish']) {
+		const { db } = fakeDb({ selectRows: [connectionRow([grantedScope])] });
+		const built = createTikTokTestApp({
+			session: freshSession('user-1'),
+			env: CONFIGURED_ENV,
+			db,
+		});
+
+		for (const path of [
+			'/api/integrations/tiktok/connections/conn-1/creator-info',
+			'/api/integrations/tiktok/connections/conn-1/publish/pub-1',
+		]) {
+			const res = await request(built, path);
+			expect(res.status).not.toBe(403);
+			expect(res.status).toBe(502);
+		}
+	}
+});
+
+test('a connection granting neither publishing scope is still refused', async () => {
+	const { db } = fakeDb({ selectRows: [connectionRow(['user.info.basic'])] });
+	const built = createTikTokTestApp({
+		session: freshSession('user-1'),
+		env: CONFIGURED_ENV,
+		db,
+	});
+
+	const res = await request(
+		built,
+		'/api/integrations/tiktok/connections/conn-1/creator-info',
+	);
+
+	expect(res.status).toBe(403);
+	const body = (await res.json()) as { error: { name: string; scope: string } };
+	expect(body.error.name).toBe('ScopeNotGranted');
+	// Both acceptable scopes are named, so the remedy is actionable.
+	expect(body.error.scope).toBe('video.publish or video.upload');
 });
 
 // --- Publish guards -------------------------------------------------------
