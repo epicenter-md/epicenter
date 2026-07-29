@@ -198,6 +198,13 @@ test('the published client drives every data operation through the real host', a
 	// test here is the reading client's `after` cursor, not another hundred
 	// round trips of `create`.
 	const seeded = await harness.seedNotes(PAGING_ROWS - 1);
+	await waitFor(() =>
+		rowInvalidations.some(
+			(invalidation) =>
+				invalidation.scope === 'rows' &&
+				invalidation.rowIds.includes(seeded[0] ?? ''),
+		),
+	);
 	const traversed: string[] = [];
 	for await (const entry of notes.entries()) {
 		expect(entry.error).toBeNull();
@@ -309,6 +316,11 @@ async function startHost(directory: string) {
 
 	const nativeFetch = globalThis.fetch;
 	const NativeWebSocket = globalThis.WebSocket;
+	const nativeWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+	const nativeLocation = Object.getOwnPropertyDescriptor(
+		globalThis,
+		'location',
+	);
 	let hostVisible = true;
 
 	define('window', {
@@ -325,7 +337,9 @@ async function startHost(directory: string) {
 		// Record what the host made of each data operation. Read from a clone so
 		// the client still gets its own body.
 		if (String(input).endsWith('/api/data') && typeof init?.body === 'string') {
-			const { operation } = JSON.parse(init.body) as { operation: { kind: string } };
+			const { operation } = JSON.parse(init.body) as {
+				operation: { kind: string };
+			};
 			const envelope = (await response.clone().json()) as {
 				error: { name: string } | null;
 			};
@@ -369,6 +383,8 @@ async function startHost(directory: string) {
 		async dispose() {
 			define('fetch', nativeFetch);
 			define('WebSocket', NativeWebSocket);
+			restore('window', nativeWindow);
+			restore('location', nativeLocation);
 			await server.stop(true);
 			await host[Symbol.asyncDispose]();
 			await dataOwner[Symbol.asyncDispose]();
@@ -382,6 +398,17 @@ function define(name: string, value: unknown): void {
 		configurable: true,
 		writable: true,
 	});
+}
+
+function restore(
+	name: string,
+	descriptor: PropertyDescriptor | undefined,
+): void {
+	if (descriptor === undefined) {
+		Reflect.deleteProperty(globalThis, name);
+		return;
+	}
+	Object.defineProperty(globalThis, name, descriptor);
 }
 
 async function writeAssets(directory: string): Promise<string> {
@@ -400,7 +427,8 @@ async function writeAssets(directory: string): Promise<string> {
 async function waitFor(condition: () => boolean, timeoutMs = 2_000) {
 	const deadline = Date.now() + timeoutMs;
 	while (!condition()) {
-		if (Date.now() > deadline) throw new Error('Timed out waiting for a change');
+		if (Date.now() > deadline)
+			throw new Error('Timed out waiting for a change');
 		await Bun.sleep(5);
 	}
 }
