@@ -45,6 +45,7 @@ import {
 	chargeOpenAiTranscriptionCredits,
 } from './billing/policies.js';
 import { mountBillingApi } from './billing/routes.js';
+import { mountTikTokIntegrationApi } from './integrations/tiktok/routes.js';
 import { buildEpicenterTrustedOrigins } from './trusted-origins.js';
 
 // Compile-time proof that this worker's generated Env provides every
@@ -183,6 +184,15 @@ mountTranscriptionApp(app, {
 // Cloud-only billing data plane. Auth is bundled into the mount so the
 // dashboard endpoints can't be mounted without it.
 mountBillingApi(app, { auth: cookieOrBearer });
+
+// Connected TikTok creator accounts (hosted-only). Publishing authorization,
+// deliberately NOT a Better Auth social provider: better-auth resolves
+// `/auth/sign-in/social` against whatever sits in `socialProviders` with no
+// link-only mode, so registering TikTok there would open a new Epicenter login
+// door. These routes never touch the `user`/`session`/`account` tables; auth is
+// cookie-only, and the two routes that change which accounts are authorized
+// demand a fresh session. Unconfigured deployments answer a named 503.
+mountTikTokIntegrationApi(app);
 
 // Hosted account deletion (Wave G): one route coordinates authority storage,
 // the blob prefix, the Autumn customer, storage observations, and the auth
