@@ -1826,6 +1826,8 @@ mod tests {
             include_str!("../capabilities/home-model-administration-production.json"),
             include_str!("../capabilities/trusted-whispering-native-development.json"),
             include_str!("../capabilities/trusted-whispering-native-production.json"),
+            include_str!("../capabilities/trusted-app-windows-development.json"),
+            include_str!("../capabilities/trusted-app-windows-production.json"),
         ] {
             let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
             for permission in capability["permissions"].as_array().unwrap() {
@@ -1948,6 +1950,160 @@ mod tests {
                 );
             }
         }
+
+        // Catalog apps transcribe through the same public client, so the same
+        // separation has to hold for the window class that did not exist when
+        // ADR-0180 was written.
+        for encoded in APP_WINDOW_CAPABILITIES {
+            let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
+            let permissions = capability["permissions"].as_array().unwrap();
+            for permission in ADMINISTRATION {
+                assert!(
+                    !permissions.contains(&serde_json::json!(permission)),
+                    "an app window must not administer models: {permission}"
+                );
+            }
+        }
+    }
+
+    /// Both variants of the one capability that says what an app window may
+    /// reach natively.
+    const APP_WINDOW_CAPABILITIES: &[&str] = &[
+        include_str!("../capabilities/trusted-app-windows-development.json"),
+        include_str!("../capabilities/trusted-app-windows-production.json"),
+    ];
+
+    /// The operations `@epicenter/app` exposes, and therefore the complete set
+    /// of this crate's commands an app window is granted.
+    const PUBLIC_CLIENT_COMMANDS: &[&str] = &[
+        "start_recording",
+        "stop_recording",
+        "cancel_recording",
+        "current_recording",
+        "transcribe_recording",
+        "prewarm_model",
+        "get_local_transcription_readiness",
+    ];
+
+    /// Every bare `allow-<command>` grant in a capability, as command names.
+    ///
+    /// Plugin and core grants (`core:event:allow-listen`, the scoped
+    /// `http:default` object) are not this crate's commands and are checked
+    /// where they are relevant instead.
+    fn granted_app_commands(encoded: &str) -> std::collections::BTreeSet<String> {
+        let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
+        capability["permissions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|permission| permission.as_str())
+            .filter(|name| !name.contains(':'))
+            .filter_map(|name| name.strip_prefix("allow-"))
+            .map(|command| command.replace('-', "_"))
+            .collect()
+    }
+
+    /// An app window's native command surface is the public client's surface,
+    /// exactly: nothing the client cannot call, and nothing it can call that
+    /// the window was not granted.
+    ///
+    /// This is API admission, not a sandbox. ADR-0179 is explicit that an
+    /// admitted app already holds the shared origin, the session, and the
+    /// Epicenter application's own device grants; what an equality check buys
+    /// is that the *product* boundary stays a decision. A permission pasted in
+    /// to unblock something fails here rather than quietly widening what every
+    /// installed app can do.
+    #[test]
+    fn app_windows_reach_exactly_the_public_client_surface() {
+        let expected: std::collections::BTreeSet<String> = PUBLIC_CLIENT_COMMANDS
+            .iter()
+            .map(|command| command.to_string())
+            .collect();
+        for encoded in APP_WINDOW_CAPABILITIES {
+            assert_eq!(
+                granted_app_commands(encoded),
+                expected,
+                "the app-window capability must grant the public client's surface and nothing else"
+            );
+        }
+    }
+
+    /// Subscribing to an ending is half a lifecycle. A window granted `listen`
+    /// but not `unlisten` leaks a host listener every time an app unsubscribes,
+    /// and the leak is invisible because unsubscribing has no outcome to fail.
+    #[test]
+    fn app_windows_can_both_subscribe_and_unsubscribe() {
+        for encoded in APP_WINDOW_CAPABILITIES {
+            let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
+            let permissions = capability["permissions"].as_array().unwrap();
+            for permission in ["core:event:allow-listen", "core:event:allow-unlisten"] {
+                assert!(
+                    permissions.contains(&serde_json::json!(permission)),
+                    "an app window observing recordings needs {permission}"
+                );
+            }
+        }
+    }
+
+    /// The public client is hand-written against this crate's command names
+    /// rather than generated from it, because what an app may call is a product
+    /// decision and a generator would export whatever the crate happens to
+    /// register. This is what keeps that hand-written list honest.
+    ///
+    /// Three artifacts have to agree, and each would otherwise drift silently:
+    /// the commands `@epicenter/app` invokes, the commands an app window is
+    /// granted, and the commands this crate actually exposes.
+    #[test]
+    fn the_public_client_invokes_exactly_what_app_windows_are_granted() {
+        const PROTOCOL: &str = include_str!("../../../../packages/app/src/protocol.ts");
+
+        let named: std::collections::BTreeSet<String> = PROTOCOL
+            .split_once("COMMANDS = {")
+            .expect("packages/app/src/protocol.ts must declare a COMMANDS map")
+            .1
+            .split_once("} as const;")
+            .expect("the COMMANDS map must be closed with `} as const;`")
+            .0
+            .split('\n')
+            .filter_map(|line| line.split_once(": '"))
+            .filter_map(|(_, rest)| rest.split_once('\''))
+            .map(|(command, _)| command.to_string())
+            .collect();
+
+        let expected: std::collections::BTreeSet<String> = PUBLIC_CLIENT_COMMANDS
+            .iter()
+            .map(|command| command.to_string())
+            .collect();
+        assert_eq!(
+            named, expected,
+            "@epicenter/app and this crate disagree about the public command surface"
+        );
+
+        // Each of them has to be a command this build declares, or the grant
+        // above is a silent no-op and the client invokes into nothing.
+        let declared: std::collections::BTreeSet<&str> =
+            crate::command_names::COMMANDS.iter().copied().collect();
+        for command in &named {
+            assert!(
+                declared.contains(command.as_str()),
+                "@epicenter/app invokes {command}, which this build does not declare"
+            );
+        }
+
+        // The one event it subscribes to has to be the one the host emits.
+        assert!(
+            PROTOCOL.contains("'recording-ended-event'"),
+            "@epicenter/app must name the host's recording-ended event"
+        );
+        // Either quote style, for the same reason the binding freshness check
+        // above accepts both: specta emits double quotes and the repo formatter
+        // rewrites them to single.
+        const BINDINGS: &str = include_str!("../../src/ui/bindings.gen.ts");
+        assert!(
+            BINDINGS.contains("'recording-ended-event'")
+                || BINDINGS.contains("\"recording-ended-event\""),
+            "the host no longer emits the event @epicenter/app subscribes to"
+        );
     }
 
     #[test]
