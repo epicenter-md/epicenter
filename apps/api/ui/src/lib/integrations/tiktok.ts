@@ -14,37 +14,57 @@ import type {
 	TikTokCreatorInfo,
 	TikTokPostStatus,
 	TikTokPrivacyLevel,
-	TikTokVideo,
 } from '$api/integrations/tiktok/api';
 import type { PublicConnection } from '$api/integrations/tiktok/store';
 import { auth } from '$lib/platform/auth';
 import { defineQuery } from '$lib/query/client';
 
-export type {
-	PublicConnection,
-	TikTokCreatorInfo,
-	TikTokPrivacyLevel,
-	TikTokVideo,
-};
+export type { PublicConnection, TikTokCreatorInfo, TikTokPrivacyLevel };
 
 export type ConnectionsView = {
 	/** False when the deployment has no TikTok credentials configured. */
 	configured: boolean;
-	/** The exact value to register in the TikTok developer portal. */
+	/**
+	 * The exact value to register in the TikTok developer portal. Surfaced only
+	 * in the unconfigured state, which is an operator problem rather than part of
+	 * the creator's product.
+	 */
 	redirectUri: string;
-	requestedScopes: readonly string[];
 	connections: PublicConnection[];
 };
 
+/**
+ * One recorded publish, as it crosses the wire.
+ *
+ * Declared here rather than derived from the Drizzle row because the row's
+ * timestamps are `Date` objects and JSON delivers strings. `status` is
+ * deliberately a plain `string | null`: it holds TikTok's own code, and
+ * `describeAttemptStatus` is what turns any of them (including one this build
+ * has never seen) into something to show a creator.
+ */
 export type PublishAttempt = {
 	id: string;
 	connectionId: string;
 	idempotencyKey: string;
-	kind: string;
 	publishId: string | null;
 	status: string | null;
+	/**
+	 * `null` until remote status has been read once; an empty array once TikTok
+	 * has answered and named no public post.
+	 */
+	publicPostIds: string[] | null;
 	failReason: string | null;
 	createdAt: string;
+};
+
+/** Remote truth for one publishing task, plus whether it was recorded locally. */
+export type PublishStatusView = TikTokPostStatus & {
+	/**
+	 * False in the one documented window where TikTok created the task but
+	 * Epicenter never persisted its publish id, so this outcome is not being
+	 * remembered.
+	 */
+	recorded: boolean;
 };
 
 export const TikTokApiError = defineErrors({
@@ -181,18 +201,18 @@ export const tiktokApi = {
 	creatorInfo: (connectionId: string) =>
 		send<TikTokCreatorInfo>(`${BASE}/connections/${connectionId}/creator-info`),
 
-	videos: (connectionId: string) =>
-		send<{ videos: TikTokVideo[] }>(
-			`${BASE}/connections/${connectionId}/videos`,
-		),
-
 	attempts: (connectionId: string) =>
 		send<{ attempts: PublishAttempt[] }>(
 			`${BASE}/connections/${connectionId}/attempts`,
 		),
 
+	/**
+	 * Remote truth for one publishing task. This is how an ambiguous publish is
+	 * resolved, never a retry, and the same call reconciles the recorded attempt
+	 * server-side so a reload cannot show a stale "processing".
+	 */
 	publishStatus: (connectionId: string, publishId: string) =>
-		send<TikTokPostStatus>(
+		send<PublishStatusView>(
 			`${BASE}/connections/${connectionId}/publish/${publishId}`,
 		),
 
@@ -205,7 +225,6 @@ export const tiktokApi = {
 		send<{
 			attemptId: string;
 			publishId: string;
-			kind: string;
 			message: string;
 		}>(`${BASE}/connections/${connectionId}/publish`, {
 			method: 'POST',
@@ -224,6 +243,37 @@ export const tiktok = {
 	}),
 };
 
+/**
+ * A link to a published post, built from the creator's @handle and the post id
+ * TikTok reported.
+ *
+ * TikTok documents no permalink builder, so this is its canonical video URL
+ * shape rather than a value the API handed back. The post id is always shown
+ * beside the link for that reason: if the shape ever changes, the creator still
+ * has the identifier TikTok actually returned. `null` when the handle is unknown
+ * (the creator declined `user.info.profile`), because guessing a handle would
+ * link at somebody else's profile.
+ */
+export function tiktokPostUrl(
+	username: string | null,
+	postId: string,
+): string | null {
+	return username
+		? `https://www.tiktok.com/@${username}/video/${postId}`
+		: null;
+}
+
+/**
+ * What an attempt status MEANS, from the module both sides share. The client must
+ * not decide for itself which statuses are terminal: that judgement is what stops
+ * polling, and getting it wrong either polls a finished task forever or abandons
+ * one still in flight.
+ */
+export {
+	type AttemptTone,
+	describeAttemptStatus,
+	isTerminalAttemptStatus,
+} from '$api/integrations/tiktok/attempt-status';
 /**
  * The Direct Post rules, re-exported from the sibling Worker module that
  * ENFORCES them. The dashboard renders the same label explanations and the same
