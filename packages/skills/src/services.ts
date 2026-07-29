@@ -23,7 +23,7 @@ export async function scanReferences(
 	data: SkillsData,
 ): Promise<ReferencesScan> {
 	const { rows: references, nonconforming } =
-		await data.tables.references.scan();
+		await data.tables.skillReferences.scan();
 	return { references, nonconforming };
 }
 
@@ -70,7 +70,7 @@ export async function getSkillWithReferences(data: SkillsData, id: string) {
 		scanned.references
 			.filter((reference) => reference.skillId === id)
 			.map(async (reference) => {
-				await using content = await data.tables.references.openDocument(
+				await using content = await data.tables.skillReferences.openDocument(
 					reference.id,
 				);
 				return {
