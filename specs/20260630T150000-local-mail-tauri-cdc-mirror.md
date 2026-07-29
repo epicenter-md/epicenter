@@ -31,18 +31,26 @@ Local Mail's mirror is not a new design, it is `local-books`'s proven shape appl
 
 Do not invent a different mirror shape. If something here doesn't fit Gmail's actual API surface, that's a reason to adapt this table, not to redesign from scratch.
 
-## Mode selection
+## Application identity
+
+There are no hosted and self-host modes here. The Google application identity is
+machine-wide, resolved once at connect and refresh time:
 
 ```
-GmailApp = { clientId?: string }
-  undefined → Epicenter's baked-in, CASA-verified Client ID (hosted mode)
-  present   → operator's own registered Client ID (self-host mode)
+resolve GMAIL_CLIENT_ID / GMAIL_CLIENT_SECRET
+  1. process environment          — the override, CI, and test seam
+  2. <data-dir>/provider.json     — the 0600 machine-wide durable default,
+                                    cached after the first good grant and
+                                    shared by every account and worktree
+  neither → fail loudly, naming both variable names
 
-connectGmail(app: GmailApp)   — the one choke point, both modes
+connect  — the one choke point
   → opens Google's PKCE consent screen (Desktop app client type; Google does
-    issue these a client_secret, included in the exchange; see resolved
-    question 5)
-  → returns a refresh token, same shape either way
+    issue these a client_secret, and the current code includes it in the
+    exchange; ADR-0188 records that dropping it is documented-optional but
+    empirically unproven for this client type)
+  → stores the refresh token alongside the client id that minted it, so a later
+    identity change fails loudly and asks for a reconnect
   → everything downstream (mail.db, poll loop, write-through) is identical
 ```
 
