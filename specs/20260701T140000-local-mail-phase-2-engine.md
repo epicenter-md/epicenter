@@ -48,7 +48,7 @@ Order matters: bounding fetch concurrency lands first so the schema bump's force
 ### Wave 2b: connect flow
 
 - [ ] **2b.1** Add the authorization-code + PKCE half to `oauth.ts` (the refresh grant is already there), via `oauth4webapi`, per the parent spec's resolved question 5: loopback callback on `127.0.0.1` with an OS-assigned port (`Bun.serve({ port: 0 })`), never a custom URI scheme. Include the `client_secret` in the exchange (Google Desktop clients are issued one).
-- [ ] **2b.2** `connect [--client-id <id>]` verb in the CLI: print the consent URL, attempt `open` on macOS, receive the callback, exchange, resolve the account email from `getProfile` (`emailAddress` field; extend `ProfileResponseSchema`), persist through the existing `TokenStore`. `--client-id` is ADR-0082's one hosted/self-host override. Keep `seed-token` for headless bootstrap.
+- [ ] **2b.2** `connect [--client-id <id>]` verb in the CLI: print the consent URL, attempt `open` on macOS, receive the callback, exchange, resolve the account email from `getProfile` (`emailAddress` field; extend `ProfileResponseSchema`), persist through the existing `TokenStore`. Keep `seed-token` for headless bootstrap. (Shipped without `--client-id`: under ADR-0188 the client identity is machine-wide, resolved from the environment then the `0600 provider.json`, so a per-invocation flag would let one account's grant disagree with the machine's identity.)
 - [ ] **2b.3** Scope: `gmail.readonly` now; `gmail.modify` waits for Phase 3 write-through (re-consent is one command once `connect` exists).
 - [ ] **2b.4** Tests (the grill flagged this wave as having zero test coverage planned): the PKCE exchange half is testable against a mock token endpoint (the `LOCAL_MAIL_GMAIL_TOKEN_URL` config override exists for exactly this, `config.ts:55`) plus a hand-thrown GET at the loopback callback; only the browser hop is untestable, matching local-books' posture.
 
@@ -116,9 +116,7 @@ Settled since the first draft: threads derive vs guard is no longer open. Derive
 
 ## Owner decisions this spec surfaces but does not make
 
-- Flip ADR-0081/ADR-0082 from Proposed to Accepted (the smoke test is the awaited evidence), with two corrections at flip time:
-  - ADR-0082's push rejection rests on a premise to correct first: it claims push requires a publicly reachable webhook. Gmail's `users.watch` publishes to Cloud Pub/Sub, and Pub/Sub PULL subscriptions let a local long-lived process consume notifications with no public endpoint. Poll-only remains the right v1 call, but the ADR currently rejects a strawman; its revisit path should name pull-subscription push as the no-server upgrade.
-  - ADR-0081's consequence line that the mirror works "standalone on a phone" needs trimming or annotation: the Bun-served shell forecloses it, and the phone story belongs to ADR-0098 (Gmail's own app is the phone client).
+- ~~Flip ADR-0081/ADR-0082 from Proposed to Accepted, with two corrections at flip time.~~ Done 2026-07-29. Both corrections landed: ADR-0082 now rejects push on provisioning cost and names the Pub/Sub PULL subscription as the no-server upgrade path instead of rejecting the public-webhook strawman, and ADR-0081's "standalone on a phone" consequence now says what Google's ceiling actually buys, pointing at ADR-0116 and ADR-0098 for the phone story. ADR-0082's OAuth-client-identity half was split into ADR-0188 rather than accepted.
 - CASA Tier 2 quote before hosted mode ships a restricted scope publicly (client stays Testing mode until then; test-user refresh tokens die 7 days after issuance).
 - Secret-vault cross-device token sync (parent spec question 1).
 

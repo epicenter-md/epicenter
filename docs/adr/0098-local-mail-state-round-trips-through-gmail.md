@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-01
-- **Relates:** [ADR-0080](0080-the-super-app-is-a-desktop-host-cross-device-is-remote-access-to-the-session-not-a-per-app-capability-plane.md) (cross-device is a remote session, not per-app phone code, so the phone reads mail in the phone's own mail app), [ADR-0081](0081-per-upstream-oauth-concurrency-decides-mirror-topology.md) (each device holds its own mirror against Google directly), [ADR-0082](0082-local-mail-mirror-is-push-free-polling-collapsing-hosted-vs-self-host-to-one-oauth-client-id.md) (writes hit Gmail first; the mirror folds the result in after), [ADR-0083](0083-apps-email-is-refused-local-mail-is-the-only-gmail-client.md) (Local Mail is the only Gmail client)
+- **Relates:** [ADR-0080](0080-the-super-app-is-a-desktop-host-cross-device-is-remote-access-to-the-session-not-a-per-app-capability-plane.md) (cross-device is a remote session, not per-app phone code, so the phone reads mail in the phone's own mail app), [ADR-0081](0081-per-upstream-oauth-concurrency-decides-mirror-topology.md) (each device holds its own mirror against Google directly), [ADR-0082](0082-local-mail-syncs-by-push-free-history-list-polling.md) (writes hit Gmail first; the mirror folds the result in after), [ADR-0083](0083-apps-email-is-refused-local-mail-is-the-only-gmail-client.md) (Local Mail is the only Gmail client)
 
 ## Context
 
