@@ -7,14 +7,23 @@
  */
 
 import type { AgentMessage, AgentMessageStore } from '@epicenter/agent';
-import {
-	defineLens,
-	defineTable,
-	type RowDocument,
-	type RowFor,
-	type TableLens,
-} from '@epicenter/data';
+/**
+ * Two packages, because two different things are being named.
+ *
+ * `TableLens` and `RowDocument` are runtime handles a Data engine constructs, so
+ * they come from `@epicenter/data`. Everything this module *declares* is inert
+ * contract vocabulary owned by `@epicenter/lens`; `@epicenter/data` re-exports
+ * it, but reaching it through the runtime would say this module builds its
+ * schema out of a SQLite replica, which it never does.
+ *
+ * Both stay runtime dependencies. This package publishes raw TypeScript
+ * (`exports` is `./src/index.ts`, with no build and no declaration emit), so a
+ * consumer compiles these very lines, and a type-only import it cannot resolve
+ * is as fatal as a value one.
+ */
+import type { RowDocument, TableLens } from '@epicenter/data';
 import { field } from '@epicenter/field';
+import { defineLens, defineTable, type RowFor } from '@epicenter/lens';
 import type { Brand } from 'wellcrafted/brand';
 
 export type ConversationId = string & Brand<'ConversationId'>;

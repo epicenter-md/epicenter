@@ -821,6 +821,7 @@
         "@epicenter/agent": "workspace:*",
         "@epicenter/data": "workspace:*",
         "@epicenter/field": "workspace:*",
+        "@epicenter/lens": "workspace:*",
         "wellcrafted": "catalog:",
       },
       "devDependencies": {
