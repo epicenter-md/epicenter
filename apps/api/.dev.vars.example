@@ -12,3 +12,19 @@ GEMINI_API_KEY=
 BLOBS_S3_ENDPOINT=
 BLOBS_S3_ACCESS_KEY_ID=
 BLOBS_S3_SECRET_ACCESS_KEY=
+# TikTok connected publishing accounts. Leave blank to run without them: the
+# /api/integrations/tiktok/* routes answer a named 503 and the dashboard shows
+# an explicit "not configured" state. TikTok calls the public half of the pair a
+# "client key", not a client id.
+#
+# Register this exact redirect URI in the TikTok developer portal for local dev:
+#   http://localhost:8787/api/integrations/tiktok/callback
+# (production is https://api.epicenter.so/api/integrations/tiktok/callback)
+TIKTOK_CLIENT_KEY=
+TIKTOK_CLIENT_SECRET=
+# 32 random bytes, base64url. Encrypts OAuth tokens at rest (AES-256-GCM). Its
+# own secret, deliberately NOT BETTER_AUTH_SECRET. Generate with:
+#   bun -e "console.log(Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64url'))"
+TIKTOK_TOKEN_ENCRYPTION_KEY=
+# Set only while rotating the key above; see worker/integrations/tiktok/token-cipher.ts
+# TIKTOK_TOKEN_ENCRYPTION_KEY_V2=
