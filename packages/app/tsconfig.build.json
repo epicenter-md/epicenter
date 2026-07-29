@@ -1,0 +1,28 @@
+{
+	// The one emitting config in this repo, and the reason is the audience.
+	//
+	// Every other package here is consumed by this repo's own bundlers, so
+	// publishing raw `.ts` costs nothing and the repo tsconfig conventions
+	// assume it. This package is consumed by strangers' toolchains. Shipping
+	// `.ts` would drag its source into whatever compiler settings the consumer
+	// happens to run (their `strict`, their `lib`, their `verbatimModuleSyntax`)
+	// and make our type checking their problem. So it ships `.js` and `.d.ts`,
+	// and `tsc` is enough to produce both: this package has no bundling to do.
+	//
+	// It emits only what `src/index.ts` reaches. Tests are excluded, and so is
+	// `@types/bun`: a browser SDK that shipped Bun's globals in its declarations
+	// would leak them into every consumer.
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"types": [],
+		"noEmit": false,
+		"outDir": "./dist",
+		"rootDir": "./src",
+		"declaration": true,
+		"declarationMap": true,
+		"sourceMap": true,
+		"allowImportingTsExtensions": false
+	},
+	"include": ["src/**/*.ts"],
+	"exclude": ["src/**/*.test.ts"]
+}
