@@ -42,7 +42,7 @@ const rowAddr = (rowId: string): RowAddress => ({
 	tableName: 'collection0001',
 	rowId,
 });
-const valueAddr = (value: string): ValueAddress => ({
+const valueAddr = (valueName: string): ValueAddress => ({
 	kind: 'value',
 	namespace: 'so.epicenter.ns00',
 	valueName,
