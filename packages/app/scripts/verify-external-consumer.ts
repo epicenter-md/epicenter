@@ -17,14 +17,52 @@
  * ordinary TypeScript and Vite setup.
  *
  * Run: `bun run verify:consumer` from `packages/app`.
+ *
+ * Everything this builds is thrown away, because the claim is about the build
+ * and not about the output. `--out <dir>` is the exception: it keeps the built
+ * `dist` at a path the caller names, so the fixture can be admitted as a real
+ * app and driven against real hardware. The caller owns that directory; the
+ * script refuses to write into one that already exists.
  */
 
-import { cp, mkdtemp, readdir, rm } from 'node:fs/promises';
+import { cp, mkdtemp, readdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 const packageDir = join(import.meta.dir, '..');
 const fixtureDir = join(packageDir, 'test-fixtures', 'consumer');
+
+function usage(): never {
+	console.error(
+		'Usage: bun run scripts/verify-external-consumer.ts [--out <dir>]',
+	);
+	process.exit(1);
+}
+
+/** Whether anything at all is already at `path`. */
+async function exists(path: string) {
+	try {
+		await stat(path);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+const args = Bun.argv.slice(2);
+const outFlag = args.indexOf('--out');
+const outArg = outFlag === -1 ? undefined : args.splice(outFlag, 2)[1];
+if (args.length > 0 || (outFlag !== -1 && outArg === undefined)) usage();
+
+const outDir = outArg === undefined ? undefined : resolve(outArg);
+// Checked before the build rather than after it, so a caller who pointed at an
+// occupied path finds out now instead of two minutes from now.
+if (outDir !== undefined && (await exists(outDir))) {
+	console.error(
+		`FAILED: ${outDir} already exists. --out writes one fresh directory; removing an old one is the caller's decision, not this script's.`,
+	);
+	process.exit(1);
+}
 
 /**
  * Everything a published tarball is allowed to contain.
@@ -150,7 +188,38 @@ try {
 	}
 	console.log(`  ok  bundle ${bundle} carries the client`);
 
+	// Epicenter serves an admitted app below `/apps/<id>/` (ADR-0179), and the
+	// app does not know its id at build time. Vite's default base of `/` emits
+	// `/assets/index-*.js`, which resolves against the origin root and 404s for
+	// every app but whichever one happens to be mounted there. The fixture sets
+	// a relative base; this is what notices if that regresses.
+	const indexHtml = await Bun.file(join(consumer, 'dist', 'index.html')).text();
+	const references = [...indexHtml.matchAll(/\b(?:src|href)="([^"]*)"/g)].map(
+		([, url]) => url,
+	);
+	const rootAbsolute = references.filter((url) => url.startsWith('/'));
+	if (rootAbsolute.length > 0) {
+		console.error(
+			`FAILED: index.html references root-absolute assets, which cannot resolve below /apps/<id>/:\n  ${rootAbsolute.join('\n  ')}`,
+		);
+		process.exit(1);
+	}
+	if (!references.some((url) => url.endsWith(bundle))) {
+		console.error(
+			`FAILED: index.html does not reference ${bundle}, so the built document loads nothing.`,
+		);
+		process.exit(1);
+	}
+	console.log(`  ok  index.html loads ${bundle} by a relative path`);
+
 	console.log('\nA foreign consumer builds against the packed package.');
+
+	// The only output that outlives the run, and only when asked for. Copied
+	// after every assertion above, so an exported directory is one that passed.
+	if (outDir !== undefined) {
+		await cp(join(consumer, 'dist'), outDir, { recursive: true });
+		console.log(`\nExported the built app to ${outDir}`);
+	}
 } finally {
 	await rm(workspace, { recursive: true, force: true });
 }
