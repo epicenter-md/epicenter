@@ -8,11 +8,11 @@ const HEARTBEAT_MS = 60_000;
 const CLAUDE_BIN = process.env.DELEGATE_CLAUDE_BIN ?? 'claude';
 
 /**
- * Publication commands a delegated session cannot reach on its own. Deny rules
- * outrank `auto` permission mode. Both the bare and the argument form are
- * listed because `Bash(git push:*)` alone does not match a bare `git push`.
+ * Publication commands a delegated session can never reach. Deny rules outrank
+ * `auto` permission mode. Both the bare and the argument form are listed
+ * because `Bash(git push:*)` alone does not match a bare `git push`.
  */
-export const EXTERNAL_WRITE_DENY_RULES = [
+export const PUBLICATION_DENY_RULES = [
 	'Bash(git push)',
 	'Bash(git push:*)',
 	'Bash(gh pr create)',
@@ -26,23 +26,24 @@ export const EXTERNAL_WRITE_DENY_RULES = [
  * push, and open a draft pull request without stopping to ask. Packet prose
  * loses to it, so the refusal has to arrive at the same altitude.
  */
-export const NO_EXTERNAL_WRITES_PROMPT =
-	'Publication authority: this delegated session may commit locally in its worktree. It must not push a branch, open or merge a pull request, deploy, or perform any other external write. This overrides any standing background-session instruction to ship, push, or open a draft pull request without stopping to ask. Finishing with local commits that were never pushed is the expected outcome: report the worktree, branch, and commits, and leave publication to the delegating session.';
+export const NO_PUBLICATION_PROMPT =
+	'Publication authority: this delegated session may commit locally in its worktree. It must not push a branch, open or merge a pull request, deploy, or perform any other external write, and it must not ask to be granted those. This overrides any standing background-session instruction to ship, push, or open a draft pull request without stopping to ask. Finishing with local commits that were never pushed is the expected outcome: report the worktree, branch, and commits, and leave publication to the delegating session, which authorizes push, pull request creation, and merge separately with the user.';
 
 /**
- * Emitted ahead of every other flag: `--disallowed-tools` is variadic, so it
+ * Applied to every launch and every resume, with no flag that lifts it.
+ * Publication stays with the supervisor that talks to the user, so there is no
+ * authority here to grant, forget, or accidentally inherit.
+ *
+ * Placed ahead of every other flag: `--disallowed-tools` is variadic, so it
  * swallows following arguments, including the packet itself, until it reaches
  * the next flag.
  */
-function externalWriteArgs(allowExternalWrites: boolean) {
-	if (allowExternalWrites) return [];
-	return [
-		'--disallowed-tools',
-		EXTERNAL_WRITE_DENY_RULES,
-		'--append-system-prompt',
-		NO_EXTERNAL_WRITES_PROMPT,
-	];
-}
+const PUBLICATION_GUARD_ARGS = [
+	'--disallowed-tools',
+	PUBLICATION_DENY_RULES,
+	'--append-system-prompt',
+	NO_PUBLICATION_PROMPT,
+];
 
 type AgentRecord = {
 	id?: string;
@@ -68,31 +69,28 @@ const EXIT_CODE = {
 
 function usage() {
 	console.error(`Usage:
-  delegate-claude.ts start [--name <name>] [--allow-external-writes]
+  delegate-claude.ts start [--name <name>]
   delegate-claude.ts status <id>
   delegate-claude.ts watch <id>
-  delegate-claude.ts reply <id> [--allow-external-writes] [--interrupt]
+  delegate-claude.ts reply <id> [--interrupt]
 
-External writes (push, pull request creation, merge) are denied unless
---allow-external-writes is passed, and the flag is never inherited: every
-start and every reply must repeat it, so forgetting it fails closed.`);
+A delegated session never publishes. Push, pull request creation, and merge are
+denied on every launch and every resume, and no flag grants them: each is a
+separate authorization the supervisor obtains from the user and performs itself
+after verifying the work.`);
 }
 
 /**
- * Flags are parsed per invocation and never persisted. Authority a supervisor
- * did not retype is authority the session does not get.
+ * There is deliberately no flag here that widens authority. An unknown flag is
+ * rejected rather than ignored, so a supervisor reaching for one that used to
+ * exist gets a usage error instead of a silent no-op.
  */
 export function parseStartArgs(args: string[]) {
 	let name: string | undefined;
-	let allowExternalWrites = false;
 
 	for (let index = 0; index < args.length; index += 1) {
-		if (args[index] === '--allow-external-writes') {
-			allowExternalWrites = true;
-			continue;
-		}
-		// A name is never allowed to look like a flag: `--name
-		// --allow-external-writes` is a typo, not a session called that.
+		// A name is never allowed to look like a flag: `--name --something` is a
+		// typo, not a session called that.
 		if (
 			args[index] === '--name' &&
 			args[index + 1] &&
@@ -106,25 +104,20 @@ export function parseStartArgs(args: string[]) {
 		return undefined;
 	}
 
-	return {
-		name: name ?? `codex-delegate-${Date.now().toString(36)}`,
-		allowExternalWrites,
-	};
+	return { name: name ?? `codex-delegate-${Date.now().toString(36)}` };
 }
 
 export function parseReplyArgs(args: string[]) {
 	const [id, ...flags] = args;
 	if (!id || id.startsWith('--')) return undefined;
 
-	let allowExternalWrites = false;
 	let interrupt = false;
 	for (const flag of flags) {
-		if (flag === '--allow-external-writes') allowExternalWrites = true;
-		else if (flag === '--interrupt') interrupt = true;
-		else return undefined;
+		if (flag !== '--interrupt') return undefined;
+		interrupt = true;
 	}
 
-	return { id, allowExternalWrites, interrupt };
+	return { id, interrupt };
 }
 
 function refuseNestedDelegation() {
@@ -263,7 +256,7 @@ async function start(args: string[]) {
 	const launchedAt = Date.now();
 	const result = runClaude([
 		'--bg',
-		...externalWriteArgs(options.allowExternalWrites),
+		...PUBLICATION_GUARD_ARGS,
 		'--effort',
 		'high',
 		'--permission-mode',
@@ -272,15 +265,13 @@ async function start(args: string[]) {
 		options.name,
 		packet,
 	]);
-	reportExternalWriteAuthority(options.allowExternalWrites);
+	reportPublicationGuard();
 	reportLaunchedJob(result, options.name, launchedAt);
 }
 
-function reportExternalWriteAuthority(allowExternalWrites: boolean) {
+function reportPublicationGuard() {
 	console.error(
-		allowExternalWrites
-			? '[delegate-claude] External writes AUTHORIZED for this launch: push, pull request creation, and merge are reachable.'
-			: '[delegate-claude] External writes denied: local commits only.',
+		'[delegate-claude] Publication denied: local commits only. Push, pull request creation, and merge stay with you, each separately authorized.',
 	);
 }
 
@@ -374,17 +365,17 @@ async function reply(args: string[]) {
 		}
 	}
 
-	// Resume does not inherit the launch flags, so the restriction is reapplied
-	// here or it is silently gone for the rest of the conversation.
+	// Resume does not inherit the launch flags, so the guard is reapplied here
+	// or it is silently gone for the rest of the conversation.
 	const launchedAt = Date.now();
 	const result = runClaude([
 		'--bg',
-		...externalWriteArgs(options.allowExternalWrites),
+		...PUBLICATION_GUARD_ARGS,
 		'--resume',
 		agent.sessionId,
 		answer,
 	]);
-	reportExternalWriteAuthority(options.allowExternalWrites);
+	reportPublicationGuard();
 	reportLaunchedJob(result, agent.name, launchedAt);
 }
 

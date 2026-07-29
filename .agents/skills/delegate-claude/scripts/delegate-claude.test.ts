@@ -11,8 +11,8 @@
  * - Short and full session IDs resolve to the same agent record
  * - working/blocked/terminal states map to watcher outcomes and exit codes
  * - `reply` stops the job and resumes the same conversation as a new job
- * - Push and pull request authority is denied on every start and every resume
- *   unless that invocation passes `--allow-external-writes`
+ * - Push, pull request creation, and merge are denied on every start and every
+ *   resume, and no argument reaches a launch that grants them
  * - `reply` refuses a working job unless the interruption is deliberate
  * - `CLAUDECODE=1` refuses reciprocal delegation
  */
@@ -30,10 +30,10 @@ import { join } from 'node:path';
 
 import {
 	classifyAgent,
-	EXTERNAL_WRITE_DENY_RULES,
 	findAgent,
 	findLaunchedByName,
-	NO_EXTERNAL_WRITES_PROMPT,
+	NO_PUBLICATION_PROMPT,
+	PUBLICATION_DENY_RULES,
 	parseBackgroundId,
 	parseReplyArgs,
 	parseStartArgs,
@@ -112,50 +112,51 @@ describe('classifyAgent', () => {
 });
 
 describe('parseStartArgs', () => {
-	test('denies external writes unless the launch asks for them', () => {
-		expect(parseStartArgs([])?.allowExternalWrites).toBe(false);
-		expect(parseStartArgs(['--name', 'x'])?.allowExternalWrites).toBe(false);
-		expect(
-			parseStartArgs(['--name', 'x', '--allow-external-writes'])
-				?.allowExternalWrites,
-		).toBe(true);
-		expect(
-			parseStartArgs(['--allow-external-writes', '--name', 'x'])?.name,
-		).toBe('x');
+	test('takes a name and generates one otherwise', () => {
+		expect(parseStartArgs(['--name', 'x'])).toEqual({ name: 'x' });
+		expect(parseStartArgs([])?.name).toMatch(/^codex-delegate-/);
 	});
 
-	test('generates a name and rejects unknown or malformed flags', () => {
-		expect(parseStartArgs([])?.name).toMatch(/^codex-delegate-/);
+	test('rejects unknown or malformed flags', () => {
 		expect(parseStartArgs(['--name'])).toBeUndefined();
-		expect(parseStartArgs(['--allow-pushes'])).toBeUndefined();
 		expect(parseStartArgs(['fixture'])).toBeUndefined();
 		expect(parseStartArgs(['--name', 'a', '--name', 'b'])).toBeUndefined();
-		// Never swallow the authority flag as if it were the session name.
-		expect(
-			parseStartArgs(['--name', '--allow-external-writes']),
-		).toBeUndefined();
+		expect(parseStartArgs(['--name', '--something'])).toBeUndefined();
+	});
+
+	test('offers no argument that widens publication authority', () => {
+		// A supervisor reaching for authority gets a usage error, never a launch
+		// that quietly granted nothing or, worse, quietly granted something.
+		for (const flag of [
+			'--allow-external-writes',
+			'--allow-push',
+			'--allow-pr-create',
+			'--allow-pr-merge',
+			'--dangerously-skip-permissions',
+		]) {
+			expect(parseStartArgs([flag])).toBeUndefined();
+			expect(parseStartArgs(['--name', 'x', flag])).toBeUndefined();
+		}
 	});
 });
 
 describe('parseReplyArgs', () => {
-	test('requires an ID and defaults both authorities off', () => {
+	test('requires an ID and defaults the interruption off', () => {
 		expect(parseReplyArgs(['7c5dcf5d'])).toEqual({
 			id: '7c5dcf5d',
-			allowExternalWrites: false,
 			interrupt: false,
 		});
+		expect(parseReplyArgs(['7c5dcf5d', '--interrupt'])?.interrupt).toBe(true);
 		expect(parseReplyArgs([])).toBeUndefined();
 		expect(parseReplyArgs(['--interrupt'])).toBeUndefined();
-		expect(parseReplyArgs(['7c5dcf5d', '--yolo'])).toBeUndefined();
 	});
 
-	test('reads each authority independently', () => {
+	test('rejects anything that is not the interruption flag', () => {
+		expect(parseReplyArgs(['7c5dcf5d', '--yolo'])).toBeUndefined();
 		expect(
-			parseReplyArgs(['7c5dcf5d', '--interrupt'])?.allowExternalWrites,
-		).toBe(false);
-		expect(
-			parseReplyArgs(['7c5dcf5d', '--allow-external-writes'])?.interrupt,
-		).toBe(false);
+			parseReplyArgs(['7c5dcf5d', '--allow-external-writes']),
+		).toBeUndefined();
+		expect(parseReplyArgs(['7c5dcf5d', '--allow-pr-create'])).toBeUndefined();
 	});
 });
 
@@ -208,13 +209,13 @@ if (args[0] === '--bg' && args.includes('--resume')) {
 		 * `--disallowed-tools` is variadic, so an argument that is not a flag
 		 * immediately after the rule list would be eaten as another rule.
 		 */
-		const expectExternalWritesDenied = (args: string[]) => {
+		const expectPublicationDenied = (args: string[]) => {
 			const deny = args.indexOf('--disallowed-tools');
 			expect(deny).toBeGreaterThanOrEqual(0);
-			expect(args[deny + 1]).toBe(EXTERNAL_WRITE_DENY_RULES);
+			expect(args[deny + 1]).toBe(PUBLICATION_DENY_RULES);
 			expect(args[deny + 2]?.startsWith('--')).toBe(true);
 			const guard = args.indexOf('--append-system-prompt');
-			expect(args[guard + 1]).toBe(NO_EXTERNAL_WRITES_PROMPT);
+			expect(args[guard + 1]).toBe(NO_PUBLICATION_PROMPT);
 		};
 
 		// The suite itself may run inside Claude Code; drop its recursion marker
@@ -240,17 +241,18 @@ if (args[0] === '--bg' && args.includes('--resume')) {
 			for (const flag of ['--effort', 'high', '--permission-mode', 'auto'])
 				expect(startArgs).toContain(flag);
 			expect(finalArg(startArgs)).toBe('Mission: fixture');
-			expectExternalWritesDenied(startArgs);
+			expectPublicationDenied(startArgs);
 
-			const permitted = spawnSync(
+			// The flag that used to widen authority now fails the launch outright
+			// rather than reaching `claude` as an unguarded start.
+			const launchCount = launches().length;
+			const refused = spawnSync(
 				'bun',
 				[cli, 'start', '--name', 'fixture', '--allow-external-writes'],
 				{ encoding: 'utf8', env: environment, input: 'Mission: fixture' },
 			);
-			expect(permitted.status).toBe(0);
-			expect(lastLaunch()).not.toContain('--disallowed-tools');
-			expect(lastLaunch()).not.toContain('--append-system-prompt');
-			expect(permitted.stderr).toContain('External writes AUTHORIZED');
+			expect(refused.status).toBe(2);
+			expect(launches().length).toBe(launchCount);
 
 			const recovered = spawnSync('bun', [cli, 'start', '--name', 'fixture'], {
 				encoding: 'utf8',
@@ -290,9 +292,10 @@ if (args[0] === '--bg' && args.includes('--resume')) {
 			expect(resumeArgs).toContain('--resume');
 			expect(resumeArgs).toContain(baseAgent.sessionId);
 			expect(finalArg(resumeArgs)).toBe('pear');
-			// The reply never repeated `--allow-external-writes`, so the resumed
-			// conversation cannot inherit authority the first launch lacked.
-			expectExternalWritesDenied(resumeArgs);
+			// Claude does not carry deny rules across `--resume`, so an unguarded
+			// resume would silently restore publication for the rest of the
+			// conversation. The reply reapplies the guard every time.
+			expectPublicationDenied(resumeArgs);
 
 			const busy = spawnSync('bun', [cli, 'reply', '7c5dcf5d'], {
 				encoding: 'utf8',
@@ -315,6 +318,9 @@ if (args[0] === '--bg' && args.includes('--resume')) {
 			expect(interrupted.status).toBe(0);
 			expect(interrupted.stdout).toContain('DELEGATE_CLAUDE_JOB_ID=a5b4a85d');
 			expect(back(1)[0]).toBe('stop');
+			// Interrupting a live turn is a supervision decision, not a widening
+			// of what the resumed session may do.
+			expectPublicationDenied(lastLaunch());
 
 			const nested = spawnSync('bun', [cli, 'start'], {
 				encoding: 'utf8',

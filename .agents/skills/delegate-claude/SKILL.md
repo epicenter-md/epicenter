@@ -87,35 +87,38 @@ context Codex has. Ask the user before crossing into unrelated private material,
 credentials, personal data, or broader external systems. Claude inherits the
 user's task scope, never broader mutation authority.
 
-## Publication is a separate authorization
+## Publication stays with Codex
 
 Delegating implementation never delegates publication. Claude may commit
-locally in its worktree. Pushing a branch, opening or merging a pull request,
-deploying, and every other external write each need authorization the
-originating user gave for this delegation. "Implement it", "finish it",
-"integrate it", "hand it off", and "delegate it" do not supply it, and neither
-does an authorized commit: a commit is local and reversible, publication is
-neither.
+locally in its worktree. Pushing a branch, opening a pull request, merging one,
+deploying, and every other external write stay with Codex, which performs them
+itself after verifying the work.
 
-Prose in the packet is not enough on its own. Every background session already
-carries a standing instruction to commit, push, and open a draft pull request
-without stopping to ask, so a packet that only asks for restraint is arguing
-with the session's own system prompt. The launcher therefore denies `git push`,
-`gh pr create`, and `gh pr merge` through Claude's permission rules and appends
-a system-prompt-level refusal that outranks the shipping instruction.
+Each of those is authorized separately by the user. Authorization to push is
+not authorization to open a pull request, and authorization to open one is not
+authorization to merge it; a merge is always the user's explicit instruction,
+never Codex's read of a finished branch. "Implement it", "finish it",
+"integrate it", "hand it off", and "delegate it" authorize none of them, and
+neither does an authorized commit: a commit is local and reversible,
+publication is neither.
 
-Pass `--allow-external-writes` only when the user authorized publication for
-this delegation:
+Because publication is never Claude's to perform, the launcher grants no
+opt-in. It denies `git push`, `gh pr create`, and `gh pr merge` through
+Claude's permission rules on every launch and every resume, and appends a
+system-prompt-level refusal. There is no flag that lifts this, so there is no
+authority to forget on a resume and none that can widen from one command to the
+next. A supervisor who reaches for one gets a usage error rather than a launch.
 
-```bash
-bun <skill-dir>/scripts/delegate-claude.ts start --name <short-name> --allow-external-writes
-```
+That last part matters more than it looks. Prose in the packet is not enough on
+its own: every background session already carries a standing instruction to
+commit, push, and open a draft pull request without stopping to ask, so a
+packet that only asks for restraint is arguing with the session's own system
+prompt and losing. Deny rules still cover only the commands an overreaching
+session actually reaches for, not every route to the network, so treat them as
+a floor under the packet's authority text rather than a fence around it.
 
-The flag applies to one invocation and is never stored or inherited. `reply`
-must repeat it, so a supervisor who forgets it fails closed rather than open.
-Deny rules cover the commands an overreaching session actually reaches for, not
-every possible route to the network, so treat them as a floor under the
-packet's authority text rather than a replacement for it.
+If the user wants the work published, verify it first, then push and open the
+pull request yourself.
 
 ## Start one durable session
 
@@ -216,8 +219,9 @@ on. The superseded job stays listed as `stopped`; leave it alone, and never run
 running process first, replying to a working job throws away the turn in
 flight, so the launcher refuses that unless you pass `--interrupt`. Reach for
 `--interrupt` when the user genuinely changes direction mid-run, not to hurry a
-quiet session along. Resume does not inherit launch flags either: repeat
-`--allow-external-writes` if and only if publication is still authorized.
+quiet session along. Interrupting changes what the session is working on, never
+what it is allowed to do: the resume reapplies the publication guard, which
+Claude does not otherwise carry across `--resume`.
 
 `claude attach <id>` opens the session's full-screen terminal UI in the current
 terminal; `Ctrl+Z` detaches while the session keeps running. Prefer attach when
@@ -244,10 +248,10 @@ confirms it (branch `worktree-<generated-name>`, locked).
 4. Check for unrelated edits and unauthorized commits, pushes, PRs, deploys, or
    external mutations.
 5. Reconcile Claude's conclusions with local evidence.
-6. Integrate or commit only when the originating request authorizes it. Push
-   and open the pull request yourself, and only after the user authorizes
-   publication; that authorization is Codex's to obtain, never Claude's to
-   infer from having finished the work.
+6. Integrate or commit only when the originating request authorizes it. Push,
+   open the pull request, and merge yourself, each only after the user
+   authorized that specific step. Finished and verified work is not an
+   authorization to publish it.
 
 If verification disproves Claude's completion claim, the session is healthy and
 wrong, not failed: attach and continue the same conversation with the concrete
