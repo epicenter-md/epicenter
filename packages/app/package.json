@@ -26,6 +26,8 @@
 	},
 	"files": [
 		"dist",
+		"src",
+		"!src/**/*.test.ts",
 		"README.md",
 		"LICENSE"
 	],
@@ -33,7 +35,8 @@
 		"build": "tsc -p tsconfig.build.json",
 		"prepack": "bun run build",
 		"typecheck": "tsc --noEmit",
-		"test": "bun test"
+		"test": "bun test",
+		"verify:consumer": "bun run scripts/verify-external-consumer.ts"
 	},
 	"dependencies": {
 		"@tauri-apps/api": "catalog:",
