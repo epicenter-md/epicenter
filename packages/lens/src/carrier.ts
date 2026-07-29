@@ -21,10 +21,10 @@
  *   handles were listening across it, and a row deleted while the socket was
  *   down has left nothing behind to name.
  * - **Law 7, the carrier is established before the opener resolves.** {@link
- *   openObservationCarrier} answers only after the first dial settles. That is
- *   what buys law 2: a caller that holds a handle can subscribe and then read
- *   with nothing able to land in between, so no initial fire is needed to cover
- *   a window that does not exist.
+ *   openObservationCarrier} answers only after the first dial settles, and it
+ *   answers with a live carrier or not at all. That is what buys law 2: a caller
+ *   that holds a handle can subscribe and then read with nothing able to land in
+ *   between, so no initial fire is needed to cover a window that does not exist.
  */
 
 import type { Address } from './addresses.js';
@@ -117,48 +117,65 @@ export async function openObservationCarrier({
 	 */
 	redialDelayMs?: (attempt: number) => number;
 	/**
-	 * Where a dial that threw is reported. A socket that merely closed is
-	 * ordinary and stays silent; a dial that could not even produce one says
-	 * something about the environment, and the redial loop would otherwise hide
-	 * it forever.
+	 * Where a failure the redial loop would otherwise hide is reported.
+	 *
+	 * A socket that merely closed is ordinary and stays silent, and a failed open
+	 * is not reported here at all: it rejects with its cause attached, so the
+	 * caller already holds it. What is left is what only the loop can see, and
+	 * would otherwise see forever in silence: a redial that could not even
+	 * produce a socket.
 	 */
 	log?: InvalidationErrorReporter;
-}): Promise<ObservationCarrier | undefined> {
+}): Promise<ObservationCarrier> {
 	let socket: ObservationSocket | undefined;
 	let redialTimer: unknown;
 	let failedAttempts = 0;
 	let isClosed = false;
+	/**
+	 * Whether the opener is still waiting to be told what happened.
+	 *
+	 * One flag decides both branches this loop has. While the opener waits, a
+	 * failure is its answer: no carrier has been handed out, so there is no
+	 * handle to heal and nothing to retry behind a caller who is about to be told
+	 * the open failed. Once it has been answered, every failure belongs to the
+	 * redial loop and every reopen heals (law 6).
+	 */
+	let isOpening = true;
+	let openingFailure: Error | undefined;
 
-	function connect({ isInitial }: { isInitial: boolean }): Promise<boolean> {
-		return new Promise<boolean>((resolve) => {
-			if (isClosed) return resolve(false);
-			let settled = false;
-			const settle = (established: boolean) => {
-				if (settled) return;
-				settled = true;
-				resolve(established);
-			};
-
+	/** Dial once. The promise settles when that dial does, either way. */
+	function connect(): Promise<void> {
+		return new Promise<void>((settle) => {
 			let next: ObservationSocket;
 			try {
 				next = dial();
 			} catch (cause) {
 				// A dial that threw never produced a socket, so no `close` event is
 				// coming to drive the redial from.
-				log.error(new Error('Observation carrier could not dial', { cause }));
-				failedAttempts += 1;
-				scheduleRedial();
-				return settle(false);
+				if (isOpening) {
+					isOpening = false;
+					openingFailure = new Error('Observation carrier could not dial', {
+						cause,
+					});
+				} else {
+					log.error(
+						new Error('Observation carrier could not redial', { cause }),
+					);
+					redialAfterFailure();
+				}
+				return settle();
 			}
 			socket = next;
 
 			next.addEventListener('open', () => {
 				failedAttempts = 0;
-				settle(true);
-				// Only a reopen has handles to heal. The first carrier precedes every
-				// subscription a caller can have installed, so there is nothing to
-				// tell (law 7 is what makes that true).
-				if (!isInitial) observation.invalidateAll();
+				// The first open answers the opener; only a reopen has handles to
+				// heal. The first carrier precedes every subscription a caller can
+				// have installed, so there is nothing to tell (law 7 is what makes
+				// that true).
+				if (isOpening) isOpening = false;
+				else observation.invalidateAll();
+				settle();
 			});
 			next.addEventListener('message', (event) => {
 				const changes = readObservationFrame(event.data);
@@ -173,23 +190,35 @@ export async function openObservationCarrier({
 			next.addEventListener('close', () => {
 				if (socket !== next) return;
 				socket = undefined;
-				if (isClosed) return;
-				failedAttempts += 1;
-				settle(false);
-				scheduleRedial();
+				if (isClosed) return settle();
+				if (isOpening) {
+					isOpening = false;
+					openingFailure = new Error(
+						'Observation carrier closed before it opened',
+					);
+				} else {
+					redialAfterFailure();
+				}
+				settle();
 			});
 		});
 	}
 
-	function scheduleRedial(): void {
+	/**
+	 * Count this failure and arrange another attempt.
+	 *
+	 * Reachable only once the opener has been answered. At most one dial is ever
+	 * in flight, from two directions: a socket the loop has already replaced has
+	 * its events dropped by identity above, and a timer already armed is never
+	 * armed a second time.
+	 */
+	function redialAfterFailure(): void {
+		failedAttempts += 1;
 		if (isClosed || redialTimer !== undefined) return;
-		redialTimer = setTimeout(
-			() => {
-				redialTimer = undefined;
-				if (!isClosed) void connect({ isInitial: false });
-			},
-			redialDelayMs(Math.max(failedAttempts, 1)),
-		);
+		redialTimer = setTimeout(() => {
+			redialTimer = undefined;
+			if (!isClosed) void connect();
+		}, redialDelayMs(failedAttempts));
 	}
 
 	function close(): void {
@@ -202,13 +231,14 @@ export async function openObservationCarrier({
 		observation.clear();
 	}
 
-	const established = await connect({ isInitial: true });
-	// A carrier that never opened has no handles to heal and no caller holding
-	// it. Stopping here is what keeps a declined open from leaving a redial loop
-	// running behind it.
-	if (!established) {
+	await connect();
+	if (openingFailure !== undefined) {
+		// A carrier that never opened has no handles to heal and no caller holding
+		// it, so it releases everything it touched and explains itself. Answering
+		// with a sentinel instead would make every caller re-derive "no carrier"
+		// from a value, and would lose the reason a person needs to fix it.
 		close();
-		return undefined;
+		throw openingFailure;
 	}
 	return { close };
 }

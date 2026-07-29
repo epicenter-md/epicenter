@@ -3,6 +3,7 @@ import {
 	type CreateInputFor,
 	createInvalidationDispatcher,
 	type Lens,
+	type ObservationCarrier,
 	type ObservationSocket,
 	openObservationCarrier,
 	type RowFor,
@@ -17,6 +18,7 @@ import {
 	type ValueFor,
 } from '@epicenter/lens';
 import * as Y from '@y/y';
+import { extractErrorMessage } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import {
 	type DesktopOperation,
@@ -111,16 +113,19 @@ export async function openDesktopEpicenter({
 	// subscribe and then read with nothing able to land in between. That is what
 	// buys the right to promise no initial fire: there is no gap to cover.
 	await request<void>({ kind: 'open' });
-	const carrier = await openObservationCarrier({
-		observation,
-		dial: () => createObservationSocket(desktopEpicenterObserveUrl(baseUrl)),
-		redialDelayMs: reconnectDelayMs,
-		log,
-	});
-	if (carrier === undefined) {
+	let carrier: ObservationCarrier;
+	try {
+		carrier = await openObservationCarrier({
+			observation,
+			dial: () => createObservationSocket(desktopEpicenterObserveUrl(baseUrl)),
+			redialDelayMs: reconnectDelayMs,
+			log,
+		});
+	} catch (cause) {
 		// `open` registered this surface before the carrier dial failed. Release
-		// that registration before rejecting the opener. Cleanup failure must not
-		// hide the carrier failure that explains why no handle was returned.
+		// that registration before rejecting the opener. Cleanup failure is
+		// reported rather than thrown: it must not displace the carrier failure
+		// that explains why no handle was returned.
 		try {
 			await request<void>({ kind: 'disconnect' });
 		} catch (disconnectCause) {
@@ -132,7 +137,10 @@ export async function openDesktopEpicenter({
 			);
 		}
 		isDisposed = true;
-		throw new Error('Desktop Epicenter could not open its observation carrier');
+		throw new Error(
+			`Desktop Epicenter could not open its observation carrier: ${extractErrorMessage(cause)}`,
+			{ cause },
+		);
 	}
 
 	function bind<

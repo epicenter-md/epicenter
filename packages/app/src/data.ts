@@ -67,6 +67,7 @@ import {
 	type ValueDefinitions,
 	type ValueFor,
 } from '@epicenter/lens';
+import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 
 import {
@@ -301,23 +302,31 @@ async function openTransport(): Promise<Result<DataTransport, BindDataError>> {
 	// The carrier is established before this resolves. That ordering is the whole
 	// reason `bind` is asynchronous: once a caller holds a handle, subscribing and
 	// then reading cannot straddle a gap.
-	const carrier = await openObservationCarrier({
-		observation,
-		dial: () => {
-			if (typeof WebSocket === 'undefined') {
-				throw new Error('Epicenter data observation requires WebSocket');
-			}
-			return new WebSocket(observeUrl(origin));
-		},
-	});
-	if (carrier === undefined) {
+	let carrier: ObservationCarrier;
+	try {
+		carrier = await openObservationCarrier({
+			observation,
+			dial: () => {
+				if (typeof WebSocket === 'undefined') {
+					throw new Error('Epicenter data observation requires WebSocket');
+				}
+				return new WebSocket(observeUrl(origin));
+			},
+		});
+	} catch (cause) {
 		// `open` registered this surface before the carrier dial failed. Close that
 		// registration before declining, or every failed bind leaves a host-owned
 		// surface behind until the process exits.
-		await request<void>(surface, { kind: 'disconnect' });
+		const released = await request<void>(surface, { kind: 'disconnect' });
+		// A cleanup that also failed is named rather than substituted: the carrier
+		// is still the reason this bind produced no handle, and it is the one an
+		// app author can act on.
+		const leaked =
+			released.error === null
+				? ''
+				: ` The host surface it had already opened could not be released either: ${released.error.message}`;
 		return DataErrors.DataUnavailable({
-			message:
-				'Epicenter is present but its data observation carrier would not open, so a bound handle could not promise to report changes.',
+			message: `Epicenter is present but its data observation carrier would not open, so a bound handle could not promise to report changes: ${extractErrorMessage(cause)}${leaked}`,
 		});
 	}
 	return Ok({ origin, surfaceId, observation, carrier, bindings: 0 });
