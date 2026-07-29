@@ -59,10 +59,11 @@ Scenario 4 (a hosted competitor) is the one where the license is most load-beari
 
 ### Tier 1: MIT
 
-**Applies to:** the embeddable toolkit libraries: `packages/workspace`, `packages/ui`, `packages/filesystem`, `packages/sync`, `packages/sqlite`, `packages/row-sync`, `packages/data`, and `packages/document-sync`, plus the toolkit-internal packages they carry: `packages/identity`, `packages/agent-protocol`, `packages/encryption`, `packages/field`, `packages/chat`, and `packages/agent`.
+**Applies to:** the embeddable toolkit libraries: `packages/workspace`, `packages/ui`, `packages/filesystem`, `packages/sync`, `packages/sqlite`, `packages/row-sync`, `packages/data`, `packages/document-sync`, and `packages/app`, plus the toolkit-internal packages they carry: `packages/identity`, `packages/agent-protocol`, `packages/encryption`, `packages/field`, `packages/chat`, and `packages/agent`.
 
 **Rationale:**
 - Libraries: we want developers to embed `@epicenter/workspace` in their own projects with zero friction. AGPL would forbid that for closed-source consumers, killing adoption. The library is not what we sell.
+- `packages/app` is the clearest case rule 1 has: it exists to be bundled into software we do not write, by people building for the Epicenter catalog, and an AGPL client would make every installed app AGPL by construction (ADR-0186). It is also the one MIT package whose closure reaches outside `@epicenter/*`, so it is worth stating: it depends on `@tauri-apps/api` (Apache-2.0 OR MIT) and `wellcrafted` (MIT), both permissive and both zero-runtime-dependency, and it depends on no Epicenter package at all. It deliberately does not reach `@epicenter/data`, Yjs, blobs, auth, or the app shell. Note the guard's blind spot: `bun run check:licenses` walks `@epicenter/*` dependency edges only, so nothing mechanical would catch AGPL source *copied* into this package. Whispering's Tauri recorder service solves the same problem and is AGPL; the client is written against the host's command protocol instead, and a drift test in `apps/epicenter` is what keeps the two aligned in place of a shared module.
 - Toolkit-internal packages (`identity`, `agent-protocol`, `encryption`, `field`, `chat`): these are dependencies bundled into the MIT toolkit libraries, so they must be MIT-compatible for the toolkit to stay distributable as MIT. `@epicenter/identity` owns the capability and identity vocabulary shared by the MIT toolkit and the AGPL auth layer; `@epicenter/agent-protocol` is the agent wire contract shared the same way. They are not separately marketed.
 - MIT-clean closure: the toolkit no longer depends on any AGPL package. `PrincipalId` and `AuthState` live in `@epicenter/identity`; the room route and bearer subprotocol moved to the now-MIT `@epicenter/sync`; the agent wire contract is the now-MIT `@epicenter/agent-protocol`; and the daemon takes its API base URL as config instead of importing the hosted constant. `bun run check:licenses` enforces this. `cli` stays AGPL primarily because it is a shipped CLI app (decision-procedure rule 2, not a toolkit root); it also directly imports AGPL `auth` for machine-auth login, and reaches AGPL `constants` only transitively, through `auth` and `client`.
 
@@ -162,6 +163,7 @@ All apps are AGPL-3.0. MIT is reserved for the embeddable toolkit libraries.
 | `packages/data` | MIT | Typed local-first Epicenter replica and sync |
 | `packages/document-sync` | MIT | Row-document sync plane |
 | `packages/agent` | MIT | UI-free agent loop |
+| `packages/app` | MIT | `@epicenter/app`: the public Epicenter client an installed app bundles (ADR-0186) |
 | `packages/auth` | AGPL-3.0 | Framework-agnostic auth core (private, internal) |
 | `packages/svelte-utils` (`@epicenter/svelte`) | AGPL-3.0 | Svelte 5 reactive helpers and auth wrapper |
 | `packages/app-shell` | AGPL-3.0 | Shared app shell UI (private, internal) |

@@ -40,6 +40,9 @@ entirely MIT; the boundary is enforced by 'bun run check:licenses'.
                                                          Epicenter replica and sync
     - packages/document-sync    (@epicenter/document-sync) row-document sync plane
     - packages/agent            (@epicenter/agent)       UI-free agent loop
+    - packages/app              (@epicenter/app)         the public Epicenter
+                                                         client an installed
+                                                         app bundles
 
 ================================================================================
 2. GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)
