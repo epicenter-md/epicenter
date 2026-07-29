@@ -37,7 +37,7 @@
 		"typecheck": "tsc --noEmit",
 		"test": "bun test",
 		"verify:consumer": "bun run scripts/verify-external-consumer.ts",
-		"prepare": "bun run build"
+		"prepack": "bun run build"
 	},
 	"dependencies": {
 		"@epicenter/lens": "workspace:*",

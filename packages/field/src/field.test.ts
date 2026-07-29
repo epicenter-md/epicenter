@@ -21,9 +21,9 @@
 import { describe, expect, test } from 'bun:test';
 import { type TSchema, Type } from 'typebox';
 import { Value } from 'typebox/value';
-import { field, jsonValue } from './builders';
-import { compile, KINDS, type Kind, META_BY_KIND, recognize } from './field';
-import { INSTANT_STRING_PATTERN } from './instant-string';
+import { field, jsonValue } from './builders.js';
+import { compile, KINDS, type Kind, META_BY_KIND, recognize } from './field.js';
+import { INSTANT_STRING_PATTERN } from './instant-string.js';
 
 /**
  * The at-rest form of a built schema: a live TypeBox schema carries a

@@ -34,7 +34,7 @@
 		"build": "tsc -p tsconfig.build.json",
 		"typecheck": "tsc --noEmit",
 		"test": "bun test",
-		"prepare": "bun run build"
+		"prepack": "bun run build"
 	},
 	"dependencies": {
 		"@epicenter/field": "workspace:*",

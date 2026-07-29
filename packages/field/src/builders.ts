@@ -51,10 +51,13 @@ import {
 } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
-import type { CalendarDateString } from './calendar-date-string';
-import type { DateTimeString } from './datetime-string';
-import { JSON_SCHEMA_KEYWORD, REFERENCE_KEYWORD } from './field';
-import { INSTANT_STRING_PATTERN, type InstantString } from './instant-string';
+import type { CalendarDateString } from './calendar-date-string.js';
+import type { DateTimeString } from './datetime-string.js';
+import { JSON_SCHEMA_KEYWORD, REFERENCE_KEYWORD } from './field.js';
+import {
+	INSTANT_STRING_PATTERN,
+	type InstantString,
+} from './instant-string.js';
 
 type BrandedString = string & Brand<string>;
 type StringOptions = TStringOptions & {

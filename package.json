@@ -130,7 +130,8 @@
 		"yaml": "^2.9.0"
 	},
 	"scripts": {
-		"build": "bun run --filter '*' build",
+		"build": "bun run build:app-sdk && bun run --filter '*' build",
+		"build:app-sdk": "bun run --cwd packages/field build && bun run --cwd packages/lens build && bun run --cwd packages/app build",
 		"check": "bun run format:check && bun run lint:check && bun run typecheck",
 		"dev": "bun run dev:tab-manager",
 		"dev:api": "bun run --cwd apps/api dev",
@@ -161,6 +162,7 @@
 		"lint": "biome lint --write",
 		"lint:check": "biome lint",
 		"lint:ci": "biome lint --diagnostic-level=error --reporter=github",
+		"postinstall": "bun run build:app-sdk",
 		"release": "changeset version && bun run scripts/publish-packages.ts",
 		"release:dry-run": "bun run scripts/publish-packages.ts --dry-run",
 		"typecheck": "bun run --filter '*' typecheck && bun x tsc --noEmit -p scripts/tsconfig.json",

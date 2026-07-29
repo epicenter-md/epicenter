@@ -14,13 +14,14 @@
  * script chains them: `changeset version && bun run scripts/publish-packages.ts`.
  *
  * Flow:
- *   1. discover every packages/* package.json that is not `private`
- *   2. GATE: pack each with `bun pm pack` and assert the packed manifest has no
+ *   1. build the compiled installed-app SDK closure in dependency order
+ *   2. discover every packages/* package.json that is not `private`
+ *   3. GATE: pack each with `bun pm pack` and assert the packed manifest has no
  *      unresolved `catalog:` / `workspace:` strings AND no dependency on a
  *      private @epicenter/* package (bun resolves workspace:* to the concrete
  *      version of a private package, which still 404s on install). Always runs
  *      first, so a dirty manifest aborts before any upload.
- *   3. (real run only) skip any name@version already on the npm registry, then
+ *   4. (real run only) skip any name@version already on the npm registry, then
  *      `bun publish --access public` each remaining package and create a local
  *      `name@version` git tag. Pushing tags is left to the operator (matching
  *      bump-version.ts: this script performs no network git operations).
@@ -39,6 +40,19 @@ type Package = { dir: string; name: string; version: string };
 
 const root = process.cwd();
 const dryRun = process.argv.includes('--dry-run');
+
+async function buildCompiledAppSdk(): Promise<void> {
+	const build = Bun.spawn(['bun', 'run', 'build:app-sdk'], {
+		cwd: root,
+		stdout: 'inherit',
+		stderr: 'inherit',
+	});
+	await build.exited;
+	if (build.exitCode !== 0) {
+		console.error('compiled app SDK build failed');
+		process.exit(1);
+	}
+}
 
 /** Discover every publishable (non-private) package under packages/. */
 async function discoverPackages(): Promise<Package[]> {
@@ -148,6 +162,8 @@ async function isAlreadyPublished(pkg: Package): Promise<boolean> {
 	const data = (await res.json()) as { versions?: Record<string, unknown> };
 	return Boolean(data.versions?.[pkg.version]);
 }
+
+await buildCompiledAppSdk();
 
 const packages = await discoverPackages();
 if (packages.length === 0) {

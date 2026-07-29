@@ -8,8 +8,9 @@
 		// Each package opts in explicitly via `"types": ["bun"]` or `["node"]`.
 		"types": [],
 
-		// Modules: every package is source-only .ts consumed by Bun or a
-		// bundler. `module: preserve` implies `moduleResolution: bundler`;
+		// Modules: packages are source-only by default and consumed by Bun or a
+		// bundler. The externally bundled app SDK closure emits from its own
+		// build configs. `module: preserve` implies `moduleResolution: bundler`;
 		// the pair is kept explicit for readability.
 		"module": "preserve",
 		"moduleResolution": "bundler",

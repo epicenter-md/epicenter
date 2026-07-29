@@ -11,9 +11,9 @@
  * its own edge.
  */
 
-export { field, jsonValue } from './builders';
-export { CalendarDateString } from './calendar-date-string';
-export { DateTimeString } from './datetime-string';
+export { field, jsonValue } from './builders.js';
+export { CalendarDateString } from './calendar-date-string.js';
+export { DateTimeString } from './datetime-string.js';
 export {
 	compile,
 	type Field,
@@ -23,5 +23,5 @@ export {
 	recognize,
 	referenceTargetOf,
 	storageOf,
-} from './field';
-export { InstantString } from './instant-string';
+} from './field.js';
+export { InstantString } from './instant-string.js';

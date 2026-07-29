@@ -70,7 +70,7 @@
 import { type Static, Type } from 'typebox';
 import * as Schema from 'typebox/schema';
 import { Value } from 'typebox/value';
-import { INSTANT_STRING_PATTERN } from './instant-string';
+import { INSTANT_STRING_PATTERN } from './instant-string.js';
 
 /** Reject any property the meta does not explicitly name. The source of mutual exclusivity. */
 const CLOSED = { additionalProperties: false } as const;

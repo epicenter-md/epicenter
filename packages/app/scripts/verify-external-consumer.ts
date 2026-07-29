@@ -38,13 +38,22 @@ const repoRoot = join(packageDir, '..', '..');
  *
  * `bun pm pack` resolves `workspace:*` to an exact version, so the packed
  * manifest asks for `@epicenter/lens@x.y.z` exactly as it would after
- * publication. Nothing has published that yet, so the fixture points those two
- * names at locally packed tarballs through `overrides`. The app's own manifest
- * is untouched: this stands in for the registry, not for the dependency.
+ * publication. Nothing has published that closure yet, so the fixture points
+ * those names at locally packed tarballs through `overrides`. The app's own
+ * manifest is untouched: this stands in for the registry, not for the
+ * dependency.
  */
 const WORKSPACE_DEPENDENCIES = [
-	{ name: '@epicenter/lens', dir: join(repoRoot, 'packages', 'lens'), build: true },
-	{ name: '@epicenter/field', dir: join(repoRoot, 'packages', 'field'), build: false },
+	{
+		name: '@epicenter/field',
+		dir: join(repoRoot, 'packages', 'field'),
+		build: true,
+	},
+	{
+		name: '@epicenter/lens',
+		dir: join(repoRoot, 'packages', 'lens'),
+		build: true,
+	},
 ] as const;
 
 function usage(): never {
@@ -113,13 +122,102 @@ async function run(command: string[], cwd: string, label: string) {
 	return stdout;
 }
 
+type PackedManifest = {
+	name?: string;
+	dependencies?: Record<string, string>;
+	exports?: unknown;
+	imports?: unknown;
+	main?: string;
+	module?: string;
+	browser?: unknown;
+	types?: string;
+	typings?: string;
+	bin?: unknown;
+};
+
+function entryTargets(value: unknown, path: string): Array<[string, string]> {
+	if (typeof value === 'string') return [[path, value]];
+	if (Array.isArray(value)) {
+		return value.flatMap((child, index) =>
+			entryTargets(child, `${path}[${index}]`),
+		);
+	}
+	if (value === null || typeof value !== 'object') return [];
+	return Object.entries(value).flatMap(([key, child]) =>
+		entryTargets(child, `${path}.${key}`),
+	);
+}
+
+function isRawTypeScriptEntry(target: string): boolean {
+	return /\.(?:c|m)?ts$/.test(target) && !/\.d\.(?:c|m)?ts$/.test(target);
+}
+
+async function inspectPackedManifest(
+	tarballPath: string,
+	workspace: string,
+	expectedName: string,
+): Promise<PackedManifest> {
+	const manifestText = await run(
+		['tar', '-xzOf', tarballPath, 'package/package.json'],
+		workspace,
+		`${expectedName} read packed manifest`,
+	);
+	for (const protocol of ['catalog:', 'workspace:']) {
+		if (manifestText.includes(protocol)) {
+			console.error(
+				`FAILED: ${expectedName} packed manifest still contains ${protocol}`,
+			);
+			process.exit(1);
+		}
+	}
+
+	const manifest = JSON.parse(manifestText) as PackedManifest;
+	if (manifest.name !== expectedName) {
+		console.error(
+			`FAILED: expected ${expectedName}, packed ${manifest.name ?? 'an unnamed package'}`,
+		);
+		process.exit(1);
+	}
+
+	const targets = [
+		...entryTargets(manifest.exports, 'exports'),
+		...entryTargets(manifest.imports, 'imports'),
+		...entryTargets(manifest.main, 'main'),
+		...entryTargets(manifest.module, 'module'),
+		...entryTargets(manifest.browser, 'browser'),
+		...entryTargets(manifest.types, 'types'),
+		...entryTargets(manifest.typings, 'typings'),
+		...entryTargets(manifest.bin, 'bin'),
+	];
+	const rawTypeScriptEntries = targets.filter(([, target]) =>
+		isRawTypeScriptEntry(target),
+	);
+	if (rawTypeScriptEntries.length > 0) {
+		console.error(
+			`FAILED: ${expectedName} exposes raw TypeScript entry points:\n${rawTypeScriptEntries
+				.map(([path, target]) => `  ${path}: ${target}`)
+				.join('\n')}`,
+		);
+		process.exit(1);
+	}
+
+	console.log(
+		`  ok  ${expectedName} exposes compiled entry points with resolved dependencies ${JSON.stringify(manifest.dependencies)}`,
+	);
+	return manifest;
+}
+
 const workspace = await mkdtemp(join(tmpdir(), 'epicenter-app-consumer-'));
 try {
 	const overrides: Record<string, string> = {};
 	for (const dependency of WORKSPACE_DEPENDENCIES) {
 		console.log(`Packing ${dependency.name}`);
 		if (dependency.build) {
-			await run(['bun', 'run', 'build'], dependency.dir, `${dependency.name} build`);
+			await run(
+				['bun', 'run', 'build'],
+				dependency.dir,
+				`${dependency.name} build`,
+			);
 		}
 		const before = new Set(await readdir(workspace));
 		await run(
@@ -134,7 +232,9 @@ try {
 			console.error(`FAILED: packing ${dependency.name} produced no tarball`);
 			process.exit(1);
 		}
-		overrides[dependency.name] = join(workspace, packed);
+		const tarballPath = join(workspace, packed);
+		await inspectPackedManifest(tarballPath, workspace, dependency.name);
+		overrides[dependency.name] = tarballPath;
 	}
 
 	console.log('\nBuilding and packing @epicenter/app');
@@ -179,26 +279,9 @@ try {
 	for (const entry of entries) console.log(`      ${entry}`);
 	console.log(`  ok  ${entries.length} files, all expected`);
 
-	// The publish gate's own check, run here too: bun resolves `catalog:` and
-	// `workspace:` at pack time, and a residual one is a manifest that 404s on
-	// a clean install.
-	const manifest = await run(
-		['tar', '-xzOf', tarballPath, 'package/package.json'],
-		workspace,
-		'read packed manifest',
-	);
-	for (const protocol of ['catalog:', 'workspace:']) {
-		if (manifest.includes(protocol)) {
-			console.error(`FAILED: packed manifest still contains ${protocol}`);
-			process.exit(1);
-		}
-	}
-	const parsed = JSON.parse(manifest) as {
-		dependencies?: Record<string, string>;
-	};
-	console.log(
-		`  ok  resolved dependencies: ${JSON.stringify(parsed.dependencies)}`,
-	);
+	// The publish gate's own manifest checks, run here too: pack must resolve
+	// monorepo-only protocols, and every reachable entry point must be compiled.
+	await inspectPackedManifest(tarballPath, workspace, '@epicenter/app');
 
 	console.log(`\nBuilding a foreign consumer in ${workspace}`);
 	const consumer = join(workspace, 'consumer');

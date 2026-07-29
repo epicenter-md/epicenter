@@ -14,10 +14,10 @@
 import type { Static, Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
-import type { field, jsonValue } from './builders';
-import type { CalendarDateString } from './calendar-date-string';
-import type { DateTimeString } from './datetime-string';
-import type { InstantString } from './instant-string';
+import type { field, jsonValue } from './builders.js';
+import type { CalendarDateString } from './calendar-date-string.js';
+import type { DateTimeString } from './datetime-string.js';
+import type { InstantString } from './instant-string.js';
 
 type Equal<X, Y> =
 	(<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2
