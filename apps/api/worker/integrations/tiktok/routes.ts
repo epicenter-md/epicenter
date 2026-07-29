@@ -47,10 +47,8 @@ import {
 } from './config.js';
 import {
 	buildAuthorizeUrl,
-	createCodeVerifier,
 	createOAuthStateValue,
 	createTikTokOAuthClient,
-	deriveCodeChallenge,
 } from './oauth.js';
 import {
 	claimPublishAttempt,
@@ -213,17 +211,12 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 					(body as Record<string, unknown>).returnPath,
 				);
 
-				// PKCE: only the S256 challenge ever leaves this server, so an
-				// intercepted authorization code cannot be redeemed without the
-				// verifier that stays in Postgres.
-				const codeVerifier = createCodeVerifier();
 				const state = createOAuthStateValue();
 				const db = c.var.db as Db;
 
 				await createOAuthState(db, {
 					state,
 					userId: c.var.tiktokUser.id,
-					codeVerifier,
 					returnPath,
 					expiresAt: new Date(Date.now() + OAUTH_STATE_TTL_MS),
 				});
@@ -236,7 +229,9 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 						redirectUri: tiktokRedirectUri(c.var.authBaseURL),
 						scopes: TIKTOK_SCOPES,
 						state,
-						codeChallenge: await deriveCodeChallenge(codeVerifier),
+						// A creator connecting a SECOND account must not be silently
+						// re-authorized back into the first one, so always show consent.
+						disableAutoAuth: true,
 					}),
 				});
 			}),
@@ -332,7 +327,6 @@ export function mountTikTokIntegrationApi(app: Hono<CloudEnv>): void {
 			const { data: grant, error: exchangeError } = await oauth.exchangeCode({
 				code: query.code,
 				redirectUri: tiktokRedirectUri(c.var.authBaseURL),
-				codeVerifier: stored.codeVerifier,
 			});
 			if (exchangeError) {
 				return back(stored.returnPath, { error: exchangeError.message });

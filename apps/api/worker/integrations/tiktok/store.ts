@@ -65,7 +65,6 @@ export async function createOAuthState(
 	row: {
 		state: string;
 		userId: string;
-		codeVerifier: string;
 		returnPath: string;
 		expiresAt: Date;
 	},

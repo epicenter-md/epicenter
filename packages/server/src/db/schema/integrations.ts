@@ -103,6 +103,13 @@ export const tiktokConnection = pgTable(
  * any Worker isolate and must bind to the Epicenter user who STARTED the flow.
  * The row is consumed with `DELETE ... RETURNING`, so replaying a state is a
  * miss, not a second connection.
+ *
+ * There is no PKCE verifier column, deliberately. TikTok's Login Kit for Web
+ * authorize contract does not accept `code_challenge` and its web token
+ * exchange does not accept `code_verifier`; PKCE is documented for the Desktop
+ * and mobile PUBLIC clients. This is a confidential client whose secret never
+ * leaves the Worker, so `state` plus the user binding and expiry below are the
+ * whole CSRF story.
  */
 export const tiktokOauthState = pgTable(
 	'tiktok_oauth_state',
@@ -117,8 +124,6 @@ export const tiktokOauthState = pgTable(
 		userId: text('user_id')
 			.notNull()
 			.references(() => user.id, { onDelete: 'cascade' }),
-		/** PKCE verifier; only its S256 challenge ever left this server. */
-		codeVerifier: text('code_verifier').notNull(),
 		/** Same-origin dashboard path to return to. Validated to start with `/`. */
 		returnPath: text('return_path').notNull(),
 		expiresAt: timestamp('expires_at').notNull(),
