@@ -4,16 +4,23 @@
 	"version": "0.3.0",
 	"type": "module",
 	"exports": {
-		".": "./src/index.ts"
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
 	},
 	"files": [
+		"dist",
 		"src",
-		"!src/**/*.test.ts"
+		"!src/**/*.test.ts",
+		"LICENSE"
 	],
 	"license": "MIT",
 	"scripts": {
+		"build": "tsc -p tsconfig.build.json",
 		"typecheck": "tsc --noEmit",
-		"test": "bun test"
+		"test": "bun test",
+		"prepack": "bun run build"
 	},
 	"dependencies": {
 		"typebox": "catalog:",

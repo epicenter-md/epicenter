@@ -1,12 +1,11 @@
 {
 	"name": "@epicenter/skills",
 	"version": "0.3.0",
-	"description": "Skill definitions and loaders for Epicenter workspace actions.",
+	"description": "Agent skill definitions and services for Epicenter workspaces.",
 	"keywords": [
 		"local-first",
 		"skills",
 		"workspace",
-		"actions",
 		"AI"
 	],
 	"repository": {
@@ -18,7 +17,6 @@
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts",
-		"./browser": "./src/browser.ts",
 		"./node": "./src/node.ts"
 	},
 	"license": "AGPL-3.0-or-later",
@@ -26,19 +24,14 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"@epicenter/data": "workspace:*",
 		"@epicenter/field": "workspace:*",
-		"@epicenter/workspace": "workspace:*",
-		"typebox": "catalog:",
 		"wellcrafted": "catalog:",
-		"y-indexeddb": "catalog:",
+		"typebox": "catalog:",
 		"yaml": "^2.8.0"
 	},
 	"devDependencies": {
 		"@types/bun": "catalog:",
-		"typescript": "catalog:",
-		"yjs": "catalog:"
-	},
-	"peerDependencies": {
-		"yjs": "catalog:"
+		"typescript": "catalog:"
 	}
 }

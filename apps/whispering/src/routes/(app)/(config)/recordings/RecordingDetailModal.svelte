@@ -12,15 +12,22 @@
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { createQuery } from '@tanstack/svelte-query';
 	import type { Snippet } from 'svelte';
-	import { onDestroy } from 'svelte';
-	import { deleteRecordingsWithConfirmation } from '$lib/operations/recordings';
+	import AudioBlobPlayer from '$lib/components/AudioBlobPlayer.svelte';
+	import { deleteRecordingsWithConfirmation } from '$lib/operations/delete-recordings';
 	import { report } from '$lib/report';
-	import { rpc } from '$lib/rpc';
-	import { services } from '$lib/services';
-	import { type Recording, recordings } from '$lib/state/recordings.svelte';
+	import type { Recording } from '$lib/state/recordings.svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
 	import DownloadRecordingButton from './actions/DownloadRecordingButton.svelte';
 	import TranscribeRecordingButton from './actions/TranscribeRecordingButton.svelte';
+	import RecordingStorageAction from './RecordingStorageAction.svelte';
+	import RecordingStorageBadge from './RecordingStorageBadge.svelte';
+	import {
+		getWhisperingApp,
+		getWhisperingQueries,
+	} from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
+	const queries = getWhisperingQueries();
 
 	/**
 	 * The single detail surface for one recording: play it back, read and edit
@@ -39,18 +46,6 @@
 		/** Renders the modal opener; spread the given props onto a single element. */
 		trigger: Snippet<[Record<string, unknown>]>;
 	} = $props();
-
-	/**
-	 * Capture the recording ID at setup time for use in cleanup.
-	 *
-	 * Reactive props ($props) can become undefined during Svelte's teardown
-	 * when the parent's data source is deleted (e.g. deleting a recording
-	 * causes the table row, and this component, to unmount). If onDestroy
-	 * reads the prop directly, it may see undefined and throw. Capturing
-	 * the ID here sidesteps the reactive teardown race entirely.
-	 */
-	// svelte-ignore state_referenced_locally -- intentional teardown handle; onDestroy must revoke the original row's URL.
-	const recordingIdForCleanup = recording.id;
 
 	let isDialogOpen = $state(false);
 
@@ -80,12 +75,11 @@
 
 	/**
 	 * Audio playback URL via TanStack Query, fetched lazily once the modal
-	 * opens. Audio blobs are too large for Yjs CRDTs, so they're still served
-	 * from BlobStore; gating on `isDialogOpen` keeps closed rows from each
-	 * eagerly resolving a playback URL.
+	 * opens. Gating on `isDialogOpen` keeps closed rows from eagerly acquiring
+	 * local blob URLs.
 	 */
-	const audioPlaybackUrlQuery = createQuery(() => ({
-		...rpc.audio.getPlaybackUrl(() => recording.id).options,
+	const audioAvailabilityQuery = createQuery(() => ({
+		...queries.audio.availability(() => recording).options,
 		enabled: isDialogOpen,
 	}));
 
@@ -113,7 +107,7 @@
 		});
 	}
 
-	function save() {
+	async function save() {
 		const snapshot = $state.snapshot(workingCopy);
 		if (!InstantString.is(snapshot.recordedAt)) {
 			report.info({
@@ -123,7 +117,7 @@
 			return;
 		}
 
-		const { error } = recordings.update(recording.id, {
+		const { error } = await app.recordings.update(recording.id, {
 			title: snapshot.title,
 			recordedAt: snapshot.recordedAt,
 			recordedAtZone: snapshot.recordedAtZone,
@@ -146,9 +140,6 @@
 		isDialogOpen = false;
 	}
 
-	onDestroy(() => {
-		services.blobs.audio.revokeUrl(recordingIdForCleanup);
-	});
 </script>
 
 <Modal.Root bind:open={isDialogOpen}>
@@ -176,12 +167,26 @@
 		</Modal.Header>
 
 		<div class="space-y-4 p-4">
-			{#if audioPlaybackUrlQuery.data}
-				<audio
-					src={audioPlaybackUrlQuery.data}
-					controls
+			<div class="flex items-center gap-2">
+				<RecordingStorageBadge {recording} />
+				<RecordingStorageAction {recording} />
+			</div>
+
+			{#if audioAvailabilityQuery.data === 'local-only' ||
+				audioAvailabilityQuery.data === 'local-and-remote'}
+				<AudioBlobPlayer
+					id={recording.audioBlobId}
+					enabled={isDialogOpen}
 					class="h-9 w-full"
-				></audio>
+				/>
+			{:else if audioAvailabilityQuery.data === 'remote-only'}
+				<p class="text-muted-foreground text-sm">
+					Download the audio to play it on this device.
+				</p>
+			{:else if audioAvailabilityQuery.data === 'unavailable'}
+				<p class="text-destructive text-sm">
+					The audio is no longer available locally or online.
+				</p>
 			{/if}
 
 			{#if workingCopy.polishedTranscript}
@@ -289,7 +294,7 @@
 			<Button
 				variant="destructive"
 				onclick={() =>
-					deleteRecordingsWithConfirmation($state.snapshot(recording), {
+					deleteRecordingsWithConfirmation(app, $state.snapshot(recording), {
 						onSuccess: () => {
 							isDialogOpen = false;
 						},

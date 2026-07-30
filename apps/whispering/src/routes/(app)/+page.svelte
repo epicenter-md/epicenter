@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import { FileDropZone } from '@epicenter/ui/file-drop-zone';
-	import * as Kbd from '@epicenter/ui/kbd';
 	import { Link } from '@epicenter/ui/link';
 	import * as SectionHeader from '@epicenter/ui/section-header';
 	import * as ToggleGroup from '@epicenter/ui/toggle-group';
@@ -29,30 +28,34 @@
 	import { whisperingPath } from '$lib/constants/urls';
 	import { importFiles } from '$lib/operations/import';
 	import { selectCaptureSurface } from '$lib/operations/recording';
-	import { deleteRecordingsWithConfirmation } from '$lib/operations/recordings';
+	import { deleteRecordingsWithConfirmation } from '$lib/operations/delete-recordings';
 	import { report } from '$lib/report';
 	import {
 		getSelectedTranscriptionProvider,
 		getTranscriptionReadiness,
 	} from '$lib/settings/transcription-validation';
 	import { captureSurface } from '$lib/state/capture-surface.svelte';
-	import { recordings } from '$lib/state/recordings.svelte';
-	import {
-		getRecordingShortcutLabels,
-		type RecordingShortcutMode,
-	} from '$lib/utils/recording-shortcut';
+	import { getRecordingShortcutLabel } from '$lib/utils/recording-shortcut';
 	import { viewTransition } from '$lib/utils/viewTransitions';
+	import { getWhisperingApp } from '$lib/whispering/context';
 	import studioMicrophone from '$lib/assets/studio-microphone.png';
 	import { tauri } from '#platform/tauri';
 	import CaptureBehaviorPopover from './_components/CaptureBehaviorPopover.svelte';
 	import CapturePipeline from './_components/CapturePipeline.svelte';
 	import ManualRecordingAction from './_components/ManualRecordingAction.svelte';
-	import PolishPipelineControl from './_components/PolishPipelineControl.svelte';
+	import PolishStatusLink from './_components/PolishStatusLink.svelte';
 	import RecordingResult from './_components/RecordingResult.svelte';
 	import VadRecordingAction from './_components/VadRecordingAction.svelte';
 
-	const latestRecording = $derived(recordings.sorted[0]);
-	const transcriptionReadiness = $derived(getTranscriptionReadiness());
+	const app = getWhisperingApp();
+
+	const latestRecording = $derived(app.recordings.sorted[0]);
+	const transcriptionReadiness = $derived(getTranscriptionReadiness(app));
+	const hasActiveShortcut = $derived.by(() => {
+		const surface = captureSurface.current(app);
+		if (surface === 'import') return false;
+		return !!getRecordingShortcutLabel(app, surface);
+	});
 	// Home is onboarding, not configuration: when transcription is not ready, ask
 	// for only the one required credential inline. A cloud provider needs a single
 	// API key, so we render just that field (via `secretsOnly`) and delegate the
@@ -61,90 +64,9 @@
 	// heavy for the record screen, so those route to Privacy & Processing instead
 	// of rendering a second setup surface here.
 	const inlineKeyProvider = $derived.by(() => {
-		const provider = getSelectedTranscriptionProvider();
+		const provider = getSelectedTranscriptionProvider(app);
 		return provider?.access === 'key' ? provider : null;
 	});
-	// The verb fragments the hint drops around each key, per mode. `here` and
-	// `anywhere` annotate the in-app and global keys with their reach; `fresh` is the
-	// bare prompt shown when nothing is bound at all.
-	type RecordingHintWords = { here: string; anywhere: string; fresh: string };
-	const MANUAL_HINT_WORDS: RecordingHintWords = {
-		here: 'record here',
-		anywhere: 'record from anywhere',
-		fresh: 'start recording',
-	};
-	const VAD_HINT_WORDS: RecordingHintWords = {
-		here: 'listen here',
-		anywhere: 'listen from anywhere',
-		fresh: 'start a voice-activated session',
-	};
-	// A shortcut option in the hint: a bound key (a `Kbd` chip) or a call to set one
-	// up. Both link into /settings/shortcuts, so the hint doubles as the way to
-	// configure each key.
-	type HintLink =
-		| { kind: 'key'; label: string; tooltip: string }
-		| { kind: 'cta'; label: string; tooltip: string };
-	// One way to start a recording, as a "{lead}{link}{tail}" run. Spaces live inside
-	// `lead`/`tail` so the parts concatenate verbatim when the hint joins them; `link`
-	// is null for the mic, which names the on-screen button rather than a setting.
-	type RecordingWay = { lead: string; link: HintLink | null; tail: string };
-	// The ordered ways to start `mode`. The mic always works and leads; the in-app key
-	// reaches "here" and the global key "from anywhere" when bound. The mic states its
-	// own verb only when it is the only way.
-	function recordingWays(
-		mode: RecordingShortcutMode,
-		words: RecordingHintWords,
-	): RecordingWay[] {
-		const { focused, global } = getRecordingShortcutLabels(mode);
-		const ways: RecordingWay[] = [];
-		if (focused) {
-			ways.push({
-				lead: 'press ',
-				link: {
-					kind: 'key',
-					label: focused,
-					tooltip: 'Configure the in-app shortcut',
-				},
-				tail: ` to ${words.here}`,
-			});
-		}
-		// The from-anywhere tier exists only where there is a system backend, which
-		// `global` reports as non-null (`''` there means the slot is just unbound).
-		if (global !== null) {
-			ways.push(
-				global
-					? {
-							lead: 'press ',
-							link: {
-								kind: 'key',
-								label: global,
-								tooltip: 'Configure the global shortcut',
-							},
-							tail: ` to ${words.anywhere}`,
-						}
-					: {
-							lead: '',
-							link: {
-								kind: 'cta',
-								label: 'set a global shortcut',
-								tooltip: 'Set a global shortcut',
-							},
-							tail: ` to ${words.anywhere}`,
-						},
-			);
-		}
-		ways.unshift({
-			lead: 'Click the microphone',
-			link: null,
-			tail: ways.length ? '' : ` to ${words.fresh}`,
-		});
-		return ways;
-	}
-	// Join the ways as an or-list: "a", "a, or b", "a, b, or c".
-	const orPrefix = (index: number, count: number) =>
-		index === 0 ? '' : index === count - 1 ? ', or ' : ', ';
-	const manualWays = $derived(recordingWays('manual', MANUAL_HINT_WORDS));
-	const vadWays = $derived(recordingWays('vad', VAD_HINT_WORDS));
 	const PageError = defineErrors({
 		DragDropListenerFailed: ({ cause }: { cause: unknown }) => ({
 			message: `Failed to set up drag drop listener: ${extractErrorMessage(cause)}`,
@@ -212,7 +134,7 @@
 						}
 
 						if (files.length > 0) {
-							await importFiles({ files });
+							await importFiles(app, { files });
 						}
 					},
 				);
@@ -233,19 +155,14 @@
 <svelte:head> <title>Whispering</title> </svelte:head>
 
 <div
-	class="flex flex-1 flex-col items-center justify-start gap-4 w-full max-w-lg mx-auto px-4 pt-6 pb-24 sm:justify-center sm:py-0"
+	class="mx-auto flex w-full max-w-xl flex-1 flex-col items-center justify-start gap-5 px-4 pt-8 pb-24 sm:justify-center sm:py-12"
 >
-	<SectionHeader.Root class="flex flex-col items-center gap-3">
-		<div class="flex items-center gap-3">
-			<img src={studioMicrophone} alt="" class="size-12" />
-			<SectionHeader.Title
-				level={1}
-				class="scroll-m-20 text-4xl tracking-tight lg:text-5xl"
-			>
-				Whispering
-			</SectionHeader.Title>
+	<SectionHeader.Root class="flex flex-col items-center gap-2 text-center">
+		<div class="flex items-center gap-2.5">
+			<img src={studioMicrophone} alt="" class="size-8" />
+			<SectionHeader.Title level={1} class="text-3xl">Whispering</SectionHeader.Title>
 		</div>
-		<SectionHeader.Description class="text-center">
+		<SectionHeader.Description class="text-base">
 			Press shortcut → speak → get text. Free and open source ❤️
 		</SectionHeader.Description>
 	</SectionHeader.Root>
@@ -281,10 +198,10 @@
 	{:else}
 		<ToggleGroup.Root
 			type="single"
-			bind:value={() => captureSurface.current,
+			bind:value={() => captureSurface.current(app),
 				(surface) => {
 					if (!surface) return;
-					void selectCaptureSurface(surface as CaptureSurface);
+					void selectCaptureSurface(app, surface as CaptureSurface);
 				}}
 			class="w-full"
 		>
@@ -300,18 +217,10 @@
 			{/each}
 		</ToggleGroup.Root>
 
-		<!--
-			The capture pipeline is each recording action's idle footer (the action
-			hides it while live), so it's defined inline per surface. Manual and VAD
-			differ only by their device selector; each owns a distinct one backed by a
-			different recorder config. The shared tail repeats, but that keeps each
-			surface's footer co-located with the branch that already chose it, rather
-			than re-deriving the surface inside a shared snippet.
-		-->
-		{#if captureSurface.current === 'manual'}
+		{#if captureSurface.current(app) === 'manual'}
 			<div class="flex w-full flex-col items-center gap-3">
 				<ManualRecordingAction>
-					{#snippet pipeline()}
+					{#snippet footer()}
 						<CapturePipeline>
 							<ManualDeviceSelector
 								iconViewTransitionName={viewTransition.pipeline.device}
@@ -320,16 +229,16 @@
 								variant="pipeline"
 								iconViewTransitionName={viewTransition.pipeline.transcription}
 							/>
-							<PolishPipelineControl />
+							<PolishStatusLink />
 							<CaptureBehaviorPopover />
 						</CapturePipeline>
 					{/snippet}
 				</ManualRecordingAction>
 			</div>
-		{:else if captureSurface.current === 'vad'}
+		{:else if captureSurface.current(app) === 'vad'}
 			<div class="flex w-full flex-col items-center gap-3">
 				<VadRecordingAction>
-					{#snippet pipeline()}
+					{#snippet footer()}
 						<CapturePipeline>
 							<VadDeviceSelector
 								iconViewTransitionName={viewTransition.pipeline.device}
@@ -338,13 +247,13 @@
 								variant="pipeline"
 								iconViewTransitionName={viewTransition.pipeline.transcription}
 							/>
-							<PolishPipelineControl />
+							<PolishStatusLink />
 							<CaptureBehaviorPopover />
 						</CapturePipeline>
 					{/snippet}
 				</VadRecordingAction>
 			</div>
-		{:else if captureSurface.current === 'import'}
+		{:else if captureSurface.current(app) === 'import'}
 			<div class="flex w-full flex-col items-center gap-4">
 				<FileDropZone
 					accept={IMPORT_ACCEPT}
@@ -352,7 +261,7 @@
 					maxFileSize={MAX_IMPORT_FILE_SIZE}
 					onUpload={async (files) => {
 						if (files.length > 0) {
-							await importFiles({ files });
+							await importFiles(app, { files });
 						}
 					}}
 					onFileRejected={({ file, reason }) => {
@@ -366,12 +275,12 @@
 					}}
 					class="h-32 sm:h-36 w-full"
 				/>
-				<CapturePipeline>
+				<CapturePipeline class="rounded-xl bg-card px-3 py-2 shadow-sm">
 					<TranscriptionSelector
 						variant="pipeline"
 						iconViewTransitionName={viewTransition.pipeline.transcription}
 					/>
-					<PolishPipelineControl />
+					<PolishStatusLink />
 				</CapturePipeline>
 			</div>
 		{/if}
@@ -379,57 +288,40 @@
 		{#if latestRecording}
 			<RecordingResult
 				recordingId={latestRecording.id}
+				audioBlobId={latestRecording.audioBlobId}
 				transcript={latestRecording.polishedTranscript ?? latestRecording.transcript}
 				rows={1}
 				onDelete={() => {
-					deleteRecordingsWithConfirmation(latestRecording);
+					deleteRecordingsWithConfirmation(app, latestRecording);
 				}}
 			/>
 		{/if}
 
-		<div class="flex flex-col items-center gap-3">
-			{#if captureSurface.current === 'manual'}
-				<p class="text-foreground/75 text-center text-sm">
-					{@render recordingHint(manualWays)}
-				</p>
-			{:else if captureSurface.current === 'vad'}
-				<p class="text-foreground/75 text-center text-sm">
-					{@render recordingHint(vadWays)}
-				</p>
-			{/if}
-			<p class="text-muted-foreground text-center text-sm font-light">
-				{#if !tauri}
-					Tired of switching tabs?
-					<Link
-						tooltip="Get Whispering for desktop"
-						href="https://epicenter.so/whispering"
-						target="_blank"
-						rel="noopener noreferrer"
-					>
-						Get the native desktop app
-					</Link>
+		{#if captureSurface.current(app) !== 'import'}
+			<p class="text-muted-foreground text-center text-sm">
+				{#if hasActiveShortcut}
+					Your shortcut works
+					{tauri ? 'from any app.' : 'while this window is focused.'}
+					<Link href={whisperingPath('/settings/shortcuts')}>Configure shortcuts</Link>
+				{:else}
+					<Link href={whisperingPath('/settings/shortcuts')}>Set a shortcut</Link>
+					{tauri ? 'to dictate from any app.' : 'to start recording.'}
 				{/if}
 			</p>
-		</div>
+		{/if}
+
+		{#if !tauri}
+			<p class="text-muted-foreground text-center text-sm font-light">
+				Tired of switching tabs?
+				<Link
+					tooltip="Get Whispering for desktop"
+					href="https://epicenter.so/whispering"
+					target="_blank"
+					rel="noopener noreferrer"
+				>
+					Get the native desktop app
+				</Link>
+			</p>
+		{/if}
 	{/if}
 </div>
-
-<!-- A shortcut option as a link into settings: a key chip, or the "set one up" call
-to action. -->
-{#snippet shortcutLink(link: HintLink)}
-	<Link tooltip={link.tooltip} href={whisperingPath('/settings/shortcuts')}>
-		{#if link.kind === 'key'}
-			<Kbd.Root>{link.label}</Kbd.Root>
-		{:else}{link.label}{/if}
-	</Link>
-{/snippet}
-
-<!-- One way rendered as its "{lead}{link}{tail}" run. Kept on one line so no template
-whitespace creeps between the parts; every needed space lives in the strings. -->
-{#snippet hintWay(way: RecordingWay)}{way.lead}{#if way.link}{@render shortcutLink(way.link)}{/if}{way.tail}{/snippet}
-
-<!-- The home recording hint: every way to start a recording, joined as an or-list.
-`recordingWays` decides which ways exist; this only joins and punctuates them. -->
-{#snippet recordingHint(ways: RecordingWay[])}
-	{#each ways as way, i}{orPrefix(i, ways.length)}{@render hintWay(way)}{/each}.
-{/snippet}

@@ -60,7 +60,7 @@ function createDictationLifecycle() {
 	// is in flight, otherwise the most-recent utterance's phase. Reset to `none`
 	// when a new dictation begins so a stale `failed` never lingers past the next
 	// attempt.
-	let outcome = $state<DictationOutcome>({ kind: 'none' });
+	let outcome = $state.raw<DictationOutcome>({ kind: 'none' });
 	let deliveredTimer: ReturnType<typeof setTimeout> | undefined;
 
 	function clearDeliveredTimer() {

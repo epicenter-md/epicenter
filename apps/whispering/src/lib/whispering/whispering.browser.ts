@@ -1,18 +1,30 @@
-/**
- * Browser runtime client for Whispering. Consumed everywhere through the
- * `#platform/whispering` seam; see `whispering.active.ts` for what
- * `openWhisperingBrowser` builds. The web default transcription service is
- * OpenAI.
- */
-
-import { createNodeId } from '@epicenter/workspace';
 import { auth } from '#platform/auth';
-import { openWhisperingBrowser } from './whispering.active';
+import { BlobsLive } from '#platform/blobs';
+import { log } from '$lib/report';
+import type { WhisperingAppDependencies } from './app';
+import { openWhisperingBrowserEpicenter } from './whispering.browser-runtime';
 
-const nodeId = createNodeId({ storage: window.localStorage });
-
-export const whispering = openWhisperingBrowser({
-	auth,
-	nodeId,
+/**
+ * The web build's app dependencies. Pure data and factories: nothing
+ * here opens storage or starts fallible work. The (app) layout passes this to
+ * `openWhisperingApp` inside the mounted Svelte root, where the raw
+ * `{#await}` owns the acquisition from its first microtask.
+ */
+export const whisperingPlatform: WhisperingAppDependencies = {
+	openEpicenter: () =>
+		openWhisperingBrowserEpicenter({
+			auth,
+			reportBackgroundError: (cause) =>
+				log.warn(
+					cause instanceof Error ? cause : new Error(String(cause)),
+					'Whispering sync failure',
+				),
+		}),
+	blobs: BlobsLive,
 	defaultTranscriptionService: 'OpenAI',
-});
+	reportBackgroundError: (cause) =>
+		log.warn(
+			cause instanceof Error ? cause : new Error(String(cause)),
+			'Whispering app background failure',
+		),
+};

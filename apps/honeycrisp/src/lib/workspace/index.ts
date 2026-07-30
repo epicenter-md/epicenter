@@ -1,154 +1,86 @@
 /**
- * Honeycrisp workspace contract: id, branded types, tables, actions, and
- * per-row child document models. Isomorphic: no IndexedDB, WebSockets, SQLite
- * files, Svelte state, or daemon process lifecycle.
+ * Honeycrisp's inert Data definitions.
  *
- * Distribution: `apps/honeycrisp/package.json` exports this file as the
- * `@epicenter/honeycrisp` package root. Browser code and tests import from
- * here. The table shapes here are the wire contract for sync;
- * forking a column shape breaks sync compatibility with peers running the
- * canonical schema.
- *
- * Composition lives elsewhere:
- *  - `apps/honeycrisp/src/lib/workspace/browser.ts` -> `openHoneycrispBrowser({ auth, nodeId })`
+ * Runtimes own storage, synchronization, and document lifecycles. This module
+ * owns only the Lens over Honeycrisp's namespace, release-local row lenses, and
+ * the one multi-row folder deletion operation shared by the UI and desktop host.
  */
 
-import { field } from '@epicenter/field';
 import {
-	attachRichText,
-	defineActions,
-	defineMutation,
+	type BoundData,
+	defineLens,
 	defineTable,
-	defineWorkspace,
-	generateId,
-	type InferTableRow,
-	nullable,
-	type WorkspaceFromDefinition,
-} from '@epicenter/workspace';
-import Type from 'typebox';
-import type { Brand } from 'wellcrafted/brand';
+	optional,
+	type RowFor,
+} from '@epicenter/data';
+import { field } from '@epicenter/field';
 
-// ─── Branded IDs ──────────────────────────────────────────────────────────────
+/** Runtime-minted structural note row id. */
+export type NoteId = string;
 
-/**
- * Branded note ID: nanoid generated when a note is created.
- *
- * Prevents accidental mixing with other string IDs at compile time.
- */
-export type NoteId = string & Brand<'NoteId'>;
+/** Runtime-minted structural folder row id. */
+export type FolderId = string;
 
-/**
- * Syntactic sugar for `value as NoteId`. The constrained `string` parameter
- * is what earns it over a raw `as` cast (callers can't widen to `unknown`).
- * The only place in the codebase where `as NoteId` should appear.
- */
-export const asNoteId = (value: string): NoteId => value as NoteId;
-
-/** Generate a unique {@link NoteId} for a new note row. */
-export const generateNoteId = (): NoteId => generateId<NoteId>();
-
-/**
- * Branded folder ID: nanoid generated when a folder is created.
- *
- * Prevents accidental mixing with other string IDs at compile time.
- */
-export type FolderId = string & Brand<'FolderId'>;
-
-/**
- * Syntactic sugar for `value as FolderId`. The constrained `string` parameter
- * is what earns it over a raw `as` cast (callers can't widen to `unknown`).
- * The only place in the codebase where `as FolderId` should appear.
- */
-export const asFolderId = (value: string): FolderId => value as FolderId;
-
-/** Generate a unique {@link FolderId} for a new folder row. */
-export const generateFolderId = (): FolderId => generateId<FolderId>();
-
-// ─── Tables ───────────────────────────────────────────────────────────────────
-
-/**
- * Folders table: organizational containers for notes.
- *
- * Each folder has a name, optional emoji icon, and sort order for manual
- * reordering in the sidebar. Notes reference folders via `folderId`.
- */
-const foldersTable = defineTable({
-	id: field.string<FolderId>(),
-	name: field.string(),
-	icon: nullable(field.string()),
-	sortOrder: field.number(),
-});
-export type Folder = InferTableRow<typeof foldersTable>;
-
-/**
- * Notes table: individual notes with rich-text bodies.
- *
- * Each note belongs to an optional folder (unfiled if `folderId` is null),
- * has a title auto-populated from the first line of content, a preview for the
- * list view, and can be pinned to appear at the top of the note list.
- *
- * `deletedAt` is `null` for active notes and an `InstantString` for deleted
- * notes. `wordCount` is computed on each editor update.
- *
- * The Y.XmlFragment document (`body`) lives in a separate Y.Doc per note,
- * declared as a child doc on this table.
- */
-const notesTable = defineTable({
-	id: field.string<NoteId>(),
-	folderId: nullable(field.string<FolderId>()),
-	title: field.string(),
-	preview: field.string(),
-	pinned: field.boolean(),
-	createdAt: field.instant(),
-	updatedAt: field.instant(),
-	deletedAt: nullable(field.instant()),
-	wordCount: nullable(field.number()),
-}).docs({
-	body: {
-		layout: attachRichText,
-		touch: 'updatedAt',
+export const foldersTable = defineTable({
+	fields: {
+		name: field.string(),
+		icon: optional(field.string()),
+		sortOrder: field.number(),
 	},
 });
-export type Note = InferTableRow<typeof notesTable>;
+export type Folder = RowFor<typeof foldersTable>;
 
-// ─── Workspace factory ────────────────────────────────────────────────────────
+export const notesTable = defineTable({
+	fields: {
+		folderId: optional(field.string()),
+		title: field.string(),
+		preview: field.string(),
+		pinned: field.boolean(),
+		createdAt: field.instant(),
+		updatedAt: field.instant(),
+		deletedAt: optional(field.instant()),
+		wordCount: optional(field.number()),
+	},
+});
+export type Note = RowFor<typeof notesTable>;
 
 /**
- * Honeycrisp's shared workspace definition.
+ * Honeycrisp's inert Lens for this release.
  *
- * Runtime openers attach persistence, sync, materializers, and UI state around
- * this shared model.
+ * The namespace is declared once here. The `folders` and `notes` property names
+ * are the durable table names: they are what the row addresses carry, and what a
+ * trusted inspection host would mount as `SELECT * FROM notes`.
  */
-export const honeycrispWorkspace = defineWorkspace({
-	id: 'epicenter-honeycrisp',
-	name: 'honeycrisp',
+export const honeycrispLens = defineLens({
+	namespace: 'so.epicenter.honeycrisp',
 	tables: { folders: foldersTable, notes: notesTable },
-	kv: {},
-	actions: ({ tables }) =>
-		defineActions({
-			/**
-			 * Delete a folder and move all its notes to unfiled.
-			 *
-			 * Re-parents every note in the folder (sets `folderId` to null)
-			 * and deletes the folder row. Selection clearing is handled by the
-			 * Svelte state layer (folders) via URL search params.
-			 */
-			folders_delete: defineMutation({
-				description: 'Delete a folder and re-parent its notes to unfiled',
-				input: Type.Object({ folderId: Type.String() }),
-				handler: ({ folderId: rawId }) => {
-					const folderId = asFolderId(rawId);
-					const folderNotes = tables.notes
-						.scan()
-						.rows.filter((n) => n.folderId === folderId);
-					for (const note of folderNotes) {
-						tables.notes.update(note.id, { folderId: null });
-					}
-					tables.folders.delete(folderId);
-				},
-			}),
-		}),
+	values: {},
 });
-export type HoneycrispWorkspace = WorkspaceFromDefinition<
-	typeof honeycrispWorkspace
+
+export type HoneycrispData = BoundData<
+	typeof honeycrispLens.tables,
+	typeof honeycrispLens.values
 >;
+
+/**
+ * Delete a folder after best-effort re-parenting of its current notes.
+ *
+ * The row runtime has no workspace action layer or cross-row transaction. A
+ * failed note update stops before the folder is deleted, so the operation can
+ * be retried without knowingly leaving a dangling folder id.
+ */
+export async function deleteHoneycrispFolder(
+	data: HoneycrispData,
+	folderId: FolderId,
+): Promise<void> {
+	for await (const entry of data.tables.notes.entries()) {
+		if (entry.error !== null) continue;
+		const note = entry.data;
+		if (note.folderId !== folderId) continue;
+		const result = await data.tables.notes.update(note.id, {
+			folderId: undefined,
+		});
+		if (result.error !== null) throw result.error;
+	}
+	await data.tables.folders.delete(folderId);
+}

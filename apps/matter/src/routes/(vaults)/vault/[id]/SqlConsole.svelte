@@ -31,7 +31,7 @@
 	let container: HTMLDivElement | undefined;
 	// Plain handle (not reactive): the Run button reads the live document from it.
 	let editorView: EditorView | undefined;
-	let result = $state<{ columns: string[]; rows: unknown[][] }>();
+	let result = $state.raw<{ columns: string[]; rows: unknown[][] }>();
 	let error = $state<string>();
 	let running = $state(false);
 	let recentQueries = $state.raw<string[]>([]);

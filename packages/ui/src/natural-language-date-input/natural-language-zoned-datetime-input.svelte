@@ -1,5 +1,6 @@
 <script lang="ts" module>
-	import { type DateTimeString, IanaTimeZone } from '@epicenter/workspace';
+	import type { DateTimeString } from '@epicenter/field';
+	import type { IanaTimeZone } from './iana-time-zone.js';
 
 	export type ZonedDateTimeChoice = {
 		label: string;
@@ -37,6 +38,7 @@
 	import { untrack } from 'svelte';
 	import * as Command from '../command/index.js';
 	import { TimezoneCombobox } from '../timezone-combobox/index.js';
+	import { currentIanaTimeZone } from './iana-time-zone.js';
 	import { parseInZone } from './parse.js';
 
 	let {
@@ -46,7 +48,7 @@
 	}: NaturalLanguageZonedDateTimeInputProps = $props();
 
 	let dateZone = $state<IanaTimeZone>(
-		untrack(() => initialDateZone) ?? IanaTimeZone.current(),
+		untrack(() => initialDateZone) ?? currentIanaTimeZone(),
 	);
 	let value = $state('');
 

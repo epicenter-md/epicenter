@@ -2,8 +2,10 @@
 	import { Button } from '@epicenter/ui/button';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import { skillsState } from '$lib/state/skills-state.svelte';
+	import { getSkillsApp } from '$lib/context.js';
 	import ExpandedReference from './ExpandedReference.svelte';
+
+	const { state: skillsState } = getSkillsApp();
 
 	let expandedRefId = $state<string | null>(null);
 </script>
@@ -15,9 +17,12 @@
 			<Button
 				variant="ghost"
 				size="sm"
-				onclick={() => {
+				onclick={async () => {
 					if (!skillsState.selectedSkillId) return;
-					const id = skillsState.createReference(skillsState.selectedSkillId, 'new-reference.md');
+					const id = await skillsState.createReference(
+						skillsState.selectedSkillId,
+						'new-reference.md',
+					);
 					expandedRefId = id;
 				}}
 			>
@@ -46,9 +51,9 @@
 							<Button
 								variant="ghost"
 								size="icon-xs"
-								onclick={() => {
+								onclick={async () => {
 									if (expandedRefId === ref.id) expandedRefId = null;
-									skillsState.deleteReference(ref.id);
+									await skillsState.deleteReference(ref.id);
 								}}
 							>
 								<TrashIcon class="size-3.5 text-muted-foreground" />

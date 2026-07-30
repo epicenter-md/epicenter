@@ -5,7 +5,7 @@
 > survives any deletion. Scope is every `specs/` directory repo-wide.
 >
 > - For **current decisions and why**, read `docs/adr/`.
-> - For **how the system works now**, read `docs/reference/` and the code.
+> - For **how package-owned systems work now**, read the package README and code.
 > - For **shared vocabulary**, read `docs/CONTEXT.md`.
 > - To **read a removed spec's body**: `git log --all --full-history -- "<path>"` then `git show <sha>:<path>`.
 >
@@ -16,16 +16,32 @@
 >
 > **Regenerate (deterministic per ref set, lossless):** `bun scripts/generate-spec-history.ts`. The totals track the refs this clone can see; `--all` is deliberate so the timeline recovers specs that only lived on unmerged or deleted branches.
 
-**1380 specs ever** (553 still in tree, 827 removed).
+**1397 specs ever** (547 still in tree, 850 removed).
 
 
 ## 2026
 
 | Date | Spec | State | Path |
 |------|------|-------|------|
+| 2026-07-20 | epicenter-data-clean-break.handoff | removed | specs/20260720T002337-epicenter-data-clean-break.handoff.md |
+| 2026-07-20 | epicenter-data-clean-break | in tree | specs/20260720T002337-epicenter-data-clean-break.md |
+| 2026-07-19 | one-app-catalog-clean-break | removed | specs/20260719T180000-one-app-catalog-clean-break.md |
+| 2026-07-19 | one-epicenter-clean-break | removed | specs/20260719T222716-one-epicenter-clean-break.md |
+| 2026-07-19 | app-owned-workspace-lenses-clean-break | in tree | specs/20260719T180000-app-owned-workspace-lenses-clean-break.md |
+| 2026-07-19 | owner-scoped-workspace-stores | removed | specs/20260719T003311-owner-scoped-workspace-stores.md |
+| 2026-07-17 | two-plane-row-document-runtime | in tree | specs/20260717T212450-two-plane-row-document-runtime.md |
+| 2026-07-17 | workspace-root-cleanup | in tree | specs/20260717T120000-workspace-root-cleanup.md |
+| 2026-07-17 | hosted-storage-policy | removed | specs/20260717T004239-hosted-storage-policy.md |
+| 2026-07-16 | portable-workspace-tree-greenfield-dialectic | removed | specs/20260716T112345-portable-workspace-tree-greenfield-dialectic.md |
+| 2026-07-16 | workspace-tables-kv-row-documents | removed | specs/20260716T161934-workspace-tables-kv-row-documents.md |
+| 2026-07-16 | confirmed-state-compacted-row-intents | removed | specs/20260716T204040-confirmed-state-compacted-row-intents.md |
+| 2026-07-16 | workspace-tables-kv-row-bodies | removed | specs/20260716T161934-workspace-tables-kv-row-bodies.md |
+| 2026-07-16 | fold-never-refuse-sync-architecture | removed | specs/20260716T173049-fold-never-refuse-sync-architecture.md |
+| 2026-07-14 | synchronized-data-open-runtime-clean-break | removed | specs/20260714T162816-synchronized-data-open-runtime-clean-break.md |
+| 2026-07-14 | sqlite-workspace-app-adoption | removed | specs/20260714T131232-sqlite-workspace-app-adoption.md |
+| 2026-07-14 | workspace-contract-clean-break | removed | specs/20260714T110841-workspace-contract-clean-break.md |
 | 2026-07-13 | immutable-application-data-generations | removed | specs/20260713T211805-immutable-application-data-generations.md |
 | 2026-07-13 | agent-skill-surface-consolidation | removed | specs/20260713T195355-agent-skill-surface-consolidation.md |
-| 2026-07-13 | desktop-auth-authority | removed | specs/20260713T115019-desktop-auth-authority.md |
 | 2026-07-11 | server-authoritative-sqlite-sync.handoff | removed | specs/20260711T103822-server-authoritative-sqlite-sync.handoff.md |
 | 2026-07-11 | server-authoritative-sqlite-sync | removed | specs/20260711T103822-server-authoritative-sqlite-sync.md |
 | 2026-07-10 | whispering-epicenter-capability-collapse | removed | specs/20260710T230000-whispering-epicenter-capability-collapse.md |
@@ -35,12 +51,13 @@
 | 2026-07-09 | provider-app-and-empty-launch | removed | apps/local-mail/specs/20260709-provider-app-and-empty-launch.md |
 | 2026-07-08 | host-discovery-connect-device | removed | apps/super-chat/specs/host-discovery-connect-device.md |
 | 2026-07-07 | super-chat-attach-relay-proof | removed | specs/20260707T200000-super-chat-attach-relay-proof.md |
+| 2026-07-06 | skill-clean-breaks-agent-handoff | removed | specs/20260706T125841-skill-clean-breaks-agent-handoff.md |
 | 2026-07-06 | cross-device-coordination-vision | in tree | specs/20260706T220000-cross-device-coordination-vision.md |
 | 2026-07-06 | encrypted-job-envelope-strategy | in tree | specs/20260706T233000-encrypted-job-envelope-strategy.md |
 | 2026-07-06 | super-chat-direct-command-forms | in tree | specs/super-chat-direct-command-forms.md |
 | 2026-07-06 | cli-watcher-ipc-collapse | in tree | specs/20260706T183000-cli-watcher-ipc-collapse.md |
 | 2026-07-03 | transcription-selector-post-gguf-reconciliation | removed | apps/whispering/specs/20260703T170000-transcription-selector-post-gguf-reconciliation.md |
-| 2026-07-02 | local-models-huggingface-transcribe-cpp | in tree | apps/whispering/specs/20260702T120000-local-models-huggingface-transcribe-cpp.md |
+| 2026-07-02 | local-models-huggingface-transcribe-cpp | removed | apps/whispering/specs/20260702T120000-local-models-huggingface-transcribe-cpp.md |
 | 2026-07-02 | local-mail-phase-3-write-through | in tree | specs/20260702T211500-local-mail-phase-3-write-through.md |
 | 2026-07-02 | daemon-role-after-relay-channel-deletion | removed | specs/20260702T233000-daemon-role-after-relay-channel-deletion.md |
 | 2026-07-02 | identity-is-the-partition | removed | specs/20260702T000000-identity-is-the-partition.md |
@@ -55,7 +72,7 @@
 | 2026-07-01 | progressive-sign-in-collapse.prompt | removed | specs/20260701T151347-progressive-sign-in-collapse.prompt.md |
 | 2026-07-01 | honeycrisp-desktop-notes | in tree | specs/20260701T141841-honeycrisp-desktop-notes.md |
 | 2026-07-01 | blobs-are-a-url-machine | removed | specs/20260701T150659-blobs-are-a-url-machine.md |
-| 2026-07-01 | whispering-cloud-sync-remainder | in tree | apps/whispering/specs/20260701T120000-whispering-cloud-sync-remainder.md |
+| 2026-07-01 | whispering-cloud-sync-remainder | removed | apps/whispering/specs/20260701T120000-whispering-cloud-sync-remainder.md |
 | 2026-06-30 | cross-device-topology-seam-2-the-rule | in tree | specs/20260630T173000-cross-device-topology-seam-2-the-rule.md |
 | 2026-06-30 | super-app-desktop-host-build-plan | removed | specs/20260630T190000-super-app-desktop-host-build-plan.md |
 | 2026-06-30 | local-mail-tauri-cdc-mirror.handoff | removed | specs/20260630T150000-local-mail-tauri-cdc-mirror.handoff.md |
@@ -100,7 +117,7 @@
 | 2026-06-18 | playback-pause-speaking-window | removed | apps/whispering/specs/20260618T113342-playback-pause-speaking-window.md |
 | 2026-06-18 | one-conversation-core-loop-and-doc-sink | removed | specs/20260618T113407-one-conversation-core-loop-and-doc-sink.md |
 | 2026-06-18 | keyboard-tap-foundation-research | removed | apps/whispering/specs/20260618T000000-keyboard-tap-foundation-research.md |
-| 2026-06-17 | brand-asset-pipeline | in tree | specs/20260617T100000-brand-asset-pipeline.md |
+| 2026-06-17 | brand-asset-pipeline | removed | specs/20260617T100000-brand-asset-pipeline.md |
 | 2026-06-17 | v2-coding-worker-sandbox-and-harness | in tree | specs/20260617T235900-v2-coding-worker-sandbox-and-harness.md |
 | 2026-06-17 | zhongwen-daemon-and-v0-exit | removed | specs/20260617T224538-zhongwen-daemon-and-v0-exit.md |
 | 2026-06-17 | desktop-audio-pipeline-greenfield | removed | apps/whispering/specs/20260617T170000-desktop-audio-pipeline-greenfield.md |
@@ -191,7 +208,7 @@
 | 2026-05-30 | body-docs-clean-break | removed | specs/20260530T220000-body-docs-clean-break.md |
 | 2026-05-30 | bodies-as-generic-doc-opener | removed | specs/20260530T230000-bodies-as-generic-doc-opener.md |
 | 2026-05-30 | sound-cue-customization | removed | apps/whispering/specs/20260530T150000-sound-cue-customization.md |
-| 2026-05-29 | recording-input-paths-clean-break | in tree | apps/whispering/specs/20260529T000000-recording-input-paths-clean-break.md |
+| 2026-05-29 | recording-input-paths-clean-break | removed | apps/whispering/specs/20260529T000000-recording-input-paths-clean-break.md |
 | 2026-05-29 | ai-workflows-bounded-programs | removed | specs/20260529T120000-ai-workflows-bounded-programs.md |
 | 2026-05-29 | ai-workflows-ux-grill-and-clean-break | in tree | specs/20260529T163000-ai-workflows-ux-grill-and-clean-break.md |
 | 2026-05-29 | ai-workflows-triggers-portability-durable-execution | in tree | specs/20260529T190000-ai-workflows-triggers-portability-durable-execution.md |
@@ -225,7 +242,7 @@
 | 2026-05-26 | REPORT | in tree | apps/whispering/specs/2026-05-26-recorder-shape-investigation/REPORT.md |
 | 2026-05-26 | replace-ffmpeg-with-symphonia-libopus | in tree | apps/whispering/specs/20260526T000000-replace-ffmpeg-with-symphonia-libopus.md |
 | 2026-05-26 | feature-folder-reorganization | in tree | apps/whispering/specs/20260526T005233-feature-folder-reorganization.md |
-| 2026-05-26 | canonical-recorder | in tree | apps/whispering/specs/20260526T150401-canonical-recorder.md |
+| 2026-05-26 | canonical-recorder | removed | apps/whispering/specs/20260526T150401-canonical-recorder.md |
 | 2026-05-26 | tauri-specta-on-artifact-id-base | in tree | specs/20260526T220000-tauri-specta-on-artifact-id-base.md |
 | 2026-05-26 | build-time-platform-di | removed | apps/whispering/specs/20260526T010258-build-time-platform-di.md |
 | 2026-05-26 | collapse-tauri-only-services-into-namespace | removed | specs/20260526T000140-collapse-tauri-only-services-into-namespace.md |
@@ -484,16 +501,16 @@
 | 2026-04-22 | workspace-logger | removed | specs/20260422T222216-workspace-logger.md |
 | 2026-04-22 | unified-action-invocation | removed | specs/20260422T234500-unified-action-invocation.md |
 | 2026-04-22 | markdown-materializer-reindex | removed | specs/20260422T175408-markdown-materializer-reindex.md |
-| 2026-04-21 | inline-content-doc-factories | in tree | specs/20260421T000000-inline-content-doc-factories.md |
+| 2026-04-21 | inline-content-doc-factories | removed | specs/20260421T000000-inline-content-doc-factories.md |
 | 2026-04-21 | cli-scripting-first-redesign | in tree | specs/20260421T155436-cli-scripting-first-redesign.md |
 | 2026-04-21 | collapse-defineworkspace-into-definedocument | removed | specs/20260421T010000-collapse-defineworkspace-into-definedocument.md |
 | 2026-04-21 | encryption-primitive-refactor | removed | specs/20260421T140000-encryption-primitive-refactor.md |
 | 2026-04-21 | collapse-document-and-workspace-primitives | removed | specs/20260421T170000-collapse-document-and-workspace-primitives.md |
 | 2026-04-21 | merge-document-into-workspace | removed | specs/20260421T170000-merge-document-into-workspace.md |
-| 2026-04-20 | definedocument-primitive | in tree | specs/20260420T152026-definedocument-primitive.md |
+| 2026-04-20 | definedocument-primitive | removed | specs/20260420T152026-definedocument-primitive.md |
 | 2026-04-20 | document-open-handle-disposable | in tree | specs/20260420T162601-document-open-handle-disposable.md |
 | 2026-04-20 | y-websocket-teardown-fix | in tree | specs/20260420T230000-y-websocket-teardown-fix.md |
-| 2026-04-20 | collapse-document-framework | in tree | specs/20260420T230100-collapse-document-framework.md |
+| 2026-04-20 | collapse-document-framework | removed | specs/20260420T230100-collapse-document-framework.md |
 | 2026-04-20 | workspace-as-definedocument | in tree | specs/20260420T230200-workspace-as-definedocument.md |
 | 2026-04-20 | consumer-migration-to-defineworkspace | in tree | specs/20260420T234500-consumer-migration-to-defineworkspace.md |
 | 2026-04-20 | documents-under-tables-namespace | removed | specs/20260420T120000-documents-under-tables-namespace.md |
@@ -745,7 +762,7 @@
 | 2026-03-05 | neon-to-planetscale-hyperdrive | removed | specs/20260305T180000-neon-to-planetscale-hyperdrive.md |
 | 2026-03-05 | server-remote-adapter-architecture | removed | specs/20260305T180000-server-remote-adapter-architecture.md |
 | 2026-03-04 | platform-agnostic-sync-primitives | in tree | specs/20260304T000000-platform-agnostic-sync-primitives.md |
-| 2026-03-04 | withDocument-onUpdate-callback | in tree | specs/20260304T000000-withDocument-onUpdate-callback.md |
+| 2026-03-04 | withDocument-onUpdate-callback | removed | specs/20260304T000000-withDocument-onUpdate-callback.md |
 | 2026-03-04 | hub-sidecar-architecture | in tree | specs/20260304T120000-hub-sidecar-architecture.md |
 | 2026-03-03 | http-sync-protocol | in tree | specs/20260303T150000-http-sync-protocol.md |
 | 2026-03-03 | unified-versioning | in tree | specs/20260303T150000-unified-versioning.md |
@@ -833,7 +850,7 @@
 | 2026-02-18 | markdown-persistence-extension | in tree | specs/20260218T211400-markdown-persistence-extension.md |
 | 2026-02-18 | tab-manager-markdown-export | removed | specs/20260218T172212-tab-manager-markdown-export.md |
 | 2026-02-18 | tab-manager-markdown-export | removed | docs/specs/20260218T172212-tab-manager-markdown-export.md |
-| 2026-02-17 | table-level-document-api | in tree | specs/20260217T094400-table-level-document-api.md |
+| 2026-02-17 | table-level-document-api | removed | specs/20260217T094400-table-level-document-api.md |
 | 2026-02-17 | tab-manager-popup-to-sidepanel | in tree | specs/20260217T211400-tab-manager-popup-to-sidepanel.md |
 | 2026-02-17 | tab-manager-popup-to-sidepanel | removed | docs/specs/20260217T211400-tab-manager-popup-to-sidepanel.md |
 | 2026-02-16 | component-styling-audit | in tree | specs/20260216T211358-component-styling-audit.md |

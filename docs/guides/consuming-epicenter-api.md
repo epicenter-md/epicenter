@@ -1,83 +1,132 @@
 # Consuming the Epicenter API
 
-> **Historical note.** Earlier drafts of this guide described a
-> `createWorkspace(definition).withEncryption().withExtension(...)` builder
-> chain, and later an owner factory that wrapped the encryption, local
-> storage, and per-owner wipe paths behind a single object. Both shapes
-> are gone. There is one pattern today: `createWorkspace()` builds the low-level
-> bundle, `create<App>()` defines the app's shared isomorphic model,
-> and `open<App>Browser()` attaches browser storage and sync inline.
->
-> Rather than maintain two versions of the same narrative, this guide also
-> points at the canonical sources:
->
-> - **Quick Start**: [`packages/workspace/README.md`](../../packages/workspace/README.md)
-> - **Multi-node sync**: [`packages/workspace/SYNC_ARCHITECTURE.md`](../../packages/workspace/SYNC_ARCHITECTURE.md)
-> - **Production wiring**: `apps/honeycrisp/src/lib/workspace/browser.ts` (inline composition with per-row child docs), `apps/honeycrisp/src/lib/honeycrisp.ts` (boot singleton), `apps/tab-manager/src/lib/session.svelte.ts` (browser extension auth binding)
+> **Transition status.** The SQLite row API lives in `@epicenter/data`, with
+> lens and table definitions in `@epicenter/lens` (ADR-0166). The Proposed
+> row-document network path uses
+> Yjs 14 and is not yet the only deployed path. Some applications still use the
+> Yjs 13 `/api/rooms/:roomId` service described at the end of this guide. That
+> service is replacement work, not a destination compatibility layer.
 
-## Overview
+## Workspace model
 
-The hosted hub at `https://api.epicenter.so` handles auth, real-time sync, and AI inference. It runs on Cloudflare Workers with Durable Objects. Cloud sync enters through `/api/rooms/:roomId` (the same path in Cloud and self-hosted instance deployments): a cloud doc is scoped to the resolved `principalId` and addressed by its `ydoc.guid`, and the server resolves the room from the auth token. Browser apps and the workspace daemon both use this route.
+An Epicenter workspace contains queryable scalar rows, one reserved KV row, and
+one lazy collaborative document for each ordinary row.
 
-On the client, `@epicenter/workspace` exposes the preset directly: define your schema with `defineTable` / `defineKv`, wrap it with `defineWorkspace({ id, tables, kv, actions })`, then connect once at boot. `toConnection(auth, nodeId)` projects the auth snapshot: `null` signed out (bare local IndexedDB storage), the principal's connection signed in (principal-scoped storage plus relay sync).
-
-## Minimal cloud workspace shape
-
-This snippet shows the current browser shape. The per-app browser opener is the single source of truth for "how this app mounts in a browser." It reads `auth.state` once, so principal changes reload the page and re-project the connection.
-
-```typescript
-import type { SyncAuthClient } from '@epicenter/auth';
-import { field } from '@epicenter/field';
-import { toConnection } from '@epicenter/svelte/auth';
-import {
-	createNodeId,
-	defineActions,
-	defineMutation,
-	defineTable,
-	defineWorkspace,
-	type NodeId,
-} from '@epicenter/workspace';
-import Type from 'typebox';
-import { auth } from './auth';
-
-const notes = defineTable({
-	id: field.string(),
-	title: field.string(),
-});
-
-export const myAppWorkspace = defineWorkspace({
-	id: 'epicenter.my-app',
-	name: 'my-app',
-	tables: { notes },
-	kv: {},
-	actions: ({ tables }) =>
-		defineActions({
-			notes_create: defineMutation({
-				description: 'Create a note',
-				input: Type.Object({ id: Type.String(), title: Type.String() }),
-				handler: ({ id, title }) => {
-					tables.notes.set({ id, title });
-				},
-			}),
-		}),
-});
-
-export function openMyAppBrowser({
-	auth,
-	nodeId,
-}: {
-	auth: SyncAuthClient;
-	nodeId: NodeId;
-}) {
-	return myAppWorkspace.connect(toConnection(auth, nodeId));
-}
-
-export const myApp = openMyAppBrowser({
-	auth,
-	nodeId: createNodeId({ storage: localStorage }),
-});
+```text
+workspace
+|-- table row
+|   |-- stable row id
+|   |-- queryable JSON fields
+|   `-- lazy Yjs document
+`-- workspace KV
 ```
 
-The `ydoc.guid` is both the local IndexedDB key and the cloud room id. Namespace it to your app, for example `epicenter.my-app`, to avoid collisions when multiple apps share the same IndexedDB origin. The cloud sync route is `/api/rooms/:roomId` in Cloud and self-hosted instance deployments, taking the room id straight from `ydoc.guid`; the server resolves the DO name `principals/${principalId}/rooms/${room}` from the auth token, with no workspace lookup.
+Use scalar fields for facts that must remain queryable without hydrating a
+CRDT. Use the row document for rich or collaborative structure whose concurrent
+edits must merge. Use workspace KV for declared singleton values without row
+identity or query needs.
 
-`connect(null)` returns the local-only bundle: IndexedDB, BroadcastChannel, `wipe()`, and child-doc openers, but no relay. `connect(connection)` returns the same bundle shape with principal-scoped storage and collaboration. The app shell should not branch on auth after this point; signed-in-only features should degrade inline.
+Row deletion ends both the scalar row and its document lifetime. Deleted row
+ids are never reused.
+
+## Opened API
+
+An imported workspace definition binds to one runtime:
+
+```ts
+const workspace = await runtime.open(definition);
+
+const row = await workspace.tables.notes.create({ title: 'First note' });
+using document = await workspace.tables.notes.document.open(row.id);
+
+document.transact(() => {
+	document.get('content').insert(0, 'Hello');
+});
+
+await document.whenDurable();
+```
+
+The opened handle exposes:
+
+- `tables`: release-local validation and row operations over schema-opaque JSON;
+- `kv`: declared singleton values;
+- `sql`: arbitrary read-only SQL and runtime TEMP views over scalar state;
+- `sync`: scalar synchronization status and a fixed-cut `settle()` barrier;
+- `table.document.open(rowId)`: a lazy row-owned Yjs document.
+
+`document.whenDurable()` covers local document persistence. `sync.settle()`
+covers scalar rows and KV present when called. Neither promise impersonates the
+other.
+
+## Network addressing
+
+Scalar row sync and row-document sync are independent protocols served by one
+workspace authority.
+
+```text
+scalar rows
+  /api/records/:workspaceId/...
+
+one opened row document
+  /api/workspaces/:workspaceId/tables/:table/rows/:rowId/document
+```
+
+Each open row document owns one authenticated Yjs 14 WebSocket. The route binds
+the socket to a single structured row address; the connection does not carry an
+arbitrary room id or any other document.
+
+The bearer authenticates the principal, and the account authority derives
+deterministically from that principal alone; the route workspace id is a name
+inside the requester's own partition, and the remaining route selects the
+table and row. The server checks row liveness before hydration and before
+every persisted update. A row that is not live closes retryably with no
+reserved code; the client's scalar plane owns the difference between "not yet
+synchronized" and "deleted", and revokes the document when a deletion
+installs. There is no terminal document verdict: the authority enforces the
+compound document bound (canonical bytes and struct count) on every accepted
+update, clients suppress sending while they measure over it, and close 1009
+is only a retryable backstop against a stale client estimate.
+
+## Browser and native storage
+
+The API contract is shared across runtimes, but the storage owners differ.
+
+- Browser scalar rows live in OPFS SQLite inside a Worker. Open Yjs documents
+  live on the page and persist through one Epicenter-owned IndexedDB update-log
+  database per workspace.
+- Tauri and other native hosts use native SQLite for scalar rows and a native
+  Yjs update-log provider. Both stores may use SQLite without promising one
+  cross-plane transaction.
+
+The destination uses `@y/y` 14 `updateV2` storage and synchronization only. It
+does not read old Yjs 13 IndexedDB stores or room logs.
+
+## Deployed Yjs 13 lane
+
+Applications awaiting conversion may still construct a root `Y.Doc`, attach
+`y-indexeddb`, and call `openCollaboration()` with `roomWsUrl()`:
+
+```text
+ydoc.guid
+  -> roomWsUrl({ baseURL, guid, nodeId })
+  -> /api/rooms/:roomId
+  -> principal-scoped Yjs 13 room
+```
+
+This is current deployment history, not the API to build new row-document
+features against. Converted applications use SQLite for scalar rows and open
+Yjs 14 documents through `table.document.open(rowId)`. The final cut removes
+the room route and old provider family rather than maintaining dual wires.
+
+## Canonical references
+
+- [`packages/workspace/README.md`](../../packages/workspace/README.md): workspace
+  API and runtime ownership.
+- [`packages/workspace/SYNC_ARCHITECTURE.md`](../../packages/workspace/SYNC_ARCHITECTURE.md):
+  document lifecycle and wire boundary.
+- [`docs/adr/0144-scalar-rows-and-row-documents-synchronize-through-independent-client-planes.md`](../adr/0144-scalar-rows-and-row-documents-synchronize-through-independent-client-planes.md):
+  independent client planes.
+- Proposed ADR-0145: workspace authority ownership. Its socket topology is
+  being reconciled to one route-bound socket per open document.
+- [`docs/adr/0146-row-documents-use-one-yjs-14-major-and-runtime-native-update-logs.md`](../adr/0146-row-documents-use-one-yjs-14-major-and-runtime-native-update-logs.md):
+  Yjs 14-only storage and wire.

@@ -5,5 +5,10 @@
 		"jsxImportSource": "hono/jsx",
 		"types": ["bun", "@cloudflare/workers-types", "./worker-configuration.d.ts"]
 	},
-	"include": ["worker", "worker-configuration.d.ts"]
+	"include": [
+		"server.ts",
+		"trusted-origins.ts",
+		"worker",
+		"worker-configuration.d.ts"
+	]
 }

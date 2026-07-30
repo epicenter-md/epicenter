@@ -19,7 +19,14 @@ export const corsMiddleware = createMiddleware<Env>(async (c, next) => {
 		origin: (origin) =>
 			origin && trustedOrigins.includes(origin) ? origin : undefined,
 		credentials: true,
-		allowHeaders: ['Content-Type', 'Authorization', 'Upgrade'],
+		// `If-None-Match` carries the document pull's conditional version, and it
+		// is not a CORS-safelisted request header: without it here, every
+		// cross-origin conditional pull dies at preflight.
+		allowHeaders: ['Content-Type', 'Authorization', 'Upgrade', 'If-None-Match'],
 		allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+		// `ETag` carries the accepted document version back. It is not a
+		// CORS-safelisted RESPONSE header, so a cross-origin browser client reads
+		// `null` from it unless it is exposed, and cannot settle the revision.
+		exposeHeaders: ['ETag'],
 	})(c, next);
 });

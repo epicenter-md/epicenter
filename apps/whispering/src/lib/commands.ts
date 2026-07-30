@@ -9,9 +9,10 @@ import {
 	toggleVadRecording,
 } from '$lib/operations/recording';
 import type { Reach } from '$lib/utils/key-binding';
+import type { WhisperingApp } from '$lib/whispering/app';
 
 /**
- * Registry of available commands in the application.
+ * Registry of available commands in the app.
  * Defines what commands exist and how they're triggered (keyboard shortcuts,
  * voice, command palette, etc.).
  *
@@ -57,7 +58,8 @@ export type SatisfiedCommand = {
 	 * - ['Pressed', 'Released']: On both press and release
 	 */
 	on: ShortcutEventState[];
-	run: (state?: ShortcutEventState) => void;
+	/** Every command runs against the ready app it was dispatched with. */
+	run: (app: WhisperingApp, state?: ShortcutEventState) => void;
 };
 
 /** Commands available in every build (browser and desktop). */
@@ -75,9 +77,9 @@ const sharedCommands = [
 		// and the browser keydown backend emit the Pressed/Released pair. Unbound
 		// globally by default: bind a chord here for hold-to-talk.
 		on: ['Pressed', 'Released'],
-		run: (state?: ShortcutEventState) => {
-			if (state === 'Pressed') return pushToTalk.start();
-			if (state === 'Released') return pushToTalk.stop();
+		run: (app, state?: ShortcutEventState) => {
+			if (state === 'Pressed') return pushToTalk.start(app);
+			if (state === 'Released') return pushToTalk.stop(app);
 		},
 	},
 	{
@@ -89,7 +91,7 @@ const sharedCommands = [
 		// fires (a click arrives with no edge). It ships with the default global
 		// recording chord; push-to-talk ships unbound for users who prefer a hold.
 		on: ['Pressed'],
-		run: () => toggleManualRecording(),
+		run: (app) => toggleManualRecording(app),
 	},
 	{
 		id: 'cancelRecording',
@@ -97,7 +99,7 @@ const sharedCommands = [
 		category: 'Recording',
 		reach: 'global',
 		on: ['Pressed'],
-		run: () => cancelRecording(),
+		run: (app) => cancelRecording(app),
 	},
 	{
 		id: 'toggleVadRecording',
@@ -105,7 +107,7 @@ const sharedCommands = [
 		category: 'Recording',
 		reach: 'global',
 		on: ['Pressed'],
-		run: () => toggleVadRecording(),
+		run: (app) => toggleVadRecording(app),
 	},
 	{
 		id: 'runRecipeOnClipboard',
@@ -138,6 +140,12 @@ export type Command = (typeof commands)[number];
 
 export type CommandRunners = Record<Command['id'], Command['run']>;
 
+/** Command runners with the app already bound (the DevTools surface). */
+export type BoundCommandRunners = Record<
+	Command['id'],
+	(state?: ShortcutEventState) => void
+>;
+
 export const commandRunners = commands.reduce<CommandRunners>(
 	(acc, command) => {
 		acc[command.id] = command.run;
@@ -148,7 +156,7 @@ export const commandRunners = commands.reduce<CommandRunners>(
 
 type TriggerTarget = {
 	on: readonly ShortcutEventState[];
-	run: (state?: ShortcutEventState) => void;
+	run: (app: WhisperingApp, state?: ShortcutEventState) => void;
 };
 const triggerTargetById = new Map<string, TriggerTarget>(
 	commands.map((c) => [c.id, { on: c.on, run: c.run }]),
@@ -163,10 +171,11 @@ const triggerTargetById = new Map<string, TriggerTarget>(
  * `commandRunners` with no edge.
  */
 export function dispatchCommandTrigger(
+	app: WhisperingApp,
 	commandId: string,
 	state: ShortcutEventState,
 ) {
 	const target = triggerTargetById.get(commandId);
 	if (!target?.on.includes(state)) return;
-	target.run(state);
+	target.run(app, state);
 }

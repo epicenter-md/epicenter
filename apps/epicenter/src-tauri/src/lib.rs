@@ -21,22 +21,28 @@ use tauri_plugin_dialog::{
     DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
 };
 use tauri_plugin_opener::OpenerExt;
+use tauri_specta::Event as _;
+
+/// The command list, shared with `build.rs` through `include!`. Only the tests
+/// read it from the crate, which is where the drift checks live.
+#[cfg(test)]
+mod command_names;
 
 pub mod audio;
 use audio::encode_recording_for_upload;
 
 pub mod recorder;
 use recorder::commands::{
-    cancel_recording, clear_recording_artifacts, close_recording_session,
-    delete_recording_artifacts, enumerate_recording_devices, get_current_recording_id,
-    init_recording_session, read_recording_artifact, start_recording, stop_recording,
+    cancel_recording, cancel_recording_owned_by, current_recording, enumerate_recording_devices,
+    start_recording, stop_recording,
 };
 use recorder::recorder::Recorder;
 
 pub mod transcription;
 use transcription::{
-    delete_model, download_model, list_models, prewarm_model, set_unload_policy,
-    transcribe_recording, ModelCache,
+    delete_model, download_model, get_active_model, get_local_transcription_readiness,
+    get_unload_policy, list_models, prewarm_model, set_active_model, set_unload_policy,
+    transcribe_recording, LocalTranscriptionSettings, ModelCache,
 };
 
 pub mod command;
@@ -51,8 +57,8 @@ use download::{cancel_download, DownloadManager};
 mod delivery;
 use delivery::{simulate_copy_keystroke, simulate_enter_keystroke, write_text};
 
-pub mod keyring_storage;
-use keyring_storage::{keyring_read, keyring_write};
+mod keyring_storage;
+use keyring_storage::{read_auth_cell, write_auth_cell};
 
 pub mod media;
 use media::{pause_playback, resume_playback};
@@ -75,28 +81,33 @@ pub mod overlay;
 pub mod clipboard;
 
 const PRODUCT_NAME: &str = "Epicenter";
+/// Reserved label prefix for derived-catalog app windows (ADR-0153). One
+/// capability glob (`app-*`) grants every such window the first trusted-app
+/// authority slice, so no host-internal window label may ever start with it.
+const APP_WINDOW_PREFIX: &str = "app-";
 #[cfg(any(not(debug_assertions), test))]
 const PRODUCTION_PORT: u16 = 39_130;
 #[cfg(any(debug_assertions, test))]
 const DEVELOPMENT_PORT: u16 = 39_131;
-const PROTOCOL_VERSION: u8 = 1;
+const PROTOCOL_VERSION: u8 = 2;
+const HOSTED_AUTH_ORIGIN: &str = "https://api.epicenter.so";
 const READY_TIMEOUT: Duration = Duration::from_secs(15);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Surface {
-    Query,
+    Home,
     Whispering,
     Mail,
     Books,
 }
 
 impl Surface {
-    const ALL: [Self; 4] = [Self::Query, Self::Whispering, Self::Mail, Self::Books];
+    const ALL: [Self; 4] = [Self::Home, Self::Whispering, Self::Mail, Self::Books];
 
     const fn id(self) -> &'static str {
         match self {
-            Self::Query => "query",
+            Self::Home => "home",
             Self::Whispering => "whispering",
             Self::Mail => "mail",
             Self::Books => "books",
@@ -105,7 +116,7 @@ impl Surface {
 
     const fn path(self) -> &'static str {
         match self {
-            Self::Query => "/apps/query/",
+            Self::Home => "/apps/home/",
             Self::Whispering => "/apps/whispering/",
             Self::Mail => "/apps/mail/",
             Self::Books => "/apps/books/",
@@ -114,7 +125,7 @@ impl Surface {
 
     const fn title(self) -> &'static str {
         match self {
-            Self::Query => "Epicenter: Query",
+            Self::Home => "Epicenter: Home",
             Self::Whispering => "Epicenter: Whispering",
             Self::Mail => "Epicenter: Mail",
             Self::Books => "Epicenter: Books",
@@ -135,6 +146,7 @@ struct BootFrame<'a> {
     protocol_version: u8,
     token: &'a str,
     port: u16,
+    auth_cell: Option<&'a str>,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
@@ -143,6 +155,37 @@ struct ReadyFrame {
     r#type: String,
     protocol_version: u8,
     port: u16,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
+enum BunToRustAuthFrame {
+    StoreAuth {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        serialized: Option<String>,
+    },
+    OpenAuthUrl {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        url: String,
+    },
+    Relaunch {},
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+enum RustToBunAuthFrame<'a> {
+    NativeResult {
+        #[serde(rename = "requestId")]
+        request_id: &'a str,
+        status: &'static str,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        message: Option<&'a str>,
+    },
+    OauthCallback {
+        url: &'a str,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -163,6 +206,11 @@ struct HostState {
     process: Mutex<Option<ManagedChild>>,
     active_token: Mutex<Option<String>>,
     pending_surfaces: Mutex<Vec<Surface>>,
+    pending_oauth_callback: Mutex<Option<String>>,
+    /// A section of Home an application asked the shell to open, held until Home
+    /// is able to claim it. Only the latest survives: two recovery nudges in a
+    /// row should land the user somewhere once, not queue a backlog.
+    pending_home_section: Mutex<Option<HomeSection>>,
     shutting_down: AtomicBool,
     starting: AtomicBool,
 }
@@ -175,6 +223,8 @@ impl HostState {
             process: Mutex::new(None),
             active_token: Mutex::new(None),
             pending_surfaces: Mutex::new(Vec::new()),
+            pending_oauth_callback: Mutex::new(None),
+            pending_home_section: Mutex::new(None),
             shutting_down: AtomicBool::new(false),
             starting: AtomicBool::new(false),
         }
@@ -204,6 +254,34 @@ impl HostState {
                 .lock()
                 .expect("pending surface lock poisoned"),
         )
+    }
+
+    fn queue_home_section(&self, section: HomeSection) {
+        *self
+            .pending_home_section
+            .lock()
+            .expect("pending home section lock poisoned") = Some(section);
+    }
+
+    fn take_home_section(&self) -> Option<HomeSection> {
+        self.pending_home_section
+            .lock()
+            .expect("pending home section lock poisoned")
+            .take()
+    }
+
+    fn queue_oauth_callback(&self, url: String) {
+        *self
+            .pending_oauth_callback
+            .lock()
+            .expect("pending OAuth callback lock poisoned") = Some(url);
+    }
+
+    fn take_oauth_callback(&self) -> Option<String> {
+        self.pending_oauth_callback
+            .lock()
+            .expect("pending OAuth callback lock poisoned")
+            .take()
     }
 
     fn activate(&self, token: &str) {
@@ -248,30 +326,33 @@ enum FailureChoice {
     Quit,
 }
 
-/// The typed Whispering command and event contract. The raw audio response and
-/// Epicenter host-status command remain on Tauri's handwritten handler because
-/// their response shapes are outside this generated binding surface.
+/// The typed Whispering command and event contract. The raw audio response,
+/// Epicenter host-status command, and host-owned `open_app` remain on Tauri's
+/// handwritten handler because they are outside this generated Whispering
+/// binding surface.
 fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
     tauri_specta::Builder::<tauri::Wry>::new()
         .commands(tauri_specta::collect_commands![
             write_text,
             simulate_enter_keystroke,
             simulate_copy_keystroke,
-            get_current_recording_id,
             enumerate_recording_devices,
-            init_recording_session,
-            close_recording_session,
             start_recording,
             stop_recording,
             cancel_recording,
-            delete_recording_artifacts,
-            clear_recording_artifacts,
+            current_recording,
             transcribe_recording,
             prewarm_model,
             open_accessibility_settings,
             request_accessibility_permission,
             get_microphone_permission,
             request_microphone_permission,
+            get_active_model,
+            set_active_model,
+            get_local_transcription_readiness,
+            open_home,
+            take_pending_home_section,
+            get_unload_policy,
             set_unload_policy,
             list_models,
             download_model,
@@ -279,8 +360,6 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cancel_download,
             pause_playback,
             resume_playback,
-            keyring_read,
-            keyring_write,
             keyboard::commands::set_auto_paste_enabled,
             keyboard::commands::get_dictation_capability,
             replace_global_shortcuts,
@@ -290,20 +369,35 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         .events(tauri_specta::collect_events![
             keyboard::DictationCapabilityEvent,
             GlobalShortcutTriggered,
+            HomeSectionPending,
+            recorder::ended::RecordingEndedEvent,
         ])
         .error_handling(tauri_specta::ErrorHandlingMode::Result)
 }
 
 #[cfg(test)]
 mod export_bindings {
+    /// Both consumers of this crate's typed command surface are generated from
+    /// the one builder, so neither can drift from Rust.
+    ///
+    /// Each file carries the whole surface because `tauri_specta` exports a
+    /// builder, not a slice of one. What a window may actually call is decided
+    /// by its capability file, not by which bindings it can import: Home's
+    /// `home-model-administration-*` capability grants exactly the local-model
+    /// administration commands (ADR-0180), and every other command in Home's
+    /// copy is denied at the IPC boundary.
+    const TARGETS: &[&str] = &[
+        "../../whispering/src/lib/tauri/bindings.gen.ts",
+        "../src/ui/bindings.gen.ts",
+    ];
+
     #[test]
     fn export_types() {
-        super::make_specta_builder()
-            .export(
-                specta_typescript::Typescript::default(),
-                "../../whispering/src/lib/tauri/bindings.gen.ts",
-            )
-            .expect("failed to export bindings");
+        for target in TARGETS {
+            super::make_specta_builder()
+                .export(specta_typescript::Typescript::default(), target)
+                .unwrap_or_else(|error| panic!("failed to export bindings to {target}: {error}"));
+        }
     }
 }
 
@@ -316,15 +410,161 @@ fn get_runtime_info(state: State<'_, HostState>) -> std::result::Result<RuntimeI
     })
 }
 
+/// A section of Epicenter Home an application can ask the shell to open.
+///
+/// A closed set, not a string-addressed destination: Home is a privileged
+/// built-in surface, so what an application may name inside it is enumerated
+/// here rather than parsed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum HomeSection {
+    /// Local transcription model administration.
+    Transcription,
+}
+
+/// A nudge telling an already-running Home to collect any pending section
+/// intent. It deliberately carries no section of its own: the intent lives in
+/// the host, and Home reads it with `take_pending_home_section`, so an event
+/// that arrives twice, late, or not at all cannot produce a different outcome.
+#[derive(Clone, Debug, serde::Serialize, specta::Type, tauri_specta::Event)]
+pub struct HomeSectionPending;
+
+/// Take the user to the surface that can fix an unavailable local transcription
+/// route.
+///
+/// The app shell owns this navigation. The host reports that the route is
+/// unavailable, an application decides how to present it, and getting the user
+/// to Home is neither of their jobs: `open_app` deliberately refuses built-in
+/// surfaces, and that refusal stands.
+///
+/// The intent is recorded *before* any window work, which is what makes this
+/// safe against the state Home happens to be in. Home may be absent, still
+/// booting, hidden, or already open; in every case the intent is waiting when
+/// Home next asks for it, and the event below is only an optimization for the
+/// already-running case. Emitting the section directly would lose it whenever
+/// no listener existed yet, which is exactly the recovery path that matters.
+///
+/// It mutates no transcription state: it opens a window, and the user chooses.
+#[tauri::command]
+#[specta::specta]
+fn open_home(section: HomeSection, app: DesktopAppHandle) {
+    app.state::<HostState>().queue_home_section(section);
+    request_surface(&app, Surface::Home);
+    let _ = HomeSectionPending.emit_to(&app, Surface::Home.id());
+}
+
+/// Claim the pending section intent, if any. Home calls this on mount and
+/// whenever it is nudged; taking is destructive, so one intent opens one
+/// section exactly once however many nudges arrive.
+#[tauri::command]
+#[specta::specta]
+fn take_pending_home_section(app: DesktopAppHandle) -> Option<HomeSection> {
+    app.state::<HostState>().take_home_section()
+}
+
+/// Open one derived-catalog app window. Rust validates the ID and derives the
+/// URL and label itself; the frontend never supplies a URL (ADR-0153). An
+/// unknown-but-valid ID opens a window that Bun answers with 404, which is the
+/// honest state of a catalog member that disappeared since the last restart.
+#[tauri::command]
+fn open_app(
+    app: DesktopAppHandle,
+    state: State<'_, HostState>,
+    app_id: String,
+) -> std::result::Result<(), String> {
+    let Some(id) = parse_app_id(&app_id) else {
+        return Err(format!(
+            "app id must match [a-z0-9-]+ and not name a built-in surface: {app_id}"
+        ));
+    };
+    let Some(token) = state.active_token() else {
+        return Err("the Epicenter host is not ready".to_string());
+    };
+    let port = state.port().map_err(|error| format!("{error:#}"))?;
+
+    let id = id.to_string();
+    app.clone()
+        .run_on_main_thread(move || {
+            if !app.state::<HostState>().token_is_active(&token) {
+                return;
+            }
+            if let Err(error) = ensure_app_window(&app, &id, port, &token) {
+                append_parent_log(&app, &format!("open {id} app window: {error:#}"));
+            }
+        })
+        .map_err(|error| format!("schedule the {app_id} app window: {error}"))
+}
+
+/// Accept exactly the derived-catalog ID contract: `[a-z0-9-]+`, excluding the
+/// built-in surface IDs, which keep their own labels and enumerated
+/// capabilities until they migrate into the catalog.
+fn parse_app_id(id: &str) -> Option<&str> {
+    let matches_pattern = !id.is_empty()
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-');
+    if !matches_pattern || Surface::from_id(id).is_some() {
+        return None;
+    }
+    Some(id)
+}
+
+fn app_window_label(id: &str) -> String {
+    format!("{APP_WINDOW_PREFIX}{id}")
+}
+
+fn ensure_app_window(app: &DesktopAppHandle, id: &str, port: u16, token: &str) -> Result<()> {
+    let label = app_window_label(id);
+    if let Some(window) = app.get_webview_window(&label) {
+        focus(window);
+        return Ok(());
+    }
+
+    let origin = origin(port);
+    let url: tauri::Url = format!("{origin}/apps/{id}/").parse()?;
+    let initialization_script = initialization_script(&origin, token)?;
+    let window = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
+        .title(format!("Epicenter: {id}"))
+        .inner_size(1100.0, 760.0)
+        .min_inner_size(680.0, 480.0)
+        .initialization_script(initialization_script)
+        .on_navigation(move |url| is_allowed_navigation(url, port))
+        .on_new_window(|_, _| NewWindowResponse::Deny)
+        .build()
+        .with_context(|| format!("create the {id} app WebView"))?;
+    release_host_resources_on_destroy(&window);
+    focus(window);
+    Ok(())
+}
+
+/// Release the host resources a window owns once it is destroyed.
+///
+/// Only destruction, never hide or navigation: a hidden window still owns its
+/// recording (push-to-talk from the tray depends on that), and reload keeps the
+/// same label, which is exactly why `current_recording` exists. A destroyed
+/// window can no longer stop or cancel anything, so its recording would hold
+/// the one host recorder until the process exits.
+///
+/// Surface windows are hidden rather than destroyed when the user closes them,
+/// so this fires for them only on a host restart teardown. App windows have no
+/// close interception and are destroyed on close, which is the live path.
+fn release_host_resources_on_destroy(window: &WebviewWindow<Wry>) {
+    let app = window.app_handle().clone();
+    let label = window.label().to_string();
+    window.on_window_event(move |event| {
+        if matches!(event, WindowEvent::Destroyed) {
+            cancel_recording_owned_by(&app, &label);
+        }
+    });
+}
+
 pub fn run() {
     let port = configured_port();
     let specta_builder = make_specta_builder();
     let specta_handler = tauri_specta::Builder::invoke_handler(&specta_builder);
-    let native_handler = tauri::generate_handler![
-        get_runtime_info,
-        encode_recording_for_upload,
-        read_recording_artifact
-    ] as fn(tauri::ipc::Invoke<tauri::Wry>) -> bool;
+    let native_handler =
+        tauri::generate_handler![get_runtime_info, encode_recording_for_upload, open_app]
+            as fn(tauri::ipc::Invoke<tauri::Wry>) -> bool;
     let log_plugin = tauri_plugin_log::Builder::new()
         .level(log::LevelFilter::Info)
         .level_for("epicenter::transcription", log::LevelFilter::Debug)
@@ -342,14 +582,14 @@ pub fn run() {
         // This must remain the first plugin: later plugins and setup must only run
         // in the process that owns the application instance.
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-            open_forwarded_surfaces(app, &args);
+            open_forwarded_deep_links(app, &args);
         }))
         .plugin(log_plugin)
-        .plugin(tauri_plugin_macos_permissions::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_os::init())
@@ -366,7 +606,7 @@ pub fn run() {
         .invoke_handler(move |invoke| {
             if matches!(
                 invoke.message.command(),
-                "get_runtime_info" | "encode_recording_for_upload" | "read_recording_artifact"
+                "get_runtime_info" | "encode_recording_for_upload" | "open_app"
             ) {
                 native_handler(invoke)
             } else {
@@ -376,7 +616,25 @@ pub fn run() {
         .setup(move |app| {
             specta_builder.mount_events(app);
 
-            let cache = ModelCache::new();
+            // A recording that was still capturing when a previous launch died
+            // left a partial WAV in the recorder's private staging. It is not a
+            // blob and never will be one, so it is deleted here and nothing
+            // else happens: no promotion, no repair, no notice. Owned by the
+            // recorder rather than by blob-store startup because `.staging/rust`
+            // is the recorder's alone (`packages/blobs` stages its own uploads
+            // under `.staging/bun` and cleans them per operation).
+            crate::recorder::blob::delete_stale_staging(app.handle());
+
+            // The active local model and the unload policy are device-local host
+            // state (ADR-0180), so they live beside the app's own config rather
+            // than in any workspace that could carry them to a machine without
+            // the model files or a compatible accelerator.
+            let settings = LocalTranscriptionSettings::load(
+                app.path()
+                    .app_config_dir()?
+                    .join("local-transcription.json"),
+            );
+            let cache = ModelCache::new(settings);
             cache.start_idle_watcher();
             app.manage(cache);
 
@@ -394,6 +652,9 @@ pub fn run() {
             let mut opened_surface = false;
             if let Some(urls) = current {
                 for url in &urls {
+                    if let Some(callback) = parse_oauth_callback(url) {
+                        queue_or_send_oauth_callback(app.handle(), callback);
+                    }
                     if let Some(surface) = parse_surface_deep_link(url) {
                         request_surface(app.handle(), surface);
                         opened_surface = true;
@@ -401,7 +662,7 @@ pub fn run() {
                 }
             }
             if !opened_surface {
-                request_surface(app.handle(), Surface::Query);
+                request_surface(app.handle(), Surface::Home);
             }
             request_start(app.handle().clone(), None);
             Ok(())
@@ -409,16 +670,24 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("failed to build Epicenter")
         .run(|app, event| match event {
-            RunEvent::Reopen { .. } => request_surface(app, Surface::Query),
+            RunEvent::Reopen { .. } => request_surface(app, Surface::Home),
             RunEvent::Exit => shutdown_host(app),
             _ => {}
         });
 }
 
-fn open_forwarded_surfaces(app: &DesktopAppHandle, arguments: &[String]) {
+fn open_forwarded_deep_links(app: &DesktopAppHandle, arguments: &[String]) {
     let surfaces = surfaces_from_arguments(arguments);
+    for argument in arguments {
+        let Ok(url) = tauri::Url::parse(argument) else {
+            continue;
+        };
+        if let Some(callback) = parse_oauth_callback(&url) {
+            queue_or_send_oauth_callback(app, callback);
+        }
+    }
     if surfaces.is_empty() {
-        request_surface(app, Surface::Query);
+        request_surface(app, Surface::Home);
     } else {
         for surface in surfaces {
             request_surface(app, surface);
@@ -444,9 +713,50 @@ fn surfaces_from_arguments(arguments: &[String]) -> Vec<Surface> {
 
 fn open_deep_links(app: &DesktopAppHandle, urls: &[tauri::Url]) {
     for url in urls {
+        if let Some(callback) = parse_oauth_callback(url) {
+            queue_or_send_oauth_callback(app, callback);
+        }
         if let Some(surface) = parse_surface_deep_link(url) {
             request_surface(app, surface);
         }
+    }
+}
+
+fn parse_oauth_callback(url: &tauri::Url) -> Option<String> {
+    if url.scheme() != "epicenter"
+        || url.host_str() != Some("auth")
+        || url.path() != "/callback"
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.port().is_some()
+        || url.fragment().is_some()
+        || !(url.query_pairs().any(|(key, _)| key == "code")
+            || url.query_pairs().any(|(key, _)| key == "error"))
+    {
+        return None;
+    }
+    Some(url.to_string())
+}
+
+fn queue_or_send_oauth_callback(app: &DesktopAppHandle, url: String) {
+    let state = app.state::<HostState>();
+    let generation = state
+        .process
+        .lock()
+        .expect("host state lock poisoned")
+        .as_ref()
+        .map(|process| process.generation);
+    let Some(generation) = generation else {
+        state.queue_oauth_callback(url);
+        return;
+    };
+    if let Err(error) = send_auth_frame(
+        &state,
+        generation,
+        &RustToBunAuthFrame::OauthCallback { url: &url },
+    ) {
+        state.queue_oauth_callback(url);
+        append_parent_log(app, &format!("deliver OAuth callback: {error:#}"));
     }
 }
 
@@ -571,10 +881,19 @@ fn start_once(app: &DesktopAppHandle) -> Result<()> {
         });
     }
 
+    if let Some(callback) = state.take_oauth_callback() {
+        send_auth_frame(
+            &state,
+            generation,
+            &RustToBunAuthFrame::OauthCallback { url: &callback },
+        )
+        .context("deliver the queued OAuth callback")?;
+    }
+
     state.activate(&token);
     let mut surfaces = state.take_pending_surfaces();
     if surfaces.is_empty() {
-        surfaces.push(Surface::Query);
+        surfaces.push(Surface::Home);
     }
     if let Err(error) = create_surfaces_on_main_thread(app, port, &token, surfaces) {
         state.deactivate();
@@ -591,13 +910,11 @@ fn start_once(app: &DesktopAppHandle) -> Result<()> {
 
 fn launch_host(app: &DesktopAppHandle, port: u16) -> Result<LaunchedHost> {
     let log = open_log_file(app)?;
-    let data_dir = app.path().app_data_dir()?.join("query");
-    fs::create_dir_all(&data_dir)
-        .with_context(|| format!("create Query data directory at {}", data_dir.display()))?;
+    let app_data_dir = app.path().app_data_dir()?;
 
     let mut command = host_command(app)?;
     command
-        .env("EPICENTER_QUERY_DATA_DIR", &data_dir)
+        .env("EPICENTER_DATA_DIR", &app_data_dir)
         .env("EPICENTER_APPS_DIST", apps_dist(app)?)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -609,7 +926,8 @@ fn launch_host(app: &DesktopAppHandle, port: u16) -> Result<LaunchedHost> {
     let mut stdin = child.stdin.take().context("capture Bun stdin")?;
     let stdout = child.stdout.take().context("capture Bun stdout")?;
     let token = launch_token()?;
-    let frame = boot_frame_json(&token, port)?;
+    let auth_cell = read_auth_cell().context("read the desktop auth cell")?;
+    let frame = boot_frame_json(&token, port, auth_cell.as_deref())?;
 
     if let Err(error) = writeln!(stdin, "{frame}").and_then(|()| stdin.flush()) {
         stop_starting_child(child, stdin);
@@ -627,7 +945,7 @@ fn launch_host(app: &DesktopAppHandle, port: u16) -> Result<LaunchedHost> {
         Ok(value) => value,
         Err(mpsc::RecvTimeoutError::Timeout) => {
             stop_starting_child(child, stdin);
-            bail!("Bun did not emit its v1 ready frame within 15 seconds");
+            bail!("Bun did not emit its v2 ready frame within 15 seconds");
         }
         Err(mpsc::RecvTimeoutError::Disconnected) => {
             stop_starting_child(child, stdin);
@@ -693,14 +1011,23 @@ fn host_command(_app: &DesktopAppHandle) -> Result<Command> {
 
 fn monitor_host(app: DesktopAppHandle, generation: u64, mut stdout: BufReader<ChildStdout>) {
     let (stdout_sender, stdout_receiver) = mpsc::sync_channel(1);
-    thread::spawn(move || {
-        let mut bytes = Vec::new();
-        let event = match stdout.read_until(b'\n', &mut bytes) {
-            Ok(0) => "Bun closed stdout after readiness".to_string(),
-            Ok(count) => format!("Bun wrote {count} unexpected byte(s) to stdout after readiness"),
-            Err(error) => format!("failed to monitor Bun stdout: {error}"),
+    thread::spawn(move || loop {
+        let mut line = String::new();
+        let event = match stdout.read_line(&mut line) {
+            Ok(0) => Err("Bun closed stdout after readiness".to_string()),
+            Ok(_) if !line.ends_with('\n') => {
+                Err("Bun closed stdout during an auth frame".to_string())
+            }
+            Ok(_) => {
+                serde_json::from_str::<BunToRustAuthFrame>(line.trim_end_matches(['\r', '\n']))
+                    .map_err(|error| format!("Bun emitted an invalid auth frame: {error}"))
+            }
+            Err(error) => Err(format!("failed to monitor Bun stdout: {error}")),
         };
-        let _ = stdout_sender.send(event);
+        let terminal = event.is_err();
+        if stdout_sender.send(event).is_err() || terminal {
+            return;
+        }
     });
 
     thread::spawn(move || loop {
@@ -712,9 +1039,23 @@ fn monitor_host(app: DesktopAppHandle, generation: u64, mut stdout: BufReader<Ch
             return;
         }
 
-        if let Ok(message) = stdout_receiver.recv_timeout(Duration::from_millis(150)) {
-            fail_generation(&app, generation, message);
-            return;
+        if let Ok(event) = stdout_receiver.recv_timeout(Duration::from_millis(150)) {
+            match event {
+                Ok(frame) => {
+                    if let Err(error) = handle_auth_frame(&app, generation, frame) {
+                        fail_generation(
+                            &app,
+                            generation,
+                            format!("handle Bun auth frame: {error:#}"),
+                        );
+                        return;
+                    }
+                }
+                Err(message) => {
+                    fail_generation(&app, generation, message);
+                    return;
+                }
+            }
         }
 
         let status = {
@@ -749,6 +1090,100 @@ fn monitor_host(app: DesktopAppHandle, generation: u64, mut stdout: BufReader<Ch
             }
         }
     });
+}
+
+fn handle_auth_frame(
+    app: &DesktopAppHandle,
+    generation: u64,
+    frame: BunToRustAuthFrame,
+) -> Result<()> {
+    match frame {
+        BunToRustAuthFrame::StoreAuth {
+            request_id,
+            serialized,
+        } => {
+            let result = write_auth_cell(serialized);
+            send_native_result(app, generation, &request_id, result)
+        }
+        BunToRustAuthFrame::OpenAuthUrl { request_id, url } => {
+            let result = validate_hosted_auth_url(&url).and_then(|()| {
+                app.opener()
+                    .open_url(url, None::<String>)
+                    .map_err(Into::into)
+            });
+            send_native_result(app, generation, &request_id, result)
+        }
+        BunToRustAuthFrame::Relaunch {} => app.restart(),
+    }
+}
+
+fn send_native_result<E: std::fmt::Display>(
+    app: &DesktopAppHandle,
+    generation: u64,
+    request_id: &str,
+    result: std::result::Result<(), E>,
+) -> Result<()> {
+    if request_id.is_empty() {
+        bail!("native requestId must be non-empty");
+    }
+    let state = app.state::<HostState>();
+    match result {
+        Ok(()) => send_auth_frame(
+            &state,
+            generation,
+            &RustToBunAuthFrame::NativeResult {
+                request_id,
+                status: "ok",
+                message: None,
+            },
+        ),
+        Err(error) => {
+            let message = error.to_string();
+            send_auth_frame(
+                &state,
+                generation,
+                &RustToBunAuthFrame::NativeResult {
+                    request_id,
+                    status: "error",
+                    message: Some(&message),
+                },
+            )
+        }
+    }
+}
+
+fn send_auth_frame(
+    state: &HostState,
+    generation: u64,
+    frame: &RustToBunAuthFrame<'_>,
+) -> Result<()> {
+    let line = serde_json::to_string(frame).context("serialize the native auth frame")?;
+    let mut process = state.process.lock().expect("host state lock poisoned");
+    let process = process
+        .as_mut()
+        .filter(|process| process.generation == generation)
+        .context("the target Bun generation is no longer active")?;
+    let stdin = process
+        .stdin
+        .as_mut()
+        .context("the target Bun generation has no command pipe")?;
+    writeln!(stdin, "{line}").and_then(|()| stdin.flush())?;
+    Ok(())
+}
+
+fn validate_hosted_auth_url(value: &str) -> Result<()> {
+    let url = tauri::Url::parse(value).context("parse the hosted authorization URL")?;
+    if url.scheme() != "https"
+        || url.host_str() != Some("api.epicenter.so")
+        || url.port().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+        || !url.path().starts_with("/auth/")
+    {
+        bail!("authorization URL must stay under {HOSTED_AUTH_ORIGIN}/auth/");
+    }
+    Ok(())
 }
 
 fn fail_generation(app: &DesktopAppHandle, generation: u64, message: String) {
@@ -882,6 +1317,7 @@ fn ensure_surface(
             let _ = close_window.hide();
         }
     });
+    release_host_resources_on_destroy(&window);
     if reveal {
         focus(window);
     }
@@ -903,6 +1339,13 @@ fn invalidate_surfaces(app: &DesktopAppHandle) {
                 if window.destroy().is_err() {
                     let _ = window.hide();
                 }
+            }
+        }
+        // Derived-catalog app windows carry the dead host's launch token in
+        // their initialization script, so a restart must tear them down too.
+        for (label, window) in app.webview_windows() {
+            if label.starts_with(APP_WINDOW_PREFIX) && window.destroy().is_err() {
+                let _ = window.hide();
             }
         }
         #[cfg(target_os = "macos")]
@@ -990,12 +1433,13 @@ fn launch_token() -> Result<String> {
     Ok(URL_SAFE_NO_PAD.encode(bytes))
 }
 
-fn boot_frame_json(token: &str, port: u16) -> Result<String> {
+fn boot_frame_json(token: &str, port: u16, auth_cell: Option<&str>) -> Result<String> {
     serde_json::to_string(&BootFrame {
         r#type: "boot",
         protocol_version: PROTOCOL_VERSION,
         token,
         port,
+        auth_cell,
     })
     .context("serialize the Bun boot frame")
 }
@@ -1006,15 +1450,15 @@ fn read_ready_frame(reader: &mut impl BufRead, expected_port: u16) -> Result<()>
         .read_line(&mut line)
         .context("read the Bun readiness frame")?;
     if count == 0 {
-        bail!("Bun exited without emitting its v1 ready frame");
+        bail!("Bun exited without emitting its v2 ready frame");
     }
     if !line.ends_with('\n') {
-        bail!("Bun closed stdout before completing its v1 ready frame");
+        bail!("Bun closed stdout before completing its v2 ready frame");
     }
 
     let line = line.trim_end_matches(['\r', '\n']);
     let frame: ReadyFrame =
-        serde_json::from_str(line).context("Bun stdout was not one strict v1 ready frame")?;
+        serde_json::from_str(line).context("Bun stdout was not one strict v2 ready frame")?;
     if frame.r#type != "ready" {
         bail!("Bun emitted a frame other than ready");
     }
@@ -1055,32 +1499,6 @@ fn initialization_script(origin: &str, token: &str) -> Result<String> {
     configurable: false,
     writable: false,
   }});
-  if (window.location.pathname.startsWith('/apps/whispering/')) {{
-    const credentialReady = window.__TAURI_INTERNALS__.invoke('keyring_read').then(
-      (serialized) => {{
-        Object.defineProperty(window, '__EPICENTER_WHISPERING_AUTH_BOOTSTRAP__', {{
-          value: {{ serialized, error: null }},
-          enumerable: false,
-          configurable: true,
-          writable: false,
-        }});
-      }},
-      (error) => {{
-        Object.defineProperty(window, '__EPICENTER_WHISPERING_AUTH_BOOTSTRAP__', {{
-          value: {{ serialized: null, error: String(error) }},
-          enumerable: false,
-          configurable: true,
-          writable: false,
-        }});
-      }},
-    );
-    Object.defineProperty(window, '__EPICENTER_WHISPERING_AUTH_READY__', {{
-      value: credentialReady,
-      enumerable: false,
-      configurable: false,
-      writable: false,
-    }});
-  }}
 }})();"#
     ))
 }
@@ -1146,19 +1564,19 @@ mod tests {
     }
 
     #[test]
-    fn parses_only_the_expected_v1_ready_frame() {
+    fn parses_only_the_expected_v2_ready_frame() {
         read_ready_frame(
-            &mut Cursor::new(b"{\"type\":\"ready\",\"protocolVersion\":1,\"port\":39130}\n"),
+            &mut Cursor::new(b"{\"type\":\"ready\",\"protocolVersion\":2,\"port\":39130}\n"),
             PRODUCTION_PORT,
         )
         .unwrap();
 
         for invalid in [
             "preamble\n",
-            "{\"type\":\"ready\",\"protocolVersion\":2,\"port\":39130}\n",
-            "{\"type\":\"ready\",\"protocolVersion\":1,\"port\":39131}\n",
-            "{\"type\":\"ready\",\"protocolVersion\":1,\"port\":39130,\"extra\":true}\n",
-            "{\"type\":\"ready\",\"protocolVersion\":1,\"port\":39130}",
+            "{\"type\":\"ready\",\"protocolVersion\":1,\"port\":39130}\n",
+            "{\"type\":\"ready\",\"protocolVersion\":2,\"port\":39131}\n",
+            "{\"type\":\"ready\",\"protocolVersion\":2,\"port\":39130,\"extra\":true}\n",
+            "{\"type\":\"ready\",\"protocolVersion\":2,\"port\":39130}",
         ] {
             assert!(read_ready_frame(&mut Cursor::new(invalid), PRODUCTION_PORT).is_err());
         }
@@ -1167,7 +1585,7 @@ mod tests {
     #[test]
     fn navigation_allows_only_the_exact_active_origin_without_credentials() {
         for allowed in [
-            "http://127.0.0.1:39130/apps/query/",
+            "http://127.0.0.1:39130/apps/home/",
             "http://127.0.0.1:39130/another/path?query=ok#fragment",
         ] {
             assert!(is_allowed_navigation(
@@ -1177,11 +1595,11 @@ mod tests {
         }
 
         for denied in [
-            "https://127.0.0.1:39130/apps/query/",
-            "http://localhost:39130/apps/query/",
-            "http://127.0.0.1:39131/apps/query/",
-            "http://user@127.0.0.1:39130/apps/query/",
-            "http://user:secret@127.0.0.1:39130/apps/query/",
+            "https://127.0.0.1:39130/apps/home/",
+            "http://localhost:39130/apps/home/",
+            "http://127.0.0.1:39131/apps/home/",
+            "http://user@127.0.0.1:39130/apps/home/",
+            "http://user:secret@127.0.0.1:39130/apps/home/",
         ] {
             assert!(!is_allowed_navigation(
                 &denied.parse().unwrap(),
@@ -1196,7 +1614,7 @@ mod tests {
         assert_eq!(
             actual,
             [
-                ("query", "/apps/query/", "Epicenter: Query"),
+                ("home", "/apps/home/", "Epicenter: Home"),
                 ("whispering", "/apps/whispering/", "Epicenter: Whispering"),
                 ("mail", "/apps/mail/", "Epicenter: Mail"),
                 ("books", "/apps/books/", "Epicenter: Books"),
@@ -1205,9 +1623,509 @@ mod tests {
     }
 
     #[test]
+    fn trusted_application_capabilities_follow_the_surface_table() {
+        let expected = Surface::ALL.map(Surface::id);
+        for encoded in [
+            include_str!("../capabilities/trusted-epicenter-apps-development.json"),
+            include_str!("../capabilities/trusted-epicenter-apps-production.json"),
+        ] {
+            let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
+            let windows = capability["windows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_str().unwrap())
+                .collect::<Vec<_>>();
+            assert_eq!(windows, expected);
+        }
+    }
+
+    #[test]
+    fn app_ids_accept_only_the_catalog_contract_outside_built_in_surfaces() {
+        for accepted in ["hello-http", "a", "notes2", "x-y-z", "0-"] {
+            assert_eq!(parse_app_id(accepted), Some(accepted));
+        }
+
+        for denied in [
+            "",
+            "Hello",
+            "hello_http",
+            "hello.http",
+            "hello/http",
+            "..",
+            "hello http",
+            "héllo",
+            // Built-in surfaces keep their own labels and capabilities until
+            // they migrate into the derived catalog.
+            "home",
+            "whispering",
+            "mail",
+            "books",
+        ] {
+            assert_eq!(parse_app_id(denied), None, "expected {denied:?} rejected");
+        }
+    }
+
+    #[test]
+    fn app_window_labels_are_reserved_and_never_collide_with_host_windows() {
+        assert_eq!(app_window_label("hello-http"), "app-hello-http");
+
+        let mut host_labels: Vec<&str> = Surface::ALL.map(Surface::id).to_vec();
+        host_labels.push("recording-overlay");
+        for label in host_labels {
+            assert!(
+                !label.starts_with(APP_WINDOW_PREFIX),
+                "host window label {label:?} must not match the app-* capability glob"
+            );
+        }
+    }
+
+    #[test]
+    fn trusted_app_capabilities_grant_the_shared_http_slice() {
+        for encoded in [
+            include_str!("../capabilities/trusted-app-windows-development.json"),
+            include_str!("../capabilities/trusted-app-windows-production.json"),
+        ] {
+            let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
+            assert_eq!(
+                capability["windows"],
+                serde_json::json!(["app-*", "whispering"]),
+                "the trusted-app HTTP slice must cover catalog apps and transitional Whispering"
+            );
+
+            let http = capability["permissions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|permission| permission["identifier"] == "http:default")
+                .expect("the app capability must scope the HTTP plugin");
+            let allowed: Vec<&str> = http["allow"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|entry| entry["url"].as_str().unwrap())
+                .collect();
+            assert_eq!(
+                allowed,
+                ["http://*", "https://*", "http://*:*", "https://*:*"],
+                "the first trusted-app authority slice is unrestricted HTTP(S) egress"
+            );
+        }
+    }
+
+    #[test]
+    fn whispering_native_capabilities_do_not_duplicate_trusted_app_http() {
+        for encoded in [
+            include_str!("../capabilities/trusted-whispering-native-development.json"),
+            include_str!("../capabilities/trusted-whispering-native-production.json"),
+        ] {
+            let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
+            assert!(
+                capability["permissions"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|permission| permission["identifier"] != "http:default"),
+                "trusted-app HTTP belongs to the shared app capability, not Whispering native"
+            );
+        }
+    }
+
+    /// The `tauri-plugin-macos-permissions` plugin is gone from this build:
+    /// `command.rs` owns the two OS permission capabilities Epicenter exposes,
+    /// through AVFoundation and the Accessibility API directly.
+    ///
+    /// Its `macos-permissions:default` grant handed Whispering twelve unrelated
+    /// plugin commands (screen recording, input monitoring, full disk access,
+    /// camera) to reach the two it used. A grant naming a plugin this build does
+    /// not ship is a silent no-op, so nothing would fail if it were pasted back;
+    /// what it would do is describe an authority the app does not have. Both
+    /// Whispering surfaces are checked, not just the one that had it.
+    #[test]
+    fn no_whispering_capability_grants_the_deleted_permissions_plugin() {
+        for encoded in [
+            include_str!("../capabilities/trusted-whispering-native-development.json"),
+            include_str!("../capabilities/trusted-whispering-native-production.json"),
+            include_str!("../capabilities/trusted-whispering-overlay-development.json"),
+            include_str!("../capabilities/trusted-whispering-overlay-production.json"),
+        ] {
+            let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
+            for permission in capability["permissions"].as_array().unwrap() {
+                // Permissions are either a bare identifier string or an object
+                // with a scope; both spell the plugin the same way.
+                let identifier = permission
+                    .as_str()
+                    .or_else(|| permission["identifier"].as_str())
+                    .unwrap_or_default();
+                assert!(
+                    !identifier.starts_with("macos-permissions:"),
+                    "{} grants a plugin this build no longer ships",
+                    capability["identifier"].as_str().unwrap()
+                );
+            }
+        }
+    }
+
+    /// The recovery path an application offers must survive Home not being
+    /// there yet. The intent is host state, so "Home is absent", "Home is still
+    /// booting", and "Home is open behind another window" are the same code
+    /// path: the intent waits until Home claims it.
+    #[test]
+    fn a_pending_home_section_waits_for_home_to_claim_it() {
+        let state = HostState::new(Ok(1));
+        assert_eq!(
+            state.take_home_section(),
+            None,
+            "nothing pending before anyone asks"
+        );
+
+        // Home absent or mid-boot: nobody is listening, and the intent survives.
+        state.queue_home_section(HomeSection::Transcription);
+        assert_eq!(
+            state.take_home_section(),
+            Some(HomeSection::Transcription),
+            "the intent is still there whenever Home gets around to asking"
+        );
+    }
+
+    /// Taking is destructive, so however many nudges arrive, one request opens
+    /// one section once. Without this a stale intent would reopen the panel on
+    /// some later unrelated mount.
+    #[test]
+    fn a_claimed_home_section_is_not_replayed() {
+        let state = HostState::new(Ok(1));
+        state.queue_home_section(HomeSection::Transcription);
+        assert!(state.take_home_section().is_some());
+        assert_eq!(
+            state.take_home_section(),
+            None,
+            "a claimed intent must not fire again"
+        );
+    }
+
+    /// Two recovery attempts in a row should land the user somewhere once.
+    #[test]
+    fn repeated_requests_collapse_to_one_pending_section() {
+        let state = HostState::new(Ok(1));
+        state.queue_home_section(HomeSection::Transcription);
+        state.queue_home_section(HomeSection::Transcription);
+        assert!(state.take_home_section().is_some());
+        assert_eq!(state.take_home_section(), None);
+    }
+
+    /// Every command a capability grants must exist, and every command the crate
+    /// exposes must be declared to the Tauri manifest. These are two hand-kept
+    /// lists today, and a grant for a command that does not exist is a silent
+    /// no-op rather than an error.
+    #[test]
+    fn capability_grants_name_only_commands_this_build_has() {
+        let declared: std::collections::BTreeSet<&str> =
+            crate::command_names::COMMANDS.iter().copied().collect();
+        for encoded in [
+            include_str!("../capabilities/home-model-administration-development.json"),
+            include_str!("../capabilities/home-model-administration-production.json"),
+            include_str!("../capabilities/trusted-whispering-native-development.json"),
+            include_str!("../capabilities/trusted-whispering-native-production.json"),
+            include_str!("../capabilities/trusted-app-windows-development.json"),
+            include_str!("../capabilities/trusted-app-windows-production.json"),
+        ] {
+            let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
+            for permission in capability["permissions"].as_array().unwrap() {
+                let Some(name) = permission.as_str() else {
+                    continue;
+                };
+                // Only app-owned grants are checked here; plugin and core
+                // permissions (`core:`, `dialog:`, ...) belong to their plugins.
+                let Some(command) = name.strip_prefix("allow-") else {
+                    continue;
+                };
+                if name.contains(':') {
+                    continue;
+                }
+                let command = command.replace('-', "_");
+                assert!(
+                    declared.contains(command.as_str()),
+                    "{name} grants a command this build does not declare: {command}"
+                );
+            }
+        }
+    }
+
+    /// The generated bindings are a committed artifact, so they can go stale
+    /// against the command list without anything failing to compile.
+    ///
+    /// Three commands are deliberately outside the generated surface: they ride
+    /// Tauri's handwritten handler because their shapes are not `specta::Type`
+    /// (raw bytes) or are host-owned rather than part of the app contract.
+    #[test]
+    fn generated_bindings_cover_every_declared_command() {
+        const HANDWRITTEN: &[&str] = &[
+            "get_runtime_info",
+            "encode_recording_for_upload",
+            "open_app",
+        ];
+        for bindings in [
+            include_str!("../../../whispering/src/lib/tauri/bindings.gen.ts"),
+            include_str!("../../src/ui/bindings.gen.ts"),
+        ] {
+            for command in crate::command_names::COMMANDS {
+                if HANDWRITTEN.contains(command) {
+                    continue;
+                }
+                // Either quote style: specta emits double quotes and the repo
+                // formatter rewrites them to single, so both are "fresh".
+                assert!(
+                    bindings.contains(&format!("'{command}'"))
+                        || bindings.contains(&format!("\"{command}\"")),
+                    "regenerate bindings: {command} is missing"
+                );
+            }
+        }
+    }
+
+    /// Model administration is routed to Home and to no application window
+    /// (ADR-0180). This is wiring, not a sandbox: an app window runs as
+    /// Epicenter. What it proves is that the ownership the record describes is
+    /// the ownership the build actually wires, so "Whispering cannot pick a
+    /// model" does not quietly become false the next time a permission is
+    /// pasted into the wrong file.
+    #[test]
+    fn model_administration_is_routed_to_home_and_away_from_applications() {
+        // `get_active_model` is in this list: model *identity* is administration
+        // data. An application reads readiness, which answers "can the route run
+        // and what does it accept" without naming a model (ADR-0180).
+        const ADMINISTRATION: &[&str] = &[
+            "allow-list-models",
+            "allow-download-model",
+            "allow-cancel-download",
+            "allow-delete-model",
+            "allow-get-active-model",
+            "allow-set-active-model",
+            "allow-get-unload-policy",
+            "allow-set-unload-policy",
+        ];
+
+        for encoded in [
+            include_str!("../capabilities/home-model-administration-development.json"),
+            include_str!("../capabilities/home-model-administration-production.json"),
+        ] {
+            let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
+            assert_eq!(
+                capability["windows"].as_array().unwrap(),
+                &vec![serde_json::json!("home")],
+                "model administration belongs to Home alone"
+            );
+            let permissions = capability["permissions"].as_array().unwrap();
+            for permission in ADMINISTRATION {
+                assert!(
+                    permissions.contains(&serde_json::json!(permission)),
+                    "Home must be able to invoke {permission}"
+                );
+            }
+        }
+
+        for encoded in [
+            include_str!("../capabilities/trusted-whispering-native-development.json"),
+            include_str!("../capabilities/trusted-whispering-native-production.json"),
+        ] {
+            let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
+            let permissions = capability["permissions"].as_array().unwrap();
+            for permission in ADMINISTRATION {
+                assert!(
+                    !permissions.contains(&serde_json::json!(permission)),
+                    "an application must not administer models: {permission}"
+                );
+            }
+            // It still transcribes, still reads advisory readiness so it can warn
+            // before capture, and can still send the user to Home to fix it.
+            for permission in [
+                "allow-transcribe-recording",
+                "allow-prewarm-model",
+                "allow-get-local-transcription-readiness",
+                "allow-open-home",
+            ] {
+                assert!(
+                    permissions.contains(&serde_json::json!(permission)),
+                    "Whispering must keep {permission}"
+                );
+            }
+        }
+
+        // Catalog apps transcribe through the same public client, so the same
+        // separation has to hold for the window class that did not exist when
+        // ADR-0180 was written.
+        for encoded in APP_WINDOW_CAPABILITIES {
+            let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
+            let permissions = capability["permissions"].as_array().unwrap();
+            for permission in ADMINISTRATION {
+                assert!(
+                    !permissions.contains(&serde_json::json!(permission)),
+                    "an app window must not administer models: {permission}"
+                );
+            }
+        }
+    }
+
+    /// Both variants of the one capability that says what an app window may
+    /// reach natively.
+    const APP_WINDOW_CAPABILITIES: &[&str] = &[
+        include_str!("../capabilities/trusted-app-windows-development.json"),
+        include_str!("../capabilities/trusted-app-windows-production.json"),
+    ];
+
+    /// The operations `@epicenter/app` exposes, and therefore the complete set
+    /// of this crate's commands an app window is granted.
+    const PUBLIC_CLIENT_COMMANDS: &[&str] = &[
+        "start_recording",
+        "stop_recording",
+        "cancel_recording",
+        "current_recording",
+        "transcribe_recording",
+        "prewarm_model",
+        "get_local_transcription_readiness",
+    ];
+
+    /// Every bare `allow-<command>` grant in a capability, as command names.
+    ///
+    /// Plugin and core grants (`core:event:allow-listen`, the scoped
+    /// `http:default` object) are not this crate's commands and are checked
+    /// where they are relevant instead.
+    fn granted_app_commands(encoded: &str) -> std::collections::BTreeSet<String> {
+        let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
+        capability["permissions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|permission| permission.as_str())
+            .filter(|name| !name.contains(':'))
+            .filter_map(|name| name.strip_prefix("allow-"))
+            .map(|command| command.replace('-', "_"))
+            .collect()
+    }
+
+    /// An app window's native command surface is the public client's surface,
+    /// exactly: nothing the client cannot call, and nothing it can call that
+    /// the window was not granted.
+    ///
+    /// This is API admission, not a sandbox. ADR-0179 is explicit that an
+    /// admitted app already holds the shared origin, the session, and the
+    /// Epicenter application's own device grants; what an equality check buys
+    /// is that the *product* boundary stays a decision. A permission pasted in
+    /// to unblock something fails here rather than quietly widening what every
+    /// installed app can do.
+    #[test]
+    fn app_windows_reach_exactly_the_public_client_surface() {
+        let expected: std::collections::BTreeSet<String> = PUBLIC_CLIENT_COMMANDS
+            .iter()
+            .map(|command| command.to_string())
+            .collect();
+        for encoded in APP_WINDOW_CAPABILITIES {
+            assert_eq!(
+                granted_app_commands(encoded),
+                expected,
+                "the app-window capability must grant the public client's surface and nothing else"
+            );
+        }
+    }
+
+    /// Subscribing to an ending is half a lifecycle. A window granted `listen`
+    /// but not `unlisten` leaks a host listener every time an app unsubscribes,
+    /// and the leak is invisible because unsubscribing has no outcome to fail.
+    #[test]
+    fn app_windows_can_both_subscribe_and_unsubscribe() {
+        for encoded in APP_WINDOW_CAPABILITIES {
+            let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
+            let permissions = capability["permissions"].as_array().unwrap();
+            for permission in ["core:event:allow-listen", "core:event:allow-unlisten"] {
+                assert!(
+                    permissions.contains(&serde_json::json!(permission)),
+                    "an app window observing recordings needs {permission}"
+                );
+            }
+        }
+    }
+
+    /// The seven commands must exist, or the grant above is a silent no-op and
+    /// the public client invokes into nothing.
+    ///
+    /// That the *client* invokes exactly these seven, with exactly the
+    /// arguments they deserialize, is proved in
+    /// `src/app-client-parity.test.ts`, where the capability, the generated
+    /// bindings, and the client are all ordinary values and both sides can be
+    /// driven through one fake IPC. This test used to parse the client's
+    /// TypeScript as text from here, which was weaker (it compared source
+    /// spelling, not what was sent) and fragile enough to pass or fail on how
+    /// the bindings happened to be formatted.
+    #[test]
+    fn the_public_client_surface_is_commands_this_build_declares() {
+        let declared: std::collections::BTreeSet<&str> =
+            crate::command_names::COMMANDS.iter().copied().collect();
+        for command in PUBLIC_CLIENT_COMMANDS {
+            assert!(
+                declared.contains(command),
+                "the app-window grant names {command}, which this build does not declare"
+            );
+        }
+    }
+
+    /// The one event an app window subscribes to has to be one the host emits.
+    #[test]
+    fn the_host_still_emits_the_recording_ended_event() {
+        // Either quote style, for the same reason the binding freshness check
+        // above accepts both: specta emits double quotes and the repo formatter
+        // rewrites them to single.
+        const BINDINGS: &str = include_str!("../../src/ui/bindings.gen.ts");
+        assert!(
+            BINDINGS.contains("'recording-ended-event'")
+                || BINDINGS.contains("\"recording-ended-event\""),
+            "the host no longer emits the event @epicenter/app subscribes to"
+        );
+    }
+
+    #[test]
+    fn each_build_selects_the_home_model_administration_capability() {
+        for (encoded, capability) in [
+            (
+                include_str!("../tauri.dev.conf.json"),
+                "home-model-administration-development",
+            ),
+            (
+                include_str!("../tauri.conf.json"),
+                "home-model-administration-production",
+            ),
+        ] {
+            let config: serde_json::Value = serde_json::from_str(encoded).unwrap();
+            let selected = config["app"]["security"]["capabilities"]
+                .as_array()
+                .unwrap();
+            assert!(
+                selected.contains(&serde_json::json!(capability)),
+                "{capability} exists but this build does not select it"
+            );
+        }
+    }
+
+    #[test]
+    fn built_in_surface_capabilities_expose_open_app_to_the_home_window() {
+        for encoded in [
+            include_str!("../capabilities/trusted-epicenter-apps-development.json"),
+            include_str!("../capabilities/trusted-epicenter-apps-production.json"),
+        ] {
+            let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
+            let windows = capability["windows"].as_array().unwrap();
+            assert!(
+                windows.contains(&serde_json::json!("home")),
+                "the home window must hold the surface capability to invoke open_app"
+            );
+            let permissions = capability["permissions"].as_array().unwrap();
+            assert!(permissions.contains(&serde_json::json!("allow-open-app")));
+        }
+    }
+
+    #[test]
     fn deep_links_accept_only_the_closed_surface_route_table() {
         for (url, expected) in [
-            ("epicenter://surface/query", Surface::Query),
+            ("epicenter://surface/home", Surface::Home),
             ("epicenter://surface/whispering", Surface::Whispering),
             ("epicenter://surface/mail", Surface::Mail),
             ("epicenter://surface/books", Surface::Books),
@@ -1220,17 +2138,82 @@ mod tests {
 
         for denied in [
             "epicenter://surface/unknown",
-            "epicenter://surface/query/",
-            "epicenter://surface/query/extra",
-            "epicenter://surface/query?mode=other",
-            "epicenter://surface/query#other",
-            "epicenter://user@surface/query",
-            "epicenter://user:secret@surface/query",
+            "epicenter://surface/home/",
+            "epicenter://surface/home/extra",
+            "epicenter://surface/home?mode=other",
+            "epicenter://surface/home#other",
+            "epicenter://user@surface/home",
+            "epicenter://user:secret@surface/home",
             "epicenter://other/query",
-            "https://surface/query",
+            "https://surface/home",
         ] {
             assert_eq!(parse_surface_deep_link(&denied.parse().unwrap()), None);
         }
+    }
+
+    #[test]
+    fn oauth_deep_links_accept_only_the_exact_callback_route() {
+        for url in [
+            "epicenter://auth/callback?code=code&state=state",
+            "epicenter://auth/callback?error=access_denied&state=state",
+        ] {
+            assert_eq!(
+                parse_oauth_callback(&url.parse().unwrap()),
+                Some(url.to_string())
+            );
+        }
+
+        for denied in [
+            "epicenter://auth/callback",
+            "epicenter://auth/callback?state=state",
+            "epicenter://auth/callback/extra?code=code",
+            "epicenter://auth/callback?code=code#fragment",
+            "epicenter://user@auth/callback?code=code",
+            "https://api.epicenter.so/auth/callback?code=code",
+        ] {
+            assert_eq!(parse_oauth_callback(&denied.parse().unwrap()), None);
+        }
+    }
+
+    #[test]
+    fn system_browser_accepts_only_hosted_auth_urls() {
+        for allowed in [
+            "https://api.epicenter.so/auth/oauth2/authorize?client_id=desktop",
+            "https://api.epicenter.so/auth/sign-in",
+        ] {
+            validate_hosted_auth_url(allowed).unwrap();
+        }
+        for denied in [
+            "http://api.epicenter.so/auth/sign-in",
+            "https://api.epicenter.so.evil.test/auth/sign-in",
+            "https://api.epicenter.so/not-auth",
+            "https://user@api.epicenter.so/auth/sign-in",
+            "https://api.epicenter.so/auth/sign-in#fragment",
+        ] {
+            assert!(validate_hosted_auth_url(denied).is_err());
+        }
+    }
+
+    #[test]
+    fn bun_auth_frames_are_closed_and_exact() {
+        assert_eq!(
+            serde_json::from_str::<BunToRustAuthFrame>(
+                "{\"type\":\"store-auth\",\"requestId\":\"one\",\"serialized\":null}"
+            )
+            .unwrap(),
+            BunToRustAuthFrame::StoreAuth {
+                request_id: "one".to_string(),
+                serialized: None,
+            }
+        );
+        assert!(serde_json::from_str::<BunToRustAuthFrame>(
+            "{\"type\":\"execute\",\"command\":\"shell\"}"
+        )
+        .is_err());
+        assert!(serde_json::from_str::<BunToRustAuthFrame>(
+            "{\"type\":\"relaunch\",\"extra\":true}"
+        )
+        .is_err());
     }
 
     #[test]
@@ -1250,13 +2233,13 @@ mod tests {
     }
 
     #[test]
-    fn boot_frame_is_strict_v1_and_does_not_pad_the_token() {
+    fn boot_frame_is_strict_v2_and_carries_the_opaque_auth_cell() {
         let token = URL_SAFE_NO_PAD.encode([7_u8; 32]);
-        let json = boot_frame_json(&token, PRODUCTION_PORT).unwrap();
+        let json = boot_frame_json(&token, PRODUCTION_PORT, Some("opaque")).unwrap();
         assert_eq!(
             json,
             format!(
-                "{{\"type\":\"boot\",\"protocolVersion\":1,\"token\":\"{token}\",\"port\":39130}}"
+                "{{\"type\":\"boot\",\"protocolVersion\":2,\"token\":\"{token}\",\"port\":39130,\"authCell\":\"opaque\"}}"
             )
         );
         assert!(!token.contains('='));
@@ -1268,10 +2251,9 @@ mod tests {
         assert!(script.contains("window.location.origin !== expectedOrigin"));
         assert!(script.contains("/_epicenter/bootstrap"));
         assert!(script.contains("__EPICENTER_SESSION_READY__"));
-        assert!(script.contains("window.location.pathname.startsWith('/apps/whispering/')"));
-        assert!(script.contains("__EPICENTER_WHISPERING_AUTH_READY__"));
-        assert!(script.contains("__EPICENTER_WHISPERING_AUTH_BOOTSTRAP__"));
-        assert!(script.contains("invoke('keyring_read')"));
+        assert!(!script.contains("__EPICENTER_WHISPERING_AUTH_READY__"));
+        assert!(!script.contains("__EPICENTER_WHISPERING_AUTH_BOOTSTRAP__"));
+        assert!(!script.contains("keyring_read"));
         assert!(!script.contains("localStorage"));
         assert!(!script.contains("sessionStorage"));
     }

@@ -13,8 +13,11 @@
 	import TrashIcon from '@lucide/svelte/icons/trash';
 	import { report } from '$lib/report';
 	import { isBuiltinRecipeId } from '$lib/state/builtin-recipes';
-	import { generateDefaultRecipe, recipes } from '$lib/state/recipes.svelte';
+	import { generateDefaultRecipe } from '$lib/state/recipes.svelte';
 	import type { Recipe } from '$lib/workspace';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 
 	let editorOpen = $state(false);
 	let isEditing = $state(false);
@@ -34,7 +37,7 @@
 		editorOpen = true;
 	}
 
-	function save() {
+	async function save() {
 		const name = working.name.trim();
 		const instructions = working.instructions.trim();
 		if (!name) {
@@ -45,7 +48,7 @@
 			report.info({ title: 'Add an instruction', description: 'One line telling the AI what to do with the text.' });
 			return;
 		}
-		recipes.set({ ...$state.snapshot(working), name, instructions });
+		await app.recipes.set({ ...$state.snapshot(working), name, instructions });
 		editorOpen = false;
 		report.success({ title: isEditing ? 'Recipe updated' : 'Recipe created' });
 	}
@@ -55,8 +58,8 @@
 			title: `Delete ${recipe.name}?`,
 			description: 'This removes the recipe everywhere. It cannot be undone.',
 			confirm: { text: 'Delete', variant: 'destructive' },
-			onConfirm: () => {
-				recipes.delete(recipe.id);
+			onConfirm: async () => {
+				await app.recipes.delete(recipe.id);
 				report.success({ title: 'Recipe deleted' });
 			},
 		});
@@ -89,7 +92,7 @@
 		</div>
 
 		<ul class="flex flex-col divide-y">
-			{#each recipes.pickable as recipe (recipe.id)}
+			{#each app.recipes.pickable as recipe (recipe.id)}
 				{@const builtin = isBuiltinRecipeId(recipe.id)}
 				<li class="flex items-start justify-between gap-4 py-3">
 					<div class="min-w-0 flex-1">

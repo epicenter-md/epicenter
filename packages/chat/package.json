@@ -16,8 +16,10 @@
 		"test": "bun test"
 	},
 	"dependencies": {
+		"@epicenter/agent": "workspace:*",
+		"@epicenter/data": "workspace:*",
 		"@epicenter/field": "workspace:*",
-		"@epicenter/workspace": "workspace:*",
+		"@epicenter/lens": "workspace:*",
 		"wellcrafted": "catalog:"
 	},
 	"devDependencies": {

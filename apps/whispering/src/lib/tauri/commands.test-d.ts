@@ -7,26 +7,27 @@
  */
 
 import type { Result } from 'wellcrafted/result';
+import type { RecordingEndedReason } from '$lib/services/recorder/contract';
 import type {
-	CatalogError,
 	commands,
+	DeviceAcquisition,
 	DictationCapability,
-	DownloadProgress,
+	EndedReason,
+	HostRecording,
 	IpcRecorderError,
-	ModelInfo,
-	RecordingArtifact,
+	LocalTranscriptionReadiness,
+	StoppedRecording,
 	TranscriptionError,
-	TranscriptionSpec,
+	TranscriptionHints,
+	TranscriptionOutcome,
 } from './commands';
 import type {
-	CatalogError as SharedCatalogError,
 	DictationCapability as SharedDictationCapability,
-	DownloadProgress as SharedDownloadProgress,
 	IpcRecorderError as SharedIpcRecorderError,
-	ModelInfo as SharedModelInfo,
-	RecordingArtifact as SharedRecordingArtifact,
+	LocalTranscriptionReadiness as SharedLocalTranscriptionReadiness,
 	TranscriptionError as SharedTranscriptionError,
-	TranscriptionSpec as SharedTranscriptionSpec,
+	TranscriptionHints as SharedTranscriptionHints,
+	TranscriptionOutcome as SharedTranscriptionOutcome,
 } from './commands.types';
 
 // Helper: a no-op assertion that two types are equal.
@@ -41,36 +42,138 @@ type Equal<X, Y> =
 type _SharedContracts = Expect<
 	Equal<
 		[
-			SharedCatalogError,
 			SharedDictationCapability,
-			SharedDownloadProgress,
 			SharedIpcRecorderError,
-			SharedModelInfo,
-			SharedRecordingArtifact,
+			SharedLocalTranscriptionReadiness,
 			SharedTranscriptionError,
-			SharedTranscriptionSpec,
+			SharedTranscriptionHints,
+			SharedTranscriptionOutcome,
 		],
 		[
-			CatalogError,
 			DictationCapability,
-			DownloadProgress,
 			IpcRecorderError,
-			ModelInfo,
-			RecordingArtifact,
+			LocalTranscriptionReadiness,
 			TranscriptionError,
-			TranscriptionSpec,
+			TranscriptionHints,
+			TranscriptionOutcome,
 		]
 	>
 >;
 
-// stop_recording: fallible, returns the artifact struct. The error is the
-// structured `RecorderError` IPC enum, not a bare string: this assertion is the
-// contract proof that the recorder boundary stays typed.
+// The whole recording surface, pinned.
+//
+// Each of these commands takes an injected `tauri::WebviewWindow` in Rust, so
+// the host knows which window is calling without the caller being able to say.
+// Specta renders that parameter as nothing at all, and these argument
+// assertions are the proof: if the injection ever started leaking into the
+// generated signature, the arity here would stop matching.
+//
+// The errors are the structured `RecorderError` IPC enum, not bare strings, so
+// the recorder boundary stays typed.
+
+// start_recording: optional device in, the host-minted blob id out. The caller
+// does not supply an id, because the host owns which recording exists, and it
+// does not have to enumerate devices first, because the host reports the
+// microphone it actually opened.
+type _StartRecordingArgs = Expect<
+	Equal<Parameters<typeof commands.startRecording>, [string | null]>
+>;
+
+type _StartRecording = Expect<
+	Equal<
+		ReturnType<typeof commands.startRecording>,
+		Promise<Result<HostRecording, IpcRecorderError>>
+	>
+>;
+
+// One shape for a started recording and a recovered one. `endedReason` is what
+// makes that possible: a recording whose capture died is the same recording with
+// a reason attached, not a second kind of thing arriving down a second channel.
+type _HostRecordingShape = Expect<
+	Equal<
+		HostRecording,
+		{
+			audioBlobId: string;
+			device: DeviceAcquisition;
+			endedReason: EndedReason | null;
+		}
+	>
+>;
+
+// Device acquisition never omits which device ran: both arms carry one, so a
+// caller can always say what it is recording from.
+type _DeviceAcquisitionShape = Expect<
+	Equal<
+		DeviceAcquisition,
+		| { outcome: 'success'; deviceId: string }
+		| {
+				outcome: 'fallback';
+				reason: 'no-device-selected' | 'preferred-device-unavailable';
+				deviceId: string;
+		  }
+	>
+>;
+
+// stop_recording: names the recording to end, and answers with the committed
+// blob plus the host's exact duration and byte length. Neither is nullable,
+// because a stop that returns at all has already published the file.
+type _StopRecordingArgs = Expect<
+	Equal<Parameters<typeof commands.stopRecording>, [string]>
+>;
+
 type _StopRecording = Expect<
 	Equal<
 		ReturnType<typeof commands.stopRecording>,
-		Promise<Result<RecordingArtifact, IpcRecorderError>>
+		Promise<Result<StoppedRecording, IpcRecorderError>>
 	>
+>;
+
+type _StoppedRecordingShape = Expect<
+	Equal<
+		StoppedRecording,
+		{ audioBlobId: string; durationMs: number; byteLength: number }
+	>
+>;
+
+// cancel_recording: names the recording to burn, and produces nothing. The
+// absence of a result type is the invariant: a cancel can never hand anyone a
+// blob.
+type _CancelRecordingArgs = Expect<
+	Equal<Parameters<typeof commands.cancelRecording>, [string]>
+>;
+
+type _CancelRecording = Expect<
+	Equal<
+		ReturnType<typeof commands.cancelRecording>,
+		Promise<Result<null, IpcRecorderError>>
+	>
+>;
+
+// current_recording: takes nothing, because the only window it could be asked
+// about is the one asking. That scoping lives in Rust with the injected window,
+// which is why there is no label parameter here to get wrong.
+//
+// It answers in the same shape `start` does, which is what lets a recording
+// recovered after a reload be as capable as one just started rather than a
+// degraded stand-in, including one whose capture already ended.
+type _CurrentRecordingArgs = Expect<
+	Equal<Parameters<typeof commands.currentRecording>, []>
+>;
+
+type _CurrentRecording = Expect<
+	Equal<
+		ReturnType<typeof commands.currentRecording>,
+		Promise<Result<HostRecording | null, IpcRecorderError>>
+	>
+>;
+
+// The recorder contract is platform-neutral, so it cannot import the native
+// bindings; its `RecordingEndedReason` is a hand-written mirror of the host's
+// `EndedReason`. This is what keeps the two from drifting apart: adding a
+// reason in Rust without adding it to the contract would otherwise reach a
+// `Record` lookup that returns undefined at runtime.
+type _EndedReasonMirrorsTheHost = Expect<
+	Equal<RecordingEndedReason, EndedReason>
 >;
 
 // pause_playback / resume_playback: infallible across IPC. A platform failure
@@ -84,31 +187,49 @@ type _ResumePlayback = Expect<
 	Equal<ReturnType<typeof commands.resumePlayback>, Promise<void>>
 >;
 
-// transcribe_recording: fallible, takes recordingId plus the per-call spec.
+// transcribe_recording: fallible, takes the blob id plus advisory hints, and
+// answers with the text alongside the exact model that produced it. The absence
+// of a model argument here is the ADR-0180 invariant expressed at the type
+// level: an application cannot name a model, so it cannot change one.
 type _TranscribeRecording = Expect<
 	Equal<
 		ReturnType<typeof commands.transcribeRecording>,
-		Promise<Result<string, TranscriptionError>>
+		Promise<Result<TranscriptionOutcome, TranscriptionError>>
 	>
 >;
 
 type _TranscribeRecordingArgs = Expect<
 	Equal<
 		Parameters<typeof commands.transcribeRecording>,
-		[string, TranscriptionSpec]
+		[string, TranscriptionHints]
 	>
 >;
 
-// set_unload_policy: infallible (Rust `()`). Stays plain Promise; no Result
-// wrap.
-type _SetUnloadPolicy = Expect<
-	Equal<ReturnType<typeof commands.setUnloadPolicy>, Promise<void>>
+// prewarm_model: takes nothing. It warms the active model, the same one
+// transcribe will run, because there is only one.
+type _PrewarmModelArgs = Expect<
+	Equal<Parameters<typeof commands.prewarmModel>, []>
 >;
 
-type _SetUnloadPolicyArg = Expect<
+// get_local_transcription_readiness: infallible and advisory. This is the whole
+// application-facing read of the local route, and the type is the boundary:
+// there is no model id, no name, and no inventory anywhere in it (ADR-0180).
+type _GetLocalTranscriptionReadiness = Expect<
 	Equal<
-		Parameters<typeof commands.setUnloadPolicy>,
-		['never' | 'immediately' | 'after_5_minutes' | 'after_30_minutes']
+		ReturnType<typeof commands.getLocalTranscriptionReadiness>,
+		Promise<LocalTranscriptionReadiness>
+	>
+>;
+
+type _ReadinessShape = Expect<
+	Equal<
+		LocalTranscriptionReadiness,
+		| { status: 'ready'; supportsPrompt: boolean; supportsLanguage: boolean }
+		| {
+				status: 'unavailable';
+				reason: 'no-active-model' | 'active-model-unavailable';
+				message: string;
+		  }
 	>
 >;
 
@@ -133,25 +254,12 @@ type _EncodeRecordingForUpload = Expect<
 	>
 >;
 
-// read_recording_artifact: hand-rolled, raw bytes success path. The only
-// argument is the app-owned recording id; no filesystem path crosses IPC.
-type _ReadRecordingArtifact = Expect<
+// TranscriptionHints is the per-call advisory input: language and prompt, and
+// deliberately no model.
+type _TranscriptionHintsShape = Expect<
 	Equal<
-		ReturnType<typeof commands.readRecordingArtifact>,
-		Promise<Result<ArrayBuffer, string>>
-	>
->;
-
-type _ReadRecordingArtifactArgs = Expect<
-	Equal<Parameters<typeof commands.readRecordingArtifact>, [string]>
->;
-
-// TranscriptionSpec is the per-call local transcription config.
-type _TranscriptionSpecShape = Expect<
-	Equal<
-		TranscriptionSpec,
+		TranscriptionHints,
 		{
-			modelId: string;
 			language?: string | null;
 			initialPrompt?: string | null;
 		}

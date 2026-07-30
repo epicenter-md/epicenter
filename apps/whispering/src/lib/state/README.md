@@ -1,64 +1,79 @@
 # State
 
-Singleton reactive state that stays in sync with the application. Unlike the rpc layer which uses stale-while-revalidate caching, state modules maintain live state that updates immediately and persists across the application lifecycle.
+Reactive state that stays in sync with the app. Unlike the query layer, which uses stale-while-revalidate caching, state modules maintain live state that updates immediately and persists across the app lifecycle.
 
-## When to Use State vs RPC Layer
+Two shapes live here. Workspace-backed state (`settings`, `recordings`, `recipes`) is owned and hydrated by the UI-free app; these modules are thin Svelte reactivity adapters over that ready product API. Device/hardware state (`device-config`, recorders, lifecycle) remains module singletons.
 
-| Aspect | `$lib/state/` | `$lib/rpc/` |
+## When to Use State vs Query Layer
+
+| Aspect | `$lib/state/` | `$lib/queries/` |
 |--------|----------------|---------------|
-| **Pattern** | Singleton reactive state | Stale-while-revalidate (TanStack Query) |
-| **State Location** | Module-level `$state` runes | TanStack Query cache |
+| **Pattern** | App-owned domain state plus Svelte adapters | Stale-while-revalidate (TanStack Query) |
+| **State Location** | Ready `WhisperingApp` | TanStack Query cache |
 | **Updates** | Immediate, live | Cached with background refresh |
 | **Use Case** | Hardware state, user preferences, live status, workspace table data | Data fetching, mutations, external API calls |
-| **Lifecycle** | Application lifetime | Managed by TanStack Query |
+| **Lifecycle** | App lifetime | Managed by TanStack Query |
 
 ## Current State Modules
 
 ### `settings.svelte.ts`
 
-Synced workspace settings backed by Yjs KV. Settings here roam across devices via CRDT sync. Uses a SvelteMap for per-key reactivity.
+Synced workspace settings backed by the canonical workspace KV lens (ADR-0130). Settings roam across devices through row sync. The app core hydrates every key before the app resolves; `createSettingsView` wraps it with `createSubscriber` so reads are reactive. Product defaults remain release-local app policy.
 
 ```typescript
-import { settings } from '$lib/state/settings.svelte';
+import { getWhisperingApp } from '$lib/whispering/context';
+
+const app = getWhisperingApp(); // component initialisation
 
 // Read settings reactively (re-renders on change)
-const trigger = settings.get('recording.trigger');
+const trigger = app.settings.get('settings.recording.trigger');
 
-// Update settings (writes to Yjs KV → syncs to other devices)
-settings.set('recording.trigger', 'vad');
+// Update settings (writes to the document and syncs to other devices)
+app.settings.set('settings.recording.trigger', 'vad');
 ```
 
 ### `recordings.svelte.ts`
 
-Recording metadata backed by Yjs workspace table. SvelteMap provides per-key reactivity: updating one recording doesn't re-render the entire list. Audio blobs are not stored here because they are too large for CRDTs; use `$lib/rpc/audio` for playback URLs and `services.blobs.audio` for raw blob access.
+Recording metadata backed by structural workspace row ids. The app namespace maintains the cache, owns row/blob consistency (`storeAudio`, `create` cleanup, `delete`, the audio workflows, and the `uploadedAt` marker), and refreshes after local writes or installed remote record changes; this module only makes its reads reactive. Use `$lib/queries/audio` for availability query identity and `services.blobSources` for playback.
 
 ```typescript
 import { InstantString } from '@epicenter/field';
 
-import { recordings } from '$lib/state/recordings.svelte';
+import { getWhisperingApp } from '$lib/whispering/context';
+
+const { recordings } = getWhisperingApp(); // component initialisation
 
 // Read recordings reactively
 const recording = recordings.get(id);
 const sorted = recordings.sorted; // newest first
 
-// Write (Yjs observer auto-updates SvelteMap)
-recordings.set(recording);
-recordings.update(id, {
+// Writes are async and refresh the app-level cache after commit.
+// `uploadedAt` is blob-state metadata owned by the audio workflows; creation
+// starts it at null and public updates cannot touch it.
+const stored = await recordings.storeAudio(blob);
+const created = await recordings.create({
+	audioBlobId: stored.data.audioBlobId,
+	// remaining recording fields
+});
+await recordings.update(id, {
 	transcript,
 	transcription: { status: 'completed', completedAt: InstantString.now() },
 });
-recordings.delete(id);
+// Deletes the online copy (when one exists), the device copy, then the row.
+await recordings.delete(id);
 ```
 
 ### `recipes.svelte.ts`
 
-The on-demand Recipe library backed by a Yjs workspace table. Each recipe is a single self-contained row (`name`, `instructions`, optional `icon`); the built-in recipes are merged in ahead of the user's saved rows.
+The on-demand Recipe library backed by canonical records. Each recipe is a single self-contained row (`name`, `instructions`, optional `icon`); built-in recipes are merged ahead of the user's saved rows.
 
 ```typescript
-import { recipes } from '$lib/state/recipes.svelte';
+import { getWhisperingApp } from '$lib/whispering/context';
+
+const { recipes } = getWhisperingApp(); // component initialisation
 
 const list = recipes.pickable; // built-ins followed by saved recipes
-recipes.set({ id, name, instructions, icon: null });
+await recipes.set({ id, name, instructions, icon: null });
 ```
 
 ### `device-config.svelte.ts`
@@ -100,7 +115,7 @@ await vadRecorder.stopActiveListening();
 
 ## Why VAD Lives Here
 
-The VAD recorder doesn't fit the rpc layer pattern because:
+The VAD recorder doesn't fit the query layer pattern because:
 
 1. **Live state**: VAD state (`IDLE` → `LISTENING` → `SPEECH_DETECTED`) must update immediately as hardware events occur
 2. **Singleton nature**: Only one VAD instance can exist at a time
@@ -113,10 +128,10 @@ Create a new state module when you need:
 
 1. **Live reactive state** that must update immediately (not stale-while-revalidate)
 2. **Singleton behavior** where only one instance should exist
-3. **Application-lifetime persistence** (not request-scoped)
+3. **App-lifetime persistence** (not request-scoped)
 4. **Hardware or system state** that can't be "refreshed" like data
 
-Use the rpc layer (`$lib/rpc/`) instead when you need:
+Use the query layer (`$lib/queries/`) instead when you need:
 - Data fetching with caching
 - Mutations with optimistic updates
 - Background refresh and stale-while-revalidate
@@ -130,6 +145,6 @@ export const recorderKeys = defineKeys({
 });
 ```
 
-Use the same module shape as `$lib/rpc/`: exported `*Keys` for shared cache identity, local `defineErrors` namespaces for state-owned failures, named input object types for structured public methods, and `ReturnType<typeof createThing>` when exporting the exact shape returned by a factory.
+Use the same module shape as `$lib/queries/`: exported `*Keys` for shared cache identity, local `defineErrors` namespaces for state-owned failures, named input object types for structured public methods, and `ReturnType<typeof createThing>` when exporting the exact shape returned by a factory.
 
-See `$lib/rpc/README.md` for the rpc layer documentation.
+See `$lib/queries/README.md` for the query layer documentation.

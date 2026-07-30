@@ -197,6 +197,18 @@ export type YKeyValueLwwEntry<T> = { key: string; val: T; ts: number };
  */
 const DEDUP_ORIGIN = Symbol('dedup');
 
+/**
+ * Ceiling on how far ahead of the local wall clock an adopted timestamp may
+ * drag the monotonic clock.
+ *
+ * Adoption exists so nodes with slow clocks catch up after syncing. Without a
+ * bound, one poisoned far-future entry (a broken clock, a corrupted byte)
+ * would drag every future local write timestamp into the far future forever.
+ * Stored entries and winner selection are untouched: replicas still converge
+ * on the raw timestamps; only what the local clock adopts is clamped.
+ */
+export const MAX_ADOPTED_CLOCK_SKEW_MS = 24 * 60 * 60 * 1000;
+
 export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	/** The underlying Y.Array that stores `{key, val, ts}` entries. */
 	readonly yarray: Y.Array<YKeyValueLwwEntry<T>>;
@@ -346,7 +358,7 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 			// This ensures our next local write will have a higher timestamp than
 			// any entry we've seen, preventing us from writing "old" timestamps
 			// that would lose conflicts to nodes with faster clocks
-			if (entry.ts > this.lastTimestamp) this.lastTimestamp = entry.ts;
+			this.adoptTimestamp(entry.ts);
 		}
 
 		// Delete losers
@@ -375,8 +387,7 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 					addedEntries.push(addedEntry);
 
 					// Track max timestamp from synced entries (self-healing behavior)
-					if (addedEntry.ts > this.lastTimestamp)
-						this.lastTimestamp = addedEntry.ts;
+					this.adoptTimestamp(addedEntry.ts);
 				}
 			}
 
@@ -577,7 +588,29 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 		const now = Date.now();
 		this.lastTimestamp =
 			now > this.lastTimestamp ? now : this.lastTimestamp + 1;
+		if (!Number.isSafeInteger(this.lastTimestamp) || this.lastTimestamp <= 0) {
+			throw new Error(
+				`YKeyValueLww produced an invalid local timestamp: ${this.lastTimestamp}`,
+			);
+		}
 		return this.lastTimestamp;
+	}
+
+	/**
+	 * Adopt a stored or synced timestamp into the monotonic clock.
+	 *
+	 * Non-finite and negative timestamps are ignored, and adoption is clamped
+	 * at `Date.now() + MAX_ADOPTED_CLOCK_SKEW_MS` so a poisoned far-future
+	 * entry cannot drag every future local write timestamp into the far
+	 * future. This is local-only: the entry itself is stored and compared
+	 * unchanged, so winner selection and cross-replica convergence are
+	 * untouched.
+	 */
+	private adoptTimestamp(ts: number): void {
+		if (!Number.isFinite(ts) || ts < 0) return;
+		const ceiling = Date.now() + MAX_ADOPTED_CLOCK_SKEW_MS;
+		const adopted = Math.floor(Math.min(ts, ceiling));
+		if (adopted > this.lastTimestamp) this.lastTimestamp = adopted;
 	}
 
 	/**

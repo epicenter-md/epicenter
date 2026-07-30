@@ -6,9 +6,12 @@
 	import ArrowUpDownIcon from '@lucide/svelte/icons/arrow-up-down';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import PlusIcon from '@lucide/svelte/icons/plus';
-	import { honeycrisp } from '$lib/honeycrisp';
+	import { getHoneycrispApp } from '$lib/context.js';
+	import { runHoneycrispMutation } from '$lib/mutation.js';
 	import { getDateLabel } from '$lib/utils/date';
 	import NoteCard from '../components/NoteCard.svelte';
+
+	const honeycrisp = getHoneycrispApp();
 
 	const sortOptions = [
 		{ value: 'dateEdited' as const, label: 'Date Edited' },
@@ -59,6 +62,13 @@
 	const flatNoteIds = $derived(
 		groupedNotes.flatMap((g) => g.entries.map((n) => n.id)),
 	);
+
+	async function createAndSelectNote(): Promise<void> {
+		const { id } = await honeycrisp.state.notes.create(
+			honeycrisp.state.view.selectedFolderId,
+		);
+		honeycrisp.state.view.selectNote(id);
+	}
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -123,12 +133,11 @@
 					variant="ghost"
 					size="icon"
 					class="size-7"
-					onclick={() => {
-						const { id } = honeycrisp.state.notes.create(
-							honeycrisp.state.view.selectedFolderId,
-						);
-						honeycrisp.state.view.selectNote(id);
-					}}
+					onclick={() =>
+						runHoneycrispMutation(
+							createAndSelectNote(),
+							'Could not create note',
+						)}
 				>
 					<PlusIcon class="size-4" />
 				</Button>

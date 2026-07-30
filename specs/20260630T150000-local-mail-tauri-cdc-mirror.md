@@ -11,7 +11,8 @@
 ## Durable decisions (do not re-derive, read the ADRs)
 
 - **ADR-0081**: Gmail's OAuth policy permits up to 100 concurrent refresh tokens per account per Client ID, so each device may hold its own independent grant and mirror. This is what makes Local Mail possible at all without a box/relay, unlike Local Books.
-- **ADR-0082**: Sync is plain interval polling of `history.list`, never push/Pub/Sub/webhook, in either mode. Hosted vs self-host collapses to one override value, `GmailApp = { clientId?: string }`. Read the ADR before touching sync mechanics or the mode-selection UI; both are already decided.
+- **ADR-0082**: Sync is plain interval polling of `history.list`, never push/Pub/Sub/webhook. Read the ADR before touching sync mechanics; it is already decided.
+- **ADR-0188**: The Google application identity is a property of the shipped distribution, not of the selected Epicenter instance, and no Epicenter server touches the Gmail path. This replaced ADR-0082's original hosted-vs-self-host `GmailApp = { clientId?: string }` framing, which was the wrong axis. There is no mode-selection UI to build.
 
 ## The `local-books` mapping (read `apps/local-books` before writing any of this)
 
@@ -30,22 +31,30 @@ Local Mail's mirror is not a new design, it is `local-books`'s proven shape appl
 
 Do not invent a different mirror shape. If something here doesn't fit Gmail's actual API surface, that's a reason to adapt this table, not to redesign from scratch.
 
-## Mode selection
+## Application identity
+
+There are no hosted and self-host modes here. The Google application identity is
+machine-wide, resolved once at connect and refresh time:
 
 ```
-GmailApp = { clientId?: string }
-  undefined → Epicenter's baked-in, CASA-verified Client ID (hosted mode)
-  present   → operator's own registered Client ID (self-host mode)
+resolve GMAIL_CLIENT_ID / GMAIL_CLIENT_SECRET
+  1. process environment          — the override, CI, and test seam
+  2. <data-dir>/provider.json     — the 0600 machine-wide durable default,
+                                    cached after the first good grant and
+                                    shared by every account and worktree
+  neither → fail loudly, naming both variable names
 
-connectGmail(app: GmailApp)   — the one choke point, both modes
+connect  — the one choke point
   → opens Google's PKCE consent screen (Desktop app client type; Google does
-    issue these a client_secret, included in the exchange; see resolved
-    question 5)
-  → returns a refresh token, same shape either way
+    issue these a client_secret, and the current code includes it in the
+    exchange; ADR-0188 records that dropping it is documented-optional but
+    empirically unproven for this client type)
+  → stores the refresh token alongside the client id that minted it, so a later
+    identity change fails loudly and asks for a reconnect
   → everything downstream (mail.db, poll loop, write-through) is identical
 ```
 
-Self-host operators must register their own Google Cloud project and OAuth client; reusing Epicenter's Client ID is refused (ADR-0082's "considered alternatives") because it would make self-host not actually sovereign from Epicenter's infrastructure.
+Superseded by ADR-0188: self-hosting an Epicenter instance does not oblige anyone to register a Google Cloud project. Sovereignty from Epicenter's infrastructure is already total, because no Epicenter server is in the Gmail path. What decides the Google application identity is which distribution shipped the binary: the official signed build carries Epicenter's own verified client, a fork carries its own, and a machine-wide BYO override stays available to anyone who wants their own identity and quota.
 
 ## Data model sketch
 
@@ -64,7 +73,7 @@ The shipped schema diverged from this sketch in one place: the `threads` table i
 
 ## Open questions (owner decides, do not guess)
 
-1. **Cross-device token sharing.** Does the existing secret vault (ADR-0074) extend to self-host instances? If yes, a second device picks up the encrypted refresh token via normal sync and skips re-consenting Gmail (mirrors how a hosted user gets it for free). If the vault is hosted-only, self-host multi-device needs its own answer, not yet designed. Verify against the vault's actual shipped scope before assuming either way.
+1. ~~**Cross-device token sharing.** Does the existing secret vault (ADR-0074) extend to self-host instances?~~ **Closed by ADR-0188.** Gmail refresh tokens never leave the device and never travel through any Epicenter server, vault included. A second device re-consents, which costs one sign-in and is free under Google's concurrency ceiling (ADR-0081). Syncing a Gmail refresh token would put mail credentials on a server and pull Epicenter into the restricted-scope security assessment it otherwise sits outside.
 2. **Poll interval.** Local-books' CLI leaves `--interval` to the operator. Local Mail is a live app; what's the default? 30-60s is well inside Gmail's quota (`history.list` ≈ 2 units against 6,000/min/user), but the interval should probably shorten while the app is foregrounded and lengthen or pause when backgrounded/idle. Not yet decided.
 3. **Historyid expiry window — PARTIALLY RESOLVED 2026-06-30.** Record shapes confirmed live (see First slice / mapping table above). The actual expiry duration is still unmeasured: Google's docs say retention is "at least a week, often longer," not a fixed number the way QuickBooks' 30-day window is. A saved baseline `historyId` (554264, from `braden@epicenter.so`, saved 2026-06-30T18:11:47-07:00) is sitting ready for a follow-up multi-day check; do not port `decideMode`'s staleness threshold verbatim until that lands, and don't confuse this with the separate 7-day test-user refresh-token expiry (Appendix) which will hit first if this client stays in Testing mode.
 4. ~~Backfill chunking.~~ **RESOLVED 2026-06-30, do not reopen without new evidence.** Confirmed empirically: no artificial subrequest cap was hit running the probe script as a long-lived Bun process (same runtime model Local Mail's Tauri process has, unlike the old server-proxy `apps/email` spec which ran inside Cloudflare Workers' subrequest-capped model). Chunking is not a hidden constraint here.
@@ -185,6 +194,6 @@ Reading mail bodies requires a Google **restricted** scope (`gmail.readonly`, `g
 
 Source: https://developers.google.com/gmail/api/auth/scopes and https://developers.google.com/identity/protocols/oauth2/production-readiness/restricted-scope-verification
 
-**Until an OAuth client is verified, it is capped at ~100 test users, and refresh tokens issued to test users expire after 7 days** (the 7-day expiry does not apply to identity-only scopes). This matters directly for Phase 0/1 empirical testing against the "Epicenter Mail" project's test-user client: a saved refresh token from that client will stop working after 7 days regardless of anything Local Mail does, which is a separate failure mode from `historyId` expiry and should not be confused with it. CASA cost is not authoritatively published; low thousands USD/year is a defensible planning floor. Get a real quote before committing hosted mode to a restricted scope.
+**Until an OAuth client is verified, it is capped at ~100 test users, and refresh tokens issued to test users expire after 7 days** (the 7-day expiry does not apply to identity-only scopes). This matters directly for Phase 0/1 empirical testing against the "Epicenter Mail" project's test-user client: a saved refresh token from that client will stop working after 7 days regardless of anything Local Mail does, which is a separate failure mode from `historyId` expiry and should not be confused with it. What the official distribution's client owes Google needs care, because there is no "hosted mode" to gate it on (ADR-0188): the identity belongs to the shipped build. Restricted-scope verification is owed for any publicly distributed client requesting `gmail.modify`. The recurring third-party security assessment is a separate obligation, and Google's own trigger for it is an app that can access restricted data *from or through a third-party server*, re-verified at least every 12 months after the assessor's Letter of Assessment (checked 2026-07-29). Local Mail's device-only boundary is designed to sit outside that trigger, so do not assume the annual assessment applies: confirm scope with Google or an assessor before budgeting it. CASA cost is not authoritatively published; low thousands USD/year is the planning floor *if* an assessment turns out to be owed.
 
 Gmail REST is small, stable, and CORS-capable; the Node SDKs (`googleapis`, `google-auth-library`) are not Workers-safe and unnecessary either way — OAuth code exchange, refresh, and revoke are all plain form-encoded HTTPS POSTs, and `format=full` message fetches return MIME already parsed into JSON. A hand-rolled typed `fetch` wrapper covers the whole surface with zero SDK dependency, which is why the Phase 0 throwaway probe script has none.

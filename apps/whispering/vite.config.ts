@@ -35,8 +35,18 @@ export default defineConfig(
 		// subpath native, but still prebundle vad-web so Vite converts its
 		// CommonJS entry to ESM for browser dev mode.
 		optimizeDeps: {
-			exclude: ['onnxruntime-web', 'onnxruntime-web/wasm'],
+			// @sqlite.org/sqlite-wasm resolves its .wasm relative to its own
+			// module URL inside the records Worker; pre-bundling breaks that.
+			exclude: [
+				'onnxruntime-web',
+				'onnxruntime-web/wasm',
+				'@sqlite.org/sqlite-wasm',
+			],
 		},
+		// The records Worker (module type) transitively includes sqlite-wasm;
+		// its chunk needs ES output and current syntax, same as honeycrisp.
+		worker: { format: 'es' },
+		build: { target: 'esnext' },
 		resolve: {
 			// Build-time platform DI. Each `#platform/*` subpath (package.json
 			// "imports") has a browser impl and a Tauri impl; the Tauri build

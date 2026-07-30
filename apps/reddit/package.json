@@ -1,23 +1,19 @@
 {
 	"name": "@epicenter/reddit",
-	"description": "Reddit GDPR data export importer for Epicenter workspaces",
+	"description": "Reddit GDPR data export parser",
 	"private": true,
 	"version": "0.0.2",
 	"type": "module",
 	"exports": {
-		"./workspace": "./src/lib/workspace/ingest/index.ts"
+		"./ingest": "./src/lib/workspace/ingest/index.ts"
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@epicenter/field": "workspace:*",
-		"@epicenter/workspace": "workspace:*",
 		"@sindresorhus/slugify": "catalog:",
 		"arktype": "catalog:",
-		"fflate": "catalog:",
-		"typebox": "catalog:",
-		"yjs": "catalog:"
+		"fflate": "catalog:"
 	},
 	"devDependencies": {
 		"@types/bun": "catalog:",

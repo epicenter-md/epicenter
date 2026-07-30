@@ -1,5 +1,10 @@
 # Workspace Document API
 
+> Transition note: this page describes the current production Yjs-record path.
+> The greenfield model is `@epicenter/data`, where SQLite owns rows and every
+> ordinary row owns one lazy document with application-owned roots (ADR-0130,
+> ADR-0135); tables declare fields only.
+
 A typed interface over Y.js for apps that need to evolve their data schema over time.
 
 ## The Idea
@@ -132,6 +137,5 @@ Tests live in `*.test.ts` next to the implementation. Use `createWorkspace({ id:
 
 - `apps/whispering/src/lib/whispering/whispering.tauri.ts`: IndexedDB + BroadcastChannel + recording markdown export
 - `apps/honeycrisp/src/lib/workspace/browser.ts`: IndexedDB + sync + per-row child docs
-- `apps/tab-manager/mount.ts`: daemon materializers for root-table projections
 - `packages/workspace/README.md`: quick start
 - `packages/workspace/SYNC_ARCHITECTURE.md`: multi-node sync design

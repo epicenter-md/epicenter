@@ -1,114 +1,52 @@
 # @epicenter/skills
 
-`@epicenter/skills` defines the shared skills data model: table schemas, row
-types, the pure skills workspace factory, per-row document guid helpers, and
-read action factories. It does not own browser storage. Browser apps compose
-IndexedDB, BroadcastChannel, and `createDisposableCache` at the app boundary.
+`@epicenter/skills` declares inert Skills data definitions and ordinary
+services over an already opened handle. The package does not open storage,
+construct browser or Node runtimes, expose Yjs GUIDs, or register actions.
 
-## Root Export
-
-```typescript
+```ts
 import {
-	SKILLS_WORKSPACE_ID,
-	createSkillsActions,
-	openSkills,
-	referenceContentDocGuid,
-	referencesTable,
-	skillInstructionsDocGuid,
-	skillsTable,
+	listSkills,
+	skillsLens,
 } from '@epicenter/skills';
+import { openBunEpicenter } from '@epicenter/data/bun';
+
+await using epicenter = await openBunEpicenter({
+	path: '/app/data/epicenter.sqlite3',
+});
+const skills = epicenter.bind(skillsLens);
+const catalog = await listSkills(skills);
 ```
 
-The root export is intentionally runtime-neutral. It is safe to use from
-browser apps, Node scripts, and package-level tests because it does not import
-IndexedDB or file-system APIs.
+## Data model
 
-`openSkills()` builds the shared Y.Doc, tables, KV, and batch helper.
-It does not create instruction or reference document caches, because those
-caches own runtime persistence and browser cleanup.
+Skill and reference metadata are canonical JSON rows interpreted by the
+release-local table lenses. The runtime allocates structural row ids. A
+SKILL.md `metadata.id` is stored separately as `sourceId`, so filesystem
+round-trips can match records without forging canonical identity.
 
-## Browser Composition
+Each skill and reference row owns one document. The skill document stores its
+instructions; the reference document stores its Markdown body:
 
-Browser callers layer browser lifecycle wiring on top of `openSkills()`:
-
-```typescript
-const doc = openSkills();
-const idb = attachIndexedDb(doc.ydoc);
-attachBroadcastChannel(doc.ydoc);
-
-const instructionsDocs = createDisposableCache(
-	(skillId: string) => {
-		const ydoc = new Y.Doc({
-			guid: skillInstructionsDocGuid({
-				workspaceId: doc.ydoc.guid,
-				skillId,
-			}),
-			gc: true,
-		});
-		onLocalUpdate(ydoc, () =>
-			doc.tables.skills.update(skillId, { updatedAt: Date.now() }),
-		);
-		const idb = attachIndexedDb(ydoc);
-		return {
-			ydoc,
-			instructions: attachPlainText(ydoc),
-			idb,
-			[Symbol.dispose]() {
-				ydoc.destroy();
-			},
-		};
-	},
-	{ gcTime: 5_000 },
-);
-
-async function clearInstructionsLocalData() {
-	await Promise.all(
-		doc.tables.skills.scan().rows.map((skill) =>
-			clearDocument(
-				skillInstructionsDocGuid({
-					workspaceId: doc.ydoc.guid,
-					skillId: skill.id,
-				}),
-			),
-		),
-	);
-}
+```ts
+await using instructions = await skills.tables.skills.openDocument(skill.id);
+const content = instructions.get('content');
+instructions.transact(() => content.insert(0, '# Instructions'));
+await instructions.whenDurable();
 ```
 
-That inline cache source is deliberate. `openSkills()` owns the root document,
-the app owns child document construction, and `skillInstructionsDocGuid()` owns
-the stable storage address.
+The runtime derives persistence and synchronization from the row address.
+Callers pass the structural row id they already own.
 
-## Node Composition
+Catalog reads return nonconforming diagnostics with the preserved canonical
+rows; they never heal user data during reads. A developer repairs a row with
+the same typed `update` used for ordinary writes.
 
-Use `@epicenter/skills/node` when disk import/export actions are needed:
+## Filesystem portability
 
-```typescript
-import { openSkillsNode } from '@epicenter/skills/node';
-
-using workspace = openSkillsNode({ workspaceId: 'epicenter-skills' });
-await workspace.actions.import_from_disk({ dir: '.agents/skills' });
-await workspace.actions.export_to_disk({ dir: '.agents/skills' });
-```
-
-Node opens instruction and reference docs per operation. The browser cache
-exists for shared live identity, refcounting, and IndexedDB reset; the Node
-import/export path does not need those lifecycle rules.
-
-## Data Model
-
-```text
-skills row
-  metadata columns
-  instructions document
-
-references row
-  skillId
-  content document
-```
-
-The catalog stays small and queryable. Markdown bodies live in per-row Y.Docs
-so editors can load and collaborate on them on demand.
+The `@epicenter/skills/node` subpath exports `importSkillsFromDisk` and
+`exportSkillsToDisk`. Both receive an opened Skills handle. They do not create a
+Node-specific Data runtime or own runtime lifecycle.
 
 ## License
 

@@ -13,6 +13,16 @@
  */
 
 import type { AuthFetch } from '@epicenter/auth';
+import {
+	type BlobAlreadyExists,
+	type BlobId,
+	type BlobNotFound,
+	type BlobRemote,
+	BlobRemoteError,
+	type BlobStat,
+	type BlobStore,
+	type BlobStoreFailed,
+} from '@epicenter/blobs';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import {
 	defineErrors,
@@ -58,35 +68,25 @@ export type EpicenterClientOptions = {
 };
 
 // ---------------------------------------------------------------------------
-// Blob types (content-addressed store; mirror the server response shapes)
+// Blob types (opaque-id remote store; mirror the server response shapes)
 // ---------------------------------------------------------------------------
-
-/** One row of the current principal's blob listing (`GET /blobs`). */
-export type BlobRow = { sha256: string; size: number; uploaded: string };
 
 /** Result of the client's `blobs.add`. */
 export type AddBlobResult = {
-	/** Lowercase-hex content address of the stored bytes. */
-	sha256: string;
-	/** Content-addressed read URL (`GET /blobs/:sha256`, a 302 to a presigned GET). */
+	blobId: BlobId;
+	/** Authenticated read URL (`GET /blobs/:blobId`, a 302 to a presigned GET). */
 	url: string;
-	/** True when the object already existed, so no bytes were uploaded. */
-	duplicate: boolean;
 };
 
 /**
- * Upload-ticket response from `POST /blobs`. The server either reports the
- * object already exists (`duplicate`) or returns a presigned PUT plus the
- * headers the client must echo verbatim (`upload`). Internal to `blobs.add`.
+ * Upload-ticket response from `POST /blobs`: a create-only presigned PUT plus
+ * the headers the client must echo verbatim. Internal to `blobs.add`.
  */
-type BlobTicket =
-	| { status: 'duplicate'; url: string }
-	| {
-			status: 'upload';
-			url: string;
-			uploadUrl: string;
-			requiredHeaders: Record<string, string>;
-	  };
+type BlobTicket = {
+	url: string;
+	uploadUrl: string;
+	requiredHeaders: Record<string, string>;
+};
 
 /** Failure modes of the Result-returning client surfaces (`blobs.*`). */
 export const ClientError = defineErrors({
@@ -119,19 +119,6 @@ export const ClientError = defineErrors({
 	}),
 });
 export type ClientError = InferErrors<typeof ClientError>;
-
-/**
- * Hex sha256 of a byte buffer via the platform WebCrypto (`crypto.subtle`),
- * present on browsers, Node 18+, and Workers. This hex digest IS the blob's
- * content address; the server derives the base64 `x-amz-checksum-sha256` the
- * store enforces from the same digest.
- */
-async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
-	const digest = await crypto.subtle.digest('SHA-256', bytes);
-	return Array.from(new Uint8Array(digest), (b) =>
-		b.toString(16).padStart(2, '0'),
-	).join('');
-}
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -169,63 +156,32 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 
 	const blobs = {
 		/**
-		 * Archive bytes in the content-addressed store: hash the bytes, mint an
-		 * upload ticket, and (unless the object already exists) PUT the bytes
-		 * straight to the store. Accepts a `File`/`Blob`, or an `http(s)` URL
-		 * string to fetch first.
+		 * Store bytes under a caller-minted BlobId: mint an upload ticket and PUT
+		 * the bytes straight to the store. This portable browser-facing boundary
+		 * accepts a Blob/File, never a request stream; Bun shells resolve file and
+		 * URL sources before calling it.
 		 *
 		 * The presigned PUT goes direct to the store with a plain `fetch`, not the
 		 * authed one: the URL is self-authenticating and an extra bearer is not in
-		 * the signed header set. The signed `x-amz-checksum-sha256` is echoed
-		 * verbatim, so the object can only land under a key whose hash its bytes
-		 * actually match (mismatch -> 400 BadDigest).
+		 * the signed header set. The signed `If-None-Match: *` makes the first
+		 * upload for an id immutable; a repeated upload's 412 is idempotent success.
 		 */
 		async add(
-			fileOrUrl: File | Blob | string,
+			blobId: BlobId,
+			blob: Blob,
 			params: { contentType?: string } = {},
 		): Promise<Result<AddBlobResult, ClientError>> {
-			let bytes: ArrayBuffer;
-			let contentType: string;
-			if (typeof fileOrUrl === 'string') {
-				const { data: source, error } = await tryAsync({
-					try: () => fetch(fileOrUrl),
-					catch: (cause) =>
-						ClientError.TransportFailed({
-							operation: `GET ${fileOrUrl}`,
-							cause,
-						}),
-				});
-				if (error !== null) return Err(error);
-				if (!source.ok) {
-					return ClientError.RequestFailed({
-						operation: `GET ${fileOrUrl}`,
-						status: source.status,
-					});
-				}
-				bytes = await source.arrayBuffer();
-				// `||`, matching the Blob branch below: an empty-string content type
-				// (an override of '' or a bare header) falls through to the default
-				// instead of being pinned into the stored object verbatim.
-				contentType =
-					params.contentType ||
-					source.headers.get('content-type') ||
-					'application/octet-stream';
-			} else {
-				bytes = await fileOrUrl.arrayBuffer();
-				contentType =
-					params.contentType || fileOrUrl.type || 'application/octet-stream';
-			}
-
-			const sha256 = await sha256Hex(bytes);
+			const contentType =
+				params.contentType || blob.type || 'application/octet-stream';
 
 			const { data: ticketRes, error: ticketError } = await request(
-				API_ROUTES.blobs.list.url(base),
+				API_ROUTES.blobs.collection.url(base),
 				{
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },
 					body: JSON.stringify({
-						sha256,
-						sizeBytes: bytes.byteLength,
+						blobId,
+						sizeBytes: blob.size,
 						contentType,
 					}),
 				},
@@ -234,22 +190,18 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 			if (ticketError !== null) return Err(ticketError);
 			const ticket = (await ticketRes.json()) as BlobTicket;
 
-			if (ticket.status === 'duplicate') {
-				return Ok({ sha256, url: ticket.url, duplicate: true });
-			}
-
 			const { data: put, error: putError } = await tryAsync({
 				try: () =>
 					fetch(ticket.uploadUrl, {
 						method: 'PUT',
 						headers: ticket.requiredHeaders,
-						body: bytes,
+						body: blob,
 					}),
 				catch: (cause) =>
 					ClientError.TransportFailed({ operation: 'store PUT', cause }),
 			});
 			if (putError !== null) return Err(putError);
-			if (!put.ok) {
+			if (!put.ok && put.status !== 412) {
 				const detail = (await put.text().catch(() => '')).slice(0, 200);
 				return ClientError.RequestFailed({
 					operation: 'store PUT',
@@ -257,17 +209,17 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 					detail,
 				});
 			}
-			return Ok({ sha256, url: ticket.url, duplicate: false });
+			return Ok({ blobId, url: ticket.url });
 		},
 
 		/**
-		 * Build the content-addressed read URL for a blob under the authenticated
+		 * Build the authenticated read URL for a blob under the authenticated
 		 * principal. Synchronous; the principal partition comes from auth.
 		 *
 		 * Useful for resolving a manifest entry, an `<img src>`, or a share link.
 		 */
-		url(sha256: string): string {
-			return API_ROUTES.blobs.byHash.url(base, sha256);
+		url(blobId: BlobId): string {
+			return API_ROUTES.blobs.byId.url(base, blobId);
 		},
 
 		/**
@@ -279,10 +231,10 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 		 * presigned URL with the plain global `fetch`, so no bearer reaches the
 		 * storage origin. On success `data` is the bytes `Response`.
 		 */
-		async get(sha256: string): Promise<Result<Response, ClientError>> {
-			const operation = 'GET /blobs/:sha256';
+		async get(blobId: BlobId): Promise<Result<Response, ClientError>> {
+			const operation = 'GET /blobs/:blobId';
 			const { data: res, error } = await tryAsync({
-				try: () => opts.fetch(API_ROUTES.blobs.byHash.url(base, sha256)),
+				try: () => opts.fetch(API_ROUTES.blobs.byId.url(base, blobId)),
 				catch: (cause) => ClientError.TransportFailed({ operation, cause }),
 			});
 			if (error !== null) return Err(error);
@@ -324,21 +276,11 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 			});
 		},
 
-		async list(): Promise<Result<BlobRow[], ClientError>> {
-			const { data: res, error: reqError } = await request(
-				API_ROUTES.blobs.list.url(base),
-				undefined,
-				'GET /blobs',
-			);
-			if (reqError !== null) return Err(reqError);
-			return Ok((await res.json()) as BlobRow[]);
-		},
-
-		async delete(sha256: string): Promise<Result<void, ClientError>> {
+		async delete(blobId: BlobId): Promise<Result<void, ClientError>> {
 			const { error: reqError } = await request(
-				API_ROUTES.blobs.byHash.url(base, sha256),
+				API_ROUTES.blobs.byId.url(base, blobId),
 				{ method: 'DELETE' },
-				'DELETE /blobs/:sha256',
+				'DELETE /blobs/:blobId',
 			);
 			if (reqError !== null) return Err(reqError);
 			return Ok(undefined);
@@ -351,3 +293,138 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 }
 
 export type EpicenterClient = ReturnType<typeof createEpicenterClient>;
+
+/**
+ * Compose a Blob-valued local store with the hosted remote blob surface.
+ *
+ * This adapter is for browser-like runtimes where `BlobStore.get` already
+ * returns an in-process Blob. Epicenter Desktop uses a separate host-owned
+ * adapter so large BunFile recordings stream directly to S3 without crossing
+ * WebView IPC.
+ */
+export function createBrowserBlobRemote({
+	local,
+	client,
+}: {
+	local: BlobStore;
+	client: EpicenterClient;
+}): BlobRemote {
+	return {
+		async upload(id) {
+			const { data: blob, error: localError } = await local.get(id);
+			if (localError !== null) return Err(localError);
+			const { error: remoteError } = await client.blobs.add(id, blob);
+			return remoteError === null
+				? Ok(undefined)
+				: BlobRemoteError.BlobRemoteFailed({ id, cause: remoteError });
+		},
+
+		async download(id) {
+			const { error: statError } = await local.stat(id);
+			if (statError === null) return Ok(undefined);
+			if (statError.name !== 'BlobNotFound') return Err(statError);
+
+			const { data: response, error: remoteError } = await client.blobs.get(id);
+			if (remoteError !== null) {
+				return remoteError.name === 'RequestFailed' &&
+					remoteError.status === 404
+					? BlobRemoteError.RemoteBlobNotFound({ id })
+					: BlobRemoteError.BlobRemoteFailed({ id, cause: remoteError });
+			}
+			const { data: blob, error: readError } = await tryAsync({
+				try: () => response.blob(),
+				catch: (cause) => BlobRemoteError.BlobRemoteFailed({ id, cause }),
+			});
+			if (readError !== null) return Err(readError);
+
+			const { error: putError } = await local.put(id, blob);
+			if (putError === null || putError.name === 'BlobAlreadyExists') {
+				return Ok(undefined);
+			}
+			return Err(putError);
+		},
+
+		async purge(id) {
+			const { error } = await client.blobs.delete(id);
+			return error === null
+				? Ok(undefined)
+				: BlobRemoteError.BlobRemoteFailed({ id, cause: error });
+		},
+	};
+}
+
+/**
+ * The streaming surface the desktop remote needs from a host-owned store.
+ * `BunBlobStore` satisfies it: `openFile` hands back a lazy file (a `Blob`
+ * whose bytes load on demand) and `putResponse` writes a response stream.
+ */
+export type HostBlobStore = {
+	openFile(
+		id: BlobId,
+	): Promise<
+		Result<{ file: Blob; stat: BlobStat }, BlobNotFound | BlobStoreFailed>
+	>;
+	putResponse(
+		id: BlobId,
+		response: Response,
+	): Promise<Result<void, BlobAlreadyExists | BlobStoreFailed>>;
+	stat(id: BlobId): Promise<Result<BlobStat, BlobNotFound | BlobStoreFailed>>;
+};
+
+/**
+ * Compose the Bun filesystem store with the hosted remote blob surface.
+ *
+ * This is the desktop host's adapter (ADR-0149): upload hands the store's lazy
+ * `BunFile` to the presigned PUT so recording bytes stream from disk, and
+ * download writes the presigned GET's response stream straight into the store,
+ * so a large object is never materialized in memory and never crosses WebView
+ * IPC. The caller owns the authed fetch inside `client`; presigned vocabulary
+ * stays inside `client.blobs`.
+ */
+export function createBunBlobRemote({
+	store,
+	client,
+}: {
+	store: HostBlobStore;
+	client: EpicenterClient;
+}): BlobRemote {
+	return {
+		async upload(id) {
+			const { data: opened, error: localError } = await store.openFile(id);
+			if (localError !== null) return Err(localError);
+			const { error: remoteError } = await client.blobs.add(id, opened.file, {
+				contentType: opened.stat.contentType,
+			});
+			return remoteError === null
+				? Ok(undefined)
+				: BlobRemoteError.BlobRemoteFailed({ id, cause: remoteError });
+		},
+
+		async download(id) {
+			const { error: statError } = await store.stat(id);
+			if (statError === null) return Ok(undefined);
+			if (statError.name !== 'BlobNotFound') return Err(statError);
+
+			const { data: response, error: remoteError } = await client.blobs.get(id);
+			if (remoteError !== null) {
+				return remoteError.name === 'RequestFailed' &&
+					remoteError.status === 404
+					? BlobRemoteError.RemoteBlobNotFound({ id })
+					: BlobRemoteError.BlobRemoteFailed({ id, cause: remoteError });
+			}
+
+			const { error: putError } = await store.putResponse(id, response);
+			if (putError === null || putError.name === 'BlobAlreadyExists') {
+				return Ok(undefined);
+			}
+			return Err(putError);
+		},
+
+		async purge(id) {
+			const { error } = await client.blobs.delete(id);
+			return error === null
+				? Ok(undefined)
+				: BlobRemoteError.BlobRemoteFailed({ id, cause: error });
+		},
+	};
+}

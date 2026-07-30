@@ -14,7 +14,7 @@
  * `hashYDocClientId(nodeId)`. It is a plain claimed id, not a signing key: the
  * relay floor authenticates by the session's `principalId`, never the nodeId.
  *
- * Browser app nodeIds (opensidian, fuji, honeycrisp, vocab, tab-manager) are the
+ * Browser app nodeIds (honeycrisp, vocab, tab-manager) are the
  * same kind of nanoid, persisted in Web Storage via `createNodeId` /
  * `createNodeIdAsync` in `document/node-id.ts`. This module only differs in
  * where the daemon persists its own: under the runtime dir instead of storage.

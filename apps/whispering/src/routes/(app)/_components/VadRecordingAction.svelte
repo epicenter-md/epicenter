@@ -3,18 +3,21 @@
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import { createVadRecordingController } from './vad-recording-controller.svelte';
 	import RecordingActionCard from './RecordingActionCard.svelte';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 
 	let {
-		pipeline,
+		footer,
 	}: {
-		pipeline: Snippet;
+		footer: Snippet;
 	} = $props();
 
-	const rec = createVadRecordingController();
+	const rec = createVadRecordingController(app);
 </script>
 
 <RecordingActionCard
 	controller={rec}
-	footer={pipeline}
+	{footer}
 	iconViewTransitionName={viewTransition.recordingMode('vad')}
 />

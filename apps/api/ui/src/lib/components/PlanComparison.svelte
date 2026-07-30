@@ -13,7 +13,7 @@
 	import { queryClient } from '$lib/query/client';
 
 	let isAnnual = $state(false);
-	let confirmDialog = $state<{ card: BillingPlanCard } | null>(null);
+	let confirmDialog = $state.raw<{ card: BillingPlanCard } | null>(null);
 
 	const overview = createQuery(() => billing.overview.options);
 	const plans = createQuery(() => billing.plans.options);

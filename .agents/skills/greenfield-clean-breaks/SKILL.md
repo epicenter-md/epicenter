@@ -7,10 +7,15 @@ description: "Greenfield clean-break review and execution for starting from an u
 
 Use this skill as an operating mode, not a cleanup checklist. Start with the uncompromised greenfield vision, then work backward to the deletion waves, owner changes, and verification needed to make that vision real. The current software is evidence, not a constraint. Previously resolved decisions can be reopened when they make the final system harder to explain, own, test, or delete.
 
-When the destination is genuinely exploratory and the user has not explicitly
-accepted it, run [dialectic](../dialectic/SKILL.md) first. Do not add a dialectic
-round to a settled request. This skill owns the backward transition and
-execution after the destination is clear.
+When the destination remains genuinely exploratory or disputed, run
+[dialectic](../dialectic/SKILL.md) until the conversation converges. Dialectic
+may end with a shared explanatory model or an explicitly accepted destination;
+this skill accepts only the destination handoff. Do not add a dialectic round
+to a settled request. Adopt the accepted greenfield vision as the fixed point
+and work backward. Implementation difficulty does not reopen it; an external
+constraint or desired outcome that materially changes it returns to Dialectic.
+This skill owns the backward transition and execution after the destination is
+clear.
 
 Two pillars:
 
@@ -97,7 +102,11 @@ Do not let context gathering become permission seeking. The goal is to find wher
 
 Do not begin by patching the current shape. First describe the system you would build if the old API, files, tests, names, and migration paths did not exist. That vision is the anchor; implementation planning works backward from it.
 
-Write the ideal sentence first:
+If Dialectic supplied a destination artifact, adopt it rather than repeating
+destination discovery. Clarification must not change the accepted model.
+
+Begin with its accepted destination sentence. If none was supplied, write the
+ideal sentence first:
 
 ```txt
 <noun> owns <boundary>; <caller> enters through <single path>; <runtime> does <one job>.
@@ -126,6 +135,10 @@ Single representation:
 
 Deletion prize:
   What code disappears if this model wins?
+
+Recognition test:
+  What observable facts would prove this destination exists, and what would
+  clearly violate it?
 ```
 
 If the sentence needs "or", "also", "legacy", "fallback", "compat", "unless", or "for old callers", the design is probably keeping two systems alive.
@@ -259,6 +272,24 @@ When editing, keep the break clean:
 
 Read [references/wave-ordering.md](references/wave-ordering.md) for any multi-wave replacement.
 
+## Close Against The Destination
+
+After verification and old-path deletion, compare the resulting system with
+the accepted destination:
+
+```txt
+Satisfied:
+  The evidence that its recognition test is now true.
+
+Drift:
+  Any difference from the accepted model, including a newly discovered
+  external constraint or desired outcome.
+```
+
+Do not normalize consequential drift as implementation detail. Return to
+Dialectic when drift materially changes the destination; otherwise record the
+comparison and finish.
+
 ## Related Moves
 
 - Use [asymmetric-wins](../asymmetric-wins/SKILL.md) when one small refusal may delete a large code family.
@@ -274,6 +305,9 @@ Uncompromised vision:
 
 Product sentence:
   ...
+
+Recognition test:
+  observable proof of the destination and its clear violations
 
 Backward path:
   deletion waves, owner changes, blockers, and verification
@@ -347,4 +381,5 @@ Did I stop importing the old path before deleting it?
 Did verification pass before deletion?
 Did I delete stale names instead of leaving aliases?
 Did docs, tests, and examples stop teaching the old shape?
+Does the result satisfy the accepted destination, and did I name any drift?
 ```

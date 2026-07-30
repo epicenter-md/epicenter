@@ -1,60 +1,62 @@
 /**
- * The recorder switcher's row source: `readyModels()`, a flat list of the
- * transcription routes usable *right now*. It is a union of two honestly
- * different producers (see the reconciliation spec):
+ * The recorder switcher's row source: `readyTranscribers()`, a flat list of the
+ * transcription routes usable *right now*, one per configured provider.
  *
- *  - the static non-onDevice provider registry (`session` / `key` / `endpoint`),
- *    filtered to the ones configured, one leaf each; and
- *  - the live on-device catalog (`localModels`), filtered to the downloaded
- *    GGUFs, one leaf per model.
+ * Every route contributes exactly one row, on-device included. Choosing "Local"
+ * picks a route; it does not pick a model, because the host owns the one active
+ * local model and Epicenter Home administers it (ADR-0180). The local row names
+ * no model at all: model identity is administration data this app never
+ * receives, and a row that named one would be a picker growing back.
  *
- * Same leaf shape, different provenance. Each producer computes its own
- * `label` where it already reads its own store, so the selector does not need
- * cross-store display branching.
+ * The local row is present on desktop whether or not the host can currently run
+ * it, so the selector can warn about it. Readiness is surfaced as a warning by
+ * `getTranscriptionReadiness`, not by making the route disappear.
+ *
  * Reactive by construction: the getters it reads (`settings`, `secrets`,
- * `auth`, `deviceConfig`, `localModels`) are all reactive, so calling this
- * inside a `$derived` re-runs it when any source changes.
+ * `auth`, `deviceConfig`) are all reactive, so calling this inside a `$derived`
+ * re-runs it when any source changes.
  */
-import { tauri } from '#platform/tauri';
 import {
-	PROVIDER_ICONS,
 	TRANSCRIPTION_PROVIDERS,
 	type TranscriptionProviderEntry,
 } from '$lib/services/transcription/provider-ui';
-import type { TranscriptionServiceId } from '$lib/services/transcription/providers';
 import { deviceConfig } from '$lib/state/device-config.svelte';
-import { localModels } from '$lib/state/local-models.svelte';
-import { settings } from '$lib/state/settings.svelte';
-import type { ModelInfo } from '$lib/tauri/commands.types';
-import { isTranscriptionServiceConfigured } from './transcription-validation';
+import type { WhisperingApp } from '$lib/whispering/app';
+import {
+	isTranscriptionServiceAvailable,
+	isTranscriptionServiceConfigured,
+} from './transcription-validation';
 
 /**
- * One switchable transcription route. The union's single row shape: an icon,
- * a name, where it runs, a check if active, and how to make it active. Each
- * producer fills `label`/`sublabel` from the store it owns.
+ * One ready transcriber: a configured route that can turn captured audio into
+ * text immediately.
  */
-export type SwitcherLeaf = {
-	/** Stable list/cmdk key. remote providers: providerId. onDevice: model id. */
+export type Transcriber = {
+	/** Stable list/cmdk key: the provider id. */
 	key: string;
-	providerId: TranscriptionServiceId;
 	access: 'session' | 'key' | 'endpoint' | 'onDevice';
-	/** Brand glyph markup from `PROVIDER_ICONS` (local shares the ggml icon). */
+	/** Brand glyph markup from the provider registry. */
 	icon: string;
 	invertInDarkMode: boolean;
-	/** Primary line: session -> "Epicenter"; key -> selected model; onDevice ->
-	 *  model name; endpoint -> model id (#2337). */
-	label: string;
-	/** Secondary line: key -> provider label; endpoint -> endpoint host. */
-	sublabel?: string;
+	/** The compact trigger and row title: the provider label. */
+	title: string;
+	/**
+	 * The exact model this route will use, where the app owns that choice. Keyed
+	 * and endpoint providers configure a model here; on-device never does,
+	 * because the host owns it and does not report it.
+	 */
+	modelId?: string;
+	/** The endpoint provider's configured host. */
+	endpointHost?: string;
 	/** The cmdk search string (also its unique `value`). */
 	keywords: string;
-	/** True when this leaf is the current active selection. */
+	/** True when this transcriber is the current active selection. */
 	isActive: boolean;
-	/** Write today's selection keys to make this the active route. */
+	/** Make this the active transcription route. */
 	select: () => void;
 };
 
-/** The endpoint provider's host sublabel; the raw string if it won't parse. */
+/** The endpoint provider's host; the raw string if it won't parse. */
 function endpointHost(endpoint: string): string {
 	try {
 		return new URL(endpoint).host || endpoint;
@@ -63,25 +65,19 @@ function endpointHost(endpoint: string): string {
 	}
 }
 
-/** Every non-onDevice provider: reached over the wire, one committed leaf each. */
-type RemoteEntry = Extract<
-	TranscriptionProviderEntry,
-	{ access: 'session' | 'key' | 'endpoint' }
->;
-
-const REMOTE_ENTRIES = TRANSCRIPTION_PROVIDERS.filter(
-	(entry): entry is RemoteEntry => entry.access !== 'onDevice',
-);
-
-/** A committed remote provider -> its one switcher leaf. */
-function toRemoteLeaf(entry: RemoteEntry): SwitcherLeaf {
+/** A configured provider -> its one ready transcriber. */
+function toTranscriber(
+	app: WhisperingApp,
+	entry: TranscriptionProviderEntry,
+): Transcriber {
+	// Selecting a route writes exactly one setting. Picking a local model is a
+	// separate act by a different owner (Home), which is the point of ADR-0180.
 	const base = {
 		key: entry.id,
-		providerId: entry.id,
 		icon: entry.icon,
 		invertInDarkMode: entry.invertInDarkMode,
-		isActive: settings.get('transcription.service') === entry.id,
-		select: () => settings.set('transcription.service', entry.id),
+		isActive: app.settings.get('settings.transcription.service') === entry.id,
+		select: () => app.settings.set('settings.transcription.service', entry.id),
 	};
 	switch (entry.access) {
 		case 'session':
@@ -90,68 +86,62 @@ function toRemoteLeaf(entry: RemoteEntry): SwitcherLeaf {
 			return {
 				...base,
 				access: 'session',
-				label: entry.label,
+				title: entry.label,
 				keywords: `${entry.id} ${entry.label} epicenter hosted account credits`,
 			};
 		case 'key': {
-			// The committed model (set once in setup) is the leaf; the provider is
-			// conveyed by the icon and the sublabel.
-			const model = settings.get(entry.modelSettingKey) || entry.defaultModel;
+			// The provider is the route identity; the committed model remains visible
+			// as exact context in the expanded row.
+			const model =
+				app.settings.get(entry.modelSettingKey) || entry.defaultModel;
 			return {
 				...base,
 				access: 'key',
-				label: model,
-				sublabel: entry.label,
+				title: entry.label,
+				modelId: model,
 				keywords: `${entry.id} ${entry.label} ${model} cloud api key`,
 			};
 		}
 		case 'endpoint': {
-			// #2337: the model id is the primary label, the endpoint host the sublabel.
+			// Preserve #2337's exact model confirmation without making an arbitrary
+			// server identifier the compact trigger's primary label.
 			const endpoint = deviceConfig.get(entry.endpointConfigKey);
 			const modelId = deviceConfig.get(entry.modelIdConfigKey);
 			return {
 				...base,
 				access: 'endpoint',
-				label: modelId,
-				sublabel: endpointHost(endpoint),
+				title: entry.label,
+				modelId,
+				endpointHost: endpointHost(endpoint),
 				keywords: `${entry.id} ${entry.label} ${modelId} ${endpoint} custom server self-hosted`,
 			};
 		}
+		case 'onDevice':
+			// No `modelId`: which model runs is the host's, and naming it here
+			// would hand this app an identity it is not given (ADR-0180).
+			return {
+				...base,
+				access: 'onDevice',
+				title: entry.label,
+				keywords: `${entry.id} ${entry.label} local on-device offline private`,
+			};
 	}
 }
 
-/** A downloaded on-device GGUF -> its one switcher leaf. */
-function toLocalLeaf(model: ModelInfo): SwitcherLeaf {
-	return {
-		key: model.id,
-		providerId: 'local',
-		access: 'onDevice',
-		icon: PROVIDER_ICONS.local.icon,
-		invertInDarkMode: PROVIDER_ICONS.local.invertInDarkMode,
-		label: model.name,
-		keywords: `${model.id} ${model.name} ${model.description} local on-device offline gguf whisper private`,
-		isActive:
-			settings.get('transcription.service') === 'local' &&
-			deviceConfig.get('transcription.local.selectedModel') === model.id,
-		select: () => {
-			settings.set('transcription.service', 'local');
-			deviceConfig.set('transcription.local.selectedModel', model.id);
-		},
-	};
-}
-
 /**
- * The switcher's row source: on-device leaves first (privacy-forward), then the
- * committed remote routes. On-device is empty off Tauri (the store never scans
- * on web). Membership is the store's own per-model `downloaded` verdict, never
- * the raw deviceConfig pointer.
+ * The switcher's row source: on-device first (privacy-forward), then the
+ * configured remote services. Membership is `isTranscriptionServiceConfigured`
+ * for every route alike, which for on-device is simply "we are on desktop":
+ * the local route takes no app-side configuration.
  */
-export function readyModels(): SwitcherLeaf[] {
-	const remote = REMOTE_ENTRIES.filter(isTranscriptionServiceConfigured).map(
-		toRemoteLeaf,
-	);
-	const onDevice = tauri
-		? localModels.models.filter((model) => model.downloaded).map(toLocalLeaf)
-		: [];
-	return [...onDevice, ...remote];
+export function readyTranscribers(app: WhisperingApp): Transcriber[] {
+	const ready = TRANSCRIPTION_PROVIDERS.filter(
+		(entry) =>
+			isTranscriptionServiceAvailable(entry) &&
+			isTranscriptionServiceConfigured(entry),
+	).map((entry) => toTranscriber(app, entry));
+	return [
+		...ready.filter((transcriber) => transcriber.access === 'onDevice'),
+		...ready.filter((transcriber) => transcriber.access !== 'onDevice'),
+	];
 }

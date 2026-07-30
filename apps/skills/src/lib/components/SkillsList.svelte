@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Empty from '@epicenter/ui/empty';
-	import { skillsState } from '$lib/state/skills-state.svelte';
+	import { getSkillsApp } from '$lib/context.js';
 	import SkillListItem from './SkillListItem.svelte';
 	import InlineNameInput from './tree/InlineNameInput.svelte';
+
+	const { state: skillsState } = getSkillsApp();
 
 	let renamingSkillId = $state<string | null>(null);
 	const isEditing = $derived(renamingSkillId !== null);
@@ -47,7 +49,7 @@
 					confirmationDialog.open({
 						title: `Delete ${selected.name}?`,
 						description:
-							'This will delete the skill and all its references. This action cannot be undone.',
+							'This will delete the skill and its known reference records. This action cannot be undone.',
 						confirm: { text: 'Delete', variant: 'destructive' },
 						onConfirm: () => skillsState.deleteSkill(selected.id),
 					});
@@ -80,7 +82,7 @@
 					defaultValue={skill.name}
 					onConfirm={(name) => {
 						if (renamingSkillId && name.trim()) {
-							skillsState.updateSkill(renamingSkillId, { name: name.trim() });
+							void skillsState.updateSkill(renamingSkillId, { name: name.trim() });
 						}
 						renamingSkillId = null;
 					}}

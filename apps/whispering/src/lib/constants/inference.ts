@@ -2,6 +2,15 @@ import type {
 	DeviceConfigKey,
 	SecretKey,
 } from '$lib/state/device-config.svelte';
+import {
+	INFERENCE_PROVIDER_IDS,
+	type InferenceProviderId,
+} from './inference-provider-ids';
+
+export {
+	INFERENCE_PROVIDER_IDS,
+	type InferenceProviderId,
+} from './inference-provider-ids';
 
 type InferenceProvider = {
 	label: string;
@@ -142,9 +151,7 @@ export const INFERENCE = {
 		endpointConfigKey: 'providers.custom.endpoint',
 		models: null,
 	},
-} as const satisfies Record<string, InferenceProvider>;
-
-export type InferenceProviderId = keyof typeof INFERENCE;
+} as const satisfies Record<InferenceProviderId, InferenceProvider>;
 
 /**
  * Inference providers with a fixed model list (`models` is non-null), i.e.
@@ -160,11 +167,6 @@ export type ModelSelectProviderId = {
 export const hasModelSelect = (
 	provider: InferenceProviderId,
 ): provider is ModelSelectProviderId => INFERENCE[provider].models !== null;
-
-/** Every inference provider ID, e.g. for `field.select(INFERENCE_PROVIDER_IDS)`. */
-export const INFERENCE_PROVIDER_IDS = Object.keys(
-	INFERENCE,
-) as InferenceProviderId[];
 
 /** UI dropdown options for provider selection. */
 export const INFERENCE_PROVIDER_OPTIONS = INFERENCE_PROVIDER_IDS.map((id) => ({

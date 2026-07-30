@@ -25,7 +25,9 @@ import {
 	createDurableObjectRooms,
 	createEnvTokenResolver,
 	createServerApp,
+	EpicenterAuthority,
 	mountBlobsApp,
+	mountCloudflareEpicenterSyncApp,
 	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
@@ -51,7 +53,11 @@ const app = createServerApp({
 		// A self-host trusts its OWN origin and the Tauri desktop client, never
 		// Epicenter cloud's. Shared with `server.ts` so the two runtimes cannot
 		// drift. The instance has no Better Auth and no cookies at all.
-		resolveTrustedOrigins: resolveSelfHostTrustedOrigins,
+		resolveTrustedOrigins: (baseURL, env) =>
+			resolveSelfHostTrustedOrigins(
+				baseURL,
+				(env as Cloudflare.Env).TRUSTED_BROWSER_ORIGINS,
+			),
 	},
 });
 
@@ -80,6 +86,15 @@ app.get('/', (c) =>
 mountSessionApp(app, { auth });
 // Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver.
 mountRoomsApp(app, { resolveBearerPrincipal });
+mountCloudflareEpicenterSyncApp(app, {
+	auth,
+	resolveNamespace: (env) =>
+		(
+			env as Cloudflare.Env & {
+				EPICENTER_SYNC: DurableObjectNamespace<EpicenterAuthority>;
+			}
+		).EPICENTER_SYNC,
+});
 // Cap the inference burn rate so a leaked or overused bearer cannot run the
 // operator's house key up unbounded. Per-isolate on Cloudflare (approximate);
 // the real ceiling is the hard spend limit on the provider key itself (README).
@@ -101,4 +116,4 @@ mountTranscriptionApp(app, {
 mountBlobsApp(app, { auth });
 
 export default app;
-export { Room };
+export { EpicenterAuthority, Room };

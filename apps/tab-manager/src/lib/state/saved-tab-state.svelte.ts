@@ -1,30 +1,37 @@
 /**
- * Reactive saved tab state for the side panel.
+ * The reactive saved-tab list, plus the one adapter that turns a live Chrome tab
+ * into a saved row.
  *
- * Read-only reactive layer backed by `fromTable()`: a stateless
- * `ReadonlyTableView` whose reads track the underlying CRDT table. All write
- * operations are delegated to workspace actions on the boot-time workspace
- * bundle (ADR-0088: saved tabs exist on the local doc whether signed in or
- * not; there is no signed-in-only gate here).
+ * Reads go through `fromTable()`, which subscribes before it reads and then
+ * re-reads only the rows an invalidation names (ADR-0187). Writes are not
+ * re-exported here: a component calls `actions.saved_tabs_*` directly, so a
+ * button press and an agent tool call take the same path with nothing in
+ * between. `save` is the exception because it adapts a `BrowserTab` rather than
+ * forwarding one.
  *
- * The public API exposes a `$derived` sorted array since the access
- * pattern is always "render the full sorted list."
- *
- * @example
- * Components read this through `workspace.state.savedTabs`.
+ * Saved tabs are durable whether or not anyone is signed in (ADR-0088); there is
+ * no signed-in gate here.
  */
 
 import { fromTable } from '@epicenter/svelte';
+import type { TabManagerActions } from '$lib/actions';
 import type { BrowserTab } from '$lib/state/browser-state.svelte';
-import type { TabManagerBrowser } from '$lib/tab-manager/extension';
-import type { SavedTab, SavedTabId } from '$lib/workspace/definition';
+import type { TabManagerData } from '$lib/workspace';
 
-export function createSavedTabState(tabManager: TabManagerBrowser) {
-	const tabsView = fromTable(tabManager.tables.savedTabs);
+export function createSavedTabState({
+	data,
+	actions,
+}: {
+	data: TabManagerData;
+	actions: TabManagerActions;
+}) {
+	const tabsView = fromTable(data.tables.savedTabs);
 
-	/** All saved tabs, sorted by most recently saved first. Cached via $derived. */
+	/** All saved tabs, most recently saved first. */
 	const tabs = $derived(
-		tabsView.all.toSorted((a, b) => b.savedAt.localeCompare(a.savedAt)),
+		tabsView.all.toSorted((left, right) =>
+			right.savedAt.localeCompare(left.savedAt),
+		),
 	);
 
 	return {
@@ -32,54 +39,23 @@ export function createSavedTabState(tabManager: TabManagerBrowser) {
 			return tabs;
 		},
 
+		/** Resolves once the first read of this table has landed. */
+		whenReady: tabsView.whenReady,
+
 		/**
-		 * Save a tab: snapshot its metadata to Y.Doc and close the browser tab.
-		 *
-		 * Delegates to the `saved_tabs_save` workspace action. Silently no-ops
-		 * for tabs without a URL. The action's Result envelope flows through
-		 * to callers; today the action's Err channel is `never` because
-		 * browser-API failures during the close step are intentionally
-		 * swallowed inside the handler.
+		 * Save a tab: write the row, then close the browser tab. No-ops for a tab
+		 * with no URL. The returned `closeResult` reports the close half only; the
+		 * save itself already succeeded.
 		 */
 		async save(tab: BrowserTab) {
 			if (!tab.url) return;
-			return tabManager.actions.saved_tabs_save({
+			return actions.saved_tabs_save({
 				browserTabId: tab.id,
 				url: tab.url,
 				title: tab.title || 'Untitled',
 				favIconUrl: tab.favIconUrl,
 				pinned: tab.pinned,
 			});
-		},
-
-		/**
-		 * Restore a saved tab: re-open in browser and delete the record.
-		 *
-		 * The action returns `Result<{ restored }, BrowserApiFailed>`: the
-		 * saved record is preserved on `tabs.create` failure so the user
-		 * doesn't lose the URL.
-		 */
-		async restore(savedTab: SavedTab) {
-			return tabManager.actions.saved_tabs_restore({
-				id: savedTab.id,
-				url: savedTab.url,
-				pinned: savedTab.pinned,
-			});
-		},
-
-		/** Restore all saved tabs at once. */
-		async restoreAll() {
-			return tabManager.actions.saved_tabs_restore_all();
-		},
-
-		/** Delete a saved tab without restoring it. Synchronous CRDT delete. */
-		remove(id: SavedTabId) {
-			return tabManager.actions.saved_tabs_remove({ id });
-		},
-
-		/** Delete all saved tabs without restoring them. Synchronous CRDT batch delete. */
-		removeAll() {
-			return tabManager.actions.saved_tabs_remove_all();
 		},
 	};
 }

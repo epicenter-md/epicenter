@@ -1,11 +1,21 @@
 <script lang="ts">
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
-	import { honeycrisp } from '$lib/honeycrisp';
+	import { getHoneycrispApp } from '$lib/context.js';
+	import { runHoneycrispMutation } from '$lib/mutation.js';
 	import CommandPalette from './components/CommandPalette.svelte';
 	import NoteBodyPane from './components/NoteBodyPane.svelte';
 	import NoteList from './components/NoteList.svelte';
 	import HoneycripSidebar from './components/Sidebar.svelte';
+
+	const honeycrisp = getHoneycrispApp();
+
+	async function createAndSelectNote(): Promise<void> {
+		const { id } = await honeycrisp.state.notes.create(
+			honeycrisp.state.view.selectedFolderId,
+		);
+		honeycrisp.state.view.selectNote(id);
+	}
 </script>
 
 <svelte:window
@@ -15,11 +25,13 @@
 
 		if (e.key === 'n' && e.shiftKey) {
 			e.preventDefault();
-			honeycrisp.state.folders.create();
+			runHoneycrispMutation(
+				honeycrisp.state.folders.create(),
+				'Could not create folder',
+			);
 		} else if (e.key === 'n') {
 			e.preventDefault();
-			const { id } = honeycrisp.state.notes.create(honeycrisp.state.view.selectedFolderId);
-			honeycrisp.state.view.selectNote(id);
+			runHoneycrispMutation(createAndSelectNote(), 'Could not create note');
 		}
 	}}
 />

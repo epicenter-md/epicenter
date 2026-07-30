@@ -6,7 +6,7 @@ import {
 	resolveCompletionStateFromConfig,
 } from '$lib/operations/completion-target';
 import { deviceConfig } from '$lib/state/device-config.svelte';
-import { settings } from '$lib/state/settings.svelte';
+import type { WhisperingApp } from '$lib/whispering/app';
 
 /**
  * Resolve the single global completion state: what to call (`target`), whether
@@ -16,9 +16,9 @@ import { settings } from '$lib/state/settings.svelte';
  * stale. `target` is null when there is no base URL to talk to (Custom with no
  * endpoint configured), the one genuinely un-runnable state.
  */
-export function resolveCompletionState(): CompletionState {
+export function resolveCompletionState(app: WhisperingApp): CompletionState {
 	return resolveCompletionStateFromConfig({
-		provider: settings.get('completion.provider'),
+		provider: app.settings.get('settings.completion.provider'),
 		getDeviceConfig: deviceConfig.get,
 	});
 }
@@ -35,18 +35,21 @@ export function resolveCompletionState(): CompletionState {
  *
  * `signal` aborts the in-flight request (the Polish HUD's "ship raw" control).
  */
-export function completeWithGlobalDefault({
-	systemPrompt,
-	userPrompt,
-	signal,
-}: {
-	systemPrompt: string;
-	userPrompt: string;
-	signal?: AbortSignal;
-}): Promise<Result<string, CompleteError>> {
-	const { target } = resolveCompletionState();
+export function completeWithGlobalDefault(
+	app: WhisperingApp,
+	{
+		systemPrompt,
+		userPrompt,
+		signal,
+	}: {
+		systemPrompt: string;
+		userPrompt: string;
+		signal?: AbortSignal;
+	},
+): Promise<Result<string, CompleteError>> {
+	const { target } = resolveCompletionState(app);
 	if (!target) {
-		const provider = settings.get('completion.provider');
+		const provider = app.settings.get('settings.completion.provider');
 		return Promise.resolve(
 			CompleteError.TransportFailed({
 				cause: new Error(
@@ -61,7 +64,7 @@ export function completeWithGlobalDefault({
 			customFetch,
 		),
 		{
-			model: settings.get('completion.model').trim(),
+			model: app.settings.get('settings.completion.model').trim(),
 			systemPrompt,
 			userPrompt,
 			signal,

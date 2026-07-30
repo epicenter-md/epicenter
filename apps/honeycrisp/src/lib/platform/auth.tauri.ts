@@ -1,4 +1,4 @@
-import { loadPersistedAuthStorage } from '@epicenter/auth';
+import { createSerializedPersistedAuthStorage } from '@epicenter/auth';
 import {
 	EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID,
 	EPICENTER_HONEYCRISP_TAURI_OAUTH_REDIRECT_URI,
@@ -26,23 +26,6 @@ const KeyringError = defineErrors({
 });
 
 /**
- * Tolerant like the `localStorage` adapter's `get`: a keychain read failure
- * (locked keychain, platform error) reads as signed-out rather than crashing
- * app boot. The next sign-in re-establishes the grant.
- */
-async function readGrant(): Promise<string | null> {
-	const { data, error } = await tryAsync({
-		try: () => invoke<string | null>('keyring_read'),
-		catch: (cause) => KeyringError.ReadFailed({ cause }),
-	});
-	if (error !== null) {
-		log.warn(error);
-		return null;
-	}
-	return data;
-}
-
-/**
  * Strict like the `localStorage` adapter's `set`: a grant that could not be
  * persisted must fail the sign-in or refresh that produced it, not silently
  * look saved.
@@ -55,13 +38,33 @@ async function writeGrant(serialized: string | null): Promise<void> {
 	if (error !== null) throw error;
 }
 
+declare global {
+	interface Window {
+		__EPICENTER_HONEYCRISP_AUTH_BOOTSTRAP__?: {
+			serialized: string | null;
+			error: string | null;
+		};
+	}
+}
+
+const bootstrap = window.__EPICENTER_HONEYCRISP_AUTH_BOOTSTRAP__;
+if (!bootstrap) {
+	throw new Error('Honeycrisp did not preload its credential store.');
+}
+delete window.__EPICENTER_HONEYCRISP_AUTH_BOOTSTRAP__;
+// Tolerant like the localStorage adapter's read: a locked or unavailable
+// keychain starts signed out, and the next sign-in re-establishes the grant.
+if (bootstrap.error !== null) {
+	log.warn(KeyringError.ReadFailed({ cause: new Error(bootstrap.error) }));
+}
+
 export const auth: PlatformAuth = createHostedDeepLinkAuth({
 	instanceSetting,
 	clientId: EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID,
 	redirectUri: EPICENTER_HONEYCRISP_TAURI_OAUTH_REDIRECT_URI,
 	api: APP_URLS.API,
-	persistedAuthStorage: await loadPersistedAuthStorage({
-		read: readGrant,
+	persistedAuthStorage: createSerializedPersistedAuthStorage({
+		initial: bootstrap.serialized,
 		write: writeGrant,
 	}),
 });

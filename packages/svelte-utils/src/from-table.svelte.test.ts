@@ -1,165 +1,331 @@
-import { expect, test } from 'bun:test';
-import type {
-	BaseRow,
-	ReadonlyTable,
-	TableReadError,
-} from '@epicenter/workspace';
-import { TableNewerWriterError, TableParseError } from '@epicenter/workspace';
-import { Err, Ok } from 'wellcrafted/result';
+import { expect, mock, test } from 'bun:test';
+
+type SubscriberControl = {
+	activate(): void;
+	deactivate(): void;
+};
+
+const subscriberControls: SubscriberControl[] = [];
+
+/**
+ * `createSubscriber` installs its subscription only from inside a Svelte
+ * effect, and these are plain bun tests with no reactive runtime. Substituting
+ * it with its activation and teardown lifecycle lets the invalidation path and
+ * dormant-cache behavior be exercised without reshaping the adapter around the
+ * test.
+ */
+mock.module('svelte/reactivity', () => ({
+	createSubscriber(start: (update: () => void) => () => void) {
+		let stop: (() => void) | undefined;
+		const control = {
+			activate() {
+				stop ??= start(() => {});
+			},
+			deactivate() {
+				stop?.();
+				stop = undefined;
+			},
+		};
+		subscriberControls.push(control);
+		// These tests read getters imperatively, outside a Svelte effect. The real
+		// createSubscriber is also a no-op for those reads; tests activate the
+		// simulated effect explicitly through this control.
+		return () => {};
+	},
+}));
+
+import {
+	DataReadError,
+	defineTable,
+	type NonconformingRowError,
+	type RowFor,
+	type TableInvalidation,
+	type TableLens,
+} from '@epicenter/data';
+import { field } from '@epicenter/field';
 import { fromTable } from './from-table.svelte.js';
 
-// `bun test` runs `.svelte.ts` modules without the Svelte compiler, so the runes
-// the source uses are plain globals here. `$derived.by` is stubbed as a proxy
-// that re-invokes the compute function on every property read, which models the
-// pull-based recompute a live `$derived` does and lets the list surfaces reflect
-// the current table state. `createSubscriber` is the real import; outside an
-// effect its `subscribe()` is a no-op (it never attaches an observer), so the
-// observe-driven lifecycle is not exercised here. That lifecycle belongs to
-// Svelte and is covered by Svelte's own tests; what these tests pin is the
-// stateless read-through: that every surface reads live through the table and
-// classifies each id into rows or the right issue bucket.
-(globalThis as unknown as { $derived: unknown }).$derived = Object.assign(
-	<T>(v: T) => v,
-	{
-		by: (fn: () => Record<PropertyKey, unknown>) =>
-			new Proxy({}, { get: (_target, prop) => fn()[prop] }),
-	},
+/**
+ * Data table Svelte adapter tests.
+ *
+ * Key behaviors:
+ * - Initial refresh classifies conforming and nonconforming rows
+ * - Observation starts before each scan, including initial readiness
+ * - Reactivation discards a dormant cache and rescans
+ * - Row invalidations update only the rows they name
+ */
+
+(globalThis as unknown as { $state: unknown }).$state = Object.assign(
+	<TValue>(value: TValue) => value,
+	{ raw: <TValue>(value: TValue) => value },
 );
 
-type Row = BaseRow & { name: string };
+/**
+ * Invalidation is handled asynchronously, so a test that wants to assert on the
+ * result waits for the adapter's queue to drain. A timer turn flushes every
+ * microtask the mock table can produce.
+ */
+const settle = () => Bun.sleep(1);
+
+async function activateLatestSubscriber(): Promise<SubscriberControl> {
+	const subscriber = subscriberControls.at(-1);
+	if (subscriber === undefined) throw new Error('No subscriber was created');
+	subscriber.activate();
+	await settle();
+	return subscriber;
+}
+
+const definition = defineTable({
+	fields: { name: field.string() },
+});
+type Row = RowFor<typeof definition>;
 
 type StoredEntry =
 	| { kind: 'row'; row: Row }
-	| { kind: 'error'; error: TableReadError };
+	| { kind: 'error'; error: NonconformingRowError };
 
 const row = (id: string, name = id): StoredEntry => ({
 	kind: 'row',
-	row: { id, _v: 1, name } as Row,
+	row: { id, name },
 });
 
 const nonconforming = (id: string): StoredEntry => ({
 	kind: 'error',
-	error: TableParseError.ValidationFailed({
-		id,
-		errors: [{ path: '/name', message: 'required' }],
-		row: {},
+	error: DataReadError.NonconformingRow({
+		address: {
+			kind: 'row',
+			namespace: 'so.epicenter.test.svelte',
+			tableName: 'rows',
+			rowId: id,
+		},
+		raw: {},
+		issues: [{ field: 'name', kind: 'missing', message: 'required' }],
 	}).error,
 });
 
-const newerWriter = (id: string): StoredEntry => ({
-	kind: 'error',
-	error: TableNewerWriterError.NewerWriter({
-		id,
-		version: 9,
-		latestVersion: 1,
-		row: {},
-	}).error,
-});
-
-/**
- * A `ReadonlyTable` standing on a plain Map. `fromTable` only ever calls
- * `scan()`, `observe()`, and `get()`, so the rest throws to fail loud if the
- * contract widens. The view reads live, so mutating `store` then reading a
- * surface plays the role of a write landing.
- */
 function createMockTable() {
 	const store = new Map<string, StoredEntry>();
+	const listeners = new Set<(invalidation: TableInvalidation) => void>();
+	const reads = { scans: 0, gets: [] as string[] };
+	let getFailure: unknown;
+	let heldScan:
+		| { readonly promise: Promise<void>; readonly release: () => void }
+		| undefined;
 
 	const table = {
-		scan() {
+		async scan() {
+			reads.scans += 1;
+			const snapshot = [...store.entries()].sort(([left], [right]) =>
+				left < right ? -1 : 1,
+			);
+			const gate = heldScan;
+			heldScan = undefined;
+			await gate?.promise;
 			const scan = {
 				rows: [] as Row[],
-				nonconforming: [] as TableParseError[],
-				newerWriter: [] as TableNewerWriterError[],
+				nonconforming: [] as NonconformingRowError[],
 			};
-			for (const entry of store.values()) {
-				if (entry.kind === 'row') {
-					scan.rows.push(entry.row);
-				} else if (entry.error.name === 'NewerWriter') {
-					scan.newerWriter.push(entry.error);
-				} else {
-					scan.nonconforming.push(entry.error);
-				}
+			for (const [, entry] of snapshot) {
+				if (entry.kind === 'row') scan.rows.push(entry.row);
+				else scan.nonconforming.push(entry.error);
 			}
 			return scan;
 		},
-		get(id: string) {
+		async get(id: string) {
+			reads.gets.push(id);
+			if (getFailure !== undefined) return { data: null, error: getFailure };
 			const entry = store.get(id);
-			if (!entry) return Ok(null);
-			return entry.kind === 'row' ? Ok(entry.row) : Err(entry.error);
+			if (entry === undefined) return { data: undefined, error: null };
+			return entry.kind === 'row'
+				? { data: entry.row, error: null }
+				: { data: null, error: entry.error };
 		},
-		observe() {
-			// Outside an effect `createSubscriber` never calls this; the lifecycle
-			// is Svelte's to drive. Return a no-op unobserve for completeness.
-			return () => {};
+		subscribe(listener: (invalidation: TableInvalidation) => void) {
+			listeners.add(listener);
+			return () => listeners.delete(listener);
 		},
-	} as unknown as ReadonlyTable<Row>;
+	} as unknown as TableLens<typeof definition>;
 
-	return { table, store };
+	return {
+		table,
+		store,
+		reads,
+		failGetsWith(error: unknown) {
+			getFailure = error;
+		},
+		holdNextScan() {
+			let release = () => {};
+			const promise = new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			heldScan = { promise, release };
+			return release;
+		},
+		invalidate(invalidation: TableInvalidation) {
+			for (const listener of listeners) listener(invalidation);
+		},
+	};
 }
 
-test('all + buckets: scan routes conforming rows and each issue bucket', () => {
+test('initial refresh classifies conforming and nonconforming rows', async () => {
 	const { table, store } = createMockTable();
 	store.set('ok', row('ok'));
 	store.set('bad', nonconforming('bad'));
-	store.set('ahead', newerWriter('ahead'));
 
 	const entries = fromTable(table);
+	await entries.whenReady;
 
 	expect(entries.all.map((r) => r.id)).toEqual(['ok']);
 	expect(entries.nonconforming.map((e) => e.id)).toEqual(['bad']);
-	expect(entries.newerWriter.map((e) => e.id)).toEqual(['ahead']);
 });
 
-test('byId: conforming id resolves; unreadable and absent ids do not', () => {
-	const { table, store } = createMockTable();
-	store.set('ok', row('ok', 'Ada'));
-	store.set('bad', nonconforming('bad'));
+test('initial scan observes a mutation that lands while the scan is in flight', async () => {
+	const mock = createMockTable();
+	mock.store.set('a', row('a', 'Before'));
+	const releaseScan = mock.holdNextScan();
 
-	const entries = fromTable(table);
+	const entries = fromTable(mock.table);
+	mock.store.set('a', row('a', 'After'));
+	mock.invalidate({ scope: 'rows', rowIds: ['a'] });
+	releaseScan();
+	await entries.whenReady;
 
-	expect(entries.byId('ok')?.name).toBe('Ada');
-
-	// A stored-but-unreadable id does not resolve to a row; it surfaces in the
-	// issue bucket instead.
-	expect(entries.byId('bad')).toBeUndefined();
-	expect(entries.nonconforming.map((e) => e.id)).toEqual(['bad']);
-
-	// An absent id resolves to undefined and is in no bucket.
-	expect(entries.byId('missing')).toBeUndefined();
+	expect(entries.byId('a')?.name).toBe('After');
+	expect(mock.reads.scans).toBe(1);
+	expect(mock.reads.gets).toEqual(['a']);
 });
 
-test('reads are live: surfaces reflect the current table state', () => {
+test('reactivation clears a dormant cache and rescans before exposing rows', async () => {
+	const mock = createMockTable();
+	mock.store.set('a', row('a', 'Before'));
+	const entries = fromTable(mock.table);
+	await entries.whenReady;
+	expect(entries.all.map((entry) => entry.name)).toEqual(['Before']);
+	const subscriber = subscriberControls.at(-1);
+	expect(subscriber).toBeDefined();
+
+	subscriber?.activate();
+	await settle();
+	subscriber?.deactivate();
+	mock.store.set('a', row('a', 'After'));
+	const releaseScan = mock.holdNextScan();
+	subscriber?.activate();
+
+	expect(entries.all).toEqual([]);
+	releaseScan();
+	await settle();
+	expect(entries.all.map((entry) => entry.name)).toEqual(['After']);
+	expect(mock.reads.scans).toBe(3);
+});
+
+test('explicit refresh updates classified and point-read surfaces', async () => {
 	const { table, store } = createMockTable();
 	const entries = fromTable(table);
+	await entries.whenReady;
 	expect(entries.all).toEqual([]);
 
 	store.set('a', row('a', 'Ada'));
+	await entries.refresh();
 	expect(entries.byId('a')?.name).toBe('Ada');
 	expect(entries.all.map((r) => r.id)).toEqual(['a']);
 
 	store.delete('a');
+	await entries.refresh();
 	expect(entries.byId('a')).toBeUndefined();
 	expect(entries.all).toEqual([]);
 });
 
-test('reads are live across every classification transition', () => {
-	const { table, store } = createMockTable();
-	const entries = fromTable(table);
+test('a rows invalidation re-reads only the rows it names', async () => {
+	const mock = createMockTable();
+	mock.store.set('a', row('a', 'Ada'));
+	mock.store.set('b', row('b', 'Bo'));
+	const entries = fromTable(mock.table);
+	await entries.whenReady;
+	await activateLatestSubscriber();
+	expect(entries.all.map((r) => r.id)).toEqual(['a', 'b']);
+	expect(mock.reads.scans).toBe(2);
 
-	// row -> nonconforming -> newerWriter -> row, each visible on the next read.
-	store.set('a', row('a'));
-	expect(entries.byId('a')).toBeDefined();
+	mock.store.set('b', row('b', 'Bea'));
+	mock.invalidate({ scope: 'rows', rowIds: ['b'] });
+	await settle();
 
-	store.set('a', nonconforming('a'));
+	expect(mock.reads.scans).toBe(2);
+	expect(mock.reads.gets).toEqual(['b']);
+	expect(entries.byId('b')?.name).toBe('Bea');
+	expect(entries.all.map((r) => r.id)).toEqual(['a', 'b']);
+});
+
+test('a rows invalidation removes a row that is no longer live', async () => {
+	const mock = createMockTable();
+	mock.store.set('a', row('a'));
+	mock.store.set('b', row('b'));
+	const entries = fromTable(mock.table);
+	await entries.whenReady;
+	await activateLatestSubscriber();
+
+	mock.store.delete('a');
+	mock.invalidate({ scope: 'rows', rowIds: ['a'] });
+	await settle();
+
+	expect(entries.all.map((r) => r.id)).toEqual(['b']);
 	expect(entries.byId('a')).toBeUndefined();
-	expect(entries.nonconforming.map((e) => e.id)).toEqual(['a']);
+});
 
-	store.set('a', newerWriter('a'));
-	expect(entries.byId('a')).toBeUndefined();
-	expect(entries.newerWriter.map((e) => e.id)).toEqual(['a']);
+test('a rows invalidation moves a newly nonconforming row into its bucket', async () => {
+	const mock = createMockTable();
+	mock.store.set('a', row('a'));
+	const entries = fromTable(mock.table);
+	await entries.whenReady;
+	await activateLatestSubscriber();
 
-	store.set('a', row('a', 'fixed'));
-	expect(entries.byId('a')?.name).toBe('fixed');
-	expect(entries.newerWriter).toEqual([]);
+	mock.store.set('a', nonconforming('a'));
+	mock.invalidate({ scope: 'rows', rowIds: ['a'] });
+	await settle();
+
+	expect(entries.all).toEqual([]);
+	expect(entries.nonconforming.map((issue) => issue.id)).toEqual(['a']);
+
+	// And back again, without a scan.
+	mock.store.set('a', row('a', 'Recovered'));
+	mock.invalidate({ scope: 'rows', rowIds: ['a'] });
+	await settle();
+	expect(entries.nonconforming).toEqual([]);
+	expect(entries.byId('a')?.name).toBe('Recovered');
+	expect(mock.reads.scans).toBe(2);
+});
+
+test('a table invalidation rescans and supersedes waiting row ids', async () => {
+	const mock = createMockTable();
+	mock.store.set('a', row('a'));
+	const entries = fromTable(mock.table);
+	await entries.whenReady;
+	await activateLatestSubscriber();
+	mock.reads.gets.length = 0;
+
+	mock.store.set('c', row('c'));
+	mock.invalidate({ scope: 'rows', rowIds: ['a'] });
+	mock.invalidate({ scope: 'table' });
+	await settle();
+
+	expect(mock.reads.scans).toBe(3);
+	expect(entries.all.map((r) => r.id)).toEqual(['a', 'c']);
+});
+
+test('an unreadable point read falls back to a rescan', async () => {
+	const mock = createMockTable();
+	mock.store.set('a', row('a'));
+	const entries = fromTable(mock.table);
+	await entries.whenReady;
+	await activateLatestSubscriber();
+
+	mock.failGetsWith({ name: 'ReplicaUnavailable', message: 'storage gone' });
+	mock.store.set('b', row('b'));
+	mock.invalidate({ scope: 'rows', rowIds: ['b'] });
+	await settle();
+
+	// The read could not answer, so the view asked the question it can always
+	// ask instead of reporting a failure the caller cannot act on.
+	expect(mock.reads.scans).toBe(3);
+	expect(entries.all.map((r) => r.id)).toEqual(['a', 'b']);
+	expect(entries.loadError).toBeNull();
 });

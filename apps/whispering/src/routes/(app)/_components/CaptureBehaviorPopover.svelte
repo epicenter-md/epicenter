@@ -5,23 +5,13 @@
 	import OutputDeliveryControls from '$lib/components/OutputDeliveryControls.svelte';
 	import { SettingSwitch } from '$lib/components/settings';
 	import { captureSurface } from '$lib/state/capture-surface.svelte';
+	import { getWhisperingApp } from '$lib/whispering/context';
 
-	// Quick access to the per-session capture behaviors that otherwise live in
-	// Settings. The trailing bookend of the capture pipeline row, matching the
-	// device/model/polish popover grammar. Booleans only: pickers stay as
-	// pills, set-and-forget config stays in Settings. This is the one surface that
-	// curates a capture behavior (pause playback) next to the transcription output
-	// delivery, and both reuse the same components the Settings page renders, so
-	// there is one source of truth with no drift.
+	const app = getWhisperingApp();
 	let open = $state(false);
 
-	// The pause window differs by mode (ADR-0027): manual holds the pause for the
-	// whole recording, VAD pauses per utterance and resumes shortly after you stop
-	// speaking. Word the description to match the surface on screen. Import shares
-	// the recording phrasing: it never captures a live speaking window, and its
-	// underlying durable trigger is the one that runs on the next capture.
 	const pausePlaybackDescription = $derived.by(() => {
-		switch (captureSurface.current) {
+		switch (captureSurface.current(app)) {
 			case 'vad':
 				return 'Pause music or video while you are speaking, then try to resume shortly after you stop.';
 			case 'manual':
@@ -49,7 +39,7 @@
 	<Popover.Content class="w-80">
 		<div class="flex flex-col gap-3">
 			<SettingSwitch
-				key="recording.pausePlayback"
+				key="settings.recording.pausePlayback"
 				label="Pause playback while recording"
 				description={pausePlaybackDescription}
 			/>

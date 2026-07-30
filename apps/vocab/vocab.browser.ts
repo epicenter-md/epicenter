@@ -1,26 +1,98 @@
 /**
- * Vocab browser composition: the one boot call (ADR-0088/ADR-0094).
+ * Vocab browser composition: open this origin's replica, then attach sync when
+ * auth is signed in (ADR-0088: sign-in is an enhancement, never a door).
  *
- * `toConnection` reads `auth.state` once: signed out projects to `null` (bare
- * guid-named IndexedDB, cross-tab channel, no relay), signed in projects to
- * the principal's connection (principal-scoped storage plus relay). Both arms return
- * the same bundle shape, per-conversation message-doc openers and `wipe()`
- * included, so nothing downstream branches on auth again.
+ * The replica is the same one either way. Signing in attaches a sync session to
+ * it; signing out detaches. Nothing downstream branches on auth, and no
+ * identity change swaps the underlying storage.
  */
 
 import type { SyncAuthClient } from '@epicenter/auth';
-import { toConnection } from '@epicenter/svelte/auth';
-import type { NodeId } from '@epicenter/workspace';
-import { vocabWorkspace } from './vocab.js';
+import type { Exchange, SyncCredentialProvider } from '@epicenter/data';
+import { openBrowserEpicenter } from '@epicenter/data/browser';
+import { parseExchangeResponse } from '@epicenter/data/protocol';
+import { createHttpDocumentTransports } from '@epicenter/document-sync';
 
-export function openVocabBrowser({
-	auth,
-	nodeId,
-}: {
-	auth: SyncAuthClient;
-	nodeId: NodeId;
-}) {
-	return vocabWorkspace.connect(toConnection(auth, nodeId));
+type SyncAuth = Pick<
+	SyncAuthClient,
+	'state' | 'deployment' | 'fetch' | 'onStateChange'
+>;
+
+function deploymentUrl(baseUrl: string): URL {
+	const url = new URL(baseUrl);
+	if (!url.pathname.endsWith('/')) url.pathname += '/';
+	return url;
 }
 
-export type VocabBrowser = ReturnType<typeof openVocabBrowser>;
+function createExchange(auth: SyncAuth): Exchange {
+	return async (request) => {
+		const response = await auth.fetch(
+			new URL('api/sync/v1', deploymentUrl(auth.deployment.baseURL)),
+			{
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify(request),
+			},
+		);
+		if (!response.ok) {
+			throw new Error(`Epicenter sync failed (${response.status})`);
+		}
+		const parsed = parseExchangeResponse(await response.json());
+		if (parsed.error !== null) throw parsed.error;
+		return parsed.data;
+	};
+}
+
+/** Open this browser origin's replica and attach sync for signed-in auth. */
+export async function openVocabBrowserEpicenter({
+	auth,
+	reportBackgroundError,
+}: {
+	auth: SyncAuth;
+	reportBackgroundError(cause: unknown): void;
+}) {
+	const epicenter = await openBrowserEpicenter();
+	const credentials: SyncCredentialProvider = {
+		get: () => (auth.state.status === 'signed-in' ? 'available' : undefined),
+		subscribe: (listener) => auth.onStateChange(listener),
+	};
+	const exchange = createExchange(auth);
+
+	async function attachSignedIn(): Promise<void> {
+		const state = auth.state;
+		if (state.status !== 'signed-in') return;
+		const attached = await epicenter.attachSync({
+			deploymentId: deploymentUrl(auth.deployment.baseURL).href,
+			principalId: state.principalId,
+			exchange,
+			...createHttpDocumentTransports({
+				baseUrl: auth.deployment.baseURL,
+				fetch: (url, init) => auth.fetch(url, init),
+			}),
+			credentials,
+		});
+		if (attached.error !== null) throw attached.error;
+	}
+
+	try {
+		await attachSignedIn();
+	} catch (cause) {
+		await epicenter[Symbol.asyncDispose]();
+		throw cause;
+	}
+	const stopAuth = auth.onStateChange(() => {
+		void attachSignedIn().catch(reportBackgroundError);
+	});
+
+	return Object.freeze({
+		epicenter,
+		async [Symbol.asyncDispose]() {
+			stopAuth();
+			await epicenter[Symbol.asyncDispose]();
+		},
+	});
+}
+
+export type VocabBrowserEpicenter = Awaited<
+	ReturnType<typeof openVocabBrowserEpicenter>
+>;

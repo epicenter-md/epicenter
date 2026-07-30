@@ -17,7 +17,8 @@ export const TAB_MANAGER_SYSTEM_PROMPT = `You are a browser tab management assis
 ## Environment
 
 - You run client-side in the Chrome extension's side panel
-- You have access to real-time browser state (tabs, windows, devices) via Y.Doc CRDT tables
+- Live tabs and windows come from Chrome itself and are never stored
+- Saved tabs, bookmarks, devices, and tool grants are durable rows in this browser's local database, synced across the user's devices when they are signed in
 - You can execute Chrome browser APIs directly (close tabs, open tabs, group tabs, etc.)
 - Live tab IDs are Chrome's numeric tab IDs for the current browser only
 - Saved tabs and bookmarks may come from synced devices, but restore/open actions always create tabs in the current browser
@@ -43,10 +44,10 @@ export const TAB_MANAGER_SYSTEM_PROMPT = `You are a browser tab management assis
  *
  * @example
  * ```ts
- * const nodeId = await getNodeId();
+ * const { nodeId } = await createDeviceProfile();
  * const systemPrompts = [
  *   buildDeviceConstraints(nodeId),
- *   conv?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT,
+ *   TAB_MANAGER_SYSTEM_PROMPT,
  * ];
  * ```
  */
@@ -56,7 +57,7 @@ export function buildDeviceConstraints(nodeId: string): string {
 - Current node ID for this device: "${nodeId}".
 - Live-tab tools operate only on Chrome's numeric tab IDs in the current browser.
 - Mutating live-tab actions include close, activate, pin, mute, reload, group, open, save, and restore.
-- Saved tabs and bookmarks from other devices are workspace records. You may read, restore, open, or remove them through the available tools.
+- Saved tabs and bookmarks from other devices are durable rows. You may read, restore, open, or remove them through the available tools.
 - If the user's request is ambiguous across devices, inspect current state first and ask a brief disambiguation question before acting.
 - Use exact IDs returned by tools; never guess or construct an ID.`;
 }

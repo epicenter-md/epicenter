@@ -1,54 +1,59 @@
 /**
- * Reactive tool trust state backed by the workspace's toolTrust table.
+ * Reactive tool-trust state: which AI chat tools auto-approve.
  *
- * The table is a presence set of auto-approved tool names: a row means
- * "always allow", no row means "ask" (the safe default), so revoking
- * deletes the row instead of writing a junk default. Mutation tools start
- * absent and show approval UI in chat; "Always Allow" adds the row and
- * future invocations auto-approve. Query tools never consult this module:
- * they auto-execute always.
+ * The table is a presence set (see `$lib/workspace`): a row means "always
+ * allow", no row means ask. Query tools never consult this; they run unattended
+ * either way. Grants sync across devices like any other row.
  *
- * Trust state syncs across devices via the workspace's Y.Doc CRDT.
- *
- * @module
+ * A grant is matched by `toolName`, not by row id, because row ids are
+ * runtime-minted (ADR-0187). Revoking deletes every row naming that tool, so two
+ * devices that granted the same tool concurrently both get revoked by one click.
  */
 
 import { fromTable } from '@epicenter/svelte';
-import type { TabManagerBrowser } from '$lib/tab-manager/extension';
+import type { TabManagerData } from '$lib/workspace';
 
-export type ToolTrustState = ReturnType<typeof createToolTrustState>;
+export function createToolTrustState({ data }: { data: TabManagerData }) {
+	const trustView = fromTable(data.tables.toolTrust);
 
-export function createToolTrustState(tabManager: TabManagerBrowser) {
-	const trustView = fromTable(tabManager.tables.toolTrust);
-
-	/** Cached projection of trusted tool names: stable reference via $derived. */
-	const trustedNames = $derived(trustView.all.map((row) => row.id));
+	/** Tool names with a live grant, deduplicated and stable per change. */
+	const trustedNames = $derived([
+		...new Set(trustView.all.map((grant) => grant.toolName)),
+	]);
 
 	return {
+		/** Resolves once the first read of this table has landed. */
+		whenReady: trustView.whenReady,
+
 		/**
 		 * Whether a tool auto-approves without showing the approval UI.
-		 * Query tools should not call this because they auto-execute always.
 		 *
-		 * Honors only a trust row this binary can read: a grant written by a newer
-		 * binary (a future toolTrust schema) is unreadable here, so it falls back
-		 * to the safe "ask" default rather than auto-approving a row whose fields
-		 * it cannot see.
+		 * Honors only a grant this binary can read: a row written by a newer
+		 * binary is nonconforming here, so it falls back to the safe "ask"
+		 * default rather than auto-approving a row whose fields it cannot see.
 		 */
 		shouldAutoApprove(name: string): boolean {
-			return trustView.byId(name) !== undefined;
+			return trustedNames.includes(name);
 		},
 
 		/** Auto-approve this tool from now on (the "Always Allow" action). */
-		allow(name: string): void {
-			tabManager.tables.toolTrust.set({ id: name });
+		async allow(name: string): Promise<void> {
+			if (trustedNames.includes(name)) return;
+			await data.tables.toolTrust.create({ toolName: name });
 		},
 
 		/** Return this tool to the ask-every-time default. */
-		revoke(name: string): void {
-			tabManager.tables.toolTrust.delete(name);
+		async revoke(name: string): Promise<void> {
+			// Snapshot the matching row ids before the first await. `all` is a live
+			// reactive read that each delete invalidates, so iterating it directly
+			// would be walking a list that changes underneath the loop.
+			const revoking = trustView.all
+				.filter((grant) => grant.toolName === name)
+				.map((grant) => grant.id);
+			for (const id of revoking) await data.tables.toolTrust.delete(id);
 		},
 
-		/** Names of all auto-approved tools, as a cached reactive array. */
+		/** Every auto-approved tool name. */
 		get trustedToolNames(): readonly string[] {
 			return trustedNames;
 		},

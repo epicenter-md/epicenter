@@ -1,5 +1,10 @@
 # Workspaces Were Documents All Along
 
+> **Historical note (2026-07-12):** This article traces the earlier root-Y.Doc
+> workspace architecture. The target workspace family composes row-owned
+> documents, stable synchronized KV, and a row-sync authority. See ADR-0130
+> through ADR-0137 for the current direction.
+
 I built the workspace API five times. Each version deleted more code than the last, until the fifth version put some of it back : for a reason the earlier versions hadn't earned the right to see yet. Here's how I got there.
 
 ## The first version felt great to call

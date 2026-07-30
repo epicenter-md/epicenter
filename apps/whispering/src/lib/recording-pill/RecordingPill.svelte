@@ -128,7 +128,8 @@
 			// with the meter spread between them (justify-between). The text chips hug
 			// their content, capped wide enough for the longest label ("Transcription
 			// failed") to show in full. The 224px cap is mirrored by the desktop overlay
-			// window (OVERLAY_WIDTH in the Tauri runtime owner), which must stay in sync.
+			// window (OVERLAY_WIDTH in the Tauri overlay window manager), which must
+			// stay in sync.
 			recording
 				? 'w-[208px] justify-between'
 				: 'w-fit max-w-[224px]',

@@ -21,10 +21,12 @@ import {
 	createDurableObjectAttachRelay,
 	createDurableObjectRooms,
 	createServerApp,
+	EpicenterAuthority,
 	mountAttachRelayApp,
 	mountBlobsApp,
 	mountCloudAuth,
 	mountCloudDb,
+	mountCloudflareEpicenterSyncApp,
 	mountInferenceApp,
 	mountRoomsApp,
 	mountSessionApp,
@@ -37,6 +39,7 @@ import {
 } from '@epicenter/server';
 import type { Context } from 'hono';
 import { describeRoute } from 'hono-openapi';
+import { mountAccountDeletionApi } from './account/routes.js';
 import {
 	chargeOpenAiCreditsWithAutumn,
 	chargeOpenAiTranscriptionCredits,
@@ -134,6 +137,15 @@ mountCloudAuth(app, {
 
 // Principal-partitioned reusable surfaces.
 mountSessionApp(app, { auth: cookieOrBearer });
+mountCloudflareEpicenterSyncApp(app, {
+	auth: bearer,
+	resolveNamespace: (env) =>
+		(
+			env as Cloudflare.Env & {
+				EPICENTER_SYNC: DurableObjectNamespace<EpicenterAuthority>;
+			}
+		).EPICENTER_SYNC,
+});
 // Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver, not
 // a prebuilt wrapper.
 mountRoomsApp(app, { resolveBearerPrincipal: resolveRequestOAuthPrincipal });
@@ -172,6 +184,13 @@ mountTranscriptionApp(app, {
 // dashboard endpoints can't be mounted without it.
 mountBillingApi(app, { auth: cookieOrBearer });
 
+// Hosted account deletion (Wave G): one route coordinates authority storage,
+// the blob prefix, the Autumn customer, storage observations, and the auth
+// user, ordered so retries stay authenticated until deletion is complete.
+// Auth is bundled inside the mount: a fresh cookie session only, so a leaked
+// bearer can never destroy the account.
+mountAccountDeletionApi(app);
+
 // Dashboard SPA: serve the cloud UI shell for the dashboard URLs. The hosted
 // auth browser surfaces use the same shell through `mountCloudAuth` above.
 // Cloud-only because the `ASSETS` binding lives in this worker's wrangler
@@ -195,4 +214,4 @@ app.get('/billing', (c) => c.redirect('/dashboard'));
 export default {
 	fetch: app.fetch,
 };
-export { AttachRelay, Room };
+export { AttachRelay, EpicenterAuthority, Room };

@@ -3,7 +3,7 @@
  *
  * Point it at a base URL and it runs ONE end-to-end scenario against the live
  * HTTP server: read the session, verify the room HTTP refusal, and exercise the
- * full content-addressed blob lifecycle (ticket -> presigned PUT -> read back).
+ * full opaque-id blob lifecycle (ticket -> presigned PUT -> read back).
  * Every step prints a single PASS/FAIL/SKIP line, so the same
  * invocation against the Bun process (:8788) and the wrangler process (:8787)
  * produces a diffable transcript of runtime parity.
@@ -27,6 +27,7 @@
  *     that as an expected, non-fatal outcome.
  */
 
+import { generateBlobId } from '@epicenter/blobs';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { API_BUN_DEV_PORT } from '@epicenter/constants/apps';
 
@@ -54,13 +55,6 @@ function record(status: Status, step: string, detail: string) {
 
 function randHex(bytes: number): string {
 	return [...crypto.getRandomValues(new Uint8Array(bytes))]
-		.map((b) => b.toString(16).padStart(2, '0'))
-		.join('');
-}
-
-async function sha256Hex(data: Uint8Array): Promise<string> {
-	const digest = await crypto.subtle.digest('SHA-256', data as BufferSource);
-	return [...new Uint8Array(digest)]
 		.map((b) => b.toString(16).padStart(2, '0'))
 		.join('');
 }
@@ -124,12 +118,12 @@ async function main() {
 	const payload = new TextEncoder().encode(
 		`epicenter blob smoke ${new Date().toISOString()} ${randHex(4)}\n`,
 	);
-	const sha256 = await sha256Hex(payload);
-	const ticketRes = await fetch(API_ROUTES.blobs.list.url(BASE_URL), {
+	const blobId = generateBlobId();
+	const ticketRes = await fetch(API_ROUTES.blobs.collection.url(BASE_URL), {
 		method: 'POST',
 		headers: { ...authHeaders, 'content-type': 'application/json' },
 		body: JSON.stringify({
-			sha256,
+			blobId,
 			sizeBytes: payload.byteLength,
 			contentType: 'text/plain',
 		}),
@@ -149,37 +143,24 @@ async function main() {
 		);
 	} else {
 		const ticket = (await ticketRes.json()) as {
-			status: 'upload' | 'duplicate';
-			uploadUrl?: string;
-			requiredHeaders?: Record<string, string>;
+			uploadUrl: string;
+			requiredHeaders: Record<string, string>;
 		};
+		record('PASS', 'blob ticket', `${ticketRes.status} blobId=${blobId}`);
+
+		const putRes = await fetch(ticket.uploadUrl, {
+			method: 'PUT',
+			headers: ticket.requiredHeaders,
+			body: payload,
+		});
 		record(
-			'PASS',
-			'blob ticket',
-			`${ticketRes.status} status=${ticket.status}`,
+			putRes.ok || putRes.status === 412 ? 'PASS' : 'FAIL',
+			'blob PUT (presigned)',
+			`${putRes.status}`,
 		);
 
-		if (ticket.status === 'upload' && ticket.uploadUrl) {
-			const putRes = await fetch(ticket.uploadUrl, {
-				method: 'PUT',
-				headers: ticket.requiredHeaders,
-				body: payload,
-			});
-			record(
-				putRes.ok ? 'PASS' : 'FAIL',
-				'blob PUT (presigned)',
-				`${putRes.status}`,
-			);
-		} else {
-			record(
-				'PASS',
-				'blob PUT (presigned)',
-				'skipped (duplicate, already stored)',
-			);
-		}
-
 		// Read back: 302 -> presigned GET -> compare bytes.
-		const readRes = await fetch(API_ROUTES.blobs.byHash.url(BASE_URL, sha256), {
+		const readRes = await fetch(API_ROUTES.blobs.byId.url(BASE_URL, blobId), {
 			headers: authHeaders,
 			redirect: 'manual',
 		});
@@ -189,7 +170,7 @@ async function main() {
 			const got = new Uint8Array(await objRes.arrayBuffer());
 			const match =
 				got.byteLength === payload.byteLength &&
-				(await sha256Hex(got)) === sha256;
+				got.every((byte, index) => byte === payload[index]);
 			record(
 				match ? 'PASS' : 'FAIL',
 				'blob read back',
@@ -200,7 +181,7 @@ async function main() {
 		}
 
 		// Cleanup the uploaded object (idempotent).
-		await fetch(API_ROUTES.blobs.byHash.url(BASE_URL, sha256), {
+		await fetch(API_ROUTES.blobs.byId.url(BASE_URL, blobId), {
 			method: 'DELETE',
 			headers: authHeaders,
 		});
@@ -210,10 +191,10 @@ async function main() {
 }
 
 function summarize() {
-	const counts = rows.reduce(
-		(acc, r) => ({ ...acc, [r.status]: (acc[r.status] ?? 0) + 1 }),
-		{} as Record<Status, number>,
-	);
+	const counts = {} as Record<Status, number>;
+	for (const row of rows) {
+		counts[row.status] = (counts[row.status] ?? 0) + 1;
+	}
 	console.log(
 		`\nSummary: ${counts.PASS ?? 0} pass, ${counts.FAIL ?? 0} fail, ${counts.SKIP ?? 0} skip\n`,
 	);

@@ -1,6 +1,6 @@
 /**
- * The browser side of the Query session: one startup fetch of
- * the Query session API, one Query session WebSocket, and a `$state`-backed
+ * The browser side of the Home session: one startup fetch of
+ * the Home session API, one Home session WebSocket, and a `$state`-backed
  * view the components read. The server snapshot is the only transcript state;
  * every initial payload and `snapshot` event replaces it wholesale, so the
  * client never accumulates a second transcript that could drift.
@@ -9,31 +9,31 @@
  * (Hono, Bun WebSocket glue, node builtins) enters the browser bundle.
  */
 
-import type { ConversationSnapshot } from '@epicenter/workspace/agent';
+import type { ConversationSnapshot } from '@epicenter/agent';
 import type {
+	HomeClientCommand,
+	HomeInvocation,
 	PendingApproval,
-	QueryClientCommand,
-	QueryInvocation,
 } from '../host.ts';
 import { SESSION_ROUTE, SESSION_STREAM_ROUTE } from '../routes.ts';
-import type { QueryServerEvent, QuerySessionResponse } from '../server.ts';
+import type { HomeServerEvent, HomeSessionResponse } from '../server.ts';
 
 export type ConnectionStatus = 'connecting' | 'open' | 'closed';
 
 const RECONNECT_DELAY_MS = 1500;
 
 export function createSession({ ready }: { ready: Promise<void> }) {
-	let snapshot = $state<ConversationSnapshot>({
+	let snapshot = $state.raw<ConversationSnapshot>({
 		messages: [],
 		streaming: null,
 		isThinking: false,
 		isGenerating: false,
 		error: null,
 	});
-	let pendingApprovals = $state<PendingApproval[]>([]);
-	let invocations = $state<QueryInvocation[]>([]);
+	let pendingApprovals = $state.raw<PendingApproval[]>([]);
+	let invocations = $state.raw<HomeInvocation[]>([]);
 	let connection = $state<ConnectionStatus>('connecting');
-	let tools = $state<QuerySessionResponse['tools']>([]);
+	let tools = $state.raw<HomeSessionResponse['tools']>([]);
 
 	let socket: WebSocket | undefined;
 
@@ -44,7 +44,7 @@ export function createSession({ ready }: { ready: Promise<void> }) {
 				connection = 'closed';
 				return false;
 			}
-			const body = (await response.json()) as QuerySessionResponse;
+			const body = (await response.json()) as HomeSessionResponse;
 			tools = body.tools;
 			snapshot = body.snapshot.conversation;
 			pendingApprovals = body.snapshot.pendingApprovals;
@@ -69,7 +69,7 @@ export function createSession({ ready }: { ready: Promise<void> }) {
 		};
 		ws.onmessage = (event) => {
 			if (typeof event.data !== 'string') return;
-			let parsed: QueryServerEvent;
+			let parsed: HomeServerEvent;
 			try {
 				parsed = JSON.parse(event.data);
 			} catch {
@@ -90,7 +90,7 @@ export function createSession({ ready }: { ready: Promise<void> }) {
 	}
 
 	/** Returns whether the command actually went out over an open socket. */
-	function sendCommand(command: QueryClientCommand): boolean {
+	function sendCommand(command: HomeClientCommand): boolean {
 		if (socket?.readyState !== WebSocket.OPEN) return false;
 		socket.send(JSON.stringify(command));
 		return true;
@@ -138,7 +138,7 @@ export function createSession({ ready }: { ready: Promise<void> }) {
 		/** Run one tool directly; the result lands in `invocations`. */
 		invoke(
 			toolName: string,
-			input: Extract<QueryClientCommand, { type: 'invoke' }>['input'] = {},
+			input: Extract<HomeClientCommand, { type: 'invoke' }>['input'] = {},
 		) {
 			return sendCommand({ type: 'invoke', toolName, input });
 		},

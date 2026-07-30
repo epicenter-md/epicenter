@@ -1,5 +1,5 @@
 import '@tanstack/svelte-table';
-import type { CommandRunners } from '$lib/commands';
+import type { BoundCommandRunners } from '$lib/commands';
 
 // See https://svelte.dev/docs/kit/types#app.d.ts
 // for information about these interfaces
@@ -13,7 +13,7 @@ declare global {
 	}
 	interface Window {
 		__TAURI_INTERNALS__: Record<string, unknown>;
-		commands: CommandRunners;
+		commands: BoundCommandRunners;
 		goto: (url: string) => Promise<void>;
 	}
 }

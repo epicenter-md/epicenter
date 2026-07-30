@@ -6,9 +6,12 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { auth } from '#platform/auth';
-	import { honeycrisp } from '$lib/honeycrisp';
+	import { getHoneycrispApp } from '$lib/context.js';
 	import { instanceSetting } from '$lib/instance';
+	import { runHoneycrispMutation } from '$lib/mutation.js';
 	import FolderMenuItem from '../components/FolderMenuItem.svelte';
+
+	const honeycrisp = getHoneycrispApp();
 </script>
 
 <Sidebar.Root>
@@ -18,9 +21,8 @@
 			<div class="flex items-center gap-1">
 				<AccountPopover
 					{auth}
-					collaboration={honeycrisp.collaboration}
+					dataSync={honeycrisp}
 					syncNoun="notes"
-					onForgetDevice={() => honeycrisp.wipe()}
 					instanceConnect={{ appName: 'Honeycrisp', setting: instanceSetting }}
 				/>
 				<Sidebar.Trigger />
@@ -76,7 +78,11 @@
 				</Collapsible.Trigger>
 				<Sidebar.GroupAction
 					title="New Folder"
-					onclick={() => honeycrisp.state.folders.create()}
+					onclick={() =>
+						runHoneycrispMutation(
+							honeycrisp.state.folders.create(),
+							'Could not create folder',
+						)}
 				>
 					<PlusIcon />
 					<span class="sr-only">New Folder</span>

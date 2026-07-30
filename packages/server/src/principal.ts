@@ -20,6 +20,7 @@
  * One shape, one helper per resource type, no ternary.
  */
 
+import type { BlobId } from '@epicenter/blobs';
 import type { PrincipalId } from '@epicenter/identity';
 
 /** Durable Object name template, single form. */
@@ -36,10 +37,9 @@ export type RoomDoName = `principals/${string}/rooms/${string}`;
 export type AttachHostDoName = `principals/${string}/attach-hosts/${string}`;
 
 /**
- * R2 object key template for a content-addressed blob, single form. The id
- * segment is a sha256 hex digest, so the key IS the content address: R2 is
- * the index, with no separate database row. See
- * ADR-0089 (the blob store is a presigned-S3 kernel and the bucket is its only index).
+ * R2 object key template for an opaque-id blob, single form. The BlobId is
+ * used verbatim: R2 is the index, with no separate database row. See
+ * ADR-0089 (presigned S3 kernel) as amended by ADR-0148 (opaque BlobId).
  */
 export type BlobR2Key = `principals/${string}/blobs/${string}`;
 
@@ -59,9 +59,9 @@ export function attachHostDoName(
 	return `principals/${principalId}/attach-hosts/${hostId}`;
 }
 
-/** Durable key of a content-addressed blob's R2 object (id = sha256 hex). */
-export function blobKey(principalId: PrincipalId, sha256: string): BlobR2Key {
-	return `principals/${principalId}/blobs/${sha256}`;
+/** Durable key of an opaque-id blob's R2 object. */
+export function blobKey(principalId: PrincipalId, blobId: BlobId): BlobR2Key {
+	return `principals/${principalId}/blobs/${blobId}`;
 }
 
 /** Prefix matching every blob this partition has stored. */

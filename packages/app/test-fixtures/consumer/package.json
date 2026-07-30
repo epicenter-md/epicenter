@@ -1,0 +1,17 @@
+{
+	"name": "epicenter-app-consumer-fixture",
+	"private": true,
+	"version": "0.0.0",
+	"type": "module",
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"build": "vite build"
+	},
+	"devDependencies": {
+		"typescript": "^5.9.3",
+		"vite": "^7.3.5"
+	},
+	"dependencies": {
+		"@epicenter/lens": "^0.1.0"
+	}
+}

@@ -123,12 +123,12 @@ Copy (proven, with sources):
 | Desktop token persistence = plain `localStorage` (survives the OS-browser round trip) | `packages/auth/src/persisted-auth-storage.ts:61-78` |
 | `AuthConnection` optional capability for self-host verification UX (PR #2247) | `packages/auth/src/auth-contract.ts` |
 | Single instance focuses the existing window | `apps/whispering/src-tauri/src/lib.rs:305-317` |
-| Updater: fire-and-forget `check()` at startup + UpdateDialog | `apps/whispering/src/routes/(app)/_runtime/check-for-updates.ts` |
+| Updater: fire-and-forget `check()` at startup + UpdateDialog | removed from Whispering since this audit; recover from git history |
 | Per-window capability JSON with explicit path/URL scoping | `apps/whispering/src-tauri/capabilities/*.json` |
 | CI release via `tauri-apps/tauri-action@v0` + updater signing + notarization secrets | `.github/workflows/release.whispering.yml:100-140` |
-| `runtimeOwners` array of `{attach}` modules mounted once from the root layout | `apps/whispering/src/routes/(app)/_runtime/runtime-owners.ts` |
+| Headless `AppEffects` component mounting app-lifetime effect helpers once from the root layout | `apps/whispering/src/routes/(app)/_components/AppEffects.svelte` |
 
-Skip (audio/keystroke-specific or a tradeoff Honeycrisp does not share): NSPanel overlay, `macOSPrivateApi`, `tauri-plugin-macos-permissions`, the rdev keyboard tap and two-tier shortcut system, the dev codesign-runner dual identity, `write_text`/keystroke Rust commands, and Whispering's Shape B module singleton with `reloadOnOwnerChange` (a deliberate tradeoff for ~70 singleton importers; Honeycrisp's Shape A `WorkspaceGate` already handles identity changes more simply).
+Skip (audio/keystroke-specific or a tradeoff Honeycrisp does not share): NSPanel overlay, `macOSPrivateApi`, the AVFoundation microphone-permission command, the rdev keyboard tap and two-tier shortcut system, the dev codesign-runner dual identity, `write_text`/keystroke Rust commands, and Whispering's Shape B module singleton with `reloadOnOwnerChange` (a deliberate tradeoff for ~70 singleton importers; Honeycrisp's Shape A `WorkspaceGate` already handles identity changes more simply).
 
 ### External grounding verdicts
 
@@ -242,7 +242,7 @@ Tauri 2 shell, cloned from Whispering minus everything audio. Plugin ledger:
 | dialog, fs | with export (Phase 5) | not needed while notes live only in IndexedDB |
 | process | optional | |
 | notification, global-shortcut, autostart, clipboard-manager, tray | no | global-shortcut returns with quick-capture (v2); tray/autostart are not notes-app posture |
-| macos-permissions, nspanel, `macOSPrivateApi` | never | audio/keystroke apparatus |
+| microphone permissions, nspanel, `macOSPrivateApi` | never | audio/keystroke apparatus |
 
 Shell specifics:
 

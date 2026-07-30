@@ -1,5 +1,12 @@
 import type { SyncAuthClient } from '@epicenter/auth';
-import type { ConnectionConfig, NodeId } from '@epicenter/workspace';
+
+type ConnectionConfig = {
+	baseURL: string;
+	principalId: string;
+	nodeId: string;
+	openWebSocket: SyncAuthClient['openWebSocket'];
+	onReconnectSignal: SyncAuthClient['onStateChange'];
+};
 
 /**
  * Project the boot-time auth snapshot into a workspace connection, the one
@@ -18,7 +25,7 @@ import type { ConnectionConfig, NodeId } from '@epicenter/workspace';
  */
 export function toConnection(
 	auth: SyncAuthClient,
-	nodeId: NodeId,
+	nodeId: string,
 ): ConnectionConfig | null {
 	const state = auth.state;
 	if (state.status === 'signed-out') return null;

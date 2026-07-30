@@ -1,252 +1,132 @@
-import { INSTANCE_PRINCIPAL_ID } from '@epicenter/identity';
-import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/sync';
-import { defineErrors } from 'wellcrafted/error';
-import { createLogger, type Logger } from 'wellcrafted/logger';
-import { Ok, type Result } from 'wellcrafted/result';
-import type {
-	AuthFetch,
-	AuthState,
-	InstanceConnectionStatus,
-	SyncAuthClient,
-} from './auth-contract.js';
-import { AuthError } from './auth-errors.js';
+import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/sync/auth-subprotocol';
+import type { Logger } from 'wellcrafted/logger';
+import type { AuthFetch, SyncAuthClient } from './auth-contract.js';
+import { OpenWebSocketDenied } from './auth-errors.js';
 import {
 	type AuthFetchInput,
 	fetchWithBearer,
 	resolveTargetUrl,
 } from './bearer-fetch.js';
-import { getProfileVia, readApiSession } from './read-api-session.js';
+import type { BearerAuthorization } from './credential-authority.js';
+import { createInstanceCredentialAuthority } from './instance-credential-authority.js';
+import { getProfileVia } from './read-api-session.js';
 
-/**
- * Construction inputs for the instance-token auth client.
- *
- * `baseURL` is the self-hosted star's origin (optionally with a path prefix);
- * `token` is the operator-supplied bearer (the self-host `INSTANCE_TOKEN`, or the
- * quarantined dev `dev:<principalId>` resolver's token). `fetch`, `WebSocket`, and
- * `log` exist so tests can drive the client without a DOM.
- */
+/** Construction inputs for a self-hosted static-token client. */
 export type CreateInstanceTokenAuthConfig = {
 	/**
 	 * Base URL of the self-hosted Epicenter server. The bearer is attached only
-	 * to this origin (audience scoping, ADR-0053).
+	 * to this origin (ADR-0053).
 	 */
 	baseURL: string;
 	/**
-	 * The instance bearer token. Sent verbatim as `Authorization: Bearer <token>`
-	 * to `baseURL`; this client never refreshes or revokes it (it is the user's
-	 * credential, not a grant this client owns).
+	 * Operator-supplied instance bearer. The authority verifies but never
+	 * refreshes, revokes, or persists it.
 	 */
 	token: string;
-	/**
-	 * Fetch implementation for `/api/session` verification and authenticated
-	 * resource calls. Defaults to the bound global `fetch`.
-	 */
+	/** Fetch used for verification and local authenticated resource calls. */
 	fetch?: AuthFetch;
-	/**
-	 * WebSocket constructor. Tests and non-browser runtimes inject this because
-	 * browsers do not allow request headers during WebSocket upgrades.
-	 */
+	/** WebSocket constructor for browser transport or injected tests. */
 	WebSocket?: typeof WebSocket;
-	/**
-	 * Library logger for subscriber failures.
-	 */
+	/** Library logger for subscriber failures. */
 	log?: Logger;
 };
 
-const InstanceTokenAuthError = defineErrors({
-	SubscriberThrew: ({ cause }: { cause: unknown }) => ({
-		message: 'Auth state subscriber threw.',
-		cause,
-	}),
-});
-
 /**
- * Auth client for a prebuilt app pointed at a SELF-HOSTED Epicenter star with a
- * static instance bearer token (Wave 2 of the self-host spec).
- *
- * This is the third credential sibling of {@link createOAuthAppAuth} (PKCE
- * bearer) and {@link createSameOriginCookieAuth} (cookie): a different
- * credential model, not a mode flag on either. There is no OAuth flow, refresh,
- * launcher, or persisted grant. The token comes from the persisted Instance
- * setting and is held only in this closure for the client's lifetime:
- *
- *   - resource calls attach `Authorization: Bearer <token>`, but ONLY to
- *     `baseURL`'s origin (ADR-0053 audience scoping), so handing this `fetch` to
- *     a custom inference backend or any third party can never leak the token.
- *   - identity boots optimistically `signed-in` as `INSTANCE_PRINCIPAL_ID`
- *     (ADR-0075): a held instance token is a credential for the single partition,
- *     whose principal is always that literal, so the local workspace can open
- *     principal-scoped synchronously (mirroring the OAuth client's boot from its
- *     persisted grant). `/api/session` is then read once in the background (via
- *     the shared {@link readApiSession}) to verify: a 200 confirms the identity,
- *     an unreachable star leaves it (an offline self-hoster keeps their local
- *     workspace), and only a rejected token drops to `signed-out`. `startSignIn`
- *     re-runs that check so a UI can retry a connection that was offline at boot.
- *   - `signOut` is local-only: it drops to `signed-out` without a server call,
- *     because there is no grant to revoke. Forgetting the instance itself
- *     (reverting to hosted) is an app-level concern.
- *
- * It returns a {@link SyncAuthClient} (it carries the bearer subprotocol the
- * rooms route requires), so it is a drop-in for principal-scoped cloud sync.
+ * Compose one static instance credential authority with local HTTP and
+ * WebSocket transports. The instance token remains audience-scoped to its own
+ * origin and is never exposed on the returned client. Identity boots
+ * optimistically as the instance principal for local workspace selection, but
+ * resource transports wait for `/api/session` verification.
  */
 export function createInstanceTokenAuth({
 	baseURL,
 	token,
 	fetch: fetchImpl = globalThis.fetch.bind(globalThis),
 	WebSocket: WebSocketImpl = globalThis.WebSocket,
-	log = createLogger('auth/instance-token'),
+	log,
 }: CreateInstanceTokenAuthConfig): SyncAuthClient {
 	const epicenterOrigin = new URL(baseURL).origin;
-	// Boot optimistically signed-in as the instance principal, mirroring the OAuth
-	// client's synchronous boot from its persisted grant. The identity is knowable
-	// synchronously (ADR-0075: every valid instance bearer resolves to
-	// `INSTANCE_PRINCIPAL_ID`), so the workspace opens principal-scoped at once and
-	// `confirmSession` only verifies in the background. Booting `signed-out` here
-	// instead would flip the principal null -> instance the moment `/api/session`
-	// resolves, and `reloadOnPrincipalChange` (ADR-0088) would reload the page
-	// mid-session, tearing down the workspace's IndexedDB under any in-flight
-	// write; booting signed-in makes the happy path a no-op.
-	let state: AuthState = {
-		status: 'signed-in',
-		principalId: INSTANCE_PRINCIPAL_ID,
-	};
-	const listeners = new Set<(state: AuthState) => void>();
-	// The boot bearer check verifies against a remote instance, so it can be in
-	// flight or fail for a reason `AuthState` cannot carry (only a rejected token
-	// drops to `signed-out`). The connection status runs alongside `state` on its
-	// own listener set so a UI can tell "still connecting" from "unreachable"
-	// from "rejected token".
-	let connectionStatus: InstanceConnectionStatus = 'connecting';
-	const connectionListeners = new Set<
-		(status: InstanceConnectionStatus) => void
-	>();
+	const authority = createInstanceCredentialAuthority(
+		{ fetch: fetchImpl, log },
+		{ baseURL, token },
+	);
 
-	function setState(next: AuthState) {
-		state = next;
-		for (const listener of listeners) {
-			try {
-				listener(next);
-			} catch (cause) {
-				log.error(InstanceTokenAuthError.SubscriberThrew({ cause }));
-			}
-		}
-	}
-
-	function setConnection(next: InstanceConnectionStatus) {
-		connectionStatus = next;
-		for (const listener of connectionListeners) {
-			try {
-				listener(next);
-			} catch (cause) {
-				log.error(InstanceTokenAuthError.SubscriberThrew({ cause }));
-			}
-		}
-	}
-
-	/**
-	 * Verify the configured token against `/api/session` and reflect the result
-	 * into state. A 200 installs `signed-in` with the response's principal id; a
-	 * rejected token (`Rejected`) drops to `signed-out`. A network or parse
-	 * failure returns the error and leaves the current state, so a transient
-	 * outage does not look like a bad token.
-	 *
-	 * The actual `/api/session` read is the shared {@link readApiSession}; this
-	 * only reflects its outcome onto state and the `AuthClient` error contract.
-	 */
-	async function confirmSession(): Promise<Result<undefined, AuthError>> {
-		setConnection('connecting');
-		const { data: session, error } = await readApiSession({
-			baseURL,
-			token,
-			fetch: fetchImpl,
-		});
-		if (error) {
-			// `Rejected` (401/403) is a bad token; anything else (offline, wrong
-			// origin, non-Epicenter response) reads as unreachable. Only a rejected
-			// token is a durable "signed-out"; a transient outage leaves state alone
-			// so it does not look like a bad credential.
-			if (error.name === 'Rejected') setState({ status: 'signed-out' });
-			setConnection(error.name === 'Rejected' ? 'rejected' : 'unreachable');
-			return AuthError.StartSignInFailed({ cause: error });
-		}
-		setState({ status: 'signed-in', principalId: session.principalId });
-		setConnection('connected');
-		return Ok(undefined);
-	}
-
-	void confirmSession();
-
-	async function authedFetch(input: AuthFetchInput, init?: RequestInit) {
-		const onEpicenter =
-			resolveTargetUrl(input, baseURL)?.origin === epicenterOrigin;
+	async function fetchWithAuth(
+		input: AuthFetchInput,
+		init: RequestInit | undefined,
+		providedAuthorization?: BearerAuthorization,
+	) {
+		let authorization = providedAuthorization;
 		const response = await fetchWithBearer({
 			input,
 			init,
 			fetch: fetchImpl,
 			baseURL,
 			epicenterOrigin,
-			// The token is static: it is the credential to attach on every
-			// Epicenter-origin request, never refreshed.
-			resolveToken: async () => token,
+			resolveToken: async () => {
+				authorization ??= await authority.authorize();
+				return authorization.status === 'authorized'
+					? authorization.accessToken
+					: null;
+			},
 		});
-		// A 401 from the instance means the token is gone or revoked: go straight
-		// to signed-out. There is no refresh path for a static token.
+		return { response, authorization };
+	}
+
+	async function authedFetch(input: AuthFetchInput, init?: RequestInit) {
+		const result = await fetchWithAuth(input, init);
 		if (
-			response.status === 401 &&
-			onEpicenter &&
-			state.status === 'signed-in'
+			result.response.status === 401 &&
+			resolveTargetUrl(input, baseURL)?.origin === epicenterOrigin &&
+			result.authorization?.status === 'authorized'
 		) {
-			setState({ status: 'signed-out' });
-			setConnection('rejected');
+			authority.reportRejected(result.authorization.tokenGeneration);
 		}
-		return response;
+		return result.response;
 	}
 
 	return {
 		get state() {
-			return state;
+			return authority.snapshot.state;
 		},
 		deployment: {
 			kind: 'self-hosted',
 			baseURL,
 			connection: {
 				get status() {
-					return connectionStatus;
+					return authority.snapshot.connectionStatus;
 				},
 				onChange(fn) {
-					connectionListeners.add(fn);
-					return () => {
-						connectionListeners.delete(fn);
-					};
+					return authority.onConnectionChange(fn);
 				},
 			},
 		},
 		onStateChange(fn) {
-			listeners.add(fn);
-			return () => {
-				listeners.delete(fn);
-			};
+			return authority.onStateChange(fn);
 		},
-		// "Sign in" for a token client is verifying the configured token; it lets a
-		// signed-out screen retry a connection that was unreachable at boot.
-		startSignIn: confirmSession,
-		async signOut() {
-			setState({ status: 'signed-out' });
-			return Ok(undefined);
+		startSignIn() {
+			return authority.startSignIn();
+		},
+		signOut() {
+			return authority.signOut();
 		},
 		fetch: authedFetch,
 		getProfile: () => getProfileVia(authedFetch, baseURL),
 		async openWebSocket(url, protocols = []) {
-			// The room URL is always built from `baseURL`, so the bearer is always
-			// addressed to its own origin; attach it unconditionally.
+			const authorization = await authority.authorize();
+			if (authorization.status === 'denied') {
+				throw OpenWebSocketDenied({
+					permanence: authorization.permanence,
+					code: authorization.code,
+				}).error;
+			}
 			return new WebSocketImpl(String(url), [
 				...protocols,
-				`${BEARER_SUBPROTOCOL_PREFIX}${token}`,
+				`${BEARER_SUBPROTOCOL_PREFIX}${authorization.accessToken}`,
 			]);
 		},
 		[Symbol.dispose]() {
-			listeners.clear();
-			connectionListeners.clear();
+			authority[Symbol.dispose]();
 		},
 	};
 }

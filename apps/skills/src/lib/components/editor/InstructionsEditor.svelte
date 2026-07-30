@@ -1,11 +1,21 @@
 <script lang="ts">
-	import { fromDisposableCache } from '@epicenter/svelte';
-	import { skills } from '$lib/skills/client';
+	import { getSkillsApp } from '$lib/context.js';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 
 	let { skillId }: { skillId: string } = $props();
+	const skills = getSkillsApp();
 
-	const doc = fromDisposableCache(skills.instructionsDocs, () => skillId);
+	const lease = $derived(skills.tables.skills.openDocument(skillId));
+	$effect(() => {
+		const openedLease = lease;
+		return () =>
+			void openedLease.then(
+				(opened) => opened[Symbol.asyncDispose](),
+				() => undefined,
+			);
+	});
 </script>
 
-<CodeMirrorEditor ytext={doc.current.instructions.binding} />
+{#await lease then opened}
+	<CodeMirrorEditor document={opened} />
+{/await}

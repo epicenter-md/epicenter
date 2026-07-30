@@ -46,10 +46,11 @@
  */
 
 import { mkdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { assertStrongToken } from '@epicenter/auth';
 import {
 	createAttachRelayBunServer,
+	createBunEpicenterSyncRuntime,
 	createBunRooms,
 	createDeviceGrantStore,
 	createEnvTokenResolver,
@@ -58,6 +59,7 @@ import {
 	mountAttachGrantsApp,
 	mountAttachRelayApp,
 	mountBlobsApp,
+	mountBunEpicenterSyncApp,
 	mountHostDirectoryApp,
 	mountInferenceApp,
 	mountRoomsApp,
@@ -81,6 +83,7 @@ import { resolveSelfHostTrustedOrigins } from './trusted-origins.js';
 const InstanceBindings = ServerBindings.merge({
 	'PORT?': 'string',
 	'API_PUBLIC_ORIGIN?': 'string',
+	'TRUSTED_BROWSER_ORIGINS?': 'string',
 	'DATA_DIR?': 'string',
 	'INSTANCE_TOKEN?': 'string',
 });
@@ -131,11 +134,26 @@ export function startSelfHostServer(): void {
 	// The auth origin must match where the process actually listens. Default to
 	// localhost; an operator overrides it with their own domain.
 	const origin = env.API_PUBLIC_ORIGIN ?? `http://localhost:${port}`;
+	// Resolve the CORS trust set once, at boot, beside the origin it extends: a
+	// malformed `TRUSTED_BROWSER_ORIGINS` must refuse to start, not throw on
+	// every request. (The Worker entry has no boot, so it resolves per request
+	// from the same function.)
+	const trustedOrigins = resolveSelfHostTrustedOrigins(
+		origin,
+		env.TRUSTED_BROWSER_ORIGINS,
+	);
 
-	// One room directory of `bun:sqlite` files for this host.
-	const dataDir = resolve(env.DATA_DIR ?? './.data/rooms');
+	// One data directory for this host's room and record SQLite files.
+	const dataDir = resolve(env.DATA_DIR ?? './.data');
 	mkdirSync(dataDir, { recursive: true });
-	const bunRooms = createBunRooms({ dir: dataDir });
+	const bunRooms = createBunRooms({ dir: join(dataDir, 'rooms') });
+	// The current-state authority owns the same private records directory. Its
+	// first open deliberately drops legacy authority tables: synchronized
+	// authority state resets, while unrelated local-only workspace storage is
+	// untouched.
+	const epicenterSync = createBunEpicenterSyncRuntime({
+		dir: join(dataDir, 'records'),
+	});
 	// The AttachRelay coordinator for this instance (ADR-0115): the
 	// endpoint-addressed byte forwarder. It shares this process's one `Bun.serve`
 	// with the rooms backend (see the merged websocket handler below).
@@ -154,10 +172,11 @@ export function startSelfHostServer(): void {
 		resolveRooms: () => bunRooms.rooms,
 		identity: {
 			resolveOrigin: () => origin,
-			// A self-host trusts its OWN origin and the Tauri desktop client, never
-			// Epicenter cloud's. Shared with `worker/index.ts` so the two runtimes
-			// cannot drift.
-			resolveTrustedOrigins: resolveSelfHostTrustedOrigins,
+			// A self-host trusts its OWN origin, the Tauri desktop client, and any
+			// exact browser origins the operator configured, never Epicenter
+			// cloud's. Resolved at boot above, from the same function
+			// `worker/index.ts` calls, so the two runtimes cannot drift.
+			resolveTrustedOrigins: () => trustedOrigins,
 		},
 	});
 
@@ -170,6 +189,10 @@ export function startSelfHostServer(): void {
 	mountSessionApp(app, { auth });
 	// Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver.
 	mountRoomsApp(app, { resolveBearerPrincipal });
+	mountBunEpicenterSyncApp(app, {
+		auth,
+		runtime: epicenterSync,
+	});
 	// The AttachRelay upgrade (`/attach`), WS-aware and gated by a per-device grant
 	// (ADR-0115), not the operator token: a connect resolves against the
 	// device-grant store, and the instance principal is stamped server-side so a
@@ -241,9 +264,19 @@ export function startSelfHostServer(): void {
 	bunRooms.bindServer(server);
 	attachRelay.bindServer(server);
 
+	// Close authority databases and their sockets before the process dies so WAL
+	// checkpoints land and clients see a clean 1001 instead of a dropped TCP.
+	const shutdown = () => {
+		epicenterSync.close();
+		void server.stop(true);
+		process.exit(0);
+	};
+	process.once('SIGINT', shutdown);
+	process.once('SIGTERM', shutdown);
+
 	console.log(
 		`apps/self-host instance (Bun) listening on ${origin} ` +
-			`(rooms in ${dataDir}, partition principals/instance). Hand INSTANCE_TOKEN to ` +
+			`(data in ${dataDir}, partition principals/instance). Hand INSTANCE_TOKEN to ` +
 			'whoever should have access.',
 	);
 }

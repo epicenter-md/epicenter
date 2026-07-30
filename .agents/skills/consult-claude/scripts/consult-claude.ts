@@ -6,18 +6,22 @@ const TIMEOUT_MS = 30 * 60 * 1000;
 const HEARTBEAT_MS = 60 * 1000;
 const KILL_GRACE_MS = 5 * 1000;
 
-const claudeArgs = [
-	'-p',
-	'--safe-mode',
-	'--tools',
-	'',
-	'--permission-mode',
-	'dontAsk',
-	'--no-session-persistence',
-	'--no-chrome',
-	'--output-format',
-	'text',
-];
+export function buildClaudeArgs() {
+	return [
+		'-p',
+		'--safe-mode',
+		'--effort',
+		'high',
+		'--tools',
+		'Read,Glob,Grep,Bash,WebFetch,WebSearch',
+		'--permission-mode',
+		'plan',
+		'--no-session-persistence',
+		'--no-chrome',
+		'--output-format',
+		'text',
+	];
+}
 
 function terminateProcessGroup(child: ChildProcess, signal: NodeJS.Signals) {
 	if (!child.pid) return;
@@ -92,7 +96,7 @@ async function main() {
 		cancelKill: undefined,
 	};
 
-	const child = spawn('claude', claudeArgs, {
+	const child = spawn('claude', buildClaudeArgs(), {
 		cwd: process.cwd(),
 		detached: true,
 		stdio: ['pipe', 'pipe', 'pipe'],
@@ -173,7 +177,9 @@ async function main() {
 	else process.exitCode = exitCode ?? 1;
 }
 
-main().catch((error) => {
-	console.error(error instanceof Error ? error.message : String(error));
-	process.exitCode = 1;
-});
+if (import.meta.main) {
+	main().catch((error) => {
+		console.error(error instanceof Error ? error.message : String(error));
+		process.exitCode = 1;
+	});
+}

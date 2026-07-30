@@ -1,5 +1,10 @@
 # The Best CRDT Migration Is No Migration
 
+> Historical: this article describes the retired Yjs-record model. Epicenter's
+> target record plane keeps schema-opaque canonical JSON and applies
+> release-local lenses without user-data migration. See
+> [ADR-0125](../adr/0125-record-definitions-are-release-local-lenses-and-never-migrate-user-data.md).
+
 I've been building local-first apps with Yjs, and the hardest problem I kept hitting wasn't sync or conflict resolution. It was renaming a column.
 
 Renaming in CRDTs is surprisingly hard (copy/delete doesn't work, legacy keys accumulate).

@@ -26,7 +26,7 @@ import type { AttachRelaySocketData } from './attach-relay/bun-server.js';
 import type { BunRoomSocketData } from './room/backends/bun/registry.js';
 
 /** The two disjoint `ws.data` shapes this merged handler dispatches between. */
-type MergedSocketData = BunRoomSocketData | AttachRelaySocketData;
+export type MergedSocketData = BunRoomSocketData | AttachRelaySocketData;
 
 /**
  * Build the one `WebSocketHandler` that routes each socket to its owning backend
@@ -38,7 +38,7 @@ type MergedSocketData = BunRoomSocketData | AttachRelaySocketData;
  */
 export function mergeBunWebSocketHandlers(handlers: {
 	rooms: WebSocketHandler<BunRoomSocketData>;
-	attach: WebSocketHandler<AttachRelaySocketData>;
+	attach?: WebSocketHandler<AttachRelaySocketData>;
 }): WebSocketHandler<MergedSocketData> {
 	const pick = (
 		ws: ServerWebSocket<MergedSocketData>,

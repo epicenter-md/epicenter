@@ -7,7 +7,10 @@
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import { honeycrisp } from '$lib/honeycrisp';
+	import { getHoneycrispApp } from '$lib/context.js';
+	import { runHoneycrispMutation } from '$lib/mutation.js';
+
+	const honeycrisp = getHoneycrispApp();
 
 	let { folder }: { folder: Folder } = $props();
 
@@ -18,7 +21,10 @@
 
 	function commitRename() {
 		if (editingName.trim()) {
-			honeycrisp.state.folders.rename(folder.id, editingName.trim());
+			runHoneycrispMutation(
+				honeycrisp.state.folders.rename(folder.id, editingName.trim()),
+				'Could not rename folder',
+			);
 		}
 		isEditing = false;
 		editingName = '';
@@ -106,7 +112,11 @@
 			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
 			<AlertDialog.Action
 				class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-				onclick={() => honeycrisp.state.folders.delete(folder.id)}
+				onclick={() =>
+					runHoneycrispMutation(
+						honeycrisp.state.folders.delete(folder.id),
+						'Could not delete folder',
+					)}
 			>
 				Delete
 			</AlertDialog.Action>

@@ -7,10 +7,12 @@
  * runs then too; the module is pulled in dynamically for that ordering.
  */
 
-import { beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { JSDOM } from 'jsdom';
 
 let sanitizeEmailHtml: (html: string) => string;
+const originalWindow = globalThis.window;
+const originalDocument = globalThis.document;
 
 beforeAll(async () => {
 	const { window } = new JSDOM('');
@@ -18,6 +20,17 @@ beforeAll(async () => {
 	(globalThis as { window?: unknown }).window = window;
 	(globalThis as { document?: unknown }).document = window.document;
 	({ sanitizeEmailHtml } = await import('./sanitize-email'));
+});
+
+afterAll(() => {
+	if (originalWindow === undefined)
+		delete (globalThis as { window?: unknown }).window;
+	else (globalThis as { window?: unknown }).window = originalWindow;
+	if (originalDocument === undefined) {
+		delete (globalThis as { document?: unknown }).document;
+	} else {
+		(globalThis as { document?: unknown }).document = originalDocument;
+	}
 });
 
 describe('sanitizeEmailHtml', () => {

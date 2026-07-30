@@ -33,6 +33,15 @@ entirely MIT; the boundary is enforced by 'bun run check:licenses'.
                                                          field schema kinds
     - packages/chat             (@epicenter/chat)        toolkit-internal
                                                          chat primitives
+    - packages/sqlite           (@epicenter/sqlite)      portable embedded
+                                                         SQLite adapter contract
+    - packages/data             (@epicenter/data)        typed local-first
+                                                         Epicenter replica and sync
+    - packages/document-sync    (@epicenter/document-sync) row-document sync plane
+    - packages/agent            (@epicenter/agent)       UI-free agent loop
+    - packages/app              (@epicenter/app)         the public Epicenter
+                                                         client an installed
+                                                         app bundles
 
 ================================================================================
 2. GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)
@@ -61,7 +70,6 @@ who forks and distributes a modified binary shares the changes back.
                                                          reference Worker
     - apps/whispering            (@epicenter/whispering) desktop transcription
     - apps/honeycrisp            (@epicenter/honeycrisp) notes app
-    - apps/opensidian            (opensidian)            notes + terminal
     - apps/vocab                 (@epicenter/vocab)      mandarin chat
     - apps/tab-manager           (@epicenter/tab-manager) browser extension
     - apps/skills                (skills)                agent skill editor
@@ -71,7 +79,6 @@ who forks and distributes a modified binary shares the changes back.
     - apps/matter                (@epicenter/matter)     markdown grid
     - apps/wiki                  (@epicenter/wiki)       wiki app
     - apps/local-books           (@epicenter/local-books) quickbooks mirror
-    - apps/todos                 (@epicenter/todos)      todos app
 
   Packages:
     - packages/auth              (@epicenter/auth)       auth core (private)

@@ -66,7 +66,7 @@ async function openFolderDialog(): Promise<string | null> {
 function createOpenVaults() {
 	const store = new LazyStore(STORE_FILE);
 	// The list IS the sidebar order. Empty until `ensureHydrated` fills it from disk.
-	let vaults = $state<OpenVault[]>([]);
+	let vaults = $state.raw<OpenVault[]>([]);
 
 	// Read the persisted vaults from disk into the live list, once. The `(vaults)` layout `load`
 	// awaits this before the group paints, so it is the readiness gate and the strip needs no
@@ -92,8 +92,8 @@ function createOpenVaults() {
 
 	// Persist the sidebar list. A fire-and-forget side effect: the store auto-saves 100ms after a
 	// `set` (the plugin default), so no caller awaits the disk write, and a dropped write
-	// only forgets a vault entry, never real data. `$state.snapshot` hands the store a plain array,
-	// not the reactive proxy.
+	// only forgets a vault entry, never real data. `$state.snapshot` detaches the value handed
+	// to the store from the live replace-only state.
 	function persist(): void {
 		void store.set(STORE_KEY, $state.snapshot(vaults)).catch(() => {});
 	}

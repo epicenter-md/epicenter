@@ -282,8 +282,8 @@ workspace table API, or replace the map value with `set(id, next)`.
 | Workspace KV (single key) | `fromKv()` | selectedFolderId, sortBy |
 | Browser API keyed data | `new SvelteMap()` + listeners | Chrome tabs, windows |
 | Primitive value | `$state(value)` | `$state(false)`, `$state('')`, `$state(0)` |
-| Sequential data without IDs | `$state<T[]>([])` | terminal history, command history |
-| Ordered list where position matters | `$state<T[]>([])` | open file tab order |
+| Replace-only sequential data without IDs | `$state.raw<T[]>([])` | terminal history, command history |
+| Replace-only ordered list where position matters | `$state.raw<T[]>([])` | open file tab order |
 
 ### Anti-Pattern: $state for ID-Keyed Collections
 

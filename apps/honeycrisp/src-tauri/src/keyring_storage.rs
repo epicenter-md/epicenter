@@ -8,13 +8,18 @@
 //! crate. Its default `v1` feature already picks the right native backend per
 //! platform, so there is no per-OS Cargo feature to juggle here.
 //!
-//! `keyring`'s `Entry` calls are blocking OS/D-Bus round-trips (and can block
-//! on a locked keychain waiting for the user), so both commands hop onto the
-//! runtime's blocking pool via `tauri::async_runtime::spawn_blocking` instead
-//! of running on an async worker thread.
+//! `keyring`'s `Entry` calls are blocking OS/D-Bus round-trips. Commands hop
+//! onto Tauri's blocking pool. The one boot read intentionally runs before the
+//! main WebView is constructed because auth needs a synchronous snapshot before
+//! its JavaScript module graph evaluates. That read is bounded: a hung
+//! credential store (locked keychain prompt, stalled D-Bus service) turns into
+//! a keyring-unavailable boot, never a launch with zero windows.
 
 use keyring::{Entry, Error as KeyringCrateError};
 use serde::Serialize;
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
 use thiserror::Error;
 
 const KEYRING_SERVICE: &str = "honeycrisp";
@@ -64,17 +69,70 @@ impl KeyringError {
 /// platform failure, bad encoding) surfaces as `Err`.
 #[tauri::command]
 pub async fn keyring_read() -> Result<Option<String>, KeyringError> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let entry = Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT)
-            .map_err(|e| KeyringError::from_crate_error("opening keyring entry", e))?;
-        match entry.get_password() {
-            Ok(password) => Ok(Some(password)),
-            Err(KeyringCrateError::NoEntry) => Ok(None),
-            Err(e) => Err(KeyringError::from_crate_error("reading keyring entry", e)),
-        }
-    })
+    tauri::async_runtime::spawn_blocking(read_serialized)
     .await
     .map_err(|join_err| KeyringError::task_panicked("keyring_read", join_err))?
+}
+
+/// Read the auth cell before the main WebView exists.
+///
+/// Honeycrisp's auth state is synchronous by contract. The native owner calls
+/// this once during application setup and injects the resulting snapshot into
+/// the WebView's document-start script, before the JavaScript module graph can
+/// evaluate. The command above reuses the same operation for diagnostics.
+fn read_serialized() -> Result<Option<String>, KeyringError> {
+    let entry = Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT)
+        .map_err(|e| KeyringError::from_crate_error("opening keyring entry", e))?;
+    match entry.get_password() {
+        Ok(password) => Ok(Some(password)),
+        Err(KeyringCrateError::NoEntry) => Ok(None),
+        Err(e) => Err(KeyringError::from_crate_error("reading keyring entry", e)),
+    }
+}
+
+/// How long the boot read may delay window creation. Keyring reads are local
+/// IPC round-trips that normally finish in milliseconds; five seconds covers a
+/// slow Secret Service activation. Anything slower means the credential store
+/// is effectively unavailable, and the user gets a window that boots signed
+/// out (grant untouched, failure logged) instead of a launch with no pixels.
+const BOOT_READ_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// [`read_serialized`], bounded by [`BOOT_READ_TIMEOUT`] for the one
+/// pre-window boot read.
+///
+/// Transitional bridge: this exists only while auth is acquired before the
+/// WebView boots. When the ApplicationSession migration moves the keyring
+/// read into the async application open (a post-mount `keyring_read` invoke),
+/// delete this together with the pre-window read in `setup`.
+///
+/// The underlying OS call cannot be cancelled, so on timeout the reader thread
+/// is left to finish (or hang) on its own and its eventual result is
+/// discarded; the stored grant itself is never touched. The caller boots the
+/// window signed out with the error carried into the bootstrap snapshot.
+pub fn read_serialized_for_boot() -> Result<Option<String>, KeyringError> {
+    read_bounded(read_serialized, BOOT_READ_TIMEOUT)
+}
+
+fn read_bounded<T: Send + 'static>(
+    read: impl FnOnce() -> Result<T, KeyringError> + Send + 'static,
+    timeout: Duration,
+) -> Result<T, KeyringError> {
+    let (sender, receiver) = mpsc::sync_channel(1);
+    thread::spawn(move || {
+        let _ = sender.send(read());
+    });
+    match receiver.recv_timeout(timeout) {
+        Ok(result) => result,
+        Err(mpsc::RecvTimeoutError::Timeout) => Err(KeyringError::Failed {
+            message: format!(
+                "reading keyring entry: the OS credential store did not respond within {}s",
+                timeout.as_secs()
+            ),
+        }),
+        Err(mpsc::RecvTimeoutError::Disconnected) => Err(KeyringError::Failed {
+            message: "reading keyring entry: the reader thread panicked".to_string(),
+        }),
+    }
 }
 
 /// Write `value` as the stored secret, or delete the entry when `value` is
@@ -101,4 +159,31 @@ pub async fn keyring_write(value: Option<String>) -> Result<(), KeyringError> {
     })
     .await
     .map_err(|join_err| KeyringError::task_panicked("keyring_write", join_err))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::read_bounded;
+    use std::time::Duration;
+
+    #[test]
+    fn read_bounded_returns_the_read_result() {
+        let result = read_bounded(|| Ok(Some("grant".to_string())), Duration::from_secs(1));
+        assert_eq!(result.unwrap(), Some("grant".to_string()));
+    }
+
+    #[test]
+    fn read_bounded_times_out_instead_of_hanging() {
+        let result: Result<Option<String>, _> = read_bounded(
+            || {
+                std::thread::sleep(Duration::from_secs(2));
+                Ok(None)
+            },
+            Duration::from_millis(20),
+        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("did not respond within"));
+    }
 }

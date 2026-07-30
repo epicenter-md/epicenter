@@ -1,5 +1,5 @@
 import { AnalyticsServiceLive } from '#platform/analytics';
-import { AudioBlobStoreLive } from '#platform/blob-store';
+import { BlobSourcesLive, BlobsLive } from '#platform/blobs';
 import { DownloadServiceLive } from '#platform/download';
 import { TextServiceLive } from '#platform/text';
 import { LocalShortcutManagerLive } from './local-shortcut-manager';
@@ -12,7 +12,8 @@ import { PlaySoundServiceLive } from './sound';
 export const services = {
 	analytics: AnalyticsServiceLive,
 	text: TextServiceLive,
-	blobs: { audio: AudioBlobStoreLive },
+	blobs: BlobsLive,
+	blobSources: BlobSourcesLive,
 	download: DownloadServiceLive,
 	localShortcutManager: LocalShortcutManagerLive,
 	sound: PlaySoundServiceLive,

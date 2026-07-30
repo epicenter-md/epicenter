@@ -1,6 +1,6 @@
 # Settings Components
 
-Components directly bound to reactive settings state. Each component encapsulates settings management logic and provides reusable UI for configuring the application.
+Components directly bound to reactive settings state. Each component encapsulates settings management logic and provides reusable UI for configuring the app.
 
 ## Two Settings Stores
 
@@ -23,7 +23,7 @@ Components in this directory:
 - Import and use `settings` and/or `deviceConfig` from `$lib/state/`
 - Either take **no props** or only take **minimal configuration props** (like `mode` or `settingKey`) to determine which setting to bind to
 - Update settings directly using `.set(key, value)` methods
-- Are self-contained and can be used globally throughout the application
+- Are self-contained and can be used globally throughout the app
 
 ## Component Organization
 
@@ -32,7 +32,6 @@ settings/
 ├── TranscriptionRuntimeConfig.svelte # Audio stage: access-sectioned transcription setup catalog (propless)
 ├── CompletionRuntimeConfig.svelte    # Text stage: Polish/Recipes AI provider + its config (propless)
 ├── ProviderConfigFields.svelte       # Per-provider API key and endpoint fields (deviceConfig)
-├── LocalModelSelector.svelte         # Local GGUF model picker (deviceConfig)
 ├── AdvancedDisclosure.svelte         # Collapsible wrapper for advanced fields
 ├── SettingSelect.svelte              # Shared select bound to a settings key
 ├── SettingSwitch.svelte              # Shared switch bound to a settings key

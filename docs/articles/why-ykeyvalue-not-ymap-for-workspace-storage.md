@@ -1,5 +1,10 @@
 # Why the Workspace API Uses YKeyValue, Not Y.Map
 
+> Historical: this article describes the retired YKeyValue-backed workspace
+> table implementation. Current scalar rows use server-ordered top-level field
+> patches over SQLite JSON. See the
+> [`@epicenter/data` modeling guide](../../packages/data/README.md).
+
 The Static Workspace API stores every table row through YKeyValueLww, a key-value store built on Y.Array. Not Y.Map. This is the obvious question: Y.Map is Yjs's native key-value type. Why build a custom one on top of Y.Array?
 
 Because Y.Map was designed for collaborative editing, not database storage. And the difference shows up exactly where production workloads spend most of their time: saving the same row over and over.
@@ -68,7 +73,7 @@ For database storage, it's the worst pattern. Every field update creates an unme
 
 This isn't a universal win. YKV's advantage depends on garbage collection being enabled (`gc: true`, which is Yjs's default). With GC off (needed for version snapshots), YKV's tombstones can't merge either, and Y.Map actually wins. See the [decision guide](./ykeyvalue-vs-ymap-decision-guide.md) for that breakdown.
 
-And there's a real trade-off: YKV uses row-level last-write-wins. If two users edit different fields of the same row simultaneously, one person's changes are lost. Y.Map would merge them. We accept this because most workspace data has a single author at a time, and schema evolution (which row-level LWW enables cleanly) matters more than concurrent field merging for our use case. See [cell-level CRDT vs row-level LWW](./cell-level-crdt-vs-row-level-lww.md) for the full trade-off analysis.
+And there was a real trade-off: YKV used row-level last-write-wins. If two users edited different fields of the same row simultaneously, one person's change was lost. Y.Map would merge them. That retired implementation accepted the loss because most workspace data had a single author at a time and coherent whole-row schema evolution mattered more than concurrent field merging.
 
 ## When It Matters Most
 
@@ -103,5 +108,5 @@ The result: a workspace that's been used for months takes roughly the same stora
 - [YKeyValue: A Space-Efficient Key-Value Store](./ykeyvalue-space-efficient-kv-store.md): How the data structure works
 - [YKeyValueLww Tombstones Are Practically Free](./ykeyvalue-lww-tombstones-are-free.md): Delete/reinsert cycle benchmarks
 - [YKeyValue vs Y.Map: Quick Decision Guide](./ykeyvalue-vs-ymap-decision-guide.md): When Y.Map wins (GC off)
-- [Cell-Level CRDT vs Row-Level LWW](./cell-level-crdt-vs-row-level-lww.md): The conflict resolution trade-off
+- [`@epicenter/data` modeling guide](../../packages/data/README.md): The current replacement-boundary choices
 - [Yjs Storage Efficiency: Only 30% Overhead](./yjs-storage-efficiency/README.md): YJS vs SQLite size comparison

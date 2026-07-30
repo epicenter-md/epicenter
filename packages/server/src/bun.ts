@@ -78,6 +78,15 @@ export { createEnvTokenResolver } from './auth/instance-token.js';
 // Durable Object and its `cloudflare:workers` import.
 export { OAuthError } from './auth/oauth-errors.js';
 export { createDb } from './db/create-db.js';
+export {
+	listStorageObservations,
+	type StorageObservation,
+} from './db/storage-data.js';
+export {
+	type BunEpicenterSyncRuntime,
+	createBunEpicenterSyncRuntime,
+	mountBunEpicenterSyncApp,
+} from './epicenter-sync/bun.js';
 // Merge several Bun `WebSocketHandler`s onto one `Bun.serve`, dispatching each
 // socket to its backend by a `surface` tag (rooms + attach relay on one port).
 export { mergeBunWebSocketHandlers } from './merge-bun-websocket-handlers.js';
@@ -111,4 +120,8 @@ export { createServerApp } from './server-app.js';
 export { ServerBindings } from './server-bindings.js';
 // Public Hono context types: the portable `Env`, the cloud's `CloudEnv`, and the
 // `ResolveBearerPrincipal<E>` seam the dev Bun entry closes its wrapper over for the smoke.
-export type { CloudEnv, Env, ResolveBearerPrincipal } from './types.js';
+export type {
+	CloudEnv,
+	Env,
+	ResolveBearerPrincipal,
+} from './types.js';

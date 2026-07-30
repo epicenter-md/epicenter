@@ -38,18 +38,26 @@
  *
  * The dashboard SPA and billing data plane are intentionally omitted: Vite
  * serves the dashboard in dev, and billing is the hosted Worker's concern.
+ * Because this runtime cannot resolve the hosted storage allowance, first
+ * contact is allowed only for workspaces already registered by the hosted
+ * Worker. Existing current-state replicas in this runtime's own backend may
+ * still sync; opening an old records database performs the authorized protocol
+ * reset and does not resume legacy receipts.
  */
 
 import { mkdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { API_BUN_DEV_PORT } from '@epicenter/constants/apps';
 import {
 	CloudAuthBindings,
 	type CloudEnv,
+	createBunEpicenterSyncRuntime,
 	createBunRooms,
 	createDb,
 	createServerApp,
+	mergeBunWebSocketHandlers,
 	mountBlobsApp,
+	mountBunEpicenterSyncApp,
 	mountCloudAuth,
 	mountCloudDb,
 	mountInferenceApp,
@@ -121,10 +129,16 @@ export function startBunApiServer(
 	// on the chosen port; an operator overrides it with their domain.
 	const origin = env.API_PUBLIC_ORIGIN ?? `http://localhost:${port}`;
 
-	// One room directory of `bun:sqlite` files for this host.
-	const dataDir = resolve(env.DATA_DIR ?? './.data/rooms');
+	// One data directory for this host's room and record SQLite files.
+	const dataDir = resolve(env.DATA_DIR ?? './.data');
 	mkdirSync(dataDir, { recursive: true });
-	const bunRooms = createBunRooms({ dir: dataDir });
+	const bunRooms = createBunRooms({ dir: join(dataDir, 'rooms') });
+	// Keep the operator-selected directory stable, but the replacement authority
+	// deliberately drops the legacy table family on first open. There is no
+	// compatibility reader or receipt migration across this protocol reset.
+	const epicenterSync = createBunEpicenterSyncRuntime({
+		dir: join(dataDir, 'records'),
+	});
 
 	// One pool for the process; drizzle checks a client out per query and returns
 	// it, so the `mountCloudDb` connect leg below hands back the shared handle with
@@ -179,6 +193,10 @@ export function startBunApiServer(
 	mountSessionApp(app, { auth: cookieOrBearer });
 	// Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver.
 	mountRoomsApp(app, { resolveBearerPrincipal });
+	mountBunEpicenterSyncApp(app, {
+		auth: bearer,
+		runtime: epicenterSync,
+	});
 	mountInferenceApp(app, { auth: bearer });
 	mountBlobsApp(app, { auth: cookieOrBearer });
 
@@ -189,13 +207,25 @@ export function startBunApiServer(
 		// route via the bound server (see createBunRooms), after auth runs, so they
 		// are never intercepted ahead of the auth pipeline here.
 		fetch: (req) => app.fetch(req, env),
-		websocket: bunRooms.websocket,
+		websocket: mergeBunWebSocketHandlers({
+			rooms: bunRooms.websocket,
+		}),
 	});
 	// `server` only exists once `Bun.serve` returns; hand it to the room registry
 	// so `handleUpgrade` can call `server.upgrade`.
 	bunRooms.bindServer(server);
 
-	console.log(`apps/api (Bun) listening on ${origin} (rooms in ${dataDir})`);
+	// Close authority databases and their sockets before the process dies so WAL
+	// checkpoints land and clients see a clean 1001 instead of a dropped TCP.
+	const shutdown = () => {
+		epicenterSync.close();
+		void server.stop(true);
+		process.exit(0);
+	};
+	process.once('SIGINT', shutdown);
+	process.once('SIGTERM', shutdown);
+
+	console.log(`apps/api (Bun) listening on ${origin} (data in ${dataDir})`);
 }
 
 // Run production only when this file is the entrypoint. `server.dev.ts` imports

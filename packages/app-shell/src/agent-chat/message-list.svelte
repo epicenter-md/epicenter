@@ -4,7 +4,7 @@
 	import * as Empty from '@epicenter/ui/empty';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import SparklesIcon from '@lucide/svelte/icons/sparkles';
-	import type { AgentMessage } from '@epicenter/workspace/agent';
+	import type { AgentMessage } from '@epicenter/agent';
 	import type { Snippet } from 'svelte';
 
 	let {

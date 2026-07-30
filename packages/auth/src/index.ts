@@ -17,10 +17,19 @@ export {
 	Principal,
 } from './auth-types.js';
 export {
+	type AuthFetchInput,
+	fetchWithBearer,
+	resolveTargetUrl,
+} from './bearer-fetch.js';
+export {
 	type Instance,
 	InstanceUrlError,
 	normalizeInstanceUrl,
 } from './instance.js';
+export {
+	createInstanceCredentialAuthority,
+	type InstanceCredentialAuthority,
+} from './instance-credential-authority.js';
 export {
 	createInstanceSetting,
 	type InstanceSetting,
@@ -37,11 +46,16 @@ export {
 	MIN_INSTANCE_TOKEN_CHARS,
 } from './instance-token.js';
 export {
+	createOAuthCredentialAuthority,
+	type OAuthCredentialAuthority,
+} from './oauth-credential-authority.js';
+export {
 	createSerializedPersistedAuthStorage,
 	createWebStoragePersistedAuthStorage,
 	loadPersistedAuthStorage,
 	type PersistedAuthStorage,
 } from './persisted-auth-storage.js';
+export { getProfileVia } from './read-api-session.js';
 export {
 	type CreateSameOriginCookieAuthConfig,
 	createSameOriginCookieAuth,

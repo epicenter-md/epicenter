@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
+
 	let {
 		defaultValue = '',
 		onConfirm,
@@ -9,7 +11,7 @@
 		onCancel: () => void;
 	} = $props();
 
-	let value = $state(defaultValue);
+	let value = $state(untrack(() => defaultValue));
 	let inputEl = $state<HTMLInputElement | null>(null);
 
 	/**
@@ -61,11 +63,8 @@
 			e.stopPropagation();
 		}}
 		onblur={() => {
-			// FlushEditsOnHide force-blurs on page hide, and rAF never runs
-			// while the document is hidden: commit synchronously there or the
-			// rename is lost. The deferred path exists only for transient
-			// focus shifts while the page is visible (the closing context
-			// menu restoring focus must not cancel the edit).
+			// requestAnimationFrame does not run while the document is hidden.
+			// Start the async rename immediately so the runtime can admit it.
 			if (document.visibilityState === 'hidden') {
 				confirm();
 				return;

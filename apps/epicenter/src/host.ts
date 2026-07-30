@@ -1,28 +1,14 @@
 /**
- * The Query host: one local desktop chat session; built-in apps enter
- * through one verb catalog (ADR-0080). Built-in Yjs apps mount in-process
- * as action registries (arm A); boxed apps an upstream forces off the mesh
+ * The Epicenter Home host: one local desktop chat session; built-in apps enter
+ * through one verb catalog (ADR-0080). Built-in apps mount in-process through
+ * app-owned catalogs (arm A); boxed apps an upstream forces off the mesh
  * may join as local stdio MCP subprocesses (arm B, Local Books today). One
  * agent loop consumes the composed catalog and never learns where a verb lives.
  *
- * The in-process apps open through the ungated durable local preset:
- * `connect(null, { persistence })`. Sign-in is still an enhancement; the Bun
- * host gets disk-backed replicas without constructing an auth client.
- *
- * Transcripts are durable the same way: the host's own workspace holds the
- * canonical conversations table (ADR-0055), null-connected, so finished
- * messages survive restarts on this machine without touching a relay. Boot
- * resumes the most recent conversation row; `clear` starts a fresh one. Sync
- * is a deliberate later wave that arrives with host sign-in.
+ * Home and its built-in apps use device-owned SQLite workspaces opened by one
+ * desktop owner. Sign-in remains an enhancement.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { homedir, platform } from 'node:os';
-import { dirname, join } from 'node:path';
-import { type Conversation, generateConversationId } from '@epicenter/chat';
-import { honeycrispWorkspace } from '@epicenter/honeycrisp';
-import { todosWorkspace } from '@epicenter/todos';
-import { createNodeId, generateId, InstantString } from '@epicenter/workspace';
 import {
 	type AgentEngine,
 	type AgentToolCall,
@@ -32,13 +18,17 @@ import {
 	type ConversationSnapshot,
 	composeToolCatalogs,
 	createConversation,
-	createLocalToolCatalog,
 	defaultApprovalDecision,
 	namespaceToolCatalog,
 	resolveApprovedToolCall,
 	type ToolCatalog,
-} from '@epicenter/workspace/agent';
-import { bunLocalPersistence } from '@epicenter/workspace/node';
+} from '@epicenter/agent';
+import { InstantString } from '@epicenter/field';
+import {
+	type AgentMessageDocumentStore,
+	createAgentMessageDocumentStore,
+} from './agent-message-store.ts';
+import { createHoneycrispCatalog } from './honeycrisp-catalog.js';
 import {
 	createLocalSourceCatalog,
 	type LocalSourceCatalogOptions,
@@ -47,9 +37,13 @@ import {
 	createStdioMcpCatalog,
 	type StdioMcpCatalogOptions,
 } from './stdio-mcp-catalog.ts';
-import { queryWorkspace } from './workspace.ts';
+import type {
+	Conversation,
+	ConversationsData,
+	HoneycrispData,
+} from './workspace.ts';
 
-export type QueryHostOptions = {
+export type HomeHostInputs = {
 	/** The inference backend driving the loop (BYOK, local, or scripted). */
 	engine: AgentEngine;
 	/**
@@ -74,8 +68,13 @@ export type QueryHostOptions = {
 	 * so the source stays host-owned and never becomes reachable over the relay.
 	 */
 	localSource?: LocalSourceCatalogOptions;
-	/** Host-owned data directory for built-in app replicas and node identity. */
-	dataDir?: string;
+};
+
+export type HomeHostOptions = HomeHostInputs & {
+	/** Canonical Honeycrisp handle opened by the one desktop workspace owner. */
+	honeycrisp: HoneycrispData;
+	/** Home conversation workspace opened by the same desktop owner. */
+	conversations: ConversationsData;
 };
 
 export type PendingApproval = {
@@ -88,10 +87,10 @@ export type PendingApproval = {
 	requestedAt: number;
 };
 
-export type QuerySessionSnapshot = {
+export type HomeSessionSnapshot = {
 	conversation: ConversationSnapshot;
 	pendingApprovals: PendingApproval[];
-	invocations: QueryInvocation[];
+	invocations: HomeInvocation[];
 };
 
 /**
@@ -101,7 +100,7 @@ export type QuerySessionSnapshot = {
  * conversation transcript; the model must not see operator-plane runs as
  * chat history.
  */
-export type QueryInvocation = {
+export type HomeInvocation = {
 	id: string;
 	toolName: string;
 	status: 'running' | 'succeeded' | 'failed';
@@ -112,15 +111,15 @@ export type QueryInvocation = {
 };
 
 /** What a session client may ask of the one host-owned session. */
-export type QueryClientCommand =
+export type HomeClientCommand =
 	| { type: 'send'; content: string }
 	| { type: 'stop' }
 	| { type: 'retry' }
 	| {
 			/**
 			 * Start a fresh session: abort any live turn and switch to a new
-			 * conversation whose row is minted on its first send. The old
-			 * transcript stays durable in its row; reopening one is a later wave
+			 * durable conversation row. The old transcript stays in its row;
+			 * reopening one is a later wave
 			 * (there is no conversation list yet).
 			 */
 			type: 'clear';
@@ -148,9 +147,9 @@ export type QueryClientCommand =
  * owns what a valid command is (ADR-0113); transports own only the framing
  * that produced the value.
  */
-export function parseQueryCommand(
+export function parseHomeCommand(
 	value: unknown,
-): QueryClientCommand | undefined {
+): HomeClientCommand | undefined {
 	if (value === null || typeof value !== 'object') return undefined;
 	const command = value as Record<string, unknown>;
 	if (command.type === 'send' && typeof command.content === 'string') {
@@ -193,15 +192,15 @@ export function parseQueryCommand(
 	return undefined;
 }
 
-export type QueryHost = {
+export type HomeHost = {
 	/** The model-visible tool surface, for shells that list or introspect tools. */
 	toolDefinitions(): AgentToolDefinition[];
 	/** Read the render state owned by the host session. */
-	snapshot(): QuerySessionSnapshot;
+	snapshot(): HomeSessionSnapshot;
 	/** Register for any conversation or approval-state change. */
 	subscribe(listener: () => void): () => void;
 	/** Apply one client command to the host-owned session. */
-	handleCommand(command: QueryClientCommand): boolean;
+	handleCommand(command: HomeClientCommand): Promise<boolean>;
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
@@ -211,31 +210,16 @@ const INVOCATION_LIMIT = 20;
  * Open the built-in apps, compose their catalogs, and start the one chat
  * session over them.
  */
-export async function createQueryHost(
-	options: QueryHostOptions,
-): Promise<QueryHost> {
-	// Arm A: in-process Yjs apps. Each app's namespace keeps same-named verbs
-	// distinct in the composed surface; the prefix must not contain `__`.
-	const dataDir = options.dataDir ?? defaultDataDir();
-	const nodeId = createNodeId({
-		storage: fileStorage(join(dataDir, 'node-id')),
-	});
-	const persistence = bunLocalPersistence({ dir: dataDir, nodeId });
-	const honeycrisp = honeycrispWorkspace.connect(null, { persistence });
-	const todos = todosWorkspace.connect(null, { persistence });
-	// The host's own workspace: durable transcripts, same ungated local preset.
-	const query = queryWorkspace.connect(null, { persistence });
-	await Promise.all([
-		honeycrisp.storage.whenLoaded,
-		todos.storage.whenLoaded,
-		query.storage.whenLoaded,
-	]);
+export async function createHomeHost(
+	options: HomeHostOptions,
+): Promise<HomeHost> {
+	// Arm A: in-process apps. Each namespace keeps same-named verbs distinct in
+	// the composed surface; the prefix must not contain `__`.
+	const honeycrisp = options.honeycrisp;
+	const conversations = options.conversations.conversations;
+	await honeycrisp.folders.scan();
 	const catalogs: ToolCatalog[] = [
-		namespaceToolCatalog(
-			'honeycrisp',
-			createLocalToolCatalog(honeycrisp.actions),
-		),
-		namespaceToolCatalog('todos', createLocalToolCatalog(todos.actions)),
+		namespaceToolCatalog('honeycrisp', createHoneycrispCatalog(honeycrisp)),
 	];
 
 	// A read-only local source, if one is wired: one `query` verb the host reads
@@ -252,12 +236,7 @@ export async function createQueryHost(
 
 	// Arm B: boxed apps join as stdio MCP subprocesses behind the same seam.
 	const localBooks = options.localBooks
-		? await createStdioMcpCatalog(options.localBooks).catch((error) => {
-				honeycrisp[Symbol.dispose]();
-				todos[Symbol.dispose]();
-				query[Symbol.dispose]();
-				throw error;
-			})
+		? await createStdioMcpCatalog(options.localBooks)
 		: undefined;
 	if (localBooks) {
 		catalogs.push(namespaceToolCatalog('localbooks', localBooks));
@@ -273,15 +252,22 @@ export async function createQueryHost(
 	// invocations must share it so mutation policy cannot drift by caller.
 	const approval = options.approval ?? sessionApproval.approval;
 
-	// Resume the most recent session; a host with no history starts a fresh id
-	// whose row is minted lazily on the first successful send, so an idle
-	// launch leaves no empty row behind.
-	const conversations = query.tables.conversations;
+	// Resume the most recent session; a host with no history creates one durable
+	// blank conversation before opening its row document.
 	let latest: Conversation | undefined;
-	for (const row of conversations.scan().rows) {
+	for (const row of (await conversations.scan()).rows) {
 		if (latest === undefined || row.updatedAt > latest.updatedAt) latest = row;
 	}
-	let activeConversationId = latest?.id ?? generateConversationId();
+	const createConversationRow = () => {
+		const now = InstantString.now();
+		return conversations.create({
+			title: 'New Chat',
+			model: options.model,
+			createdAt: now,
+			updatedAt: now,
+		});
+	};
+	let activeConversation = latest ?? (await createConversationRow());
 
 	const buildConversation = (store: ConversationOptions['store']) =>
 		createConversation({
@@ -289,49 +275,37 @@ export async function createQueryHost(
 			engine: options.engine,
 			tools,
 			approval,
-			generateId,
+			generateId: () => crypto.randomUUID(),
 		});
 
-	// The row's messages child doc is the loop's message store (ADR-0055):
+	// The row's document is the loop's message store (ADR-0152):
 	// finished messages land there and survive restarts. Loaded before the
 	// loop starts so a first send never races the replayed history.
-	let activeStore = conversations.docs.messages.open(activeConversationId);
-	await activeStore.whenLoaded;
+	let activeStore = createAgentMessageDocumentStore(
+		await conversations.openDocument(activeConversation.id),
+	);
 	let conversation = buildConversation(activeStore);
 	// One relay subscription that survives `clear` swapping the conversation;
 	// host listeners subscribe to the host, never to a conversation instance.
 	let unbindConversation = conversation.subscribe(notify);
-	// Child-doc flushes are not covered by `storage.whenDisposed`; stores
-	// swapped out by `clear` park their flush promise here for disposal.
-	const storeFlushes: Promise<unknown>[] = [];
 
 	/**
-	 * Keep the active row honest after a started turn: mint it on the session's
-	 * first send, name it from the first user message (app-shell convention:
+	 * Keep the active row honest after a started turn: name it from the first
+	 * user message (app-shell convention:
 	 * 'New Chat' until the first user message's first 50 chars), bump recency.
 	 */
-	const touchConversationRow = (content: string) => {
+	const touchConversationRow = async (content: string) => {
 		const now = InstantString.now();
-		const { data: existing } = conversations.get(activeConversationId);
-		if (!existing) {
-			conversations.set({
-				id: activeConversationId,
-				title: content.slice(0, 50),
-				model: options.model,
-				createdAt: now,
-				updatedAt: now,
-			});
-			return;
-		}
-		// The write Result is deliberately dropped (app-shell does the same): the
-		// only failure is a row this binary cannot read (newer schema), and there
-		// is no fallback write that would not clobber it.
-		conversations.update(activeConversationId, {
+		const result = await conversations.update(activeConversation.id, {
 			title:
-				existing.title === 'New Chat' ? content.slice(0, 50) : existing.title,
+				activeConversation.title === 'New Chat'
+					? content.slice(0, 50)
+					: activeConversation.title,
 			model: options.model,
 			updatedAt: now,
 		});
+		if (result.error !== null) throw result.error;
+		if (result.data) activeConversation = result.data;
 	};
 
 	// Direct invocations outlive no one: this controller aborts any still-running
@@ -339,10 +313,12 @@ export async function createQueryHost(
 	// after the abort rides the catalog honoring the signal, the same contract
 	// chat turns rely on; disposal never awaits invocations.
 	const invokeAbort = new AbortController();
-	const invocations: QueryInvocation[] = [];
+	const invocations: HomeInvocation[] = [];
+	let commandQueue = Promise.resolve();
+	let disposing = false;
 	const runInvocation = (toolName: string, input: AgentToolCall['input']) => {
-		const invocation: QueryInvocation = {
-			id: generateId(),
+		const invocation: HomeInvocation = {
+			id: crypto.randomUUID(),
 			toolName,
 			status: 'running',
 			requestedAt: Date.now(),
@@ -380,6 +356,64 @@ export async function createQueryHost(
 			});
 	};
 
+	async function applyCommand(command: HomeClientCommand): Promise<boolean> {
+		switch (command.type) {
+			case 'send': {
+				const started = conversation.send(command.content);
+				if (started) await touchConversationRow(command.content);
+				return started;
+			}
+			case 'stop':
+				conversation.stop();
+				sessionApproval.cancelAll();
+				return true;
+			case 'retry':
+				conversation.retry();
+				return true;
+			case 'clear': {
+				const alreadyBlank = conversation.snapshot().messages.length === 0;
+				conversation.stop();
+				sessionApproval.cancelAll();
+				if (alreadyBlank) {
+					notify();
+					return true;
+				}
+				await activeStore.whenDurable();
+				const nextConversationRow = await createConversationRow();
+				let nextStore: AgentMessageDocumentStore;
+				try {
+					nextStore = createAgentMessageDocumentStore(
+						await conversations.openDocument(nextConversationRow.id),
+					);
+				} catch (cause) {
+					await conversations.delete(nextConversationRow.id);
+					throw cause;
+				}
+				const nextConversation = buildConversation(nextStore);
+				unbindConversation();
+				conversation[Symbol.dispose]();
+				activeConversation = nextConversationRow;
+				activeStore = nextStore;
+				conversation = nextConversation;
+				unbindConversation = conversation.subscribe(notify);
+				notify();
+				return true;
+			}
+			case 'approve':
+				return sessionApproval.answer({
+					requestId: command.requestId,
+					approved: command.approved,
+					alwaysAllowSession: command.alwaysAllowSession === true,
+				});
+			case 'invoke':
+				runInvocation(command.toolName, command.input);
+				return true;
+			default:
+				command satisfies never;
+				return false;
+		}
+	}
+
 	return {
 		toolDefinitions() {
 			return tools.definitions();
@@ -398,66 +432,25 @@ export async function createQueryHost(
 			};
 		},
 		handleCommand(command) {
-			switch (command.type) {
-				case 'send': {
-					const started = conversation.send(command.content);
-					if (started) touchConversationRow(command.content);
-					return started;
-				}
-				case 'stop':
-					conversation.stop();
-					sessionApproval.cancelAll();
-					return true;
-				case 'retry':
-					conversation.retry();
-					return true;
-				case 'clear': {
-					// Abort any live turn first (as `stop` and disposal do), then
-					// resolve its approvals denied and swap to a fresh conversation.
-					// The old transcript stays durable in its row.
-					unbindConversation();
-					storeFlushes.push(activeStore.whenDisposed);
-					conversation[Symbol.dispose]();
-					sessionApproval.cancelAll();
-					activeConversationId = generateConversationId();
-					activeStore = conversations.docs.messages.open(activeConversationId);
-					conversation = buildConversation(activeStore);
-					unbindConversation = conversation.subscribe(notify);
-					notify();
-					return true;
-				}
-				case 'approve':
-					return sessionApproval.answer({
-						requestId: command.requestId,
-						approved: command.approved,
-						alwaysAllowSession: command.alwaysAllowSession === true,
-					});
-				case 'invoke':
-					runInvocation(command.toolName, command.input);
-					return true;
-				default:
-					command satisfies never;
-					return false;
-			}
+			if (disposing) return Promise.resolve(false);
+			const result = commandQueue.then(() => applyCommand(command));
+			commandQueue = result.then(
+				() => undefined,
+				() => undefined,
+			);
+			return result;
 		},
 		async [Symbol.asyncDispose]() {
 			// The conversation first (aborts any in-flight turn and disposes the
 			// store), then the subprocess, then the in-process docs.
-			conversation[Symbol.dispose]();
+			disposing = true;
+			await commandQueue;
+			conversation.stop();
 			invokeAbort.abort();
 			sessionApproval.cancelAll();
 			await localBooks?.[Symbol.asyncDispose]();
-			honeycrisp[Symbol.dispose]();
-			todos[Symbol.dispose]();
-			query[Symbol.dispose]();
-			await Promise.all([
-				honeycrisp.storage.whenDisposed,
-				todos.storage.whenDisposed,
-				query.storage.whenDisposed,
-				// Transcript flushes: the active store plus any `clear` left behind.
-				activeStore.whenDisposed,
-				...storeFlushes,
-			]);
+			await activeStore.whenDurable();
+			conversation[Symbol.dispose]();
 		},
 	};
 }
@@ -484,7 +477,7 @@ function createSessionApproval(notify: () => void) {
 			return defaultApprovalDecision(call, definition);
 		},
 		request(call, definition) {
-			const id = generateId();
+			const id = crypto.randomUUID();
 			const prompt: PendingApproval = {
 				id,
 				toolCallId: call.toolCallId,
@@ -533,32 +526,6 @@ function createSessionApproval(notify: () => void) {
 			pending.clear();
 			for (const entry of entries) entry.resolve(false);
 			notify();
-		},
-	};
-}
-
-function defaultDataDir(): string {
-	if (process.env.EPICENTER_QUERY_DATA_DIR)
-		return process.env.EPICENTER_QUERY_DATA_DIR;
-	if (platform() === 'darwin') {
-		return join(homedir(), 'Library', 'Application Support', 'epicenter-query');
-	}
-	const xdgDataHome = process.env.XDG_DATA_HOME;
-	if (xdgDataHome) return join(xdgDataHome, 'epicenter-query');
-	return join(homedir(), '.local', 'share', 'epicenter-query');
-}
-
-function fileStorage(filePath: string) {
-	return {
-		getItem(key: string): string | null {
-			if (key !== 'epicenter.node.id') return null;
-			if (!existsSync(filePath)) return null;
-			return readFileSync(filePath, 'utf8');
-		},
-		setItem(key: string, value: string): void {
-			if (key !== 'epicenter.node.id') return;
-			mkdirSync(dirname(filePath), { recursive: true });
-			writeFileSync(filePath, value);
 		},
 	};
 }

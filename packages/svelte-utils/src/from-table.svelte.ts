@@ -1,93 +1,197 @@
 import type {
-	BaseRow,
-	ReadonlyTable,
-	TableNewerWriterError,
-	TableParseError,
-} from '@epicenter/workspace';
+	NonconformingRowError,
+	RowFor,
+	TableDefinition,
+	TableInvalidation,
+	TableLens,
+} from '@epicenter/data';
 import { createSubscriber } from 'svelte/reactivity';
 
-/**
- * A read-only reactive view of a workspace table: the conforming rows plus the
- * table's two issue buckets, all driven by one `observe()` subscription.
- *
- * The view holds no state. Every surface reads live through the table, so it can
- * never disagree with storage and there is nothing to dispose. Reads inside an
- * effect (a component, a `$derived`) re-run when the table changes; reads outside
- * one return the current value without subscribing.
- */
-export type ReadonlyTableView<TRow extends BaseRow> = {
-	/**
-	 * Every conforming row, recomputed once per change. The array is the view's
-	 * memoized scan, shared between reads, so the type is `readonly`: mutating it
-	 * (e.g. `.sort()`) in place would corrupt that shared value and is a compile
-	 * error. Take a copy first, e.g. `all.toSorted(...)`.
-	 */
-	readonly all: readonly TRow[];
-	/** Stored entries this binary should understand but cannot parse. */
-	readonly nonconforming: readonly TableParseError[];
-	/** Stored entries written by a newer binary than this one. */
-	readonly newerWriter: readonly TableNewerWriterError[];
-	/** A single conforming row by id, or `undefined` if absent or unreadable. */
-	byId(id: string): TRow | undefined;
+export type ReadonlyTableView<TDefinition extends TableDefinition> = {
+	readonly all: readonly RowFor<TDefinition>[];
+	readonly nonconforming: readonly NonconformingRowError[];
+	readonly loadError: unknown;
+	readonly whenReady: Promise<void>;
+	byId(id: string): RowFor<TDefinition> | undefined;
+	refresh(): Promise<void>;
 };
 
 /**
- * Create a read-only reactive view of a workspace table from a single
- * `observe()` subscription.
+ * Create a reactive classified view over one bound Data table lens.
  *
- * `all`, `nonconforming`, and `newerWriter` share one memoized `scan()`: the
- * scan recomputes once when the table changes, not once per surface read. The
- * table caches parsed rows by stored-value identity, so an unchanged row keeps
- * its object reference across scans and only changed rows are reparsed; the view
- * does not need a mirror of its own to stay incremental.
+ * This is where the row ids in a `rows` invalidation are actually spent. A
+ * caller that only wants correctness can ignore the payload entirely and
+ * rescan; this adapter exists so the common case does not have to. A commit
+ * that touched three rows of a ten thousand row table re-reads three rows.
  *
- * `byId` reads straight through the table per call. It is reactive (it
- * subscribes), but coarsely: any table change re-runs it, where a per-key mirror
- * would re-run only on a change to that id. At table sizes below roughly ten
- * thousand rows with human-speed edits this is not worth a per-key subscription;
- * add one keyed by id if profiling ever says otherwise.
+ * There is deliberately no size threshold that flips point-reads back into a
+ * full scan. A threshold would be a number nobody can defend without measuring
+ * one workload and then applying it to every other, and the honest fallback is
+ * already free: table scope rescans, and so does anything the point-read path
+ * could not interpret.
  *
- * The view self-manages its lifetime: `observe()` attaches when the first effect
- * starts reading and detaches a microtask after the last one stops. There is no
- * `[Symbol.dispose]` to thread through consumers.
- *
- * Read-only: mutations go through `table.set()`, `table.update()`, etc. The
- * observer picks up changes from both local writes and remote CRDT sync.
- *
- * @example
- * ```typescript
- * const entries = fromTable(workspaceClient.tables.entries);
- *
- * entries.all;                  // TRow[] (reactive)
- * entries.byId(id);             // TRow | undefined (reactive)
- * entries.nonconforming.length; // issue bucket (reactive)
- * ```
+ * Work is drained through one serialized loop, so an invalidation that arrives
+ * while a scan is in flight is applied after it rather than racing it, and a
+ * table-scope invalidation collapses every row id still waiting: it already
+ * says everything reachable here may be stale.
  */
-export function fromTable<TRow extends BaseRow>(
-	table: ReadonlyTable<TRow>,
-): ReadonlyTableView<TRow> {
-	const subscribe = createSubscriber((update) => table.observe(update));
-	// One scan feeds every list surface and recomputes once per change. Reading
-	// `scanned` is what registers the dependency, so the list getters need no
-	// separate `subscribe()` call.
-	const scanned = $derived.by(() => {
-		subscribe();
-		return table.scan();
+export function fromTable<TDefinition extends TableDefinition>(
+	table: TableLens<TDefinition>,
+): ReadonlyTableView<TDefinition> {
+	let rows = $state.raw<RowFor<TDefinition>[]>([]);
+	let nonconforming = $state.raw<NonconformingRowError[]>([]);
+	let loadError = $state.raw<unknown>(null);
+
+	let pendingRowIds: Set<string> | undefined;
+	let pendingRescan = false;
+	let draining: Promise<void> | undefined;
+
+	/** Rows in stable row-ID order, which is the order `scan()` promises. */
+	function sortById(next: RowFor<TDefinition>[]): RowFor<TDefinition>[] {
+		return next.sort((left, right) => (left.id < right.id ? -1 : 1));
+	}
+
+	async function rescan(): Promise<void> {
+		const { rows: nextRows, nonconforming: nextNonconforming } =
+			await table.scan();
+		rows = nextRows;
+		nonconforming = nextNonconforming;
+		loadError = null;
+	}
+
+	/**
+	 * Re-read exactly the named rows.
+	 *
+	 * A read that answers `undefined` is a row that is no longer live, so it
+	 * leaves both buckets. A read that answers a nonconforming row moves it into
+	 * the second bucket rather than dropping it, which is the same classification
+	 * `scan()` performs and the reason this adapter can stay incremental without
+	 * quietly losing the rows a Lens cannot interpret.
+	 *
+	 * Anything else is operational: storage or transport failed and this pass
+	 * cannot say what the table holds. Rather than guess, it asks for a rescan,
+	 * which is always allowed because invalidation is a superset.
+	 */
+	async function applyRowIds(rowIds: Set<string>): Promise<void> {
+		const byId = new Map(rows.map((row) => [row.id, row]));
+		const badById = new Map(
+			nonconforming.map((issue) => [issue.id, issue] as const),
+		);
+		for (const id of rowIds) {
+			const result = await table.get(id);
+			if (result.error !== null) {
+				if (result.error.name !== 'NonconformingRow') throw result.error;
+				byId.delete(id);
+				badById.set(id, result.error);
+				continue;
+			}
+			badById.delete(id);
+			if (result.data === undefined) byId.delete(id);
+			else byId.set(id, result.data);
+		}
+		rows = sortById([...byId.values()]);
+		nonconforming = [...badById.values()];
+		loadError = null;
+	}
+
+	function drain(): Promise<void> {
+		draining ??= (async () => {
+			try {
+				while (pendingRescan || pendingRowIds !== undefined) {
+					if (pendingRescan) {
+						pendingRescan = false;
+						pendingRowIds = undefined;
+						await rescan();
+						continue;
+					}
+					const rowIds = pendingRowIds;
+					pendingRowIds = undefined;
+					if (rowIds === undefined) continue;
+					try {
+						await applyRowIds(rowIds);
+					} catch {
+						// The point-read path could not answer. Fall back rather than
+						// report: the caller asked for the table's contents, not for
+						// this adapter's opinion about one read.
+						pendingRescan = true;
+					}
+				}
+			} catch (cause) {
+				loadError = cause;
+				throw cause;
+			} finally {
+				draining = undefined;
+			}
+		})();
+		return draining;
+	}
+
+	function requestRescan(): Promise<void> {
+		pendingRescan = true;
+		pendingRowIds = undefined;
+		return drain();
+	}
+
+	function requestRowIds(rowIds: readonly string[]): Promise<void> {
+		if (!pendingRescan) {
+			pendingRowIds ??= new Set();
+			for (const id of rowIds) pendingRowIds.add(id);
+		}
+		return drain();
+	}
+
+	function apply(invalidation: TableInvalidation): Promise<void> {
+		return invalidation.scope === 'table'
+			? requestRescan()
+			: requestRowIds(invalidation.rowIds);
+	}
+
+	/**
+	 * Observe before reading so a commit cannot land between the scan and the
+	 * subscription. Clearing the dormant cache is equally important: while the
+	 * last Svelte subscriber was absent, no invalidations were observed, so the
+	 * previous rows are no longer an honest answer.
+	 */
+	const subscribe = createSubscriber((update) => {
+		const stop = table.subscribe((invalidation) => {
+			void apply(invalidation).then(update, update);
+		});
+		rows = [];
+		nonconforming = [];
+		loadError = null;
+		void requestRescan().then(update, update);
+		return stop;
 	});
+
+	/**
+	 * Construction has no Svelte effect to own the initial subscription, so the
+	 * readiness scan uses a bounded observation period of its own. Invalidation
+	 * work joins the same serialized drain and therefore finishes before this
+	 * promise settles.
+	 */
+	const stopInitialObservation = table.subscribe((invalidation) => {
+		void apply(invalidation);
+	});
+	const whenReady = requestRescan().finally(stopInitialObservation);
 
 	return {
 		get all() {
-			return scanned.rows;
+			subscribe();
+			return rows;
 		},
 		get nonconforming() {
-			return scanned.nonconforming;
-		},
-		get newerWriter() {
-			return scanned.newerWriter;
-		},
-		byId(id: string): TRow | undefined {
 			subscribe();
-			return table.get(id).data ?? undefined;
+			return nonconforming;
 		},
+		get loadError() {
+			subscribe();
+			return loadError;
+		},
+		whenReady,
+		byId(id: string) {
+			subscribe();
+			return rows.find((row) => row.id === id);
+		},
+		refresh: requestRescan,
 	};
 }

@@ -1,5 +1,10 @@
 # SQLite Is a Projection, Not the Database
 
+> **Historical note (2026-07-12):** This article describes the earlier
+> root-Y.Doc records model. The target architecture gives records their own
+> authoritative logical database and materializes that database in local
+> SQLite. See ADR-0130 through ADR-0137 for the current direction.
+
 Yjs is the database. SQLite is a read cache that happens to look like one.
 
 Every write in the workspace goes through a Yjs CRDT. The Y.Doc is the source of truth: it handles conflict resolution, offline merges, and multi-device sync. SQLite doesn't participate in any of that. It sits downstream, populated by an observer that watches the Y.Doc and mirrors changes into rows and columns. If you delete the SQLite file, nothing is lost. The workspace rebuilds it from the CRDT on next open. The same way a database rebuilds a materialized view from the underlying tables.

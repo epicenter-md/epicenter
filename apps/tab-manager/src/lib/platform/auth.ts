@@ -3,9 +3,9 @@
  *
  * Exports the persisted auth cell loader, the instance setting loader, and the
  * OAuth sign-in launcher. The auth client itself is created after both async
- * cells have loaded, in `../session.svelte`.
+ * cells have loaded, in `../application-platform.ts`.
  *
- * @see {@link ../session.svelte} auth, workspace, and identity wiring
+ * @see {@link ../application-platform.ts} auth, replica, and device acquisition
  */
 
 import { loadInstanceSetting, loadPersistedAuthStorage } from '@epicenter/auth';
@@ -20,11 +20,11 @@ import { storage } from '@wxt-dev/storage';
  * The serialized cell is owned by `@epicenter/auth`; this module only supplies
  * async read/write over an opaque string. Older builds persisted a bundled
  * shape under `local:auth.session`; the new key resets cleanly, and a corrupt
- * or legacy cell validates to null, forcing a one-time sign-in. Workspace
- * IndexedDB data is keyed by userId and survives the reset.
+ * or legacy cell validates to null, forcing a one-time sign-in. The OPFS
+ * replica is independent of auth state and survives the reset.
  *
  * `loadPersistedAuthStorage` resolves once chrome.storage has been read;
- * `../session.svelte` awaits it before constructing the auth client.
+ * `../application-platform.ts` awaits it before constructing the auth client.
  */
 const authCell = storage.defineItem<string>('local:auth.persisted');
 
@@ -40,8 +40,9 @@ export const persistedAuthStoragePromise = loadPersistedAuthStorage({
  * Persisted instance setting in `chrome.storage.local`: which Epicenter star
  * this install talks to (ADR-0069/0070). The hosted default uses OAuth; a
  * self-hoster pastes the token their box minted (ADR-0071). `chrome.storage` is
- * async, so the snapshot is pre-loaded here and awaited in `../session.svelte`
- * alongside the auth cell, mirroring `persistedAuthStoragePromise`.
+ * async, so the snapshot is pre-loaded here and awaited in
+ * `../application-platform.ts` alongside the auth cell, mirroring
+ * `persistedAuthStoragePromise`.
  */
 const instanceCell = storage.defineItem<string>('local:instance');
 

@@ -1,5 +1,5 @@
 import type { CaptureSurface } from '$lib/constants/audio';
-import { settings } from '$lib/state/settings.svelte';
+import type { WhisperingApp } from '$lib/whispering/app';
 
 /**
  * Which capture surface the home page and the config header are currently
@@ -7,10 +7,10 @@ import { settings } from '$lib/state/settings.svelte';
  * (`import`).
  *
  * This is a thin, transient presentation layer over the durable
- * `recording.trigger` setting. `manual`/`vad` read straight through to that
+ * `settings.recording.trigger` setting. `manual`/`vad` read straight through to that
  * setting; `import` is a module-level boolean that is never persisted (file
  * import is a one-shot, so each launch starts on your durable trigger) and
- * never written back to `recording.trigger`. Keeping it here, rather than as a
+ * never written back to `settings.recording.trigger`. Keeping it here, rather than as a
  * third trigger value, is what lets the UI offer the three-way choice while the
  * trigger setting stays strictly `manual | vad`.
  *
@@ -23,11 +23,12 @@ let isImportSurfaceShowing = $state(false);
 
 export const captureSurface = {
 	/** The surface on screen now: `import` while the import overlay is open,
-	 *  otherwise the durable recording trigger. */
-	get current(): CaptureSurface {
+	 *  otherwise the durable recording trigger. Reactive when called inside a
+	 *  template, `$derived`, or `$effect`. */
+	current(app: WhisperingApp): CaptureSurface {
 		return isImportSurfaceShowing
 			? 'import'
-			: settings.get('recording.trigger');
+			: app.settings.get('settings.recording.trigger');
 	},
 
 	/** Open the file-import overlay over the current trigger. */

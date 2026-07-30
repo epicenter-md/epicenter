@@ -25,22 +25,25 @@ into Rust would split the source of truth, so we keep it in the main window.
 - **Route**: `/recording-overlay` renders the pill. It lives in its own webview,
   so it cannot read the recorder state directly.
 - **Shared pill** (`src/lib/recording-pill/`): owns the platform-free status and
-  action model, lifecycle projection, presentation, direct web host, and meter
-  curve. `RecordingPillHost` reads `dictationLifecycle` directly and renders the
-  in-page pill on web.
+  action model, lifecycle projection, presentation, and meter curve.
+- **Dictation indicator** (`src/lib/dictation-indicator/`): the build-selected
+  presentation mounted once by the app layout. The browser component reads
+  `dictationLifecycle` directly and renders the shared pill in-page. The Tauri
+  component projects the same lifecycle, synchronizes the native overlay
+  window, and listens for overlay actions and reveal requests.
 - **Tauri overlay** (`src/lib/recording-overlay/`): owns only the secondary-window
-  event protocol and desktop mic-level transport. On desktop,
-  the Tauri implementation of `#platform/recording-overlay-owner` projects the
-  lifecycle, synchronizes the separate overlay window, and listens for overlay
-  actions and reveal requests. The browser implementation exports no runtime
-  owner because its pill is mounted directly in the app layout.
+  event protocol, window management, and desktop mic-level transport. The Tauri
+  dictation-indicator component drives the native window manager; the browser
+  build never resolves that `.tauri` implementation.
 - **Protocol** (`src/lib/recording-overlay/events.ts`): binds the shared pill
   model to Tauri event channels. The main window pushes a `status` to the overlay;
-  the overlay pushes `action` (stop/cancel) and a `ready` handshake back. Actions
-  are routed against the live recorder state in the main window, not the overlay's
-  payload, so a click that races a state change is safe.
-- **Controls**: the stop and cancel buttons are filled chips (stop is red) so
-  they read as buttons in the small pill, and they stop click propagation.
+  the overlay pushes `action` (stop, cancel, or ship the raw transcript during
+  polishing) and a `ready` handshake back. Actions are routed against the live
+  lifecycle state in the main window, not the overlay's payload, so a click that
+  races a state change is safe.
+- **Controls**: the stop and cancel buttons are filled chips (stop is red), and
+  polishing offers a ship-raw control. They read as buttons in the small pill and
+  stop click propagation.
   Clicking the pill body anywhere else emits `main-window:reveal`, which brings
   the main Whispering window forward (show + unminimize + setFocus); it is a
   separate gesture from stop/cancel so finishing a recording never yanks the

@@ -1,7 +1,8 @@
 # 0006. Schema evolution keeps the version tuple and refuses repair APIs
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-06-12
+- **Superseded by:** [ADR-0125](0125-record-definitions-are-release-local-lenses-and-never-migrate-user-data.md)
 
 ## Context
 

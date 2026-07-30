@@ -6,7 +6,7 @@ Epicenter is the repository's native application host. It owns one Tauri runtime
 trusted SPA source                 Epicenter build output
 
 apps/whispering/src  -----------> dist/whispering
-apps/epicenter/ui     -----------> dist/query
+apps/epicenter/ui     -----------> dist/home
                                           |
                                           v
                               Bun loopback sidecar
@@ -29,19 +29,45 @@ The tray opens trusted surfaces in separate windows. Deep links use the compiled
 
 ```bash
 open 'epicenter://surface/whispering'
-open 'epicenter://surface/query'
+open 'epicenter://surface/home'
 ```
+
+## Publish an app catalog
+
+The promotion command accepts already-built static outputs. It does not install
+dependencies, run build scripts, or read application source (ADR-0179). How the
+folders were produced, and by whom, is outside the contract. The candidate
+directory contains one built result per app:
+
+```text
+candidate/
+|-- notes/
+|   `-- index.html
+`-- timeline/
+    `-- index.html
+```
+
+Publish it from the repository root:
+
+```bash
+bun run --cwd apps/epicenter catalog:publish -- ./candidate --data-dir ./tmp/epicenter-data
+```
+
+Epicenter copies and validates the complete candidate, stores it as an
+immutable generation, and atomically selects it for the next launch. A running
+process keeps serving the generation it selected at startup. Restart Epicenter
+to activate the new catalog.
 
 ## Build and verify
 
 ```bash
-# Build Query, Whispering, and the Bun sidecar
+# Build Home, Whispering, and the Bun sidecar
 bun run --cwd apps/epicenter build:desktop
 
 # Package the complete native application
 bun run --cwd apps/epicenter desktop:build
 
-# Typecheck Query plus both Whispering platform conditions
+# Typecheck Home plus both Whispering platform conditions
 bun run --cwd apps/epicenter typecheck
 
 # Host, routing, sidecar, and surface tests
@@ -54,7 +80,7 @@ cargo test --manifest-path apps/epicenter/src-tauri/Cargo.toml
 ## Ownership rules
 
 - `src-tauri` owns native commands, permissions, windows, deep links, and packaging.
-- `src` owns the Bun host, trusted route catalog, static-asset containment, and Query session.
+- `src` owns the Bun host, trusted route catalog, static-asset containment, and Home session.
 - `dist` is generated. Never edit it or commit product source beneath it.
 - A product SPA owns its UI and browser deployment from its own app folder.
 - A multi-host SPA selects implementations through build-time `#platform/*` conditions. Runtime checks guard optional capabilities; they do not choose which implementation was bundled.

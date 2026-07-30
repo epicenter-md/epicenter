@@ -22,11 +22,11 @@
 	import AiDrawer from '$lib/components/AiDrawer.svelte';
 	import { createCommandPaletteItems } from '$lib/components/command-palette-items';
 	import UnifiedTabList from '$lib/components/tabs/UnifiedTabList.svelte';
-	import { tabManagerBoot } from '$lib/session.svelte';
+	import { getTabManagerApp } from '$lib/context';
 	import { browserState } from '$lib/state/browser-state.svelte';
 
-	const tabManager = tabManagerBoot.tabManager;
-	const auth = tabManagerBoot.auth;
+	const tabManager = getTabManagerApp();
+	const auth = tabManager.auth;
 	const items = createCommandPaletteItems(tabManager.state.savedTabs);
 	let searchInputRef = $state<HTMLInputElement | null>(null);
 	let commandPaletteOpen = $state(false);
@@ -202,15 +202,18 @@
 				</Button>
 				<AccountPopover
 					{auth}
-					collaboration={tabManager.collaboration}
+					dataSync={tabManager}
 					syncNoun="tabs"
-					onForgetDevice={() => tabManager.wipe()}
-					instanceConnect={{ appName: 'Epicenter', setting: tabManagerBoot.instanceSetting }}
+					instanceConnect={{
+						appName: 'Epicenter',
+						setting: tabManager.instanceSetting,
+					}}
 				/>
 			</div>
 		</header>
-		<!-- Gate on browser state seed so child components can read data synchronously -->
-		{#await Promise.all([tabManager.storage.whenLoaded, browserState.whenReady])}
+		<!-- Durable rows are hydrated before the application resolves, so the only
+		     remaining seed is Chrome's live tab state. -->
+		{#await browserState.whenReady}
 			<Loading class="flex-1" label="Loading tabs…" />
 		{:then}
 			<div class="flex-1 min-h-0"><UnifiedTabList /></div>

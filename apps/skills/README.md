@@ -1,78 +1,64 @@
 # Skills Editor
 
-A local editor for writing the prompt files and configuration that power Epicenter agents. It uses Yjs CRDTs under the hood, so undo and redo work across sessions and the format is ready for collaboration, but it does not sync anywhere. Your skills stay on your machine.
+A local browser editor for Epicenter agent skills. Records live in the Browser
+workspace runtime's canonical OPFS store. Instructions and reference bodies are
+row-owned Yjs documents in the workspace contract. The browser row-document
+channel is still a deliberate runtime stub, so metadata works but the text
+editors remain blocked until that channel lands.
 
-Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL-3.0 licensed.
+Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo.
+AGPL-3.0 licensed.
 
----
+## Workspace composition
 
-## How it works
+The mounted root layout calls `openSkillsApplication()`, renders its stable boot
+promise with Svelte's `{#await}` block, and provides only the fully opened and
+hydrated application to descendants. Importing Skills modules does not open
+storage. Record lenses validate canonical JSON when it is read. Rows that do not
+conform stay stored and appear in the UI's invalid-record count rather than
+being silently deleted or migrated.
 
-### What's a skill?
+The app uses runtime-owned structural record IDs. Each valid skill and reference
+also carries a stable `sourceId` in its JSON payload for domain-level references.
+Deleting a skill explicitly deletes its currently conforming reference records.
+Deleting a row also deletes its owned document state.
 
-A skill is a set of instructions (markdown) plus reference files that tell an Epicenter agent how to perform a specific task. Each skill has metadata (name, description, license, compatibility) and one or more reference documents. The Skills Editor is where you author and organize these.
+Instructions and reference bodies open through their owning rows:
 
-### Workspace connection
+```ts
+await skills.tables.skills.openDocument(skillId);
+await skills.tables.skillReferences.openDocument(referenceId);
+```
 
-The app composes its browser workspace in `src/lib/skills/browser.ts`.
-`src/lib/skills/client.ts` exports the running `skills` singleton for Svelte
-components. `@epicenter/skills` provides the pure `openSkills()` factory,
-document builders, guid helpers, and action factory; the app owns IndexedDB,
-BroadcastChannel, and inline `createDisposableCache` sources for
-instructions and references. The workspace ID is `epicenter-skills`. No remote
-sync is wired in, so the editor works entirely offline.
+Application code never constructs document addresses, authority identities, or
+providers. The runtime derives them from the table and structural row id.
 
-### Collaborative editing
+## UI
 
-Each skill's instructions and each reference's content are `Y.Doc`-backed documents. CodeMirror 6 with `y-codemirror.next` binds directly to those documents, so edits are conflict-free and survive concurrent sessions.
-
-### UI
-
-A single route renders a resizable split view: sidebar on the left, editor panel on the right.
-
-- **Sidebar**: skill list with search, keyboard navigation (arrow keys), inline rename (F2), and delete with confirmation.
-- **Editor panel**: metadata form (name, description, license, compatibility), instructions editor (CodeMirror + Yjs), and a references panel with expandable entries, each with its own CodeMirror editor.
-- **Command palette**: search across skills from anywhere.
-
----
-
-## Workspace schema
-
-Workspace ID: `epicenter-skills`
-
-| Table | Columns | Attached doc |
-|---|---|---|
-| `skills` | `id`, `name`, `description`, `license`, `compatibility` | `instructions` (Y.Doc) |
-| `references` | `id`, `skillId`, `name` | `content` (Y.Doc) |
-
----
+The single route renders a resizable split view with a searchable skill list,
+metadata editor, Markdown instructions editor, references panel, and command
+palette. CodeMirror writes document content through the row document handle once
+the browser channel is available.
 
 ## Development
 
-Prerequisites: [Bun](https://bun.sh).
+The Browser OPFS runtime requires a cross-origin isolated page. The SvelteKit
+server hook and Vite dev and preview servers set the required COOP and COEP
+headers. Production proxies must preserve those headers.
+
+From the repository root:
 
 ```bash
-git clone https://github.com/EpicenterHQ/epicenter.git
-cd epicenter
 bun install
-cd apps/skills
-bun dev
+bun dev:skills
 ```
 
----
+Run checks with:
 
-## Tech stack
-
-- [SvelteKit](https://kit.svelte.dev): UI framework (SSR disabled)
-- [CodeMirror 6](https://codemirror.net) + [y-codemirror.next](https://github.com/yjs/y-codemirror.next): collaborative markdown editing
-- [Yjs](https://yjs.dev): CRDT engine
-- [Tailwind CSS](https://tailwindcss.com): styling
-- `@epicenter/skills`: workspace definition for skills and references
-- `@epicenter/workspace`: CRDT-backed tables, persistence
-- `@epicenter/svelte`: reactive table bindings
-- `@epicenter/ui`: shadcn-svelte component library
-
----
+```bash
+bun run --filter skills typecheck
+bun run --filter skills build
+```
 
 ## License
 

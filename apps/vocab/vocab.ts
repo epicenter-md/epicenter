@@ -1,32 +1,29 @@
 /**
- * Vocab workspace contract: id, branded types, tables, kv, and the workspace
- * factory. Isomorphic: no IndexedDB, WebSockets, Svelte state, or browser APIs.
+ * Vocab's Lens: the namespace it owns, its tables, and its durable values.
+ * Isomorphic: no IndexedDB, WebSockets, Svelte state, or browser APIs.
  *
  * Distribution: this file is the `@epicenter/vocab` package root file
  * (the target of the package's `"."` export). The browser entrypoint imports the
- * schema from here and composes runtime-specific attachments around it. The table
- * and KV shapes here are the wire contract for sync; forking a column shape
- * breaks sync compatibility with peers running the canonical schema.
+ * Lens from here and binds it to a runtime. The shapes here are the wire
+ * contract for sync; forking a field shape breaks sync compatibility with peers
+ * running the canonical Lens.
  *
  * Composition lives elsewhere:
  *  - `apps/vocab/vocab.browser.ts`
  *      → `openVocabBrowser({ auth, nodeId })`
  */
 
+import type { AgentMessage } from '@epicenter/agent';
 import { conversationsTable } from '@epicenter/chat';
 import type { ServableModel } from '@epicenter/constants/ai-providers';
-import { field } from '@epicenter/field';
 import {
-	defineKv,
+	type BoundData,
+	defineLens,
 	defineTable,
-	defineWorkspace,
-	generateId,
-	type Id,
-	type InferTableRow,
-} from '@epicenter/workspace';
-import type { AgentMessage } from '@epicenter/workspace/agent';
-import { Type } from 'typebox';
-import type { Brand } from 'wellcrafted/brand';
+	defineValue,
+	type RowFor,
+} from '@epicenter/data';
+import { field } from '@epicenter/field';
 
 /**
  * Vocab runs a single model. It is an app constant, not a per-conversation
@@ -79,7 +76,7 @@ export const VOCAB_STT_MODEL = 'whisper-1';
  * its message id (ADR-0046/0047), the moment a turn finishes.
  *
  * It is the shared {@link AgentMessage} so Vocab rides the one client agent loop
- * (`@epicenter/workspace/agent`). Vocab is capability-free, so every message is
+ * (`@epicenter/agent`). Vocab is capability-free, so every message is
  * a single text part, but the parts-array shape is the same one a tool agent
  * fills with tool-call and tool-result parts.
  */
@@ -89,12 +86,6 @@ export type VocabMessage = AgentMessage;
 // Entries
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Branded entry id: a nanoid minted when an entry is saved. */
-export type EntryId = Id & Brand<'EntryId'>;
-
-/** Mint a unique {@link EntryId}. */
-export const generateEntryId = (): EntryId => generateId<EntryId>();
-
 /**
  * The entries table: the user-curated store of language units of any length
  * (words, phrases, chengyu) captured by selection. One pool, no decks.
@@ -103,37 +94,53 @@ export const generateEntryId = (): EntryId => generateId<EntryId>();
  * human-owned: no code path machine-writes it.
  */
 export const entriesTable = defineTable({
-	id: field.string<EntryId>(),
-	text: field.string(),
-	note: field.string(),
-	stage: field.select(['new', 'understood', 'usable']),
-	createdAt: field.instant(),
+	fields: {
+		text: field.string(),
+		note: field.string(),
+		stage: field.select(['new', 'understood', 'usable']),
+		createdAt: field.instant(),
+	},
 });
 
-/** One entry row. */
-export type Entry = InferTableRow<typeof entriesTable>;
+/** One entry row. Row ids are runtime-minted, so the lens owns `id`. */
+export type Entry = RowFor<typeof entriesTable>;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Workspace Factory
+// Lens
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * The isomorphic Vocab workspace definition.
+ * The isomorphic Vocab Lens.
  *
- * Conversation transcripts are not rows: each `conversations.messages` handle
- * opens a synced child doc derived from the conversation id, holding one
- * {@link VocabMessage} per key (ADR-0046). The open client tab answers
- * in-process (ADR-0043): it streams the live turn in component state and writes
- * each finished message into this store.
+ * A Lens declares exactly one namespace (ADR-0160), so Vocab interprets the
+ * canonical `conversationsTable` shape under its own namespace rather than
+ * binding the chat Lens: the conversations are Vocab's, not a namespace another
+ * application owns.
+ *
+ * Conversation transcripts are not rows: each conversation row owns a document
+ * holding one {@link VocabMessage} per key (ADR-0046). The open client tab
+ * answers in-process (ADR-0043): it streams the live turn in component state
+ * and writes each finished message into that document.
  */
-export const vocabWorkspace = defineWorkspace({
-	id: 'epicenter-vocab',
-	name: 'vocab',
+export const vocabLens = defineLens({
+	namespace: 'so.epicenter.vocab',
 	tables: {
 		conversations: conversationsTable,
 		entries: entriesTable,
 	},
-	kv: {
-		showReadings: defineKv(Type.Boolean(), () => true),
+	values: {
+		showReadings: defineValue({ value: field.boolean() }),
 	},
 });
+
+/** Vocab's bound data handle. */
+export type VocabData = BoundData<
+	typeof vocabLens.tables,
+	typeof vocabLens.values
+>;
+
+/**
+ * Readings render by default. A value has no declared default (an unset value
+ * reads `undefined`), so the one place that decision lives is here.
+ */
+export const SHOW_READINGS_DEFAULT = true;

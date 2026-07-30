@@ -46,15 +46,23 @@
 	import { createRawSnippet } from 'svelte';
 	import { PATHS } from '$lib/services/fs-paths';
 	import { report } from '$lib/report';
-	import { rpc } from '$lib/rpc';
 	import { tauri } from '#platform/tauri';
-	import { deleteRecordingsWithConfirmation } from '$lib/operations/recordings';
-	import { type Recording, recordings } from '$lib/state/recordings.svelte';
+	import { deleteRecordingsWithConfirmation } from '$lib/operations/delete-recordings';
+	import type { Recording } from '$lib/state/recordings.svelte';
+	import type { RecordingId } from '$lib/workspace';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
 	import RecordingTranscriptCell from './RecordingTranscriptCell.svelte';
-	import RenderAudioUrl from './RenderAudioUrl.svelte';
+	import RecordingAudioCell from './RecordingAudioCell.svelte';
+	import RecordingStorageBadge from './RecordingStorageBadge.svelte';
 	import TranscriptionStatusBadge from './TranscriptionStatusBadge.svelte';
 	import RecordingRowActions from './actions/RecordingRowActions.svelte';
+	import {
+		getWhisperingApp,
+		getWhisperingQueries,
+	} from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
+	const queries = getWhisperingQueries();
 
 	/**
 	 * Returns a cell renderer for an instant, optionally using a row-owned
@@ -95,7 +103,7 @@
 	}
 
 	const transcribeRecordings = createMutation(
-		() => rpc.transcription.transcribeRecordings.options,
+		() => queries.transcription.transcribeRecordings.options,
 	);
 
 	function displayTranscript(recording: Recording): string {
@@ -168,21 +176,34 @@
 					headerText: 'Transcript',
 				}),
 			cell: ({ row }) =>
-				renderComponent(RecordingTranscriptCell, { recordingId: row.id }),
+				renderComponent(RecordingTranscriptCell, {
+					recordingId: row.original.id,
+				}),
 		},
 		{
 			id: 'audio',
 			meta: { label: 'Audio' },
-			accessorFn: ({ id }) => id,
+			accessorFn: (recording) => recording,
 			header: ({ column }) =>
 				renderComponent(SortableTableHeader, {
 					column,
 					headerText: 'Audio',
 				}),
-			cell: ({ getValue }) => {
-				const id = getValue<string>();
-				return renderComponent(RenderAudioUrl, { id });
-			},
+			cell: ({ getValue }) =>
+				renderComponent(RecordingAudioCell, {
+					recording: getValue<Recording>(),
+				}),
+		},
+		{
+			id: 'storage',
+			meta: { label: 'Storage' },
+			accessorFn: (recording) => recording,
+			header: 'Storage',
+			enableSorting: false,
+			cell: ({ getValue }) =>
+				renderComponent(RecordingStorageBadge, {
+					recording: getValue<Recording>(),
+				}),
 		},
 		{
 			id: 'status',
@@ -192,7 +213,7 @@
 			enableSorting: false,
 			cell: ({ getValue }) =>
 				renderComponent(TranscriptionStatusBadge, {
-					recordingId: getValue<string>(),
+					recordingId: getValue<RecordingId>(),
 				}),
 		},
 		{
@@ -206,9 +227,7 @@
 				}),
 			cell: ({ getValue }) => {
 				const recording = getValue<Recording>();
-				return renderComponent(RecordingRowActions, {
-					recordingId: recording.id,
-				});
+				return renderComponent(RecordingRowActions, { recording });
 			},
 		},
 	] satisfies ColumnDef<Recording>[];
@@ -218,7 +237,7 @@
 		schema: type({ desc: 'boolean', id: 'string' }).array(),
 		defaultValue: [{ id: 'recordedAt', desc: true }],
 	});
-	let columnFilters = $state<ColumnFiltersState>([]);
+	let columnFilters = $state.raw<ColumnFiltersState>([]);
 	let columnVisibility = createPersistedState({
 		key: 'whispering-recordings-data-table-column-visibility',
 		schema: type('Record<string, boolean>'),
@@ -231,13 +250,16 @@
 		schema: type('Record<string, boolean>'),
 		defaultValue: {},
 	});
-	let pagination = $state<PaginationState>({ pageIndex: 0, pageSize: 10 });
+	let pagination = $state.raw<PaginationState>({
+		pageIndex: 0,
+		pageSize: 10,
+	});
 	let globalFilter = $state('');
 
 	const table = createSvelteTable({
 		getRowId: (originalRow) => originalRow.id,
 		get data() {
-			return recordings.sorted;
+			return app.recordings.sorted;
 		},
 		columns,
 		getCoreRowModel: getCoreRowModel(),
@@ -334,9 +356,9 @@
 		return transcriptions.join(delimiter);
 	});
 
-	async function openRecordingsFolder() {
+	async function openBlobsFolder() {
 		if (!tauri) return;
-		const { error } = await tauri.opener.openPath(await PATHS.DB.RECORDINGS());
+		const { error } = await tauri.opener.openPath(await PATHS.DB.BLOBS());
 		if (error) report.error({ title: 'Failed to open folder', cause: error });
 	}
 </script>
@@ -380,18 +402,35 @@
 								selectedRecordingRows.map(({ original }) => original),
 								{
 									onSuccess: ({ oks, errs }) => {
+										const historyUnconfirmedTexts = oks.flatMap(({ data }) =>
+											data.history.error === null ? [] : [data.text],
+										);
+										const historyWarningCount = historyUnconfirmedTexts.length;
+										const copyUnsavedAction =
+											historyWarningCount === 0
+												? undefined
+												: {
+														label: 'Copy unsaved transcripts',
+														onClick: () =>
+															createCopyFn('unsaved transcripts')(
+																historyUnconfirmedTexts.join('\n\n'),
+															),
+													};
 										if (errs.length === 0) {
 											const count = oks.length;
 											loading.resolve({
-												title: `Transcribed ${count} recording${count === 1 ? '' : 's'}!`,
-												description: `Your ${count} recording${count === 1 ? ' has' : 's have'} been transcribed successfully.`,
+												title: `Transcribed ${count} recording${count === 1 ? '' : 's'}`,
+												description:
+													historyWarningCount === 0
+														? `Your ${count} recording${count === 1 ? ' has' : 's have'} been transcribed successfully.`
+														: `Recording history may be incomplete for ${historyWarningCount} transcription${historyWarningCount === 1 ? '' : 's'}.`,
+												action: copyUnsavedAction,
 											});
 											return;
 										}
 
-										// Per-recording errors already live on their rows:
-										// transcribeAndPersist marks each failed row and the row
-										// surfaces its message plus a retry. So the bulk toast only
+										// transcribeAndPersist attempts to mark each failed row so
+										// history can surface its message plus a retry. So the bulk toast only
 										// summarizes, and forwards the first real failure as the
 										// cause so More details stays a genuine provider error
 										// rather than a synthesized one. Dedupe the messages so a
@@ -415,7 +454,8 @@
 										loading.reject({
 											cause: firstFailure.error,
 											title: `Transcribed ${oks.length} of ${oks.length + errs.length} recordings`,
-											description: `${oks.length} succeeded, ${errs.length} failed:\n${failureSummary}`,
+											description: `${oks.length} succeeded, ${errs.length} failed${historyWarningCount === 0 ? '' : `, ${historyWarningCount} may not have been saved to history`}:\n${failureSummary}`,
+											action: copyUnsavedAction,
 										});
 									},
 								},
@@ -425,8 +465,9 @@
 						{#if transcribeRecordings.isPending}
 							<EllipsisIcon class="size-4" />
 						{:else if selectedRecordingRows.some(
-							({ id }) =>
-								recordings.get(id)?.transcription?.status === 'completed',
+							(recording) =>
+								app.recordings.get(recording.original.id)?.transcription?.status ===
+								'completed',
 						)}
 							<RetryTranscriptionIcon class="size-4" />
 						{:else}
@@ -500,6 +541,7 @@
 						size="icon"
 						onclick={() =>
 							deleteRecordingsWithConfirmation(
+								app,
 								selectedRecordingRows.map(({ original }) => original),
 							)}
 					>
@@ -509,10 +551,10 @@
 
 				{#if tauri}
 					<Button
-						tooltip="Open recordings folder"
+						tooltip="Open audio storage folder"
 						variant="outline"
 						size="icon"
-						onclick={openRecordingsFolder}
+						onclick={openBlobsFolder}
 					>
 						<ExternalLinkIcon class="size-4" />
 					</Button>

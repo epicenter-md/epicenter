@@ -3,9 +3,13 @@
  * at runtime, only used as compile-time types.
  */
 
-// The recorder lifecycle state lives on Whispering's recorder contract; alias
-// it to the app's existing name so in-app consumers keep their import.
-export type { RecordingState as WhisperingRecordingState } from '$lib/services/recorder/contract';
+/**
+ * Manual recording state as the UI tracks it. Owned here rather than by the
+ * recorder contract: the recorder has no state to report, because holding a
+ * `Recording` is what "recording" means. `manual-recorder.svelte.ts` derives
+ * this from whether it holds one, and the UI reads that.
+ */
+export type WhisperingRecordingState = 'IDLE' | 'RECORDING';
 
 /**
  * VAD session state as the UI tracks it: closed, armed and waiting for speech,

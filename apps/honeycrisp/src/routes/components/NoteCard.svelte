@@ -4,14 +4,16 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as ContextMenu from '@epicenter/ui/context-menu';
 	import * as Item from '@epicenter/ui/item';
-	import { DateTimeString } from '@epicenter/workspace';
 	import ArchiveRestoreIcon from '@lucide/svelte/icons/archive-restore';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import PinIcon from '@lucide/svelte/icons/pin';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { format } from 'date-fns';
-	import { honeycrisp } from '$lib/honeycrisp';
+	import { getHoneycrispApp } from '$lib/context.js';
+	import { runHoneycrispMutation } from '$lib/mutation.js';
+
+	const honeycrisp = getHoneycrispApp();
 
 	let {
 		note,
@@ -24,7 +26,7 @@
 	} = $props();
 
 	/** Derive deleted status from the note itself, no need to check view mode. */
-	const isDeleted = $derived(note.deletedAt !== null);
+	const isDeleted = $derived(note.deletedAt !== undefined);
 
 	let confirmingPermanentDelete = $state(false);
 </script>
@@ -64,9 +66,12 @@
 						size="icon"
 						class="size-6"
 						onclick={(e) => {
-						e.stopPropagation();
-						honeycrisp.state.notes.restore(note.id);
-					}}
+							e.stopPropagation();
+							runHoneycrispMutation(
+								honeycrisp.state.notes.restore(note.id),
+								'Could not restore note',
+							);
+						}}
 					>
 						<ArchiveRestoreIcon class="size-3" />
 					</Button>
@@ -75,9 +80,9 @@
 						size="icon"
 						class="size-6 text-destructive hover:text-destructive"
 						onclick={(e) => {
-					e.stopPropagation();
-					confirmingPermanentDelete = true;
-				}}
+							e.stopPropagation();
+							confirmingPermanentDelete = true;
+						}}
 					>
 						<TrashIcon class="size-3" />
 					</Button>
@@ -94,7 +99,10 @@
 						class="size-6"
 						onclick={(e) => {
 							e.stopPropagation();
-					honeycrisp.state.notes.togglePin(note.id);
+							runHoneycrispMutation(
+								honeycrisp.state.notes.togglePin(note.id),
+								'Could not update note',
+							);
 						}}
 					>
 						<PinIcon class="size-3 {note.pinned ? 'fill-current' : ''}" />
@@ -105,7 +113,10 @@
 						class="size-6 text-destructive hover:text-destructive"
 						onclick={(e) => {
 							e.stopPropagation();
-					honeycrisp.state.notes.softDelete(note.id);
+							runHoneycrispMutation(
+								honeycrisp.state.notes.softDelete(note.id),
+								'Could not delete note',
+							);
 						}}
 					>
 						<TrashIcon class="size-3" />
@@ -117,7 +128,13 @@
 
 	<ContextMenu.Content class="w-48">
 		{#if isDeleted}
-			<ContextMenu.Item onclick={() => honeycrisp.state.notes.restore(note.id)}>
+			<ContextMenu.Item
+				onclick={() =>
+					runHoneycrispMutation(
+						honeycrisp.state.notes.restore(note.id),
+						'Could not restore note',
+					)}
+			>
 				<ArchiveRestoreIcon class="mr-2 size-4" />
 				Restore
 			</ContextMenu.Item>
@@ -133,7 +150,11 @@
 			</ContextMenu.Item>
 		{:else}
 			<ContextMenu.Item
-				onclick={() => honeycrisp.state.notes.togglePin(note.id)}
+				onclick={() =>
+					runHoneycrispMutation(
+						honeycrisp.state.notes.togglePin(note.id),
+						'Could not update note',
+					)}
 			>
 				<PinIcon class="mr-2 size-4 {note.pinned ? 'fill-current' : ''}" />
 				{note.pinned ? 'Unpin' : 'Pin'}
@@ -146,7 +167,11 @@
 				</ContextMenu.SubTrigger>
 				<ContextMenu.SubContent class="w-48">
 					<ContextMenu.Item
-						onclick={() => honeycrisp.state.notes.moveToFolder(note.id, null)}
+						onclick={() =>
+							runHoneycrispMutation(
+								honeycrisp.state.notes.moveToFolder(note.id, null),
+								'Could not move note',
+							)}
 					>
 						<FileTextIcon class="mr-2 size-4" />
 						Unfiled
@@ -154,7 +179,11 @@
 					<ContextMenu.Separator />
 					{#each honeycrisp.state.folders.all as folder (folder.id)}
 						<ContextMenu.Item
-							onclick={() => honeycrisp.state.notes.moveToFolder(note.id, folder.id)}
+							onclick={() =>
+								runHoneycrispMutation(
+									honeycrisp.state.notes.moveToFolder(note.id, folder.id),
+									'Could not move note',
+								)}
 						>
 							{#if folder.icon}
 								<span class="mr-2 text-base leading-none">{folder.icon}</span>
@@ -169,7 +198,11 @@
 			<ContextMenu.Separator />
 			<ContextMenu.Item
 				class="text-destructive focus:text-destructive"
-				onclick={() => honeycrisp.state.notes.softDelete(note.id)}
+				onclick={() =>
+					runHoneycrispMutation(
+						honeycrisp.state.notes.softDelete(note.id),
+						'Could not delete note',
+					)}
 			>
 				<TrashIcon class="mr-2 size-4" />
 				Delete
@@ -189,7 +222,11 @@
 		<AlertDialog.Footer>
 			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
 			<AlertDialog.Action
-				onclick={() => honeycrisp.state.notes.permanentlyDelete(note.id)}
+				onclick={() =>
+					runHoneycrispMutation(
+						honeycrisp.state.notes.permanentlyDelete(note.id),
+						'Could not permanently delete note',
+					)}
 				>Delete</AlertDialog.Action
 			>
 		</AlertDialog.Footer>

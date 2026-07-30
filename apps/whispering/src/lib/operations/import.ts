@@ -1,4 +1,3 @@
-import { nanoid } from 'nanoid/non-secure';
 import {
 	IMPORTABLE_AUDIO_EXTENSIONS,
 	IMPORTABLE_MIME_PREFIXES,
@@ -6,9 +5,10 @@ import {
 	MAX_IMPORT_FILE_SIZE,
 	MAX_IMPORT_FILES,
 } from '$lib/constants/import-formats';
-import { analytics } from '$lib/operations/analytics';
+import { logAnalyticsEvent } from '$lib/operations/analytics';
 import { processRecordingPipeline } from '$lib/operations/pipeline';
 import { report } from '$lib/report';
+import type { WhisperingApp } from '$lib/whispering/app';
 
 type RejectedImportFile = { file: File; reason: string };
 
@@ -82,10 +82,13 @@ function partitionByImportPolicy(files: File[]) {
 /**
  * Imports audio/video files and runs each through the transcription pipeline.
  * This is its own surface, separate from the microphone recording triggers:
- * importing a file never touches `recording.trigger`. Works on web (the file
+ * importing a file never touches `settings.recording.trigger`. Works on web (the file
  * picker) and desktop (the picker plus drag-and-drop).
  */
-export async function importFiles({ files }: { files: File[] }): Promise<void> {
+export async function importFiles(
+	app: WhisperingApp,
+	{ files }: { files: File[] },
+): Promise<void> {
 	const { valid, rejected } = partitionByImportPolicy(files);
 
 	if (rejected.length > 0) {
@@ -101,21 +104,22 @@ export async function importFiles({ files }: { files: File[] }): Promise<void> {
 
 	await Promise.all(
 		valid.map(async (file) => {
-			const arrayBuffer = await file.arrayBuffer();
-			const audioBlob = new Blob([arrayBuffer], { type: file.type });
+			const finalized = await app.recordings.storeAudio(file);
+			if (finalized.error !== null) {
+				report.error({
+					title: 'Failed to save imported audio',
+					cause: finalized.error,
+				});
+				return;
+			}
 
-			analytics.logEvent({
+			void logAnalyticsEvent(app, {
 				type: 'file_import_completed',
-				blob_size: audioBlob.size,
+				blob_size: file.size,
 			});
 
-			await processRecordingPipeline({
-				source: {
-					kind: 'blob',
-					blob: audioBlob,
-					recordingId: nanoid(),
-					durationMs: null,
-				},
+			await processRecordingPipeline(app, {
+				audioBlobId: finalized.data.audioBlobId,
 				durationMs: null,
 				deliverySource: 'import',
 			});

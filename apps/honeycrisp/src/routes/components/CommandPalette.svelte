@@ -7,9 +7,19 @@
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import FolderPlusIcon from '@lucide/svelte/icons/folder-plus';
 	import PlusIcon from '@lucide/svelte/icons/plus';
-	import { honeycrisp } from '$lib/honeycrisp';
+	import { getHoneycrispApp } from '$lib/context.js';
+	import { runHoneycrispMutation } from '$lib/mutation.js';
+
+	const honeycrisp = getHoneycrispApp();
 
 	let isOpen = $state(false);
+
+	async function createAndSelectNote(): Promise<void> {
+		const { id } = await honeycrisp.state.notes.create(
+			honeycrisp.state.view.selectedFolderId,
+		);
+		honeycrisp.state.view.selectNote(id);
+	}
 
 	const items = $derived.by((): CommandPaletteItem[] => [
 		{
@@ -40,19 +50,19 @@
 			label: 'New Note',
 			group: 'Actions',
 			icon: PlusIcon,
-			onSelect: () => {
-				const { id } = honeycrisp.state.notes.create(
-					honeycrisp.state.view.selectedFolderId,
-				);
-				honeycrisp.state.view.selectNote(id);
-			},
+			onSelect: () =>
+				runHoneycrispMutation(createAndSelectNote(), 'Could not create note'),
 		},
 		{
 			id: 'action:new-folder',
 			label: 'New Folder',
 			group: 'Actions',
 			icon: FolderPlusIcon,
-			onSelect: () => honeycrisp.state.folders.create(),
+			onSelect: () =>
+				runHoneycrispMutation(
+					honeycrisp.state.folders.create(),
+					'Could not create folder',
+				),
 		},
 	]);
 </script>

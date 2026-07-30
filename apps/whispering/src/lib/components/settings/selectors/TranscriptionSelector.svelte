@@ -3,31 +3,25 @@
 	import * as Command from '@epicenter/ui/command';
 	import * as Empty from '@epicenter/ui/empty';
 	import { useCombobox } from '@epicenter/ui/hooks';
-	import { Loading } from '@epicenter/ui/loading';
 	import * as Popover from '@epicenter/ui/popover';
-	import { Progress } from '@epicenter/ui/progress';
-	import { toast } from '@epicenter/ui/sonner';
 	import { cn } from '@epicenter/ui/utils';
 	import CaptionsIcon from '@lucide/svelte/icons/captions';
 	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
-	import DownloadIcon from '@lucide/svelte/icons/download';
-	import HardDriveDownloadIcon from '@lucide/svelte/icons/hard-drive-download';
 	import MicIcon from '@lucide/svelte/icons/mic';
 	import PlusIcon from '@lucide/svelte/icons/plus';
-	import XIcon from '@lucide/svelte/icons/x';
 	import { goto } from '$app/navigation';
 	import { whisperingPath } from '$lib/constants/urls';
-	import { readyModels } from '$lib/settings/transcription-switcher';
+	import { readyTranscribers } from '$lib/settings/transcription-switcher';
 	import {
 		getSelectedTranscriptionService,
 		getTranscriptionReadiness,
 	} from '$lib/settings/transcription-validation';
-	import { deviceConfig } from '$lib/state/device-config.svelte';
-	import { localModels } from '$lib/state/local-models.svelte';
-	import { settings } from '$lib/state/settings.svelte';
 	import { auth } from '#platform/auth';
 	import { tauri } from '#platform/tauri';
-	import ModelRow from './ModelRow.svelte';
+	import TranscriberRow from './TranscriberRow.svelte';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 
 	let {
 		class: className,
@@ -49,14 +43,16 @@
 		iconViewTransitionName?: string;
 	} = $props();
 
-	// The two-source union of routes usable right now (downloaded on-device GGUFs
-	// unioned with signed-in session, keyed, and endpoint providers). Each leaf owns
-	// its own label, so the trigger just reads the active one.
-	const leaves = $derived(readyModels());
-	const activeLeaf = $derived(leaves.find((leaf) => leaf.isActive));
+	// The ready transcribers: downloaded on-device GGUFs unioned with configured
+	// session, keyed, and endpoint providers. Each transcriber owns its own title,
+	// so the trigger just reads the active one.
+	const transcribers = $derived(readyTranscribers(app));
+	const activeTranscriber = $derived(
+		transcribers.find((transcriber) => transcriber.isActive),
+	);
 
-	const selectedService = $derived(getSelectedTranscriptionService());
-	const readiness = $derived(getTranscriptionReadiness());
+	const selectedService = $derived(getSelectedTranscriptionService(app));
+	const readiness = $derived(getTranscriptionReadiness(app));
 	const isSelectedServiceReady = $derived(readiness.isReady);
 	const showConfigurationWarning = $derived(
 		variant === 'pipeline'
@@ -64,26 +60,30 @@
 			: !!selectedService && !isSelectedServiceReady,
 	);
 
-	// The pipeline trigger surfaces the active model as text, so it reads at a
-	// glance instead of relying on a hover tooltip. Falls back to the selected
-	// provider's label (when its model is not yet ready), then to a prompt.
+	// The pipeline trigger surfaces the active transcriber: a curated on-device
+	// model name or a remote provider name. Exact remote model ids stay in the
+	// expanded rows and settings.
 	const pipelineLabel = $derived(
-		activeLeaf?.label ?? selectedService?.label ?? 'Choose model',
+		activeTranscriber?.title ?? selectedService?.label ?? 'Choose model',
 	);
 
-	// The pipeline pill already shows the model name, so its tooltip describes the
-	// action rather than echoing the visible value. The standalone switcher keeps
-	// the value, since there it is the brand icon, not text, that is on screen.
+	// The pipeline pill already shows the transcriber name, so its tooltip
+	// describes the action. The icon-only standalone switcher keeps the exact
+	// configured context.
 	const triggerTooltip = $derived.by(() => {
 		if (variant === 'pipeline') {
 			return selectedService
 				? 'Change transcription model'
 				: 'Choose transcription model';
 		}
-		if (activeLeaf) {
-			return activeLeaf.sublabel
-				? `${activeLeaf.sublabel} - ${activeLeaf.label}`
-				: activeLeaf.label;
+		if (activeTranscriber) {
+			const model = activeTranscriber.modelId
+				? ` - ${activeTranscriber.modelId}`
+				: '';
+			const host = activeTranscriber.endpointHost
+				? ` · ${activeTranscriber.endpointHost}`
+				: '';
+			return `${activeTranscriber.title}${model}${host}`;
 		}
 		return selectedService
 			? selectedService.label
@@ -92,42 +92,6 @@
 
 	const combobox = useCombobox();
 
-	// `leaves` is empty only when nothing is set up and the user is signed out
-	// (a signed-in user always has the session leaf). Desktop leads with the private
-	// on-device download; web offers sign-in or an API key. Never auto-selects a
-	// remote provider.
-	const recommended = $derived(
-		localModels.models.find((model) => model.recommended) ??
-			localModels.models[0],
-	);
-	const recommendedState = $derived(
-		recommended ? localModels.stateOf(recommended) : null,
-	);
-
-	function formatSize(bytes: number | null): string {
-		if (!bytes) return '';
-		const mb = bytes / 1_000_000;
-		return mb >= 1000 ? `${(mb / 1000).toFixed(1)} GB` : `${Math.round(mb)} MB`;
-	}
-
-	async function downloadRecommended() {
-		if (!recommended) return;
-		const result = await localModels.download(recommended);
-		if (!result) return;
-		if (result.error) {
-			toast.error('Failed to download model', {
-				description: result.error.message,
-			});
-			return;
-		}
-		settings.set('transcription.service', 'local');
-		deviceConfig.set('transcription.local.selectedModel', result.data.modelId);
-		toast.success(
-			result.data.outcome === 'already-installed'
-				? 'Model already downloaded and activated'
-				: 'Model downloaded and activated',
-		);
-	}
 </script>
 
 {#snippet triggerBrandIcon(icon: string, invertInDarkMode: boolean, dimmed = false)}
@@ -207,77 +171,43 @@
 		{/snippet}
 	</Popover.Trigger>
 	<Popover.Content class="p-0">
-		{#if leaves.length === 0}
-			<!-- Signed out with nothing set up: privacy-forward on desktop, remote
-			setup on web. Never auto-selects a provider. -->
-			{#if tauri && recommended && recommendedState}
-				<Empty.Root class="py-8">
-					<Empty.Media variant="icon">
-						<HardDriveDownloadIcon class="size-5" />
-					</Empty.Media>
-					<Empty.Title>Transcribe on this device</Empty.Title>
-					<Empty.Description>
-						Private, offline, and free. Download the recommended model to start.
-					</Empty.Description>
-					<Empty.Content>
-						{#if recommendedState.type === 'downloading'}
-							<div class="flex w-full max-w-xs flex-col items-center gap-2">
-								<Progress value={recommendedState.progress} class="h-2" />
-								<span class="text-sm text-muted-foreground">
-									Downloading {recommended.name}: {recommendedState.progress}%
-								</span>
-								<Button
-									variant="ghost"
-									size="sm"
-									onclick={() => localModels.cancel(recommended)}
-									disabled={recommendedState.cancelling}
-								>
-									<XIcon class="size-4" />
-									{recommendedState.cancelling ? 'Cancelling…' : 'Cancel'}
-								</Button>
-							</div>
-						{:else}
-							<Button onclick={downloadRecommended}>
-								<DownloadIcon class="size-4" />
-								Download {recommended.name} ({formatSize(recommended.sizeBytes)})
-							</Button>
-						{/if}
-					</Empty.Content>
-				</Empty.Root>
-			{:else if tauri && !localModels.loaded}
-				<Loading class="py-8" label="Loading on-device models" />
-			{:else}
-				<Empty.Root class="py-8">
-					<Empty.Media variant="icon">
-						<MicIcon class="size-5" />
-					</Empty.Media>
-					<Empty.Title>Set up transcription</Empty.Title>
-					<Empty.Description>
-						Sign in to Epicenter or add an API key to transcribe. Nothing
-						uploads your audio until you choose a provider.
-					</Empty.Description>
-					<Empty.Content class="flex flex-col gap-2">
-						<Button onclick={() => auth.startSignIn()}>Sign in to Epicenter</Button>
-						<Button
-							variant="outline"
-							onclick={() => {
-								goto(whisperingPath('/settings/processing'));
-								combobox.closeAndFocusTrigger();
-							}}
-						>
-							Add an API key
-						</Button>
-					</Empty.Content>
-				</Empty.Root>
-			{/if}
+		{#if transcribers.length === 0}
+			<!-- Web only. On desktop the local route is always a row, ready or not,
+			so there is always something to select and to be warned about, which is
+			what lets the warning happen before capture rather than after. -->
+			<Empty.Root class="py-8">
+				<Empty.Media variant="icon">
+					<MicIcon class="size-5" />
+				</Empty.Media>
+				<Empty.Title>Set up transcription</Empty.Title>
+				<Empty.Description>
+					Sign in to Epicenter or add an API key to transcribe. Nothing uploads
+					your audio until you choose a provider.
+				</Empty.Description>
+				<Empty.Content class="flex flex-col gap-2">
+					<Button onclick={() => auth.startSignIn()}>Sign in to Epicenter</Button>
+					<Button
+						variant="outline"
+						onclick={() => {
+							goto(whisperingPath('/settings/processing'));
+							combobox.closeAndFocusTrigger();
+						}}
+					>
+						Add an API key
+					</Button>
+				</Empty.Content>
+			</Empty.Root>
 		{:else}
 			<Command.Root loop>
 				<Command.Input placeholder="Search models..." class="h-9 text-sm" />
 				<Command.List class="max-h-[40vh]">
 					<Command.Empty>No model found.</Command.Empty>
 
-					{#each leaves as leaf (leaf.key)}
-						<ModelRow {leaf} onSelect={combobox.closeAndFocusTrigger} />
+					{#each transcribers as transcriber (transcriber.key)}
+						<TranscriberRow
+							{transcriber}
+							onSelect={combobox.closeAndFocusTrigger}
+						/>
 					{/each}
 
 					<Command.Separator />

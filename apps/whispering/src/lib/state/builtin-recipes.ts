@@ -1,4 +1,4 @@
-import type { Recipe } from '$lib/workspace';
+import type { Recipe } from '../workspace';
 
 /**
  * The built-in Recipes that ship in code, shown in the picker and the library

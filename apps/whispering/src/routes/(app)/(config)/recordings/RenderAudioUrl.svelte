@@ -1,29 +1,14 @@
 <script lang="ts">
-	import { createQuery } from '@tanstack/svelte-query';
-	import { onDestroy } from 'svelte';
-	import { rpc } from '$lib/rpc';
-	import { services } from '$lib/services';
+	import type { BlobId } from '@epicenter/blobs';
+	import AudioBlobPlayer from '$lib/components/AudioBlobPlayer.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
+	import type { RecordingId } from '$lib/workspace';
 
-	let { id }: { id: string } = $props();
-
-	const audioUrlQuery = createQuery(
-		() => rpc.audio.getPlaybackUrl(() => id).options,
-	);
-
-	onDestroy(() => {
-		// Clean up audio URL when component unmounts to prevent memory leaks
-		services.blobs.audio.revokeUrl(id);
-	});
+	let { id, audioBlobId }: { id: RecordingId; audioBlobId: BlobId } = $props();
 </script>
 
-{#if audioUrlQuery.data}
-	<audio
-		class="h-8"
-		style:view-transition-name={viewTransition.recording(id).audio}
-		controls
-		src={audioUrlQuery.data}
-	>
-		Your browser does not support the audio element.
-	</audio>
-{/if}
+<AudioBlobPlayer
+	id={audioBlobId}
+	class="h-8"
+	viewTransitionName={viewTransition.recording(id).audio}
+/>

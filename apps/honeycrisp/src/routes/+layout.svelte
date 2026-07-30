@@ -1,45 +1,44 @@
 <script lang="ts">
-	import { SignInMigrationDialog } from '@epicenter/app-shell/sign-in-migration';
-	import { WorkspaceGate } from '@epicenter/app-shell/workspace-gate';
 	import { FlushEditsOnHide } from '@epicenter/svelte';
-	import { reloadOnPrincipalChange } from '@epicenter/svelte/auth';
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
+	import { Loading } from '@epicenter/ui/loading';
 	import { Toaster } from '@epicenter/ui/sonner';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { ModeWatcher } from 'mode-watcher';
-	import { onMount } from 'svelte';
-	import { auth } from '#platform/auth';
-	import { honeycrisp } from '$lib/honeycrisp';
-	import { signInMigration } from '$lib/migration/sign-in-migration';
+	import HoneycrispAppProvider from '$lib/HoneycrispAppProvider.svelte';
+	import { openHoneycrispApplication } from '$lib/application.js';
+	import { honeycrispPlatform } from '$lib/application-platform.js';
 	import '@epicenter/ui/app.css';
 
 	let { children } = $props();
 
-	// Option A (ADR-0088): the doc is picked once at boot (the preset branch
-	// inside `openHoneycrispBrowser`); a principal identity change reloads so the
-	// next boot rebuilds the right doc.
-	onMount(() => reloadOnPrincipalChange(auth));
-
-	// Signed-in only: prompt to migrate this device's local notes into the
-	// account (no-op when signed out or when there is no local data). Fire and
-	// forget: `signInMigration.check()` owns its own once-per-boot guard.
-	onMount(() => {
-		void signInMigration.check();
+	const boot = new AbortController();
+	const opening = openHoneycrispApplication(honeycrispPlatform, {
+		signal: boot.signal,
 	});
+	$effect(() => () => boot.abort());
 </script>
 
 <svelte:head><title>Honeycrisp</title></svelte:head>
 
-<WorkspaceGate
-	pending={honeycrisp.whenReady}
-	onForgetDevice={() => honeycrisp.wipe()}
-	onSignOut={() => auth.signOut()}
->
-	<Tooltip.Provider>{@render children?.()}</Tooltip.Provider>
-</WorkspaceGate>
+{#await opening}
+	<Loading class="h-dvh" />
+{:then application}
+	<HoneycrispAppProvider {application}>
+		<Tooltip.Provider>{@render children?.()}</Tooltip.Provider>
+	</HoneycrispAppProvider>
+{:catch error}
+	<div class="flex h-dvh items-center justify-center p-6 text-center">
+		<div class="max-w-md space-y-2">
+			<h1 class="text-lg font-semibold">Honeycrisp could not start</h1>
+			<p class="text-sm text-muted-foreground">
+				{error instanceof Error ? error.message : String(error)}
+			</p>
+		</div>
+	</div>
+{/await}
 
 <Toaster offset={16} closeButton />
 <ConfirmationDialog />
-<SignInMigrationDialog migration={signInMigration} />
 <ModeWatcher defaultMode="dark" track={false} />
 <FlushEditsOnHide />

@@ -1,5 +1,10 @@
 # Schema Evolution Without Migrations
 
+> Historical: this article describes the retired Yjs-record model. Epicenter's
+> target record plane keeps schema-opaque canonical JSON and applies
+> release-local lenses without user-data migration. See
+> [ADR-0125](../adr/0125-record-definitions-are-release-local-lenses-and-never-migrate-user-data.md).
+
 Traditional databases have migrations: you write a script, run it against the database, and boom, your schema is updated. Everyone's on the same version.
 
 That doesn't work in a CRDT system.

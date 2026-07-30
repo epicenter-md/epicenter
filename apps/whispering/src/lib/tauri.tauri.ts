@@ -38,7 +38,6 @@
  * See `specs/20260526T000140-collapse-tauri-only-services-into-namespace.md`.
  */
 
-import { Channel } from '@tauri-apps/api/core';
 import { appDataDir, basename, extname, join } from '@tauri-apps/api/path';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -46,13 +45,17 @@ import { readFile } from '@tauri-apps/plugin-fs';
 import { openPath as revealPath } from '@tauri-apps/plugin-opener';
 import mime from 'mime';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
-import { defineKeys } from 'wellcrafted/query';
+import {
+	defineKeys,
+	resultMutationOptions,
+	resultQueryOptions,
+} from 'wellcrafted/query';
 import { Ok, tryAsync } from 'wellcrafted/result';
-import { defineMutation, defineQuery, queryClient } from '$lib/rpc/client';
+import { log } from '$lib/report';
 import type {
 	DictationCapability,
-	DownloadProgress,
 	GlobalShortcutRegistration,
+	MicrophonePermission,
 } from '$lib/tauri/commands';
 import { commands, events } from '$lib/tauri/commands';
 
@@ -126,12 +129,26 @@ const PermissionsError = defineErrors({
 	}),
 });
 
+/**
+ * Whether the OS microphone gate lets capture proceed.
+ *
+ * `granted` is the yes. `unknown` is also a yes: it means the platform has no
+ * such gate or no readable consent entry, and a reading we cannot make must not
+ * newly block a setup that was recording fine, so the recorder's stream-open
+ * fallback stays the classifier of a real denial. `denied` and `not_determined`
+ * are both no, and the difference between them is only what `request` can do
+ * about it, which is Rust's business.
+ */
+function isMicrophoneUsable(status: MicrophonePermission): boolean {
+	return status === 'granted' || status === 'unknown';
+}
+
 const permissions = {
 	accessibility: {
-		// Rust owns the platform dispatch (macOS prompts via the permissions
-		// plugin, elsewhere a no-op), so the FE just calls the command. The prompt
-		// cannot grant in place; the live grant is observed by the Rust tap
-		// supervisor, so the Result here only reports whether the nudge fired.
+		// Rust owns the platform dispatch (macOS raises the Accessibility prompt,
+		// elsewhere a no-op), so the FE just calls the command. The prompt cannot
+		// grant in place; the live grant is observed by the Rust tap supervisor,
+		// so the Result here only reports whether the nudge fired.
 		async request() {
 			return tryAsync({
 				try: () => commands.requestAccessibilityPermission(),
@@ -150,65 +167,33 @@ const permissions = {
 	},
 
 	microphone: {
-		// One transport for every platform: Rust owns "what does the OS say about
-		// mic access" (macOS via the permissions plugin, Windows via the consent
-		// store, `unknown` elsewhere). Only an explicit `denied` gates; `granted`
-		// and `unknown` both read as available, so a missing consent entry never
-		// newly blocks a setup that was recording fine, and the recorder's
-		// stream-open fallback still classifies any real denial.
+		// Rust owns "what does the OS say about mic access" (macOS via
+		// AVFoundation, Windows via the consent store, `unknown` elsewhere) and
+		// answers both calls with the same four-state status. This adapter is
+		// where that status stops: the app asks one question, "can I record", so
+		// nothing above here has to know which OS state produced the answer.
 		async check() {
 			return tryAsync({
 				try: async () =>
-					(await commands.getMicrophonePermission()) !== 'denied',
+					isMicrophoneUsable(await commands.getMicrophonePermission()),
 				catch: (error) => PermissionsError.CheckMicrophone({ cause: error }),
 			});
 		},
 
-		// Elicit a grant the way the platform allows (macOS prompt, Windows privacy
-		// page when denied); the caller re-checks afterward. No platform can grant
-		// in place, so this only reports whether the nudge itself succeeded.
+		// Ask once. macOS raises the system prompt when nobody has been asked yet
+		// and waits for the user's answer; every other platform and every settled
+		// status has nothing to elicit, so Rust returns the status that already
+		// holds (Windows also opening its privacy page on the way). Either way the
+		// returned status is the one in force after this call, so callers neither
+		// pre-check nor re-check.
 		async request() {
-			const { error } = await commands.requestMicrophonePermission();
+			const { data: status, error } =
+				await commands.requestMicrophonePermission();
 			if (error !== null) {
 				return PermissionsError.RequestMicrophone({ cause: error });
 			}
-			return Ok(undefined);
+			return Ok(isMicrophoneUsable(status));
 		},
-	},
-};
-
-// keyring -------------------------------------------------------------
-const KeyringError = defineErrors({
-	ReadFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to read from the OS keyring: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	WriteFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to write to the OS keyring: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-});
-
-const keyring = {
-	/**
-	 * Read the persisted OAuth grant, or `null` when absent. Rust owns the OS
-	 * credential-store service and account names.
-	 */
-	async read() {
-		const { data, error } = await commands.keyringRead();
-		if (error !== null) return KeyringError.ReadFailed({ cause: error });
-		return Ok(data);
-	},
-
-	/**
-	 * Write `value` as the persisted OAuth grant, or delete the entry when
-	 * `value` is `null`. Rust owns the OS credential-store service and account
-	 * names.
-	 */
-	async write(value: string | null) {
-		const { error } = await commands.keyringWrite(value);
-		if (error !== null) return KeyringError.WriteFailed({ cause: error });
-		return Ok(undefined);
 	},
 };
 
@@ -241,7 +226,7 @@ const AutostartError = defineErrors({
 // Public namespaces ------------------------------------------------
 // Each capability picks ONE shape per method: TanStack where reactivity,
 // caching, or invalidation is the point; plain Result functions otherwise.
-// One canonical call shape per leaf; no `tauri.X.Y` vs `tauri.rpc.X.Y`
+// One canonical call shape per leaf; no duplicate capability/query namespace.
 // duplication.
 
 const autostartKeys = defineKeys({
@@ -251,53 +236,59 @@ const autostartKeys = defineKeys({
 });
 
 const autostart = {
-	isEnabled: defineQuery({
-		queryKey: autostartKeys.isEnabled,
-		queryFn: () =>
-			tryAsync({
-				try: async () => {
-					const { data, error } = await commands.isAutostartEnabled();
-					if (error !== null) throw new Error(error);
-					return data;
-				},
-				catch: (error) => AutostartError.CheckFailed({ cause: error }),
-			}),
-		// The OS login-item state can change outside the app (System Settings,
-		// another tool, the platform dropping the entry), so re-read on focus
-		// instead of trusting a stale cached value.
-		refetchOnWindowFocus: true,
-	}),
-	enable: defineMutation({
-		mutationKey: autostartKeys.enable,
-		mutationFn: () =>
-			tryAsync({
-				try: async () => {
-					const { error } = await commands.setAutostartEnabled(true);
-					if (error !== null) throw new Error(error);
-				},
-				catch: (error) => AutostartError.EnableFailed({ cause: error }),
-			}),
-		onSettled: () =>
-			queryClient.invalidateQueries({ queryKey: autostartKeys.isEnabled }),
-	}),
-	disable: defineMutation({
-		mutationKey: autostartKeys.disable,
-		mutationFn: () =>
-			tryAsync({
-				try: async () => {
-					const { error } = await commands.setAutostartEnabled(false);
-					if (error !== null) throw new Error(error);
-				},
-				catch: (error) => AutostartError.DisableFailed({ cause: error }),
-			}),
-		onSettled: () =>
-			queryClient.invalidateQueries({ queryKey: autostartKeys.isEnabled }),
-	}),
+	isEnabled: {
+		options: resultQueryOptions({
+			queryKey: autostartKeys.isEnabled,
+			queryFn: () =>
+				tryAsync({
+					try: async () => {
+						const { data, error } = await commands.isAutostartEnabled();
+						if (error !== null) throw new Error(error);
+						return data;
+					},
+					catch: (error) => AutostartError.CheckFailed({ cause: error }),
+				}),
+			// The OS login-item state can change outside the app (System Settings,
+			// another tool, the platform dropping the entry), so re-read on focus
+			// instead of trusting a stale cached value.
+			refetchOnWindowFocus: true,
+		}),
+	},
+	enable: {
+		options: resultMutationOptions({
+			mutationKey: autostartKeys.enable,
+			mutationFn: () =>
+				tryAsync({
+					try: async () => {
+						const { error } = await commands.setAutostartEnabled(true);
+						if (error !== null) throw new Error(error);
+					},
+					catch: (error) => AutostartError.EnableFailed({ cause: error }),
+				}),
+		}),
+	},
+	disable: {
+		options: resultMutationOptions({
+			mutationKey: autostartKeys.disable,
+			mutationFn: () =>
+				tryAsync({
+					try: async () => {
+						const { error } = await commands.setAutostartEnabled(false);
+						if (error !== null) throw new Error(error);
+					},
+					catch: (error) => AutostartError.DisableFailed({ cause: error }),
+				}),
+		}),
+	},
 };
 
 let shortcutListenerPromise: ReturnType<
 	typeof events.globalShortcutTriggered.listen
 > | null = null;
+/** The latest registration's dispatcher; chord events always hit the current app. */
+let onShortcutTriggered:
+	| ((commandId: string, state: 'Pressed' | 'Released') => void)
+	| null = null;
 
 const keyboard = {
 	/**
@@ -308,12 +299,15 @@ const keyboard = {
 	 * refused upstream, so nothing reaches here but chords. Carbon's
 	 * `RegisterEventHotKey` needs no Accessibility grant.
 	 */
-	registerChords: async (chords: GlobalShortcutRegistration[]) => {
+	registerChords: async (
+		chords: GlobalShortcutRegistration[],
+		onTrigger: (commandId: string, state: 'Pressed' | 'Released') => void,
+	) => {
+		onShortcutTriggered = onTrigger;
 		if (!shortcutListenerPromise) {
 			shortcutListenerPromise = events.globalShortcutTriggered.listen(
-				async ({ payload }) => {
-					const { dispatchCommandTrigger } = await import('$lib/commands');
-					dispatchCommandTrigger(payload.commandId, payload.state);
+				({ payload }) => {
+					onShortcutTriggered?.(payload.commandId, payload.state);
 				},
 			);
 		}
@@ -371,23 +365,59 @@ const media = {
 // `#platform/tauri` seam. Keeping the raw generated bindings here prevents a
 // browser build from retaining native invoke names merely because it shares the
 // orchestration module with Epicenter.
+// Transcription, not model administration: Whispering asks the host to
+// transcribe on whichever model is active, and reads advisory readiness so it
+// can warn before capture. Choosing, downloading, and deleting models, and even
+// learning which model is active, belong to Epicenter Home (ADR-0180); no
+// Whispering window is granted those commands.
+//
+// These are raw Tauri shapes and are internal on purpose. ADR-0181 replaces
+// them with one portable `epicenter` handle whose members are the same in every
+// runtime: this namespace becomes `epicenter.transcription`
+// (`capabilities()` / `transcribe()` / `prewarm()`) and the navigation below
+// becomes `epicenter.shell.openHome('transcription')`. Nothing here claims to
+// be that handle. What this wave does establish is the substrate it will wrap:
+// the host-side contract, and the two behaviours the SDK shape depends on, kept
+// here so the next wave moves them rather than redesigns them.
 const transcription = {
 	encodeRecordingForUpload: commands.encodeRecordingForUpload,
-	listModels: commands.listModels,
-	downloadModel: (
-		modelId: string,
-		downloadId: string,
-		onProgress: (progress: DownloadProgress) => void,
-	) => {
-		const channel = new Channel<DownloadProgress>();
-		channel.onmessage = onProgress;
-		return commands.downloadModel(modelId, downloadId, channel);
-	},
-	deleteModel: commands.deleteModel,
-	cancelDownload: commands.cancelDownload,
-	prewarmModel: commands.prewarmModel,
+	getLocalTranscriptionReadiness: commands.getLocalTranscriptionReadiness,
 	transcribeRecording: commands.transcribeRecording,
-	setUnloadPolicy: commands.setUnloadPolicy,
+
+	/**
+	 * A timing hint that transcription may be imminent. Synchronous and
+	 * outcome-free by contract (ADR-0181): this namespace owns the asynchronous
+	 * best-effort work and its diagnostics, so callers cannot forget to handle a
+	 * rejection and never branch on whether warming worked. A real problem
+	 * surfaces at transcribe with a message the user can act on.
+	 */
+	prewarmModel: (): void => {
+		void commands.prewarmModel().then(
+			(result) => {
+				if (result.error !== null) {
+					log.info('Prewarming the local model did not run', {
+						error: result.error,
+					});
+				}
+			},
+			(cause) => {
+				log.info('Prewarming the local model could not be requested', {
+					cause,
+				});
+			},
+		);
+	},
+
+	/**
+	 * Ask the shell to open Home's transcription section. Fire-and-forget for
+	 * the same reason: the outcome a caller cares about is the user arriving,
+	 * which is not something this promise reports.
+	 */
+	openHomeTranscription: (): void => {
+		void commands.openHome('transcription').catch((cause) => {
+			log.info('Opening Epicenter Home was refused', { cause });
+		});
+	},
 };
 
 // opener ------------------------------------------------------------
@@ -434,7 +464,6 @@ const mainWindow = {
 export const tauriOnly = {
 	fs,
 	permissions,
-	keyring,
 	keyboard,
 	autostart,
 	media,

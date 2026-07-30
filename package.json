@@ -36,6 +36,7 @@
 			"examples/*"
 		],
 		"catalog": {
+			"@sqlite.org/sqlite-wasm": "^3.53.0-build1",
 			"@types/node": "^24.0.0",
 			"@types/bun": "^1.3.14",
 			"@types/yargs": "^17.0.35",
@@ -129,7 +130,8 @@
 		"yaml": "^2.9.0"
 	},
 	"scripts": {
-		"build": "bun run --filter '*' build",
+		"build": "bun run build:app-sdk && bun run --filter '*' build",
+		"build:app-sdk": "bun run --cwd packages/field build && bun run --cwd packages/lens build && bun run --cwd packages/app build",
 		"check": "bun run format:check && bun run lint:check && bun run typecheck",
 		"dev": "bun run dev:tab-manager",
 		"dev:api": "bun run --cwd apps/api dev",
@@ -141,33 +143,36 @@
 		"dev:landing": "bun run --cwd apps/landing dev",
 		"dev:matter": "bun run --cwd apps/matter dev",
 		"dev:matter:ui": "bun run --cwd apps/matter dev:web",
-		"dev:opensidian": "bun run --filter @epicenter/api --filter opensidian dev",
-		"dev:opensidian:ui": "bun run --cwd apps/opensidian dev",
 		"dev:posthog-reverse-proxy": "bun run --cwd apps/posthog-reverse-proxy dev",
 		"dev:self-host": "bun run --cwd apps/self-host dev",
 		"dev:skills": "bun run --cwd apps/skills dev",
 		"dev:tab-manager": "bun run --filter @epicenter/api --filter @epicenter/tab-manager dev",
 		"dev:tab-manager:ui": "bun run --cwd apps/tab-manager dev",
-		"dev:todos": "bun run --cwd apps/todos dev",
 		"dev:vocab": "bun run --filter @epicenter/api --filter @epicenter/vocab dev",
 		"dev:vocab:ui": "bun run --cwd apps/vocab dev",
 		"dev:whispering": "bun run --filter @epicenter/api --filter @epicenter/whispering dev",
 		"dev:whispering:ui": "bun run --cwd apps/whispering dev",
+		"evidence:data:browser": "bun run --cwd packages/data evidence:browser",
 		"smoke:local": "bun run --cwd apps/api smoke:local",
 		"format": "biome check --write --linter-enabled=false",
 		"format:check": "biome ci --linter-enabled=false",
 		"lint": "biome lint --write",
 		"lint:check": "biome lint",
+		"lint:ci": "biome lint --diagnostic-level=error --reporter=github",
+		"postinstall": "bun run build:app-sdk",
 		"release": "changeset version && bun run scripts/publish-packages.ts",
 		"release:dry-run": "bun run scripts/publish-packages.ts --dry-run",
 		"typecheck": "bun run --filter '*' typecheck && bun x tsc --noEmit -p scripts/tsconfig.json",
-		"test": "bun test scripts/*.test.ts && bun run --filter '*' test",
+		"test": "bun run build:app-sdk && bun test scripts/*.test.ts && bun run --filter '*' test",
 		"bench": "bun run --filter '*' bench",
 		"check:ui-boundary": "bun run scripts/check-ui-boundary.ts",
 		"check:licenses": "bun run scripts/check-license-graph.ts",
 		"check:doc-paths": "bun run scripts/check-doc-paths.ts",
+		"check:boot-purity": "bun run scripts/check-boot-purity.ts",
 		"check:doc-hygiene": "bun run scripts/check-doc-hygiene.ts",
 		"check:catalog-pins": "bun run scripts/check-catalog-pins.ts",
+		"check:api-paths": "bun run scripts/check-api-paths.ts",
+		"check:quality": "bun run format:check && bun run lint:check && bun run typecheck && bun run check:doc-paths && bun run check:catalog-pins && bun run check:api-paths",
 		"gen:spec-history": "bun run scripts/generate-spec-history.ts",
 		"bump-version": "bun run scripts/bump-version.ts",
 		"clean": "bun run scripts/clean.ts",
@@ -191,6 +196,8 @@
 		"tinyexec": "^1.0.4"
 	},
 	"patchedDependencies": {
-		"y-indexeddb@9.0.12": "patches/y-indexeddb@9.0.12.patch"
+		"y-indexeddb@9.0.12": "patches/y-indexeddb@9.0.12.patch",
+		"@y/prosemirror@2.0.0-6": "patches/@y%2Fprosemirror@2.0.0-6.patch",
+		"@y/y@14.0.0-rc.24": "patches/@y%2Fy@14.0.0-rc.24.patch"
 	}
 }

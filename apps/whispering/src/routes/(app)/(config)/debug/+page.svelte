@@ -4,31 +4,25 @@
 	import * as SectionHeader from '@epicenter/ui/section-header';
 	import DatabaseIcon from '@lucide/svelte/icons/database';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
-	import * as Y from 'yjs';
-	import { whispering } from '#platform/whispering';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 
 	// ── Metrics ────────────────────────────────────────────────────────────────
 
 	function createMetrics() {
-		const tableDefs = [
-			{
-				label: 'Recordings',
-				count: () => whispering.tables.recordings.storedCount(),
-			},
-			{
-				label: 'Recipes',
-				count: () => whispering.tables.recipes.storedCount(),
-			},
-		] as const;
-
 		function snapshot() {
 			return {
-				ydocSize: Y.encodeStateAsUpdate(whispering.ydoc).byteLength,
-				tables: tableDefs.map((t) => ({ label: t.label, count: t.count() })),
+				tables: [
+					{ label: 'Recordings', count: app.recordings.count },
+					{ label: 'Recipes', count: app.recipes.count },
+				],
+				nonconforming:
+					app.recordings.nonconforming.length + app.recipes.nonconforming.length,
 			};
 		}
 
-		let current = $state(snapshot());
+		let current = $state.raw(snapshot());
 
 		return {
 			get current() {
@@ -44,11 +38,6 @@
 
 	const metrics = createMetrics();
 
-	function formatBytes(bytes: number): string {
-		if (bytes < 1024) return `${bytes} B`;
-		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-		return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-	}
 </script>
 
 {#if import.meta.env.DEV}
@@ -83,17 +72,12 @@
 			</Card.Header>
 			<Card.Content>
 				<div class="space-y-4">
-					<!-- Y.Doc Size -->
 					<div class="flex items-center justify-between rounded-md border p-3">
 						<span class="text-sm text-muted-foreground"
-							>Y.Doc encoded size</span
+							>Nonconforming canonical records</span
 						>
 						<span class="font-mono text-sm font-medium">
-							{formatBytes(metrics.current.ydocSize)}
-							<span class="text-muted-foreground"
-								>({metrics.current.ydocSize.toLocaleString()}
-								bytes)</span
-							>
+							{metrics.current.nonconforming.toLocaleString()}
 						</span>
 					</div>
 

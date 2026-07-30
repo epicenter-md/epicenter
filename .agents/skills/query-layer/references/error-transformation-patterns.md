@@ -1,72 +1,50 @@
 # Error Flow Patterns
 
-## When to Read This
+This reference covers RPC error pass-through and the boundary where a local
+adapter error is justified.
 
-Read when you need concrete examples of RPC error pass-through or want to avoid double-wrapping tagged errors.
+## Preserve Lower-Layer Errors
 
-## Real-World Examples
-
-Pass service errors through unchanged:
-
-```typescript
-enumerateDevices: defineQuery({
-	queryKey: recorderKeys.devices,
-	queryFn: async () => {
-		const { data, error } = await recorderService().enumerateDevices();
-		if (error) return Err(error);
-		return Ok(data);
-	},
-});
-```
-
-Add an RPC-local error only when the adapter owns the failure:
+Pass service and operation errors through unchanged. The current download
+adapter composes two fallible services without inventing a UI error shape:
 
 ```typescript
-const TransformerRpcError = defineErrors({
-	RecordingNotFound: () => ({
-		message: 'Could not find the selected recording.',
-	}),
-});
-type TransformerRpcError = InferErrors<typeof TransformerRpcError>;
+downloadRecording: defineMutation({
+	mutationKey: downloadKeys.downloadRecording,
+	mutationFn: async (recording: Recording) => {
+		const { data: audioBlob, error } =
+			await services.blobs.audio.getBlob(recording.id);
+		if (error !== null) return Err(error);
 
-transformRecording: defineMutation({
-	mutationKey: transformerKeys.transformRecording,
-	mutationFn: async ({
-		recordingId,
-		transformation,
-	}: {
-		recordingId: string;
-		transformation: Transformation;
-	}) => {
-		const recording = recordings.get(recordingId);
-		if (!recording) return TransformerRpcError.RecordingNotFound();
-
-		return runTransformation({
-			input: recording.transcript,
-			transformation,
-			recordingId,
+		return services.download.downloadBlob({
+			name: `whispering_recording_${recording.id}`,
+			blob: audioBlob,
 		});
 	},
 });
 ```
 
-## Anti-Pattern: Double Wrapping
+Define an RPC-local error only when the adapter itself discovers a failure that
+neither the service nor the operation can own. Keep that namespace local unless
+another module needs to name the exact union.
 
-Do not translate a typed service error into a parallel UI error shape inside `$lib/rpc`:
+## Do Not Double-Wrap For Presentation
 
 ```typescript
-// BAD: the tagged error loses its domain fields before the report boundary.
-if (error) {
+// Wrong: domain fields and variant identity disappear before presentation.
+if (error !== null) {
 	return Err({
 		title: 'Failed',
 		description: error.message,
 	});
 }
 
-// GOOD: keep the tagged error intact until UI/report code chooses display copy.
-if (error) return Err(error);
+// Right: preserve the tagged error until the report boundary.
+if (error !== null) return Err(error);
 
-if (error) {
-	report.error({ cause: error });
-}
+report.error({ cause: error });
 ```
+
+TanStack receives the tagged error through `defineQuery`, `defineMutation`,
+`resultQueryOptions`, or `resultMutationOptions`. The component decides whether
+to show a toast, inline state, retry action, or no presentation at all.

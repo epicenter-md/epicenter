@@ -15,7 +15,11 @@
  */
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import { YKeyValueLww, type YKeyValueLwwEntry } from './y-keyvalue-lww';
+import {
+	MAX_ADOPTED_CLOCK_SKEW_MS,
+	YKeyValueLww,
+	type YKeyValueLwwEntry,
+} from './y-keyvalue-lww';
 
 /**
  * Create the smallest useful LWW KV fixture.
@@ -968,5 +972,87 @@ describe('YKeyValueLww', () => {
 				expect(kv1.get('foo')).toBe('updated');
 			});
 		});
+	});
+});
+
+describe('monotonic clock adoption clamp', () => {
+	test('a poisoned far-future entry does not drag local write timestamps past the skew ceiling', () => {
+		const ydoc = new Y.Doc({ guid: 'clamp' });
+		const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
+		const poisonedTs = Date.now() + 10 * MAX_ADOPTED_CLOCK_SKEW_MS;
+		yarray.push([{ key: 'poisoned', val: 'future', ts: poisonedTs }]);
+
+		// Initial scan adopts at most now + MAX_ADOPTED_CLOCK_SKEW_MS.
+		const kv = new YKeyValueLww(yarray);
+		kv.set('local', 'value');
+
+		const localEntry = yarray.toArray().find(({ key }) => key === 'local');
+		if (!localEntry) throw new Error('Expected the local entry');
+		expect(localEntry.ts).toBeLessThanOrEqual(
+			Date.now() + MAX_ADOPTED_CLOCK_SKEW_MS + 1,
+		);
+		// The stored poisoned entry itself is untouched: replicas still
+		// converge on raw timestamps.
+		const poisonedEntry = yarray
+			.toArray()
+			.find(({ key }) => key === 'poisoned');
+		expect(poisonedEntry?.ts).toBe(poisonedTs);
+	});
+
+	test('observer-path adoption clamps synced far-future timestamps', () => {
+		const ydoc = new Y.Doc({ guid: 'clamp-observer' });
+		const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
+		const kv = new YKeyValueLww(yarray);
+
+		yarray.push([
+			{
+				key: 'remote',
+				val: 'future',
+				ts: Date.now() + 10 * MAX_ADOPTED_CLOCK_SKEW_MS,
+			},
+		]);
+		kv.set('local', 'value');
+
+		const localEntry = yarray.toArray().find(({ key }) => key === 'local');
+		if (!localEntry) throw new Error('Expected the local entry');
+		expect(localEntry.ts).toBeLessThanOrEqual(
+			Date.now() + MAX_ADOPTED_CLOCK_SKEW_MS + 1,
+		);
+	});
+
+	test('non-finite and negative stored timestamps are never adopted', () => {
+		const ydoc = new Y.Doc({ guid: 'clamp-invalid' });
+		const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
+		yarray.push([
+			{ key: 'nan', val: 'a', ts: Number.NaN },
+			{ key: 'infinite', val: 'b', ts: Number.POSITIVE_INFINITY },
+			{ key: 'negative', val: 'c', ts: -5 },
+		]);
+
+		const kv = new YKeyValueLww(yarray);
+		const before = Date.now();
+		kv.set('local', 'value');
+
+		const localEntry = yarray.toArray().find(({ key }) => key === 'local');
+		if (!localEntry) throw new Error('Expected the local entry');
+		expect(Number.isSafeInteger(localEntry.ts)).toBe(true);
+		expect(localEntry.ts).toBeGreaterThanOrEqual(before);
+		expect(localEntry.ts).toBeLessThanOrEqual(Date.now() + 1);
+	});
+
+	test('bounded future timestamps are still adopted for self-healing', () => {
+		const ydoc = new Y.Doc({ guid: 'clamp-adopt' });
+		const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
+		const aheadTs = Date.now() + 60_000;
+		yarray.push([{ key: 'ahead', val: 'a', ts: aheadTs }]);
+
+		const kv = new YKeyValueLww(yarray);
+		kv.set('local', 'value');
+
+		const localEntry = yarray.toArray().find(({ key }) => key === 'local');
+		if (!localEntry) throw new Error('Expected the local entry');
+		// The next local write continues past the adopted timestamp, so it
+		// still wins conflicts against the faster clock.
+		expect(localEntry.ts).toBeGreaterThan(aheadTs);
 	});
 });

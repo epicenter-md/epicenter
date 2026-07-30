@@ -6,8 +6,10 @@
 	import * as Item from '@epicenter/ui/item';
 	import * as Popover from '@epicenter/ui/popover';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import type { QueryInvocation } from '../host.ts';
+	import type { HomeInvocation } from '../host.ts';
 	import Composer from './Composer.svelte';
+	import LocalModelAdministration from './LocalModelAdministration.svelte';
+	import { commands, events } from './bindings.gen';
 	import { readRuntimeInfo } from './runtime.ts';
 	import Transcript from './Transcript.svelte';
 	import { createSession } from './session.svelte.ts';
@@ -28,6 +30,22 @@
 		});
 
 	let toolsOpen = $state(false);
+	// Model administration is Home's, not any app's (ADR-0180). It opens from the
+	// header rather than living inline: it is a settings act, not part of the
+	// conversation.
+	let modelsOpen = $state(false);
+	// An app whose local transcription is unavailable can send the user here.
+	// The intent lives in the host, so this window claims it rather than being
+	// handed it: on mount (Home may have been absent or still booting when the
+	// request arrived) and again on each nudge (Home was already running). Taking
+	// is destructive, so however many nudges arrive, one request opens the
+	// section once.
+	async function claimPendingSection() {
+		const section = await commands.takePendingHomeSection();
+		if (section === 'transcription') modelsOpen = true;
+	}
+	void claimPendingSection();
+	void events.homeSectionPending.listen(() => void claimPendingSection());
 
 	const connectionIndicator = {
 		connecting: { label: 'Connecting', dot: 'bg-warning' },
@@ -40,7 +58,7 @@
 		succeeded: { label: 'Done', variant: 'status.completed' },
 		failed: { label: 'Failed', variant: 'status.failed' },
 	} as const satisfies Record<
-		QueryInvocation['status'],
+		HomeInvocation['status'],
 		{ label: string; variant: BadgeVariant }
 	>;
 
@@ -70,7 +88,7 @@
 
 <div class="flex h-full flex-col text-sm">
 		<header class="flex flex-none items-center gap-3 border-b px-3 py-2">
-			<span class="font-semibold">Query</span>
+			<span class="font-semibold">Home</span>
 			{#if nativeStatus === 'connected'}
 				<Badge variant="status.completed">Native connected</Badge>
 			{:else if nativeStatus === 'denied'}
@@ -134,11 +152,27 @@
 						</Command.Root>
 					</Popover.Content>
 				</Popover.Root>
+				{#if nativeStatus === 'connected'}
+					<Button
+						variant="outline"
+						size="sm"
+						aria-expanded={modelsOpen}
+						onclick={() => (modelsOpen = !modelsOpen)}
+					>
+						Local model
+					</Button>
+				{/if}
 				<Button variant="ghost" size="sm" onclick={() => session.clear()}>
 					New chat
 				</Button>
 			</div>
 		</header>
+
+		{#if modelsOpen && nativeStatus === 'connected'}
+			<section class="flex-none px-3 py-2" aria-label="Local transcription model">
+				<LocalModelAdministration />
+			</section>
+		{/if}
 
 		<Transcript snapshot={session.snapshot} />
 

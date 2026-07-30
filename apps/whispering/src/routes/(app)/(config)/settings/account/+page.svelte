@@ -7,6 +7,7 @@
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import { resultMutationOptions } from 'wellcrafted/query';
 	import { auth } from '#platform/auth';
+	import { tauri } from '#platform/tauri';
 	import { recordingActive } from '$lib/state/recording-active.svelte';
 
 	// Identity (email) is shown by the footer AccountPopover, which owns the
@@ -101,9 +102,15 @@
 	<Field.Set>
 		<Field.Legend variant="label">Sync</Field.Legend>
 		<Field.Description>
-			While signed in, your recordings, transcripts, and transformations sync
-			across your devices. Audio files stay on the device that recorded them.
-			Live sync status shows in the account menu in the sidebar.
+			{#if tauri}
+				Desktop workspace data stays on this computer for now; signing in
+				powers hosted transcription. Use Whispering in the browser for
+				cross-device sync of recordings and settings.
+			{:else}
+				While signed in, your recordings, transcripts, and settings sync
+				across your devices. Audio files stay on the device that recorded
+				them. Live sync status shows in the account menu in the sidebar.
+			{/if}
 		</Field.Description>
 	</Field.Set>
 </Field.Set>

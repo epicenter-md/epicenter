@@ -1,0 +1,14 @@
+{
+	"extends": "../../tsconfig.dom.json",
+	"compilerOptions": {
+		"types": ["bun"],
+		"noUnusedLocals": true,
+		"noUnusedParameters": true
+	},
+	// The consumer fixture is deliberately not ours to typecheck. It is a
+	// stranger's project: it has its own tsconfig, resolves `@epicenter/app`
+	// from a packed tarball, and is checked by `bun run verify:consumer` in a
+	// temporary directory outside this repository. Checking it from here would
+	// resolve the import through the workspace and prove nothing.
+	"include": ["src"]
+}

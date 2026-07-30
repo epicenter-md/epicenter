@@ -3,15 +3,27 @@
 	import { fromKv } from '@epicenter/svelte';
 	import { Button } from '@epicenter/ui/button';
 	import * as Sidebar from '@epicenter/ui/sidebar';
-	import { VOCAB_MODEL, VOCAB_SYSTEM_PROMPT } from '@epicenter/vocab';
+	import { toast } from '@epicenter/ui/sonner';
+	import {
+		SHOW_READINGS_DEFAULT,
+		VOCAB_MODEL,
+		VOCAB_SYSTEM_PROMPT,
+	} from '@epicenter/vocab';
 	import { onDestroy } from 'svelte';
+	import { getVocabApp } from '$lib/context';
 	import { buildPracticePrompt } from '$lib/practice';
 	import { inferenceConnections } from '$lib/state/inference-connections.svelte';
-	import { vocab } from '$lib/vocab';
 	import ConversationView from './components/ConversationView.svelte';
 	import VocabSidebar from './components/VocabSidebar.svelte';
 
-	const showReadings = fromKv(vocab.kv, 'showReadings');
+	const vocab = getVocabApp();
+	const showReadings = fromKv(vocab.values.showReadings);
+
+	function reportBackgroundError(cause: unknown) {
+		toast.error('Vocab chat failed', {
+			description: cause instanceof Error ? cause.message : String(cause),
+		});
+	}
 
 	// The shared chat registry (ADR-0047/0059) with Vocab's variation injected:
 	// capability-free (no tools, no approval), one general multilingual system
@@ -19,13 +31,17 @@
 	// on. The active conversation lives in internal state (Vocab has no URL seam).
 	const chat = createAgentChatState({
 		table: vocab.tables.conversations,
-		whenLoaded: vocab.storage.whenLoaded,
+		openConversationDocument: (id) => vocab.tables.conversations.openDocument(id),
+		reportBackgroundError,
 		connections: inferenceConnections,
 		agent: {
 			buildSystemPrompts: () => [VOCAB_SYSTEM_PROMPT],
 			defaultModel: VOCAB_MODEL,
 		},
 	});
+
+	// An unset value reads `undefined`; the app owns the default.
+	const readings = $derived(showReadings.current ?? SHOW_READINGS_DEFAULT);
 
 	onDestroy(() => chat[Symbol.dispose]());
 
@@ -58,17 +74,17 @@
 
 			<div class="flex items-center gap-2">
 				<Button
-					variant={showReadings.current ? 'default' : 'outline'}
+					variant={readings ? 'default' : 'outline'}
 					size="sm"
-					onclick={() => (showReadings.current = !showReadings.current)}
-					aria-pressed={showReadings.current}
+					onclick={() => (showReadings.current = !readings)}
+					aria-pressed={readings}
 					aria-label="Toggle pronunciation readings"
 				>
-					{showReadings.current ? 'Hide readings' : 'Show readings'}
+					{readings ? 'Hide readings' : 'Show readings'}
 				</Button>
 			</div>
 		</header>
 
-		<ConversationView active={chat.active} showReadings={showReadings.current} />
+		<ConversationView active={chat.active} showReadings={readings} />
 	</main>
 </Sidebar.Provider>

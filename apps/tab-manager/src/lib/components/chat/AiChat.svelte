@@ -4,26 +4,26 @@
 		ConversationSwitcher,
 	} from '@epicenter/app-shell/agent-chat';
 	import { browser } from 'wxt/browser';
-	import { tabManagerBoot } from '$lib/session.svelte';
-	import { inferenceConnections } from '$lib/state/inference-connections.svelte';
+	import { getTabManagerApp } from '$lib/context';
 
-	const tabManager = tabManagerBoot.tabManager;
-	const auth = tabManagerBoot.auth;
-	const aiChat = $derived(tabManager.state.aiChat);
+	const tabManager = getTabManagerApp();
+	const auth = tabManager.auth;
+	const aiChat = tabManager.state.aiChat;
 	const active = $derived(aiChat.active);
 
 	/** A tool call's human title from its declaring action, or undefined to let the
 	 * shared renderer title-case the tool name. */
-	const actionTitles = $derived(
-		tabManager.actions as Record<string, { title?: string }>,
-	);
+	const actionTitles = tabManager.actions as Record<
+		string,
+		{ title?: string }
+	>;
 
 	/** Trust the pending tool from now on, then approve it. The trust set lives in
 	 * tab-manager, so "Always Allow" is composed here from the handle's exposed
 	 * pending-tool name rather than baked into the shared chat state. */
 	function alwaysAllowPendingToolCall() {
 		const toolName = active?.pendingApprovalToolName;
-		if (toolName) tabManager.state.toolTrust.allow(toolName);
+		if (toolName) void tabManager.state.toolTrust.allow(toolName);
 		active?.approveToolCall();
 	}
 </script>
@@ -39,7 +39,7 @@
 	{#if active}
 		<AgentChatThread
 			conversation={active}
-			connections={inferenceConnections}
+			connections={tabManager.connections}
 			resolveToolTitle={(toolName) => actionTitles[toolName]?.title}
 			onAlwaysAllow={alwaysAllowPendingToolCall}
 			onSignIn={() => auth.startSignIn()}

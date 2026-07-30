@@ -1,162 +1,125 @@
 ---
 name: services-layer
-description: 'Service layer patterns: defineErrors, namespace exports, Result types. Use when: "create a service", "service layer", creating services, defining domain-specific errors.'
+description: 'Whispering service boundaries: UI-free capabilities, explicit app inputs, Result-typed fallibility, direct Live objects, lifecycle-earned factories, and build-time #platform implementations. Use when creating or refactoring services, service contracts, platform variants, provider dispatch, or the $lib/services barrel.'
 metadata:
   author: epicenter
-  version: '2.0'
+  version: '3.0'
 ---
 
-# Services Layer Patterns
+# Services Layer
 
-This skill documents how to implement services in the Whispering architecture. Services are UI-free business logic with explicit app inputs and `Result<T, E>` return types.
+Ground service guidance in `apps/whispering/src/lib/services`, its consumers,
+and the `#platform/*` mappings in `apps/whispering/package.json`. Historical
+examples and neighboring skills are leads, not current architecture.
 
-> **Related Skills**: See `error-handling` for trySync/tryAsync patterns. See `define-errors` for error variant factories. See `query-layer` for consuming services from `$lib/rpc` with TanStack Query.
+## Product Sentence
 
-## Core Architecture
+The service layer owns UI-free capabilities; callers inject app policy through
+explicit inputs, fallible operations return Results, and platform selection has
+one build-time owner.
 
-Services follow a three-layer architecture: **Service** -> **RPC/Query** -> **UI**
+## Boundary
 
-```
-┌─────────────┐     ┌─────────────┐     ┌──────────────┐
-│     UI      │ --> │  RPC/Query  │ --> │   Services   │
-│ Components  │     │    Layer    │     │    (Pure)    │
-└─────────────┘     └─────────────┘     └──────────────┘
-```
+Services may perform IO and may own service-local runtime state. They are not
+required to be pure functions. They must remain free of UI and app-owned policy:
 
-**Services are:**
+- no runtime reads of Svelte stores, `settings`, `deviceConfig`, toasts, or
+  `report`;
+- accept credentials, model names, endpoints, paths, and user choices as inputs;
+- return domain data and errors, not presentation copy or UI state;
+- expose the same contract from both sides of a `#platform/*` seam.
 
-- **Pure**: Accept explicit parameters, no hidden dependencies
-- **Isolated**: No knowledge of UI state, settings, or reactive stores
-- **Testable**: Easy to unit test with mock parameters
-- **Consistent**: All return `Result<T, E>` types for uniform error handling
+`$lib/operations` usually reads app settings, chooses providers, and composes
+services. `$lib/queries` adds shared query identity and observable lifecycle only
+when the UI needs it.
 
-## Creating Errors with defineErrors
+The transcription directory also holds provider registry data and the
+UI-facing `provider-ui.ts` join. Those colocated metadata modules are not
+service implementations; do not use them to weaken the service boundary.
 
-Every service defines domain-specific errors using `defineErrors` from wellcrafted. Errors are grouped into a namespace object where each key becomes a variant.
+## Model Fallibility Honestly
 
-```typescript
-import { defineErrors, type InferError, type InferErrors, extractErrorMessage } from 'wellcrafted/error';
-import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
+Use `Result<T, E>` for a public operation that can fail in ordinary runtime use.
+Adapt throwing platform or library calls with the `error-handling` skill.
 
-// Namespace-style error definition : name describes the domain
-const CompletionError = defineErrors({
-  ConnectionFailed: ({ cause }: { cause: unknown }) => ({
-    message: `Connection failed: ${extractErrorMessage(cause)}`,
-    cause,
-  }),
-  EmptyResponse: ({ providerLabel }: { providerLabel: string }) => ({
-    message: `${providerLabel} API returned an empty response`,
-    providerLabel,
-  }),
-  MissingParam: ({ param }: { param: string }) => ({
-    message: `${param} is required`,
-    param,
-  }),
-});
-
-// Type derivation : shadow the const with a type of the same name
-type CompletionError = InferErrors<typeof CompletionError>;
-type ConnectionFailedError = InferError<typeof CompletionError.ConnectionFailed>;
-
-// Call sites : each variant returns Err<...> directly
-return CompletionError.ConnectionFailed({ cause: error });
-return CompletionError.EmptyResponse({ providerLabel: 'OpenAI' });
-return CompletionError.MissingParam({ param: 'apiKey' });
-```
-
-### How defineErrors Works
-
-`defineErrors({ ... })` takes an object of factory functions and returns a namespace object. Each key becomes a variant:
-
-- **`name` is auto-stamped** from the key (e.g., key `NotFound` -> `error.name === 'NotFound'`)
-- **The factory function IS the message generator** : it returns `{ message, ...fields }`
-- **Each variant returns `Err<...>` directly** : no separate `FooErr` constructor needed
-- **Types use `InferError` / `InferErrors`** : not `ReturnType`
+Do not fake a Result for an infallible in-memory action or cleanup. Current
+examples include local shortcut `register` / `unregister` returning `void` and
+listener setup returning a cleanup function.
 
 ```typescript
-// No-input variant (static message)
-const RecorderError = defineErrors({
-  Busy: () => ({
-    message: 'A recording is already in progress',
-  }),
-});
-
-// Usage : no arguments needed
-return RecorderError.Busy();
-
-// Variant with derived fields : constructor extracts from raw input
-const HttpError = defineErrors({
-  Response: ({ response, body }: { response: { status: number }; body: unknown }) => ({
-    message: `HTTP ${response.status}: ${extractErrorMessage(body)}`,
-    status: response.status,
-    body,
-  }),
-});
-
-// Usage : pass raw objects, constructor derives fields
-return HttpError.Response({ response, body: await response.json() });
-// error.message -> "HTTP 401: Unauthorized"
-// error.status  -> 401 (derived from response, flat on the object)
-// error.name    -> "Response"
+export type DownloadService = {
+	downloadBlob(args: {
+		name: string;
+		blob: Blob;
+	}): Promise<Result<void, DownloadError>>;
+};
 ```
 
-### Error Type Examples from the Codebase
+Errors belong to the layer that understands the failure. Preserve lower-layer
+tagged errors when composing services. Define a service-local variant only for
+a failure the service itself owns. Use `define-errors` for variant shape and
+message rules; use `error-handling` for adaptation and propagation.
+
+## Direct Object Or Factory
+
+Default to a direct `*ServiceLive` object when construction has no input or
+lifecycle. Current download, analytics, text, and transcription provider
+implementations use this shape. Download, analytics, and text check their shared
+platform contracts with `satisfies <Service>`.
+
+Use a factory when it owns real construction inputs, replaceable dependencies,
+or stateful lifecycle. The browser and CPAL recorder factories earn their
+boundary because each creates recording sessions with stop, cancel, subscribe,
+and teardown behavior.
+
+Do not add `create*` plus `*Live` mechanically for a stateless object.
+
+Read [service implementation patterns](references/service-implementation-pattern.md)
+for the current direct-object example and the factory decision.
+
+## Platform And Runtime Selection
+
+Use `#platform/*` imports for a capability with browser and Tauri
+implementations. `package.json#imports` chooses the implementation at build
+time; shared callers import one stable name and do not inspect
+`window.__TAURI_INTERNALS__`.
+
+Use the nullable `#platform/tauri` namespace for Tauri-only capabilities.
+
+User-selected providers are runtime policy, not a platform seam. Keep the
+dispatch in the consuming operation. Whispering transcription reads the
+selected provider in `$lib/operations/transcribe.ts`; the query layer only
+observes that operation.
+
+Read [service organization and platform variants](references/service-organization-platforms.md)
+when adding or moving a platform service.
+
+## Service Barrel
+
+`$lib/services/index.ts` collects stable cross-platform capabilities:
 
 ```typescript
-// Static message, no input needed
-const RecorderError = defineErrors({
-  Busy: () => ({
-    message: 'A recording is already in progress',
-  }),
-});
-RecorderError.Busy()
-
-// Multiple related errors in a single namespace
-const HttpError = defineErrors({
-  Connection: ({ cause }: { cause: unknown }) => ({
-    message: `Failed to connect to the server: ${extractErrorMessage(cause)}`,
-    cause,
-  }),
-  Response: ({ response, body }: { response: { status: number }; body: unknown }) => ({
-    message: `HTTP ${response.status}: ${extractErrorMessage(body)}`,
-    status: response.status,
-    body,
-  }),
-  Parse: ({ cause }: { cause: unknown }) => ({
-    message: `Failed to parse response body: ${extractErrorMessage(cause)}`,
-    cause,
-  }),
-});
-
-// Union type for the whole namespace
-type HttpError = InferErrors<typeof HttpError>;
-
-// Individual variant type
-type ConnectionError = InferError<typeof HttpError.Connection>;
+export const services = {
+	analytics: AnalyticsServiceLive,
+	text: TextServiceLive,
+	blobs: BlobsLive,
+	blobSources: BlobSourcesLive,
+	download: DownloadServiceLive,
+	localShortcutManager: LocalShortcutManagerLive,
+	sound: PlaySoundServiceLive,
+} as const;
 ```
 
-## Key Rules
+Do not force every provider implementation into this barrel. A runtime
+operation may import its provider-specific services directly when it owns the
+dispatch table.
 
-1. **Services never import settings** - Pass configuration as parameters
-2. **Services never import UI code** - No toasts, no notifications, no report calls
-3. **Always return Result types** - Never throw errors
-4. **Use trySync/tryAsync** - See the error-handling skill for details
-5. **Export factory + Live instance** - Factory for testing, Live for production
-6. **Use defineErrors namespaces** - Group related errors under a single namespace
-7. **Derive types with InferError/InferErrors** - Not `ReturnType`
-8. **Variant names describe the failure mode** - Never use generic names like `Service`, `Error`, or `Failed`. The namespace provides domain context (`RecorderError`), so the variant must say *what went wrong* (`AlreadyRecording`, `InitFailed`, `StreamAcquisition`). `RecorderError.Service` is meaningless : `RecorderError.AlreadyRecording` tells you exactly what happened.
-9. **Split discriminated union inputs** - Each variant gets its own name and shape. If the constructor branches on its inputs (if/switch/ternary) to decide the message, each branch should be its own variant
-10. **Transform cause in the constructor, not the call site** - Accept `cause: unknown` and call `extractErrorMessage(cause)` inside the factory's message template. Call sites pass the raw error: `{ cause: error }`. This centralizes message extraction where the message is composed and keeps call sites clean.
+## Final Check
 
-## References
-
-Load these on demand based on what you're working on:
-
-- If working with **error variant anti-patterns** (discriminated union inputs, branching constructors), read [references/error-anti-patterns.md](references/error-anti-patterns.md)
-- If working with **service implementation details** (factory patterns, recorder service examples), read [references/service-implementation-pattern.md](references/service-implementation-pattern.md)
-- If working with **service organization and platform variants** (namespace exports, desktop vs web services), read [references/service-organization-platforms.md](references/service-organization-platforms.md)
-- If working with **error message authoring** (user-friendly/actionable message design), read [references/error-message-best-practices.md](references/error-message-best-practices.md)
-
-- See `apps/whispering/src/lib/services/README.md` for architecture details
-- See the `query-layer` skill for how services are consumed
-- See the `error-handling` skill for trySync/tryAsync patterns
+- The service imports no UI or app-owned settings.
+- Every app choice enters as an explicit input or is selected by the caller.
+- Fallible public operations return Results; infallible operations stay plain.
+- A factory owns construction or lifecycle, not convention alone.
+- Platform choice happens through one `#platform/*` mapping.
+- Runtime provider choice happens once at the consuming operation.
+- Lower-layer errors pass through unless this service owns a new failure.

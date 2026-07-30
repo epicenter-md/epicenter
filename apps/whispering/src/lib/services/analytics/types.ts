@@ -29,7 +29,7 @@ type SettingsSection =
  * No personal data or user-generated content is ever collected.
  */
 export type Event =
-	// Application lifecycle
+	// App lifecycle
 	| { type: 'app_started' }
 	// Recording completion events - always include blob_size, duration when available
 	| { type: 'manual_recording_completed'; blob_size: number; duration?: number }

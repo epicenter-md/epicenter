@@ -1,0 +1,51 @@
+{
+	"name": "@epicenter/app",
+	"version": "0.1.0",
+	"description": "The public Epicenter client: one typed capability handle for recording, transcription, and structured data inside an installed Epicenter app.",
+	"type": "module",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/EpicenterHQ/epicenter.git",
+		"directory": "packages/app"
+	},
+	"homepage": "https://epicenter.so",
+	"keywords": [
+		"epicenter",
+		"transcription",
+		"recording",
+		"data",
+		"local-first",
+		"sdk"
+	],
+	"sideEffects": false,
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist",
+		"src",
+		"!src/**/*.test.ts",
+		"README.md",
+		"LICENSE"
+	],
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json",
+		"typecheck": "tsc --noEmit",
+		"test": "bun test",
+		"verify:consumer": "bun run scripts/verify-external-consumer.ts",
+		"prepack": "bun run build"
+	},
+	"dependencies": {
+		"@epicenter/lens": "workspace:*",
+		"@tauri-apps/api": "catalog:",
+		"wellcrafted": "catalog:"
+	},
+	"devDependencies": {
+		"@types/bun": "catalog:",
+		"typescript": "catalog:"
+	}
+}

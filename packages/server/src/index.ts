@@ -50,7 +50,19 @@ export { connectHyperdriveDb } from './db/backends/cloudflare.js';
 // client/pool in drizzle with the auth schema; a cloud entry hands the result to
 // `mountCloudDb`. The Cloudflare per-request `pg.Client` over Hyperdrive comes from
 // `connectHyperdriveDb`; a Bun host builds its own `pg.Pool` inline.
-export { createDb } from './db/create-db.js';
+export { createDb, type Db } from './db/create-db.js';
+export {
+	deleteStorageObservations,
+	listStorageObservations,
+	type StorageObservation,
+	type StorageSourceKind,
+	upsertStorageObservation,
+} from './db/storage-data.js';
+export {
+	createDurableObjectAccountAuthorities,
+	EpicenterAuthority,
+	mountCloudflareEpicenterSyncApp,
+} from './epicenter-sync/cloudflare.js';
 // An opt-in burn-rate cap for the inference `policies` seam: caps requests per
 // principal partition so a shared house key cannot be run up unbounded (ADR-0076).
 export { rateLimit } from './middleware/rate-limit.js';
@@ -80,6 +92,11 @@ export {
 // its own boot validation and resolves through `resolveAuthSecrets` (ADR-0076).
 export { CloudAuthBindings, mountCloudAuth } from './mount-cloud-auth.js';
 export { mountCloudDb } from './mount-cloud-db.js';
+// Reusable surfaces. Each `mount*` bundles auth + the route mount, accepting
+// only the deployment-controlled knobs (auth choice, optional policies). The
+// cloud's Better Auth surface (sessions, OAuth, `c.var.auth`) is bundled into
+// `mountCloudAuth`; an instance composes none of it (ADR-0075).
+export { blobPrincipalPrefix } from './principal.js';
 // Re-export the Cloudflare Durable Object class so each deployment's
 // wrangler.jsonc can resolve `class_name: "Room"` against this entrypoint.
 export { Room } from './room/backends/cloudflare/durable-object.js';
@@ -89,11 +106,7 @@ export { Room } from './room/backends/cloudflare/durable-object.js';
 // its own pool instead (the `@epicenter/server/bun` barrel omits both of these,
 // since their modules name Cloudflare bindings).
 export { createDurableObjectRooms } from './room/backends/cloudflare/registry.js';
-// Reusable surfaces. Each `mount*` bundles auth + the route mount, accepting
-// only the deployment-controlled knobs (auth choice, optional policies). The
-// cloud's Better Auth surface (sessions, OAuth, `c.var.auth`) is bundled into
-// `mountCloudAuth`; an instance composes none of it (ADR-0075).
-export { mountBlobsApp } from './routes/blobs.js';
+export { mountBlobsApp, resolveDeploymentBlobStore } from './routes/blobs.js';
 export { mountInferenceApp } from './routes/inference.js';
 export { mountRoomsApp } from './routes/rooms.js';
 export { mountSessionApp } from './routes/session.js';
@@ -104,7 +117,6 @@ export { mountTranscriptionApp } from './routes/transcription.js';
 // `Identity` (who this deployment is on the web). The cloud's db + Better Auth are
 // NOT here; the cloud adds them via `mountCloudDb` + `mountCloudAuth`.
 export { createServerApp } from './server-app.js';
-
 // Binding contract: the portable env the library reads from `c.env`, as both
 // the arktype schema (value) and its inferred type (same name). Each deployment
 // proves its own Env against it (extends in apps/self-host, satisfies in
@@ -113,4 +125,8 @@ export { ServerBindings } from './server-bindings.js';
 // Public Hono context types: the portable `Env` (both deployments), the cloud's
 // `CloudEnv` (Env + Better Auth/Postgres state), and the `ResolveBearerPrincipal<E>`
 // seam the deployment closes its auth wrappers over.
-export type { CloudEnv, Env, ResolveBearerPrincipal } from './types.js';
+export type {
+	CloudEnv,
+	Env,
+	ResolveBearerPrincipal,
+} from './types.js';

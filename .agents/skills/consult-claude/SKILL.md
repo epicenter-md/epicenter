@@ -1,31 +1,49 @@
 ---
 name: consult-claude
-description: Give Claude one fresh, read-only adversarial consultation on Codex's current synthesis. Use only when the user explicitly invokes $consult-claude or unmistakably asks Codex to consult Claude on an uncompromising greenfield vision, architecture direction, or other bounded decision after Codex has gathered the relevant evidence and directional data.
-disable-model-invocation: true
+description: Give Claude one fresh, read-only, evidence-seeking adversarial memo on Codex's grounded synthesis. Use when the user asks Codex to consult Claude or when an independent investigation would materially reduce risk in a high-stakes, ambiguous, architectural, product, planning, or clean-break decision; Codex may invoke it autonomously after forming an evidence-backed read. Do not use for implementation, an obvious bounded decision, or a continuing Claude conversation.
 ---
 
 # Consult Claude
 
-The consult-claude skill gives Claude one explicitly requested opportunity to
-attack Codex's decision-complete synthesis. Codex owns the user dialectic,
-packet, verification, reconciliation, and final judgment. Claude returns one
-adversarial memo. The runner keeps that fresh, tool-free consultation observable
-and bounded.
+Consult Claude gives one fresh reasoning trajectory enough read access to
+investigate and attack Codex's grounded synthesis. The user owns product
+decisions. Codex stewards the user dialectic, consultation boundary,
+reconciliation, and final recommendation. Claude owns the independent
+investigation and one evidence-backed adversarial memo. The runner enforces
+read-only authority and a bounded lifetime.
 
-## Build the packet
+Codex may escalate autonomously when getting the judgment wrong would cost
+substantially more than the additional latency and quota. Announce the
+consultation and why it earns the escalation before starting it. Do not consult
+to avoid forming a grounded position first.
 
-Read the evidence Claude should not have to rediscover. Include content rather
-than only paths because Claude has no file tools. Preserve selected verbatim
-directional data when Codex's summary would smooth away the user's taste.
+## Ground the challenge
+
+Read enough evidence to make Codex's working model explicit before consulting.
+Give Claude the sources and conversation history that explain how the working
+model evolved, but do not close the record around Codex's evidence selection.
+When consulting inside a dialectic, include the live shared model, the relevant
+parts of both participants' private models, and how the conversation changed
+them. Preserve verbatim user reactions when summarizing them would flatten an
+important distinction, contribution, or expression of taste.
 
 Start every packet with this mandate:
 
 ```txt
 Mandate:
   Attack the synthesis as a whole. Surface inherited assumptions and hidden
-  compromises, articulate the strongest rival, and propose further collapse.
-  Return one decisive memo. Do not ask the user questions, inspect the
-  repository, use tools, implement, or continue the task.
+  compromises, articulate the strongest rival, test the important failure
+  modes, and recommend the best direction. Propose collapse or a clean break
+  when the evidence earns it, not as a default.
+
+  Treat the supplied evidence as a grounded starting point, not a closed
+  record. Inspect relevant repository sources and authoritative documentation
+  when doing so could verify, falsify, or materially improve the synthesis.
+  Report consequential discoveries with precise source locations and
+  distinguish discovered evidence from your interpretation.
+
+  Return one decisive memo. Do not edit files, run mutating operations, ask the
+  user questions, implement, or continue the task.
 ```
 
 Then make the packet cold-start complete:
@@ -35,22 +53,26 @@ Mission:
   The bounded subject or design problem.
 
 Evolution:
-  How the vision changed during the Codex-user dialectic.
+  How the working model changed. When a dialectic is active, how the live
+  shared model changed.
 
-Directional data:
-  Selected user reactions, rejected framings, and recognition criteria.
+User contributions and divergences:
+  Selected evidence, interpretations, questions, reactions, rejected framings,
+  desired outcomes, and recognition criteria from the originating conversation.
 
-Evidence:
-  Relevant excerpts, diffs, command output, paths, and durable decisions.
+Starting evidence:
+  Established excerpts, diffs, command output, paths, and durable decisions.
+  Include decisive context directly and name sources Claude should inspect.
 
-Current synthesis:
-  Codex's positive model and reasoning.
+Working model:
+  Codex's explicit grounded model and the path from evidence to its conclusions
+  or proposal.
 
-Competing case:
-  The strongest rival vision or objection.
+Strongest rival:
+  The best competing vision or objection Codex can already articulate.
 
-Tensions:
-  What remains uncertain or may still hide an inherited constraint.
+Investigation questions:
+  Facts, assumptions, and architectural boundaries that remain open to attack.
 
 Constraints:
   Product promises, ownership boundaries, security limits, and refusals.
@@ -62,11 +84,12 @@ Stop:
   Answer this bounded problem. Do not implement or expand the task.
 ```
 
-Decision-complete does not mean short. Include the conversational history that
-explains the vision, but do not dump unrelated repository context or make
-Claude reconstruct facts Codex can establish locally.
+Give Claude relevance-complete direction, not a conclusion-only summary or a
+repository dump. Point it at the strongest starting sources so investigation
+can follow consequential leads instead of repeating Codex's entire discovery
+pass.
 
-## Run one attached consultation
+## Run one read-only investigation
 
 Prerequisites: Bun and a current, authenticated Claude CLI on macOS or Linux.
 Resolve this skill's directory from its loaded `SKILL.md` path. Start
@@ -76,15 +99,21 @@ raw, non-echoing mode. Write the complete packet to stdin, then send the EOT
 character (`Ctrl-D`). The runner accepts no prompt arguments and creates no
 files.
 
-The runner starts Claude in safe mode with no tools, browser, project discovery,
-or persisted session. It inherits the environment needed for local
-authentication. Do not add tools without revisiting that trust boundary.
+The runner starts a high-effort Claude turn in safe mode with an explicit tool
+allowlist and plan permission mode. Claude may read and search files, use
+read-only shell commands, and consult public web sources. It cannot edit files
+or persist the session. Safe mode prevents project instructions, skills,
+plugins, hooks, MCP servers, and other hidden configuration from shaping the
+independent trajectory, so the packet must name the repository instructions
+and sources that matter.
 
-If the runtime blocks export of private context, do not silently weaken the
-packet. Explain the boundary. Prefer routing the scoped network approval to the
-user. If the user chooses a sanitized consultation instead, remove private
-identifiers, paths, code, commits, and verbatim conversation, then run from a
-neutral temporary directory.
+Read-only protects repository integrity, not confidentiality. Sending the
+packet and running tools exports their relevant contents to the locally
+authenticated Claude provider. Keep investigation inside the task's repository
+and subject. Do not direct Claude into credentials, environment files, personal
+data, unrelated private material, or broader external systems. Ask the user
+before crossing that boundary. If the runtime blocks required in-scope access,
+do not silently weaken the investigation; explain the boundary.
 
 ## Wait patiently
 
@@ -101,11 +130,19 @@ Codex's command session already owns waiting and cancellation.
 
 ## Reconcile the memo
 
-1. Report Claude's strongest argument accurately.
-2. Separate Claude's evidence from its opinion.
-3. Verify every material claim against local files or authoritative sources.
-4. Explain what survives verification and what changes in Codex's synthesis.
-5. Put the revised synthesis back into the user dialectic.
+1. State Claude's strongest recommendation accurately.
+2. Separate starting evidence, newly discovered evidence, and Claude's opinion.
+3. Verify every material discovery against local files or authoritative
+   sources.
+4. State where Codex agrees, disagrees, or needs more evidence.
+5. Resolve obvious evidence-dominated consequences without ceremony.
+6. Bring genuine product, promise, ownership, or taste forks to the user.
+7. Return Claude's challenge to the originating workflow. When a dialectic is
+   active, put it back into the live shared model and continue the conversation.
+
+Do not smooth genuine disagreement into a compromise. When a product decision
+remains, present Claude's recommendation, Codex's read, and the concrete choice
+the user owns.
 
 Each consultation is fresh. A later checkpoint may request another consultation
 for a genuinely new synthesis, but never resume a Claude session or let Claude

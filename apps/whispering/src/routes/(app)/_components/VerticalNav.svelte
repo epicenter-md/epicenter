@@ -9,10 +9,9 @@
 	import studioMicrophone from '$lib/assets/studio-microphone.png';
 	import { NAV_ITEMS } from './nav-items';
 	import { auth } from '#platform/auth';
-	import { whispering } from '#platform/whispering';
+	import { instanceSetting } from '#platform/instance';
 	import { AccountPopover } from '@epicenter/app-shell/account-popover';
 	import { recordingActive } from '$lib/state/recording-active.svelte';
-	import { instanceSetting } from '$lib/instance';
 
 	const sidebar = useSidebar();
 </script>
@@ -28,7 +27,7 @@
 					{#snippet child({ props })}
 						<button {...props} onclick={sidebar.toggle}>
 							<div
-								class="bg-sidebar-primary text-sidebar-primary-foreground flex size-8 items-center justify-center rounded-lg"
+								class="bg-sidebar-accent flex size-8 items-center justify-center rounded-lg"
 							>
 								<img src={studioMicrophone} alt="" class="size-4" />
 							</div>
@@ -77,7 +76,6 @@
 			<Sidebar.MenuItem>
 				<AccountPopover
 					{auth}
-					collaboration={whispering.collaboration}
 					syncNoun="recordings"
 					disabledReason={recordingActive.current
 						? 'Stop recording to change your account'

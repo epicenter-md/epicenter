@@ -6,7 +6,7 @@ import {
 import { isErr, Ok, type Result } from 'wellcrafted/result';
 import { buildSystemPrompt } from '$lib/operations/build-system-prompt';
 import { completeWithGlobalDefault } from '$lib/operations/completion';
-import { settings } from '$lib/state/settings.svelte';
+import type { WhisperingApp } from '$lib/whispering/app';
 import type { Recipe } from '$lib/workspace';
 
 export const RunRecipeError = defineErrors({
@@ -24,20 +24,23 @@ export type RunRecipeError = InferErrors<typeof RunRecipeError>;
  * text and this never re-does correction.
  *
  * The system prompt is `recipe.instructions` plus the Dictionary block (via
- * `buildSystemPrompt`, with `dictionary` read at use per ADR 0012). Provider and
+ * `buildSystemPrompt`, with `settings.dictionary` read at use per ADR 0012). Provider and
  * model come from the single global `completion.*` default (via
  * `completeWithGlobalDefault`), not from the Recipe.
  *
  * Pure execution: no workspace writes, no persistence, no toasts. The picker is
  * the caller; it owns delivery and any history bookkeeping.
  */
-export async function runRecipe({
-	input,
-	recipe,
-}: {
-	input: string;
-	recipe: Recipe;
-}): Promise<Result<string, RunRecipeError>> {
+export async function runRecipe(
+	app: WhisperingApp,
+	{
+		input,
+		recipe,
+	}: {
+		input: string;
+		recipe: Recipe;
+	},
+): Promise<Result<string, RunRecipeError>> {
 	if (!input.trim()) {
 		return RunRecipeError.InvalidInput({
 			message: 'Empty input. Please enter some text to run a recipe on.',
@@ -49,10 +52,10 @@ export async function runRecipe({
 		});
 	}
 
-	const result = await completeWithGlobalDefault({
+	const result = await completeWithGlobalDefault(app, {
 		systemPrompt: buildSystemPrompt(
 			recipe.instructions,
-			settings.get('dictionary'),
+			app.settings.get('settings.dictionary'),
 		),
 		userPrompt: input,
 	});

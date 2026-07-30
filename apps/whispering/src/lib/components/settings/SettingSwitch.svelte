@@ -1,10 +1,10 @@
 <script lang="ts" generics="K extends BooleanSettingKey">
 	import * as Field from '@epicenter/ui/field';
 	import { Switch } from '@epicenter/ui/switch';
-	import {
-		type BooleanSettingKey,
-		settings,
-	} from '$lib/state/settings.svelte';
+	import type { BooleanSettingKey } from '$lib/state/settings.svelte';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 
 	let {
 		key,
@@ -35,9 +35,9 @@
 	<Switch
 		{id}
 		bind:checked={
-			() => settings.get(key),
+			() => app.settings.get(key),
 			(checked) => {
-				settings.set(key, checked);
+				app.settings.set(key, checked);
 				onCheckedChange?.(checked);
 			}
 		}

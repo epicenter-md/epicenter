@@ -8,9 +8,15 @@
 	import type { ComponentProps } from 'svelte';
 	import { deliverTranscriptionResult } from '$lib/operations/delivery';
 	import { report } from '$lib/report';
-	import { sound } from '$lib/operations/sound';
-	import { rpc } from '$lib/rpc';
+	import { playSoundIfEnabled } from '$lib/operations/sound';
 	import type { Recording } from '$lib/state/recordings.svelte';
+	import {
+		getWhisperingApp,
+		getWhisperingQueries,
+	} from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
+	const queries = getWhisperingQueries();
 
 	/**
 	 * The transcribe / retry button for a single recording.
@@ -35,7 +41,7 @@
 	} = $props();
 
 	const transcribeRecording = createMutation(
-		() => rpc.transcription.transcribeRecording.options,
+		() => queries.transcription.transcribeRecording.options,
 	);
 
 	const transcriptionState = $derived.by(() => {
@@ -86,13 +92,19 @@
 					title: 'Failed to transcribe recording',
 				});
 			},
-			onSuccess: async (transcribedText) => {
-				sound.playSoundIfEnabled('transcriptionComplete');
+			onSuccess: async ({ text, history }) => {
+				void playSoundIfEnabled(app, 'transcriptionComplete');
 
-				const { notice } = await deliverTranscriptionResult({
-					text: transcribedText,
+				const { notice } = await deliverTranscriptionResult(app, {
+					text,
 				});
 				loading.resolve(notice);
+				if (history.error !== null) {
+					report.info({
+						title: 'Transcription delivered, but history may be incomplete',
+						description: history.error.message,
+					});
+				}
 			},
 		});
 	}

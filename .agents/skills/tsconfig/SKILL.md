@@ -12,6 +12,15 @@ Every package here is **source-only `.ts`**: `exports` point at `./src/*.ts`,
 there is no build step, and consumers (Bun, Vite, WXT, Tauri, the Cloudflare
 Worker) operate on raw `.ts`. That single fact decides the whole config.
 
+**One exception, and it is the audience, not the package.** `packages/app`
+(`@epicenter/app`) is published for toolchains we do not control, so shipping
+source would subject it to a stranger's compiler settings. It emits `.js` and
+`.d.ts` (ADR-0186). Its leaf `tsconfig.json` is an ordinary tier from the table
+below; the emit lives in a **sibling `tsconfig.build.json`** that extends the
+leaf and turns on exactly what emitting needs. Do not add `outDir`,
+`declaration`, or `noEmit: false` to any leaf. If a second package ever earns a
+build, copy that split.
+
 ## The one rule
 
 A leaf `tsconfig.json` may set **only**: `types`, library-only strictness
@@ -30,7 +39,9 @@ tsconfig.dom.json    extends base; its ONLY job is lib [ESNext, DOM, DOM.Iterabl
 ```
 
 There is no `tsconfig.base.lib.json` and no project `references`. Source-only
-packages never emit, so `composite`/`declaration`/`outDir` have no place here.
+packages never emit, so `composite`/`declaration`/`outDir` have no place in a
+leaf. The one published package that does emit puts them in its own
+`tsconfig.build.json` (see above), never in the leaf or a base.
 
 ## Module strategy: one, repo-wide
 

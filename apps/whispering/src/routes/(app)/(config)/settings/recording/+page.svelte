@@ -7,26 +7,24 @@
 	import { createMutation } from '@tanstack/svelte-query';
 	import { resultMutationOptions } from 'wellcrafted/query';
 	import { SettingSelect, SettingSwitch } from '$lib/components/settings';
-	import {
-		BITRATE_OPTIONS,
-		RECORDING_TRIGGER_OPTIONS,
-		SAMPLE_RATE_OPTIONS,
-	} from '$lib/constants/audio';
+	import { BITRATE_OPTIONS, RECORDING_TRIGGER_OPTIONS } from '$lib/constants/audio';
 	import { report } from '$lib/report';
 	import { asDeviceIdentifier } from '@epicenter/recorder';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
-	import { settings } from '$lib/state/settings.svelte';
 	import { os } from '#platform/os';
 	import { manualRecorderConfig } from '#platform/manual-recorder-config';
 	import { tauri } from '#platform/tauri';
-	import { whispering } from '#platform/whispering';
+	import { exportRecordingsMarkdown } from '$lib/whispering/recordings-markdown-export';
 	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
 	import VadSelectRecordingDevice from './VadSelectRecordingDevice.svelte';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 
 	const exportRecordings = createMutation(() =>
 		resultMutationOptions({
 			mutationKey: ['recordings', 'export'],
-			mutationFn: whispering.actions.recordings_export_markdown,
+			mutationFn: () => exportRecordingsMarkdown(app),
 		}),
 	);
 </script>
@@ -41,8 +39,8 @@
 	<Field.Separator />
 	<Field.Group>
 		<SettingSelect
-			store={settings}
-			key="recording.trigger"
+			store={app.settings}
+			key="settings.recording.trigger"
 			label="Recording Trigger"
 			items={RECORDING_TRIGGER_OPTIONS}
 			description="Choose how recording starts: {RECORDING_TRIGGER_OPTIONS.map(
@@ -51,12 +49,20 @@
 		/>
 
 		<SettingSwitch
-			key="recording.pausePlayback"
+			key="settings.recording.pausePlayback"
 			label="Pause playback while recording"
 			description="Whispering pauses media playing on your computer (music, video, browser tabs) while your voice is being captured, then tries to resume it after. In voice activated mode it pauses only while you actually speak, so music keeps playing between phrases. Works with most apps in your system media controls. A few can't be paused, and on macOS the resume can occasionally wake a different app that was already paused."
 		/>
 
-		{#if settings.get('recording.trigger') === 'manual'}
+		{#if app.recordings.remoteAvailable}
+			<SettingSwitch
+				key="settings.recording.autoUpload"
+				label="Upload new recordings"
+				description="After saving a new recording on this device, try once to copy its audio to your online storage. Failed uploads stay local and are not retried automatically."
+			/>
+		{/if}
+
+		{#if app.settings.get('settings.recording.trigger') === 'manual'}
 			<ManualSelectRecordingDevice
 				bind:selected={() => {
 					const selected = manualRecorderConfig.deviceId;
@@ -64,7 +70,7 @@
 					},
 					(selected) => (manualRecorderConfig.deviceId = selected)}
 			/>
-		{:else if settings.get('recording.trigger') === 'vad'}
+		{:else if app.settings.get('settings.recording.trigger') === 'vad'}
 			{#if os.isLinux}
 				<Alert.Root variant="destructive">
 					<InfoIcon class="size-4" />
@@ -119,24 +125,14 @@
 			/>
 		{/if}
 
-		{#if settings.get('recording.trigger') === 'manual'}
-			{#if !tauri}
-				<SettingSelect
-					store={deviceConfig}
-					key="recording.navigator.bitrateKbps"
-					label="Bitrate"
-					items={BITRATE_OPTIONS}
-					description="The bitrate of the recording. Higher values mean better quality but larger file sizes."
-				/>
-			{:else}
-				<SettingSelect
-					store={deviceConfig}
-					key="recording.cpal.sampleRate"
-					label="Sample Rate"
-					items={SAMPLE_RATE_OPTIONS}
-					description="Higher sample rates provide better quality but create larger files"
-				/>
-			{/if}
+		{#if app.settings.get('settings.recording.trigger') === 'manual' && !tauri}
+			<SettingSelect
+				store={deviceConfig}
+				key="recording.navigator.bitrateKbps"
+				label="Bitrate"
+				items={BITRATE_OPTIONS}
+				description="The bitrate of the recording. Higher values mean better quality but larger file sizes."
+			/>
 		{/if}
 
 		<Field.Field>

@@ -1,59 +1,132 @@
 /**
- * The Bun-owned Epicenter origin: trusted SPA documents, Query APIs, and the
- * Query session WebSocket. The launch credential can only mint short-lived
+ * The Bun-owned Epicenter origin: trusted SPA documents, Home APIs, and the
+ * Home session WebSocket. The launch credential can only mint short-lived
  * browser sessions at the bootstrap route; it never appears in a URL or
  * durable browser storage.
  */
 
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import type { AgentToolDefinition } from '@epicenter/workspace/agent';
-import { Hono } from 'hono';
+import type { AgentToolDefinition } from '@epicenter/agent';
+import { getProfileVia } from '@epicenter/auth';
+import { type BlobId, type BlobRemote, parseBlobId } from '@epicenter/blobs';
+import type { BunBlobStore } from '@epicenter/blobs/bun';
+import type { Address } from '@epicenter/data';
+import {
+	DESKTOP_EPICENTER_OBSERVE_ROUTE,
+	DESKTOP_EPICENTER_ROUTE,
+	type DesktopInvalidationFrame,
+	type DesktopResponse,
+	describeThrownError,
+} from '@epicenter/data/desktop';
+import {
+	type DesktopEpicenterOwner,
+	EPICENTER_SURFACE_NOT_OPEN_ERROR_NAME,
+} from '@epicenter/data/desktop-owner';
+import { type Context, Hono, type Next } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
 import { getCookie, setCookie } from 'hono/cookie';
+import type { DesktopAuthAuthority } from './desktop-auth-authority.ts';
+import { createDesktopAuthorityFetch } from './desktop-authority-fetch.ts';
 import {
-	parseQueryCommand,
-	type QueryHost,
-	type QuerySessionSnapshot,
+	type HomeHost,
+	type HomeSessionSnapshot,
+	parseHomeCommand,
 } from './host.ts';
 import {
+	ACCOUNT_INSTANCE_ROUTE,
+	ACCOUNT_PROFILE_ROUTE,
+	ACCOUNT_SIGN_IN_ROUTE,
+	ACCOUNT_SIGN_OUT_ROUTE,
 	BOOTSTRAP_ROUTE,
+	LOCAL_BLOB_REMOTE_ROUTES,
+	LOCAL_BLOB_ROUTE,
 	SESSION_ROUTE,
 	SESSION_STREAM_ROUTE,
 	SURFACE_ROUTES,
 	type SurfaceId,
 } from './routes.ts';
-import type { EpicenterStaticAssets } from './static-assets.ts';
+import type { AppCatalog, EpicenterStaticAssets } from './static-assets.ts';
 import { PLACEHOLDER_SURFACE_PAGES } from './surface-pages.ts';
 
-export type QueryServerEvent = {
+export type HomeServerEvent = {
 	type: 'snapshot';
-	snapshot: QuerySessionSnapshot;
+	snapshot: HomeSessionSnapshot;
 };
 
-export type QuerySessionResponse = {
+export type HomeSessionResponse = {
 	tools: AgentToolDefinition[];
-	snapshot: QuerySessionSnapshot;
+	snapshot: HomeSessionSnapshot;
 };
 
-export type QueryServerOptions = {
-	host: QueryHost;
+export type HomeServerOptions = {
+	host: HomeHost;
 	/** Exact active origin, including the Rust-selected explicit port. */
 	origin: string;
 	/** Per-launch credential received from Rust over stdin. */
 	launchToken: string;
 	/** Release-built documents and the contained Whispering asset resolver. */
 	staticAssets: EpicenterStaticAssets;
+	/** Derived trusted app catalog (ADR-0153); absent means no members. */
+	appCatalog?: AppCatalog;
+	dataOwner?: DesktopEpicenterOwner;
+	/** Canonical device-local bytes shared by every trusted app surface. */
+	blobs: BunBlobStore;
+	/** One credential owner for every compiled desktop surface. */
+	desktopAuth: DesktopAuthAuthority;
+	/**
+	 * Host-owned remote copy capability over the same local bytes, or `null`
+	 * when this signed-out process generation has none. The composition root
+	 * builds it from the desktop authority, so these routes never see a
+	 * credential or a destination URL.
+	 */
+	blobRemote: BlobRemote | null;
 };
 
 const SESSION_COOKIE = 'epicenter_session';
 const MAX_BROWSER_SESSIONS = 32;
+const SESSION_SHELL = `<!doctype html><html><head><meta charset="utf-8"><title>Epicenter</title><script>window.__EPICENTER_SESSION_READY__.then(() => window.location.reload())</script></head><body></body></html>`;
 
-export function createQueryServer({
+type ObservationWebSocket = {
+	raw?: unknown;
+};
+
+/**
+ * Send one observation frame without erasing Bun's delivery status.
+ *
+ * Hono's portable `WSContext` intentionally exposes a void `send`, but this
+ * Bun-owned route needs to distinguish delivered, dropped, and backpressured
+ * frames. A non-positive native result is therefore a carrier failure: the
+ * caller closes it and reconnect recovery emits the strongest honest
+ * invalidation for every subscribed handle.
+ */
+export function sendObservationFrame(
+	ws: ObservationWebSocket,
+	frame: DesktopInvalidationFrame,
+): void {
+	const payload = JSON.stringify(frame);
+	if (ws.raw === undefined) {
+		throw new Error('Observation carrier has no Bun delivery status');
+	}
+	const status = (ws.raw as { send(data: string): number }).send(payload);
+	if (status > 0) return;
+	throw new Error(
+		status === 0
+			? 'Observation frame was dropped'
+			: 'Observation carrier is backpressured',
+	);
+}
+
+export function createHomeServer({
 	host,
 	origin,
 	launchToken,
 	staticAssets,
-}: QueryServerOptions) {
+	appCatalog = { apps: [] },
+	dataOwner,
+	blobs,
+	desktopAuth,
+	blobRemote,
+}: HomeServerOptions) {
 	if (launchToken === '') {
 		throw new Error('Epicenter refuses to serve without a launch token.');
 	}
@@ -61,11 +134,17 @@ export function createQueryServer({
 	const activeHost = activeUrl.host;
 	const sessionHashes = new Set<string>();
 	const surfacePages = {
-		query: staticAssets.queryPage,
-		whispering: staticAssets.whisperingPage,
+		home: injectAuthBootstrap(staticAssets.homePage, desktopAuth.bootSnapshot),
+		whispering: injectAuthBootstrap(
+			staticAssets.whisperingPage,
+			desktopAuth.bootSnapshot,
+		),
 		...PLACEHOLDER_SURFACE_PAGES,
 	} satisfies Record<SurfaceId, string>;
-	const csp = contentSecurityPolicy(Object.values(surfacePages).join('\n'));
+	const csp = contentSecurityPolicy(
+		`${Object.values(surfacePages).join('\n')}\n${SESSION_SHELL}`,
+	);
+	const deploymentFetch = createDesktopAuthorityFetch(desktopAuth);
 	const { upgradeWebSocket, websocket } = createBunWebSocket();
 	const app = new Hono();
 
@@ -109,21 +188,113 @@ export function createQueryServer({
 		});
 		return c.body(null, 204);
 	});
+	const hasBrowserSession = (c: Context) => {
+		const session = getCookie(c, SESSION_COOKIE);
+		return session !== undefined && sessionHashes.has(tokenHash(session));
+	};
+
+	const requireBrowserSession = async (c: Context, next: Next) => {
+		if (!hasBrowserSession(c)) return c.text('Unauthorized', 401);
+		await next();
+	};
+	const requirePrivateBroker = async (c: Context, next: Next) => {
+		if (!hasBrowserSession(c)) return c.text('Unauthorized', 401);
+		if (c.req.header('origin') !== origin) return c.text('Forbidden', 403);
+		await next();
+	};
+	// The account broker carries only host-owned identity commands and the
+	// profile projection. There is deliberately no authorize/bearer-grant
+	// route: no credential ever crosses into a WebView, so the windows keep
+	// the loopback-only CSP. The read-only profile GET is session-guarded
+	// without the origin check because a browser omits the Origin header on
+	// same-origin GETs.
+	app.use('/_epicenter/account/*', async (c, next) => {
+		if (c.req.method === 'GET') return requireBrowserSession(c, next);
+		return requirePrivateBroker(c, next);
+	});
+
+	app.get(ACCOUNT_PROFILE_ROUTE.pattern, async (c) => {
+		const profile = await getProfileVia(deploymentFetch, desktopAuth.baseURL);
+		if (profile.error !== null) return c.text('Profile unavailable', 502);
+		return c.json(profile.data);
+	});
+	app.post(ACCOUNT_SIGN_IN_ROUTE.pattern, async (c) => {
+		const result = await desktopAuth.startSignIn();
+		if (result.error) return c.text('Sign-in failed', 502);
+		return c.body(null, 202);
+	});
+	app.post(ACCOUNT_SIGN_OUT_ROUTE.pattern, async (c) => {
+		const result = await desktopAuth.signOut();
+		if (result.error) return c.text('Sign-out failed', 500);
+		return c.body(null, 202);
+	});
+	app.post(ACCOUNT_INSTANCE_ROUTE.pattern, async (c) => {
+		const input = await readJsonObject(c.req.raw);
+		if (
+			input === null ||
+			Object.keys(input).some((key) => key !== 'baseURL' && key !== 'token') ||
+			typeof input.baseURL !== 'string' ||
+			typeof input.token !== 'string'
+		) {
+			return c.text('Bad Request', 400);
+		}
+		try {
+			await desktopAuth.selectInstance({
+				baseURL: input.baseURL,
+				token: input.token,
+			});
+			return c.body(null, 202);
+		} catch {
+			return c.text('Invalid instance', 400);
+		}
+	});
+	app.delete(ACCOUNT_INSTANCE_ROUTE.pattern, async (c) => {
+		await desktopAuth.selectHosted();
+		return c.body(null, 202);
+	});
 
 	for (const surface of [
-		SURFACE_ROUTES.query,
+		SURFACE_ROUTES.home,
 		SURFACE_ROUTES.mail,
 		SURFACE_ROUTES.books,
 	]) {
 		app.get(surface.pattern, (c) => {
 			c.header('cache-control', 'no-store');
+			if (!hasBrowserSession(c)) return c.html(SESSION_SHELL);
 			return c.html(surfacePages[surface.id]);
 		});
 	}
 	app.get('/apps/whispering/*', async (c) => {
-		const asset = await staticAssets.resolveWhispering(
-			new URL(c.req.url).pathname,
+		const pathname = new URL(c.req.url).pathname;
+		if (
+			pathname === SURFACE_ROUTES.whispering.pattern ||
+			pathname === `${SURFACE_ROUTES.whispering.pattern}index.html`
+		) {
+			c.header('cache-control', 'no-store');
+			if (!hasBrowserSession(c)) return c.html(SESSION_SHELL);
+			return c.html(surfacePages.whispering);
+		}
+		const asset = await staticAssets.resolveWhispering(pathname);
+		if (!asset) return c.text('Not Found', 404);
+		c.header('cache-control', 'no-store');
+		if (!hasBrowserSession(c)) {
+			return asset.isDocument
+				? c.html(SESSION_SHELL)
+				: c.text('Unauthorized', 401);
+		}
+		if (asset.isDocument) return c.html(surfacePages.whispering);
+		c.header('content-type', asset.contentType);
+		return c.body(asset.file.stream());
+	});
+	// Derived catalog members (ADR-0153). Reserved built-in IDs never reach
+	// this handler: the surface routes above win registration order and the
+	// catalog derivation refuses them.
+	app.get('/apps/:appId/*', async (c) => {
+		const member = appCatalog.apps.find(
+			(catalogApp) => catalogApp.id === c.req.param('appId'),
 		);
+		if (!member) return c.text('Not Found', 404);
+		const asset = await member.resolve(new URL(c.req.url).pathname);
 		if (!asset) return c.text('Not Found', 404);
 		c.header('cache-control', 'no-store');
 		c.header('content-type', asset.contentType);
@@ -131,13 +302,19 @@ export function createQueryServer({
 	});
 	app.get('/apps/*', (c) => c.text('Not Found', 404));
 
-	app.use('/api/query/*', async (c, next) => {
-		const session = getCookie(c, SESSION_COOKIE);
-		if (session === undefined || !sessionHashes.has(tokenHash(session))) {
-			return c.text('Unauthorized', 401);
-		}
+	app.use('/api/apps', requireBrowserSession);
+	app.use('/api/home/*', requireBrowserSession);
+	app.use(DESKTOP_EPICENTER_ROUTE, requireBrowserSession);
+	// The observation carrier is guarded exactly like the operations route it
+	// sits beside, plus the explicit Origin equality every WebSocket upgrade
+	// here carries: a browser always sends Origin on a handshake, so unlike a
+	// same-origin GET there is no reason to accept its absence.
+	app.use(DESKTOP_EPICENTER_OBSERVE_ROUTE, async (c, next) => {
+		if (!hasBrowserSession(c)) return c.text('Unauthorized', 401);
+		if (c.req.header('origin') !== origin) return c.text('Forbidden', 403);
 		await next();
 	});
+	app.use('/api/local-blobs/*', requireBrowserSession);
 	app.use(SESSION_STREAM_ROUTE.pattern, async (c, next) => {
 		if (c.req.header('origin') !== origin) return c.text('Forbidden', 403);
 		await next();
@@ -147,7 +324,239 @@ export function createQueryServer({
 		c.json({
 			tools: host.toolDefinitions(),
 			snapshot: host.snapshot(),
-		} satisfies QuerySessionResponse),
+		} satisfies HomeSessionResponse),
+	);
+
+	app.get('/api/apps', (c) =>
+		c.json({
+			apps: appCatalog.apps.map(({ id, title }) => ({ id, title })),
+		}),
+	);
+
+	app.put(LOCAL_BLOB_ROUTE.pattern, async (c) => {
+		const id = parseBlobId(c.req.param('blobId'));
+		if (id === undefined) return c.text('Invalid blob id', 400);
+		const result = await blobs.putRequest(id, c.req.raw);
+		if (result.error === null) return c.body(null, 201);
+		switch (result.error.name) {
+			case 'BlobAlreadyExists':
+				return c.text('Blob already exists', 409);
+			case 'BlobStoreFailed':
+				return c.text('Blob store failed', 500);
+			default:
+				return result.error satisfies never;
+		}
+	});
+
+	// Hono derives HEAD from GET before considering explicit HEAD routes. A
+	// middleware guard keeps HEAD metadata-only and preserves Content-Length.
+	app.use(LOCAL_BLOB_ROUTE.pattern, async (c, next) => {
+		if (c.req.method !== 'HEAD') {
+			await next();
+			return;
+		}
+		const id = parseBlobId(c.req.param('blobId'));
+		if (id === undefined) return c.text('Invalid blob id', 400);
+		const result = await blobs.stat(id);
+		if (result.error !== null) {
+			switch (result.error.name) {
+				case 'BlobNotFound':
+					return c.text('Blob not found', 404);
+				case 'BlobStoreFailed':
+					return c.text('Blob store failed', 500);
+				default:
+					return result.error satisfies never;
+			}
+		}
+		return new Response(null, {
+			headers: {
+				...blobResponseHeaders(result.data.contentType),
+				'content-length': String(result.data.size),
+			},
+		});
+	});
+
+	app.get(LOCAL_BLOB_ROUTE.pattern, async (c) => {
+		const id = parseBlobId(c.req.param('blobId'));
+		if (id === undefined) return c.text('Invalid blob id', 400);
+		const result = await blobs.openFile(id);
+		if (result.error !== null) {
+			switch (result.error.name) {
+				case 'BlobNotFound':
+					return c.text('Blob not found', 404);
+				case 'BlobStoreFailed':
+					return c.text('Blob store failed', 500);
+				default:
+					return result.error satisfies never;
+			}
+		}
+		const rangeHeader = c.req.header('range');
+		if (rangeHeader !== undefined) {
+			const range = parseByteRange(rangeHeader, result.data.stat.size);
+			if (range === undefined) {
+				return new Response('Range Not Satisfiable', {
+					status: 416,
+					headers: {
+						...blobResponseHeaders(result.data.stat.contentType),
+						'content-range': `bytes */${result.data.stat.size}`,
+					},
+				});
+			}
+			return new Response(
+				result.data.file.slice(
+					range.start,
+					range.endExclusive,
+					result.data.stat.contentType,
+				),
+				{
+					status: 206,
+					headers: {
+						...blobResponseHeaders(result.data.stat.contentType),
+						'content-length': String(range.endExclusive - range.start),
+						'content-range': `bytes ${range.start}-${range.endExclusive - 1}/${result.data.stat.size}`,
+					},
+				},
+			);
+		}
+		return new Response(result.data.file, {
+			headers: {
+				...blobResponseHeaders(result.data.stat.contentType),
+				'content-length': String(result.data.stat.size),
+			},
+		});
+	});
+
+	app.delete(LOCAL_BLOB_ROUTE.pattern, async (c) => {
+		const id = parseBlobId(c.req.param('blobId'));
+		if (id === undefined) return c.text('Invalid blob id', 400);
+		const result = await blobs.delete(id);
+		if (result.error !== null) return c.text('Blob store failed', 500);
+		return c.body(null, 204);
+	});
+
+	// Remote copy operations: the blob id in the path is the only input. The
+	// host's own deployment authority supplies the target and credential, so
+	// no request body, destination URL, or authorization header is read.
+	const requireBlobRemote = (
+		operate: (
+			remote: BlobRemote,
+			id: BlobId,
+		) => Promise<
+			| Awaited<ReturnType<BlobRemote['upload']>>
+			| Awaited<ReturnType<BlobRemote['download']>>
+			| Awaited<ReturnType<BlobRemote['purge']>>
+		>,
+	) => {
+		return async (c: Context) => {
+			const id = parseBlobId(c.req.param('blobId'));
+			if (id === undefined) return c.text('Invalid blob id', 400);
+			if (blobRemote === null) {
+				return c.text('Remote storage unavailable', 503);
+			}
+			const result = await operate(blobRemote, id);
+			if (result.error === null) return c.body(null, 204);
+			switch (result.error.name) {
+				case 'BlobNotFound':
+				case 'RemoteBlobNotFound':
+					return c.text(result.error.message, 404);
+				case 'BlobStoreFailed':
+					return c.text('Blob store failed', 500);
+				case 'BlobRemoteFailed':
+					return c.text('Remote operation failed', 502);
+				default:
+					return result.error satisfies never;
+			}
+		};
+	};
+	app.post(
+		LOCAL_BLOB_REMOTE_ROUTES.upload.pattern,
+		requireBlobRemote((remote, id) => remote.upload(id)),
+	);
+	app.post(
+		LOCAL_BLOB_REMOTE_ROUTES.download.pattern,
+		requireBlobRemote((remote, id) => remote.download(id)),
+	);
+	app.post(
+		LOCAL_BLOB_REMOTE_ROUTES.purge.pattern,
+		requireBlobRemote((remote, id) => remote.purge(id)),
+	);
+
+	app.post(DESKTOP_EPICENTER_ROUTE, async (c) => {
+		if (!dataOwner) {
+			return c.json(
+				{
+					data: null,
+					error: {
+						name: 'DesktopEpicenterUnavailable',
+						message: 'The desktop Epicenter owner is unavailable.',
+					},
+				} satisfies DesktopResponse,
+				404,
+			);
+		}
+		try {
+			return c.json({
+				data: (await dataOwner.execute(await c.req.json())) ?? null,
+				error: null,
+			} satisfies DesktopResponse);
+		} catch (cause) {
+			// A bound Lens reports its refusals by throwing what a `defineErrors`
+			// factory produced, and those are plain objects rather than `Error`
+			// instances. Describing them is what keeps the variant name, which is
+			// the only thing either client classifies on.
+			const error = describeThrownError(cause);
+			return c.json(
+				{ data: null, error } satisfies DesktopResponse,
+				error.name === EPICENTER_SURFACE_NOT_OPEN_ERROR_NAME ? 409 : 400,
+			);
+		}
+	});
+
+	// One socket per trusted surface, carrying committed addresses and nothing
+	// else. This is Epicenter observing its own replica on behalf of the
+	// surfaces it serves, which is why it does not reopen ADR-0185: that record
+	// refuses observing an installed app's *ordinary* HTTP, and nothing here
+	// reports where an app went or what it sent.
+	app.get(
+		DESKTOP_EPICENTER_OBSERVE_ROUTE,
+		upgradeWebSocket(() => {
+			let unsubscribe: (() => void) | undefined;
+			return {
+				onOpen(_event, ws) {
+					if (!dataOwner) {
+						// Nothing to observe and nothing that will start: closing is
+						// honest, and the client's redial is bounded and cheap.
+						ws.close(1011, 'Desktop Epicenter is unavailable');
+						return;
+					}
+					unsubscribe = dataOwner.subscribeInvalidations(
+						(changes: readonly Address[]) => {
+							const frame: DesktopInvalidationFrame = {
+								type: 'invalidation',
+								changes,
+							};
+							try {
+								sendObservationFrame(ws, frame);
+							} catch (cause) {
+								// A send that fails has already lost a frame, and there is
+								// no way to know how much else this socket would drop. Fail
+								// into the client's reconnect path, which recovers by
+								// invalidating every handle it holds, rather than
+								// continuing on a carrier that silently skips commits.
+								unsubscribe?.();
+								unsubscribe = undefined;
+								ws.close(1011, 'Observation carrier failed');
+								void cause;
+							}
+						},
+					);
+				},
+				onClose() {
+					unsubscribe?.();
+					unsubscribe = undefined;
+				},
+			};
+		}),
 	);
 
 	app.get(
@@ -155,7 +564,7 @@ export function createQueryServer({
 		upgradeWebSocket(() => {
 			let unsubscribe: (() => void) | undefined;
 			const push = (ws: { send(data: string): void }) => {
-				const event: QueryServerEvent = {
+				const event: HomeServerEvent = {
 					type: 'snapshot',
 					snapshot: host.snapshot(),
 				};
@@ -167,9 +576,9 @@ export function createQueryServer({
 					push(ws);
 				},
 				onMessage(event, ws) {
-					const command = parseQueryCommand(parseFrame(event.data));
+					const command = parseHomeCommand(parseFrame(event.data));
 					if (!command) return;
-					host.handleCommand(command);
+					void host.handleCommand(command);
 					push(ws);
 				},
 				onClose() {
@@ -180,6 +589,75 @@ export function createQueryServer({
 	);
 
 	return { app, websocket };
+}
+
+/**
+ * Stamp one served page with the one-shot auth bootstrap.
+ *
+ * This is the only thing the host injects. A surface parses the bootstrap and
+ * then removes it, because it carries an identity snapshot that has no business
+ * sitting in the DOM afterwards, and nothing else may read it: which replica a
+ * surface opens is decided by which build the host serves, not by what survives
+ * in its `<head>`.
+ */
+function injectAuthBootstrap(
+	page: string,
+	snapshot: DesktopAuthAuthority['bootSnapshot'],
+): string {
+	const serialized = JSON.stringify(snapshot).replaceAll('<', '\\u003c');
+	const element = `<script id="epicenter-auth-bootstrap" type="application/json">${serialized}</script>`;
+	const head = page.search(/<\/head\s*>/i);
+	return head === -1
+		? page.replace(/<body\b/i, `${element}<body`)
+		: `${page.slice(0, head)}${element}${page.slice(head)}`;
+}
+
+function blobResponseHeaders(contentType: string): Record<string, string> {
+	return {
+		'accept-ranges': 'bytes',
+		'cache-control': 'no-store',
+		'content-disposition': 'attachment',
+		'content-security-policy': "sandbox; default-src 'none'",
+		'content-type': contentType,
+		'cross-origin-resource-policy': 'same-origin',
+		'x-content-type-options': 'nosniff',
+	};
+}
+
+function parseByteRange(
+	header: string,
+	size: number,
+): { start: number; endExclusive: number } | undefined {
+	const match = /^bytes=(\d*)-(\d*)$/.exec(header);
+	if (match === null || size === 0) return undefined;
+	const [, startText = '', endText = ''] = match;
+	if (startText === '' && endText === '') return undefined;
+
+	if (startText === '') {
+		const suffixLength = Number(endText);
+		if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) {
+			return undefined;
+		}
+		return {
+			start: Math.max(size - suffixLength, 0),
+			endExclusive: size,
+		};
+	}
+
+	const start = Number(startText);
+	if (!Number.isSafeInteger(start) || start < 0 || start >= size) {
+		return undefined;
+	}
+	if (endText === '') return { start, endExclusive: size };
+
+	const inclusiveEnd = Number(endText);
+	if (!Number.isSafeInteger(inclusiveEnd) || inclusiveEnd < start) {
+		return undefined;
+	}
+	return {
+		start,
+		endExclusive: Math.min(inclusiveEnd + 1, size),
+	};
 }
 
 function validateOrigin(origin: string): URL {
@@ -225,7 +703,14 @@ function contentSecurityPolicy(page: string): string {
 		);
 	return [
 		"default-src 'self'",
-		`script-src 'self' ${scriptHashes.join(' ')}`,
+		// `'wasm-unsafe-eval'` permits WebAssembly compilation and nothing else:
+		// it does not restore `eval` or `new Function`, which is why it exists
+		// separately from `'unsafe-eval'`. Voice activity detection runs
+		// onnxruntime in this WebView over assets Epicenter itself ships, so
+		// WebAssembly is a first-party capability of the surface rather than
+		// something a policy is being bent to tolerate. Without it the browser
+		// refuses the compile and the recording trigger dies mid-boot.
+		`script-src 'self' 'wasm-unsafe-eval' ${scriptHashes.join(' ')}`,
 		"style-src 'self' 'unsafe-inline'",
 		"connect-src 'self' ipc: http://ipc.localhost",
 		"img-src 'self' data: blob:",
@@ -235,6 +720,19 @@ function contentSecurityPolicy(page: string): string {
 		"base-uri 'self'",
 		"frame-ancestors 'none'",
 	].join('; ');
+}
+
+async function readJsonObject(
+	request: Request,
+): Promise<Record<string, unknown> | null> {
+	try {
+		const value: unknown = await request.json();
+		return typeof value === 'object' && value !== null && !Array.isArray(value)
+			? (value as Record<string, unknown>)
+			: null;
+	} catch {
+		return null;
+	}
 }
 
 function parseFrame(data: unknown): unknown {

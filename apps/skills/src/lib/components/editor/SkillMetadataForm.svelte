@@ -4,11 +4,11 @@
 	import * as Field from '@epicenter/ui/field';
 	import { Input } from '@epicenter/ui/input';
 	import { Textarea } from '@epicenter/ui/textarea';
-	import {
-		type SkillMetadataUpdate,
-		skillsState,
-	} from '$lib/state/skills-state.svelte';
+	import { getSkillsApp } from '$lib/context.js';
+	import type { SkillMetadataUpdate } from '$lib/state/skills-state.svelte';
 	import { validateSkill } from '$lib/utils/validation';
+
+	const { state: skillsState } = getSkillsApp();
 
 	let { skill }: { skill: Skill } = $props();
 
@@ -26,7 +26,7 @@
 	);
 
 	function updateSkill(updates: SkillMetadataUpdate) {
-		skillsState.updateSkill(skill.id, updates);
+		void skillsState.updateSkill(skill.id, updates);
 	}
 </script>
 
@@ -66,7 +66,7 @@
 				<Input
 					value={skill.license ?? ''}
 					onblur={(e) => {
-						const next = e.currentTarget.value || null;
+						const next = e.currentTarget.value || undefined;
 						if (next !== skill.license) updateSkill({ license: next });
 					}}
 					placeholder="MIT"
@@ -100,7 +100,7 @@
 			<Input
 				value={skill.compatibility ?? ''}
 				onblur={(e) => {
-					const next = e.currentTarget.value || null;
+					const next = e.currentTarget.value || undefined;
 					if (next !== skill.compatibility) updateSkill({ compatibility: next });
 				}}
 				placeholder="Claude Code, OpenCode, Cursor..."

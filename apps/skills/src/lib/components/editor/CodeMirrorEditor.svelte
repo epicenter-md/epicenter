@@ -1,5 +1,10 @@
 <script lang="ts">
-	import { defaultKeymap, indentWithTab } from '@codemirror/commands';
+	import {
+		defaultKeymap,
+		history,
+		historyKeymap,
+		indentWithTab,
+	} from '@codemirror/commands';
 	import { markdown } from '@codemirror/lang-markdown';
 	import {
 		defaultHighlightStyle,
@@ -12,65 +17,70 @@
 		keymap,
 		placeholder,
 	} from '@codemirror/view';
-	import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
-	import type * as Y from 'yjs';
+	import type { RowDocument } from '@epicenter/data';
 
-	let {
-		ytext,
-	}: {
-		ytext: Y.Text;
-	} = $props();
-
+	let { document }: { document: RowDocument } = $props();
 	let container: HTMLDivElement | undefined = $state();
 
 	$effect(() => {
 		if (!container) return;
-
+		const content = document.get('content');
+		let applyingDocumentUpdate = false;
 		const view = new EditorView({
 			state: EditorState.create({
-				doc: ytext.toString(),
+				doc: content.toString(),
 				extensions: [
-					keymap.of([...yUndoManagerKeymap, ...defaultKeymap, indentWithTab]),
+					history(),
+					keymap.of([...historyKeymap, ...defaultKeymap, indentWithTab]),
 					drawSelection(),
 					EditorView.lineWrapping,
 					syntaxHighlighting(defaultHighlightStyle),
 					markdown(),
-					yCollab(ytext, null),
+					EditorView.updateListener.of((update) => {
+						if (update.docChanged && !applyingDocumentUpdate) {
+							const next = update.state.doc.toString();
+							document.transact(() => {
+								content.delete(0, content.length);
+								content.insert(0, next);
+							});
+						}
+					}),
 					placeholder('Write skill instructions here...'),
 					EditorView.theme({
-						'&': {
-							height: '100%',
-							fontSize: '14px',
-						},
+						'&': { height: '100%', fontSize: '14px' },
 						'.cm-scroller': {
 							fontFamily:
 								'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
 							padding: '1rem',
 							overflow: 'auto',
 						},
-						'.cm-content': {
-							caretColor: 'var(--foreground, currentColor)',
-						},
-						'.cm-focused': {
-							outline: 'none',
-						},
-						'.cm-gutters': {
-							display: 'none',
-						},
-						'.cm-activeLine': {
-							backgroundColor: 'transparent',
-						},
+						'.cm-content': { caretColor: 'var(--foreground, currentColor)' },
+						'.cm-focused': { outline: 'none' },
+						'.cm-gutters': { display: 'none' },
+						'.cm-activeLine': { backgroundColor: 'transparent' },
 					}),
 				],
 			}),
 			parent: container,
 		});
-
-		return () => view.destroy();
+		const onDocumentUpdate = () => {
+			const next = content.toString();
+			if (next === view.state.doc.toString()) return;
+			applyingDocumentUpdate = true;
+			try {
+				view.dispatch({
+					changes: { from: 0, to: view.state.doc.length, insert: next },
+				});
+			} finally {
+				applyingDocumentUpdate = false;
+			}
+		};
+		content.observe(onDocumentUpdate);
+		return () => {
+			content.unobserve(onDocumentUpdate);
+			view.destroy();
+		};
 	});
 </script>
 
-<div
-	class="h-full w-full overflow-hidden bg-transparent"
-	bind:this={container}
-></div>
+<div class="h-full w-full overflow-hidden bg-transparent" bind:this={container}></div>

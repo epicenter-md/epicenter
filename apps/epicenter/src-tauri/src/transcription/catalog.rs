@@ -4,10 +4,11 @@
 //!
 //! A model is identified by a stable `modelId` string rendered from its Hugging
 //! Face coordinate as `"{repo_id}@{revision}/{filename}"`. That id is an opaque
-//! catalog key: the webview stores it as the selection and passes it back to
-//! `transcribe_recording`; Rust resolves it to a coordinate by looking it up
-//! here, so an id that is not in the catalog is refused rather than parsed.
-//! (Custom drop-in GGUF is a later earned feature, not a compatibility path.)
+//! catalog key. Epicenter Home names it when it administers models, and the host
+//! stores the one active choice; applications never see it and never pass it to
+//! `transcribe_recording` (ADR-0180). An id outside this catalog is refused
+//! rather than parsed. (Custom drop-in GGUF is a later earned feature, not a
+//! compatibility path.)
 //!
 //! Storage is the shared Hugging Face cache (`~/.cache/huggingface/hub`,
 //! overridable by `HF_HOME`), owned by `hf-hub`: downloads stage, resume, and
@@ -139,28 +140,79 @@ fn find_or_unknown(model_id: &str) -> Result<&'static CatalogEntry, CatalogError
     })
 }
 
-/// Resolve a stored model id to its on-disk GGUF path, or a user-facing message.
-/// The one place `transcribe_recording`/`prewarm_model` turn a selection into a
-/// path: an unknown id or a not-yet-downloaded model both fail here with a
-/// message the settings UI can act on.
-pub fn resolve_model_path(model_id: &str) -> Result<PathBuf, String> {
-    if model_id.is_empty() {
-        return Err("No local model selected. Choose a model in settings.".to_string());
-    }
-    let entry = find(model_id)
-        .ok_or_else(|| format!("Unknown local model \"{model_id}\". Pick a model in settings."))?;
-    entry.cached_path().ok_or_else(|| {
-        format!(
-            "The model \"{}\" is not downloaded yet. Download it in settings.",
-            entry.name
-        )
+/// The on-disk GGUF path for a model that is both in this build's catalog and
+/// present on this machine; `None` otherwise.
+///
+/// The one place `transcribe_recording`/`prewarm_model` turn the active model
+/// into a path. Deliberately a plain `Option`: an id outside the catalog and a
+/// model that is not downloaded are the same public answer ("the active model
+/// cannot run"), and the caller composes the user-facing message so that message
+/// never has to name a model. Resolution happens at the point of use, so a file
+/// that appears on disk after a failed load works on the very next call, and one
+/// deleted behind Epicenter's back is noticed on the very next call too.
+pub fn installed_model_path(model_id: &str) -> Option<PathBuf> {
+    find(model_id).and_then(CatalogEntry::cached_path)
+}
+
+/// The one active local model as **Home** sees it: its exact identity and
+/// whether its file is on this machine right now.
+///
+/// Administration data, not application data (ADR-0180). Home chooses the active
+/// model, so Home is told which one it is; an ordinary application never learns
+/// model identity and reads `get_local_transcription_readiness` instead. Nothing
+/// here reports residency: `installed` is disk presence, and how many models are
+/// resident or warm stays host-private.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ActiveModel {
+    pub id: String,
+    /// The curated display name, so a caller can name the model in an error
+    /// without holding a catalog of its own.
+    pub name: String,
+    /// Whether the model's file is present on this machine. Disk presence, the
+    /// same verdict `list_models` renders; never a statement about memory.
+    pub installed: bool,
+    /// Whether this model accepts an initial prompt, so a caller knows whether
+    /// to offer the field at all. The runtime still guards the real decision at
+    /// use and reports what it applied, so a stale hint can only hide a field,
+    /// never misfeed the model.
+    pub supports_prompt: bool,
+    /// Whether this model takes a spoken-language hint.
+    pub supports_language: bool,
+}
+
+/// Describe a stored model id against the catalog, or `None` when the id names
+/// no model this build ships. Both the settings store (to refuse an unknown
+/// choice) and `get_active_model` (to report identity and presence) read
+/// through here, so there is one answer to "is this a real model".
+pub fn describe(model_id: &str) -> Option<ActiveModel> {
+    find(model_id).map(|entry| ActiveModel {
+        id: entry.id(),
+        name: entry.name.to_string(),
+        installed: entry.cached_path().is_some(),
+        supports_prompt: entry.supports_prompt,
+        supports_language: entry.supports_language,
     })
 }
 
-/// A catalog model as the webview sees it: its identity, display fields, static
-/// capabilities, and whether it is already downloaded. The webview stores only
-/// `id` as the selection and reads capabilities to decide which inference fields
-/// to show; it never learns the coordinate.
+/// Every catalog id. Exists for tests that need a real, resolvable identity
+/// without hard-coding one that the catalog could later drop.
+#[cfg(test)]
+pub fn model_ids() -> Vec<String> {
+    CATALOG.iter().map(|entry| entry.id()).collect()
+}
+
+/// Every catalog display name, so a test can assert that a message an
+/// application receives names none of them.
+#[cfg(test)]
+pub fn model_names() -> Vec<&'static str> {
+    CATALOG.iter().map(|entry| entry.name).collect()
+}
+
+/// A catalog model as Home's administration view sees it: identity, display
+/// fields, static capabilities, and whether it is already downloaded. Home names
+/// `id` when it activates, downloads, or deletes a model; it never learns the
+/// Hugging Face coordinate. Applications see none of this.
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelInfo {
@@ -290,16 +342,46 @@ pub async fn download_model(
 }
 
 /// Remove a downloaded model's file from the shared HF cache, reclaiming its
-/// space. Best-effort: removes the snapshot pointer and its backing blob. A
+/// space, and stand down the active choice if this was it.
+///
+/// One host operation, not two invokes, because the host owns both halves: the
+/// file and the active-model setting live on the same side of the boundary, and
+/// splitting them would let a caller succeed at deleting and then fail (or
+/// forget) to clear, leaving an active model that cannot run and a UI that never
+/// learned. Clearing is deliberate rather than promoting another installed
+/// model: there is no substitution, so the next transcription fails with an
+/// actionable error until the user chooses again.
+///
+/// Best-effort on the file: removes the snapshot pointer and its backing blob. A
 /// no-op when the model is not downloaded. Other quantizations in the same repo
 /// are untouched (each is its own blob + pointer).
 #[tauri::command]
 #[specta::specta]
-pub fn delete_model(model_id: String) -> Result<(), CatalogError> {
+pub fn delete_model(
+    model_id: String,
+    model_cache: State<'_, crate::transcription::ModelCache>,
+) -> Result<(), CatalogError> {
     let entry = find_or_unknown(&model_id)?;
+    let settings = model_cache.settings();
+
+    let clear_active_choice = || -> Result<(), CatalogError> {
+        if settings.active_model_id().as_deref() != Some(model_id.as_str()) {
+            return Ok(());
+        }
+        settings
+            .set_active_model_id(None)
+            .map_err(|error| CatalogError::DeleteFailed {
+                message: format!(
+                    "Removed the model file, but could not clear it as the active model: {error}"
+                ),
+            })
+    };
 
     let Some(pointer) = entry.cached_path() else {
-        return Ok(());
+        // Nothing on disk, but it may still be the stored choice: a file deleted
+        // outside Epicenter leaves exactly that state, and this is where it gets
+        // reconciled.
+        return clear_active_choice();
     };
 
     // The pointer is a symlink into `blobs/{etag}`; resolve it before unlinking
@@ -314,5 +396,5 @@ pub fn delete_model(model_id: String) -> Result<(), CatalogError> {
         // model already reads as not-downloaded (its pointer is gone).
         let _ = std::fs::remove_file(blob);
     }
-    Ok(())
+    clear_active_choice()
 }

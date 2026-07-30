@@ -1,274 +1,250 @@
 # Epicenter architecture
-Epicenter is one composition story. The core packages define the local-first model, the middle layer turns that model into app-shaped tools, and the apps decide which runtime pieces to compose.
-The current center is `createWorkspace -> create<App> -> open<App>Browser/open<App>Daemon/open<App>Tauri`. That order matters because Epicenter keeps schema definition pure, keeps the shared app model isomorphic, and pushes runtime side effects to the edge.
-This is the five-minute map. It explains how the packages interlock without redoing the full `@epicenter/workspace` README.
 
-## The stack in one picture
-The dependency shape runs bottom to top. Apps depend on middleware; middleware depends on the core; the core stays small and reusable.
+Epicenter is a local-first workspace platform. Apps define stable workspace
+families, clients keep complete local data, and a hosted or self-hosted star
+keeps devices synchronized while they sleep.
+
+This page is the five-minute map. Durable decisions live in
+[`docs/adr`](adr/README.md). Shared vocabulary lives in
+[`docs/CONTEXT.md`](CONTEXT.md). Package-owned current behavior belongs in
+package READMEs and code.
+
+The greenfield replacement destination is documented in
+[`One Epicenter, namespaces, and Lenses`](architecture/one-epicenter-namespaces-and-lenses.md).
+Its ADRs are decision-complete but remain Proposed until the implementation
+lands. This page continues to describe the active Workspace architecture during
+that replacement.
+
+## The stack
+
+Apps compose middleware and core packages. Dependencies point downward; product
+policy stays in the app that can name it.
 
 ```text
 +----------------------------------------------------------------------------+
 | APPS                                                                       |
 |                                                                            |
-| opensidian   whispering   tab-manager   vocab                              |
-| honeycrisp   self-host    api           landing                            |
+| whispering   honeycrisp   epicenter   tab-manager   api   self-host        |
+| landing      local-books  local-mail                                       |
 +----------------------------------------------------------------------------+
                                       |
                                       v
 +----------------------------------------------------------------------------+
 | MIDDLEWARE                                                                 |
 |                                                                            |
-| @epicenter/svelte      (packages/svelte-utils)                             |
-| @epicenter/filesystem                                                      |
-| @epicenter/skills                                                          |
-| @epicenter/workspace/agent                                                 |
+| @epicenter/svelte      @epicenter/filesystem                               |
+| @epicenter/skills      app-owned runtime composition per environment       |
 +----------------------------------------------------------------------------+
                                       |
                                       v
 +----------------------------------------------------------------------------+
 | CORE                                                                       |
 |                                                                            |
-| @epicenter/workspace   @epicenter/sync   @epicenter/constants   @epicenter/ui |
+| @epicenter/workspace   @epicenter/data       @epicenter/sync               |
+| @epicenter/lens        @epicenter/field      @epicenter/constants          |
+| @epicenter/ui                                                              |
 +----------------------------------------------------------------------------+
 ```
-`@epicenter/workspace` is the center of gravity. It defines the schema layer, creates the live Yjs-backed client, owns the extension lifecycle, and exposes tables, KV, documents, presence, and actions.
-`@epicenter/sync` is the wire format, not the app model. It exports protocol primitives like `encodeSyncStep1`, `encodeSyncUpdate`, `decodeSyncMessage` so server and client can speak the same binary language without duplicating protocol logic.
-`@epicenter/constants` is the routing glue. It gives apps one source of truth for URLs, ports, and versioning so sync endpoints, auth URLs, and cross-app links do not drift.
-`@epicenter/ui` is the shared presentation layer. It knows Svelte components, not Yjs semantics.
-The middleware layer is where workspace data starts feeling like an application. `@epicenter/svelte` turns workspace helpers into reactive Svelte state, `@epicenter/filesystem` turns workspace rows and documents into a POSIX-style filesystem, `@epicenter/skills` proves that whole workspaces can be packaged and embedded as data products, and `@epicenter/workspace/agent` projects workspace actions into local agent tool catalogs.
-The apps are thin by comparison. Each app owns a shared `create<App>()` model, then runtime openers attach browser, daemon, or Tauri concerns on top.
 
-## The lifecycle: define, create, open, attach
-The verbs are the architecture. If you remember nothing else, remember that Epicenter keeps these stages separate on purpose.
+`@epicenter/workspace` owns the app-facing data contract and runtime handles.
+`@epicenter/field` supplies the release-local projection vocabulary.
+`@epicenter/data` owns the portable scalar row protocol: row intent folding,
+exact retry, fact paging, admission, and the local SQLite replica that
+materializes it. `@epicenter/lens` supplies the definitions, structured
+addresses, and canonical JSON that protocol builds on. There is no separate
+scalar protocol package. Row-addressed Yjs 14 connections synchronize lazy row
+documents independently.
 
-### 1. Define is pure
-`defineTable` and `defineKv` are pure declarations. They do not create a `Y.Doc`, open IndexedDB, start a WebSocket, or touch the network.
+## Workspace definitions are app contracts
 
-```ts
-import { field } from '@epicenter/field';
-import {
-	defineKv,
-	defineTable,
-} from '@epicenter/workspace';
-import Type from 'typebox';
-
-const files = defineTable({
-	id: field.string(),
-	name: field.string(),
-});
-
-const themeMode = defineKv(
-	Type.Union([Type.Literal('light'), Type.Literal('dark'), Type.Literal('system')]),
-	() => 'system',
-);
-```
-
-That purity is what makes cross-package reuse work. The same table and KV declarations can be imported by an app, a CLI tool, a migration utility, a test, or another package without dragging runtime side effects along for the ride.
-
-### 2. `createWorkspace` is where the live bundle appears
-`createWorkspace({ id, tables, kv })` is the boundary where static meaning turns into live state. It allocates the `Y.Doc`, registers and activates every typed table and KV slot atomically, and returns a typed bundle. The bundle owns the Y.Doc lifecycle: `[Symbol.dispose]()` calls `ydoc.destroy()`, and cascade disposal tears every attached store down.
-
-```ts
-import { createWorkspace } from '@epicenter/workspace';
-
-const workspace = createWorkspace({
-	id: 'example.app',
-	tables: { files },
-	kv: { themeMode },
-});
-
-workspace.tables.files.set({ id: 'readme.md', name: 'README.md' });
-```
-
-The split is conceptual, not cosmetic. Definitions describe what data means; `createWorkspace` is the runtime that can actually hold and mutate that data.
-
-### 3. App factories create the shared model
-Apps wrap `createWorkspace` in a per-app factory. That is where the app id, table set, actions, and shared child-doc model live.
-
-```txt
-createWorkspace()
-  -> honeycrispWorkspace (defineWorkspace())
-    -> openHoneycrispBrowser()
-```
-
-Use `defineWorkspace()` when returning the composed object so TypeScript keeps the exact inferred bundle shape after spreads.
-
-### 4. Runtime openers attach resources
-There is no plugin chain. Persistence, indexing, and materializers all mount through `attach*` functions; the workspace's network surface (sync + presence) mounts through the `openCollaboration` primitive. Runtime openers compose them inline against `workspace.ydoc` after `create<App>()`.
-
-The example below syncs a cloud document. A cloud doc is scoped to the authenticated `principalId` and addressed by its own `ydoc.guid`, so the client builds the URL with `roomWsUrl({ baseURL, guid: ydoc.guid, nodeId })`; the server resolves it from the authenticated principal and room id. There is no workspace lookup.
-
-```ts
-import {
-	attachIndexedDb,
-	createWorkspace,
-	openCollaboration,
-	roomWsUrl,
-} from '@epicenter/workspace';
-
-const workspace = createWorkspace({
-	id: 'example.app',
-	tables: { files },
-	kv: { themeMode },
-});
-const idb = attachIndexedDb(workspace.ydoc);
-const collaboration = openCollaboration(workspace.ydoc, {
-	url: roomWsUrl({
-		baseURL: auth.deployment.baseURL,
-		guid: workspace.ydoc.guid,
-		nodeId,
-	}),
-	openWebSocket: auth.openWebSocket,
-	onReconnectSignal: auth.onStateChange,
-	waitFor: idb.whenLoaded,
-});
-```
-
-Ordering is lexical. `openCollaboration` reads `idb.whenLoaded` as `waitFor` because `idb` is already in scope. Later attachments see earlier ones directly. There is no context object to route through.
-
-For extensions that need their own Y.Doc per row (file content, note bodies), use sub-doc primitives like `attachRichText(childYdoc)` or `attachTimeline(childYdoc)` against a raw `Y.Doc`, then mount `openCollaboration` on it for sync and presence.
-
-### 5. Collaboration is just another runtime opener, but it changes the topology
-`openCollaboration` does not own the document. It attaches to a Y.Doc that already exists and starts moving CRDT updates between peers. The relay publishes presence over its own channel. Action invocation lives on workspace and daemon runtime surfaces, outside collaboration. The `waitFor: idb.whenLoaded` option ensures local state is replayed first, so the initial handshake is a delta, not a full document transfer.
-
-Local state exists first, then optional durability, then optional network coordination.
-
-## The async boundary is `whenReady`
-The builder runs synchronously, but attachments load asynchronously. Conventionally the bundle exposes a `whenReady` promise, usually `idb.whenLoaded`, so callers can await full local availability:
-
-```ts
-// Reactive callers (Svelte $effect, {#await}) construct and gate on whenReady.
-const workspace = createWorkspace({ id: 'example.app', tables, kv });
-const idb = attachIndexedDb(workspace.ydoc);
-await idb.whenLoaded;
-```
-
-That promise is the line between construction and full availability. Construct synchronously, await whichever attachment exposes the relevant readiness signal.
-
-## Disposal cascades from `ydoc.destroy()`
-Teardown runs through Yjs itself. Every async `attach*` function registers `ydoc.once('destroy')` internally, so when the workspace bundle's `[Symbol.dispose]()` calls `ydoc.destroy()`, every attachment starts teardown in parallel. Attachments with genuine async cleanup expose `whenDisposed` for the callers that need a barrier:
-
-```ts
-workspace[Symbol.dispose]();
-await workspace.idb.whenDisposed;
-await workspace.collaboration.whenDisposed;
-```
-
-Browser bundles expose `wipe()` for explicit local cleanup such as "Forget this device." Sign-out does not call it. The wipe sequence disposes the live bundle, awaits the async attachments needed to unblock storage deletion, then deletes persisted local state. The refcounted cache still calls `[Symbol.dispose]()` on the last release after the `gcTime` grace period; it does not aggregate an async disposal barrier.
-
-## Write and read flow
-Writes always hit Yjs first. Everything else reacts to that state instead of becoming a competing source of truth.
+A workspace definition is pure. It names release-local table and KV lenses
+without opening storage or a network connection. Every ordinary row owns one
+latent Yjs document; document roots remain application-owned.
 
 ```text
-WRITE FLOW
-
-app code / action / UI event
-            |
-            v
-   workspace.tables / kv / documents
-            |
-            v
-          Y.Doc
-            |
-   +--------+---------------+---------------+
-   v        v               v               v
-persistence sync       sqlite index   markdown/file views
-IndexedDB   WebSocket  or search      or other materializers
-SQLite      relay      extensions     built from workspace data
+defineWorkspace({ id, tables, kv })
+        |
+        | pure app contract
+        v
+runtime.open(definition)             Browser, Bun, desktop, or hosted runtime
 ```
 
-Reads split by purpose. Simple reads stay in the workspace client, while derived reads can come from extension exports built on top of that same client state.
+Definitions are not storage schemas. A new release may change its lens
+immediately. Nonconforming rows remain stored and visible to repair code.
+
+An Account workspace synchronizes scalar rows automatically. Scalar
+`sync.settle()` waits for the scalar work present at invocation and the
+authority state that confirms it. Each open document persists automatically;
+its `whenDurable()` covers only the local Yjs provider and its connection status
+reports document-network progress. Neither barrier impersonates the other.
+
+Device and Account storage are independent owners. Account `open()` never reads
+Device data. Products implement consent with Device `capture()` and `delete()`,
+Account `add()`, or no call for Keep.
+
+Runtime openers supply the resources that cannot travel with the definition:
+browser storage, desktop storage, row synchronization, materializers, auth, and
+platform APIs. App-facing code should enter through the workspace definition
+instead of rebuilding addresses or storage topology itself.
+
+The client planes meet only at the workspace handle and the server authority:
 
 ```text
-READ FLOW
+Browser page: live Yjs 14 docs  ------ socket per open document --------+
+Browser Worker: OPFS SQLite                                             |
+  (scalar rows + document log)  ------ scalar row HTTP protocol --------+-- workspace authority
 
-          Y.Doc
-            |
-   +--------+---------------+-------------------------+
-   v        v               v                         v
-tables      kv             documents                 extensions
-typed rows  settings       per-row content docs      indexes/materializers
-   |         |               |                         |
-   +---------+---------------+-------------------------+
-                             |
-                             v
-                          app UI
+Native host: live Yjs 14 docs  ------- socket per open document --------+
+Native host: SQLite
+  (scalar rows + document log)  ------ scalar row HTTP protocol --------+
 ```
 
-That model is why Epicenter can mix SQL-like lookup, filesystem semantics, and collaborative document editing without splitting the truth into three different stores. They are three views over one CRDT core.
+One `store.sqlite3` per workspace holds both scalar rows and the document
+update log (ADR-0156), but co-location is not a cross-plane transaction
+contract: the planes stay independently synchronized.
 
-## Opensidian is the best concrete example
-Opensidian composes nearly every layer inline in a per-app browser opener. Its schema starts with `filesTable` from `@epicenter/filesystem`, adds chat tables locally, and constructs the shared app model with `createOpensidian`.
+## The scalar row plane is the ordered queryable core
 
-```ts
-import {
-	attachIndexedDb,
-	defineActions,
-	defineQuery,
-	defineWorkspace,
-	openCollaboration,
-	roomWsUrl,
-} from '@epicenter/workspace';
-import { createOpensidian } from 'opensidian';
-
-export function openOpensidianBrowser() {
-	const workspace = createOpensidian();
-	const idb = attachIndexedDb(workspace.ydoc);
-	const fs = attachYjsFileSystem(workspace.ydoc, workspace.tables.files, fileContent);
-	const sqliteIndex = createSqliteIndex({
-		readContent: fileContent.read,
-		index: fs.index,
-	})({ tables: workspace.tables });
-	const actions = defineActions({
-		files_search: defineQuery({
-			handler: async ({ query }) => sqliteIndex.exports.search(query),
-		}),
-	});
-	const collaboration = openCollaboration(workspace.ydoc, {
-		url: roomWsUrl({
-			baseURL: auth.deployment.baseURL,
-			guid: workspace.ydoc.guid,
-			nodeId,
-		}),
-		openWebSocket: auth.openWebSocket,
-		onReconnectSignal: auth.onStateChange,
-		waitFor: idb.whenLoaded,
-	});
-	return defineWorkspace({ ...workspace, idb, collaboration, fs, sqliteIndex, actions });
-}
-```
-
-That bundle then feeds other middleware packages. `attachYjsFileSystem(workspace.ydoc, workspace.tables.files, fileContent)` turns the files table plus content docs into a real virtual filesystem, and its `fs.index` is the single owner of path validity that the sqlite mirror converges to; `createLocalToolCatalog(workspace.actions)` from `@epicenter/workspace/agent` exposes the same action handlers to the chat loop; per-row content docs use sub-doc primitives like `attachRichText`; `createAppAuthClient()` and `createSameOriginCookieAuth()` from `@epicenter/svelte/auth` coordinate identity, fetch, and WebSocket auth, while `toConnection(auth, nodeId)` supplies the boot-time connection (the signed-in principal and WebSocket transport, or `null` signed out) to the workspace boot call.
+Workspace table fields and workspace KV reduce to scalar row intents. Document
+updates never cross this boundary.
 
 ```text
-createOpensidian()
-    |
-    +-- workspace.ydoc, workspace.tables, workspace.kv
-    +-- attachIndexedDb(workspace.ydoc)
-    +-- openCollaboration(workspace.ydoc, { url, openWebSocket, onReconnectSignal, waitFor: idb.whenLoaded })
-    |
-    +-- attachYjsFileSystem(...)              -> editor + terminal + file tree
-    +-- createSqliteIndex({ index: fs.index })-> SQL mirror, paths owned by fs.index
-    +-- createLocalToolCatalog(actions)       -> local agent tool definitions + resolution
-    +-- agent loop approval policy            -> queries auto, mutations gated
-    +-- attachRichText(childYdoc) per file    -> per-row content docs
-    +-- fromTable / fromKv / auth             -> reactive Svelte app state
+workspace scalar runtime
+  create/update/delete row fields and kv
+        |
+        v
+scalar row protocol
+  RowIntent, sealed rounds, receipts, current-state pages
+        |
+        v
+workspace authority
+  SQLite-backed fold, receipts, paging, compaction, acquisition
 ```
 
-That is the whole monorepo in miniature. The app is mostly composition code because the packages under it already agree on the same runtime shape.
+The workspace authority is schema-blind. It orders semantically valid row
+intents and folds them into deterministic outcomes. It does not rename fields,
+apply defaults, heal application data, or synchronize a device SQLite file as
+the wire format.
 
-## The sync philosophy is dumb server, smart client
-The server is a relay, not the authority. Clients own schema meaning, table helpers, migrations, action handlers, and most of the user-facing behavior.
+Each synchronized client tracks:
 
-`@epicenter/sync` reflects that philosophy in its API. It exports protocol encode/decode functions, while `openCollaboration` plugs those primitives into a live workspace that already knows how to read and write its own data.
+```text
+retired receipt  exact outgoing round already installed locally
+checkpoint       authority state this client installed
+open intents     compactable local work not yet sent
+sealed intents   immutable exact-retry payload
+```
 
-That means the server does not need to understand your tables. It forwards Yjs sync messages. Presence is server state: the relay owns the `connections` map and pushes a `presence` text frame, the full list of connected installs, on every change. Neither sync nor presence needs the server to decode your data.
+The authority receipt contains the accepted round, request digest, and the
+sequence through which that round changed current state. The client retires its
+sealed overlay only after pull installs state through that sequence. The digest
+is the safety witness that stops a restored or copied private database from
+silently retiring different content under the same round.
 
-This is what "smart client" means here. The client can boot locally, read persisted state, expose actions, open document timelines, and keep working offline before the network helps at all.
+For protocol details and executable coverage, read
+[`packages/data/src/protocol/v1`](../packages/data/src/protocol/v1) and
+[`packages/data/src/protocol/protocol.test.ts`](../packages/data/src/protocol/protocol.test.ts).
 
-This is what "dumb server" means here. The server helps peers find each other and exchange updates, but it is not where the data model becomes valid or meaningful.
+## Documents are a lazy Yjs 14 plane
 
-## The shortest accurate mental model
-Epicenter defines data first. `@epicenter/workspace` gives that data a live Yjs document via `createWorkspace({ id, tables, kv })`, app packages wrap it as `create<App>()`, runtime openers attach durability and transport, middleware packages reinterpret the same bundle for files, skills, Svelte state, and AI tools, and the apps compose those layers into actual products.
+Documents remain the right representation for merge-sensitive content. Every
+ordinary row owns latent Yjs state under the same identity and lifecycle as its
+fields. The workspace API exposes that state through the row's singular
+document handle.
 
-Everything after that is detail. Useful detail, but still detail.
+Opening a document hydrates its durable update log before networking. Every
+runtime persists documents in the workspace's own SQLite store: the records
+Worker owns it in the browser, the Bun host owns it natively, and renderer
+surfaces reach it through a narrow asynchronous load/append seam (ADR-0156).
+Releasing the last handle unloads live state without deleting it. Deleting the
+row revokes its handles and deletes its durable log in the same transaction.
+
+Each currently open row document uses one Yjs 14 WebSocket. Every such
+connection and the scalar HTTP protocol terminate at the same account
+authority actor, which owns exact row liveness and deletion without putting
+document updates in `RowIntent`. Closed documents use no socket, and the
+server retains no live document state: it hydrates disposable committed state
+per admission and per accepted update. Yjs supplies merge semantics inside a
+row, but it is not a second public identity or lifecycle.
+
+Document admission has three facts and one surface. The upgrade credential
+authenticates a principal. The authority address derives deterministically
+from that principal alone (ADR-0092: the principal is the partition, and here
+also the actor), so a workspace id is a name inside the requester's own
+partition and no request can address another principal's state; there is no
+catalog, grant, or per-request authorization lookup. Finally, the authority
+checks whether the route's `(table, rowId)` is live. A not-live row closes
+retryably with no reserved code; the client's own scalar plane knows whether
+its row is still awaiting admission, and scalar synchronization installing a
+deletion is what revokes the open document. There is no terminal document
+verdict on the wire: the authority enforces the compound document bound
+(bytes and struct count of the canonical post-candidate state, ADR-0146)
+exactly inside the append transaction, clients estimate the same bound and
+suppress sending while over it, and close 1009 is only a defensive backstop
+against a stale estimate. The row address is not a
+capability. Every update rechecks liveness in its SQLite transaction. Row
+deletion removes the row, records a bounded deletion marker, and removes the
+server document snapshot and update log in one transaction, then closes the
+row's sockets. A crash before those closes cannot resurrect bytes because
+acceptance rechecks liveness against committed state.
+
+On Cloudflare, each hibernating socket stores its one fixed structured address
+within the platform's 16,384 byte attachment limit. Fanout enumerates the
+actor's sockets and compares complete attachment addresses; open documents are
+few by product premise, so no tag index ships until measured socket counts
+earn one. This uses the platform's per-socket recovery instead of persisting a
+mutable multiplex subscription set. The platform permits at most 32,768
+hibernating sockets per actor. Multiplexing remains refused until measured
+open-document socket pressure earns its additional protocol state.
+
+This document plane uses `@y/y` 14 only. It provides no Yjs 13 dependency,
+persisted-state reader, alias, migration path, dual wire, or fallback.
+
+## Lens evolution never migrates user data implicitly
+
+Definitions are views over durable JSON. A release may add a required field,
+remove a field, or change validation. Rows that no longer conform remain
+preserved as canonical data and surface as nonconforming for that release's
+Lens. The runtime does not copy a database, execute an upcaster, add fallback
+keys, or reinterpret old writes.
+
+When product semantics require conversion, the application owns a normal,
+explicit repair loop. It may recognize an old shape, compute the new value, and
+issue bounded typed patches. Mixed releases may disagree until the repair
+converges; that is honest application behavior rather than a platform migration
+protocol.
+
+```text
+durable JSON stays unchanged
+        |
+        +-- old release lens -> one interpretation
+        `-- new release lens -> typed rows plus nonconforming diagnostics
+```
+
+## The star owns availability, not application meaning
+
+A star is the runnable deployment that holds a person's synchronized data. The
+hosted Cloud app and the self-hosted instance use the same shared server library
+but resolve principals differently.
+
+The workspace authority backend owns scalar ordering, receipts, current rows,
+complete-state acquisition, and the separate row-document connections.
+Application releases own field validation, document roots, and explicit repair
+code. Blob storage holds large binaries by reference.
+
+This separation keeps the privacy question concrete. Epicenter can run the
+star, or the user can run it. In either topology, apps keep their schema meaning
+and product policy at the client boundary.
+
+## Current transition
+
+The Proposed clean break is queryable SQLite scalars plus runtime-native Yjs 14
+document providers, terminating at one workspace authority through separate
+protocols. Current code still contains the combined row/document replica,
+per-document Yjs 13 rooms, and root-Y.Doc-era paths. Treat all three as
+transition surfaces, not ownership boundaries.
+
+During the transition, use accepted ADRs, package READMEs, executable tests, and
+code as current implementation truth. Use this architecture page to judge
+conversions, delete legacy branches, and prevent root-Y.Doc topology from
+leaking back into the selected vocabulary.

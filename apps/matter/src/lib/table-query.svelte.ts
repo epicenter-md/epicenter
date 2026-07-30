@@ -33,8 +33,8 @@ export type Sort = { column: string; dir: 'asc' | 'desc' };
 export function createTableQuery(mirror: Mirror, tableName: () => string) {
 	let where = $state('');
 	let match = $state('');
-	let sort = $state<Sort>();
-	let orderedStems = $state<string[]>();
+	let sort = $state.raw<Sort>();
+	let orderedStems = $state.raw<string[]>();
 	let error = $state<string>();
 
 	// Active when any control is set. The grid reads this for its "X of Y" count and empty-state copy,

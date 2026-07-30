@@ -1,5 +1,5 @@
 /**
- * Query Host Tests
+ * Home Host Tests
  *
  * Verifies that the host composes built-in app actions, optional Local Books
  * MCP tools, and one durable local replica set into a single conversation
@@ -21,14 +21,11 @@ import type {
 	AgentMessagePart,
 	Approval,
 	EngineChunk,
-} from '@epicenter/workspace/agent';
-import { bunLocalPersistence } from '@epicenter/workspace/node';
-import {
-	createQueryHost,
-	parseQueryCommand,
-	type QueryHostOptions,
-} from './host.ts';
-import { queryWorkspace } from './workspace.ts';
+} from '@epicenter/agent';
+import { openBunEpicenter } from '@epicenter/data/bun';
+import { type HomeHostInputs, parseHomeCommand } from './host.ts';
+import { createOwnedTestHomeHost } from './test-home-host.ts';
+import { homeLens } from './workspace.ts';
 
 const FIXTURE = new URL('../test-fixtures/mini-mcp-server.ts', import.meta.url)
 	.pathname;
@@ -58,8 +55,13 @@ function testDataDir(): string {
 
 const TEST_MODEL = 'test-model';
 
-function createTestHost(options: Omit<QueryHostOptions, 'dataDir' | 'model'>) {
-	return createQueryHost({
+function createTestHost(
+	options: Pick<
+		HomeHostInputs,
+		'approval' | 'engine' | 'localBooks' | 'localSource'
+	>,
+) {
+	return createOwnedTestHomeHost({
 		dataDir: testDataDir(),
 		model: TEST_MODEL,
 		...options,
@@ -91,26 +93,21 @@ function toolResults(parts: AgentMessagePart[]) {
 
 /** Read the conversation rows a disposed host left behind in its data dir. */
 async function readConversationRows(dataDir: string) {
-	const replica = queryWorkspace.connect(null, {
-		persistence: bunLocalPersistence({ dir: dataDir }),
+	await using epicenter = await openBunEpicenter({
+		directory: join(dataDir, 'data'),
 	});
-	try {
-		await replica.storage.whenLoaded;
-		return replica.tables.conversations.scan().rows;
-	} finally {
-		replica[Symbol.dispose]();
-		await replica.storage.whenDisposed;
-	}
+	const conversations = epicenter.bind(homeLens).tables.conversations;
+	return (await conversations.scan()).rows;
 }
 
-describe('createQueryHost', () => {
+describe('createHomeHost', () => {
 	test('composes the in-process apps under namespaced verbs', async () => {
 		await using host = await createTestHost({
 			engine: scriptedEngine([[]]),
 		});
 		const names = host.toolDefinitions().map((d) => d.name);
-		expect(names).toContain('todos__todos_create');
-		expect(names).toContain('todos__todos_list');
+		expect(names).toContain('honeycrisp__folders_create');
+		expect(names).toContain('honeycrisp__folders_list');
 		expect(names).toContain('honeycrisp__folders_delete');
 	});
 
@@ -120,18 +117,21 @@ describe('createQueryHost', () => {
 				{
 					type: 'tool-call',
 					toolCallId: 'call-1',
-					toolName: 'todos__todos_create',
-					input: { title: 'Buy milk' },
+					toolName: 'honeycrisp__folders_create',
+					input: { name: 'Buy milk' },
 				},
 			],
-			[{ type: 'text-delta', delta: 'Created your todo.' }],
+			[{ type: 'text-delta', delta: 'Created your folder.' }],
 		]);
 		await using host = await createTestHost({
 			engine,
 			approval: APPROVE_ALL,
 		});
 
-		host.handleCommand({ type: 'send', content: 'add buy milk to my todos' });
+		await host.handleCommand({
+			type: 'send',
+			content: 'create a Honeycrisp folder',
+		});
 		await settle(host);
 
 		const { messages, error } = host.snapshot().conversation;
@@ -139,11 +139,11 @@ describe('createQueryHost', () => {
 		const results = messages.flatMap((m) => toolResults(m.parts));
 		expect(results).toHaveLength(1);
 		expect(results[0]!.isError).toBe(false);
-		// todos_create returns the created TodoId: proof the verb ran in-process.
+		// folders_create returns the created folder row: proof the verb ran in-process.
 		expect(typeof results[0]!.content).toBe('string');
 		expect(messages.at(-1)!.parts).toContainEqual({
 			type: 'text',
-			text: 'Created your todo.',
+			text: 'Created your folder.',
 		});
 	});
 
@@ -153,17 +153,17 @@ describe('createQueryHost', () => {
 				{
 					type: 'tool-call',
 					toolCallId: 'call-1',
-					toolName: 'todos__todos_create',
-					input: { title: 'Needs approval' },
+					toolName: 'honeycrisp__folders_create',
+					input: { name: 'Needs approval' },
 				},
 			],
 			[{ type: 'text-delta', delta: 'Created after approval.' }],
 		]);
 		await using host = await createTestHost({ engine });
 
-		expect(host.handleCommand({ type: 'send', content: 'add a todo' })).toBe(
-			true,
-		);
+		expect(
+			await host.handleCommand({ type: 'send', content: 'create a folder' }),
+		).toBe(true);
 		await waitFor(
 			() => host.snapshot().pendingApprovals.length === 1,
 			'a pending approval',
@@ -173,13 +173,13 @@ describe('createQueryHost', () => {
 		expect(approval).toEqual(
 			expect.objectContaining({
 				toolCallId: 'call-1',
-				toolName: 'todos__todos_create',
-				input: { title: 'Needs approval' },
+				toolName: 'honeycrisp__folders_create',
+				input: { name: 'Needs approval' },
 			}),
 		);
 
 		expect(
-			host.handleCommand({
+			await host.handleCommand({
 				type: 'approve',
 				requestId: approval!.id,
 				approved: true,
@@ -205,8 +205,8 @@ describe('createQueryHost', () => {
 				{
 					type: 'tool-call',
 					toolCallId: 'call-1',
-					toolName: 'todos__todos_create',
-					input: { title: 'First' },
+					toolName: 'honeycrisp__folders_create',
+					input: { name: 'First' },
 				},
 			],
 			[{ type: 'text-delta', delta: 'Created first.' }],
@@ -214,21 +214,21 @@ describe('createQueryHost', () => {
 				{
 					type: 'tool-call',
 					toolCallId: 'call-2',
-					toolName: 'todos__todos_create',
-					input: { title: 'Second' },
+					toolName: 'honeycrisp__folders_create',
+					input: { name: 'Second' },
 				},
 			],
 			[{ type: 'text-delta', delta: 'Created second.' }],
 		]);
 		await using host = await createTestHost({ engine });
 
-		host.handleCommand({ type: 'send', content: 'add first' });
+		await host.handleCommand({ type: 'send', content: 'add first' });
 		await waitFor(
 			() => host.snapshot().pendingApprovals.length === 1,
 			'the first approval',
 		);
 		const [approval] = host.snapshot().pendingApprovals;
-		host.handleCommand({
+		await host.handleCommand({
 			type: 'approve',
 			requestId: approval!.id,
 			approved: true,
@@ -236,7 +236,7 @@ describe('createQueryHost', () => {
 		});
 		await settle(host);
 
-		host.handleCommand({ type: 'send', content: 'add second' });
+		await host.handleCommand({ type: 'send', content: 'add second' });
 		await settle(host);
 
 		expect(host.snapshot().pendingApprovals).toEqual([]);
@@ -285,7 +285,7 @@ describe('createQueryHost', () => {
 			.find((d) => d.name === 'localbooks__customers');
 		expect(customers?.kind).toBe('query');
 
-		host.handleCommand({ type: 'send', content: 'who owes me money?' });
+		await host.handleCommand({ type: 'send', content: 'who owes me money?' });
 		await settle(host);
 
 		const { messages, error } = host.snapshot().conversation;
@@ -299,18 +299,21 @@ describe('createQueryHost', () => {
 	test('a second host over the same data dir resumes the persisted transcript', async () => {
 		const dataDir = testDataDir();
 		{
-			await using host = await createQueryHost({
+			await using host = await createOwnedTestHomeHost({
 				dataDir,
 				model: TEST_MODEL,
 				engine: scriptedEngine([
 					[{ type: 'text-delta', delta: 'Hello from host A.' }],
 				]),
 			});
-			host.handleCommand({ type: 'send', content: 'remember this session' });
+			await host.handleCommand({
+				type: 'send',
+				content: 'remember this session',
+			});
 			await settle(host);
 		}
 
-		await using host = await createQueryHost({
+		await using host = await createOwnedTestHomeHost({
 			dataDir,
 			model: TEST_MODEL,
 			engine: scriptedEngine([[]]),
@@ -327,27 +330,29 @@ describe('createQueryHost', () => {
 		});
 	});
 
-	test('no send leaves no conversation row; the first send mints one with title and model', async () => {
+	test('boot creates one blank conversation; the first send names it', async () => {
 		const dataDir = testDataDir();
 		// Boot and dispose without ever sending.
 		await (
-			await createQueryHost({
+			await createOwnedTestHomeHost({
 				dataDir,
 				model: TEST_MODEL,
 				engine: scriptedEngine([[]]),
 			})
 		)[Symbol.asyncDispose]();
-		expect(await readConversationRows(dataDir)).toHaveLength(0);
+		const blankRows = await readConversationRows(dataDir);
+		expect(blankRows).toHaveLength(1);
+		expect(blankRows[0]!.title).toBe('New Chat');
 
 		const content =
 			'summarize the quarterly numbers and flag anything that looks off';
 		{
-			await using host = await createQueryHost({
+			await using host = await createOwnedTestHomeHost({
 				dataDir,
 				model: TEST_MODEL,
 				engine: scriptedEngine([[{ type: 'text-delta', delta: 'Done.' }]]),
 			});
-			host.handleCommand({ type: 'send', content });
+			await host.handleCommand({ type: 'send', content });
 			await settle(host);
 		}
 
@@ -355,22 +360,25 @@ describe('createQueryHost', () => {
 		expect(rows).toHaveLength(1);
 		expect(rows[0]!.title).toBe(content.slice(0, 50));
 		expect(rows[0]!.model).toBe(TEST_MODEL);
-		expect(rows[0]!.createdAt).toBe(rows[0]!.updatedAt);
+		expect(rows[0]!.updatedAt >= rows[0]!.createdAt).toBe(true);
 	});
 
 	test('a later send keeps the first-message title and bumps updatedAt', async () => {
 		const dataDir = testDataDir();
 		{
-			await using host = await createQueryHost({
+			await using host = await createOwnedTestHomeHost({
 				dataDir,
 				model: TEST_MODEL,
 				engine: scriptedEngine([[{ type: 'text-delta', delta: 'Sure.' }]]),
 			});
-			host.handleCommand({ type: 'send', content: 'first message names it' });
+			await host.handleCommand({
+				type: 'send',
+				content: 'first message names it',
+			});
 			await settle(host);
 			// Instants have millisecond resolution; a beat apart so the bump shows.
 			await new Promise((resolve) => setTimeout(resolve, 5));
-			host.handleCommand({ type: 'send', content: 'second message' });
+			await host.handleCommand({ type: 'send', content: 'second message' });
 			await settle(host);
 		}
 
@@ -383,22 +391,22 @@ describe('createQueryHost', () => {
 	test('clear starts a fresh conversation and boot resumes the most recent one', async () => {
 		const dataDir = testDataDir();
 		{
-			await using host = await createQueryHost({
+			await using host = await createOwnedTestHomeHost({
 				dataDir,
 				model: TEST_MODEL,
 				engine: scriptedEngine([[{ type: 'text-delta', delta: 'Okay.' }]]),
 			});
-			host.handleCommand({ type: 'send', content: 'the first session' });
+			await host.handleCommand({ type: 'send', content: 'the first session' });
 			await settle(host);
-			expect(host.handleCommand({ type: 'clear' })).toBe(true);
+			expect(await host.handleCommand({ type: 'clear' })).toBe(true);
 			expect(host.snapshot().conversation.messages).toHaveLength(0);
 			await new Promise((resolve) => setTimeout(resolve, 5));
-			host.handleCommand({ type: 'send', content: 'the second session' });
+			await host.handleCommand({ type: 'send', content: 'the second session' });
 			await settle(host);
 		}
 		expect(await readConversationRows(dataDir)).toHaveLength(2);
 
-		await using host = await createQueryHost({
+		await using host = await createOwnedTestHomeHost({
 			dataDir,
 			model: TEST_MODEL,
 			engine: scriptedEngine([[]]),
@@ -411,10 +419,79 @@ describe('createQueryHost', () => {
 		expect(texts).not.toContain('the first session');
 	});
 
+	test('a send queued behind clear lands in the new durable row', async () => {
+		const dataDir = testDataDir();
+		{
+			await using host = await createOwnedTestHomeHost({
+				dataDir,
+				model: TEST_MODEL,
+				engine: scriptedEngine([[{ type: 'text-delta', delta: 'New row.' }]]),
+			});
+			const clearing = host.handleCommand({ type: 'clear' });
+			const sending = host.handleCommand({
+				type: 'send',
+				content: 'queued after clear',
+			});
+			expect(await clearing).toBe(true);
+			expect(await sending).toBe(true);
+			await settle(host);
+			expect(host.snapshot().conversation.messages[0]?.parts).toContainEqual({
+				type: 'text',
+				text: 'queued after clear',
+			});
+		}
+		expect(await readConversationRows(dataDir)).toHaveLength(1);
+	});
+
+	test('a failed clear keeps the previous durable conversation usable', async () => {
+		const dataDir = testDataDir();
+		await using host = await createOwnedTestHomeHost({
+			dataDir,
+			model: TEST_MODEL,
+			engine: scriptedEngine([
+				[{ type: 'text-delta', delta: 'First.' }],
+				[{ type: 'text-delta', delta: 'Second.' }],
+			]),
+			wrapConversations(workspace) {
+				let creates = 0;
+				return {
+					...workspace,
+					conversations: {
+						...workspace.conversations,
+						async create(input) {
+							if (creates++ > 0) {
+								throw new Error('injected create failure');
+							}
+							return workspace.conversations.create(input);
+						},
+					},
+				};
+			},
+		});
+		await host.handleCommand({ type: 'send', content: 'first message' });
+		await settle(host);
+		await expect(host.handleCommand({ type: 'clear' })).rejects.toThrow(
+			'injected create failure',
+		);
+		expect(
+			await host.handleCommand({ type: 'send', content: 'second message' }),
+		).toBe(true);
+		await settle(host);
+		const texts = host
+			.snapshot()
+			.conversation.messages.flatMap((message) =>
+				message.parts
+					.filter((part) => part.type === 'text')
+					.map((part) => part.text),
+			);
+		expect(texts).toContain('first message');
+		expect(texts).toContain('second message');
+	});
+
 	test('a pending approval dies with the process instead of persisting', async () => {
 		const dataDir = testDataDir();
 		{
-			await using host = await createQueryHost({
+			await using host = await createOwnedTestHomeHost({
 				dataDir,
 				model: TEST_MODEL,
 				engine: scriptedEngine([
@@ -422,20 +499,20 @@ describe('createQueryHost', () => {
 						{
 							type: 'tool-call',
 							toolCallId: 'call-1',
-							toolName: 'todos__todos_create',
-							input: { title: 'Never approved' },
+							toolName: 'honeycrisp__folders_create',
+							input: { name: 'Never approved' },
 						},
 					],
 				]),
 			});
-			host.handleCommand({ type: 'send', content: 'add a todo' });
+			await host.handleCommand({ type: 'send', content: 'create a folder' });
 			await waitFor(
 				() => host.snapshot().pendingApprovals.length === 1,
 				'a pending approval',
 			);
 		}
 
-		await using host = await createQueryHost({
+		await using host = await createOwnedTestHomeHost({
 			dataDir,
 			model: TEST_MODEL,
 			engine: scriptedEngine([[]]),
@@ -452,9 +529,9 @@ describe('createQueryHost', () => {
 			engine: scriptedEngine([[]]),
 		});
 		expect(
-			host.handleCommand({
+			await host.handleCommand({
 				type: 'invoke',
-				toolName: 'todos__todos_list',
+				toolName: 'honeycrisp__folders_list',
 				input: {},
 			}),
 		).toBe(true);
@@ -466,7 +543,7 @@ describe('createQueryHost', () => {
 		const [invocation] = host.snapshot().invocations;
 		expect(invocation).toEqual(
 			expect.objectContaining({
-				toolName: 'todos__todos_list',
+				toolName: 'honeycrisp__folders_list',
 				status: 'succeeded',
 			}),
 		);
@@ -481,7 +558,7 @@ describe('createQueryHost', () => {
 		await using host = await createTestHost({
 			engine: scriptedEngine([[]]),
 		});
-		host.handleCommand({
+		await host.handleCommand({
 			type: 'invoke',
 			toolName: 'nope__missing',
 			input: {},
@@ -499,10 +576,10 @@ describe('createQueryHost', () => {
 		await using host = await createTestHost({
 			engine: scriptedEngine([[]]),
 		});
-		host.handleCommand({
+		await host.handleCommand({
 			type: 'invoke',
-			toolName: 'todos__todos_create',
-			input: { title: 'Direct with consent' },
+			toolName: 'honeycrisp__folders_create',
+			input: { name: 'Direct with consent' },
 		});
 		await waitFor(
 			() => host.snapshot().pendingApprovals.length === 1,
@@ -516,8 +593,8 @@ describe('createQueryHost', () => {
 		expect(host.snapshot().pendingApprovals[0]).toEqual(
 			expect.objectContaining({
 				toolCallId: invocation!.id,
-				toolName: 'todos__todos_create',
-				input: { title: 'Direct with consent' },
+				toolName: 'honeycrisp__folders_create',
+				input: { name: 'Direct with consent' },
 			}),
 		);
 	});
@@ -526,16 +603,16 @@ describe('createQueryHost', () => {
 		await using host = await createTestHost({
 			engine: scriptedEngine([[]]),
 		});
-		host.handleCommand({
+		await host.handleCommand({
 			type: 'invoke',
-			toolName: 'todos__todos_create',
-			input: { title: 'Denied' },
+			toolName: 'honeycrisp__folders_create',
+			input: { name: 'Denied' },
 		});
 		await waitFor(
 			() => host.snapshot().pendingApprovals.length === 1,
 			'a pending approval',
 		);
-		host.handleCommand({
+		await host.handleCommand({
 			type: 'approve',
 			requestId: host.snapshot().pendingApprovals[0]!.id,
 			approved: false,
@@ -552,16 +629,16 @@ describe('createQueryHost', () => {
 		await using host = await createTestHost({
 			engine: scriptedEngine([[]]),
 		});
-		host.handleCommand({
+		await host.handleCommand({
 			type: 'invoke',
-			toolName: 'todos__todos_create',
-			input: { title: 'Approved directly' },
+			toolName: 'honeycrisp__folders_create',
+			input: { name: 'Approved directly' },
 		});
 		await waitFor(
 			() => host.snapshot().pendingApprovals.length === 1,
 			'a pending approval',
 		);
-		host.handleCommand({
+		await host.handleCommand({
 			type: 'approve',
 			requestId: host.snapshot().pendingApprovals[0]!.id,
 			approved: true,
@@ -572,11 +649,11 @@ describe('createQueryHost', () => {
 		);
 
 		expect(typeof host.snapshot().invocations[0]!.content).toBe('string');
-		// The created todo reads back through the product invocation path: the
+		// The created folder reads back through the product invocation path: the
 		// approved mutation really ran, not just settled.
-		host.handleCommand({
+		await host.handleCommand({
 			type: 'invoke',
-			toolName: 'todos__todos_list',
+			toolName: 'honeycrisp__folders_list',
 			input: {},
 		});
 		await waitFor(
@@ -594,10 +671,10 @@ describe('createQueryHost', () => {
 		const host = await createTestHost({
 			engine: scriptedEngine([[]]),
 		});
-		host.handleCommand({
+		await host.handleCommand({
 			type: 'invoke',
-			toolName: 'todos__todos_create',
-			input: { title: 'Never answered' },
+			toolName: 'honeycrisp__folders_create',
+			input: { name: 'Never answered' },
 		});
 		await waitFor(
 			() => host.snapshot().pendingApprovals.length === 1,
@@ -619,10 +696,10 @@ describe('createQueryHost', () => {
 			engine: scriptedEngine([[]]),
 		});
 		// One gated mutation stays running (its approval is never answered)...
-		host.handleCommand({
+		await host.handleCommand({
 			type: 'invoke',
-			toolName: 'todos__todos_create',
-			input: { title: 'Still pending' },
+			toolName: 'honeycrisp__folders_create',
+			input: { name: 'Still pending' },
 		});
 		await waitFor(
 			() => host.snapshot().pendingApprovals.length === 1,
@@ -634,9 +711,9 @@ describe('createQueryHost', () => {
 		// trims on push only, so a burst may briefly exceed it; the final push
 		// converges the ring back to the limit.
 		for (let i = 0; i < 25; i++) {
-			host.handleCommand({
+			await host.handleCommand({
 				type: 'invoke',
-				toolName: 'todos__todos_list',
+				toolName: 'honeycrisp__folders_list',
 				input: {},
 			});
 		}
@@ -648,9 +725,9 @@ describe('createQueryHost', () => {
 					.length === 1,
 			'the query burst to settle',
 		);
-		host.handleCommand({
+		await host.handleCommand({
 			type: 'invoke',
-			toolName: 'todos__todos_list',
+			toolName: 'honeycrisp__folders_list',
 			input: {},
 		});
 		await waitFor(
@@ -664,19 +741,19 @@ describe('createQueryHost', () => {
 		);
 	});
 
-	test('a second host over the same data dir reads the first host todos through the catalog', async () => {
+	test('a second host over the same data dir reads the first host folders through the catalog', async () => {
 		const dataDir = testDataDir();
 		{
-			await using host = await createQueryHost({
+			await using host = await createOwnedTestHomeHost({
 				dataDir,
 				engine: scriptedEngine([[]]),
 				model: TEST_MODEL,
 				approval: APPROVE_ALL,
 			});
-			host.handleCommand({
+			await host.handleCommand({
 				type: 'invoke',
-				toolName: 'todos__todos_create',
-				input: { title: 'Survives restart' },
+				toolName: 'honeycrisp__folders_create',
+				input: { name: 'Survives restart' },
 			});
 			await waitFor(
 				() => host.snapshot().invocations[0]?.status === 'succeeded',
@@ -684,14 +761,14 @@ describe('createQueryHost', () => {
 			);
 		}
 
-		await using host = await createQueryHost({
+		await using host = await createOwnedTestHomeHost({
 			dataDir,
 			engine: scriptedEngine([[]]),
 			model: TEST_MODEL,
 		});
-		host.handleCommand({
+		await host.handleCommand({
 			type: 'invoke',
-			toolName: 'todos__todos_list',
+			toolName: 'honeycrisp__folders_list',
 			input: {},
 		});
 		await waitFor(
@@ -704,42 +781,42 @@ describe('createQueryHost', () => {
 	});
 });
 
-describe('parseQueryCommand', () => {
+describe('parseHomeCommand', () => {
 	test('accepts an invoke frame with a tool name and an object input', () => {
 		expect(
-			parseQueryCommand({
+			parseHomeCommand({
 				type: 'invoke',
-				toolName: 'todos__todos_create',
-				input: { title: 'Buy milk' },
+				toolName: 'honeycrisp__folders_create',
+				input: { name: 'Buy milk' },
 			}),
 		).toEqual({
 			type: 'invoke',
-			toolName: 'todos__todos_create',
-			input: { title: 'Buy milk' },
+			toolName: 'honeycrisp__folders_create',
+			input: { name: 'Buy milk' },
 		});
 	});
 
 	test('rejects invoke frames with a missing, empty, or non-string tool name', () => {
-		expect(parseQueryCommand({ type: 'invoke', input: {} })).toBeUndefined();
+		expect(parseHomeCommand({ type: 'invoke', input: {} })).toBeUndefined();
 		expect(
-			parseQueryCommand({ type: 'invoke', toolName: '', input: {} }),
+			parseHomeCommand({ type: 'invoke', toolName: '', input: {} }),
 		).toBeUndefined();
 		expect(
-			parseQueryCommand({ type: 'invoke', toolName: 42, input: {} }),
+			parseHomeCommand({ type: 'invoke', toolName: 42, input: {} }),
 		).toBeUndefined();
 	});
 
 	test('rejects invoke frames whose input is not a plain object', () => {
-		const toolName = 'todos__todos_list';
-		expect(parseQueryCommand({ type: 'invoke', toolName })).toBeUndefined();
+		const toolName = 'honeycrisp__folders_list';
+		expect(parseHomeCommand({ type: 'invoke', toolName })).toBeUndefined();
 		expect(
-			parseQueryCommand({ type: 'invoke', toolName, input: null }),
+			parseHomeCommand({ type: 'invoke', toolName, input: null }),
 		).toBeUndefined();
 		expect(
-			parseQueryCommand({ type: 'invoke', toolName, input: 'title' }),
+			parseHomeCommand({ type: 'invoke', toolName, input: 'title' }),
 		).toBeUndefined();
 		expect(
-			parseQueryCommand({ type: 'invoke', toolName, input: [1, 2] }),
+			parseHomeCommand({ type: 'invoke', toolName, input: [1, 2] }),
 		).toBeUndefined();
 	});
 });

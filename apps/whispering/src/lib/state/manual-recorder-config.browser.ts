@@ -29,10 +29,9 @@ export const manualRecorderConfig = {
 	 * Only settings-derived config lives here; live callbacks (the meter sink)
 	 * are passed separately to `startRecording`.
 	 */
-	resolveStartParams(recordingId: string): NavigatorRecordingParams {
+	resolveStartParams(): NavigatorRecordingParams {
 		const deviceId = this.deviceId;
 		return {
-			recordingId,
 			selectedDeviceId: deviceId ? asDeviceIdentifier(deviceId) : null,
 			bitrateKbps: deviceConfig.get('recording.navigator.bitrateKbps'),
 		};

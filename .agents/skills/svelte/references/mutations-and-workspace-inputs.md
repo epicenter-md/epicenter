@@ -10,7 +10,7 @@ In `.svelte` files, use `createMutation` for user-triggered async operations whe
 
 `createMutation` is the component operation lifecycle primitive. It is not reserved for cache invalidation, retry policy, or shared mutation keys.
 
-Use `defineMutation` in `$lib/rpc` when the operation has shared query-layer identity: multiple consumers, cache invalidation, optimistic updates, `useIsMutating`, or a reusable RPC boundary. For a one-off Result-returning component action, keep the operation as a plain function in `$lib/operations`, `$lib/services`, or a focused module, then wrap it locally with `createMutation(() => mutationOptions({ mutationKey, mutationFn }))`.
+Use `defineMutation` in `$lib/rpc` when the operation has shared query-layer identity: multiple consumers, cache invalidation, optimistic updates, `useIsMutating`, or a reusable RPC boundary. For a one-off Result-returning component action, keep the operation as a plain function in `$lib/operations`, `$lib/services`, or a focused module, then wrap it locally with `createMutation(() => resultMutationOptions({ mutationKey, mutationFn }))`.
 
 Use direct `await` when no template lifecycle state is observed, when the code runs outside component context, or when a sequential workflow would become harder to read as mutation callbacks. Shared Wellcrafted mutations are callable, so imperative RPC mutation usage is `await rpc.thing(input)`.
 
@@ -21,39 +21,37 @@ Pass `onSuccess` and `onError` as the second argument to `.mutate()` so the call
 ```svelte
 <script lang="ts">
 	import { createMutation } from '@tanstack/svelte-query';
-	import * as rpc from '$lib/query';
+	import { report } from '$lib/report';
+	import { rpc } from '$lib/rpc';
 
-	const deleteSession = createMutation(
-		() => rpc.sessions.deleteSession.options,
+	const downloadRecording = createMutation(
+		() => rpc.download.downloadRecording.options,
 	);
-
-	// Local state that we can access in callbacks
-	let isDialogOpen = $state(false);
 </script>
 
 <Button
 	onclick={() => {
-		deleteSession.mutate(
-			{ sessionId },
+		downloadRecording.mutate(
+			recording,
 			{
 				onSuccess: () => {
-					// Access local state and context
-					isDialogOpen = false;
-					toast.success('Session deleted');
-					goto('/sessions');
+					report.success({ title: 'Recording downloaded' });
 				},
 				onError: (error) => {
-					toast.error(error.title, { description: error.description });
+					report.error({
+						title: 'Failed to download recording',
+						cause: error,
+					});
 				},
 			},
 		);
 	}}
-	disabled={deleteSession.isPending}
+	disabled={downloadRecording.isPending}
 >
-	{#if deleteSession.isPending}
-		Deleting...
+	{#if downloadRecording.isPending}
+		Downloading...
 	{:else}
-		Delete
+		Download
 	{/if}
 </Button>
 ```
@@ -65,12 +63,12 @@ For component-local operation lifecycle, wrap the function locally:
 ```svelte
 <script lang="ts">
 	import { createMutation } from '@tanstack/svelte-query';
-	import { mutationOptions } from 'wellcrafted/query';
+	import { resultMutationOptions } from 'wellcrafted/query';
 	import { exportRecordingsMarkdown } from '$lib/recording-markdown-export';
 	import { report } from '$lib/report';
 
 	const exportMarkdown = createMutation(() =>
-		mutationOptions({
+		resultMutationOptions({
 			mutationKey: ['recordings', 'exportMarkdown'],
 			mutationFn: exportRecordingsMarkdown,
 		}),
@@ -121,8 +119,8 @@ accessor:
 		rpc.audio.getPlaybackUrl(() => recordingId).options,
 	);
 
-	const transformRecording = createMutation(
-		() => rpc.transformer.transformRecording.options,
+	const transcribeRecording = createMutation(
+		() => rpc.transcription.transcribeRecording.options,
 	);
 </script>
 ```
@@ -133,11 +131,11 @@ observe `isPending`. Wrap the operation locally:
 ```svelte
 <script lang="ts">
 	import { createMutation } from '@tanstack/svelte-query';
-	import { mutationOptions } from 'wellcrafted/query';
+	import { resultMutationOptions } from 'wellcrafted/query';
 	import { startManualRecording } from '$lib/operations/recording';
 
 	const startRecording = createMutation(() =>
-		mutationOptions({
+		resultMutationOptions({
 			mutationKey: ['recording', 'startManual'],
 			mutationFn: startManualRecording,
 		}),
@@ -149,7 +147,7 @@ Whispering error presentation goes through `$lib/report` at the UI or operation
 boundary:
 
 ```typescript
-if (error) {
+if (error !== null) {
 	report.error({ cause: error });
 	return;
 }
@@ -161,14 +159,10 @@ In `.ts` files, use direct `await` because `createMutation` requires component c
 
 ```typescript
 // In a .ts file (e.g., load function, utility)
-const result = await rpc.sessions.createSession({
-	body: { title: 'New Session' },
-});
-
-const { data, error } = result;
-if (error) {
+const { error } = await rpc.download.downloadRecording(recording);
+if (error !== null) {
 	// Handle error
-} else if (data) {
+} else {
 	// Handle success
 }
 ```

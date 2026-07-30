@@ -5,7 +5,7 @@
  * and map each `tools/call` onto {@link ToolCatalog.resolve}. The subprocess
  * keeps its data private; the host sees verbs only.
  *
- * This is deliberately app-local, not a `@epicenter/workspace` primitive. Super
+ * This is deliberately app-local, not an agent-package primitive. Super
  * Chat is the first local-stdio consumer; promote it to the shared package when
  * a second consumer appears, not before.
  *
@@ -19,7 +19,7 @@ import type {
 	AgentToolDefinition,
 	AgentToolOutcome,
 	ToolCatalog,
-} from '@epicenter/workspace/agent';
+} from '@epicenter/agent';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js';

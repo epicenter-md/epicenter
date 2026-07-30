@@ -59,16 +59,17 @@ Scenario 4 (a hosted competitor) is the one where the license is most load-beari
 
 ### Tier 1: MIT
 
-**Applies to:** the embeddable toolkit libraries: `packages/workspace`, `packages/ui`, `packages/filesystem`, `packages/sync`, plus the toolkit-internal packages they carry: `packages/identity`, `packages/agent-protocol`, `packages/encryption`, `packages/field`, and `packages/chat`.
+**Applies to:** the embeddable toolkit libraries: `packages/workspace`, `packages/ui`, `packages/filesystem`, `packages/sync`, `packages/sqlite`, `packages/data`, `packages/document-sync`, `packages/lens`, and `packages/app`, plus the toolkit-internal packages they carry: `packages/identity`, `packages/agent-protocol`, `packages/encryption`, `packages/field`, `packages/chat`, and `packages/agent`.
 
 **Rationale:**
 - Libraries: we want developers to embed `@epicenter/workspace` in their own projects with zero friction. AGPL would forbid that for closed-source consumers, killing adoption. The library is not what we sell.
+- `packages/app` is the clearest case rule 1 has: it exists to be bundled into software we do not write, by people building for the Epicenter catalog, and an AGPL client would make every installed app AGPL by construction (ADR-0186). Its Epicenter closure is deliberately narrow: `@epicenter/app` depends on the inert contract package `@epicenter/lens`, which depends on the toolkit-internal `@epicenter/field`; all three are MIT and publish compiled JavaScript plus declarations. The closure also reaches the permissive external packages `@tauri-apps/api` (Apache-2.0 OR MIT), `typebox` (MIT), and `wellcrafted` (MIT). It deliberately does not reach `@epicenter/data`, Yjs, blobs, auth, or the app shell. The external-consumer verification packs all three Epicenter packages and rejects any reachable raw TypeScript entry point, so the distributable closure matches the compiled-package promise rather than passing only through monorepo resolution. Note the license guard's blind spot: `bun run check:licenses` walks `@epicenter/*` dependency edges only, so nothing mechanical would catch AGPL source *copied* into this package. Whispering's Tauri recorder service solves the same problem and is AGPL; the client is written against the host's command protocol instead, and a drift test in `apps/epicenter` is what keeps the two aligned in place of a shared module.
 - Toolkit-internal packages (`identity`, `agent-protocol`, `encryption`, `field`, `chat`): these are dependencies bundled into the MIT toolkit libraries, so they must be MIT-compatible for the toolkit to stay distributable as MIT. `@epicenter/identity` owns the capability and identity vocabulary shared by the MIT toolkit and the AGPL auth layer; `@epicenter/agent-protocol` is the agent wire contract shared the same way. They are not separately marketed.
 - MIT-clean closure: the toolkit no longer depends on any AGPL package. `PrincipalId` and `AuthState` live in `@epicenter/identity`; the room route and bearer subprotocol moved to the now-MIT `@epicenter/sync`; the agent wire contract is the now-MIT `@epicenter/agent-protocol`; and the daemon takes its API base URL as config instead of importing the hosted constant. `bun run check:licenses` enforces this. `cli` stays AGPL primarily because it is a shipped CLI app (decision-procedure rule 2, not a toolkit root); it also directly imports AGPL `auth` for machine-auth login, and reaches AGPL `constants` only transitively, through `auth` and `client`.
 
 ### Tier 2: AGPL-3.0
 
-**Applies to:** all apps (`apps/api`, `apps/self-host`, `apps/whispering`, `apps/honeycrisp`, `apps/opensidian`, `apps/vocab`, `apps/tab-manager`, `apps/skills`, `apps/reddit`, `apps/landing`, `apps/posthog-reverse-proxy`, `apps/matter`, `apps/wiki`, `apps/local-books`, `apps/todos`), `packages/cli`, and the internal packages `packages/auth`, `packages/svelte-utils`, `packages/app-shell`, `packages/skills`, `packages/constants`, `packages/server`, `packages/client`, `packages/matter-core`, `packages/vite-config`.
+**Applies to:** all apps (`apps/api`, `apps/self-host`, `apps/whispering`, `apps/honeycrisp`, `apps/vocab`, `apps/tab-manager`, `apps/skills`, `apps/reddit`, `apps/landing`, `apps/posthog-reverse-proxy`, `apps/matter`, `apps/wiki`, `apps/local-books`), `packages/cli`, and the internal packages `packages/auth`, `packages/svelte-utils`, `packages/app-shell`, `packages/skills`, `packages/constants`, `packages/server`, `packages/client`, `packages/matter-core`, `packages/vite-config`.
 
 **Rationale:**
 - `apps/api` (hosted cloud: sync server, auth, AI inference; serves the same-origin dashboard SPA from its `ui/`): the infrastructure a competitor would need to clone Epicenter Cloud. AGPL §13 means any hosted fork must publish source, including improvements, which destroys the economics of forking-and-hosting. `apps/self-host` is the self-hosted single-partition instance reference deployment.
@@ -137,7 +138,6 @@ All apps are AGPL-3.0. MIT is reserved for the embeddable toolkit libraries.
 | `apps/self-host` | AGPL-3.0 | Self-hosted single-partition instance reference deployment |
 | `apps/whispering` | AGPL-3.0 | Desktop transcription |
 | `apps/honeycrisp` | AGPL-3.0 | Notes app |
-| `apps/opensidian` | AGPL-3.0 | Note-taking with terminal |
 | `apps/vocab` | AGPL-3.0 | Vocabulary chat app |
 | `apps/tab-manager` | AGPL-3.0 | Browser extension |
 | `apps/skills` | AGPL-3.0 | Agent skill editor |
@@ -147,7 +147,6 @@ All apps are AGPL-3.0. MIT is reserved for the embeddable toolkit libraries.
 | `apps/matter` | AGPL-3.0 | Typed grid for user-owned Markdown folders |
 | `apps/wiki` | AGPL-3.0 | Wiki app |
 | `apps/local-books` | AGPL-3.0 | QuickBooks mirror |
-| `apps/todos` | AGPL-3.0 | Todos app |
 | `packages/workspace` | MIT | Core CRDT library (toolkit) |
 | `packages/ui` | MIT | shadcn-svelte components (toolkit) |
 | `packages/filesystem` | MIT | POSIX layer over Yjs (toolkit) |
@@ -157,6 +156,12 @@ All apps are AGPL-3.0. MIT is reserved for the embeddable toolkit libraries.
 | `packages/encryption` | MIT | HKDF and blob crypto (toolkit-internal) |
 | `packages/field` | MIT | Field schema kinds (toolkit-internal) |
 | `packages/chat` | MIT | Chat message primitives (toolkit-internal) |
+| `packages/sqlite` | MIT | Domain-free synchronous SQLite adapter contract shared across embedded runtimes |
+| `packages/data` | MIT | Typed local-first Epicenter replica and sync |
+| `packages/document-sync` | MIT | Row-document sync plane |
+| `packages/agent` | MIT | UI-free agent loop |
+| `packages/lens` | MIT | Compiled, inert data-contract vocabulary for installed apps |
+| `packages/app` | MIT | `@epicenter/app`: the public Epicenter client an installed app bundles (ADR-0186) |
 | `packages/auth` | AGPL-3.0 | Framework-agnostic auth core (private, internal) |
 | `packages/svelte-utils` (`@epicenter/svelte`) | AGPL-3.0 | Svelte 5 reactive helpers and auth wrapper |
 | `packages/app-shell` | AGPL-3.0 | Shared app shell UI (private, internal) |
@@ -168,7 +173,7 @@ All apps are AGPL-3.0. MIT is reserved for the embeddable toolkit libraries.
 | `packages/matter-core` | AGPL-3.0 | Markdown-to-SQLite projection engine |
 | `packages/vite-config` | AGPL-3.0 | Shared Vite config |
 
-> **MIT-clean closure:** the MIT toolkit's entire dependency closure is MIT. `@epicenter/workspace` no longer imports from any AGPL package: shared capability state lives in `@epicenter/identity`, the room route plus bearer subprotocol moved to the now-MIT `@epicenter/sync`, and the agent wire contract is the now-MIT `@epicenter/agent-protocol`. `cli` stays AGPL because it is a shipped CLI app (decision-procedure rule 2); it also directly imports AGPL `auth`, and reaches AGPL `constants` only transitively, through `auth` and `client`. `bun run check:licenses` walks every package's dependency closure and fails if an MIT package can reach an AGPL one.
+> **MIT-clean closure:** the MIT toolkit's entire dependency closure is MIT. `@epicenter/workspace` no longer imports from any AGPL package: shared capability state lives in `@epicenter/identity`, the room route plus bearer subprotocol moved to the now-MIT `@epicenter/sync`, and the agent wire contract is the now-MIT `@epicenter/agent-protocol`. The installed-app distribution closure is `@epicenter/app` to `@epicenter/lens` to `@epicenter/field`; each package publishes compiled JavaScript and declarations, and the foreign-consumer gate rejects a raw TypeScript entry point anywhere in that Epicenter closure. `cli` stays AGPL because it is a shipped CLI app (decision-procedure rule 2); it also directly imports AGPL `auth`, and reaches AGPL `constants` only transitively, through `auth` and `client`. `bun run check:licenses` walks every package's dependency closure and fails if an MIT package can reach an AGPL one.
 
 ## Decision procedure for new packages
 

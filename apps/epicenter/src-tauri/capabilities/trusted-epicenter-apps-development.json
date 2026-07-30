@@ -3,9 +3,9 @@
 	"identifier": "trusted-epicenter-apps-development",
 	"description": "Allows the development Bun-served Epicenter app windows to prove focused native authority on the explicitly selected loopback port.",
 	"local": false,
-	"windows": ["query", "whispering", "mail", "books"],
+	"windows": ["home", "whispering", "mail", "books"],
 	"remote": {
 		"urls": ["http://127.0.0.1:*"]
 	},
-	"permissions": ["allow-get-runtime-info"]
+	"permissions": ["allow-get-runtime-info", "allow-open-app"]
 }

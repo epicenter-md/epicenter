@@ -1,5 +1,66 @@
 # @epicenter/workspace
 
+> Status: the two-plane design below is the Proposed destination in ADRs
+> 0144-0147. The current implementation still uses a root Yjs 13 document for
+> tables and KV, with per-row room providers. Sections explicitly marked
+> "current implementation" describe that transition code, not the final API.
+
+## Proposed destination: one row, two client planes
+
+The workspace keeps one public row identity while giving scalar data and rich
+content different storage and synchronization owners:
+
+```txt
+workspace.tables.notes
+  row(id)                    JSON fields in runtime-native SQLite
+  document.open(id)          lazy Yjs 14 document
+
+Browser
+  storage owner              OPFS SQLite Worker (scalar rows + document log)
+  live documents             page Y.Doc over a load/append seam
+
+Native
+  storage owner              native SQLite (scalar rows + document log)
+  live documents             Y.Doc over the same load/append seam
+```
+
+`RowIntent` carries scalar row and KV changes only. Scalar rows remain bounded,
+fully queryable, and available without hydrating any Yjs document. The scalar
+replica owns optimistic edits, exact retry, current-state pull, acquisition,
+tombstones, and `workspace.sync.settle()`.
+
+Each live row may also own one restricted, lazy `RowDocument`:
+
+```ts
+using document = await workspace.tables.notes.document.open(rowId);
+await document.whenDurable();
+```
+
+The handle exposes application-owned Yjs roots, local durability, reactive
+connection status, and disposal. It does not expose provider ownership or a
+free-standing room id. The workspace constructs the Yjs 14 document, persists
+its update log through the runtime-native provider, and opens one authenticated
+connection while that row document is live. Closing the last handle releases
+the connection without deleting persisted content.
+
+The two planes are deliberately eventual rather than remotely atomic. A row may
+arrive before its document. `workspace.sync` covers scalar work only;
+`document.whenDurable()` covers local document persistence only. Export,
+Device Add, and recovery coordinate logical scalar and document copies without
+claiming one cross-plane snapshot or copying private SQLite state.
+
+Read-only SQL is a first-class scalar surface, not a projection of one giant
+in-memory Yjs document. Browser and native runtimes may use different physical
+stores while implementing the same workspace contract. Sharing one native
+SQLite file is allowed, but it does not imply a cross-plane transaction.
+
+See [ADR-0144](../../docs/adr/0144-scalar-rows-and-row-documents-synchronize-through-independent-client-planes.md),
+[ADR-0145](../../docs/adr/0145-one-workspace-authority-owns-scalar-state-and-one-socket-per-open-row-document.md),
+[ADR-0146](../../docs/adr/0146-row-documents-use-one-yjs-14-major-and-runtime-native-update-logs.md),
+and [ADR-0147](../../docs/adr/0147-cross-plane-transfer-and-recovery-use-logical-coordination-not-atomic-snapshots.md).
+
+## Current implementation during the clean break
+
 A local-first workspace engine for TypeScript apps: Yjs is the source of truth; SQLite and Markdown are read-only materialized projections.
 
 The hard problem with local-first apps is synchronization. If each device has its own SQLite file, how do you keep them in sync? If each device has its own Markdown folder, same question.
@@ -234,7 +295,7 @@ no workspace lookup.
 
 For production-shaped browser wiring, see
 `apps/honeycrisp/src/lib/workspace/browser.ts`. For the boot-time doc selection, see
-`apps/honeycrisp/src/lib/honeycrisp.ts`.
+`apps/honeycrisp/src/lib/application.ts`.
 
 ## Core Philosophy
 
@@ -508,8 +569,7 @@ Each `.open(rowId)` returns a disposable handle. Multiple consumers can open the
 same row and share one underlying Y.Doc safely; the workspace-owned cache handles
 construction, refcounting, and `gcTime`-delayed teardown.
 
-Reference implementations: `apps/opensidian/opensidian.browser.ts` and
-`apps/honeycrisp/src/lib/workspace/browser.ts`.
+Reference implementation: `apps/honeycrisp/src/lib/workspace/browser.ts`.
 
 ## Schema definition
 
@@ -1463,7 +1523,7 @@ Everything below is a *convention*: the builder is free to expose more or less. 
 Per-row content is just another `attach*` call inside a child document builder.
 Pick the attachment that matches the content shape:
 
-- `attachPlainText(ydoc, name)`: binds a `Y.Text` at `getText(name)`. Returns `{ binding, read, write, appendText }`: feed `binding` to a CodeMirror/Monaco Yjs extension, `read()`/`write()`/`appendText()` for programmatic access. This is the file-body layout (opensidian's Markdown source lives here; ADR-0107).
+- `attachPlainText(ydoc, name)`: binds a `Y.Text` at `getText(name)`. Returns `{ binding, read, write, appendText }`: feed `binding` to a CodeMirror/Monaco Yjs extension, `read()`/`write()`/`appendText()` for programmatic access. This is the file-body layout for Markdown source bodies (ADR-0107).
 - `attachRecords(ydoc, name)`: binds a keyed last-write-wins store of whole JSON records, one per id (the shape an agent transcript uses). Bundle field is a `RecordsHandle<T>` with `get / set / delete / entries / observe`.
 - `attachRichText(ydoc, name)`: binds a `Y.XmlFragment` for prosemirror / tiptap / yrs-xml editors.
 
@@ -1513,7 +1573,7 @@ Public table methods:
 - `set(row)`
 - `update(id, partial)`
 - `get(id)`
-- `scan()` (returns the four classified buckets)
+- `scan()` (returns the three classified buckets)
 - `findValid(predicate)`
 - `delete(id)`
 - `clear()`

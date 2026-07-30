@@ -9,8 +9,10 @@
 	import { SettingSwitch } from '$lib/components/settings';
 	import { dictationCapability } from '$lib/state/dictation-capability.svelte';
 	import type { BooleanSettingKey } from '$lib/state/settings.svelte';
-	import { settings } from '$lib/state/settings.svelte';
 	import { tauri } from '#platform/tauri';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 
 	// One scope's full output delivery UI: copy to clipboard, paste at cursor (with
 	// its macOS Accessibility notice), and the dependent "press Enter" sub-toggle.
@@ -32,15 +34,15 @@
 	const SCOPES = {
 		transcription: {
 			noun: 'transcript',
-			clipboard: 'output.transcription.clipboard',
-			cursor: 'output.transcription.cursor',
-			enter: 'output.transcription.enter',
+			clipboard: 'settings.output.transcription.clipboard',
+			cursor: 'settings.output.transcription.cursor',
+			enter: 'settings.output.transcription.enter',
 		},
 		recipe: {
 			noun: 'recipe output',
-			clipboard: 'output.recipe.clipboard',
-			cursor: 'output.recipe.cursor',
-			enter: 'output.recipe.enter',
+			clipboard: 'settings.output.recipe.clipboard',
+			cursor: 'settings.output.recipe.cursor',
+			enter: 'settings.output.recipe.enter',
 		},
 	} satisfies Record<
 		OutputScope,
@@ -81,7 +83,7 @@
 	</div>
 {/if}
 
-{#if tauri && settings.get(delivery.cursor)}
+{#if tauri && app.settings.get(delivery.cursor)}
 	<div class:opacity-50={dictationCapability.needsAccessibility}>
 		<SettingSwitch
 			key={delivery.enter}

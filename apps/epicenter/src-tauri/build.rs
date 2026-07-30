@@ -9,40 +9,7 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const COMMANDS: &[&str] = &[
-    "get_runtime_info",
-    "write_text",
-    "simulate_enter_keystroke",
-    "simulate_copy_keystroke",
-    "get_current_recording_id",
-    "enumerate_recording_devices",
-    "init_recording_session",
-    "close_recording_session",
-    "start_recording",
-    "stop_recording",
-    "cancel_recording",
-    "delete_recording_artifacts",
-    "clear_recording_artifacts",
-    "read_recording_artifact",
-    "encode_recording_for_upload",
-    "transcribe_recording",
-    "prewarm_model",
-    "open_accessibility_settings",
-    "request_accessibility_permission",
-    "get_microphone_permission",
-    "request_microphone_permission",
-    "set_unload_policy",
-    "list_models",
-    "download_model",
-    "delete_model",
-    "cancel_download",
-    "pause_playback",
-    "resume_playback",
-    "keyring_read",
-    "keyring_write",
-    "set_auto_paste_enabled",
-    "get_dictation_capability",
-];
+include!("src/command_names.rs");
 
 fn main() {
     bake_transcribe_rpath();

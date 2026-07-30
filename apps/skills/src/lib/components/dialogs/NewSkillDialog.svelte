@@ -5,14 +5,16 @@
 	import { Label } from '@epicenter/ui/label';
 	import { toast } from '@epicenter/ui/sonner';
 	import PlusIcon from '@lucide/svelte/icons/plus';
-	import { skillsState } from '$lib/state/skills-state.svelte';
+	import { getSkillsApp } from '$lib/context.js';
 	import { validateSkill } from '$lib/utils/validation';
+
+	const { state: skillsState } = getSkillsApp();
 
 	let isOpen = $state(false);
 	let name = $state('');
 	let error = $state('');
 
-	function handleCreate() {
+	async function handleCreate() {
 		const trimmed = name.trim();
 		if (!trimmed) return;
 
@@ -26,7 +28,7 @@
 			return;
 		}
 
-		skillsState.createSkill(trimmed);
+		await skillsState.createSkill(trimmed);
 		toast.success(`Created skill: ${trimmed}`);
 		isOpen = false;
 		name = '';
@@ -59,7 +61,7 @@
 				onkeydown={(e: KeyboardEvent) => {
 					if (e.key === 'Enter') {
 						e.preventDefault();
-						handleCreate();
+						void handleCreate();
 					}
 				}}
 			/>
@@ -72,7 +74,7 @@
 		</div>
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (isOpen = false)}>Cancel</Button>
-			<Button onclick={handleCreate} disabled={!name.trim()}>Create</Button>
+			<Button onclick={() => void handleCreate()} disabled={!name.trim()}>Create</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

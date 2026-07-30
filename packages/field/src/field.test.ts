@@ -11,6 +11,7 @@
  * - Discrimination invariant: every legal schema matches EXACTLY ONE meta
  * - Cross-discrimination: the shapes that could collide resolve to one kind
  * - Refinements and annotations ride along without changing the kind
+ * - String byte bounds count UTF-8 bytes at runtime
  * - Rejection lane: unsupported shapes match no meta and recognize as null
  *
  * See also:
@@ -20,9 +21,9 @@
 import { describe, expect, test } from 'bun:test';
 import { type TSchema, Type } from 'typebox';
 import { Value } from 'typebox/value';
-import { field, jsonValue } from './builders';
-import { compile, KINDS, type Kind, META_BY_KIND, recognize } from './field';
-import { INSTANT_STRING_PATTERN } from './instant-string';
+import { field, jsonValue } from './builders.js';
+import { compile, KINDS, type Kind, META_BY_KIND, recognize } from './field.js';
+import { INSTANT_STRING_PATTERN } from './instant-string.js';
 
 /**
  * The at-rest form of a built schema: a live TypeBox schema carries a
@@ -360,6 +361,19 @@ describe('refinements and annotations ride along without changing the kind', () 
 		const s = { type: 'string', minLength: 1, pattern: '^[a-z-]+$' };
 		expect(kindOf(s)).toBe('string');
 		expect(countMatches(s)).toBe(1);
+	});
+
+	test('string maxBytes counts UTF-8 bytes at the exact boundary', () => {
+		const recognized = recognize(atRest(field.string({ maxBytes: 4 })));
+		expect(recognized?.kind).toBe('string');
+		if (recognized?.kind !== 'string')
+			throw new Error('Expected string schema');
+		const check = compile(recognized.schema);
+
+		expect(check('abcd')).toBe(true);
+		expect(check('abcde')).toBe(false);
+		expect(check('😀')).toBe(true);
+		expect(check('😀a')).toBe(false);
 	});
 
 	test('a rating (integer with min/max) is still integer', () => {

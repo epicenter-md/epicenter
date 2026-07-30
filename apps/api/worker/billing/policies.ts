@@ -8,7 +8,7 @@
  * forwarding the guard's typed error to `c.json`, and pushing after-response
  * settlement/sync work onto the queue from `@epicenter/server`. Those ops
  * return a `Result` (they never reject) and the adapter logs any provider
- * failure at its source, so a failed finalize or storage sync is recorded
+ * failure at its source, so a failed finalize is recorded
  * rather than silently swallowed by the queue's `Promise.allSettled`, with no
  * separate settlement wrapper needed.
  *
@@ -33,7 +33,7 @@
  * `BillingError` (fail closed), so the surface answers with a billing envelope
  * instead of a naked 500.
  *
- * The content-addressed blob store is unmetered in v1 (no storage policy here):
+ * The opaque-id blob store is unmetered in v1 (no storage policy here):
  * Autumn `check()` denies by default with no plan attached, so deferred quota
  * means not calling it. When blob storage is billed (deleted spec
  * 20260623T220000 decision 10, recoverable via git history; kernel is

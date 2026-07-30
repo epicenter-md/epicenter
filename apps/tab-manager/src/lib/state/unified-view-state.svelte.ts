@@ -6,11 +6,11 @@
  * bookmark states built alongside it. The flat array feeds a single VList
  * that renders all sections in one scrollable view.
  *
- * Section expand/collapse works identically to how window expand/collapse
- * already works in the original `FlatTabList`: a `SvelteSet` tracks expanded
- * sections, and `$derived` flatItems includes or excludes child items.
+ * Section expand/collapse works the same way window expand/collapse does: a
+ * `SvelteSet` tracks what is expanded, and `$derived` flatItems includes or
+ * excludes child items.
  *
- * Components read this through `workspace.state.unifiedView`.
+ * Components read this through `getTabManagerApp().state.unifiedView`.
  */
 
 import { SvelteSet } from 'svelte/reactivity';
@@ -28,7 +28,7 @@ import {
 	searchRegex,
 } from '$lib/state/search-preferences.svelte';
 import { normalizeUrl } from '$lib/utils/tab-helpers';
-import type { Bookmark, SavedTab } from '$lib/workspace/definition';
+import type { Bookmark, SavedTab } from '$lib/workspace';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types

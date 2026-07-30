@@ -1,0 +1,30 @@
+{
+	// One of the three emitting configs in the installed-app SDK closure, and
+	// the reason is the audience.
+	//
+	// Most packages here are consumed by this repo's own bundlers, so publishing
+	// raw `.ts` costs nothing and the repo tsconfig conventions assume it. This
+	// package, `@epicenter/lens`, and `@epicenter/field` are consumed by
+	// strangers' toolchains. Shipping `.ts` would drag source into whatever
+	// compiler settings the consumer happens to run (their `strict`, their
+	// `lib`, their `verbatimModuleSyntax`) and make our type checking their
+	// problem. The closure ships `.js` and `.d.ts`; `tsc` is enough because none
+	// of the three packages bundles.
+	//
+	// It emits only what `src/index.ts` reaches. Tests are excluded, and so is
+	// `@types/bun`: a browser SDK that shipped Bun's globals in its declarations
+	// would leak them into every consumer.
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"types": [],
+		"noEmit": false,
+		"outDir": "./dist",
+		"rootDir": "./src",
+		"declaration": true,
+		"declarationMap": true,
+		"sourceMap": true,
+		"allowImportingTsExtensions": false
+	},
+	"include": ["src/**/*.ts"],
+	"exclude": ["src/**/*.test.ts"]
+}

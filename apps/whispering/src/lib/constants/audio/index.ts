@@ -22,4 +22,3 @@ export {
 	RECORDING_TRIGGERS,
 	type RecordingTrigger,
 } from './recording-triggers';
-export { RECORDER_OUTPUT_RATE, SAMPLE_RATE_OPTIONS } from './sample-rate';

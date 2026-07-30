@@ -41,7 +41,7 @@
 	<Textarea
 		bind:value={draft}
 		onkeydown={handleKeydown}
-		placeholder="Message Query (Enter to send, Shift+Enter for a new line)"
+		placeholder="Message Home (Enter to send, Shift+Enter for a new line)"
 		class="max-h-40 flex-1"
 	/>
 	{#if isGenerating}

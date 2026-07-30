@@ -1,36 +1,35 @@
+import type { BlobId } from '@epicenter/blobs';
 import {
 	type ResolvedConnection,
 	resolveConnection,
 	transcribe,
 } from '@epicenter/client';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
-import { InstantString } from '@epicenter/field';
-import {
-	type AnyTaggedError,
-	defineErrors,
-	extractErrorMessage,
-} from 'wellcrafted/error';
+import { type AnyTaggedError, defineErrors } from 'wellcrafted/error';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import { auth } from '#platform/auth';
 import { customFetch } from '#platform/http';
 import { tauri } from '#platform/tauri';
 import type { SupportedLanguage } from '$lib/constants/languages';
-import { analytics } from '$lib/operations/analytics';
-import { report } from '$lib/report';
+import { logAnalyticsEvent } from '$lib/operations/analytics';
+import {
+	recordTranscriptionOutcome,
+	type TranscriptionSuccess,
+} from '$lib/operations/transcription-history';
+import { log, report } from '$lib/report';
 import { services } from '$lib/services';
 import { DeepgramTranscriptionServiceLive } from '$lib/services/transcription/cloud/deepgram';
 import { ElevenLabsTranscriptionServiceLive } from '$lib/services/transcription/cloud/elevenlabs';
 import { MistralTranscriptionServiceLive } from '$lib/services/transcription/cloud/mistral';
 import {
 	isOnDeviceProviderId,
-	type OnDeviceProviderId,
 	PROVIDERS,
 	type UploadProviderId,
 } from '$lib/services/transcription/providers';
 import { deviceConfig } from '$lib/state/device-config.svelte';
-import { recordings } from '$lib/state/recordings.svelte';
 import { type SecretKey, secrets } from '$lib/state/secrets.svelte';
-import { settings } from '$lib/state/settings.svelte';
+import type { WhisperingApp } from '$lib/whispering/app';
+import type { RecordingId } from '$lib/workspace';
 
 /**
  * The error any transcription path can surface. Deliberately `AnyTaggedError`
@@ -42,6 +41,8 @@ import { settings } from '$lib/state/settings.svelte';
  * union would add error variants no consumer reads.
  */
 export type TranscriptionError = AnyTaggedError;
+
+export type { TranscriptionSuccess } from '$lib/operations/transcription-history';
 
 const TranscriptionOperationError = defineErrors({
 	/** The hosted Epicenter gateway answered 402 (`InsufficientCredits`, ADR-0100):
@@ -55,9 +56,6 @@ const TranscriptionOperationError = defineErrors({
 	LocalTranscriptionUnavailableOnWeb: () => ({
 		message:
 			'Local transcription is only available in the desktop app. Choose a cloud or self-hosted provider on web.',
-	}),
-	LocalModelNotSelected: () => ({
-		message: 'Please select a local model in settings.',
 	}),
 });
 
@@ -118,117 +116,117 @@ function secretApiKey(key: SecretKey): string | undefined {
  * clients because they do not speak the wire (Deepgram's raw body + `Authorization:
  * Token`, ElevenLabs' `xi-api-key`, Mistral's `context_bias`); ADR-0060 blesses it.
  */
-const UPLOAD_DISPATCH = {
-	// Epicenter (`session`) STT: the transport is the signed-in session fetch against
-	// the deployment you are bonded to (`auth.deployment.baseURL`, so a self-hosted instance's own
-	// gateway is used when connected to one), never a stored key. Both deployables mount
-	// this gateway on their house key; a hosted deployment meters it (ADR-0100), a
-	// self-host deployment does not. The model is fixed by the gateway.
-	epicenter: {
-		kind: 'wire',
-		resolve: () => ({
-			fetch: auth.fetch,
-			baseURL: API_ROUTES.ai.baseUrl(auth.deployment.baseURL),
-		}),
-		model: () => PROVIDERS.epicenter.model,
-	},
-	OpenAI: {
-		kind: 'wire',
-		resolve: () =>
-			resolveConnection(
-				{
-					baseUrl:
-						deviceConfig.get(PROVIDERS.OpenAI.endpointConfigKey) ||
-						'https://api.openai.com/v1',
-					apiKey: secretApiKey(PROVIDERS.OpenAI.apiKeyConfigKey),
-				},
-				customFetch,
-			),
-		model: () => settings.get(PROVIDERS.OpenAI.modelSettingKey),
-	},
-	Groq: {
-		kind: 'wire',
-		resolve: () =>
-			resolveConnection(
-				{
-					baseUrl:
-						deviceConfig.get(PROVIDERS.Groq.endpointConfigKey) ||
-						'https://api.groq.com/openai/v1',
-					apiKey: secretApiKey(PROVIDERS.Groq.apiKeyConfigKey),
-				},
-				customFetch,
-			),
-		model: () => settings.get(PROVIDERS.Groq.modelSettingKey),
-	},
-	speaches: {
-		kind: 'wire',
-		resolve: () =>
-			resolveConnection(
-				{
-					baseUrl: `${deviceConfig.get(PROVIDERS.speaches.endpointConfigKey)}/v1`,
-				},
-				customFetch,
-			),
-		model: () => deviceConfig.get(PROVIDERS.speaches.modelIdConfigKey),
-	},
-	ElevenLabs: {
-		kind: 'bespoke',
-		transcribe: (audio, { prompt, spokenLanguage }) =>
-			ElevenLabsTranscriptionServiceLive.transcribe(audio, {
-				prompt,
-				spokenLanguage,
-				apiKey: secretApiKey(PROVIDERS.ElevenLabs.apiKeyConfigKey) ?? '',
-				modelName: settings.get(PROVIDERS.ElevenLabs.modelSettingKey),
+const uploadDispatch = (app: WhisperingApp) =>
+	({
+		// Epicenter (`session`) STT: the transport is the signed-in session fetch against
+		// the deployment you are bonded to (`auth.deployment.baseURL`, so a self-hosted instance's own
+		// gateway is used when connected to one), never a stored key. Both deployables mount
+		// this gateway on their house key; a hosted deployment meters it (ADR-0100), a
+		// self-host deployment does not. The model is fixed by the gateway.
+		epicenter: {
+			kind: 'wire',
+			resolve: () => ({
+				fetch: auth.fetch,
+				baseURL: API_ROUTES.ai.baseUrl(auth.deployment.baseURL),
 			}),
-	},
-	Deepgram: {
-		kind: 'bespoke',
-		transcribe: (audio, { prompt, spokenLanguage }) =>
-			DeepgramTranscriptionServiceLive.transcribe(audio, {
-				prompt,
-				spokenLanguage,
-				apiKey: secretApiKey(PROVIDERS.Deepgram.apiKeyConfigKey) ?? '',
-				modelName: settings.get(PROVIDERS.Deepgram.modelSettingKey),
-			}),
-	},
-	Mistral: {
-		kind: 'bespoke',
-		transcribe: (audio, { prompt, spokenLanguage }) =>
-			MistralTranscriptionServiceLive.transcribe(audio, {
-				prompt,
-				spokenLanguage,
-				apiKey: secretApiKey(PROVIDERS.Mistral.apiKeyConfigKey) ?? '',
-				modelName: settings.get(PROVIDERS.Mistral.modelSettingKey),
-			}),
-	},
-} satisfies Record<UploadProviderId, UploadDispatch>;
+			model: () => PROVIDERS.epicenter.model,
+		},
+		OpenAI: {
+			kind: 'wire',
+			resolve: () =>
+				resolveConnection(
+					{
+						baseUrl:
+							deviceConfig.get(PROVIDERS.OpenAI.endpointConfigKey) ||
+							'https://api.openai.com/v1',
+						apiKey: secretApiKey(PROVIDERS.OpenAI.apiKeyConfigKey),
+					},
+					customFetch,
+				),
+			model: () => app.settings.get(PROVIDERS.OpenAI.modelSettingKey),
+		},
+		Groq: {
+			kind: 'wire',
+			resolve: () =>
+				resolveConnection(
+					{
+						baseUrl:
+							deviceConfig.get(PROVIDERS.Groq.endpointConfigKey) ||
+							'https://api.groq.com/openai/v1',
+						apiKey: secretApiKey(PROVIDERS.Groq.apiKeyConfigKey),
+					},
+					customFetch,
+				),
+			model: () => app.settings.get(PROVIDERS.Groq.modelSettingKey),
+		},
+		speaches: {
+			kind: 'wire',
+			resolve: () =>
+				resolveConnection(
+					{
+						baseUrl: `${deviceConfig.get(PROVIDERS.speaches.endpointConfigKey)}/v1`,
+					},
+					customFetch,
+				),
+			model: () => deviceConfig.get(PROVIDERS.speaches.modelIdConfigKey),
+		},
+		ElevenLabs: {
+			kind: 'bespoke',
+			transcribe: (audio, { prompt, spokenLanguage }) =>
+				ElevenLabsTranscriptionServiceLive.transcribe(audio, {
+					prompt,
+					spokenLanguage,
+					apiKey: secretApiKey(PROVIDERS.ElevenLabs.apiKeyConfigKey) ?? '',
+					modelName: app.settings.get(PROVIDERS.ElevenLabs.modelSettingKey),
+				}),
+		},
+		Deepgram: {
+			kind: 'bespoke',
+			transcribe: (audio, { prompt, spokenLanguage }) =>
+				DeepgramTranscriptionServiceLive.transcribe(audio, {
+					prompt,
+					spokenLanguage,
+					apiKey: secretApiKey(PROVIDERS.Deepgram.apiKeyConfigKey) ?? '',
+					modelName: app.settings.get(PROVIDERS.Deepgram.modelSettingKey),
+				}),
+		},
+		Mistral: {
+			kind: 'bespoke',
+			transcribe: (audio, { prompt, spokenLanguage }) =>
+				MistralTranscriptionServiceLive.transcribe(audio, {
+					prompt,
+					spokenLanguage,
+					apiKey: secretApiKey(PROVIDERS.Mistral.apiKeyConfigKey) ?? '',
+					modelName: app.settings.get(PROVIDERS.Mistral.modelSettingKey),
+				}),
+		},
+	}) satisfies Record<UploadProviderId, UploadDispatch>;
 
 /**
- * Materialize the bytes to upload for a non-on-device (upload) transcription. The
- * recording is already saved under `recordings/{id}.{ext}`; in Tauri we round-trip
- * through Rust's libopus to land on a compressed opus blob. On the web
- * there is no Rust, so we fetch the original bytes from the blob store and
- * upload them as-is.
+ * Materialize the bytes for an upload transcription. On Tauri, Rust reads the
+ * local blob and compresses it with libopus. On the web, the original local
+ * blob is uploaded as-is.
  */
 async function loadForUpload(
-	recordingId: string,
+	app: WhisperingApp,
+	audioBlobId: BlobId,
 ): Promise<Result<Blob, TranscriptionError>> {
 	if (tauri) {
 		const { data: oggBytes, error } =
-			await tauri.transcription.encodeRecordingForUpload(recordingId);
+			await tauri.transcription.encodeRecordingForUpload(audioBlobId);
 		if (error === null) return Ok(new Blob([oggBytes], { type: 'audio/ogg' }));
 		report.info({
 			title: 'Audio compression skipped',
 			description: `${error}. Uploading uncompressed audio instead.`,
 		});
-		analytics.logEvent({
+		void logAnalyticsEvent(app, {
 			type: 'compression_failed',
-			provider: settings.get('transcription.service'),
+			provider: app.settings.get('settings.transcription.service'),
 			error_message: error,
 		});
 	}
 
-	return services.blobs.audio.getBlob(recordingId);
+	return services.blobs.local.get(audioBlobId);
 }
 
 /**
@@ -236,20 +234,21 @@ async function loadForUpload(
  * point for transcription:
  *
  * - The cpal stop path saves the WAV via Rust and returns the id.
- * - The navigator / VAD / file import paths save the blob via the
- *   recordings blob store and pass the id here.
+ * - The navigator / VAD / file import paths commit the local blob and pass
+ *   its id here.
  *
  * Local transcription always goes through `transcribe_recording(id)`.
  * Upload (non-on-device) transcription uploads compressed bytes derived from the
  * saved file when possible, falling back to the raw blob.
  */
 export async function transcribeAudio(
-	recordingId: string,
+	app: WhisperingApp,
+	audioBlobId: BlobId,
 ): Promise<Result<string, TranscriptionError>> {
-	const selectedService = settings.get('transcription.service');
+	const selectedService = app.settings.get('settings.transcription.service');
 
 	const startTime = Date.now();
-	analytics.logEvent({
+	void logAnalyticsEvent(app, {
 		type: 'transcription_requested',
 		provider: selectedService,
 	});
@@ -258,19 +257,19 @@ export async function transcribeAudio(
 	// to `OnDeviceProviderId` in one arm and `UploadProviderId` in the other, so each
 	// helper receives an already-narrowed id and neither re-checks.
 	const transcriptionResult = isOnDeviceProviderId(selectedService)
-		? await transcribeOnDevice(recordingId, selectedService)
-		: await transcribeViaUpload(recordingId, selectedService);
+		? await transcribeOnDevice(app, audioBlobId)
+		: await transcribeViaUpload(app, audioBlobId, selectedService);
 
 	const duration = Date.now() - startTime;
 	if (transcriptionResult.error) {
-		analytics.logEvent({
+		void logAnalyticsEvent(app, {
 			type: 'transcription_failed',
 			provider: selectedService,
 			error_name: transcriptionResult.error.name,
 			error_message: transcriptionResult.error.message,
 		});
 	} else {
-		analytics.logEvent({
+		void logAnalyticsEvent(app, {
 			type: 'transcription_completed',
 			provider: selectedService,
 			duration,
@@ -281,64 +280,44 @@ export async function transcribeAudio(
 }
 
 /**
- * Transcribe a saved recording by id and persist the outcome to the recordings
- * table: on success the transcript plus a completed outcome, on failure a
- * failed outcome carrying the error. Every path that transcribes (the record
- * pipeline, manual retry, bulk) goes through here, so the stored outcome can
- * never drift between callers.
+ * Transcribe a saved recording by id and attempt to persist the outcome to the
+ * recordings table. Successful text remains successful when history cannot be
+ * confirmed: callers receive that secondary Result and choose how to warn.
+ * Every path that transcribes (the record pipeline, manual retry, bulk) goes
+ * through here, so they share one history-write policy.
  */
 export async function transcribeAndPersist(
-	recordingId: string,
-): Promise<Result<string, TranscriptionError>> {
-	const { data: transcribedText, error } = await transcribeAudio(recordingId);
-	if (error) {
-		recordings.update(recordingId, {
-			transcription: {
-				status: 'failed',
-				completedAt: InstantString.now(),
-				error: extractErrorMessage(error),
-			},
-		});
-		return Err(error);
-	}
-	recordings.update(recordingId, {
-		transcript: transcribedText,
-		polishedTranscript: null,
-		transcription: {
-			status: 'completed',
-			completedAt: InstantString.now(),
-		},
-	});
-	return Ok(transcribedText);
+	app: WhisperingApp,
+	recordingId: RecordingId,
+	audioBlobId: BlobId,
+): Promise<Result<TranscriptionSuccess, TranscriptionError>> {
+	return recordTranscriptionOutcome(
+		app,
+		recordingId,
+		await transcribeAudio(app, audioBlobId),
+	);
 }
 
 /**
- * Warm the selected local model the instant a capture begins, so the cold
+ * Warm the host's active local model the instant a capture begins, so the cold
  * load (~1 s) overlaps the user's speech instead of being paid after they
  * stop. Called fire-and-forget from the manual and VAD start paths.
  *
- * No-op unless we are on desktop with an on-device provider selected and a model
- * chosen: cloud/self-hosted have no on-device model to load, and web has no Rust.
- * It resolves the model exactly the way `transcribeOnDevice` does, so it warms
- * the same model transcription will use. Failures are swallowed on purpose:
- * the worst case is transcription loads the model itself, as it does today.
- * `language`/`initialPrompt` are inference params, irrelevant to loading, so
- * they are sent null.
+ * No-op unless we are on desktop with the local route selected: cloud and
+ * self-hosted have no on-device model to load, and web has no Rust. The host
+ * resolves the same active model here as it does at transcribe, because there is
+ * only one (ADR-0180), so what is warmed is what will run. Failures are
+ * swallowed on purpose: the worst case is transcription loads the model itself,
+ * and a real problem (no active model, not downloaded) surfaces there with a
+ * message the user can act on.
  */
-export function prewarmOnDeviceModel(): void {
+export function prewarmOnDeviceModel(app: WhisperingApp): void {
 	if (!tauri) return;
 
-	const selectedService = settings.get('transcription.service');
+	const selectedService = app.settings.get('settings.transcription.service');
 	if (!isOnDeviceProviderId(selectedService)) return;
 
-	const modelId = deviceConfig.get(PROVIDERS[selectedService].modelConfigKey);
-	if (!modelId) return;
-
-	void tauri.transcription.prewarmModel({
-		modelId,
-		language: null,
-		initialPrompt: null,
-	});
+	tauri.transcription.prewarmModel();
 }
 
 /**
@@ -356,44 +335,68 @@ function withDictionaryTerms(prompt: string, dictionary: string[]): string {
 	return trimmed ? `${trimmed} ${glossary}` : glossary;
 }
 
+/**
+ * Transcribe on the host's one active local model.
+ *
+ * Whispering names audio and advisory hints; it does not name a model
+ * (ADR-0180). The host resolves the active model at the point of use and
+ * reports which model actually ran, so a model that appears on disk after a
+ * failed load works on the very next call, and no request can quietly change
+ * what the shared cache holds. Every failure mode here is the host's to
+ * describe: no active model, an active model that is not downloaded, a load or
+ * inference failure. Each arrives as a tagged error carrying a message that
+ * names the fix, so there is no frontend pre-check to drift from it.
+ */
 async function transcribeOnDevice(
-	recordingId: string,
-	selectedService: OnDeviceProviderId,
+	app: WhisperingApp,
+	audioBlobId: BlobId,
 ): Promise<Result<string, TranscriptionError>> {
 	if (!tauri) {
 		return TranscriptionOperationError.LocalTranscriptionUnavailableOnWeb();
 	}
 
-	// Rust owns model resolution and validation: it resolves this catalog id to a
-	// shared-HF-cache path and reports an unknown or not-downloaded model with a
-	// user-facing message. The FE keeps the one check Rust cannot make as well:
-	// "nothing selected yet" (instant, no IPC).
-	const modelId = deviceConfig.get(PROVIDERS[selectedService].modelConfigKey);
-	if (!modelId) {
-		return TranscriptionOperationError.LocalModelNotSelected();
-	}
-
-	// Read-at-use: the per-call spec is built right here, where it is consumed,
-	// so there is no ambient config to go stale. `auto` language and an empty
-	// prompt map to the wire's "unset" (an omitted optional field). The Dictionary
-	// terms fold into the prompt so local recognition spells them the user's way.
-	const language = settings.get('transcription.language');
+	// Read-at-use: the hints are built right here, where they are consumed, so
+	// there is no ambient config to go stale. `auto` language and an empty prompt
+	// map to the wire's "unset" (an omitted optional field). The Dictionary terms
+	// fold into the prompt so local recognition spells them the user's way.
+	const language = app.settings.get('settings.transcription.language');
 	const prompt = withDictionaryTerms(
-		settings.get('transcription.prompt'),
-		settings.get('dictionary'),
+		app.settings.get('settings.transcription.prompt'),
+		app.settings.get('settings.dictionary'),
 	);
-	return tauri.transcription.transcribeRecording(recordingId, {
-		modelId,
-		language: language === 'auto' ? undefined : language,
-		initialPrompt: prompt || undefined,
+	const { data: outcome, error } =
+		await tauri.transcription.transcribeRecording(audioBlobId, {
+			language: language === 'auto' ? undefined : language,
+			initialPrompt: prompt || undefined,
+		});
+	if (error) return Err(error);
+
+	// Empty audio ran no model, so there is nothing to attribute and nothing to
+	// report as applied. An empty transcript is the honest result.
+	if (outcome.outcome === 'empty-audio') return Ok('');
+
+	// The host names the exact model on every success. Logging it is what turns
+	// an accidental substitution into something visible after the fact, and the
+	// applied hints say which of the caller's requests actually reached the
+	// recognizer: a prompt or language the active model cannot take is reported
+	// rather than silently dropped, so "my Dictionary had no effect" has an
+	// answer in the log instead of being a mystery.
+	log.info('Local transcription complete', {
+		modelId: outcome.modelId,
+		applied: outcome.applied,
 	});
+	return Ok(outcome.text);
 }
 
 async function transcribeViaUpload(
-	recordingId: string,
+	app: WhisperingApp,
+	audioBlobId: BlobId,
 	selectedService: UploadProviderId,
 ): Promise<Result<string, TranscriptionError>> {
-	const { data: audio, error: loadError } = await loadForUpload(recordingId);
+	const { data: audio, error: loadError } = await loadForUpload(
+		app,
+		audioBlobId,
+	);
 	if (loadError) return Err(loadError);
 
 	// `auto` language and an empty prompt map to the wire's "unset" (omitted from
@@ -401,12 +404,12 @@ async function transcribeViaUpload(
 	// and the server answers 401, surfaced as a RequestFailed carrying that detail.
 	// The Dictionary terms fold into the prompt so cloud recognition spells them
 	// the user's way.
-	const spokenLanguage = settings.get('transcription.language');
+	const spokenLanguage = app.settings.get('settings.transcription.language');
 	const prompt = withDictionaryTerms(
-		settings.get('transcription.prompt'),
-		settings.get('dictionary'),
+		app.settings.get('settings.transcription.prompt'),
+		app.settings.get('settings.dictionary'),
 	);
-	const entry = UPLOAD_DISPATCH[selectedService];
+	const entry = uploadDispatch(app)[selectedService];
 	switch (entry.kind) {
 		case 'wire': {
 			const result = await transcribe(audio, entry.resolve(), {

@@ -36,6 +36,13 @@
 			"when": 1783480626422,
 			"tag": "0004_first_norrin_radd",
 			"breakpoints": true
+		},
+		{
+			"idx": 5,
+			"version": "7",
+			"when": 1784308579193,
+			"tag": "0005_short_shinobi_shaw",
+			"breakpoints": true
 		}
 	]
 }

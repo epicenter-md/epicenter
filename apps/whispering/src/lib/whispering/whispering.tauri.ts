@@ -1,18 +1,26 @@
+import { openDesktopEpicenter } from '@epicenter/data/desktop';
+import { BlobsLive } from '#platform/blobs';
+import { log } from '$lib/report';
+import type { WhisperingAppDependencies } from './app';
+
 /**
- * Tauri runtime client for Whispering. Consumed everywhere through the
- * `#platform/whispering` seam; see `whispering.active.ts` for what
- * `openWhisperingBrowser` builds. The desktop default transcription service is
- * the on-device local GGUF provider.
+ * The Epicenter-hosted build's app dependencies. Pure data and
+ * factories: the WebView runtime performs its honest host open handshake only
+ * once `openWhisperingApp` runs inside the mounted Svelte root.
+ *
+ * This build opens the host-owned replica rather than one of its own, and says
+ * so by naming it. Only this build is ever served by the desktop host: it is
+ * selected by the `tauri` resolve condition, which `build:epicenter` turns on
+ * and nothing else does, so "am I a desktop surface" is answered by which file
+ * is compiled and never has to be asked of the DOM at runtime.
  */
-
-import { createNodeId } from '@epicenter/workspace';
-import { auth } from '#platform/auth';
-import { openWhisperingBrowser } from './whispering.active';
-
-const nodeId = createNodeId({ storage: window.localStorage });
-
-export const whispering = openWhisperingBrowser({
-	auth,
-	nodeId,
+export const whisperingPlatform: WhisperingAppDependencies = {
+	openEpicenter: openDesktopEpicenter,
+	blobs: BlobsLive,
 	defaultTranscriptionService: 'local',
-});
+	reportBackgroundError: (cause) =>
+		log.warn(
+			cause instanceof Error ? cause : new Error(String(cause)),
+			'Whispering app background failure',
+		),
+};

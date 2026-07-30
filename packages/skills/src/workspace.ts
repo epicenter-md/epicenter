@@ -1,22 +1,20 @@
-import { createWorkspace } from '@epicenter/workspace';
-import { SKILLS_WORKSPACE_ID } from './constants.js';
+import { type BoundData, defineLens } from '@epicenter/data';
 import { referencesTable, skillsTable } from './tables.js';
 
-export function createSkills({
-	workspaceId = SKILLS_WORKSPACE_ID,
-	clientID,
-}: {
-	workspaceId?: string;
-	clientID?: number;
-} = {}) {
-	const workspace = createWorkspace({
-		id: workspaceId,
-		tables: {
-			skills: skillsTable,
-			references: referencesTable,
-		},
-		kv: {},
-	});
-	if (clientID !== undefined) workspace.ydoc.clientID = clientID;
-	return workspace;
-}
+/**
+ * The inert Skills contract. A caller binds it through its environment-owned
+ * runtime and passes the resulting handle to ordinary application services.
+ */
+export const skillsLens = defineLens({
+	namespace: 'so.epicenter.skills',
+	tables: {
+		skills: skillsTable,
+		skillReferences: referencesTable,
+	},
+	values: {},
+});
+
+export type SkillsData = BoundData<
+	typeof skillsLens.tables,
+	typeof skillsLens.values
+>;

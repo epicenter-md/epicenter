@@ -1,7 +1,8 @@
 # 0001. One classified scan, no valid-only default read
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-06-15
+- **Superseded by:** [ADR-0175](0175-table-traversal-is-complete-and-classified-with-paging-kept-private.md)
 
 > **Bucket list amended by [ADR-0003](0003-three-read-states-after-encryption-removal.md).**
 > `scan()` now returns three buckets, not four: the `unreadable` bucket existed

@@ -1,6 +1,6 @@
 # Honeycrisp
 
-Honeycrisp is a notes app that works offline first and syncs when it can. Notes, folders, and rich text are all Yjs CRDTs. Two devices can edit the same note simultaneously and converge without conflicts. Open two browser tabs and try it.
+Honeycrisp is a local-first notes app. Folder and note metadata live as canonical SQLite rows. Each note body is a Yjs document that can sync and merge independently.
 
 Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL-3.0 licensed.
 
@@ -14,29 +14,33 @@ Single-route SvelteKit app with a three-pane layout: sidebar (folders) → note 
 
 ### Data layer
 
-All shared state lives in an Epicenter workspace (`id: "epicenter-honeycrisp"`). The split follows the repo-wide naming pattern:
+Honeycrisp defines one inert workspace contract (`id: "epicenter-honeycrisp"`) and opens it through a page-owned runtime:
 
 ```txt
-honeycrispWorkspace
-  shared isomorphic definition: id, tables, actions, notes.body child docs
+honeycrispLens
+  shared isomorphic definition: id and release-local row lenses
 
-openHoneycrispBrowser()
-  browser runtime: local storage, sync, child-doc storage and sync
+openHoneycrispBrowserEpicenter()
+  browser runtime: device or account SQLite ownership and sync
 ```
 
-The Svelte app builds one browser runtime at boot. Signed out, it uses bare local IndexedDB storage under the workspace guid. Signed in, it uses principal-scoped storage plus relay sync. The app shell is the same either way; sign-in only adds sync and account controls.
+The Svelte app chooses its authority once at boot. Signed out, it opens the device database. Signed in, it opens the account database and attaches the account transport. Row changes invalidate app-owned reactive arrays; the state layer refreshes them through the async table API.
+
+This was a clean break from the legacy root-Yjs and IndexedDB model. Honeycrisp does not probe, import, restore, or delete legacy data. The old database is untouched and unreachable from the new app.
 
 ### Rich-text editing
 
-Each note's body is a `Y.XmlFragment` in the `notes.body` child doc declared by `honeycrispWorkspace`. The browser opener attaches storage and sync around child docs, and `NoteBodyPane.svelte` opens the active note body through `honeycrisp.tables.notes.docs.body.open(noteId)`. ProseMirror binds to the fragment via `y-prosemirror`, giving collaborative editing for free. The editor schema covers paragraphs, headings, lists, task lists, underline, and strikethrough. Every ProseMirror transaction extracts a title, preview snippet, and word count for the note row; the child-doc `touch: 'updatedAt'` declaration owns the update timestamp.
+Each note row owns one document. `NoteBodyPane.svelte` opens it through `honeycrisp.openNoteDocument(noteId)`, reads the application-owned `body` root, and disposes the handle when the pane unmounts. ProseMirror binds to that Yjs 14 type through `@y/prosemirror`.
+
+User edits extract the title, preview, and word count and write them back to the note row with an explicit `updatedAt`. Binding-origin transactions do not update metadata, so opening or remotely hydrating a note does not make it look newly edited.
 
 ### Soft deletion
 
-Notes are never removed from the CRDT. They're soft-deleted with a `deletedAt` timestamp. This matters when two devices diverge: one deletes a note while the other keeps editing it. Without soft deletion, the CRDT has no way to represent "deleted but also modified." With it, you can restore the note and keep the edits. Soft-deleted notes appear in "Recently Deleted" where you can restore or permanently remove them.
+Normal deletion is soft deletion: the note row gets a `deletedAt` timestamp and appears in Recently Deleted. Permanent deletion removes the canonical row and revokes its document lease.
 
 ### Auth
 
-Google sign-in is optional. The app opens immediately with local data, and `AccountPopover` is the account surface for signing in, signing out, or forgetting this device. A principal change reloads the page so boot can choose the right storage branch.
+Google sign-in is optional. The app opens immediately against device storage. A principal change reloads the page so the next boot can choose the account or device runtime. There is no legacy sign-in migration or restore prompt.
 
 ---
 
@@ -49,7 +53,7 @@ Google sign-in is optional. The app opens immediately with local data, and `Acco
 **`folders`**
 | Field | Type |
 |---|---|
-| `id` | `FolderId` |
+| `id` | `string` (runtime-minted) |
 | `name` | `string` |
 | `icon` | `string` (optional) |
 | `sortOrder` | `number` |
@@ -57,17 +61,17 @@ Google sign-in is optional. The app opens immediately with local data, and `Acco
 **`notes`**
 | Field | Type |
 |---|---|
-| `id` | `NoteId` |
+| `id` | `string` (runtime-minted) |
 | `folderId` | `FolderId` (optional) |
 | `title` | `string` |
 | `preview` | `string` |
 | `pinned` | `boolean` |
-| `createdAt` | `DateTimeString` |
-| `updatedAt` | `DateTimeString` |
-| `deletedAt` | `DateTimeString` (optional, soft delete) |
+| `createdAt` | `InstantString` |
+| `updatedAt` | `InstantString` |
+| `deletedAt` | `InstantString` (optional, soft delete) |
 | `wordCount` | `number` (optional) |
 
-Each note's body lives in a separate Y.Doc opened by `honeycrisp.tables.notes.docs.body.open(noteId)`. The handle yields a `Y.XmlFragment` that ProseMirror binds to; editor logic refreshes title, preview, and word count on content changes, while the child-doc declaration refreshes `updatedAt`.
+Each note's body lives in a row-owned document opened by `honeycrisp.openNoteDocument(noteId)`. The editor owns the `body` root name and the handle's lifecycle.
 
 Honeycrisp currently has no workspace KV schema. View selection, sorting, and URL state live in the Svelte state layer.
 
@@ -97,17 +101,26 @@ bun dev:honeycrisp
 
 This starts the desktop app on port 5175 alongside the local API on `localhost:8787`, which auth and sync expect. `bun dev:honeycrisp:ui` runs the browser UI without the API or Tauri shell.
 
+### Manual two-client check
+
+To exercise two independent browser replicas, open the Honeycrisp web UI in two
+isolated browser profiles. Point both at one self-hosted authority that includes
+the UI origin in `TRUSTED_BROWSER_ORIGINS`. Do not use two ordinary tabs in one
+profile: they share a storage partition, so the second owner is refused by
+design (ADR-0177).
+
 ---
 
 ## Tech stack
 
 - [SvelteKit](https://kit.svelte.dev): UI framework (static adapter, SSR disabled)
-- [ProseMirror](https://prosemirror.net) + [y-prosemirror](https://github.com/yjs/y-prosemirror): collaborative rich-text editing
-- [Yjs](https://yjs.dev): CRDT engine (Y.Doc, Y.XmlFragment)
+- [ProseMirror](https://prosemirror.net) + `@y/prosemirror`: collaborative rich-text editing
+- `@y/y` 14: row-owned note body documents
 - [Tailwind CSS](https://tailwindcss.com): styling
 - [Better Auth](https://better-auth.com): authentication
-- `@epicenter/workspace`: CRDT-backed tables, versioning, sync
-- `@epicenter/svelte`: auth, workspace gate, reactive table/KV bindings
+- `@epicenter/data`: canonical SQLite rows, values, and local row documents
+- `@epicenter/document-sync`: network synchronization for open row documents
+- `@epicenter/svelte`: auth and browser lifecycle helpers
 - `@epicenter/ui`: shadcn-svelte component library
 
 ---

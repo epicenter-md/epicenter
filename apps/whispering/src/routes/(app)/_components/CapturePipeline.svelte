@@ -1,23 +1,20 @@
 <script lang="ts">
+	import { cn } from '@epicenter/ui/utils';
 	import type { Snippet } from 'svelte';
 
 	let {
 		children,
+		class: className,
 	}: {
 		children: Snippet;
+		class?: string;
 	} = $props();
 </script>
 
-<!--
-	The capture controls: input device, transcription model, post-processing.
-	The model is the one setting people hunt for, so its selector renders as a
-	labeled pill that stretches between the two icon bookends; the device and
-	polish stay compact icons (their labels live in hover tooltips).
--->
 <div
-	class="flex w-full items-center gap-1.5"
+	class={cn('flex w-full items-center gap-1.5', className)}
 	role="group"
-	aria-label="Capture pipeline"
+	aria-label="Recording setup"
 >
 	{@render children()}
 </div>

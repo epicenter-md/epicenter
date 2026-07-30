@@ -4,26 +4,27 @@
 	it" step both render this, so the two cannot drift.
 
 	The audio renders whenever the clip exists, independent of the transcript, so a
-	silent or not-yet-transcribed recording still plays back. The playback URL is
-	owned here: the blob store caches it per id, and it is revoked on teardown.
+	silent or not-yet-transcribed recording still plays back. This component owns
+	its playback URL acquisition and disposes it on teardown.
 -->
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
+	import type { BlobId } from '@epicenter/blobs';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import { createQuery } from '@tanstack/svelte-query';
-	import { onDestroy } from 'svelte';
+	import AudioBlobPlayer from '$lib/components/AudioBlobPlayer.svelte';
 	import TextPreviewDialog from '$lib/components/copyable/TextPreviewDialog.svelte';
-	import { rpc } from '$lib/rpc';
-	import { services } from '$lib/services';
 	import { viewTransition } from '$lib/utils/viewTransitions';
+	import type { RecordingId } from '$lib/workspace';
 
 	let {
 		recordingId,
+		audioBlobId,
 		transcript,
 		rows = 1,
 		onDelete,
 	}: {
-		recordingId: string;
+		recordingId: RecordingId;
+		audioBlobId: BlobId;
 		transcript: string;
 		/** Visible rows of the transcript preview before it scrolls/expands. */
 		rows?: number;
@@ -31,13 +32,6 @@
 		onDelete?: () => void;
 	} = $props();
 
-	const audioQuery = createQuery(() => ({
-		...rpc.audio.getPlaybackUrl(() => recordingId).options,
-		enabled: !!recordingId,
-	}));
-	onDestroy(() => {
-		if (recordingId) services.blobs.audio.revokeUrl(recordingId);
-	});
 </script>
 
 <div class="flex w-full flex-col gap-2">
@@ -52,17 +46,13 @@
 	<!-- Delete is a companion action on the audio row, mirroring the copy button
 	     on the transcript row above: content stretches, its action caps the row.
 	     Icon-only with a tooltip; the confirmation dialog carries the words. -->
-	{#if audioQuery.data || onDelete}
+	{#if audioBlobId || onDelete}
 		<div class="flex w-full items-center gap-2">
-			{#if audioQuery.data}
-				<audio
-					style:view-transition-name={viewTransition.recording(recordingId)
-						.audio}
-					src={audioQuery.data}
-					controls
-					class="h-8 min-w-0 flex-1"
-				></audio>
-			{/if}
+			<AudioBlobPlayer
+				id={audioBlobId}
+				class="h-8 min-w-0 flex-1"
+				viewTransitionName={viewTransition.recording(recordingId).audio}
+			/>
 			{#if onDelete}
 				<Button
 					class="ml-auto"

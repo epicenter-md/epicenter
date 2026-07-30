@@ -2,11 +2,11 @@
 
 Whispering uses a clean three-layer architecture that shares one SPA between its browser deployment and the Epicenter desktop host. This is possible because platform differences are selected at build time and business logic stays separate from UI concerns.
 
-**Quick Navigation:** [Service Layer](#service-layer---pure-business-logic--platform-abstraction) | [RPC Layer](#rpc-layer---adding-reactivity-and-state-management) | [Error Handling](#error-handling-with-wellcrafted)
+**Quick Navigation:** [Service Layer](#service-layer---pure-business-logic--platform-abstraction) | [Query Layer](#query-layer---adding-reactivity-and-state-management) | [Error Handling](#error-handling-with-wellcrafted)
 
 ```
 ┌─────────────┐     ┌─────────────┐     ┌──────────────┐
-│  UI Layer   │ --> │  RPC Layer│ --> │ Service Layer│
+│  UI Layer   │ --> │ Query Layer │ --> │ Service Layer│
 │ (Svelte 5)  │     │ (TanStack)  │     │   (Pure)     │
 └─────────────┘     └─────────────┘     └──────────────┘
       ↑                    │
@@ -16,30 +16,20 @@ Whispering uses a clean three-layer architecture that shares one SPA between its
 
 ## Workspace Composition
 
-Whispering uses the same workspace composition vocabulary as the rest of the repo across browser and Epicenter-hosted builds:
+Whispering binds its inert workspace contract through one environment-owned SQLite runtime, acquired as one ready app inside the mounted Svelte root:
 
 ```txt
-defineWorkspace()
-  -> defineWhispering(defaultTranscriptionService)
-    -> openWhisperingBrowser({ auth, nodeId, defaultTranscriptionService })
+defineWorkspace()                       src/lib/workspace/contract.ts (inert schema)
+  -> openWhisperingApp()        src/lib/whispering/app.ts (transactional async open)
+    -> #platform/whispering             whisperingPlatform: the per-build dependencies
+      -> openWhisperingUiSession()      src/lib/whispering/ui-session.ts (app + query runtime)
+        -> (app)/+layout.svelte         raw {#await} owns pending / ready / failed
+          -> WhisperingUiSessionProvider      typed context for ready-only descendants
 ```
 
-`defineWhispering(defaultTranscriptionService)` in `src/lib/workspace/definition.ts` is the shared model factory. It defines the fixed workspace id, tables, and KV schema with no platform APIs; the platform argument only changes read-side KV defaults.
+`src/lib/workspace/contract.ts` defines the fixed workspace id, row tables, and KV settings schema with no platform APIs. `openWhisperingApp(whisperingPlatform, { signal })` opens the Whispering workspace through the runtime the environment supplies, hydrates settings, recordings, and recipes, and resolves only with those UI-free product namespaces ready; any failure releases everything it opened and rejects. The (app) layout wraps that open in one UI session (`openWhisperingUiSession`), which composes the Svelte reactivity adapters, a session-scoped TanStack `QueryClient`, and the query namespace over the ready app, and owns their ordered disposal. The layout creates the session promise during component initialisation, so the `{#await}` observes it from the first microtask. The fulfilled branch mounts `WhisperingUiSessionProvider`, which only publishes the ready session: typed `getWhisperingApp()` / `getWhisperingQueries()` context plus the session's query client. Boot retry is a full page reload; unmount/HMR aborts the acquisition, and the layout is the single owner of session disposal. Bun scripts import `@epicenter/whispering/app` and `@epicenter/whispering/app/bun`, then use the same product API: `await using app = await openWhisperingApp(createWhisperingBunDependencies({ dataDir }))`. The one `dataDir` roots all persistent Bun storage (`<dataDir>/device/<workspaceId>/store.sqlite3`, `<dataDir>/blobs/`).
 
-`openWhisperingBrowser({ auth, nodeId, defaultTranscriptionService })` in `src/lib/whispering/whispering.active.ts` is the shared browser/Tauri runtime opener. It connects once at boot with `toConnection(auth, nodeId)`, layers the recording markdown export, and aliases `storage.whenLoaded` as `whenReady`; settings metadata comes from the workspace's own `kv.keys` / `kv.getDefault` / `kv.reset` (ADR-0093). The `#platform/whispering` leaves supply the auth client, stable node id, and default transcription service.
-
-The rule is the same as Fuji and Honeycrisp:
-
-```txt
-create<App>()
-  shared isomorphic model
-
-open<App>Browser/open<App>Daemon/open<App>Tauri()
-  runtime resources around that model
-
-attach*
-  one side-effectful layer
-```
+The `#platform/whispering` leaves are pure dependency bindings of the workspace runtime plus the platform's composed blob capability (`#platform/blobs`): the web build (`whispering.browser.ts`) selects the device or account browser runtime from the boot auth state (`whispering.browser-runtime.ts`); the Epicenter-hosted build (`whispering.tauri.ts`) uses the same-origin desktop workspace runtime, whose `open` performs an honest host acquisition handshake. The app's recordings namespace owns row/blob consistency: audio storage, upload/download/purge, the `uploadedAt` marker, and deletion of the online copy, device copy, and row as one workflow. Scalar rows live in runtime-native SQLite; row documents are lazy Yjs 14 documents behind the runtime's document provider (ADR-0144).
 
 ## Service Layer - Pure Business Logic + Platform Abstraction
 
@@ -94,59 +84,40 @@ The codebase distinguishes two kinds of "which implementation" decisions and use
 
 **→ Learn more:** [Services README](./src/lib/services/README.md) | [Constants Organization](./src/lib/constants/README.md)
 
-## RPC Layer - Adding Reactivity and State Management
+## Query Layer - Adding Reactivity and State Management
 
-The rpc layer is where reactivity gets injected on top of pure services. It wraps service functions with TanStack Query and handles two key responsibilities:
-
-**Runtime Dependency Injection** - Dynamically switching service implementations based on user settings:
-
-```typescript
-// From transcription rpc layer
-async function transcribeBlob(blob: Blob) {
-  const selectedService = settings.value['transcription.selectedTranscriptionService'];
-
-  switch (selectedService) {
-    case 'OpenAI':
-      return services.transcriptions.openai.transcribe(blob, {
-        apiKey: settings.value['apiKeys.openai'],
-        model: settings.value['transcription.openai.model'],
-      });
-    case 'Groq':
-      return services.transcriptions.groq.transcribe(blob, {
-        apiKey: settings.value['apiKeys.groq'], 
-        model: settings.value['transcription.groq.model'],
-      });
-  }
-}
-```
-
-**Workspace State** - After migrating to Yjs CRDTs, domain data (recordings, transformations, transformation runs) lives in reactive workspace state modules (`$lib/state/*.svelte.ts`). These use SvelteMap backed by Yjs documents for instant reactivity. No cache invalidation or optimistic updates needed.
-
-The rpc layer's role has narrowed to things that don't fit in CRDTs:
-
-- **External APIs**: Transcription services, LLM completions (`rpc.transcription.*`, `rpc.transformer.*`)
-- **Microphone enumeration**: Async device list with loading states (`manualRecorder.enumerateDevices`). Recorder state itself lives in `$lib/state/manual-recorder.svelte.ts` and `$lib/state/vad-recorder.svelte.ts` as `$state`, not queries.
-- **Audio blob access**: Too large for Yjs CRDTs, still served via DbService (`rpc.audio.getPlaybackUrl`)
+The query layer (`$lib/queries`) is where TanStack Query reactivity gets injected on top of the ready app and pure services. One `WhisperingUiSession` owns one `QueryClient` and one `WhisperingQueries` namespace; there is no module-global client. Components reach both through context:
 
 ```svelte
 <script>
-  import { rpc } from '$lib/rpc';
-  import { recordings } from '$lib/state/recordings.svelte';
+  import { createQuery } from '@tanstack/svelte-query';
+  import { getWhisperingApp, getWhisperingQueries } from '$lib/whispering/context';
+
+  const app = getWhisperingApp();
+  const queries = getWhisperingQueries();
 
   // Domain data: workspace state (reactive, no queries needed)
-  const latestRecording = $derived(recordings.sorted[0]);
+  const latestRecording = $derived(app.recordings.sorted[0]);
 
-  // Audio blob: still needs TanStack Query (too large for CRDTs)
-  const audioUrl = createQuery(() => ({
-    ...rpc.audio.getPlaybackUrl(() => latestRecording?.id ?? '').options,
-    enabled: !!latestRecording?.id,
-  }));
+  // Audio availability: still needs TanStack Query (blobs are too large for
+  // workspace rows)
+  const availability = createQuery(
+    () => queries.audio.availability(() => latestRecording).options,
+  );
 </script>
 ```
 
+**Workspace State** - The UI-free app owns domain data (recordings, recipes, settings). Thin `$lib/state/*.svelte.ts` adapters add `createSubscriber` tracking, so components react to the same namespaces that Bun scripts use.
+
+The query layer's role has narrowed to things that don't fit in workspace rows:
+
+- **External APIs**: Transcription mutations (`queries.transcription.*`) around the transcription operations
+- **Microphone enumeration**: Async device list with loading states (`manualRecorder.enumerateDevices`). Recorder state itself lives in `$lib/state/manual-recorder.svelte.ts` and `$lib/state/vad-recorder.svelte.ts` as `$state`, not queries.
+- **Audio blob access**: Too large for workspace rows, still served via the blob store (`queries.audio.availability`, `queries.download.downloadRecording`)
+
 This design keeps services pure and platform-agnostic while giving the UI immediate reactivity for domain data and cached access for external resources.
 
-**→ Learn more:** [RPC README](./src/lib/rpc/README.md) | [State README](./src/lib/state/README.md)
+**→ Learn more:** [Queries README](./src/lib/queries/README.md) | [State README](./src/lib/state/README.md)
 
 ## Error reporting
 
@@ -182,8 +153,7 @@ Whispering uses [WellCrafted](https://github.com/wellcrafted-dev/wellcrafted), a
 ## Architecture Patterns
 
 - **Service Layer**: Platform-agnostic business logic with Result types
-- **RPC Layer**: Reactive data management with caching
-- **RPC Pattern**: Unified API interface for non-CRUD operations (`rpc.audio.*`, `rpc.transcription.*`, `rpc.actions.*`)
+- **Query Layer**: Reactive data management with caching, scoped to one UI session (`queries.audio.*`, `queries.transcription.*`, `queries.download.*`)
 - **Dependency Injection**: Clean separation of concerns
 
 ## Key Architectural Decisions

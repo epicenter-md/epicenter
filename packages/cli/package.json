@@ -32,6 +32,7 @@
 	},
 	"dependencies": {
 		"@epicenter/auth": "workspace:*",
+		"@epicenter/blobs": "workspace:*",
 		"@epicenter/client": "workspace:*",
 		"@epicenter/identity": "workspace:*",
 		"@epicenter/matter-core": "workspace:*",
@@ -43,9 +44,6 @@
 	},
 	"devDependencies": {
 		"typebox": "catalog:",
-		"@epicenter/api": "workspace:*",
-		"@epicenter/honeycrisp": "workspace:*",
-		"@epicenter/tab-manager": "workspace:*",
 		"@types/bun": "catalog:",
 		"@types/yargs": "catalog:",
 		"typescript": "catalog:"

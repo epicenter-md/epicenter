@@ -1,5 +1,10 @@
 # Why Reads Should Be Pure
 
+> Historical: this article reasons about the retired migrate-on-read record
+> model. The target keeps schema-opaque canonical JSON and makes every
+> release-local lens read pure. See
+> [ADR-0125](../adr/0125-record-definitions-are-release-local-lenses-and-never-migrate-user-data.md).
+
 When designing Epicenter's migrate-on-read pattern, we faced a question: after reading and migrating old data, should we automatically write the migrated version back to storage?
 
 We decided no. Reads should be pure.

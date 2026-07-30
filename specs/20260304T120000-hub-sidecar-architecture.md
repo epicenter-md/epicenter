@@ -753,7 +753,7 @@ This is the core component. Each DO instance manages one Y.Doc sync room using t
 1. **No `setTimeout`/`setInterval`**: timers prevent hibernation. The existing Elysia adapter's 30s ping interval is replaced by `setWebSocketAutoResponse` (auto ping/pong without waking the DO).
 1. **No `onOpen` event**: Cloudflare Workers WebSocket adapter does not fire `onOpen`. Initial sync messages must be sent inline during the upgrade in `fetch()`, not in a separate callback. Do not add a `webSocketOpen()` handler: it won't fire.
 2. **Constructor runs on every wake**: minimize initialization. Rebuild in-memory state lazily or via `blockConcurrencyWhile`.
-3. **`serializeAttachment` for per-connection state**: max 2,048 bytes per WebSocket. Store the `ConnectionState` fields needed to survive hibernation.
+3. **`serializeAttachment` for per-connection state**: max 16,384 bytes per WebSocket. Store the `ConnectionState` fields needed to survive hibernation.
 4. **Binary messages**: `WebSocket.send()` accepts `ArrayBuffer | string`. sync-core produces `Uint8Array`. Need `ws.send(data.buffer)` or spread into `ArrayBuffer`.
 5. **Message batching**: each WS message incurs a context switch. For high-frequency Y.Doc updates, consider batching into single frames.
 
@@ -770,7 +770,7 @@ sync-core's `ConnectionState` includes:
 Only `controlledClientIds` needs serialization. The rest is either fixed per-DO or recreated.
 
 ```typescript
-// Serialized into WebSocket attachment (max 2,048 bytes)
+// Serialized into WebSocket attachment (max 16,384 bytes)
 type WsAttachment = {
   controlledClientIds: number[]
 }
@@ -1257,7 +1257,7 @@ The only potential issue: Cloudflare's `WebSocket.send()` accepts `string | Arra
 | No `setTimeout`/`setInterval` | Can't do periodic compaction | Compact on last disconnect instead |
 | Code deploy disconnects all WS | All clients reconnect on deploy | y-websocket protocol handles reconnection gracefully |
 | PostgreSQL latency (~20-50ms) | Auth check on first request | KV session cache (SecondaryStorage) reduces to <1ms |
-| 2,048 byte attachment limit | Can't serialize large connection state | Only `controlledClientIds` needs serialization: a few dozen bytes |
+| 16,384 byte attachment limit | Can't serialize arbitrarily large connection state | Only `controlledClientIds` needs serialization: a few dozen bytes |
 
 ### Future Extensions
 

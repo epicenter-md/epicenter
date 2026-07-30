@@ -1,7 +1,7 @@
 {
 	"name": "@epicenter/workspace",
 	"version": "0.3.0",
-	"description": "Local-first workspace library. CRDT-backed tables, key-value stores, and sync, built on Yjs.",
+	"description": "Local-first workspace library with schema-opaque records, release-local lenses, and lazy Yjs documents.",
 	"keywords": [
 		"local-first",
 		"CRDT",
@@ -45,10 +45,13 @@
 		"bench": "bun test ./src/__benchmarks__/*.bench.ts --timeout 60000"
 	},
 	"dependencies": {
+		"@y/y": "14.0.0-rc.24",
+		"@sqlite.org/sqlite-wasm": "catalog:",
 		"@epicenter/agent-protocol": "workspace:*",
 		"@epicenter/encryption": "workspace:*",
 		"@epicenter/field": "workspace:*",
 		"@epicenter/identity": "workspace:*",
+		"@epicenter/sqlite": "workspace:*",
 		"@epicenter/sync": "workspace:*",
 		"@sindresorhus/slugify": "catalog:",
 		"@types/bun": "catalog:",

@@ -1,6 +1,6 @@
 import { tauri } from '#platform/tauri';
 import { log } from '$lib/report';
-import { settings } from '$lib/state/settings.svelte';
+import type { WhisperingApp } from '$lib/whispering/app';
 
 // The one best-effort side effect for recording: pause whatever the system is
 // playing while recording, resume it after. Recording never waits on this and
@@ -20,8 +20,8 @@ import { settings } from '$lib/state/settings.svelte';
 
 let chain: Promise<string[]> = Promise.resolve([]);
 
-function shouldPausePlayback(): boolean {
-	return Boolean(tauri && settings.get('recording.pausePlayback'));
+function shouldPausePlayback(app: WhisperingApp): boolean {
+	return Boolean(tauri && app.settings.get('settings.recording.pausePlayback'));
 }
 
 async function pausePlayingSessions(): Promise<string[]> {
@@ -49,8 +49,8 @@ async function resumeSessions(sessions: string[]): Promise<void> {
 
 export const recordingMedia = {
 	/** Pause active playback if enabled. Fire-and-forget: recording never waits. */
-	pause(): void {
-		if (!shouldPausePlayback()) return;
+	pause(app: WhisperingApp): void {
+		if (!shouldPausePlayback(app)) return;
 		// Already paused? Keep that set; otherwise pause what's playing now.
 		chain = chain.then(async (paused) =>
 			paused.length > 0 ? paused : await pausePlayingSessions(),

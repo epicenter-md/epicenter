@@ -20,6 +20,12 @@ import type {
 	DeviceConfigKey,
 	SecretKey,
 } from '$lib/state/device-config.svelte';
+import type { TranscriptionServiceId } from './provider-ids';
+
+export {
+	TRANSCRIPTION_SERVICE_IDS,
+	type TranscriptionServiceId,
+} from './provider-ids';
 
 type Capabilities = { supportsPrompt: boolean; supportsLanguage: boolean };
 type CloudModel = { name: string; description: string; cost: string };
@@ -61,14 +67,14 @@ type KeyProvider = {
 	apiKeyConfigKey: SecretKey;
 	/**
 	 * The settings key holding this provider's model selection. Constrained to
-	 * the leaf shape `transcription.${string}.model`, not a precise union of the
+	 * the leaf shape `settings.transcription.${string}.model`, not a precise union of the
 	 * cloud keys: a precise union here would make `typeof PROVIDERS` reference a
 	 * type derived from itself (`satisfies Record<..., TranscriptionProvider>`
 	 * closes the loop). The real guard is the call site
 	 * `settings.get(provider.modelSettingKey)`, which rejects keys absent from
 	 * the settings schema.
 	 */
-	modelSettingKey: `transcription.${string}.model`;
+	modelSettingKey: `settings.transcription.${string}.model`;
 	/** Device config key for the endpoint override; null when not configurable. */
 	endpointConfigKey: DeviceConfigKey | null;
 	/**
@@ -83,14 +89,9 @@ type OnDeviceProvider = {
 	access: Extract<ProviderAccess, 'onDevice'>;
 	label: string;
 	description: string;
-	/**
-	 * The device config key holding the selected model's catalog id
-	 * (`"{repoId}@{revision}/{filename}"`), never a path. Rust owns the catalog
-	 * and resolves the id to a shared-HF-cache path at load time. No static
-	 * `capabilities` here: local capability is per-GGUF, read from the Rust
-	 * `ModelInfo` (honest asymmetry vs. provider-wide cloud capability).
-	 */
-	modelConfigKey: DeviceConfigKey;
+	// No model pointer and no static `capabilities`: the host owns the one
+	// active local model (ADR-0180), and its per-model capability is read from
+	// that model at use, not declared provider-wide the way a cloud family's is.
 };
 
 type EndpointProvider = {
@@ -151,7 +152,7 @@ export const PROVIDERS = {
 		description: 'Industry-standard Whisper API',
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
 		apiKeyConfigKey: 'providers.openai.apiKey',
-		modelSettingKey: 'transcription.openai.model',
+		modelSettingKey: 'settings.transcription.openai.model',
 		endpointConfigKey: 'providers.openai.endpoint',
 		modelsDoc: {
 			label: 'OpenAI docs',
@@ -185,7 +186,7 @@ export const PROVIDERS = {
 		description: 'Lightning-fast cloud transcription',
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
 		apiKeyConfigKey: 'providers.groq.apiKey',
-		modelSettingKey: 'transcription.groq.model',
+		modelSettingKey: 'settings.transcription.groq.model',
 		endpointConfigKey: 'providers.groq.endpoint',
 		modelsDoc: {
 			label: 'Groq docs',
@@ -214,7 +215,7 @@ export const PROVIDERS = {
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
 		apiKeyConfigKey: 'providers.elevenlabs.apiKey',
 		endpointConfigKey: null,
-		modelSettingKey: 'transcription.elevenlabs.model',
+		modelSettingKey: 'settings.transcription.elevenlabs.model',
 		modelsDoc: {
 			label: 'ElevenLabs docs',
 			href: 'https://elevenlabs.io/docs/capabilities/speech-to-text',
@@ -248,7 +249,7 @@ export const PROVIDERS = {
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
 		apiKeyConfigKey: 'providers.deepgram.apiKey',
 		endpointConfigKey: null,
-		modelSettingKey: 'transcription.deepgram.model',
+		modelSettingKey: 'settings.transcription.deepgram.model',
 		modelsDoc: null,
 		defaultModel: 'nova-3',
 		models: [
@@ -290,7 +291,7 @@ export const PROVIDERS = {
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
 		apiKeyConfigKey: 'providers.mistral.apiKey',
 		endpointConfigKey: null,
-		modelSettingKey: 'transcription.mistral.model',
+		modelSettingKey: 'settings.transcription.mistral.model',
 		modelsDoc: {
 			label: 'Mistral docs',
 			href: 'https://mistral.ai/news/voxtral/',
@@ -316,7 +317,6 @@ export const PROVIDERS = {
 		access: 'onDevice',
 		label: 'Local',
 		description: 'Private on-device transcription, no internet required',
-		modelConfigKey: 'transcription.local.selectedModel',
 	},
 
 	speaches: {
@@ -327,9 +327,7 @@ export const PROVIDERS = {
 		endpointConfigKey: 'providers.speaches.endpoint',
 		modelIdConfigKey: 'providers.speaches.modelId',
 	},
-} as const satisfies Record<string, TranscriptionProvider>;
-
-export type TranscriptionServiceId = keyof typeof PROVIDERS;
+} as const satisfies Record<TranscriptionServiceId, TranscriptionProvider>;
 
 /**
  * The ids of `key` providers (the ones that take a user API key), derived from
@@ -372,8 +370,3 @@ export type UploadProviderId = Exclude<
 	TranscriptionServiceId,
 	OnDeviceProviderId
 >;
-
-/** Every provider ID, e.g. for `field.select(TRANSCRIPTION_SERVICE_IDS)`. */
-export const TRANSCRIPTION_SERVICE_IDS = Object.keys(
-	PROVIDERS,
-) as TranscriptionServiceId[];

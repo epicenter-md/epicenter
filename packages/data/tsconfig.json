@@ -1,0 +1,9 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"types": ["bun"],
+		"noUnusedLocals": true,
+		"noUnusedParameters": true
+	},
+	"exclude": ["browser-evidence"]
+}

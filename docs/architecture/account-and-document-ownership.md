@@ -1,127 +1,125 @@
-# Account and Document Scope
+# Account, workspace, and document scope
 
-This is the canonical reference for which principal scopes a document in Epicenter,
-how cloud sync is addressed, and where "organization" fits. For the narrative behind the
-decision, see `docs/articles/20260522T170000-documents-belong-to-you-not-a-workspace.md`.
+This is the current reference for the ownership boundaries around a workspace
+and its row documents. Historical articles and ADRs may describe the deployed
+principal-scoped room service; the Proposed destination is recorded here
+separately from that transition state.
 
-## The core rule
+## Core rule
 
-A document is scoped to an authenticated principal. There is no container between
-that principal and the document.
+One account authority owns everything an authenticated principal stores: one
+actor and one SQLite database containing every named workspace, its rows, KV,
+and row documents. A row document has no independent global room identity.
 
-```
-principal = a Better Auth user in Cloud, or the literal "instance" on self-host
-document  = a Y.Doc, identified by its guid
-```
-
-The token says which principal the request represents. For documents under that
-principal, that is the entire authorization story. There is no membership lookup,
-because the route does not echo or select another principal.
-
-## Three layers, introduced over time
-
-Epicenter separates content ownership from tenancy and billing. They are
-distinct layers; only Layer 1 exists today.
-
-```
-LAYER 3  Tenancy / billing       acme.com, 40 seats, admin console     Google Workspace
-           groups user ACCOUNTS for one invoice and admin policy       (enterprise, future)
-              |  administers
-LAYER 2  Shared-drive content    docs OWNED BY an org, so they         Google Shared Drives
-           survive a departing employee                                (enterprise, future)
-              |  alongside
-LAYER 1  Principal content       principals/<principalId> scopes        consumer Google Docs
-           the doc; sharing is not built yet                             (TODAY)
+```text
+account authority (one per principal)
+    `-- named workspace
+        `-- table row
+            `-- Yjs document
 ```
 
-Layer 1 is what ships today: documents sit under the resolved principal. Layer
-1.5 is per-document sharing through an access list, additive, not yet built.
-Layer 2 is org-owned
-content for the enterprise case where work must outlive an employee. Layer 3 is
-the billing and administration grouping for enterprise seats.
+The complete route address is `(workspaceId, table, rowId)`:
 
-The layers attach cleanly because Layer 1 makes no claim about teams or billing.
-Build a fused container first (the Notion model) and you are forced to invent a
-container-of-one for every solo user before any real org exists.
+- authentication resolves `principalId`;
+- the authority address derives deterministically from that principal alone,
+  so a workspace id is a name inside the requester's own partition
+  (ADR-0092) and no request can address another principal's state;
+- the route supplies `workspaceId`, `table`, and `rowId` inside that
+  authority;
+- the client never supplies a principal or arbitrary room id.
 
-## Google Docs, not Notion
+The row id is stable for one lifetime and is never reused by conforming
+runtimes.
 
-The distinction that decides everything: Notion fuses content ownership and
-billing into one "workspace". A page lives inside a workspace, the workspace is
-the billing boundary, membership is workspace-level. One entity, two jobs.
+## Workspace is a data boundary, not an organization
 
-Google separates them. A Google Doc is owned by a user account; sharing is a
-per-document access list. Google Workspace is a separate product: a domain, an
-admin console, per-seat billing, administering a set of user accounts. It never
-owns a document.
+Epicenter uses a workspace to group one application's queryable rows, KV, and
+documents under one authority. It is not a billing account, team membership
+container, or enterprise organization.
 
-Epicenter follows Google. Content scope is Layer 1. Tenancy and billing are
-Layer 3. They never merge.
-
-## Cloud sync addressing
-
-A cloud doc syncs through one route, keyed by the authenticated principal and
-the doc's guid.
-
-```
-route     /api/rooms/:room                          (all deployments)
-DO name   principals/${principalId}/rooms/${room}    (room = ydoc.guid)
-builder   roomWsUrl({ baseURL, guid: ydoc.guid, nodeId })
+```text
+content boundary       workspace authority and its rows
+identity boundary      authenticated principal
+billing boundary       account, with enterprise aggregation later
 ```
 
-The DO partition is `principals/<principalId>` in every deployment. In Cloud,
-the principal is derived from the authenticated user. On a self-hosted
-instance, `principalId === 'instance'`, so every operator-authorized request on
-the deployment shares the same partition. The room id is the Y.Doc's guid: the
-document already carries its own identity, so nothing else is
-composed into the name.
+A principal can own several workspaces. Adding a workspace does not create an
+organization-of-one, membership row, invitation system, or separate billing
+customer.
 
-Browser apps and the daemon use the same route and the same builder. They sync
-the same document by using the same guid.
+## Proposed document addressing
 
-There is no `appId` segment. A user may hold documents from several apps;
-cross-app collision is avoided by convention (each app names its root doc
-after itself, child docs carry unique guids), not by infrastructure. Guid
-uniqueness per user is already required for local IndexedDB, so cloud sync
-adds no new collision surface.
+Each open row document connects through its own route-bound Yjs 14 socket:
 
-## What "organization" means here
+```text
+/api/workspaces/:workspaceId/tables/:table/rows/:rowId/document
+```
 
-An organization is a Layer 3 concept: a billing and administration grouping of
-user accounts. It is not a container that owns documents.
+The route selects exactly one document. It does not use `ydoc.guid` as a public
+room id, and the connection carries no other row document.
 
-The Better Auth organization plugin belongs to Layer 3, where its real strengths
-(members, roles, invitations, admin) apply to accounts. It does not belong under
-documents. A solo user is not an organization, and modeling them as an
-organization-of-one buys a degenerate entity, a derived id that is a pure hash
-of the user id, and a membership check whose only failure mode is a provisioning
-bug.
+The same account authority serves scalar row synchronization and document
+sockets. That lets one durable owner enforce the lifecycle invariant:
 
-## Why personal docs need no membership check
+- rows that are not live admit no document bytes;
+- live rows may append document updates;
+- deletion removes the row, records a bounded deletion marker, and removes
+  server document state in one transaction;
+- conforming runtimes never re-mint a deleted row id, and only `create` can
+  establish a row, so late updates cannot resurrect one.
 
-Authorization for a Layer 1 document is principal resolution, not membership.
-The auth middleware confirms the caller is a valid principal; the DO name is
-derived from that same principal. A request reaching
-`principals/${principalId}/rooms/*` is, by construction, scoped to the principal
-that auth resolved. A membership query here would have exactly one possible
-denial: the system is broken.
+Local scalar and document storage remain independent. Physical co-location in
+native SQLite does not create a cross-plane snapshot promise.
 
-Layer 1.5 sharing changes this only for documents shared *to* you: the source
-principal's DO name stays `principals/${principalId}/rooms/${room}`, and an ACL
-table grants other principals access. The auth check becomes "is the caller the
-source principal, or in the ACL". Your own documents still need no lookup.
+## Authorization
 
-## Billing
+Authorization is the partition rule itself: an authenticated principal is
+always authorized for its own partition and can address nothing else. There is
+no catalog, grant table, or per-request lookup. Reads create no logical
+workspace, replica record, or user-data state; the first accepted write binds
+a new `(workspace, replica)` pair under the account's storage allowance and
+creates the workspace row, replica receipt, and data in one transaction.
 
-Billing is per user account. The signup hook creates an Autumn customer keyed on
-`user.id`. No per-document or per-workspace billing exists. Enterprise per-seat
-billing is Layer 3 and aggregates user accounts under a tenancy; it does not
-require content to be owned by anything other than the user.
+Future sharing maps several accounts to one shared principal through
+`ResolvePrincipal`, the seam ADR-0092 reserved. Every member then resolves the
+same deterministic authority, so shared history cannot split, and no
+per-workspace membership state exists until a real sharing product earns one.
 
-## Related
+## Tenancy and billing
 
-- `docs/articles/20260522T170000-documents-belong-to-you-not-a-workspace.md` - the narrative
-- `specs/20260522T160000-revert-cloud-workspace-sync-layer.md` - the spec that reverted the code to this model
-- `packages/workspace/SYNC_ARCHITECTURE.md` - the sync transport and presence surfaces
-- `docs/trust-model.md` - the trust model: the relay reads plaintext, so
-  privacy is a topology choice (who runs the anchor) rather than an encryption layer
+Billing is per user account today. An enterprise organization may later group
+accounts for administration and one invoice. It does not need to own the
+workspaces or documents those accounts create.
+
+This keeps three questions separate:
+
+1. Who authenticated this request?
+2. Which workspace and row does the request address?
+3. Which account or organization pays for the service?
+
+Answering one does not manufacture the others.
+
+## Deployed legacy during transition
+
+Some applications still use the older Yjs 13 room model:
+
+```text
+route     /api/rooms/:roomId
+room      ydoc.guid
+storage   principal-scoped room actor or file
+```
+
+In that deployed lane, authentication selects the principal and `ydoc.guid`
+selects an arbitrary room beneath it. This remains operational until those
+applications convert. It is not compatible with the Proposed route, Yjs major,
+or persisted format, and the destination does not preserve a fallback reader.
+
+## Related decisions
+
+- ADR-0092 records that the authenticated principal is the partition; under
+  ADR-0145 it is also the actor.
+- Proposed ADR-0144 separates scalar and document client planes.
+- Proposed ADR-0145 assigns both planes to one account authority with one
+  route-bound socket per open row document.
+- Proposed ADR-0146 selects Yjs 14-only providers and update logs.
+- `packages/workspace/SYNC_ARCHITECTURE.md` describes the runtime lifecycle.

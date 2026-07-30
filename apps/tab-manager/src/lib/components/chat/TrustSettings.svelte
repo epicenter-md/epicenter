@@ -3,13 +3,14 @@
 	import * as Popover from '@epicenter/ui/popover';
 	import { Switch } from '@epicenter/ui/switch';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import { tabManagerBoot } from '$lib/session.svelte';
+	import { getTabManagerApp } from '$lib/context';
 
-	const tabManager = tabManagerBoot.tabManager;
+	const tabManager = getTabManagerApp();
 	const trustedTools = $derived(tabManager.state.toolTrust.trustedToolNames);
-	const actionTitles = $derived(
-		tabManager.actions as Record<string, { title?: string }>,
-	);
+	const actionTitles = tabManager.actions as Record<
+		string,
+		{ title?: string }
+	>;
 </script>
 
 {#if trustedTools.length > 0}
@@ -35,7 +36,7 @@
 							<Switch
 								checked={true}
 								onCheckedChange={() =>
-									tabManager.state.toolTrust.revoke(name)}
+									void tabManager.state.toolTrust.revoke(name)}
 							/>
 						</div>
 					{/each}
@@ -46,7 +47,7 @@
 							class="text-xs text-muted-foreground hover:text-foreground transition-colors"
 							onclick={() => {
 								for (const toolName of trustedTools) {
-									tabManager.state.toolTrust.revoke(toolName);
+									void tabManager.state.toolTrust.revoke(toolName);
 								}
 							}}
 						>

@@ -5,6 +5,7 @@
 	"description": "Framework-agnostic auth core for Epicenter.",
 	"exports": {
 		".": "./src/index.ts",
+		"./desktop": "./src/desktop-broker-auth.ts",
 		"./node": "./src/node.ts",
 		"./oauth-launchers": "./src/oauth-launchers/index.ts",
 		"./oauth-launchers/tauri": "./src/oauth-launchers/tauri.ts"

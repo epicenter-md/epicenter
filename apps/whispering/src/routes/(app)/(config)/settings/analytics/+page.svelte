@@ -3,8 +3,10 @@
 	import * as Card from '@epicenter/ui/card';
 	import * as SectionHeader from '@epicenter/ui/section-header';
 	import { SettingSwitch } from '$lib/components/settings';
-	import { analytics } from '$lib/operations/analytics';
-	import { settings } from '$lib/state/settings.svelte';
+	import { logAnalyticsEvent } from '$lib/operations/analytics';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 </script>
 
 <div class="space-y-8">
@@ -14,7 +16,7 @@
 			<SectionHeader.Title level={3} class="text-xl tracking-tight"
 				>Analytics</SectionHeader.Title
 			>
-			{#if settings.get('analytics.enabled')}
+			{#if app.settings.get('settings.analytics.enabled')}
 				<Badge
 					variant="outline"
 					class="text-xs text-green-700 dark:text-green-400 border-green-200 dark:border-green-400/30"
@@ -39,13 +41,13 @@
 	<Card.Root>
 		<Card.Content class="py-2">
 			<SettingSwitch
-				key="analytics.enabled"
+				key="settings.analytics.enabled"
 				label="Share anonymized events"
 				description='We log simple events like "recording started" or "transcription completed". No personal data is attached to any of these events.'
 				onCheckedChange={(checked) => {
 					// Log the change (only actually sends if analytics is now enabled).
 					if (checked) {
-						analytics.logEvent({
+						void logAnalyticsEvent(app, {
 							type: 'settings_changed',
 							section: 'analytics',
 						});
@@ -107,7 +109,7 @@
 					>
 				</a>
 				<a
-					href="https://github.com/search?q=repo%3AEpicenterHQ%2Fepicenter+rpc.analytics.logEvent&type=code"
+					href="https://github.com/search?q=repo%3AEpicenterHQ%2Fepicenter+logEvent&type=code"
 					target="_blank"
 					rel="noopener noreferrer"
 					class="group flex items-center gap-2 text-primary hover:text-primary/80 transition-colors"
@@ -142,7 +144,7 @@
 
 	<!-- Status Footer -->
 	<div class="flex items-center gap-2 text-xs">
-		{#if settings.get('analytics.enabled')}
+		{#if app.settings.get('settings.analytics.enabled')}
 			<div class="flex items-center gap-2 text-green-700 dark:text-green-400">
 				<div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
 				<span class="font-medium">Analytics active</span>

@@ -3,7 +3,6 @@
 	import { cn } from '@epicenter/ui/utils';
 	import { commandRunners } from '$lib/commands';
 	import ImportFileButton from '$lib/components/ImportFileButton.svelte';
-	import PolishPipelineControl from '../_components/PolishPipelineControl.svelte';
 	import {
 		CaptureSurfaceSelector,
 		TranscriptionSelector,
@@ -19,6 +18,9 @@
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 
 	let { children } = $props();
 
@@ -41,7 +43,7 @@
 	<!-- The row hides while a capture is live: the pill owns stop and cancel on
 	every route, and the state-derived toggle here would just duplicate them. -->
 	<div class="flex items-center gap-1.5">
-		{#if captureSurface.current === 'manual' && manualRecorder.state !== 'RECORDING'}
+		{#if captureSurface.current(app) === 'manual' && manualRecorder.state !== 'RECORDING'}
 			<ManualDeviceSelector
 				iconViewTransitionName={viewTransition.pipeline.device}
 			/>
@@ -49,11 +51,10 @@
 				variant="standalone"
 				iconViewTransitionName={viewTransition.pipeline.transcription}
 			/>
-			<PolishPipelineControl />
 			<div class="flex">
 				<Button
 					tooltip="Start recording"
-					onclick={() => commandRunners.toggleManualRecording()}
+					onclick={() => commandRunners.toggleManualRecording(app)}
 					variant="ghost"
 					size="icon"
 					class="rounded-r-none border-r-0"
@@ -67,7 +68,7 @@
 				</Button>
 				<CaptureSurfaceSelector class="rounded-l-none" />
 			</div>
-		{:else if captureSurface.current === 'vad' && vadRecorder.state === 'IDLE'}
+		{:else if captureSurface.current(app) === 'vad' && vadRecorder.state === 'IDLE'}
 			<VadDeviceSelector
 				iconViewTransitionName={viewTransition.pipeline.device}
 			/>
@@ -75,11 +76,10 @@
 				variant="standalone"
 				iconViewTransitionName={viewTransition.pipeline.transcription}
 			/>
-			<PolishPipelineControl />
 			<div class="flex">
 				<Button
 					tooltip="Start voice activated recording"
-					onclick={() => commandRunners.toggleVadRecording()}
+					onclick={() => commandRunners.toggleVadRecording(app)}
 					variant="ghost"
 					size="icon"
 					class="rounded-r-none border-r-0"
@@ -93,12 +93,11 @@
 				</Button>
 				<CaptureSurfaceSelector class="rounded-l-none" />
 			</div>
-		{:else if captureSurface.current === 'import'}
+		{:else if captureSurface.current(app) === 'import'}
 			<TranscriptionSelector
 				variant="standalone"
 				iconViewTransitionName={viewTransition.pipeline.transcription}
 			/>
-			<PolishPipelineControl />
 			<div class="flex">
 				<ImportFileButton class="rounded-r-none border-r-0" />
 				<CaptureSurfaceSelector class="rounded-l-none" />

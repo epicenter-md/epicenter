@@ -15,9 +15,9 @@
  * Run: bun run apps/query/src/session-client.ts ws://127.0.0.1:<port> <token>
  */
 
-import type { AgentMessage } from '@epicenter/workspace/agent';
+import type { AgentMessage } from '@epicenter/agent';
 import { SESSION_STREAM_ROUTE } from './routes.ts';
-import type { QueryServerEvent } from './server.ts';
+import type { HomeServerEvent } from './server.ts';
 
 const [, , origin, token] = process.argv;
 if (!origin || !token) {
@@ -48,7 +48,7 @@ socket.addEventListener('open', () => {
 });
 
 socket.addEventListener('message', (event) => {
-	const frame = JSON.parse(String(event.data)) as QueryServerEvent;
+	const frame = JSON.parse(String(event.data)) as HomeServerEvent;
 	// Print only messages not shown yet; the server pushes the whole snapshot on
 	// every change, this client just diffs by count. A message renders once it
 	// settles into `messages` (never from `streaming`): a real UI keys one

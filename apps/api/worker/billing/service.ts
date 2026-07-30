@@ -3,8 +3,8 @@
  *
  * Owns every billing domain operation in the cloud worker. Routes and
  * policies call into this service, which returns Epicenter DTOs from
- * `./contracts.ts` (dashboard reads), reservation objects for AI, or storage
- * guard/sync results. It never imports `autumn-js`: the Autumn SDK lives
+ * `./contracts.ts` (dashboard reads), reservation objects for AI, or resolved
+ * storage allowances. It never imports `autumn-js`: the Autumn SDK lives
  * behind `./autumn.ts`, which builds the client, wraps each round-trip in
  * `tryAutumn`, and translates provider throws into `BillingError`.
  *
@@ -20,10 +20,9 @@
  * RETURNS `Result`, because it takes a reservation lock the policy must settle
  * (confirm or release) around the response via the after-response queue.
  *
- * Storage is unmetered in v1: `getOverview` still reports the plan's storage
- * allowance, but nothing writes usage to Autumn yet. The content-addressed blob
- * store will drive `storage_bytes` from an R2 LIST-sum when storage is billed
- * (deleted spec 20260623T220000 decision 10, recoverable via git history; kernel is ADR-0089); the old asset-table sync is retired.
+ * Storage enforcement reads the active plan's allowance here but does not
+ * write usage to Autumn. Physical usage is owned by the storage-observation
+ * registry (ADR-0137), not the provider balance.
  */
 
 import {
@@ -35,7 +34,7 @@ import type { CloudEnv } from '@epicenter/server';
 import type { Context } from 'hono';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import { AiChatError } from './ai-chat-errors.js';
-import { createAutumnClient, tryAutumn } from './autumn.js';
+import { createAutumnClient, isNotFoundError, tryAutumn } from './autumn.js';
 import {
 	type CheckoutPlanId,
 	FEATURE_IDS,
@@ -243,6 +242,22 @@ export function createBillingService(
 	}
 
 	// ----- Dashboard data plane -----------------------------------------
+
+	/** Resolve the active subscription's included physical storage bytes. */
+	async function getStorageIncludedBytes(): Promise<number> {
+		const customer = await loadCustomer();
+		const mainSubscription =
+			customer.subscriptions.find((subscription) => !subscription.addOn) ??
+			null;
+		const planId = (mainSubscription?.planId ?? PLAN_IDS.free) as PlanId;
+		const plan = getPlan(planId);
+		if (!plan || plan.kind !== 'subscription') {
+			throw new Error(
+				`Active subscription plan '${planId}' is not in the catalog`,
+			);
+		}
+		return plan.storage.includedBytes;
+	}
 
 	async function getOverview(): Promise<BillingOverview> {
 		const customer = await loadCustomer();
@@ -529,10 +544,30 @@ export function createBillingService(
 		});
 	}
 
+	/**
+	 * Delete this account's Autumn customer and its Stripe counterpart during
+	 * account deletion. Idempotent: a customer Autumn does not know (never
+	 * created, or already removed by an earlier partial attempt) is success,
+	 * so the deletion coordinator can retry across cross-system failures.
+	 */
+	async function deleteCustomer(): Promise<Result<void, BillingError>> {
+		return tryAutumn(async () => {
+			try {
+				await autumn.customers.delete({
+					customerId: identity.principalId,
+					deleteInStripe: true,
+				});
+			} catch (error) {
+				if (!isNotFoundError(error)) throw error;
+			}
+		});
+	}
+
 	return {
 		reserveAiChat,
 		checkAiCredits,
 		trackAiTranscription,
+		getStorageIncludedBytes,
 		getOverview,
 		listPlans,
 		listUsage,
@@ -541,6 +576,7 @@ export function createBillingService(
 		checkoutPlan,
 		checkoutTopUp,
 		openPortal,
+		deleteCustomer,
 	};
 }
 

@@ -1,6 +1,6 @@
 # Tab Manager
 
-Live tabs and saved tabs are fundamentally different things. Live tabs mirror Chrome's reality. They're ephemeral, they vanish on restart, and they're not yours to own. Saved tabs and bookmarks are workspace data: they persist, sync across devices, and survive browser restarts. Tab Manager is a browser extension that keeps these two layers separate and bridges them with an AI chat drawer that can act on your workspace.
+Live tabs and saved tabs are fundamentally different things. Live tabs mirror Chrome's reality. They're ephemeral, they vanish on restart, and they're not yours to own. Saved tabs and bookmarks are yours: they persist, sync across devices, and survive browser restarts. Tab Manager is a browser extension that keeps these two layers separate and bridges them with an AI chat drawer that can act on the durable one.
 
 Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL-3.0 licensed.
 
@@ -10,19 +10,39 @@ Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL
 
 ```
 ┌──────────────────────────────────────────────────┐
-│  WXT Side Panel (Svelte app)                     │
+│  WXT Side Panel (Svelte app)  ← owns the replica  │
 ├──────────────────────────────────────────────────┤
 │  Chrome APIs (tabs, windows, identity)           │
 ├──────────────┬───────────────────────────────────┤
-│  Browser     │  Workspace state (saved tabs,     │
+│  Browser     │  Durable rows (saved tabs,        │
 │  state       │  bookmarks, chat, tool trust)     │
-│  (ephemeral) │  @epicenter/workspace + sync      │
+│  (ephemeral) │  tabManagerLens + @epicenter/data │
 ├──────────────┴───────────────────────────────────┤
-│  @epicenter/workspace/agent tool catalog         │
+│  DedicatedWorker: OPFS SQLite + one Web Lock     │
 └──────────────────────────────────────────────────┘
 ```
 
-The extension never fights Chrome for ownership of tab state. Ephemeral state seeds from `chrome.windows.getAll` and stays current via event listeners. Workspace state persists to IndexedDB, syncs over WebSocket, and replicates to every device you sign into.
+**Ownership, in one sentence: the open side panel document owns one Epicenter
+browser replica, and the background service worker owns no database.**
+
+That is not a preference. `openBrowserEpicenter` spawns a DedicatedWorker that
+claims one exclusive Web Lock over one OPFS SQLite file, and the replica belongs
+to the storage-partition and origin pair of the document that opened it
+(ADR-0165, amended by ADR-0177). MV3 gives a background service worker no
+production lifetime guarantee, so a replica owned there would lose its lock to
+termination at a moment nothing observes. The background entrypoint's only job
+is to open the side panel on action click, and `ownership.test.ts` asserts its
+module graph can never reach a replica.
+
+A consequence worth knowing: a second same-partition extension document is
+refused immediately rather than queued, so opening the side panel in a second
+browser window surfaces "already open in another tab for this origin" instead of
+waiting on the first one's lifetime. There is deliberately no election, broker,
+or handoff protocol.
+
+The extension never fights Chrome for ownership of tab state. Ephemeral state
+seeds from `chrome.windows.getAll` and stays current via event listeners.
+Durable rows live in SQLite and sync over HTTP when you are signed in.
 
 ---
 
@@ -32,13 +52,27 @@ The extension never fights Chrome for ownership of tab state. Ephemeral state se
 
 On load, `browser-state.svelte.ts` seeds a reactive map of every open window and tab. Chrome's tab and window event listeners keep it current. This layer exposes actions: close, activate, pin, mute, reload, and duplicate. They are all backed by Chrome APIs. Nothing here persists; it's a mirror.
 
-### Workspace state
+### Durable rows
 
-Saved tabs and bookmarks live in Epicenter workspace tables and sync across devices over WebSocket. The UI reads from these tables via `fromTable` and writes through workspace actions. Save a tab on your laptop and it shows up on your desktop.
+Saved tabs and bookmarks are rows in this origin's replica and sync across
+devices. The UI reads them through `fromTable`, which subscribes before it reads
+and then re-reads only the rows an invalidation names (ADR-0187), and writes
+through the capability registry in `lib/actions.ts`. Save a tab on your laptop
+and it shows up on your desktop.
+
+Row ids are minted by the runtime, so nothing here authors an `id`. A device is
+named by a `nodeId` field instead, kept in `chrome.storage.local` so it stays
+stable across panel opens and sign-ins.
 
 ### Side panel
 
-A Svelte app mounted into `#app`. There's no popup and no content scripts. Everything runs in the side panel, which opens when you click the extension action button. The background service worker is minimal; its only job is to open the side panel on click.
+A Svelte app mounted into `#app`. There's no popup and no content scripts.
+Everything runs in the side panel, which opens when you click the extension
+action button. `App.svelte` starts exactly one acquisition
+(`openTabManagerApplication`) and renders it through one `{#await}`; closing the
+panel aborts it, which releases the worker, the Web Lock, and the OPFS handles.
+Every library module stays inert at import so a storage failure lands in a
+mounted error boundary instead of blanking the document.
 
 ### UI
 
@@ -46,28 +80,38 @@ The main UI has a search bar with case-sensitive, regex, and exact-match toggles
 
 ---
 
-## Workspace schema
+## Lens
 
-Workspace ID: `epicenter-tab-manager`. Five root tables:
+Namespace: `so.epicenter.tab-manager`, declared once in `src/lib/workspace/index.ts`
+and bound by whichever runtime opened the replica. Five tables, every row id
+minted by the runtime:
 
-| Table | Key | Notable fields |
-|---|---|---|
-| `devices` | `NodeId` | `name`, `lastSeen`, `browser` |
-| `savedTabs` | `SavedTabId` | `url`, `title`, `favIconUrl?`, `pinned`, `sourceNodeId`, `savedAt` |
-| `bookmarks` | `BookmarkId` | `url`, `title`, `favIconUrl?`, `description?`, `sourceNodeId`, `createdAt` |
-| `conversations` | `ConversationId` | `title`, `model`, `createdAt`, `updatedAt` |
-| `toolTrust` | tool name | presence row for "always allow" |
+| Table | Fields |
+|---|---|
+| `devices` | `nodeId`, `name`, `lastSeen`, `browser` |
+| `savedTabs` | `url`, `title`, `favIconUrl?`, `pinned`, `sourceNodeId`, `savedAt` |
+| `bookmarks` | `url`, `title`, `favIconUrl?`, `sourceNodeId`, `createdAt` |
+| `conversations` | `title`, `model`, `createdAt`, `updatedAt` |
+| `toolTrust` | `toolName` (one row per "always allow" grant) |
 
-Relay presence carries `nodeId`; Tab Manager maps that framework node to its app-owned `devices` table so the UI can show named browser devices.
-Conversation messages live in the per-row `conversations.messages` child doc, not a root `chatMessages` table.
+`conversations` is the canonical shape from `@epicenter/chat`, interpreted under
+this namespace rather than borrowed from another application's (ADR-0160).
+Conversation messages live in the per-row document, not a table.
+
+`toolTrust` is one row per grant rather than one value holding a list, so two
+devices granting two different tools at once keep both grants. `sourceNodeId`
+points at a device's `nodeId`, which is why that is a field and not the row id.
+
+Live browser tabs, windows, and tab groups are absent on purpose. Chrome owns
+them, and `workspace.test.ts` asserts they never became durable.
 
 ---
 
 ## AI chat
 
-The `AiDrawer` component supports multiple conversations. Chat inference needs a signed-in remote connection, but the drawer and its local conversation metadata do not gate the extension shell. Workspace actions are exposed to AI through `createLocalToolCatalog` from `@epicenter/workspace/agent`, so the AI can read and write workspace data directly.
+The `AiDrawer` component supports multiple conversations. Chat inference needs a signed-in remote connection, but the drawer and its local conversation metadata do not gate the extension shell. The same capability registry the UI calls is projected into the agent's tool surface by `createLocalToolCatalog` from `@epicenter/agent`, so a tool call and a button press take the same path.
 
-Destructive tool calls require inline approval before they execute. Each tool can also be set to "always allow," and that preference is stored in the `toolTrust` table, so it syncs across all your devices like any other workspace data.
+Destructive tool calls require inline approval before they execute: a query runs unattended, a mutation asks. Each tool can also be set to "always allow," and that grant is a `toolTrust` row, so it syncs across your devices like any other row.
 
 ---
 
@@ -107,7 +151,7 @@ bun run zip            # Package for Chrome Web Store
 bun run zip:firefox    # Package for Firefox Add-ons
 ```
 
-Auth uses Google OAuth via `browser.identity`. The workspace always mounts: signed out uses bare local IndexedDB storage, and signed in uses principal-scoped storage plus relay sync.
+Auth uses OAuth via `browser.identity`. Sign-in is an enhancement, never a door (ADR-0088): the replica is the same one either way, and signing in attaches a sync session to the replica already open rather than swapping storage or reloading the panel.
 
 ---
 
@@ -115,12 +159,13 @@ Auth uses Google OAuth via `browser.identity`. The workspace always mounts: sign
 
 - [WXT](https://wxt.dev): browser extension framework
 - [Svelte 5](https://svelte.dev): UI (side panel)
-- [Yjs](https://yjs.dev): CRDT engine
 - [virtua](https://github.com/inokawa/virtua): virtualized tab list
 - [Tailwind CSS](https://tailwindcss.com): styling
-- `@epicenter/workspace`: CRDT-backed tables, sync, persistence
-- `@epicenter/workspace/agent` `createLocalToolCatalog` - workspace-to-agent tool bridge
-- `@epicenter/svelte`: auth integration
+- `@epicenter/data`: the replica, its Lens binding, and row documents
+- `@epicenter/chat`: the canonical `conversations` shape
+- `@epicenter/agent` `createLocalToolCatalog`: capabilities to agent tools
+- `@epicenter/document-sync`: HTTP document transports
+- `@epicenter/svelte`: `fromTable` and auth integration
 - `@epicenter/ui`: shadcn-svelte component library
 
 ---

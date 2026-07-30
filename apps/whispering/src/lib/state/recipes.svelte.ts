@@ -1,78 +1,37 @@
-/**
- * Reactive Recipe state backed by the Yjs workspace table.
- *
- * A Recipe is a single self-contained row: a name and one instruction (text in,
- * text out). No replacements, no prompt split, no per-Recipe model. See ADR-0099.
- *
- * @example
- * ```typescript
- * import { recipes } from '$lib/state/recipes.svelte';
- *
- * // Read reactively: built-ins first, then the user's own (alphabetical)
- * const list = recipes.pickable;
- *
- * // Write
- * recipes.set(recipe);
- * recipes.delete(id);
- * ```
- */
-
-import { fromTable } from '@epicenter/svelte';
 import { nanoid } from 'nanoid/non-secure';
-import { whispering } from '#platform/whispering';
-import { BUILTIN_RECIPES } from '$lib/state/builtin-recipes';
+import { createSubscriber } from 'svelte/reactivity';
+import type { WhisperingApp } from '$lib/whispering/app';
 import type { Recipe } from '$lib/workspace';
 
-function createRecipes() {
-	const view = fromTable(whispering.tables.recipes);
+export type Recipes = ReturnType<typeof createRecipes>;
 
-	// Memoize sorted array with $derived for referential stability.
-	const sorted = $derived(
-		view.all.toSorted((a, b) => a.name.localeCompare(b.name)),
-	);
-
-	// Built-ins first, then the user's own (alphabetical). This is the list the
-	// picker and the library both show: `builtins` union `customs`.
-	const pickable = $derived([...BUILTIN_RECIPES, ...sorted]);
-
+/** Bridges committed recipes-table invalidations into Svelte tracking. */
+export function createRecipes({ recipes }: Pick<WhisperingApp, 'recipes'>) {
+	const invalidate = createSubscriber((update) => recipes.subscribe(update));
 	return {
-		/**
-		 * Every recipe the user can pick: built-ins first, then their own. This is
-		 * what the picker and the library list. Memoized via `$derived`.
-		 */
-		get pickable(): Recipe[] {
-			return pickable;
+		get pickable() {
+			invalidate();
+			return recipes.pickable;
 		},
-
-		/** Create or update a recipe. Writes to Yjs; the view re-reads on the observer signal. */
-		set(recipe: Recipe) {
-			whispering.tables.recipes.set(recipe);
+		get count() {
+			invalidate();
+			return recipes.count;
 		},
-
-		/** Delete a recipe by ID. */
-		delete(id: string) {
-			whispering.tables.recipes.delete(id);
+		get nonconforming() {
+			invalidate();
+			return recipes.nonconforming;
 		},
+		get loadError() {
+			invalidate();
+			return recipes.loadError;
+		},
+		set: recipes.set,
+		delete: recipes.delete,
+		refresh: recipes.refresh,
+		subscribe: recipes.subscribe,
 	};
 }
 
-export const recipes = createRecipes();
-
-/**
- * Generate a blank Recipe row: empty name and instructions, no icon. Ready to
- * pass straight to `recipes.set()`.
- *
- * @example
- * ```typescript
- * const r = generateDefaultRecipe();
- * recipes.set(r);
- * ```
- */
 export function generateDefaultRecipe(): Recipe {
-	return {
-		id: nanoid(),
-		name: '',
-		instructions: '',
-		icon: null,
-	};
+	return { id: nanoid(), name: '', instructions: '', icon: null };
 }

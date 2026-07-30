@@ -10,15 +10,17 @@
 	import { AdvancedDisclosure, SettingSwitch } from '$lib/components/settings';
 	import { whisperingPath } from '$lib/constants/urls';
 	import { polishDestination, polishStatus } from '$lib/operations/run-polish';
-	import { settings } from '$lib/state/settings.svelte';
+	import { getWhisperingApp } from '$lib/whispering/context';
 
-	const dictionary = $derived(settings.get('dictionary'));
-	// Intent (`polish.enabled`) and capability (a usable provider) are separate
+	const app = getWhisperingApp();
+
+	const dictionary = $derived(app.settings.get('settings.dictionary'));
+	// Intent (`settings.polish.enabled`) and capability (a usable provider) are separate
 	// facts; the toggle below sets intent, this surfaces when intent is on but
 	// the provider is missing so the control never silently reads "on" while the
 	// pipeline ships raw.
-	const polish = $derived(polishStatus());
-	const destination = $derived(polishDestination());
+	const polish = $derived(polishStatus(app));
+	const destination = $derived(polishDestination(app));
 
 	let newTerm = $state('');
 
@@ -28,12 +30,12 @@
 		// Injection-only and order-free, so dedupe and ignore blanks; a repeated
 		// term would only bloat the prompt block.
 		if (!term || dictionary.includes(term)) return;
-		settings.set('dictionary', [...dictionary, term]);
+		app.settings.set('settings.dictionary', [...dictionary, term]);
 	}
 
 	function removeTerm(term: string) {
-		settings.set(
-			'dictionary',
+		app.settings.set(
+			'settings.dictionary',
 			dictionary.filter((t) => t !== term),
 		);
 	}
@@ -56,11 +58,11 @@
 			</Field.Description>
 			<Field.Group>
 				<SettingSwitch
-					key="polish.enabled"
+					key="settings.polish.enabled"
 					label="Polish transcripts with AI"
 					description="Turn off for speed mode: the raw transcript ships instantly, with no AI call."
 				/>
-				{#if settings.get('polish.enabled')}
+				{#if app.settings.get('settings.polish.enabled')}
 					<p class="text-muted-foreground text-sm">{destination}</p>
 				{/if}
 
@@ -78,7 +80,7 @@
 					</div>
 				{/if}
 
-				{#if settings.get('polish.enabled')}
+				{#if app.settings.get('settings.polish.enabled')}
 					<AdvancedDisclosure>
 						<Field.Field>
 							<Field.Label for="polish-instructions">
@@ -86,12 +88,12 @@
 							</Field.Label>
 							<Textarea
 								id="polish-instructions"
-								placeholder={settings.getDefault('polish.instructions')}
-								value={settings.get('polish.instructions')}
+								placeholder={app.settings.getDefault('settings.polish.instructions')}
+								value={app.settings.get('settings.polish.instructions')}
 								onblur={(e) => {
 									const next = e.currentTarget.value;
-									if (next !== settings.get('polish.instructions'))
-										settings.set('polish.instructions', next);
+									if (next !== app.settings.get('settings.polish.instructions'))
+										app.settings.set('settings.polish.instructions', next);
 								}}
 							/>
 							<Field.Description>

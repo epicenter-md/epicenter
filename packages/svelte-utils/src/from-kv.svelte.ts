@@ -1,46 +1,57 @@
-import type { InferKvValue, Kv, KvDefinitions } from '@epicenter/workspace';
+import type { ValueDefinition, ValueFor, ValueLens } from '@epicenter/data';
 import { createSubscriber } from 'svelte/reactivity';
 
-/**
- * Create a reactive binding to a single workspace KV key.
- *
- * Mirrors Svelte 5's `fromStore()` pattern: wraps an external data source
- * into a reactive `{ current }` box. Reading `.current` is reactive (triggers
- * re-renders). Writing `.current` calls `kv.set()` under the hood.
- *
- * The observer fires on both local and remote changes (Yjs CRDT sync).
- * On delete, falls back to the KV definition's `defaultValue` via `kv.get()`.
- *
- * The binding is tied to one KV store for its lifetime. If the workspace
- * changes, remount the component or recreate the binding at that lifecycle
- * boundary.
- *
- * @example
- * ```typescript
- * const selectedFolderId = fromKv(workspaceClient.kv, 'selectedFolderId');
- *
- * // Read (reactive):
- * console.log(selectedFolderId.current); // FolderId | null
- *
- * // Write (calls kv.set):
- * selectedFolderId.current = newFolderId;
- * ```
- */
-export function fromKv<
-	TDefs extends KvDefinitions,
-	K extends keyof TDefs & string,
->(kv: Kv<TDefs>, key: K): { current: InferKvValue<TDefs[K]> } {
-	const subscribe = createSubscriber((update) => {
-		return kv.observe(key, update);
-	});
+/** Create a reactive value box over one bound Data value lens. */
+export function fromKv<TDefinition extends ValueDefinition>(
+	value: ValueLens<TDefinition>,
+): {
+	current: ValueFor<TDefinition> | undefined;
+	readonly loadError: unknown;
+	readonly whenReady: Promise<void>;
+	refresh(): Promise<void>;
+} {
+	let current = $state.raw<ValueFor<TDefinition> | undefined>(undefined);
+	let loadError = $state.raw<unknown>(null);
+	let refreshGeneration = 0;
+
+	async function refresh(): Promise<void> {
+		const generation = ++refreshGeneration;
+		const result = await value.get();
+		if (generation !== refreshGeneration) return;
+		if (result.error !== null) {
+			loadError = result.error;
+			return;
+		}
+		current = result.data;
+		loadError = null;
+	}
+
+	const subscribe = createSubscriber((update) =>
+		value.subscribe(() => {
+			void refresh().then(update, update);
+		}),
+	);
+	const whenReady = refresh();
 
 	return {
 		get current() {
 			subscribe();
-			return kv.get(key);
+			return current;
 		},
-		set current(newValue: InferKvValue<TDefs[K]>) {
-			kv.set(key, newValue);
+		set current(newValue: ValueFor<TDefinition> | undefined) {
+			current = newValue;
+			const write =
+				newValue === undefined ? value.unset() : value.set(newValue);
+			void write.catch((cause) => {
+				loadError = cause;
+				void refresh();
+			});
 		},
+		get loadError() {
+			subscribe();
+			return loadError;
+		},
+		whenReady,
+		refresh,
 	};
 }

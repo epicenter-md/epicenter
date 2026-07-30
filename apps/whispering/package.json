@@ -4,8 +4,11 @@
 	"version": "7.11.1",
 	"description": "Browser-deployable speech-to-text SPA hosted natively by Epicenter",
 	"exports": {
+		"./app": "./src/lib/whispering/app.ts",
+		"./app/bun": "./src/lib/whispering/app.bun.ts",
 		"./commands": "./src/lib/commands.ts",
-		"./workspace": "./src/lib/workspace/index.ts"
+		"./workspace": "./src/lib/workspace/index.ts",
+		"./workspace-contract": "./src/lib/workspace/contract.ts"
 	},
 	"imports": {
 		"#platform/commands": {
@@ -16,9 +19,9 @@
 			"tauri": "./src/lib/services/analytics/index.tauri.ts",
 			"default": "./src/lib/services/analytics/index.browser.ts"
 		},
-		"#platform/blob-store": {
-			"tauri": "./src/lib/services/blob-store/index.tauri.ts",
-			"default": "./src/lib/services/blob-store/index.browser.ts"
+		"#platform/blobs": {
+			"tauri": "./src/lib/services/blobs/index.tauri.ts",
+			"default": "./src/lib/services/blobs/index.browser.ts"
 		},
 		"#platform/download": {
 			"tauri": "./src/lib/services/download/index.tauri.ts",
@@ -44,9 +47,9 @@
 			"tauri": "./src/lib/recording-overlay/mic-level.tauri.ts",
 			"default": "./src/lib/recording-pill/mic-level.browser.ts"
 		},
-		"#platform/recording-overlay-owner": {
-			"tauri": "./src/routes/(app)/_runtime/attach-recording-overlay.tauri.svelte.ts",
-			"default": "./src/routes/(app)/_runtime/attach-recording-overlay.browser.ts"
+		"#platform/dictation-indicator": {
+			"tauri": "./src/lib/dictation-indicator/DictationIndicator.tauri.svelte",
+			"default": "./src/lib/dictation-indicator/DictationIndicator.browser.svelte"
 		},
 		"#platform/text": {
 			"tauri": "./src/lib/services/text/index.tauri.ts",
@@ -71,6 +74,10 @@
 		"#platform/auth": {
 			"tauri": "./src/lib/platform/auth.tauri.ts",
 			"default": "./src/lib/platform/auth.browser.ts"
+		},
+		"#platform/instance": {
+			"tauri": "./src/lib/platform/instance.tauri.ts",
+			"default": "./src/lib/platform/instance.browser.ts"
 		},
 		"#platform/base-path": {
 			"tauri": "./src/lib/platform/base-path.tauri.ts",
@@ -106,6 +113,7 @@
 		"@tailwindcss/typography": "catalog:",
 		"@tailwindcss/vite": "catalog:",
 		"@types/js-yaml": "^4.0.9",
+		"fake-indexeddb": "^6.2.5",
 		"mode-watcher": "catalog:",
 		"svelte": "catalog:",
 		"svelte-check": "catalog:",
@@ -122,12 +130,14 @@
 		"@aptabase/web": "^0.4.3",
 		"@epicenter/app-shell": "workspace:*",
 		"@epicenter/auth": "workspace:*",
+		"@epicenter/blobs": "workspace:*",
 		"@epicenter/client": "workspace:*",
 		"@epicenter/constants": "workspace:*",
+		"@epicenter/data": "workspace:*",
 		"@epicenter/field": "workspace:*",
 		"@epicenter/recorder": "workspace:*",
+		"@epicenter/skills": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
-		"@epicenter/workspace": "workspace:*",
 		"@mistralai/mistralai": "^1.9.18",
 		"@standard-schema/spec": "catalog:",
 		"@tanstack/svelte-query": "catalog:",
@@ -158,7 +168,6 @@
 		"nanoid": "catalog:",
 		"tailwind-variants": "catalog:",
 		"typebox": "catalog:",
-		"wellcrafted": "catalog:",
-		"yjs": "catalog:"
+		"wellcrafted": "catalog:"
 	}
 }

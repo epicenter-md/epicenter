@@ -18,9 +18,10 @@
 		"./auth/tauri": "./src/auth-tauri.svelte.ts"
 	},
 	"dependencies": {
+		"@epicenter/agent": "workspace:*",
 		"@epicenter/auth": "workspace:*",
+		"@epicenter/data": "workspace:*",
 		"@epicenter/identity": "workspace:*",
-		"@epicenter/workspace": "workspace:*",
 		"arktype": "catalog:",
 		"wellcrafted": "catalog:"
 	},
@@ -41,6 +42,7 @@
 		}
 	},
 	"devDependencies": {
+		"@epicenter/field": "workspace:*",
 		"@standard-schema/spec": "catalog:",
 		"@tauri-apps/api": "catalog:",
 		"@tauri-apps/plugin-deep-link": "catalog:",

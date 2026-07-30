@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-06-17
+- **Amended by:** [ADR-0180](0180-epicenter-has-one-host-owned-active-local-transcription-model.md) at the model-identity boundary only. The local model name is host state rather than an application-owned value carried in `TranscriptionSpec`; read-at-use delivery and the refusal to mirror config into Rust stand.
 
 ## Context
 
@@ -29,9 +30,9 @@ Delivery splits by *when the value is consumed*:
   resolves the model path at load time. There is no ambient config to go stale.
 - **Consumed between uses → reconcile into the resource.** A background idle
   timer cannot be read at use, so the frontend reconciles the unload policy onto
-  its own `set_unload_policy` channel (the `attachUnloadPolicy` runtime owner)
-  on every change. Rust owns the clock, because a backgrounded webview timer
-  throttles exactly when idle-eviction must fire to reclaim RAM.
+  its own `set_unload_policy` channel (the `synchronizeUnloadPolicy` app
+  effect) on every change. Rust owns the clock, because a backgrounded webview
+  timer throttles exactly when idle-eviction must fire to reclaim RAM.
 
 `ModelManager` is renamed `ModelCache` to name what it now is. `set` and `sync`
 are the smell verbs: both shove a copy across a boundary and hope it stays put.
@@ -48,9 +49,10 @@ are the smell verbs: both shove a copy across a boundary and hope it stays put.
   reconcile lands.
 - `snapshot()` reports identity from the resident engine rather than the retired
   ambient config, so a late-mounting window still sees what is loaded now.
-- The convention is `attach*` runtime owners plus per-call specs, deliberately
-  not a generic config-reconciler framework: there is exactly one between-uses
-  value left (the unload clock), and subtraction beats abstraction here.
+- The convention is app-lifetime effect helpers plus per-call specs,
+  deliberately not a generic config-reconciler framework: there is exactly one
+  between-uses value left (the unload clock), and subtraction beats abstraction
+  here.
 
 ## Considered alternatives
 

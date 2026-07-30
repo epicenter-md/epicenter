@@ -16,7 +16,7 @@ import { upCommand } from './commands/up.js';
  *   - `up` / `down` / `status` / `logs`: run and inspect the headless
  *     sync/materialization watcher (ADR-0112)
  *   - `auth`: manage the local machine auth session (pre-workspace)
- *   - `blobs`: archive a file/URL into the content-addressed cloud blob store
+ *   - `blobs`: upload and retrieve bytes in the remote blob store
  *   - `init`: scaffold epicenter.config.ts (explicit root creation)
  *   - `matter`: lint a folder of typed markdown (disk is the source; SQLite is a projection)
  *

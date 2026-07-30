@@ -1,0 +1,43 @@
+{
+	"name": "@epicenter/data",
+	"version": "0.0.1",
+	"description": "Local-first scalar data protocol and SQLite replica.",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts",
+		"./browser": "./src/browser.ts",
+		"./browser-dedicated-worker": "./src/browser-dedicated-worker.ts",
+		"./bun": "./src/bun.ts",
+		"./desktop": "./src/desktop.ts",
+		"./inspection": "./src/inspection.ts",
+		"./desktop-owner": "./src/desktop-owner.ts",
+		"./protocol": "./src/protocol/index.ts"
+	},
+	"files": [
+		"src",
+		"!src/**/*.test.ts",
+		"!src/**/*.test-support.ts"
+	],
+	"license": "MIT",
+	"scripts": {
+		"evidence:browser": "bun browser-evidence/run.ts --profile smoke",
+		"typecheck": "tsc --noEmit && tsc --noEmit -p browser-evidence/tsconfig.json",
+		"test": "bun test"
+	},
+	"dependencies": {
+		"@epicenter/field": "workspace:*",
+		"@epicenter/lens": "workspace:*",
+		"@epicenter/sqlite": "workspace:*",
+		"@sqlite.org/sqlite-wasm": "catalog:",
+		"@y/y": "14.0.0-rc.24",
+		"nanoid": "catalog:",
+		"typebox": "catalog:",
+		"wellcrafted": "catalog:"
+	},
+	"devDependencies": {
+		"@types/bun": "catalog:",
+		"playwright": "^1.61.1",
+		"typescript": "catalog:",
+		"vite": "catalog:"
+	}
+}

@@ -52,6 +52,7 @@
 	"app": {
 		"windows": [
 			{
+				"create": false,
 				"label": "main",
 				"title": "Honeycrisp",
 				"width": 1200,

@@ -1,5 +1,7 @@
-import { report } from '$lib/report';
+import type { BlobId } from '@epicenter/blobs';
+import { log, report } from '$lib/report';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
+import type { WhisperingApp } from '$lib/whispering/app';
 import { startManualRecording, stopManualRecordingById } from './recording';
 
 /**
@@ -31,8 +33,10 @@ const MAX_HOLD_MS = 5 * 60 * 1000;
 type Session = {
 	/** Scopes every async continuation to the press that began it. */
 	id: number;
+	/** The ready app whose command started this session. */
+	app: WhisperingApp;
 	/** The recording this press started, or null until startup resolves. */
-	recordingId: string | null;
+	recordingId: BlobId | null;
 	/** A release that arrived before startup finished, honored once it exists. */
 	stopRequested: boolean;
 };
@@ -41,6 +45,7 @@ function createPushToTalk() {
 	let generation = 0;
 	let session: Session | null = null;
 	let capTimer: ReturnType<typeof setTimeout> | undefined;
+	let pendingStart: Promise<void> | undefined;
 
 	function clearSession() {
 		session = null;
@@ -56,16 +61,21 @@ function createPushToTalk() {
 	function sessionIsStale(): boolean {
 		return (
 			session !== null &&
+			pendingStart === undefined &&
 			manualRecorder.state !== 'RECORDING' &&
 			!manualRecorder.isStarting
 		);
 	}
 
-	async function end(id: number, options?: { capped?: boolean }) {
+	async function end(
+		app: WhisperingApp,
+		id: number,
+		options?: { capped?: boolean },
+	) {
 		if (session?.id !== id) return; // superseded by a newer press
 		const { recordingId } = session;
 		clearSession();
-		if (recordingId) await stopManualRecordingById(recordingId);
+		if (recordingId) await stopManualRecordingById(app, recordingId);
 		if (options?.capped) {
 			report.info({
 				title: 'Recording stopped',
@@ -74,32 +84,56 @@ function createPushToTalk() {
 		}
 	}
 
-	async function start() {
+	async function start(app: WhisperingApp) {
 		// Drop a stale session whose recording already ended without a release, so a
 		// fresh press is never blocked by it.
 		if (sessionIsStale()) clearSession();
 		if (session) return; // genuinely still holding (recording or starting)
 
 		const id = ++generation;
-		session = { id, recordingId: null, stopRequested: false };
+		session = { id, app, recordingId: null, stopRequested: false };
+		const completion = Promise.withResolvers<void>();
+		pendingStart = completion.promise;
 
-		// Null means this press started nothing it owns: startup failed, or a
-		// recording was already live (a toggle/button capture) so the start no-op'd.
-		// Either way, do not arm a cap or stop another source's recording.
-		const recordingId = await startManualRecording();
+		try {
+			// Null means this press started nothing it owns: startup failed, or a
+			// recording was already live (a toggle/button capture) so the start no-op'd.
+			// Either way, do not arm a cap or stop another source's recording.
+			let recordingId: BlobId | null;
+			try {
+				recordingId = await startManualRecording(app);
+			} catch (cause) {
+				if (session?.id === id) clearSession();
+				throw cause;
+			}
 
-		if (session?.id !== id) return; // superseded while we awaited
-		if (!recordingId) {
-			clearSession();
-			return;
+			if (session?.id !== id) {
+				if (recordingId) await stopManualRecordingById(app, recordingId);
+				return;
+			}
+			if (!recordingId) {
+				clearSession();
+				return;
+			}
+			session.recordingId = recordingId;
+			// A release or app teardown arrived during startup: honor it now
+			// that the recording exists, before the old app can be disposed.
+			if (session.stopRequested) {
+				await end(app, id);
+				return;
+			}
+			capTimer = setTimeout(() => {
+				void end(app, id, { capped: true }).catch((cause) =>
+					log.warn(
+						cause instanceof Error ? cause : new Error(String(cause)),
+						'Push-to-talk cap failed to stop recording',
+					),
+				);
+			}, MAX_HOLD_MS);
+		} finally {
+			completion.resolve();
+			if (pendingStart === completion.promise) pendingStart = undefined;
 		}
-		session.recordingId = recordingId;
-		// A release arrived during startup: honor it now that the recording exists.
-		if (session.stopRequested) {
-			await end(id);
-			return;
-		}
-		capTimer = setTimeout(() => void end(id, { capped: true }), MAX_HOLD_MS);
 	}
 
 	/**
@@ -108,9 +142,9 @@ function createPushToTalk() {
 	 * completion honors), and when the recording already ended (clears the stale
 	 * session).
 	 */
-	async function stop() {
-		if (!session) return; // not holding anything
-		if (manualRecorder.state === 'RECORDING') return end(session.id);
+	async function stop(app: WhisperingApp) {
+		if (!session || session.app !== app) return; // not this app's hold
+		if (manualRecorder.state === 'RECORDING') return end(app, session.id);
 		if (manualRecorder.isStarting) {
 			session.stopRequested = true; // honored when start completes
 			return;
@@ -118,7 +152,17 @@ function createPushToTalk() {
 		clearSession(); // not recording and not starting: ended by other means
 	}
 
-	return { start, stop };
+	async function dispose(app: WhisperingApp): Promise<void> {
+		if (!session || session.app !== app) return;
+		if (pendingStart) {
+			session.stopRequested = true;
+			await pendingStart;
+			return;
+		}
+		await end(app, session.id);
+	}
+
+	return { start, stop, dispose };
 }
 
 export const pushToTalk = createPushToTalk();

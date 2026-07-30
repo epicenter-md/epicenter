@@ -1,6 +1,6 @@
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, tryAsync } from 'wellcrafted/result';
-import { type Command, commands } from '$lib/commands';
+import { type Command, commands, dispatchCommandTrigger } from '$lib/commands';
 import {
 	DEFAULT_GLOBAL_BINDINGS,
 	deviceConfig,
@@ -14,7 +14,7 @@ import {
 } from '$lib/utils/key-binding';
 import { validateGlobalBinding } from '$lib/utils/reserved-shortcuts';
 import { createShortcuts } from './shortcuts.shared';
-import type { Shortcuts } from './types';
+import type { CreateSystemShortcuts } from './types';
 
 /**
  * Tauri build of `#platform/system-shortcuts`: system-global chords driven by
@@ -46,45 +46,48 @@ function readBinding(id: Command['id']): KeyBinding | null {
 	return isRegistrableChord(stored) ? stored : null;
 }
 
-export const systemShortcuts: Shortcuts | null = createShortcuts({
-	read: readBinding,
-	getDefault: (id) => DEFAULT_GLOBAL_BINDINGS[id] ?? null,
-	write: (id, binding) => deviceConfig.set(globalKey(id), binding),
-	// The plugin matches complete chords. Refuse reserved gestures and exact
-	// duplicates, while allowing distinct chords that share keys or modifiers.
-	findConflict: (id, binding) => {
-		const reserved = validateGlobalBinding(binding);
-		if (reserved) return { kind: 'reserved', reason: reserved };
-		for (const command of commands) {
-			if (command.id === id) continue;
-			const other = readBinding(command.id);
-			if (other && bindingsEqual(other, binding)) {
-				return { kind: 'duplicate', commandId: command.id };
+export const createSystemShortcuts: CreateSystemShortcuts | null = (app) =>
+	createShortcuts({
+		read: readBinding,
+		getDefault: (id) => DEFAULT_GLOBAL_BINDINGS[id] ?? null,
+		write: (id, binding) => deviceConfig.set(globalKey(id), binding),
+		// The plugin matches complete chords. Refuse reserved gestures and exact
+		// duplicates, while allowing distinct chords that share keys or modifiers.
+		findConflict: (id, binding) => {
+			const reserved = validateGlobalBinding(binding);
+			if (reserved) return { kind: 'reserved', reason: reserved };
+			for (const command of commands) {
+				if (command.id === id) continue;
+				const other = readBinding(command.id);
+				if (other && bindingsEqual(other, binding)) {
+					return { kind: 'duplicate', commandId: command.id };
+				}
 			}
-		}
-		return null;
-	},
-	syncErrorTitle: 'Error registering global shortcuts',
-	async push(entries) {
-		const chords: ChordRegistration[] = [];
-		for (const entry of entries) {
-			if (entry.binding === null) continue;
-			const accelerator = keyBindingToAccelerator(entry.binding);
-			if (accelerator === null) continue;
-			chords.push({ commandId: entry.command.id, accelerator });
-		}
-		// A plugin registration the OS rejects (a chord another app holds) fails
-		// the whole replace-all; surface it instead of partially binding.
-		const { error } = await tryAsync({
-			try: async () => {
-				await tauriOnly.keyboard.registerChords(chords);
-			},
-			catch: (cause) =>
-				Err({
-					name: 'GlobalShortcutRegistrationFailed',
-					message: extractErrorMessage(cause),
-				}),
-		});
-		return error ?? null;
-	},
-});
+			return null;
+		},
+		syncErrorTitle: 'Error registering global shortcuts',
+		async push(entries) {
+			const chords: ChordRegistration[] = [];
+			for (const entry of entries) {
+				if (entry.binding === null) continue;
+				const accelerator = keyBindingToAccelerator(entry.binding);
+				if (accelerator === null) continue;
+				chords.push({ commandId: entry.command.id, accelerator });
+			}
+			// A plugin registration the OS rejects (a chord another app holds) fails
+			// the whole replace-all; surface it instead of partially binding.
+			const { error } = await tryAsync({
+				try: async () => {
+					await tauriOnly.keyboard.registerChords(chords, (commandId, state) =>
+						dispatchCommandTrigger(app, commandId, state),
+					);
+				},
+				catch: (cause) =>
+					Err({
+						name: 'GlobalShortcutRegistrationFailed',
+						message: extractErrorMessage(cause),
+					}),
+			});
+			return error ?? null;
+		},
+	});

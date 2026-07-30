@@ -6,7 +6,25 @@ This folder is a single Cloudflare Worker deployment: `worker/` (Hono code) and 
 
 Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL-3.0 licensed. If you host a modified version, you share your changes. See `apps/self-host` for the self-hosted reference and the trust model below.
 
-Runs on Cloudflare Workers with Durable Objects. Cloud sync opens documents through `/api/rooms/:room` (the same path for either deployment): a cloud doc is partitioned by the authenticated `principalId` and addressed by its `ydoc.guid`, and the route resolves the DO name `principals/${principalId}/rooms/${room}` from the auth token. Browser apps and the workspace daemon both use this route. The Hono route's auth middleware authorizes the caller before it builds the internal room name.
+Runs on Cloudflare Workers with Durable Objects. The current Yjs 13 path opens
+arbitrary principal-scoped `/api/rooms/:room` actors. Proposed ADR-0145
+replaces that topology with one account authority actor per principal
+(`idFromName(principalId)`, one SQLite database, named workspaces as logical
+namespaces inside it) exposing a Yjs 14 document connection for each open row
+at `/api/workspaces/:workspaceId/tables/:table/rows/:rowId/document`. The
+bearer authenticates the principal; the authority derives deterministically
+from that principal alone, so no catalog, grant, or authorization lookup
+exists and no request can address another principal's state; route-bound row
+addresses and authority-local liveness replace caller-authored room ids.
+
+There is no workspace-creation operation and no enrollment operation. Reads
+create no logical state; the first accepted push that binds a new
+`(workspace, replica)` pair creates the workspace row, replica receipt, and
+data in one allowance-checked transaction (ADR-0137's issuance gate, renamed).
+Scalar synchronization lives below
+`/api/workspaces/:workspaceId/records/...`; known replicas synchronize
+economically unconditionally, bounded only by the physical wall below the
+platform's 10 GB object limit.
 
 ## Why a hub exists
 
@@ -149,6 +167,12 @@ docker compose up -d
 Then set the `BLOBS_S3_*` values from `.env.example` (endpoint
 `http://localhost:7070`). Your blobs land as ordinary files under
 `.data/blobs/epicenter-blobs/`.
+
+Browser replicas upload and download through short-lived presigned object-store
+URLs. The bucket CORS policy must allow each trusted application origin to use
+`GET` and `PUT`, and must allow the `Content-Type` and `If-None-Match` request
+headers. This is deployment configuration, not Worker CORS: a missing
+`If-None-Match` allowance makes immutable browser uploads fail at preflight.
 
 The server runs the same portable S3 client against versitygw, Garage, AWS S3, or
 R2; the store is endpoint-as-config, so swapping it is a config change, never a
