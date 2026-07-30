@@ -4,11 +4,10 @@
 		ConversationSwitcher,
 	} from '@epicenter/app-shell/agent-chat';
 	import { browser } from 'wxt/browser';
-	import { tabManagerBoot } from '$lib/session.svelte';
-	import { inferenceConnections } from '$lib/state/inference-connections.svelte';
+	import { getTabManagerApp } from '$lib/context';
 
-	const tabManager = tabManagerBoot.tabManager;
-	const auth = tabManagerBoot.auth;
+	const tabManager = getTabManagerApp();
+	const auth = tabManager.auth;
 	const aiChat = $derived(tabManager.state.aiChat);
 	const active = $derived(aiChat.active);
 
@@ -23,7 +22,7 @@
 	 * pending-tool name rather than baked into the shared chat state. */
 	function alwaysAllowPendingToolCall() {
 		const toolName = active?.pendingApprovalToolName;
-		if (toolName) tabManager.state.toolTrust.allow(toolName);
+		if (toolName) void tabManager.state.toolTrust.allow(toolName);
 		active?.approveToolCall();
 	}
 </script>
@@ -39,7 +38,7 @@
 	{#if active}
 		<AgentChatThread
 			conversation={active}
-			connections={inferenceConnections}
+			connections={tabManager.connections}
 			resolveToolTitle={(toolName) => actionTitles[toolName]?.title}
 			onAlwaysAllow={alwaysAllowPendingToolCall}
 			onSignIn={() => auth.startSignIn()}

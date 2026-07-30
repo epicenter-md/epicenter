@@ -1,43 +1,39 @@
 /**
  * Reactive bookmark state for the side panel.
  *
- * Read-only reactive layer backed by `fromTable()`: a stateless
- * `ReadonlyTableView` whose reads track the underlying CRDT table. All write
- * operations are delegated to workspace actions on the boot-time workspace
- * bundle (ADR-0088: bookmarks exist on the local doc whether signed in or
- * not; there is no signed-in-only gate here).
- *
- * The public API exposes a `$derived` sorted array (access pattern is
- * always "render the full sorted list") plus a URL lookup set for O(1)
- * bookmark checks.
- *
- * Components read this through `workspace.state.bookmarks`.
+ * Same shape as saved tabs: `fromTable()` for reads (subscribe before read,
+ * incremental re-read), the capability registry for writes. Bookmarks are
+ * durable signed in or out (ADR-0088).
  */
 
 import { fromTable } from '@epicenter/svelte';
 import { SvelteSet } from 'svelte/reactivity';
+import type { TabManagerActions } from '$lib/actions';
 import type { BrowserTab } from '$lib/state/browser-state.svelte';
-import type { TabManagerBrowser } from '$lib/tab-manager/extension';
-import type { Bookmark, BookmarkId } from '$lib/workspace/definition';
+import type { Bookmark, TabManagerData } from '$lib/workspace';
 
-export function createBookmarkState(tabManager: TabManagerBrowser) {
-	const bookmarksView = fromTable(tabManager.tables.bookmarks);
+export function createBookmarkState({
+	data,
+	actions,
+}: {
+	data: TabManagerData;
+	actions: TabManagerActions;
+}) {
+	const bookmarksView = fromTable(data.tables.bookmarks);
 
-	/** All bookmarks, sorted by most recently created first. Cached via $derived. */
+	/** All bookmarks, most recently created first. */
 	const bookmarks = $derived(
-		bookmarksView.all.toSorted((a, b) =>
-			b.createdAt.localeCompare(a.createdAt),
+		bookmarksView.all.toSorted((left, right) =>
+			right.createdAt.localeCompare(left.createdAt),
 		),
 	);
 
 	/**
-	 * Reactive set of bookmarked URLs for O(1) lookup.
-	 *
-	 * Uses `SvelteSet` so `.has()` is a tracked reactive read: Svelte 5
-	 * re-renders any component that calls `isUrlBookmarked` when the set changes.
+	 * Bookmarked URLs, as a `SvelteSet` so `.has()` is a tracked reactive read:
+	 * safe to call once per row while rendering a list.
 	 */
 	const bookmarkedUrls = $derived(
-		new SvelteSet(bookmarksView.all.map((b) => b.url)),
+		new SvelteSet(bookmarksView.all.map((bookmark) => bookmark.url)),
 	);
 
 	return {
@@ -45,45 +41,38 @@ export function createBookmarkState(tabManager: TabManagerBrowser) {
 			return bookmarks;
 		},
 
-		/**
-		 * Check whether a URL is currently bookmarked.
-		 *
-		 * O(1) lookup via `SvelteSet.has()`, which is a tracked reactive
-		 * read in Svelte 5: safe to call per-row in a list render.
-		 */
+		/** Resolves once the first read of this table has landed. */
+		whenReady: bookmarksView.whenReady,
+
+		/** Whether a URL is currently bookmarked. */
 		isUrlBookmarked(url: string | undefined): boolean {
 			if (!url) return false;
 			return bookmarkedUrls.has(url);
 		},
 
-		/**
-		 * Toggle a bookmark for a tab: add if not bookmarked, remove if already
-		 * bookmarked. Silently no-ops for tabs without a URL.
-		 */
+		/** Add a bookmark for a tab, or remove it if the URL is already bookmarked. */
 		async toggle(tab: BrowserTab) {
 			if (!tab.url) return;
-			return tabManager.actions.bookmarks_toggle({
+			return actions.bookmarks_toggle({
 				url: tab.url,
 				title: tab.title || 'Untitled',
 				favIconUrl: tab.favIconUrl,
 			});
 		},
 
-		/** Open a bookmark in a new browser tab without removing the bookmark. */
+		/** Open a bookmark in a new tab. The bookmark stays. */
 		async open(bookmark: Bookmark) {
-			return tabManager.actions.bookmarks_open({
-				url: bookmark.url,
-			});
+			return actions.bookmarks_open({ url: bookmark.url });
 		},
 
-		/** Delete a bookmark by ID. Synchronous CRDT delete. */
-		remove(id: BookmarkId) {
-			return tabManager.actions.bookmarks_remove({ id });
+		/** Delete one bookmark. */
+		async remove(id: string) {
+			return actions.bookmarks_remove({ id });
 		},
 
-		/** Delete all bookmarks. Synchronous CRDT batch delete. */
-		removeAll() {
-			return tabManager.actions.bookmarks_remove_all();
+		/** Delete every bookmark. */
+		async removeAll() {
+			return actions.bookmarks_remove_all();
 		},
 	};
 }
