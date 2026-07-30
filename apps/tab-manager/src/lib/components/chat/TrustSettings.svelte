@@ -7,9 +7,10 @@
 
 	const tabManager = getTabManagerApp();
 	const trustedTools = $derived(tabManager.state.toolTrust.trustedToolNames);
-	const actionTitles = $derived(
-		tabManager.actions as Record<string, { title?: string }>,
-	);
+	const actionTitles = tabManager.actions as Record<
+		string,
+		{ title?: string }
+	>;
 </script>
 
 {#if trustedTools.length > 0}

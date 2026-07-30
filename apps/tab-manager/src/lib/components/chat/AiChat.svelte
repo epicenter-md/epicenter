@@ -8,14 +8,15 @@
 
 	const tabManager = getTabManagerApp();
 	const auth = tabManager.auth;
-	const aiChat = $derived(tabManager.state.aiChat);
+	const aiChat = tabManager.state.aiChat;
 	const active = $derived(aiChat.active);
 
 	/** A tool call's human title from its declaring action, or undefined to let the
 	 * shared renderer title-case the tool name. */
-	const actionTitles = $derived(
-		tabManager.actions as Record<string, { title?: string }>,
-	);
+	const actionTitles = tabManager.actions as Record<
+		string,
+		{ title?: string }
+	>;
 
 	/** Trust the pending tool from now on, then approve it. The trust set lives in
 	 * tab-manager, so "Always Allow" is composed here from the handle's exposed
