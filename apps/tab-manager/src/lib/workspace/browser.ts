@@ -103,7 +103,3 @@ export async function openTabManagerBrowserEpicenter({
 		},
 	});
 }
-
-export type TabManagerBrowserEpicenter = Awaited<
-	ReturnType<typeof openTabManagerBrowserEpicenter>
->;

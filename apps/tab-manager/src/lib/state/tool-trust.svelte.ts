@@ -59,5 +59,3 @@ export function createToolTrustState({ data }: { data: TabManagerData }) {
 		},
 	};
 }
-
-export type ToolTrustState = ReturnType<typeof createToolTrustState>;
