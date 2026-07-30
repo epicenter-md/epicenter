@@ -1,10 +1,13 @@
 /**
- * Reactive saved-tab state for the side panel.
+ * The reactive saved-tab list, plus the one adapter that turns a live Chrome tab
+ * into a saved row.
  *
  * Reads go through `fromTable()`, which subscribes before it reads and then
- * re-reads only the rows an invalidation names (ADR-0187). Writes go through the
- * capability registry, so a button press and an agent tool call take the same
- * path.
+ * re-reads only the rows an invalidation names (ADR-0187). Writes are not
+ * re-exported here: a component calls `actions.saved_tabs_*` directly, so a
+ * button press and an agent tool call take the same path with nothing in
+ * between. `save` is the exception because it adapts a `BrowserTab` rather than
+ * forwarding one.
  *
  * Saved tabs are durable whether or not anyone is signed in (ADR-0088); there is
  * no signed-in gate here.
@@ -13,7 +16,7 @@
 import { fromTable } from '@epicenter/svelte';
 import type { TabManagerActions } from '$lib/actions';
 import type { BrowserTab } from '$lib/state/browser-state.svelte';
-import type { SavedTab, TabManagerData } from '$lib/workspace';
+import type { TabManagerData } from '$lib/workspace';
 
 export function createSavedTabState({
 	data,
@@ -53,33 +56,6 @@ export function createSavedTabState({
 				favIconUrl: tab.favIconUrl,
 				pinned: tab.pinned,
 			});
-		},
-
-		/**
-		 * Restore a saved tab: open it, then delete the row. The row survives a
-		 * failed `tabs.create`, so the URL is never lost.
-		 */
-		async restore(savedTab: SavedTab) {
-			return actions.saved_tabs_restore({
-				id: savedTab.id,
-				url: savedTab.url,
-				pinned: savedTab.pinned,
-			});
-		},
-
-		/** Restore every saved tab. Rows whose tab failed to open stay saved. */
-		async restoreAll() {
-			return actions.saved_tabs_restore_all();
-		},
-
-		/** Delete one saved tab without restoring it. */
-		async remove(id: string) {
-			return actions.saved_tabs_remove({ id });
-		},
-
-		/** Delete every saved tab without restoring them. */
-		async removeAll() {
-			return actions.saved_tabs_remove_all();
 		},
 	};
 }
