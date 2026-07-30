@@ -1,0 +1,11 @@
+{
+	"$schema": "../gen/schemas/desktop-schema.json",
+	"identifier": "home-open-application-development",
+	"description": "Epicenter Home opens applications in the development build, on the explicitly selected loopback port (ADR-0189). Home is the only window that lists the application catalog, so it is the only window that holds the verb; every other surface reaches its own window through the tray, a deep link, or the host itself.",
+	"local": false,
+	"windows": ["home"],
+	"remote": {
+		"urls": ["http://127.0.0.1:*"]
+	},
+	"permissions": ["allow-get-runtime-info", "allow-open-app"]
+}

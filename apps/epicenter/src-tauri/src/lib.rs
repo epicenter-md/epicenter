@@ -105,6 +105,17 @@ enum Surface {
 impl Surface {
     const ALL: [Self; 4] = [Self::Home, Self::Whispering, Self::Mail, Self::Books];
 
+    /// Whether Home lists this surface as an application a person can open
+    /// (ADR-0189).
+    ///
+    /// Home is the shell the list lives in. Mail and Books are release-bundled
+    /// placeholder documents with nothing behind them to open. Both stay
+    /// reserved IDs the catalog refuses to admit, so "not launchable" never
+    /// means "free for someone else to claim".
+    const fn is_application(self) -> bool {
+        matches!(self, Self::Whispering)
+    }
+
     const fn id(self) -> &'static str {
         match self {
             Self::Home => "home",
@@ -462,27 +473,50 @@ fn take_pending_home_section(app: DesktopAppHandle) -> Option<HomeSection> {
     app.state::<HostState>().take_home_section()
 }
 
-/// Open one derived-catalog app window. Rust validates the ID and derives the
-/// URL and label itself; the frontend never supplies a URL (ADR-0153). An
-/// unknown-but-valid ID opens a window that Bun answers with 404, which is the
-/// honest state of a catalog member that disappeared since the last restart.
+/// What an application ID names. Home never learns which: it lists one catalog
+/// and calls one verb (ADR-0189), so this split stays inside the host, where
+/// window labels and capabilities actually differ.
+enum Application<'a> {
+    /// A compiled application with its own stable window label and enumerated
+    /// capabilities.
+    Compiled(Surface),
+    /// A member of the active catalog generation, opened in an `app-` window.
+    Admitted(&'a str),
+}
+
+/// Open one application from Home's catalog: reveal and focus its window,
+/// creating it the first time. Calling again focuses rather than duplicating.
+///
+/// Rust validates the ID and derives the URL and label itself; the frontend
+/// never supplies a URL (ADR-0179). An unknown-but-valid admitted ID opens a
+/// window that Bun answers with 404, which is the honest state of a catalog
+/// member that disappeared since the last restart.
 #[tauri::command]
 fn open_app(
     app: DesktopAppHandle,
     state: State<'_, HostState>,
     app_id: String,
 ) -> std::result::Result<(), String> {
-    let Some(id) = parse_app_id(&app_id) else {
+    let Some(application) = parse_application_id(&app_id) else {
         return Err(format!(
-            "app id must match [a-z0-9-]+ and not name a built-in surface: {app_id}"
+            "app id must match [a-z0-9-]+ and name an application Home can open: {app_id}"
         ));
     };
+    let id = match application {
+        // The compiled path already owns queueing, revealing, and focusing, and
+        // it is the same path the tray and deep links take.
+        Application::Compiled(surface) => {
+            request_surface(&app, surface);
+            return Ok(());
+        }
+        Application::Admitted(id) => id.to_string(),
+    };
+
     let Some(token) = state.active_token() else {
         return Err("the Epicenter host is not ready".to_string());
     };
     let port = state.port().map_err(|error| format!("{error:#}"))?;
 
-    let id = id.to_string();
     app.clone()
         .run_on_main_thread(move || {
             if !app.state::<HostState>().token_is_active(&token) {
@@ -495,18 +529,25 @@ fn open_app(
         .map_err(|error| format!("schedule the {app_id} app window: {error}"))
 }
 
-/// Accept exactly the derived-catalog ID contract: `[a-z0-9-]+`, excluding the
-/// built-in surface IDs, which keep their own labels and enumerated
-/// capabilities until they migrate into the catalog.
-fn parse_app_id(id: &str) -> Option<&str> {
+/// Accept exactly the IDs Home can list: the derived-catalog contract
+/// `[a-z0-9-]+`, resolved against the compiled surface table.
+///
+/// A reserved surface that is not an application (Home itself, a placeholder)
+/// and an ID the catalog could never admit are the same refusal, because Home
+/// never offers either.
+fn parse_application_id(id: &str) -> Option<Application<'_>> {
     let matches_pattern = !id.is_empty()
         && id
             .bytes()
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-');
-    if !matches_pattern || Surface::from_id(id).is_some() {
+    if !matches_pattern {
         return None;
     }
-    Some(id)
+    match Surface::from_id(id) {
+        Some(surface) if surface.is_application() => Some(Application::Compiled(surface)),
+        Some(_) => None,
+        None => Some(Application::Admitted(id)),
+    }
 }
 
 fn app_window_label(id: &str) -> String {
@@ -1622,28 +1663,31 @@ mod tests {
         );
     }
 
+    /// Home lists exactly the applications this table calls launchable, so the
+    /// two must not drift: an ID Home can show has to be one this verb opens,
+    /// and an ID it cannot show has to be one this verb refuses.
     #[test]
-    fn trusted_application_capabilities_follow_the_surface_table() {
-        let expected = Surface::ALL.map(Surface::id);
-        for encoded in [
-            include_str!("../capabilities/trusted-epicenter-apps-development.json"),
-            include_str!("../capabilities/trusted-epicenter-apps-production.json"),
-        ] {
-            let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
-            let windows = capability["windows"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|value| value.as_str().unwrap())
-                .collect::<Vec<_>>();
-            assert_eq!(windows, expected);
-        }
+    fn compiled_applications_are_exactly_whispering() {
+        let launchable: Vec<&str> = Surface::ALL
+            .into_iter()
+            .filter(|surface| surface.is_application())
+            .map(Surface::id)
+            .collect();
+        assert_eq!(launchable, ["whispering"]);
     }
 
     #[test]
-    fn app_ids_accept_only_the_catalog_contract_outside_built_in_surfaces() {
+    fn one_verb_opens_compiled_and_admitted_applications_alike() {
+        assert!(matches!(
+            parse_application_id("whispering"),
+            Some(Application::Compiled(Surface::Whispering))
+        ));
+
         for accepted in ["hello-http", "a", "notes2", "x-y-z", "0-"] {
-            assert_eq!(parse_app_id(accepted), Some(accepted));
+            assert!(
+                matches!(parse_application_id(accepted), Some(Application::Admitted(id)) if id == accepted),
+                "expected {accepted:?} to open as an admitted application"
+            );
         }
 
         for denied in [
@@ -1655,14 +1699,16 @@ mod tests {
             "..",
             "hello http",
             "héllo",
-            // Built-in surfaces keep their own labels and capabilities until
-            // they migrate into the derived catalog.
+            // Reserved surfaces Home does not list: the shell itself, and
+            // placeholder documents with nothing behind them to open.
             "home",
-            "whispering",
             "mail",
             "books",
         ] {
-            assert_eq!(parse_app_id(denied), None, "expected {denied:?} rejected");
+            assert!(
+                parse_application_id(denied).is_none(),
+                "expected {denied:?} rejected"
+            );
         }
     }
 
@@ -2105,17 +2151,21 @@ mod tests {
         }
     }
 
+    /// Home lists the application catalog, so Home is the window that opens it
+    /// (ADR-0189). Granting the verb more widely would let an application open
+    /// another application without the user ever choosing it, which is a
+    /// product decision nobody made.
     #[test]
-    fn built_in_surface_capabilities_expose_open_app_to_the_home_window() {
+    fn only_home_can_open_an_application() {
         for encoded in [
-            include_str!("../capabilities/trusted-epicenter-apps-development.json"),
-            include_str!("../capabilities/trusted-epicenter-apps-production.json"),
+            include_str!("../capabilities/home-open-application-development.json"),
+            include_str!("../capabilities/home-open-application-production.json"),
         ] {
             let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
-            let windows = capability["windows"].as_array().unwrap();
-            assert!(
-                windows.contains(&serde_json::json!("home")),
-                "the home window must hold the surface capability to invoke open_app"
+            assert_eq!(
+                capability["windows"],
+                serde_json::json!(["home"]),
+                "the application-opening verb belongs to the Home window alone"
             );
             let permissions = capability["permissions"].as_array().unwrap();
             assert!(permissions.contains(&serde_json::json!("allow-open-app")));
