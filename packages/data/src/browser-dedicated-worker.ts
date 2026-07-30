@@ -25,6 +25,9 @@ const scope = globalThis as unknown as DedicatedWorkerScope;
 serveBrowserEpicenter({
 	postMessage: (message) => scope.postMessage(message),
 	addEventListener: (type, listener) =>
-		scope.addEventListener(type, listener as (event: { data: unknown }) => void),
+		scope.addEventListener(
+			type,
+			listener as (event: { data: unknown }) => void,
+		),
 	close: () => scope.close(),
 } as MessagePortLike);

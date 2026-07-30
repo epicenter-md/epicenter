@@ -10,9 +10,8 @@
  * - Canonical digests ignore object insertion order
  */
 import { describe, expect, test } from 'bun:test';
-import { expectErr, expectOk } from 'wellcrafted/testing';
-
 import { isAddress, sha256Hex } from '@epicenter/lens';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import {
 	addressesEqual,
 	addressKey,
