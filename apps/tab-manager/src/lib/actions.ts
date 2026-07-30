@@ -8,7 +8,7 @@
  * already-bound {@link TabManagerData} handle plus this device's node id, and it
  * lives exactly as long as the side panel document that built it.
  *
- * One implementation, two consumers. The side panel's state modules call these
+ * One implementation, two consumers. The side panel's components call these
  * directly, and `createLocalToolCatalog` projects the same functions into the
  * agent's tool surface, so a tool call and a button press take the same path. The
  * `type` on each action is what drives the loop's approval policy: a query runs
