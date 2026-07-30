@@ -1,32 +1,21 @@
+import type { NonconformingRowError } from '@epicenter/data';
 import { InstantString } from '@epicenter/field';
 import {
 	type Reference,
 	type Skill,
+	type SkillsData,
 	scanReferences,
 	scanSkills,
-	type skillsWorkspace,
 } from '@epicenter/skills';
-import type {
-	RowLensError,
-	Workspace,
-} from '@epicenter/workspace/sqlite';
-
-type SkillsWorkspace = Workspace<typeof skillsWorkspace>;
 
 export type SkillMetadataUpdate = Partial<
 	Pick<Skill, 'name' | 'description' | 'license' | 'compatibility'>
 >;
 
-export function createSkillsState({
-	skills,
-	onRecordsChanged,
-}: {
-	skills: SkillsWorkspace;
-	onRecordsChanged(listener: () => void): () => void;
-}) {
+export function createSkillsState({ skills }: { skills: SkillsData }) {
 	let skillRows = $state.raw<Skill[]>([]);
 	let referenceRows = $state.raw<Reference[]>([]);
-	let nonconforming = $state.raw<RowLensError[]>([]);
+	let nonconforming = $state.raw<NonconformingRowError[]>([]);
 	let loadError = $state.raw<unknown>(null);
 	let selectedSkillId = $state<string | null>(null);
 	let refreshGeneration = 0;
@@ -69,11 +58,13 @@ export function createSkillsState({
 	}
 
 	let isDisposed = false;
-	let unsubscribe = () => {};
-	const whenReady = refresh({ throwOnError: true }).then(() => {
-		if (isDisposed) return;
-		unsubscribe = onRecordsChanged(() => void refresh());
+	const stopSkills = skills.tables.skills.subscribe(() => {
+		if (!isDisposed) void refresh();
 	});
+	const stopReferenceFiles = skills.tables.referenceFiles.subscribe(() => {
+		if (!isDisposed) void refresh();
+	});
+	const whenReady = refresh({ throwOnError: true });
 
 	return {
 		whenReady,
@@ -120,7 +111,7 @@ export function createSkillsState({
 		async deleteSkill(id: string): Promise<void> {
 			for (const reference of referenceRows) {
 				if (reference.skillId === id) {
-					await skills.tables.references.delete(reference.id);
+					await skills.tables.referenceFiles.delete(reference.id);
 				}
 			}
 			await skills.tables.skills.delete(id);
@@ -131,7 +122,7 @@ export function createSkillsState({
 			await refresh();
 		},
 		async createReference(skillId: string, path: string): Promise<string> {
-			const reference = await skills.tables.references.create({
+			const reference = await skills.tables.referenceFiles.create({
 				skillId,
 				path,
 				updatedAt: InstantString.now(),
@@ -140,13 +131,14 @@ export function createSkillsState({
 			return reference.id;
 		},
 		async deleteReference(id: string): Promise<void> {
-			await skills.tables.references.delete(id);
+			await skills.tables.referenceFiles.delete(id);
 			await refresh();
 		},
 		[Symbol.dispose]() {
 			isDisposed = true;
 			refreshGeneration += 1;
-			unsubscribe();
+			stopSkills();
+			stopReferenceFiles();
 		},
 	};
 }

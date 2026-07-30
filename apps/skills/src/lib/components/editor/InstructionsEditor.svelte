@@ -5,12 +5,12 @@
 	let { skillId }: { skillId: string } = $props();
 	const skills = getSkillsApp();
 
-	const lease = $derived(skills.tables.skills.document.open(skillId));
+	const lease = $derived(skills.tables.skills.openDocument(skillId));
 	$effect(() => {
 		const openedLease = lease;
 		return () =>
 			void openedLease.then(
-				(opened) => opened[Symbol.dispose](),
+				(opened) => opened[Symbol.asyncDispose](),
 				() => undefined,
 			);
 	});

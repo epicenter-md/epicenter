@@ -436,6 +436,7 @@
       "name": "skills",
       "version": "0.0.1",
       "dependencies": {
+        "@epicenter/data": "workspace:*",
         "mode-watcher": "^1.1.0",
       },
       "devDependencies": {
@@ -447,7 +448,6 @@
         "@epicenter/field": "workspace:*",
         "@epicenter/skills": "workspace:*",
         "@epicenter/ui": "workspace:*",
-        "@epicenter/workspace": "workspace:*",
         "@lucide/svelte": "catalog:",
         "@sveltejs/adapter-auto": "catalog:",
         "@sveltejs/kit": "catalog:",
