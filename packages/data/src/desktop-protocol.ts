@@ -1,9 +1,10 @@
+import type { ObservationFrame } from '@epicenter/lens';
 import type {
 	BrowserOperation,
 	SerializedTableDefinition,
 	SerializedValueDefinition,
 } from './browser/protocol.js';
-import type { Address, RowAddress } from './protocol/index.js';
+import type { RowAddress } from './protocol/index.js';
 
 export const DESKTOP_EPICENTER_ROUTE = '/api/data';
 
@@ -20,15 +21,12 @@ export const DESKTOP_EPICENTER_OBSERVE_ROUTE = '/api/data/observe';
 /**
  * One committed replica notification on its way to every attached surface.
  *
- * The wire says only which addresses moved. It does not encode reconnection,
- * reset, table scope, operation kind, or a revision cursor: a client that
- * missed frames is the only party that knows which handles it was holding
- * across the gap, so synthesizing the recovery is its job, not the host's.
+ * The same frame every observation carrier reads, named here for the host that
+ * writes it. `@epicenter/lens` declares it once because the client-side carrier
+ * parses it; a second structural copy on the producing side would be exactly the
+ * drift this route cannot afford.
  */
-export type DesktopInvalidationFrame = {
-	type: 'invalidation';
-	changes: Address[];
-};
+export type DesktopInvalidationFrame = ObservationFrame;
 
 /** The `ws:`/`wss:` URL of the observation carrier for one Epicenter origin. */
 export function desktopEpicenterObserveUrl(baseUrl: string): string {

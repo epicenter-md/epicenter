@@ -20,8 +20,23 @@
  *
  * This does not reintroduce the `openEpicenter()` that ADR-0186 refused. There
  * is still no handle-wide session, no configuration, and no connection object
- * an app holds: `bind` is per Lens, and what it waits for is that Lens's
- * liveness.
+ * an app holds: `bind` is per Lens, and what it waits for is the document's
+ * shared observation carrier.
+ *
+ * # One carrier per document, however many Lenses
+ *
+ * A Lens is one namespace, and an app may declare several. What an app must not
+ * get is one host surface, one socket, and one reconnect loop per declaration:
+ * the host broadcasts every committed address to every surface, so a second
+ * socket carries a second copy of the same firehose, heals its own gap on its
+ * own schedule, and registers a second surface the host has to keep.
+ *
+ * So the carrier belongs to the document rather than to the binding. The first
+ * `bind` opens it, every later `bind` joins it, and it closes when the last
+ * binding lets go. `close()` still means what it says at the call site: this
+ * binding is finished, its handles refuse further use, and its listeners are
+ * released. Whether that was also the last one is the transport's business,
+ * not the app's.
  *
  * # Reading is a re-read, never a push
  *
@@ -34,18 +49,25 @@ import {
 	type ConstrainedUpdate,
 	type CreateInputFor,
 	createInvalidationDispatcher,
+	type InvalidationDispatcher,
 	type Lens,
 	type NonconformingRowError,
+	type ObservationCarrier,
+	openObservationCarrier,
+	type RowAddress,
 	type RowFor,
 	serializeTableDefinition,
 	serializeValueDefinition,
+	splitUpdate,
 	type TableDefinition,
 	type TableDefinitions,
 	type TableInvalidation,
+	type ValueAddress,
 	type ValueDefinition,
 	type ValueDefinitions,
 	type ValueFor,
 } from '@epicenter/lens';
+import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 
 import {
@@ -54,9 +76,6 @@ import {
 	type WireDataOperation,
 	type WireDataResponse,
 	type WireEntriesPage,
-	type WireInvalidationFrame,
-	type WireRowAddress,
-	type WireValueAddress,
 } from './data-protocol.js';
 import {
 	type BindDataError,
@@ -149,10 +168,12 @@ export type BoundData<
 	tables: { [K in keyof TTables]: TableHandle<TTables[K]> };
 	values: { [K in keyof TValues]: ValueHandle<TValues[K]> };
 	/**
-	 * Release this binding's observation carrier.
+	 * Finish with this binding: its handles refuse further use and its listeners
+	 * stop firing.
 	 *
 	 * An app that lives as long as its window never needs this; a surface that
-	 * binds and unbinds does.
+	 * binds and unbinds does. Other bindings in the same document are unaffected,
+	 * and the shared observation carrier closes only once the last one lets go.
 	 */
 	close(): Promise<void>;
 };
@@ -203,63 +224,166 @@ function observeUrl(origin: string): string {
 }
 
 /**
- * Read one carrier frame, or nothing when the host said something this client
- * does not recognize. An unreadable frame is dropped rather than thrown: the
- * carrier's job is liveness, and killing the socket over one bad message would
- * turn a cosmetic mismatch into a surface that stops updating.
+ * Ask the host to perform one operation on behalf of one surface.
+ *
+ * Deliberately takes the surface rather than closing over it: the same request
+ * is issued while a transport is being opened, while it is live, and once more
+ * after the last binding has let it go.
  */
-function parseFrame(data: unknown): WireInvalidationFrame | undefined {
-	if (typeof data !== 'string') return undefined;
+async function request<TResult>(
+	{ origin, surfaceId }: { origin: string; surfaceId: string },
+	operation: WireDataOperation,
+): Promise<Result<TResult, DataOperationError>> {
+	let envelope: WireDataResponse;
+	let status: number;
 	try {
-		const parsed: unknown = JSON.parse(data);
-		if (
-			typeof parsed !== 'object' ||
-			parsed === null ||
-			!('type' in parsed) ||
-			parsed.type !== 'invalidation' ||
-			!('changes' in parsed) ||
-			!Array.isArray(parsed.changes)
-		) {
-			return undefined;
-		}
-		return parsed as WireInvalidationFrame;
-	} catch {
-		return undefined;
+		const response = await fetch(new URL(DATA_ROUTE, origin), {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			credentials: 'same-origin',
+			body: JSON.stringify({ surfaceId, operation }),
+		});
+		status = response.status;
+		envelope = (await response.json()) as WireDataResponse;
+	} catch (cause) {
+		return DataErrors.DataFailed({ operation: operation.kind, cause });
 	}
+	if (envelope.error !== null) {
+		// The host answers a missing data owner and a refused operation the same
+		// way it answers a bad patch: a named error. Only the first is a claim
+		// about the system, so only the first becomes "unavailable".
+		return envelope.error.name === 'DesktopEpicenterUnavailable'
+			? DataErrors.DataUnavailable({ message: envelope.error.message })
+			: DataErrors.DataFailed({
+					operation: operation.kind,
+					cause: `${envelope.error.name}: ${envelope.error.message}`,
+				});
+	}
+	if (status >= 400) {
+		return DataErrors.DataFailed({
+			operation: operation.kind,
+			cause: new Error(`Epicenter data answered HTTP ${status}`),
+		});
+	}
+	return Ok(envelope.data as TResult);
 }
 
 /**
- * Split a patch into what to write and what to remove.
+ * The one host surface this document holds, and the carrier that keeps it live.
  *
- * `JSON.stringify` drops a key whose value is `undefined`, so a patch crossing
- * this carrier cannot say "remove this optional field" by holding one. The two
- * halves are named instead. Field names are not judged here: the host owns that
- * and reports it as an ordinary failure, and refusing early would turn a typed
- * decline into a thrown error.
+ * Every binding in the document shares all of it: one `surfaceId` the host
+ * registered once, one socket carrying one copy of the invalidation stream, and
+ * one dispatcher that fans that stream out to whichever handles are subscribed.
  */
-function splitUpdate(patch: Record<string, unknown>): {
-	set: Record<string, unknown>;
-	unset: string[];
-} {
-	const set: Record<string, unknown> = {};
-	const unset: string[] = [];
-	for (const [name, value] of Object.entries(patch)) {
-		if (value === undefined) unset.push(name);
-		else set[name] = value;
+type DataTransport = {
+	origin: string;
+	surfaceId: string;
+	observation: InvalidationDispatcher;
+	carrier: ObservationCarrier;
+	/** How many bindings are still holding this transport. */
+	bindings: number;
+};
+
+let heldTransport: DataTransport | undefined;
+/**
+ * The acquisition in flight, so binds in the same tick share one host `open`
+ * and one dial rather than racing to register two surfaces.
+ */
+let pendingTransport: Promise<Result<DataTransport, BindDataError>> | undefined;
+
+async function openTransport(): Promise<Result<DataTransport, BindDataError>> {
+	const origin = originOf();
+	const surfaceId = crypto.randomUUID();
+	const surface = { origin, surfaceId };
+	const observation = createInvalidationDispatcher();
+
+	const opened = await request<void>(surface, { kind: 'open' });
+	if (opened.error !== null) return Err(opened.error);
+	// The carrier is established before this resolves. That ordering is the whole
+	// reason `bind` is asynchronous: once a caller holds a handle, subscribing and
+	// then reading cannot straddle a gap.
+	let carrier: ObservationCarrier;
+	try {
+		carrier = await openObservationCarrier({
+			observation,
+			dial: () => {
+				if (typeof WebSocket === 'undefined') {
+					throw new Error('Epicenter data observation requires WebSocket');
+				}
+				return new WebSocket(observeUrl(origin));
+			},
+		});
+	} catch (cause) {
+		// `open` registered this surface before the carrier dial failed. Close that
+		// registration before declining, or every failed bind leaves a host-owned
+		// surface behind until the process exits.
+		const released = await request<void>(surface, { kind: 'disconnect' });
+		// A cleanup that also failed is named rather than substituted: the carrier
+		// is still the reason this bind produced no handle, and it is the one an
+		// app author can act on.
+		const leaked =
+			released.error === null
+				? ''
+				: ` The host surface it had already opened could not be released either: ${released.error.message}`;
+		return DataErrors.DataUnavailable({
+			message: `Epicenter is present but its data observation carrier would not open, so a bound handle could not promise to report changes: ${extractErrorMessage(cause)}${leaked}`,
+		});
 	}
-	return { set, unset };
+	return Ok({ origin, surfaceId, observation, carrier, bindings: 0 });
 }
 
 /**
- * Backoff for a loopback socket whose server is the same process tree.
+ * Join the document's transport, opening one if there is none.
  *
- * Short at the start because the common cause is a transient loopback carrier
- * gap; capped low because a surface that stays dark after sleep or wake is far
- * worse than a few extra localhost dials.
+ * A caller that is answered `Ok` has already been counted; it owes exactly one
+ * {@link releaseTransport}. A failed acquisition is forgotten rather than
+ * remembered, so a bind after the host comes back dials again instead of
+ * replaying the old refusal forever.
  */
-function reconnectDelayMs(attempt: number): number {
-	return Math.min(250 * 2 ** (attempt - 1), 5_000);
+async function acquireTransport(): Promise<
+	Result<DataTransport, BindDataError>
+> {
+	if (heldTransport !== undefined) {
+		heldTransport.bindings += 1;
+		return Ok(heldTransport);
+	}
+	pendingTransport ??= openTransport().then(
+		(opened) => {
+			pendingTransport = undefined;
+			if (opened.error === null) heldTransport = opened.data;
+			return opened;
+		},
+		(cause: unknown) => {
+			pendingTransport = undefined;
+			throw cause;
+		},
+	);
+	const acquired = await pendingTransport;
+	if (acquired.error !== null) return acquired;
+	// Counted after the await rather than inside `openTransport`, so every caller
+	// that joined the same in-flight acquisition is counted exactly once.
+	acquired.data.bindings += 1;
+	return acquired;
 }
+
+/**
+ * Give back one binding's hold, and tear the transport down if it was the last.
+ *
+ * The shared slot is cleared before the host is told, so a bind that arrives
+ * during the teardown opens a fresh surface rather than joining a closing one.
+ */
+async function releaseTransport(held: DataTransport): Promise<void> {
+	held.bindings -= 1;
+	if (held.bindings > 0) return;
+	if (heldTransport === held) heldTransport = undefined;
+	held.carrier.close();
+	// Deliberately not routed through the binding's `call`: the host should hear
+	// that this surface is gone even though no further operation may be issued.
+	await request<void>(held, { kind: 'disconnect' });
+}
+
+/** What `subscribe` answers on a closed binding: nothing was installed. */
+const NOT_SUBSCRIBED: Unsubscribe = () => undefined;
 
 /** The one data namespace. */
 export const data: DataNamespace = { bind };
@@ -273,127 +397,42 @@ async function bind<
 	if (!hostIsReachable()) {
 		return HostErrors.HostUnavailable({ operation: 'data.bind' });
 	}
-	const origin = originOf();
-	const surfaceId = crypto.randomUUID();
-	const observation = createInvalidationDispatcher();
+	const acquired = await acquireTransport();
+	if (acquired.error !== null) return Err(acquired.error);
+	const transport = acquired.data;
+	const { observation } = transport;
 	let isClosed = false;
 
-	async function call<TResult>(
+	function call<TResult>(
 		operation: WireDataOperation,
 	): Promise<Result<TResult, DataOperationError>> {
 		if (isClosed) {
-			return DataErrors.DataFailed({
-				operation: operation.kind,
-				cause: new Error('This data binding is closed'),
-			});
+			return Promise.resolve(
+				DataErrors.DataFailed({
+					operation: operation.kind,
+					cause: new Error('This data binding is closed'),
+				}),
+			);
 		}
-		let envelope: WireDataResponse;
-		let status: number;
-		try {
-			const response = await fetch(new URL(DATA_ROUTE, origin), {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				credentials: 'same-origin',
-				body: JSON.stringify({ surfaceId, operation }),
-			});
-			status = response.status;
-			envelope = (await response.json()) as WireDataResponse;
-		} catch (cause) {
-			return DataErrors.DataFailed({ operation: operation.kind, cause });
-		}
-		if (envelope.error !== null) {
-			// The host answers a missing data owner and a refused operation the
-			// same way it answers a bad patch: a named error. Only the first is a
-			// claim about the system, so only the first becomes "unavailable".
-			return envelope.error.name === 'DesktopEpicenterUnavailable'
-				? DataErrors.DataUnavailable({ message: envelope.error.message })
-				: DataErrors.DataFailed({
-						operation: operation.kind,
-						cause: `${envelope.error.name}: ${envelope.error.message}`,
-					});
-		}
-		if (status >= 400) {
-			return DataErrors.DataFailed({
-				operation: operation.kind,
-				cause: new Error(`Epicenter data answered HTTP ${status}`),
-			});
-		}
-		return Ok(envelope.data as TResult);
+		return request<TResult>(transport, operation);
 	}
 
-	// The carrier is established before this function resolves. That ordering is
-	// the whole reason `bind` is asynchronous: once a caller holds the handle,
-	// subscribing and then reading cannot straddle a gap.
-	let socket: WebSocket | undefined;
-	let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
-	let failedAttempts = 0;
-
-	function connect({ isInitial }: { isInitial: boolean }): Promise<boolean> {
-		return new Promise<boolean>((resolve) => {
-			if (isClosed || typeof WebSocket === 'undefined') return resolve(false);
-			let settled = false;
-			const next = new WebSocket(observeUrl(origin));
-			socket = next;
-			next.addEventListener('open', () => {
-				failedAttempts = 0;
-				if (!settled) {
-					settled = true;
-					resolve(true);
-				}
-				// Only a reopen has handles to heal. The first carrier precedes every
-				// subscription this binding can have, so there is nothing to tell.
-				if (!isInitial) observation.invalidateAll();
-			});
-			next.addEventListener('message', (event: MessageEvent) => {
-				const frame = parseFrame(event.data);
-				if (frame !== undefined) observation.deliver(frame.changes);
-			});
-			// `error` always precedes `close` on a failed dial, so scheduling the
-			// redial from `close` alone covers both without double-dialing.
-			next.addEventListener('error', () => undefined);
-			next.addEventListener('close', () => {
-				if (socket !== next) return;
-				socket = undefined;
-				if (isClosed) return;
-				failedAttempts += 1;
-				if (!settled) {
-					settled = true;
-					resolve(false);
-				}
-				scheduleReconnect();
-			});
-		});
-	}
-
-	function scheduleReconnect(): void {
-		if (isClosed || reconnectTimer !== undefined) return;
-		reconnectTimer = setTimeout(
-			() => {
-				reconnectTimer = undefined;
-				if (!isClosed) void connect({ isInitial: false });
-			},
-			reconnectDelayMs(Math.max(failedAttempts, 1)),
-		);
-	}
-
-	const opened = await call<void>({ kind: 'open' });
-	if (opened.error !== null) return Err(opened.error);
-	const carrierOpened = await connect({ isInitial: true }).catch(() => false);
-	if (!carrierOpened) {
-		clearTimeout(reconnectTimer);
-		reconnectTimer = undefined;
-		socket?.close();
-		socket = undefined;
-		observation.clear();
-		// `open` registered this surface before the carrier dial failed. Close
-		// that registration before declining the bind, or every failed bind
-		// leaves a host-owned surface behind until the process exits.
-		await call<void>({ kind: 'disconnect' });
-		isClosed = true;
-		return DataErrors.DataUnavailable({
-			message:
-				'Epicenter is present but its data observation carrier would not open, so a bound handle could not promise to report changes.',
-		});
+	/**
+	 * Remember one listener this binding installed on the shared dispatcher.
+	 *
+	 * The dispatcher outlives this binding, so `close()` has to take back exactly
+	 * what this binding put in. Clearing the dispatcher, which is what a
+	 * per-binding carrier could afford to do, would silence every other binding
+	 * in the document.
+	 */
+	const installed = new Set<Unsubscribe>();
+	function retain(unsubscribe: () => void): Unsubscribe {
+		const release: Unsubscribe = () => {
+			if (!installed.delete(release)) return;
+			unsubscribe();
+		};
+		installed.add(release);
+		return release;
 	}
 
 	const tables = Object.fromEntries(
@@ -415,23 +454,8 @@ async function bind<
 		async close() {
 			if (isClosed) return;
 			isClosed = true;
-			clearTimeout(reconnectTimer);
-			reconnectTimer = undefined;
-			socket?.close();
-			socket = undefined;
-			observation.clear();
-			// Deliberately after `isClosed`, and deliberately not routed through
-			// `call`: the host should hear that this surface is gone even though no
-			// further operation may be issued.
-			await fetch(new URL(DATA_ROUTE, origin), {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				credentials: 'same-origin',
-				body: JSON.stringify({
-					surfaceId,
-					operation: { kind: 'disconnect' },
-				}),
-			}).catch(() => undefined);
+			for (const release of [...installed]) release();
+			await releaseTransport(transport);
 		},
 	};
 	return Ok(Object.freeze(bound));
@@ -442,7 +466,7 @@ async function bind<
 		definition: TDefinition,
 	): TableHandle<TDefinition> {
 		const wire = serializeTableDefinition(namespace, tableName, definition);
-		const addressOf = (rowId: string): WireRowAddress => ({
+		const addressOf = (rowId: string): RowAddress => ({
 			kind: 'row',
 			namespace,
 			tableName,
@@ -520,7 +544,9 @@ async function bind<
 			},
 			entries,
 			subscribe: (listener: (invalidation: TableInvalidation) => void) =>
-				observation.subscribeTable(namespace, tableName, listener),
+				isClosed
+					? NOT_SUBSCRIBED
+					: retain(observation.subscribeTable(namespace, tableName, listener)),
 		}) as TableHandle<TDefinition>;
 	}
 
@@ -529,7 +555,7 @@ async function bind<
 		valueName: string,
 		definition: TDefinition,
 	): ValueHandle<TDefinition> {
-		const address: WireValueAddress = { kind: 'value', namespace, valueName };
+		const address: ValueAddress = { kind: 'value', namespace, valueName };
 		const wire = serializeValueDefinition(address, definition);
 		return Object.freeze({
 			async get() {
@@ -543,7 +569,9 @@ async function bind<
 			unset: () =>
 				call<void>({ kind: 'value-unset', definition: wire, address }),
 			subscribe: (listener: () => void) =>
-				observation.subscribeValue(address, listener),
+				isClosed
+					? NOT_SUBSCRIBED
+					: retain(observation.subscribeValue(address, listener)),
 		}) as ValueHandle<TDefinition>;
 	}
 }

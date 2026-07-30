@@ -9,9 +9,9 @@ import {
 } from './links.js';
 
 const SAMPLE_ID = '01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b';
-const SAMPLE_WORKSPACE = 'opensidian';
-const SAMPLE_TABLE = 'files';
-const SAMPLE_REF = `epicenter://opensidian/files/${SAMPLE_ID}`;
+const SAMPLE_WORKSPACE = 'honeycrisp';
+const SAMPLE_TABLE = 'notes';
+const SAMPLE_REF = `epicenter://honeycrisp/notes/${SAMPLE_ID}`;
 
 describe('isEpicenterLink', () => {
 	test('returns true for epicenter URIs', () => {
@@ -85,7 +85,7 @@ describe('convertWikilinksToEpicenterLinks', () => {
 	const resolve = (name: string) => {
 		const lookup: Record<string, string> = {
 			'First Note': SAMPLE_REF,
-			'Project Plan': 'epicenter://opensidian/files/def-456',
+			'Project Plan': 'epicenter://honeycrisp/notes/def-456',
 		};
 
 		return lookup[name] ?? null;

@@ -2,10 +2,12 @@
 	import { Button } from '@epicenter/ui/button';
 	import { Input } from '@epicenter/ui/input';
 	import * as Sidebar from '@epicenter/ui/sidebar';
-	import type { Entry, EntryId } from '@epicenter/vocab';
+	import type { Entry } from '@epicenter/vocab';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash';
-	import { entriesState } from '$lib/state/entries.svelte';
+	import { getVocabApp } from '$lib/context';
+
+	const { entries } = getVocabApp();
 
 	let {
 		onPractice,
@@ -33,29 +35,29 @@
 
 	const filteredEntries = $derived(
 		stageFilter === 'all'
-			? entriesState.entries
-			: entriesState.entries.filter((entry) => entry.stage === stageFilter),
+			? entries.entries
+			: entries.entries.filter((entry) => entry.stage === stageFilter),
 	);
 
 	/** Cap the compiled set so a large pool cannot build a runaway prompt. Newest
-	 * first, since `entriesState.entries` already sorts that way. */
+	 * first, since `entries.entries` already sorts that way. */
 	const PRACTICE_CAP = 20;
 	const practiceEntries = $derived(filteredEntries.slice(0, PRACTICE_CAP));
 
 	let newEntry = $state('');
 
 	function addEntry() {
-		if (entriesState.save(newEntry)) {
+		if (entries.save(newEntry)) {
 			newEntry = '';
 		}
 	}
 
-	function cycleStage(id: EntryId, stage: Entry['stage']) {
-		entriesState.setStage(id, NEXT_STAGE[stage]);
+	function cycleStage(id: string, stage: Entry['stage']) {
+		entries.setStage(id, NEXT_STAGE[stage]);
 	}
 
 	function commitNote(entry: Entry, note: string) {
-		if (note !== entry.note) entriesState.setNote(entry.id, note);
+		if (note !== entry.note) entries.setNote(entry.id, note);
 	}
 </script>
 
@@ -63,7 +65,7 @@
 	<Sidebar.GroupLabel>
 		<span>Entries</span>
 		<span class="ml-auto text-xs text-muted-foreground">
-			usable: {entriesState.usableCount}
+			usable: {entries.usableCount}
 		</span>
 	</Sidebar.GroupLabel>
 	<Sidebar.GroupContent>
@@ -114,7 +116,7 @@
 			</Button>
 		</div>
 
-		{#if entriesState.entries.length === 0}
+		{#if entries.entries.length === 0}
 			<p class="px-2 py-1 text-xs text-muted-foreground">
 				Select text in the chat to save it as an entry.
 			</p>
@@ -146,7 +148,7 @@
 						<Sidebar.MenuAction
 							showOnHover
 							aria-label="Delete entry"
-							onclick={() => entriesState.remove(entry.id)}
+							onclick={() => entries.remove(entry.id)}
 						>
 							<TrashIcon class="size-3.5" />
 						</Sidebar.MenuAction>

@@ -144,13 +144,13 @@ export async function importSkillsFromDisk({
 				const existingReference = referencesByOwnerAndPath.get(key);
 				const reference = existingReference
 					? await repairReference(data, existingReference, path)
-					: await data.tables.referenceFiles.create({
+					: await data.tables.skillReferences.create({
 							skillId: skill.id,
 							path,
 							updatedAt: InstantString.now(),
 						});
 				referencesByOwnerAndPath.set(key, reference);
-				await using document = await data.tables.referenceFiles.openDocument(
+				await using document = await data.tables.skillReferences.openDocument(
 					reference.id,
 				);
 				writeDocumentText(document, content);
@@ -199,7 +199,7 @@ export async function exportSkillsToDisk({
 			await mkdir(referencesDir, { recursive: true });
 			await Promise.all(
 				references.map(async (reference) => {
-					await using content = await data.tables.referenceFiles.openDocument(
+					await using content = await data.tables.skillReferences.openDocument(
 						reference.id,
 					);
 					await writeFile(
@@ -241,7 +241,7 @@ async function repairReference(
 	reference: { id: string },
 	path: string,
 ): Promise<Reference> {
-	const repaired = await data.tables.referenceFiles.update(reference.id, {
+	const repaired = await data.tables.skillReferences.update(reference.id, {
 		path,
 		updatedAt: InstantString.now(),
 	});

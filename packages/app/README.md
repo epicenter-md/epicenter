@@ -187,10 +187,10 @@ const { data: all } = await notes.tables.notes.scan();
 await notes.values['settings.sortOrder'].set('newest');
 ```
 
-`bind` is the one call in this client you await for a connection, and what it
-waits for is that Lens's liveness rather than a handle-wide session. A bound
-handle promises to report when its data may be stale, and that promise is only
-keepable if the observation carrier already exists when you receive the handle.
+`bind` is the one call in this client you await for a connection. It waits for
+the document's shared observation carrier rather than introducing a handle-wide
+session. A bound handle promises to report when its data may be stale, and that
+promise is only keepable if the carrier already exists when you receive it.
 
 ### Staleness
 

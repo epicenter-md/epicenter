@@ -61,7 +61,7 @@ export function createSkillsState({ skills }: { skills: SkillsData }) {
 	const stopSkills = skills.tables.skills.subscribe(() => {
 		if (!isDisposed) void refresh();
 	});
-	const stopReferenceFiles = skills.tables.referenceFiles.subscribe(() => {
+	const stopSkillReferences = skills.tables.skillReferences.subscribe(() => {
 		if (!isDisposed) void refresh();
 	});
 	const whenReady = refresh({ throwOnError: true });
@@ -111,7 +111,7 @@ export function createSkillsState({ skills }: { skills: SkillsData }) {
 		async deleteSkill(id: string): Promise<void> {
 			for (const reference of referenceRows) {
 				if (reference.skillId === id) {
-					await skills.tables.referenceFiles.delete(reference.id);
+					await skills.tables.skillReferences.delete(reference.id);
 				}
 			}
 			await skills.tables.skills.delete(id);
@@ -122,7 +122,7 @@ export function createSkillsState({ skills }: { skills: SkillsData }) {
 			await refresh();
 		},
 		async createReference(skillId: string, path: string): Promise<string> {
-			const reference = await skills.tables.referenceFiles.create({
+			const reference = await skills.tables.skillReferences.create({
 				skillId,
 				path,
 				updatedAt: InstantString.now(),
@@ -131,14 +131,14 @@ export function createSkillsState({ skills }: { skills: SkillsData }) {
 			return reference.id;
 		},
 		async deleteReference(id: string): Promise<void> {
-			await skills.tables.referenceFiles.delete(id);
+			await skills.tables.skillReferences.delete(id);
 			await refresh();
 		},
 		[Symbol.dispose]() {
 			isDisposed = true;
 			refreshGeneration += 1;
 			stopSkills();
-			stopReferenceFiles();
+			stopSkillReferences();
 		},
 	};
 }

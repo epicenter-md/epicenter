@@ -5,8 +5,14 @@
  * moves or deletes files (the worker collapse, the dashboard removal, app
  * restructures). They are invisible to typecheck and lint because they live in
  * Markdown, so they rot silently until someone clicks a dead link. This walks
- * every backtick-wrapped file path in the canonical docs and checks it resolves
- * in the current worktree.
+ * every backtick-wrapped file path in the canonical docs and checks it against
+ * the tracked file set.
+ *
+ * Tracked, not `existsSync`, on both sides of the gate: a doc may only cite what
+ * the repository actually ships. Resolving against the filesystem would let a
+ * reference to a gitignored build artifact (`packages/app/dist/index.js`) or a
+ * stray local scratch file pass on the machine that wrote it and fail on a fresh
+ * clone, making the gate's verdict depend on who ran it.
  *
  * Scope is deliberately narrow to stay false-positive free:
  *   - Only backtick-wrapped tokens with a filename extension are treated as
@@ -45,7 +51,7 @@ const tracked = execFileSync('git', ['ls-files', '-z'], {
 })
 	.split('\0')
 	.filter(Boolean);
-const trackedSet = new Set(tracked);
+const trackedPaths = new Set(tracked);
 
 const EXCLUDED_DOC_DIRS = ['specs', 'docs/articles', '.agents', '.claude'];
 const REPO_ROOT_DIRS = [
@@ -98,7 +104,7 @@ for (const file of docs) {
 			) {
 				continue;
 			}
-			if (!trackedSet.has(path) || !existsSync(join(root, path))) {
+			if (!trackedPaths.has(path)) {
 				violations.push({ file, line: i + 1, path });
 			}
 		}

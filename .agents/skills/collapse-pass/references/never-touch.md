@@ -69,5 +69,5 @@ Default collapse-pass targets, narrowest to widest:
 
 Out of scope without an explicit pass declaration:
 
-- First-party apps: `apps/whispering`, `apps/tab-manager`, `apps/fuji`, `apps/honeycrisp`, `apps/opensidian`, `apps/vocab`. These are owned by separate waves and have their own architecture tests.
+- First-party apps: `apps/whispering`, `apps/tab-manager`, `apps/honeycrisp`, `apps/vocab`. These are owned by separate waves and have their own architecture tests.
 - `specs/`, `docs/articles/`, migration history (`*-legacy-*.md`, archived decision docs)

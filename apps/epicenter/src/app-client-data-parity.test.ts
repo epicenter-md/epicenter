@@ -1,13 +1,15 @@
 /**
  * @fileoverview The public data client and this host's data owner agree.
  *
- * `@epicenter/app` declares the data operations it sends by hand rather than
- * importing them, because the package that owns them also owns SQLite, Yjs, a
- * replica, and a sync supervisor, and an MIT client handed to strangers must
- * not carry that closure to reuse a few type aliases (ADR-0186, ADR-0187).
+ * `@epicenter/app` declares the operation union it sends by hand rather than
+ * importing it, because the package that owns those operations also owns
+ * SQLite, Yjs, a replica, and a sync supervisor, and an MIT client handed to
+ * strangers must not carry that closure (ADR-0186, ADR-0187). The vocabulary an
+ * operation carries is shared: both sides name their addresses and serialized
+ * definitions from `@epicenter/lens`.
  *
- * That is the right boundary and it is also the drift risk. A renamed field on
- * either side compiles cleanly on both, and the failure appears the first time
+ * That is the right boundary and it is also the drift risk. A renamed operation
+ * field compiles cleanly on both sides, and the failure appears the first time
  * someone reads their own data.
  *
  * So nothing here compares two hand-written lists. The published client is
@@ -24,6 +26,9 @@
  *   the request shape.
  * - It proves the observation carrier connects and its frames parse, by writing
  *   from a second surface and watching the client's own subscribers fire.
+ * - It proves what the host is asked to hold for one document: two bindings, one
+ *   `open`, one `surfaceId`, one socket, and one `disconnect` when the last of
+ *   them lets go.
  * - It does **not** compare the two type declarations field by field. A field
  *   the client never sends, or a host response field it never reads, is outside
  *   what driving the client can see. The coverage guard below is what keeps that
@@ -41,6 +46,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { epicenter } from '@epicenter/app';
+import { DESKTOP_EPICENTER_ROUTE } from '@epicenter/data/desktop';
 import {
 	defineLens,
 	defineTable,
@@ -78,6 +84,20 @@ const notesContract = defineLens({
 	},
 });
 
+/**
+ * A second, unrelated contract, because an app may declare more than one.
+ *
+ * One Lens is still exactly one namespace. What the two of them together prove
+ * is that binding twice does not cost a second host surface or a second socket.
+ */
+const tagsContract = defineLens({
+	namespace: 'so.epicenter.parity.tags',
+	tables: {
+		tags: defineTable({ fields: { label: field.string() } }),
+	},
+	values: {},
+});
+
 /** One page is 100 rows, so 101 is the smallest table that must page twice. */
 const PAGING_ROWS = 101;
 
@@ -85,8 +105,17 @@ type Harness = Awaited<ReturnType<typeof startHost>>;
 
 let root: string;
 let harness: Harness;
-/** Every host answer this walk provoked, so acceptance can be asserted in bulk. */
-const answers: { kind: string; error: { name: string } | null }[] = [];
+/**
+ * Every host request this walk provoked, so acceptance and surface identity can
+ * both be asserted in bulk.
+ */
+const answers: {
+	kind: string;
+	surfaceId: string;
+	error: { name: string } | null;
+}[] = [];
+/** Every observation socket the client dialed, in order. */
+const sockets: WebSocket[] = [];
 
 beforeAll(async () => {
 	root = mkdtempSync(join(tmpdir(), 'epicenter-app-data-parity-'));
@@ -253,6 +282,115 @@ test('the published client drives every data operation through the real host', a
 	);
 });
 
+test('two bindings in one document share one host surface and one carrier', async () => {
+	const firstAnswer = answers.length;
+	const firstSocket = sockets.length;
+
+	// Both binds are started in the same tick, so they race for the transport
+	// the way two modules of one app would. Exactly one of them may open it.
+	const [notesBound, tagsBound] = await Promise.all([
+		epicenter.data.bind(notesContract),
+		epicenter.data.bind(tagsContract),
+	]);
+	const notesBinding = notesBound.data;
+	const tagsBinding = tagsBound.data;
+	expect(notesBinding).not.toBeNull();
+	expect(tagsBinding).not.toBeNull();
+	if (!notesBinding || !tagsBinding) return;
+
+	const opens = answers
+		.slice(firstAnswer)
+		.filter((answer) => answer.kind === 'open');
+	expect(opens.length).toBe(1);
+	expect(
+		new Set(answers.slice(firstAnswer).map((each) => each.surfaceId)).size,
+	).toBe(1);
+	expect(sockets.length - firstSocket).toBe(1);
+	const carrier = sockets.at(-1);
+
+	// ── one socket, fanned out to both bindings ──────────────────────────
+	const notesSeen: TableInvalidation[] = [];
+	const tagsSeen: TableInvalidation[] = [];
+	notesBinding.tables.notes.subscribe((each) => notesSeen.push(each));
+	tagsBinding.tables.tags.subscribe((each) => tagsSeen.push(each));
+
+	expect(
+		(
+			await notesBinding.tables.notes.create({
+				title: 'Shared',
+				body: undefined,
+			})
+		).error,
+	).toBeNull();
+	expect(
+		(await tagsBinding.tables.tags.create({ label: 'shared' })).error,
+	).toBeNull();
+	await waitFor(() => notesSeen.length >= 1 && tagsSeen.length >= 1);
+
+	// ── closing one binding leaves the other, and the carrier, alive ─────
+	await notesBinding.close();
+	expect(
+		answers.slice(firstAnswer).filter((each) => each.kind === 'disconnect'),
+	).toEqual([]);
+	expect(carrier?.readyState).toBe(WebSocket.OPEN);
+
+	const notesAfterClose = notesSeen.length;
+	const tagsAfterClose = tagsSeen.length;
+	await harness.seedNotes(1);
+	expect(
+		(await tagsBinding.tables.tags.create({ label: 'still live' })).error,
+	).toBeNull();
+	await waitFor(() => tagsSeen.length > tagsAfterClose);
+	// The closed binding released its listeners rather than clearing a
+	// dispatcher the surviving binding is still using.
+	expect(notesSeen.length).toBe(notesAfterClose);
+	// Its handles refuse further use rather than reaching a surface it gave up.
+	expect((await notesBinding.tables.notes.scan()).error?.name).toBe(
+		'DataFailed',
+	);
+
+	// ── the last release is what the host and the socket hear ────────────
+	await tagsBinding.close();
+	expect(
+		answers
+			.slice(firstAnswer)
+			.filter((each) => each.kind === 'disconnect')
+			.map((each) => each.error),
+	).toEqual([null]);
+	await waitFor(() => carrier?.readyState === WebSocket.CLOSED);
+});
+
+test('an operation from a surface that never opened is refused with 409', async () => {
+	// The one refusal the host can produce that no client bug is needed to
+	// reach, and the only place its name is load-bearing: nothing branches on
+	// `EpicenterSurfaceNotOpenError`, but it crosses the wire and picks the
+	// status, so a rename that missed one side would be invisible otherwise.
+	//
+	// The operation carries nothing but its `kind`, which is the assertion:
+	// membership is checked before the operation is looked at, so a request from
+	// a surface the host does not hold never reaches the store at all.
+	const response = await fetch(
+		new URL(DESKTOP_EPICENTER_ROUTE, harness.origin),
+		{
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({
+				surfaceId: 'a-surface-that-never-opened',
+				operation: { kind: 'value-get' },
+			}),
+		},
+	);
+
+	expect(response.status).toBe(409);
+	const envelope = (await response.json()) as {
+		error: { name: string; message: string } | null;
+	};
+	expect(envelope.error?.name).toBe('EpicenterSurfaceNotOpenError');
+	expect(envelope.error?.message).toBe(
+		'Desktop Epicenter holds no open surface for this request',
+	);
+});
+
 test('a bound handle outside an Epicenter host declines instead of throwing', async () => {
 	const restore = harness.hideHost();
 	try {
@@ -337,13 +475,14 @@ async function startHost(directory: string) {
 		// Record what the host made of each data operation. Read from a clone so
 		// the client still gets its own body.
 		if (String(input).endsWith('/api/data') && typeof init?.body === 'string') {
-			const { operation } = JSON.parse(init.body) as {
+			const { operation, surfaceId } = JSON.parse(init.body) as {
 				operation: { kind: string };
+				surfaceId: string;
 			};
 			const envelope = (await response.clone().json()) as {
 				error: { name: string } | null;
 			};
-			answers.push({ kind: operation.kind, error: envelope.error });
+			answers.push({ kind: operation.kind, surfaceId, error: envelope.error });
 		}
 		return response;
 	});
@@ -354,6 +493,7 @@ async function startHost(directory: string) {
 				super(url, {
 					headers: { cookie, origin },
 				} as unknown as string[]);
+				sockets.push(this);
 			}
 		},
 	);
