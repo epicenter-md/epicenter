@@ -25,10 +25,13 @@ Start Epicenter from the repository root:
 bun dev:epicenter
 ```
 
-Epicenter opens Home. Home's Apps pane lists every application this build can
-open, compiled and admitted alike, and opening one reveals its own window while
-Home stays open behind it (ADR-0189). The tray and deep links remain shortcuts
-into the same windows:
+Epicenter opens Home. Its Apps pane lists what this build can launch, the
+compiled applications plus the selected catalog generation's members, and
+launching one reveals its own window while Home stays open behind it
+(ADR-0189). Whispering hands transcription setup back to Home's Settings pane
+when the host has no usable local model, and Settings offers the ordinary launch
+action once there is one. The tray and deep links remain shortcuts into the same
+windows:
 
 ```bash
 open 'epicenter://surface/whispering'
