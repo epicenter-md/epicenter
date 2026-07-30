@@ -1,54 +1,36 @@
-import { skillsWorkspace } from '@epicenter/skills';
-import type {
-	WorkspaceLens,
-	Workspace,
-} from '@epicenter/workspace/sqlite';
-import { createDeviceBrowserWorkspaceRuntime } from '@epicenter/workspace/sqlite/browser';
+import type { Epicenter } from '@epicenter/data';
+import { openBrowserEpicenter } from '@epicenter/data/browser';
+import { type SkillsData, skillsLens } from '@epicenter/skills';
 import { createSkillsState } from './state/skills-state.svelte.js';
 
-type SkillsWorkspace = Workspace<typeof skillsWorkspace>;
-
-type ApplicationRuntime = {
-	open<TDefinition extends WorkspaceLens>(
-		definition: TDefinition,
-	): Promise<Workspace<TDefinition>>;
-	[Symbol.asyncDispose](): Promise<void>;
-};
-
 export type SkillsDependencies = {
-	createRuntime(
-		onRecordsChanged: (workspaceId: string) => void,
-	): ApplicationRuntime;
+	openEpicenter(): Promise<Epicenter>;
 	reportBackgroundError(cause: unknown): void;
 };
 
-export type SkillsApplication = SkillsWorkspace & {
+export type SkillsApplication = SkillsData & {
 	state: ReturnType<typeof createSkillsState>;
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
 /** Inert browser dependencies. Storage opens only when the root calls open. */
-export const skillsBrowser: Pick<SkillsDependencies, 'createRuntime'> = {
-	createRuntime: (onRecordsChanged) =>
-		createDeviceBrowserWorkspaceRuntime({ onRecordsChanged }),
+export const skillsBrowser: Pick<SkillsDependencies, 'openEpicenter'> = {
+	openEpicenter: openBrowserEpicenter,
 };
 
 /** Open one fully acquired and hydrated standalone Skills application. */
 export async function openSkillsApplication(
-	{ createRuntime, reportBackgroundError }: SkillsDependencies,
+	{ openEpicenter, reportBackgroundError }: SkillsDependencies,
 	{ signal }: { signal?: AbortSignal } = {},
 ): Promise<SkillsApplication> {
-	const recordsChangedListeners = new Set<() => void>();
-	const runtime = createRuntime((workspaceId) => {
-		if (workspaceId !== skillsWorkspace.id) return;
-		for (const listener of recordsChangedListeners) listener();
-	});
+	let runtime: Epicenter | undefined;
 	let state: ReturnType<typeof createSkillsState> | undefined;
+	let released = false;
 	let releasePromise: Promise<void> | undefined;
 	const release = (): Promise<void> => {
 		releasePromise ??= (async () => {
+			released = true;
 			signal?.removeEventListener('abort', onAbort);
-			recordsChangedListeners.clear();
 			const failures: unknown[] = [];
 			try {
 				state?.[Symbol.dispose]();
@@ -56,7 +38,7 @@ export async function openSkillsApplication(
 				failures.push(cause);
 			}
 			try {
-				await runtime[Symbol.asyncDispose]();
+				await runtime?.[Symbol.asyncDispose]();
 			} catch (cause) {
 				failures.push(cause);
 			}
@@ -77,19 +59,22 @@ export async function openSkillsApplication(
 
 	try {
 		signal?.throwIfAborted();
-		const workspace = await untilAbort(runtime.open(skillsWorkspace));
+		const opened = await untilAbort(
+			openEpicenter().then(async (opened) => {
+				runtime = opened;
+				if (released) await opened[Symbol.asyncDispose]();
+				return opened;
+			}),
+		);
 		signal?.throwIfAborted();
+		const skills = opened.bind(skillsLens);
 		state = createSkillsState({
-			skills: workspace,
-			onRecordsChanged(listener) {
-				recordsChangedListeners.add(listener);
-				return () => recordsChangedListeners.delete(listener);
-			},
+			skills,
 		});
 		await untilAbort(state.whenReady);
 		signal?.throwIfAborted();
 		return Object.freeze({
-			...workspace,
+			...skills,
 			state,
 			[Symbol.asyncDispose]: release,
 		});

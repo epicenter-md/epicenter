@@ -9,7 +9,7 @@ export const skillsLens = defineLens({
 	namespace: 'so.epicenter.skills',
 	tables: {
 		skills: skillsTable,
-		references: referencesTable,
+		referenceFiles: referencesTable,
 	},
 	values: {},
 });

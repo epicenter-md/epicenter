@@ -17,7 +17,7 @@
 		keymap,
 		placeholder,
 	} from '@codemirror/view';
-	import type { RowDocument } from '@epicenter/workspace/sqlite';
+	import type { RowDocument } from '@epicenter/data';
 
 	let { document }: { document: RowDocument } = $props();
 	let container: HTMLDivElement | undefined = $state();
