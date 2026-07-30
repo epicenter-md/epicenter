@@ -35,13 +35,26 @@ open.
 **One Home-owned launch verb.** Home calls one native command with one ID. The
 host resolves it and decides privately whether that means revealing a compiled
 surface or opening an `app-` window. Launching again focuses the existing window
-rather than creating a second one, and Home is never hidden to do it.
+rather than creating a second one, and Home is never hidden to do it. The
+command settles on the outcome of that window work, not on having scheduled it,
+so a launch that fails gives the person a sentence instead of silence.
 
 That verb is Home's, and no other window holds it. It is deliberately not the
 `openApp(appId)` of ADR-0181: that operation is app-facing and targets an
 admitted member only. The two stay apart so an application can never reveal
 another application. ADR-0181's refusal to collapse `openHome(section)` and
 `openApp(appId)` is unchanged and unamended by this record.
+
+**Bun owns membership; Rust owns window mechanism.** The catalog stays exactly
+where ADR-0179 put it: one immutable generation, selected once at startup,
+served and enumerated by Bun. Rust keeps no copy of it and answers no question
+about it. The launch command validates the ID's shape, refuses reserved surface
+IDs that are not applications, and then builds a window; whether a folder was
+ever admitted is not a question it asks. What keeps a made-up ID from arriving
+is that Home only offers IDs from the authenticated list Bun served it, and what
+makes a wrong one harmless is that the resulting window loads a URL Rust derived
+itself and Bun answers 404. Two catalogs would mean two answers, so there is
+one.
 
 **Three panes.** Home has exactly three: Apps, Chat, Settings. Apps is the
 native landing pane. Chat owns the assistant session and its own controls.
@@ -100,6 +113,13 @@ those capabilities live instead of offering an action that would fail.
   already owns the table that answers which mechanism an ID needs, so putting
   the branch in the UI copies host knowledge into a window and gives a person
   two rows for one act.
+- **Checking catalog membership in Rust before opening a window.** Rejected: it
+  duplicates the one immutable generation ADR-0179 gave to Bun, and two owners
+  of "is this a real app" is how they drift. The refusal costs nothing, because
+  a non-member ID already resolves to a contained 404.
+- **Letting the launch command queue like the tray does.** Rejected: queueing is
+  right when nobody is waiting, and wrong when someone clicked. A window that
+  appears after the next restart is not the thing that was asked for.
 - **An applications popover in the header.** Rejected: it makes launching a
   transient menu act and keeps growing the header this record is collapsing.
 - **A "Back to Whispering" affordance after setup.** Rejected: it requires
