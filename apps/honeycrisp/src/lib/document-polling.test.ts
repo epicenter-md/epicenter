@@ -8,8 +8,8 @@
  * desktop-owner request that will succeed on the next tick.
  */
 
-import { type DocumentSyncIssue, DocumentPullError } from '@epicenter/data';
 import { expect, test } from 'bun:test';
+import { DocumentPullError, type DocumentSyncIssue } from '@epicenter/data';
 import { Ok } from 'wellcrafted/result';
 
 import { startNoteDocumentPolling } from './document-polling.js';
@@ -87,8 +87,9 @@ test('stopping ends the interval', async () => {
 test('a throwing consumer neither stops polling nor rejects the tick', async () => {
 	let pulls = 0;
 	const rejections: unknown[] = [];
-	const recordRejection = (event: PromiseRejectionEvent | { reason: unknown }) =>
-		rejections.push(event.reason);
+	const recordRejection = (
+		event: PromiseRejectionEvent | { reason: unknown },
+	) => rejections.push(event.reason);
 	process.on('unhandledRejection', recordRejection);
 	const stop = startNoteDocumentPolling(
 		{

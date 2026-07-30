@@ -54,9 +54,9 @@ import {
 } from './routes.ts';
 import {
 	createHomeServer,
-	sendObservationFrame,
 	type HomeServerEvent,
 	type HomeSessionResponse,
+	sendObservationFrame,
 } from './server.ts';
 import type { ReadyFrame } from './sidecar-runtime.ts';
 import { loadStaticAssets } from './static-assets.ts';
@@ -138,9 +138,9 @@ describe('sendObservationFrame', () => {
 	});
 
 	test('fails closed without Bun delivery status', () => {
-		expect(() =>
-			sendObservationFrame({}, frame),
-		).toThrow('no Bun delivery status');
+		expect(() => sendObservationFrame({}, frame)).toThrow(
+			'no Bun delivery status',
+		);
 	});
 });
 
