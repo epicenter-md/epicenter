@@ -236,8 +236,8 @@ export const commands = {
 	 *
 	 *  The app shell owns this navigation. The host reports that the route is
 	 *  unavailable, an application decides how to present it, and getting the user
-	 *  to Home is neither of their jobs: `open_app` deliberately refuses built-in
-	 *  surfaces, and that refusal stands.
+	 *  to Home is neither of their jobs: an application asks the shell to show a
+	 *  section of Home, and the shell decides how.
 	 *
 	 *  The intent is recorded *before* any window work, which is what makes this
 	 *  safe against the state Home happens to be in. Home may be absent, still

@@ -331,7 +331,7 @@ enum FailureChoice {
 }
 
 /// The typed Whispering command and event contract. The raw audio response,
-/// Epicenter host-status command, and host-owned `open_app` remain on Tauri's
+/// Epicenter host-status command, and host-owned `launch_application` remain on Tauri's
 /// handwritten handler because they are outside this generated Whispering
 /// binding surface.
 fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
@@ -429,8 +429,8 @@ pub struct HomeSectionPending;
 ///
 /// The app shell owns this navigation. The host reports that the route is
 /// unavailable, an application decides how to present it, and getting the user
-/// to Home is neither of their jobs: `open_app` deliberately refuses built-in
-/// surfaces, and that refusal stands.
+/// to Home is neither of their jobs: an application asks the shell to show a
+/// section of Home, and the shell decides how.
 ///
 /// The intent is recorded *before* any window work, which is what makes this
 /// safe against the state Home happens to be in. Home may be absent, still
@@ -457,9 +457,10 @@ fn take_pending_home_section(app: DesktopAppHandle) -> Option<HomeSection> {
     app.state::<HostState>().take_home_section()
 }
 
-/// What an application ID names. Home never learns which: it lists one catalog
-/// and calls one verb (ADR-0189), so this split stays inside the host, where
-/// window labels and capabilities actually differ.
+/// How Home's window for one application is created. The two arms differ in
+/// window label, capability file, and how Bun serves the document, and none of
+/// that is a distinction a person makes, so it is resolved here from the ID
+/// rather than by the caller (ADR-0189).
 enum Application<'a> {
     /// A compiled application with its own stable window label and enumerated
     /// capabilities.
@@ -468,22 +469,28 @@ enum Application<'a> {
     Admitted(&'a str),
 }
 
-/// Open one application from Home's catalog: reveal and focus its window,
-/// creating it the first time. Calling again focuses rather than duplicating.
+/// Launch one application Home lists: reveal and focus its window, creating it
+/// the first time. Calling again focuses rather than duplicating, and Home is
+/// never hidden to do it.
+///
+/// This is Home's verb, not an app-facing one. It deliberately does not reuse
+/// the `openApp(appId)` name ADR-0181 reserves for the portable handle, because
+/// that operation targets a catalog member only and must not become a way for
+/// one application to reveal another.
 ///
 /// Rust validates the ID and derives the URL and label itself; the frontend
-/// never supplies a URL (ADR-0179). An unknown-but-valid admitted ID opens a
-/// window that Bun answers with 404, which is the honest state of a catalog
-/// member that disappeared since the last restart.
+/// never supplies a URL (ADR-0179). An admitted ID that names no member of the
+/// generation this process selected at startup opens a window Bun answers with
+/// 404. Home does not produce one, because its list is that same generation.
 #[tauri::command]
-fn open_app(
+fn launch_application(
     app: DesktopAppHandle,
     state: State<'_, HostState>,
     app_id: String,
 ) -> std::result::Result<(), String> {
     let Some(application) = parse_application_id(&app_id) else {
         return Err(format!(
-            "app id must match [a-z0-9-]+ and name an application Home can open: {app_id}"
+            "app id must match [a-z0-9-]+ and name an application Home lists: {app_id}"
         ));
     };
     let id = match application {
@@ -513,11 +520,11 @@ fn open_app(
         .map_err(|error| format!("schedule the {app_id} app window: {error}"))
 }
 
-/// Accept exactly the IDs Home can list: the derived-catalog contract
-/// `[a-z0-9-]+`, resolved against the compiled surface table.
+/// Accept exactly the IDs Home lists: the admitted-member ID contract
+/// `[a-z0-9-]+` (ADR-0179), resolved against the compiled surface table.
 ///
 /// A reserved surface that is not an application (Home itself, a placeholder)
-/// and an ID the catalog could never admit are the same refusal, because Home
+/// and an ID no generation could ever admit are the same refusal, because Home
 /// never offers either.
 fn parse_application_id(id: &str) -> Option<Application<'_>> {
     let matches_pattern = !id.is_empty()
@@ -587,7 +594,7 @@ pub fn run() {
     let port = configured_port();
     let specta_builder = make_specta_builder();
     let specta_handler = tauri_specta::Builder::invoke_handler(&specta_builder);
-    let native_handler = tauri::generate_handler![encode_recording_for_upload, open_app]
+    let native_handler = tauri::generate_handler![encode_recording_for_upload, launch_application]
         as fn(tauri::ipc::Invoke<tauri::Wry>) -> bool;
     let log_plugin = tauri_plugin_log::Builder::new()
         .level(log::LevelFilter::Info)
@@ -630,7 +637,7 @@ pub fn run() {
         .invoke_handler(move |invoke| {
             if matches!(
                 invoke.message.command(),
-                "encode_recording_for_upload" | "open_app"
+                "encode_recording_for_upload" | "launch_application"
             ) {
                 native_handler(invoke)
             } else {
@@ -1888,7 +1895,7 @@ mod tests {
     /// (raw bytes) or are host-owned rather than part of the app contract.
     #[test]
     fn generated_bindings_cover_every_declared_command() {
-        const HANDWRITTEN: &[&str] = &["encode_recording_for_upload", "open_app"];
+        const HANDWRITTEN: &[&str] = &["encode_recording_for_upload", "launch_application"];
         for bindings in [
             include_str!("../../../whispering/src/lib/tauri/bindings.gen.ts"),
             include_str!("../../src/ui/bindings.gen.ts"),
@@ -2135,19 +2142,36 @@ mod tests {
     /// another application without the user ever choosing it, which is a
     /// product decision nobody made.
     #[test]
-    fn only_home_can_open_an_application() {
+    fn only_home_can_launch_an_application() {
         for encoded in [
-            include_str!("../capabilities/home-open-application-development.json"),
-            include_str!("../capabilities/home-open-application-production.json"),
+            include_str!("../capabilities/home-launch-application-development.json"),
+            include_str!("../capabilities/home-launch-application-production.json"),
         ] {
             let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
             assert_eq!(
                 capability["windows"],
                 serde_json::json!(["home"]),
-                "the application-opening verb belongs to the Home window alone"
+                "the launch verb belongs to the Home window alone"
             );
             let permissions = capability["permissions"].as_array().unwrap();
-            assert!(permissions.contains(&serde_json::json!("allow-open-app")));
+            assert!(permissions.contains(&serde_json::json!("allow-launch-application")));
+        }
+    }
+
+    /// ADR-0181 keeps `openHome(section)` and `openApp(appId)` apart because a
+    /// built-in surface and an admitted member have different identity and
+    /// authority rules. Home's launch verb crosses that line by design, which is
+    /// exactly why no app window may hold it: an admitted app must not be able
+    /// to reveal a compiled surface, and reusing the reserved `open_app` name
+    /// for this would have made that the default the day a `shell` namespace
+    /// shipped.
+    #[test]
+    fn no_app_window_can_launch_an_application() {
+        for encoded in APP_WINDOW_CAPABILITIES {
+            assert!(
+                !granted_app_commands(encoded).contains("launch_application"),
+                "an app window must not be able to reveal another application"
+            );
         }
     }
 

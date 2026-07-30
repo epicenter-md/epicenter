@@ -17,9 +17,12 @@ export function isDesktopHost(): boolean {
 
 /**
  * Reveal and focus one application's window, creating it the first time
- * (ADR-0189). The host resolves the ID against its own catalog and derives the
+ * (ADR-0189). The host resolves the ID against its own tables and derives the
  * URL and window label; Home passes an ID and nothing else.
+ *
+ * Home's verb, held by no other window. It is deliberately not the app-facing
+ * `openApp(appId)` of ADR-0181, which targets an admitted catalog member only.
  */
-export async function openApplication(id: string): Promise<void> {
-	await invoke('open_app', { appId: id });
+export async function launchApplication(id: string): Promise<void> {
+	await invoke('launch_application', { appId: id });
 }

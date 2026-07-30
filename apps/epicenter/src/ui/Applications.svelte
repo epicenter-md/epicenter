@@ -6,16 +6,16 @@
 	import type { Application } from '../applications.ts';
 	import { APPLICATIONS_ROUTE } from '../routes.ts';
 	import type { ApplicationsResponse } from '../server.ts';
-	import { isDesktopHost, openApplication } from './runtime.ts';
+	import { isDesktopHost, launchApplication } from './runtime.ts';
 
 	/**
-	 * Everything a person can open, in one list (ADR-0189).
+	 * Everything a person can launch, in one list (ADR-0189).
 	 *
 	 * The host composes the list, so there is nothing here that knows whether a
-	 * row is compiled into the release or was admitted as a folder: one row
-	 * shape, one action, one order. A row carries only the ID and title
-	 * admission honestly derived, which is why there are no descriptions,
-	 * icons, categories, or running indicators to invent.
+	 * row is compiled into the release or is a member of the selected catalog
+	 * generation: one row shape, one action, one order. A row carries only the
+	 * ID and title the host honestly derived, which is why there are no
+	 * descriptions, icons, categories, or running indicators to invent.
 	 */
 
 	const { ready }: { ready: Promise<void> } = $props();
@@ -38,7 +38,7 @@
 	async function open(application: Application) {
 		openFailure = null;
 		try {
-			await openApplication(application.id);
+			await launchApplication(application.id);
 		} catch (error) {
 			openFailure = `${application.title} did not open. ${
 				error instanceof Error ? error.message : String(error)
