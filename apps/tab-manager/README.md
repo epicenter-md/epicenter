@@ -31,7 +31,7 @@ to the storage-partition and origin pair of the document that opened it
 (ADR-0165, amended by ADR-0177). MV3 gives a background service worker no
 production lifetime guarantee, so a replica owned there would lose its lock to
 termination at a moment nothing observes. The background entrypoint's only job
-is to open the side panel on action click, and `background.test.ts` asserts its
+is to open the side panel on action click, and `ownership.test.ts` asserts its
 module graph can never reach a replica.
 
 A consequence worth knowing: a second same-partition extension document is
