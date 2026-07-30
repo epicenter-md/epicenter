@@ -17,8 +17,15 @@ export function isDesktopHost(): boolean {
 
 /**
  * Reveal and focus one application's window, creating it the first time
- * (ADR-0189). The host resolves the ID against its own tables and derives the
- * URL and window label; Home passes an ID and nothing else.
+ * (ADR-0189). Home passes an ID and nothing else; the host derives the URL and
+ * window label itself.
+ *
+ * Pass only IDs from the list `/api/apps` served: that authenticated list is
+ * the one place membership is decided (ADR-0179), and the native side checks
+ * the ID's shape rather than re-deriving the catalog.
+ *
+ * Resolves when the window is actually open and focused, and rejects with the
+ * host's own sentence when it is not, so a caller has something true to show.
  *
  * Home's verb, held by no other window. It is deliberately not the app-facing
  * `openApp(appId)` of ADR-0181, which targets an admitted catalog member only.

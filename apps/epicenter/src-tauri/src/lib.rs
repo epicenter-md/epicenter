@@ -461,12 +461,16 @@ fn take_pending_home_section(app: DesktopAppHandle) -> Option<HomeSection> {
 /// window label, capability file, and how Bun serves the document, and none of
 /// that is a distinction a person makes, so it is resolved here from the ID
 /// rather than by the caller (ADR-0189).
-enum Application<'a> {
+///
+/// `Admitted` says how the window is built, not that the ID is admitted. Rust
+/// keeps no catalog: the immutable generation and its membership are Bun's
+/// alone (ADR-0179), and nothing here can or should re-derive them.
+enum Application {
     /// A compiled application with its own stable window label and enumerated
     /// capabilities.
     Compiled(Surface),
-    /// A member of the active catalog generation, opened in an `app-` window.
-    Admitted(&'a str),
+    /// Anything else: opened in an `app-` window pointed at `/apps/<id>/`.
+    Admitted(String),
 }
 
 /// Launch one application Home lists: reveal and focus its window, creating it
@@ -478,11 +482,28 @@ enum Application<'a> {
 /// that operation targets a catalog member only and must not become a way for
 /// one application to reveal another.
 ///
-/// Rust validates the ID and derives the URL and label itself; the frontend
-/// never supplies a URL (ADR-0179). An admitted ID that names no member of the
-/// generation this process selected at startup opens a window Bun answers with
-/// 404. Home does not produce one, because its list is that same generation.
-#[tauri::command]
+/// # Who decides an ID is real
+///
+/// Not this function. Rust validates the ID's *shape* and resolves it against
+/// its own compiled surface table; it never asks whether a folder was admitted,
+/// because the catalog is one immutable generation owned by Bun (ADR-0179) and
+/// a second copy in Rust would be a second answer. What keeps a made-up ID from
+/// arriving is that Home only offers IDs from the authenticated list Bun serves.
+///
+/// An ID that shape-checks but names no member still cannot reach anything: it
+/// opens an `app-` window at `/apps/<id>/`, which is a URL Rust derived itself
+/// (the frontend never supplies one), and Bun answers it 404. That is a
+/// contained dead end, not a privilege.
+///
+/// # Why it waits
+///
+/// Window work happens on the main thread, so this command hands the attempt
+/// over and blocks on its outcome rather than reporting that it scheduled
+/// something. A caller that gets `Ok` has a window; a caller that gets `Err`
+/// has a sentence to show. `#[tauri::command(async)]` is what makes the wait
+/// safe: it moves this body off the main thread, which would otherwise be the
+/// thread the closure below is waiting for.
+#[tauri::command(async)]
 fn launch_application(
     app: DesktopAppHandle,
     state: State<'_, HostState>,
@@ -490,43 +511,68 @@ fn launch_application(
 ) -> std::result::Result<(), String> {
     let Some(application) = parse_application_id(&app_id) else {
         return Err(format!(
-            "app id must match [a-z0-9-]+ and name an application Home lists: {app_id}"
+            "app id must match [a-z0-9-]+ and must not name a built-in surface that is not an application: {app_id}"
         ));
     };
-    let id = match application {
-        // The compiled path already owns queueing, revealing, and focusing, and
-        // it is the same path the tray and deep links take.
-        Application::Compiled(surface) => {
-            request_surface(&app, surface);
-            return Ok(());
-        }
-        Application::Admitted(id) => id.to_string(),
-    };
-
+    // Unlike the tray, deep links, and startup, a user-invoked launch does not
+    // queue itself for a future host generation: the person is waiting, and a
+    // window that appears after the next restart is not what they asked for.
     let Some(token) = state.active_token() else {
         return Err("the Epicenter host is not ready".to_string());
     };
     let port = state.port().map_err(|error| format!("{error:#}"))?;
 
-    app.clone()
-        .run_on_main_thread(move || {
-            if !app.state::<HostState>().token_is_active(&token) {
-                return;
-            }
-            if let Err(error) = ensure_app_window(&app, &id, port, &token) {
-                append_parent_log(&app, &format!("open {id} app window: {error:#}"));
-            }
-        })
-        .map_err(|error| format!("schedule the {app_id} app window: {error}"))
+    launch_on_main_thread(&app, application, port, &token).map_err(|error| format!("{error:#}"))
 }
 
-/// Accept exactly the IDs Home lists: the admitted-member ID contract
-/// `[a-z0-9-]+` (ADR-0179), resolved against the compiled surface table.
+/// Create or reveal the window on the main thread and report what happened.
 ///
-/// A reserved surface that is not an application (Home itself, a placeholder)
-/// and an ID no generation could ever admit are the same refusal, because Home
-/// never offers either.
-fn parse_application_id(id: &str) -> Option<Application<'_>> {
+/// Mirrors `create_surfaces_on_main_thread`: hand the work over, wait for the
+/// one result. The sender lives in the closure, so an event loop that shuts
+/// down before running it drops the sender and this returns an error rather
+/// than waiting forever.
+fn launch_on_main_thread(
+    app: &DesktopAppHandle,
+    application: Application,
+    port: u16,
+    token: &str,
+) -> Result<()> {
+    let (sender, receiver) = mpsc::sync_channel(1);
+    let window_app = app.clone();
+    let token = token.to_string();
+    app.run_on_main_thread(move || {
+        let result = if window_app.state::<HostState>().token_is_active(&token) {
+            match application {
+                Application::Compiled(surface) => {
+                    ensure_surface(&window_app, surface, port, &token, true)
+                }
+                Application::Admitted(id) => ensure_app_window(&window_app, &id, port, &token),
+            }
+        } else {
+            // The host restarted between the click and the main thread reaching
+            // this: every window from the old generation is being torn down, so
+            // opening one now would create a window against a dead token.
+            Err(anyhow!(
+                "the Epicenter host restarted before the window opened"
+            ))
+        };
+        let _ = sender.send(result);
+    })
+    .context("schedule the application window on the main thread")?;
+    receiver
+        .recv()
+        .context("the main thread stopped before opening the window")?
+}
+
+/// Accept the ID shapes this command can act on: the `[a-z0-9-]+` contract an
+/// admitted folder name must satisfy (ADR-0179), resolved against the compiled
+/// surface table.
+///
+/// This is a shape and reserved-name check, not a membership check. A reserved
+/// surface that is not an application (Home itself, a placeholder) and an ID
+/// with characters no folder name may contain are the same refusal, because
+/// Home offers neither.
+fn parse_application_id(id: &str) -> Option<Application> {
     let matches_pattern = !id.is_empty()
         && id
             .bytes()
@@ -537,7 +583,7 @@ fn parse_application_id(id: &str) -> Option<Application<'_>> {
     match Surface::from_id(id) {
         Some(surface) if surface.is_application() => Some(Application::Compiled(surface)),
         Some(_) => None,
-        None => Some(Application::Admitted(id)),
+        None => Some(Application::Admitted(id.to_string())),
     }
 }
 
@@ -791,6 +837,13 @@ fn queue_or_send_oauth_callback(app: &DesktopAppHandle, url: String) {
     }
 }
 
+/// Ask for a surface without waiting: queue it when the host is not ready yet,
+/// and log rather than report what the main thread makes of it.
+///
+/// That is right for the callers that have nobody to answer to (startup, the
+/// tray, a deep link, macOS reopen, an app asking for a section of Home). It is
+/// wrong for `launch_application`, where a person clicked and is owed an
+/// outcome, so that command waits on the main thread instead.
 fn request_surface(app: &DesktopAppHandle, surface: Surface) {
     let state = app.state::<HostState>();
     let Some(token) = state.active_token() else {
@@ -1673,10 +1726,16 @@ mod tests {
             Some(Application::Compiled(Surface::Whispering))
         ));
 
-        for accepted in ["hello-http", "a", "notes2", "x-y-z", "0-"] {
+        // Every well-formed non-reserved ID resolves to the app-window path,
+        // including ones no generation ever admitted. That is the ownership
+        // boundary, not an oversight: the catalog is Bun's (ADR-0179), Home
+        // only offers IDs from the list Bun served it, and an ID that names no
+        // member opens a window Bun answers with 404. Re-deriving membership
+        // here would be a second catalog with a second answer.
+        for accepted in ["hello-http", "a", "notes2", "x-y-z", "0-", "never-admitted"] {
             assert!(
                 matches!(parse_application_id(accepted), Some(Application::Admitted(id)) if id == accepted),
-                "expected {accepted:?} to open as an admitted application"
+                "expected {accepted:?} to resolve to the app-window path"
             );
         }
 
@@ -2153,7 +2212,7 @@ mod tests {
         assert_ne!(production["identifier"], development["identifier"]);
     }
 
-    /// Home lists the application catalog, so Home is the window that opens it
+    /// Home lists what can be launched, so Home is the window that launches it
     /// (ADR-0189). Granting the verb more widely would let an application open
     /// another application without the user ever choosing it, which is a
     /// product decision nobody made.
