@@ -2,9 +2,9 @@
  * Epicenter: YJS-First Collaborative Workspace System
  *
  * This root entrypoint is the current production Yjs-record API. The
- * greenfield records contract is exported from `@epicenter/workspace/sqlite`;
- * its workspace declares release-local tables and KV, and every ordinary row
- * owns one lazy document with application-owned roots.
+ * greenfield records contract lives in `@epicenter/data`, which owns the
+ * row-owned SQLite replica, and `@epicenter/lens`, which owns lens and table
+ * definitions (ADR-0166).
  * Keep examples below as migration context until their consumers move.
  *
  * `@epicenter/workspace` builds typed Yjs-backed workspaces: tables, KV,

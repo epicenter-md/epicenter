@@ -1,9 +1,9 @@
 # Workspace Document API
 
 > Transition note: this page describes the current production Yjs-record path.
-> The greenfield model is `@epicenter/workspace/sqlite`, where SQLite owns
-> rows and every ordinary row owns one lazy document with application-owned
-> roots (ADR-0130, ADR-0135); tables declare fields only.
+> The greenfield model is `@epicenter/data`, where SQLite owns rows and every
+> ordinary row owns one lazy document with application-owned roots (ADR-0130,
+> ADR-0135); tables declare fields only.
 
 A typed interface over Y.js for apps that need to evolve their data schema over time.
 

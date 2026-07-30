@@ -1098,7 +1098,6 @@
         "@epicenter/encryption": "workspace:*",
         "@epicenter/field": "workspace:*",
         "@epicenter/identity": "workspace:*",
-        "@epicenter/row-sync": "workspace:*",
         "@epicenter/sqlite": "workspace:*",
         "@epicenter/sync": "workspace:*",
         "@sindresorhus/slugify": "catalog:",
