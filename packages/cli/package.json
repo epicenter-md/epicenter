@@ -44,9 +44,6 @@
 	},
 	"devDependencies": {
 		"typebox": "catalog:",
-		"@epicenter/api": "workspace:*",
-		"@epicenter/honeycrisp": "workspace:*",
-		"@epicenter/tab-manager": "workspace:*",
 		"@types/bun": "catalog:",
 		"@types/yargs": "catalog:",
 		"typescript": "catalog:"
