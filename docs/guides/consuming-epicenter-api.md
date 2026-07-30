@@ -1,7 +1,8 @@
 # Consuming the Epicenter API
 
-> **Transition status.** The SQLite row API is landing under
-> `@epicenter/workspace/sqlite`. The Proposed row-document network path uses
+> **Transition status.** The SQLite row API lives in `@epicenter/data`, with
+> lens and table definitions in `@epicenter/lens` (ADR-0166). The Proposed
+> row-document network path uses
 > Yjs 14 and is not yet the only deployed path. Some applications still use the
 > Yjs 13 `/api/rooms/:roomId` service described at the end of this guide. That
 > service is replacement work, not a destination compatibility layer.
