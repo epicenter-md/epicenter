@@ -5,9 +5,15 @@ import {
 	compileValueDefinition,
 	createInvalidationDispatcher,
 	type DataReadError,
+	defineLens,
+	defineTable,
+	defineValue,
 	type Lens,
 	type NonconformingRowError,
+	optional,
 	type RowFor,
+	type SerializedTableDefinition,
+	type SerializedValueDefinition,
 	type TableDefinition,
 	type TableDefinitions,
 	type TableInvalidation,
@@ -17,6 +23,7 @@ import {
 } from '@epicenter/lens';
 import type { SqliteDatabase, SqliteRow } from '@epicenter/sqlite';
 import { customAlphabet } from 'nanoid';
+import type { TSchema } from 'typebox';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Ok, type Result } from 'wellcrafted/result';
 
@@ -221,6 +228,98 @@ export function createTableReadMethods<TDefinition extends TableDefinition>(
 		},
 		entries,
 	};
+}
+
+/**
+ * One table as an RPC host sees it: named on the wire, so its field types are
+ * gone by the time the host holds it.
+ *
+ * A host proxies for a surface that owns the real Lens, and only that surface
+ * can say what a row means. The host's whole job is to route the call and hand
+ * back whatever came out, so `unknown` is the honest return: it is the same
+ * value the typed handle on the other side already knows how to read.
+ */
+export type UntypedTableLens = {
+	create(fields: Record<string, unknown>): Promise<unknown>;
+	get(rowId: string): Promise<unknown>;
+	update(rowId: string, patch: Record<string, unknown>): Promise<unknown>;
+	delete(rowId: string): Promise<boolean>;
+	entriesPage(after?: string): Promise<unknown>;
+	openDocument(rowId: string): Promise<RowDocument>;
+};
+
+/** One value as an RPC host sees it. See {@link UntypedTableLens}. */
+export type UntypedValueLens = {
+	get(): Promise<unknown>;
+	set(value: unknown): Promise<void>;
+	unset(): Promise<void>;
+};
+
+function deserializeTable(
+	definition: SerializedTableDefinition,
+): TableDefinition {
+	const fields: Record<string, TSchema> = {};
+	const optionalFields = new Set(definition.optionalFields);
+	for (const [name, schema] of Object.entries(definition.fields)) {
+		const typedSchema = schema as TSchema;
+		fields[name] = optionalFields.has(name)
+			? optional(typedSchema)
+			: typedSchema;
+	}
+	return defineTable({ fields });
+}
+
+/**
+ * Rebuild one wire-named table into a bound handle an RPC host can call.
+ *
+ * Lives here, beside {@link readTableEntriesPage}, because it is the only thing
+ * that needs that symbol: a host reaches the page reader through `entriesPage`
+ * and never learns the symbol exists. Both RPC hosts (the browser worker and
+ * the desktop owner) used to carry their own copy of this reconstruction, which
+ * meant two places had to agree that the serialized table name is the durable
+ * local key.
+ *
+ * That name is the whole reason the Lens is rebuilt under `definition.table`
+ * rather than a fixed placeholder: the property name IS the address, so binding
+ * every proxied table under one placeholder would address them all identically.
+ */
+export function bindSerializedTable(
+	epicenter: Epicenter,
+	definition: SerializedTableDefinition,
+): UntypedTableLens {
+	const bound = epicenter.bind(
+		defineLens({
+			namespace: definition.namespace,
+			tables: { [definition.table]: deserializeTable(definition) },
+			values: {},
+		}),
+	).tables[definition.table] as InternalTableLens<TableDefinition>;
+	return {
+		create: (fields) => bound.create(fields),
+		get: (rowId) => bound.get(rowId),
+		update: (rowId, patch) => bound.update(rowId, patch),
+		delete: (rowId) => bound.delete(rowId),
+		entriesPage: (after) => bound[readTableEntriesPage](after),
+		openDocument: (rowId) => bound.openDocument(rowId),
+	};
+}
+
+/** Rebuild one wire-named value. See {@link bindSerializedTable}. */
+export function bindSerializedValue(
+	epicenter: Epicenter,
+	definition: SerializedValueDefinition,
+): UntypedValueLens {
+	return epicenter.bind(
+		defineLens({
+			namespace: definition.address.namespace,
+			tables: {},
+			values: {
+				[definition.address.valueName]: defineValue({
+					value: definition.value as TSchema,
+				}) as ValueDefinition,
+			},
+		}),
+	).values[definition.address.valueName] as UntypedValueLens;
 }
 
 /** Create the adapter-agnostic Data runtime over one already-open replica. */
