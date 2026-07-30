@@ -1,9 +1,15 @@
 /**
  * Minimal background service worker.
  *
- * All Y.Doc, browser event listeners, sync, and command consumer logic
- * has been consolidated into the side panel context. The background only
- * exists to configure the side panel to open on extension icon click.
+ * It owns no database. The open side panel document owns this origin's
+ * Epicenter replica, because it owns the DedicatedWorker holding the one
+ * exclusive Web Lock over the OPFS SQLite file (ADR-0165, amended by ADR-0177),
+ * and MV3 gives a service worker no production lifetime guarantee. Browser
+ * event listeners, sync, and the AI chat loop all live in the panel too.
+ *
+ * The only job here is opening that panel on action click.
+ * `src/lib/ownership.test.ts` walks this module graph and fails if it ever
+ * reaches a replica.
  */
 
 import { defineBackground } from 'wxt/utils/define-background';

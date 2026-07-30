@@ -5,9 +5,9 @@
  * surgical updates via browser event listeners. Uses a single
  * `SvelteMap<number, WindowState>` where each window owns its tabs.
  *
- * Chrome is the sole authority for live tab state. No Y.Doc/CRDT
- * persistence. Only user-created data (saved tabs, bookmarks, chat)
- * uses Y.Doc.
+ * Chrome is the sole authority for live tab state, so nothing here is durable.
+ * Only what a person creates (saved tabs, bookmarks, tool grants,
+ * conversations) becomes a row in the replica.
  *
  * Lifecycle: Created when side panel opens. All listeners die when panel closes.
  * Next open → fresh seed + fresh listeners. No cleanup needed.
