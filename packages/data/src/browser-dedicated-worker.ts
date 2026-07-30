@@ -17,22 +17,14 @@ type DedicatedWorkerScope = {
  *
  * A dedicated worker belongs to the page that constructed it, so its global
  * scope IS the port and there is nothing to connect: the page that owns this
- * worker is the only page it will ever have.
+ * worker is the only page it will ever have. Running at module scope is the
+ * whole entry point; there is no second scope to serve, so there is nothing to
+ * parameterize and nothing to export.
  */
-export function startBrowserEpicenterDedicatedWorker(
-	scope: DedicatedWorkerScope,
-): void {
-	serveBrowserEpicenter({
-		postMessage: (message) => scope.postMessage(message),
-		addEventListener: (type, listener) =>
-			scope.addEventListener(
-				type,
-				listener as (event: { data: unknown }) => void,
-			),
-		close: () => scope.close(),
-	} as MessagePortLike);
-}
-
-startBrowserEpicenterDedicatedWorker(
-	globalThis as unknown as DedicatedWorkerScope,
-);
+const scope = globalThis as unknown as DedicatedWorkerScope;
+serveBrowserEpicenter({
+	postMessage: (message) => scope.postMessage(message),
+	addEventListener: (type, listener) =>
+		scope.addEventListener(type, listener as (event: { data: unknown }) => void),
+	close: () => scope.close(),
+} as MessagePortLike);
