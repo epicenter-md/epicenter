@@ -1,11 +1,11 @@
 <script lang="ts">
+	import { agentMessageText } from '@epicenter/agent';
 	import {
 		AgentChatThread,
 		type ConversationHandle,
 	} from '@epicenter/app-shell/agent-chat';
 	import { complete } from '@epicenter/client';
 	import { Button } from '@epicenter/ui/button';
-	import { agentMessageText } from '@epicenter/workspace/agent';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import {
 		buildEntryCandidatePrompt,
