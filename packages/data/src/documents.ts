@@ -790,10 +790,3 @@ export function observeRowDocumentUpdates(
 ): () => void {
 	return requireRowDocumentAccess(document).observe(listener);
 }
-
-/** Read the registered adapter seam for one row document handle. */
-export function rowDocumentConnectionTarget(
-	document: RowDocument,
-): RowDocumentConnectionTarget {
-	return requireRowDocumentAccess(document);
-}
