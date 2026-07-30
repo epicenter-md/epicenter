@@ -1,16 +1,17 @@
 /**
- * Reactive bookmark state for the side panel.
+ * The reactive bookmark list, its bookmarked-URL index, and the one adapter that
+ * turns a live Chrome tab into a bookmark.
  *
  * Same shape as saved tabs: `fromTable()` for reads (subscribe before read,
- * incremental re-read), the capability registry for writes. Bookmarks are
- * durable signed in or out (ADR-0088).
+ * incremental re-read), and `actions.bookmarks_*` called directly for writes
+ * that need no adaptation. Bookmarks are durable signed in or out (ADR-0088).
  */
 
 import { fromTable } from '@epicenter/svelte';
 import { SvelteSet } from 'svelte/reactivity';
 import type { TabManagerActions } from '$lib/actions';
 import type { BrowserTab } from '$lib/state/browser-state.svelte';
-import type { Bookmark, TabManagerData } from '$lib/workspace';
+import type { TabManagerData } from '$lib/workspace';
 
 export function createBookmarkState({
 	data,
@@ -58,21 +59,6 @@ export function createBookmarkState({
 				title: tab.title || 'Untitled',
 				favIconUrl: tab.favIconUrl,
 			});
-		},
-
-		/** Open a bookmark in a new tab. The bookmark stays. */
-		async open(bookmark: Bookmark) {
-			return actions.bookmarks_open({ url: bookmark.url });
-		},
-
-		/** Delete one bookmark. */
-		async remove(id: string) {
-			return actions.bookmarks_remove({ id });
-		},
-
-		/** Delete every bookmark. */
-		async removeAll() {
-			return actions.bookmarks_remove_all();
 		},
 	};
 }

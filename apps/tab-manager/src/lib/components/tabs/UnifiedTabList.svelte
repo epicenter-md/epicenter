@@ -99,7 +99,7 @@
 								variant="ghost"
 								size="icon-xs"
 								tooltip="Restore All"
-								onclick={() => void tabManager.state.savedTabs.restoreAll()}
+								onclick={() => void tabManager.actions.saved_tabs_restore_all()}
 							>
 								<RotateCcwIcon />
 							</Button>
@@ -108,7 +108,7 @@
 								size="icon-xs"
 								class="text-destructive"
 								tooltip="Delete All"
-								onclick={() => tabManager.state.savedTabs.removeAll()}
+								onclick={() => void tabManager.actions.saved_tabs_remove_all()}
 							>
 								<Trash2Icon />
 							</Button>
@@ -175,7 +175,7 @@
 								size="icon-xs"
 								tooltip="Restore"
 								onclick={() =>
-							tabManager.state.savedTabs.restore(tab).then((r) => toastOnError(r, 'Failed to restore tab'))}
+							tabManager.actions.saved_tabs_restore({ id: tab.id, url: tab.url, pinned: tab.pinned }).then((r) => toastOnError(r, 'Failed to restore tab'))}
 							>
 								<RotateCcwIcon />
 							</Button>
@@ -184,7 +184,8 @@
 								size="icon-xs"
 								class="text-destructive"
 								tooltip="Delete"
-								onclick={() => tabManager.state.savedTabs.remove(tab.id)}
+								onclick={() =>
+							void tabManager.actions.saved_tabs_remove({ id: tab.id })}
 							>
 								<Trash2Icon />
 							</Button>
@@ -217,7 +218,7 @@
 								variant="ghost"
 								size="icon-xs"
 								tooltip="Open"
-								onclick={() => tabManager.state.bookmarks.open(bookmark).then((r) => toastOnError(r, 'Failed to open bookmark'))}
+								onclick={() => tabManager.actions.bookmarks_open({ url: bookmark.url }).then((r) => toastOnError(r, 'Failed to open bookmark'))}
 							>
 								<ExternalLinkIcon />
 							</Button>
@@ -226,7 +227,8 @@
 								size="icon-xs"
 								class="text-destructive"
 								tooltip="Delete"
-								onclick={() => tabManager.state.bookmarks.remove(bookmark.id)}
+								onclick={() =>
+							void tabManager.actions.bookmarks_remove({ id: bookmark.id })}
 							>
 								<Trash2Icon />
 							</Button>
