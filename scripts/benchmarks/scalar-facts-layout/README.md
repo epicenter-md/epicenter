@@ -156,4 +156,3 @@ binding the two. Read the archive for that evidence and its limits.
 The monolith itself is gone from the tree. It was decision-disabled, it had no
 runner, and its final in-tree schema had drifted to a shape that could no longer
 reproduce the archived report. This directory is the only maintained instrument.
-
