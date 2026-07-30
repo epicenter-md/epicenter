@@ -2137,6 +2137,22 @@ mod tests {
         }
     }
 
+    /// A development build and an installed one can be running at the same time
+    /// on one machine, and they own separate config, data, and log directories.
+    /// Telling them apart has to be possible from the Dock, the menu bar, and
+    /// the window title, not only from a bundle identifier nobody reads.
+    #[test]
+    fn development_and_production_builds_are_distinguishable() {
+        let development: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.dev.conf.json")).unwrap();
+        let production: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+
+        assert_eq!(production["productName"], "Epicenter");
+        assert_eq!(development["productName"], "Epicenter Dev");
+        assert_ne!(production["identifier"], development["identifier"]);
+    }
+
     /// Home lists the application catalog, so Home is the window that opens it
     /// (ADR-0189). Granting the verb more widely would let an application open
     /// another application without the user ever choosing it, which is a
