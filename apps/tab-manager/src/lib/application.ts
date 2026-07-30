@@ -43,7 +43,7 @@ import { createSavedTabState } from '$lib/state/saved-tab-state.svelte';
 import { createStorageState } from '$lib/state/storage-state.svelte';
 import { createToolTrustState } from '$lib/state/tool-trust.svelte';
 import { createUnifiedViewState } from '$lib/state/unified-view-state.svelte';
-import { type TabManagerData, tabManagerLens } from '$lib/workspace';
+import { tabManagerLens } from '$lib/workspace';
 
 /**
  * The extension platform, acquired once per side panel document: the persisted
@@ -76,7 +76,14 @@ export type TabManagerState = {
 	aiChat: ReturnType<typeof createAgentChatState>;
 };
 
-export type TabManagerApplication = TabManagerData & {
+/**
+ * What the side panel's components see.
+ *
+ * The bound Lens handle is deliberately not on here. Rows are reached one of two
+ * ways: read them through `state`, write them through `actions`. Re-exposing
+ * `tables` would offer a third path that skips both.
+ */
+export type TabManagerApplication = {
 	readonly auth: SyncAuthClient;
 	readonly instanceSetting: InstanceSetting;
 	/** Chrome and durable-row capabilities; also the agent's tool surface. */
@@ -224,7 +231,6 @@ export async function openTabManagerApplication(
 		void registerDevice(data, opened.profile).catch(reportBackgroundError);
 
 		return Object.freeze({
-			...data,
 			get auth() {
 				return opened.auth;
 			},
