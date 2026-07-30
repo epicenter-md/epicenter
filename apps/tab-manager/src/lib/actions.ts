@@ -23,11 +23,7 @@
 import { InstantString } from '@epicenter/field';
 import type { Static, TSchema } from 'typebox';
 import Type from 'typebox';
-import {
-	defineErrors,
-	extractErrorMessage,
-	type InferErrors,
-} from 'wellcrafted/error';
+import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import type { TabManagerData } from '$lib/workspace';
 
@@ -64,14 +60,14 @@ const TabError = defineErrors({
 		cause,
 	}),
 });
-export type TabError = InferErrors<typeof TabError>;
-export type BrowserApiFailed = Extract<TabError, { name: 'BrowserApiFailed' }>;
-export type SaveCloseFailed = Extract<TabError, { name: 'SaveCloseFailed' }>;
 
 /**
  * What `createLocalToolCatalog` reads off a callable to describe it to the model.
  * Structural on purpose: `@epicenter/agent` names this shape (`LocalAction`) and
  * never imports it from here, so the two stay independent.
+ *
+ * Each action's error type reaches callers through the inferred `Result` its
+ * handler returns, so no error alias is exported from this module.
  */
 type ActionMeta = {
 	readonly type: 'query' | 'mutation';
@@ -79,13 +75,6 @@ type ActionMeta = {
 	readonly description: string;
 	readonly input?: TSchema;
 };
-
-function withMeta<TAction extends (...args: never[]) => unknown>(
-	handler: TAction,
-	meta: ActionMeta,
-): TAction & ActionMeta {
-	return Object.assign(handler, meta);
-}
 
 /**
  * A capability that only reads. The agent loop runs one unattended.
@@ -112,7 +101,7 @@ function defineQuery(spec: {
 	input?: TSchema;
 	handler: (input?: never) => unknown;
 }) {
-	return withMeta(spec.handler, {
+	return Object.assign(spec.handler, {
 		type: 'query',
 		title: spec.title,
 		description: spec.description,
@@ -139,7 +128,7 @@ function defineMutation(spec: {
 	input?: TSchema;
 	handler: (input?: never) => unknown;
 }) {
-	return withMeta(spec.handler, {
+	return Object.assign(spec.handler, {
 		type: 'mutation',
 		title: spec.title,
 		description: spec.description,
