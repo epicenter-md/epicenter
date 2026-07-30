@@ -1,278 +1,83 @@
 <script lang="ts">
-	import * as Alert from '@epicenter/ui/alert';
-	import { Badge, type BadgeVariant } from '@epicenter/ui/badge';
-	import { Button } from '@epicenter/ui/button';
-	import * as Command from '@epicenter/ui/command';
-	import * as Item from '@epicenter/ui/item';
-	import * as Popover from '@epicenter/ui/popover';
-	import { Spinner } from '@epicenter/ui/spinner';
-	import type { HomeInvocation } from '../host.ts';
-	import Composer from './Composer.svelte';
-	import LocalModelAdministration from './LocalModelAdministration.svelte';
+	import * as Tabs from '@epicenter/ui/tabs';
+	import Applications from './Applications.svelte';
 	import { commands, events } from './bindings.gen';
-	import { readRuntimeInfo } from './runtime.ts';
-	import Transcript from './Transcript.svelte';
+	import Chat from './Chat.svelte';
+	import { isDesktopHost } from './runtime.ts';
 	import { createSession } from './session.svelte.ts';
+	import Settings from './Settings.svelte';
+
+	/**
+	 * Epicenter Home: the shell a person keeps open (ADR-0189).
+	 *
+	 * Three panes and nothing else. The session is owned here, above the visual
+	 * contents, and `Tabs.Content` hides an inactive pane rather than unmounting
+	 * it, so switching panes never disturbs the live socket, the transcript, or
+	 * an unsent draft.
+	 */
 
 	const { sessionReady }: { sessionReady: Promise<void> } = $props();
 	// The bootstrap promise is fixed for this document lifetime.
 	// svelte-ignore state_referenced_locally
 	const session = createSession({ ready: sessionReady });
-	let nativeStatus = $state<'checking' | 'browser' | 'connected' | 'denied'>(
-		'checking',
-	);
-	void readRuntimeInfo()
-		.then((info) => {
-			nativeStatus = info === null ? 'browser' : 'connected';
-		})
-		.catch(() => {
-			nativeStatus = 'denied';
-		});
 
-	let toolsOpen = $state(false);
-	// Model administration is Home's, not any app's (ADR-0180). It opens from the
-	// header rather than living inline: it is a settings act, not part of the
-	// conversation.
-	let modelsOpen = $state(false);
-	// An app whose local transcription is unavailable can send the user here.
-	// The intent lives in the host, so this window claims it rather than being
-	// handed it: on mount (Home may have been absent or still booting when the
-	// request arrived) and again on each nudge (Home was already running). Taking
-	// is destructive, so however many nudges arrive, one request opens the
-	// section once.
+	const isDesktop = isDesktopHost();
+	// Native Home opens on the applications it can launch; a browser or remote
+	// Home cannot open a window, so it opens on the conversation it can hold.
+	// The host answers this synchronously, so the first paint is already right.
+	let pane = $state(isDesktop ? 'apps' : 'chat');
+
+	// An application whose local transcription is unavailable can send the user
+	// here. The intent lives in the host, so this window claims it rather than
+	// being handed it: on mount (Home may have been absent or still booting when
+	// the request arrived) and again on each nudge (Home was already running).
+	// Taking is destructive, so however many nudges arrive, one request opens
+	// Settings once.
 	async function claimPendingSection() {
 		const section = await commands.takePendingHomeSection();
-		if (section === 'transcription') modelsOpen = true;
+		if (section === 'transcription') pane = 'settings';
 	}
-	void claimPendingSection();
-	void events.homeSectionPending.listen(() => void claimPendingSection());
+	if (isDesktop) {
+		void claimPendingSection();
+		void events.homeSectionPending.listen(() => void claimPendingSection());
+	}
 
 	const connectionIndicator = {
 		connecting: { label: 'Connecting', dot: 'bg-warning' },
 		open: { label: 'Connected', dot: 'bg-success' },
 		closed: { label: 'Disconnected', dot: 'bg-destructive' },
 	} as const;
-
-	const invocationBadge = {
-		running: { label: 'Running', variant: 'status.running' },
-		succeeded: { label: 'Done', variant: 'status.completed' },
-		failed: { label: 'Failed', variant: 'status.failed' },
-	} as const satisfies Record<
-		HomeInvocation['status'],
-		{ label: string; variant: BadgeVariant }
-	>;
-
-	function formatApprovalInput(input: unknown): string {
-		return JSON.stringify(input, null, 2);
-	}
-
-	/**
-	 * A tool is runnable from the command surface only when submitting `{}` is
-	 * the whole visible payload (the consent boundary of the direct-forms spec):
-	 * no input schema at all, or an object schema with no required properties.
-	 * Everything else waits for the direct command forms.
-	 */
-	function canRunWithoutInput(tool: { inputSchema?: unknown }): boolean {
-		const schema = tool.inputSchema;
-		if (schema === undefined) return true;
-		if (typeof schema !== 'object' || schema === null || Array.isArray(schema))
-			return false;
-		const { type, required } = schema as { type?: unknown; required?: unknown };
-		if (type !== 'object') return false;
-		return (
-			required === undefined ||
-			(Array.isArray(required) && required.length === 0)
-		);
-	}
 </script>
 
-<div class="flex h-full flex-col text-sm">
-		<header class="flex flex-none items-center gap-3 border-b px-3 py-2">
-			<span class="font-semibold">Home</span>
-			{#if nativeStatus === 'connected'}
-				<Badge variant="status.completed">Native connected</Badge>
-			{:else if nativeStatus === 'denied'}
-				<Badge variant="status.failed">Native denied</Badge>
-			{/if}
+<Tabs.Root bind:value={pane} class="h-full text-sm">
+	<header class="flex flex-none items-center gap-3 border-b px-3 py-2">
+		<Tabs.List variant="line">
+			<Tabs.Trigger value="apps">Apps</Tabs.Trigger>
+			<Tabs.Trigger value="chat">Chat</Tabs.Trigger>
+			<Tabs.Trigger value="settings">Settings</Tabs.Trigger>
+		</Tabs.List>
+		<span
+			class="ms-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+		>
 			<span
-				class="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
-			>
-				<span
-					class="size-1.5 rounded-full {connectionIndicator[session.connection]
-						.dot}"
-				></span>
-				{connectionIndicator[session.connection].label}
-			</span>
-			<div class="ms-auto flex items-center gap-2">
-				<Popover.Root bind:open={toolsOpen}>
-					<Popover.Trigger>
-						{#snippet child({ props })}
-							<Button {...props} variant="outline" size="sm">
-								{session.tools.length}
-								{session.tools.length === 1 ? 'tool' : 'tools'}
-							</Button>
-						{/snippet}
-					</Popover.Trigger>
-					<Popover.Content class="w-96 p-0" align="end">
-						<Command.Root loop>
-							<Command.Input placeholder="Search tools..." />
-							<Command.List class="max-h-[50vh]">
-								<Command.Empty>No tools match.</Command.Empty>
-								{#each session.tools as tool (tool.name)}
-									<Command.Item
-										value="{tool.name} {tool.title ?? ''} {tool.description ??
-											''}"
-										disabled={!canRunWithoutInput(tool)}
-										onSelect={() => {
-											session.invoke(tool.name);
-											toolsOpen = false;
-										}}
-									>
-										<div class="min-w-0 flex-1">
-											<div class="flex items-baseline gap-2">
-												<code class="font-mono text-xs">{tool.name}</code>
-												{#if tool.title}
-													<span class="truncate text-muted-foreground">
-														{tool.title}
-													</span>
-												{/if}
-											</div>
-											{#if tool.description}
-												<p class="truncate text-xs text-muted-foreground">
-													{tool.description}
-												</p>
-											{/if}
-										</div>
-										<span class="text-xs text-muted-foreground">
-											{canRunWithoutInput(tool) ? 'Run' : 'Needs input'}
-										</span>
-									</Command.Item>
-								{/each}
-							</Command.List>
-						</Command.Root>
-					</Popover.Content>
-				</Popover.Root>
-				{#if nativeStatus === 'connected'}
-					<Button
-						variant="outline"
-						size="sm"
-						aria-expanded={modelsOpen}
-						onclick={() => (modelsOpen = !modelsOpen)}
-					>
-						Local model
-					</Button>
-				{/if}
-				<Button variant="ghost" size="sm" onclick={() => session.clear()}>
-					New chat
-				</Button>
-			</div>
-		</header>
+				class="size-1.5 rounded-full {connectionIndicator[session.connection]
+					.dot}"
+			></span>
+			{connectionIndicator[session.connection].label}
+		</span>
+	</header>
 
-		{#if modelsOpen && nativeStatus === 'connected'}
-			<section class="flex-none px-3 py-2" aria-label="Local transcription model">
-				<LocalModelAdministration />
-			</section>
-		{/if}
+	<!-- Each pane owns its own padding so a full-height empty or loading state
+	     can center against the whole pane instead of a padded box. -->
+	<Tabs.Content value="apps" class="min-h-0 overflow-y-auto">
+		<Applications ready={sessionReady} />
+	</Tabs.Content>
 
-		<Transcript snapshot={session.snapshot} />
+	<Tabs.Content value="chat" class="min-h-0">
+		<Chat {session} />
+	</Tabs.Content>
 
-		{#if session.snapshot.error}
-			<Alert.Root variant="destructive" class="mx-3 mb-2 w-auto flex-none">
-				<Alert.Title>
-					Turn failed{session.snapshot.error.code
-						? ` (${session.snapshot.error.code})`
-						: ''}
-				</Alert.Title>
-				<Alert.Description>{session.snapshot.error.message}</Alert.Description>
-			</Alert.Root>
-		{/if}
-
-		{#if session.invocations.length > 0}
-			<section
-				class="max-h-[30vh] flex-none overflow-y-auto px-3 pb-2"
-				aria-label="Direct runs"
-			>
-				<Item.Group class="gap-1.5">
-					{#each [...session.invocations].reverse() as invocation (invocation.id)}
-						<Item.Root variant="outline" size="sm">
-							<Item.Content>
-								<Item.Title>
-									<code class="font-mono text-xs">{invocation.toolName}</code>
-									<Badge variant={invocationBadge[invocation.status].variant}>
-										{invocationBadge[invocation.status].label}
-									</Badge>
-								</Item.Title>
-								{#if invocation.content !== undefined}
-									<pre
-										class="max-h-24 overflow-auto font-mono text-xs whitespace-pre-wrap text-muted-foreground [overflow-wrap:anywhere]">{invocation.content}</pre>
-								{/if}
-							</Item.Content>
-							{#if invocation.status === 'running'}
-								<Item.Actions>
-									<Spinner class="size-3.5" />
-								</Item.Actions>
-							{/if}
-						</Item.Root>
-					{/each}
-				</Item.Group>
-			</section>
-		{/if}
-
-		{#if session.pendingApprovals.length > 0}
-			<!-- Always stacked: copy above actions, at every width. Approvals are
-			     rare and sit above the composer, so vertical space is the honest
-			     dimension; one layout serves the desktop window and a remote phone
-			     alike. -->
-			<section
-				class="grid flex-none gap-2 px-3 pb-2"
-				aria-label="Pending approvals"
-			>
-				{#each session.pendingApprovals as approval (approval.id)}
-					<Alert.Root variant="warning">
-						<Alert.Title>{approval.title ?? approval.toolName}</Alert.Title>
-						<Alert.Description>
-							{#if approval.description}
-								<p>{approval.description}</p>
-							{/if}
-							<pre
-								class="max-h-32 w-full overflow-auto font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">{formatApprovalInput(
-									approval.input,
-								)}</pre>
-							<div class="flex flex-wrap gap-2 pt-1">
-								<Button
-									size="sm"
-									onclick={() => session.approve(approval.id, true)}
-								>
-									Approve
-								</Button>
-								<Button
-									size="sm"
-									variant="outline"
-									onclick={() => session.approve(approval.id, true, true)}
-								>
-									Always allow
-								</Button>
-								<Button
-									size="sm"
-									variant="ghost"
-									onclick={() => session.approve(approval.id, false)}
-								>
-									Deny
-								</Button>
-							</div>
-						</Alert.Description>
-					</Alert.Root>
-				{/each}
-			</section>
-		{/if}
-
-		<Composer
-			isGenerating={session.snapshot.isGenerating}
-			isConnected={session.connection === 'open'}
-			canRetry={session.snapshot.error !== null &&
-				!session.snapshot.isGenerating}
-			onSend={(content) => session.send(content)}
-			onStop={() => session.stop()}
-			onRetry={() => session.retry()}
-		/>
-</div>
+	<Tabs.Content value="settings" class="min-h-0 overflow-y-auto">
+		<Settings />
+	</Tabs.Content>
+</Tabs.Root>

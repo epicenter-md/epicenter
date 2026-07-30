@@ -25,7 +25,10 @@ Start Epicenter from the repository root:
 bun dev:epicenter
 ```
 
-The tray opens trusted surfaces in separate windows. Deep links use the compiled catalog, for example:
+Epicenter opens Home. Home's Apps pane lists every application this build can
+open, compiled and admitted alike, and opening one reveals its own window while
+Home stays open behind it (ADR-0189). The tray and deep links remain shortcuts
+into the same windows:
 
 ```bash
 open 'epicenter://surface/whispering'
