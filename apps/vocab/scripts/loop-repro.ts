@@ -8,41 +8,36 @@
  */
 
 import {
+	type AgentMessage,
+	type AgentMessageStore,
+	agentMessageText,
+	createConversation,
+} from '@epicenter/agent';
+import {
 	type AgentEngine,
 	createOpenAiAgentEngine,
 	resolveConnection,
 } from '@epicenter/client';
-import type { RecordsHandle } from '@epicenter/workspace';
-import {
-	type AgentMessage,
-	agentMessageText,
-	createConversation,
-} from '@epicenter/workspace/agent';
 import { VOCAB_SYSTEM_PROMPT } from '../vocab.js';
 
 const model = process.argv[2] ?? 'qwen3:30b-a3b-instruct-2507-q4_K_M';
 const baseUrl = process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434/v1';
 
-/** Minimal in-memory RecordsHandle<AgentMessage> & Disposable for the loop. */
-function inMemoryStore(): RecordsHandle<AgentMessage> & Disposable {
+/** Minimal in-memory {@link AgentMessageStore} for the loop. */
+function inMemoryStore(): AgentMessageStore {
 	const map = new Map<string, AgentMessage>();
 	const handlers = new Set<() => void>();
 	return {
-		get: (k) => map.get(k),
-		set: (k, v) => {
-			map.set(k, v);
-			for (const h of handlers) h();
-		},
-		delete: (k) => {
-			map.delete(k);
-			for (const h of handlers) h();
+		set: (key, value) => {
+			map.set(key, value);
+			for (const handler of handlers) handler();
 		},
 		*entries() {
 			for (const [key, val] of map) yield { key, val };
 		},
-		observe(h) {
-			handlers.add(h);
-			return () => handlers.delete(h);
+		observe(handler) {
+			handlers.add(handler);
+			return () => handlers.delete(handler);
 		},
 		[Symbol.dispose]() {},
 	};
