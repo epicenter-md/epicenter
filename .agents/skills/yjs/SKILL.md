@@ -51,23 +51,22 @@ Skip DeepWiki for stable basics and repo-local patterns already documented below
 
 ## Owner-Side SQLite Persistence
 
-Row documents persist in the Workspace ID's own `store.sqlite3`, in one
-`workspace_document_updates` update-log table beside the scalar rows (ADR-0159).
-There is no IndexedDB row-document store and no per-runtime provider: the browser
-records Worker owns the log in its OPFS SQLite, the Bun host owns it natively,
-and the desktop WebView reaches it over the same-origin records route. There is
-no official `@y/indexeddb` provider for the Yjs 14 line; do not install or
-peer-override `y-indexeddb`.
+Row documents persist beside scalar facts in the same Data-owned SQLite
+database. `document_updates` stores the Yjs 14 update chain at the exact
+`(namespace, table_name, row_id)` address. `document_publication` stores the
+durable outbound obligation for locally authored document work. The browser
+Worker owns its OPFS SQLite database, the Bun runtime owns its native database,
+and the desktop WebView borrows the Bun owner over the Data desktop protocol.
+Do not add a separate IndexedDB provider or a second document store.
 
-- The owner side is `createSqliteDocumentLog`: it owns schema, append admission, compaction, capture, and durable deletion. It never holds a live `Y.Doc`.
-- Renderer-facing code owns live documents through `createRowDocumentRuntime` over one `createDocumentStore` load/append seam. The renderer capability is exactly `load(address)` and `append(address, updateV2)`; capture, deletion, and compaction policy are never reachable through renderer persistence.
-- Attach the `updateV2` listener before hydration can race application writes. Append copied update bytes and expose an invocation-time `whenDurable()` barrier over the persistence tail.
-- Apply stored updates with a private hydration origin so replay does not append them again.
-- `whenLoaded` means local owner hydration completed. It does not mean remote convergence.
-- The owner checks row liveness inside the same transaction as the insert: a late append after row deletion refuses with the address-scoped `DocumentRowAbsentError` instead of resurrecting content.
-- Document death happens in the transaction that ends the row's scalar life (local delete, replica lifecycle transitions, fresh-lineage reset, workspace deletion). Deletion is owner-side; a renderer never deletes a log.
-- Compact at bounded thresholds by replaying a covered prefix through a fresh `gc: true` document and re-encoding one complete V2 update. Compaction does not remove CRDT modeling costs inside that encoded document.
-- Treat corruption, eviction, and transaction failure as storage failures. Do not silently continue with an empty document.
+- `createDocumentRuntime` owns live `Y.Doc` handles, durable append and compaction, explicit pull, capture, publication settlement, and revocation.
+- Attach the `updateV2` listener before hydration. Replay stored updates with a private hydration origin so loading cannot append the same bytes again.
+- A locally authored append stores copied update bytes and advances `document_publication.revision` in the same SQLite transaction. Authority-accepted bytes use `acceptedDocumentOrigin` and create no outbound obligation.
+- Check row liveness inside the append transaction. A late write after scalar deletion must fail rather than resurrect document content.
+- Scalar row deletion removes the update chain and publication obligation in the same replica transaction, then revokes any live handle.
+- Compact a bounded chain by replaying it into a fresh `gc: true` document and replacing the covered updates with one complete V2 state update. Compaction does not remove modeling costs inside the encoded document.
+- Pull and publication are separate operations. Pulling accepted state never marks it as local work; publishing captures current complete state with the revision it covers and settles only that revision.
+- Treat replay corruption or transaction failure as storage failure. Revoke the live handle rather than allowing memory to diverge from durable SQLite state.
 
 ## Core Concepts
 
@@ -378,8 +377,8 @@ If documents grow unexpectedly, check for:
 - [GitHub issue #520](https://github.com/yjs/yjs/issues/520) - Conflict resolution discussion with dmonad
 - [fractional-indexing](https://github.com/rocicorp/fractional-indexing) - Production library
 - [YATA paper](https://www.researchgate.net/publication/310212186_Near_Real-Time_Peer-to-Peer_Shared_Editing_on_Extensible_Data_Types) - Academic foundation
-- `packages/workspace/src/document-provider/sqlite-document-log.ts`: the owner-side Yjs 14 SQLite update log (schema, append, compaction, capture, deletion)
-- `packages/workspace/src/document-provider/persistence.ts`: the shared `createDocumentStore` load/append seam between live documents and the owner log
+- `packages/data/src/documents.ts`: the row-document runtime (load, append, compaction, capture, deletion, and publication obligations)
+- `packages/data/src/replica/schema.ts`: the SQLite relations that durably store document updates and publication state
 - `packages/sync/src/document-v3/`: the Yjs 14 row-document wire
 - [ADR-0145](../../../docs/adr/0145-one-account-authority-owns-every-workspace-and-one-socket-per-open-row-document.md): workspace authority and document connection ownership
 - [ADR-0146](../../../docs/adr/0146-row-documents-use-one-yjs-14-major-and-runtime-native-update-logs.md): Yjs 14-only persistence decision
