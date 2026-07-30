@@ -15,9 +15,11 @@
  *   routes, and refuses traversal, smuggled separators, and symlink escape
  * - The Home server serves members at /apps/<id>/, 404s unknown apps, and
  *   keeps the legacy Home and Whispering routes intact
- * - /api/apps requires a browser session and lists {id, title}
+ * - The application list requires a browser session and merges compiled
+ *   applications with derived members into one {id, title} shape
  *
  * See also:
+ * - `applications.test.ts` for the composition rules behind that one list
  * - `server.test.ts` for the legacy closed-layout serving and session shell
  */
 
@@ -27,7 +29,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createBunBlobStore } from '@epicenter/blobs/bun';
-import { BOOTSTRAP_ROUTE, SURFACE_ROUTES } from './routes.ts';
+import {
+	APPLICATIONS_ROUTE,
+	BOOTSTRAP_ROUTE,
+	SURFACE_ROUTES,
+} from './routes.ts';
 import { createHomeServer } from './server.ts';
 import {
 	type AppCatalog,
@@ -303,18 +309,23 @@ describe('home server catalog routes', () => {
 		}
 	});
 
-	test('/api/apps requires a browser session and lists derived members', async () => {
+	test('the application list requires a browser session and merges compiled with derived members', async () => {
 		const { origin, server } = await serveWithCatalog();
 		try {
-			expect((await fetch(`${origin}/api/apps`)).status).toBe(401);
+			expect((await fetch(APPLICATIONS_ROUTE.url(origin))).status).toBe(401);
 
 			const cookie = await bootstrapCookie(origin);
-			const listed = await fetch(`${origin}/api/apps`, {
+			const listed = await fetch(APPLICATIONS_ROUTE.url(origin), {
 				headers: { cookie },
 			});
 			expect(listed.status).toBe(200);
+			// One list, one shape (ADR-0189): nothing on the wire says which of
+			// these Epicenter compiled and which it admitted as a folder.
 			expect(await listed.json()).toEqual({
-				apps: [{ id: 'hello-http', title: 'Hello HTTP' }],
+				apps: [
+					{ id: 'whispering', title: 'Whispering' },
+					{ id: 'hello-http', title: 'Hello HTTP' },
+				],
 			});
 		} finally {
 			await server.stop(true);

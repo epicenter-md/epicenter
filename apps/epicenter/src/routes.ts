@@ -46,6 +46,8 @@ export const HOME_ROUTE = SURFACE_ROUTES.home;
 export const WHISPERING_ROUTE = SURFACE_ROUTES.whispering;
 export const MAIL_ROUTE = SURFACE_ROUTES.mail;
 export const BOOKS_ROUTE = SURFACE_ROUTES.books;
+/** The one application list Home renders (ADR-0189). */
+export const APPLICATIONS_ROUTE = route('/api/apps');
 export const SESSION_ROUTE = route('/api/home/session');
 export const SESSION_STREAM_ROUTE = route('/api/home/session/stream');
 export const LOCAL_BLOB_ROUTE = {
