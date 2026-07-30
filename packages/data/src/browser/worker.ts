@@ -27,6 +27,7 @@ import {
 	type RowAddress,
 } from '../protocol/index.js';
 import { openReplica, type Replica } from '../replica/index.js';
+import { describeThrownError } from '../thrown-error.js';
 import type {
 	BrowserOperation,
 	BrowserTransportResult,
@@ -850,8 +851,7 @@ export function serveBrowserEpicenter(
 						{
 							type: 'error',
 							id: message.id,
-							name: cause instanceof Error ? cause.name : 'Error',
-							message: cause instanceof Error ? cause.message : String(cause),
+							...describeThrownError(cause),
 						},
 						{ afterDisconnect: message.operation.kind === 'disconnect' },
 					);
