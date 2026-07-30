@@ -30,11 +30,34 @@ The monorepo uses consistent script naming conventions.
 - `test` runs only `*.test.ts`; `bench` runs only `*.bench.ts`. A file is
   one or the other : never both. Benchmarks print reports; tests assert.
 
+## The app SDK build gate
+
+`@epicenter/lens` and `@epicenter/app` export `./dist` only, because their
+declarations are published and then typechecked inside a stranger's project
+(ADR-0186). Every in-repo consumer therefore resolves them through
+`node_modules` to build output, so a test that reaches either one is testing
+the last build rather than the working tree.
+
+Root `test` runs `build:app-sdk` first for exactly that reason. It is one gate
+rather than a `pretest` in each affected package, and it is not redundant with
+`postinstall`: `postinstall` makes `dist` fresh once, and an edit after that is
+invisible until something rebuilds.
+
+Two things follow. Running one package's tests directly (`bun test <path>`, or
+`bun run --cwd packages/app test`) does **not** rebuild, so build first when
+the change is in `lens` or `app`. And a module that both clients depend on for
+correctness earns a test inside its own package, where the import is source:
+`packages/lens/src/carrier.test.ts` is the worked example.
+
+Do not fix this with a `development` or `bun` export condition. In-repo tests
+and published consumers would then run different code, which is the same
+problem in a place nobody looks.
+
 ## Dev Scripts
 
 Start apps from the repo root, not by cd-ing into the app. Root
 `bun dev:<app>` runs every process the app needs; for apps that talk to the
-hosted API (tab-manager, honeycrisp, opensidian, vocab, whispering, and the
+hosted API (tab-manager, honeycrisp, vocab, whispering, and the
 api dashboard), it also starts `@epicenter/api` on `localhost:8787` via
 `bun run --filter`. Root `bun dev:<app>:ui` runs the app's frontend
 alone when that split exists; for Tauri apps, it maps to the package's
@@ -71,7 +94,7 @@ against the default hosted target.
 
 ```bash
 bun run cli:local auth login
-bun run cli:local up -C playground/opensidian-e2e
+bun run cli:local up -C <project-dir>
 ```
 
 The full targeting matrix (prod, published binary, per-target token storage)

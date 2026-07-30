@@ -25,7 +25,7 @@ test('a failed Skills open releases its runtime', async () => {
 									subscribe: () => () => {},
 									scan: () => Promise.reject(cause),
 								},
-								referenceFiles: {
+								skillReferences: {
 									subscribe: () => () => {},
 									scan: () => new Promise<never>(() => {}),
 								},
@@ -57,7 +57,7 @@ test('aborting a pending Skills open rejects and releases its runtime', async ()
 							scan: () => new Promise<never>(() => {}),
 						};
 						return {
-							tables: { skills: table, referenceFiles: table },
+							tables: { skills: table, skillReferences: table },
 							values: {},
 						};
 					},

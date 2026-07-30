@@ -116,9 +116,9 @@ if (capabilitiesError?.name === 'TranscriptionUnavailable') {
 /**
  * Structured data, bound through the app's own contract.
  *
- * `bind` is the one awaited call in the client, and what it waits for is this
- * Lens's liveness: once it resolves, subscribing and then reading cannot miss a
- * change that landed in between.
+ * `bind` is the one awaited call in the client. It waits for the document's
+ * shared observation carrier, so once it resolves, subscribing and then reading
+ * cannot miss a change that landed in between.
  */
 const { data: notes, error: bindError } =
 	await epicenter.data.bind(notesContract);

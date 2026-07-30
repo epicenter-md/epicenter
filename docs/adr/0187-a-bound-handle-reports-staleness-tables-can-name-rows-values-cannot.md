@@ -81,6 +81,14 @@ each, on a bounded route beside the operations route. Backpressure or a failed
 send closes the socket into the reconnect path rather than dropping a frame and
 continuing on a carrier that silently skips commits.
 
+A surface is a document, not a binding. One app window may bind several Lenses,
+and it still registers one surface and holds one socket: the host broadcasts
+every committed address to every surface, so a second socket would carry a
+second copy of the same stream and heal its own gaps on its own schedule. The
+carrier is opened by the first bind, joined by every later one, and closed when
+the last binding releases it; `close()` on one binding releases that binding's
+listeners and nothing else.
+
 The local echo is deleted. When the broadcast is authoritative, a writer that
 also notified itself would double-fire, and local and remote surfaces would see
 the same commit at different times through different code.
@@ -117,7 +125,33 @@ the same commit at different times through different code.
   the browser session and surface registration, so it still requires a surface
   reload; this transport does not introduce a second bootstrap protocol.
 - One more socket per desktop surface, on the same origin, session, and Origin
-  check as every other host API.
+  check as every other host API. Per surface, not per Lens: an app that declares
+  four namespaces still costs the host one registration and one socket.
+- **Every trusted surface receives every committed address batch, across every
+  namespace, and filters client-side.** This is the direct cost of refusing a
+  host interest registry, and it is larger than "two surfaces on one Lens see
+  each other's writes". A surface that has bound nothing still receives the
+  whole machine's write stream, so both the volume and the namespace metadata it
+  carries are global to the host rather than scoped to the app's interest: the
+  frame rate scales with total write activity, and the set of namespaces in use
+  is enumerable from what arrives. Under the ADR-0179/ADR-0183 full-trust model
+  this is a cost, not an exposure, and the refusal above stands. It is recorded
+  here so it is not rediscovered as a surprise, and so this record is not cited
+  as license for a broadcast where trust is not total.
+- **A surface that dies without disconnecting is retained until the host process
+  exits.** Membership is added by `open` and removed only by an explicit
+  `disconnect`, so a reloaded, crashed, or killed WebView leaves its registration
+  and every row document it opened behind. Observation socket loss is the only
+  related signal the host receives, but it carries neither surface identity nor
+  proof that the surface died, so nothing can attribute it. A retained member
+  can issue nothing, which is why this is a leak rather than a correctness
+  failure.
+  Socket close cannot simply become `disconnect`: a transient carrier gap is
+  recoverable under law 6, while disconnect disposes the row documents that
+  existing handles still name. Reclamation needs a lease or terminal-death
+  protocol that distinguishes those lifetimes. An unload-time `disconnect` is
+  not that protocol: `pagehide` does not fire on crash or kill, and a request
+  issued during unload is not guaranteed to be sent.
 
 ## Considered alternatives
 

@@ -569,8 +569,7 @@ Each `.open(rowId)` returns a disposable handle. Multiple consumers can open the
 same row and share one underlying Y.Doc safely; the workspace-owned cache handles
 construction, refcounting, and `gcTime`-delayed teardown.
 
-Reference implementations: `apps/opensidian/opensidian.browser.ts` and
-`apps/honeycrisp/src/lib/workspace/browser.ts`.
+Reference implementation: `apps/honeycrisp/src/lib/workspace/browser.ts`.
 
 ## Schema definition
 
@@ -1524,7 +1523,7 @@ Everything below is a *convention*: the builder is free to expose more or less. 
 Per-row content is just another `attach*` call inside a child document builder.
 Pick the attachment that matches the content shape:
 
-- `attachPlainText(ydoc, name)`: binds a `Y.Text` at `getText(name)`. Returns `{ binding, read, write, appendText }`: feed `binding` to a CodeMirror/Monaco Yjs extension, `read()`/`write()`/`appendText()` for programmatic access. This is the file-body layout (opensidian's Markdown source lives here; ADR-0107).
+- `attachPlainText(ydoc, name)`: binds a `Y.Text` at `getText(name)`. Returns `{ binding, read, write, appendText }`: feed `binding` to a CodeMirror/Monaco Yjs extension, `read()`/`write()`/`appendText()` for programmatic access. This is the file-body layout for Markdown source bodies (ADR-0107).
 - `attachRecords(ydoc, name)`: binds a keyed last-write-wins store of whole JSON records, one per id (the shape an agent transcript uses). Bundle field is a `RecordsHandle<T>` with `get / set / delete / entries / observe`.
 - `attachRichText(ydoc, name)`: binds a `Y.XmlFragment` for prosemirror / tiptap / yrs-xml editors.
 

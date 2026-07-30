@@ -1,7 +1,7 @@
 {
 	"name": "@epicenter/lens",
 	"version": "0.1.0",
-	"description": "The inert Epicenter data-contract vocabulary for installed applications.",
+	"description": "The Epicenter data-contract vocabulary for installed applications, and the environment-neutral observation runtime that keeps a bound handle honest.",
 	"type": "module",
 	"license": "MIT",
 	"repository": {

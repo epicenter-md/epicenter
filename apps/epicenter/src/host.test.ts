@@ -139,7 +139,7 @@ describe('createHomeHost', () => {
 		const results = messages.flatMap((m) => toolResults(m.parts));
 		expect(results).toHaveLength(1);
 		expect(results[0]!.isError).toBe(false);
-		// todos_create returns the created folder row: proof the verb ran in-process.
+		// folders_create returns the created folder row: proof the verb ran in-process.
 		expect(typeof results[0]!.content).toBe('string');
 		expect(messages.at(-1)!.parts).toContainEqual({
 			type: 'text',

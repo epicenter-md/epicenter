@@ -5,7 +5,7 @@
 	let { id }: { id: string } = $props();
 	const skills = getSkillsApp();
 
-	const lease = $derived(skills.tables.referenceFiles.openDocument(id));
+	const lease = $derived(skills.tables.skillReferences.openDocument(id));
 	$effect(() => {
 		const openedLease = lease;
 		return () =>

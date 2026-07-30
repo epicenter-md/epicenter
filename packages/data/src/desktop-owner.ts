@@ -54,7 +54,8 @@ type OpenDocument = {
 	document: RowDocument;
 };
 
-export const EPICENTER_STORAGE_MOVED_ERROR_NAME = 'EpicenterStorageMovedError';
+export const EPICENTER_SURFACE_NOT_OPEN_ERROR_NAME =
+	'EpicenterSurfaceNotOpenError';
 
 /** Open the one Bun-owned desktop Epicenter and its trusted-surface RPC owner. */
 export async function createDesktopEpicenterOwner({
@@ -64,10 +65,32 @@ export async function createDesktopEpicenterOwner({
 }) {
 	const path = epicenterPath({ directory });
 	const epicenter = await openBunEpicenter({ path });
-	const surfaces = new Map<string, number>();
+	/**
+	 * The surfaces that have opened and not yet disconnected.
+	 *
+	 * Membership is the whole of it. `open` adds a surface, `disconnect` removes
+	 * it along with every document that surface opened, and an operation from a
+	 * surface that is not a member is refused. There is no generation, token, or
+	 * epoch to compare, and nothing on the wire carries a fencing token, so
+	 * minting one here would only be a number nobody checks.
+	 *
+	 * Explicit disconnect is the only way out, which means a surface that dies
+	 * abruptly does not leave. A WebView reload, crash, or kill leaves its id in
+	 * this set and its {@link OpenDocument}s in `documents`, each holding a live
+	 * row document, until the host process exits. Observation socket loss is the
+	 * only related signal the host receives, and it carries no surface identity
+	 * to attribute it to or proof that the surface died.
+	 *
+	 * That is a known retention cost rather than a correctness one: a stale
+	 * member can issue nothing, because the surface that could have named it is
+	 * gone. Socket close cannot simply become `disconnect`: transient carrier
+	 * gaps are recoverable and the existing row-document handles must survive
+	 * them. Reclamation therefore needs a real lease or terminal-death protocol,
+	 * not an unload callback or a query parameter.
+	 */
+	const surfaces = new Set<string>();
 	const documents = new Map<number, OpenDocument>();
 	let operationTail = Promise.resolve();
-	let nextGeneration = 0;
 	let nextDocumentId = 0;
 
 	async function closeDocument(documentId: number): Promise<void> {
@@ -82,9 +105,8 @@ export async function createDesktopEpicenterOwner({
 		operation: DesktopOperation,
 	): Promise<unknown> {
 		if (operation.kind === 'open') {
-			const generation = ++nextGeneration;
-			surfaces.set(surfaceId, generation);
-			return generation;
+			surfaces.add(surfaceId);
+			return undefined;
 		}
 		if (operation.kind === 'disconnect') {
 			for (const [documentId, opened] of documents) {
@@ -94,8 +116,10 @@ export async function createDesktopEpicenterOwner({
 			return undefined;
 		}
 		if (!surfaces.has(surfaceId)) {
-			const cause = new Error('Desktop Epicenter moved to a newer surface');
-			cause.name = EPICENTER_STORAGE_MOVED_ERROR_NAME;
+			const cause = new Error(
+				'Desktop Epicenter holds no open surface for this request',
+			);
+			cause.name = EPICENTER_SURFACE_NOT_OPEN_ERROR_NAME;
 			throw cause;
 		}
 

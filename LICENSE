@@ -71,7 +71,6 @@ who forks and distributes a modified binary shares the changes back.
                                                          reference Worker
     - apps/whispering            (@epicenter/whispering) desktop transcription
     - apps/honeycrisp            (@epicenter/honeycrisp) notes app
-    - apps/opensidian            (opensidian)            notes + terminal
     - apps/vocab                 (@epicenter/vocab)      mandarin chat
     - apps/tab-manager           (@epicenter/tab-manager) browser extension
     - apps/skills                (skills)                agent skill editor
@@ -81,7 +80,6 @@ who forks and distributes a modified binary shares the changes back.
     - apps/matter                (@epicenter/matter)     markdown grid
     - apps/wiki                  (@epicenter/wiki)       wiki app
     - apps/local-books           (@epicenter/local-books) quickbooks mirror
-    - apps/todos                 (@epicenter/todos)      todos app
 
   Packages:
     - packages/auth              (@epicenter/auth)       auth core (private)

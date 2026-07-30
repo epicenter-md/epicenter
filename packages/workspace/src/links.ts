@@ -10,8 +10,8 @@ const EPICENTER_SCHEME = 'epicenter://';
  * @example
  * ```typescript
  * const ref: EpicenterLink = {
- * 	workspace: 'opensidian',
- * 	table: 'files',
+ * 	workspace: 'honeycrisp',
+ * 	table: 'notes',
  * 	id: '01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b',
  * };
  * ```
@@ -32,7 +32,7 @@ export type EpicenterLink = {
  *
  * @example
  * ```typescript
- * isEpicenterLink('epicenter://opensidian/files/01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b');
+ * isEpicenterLink('epicenter://honeycrisp/notes/01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b');
  * // true
  *
  * isEpicenterLink('https://example.com');
@@ -53,10 +53,10 @@ export function isEpicenterLink(href: string): boolean {
  *
  * @example
  * ```typescript
- * parseEpicenterLink('epicenter://opensidian/files/01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b');
+ * parseEpicenterLink('epicenter://honeycrisp/notes/01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b');
  * // {
- * // 	workspace: 'opensidian',
- * // 	table: 'files',
+ * // 	workspace: 'honeycrisp',
+ * // 	table: 'notes',
  * // 	id: '01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b',
  * // }
  *
@@ -93,12 +93,12 @@ export function parseEpicenterLink(href: string): EpicenterLink | null {
  * @example
  * ```typescript
  * const href = makeEpicenterLink(
- * 	'opensidian',
+ * 	'honeycrisp',
  * 	'files',
  * 	'01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b',
  * );
  *
- * // href === 'epicenter://opensidian/files/01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b'
+ * // href === 'epicenter://honeycrisp/notes/01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b'
  * ```
  */
 export function makeEpicenterLink(
@@ -126,7 +126,7 @@ const WIKILINK_RE = /\[\[([^\]]+)\]\]/g;
  * @example
  * ```typescript
  * const body =
- * 	'See [Meeting Notes](epicenter://opensidian/files/abc-123) for details.';
+ * 	'See [Meeting Notes](epicenter://honeycrisp/notes/abc-123) for details.';
  *
  * convertEpicenterLinksToWikilinks(body);
  * // 'See [[Meeting Notes]] for details.'
@@ -153,11 +153,11 @@ export function convertEpicenterLinksToWikilinks(body: string): string {
  * const body = 'See [[Meeting Notes]] for details.';
  * const resolve = (name: string) =>
  * 	name === 'Meeting Notes'
- * 		? 'epicenter://opensidian/files/abc-123'
+ * 		? 'epicenter://honeycrisp/notes/abc-123'
  * 		: null;
  *
  * convertWikilinksToEpicenterLinks(body, resolve);
- * // 'See [Meeting Notes](epicenter://opensidian/files/abc-123) for details.'
+ * // 'See [Meeting Notes](epicenter://honeycrisp/notes/abc-123) for details.'
  * ```
  */
 export function convertWikilinksToEpicenterLinks(

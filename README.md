@@ -224,7 +224,6 @@ Every app starts from the repo root. `bun dev:<app>` runs every process the app 
 | `bun dev:api` | Hosted API worker alone | 8787 |
 | `bun dev:api-dashboard` | API + dashboard UI | 5178 |
 | `bun dev:honeycrisp` | API + Honeycrisp desktop | 5175 |
-| `bun dev:opensidian` | API + Opensidian | 5176 |
 | `bun dev:tab-manager` | API + Tab Manager extension | extension build |
 | `bun dev:vocab` | API + Vocab | 8888 |
 | `bun dev:whispering` | API + hosted Whispering browser app | 1420 |
@@ -234,7 +233,6 @@ Every app starts from the repo root. `bun dev:<app>` runs every process the app 
 | `bun dev:posthog-reverse-proxy` | PostHog reverse proxy Worker | wrangler default |
 | `bun dev:self-host` | Self-host server (needs `INSTANCE_TOKEN`) | 8787 |
 | `bun dev:skills` | Skills editor, standalone | vite default |
-| `bun dev:todos` | Todos, standalone | 5177 |
 
 The API needs local Postgres and Infisical; see [apps/api/README.md](apps/api/README.md). Rust is needed for Tauri apps such as Epicenter, Matter, and Honeycrisp. Local Books and Local Mail run their own multi-process dev flows; their READMEs document them.
 
