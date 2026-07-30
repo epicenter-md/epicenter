@@ -6,9 +6,10 @@
 // Svelte error surface can mount. The Safari gate falsified exactly this on
 // 2026-07-18. The contract: `runtime.open()` is asynchronous and resolves
 // only with a ready handle, and every fallible acquisition runs inside a
-// mounted observer. Whispering, Honeycrisp, and Skills synchronously create
-// one application-opening promise in a mounted layout and render it through
-// a stable `{#await}` boundary. Their library modules remain inert.
+// mounted observer. Whispering, Honeycrisp, Skills, and Tab Manager
+// synchronously create one application-opening promise in a mounted component
+// and render it through a stable `{#await}` boundary. Their library modules
+// remain inert.
 //
 // This is a tripwire, not a parser: it flags `await` at module scope using a
 // brace/paren depth heuristic over the app lib trees. Top-level await inside
@@ -71,7 +72,7 @@ if (findings.length > 0) {
 	);
 	for (const finding of findings) console.error(`  ${finding}`);
 	console.error(
-		'  -> move the await behind the app ready promise the WorkspaceGate awaits;',
+		'  -> move the await behind the application-opening promise rendered by a mounted {#await} boundary;',
 	);
 	console.error(
 		'     module evaluation must never reject (blank page before any error surface).',

@@ -20,8 +20,8 @@ import { storage } from '@wxt-dev/storage';
  * The serialized cell is owned by `@epicenter/auth`; this module only supplies
  * async read/write over an opaque string. Older builds persisted a bundled
  * shape under `local:auth.session`; the new key resets cleanly, and a corrupt
- * or legacy cell validates to null, forcing a one-time sign-in. Workspace
- * IndexedDB data is keyed by userId and survives the reset.
+ * or legacy cell validates to null, forcing a one-time sign-in. The OPFS
+ * replica is independent of auth state and survives the reset.
  *
  * `loadPersistedAuthStorage` resolves once chrome.storage has been read;
  * `../application-platform.ts` awaits it before constructing the auth client.

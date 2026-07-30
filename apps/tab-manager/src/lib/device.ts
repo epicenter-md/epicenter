@@ -29,9 +29,9 @@ export type DeviceProfile = {
  * Resolve this device's profile, minting the node id on first run.
  *
  * A concurrent first run in two extension documents could mint twice; the
- * second write wins and both documents then agree, because every later read
- * returns the stored value. The cost of that race is one extra device row, never
- * a lost or duplicated saved tab.
+ * second write wins for later opens, while the first document keeps the id it
+ * already read. The bounded cost is one orphan device row, never a lost or
+ * duplicated saved tab.
  */
 export async function createDeviceProfile(): Promise<DeviceProfile> {
 	const [nodeId, defaultName] = await Promise.all([
