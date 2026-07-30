@@ -10,7 +10,7 @@ An opened workspace has two independent synchronization planes:
 
 ```text
 scalar rows and KV                 one opened row document
-HTTP row-sync protocol             one Yjs 14 WebSocket
+HTTP scalar row protocol           one Yjs 14 WebSocket
 runtime-native SQLite              runtime-native Yjs update log
         |                                  |
         +---------- workspace authority ---+
