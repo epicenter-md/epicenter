@@ -27,7 +27,7 @@ Instructions and reference bodies open through their owning rows:
 
 ```ts
 await skills.tables.skills.openDocument(skillId);
-await skills.tables.referenceFiles.openDocument(referenceId);
+await skills.tables.skillReferences.openDocument(referenceId);
 ```
 
 Application code never constructs document addresses, authority identities, or
