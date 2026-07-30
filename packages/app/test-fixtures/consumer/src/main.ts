@@ -120,7 +120,8 @@ if (capabilitiesError?.name === 'TranscriptionUnavailable') {
  * Lens's liveness: once it resolves, subscribing and then reading cannot miss a
  * change that landed in between.
  */
-const { data: notes, error: bindError } = await epicenter.data.bind(notesContract);
+const { data: notes, error: bindError } =
+	await epicenter.data.bind(notesContract);
 if (bindError) {
 	// Every reason binding can decline, named. There is no case for "not on
 	// desktop": that is `HostUnavailable`, like everything else.
@@ -161,7 +162,8 @@ async function renderEverything() {
 	const { data: scanned, error } = await bound.tables.notes.scan();
 	if (error) return show(error.message);
 	const list = document.querySelector('#notes');
-	if (list) list.textContent = scanned.rows.map((note) => note.title).join(', ');
+	if (list)
+		list.textContent = scanned.rows.map((note) => note.title).join(', ');
 	if (scanned.nonconforming.length > 0) {
 		show(`${scanned.nonconforming.length} note(s) this version cannot read.`);
 	}

@@ -216,9 +216,7 @@ test('a write in one surface invalidates the same lens in another', async () => 
 
 		// Exactly one rows-scoped invalidation naming exactly the row that moved,
 		// and the reader can go and read it.
-		expect(rowInvalidations).toEqual([
-			{ scope: 'rows', rowIds: [created.id] },
-		]);
+		expect(rowInvalidations).toEqual([{ scope: 'rows', rowIds: [created.id] }]);
 		expect((await readerData.tables.documents.get(created.id)).data?.name).toBe(
 			'Written elsewhere',
 		);
@@ -319,7 +317,8 @@ async function waitFor(
 ): Promise<void> {
 	const deadline = Date.now() + timeoutMs;
 	while (!condition()) {
-		if (Date.now() > deadline) throw new Error('Timed out waiting for a change');
+		if (Date.now() > deadline)
+			throw new Error('Timed out waiting for a change');
 		await Bun.sleep(5);
 	}
 }
@@ -328,7 +327,11 @@ async function startDesktopServer(root: string) {
 	// A real listening server, not `app.request`. The observation carrier is a
 	// WebSocket, and a fetch-only harness cannot prove a socket reaches a second
 	// surface.
-	const probe = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: () => new Response() });
+	const probe = Bun.serve({
+		hostname: '127.0.0.1',
+		port: 0,
+		fetch: () => new Response(),
+	});
 	const port = probe.port;
 	await probe.stop(true);
 	const origin = `http://127.0.0.1:${port}`;
