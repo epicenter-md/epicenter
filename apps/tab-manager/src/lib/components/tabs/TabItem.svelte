@@ -13,7 +13,7 @@
 	import Volume2Icon from '@lucide/svelte/icons/volume-2';
 	import VolumeXIcon from '@lucide/svelte/icons/volume-x';
 	import XIcon from '@lucide/svelte/icons/x';
-	import { tabManagerBoot } from '$lib/session.svelte';
+	import { getTabManagerApp } from '$lib/context';
 	import {
 		type BrowserTab,
 		browserState,
@@ -21,7 +21,7 @@
 	import { getDomain } from '$lib/utils/format';
 	import TabFavicon from './TabFavicon.svelte';
 
-	const tabManager = tabManagerBoot.tabManager;
+	const tabManager = getTabManagerApp();
 	let { tab }: { tab: BrowserTab } = $props();
 
 	const domain = $derived(tab.url ? getDomain(tab.url) : '');
@@ -153,7 +153,7 @@
 					tooltip="Save for later"
 					onclick={(e: MouseEvent) => {
 							e.stopPropagation();
-							// Save always succeeds in the workspace; toast only if the
+							// The row is written before this resolves; toast only if the
 							// source-tab close half failed (partial-success path).
 							tabManager.state.savedTabs.save(tab).then((result) => {
 								if (result?.closeResult.error)
@@ -173,7 +173,9 @@
 					tooltip={isBookmarked ? 'Remove bookmark': 'Bookmark'}
 					onclick={(e: MouseEvent) => {
 						e.stopPropagation();
-						// Pure CRDT writes: can't fail, no Result to toast.
+						// A row write, so it can fail on storage rather than on a
+						// browser API: there is no Result channel to toast, and a
+						// rejection surfaces through the runtime's error reporting.
 						void tabManager.state.bookmarks.toggle(tab);
 					}}
 				>

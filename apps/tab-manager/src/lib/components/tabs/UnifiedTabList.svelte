@@ -13,13 +13,13 @@
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { VList } from 'virtua/svelte';
-	import { tabManagerBoot } from '$lib/session.svelte';
+	import { getTabManagerApp } from '$lib/context';
 	import { browserState } from '$lib/state/browser-state.svelte';
 	import { getDomain, getRelativeTime } from '$lib/utils/format';
 	import TabFavicon from './TabFavicon.svelte';
 	import TabItem from './TabItem.svelte';
 
-	const tabManager = tabManagerBoot.tabManager;
+	const tabManager = getTabManagerApp();
 </script>
 
 {#if tabManager.state.unifiedView.flatItems.length === 0}

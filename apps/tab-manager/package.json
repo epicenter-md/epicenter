@@ -5,8 +5,7 @@
 	"type": "module",
 	"private": true,
 	"exports": {
-		".": "./src/lib/workspace/index.ts",
-		"./mount": "./mount.ts"
+		".": "./src/lib/workspace/index.ts"
 	},
 	"scripts": {
 		"dev": "wxt",
@@ -20,28 +19,30 @@
 		"postinstall": "wxt prepare"
 	},
 	"dependencies": {
+		"@epicenter/agent": "workspace:*",
 		"@epicenter/app-shell": "workspace:*",
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/chat": "workspace:*",
 		"@epicenter/client": "workspace:*",
 		"@epicenter/constants": "workspace:*",
+		"@epicenter/data": "workspace:*",
+		"@epicenter/document-sync": "workspace:*",
 		"@epicenter/field": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/ui": "workspace:*",
-		"@epicenter/workspace": "workspace:*",
 		"@lucide/svelte": "catalog:",
 		"@wxt-dev/storage": "^1.2.6",
+		"@y/y": "14.0.0-rc.24",
 		"arktype": "catalog:",
 		"better-auth": "catalog:",
 		"clsx": "catalog:",
 		"mode-watcher": "^1.1.0",
+		"nanoid": "catalog:",
 		"svelte-sonner": "^1.1.0",
 		"tailwind-merge": "catalog:",
 		"typebox": "catalog:",
 		"virtua": "catalog:",
-		"wellcrafted": "catalog:",
-		"y-indexeddb": "catalog:",
-		"yjs": "catalog:"
+		"wellcrafted": "catalog:"
 	},
 	"devDependencies": {
 		"@standard-schema/spec": "catalog:",
