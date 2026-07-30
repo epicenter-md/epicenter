@@ -12,6 +12,7 @@
 import { describe, expect, test } from 'bun:test';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 
+import { isAddress, sha256Hex } from '@epicenter/lens';
 import {
 	addressesEqual,
 	addressKey,
@@ -19,15 +20,12 @@ import {
 	DATA_ADDRESS_CEILINGS,
 	DATA_ADMISSION_LIMITS,
 	type Intent,
-	isAddress,
 	isRowAddress,
 	isValueAddress,
 	parseExchangeRequest,
 	parseExchangeResponse,
 	parseIntent,
 	parseReplicaId,
-	parseRowId,
-	sha256Hex,
 } from './index.js';
 
 const ROW_ID = 'abc123def456ghi789jkl012';
@@ -128,16 +126,15 @@ describe('structured identifiers', () => {
 		).toBe(false);
 	});
 
-	test('row and replica IDs require exactly 24 lowercase alphanumerics', () => {
-		expect(expectOk(parseRowId(ROW_ID))).toBe(ROW_ID);
+	test('replica IDs require exactly 24 lowercase alphanumerics', () => {
 		expect(expectOk(parseReplicaId(REPLICA_ID))).toBe(REPLICA_ID);
 		for (const value of [
 			'short',
-			`${ROW_ID}x`,
-			ROW_ID.toUpperCase(),
+			`${REPLICA_ID}x`,
+			REPLICA_ID.toUpperCase(),
 			'abc-23def456ghi789jkl012',
 		]) {
-			expect(expectErr(parseRowId(value)).name).toBe('Invalid');
+			expect(expectErr(parseReplicaId(value)).name).toBe('Invalid');
 		}
 	});
 });

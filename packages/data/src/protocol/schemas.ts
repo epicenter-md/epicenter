@@ -25,13 +25,6 @@ const positiveSequence = Type.Integer({
 	maximum: Number.MAX_SAFE_INTEGER,
 });
 
-export const RowIdSchema = Type.String({
-	minLength: 24,
-	maxLength: 24,
-	pattern: '^[a-z0-9]{24}$',
-});
-export type RowId = Static<typeof RowIdSchema>;
-
 export const ReplicaIdSchema = Type.String({
 	minLength: 24,
 	maxLength: 24,
@@ -278,16 +271,6 @@ export const ProtocolValidationError = defineErrors({
 export type ProtocolValidationError = InferErrors<
 	typeof ProtocolValidationError
 >;
-
-export function parseRowId(
-	value: unknown,
-): Result<RowId, ProtocolValidationError> {
-	return typeof value === 'string' &&
-		Value.Check(RowIdSchema, value) &&
-		isRuntimeId(value)
-		? Ok(value)
-		: ProtocolValidationError.Invalid({ boundary: 'row id' });
-}
 
 export function parseReplicaId(
 	value: unknown,

@@ -1,50 +1,38 @@
+/**
+ * The data protocol boundary.
+ *
+ * What crosses it: the address vocabulary, the wire types, the admission
+ * limits, the parsers that admit untrusted input, the authority fold, and the
+ * batch digest. That is the whole contract a replica or an authority needs.
+ *
+ * What deliberately does not cross it. The typebox schema objects behind the
+ * parsers stay private, because validating means calling `parseFact` rather
+ * than hand-driving `Value.Check(FactSchema, ...)`, and publishing both invites
+ * a second admission path that skips the extra checks the parsers apply. The
+ * admission predicates stay private for the same reason: the parsers already
+ * run them. And `@epicenter/lens` owns the inert Lens vocabulary, so only the
+ * lens symbols this protocol's own signatures name are re-exported here; the
+ * rest are imported from lens directly rather than through a second door.
+ */
 export {
 	type Address,
-	type AddressByteCeilings,
-	AddressSchema,
 	addressesEqual,
 	addressKey,
-	canonicalJson,
 	DATA_ADDRESS_CEILINGS,
-	isAddress,
-	isAdmissibleAddress,
-	isJsonObject,
-	isJsonValue,
-	isNamespace,
 	isRowAddress,
-	isRuntimeId,
-	isTableName,
 	isValueAddress,
-	isValueName,
 	type RowAddress,
-	RowAddressSchema,
-	SQLITE_UNUSABLE_AS_RELATION_NAME,
-	sha256Hex,
 	type ValueAddress,
-	ValueAddressSchema,
 } from '@epicenter/lens';
-export {
-	DATA_ADMISSION_LIMITS,
-	encodedBytes,
-	encodedJsonBytes,
-	isAdmissibleFact,
-	isAdmissibleIntent,
-} from './admission.js';
+export { DATA_ADMISSION_LIMITS, encodedJsonBytes } from './admission.js';
 export { type FoldResult, foldIntent } from './fold.js';
 export {
 	type Batch,
-	BatchSchema,
 	type Cursor,
-	CursorSchema,
 	type ExchangeRequest,
-	ExchangeRequestSchema,
 	type ExchangeResponse,
-	ExchangeResponseSchema,
-	type ExchangeSuccess,
 	type Fact,
-	FactSchema,
 	type Intent,
-	IntentSchema,
 	type JsonObject,
 	type JsonValue,
 	type LocalFact,
@@ -53,15 +41,9 @@ export {
 	parseExchangeResponse,
 	parseFact,
 	parseIntent,
-	parseJsonValue,
 	parseReplicaId,
-	parseRowId,
 	type Receipt,
-	ReceiptSchema,
 	type ReplicaId,
-	ReplicaIdSchema,
-	type RowId,
-	RowIdSchema,
 } from './schemas.js';
 
 import { canonicalJson, sha256Hex } from '@epicenter/lens';

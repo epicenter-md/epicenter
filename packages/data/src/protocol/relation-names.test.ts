@@ -15,12 +15,13 @@
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 
-import { REPLICA_TABLES } from '../replica/schema.js';
 import {
-	DATA_ADDRESS_CEILINGS,
 	isTableName,
 	SQLITE_UNUSABLE_AS_RELATION_NAME,
-} from './index.js';
+} from '@epicenter/lens';
+
+import { REPLICA_TABLES } from '../replica/schema.js';
+import { DATA_ADDRESS_CEILINGS } from './index.js';
 
 /**
  * Every SQLite keyword.
