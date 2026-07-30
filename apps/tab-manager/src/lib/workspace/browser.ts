@@ -24,7 +24,7 @@ import { openBrowserEpicenter } from '@epicenter/data/browser';
 import { parseExchangeResponse } from '@epicenter/data/protocol';
 import { createHttpDocumentTransports } from '@epicenter/document-sync';
 
-type WorkspaceAuth = Pick<
+type SyncAuth = Pick<
 	SyncAuthClient,
 	'state' | 'deployment' | 'fetch' | 'onStateChange'
 >;
@@ -35,7 +35,7 @@ function deploymentUrl(baseUrl: string): URL {
 	return url;
 }
 
-function createExchange(auth: WorkspaceAuth): Exchange {
+function createExchange(auth: SyncAuth): Exchange {
 	return async (request) => {
 		const response = await auth.fetch(
 			new URL('api/sync/v1', deploymentUrl(auth.deployment.baseURL)),
@@ -59,7 +59,7 @@ export async function openTabManagerBrowserEpicenter({
 	auth,
 	reportBackgroundError,
 }: {
-	auth: WorkspaceAuth;
+	auth: SyncAuth;
 	reportBackgroundError(cause: unknown): void;
 }) {
 	const epicenter = await openBrowserEpicenter();

@@ -1,6 +1,6 @@
 {
 	"name": "@epicenter/tab-manager",
-	"description": "Browser extension for managing tabs with workspace sync and AI chat",
+	"description": "Browser extension for managing tabs with Epicenter sync and AI chat",
 	"version": "0.0.2",
 	"type": "module",
 	"private": true,
