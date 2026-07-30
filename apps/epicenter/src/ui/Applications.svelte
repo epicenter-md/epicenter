@@ -6,7 +6,8 @@
 	import type { Application } from '../applications.ts';
 	import { APPLICATIONS_ROUTE } from '../routes.ts';
 	import type { ApplicationsResponse } from '../server.ts';
-	import { isDesktopHost, launchApplication } from './runtime.ts';
+	import { createLaunch } from './launch.svelte.ts';
+	import { isDesktopHost } from './runtime.ts';
 
 	/**
 	 * Everything a person can launch, in one list (ADR-0189).
@@ -25,7 +26,7 @@
 	// The bootstrap promise is fixed for this document lifetime.
 	// svelte-ignore state_referenced_locally
 	const applications = isDesktopHost() ? ready.then(readApplications) : null;
-	let openFailure = $state<string | null>(null);
+	const launcher = createLaunch();
 
 	async function readApplications(): Promise<Application[]> {
 		const response = await fetch(APPLICATIONS_ROUTE.url(location.origin));
@@ -34,17 +35,6 @@
 		}
 		return ((await response.json()) as ApplicationsResponse).apps;
 	}
-
-	async function open(application: Application) {
-		openFailure = null;
-		try {
-			await launchApplication(application.id);
-		} catch (error) {
-			openFailure = `${application.title} did not open. ${
-				error instanceof Error ? error.message : String(error)
-			}`;
-		}
-	}
 </script>
 
 {#if applications !== null}
@@ -52,10 +42,10 @@
 		<Loading class="h-full" label="Loading applications" />
 	{:then list}
 		<div class="grid gap-3 p-3">
-			{#if openFailure}
+			{#if launcher.failure}
 				<Alert.Root variant="destructive">
 					<Alert.Title>Could not open</Alert.Title>
-					<Alert.Description>{openFailure}</Alert.Description>
+					<Alert.Description>{launcher.failure}</Alert.Description>
 				</Alert.Root>
 			{/if}
 			<Item.Group class="gap-1.5" aria-label="Applications">
@@ -63,7 +53,7 @@
 					<Item.Button
 						variant="outline"
 						class="text-start hover:bg-accent/50"
-						onclick={() => void open(application)}
+						onclick={() => void launcher.launch(application)}
 					>
 						<Item.Content>
 							<Item.Title>{application.title}</Item.Title>
