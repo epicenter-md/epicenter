@@ -739,9 +739,6 @@
         "yjs": "catalog:",
       },
       "devDependencies": {
-        "@epicenter/api": "workspace:*",
-        "@epicenter/honeycrisp": "workspace:*",
-        "@epicenter/tab-manager": "workspace:*",
         "@types/bun": "catalog:",
         "@types/yargs": "catalog:",
         "typebox": "catalog:",
