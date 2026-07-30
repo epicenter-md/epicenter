@@ -2,6 +2,7 @@
 	import * as Alert from '@epicenter/ui/alert';
 	import { Button } from '@epicenter/ui/button';
 	import * as Empty from '@epicenter/ui/empty';
+	import * as Item from '@epicenter/ui/item';
 	import { WHISPERING_APPLICATION } from '../applications.ts';
 	import { createLaunch } from './launch.svelte.ts';
 	import LocalModelAdministration from './LocalModelAdministration.svelte';
@@ -39,22 +40,25 @@
 		<LocalModelAdministration />
 
 		{#if isLocalTranscriptionReady}
-			<!-- The ordinary launch action, not a return path: it says what is true
-			     of the host, and the user chooses. -->
-			<div
-				class="flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-3"
-			>
-				<p class="text-sm text-muted-foreground">
-					Local transcription is ready on this device.
-				</p>
-				<Button
-					variant="outline"
-					size="sm"
-					onclick={() => void launcher.launch(WHISPERING_APPLICATION)}
-				>
-					Open {WHISPERING_APPLICATION.title}
-				</Button>
-			</div>
+			<!-- The ordinary launch action, not a return path: it states what is
+			     true of the host, and the user chooses. Same row shape as the Apps
+			     pane, because it is the same act. -->
+			<Item.Root variant="outline">
+				<Item.Content>
+					<Item.Description>
+						Local transcription is ready on this device.
+					</Item.Description>
+				</Item.Content>
+				<Item.Actions>
+					<Button
+						variant="outline"
+						size="sm"
+						onclick={() => void launcher.launch(WHISPERING_APPLICATION)}
+					>
+						Open {WHISPERING_APPLICATION.title}
+					</Button>
+				</Item.Actions>
+			</Item.Root>
 		{/if}
 
 		{#if launcher.failure}
