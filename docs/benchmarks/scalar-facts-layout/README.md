@@ -20,13 +20,20 @@ archived source plus its content hashes are the durable source of truth. The
 schema-v3 report did not embed a source identity, so the source-to-report binding
 is an attestation rather than a cryptographic field in the report.
 
-Reported invocation:
+Reported invocation, as run on 2026-07-21:
 
 ```sh
 bun scripts/benchmarks/scalar-facts-layout.ts \
   --profile full \
   --output <temporary-directory>/report.json
 ```
+
+That path no longer exists. The monolith was decision-disabled and removed once
+its in-tree schema had drifted past the shape this report records; git history
+keeps it. To re-run this measurement, run the archived
+`2026-07-21-bun-native-full-schema-v3.source.ts` above, which is the exact
+source behind these numbers. The maintained instrument for new evidence is
+`scripts/benchmarks/scalar-facts-layout/`.
 
 Environment:
 

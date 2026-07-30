@@ -146,69 +146,14 @@ Paired candidates within one seed see exactly the same trace; each seed is an
 independent outer unit. Same seed and config reproduce byte-identical trace
 identity, schedule, estimator inputs, and method gates.
 
-## Historical monolith (`scalar-facts-layout.ts`): decision-disabled
+## The superseded monolith
 
-The parent `scalar-facts-layout.ts` retains the first benchmark implementation and
-its 2026-07-21 Bun/native full run. It is retained as **provisional evidence
-only** and is **decision-disabled**: it issues no recommendation and its latency
-estimator was found inadequate by two independent reviews. It predates and does
-not use the modular exact trace.
+An earlier single-file benchmark produced the retained 2026-07-21 Bun/native
+run. That run is archived under `docs/benchmarks/scalar-facts-layout/`, which
+keeps the report, the byte-exact source that produced it, and SHA-256 hashes
+binding the two. Read the archive for that evidence and its limits.
 
-Its storage numbers are **whole-database, post-phase-WAL page evidence**, not
-candidate-table-only true filesystem peaks: they measure the entire database file
-(including fixture tables and WAL state after a phase) rather than the isolated
-candidate-varying tables' peak filesystem bytes. Treat the roughly 20% normalized
-storage finding as directional whole-database evidence at this envelope, not a
-frozen candidate-table peak.
+The monolith itself is gone from the tree. It was decision-disabled, it had no
+runner, and its final in-tree schema had drifted to a shape that could no longer
+reproduce the archived report. This directory is the only maintained instrument.
 
-### Legacy scope and refusals
-
-The monolith compares the four relation and coordinate layouts only for the
-confirmed-facts table. It exercises replica and authority workloads, but it does
-not design or qualify pending intents, sealed submissions, parked diagnostics,
-document publication, blob publication, blob bytes, or metadata. It therefore
-cannot freeze a schema-wide coordinate representation or any non-facts layout.
-The modular pilot closes more owner-specific traces, but it is still only a
-method pilot and does not select a layout.
-
-The retained artifact reports `legacy-bun-diagnostic` with
-`decisionEligible: false`. It cannot qualify browser OPFS behavior, quota,
-WebKit, worker locks, mobile memory and backgrounding, or Durable Object SQLite.
-Its live schema is version 4; the historical schema-version-3 artifact under
-`docs/benchmarks/scalar-facts-layout/` has an incompatible shape.
-
-### Legacy profile is not a portability guarantee
-
-The 1,000,000-live-address / 512 MiB target is a conditional normal profile only
-where runtime quota admits it. The broader proof still needs these distinct
-tiers:
-
-- legacy smoke diagnostic: 5,000 current facts and approximately 1 MiB of
-  initial payload;
-- physical mobile floor: 250,000 live addresses and 128 MiB on physical iOS
-  Safari and Android;
-- conditional normal profile: 1,000,000 live addresses and 512 MiB where quota
-  admits;
-- informational desktop stress: 2,000,000 live addresses and 1 GiB;
-- private or incognito mode: a negative persistence-refusal test, never a
-  durable qualification cell.
-
-The monolith's `initialPayloadBytes` sums payload strings while it installs the
-initial facts. It is not ADR-0167 present-logical-state bytes and is not current
-protocol-fact bytes. Aging later adds rewrites, tombstones, and unsets. Only the
-modular trace owns those two exact byte measures.
-
-### Legacy measurement and oracle limits
-
-The monolith retains three diagnostics: initial payload bytes, steady physical
-database pages after checkpoint and settle, and phase WAL file sizes. Phase WAL
-sizes are bounded observations around named phases, not cumulative write
-amplification. The report intentionally emits no logical-state amplification or
-protocol-overhead ratio.
-
-It retains every owner, candidate, repetition, metric, and storage observation,
-checks matrix completeness and physical conformance, and reports no materiality
-band, Pareto filter, ordering, fallback, or winner. Its semantic witness is
-cross-candidate agreement over its own deterministic corpus. That is a
-consistency check, not the modular trace's independent analytical oracle, and is
-another reason the legacy diagnostic cannot become decision evidence.
