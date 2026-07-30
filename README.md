@@ -176,7 +176,8 @@ These packages carry the main architecture.
 | Package | Role | License |
 | --- | --- | --- |
 | [`@epicenter/workspace`](packages/workspace) | Typed workspace API, queryable scalar replicas, lazy row documents, local persistence, actions, and runtime composition. | MIT |
-| [`@epicenter/row-sync`](packages/row-sync) | Portable scalar row protocol, admission, deterministic field folding, and exact-retry digests. It owns no authority database. | MIT |
+| [`@epicenter/data`](packages/data) | The row-owned SQLite replica: scalar row protocol, admission, deterministic folding, exact-retry digests, sync supervision, and relational inspection. | MIT |
+| [`@epicenter/lens`](packages/lens) | Lens, table, and value definitions plus structured addresses and canonical JSON. | MIT |
 | [`@epicenter/sqlite`](packages/sqlite) | Neutral embedded-SQLite driver and Browser, Bun, and Durable Object adapters. It owns no product schema. | MIT |
 | [`@epicenter/sync`](packages/sync) | Yjs document protocol encoding and provider behavior, separate from scalar row synchronization. | MIT |
 | [`@epicenter/ui`](packages/ui) | Shared Svelte component library used by multiple app surfaces. | MIT |

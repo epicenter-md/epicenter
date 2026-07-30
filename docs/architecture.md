@@ -40,18 +40,20 @@ policy stays in the app that can name it.
 +----------------------------------------------------------------------------+
 | CORE                                                                       |
 |                                                                            |
-| @epicenter/workspace   @epicenter/row-sync   @epicenter/sync               |
-| @epicenter/field       @epicenter/constants  @epicenter/ui                 |
+| @epicenter/workspace   @epicenter/data       @epicenter/sync               |
+| @epicenter/lens        @epicenter/field      @epicenter/constants          |
+| @epicenter/ui                                                              |
 +----------------------------------------------------------------------------+
 ```
 
 `@epicenter/workspace` owns the app-facing data contract and runtime handles.
 `@epicenter/field` supplies the release-local projection vocabulary.
-`@epicenter/row-sync` owns the portable scalar row protocol: row intent folding,
-exact retry, current-state paging, transport compaction, and complete-state
-acquisition. The Proposed two-plane replacement removes document bytes from
-that protocol. Row-addressed Yjs 14 connections synchronize lazy row documents
-independently.
+`@epicenter/data` owns the portable scalar row protocol: row intent folding,
+exact retry, fact paging, admission, and the local SQLite replica that
+materializes it. `@epicenter/lens` supplies the definitions, structured
+addresses, and canonical JSON that protocol builds on. There is no separate
+scalar protocol package. Row-addressed Yjs 14 connections synchronize lazy row
+documents independently.
 
 ## Workspace definitions are app contracts
 
@@ -111,7 +113,7 @@ workspace scalar runtime
   create/update/delete row fields and kv
         |
         v
-row-sync protocol
+scalar row protocol
   RowIntent, sealed rounds, receipts, current-state pages
         |
         v
@@ -140,8 +142,8 @@ is the safety witness that stops a restored or copied private database from
 silently retiring different content under the same round.
 
 For protocol details and executable coverage, read
-[`packages/row-sync/README.md`](../packages/row-sync/README.md) and
-[`packages/row-sync/src/current-state-protocol.test.ts`](../packages/row-sync/src/current-state-protocol.test.ts).
+[`packages/data/src/protocol/v1`](../packages/data/src/protocol/v1) and
+[`packages/data/src/protocol/protocol.test.ts`](../packages/data/src/protocol/protocol.test.ts).
 
 ## Documents are a lazy Yjs 14 plane
 

@@ -59,7 +59,7 @@ Scenario 4 (a hosted competitor) is the one where the license is most load-beari
 
 ### Tier 1: MIT
 
-**Applies to:** the embeddable toolkit libraries: `packages/workspace`, `packages/ui`, `packages/filesystem`, `packages/sync`, `packages/sqlite`, `packages/row-sync`, `packages/data`, `packages/document-sync`, `packages/lens`, and `packages/app`, plus the toolkit-internal packages they carry: `packages/identity`, `packages/agent-protocol`, `packages/encryption`, `packages/field`, `packages/chat`, and `packages/agent`.
+**Applies to:** the embeddable toolkit libraries: `packages/workspace`, `packages/ui`, `packages/filesystem`, `packages/sync`, `packages/sqlite`, `packages/data`, `packages/document-sync`, `packages/lens`, and `packages/app`, plus the toolkit-internal packages they carry: `packages/identity`, `packages/agent-protocol`, `packages/encryption`, `packages/field`, `packages/chat`, and `packages/agent`.
 
 **Rationale:**
 - Libraries: we want developers to embed `@epicenter/workspace` in their own projects with zero friction. AGPL would forbid that for closed-source consumers, killing adoption. The library is not what we sell.
@@ -157,7 +157,6 @@ All apps are AGPL-3.0. MIT is reserved for the embeddable toolkit libraries.
 | `packages/field` | MIT | Field schema kinds (toolkit-internal) |
 | `packages/chat` | MIT | Chat message primitives (toolkit-internal) |
 | `packages/sqlite` | MIT | Domain-free synchronous SQLite adapter contract shared across embedded runtimes |
-| `packages/row-sync` | MIT | Schema-opaque scalar row synchronization protocol and digests |
 | `packages/data` | MIT | Typed local-first Epicenter replica and sync |
 | `packages/document-sync` | MIT | Row-document sync plane |
 | `packages/agent` | MIT | UI-free agent loop |

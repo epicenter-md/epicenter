@@ -20,12 +20,12 @@ Three concrete capability packages replace the surviving Workspace families:
 @epicenter/agent          UI-free agent loop over an explicit data interface
 ```
 
-`@epicenter/sqlite` remains a domain-free adapter leaf. `@epicenter/row-sync`
-may remain as the portable scalar wire and convergence leaf only if both Data
-and Server have substantial direct use for it; otherwise its implementation is
-owned by Data and Server without a public package. `@epicenter/server` owns the
-authority schema and depends on portable protocols, never on application typed
-lenses.
+`@epicenter/sqlite` remains a domain-free adapter leaf. The portable scalar
+wire and convergence leaf does not survive as its own package: neither Data nor
+Server had substantial direct use for it, so Data owns that implementation
+alongside the definitions, structured addresses, and canonical JSON in
+`@epicenter/lens`. `@epicenter/server` owns the authority schema and depends on
+portable protocols, never on application typed lenses.
 
 Data owns the one runtime lifecycle for attachment, credentials, wakeups,
 automatic scalar, document, and blob obligations, status, and disposal.
