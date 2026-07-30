@@ -333,9 +333,9 @@ export function createHomeServer({
 		} satisfies HomeSessionResponse),
 	);
 
-	// The one list Home renders: compiled applications plus admitted catalog
-	// members, with no built-in/admitted distinction crossing the wire
-	// (ADR-0189).
+	// What Home lists as launchable: compiled applications plus the members of
+	// the selected catalog generation, with no distinction between them crossing
+	// the wire (ADR-0189).
 	app.get(APPLICATIONS_ROUTE.pattern, (c) =>
 		c.json({
 			apps: listApplications(appCatalog),

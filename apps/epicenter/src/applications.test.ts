@@ -1,10 +1,10 @@
 /**
- * The one user-facing application list (ADR-0189).
+ * What Home lists as launchable (ADR-0189).
  *
- * What these protect is the absence of a distinction: whatever the host has to
- * do differently to serve a compiled application and an admitted folder, one
- * list of `{ id, title }` leaves this module, so Home cannot grow two row
- * shapes or two opening verbs by accident.
+ * What these protect is the absence of a distinction downstream: whatever the
+ * host has to do differently to serve a compiled application and an admitted
+ * catalog member, one list of `{ id, title }` leaves this module, so Home
+ * cannot grow two row shapes or two launch verbs by accident.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -26,13 +26,13 @@ function catalogOf(...members: { id: string; title: string }[]): AppCatalog {
 }
 
 describe('listApplications', () => {
-	test('an empty admitted catalog still offers the compiled applications', () => {
+	test('an empty catalog still offers the compiled applications', () => {
 		expect(listApplications({ apps: [] })).toEqual([
 			{ id: 'whispering', title: 'Whispering' },
 		]);
 	});
 
-	test('compiled and admitted applications share one shape and one list', () => {
+	test('compiled applications and catalog members share one shape and one list', () => {
 		expect(
 			listApplications(
 				catalogOf(
