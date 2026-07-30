@@ -80,7 +80,6 @@ pub mod overlay;
 #[cfg(target_os = "macos")]
 pub mod clipboard;
 
-const PRODUCT_NAME: &str = "Epicenter";
 /// Reserved label prefix for derived-catalog app windows (ADR-0153). One
 /// capability glob (`app-*`) grants every such window the first trusted-app
 /// authority slice, so no host-internal window label may ever start with it.
@@ -197,12 +196,6 @@ enum RustToBunAuthFrame<'a> {
     OauthCallback {
         url: &'a str,
     },
-}
-
-#[derive(Debug, Serialize)]
-struct RuntimeInfo {
-    product: &'static str,
-    origin: String,
 }
 
 struct ManagedChild {
@@ -412,15 +405,6 @@ mod export_bindings {
     }
 }
 
-#[tauri::command]
-fn get_runtime_info(state: State<'_, HostState>) -> std::result::Result<RuntimeInfo, String> {
-    let port = state.port().map_err(|error| format!("{error:#}"))?;
-    Ok(RuntimeInfo {
-        product: PRODUCT_NAME,
-        origin: origin(port),
-    })
-}
-
 /// A section of Epicenter Home an application can ask the shell to open.
 ///
 /// A closed set, not a string-addressed destination: Home is a privileged
@@ -603,9 +587,8 @@ pub fn run() {
     let port = configured_port();
     let specta_builder = make_specta_builder();
     let specta_handler = tauri_specta::Builder::invoke_handler(&specta_builder);
-    let native_handler =
-        tauri::generate_handler![get_runtime_info, encode_recording_for_upload, open_app]
-            as fn(tauri::ipc::Invoke<tauri::Wry>) -> bool;
+    let native_handler = tauri::generate_handler![encode_recording_for_upload, open_app]
+        as fn(tauri::ipc::Invoke<tauri::Wry>) -> bool;
     let log_plugin = tauri_plugin_log::Builder::new()
         .level(log::LevelFilter::Info)
         .level_for("epicenter::transcription", log::LevelFilter::Debug)
@@ -647,7 +630,7 @@ pub fn run() {
         .invoke_handler(move |invoke| {
             if matches!(
                 invoke.message.command(),
-                "get_runtime_info" | "encode_recording_for_upload" | "open_app"
+                "encode_recording_for_upload" | "open_app"
             ) {
                 native_handler(invoke)
             } else {
@@ -1900,16 +1883,12 @@ mod tests {
     /// The generated bindings are a committed artifact, so they can go stale
     /// against the command list without anything failing to compile.
     ///
-    /// Three commands are deliberately outside the generated surface: they ride
+    /// Two commands are deliberately outside the generated surface: they ride
     /// Tauri's handwritten handler because their shapes are not `specta::Type`
     /// (raw bytes) or are host-owned rather than part of the app contract.
     #[test]
     fn generated_bindings_cover_every_declared_command() {
-        const HANDWRITTEN: &[&str] = &[
-            "get_runtime_info",
-            "encode_recording_for_upload",
-            "open_app",
-        ];
+        const HANDWRITTEN: &[&str] = &["encode_recording_for_upload", "open_app"];
         for bindings in [
             include_str!("../../../whispering/src/lib/tauri/bindings.gen.ts"),
             include_str!("../../src/ui/bindings.gen.ts"),

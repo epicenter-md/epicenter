@@ -7,5 +7,5 @@
 	"remote": {
 		"urls": ["http://127.0.0.1:*"]
 	},
-	"permissions": ["allow-get-runtime-info", "allow-open-app"]
+	"permissions": ["allow-open-app"]
 }
