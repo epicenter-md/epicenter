@@ -8,9 +8,18 @@
 		".": "./src/lib/workspace/index.ts"
 	},
 	"imports": {
+		"#platform/application": {
+			"epicenter-host": "./src/lib/application-platform.epicenter-host.ts",
+			"default": "./src/lib/application-platform.browser.ts"
+		},
 		"#platform/auth": {
+			"epicenter-host": "./src/lib/platform/auth.epicenter-host.ts",
 			"tauri": "./src/lib/platform/auth.tauri.ts",
 			"default": "./src/lib/platform/auth.browser.ts"
+		},
+		"#platform/instance": {
+			"epicenter-host": "./src/lib/platform/instance.epicenter-host.ts",
+			"default": "./src/lib/instance.ts"
 		}
 	},
 	"scripts": {
@@ -18,12 +27,13 @@
 		"dev:web": "vite dev",
 		"dev:desktop": "tauri dev",
 		"build": "NODE_ENV=production vite build",
+		"build:epicenter": "EPICENTER_SURFACE=1 bun run build",
 		"preview": "vite preview",
 		"deploy": "wrangler deploy",
 		"prepare": "svelte-kit sync || echo ''",
 		"test": "bun test",
 		"tauri": "tauri",
-		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
+		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && svelte-check --tsconfig ./tsconfig.tauri.json && svelte-check --tsconfig ./tsconfig.epicenter.json"
 	},
 	"devDependencies": {
 		"@epicenter/ui": "workspace:*",
