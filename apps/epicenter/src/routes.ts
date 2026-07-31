@@ -50,6 +50,14 @@ export const MAIL_ROUTE = SURFACE_ROUTES.mail;
 export const BOOKS_ROUTE = SURFACE_ROUTES.books;
 /** What Home lists as launchable (ADR-0189). */
 export const APPLICATIONS_ROUTE = route('/api/apps');
+/**
+ * Where this host mounts Local Mail's surface (ADR-0191). The mail app carries
+ * no prefix of its own, so the host picks one that cannot collide with
+ * {@link APPLICATIONS_ROUTE} or the Home session routes, and gates it with the
+ * same browser session as every other `/api` surface. The Mail build resolves
+ * the matching client base through its own `#platform/mail-host` seam.
+ */
+export const MAIL_API_PREFIX = '/api/mail';
 export const SESSION_ROUTE = route('/api/home/session');
 export const SESSION_STREAM_ROUTE = route('/api/home/session/stream');
 export const LOCAL_BLOB_ROUTE = {

@@ -99,6 +99,7 @@
         "@epicenter/data": "workspace:*",
         "@epicenter/document-sync": "workspace:*",
         "@epicenter/field": "workspace:*",
+        "@epicenter/local-mail": "workspace:*",
         "@epicenter/server": "workspace:*",
         "@epicenter/skills": "workspace:*",
         "@epicenter/sync": "workspace:*",

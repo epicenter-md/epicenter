@@ -46,6 +46,18 @@ export const HONEYCRISP_APPLICATION: Application = {
 };
 
 /**
+ * Mail is the first compiled application whose data plane is not the host-owned
+ * replica: it reads a device-local SQLite mirror of Gmail through the mail
+ * surface the host mounts at `/api/mail` (ADR-0191). That changes
+ * nothing here, because a compiled application is a `dist/<id>` build and a
+ * title, and Home has never needed to know what is behind one.
+ */
+export const MAIL_APPLICATION: Application = {
+	id: SURFACE_ROUTES.mail.id,
+	title: SURFACE_ROUTES.mail.title,
+};
+
+/**
  * Compiled applications, in the order Home lists them.
  *
  * This is also the list the host loads asset trees for at boot: a compiled
@@ -55,6 +67,7 @@ export const HONEYCRISP_APPLICATION: Application = {
 export const COMPILED_APPLICATIONS: readonly Application[] = [
 	WHISPERING_APPLICATION,
 	HONEYCRISP_APPLICATION,
+	MAIL_APPLICATION,
 ];
 
 /**

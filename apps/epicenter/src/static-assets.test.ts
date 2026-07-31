@@ -253,6 +253,7 @@ describe('home server catalog routes', () => {
 			}),
 			desktopAuth: createTestDesktopAuth(),
 			blobRemote: null,
+			mail: null,
 		});
 		const server = Bun.serve({
 			hostname: '127.0.0.1',
@@ -325,6 +326,7 @@ describe('home server catalog routes', () => {
 				apps: [
 					{ id: 'whispering', title: 'Whispering' },
 					{ id: 'honeycrisp', title: 'Honeycrisp' },
+					{ id: 'mail', title: 'Mail' },
 					{ id: 'hello-http', title: 'Hello HTTP' },
 				],
 			});

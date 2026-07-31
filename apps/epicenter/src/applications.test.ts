@@ -31,6 +31,7 @@ describe('listApplications', () => {
 		expect(listApplications({ apps: [] })).toEqual([
 			{ id: 'whispering', title: 'Whispering' },
 			{ id: 'honeycrisp', title: 'Honeycrisp' },
+			{ id: 'mail', title: 'Mail' },
 		]);
 	});
 
@@ -45,6 +46,7 @@ describe('listApplications', () => {
 		).toEqual([
 			{ id: 'whispering', title: 'Whispering' },
 			{ id: 'honeycrisp', title: 'Honeycrisp' },
+			{ id: 'mail', title: 'Mail' },
 			{ id: 'notes', title: 'Notes' },
 			{ id: 'timeline', title: 'Timeline' },
 		]);
@@ -61,7 +63,6 @@ describe('listApplications', () => {
 		const listed = new Set(listApplications({ apps: [] }).map(({ id }) => id));
 		for (const id of [
 			'home',
-			'mail',
 			'books',
 		] satisfies (keyof typeof SURFACE_ROUTES)[]) {
 			expect(listed.has(id)).toBe(false);

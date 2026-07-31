@@ -4,7 +4,7 @@ import type { SurfaceId } from './routes.ts';
 
 type PlaceholderSurfaceId = Exclude<
 	SurfaceId,
-	'home' | 'whispering' | 'honeycrisp'
+	'home' | 'whispering' | 'honeycrisp' | 'mail'
 >;
 
 function placeholderPage(title: string, status: string): string {
@@ -36,10 +36,6 @@ function placeholderPage(title: string, status: string): string {
 }
 
 export const PLACEHOLDER_SURFACE_PAGES = {
-	mail: placeholderPage(
-		'Mail',
-		'Mail has its permanent place in Epicenter, but the full Mail experience is not included in this milestone.',
-	),
 	books: placeholderPage(
 		'Books',
 		'Books has its permanent place in Epicenter, but the full Books experience is not included in this milestone.',

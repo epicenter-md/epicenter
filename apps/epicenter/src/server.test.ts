@@ -220,6 +220,7 @@ async function serveHost(
 		blobs: createTestBlobs(),
 		desktopAuth: createTestDesktopAuth(),
 		blobRemote,
+		mail: null,
 		dataOwner,
 	});
 	const server = Bun.serve({
@@ -450,6 +451,7 @@ describe('createHomeServer', () => {
 				blobs: createTestBlobs(),
 				desktopAuth,
 				blobRemote: null,
+				mail: null,
 			}),
 		).toThrow(/launch token/);
 		for (const origin of [
@@ -467,6 +469,7 @@ describe('createHomeServer', () => {
 					blobs: createTestBlobs(),
 					desktopAuth,
 					blobRemote: null,
+					mail: null,
 				}),
 			).toThrow(/exact http:\/\/127\.0\.0\.1/);
 		}
@@ -629,11 +632,13 @@ describe('createHomeServer', () => {
 				applicationPage('Honeycrisp'),
 			);
 
+			// Mail is a compiled application now, not a placeholder document
+			// (ADR-0191), so it serves its own stamped page like the others.
 			const mail = await fetch(MAIL_ROUTE.url(server.url.origin), {
 				headers: authenticatedHeaders(server),
 			});
-			expect(await mail.text()).toContain(
-				'the full Mail experience is not included',
+			expect(withoutAuthBootstrap(await mail.text())).toBe(
+				applicationPage('Mail'),
 			);
 			const books = await fetch(BOOKS_ROUTE.url(server.url.origin), {
 				headers: authenticatedHeaders(server),
@@ -698,7 +703,9 @@ describe('createHomeServer', () => {
 				{ headers: authenticatedHeaders(server) },
 			);
 			expect(browserFragment.status).toBe(200);
-			expect(await browserFragment.text()).toContain('<h1>Mail</h1>');
+			expect(withoutAuthBootstrap(await browserFragment.text())).toBe(
+				applicationPage('Mail'),
+			);
 		} finally {
 			await server.stop(true);
 		}
