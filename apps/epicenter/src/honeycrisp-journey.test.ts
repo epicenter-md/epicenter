@@ -1,10 +1,10 @@
 /**
- * Honeycrisp's journey through the desktop host, end to end.
+ * Honeycrisp against the Bun host: listed, served, shared, and durable.
  *
- * Home lists Honeycrisp, the host serves its build, that build opens the
- * host-owned replica, and the folders, notes, and note bodies it writes land in
- * the one `epicenter.sqlite3` this process owns. Two things then have to be
- * true, and neither is provable from either side alone:
+ * Home's list offers Honeycrisp, the host serves its document, the app's own
+ * `honeycrispLens` opened through `openDesktopEpicenter` writes folders, notes,
+ * and note bodies into the one `epicenter.sqlite3` this process owns, and two
+ * things follow that neither side proves alone:
  *
  * - Home's tools read those same rows. Honeycrisp's Lens and Home's mirror are
  *   deliberately separate release-local interpretations of one namespace
@@ -14,9 +14,15 @@
  *   new owner over the same directory, which is the only thing "my note is
  *   still there" ever meant.
  *
- * The Honeycrisp side here binds the app's own exported `honeycrispLens`
- * through `openDesktopEpicenter`, which is exactly what the built surface does;
- * only the WebView is missing.
+ * ## What this does not cover
+ *
+ * The native half. Nothing here calls `launch_application`, opens a window, or
+ * exercises Rust at all: this drives the Bun host directly with a real browser
+ * session, which is what the served build does once its WebView exists. That a
+ * click on Honeycrisp's row opens and focuses a `honeycrisp` window is decided
+ * by the surface table in `src-tauri/src/lib.rs` and asserted by its own tests.
+ * That the build served here selected the desktop data path is asserted by
+ * `apps/epicenter/scripts/build-applications.test.ts` against real build output.
  */
 
 import { expect, test } from 'bun:test';
@@ -134,13 +140,14 @@ async function launchEpicenter(root: string) {
 	};
 }
 
-test('Home launches Honeycrisp, whose notes outlive the process Home shares with it', async () => {
+test('Honeycrisp is listed, served, shared with Home, and durable across relaunch', async () => {
 	const root = mkdtempSync(join(tmpdir(), 'epicenter-honeycrisp-journey-'));
 	let noteId: string;
 	try {
 		const epicenter = await launchEpicenter(root);
 		try {
-			// Home's Apps pane offers Honeycrisp, and the host serves its build.
+			// Home's Apps pane has a Honeycrisp row to offer, and the host serves
+			// the document behind it. (Clicking that row is Rust's half.)
 			const { apps } = (await (
 				await epicenter.fetch(APPLICATIONS_ROUTE.url(epicenter.origin))
 			).json()) as ApplicationsResponse;
@@ -152,7 +159,8 @@ test('Home launches Honeycrisp, whose notes outlive the process Home shares with
 			expect(page.status).toBe(200);
 			expect(await page.text()).toContain('id="epicenter-auth-bootstrap"');
 
-			// The launched window creates a folder, a note, and a note body.
+			// What the served build does once it is running: create a folder, a
+			// note, and a note body against the host-owned replica.
 			const surface = await epicenter.openHoneycrispSurface();
 			const honeycrisp = surface.bind(honeycrispLens).tables;
 			const folder = await honeycrisp.folders.create({
