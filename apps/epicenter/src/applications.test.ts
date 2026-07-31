@@ -8,9 +8,10 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { listApplications } from './applications.ts';
-import type { SURFACE_ROUTES } from './routes.ts';
+import { COMPILED_APPLICATIONS, listApplications } from './applications.ts';
+import { SURFACE_ROUTES } from './routes.ts';
 import type { AppCatalog, CatalogApp } from './static-assets.ts';
+import { PLACEHOLDER_SURFACE_PAGES } from './surface-pages.ts';
 
 function catalogOf(...members: { id: string; title: string }[]): AppCatalog {
 	return {
@@ -63,5 +64,34 @@ describe('listApplications', () => {
 		] satisfies (keyof typeof SURFACE_ROUTES)[]) {
 			expect(listed.has(id)).toBe(false);
 		}
+	});
+});
+
+/**
+ * Every surface the host routes has something behind it, and every compiled
+ * application is a surface. The two lists used to be one object literal the
+ * type checker cross-checked; now that compiled builds arrive at runtime, this
+ * is where a surface with no document, or an application with no route, shows
+ * up.
+ */
+describe('surface coverage', () => {
+	test('each surface is Home, a compiled application, or a placeholder', () => {
+		const served = new Set<string>([
+			SURFACE_ROUTES.home.id,
+			...COMPILED_APPLICATIONS.map(({ id }) => id),
+			...Object.keys(PLACEHOLDER_SURFACE_PAGES),
+		]);
+		expect(
+			Object.keys(SURFACE_ROUTES).filter((id) => !served.has(id)),
+		).toEqual([]);
+	});
+
+	test('each compiled application has its own surface route', () => {
+		expect(
+			COMPILED_APPLICATIONS.filter(
+				({ id, title }) =>
+					SURFACE_ROUTES[id as keyof typeof SURFACE_ROUTES]?.title !== title,
+			),
+		).toEqual([]);
 	});
 });

@@ -40,8 +40,16 @@ export const WHISPERING_APPLICATION: Application = {
 	title: SURFACE_ROUTES.whispering.title,
 };
 
-/** Compiled applications, in the order Home lists them. */
-const COMPILED_APPLICATIONS: readonly Application[] = [WHISPERING_APPLICATION];
+/**
+ * Compiled applications, in the order Home lists them.
+ *
+ * This is also the list the host loads asset trees for at boot: a compiled
+ * application is exactly a `dist/<id>` build the release ships, so declaring
+ * one here and building it are the two halves of the same act.
+ */
+export const COMPILED_APPLICATIONS: readonly Application[] = [
+	WHISPERING_APPLICATION,
+];
 
 /**
  * Compose the one list Home renders. An admitted member can never collide with

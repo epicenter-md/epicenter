@@ -29,6 +29,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createBunBlobStore } from '@epicenter/blobs/bun';
+import { COMPILED_APPLICATIONS } from './applications.ts';
 import {
 	APPLICATIONS_ROUTE,
 	BOOTSTRAP_ROUTE,
@@ -41,6 +42,7 @@ import {
 	isValidAppId,
 	loadStaticAssets,
 } from './static-assets.ts';
+import { writeAppsDist } from './test-apps-dist.ts';
 import {
 	createOwnedTestHomeHost,
 	createTestDesktopAuth,
@@ -52,8 +54,6 @@ const COMMITTED_FIXTURE_ROOT = fileURLToPath(
 );
 const TOKEN = 'per-launch-secret';
 const HOME_PAGE = '<!doctype html><html><body>Home test page</body></html>';
-const WHISPERING_PAGE =
-	'<!doctype html><html><body>Whispering test application</body></html>';
 
 function tempDir(prefix: string): string {
 	return mkdtempSync(join(tmpdir(), prefix));
@@ -220,11 +220,11 @@ describe('home server catalog routes', () => {
 			files: { 'main.js': 'document.title;' },
 		});
 
-		const appsDist = tempDir('epicenter-apps-dist-');
-		mkdirSync(join(appsDist, 'home'), { recursive: true });
-		mkdirSync(join(appsDist, 'whispering'), { recursive: true });
-		writeFileSync(join(appsDist, 'home', 'index.html'), HOME_PAGE);
-		writeFileSync(join(appsDist, 'whispering', 'index.html'), WHISPERING_PAGE);
+		const appsDist = writeAppsDist({
+			homePage: HOME_PAGE,
+			applicationPage: ({ title }) =>
+				`<!doctype html><html><body>${title} test application</body></html>`,
+		});
 
 		const host = await createOwnedTestHomeHost({
 			dataDir: tempDir('epicenter-host-'),
@@ -246,7 +246,7 @@ describe('home server catalog routes', () => {
 			host,
 			origin,
 			launchToken: TOKEN,
-			staticAssets: await loadStaticAssets(appsDist),
+			staticAssets: await loadStaticAssets(appsDist, COMPILED_APPLICATIONS),
 			appCatalog: await derive(catalogRoot),
 			blobs: createBunBlobStore({
 				directory: join(tempDir('epicenter-blobs-'), 'blobs'),

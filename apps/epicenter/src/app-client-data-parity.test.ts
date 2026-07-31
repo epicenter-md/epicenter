@@ -55,9 +55,11 @@ import {
 	optional,
 	type TableInvalidation,
 } from '@epicenter/lens';
+import { COMPILED_APPLICATIONS } from './applications.ts';
 import { BOOTSTRAP_ROUTE } from './routes.ts';
 import { createHomeServer } from './server.ts';
 import { loadStaticAssets } from './static-assets.ts';
+import { writeAppsDist } from './test-apps-dist.ts';
 import {
 	createOwnedTestHomeHostBundle,
 	createTestDesktopAuth,
@@ -431,7 +433,10 @@ async function startHost(directory: string) {
 		host,
 		origin,
 		launchToken: TOKEN,
-		staticAssets: await loadStaticAssets(await writeAssets(directory)),
+		staticAssets: await loadStaticAssets(
+			writeAssets(directory),
+			COMPILED_APPLICATIONS,
+		),
 		dataOwner,
 		blobs: (await import('@epicenter/blobs/bun')).createBunBlobStore({
 			directory: join(directory, 'blobs'),
@@ -551,17 +556,12 @@ function restore(
 	Object.defineProperty(globalThis, name, descriptor);
 }
 
-async function writeAssets(directory: string): Promise<string> {
-	const { mkdirSync, writeFileSync } = await import('node:fs');
-	const dist = join(directory, 'dist');
-	mkdirSync(join(dist, 'home'), { recursive: true });
-	mkdirSync(join(dist, 'whispering'), { recursive: true });
-	writeFileSync(join(dist, 'home', 'index.html'), '<!doctype html><body>Home');
-	writeFileSync(
-		join(dist, 'whispering', 'index.html'),
-		'<!doctype html><body>Whispering',
-	);
-	return dist;
+function writeAssets(directory: string): string {
+	return writeAppsDist({
+		root: join(directory, 'dist'),
+		homePage: '<!doctype html><body>Home',
+		applicationPage: ({ title }) => `<!doctype html><body>${title}`,
+	});
 }
 
 async function waitFor(condition: () => boolean, timeoutMs = 2_000) {

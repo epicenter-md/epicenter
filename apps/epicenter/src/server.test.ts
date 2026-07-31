@@ -44,6 +44,7 @@ import {
 import type { DesktopEpicenterOwner } from '@epicenter/data/desktop-owner';
 import { defineErrors } from 'wellcrafted/error';
 import { Ok } from 'wellcrafted/result';
+import { COMPILED_APPLICATIONS } from './applications.ts';
 import type { HomeHost, HomeHostInputs } from './host.ts';
 import {
 	ACCOUNT_INSTANCE_ROUTE,
@@ -65,7 +66,11 @@ import {
 	sendObservationFrame,
 } from './server.ts';
 import type { ReadyFrame } from './sidecar-runtime.ts';
-import { loadStaticAssets } from './static-assets.ts';
+import {
+	type EpicenterStaticAssets,
+	loadStaticAssets,
+} from './static-assets.ts';
+import { writeAppsDist } from './test-apps-dist.ts';
 import {
 	createOwnedTestHomeHost,
 	createTestDesktopAuth,
@@ -75,8 +80,9 @@ const TOKEN = 'per-launch-secret';
 
 /** A stand-in for the built SPA document; `/` must return it byte-for-byte. */
 const PAGE = '<!doctype html><html><body>Home test page</body></html>';
-const WHISPERING_PAGE =
-	'<!doctype html><html><body>Whispering test application</body></html>';
+const applicationPage = (title: string) =>
+	`<!doctype html><html><body>${title} test application</body></html>`;
+const WHISPERING_PAGE = applicationPage('Whispering');
 
 /** Parse a Content-Security-Policy header into directive name to its token list. */
 function cspDirectives(header: string | null): Map<string, string[]> {
@@ -232,16 +238,25 @@ async function serveHost(
 }
 
 async function createAppsDistFixture(homePage: string = PAGE) {
-	return loadStaticAssets(writeAppsDistFixture(homePage));
+	return loadStaticAssets(writeAppsDistFixture(homePage), COMPILED_APPLICATIONS);
+}
+
+/** The loaded build of one compiled application, by ID. */
+function applicationAssets(assets: EpicenterStaticAssets, id: string) {
+	const application = assets.applications.find(
+		(candidate) => candidate.id === id,
+	);
+	if (!application) throw new Error(`no compiled application named ${id}`);
+	return application;
 }
 
 function writeAppsDistFixture(homePage: string = PAGE): string {
-	const root = mkdtempSync(join(tmpdir(), 'epicenter-apps-dist-'));
-	mkdirSync(join(root, 'home'), { recursive: true });
+	const root = writeAppsDist({
+		homePage,
+		applicationPage: ({ title }) => applicationPage(title),
+	});
 	mkdirSync(join(root, 'whispering', '_app', 'immutable'), { recursive: true });
 	mkdirSync(join(root, 'whispering', 'vad'), { recursive: true });
-	writeFileSync(join(root, 'home', 'index.html'), homePage);
-	writeFileSync(join(root, 'whispering', 'index.html'), WHISPERING_PAGE);
 	writeFileSync(
 		join(root, 'whispering', '_app', 'immutable', 'entry.js'),
 		'window.whisperingLoaded = true;',
@@ -330,48 +345,47 @@ const settledWith =
 	};
 
 describe('loadStaticAssets', () => {
-	test('requires both real application documents at startup', async () => {
-		const missingWhispering = mkdtempSync(
-			join(tmpdir(), 'epicenter-missing-whispering-'),
+	test('every declared compiled application must have built, and so must Home', async () => {
+		const missingApplication = mkdtempSync(
+			join(tmpdir(), 'epicenter-missing-application-'),
 		);
-		mkdirSync(join(missingWhispering, 'home'), { recursive: true });
-		writeFileSync(join(missingWhispering, 'home', 'index.html'), PAGE);
-		expect(loadStaticAssets(missingWhispering)).rejects.toThrow(
-			/Whispering asset root is missing/,
-		);
+		mkdirSync(join(missingApplication, 'home'), { recursive: true });
+		writeFileSync(join(missingApplication, 'home', 'index.html'), PAGE);
+		expect(
+			loadStaticAssets(missingApplication, COMPILED_APPLICATIONS),
+		).rejects.toThrow(/Whispering asset root is missing/);
 
-		const missingQuery = mkdtempSync(
-			join(tmpdir(), 'epicenter-missing-query-'),
-		);
-		mkdirSync(join(missingQuery, 'whispering'), { recursive: true });
+		const missingHome = mkdtempSync(join(tmpdir(), 'epicenter-missing-home-'));
+		mkdirSync(join(missingHome, 'whispering'), { recursive: true });
 		writeFileSync(
-			join(missingQuery, 'whispering', 'index.html'),
+			join(missingHome, 'whispering', 'index.html'),
 			WHISPERING_PAGE,
 		);
-		expect(loadStaticAssets(missingQuery)).rejects.toThrow(
-			/Home index is missing/,
-		);
+		expect(
+			loadStaticAssets(missingHome, COMPILED_APPLICATIONS),
+		).rejects.toThrow(/Home index is missing/);
 	});
 
 	test('resolves nested generated assets and extensionless SPA routes', async () => {
 		const assets = await createAppsDistFixture();
-		const nested = await assets.resolveWhispering(
+		const whispering = applicationAssets(assets, 'whispering');
+		const nested = await whispering.resolve(
 			'/apps/whispering/_app/immutable/entry.js',
 		);
 		expect(nested?.contentType).toContain('text/javascript');
 		expect(await nested?.file.text()).toContain('whisperingLoaded');
 
-		const vad = await assets.resolveWhispering(
+		const vad = await whispering.resolve(
 			'/apps/whispering/vad/silero_vad_v5.onnx',
 		);
 		expect(await vad?.file.text()).toBe('vad-model');
 
-		const fallback = await assets.resolveWhispering(
+		const fallback = await whispering.resolve(
 			'/apps/whispering/settings/transcription',
 		);
 		expect(await fallback?.file.text()).toBe(WHISPERING_PAGE);
 		expect(
-			await assets.resolveWhispering('/apps/whispering/_app/missing.js'),
+			await whispering.resolve('/apps/whispering/_app/missing.js'),
 		).toBeUndefined();
 	});
 
@@ -387,7 +401,8 @@ describe('loadStaticAssets', () => {
 			join(outside, 'secret.txt'),
 			join(root, 'whispering', 'linked-secret'),
 		);
-		const assets = await loadStaticAssets(root);
+		const assets = await loadStaticAssets(root, COMPILED_APPLICATIONS);
+		const whispering = applicationAssets(assets, 'whispering');
 
 		for (const pathname of [
 			'/apps/whispering/../home/index.html',
@@ -401,7 +416,7 @@ describe('loadStaticAssets', () => {
 			'/apps/whispering/linked-secret.txt',
 			'/apps/whispering/linked-secret',
 		]) {
-			expect(await assets.resolveWhispering(pathname)).toBeUndefined();
+			expect(await whispering.resolve(pathname)).toBeUndefined();
 		}
 	});
 });

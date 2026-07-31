@@ -45,7 +45,6 @@ import {
 	SESSION_ROUTE,
 	SESSION_STREAM_ROUTE,
 	SURFACE_ROUTES,
-	type SurfaceId,
 } from './routes.ts';
 import type { AppCatalog, EpicenterStaticAssets } from './static-assets.ts';
 import { PLACEHOLDER_SURFACE_PAGES } from './surface-pages.ts';
@@ -70,7 +69,7 @@ export type HomeServerOptions = {
 	origin: string;
 	/** Per-launch credential received from Rust over stdin. */
 	launchToken: string;
-	/** Release-built documents and the contained Whispering asset resolver. */
+	/** Home's document and every compiled application's release build. */
 	staticAssets: EpicenterStaticAssets;
 	/** Derived trusted app catalog (ADR-0153); absent means no members. */
 	appCatalog?: AppCatalog;
@@ -139,16 +138,20 @@ export function createHomeServer({
 	const activeUrl = validateOrigin(origin);
 	const activeHost = activeUrl.host;
 	const sessionHashes = new Set<string>();
-	const surfacePages = {
+	const hostPages = {
 		home: injectAuthBootstrap(staticAssets.homePage, desktopAuth.bootSnapshot),
-		whispering: injectAuthBootstrap(
-			staticAssets.whisperingPage,
-			desktopAuth.bootSnapshot,
-		),
 		...PLACEHOLDER_SURFACE_PAGES,
-	} satisfies Record<SurfaceId, string>;
+	};
+	const applications = staticAssets.applications.map((application) => ({
+		...application,
+		page: injectAuthBootstrap(application.page, desktopAuth.bootSnapshot),
+	}));
 	const csp = contentSecurityPolicy(
-		`${Object.values(surfacePages).join('\n')}\n${SESSION_SHELL}`,
+		[
+			...Object.values(hostPages),
+			...applications.map(({ page }) => page),
+			SESSION_SHELL,
+		].join('\n'),
 	);
 	const deploymentFetch = createDesktopAuthorityFetch(desktopAuth);
 	const { upgradeWebSocket, websocket } = createBunWebSocket();
@@ -259,6 +262,8 @@ export function createHomeServer({
 		return c.body(null, 202);
 	});
 
+	// Home and the release-bundled placeholders: one document each, no asset
+	// tree behind them.
 	for (const surface of [
 		SURFACE_ROUTES.home,
 		SURFACE_ROUTES.mail,
@@ -267,34 +272,36 @@ export function createHomeServer({
 		app.get(surface.pattern, (c) => {
 			c.header('cache-control', 'no-store');
 			if (!hasBrowserSession(c)) return c.html(SESSION_SHELL);
-			return c.html(surfacePages[surface.id]);
+			return c.html(hostPages[surface.id]);
 		});
 	}
-	app.get('/apps/whispering/*', async (c) => {
-		const pathname = new URL(c.req.url).pathname;
-		if (
-			pathname === SURFACE_ROUTES.whispering.pattern ||
-			pathname === `${SURFACE_ROUTES.whispering.pattern}index.html`
-		) {
+	// Compiled applications: one contained asset tree each, with the document
+	// served from memory so every client route lands on the stamped page.
+	for (const application of applications) {
+		const prefix = `/apps/${application.id}/`;
+		app.get(`${prefix}*`, async (c) => {
+			const pathname = new URL(c.req.url).pathname;
+			if (pathname === prefix || pathname === `${prefix}index.html`) {
+				c.header('cache-control', 'no-store');
+				if (!hasBrowserSession(c)) return c.html(SESSION_SHELL);
+				return c.html(application.page);
+			}
+			const asset = await application.resolve(pathname);
+			if (!asset) return c.text('Not Found', 404);
 			c.header('cache-control', 'no-store');
-			if (!hasBrowserSession(c)) return c.html(SESSION_SHELL);
-			return c.html(surfacePages.whispering);
-		}
-		const asset = await staticAssets.resolveWhispering(pathname);
-		if (!asset) return c.text('Not Found', 404);
-		c.header('cache-control', 'no-store');
-		if (!hasBrowserSession(c)) {
-			return asset.isDocument
-				? c.html(SESSION_SHELL)
-				: c.text('Unauthorized', 401);
-		}
-		if (asset.isDocument) return c.html(surfacePages.whispering);
-		c.header('content-type', asset.contentType);
-		return c.body(asset.file.stream());
-	});
+			if (!hasBrowserSession(c)) {
+				return asset.isDocument
+					? c.html(SESSION_SHELL)
+					: c.text('Unauthorized', 401);
+			}
+			if (asset.isDocument) return c.html(application.page);
+			c.header('content-type', asset.contentType);
+			return c.body(asset.file.stream());
+		});
+	}
 	// Derived catalog members (ADR-0153). Reserved built-in IDs never reach
-	// this handler: the surface routes above win registration order and the
-	// catalog derivation refuses them.
+	// this handler: the surface and compiled-application routes above win
+	// registration order and the catalog derivation refuses them.
 	app.get('/apps/:appId/*', async (c) => {
 		const member = appCatalog.apps.find(
 			(catalogApp) => catalogApp.id === c.req.param('appId'),
