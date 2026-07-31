@@ -240,24 +240,10 @@ shapes, see `docs/adr/`.
   state and the row's bounded interactive CRDT document.
 - **Data runtime**: one Epicenter replica composes typed table/value lenses and
   lazy Yjs 14 row documents over one private store.
-- **Transitional root-Yjs workspace**: the still-active `@epicenter/workspace`
-  lane used by apps not yet migrated. Its `defineKv`, definition-owned
-  `create/connect/mount`, `.docs`, and `_v` behavior remain compatibility
-  surfaces for those apps, not the canonical SQLite design.
-- **Transitional `satisfiesWorkspace`**: the root-Yjs bundle-conformance helper
-  (renamed from the older `defineWorkspaceBundle`).
-- **Transitional actions and collaboration**: actions remain part of the
-  root-Yjs workspace bundle; collaboration is sync and presence only.
-- **Transitional root-Yjs child document**: a separate, lazy Y.Doc owned by one
-  row and reached through `ws.tables.X.docs.name.open(rowId)`. The workspace
-  derives its address from the workspace, table, a collision-resistant digest
-  of the full row ID, document name, and document format hash; the format
-  capability attaches the typed content handle after the runtime opens the doc.
-- **Worker**: running behavior that observes workspace state and writes results
+- **Worker**: running behavior that observes Epicenter state and writes results
   back. Workers may be local (every node runs them) or agent-bound (one
   configured agent answers). A conversation is answered by the client agent loop
-  in the open tab, for every agent (ADR-0047); the daemon contributes data and
-  side effects as dispatched actions (tools), never by running the loop.
+  in the open tab, for every agent (ADR-0047).
 - **Agent**: the durable address a row or conversation binds to (an immutable
   id). An agent names who should answer; the peer that answers as it is the
   client tab or a daemon, set by the agent's **trust location** (ADR-0030/0043).
@@ -275,39 +261,25 @@ shapes, see `docs/adr/`.
   messages as records (ADR-0047). It replaces the older doc-observing _answerer_
   (a daemon that wrote the reply into the doc), which ADR-0047 removed. Two
   implementations exist, chosen by transcript reach (ADR-0048): a transcript that
-  syncs across a person's peers uses the workspace loop (`createConversation`,
-  finished messages in a Yjs child doc); a deliberately device-local transcript
-  uses TanStack `createChat` (tab-manager, IndexedDB).
-- **Materializer**: a local, addressless worker that projects workspace data into
-  another store (markdown, sqlite).
+  syncs across a person's peers uses `createConversation` (`@epicenter/agent`),
+  which persists finished messages as rows; a deliberately device-local
+  transcript uses TanStack `createChat` (tab-manager, IndexedDB).
+- **Materializer**: a local, addressless worker that projects Epicenter data
+  into another store (markdown, sqlite). Matter is the one surviving user.
 - **`attach*` vs `create*`**: `attach*` are side-effectful primitives that register
   listeners at call time; `create*` are pure construction.
 
-## Transitional root-Yjs app composition
+## App composition
 
 - **`create<App>`**: the isomorphic doc factory for an app.
 - **`open<App>Browser` / `open<App>Extension` / tauri**: environment factories.
 - **`#platform/*`**: the build-time platform DI seam for multi-platform (Tauri) apps.
-- **`session`**: the singleton holding the signed-in workspace lifecycle.
-- **deviceConfig vs workspace KV**: per-device settings (global shortcuts, machine
-  collisions) versus synced settings (local shortcuts). The asymmetry is deliberate.
+- **`session`**: the singleton holding the signed-in Epicenter lifecycle.
+- **deviceConfig vs synced values**: per-device settings (global shortcuts,
+  machine collisions) versus synced settings (local shortcuts). The asymmetry is
+  deliberate.
 - **Vault**: the designated, not-yet-built home for the one encryption that
-  survives ADR-0004: an explicitly encrypted, shared workspace for secrets only
-  (blind relay, Argon2-derived key). Its primitives were removed with the
-  encryption layer; it returns minimally if a secrets path is built. Distinct
-  from the Matter vault (a folder of Markdown).
-
-## CLI and watcher
-
-- **Epicenter root**: a directory whose `epicenter.config.ts` declares one mount.
-  Discovery walks up to the nearest one. One root, one watcher.
-- **Watcher**: the long-lived foreground process started by `epicenter up`.
-  It opens the root's mount, owns the lease, joins sync when signed in, and keeps
-  materializers alive. It is not a callable action server. Internal code still
-  uses `daemon` names (`DaemonMetadata`, `claimDaemonLease`) for this process.
-- **Watcher lifecycle commands**: `up`, `down`, `status`, and `logs`. They use
-  metadata, pid liveness, logs, and OS signals. No Unix socket or daemon action
-  client exists.
-- **Library script**: a `bun ./script.ts` that reads materialized SQLite or
-  Markdown directly. Generic off-process writes are deliberately absent; real
-  write workflows should earn an app-specific command or in-process script.
+  survives ADR-0004: an explicitly encrypted store for secrets only (blind
+  relay, Argon2-derived key). Its primitives were removed with the encryption
+  layer, and `@epicenter/encryption` itself is now deleted; a secrets path
+  rebuilds from scratch. Distinct from the Matter vault (a folder of Markdown).
