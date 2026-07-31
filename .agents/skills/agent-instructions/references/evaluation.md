@@ -9,6 +9,7 @@ Load this when tuning description routing, comparing skill versions, diagnosing 
 - [Prompt Set](#prompt-set)
 - [Baseline](#baseline)
 - [Assertions](#assertions)
+- [Run The Harness](#run-the-harness)
 - [Output Quality Eval](#output-quality-eval)
 - [Skill Content Checklist](#skill-content-checklist)
 - [Script Requirements](#script-requirements)
@@ -72,6 +73,80 @@ Use assertions only when they can be checked with evidence:
 - Mechanical assertion: a script or command can verify the result.
 
 Avoid brittle phrase matching. Assertions should check outcomes, not exact wording.
+
+## Run The Harness
+
+`scripts/run-trigger-eval.ts` runs a stored corpus of should-trigger and
+near-miss prompts. The corpus lives at `evals/routing.json` and currently covers
+the two boundaries where a wrong pick costs the most: the review/simplification
+cluster, where several skills legitimately overlap, and the
+consultation/delegation/handoff cluster, where the wrong choice burns a whole
+session. Each case carries a prompt, the anchor phrases that prompt contains,
+the skill that should own it (`null` for a near miss), and the skills that must
+not answer.
+
+```bash
+bun run agent-instructions/scripts/run-trigger-eval.ts
+```
+
+The default pass is offline and free. It reports four conditions per anchor:
+nobody claims it, several skills claim it, the expected owner carries no hook
+for it, or a forbidden skill claims it.
+
+**That pass measures descriptions, not routing.** A description can carry a
+near-miss clause no substring scan can weigh, and a model can route correctly on
+intent with zero lexical overlap. Both happen in this library. Use the offline
+pass as a smoke test on description coverage, and never quote it as evidence
+that routing works.
+
+To measure routing, spend the quota:
+
+```bash
+bun run agent-instructions/scripts/run-trigger-eval.ts --live
+```
+
+`--live` spawns the Claude CLI once per case with the Skill tool as its only
+tool, tells it to load the skill it would use and stop, and records what it
+actually loaded. That is a real model decision over the real descriptions, and
+it is still a proxy: a session restricted to one tool and told not to work is
+not the session a skill gets selected in for real. It needs an authenticated
+CLI and is opt-in for that reason; the test suite never invokes it.
+
+Every live run is bounded. `--timeout-ms` kills one hung probe and records it as
+a timeout rather than a routing failure, `--budget-ms` (default 15 minutes) ends
+the run and exits non-zero with the count of cases that never ran, and `--limit`
+reports what it dropped. A missing `claude` on PATH is a usage error, not a
+silent skip.
+
+`--live` drives the Claude CLI, so it can only measure Claude-routed cases. A
+case carrying `"router": "codex"` is reported as `NOT MEASURED` and left out of
+the pass count. `consult-claude` and `delegate-claude` are written for a Codex
+session in their own descriptions, so a Claude probe answering them picks a
+neighbour every time; that is a category error in the measurement, not a defect
+in the description. Measuring those needs a Codex-side probe that does not exist
+yet. Do not edit a description on the strength of a probe that could not have
+routed to it.
+
+Routing varies between runs, so re-run rather than trusting one pass, as
+[Prompt Set](#prompt-set) says. `--runs <n>` does that per case and reports a
+pass rate, marking a case that passes some runs and fails others as `flaky`
+instead of letting the last run decide. For a model or effort sweep, run one
+cell per file and diff them:
+
+```bash
+bun run agent-instructions/scripts/run-trigger-eval.ts --live \
+  --model claude-opus-5 --effort high --out run-opus5-high.json
+```
+
+The result file records the model, effort, runs per case, whether the budget was
+exhausted, and which cases went unmeasured, so a stale or partial file cannot be
+mistaken for a clean one. Other flags: `--case <id>` to run one case, `--strict`
+to turn the offline pass into a gate, `--json` for machine reading.
+
+Extend the corpus when a routing bug shows up in real use. A case is only valid
+when each anchor appears verbatim in its prompt and every named skill exists;
+`bun test scripts/run-trigger-eval.test.ts` enforces both, so a renamed skill
+cannot leave a case silently measuring nothing.
 
 ## Output Quality Eval
 

@@ -231,9 +231,9 @@ The `this.method()` vs direct-call decision depends on which zone the function l
 
 When a helper needs to be in zone 3, its JSDoc won't be visible to consumers; that's correct, because it's a private implementation detail. Only zone 4 methods need consumer-facing JSDoc.
 
-See [Closures Are Better Privacy Than Keywords](../../docs/articles/closures-are-better-privacy-than-keywords.md) for the full factory function anatomy.
+See [Closures Are Better Privacy Than Keywords](../../../docs/articles/closures-are-better-privacy-than-keywords.md) for the full factory function anatomy.
 
 ## References
 
-- [docs/articles/method-shorthand-jsdoc-preservation.md](../../docs/articles/method-shorthand-jsdoc-preservation.md) - Same content as article
-- [docs/articles/closures-are-better-privacy-than-keywords.md](../../docs/articles/closures-are-better-privacy-than-keywords.md) - Factory function anatomy and zone system
+- [docs/articles/method-shorthand-jsdoc-preservation.md](../../../docs/articles/method-shorthand-jsdoc-preservation.md) - Same content as article
+- [docs/articles/closures-are-better-privacy-than-keywords.md](../../../docs/articles/closures-are-better-privacy-than-keywords.md) - Factory function anatomy and zone system
