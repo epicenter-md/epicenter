@@ -441,196 +441,29 @@ must reject unknown physical formats and a local replica must remember its
 principal attachment. It is not an application-facing catalog and does not
 make the store portable SQL.
 
-The logical facts feed does not freeze one physical state relation. Before the
-replica and authority format break, benchmark two independent physical-layout
-axes for each owner at the million-address envelope:
+The physical layout question this section once opened is closed.
+[ADR-0178](../docs/adr/0178-row-facts-and-value-facts-are-separate-relations-keyed-by-structured-coordinates.md)
+is Accepted and decided both axes on semantic grounds rather than measurement:
+facts live in separate `row_facts` and `value_facts` relations keyed by inline
+structured coordinates, in both the replica and the authority. A single relation
+could not express the two kinds' different laws without sentinels and CHECK
+constraints, and a flat `qualified_key` left the coordinates unreadable to the
+SQL a trusted inspection host needs. Both schemas implement that shape today.
 
-```txt
-relation layout
-  one checked facts table
-    one sequence index and direct global uniqueness
-    address-kind checks and a private missing-row representation
+No layout benchmark gates this program. The four-candidate matrix compared
+layouts that are no longer candidates, so the instrument that measured it is
+deleted. The 2026-07-21 Bun/native artifacts remain under
+`docs/benchmarks/scalar-facts-layout/` as history; that run established only
+that its own latency estimator was inadequate, and its one storage finding
+favored a normalized coordinate layout ADR-0178 rejected on other grounds.
 
-  separate row_facts and value_facts tables
-    no mixed status, payload, or row-ID sentinels
-    ordered UNION over two sequence indexes
-
-coordinate layout
-  inline structured address coordinates
-
-  normalized coordinates
-    dictionary-encode repeated kind, namespace, and local-key prefixes
-```
-
-Run all four combinations. A failed scan, install, reopen, integrity, witness,
-query-plan, or constraint proof invalidates the evidence cell. The maintained
-benchmark contract at `scripts/benchmarks/scalar-facts-layout/README.md` owns the
-versioned fixtures, measurement method, provisional performance and storage
-gates, and machine-readable evidence schema.
-
-One evidence cell is identified by owner, runtime, profile, candidate, and
-repetition. Its outcome is `passed`, `failed`, `unsupported`, or
-`not-admitted`; an expected cell with no retained artifact is missing.
-`not-admitted` is valid only for a conditional capacity profile after refusal
-and recovery proof; it never proves capacity and cannot satisfy the physical
-mobile floor. The overall classifier reports only `invalid`, `incomplete`,
-`provisional`, or `ready-for-ADR-review`. Per-cell outcomes are not classifier
-statuses.
-
-| Overall status         | Fail-closed transition                                                                                                                                                                                                                                                                     |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `invalid`              | A retained artifact fails schema, provenance, fixture, method, or identity validation; two artifacts claim one cell with conflicting content; any expected cell is `failed`; or `not-admitted` is used outside an eligible conditional profile or without refusal-and-recovery proof.                                         |
-| `incomplete`           | No invalid condition exists, but an expected cell is missing or a mandatory proof is `unsupported`.                                                                                                                                                                                       |
-| `provisional`          | The declared matrix is complete and valid, but it is a pre-pilot, pilot, Bun-only, confirmed-facts-only, or otherwise partial scope rather than the final mandatory owner, runtime, workload, and profile matrix.                                                                          |
-| `ready-for-ADR-review` | The pilot-frozen final method and complete mandatory matrix are present. Every mandatory cell passes, except that an eligible conditional browser normal-profile cell may be `not-admitted` after its refusal-and-recovery proof. Every physical mobile floor cell passes, and no required proof is missing or unsupported.         |
-
-The classifier applies those rows in order. An earlier row always wins, so a
-passing subset cannot hide invalid, missing, failed, or unsupported evidence.
-
-The classifier never returns a candidate ID, ranking, selection, tie-break, or
-recommendation. A Bun-only or confirmed-facts-only matrix remains provisional
-even when every local cell passes. Complete replica evidence requires native
-SQLite and browser SQLite/OPFS. Complete authority evidence requires Bun SQLite
-and Cloudflare Durable Object SQLite, including the platform measurements that
-each runtime exposes. When the evidence becomes ready for review, an ADR chooses
-one layout per owner. Replica and authority may choose different layouts. The
-implementation then deletes losing layouts instead of retaining compatibility
-readers. The authority transaction owns global sequence allocation under every
-layout.
-
-Browser evidence has two non-substitutable layers. Automated Chromium and
-Playwright WebKit are required pre-physical browser-engine evidence for the
-SQLite/OPFS workflow and its injected failures. They do not satisfy physical
-browser qualification, and Playwright WebKit does not impersonate Safari. A
-clean physical iOS Safari origin and a clean physical Android Chrome origin must
-each pass the 250,000-final-present-address, 128 MiB mobile floor. The
-1,000,000-address, 512 MiB normal profile runs on each browser where measured
-storage availability admits it; an eligible `not-admitted` result preserves the
-committed prefix and durable progress but proves no capacity.
-
-The 24-character lowercase row-ID grammar remains a permanent storage invariant;
-no private sentinel or nullable column escapes into protocol or public types.
-The fold distinguishes terminal row deletion from nonterminal value unset
-through the typed fact shape rather than relying on physical coincidence.
-
-### Local layout evidence checkpoint
-
-The 2026-07-21 Bun/native full run from the exact archived historical source
-exercised all four layouts for both owners across five paired seeds. Its legacy
-fixture held one million current facts and approximately 512 MiB of initial
-payload; it did not use ADR-0161's exact final-present
-scalar-fields-and-values proxy. All 40 cells passed the constraint, scan,
-install, semantic-hash, integrity, reopen, and cleanup proofs. Normalized
-coordinates used about 631 MiB of live SQLite pages versus about 782 to 788 MiB
-for inline coordinates. This is provisional storage evidence for that fixture.
-It does not select a relation layout or establish browser or Cloudflare costs.
-
-The retained schema-v3 report records the resolved configuration, fixture DDL
-hash, raw timing samples, query plans, and environment (Bun 1.3.1, SQLite
-3.51.0, Apple M4 Max, Darwin kernel 25.5.0). Its uncompressed SHA-256 is
-`a97bf03f8f4d659dc88bed21d076c215e81d3ea65e5b65989c1449ceabd102c5`;
-the durable compressed artifact, exact archived source, provenance manifest,
-and reproduction notes live under `docs/benchmarks/scalar-facts-layout/`. The
-schema-v3 report did not embed the source identity, so the manifest labels that
-binding as attested and preserves the full historical pre-rewrite identity only
-as informational provenance.
-
-The run establishes no latency ranking. Several critical per-repetition p95
-values were the maximum of only 16 samples; warm reopen had one sample; and
-sub-millisecond reads were timed one call at a time without explicit warmup.
-Unbalanced candidate position, database-build variation, process drift,
-checkpoint behavior, and operating-system scheduling may also contribute. The
-run therefore establishes that its latency estimator is inadequate, not that
-the physical layouts are stable or unstable. Do not combine those timings with
-a later run or use them to prune the four-layout matrix.
-
-Before another evidence run, execute one measurement-method pilot. The pilot
-can report only an evidence status and cannot select a layout. Predeclare and
-enforce all of the following:
-
-- Keep all four candidates and both owners. Use four fresh paired seeds as the
-  independent outer units. For one seed at a time, construct and retain one
-  full-envelope database per owner and candidate, then delete all eight only
-  after that seed's pilot blocks and raw checkpoint commit. Blocks nested inside
-  one database build measure temporal repeatability; they are never treated as
-  independent seed evidence.
-- Before timing, make the modular trace the only workload source and bind
-  representative generated facts to the private V1 parser and encoded-byte
-  oracle. Keep trace generation, framing, and incremental hashing portable to
-  browser runtimes; Bun owns only the local runner and SQLite lifecycle. Define
-  and hash separate owner-specific auxiliary traces for pending intents, sealed
-  work, parked rows, row-document liveness, and authority retry state. The
-  physical coordinate decision applies to every address-bearing owner table,
-  not only confirmed facts, so the evidence cannot become ready for ADR review
-  while those auxiliary states are absent from the workload.
-- Measure acquisition once per outer unit and candidate on a fresh empty
-  database as total elapsed time and throughput. Measure a complete fresh feed
-  the same way after construction. These macro observations remain seed-level;
-  they are not page-p95 or block-pseudo-replicates.
-- For read-only point, traversal, overlay, resume-feed, fold, and exact-retry
-  work, interleave the same metric across candidates. Inside every seed use
-  three complete cycles of the four Williams sequences `A B D C`, `B C A D`,
-  `C D B A`, `D A C B`. Record both the seed-specific layout-to-letter mapping
-  and sequence order. Order sequences in end-to-start self-transition pairs
-  (`A B D C` then `C D B A`; `B C A D` then `D A C B`), balance the pair order
-  across seeds, and record a fixed idle plus connection-reopen boundary between
-  pairs and cycles. Model boundary position explicitly; connection reopen is
-  not claimed to clear the operating-system cache or thermal history.
-- Run a separate balanced calibration pass before any timed block. Record every
-  calibration trial and use disjoint deterministic probes. For each owner and
-  metric, choose the smallest power-of-two operation count for which every
-  candidate takes at least 20 ms, then freeze the common count. Immediately
-  before each timed candidate block, run three untimed warmup batches with a
-  second disjoint probe set. Retain every timed block and delete no outlier.
-- Measure warm reopen through at least 20 close/open observations per seed and
-  candidate, interleaved in complete balanced candidate sequences. Reduce the
-  balanced series to one seed-level estimator; do not treat serial reopens as
-  independent units or call a single observation p50, p95, or p99.
-- Treat monotonic install, row-tombstone document cleanup, and authority
-  submission settlement as mutating checkpoint-tail experiments, not reads.
-  For every seed and candidate, reconstruct a byte-equivalent logical pre-state
-  from the same canonical trace outside timing, run `ANALYZE`, checkpoint and
-  truncate the WAL, close, and reopen. Run three untimed disjoint warmup
-  transactions, restore the pre-state again, then time at least 400 sequential
-  protocol-sized transactions under production autocheckpoint behavior. Record
-  checkpoint boundaries and report the transaction p50, p95, and p99 plus total
-  throughput. A rollback, reused mutated database, or file clone with undeclared
-  copy-on-write behavior is not an admissible reset.
-- Preserve seed, database-build, cycle, sequence, boundary predecessor,
-  position, candidate, owner,
-  metric, calibration, warmup, block, and checkpoint identity in the raw output.
-  Summarize paired log ratios without pooling away the seed hierarchy. Keep
-  block dispersion, position, carryover, and checkpoint effects as diagnostics,
-  not independent experimental units or automatic refusal statistics.
-- Before retaining eight full-envelope databases, preflight measured live-page
-  bytes plus bounded WAL and temporary-copy headroom with a 25% safety margin.
-  Record the required and available bytes and the wall-time estimate. Abort
-  before a seed begins when the bound fails. Resume only at a committed seed
-  boundary from the retained raw manifest; never resume a partial timing block.
-- Predeclare a maximum of 64 measured read blocks per seed, candidate, owner,
-  and metric and an eight-hour estimated wall-time cap for one runtime's pilot
-  or final run. The pilot freezes final seed and block counts before final data
-  collection. Never add final observations after inspecting a final interval.
-- Use the pilot only to prove minimum 20 ms timed blocks, removal of cold-first
-  inflation, balanced position and carryover, deterministic state reset, and a
-  feasible final sample size. Pilot calibration, warmup, and timed blocks are
-  excluded from the independent final decision run.
-
-The final Bun/native run uses the seed and block counts frozen by the pilot. It
-retains every raw observation and reports owner-specific measurements without
-ranking candidates or converting pairwise contrasts into a selection. No
-confidence interval, materiality band, score, or fallback tie-break promotes or
-drops a candidate. Missing, unstable, or unsupported evidence remains visible
-in the overall status. Browser SQLite/OPFS and Cloudflare Durable Object SQLite
-evidence remain mandatory before the classifier can report
-`ready-for-ADR-review`. A later ADR reviews the complete evidence and chooses
-the owner formats.
+Capacity is a separate question and keeps its own gate in Wave 5: the
+1,000,000-address, 512 MiB representative envelope and the physical mobile
+floor measure whether the chosen shape holds, not which shape to choose.
 
 Each store's metadata is one explicit single-row table with named columns, not
 `PRAGMA user_version` (unsupported on Durable Object SQLite) and not key-value
-rows. The structured representation must be measured at the one-million-address
-conformance envelope. Do not carry forward the earlier byte estimate for a flat
-qualified key or treat dictionary encoding as an unmeasured afterthought.
+rows.
 
 Row deletion changes the latest state to a terminal tombstone and removes the
 payload and row-document bytes. Later row-present intents for that address
@@ -1080,12 +913,9 @@ biome lint/format are clean.
 
 #### Wave 2b: local replica format
 
-- Benchmark all four combinations of relation layout (one checked facts table
-  or separate row and value fact tables) and coordinate layout (inline or
-  normalized) against both replica and authority workloads. The benchmark only
-  classifies evidence. After the required native/browser or Bun/Cloudflare
-  evidence is ready for review, an ADR chooses one layout per owner. It chooses
-  the same layout only if the evidence earns the shared shape.
+- Store facts in separate `row_facts` and `value_facts` relations keyed by
+  inline structured coordinates, per ADR-0178. Done; both the replica and the
+  authority schemas implement it.
 - Replace flat scalar and document address columns together. The physical-format
   break carries structured identity through confirmed facts, pending intents,
   sealed submission state, parked diagnostics, and document liveness joins.
