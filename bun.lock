@@ -933,20 +933,9 @@
     "packages/sync": {
       "name": "@epicenter/sync",
       "version": "0.3.0",
-      "dependencies": {
-        "@epicenter/identity": "workspace:*",
-        "lib0": "catalog:",
-        "wellcrafted": "catalog:",
-      },
       "devDependencies": {
         "@types/bun": "catalog:",
-        "@y/y": "14.0.0-rc.24",
         "typescript": "catalog:",
-        "yjs": "catalog:",
-      },
-      "peerDependencies": {
-        "@y/y": "14.0.0-rc.24",
-        "yjs": "catalog:",
       },
     },
     "packages/ui": {
