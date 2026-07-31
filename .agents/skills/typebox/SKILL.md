@@ -65,5 +65,5 @@ and branded domain values.
 
 ## References
 
-- [TypeBox is a Beast](../../docs/articles/typebox-is-a-beast.md)
-- [The Schema Wars Just Shifted](../../docs/articles/20260429T120000-typebox-standard-schema-pivot.md)
+- [TypeBox is a Beast](../../../docs/articles/typebox-is-a-beast.md)
+- [The Schema Wars Just Shifted](../../../docs/articles/20260429T120000-typebox-standard-schema-pivot.md)
