@@ -25,6 +25,7 @@ import {
 import { type Context, Hono, type Next } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
 import { getCookie, setCookie } from 'hono/cookie';
+import { type Application, listApplications } from './applications.ts';
 import type { DesktopAuthAuthority } from './desktop-auth-authority.ts';
 import { createDesktopAuthorityFetch } from './desktop-authority-fetch.ts';
 import {
@@ -37,6 +38,7 @@ import {
 	ACCOUNT_PROFILE_ROUTE,
 	ACCOUNT_SIGN_IN_ROUTE,
 	ACCOUNT_SIGN_OUT_ROUTE,
+	APPLICATIONS_ROUTE,
 	BOOTSTRAP_ROUTE,
 	LOCAL_BLOB_REMOTE_ROUTES,
 	LOCAL_BLOB_ROUTE,
@@ -56,6 +58,10 @@ export type HomeServerEvent = {
 export type HomeSessionResponse = {
 	tools: AgentToolDefinition[];
 	snapshot: HomeSessionSnapshot;
+};
+
+export type ApplicationsResponse = {
+	apps: Application[];
 };
 
 export type HomeServerOptions = {
@@ -302,7 +308,7 @@ export function createHomeServer({
 	});
 	app.get('/apps/*', (c) => c.text('Not Found', 404));
 
-	app.use('/api/apps', requireBrowserSession);
+	app.use(APPLICATIONS_ROUTE.pattern, requireBrowserSession);
 	app.use('/api/home/*', requireBrowserSession);
 	app.use(DESKTOP_EPICENTER_ROUTE, requireBrowserSession);
 	// The observation carrier is guarded exactly like the operations route it
@@ -327,10 +333,13 @@ export function createHomeServer({
 		} satisfies HomeSessionResponse),
 	);
 
-	app.get('/api/apps', (c) =>
+	// What Home lists as launchable: compiled applications plus the members of
+	// the selected catalog generation, with no distinction between them crossing
+	// the wire (ADR-0189).
+	app.get(APPLICATIONS_ROUTE.pattern, (c) =>
 		c.json({
-			apps: appCatalog.apps.map(({ id, title }) => ({ id, title })),
-		}),
+			apps: listApplications(appCatalog),
+		} satisfies ApplicationsResponse),
 	);
 
 	app.put(LOCAL_BLOB_ROUTE.pattern, async (c) => {

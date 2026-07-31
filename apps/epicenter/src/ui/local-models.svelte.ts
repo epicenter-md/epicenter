@@ -26,7 +26,7 @@
  * anyway. Off Tauri the store stays inert and reports `available: false` rather
  * than throwing at import.
  */
-import { Channel, isTauri } from '@tauri-apps/api/core';
+import { Channel } from '@tauri-apps/api/core';
 import { SvelteMap } from 'svelte/reactivity';
 import {
 	type ActiveModel,
@@ -35,6 +35,7 @@ import {
 	type ModelInfo,
 	type UnloadPolicy,
 } from './bindings.gen';
+import { isDesktopHost } from './runtime.ts';
 
 export type ModelTransferState =
 	| { type: 'not-downloaded' }
@@ -61,7 +62,7 @@ function createLocalModels() {
 	/** The last failure worth showing, cleared by the next successful action. */
 	let error = $state.raw<string | null>(null);
 
-	const available = isTauri();
+	const available = isDesktopHost();
 
 	async function refresh() {
 		if (!available) return;
