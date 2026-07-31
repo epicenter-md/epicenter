@@ -1,0 +1,124 @@
+{
+	"about": "Trigger corpus for run-trigger-eval.ts. Two boundaries: the review/simplification cluster, where several skills legitimately overlap, and the consultation/delegation/handoff cluster, where picking the wrong one wastes a whole session. Every `anchor` must appear verbatim in its `prompt`; the runner rejects the corpus otherwise. `router` names the agent whose routing a case is about and defaults to `claude`; `--live` drives the Claude CLI, so it reports `codex` cases as not measured rather than failing them.",
+	"cases": [
+		{
+			"id": "review-second-pass",
+			"cluster": "review",
+			"prompt": "I just finished wiring the new blob store across four files. Do a second pass over what you changed before you reply.",
+			"anchors": ["second pass"],
+			"expect": "post-implementation-review",
+			"forbid": ["collapse-pass", "first-read-review"],
+			"why": "The hub owns the after-implementation sweep. A collapse pass is a different job with a different cadence."
+		},
+		{
+			"id": "review-collapse-pass",
+			"cluster": "review",
+			"prompt": "Run a collapse pass over packages/workspace and tell me which indirection can go.",
+			"anchors": ["collapse pass"],
+			"expect": "collapse-pass",
+			"forbid": ["post-implementation-review", "refactoring"],
+			"why": "Named phrase with a single owner. If the hub answers this, the hub's description is too broad."
+		},
+		{
+			"id": "review-nested-ifs",
+			"cluster": "review",
+			"prompt": "These nested ifs are unreadable. Can you simplify this handler?",
+			"anchors": ["nested ifs", "simplify this"],
+			"expect": "control-flow",
+			"forbid": [],
+			"why": "Two anchors on purpose. 'nested ifs' is control-flow's real hook; 'simplify this' is a phrase control-flow explicitly routes away, so the lexical layer should report it as disclaimed rather than owned."
+		},
+		{
+			"id": "review-asymmetric-win",
+			"cluster": "review",
+			"prompt": "Does the migration UI need to be pixel perfect, or is there an asymmetric win in dropping that promise?",
+			"anchors": ["asymmetric win", "pixel perfect"],
+			"expect": "asymmetric-wins",
+			"forbid": ["radical-options"],
+			"why": "The move owns its phrase. radical-options mentions asymmetric deletions in its body, which is the kind of near-neighbour that over-triggers."
+		},
+		{
+			"id": "review-disproportionate-complexity",
+			"cluster": "review",
+			"prompt": "Find the one change here that would delete disproportionate complexity for a small refusal.",
+			"anchors": ["delete disproportionate complexity"],
+			"expect": "asymmetric-wins",
+			"forbid": [],
+			"why": "Known genuine ambiguity: asymmetric-wins and greenfield-clean-breaks both carry this phrase. Recorded so a description edit that resolves it is visible."
+		},
+		{
+			"id": "review-one-sentence",
+			"cluster": "review",
+			"prompt": "What does the mount surface actually do? Give it to me in one sentence.",
+			"anchors": ["in one sentence", "actually do"],
+			"expect": "one-sentence-test",
+			"forbid": ["first-read-review"],
+			"why": "The move owns both phrases and should win over the readability lens."
+		},
+		{
+			"id": "review-plain-comprehension-near-miss",
+			"cluster": "review",
+			"prompt": "What does this regex actually do? Just explain it, no audit needed.",
+			"anchors": ["actually do"],
+			"expect": null,
+			"forbid": ["one-sentence-test"],
+			"why": "Near miss. one-sentence-test's near-miss clause says to answer a plain comprehension question directly, but that clause is prose the lexical layer cannot weigh, so this case is expected to look like an over-claim on the deterministic pass and resolve only under --live."
+		},
+		{
+			"id": "delegate-implementation",
+			"cluster": "delegation",
+			"prompt": "The direction is settled. Have Claude execute the implementation across those four packages while I step out.",
+			"anchors": ["have Claude execute"],
+			"expect": "delegate-claude",
+			"forbid": ["consult-claude", "handoff"],
+			"router": "codex",
+			"why": "Authorized implementation, not a decision and not a copy-paste artifact. delegate-claude is written for a Codex session ('Launch and supervise one durable Claude Code implementation session from Codex'), so only a Codex router can answer it; a Claude probe picked handoff 3/3."
+		},
+		{
+			"id": "consult-independent-investigation",
+			"cluster": "delegation",
+			"prompt": "Before we commit to this ownership boundary, consult Claude for an independent investigation.",
+			"anchors": ["consult Claude", "independent investigation"],
+			"expect": "consult-claude",
+			"forbid": ["delegate-claude", "fresh-context-review"],
+			"router": "codex",
+			"why": "Read-only adversarial memo on an unsettled decision, the opposite end of the same axis as delegate-claude. consult-claude is written for a Codex session ('a memo on Codex's grounded synthesis'), so only a Codex router can answer it; a Claude probe picked fresh-context-review 2/3 and nothing 1/3."
+		},
+		{
+			"id": "handoff-paste-prompt",
+			"cluster": "delegation",
+			"prompt": "Write me something I can copy and paste into a fresh Claude Code session on my laptop to continue this.",
+			"anchors": ["copy and paste into"],
+			"expect": "handoff",
+			"forbid": ["delegate-claude", "consult-claude"],
+			"why": "The user wants an artifact, not a launched worker. This is the boundary handoff and delegate-claude most often blur."
+		},
+		{
+			"id": "delegation-hand-off-near-miss",
+			"cluster": "delegation",
+			"prompt": "Hand off the deploy checklist to the on-call engineer and close the incident.",
+			"anchors": ["hand off"],
+			"expect": null,
+			"forbid": ["delegate-claude", "handoff"],
+			"why": "Near miss on an everyday phrase. 'hand off' is ordinary English; delegate-claude carries it inside 'hand off the implementation'."
+		},
+		{
+			"id": "fresh-eyes-diff",
+			"cluster": "delegation",
+			"prompt": "Give me fresh eyes on this diff, I have been staring at the state machine too long.",
+			"anchors": ["fresh eyes", "state machine"],
+			"expect": "fresh-context-review",
+			"forbid": ["consult-claude", "post-implementation-review"],
+			"why": "Independent review of a concrete diff, not a product decision and not the ordinary end-of-work sweep."
+		},
+		{
+			"id": "agent-goal-line",
+			"cluster": "delegation",
+			"prompt": "Write a /goal line for this long-running Codex work with a clear completion condition.",
+			"anchors": ["/goal", "completion condition"],
+			"expect": "agent-goal",
+			"forbid": ["handoff", "delegate-claude"],
+			"why": "A goal line is a third artifact next to the handoff prompt and the launched session."
+		}
+	]
+}
