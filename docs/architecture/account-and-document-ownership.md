@@ -122,4 +122,3 @@ or persisted format, and the destination does not preserve a fallback reader.
 - Proposed ADR-0145 assigns both planes to one account authority with one
   route-bound socket per open row document.
 - Proposed ADR-0146 selects Yjs 14-only providers and update logs.
-- `packages/workspace/SYNC_ARCHITECTURE.md` describes the runtime lifecycle.

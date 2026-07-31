@@ -37,25 +37,6 @@ In this lane today: `tab-manager`, `honeycrisp`, `whispering`, `vocab`,
 `skills` (its Lens lives in `packages/skills/src/workspace.ts`), and the
 `epicenter` host (`apps/epicenter/src/workspace.ts`).
 
-## The transitional root-Yjs lane
-
-`apps/wiki` is the last app on the root-Yjs record path
-(`apps/wiki/src/lib/workspace/index.ts`):
-
-```txt
-defineWorkspace()
-  the app's shared isomorphic definition
-
-createWorkspace()
-satisfiesWorkspace()
-  lower-level primitives for internals, tests, and older ports
-```
-
-Its definition-owned `create`/`connect`, `defineKv`, `.docs`, and `_v` APIs
-remain compatibility surfaces in `@epicenter/workspace` until it migrates. Do
-not copy them into a Lens app, and do not mix the two record authorities inside
-one app.
-
 ## Layout
 
 The inert contract is the package root export, and runtime composition sits
@@ -70,7 +51,7 @@ apps/<app>/
 └── package.json      "exports": { ".": "./src/lib/workspace/index.ts" }
 ```
 
-`tab-manager`, `honeycrisp`, `whispering`, and `wiki` use that nesting. `vocab`
+`tab-manager`, `honeycrisp`, and `whispering` use that nesting. `vocab`
 keeps the same two files at the package root instead
 (`apps/vocab/vocab.ts`, `apps/vocab/vocab.browser.ts`). Follow the existing
 package shape; the boundary is the same either way, and forking the contract
@@ -79,10 +60,6 @@ file forks sync compatibility with peers running the canonical Lens.
 Multi-platform apps put runtime-specific implementations behind `#platform/*`
 build-time subpath imports (see `honeycrisp`'s `#platform/auth`, resolved to
 `apps/honeycrisp/src/lib/platform/auth.tauri.ts` or `auth.browser.ts`).
-
-No app exports a `./mount` or ships a `mount.ts`. Daemon mounts are declared in
-an `epicenter.config.ts` with `defineMount` from `@epicenter/workspace/daemon`
-and run by the CLI watcher; see `packages/cli/README.md`.
 
 ## Browser replicas
 

@@ -120,10 +120,8 @@ the room route and old provider family rather than maintaining dual wires.
 
 ## Canonical references
 
-- [`packages/workspace/README.md`](../../packages/workspace/README.md): workspace
-  API and runtime ownership.
-- [`packages/workspace/SYNC_ARCHITECTURE.md`](../../packages/workspace/SYNC_ARCHITECTURE.md):
-  document lifecycle and wire boundary.
+- [`packages/data/README.md`](../../packages/data/README.md): the Epicenter
+  replica, Lens binding, and runtime ownership.
 - [`docs/adr/0144-scalar-rows-and-row-documents-synchronize-through-independent-client-planes.md`](../adr/0144-scalar-rows-and-row-documents-synchronize-through-independent-client-planes.md):
   independent client planes.
 - Proposed ADR-0145: workspace authority ownership. Its socket topology is
