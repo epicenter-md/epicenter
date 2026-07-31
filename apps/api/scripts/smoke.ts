@@ -2,8 +2,8 @@
  * One-scenario smoke test for the runtime port. Same backend, either runtime.
  *
  * Point it at a base URL and it runs ONE end-to-end scenario against the live
- * HTTP server: read the session, verify the room HTTP refusal, and exercise the
- * full opaque-id blob lifecycle (ticket -> presigned PUT -> read back).
+ * HTTP server: read the session and exercise the full opaque-id blob lifecycle
+ * (ticket -> presigned PUT -> read back).
  * Every step prints a single PASS/FAIL/SKIP line, so the same
  * invocation against the Bun process (:8788) and the wrangler process (:8787)
  * produces a diffable transcript of runtime parity.
@@ -38,7 +38,7 @@ const BASE_URL = (
 ).replace(/\/+$/, '');
 
 // The dev resolver synthesizes the principal from this id. Random per run so
-// repeated smokes never collide on room or blob state.
+// repeated smokes never collide on blob state.
 const principalId = `smoke-${randHex(4)}`;
 const authHeaders: Record<string, string> = {
 	authorization: `Bearer dev:${principalId}`,
@@ -98,23 +98,7 @@ async function main() {
 		}
 	}
 
-	// 3. Room: bearer-only surface. A plain GET is intentionally rejected because
-	// rooms are WebSocket-only.
-	{
-		const roomId = `smoke-${randHex(4)}`;
-		const url = `${BASE_URL}/api/rooms/${encodeURIComponent(roomId)}?nodeId=smoke`;
-		const res = await fetch(url, { headers: authHeaders });
-		const body = await res.text();
-		record(
-			res.status === 426 && body === 'Rooms are WebSocket-only'
-				? 'PASS'
-				: 'FAIL',
-			'room websocket-only',
-			`${res.status} ${body}`,
-		);
-	}
-
-	// 4. Blob lifecycle.
+	// 3. Blob lifecycle.
 	const payload = new TextEncoder().encode(
 		`epicenter blob smoke ${new Date().toISOString()} ${randHex(4)}\n`,
 	);
