@@ -34,7 +34,7 @@ The OAuth endpoints Epicenter clients call (`OAUTH_ROUTES`) and the public first
 
 ### `@epicenter/constants/oauth-seed`
 
-`buildTrustedOAuthClients` / `projectTrustedOAuthClientToRow`: project the first-party clients (composed from `APPS`, `oauth-clients`, and `OAUTH_ROUTES`) into the Better Auth `oauth_client` rows. Shared by the server's auth plugin and the `apps/api` deploy seed script, neither of which can own it without a backwards dependency, so it stays on the floor beside its inputs.
+`buildTrustedOAuthClients` / `projectTrustedOAuthClientToRow`: project the first-party clients (composed from `APPS` and `oauth-clients`) into the Better Auth `oauth_client` rows. Shared by the server's auth plugin and the `apps/api` deploy seed script, neither of which can own it without a backwards dependency, so it stays on the floor beside its inputs.
 
 ### `@epicenter/constants/ai-providers`
 
