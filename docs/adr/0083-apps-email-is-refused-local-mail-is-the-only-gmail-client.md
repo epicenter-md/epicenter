@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-06-30
+- **Relates:** [ADR-0191](0191-the-epicenter-host-process-owns-the-mail-engine-and-its-sync-loop.md) (which native app this decision leaves as the surface: Epicenter, whose host opens the mail engine and serves Mail as a compiled application. When this record was written the native app was Local Mail's own Tauri shell; that shell is deleted, so nothing here should be read as promising a separately installable Local Mail), [ADR-0081](0081-per-upstream-oauth-concurrency-decides-mirror-topology.md) and [ADR-0082](0082-local-mail-syncs-by-push-free-history-list-polling.md) (the Local Mail this record defers to), [ADR-0188](0188-gmail-app-identity-belongs-to-the-distribution-and-no-epicenter-server-enters-the-gmail-path.md) (the device-only credential boundary that keeps the refused server-proxy shape refused)
 
 ## Context
 
