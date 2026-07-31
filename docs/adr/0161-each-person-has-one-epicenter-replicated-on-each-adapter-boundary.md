@@ -142,11 +142,15 @@ The proxy includes structured addresses, row fields, and value content. It
 excludes terminal row tombstones, reversible value absences, sequences, wire
 framing, SQLite pages, documents, blob digests, and raw blob bytes. The target is
 therefore representative present-state stress evidence, not a bound on total
-replica size or lifetime growth. The
-[maintained benchmark contract](../../scripts/benchmarks/scalar-facts-layout/README.md)
-owns the proxy encoding, fixture ratios, physical measurements, and outcome
-vocabulary; it reports current-fact count and current protocol-fact bytes
-separately.
+replica size or lifetime growth. The inclusion and exclusion list above is the
+proxy definition; evidence must report current-fact count and current
+protocol-fact bytes separately.
+
+**Note (2026-07-31):** the layout benchmark that formerly owned the proxy
+encoding, fixture ratios, and outcome vocabulary was deleted once ADR-0178
+settled both physical-layout axes on semantic grounds. Capacity evidence still
+needs an instrument; whoever builds it re-derives the encoding from the
+definition above rather than from the deleted harness.
 
 Browser capacity remains conditional. Physical iOS Safari and physical Android
 Chrome must complete a maintained floor of 250,000 final-present addresses and

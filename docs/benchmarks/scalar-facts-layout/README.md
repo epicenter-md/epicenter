@@ -32,8 +32,12 @@ That path no longer exists. The monolith was decision-disabled and removed once
 its in-tree schema had drifted past the shape this report records; git history
 keeps it. To re-run this measurement, run the archived
 `2026-07-21-bun-native-full-schema-v3.source.ts` above, which is the exact
-source behind these numbers. The maintained instrument for new evidence is
-`scripts/benchmarks/scalar-facts-layout/`.
+source behind these numbers.
+
+There is no maintained instrument for new evidence. The layout harness that
+replaced this monolith was itself deleted on 2026-07-31, once ADR-0178 settled
+both physical-layout axes on semantic grounds and made the four-candidate
+comparison moot. These artifacts remain as history only.
 
 Environment:
 
