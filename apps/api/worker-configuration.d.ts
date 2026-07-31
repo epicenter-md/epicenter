@@ -4,7 +4,7 @@
 declare namespace Cloudflare {
 	interface GlobalProps {
 		mainModule: typeof import('./worker/index');
-		durableNamespaces: 'Room' | 'AttachRelay' | 'EpicenterAuthority';
+		durableNamespaces: 'AttachRelay' | 'EpicenterAuthority';
 	}
 	interface Env {
 		HYPERDRIVE: Hyperdrive;
@@ -22,7 +22,6 @@ declare namespace Cloudflare {
 		BLOBS_S3_ENDPOINT: string;
 		BLOBS_S3_ACCESS_KEY_ID: string;
 		BLOBS_S3_SECRET_ACCESS_KEY: string;
-		ROOM: DurableObjectNamespace<import('./worker/index').Room>;
 		ATTACH_RELAY: DurableObjectNamespace<import('./worker/index').AttachRelay>;
 		EPICENTER_SYNC: DurableObjectNamespace<
 			import('./worker/index').EpicenterAuthority

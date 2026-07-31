@@ -47,9 +47,9 @@ import {
  * Per-connection identity Bun carries on `ws.data`, set at `server.upgrade` and
  * read back in the `websocket` handler. Discriminated by `role`: a host
  * registers under `(principalId, hostId)`; a client attaches under the full
- * endpoint quadruple. The `surface` tag lets {@link mergeBunWebSocketHandlers}
- * route this socket to the attach relay when it shares one `Bun.serve` with the
- * transport; it is a server-side dispatch discriminant, never a wire field.
+ * endpoint quadruple. The `surface` tag identifies sockets this transport owns
+ * on the one `Bun.serve` handler; it is a server-side dispatch discriminant,
+ * never a wire field.
  */
 export type AttachRelaySocketData = { surface: 'attach' } & AttachEndpoint;
 
