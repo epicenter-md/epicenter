@@ -105,17 +105,6 @@ test('GET /consent with a session serves the auth UI shell', async () => {
 	expect(await response.text()).toContain('Svelte auth shell');
 });
 
-test('GET /cli-callback serves a no-store auth UI shell', async () => {
-	const app = createAuthRouteApp();
-
-	const response = await app.request('/cli-callback?code=abc');
-
-	expect(response.status).toBe(200);
-	expect(response.headers.get('Cache-Control')).toBe('no-store, no-transform');
-	expect(response.headers.get('X-Frame-Options')).toBe('SAMEORIGIN');
-	expect(await response.text()).toContain('Svelte auth shell');
-});
-
 test('GET /auth/* still reaches the Better Auth catch-all', async () => {
 	const app = createAuthRouteApp();
 

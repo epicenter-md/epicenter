@@ -10,15 +10,14 @@ import { JWT_SIGNING_ALG } from './base-config.js';
  * Build the Better Auth plugins that define Epicenter's OAuth server boundary.
  *
  * Use this only from the API auth factory, where the request URL is known.
- * `apiBaseURL` plays two roles: it's the OAuth resource audience (clients
- * pass it as `resource`, and we accept tokens minted only for this audience,
- * preventing tokens from one resource server being replayed against another),
- * and it's the deployment input to `buildTrustedOAuthClients` so the
- * trusted-client-id set matches the clients the seeder will install.
+ * `apiBaseURL` is the OAuth resource audience: clients pass it as `resource`,
+ * and we accept tokens minted only for this audience, preventing tokens from
+ * one resource server being replayed against another. It also fixes the
+ * passkey Relying Party below.
  */
 export function authPlugins(apiBaseURL: string) {
 	const trustedOAuthClientIds = new Set(
-		buildTrustedOAuthClients(apiBaseURL).map((client) => client.clientId),
+		buildTrustedOAuthClients().map((client) => client.clientId),
 	);
 	// WebAuthn binds credentials to a Relying Party. Passkeys are only ever
 	// created and used on the hosted auth pages, which the API serves at its own

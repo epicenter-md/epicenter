@@ -43,7 +43,7 @@ const EXCLUDED_DIRS = new Set([
 // A quoted route literal for a path @epicenter/constants owns. `([^a-z]|$)`
 // keeps `/api/sessions-of-mine` style prefixes from matching.
 const HARDCODED_PATH =
-	/['"`]\/api\/(session|rooms|blobs|ai)([^a-z]|$)|['"`]\/auth\/(oauth2\/[a-z]+|cli-callback)/;
+	/['"`]\/api\/(session|rooms|blobs|ai)([^a-z]|$)|['"`]\/auth\/oauth2\/[a-z]+/;
 
 // The next two regexes test the full `path:line:content` record, exactly as
 // the workflow's `grep -v` filters did.
