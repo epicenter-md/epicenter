@@ -25,6 +25,42 @@ export type DesktopAuthBootstrap = {
 	networkEligible: boolean;
 };
 
+/** Where the Bun authority stamps the boot snapshot into a served document. */
+const BOOTSTRAP_ELEMENT_ID = 'epicenter-auth-bootstrap';
+
+/**
+ * Read this window's boot snapshot out of the document the host served, and
+ * take it out of the DOM.
+ *
+ * Every compiled application parses the same element, so the parse lives with
+ * the client that consumes it rather than being copied per application. The
+ * removal is the point of doing it once and eagerly: an identity snapshot has
+ * no business sitting in the DOM after boot, and nothing may read it a second
+ * time, because which replica a build opens is decided by which build the host
+ * served and never by what survives in its `<head>`.
+ *
+ * A missing or unparseable element throws. A build that calls this is one the
+ * desktop host serves, so the snapshot's absence is a broken host contract, not
+ * a state to degrade into.
+ */
+export function readDesktopAuthBootstrap(): DesktopAuthBootstrap {
+	const element = document.querySelector<HTMLScriptElement>(
+		`#${BOOTSTRAP_ELEMENT_ID}`,
+	);
+	if (!element) {
+		throw new Error('Epicenter did not provide the desktop auth bootstrap.');
+	}
+	try {
+		return JSON.parse(element.textContent ?? '') as DesktopAuthBootstrap;
+	} catch (cause) {
+		throw new Error('Epicenter provided an invalid desktop auth bootstrap.', {
+			cause,
+		});
+	} finally {
+		element.remove();
+	}
+}
+
 function createDesktopBroker({
 	brokerBaseURL,
 	fetch,
