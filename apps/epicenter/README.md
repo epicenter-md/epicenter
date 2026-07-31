@@ -6,6 +6,7 @@ Epicenter is the repository's native application host. It owns one Tauri runtime
 trusted SPA source                 Epicenter build output
 
 apps/whispering/src  -----------> dist/whispering
+apps/honeycrisp/src  -----------> dist/honeycrisp
 apps/epicenter/ui     -----------> dist/home
                                           |
                                           v
@@ -15,7 +16,12 @@ apps/epicenter/ui     -----------> dist/home
                               apps/epicenter/src-tauri
 ```
 
-Whispering is the first full product surface under this model. Its browser build remains independently deployable; its `tauri` build condition activates native implementations and uses `/apps/whispering` as its asset base.
+A compiled application is a `dist/<id>` build this release declares, served
+below `/apps/<id>/`. Whispering and Honeycrisp are the two. Each keeps its
+independently deployable browser build; the variant Epicenter serves is
+selected at build time by a resolve condition, and that condition is what
+decides the application opens the host-owned replica rather than one of its own
+(ADR-0190).
 
 ## Run locally
 
@@ -35,6 +41,7 @@ windows:
 
 ```bash
 open 'epicenter://surface/whispering'
+open 'epicenter://surface/honeycrisp'
 open 'epicenter://surface/home'
 ```
 
@@ -67,13 +74,13 @@ to activate the new catalog.
 ## Build and verify
 
 ```bash
-# Build Home, Whispering, and the Bun sidecar
+# Build Home, every compiled application, and the Bun sidecar
 bun run --cwd apps/epicenter build:desktop
 
 # Package the complete native application
 bun run --cwd apps/epicenter desktop:build
 
-# Typecheck Home plus both Whispering platform conditions
+# Typecheck Home plus every compiled application's platform conditions
 bun run --cwd apps/epicenter typecheck
 
 # Host, routing, sidecar, and surface tests

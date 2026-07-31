@@ -253,10 +253,9 @@ against `sveltejs/kit`; for the `{#await}` form see the `svelte` skill.
 
 ## Platform DI: the `#platform/*` seam
 
-Multi-host SPAs such as Whispering select browser-vs-Epicenter implementations
-at BUILD time via Node-standard `#platform/*` subpath imports. Epicenter owns
-the Tauri runtime; the SPA owns both implementation leaves. This is the
-canonical mechanism. It replaced the old
+Multi-host SPAs such as Whispering and Honeycrisp select their implementations
+at BUILD time via Node-standard `#platform/*` subpath imports. The SPA owns
+every implementation leaf. This is the canonical mechanism. It replaced the old
 `resolve.extensions` / `moduleSuffixes` suffix trick (see "Why not suffixes"
 below).
 
@@ -294,9 +293,12 @@ resolve: {
 },
 ```
 
-**4. tsconfig needs nothing.** No `moduleSuffixes`, no per-target tsconfig.
-Bundler `moduleResolution` reads the `imports` field and lands on `default`
-(browser) for the editor and typecheck.
+**4. tsconfig needs nothing to typecheck the default leaf.** No
+`moduleSuffixes`, no suffix trick. Bundler `moduleResolution` reads the
+`imports` field and lands on `default` (browser) for the editor. Every OTHER
+condition needs its own `tsconfig.<condition>.json` setting
+`compilerOptions.customConditions`, run from `typecheck`; without one, those
+leaves are never checked at all.
 
 **5. Each seam has a shared contract.** A `types.ts` declares the contract;
 both impls annotate against it with a type annotation, not `satisfies`:
@@ -325,6 +327,34 @@ same shape.
 `@tauri-apps/*` code is PHYSICALLY ABSENT from the web bundle (a build-time
 guarantee, not Rollup tree-shaking). A Tauri-only file imported by shared code
 fails the web build instead of shipping a broken runtime.
+
+### Two conditions, two questions (ADR-0190)
+
+`tauri` means "this build runs in a Tauri WebView". `epicenter-host` means "the
+desktop Epicenter host serves this build and owns its replica, credential, and
+deployment choice". Do NOT conflate them.
+
+For Whispering they coincide, because Epicenter owns its only Tauri runtime, so
+it still spells both `tauri`. Honeycrisp is where they come apart: its
+standalone bundle is a Tauri WebView that owns its own OPFS storage, so its
+seams list `epicenter-host` first, then `tauri`, then `default`:
+
+```jsonc
+"#platform/auth": {
+  "epicenter-host": "./src/lib/platform/auth.epicenter-host.ts",
+  "tauri": "./src/lib/platform/auth.tauri.ts",
+  "default": "./src/lib/platform/auth.browser.ts"
+}
+```
+
+Condition order in the map is match order. A build that owns its own storage
+uses NEITHER host condition, whether a browser or a bundle serves it: a WebView
+is a storage partition and origin pair like any other (ADR-0177).
+
+**Test the host leaves exist.** Dropping an `epicenter-host` key does not fail
+any build; resolution silently falls back to `default`, so the hosted build
+quietly opens browser storage and writes where nothing else can read. See
+`apps/honeycrisp/src/lib/platform-selection.test.ts`.
 
 ### Why not suffixes
 
