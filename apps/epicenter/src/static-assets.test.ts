@@ -324,6 +324,7 @@ describe('home server catalog routes', () => {
 			expect(await listed.json()).toEqual({
 				apps: [
 					{ id: 'whispering', title: 'Whispering' },
+					{ id: 'honeycrisp', title: 'Honeycrisp' },
 					{ id: 'hello-http', title: 'Hello HTTP' },
 				],
 			});

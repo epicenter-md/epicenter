@@ -24,7 +24,13 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+	mkdirSync,
+	mkdtempSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -53,6 +59,7 @@ import {
 	BOOKS_ROUTE,
 	BOOTSTRAP_ROUTE,
 	HOME_ROUTE,
+	HONEYCRISP_ROUTE,
 	MAIL_ROUTE,
 	SESSION_ROUTE,
 	SESSION_STREAM_ROUTE,
@@ -346,21 +353,24 @@ const settledWith =
 
 describe('loadStaticAssets', () => {
 	test('every declared compiled application must have built, and so must Home', async () => {
-		const missingApplication = mkdtempSync(
-			join(tmpdir(), 'epicenter-missing-application-'),
-		);
-		mkdirSync(join(missingApplication, 'home'), { recursive: true });
-		writeFileSync(join(missingApplication, 'home', 'index.html'), PAGE);
-		expect(
-			loadStaticAssets(missingApplication, COMPILED_APPLICATIONS),
-		).rejects.toThrow(/Whispering asset root is missing/);
+		// One omission at a time, so the message names the application that is
+		// actually missing rather than whichever absence lost a race.
+		for (const absent of COMPILED_APPLICATIONS) {
+			const root = writeAppsDist({
+				homePage: PAGE,
+				applicationPage: ({ title }) => applicationPage(title),
+			});
+			rmSync(join(root, absent.id), { recursive: true });
+			expect(loadStaticAssets(root, COMPILED_APPLICATIONS)).rejects.toThrow(
+				new RegExp(`${absent.title} asset root is missing`),
+			);
+		}
 
-		const missingHome = mkdtempSync(join(tmpdir(), 'epicenter-missing-home-'));
-		mkdirSync(join(missingHome, 'whispering'), { recursive: true });
-		writeFileSync(
-			join(missingHome, 'whispering', 'index.html'),
-			WHISPERING_PAGE,
-		);
+		const missingHome = writeAppsDist({
+			homePage: PAGE,
+			applicationPage: ({ title }) => applicationPage(title),
+		});
+		rmSync(join(missingHome, 'home'), { recursive: true });
 		expect(
 			loadStaticAssets(missingHome, COMPILED_APPLICATIONS),
 		).rejects.toThrow(/Home index is missing/);
@@ -537,7 +547,7 @@ describe('createHomeServer', () => {
 		}
 	});
 
-	test('serves Home and Whispering builds plus honest Mail and Books placeholders', async () => {
+	test('serves Home and every compiled application plus honest placeholders', async () => {
 		await using host = await createTestHost({
 			engine: scriptedEngine([[]]),
 		});
@@ -555,6 +565,11 @@ describe('createHomeServer', () => {
 					id: 'whispering',
 					pattern: '/apps/whispering/',
 					windowLabel: 'whispering',
+				},
+				{
+					id: 'honeycrisp',
+					pattern: '/apps/honeycrisp/',
+					windowLabel: 'honeycrisp',
 				},
 				{ id: 'mail', pattern: '/apps/mail/', windowLabel: 'mail' },
 				{ id: 'books', pattern: '/apps/books/', windowLabel: 'books' },
@@ -593,6 +608,24 @@ describe('createHomeServer', () => {
 			expect(withoutAuthBootstrap(await clientRoute.text())).toBe(
 				WHISPERING_PAGE,
 			);
+			// The second compiled application takes the same path with no
+			// per-application wiring: its own document, stamped and gated.
+			const honeycrisp = await fetch(HONEYCRISP_ROUTE.url(server.url.origin), {
+				headers: authenticatedHeaders(server),
+			});
+			const honeycrispPage = await honeycrisp.text();
+			expect(honeycrispPage).toContain('id="epicenter-auth-bootstrap"');
+			expect(withoutAuthBootstrap(honeycrispPage)).toBe(
+				applicationPage('Honeycrisp'),
+			);
+			const honeycrispRoute = await fetch(
+				`${server.url.origin}/apps/honeycrisp/notes/some-note`,
+				{ headers: authenticatedHeaders(server) },
+			);
+			expect(withoutAuthBootstrap(await honeycrispRoute.text())).toBe(
+				applicationPage('Honeycrisp'),
+			);
+
 			const mail = await fetch(MAIL_ROUTE.url(server.url.origin), {
 				headers: authenticatedHeaders(server),
 			});
@@ -612,6 +645,8 @@ describe('createHomeServer', () => {
 				whisperingAsset,
 				vadAsset,
 				clientRoute,
+				honeycrisp,
+				honeycrispRoute,
 				mail,
 				books,
 			]) {

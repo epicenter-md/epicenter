@@ -97,12 +97,19 @@ const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 enum Surface {
     Home,
     Whispering,
+    Honeycrisp,
     Mail,
     Books,
 }
 
 impl Surface {
-    const ALL: [Self; 4] = [Self::Home, Self::Whispering, Self::Mail, Self::Books];
+    const ALL: [Self; 5] = [
+        Self::Home,
+        Self::Whispering,
+        Self::Honeycrisp,
+        Self::Mail,
+        Self::Books,
+    ];
 
     /// Whether Home lists this surface as an application a person can open
     /// (ADR-0189).
@@ -112,13 +119,14 @@ impl Surface {
     /// reserved IDs the catalog refuses to admit, so "not launchable" never
     /// means "free for someone else to claim".
     const fn is_application(self) -> bool {
-        matches!(self, Self::Whispering)
+        matches!(self, Self::Whispering | Self::Honeycrisp)
     }
 
     const fn id(self) -> &'static str {
         match self {
             Self::Home => "home",
             Self::Whispering => "whispering",
+            Self::Honeycrisp => "honeycrisp",
             Self::Mail => "mail",
             Self::Books => "books",
         }
@@ -128,6 +136,7 @@ impl Surface {
         match self {
             Self::Home => "/apps/home/",
             Self::Whispering => "/apps/whispering/",
+            Self::Honeycrisp => "/apps/honeycrisp/",
             Self::Mail => "/apps/mail/",
             Self::Books => "/apps/books/",
         }
@@ -137,6 +146,7 @@ impl Surface {
         match self {
             Self::Home => "Epicenter: Home",
             Self::Whispering => "Epicenter: Whispering",
+            Self::Honeycrisp => "Epicenter: Honeycrisp",
             Self::Mail => "Epicenter: Mail",
             Self::Books => "Epicenter: Books",
         }
@@ -1700,6 +1710,7 @@ mod tests {
             [
                 ("home", "/apps/home/", "Epicenter: Home"),
                 ("whispering", "/apps/whispering/", "Epicenter: Whispering"),
+                ("honeycrisp", "/apps/honeycrisp/", "Epicenter: Honeycrisp"),
                 ("mail", "/apps/mail/", "Epicenter: Mail"),
                 ("books", "/apps/books/", "Epicenter: Books"),
             ]
@@ -1708,15 +1719,16 @@ mod tests {
 
     /// Home lists exactly the applications this table calls launchable, so the
     /// two must not drift: an ID Home can show has to be one this verb opens,
-    /// and an ID it cannot show has to be one this verb refuses.
+    /// and an ID it cannot show has to be one this verb refuses. The Bun side
+    /// asserts the same list against `applications.ts`.
     #[test]
-    fn compiled_applications_are_exactly_whispering() {
+    fn compiled_applications_are_the_release_built_spas() {
         let launchable: Vec<&str> = Surface::ALL
             .into_iter()
             .filter(|surface| surface.is_application())
             .map(Surface::id)
             .collect();
-        assert_eq!(launchable, ["whispering"]);
+        assert_eq!(launchable, ["whispering", "honeycrisp"]);
     }
 
     #[test]
@@ -1724,6 +1736,10 @@ mod tests {
         assert!(matches!(
             parse_application_id("whispering"),
             Some(Application::Compiled(Surface::Whispering))
+        ));
+        assert!(matches!(
+            parse_application_id("honeycrisp"),
+            Some(Application::Compiled(Surface::Honeycrisp))
         ));
 
         // Every well-formed non-reserved ID resolves to the app-window path,
@@ -2255,6 +2271,7 @@ mod tests {
         for (url, expected) in [
             ("epicenter://surface/home", Surface::Home),
             ("epicenter://surface/whispering", Surface::Whispering),
+            ("epicenter://surface/honeycrisp", Surface::Honeycrisp),
             ("epicenter://surface/mail", Surface::Mail),
             ("epicenter://surface/books", Surface::Books),
         ] {

@@ -29,7 +29,7 @@ export type Application = {
 };
 
 /**
- * The compiled application this release can launch.
+ * The compiled applications this release can launch.
  *
  * Rust holds the matching decision for its own window table
  * (`Surface::is_application`). Both sides are small closed lists rather than a
@@ -38,6 +38,11 @@ export type Application = {
 export const WHISPERING_APPLICATION: Application = {
 	id: SURFACE_ROUTES.whispering.id,
 	title: SURFACE_ROUTES.whispering.title,
+};
+
+export const HONEYCRISP_APPLICATION: Application = {
+	id: SURFACE_ROUTES.honeycrisp.id,
+	title: SURFACE_ROUTES.honeycrisp.title,
 };
 
 /**
@@ -49,6 +54,7 @@ export const WHISPERING_APPLICATION: Application = {
  */
 export const COMPILED_APPLICATIONS: readonly Application[] = [
 	WHISPERING_APPLICATION,
+	HONEYCRISP_APPLICATION,
 ];
 
 /**
