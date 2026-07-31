@@ -35,11 +35,9 @@ function createRuntime(scanFolders: () => Promise<never>) {
 			return releases;
 		},
 		value: {
-			epicenter: {
-				bind: () => ({ tables: { folders: table, notes: table }, values: {} }),
-				syncStatus: { state: 'local', lastError: undefined },
-				subscribeSyncStatus: () => () => {},
-			},
+			bind: () => ({ tables: { folders: table, notes: table }, values: {} }),
+			syncStatus: { state: 'local', lastError: undefined },
+			subscribeSyncStatus: () => () => {},
 			async [Symbol.asyncDispose]() {
 				releases += 1;
 			},
