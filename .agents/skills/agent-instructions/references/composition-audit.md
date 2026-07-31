@@ -53,6 +53,18 @@ let a hub or manual *open* with a move's name. (This check catches the case wher
 a manual was branded "Asymmetric-wins pass" while a dedicated `asymmetric-wins`
 move also existed.)
 
+A hit counts the phrase, not the intent. Add `--explain` to see whether each hit
+claims the phrase or routes it elsewhere:
+
+```bash
+bun run agent-instructions/scripts/audit-routing-collisions.ts --explain "simplify this"
+```
+
+That phrase reports one hit, which reads as clean routing, but the annotation
+shows `control-flow` only mentions it to send the reader to `collapse-pass`. One
+hit plus `[disclaims]` means the phrase has no owner at all. The flag does not
+change the hit count or the exit code.
+
 ### 2. Duplicated bodies
 
 Same `## Heading` living in many skills usually means a copied essay.
@@ -75,20 +87,22 @@ non-owners already delegate. A delegating repeat is resolved, not a smell.
 ### 3. Dead and orphan links
 
 ```bash
-# broken reference links: match real markdown links ](...) only, keep the
-# ../skill/ prefix, and resolve relative to the linking file's dir. Matching the
-# bare `references/x.md` tail (and dropping the prefix) gives false DEAD hits for
-# valid cross-skill links like ](../workspace-api/references/x.md) and for
-# backtick-wrapped prose like `references/api-errors.md`.
-grep -rnoE '\]\((\.\./[a-z0-9-]+/)*references/[a-z0-9-]+\.md\)' */SKILL.md | while IFS=: read -r f n match; do
-  link="${match#']('}"; link="${link%')'}"
-  [ -f "$(dirname "$f")/$link" ] || echo "DEAD REF: $f:$n -> $link"
-done
-# broken ../skill/SKILL.md cross-links
-grep -rho '\.\./[a-z0-9-]*/SKILL\.md' */SKILL.md | sort -u | while read -r l; do
-  [ -f "${l#../}" ] || echo "DEAD LINK: $l"
-done
-# skill dirs missing a SKILL.md (stubs/orphans)
+bun run agent-instructions/scripts/audit-skill-links.ts
+```
+
+Walks every Markdown file under the tree, not just `SKILL.md`, so links written
+*inside* a reference file are covered too. It strips fenced code and inline code
+first (skills carry example posts with placeholder links), resolves each target
+against the linking file's directory, and checks heading anchors as a separate
+`DEAD_ANCHOR` finding. Exit 1 means findings; `--json` for machine reading;
+`--root <dir>` to scan a tree elsewhere.
+
+Nothing else covers these links: `scripts/check-doc-paths.ts` excludes
+`.agents/` by design and only inspects backtick-wrapped repo-rooted paths.
+
+Stub directories are still a shell one-liner, since they are not a link:
+
+```bash
 for d in */; do [ -f "${d}SKILL.md" ] || echo "NO SKILL.md: $d"; done
 ```
 

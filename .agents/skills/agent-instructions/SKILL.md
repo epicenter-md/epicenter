@@ -43,6 +43,7 @@ Every skill is a flat directory with a required `SKILL.md`:
 |-- references/   optional, detailed context loaded only when needed
 |-- scripts/      optional, executable helpers for repeatable fragile work
 |-- assets/       optional, files used in generated output
+|-- evals/        optional, stored prompt corpora and recorded runs
 ```
 
 Use `.agents/skills` for project-local portable skills. The Vercel CLI discovers this path, and Codex uses it as the project skill location.
@@ -90,6 +91,10 @@ decorative assets
 ```
 
 Those can exist in personal or system skill installations, but they are not the Vercel-backed skill format.
+
+The line is a second *format and discovery* validator, which the Vercel CLI
+already owns. A script that checks something the CLI does not look at, such as
+whether a Markdown link resolves, is a different job and is fine to keep.
 
 ## Create A Skill
 
@@ -188,6 +193,19 @@ Use this loop:
 5. Revise the description or core workflow first.
 6. Move detail to references only when it is conditionally useful.
 
+Two scripts make part of that loop mechanical:
+
+```bash
+bun run .agents/skills/agent-instructions/scripts/audit-skill-links.ts
+bun run .agents/skills/agent-instructions/scripts/run-trigger-eval.ts
+```
+
+The first checks every Markdown link and heading anchor under `.agents/skills`;
+nothing else in the repository does. The second runs the stored trigger corpus.
+Its default pass is offline and reports what descriptions claim, which is a
+smoke test on coverage and not evidence about routing; `--live` spawns the
+Claude CLI per case to measure what a model actually loads.
+
 Read [references/evaluation.md](references/evaluation.md) for trigger evals, execution trace review, and security checks.
 
 ## Validate With Vercel CLI
@@ -246,6 +264,7 @@ Use sharper review questions when the design still feels soft:
 - The description has concrete triggers and near-miss boundaries.
 - `SKILL.md` contains the core workflow, not a copied source essay.
 - References have clear load conditions.
+- `audit-skill-links.ts` reports no dead link or anchor.
 - Scripts are justified, non-interactive, and portable.
 - Required tools are stated as prerequisites; the skill does not imply access to apps, files, connectors, or credentials.
 - Optional frontmatter is intentional: keep cross-agent fields like `license`,
