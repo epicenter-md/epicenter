@@ -4,7 +4,6 @@
 	"commit": false,
 	"fixed": [
 		[
-			"@epicenter/workspace",
 			"@epicenter/sync",
 			"@epicenter/skills",
 			"@epicenter/field",

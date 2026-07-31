@@ -37,7 +37,7 @@ export type SecretRead =
  * ## The auth seam: the user-global encrypted vault
  *
  * When auth lands, the session delivers a server-derived per-owner keyring
- * (`HKDF(rootSecret, principalId)` through `@epicenter/encryption`'s `deriveKeyring`).
+ * (`HKDF(rootSecret, principalId)`; the deriving package is not built yet).
  * The facade then attaches ONE user-global vault Y.Doc, addressed by an
  * app-agnostic guid (`epicenter:secret-vault`, never a per-app one) so every
  * Epicenter app attaches the same doc and the same owner's key is the same key
