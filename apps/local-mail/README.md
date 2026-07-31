@@ -49,6 +49,13 @@ provisioned in this repository yet, so source builds remain bring-your-own: set
 bun run src/bin.ts connect
 ```
 
+Epicenter offers the same flow in the Mail window, so a person never has to
+reach a terminal to add a mailbox: the surface answers with the consent URL,
+opens a browser where it can, and the engine admits the mailbox in the
+background. Both paths run the identical device-local exchange and write the
+same `credentials.json`; neither sends anything through an Epicenter server
+(ADR-0188).
+
 One client identity serves every Gmail account connected on this machine. An
 explicit `GMAIL_*` pair is the machine-wide override and wins over the identity
 supplied by a packaged distribution. Because Google binds a refresh token to

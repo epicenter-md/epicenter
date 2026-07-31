@@ -2,6 +2,7 @@ import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
+import type { Result } from 'wellcrafted/result';
 import type { MailDb } from '../db.ts';
 import { syncOwnerBusy } from '../lock.ts';
 import {
@@ -34,12 +35,12 @@ import { ApiError } from './api-errors.ts';
  * client's base URL carries the host's mount prefix, so the same generated
  * client works under either mount.
  *
- * The surface is multi-account. `GET /accounts` lists the accounts the host
- * loaded at launch, and every read/write route is scoped under
- * `/accounts/:account/*`: one origin serves all connected mailboxes (the host
- * holds one sync session, one gate, and one per-account sync lock for each). An
- * unknown `:account` is a 404 (`AccountNotFound`); the set is frozen at launch,
- * matching the MCP one-session-per-account rule.
+ * The surface is multi-account. `GET /accounts` lists the accounts in service,
+ * and every read/write route is scoped under `/accounts/:account/*`: one origin
+ * serves all connected mailboxes (the host holds one sync session, one gate, and
+ * one per-account sync lock for each). An unknown `:account` is a 404
+ * (`AccountNotFound`). The set is read per request rather than frozen, so a
+ * mailbox added by `POST /connect` is servable on the next request.
  *
  * Label writes go through the same core the CLI and MCP use
  * (`resolveAndModifyMessageLabels`); the archive/read/label intents desugar into
@@ -98,14 +99,25 @@ export type AccountApi = {
 };
 
 type ApiDeps = {
-	/** The connected accounts this host loaded at launch, keyed by email. */
+	/** The accounts in service, keyed by email. Read per request, so the engine
+	 * can admit a newly connected mailbox without rebuilding this app. */
 	accounts: Map<string, AccountApi>;
 	/** Global mutation kill switch (`LOCAL_MAIL_READ_ONLY`), not per-account. */
 	readOnly: boolean;
+	/**
+	 * Start Gmail's consent flow and put the resulting mailbox into service.
+	 *
+	 * Injected because it belongs to the engine that owns the token store, not to
+	 * a route table. Absent when the surface is mounted over a fixed set of
+	 * accounts with no way to add one, which is how the tests drive it.
+	 */
+	connect?: () => Promise<
+		Result<{ authorizeUrl: string }, { message: string }>
+	>;
 };
 
 export function createApiApp(deps: ApiDeps) {
-	const { accounts, readOnly } = deps;
+	const { accounts, readOnly, connect } = deps;
 
 	// Look up the account named by the `:account` segment, or undefined. The
 	// caller emits the 404 inline via `c.json`, NOT this helper: a helper that
@@ -240,9 +252,26 @@ export function createApiApp(deps: ApiDeps) {
 	// (ADR-0191). Every route here is already inside whatever gate that host
 	// applied before dispatching to this app.
 	const app = new Hono()
-		// The connected accounts this host serves, sorted, for the switcher. The
-		// set is frozen at launch (a newly connected account appears on restart).
+		// The accounts this host serves, sorted, for the switcher. Read at request
+		// time, so a mailbox connected through `POST /connect` shows up here as
+		// soon as the engine admits it.
 		.get('/accounts', (c) => c.json({ accounts: [...accounts.keys()].sort() }))
+		// Start Gmail's consent flow. Answers with somewhere to send the person
+		// rather than waiting for them: the browser may take minutes, and on a
+		// platform where nothing opens automatically the URL is the only way
+		// through. The caller watches `GET /accounts` for the mailbox to appear.
+		.post('/connect', async (c) => {
+			if (!connect) {
+				const err = ApiError.ConnectUnavailable();
+				return c.json(err, err.error.status);
+			}
+			const { data, error } = await connect();
+			if (error) {
+				const err = ApiError.ConnectFailed({ message: error.message });
+				return c.json(err, err.error.status);
+			}
+			return c.json(data);
+		})
 		.route('/accounts/:account', accountApp)
 		.notFound((c) => {
 			const err = ApiError.NotFound();

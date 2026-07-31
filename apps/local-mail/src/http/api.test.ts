@@ -27,6 +27,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Ok } from 'wellcrafted/result';
 import type { AppConfig } from '../config.ts';
 import { type MailDb, openMailDb } from '../db.ts';
 import type { GmailClient } from '../gmail-client.ts';
@@ -430,6 +431,84 @@ describe('createApiApp multi-account routing', () => {
 		expect(body.results[0]?.id).toBe('ma');
 		expect(body.results[0]?.folded).toBe(false);
 		expect(body.results[0]?.error).not.toBeNull();
+
+		a.db.close();
+		tmp.cleanup();
+	});
+
+	test('connect answers with somewhere to send the person, not a finished flow', async () => {
+		const tmp = tempDir();
+		const a = account(tmp.dir, 'a@example.com', {
+			messageId: 'ma',
+			subject: 'A',
+			label: 'LA',
+		});
+		const app = createApiApp({
+			accounts: new Map([['a@example.com', a.api]]),
+			readOnly: false,
+			connect: async () =>
+				Ok({ authorizeUrl: 'https://accounts.google.com/o/x' }),
+		});
+
+		const res = await app.fetch(
+			new Request('http://127.0.0.1/connect', { method: 'POST' }),
+		);
+		expect(res.status).toBe(200);
+		expect(await res.json()).toEqual({
+			authorizeUrl: 'https://accounts.google.com/o/x',
+		});
+
+		a.db.close();
+		tmp.cleanup();
+	});
+
+	test('a surface mounted without connect says so instead of pretending', async () => {
+		const tmp = tempDir();
+		const a = account(tmp.dir, 'a@example.com', {
+			messageId: 'ma',
+			subject: 'A',
+			label: 'LA',
+		});
+		const app = createApiApp({
+			accounts: new Map([['a@example.com', a.api]]),
+			readOnly: false,
+		});
+
+		const res = await app.fetch(
+			new Request('http://127.0.0.1/connect', { method: 'POST' }),
+		);
+		expect(res.status).toBe(501);
+		const body = (await res.json()) as { error: { name: string } };
+		expect(body.error.name).toBe('ConnectUnavailable');
+
+		a.db.close();
+		tmp.cleanup();
+	});
+
+	test('the account set is read per request, so a later mailbox is servable', async () => {
+		const tmp = tempDir();
+		// Start empty, which is the first-run state the engine now opens in.
+		const accounts = new Map<string, AccountApi>();
+		const app = createApiApp({ accounts, readOnly: false });
+
+		expect(await (await get(app, '/accounts')).json()).toEqual({
+			accounts: [],
+		});
+
+		// What `connect` does once Google redirects back: admit the mailbox.
+		const a = account(tmp.dir, 'a@example.com', {
+			messageId: 'ma',
+			subject: 'A',
+			label: 'LA',
+		});
+		accounts.set('a@example.com', a.api);
+
+		// No rebuild, no restart: the same app now lists and serves it.
+		expect(await (await get(app, '/accounts')).json()).toEqual({
+			accounts: ['a@example.com'],
+		});
+		const status = await get(app, '/accounts/a@example.com/status');
+		expect(status.status).toBe(200);
 
 		a.db.close();
 		tmp.cleanup();

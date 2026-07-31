@@ -2,6 +2,7 @@ import { Err, Ok, type Result } from 'wellcrafted/result';
 import { type AppConfig, loadConfig } from './config.ts';
 import { type AccountApi, type ApiApp, createApiApp } from './http/api.ts';
 import { acquireSyncLock, type SyncLock } from './lock.ts';
+import { beginAuthorizationFlow } from './oauth.ts';
 import {
 	type LocalMailRuntime,
 	openSyncSession,
@@ -33,9 +34,11 @@ export type MailEngine = {
 	/** The mail surface, prefix-free and unauthenticated. The host mounts it
 	 * where it wants and applies its own gate (ADR-0191). */
 	api: ApiApp;
-	/** The accounts this engine actually opened, in load order. An account that
-	 * failed to open is absent here and was reported through `log`. */
-	accountEmails: string[];
+	/** The accounts currently in service, in admission order. An account that
+	 * failed to open is absent and was reported through `log`. Live rather than a
+	 * boot snapshot: a mailbox connected through the surface appears here without
+	 * a restart. */
+	readonly accountEmails: string[];
 	/**
 	 * Stop every loop, close every session, release every held sync lock.
 	 *
@@ -92,21 +95,20 @@ type AccountEngine = {
 };
 
 /**
- * The accounts to open: every connected account by default, or only
+ * The accounts to open at boot: every connected account by default, or only
  * `LOCAL_MAIL_ACCOUNT` when that single-account override is set (the same escape
- * hatch the CLI and tests use, honored here too). Enumerated once at open, so an
- * account connected later appears on the next host restart.
+ * hatch the CLI and tests use, honored here too).
+ *
+ * No connected account is an empty list, not an error. A device where nobody has
+ * signed in to Gmail yet is the first-run state, and the engine has to open
+ * anyway so `connect` has something to run on.
  */
 async function selectAccounts(
 	config: AppConfig,
 	store: TokenStore,
 ): Promise<Result<string[], { message: string }>> {
 	const connected = await store.listAccounts();
-	if (connected.length === 0) {
-		return Err({
-			message: 'No Gmail account connected. Run "local-mail connect" first.',
-		});
-	}
+	if (connected.length === 0) return Ok([]);
 	if (config.account) {
 		if (!connected.includes(config.account)) {
 			return Err({
@@ -119,17 +121,20 @@ async function selectAccounts(
 }
 
 /**
- * Open every connected mailbox and start its sync loop.
+ * Open every connected mailbox, start its sync loop, and stay open.
  *
- * Errs only when no account could be opened at all: with no account connected,
- * or with every candidate failing. One account failing among several is not an
- * error, because it must not cost a host the mailboxes that did open; it is
- * reported through `log` and left out of `accountEmails`. Epicenter depends on
- * that distinction, since a stale Gmail token is a user state, not a release
- * defect, and must not sink a host that serves far more than mail.
+ * Opening succeeds even with no account at all. A device where nobody has
+ * connected Gmail yet is the first-run state, and it is exactly the state where
+ * `connect` needs to be reachable, so refusing to open would make the one action
+ * that fixes it impossible to offer. An account that fails to open is reported
+ * through `log` and left out; it never costs a host the mailboxes that did open,
+ * because a stale Gmail token is a user state rather than a release defect.
+ *
+ * Errs only on a configuration mistake the caller must fix: `LOCAL_MAIL_ACCOUNT`
+ * naming an account nobody has connected.
  *
  * `log` is injected rather than written to the console, because this is library
- * code and its two hosts narrate differently.
+ * code and its hosts narrate differently.
  */
 export async function openMailEngine(options: {
 	log: (message: string) => void;
@@ -145,10 +150,23 @@ export async function openMailEngine(options: {
 	if (accountsError) return Err(accountsError);
 
 	const controller = new AbortController();
-	// One engine per account, all under one surface. A per-account gate keeps
-	// each mirror single-writer while letting distinct accounts sync concurrently.
+	// One entry per open account, read at request time by the surface, so an
+	// account admitted after boot is live on the next request rather than the
+	// next restart.
+	const accounts = new Map<string, AccountApi>();
 	const engines: AccountEngine[] = [];
-	for (const accountEmail of accountEmails) {
+
+	/**
+	 * Open one mailbox and put it into service: its sync session, its serialize
+	 * gate, its sync-owner lock if this engine wins it, and its poll loop.
+	 *
+	 * The one path into service, used by boot and by `connect` alike, so a
+	 * freshly connected account is opened exactly the way a boot-time one is.
+	 */
+	async function admit(
+		accountEmail: string,
+	): Promise<Result<void, { message: string }>> {
+		if (accounts.has(accountEmail)) return Ok(undefined);
 		const runtime = runtimeForAccount(config, store, accountEmail);
 		const { data: session, error: sessionError } = await openSyncSession(
 			runtime,
@@ -157,64 +175,91 @@ export async function openMailEngine(options: {
 				syncLog: (m) => log(`[sync ${accountEmail}] ${m}`),
 			},
 		);
-		if (sessionError) {
-			// One account failing to open (e.g. its token vanished between the store
-			// listing and now) must not sink the rest; log it and serve the others.
-			log(`Skipping ${accountEmail}: ${sessionError.message}`);
-			continue;
-		}
+		if (sessionError) return Err({ message: sessionError.message });
+
 		const lock = acquireSyncLock({ dataDir: config.dataDir, accountEmail });
-		engines.push({ runtime, session, gate: createSyncGate(), lock });
-	}
-
-	if (engines.length === 0) {
-		return Err({
-			message: 'No account could be opened. Run "local-mail connect" first.',
+		const gate = createSyncGate();
+		const engine: AccountEngine = { runtime, session, gate, lock };
+		engines.push(engine);
+		accounts.set(accountEmail, {
+			runtime,
+			syncDeps: session.deps,
+			gate,
+			ownsLoop: lock !== null,
 		});
-	}
 
-	const api = createApiApp({
-		accounts: new Map<string, AccountApi>(
-			engines.map((engine) => [
-				engine.runtime.accountEmail,
-				{
-					runtime: engine.runtime,
-					syncDeps: engine.session.deps,
-					gate: engine.gate,
-					ownsLoop: engine.lock !== null,
-				},
-			]),
-		),
-		readOnly: config.readOnly,
-	});
-
-	// One background loop per account this engine won the lock for, each
-	// serialized through its own gate (the same gate its POST .../sync rides).
-	// An account whose loop is owned elsewhere is still served; that other owner
-	// keeps its mirror fresh.
-	for (const engine of engines) {
-		if (!engine.lock) {
-			log(
-				`[sync ${engine.runtime.accountEmail}] loop owned elsewhere; serving reads only.`,
-			);
-			continue;
+		// An account whose loop is owned elsewhere is still served; that other
+		// owner keeps its mirror fresh.
+		if (!lock) {
+			log(`[sync ${accountEmail}] loop owned elsewhere; serving reads only.`);
+			return Ok(undefined);
 		}
-		const { session, gate, runtime } = engine;
-		(async () => {
+		// Serialized through the same gate its POST .../sync rides.
+		void (async () => {
 			while (!controller.signal.aborted) {
 				await gate(() => syncMailbox(session.deps, { forceFull: false })).catch(
-					(cause) =>
-						log(`[sync ${runtime.accountEmail}] loop pass failed: ${cause}`),
+					(cause) => log(`[sync ${accountEmail}] loop pass failed: ${cause}`),
 				);
 				if (controller.signal.aborted) break;
 				await sleepUntilAborted(SYNC_INTERVAL_MS, controller.signal);
 			}
 		})();
+		return Ok(undefined);
 	}
+
+	for (const accountEmail of accountEmails) {
+		const { error } = await admit(accountEmail);
+		// One account failing to open (e.g. its token vanished between the store
+		// listing and now) must not sink the rest; log it and serve the others.
+		if (error) log(`Skipping ${accountEmail}: ${error.message}`);
+	}
+
+	/**
+	 * Run Gmail's consent flow and put the resulting mailbox into service.
+	 *
+	 * Returns as soon as there is somewhere to send the person, because the
+	 * browser may take minutes and may not open at all on this platform. The
+	 * exchange and the admission finish in the background; the caller watches
+	 * `GET /accounts` for the new mailbox to appear.
+	 */
+	async function connect(): Promise<
+		Result<{ authorizeUrl: string }, { message: string }>
+	> {
+		const { data: flow, error } = await beginAuthorizationFlow(config, {
+			now: () => Date.now(),
+			log,
+		});
+		if (error) return Err({ message: error.message });
+
+		void (async () => {
+			const { data: token, error: grantError } = await flow.completed;
+			if (grantError) {
+				log(`[connect] ${grantError.message}`);
+				return;
+			}
+			await store.set(token);
+			const { error: admitError } = await admit(token.accountEmail);
+			if (admitError) {
+				log(`[connect] ${token.accountEmail}: ${admitError.message}`);
+				return;
+			}
+			log(`[connect] ${token.accountEmail} connected.`);
+		})();
+
+		return Ok({ authorizeUrl: flow.authorizeUrl });
+	}
+
+	const api = createApiApp({
+		accounts,
+		readOnly: config.readOnly,
+		connect,
+	});
 
 	return Ok({
 		api,
-		accountEmails: engines.map((engine) => engine.runtime.accountEmail),
+		get accountEmails() {
+			return [...accounts.keys()];
+		},
 		async close() {
 			controller.abort();
 			// Wait out any pass already running before its statements go away.

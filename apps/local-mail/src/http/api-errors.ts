@@ -47,6 +47,20 @@ export const ApiError = defineErrors({
 		message: 'Not found.',
 		status: 404 as const,
 	}),
+	/** Gmail's consent flow could not start: no application credentials, or the
+	 * loopback listener could not bind. Distinct from the person declining
+	 * consent, which happens later and is reported through the engine's log. */
+	ConnectFailed: ({ message }: { message: string }) => ({
+		message,
+		status: 400 as const,
+	}),
+	/** This surface was mounted over a fixed set of accounts with no way to add
+	 * one. Not reachable from the Epicenter host, whose engine always supplies
+	 * `connect`; it exists so the route is total rather than optional. */
+	ConnectUnavailable: () => ({
+		message: 'This mail surface cannot connect new accounts.',
+		status: 501 as const,
+	}),
 	/** The host mounted these routes but has no engine behind them, because no
 	 * Gmail account is connected on this device. Emitted by the host in front of
 	 * the mail app, never by the app itself (ADR-0191): the app only exists when

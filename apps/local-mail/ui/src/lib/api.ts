@@ -48,6 +48,18 @@ export const api = {
 		if (!res.ok) throw await toError(res);
 		return res.json();
 	},
+	/**
+	 * Start Gmail's consent flow and get somewhere to send the person.
+	 *
+	 * Resolves as soon as there is a URL, not when consent finishes: the browser
+	 * may take minutes and may not open at all on this platform, so the caller
+	 * renders the URL and watches `accounts()` for the mailbox to appear.
+	 */
+	connect: async () => {
+		const res = await client.connect.$post();
+		if (!res.ok) throw await toError(res);
+		return res.json();
+	},
 	status: async (account: string) => {
 		const res = await client.accounts[':account'].status.$get({
 			param: { account },
