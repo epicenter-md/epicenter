@@ -42,13 +42,18 @@ export type CatalogApp = {
 /**
  * One compiled application's release build.
  *
- * The extra `page` is the whole structural difference from a catalog member:
- * the host holds a compiled application's document so it can gate it behind a
- * browser session and stamp the auth bootstrap into it, which is what lets that
- * build open the host-owned replica instead of one of its own.
+ * Deliberately not an extension of {@link CatalogApp}: a compiled application
+ * never enters the catalog (ADR-0179), and the two only look alike because the
+ * host serves both below `/apps/<id>/`. What it has and a member does not is
+ * `page`, its own document, which the host holds so it can gate it behind a
+ * browser session and stamp the auth bootstrap into it. That stamp is what lets
+ * the build open the host-owned replica instead of one of its own.
  */
-export type CompiledApplicationAssets = CatalogApp & {
+export type CompiledApplicationAssets = {
+	id: string;
+	title: string;
 	page: string;
+	resolve(pathname: string): Promise<StaticAsset | undefined>;
 };
 
 export type EpicenterStaticAssets = {
