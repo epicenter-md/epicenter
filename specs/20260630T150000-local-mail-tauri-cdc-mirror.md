@@ -1,7 +1,7 @@
 # Local Mail CDC mirror: parent research, write-through scope, and UI appendix
 
 **Date**: 2026-06-30
-**Status**: In Progress (Phase 1 shipped at commit `c924831744` on branch `email`; this file now holds the still-live research, the Phase 3 write-through scope, and the UI appendix; execution lives in `specs/20260701T140000-local-mail-phase-2-engine.md` and `specs/20260701T141500-local-mail-up-bun-served-shell.md`)
+**Status**: In Progress (a research vessel, not an execution plan. The Phase 2, Phase 3, and bun-served-shell specs shipped and were deleted; `git log --all --full-history -- specs/` recovers their bodies. What survives here and nowhere else is the Appendix, which ADR-0083 designates as the only in-tree copy of the `apps/email` UI Shape and Gmail-scope/CASA research. Every durable decision is an ADR: 0081/0082/0098/0188 for topology, polling, write-through, and application identity. This file's Tauri shell assumption is dead, because ADR-0191 moved the engine into the Epicenter host and deleted the standalone one.)
 **Relation to `apps/email`**: None; `apps/email` is refused (ADR-0083). Local Mail is the only Gmail client Epicenter builds.
 
 ## One sentence

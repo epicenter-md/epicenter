@@ -31,7 +31,7 @@ local-books demo                                   # build + grill a sample comp
 local-books mcp                                    # stdio MCP server: expose the verbs to a coding agent
 ```
 
-`app` is the loopback browser surface: `src/app.ts` owns lifecycle (realm resolve, per-realm `lock.db`, sync loop, Host check, static serving, `Bun.serve`, browser launch); `src/http/api.ts` owns the Hono `/api` app and exports `ApiApp` (the read verbs go through the same `src/books/*` cores, `recategorize` stays the one write, `readOnly` refuses it at the core). The SPA in `ui/` is a SvelteKit static SPA typed end-to-end by `hc<ApiApp>`. Elysia/Eden is refused for repo coherence; this is `local-mail app`'s shape reused.
+`app` is the loopback browser surface: `src/app.ts` owns lifecycle (realm resolve, per-realm `lock.db`, sync loop, Host check, static serving, `Bun.serve`, browser launch); `src/http/api.ts` owns the Hono `/api` app and exports `ApiApp` (the read verbs go through the same `src/books/*` cores, `recategorize` stays the one write, `readOnly` refuses it at the core). The SPA in `ui/` is a SvelteKit static SPA typed end-to-end by `hc<ApiApp>`. Elysia/Eden is refused for repo coherence. Local Mail shared this loopback-shell shape until ADR-0191 moved its engine into the Epicenter host and deleted its standalone one, so `local-books app` is now the only one left.
 
 Sync mode is chosen from stored state: `--full` / no cursor / cursor older than the CDC window / full-pull staleness backstop forces FULL; otherwise INCREMENTAL.
 
