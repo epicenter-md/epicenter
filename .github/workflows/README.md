@@ -52,7 +52,6 @@ We use [changesets](https://github.com/changesets/changesets) to version and pub
 | Package | npm name | Published |
 |---|---|---|
 | `packages/workspace` | `@epicenter/workspace` | yes |
-| `packages/cli` | `@epicenter/cli` | yes |
 | `packages/sync` | `@epicenter/sync` | yes |
 | `packages/filesystem` | `@epicenter/filesystem` | yes |
 | `packages/skills` | `@epicenter/skills` | yes |
@@ -64,9 +63,9 @@ We use [changesets](https://github.com/changesets/changesets) to version and pub
 
 ### Fixed version group
 
-The framework closure shares one version number, configured via the `fixed` array in `.changeset/config.json`: `workspace`, `cli`, `sync`, `filesystem`, `skills`, `ui`, `svelte`, `field`, and `identity`. When any one of them changes, all of them bump together. This keeps the ecosystem coherent: if you install `@epicenter/workspace@0.3.0`, you know `@epicenter/cli@0.3.0` is the matching release.
+The framework closure shares one version number, configured via the `fixed` array in `.changeset/config.json`: `sync`, `skills`, `field`, and `identity`. When any one of them changes, all of them bump together. This keeps the ecosystem coherent: if you install `@epicenter/sync@0.3.0`, you know `@epicenter/identity@0.3.0` is the matching release.
 
-Note: `@epicenter/svelte` is in the `fixed` array but currently marked `private` in its `package.json`, so changesets versions it in lockstep without publishing it. Un-private it to publish, or drop it from the array if it should stay internal.
+Packages published outside that group (`workspace`, `filesystem`, `ui`, `svelte`) version independently.
 
 ### Day-to-day: adding a changeset
 

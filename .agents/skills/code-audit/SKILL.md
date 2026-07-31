@@ -1,6 +1,6 @@
 ---
 name: code-audit
-description: "Codebase-specific smell catalog with calibrated grep recipes: duck-typing at boundaries, yargs argv re-assertions, value-discarding promise tails, console.* in library code, exhaustive `never` over-broad unions, single-method `Pick` deps, `*Like` boundary shape copies. Use for a periodic audit pass, scoping a cleanup PR, after a major refactor, or reviewing a primitive's consumers. Pairs with refactoring (fix mechanics) and post-implementation-review (second-read hub)."
+description: "Codebase-specific smell catalog with calibrated grep recipes: duck-typing at boundaries, value-discarding promise tails, console.* in library code, exhaustive `never` over-broad unions, single-method `Pick` deps, `*Like` boundary shape copies. Use for a periodic audit pass, scoping a cleanup PR, after a major refactor, or reviewing a primitive's consumers. Pairs with refactoring (fix mechanics) and post-implementation-review (second-read hub)."
 metadata:
   author: epicenter
   version: '1.0'
@@ -19,32 +19,18 @@ The categories below were validated against the actual codebase by repeated agen
 **Pattern**: `(x as { foo?: unknown }).foo` or `as Record<string, unknown>` accesses where the shape isn't statically known.
 
 ```bash
-grep -rn "as\s*{" packages/cli packages/workspace --include="*.ts" -B2 -A2
+grep -rn "as\s*{" packages apps --include="*.ts" -B2 -A2
 ```
 
 **Why it matters**: Each duck-type is a contract gap. The receiver doesn't know what it's getting; the producer doesn't know what's expected. Often justified at literal system boundaries (e.g., parsing user-provided configs, reading from third-party APIs), but unjustified inside the framework's own code.
 
-**Example (justified)**: `packages/cli/src/util/handle-attachments.ts:41-45`: duck-types `sync` and `awareness` because the CLI bundles are user-defined and arbitrary. The 30-line comment block above the helper documents exactly why.
+**Example (justified)**: a loader that duck-types fields off a user-authored module it imports at runtime, because the module's shape is arbitrary by design. What makes it justified is the comment block above the access explaining exactly why static typing is impossible there.
 
 **Example (unjustified)**: `if (entry.handle.whenReady)` was duck-typing `whenReady` until it became a typed optional on `Document`. The diagnostic told us the contract was incomplete; the fix was to declare the field.
 
 **How to triage a hit**: read the ~30 lines above the duck-type. If there's a comment explaining why static typing isn't possible at this boundary, leave it. If there's no explanation and the producer is an internal type, either widen the producer's type to include the field, or consolidate the access into a duck-typing helper that's itself well-documented.
 
-## 2. `argv as Record<string, unknown>` Re-Assertions
-
-**Pattern**: yargs argv re-asserted to a broad shape at every command handler.
-
-```bash
-grep -rn "argv\s*as\s*Record<string, unknown>" packages/cli --include="*.ts"
-```
-
-**Why it matters**: yargs types `argv` as loosely as it can. Every CLI command handler does `const args = argv as Record<string, unknown>` and then keys into it three or four times. Each access is a type-system escape: `argv.foo as string`, `argv.bar as number`. The type system isn't catching missing flags or typos at the source.
-
-**Why it persists**: yargs's typed builder API is verbose and authors trade off ergonomics for safety. The trade is real, but worth periodically auditing: especially when adding a new flag, check whether the access pattern crosses the threshold where a typed argv extraction helper would pay off.
-
-**Triage**: a single command with two flag accesses isn't worth a typed wrapper. Five flags or three commands sharing the same accessor pattern is. Look for **repeated** key access to the same field across command files; that's the signal to extract.
-
-## 3. Promise-Shape Ceremony (`.then(() => {})`)
+## 2. Promise-Shape Ceremony (`.then(() => {})`)
 
 **Pattern**: explicit value-discarding tails on promise chains.
 
@@ -60,7 +46,7 @@ grep -rn "\.then\s*\(\s*(\(\)|=> \{\}|=> undefined)" packages --include="*.ts"
 
 **False positive**: if the `.then(() => result)` returns a *meaningful* transformed value, leave it. The smell is specifically the "discard the value" form.
 
-## 4. Unstructured Logging in Library Code
+## 3. Unstructured Logging in Library Code
 
 **Pattern**: `console.log` / `console.error` / `console.warn` outside of CLIs, tests, and benchmarks.
 
@@ -85,7 +71,7 @@ const log = config.log ?? createLogger('collaboration');
 
 **Triage**: this category is verified periodically: the codebase has historically been clean. Treat any hit as a regression and route through `wellcrafted/logger` before merging. New `console.*` in library code should be refused at PR review unless the call site is explicitly a CLI command, test, or benchmark.
 
-## 5. Exhaustive `never` Checks as Union-Churn Signals
+## 4. Exhaustive `never` Checks as Union-Churn Signals
 
 **Pattern**: `const _exhaustive: never = x` after a switch on a discriminated union.
 
@@ -95,7 +81,7 @@ grep -rn ": never\s*=" packages --include="*.ts" -B10
 
 **Why it matters**: each `never` check is a contract promise: "if this union grows a variant, every consumer with this check will break." That's *good*: it's the type system catching missed cases. But if adding a single variant breaks five different switches, the variants are probably overlapping, the union is too broad, or the same logic is being implemented in too many places.
 
-**Example (justified)**: `packages/cli/src/util/emit-peer-errors.ts:89` exhaustively switches over `RpcError` variants. `RpcError` has well-bounded variants (well under five), the switch is the canonical formatter, and other code routes through it rather than re-implementing. Single point of enforcement, healthy use of the pattern.
+**Example (justified)**: one canonical formatter that exhaustively switches over a tagged error union with well under five variants, which every other consumer delegates to rather than re-implementing. Single point of enforcement, healthy use of the pattern.
 
 **Triage**: count call sites on the discriminated type. If 1-2 switches enforce exhaustiveness, fine. 5+ is a smell: consider:
 
@@ -105,7 +91,7 @@ grep -rn ": never\s*=" packages --include="*.ts" -B10
 
 **False positive**: type-narrowing on a result type at a boundary is healthy, even if there are several. Look for the pattern of "every consumer has to know about every variant" as the actual signal.
 
-## 6. Single-Method `Pick` Dependencies
+## 5. Single-Method `Pick` Dependencies
 
 **Pattern**: dependency injection shaped as `Pick<Thing, 'method'>`.
 
@@ -121,7 +107,7 @@ rg "Pick<[^>]+,\s*['\"][^'\"|]+['\"]\s*>" packages apps
 
 **False positive**: `Pick` is fine for data projection, DTO trimming, and multi-field view models. A single non-method field like `Pick<Session['session'], 'expiresAt'>` is not this smell.
 
-## 7. Copied TypeScript Boundary Shapes
+## 6. Copied TypeScript Boundary Shapes
 
 **Pattern**: local helper types that copy upstream shapes instead of deriving
 from the owner.
@@ -161,9 +147,9 @@ helper type from a stable exported function. It becomes a smell when tests use i
 to reverse-engineer an unnamed seam, or when the index gymnastics hide the fact
 that the caller wants a smaller named capability.
 
-## 8. Non-Exhaustive Union Folds (`if/else` Where a `switch` Belongs)
+## 7. Non-Exhaustive Union Folds (`if/else` Where a `switch` Belongs)
 
-**Pattern**: an `if (x.type === '...')` / `else` chain that *folds an entire closed discriminated union* (every branch maps a variant to a different output) with no `satisfies never` pin. The inverse of category 5.
+**Pattern**: an `if (x.type === '...')` / `else` chain that *folds an entire closed discriminated union* (every branch maps a variant to a different output) with no `satisfies never` pin. The inverse of category 4.
 
 ```bash
 grep -rn "\.error\.name === '" packages apps --include="*.ts" | grep -v test

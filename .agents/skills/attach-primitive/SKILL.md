@@ -5,7 +5,7 @@ description: Contract and invariants for `attach*` composition primitives in `pa
 
 # Attach Primitives
 
-Every persistence, sync, materializer, and binding in `packages/workspace` (plus session-shaped primitives in `packages/cli`) follows one shape. Match the invariants exactly.
+Every persistence, sync, materializer, and binding in `packages/workspace` follows one shape. Match the invariants exactly.
 
 ## Naming
 

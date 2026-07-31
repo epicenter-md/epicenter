@@ -48,7 +48,6 @@ apps/whispering
 apps/tab-manager
 apps/api
 packages/workspace
-packages/cli
 shared TypeScript utilities
 ```
 
@@ -134,7 +133,7 @@ Pause and ask before:
 - UI copy changes
 - dependency changes
 - package boundary moves
-- deleting an export with plausible external CLI or SDK consumers
+- deleting an export with plausible external SDK consumers
 - changing a function signature that crosses a published package boundary
 - anything that cannot be validated locally enough to distinguish pass risk
   from pre-existing failure
