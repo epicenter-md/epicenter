@@ -81,6 +81,10 @@ export {
 	validateLimits,
 } from './limits.js';
 export {
+	V1_LIMITS,
+	type V1Limits,
+} from './limits-constants.js';
+export {
 	type AdmittedFactsRequest,
 	type AdmittedSubmissionRequest,
 	admitFactsPage,
