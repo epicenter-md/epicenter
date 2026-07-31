@@ -66,10 +66,10 @@ const remoteDocumentOrigin = Object.freeze({ kind: 'desktop-document-remote' });
  * Open one trusted WebView proxy to the Bun-owned desktop Epicenter.
  *
  * A surface reaches this by being compiled for the desktop host, never by
- * detecting one. The build that the host serves is selected by the `tauri`
- * resolve condition, so the module that names this opener is already the answer
- * to "is this a desktop surface"; asking the DOM the same question at runtime
- * would only be a second, weaker copy of a fact the bundler already fixed.
+ * detecting one. The build that the host serves is selected by a resolve
+ * condition, so the module that names this opener is already the answer to "who
+ * owns my replica"; asking the DOM the same question at runtime would only be a
+ * second, weaker copy of a fact the bundler already fixed (ADR-0190).
  */
 export async function openDesktopEpicenter({
 	baseUrl = defaultOrigin(),

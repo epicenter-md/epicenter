@@ -135,7 +135,7 @@ Tests live in `*.test.ts` next to the implementation. Use `createWorkspace({ id:
 
 ## Canonical references
 
-- `apps/whispering/src/lib/whispering/whispering.tauri.ts`: IndexedDB + BroadcastChannel + recording markdown export
+- `apps/whispering/src/lib/whispering/whispering.epicenter-host.ts`: IndexedDB + BroadcastChannel + recording markdown export
 - `apps/honeycrisp/src/lib/workspace/browser.ts`: IndexedDB + sync + per-row child docs
 - `packages/workspace/README.md`: quick start
 - `packages/workspace/SYNC_ARCHITECTURE.md`: multi-node sync design

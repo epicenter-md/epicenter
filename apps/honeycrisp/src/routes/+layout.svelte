@@ -5,9 +5,9 @@
 	import { Toaster } from '@epicenter/ui/sonner';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { ModeWatcher } from 'mode-watcher';
+	import { honeycrispPlatform } from '#platform/application';
 	import HoneycrispAppProvider from '$lib/HoneycrispAppProvider.svelte';
 	import { openHoneycrispApplication } from '$lib/application.js';
-	import { honeycrispPlatform } from '$lib/application-platform.js';
 	import '@epicenter/ui/app.css';
 
 	let { children } = $props();

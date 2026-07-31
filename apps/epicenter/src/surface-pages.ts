@@ -2,7 +2,10 @@
 
 import type { SurfaceId } from './routes.ts';
 
-type PlaceholderSurfaceId = Exclude<SurfaceId, 'home' | 'whispering'>;
+type PlaceholderSurfaceId = Exclude<
+	SurfaceId,
+	'home' | 'whispering' | 'honeycrisp'
+>;
 
 function placeholderPage(title: string, status: string): string {
 	return `<!doctype html>

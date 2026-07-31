@@ -31,6 +31,7 @@ function surface<const TId extends string>(id: TId, title: string) {
 export const SURFACE_ROUTES = {
 	home: surface('home', 'Home'),
 	whispering: surface('whispering', 'Whispering'),
+	honeycrisp: surface('honeycrisp', 'Honeycrisp'),
 	mail: surface('mail', 'Mail'),
 	books: surface('books', 'Books'),
 } as const;
@@ -44,6 +45,7 @@ export const ACCOUNT_INSTANCE_ROUTE = route('/_epicenter/account/instance');
 export const ACCOUNT_PROFILE_ROUTE = route('/_epicenter/account/profile');
 export const HOME_ROUTE = SURFACE_ROUTES.home;
 export const WHISPERING_ROUTE = SURFACE_ROUTES.whispering;
+export const HONEYCRISP_ROUTE = SURFACE_ROUTES.honeycrisp;
 export const MAIL_ROUTE = SURFACE_ROUTES.mail;
 export const BOOKS_ROUTE = SURFACE_ROUTES.books;
 /** What Home lists as launchable (ADR-0189). */

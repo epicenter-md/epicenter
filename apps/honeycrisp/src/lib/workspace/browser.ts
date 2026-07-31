@@ -1,5 +1,9 @@
 import type { SyncAuthClient } from '@epicenter/auth';
-import type { Exchange, SyncCredentialProvider } from '@epicenter/data';
+import type {
+	Epicenter,
+	Exchange,
+	SyncCredentialProvider,
+} from '@epicenter/data';
 import { openBrowserEpicenter } from '@epicenter/data/browser';
 import { parseExchangeResponse } from '@epicenter/data/protocol';
 import { createHttpDocumentTransports } from '@epicenter/document-sync';
@@ -41,7 +45,7 @@ export async function openHoneycrispBrowserEpicenter({
 }: {
 	auth: SyncAuth;
 	reportBackgroundError(cause: unknown): void;
-}) {
+}): Promise<Epicenter> {
 	const epicenter = await openBrowserEpicenter();
 	const credentials: SyncCredentialProvider = {
 		get: () => (auth.state.status === 'signed-in' ? 'available' : undefined),
@@ -75,15 +79,19 @@ export async function openHoneycrispBrowserEpicenter({
 		void attachSignedIn().catch(reportBackgroundError);
 	});
 
+	// The auth subscription lives exactly as long as the replica it re-attaches,
+	// so this is an Epicenter that also stops listening, not a second thing
+	// wrapped around one.
 	return Object.freeze({
-		epicenter,
+		bind: epicenter.bind,
+		attachSync: epicenter.attachSync,
+		get syncStatus() {
+			return epicenter.syncStatus;
+		},
+		subscribeSyncStatus: epicenter.subscribeSyncStatus,
 		async [Symbol.asyncDispose]() {
 			stopAuth();
 			await epicenter[Symbol.asyncDispose]();
 		},
 	});
 }
-
-export type HoneycrispBrowserEpicenter = Awaited<
-	ReturnType<typeof openHoneycrispBrowserEpicenter>
->;

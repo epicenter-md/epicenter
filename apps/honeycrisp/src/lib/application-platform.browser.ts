@@ -5,7 +5,14 @@ import { openHoneycrispBrowserEpicenter } from './workspace/browser.js';
 
 const log = createLogger('honeycrisp/application');
 
-/** Inert browser dependencies. Storage does not open until the root calls open. */
+/**
+ * Dependencies for every build that owns its own replica: the hosted web SPA
+ * and the standalone desktop bundle alike. A WebView is a storage partition and
+ * origin pair like any other (ADR-0177), so both open browser storage, carry
+ * their own credential, and attach their own sync.
+ *
+ * Inert: storage does not open until the root calls open.
+ */
 export const honeycrispPlatform: HoneycrispDependencies = {
 	openEpicenter: () =>
 		openHoneycrispBrowserEpicenter({

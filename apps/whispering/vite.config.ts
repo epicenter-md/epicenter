@@ -48,15 +48,20 @@ export default defineConfig(
 		worker: { format: 'es' },
 		build: { target: 'esnext' },
 		resolve: {
-			// Build-time platform DI. Each `#platform/*` subpath (package.json
-			// "imports") has a browser impl and a Tauri impl; the Tauri build
-			// activates the `tauri` condition, the web build uses `default`
-			// (browser). A Tauri-only file imported by shared code is unresolvable
-			// under the web condition, so it fails at vite build time, not at user
-			// runtime. The `...defaultClientConditions` spread is load-bearing:
-			// custom conditions REPLACE Vite's defaults.
+			// Build-time platform DI over the `#platform/*` subpaths (package.json
+			// "imports"). This build activates both conditions because both are
+			// true of it, and they answer different questions: `epicenter-host`
+			// selects the leaves whose owner is the Bun host (its replica,
+			// credential, deployment choice, blob bytes, and asset base), `tauri`
+			// the leaves that call native commands. Whispering has no build where
+			// they come apart, but Honeycrisp does, which is why they are named
+			// apart rather than collapsed (ADR-0190). The web build uses `default`
+			// (browser) for every seam, so a desktop-only file imported by shared
+			// code is unresolvable there and fails at vite build time rather than
+			// at user runtime. The `...defaultClientConditions` spread is
+			// load-bearing: custom conditions REPLACE Vite's defaults.
 			...(isEpicenterSurface && {
-				conditions: ['tauri', ...defaultClientConditions],
+				conditions: ['epicenter-host', 'tauri', ...defaultClientConditions],
 			}),
 		},
 	}),

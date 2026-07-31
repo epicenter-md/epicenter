@@ -24,7 +24,13 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+	mkdirSync,
+	mkdtempSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -44,6 +50,7 @@ import {
 import type { DesktopEpicenterOwner } from '@epicenter/data/desktop-owner';
 import { defineErrors } from 'wellcrafted/error';
 import { Ok } from 'wellcrafted/result';
+import { COMPILED_APPLICATIONS } from './applications.ts';
 import type { HomeHost, HomeHostInputs } from './host.ts';
 import {
 	ACCOUNT_INSTANCE_ROUTE,
@@ -52,6 +59,7 @@ import {
 	BOOKS_ROUTE,
 	BOOTSTRAP_ROUTE,
 	HOME_ROUTE,
+	HONEYCRISP_ROUTE,
 	MAIL_ROUTE,
 	SESSION_ROUTE,
 	SESSION_STREAM_ROUTE,
@@ -65,7 +73,11 @@ import {
 	sendObservationFrame,
 } from './server.ts';
 import type { ReadyFrame } from './sidecar-runtime.ts';
-import { loadStaticAssets } from './static-assets.ts';
+import {
+	type EpicenterStaticAssets,
+	loadStaticAssets,
+} from './static-assets.ts';
+import { writeAppsDist } from './test-apps-dist.ts';
 import {
 	createOwnedTestHomeHost,
 	createTestDesktopAuth,
@@ -75,8 +87,9 @@ const TOKEN = 'per-launch-secret';
 
 /** A stand-in for the built SPA document; `/` must return it byte-for-byte. */
 const PAGE = '<!doctype html><html><body>Home test page</body></html>';
-const WHISPERING_PAGE =
-	'<!doctype html><html><body>Whispering test application</body></html>';
+const applicationPage = (title: string) =>
+	`<!doctype html><html><body>${title} test application</body></html>`;
+const WHISPERING_PAGE = applicationPage('Whispering');
 
 /** Parse a Content-Security-Policy header into directive name to its token list. */
 function cspDirectives(header: string | null): Map<string, string[]> {
@@ -232,16 +245,28 @@ async function serveHost(
 }
 
 async function createAppsDistFixture(homePage: string = PAGE) {
-	return loadStaticAssets(writeAppsDistFixture(homePage));
+	return loadStaticAssets(
+		writeAppsDistFixture(homePage),
+		COMPILED_APPLICATIONS,
+	);
+}
+
+/** The loaded build of one compiled application, by ID. */
+function applicationAssets(assets: EpicenterStaticAssets, id: string) {
+	const application = assets.applications.find(
+		(candidate) => candidate.id === id,
+	);
+	if (!application) throw new Error(`no compiled application named ${id}`);
+	return application;
 }
 
 function writeAppsDistFixture(homePage: string = PAGE): string {
-	const root = mkdtempSync(join(tmpdir(), 'epicenter-apps-dist-'));
-	mkdirSync(join(root, 'home'), { recursive: true });
+	const root = writeAppsDist({
+		homePage,
+		applicationPage: ({ title }) => applicationPage(title),
+	});
 	mkdirSync(join(root, 'whispering', '_app', 'immutable'), { recursive: true });
 	mkdirSync(join(root, 'whispering', 'vad'), { recursive: true });
-	writeFileSync(join(root, 'home', 'index.html'), homePage);
-	writeFileSync(join(root, 'whispering', 'index.html'), WHISPERING_PAGE);
 	writeFileSync(
 		join(root, 'whispering', '_app', 'immutable', 'entry.js'),
 		'window.whisperingLoaded = true;',
@@ -330,48 +355,50 @@ const settledWith =
 	};
 
 describe('loadStaticAssets', () => {
-	test('requires both real application documents at startup', async () => {
-		const missingWhispering = mkdtempSync(
-			join(tmpdir(), 'epicenter-missing-whispering-'),
-		);
-		mkdirSync(join(missingWhispering, 'home'), { recursive: true });
-		writeFileSync(join(missingWhispering, 'home', 'index.html'), PAGE);
-		expect(loadStaticAssets(missingWhispering)).rejects.toThrow(
-			/Whispering asset root is missing/,
-		);
+	test('every declared compiled application must have built, and so must Home', async () => {
+		// One omission at a time, so the message names the application that is
+		// actually missing rather than whichever absence lost a race.
+		for (const absent of COMPILED_APPLICATIONS) {
+			const root = writeAppsDist({
+				homePage: PAGE,
+				applicationPage: ({ title }) => applicationPage(title),
+			});
+			rmSync(join(root, absent.id), { recursive: true });
+			expect(loadStaticAssets(root, COMPILED_APPLICATIONS)).rejects.toThrow(
+				new RegExp(`${absent.title} asset root is missing`),
+			);
+		}
 
-		const missingQuery = mkdtempSync(
-			join(tmpdir(), 'epicenter-missing-query-'),
-		);
-		mkdirSync(join(missingQuery, 'whispering'), { recursive: true });
-		writeFileSync(
-			join(missingQuery, 'whispering', 'index.html'),
-			WHISPERING_PAGE,
-		);
-		expect(loadStaticAssets(missingQuery)).rejects.toThrow(
-			/Home index is missing/,
-		);
+		const missingHome = writeAppsDist({
+			homePage: PAGE,
+			applicationPage: ({ title }) => applicationPage(title),
+		});
+		rmSync(join(missingHome, 'home'), { recursive: true });
+		expect(
+			loadStaticAssets(missingHome, COMPILED_APPLICATIONS),
+		).rejects.toThrow(/Home index is missing/);
 	});
 
 	test('resolves nested generated assets and extensionless SPA routes', async () => {
 		const assets = await createAppsDistFixture();
-		const nested = await assets.resolveWhispering(
+		const whispering = applicationAssets(assets, 'whispering');
+		const nested = await whispering.resolve(
 			'/apps/whispering/_app/immutable/entry.js',
 		);
 		expect(nested?.contentType).toContain('text/javascript');
 		expect(await nested?.file.text()).toContain('whisperingLoaded');
 
-		const vad = await assets.resolveWhispering(
+		const vad = await whispering.resolve(
 			'/apps/whispering/vad/silero_vad_v5.onnx',
 		);
 		expect(await vad?.file.text()).toBe('vad-model');
 
-		const fallback = await assets.resolveWhispering(
+		const fallback = await whispering.resolve(
 			'/apps/whispering/settings/transcription',
 		);
 		expect(await fallback?.file.text()).toBe(WHISPERING_PAGE);
 		expect(
-			await assets.resolveWhispering('/apps/whispering/_app/missing.js'),
+			await whispering.resolve('/apps/whispering/_app/missing.js'),
 		).toBeUndefined();
 	});
 
@@ -387,7 +414,8 @@ describe('loadStaticAssets', () => {
 			join(outside, 'secret.txt'),
 			join(root, 'whispering', 'linked-secret'),
 		);
-		const assets = await loadStaticAssets(root);
+		const assets = await loadStaticAssets(root, COMPILED_APPLICATIONS);
+		const whispering = applicationAssets(assets, 'whispering');
 
 		for (const pathname of [
 			'/apps/whispering/../home/index.html',
@@ -401,7 +429,7 @@ describe('loadStaticAssets', () => {
 			'/apps/whispering/linked-secret.txt',
 			'/apps/whispering/linked-secret',
 		]) {
-			expect(await assets.resolveWhispering(pathname)).toBeUndefined();
+			expect(await whispering.resolve(pathname)).toBeUndefined();
 		}
 	});
 });
@@ -522,7 +550,7 @@ describe('createHomeServer', () => {
 		}
 	});
 
-	test('serves Home and Whispering builds plus honest Mail and Books placeholders', async () => {
+	test('serves Home and every compiled application plus honest placeholders', async () => {
 		await using host = await createTestHost({
 			engine: scriptedEngine([[]]),
 		});
@@ -540,6 +568,11 @@ describe('createHomeServer', () => {
 					id: 'whispering',
 					pattern: '/apps/whispering/',
 					windowLabel: 'whispering',
+				},
+				{
+					id: 'honeycrisp',
+					pattern: '/apps/honeycrisp/',
+					windowLabel: 'honeycrisp',
 				},
 				{ id: 'mail', pattern: '/apps/mail/', windowLabel: 'mail' },
 				{ id: 'books', pattern: '/apps/books/', windowLabel: 'books' },
@@ -578,6 +611,24 @@ describe('createHomeServer', () => {
 			expect(withoutAuthBootstrap(await clientRoute.text())).toBe(
 				WHISPERING_PAGE,
 			);
+			// The second compiled application takes the same path with no
+			// per-application wiring: its own document, stamped and gated.
+			const honeycrisp = await fetch(HONEYCRISP_ROUTE.url(server.url.origin), {
+				headers: authenticatedHeaders(server),
+			});
+			const honeycrispPage = await honeycrisp.text();
+			expect(honeycrispPage).toContain('id="epicenter-auth-bootstrap"');
+			expect(withoutAuthBootstrap(honeycrispPage)).toBe(
+				applicationPage('Honeycrisp'),
+			);
+			const honeycrispRoute = await fetch(
+				`${server.url.origin}/apps/honeycrisp/notes/some-note`,
+				{ headers: authenticatedHeaders(server) },
+			);
+			expect(withoutAuthBootstrap(await honeycrispRoute.text())).toBe(
+				applicationPage('Honeycrisp'),
+			);
+
 			const mail = await fetch(MAIL_ROUTE.url(server.url.origin), {
 				headers: authenticatedHeaders(server),
 			});
@@ -597,6 +648,8 @@ describe('createHomeServer', () => {
 				whisperingAsset,
 				vadAsset,
 				clientRoute,
+				honeycrisp,
+				honeycrispRoute,
 				mail,
 				books,
 			]) {

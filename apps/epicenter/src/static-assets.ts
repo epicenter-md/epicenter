@@ -3,25 +3,25 @@
  *
  * Two serving paths currently coexist (ADR-0153 migration state):
  *
- * - The legacy closed layout: `home/index.html` plus the Whispering asset
- *   tree, loaded by {@link loadStaticAssets}.
+ * - The release layout: `home/index.html` plus one directory per compiled
+ *   application, loaded by {@link loadStaticAssets}. Which directories those
+ *   are is the release's closed list, passed in rather than discovered, so a
+ *   missing build is a boot failure instead of a silently absent application.
  * - The derived app catalog: one directory per app under a host-owned catalog
  *   root, discovered by {@link deriveAppCatalog}. IDs are the direct folder
  *   names, metadata is derived from validated output, and every member is
- *   served below `/apps/<id>/` by the same contained resolver the legacy
- *   Whispering path uses. The root a process serves is one immutable
- *   generation directory selected once at startup; `app-catalog.ts` owns
- *   that selection and the promotion protocol.
+ *   served below `/apps/<id>/`.
  *
- * Both paths resolve every request below one real directory and check again
+ * Both paths hand back the same `{ id, title, resolve }` shape and use the
+ * same contained resolver, so the only structural difference is that a
+ * compiled application also carries its own document for the host to gate and
+ * stamp. Both resolve every request below one real directory and check again
  * after symlinks are resolved.
  */
 
 import { readdir, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import mime from 'mime';
-
-const WHISPERING_PREFIX = '/apps/whispering/';
 
 /** The direct-folder-name contract for derived catalog app IDs (ADR-0153). */
 const APP_ID_PATTERN = /^[a-z0-9-]+$/;
@@ -32,17 +32,34 @@ export type StaticAsset = {
 	isDocument: boolean;
 };
 
-export type EpicenterStaticAssets = {
-	homePage: string;
-	whisperingPage: string;
-	resolveWhispering(pathname: string): Promise<StaticAsset | undefined>;
-};
-
 /** One derived catalog member: enough to list it and serve its static root. */
 export type CatalogApp = {
 	id: string;
 	title: string;
 	resolve(pathname: string): Promise<StaticAsset | undefined>;
+};
+
+/**
+ * One compiled application's release build.
+ *
+ * Deliberately not an extension of {@link CatalogApp}: a compiled application
+ * never enters the catalog (ADR-0179), and the two only look alike because the
+ * host serves both below `/apps/<id>/`. What it has and a member does not is
+ * `page`, its own document, which the host holds so it can gate it behind a
+ * browser session and stamp the auth bootstrap into it. That stamp is what lets
+ * the build open the host-owned replica instead of one of its own.
+ */
+export type CompiledApplicationAssets = {
+	id: string;
+	title: string;
+	page: string;
+	resolve(pathname: string): Promise<StaticAsset | undefined>;
+};
+
+export type EpicenterStaticAssets = {
+	homePage: string;
+	/** Compiled applications, in the order the release declared them. */
+	applications: CompiledApplicationAssets[];
 };
 
 export type AppCatalog = {
@@ -109,8 +126,15 @@ function documentTitle(page: string): string | undefined {
 	return title === undefined || title === '' ? undefined : title;
 }
 
+/**
+ * Load Home's document and the build of every compiled application this
+ * release declares. Unlike catalog derivation, a declared application that did
+ * not build is an error rather than an omission: the release promised it, Home
+ * will list it, and a 404 behind a listed row is worse than refusing to start.
+ */
 export async function loadStaticAssets(
 	appsDist: string,
+	applications: readonly { id: string; title: string }[],
 ): Promise<EpicenterStaticAssets> {
 	if (appsDist.trim() === '') {
 		throw new Error(
@@ -124,25 +148,33 @@ export async function loadStaticAssets(
 		resolve(root, 'home', 'index.html'),
 		'Home index',
 	);
-	const whisperingRoot = await requiredContainedDirectory(
-		root,
-		resolve(root, 'whispering'),
-		'Whispering asset root',
-	);
-	const whisperingIndex = await requiredFile(
-		whisperingRoot,
-		resolve(whisperingRoot, 'index.html'),
-		'Whispering index',
-	);
 
 	return {
 		homePage: await Bun.file(homeIndex).text(),
-		whisperingPage: await Bun.file(whisperingIndex).text(),
-		resolveWhispering: createContainedResolver({
-			prefix: WHISPERING_PREFIX,
-			root: whisperingRoot,
-			index: whisperingIndex,
-		}),
+		applications: await Promise.all(
+			applications.map(async ({ id, title }) => {
+				const appRoot = await requiredContainedDirectory(
+					root,
+					resolve(root, id),
+					`${title} asset root`,
+				);
+				const index = await requiredFile(
+					appRoot,
+					resolve(appRoot, 'index.html'),
+					`${title} index`,
+				);
+				return {
+					id,
+					title,
+					page: await Bun.file(index).text(),
+					resolve: createContainedResolver({
+						prefix: `/apps/${id}/`,
+						root: appRoot,
+						index,
+					}),
+				};
+			}),
+		),
 	};
 }
 

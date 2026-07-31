@@ -11,8 +11,9 @@
 		"dev": "bun run dev:desktop",
 		"dev:desktop": "tauri dev --config src-tauri/tauri.dev.conf.json",
 		"remote:dev": "bun run scripts/remote-dev-smoke.ts",
-		"build": "bun run clean:dist && bun run build:home && bun run build:whispering",
+		"build": "bun run clean:dist && bun run build:home && bun run build:whispering && bun run build:honeycrisp",
 		"build:home": "vite build",
+		"build:honeycrisp": "bun run --cwd ../honeycrisp build:epicenter",
 		"build:sidecar": "bun run scripts/build-sidecar.ts",
 		"build:whispering": "bun run --cwd ../whispering build:epicenter",
 		"clean:dist": "bun run scripts/clean-dist.ts",
@@ -21,7 +22,7 @@
 		"desktop:build": "tauri build",
 		"test": "bun test",
 		"tauri": "tauri",
-		"typecheck": "bun run typecheck:home && bun run --cwd ../whispering typecheck",
+		"typecheck": "bun run typecheck:home && bun run --cwd ../whispering typecheck && bun run --cwd ../honeycrisp typecheck",
 		"typecheck:home": "tsc --noEmit && svelte-check --tsconfig ./tsconfig.json"
 	},
 	"dependencies": {
@@ -46,6 +47,7 @@
 	},
 	"devDependencies": {
 		"@epicenter/app": "workspace:*",
+		"@epicenter/honeycrisp": "workspace:*",
 		"@epicenter/lens": "workspace:*",
 		"@sveltejs/vite-plugin-svelte": "catalog:",
 		"@tailwindcss/vite": "catalog:",

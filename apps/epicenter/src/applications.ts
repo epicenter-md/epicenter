@@ -29,7 +29,7 @@ export type Application = {
 };
 
 /**
- * The compiled application this release can launch.
+ * The compiled applications this release can launch.
  *
  * Rust holds the matching decision for its own window table
  * (`Surface::is_application`). Both sides are small closed lists rather than a
@@ -40,8 +40,22 @@ export const WHISPERING_APPLICATION: Application = {
 	title: SURFACE_ROUTES.whispering.title,
 };
 
-/** Compiled applications, in the order Home lists them. */
-const COMPILED_APPLICATIONS: readonly Application[] = [WHISPERING_APPLICATION];
+export const HONEYCRISP_APPLICATION: Application = {
+	id: SURFACE_ROUTES.honeycrisp.id,
+	title: SURFACE_ROUTES.honeycrisp.title,
+};
+
+/**
+ * Compiled applications, in the order Home lists them.
+ *
+ * This is also the list the host loads asset trees for at boot: a compiled
+ * application is exactly a `dist/<id>` build the release ships, so declaring
+ * one here and building it are the two halves of the same act.
+ */
+export const COMPILED_APPLICATIONS: readonly Application[] = [
+	WHISPERING_APPLICATION,
+	HONEYCRISP_APPLICATION,
+];
 
 /**
  * Compose the one list Home renders. An admitted member can never collide with

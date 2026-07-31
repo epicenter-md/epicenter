@@ -1,12 +1,6 @@
 /** Desktop Data RPC integration over one Bun-owned Epicenter replica. */
 import { expect, test } from 'bun:test';
-import {
-	existsSync,
-	mkdirSync,
-	mkdtempSync,
-	rmSync,
-	writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { generateBlobId } from '@epicenter/blobs';
@@ -24,9 +18,11 @@ import {
 import { field, InstantString } from '@epicenter/field';
 import { optional } from '@epicenter/lens';
 import { whisperingLens } from '@epicenter/whispering/workspace-contract';
+import { COMPILED_APPLICATIONS } from './applications.ts';
 import { BOOTSTRAP_ROUTE } from './routes.ts';
 import { createHomeServer } from './server.ts';
 import { loadStaticAssets } from './static-assets.ts';
+import { writeAppsDist } from './test-apps-dist.ts';
 import {
 	createOwnedTestHomeHostBundle,
 	createTestDesktopAuth,
@@ -424,13 +420,12 @@ function createClient(
 }
 
 async function testAssets(root: string) {
-	const dist = join(root, 'dist');
-	mkdirSync(join(dist, 'home'), { recursive: true });
-	mkdirSync(join(dist, 'whispering'), { recursive: true });
-	writeFileSync(join(dist, 'home', 'index.html'), '<!doctype html><body>Home');
-	writeFileSync(
-		join(dist, 'whispering', 'index.html'),
-		'<!doctype html><body>Whispering',
+	return loadStaticAssets(
+		writeAppsDist({
+			root: join(root, 'dist'),
+			homePage: '<!doctype html><body>Home',
+			applicationPage: ({ title }) => `<!doctype html><body>${title}`,
+		}),
+		COMPILED_APPLICATIONS,
 	);
-	return loadStaticAssets(dist);
 }

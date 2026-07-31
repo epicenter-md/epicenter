@@ -6,8 +6,8 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { auth } from '#platform/auth';
+	import { instanceSetting } from '#platform/instance';
 	import { getHoneycrispApp } from '$lib/context.js';
-	import { instanceSetting } from '$lib/instance';
 	import { runHoneycrispMutation } from '$lib/mutation.js';
 	import FolderMenuItem from '../components/FolderMenuItem.svelte';
 

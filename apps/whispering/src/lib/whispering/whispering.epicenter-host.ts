@@ -10,9 +10,9 @@ import type { WhisperingAppDependencies } from './app';
  *
  * This build opens the host-owned replica rather than one of its own, and says
  * so by naming it. Only this build is ever served by the desktop host: it is
- * selected by the `tauri` resolve condition, which `build:epicenter` turns on
- * and nothing else does, so "am I a desktop surface" is answered by which file
- * is compiled and never has to be asked of the DOM at runtime.
+ * selected by the `epicenter-host` resolve condition, which `build:epicenter`
+ * turns on and nothing else does, so "who owns my replica" is answered by which
+ * file is compiled and never has to be asked of the DOM at runtime (ADR-0190).
  */
 export const whisperingPlatform: WhisperingAppDependencies = {
 	openEpicenter: openDesktopEpicenter,

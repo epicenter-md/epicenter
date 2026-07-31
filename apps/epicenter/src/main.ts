@@ -22,6 +22,7 @@ import { parseExchangeResponse } from '@epicenter/data/protocol';
 import { createHttpDocumentTransports } from '@epicenter/document-sync';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { loadActiveAppCatalog } from './app-catalog.ts';
+import { COMPILED_APPLICATIONS } from './applications.ts';
 import {
 	createDesktopAuthAuthority,
 	type DesktopAuthAuthority,
@@ -137,7 +138,10 @@ async function main(): Promise<void> {
 				'EPICENTER_APPS_DIST must name the release-built Epicenter applications directory.',
 			);
 		}
-		const staticAssets = await loadStaticAssets(appsDist);
+		const staticAssets = await loadStaticAssets(
+			appsDist,
+			COMPILED_APPLICATIONS,
+		);
 		// Source-built catalog members live in host-owned app data; the
 		// built-in surfaces stay on the legacy closed layout for this slice.
 		// The generation selected here is what this process serves for its

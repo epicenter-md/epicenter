@@ -2,13 +2,13 @@ import type { Epicenter, RowDocument, SyncStatus } from '@epicenter/data';
 import { type HoneycrispData, honeycrispLens } from '@epicenter/honeycrisp';
 import { createHoneycrispState } from '../routes/state/index.js';
 
-type ApplicationRuntime = {
-	epicenter: Epicenter;
-	[Symbol.asyncDispose](): Promise<void>;
-};
-
 export type HoneycrispDependencies = {
-	openEpicenter(): Promise<ApplicationRuntime>;
+	/**
+	 * Open the replica this build talks to. Which one that is, and who owns its
+	 * storage, is the whole of what separates Honeycrisp's builds: a browser
+	 * origin owns its own, and the desktop host owns the one it serves.
+	 */
+	openEpicenter(): Promise<Epicenter>;
 	reportBackgroundError(cause: unknown): void;
 };
 
@@ -30,7 +30,7 @@ export async function openHoneycrispApplication(
 	{ openEpicenter, reportBackgroundError }: HoneycrispDependencies,
 	{ signal }: { signal?: AbortSignal } = {},
 ): Promise<HoneycrispApplication> {
-	let runtime: ApplicationRuntime | undefined;
+	let runtime: Epicenter | undefined;
 	let state: ReturnType<typeof createHoneycrispState> | undefined;
 	const documents = new Set<HoneycrispNoteDocument>();
 	let releasePromise: Promise<void> | undefined;
@@ -79,7 +79,7 @@ export async function openHoneycrispApplication(
 		runtime = await untilAbort(openEpicenter());
 		signal?.throwIfAborted();
 		const activeRuntime = runtime;
-		const data = activeRuntime.epicenter.bind(honeycrispLens);
+		const data = activeRuntime.bind(honeycrispLens);
 		state = createHoneycrispState({
 			honeycrisp: data,
 			reportBackgroundError,
@@ -90,10 +90,10 @@ export async function openHoneycrispApplication(
 			...data,
 			state,
 			get syncStatus() {
-				return activeRuntime.epicenter.syncStatus;
+				return activeRuntime.syncStatus;
 			},
 			subscribeSyncStatus(listener: (status: SyncStatus) => void) {
-				return activeRuntime.epicenter.subscribeSyncStatus(listener);
+				return activeRuntime.subscribeSyncStatus(listener);
 			},
 			async openNoteDocument(noteId: string) {
 				// Opening hydrates locally durable state only; remote refresh is

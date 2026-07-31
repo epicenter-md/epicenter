@@ -14,15 +14,23 @@ Single-route SvelteKit app with a three-pane layout: sidebar (folders) → note 
 
 ### Data layer
 
-Honeycrisp defines one inert workspace contract (`id: "epicenter-honeycrisp"`) and opens it through a page-owned runtime:
+Honeycrisp defines one inert Lens over `so.epicenter.honeycrisp` and opens it through a runtime the build selects:
 
 ```txt
 honeycrispLens
-  shared isomorphic definition: id and release-local row lenses
+  shared isomorphic definition: namespace and release-local row lenses
 
-openHoneycrispBrowserEpicenter()
-  browser runtime: device or account SQLite ownership and sync
+openHoneycrispBrowserEpicenter()   this origin's own replica, plus its own sync
+openDesktopEpicenter()             the desktop Epicenter host's replica
 ```
+
+Which one a build gets is fixed at build time by the `#platform/application`
+seam, never detected at runtime (ADR-0190). The web SPA and the standalone
+desktop bundle both own their storage, so both open the first. Only the build
+Epicenter serves opens the second, and its folders, notes, and note documents
+then live in the host's shared `epicenter.sqlite3` alongside every other trusted
+surface, kept apart by the namespace. A person can run both desktop Honeycrisps;
+they are two databases and nothing moves between them.
 
 The Svelte app chooses its authority once at boot. Signed out, it opens the device database. Signed in, it opens the account database and attaches the account transport. Row changes invalidate app-owned reactive arrays; the state layer refreshes them through the async table API.
 
