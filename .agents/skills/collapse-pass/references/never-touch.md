@@ -51,7 +51,7 @@ the wire as config.
 The collapse pass should stop and surface to the user (not silently proceed) when about to:
 
 - Change any string from the list above
-- Delete a public exported name that has zero in-repo callers but plausible external CLI or SDK consumers (the `@epicenter/cli` binary and the `@epicenter/workspace` published API are the load-bearing examples)
+- Delete a public exported name that has zero in-repo callers but plausible external SDK consumers (the `@epicenter/workspace` published API is the load-bearing example)
 - Collapse two files where one's JSDoc documents a non-obvious invariant (the JSDoc is the documentation of a contract; losing it loses the contract)
 - Merge packages or move exports across package boundaries
 - Change a function signature that crosses a published package boundary
@@ -64,8 +64,7 @@ Default collapse-pass targets, narrowest to widest:
 1. `packages/auth`
 2. `packages/workspace`
 3. `packages/svelte-utils`
-4. `packages/cli`
-5. `apps/api`
+4. `apps/api`
 
 Out of scope without an explicit pass declaration:
 
