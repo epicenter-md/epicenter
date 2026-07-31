@@ -3,11 +3,11 @@
  *
  * A browser `new WebSocket(url, protocols)` upgrade cannot set `Authorization`;
  * the only channel for a bearer is the `Sec-WebSocket-Protocol` list, as
- * `bearer.<token>` (see `@epicenter/sync` `auth-subprotocol.ts`). So every Bun
- * WebSocket surface that authenticates a browser client (the attach relay upgrade and
- * the AttachRelay mount) reads the credential the same way: an explicit
- * `Authorization` header first (a non-browser client can set one), else a
- * single `bearer.<token>` subprotocol entry.
+ * `bearer.<token>` (see `@epicenter/sync` `auth-subprotocol.ts`). The attach
+ * relay mount, the one surface that authenticates a browser WebSocket client,
+ * reads the credential here: an explicit `Authorization` header first (a
+ * non-browser client can set one), else a single `bearer.<token>` subprotocol
+ * entry.
  *
  * The extracted token feeds the deployment's `ResolveBearerPrincipal` (the
  * cloud's OAuth resolver, an instance's env-token resolver). The ambient

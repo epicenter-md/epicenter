@@ -24,9 +24,9 @@
  * quadruple plus `role`. This adds no route, channel, capability, action, or
  * per-host directory; it only authenticates the one relay surface the
  * coordinator already shaped. The credential rides `Authorization` (a non-browser client)
- * or the `bearer.<token>` subprotocol (a browser), the same two channels the
- * the upgrade guard reads, and the 101 echoes only the main subprotocol so the
- * token never round-trips.
+ * or the `bearer.<token>` subprotocol (a browser), the same two channels
+ * {@link extractUpgradeBearer} reads, and the 101 echoes only the main
+ * subprotocol so the token never round-trips.
  */
 
 import { MAIN_SUBPROTOCOL, parseSubprotocols } from '@epicenter/sync';
@@ -78,9 +78,8 @@ function requireAttachBearer<E extends Env>(
  * the principal is stamped from auth, never the query.
  *
  * The backend is resolved per request from `c.env`, the one genuinely
- * runtime-specific concern (a Bun singleton coordinator, or a Cloudflare Durable
- * Object namespace bound only at request time), exactly as {@link createServerApp}
- * resolves the relay backend.
+ * runtime-specific concern here: a Bun singleton coordinator, or a Cloudflare
+ * Durable Object namespace bound only at request time.
  */
 function createAttachRelayApp(
 	resolveRelay: (env: ServerBindings) => AttachRelayUpgradeHandler,
@@ -137,9 +136,9 @@ function createAttachRelayApp(
  * authenticated principal is stamped from `c.var.principal.id`, never the query,
  * so this surface cannot be pointed at another partition.
  *
- * `resolveRelay` binds this runtime's relay backend from the per-request env,
- * a runtime-resolved backend: a Bun host
- * closes over its one coordinator (`() => attachRelay`); the Cloud Worker builds
+ * `resolveRelay` binds this runtime's relay backend from the per-request env: a
+ * Bun host closes over its one coordinator (`() => attachRelay`); the Cloud
+ * Worker builds
  * a Durable Object registry over its bound namespace
  * (`(env) => createDurableObjectAttachRelay((env as Cloudflare.Env).ATTACH_RELAY)`).
  */
