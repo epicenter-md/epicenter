@@ -7,7 +7,6 @@
  *
  *   - the `db` leg   a module-scope `pg.Pool` over `DATABASE_URL`, drained
  *                    fire-and-forget in the live process (no `waitUntil`)
- *   - `resolveRooms` an in-process registry over `bun:sqlite` files
  *   - blobs          any S3 endpoint via the existing `BLOBS_S3_*` env
  *
  * This is additive: `wrangler dev`/`deploy` still serve the Worker unchanged.
@@ -18,7 +17,7 @@
  *
  * The whole hosted-cloud-on-Bun bootstrap lives here, in the app, not behind a
  * shared `@epicenter/server` factory: everything mechanical (the `pg.Pool`, the
- * `bun:sqlite` rooms, the cloud auth layer, the session/rooms/inference/blobs
+ * the cloud auth layer, the session/inference/blobs
  * mounts, `Bun.serve`) is this app's composition to own. The instance does NOT
  * share it (it diverges on the substrate that matters: no Better Auth, no
  * Postgres), so a shared launcher would re-introduce the mode knob ADR-0075/0076
@@ -34,7 +33,7 @@
  *
  * Runtime skew is fenced by design: a DO-only behavior (hibernation restore,
  * alarm timing, edge placement) will not surface here, so `wrangler dev` /
- * staging stays the fidelity gate before any deploy touching room behavior.
+ * staging stays the fidelity gate before any deploy touching runtime behavior.
  *
  * The dashboard SPA and billing data plane are intentionally omitted: Vite
  * serves the dashboard in dev, and billing is the hosted Worker's concern.
@@ -52,16 +51,13 @@ import {
 	CloudAuthBindings,
 	type CloudEnv,
 	createBunEpicenterSyncRuntime,
-	createBunRooms,
 	createDb,
 	createServerApp,
-	mergeBunWebSocketHandlers,
 	mountBlobsApp,
 	mountBunEpicenterSyncApp,
 	mountCloudAuth,
 	mountCloudDb,
 	mountInferenceApp,
-	mountRoomsApp,
 	mountSessionApp,
 	type ResolveBearerPrincipal,
 	requireBearerPrincipal,
@@ -107,7 +103,7 @@ const ApiBunBindings = ServerBindings.merge(CloudAuthBindings).merge({
  * Production (`server.ts` as the entrypoint) passes nothing, so
  * `createServerApp` keeps the real OAuth resolver. `server.dev.ts` passes a
  * dev `Bearer dev:<principalId>` resolver so the parity smoke needs no interactive
- * login. Everything else (env validation, pool, rooms, mounts, `Bun.serve`) is
+ * login. Everything else (env validation, pool, mounts, `Bun.serve`) is
  * identical across the two, so they cannot drift.
  */
 export function startBunApiServer(
@@ -129,10 +125,9 @@ export function startBunApiServer(
 	// on the chosen port; an operator overrides it with their domain.
 	const origin = env.API_PUBLIC_ORIGIN ?? `http://localhost:${port}`;
 
-	// One data directory for this host's room and record SQLite files.
+	// One data directory for this host's record SQLite files.
 	const dataDir = resolve(env.DATA_DIR ?? './.data');
 	mkdirSync(dataDir, { recursive: true });
-	const bunRooms = createBunRooms({ dir: join(dataDir, 'rooms') });
 	// Keep the operator-selected directory stable, but the replacement authority
 	// deliberately drops the legacy table family on first open. There is no
 	// compatibility reader or receipt migration across this protocol reset.
@@ -147,11 +142,8 @@ export function startBunApiServer(
 	const db = createDb(pool);
 
 	const app = createServerApp<CloudEnv>({
-		resolveRooms: () => bunRooms.rooms,
-		identity: {
-			resolveOrigin: () => origin,
-			resolveTrustedOrigins: buildEpicenterTrustedOrigins,
-		},
+		resolveOrigin: () => origin,
+		resolveTrustedOrigins: buildEpicenterTrustedOrigins,
 	});
 
 	// The dev entry passes a dev bearer resolver for the parity smoke; production
@@ -191,8 +183,6 @@ export function startBunApiServer(
 		serveAuthUiShell,
 	});
 	mountSessionApp(app, { auth: cookieOrBearer });
-	// Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver.
-	mountRoomsApp(app, { resolveBearerPrincipal });
 	mountBunEpicenterSyncApp(app, {
 		auth: bearer,
 		runtime: epicenterSync,
@@ -203,17 +193,10 @@ export function startBunApiServer(
 	const server = Bun.serve({
 		port,
 		// Bun calls `fetch(req, server)`; route everything through the Hono app with
-		// the validated env as `c.env`. WebSocket upgrades happen inside the rooms
-		// route via the bound server (see createBunRooms), after auth runs, so they
-		// are never intercepted ahead of the auth pipeline here.
+		// the validated env as `c.env`. WebSocket upgrades are never intercepted
+		// ahead of the auth pipeline here.
 		fetch: (req) => app.fetch(req, env),
-		websocket: mergeBunWebSocketHandlers({
-			rooms: bunRooms.websocket,
-		}),
 	});
-	// `server` only exists once `Bun.serve` returns; hand it to the room registry
-	// so `handleUpgrade` can call `server.upgrade`.
-	bunRooms.bindServer(server);
 
 	// Close authority databases and their sockets before the process dies so WAL
 	// checkpoints land and clients see a clean 1001 instead of a dropped TCP.

@@ -13,7 +13,7 @@
  * authenticated mount stamps the principal from the resolved bearer and never
  * trusts the query value, so a client cannot address another partition by
  * putting one there. Wave 3 replaces the bearer-to-instance-principal step with
- * a per-device grant, the same way the rooms surface resolves its principal; the
+ * a per-device grant; the
  * addressing shape here does not change.
  */
 
@@ -26,7 +26,7 @@ export const ATTACH_RELAY_ROUTE = {
 	/**
 	 * The WebSocket subprotocols an attach client offers: the main one plus the
 	 * bearer, carried as `bearer.<token>` because a browser upgrade cannot set
-	 * `Authorization` (the same channel the rooms client uses). Every attach is
+	 * `Authorization`. Every attach is
 	 * authenticated, so both endpoints always offer these; the mount echoes only
 	 * the main one on the 101, so the token never round-trips.
 	 */

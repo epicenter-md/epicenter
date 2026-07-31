@@ -83,13 +83,13 @@ test('GET /consent without a session redirects to sign-in with callbackURL', asy
 	const app = createAuthRouteApp();
 
 	const response = await app.request(
-		'/consent?client_id=cli&scope=rooms%20profile',
+		'/consent?client_id=cli&scope=email%20profile',
 	);
 
 	expect(response.status).toBe(302);
 	expect(response.headers.get('Location')).toBe(
 		`/sign-in?callbackURL=${encodeURIComponent(
-			'/consent?client_id=cli&scope=rooms%20profile',
+			'/consent?client_id=cli&scope=email%20profile',
 		)}`,
 	);
 });

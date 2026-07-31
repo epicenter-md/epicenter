@@ -1,20 +1,17 @@
 /**
  * Server app factory. Wires the portable per-request lifecycle (origin + trust
- * resolution, CORS, CSRF, the rooms registry) and returns a `Hono` instance the
- * deployment mounts every other sub-app on.
+ * resolution, CORS, CSRF) and returns a `Hono` instance the deployment mounts
+ * every other sub-app on.
  *
- * It takes exactly two things, the two axes a deployment varies on:
+ * It takes exactly one thing, the single axis a deployment varies on: an
+ * {@link Identity}, who THIS deployment is on the web (its canonical origin and
+ * the origins it trusts). That varies per deployment, NOT per runtime, so
+ * `apps/api` passes the same identity whether it runs on Workers or Bun.
  *
- *   - `resolveRooms`: how THIS runtime binds the room registry, the one genuinely
- *     runtime-specific portable concern (a hibernating single-writer actor with no
- *     open standard, ADR-0066 Road 2): a Cloudflare Durable Object, or an in-process
- *     `bun:sqlite` registry. The cloud's Postgres connection and `waitUntil` drain
- *     are NOT runtime concerns of this factory; they are cloud concerns the cloud
- *     installs itself ({@link mountCloudDb}), because only Better Auth and billing
- *     use them. The instance composes neither.
- *   - an {@link Identity}: who THIS deployment is on the web (its canonical origin
- *     and the origins it trusts). These vary per deployment, NOT per runtime:
- *     `apps/api` passes the same identity whether it runs on Workers or Bun.
+ * Nothing else here is runtime-specific. The cloud's Postgres connection and
+ * `waitUntil` drain are cloud concerns the cloud installs itself
+ * ({@link mountCloudDb}), because only Better Auth and billing use them. The
+ * instance composes neither.
  *
  * Generic over the context `E`: the cloud composes `createServerApp<CloudEnv>` so
  * it can add db + Better Auth state, the instance composes `createServerApp()`
@@ -24,7 +21,6 @@
 import { Hono } from 'hono';
 import { corsMiddleware } from './middleware/cors.js';
 import { requireOriginForCookieMutations } from './middleware/require-origin-for-cookie-mutations.js';
-import type { Rooms } from './room/contracts.js';
 import type { ServerBindings } from './server-bindings.js';
 import type { Env } from './types.js';
 
@@ -64,31 +60,18 @@ export type Identity = {
  *   1. Origin + trust resolution (a pure read of the env binding).
  *   2. CORS (skips WS upgrades).
  *   3. CSRF gate on `/api/*` (bearer requests skip it inside the middleware).
- *   4. The rooms registry (`c.var.rooms`).
  *
  * The deployment is responsible for exposing a health endpoint on `/`. The cloud's
  * relational-auth context (`c.var.auth`, `c.var.db`) is NOT installed here: the
  * cloud adds it via {@link mountCloudAuth} + {@link mountCloudDb}, so the
  * single-partition instance composes no Better Auth and no Postgres (ADR-0076).
- * WebSocket auth-transport normalization is likewise not global: it lives in
- * {@link mountRoomsApp}, the only WebSocket surface.
+ * WebSocket auth-transport normalization is likewise not global: it lives in the
+ * attach relay, the only remaining WebSocket surface.
  */
-type CreateServerAppOptions = {
-	/**
-	 * Bind this runtime's room registry: a Cloudflare Durable Object
-	 * (`createDurableObjectRooms(env.ROOM)`) or an in-process `bun:sqlite` registry
-	 * (`createBunRooms(...).rooms`). The one genuinely runtime-specific portable
-	 * concern; bound per request onto `c.var.rooms`.
-	 */
-	resolveRooms: (env: ServerBindings) => Rooms;
-	/** Who this deployment is on the web. {@link Identity}. */
-	identity: Identity;
-};
-
 export function createServerApp<E extends Env = Env>({
-	resolveRooms,
-	identity: { resolveOrigin, resolveTrustedOrigins },
-}: CreateServerAppOptions): Hono<E> {
+	resolveOrigin,
+	resolveTrustedOrigins,
+}: Identity): Hono<E> {
 	const app = new Hono<E>();
 
 	// 1. Deployment auth origin and trust set. Resolved first (a pure read of
@@ -109,14 +92,6 @@ export function createServerApp<E extends Env = Env>({
 	// 3. CSRF gate on every `/api/*` route. Bearer requests are CSRF-immune
 	// and skip this check inside the middleware.
 	app.use('/api/*', requireOriginForCookieMutations);
-
-	// 4. Rooms registry: bound for any sub-app that reads `c.var.rooms`. The
-	// Cloudflare backend wraps `env.ROOM`, a Bun host returns its in-process
-	// registry; either way the route stays backend-blind.
-	app.use('/api/*', async (c, next) => {
-		c.set('rooms', resolveRooms(c.env));
-		await next();
-	});
 
 	return app;
 }

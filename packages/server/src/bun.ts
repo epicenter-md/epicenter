@@ -5,19 +5,17 @@
  * here (`createServerApp` + the `mount*` surface) and serves it with `Bun.serve`.
  * The hosted cloud's Bun bootstrap and the instance's Bun bootstrap each own
  * their own composition (`apps/api/server.ts`, `apps/self-host/server.ts`); the
- * library ships the parts, not a shared launcher (ADR-0075/0076). A Bun entry passes
- * {@link createBunRooms}'s `.rooms` as `createServerApp`'s `resolveRooms` (an
- * in-process registry over `bun:sqlite`, not a Durable Object); a cloud-on-Bun entry
- * additionally installs `mountCloudDb` with a `pg.Pool` checkout and a fire-and-forget
- * drain. Bun is the one non-Cloudflare runtime (ADR-0066): `bun:sqlite` is the
- * built-in synchronous engine the room update log needs, and `bun build
- * --compile` is what ships the self-host binary and the Tauri sidecar. There is
- * no Node backend; this code imports `bun:sqlite` and `Bun.serve` directly.
+ * library ships the parts, not a shared launcher (ADR-0075/0076). A cloud-on-Bun
+ * entry additionally installs `mountCloudDb` with a `pg.Pool` checkout and a
+ * fire-and-forget drain. Bun is the one non-Cloudflare runtime (ADR-0066):
+ * `bun:sqlite` is the built-in synchronous engine the Epicenter authority needs,
+ * and `bun build --compile` is what ships the self-host binary and the Tauri
+ * sidecar. There is no Node backend; this code imports `bun:sqlite` and
+ * `Bun.serve` directly.
  *
  * This barrel re-exports everything the main barrel does EXCEPT the Cloudflare
  * pieces whose modules name `cloudflare:workers` or a Workers binding and so cannot
- * load in a Bun process: the `Room` Durable Object class, `createDurableObjectRooms`,
- * and `connectHyperdriveDb`. A Bun host supplies its own room and db concerns.
+ * load in a Bun process. A Bun host supplies its own db concerns.
  */
 
 export {
@@ -27,8 +25,8 @@ export {
 // The AttachRelay (ADR-0115): the Bun WebSocket transport a desktop or
 // self-hosted instance serves, plus the wire type its adapters speak. A
 // self-hosted instance mounts it behind per-device grants (`mountAttachRelayApp`).
-// The coordinator itself (`createAttachRelay`) stays package-internal, the way
-// the room coordinator does; only its transport and mounts are public. The Cloud
+// The coordinator itself (`createAttachRelay`) stays package-internal; only its
+// transport and mounts are public. The Cloud
 // Durable Object transport (`createDurableObjectAttachRelay`, `AttachRelay`)
 // lives in the main barrel instead: its module imports `cloudflare:workers` and
 // cannot load in a Bun process.
@@ -74,8 +72,8 @@ export { ATTACH_RELAY_ROUTE } from './attach-relay/route.js';
 export { createEnvTokenResolver } from './auth/instance-token.js';
 // The OAuth resource-boundary error union the bearer resolver emits. Exported
 // here too (it is not a Cloudflare module) so a Bun entry's dev bearer resolver
-// gets it without importing the main barrel, which would drag in the `Room`
-// Durable Object and its `cloudflare:workers` import.
+// gets it without importing the main barrel, which would drag in the Cloudflare
+// Durable Objects and their `cloudflare:workers` import.
 export { OAuthError } from './auth/oauth-errors.js';
 export { createDb } from './db/create-db.js';
 export {
@@ -87,9 +85,6 @@ export {
 	createBunEpicenterSyncRuntime,
 	mountBunEpicenterSyncApp,
 } from './epicenter-sync/bun.js';
-// Merge several Bun `WebSocketHandler`s onto one `Bun.serve`, dispatching each
-// socket to its backend by a `surface` tag (rooms + attach relay on one port).
-export { mergeBunWebSocketHandlers } from './merge-bun-websocket-handlers.js';
 // An opt-in burn-rate cap for the inference `policies` seam (ADR-0076).
 export { rateLimit } from './middleware/rate-limit.js';
 export {
@@ -104,13 +99,8 @@ export {
 // merged into the cloud Bun host's boot validation.
 export { CloudAuthBindings, mountCloudAuth } from './mount-cloud-auth.js';
 export { mountCloudDb } from './mount-cloud-db.js';
-// The Bun room backend: an in-process Rooms map + bun:sqlite update log,
-// plus the Bun `websocket` handler and `bindServer` the entry wires. Its `.rooms`
-// is what a Bun entry passes as `createServerApp`'s `resolveRooms`.
-export { createBunRooms } from './room/backends/bun/registry.js';
 export { mountBlobsApp } from './routes/blobs.js';
 export { mountInferenceApp } from './routes/inference.js';
-export { mountRoomsApp } from './routes/rooms.js';
 export { mountSessionApp } from './routes/session.js';
 export { mountTranscriptionApp } from './routes/transcription.js';
 export { createServerApp } from './server-app.js';

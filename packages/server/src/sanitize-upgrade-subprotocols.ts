@@ -14,10 +14,9 @@
  * the original object threads that needle: identity is preserved and uWS reads
  * the rewritten value at upgrade time (also verified).
  *
- * Shared by every Bun WebSocket surface that carries a `bearer.<token>`
- * subprotocol a browser upgrade cannot otherwise send safely: the rooms backend
- * (`room/backends/bun/registry.ts`) and the AttachRelay transport
- * (`attach-relay/bun-server.ts`). Each surface guarantees a main-subprotocol
+ * Used by the one Bun WebSocket surface that carries a `bearer.<token>`
+ * subprotocol a browser upgrade cannot otherwise send safely: the AttachRelay
+ * transport (`attach-relay/bun-server.ts`). It guarantees a main-subprotocol
  * offer on every path that upgrades (the route refuses offers without it), so
  * the sanitized header is `epicenter` exactly; the delete branch is defense in
  * depth for a client that offered only non-main protocols: no header, nothing

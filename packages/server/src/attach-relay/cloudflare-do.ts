@@ -19,7 +19,7 @@
  *
  * ## Standard accept, not the hibernation API
  *
- * Unlike the room DO, this backend accepts sockets with `server.accept()` rather
+ * This backend accepts sockets with `server.accept()` rather
  * than the WebSocket Hibernation API. A live attach keeps both ends online (the
  * relay stores no frames and needs both peers, ADR-0115 clause 5), so pinning the
  * DO in memory for the connection's life is honest: the in-memory coordinator
@@ -36,7 +36,7 @@
  * Cloudflare's `WebSocket` exposes `send`, `close(code, reason)`, and
  * `readyState`, so it structurally satisfies {@link RelaySocket} and the raw
  * socket is handed straight to the coordinator with no wrapper, the same move the
- * Bun and room backends make.
+ * Bun backend makes.
  */
 
 import { DurableObject } from 'cloudflare:workers';
@@ -59,7 +59,7 @@ export class AttachRelay extends DurableObject {
 	/**
 	 * The runtime-agnostic relay coordinator for this pair's sockets. A plain
 	 * field initializer suffices: standard-accept sockets pin the DO in memory, so
-	 * there is no hibernation restore to run in the constructor (contrast the room
+	 * there is no hibernation restore to run in the constructor (this backend
 	 * DO's `blockConcurrencyWhile` rebuild).
 	 */
 	private readonly relay = createAttachRelay();
@@ -94,7 +94,7 @@ export class AttachRelay extends DurableObject {
 		// Register or attach on the coordinator. It may synchronously close `server`
 		// here (HOST_CONFLICT for a second host, HOST_NOT_FOUND for a client with no
 		// live host); the 101 still completes and the client reads the app close
-		// code, the same accept-then-close shape the rooms reject path uses.
+		// code, an accept-then-close shape.
 		const connection =
 			endpoint.role === 'host'
 				? this.relay.registerHost({
@@ -137,7 +137,7 @@ export class AttachRelay extends DurableObject {
  * {@link mountAttachRelayApp}'s `resolveRelay` returns on Cloudflare. Resolves
  * each upgrade to the DO for its `(principalId, hostId)` pair and forwards the
  * request (a 101-returning `fetch`), stamping the server-resolved principal over
- * any client-supplied value first. This mirrors `createDurableObjectRooms`: the
+ * any client-supplied value first. The
  * `idFromName` derivation and the `fetch`-as-upgrade convention live here, in the
  * Cloudflare backend, never in the backend-blind mount.
  */

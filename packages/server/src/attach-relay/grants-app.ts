@@ -36,7 +36,7 @@ const GrantMintRequest = type({
  * Mount the device-grant admin surface on a deployment's server app.
  *
  * The deployment supplies the operator auth middleware (the same
- * `requireBearerPrincipal` gating rooms and inference): minting and revoking
+ * `requireBearerPrincipal` gating inference): minting and revoking
  * grants is an operator action, so it rides the operator token, never a device
  * grant. Bundles that auth and the three management routes into one call, the same
  * shape `mountSessionApp` uses.

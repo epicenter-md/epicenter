@@ -6,14 +6,12 @@
  */
 
 import type { Principal } from '@epicenter/auth';
-import type { PrincipalId } from '@epicenter/identity';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { Context } from 'hono';
 import type { Result } from 'wellcrafted/result';
 import type { CloudAuthBindings, createAuth } from './auth/create-auth.js';
 import type { OAuthError } from './auth/oauth-errors.js';
 import type * as schema from './db/schema/index.js';
-import type { Rooms } from './room/contracts.js';
 import type { ServerBindings } from './server-bindings.js';
 
 /**
@@ -21,10 +19,10 @@ import type { ServerBindings } from './server-bindings.js';
  * seam.
  *
  * The surface wrappers (`requireCookieOrBearerPrincipal`, `requireBearerPrincipal`,
- * the rooms bearer with its WebSocket-reject path) own credential EXTRACTION:
- * each knows where its transport carries the token (`Authorization` header, or
- * the `bearer.<token>` WebSocket subprotocol for rooms) and hands the resolver
- * a bare token. The resolver only VERIFIES; it never reads request headers, so
+ * the attach relay's bearer with its WebSocket-reject path) own credential
+ * EXTRACTION: each knows where its transport carries the token (`Authorization`
+ * header, or the `bearer.<token>` WebSocket subprotocol for the relay) and hands
+ * the resolver a bare token. The resolver only VERIFIES; it never reads request headers, so
  * no transport ever has to fake another transport's header to authenticate.
  * The deployment builds each wrapper by closing it over its resolver
  * (`requireBearerPrincipal(resolveBearerPrincipal)`), so the resolver is held in
@@ -40,7 +38,7 @@ import type { ServerBindings } from './server-bindings.js';
  *
  * Returns the same `Result<Principal, OAuthError>` every resolver returns, so a
  * different resolver slots in without touching the wrappers' error handling
- * (HTTP 401, the OAuth `WWW-Authenticate` challenge, or the rooms 4401 close).
+ * (HTTP 401, the OAuth `WWW-Authenticate` challenge, or the relay's 4401 close).
  *
  * Generic over the context it reads: the instance's env-token resolver needs only
  * the portable {@link Env}; the cloud's `resolveRequestOAuthPrincipal` reads
@@ -52,36 +50,6 @@ export type ResolveBearerPrincipal<E extends Env = Env> = (
 	c: Context<E>,
 	bearer: string,
 ) => Promise<Result<Principal, OAuthError>>;
-
-/**
- * Per-connection identity and runtime state, stamped onto the Cloudflare
- * Durable Object WebSocket attachment so presence survives hibernation.
- *
- * `nodeId` identifies one Epicenter app on one persistent storage scope
- * (browser tab, Tauri window, extension service worker, CLI process; tabs
- * sharing localStorage share an id). The client generates and persists its
- * own; lifespan is the client's concern.
- *
- * `connectedAt` is stamped at upgrade time and surfaced in presence frames so
- * receivers can render an "online since" affordance and tie-break multi-tab
- * same-node (newest wins).
- *
- * Every connection to a given room carries the authenticated principal id that
- * selected the partition. The room stays deployment-blind and never branches on
- * where that principal came from.
- */
-export type Connection = {
-	principalId: PrincipalId;
-	nodeId: string;
-	connectedAt: number;
-	/**
-	 * The catalog agent this connection answers as (ADR-0025), set from the
-	 * node's `presence_publish` and mirrored on the wire so a picker can decorate
-	 * a durable agent as live. Undefined until published; ordinary participants
-	 * never set it. Opaque to the relay (forwarded, never inspected).
-	 */
-	agentId?: string;
-};
 
 /**
  * The PORTABLE Hono context, shared by every library sub-app and BOTH
@@ -98,7 +66,7 @@ export type Connection = {
  * binding casts `env` to its own `Cloudflare.Env` at the `apps/*` edge.
  *
  * `Variables` are populated by request-scoped middleware: the resolved origin and
- * trust set, the resolved principal, and the runtime-specific rooms registry.
+ * trust set, and the resolved principal.
  * The library does NOT carry `planId` (apps/api billing) or any Postgres /
  * Better Auth handle (cloud-only, {@link CloudEnv}).
  */
@@ -114,7 +82,6 @@ export type Env = {
 		 */
 		trustedOrigins: string[];
 		principal: Principal;
-		rooms: Rooms;
 	};
 };
 
@@ -131,7 +98,7 @@ export type CloudEnv = {
 	Variables: Env['Variables'] & {
 		/**
 		 * The per-request Postgres handle. Populated by `mountCloudDb`. Read by
-		 * Better Auth (the only Postgres consumer once room telemetry was deleted).
+		 * Better Auth (the only Postgres consumer).
 		 */
 		db: NodePgDatabase<typeof schema>;
 		/** The per-request Better Auth instance. Populated by `mountCloudAuth`. */
