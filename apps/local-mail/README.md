@@ -7,7 +7,8 @@ polling, then exposes the mirror through CLI queries and a stdio MCP server.
 Design authority lives in ADRs first, then the current code:
 `docs/adr/0081-*.md` (a per-device grant and mirror), `docs/adr/0082-*.md`
 (push-free `history.list` polling), `docs/adr/0098-*.md` (state round-trips
-through Gmail), `docs/adr/0116-*.md` (desktop-first, one Bun engine), and
+through Gmail), `docs/adr/0116-*.md` (desktop-first, one Bun engine), `docs/adr/0191-*.md`
+(the Epicenter host owns that engine and its sync loop in process), and
 `docs/adr/0188-*.md` (who owns the Google application identity, and the
 device-only credential boundary). The mirror is Gmail-owned cache data.
 Human-meaningful mail state must round-trip through Gmail, not a local-only
@@ -17,6 +18,14 @@ table.
 
 - Runtime: Bun. `bun:sqlite` stores the mirror, built-in `fetch` calls Gmail,
   `oauth4webapi` handles OAuth.
+- Two hosts open the same engine (`src/engine.ts`, ADR-0191). Epicenter opens it
+  at boot, mounts the mail surface at `/api/mail` behind its own browser
+  session, and owns the sync loop for its process lifetime; that is where Mail
+  ships as a compiled application. Standalone `local-mail app` opens the same
+  engine, adds a per-launch loopback bearer, and serves the SPA from `ui/dist`.
+  The HTTP surface (`src/http/api.ts`) carries no path prefix and no
+  authentication of its own, so a host chooses both and neither host can drift
+  from the other on what an open account means.
 - One SQLite file per connected account: `<data-dir>/<accountEmail>/mail.db`.
   The refresh token lives in a separate `0600 credentials.json` at the data-dir
   root, never inside the mirror db.
