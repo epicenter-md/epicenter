@@ -17,7 +17,7 @@ import { defineConfig, js, repository } from 'jsrepo';
  * writer) ship for every app. Scripts are not recipes: a script is a
  * user-owned Bun file that reads the local SQLite materializer. There is no
  * daemon write path; writes go through an app or an in-process tool surface
- * (ADR-0112). See `docs/scripting.md`.
+ * (ADR-0112).
  */
 
 const BLOCKS = {
