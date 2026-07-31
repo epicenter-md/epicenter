@@ -113,10 +113,10 @@ the relay to move with it.
   relay. When an app's worker runs on the user's own device, the hosted route is
   unnecessary, and private facts never leave the machine.
 - A worker is the existing daemon body plus an observe loop, not a new process
-  kind. The mount runtime gains a child-doc observe loop
-  (`packages/workspace/src/document/child-doc-worker.ts`) over a node-only body
-  connector injected through `nodeMountRuntime().connectChildDoc`
-  (`packages/workspace/src/daemon/mount-runtime.ts`); both are additive.
+  kind. The mount runtime gains a child-doc observe loop over a node-only body
+  connector injected through `nodeMountRuntime().connectChildDoc`; both are
+  additive. (Both modules lived in the root-Yjs workspace package and were
+  deleted with it; the shape is recorded here for the argument only.)
 - Hosting is schema-driven, symmetric with the browser child-doc opener. A
   browser `connect()` reads the table's `docDecls` and hands the UI
   `tables.<t>.docs.<field>.open(rowId)`; a daemon `mount({ workers })` reads the

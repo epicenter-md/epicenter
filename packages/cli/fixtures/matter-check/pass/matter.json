@@ -1,9 +1,0 @@
-{
-	"fields": {
-		"title": { "type": "string", "minLength": 1 },
-		"status": { "enum": ["draft", "ready", "published"] },
-		"duration": { "type": "integer" },
-		"url": { "type": "string", "format": "uri" }
-	},
-	"optional": ["url"]
-}

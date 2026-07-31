@@ -2,7 +2,7 @@
  * A Bun WebSocket transport for the {@link createAttachRelay} coordinator, the
  * runtime a self-hosted instance runs (ADR-0115: the relay is a WebSocket
  * channel on the per-user rendezvous each device dials out to; a Durable Object
- * backend for Cloud is not built). Mirrors `createBunRooms`: it returns the
+ * backend for Cloud is not built). It returns the
  * `websocket` handler `Bun.serve` needs, `bindServer` to hand back the `Server`
  * once serving, and `handleUpgrade` to accept one authenticated attach.
  *
@@ -12,7 +12,7 @@
  * (`mountAttachRelayApp`) resolves the operator bearer to the one principal this
  * deployment admits (the instance principal on self-host) and stamps
  * `principalId` SERVER-SIDE, so a query `principalId` is never trusted. It
- * requires a bound `Server` (`bindServer`), the same impedance the rooms backend
+ * requires a bound `Server` (`bindServer`), the impedance a Bun WebSocket backend
  * has, because Bun upgrades by calling `server.upgrade` rather than returning a
  * 101 from `fetch`. There is deliberately no unauthenticated path: every attach
  * carries a bearer, so the relay has one principal-resolution model, not two.
@@ -22,7 +22,7 @@
  *
  * The socket the coordinator drives is the Bun `ServerWebSocket` itself: it
  * satisfies {@link RelaySocket} structurally (`send`, `close`, `readyState`),
- * so no wrapper is needed, the same move the room backend makes.
+ * so no wrapper is needed.
  */
 
 import type { Server, ServerWebSocket, WebSocketHandler } from 'bun';
@@ -47,9 +47,9 @@ import {
  * Per-connection identity Bun carries on `ws.data`, set at `server.upgrade` and
  * read back in the `websocket` handler. Discriminated by `role`: a host
  * registers under `(principalId, hostId)`; a client attaches under the full
- * endpoint quadruple. The `surface` tag lets {@link mergeBunWebSocketHandlers}
- * route this socket to the attach relay when it shares one `Bun.serve` with the
- * rooms backend; it is a server-side dispatch discriminant, never a wire field.
+ * endpoint quadruple. The `surface` tag identifies sockets this transport owns
+ * on the one `Bun.serve` handler; it is a server-side dispatch discriminant,
+ * never a wire field.
  */
 export type AttachRelaySocketData = { surface: 'attach' } & AttachEndpoint;
 
@@ -74,7 +74,7 @@ export type AttachRelayBunServer = {
 /**
  * Build the Bun transport around one relay coordinator. Bind the `Server` once
  * `Bun.serve` returns (Bun's `server.upgrade` needs the live instance), pass
- * `websocket` to `Bun.serve` (or merge it with the rooms handler), and accept
+ * `websocket` to `Bun.serve`, and accept
  * one authenticated `/attach` upgrade through `handleUpgrade`.
  */
 export function createAttachRelayBunServer(): AttachRelayBunServer {

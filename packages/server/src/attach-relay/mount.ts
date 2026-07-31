@@ -24,9 +24,9 @@
  * quadruple plus `role`. This adds no route, channel, capability, action, or
  * per-host directory; it only authenticates the one relay surface the
  * coordinator already shaped. The credential rides `Authorization` (a non-browser client)
- * or the `bearer.<token>` subprotocol (a browser), the same two channels the
- * rooms upgrade reads, and the 101 echoes only the main subprotocol so the
- * token never round-trips.
+ * or the `bearer.<token>` subprotocol (a browser), the same two channels
+ * {@link extractUpgradeBearer} reads, and the 101 echoes only the main
+ * subprotocol so the token never round-trips.
  */
 
 import { MAIN_SUBPROTOCOL, parseSubprotocols } from '@epicenter/sync';
@@ -44,13 +44,13 @@ import type { AttachRelayUpgradeHandler } from './contracts.js';
 import { ATTACH_RELAY_ROUTE } from './route.js';
 
 /**
- * Bearer auth for the attach surface. Mirrors the rooms upgrade guard: it owns
+ * Bearer auth for the attach surface. It owns
  * WebSocket credential extraction ({@link extractUpgradeBearer}: an
  * `Authorization` header first, else a single `bearer.<token>` subprotocol) and
  * feeds the same {@link ResolveBearerPrincipal} every bearer surface uses, so a
  * browser cookie can never authenticate an attach.
  *
- * On failure it answers a standard OAuth 401. Rooms additionally closes a failed
+ * On failure it answers a standard OAuth 401. It additionally closes a failed
  * WebSocket upgrade with a readable app close code (4401) so a browser's sync
  * supervisor can park permanently; the attach client has no such supervisor, so
  * the readable-close-code refinement is not duplicated here. A failed handshake
@@ -78,9 +78,8 @@ function requireAttachBearer<E extends Env>(
  * the principal is stamped from auth, never the query.
  *
  * The backend is resolved per request from `c.env`, the one genuinely
- * runtime-specific concern (a Bun singleton coordinator, or a Cloudflare Durable
- * Object namespace bound only at request time), exactly as {@link createServerApp}
- * resolves the rooms registry.
+ * runtime-specific concern here: a Bun singleton coordinator, or a Cloudflare
+ * Durable Object namespace bound only at request time.
  */
 function createAttachRelayApp(
 	resolveRelay: (env: ServerBindings) => AttachRelayUpgradeHandler,
@@ -137,9 +136,9 @@ function createAttachRelayApp(
  * authenticated principal is stamped from `c.var.principal.id`, never the query,
  * so this surface cannot be pointed at another partition.
  *
- * `resolveRelay` binds this runtime's relay backend from the per-request env,
- * the same shape {@link createServerApp}'s `resolveRooms` takes: a Bun host
- * closes over its one coordinator (`() => attachRelay`); the Cloud Worker builds
+ * `resolveRelay` binds this runtime's relay backend from the per-request env: a
+ * Bun host closes over its one coordinator (`() => attachRelay`); the Cloud
+ * Worker builds
  * a Durable Object registry over its bound namespace
  * (`(env) => createDurableObjectAttachRelay((env as Cloudflare.Env).ATTACH_RELAY)`).
  */

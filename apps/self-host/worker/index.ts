@@ -22,43 +22,27 @@
 
 import { assertStrongToken } from '@epicenter/auth';
 import {
-	createDurableObjectRooms,
 	createEnvTokenResolver,
 	createServerApp,
 	EpicenterAuthority,
 	mountBlobsApp,
 	mountCloudflareEpicenterSyncApp,
 	mountInferenceApp,
-	mountRoomsApp,
 	mountSessionApp,
 	mountTranscriptionApp,
 	type ResolveBearerPrincipal,
-	Room,
 	rateLimit,
 	requireBearerPrincipal,
 } from '@epicenter/server';
 import { resolveSelfHostTrustedOrigins } from '../trusted-origins.js';
 
 const app = createServerApp({
-	// The one runtime-specific concern: bind this Worker's Durable Object room
-	// registry. The instance composes no Postgres (no Better Auth, no telemetry), so
-	// it never calls `mountCloudDb` and `createServerApp` stays on the portable `Env`
-	// (ADR-0076). This edge points it at its OWN binding (the `Cloudflare.Env` cast
-	// stays here, type-checked against this Worker's generated bindings, ADR-0066).
-	resolveRooms: (env) => createDurableObjectRooms((env as Cloudflare.Env).ROOM),
-	identity: {
-		// Self-hosters set their own public origin in wrangler.jsonc
-		// (`API_PUBLIC_ORIGIN`): their domain, not Epicenter Cloud's.
-		resolveOrigin: (env) => (env as Cloudflare.Env).API_PUBLIC_ORIGIN,
-		// A self-host trusts its OWN origin and the Tauri desktop client, never
-		// Epicenter cloud's. Shared with `server.ts` so the two runtimes cannot
-		// drift. The instance has no Better Auth and no cookies at all.
-		resolveTrustedOrigins: (baseURL, env) =>
-			resolveSelfHostTrustedOrigins(
-				baseURL,
-				(env as Cloudflare.Env).TRUSTED_BROWSER_ORIGINS,
-			),
-	},
+	resolveOrigin: (env) => (env as Cloudflare.Env).API_PUBLIC_ORIGIN,
+	resolveTrustedOrigins: (baseURL, env) =>
+		resolveSelfHostTrustedOrigins(
+			baseURL,
+			(env as Cloudflare.Env).TRUSTED_BROWSER_ORIGINS,
+		),
 });
 
 // The instance authenticates one operator-supplied bearer. On Cloudflare the
@@ -84,8 +68,6 @@ app.get('/', (c) =>
 // operator bearer (`auth` above) is the only gate, so every surface is
 // bearer-authenticated (ADR-0075).
 mountSessionApp(app, { auth });
-// Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver.
-mountRoomsApp(app, { resolveBearerPrincipal });
 mountCloudflareEpicenterSyncApp(app, {
 	auth,
 	resolveNamespace: (env) =>
@@ -116,4 +98,4 @@ mountTranscriptionApp(app, {
 mountBlobsApp(app, { auth });
 
 export default app;
-export { EpicenterAuthority, Room };
+export { EpicenterAuthority };

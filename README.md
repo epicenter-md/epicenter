@@ -47,88 +47,73 @@ Press record, speak, optionally transform the transcript, and copy or deliver th
 
 ## Build With The Toolkit
 
-The developer toolkit is MIT: build anything on it, including closed-source and commercial products, and you own what you build, with no obligation back to Epicenter. These are the packages meant to leave this repo: [`@epicenter/workspace`](packages/workspace), [`@epicenter/ui`](packages/ui), [`@epicenter/filesystem`](packages/filesystem), and [`@epicenter/sync`](packages/sync). They are pre-1.0 and tuned for our own apps, so treat them as fork-and-own rather than a stability-guaranteed SDK for now.
+The developer toolkit is MIT: build anything on it, including closed-source and commercial products, and you own what you build, with no obligation back to Epicenter. [`@epicenter/lens`](packages/lens), [`@epicenter/field`](packages/field), and [`@epicenter/ui`](packages/ui) are the packages meant to leave this repo. They are pre-1.0 and tuned for our own apps, so treat them as fork-and-own rather than a stability-guaranteed SDK for now.
 
 The hard problem with local-first apps is synchronization. If each device has
 its own SQLite file or Markdown folder, how do you keep them in sync?
-[`@epicenter/workspace`](packages/workspace) is moving to a two-plane answer:
-bounded JSON rows live directly in runtime-native SQLite, while each row may
-own a lazy Yjs 14 document for collaborative rich content. SQLite remains the
-queryable scalar source rather than a mirror of one giant in-memory document.
 
-Alongside typed tables, local persistence, collaboration hooks, and validated actions, the package gives apps materializers, the writers that project state to disk.
+Epicenter's answer is that a person has one Epicenter, replicated on every
+device, and applications never own storage. A row holds bounded JSON fields in
+runtime-native SQLite, and may also own one lazy Yjs document for collaborative
+rich content and one write-once blob for bytes. An application declares a
+*Lens*: a pure JSON interpretation of one durable namespace, which creates no
+storage and no lifecycle of its own.
 
 ```typescript
+import { defineLens, defineTable, optional } from '@epicenter/data';
 import { field } from '@epicenter/field';
-import { createWorkspace, defineTable } from '@epicenter/workspace';
 
-const notes = defineTable({
-  id: field.string(),
-  title: field.string(),
-  body: field.string(),
+const notesLens = defineLens({
+  namespace: 'com.example.notes',
+  tables: {
+    notes: defineTable({
+      fields: {
+        title: field.string(),
+        body: field.string(),
+        pinned: optional(field.boolean()),
+      },
+    }),
+  },
+  values: {},
 });
 
-const workspace = createWorkspace({
-  id: 'notes',
-  tables: { notes },
-  kv: {},
-});
+const data = epicenter.bind({ notes: notesLens });
 
-workspace.tables.notes.set({
-  id: '1',
+await data.notes.tables.notes.create({
   title: 'Hello',
   body: 'Follow up on the README framing.',
 });
-
-// Materializers can project that row to Markdown files and SQLite rows.
 ```
 
-[Read the workspace package docs](packages/workspace/README.md)
+Two Lenses may interpret the same namespace differently, and neither becomes
+authoritative. That is what lets one application read another's data without
+depending on its build.
+
+[Read the data package docs](packages/data/README.md)
 
 ## How It Works
 
-Epicenter separates app-owned data from user-owned Markdown. App output belongs under `apps/<name>/`; folders you own stay ordinary Markdown.
+One person has one Epicenter: a single body of rows and values, replicated
+completely onto every device they sign in on. Applications do not own storage.
+They bind a Lens over the shared data, and Epicenter Home is the shell that
+launches them.
 
 ```txt
-workspace/
-|-- apps/<name>/        generated app output; read, grep, quote, copy
-|-- .epicenter/         machine state; ignore
-|-- journal/            your Markdown; edit, commit, curate, publish
-|-- ideas/              your Markdown
-`-- publish/            your publishable artifacts
+one Epicenter
+|-- rows        bounded JSON fields in runtime-native SQLite
+|-- values      typed singletons
+|-- documents   zero or one lazy Yjs document per row, for collaborative content
+`-- blobs       zero or one write-once immutable byte stream per row
 ```
 
-The rule is simple: `apps/<name>/` is for reading app output, not hand-editing it. To change app data, use the app or a CLI action validated against the app's schema. To keep something forever, copy it into a folder you own.
+Each plane converges on its own terms. Scalar rows and values synchronize
+through the account authority. Row documents publish over HTTP automatically
+and pull remote state explicitly when a handle is open. Blobs upload once and
+download on demand. There is no distributed transaction across them, and
+applications receive no SQL: relational inspection belongs to Home.
 
-Your folders are ordinary Markdown: grep them, open them in Obsidian, version them with Git, publish them with whatever static site stack you like.
-
-```txt
-purpose-built app
-  -> SQLite scalar rows for local queries and synchronization
-  -> lazy row-owned Yjs 14 documents for collaborative content
-  -> Markdown projection for human reading
-  -> curated Markdown when something is worth keeping
-```
-
-SQLite handles bounded rows, local SQL, and scalar synchronization. Yjs handles
-lazy rich documents, offline document edits, and live collaboration. Markdown
-gives you files you can read, quote, copy, version, and publish. This clean
-break is recorded in Proposed ADRs 0144 through 0147 and is still being
-implemented; the current package README labels the old and new paths explicitly.
-
-A generated Markdown projection is meant to be boring on purpose (this is the target shape):
-
-```md
----
-id: note_123
-title: Morning capture
-source: app
-updatedAt: "2026-06-10T16:49:59.180Z"
----
-Follow up on the README framing.
-```
-
-Matter applies the same SQLite-mirror idea to the folders you own: it keeps a disposable `matter.sqlite` mirror of each managed folder, so agents and scripts can query your Markdown as SQL:
+Matter keeps a disposable `matter.sqlite` mirror of each Markdown folder you
+own, so agents and scripts can query your Markdown as SQL:
 
 ```bash
 sqlite3 matter.sqlite 'select "name" from "journal" limit 5;'
@@ -138,7 +123,7 @@ sqlite3 matter.sqlite 'select "name" from "journal" limit 5;'
 
 Whispering is independently deployable as a browser SPA and is also mounted inside the Epicenter desktop host. Epicenter is the only native runtime; Whispering no longer ships a standalone desktop shell.
 
-The shared workspace for tabs, notes, drafts, and publishing is being built in public around `@epicenter/workspace`. [Matter](apps/matter) is an early app for user-owned Markdown folders: it edits ordinary Markdown directly and keeps `matter.sqlite` as a query mirror. Other app folders are public research and prototypes.
+The shared data model for tabs, notes, drafts, and publishing is being built in public around `@epicenter/data`. [Matter](apps/matter) is an early app for user-owned Markdown folders: it edits ordinary Markdown directly and keeps `matter.sqlite` as a query mirror. Other app folders are public research and prototypes.
 
 ## Trust Boundaries
 
@@ -152,7 +137,7 @@ Pick the trust model you want.
 | Hosted Epicenter API or sync | Workspace updates, account/session data, and enabled hosted feature requests go to Epicenter servers. |
 | Self-hosted deployable | You control the server, secrets, deployment, and infrastructure boundary. |
 
-Signed-in workspace sync sends your Yjs updates to a trusted relay that reads them in plaintext. On hosted Epicenter the relay is ours, so that data sits inside our trust boundary; self-hosting puts the relay on infrastructure you control, so Epicenter never holds it. See the [trust model](docs/trust-model.md) for the details, including where this is heading with the anchor.
+Signed-in sync sends your data to a trusted server that reads it in plaintext. On hosted Epicenter the relay is ours, so that data sits inside our trust boundary; self-hosting puts the relay on infrastructure you control, so Epicenter never holds it. See the [trust model](docs/trust-model.md) for the details, including where this is heading with the anchor.
 
 The detailed privacy notes for Whispering live in [apps/whispering](apps/whispering).
 
@@ -175,15 +160,12 @@ These packages carry the main architecture.
 
 | Package | Role | License |
 | --- | --- | --- |
-| [`@epicenter/workspace`](packages/workspace) | Typed workspace API, queryable scalar replicas, lazy row documents, local persistence, actions, and runtime composition. | MIT |
 | [`@epicenter/data`](packages/data) | The row-owned SQLite replica: scalar row protocol, admission, deterministic folding, exact-retry digests, sync supervision, and relational inspection. | MIT |
 | [`@epicenter/lens`](packages/lens) | Lens, table, and value definitions plus structured addresses and canonical JSON. | MIT |
 | [`@epicenter/sqlite`](packages/sqlite) | Neutral embedded-SQLite driver and Browser, Bun, and Durable Object adapters. It owns no product schema. | MIT |
-| [`@epicenter/sync`](packages/sync) | Yjs document protocol encoding and provider behavior, separate from scalar row synchronization. | MIT |
+| [`@epicenter/document-sync`](packages/document-sync) | Row-document HTTP publication and pull, separate from scalar row synchronization. | MIT |
 | [`@epicenter/ui`](packages/ui) | Shared Svelte component library used by multiple app surfaces. | MIT |
-| [`@epicenter/filesystem`](packages/filesystem) | POSIX-style virtual filesystem helpers over workspace data. | MIT |
 | [`@epicenter/server`](packages/server) | Shared Hono server library composed by the hosted API and self-host reference deployable. | AGPL-3.0-or-later |
-| [`@epicenter/cli`](packages/cli) | The `epicenter` command and local or hosted API workflows. | AGPL-3.0-or-later |
 
 ## Architecture
 
@@ -261,7 +243,7 @@ Contributors coordinate in [Discord](https://go.epicenter.so/discord).
 
 Epicenter uses a two-tier split by how you use the code:
 
-- [MIT](licenses/LICENSE-MIT) for code you build with: the toolkit roots (`@epicenter/workspace`, `@epicenter/ui`, `@epicenter/filesystem`, `@epicenter/sync`) and the toolkit-internal contracts they carry (`@epicenter/identity`, `@epicenter/agent-protocol`, `@epicenter/encryption`, `@epicenter/field`, `@epicenter/chat`). Nine packages today.
+- [MIT](licenses/LICENSE-MIT) for code you build with: the toolkit roots (`@epicenter/lens`, `@epicenter/field`, `@epicenter/ui`) and the toolkit-internal contracts they carry (`@epicenter/data`, `@epicenter/sqlite`, `@epicenter/identity`, `@epicenter/agent-protocol`, `@epicenter/chat`).
 - [AGPL-3.0](licenses/LICENSE-AGPL-3.0) or later for code we ship or run: every app, the shared server library, the CLI, and the rest of the internal packages.
 - There is no proprietary tier today. Revenue is intended to come from hosting and services, not from selling closed licenses.
 

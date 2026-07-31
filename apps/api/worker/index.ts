@@ -19,7 +19,6 @@ import {
 	type CloudEnv,
 	connectHyperdriveDb,
 	createDurableObjectAttachRelay,
-	createDurableObjectRooms,
 	createServerApp,
 	EpicenterAuthority,
 	mountAttachRelayApp,
@@ -28,10 +27,8 @@ import {
 	mountCloudDb,
 	mountCloudflareEpicenterSyncApp,
 	mountInferenceApp,
-	mountRoomsApp,
 	mountSessionApp,
 	mountTranscriptionApp,
-	Room,
 	requireBearerPrincipal,
 	requireCookieOrBearerPrincipal,
 	resolveRequestOAuthPrincipal,
@@ -52,26 +49,19 @@ import { buildEpicenterTrustedOrigins } from './trusted-origins.js';
 // not deep inside library files compiled in this program.
 ({}) as Cloudflare.Env satisfies ServerBindings;
 
+// The cloud's Postgres + `waitUntil` are NOT here; they are installed by
+// `mountCloudDb` below.
 const app = createServerApp<CloudEnv>({
-	// The one runtime-specific portable concern: bind this Worker's Durable Object
-	// room registry. The `Cloudflare.Env` cast and the binding name live here, at
-	// the app edge, type-checked against this Worker's generated bindings (ADR-0066).
-	// Per-room DO sharding stays the cloud's binding of the room actor forever:
-	// hibernate-to-zero and single-writer-per-room at multi-tenant scale. The cloud's
-	// Postgres + `waitUntil` are NOT here; they are installed by `mountCloudDb` below.
-	resolveRooms: (env) => createDurableObjectRooms((env as Cloudflare.Env).ROOM),
-	identity: {
-		// The hosted cloud's public origin never changes per deploy, so it is
-		// baked from the constants source of truth rather than duplicated into
-		// wrangler.jsonc vars. Local dev injects
-		// `API_PUBLIC_ORIGIN=http://localhost:8787` via scripts/dev.ts; production
-		// falls through to PRODUCTION_API_URL. `API_PUBLIC_ORIGIN` is
-		// deployment-owned config, not a binding `ServerBindings` names, so casting
-		// to this deployment's own `Cloudflare.Env` is the honest edge (ADR-0066).
-		resolveOrigin: (env) =>
-			(env as Cloudflare.Env).API_PUBLIC_ORIGIN ?? PRODUCTION_API_URL,
-		resolveTrustedOrigins: buildEpicenterTrustedOrigins,
-	},
+	// The hosted cloud's public origin never changes per deploy, so it is
+	// baked from the constants source of truth rather than duplicated into
+	// wrangler.jsonc vars. Local dev injects
+	// `API_PUBLIC_ORIGIN=http://localhost:8787` via scripts/dev.ts; production
+	// falls through to PRODUCTION_API_URL. `API_PUBLIC_ORIGIN` is
+	// deployment-owned config, not a binding `ServerBindings` names, so casting
+	// to this deployment's own `Cloudflare.Env` is the honest edge (ADR-0066).
+	resolveOrigin: (env) =>
+		(env as Cloudflare.Env).API_PUBLIC_ORIGIN ?? PRODUCTION_API_URL,
+	resolveTrustedOrigins: buildEpicenterTrustedOrigins,
 });
 
 // The cloud resolves a request to its principal by verifying an OAuth bearer against
@@ -88,7 +78,7 @@ const bearer = requireBearerPrincipal(resolveRequestOAuthPrincipal);
 // owns. This helper is the Worker's implementation of "serve the shell":
 // fetch it from the ASSETS binding, forwarding the original request so
 // conditional-request headers still work. The `Cloudflare.Env` cast lives
-// here at the app edge, like ROOM and HYPERDRIVE (ADR-0066). A 503 with the
+// here at the app edge, like ATTACH_RELAY and HYPERDRIVE (ADR-0066). A 503 with the
 // build command beats a blank page when the UI has not been built (local
 // `wrangler dev`).
 const serveUiShell = async (c: Context<CloudEnv>) => {
@@ -146,16 +136,12 @@ mountCloudflareEpicenterSyncApp(app, {
 			}
 		).EPICENTER_SYNC,
 });
-// Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver, not
-// a prebuilt wrapper.
-mountRoomsApp(app, { resolveBearerPrincipal: resolveRequestOAuthPrincipal });
 // Remote Super Chat attach (ADR-0115): the endpoint-addressed relay that forwards
 // live session bytes between a signed-in desktop host and a signed-in client of
-// the same principal. Like rooms it is WS-aware and resolves the OAuth bearer
-// itself; the principal is stamped server-side, never the query. The transport is
-// a Durable Object per `(principalId, hostId)` pair, bound here at the app edge
-// where this Worker's generated `ATTACH_RELAY` binding is typed (ADR-0066, the
-// same edge as ROOM). On Cloud a signed-in bearer is the whole attach
+// the same principal. It is WS-aware and resolves the OAuth bearer itself; the
+// principal is stamped server-side, never the query. The transport is a Durable
+// Object per `(principalId, hostId)` pair, bound here at the app edge where this
+// Worker's generated `ATTACH_RELAY` binding is typed (ADR-0066). On Cloud a signed-in bearer is the whole attach
 // authorization: no device-grant store, pairing ceremony, or QR (self-host keeps
 // per-device grants because it has no account substrate).
 mountAttachRelayApp(app, {
@@ -214,4 +200,4 @@ app.get('/billing', (c) => c.redirect('/dashboard'));
 export default {
 	fetch: app.fetch,
 };
-export { AttachRelay, EpicenterAuthority, Room };
+export { AttachRelay, EpicenterAuthority };

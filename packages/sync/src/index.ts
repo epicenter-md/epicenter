@@ -1,14 +1,17 @@
 /**
- * @epicenter/sync: Yjs Sync Protocol Primitives
+ * `@epicenter/sync`: WebSocket subprotocol auth.
  *
- * Encode/decode functions for the sync wire protocol.
+ * A browser `WebSocket` cannot set request headers, so a bearer credential
+ * rides the subprotocol list instead: the client offers `epicenter` plus
+ * `bearer.<token>`, and the server extracts the token and echoes back only the
+ * main subprotocol. These constants and helpers are the one vocabulary the
+ * client and server halves of that handshake must agree on.
  *
- * The binary WebSocket channel carries a single message family: Yjs
- * document sync. A binary frame is a sync frame, with no top-level
- * message-type discriminator. Presence frames ride text frames.
+ * The Yjs sync wire protocol this package was named for is gone (ADR-0166).
+ * The attach relay (ADR-0115) is the only remaining WebSocket surface, and it
+ * forwards opaque bytes rather than framing document updates.
  */
 
-// WebSocket subprotocol auth (shared client/server constants + helpers)
 export {
 	BEARER_SUBPROTOCOL_PREFIX,
 	isOpenWebSocketDenial,
@@ -16,18 +19,3 @@ export {
 	type OpenWebSocketDenial,
 	parseSubprotocols,
 } from './auth-subprotocol';
-// Transport origin sentinels (shared across all sync layers)
-export {
-	BC_ORIGIN,
-	isTransportOrigin,
-	SYNC_ORIGIN,
-} from './origins';
-// Protocol (encode/decode for WS sync messages)
-export {
-	encodeSyncStep1,
-	encodeSyncUpdate,
-	handleSyncPayload,
-	SYNC_MESSAGE_TYPE,
-	type SyncMessageType,
-} from './protocol';
-export { ROOM_ROUTE } from './room-route';

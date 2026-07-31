@@ -6,15 +6,13 @@
  * its composition rather than sharing a launcher: this one is bearer-only with no
  * relational-auth substrate (no Better Auth, no cookie sessions), so a shared
  * factory would re-introduce the mode knob ADR-0075/0076 deleted. It composes no
- * Postgres (no Better Auth, no telemetry), so its
- * runtime adapter (ADR-0066) provides only one leg:
- *
- *   - `resolveRooms`  an in-process registry over `bun:sqlite` files
+ * Postgres (no Better Auth, no telemetry), so it installs no runtime adapter leg
+ * at all (ADR-0066).
  *
  * This is the "one binary, no Cloudflare account, no database" instance artifact:
  * `bun server.ts` (or a `bun build --compile` binary) is a complete box on a
- * single node. Rooms are `bun:sqlite` files on local disk, so this is a single-node
- * deployment by design: it does not shard or hibernate per room the way the
+ * single node. Authority state is `bun:sqlite` files on local disk, so this is a
+ * single-node deployment by design: it does not shard or hibernate the way the
  * Durable Object edge does, which is exactly right for one homelab, one family, or
  * one small team and the price of owning your own data on your own machine.
  *
@@ -32,7 +30,7 @@
  * keeping the instance Bun-or-Cloudflare (the operator supplies the secret either
  * way).
  *
- * Surface: session + rooms + inference + blobs behind the operator bearer, zero
+ * Surface: session + sync + inference + blobs behind the operator bearer, zero
  * billing, no dashboard SPA, no auth surface. Remote Super Chat attach is the one
  * exception (ADR-0115): an attach connect carries a revocable per-device
  * grant instead of the operator token, and the operator token administers that
@@ -51,18 +49,15 @@ import { assertStrongToken } from '@epicenter/auth';
 import {
 	createAttachRelayBunServer,
 	createBunEpicenterSyncRuntime,
-	createBunRooms,
 	createDeviceGrantStore,
 	createEnvTokenResolver,
 	createServerApp,
-	mergeBunWebSocketHandlers,
 	mountAttachGrantsApp,
 	mountAttachRelayApp,
 	mountBlobsApp,
 	mountBunEpicenterSyncApp,
 	mountHostDirectoryApp,
 	mountInferenceApp,
-	mountRoomsApp,
 	mountSessionApp,
 	mountTranscriptionApp,
 	rateLimit,
@@ -143,10 +138,9 @@ export function startSelfHostServer(): void {
 		env.TRUSTED_BROWSER_ORIGINS,
 	);
 
-	// One data directory for this host's room and record SQLite files.
+	// One data directory for this host's record SQLite files.
 	const dataDir = resolve(env.DATA_DIR ?? './.data');
 	mkdirSync(dataDir, { recursive: true });
-	const bunRooms = createBunRooms({ dir: join(dataDir, 'rooms') });
 	// The current-state authority owns the same private records directory. Its
 	// first open deliberately drops legacy authority tables: synchronized
 	// authority state resets, while unrelated local-only workspace storage is
@@ -155,29 +149,26 @@ export function startSelfHostServer(): void {
 		dir: join(dataDir, 'records'),
 	});
 	// The AttachRelay coordinator for this instance (ADR-0115): the
-	// endpoint-addressed byte forwarder. It shares this process's one `Bun.serve`
-	// with the rooms backend (see the merged websocket handler below).
+	// endpoint-addressed byte forwarder. It owns this process's one `Bun.serve`
+	// WebSocket handler.
 	const attachRelay = createAttachRelayBunServer();
 	// The revocable per-device attach allowlist (ADR-0115). Attach connects
 	// resolve against this, not the operator token: a device pairs once (the
 	// operator mints it a grant, below), presents that grant on connect, and loses
 	// access the moment the operator revokes it. In-memory, so a restart re-pairs
-	// devices; persisting grants beside the rooms is deferred.
+	// devices; persisting grants beside the authority state is deferred.
 	const attachGrants = createDeviceGrantStore();
 
 	const app = createServerApp({
 		// The instance composes no Postgres (no Better Auth), so it never calls
 		// `mountCloudDb` and `createServerApp` stays on the portable `Env`: `c.var.db`
-		// is never set (ADR-0076). Its one runtime concern is the bun:sqlite rooms.
-		resolveRooms: () => bunRooms.rooms,
-		identity: {
-			resolveOrigin: () => origin,
-			// A self-host trusts its OWN origin, the Tauri desktop client, and any
-			// exact browser origins the operator configured, never Epicenter
-			// cloud's. Resolved at boot above, from the same function
-			// `worker/index.ts` calls, so the two runtimes cannot drift.
-			resolveTrustedOrigins: () => trustedOrigins,
-		},
+		// is never set (ADR-0076).
+		resolveOrigin: () => origin,
+		// A self-host trusts its OWN origin, the Tauri desktop client, and any
+		// exact browser origins the operator configured, never Epicenter
+		// cloud's. Resolved at boot above, from the same function
+		// `worker/index.ts` calls, so the two runtimes cannot drift.
+		resolveTrustedOrigins: () => trustedOrigins,
 	});
 
 	app.get('/', (c) =>
@@ -187,8 +178,6 @@ export function startSelfHostServer(): void {
 	// operator bearer (`auth` above) is the only gate, so every surface is
 	// bearer-authenticated (ADR-0075).
 	mountSessionApp(app, { auth });
-	// Rooms resolves the bearer itself (WS-aware), so it takes the raw resolver.
-	mountRoomsApp(app, { resolveBearerPrincipal });
 	mountBunEpicenterSyncApp(app, {
 		auth,
 		runtime: epicenterSync,
@@ -250,18 +239,9 @@ export function startSelfHostServer(): void {
 	const server = Bun.serve({
 		port,
 		fetch: (req) => app.fetch(req, env),
-		// Rooms and the attach relay both need WebSockets on this one port, but
-		// `Bun.serve` takes ONE handler. Each backend tags its `ws.data` with a
-		// `surface`, so this merged handler forwards every socket to its owner
-		// without blending their state.
-		websocket: mergeBunWebSocketHandlers({
-			rooms: bunRooms.websocket,
-			attach: attachRelay.websocket,
-		}),
+		// The attach relay owns the WebSocket surface on this port.
+		websocket: attachRelay.websocket,
 	});
-	// `server` only exists once `Bun.serve` returns; hand it to both backends so
-	// each `handleUpgrade` can call `server.upgrade` on the shared server.
-	bunRooms.bindServer(server);
 	attachRelay.bindServer(server);
 
 	// Close authority databases and their sockets before the process dies so WAL

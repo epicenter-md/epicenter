@@ -5,9 +5,7 @@
  * package of its own: the session projection, the blob HTTP surface,
  * and the OpenAI-compatible `/v1` inference gateways. This is not a registry of
  * every route in the repo. A route whose domain already owns a shared package
- * lives there instead, beside the protocol it belongs to: `@epicenter/sync`
- * owns the room route (`ROOM_ROUTE`, `/api/rooms/:roomId`) next to its message
- * framing, because both the sync server and the workspace client import it.
+ * lives there instead, beside the protocol it belongs to.
  * These leaves live here only because their two sides (server and the client
  * SDK) share nothing else they could hang the path on.
  *
