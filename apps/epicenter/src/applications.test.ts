@@ -83,9 +83,9 @@ describe('surface coverage', () => {
 			...COMPILED_APPLICATIONS.map(({ id }) => id),
 			...Object.keys(PLACEHOLDER_SURFACE_PAGES),
 		]);
-		expect(
-			Object.keys(SURFACE_ROUTES).filter((id) => !served.has(id)),
-		).toEqual([]);
+		expect(Object.keys(SURFACE_ROUTES).filter((id) => !served.has(id))).toEqual(
+			[],
+		);
 	});
 
 	test('each compiled application has its own surface route', () => {

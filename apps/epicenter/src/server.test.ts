@@ -245,7 +245,10 @@ async function serveHost(
 }
 
 async function createAppsDistFixture(homePage: string = PAGE) {
-	return loadStaticAssets(writeAppsDistFixture(homePage), COMPILED_APPLICATIONS);
+	return loadStaticAssets(
+		writeAppsDistFixture(homePage),
+		COMPILED_APPLICATIONS,
+	);
 }
 
 /** The loaded build of one compiled application, by ID. */

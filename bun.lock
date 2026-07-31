@@ -112,6 +112,7 @@
       },
       "devDependencies": {
         "@epicenter/app": "workspace:*",
+        "@epicenter/honeycrisp": "workspace:*",
         "@epicenter/lens": "workspace:*",
         "@sveltejs/vite-plugin-svelte": "catalog:",
         "@tailwindcss/vite": "catalog:",
