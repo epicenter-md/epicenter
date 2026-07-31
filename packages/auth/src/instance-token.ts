@@ -7,7 +7,7 @@
  * with no server coupling: {@link generateInstanceToken} mints a strong token and
  * {@link assertStrongToken} is the boot entropy gate. They live in `@epicenter/auth`
  * (not `@epicenter/server`) so a token can be generated and validated without
- * dragging the server graph in: the CLI and the self-host scripts depend on
+ * dragging the server graph in: the self-host scripts depend on
  * `@epicenter/auth`, not `@epicenter/server`.
  *
  * The matching RESOLVER side (turn a presented bearer into a principal, the

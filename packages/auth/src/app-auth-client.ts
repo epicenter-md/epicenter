@@ -34,8 +34,8 @@ export type CreateAppAuthClientOptions = {
 };
 
 /**
- * The one client-side choke point that turns a persisted {@link Instance} into a
- * concrete auth client, mirroring `createMachineAuthClient` on the node side.
+ * The one choke point that turns a persisted {@link Instance} into a concrete
+ * auth client. Every Epicenter surface reaches auth through here.
  *
  * The persisted instance is the only branch, and it is a clean two-state value
  * (ADR-0070/0071):
