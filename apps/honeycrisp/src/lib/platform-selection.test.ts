@@ -10,6 +10,12 @@
  * its WebView's own OPFS and keep notes somewhere nobody else can read, while
  * still building and still starting. Nothing downstream would complain. These
  * assertions complain instead.
+ *
+ * This is the cheap structural half: it reads declarations, so it can say
+ * exactly which seam lost its host leaf, in milliseconds. What it cannot do is
+ * prove the build honored them. That is
+ * `apps/epicenter/scripts/build-applications.test.ts`, which runs the real build
+ * and reads the emitted bytes.
  */
 
 import { describe, expect, test } from 'bun:test';

@@ -20,9 +20,11 @@ owns its own storage, so those two are separate facts here. Load
 
 Dropping a host leaf from a seam fails no build. Resolution falls back to the
 browser leaf and the hosted build silently keeps notes where nothing else can
-read them, which is what `src/lib/platform-selection.test.ts` exists to catch.
-`typecheck` runs all three conditions; only the default one is checked by an
-editor.
+read them. Two tests catch that: `src/lib/platform-selection.test.ts` reads the
+declarations and names the broken seam, and
+`../epicenter/scripts/build-applications.test.ts` runs the real build and reads
+the emitted bytes. `typecheck` runs all three conditions; only the default one
+is checked by an editor.
 
 ## Don'ts
 
