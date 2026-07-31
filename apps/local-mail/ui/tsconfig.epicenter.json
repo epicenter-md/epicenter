@@ -1,0 +1,10 @@
+{
+	// Typechecks the `#platform/mail-host` epicenter-host condition.
+	// `tsconfig.json` resolves the default (standalone) impl, so the
+	// host-served one is only checked when the resolver is flipped here.
+	// `bun run typecheck` runs both.
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"customConditions": ["epicenter-host"]
+	}
+}

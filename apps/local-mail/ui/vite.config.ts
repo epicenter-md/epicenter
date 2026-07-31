@@ -1,7 +1,9 @@
 import { readPresence } from '@epicenter/local-mail/presence';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
-import { defineConfig, type Plugin } from 'vite';
+import { defaultClientConditions, defineConfig, type Plugin } from 'vite';
+
+const isEpicenterSurface = process.env.EPICENTER_SURFACE === '1';
 
 // The SPA is same-origin with the API. In production `local-mail app` serves the
 // built SPA and `/api` from one loopback origin, injecting the per-launch bearer
@@ -45,6 +47,15 @@ export default defineConfig(({ command }) => {
 		`http://127.0.0.1:${Number(process.env.LOCAL_MAIL_PORT) || 4177}`;
 	return {
 		plugins: [sveltekit(), tailwindcss(), denyFramingInDev()],
+		resolve: {
+			// Build-time platform DI over the `#platform/mail-host` subpath in
+			// package.json "imports": which host mounted the mail surface, and what
+			// authenticates it (ADR-0191). The spread is load-bearing, because
+			// custom conditions REPLACE Vite's defaults.
+			...(isEpicenterSurface && {
+				conditions: ['epicenter-host', ...defaultClientConditions],
+			}),
+		},
 		server: {
 			port: SPA_DEV_PORT,
 			strictPort: true,
