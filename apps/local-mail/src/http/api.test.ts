@@ -10,9 +10,17 @@
  * Paths carry no prefix and requests carry no credential: the app is mounted
  * and authenticated by its host (ADR-0191), so both are the host's to test.
  *
- * Only the read/status/list surface and the sync-busy yield are exercised here
- * (a real Gmail client would be needed for modify/trash); that is the smallest
- * surface that proves N accounts compose under one app.
+ * The write routes are exercised against an injected fake Gmail client. That
+ * replaces the deleted write-path smoke harness, which stood up a throwaway
+ * mirror copy, forged credentials, a mock Gmail server, and a spawned host on a
+ * real port to make one write safe to execute. All of that protected a process
+ * that read real configuration; a test holding a fake client has nothing real to
+ * reach, so it needs none of it, and unlike the harness it runs in CI.
+ *
+ * What these add over `modify.test.ts`, which already covers the write cores in
+ * depth: the route wiring itself. That a modify or trash request reaches the
+ * core with the body it was given, that `readOnly` is refused at the route, and
+ * that a Gmail failure becomes `ModifyFailed` rather than a 500.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -70,11 +78,59 @@ function message(id: string, subject: string): GmailMessage {
  * the shared data dir (the arrangement the host uses: one dir, one subdir per
  * account). `ownsLoop` defaults true; the gate is a passthrough.
  */
+/**
+ * A Gmail client that records what the route asked of it and answers from a
+ * canned table. Deliberately smaller than `modify.test.ts`'s fake: these tests
+ * care that the call was made with the right arguments, not about the error
+ * matrix that file already walks.
+ */
+function fakeGmailClient(options: { fail?: boolean } = {}) {
+	const modifyCalls: {
+		id: string;
+		addLabelIds?: string[];
+		removeLabelIds?: string[];
+	}[] = [];
+	const trashCalls: { id: string; trashed: boolean }[] = [];
+	const failure = {
+		data: null,
+		error: { name: 'GmailApiError' as const, message: 'Gmail refused' },
+	};
+	const client = {
+		modifyCalls,
+		trashCalls,
+		async modifyMessage(id: string, body: Record<string, string[]>) {
+			modifyCalls.push({ id, ...body });
+			if (options.fail) return failure;
+			return { data: message(id, `subject ${id}`), error: null };
+		},
+		async trashMessage(id: string) {
+			trashCalls.push({ id, trashed: true });
+			if (options.fail) return failure;
+			return { data: message(id, `subject ${id}`), error: null };
+		},
+		async untrashMessage(id: string) {
+			trashCalls.push({ id, trashed: false });
+			if (options.fail) return failure;
+			return { data: message(id, `subject ${id}`), error: null };
+		},
+		async listLabels() {
+			// The core resolves a label name or id through the mirror, falling back
+			// to one live refresh; INBOX has to come back or archive cannot resolve.
+			return {
+				data: [{ id: 'INBOX', name: 'INBOX', type: 'system' }],
+				error: null,
+			};
+		},
+	};
+	return client as typeof client & GmailClient;
+}
+
 function account(
 	dataDir: string,
 	accountEmail: string,
 	seed: { messageId: string; subject: string; label: string },
 	ownsLoop = true,
+	client: GmailClient = {} as unknown as GmailClient,
 ): { api: AccountApi; db: MailDb } {
 	const db = openMailDb({ dataDir, accountEmail });
 	const syncedAt = '2026-07-08T00:00:00.000Z';
@@ -91,9 +147,9 @@ function account(
 	};
 	const syncDeps: SyncDeps = {
 		db,
-		// The read/list/status/busy paths never call the client; a real one is
-		// only needed for the modify/trash routes, which are not exercised here.
-		client: {} as unknown as GmailClient,
+		// The read/list/status/busy paths never touch the client, so they pass the
+		// unusable default; the write routes pass a fake that records its calls.
+		client,
 		config: runtime.config,
 		now: () => Date.parse(syncedAt),
 	};
@@ -235,6 +291,145 @@ describe('createApiApp multi-account routing', () => {
 			synced: false,
 			reason: 'sync-owner-active',
 		});
+
+		a.db.close();
+		tmp.cleanup();
+	});
+
+	test('modify reaches the core with the labels the request carried', async () => {
+		const tmp = tempDir();
+		const client = fakeGmailClient();
+		const a = account(
+			tmp.dir,
+			'a@example.com',
+			{ messageId: 'ma', subject: 'A', label: 'LA' },
+			true,
+			client,
+		);
+		const app = createApiApp({
+			accounts: new Map([['a@example.com', a.api]]),
+			readOnly: false,
+		});
+
+		const res = await app.fetch(
+			new Request('http://127.0.0.1/accounts/a@example.com/messages/modify', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ ids: ['ma'], removeLabels: ['INBOX'] }),
+			}),
+		);
+		expect(res.status).toBe(200);
+		// Archive desugars to one remove, and the route hands the core the ids and
+		// label sets verbatim rather than reinterpreting them.
+		expect(client.modifyCalls).toEqual([
+			{ id: 'ma', addLabelIds: [], removeLabelIds: ['INBOX'] },
+		]);
+
+		a.db.close();
+		tmp.cleanup();
+	});
+
+	test('trash carries its direction to the matching Gmail verb', async () => {
+		const tmp = tempDir();
+		const client = fakeGmailClient();
+		const a = account(
+			tmp.dir,
+			'a@example.com',
+			{ messageId: 'ma', subject: 'A', label: 'LA' },
+			true,
+			client,
+		);
+		const app = createApiApp({
+			accounts: new Map([['a@example.com', a.api]]),
+			readOnly: false,
+		});
+
+		const trash = async (trashed: boolean) =>
+			app.fetch(
+				new Request('http://127.0.0.1/accounts/a@example.com/messages/trash', {
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ ids: ['ma'], trashed }),
+				}),
+			);
+		expect((await trash(true)).status).toBe(200);
+		expect((await trash(false)).status).toBe(200);
+		// Gmail models trash and untrash as separate endpoints, so the boolean has
+		// to pick one; this is the assertion that it picks the right one.
+		expect(client.trashCalls).toEqual([
+			{ id: 'ma', trashed: true },
+			{ id: 'ma', trashed: false },
+		]);
+
+		a.db.close();
+		tmp.cleanup();
+	});
+
+	test('readOnly refuses a write at the route, before Gmail', async () => {
+		const tmp = tempDir();
+		const client = fakeGmailClient();
+		const a = account(
+			tmp.dir,
+			'a@example.com',
+			{ messageId: 'ma', subject: 'A', label: 'LA' },
+			true,
+			client,
+		);
+		const app = createApiApp({
+			accounts: new Map([['a@example.com', a.api]]),
+			readOnly: true,
+		});
+
+		const res = await app.fetch(
+			new Request('http://127.0.0.1/accounts/a@example.com/messages/modify', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ ids: ['ma'], removeLabels: ['INBOX'] }),
+			}),
+		);
+		expect(res.status).toBe(400);
+		// The point of the kill switch is that nothing reached Gmail, not merely
+		// that the caller saw an error.
+		expect(client.modifyCalls).toEqual([]);
+
+		a.db.close();
+		tmp.cleanup();
+	});
+
+	test('a per-message Gmail failure rides inside the outcome, not the status', async () => {
+		const tmp = tempDir();
+		const client = fakeGmailClient({ fail: true });
+		const a = account(
+			tmp.dir,
+			'a@example.com',
+			{ messageId: 'ma', subject: 'A', label: 'LA' },
+			true,
+			client,
+		);
+		const app = createApiApp({
+			accounts: new Map([['a@example.com', a.api]]),
+			readOnly: false,
+		});
+
+		const res = await app.fetch(
+			new Request('http://127.0.0.1/accounts/a@example.com/messages/modify', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ ids: ['ma'], removeLabels: ['INBOX'] }),
+			}),
+		);
+		// Deliberately a 200. A write is per-id and Gmail-first, so one message
+		// failing is a fact about that message, not a failed request: the caller
+		// needs to see which ids changed and which did not. `ModifyFailed` is
+		// reserved for a systemic refusal, like an unknown label or read-only.
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as {
+			results: { id: string; folded: boolean; error: unknown }[];
+		};
+		expect(body.results).toHaveLength(1);
+		expect(body.results[0]?.id).toBe('ma');
+		expect(body.results[0]?.folded).toBe(false);
+		expect(body.results[0]?.error).not.toBeNull();
 
 		a.db.close();
 		tmp.cleanup();
