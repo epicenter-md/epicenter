@@ -19,6 +19,7 @@ import type { AuthFetch } from './auth-contract.ts';
 import {
 	createDesktopBrokerAuth,
 	createDesktopInstanceSetting,
+	readDesktopAuthBootstrap,
 } from './desktop-broker-auth.ts';
 
 const bootstrap = {
@@ -180,4 +181,54 @@ test('instance writes go to the broker and never touch window storage', async ()
 		'http://127.0.0.1:39130/_epicenter/account/instance',
 	]);
 	expect(calls[1]?.init?.method).toBe('DELETE');
+});
+
+/**
+ * The boot snapshot is read once and then gone.
+ *
+ * Every build the desktop host serves parses the same element, and the removal
+ * is the load-bearing half: an identity snapshot has no business staying in the
+ * DOM, and each app's bootstrap module depends on being the only reader.
+ */
+function withBootstrapElement(textContent: string | null) {
+	let removed = false;
+	const element = {
+		textContent,
+		remove() {
+			removed = true;
+		},
+	};
+	const original = (globalThis as { document?: unknown }).document;
+	(globalThis as { document?: unknown }).document = {
+		querySelector: (selector: string) =>
+			selector === '#epicenter-auth-bootstrap' && !removed ? element : null,
+	};
+	return {
+		wasRemoved: () => removed,
+		[Symbol.dispose]() {
+			(globalThis as { document?: unknown }).document = original;
+		},
+	};
+}
+
+test('reading the boot snapshot parses it and takes it out of the document', () => {
+	using served = withBootstrapElement(JSON.stringify(bootstrap));
+
+	expect(readDesktopAuthBootstrap()).toEqual(bootstrap);
+	expect(served.wasRemoved()).toBe(true);
+	// The element is gone, so a second reader gets the honest failure rather
+	// than a stale snapshot.
+	expect(() => readDesktopAuthBootstrap()).toThrow(
+		'Epicenter did not provide the desktop auth bootstrap.',
+	);
+});
+
+test('an unparseable boot snapshot fails instead of degrading', () => {
+	using served = withBootstrapElement('{not json');
+
+	expect(() => readDesktopAuthBootstrap()).toThrow(
+		'Epicenter provided an invalid desktop auth bootstrap.',
+	);
+	// Still removed: a snapshot nobody could read is not one to leave lying around.
+	expect(served.wasRemoved()).toBe(true);
 });

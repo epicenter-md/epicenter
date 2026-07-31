@@ -38,7 +38,7 @@ describe('Epicenter-hosted Whispering identity', () => {
 		expect(read('src/lib/platform/base-path.browser.ts')).toContain(
 			"WHISPERING_BASE_PATHNAME = ''",
 		);
-		expect(read('src/lib/platform/base-path.tauri.ts')).toContain(
+		expect(read('src/lib/platform/base-path.epicenter-host.ts')).toContain(
 			"WHISPERING_BASE_PATHNAME = '/apps/whispering'",
 		);
 		expect(whisperingPath('/')).toBe('/');
@@ -54,11 +54,15 @@ describe('Epicenter-hosted Whispering identity', () => {
 	});
 
 	test('desktop auth uses the Bun authority instead of a window OAuth launcher', () => {
-		const auth = read('src/lib/platform/auth.tauri.ts');
-		const bootstrap = read('src/lib/platform/desktop-auth-bootstrap.tauri.ts');
-		const instance = read('src/lib/platform/instance.tauri.ts');
+		const auth = read('src/lib/platform/auth.epicenter-host.ts');
+		const bootstrap = read(
+			'src/lib/platform/desktop-auth-bootstrap.epicenter-host.ts',
+		);
+		const instance = read('src/lib/platform/instance.epicenter-host.ts');
 		expect(auth).toContain('createDesktopBrokerAuth');
-		expect(bootstrap).toContain('epicenter-auth-bootstrap');
+		// The element and its removal are `@epicenter/auth/desktop`'s, shared with
+		// every other compiled application; this build only reads the snapshot.
+		expect(bootstrap).toContain('readDesktopAuthBootstrap');
 		expect(instance).toContain('createDesktopInstanceSetting');
 		expect(instance).not.toContain('createInstanceSetting');
 		expect(auth).not.toContain('createHostedDeepLinkAuth');
