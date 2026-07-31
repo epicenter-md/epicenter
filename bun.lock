@@ -263,7 +263,6 @@
         "wellcrafted": "catalog:",
       },
       "devDependencies": {
-        "@tauri-apps/cli": "catalog:",
         "@types/bun": "catalog:",
         "typescript": "catalog:",
       },

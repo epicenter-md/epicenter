@@ -15,18 +15,13 @@
 		"./engine": "./src/engine.ts",
 		"./http/api": "./src/http/api.ts",
 		"./http/api-errors": "./src/http/api-errors.ts",
-		"./presence": "./src/presence.ts"
+		"./mount": "./src/mount.ts"
 	},
 	"scripts": {
 		"connect": "bun run src/bin.ts connect",
 		"sync": "bun run src/bin.ts sync",
 		"status": "bun run src/bin.ts status",
-		"app": "bun run src/bin.ts app",
-		"app:desktop": "tauri dev",
-		"build:sidecar": "bun run scripts/build-sidecar.ts",
-		"build:desktop": "bun run --cwd ui build && bun run build:sidecar",
-		"desktop:build": "tauri build",
-		"tauri": "tauri",
+		"dev:api": "bun run scripts/dev-api.ts",
 		"check:gmail-drift": "bun run test-support/check-gmail-discovery.ts",
 		"test": "bun test",
 		"typecheck": "tsc --noEmit && tsc --noEmit -p test-support/tsconfig.json"
@@ -42,7 +37,6 @@
 		"wellcrafted": "catalog:"
 	},
 	"devDependencies": {
-		"@tauri-apps/cli": "catalog:",
 		"@types/bun": "catalog:",
 		"typescript": "catalog:"
 	},

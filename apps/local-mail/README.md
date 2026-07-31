@@ -18,14 +18,11 @@ table.
 
 - Runtime: Bun. `bun:sqlite` stores the mirror, built-in `fetch` calls Gmail,
   `oauth4webapi` handles OAuth.
-- Two hosts open the same engine (`src/engine.ts`, ADR-0191). Epicenter opens it
-  at boot, mounts the mail surface at `/api/mail` behind its own browser
-  session, and owns the sync loop for its process lifetime; that is where Mail
-  ships as a compiled application. Standalone `local-mail app` opens the same
-  engine, adds a per-launch loopback bearer, and serves the SPA from `ui/dist`.
-  The HTTP surface (`src/http/api.ts`) carries no path prefix and no
-  authentication of its own, so a host chooses both and neither host can drift
-  from the other on what an open account means.
+- One host opens the engine (`src/engine.ts`, ADR-0191): Epicenter, at boot. It
+  mounts the mail surface at `/api/mail` behind its own browser session and owns
+  the sync loop for its process lifetime. This package ships no host, no window,
+  and no credential of its own; `scripts/dev-api.ts` serves the same surface on
+  loopback for SPA development and is never shipped.
 - One SQLite file per connected account: `<data-dir>/<accountEmail>/mail.db`.
   The refresh token lives in a separate `0600 credentials.json` at the data-dir
   root, never inside the mirror db.
@@ -127,44 +124,33 @@ Any per-id rejection or a systemic abort exits nonzero, so
 `LOCAL_MAIL_READ_ONLY` refuses every write while leaving `query`/`status`/`sync`
 available.
 
-Serve the triage UI and its API from one loopback process:
+The triage UI is not served from here. Epicenter serves it as the `mail`
+compiled application at `/apps/mail/` and mounts this package's HTTP surface at
+`/api/mail` on the same origin, behind the browser session it already requires
+of every surface (ADR-0191). The surface itself carries no path prefix and no
+authentication: a host chooses both, and `src/mount.ts` holds the one path the
+host and the SPA agree on.
+
+Under that host, `GET /api/mail/accounts` lists every connected account and
+reads/writes live under `/api/mail/accounts/:account/*`. The label write route is
+`POST .../messages/modify` (`{ ids, addLabels, removeLabels }` ->
+`ModifyMessageLabelsOutcome`) over the same core the CLI verbs and MCP tool use,
+so archive/read/label all desugar to add/remove sets client-side.
+`LOCAL_MAIL_READ_ONLY` disables writes end to end.
+
+Develop the triage SPA with HMR:
 
 ```sh
-bun run src/bin.ts app
+bun run dev:api                  # serves /api/mail on 127.0.0.1:4177
+bun run --cwd ui dev             # Vite serves the SPA and proxies /api/mail to it
 ```
 
-`app` is the desktop runtime host: it runs the sync loop and serves the triage
-SPA (`ui/`) plus a same-origin `/api` on `127.0.0.1`, then prints the origin to
-open (`http://127.0.0.1:PORT`). It launches no browser; opening the window is the
-host's job (a terminal today, Tauri later), not the engine's. Security: every
-request is Host-checked first (the DNS-rebinding kill switch); the web UI carries
-a per-launch local API bearer that the host injects into the served HTML as
-`window.__LOCAL_MAIL__ = { origin, bearer }` before the SPA boots (no URL
-fragment, no session-exchange endpoint, no sessionStorage), and that HTML is
-served `no-store` and frame-denied so a rotated bearer is never cached and a
-cross-origin page cannot frame the auto-authenticated SPA. The bearer is a
-loopback credential, never a Gmail token. In app mode the host loads every
-connected account and serves them under one origin: `GET /api/accounts` lists
-the loaded accounts, and reads/writes live under `/api/accounts/:account/*`.
-The label write route is `POST /api/accounts/:account/messages/modify`
-(`{ ids, addLabels, removeLabels }` -> `ModifyMessageLabelsOutcome`) over the
-same core the CLI verbs and MCP tool use, so archive/read/label all desugar to
-add/remove sets client-side. `LOCAL_MAIL_READ_ONLY` disables writes end to end;
-`--port <n>` pins the server port (`LOCAL_MAIL_PORT` is the env fallback).
-
-Develop the UI against a running `app`:
-
-```sh
-LOCAL_MAIL_PORT=4177 bun run src/bin.ts app   # serves /api + writes the presence file
-bun run --cwd ui dev                          # Vite proxies /api to the host and injects its bearer from the presence file
-```
-
-The dev server reads the host's `0600` presence file (`runtime.json`) for the
-per-launch bearer and injects it on each proxied `/api` request (SvelteKit's dev
-HTML pipeline bypasses Vite's HTML transform, so the prod `window.__LOCAL_MAIL__`
-injection is a proxy-side header in dev). No token is typed by a human. Start the
-host first; a host restart rotates the bearer, so restart the dev server to pick
-it up. Pin `LOCAL_MAIL_PORT` if the host uses an ephemeral port.
+`scripts/dev-api.ts` is a dev server, not a host: it opens the engine and serves
+the surface at the same path Epicenter does, and nothing else. No static assets,
+no bearer, no presence file, no window. It exists because Mail's data plane is
+its engine, and a Vite dev server cannot authenticate against a running
+Epicenter, whose launch token travels Rust to Bun over stdin and is never
+written to disk.
 
 Serve tools to an MCP host:
 
@@ -172,8 +158,8 @@ Serve tools to an MCP host:
 bun run src/bin.ts mcp
 ```
 
-When more than one account is connected, `local-mail app` serves all of them
-under one origin with an account switcher. Set `LOCAL_MAIL_ACCOUNT` only for
+When more than one account is connected, the engine opens all of them and the
+surface serves them under one origin with an account switcher. Set `LOCAL_MAIL_ACCOUNT` only for
 headless `sync`, `query`, and `mcp`, which operate on one account per process.
 
 Tools:
@@ -224,16 +210,12 @@ stdio subprocess for the agent-facing protocol surface.
 - Remote image loading and Gmail-perfect HTML fidelity. Formatted bodies render
   as sanitized inline HTML on a light canvas; remote assets stay stripped, and
   there is no show-images proxy yet.
-- Signed distribution. The Tauri desktop shell (`src-tauri/`, run with
-  `bun run app:desktop`) spawns this engine, reads the origin it prints, and
-  opens a `WebviewUrl::External` window at it, owning only the window and the
-  engine's lifetime (Rust never touches Gmail tokens, mail data, or the bearer).
-  `bun run desktop:build` produces a local unsigned macOS `.app` with the compiled
-  Bun sidecar and bundled SPA resources. The shell can compile in the
-  distribution's public Google client identity, but no official Epicenter
-  identity is provisioned in this repository. Signing, notarization, and the
-  official Google client still need release configuration, as described in
-  `src-tauri/README.md`.
+- Signed distribution. This package no longer ships a desktop shell of its own:
+  packaging, signing, and notarization belong to Epicenter, which ships Mail as
+  a compiled application (ADR-0191). What is still unprovisioned is the official
+  Google client identity: no verified Epicenter-owned Desktop client exists in
+  this repository yet, so an official build cannot present an Epicenter consent
+  screen (ADR-0188 clause 1).
 - Send, reply, compose, drafts, trash, untrash, and permanent delete.
 - Thread-level modify and `messages.batchModify`. Triage is message-level.
 - FTS5. `LIKE` over `body_text` is enough for the current mirror size.

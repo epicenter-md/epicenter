@@ -24,13 +24,6 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
  * ```
  */
 export const ApiError = defineErrors({
-	/** Missing or stale bearer on a gated `/api` route. A stale bearer means the
-	 * host rotated it (a restart), so reloading the page re-reads the current
-	 * injected bearer. */
-	Unauthorized: () => ({
-		message: 'Unauthorized. Reload the page to re-authenticate.',
-		status: 401 as const,
-	}),
 	/** The `:account` path segment names no account the host loaded at launch.
 	 * The app enumerates connected accounts once at start, so an account
 	 * connected after launch is unknown until the next restart. */
@@ -57,8 +50,7 @@ export const ApiError = defineErrors({
 	/** The host mounted these routes but has no engine behind them, because no
 	 * Gmail account is connected on this device. Emitted by the host in front of
 	 * the mail app, never by the app itself (ADR-0191): the app only exists when
-	 * an account opened. Distinct from `Unauthorized`, which reloading fixes;
-	 * this one needs `local-mail connect`. */
+	 * an account opened; this state needs `local-mail connect`. */
 	MailUnavailable: () => ({
 		message:
 			'No Gmail account is connected on this device. Run "local-mail connect" to add one.',

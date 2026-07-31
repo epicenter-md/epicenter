@@ -15,19 +15,18 @@
  * and Honeycrisp own a replica, so a build that reached the host names the
  * desktop data route and ships no browser storage engine. Mail owns no replica
  * at all: its data is a device-local SQLite mirror of Gmail behind the surface
- * the host mounts, so its build names that mount and carries none of the
- * standalone host's injected bearer global.
+ * the host mounts, so its build names that mount.
  *
- * Both cases assert the same thing, so {@link HOST_DATA_PROOFS} states it once
- * per application: one marker the host-served build must emit, one marker that
- * only the other leaf emits and this build therefore must not. A newly declared
- * compiled application with no entry fails here, which is the point: "how does
- * this application get its data" is not a question a release should ship
- * unanswered.
+ * Every case asserts the same thing, so {@link HOST_DATA_PROOFS} states it once
+ * per application: one marker the host-served build must emit, and, where the
+ * application still has a second build leaf to lose to, one marker that only
+ * that leaf emits. A newly declared compiled application with no entry fails
+ * here, which is the point: "how does this application get its data" is not a
+ * question a release should ship unanswered.
  *
- * The browser control below is what keeps the negatives honest: it proves the
- * absent markers are markers this codebase really emits when the other leaf
- * wins, rather than strings that never appear anywhere.
+ * The browser control below is what keeps the negative honest: it proves the
+ * absent marker is one this codebase really emits when the other leaf wins,
+ * rather than a string that never appears anywhere.
  *
  * See also:
  * - `apps/honeycrisp/src/lib/platform-selection.test.ts` for the cheap
@@ -59,25 +58,24 @@ const repoRoot = join(epicenterDir, '..', '..');
 const BROWSER_STORAGE_ASSET = /sqlite3/i;
 
 /**
- * The standalone Local Mail host hands its SPA a per-launch bearer through an
- * injected `window.__LOCAL_MAIL__` global. The Epicenter build rides the host's
- * session instead and mints nothing, so this global appearing in `dist/mail`
- * means the standalone leaf won and the surface is talking to the wrong host.
- */
-const STANDALONE_MAIL_BEARER = '__LOCAL_MAIL__';
-
-/**
  * What each compiled application's host build must, and must not, contain.
  *
- * `reaches` is emitted only by the host leaf; `insteadOf` only by the leaf that
- * would win if the seam broke. A path pattern catches a shipped asset, a source
- * needle catches emitted JavaScript.
+ * `reaches` is emitted only by the host leaf. `insteadOf` is emitted only by the
+ * leaf that would win if the seam broke, so it is what makes the positive honest;
+ * a path pattern catches a shipped asset, a source needle catches emitted
+ * JavaScript.
+ *
+ * Mail declares no `insteadOf`, and that is a fact about Mail rather than a gap.
+ * Whispering and Honeycrisp each have a second build leaf that a broken
+ * `#platform/*` condition would silently select. Mail has one build and one
+ * server path: its standalone host and the seam that chose between them were
+ * deleted by ADR-0191, so there is no other leaf left to lose to.
  */
 const HOST_DATA_PROOFS: Record<
 	string,
 	{
 		reaches: string;
-		insteadOf: { assetPath?: RegExp; sourceNeedle?: string };
+		insteadOf?: { assetPath?: RegExp; sourceNeedle?: string };
 	}
 > = {
 	whispering: {
@@ -90,7 +88,6 @@ const HOST_DATA_PROOFS: Record<
 	},
 	mail: {
 		reaches: MAIL_API_PREFIX,
-		insteadOf: { sourceNeedle: STANDALONE_MAIL_BEARER },
 	},
 };
 
@@ -156,7 +153,7 @@ describe('compiled application builds', () => {
 
 				expect(await anyFileContains(emitted, proof.reaches)).toBe(true);
 
-				if (proof.insteadOf.assetPath) {
+				if (proof.insteadOf?.assetPath) {
 					const pattern = proof.insteadOf.assetPath;
 					expect(
 						emitted
@@ -164,7 +161,7 @@ describe('compiled application builds', () => {
 							.map((path) => relative(distRoot, path)),
 					).toEqual([]);
 				}
-				if (proof.insteadOf.sourceNeedle) {
+				if (proof.insteadOf?.sourceNeedle) {
 					expect(
 						await anyFileContains(emitted, proof.insteadOf.sourceNeedle),
 					).toBe(false);
@@ -191,19 +188,6 @@ describe('compiled application builds', () => {
 			expect(emitted.some((path) => BROWSER_STORAGE_ASSET.test(path))).toBe(
 				true,
 			);
-		},
-		BUILD_TIMEOUT_MS,
-	);
-
-	test(
-		'the control: Mail built for its standalone host does the opposite',
-		async () => {
-			const mailUiDir = join(repoRoot, 'apps', 'local-mail', 'ui');
-			await run('build', mailUiDir);
-			const emitted = filesUnder(join(mailUiDir, 'dist'));
-
-			expect(await anyFileContains(emitted, MAIL_API_PREFIX)).toBe(false);
-			expect(await anyFileContains(emitted, STANDALONE_MAIL_BEARER)).toBe(true);
 		},
 		BUILD_TIMEOUT_MS,
 	);

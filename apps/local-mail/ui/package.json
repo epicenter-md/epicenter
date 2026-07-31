@@ -1,22 +1,15 @@
 {
 	"name": "@epicenter/local-mail-ui",
-	"description": "Local Mail triage SPA, served same-origin by its host: `local-mail app` standalone, or Epicenter as the `mail` compiled application",
+	"description": "Local Mail triage SPA, served by the Epicenter host as the `mail` compiled application",
 	"private": true,
 	"version": "0.0.1",
 	"type": "module",
-	"imports": {
-		"#platform/mail-host": {
-			"epicenter-host": "./src/lib/platform/mail-host.epicenter-host.ts",
-			"default": "./src/lib/platform/mail-host.standalone.ts"
-		}
-	},
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
-		"build:epicenter": "EPICENTER_SURFACE=1 bun run build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
-		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && svelte-check --tsconfig ./tsconfig.epicenter.json"
+		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
 	},
 	"devDependencies": {
 		"@epicenter/local-mail": "workspace:*",

@@ -1,18 +1,27 @@
 import type { ApiApp } from '@epicenter/local-mail/http/api';
+import { MAIL_API_PREFIX } from '@epicenter/local-mail/mount';
 import { hc } from 'hono/client';
-import { mailApiBase, mailApiFetch } from '#platform/mail-host';
 
 // The mail `/api` client, typed end to end by `hc<ApiApp>`: its request and
 // response shapes are inferred from the Hono routes in
 // `apps/local-mail/src/http/api.ts`, so the wire contract cannot drift from the
 // server.
 //
-// Where that surface is mounted, and what authenticates it, belong to the host
-// (ADR-0191) and reach this module through the `#platform/mail-host` seam:
-// `/api` behind a per-launch bearer under standalone `local-mail app`,
-// `/api/mail` behind Epicenter's own browser session under the Epicenter build.
-// The routes themselves are prefix-free, so one generated client serves both.
-const client = hc<ApiApp>(mailApiBase, { fetch: mailApiFetch });
+// One base, because there is one place this surface is ever served: the host
+// mounts it at MAIL_API_PREFIX on the origin serving this SPA (ADR-0191). In
+// production that host is Epicenter; in dev it is `scripts/dev-api.ts` behind
+// the Vite proxy, at the same path. No credential is attached: an application
+// window inside Epicenter runs as Epicenter, riding the session the host
+// already requires of every request it serves.
+//
+// `hc` needs an absolute base, and this module only ever executes in the
+// browser (the SPA is `ssr: false`, `prerender: false`); the localhost fallback
+// keeps a stray import from throwing at load.
+const base =
+	typeof window === 'undefined'
+		? `http://localhost${MAIL_API_PREFIX}`
+		: `${window.location.origin}${MAIL_API_PREFIX}`;
+const client = hc<ApiApp>(base);
 
 async function toError(res: Response): Promise<Error> {
 	// Errors arrive as wellcrafted's envelope `{ data: null, error: { name,

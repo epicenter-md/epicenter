@@ -14,7 +14,7 @@
 		"build": "bun run clean:dist && bun run build:home && bun run build:whispering && bun run build:honeycrisp && bun run build:mail",
 		"build:home": "vite build",
 		"build:honeycrisp": "bun run --cwd ../honeycrisp build:epicenter",
-		"build:mail": "bun run --cwd ../local-mail/ui build:epicenter",
+		"build:mail": "bun run --cwd ../local-mail/ui build",
 		"build:sidecar": "bun run scripts/build-sidecar.ts",
 		"build:whispering": "bun run --cwd ../whispering build:epicenter",
 		"clean:dist": "bun run scripts/clean-dist.ts",
