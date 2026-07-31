@@ -1,12 +1,14 @@
 /**
- * Multi-account `/api` surface tests (`createApiApp`).
+ * Multi-account mail surface tests (`createApiApp`).
  *
- * The desktop host serves every connected mailbox under one loopback origin, so
- * these prove the account-scoped routing: `GET /api/accounts` lists the loaded
- * set, `/api/accounts/:account/*` reads are isolated per account, an unknown
- * `:account` is a 404, the bearer gate refuses a wrong/absent bearer, and a
- * `POST .../sync` on an account whose loop is owned elsewhere yields busy rather
- * than racing a second bulk pull.
+ * A host serves every connected mailbox under one origin, so these prove the
+ * account-scoped routing: `GET /accounts` lists the loaded set,
+ * `/accounts/:account/*` reads are isolated per account, an unknown `:account`
+ * is a 404, and a `POST .../sync` on an account whose loop is owned elsewhere
+ * yields busy rather than racing a second bulk pull.
+ *
+ * Paths carry no prefix and requests carry no credential: the app is mounted
+ * and authenticated by its host (ADR-0191), so both are the host's to test.
  *
  * Only the read/status/list surface and the sync-busy yield are exercised here
  * (a real Gmail client would be needed for modify/trash); that is the smallest
@@ -25,8 +27,6 @@ import type { GmailMessage } from '../schema.ts';
 import type { SyncDeps } from '../sync.ts';
 import type { TokenStore } from '../token-store.ts';
 import { type AccountApi, createApiApp } from './api.ts';
-
-const BEARER = 'test-bearer';
 
 function config(dataDir: string): AppConfig {
 	return {
@@ -108,20 +108,12 @@ function tempDir(): { dir: string; cleanup: () => void } {
 	return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
-function get(
-	app: ReturnType<typeof createApiApp>,
-	path: string,
-	bearer = BEARER,
-) {
-	return app.fetch(
-		new Request(`http://127.0.0.1${path}`, {
-			headers: { authorization: `Bearer ${bearer}` },
-		}),
-	);
+function get(app: ReturnType<typeof createApiApp>, path: string) {
+	return app.fetch(new Request(`http://127.0.0.1${path}`));
 }
 
 describe('createApiApp multi-account routing', () => {
-	test('GET /api/accounts lists every loaded account, sorted', async () => {
+	test('GET /accounts lists every loaded account, sorted', async () => {
 		const tmp = tempDir();
 		const a = account(tmp.dir, 'b@example.com', {
 			messageId: 'mb',
@@ -139,10 +131,9 @@ describe('createApiApp multi-account routing', () => {
 				['a@example.com', b.api],
 			]),
 			readOnly: false,
-			bearer: BEARER,
 		});
 
-		const res = await get(app, '/api/accounts');
+		const res = await get(app, '/accounts');
 		expect(res.status).toBe(200);
 		expect(await res.json()).toEqual({
 			accounts: ['a@example.com', 'b@example.com'],
@@ -171,11 +162,10 @@ describe('createApiApp multi-account routing', () => {
 				['b@example.com', b.api],
 			]),
 			readOnly: false,
-			bearer: BEARER,
 		});
 
 		const statusA = (await (
-			await get(app, '/api/accounts/a@example.com/status')
+			await get(app, '/accounts/a@example.com/status')
 		).json()) as {
 			accountEmail: string;
 			mirror: string;
@@ -186,12 +176,12 @@ describe('createApiApp multi-account routing', () => {
 		expect(statusA.rows.messages).toBe(1);
 
 		const messagesB = (await (
-			await get(app, '/api/accounts/b@example.com/messages')
+			await get(app, '/accounts/b@example.com/messages')
 		).json()) as { messages: { id: string }[] };
 		expect(messagesB.messages.map((m) => m.id)).toEqual(['mb']);
 
 		const labelsA = (await (
-			await get(app, '/api/accounts/a@example.com/labels')
+			await get(app, '/accounts/a@example.com/labels')
 		).json()) as { labels: { id: string }[] };
 		expect(labelsA.labels.map((l) => l.id)).toContain('LA');
 		expect(labelsA.labels.map((l) => l.id)).not.toContain('LB');
@@ -211,38 +201,12 @@ describe('createApiApp multi-account routing', () => {
 		const app = createApiApp({
 			accounts: new Map([['a@example.com', a.api]]),
 			readOnly: false,
-			bearer: BEARER,
 		});
 
-		const res = await get(app, '/api/accounts/nobody@example.com/status');
+		const res = await get(app, '/accounts/nobody@example.com/status');
 		expect(res.status).toBe(404);
 		const body = (await res.json()) as { error: { name: string } };
 		expect(body.error.name).toBe('AccountNotFound');
-
-		a.db.close();
-		tmp.cleanup();
-	});
-
-	test('a wrong or absent bearer is a 401 before any account lookup', async () => {
-		const tmp = tempDir();
-		const a = account(tmp.dir, 'a@example.com', {
-			messageId: 'ma',
-			subject: 'A',
-			label: 'LA',
-		});
-		const app = createApiApp({
-			accounts: new Map([['a@example.com', a.api]]),
-			readOnly: false,
-			bearer: BEARER,
-		});
-
-		const wrong = await get(app, '/api/accounts', 'nope');
-		expect(wrong.status).toBe(401);
-
-		const absent = await app.fetch(
-			new Request('http://127.0.0.1/api/accounts'),
-		);
-		expect(absent.status).toBe(401);
 
 		a.db.close();
 		tmp.cleanup();
@@ -259,13 +223,11 @@ describe('createApiApp multi-account routing', () => {
 		const app = createApiApp({
 			accounts: new Map([['a@example.com', a.api]]),
 			readOnly: false,
-			bearer: BEARER,
 		});
 
 		const res = await app.fetch(
-			new Request('http://127.0.0.1/api/accounts/a@example.com/sync', {
+			new Request('http://127.0.0.1/accounts/a@example.com/sync', {
 				method: 'POST',
-				headers: { authorization: `Bearer ${BEARER}` },
 			}),
 		);
 		expect(res.status).toBe(200);

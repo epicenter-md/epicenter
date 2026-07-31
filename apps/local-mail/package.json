@@ -12,7 +12,9 @@
 		"email"
 	],
 	"exports": {
+		"./engine": "./src/engine.ts",
 		"./http/api": "./src/http/api.ts",
+		"./http/api-errors": "./src/http/api-errors.ts",
 		"./presence": "./src/presence.ts"
 	},
 	"scripts": {

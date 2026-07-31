@@ -1,18 +1,11 @@
+import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join, sep } from 'node:path';
-import { Err, Ok, type Result } from 'wellcrafted/result';
-import { type AppConfig, loadConfig } from './config.ts';
-import { type AccountApi, createApiApp, mintBearer } from './http/api.ts';
-import { acquireSyncLock, type SyncLock } from './lock.ts';
+import { Hono } from 'hono';
+import { loadConfig } from './config.ts';
+import { openMailEngine } from './engine.ts';
+import { ApiError } from './http/api-errors.ts';
 import { clearPresence, writePresence } from './presence.ts';
-import {
-	type LocalMailRuntime,
-	openSyncSession,
-	runtimeForAccount,
-	type SyncSession,
-} from './runtime.ts';
-import { syncMailbox } from './sync.ts';
-import { createFileTokenStore, type TokenStore } from './token-store.ts';
 
 /**
  * `local-mail app`: the desktop runtime host. One Bun process serves the triage
@@ -44,13 +37,22 @@ import { createFileTokenStore, type TokenStore } from './token-store.ts';
  *   reproduce the prod HTML injection). Presence, not discovery-for-spawn:
  *   nothing starts the host from it.
  *
- * Routing, the bearer gate, and request validation live in the Hono app
- * (`http/api.ts`); this module owns the loopback host primitive, static SPA
- * serving with bearer injection, and the process lifecycle, dispatching
- * `/api/*` to `api.fetch`.
+ * Routing and request validation live in the mountable Hono app
+ * (`http/api.ts`), which carries no prefix and no authentication of its own
+ * (ADR-0191). This module is one of its two hosts: it mounts it at `/api`,
+ * wraps it in the per-launch bearer gate below, and owns the loopback host
+ * primitive, static SPA serving with bearer injection, and the process
+ * lifecycle. The other host is Epicenter, which mounts the same app at
+ * `/api/mail` behind its own browser session.
  */
 
-const SYNC_INTERVAL_MS = 30_000;
+/** The per-launch local API bearer: 256 bits of CSPRNG, base64url. Minted once
+ * per launch of this loopback host, never a Gmail token, never carried in a
+ * URL. It authorizes only this host's `/api`; the Epicenter host mints nothing,
+ * because its surfaces already ride its session. */
+function mintBearer(): string {
+	return randomBytes(32).toString('base64url');
+}
 
 /** Headers on every HTML response that carries the injected bearer. `no-store`
  * keeps a rotated bearer out of the browser cache; the frame denials stop a
@@ -63,21 +65,6 @@ const INJECTED_HTML_HEADERS: Record<string, string> = {
 	'content-security-policy': "frame-ancestors 'none'",
 	'x-frame-options': 'DENY',
 };
-
-/**
- * One in-process promise chain: the background loop and a "refresh now" request
- * both enqueue here, so at most one sync pass touches the mirror at a time. No
- * coalescing (a refresh may ride a pass that started before the click); the
- * spec accepts that for v1.
- */
-function createSyncGate() {
-	let tail: Promise<unknown> = Promise.resolve();
-	return function run<T>(fn: () => Promise<T>): Promise<T> {
-		const result = tail.then(fn, fn);
-		tail = result.catch(() => {});
-		return result;
-	};
-}
 
 /**
  * Insert `<script>window.__LOCAL_MAIL__=...</script>` right after `<head>` so
@@ -139,117 +126,43 @@ async function serveStatic(
 	return serveIndex(uiDist, origin, bearer);
 }
 
-/**
- * One account's slice of the running host: its runtime, its open sync session
- * (writer db + Gmail client), its per-account serialize gate, and the sync-owner
- * lock IF this host won it. `lock === null` means another owner (a headless
- * `sync`) holds the loop for that account; the host still serves its reads and
- * Gmail-first writes (both lock-free), it just runs no loop for it.
- */
-type AccountEngine = {
-	runtime: LocalMailRuntime;
-	session: SyncSession;
-	gate: <T>(fn: () => Promise<T>) => Promise<T>;
-	lock: SyncLock | null;
-};
-
-/**
- * The accounts `local-mail app` serves: every connected account by default, or
- * only `LOCAL_MAIL_ACCOUNT` when that single-account override is set (the same
- * escape hatch the CLI and tests use, honored here too). Enumerated once at
- * launch from the store, so an account connected later appears on the next
- * restart.
- */
-async function selectAppAccounts(
-	config: AppConfig,
-	store: TokenStore,
-): Promise<Result<string[], { message: string }>> {
-	const connected = await store.listAccounts();
-	if (connected.length === 0) {
-		return Err({
-			message: 'No Gmail account connected. Run "local-mail connect" first.',
-		});
-	}
-	if (config.account) {
-		if (!connected.includes(config.account)) {
-			return Err({
-				message: `LOCAL_MAIL_ACCOUNT is set to ${config.account}, which is not a connected account (connected: ${connected.join(', ')}).`,
-			});
-		}
-		return Ok([config.account]);
-	}
-	return Ok(connected);
-}
-
 export async function runApp(options: { port?: number }): Promise<number> {
 	const config = loadConfig();
-	const store = createFileTokenStore(config.credentialsPath);
-
-	const { data: accountEmails, error: accountsError } = await selectAppAccounts(
-		config,
-		store,
-	);
-	if (accountsError || !accountEmails) {
-		console.error(accountsError?.message ?? 'No account to serve.');
+	const { data: engine, error: engineError } = await openMailEngine({
+		log: (message) => console.error(message),
+	});
+	if (engineError) {
+		console.error(engineError.message);
 		return 1;
 	}
 
-	const controller = new AbortController();
-	// One engine per account, all under this one origin. A per-account gate keeps
-	// each mirror single-writer while letting distinct accounts sync concurrently.
-	const engines: AccountEngine[] = [];
-	for (const accountEmail of accountEmails) {
-		const runtime = runtimeForAccount(config, store, accountEmail);
-		const { data: session, error: sessionError } = await openSyncSession(
-			runtime,
-			{
-				gmailLog: (m) => console.error(`[gmail ${accountEmail}] ${m}`),
-				syncLog: (m) => console.error(`[sync ${accountEmail}] ${m}`),
-			},
-		);
-		if (sessionError || !session) {
-			// One account failing to open (e.g. its token vanished between the store
-			// listing and now) must not sink the whole host; log it and serve the rest.
-			console.error(
-				`Skipping ${accountEmail}: ${sessionError?.message ?? 'failed to open sync session.'}`,
-			);
-			continue;
-		}
-		const lock = acquireSyncLock({ dataDir: config.dataDir, accountEmail });
-		engines.push({ runtime, session, gate: createSyncGate(), lock });
-	}
-
-	if (engines.length === 0) {
-		console.error(
-			'No account could be served. Run "local-mail connect" first.',
-		);
-		return 1;
-	}
-
-	const accounts = new Map<string, AccountApi>(
-		engines.map((engine) => [
-			engine.runtime.accountEmail,
-			{
-				runtime: engine.runtime,
-				syncDeps: engine.session.deps,
-				gate: engine.gate,
-				ownsLoop: engine.lock !== null,
-			},
-		]),
-	);
-
-	const readOnly = config.readOnly;
 	const bearer = mintBearer();
 	// Where the built SPA lives. In dev (and headless `bun src/bin.ts app`) it
 	// sits beside the source at `../ui/dist`. A packaged desktop build ships the
 	// engine as a compiled sidecar whose `import.meta.dir` is a virtual path with
 	// no `ui/dist` sibling, so the Tauri shell points `LOCAL_MAIL_UI_DIST` at the
 	// SPA it bundled as a resource. Same serving code either way; only the root
-	// differs (ADR-0116: one engine entrypoint, one loopback contract).
+	// differs.
 	const uiDist =
 		process.env.LOCAL_MAIL_UI_DIST ?? join(import.meta.dir, '..', 'ui', 'dist');
 
-	const api = createApiApp({ accounts, readOnly, bearer });
+	// This host's mount: the mail surface at `/api`, behind the per-launch bearer.
+	// The gate sits here rather than inside the mail app because it is this host's
+	// credential, not the surface's; Epicenter mounts the same app behind its own
+	// session and mints nothing (ADR-0191). There is no unauthenticated route.
+	const api = new Hono()
+		.use('/api/*', async (c, next) => {
+			const header = c.req.header('authorization');
+			const provided = header?.startsWith('Bearer ')
+				? header.slice('Bearer '.length)
+				: null;
+			if (!provided || provided !== bearer) {
+				const err = ApiError.Unauthorized();
+				return c.json(err, err.error.status);
+			}
+			return next();
+		})
+		.route('/api', engine.api);
 
 	const server = Bun.serve({
 		hostname: '127.0.0.1',
@@ -271,32 +184,6 @@ export async function runApp(options: { port?: number }): Promise<number> {
 		},
 	});
 
-	// One background sync loop per account this host won the lock for, each
-	// serialized through its own gate (the same gate its POST .../sync rides).
-	// An account whose loop is owned elsewhere is still served; that other owner
-	// keeps its mirror fresh.
-	for (const engine of engines) {
-		if (!engine.lock) {
-			console.error(
-				`[sync ${engine.runtime.accountEmail}] loop owned elsewhere; serving reads only.`,
-			);
-			continue;
-		}
-		const { session, gate, runtime } = engine;
-		(async () => {
-			while (!controller.signal.aborted) {
-				await gate(() => syncMailbox(session.deps, { forceFull: false })).catch(
-					(cause) =>
-						console.error(
-							`[sync ${runtime.accountEmail}] loop pass failed: ${cause}`,
-						),
-				);
-				if (controller.signal.aborted) break;
-				await Bun.sleep(SYNC_INTERVAL_MS);
-			}
-		})();
-	}
-
 	const origin = `http://127.0.0.1:${server.port}`;
 	// Publish presence so the Vite dev server (and, later, a routed one-shot
 	// `sync`) can find this host's origin and bearer. Presence, not spawn.
@@ -306,9 +193,7 @@ export async function runApp(options: { port?: number }): Promise<number> {
 	// (a terminal today, Tauri later), not the engine's.
 	console.log(origin);
 	console.error(
-		`Local Mail runtime host listening on ${origin} for ${engines.length} account(s): ${engines
-			.map((engine) => engine.runtime.accountEmail)
-			.join(', ')}. Open it in your browser.`,
+		`Local Mail runtime host listening on ${origin} for ${engine.accountEmails.length} account(s): ${engine.accountEmails.join(', ')}. Open it in your browser.`,
 	);
 	if (!existsSync(uiDist)) {
 		console.error(
@@ -317,13 +202,9 @@ export async function runApp(options: { port?: number }): Promise<number> {
 	}
 
 	await new Promise<void>((resolve) => {
-		process.on('SIGINT', () => {
-			controller.abort();
+		process.on('SIGINT', async () => {
 			server.stop();
-			for (const engine of engines) {
-				engine.session.close();
-				engine.lock?.release();
-			}
+			await engine.close();
 			clearPresence(config.dataDir);
 			resolve();
 		});

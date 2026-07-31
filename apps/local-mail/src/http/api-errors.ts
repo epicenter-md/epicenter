@@ -1,10 +1,12 @@
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 
 /**
- * Structured error variants for the loopback `/api` surface of `local-mail app`.
+ * Structured error variants for Local Mail's HTTP surface.
  *
- * Every non-2xx response from the Hono app ({@link api.ts}, its only emitter)
- * comes from one of these variants, so the wire shape is `wellcrafted`'s
+ * Every non-2xx response from the Hono app ({@link api.ts}) comes from one of
+ * these variants, and so does every non-2xx a host emits in front of it: the
+ * SPA has one error path, so anything it must read speaks this vocabulary. The
+ * wire shape is `wellcrafted`'s
  * envelope `{ data: null, error: { name, message, status } }` and each variant
  * bakes in its own HTTP `status`. Emit as `c.json(err, err.error.status)`; the
  * `c-json-errors` biome gate is satisfied because a factory result is not an
@@ -47,10 +49,20 @@ export const ApiError = defineErrors({
 		message,
 		status: 400 as const,
 	}),
-	/** No route matched under `/api`. */
+	/** No route matched under the mounted mail surface. */
 	NotFound: () => ({
 		message: 'Not found.',
 		status: 404 as const,
+	}),
+	/** The host mounted these routes but has no engine behind them, because no
+	 * Gmail account is connected on this device. Emitted by the host in front of
+	 * the mail app, never by the app itself (ADR-0191): the app only exists when
+	 * an account opened. Distinct from `Unauthorized`, which reloading fixes;
+	 * this one needs `local-mail connect`. */
+	MailUnavailable: () => ({
+		message:
+			'No Gmail account is connected on this device. Run "local-mail connect" to add one.',
+		status: 503 as const,
 	}),
 });
 
