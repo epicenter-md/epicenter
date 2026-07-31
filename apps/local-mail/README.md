@@ -21,7 +21,7 @@ table.
 - One host opens the engine (`src/engine.ts`, ADR-0191): Epicenter, at boot. It
   mounts the mail surface at `/api/mail` behind its own browser session and owns
   the sync loop for its process lifetime. This package ships no host, no window,
-  and no credential of its own; `scripts/dev-api.ts` serves the same surface on
+  and no credential of its own; `apps/local-mail/scripts/dev-api.ts` serves the same surface on
   loopback for SPA development and is never shipped.
 - One SQLite file per connected account: `<data-dir>/<accountEmail>/mail.db`.
   The refresh token lives in a separate `0600 credentials.json` at the data-dir
@@ -145,7 +145,7 @@ bun run dev:api                  # serves /api/mail on 127.0.0.1:4177
 bun run --cwd ui dev             # Vite serves the SPA and proxies /api/mail to it
 ```
 
-`scripts/dev-api.ts` is a dev server, not a host: it opens the engine and serves
+`apps/local-mail/scripts/dev-api.ts` is a dev server, not a host: it opens the engine and serves
 the surface at the same path Epicenter does, and nothing else. No static assets,
 no bearer, no presence file, no window. It exists because Mail's data plane is
 its engine, and a Vite dev server cannot authenticate against a running
