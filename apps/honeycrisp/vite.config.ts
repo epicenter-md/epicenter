@@ -11,9 +11,9 @@ export default defineConfig(
 	mergeConfig(
 		// Honeycrisp is the app where "runs in a Tauri WebView" and "the desktop
 		// Epicenter host owns my data" come apart: its standalone bundle is the
-		// first and not the second. So the two are separate conditions, and only
-		// one is ever active. Whispering has no standalone bundle, so for it the
-		// `tauri` condition still answers both questions at once.
+		// first and not the second, so exactly one of the two conditions is ever
+		// active here. Whispering declares both, because for it both are true of
+		// the same build (ADR-0190).
 		workspaceAppViteConfig(APPS.HONEYCRISP, { tauri: !isEpicenterSurface }),
 		{
 			optimizeDeps: { exclude: ['@sqlite.org/sqlite-wasm'] },

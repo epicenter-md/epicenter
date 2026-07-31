@@ -50,10 +50,12 @@ Reaching Epicenter is same-origin HTTP on the loopback origin and needs no grant
   test carries rather than an unstated hope.
 - Admitting a third compiled application is a list entry, a build script, and a
   window-table row. It is not another asset field, resolver, or route handler.
-- Whispering keeps `tauri` for both meanings, because for it they are still one
-  fact. That is two spellings of one role in the repo until its standalone-less
-  status is spelled out or Honeycrisp's standalone bundle retires; either
-  collapses them.
+- Whispering declares both conditions, because both are true of the one build
+  Epicenter serves, and its seams split along the same line: replica,
+  credential, deployment choice, blob bytes, and asset base are the host's;
+  recording, clipboard, notification, and HTTP are Tauri's. It has no build where
+  they come apart, so this changes nothing it emits. It changes what its files
+  say they are, which is the point: one role, one spelling, repo-wide.
 - Honeycrisp's standalone desktop bundle survives, so the same person can run two
   desktop Honeycrisps over two different databases. Nothing migrates between
   them and nothing pretends to. Retiring that bundle is a separate decision, and

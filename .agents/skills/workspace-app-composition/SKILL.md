@@ -334,10 +334,12 @@ fails the web build instead of shipping a broken runtime.
 desktop Epicenter host serves this build and owns its replica, credential, and
 deployment choice". Do NOT conflate them.
 
-For Whispering they coincide, because Epicenter owns its only Tauri runtime, so
-it still spells both `tauri`. Honeycrisp is where they come apart: its
-standalone bundle is a Tauri WebView that owns its own OPFS storage, so its
-seams list `epicenter-host` first, then `tauri`, then `default`:
+Whispering's Epicenter build activates BOTH, because both are true of it, and
+its seams split along the same line: `epicenter-host` for replica, credential,
+deployment choice, blob bytes, and asset base; `tauri` for recording, clipboard,
+notification, and HTTP. Honeycrisp is where the two come apart: its standalone
+bundle is a Tauri WebView that owns its own OPFS storage, so exactly one
+condition is ever active and its seams list all three leaves:
 
 ```jsonc
 "#platform/auth": {

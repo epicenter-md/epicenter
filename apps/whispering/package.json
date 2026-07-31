@@ -20,7 +20,7 @@
 			"default": "./src/lib/services/analytics/index.browser.ts"
 		},
 		"#platform/blobs": {
-			"tauri": "./src/lib/services/blobs/index.tauri.ts",
+			"epicenter-host": "./src/lib/services/blobs/index.epicenter-host.ts",
 			"default": "./src/lib/services/blobs/index.browser.ts"
 		},
 		"#platform/download": {
@@ -60,7 +60,7 @@
 			"default": "./src/lib/state/manual-recorder-config.browser.ts"
 		},
 		"#platform/whispering": {
-			"tauri": "./src/lib/whispering/whispering.tauri.ts",
+			"epicenter-host": "./src/lib/whispering/whispering.epicenter-host.ts",
 			"default": "./src/lib/whispering/whispering.browser.ts"
 		},
 		"#platform/tauri": {
@@ -72,15 +72,15 @@
 			"default": "./src/lib/report/os-notify.browser.ts"
 		},
 		"#platform/auth": {
-			"tauri": "./src/lib/platform/auth.tauri.ts",
+			"epicenter-host": "./src/lib/platform/auth.epicenter-host.ts",
 			"default": "./src/lib/platform/auth.browser.ts"
 		},
 		"#platform/instance": {
-			"tauri": "./src/lib/platform/instance.tauri.ts",
+			"epicenter-host": "./src/lib/platform/instance.epicenter-host.ts",
 			"default": "./src/lib/platform/instance.browser.ts"
 		},
 		"#platform/base-path": {
-			"tauri": "./src/lib/platform/base-path.tauri.ts",
+			"epicenter-host": "./src/lib/platform/base-path.epicenter-host.ts",
 			"default": "./src/lib/platform/base-path.browser.ts"
 		},
 		"#platform/window-events": {
@@ -96,8 +96,8 @@
 		"check": "bun run typecheck",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
-		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && svelte-check --tsconfig ./tsconfig.tauri.json",
-		"typecheck:tauri": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.tauri.json",
+		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && svelte-check --tsconfig ./tsconfig.desktop.json",
+		"typecheck:desktop": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.desktop.json",
 		"typecheck:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"deploy": "wrangler deploy"
 	},
