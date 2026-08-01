@@ -60,7 +60,7 @@ export type AppConfig = {
 	 * Reads only: the `query` and `report` verbs stay available, but `recategorize`
 	 * (the one QuickBooks write) is refused. The safety posture for "analyze my
 	 * books, do not mutate them", whether you run the verbs yourself or hand the
-	 * `books.db` to an agent. `LOCAL_BOOKS_READ_ONLY`.
+	 * mirror artifact to an agent. `LOCAL_BOOKS_READ_ONLY`.
 	 */
 	readOnly: boolean;
 };

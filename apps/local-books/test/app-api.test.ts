@@ -9,10 +9,9 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { createRequestHandler } from '../src/app.ts';
 import { type OpenQbClient, QbAccessError } from '../src/books/qb-access.ts';
-import { openBooksDb } from '../src/db.ts';
+import { booksMirror, openBooksDb } from '../src/db.ts';
 import { entityDef } from '../src/entities.ts';
 import { createApiApp } from '../src/http/api.ts';
-import { dbPath } from '../src/paths.ts';
 import { makeConfig, tempDir } from './helpers.ts';
 
 const REALM = 'realm-1';
@@ -24,9 +23,9 @@ const refusingOpenQb: OpenQbClient = async () =>
 	QbAccessError.NotAuthenticated({ realmId: 'test-realm' });
 
 /** Seed a mirror with two invoices and one purchase carrying an expense line. */
-function seedMirror(dataDir: string) {
-	const path = dbPath(dataDir, REALM);
-	const db = openBooksDb(path);
+function seedMirror(dataDir: string): void {
+	const site = booksMirror(dataDir, REALM);
+	const db = openBooksDb(site);
 	const syncedAt = '2026-01-01T00:00:00Z';
 	db.ingest(
 		[
@@ -73,7 +72,6 @@ function seedMirror(dataDir: string) {
 		{ syncedAt },
 	);
 	db.close();
-	return path;
 }
 
 function buildApp({ readOnly = false }: { readOnly?: boolean } = {}) {
@@ -93,7 +91,7 @@ function buildApp({ readOnly = false }: { readOnly?: boolean } = {}) {
 		config,
 		realmId: REALM,
 		store,
-		dbPath: dbPath(dir, REALM),
+		mirror: booksMirror(dir, REALM),
 		readOnly,
 		openQb: refusingOpenQb,
 		gate: (fn) => fn(),

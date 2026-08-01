@@ -5,6 +5,8 @@ import {
 	type CliConfigOverrides,
 	loadConfig,
 } from '../config.ts';
+import { booksMirror } from '../db.ts';
+import type { MirrorSite } from '../mirror.ts';
 import { createFileTokenStore, type TokenStore } from '../token-store.ts';
 
 /** Human-friendly "in 42m" / "3m ago" for the auth and status commands. */
@@ -20,10 +22,15 @@ export function formatRelative(targetIso: string, now: number): string {
 	return deltaMs >= 0 ? `in ${unit}` : `${unit} ago`;
 }
 
-/** The company that sync/status operate on: config, resolved realm, its token store. */
+/**
+ * The company that the verbs operate on: config, resolved realm, its mirror
+ * site, and its token store. The mirror site is resolved once here so no verb
+ * assembles a database path of its own.
+ */
 export type CompanyContext = {
 	config: AppConfig;
 	realmId: string;
+	mirror: MirrorSite;
 	store: TokenStore;
 };
 
@@ -42,6 +49,7 @@ export function resolveCompany(
 	return Ok({
 		config,
 		realmId,
+		mirror: booksMirror(config.dataDir, realmId),
 		store: createFileTokenStore(config.credentialsPath),
 	});
 }

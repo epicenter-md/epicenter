@@ -27,6 +27,7 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 import { openBooksDb } from '../db.ts';
 import { entityDef } from '../entities.ts';
+import type { MirrorSite } from '../mirror.ts';
 import type { QbClientError } from '../qb-client.ts';
 import type { OpenQbClient, QbAccessError } from './qb-access.ts';
 
@@ -151,12 +152,12 @@ export function parseRecategorizeEntity(
 
 export async function recategorizeExpense({
 	openQb,
-	dbPath,
+	site,
 	input,
 	readOnly,
 }: {
 	openQb: OpenQbClient;
-	dbPath: string;
+	site: MirrorSite;
 	input: RecategorizeInput;
 	/**
 	 * Whether writes are forbidden. Required (no default) so every caller, the
@@ -170,7 +171,7 @@ export async function recategorizeExpense({
 > {
 	if (readOnly) return RecategorizeError.ReadOnly();
 	const def = entityDef(input.entity);
-	const db = openBooksDb(dbPath);
+	const db = openBooksDb(site);
 	try {
 		const raw = db.getLiveRaw(def, input.id);
 		if (raw === null) {

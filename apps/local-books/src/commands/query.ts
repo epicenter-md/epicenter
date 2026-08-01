@@ -1,6 +1,5 @@
 import { queryBooks } from '../books/query.ts';
 import type { ParsedArgs } from '../cli.ts';
-import { dbPath } from '../paths.ts';
 import { resolveCompany } from './context.ts';
 
 /**
@@ -22,12 +21,7 @@ export async function runQuery(args: ParsedArgs): Promise<number> {
 		console.error(error);
 		return 1;
 	}
-	const { config, realmId } = company;
-
-	const { data, error: queryError } = queryBooks({
-		dbPath: dbPath(config.dataDir, realmId),
-		sql,
-	});
+	const { data, error: queryError } = queryBooks({ site: company.mirror, sql });
 	if (queryError !== null) {
 		console.error(queryError.message);
 		return 1;

@@ -53,8 +53,8 @@ import { readBooksStatus } from '../books/status.ts';
 import { type ParsedArgs, VERSION } from '../cli.ts';
 import { resolveRealm } from '../companies.ts';
 import { type AppConfig, loadConfig } from '../config.ts';
-import { openBooksDb } from '../db.ts';
-import { dbPath } from '../paths.ts';
+import { booksMirror, openBooksDb } from '../db.ts';
+import type { MirrorSite } from '../mirror.ts';
 import { syncRealm } from '../sync.ts';
 import { createFileTokenStore, type TokenStore } from '../token-store.ts';
 
@@ -62,8 +62,8 @@ import { createFileTokenStore, type TokenStore } from '../token-store.ts';
 type ToolContext = {
 	config: AppConfig;
 	realmId: string;
-	/** The mirror db path for the resolved company. */
-	dbPath: string;
+	/** The resolved company's mirror site: its current artifact is what tools read. */
+	mirror: MirrorSite;
 	/** A QB client opener for the resolved company; the token loads when called. */
 	openQb: OpenQbClient;
 	/** The realm's token store (built once per server, reloaded on each `get`). */
@@ -127,7 +127,7 @@ const TOOLS: ToolDescriptor[] = [
 		}),
 		tier: 'read',
 		async run(ctx, args) {
-			return queryBooks({ dbPath: ctx.dbPath, sql: args.sql });
+			return queryBooks({ site: ctx.mirror, sql: args.sql });
 		},
 	}),
 	defineMcpTool({
@@ -142,6 +142,7 @@ const TOOLS: ToolDescriptor[] = [
 				await readBooksStatus({
 					config: ctx.config,
 					realmId: ctx.realmId,
+					mirror: ctx.mirror,
 					store: ctx.store,
 				}),
 			);
@@ -176,7 +177,7 @@ const TOOLS: ToolDescriptor[] = [
 			// auth" reason. No bespoke not-connected error.
 			const { data: client, error } = await ctx.openQb();
 			if (error !== null) return Err(error);
-			const db = openBooksDb(ctx.dbPath);
+			const db = openBooksDb(ctx.mirror);
 			try {
 				const outcome = await syncRealm(
 					{ db, client, config: ctx.config, now: ctx.now },
@@ -202,7 +203,7 @@ const TOOLS: ToolDescriptor[] = [
 			// removing the filter later cannot silently enable the write.
 			return recategorizeExpense({
 				openQb: ctx.openQb,
-				dbPath: ctx.dbPath,
+				site: ctx.mirror,
 				readOnly: ctx.config.readOnly,
 				input: args,
 			});
@@ -299,7 +300,7 @@ export async function runMcpServer(args: ParsedArgs): Promise<number> {
 		const ctx: ToolContext = {
 			config,
 			realmId,
-			dbPath: dbPath(config.dataDir, realmId),
+			mirror: booksMirror(config.dataDir, realmId),
 			openQb: createQbAccess({ config, realmId, store, now }),
 			store,
 			now,

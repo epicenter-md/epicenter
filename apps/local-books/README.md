@@ -65,7 +65,7 @@ local-books query "SELECT json_extract(line.value, '\$.AccountBasedExpenseLineDe
 The local copy is just a SQLite file, so any agent that can run SQL can answer questions about your finances without your data leaving the machine. Print its path and point your agent at it:
 
 ```sh
-local-books status                # shows the data dir; the file is <data-dir>/<company-id>/books.db
+local-books status                # prints the exact path of the local copy
 ```
 
 Then open Claude Code or Codex in that folder and ask in plain English. To reach it from your phone or another machine, expose your box over a private mesh like [Tailscale](https://tailscale.com) and drive the agent there; the books still never leave the box. Set `LOCAL_BOOKS_READ_ONLY=1` to disable `recategorize` while you let an agent explore (both reads stay available).
@@ -175,7 +175,8 @@ bun run status:production
 ## Where things live
 
 ```
-<data-dir>/<company-id>/books.db   # record-type tables + sync state
+<data-dir>/<company-id>/
+  books.<fingerprint>.db           # record-type tables + sync state; `status` prints the path
 <data-dir>/credentials.json        # OAuth tokens (0600), never inside a company's db
 <data-dir>/companies.json          # which companies are connected, and the default
 <data-dir>/config.json             # optional: entities, environment, schedule

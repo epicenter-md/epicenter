@@ -25,9 +25,14 @@ export function resolveDataDir(override?: string): string {
 	return defaultDataDir();
 }
 
-/** One SQLite file per company, scoped by `realmId` under the data dir. */
-export function dbPath(dataDir: string, realmId: string): string {
-	return join(dataDir, realmId, 'books.db');
+/**
+ * One directory per company, scoped by `realmId` under the data dir. It holds
+ * the company's mirror artifacts (named by declaration fingerprint, see
+ * `mirror.ts`) and the `app` verb's `lock.db`. This is the directory the mirror
+ * site is opened at, so `realmId` is the only per-tenant naming the mirror sees.
+ */
+export function companyDir(dataDir: string, realmId: string): string {
+	return join(dataDir, realmId);
 }
 
 /** Tracks which companies have been authenticated and which is the default. */
@@ -38,7 +43,7 @@ export function companiesFilePath(dataDir: string): string {
 /**
  * The default file token store: `credentials.json` at the data-dir root, sibling
  * to `companies.json`. Deliberately not inside a company's `<realmId>/` mirror
- * dir, so the agent's read-only SQL surface over `books.db` can never read it
+ * dir, so the agent's read-only SQL surface over the mirror can never read it
  * (and one company's mirror can be shared without its refresh token).
  */
 export function credentialsFilePath(dataDir: string): string {

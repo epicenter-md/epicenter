@@ -9,7 +9,7 @@
 import { expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { openBooksDb } from '../src/db.ts';
+import { booksMirror, openBooksDb } from '../src/db.ts';
 import { tempDir } from './helpers.ts';
 
 const BIN = join(import.meta.dir, '../src/bin.ts');
@@ -28,9 +28,9 @@ async function runCli(args: string[], env: Record<string, string> = {}) {
 	return { stdout, stderr, exitCode };
 }
 
-/** Seed a mirror at <dir>/r1/books.db with one live invoice. */
+/** Seed the r1 company's current mirror artifact with one live invoice. */
 function seedMirror(dir: string): void {
-	const db = openBooksDb(join(dir, 'r1', 'books.db'));
+	const db = openBooksDb(booksMirror(dir, 'r1'));
 	db.raw.exec(`
 		CREATE TABLE invoices (
 			id TEXT PRIMARY KEY, raw TEXT NOT NULL, updated_at TEXT,
@@ -87,6 +87,6 @@ test('CLI: `demo` builds a sample company and prints example answers', async () 
 	expect(res.exitCode).toBe(0);
 	expect(res.stdout).toContain('sample company');
 	expect(res.stdout).toContain('Who owes us money');
-	expect(existsSync(join(tmp.dir, 'demo', 'books.db'))).toBe(true);
+	expect(existsSync(booksMirror(tmp.dir, 'demo').path)).toBe(true);
 	tmp.cleanup();
 });

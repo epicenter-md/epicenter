@@ -11,7 +11,10 @@
  * offline view of the books, so a *subset* would silently under-report against
  * the live statements `books_report` runs: forget BillPayment and "what did I
  * pay this vendor" is quietly wrong. Adding an entity is one entry here with no
- * migration, so there is no reason to curate below the full posting set.
+ * migration to write, so there is no reason to curate below the full posting
+ * set. It is not free, though: this registry is the mirror's declaration
+ * (`db.ts`), and the mirror is fingerprinted whole, so an edit here renames the
+ * artifact on disk and costs the company one full re-pull (ADR-0194).
  *
  * The raw blob is canonical; extracted columns are pure projections of it, each
  * a SQLite GENERATED column over `json_extract(raw, ...)` (see `db.ts`). So the
@@ -47,8 +50,8 @@ const SQL_IDENT = /^[a-z_][a-z0-9_]*$/;
 /**
  * Validate and brand a SQLite identifier, throwing on anything unsafe. The
  * registry is a closed set of literals, so this only ever fires on a bad
- * hand-written entry; it is also reused in `db.ts` for the one identifier source
- * that is not a registry value (table names read back from `sqlite_master`).
+ * hand-written entry; `db.ts` reuses it for the one identifier it authors
+ * itself, the `_meta` table.
  */
 export function sqlIdent(name: string): SqlIdent {
 	if (!SQL_IDENT.test(name)) throw new Error(`Unsafe SQL identifier: ${name}`);

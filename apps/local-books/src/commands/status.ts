@@ -2,6 +2,9 @@ import { readBooksStatus } from '../books/status.ts';
 import type { ParsedArgs } from '../cli.ts';
 import { formatRelative, resolveCompany } from './context.ts';
 
+/** A fingerprint prefix: enough to tell two shapes apart at a glance. */
+const short = (fingerprint: string) => fingerprint.slice(0, 12);
+
 /** Report token state and the per-entity mirror state (cursor, counts). */
 export async function runStatus(args: ParsedArgs): Promise<number> {
 	const { data: company, error } = resolveCompany(args);
@@ -9,9 +12,9 @@ export async function runStatus(args: ParsedArgs): Promise<number> {
 		console.error(error);
 		return 1;
 	}
-	const { config, realmId, store } = company;
+	const { config, realmId, mirror, store } = company;
 
-	const status = await readBooksStatus({ config, realmId, store });
+	const status = await readBooksStatus({ config, realmId, mirror, store });
 	const now = Date.now();
 
 	console.log(`Company ID:   ${status.realmId}`);
@@ -30,14 +33,28 @@ export async function runStatus(args: ParsedArgs): Promise<number> {
 		);
 	}
 
+	// Retained earlier shapes are inventory, not a fault: they are reported in both
+	// branches because the interesting case is exactly the one where the current
+	// copy is missing and an older one is still sitting beside it.
+	const retained = status.predecessors.length;
+	const predecessorLine =
+		retained === 0
+			? null
+			: `Retained:     ${retained} earlier ${retained === 1 ? 'copy' : 'copies'} from a previous shape (${status.predecessors.map(short).join(', ')})`;
+
 	if (!status.mirrorBuilt) {
 		console.log(`Local copy:   not built yet. Run "local-books sync --full".`);
+		if (predecessorLine) console.log(predecessorLine);
 		return 0;
 	}
+	// The artifact is named by the declaration's fingerprint, so its filename is
+	// not guessable: print it, because pointing an agent or `sqlite3` at the file
+	// is the whole reason someone runs `status`.
+	console.log(`Local copy:   ${status.mirrorPath}`);
+	if (predecessorLine) console.log(predecessorLine);
 
 	// The cursor is one high-water mark for the whole company (CDC's contract), so
 	// it is shown once at the realm level, not repeated per entity.
-	console.log(`Schema:        v${status.schemaVersion}`);
 	console.log(
 		`Synced through:${status.cdcCursor ? ` ${status.cdcCursor}` : ' -'}`,
 	);

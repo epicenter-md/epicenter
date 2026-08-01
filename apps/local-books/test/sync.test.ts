@@ -1,8 +1,7 @@
 import { expect, test } from 'bun:test';
-import { join } from 'node:path';
 import { parseInterval } from '../src/cli.ts';
 import type { AppConfig } from '../src/config.ts';
-import { openBooksDb } from '../src/db.ts';
+import { booksMirror, openBooksDb } from '../src/db.ts';
 import { createQbClient } from '../src/qb-client.ts';
 import { repairEntities, runSyncLoop, syncRealm } from '../src/sync.ts';
 import { createTokenManager } from '../src/token-manager.ts';
@@ -49,7 +48,7 @@ function setup(configOver: Partial<AppConfig> = {}) {
 	const tokens = createTokenManager({ config, store, token, now });
 	const client = createQbClient({ config, realmId: server.realmId, tokens });
 	const tmp = tempDir();
-	const db = openBooksDb(join(tmp.dir, 'books.db'));
+	const db = openBooksDb(booksMirror(tmp.dir, server.realmId));
 
 	const teardown = () => {
 		db.close();

@@ -1,12 +1,13 @@
 /**
  * Transcript demo: drive the real `local-books` CLI through the spec's slice 1-3
  * checkpoints against the mock QuickBooks server, running the literal goal
- * commands (including `sqlite3 books.db ...`). Not a unit test.
+ * commands (including `sqlite3 <artifact> ...`). Not a unit test.
  *
  *   bun run test/demo-e2e.ts
  */
 import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { booksMirror } from '../src/db.ts';
 import { makeInvoice, startMockQbServer } from './mock-qb-server.ts';
 
 const BIN = join(import.meta.dir, '../src/bin.ts');
@@ -37,7 +38,7 @@ function banner(label: string): void {
 const server = startMockQbServer();
 const realmId = server.realmId;
 const tokenFile = join(DATA_DIR, 'credentials.json');
-const dbFile = join(DATA_DIR, realmId, 'books.db');
+const dbFile = booksMirror(DATA_DIR, realmId).path;
 
 const env = {
 	LOCAL_BOOKS_DIR: DATA_DIR,
@@ -82,13 +83,13 @@ async function main() {
 	banner('Checkpoint 2 — local-books sync --full');
 	console.log(await cli('sync', '--full'));
 	console.log(
-		'\n$ sqlite3 books.db "SELECT count(*), min(json_valid(raw)) FROM invoices"',
+		'\n$ sqlite3 books "SELECT count(*), min(json_valid(raw)) FROM invoices"',
 	);
 	console.log(
 		await sqlite('SELECT count(*), min(json_valid(raw)) FROM invoices'),
 	);
 	console.log(
-		'\n$ sqlite3 books.db "SELECT key, value FROM _meta WHERE key=\'cdc_cursor\'"',
+		'\n$ sqlite3 books "SELECT key, value FROM _meta WHERE key=\'cdc_cursor\'"',
 	);
 	const cursorBefore = await sqlite(
 		"SELECT key, value FROM _meta WHERE key='cdc_cursor'",
@@ -104,13 +105,13 @@ async function main() {
 	banner('Checkpoint 3 — second local-books sync (no --full) runs INCREMENTAL');
 	console.log(await cli('sync'));
 	console.log(
-		'\n$ sqlite3 books.db "SELECT key, value FROM _meta WHERE key=\'cdc_cursor\'"  (cursor AFTER)',
+		'\n$ sqlite3 books "SELECT key, value FROM _meta WHERE key=\'cdc_cursor\'"  (cursor AFTER)',
 	);
 	console.log(
 		await sqlite("SELECT key, value FROM _meta WHERE key='cdc_cursor'"),
 	);
 	console.log(
-		'\n$ sqlite3 books.db "SELECT count(*) total, sum(deleted) soft_deleted FROM invoices"',
+		'\n$ sqlite3 books "SELECT count(*) total, sum(deleted) soft_deleted FROM invoices"',
 	);
 	console.log(
 		await sqlite(
@@ -118,7 +119,7 @@ async function main() {
 		),
 	);
 	console.log(
-		'\n$ sqlite3 books.db "SELECT id, total_amt, deleted FROM invoices ORDER BY id"',
+		'\n$ sqlite3 books "SELECT id, total_amt, deleted FROM invoices ORDER BY id"',
 	);
 	console.log(
 		await sqlite('SELECT id, total_amt, deleted FROM invoices ORDER BY id'),

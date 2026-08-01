@@ -16,7 +16,7 @@ import {
 	makePurchase,
 	startMockQbServer,
 } from '../../test/mock-qb-server.ts';
-import { openBooksDb } from '../db.ts';
+import { booksMirror, openBooksDb } from '../db.ts';
 import { entityDef } from '../entities.ts';
 import { createFileTokenStore } from '../token-store.ts';
 import type { TokenSet } from '../tokens.ts';
@@ -62,8 +62,8 @@ async function setup(
 	};
 	await store.set(token);
 
-	const path = join(dir, mock.realmId, 'books.db');
-	const db = openBooksDb(path);
+	const site = booksMirror(dir, mock.realmId);
+	const db = openBooksDb(site);
 	db.ingest(
 		[
 			{
@@ -78,7 +78,7 @@ async function setup(
 	const openQb = createQbAccess({ config, realmId: mock.realmId, store, now });
 	return {
 		mock,
-		path,
+		site,
 		openQb,
 		cleanup: () => {
 			mock.stop();
@@ -97,11 +97,11 @@ function lineAccount(obj: Record<string, unknown>): string | undefined {
 
 describe('recategorizeExpense', () => {
 	test('moves the expense line in QuickBooks and folds it into the mirror', async () => {
-		const { mock, path, openQb, cleanup } = await setup();
+		const { mock, site, openQb, cleanup } = await setup();
 
 		const { data, error } = await recategorizeExpense({
 			openQb,
-			dbPath: path,
+			site,
 			readOnly: false,
 			input: {
 				entity: 'Purchase',
@@ -132,7 +132,7 @@ describe('recategorizeExpense', () => {
 		expect(remote?.SyncToken).toBe('1');
 
 		// The mirror reflects the authoritative response (token '1', not the old '0').
-		const db = openBooksDb(path);
+		const db = openBooksDb(site);
 		const row = db.raw
 			.query<{ raw: string }, []>(`SELECT raw FROM purchases WHERE id = 'p1'`)
 			.get();
@@ -145,14 +145,14 @@ describe('recategorizeExpense', () => {
 	});
 
 	test('recategorizes a Bill, carrying its VendorRef through the sparse update', async () => {
-		const { mock, path, openQb, cleanup } = await setup({
+		const { mock, site, openQb, cleanup } = await setup({
 			entity: 'Bill',
 			id: 'b1',
 		});
 
 		const { data, error } = await recategorizeExpense({
 			openQb,
-			dbPath: path,
+			site,
 			readOnly: false,
 			input: {
 				entity: 'Bill',
@@ -180,7 +180,7 @@ describe('recategorizeExpense', () => {
 		expect(remote && lineAccount(remote)).toBe('24');
 		expect(remote?.SyncToken).toBe('1');
 
-		const db = openBooksDb(path);
+		const db = openBooksDb(site);
 		const row = db.raw
 			.query<{ raw: string }, []>(`SELECT raw FROM bills WHERE id = 'b1'`)
 			.get();
@@ -194,14 +194,14 @@ describe('recategorizeExpense', () => {
 
 	test('a stale SyncToken is rejected, leaving QuickBooks untouched', async () => {
 		// Mirror thinks the token is '0'; QuickBooks has moved on to '5'.
-		const { mock, path, openQb, cleanup } = await setup({
+		const { mock, site, openQb, cleanup } = await setup({
 			mockSyncToken: '5',
 			mirrorSyncToken: '0',
 		});
 
 		const { error } = await recategorizeExpense({
 			openQb,
-			dbPath: path,
+			site,
 			readOnly: false,
 			input: { entity: 'Purchase', id: 'p1', account_id: '77' },
 		});
@@ -215,10 +215,10 @@ describe('recategorizeExpense', () => {
 	});
 
 	test('errors clearly when the transaction is not in the mirror', async () => {
-		const { path, openQb, cleanup } = await setup();
+		const { site, openQb, cleanup } = await setup();
 		const { error } = await recategorizeExpense({
 			openQb,
-			dbPath: path,
+			site,
 			readOnly: false,
 			input: { entity: 'Purchase', id: 'does-not-exist', account_id: '77' },
 		});
@@ -227,10 +227,10 @@ describe('recategorizeExpense', () => {
 	});
 
 	test('refuses the write in read-only mode, leaving QuickBooks untouched', async () => {
-		const { mock, path, openQb, cleanup } = await setup();
+		const { mock, site, openQb, cleanup } = await setup();
 		const { error } = await recategorizeExpense({
 			openQb,
-			dbPath: path,
+			site,
 			readOnly: true,
 			input: { entity: 'Purchase', id: 'p1', account_id: '77' },
 		});

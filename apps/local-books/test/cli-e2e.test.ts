@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { booksMirror } from '../src/db.ts';
 import { tempDir } from './helpers.ts';
 import { makeInvoice, startMockQbServer } from './mock-qb-server.ts';
 
@@ -53,7 +54,9 @@ test('CLI: `sync --full` then `sync` runs incremental, advances the cursor, no r
 		// Narrow the realm set to one entity so the e2e stays a single query / cdc.
 		LOCAL_BOOKS_ENTITIES: 'Invoice',
 	};
-	const dbFile = join(tmp.dir, server.realmId, 'books.db');
+	// Opened as a plain SQLite file, the way an agent pointed at the artifact
+	// would: the fingerprinted filename is the only thing that changed for them.
+	const dbFile = booksMirror(tmp.dir, server.realmId).path;
 
 	// The realm cursor is one high-water mark for the company, stored in _meta.
 	const realmCursor = (db: Database): string =>

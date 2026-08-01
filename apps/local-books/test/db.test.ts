@@ -5,11 +5,19 @@
  * the newest object by QuickBooks `LastUpdatedTime` is what survives. A stale
  * write, e.g. recategorize folding its own response back after a concurrent sync
  * already ingested a newer bookkeeper edit, cannot regress the mirror.
+ *
+ * The other half is what opening does NOT do. Since the artifact is named by the
+ * declaration's fingerprint (ADR-0194), open is pure creation: no stored version
+ * to compare, no tables to drop, no cursor to clear.
  */
 
 import { describe, expect, test } from 'bun:test';
-import { join } from 'node:path';
-import { type BooksDb, openBooksDb } from '../src/db.ts';
+import {
+	type BooksDb,
+	booksMirror,
+	openBooksDb,
+	openBooksDbReadonly,
+} from '../src/db.ts';
 import { entityDef, type QbObject } from '../src/entities.ts';
 import { tempDir } from './helpers.ts';
 
@@ -34,7 +42,7 @@ function purchase(category: string, updatedAt?: string): QbObject {
 /** Open a throwaway mirror; the caller closes it. */
 function openTmp(): { db: BooksDb; cleanup: () => void } {
 	const tmp = tempDir();
-	const db = openBooksDb(join(tmp.dir, 'books.db'));
+	const db = openBooksDb(booksMirror(tmp.dir, 'r1'));
 	return { db, cleanup: () => (db.close(), tmp.cleanup()) };
 }
 
@@ -121,12 +129,10 @@ describe('the realm cursor', () => {
 		cleanup();
 	});
 
-	test('a schema-version mismatch drops the data tables and clears the cursor', () => {
+	test('reopening a writer preserves the rows and the cursor', () => {
 		const tmp = tempDir();
-		const path = join(tmp.dir, 'books.db');
-		// Seed a mirror, then forge an older schema version + a legacy _sync_state
-		// table to simulate a v1 db opened by this engine.
-		let db = openBooksDb(path);
+		const site = booksMirror(tmp.dir, 'r1');
+		let db = openBooksDb(site);
 		ingPurchase(db, purchase('60'), 's1');
 		db.ingest([], {
 			syncedAt: 's1',
@@ -136,48 +142,52 @@ describe('the realm cursor', () => {
 				lastSyncedAt: '2026-02-01T00:00:00.000Z',
 			},
 		});
-		db.raw.exec(`UPDATE _meta SET value = '1' WHERE key = 'schema_version'`);
-		db.raw.exec(`CREATE TABLE _sync_state (entity TEXT PRIMARY KEY)`);
 		db.close();
 
-		// Reopening drops the derived tables (purchases, the legacy _sync_state) and
-		// clears the realm cursor, so the next sync is a clean FULL.
-		db = openBooksDb(path);
-		expect(db.getMeta('schema_version')).toBe('2');
-		expect(db.readRealmState().cdcCursor).toBeNull();
-		expect(db.isInitialized(PURCHASE)).toBe(false);
-		const legacy = db.raw
-			.query<{ n: number }, []>(
-				`SELECT count(*) AS n FROM sqlite_master WHERE name='_sync_state'`,
-			)
-			.get();
-		expect(legacy?.n).toBe(0);
+		// Nothing is inspected, dropped, or migrated on open: a different declaration
+		// would be a different filename, so an artifact this opens is always one this
+		// build wrote (ADR-0194). Opening five times from five call sites is safe.
+		db = openBooksDb(site);
+		expect(db.readRealmState().cdcCursor).toBe('2026-02-01T00:00:00.000Z');
+		expect(db.isInitialized(PURCHASE)).toBe(true);
+		expect(db.entityStatus(PURCHASE).rows).toBe(1);
+		// Nothing about the stored shape is stamped in the file: `_meta` carries the
+		// cursor and only the cursor.
+		expect(
+			db.raw
+				.query<{ key: string }, []>(`SELECT key FROM _meta ORDER BY key`)
+				.all()
+				.map((r) => r.key),
+		).toEqual(['cdc_cursor', 'last_full_pull_at', 'last_synced_at']);
 		db.close();
 		tmp.cleanup();
 	});
 });
 
 describe('a read-only handle', () => {
-	test('reads, refuses writes, and never runs the drop-migration', () => {
+	test('is null before the mirror is built, and never creates it', () => {
 		const tmp = tempDir();
-		const path = join(tmp.dir, 'books.db');
-		// Writer seeds a mirror, then we forge an OLD schema version: the next WRITER
-		// open would drop everything; the next READER open must not.
-		let db = openBooksDb(path);
+		const site = booksMirror(tmp.dir, 'r1');
+		expect(openBooksDbReadonly(site)).toBeNull();
+		expect(openBooksDbReadonly(site)).toBeNull();
+		tmp.cleanup();
+	});
+
+	test('reads the mirror and refuses writes by the connection', () => {
+		const tmp = tempDir();
+		const site = booksMirror(tmp.dir, 'r1');
+		const db = openBooksDb(site);
 		ingPurchase(db, purchase('60'), 's1');
 		db.ingest([], {
 			syncedAt: 's1',
 			realmState: { cdcCursor: 'c1', lastFullPullAt: 'c1', lastSyncedAt: 'c1' },
 		});
-		db.raw.exec(`UPDATE _meta SET value = '1' WHERE key = 'schema_version'`);
 		db.close();
 
-		// A read-only handle reads the forged-v1 db untouched: the row survives, the
-		// version is NOT bumped, the migration does NOT fire, and a write is refused.
-		const ro = openBooksDb(path, { readonly: true });
+		const ro = openBooksDbReadonly(site);
+		if (!ro) throw new Error('the mirror was just built');
 		expect(ro.entityStatus(PURCHASE).rows).toBe(1);
 		expect(ro.readRealmState().cdcCursor).toBe('c1');
-		expect(ro.getMeta('schema_version')).toBe('1');
 		expect(() =>
 			ro.ingest([{ def: PURCHASE, objects: [purchase('61')] }], {
 				syncedAt: 's2',
@@ -185,12 +195,6 @@ describe('a read-only handle', () => {
 		).toThrow();
 		expect(ro.entityStatus(PURCHASE).rows).toBe(1); // the refused write changed nothing
 		ro.close();
-
-		// A WRITER open, by contrast, fires the migration (v1 -> v2): tables dropped.
-		db = openBooksDb(path);
-		expect(db.getMeta('schema_version')).toBe('2');
-		expect(db.isInitialized(PURCHASE)).toBe(false);
-		db.close();
 		tmp.cleanup();
 	});
 });
