@@ -40,9 +40,7 @@ export type MirrorArtifact = {
 };
 
 export type Mirror = {
-	readonly name: string;
 	readonly version: number;
-	readonly directory: string;
 	/** The current artifact's path, whether or not it exists yet. */
 	readonly path: string;
 	/**
@@ -133,8 +131,7 @@ export function mirrorAt({
 	// No leading zeros, so one version has exactly one filename and the numeric
 	// order and the name are never in disagreement.
 	const artifactPattern = new RegExp(`^${name}\\.v([1-9][0-9]*)\\.db$`);
-	const filenameFor = (of: number) => `${name}.v${of}.db`;
-	const path = join(directory, filenameFor(version));
+	const path = join(directory, `${name}.v${version}.db`);
 
 	function artifacts(): MirrorArtifact[] {
 		let filenames: string[];
@@ -144,28 +141,26 @@ export function mirrorAt({
 			return [];
 		}
 		return filenames
-			.map((filename) => ({
-				filename,
-				found: artifactPattern.exec(filename)?.[1],
-			}))
-			.filter(
-				(entry): entry is { filename: string; found: string } =>
-					entry.found !== undefined,
-			)
-			.map(({ filename, found }) => ({
-				version: Number(found),
-				filename,
-				path: join(directory, filename),
-				current: Number(found) === version,
-			}))
-			.filter((artifact) => Number.isSafeInteger(artifact.version))
+			.map((filename) => {
+				const found = artifactPattern.exec(filename)?.[1];
+				const parsed = found === undefined ? Number.NaN : Number(found);
+				// A matching name whose digits overflow a safe integer is dropped
+				// rather than compared: it cannot be ordered honestly, and being
+				// invisible to inventory also puts it out of reclamation's reach.
+				if (!Number.isSafeInteger(parsed)) return null;
+				return {
+					version: parsed,
+					filename,
+					path: join(directory, filename),
+					current: parsed === version,
+				};
+			})
+			.filter((artifact) => artifact !== null)
 			.sort((a, b) => a.version - b.version);
 	}
 
 	return {
-		name,
 		version,
-		directory,
 		path,
 
 		artifacts,

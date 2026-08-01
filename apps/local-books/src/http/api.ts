@@ -174,7 +174,7 @@ export function createApiApp(deps: ApiDeps) {
 		})
 		.get('/api/entities', (c) => {
 			const defs = config.entities.map((name) => entityDef(name));
-			return c.json(listEntities({ mirror: mirror, defs }));
+			return c.json(listEntities({ mirror, defs }));
 		})
 		.get('/api/entities/:entity', sValidator('query', RowsQuery), (c) => {
 			const entity = c.req.param('entity');
@@ -187,7 +187,7 @@ export function createApiApp(deps: ApiDeps) {
 			const { limit, offset } = c.req.valid('query');
 			return c.json(
 				pageEntityRows({
-					mirror: mirror,
+					mirror,
 					def: entityDef(entity),
 					limit: clampInt(limit, 100, 500),
 					offset: clampInt(offset, 0, Number.MAX_SAFE_INTEGER),
@@ -201,7 +201,7 @@ export function createApiApp(deps: ApiDeps) {
 				return c.json(err, err.error.status);
 			}
 			const detail = getEntityRow({
-				mirror: mirror,
+				mirror,
 				def: entityDef(entity),
 				id: c.req.param('id'),
 			});
@@ -213,7 +213,7 @@ export function createApiApp(deps: ApiDeps) {
 		})
 		.post('/api/query', sValidator('json', QueryBody), (c) => {
 			const { sql } = c.req.valid('json');
-			const { data, error } = queryBooks({ mirror: mirror, sql });
+			const { data, error } = queryBooks({ mirror, sql });
 			if (error) {
 				const err = ApiError.QueryFailed({ message: error.message });
 				return c.json(err, err.error.status);
@@ -248,7 +248,7 @@ export function createApiApp(deps: ApiDeps) {
 				// only maps that refusal to a 403 rather than re-implementing it.
 				const { data, error } = await recategorizeExpense({
 					openQb,
-					mirror: mirror,
+					mirror,
 					input: c.req.valid('json'),
 					readOnly,
 				});

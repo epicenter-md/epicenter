@@ -180,6 +180,11 @@ reclamation timing.
 - One implementation exists instead of two byte-identical copies, so the golden
   hash pinned in two test suites to detect drift between them is gone with the
   thing it was watching.
+- A Local Mail install from before this grammar has a `mail.db` beside the new
+  `mail.v5.db`. It is outside the grammar, so status does not list it and
+  reclamation cannot reach it; it is inert disk a human removes by hand. Teaching
+  reclamation about pre-grammar names would mean teaching it to delete a file it
+  cannot prove it wrote, which is the one thing the grammar exists to prevent.
 - `packages/sqlite` is MIT and both apps are AGPL, so extracting the primitive
   relicensed roughly 200 lines of filename-grammar code from AGPL to MIT. Same
   copyright holder, no CLA, and the code is generic infrastructure with no

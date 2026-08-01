@@ -23,9 +23,9 @@ export function formatRelative(targetIso: string, now: number): string {
 }
 
 /**
- * The company that the verbs operate on: config, resolved realm, its mirror
- * mirror, and its token store. The mirror is resolved once here so no verb
- * assembles a database path of its own.
+ * The company that the verbs operate on: config, resolved realm, its mirror,
+ * and its token store. The mirror is resolved once here so no verb assembles a
+ * database path of its own.
  */
 export type CompanyContext = {
 	config: AppConfig;

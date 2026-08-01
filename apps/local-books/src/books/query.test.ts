@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { booksMirror, openBooksDb } from '../db.ts';
 import { queryBooks } from './query.ts';
 
-/** Seed a mirror with two invoices (one soft-deleted); return its mirror. */
+/** Seed one company's mirror with two invoices (one soft-deleted). */
 function fixtureMirror() {
 	const dir = mkdtempSync(join(tmpdir(), 'local-books-'));
 	const mirror = booksMirror(dir, 'realm-1');
