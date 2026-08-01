@@ -75,6 +75,28 @@ export type ActiveConversation = {
 /** The reactive chat-state object returned by {@link createAgentChatState}. */
 export type AgentChatState = ReturnType<typeof createAgentChatState>;
 
+/**
+ * The placeholder title a blank conversation is born with, and the only title
+ * the first user message is allowed to overwrite. A conversation opened with a
+ * real title (see {@link ConversationOpener}) keeps it.
+ */
+const UNTITLED = 'New Chat';
+
+/**
+ * What a caller composes when it opens a conversation deliberately instead of
+ * handing the user a blank one, e.g. Vocab's Practice. Omitting both fields is
+ * the blank-conversation path every "New Chat" button takes.
+ */
+export type ConversationOpener = {
+	/** A real title, written at creation, so the conversation is findable in the
+	 * list from the moment it exists rather than being named after the first
+	 * fifty characters of a composed turn. */
+	title?: string;
+	/** One composed first user turn, sent through the new conversation's own
+	 * handle. It never lands in whatever conversation happened to be active. */
+	opening?: string;
+};
+
 /** A reactive handle for a single conversation backed by the client loop. */
 export type ConversationHandle = NonNullable<AgentChatState['active']>;
 
@@ -253,7 +275,7 @@ export function createAgentChatState({
 			},
 
 			get title() {
-				return metadata?.title ?? 'New Chat';
+				return metadata?.title ?? UNTITLED;
 			},
 
 			/** Recency for the conversation list, as the row's ISO instant. */
@@ -389,11 +411,12 @@ export function createAgentChatState({
 				// silently swallowed by the earlier dismissal.
 				dismissedError = null;
 
-				// First user message names the conversation; later sends just bump
-				// recency (updateConversation always writes updatedAt).
-				const currentTitle = metadata?.title ?? 'New Chat';
+				// First user message names a conversation that has no name yet; a
+				// conversation opened with a real title, and every later send, just
+				// bumps recency (updateConversation always writes updatedAt).
+				const currentTitle = metadata?.title ?? UNTITLED;
 				updateConversation(conversationId, {
-					title: currentTitle === 'New Chat' ? text.slice(0, 50) : currentTitle,
+					title: currentTitle === UNTITLED ? text.slice(0, 50) : currentTitle,
 				});
 			},
 
@@ -480,14 +503,22 @@ export function createAgentChatState({
 	/**
 	 * Open a new conversation, carrying the active conversation's model choice
 	 * forward, and select it after its row document is ready.
+	 *
+	 * With a {@link ConversationOpener}, the conversation is born titled and its
+	 * first turn is sent through its own handle, so a deliberately opened session
+	 * never writes into whatever conversation happened to be active. The handle
+	 * does not exist until the row document is ready, which is why every caller
+	 * that cares where its turn landed must await this.
 	 */
-	async function createConversation(): Promise<ConversationId> {
+	async function createConversation(
+		opener: ConversationOpener = {},
+	): Promise<ConversationId> {
 		const nowIso = InstantString.now();
 		const current =
 			selection.current === null ? undefined : handles.get(selection.current);
 
 		const row = await table.create({
-			title: 'New Chat',
+			title: opener.title ?? UNTITLED,
 			model: current?.model ?? defaultModel,
 			createdAt: nowIso,
 			updatedAt: nowIso,
@@ -495,6 +526,19 @@ export function createAgentChatState({
 		const id = asConversationId(row.id);
 		await reconcileHandles();
 		selection.select(id);
+
+		if (opener.opening !== undefined) {
+			// Reconciling opens a handle for every live row, so a missing one means
+			// the row went away underneath us. Throw rather than drop the turn: a
+			// silently discarded opening is the exact defect this argument exists
+			// to close, and the caller reports the failure.
+			const handle = handles.get(id);
+			if (!handle)
+				throw new Error(
+					`Conversation ${id} has no live handle; its opening turn was not sent.`,
+				);
+			handle.sendMessage(opener.opening);
+		}
 		return id;
 	}
 
