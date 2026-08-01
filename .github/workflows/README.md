@@ -30,17 +30,29 @@ Web apps (Cloudflare Workers) deploy **together in one workflow** because deploy
 
 ### CI
 
+`ci.format.yml` is the merge gate, and `bun run check` is that same gate on your
+machine. Every step in it is a root script, and the structural checks arrive as
+one `check:structure` step, so a check is added or removed in `package.json` and
+nowhere else. Do not re-list the steps here or in the workflow.
+
 | File | Trigger | What it does |
 |---|---|---|
-| `ci.format.yml` | Push to `main`, pull requests | Runs `bun run lint:check` and `bun run typecheck`. Cancels older runs for the same branch or PR. |
-| `ci.autofix.yml` | Push to `main`, pull requests | Runs `bun run format` and commits fixes back via autofix-ci. Cancels older runs for the same branch or PR. |
+| `ci.format.yml` | Push to `main`, pull requests | The merge gate: `lint:ci`, `typecheck`, `test`, `check:structure`. Cancels older runs for the same branch or PR. |
+| `ci.autofix.yml` | Push to `main`, pull requests | Runs `bun run format` and commits fixes back via autofix-ci. This is why the gate does not check formatting. Cancels older runs for the same branch or PR. |
+| `ci.runtime-parity.yml` | Push to `main`, pull requests | Boots the Bun runtime port against Postgres and a local S3 and runs the API smoke. Needs Docker, so it runs on a GitHub-hosted runner and stays out of the main gate. |
+
+Two things stay off the gate deliberately. Formatting, because autofix owns it.
+And `bun run check:doc-hygiene`, whose ADR-staleness rule is time-based, so a
+pull request that changed nothing can go red on a calendar day; it is a review
+command, not a merge blocker. Anything needing live credentials or a network
+endpoint gets its own workflow on its own trigger, as the two below do.
 
 ### Automation
 
 | File | Trigger | What it does |
 |---|---|---|
-| `auto.label-issues.yml` | Issues opened/edited | Uses Claude to auto-label issues by type, priority, platform, and area. |
 | `auto.release.yml` | PR merged to `main` | Bumps version, collects `## Changelog` entries from merged PRs, commits release, tags, creates GitHub Release with grouped changelog. |
+| `local-mail.gmail-drift.yml` | Weekly (Mondays 12:00 UTC), manual | Fetches Gmail's Discovery document and asserts the methods and fields `apps/local-mail` reads still exist. A network call, so it never gates a PR. |
 | npm release (manual) | Manual | `bun run release` (`changeset version` + `scripts/publish-packages.ts`). See "Package Releases (npm)" below. `@changesets/action` will automate this later. |
 
 ## Package Releases (npm)
@@ -127,12 +139,6 @@ keep `changeset version` (it owns version math and changelogs) but replaced
 |---|---|---|
 | `meta.sponsors-readme.yml` | Daily schedule, manual | Updates README sponsors section. |
 
-### Uncategorized
-
-| File | Trigger | What it does |
-|---|---|---|
-| `claude.yml` | `@claude` mentions in issues/PRs | Runs Claude Code agent to respond. One-off, no prefix needed. |
-
 ## Secrets Reference
 
 | Secret | Used by | Description |
@@ -142,7 +148,6 @@ keep `changeset version` (it owns version math and changelogs) but replaced
 | `CLOUDFLARE_ACCOUNT_ID` | `deploy.cloudflare`, `deploy.cloudflare-preview` | Cloudflare account ID |
 | `DISCORD_WEBHOOK_URL` | `deploy.cloudflare` | Discord webhook for deployment notifications (optional) |
 | `GH_ACTIONS_PAT` | `auto.release`, `meta.sponsors-readme` | PAT with repo + read:org scope for pushing commits/tags and creating releases |
-| `ANTHROPIC_API_KEY` | `auto.label-issues`, `claude` | Anthropic API key for Claude |
 
 ## Rollback
 

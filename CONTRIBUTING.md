@@ -100,12 +100,16 @@ The convention in one line: `:local` works on a fresh clone, `:remote` wraps wit
 
 2. **Make your changes** following our coding standards (see below)
 
-3. **Test your changes** thoroughly
+3. **Run the gate** from the repo root
 
    ```bash
-   # Run tests if available
-   bun test
+   bun run check
    ```
+
+   This is the same gate CI runs: formatting, lint, typecheck, every workspace
+   test, and the structural checks. Run it before you push and CI holds no
+   surprises. While iterating, `bun run test` or `bun run typecheck` alone is
+   faster.
 
 4. **Commit using conventional commits**
 

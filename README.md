@@ -219,13 +219,25 @@ Every app starts from the repo root. `bun dev:<app>` runs every process the app 
 
 The API needs local Postgres and Infisical; see [apps/api/README.md](apps/api/README.md). Rust is needed for Tauri apps such as Epicenter, Matter, and Honeycrisp. Local Books and Local Mail run their own multi-process dev flows; their READMEs document them.
 
-Useful checks:
+`bun run check` is the gate. It runs formatting, lint, typecheck, every workspace test, and the structural checks, and it is the same gate CI runs, so a green local run predicts a green pull request.
 
 ```bash
-bun run typecheck
-bun run test
 bun run check
 ```
+
+Run the pieces on their own while you work:
+
+```bash
+bun run format          # rewrite formatting (CI autofixes this for you)
+bun run lint:check
+bun run typecheck
+bun run test
+bun run check:structure # doc paths, catalog pins, API paths, licenses, UI boundary, boot purity
+```
+
+Two checks sit outside the gate on purpose. `bun run check:doc-hygiene` flags specs and ADRs that time has made stale, so it belongs to review rather than to merge. `bun run smoke:local` boots the API against local services.
+
+Running the Epicenter desktop app while you run `bun run test` fails one `apps/epicenter` packaging test: it needs the fixed production port the running app already holds.
 
 ## Design Notes
 
