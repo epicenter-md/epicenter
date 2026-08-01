@@ -18,11 +18,25 @@ harvested.**
 **Source:** `~/.codex/skills/.system/skill-creator/SKILL.md`, hand-rewritten
 2026-08-01 13:49. Not under version control.
 
-**At risk because:** Codex installs and rewrites `~/.codex/skills/.system/`. The
-binary carries the strings `write system skill file`, `create system skills dir`,
-and `failed to install system skills`, and the directory holds a
-`.codex-system-skills.marker` (`6fac8acc0c6abb7b`) that the hand edit did not
-change. The next `codex update` takes the rewrite with it.
+**At risk because:** Codex installs and rewrites `~/.codex/skills/.system/`.
+Three things establish it, measured against `codex-cli 0.145.0` at
+`~/.local/bin/codex`:
+
+- The binary carries the code paths `write system skill file`,
+  `create system skills dir`, and `failed to install system skills`, and the
+  directory holds a `.codex-system-skills.marker` (`6fac8acc0c6abb7b`) the hand
+  edit did not touch.
+- The binary carries the file manifest it writes, including
+  `skill-creator/SKILL.md`, `skill-creator/license.txt`, and the bundled
+  `init_skill.py` and `quick_validate.py`.
+- The binary also carries the *original* prose for that SKILL.md, in sections
+  titled `Progressive Disclosure Design Principle` and
+  `What to Not Include in a Skill`. None of the hand-written headings
+  (`Find The Actual Gap`, `Steer, Do Not Substitute`) appear anywhere in it.
+
+So the on-disk file is a local divergence from a copy Codex still holds and will
+write back. Recover the upstream text at any time with
+`strings -a ~/.local/bin/codex`.
 
 **Why not carried into Epicenter:** these are general authoring craft, not
 knowledge that is irreducible to this repository. Merging them into
