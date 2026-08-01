@@ -12,9 +12,10 @@
  * the live statements `books_report` runs: forget BillPayment and "what did I
  * pay this vendor" is quietly wrong. Adding an entity is one entry here with no
  * migration to write, so there is no reason to curate below the full posting
- * set. It is not free, though: this registry is the mirror's declaration
- * (`db.ts`), and the mirror is fingerprinted whole, so an edit here renames the
- * artifact on disk and costs the company one full re-pull (ADR-0194).
+ * set. It is not free, though: this registry is what the mirror's corpus
+ * contract covers (`db.ts`), so adding or changing an entity here is a
+ * `MIRROR_VERSION` bump, a new artifact on disk, and one full re-pull of the
+ * company (ADR-0197).
  *
  * The raw blob is canonical; extracted columns are pure projections of it, each
  * a SQLite GENERATED column over `json_extract(raw, ...)` (see `db.ts`). So the

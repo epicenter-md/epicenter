@@ -176,7 +176,7 @@ bun run status:production
 
 ```
 <data-dir>/<company-id>/
-  books.<fingerprint>.db           # record-type tables + sync state; `status` prints the path
+  books.v<version>.db              # record-type tables + sync state; `status` prints the path
 <data-dir>/credentials.json        # OAuth tokens (0600), never inside a company's db
 <data-dir>/companies.json          # which companies are connected, and the default
 <data-dir>/config.json             # optional: entities, environment, schedule

@@ -11,10 +11,9 @@
  * name: the registry is the SQL-identifier boundary, so no request string reaches
  * a table name.
  */
-
+import type { Mirror } from '@epicenter/sqlite/bun-mirror';
 import { type EntityStatus, openBooksDbReadonly } from '../db.ts';
 import type { EntityDef, GeneratedColumn } from '../entities.ts';
-import type { MirrorSite } from '../mirror.ts';
 
 /** One entity in the browse list: its mirror counts plus the columns to render. */
 export type EntitySummary = EntityStatus & {
@@ -51,13 +50,13 @@ export type EntityRowDetail = {
  * not an error, matching `readBooksStatus`.
  */
 export function listEntities({
-	site,
+	mirror,
 	defs,
 }: {
-	site: MirrorSite;
+	mirror: Mirror;
 	defs: EntityDef[];
 }): { mirrorBuilt: boolean; entities: EntitySummary[] } {
-	const db = openBooksDbReadonly(site);
+	const db = openBooksDbReadonly(mirror);
 	if (db === null) return { mirrorBuilt: false, entities: [] };
 	try {
 		const entities = defs.map((def) => ({
@@ -73,17 +72,17 @@ export function listEntities({
 
 /** A page of one entity's rows, newest first. Empty when the mirror is absent. */
 export function pageEntityRows({
-	site,
+	mirror,
 	def,
 	limit,
 	offset,
 }: {
-	site: MirrorSite;
+	mirror: Mirror;
 	def: EntityDef;
 	limit: number;
 	offset: number;
 }): EntityRowsPage {
-	const db = openBooksDbReadonly(site);
+	const db = openBooksDbReadonly(mirror);
 	if (db === null) {
 		return {
 			entity: def.name,
@@ -111,15 +110,15 @@ export function pageEntityRows({
 
 /** One row's detail with its parsed blob, or `null` when the row is unknown. */
 export function getEntityRow({
-	site,
+	mirror,
 	def,
 	id,
 }: {
-	site: MirrorSite;
+	mirror: Mirror;
 	def: EntityDef;
 	id: string;
 }): EntityRowDetail | null {
-	const db = openBooksDbReadonly(site);
+	const db = openBooksDbReadonly(mirror);
 	if (db === null) return null;
 	try {
 		const row = db.getRow(def, id);

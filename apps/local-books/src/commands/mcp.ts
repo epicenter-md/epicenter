@@ -29,7 +29,7 @@
  *    a normal result with `isError: true` and a text message, so the model can
  *    read it and self-correct.
  */
-
+import type { Mirror } from '@epicenter/sqlite/bun-mirror';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -54,7 +54,6 @@ import { type ParsedArgs, VERSION } from '../cli.ts';
 import { resolveRealm } from '../companies.ts';
 import { type AppConfig, loadConfig } from '../config.ts';
 import { booksMirror, openBooksDb } from '../db.ts';
-import type { MirrorSite } from '../mirror.ts';
 import { syncRealm } from '../sync.ts';
 import { createFileTokenStore, type TokenStore } from '../token-store.ts';
 
@@ -62,8 +61,8 @@ import { createFileTokenStore, type TokenStore } from '../token-store.ts';
 type ToolContext = {
 	config: AppConfig;
 	realmId: string;
-	/** The resolved company's mirror site: its current artifact is what tools read. */
-	mirror: MirrorSite;
+	/** The resolved company's mirror: its current artifact is what tools read. */
+	mirror: Mirror;
 	/** A QB client opener for the resolved company; the token loads when called. */
 	openQb: OpenQbClient;
 	/** The realm's token store (built once per server, reloaded on each `get`). */
@@ -127,7 +126,7 @@ const TOOLS: ToolDescriptor[] = [
 		}),
 		tier: 'read',
 		async run(ctx, args) {
-			return queryBooks({ site: ctx.mirror, sql: args.sql });
+			return queryBooks({ mirror: ctx.mirror, sql: args.sql });
 		},
 	}),
 	defineMcpTool({
@@ -203,7 +202,7 @@ const TOOLS: ToolDescriptor[] = [
 			// removing the filter later cannot silently enable the write.
 			return recategorizeExpense({
 				openQb: ctx.openQb,
-				site: ctx.mirror,
+				mirror: ctx.mirror,
 				readOnly: ctx.config.readOnly,
 				input: args,
 			});

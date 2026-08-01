@@ -7,8 +7,8 @@
  * already ingested a newer bookkeeper edit, cannot regress the mirror.
  *
  * The other half is what opening does NOT do. Since the artifact is named by the
- * declaration's fingerprint (ADR-0194), open is pure creation: no stored version
- * to compare, no tables to drop, no cursor to clear.
+ * corpus version that builds it (ADR-0197), open is pure creation: no stored
+ * version to compare, no tables to drop, no cursor to clear.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -131,8 +131,8 @@ describe('the realm cursor', () => {
 
 	test('reopening a writer preserves the rows and the cursor', () => {
 		const tmp = tempDir();
-		const site = booksMirror(tmp.dir, 'r1');
-		let db = openBooksDb(site);
+		const mirror = booksMirror(tmp.dir, 'r1');
+		let db = openBooksDb(mirror);
 		ingPurchase(db, purchase('60'), 's1');
 		db.ingest([], {
 			syncedAt: 's1',
@@ -144,10 +144,11 @@ describe('the realm cursor', () => {
 		});
 		db.close();
 
-		// Nothing is inspected, dropped, or migrated on open: a different declaration
-		// would be a different filename, so an artifact this opens is always one this
-		// build wrote (ADR-0194). Opening five times from five call sites is safe.
-		db = openBooksDb(site);
+		// Nothing is inspected, dropped, or migrated on open: a different corpus
+		// version would be a different filename, so an artifact this opens is always
+		// one this build wrote (ADR-0197). Opening five times from five call sites
+		// is safe.
+		db = openBooksDb(mirror);
 		expect(db.readRealmState().cdcCursor).toBe('2026-02-01T00:00:00.000Z');
 		expect(db.isInitialized(PURCHASE)).toBe(true);
 		expect(db.entityStatus(PURCHASE).rows).toBe(1);
@@ -167,16 +168,16 @@ describe('the realm cursor', () => {
 describe('a read-only handle', () => {
 	test('is null before the mirror is built, and never creates it', () => {
 		const tmp = tempDir();
-		const site = booksMirror(tmp.dir, 'r1');
-		expect(openBooksDbReadonly(site)).toBeNull();
-		expect(openBooksDbReadonly(site)).toBeNull();
+		const mirror = booksMirror(tmp.dir, 'r1');
+		expect(openBooksDbReadonly(mirror)).toBeNull();
+		expect(openBooksDbReadonly(mirror)).toBeNull();
 		tmp.cleanup();
 	});
 
 	test('reads the mirror and refuses writes by the connection', () => {
 		const tmp = tempDir();
-		const site = booksMirror(tmp.dir, 'r1');
-		const db = openBooksDb(site);
+		const mirror = booksMirror(tmp.dir, 'r1');
+		const db = openBooksDb(mirror);
 		ingPurchase(db, purchase('60'), 's1');
 		db.ingest([], {
 			syncedAt: 's1',
@@ -184,7 +185,7 @@ describe('a read-only handle', () => {
 		});
 		db.close();
 
-		const ro = openBooksDbReadonly(site);
+		const ro = openBooksDbReadonly(mirror);
 		if (!ro) throw new Error('the mirror was just built');
 		expect(ro.entityStatus(PURCHASE).rows).toBe(1);
 		expect(ro.readRealmState().cdcCursor).toBe('c1');

@@ -10,11 +10,11 @@
  */
 
 import { rmSync } from 'node:fs';
+import type { Mirror } from '@epicenter/sqlite/bun-mirror';
 import { queryBooks } from '../books/query.ts';
 import type { ParsedArgs } from '../cli.ts';
 import { booksMirror, openBooksDb } from '../db.ts';
 import { entityDef, type QbObject } from '../entities.ts';
-import type { MirrorSite } from '../mirror.ts';
 import { companyDir, resolveDataDir } from '../paths.ts';
 
 const DEMO_REALM = 'demo';
@@ -91,8 +91,8 @@ const purchase = (
 });
 
 /** Print a query's rows as a compact aligned table. */
-function table(site: MirrorSite, sql: string): void {
-	const { data, error } = queryBooks({ site, sql });
+function table(mirror: Mirror, sql: string): void {
+	const { data, error } = queryBooks({ mirror, sql });
 	if (error !== null) {
 		console.log(`  (query failed: ${error.message})`);
 		return;
@@ -126,7 +126,7 @@ export async function runDemo(args: ParsedArgs): Promise<number> {
 	// Fresh each run: the demo is disposable sample data, not a real mirror, so it
 	// clears the whole realm directory rather than reclaiming one artifact.
 	rmSync(companyDir(dataDir, DEMO_REALM), { recursive: true, force: true });
-	const site = booksMirror(dataDir, DEMO_REALM);
+	const mirror = booksMirror(dataDir, DEMO_REALM);
 
 	const acme = { value: '1', name: 'Acme Corp' };
 	const globex = { value: '2', name: 'Globex Inc' };
@@ -134,7 +134,7 @@ export async function runDemo(args: ParsedArgs): Promise<number> {
 	const aws = { value: '10', name: 'AWS' };
 	const wework = { value: '13', name: 'WeWork' };
 
-	const db = openBooksDb(site);
+	const db = openBooksDb(mirror);
 	const seed: Array<{ entity: string; objects: QbObject[] }> = [
 		{
 			entity: 'Account',
@@ -220,11 +220,11 @@ export async function runDemo(args: ParsedArgs): Promise<number> {
 	console.log(
 		'Built a sample company (Northwind Consulting) in your local copy.',
 	);
-	console.log(`Stored at: ${site.path}\n`);
+	console.log(`Stored at: ${mirror.path}\n`);
 
 	console.log('Who owes us money? (open invoices)');
 	table(
-		site,
+		mirror,
 		`SELECT c.display_name AS customer, i.doc_number AS invoice, i.doc_date AS date,
 		        printf('$%,.2f', i.balance) AS outstanding
 		 FROM invoices i JOIN customers c ON c.id = i.customer_ref
@@ -233,7 +233,7 @@ export async function runDemo(args: ParsedArgs): Promise<number> {
 
 	console.log('\nWhere is the money going? (expense spend by category)');
 	table(
-		site,
+		mirror,
 		`SELECT json_extract(line.value, '$.AccountBasedExpenseLineDetail.AccountRef.name') AS category,
 		        COUNT(*) AS txns, printf('$%,.2f', SUM(json_extract(line.value, '$.Amount'))) AS spent
 		 FROM purchases p, json_each(p.raw, '$.Line') line
@@ -243,7 +243,7 @@ export async function runDemo(args: ParsedArgs): Promise<number> {
 
 	console.log('\nWhat still needs categorizing?');
 	table(
-		site,
+		mirror,
 		`SELECT id, txn_date AS date, payee, printf('$%,.2f', total_amt) AS amount
 		 FROM purchases WHERE deleted = 0 AND raw LIKE '%Uncategorized Expense%' ORDER BY txn_date`,
 	);

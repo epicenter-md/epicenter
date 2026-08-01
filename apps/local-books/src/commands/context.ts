@@ -1,3 +1,4 @@
+import type { Mirror } from '@epicenter/sqlite/bun-mirror';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import { resolveRealm } from '../companies.ts';
 import {
@@ -6,7 +7,6 @@ import {
 	loadConfig,
 } from '../config.ts';
 import { booksMirror } from '../db.ts';
-import type { MirrorSite } from '../mirror.ts';
 import { createFileTokenStore, type TokenStore } from '../token-store.ts';
 
 /** Human-friendly "in 42m" / "3m ago" for the auth and status commands. */
@@ -24,13 +24,13 @@ export function formatRelative(targetIso: string, now: number): string {
 
 /**
  * The company that the verbs operate on: config, resolved realm, its mirror
- * site, and its token store. The mirror site is resolved once here so no verb
+ * mirror, and its token store. The mirror is resolved once here so no verb
  * assembles a database path of its own.
  */
 export type CompanyContext = {
 	config: AppConfig;
 	realmId: string;
-	mirror: MirrorSite;
+	mirror: Mirror;
 	store: TokenStore;
 };
 

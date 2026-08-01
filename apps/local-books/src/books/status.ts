@@ -1,13 +1,15 @@
 /**
  * `readBooksStatus`: the connection-and-mirror state of one company, read from
- * the token store, the mirror site's artifact inventory, and the mirror's `_meta`
+ * the token store, the mirror's artifact inventory, and the mirror's `_meta`
  * table. Where `queryBooks` answers row-level questions, this answers "are you
  * connected, and how fresh is the local copy?": the cheap orientation read.
  *
- * There is no stored-shape check to report. The artifact is named by the
- * declaration's fingerprint (ADR-0194), so the honest questions are "does the
- * current materialization exist" and "what earlier ones are still on disk", both
- * answered by `artifacts()` without opening SQLite.
+ * There is no stored-shape check to report. The artifact is named by the corpus
+ * version that builds it (ADR-0197), so the honest questions are "how far along
+ * is the current artifact" and "what older ones are still on disk". The second is
+ * `artifacts()`, a directory read that opens no SQLite handle. The first is not:
+ * a file existing proves only that something started writing, so readiness comes
+ * from the realm's own cursor.
  *
  * It is a plain reader, not a `Result`: "not connected" and "mirror not built"
  * are reported states, not failures, so the shape is always returned. The
@@ -15,11 +17,10 @@
  * same object straight back as structured content (ADR-0072 leaves this seam
  * open exactly as it does for the other verb cores).
  */
-
+import type { Mirror } from '@epicenter/sqlite/bun-mirror';
 import type { AppConfig, QbEnvironment } from '../config.ts';
 import { type EntityStatus, openBooksDbReadonly } from '../db.ts';
 import { entityDef } from '../entities.ts';
-import type { MirrorSite } from '../mirror.ts';
 import type { TokenStore } from '../token-store.ts';
 import { isAccessTokenExpired, isRefreshTokenExpired } from '../tokens.ts';
 
@@ -39,21 +40,28 @@ export type BooksStatus = {
 	/** Null when not connected. */
 	accessToken: TokenStatus | null;
 	refreshToken: TokenStatus | null;
-	/** Whether the current mirror artifact exists yet (a `sync --full` builds it). */
-	mirrorBuilt: boolean;
+	/**
+	 * How much of the current artifact this build can trust. `empty` is no file at
+	 * all; `building` is a file whose realm cursor has never been set, so a full
+	 * pull has not finished and the rows in it are a partial corpus; `ready` is a
+	 * cursor written by a clean full pull. A version bump lands in `empty` and
+	 * passes through `building`, so the newest artifact is never authoritative
+	 * merely for being newest.
+	 */
+	mirror: 'empty' | 'building' | 'ready';
 	/**
 	 * The current artifact's path, whether or not it exists yet. Named by the
-	 * declaration's fingerprint, so it is not a path a reader can guess: this is
-	 * how a human or an agent finds the file to point `sqlite3` at.
+	 * corpus version, so it changes under a reader that has not been rebuilt: this
+	 * is how a human or an agent finds the file to point `sqlite3` at.
 	 */
 	mirrorPath: string;
 	/**
-	 * Fingerprints of earlier artifacts still on disk beside the current one. A
-	 * declaration edit renames the artifact and retains its predecessor, so this is
-	 * non-empty until an app-owned reclaim runs. It is inventory, not a mismatch:
-	 * nothing here is consulted by any read path.
+	 * Versions of earlier artifacts still on disk beside the current one. A version
+	 * bump names a new artifact and retains its predecessor, so this is non-empty
+	 * until an app-owned reclaim runs. It is inventory, not a mismatch: nothing
+	 * here is consulted by any read path.
 	 */
-	predecessors: string[];
+	predecessors: number[];
 	/** The remaining fields are null/empty until the mirror is built. */
 	cdcCursor: string | null;
 	lastFullPullAt: string | null;
@@ -70,7 +78,7 @@ export async function readBooksStatus({
 }: {
 	config: AppConfig;
 	realmId: string;
-	mirror: MirrorSite;
+	mirror: Mirror;
 	store: TokenStore;
 }): Promise<BooksStatus> {
 	const token = await store.get(realmId);
@@ -102,7 +110,7 @@ export async function readBooksStatus({
 		predecessors: mirror
 			.artifacts()
 			.filter((a) => !a.current)
-			.map((a) => a.fingerprint),
+			.map((a) => a.version),
 	};
 
 	// Read-only: a status read must not block on a concurrent sync's write lock,
@@ -112,7 +120,7 @@ export async function readBooksStatus({
 		return {
 			...base,
 			...shape,
-			mirrorBuilt: false,
+			mirror: 'empty',
 			cdcCursor: null,
 			lastFullPullAt: null,
 			lastSyncedAt: null,
@@ -124,7 +132,10 @@ export async function readBooksStatus({
 		return {
 			...base,
 			...shape,
-			mirrorBuilt: true,
+			// The cursor is written only when a full pull finished with no failing
+			// entity (`syncRealm`), so it is the one honest "this corpus is complete"
+			// signal the mirror holds. A half-backfilled artifact reports `building`.
+			mirror: realm.lastFullPullAt === null ? 'building' : 'ready',
 			cdcCursor: realm.cdcCursor,
 			lastFullPullAt: realm.lastFullPullAt,
 			lastSyncedAt: realm.lastSyncedAt,

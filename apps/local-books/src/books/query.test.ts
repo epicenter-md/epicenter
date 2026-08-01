@@ -11,11 +11,11 @@ import { join } from 'node:path';
 import { booksMirror, openBooksDb } from '../db.ts';
 import { queryBooks } from './query.ts';
 
-/** Seed a mirror with two invoices (one soft-deleted); return its site. */
+/** Seed a mirror with two invoices (one soft-deleted); return its mirror. */
 function fixtureMirror() {
 	const dir = mkdtempSync(join(tmpdir(), 'local-books-'));
-	const site = booksMirror(dir, 'realm-1');
-	const db = openBooksDb(site);
+	const mirror = booksMirror(dir, 'realm-1');
+	const db = openBooksDb(mirror);
 	db.raw.exec(`
 		CREATE TABLE invoices (
 			id TEXT PRIMARY KEY, raw TEXT NOT NULL, updated_at TEXT,
@@ -26,14 +26,17 @@ function fixtureMirror() {
 			('i2', '{"Id":"i2"}', '2026-01-01', 1, 50.0);
 	`);
 	db.close();
-	return { site, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+	return {
+		mirror,
+		cleanup: () => rmSync(dir, { recursive: true, force: true }),
+	};
 }
 
 describe('queryBooks', () => {
 	test('runs a read-only SELECT and returns the live rows, bounded', () => {
-		const { site, cleanup } = fixtureMirror();
+		const { mirror, cleanup } = fixtureMirror();
 		const { data, error } = queryBooks({
-			site,
+			mirror,
 			sql: 'SELECT id, total_amt FROM invoices WHERE deleted = 0',
 		});
 		expect(error).toBeNull();
@@ -43,9 +46,9 @@ describe('queryBooks', () => {
 	});
 
 	test('rejects a write: the read-only connection is the boundary', () => {
-		const { site, cleanup } = fixtureMirror();
+		const { mirror, cleanup } = fixtureMirror();
 		const { error } = queryBooks({
-			site,
+			mirror,
 			sql: "DELETE FROM invoices WHERE id = 'i1'",
 		});
 		expect(error).not.toBeNull();
@@ -54,7 +57,7 @@ describe('queryBooks', () => {
 
 	test('errors clearly when no mirror exists yet', () => {
 		const { error } = queryBooks({
-			site: booksMirror(join(tmpdir(), 'local-books-absent'), 'realm'),
+			mirror: booksMirror(join(tmpdir(), 'local-books-absent'), 'realm'),
 			sql: 'SELECT 1',
 		});
 		expect(error?.message).toContain('No QuickBooks mirror');

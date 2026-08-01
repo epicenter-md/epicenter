@@ -1,16 +1,14 @@
 import type { Database } from 'bun:sqlite';
+import { type Mirror, mirrorAt } from '@epicenter/sqlite/bun-mirror';
 import {
 	type ColumnType,
-	ENTITY_DEFS,
 	type EntityDef,
-	entityDef,
 	isDeleted,
 	lastUpdatedTime,
 	type QbObject,
 	type SqlIdent,
 	sqlIdent,
 } from './entities.ts';
-import { defineMirror, type MirrorSite } from './mirror.ts';
 import { companyDir } from './paths.ts';
 
 /**
@@ -28,9 +26,9 @@ import { companyDir } from './paths.ts';
  *
  * The realm owns its identity through the directory
  * (`<dataDir>/<realmId>/`), not a stored column, so the db need not know which
- * company it holds. Inside that directory the artifact is named by the
- * fingerprint of `MIRROR_DECLARATION` (ADR-0194), so nothing about the stored
- * shape is stamped inside the file and nothing is ever dropped on open.
+ * company it holds. Inside that directory the artifact is named by
+ * `MIRROR_VERSION` (ADR-0197), so nothing about the stored shape is stamped
+ * inside the file and nothing is ever dropped on open.
  */
 
 /**
@@ -97,38 +95,30 @@ function declareEntityTable(def: EntityDef): TableDeclaration {
 }
 
 /**
- * The mirror's declared stored shape, as plain data. It is BOTH the source the
- * DDL below is generated from AND the fingerprint input that names the artifact
- * on disk, so a shape change cannot be made without renaming the artifact. That
- * is the whole point: there is no hand-stamped version to remember to bump, and
- * no reader that repairs a file in place.
+ * The version of the corpus contract this build stores, and the whole of the
+ * artifact's identity on disk: `books.v<MIRROR_VERSION>.db` (ADR-0197). It is
+ * not the app's release version and it is not a migration target. Nothing reads
+ * a lower version, and nothing rewrites one.
  *
- * Every registry entity is declared, not just the entities `config.entities`
- * narrows to at runtime: what a build can store is a property of the code, not
- * of one user's configuration. Tables are sorted by name so reordering the
- * registry literal is not a shape change. Indexes are deliberately absent: an
- * index holds no mirror facts and is applied idempotently on every open, so a
- * query optimization must not force a re-pull.
+ * Bump it when this build would store something a previous build did not: an
+ * added, removed, or retyped column; a changed meaning for what a stored column
+ * holds; or a change to which QuickBooks entities `entities.ts` can mirror,
+ * since that is what a full pull covers. That last one is why editing the
+ * registry is not free: adding one entity is a new corpus, so it is a new
+ * artifact and one full re-pull of the company.
  *
- * Consequence worth knowing before editing `entities.ts`: because the mirror is
- * fingerprinted whole (ADR-0194 defers per-table fingerprints), adding or
- * changing ONE entity renames the artifact and costs a full re-pull of the
- * company, with the predecessor retained until `reclaim` runs.
+ * Do not bump it for an index, a read-time projection, a comment, or an app
+ * release. None of those change what is on disk, and each bump costs a rebuild.
  */
-const MIRROR_DECLARATION = {
-	tables: [
-		META_TABLE,
-		...Object.keys(ENTITY_DEFS).map((name) =>
-			declareEntityTable(entityDef(name)),
-		),
-	].sort((a, b) => (a.table < b.table ? -1 : 1)),
-};
-
-const MIRROR = defineMirror({ name: 'books', declaration: MIRROR_DECLARATION });
+const MIRROR_VERSION = 1;
 
 /** The mirror as materialized for one company: `<dataDir>/<realmId>/`. */
-export function booksMirror(dataDir: string, realmId: string): MirrorSite {
-	return MIRROR.at(companyDir(dataDir, realmId));
+export function booksMirror(dataDir: string, realmId: string): Mirror {
+	return mirrorAt({
+		name: 'books',
+		version: MIRROR_VERSION,
+		directory: companyDir(dataDir, realmId),
+	});
 }
 
 /** `CREATE TABLE IF NOT EXISTS` for one declared table. */
@@ -189,11 +179,11 @@ export type BooksDb = ReturnType<typeof booksDb>;
 /**
  * Open the company's current mirror artifact for writing, creating it if absent,
  * and declare `_meta` on it. Nothing here inspects, migrates, or drops what it
- * finds: a different declaration is a different filename, so an artifact this
- * opens is always one this build wrote (ADR-0194).
+ * finds: a different corpus contract is a different filename, so an artifact
+ * this opens is always one a build of this version wrote (ADR-0197).
  */
-export function openBooksDb(site: MirrorSite): BooksDb {
-	const db = site.open();
+export function openBooksDb(mirror: Mirror): BooksDb {
+	const db = mirror.open();
 	db.run(createTableSql(META_TABLE));
 	return booksDb(db);
 }
@@ -205,8 +195,8 @@ export function openBooksDb(site: MirrorSite): BooksDb {
  * rejects every write statement, so `ingest` on this handle throws by
  * construction.
  */
-export function openBooksDbReadonly(site: MirrorSite): BooksDb | null {
-	const db = site.openReadonly();
+export function openBooksDbReadonly(mirror: Mirror): BooksDb | null {
+	const db = mirror.openReadonly();
 	return db === null ? null : booksDb(db);
 }
 
@@ -230,10 +220,10 @@ function booksDb(db: Database) {
 	function ensureEntityTable(def: EntityDef): void {
 		// Table existence is the per-entity init latch (ADR-0064), so entity tables
 		// are created on first ingest rather than at open. The DDL comes from the
-		// same declaration the artifact is named after, so a table can never be
-		// created in a shape the filename does not describe. The index is applied
-		// here and deliberately excluded from the declaration: it holds no mirror
-		// facts, so adding one must not force a re-pull.
+		// registry `MIRROR_VERSION` describes, so a table can never be created in a
+		// shape the filename does not promise. The index is applied here and
+		// deliberately outside that promise: it holds no mirror facts, so adding one
+		// must not force a re-pull.
 		db.run(createTableSql(declareEntityTable(def)));
 		db.run(
 			`CREATE INDEX IF NOT EXISTS idx_${def.table}_updated_at ON ${def.table}(updated_at);`,

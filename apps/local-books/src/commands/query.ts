@@ -21,7 +21,10 @@ export async function runQuery(args: ParsedArgs): Promise<number> {
 		console.error(error);
 		return 1;
 	}
-	const { data, error: queryError } = queryBooks({ site: company.mirror, sql });
+	const { data, error: queryError } = queryBooks({
+		mirror: company.mirror,
+		sql,
+	});
 	if (queryError !== null) {
 		console.error(queryError.message);
 		return 1;

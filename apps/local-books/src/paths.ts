@@ -27,9 +27,9 @@ export function resolveDataDir(override?: string): string {
 
 /**
  * One directory per company, scoped by `realmId` under the data dir. It holds
- * the company's mirror artifacts (named by declaration fingerprint, see
- * `mirror.ts`) and the `app` verb's `lock.db`. This is the directory the mirror
- * site is opened at, so `realmId` is the only per-tenant naming the mirror sees.
+ * the company's mirror artifacts (named by corpus version, see `booksMirror` in
+ * `db.ts`) and the `app` verb's `lock.db`. This is the directory the mirror is
+ * opened at, so `realmId` is the only per-tenant naming the mirror sees.
  */
 export function companyDir(dataDir: string, realmId: string): string {
 	return join(dataDir, realmId);

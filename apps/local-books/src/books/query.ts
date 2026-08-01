@@ -12,14 +12,13 @@
  * This core is the seam ADR-0072 leaves open: a future daemon re-exposes it with
  * `defineQuery({ handler: queryBooks })` without changing this function.
  */
-
+import type { Mirror } from '@epicenter/sqlite/bun-mirror';
 import {
 	defineErrors,
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
-import type { MirrorSite } from '../mirror.ts';
 
 export const BooksQueryError = defineErrors({
 	NoMirror: ({ path }: { path: string }) => ({
@@ -57,17 +56,17 @@ export type BooksQueryResult = {
  * enormous value or a pure-CPU query is out of scope of the row cap.
  */
 export function queryBooks({
-	site,
+	mirror,
 	sql,
 }: {
-	site: MirrorSite;
+	mirror: Mirror;
 	sql: string;
 }): Result<BooksQueryResult, BooksQueryError> {
 	// The open is inside the try so a corrupt or unreadable db surfaces as a
 	// Result error, not an uncaught throw.
 	try {
-		const db = site.openReadonly();
-		if (db === null) return BooksQueryError.NoMirror({ path: site.path });
+		const db = mirror.openReadonly();
+		if (db === null) return BooksQueryError.NoMirror({ path: mirror.path });
 		try {
 			const rows: Record<string, unknown>[] = [];
 			let truncated = false;

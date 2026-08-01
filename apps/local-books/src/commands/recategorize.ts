@@ -43,7 +43,7 @@ export async function runRecategorize(args: ParsedArgs): Promise<number> {
 	});
 	const { data, error: writeError } = await recategorizeExpense({
 		openQb,
-		site: mirror,
+		mirror: mirror,
 		readOnly: config.readOnly,
 		input: {
 			entity,

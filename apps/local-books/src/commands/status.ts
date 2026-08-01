@@ -2,9 +2,6 @@ import { readBooksStatus } from '../books/status.ts';
 import type { ParsedArgs } from '../cli.ts';
 import { formatRelative, resolveCompany } from './context.ts';
 
-/** A fingerprint prefix: enough to tell two shapes apart at a glance. */
-const short = (fingerprint: string) => fingerprint.slice(0, 12);
-
 /** Report token state and the per-entity mirror state (cursor, counts). */
 export async function runStatus(args: ParsedArgs): Promise<number> {
 	const { data: company, error } = resolveCompany(args);
@@ -33,24 +30,28 @@ export async function runStatus(args: ParsedArgs): Promise<number> {
 		);
 	}
 
-	// Retained earlier shapes are inventory, not a fault: they are reported in both
-	// branches because the interesting case is exactly the one where the current
-	// copy is missing and an older one is still sitting beside it.
+	// Retained earlier versions are inventory, not a fault: they are reported in
+	// both branches because the interesting case is exactly the one where the
+	// current copy is missing and an older one is still sitting beside it.
 	const retained = status.predecessors.length;
 	const predecessorLine =
 		retained === 0
 			? null
-			: `Retained:     ${retained} earlier ${retained === 1 ? 'copy' : 'copies'} from a previous shape (${status.predecessors.map(short).join(', ')})`;
+			: `Retained:     ${retained} earlier ${retained === 1 ? 'copy' : 'copies'} from a previous version (${status.predecessors.map((v) => `v${v}`).join(', ')})`;
 
-	if (!status.mirrorBuilt) {
+	if (status.mirror === 'empty') {
 		console.log(`Local copy:   not built yet. Run "local-books sync --full".`);
 		if (predecessorLine) console.log(predecessorLine);
 		return 0;
 	}
-	// The artifact is named by the declaration's fingerprint, so its filename is
-	// not guessable: print it, because pointing an agent or `sqlite3` at the file
-	// is the whole reason someone runs `status`.
-	console.log(`Local copy:   ${status.mirrorPath}`);
+	// The artifact carries its corpus version in the filename, so print the path:
+	// pointing an agent or `sqlite3` at the file is the whole reason someone runs
+	// `status`, and the name changes when the version does.
+	const building =
+		status.mirror === 'building'
+			? '  (building: no full pull has finished)'
+			: '';
+	console.log(`Local copy:   ${status.mirrorPath}${building}`);
 	if (predecessorLine) console.log(predecessorLine);
 
 	// The cursor is one high-water mark for the whole company (CDC's contract), so
