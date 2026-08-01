@@ -219,7 +219,11 @@
 		     HTML never renders here. Keyed by id so the view resets to each
 		     message's natural default when a different message is opened. -->
 		{#key detail.id}
-			<MessageBody unsafeHtml={detail.unsafeBodyHtml} text={detail.bodyText} />
+			<MessageBody
+				unsafeHtml={detail.unsafeBodyHtml}
+				text={detail.bodyText}
+				externalized={detail.bodyExternalized}
+			/>
 		{/key}
 	{/if}
 </section>

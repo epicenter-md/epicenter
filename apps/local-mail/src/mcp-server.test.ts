@@ -203,8 +203,8 @@ test('mcp: tools/list, body query, status, errors, and a clean stream', async ()
 		const names = tools.map((tool) => tool.name).sort();
 		expect(names).toEqual(['modify_labels', 'query', 'status', 'sync']);
 		const query = tools.find((tool) => tool.name === 'query');
-		expect(query?.description).toContain('messages(id, raw JSON');
-		expect(query?.description).toContain('labels(id, raw JSON');
+		expect(query?.description).toContain('messages(id, resource JSON');
+		expect(query?.description).toContain('labels(id, resource JSON');
 		expect(query?.description).toContain('json_each(messages.label_ids)');
 		expect(query?.description).toContain('capped at 1000 rows');
 		expect(query?.inputSchema.properties).toHaveProperty('sql');

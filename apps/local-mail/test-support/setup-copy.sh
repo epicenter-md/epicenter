@@ -16,7 +16,7 @@
 # Prints machine-readable lines the other scripts parse:
 #   ACCOUNT <email>
 #   COPY_READY <dir>
-#   MOCK_DB <path to copied mail.db>
+#   MOCK_DB <path to the copied current mirror artifact>
 set -euo pipefail
 
 REAL="${LOCAL_MAIL_REAL_DIR:-$HOME/Library/Application Support/local-mail}"
@@ -28,26 +28,40 @@ if [ ! -d "$REAL" ]; then
 	exit 1
 fi
 
-# Resolve the account: an explicit override, else the sole subdir holding a mail.db.
+# The mirror artifact is named by its declaration's fingerprint
+# (`mail.<fingerprint>.db`, ADR-0194), and a replaced declaration leaves its
+# predecessor on disk. The app only ever writes the current artifact, so the most
+# recently modified one is the current one; a predecessor is stale by definition.
+newest_artifact() {
+	find "$1" -maxdepth 1 -name 'mail.*.db' -exec stat -f '%m %N' {} \; 2>/dev/null |
+		sort -rn | head -1 | cut -d' ' -f2-
+}
+
+# Resolve the account: an explicit override, else the sole subdir holding an artifact.
 if [ -n "${LOCAL_MAIL_ACCOUNT:-}" ]; then
 	ACCT="$LOCAL_MAIL_ACCOUNT"
 else
-	DBS=()
-	while IFS= read -r db; do DBS+=("$db"); done < <(find "$REAL" -maxdepth 2 -name mail.db)
-	if [ "${#DBS[@]}" -eq 0 ]; then
-		echo "error: no mail.db found under $REAL" >&2
+	ACCTS=()
+	while IFS= read -r dir; do
+		if [ -n "$(newest_artifact "$dir")" ]; then
+			ACCTS+=("$dir")
+		fi
+	done < <(find "$REAL" -maxdepth 1 -mindepth 1 -type d)
+	if [ "${#ACCTS[@]}" -eq 0 ]; then
+		echo "error: no mail.<fingerprint>.db found under $REAL" >&2
 		exit 1
 	fi
-	if [ "${#DBS[@]}" -gt 1 ]; then
+	if [ "${#ACCTS[@]}" -gt 1 ]; then
 		echo "error: multiple accounts found; set LOCAL_MAIL_ACCOUNT to one of:" >&2
-		for d in "${DBS[@]}"; do basename "$(dirname "$d")" >&2; done
+		for d in "${ACCTS[@]}"; do basename "$d" >&2; done
 		exit 1
 	fi
-	ACCT="$(basename "$(dirname "${DBS[0]}")")"
+	ACCT="$(basename "${ACCTS[0]}")"
 fi
 
-if [ ! -f "$REAL/$ACCT/mail.db" ]; then
-	echo "error: no mail.db for account '$ACCT' under $REAL" >&2
+ARTIFACT="$(newest_artifact "$REAL/$ACCT")"
+if [ -z "$ARTIFACT" ]; then
+	echo "error: no mirror artifact for account '$ACCT' under $REAL" >&2
 	exit 1
 fi
 
@@ -67,4 +81,4 @@ chmod 600 "$COPY/credentials.json"
 
 echo "ACCOUNT $ACCT"
 echo "COPY_READY $COPY"
-echo "MOCK_DB $COPY/$ACCT/mail.db"
+echo "MOCK_DB $COPY/$ACCT/$(basename "$ARTIFACT")"

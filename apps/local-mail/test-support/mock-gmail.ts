@@ -9,7 +9,8 @@
  *
  * Env:
  *   MOCK_PORT   port to bind on 127.0.0.1 (0 => an ephemeral port, printed below)
- *   MOCK_DB     absolute path to the copied `mail.db` (opened read-only)
+ *   MOCK_DB     absolute path to the copied mirror artifact,
+ *               `mail.<fingerprint>.db` (opened read-only)
  *   MOCK_LOG    absolute path for the modify JSONL log (optional)
  *   MOCK_FOLD   "false" => every modify omits `labelIds` (exercises the
  *               `folded:false`, still-catching-up UI path); anything else folds
@@ -31,21 +32,23 @@ const LOG_PATH = process.env.MOCK_LOG;
 const FOLD = process.env.MOCK_FOLD !== 'false';
 
 if (!DB_PATH) {
-	console.error('MOCK_DB is required (path to the copied mail.db).');
+	console.error(
+		'MOCK_DB is required (path to the copied mail.<fingerprint>.db).',
+	);
 	process.exit(1);
 }
 
 const db = new Database(DB_PATH, { readonly: true });
-const getRaw = db.query<{ raw: string }, [string]>(
-	'SELECT raw FROM messages WHERE id = ?',
+const getResource = db.query<{ resource: string }, [string]>(
+	'SELECT resource FROM messages WHERE id = ?',
 );
 
 function currentMessage(
 	id: string,
 ): { threadId: string; labelIds: string[] } | null {
-	const row = getRaw.get(id);
+	const row = getResource.get(id);
 	if (!row) return null;
-	const parsed = JSON.parse(row.raw) as {
+	const parsed = JSON.parse(row.resource) as {
 		threadId: string;
 		labelIds?: string[];
 	};

@@ -17,19 +17,43 @@ table.
 
 - Runtime: Bun. `bun:sqlite` stores the mirror, built-in `fetch` calls Gmail,
   `oauth4webapi` handles OAuth.
-- One SQLite file per connected account: `<data-dir>/<accountEmail>/mail.db`.
+- One SQLite artifact per connected account, under `<data-dir>/<accountEmail>/`,
+  named `mail.<fingerprint>.db` where the fingerprint is the SHA-256 of the
+  mirror's declaration (`MIRROR_DECLARATION` in `src/db.ts`). `src/mirror.ts`
+  owns the naming, the two opening modes, artifact listing, and grammar-scoped
+  `reclaim`; the app owns the declaration, DDL, ingestion, cursors, locking, file
+  permissions, and cleanup timing. Opening is non-destructive: a declaration edit
+  is a new filename, not a migration, so nothing is dropped or unlinked on open
+  and the predecessor is retained until something calls `reclaim`. There is no
+  schema version stamped in the file. See ADR-0194. Editing the declaration
+  therefore renames the artifact and costs one full re-pull of the mailbox.
   The refresh token lives in a separate `0600 credentials.json` at the data-dir
   root, never inside the mirror db.
-- Data and account directories are `0700`. `mail.db`, `mail.db-wal`,
-  `mail.db-shm`, and `credentials.json` are `0600`.
+- Data and account directories are `0700`. The artifact, its `-wal` and `-shm`
+  sidecars, and `credentials.json` are `0600`.
 - Tables: `messages`, `labels`, and `_meta`. Thread facts are derived from live
   messages instead of stored in a separate `threads` table.
+- `messages.resource` holds the parsed `messages.get(format=full)` payload
+  verbatim. It is deliberately not called `raw`: `format=raw` is Gmail's name for
+  the base64url RFC 5322 blob this app never fetches. Everything SQLite can
+  project from the resource is a generated column; the only stored derivations
+  are `subject`, `sender`, and `body_text`, which exist because triage pushes its
+  filter and sort into SQL and `json_extract` cannot reach a header array or a
+  base64url MIME tree. Everything else is derived at read time. See ADR-0196.
 - `messages.body_text` is decoded at ingest from `text/plain` MIME parts, with
   stripped `text/html` as a fallback. That makes SQL and MCP useful for body
   questions without adding FTS yet.
-- The app detail pane can render formatted email from the raw Gmail payload, but
-  only behind the SPA sanitizer boundary. DOMPurify strips executable markup and
-  remote assets before the single `{@html}` sink renders the body on a light
+- The mirror is a disposable offline reader, not an archive. One
+  `messages.get(format=full)` is the entire per-message budget: no `format=raw`,
+  no `messages.attachments.get`, no attachment or media bytes on disk in any
+  form. Attachments are metadata only, enough to say "this message has a 42 KB
+  PDF" and not enough to open it; opening it is Gmail's job. When Gmail returns a
+  body part as an `attachmentId` instead of inline data, the reader says it has
+  no offline body for that message rather than spending a second call. See
+  ADR-0196.
+- The app detail pane can render formatted email from the stored Gmail payload,
+  but only behind the SPA sanitizer boundary. DOMPurify strips executable markup
+  and remote assets before the single `{@html}` sink renders the body on a light
   email canvas; plain text stays available as the fallback view.
 
 ## Commands

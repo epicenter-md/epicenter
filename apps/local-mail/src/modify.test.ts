@@ -17,7 +17,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Result } from 'wellcrafted/result';
-import { type MailDb, openMailDb, SCHEMA_VERSION } from './db.ts';
+import { type MailDb, openMailDb } from './db.ts';
 import { GmailApiError, type GmailClient } from './gmail-client.ts';
 import {
 	type ModifyMessageLabelsInput,
@@ -61,11 +61,13 @@ function message(id: string, over: Partial<GmailMessage> = {}): GmailMessage {
 	};
 }
 
-function messageRaw(db: MailDb, id: string): string | null {
+function messageResource(db: MailDb, id: string): string | null {
 	return (
 		db.raw
-			.query<{ raw: string }, [string]>(`SELECT raw FROM messages WHERE id = ?`)
-			.get(id)?.raw ?? null
+			.query<{ resource: string }, [string]>(
+				`SELECT resource FROM messages WHERE id = ?`,
+			)
+			.get(id)?.resource ?? null
 	);
 }
 
@@ -246,7 +248,7 @@ describe('modifyMessageLabels', () => {
 		const { db, cleanup } = tempDb();
 		db.ingestFullPullPage([message('m1')], 's1');
 		db.finishFullPull('500', 's1');
-		const beforeRaw = messageRaw(db, 'm1');
+		const beforeRaw = messageResource(db, 'm1');
 		const beforeMeta = metaRows(db);
 		const client = createFakeGmailClient(
 			new Map([
@@ -275,7 +277,7 @@ describe('modifyMessageLabels', () => {
 			folded: false,
 			error: { name: 'Http' },
 		});
-		expect(messageRaw(db, 'm1')).toBe(beforeRaw);
+		expect(messageResource(db, 'm1')).toBe(beforeRaw);
 		expect(metaRows(db)).toEqual(beforeMeta);
 		cleanup();
 	});
@@ -314,7 +316,7 @@ describe('modifyMessageLabels', () => {
 			folded: true,
 			error: null,
 		});
-		expect(JSON.parse(messageRaw(db, 'm1') ?? '{}').labelIds).toEqual([
+		expect(JSON.parse(messageResource(db, 'm1') ?? '{}').labelIds).toEqual([
 			'SENT',
 			'Label_from_gmail',
 		]);
@@ -324,7 +326,7 @@ describe('modifyMessageLabels', () => {
 	test('response without labelIds leaves mirror untouched and returns folded false', async () => {
 		const { db, cleanup } = tempDb();
 		db.ingestFullPullPage([message('m1')], 's1');
-		const beforeRaw = messageRaw(db, 'm1');
+		const beforeRaw = messageResource(db, 'm1');
 		const client = createFakeGmailClient(
 			new Map([['m1', { data: { id: 'm1', threadId: 't-m1' } }]]),
 		);
@@ -342,7 +344,7 @@ describe('modifyMessageLabels', () => {
 			folded: false,
 			error: null,
 		});
-		expect(messageRaw(db, 'm1')).toBe(beforeRaw);
+		expect(messageResource(db, 'm1')).toBe(beforeRaw);
 		cleanup();
 	});
 
@@ -368,7 +370,7 @@ describe('modifyMessageLabels', () => {
 		});
 
 		expectOk(result);
-		expect(JSON.parse(messageRaw(db, 'm1') ?? '{}').labelIds).toEqual([
+		expect(JSON.parse(messageResource(db, 'm1') ?? '{}').labelIds).toEqual([
 			'INBOX',
 		]);
 		expect(db.readRealmState().historyId).toBe('501');
@@ -397,7 +399,7 @@ describe('modifyMessageLabels', () => {
 			newHistoryId: '501',
 			syncedAt: 's2',
 		});
-		expect(JSON.parse(messageRaw(db, 'm1') ?? '{}').labelIds).toEqual([
+		expect(JSON.parse(messageResource(db, 'm1') ?? '{}').labelIds).toEqual([
 			'INBOX',
 			'UNREAD',
 		]);
@@ -410,7 +412,7 @@ describe('modifyMessageLabels', () => {
 			syncedAt: 's3',
 		});
 
-		expect(JSON.parse(messageRaw(db, 'm1') ?? '{}').labelIds).toEqual([
+		expect(JSON.parse(messageResource(db, 'm1') ?? '{}').labelIds).toEqual([
 			'INBOX',
 		]);
 		cleanup();
@@ -439,7 +441,14 @@ describe('modifyMessageLabels', () => {
 			lastFullPullAt: 's1',
 			lastSyncedAt: 's1',
 		});
-		expect(SCHEMA_VERSION).toBe('4');
+		// Nothing stamps a shape version inside the file: the filename carries the
+		// declaration's fingerprint, so `_meta` holds cursor state and nothing else
+		// (ADR-0194).
+		expect(metaRows(db).map((row) => row.key)).toEqual([
+			'history_id',
+			'last_full_pull_at',
+			'last_synced_at',
+		]);
 		cleanup();
 	});
 
@@ -557,7 +566,7 @@ describe('modifyMessageLabels', () => {
 			error: null,
 		});
 		expect(client.modifyCalls.map((call) => call.id)).toEqual(['m1']);
-		expect(messageRaw(db, 'm1')).toBeNull();
+		expect(messageResource(db, 'm1')).toBeNull();
 		cleanup();
 	});
 
@@ -614,7 +623,7 @@ describe('modifyMessageLabels', () => {
 			addLabelIds: ['Label_work'],
 			removeLabelIds: [],
 		});
-		expect(JSON.parse(messageRaw(db, 'm1') ?? '{}').labelIds).toEqual([
+		expect(JSON.parse(messageResource(db, 'm1') ?? '{}').labelIds).toEqual([
 			'INBOX',
 			'Label_work',
 		]);
@@ -683,7 +692,7 @@ describe('setMessagesTrashed', () => {
 		});
 		expect(client.trashCalls).toEqual(['m1']);
 		expect(client.untrashCalls).toEqual([]);
-		expect(JSON.parse(messageRaw(db, 'm1') ?? '{}').labelIds).toEqual([
+		expect(JSON.parse(messageResource(db, 'm1') ?? '{}').labelIds).toEqual([
 			'TRASH',
 		]);
 		cleanup();
@@ -712,7 +721,7 @@ describe('setMessagesTrashed', () => {
 		});
 		expect(client.untrashCalls).toEqual(['m1']);
 		expect(client.trashCalls).toEqual([]);
-		expect(JSON.parse(messageRaw(db, 'm1') ?? '{}').labelIds).toEqual([
+		expect(JSON.parse(messageResource(db, 'm1') ?? '{}').labelIds).toEqual([
 			'INBOX',
 		]);
 		cleanup();

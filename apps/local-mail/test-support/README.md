@@ -52,7 +52,8 @@ Four independent guarantees keep this from touching anything real:
    rather than a signal to run a FULL pull. So the mock can never wipe even the
    copy.
 4. **A fingerprint proof.** `fingerprint.sh` hashes the real mirror's durable
-   files (`credentials.json` + each `mail.db`); capture it before and after and
+   files (`credentials.json` + every `mail.<fingerprint>.db`, predecessors
+   included); capture it before and after and
    diff to confirm nothing real changed.
 
 ## Files

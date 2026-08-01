@@ -21,9 +21,33 @@ export function resolveDataDir(): string {
 }
 
 /**
+ * One account's mirror directory: `<dataDir>/<accountEmail>/`. The account email
+ * names a directory, so it must be exactly one path segment: emails reach here
+ * from Google's profile endpoint or a store-validated override, and this guard
+ * keeps any other string from escaping the data dir.
+ *
+ * This is the whole of Local Mail's per-tenant naming. What the mirror artifact
+ * inside is called is the mirror's business, not this module's (ADR-0194).
+ */
+export function accountDir(dataDir: string, accountEmail: string): string {
+	if (
+		accountEmail.length === 0 ||
+		accountEmail === '.' ||
+		accountEmail === '..' ||
+		accountEmail.includes('/') ||
+		accountEmail.includes('\\')
+	) {
+		throw new Error(
+			`Account email ${JSON.stringify(accountEmail)} cannot name a mirror directory.`,
+		);
+	}
+	return join(dataDir, accountEmail);
+}
+
+/**
  * The default file token store: `credentials.json` at the data-dir root, sibling
  * to each account's `<accountEmail>/` mirror dir. Deliberately not inside the
- * mirror dir, so a read-only SQL surface over `mail.db` can never read it. Same
+ * mirror dir, so a read-only SQL surface over the mirror can never read it. Same
  * reasoning as `apps/local-books` (ADR-0062).
  */
 export function credentialsFilePath(dataDir: string): string {

@@ -435,7 +435,7 @@ async function runQuery(args: ParsedArgs): Promise<number> {
 		console.error(error.message);
 		return 1;
 	}
-	// query is JSON-first by design: an arbitrary SELECT over raw/body_text is
+	// query is JSON-first by design: an arbitrary SELECT over resource/body_text is
 	// not column-shaped, and the rows pipe straight to jq. --json is a no-op.
 	console.log(JSON.stringify(data.rows, null, 2));
 	const note = data.truncated ? ' (capped; more rows matched)' : '';
@@ -456,7 +456,13 @@ function renderStatus(status: MailStatus): string {
 		['connected', status.connected ? 'yes' : 'no'],
 		['access token', accessToken],
 		['mirror', status.mirror],
-		['schema version', status.schemaVersion ?? 'none'],
+		['mirror file', status.mirrorPath],
+		[
+			'predecessors',
+			status.predecessors.length === 0
+				? 'none'
+				: status.predecessors.join(', '),
+		],
 		['history cursor', status.historyId ?? 'none'],
 		['last full pull', status.lastFullPullAt ?? 'never'],
 		['last synced', status.lastSyncedAt ?? 'never'],

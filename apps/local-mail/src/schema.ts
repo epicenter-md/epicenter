@@ -13,9 +13,9 @@ import { type Static, Type } from 'typebox';
  * No schema sets `additionalProperties: false`: these describe only the
  * fields this package actually reads (Gmail messages carry many more, e.g.
  * `payload.parts`/`payload.body`/`sizeEstimate`), so an unread field must
- * never fail validation. `db.ts` stores the full original parsed object as
- * `raw` (via `JSON.stringify`), not a schema-narrowed copy: `Value.Check` is
- * a non-mutating predicate, it never strips unknown properties.
+ * never fail validation. `db.ts` stores the full original parsed object in the
+ * `resource` column (via `JSON.stringify`), not a schema-narrowed copy:
+ * `Value.Check` is a non-mutating predicate, it never strips unknown properties.
  */
 
 /** One Gmail message resource. `messages.get(format=full)` populates every
@@ -31,9 +31,14 @@ export const GmailMessageSchema = Type.Object({
 	payload: Type.Optional(
 		Type.Object({
 			mimeType: Type.Optional(Type.String()),
+			// A `MessagePartBody` carries either inline base64url `data` or an
+			// `attachmentId` naming bytes only `messages.attachments.get` returns.
+			// Local Mail reads the latter to say the body is not local; it never
+			// fetches it (ADR-0196).
 			body: Type.Optional(
 				Type.Object({
 					data: Type.Optional(Type.String()),
+					attachmentId: Type.Optional(Type.String()),
 				}),
 			),
 			headers: Type.Optional(

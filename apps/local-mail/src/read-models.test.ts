@@ -4,7 +4,8 @@
  * serves to the triage SPA; the point of the tests is that they project Gmail's
  * own mirrored bytes (label ids, epoch dates, headers, extracted body) without
  * inventing state: label filtering is a `json_each` over the stored `labelIds`,
- * search is a plain `LIKE`, and the detail pulls `To`/`Date` from the raw blob.
+ * search is a plain `LIKE`, and the detail pulls `To`/`Date` from the stored
+ * resource.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -254,8 +255,8 @@ describe('getMessageDetail', () => {
 				new Date().toISOString(),
 			);
 			const detail = db.getMessageDetail('rich');
-			// bodyHtml is derived from `raw` at read time, unsanitized: the raw
-			// markup (including the anchor) crosses the wire verbatim.
+			// bodyHtml is derived from the stored resource at read time, unsanitized:
+			// the raw markup (including the anchor) crosses the wire verbatim.
 			expect(detail?.unsafeBodyHtml).toBe(html);
 			// The stored searchable text is the tag-stripped fallback.
 			expect(detail?.bodyText).toBe('Pay now');

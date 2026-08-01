@@ -1,15 +1,9 @@
-import {
-	chmodSync,
-	existsSync,
-	mkdirSync,
-	readFileSync,
-	writeFileSync,
-} from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { Value } from 'typebox/value';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { AppConfig } from './config.ts';
-import { mailDbPath } from './db.ts';
+import { mailMirror } from './db.ts';
 import { type TokenSet, TokenSetSchema } from './tokens.ts';
 
 /**
@@ -33,13 +27,18 @@ export async function resolveAccount(
 ): Promise<Result<string, { message: string }>> {
 	const accounts = await store.listAccounts();
 	if (config.account) {
-		// An override is valid when we hold credentials for it, or when its
-		// mirror already exists on disk: the read verbs (query, status) work
-		// without a token, and a disconnected account's mirror stays readable.
+		// An override is valid when we hold credentials for it, or when a mirror
+		// artifact already exists on disk: the read verbs (query, status) work
+		// without a token, and a disconnected account's mirror stays readable. Any
+		// artifact counts, not just the current one: an account whose declaration
+		// moved on still has a real site here, and `status` reporting an empty
+		// current artifact beside a retained predecessor is far more useful than
+		// "not a connected account".
 		if (accounts.includes(config.account)) return Ok(config.account);
 		let hasMirror = false;
 		try {
-			hasMirror = existsSync(mailDbPath(config.dataDir, config.account));
+			hasMirror =
+				mailMirror(config.dataDir, config.account).artifacts().length > 0;
 		} catch {
 			// Not even one path segment; the error below names the real accounts.
 		}

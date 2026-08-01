@@ -4,23 +4,32 @@
  * newer row), Gmail's history stream is applied strictly in the order it is
  * received within one process, so `upsertMessage`/`applyHistoryBatch` are
  * plain last-write-wins: what these tests actually cover is the FULL-pull vs
- * INCREMENTAL-patch split (a `labelPatch` must edit `raw.labelIds` in place
- * and leave the rest of the blob alone) and the atomic-cursor discipline
- * ported from `db.ts`.
+ * INCREMENTAL-patch split (a `labelPatch` must edit the stored resource's
+ * `labelIds` in place and leave the rest of the payload alone), the atomic-cursor
+ * discipline ported from `db.ts`, and the fingerprint-named artifact lifecycle
+ * (ADR-0194): opening never destroys, a changed shape is a new filename.
  */
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 import { Buffer } from 'node:buffer';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs';
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
 	type MailDb,
-	mailDbPath,
+	mailMirror,
 	openMailDb,
 	openMailDbReadonly,
-	SCHEMA_VERSION,
 } from './db.ts';
 import type { GmailMessage } from './schema.ts';
 
@@ -63,7 +72,7 @@ function messageRow(db: MailDb, id: string) {
 	return db.raw
 		.query<
 			{
-				raw: string;
+				resource: string;
 				thread_id: string;
 				snippet: string;
 				label_ids: string;
@@ -73,7 +82,7 @@ function messageRow(db: MailDb, id: string) {
 			},
 			[string]
 		>(
-			`SELECT raw, thread_id, snippet, label_ids, subject, sender, body_text FROM messages WHERE id = ?`,
+			`SELECT resource, thread_id, snippet, label_ids, subject, sender, body_text FROM messages WHERE id = ?`,
 		)
 		.get(id);
 }
@@ -325,11 +334,14 @@ describe('full pull page ingestion', () => {
 		cleanup();
 	});
 
-	test('creates data and account dirs as 0700 and db files as 0600', () => {
+	test('creates data and account dirs as 0700 and artifact files as 0600', () => {
 		const tmp = tempDir();
 		chmodSync(tmp.dir, 0o755);
 		const accountDir = join(tmp.dir, 'you@example.com');
-		const path = join(accountDir, 'mail.db');
+		// The mirror primitive does not know the artifact holds someone's mail, so
+		// the app is what applies the permissions to the handle it receives, to the
+		// fingerprinted filename and both SQLite sidecars.
+		const { path } = mailMirror(tmp.dir, 'you@example.com');
 		const db = openMailDb({
 			dataDir: tmp.dir,
 			accountEmail: 'you@example.com',
@@ -361,7 +373,7 @@ describe('applyHistoryBatch', () => {
 		cleanup();
 	});
 
-	test('a labelPatch edits raw.labelIds in place, leaving the rest of the blob untouched', () => {
+	test("a labelPatch edits the resource's labelIds in place, leaving the rest of the payload untouched", () => {
 		const { db, cleanup } = openTmp();
 		db.ingestFullPullPage([message()], 's1');
 
@@ -378,8 +390,8 @@ describe('applyHistoryBatch', () => {
 		// The subject/sender columns are plain (not re-derived from a patch), so a
 		// labelPatch alone must not touch them.
 		expect(row?.subject).toBe('Test subject');
-		const raw = JSON.parse(row?.raw ?? '{}');
-		expect(raw.snippet).toBe('hello there');
+		const resource = JSON.parse(row?.resource ?? '{}');
+		expect(resource.snippet).toBe('hello there');
 		cleanup();
 	});
 
@@ -493,139 +505,286 @@ describe('labels', () => {
 	});
 });
 
-describe('readonly open', () => {
-	test('a stale-schema mirror opens readonly without touching the current column set', () => {
-		// Hand-build a v1-shaped mirror: no body_text column, a threads table,
-		// TEXT internal_date. A readonly consumer (`status` before the first
-		// post-upgrade sync) must read it without throwing; only the next
-		// writer open migrates.
+describe('the read-only handle', () => {
+	test('reports an absent artifact instead of creating one', () => {
 		const tmp = tempDir();
-		const accountDir = join(tmp.dir, 'you@example.com');
-		mkdirSync(accountDir, { recursive: true });
-		const path = join(accountDir, 'mail.db');
-		const old = new Database(path, { create: true });
-		old.exec(`
-			CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT);
-			CREATE TABLE messages (
-				id TEXT PRIMARY KEY,
-				raw TEXT NOT NULL,
-				subject TEXT,
-				sender TEXT,
-				synced_at TEXT NOT NULL,
-				deleted INTEGER NOT NULL DEFAULT 0
-			);
-			CREATE TABLE threads (id TEXT PRIMARY KEY, raw TEXT NOT NULL);
-			CREATE TABLE labels (id TEXT PRIMARY KEY, raw TEXT NOT NULL, synced_at TEXT NOT NULL);
-			INSERT INTO _meta (key, value) VALUES ('schema_version', '1'), ('history_id', '42');
-			INSERT INTO messages (id, raw, synced_at) VALUES ('m1', '{}', 's1');
-		`);
-		old.close();
 
-		const reader = openMailDbReadonly({
-			dataDir: tmp.dir,
-			accountEmail: 'you@example.com',
-		});
-		expect(reader.schemaVersion()).toBe('1');
-		expect(reader.realmState().historyId).toBe('42');
-		expect(reader.counts()).toEqual({ messages: 1, labels: 0 });
-		reader.close();
+		expect(
+			openMailDbReadonly({ dataDir: tmp.dir, accountEmail: 'you@example.com' }),
+		).toBeNull();
+		// The whole point of `openReadonly`: a status or query read against an
+		// account that has never synced leaves the disk exactly as it found it.
+		expect(existsSync(join(tmp.dir, 'you@example.com'))).toBe(false);
 		tmp.cleanup();
 	});
 
-	test('the readonly handle rejects writes', () => {
+	test('rejects writes', () => {
 		const { db, dataDir, cleanup } = openTmp();
 		db.ingestFullPullPage([message()], 's1');
 		const reader = openMailDbReadonly({
 			dataDir,
 			accountEmail: 'you@example.com',
 		});
-		expect(() => reader.raw.exec(`DELETE FROM messages`)).toThrow();
-		reader.close();
+		expect(reader).not.toBeNull();
+		expect(() => reader?.raw.run(`DELETE FROM messages`)).toThrow();
+		reader?.close();
+		cleanup();
+	});
+
+	test('reads an artifact whose DDL never ran as empty rather than throwing', () => {
+		// The one window a current artifact can exist without the declared tables:
+		// a writable open that died between creating the file and running its DDL.
+		// ADR-0194 says the worst a mistaken writable open can do is leave an empty
+		// file, so a reader must report it, not crash on it.
+		const tmp = tempDir();
+		const accountDir = join(tmp.dir, 'you@example.com');
+		mkdirSync(accountDir, { recursive: true });
+		const { path } = mailMirror(tmp.dir, 'you@example.com');
+		new Database(path, { create: true }).close();
+
+		const reader = openMailDbReadonly({
+			dataDir: tmp.dir,
+			accountEmail: 'you@example.com',
+		});
+		expect(reader?.counts()).toEqual({ messages: 0, labels: 0 });
+		expect(reader?.realmState().historyId).toBeNull();
+		reader?.close();
+		tmp.cleanup();
+	});
+});
+
+describe('the mirror site', () => {
+	test('an account email that is not one path segment cannot name a mirror directory', () => {
+		expect(() => mailMirror('/data', '../evil')).toThrow(
+			'cannot name a mirror directory',
+		);
+		expect(() => mailMirror('/data', 'a/b@example.com')).toThrow(
+			'cannot name a mirror directory',
+		);
+		expect(() => mailMirror('/data', '')).toThrow(
+			'cannot name a mirror directory',
+		);
+	});
+
+	test("names the artifact by the declaration's fingerprint, under the account dir", () => {
+		const { path, fingerprint } = mailMirror('/data', 'you@example.com');
+		expect(fingerprint).toMatch(/^[0-9a-f]{64}$/);
+		expect(path).toBe(
+			join('/data', 'you@example.com', `mail.${fingerprint}.db`),
+		);
+	});
+});
+
+describe('the artifact lifecycle', () => {
+	test('reopening keeps every row: opening is never destructive', () => {
+		const tmp = tempDir();
+		const location = { dataDir: tmp.dir, accountEmail: 'you@example.com' };
+		const first = openMailDb(location);
+		first.ingestFullPullPage([message()], 's1');
+		first.finishFullPull('42', 's1');
+		first.close();
+
+		const second = openMailDb(location);
+		expect(second.counts().messages).toBe(1);
+		expect(second.readRealmState().historyId).toBe('42');
+		second.close();
+
+		// One shape, one filename: reopening the same declaration must not have
+		// produced a second artifact.
+		expect(
+			readdirSync(join(tmp.dir, 'you@example.com')).filter((name) =>
+				name.endsWith('.db'),
+			),
+		).toEqual([
+			`mail.${mailMirror(tmp.dir, 'you@example.com').fingerprint}.db`,
+		]);
+		tmp.cleanup();
+	});
+
+	test('a predecessor artifact is retained, never opened, and never swept', () => {
+		// A predecessor is what a declaration edit leaves behind. Opening the
+		// current artifact must not consult it, migrate it, or unlink it: it is the
+		// only complete local copy while the successor backfills.
+		const tmp = tempDir();
+		const accountDir = join(tmp.dir, 'you@example.com');
+		mkdirSync(accountDir, { recursive: true, mode: 0o700 });
+		const predecessorPath = join(accountDir, `mail.${'a'.repeat(64)}.db`);
+		const predecessor = new Database(predecessorPath, { create: true });
+		predecessor.run(`CREATE TABLE messages (id TEXT PRIMARY KEY);`);
+		predecessor.run(`INSERT INTO messages (id) VALUES ('old');`);
+		predecessor.close();
+
+		const db = openMailDb({
+			dataDir: tmp.dir,
+			accountEmail: 'you@example.com',
+		});
+		// The successor starts empty. It does not inherit, re-project, or delete.
+		expect(db.counts().messages).toBe(0);
+		db.close();
+
+		expect(existsSync(predecessorPath)).toBe(true);
+		const kept = new Database(predecessorPath, { readonly: true });
+		expect(kept.query(`SELECT count(*) AS n FROM messages`).get()).toEqual({
+			n: 1,
+		});
+		kept.close();
+
+		const site = mailMirror(tmp.dir, 'you@example.com');
+		const artifacts = site.artifacts();
+		expect(artifacts.length).toBe(2);
+		expect(
+			artifacts.filter((a) => a.current).map((a) => a.fingerprint),
+		).toEqual([site.fingerprint]);
+		expect(
+			artifacts.filter((a) => !a.current).map((a) => a.fingerprint),
+		).toEqual(['a'.repeat(64)]);
+		tmp.cleanup();
+	});
+
+	test('reclaim drops one predecessor and cannot reach the siblings beside it', () => {
+		const tmp = tempDir();
+		const accountDir = join(tmp.dir, 'you@example.com');
+		const db = openMailDb({
+			dataDir: tmp.dir,
+			accountEmail: 'you@example.com',
+		});
+		db.close();
+		const predecessorPath = join(accountDir, `mail.${'a'.repeat(64)}.db`);
+		writeFileSync(predecessorPath, '');
+		writeFileSync(`${predecessorPath}-wal`, '');
+		// Local Mail's siblings: the sync-owner lock and the OAuth material. The
+		// filename grammar is what puts them out of reclaim's reach (ADR-0194).
+		writeFileSync(join(accountDir, 'lock.db'), '');
+		writeFileSync(join(accountDir, 'credentials.json'), '{}');
+		writeFileSync(join(accountDir, 'provider.json'), '{}');
+
+		const site = mailMirror(tmp.dir, 'you@example.com');
+		site.reclaim('a'.repeat(64));
+
+		expect(existsSync(predecessorPath)).toBe(false);
+		expect(existsSync(`${predecessorPath}-wal`)).toBe(false);
+		// Sidecars of the live artifact are noise here; what matters is that every
+		// non-artifact file the app keeps beside the mirror survived untouched.
+		expect(
+			readdirSync(accountDir)
+				.filter((name) => !name.endsWith('-wal') && !name.endsWith('-shm'))
+				.sort(),
+		).toEqual(
+			[
+				'credentials.json',
+				'lock.db',
+				'provider.json',
+				`mail.${site.fingerprint}.db`,
+			].sort(),
+		);
+		expect(() => site.reclaim(site.fingerprint)).toThrow(/current artifact/);
+		tmp.cleanup();
+	});
+});
+
+describe('the stored payload', () => {
+	test('is a column named resource, and there is no raw column', () => {
+		// `format=raw` is Gmail's name for the base64url RFC 5322 blob this app
+		// never fetches, so a column named `raw` holding the parsed `format=full`
+		// resource was a false statement in the schema (ADR-0196).
+		const { db, cleanup } = openTmp();
+		const columnsOf = (table: string) =>
+			db.raw
+				.query<{ name: string }, []>(`PRAGMA table_info(${table})`)
+				.all()
+				.map((row) => row.name);
+
+		expect(columnsOf('messages')).toContain('resource');
+		expect(columnsOf('messages')).not.toContain('raw');
+		expect(columnsOf('labels')).toContain('resource');
+		expect(columnsOf('labels')).not.toContain('raw');
+		cleanup();
+	});
+
+	test('stores the parsed resource verbatim, including fields nothing projects', () => {
+		const { db, cleanup } = openTmp();
+		const unread = {
+			...message(),
+			sizeEstimate: 4242,
+			historyId: '99',
+		} as GmailMessage;
+		db.ingestFullPullPage([unread], 's1');
+
+		const stored = JSON.parse(messageRow(db, 'm1')?.resource ?? '{}');
+		expect(stored.sizeEstimate).toBe(4242);
+		expect(stored.historyId).toBe('99');
 		cleanup();
 	});
 });
 
-describe('mirror layout', () => {
-	test('an account email that is not one path segment cannot name a mirror directory', () => {
-		expect(() => mailDbPath('/data', '../evil')).toThrow(
-			'cannot name a mirror directory',
-		);
-		expect(() => mailDbPath('/data', 'a/b@example.com')).toThrow(
-			'cannot name a mirror directory',
-		);
-		expect(() => mailDbPath('/data', '')).toThrow(
-			'cannot name a mirror directory',
-		);
-		expect(mailDbPath('/data', 'you@example.com')).toBe(
-			join('/data', 'you@example.com', 'mail.db'),
-		);
+describe('a body Gmail externalized', () => {
+	/** A `text/plain` part whose bytes Gmail holds behind an `attachmentId`
+	 * instead of inline `data`, which `format=full` does not guarantee. */
+	const externalizedBody = (): GmailMessage =>
+		message({
+			payload: {
+				headers: [{ name: 'Subject', value: 'Big one' }],
+				parts: [
+					{
+						mimeType: 'text/plain',
+						body: { attachmentId: 'ANGjdJ8', size: 900_000 },
+					},
+				],
+			},
+		});
+
+	test('ingests as a normal, complete row', () => {
+		const { db, cleanup } = openTmp();
+		db.ingestFullPullPage([externalizedBody()], 's1');
+
+		const row = messageRow(db, 'm1');
+		// Synchronized, not partial: headers, labels, and snippet are all here.
+		expect(row?.subject).toBe('Big one');
+		expect(row?.snippet).toBe('hello there');
+		expect(JSON.parse(row?.label_ids ?? '[]')).toEqual(['INBOX', 'UNREAD']);
+		// The body is simply not local, and no second call goes looking for it.
+		expect(row?.body_text).toBeNull();
+		cleanup();
 	});
-});
 
-describe('schema-version migration', () => {
-	test('a stale schema_version rebuilds a fresh file in the same open', () => {
-		const tmp = tempDir();
-		const location = { dataDir: tmp.dir, accountEmail: 'you@example.com' };
-		const accountDir = join(tmp.dir, 'you@example.com');
-		mkdirSync(accountDir, { recursive: true });
-		const path = join(accountDir, 'mail.db');
-		const old = new Database(path, { create: true });
-		old.exec(`
-			CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT);
-			CREATE TABLE messages (
-				id TEXT PRIMARY KEY,
-				raw TEXT NOT NULL,
-				subject TEXT,
-				sender TEXT,
-				synced_at TEXT NOT NULL,
-				deleted INTEGER NOT NULL DEFAULT 0
-			);
-			CREATE TABLE threads (id TEXT PRIMARY KEY, raw TEXT NOT NULL);
-			CREATE TABLE labels (id TEXT PRIMARY KEY, raw TEXT NOT NULL, synced_at TEXT NOT NULL);
-			INSERT INTO _meta (key, value) VALUES
-				('schema_version', '3'),
-				('history_id', '42'),
-				('last_full_pull_at', 's1'),
-				('last_synced_at', 's1');
-			INSERT INTO messages (id, raw, synced_at) VALUES ('m1', '{}', 's1');
-		`);
-		old.close();
+	test('reads back as honestly absent, not as an unexplained blank', () => {
+		const { db, cleanup } = openTmp();
+		db.ingestFullPullPage([externalizedBody()], 's1');
 
-		// The handle returned from `openMailDb` must already be writable against
-		// the current schema.
-		const second = openMailDb(location);
-		expect(() =>
-			second.ingestFullPullPage([message({ id: 'm2' })], 's2'),
-		).not.toThrow();
-		const row = second.raw
-			.query<{ id: string }, [string]>(`SELECT id FROM messages WHERE id = ?`)
-			.get('m2');
-		expect(row?.id).toBe('m2');
-		expect(
-			second.raw
-				.query<{ id: string }, [string]>(`SELECT id FROM messages WHERE id = ?`)
-				.get('m1'),
-		).toBeNull();
-		expect(
-			second.raw
-				.query<{ value: string | null }, [string]>(
-					`SELECT value FROM _meta WHERE key = ?`,
-				)
-				.get('schema_version')?.value,
-		).toBe(SCHEMA_VERSION);
-		expect(
-			second.raw
-				.query<{ value: string | null }, [string]>(
-					`SELECT value FROM _meta WHERE key = ?`,
-				)
-				.get('history_id'),
-		).toBeNull();
-		const columns = second.raw
-			.query<{ name: string }, []>(`PRAGMA table_info(messages)`)
-			.all()
-			.map((row) => row.name);
-		expect(columns).not.toContain('deleted');
-		second.close();
-		tmp.cleanup();
+		const detail = db.getMessageDetail('m1');
+		expect(detail?.bodyText).toBeNull();
+		expect(detail?.unsafeBodyHtml).toBeNull();
+		expect(detail?.bodyExternalized).toBe(true);
+		cleanup();
+	});
+
+	test('an attached file beside an inline body is not an externalized body', () => {
+		const { db, cleanup } = openTmp();
+		db.ingestFullPullPage(
+			[
+				message({
+					payload: {
+						headers: [],
+						parts: [
+							{
+								mimeType: 'text/plain',
+								body: { data: base64Url('Inline body') },
+							},
+							{
+								mimeType: 'application/pdf',
+								filename: 'invoice.pdf',
+								body: { attachmentId: 'ANGjdJ9', size: 42_000 },
+							},
+						],
+					},
+				}),
+			],
+			's1',
+		);
+
+		const detail = db.getMessageDetail('m1');
+		expect(detail?.bodyText).toBe('Inline body');
+		expect(detail?.bodyExternalized).toBe(false);
+		cleanup();
 	});
 });
