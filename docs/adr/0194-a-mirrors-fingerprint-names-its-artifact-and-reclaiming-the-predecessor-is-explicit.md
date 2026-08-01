@@ -1,7 +1,8 @@
 # 0194. A mirror's fingerprint names its artifact, and reclaiming the predecessor is explicit
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-07-31
+- **Superseded by:** [ADR-0197](0197-a-mirrors-corpus-version-names-its-artifact-and-only-the-app-knows-when-one-is-ready.md) with the same disposable-mirror shape, but an explicit corpus version in the filename instead of a declaration fingerprint, no predecessor fallback, and app-owned readiness reported as empty/building/ready. The amendments this record made to ADR-0098 and ADR-0116 are carried forward by ADR-0197.
 - **Amends:** [ADR-0098](0098-local-mail-state-round-trips-through-gmail.md) at its mechanical-enforcement clause and [ADR-0116](0116-local-mail-is-desktop-first-one-bun-engine-no-background-mail-service.md) at one clause of its disposability consequence: both described a `SCHEMA_VERSION` bump dropping and rebuilding the mirror, which this record replaces with fingerprint-named replacement and predecessor retention. Neither record's decision is otherwise touched.
 - **Relates:** [ADR-0061](0061-local-books-reads-facts-from-the-mirror-reports-live-and-writes-through-one-approved-verb.md) (Local Books reads facts from the mirror; this record decides how that file is identified and replaced), [ADR-0063](0063-the-local-books-mirror-is-a-multi-writer-cache-made-safe-by-one-monotonic-write-door.md) (the monotonic write door stays app-owned; this record puts no gate in front of it), [ADR-0064](0064-the-local-books-mirror-keeps-one-realm-cdc-cursor-table-existence-is-the-per-entity-init-latch.md) (the CDC cursor and the table-existence latch live inside one artifact, so a new artifact starts with neither), [ADR-0176](0176-lenses-declare-no-query-capabilities-indexed-reads-require-separate-owners.md) (indexed reads are a separate owner's concern, which is why indexes are not fingerprint inputs)
 

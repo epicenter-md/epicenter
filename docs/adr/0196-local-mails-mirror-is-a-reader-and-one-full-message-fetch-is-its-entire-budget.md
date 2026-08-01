@@ -2,15 +2,15 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-31
-- **Relates:** [ADR-0082](0082-local-mail-syncs-by-push-free-history-list-polling.md) (push-free `history.list` polling is the change feed this budget is spent against), [ADR-0083](0083-apps-email-is-refused-local-mail-is-the-only-gmail-client.md) (Local Mail is the only Gmail client, so no second surface can quietly fetch what this refuses), [ADR-0098](0098-local-mail-state-round-trips-through-gmail.md) (Gmail holds every state a human acts on; this record decides what the mirror keeps a copy of, not what it authorizes), [ADR-0116](0116-local-mail-is-desktop-first-one-bun-engine-no-background-mail-service.md) (Gmail owns truth and the mirror is disposable; this record prices what "disposable" costs to rebuild), [ADR-0188](0188-gmail-app-identity-belongs-to-the-distribution-and-no-epicenter-server-enters-the-gmail-path.md) (the shipped distribution's Gmail identity, whose per-user quota this budget draws on), [ADR-0194](0194-a-mirrors-fingerprint-names-its-artifact-and-reclaiming-the-predecessor-is-explicit.md) (a declaration edit names a new artifact and costs a full re-pull, which is what makes the per-message budget the dominant rebuild cost)
+- **Relates:** [ADR-0082](0082-local-mail-syncs-by-push-free-history-list-polling.md) (push-free `history.list` polling is the change feed this budget is spent against), [ADR-0083](0083-apps-email-is-refused-local-mail-is-the-only-gmail-client.md) (Local Mail is the only Gmail client, so no second surface can quietly fetch what this refuses), [ADR-0098](0098-local-mail-state-round-trips-through-gmail.md) (Gmail holds every state a human acts on; this record decides what the mirror keeps a copy of, not what it authorizes), [ADR-0116](0116-local-mail-is-desktop-first-one-bun-engine-no-background-mail-service.md) (Gmail owns truth and the mirror is disposable; this record prices what "disposable" costs to rebuild), [ADR-0188](0188-gmail-app-identity-belongs-to-the-distribution-and-no-epicenter-server-enters-the-gmail-path.md) (the shipped distribution's Gmail identity, whose per-user quota this budget draws on), [ADR-0197](0197-a-mirrors-corpus-version-names-its-artifact-and-only-the-app-knows-when-one-is-ready.md) (a corpus-version bump names a new artifact and costs a full re-pull, which is what makes the per-message budget the dominant rebuild cost)
 
 ## Context
 
-Local Mail's mirror is about to be redeclared under ADR-0194: the hand-stamped
+Local Mail's mirror is about to be redeclared under ADR-0197: the hand-stamped
 `SCHEMA_VERSION` in `apps/local-mail/src/db.ts` goes away, and the stored shape
 becomes a reviewed declaration whose fingerprint names the file. That turns the
 column set from something that accretes into something decided once, and it puts
-a price on the decision. Under ADR-0194 a declaration edit is a full re-pull, and
+a price on the decision. Under ADR-0197 a version bump is a full re-pull, and
 Gmail's backfill is paginated `messages.list` plus one `messages.get` per id. So
 "what does Mail store" and "what does Mail spend per message" stopped being two
 questions.
@@ -82,7 +82,7 @@ are; nothing in the current surface needs a fourth stored derivation.
 The test for a proposed column is therefore not "is it useful" but: **can SQLite
 project it, and if not, does a pushed-down filter or sort require it?** A column
 that fails both is a read-time derivation. Adding one is not free either way,
-because under ADR-0194 it renames the artifact and costs a full re-pull.
+because under ADR-0197 it bumps the corpus version and costs a full re-pull.
 
 ### What it refuses
 
@@ -92,7 +92,7 @@ because under ADR-0194 it renames the artifact and costs a full re-pull.
 - **`messages.attachments.get`.** This is the single refusal that keeps the
   budget at one call.
 - **Attachment and media bytes on disk, in any form.** No attachment table, no
-  blob cache, no media directory beside the mirror. ADR-0194's filename grammar
+  blob cache, no media directory beside the mirror. ADR-0197's filename grammar
   and grammar-scoped `reclaim` cover mirror artifacts only; a byte store beside
   them would be unnamed, unreclaimed, and would silently survive every rebuild.
 - **Fetching or rendering remote and inline media in the UI.**
@@ -145,7 +145,7 @@ here asks Books to change.
 ## Consequences
 
 - **The blob subsystem never gets built.** No attachment table, no byte store, no
-  cache eviction policy, no reclaim path that ADR-0194's filename grammar cannot
+  cache eviction policy, no reclaim path that ADR-0197's filename grammar cannot
   express, no partial-message state machine, no completion protocol. The one
   invariant at the top of the Decision forecloses the entire family, which is
   the point of writing it as an invariant rather than a feature list.
@@ -155,17 +155,17 @@ here asks Books to change.
   20, `messages.list` costs 5 per page, `history.list` costs 2, and a user is
   capped at 6,000 units per minute. A full backfill is therefore ~20 units per
   message plus 5 per page. Adding a second per-message call would roughly double
-  a rebuild that ADR-0194 already makes routine (any declaration edit triggers
+  a rebuild that ADR-0197 already makes routine (any corpus-version bump triggers
   one), against a per-user ceiling that a large mailbox already spends hours
   under.
 - **Some messages show no body.** Accepted, named, and surfaced rather than
   papered over. The alternative costs the doubling above on every message to fix
   a minority of them.
-- **The mirror is honestly disposable, which keeps ADR-0116 and ADR-0194 true.**
+- **The mirror is honestly disposable, which keeps ADR-0116 and ADR-0197 true.**
   Nothing in it is irreplaceable, so retaining a predecessor is a convenience and
   reclaiming it is safe. Had attachment bytes lived here, deleting an artifact
   could destroy the only local copy of something Gmail no longer serves, and the
-  cheap `reclaim` of ADR-0194 would have become a data-loss decision.
+  cheap reclamation of ADR-0197 would have become a data-loss decision.
 - **No archive, export, backup, or fidelity promise.** Local Mail does not claim
   the local copy reproduces the mailbox, and does not ship an export. Google
   Takeout is the tool for that and Local Mail does not compete with it. This is a
@@ -173,10 +173,10 @@ here asks Books to change.
 - **Two stale sentences elsewhere are corrected, not by this record.** ADR-0098's
   "a `SCHEMA_VERSION` bump destroys any state stored in mirror tables" and
   ADR-0116's "it can be dropped and rebuilt on a schema-version bump" both
-  described the destroy-on-open mechanism ADR-0194 withdrew. Both are amended in
-  place with `Amended by: ADR-0194`, because ADR-0194 is what changed them. The
+  described the destroy-on-open mechanism ADR-0194 withdrew and ADR-0197 keeps
+  withdrawn. Both are amended in place with `Amended by: ADR-0197`. The
   substance ADR-0098 loses is a mechanical guard against smuggling local-only
-  state into the mirror; under ADR-0194 that guard is review of the declaration
+  state into the mirror; under ADR-0197 that guard is review of the declaration
   shape, which is where a new column now has to appear to exist at all.
 - **Reversible if a promise ever earns it.** The reopen trigger is a concrete
   product commitment that requires bytes offline (an offline attachment viewer, a
@@ -204,7 +204,7 @@ here asks Books to change.
 - **Keep the column named `raw` for symmetry with Local Books.** Rejected:
   symmetry between two apps is worth less than a column name that does not
   contradict the API it mirrors. The two mirrors share a lifecycle contract
-  (ADR-0194), not a schema, so their column names answer to their own upstreams.
+  (ADR-0197), not a schema, so their column names answer to their own upstreams.
 - **Cache media the sanitizer strips, so formatted mail renders fully.**
   Rejected: it reintroduces per-message network calls, an unreclaimed byte store,
   and the tracking-pixel exposure the sanitizer exists to refuse, in exchange for

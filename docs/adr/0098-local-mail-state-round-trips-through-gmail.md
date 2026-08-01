@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-01
-- **Amended by:** [ADR-0194](0194-a-mirrors-fingerprint-names-its-artifact-and-reclaiming-the-predecessor-is-explicit.md) at the mechanical-enforcement clause only: the `SCHEMA_VERSION` drop-and-rebuild that punished local-only state in mirror tables is withdrawn. The round-trip rule itself is untouched.
+- **Amended by:** [ADR-0197](0197-a-mirrors-corpus-version-names-its-artifact-and-only-the-app-knows-when-one-is-ready.md) at the mechanical-enforcement clause only: the `SCHEMA_VERSION` drop-and-rebuild that punished local-only state in mirror tables is withdrawn. The round-trip rule itself is untouched.
 - **Relates:** [ADR-0080](0080-the-super-app-is-a-desktop-host-cross-device-is-remote-access-to-the-session-not-a-per-app-capability-plane.md) (cross-device is a remote session, not per-app phone code, so the phone reads mail in the phone's own mail app), [ADR-0081](0081-per-upstream-oauth-concurrency-decides-mirror-topology.md) (each device holds its own mirror against Google directly), [ADR-0082](0082-local-mail-syncs-by-push-free-history-list-polling.md) (writes hit Gmail first; the mirror folds the result in after), [ADR-0083](0083-apps-email-is-refused-local-mail-is-the-only-gmail-client.md) (Local Mail is the only Gmail client)
 
 ## Context
@@ -27,12 +27,12 @@ The rule of thumb: any state a human acts on must round-trip through Gmail.
 ## Consequences
 
 - The phone story holds with zero Local Mail phone code: whatever the desktop does, Gmail's own app reflects it.
-- Enforcement is partly mechanical. The mirror's only writer is `sync.ts` (later, the write-through cores). This record originally claimed a second mechanical guard: the schema's drop-and-rebuild on a `SCHEMA_VERSION` bump destroyed any state stored in mirror tables, so a violation that smuggled precious local state into the mirror was punished at the next bump. **ADR-0194 withdrew that guard.** A declaration edit now names a new artifact and retains the predecessor; opening destroys nothing, so nothing is punished later. What replaces it is earlier and more visible: local-only state has to appear in the reviewed mirror declaration shape to exist at all, which is where the violation is now caught. Overlay tables beside the mirror remain the escape hatch this ADR exists to catch in review.
+- Enforcement is partly mechanical. The mirror's only writer is `sync.ts` (later, the write-through cores). This record originally claimed a second mechanical guard: the schema's drop-and-rebuild on a `SCHEMA_VERSION` bump destroyed any state stored in mirror tables, so a violation that smuggled precious local state into the mirror was punished at the next bump. **ADR-0194 withdrew that guard, and ADR-0197 keeps it withdrawn.** A version bump now names a new artifact and retains the predecessor; opening destroys nothing, so nothing is punished later. What replaces it is earlier and more visible: local-only state has to appear in the reviewed table declarations to exist at all, which is where the violation is now caught. Overlay tables beside the mirror remain the escape hatch this ADR exists to catch in review.
 - Snooze and send-later stay off the roadmap regardless of demand until the revisit trigger fires.
 - Revisit trigger: an always-on device that can own timers (the super-app desktop host of ADR-0080, or a home server) would make snooze semantics honest, because the timer survives a laptop lid and cancellation has one home. That is the earliest credible reopen, and it takes a new ADR accepting device-bound behavior with explicit failure semantics.
 
 ## Considered alternatives
 
 - **Emulate snooze with label moves plus a local timer.** Rejected: the state round-trips but the behavior does not; a sleeping laptop silently breaks the "it comes back" promise, and the phone cannot see or cancel it.
-- **A local tags column beside `label_ids`.** Rejected: it forks the labeling model into one the phone can never see. The original second reason (the mirror's drop-and-rebuild would destroy it anyway) is gone under ADR-0194, which retains the predecessor instead of destroying it. The first reason was always the load-bearing one.
+- **A local tags column beside `label_ids`.** Rejected: it forks the labeling model into one the phone can never see. The original second reason (the mirror's drop-and-rebuild would destroy it anyway) is gone under ADR-0197, which retains the predecessor instead of destroying it. The first reason was always the load-bearing one.
 - **Ship read/unread UI before write-through.** Rejected: reading mail flips human-meaningful state; if that flip cannot reach Gmail, the phone shows as unread what the user already handled.
