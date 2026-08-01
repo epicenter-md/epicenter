@@ -316,6 +316,10 @@ Three rules decide what an iteration changes:
 
 - Wrong skill loaded: revise the description. Right skill, wrong work: revise
   the body. Editing the body to fix a routing failure changes nothing.
+- Adding an instruction is a hypothesis about behavior, so run the ablation as
+  well as the addition: take the instruction back out and measure again. The
+  gate arms in [Routing Surfaces](#routing-surfaces) are that ablation, and they
+  are the reason the shortest plausible edit turned out not to be free.
 - Keep the version with the best validation behavior, even when it is not the
   latest draft. The newest edit is not evidence.
 - Do not add exhaustive rules to chase one failed prompt. Generalize only from
