@@ -10,6 +10,7 @@ Load this when tuning description routing, comparing skill versions, diagnosing 
 - [Baseline](#baseline)
 - [Assertions](#assertions)
 - [Run The Harness](#run-the-harness)
+- [Routing Surfaces](#routing-surfaces)
 - [Output Quality Eval](#output-quality-eval)
 - [Skill Content Checklist](#skill-content-checklist)
 - [Script Requirements](#script-requirements)
@@ -77,13 +78,19 @@ Avoid brittle phrase matching. Assertions should check outcomes, not exact wordi
 ## Run The Harness
 
 `scripts/run-trigger-eval.ts` runs a stored corpus of should-trigger and
-near-miss prompts. The corpus lives at `evals/routing.json` and currently covers
-the two boundaries where a wrong pick costs the most: the review/simplification
-cluster, where several skills legitimately overlap, and the
-consultation/delegation/handoff cluster, where the wrong choice burns a whole
-session. Each case carries a prompt, the anchor phrases that prompt contains,
-the skill that should own it (`null` for a near miss), and the skills that must
-not answer.
+near-miss prompts. Each case carries a prompt, the anchor phrases that prompt
+contains, the skill that should own it (`null` for a near miss), and the skills
+that must not answer. Two corpora ship:
+
+```txt
+evals/routing.json         the default. Covers the two boundaries where a wrong
+                           pick costs the most: the review/simplification
+                           cluster, where several skills legitimately overlap,
+                           and the consultation/delegation/handoff cluster,
+                           where the wrong choice burns a whole session.
+evals/always-on-gate.json  the always-on surface itself, not any one skill.
+                           Pass it with --corpus. See Routing Surfaces below.
+```
 
 ```bash
 bun run agent-instructions/scripts/run-trigger-eval.ts
@@ -138,15 +145,69 @@ bun run agent-instructions/scripts/run-trigger-eval.ts --live \
   --model claude-opus-5 --effort high --out run-opus5-high.json
 ```
 
-The result file records the model, effort, runs per case, whether the budget was
-exhausted, and which cases went unmeasured, so a stale or partial file cannot be
-mistaken for a clean one. Other flags: `--case <id>` to run one case, `--strict`
-to turn the offline pass into a gate, `--json` for machine reading.
+The result file records the model, the effort, the runs per case, whether the
+budget was exhausted, which cases went unmeasured, and a digest of the always-on
+instructions, so a stale or partial file cannot be mistaken for a clean one.
+`--verify-runs <dir>` reads that digest back and reports whether a stored run
+still describes the working tree, which is the question to settle before quoting
+any rate from `evals/runs/`. Other flags: `--case <id>` to run one case,
+`--strict` to turn the offline pass into a gate, `--json` for machine reading.
 
 Extend the corpus when a routing bug shows up in real use. A case is only valid
 when each anchor appears verbatim in its prompt and every named skill exists;
 `bun test scripts/run-trigger-eval.test.ts` enforces both, so a renamed skill
 cannot leave a case silently measuring nothing.
+
+## Routing Surfaces
+
+Descriptions are not the only thing that routes. `AGENTS.md` loads before a
+single description is weighed and it names skills outright, so it claims phrases
+too, and a probe obeys it: an `AGENTS.md` sentence sending overflow reports to
+`documentation` beat `styling`'s own description 3 times out of 3. That is why
+the run record carries an `instructions` digest next to `model` and `effort`.
+Two result files can disagree with no description edit between them.
+
+Measure the gate by running one corpus against two worktrees that differ only in
+`AGENTS.md`, never by editing the file under a running probe: each probe re-reads
+it from disk at spawn. `evals/always-on-gate.json` is the corpus for the gate
+itself, split into phrases a description already owns and phrases none does.
+
+The A/B over that corpus, 5 runs per case, found one asymmetry:
+
+```txt
+no description owns the phrase  -> the gate decides the route
+a description owns the phrase   -> the gate changes nothing
+```
+
+Deleting the gate moved a phrase nothing claimed by 100 points ("anything before
+I stage this" went from `post-implementation-review` 5/5 to `standalone-commits`
+5/5) and moved a phrase `greenfield-clean-breaks` owns by 0 points (5/5 either
+way). Both controls held identical, so the arms differed by the gate and not by
+probe drift.
+
+A third arm then shortened the gate instead of deleting it, dropping the
+owned-phrase triggers and three sentences naming skills that own their own
+phrases. The owned phrases did not move, as the asymmetry predicts. The orphan
+phrases did: "clean up" fell from 4/5 to 2/5 and "challenge" from 1/5 to 0/5,
+even though the shortened gate still named "clean up" outright.
+
+So gate influence is not the sum of its clauses. A shorter paragraph pulled less
+toward the skill it still named, which makes **deleting an inert clause a
+candidate rather than a free deletion**. That arm changed two things at once, so
+which half cost the strength is still unknown.
+
+What this supports when writing always-on instructions:
+
+- A gate clause naming a phrase some description already claims does not change
+  that phrase's route. `audit-routing-collisions.ts` reports it as a second
+  claimant, which makes it a deletion candidate, not a proven-free deletion.
+- A gate clause is the only thing that routes a broad intent no description
+  claims. Those are the clauses that carry the paragraph.
+- Any edit to the gate is a routing change. Measure it across two worktrees the
+  way a description edit gets measured.
+
+None of this says the gate routes *well*. It shows the gate causes the route;
+the repository's intent decides whether that route is the right one.
 
 ## Output Quality Eval
 

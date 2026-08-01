@@ -201,12 +201,17 @@ bun run .agents/skills/agent-instructions/scripts/run-trigger-eval.ts
 ```
 
 The first checks every Markdown link and heading anchor under `.agents/skills`;
-nothing else in the repository does. The second runs the stored trigger corpus.
+nothing else in the repository does. The second runs a stored trigger corpus.
 Its default pass is offline and reports what descriptions claim, which is a
 smoke test on coverage and not evidence about routing; `--live` spawns the
 Claude CLI per case to measure what a model actually loads.
 
-Read [references/evaluation.md](references/evaluation.md) for trigger evals, execution trace review, and security checks.
+Descriptions are not the only surface that routes. `AGENTS.md` loads first and
+names skills outright, and a live A/B showed it decides the route for a broad
+phrase no description claims. Editing it is a routing change with effects past
+the clause you touched, so measure rather than reason about it.
+
+Read [references/evaluation.md](references/evaluation.md) for trigger evals, always-on routing, execution trace review, and security checks.
 
 ## Validate With Vercel CLI
 
