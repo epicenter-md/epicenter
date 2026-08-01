@@ -119,9 +119,11 @@ Before drafting body content:
 
 ## Write The Description First
 
-The description is always loaded and drives selection. It must carry the trigger logic because the body is loaded only after the skill is selected.
+The description is always loaded and drives selection. It must carry the trigger logic, because the body is what an agent reads only after choosing the skill.
 
-Do not add body sections like `When to apply this skill`, `When to load`, `Trigger phrases`, or `Use this skill when...`. By the time the body is read, routing already happened. Put routing in the frontmatter description; use the body for workflow, guardrails, examples, and final checks.
+Do not add body sections like `When to apply this skill`, `When to load`, `Trigger phrases`, or `Use this skill when...`. Put routing in the frontmatter description; use the body for workflow, guardrails, examples, and final checks.
+
+The body is still not routing-neutral. Rewriting `handoff`'s body while leaving its name and description byte-identical flipped `delegation-hand-off-near-miss` from 3/3 not-loading to 3/3 loading under `--live`, reproducible across several runs each way. The mechanism is not established, and the fix is not to move trigger language into the body: re-run the affected `--live` cases after a substantial body rewrite, and treat a routing change as a real result rather than noise.
 
 Include:
 

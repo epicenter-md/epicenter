@@ -100,7 +100,7 @@
 			"anchors": ["hand off"],
 			"expect": null,
 			"forbid": ["delegate-claude", "handoff"],
-			"why": "Near miss on an everyday phrase. 'hand off' is ordinary English; delegate-claude carries it inside 'hand off the implementation'."
+			"why": "Near miss on an everyday phrase. 'hand off' is ordinary English; delegate-claude carries it inside 'hand off the implementation'. Known failing under --live since handoff's body was rewritten: with its name and description byte-identical, the leaner body loads handoff 3/3 where the older, Claude/Codex-saturated body loaded nothing 3/3. Descriptions alone do not explain it."
 		},
 		{
 			"id": "fresh-eyes-diff",
