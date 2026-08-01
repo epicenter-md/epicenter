@@ -27,11 +27,22 @@ mirror.artifacts()            // every version present here, and which is curren
 mirror.reclaimPredecessors()  // delete every lower version and its sidecars
 ```
 
-Opening is non-destructive and never falls back to another version. Inventory is
-a directory read, so it is not a readiness signal: whether the current artifact
-has been filled is a question only the consuming application's own sync cursor
-answers. Reclamation timing is the application's too, since the primitive cannot
-know whether another process still holds a predecessor open.
+Opening is non-destructive and never falls back to another version. A writable
+open fails outright on a path that is not a database rather than handing back a
+handle that only looks usable, and it repairs nothing either way.
+
+Inventory is a directory read, so it is not a readiness signal: whether the
+current artifact has been filled is a question only the consuming application's
+own sync cursor answers. An absent directory is an empty inventory; a directory
+that exists but cannot be read throws, so a broken install is never reported as
+a fresh one.
+
+`reclaimPredecessors()` is the only call here that deletes anything, and its
+timing is the application's. Unlinking a predecessor's `-wal` while another
+process still holds that artifact open discards the transactions the log had not
+checkpointed, leaving that reader on a corpus that silently rolled back; on
+Windows the unlink fails instead. No app calls it automatically, because none
+can currently prove nothing is reading.
 
 Bun and the filesystem are hard dependencies of this entry point, which is why
 it is separate from the portable root. See ADR-0197.

@@ -10,6 +10,7 @@ import {
 	existsSync,
 	mkdtempSync,
 	readdirSync,
+	readFileSync,
 	rmSync,
 	writeFileSync,
 } from 'node:fs';
@@ -83,11 +84,31 @@ describe('opening', () => {
 		expect(mirror.artifacts()).toEqual([
 			{
 				version: 5,
-				filename: 'widgets.v5.db',
 				path: mirror.path,
 				current: true,
 			},
 		]);
+		tmp.cleanup();
+	});
+
+	test('a file that is not a database fails the writable open outright', () => {
+		const tmp = tempDir();
+		const mirror = widgets(tmp.dir, 5);
+		writeFileSync(mirror.path, 'not a database at all');
+
+		// Setting the journal mode is the first statement to read the header, so a
+		// writable open cannot hand back a handle that only looks usable. It also
+		// does not repair or replace the file: `open()` destroys nothing.
+		expect(() => mirror.open()).toThrow();
+		expect(readFileSync(mirror.path, 'utf8')).toBe('not a database at all');
+
+		// A reader sets no persistent pragma, so nothing on this path reads the
+		// header and the failure lands on the caller's first query instead. `null`
+		// from `openReadonly()` means absent, never unusable.
+		const reader = mirror.openReadonly();
+		expect(reader).not.toBeNull();
+		expect(() => reader?.query('SELECT 1 FROM sqlite_master').all()).toThrow();
+		reader?.close();
 		tmp.cleanup();
 	});
 
@@ -139,18 +160,8 @@ describe('a bumped version', () => {
 
 		after.open().close();
 		expect(after.artifacts()).toEqual([
-			{
-				version: 5,
-				filename: 'widgets.v5.db',
-				path: before.path,
-				current: false,
-			},
-			{
-				version: 6,
-				filename: 'widgets.v6.db',
-				path: after.path,
-				current: true,
-			},
+			{ version: 5, path: before.path, current: false },
+			{ version: 6, path: after.path, current: true },
 		]);
 
 		// The predecessor's rows are still there, opened deliberately by its path,
@@ -190,8 +201,8 @@ describe('artifacts()', () => {
 		writeFileSync(join(tmp.dir, 'widgets.vx.db'), '');
 		writeFileSync(join(tmp.dir, 'gadgets.v5.db'), '');
 
-		expect(mirror.artifacts().map((a) => a.filename)).toEqual([
-			'widgets.v5.db',
+		expect(mirror.artifacts().map((a) => a.path)).toEqual([
+			join(tmp.dir, 'widgets.v5.db'),
 		]);
 		tmp.cleanup();
 	});
@@ -215,16 +226,22 @@ describe('artifacts()', () => {
 		tmp.cleanup();
 	});
 
+	test('refuses to call a directory it could not read an empty one', () => {
+		const tmp = tempDir();
+		// A regular file where the directory belongs. An absent directory is an
+		// empty inventory because nothing has been built yet; this is a broken
+		// site, and answering `[]` would let `status` report it as a fresh install.
+		const occupied = join(tmp.dir, 'occupied');
+		writeFileSync(occupied, '');
+		expect(() => widgets(occupied, 5).artifacts()).toThrow();
+		tmp.cleanup();
+	});
+
 	test('opens no SQLite handle, so an unreadable artifact is still inventory', () => {
 		const tmp = tempDir();
 		writeFileSync(join(tmp.dir, 'widgets.v4.db'), 'not a database at all');
 		expect(widgets(tmp.dir, 5).artifacts()).toEqual([
-			{
-				version: 4,
-				filename: 'widgets.v4.db',
-				path: join(tmp.dir, 'widgets.v4.db'),
-				current: false,
-			},
+			{ version: 4, path: join(tmp.dir, 'widgets.v4.db'), current: false },
 		]);
 		tmp.cleanup();
 	});
