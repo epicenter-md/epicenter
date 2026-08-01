@@ -13,7 +13,7 @@
 		"build": "NODE_ENV=production vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
-		"test": "if find src -name '*.test.ts' -o -name '*.test.tsx' -o -name '*.spec.ts' | grep -q .; then bun test; fi",
+		"test": "bun test",
 		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"deploy": "wrangler deploy"
 	},

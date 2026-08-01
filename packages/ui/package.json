@@ -27,6 +27,7 @@
 		"./app.css": "./src/app.css"
 	},
 	"scripts": {
+		"test": "bun test",
 		"typecheck": "svelte-check --tsconfig ./tsconfig.json"
 	},
 	"dependencies": {

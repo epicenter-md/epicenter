@@ -20,6 +20,7 @@
 	},
 	"license": "MIT",
 	"scripts": {
+		"test": "bun test",
 		"typecheck": "tsc --noEmit"
 	},
 	"devDependencies": {
