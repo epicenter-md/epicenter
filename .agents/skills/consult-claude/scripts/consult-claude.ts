@@ -13,7 +13,7 @@ export function buildClaudeArgs() {
 		'--effort',
 		'high',
 		'--tools',
-		'Read,Glob,Grep,Bash,WebFetch,WebSearch',
+		'Read,Glob,Grep,WebFetch,WebSearch',
 		'--permission-mode',
 		'plan',
 		'--no-session-persistence',
@@ -42,7 +42,7 @@ function processGroupExists(child: ChildProcess) {
 	}
 }
 
-async function readPacket() {
+async function readInvitation() {
 	const rawTerminal = process.stdin.isTTY;
 	if (rawTerminal) process.stdin.setRawMode(true);
 
@@ -78,9 +78,9 @@ async function main() {
 		return;
 	}
 
-	const packet = await readPacket();
-	if (!packet.trim()) {
-		console.error('[consult-claude] Consultation packet is empty.');
+	const invitation = await readInvitation();
+	if (!invitation.trim()) {
+		console.error('[consult-claude] Invitation is empty.');
 		process.exitCode = 2;
 		return;
 	}
@@ -133,10 +133,12 @@ async function main() {
 
 	child.stdin?.on('error', (error) => {
 		if ((error as NodeJS.ErrnoException).code !== 'EPIPE') {
-			console.error(`[consult-claude] Could not send packet: ${error.message}`);
+			console.error(
+				`[consult-claude] Could not send invitation: ${error.message}`,
+			);
 		}
 	});
-	child.stdin?.end(packet);
+	child.stdin?.end(invitation);
 	console.error('[consult-claude] Claude started.');
 
 	const timeout = setTimeout(() => {

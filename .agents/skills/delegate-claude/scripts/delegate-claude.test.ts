@@ -10,10 +10,10 @@
  *   by chosen name when the research-preview line changes shape
  * - Short and full session IDs resolve to the same agent record
  * - working/blocked/terminal states map to watcher outcomes and exit codes
- * - `reply` stops the job and resumes the same conversation as a new job
+ * - `continue` stops the job and resumes the same conversation as a new job
  * - Push, pull request creation, and merge are denied on every start and every
  *   resume, and no argument reaches a launch that grants them
- * - `reply` refuses a working job unless the interruption is deliberate
+ * - `continue` refuses a working job unless the interruption is deliberate
  * - `CLAUDECODE=1` refuses reciprocal delegation
  */
 import { describe, expect, test } from 'bun:test';
@@ -35,7 +35,7 @@ import {
 	NO_PUBLICATION_PROMPT,
 	PUBLICATION_DENY_RULES,
 	parseBackgroundId,
-	parseReplyArgs,
+	parseContinueArgs,
 	parseStartArgs,
 } from './delegate-claude';
 
@@ -140,23 +140,43 @@ describe('parseStartArgs', () => {
 	});
 });
 
-describe('parseReplyArgs', () => {
+describe('publication guard', () => {
+	test('covers common direct and option-prefixed publication commands', () => {
+		for (const rule of [
+			'Bash(git push:*)',
+			'Bash(git * push:*)',
+			'Bash(command git * push:*)',
+			'Bash(gh pr create:*)',
+			'Bash(gh * pr create:*)',
+			'Bash(gh pr merge:*)',
+			'Bash(gh * pr merge:*)',
+		]) {
+			expect(PUBLICATION_DENY_RULES).toContain(rule);
+		}
+	});
+});
+
+describe('parseContinueArgs', () => {
 	test('requires an ID and defaults the interruption off', () => {
-		expect(parseReplyArgs(['7c5dcf5d'])).toEqual({
+		expect(parseContinueArgs(['7c5dcf5d'])).toEqual({
 			id: '7c5dcf5d',
 			interrupt: false,
 		});
-		expect(parseReplyArgs(['7c5dcf5d', '--interrupt'])?.interrupt).toBe(true);
-		expect(parseReplyArgs([])).toBeUndefined();
-		expect(parseReplyArgs(['--interrupt'])).toBeUndefined();
+		expect(parseContinueArgs(['7c5dcf5d', '--interrupt'])?.interrupt).toBe(
+			true,
+		);
+		expect(parseContinueArgs([])).toBeUndefined();
+		expect(parseContinueArgs(['--interrupt'])).toBeUndefined();
 	});
 
 	test('rejects anything that is not the interruption flag', () => {
-		expect(parseReplyArgs(['7c5dcf5d', '--yolo'])).toBeUndefined();
+		expect(parseContinueArgs(['7c5dcf5d', '--yolo'])).toBeUndefined();
 		expect(
-			parseReplyArgs(['7c5dcf5d', '--allow-external-writes']),
+			parseContinueArgs(['7c5dcf5d', '--allow-external-writes']),
 		).toBeUndefined();
-		expect(parseReplyArgs(['7c5dcf5d', '--allow-pr-create'])).toBeUndefined();
+		expect(
+			parseContinueArgs(['7c5dcf5d', '--allow-pr-create']),
+		).toBeUndefined();
 	});
 });
 
@@ -281,23 +301,23 @@ if (args[0] === '--bg' && args.includes('--resume')) {
 			expect(blocked.status).toBe(10);
 			expect(blocked.stderr).toContain('7c5dcf5d: blocked');
 
-			const replied = spawnSync('bun', [cli, 'reply', '7c5dcf5d'], {
+			const continued = spawnSync('bun', [cli, 'continue', '7c5dcf5d'], {
 				encoding: 'utf8',
 				env: { ...environment, FIXTURE_STATE: 'blocked' },
 				input: 'pear',
 			});
-			expect(replied.status).toBe(0);
-			expect(replied.stdout).toContain('DELEGATE_CLAUDE_JOB_ID=a5b4a85d');
+			expect(continued.status).toBe(0);
+			expect(continued.stdout).toContain('DELEGATE_CLAUDE_JOB_ID=a5b4a85d');
 			const resumeArgs = lastLaunch();
 			expect(resumeArgs).toContain('--resume');
 			expect(resumeArgs).toContain(baseAgent.sessionId);
 			expect(finalArg(resumeArgs)).toBe('pear');
 			// Claude does not carry deny rules across `--resume`, so an unguarded
 			// resume would silently restore publication for the rest of the
-			// conversation. The reply reapplies the guard every time.
+			// conversation. The continuation reapplies the guard every time.
 			expectPublicationDenied(resumeArgs);
 
-			const busy = spawnSync('bun', [cli, 'reply', '7c5dcf5d'], {
+			const busy = spawnSync('bun', [cli, 'continue', '7c5dcf5d'], {
 				encoding: 'utf8',
 				env: { ...environment, FIXTURE_STATE: 'working' },
 				input: 'pear',
@@ -308,7 +328,7 @@ if (args[0] === '--bg' && args.includes('--resume')) {
 
 			const interrupted = spawnSync(
 				'bun',
-				[cli, 'reply', '7c5dcf5d', '--interrupt'],
+				[cli, 'continue', '7c5dcf5d', '--interrupt'],
 				{
 					encoding: 'utf8',
 					env: { ...environment, FIXTURE_STATE: 'working' },
