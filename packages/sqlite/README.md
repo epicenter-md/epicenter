@@ -8,3 +8,30 @@ or workspace lifecycle.
 Schema and transaction invariants belong to the consuming package. Client
 workspace storage lives in `@epicenter/workspace`; server authority storage
 lives in `@epicenter/server`.
+
+## `@epicenter/sqlite/bun-mirror`
+
+A mirror is a disposable local SQLite copy of data an external authority owns.
+`mirrorAt` names the current artifact after the version of the corpus contract
+that builds it, so a version bump is a new filename rather than a migration:
+
+```ts
+import { mirrorAt } from '@epicenter/sqlite/bun-mirror';
+
+const mirror = mirrorAt({ name: 'mail', version: 5, directory: accountDir });
+
+mirror.path                   // <accountDir>/mail.v5.db, whether or not it exists
+mirror.open()                 // writable, created if absent
+mirror.openReadonly()         // read-only, `null` when absent
+mirror.artifacts()            // every version present here, and which is current
+mirror.reclaimPredecessors()  // delete every lower version and its sidecars
+```
+
+Opening is non-destructive and never falls back to another version. Inventory is
+a directory read, so it is not a readiness signal: whether the current artifact
+has been filled is a question only the consuming application's own sync cursor
+answers. Reclamation timing is the application's too, since the primitive cannot
+know whether another process still holds a predecessor open.
+
+Bun and the filesystem are hard dependencies of this entry point, which is why
+it is separate from the portable root. See ADR-0197.

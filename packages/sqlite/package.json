@@ -7,6 +7,7 @@
 		".": "./src/index.ts",
 		"./browser": "./src/browser.ts",
 		"./bun": "./src/bun.ts",
+		"./bun-mirror": "./src/bun-mirror.ts",
 		"./durable-object": "./src/durable-object.ts"
 	},
 	"files": [
