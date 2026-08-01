@@ -10,7 +10,7 @@
  * Env:
  *   MOCK_PORT   port to bind on 127.0.0.1 (0 => an ephemeral port, printed below)
  *   MOCK_DB     absolute path to the copied mirror artifact,
- *               `mail.<fingerprint>.db` (opened read-only)
+ *               `mail.v<version>.db` (opened read-only)
  *   MOCK_LOG    absolute path for the modify JSONL log (optional)
  *   MOCK_FOLD   "false" => every modify omits `labelIds` (exercises the
  *               `folded:false`, still-catching-up UI path); anything else folds
@@ -32,9 +32,7 @@ const LOG_PATH = process.env.MOCK_LOG;
 const FOLD = process.env.MOCK_FOLD !== 'false';
 
 if (!DB_PATH) {
-	console.error(
-		'MOCK_DB is required (path to the copied mail.<fingerprint>.db).',
-	);
+	console.error('MOCK_DB is required (path to the copied mail.v<version>.db).');
 	process.exit(1);
 }
 

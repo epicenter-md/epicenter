@@ -6,8 +6,8 @@
  * plain last-write-wins: what these tests actually cover is the FULL-pull vs
  * INCREMENTAL-patch split (a `labelPatch` must edit the stored resource's
  * `labelIds` in place and leave the rest of the payload alone), the atomic-cursor
- * discipline ported from `db.ts`, and the fingerprint-named artifact lifecycle
- * (ADR-0194): opening never destroys, a changed shape is a new filename.
+ * discipline ported from `db.ts`, and the version-named artifact lifecycle
+ * (ADR-0197): opening never destroys, a changed shape is a new filename.
  */
 
 import { Database } from 'bun:sqlite';
@@ -340,7 +340,7 @@ describe('full pull page ingestion', () => {
 		const accountDir = join(tmp.dir, 'you@example.com');
 		// The mirror primitive does not know the artifact holds someone's mail, so
 		// the app is what applies the permissions to the handle it receives, to the
-		// fingerprinted filename and both SQLite sidecars.
+		// versioned filename and both SQLite sidecars.
 		const { path } = mailMirror(tmp.dir, 'you@example.com');
 		const db = openMailDb({
 			dataDir: tmp.dir,
@@ -534,7 +534,7 @@ describe('the read-only handle', () => {
 	test('reads an artifact whose DDL never ran as empty rather than throwing', () => {
 		// The one window a current artifact can exist without the declared tables:
 		// a writable open that died between creating the file and running its DDL.
-		// ADR-0194 says the worst a mistaken writable open can do is leave an empty
+		// ADR-0197 says the worst a mistaken writable open can do is leave an empty
 		// file, so a reader must report it, not crash on it.
 		const tmp = tempDir();
 		const accountDir = join(tmp.dir, 'you@example.com');
@@ -553,7 +553,7 @@ describe('the read-only handle', () => {
 	});
 });
 
-describe('the mirror site', () => {
+describe('the mirror', () => {
 	test('an account email that is not one path segment cannot name a mirror directory', () => {
 		expect(() => mailMirror('/data', '../evil')).toThrow(
 			'cannot name a mirror directory',
@@ -566,12 +566,17 @@ describe('the mirror site', () => {
 		);
 	});
 
-	test("names the artifact by the declaration's fingerprint, under the account dir", () => {
-		const { path, fingerprint } = mailMirror('/data', 'you@example.com');
-		expect(fingerprint).toMatch(/^[0-9a-f]{64}$/);
-		expect(path).toBe(
-			join('/data', 'you@example.com', `mail.${fingerprint}.db`),
-		);
+	test('names the artifact by its corpus version, under the account dir', () => {
+		const { path, version } = mailMirror('/data', 'you@example.com');
+		expect(path).toBe(join('/data', 'you@example.com', `mail.v${version}.db`));
+	});
+
+	test('continues the SCHEMA_VERSION it replaces, so v4 is never reopened', () => {
+		// The hand-stamped constant this replaces last read '4', and the
+		// reader-mirror rewrite that renamed `raw` to `resource` is the shape after
+		// it. Restarting the count would name a fresh artifact after a corpus that
+		// already existed.
+		expect(mailMirror('/data', 'you@example.com').version).toBeGreaterThan(4);
 	});
 });
 
@@ -589,26 +594,26 @@ describe('the artifact lifecycle', () => {
 		expect(second.readRealmState().historyId).toBe('42');
 		second.close();
 
-		// One shape, one filename: reopening the same declaration must not have
+		// One version, one filename: reopening at the same version must not have
 		// produced a second artifact.
 		expect(
 			readdirSync(join(tmp.dir, 'you@example.com')).filter((name) =>
 				name.endsWith('.db'),
 			),
-		).toEqual([
-			`mail.${mailMirror(tmp.dir, 'you@example.com').fingerprint}.db`,
-		]);
+		).toEqual([`mail.v${mailMirror(tmp.dir, 'you@example.com').version}.db`]);
 		tmp.cleanup();
 	});
 
 	test('a predecessor artifact is retained, never opened, and never swept', () => {
-		// A predecessor is what a declaration edit leaves behind. Opening the
-		// current artifact must not consult it, migrate it, or unlink it: it is the
-		// only complete local copy while the successor backfills.
+		// A predecessor is what a version bump leaves behind. Opening the current
+		// artifact must not consult it, migrate it, or unlink it: it is the only
+		// complete local copy while the successor backfills, and a reader compiled
+		// against it may still be running.
 		const tmp = tempDir();
 		const accountDir = join(tmp.dir, 'you@example.com');
 		mkdirSync(accountDir, { recursive: true, mode: 0o700 });
-		const predecessorPath = join(accountDir, `mail.${'a'.repeat(64)}.db`);
+		const previousVersion = mailMirror(tmp.dir, 'you@example.com').version - 1;
+		const predecessorPath = join(accountDir, `mail.v${previousVersion}.db`);
 		const predecessor = new Database(predecessorPath, { create: true });
 		predecessor.run(`CREATE TABLE messages (id TEXT PRIMARY KEY);`);
 		predecessor.run(`INSERT INTO messages (id) VALUES ('old');`);
@@ -629,19 +634,19 @@ describe('the artifact lifecycle', () => {
 		});
 		kept.close();
 
-		const site = mailMirror(tmp.dir, 'you@example.com');
-		const artifacts = site.artifacts();
+		const mirror = mailMirror(tmp.dir, 'you@example.com');
+		const artifacts = mirror.artifacts();
 		expect(artifacts.length).toBe(2);
-		expect(
-			artifacts.filter((a) => a.current).map((a) => a.fingerprint),
-		).toEqual([site.fingerprint]);
-		expect(
-			artifacts.filter((a) => !a.current).map((a) => a.fingerprint),
-		).toEqual(['a'.repeat(64)]);
+		expect(artifacts.filter((a) => a.current).map((a) => a.version)).toEqual([
+			mirror.version,
+		]);
+		expect(artifacts.filter((a) => !a.current).map((a) => a.version)).toEqual([
+			previousVersion,
+		]);
 		tmp.cleanup();
 	});
 
-	test('reclaim drops one predecessor and cannot reach the siblings beside it', () => {
+	test('reclaim drops predecessors and cannot reach the siblings beside them', () => {
 		const tmp = tempDir();
 		const accountDir = join(tmp.dir, 'you@example.com');
 		const db = openMailDb({
@@ -649,17 +654,19 @@ describe('the artifact lifecycle', () => {
 			accountEmail: 'you@example.com',
 		});
 		db.close();
-		const predecessorPath = join(accountDir, `mail.${'a'.repeat(64)}.db`);
+		const mirror = mailMirror(tmp.dir, 'you@example.com');
+		const predecessorPath = join(accountDir, `mail.v${mirror.version - 1}.db`);
 		writeFileSync(predecessorPath, '');
 		writeFileSync(`${predecessorPath}-wal`, '');
 		// Local Mail's siblings: the sync-owner lock and the OAuth material. The
-		// filename grammar is what puts them out of reclaim's reach (ADR-0194).
+		// filename grammar is what puts them out of reclaim's reach (ADR-0197).
 		writeFileSync(join(accountDir, 'lock.db'), '');
 		writeFileSync(join(accountDir, 'credentials.json'), '{}');
 		writeFileSync(join(accountDir, 'provider.json'), '{}');
 
-		const site = mailMirror(tmp.dir, 'you@example.com');
-		site.reclaim('a'.repeat(64));
+		expect(mirror.reclaimPredecessors().map((a) => a.version)).toEqual([
+			mirror.version - 1,
+		]);
 
 		expect(existsSync(predecessorPath)).toBe(false);
 		expect(existsSync(`${predecessorPath}-wal`)).toBe(false);
@@ -674,10 +681,13 @@ describe('the artifact lifecycle', () => {
 				'credentials.json',
 				'lock.db',
 				'provider.json',
-				`mail.${site.fingerprint}.db`,
+				`mail.v${mirror.version}.db`,
 			].sort(),
 		);
-		expect(() => site.reclaim(site.fingerprint)).toThrow(/current artifact/);
+		// The current artifact is not a predecessor, so a second call is a no-op
+		// rather than the thing that deletes the mailbox.
+		expect(mirror.reclaimPredecessors()).toEqual([]);
+		expect(existsSync(mirror.path)).toBe(true);
 		tmp.cleanup();
 	});
 });

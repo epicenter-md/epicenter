@@ -18,15 +18,17 @@ table.
 - Runtime: Bun. `bun:sqlite` stores the mirror, built-in `fetch` calls Gmail,
   `oauth4webapi` handles OAuth.
 - One SQLite artifact per connected account, under `<data-dir>/<accountEmail>/`,
-  named `mail.<fingerprint>.db` where the fingerprint is the SHA-256 of the
-  mirror's declaration (`MIRROR_DECLARATION` in `src/db.ts`). `src/mirror.ts`
-  owns the naming, the two opening modes, artifact listing, and grammar-scoped
-  `reclaim`; the app owns the declaration, DDL, ingestion, cursors, locking, file
-  permissions, and cleanup timing. Opening is non-destructive: a declaration edit
-  is a new filename, not a migration, so nothing is dropped or unlinked on open
-  and the predecessor is retained until something calls `reclaim`. There is no
-  schema version stamped in the file. See ADR-0194. Editing the declaration
-  therefore renames the artifact and costs one full re-pull of the mailbox.
+  named `mail.v<version>.db` after `MIRROR_VERSION` in `src/db.ts`: the version
+  of the corpus contract this build stores, not the app's release version.
+  `mirrorAt` from `@epicenter/sqlite/bun-mirror` owns the naming, the two opening
+  modes, artifact inventory, and grammar-scoped `reclaimPredecessors`; the app
+  owns the version constant, DDL, ingestion, cursors, locking, file permissions,
+  readiness, and reclamation timing. Opening is non-destructive and never falls
+  back to a lower version: a bump is a new filename, not a migration, so nothing
+  is dropped or unlinked on open and the predecessor is retained until something
+  reclaims it. There is no schema version stamped in the file. See ADR-0197.
+  Bumping `MIRROR_VERSION` costs one full re-pull of the mailbox, and until that
+  re-pull finishes `status` reports the artifact as `building`, never `ready`.
   The refresh token lives in a separate `0600 credentials.json` at the data-dir
   root, never inside the mirror db.
 - Data and account directories are `0700`. The artifact, its `-wal` and `-shm`

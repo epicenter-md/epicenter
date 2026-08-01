@@ -461,7 +461,7 @@ function renderStatus(status: MailStatus): string {
 			'predecessors',
 			status.predecessors.length === 0
 				? 'none'
-				: status.predecessors.join(', '),
+				: status.predecessors.map((version) => `v${version}`).join(', '),
 		],
 		['history cursor', status.historyId ?? 'none'],
 		['last full pull', status.lastFullPullAt ?? 'never'],

@@ -27,7 +27,7 @@ export function resolveDataDir(): string {
  * keeps any other string from escaping the data dir.
  *
  * This is the whole of Local Mail's per-tenant naming. What the mirror artifact
- * inside is called is the mirror's business, not this module's (ADR-0194).
+ * inside is called is the mirror's business, not this module's (ADR-0197).
  */
 export function accountDir(dataDir: string, accountEmail: string): string {
 	if (

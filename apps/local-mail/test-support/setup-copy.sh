@@ -28,13 +28,14 @@ if [ ! -d "$REAL" ]; then
 	exit 1
 fi
 
-# The mirror artifact is named by its declaration's fingerprint
-# (`mail.<fingerprint>.db`, ADR-0194), and a replaced declaration leaves its
-# predecessor on disk. The app only ever writes the current artifact, so the most
-# recently modified one is the current one; a predecessor is stale by definition.
+# The mirror artifact is named by its corpus version (`mail.v<version>.db`,
+# ADR-0197), and a bump leaves the predecessor on disk. Versions only ever
+# increase, so the highest one is the current one; a lower one is a predecessor
+# by definition. This reads the grammar rather than mtime, which a stray `touch`
+# or a copy would get wrong.
 newest_artifact() {
-	find "$1" -maxdepth 1 -name 'mail.*.db' -exec stat -f '%m %N' {} \; 2>/dev/null |
-		sort -rn | head -1 | cut -d' ' -f2-
+	find "$1" -maxdepth 1 -name 'mail.v*.db' 2>/dev/null |
+		sed -E 's|.*/mail\.v([0-9]+)\.db$|\1 &|' | sort -rn | head -1 | cut -d' ' -f2-
 }
 
 # Resolve the account: an explicit override, else the sole subdir holding an artifact.
@@ -48,7 +49,7 @@ else
 		fi
 	done < <(find "$REAL" -maxdepth 1 -mindepth 1 -type d)
 	if [ "${#ACCTS[@]}" -eq 0 ]; then
-		echo "error: no mail.<fingerprint>.db found under $REAL" >&2
+		echo "error: no mail.v<version>.db found under $REAL" >&2
 		exit 1
 	fi
 	if [ "${#ACCTS[@]}" -gt 1 ]; then

@@ -442,8 +442,8 @@ describe('modifyMessageLabels', () => {
 			lastSyncedAt: 's1',
 		});
 		// Nothing stamps a shape version inside the file: the filename carries the
-		// declaration's fingerprint, so `_meta` holds cursor state and nothing else
-		// (ADR-0194).
+		// corpus version, so `_meta` holds cursor state and nothing else
+		// (ADR-0197).
 		expect(metaRows(db).map((row) => row.key)).toEqual([
 			'history_id',
 			'last_full_pull_at',

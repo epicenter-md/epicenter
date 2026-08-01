@@ -1,11 +1,11 @@
 import { chmodSync, mkdirSync } from 'node:fs';
+import { type Mirror, mirrorAt } from '@epicenter/sqlite/bun-mirror';
 import {
 	bodyHtml,
 	bodyText,
 	hasExternalizedBody,
 	headerValue,
 } from './message-fields.ts';
-import { defineMirror, type MirrorSite } from './mirror.ts';
 import { accountDir } from './paths.ts';
 import type { GmailLabel, GmailMessage } from './schema.ts';
 
@@ -28,13 +28,12 @@ import type { GmailLabel, GmailMessage } from './schema.ts';
  *   once, in `finishFullPull`, after every page has committed.
  *
  * The account owns its identity through the directory (`<dataDir>/<email>/`),
- * not a stored column. Inside that directory the artifact is named by the
- * fingerprint of `MIRROR_DECLARATION` (ADR-0194): nothing about the stored shape
- * is stamped inside the file, and nothing is ever dropped, unlinked, or migrated
- * on open. A shape change is a different filename, and the predecessor is
- * retained until something calls `reclaim`. Indexes stay outside the declaration
- * and are applied idempotently on every open, so a query optimization costs no
- * re-pull.
+ * not a stored column. Inside that directory the artifact is named by
+ * `MIRROR_VERSION` (ADR-0197): nothing about the stored shape is stamped inside
+ * the file, and nothing is ever dropped, unlinked, or migrated on open. A shape
+ * change is a version bump, which is a different filename, and the predecessor
+ * is retained until something reclaims it. Indexes are outside that promise and
+ * applied idempotently on every open, so a query optimization costs no re-pull.
  */
 
 export type RealmState = {
@@ -111,34 +110,27 @@ export type MailDb = ReturnType<typeof openMailDb>;
 
 /**
  * One column of a declared table: its SQLite name and affinity, an optional
- * trailing constraint, and exactly one of two ways it gets a value.
- *
- * `generated` is the SQL expression SQLite computes the column from, so the
- * column cannot disagree with the stored resource. `derivation` names the
- * contract this app computes at ingest for the columns SQL cannot reach
- * (`json_extract` cannot walk Gmail's name/value header array or base64url MIME
- * tree). The derivation string is what replaces the hand-stamped
- * `SCHEMA_VERSION`: change what `bodyText` or `headerValue` promises and you
- * change the string, which renames the artifact and buys a rebuild. Editing the
- * function without editing the string is the mistake to look for in review.
+ * trailing constraint, and, when SQLite computes the value itself, the
+ * expression it computes it from. A generated column cannot disagree with the
+ * stored resource, which is why every column that can be one is one.
  */
 type ColumnDeclaration = {
 	name: string;
 	type: 'TEXT' | 'INTEGER';
 	constraint: string | null;
 	generated: { expression: string; storage: 'VIRTUAL' | 'STORED' } | null;
-	derivation: string | null;
 };
 
 type TableDeclaration = { table: string; columns: ColumnDeclaration[] };
 
-/** A column this app writes verbatim: an id, the resource, a timestamp. */
+/** A column this app writes at ingest: an id, the resource, a timestamp, or one
+ * of the three values SQL cannot reach (see `MIRROR_TABLES`). */
 function stored(
 	name: string,
 	type: ColumnDeclaration['type'],
 	constraint: string | null = null,
 ): ColumnDeclaration {
-	return { name, type, constraint, generated: null, derivation: null };
+	return { name, type, constraint, generated: null };
 }
 
 /** A column SQLite projects from the stored resource. */
@@ -148,28 +140,12 @@ function projected(
 	expression: string,
 	storage: 'VIRTUAL' | 'STORED',
 ): ColumnDeclaration {
-	return {
-		name,
-		type,
-		constraint: null,
-		generated: { expression, storage },
-		derivation: null,
-	};
-}
-
-/** A column this app computes at ingest, under a named contract. */
-function derived(
-	name: string,
-	type: ColumnDeclaration['type'],
-	derivation: string,
-): ColumnDeclaration {
-	return { name, type, constraint: null, generated: null, derivation };
+	return { name, type, constraint: null, generated: { expression, storage } };
 }
 
 /**
- * The mirror's declared stored shape, as plain data. It is BOTH the source the
- * DDL below is generated from AND the fingerprint input that names the artifact
- * on disk, so the stored shape and the artifact's name cannot drift.
+ * The mirror's declared stored shape, as plain data, and the single source the
+ * DDL below is generated from.
  *
  * Three tiers, per ADR-0196, and no fourth:
  *
@@ -187,11 +163,10 @@ function derived(
  * The test for a proposed column is not "is it useful" but "can SQLite project
  * it, and if not, does a pushed-down filter or sort require it?" A column that
  * fails both belongs in a read-time derivation, and adding one is not free
- * either way: under ADR-0194 it renames the artifact and costs a full re-pull of
- * the mailbox at 20 quota units per message.
+ * either way: it is a `MIRROR_VERSION` bump, so it costs a full re-pull of the
+ * mailbox at 20 quota units per message (ADR-0197).
  *
- * Tables are declared in sorted order so reordering this literal is not a shape
- * change. Indexes are deliberately absent: an index holds no mirror facts.
+ * Indexes are deliberately absent: an index holds no mirror facts.
  */
 const MIRROR_TABLES: TableDeclaration[] = [
 	{
@@ -237,31 +212,50 @@ const MIRROR_TABLES: TableDeclaration[] = [
 				`CAST(json_extract(resource, '$.internalDate') AS INTEGER)`,
 				'STORED',
 			),
-			derived('subject', 'TEXT', 'header:Subject'),
-			derived('sender', 'TEXT', 'header:From'),
-			derived(
-				'body_text',
-				'TEXT',
-				'body:decoded text/plain part, else tags stripped from text/html',
-			),
+			// The three columns SQL cannot project, written by this app at ingest.
+			// What each one means is part of the corpus contract, so changing any of
+			// these promises is a `MIRROR_VERSION` bump: `subject` is the `Subject`
+			// header, `sender` is the `From` header, and `body_text` is the decoded
+			// `text/plain` part, else tags stripped from `text/html`. Changing
+			// `headerValue` or `bodyText` without bumping the version is the mistake
+			// to look for in review.
+			stored('subject', 'TEXT'),
+			stored('sender', 'TEXT'),
+			stored('body_text', 'TEXT'),
 			stored('synced_at', 'TEXT', 'NOT NULL'),
 		],
 	},
 ];
 
-const MIRROR_DECLARATION = {
-	tables: [...MIRROR_TABLES].sort((a, b) => (a.table < b.table ? -1 : 1)),
-};
-
-const MIRROR = defineMirror({ name: 'mail', declaration: MIRROR_DECLARATION });
+/**
+ * The version of the corpus contract this build stores, and the whole of the
+ * artifact's identity on disk: `mail.v<MIRROR_VERSION>.db` (ADR-0197). It is not
+ * the app's release version and it is not a migration target. Nothing reads a
+ * lower version, and nothing rewrites one.
+ *
+ * It continues the hand-stamped `SCHEMA_VERSION` this replaces, which last read
+ * `'4'`; the reader-mirror rewrite that renamed `raw` to `resource` is `5`.
+ *
+ * Bump it when this build would store something a previous build did not: an
+ * added, removed, or retyped column; a changed promise for what `subject`,
+ * `sender`, or `body_text` holds; or a change to which messages a full pull
+ * covers. Do not bump it for an index, a read-time derivation such as the HTML
+ * body, a comment, or an app release. A bump costs a full re-pull of the mailbox
+ * at 20 quota units per message, so it is not a free edit.
+ */
+const MIRROR_VERSION = 5;
 
 /**
  * The mirror as materialized for one account: `<dataDir>/<accountEmail>/`. Every
  * surface that needs the artifact's path or its inventory goes through here;
  * nothing outside this file names a mirror file.
  */
-export function mailMirror(dataDir: string, accountEmail: string): MirrorSite {
-	return MIRROR.at(accountDir(dataDir, accountEmail));
+export function mailMirror(dataDir: string, accountEmail: string): Mirror {
+	return mirrorAt({
+		name: 'mail',
+		version: MIRROR_VERSION,
+		directory: accountDir(dataDir, accountEmail),
+	});
 }
 
 /** `CREATE TABLE IF NOT EXISTS` for one declared table. Every identifier and
@@ -278,12 +272,12 @@ function createTableSql({ table, columns }: TableDeclaration): string {
 	return `CREATE TABLE IF NOT EXISTS ${table} (${defs.join(', ')});`;
 }
 
-const CREATE_TABLES = MIRROR_DECLARATION.tables.map(createTableSql).join('\n');
+const CREATE_TABLES = MIRROR_TABLES.map(createTableSql).join('\n');
 
 /**
- * Indexes, outside the declaration: they hold no mirror facts, so adding one is
- * a query optimization applied on every open, not a shape change that costs a
- * re-pull (ADR-0194).
+ * Indexes, outside the corpus contract: they hold no mirror facts, so adding one
+ * is a query optimization applied on every open, not a shape change that costs a
+ * re-pull (ADR-0197).
  */
 const CREATE_INDEXES = `
 	CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id, internal_date);
@@ -308,7 +302,7 @@ function chmodIfExists(path: string, mode: number): void {
  * The mirror holds a copy of someone's mail, so the artifact and both SQLite
  * sidecars are `0600` and the directories are `0700`. The mirror primitive does
  * not know a mirror's sensitivity and deliberately does not decide this; the app
- * applies it to the handle it receives (ADR-0194).
+ * applies it to the handle it receives (ADR-0197).
  */
 function secureDbFiles(path: string): void {
 	chmodIfExists(path, 0o600);
@@ -320,20 +314,20 @@ type MailDbLocation = { dataDir: string; accountEmail: string };
 
 /**
  * Open the current artifact for writing, creating it if absent. Opening is
- * non-destructive: there is no version to compare, nothing is unlinked, and a
- * declaration edit simply means a different filename with an empty successor to
- * backfill. The DDL runs every open because `IF NOT EXISTS` is idempotent
- * against a file that already has the declared shape, which by construction is
- * the only shape this filename ever holds.
+ * non-destructive: there is no stored version to compare, nothing is unlinked,
+ * and a `MIRROR_VERSION` bump simply means a different filename with an empty
+ * successor to backfill. The DDL runs every open because `IF NOT EXISTS` is
+ * idempotent against a file that already has the declared shape, which by
+ * construction is the only shape this filename ever holds.
  */
 export function openMailDb({ dataDir, accountEmail }: MailDbLocation) {
-	// Resolve the site first: an account email that cannot name one path segment
+	// Resolve the mirror first: an account email that cannot name one path segment
 	// must be refused before anything is created on disk.
-	const site = mailMirror(dataDir, accountEmail);
+	const mirror = mailMirror(dataDir, accountEmail);
 	secureDir(dataDir);
 	secureDir(accountDir(dataDir, accountEmail));
-	const db = site.open();
-	secureDbFiles(site.path);
+	const db = mirror.open();
+	secureDbFiles(mirror.path);
 	db.run(CREATE_TABLES);
 	db.run(CREATE_INDEXES);
 
@@ -729,9 +723,9 @@ export function openMailDb({ dataDir, accountEmail }: MailDbLocation) {
  * write and must never conjure a file (`status`, `query`). Returns `null` when
  * the current artifact does not exist, which is the honest answer to "is there a
  * mirror to read": the caller reports it rather than creating one, and a
- * predecessor is never opened here (the moment the declaration changed it
- * stopped being authoritative; `mailMirror(...).artifacts()` is where a
- * deliberate inspector gets its path).
+ * predecessor is never opened here (the moment `MIRROR_VERSION` moved past it,
+ * it stopped being authoritative and reading it would be a compatibility layer;
+ * `mailMirror(...).artifacts()` is where a deliberate inspector gets its path).
  *
  * The filename is the shape guarantee, so there is no stored version to check.
  * Reads still compile at call time and tolerate absent tables, because a

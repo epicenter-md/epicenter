@@ -8,20 +8,28 @@ export type MailStatus = {
 	tokenFile: string;
 	connected: boolean;
 	accessToken: { valid: boolean; expiresAt: string } | null;
+	/**
+	 * How much of the current artifact this build can trust. `empty` is no file at
+	 * all; `building` is a file whose history cursor has never been set, so no full
+	 * pull has finished and the messages in it are a partial mailbox; `ready` is a
+	 * cursor written by `finishFullPull`, after every page committed. A version
+	 * bump lands in `empty` and passes through `building`, so the newest artifact
+	 * is never authoritative merely for being newest.
+	 */
 	mirror: 'empty' | 'building' | 'ready';
 	/**
 	 * The current artifact's path, whether or not it exists yet. It is named by
-	 * the declaration's fingerprint, so it is not a path a reader can guess: this
-	 * is how a human or an agent finds the file to point `sqlite3` at.
+	 * the corpus version, so it changes under a reader that has not been rebuilt:
+	 * this is how a human or an agent finds the file to point `sqlite3` at.
 	 */
 	mirrorPath: string;
 	/**
-	 * Fingerprints of earlier artifacts still on disk beside the current one. A
-	 * declaration edit renames the artifact and retains its predecessor, so this
-	 * is non-empty until a reclaim runs. It is inventory, not a mismatch: nothing
-	 * here is consulted by any read path (ADR-0194).
+	 * Versions of earlier artifacts still on disk beside the current one. A
+	 * version bump names a new artifact and retains its predecessor, so this is
+	 * non-empty until a reclaim runs. It is inventory, not a mismatch: nothing
+	 * here is consulted by any read path (ADR-0197).
 	 */
-	predecessors: string[];
+	predecessors: number[];
 	historyId: string | null;
 	lastFullPullAt: string | null;
 	lastSyncedAt: string | null;
@@ -47,16 +55,16 @@ export async function readMailStatus({
 			: null,
 	};
 
-	// Artifact inventory is a directory read, so it answers "which shapes exist
+	// Artifact inventory is a directory read, so it answers "which versions exist
 	// here" even when the current one has never been built. There is no stored
-	// shape version to compare: the filename is the shape (ADR-0194).
-	const site = mailMirror(config.dataDir, accountEmail);
+	// shape version to compare: the filename is the shape (ADR-0197).
+	const mirror = mailMirror(config.dataDir, accountEmail);
 	const shape = {
-		mirrorPath: site.path,
-		predecessors: site
+		mirrorPath: mirror.path,
+		predecessors: mirror
 			.artifacts()
 			.filter((artifact) => !artifact.current)
-			.map((artifact) => artifact.fingerprint),
+			.map((artifact) => artifact.version),
 	};
 
 	// Read-only: a status read must not block on a concurrent sync's write lock,

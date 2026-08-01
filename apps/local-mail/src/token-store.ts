@@ -30,8 +30,8 @@ export async function resolveAccount(
 		// An override is valid when we hold credentials for it, or when a mirror
 		// artifact already exists on disk: the read verbs (query, status) work
 		// without a token, and a disconnected account's mirror stays readable. Any
-		// artifact counts, not just the current one: an account whose declaration
-		// moved on still has a real site here, and `status` reporting an empty
+		// artifact counts, not just the current one: an account whose corpus version
+		// moved on still has a real mirror here, and `status` reporting an empty
 		// current artifact beside a retained predecessor is far more useful than
 		// "not a connected account".
 		if (accounts.includes(config.account)) return Ok(config.account);

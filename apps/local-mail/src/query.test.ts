@@ -2,7 +2,7 @@
  * The read-only SQL surface. What matters beyond "does a SELECT work" is that a
  * read never writes: `queryMail` opens the current artifact read-only and, when
  * that artifact does not exist, reports it rather than conjuring an empty file
- * on disk (ADR-0194).
+ * on disk (ADR-0197).
  */
 
 import { expect, test } from 'bun:test';
