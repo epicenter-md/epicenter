@@ -12,7 +12,6 @@ Load this when tuning description routing, comparing skill versions, diagnosing 
 - [Run The Harness](#run-the-harness)
 - [Routing Surfaces](#routing-surfaces)
 - [Output Quality Eval](#output-quality-eval)
-- [Skill Content Checklist](#skill-content-checklist)
 - [Script Requirements](#script-requirements)
 - [Failure Modes](#failure-modes)
 - [Concrete Examples](#concrete-examples)
@@ -231,38 +230,18 @@ Run each case against the right baseline: no skill for a new skill, previous ver
 
 Human feedback still matters. Save concise notes when the output is technically valid but unhelpful, overbroad, or not in the user's voice.
 
-## Skill Content Checklist
-
-Before expanding a draft, confirm the skill states:
-
-- Job to be done.
-- Required inputs or prerequisites.
-- Ordered workflow.
-- Output format or final artifact.
-- Guardrails and forbidden actions.
-- Final checks.
-
-Classify the skill as a process, tool workflow, convention, or domain pattern. If one skill needs multiple classifications with different trigger situations, consider splitting it.
-
 ## Script Requirements
 
-Use scripts when repeated code execution is more reliable than asking the agent to recreate the logic each time. Good candidates include validators, parsers, format converters, scaffolding, or output summarizers.
+`SKILL.md` states the shape a script takes here. Two things it does not carry:
 
-Scripts should be:
+- A script that changes files or external state is idempotent or dry-run
+  capable, because an agent will re-run it after a partial failure.
+- Bun inline dependency auto-install is not reliable inside this monorepo. An
+  existing parent `node_modules` changes whether inline imports auto-install, so
+  state the prerequisite or take an explicit workspace dependency.
 
-- Referenced with paths relative to the skill directory.
-- Listed in `SKILL.md` before the agent needs them.
-- Self-contained when practical.
-- Non-interactive, with input through flags, environment variables, stdin, or files.
-- Equipped with concise `--help` output.
-- Structured on stdout, with diagnostics on stderr.
-- Clear about exit codes.
-- Idempotent or dry-run capable when changing files or external state.
-- Bounded in output, with full output written to a file when needed.
-
-In this repository, prefer `bun`, `bun run`, and `bun x`. Pin versions when command behavior must be reproducible.
-
-Do not rely blindly on Bun inline dependency auto-install behavior inside this monorepo. Existing parent `node_modules` directories can change whether inline imports auto-install. State prerequisites or use explicit workspace dependencies when needed.
+Prefer `bun`, `bun run`, and `bun x`. Pin versions when command behavior must be
+reproducible.
 
 ## Failure Modes
 
@@ -333,17 +312,14 @@ If the agent already handles the task well without the skill, cut the skill or n
 
 ## Iteration Loop
 
-1. Run realistic prompts.
-2. Record failures and wasted steps.
-3. Group repeated patterns.
-4. Revise the description first when routing is wrong.
-5. Revise the core workflow when execution is wrong.
-6. Move detail to `references/` only when it is conditionally useful.
-7. Use scripts for deterministic checks when code can verify better than prose.
-8. Re-run validation prompts.
-9. Keep the version with the best validation behavior, even when it is not the latest draft.
+Three rules decide what an iteration changes:
 
-Do not add exhaustive rules to chase one failed prompt. Generalize only from repeated failures or clear project constraints.
+- Wrong skill loaded: revise the description. Right skill, wrong work: revise
+  the body. Editing the body to fix a routing failure changes nothing.
+- Keep the version with the best validation behavior, even when it is not the
+  latest draft. The newest edit is not evidence.
+- Do not add exhaustive rules to chase one failed prompt. Generalize only from
+  repeated failures or a clear project constraint.
 
 ## Security And Portability
 
@@ -358,4 +334,5 @@ Audit imported or copied skills before installing or adapting them:
 - When installing skills across agents, prefer symlink installs so there is one source of truth. Use copy mode only when symlinks are impossible, and verify installed state with `skills list` when installation is part of the task.
 - Prefer Vercel CLI behavior over local validators.
 
-Keep repository skills portable. Do not add `agents/openai.yaml`, local validator scripts, generated OpenAI YAML, decorative assets, or unsupported metadata as part of the standard shape.
+An imported skill often arrives carrying its origin host's extras. `SKILL.md`
+lists which ones to strip and why.
