@@ -106,10 +106,9 @@ The convention in one line: `:local` works on a fresh clone, `:remote` wraps wit
    bun run check
    ```
 
-   This is the same gate CI runs: formatting, lint, typecheck, every workspace
-   test, and the structural checks. Run it before you push and CI holds no
-   surprises. While iterating, `bun run test` or `bun run typecheck` alone is
-   faster.
+   This is the same gate CI runs: lint, typecheck, every workspace test, and
+   structural checks. Formatting is handled separately by the autofix workflow.
+   While iterating, `bun run test` or `bun run typecheck` alone is faster.
 
 4. **Commit using conventional commits**
 

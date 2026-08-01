@@ -130,7 +130,7 @@
 	"scripts": {
 		"build": "bun run build:app-sdk && bun run --filter '*' build",
 		"build:app-sdk": "bun run --cwd packages/field build && bun run --cwd packages/lens build && bun run --cwd packages/app build",
-		"check": "bun run format:check && bun run lint:check && bun run typecheck && bun run test && bun run check:structure",
+		"check": "bun run lint:ci && bun run typecheck && bun run test && bun run check:structure",
 		"dev": "bun run dev:tab-manager",
 		"dev:api": "bun run --cwd apps/api dev",
 		"dev:api-dashboard": "bun run --filter @epicenter/api --filter @epicenter/api-ui dev",
