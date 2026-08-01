@@ -1,0 +1,77 @@
+{
+	"about": "Trigger corpus for the always-on routing gate in AGENTS.md, not for any one skill. `AGENTS.md` is loaded before a single description is weighed, and its 'Review gates' paragraph names five skills directly, so it is a routing surface. `audit-routing-collisions.ts` reads only `<skills>/*/SKILL.md`, which means nothing in the repository audits it. These cases split the gate's own vocabulary into the two classes that behave differently: phrases a description already owns, where the gate is a second claimant, and phrases no description owns, where the gate is the only routing signal there is. `expect` records what the gate promises, so a case failing is evidence the sentence is inert prose rather than evidence a skill is misdescribed. Run this corpus against AGENTS.md with and without the gate's skill-naming clauses; the difference is the gate's causal effect.",
+	"cases": [
+		{
+			"id": "gate-orphan-clean-up",
+			"cluster": "gate-orphan",
+			"prompt": "Can you clean up this module a bit before we ship it?",
+			"anchors": ["clean up", "ship it"],
+			"expect": "post-implementation-review",
+			"forbid": [],
+			"why": "No description claims 'clean up' or 'ship it'. AGENTS.md routes a user request to clean up into post-implementation-review, so the gate is the only signal pointing anywhere. Passing means an always-on sentence can route a phrase the description layer left orphaned; failing means it cannot."
+		},
+		{
+			"id": "gate-orphan-challenge",
+			"cluster": "gate-orphan",
+			"prompt": "Challenge the way this session store is designed.",
+			"anchors": ["challenge"],
+			"expect": "post-implementation-review",
+			"forbid": [],
+			"why": "'challenge' is claimed by no description and named by the gate. Same test as gate-orphan-clean-up on a second orphaned word, so one lexical accident cannot decide the result."
+		},
+		{
+			"id": "gate-orphan-multi-file-staging",
+			"cluster": "gate-orphan",
+			"prompt": "I touched nine files across three packages. Anything I should do before I stage this?",
+			"anchors": ["before I stage"],
+			"expect": "post-implementation-review",
+			"forbid": [],
+			"why": "The gate's strongest claim: a multi-file change loads post-implementation-review before staging. The prompt carries no skill's trigger phrase, so a pass is attributable to the gate and to nothing else."
+		},
+		{
+			"id": "gate-owned-greenfield",
+			"cluster": "gate-owned",
+			"prompt": "Treat this as greenfield and tell me what you would build instead.",
+			"anchors": ["greenfield"],
+			"expect": "greenfield-clean-breaks",
+			"forbid": [],
+			"why": "The gate sends this to post-implementation-review first and escalates second; the description owns 'greenfield' outright. Recording which one wins decides whether the gate's two-hop costs a correct one-hop route."
+		},
+		{
+			"id": "gate-owned-clean-break",
+			"cluster": "gate-owned",
+			"prompt": "We have no users yet. Make a clean break from the old mount API.",
+			"anchors": ["clean break"],
+			"expect": "greenfield-clean-breaks",
+			"forbid": [],
+			"why": "Second gate-owned case. AGENTS.md names 'make a clean break' as a post-implementation-review trigger while greenfield-clean-breaks claims the phrase in its description."
+		},
+		{
+			"id": "gate-everyday-clean-up-near-miss",
+			"cluster": "gate-orphan",
+			"prompt": "Clean up the stale temp files in my downloads folder.",
+			"anchors": ["clean up"],
+			"expect": null,
+			"forbid": ["post-implementation-review", "collapse-pass", "refactoring"],
+			"why": "The cost side of an always-on gate. 'clean up' is ordinary English, and a gate that routes it unconditionally over-triggers on a request that touches no code. A gate strong enough to pass gate-orphan-clean-up and weak enough to pass this one is the only version worth keeping."
+		},
+		{
+			"id": "control-overflow",
+			"cluster": "control",
+			"prompt": "This flex container is not scrolling. Fix the overflow.",
+			"anchors": ["not scrolling", "overflow"],
+			"expect": "styling",
+			"forbid": [],
+			"why": "Control. The gate says nothing about styling, so this case must hold identically in both arms. A change here means the arms differ by something other than the gate."
+		},
+		{
+			"id": "control-standalone-commits",
+			"cluster": "control",
+			"prompt": "Break this branch into standalone commits I can review one at a time.",
+			"anchors": ["standalone commits"],
+			"expect": "standalone-commits",
+			"forbid": [],
+			"why": "Second control, in a cluster the gate never mentions. Two controls make probe drift between arms visible instead of assumed."
+		}
+	]
+}
