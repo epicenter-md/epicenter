@@ -35,8 +35,12 @@
  * alarm timing, edge placement) will not surface here, so `wrangler dev` /
  * staging stays the fidelity gate before any deploy touching runtime behavior.
  *
- * The dashboard SPA and billing data plane are intentionally omitted: Vite
- * serves the dashboard in dev, and billing is the hosted Worker's concern.
+ * Four surfaces the Worker serves are intentionally absent here, and
+ * `runtime-profile.test.ts` is where that list is declared and checked against
+ * both entries: the dashboard SPA and the account-deletion route need Worker-only
+ * bindings (`ASSETS`, the `EPICENTER_SYNC` namespace), billing is the hosted
+ * Worker's concern, and attach rides the Durable Object transport. Everything
+ * the shared library can mount on both runtimes is mounted on both.
  * Because this runtime cannot resolve the hosted storage allowance, first
  * contact is allowed only for workspaces already registered by the hosted
  * Worker. Existing current-state replicas in this runtime's own backend may
@@ -59,6 +63,7 @@ import {
 	mountCloudDb,
 	mountInferenceApp,
 	mountSessionApp,
+	mountTranscriptionApp,
 	type ResolveBearerPrincipal,
 	requireBearerPrincipal,
 	requireCookieOrBearerPrincipal,
@@ -188,6 +193,12 @@ export function startBunApiServer(
 		runtime: epicenterSync,
 	});
 	mountInferenceApp(app, { auth: bearer });
+	// The STT sibling of the inference gateway, on the same house key. Unmetered
+	// here for the same reason inference is: this host composes no billing, so
+	// there is no Autumn policy to attach. Mounting it is what keeps a `star`
+	// transcription working against `dev:bun`; the Worker is the only hosted
+	// artifact, and it meters both gateways.
+	mountTranscriptionApp(app, { auth: bearer });
 	mountBlobsApp(app, { auth: cookieOrBearer });
 
 	const server = Bun.serve({
