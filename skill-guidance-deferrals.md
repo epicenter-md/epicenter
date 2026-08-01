@@ -62,10 +62,10 @@ updates. Put these three pieces in `~/Code/dotfiles`, not in `.system/`, and not
 in Epicenter.
 
 **Deliberately not carried over:** everything in that file's `Package The Skill`
-section, which mandates `agents/openai.yaml`, `scripts/init_skill.py`, and
-`scripts/quick_validate.py`. Those are the host adapter, scaffold, and local
-format validator that `.agents/skills/agent-instructions/SKILL.md` now refuses by
-name.
+section, which mandates `agents/openai.yaml` plus the `init_skill.py` and
+`quick_validate.py` scripts bundled beside it. Those are the host adapter,
+scaffold, and local format validator that
+`.agents/skills/agent-instructions/SKILL.md` now refuses by name.
 
 **Already carried over:** the ablation step, which this wave merged into
 `references/evaluation.md` because the gate arms are an instance of it.

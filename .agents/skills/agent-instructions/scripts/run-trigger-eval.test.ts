@@ -449,7 +449,9 @@ describe('fingerprintInstructions', () => {
 	// visibly incomparable, the way a model or effort change already does.
 	test('changes the digest when a routing sentence changes', async () => {
 		const before = await fingerprintInstructions(
-			await scratch({ 'AGENTS.md': 'Review gates: load post-implementation-review.' }),
+			await scratch({
+				'AGENTS.md': 'Review gates: load post-implementation-review.',
+			}),
 		);
 		const after = await fingerprintInstructions(
 			await scratch({ 'AGENTS.md': 'Review gates: load collapse-pass.' }),
