@@ -226,8 +226,8 @@ export function mirrorAt({
 			// because a mirror is re-pullable by construction, so a lost last commit
 			// on power loss costs a re-pull and nothing more.
 			return applyPragmas(new Database(path, { create: true }), [
-				'PRAGMA journal_mode = WAL;',
 				`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS};`,
+				'PRAGMA journal_mode = WAL;',
 				'PRAGMA synchronous = NORMAL;',
 				'PRAGMA foreign_keys = ON;',
 			]);
