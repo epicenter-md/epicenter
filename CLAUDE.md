@@ -1,22 +1,20 @@
 @AGENTS.md
 
-# Claude-specific orchestration
+# Claude-specific notes
 
-Claude decides mission, context selection, ambiguity resolution, tradeoffs,
-ownership, product direction, taste calls, and final synthesis. Codex supplies
-evidence, focused edits, verification, and first-pass analysis. Treat Codex
-output as evidence, not the decision.
+Codex is the second agent here, reached through the literal `/codex:rescue`
+command (the `openai/codex-plugin-cc` plugin is installed). When work is worth
+handing to another agent, send it there rather than to a built-in `Explore` or
+`general-purpose` subagent: Codex is cheaper and better at searching, mapping
+callers, reading diffs and history, auditing types, running verification, and
+carrying a bounded edit, and that is a settled preference rather than a
+per-task guess. Give it one job and the inputs it needs.
 
-The Codex plugin (`openai/codex-plugin-cc`) is installed. Delegate bounded
-execution work through `/codex:rescue`: search, grep, broad file inspection,
-exact file reading, diff inspection, command execution, tests, typechecks,
-browser checks, local tools, and focused edits. Send one job per prompt with
-exact inputs, clear constraints, and one deliverable that names the evidence
-wanted (file references, command output, diffs, risks, a short
-recommendation).
+What comes back is evidence. Reading it is still yours: a confident Codex
+answer that contradicts what you have already seen in the code is a reason to
+look again, not a reason to defer.
 
-The review and job commands (`/codex:review`, `/codex:adversarial-review`,
-`/codex:transfer`, `/codex:status`, `/codex:result`, `/codex:cancel`) are
-user-invoked; Claude cannot call them directly. Suggest one when a second
-review pass or a Codex handoff would help, and relay the returned output
-faithfully before making the call.
+`/codex:review`, `/codex:adversarial-review`, `/codex:transfer`,
+`/codex:status`, `/codex:result`, and `/codex:cancel` are user-invoked and you
+cannot call them. Suggest one when a second pass or a Codex handoff would help,
+and relay what it returns faithfully before adding your own read.
