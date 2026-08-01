@@ -233,8 +233,7 @@ const MIRROR_TABLES: TableDeclaration[] = [
  * the app's release version and it is not a migration target. Nothing reads a
  * lower version, and nothing rewrites one.
  *
- * It continues the hand-stamped `SCHEMA_VERSION` this replaces, which last read
- * `'4'`; the reader-mirror rewrite that renamed `raw` to `resource` is `5`.
+ * The reader-mirror rewrite that renamed `raw` to `resource` is version `5`.
  *
  * Bump it when this build would store something a previous build did not: an
  * added, removed, or retyped column; a changed promise for what `subject`,

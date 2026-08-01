@@ -571,10 +571,9 @@ describe('the mirror', () => {
 		expect(path).toBe(join('/data', 'you@example.com', `mail.v${version}.db`));
 	});
 
-	test('continues the SCHEMA_VERSION it replaces, so v4 is never reopened', () => {
-		// The hand-stamped constant this replaces last read '4', and the
-		// reader-mirror rewrite that renamed `raw` to `resource` is the shape after
-		// it. Restarting the count would name a fresh artifact after a corpus that
+	test('uses the post-reader corpus version, so v4 is never reopened', () => {
+		// The reader-mirror rewrite that renamed `raw` to `resource` is version 5.
+		// Restarting the count would name a fresh artifact after a corpus that
 		// already existed.
 		expect(mailMirror('/data', 'you@example.com').version).toBeGreaterThan(4);
 	});
