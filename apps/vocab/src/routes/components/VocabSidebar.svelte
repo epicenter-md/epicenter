@@ -20,14 +20,12 @@
 		onCreate,
 		onSwitch,
 		onPractice,
-		generating,
 	}: {
 		conversations: ConversationHandle[];
 		activeConversationId: ConversationId | null;
 		onCreate: () => void;
 		onSwitch: (conversationId: ConversationId) => void;
 		onPractice: (entryTexts: string[]) => void;
-		generating: boolean;
 	} = $props();
 </script>
 
@@ -90,7 +88,7 @@
 			</Sidebar.GroupContent>
 		</Sidebar.Group>
 
-		<EntriesPanel {onPractice} {generating} />
+		<EntriesPanel {onPractice} />
 	</Sidebar.Content>
 
 	<Sidebar.Rail />

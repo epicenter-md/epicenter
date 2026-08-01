@@ -11,7 +11,7 @@
 	} from '@epicenter/vocab';
 	import { onDestroy } from 'svelte';
 	import { getVocabApp } from '$lib/context';
-	import { buildPracticePrompt } from '$lib/practice';
+	import { buildPracticeOpening } from '$lib/practice';
 	import { inferenceConnections } from '$lib/state/inference-connections.svelte';
 	import ConversationView from './components/ConversationView.svelte';
 	import VocabSidebar from './components/VocabSidebar.svelte';
@@ -45,13 +45,21 @@
 
 	onDestroy(() => chat[Symbol.dispose]());
 
-	/** Compile the chosen entries into a practice turn and send it. Focus lands in
-	 * the active conversation, opening one only when none exists. The passage
-	 * comes back under the tutor system prompt; nothing is written to the entries. */
-	function practice(entryTexts: string[]) {
+	/** Practice opens its own conversation, titled after the chosen entries, and
+	 * the compiled turn is that conversation's first message. Whatever thread was
+	 * open is left exactly as it was and stays there to return to. The passage
+	 * comes back under the tutor system prompt; nothing is written to the entries.
+	 *
+	 * Opening one is asynchronous (the row document has to be ready before a turn
+	 * can land in it), so a failure to acquire the conversation surfaces the same
+	 * way every other background chat failure does. */
+	async function practice(entryTexts: string[]) {
 		if (entryTexts.length === 0) return;
-		if (!chat.active) chat.createConversation();
-		chat.active?.sendMessage(buildPracticePrompt(entryTexts));
+		try {
+			await chat.createConversation(buildPracticeOpening(entryTexts));
+		} catch (cause) {
+			reportBackgroundError(cause);
+		}
 	}
 </script>
 
@@ -62,7 +70,6 @@
 		onCreate={() => chat.createConversation()}
 		onSwitch={(conversationId) => chat.switchTo(conversationId)}
 		onPractice={practice}
-		generating={chat.active?.isLoading ?? false}
 	/>
 
 	<main class="flex h-dvh flex-1 flex-col">
