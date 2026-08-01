@@ -1,9 +1,17 @@
 /**
  * Epicenter self-hosted instance Worker (Cloudflare; ADR-0075).
  *
- * The instance on Cloudflare: the SAME `@epicenter/server` composition the Bun
- * entry (`server.ts`) builds, wired to Cloudflare bindings instead of plain
- * primitives (ADR-0066). One single-partition instance, not a multi-user wiki and not
+ * The instance on Cloudflare: the same `@epicenter/server` surfaces the Bun entry
+ * (`server.ts`) builds, wired to Cloudflare bindings instead of plain
+ * primitives (ADR-0066), minus attach. Attach is the one surface the two runtimes
+ * do not share: its transport is `Bun.serve`'s WebSocket handler and its
+ * per-device grants are an in-process store, neither of which survives a Worker
+ * isolate, so `createAttachRelayBunServer`, `createDeviceGrantStore`,
+ * `mountAttachGrantsApp`, and `mountHostDirectoryApp` ship only in the `/bun`
+ * barrel. Run the Bun entry if you want remote Super Chat attach on your
+ * instance. `runtime-profile.test.ts` declares that divergence and holds every
+ * other surface to parity across both entries.
+ * One single-partition instance, not a multi-user wiki and not
  * a mode: every request resolves to the pinned `principals/instance` partition,
  * and authentication is one operator-supplied static
  * bearer (`INSTANCE_TOKEN`), constant-time compared. No OAuth, no allowlist, no
