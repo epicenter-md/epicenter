@@ -3,12 +3,14 @@
  *
  * Better Auth's oauth-provider reads client metadata (redirect URIs, PKCE,
  * scopes) from the `oauth_client` table at /authorize and /token, so the rows
- * must exist before any OAuth flow works (CLI login, dashboard sign-in). The
- * `cachedTrustedClients` config Set only governs consent-skip and CRUD
- * immutability, not metadata, so every deployment has to seed these rows. They
- * are a projection of code (`buildTrustedOAuthClients`, the single source of
- * truth), so this runs at deploy time, never in the request path. The upsert
- * makes re-running idempotent: each run re-asserts the rows against `baseURL`.
+ * must exist before any OAuth flow works. The `cachedTrustedClients` config Set
+ * only governs consent-skip and CRUD immutability, not metadata, so every
+ * deployment has to seed these rows. They are a projection of code
+ * (`buildTrustedOAuthClients`, the single source of truth), so this runs at
+ * deploy time, never in the request path. The upsert makes re-running
+ * idempotent. Every trusted client owns its own callback surface (an app
+ * origin, a Tauri deep link, an extension id), so the rows are the same for
+ * every deployment; only the database this points at differs.
  *
  *   bun run oauth:seed:local     seed the local dev database
  *   bun run oauth:seed:remote    seed production (wrapped with Infisical)
@@ -26,11 +28,9 @@
  * (peer-differentiated), so a drizzle query here would not typecheck. Raw SQL
  * needs no table object and dodges that split.
  *
- * `SEED_TARGET=prod` selects the canonical cloud origin; otherwise the local
- * dev origin. The connection string comes from `DATABASE_URL` (Infisical /ops
- * in prod) or the committed local default, matching `drizzle.config.ts`.
+ * The connection string comes from `DATABASE_URL` (Infisical /ops in prod) or
+ * the committed local default, matching `drizzle.config.ts`.
  */
-import { APPS, localUrl } from '@epicenter/constants/apps';
 import {
 	buildTrustedOAuthClients,
 	projectTrustedOAuthClientToRow,
@@ -38,8 +38,6 @@ import {
 import pg from 'pg';
 import { LOCAL_DATABASE_URL } from '../wrangler-config';
 
-const baseURL =
-	process.env.SEED_TARGET === 'prod' ? APPS.API.url : localUrl(APPS.API);
 const connectionString = process.env.DATABASE_URL ?? LOCAL_DATABASE_URL;
 
 const UPSERT = `
@@ -67,7 +65,7 @@ const UPSERT = `
 const client = new pg.Client({ connectionString });
 await client.connect();
 try {
-	const clients = buildTrustedOAuthClients(baseURL);
+	const clients = buildTrustedOAuthClients();
 	for (const trustedClient of clients) {
 		const row = projectTrustedOAuthClientToRow(trustedClient);
 		await client.query(UPSERT, [
@@ -88,9 +86,7 @@ try {
 			row.requirePKCE,
 		]);
 	}
-	console.log(
-		`Seeded ${clients.length} first-party OAuth client(s) for ${baseURL}`,
-	);
+	console.log(`Seeded ${clients.length} first-party OAuth client(s)`);
 } finally {
 	await client.end();
 }

@@ -1,7 +1,6 @@
 import type { SchemaClient } from '@better-auth/oauth-provider';
 import { APPS, appOrigins } from '#apps';
 import {
-	EPICENTER_CLI_OAUTH_CLIENT_ID,
 	EPICENTER_DESKTOP_OAUTH_CLIENT_ID,
 	EPICENTER_DESKTOP_TAURI_OAUTH_REDIRECT_URI,
 	EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID,
@@ -11,7 +10,6 @@ import {
 	EPICENTER_VOCAB_OAUTH_CLIENT_ID,
 	EPICENTER_WHISPERING_OAUTH_CLIENT_ID,
 } from './oauth-clients.js';
-import { OAUTH_ROUTES } from './oauth-routes.js';
 
 /**
  * Shape of one checked-in first-party public OAuth client.
@@ -23,9 +21,9 @@ import { OAUTH_ROUTES } from './oauth-routes.js';
  * The API seed layer fills in the rest (PKCE required, consent skipped,
  * authorization-code flow, Epicenter scopes).
  *
- * `redirectUris` is the final resolved list for a specific deployment,
- * built by {@link buildTrustedOAuthClients} from `APPS` plus the
- * deployment's API base URL.
+ * `redirectUris` is the final resolved list, built by
+ * {@link buildTrustedOAuthClients} from `APPS` plus each app's own
+ * deep-link or extension callback.
  *
  * Field names stay spelled out instead of using `Pick` or a mapped type so
  * this file reads as config. The Better Auth indexed types keep the field
@@ -62,17 +60,17 @@ function appCallbacks(app: {
 }
 
 /**
- * Build the checked-in trusted public OAuth clients for a specific
- * deployment. Each client's `redirectUris` resolve against either the app's
- * own origins (Honeycrisp, Opensidian, etc.) or the deployment's API base URL
- * (the CLI, which lives on the API origin). A self-host at
- * `https://api.acme.com` and `wrangler dev` on a custom port each register
- * their own callbacks without anyone editing this file.
+ * Build the checked-in trusted public OAuth clients.
+ *
+ * Every client here owns its own callback surface: an app origin
+ * ({@link appCallbacks}), a Tauri deep link, or an extension id. None of them
+ * redirect back to the API origin, so the set is the same for every
+ * deployment.
  *
  * The API `oauth:seed` deploy script calls this to upsert the client rows;
  * `authPlugins` calls it to derive the trusted-client-id set.
  */
-export function buildTrustedOAuthClients(apiBaseURL: string) {
+export function buildTrustedOAuthClients() {
 	// The same-origin dashboard SPA is not an OAuth client: it authenticates
 	// with the first-party session cookie (see createSameOriginCookieAuth), so
 	// it is deliberately absent from this trusted-client set.
@@ -109,12 +107,6 @@ export function buildTrustedOAuthClients(apiBaseURL: string) {
 			name: 'Vocab',
 			type: 'user-agent-based',
 			redirectUris: appCallbacks(APPS.VOCAB),
-		},
-		{
-			clientId: EPICENTER_CLI_OAUTH_CLIENT_ID,
-			name: 'Epicenter CLI',
-			type: 'native',
-			redirectUris: [OAUTH_ROUTES.cliCallback.url(apiBaseURL)],
 		},
 	] as const satisfies readonly TrustedOAuthClient[];
 }

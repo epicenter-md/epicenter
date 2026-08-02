@@ -244,7 +244,7 @@ Contributors coordinate in [Discord](https://go.epicenter.so/discord).
 Epicenter uses a two-tier split by how you use the code:
 
 - [MIT](licenses/LICENSE-MIT) for code you build with: the toolkit roots (`@epicenter/lens`, `@epicenter/field`, `@epicenter/ui`) and the toolkit-internal contracts they carry (`@epicenter/data`, `@epicenter/sqlite`, `@epicenter/identity`, `@epicenter/agent-protocol`, `@epicenter/chat`).
-- [AGPL-3.0](licenses/LICENSE-AGPL-3.0) or later for code we ship or run: every app, the shared server library, the CLI, and the rest of the internal packages.
+- [AGPL-3.0](licenses/LICENSE-AGPL-3.0) or later for code we ship or run: every app, the shared server library, and the rest of the internal packages.
 - There is no proprietary tier today. Revenue is intended to come from hosting and services, not from selling closed licenses.
 
 Every dependency of the toolkit packages is MIT-compatible, enforced by `bun run check:licenses`. The license split follows the same broad pattern as Plausible and PostHog for hosted open-source services, and Yjs for MIT core libraries with copyleft server pieces.

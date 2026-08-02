@@ -86,20 +86,6 @@ commands:
 There is no `dev:remote`. Production data is reached only through `:remote` db
 scripts and `deploy`, never through a development server.
 
-## CLI (`epicenter`)
-
-From the monorepo root, target the local API with `bun run cli:local` (it sets
-`EPICENTER_API_URL=http://localhost:8787`); `bun run cli` runs from source
-against the default hosted target.
-
-```bash
-bun run cli:local auth login
-bun run cli:local up -C <project-dir>
-```
-
-The full targeting matrix (prod, published binary, per-target token storage)
-lives in `packages/cli/README.md`. Keep it there so this section cannot drift.
-
 ## After Completing Code Changes
 
 Run type checking to verify:

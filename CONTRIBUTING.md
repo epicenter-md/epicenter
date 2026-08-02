@@ -170,40 +170,6 @@ git rebase upstream/main
 
 </details>
 
-## Local Development: Testing the CLI
-
-If you're working on Epicenter's CLI (`packages/epicenter`), you can test it locally without publishing using `bun link`.
-
-### One-Time Setup
-
-Link the package globally from the package directory:
-
-```bash
-cd packages/epicenter
-bun link
-```
-
-This makes the `epicenter` command available globally on your system, pointing to your local development version.
-
-### Using the CLI
-
-Now you can use the `epicenter` command from any directory:
-
-```bash
-epicenter --help
-```
-
-The CLI will use your local development version, so any changes you make to the CLI code will be reflected immediately.
-
-### Unlinking
-
-When you're done testing, you can unlink the package:
-
-```bash
-cd packages/epicenter
-bun unlink
-```
-
 ## Releasing
 
 This section is for maintainers with npm publish access to the `@epicenter` scope.

@@ -8,9 +8,9 @@ export type { AuthState };
 /**
  * Fetch-compatible transport used by auth-owned HTTP calls.
  *
- * Consumers usually pass `auth.fetch` into API clients. Tests and machine auth
- * inject this shape so the auth runtime can exercise refresh, revoke, and
- * bearer attach without depending on global `fetch`.
+ * Consumers usually pass `auth.fetch` into API clients. Tests inject this
+ * shape so the auth runtime can exercise refresh, revoke, and bearer attach
+ * without depending on global `fetch`.
  */
 export type AuthFetch = (
 	input: Request | string | URL,
@@ -85,7 +85,7 @@ export type AuthClient = {
 	/**
 	 * Start the runtime's sign-in flow.
 	 *
-	 * Use this from UI or CLI commands that can hand control to the configured
+	 * Use this from a UI surface that can hand control to the configured
 	 * launcher. Completion means the launcher finished its work, not that a page
 	 * navigation happened; callers should observe `state` for the durable signed
 	 * in signal.

@@ -73,7 +73,7 @@ App clients pick a credential model through one dispatcher,
 
 - `createOAuthAppAuth(...)` — the hosted default (no token). PKCE bearer +
   transparent refresh + a `/api/session` network gate + `openWebSocket`. Every
-  cross-origin / native app uses this (web, extension, Tauri, CLI daemon).
+  cross-origin / native app uses this (web, extension, Tauri).
 - `createInstanceTokenAuth(...)` — a self-hosted star (static `instance.token`).
   No OAuth flow, launcher, refresh, or persisted grant; boots optimistically
   `signed-in` as `INSTANCE_PRINCIPAL_ID` and verifies `/api/session` in the
@@ -113,8 +113,8 @@ The public surface lives in one package plus a Svelte subpath:
 
 - `@epicenter/auth`: framework-agnostic core. Owns the persisted auth cell,
   refresh, refresh-token revocation, `/api/session` verification, the network
-  gate, authenticated fetch, and WebSocket opening. Also exports the Node
-  machine-auth surface (`@epicenter/auth/node`) for CLI and daemons.
+  gate, authenticated fetch, and WebSocket opening. There is no headless or
+  terminal surface: every credential model here is driven by an app.
 - `@epicenter/svelte/auth`: Svelte 5 wrapper (in the `@epicenter/svelte`
   package, which also exports `toConnection`, `reloadOnPrincipalChange`,
   `createSession`, and `SignedIn`). Mirrors `auth.state` through
@@ -328,7 +328,7 @@ shapes:
   redirect launcher navigates to the hosted `/sign-in` and usually does not
   resolve before the page unloads.
 - `'completed'` with `{ grant }`: the launcher exchanged a token grant in
-  process (extension, OOB CLI). The runtime then calls `/api/session`,
+  process (the extension). The runtime then calls `/api/session`,
   resolves identity, and persists `PersistedAuth`.
 
 The return value of `startSignIn` is not the "user is signed in" signal.
@@ -364,28 +364,6 @@ Adapters:
   synchronous.
 - `parsePersistedAuth` / `serializePersistedAuth`: the shared decode/encode
   helpers (re-validate against the arktype on both sides).
-
-## CLI and Daemon (machine auth)
-
-`packages/auth/src/node/machine-auth.ts` is the Node surface. One auth file per
-API target lives at `<dataDir>/auth/<host>.json` with mode `0o600` (`:` in the
-host replaced by `_`); `machineAuthFilePath({ baseURL })` resolves it. Loading
-refuses a file whose permissions are wider than `0o600`.
-
-- `loginWithOob(...)`: runs the OOB OAuth dance once, calls `/api/session` for
-  the identity, persists `PersistedAuth`, and returns the email for CLI output.
-  It deliberately BYPASSES `createOAuthAppAuth`: login is a one-shot human
-  action, and routing it through the factory would double the round-trip count.
-- `createMachineAuthClient(...)`: the daemon boot entry point. Loads the cell
-  and constructs a normal `createOAuthAppAuth` client over a file-backed
-  storage port. Its launcher errors on `startSignIn` (a human must run
-  `epicenter auth login` to refresh the cell); daemons never sign in
-  interactively.
-- `resolveMachineAuthClient(...)`: chooses the client for a CLI/daemon run: a
-  configured token yields an instance-token client, otherwise the machine cell.
-- `status` / `logout`: read the cell and reach the server through a regular
-  client. `status` returns `'unverified'` on network failure so the CLI can
-  still print the cached identity.
 
 ## Transport
 

@@ -85,7 +85,7 @@ If a test was pre-existing-broken before the pass started, note it once:
 
 ```
 Pre-existing failures (not introduced by this pass):
-  packages/cli/src/commands/up.test.ts: 3 failures (machine auth setup)
+  packages/server/src/routes/ai.test.ts: 3 failures (missing provider key)
 ```
 
 ### 7. Rejected smells

@@ -26,7 +26,7 @@ rg "type \w+ = ReturnType<typeof \w+>" packages apps
 rg "Pick<\w+, ['\"]\w+['\"]\s*>" packages apps
 ```
 
-`Pick<Thing, 'method'>` often keeps an object boundary alive after the caller only needs one operation. Calibrate against `code-audit` §6 before fixing.
+`Pick<Thing, 'method'>` often keeps an object boundary alive after the caller only needs one operation. Calibrate against `code-audit` §5 before fixing.
 
 ### Hand-rolled object projection
 
