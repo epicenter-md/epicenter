@@ -594,12 +594,19 @@ describe('the artifact lifecycle', () => {
 		second.close();
 
 		// One version, one filename: reopening at the same version must not have
-		// produced a second artifact.
+		// produced a second artifact. `intent.db` is beside it and is not one: a
+		// writable open prepares the durable store so the effective-label view has
+		// something to attach (ADR-0198).
 		expect(
-			readdirSync(join(tmp.dir, 'you@example.com')).filter((name) =>
-				name.endsWith('.db'),
-			),
-		).toEqual([`mail.v${mailMirror(tmp.dir, 'you@example.com').version}.db`]);
+			readdirSync(join(tmp.dir, 'you@example.com'))
+				.filter((name) => name.endsWith('.db'))
+				.sort(),
+		).toEqual(
+			[
+				'intent.db',
+				`mail.v${mailMirror(tmp.dir, 'you@example.com').version}.db`,
+			].sort(),
+		);
 		tmp.cleanup();
 	});
 
@@ -657,8 +664,11 @@ describe('the artifact lifecycle', () => {
 		const predecessorPath = join(accountDir, `mail.v${mirror.version - 1}.db`);
 		writeFileSync(predecessorPath, '');
 		writeFileSync(`${predecessorPath}-wal`, '');
-		// Local Mail's siblings: the sync-owner lock and the OAuth material. The
-		// filename grammar is what puts them out of reclaim's reach (ADR-0197).
+		// Local Mail's siblings: the reconcile-owner lock, the OAuth material, and
+		// the durable intent store, which is the one that would be real data loss.
+		// The filename grammar is what puts them out of reclaim's reach (ADR-0197,
+		// ADR-0198); `intent.db` is already present because opening the mirror
+		// created it.
 		writeFileSync(join(accountDir, 'lock.db'), '');
 		writeFileSync(join(accountDir, 'credentials.json'), '{}');
 		writeFileSync(join(accountDir, 'provider.json'), '{}');
@@ -678,6 +688,7 @@ describe('the artifact lifecycle', () => {
 		).toEqual(
 			[
 				'credentials.json',
+				'intent.db',
 				'lock.db',
 				'provider.json',
 				`mail.v${mirror.version}.db`,

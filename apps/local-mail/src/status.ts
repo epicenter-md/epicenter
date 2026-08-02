@@ -1,4 +1,5 @@
 import { mailMirror, openMailDbReadonly } from './db.ts';
+import { type PendingSummary, readPendingSummary } from './intent.ts';
 import type { LocalMailRuntime } from './runtime.ts';
 import { isAccessTokenExpired } from './tokens.ts';
 
@@ -34,6 +35,13 @@ export type MailStatus = {
 	lastFullPullAt: string | null;
 	lastSyncedAt: string | null;
 	rows: { messages: number; labels: number };
+	/**
+	 * Local triage Gmail has not been told about yet: how much, and how long the
+	 * oldest has waited. Aggregates only. A surface that wants to say "3 changes
+	 * pending, oldest 2 minutes" has everything it needs, and nothing per-row is
+	 * durable enough to become a ledger (ADR-0199).
+	 */
+	pending: PendingSummary;
 };
 
 export async function readMailStatus({
@@ -54,6 +62,15 @@ export async function readMailStatus({
 				}
 			: null,
 	};
+
+	// Two files, two owners, two independent questions: the mirror answers for
+	// Gmail's facts, and the intent store answers for what this machine still
+	// owes Gmail. Read the second one FIRST and unconditionally, because the
+	// mirror's absence tells us nothing about it: a version bump replaces the
+	// mirror and undelivered triage deliberately outlives that. Reporting zero
+	// pending just because there is no mirror would hide the user's own work at
+	// exactly the moment it is most easily lost.
+	const pending = readPendingSummary({ dataDir: config.dataDir, accountEmail });
 
 	// Artifact inventory is a directory read, so it answers "which versions exist
 	// here" even when the current one has never been built. There is no stored
@@ -79,6 +96,7 @@ export async function readMailStatus({
 			lastFullPullAt: null,
 			lastSyncedAt: null,
 			rows: { messages: 0, labels: 0 },
+			pending,
 		};
 	}
 	try {
@@ -91,6 +109,7 @@ export async function readMailStatus({
 			lastFullPullAt: realm.lastFullPullAt,
 			lastSyncedAt: realm.lastSyncedAt,
 			rows: db.counts(),
+			pending,
 		};
 	} finally {
 		db.close();

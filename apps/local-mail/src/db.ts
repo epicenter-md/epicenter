@@ -1,12 +1,14 @@
-import { chmodSync, mkdirSync } from 'node:fs';
+import type { Database } from 'bun:sqlite';
+import { existsSync } from 'node:fs';
 import { type Mirror, mirrorAt } from '@epicenter/sqlite/bun-mirror';
+import { intentDbPath, openIntentDb } from './intent.ts';
 import {
 	bodyHtml,
 	bodyText,
 	hasExternalizedBody,
 	headerValue,
 } from './message-fields.ts';
-import { accountDir } from './paths.ts';
+import { accountDir, ensureAccountDir, secureDbFiles } from './paths.ts';
 import type { GmailLabel, GmailMessage } from './schema.ts';
 
 /**
@@ -283,33 +285,115 @@ const CREATE_INDEXES = `
 	CREATE INDEX IF NOT EXISTS idx_messages_internal_date ON messages(internal_date);
 `;
 
-function secureDir(path: string): void {
-	mkdirSync(path, { recursive: true, mode: 0o700 });
-	chmodSync(path, 0o700);
+type MailDbLocation = { dataDir: string; accountEmail: string };
+
+/**
+ * The effective-label view: Gmail's mirrored facts with the durable intent
+ * overlay applied, one row per `(message, label)`. Every read model below and
+ * every ad-hoc SQL query see the same definition, so "what the app shows" has
+ * exactly one meaning (ADR-0198).
+ *
+ * The shape matters for more than tidiness. Written as a plain join of
+ * `messages` against a per-message effective array, SQLite can push a
+ * `message_id = ?` constraint from a correlated use straight into the messages
+ * primary key. Written as a top-level `UNION ALL` of two branches it cannot, and
+ * a filtered page over a large mirror goes from sub-millisecond to hundreds of
+ * milliseconds. Keep the union inside the scalar subquery.
+ *
+ * `overlaid` is false only when there is no intent store to attach, which a
+ * read-only opener must not create. The overlay arms simply drop out, which is
+ * the honest reading of "nothing is asserted": effective labels are the mirrored
+ * ones. It is the same definition with an empty overlay, not a second answer to
+ * the same question.
+ *
+ * The view lives in TEMP, not in the artifact, because it names an attached
+ * database: a connection that opened the mirror without `intent` attached must
+ * not inherit a view it cannot resolve. TEMP also lets a read-only handle define
+ * it, since the temp schema is writable either way. Nothing about this is stored,
+ * so it is not a `MIRROR_VERSION` bump.
+ */
+function effectiveLabelsView(overlaid: boolean): string {
+	return `
+	CREATE TEMP VIEW IF NOT EXISTS effective_labels AS
+		SELECT m.id AS message_id, j.value AS label_id
+		  FROM messages m,
+		       json_each((
+		         SELECT json_group_array(value) FROM (
+		           SELECT mirrored.value AS value
+		             FROM json_each(m.label_ids) mirrored
+		            ${
+									overlaid
+										? `WHERE NOT EXISTS (
+		                  SELECT 1 FROM intent.label_intents i
+		                   WHERE i.message_id = m.id AND i.label_id = mirrored.value)
+		           UNION ALL
+		           SELECT i.label_id
+		             FROM intent.label_intents i
+		            WHERE i.message_id = m.id AND i.want = 1`
+										: ''
+								}))) j`;
 }
 
-function chmodIfExists(path: string, mode: number): void {
-	try {
-		chmodSync(path, mode);
-	} catch (error) {
-		const code = (error as { code?: unknown }).code;
-		if (code !== 'ENOENT') throw error;
-	}
+/** The effective label set of the row a query is currently on, as a JSON array
+ * string. Correlated, so it is computed only for the rows a page returns. */
+const EFFECTIVE_LABEL_IDS = `(
+	SELECT json_group_array(e.label_id) FROM effective_labels e
+	 WHERE e.message_id = messages.id)`;
+
+/** Whether the row a query is currently on effectively carries `param`'s label.
+ * Used for both the label filter and Gmail's trash rule, so the two can never
+ * disagree about what "has this label" means. */
+function hasEffectiveLabel(param: string): string {
+	return `EXISTS (
+		SELECT 1 FROM effective_labels e
+		 WHERE e.message_id = messages.id AND e.label_id = ${param})`;
 }
 
 /**
- * The mirror holds a copy of someone's mail, so the artifact and both SQLite
- * sidecars are `0600` and the directories are `0700`. The mirror primitive does
- * not know a mirror's sensitivity and deliberately does not decide this; the app
- * applies it to the handle it receives (ADR-0197).
+ * The read-only URI form of a path, for `ATTACH`. SQLite treats an attachment
+ * argument beginning with `file:` as a URI, and `?mode=ro` is what keeps a
+ * writable mirror connection from becoming a second writer to the durable
+ * store. Percent-escaping is not cosmetic here: an unescaped `?` or `#` in a
+ * data-dir path would be read as the URI's query or fragment, and SQLite would
+ * silently attach a DIFFERENT, empty database rather than fail.
  */
-function secureDbFiles(path: string): void {
-	chmodIfExists(path, 0o600);
-	chmodIfExists(`${path}-wal`, 0o600);
-	chmodIfExists(`${path}-shm`, 0o600);
+function readOnlyAttachUri(path: string): string {
+	const escaped = encodeURI(path).replaceAll('?', '%3f').replaceAll('#', '%23');
+	return `file:${escaped}?mode=ro`;
 }
 
-type MailDbLocation = { dataDir: string; accountEmail: string };
+/**
+ * Attach one account's durable intent store to a mirror connection and define
+ * the effective-label view over it.
+ *
+ * `create` says whether this opener may bring the store into existence. A
+ * writable mirror is opened by a path that is about to need it, so it prepares
+ * both files. A read-only opener (`query`, `status`) must not: a question about
+ * an account should not leave a durable file behind, so when there is no store
+ * it attaches nothing and the view degenerates to the mirrored labels.
+ *
+ * Attaching read-only is the ownership statement, and it also decouples the two
+ * files' locks: a writable attachment would be pulled into every
+ * `BEGIN IMMEDIATE` on the mirror, so a full-pull page commit would block a
+ * triage act mid-flight. `intent.ts` holds the only handle that may write here.
+ */
+function attachIntent(
+	db: Database,
+	{ dataDir, accountEmail }: MailDbLocation,
+	{ create }: { create: boolean },
+): void {
+	const path = intentDbPath(dataDir, accountEmail);
+	if (create) {
+		// Opened and closed by its own owner first: attaching a missing file under
+		// `mode=ro` fails outright, and an empty one has no table for the view.
+		openIntentDb({ dataDir, accountEmail }).close();
+	} else if (!existsSync(path)) {
+		db.run(effectiveLabelsView(false));
+		return;
+	}
+	db.run('ATTACH DATABASE ? AS intent', [readOnlyAttachUri(path)]);
+	db.run(effectiveLabelsView(true));
+}
 
 /**
  * Open the current artifact for writing, creating it if absent. Opening is
@@ -323,12 +407,13 @@ export function openMailDb({ dataDir, accountEmail }: MailDbLocation) {
 	// Resolve the mirror first: an account email that cannot name one path segment
 	// must be refused before anything is created on disk.
 	const mirror = mailMirror(dataDir, accountEmail);
-	secureDir(dataDir);
-	secureDir(accountDir(dataDir, accountEmail));
+	ensureAccountDir(dataDir, accountEmail);
 	const db = mirror.open();
 	secureDbFiles(mirror.path);
 	db.run(CREATE_TABLES);
 	db.run(CREATE_INDEXES);
+	// After the mirror's own DDL, so the view's reference to `messages` resolves.
+	attachIntent(db, { dataDir, accountEmail }, { create: true });
 
 	const setMetaStmt = db.query(
 		`INSERT INTO _meta (key, value) VALUES (?, ?)
@@ -408,7 +493,7 @@ export function openMailDb({ dataDir, accountEmail }: MailDbLocation) {
 
 	/**
 	 * Fold `labelIds` into one row's stored resource, reporting both whether the row was
-	 * `found` (a write-through fold cares only about this) and whether the label
+	 * `found` (the reconciler's fold cares only about this) and whether the label
 	 * set `changed` materially (the sync metric counts only these, so an
 	 * idempotent history echo of labels already current does not read as drift).
 	 * The write is unconditional either way: a no-op patch still refreshes
@@ -483,10 +568,14 @@ export function openMailDb({ dataDir, accountEmail }: MailDbLocation) {
 
 		/**
 		 * The triage list read model. Newest first; an optional `labelId` filters
-		 * to messages carrying that Gmail label, and an optional `search` matches
+		 * to messages carrying that label EFFECTIVELY (Gmail's facts with the
+		 * durable intent overlay applied), and an optional `search` matches
 		 * subject/sender/body. Both are pushed into SQL so the process never
-		 * materializes the whole mirror. Compiled per call (dynamic WHERE), which
-		 * is fine at mirror scale and mirrors the `query` verb's discipline.
+		 * materializes the whole mirror, and so filtering, ordering, and
+		 * `LIMIT`/`OFFSET` are all computed post-overlay: a message the user just
+		 * archived leaves the inbox page immediately, and the page still comes
+		 * back full. Compiled per call (dynamic WHERE), which is fine at mirror
+		 * scale and mirrors the `query` verb's discipline.
 		 */
 		listMessages({
 			labelId,
@@ -505,19 +594,16 @@ export function openMailDb({ dataDir, accountEmail }: MailDbLocation) {
 				$offset: offset,
 			};
 			if (labelId) {
-				where.push(
-					`EXISTS (SELECT 1 FROM json_each(messages.label_ids) WHERE value = $labelId)`,
-				);
+				where.push(hasEffectiveLabel('$labelId'));
 				params.$labelId = labelId;
 			}
 			// Mirror Gmail's own rule: Trash is hidden from every view (Inbox, All
 			// mail, any label) except Trash itself. A trashed row is folded, not
 			// deleted, so this read-model filter is what makes it leave the current
-			// view the instant `messages.trash` returns, before sync sweeps it.
+			// view; asserting `TRASH` makes it leave before Gmail has even been
+			// told, because the assertion is part of the effective label set.
 			if (labelId !== 'TRASH') {
-				where.push(
-					`NOT EXISTS (SELECT 1 FROM json_each(messages.label_ids) WHERE value = 'TRASH')`,
-				);
+				where.push(`NOT ${hasEffectiveLabel(`'TRASH'`)}`);
 			}
 			if (search) {
 				where.push(`(subject LIKE $q OR sender LIKE $q OR body_text LIKE $q)`);
@@ -537,7 +623,8 @@ export function openMailDb({ dataDir, accountEmail }: MailDbLocation) {
 					},
 					Record<string, string | number>
 				>(
-					`SELECT id, thread_id, subject, sender, snippet, internal_date, label_ids
+					`SELECT id, thread_id, subject, sender, snippet, internal_date,
+					        ${EFFECTIVE_LABEL_IDS} AS label_ids
 					 FROM messages ${clause}
 					 ORDER BY internal_date DESC
 					 LIMIT $limit OFFSET $offset`,
@@ -572,7 +659,7 @@ export function openMailDb({ dataDir, accountEmail }: MailDbLocation) {
 					[string]
 				>(
 					`SELECT id, thread_id, subject, sender, snippet, internal_date,
-					        label_ids, body_text, resource
+					        ${EFFECTIVE_LABEL_IDS} AS label_ids, body_text, resource
 					 FROM messages WHERE id = ?`,
 				)
 				.get(id);
@@ -678,7 +765,7 @@ export function openMailDb({ dataDir, accountEmail }: MailDbLocation) {
 		 *
 		 * Returns `labelsChanged`: how many label patches materially changed a
 		 * row's label set. A patch whose labels already match (a history echo of
-		 * a change the write-through fold already applied) is applied but not
+		 * a change the reconciler already folded) is applied but not
 		 * counted, so the sync metric reports convergence, not phantom drift.
 		 */
 		applyHistoryBatch({
@@ -731,11 +818,19 @@ export function openMailDb({ dataDir, accountEmail }: MailDbLocation) {
  * writable open that died between creating the file and running its DDL leaves
  * a current artifact with nothing in it; that reports as empty, not as a crash.
  * The handle rejects writes at the SQLite level, and `busy_timeout` keeps reads
- * from failing against a lock a concurrent sync briefly holds.
+ * from failing against a lock a concurrent reconcile briefly holds.
+ *
+ * The intent overlay is attached here too, so `local-mail query` and the MCP
+ * `query` tool see the same `effective_labels` the app's read models do. SQLite
+ * refuses writes through an attachment on a read-only connection, so the ad-hoc
+ * SQL surface can read the durable store without becoming a second writer to it,
+ * and an account with no intent store gets no file created for having been
+ * asked about.
  */
 export function openMailDbReadonly({ dataDir, accountEmail }: MailDbLocation) {
 	const db = mailMirror(dataDir, accountEmail).openReadonly();
 	if (db === null) return null;
+	attachIntent(db, { dataDir, accountEmail }, { create: false });
 
 	const hasTable = (name: string): boolean =>
 		db

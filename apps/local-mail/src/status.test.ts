@@ -9,6 +9,8 @@
  * - mirror file with no history cursor reports `building`
  * - mirror with a history cursor reports `ready`
  * - the report is artifact inventory, not a stored-shape comparison (ADR-0197)
+ * - undelivered triage stays visible whether or not a mirror exists, and a
+ *   status read never creates the durable store it reports on
  */
 
 import { expect, test } from 'bun:test';
@@ -23,6 +25,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AppConfig } from './config.ts';
 import { mailMirror, openMailDb } from './db.ts';
+import { intentDbPath, openIntentDb } from './intent.ts';
 import type { GmailMessage } from './schema.ts';
 import { readMailStatus } from './status.ts';
 import type { TokenStore } from './token-store.ts';
@@ -163,5 +166,49 @@ test('status lists retained predecessors as inventory, not as a mismatch', async
 	expect(status.mirror).toBe('ready');
 	expect(status.rows.messages).toBe(1);
 	expect(status.predecessors).toEqual([previousVersion]);
+	tmp.cleanup();
+});
+
+test('pending assertions stay visible when the mirror is gone', async () => {
+	// The mirror is disposable: a corpus-version bump names a new artifact and a
+	// reclaim unlinks the old one, and a status call can land in that window. The
+	// durable store outlives it on purpose, so a missing mirror must never be
+	// read as "nothing is owed": that is exactly when a user needs to see their
+	// undelivered work.
+	const tmp = tempDir();
+	const intent = openIntentDb({ dataDir: tmp.dir, accountEmail: ACCOUNT });
+	intent.assert(
+		[{ messageId: 'm1', labelId: 'INBOX', want: false }],
+		'2026-08-01T10:00:00.000Z',
+	);
+	intent.close();
+
+	const status = await readMailStatus({
+		config: config(tmp.dir),
+		accountEmail: ACCOUNT,
+		store,
+	});
+
+	expect(status.mirror).toBe('empty');
+	expect(status.rows).toEqual({ messages: 0, labels: 0 });
+	expect(status.pending).toEqual({
+		assertions: 1,
+		oldestAssertedAt: '2026-08-01T10:00:00.000Z',
+	});
+	tmp.cleanup();
+});
+
+test('a status read reports zero pending without creating the store', async () => {
+	const tmp = tempDir();
+
+	const status = await readMailStatus({
+		config: config(tmp.dir),
+		accountEmail: ACCOUNT,
+		store,
+	});
+
+	expect(status.pending).toEqual({ assertions: 0, oldestAssertedAt: null });
+	// Reading must not conjure a durable file for an account that has none.
+	expect(existsSync(intentDbPath(tmp.dir, ACCOUNT))).toBe(false);
 	tmp.cleanup();
 });
