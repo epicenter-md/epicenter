@@ -4,6 +4,7 @@
 	import { Spinner } from '@epicenter/ui/spinner';
 	import AlertTriangleIcon from '@lucide/svelte/icons/triangle-alert';
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
+	import ClockIcon from '@lucide/svelte/icons/clock';
 	import LockIcon from '@lucide/svelte/icons/lock';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import { relativeTime } from '$lib/format';
@@ -14,10 +15,9 @@
 		accounts,
 		selectedAccount,
 		onSelectAccount,
-		syncing,
-		syncError,
-		catchingUp,
-		onRefresh,
+		reconciling,
+		reconcileError,
+		onReconcile,
 	}: {
 		status: MailboxStatus | undefined;
 		/** Every connected account the host serves. One account renders as plain
@@ -26,35 +26,28 @@
 		/** The account currently in view (null only before the list has loaded). */
 		selectedAccount: string | null;
 		onSelectAccount: (account: string) => void;
-		syncing: boolean;
-		syncError: string | null;
-		/** A write just landed on Gmail that the mirror has not folded yet
-		 * (a `folded:false` modify). This is a mirror-state fact, so it lives on
-		 * the mirror chip, not in per-action feedback. Brief and self-clearing. */
-		catchingUp: boolean;
-		onRefresh: () => void;
+		reconciling: boolean;
+		reconcileError: string | null;
+		onReconcile: () => void;
 	} = $props();
 
-	// The mirror chip is the one canonical mirror-state surface. "catching up"
-	// overrides the steady state for the brief window after a sync-lagging write.
+	// Local triage Gmail has not been told about yet. Two numbers, no list: the
+	// point is that undelivered work is never invisible, not that this becomes a
+	// place to manage it.
+	const pending = $derived(status?.pending.assertions ?? 0);
+	const oldestPending = $derived(status?.pending.oldestAssertedAt ?? null);
+
+	// The mirror chip is the one canonical mirror-state surface.
 	const mirror = $derived(status?.mirror ?? 'empty');
-	const mirrorTone = $derived(
-		mirror === 'ready'
-			? 'bg-emerald-500'
-			: mirror === 'building'
-				? 'bg-amber-500'
-				: 'bg-muted-foreground',
-	);
-	const chip = $derived(
-		catchingUp
-			? {
-					tone: 'bg-amber-500 animate-pulse',
-					label: 'catching up',
-					title:
-						'Gmail accepted a change; the mirror folds it in on the next sync.',
-				}
-			: { tone: mirrorTone, label: mirror, title: 'Mirror state' },
-	);
+	const chip = $derived({
+		tone:
+			mirror === 'ready'
+				? 'bg-emerald-500'
+				: mirror === 'building'
+					? 'bg-amber-500'
+					: 'bg-muted-foreground',
+		label: mirror,
+	});
 	const numberFmt = new Intl.NumberFormat();
 </script>
 
@@ -103,7 +96,7 @@
 
 	<div class="flex items-center gap-3 text-xs text-muted-foreground">
 		{#if status}
-			<span class="flex items-center gap-1.5" title={chip.title}>
+			<span class="flex items-center gap-1.5" title="Mirror state">
 				<span class="size-2 rounded-full {chip.tone}"></span>
 				<span class="capitalize">{chip.label}</span>
 			</span>
@@ -113,6 +106,15 @@
 			<span class="tabular-nums" title={status.lastSyncedAt ?? 'never synced'}>
 				synced {relativeTime(status.lastSyncedAt)}
 			</span>
+			{#if pending > 0}
+				<span
+					class="flex items-center gap-1 rounded border border-border px-1.5 py-0.5 font-medium text-amber-500 tabular-nums"
+					title="Changes recorded here that Gmail has not been told about yet. The reconciler delivers them; nothing is lost if this app closes first."
+				>
+					<ClockIcon class="size-3" />
+					{pending} pending · {relativeTime(oldestPending)}
+				</span>
+			{/if}
 			{#if status.readOnly}
 				<span
 					class="flex items-center gap-1 rounded border border-border px-1.5 py-0.5 font-medium text-amber-500"
@@ -122,27 +124,27 @@
 				</span>
 			{/if}
 		{/if}
-		{#if syncError}
+		{#if reconcileError}
 			<span
 				class="flex items-center gap-1 text-destructive"
-				title={syncError}
+				title={reconcileError}
 			>
-				<AlertTriangleIcon class="size-3.5" /> sync failed
+				<AlertTriangleIcon class="size-3.5" /> reconcile failed
 			</span>
 		{/if}
 		<Button
 			size="sm"
 			variant="outline"
-			onclick={onRefresh}
-			disabled={syncing}
-			tooltip="Poll Gmail now (POST /api/sync)"
+			onclick={onReconcile}
+			disabled={reconciling}
+			tooltip="Send pending changes and poll Gmail now"
 		>
-			{#if syncing}
+			{#if reconciling}
 				<Spinner class="size-3.5" />
 			{:else}
 				<RefreshCwIcon class="size-3.5" />
 			{/if}
-			<span>Refresh</span>
+			<span>Reconcile</span>
 		</Button>
 	</div>
 </header>
