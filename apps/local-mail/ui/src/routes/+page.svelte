@@ -48,10 +48,16 @@
 		}
 	});
 
+	// The only query that polls. Status is now the health surface: the pending
+	// count, the age of the oldest, and the host loop's current failure all change
+	// without anyone touching the page, and a failed pass at 3am has no click to
+	// ride in on. Matched to the host's own reconcile interval, so a clean pass and
+	// the reading of it move together.
 	const status = createQuery(() => ({
 		queryKey: ['status', selectedAccount],
 		queryFn: () => api.status(selectedAccount as string),
 		enabled: selectedAccount !== null,
+		refetchInterval: 30_000,
 	}));
 	const labels = createQuery(() => ({
 		queryKey: ['labels', selectedAccount],
