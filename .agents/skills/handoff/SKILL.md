@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: 'Draft a compact, cold-start prompt for the user to copy and paste into a manually operated Claude Code session, with Claude as orchestrator and Codex available through /codex:rescue. Use only when the user explicitly asks for a prompt, manual handoff, continuation in another chat or machine, or invokes /handoff, or when automated delegation is unavailable and the user wants the fallback artifact. Do not use when Codex should launch and supervise Claude directly; use delegate-claude. Not for /goal lines or prompts shipped inside product code.'
+description: 'Draft a compact, cold-start prompt for the user to copy and paste into a manually operated Claude Code session, with Claude leading the mission and Codex optionally available through /codex:rescue. Use only when the user explicitly asks for a prompt, manual handoff, continuation in another chat or machine, or invokes /handoff, or when automated delegation is unavailable and the user wants the fallback artifact. Do not use when Codex should start a Claude session directly; use delegate-claude. Not for /goal lines or prompts shipped inside product code.'
 argument-hint: "What should the next agent accomplish?"
 metadata:
   author: epicenter
@@ -17,6 +17,10 @@ handoff itself, a short note before it is fine.
 The recipient cannot see this conversation. Everything it needs in order to
 think from the same reality has to be in the prompt, and everything else is
 noise.
+
+Claude leads the mission and chooses its verification. Codex is an optional
+`/codex:rescue` capability for a bounded need, not a default supervisor or
+decision-maker.
 
 ## Ground it first
 
