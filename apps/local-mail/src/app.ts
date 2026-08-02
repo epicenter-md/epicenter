@@ -5,7 +5,7 @@ import { type AppConfig, loadConfig } from './config.ts';
 import { type AccountApi, createApiApp, mintBearer } from './http/api.ts';
 import { acquireReconcileLock, type ReconcileLock } from './lock.ts';
 import { clearPresence, writePresence } from './presence.ts';
-import { reconcileAccount } from './reconcile.ts';
+import { type ReconcileOutcome, reconcileAccount } from './reconcile.ts';
 import {
 	type AccountSession,
 	type LocalMailRuntime,
@@ -201,7 +201,23 @@ type AccountEngine = {
 	gate: <T>(fn: () => Promise<T>) => Promise<T>;
 	clock: ReturnType<typeof createPassClock>;
 	lock: ReconcileLock | null;
+	/**
+	 * Why this account's most recent pass could not finish, or `null` when it was
+	 * clean. Overwritten by every pass, so it is the current answer to "is Gmail
+	 * hearing this machine", not a log: one message about the pass, never a row
+	 * per assertion (ADR-0199). Lives here, in the running host, because that is
+	 * the only place a background pass's outcome exists at all.
+	 */
+	lastFailure: string | null;
 };
+
+/** The pass-level failure a reconcile outcome carries, as one line. Delivery is
+ * named first: a machine that cannot write but can still read is a different
+ * problem from one that cannot reach Gmail at all. */
+function passFailure(outcome: ReconcileOutcome): string | null {
+	const failure = outcome.delivery.failure ?? outcome.pull.failure;
+	return failure ? `${failure.name}: ${failure.message}` : null;
+}
 
 /**
  * The accounts `local-mail app` serves: every connected account by default, or
@@ -278,6 +294,7 @@ export async function runApp(options: { port?: number }): Promise<number> {
 			gate: createReconcileGate(),
 			clock: createPassClock(controller.signal),
 			lock,
+			lastFailure: null,
 		});
 	}
 
@@ -300,6 +317,9 @@ export async function runApp(options: { port?: number }): Promise<number> {
 				requestWake: engine.lock
 					? () => engine.clock.requestWake()
 					: () => undefined,
+				// Read through a closure, not copied: the loop overwrites it after
+				// every pass, and a status request must see the current answer.
+				lastFailure: () => engine.lastFailure,
 				ownsLoop: engine.lock !== null,
 			},
 		]),
@@ -352,13 +372,17 @@ export async function runApp(options: { port?: number }): Promise<number> {
 		const { session, gate, clock, runtime } = engine;
 		(async () => {
 			while (!controller.signal.aborted) {
-				await gate(() =>
+				// A pass reports its failures in its outcome; a throw here is the
+				// unexpected kind, and it is recorded the same way so the status line
+				// never claims health the loop does not have.
+				engine.lastFailure = await gate(() =>
 					reconcileAccount(session.deps, { forceFull: false, readOnly }),
-				).catch((cause) =>
+				).then(passFailure, (cause) => {
 					console.error(
 						`[reconcile ${runtime.accountEmail}] pass failed: ${cause}`,
-					),
-				);
+					);
+					return String(cause);
+				});
 				if (controller.signal.aborted) break;
 				await clock.waitForNextPass();
 			}

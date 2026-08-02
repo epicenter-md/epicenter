@@ -173,13 +173,19 @@
 	// opposed to this label/search view simply matching none. Drives which empty
 	// state the list shows: "reconcile" vs "no match".
 	const mirrorEmpty = $derived((status.data?.rows.messages ?? 0) === 0);
+	// This tab's own reconcile first, then whatever the host's background loop
+	// last reported. The loop is where a pass usually fails (nobody is watching
+	// when the token expires), so without the second half the status line would
+	// read healthy while nothing is reaching Gmail.
 	const reconcileError = $derived(
 		reconcile.error?.message ??
 			(reconcile.data && 'delivery' in reconcile.data
 				? (reconcile.data.delivery.failure?.message ??
 					reconcile.data.pull.failure?.message ??
 					null)
-				: null),
+				: null) ??
+			status.data?.lastFailure ??
+			null,
 	);
 
 	// Keep the selection valid: default to the first row, and re-resolve when a

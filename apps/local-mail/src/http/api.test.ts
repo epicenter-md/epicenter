@@ -116,6 +116,8 @@ function account(
 			requestWake: () => {
 				created.wakes += 1;
 			},
+			// No loop runs in these tests, so the host has no pass to report on.
+			lastFailure: () => null,
 			ownsLoop,
 		} as AccountApi,
 	};
@@ -202,11 +204,15 @@ describe('createApiApp multi-account routing', () => {
 			mirror: string;
 			rows: { messages: number };
 			pending: { assertions: number; oldestAssertedAt: string | null };
+			lastFailure: string | null;
 		};
 		expect(statusA.accountEmail).toBe('a@example.com');
 		expect(statusA.mirror).toBe('ready');
 		expect(statusA.rows.messages).toBe(1);
 		expect(statusA.pending).toEqual({ assertions: 0, oldestAssertedAt: null });
+		// The host reports its loop's last pass as one line, so a background
+		// failure nobody was watching still reaches the status surface.
+		expect(statusA.lastFailure).toBeNull();
 
 		const messagesB = (await (
 			await get(app, '/api/accounts/b@example.com/messages')

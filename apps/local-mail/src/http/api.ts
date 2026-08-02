@@ -94,6 +94,16 @@ export type AccountApi = {
 	 * delivered shortly after it is made rather than at the next poll. A no-op
 	 * when this host does not own the loop; that owner's poll picks it up. */
 	requestWake: () => void;
+	/**
+	 * Why the most recent pass could not finish, or `null` when the last one was
+	 * clean. Read from the host's in-memory pass result, never from a stored
+	 * column and never per assertion (ADR-0199): a persistent delivery failure is
+	 * a property of the pass, identical for every row it stopped.
+	 *
+	 * The route asks for it rather than holding it, because the loop that
+	 * produces it outlives any one request.
+	 */
+	lastFailure: () => string | null;
 	/** Whether this host holds the account's reconcile-owner lock (runs its
 	 * loop). A false value means another owner has it, so an explicit reconcile
 	 * yields `reconcileOwnerBusy` rather than racing a second writer. */
@@ -148,6 +158,7 @@ export function createApiApp(deps: ApiDeps) {
 				lastFullPullAt: status.lastFullPullAt,
 				rows: status.rows,
 				pending: status.pending,
+				lastFailure: c.var.account.lastFailure(),
 				readOnly,
 			});
 		})
