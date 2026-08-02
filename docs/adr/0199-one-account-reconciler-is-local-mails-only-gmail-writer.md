@@ -210,7 +210,8 @@ without reaching Gmail, and it is deliberately the whole ledger rather than a
 selection: the vocabulary the product has for pending work is a count and an age,
 so a per-assertion picker would need a per-assertion listing that nothing else
 justifies. It is refused without an explicit `--all`, because nothing else in the
-system drops a recorded change.
+system drops a recorded change, and refused outright while another owner holds
+the account, because that is the window in which its report would be false.
 
 Disconnecting an account must report its undelivered count first and discard it
 on confirmation; a reauthorization is not a disconnect and retains everything.

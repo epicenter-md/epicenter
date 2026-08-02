@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs, runCli } from './cli.ts';
 import { loadConfig } from './config.ts';
+import { openIntentDb, readPendingSummary } from './intent.ts';
 import { acquireReconcileLock } from './lock.ts';
 import { createFileTokenStore } from './token-store.ts';
 import type { TokenSet } from './tokens.ts';
@@ -144,22 +145,37 @@ test('label honors LOCAL_MAIL_READ_ONLY before resolving labels', async () => {
 });
 
 /**
- * Drive `runCli` against a stored account whose reconcile lock is already held
- * by another owner (the open app or a watch loop), capturing both streams.
- * Proves a one-shot pass yields without opening a session or hitting the
- * network.
+ * Drive `runCli` against a stored account, capturing both streams and the
+ * durable state the run left behind.
+ *
+ * `holdLock` decides whether another owner (the open app, a watch loop) already
+ * has the account's reconcile lock when the command runs. That one flag covers
+ * both halves of every ownership contract here: the busy yield and the path that
+ * actually gets to do the work.
+ *
+ * `seedPending` writes undelivered assertions first, so a test can prove what a
+ * refused command did NOT do to them.
  */
-async function runWithLockHeld(argv: string[]): Promise<{
+async function runCliOnAccount(
+	argv: string[],
+	{
+		holdLock = false,
+		seedPending = 0,
+	}: { holdLock?: boolean; seedPending?: number } = {},
+): Promise<{
 	code: number;
 	stdout: string[];
 	stderr: string[];
 	/** Whether the run left a durable intent store behind. Read here, before the
 	 * temp dir is removed, so a caller cannot assert it vacuously. */
 	intentDbExists: boolean;
+	/** Undelivered assertions after the run, read the same way. */
+	pendingAfter: number;
 }> {
 	const dir = mkdtempSync(join(tmpdir(), 'local-mail-cli-lock-test-'));
+	const accountEmail = 'you@example.com';
 	const token: TokenSet = {
-		accountEmail: 'you@example.com',
+		accountEmail,
 		clientIdUsed: 'client-id',
 		accessToken: 'access-token',
 		refreshToken: 'refresh-token',
@@ -167,6 +183,20 @@ async function runWithLockHeld(argv: string[]): Promise<{
 		obtainedAt: new Date(0).toISOString(),
 	};
 	await createFileTokenStore(join(dir, 'credentials.json')).set(token);
+
+	if (seedPending > 0) {
+		const intent = openIntentDb({ dataDir: dir, accountEmail });
+		intent.assert(
+			Array.from({ length: seedPending }, (_, i) => ({
+				messageId: `m${i}`,
+				labelId: 'INBOX',
+				want: false,
+			})),
+			'2026-08-01T10:00:00.000Z',
+		);
+		intent.close();
+	}
+
 	const previousDir = process.env.LOCAL_MAIL_DIR;
 	const previousAccount = process.env.LOCAL_MAIL_ACCOUNT;
 	const previousTokenFile = process.env.LOCAL_MAIL_TOKEN_FILE;
@@ -183,18 +213,19 @@ async function runWithLockHeld(argv: string[]): Promise<{
 	console.error = (message?: unknown) => {
 		stderr.push(String(message));
 	};
-	const held = acquireReconcileLock({
-		dataDir: dir,
-		accountEmail: 'you@example.com',
-	});
-	expect(held).not.toBeNull();
+	const held = holdLock
+		? acquireReconcileLock({ dataDir: dir, accountEmail })
+		: null;
+	if (holdLock) expect(held).not.toBeNull();
 	try {
 		const code = await runCli(argv);
 		return {
 			code,
 			stdout,
 			stderr,
-			intentDbExists: existsSync(join(dir, 'you@example.com', 'intent.db')),
+			intentDbExists: existsSync(join(dir, accountEmail, 'intent.db')),
+			pendingAfter: readPendingSummary({ dataDir: dir, accountEmail })
+				.assertions,
 		};
 	} finally {
 		console.log = originalLog;
@@ -212,14 +243,18 @@ async function runWithLockHeld(argv: string[]): Promise<{
 }
 
 test('reconcile yields a human note on stdout when another owner holds the lock', async () => {
-	const { code, stdout } = await runWithLockHeld(['reconcile']);
+	const { code, stdout } = await runCliOnAccount(['reconcile'], {
+		holdLock: true,
+	});
 	expect(code).toBe(0);
 	// The terminal outcome lands on stdout like the success/failure summaries do.
 	expect(stdout.join('\n')).toContain('already reconciling you@example.com');
 });
 
 test('reconcile --json yields a structured payload on stdout when the lock is held', async () => {
-	const { code, stdout } = await runWithLockHeld(['reconcile', '--json']);
+	const { code, stdout } = await runCliOnAccount(['reconcile', '--json'], {
+		holdLock: true,
+	});
 	expect(code).toBe(0);
 	// The whole yield must be a single clean JSON value on stdout, not a human
 	// note on stderr: a --json consumer piping stdout has to see it.
@@ -234,20 +269,62 @@ test('discard refuses without --all and leaves no durable file behind', async ()
 	// it, so it is deliberately not the default shape of the verb. The refusal
 	// also has to be a read-nothing path: asking about an account that never
 	// triaged must not create its intent store (ADR-0198).
-	const { code, stderr, intentDbExists } = await runWithLockHeld(['discard']);
+	const { code, stderr, intentDbExists } = await runCliOnAccount(['discard']);
 	expect(code).toBe(1);
 	expect(stderr.join('\n')).toContain('Refusing to discard without --all');
 	expect(intentDbExists).toBe(false);
 });
 
 test('discard --all reports that there was nothing to discard', async () => {
-	const { code, stdout, intentDbExists } = await runWithLockHeld([
+	const { code, stdout, intentDbExists } = await runCliOnAccount([
 		'discard',
 		'--all',
 	]);
 	expect(code).toBe(0);
 	expect(stdout.join('\n')).toContain('Nothing to discard for you@example.com');
 	expect(intentDbExists).toBe(false);
+});
+
+test('discard --all abandons what is owed when it owns the account', async () => {
+	const { code, stdout, pendingAfter } = await runCliOnAccount(
+		['discard', '--all'],
+		{ seedPending: 3 },
+	);
+	expect(code).toBe(0);
+	expect(stdout.join('\n')).toContain('Discarded 3 undelivered change(s)');
+	expect(pendingAfter).toBe(0);
+});
+
+test('discard --all refuses while a reconciler holds the account, and keeps every assertion', async () => {
+	// The race this closes: a reconciler snapshots the pending set when its drain
+	// starts, so a discard landing mid-pass would delete rows that pass is still
+	// holding and about to send. The report would say the change was abandoned
+	// while Gmail was being told the opposite. Taking the same lock makes the
+	// promise true, and the refusal is loud rather than a silent no-op.
+	const { code, stderr, pendingAfter } = await runCliOnAccount(
+		['discard', '--all'],
+		{ holdLock: true, seedPending: 2 },
+	);
+	// Nonzero, unlike a busy reconcile: nobody discards on your behalf, so this
+	// is work that did not happen rather than work someone else is doing.
+	expect(code).toBe(1);
+	expect(stderr.join('\n')).toContain('Refusing to discard');
+	expect(stderr.join('\n')).toContain('already reconciling you@example.com');
+	expect(pendingAfter).toBe(2);
+});
+
+test('discard --all --json yields the established busy payload when the lock is held', async () => {
+	const { code, stderr, pendingAfter } = await runCliOnAccount(
+		['discard', '--all', '--json'],
+		{ holdLock: true, seedPending: 1 },
+	);
+	expect(code).toBe(1);
+	// Same discriminant and machine token a busy reconcile uses: it is the same
+	// ownership question, so a consumer branches on it the same way.
+	const payload = JSON.parse(stderr.join('\n'));
+	expect(payload.reconciled).toBe(false);
+	expect(payload.reason).toBe('reconcile-owner-active');
+	expect(pendingAfter).toBe(1);
 });
 
 test('status --json resolves the sole stored account and prints JSON', async () => {

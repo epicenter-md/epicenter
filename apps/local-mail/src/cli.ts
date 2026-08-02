@@ -64,7 +64,9 @@ Commands:
   untrash      Restore messages from Trash by asserting TRASH off.
   label        Add or remove Gmail labels by exact name or id.
   discard      Abandon every change Gmail has not been told about yet. Needs
-               --all, because nothing else ever drops a recorded change.
+               --all, because nothing else ever drops a recorded change, and
+               the account's reconcile lock, so it cannot race a pass that is
+               already sending them.
   app          Run the desktop runtime host: reconcile in the background and serve the triage UI + API on 127.0.0.1. Prints the origin to open.
   mcp          Serve query/status/reconcile/assert_labels tools over stdio.
 
@@ -500,6 +502,15 @@ async function runTriageAct(
  * nothing ages out and nothing gives up after N attempts, so discarding is the
  * only exit an undelivered act has other than reaching Gmail (ADR-0199).
  *
+ * It takes the account's reconcile lock, and that is what makes its promise
+ * true. A reconciler snapshots the pending set at the start of its drain, so a
+ * discard racing an in-flight pass would delete rows the pass is still holding
+ * in memory and about to send: the report would say the change was abandoned
+ * while Gmail was being told the opposite. Taking the lock means either the pass
+ * finishes first (and the discard abandons only what is genuinely still owed) or
+ * the discard refuses. Held for the whole read-then-delete, so the count in the
+ * message is the count that was removed.
+ *
  * `--all` is mandatory, and there is no per-assertion form, because the only
  * vocabulary the product has for pending work is a count and an age. Nothing is
  * created to answer the question: an account with no intent store discards
@@ -521,26 +532,46 @@ async function runDiscard(args: ParsedArgs): Promise<number> {
 		dataDir: runtime.config.dataDir,
 		accountEmail: runtime.accountEmail,
 	};
-	const before = readPendingSummary(location);
-	if (before.assertions === 0) {
-		console.log(
+
+	const lock = acquireReconcileLock(location);
+	if (!lock) {
+		// The same busy payload a reconcile yields, because it is the same
+		// ownership question. The exit code is NOT the same: a busy reconcile is
+		// fine because the owner does that work for you, and nobody discards on
+		// your behalf, so this exits nonzero to say the change is still owed.
+		const busy = reconcileOwnerBusy(runtime.accountEmail);
+		console.error(
 			args.json
-				? JSON.stringify({ discarded: 0 }, null, 2)
-				: `Nothing to discard for ${runtime.accountEmail}.`,
+				? JSON.stringify(busy, null, 2)
+				: `Refusing to discard: ${busy.message} Close the app or stop that pass, then try again.`,
 		);
-		return 0;
+		return 1;
 	}
-	const intent = openIntentDb(location);
+
 	try {
-		const discarded = intent.discardAll();
-		console.log(
-			args.json
-				? JSON.stringify({ discarded }, null, 2)
-				: `Discarded ${discarded} undelivered change(s) for ${runtime.accountEmail}, oldest asserted ${before.oldestAssertedAt}. Gmail was never told, and anything already delivered stays delivered.`,
-		);
-		return 0;
+		const before = readPendingSummary(location);
+		if (before.assertions === 0) {
+			console.log(
+				args.json
+					? JSON.stringify({ discarded: 0 }, null, 2)
+					: `Nothing to discard for ${runtime.accountEmail}.`,
+			);
+			return 0;
+		}
+		const intent = openIntentDb(location);
+		try {
+			const discarded = intent.discardAll();
+			console.log(
+				args.json
+					? JSON.stringify({ discarded }, null, 2)
+					: `Discarded ${discarded} undelivered change(s) for ${runtime.accountEmail}, oldest asserted ${before.oldestAssertedAt}. Gmail was never told, and anything already delivered stays delivered.`,
+			);
+			return 0;
+		} finally {
+			intent.close();
+		}
 	} finally {
-		intent.close();
+		lock.release();
 	}
 }
 

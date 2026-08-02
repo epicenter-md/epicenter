@@ -241,6 +241,14 @@ the system that drops a recorded change without delivering it, and it abandons
 rather than recalls: an assertion the reconciler already delivered is Gmail's,
 and getting back is a new act like any other.
 
+It takes the account's reconcile lock, so it refuses while the app is open or a
+pass is running, and exits nonzero saying so. That is what makes its report true:
+a reconciler snapshots what is pending when its drain begins, so a discard
+landing mid-pass would delete rows that pass is still about to send, and the
+message would claim the change was abandoned while Gmail was hearing the
+opposite. Unlike a busy `reconcile`, which exits 0 because the owner does that
+work for you, a busy discard is work that did not happen.
+
 Serve the triage UI and its API from one loopback process:
 
 ```sh
