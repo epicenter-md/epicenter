@@ -50,6 +50,15 @@ export const MAIL_ROUTE = SURFACE_ROUTES.mail;
 export const BOOKS_ROUTE = SURFACE_ROUTES.books;
 /** What Home lists as launchable (ADR-0189). */
 export const APPLICATIONS_ROUTE = route('/api/apps');
+/**
+ * Where this host mounts Local Mail's surface (ADR-0191). The mail app carries
+ * no prefix of its own, and this host gates it with the same browser session as
+ * every other `/api` surface. The constant is Local Mail's rather than ours
+ * because the triage SPA is compiled once against one base: host and SPA must
+ * agree, so there is one value, not two that happen to match. It cannot collide
+ * with {@link APPLICATIONS_ROUTE} or the Home session routes.
+ */
+export { MAIL_API_PREFIX } from '@epicenter/local-mail/mount';
 export const SESSION_ROUTE = route('/api/home/session');
 export const SESSION_STREAM_ROUTE = route('/api/home/session/stream');
 export const LOCAL_BLOB_ROUTE = {

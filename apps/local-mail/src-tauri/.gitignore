@@ -1,6 +1,0 @@
-/target
-/gen/schemas
-# The compiled Bun engine sidecar is a build artifact (`bun run build:sidecar`
-# regenerates it, and `tauri build` does so via beforeBuildCommand). 62MB, host-
-# triple specific, never committed.
-/binaries

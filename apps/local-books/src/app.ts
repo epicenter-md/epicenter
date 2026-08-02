@@ -12,8 +12,9 @@ import { type SyncDeps, syncRealm } from './sync.ts';
 /**
  * `local-books app`: one Bun process that serves the books browser SPA and its
  * `/api` over `127.0.0.1`, while the same process keeps the mirror fresh through
- * the sync loop. The security model is `local-mail app`'s loopback shell,
- * condensed:
+ * the sync loop. The security model is the loopback shell, condensed. Local Mail
+ * shared this shape until ADR-0191 moved its engine into the Epicenter host and
+ * deleted its standalone one, so this is now the last of them:
  *
  * - A single-use bootstrap token rides in the URL fragment (never the query
  *   string, so it never lands in a request line or access log). The SPA reads

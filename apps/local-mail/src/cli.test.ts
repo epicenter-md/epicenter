@@ -52,15 +52,6 @@ test('--watch followed by another flag stays flag-only', () => {
 	expect(args.watchIntervalMs).toBeUndefined();
 });
 
-test('app parses the port flag', () => {
-	const args = parseArgs(['app', '--port', '4177']);
-	expect(args.command).toBe('app');
-	expect(args.port).toBe(4177);
-	expect(() => parseArgs(['app', '--port', 'abc'])).toThrow(
-		'--port must be a non-negative integer, got "NaN"',
-	);
-});
-
 test('triage verbs collect ids as positionals', () => {
 	const args = parseArgs(['mark-read', 'm1', 'm2']);
 	expect(args.command).toBe('mark-read');

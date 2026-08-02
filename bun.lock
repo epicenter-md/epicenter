@@ -98,6 +98,7 @@
         "@epicenter/data": "workspace:*",
         "@epicenter/document-sync": "workspace:*",
         "@epicenter/field": "workspace:*",
+        "@epicenter/local-mail": "workspace:*",
         "@epicenter/server": "workspace:*",
         "@epicenter/skills": "workspace:*",
         "@epicenter/sync": "workspace:*",
@@ -261,7 +262,6 @@
         "wellcrafted": "catalog:",
       },
       "devDependencies": {
-        "@tauri-apps/cli": "catalog:",
         "@types/bun": "catalog:",
         "typescript": "catalog:",
       },

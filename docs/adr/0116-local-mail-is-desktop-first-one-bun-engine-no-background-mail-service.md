@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-08
+- **Amended by:** [ADR-0191](0191-the-epicenter-host-process-owns-the-mail-engine-and-its-sync-loop.md) (withdraws this record's process topology: the Epicenter host process owns the engine in process, the sync loop runs for that host's lifetime rather than the Mail window's, and the per-launch loopback bearer is replaced by the host's own session gate. This record's data invariants, its refusal of daemon lifecycle and election, and its refusal of Rust-owned Gmail auth all still stand.)
 - **Relates:** [ADR-0081](0081-per-upstream-oauth-concurrency-decides-mirror-topology.md) (Gmail permits an independent per-device grant and mirror), [ADR-0082](0082-local-mail-syncs-by-push-free-history-list-polling.md) (push-free interval polling from a single device; write-through to Gmail first), [ADR-0188](0188-gmail-app-identity-belongs-to-the-distribution-and-no-epicenter-server-enters-the-gmail-path.md) (the Gmail application identity this engine presents, and the device-only credential boundary), [ADR-0083](0083-apps-email-is-refused-local-mail-is-the-only-gmail-client.md) (Local Mail is the only Gmail client; the native app is the surface), [ADR-0098](0098-local-mail-state-round-trips-through-gmail.md) (every human-meaningful state round-trips through Gmail; the phone reads Gmail directly)
 
 ## Context

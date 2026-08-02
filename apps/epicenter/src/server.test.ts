@@ -69,6 +69,7 @@ import {
 import {
 	createHomeServer,
 	type HomeServerEvent,
+	type HomeServerOptions,
 	type HomeSessionResponse,
 	sendObservationFrame,
 } from './server.ts';
@@ -203,6 +204,7 @@ async function serveHost(
 	page: string = PAGE,
 	blobRemote: BlobRemote | null = null,
 	dataOwner: DesktopEpicenterOwner | undefined = undefined,
+	mail: HomeServerOptions['mail'] = null,
 ) {
 	const portProbe = Bun.serve({
 		hostname: '127.0.0.1',
@@ -220,6 +222,7 @@ async function serveHost(
 		blobs: createTestBlobs(),
 		desktopAuth: createTestDesktopAuth(),
 		blobRemote,
+		mail,
 		dataOwner,
 	});
 	const server = Bun.serve({
@@ -435,6 +438,61 @@ describe('loadStaticAssets', () => {
 });
 
 describe('createHomeServer', () => {
+	/**
+	 * The mail mount is the whole of ADR-0191's seam on this side, and all three
+	 * of its parts are invisible to every other test: the surface reaches the
+	 * host's session gate, the host strips the prefix it chose, and a host with
+	 * no engine answers in the surface's own vocabulary. A stub stands in for the
+	 * engine because none of that is about Gmail.
+	 */
+	test('mounts the mail surface behind the session, with its prefix stripped', async () => {
+		const reached: string[] = [];
+		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
+		const server = await serveHost(host, PAGE, null, undefined, {
+			fetch: (request) => {
+				reached.push(new URL(request.url).pathname);
+				return Response.json({ accounts: ['a@example.com'] });
+			},
+		});
+		try {
+			const anonymous = await fetch(`${server.url.origin}/api/mail/accounts`);
+			expect(anonymous.status).toBe(401);
+			// The gate runs before the surface, so an unauthenticated request never
+			// reaches a real mailbox.
+			expect(reached).toEqual([]);
+
+			const authenticated = await fetch(
+				`${server.url.origin}/api/mail/accounts`,
+				{ headers: authenticatedHeaders(server) },
+			);
+			expect(authenticated.status).toBe(200);
+			expect(await authenticated.json()).toEqual({
+				accounts: ['a@example.com'],
+			});
+			// `/api/mail` is this host's choice; the surface declares `/accounts`.
+			expect(reached).toEqual(['/accounts']);
+		} finally {
+			await server.stop(true);
+		}
+	});
+
+	test('answers the mail routes itself when no engine opened', async () => {
+		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
+		const server = await serveHost(host);
+		try {
+			const response = await fetch(`${server.url.origin}/api/mail/accounts`, {
+				headers: authenticatedHeaders(server),
+			});
+			expect(response.status).toBe(503);
+			// The mail surface's own envelope, so the SPA's single error path reads
+			// it without a special case for "the host answered, not the app".
+			const body = (await response.json()) as { error: { name: string } };
+			expect(body.error.name).toBe('MailUnavailable');
+		} finally {
+			await server.stop(true);
+		}
+	});
+
 	test('refuses an empty launch token and non-loopback origins', async () => {
 		await using host = await createTestHost({
 			engine: scriptedEngine([[]]),
@@ -450,6 +508,7 @@ describe('createHomeServer', () => {
 				blobs: createTestBlobs(),
 				desktopAuth,
 				blobRemote: null,
+				mail: null,
 			}),
 		).toThrow(/launch token/);
 		for (const origin of [
@@ -467,6 +526,7 @@ describe('createHomeServer', () => {
 					blobs: createTestBlobs(),
 					desktopAuth,
 					blobRemote: null,
+					mail: null,
 				}),
 			).toThrow(/exact http:\/\/127\.0\.0\.1/);
 		}
@@ -629,11 +689,13 @@ describe('createHomeServer', () => {
 				applicationPage('Honeycrisp'),
 			);
 
+			// Mail is a compiled application now, not a placeholder document
+			// (ADR-0191), so it serves its own stamped page like the others.
 			const mail = await fetch(MAIL_ROUTE.url(server.url.origin), {
 				headers: authenticatedHeaders(server),
 			});
-			expect(await mail.text()).toContain(
-				'the full Mail experience is not included',
+			expect(withoutAuthBootstrap(await mail.text())).toBe(
+				applicationPage('Mail'),
 			);
 			const books = await fetch(BOOKS_ROUTE.url(server.url.origin), {
 				headers: authenticatedHeaders(server),
@@ -698,7 +760,9 @@ describe('createHomeServer', () => {
 				{ headers: authenticatedHeaders(server) },
 			);
 			expect(browserFragment.status).toBe(200);
-			expect(await browserFragment.text()).toContain('<h1>Mail</h1>');
+			expect(withoutAuthBootstrap(await browserFragment.text())).toBe(
+				applicationPage('Mail'),
+			);
 		} finally {
 			await server.stop(true);
 		}

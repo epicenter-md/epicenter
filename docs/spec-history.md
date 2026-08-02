@@ -16,7 +16,7 @@
 >
 > **Regenerate (deterministic per ref set, lossless):** `bun scripts/generate-spec-history.ts`. The totals track the refs this clone can see; `--all` is deliberate so the timeline recovers specs that only lived on unmerged or deleted branches.
 
-**1397 specs ever** (547 still in tree, 850 removed).
+**1397 specs ever** (544 still in tree, 853 removed).
 
 
 ## 2026
@@ -58,15 +58,15 @@
 | 2026-07-06 | cli-watcher-ipc-collapse | in tree | specs/20260706T183000-cli-watcher-ipc-collapse.md |
 | 2026-07-03 | transcription-selector-post-gguf-reconciliation | removed | apps/whispering/specs/20260703T170000-transcription-selector-post-gguf-reconciliation.md |
 | 2026-07-02 | local-models-huggingface-transcribe-cpp | removed | apps/whispering/specs/20260702T120000-local-models-huggingface-transcribe-cpp.md |
-| 2026-07-02 | local-mail-phase-3-write-through | in tree | specs/20260702T211500-local-mail-phase-3-write-through.md |
+| 2026-07-02 | local-mail-phase-3-write-through | removed | specs/20260702T211500-local-mail-phase-3-write-through.md |
 | 2026-07-02 | daemon-role-after-relay-channel-deletion | removed | specs/20260702T233000-daemon-role-after-relay-channel-deletion.md |
 | 2026-07-02 | identity-is-the-partition | removed | specs/20260702T000000-identity-is-the-partition.md |
 | 2026-07-02 | relay-channel-layer-deletion | removed | specs/20260702T210000-relay-channel-layer-deletion.md |
 | 2026-07-02 | ungated-durable-local-open | removed | specs/20260702T014940-ungated-durable-local-open.md |
 | 2026-07-02 | one-preset-shape-and-derived-migration-guids | removed | specs/20260702T001604-one-preset-shape-and-derived-migration-guids.md |
-| 2026-07-01 | local-mail-up-bun-served-shell | in tree | specs/20260701T141500-local-mail-up-bun-served-shell.md |
+| 2026-07-01 | local-mail-up-bun-served-shell | removed | specs/20260701T141500-local-mail-up-bun-served-shell.md |
 | 2026-07-01 | super-chat-canonicalization-handoff | removed | specs/20260701T235243-super-chat-canonicalization-handoff.md |
-| 2026-07-01 | local-mail-phase-2-engine | in tree | specs/20260701T140000-local-mail-phase-2-engine.md |
+| 2026-07-01 | local-mail-phase-2-engine | removed | specs/20260701T140000-local-mail-phase-2-engine.md |
 | 2026-07-01 | api-keyring-and-vault-wiring | in tree | specs/20260701T150000-api-keyring-and-vault-wiring.md |
 | 2026-07-01 | progressive-sign-in-collapse | removed | specs/20260701T151347-progressive-sign-in-collapse.md |
 | 2026-07-01 | progressive-sign-in-collapse.prompt | removed | specs/20260701T151347-progressive-sign-in-collapse.prompt.md |

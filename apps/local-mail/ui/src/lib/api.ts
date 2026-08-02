@@ -1,47 +1,27 @@
 import type { ApiApp } from '@epicenter/local-mail/http/api';
+import { MAIL_API_PREFIX } from '@epicenter/local-mail/mount';
 import { hc } from 'hono/client';
 
-// The same-origin `/api` client, typed end to end by `hc<ApiApp>`: its request
-// and response shapes are inferred from the Hono routes in
+// The mail `/api` client, typed end to end by `hc<ApiApp>`: its request and
+// response shapes are inferred from the Hono routes in
 // `apps/local-mail/src/http/api.ts`, so the wire contract cannot drift from the
-// server. The per-launch local API bearer is handed to the SPA by the runtime
-// host as a `window.__LOCAL_MAIL__` global, injected into the served HTML before
-// this code runs (prod: the Bun loopback host; later: the Tauri host's init
-// script). It is a loopback credential, never a Gmail token, and it never rides
-// the URL. In dev there is no global: the Vite proxy injects the host's bearer on
-// each proxied `/api` request instead, so `readBearer()` returns null and this
-// module attaches nothing (the proxy authenticates).
-
-declare global {
-	interface Window {
-		__LOCAL_MAIL__?: { origin?: string; bearer: string };
-	}
-}
-
-function readBearer(): string | null {
-	if (typeof window === 'undefined') return null;
-	return window.__LOCAL_MAIL__?.bearer ?? null;
-}
-
-// Every hc request routes through this: attach the per-launch bearer from the
-// injected global. Typed with an explicit signature rather than `typeof fetch`
-// so it does not have to restate Bun's `fetch.preconnect`.
-const authedFetch = async (
-	input: RequestInfo | URL,
-	init?: RequestInit,
-): Promise<Response> => {
-	const headers = new Headers(init?.headers);
-	const bearer = readBearer();
-	if (bearer) headers.set('authorization', `Bearer ${bearer}`);
-	return fetch(input, { ...init, headers });
-};
-
-// Same-origin: hc needs an absolute base for URL construction, and this module
-// only ever executes in the browser (the SPA is `ssr: false`, `prerender:
-// false`). The localhost fallback keeps a stray import from throwing at load.
+// server.
+//
+// One base, because there is one place this surface is ever served: the host
+// mounts it at MAIL_API_PREFIX on the origin serving this SPA (ADR-0191). In
+// production that host is Epicenter; in dev it is `scripts/dev-api.ts` behind
+// the Vite proxy, at the same path. No credential is attached: an application
+// window inside Epicenter runs as Epicenter, riding the session the host
+// already requires of every request it serves.
+//
+// `hc` needs an absolute base, and this module only ever executes in the
+// browser (the SPA is `ssr: false`, `prerender: false`); the localhost fallback
+// keeps a stray import from throwing at load.
 const base =
-	typeof window === 'undefined' ? 'http://localhost' : window.location.origin;
-const client = hc<ApiApp>(base, { fetch: authedFetch });
+	typeof window === 'undefined'
+		? `http://localhost${MAIL_API_PREFIX}`
+		: `${window.location.origin}${MAIL_API_PREFIX}`;
+const client = hc<ApiApp>(base);
 
 async function toError(res: Response): Promise<Error> {
 	// Errors arrive as wellcrafted's envelope `{ data: null, error: { name,
@@ -60,30 +40,42 @@ type MessageQuery = {
 };
 
 // Every read/write is account-scoped: the host serves all connected mailboxes
-// under one origin (`/api/accounts/:account/*`), and the caller (the page's
+// under one origin (`/accounts/:account/*`), and the caller (the page's
 // account switcher) passes which one. `accounts()` lists the connected set.
 export const api = {
 	accounts: async () => {
-		const res = await client.api.accounts.$get();
+		const res = await client.accounts.$get();
+		if (!res.ok) throw await toError(res);
+		return res.json();
+	},
+	/**
+	 * Start Gmail's consent flow and get somewhere to send the person.
+	 *
+	 * Resolves as soon as there is a URL, not when consent finishes: the browser
+	 * may take minutes and may not open at all on this platform, so the caller
+	 * renders the URL and watches `accounts()` for the mailbox to appear.
+	 */
+	connect: async () => {
+		const res = await client.connect.$post();
 		if (!res.ok) throw await toError(res);
 		return res.json();
 	},
 	status: async (account: string) => {
-		const res = await client.api.accounts[':account'].status.$get({
+		const res = await client.accounts[':account'].status.$get({
 			param: { account },
 		});
 		if (!res.ok) throw await toError(res);
 		return res.json();
 	},
 	labels: async (account: string) => {
-		const res = await client.api.accounts[':account'].labels.$get({
+		const res = await client.accounts[':account'].labels.$get({
 			param: { account },
 		});
 		if (!res.ok) throw await toError(res);
 		return res.json();
 	},
 	messages: async (account: string, query: MessageQuery = {}) => {
-		const res = await client.api.accounts[':account'].messages.$get({
+		const res = await client.accounts[':account'].messages.$get({
 			param: { account },
 			query: {
 				...(query.label ? { label: query.label } : {}),
@@ -96,14 +88,14 @@ export const api = {
 		return res.json();
 	},
 	message: async (account: string, id: string) => {
-		const res = await client.api.accounts[':account'].messages[':id'].$get({
+		const res = await client.accounts[':account'].messages[':id'].$get({
 			param: { account, id },
 		});
 		if (!res.ok) throw await toError(res);
 		return res.json();
 	},
 	sync: async (account: string) => {
-		const res = await client.api.accounts[':account'].sync.$post({
+		const res = await client.accounts[':account'].sync.$post({
 			param: { account },
 		});
 		if (!res.ok) throw await toError(res);
@@ -117,7 +109,7 @@ export const api = {
 			removeLabels?: string[];
 		},
 	) => {
-		const res = await client.api.accounts[':account'].messages.modify.$post({
+		const res = await client.accounts[':account'].messages.modify.$post({
 			param: { account },
 			json: input,
 		});
@@ -128,7 +120,7 @@ export const api = {
 		account: string,
 		input: { ids: string[]; trashed: boolean },
 	) => {
-		const res = await client.api.accounts[':account'].messages.trash.$post({
+		const res = await client.accounts[':account'].messages.trash.$post({
 			param: { account },
 			json: input,
 		});

@@ -83,6 +83,11 @@ test('compiled production host serves packaged apps and exits on parent EOF', as
 		env: {
 			EPICENTER_DEV_PORT: '49152',
 			EPICENTER_DATA_DIR: dataDir,
+			// The host opens Local Mail's engine at boot (ADR-0191), and that
+			// engine's data dir defaults to a real per-user location that
+			// EPICENTER_DATA_DIR does not displace. Without this the compiled host
+			// under test signs into the developer's actual mailbox and polls Gmail.
+			LOCAL_MAIL_DIR: join(dataDir, 'local-mail'),
 			EPICENTER_APPS_DIST: join(appDir, 'dist'),
 			EPICENTER_INFERENCE_URL: 'http://127.0.0.1:1/v1',
 			EPICENTER_INFERENCE_MODEL: 'unused-model',

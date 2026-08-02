@@ -22,7 +22,6 @@ export type ParsedArgs = {
 	full: boolean;
 	watch: boolean;
 	watchIntervalMs?: number;
-	port?: number;
 	addLabels: string[];
 	removeLabels: string[];
 	json: boolean;
@@ -42,7 +41,6 @@ Usage:
   local-mail query "<sql>"
   local-mail archive|unarchive|mark-read|mark-unread <id...> [--json]
   local-mail label <id...> [--add <label>...] [--remove <label>...] [--json]
-  local-mail app [--port <n>]
   local-mail mcp
 
 Commands:
@@ -58,7 +56,6 @@ Commands:
   mark-read    Mark messages read by removing UNREAD.
   mark-unread  Mark messages unread by adding UNREAD.
   label        Add or remove Gmail labels by exact name or id.
-  app          Run the desktop runtime host: keep the mirror fresh and serve the triage UI + API on 127.0.0.1. Prints the origin to open.
   mcp          Serve query/status/sync/modify_labels tools over stdio.
 
 Options:
@@ -66,7 +63,6 @@ Options:
   --watch [intervalMs]  Keep syncing on a loop. Default: 30000.
   --add <label>         Add a Gmail label by exact name or id. Repeatable.
   --remove <label>      Remove a Gmail label by exact name or id. Repeatable.
-  --port <n>            Pin the app server port (app only; default: ephemeral).
   --json                Print typed JSON instead of human text. query is
                         always JSON, so --json is a no-op there.
   -h, --help            Show this help.
@@ -156,16 +152,6 @@ export function parseArgs(argv: string[]): ParsedArgs {
 					i += 1;
 					args.watchIntervalMs = parseWatchInterval(next);
 				}
-				break;
-			}
-			case '--port': {
-				const value = Number(takeValue());
-				if (!Number.isInteger(value) || value < 0) {
-					throw new Error(
-						`--port must be a non-negative integer, got "${value}"`,
-					);
-				}
-				args.port = value;
 				break;
 			}
 			case '--add':
@@ -516,10 +502,6 @@ export async function runCli(argv: string[]): Promise<number> {
 				removeLabels: args.removeLabels,
 				done: 'labels updated',
 			});
-		case 'app': {
-			const { runApp } = await import('./app.ts');
-			return runApp({ port: args.port });
-		}
 		case 'mcp': {
 			const { runMcpServer } = await import('./mcp.ts');
 			return runMcpServer();

@@ -22,6 +22,7 @@ import {
 	type DesktopEpicenterOwner,
 	EPICENTER_SURFACE_NOT_OPEN_ERROR_NAME,
 } from '@epicenter/data/desktop-owner';
+import { ApiError as MailApiError } from '@epicenter/local-mail/http/api-errors';
 import { type Context, Hono, type Next } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
 import { getCookie, setCookie } from 'hono/cookie';
@@ -42,6 +43,7 @@ import {
 	BOOTSTRAP_ROUTE,
 	LOCAL_BLOB_REMOTE_ROUTES,
 	LOCAL_BLOB_ROUTE,
+	MAIL_API_PREFIX,
 	SESSION_ROUTE,
 	SESSION_STREAM_ROUTE,
 	SURFACE_ROUTES,
@@ -85,6 +87,22 @@ export type HomeServerOptions = {
 	 * credential or a destination URL.
 	 */
 	blobRemote: BlobRemote | null;
+	/**
+	 * Local Mail's mountable surface, or `null` when no Gmail account is
+	 * connected on this device (ADR-0191). Absent means the Mail application
+	 * still launches and still serves its document: it reports "no account
+	 * connected" from its own reads rather than vanishing from Home, because a
+	 * user who has not run `local-mail connect` yet has a setup state, not a
+	 * missing application.
+	 */
+	mail: MailSurface | null;
+};
+
+/** The mail surface, as the host consumes it: something to mount. Typed
+ * structurally rather than importing the engine's `ApiApp`, so this module
+ * depends on "a Hono app" and not on Local Mail's route table. */
+type MailSurface = {
+	fetch: (request: Request) => Response | Promise<Response>;
 };
 
 const SESSION_COOKIE = 'epicenter_session';
@@ -131,6 +149,7 @@ export function createHomeServer({
 	blobs,
 	desktopAuth,
 	blobRemote,
+	mail,
 }: HomeServerOptions) {
 	if (launchToken === '') {
 		throw new Error('Epicenter refuses to serve without a launch token.');
@@ -263,12 +282,9 @@ export function createHomeServer({
 	});
 
 	// Home and the release-bundled placeholders: one document each, no asset
-	// tree behind them.
-	for (const surface of [
-		SURFACE_ROUTES.home,
-		SURFACE_ROUTES.mail,
-		SURFACE_ROUTES.books,
-	]) {
+	// tree behind them. Mail left this list when it became a compiled
+	// application (ADR-0191); Books is the last placeholder.
+	for (const surface of [SURFACE_ROUTES.home, SURFACE_ROUTES.books]) {
 		app.get(surface.pattern, (c) => {
 			c.header('cache-control', 'no-store');
 			if (!hasBrowserSession(c)) return c.html(SESSION_SHELL);
@@ -317,6 +333,25 @@ export function createHomeServer({
 
 	app.use(APPLICATIONS_ROUTE.pattern, requireBrowserSession);
 	app.use('/api/home/*', requireBrowserSession);
+	// Local Mail's surface, mounted on this origin behind the same session as
+	// every other `/api` surface (ADR-0191). The mail app carries no prefix and
+	// no gate of its own, so both are applied here; the session is the only
+	// credential, because a Mail window runs as Epicenter (ADR-0179).
+	app.use(`${MAIL_API_PREFIX}/*`, requireBrowserSession);
+	app.all(`${MAIL_API_PREFIX}/*`, (c) => {
+		if (!mail) {
+			// The mail surface's own vocabulary, so the Mail SPA's single error
+			// path reads this without a special case for "the host, not the app,
+			// answered".
+			const err = MailApiError.MailUnavailable();
+			return c.json(err, err.error.status);
+		}
+		// Strip the host-chosen prefix: the mail app's routes are prefix-free, so
+		// it must see the path its own route table declares.
+		const url = new URL(c.req.url);
+		url.pathname = url.pathname.slice(MAIL_API_PREFIX.length) || '/';
+		return mail.fetch(new Request(url, c.req.raw));
+	});
 	app.use(DESKTOP_EPICENTER_ROUTE, requireBrowserSession);
 	// The observation carrier is guarded exactly like the operations route it
 	// sits beside, plus the explicit Origin equality every WebSocket upgrade

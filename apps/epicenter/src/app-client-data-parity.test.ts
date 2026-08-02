@@ -443,6 +443,7 @@ async function startHost(directory: string) {
 		}),
 		desktopAuth: createTestDesktopAuth(),
 		blobRemote: null,
+		mail: null,
 	});
 	const server = Bun.serve({
 		hostname: '127.0.0.1',

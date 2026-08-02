@@ -1,8 +1,8 @@
-import { randomBytes } from 'node:crypto';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
+import type { Result } from 'wellcrafted/result';
 import type { MailDb } from '../db.ts';
 import { syncOwnerBusy } from '../lock.ts';
 import {
@@ -15,50 +15,47 @@ import { type SyncDeps, syncMailbox } from '../sync.ts';
 import { ApiError } from './api-errors.ts';
 
 /**
- * The `/api` surface of `local-mail app`, as a Hono app. It owns routing, the
- * bearer gate, and request validation; the loopback host primitive around it
- * (`Bun.serve` in `app.ts`) owns the Host-check kill switch and static SPA
- * serving: `/api/*` falls through to this Hono app, `/*` serves `ui/dist`.
+ * Local Mail's HTTP surface, as a mountable Hono app. It owns routing and
+ * request validation and nothing else: no path prefix, no authentication. The
+ * host that mounts it chooses both (ADR-0191).
+ *
+ * Two hosts mount it. `app.ts` mounts it at `/api` behind a per-launch loopback
+ * bearer, with the Host-check kill switch around it. The Epicenter host mounts
+ * it at `/api/mail` behind the browser session it already requires of every
+ * surface, where a mail-only credential would protect nothing the session does
+ * not already protect. Because the prefix belongs to the host, these routes
+ * cannot collide with Epicenter's own `/api/apps` or `/api/home/session`.
  *
  * The app is built by a factory so its per-launch dependencies (the per-account
- * writer db + sync gate, the per-launch bearer) are injected rather than
- * captured at module load, while `export type ApiApp = ReturnType<typeof
- * createApiApp>` still hands the SPA a precise end-to-end typed `hc` client.
- * Every handler returns `c.json(...)`, so the client's response types are
- * inferred from the exact shapes the server returns: the wire contract cannot
- * silently drift.
+ * writer db + sync gate) are injected rather than captured at module load,
+ * while `export type ApiApp = ReturnType<typeof createApiApp>` still hands the
+ * SPA a precise end-to-end typed `hc` client. Every handler returns
+ * `c.json(...)`, so the client's response types are inferred from the exact
+ * shapes the server returns: the wire contract cannot silently drift. The
+ * client's base URL carries the host's mount prefix, so the same generated
+ * client works under either mount.
  *
- * The surface is multi-account. `GET /api/accounts` lists the accounts the host
- * loaded at launch, and every read/write route is scoped under
- * `/api/accounts/:account/*`: one loopback origin serves all connected mailboxes
- * (`app.ts` holds one sync session, one gate, and one per-account sync lock for
- * each). An unknown `:account` is a 404 (`AccountNotFound`); the set is frozen at
- * launch, matching the MCP one-session-per-account rule.
- *
- * Auth is one per-launch bearer, minted by the host and handed to the SPA out of
- * band (an injected `window.__LOCAL_MAIL__` global, never the URL). Every `/api`
- * request must present it; there is no bootstrap-token exchange endpoint.
+ * The surface is multi-account. `GET /accounts` lists the accounts in service,
+ * and every read/write route is scoped under `/accounts/:account/*`: one origin
+ * serves all connected mailboxes (the host holds one sync session, one gate, and
+ * one per-account sync lock for each). An unknown `:account` is a 404
+ * (`AccountNotFound`). The set is read per request rather than frozen, so a
+ * mailbox added by `POST /connect` is servable on the next request.
  *
  * Label writes go through the same core the CLI and MCP use
  * (`resolveAndModifyMessageLabels`); the archive/read/label intents desugar into
- * one `/api/accounts/:account/messages/modify` route, not per-intent routes.
- * Trash is separate because Gmail models trash/untrash as their own endpoints,
- * not a label delta, but it stays one route:
- * `/api/accounts/:account/messages/trash` carries the direction as a `trashed`
- * boolean, the same shape the core (`setMessagesTrashed`) already owns.
+ * one `/accounts/:account/messages/modify` route, not per-intent routes. Trash
+ * is separate because Gmail models trash/untrash as their own endpoints, not a
+ * label delta, but it stays one route: `/accounts/:account/messages/trash`
+ * carries the direction as a `trashed` boolean, the same shape the core
+ * (`setMessagesTrashed`) already owns.
  */
-
-/** The per-launch local API bearer: 256 bits of CSPRNG, base64url. Minted once
- * by the host, never a Gmail token, never carried in a URL. */
-export function mintBearer(): string {
-	return randomBytes(32).toString('base64url');
-}
 
 // Request schemas are arktype, the repo's HTTP-boundary validator (paired with
 // `@hono/standard-validator`, as in `packages/server`). typebox stays for the
 // Gmail wire shapes in `schema.ts`; these are two different boundaries.
 
-/** `POST /api/messages/modify` body: ids plus the add/remove label sets the UI
+/** `POST /accounts/:account/messages/modify` body: ids plus the add/remove label sets the UI
  * desugars its archive/read/label intents into. */
 const ModifyBody = type({
 	ids: 'string[]',
@@ -66,12 +63,12 @@ const ModifyBody = type({
 	'removeLabels?': 'string[]',
 });
 
-/** `POST /api/messages/trash` body: the ids and the direction. `trashed:true`
+/** `POST /accounts/:account/messages/trash` body: the ids and the direction. `trashed:true`
  * moves them to Trash, `false` restores them (the write behind Undo). The
  * direction is explicit, matching the core's `setMessagesTrashed({trashed})`. */
 const TrashBody = type({ ids: 'string[]', trashed: 'boolean' });
 
-/** `GET /api/messages` query. Values arrive as strings; `limit`/`offset` are
+/** `GET /accounts/:account/messages` query. Values arrive as strings; `limit`/`offset` are
  * parsed and clamped in the handler, matching the original bounds. */
 const MessageQuery = type({
 	'label?': 'string',
@@ -81,7 +78,7 @@ const MessageQuery = type({
 });
 
 /**
- * Everything the `/api` surface needs to serve one account: its runtime (for
+ * Everything the mail surface needs to serve one account: its runtime (for
  * `status`), its writer db + Gmail client (`syncDeps`, for reads and
  * Gmail-first writes), its per-account serialize gate, and whether THIS host
  * owns that account's sync loop (holds the `lock.ts` lock). Reads and triage
@@ -102,18 +99,25 @@ export type AccountApi = {
 };
 
 type ApiDeps = {
-	/** The connected accounts this host loaded at launch, keyed by email. */
+	/** The accounts in service, keyed by email. Read per request, so the engine
+	 * can admit a newly connected mailbox without rebuilding this app. */
 	accounts: Map<string, AccountApi>;
 	/** Global mutation kill switch (`LOCAL_MAIL_READ_ONLY`), not per-account. */
 	readOnly: boolean;
-	/** The per-launch local API bearer every `/api` request must present. The
-	 * host mints it (`mintBearer`) and hands it to the SPA out of band (an
-	 * injected `window.__LOCAL_MAIL__` global), never a Gmail token. */
-	bearer: string;
+	/**
+	 * Start Gmail's consent flow and put the resulting mailbox into service.
+	 *
+	 * Injected because it belongs to the engine that owns the token store, not to
+	 * a route table. Absent when the surface is mounted over a fixed set of
+	 * accounts with no way to add one, which is how the tests drive it.
+	 */
+	connect?: () => Promise<
+		Result<{ authorizeUrl: string }, { message: string }>
+	>;
 };
 
 export function createApiApp(deps: ApiDeps) {
-	const { accounts, readOnly, bearer } = deps;
+	const { accounts, readOnly, connect } = deps;
 
 	// Look up the account named by the `:account` segment, or undefined. The
 	// caller emits the 404 inline via `c.json`, NOT this helper: a helper that
@@ -124,7 +128,7 @@ export function createApiApp(deps: ApiDeps) {
 	const accountFor = (c: Context): AccountApi | undefined =>
 		accounts.get(c.req.param('account') ?? '');
 
-	// The account-scoped surface, mounted under `/api/accounts/:account`. It is
+	// The account-scoped surface, mounted under `/accounts/:account`. It is
 	// its own sub-app combined via `.route()` (not seven sibling `:account`
 	// routes on one chain) so `hc<ApiApp>` infers every route: Hono merges a
 	// mounted sub-schema under the param in one step, where a long chain of
@@ -244,27 +248,31 @@ export function createApiApp(deps: ApiDeps) {
 			return c.json(data);
 		});
 
+	// No prefix and no auth middleware: both belong to the mounting host
+	// (ADR-0191). Every route here is already inside whatever gate that host
+	// applied before dispatching to this app.
 	const app = new Hono()
-		// The bearer gate on every `/api` route: present the one per-launch bearer
-		// or get 401. There is no unauthenticated route (the bootstrap exchange is
-		// gone; the SPA already holds the bearer via the injected global).
-		.use('/api/*', async (c, next) => {
-			const header = c.req.header('authorization');
-			const provided = header?.startsWith('Bearer ')
-				? header.slice('Bearer '.length)
-				: null;
-			if (!provided || provided !== bearer) {
-				const err = ApiError.Unauthorized();
+		// The accounts this host serves, sorted, for the switcher. Read at request
+		// time, so a mailbox connected through `POST /connect` shows up here as
+		// soon as the engine admits it.
+		.get('/accounts', (c) => c.json({ accounts: [...accounts.keys()].sort() }))
+		// Start Gmail's consent flow. Answers with somewhere to send the person
+		// rather than waiting for them: the browser may take minutes, and on a
+		// platform where nothing opens automatically the URL is the only way
+		// through. The caller watches `GET /accounts` for the mailbox to appear.
+		.post('/connect', async (c) => {
+			if (!connect) {
+				const err = ApiError.ConnectUnavailable();
 				return c.json(err, err.error.status);
 			}
-			return next();
+			const { data, error } = await connect();
+			if (error) {
+				const err = ApiError.ConnectFailed({ message: error.message });
+				return c.json(err, err.error.status);
+			}
+			return c.json(data);
 		})
-		// The connected accounts this host serves, sorted, for the switcher. The
-		// set is frozen at launch (a newly connected account appears on restart).
-		.get('/api/accounts', (c) =>
-			c.json({ accounts: [...accounts.keys()].sort() }),
-		)
-		.route('/api/accounts/:account', accountApp)
+		.route('/accounts/:account', accountApp)
 		.notFound((c) => {
 			const err = ApiError.NotFound();
 			return c.json(err, err.error.status);

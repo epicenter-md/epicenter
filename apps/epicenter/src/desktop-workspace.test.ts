@@ -347,6 +347,7 @@ async function startDesktopServer(root: string) {
 		blobs: createBunBlobStore({ directory: join(root, 'blobs') }),
 		desktopAuth: createTestDesktopAuth(),
 		blobRemote: null,
+		mail: null,
 	});
 	const server = Bun.serve({
 		hostname: '127.0.0.1',

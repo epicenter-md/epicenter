@@ -20,6 +20,7 @@ import type { SyncCredentialProvider } from '@epicenter/data';
 import { createDesktopEpicenterOwner } from '@epicenter/data/desktop-owner';
 import { parseExchangeResponse } from '@epicenter/data/protocol';
 import { createHttpDocumentTransports } from '@epicenter/document-sync';
+import { type MailEngine, openMailEngine } from '@epicenter/local-mail/engine';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { loadActiveAppCatalog } from './app-catalog.ts';
 import { COMPILED_APPLICATIONS } from './applications.ts';
@@ -50,6 +51,7 @@ async function main(): Promise<void> {
 		| undefined;
 	let desktopAuth: DesktopAuthAuthority | undefined;
 	let server: ReturnType<typeof Bun.serve> | undefined;
+	let mailEngine: MailEngine | null = null;
 	let lifecycleOwnsResources = false;
 
 	try {
@@ -150,6 +152,20 @@ async function main(): Promise<void> {
 			join(epicenterDataDir, 'app-catalog'),
 			{ reservedIds: Object.keys(SURFACE_ROUTES) },
 		);
+		// Local Mail's engine, opened for this host's lifetime (ADR-0191): every
+		// connected mailbox and its sync loop. Failing to open is a device state,
+		// not a release defect (usually no account connected yet), so unlike a
+		// compiled application that did not build, it never sinks the boot: the
+		// Mail surface reports it and every other surface is unaffected.
+		const openedMail = await openMailEngine({
+			log: (message) => process.stderr.write(`[mail] ${message}\n`),
+		});
+		if (openedMail.error) {
+			process.stderr.write(`[mail] not serving: ${openedMail.error.message}\n`);
+		} else {
+			mailEngine = openedMail.data;
+		}
+
 		const origin = `http://127.0.0.1:${boot.port}`;
 		const { app, websocket } = createHomeServer({
 			host,
@@ -161,6 +177,7 @@ async function main(): Promise<void> {
 			blobs,
 			desktopAuth: auth,
 			blobRemote,
+			mail: mailEngine?.api ?? null,
 		});
 
 		server = Bun.serve({
@@ -175,10 +192,12 @@ async function main(): Promise<void> {
 		const ownedHost = host;
 		const ownedData = dataOwner;
 		const ownedDesktopAuth = auth;
+		const ownedMail = mailEngine;
 		await superviseSidecar({
 			server,
 			host: {
 				async [Symbol.asyncDispose]() {
+					await ownedMail?.close();
 					ownedDesktopAuth[Symbol.dispose]();
 					await ownedHost[Symbol.asyncDispose]();
 					await ownedData[Symbol.asyncDispose]();
@@ -190,6 +209,7 @@ async function main(): Promise<void> {
 	} finally {
 		if (!lifecycleOwnsResources) {
 			if (server) await server.stop(true);
+			await mailEngine?.close();
 			desktopAuth?.[Symbol.dispose]();
 			if (host) await host[Symbol.asyncDispose]();
 			if (dataOwner) await dataOwner[Symbol.asyncDispose]();

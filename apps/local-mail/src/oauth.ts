@@ -196,10 +196,39 @@ async function fetchAccountEmail(
 	return Ok(data.emailAddress);
 }
 
-export async function runAuthorizationFlow(
+/**
+ * A consent flow that has started but not finished: where to send the person,
+ * and what to await once they come back.
+ *
+ * Split from {@link runAuthorizationFlow} because a GUI needs the URL *before*
+ * the wait, and cannot rely on a browser opening. `defaultOpenBrowser` is macOS
+ * only and silently does nothing elsewhere, which is fine for a CLI that prints
+ * the URL beside it and useless for a window that showed a spinner. A caller
+ * that can render the URL is a caller that works on every platform.
+ */
+export type AuthorizationFlowHandle = {
+	/** Send the person here. Safe to render, open, or copy. */
+	authorizeUrl: string;
+	/** Resolves when Google redirects back, or when the flow times out. */
+	completed: GrantResult;
+	/** Stop listening and release the loopback port. Idempotent; a flow that
+	 * already completed is unaffected. */
+	cancel(): void;
+};
+
+/**
+ * Start a consent flow: bind the loopback listener Google will redirect to,
+ * build the authorization URL, and hand both back without waiting.
+ *
+ * The listener holds an ephemeral port for the flow's lifetime, which is the
+ * loopback-any-port exemption Google reserves for Desktop clients (ADR-0188).
+ * Every caller must either await `completed` or `cancel()`, or the port and its
+ * timeout leak.
+ */
+export async function beginAuthorizationFlow(
 	config: AppConfig,
 	options: AuthorizationFlowOptions,
-): GrantResult {
+): Promise<Result<AuthorizationFlowHandle, OAuthError>> {
 	// Resolve the OAuth keyset lazily; this is the connect path's only
 	// app-identity read. Destructured so the narrowing survives the awaits.
 	const { data: credentials, error: credentialsError } =
@@ -211,7 +240,6 @@ export async function runAuthorizationFlow(
 	const codeVerifier = oauth.generateRandomCodeVerifier();
 	const codeChallenge = await oauth.calculatePKCECodeChallenge(codeVerifier);
 	const timeoutMs = options.timeoutMs ?? 5 * 60 * 1000;
-	const log = options.log ?? (() => {});
 	const { promise: callback, resolve } = Promise.withResolvers<URL | null>();
 
 	const server = Bun.serve({
@@ -224,7 +252,7 @@ export async function runAuthorizationFlow(
 			}
 			setTimeout(() => resolve(url), 0);
 			return new Response(
-				'<html><body><h2>Local Mail connected.</h2><p>You can close this window and return to the terminal.</p></body></html>',
+				'<html><body><h2>Gmail connected.</h2><p>You can close this window and return to Epicenter.</p></body></html>',
 				{ headers: { 'content-type': 'text/html' } },
 			);
 		},
@@ -236,57 +264,86 @@ export async function runAuthorizationFlow(
 		redirectUri,
 		clientId,
 	});
-	log('Opening your browser to authorize Gmail access.');
-	log(`If it does not open, visit:\n  ${authorizeUrl}`);
-	(options.openBrowser ?? defaultOpenBrowser)(authorizeUrl);
 
-	const timeout = new Promise<URL | null>((resolveTimeout) => {
-		setTimeout(() => resolveTimeout(null), timeoutMs);
-	});
-	const callbackUrl = await Promise.race([callback, timeout]);
-	server.stop(true);
-	if (!callbackUrl) return OAuthError.Timeout({ ms: timeoutMs });
+	const timer = setTimeout(() => resolve(null), timeoutMs);
 
-	const as = authServer(config);
-	const client: oauth.Client = { client_id: clientId };
-	try {
-		const params = oauth.validateAuthResponse(as, client, callbackUrl, state);
-		const response = await oauth.authorizationCodeGrantRequest(
-			as,
-			client,
-			oauth.ClientSecretPost(clientSecret),
-			params,
-			redirectUri,
-			codeVerifier,
-			httpOptions(config),
-		);
-		const grant = await oauth.processAuthorizationCodeResponse(
-			as,
-			client,
-			response,
-		);
-		const { data: accountEmail, error } = await fetchAccountEmail(
-			config,
-			grant,
-		);
-		if (error) return { data: null, error };
-		const { data: token, error: tokenError } = tokenSetFromGrant(grant, {
-			accountEmail,
-			clientIdUsed: clientId,
-			now: options.now(),
-		});
-		if (tokenError) return { data: null, error: tokenError };
-		persistGmailProviderCredentials(config.dataDir, credentials);
-		return Ok(token);
-	} catch (cause) {
-		if (cause instanceof oauth.AuthorizationResponseError) {
-			return OAuthError.AuthorizationDenied({
-				error: cause.error,
-				description: cause.error_description ?? '',
+	const exchange = async (callbackUrl: URL): GrantResult => {
+		const as = authServer(config);
+		const client: oauth.Client = { client_id: clientId };
+		try {
+			const params = oauth.validateAuthResponse(as, client, callbackUrl, state);
+			const response = await oauth.authorizationCodeGrantRequest(
+				as,
+				client,
+				oauth.ClientSecretPost(clientSecret),
+				params,
+				redirectUri,
+				codeVerifier,
+				httpOptions(config),
+			);
+			const grant = await oauth.processAuthorizationCodeResponse(
+				as,
+				client,
+				response,
+			);
+			const { data: accountEmail, error } = await fetchAccountEmail(
+				config,
+				grant,
+			);
+			if (error) return { data: null, error };
+			const { data: token, error: tokenError } = tokenSetFromGrant(grant, {
+				accountEmail,
+				clientIdUsed: clientId,
+				now: options.now(),
 			});
+			if (tokenError) return { data: null, error: tokenError };
+			persistGmailProviderCredentials(config.dataDir, credentials);
+			return Ok(token);
+		} catch (cause) {
+			if (cause instanceof oauth.AuthorizationResponseError) {
+				return OAuthError.AuthorizationDenied({
+					error: cause.error,
+					description: cause.error_description ?? '',
+				});
+			}
+			return OAuthError.TokenExchangeFailed({ cause });
 		}
-		return OAuthError.TokenExchangeFailed({ cause });
-	}
+	};
+
+	return Ok({
+		authorizeUrl,
+		completed: (async (): GrantResult => {
+			const callbackUrl = await callback;
+			clearTimeout(timer);
+			server.stop(true);
+			if (!callbackUrl) return OAuthError.Timeout({ ms: timeoutMs });
+			return exchange(callbackUrl);
+		})(),
+		cancel: () => {
+			clearTimeout(timer);
+			resolve(null);
+		},
+	});
+}
+
+/**
+ * The CLI's consent flow: begin, open a browser, and wait.
+ *
+ * A thin wrapper over {@link beginAuthorizationFlow} for the caller that has a
+ * terminal to print into and nothing to render. A GUI should call `begin`
+ * directly so it can show the URL instead of trusting a browser to open.
+ */
+export async function runAuthorizationFlow(
+	config: AppConfig,
+	options: AuthorizationFlowOptions,
+): GrantResult {
+	const log = options.log ?? (() => {});
+	const { data: flow, error } = await beginAuthorizationFlow(config, options);
+	if (error) return { data: null, error };
+	log('Opening your browser to authorize Gmail access.');
+	log(`If it does not open, visit:\n  ${flow.authorizeUrl}`);
+	(options.openBrowser ?? defaultOpenBrowser)(flow.authorizeUrl);
+	return flow.completed;
 }
 
 async function requestRefreshGrant({

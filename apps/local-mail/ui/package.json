@@ -1,6 +1,6 @@
 {
 	"name": "@epicenter/local-mail-ui",
-	"description": "Local Mail triage SPA, served same-origin by `local-mail app`",
+	"description": "Local Mail triage SPA, served by the Epicenter host as the `mail` compiled application",
 	"private": true,
 	"version": "0.0.1",
 	"type": "module",

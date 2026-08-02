@@ -114,12 +114,13 @@ impl Surface {
     /// Whether Home lists this surface as an application a person can open
     /// (ADR-0189).
     ///
-    /// Home is the shell the list lives in. Mail and Books are release-bundled
-    /// placeholder documents with nothing behind them to open. Both stay
-    /// reserved IDs the catalog refuses to admit, so "not launchable" never
-    /// means "free for someone else to claim".
+    /// Home is the shell the list lives in. Books is a release-bundled
+    /// placeholder document with nothing behind it to open. It stays a
+    /// reserved ID the catalog refuses to admit, so "not launchable" never
+    /// means "free for someone else to claim". Mail left that state when it
+    /// became a compiled application (ADR-0191).
     const fn is_application(self) -> bool {
-        matches!(self, Self::Whispering | Self::Honeycrisp)
+        matches!(self, Self::Whispering | Self::Honeycrisp | Self::Mail)
     }
 
     const fn id(self) -> &'static str {
@@ -1728,7 +1729,7 @@ mod tests {
             .filter(|surface| surface.is_application())
             .map(Surface::id)
             .collect();
-        assert_eq!(launchable, ["whispering", "honeycrisp"]);
+        assert_eq!(launchable, ["whispering", "honeycrisp", "mail"]);
     }
 
     #[test]
@@ -1740,6 +1741,10 @@ mod tests {
         assert!(matches!(
             parse_application_id("honeycrisp"),
             Some(Application::Compiled(Surface::Honeycrisp))
+        ));
+        assert!(matches!(
+            parse_application_id("mail"),
+            Some(Application::Compiled(Surface::Mail))
         ));
 
         // Every well-formed non-reserved ID resolves to the app-window path,
@@ -1764,10 +1769,10 @@ mod tests {
             "..",
             "hello http",
             "héllo",
-            // Reserved surfaces Home does not list: the shell itself, and
-            // placeholder documents with nothing behind them to open.
+            // Reserved surfaces Home does not list: the shell itself, and the
+            // placeholder document with nothing behind it to open. Mail left
+            // this set when it became a compiled application (ADR-0191).
             "home",
-            "mail",
             "books",
         ] {
             assert!(

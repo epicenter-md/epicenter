@@ -12,6 +12,7 @@
 		type ToggleVerb,
 		type TriageAction,
 	} from '$lib/actions';
+	import ConnectGmail from '$lib/components/ConnectGmail.svelte';
 	import LabelRail from '$lib/components/LabelRail.svelte';
 	import MessageDetail from '$lib/components/MessageDetail.svelte';
 	import MessageList from '$lib/components/MessageList.svelte';
@@ -43,9 +44,41 @@
 		queryFn: () => api.accounts(),
 	}));
 	let selectedAccount = $state<string | null>(null);
+
+	// First run: no mailbox connected yet. The engine answers with a consent URL
+	// immediately and admits the account in the background, so the only thing to
+	// do here is show the URL and keep asking whether it landed.
+	let authorizeUrl = $state<string | null>(null);
+	let connectError = $state<string | null>(null);
+	const noAccounts =
+		$derived(accountsQuery.isSuccess && accountsQuery.data.accounts.length === 0);
+	const connect = createMutation(() => ({
+		mutationFn: () => api.connect(),
+		onMutate: () => {
+			connectError = null;
+		},
+		onSuccess: (result) => {
+			authorizeUrl = result.authorizeUrl;
+		},
+		onError: (cause: Error) => {
+			connectError = cause.message;
+		},
+	}));
+	// Poll only while a consent flow is outstanding. Nothing else can add an
+	// account, so there is nothing to watch for at any other time.
+	$effect(() => {
+		if (!authorizeUrl) return;
+		const timer = setInterval(() => accountsQuery.refetch(), 2000);
+		return () => clearInterval(timer);
+	});
+	// The flow landed: stop showing the link.
+	$effect(() => {
+		if (!noAccounts) authorizeUrl = null;
+	});
+
 	// Default to the first account once loaded, and re-resolve if the current
-	// selection disappears (an account list can only change across a restart, but
-	// this keeps the selection valid without special-casing the first load).
+	// selection disappears. The list changes when a mailbox is connected, so this
+	// keeps the selection valid without special-casing the first load.
 	$effect(() => {
 		const list = accountsQuery.data?.accounts ?? [];
 		if (list.length === 0) {
@@ -369,6 +402,14 @@
 		}}
 	/>
 
+	{#if noAccounts}
+		<ConnectGmail
+			starting={connect.isPending}
+			{authorizeUrl}
+			error={connectError}
+			onConnect={() => connect.mutate()}
+		/>
+	{:else}
 	<div class="flex min-h-0 flex-1">
 		<LabelRail
 			labels={labelList}
@@ -403,6 +444,7 @@
 			/>
 		{/key}
 	</div>
+	{/if}
 </div>
 
 <Dialog.Root open={shortcutsOpen} onOpenChange={(open) => (shortcutsOpen = open)}>

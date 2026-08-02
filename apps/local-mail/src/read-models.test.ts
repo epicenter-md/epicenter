@@ -1,6 +1,6 @@
 /**
  * The HTTP read surface's projections (db.ts's `listMessages`,
- * `getMessageDetail`, `listLabels`). These are the read models `local-mail app`
+ * `getMessageDetail`, `listLabels`). These are the read models the mail surface
  * serves to the triage SPA; the point of the tests is that they project Gmail's
  * own mirrored bytes (label ids, epoch dates, headers, extracted body) without
  * inventing state: label filtering is a `json_each` over the stored `labelIds`,
