@@ -157,6 +157,12 @@ Gmail's profile. Under a minted id it does not, and what it fails to find now
 contains undelivered triage. A locally minted identifier turns a recoverable
 credential loss into a data loss.
 
+The segment is validated as exactly one path component before it names a
+directory. Local Mail already does this; Local Books does not, and takes
+`realmId` verbatim from a callback query parameter into `join(dataDir, realmId)`
+(`apps/local-books/src/oauth.ts`, `apps/local-books/src/paths.ts`). Two call
+sites, one of them currently unguarded, is what earns one shared guard.
+
 ### Moving a partition and renaming one are different operations
 
 This record changes a partition's path twice, and the two changes are not the
@@ -202,12 +208,6 @@ account changes its name on disk.
 The mirror needs neither treatment in the rename case. ADR-0197 makes it a
 version-named artifact that a re-pull rebuilds, so the new partition builds its
 own and the old one becomes inert disk beside the rest of the legacy directory.
-
-The segment is validated as exactly one path component before it names a
-directory. Local Mail already does this; Local Books does not, and takes
-`realmId` verbatim from a callback query parameter into `join(dataDir, realmId)`
-(`apps/local-books/src/oauth.ts`, `apps/local-books/src/paths.ts`). Two call
-sites, one of them currently unguarded, is what earns one shared guard.
 
 ### Partitions live under one directory the app names
 
