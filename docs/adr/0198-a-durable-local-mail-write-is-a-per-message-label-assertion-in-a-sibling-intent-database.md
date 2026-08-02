@@ -7,17 +7,17 @@
 
 ## Context
 
-A Local Mail triage write is currently a synchronous Gmail call made from the
-request path: `apps/local-mail/src/modify.ts` sends `messages.modify` per id and
-folds Gmail's response into the mirror. There is no durable record of a write
-that has not landed. Offline, the click fails and nothing remembers it. With a
-flaky connection the user cannot tell what reached Gmail and what did not.
+A Local Mail triage write was a synchronous Gmail call made from the request
+path: a shared modify core sent `messages.modify` per id and folded Gmail's
+response into the mirror. There was no durable record of a write that had not
+landed. Offline, the click failed and nothing remembered it. With a flaky
+connection the user could not tell what reached Gmail and what did not.
 
-The SPA compensates in browser memory. `apps/local-mail/ui/src/lib/optimistic.ts`
-reads TanStack's mutation cache and projects pending label deltas over cached
-rows at render time. That projection dies on reload, is invisible to the CLI and
-the MCP surface, and can only hide rows the browser already fetched, so a
-filtered list's paging and counts are wrong the moment a write is in flight.
+The SPA compensated in browser memory, reading TanStack's mutation cache and
+projecting pending label deltas over cached rows at render time. That projection
+died on reload, was invisible to the CLI and the MCP surface, and could only hide
+rows the browser already held, so a filtered list's paging and counts were wrong
+the moment a write was in flight.
 
 ADR-0098 refused local-only mail state, and that refusal is correct: a tag or a
 read flag that never reaches Gmail leaves the phone showing something false. But
@@ -218,9 +218,9 @@ was shown. One projection, shared by the SPA, the CLI, and MCP.
   wrong shape for an irreversible act. Spam reporting trains a shared classifier
   and is likewise not a triage label the user is merely rearranging.
 - **Browser-memory optimism beside the durable ledger.** There is one pending
-  state and it is on disk. `optimistic.ts` and its mutation-cache projection are
-  deleted rather than kept as a faster parallel path, because two answers to
-  "what is pending" is the defect, not the latency.
+  state and it is on disk. The SPA's mutation-cache projection is deleted rather
+  than kept as a faster parallel path, because two answers to "what is pending"
+  is the defect, not the latency.
 
 ## Consequences
 
