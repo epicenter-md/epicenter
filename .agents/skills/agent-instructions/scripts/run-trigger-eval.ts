@@ -27,16 +27,82 @@
  * The default test suite never invokes it.
  *
  * For a model or effort sweep, run `--live --model X --effort Y --out run-X-Y.json`
- * once per cell and diff the result files. The result file records the model
- * and effort it was produced under so a stale file cannot be mistaken for a
- * fresh one.
+ * once per cell and diff the result files. The result file records the model,
+ * the effort, and a digest of the always-on instructions it was produced under,
+ * so a stale file cannot be mistaken for a fresh one.
  */
 
 import { type ChildProcess, spawn } from 'node:child_process';
-import { writeFile } from 'node:fs/promises';
+import { readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { classifyClaim, readSkillCatalog } from './skill-catalog';
+import {
+	classifyClaim,
+	readAlwaysOnInstructions,
+	readSkillCatalog,
+} from './skill-catalog';
+
+export type InstructionFingerprint = {
+	/** One entry per file that exists, in `ALWAYS_ON_FILES` order. */
+	files: { path: string; bytes: number; sha256: string }[];
+	/** Digest over every entry, so one field can decide comparability. */
+	digest: string;
+};
+
+/**
+ * Fingerprint the always-on instruction surface a live run routed under.
+ *
+ * `model` and `effort` are recorded because a result file produced under
+ * different ones is not comparable. The always-on instructions are the third
+ * such variable, and the only one that can change routing without touching a
+ * single description: `AGENTS.md` names skills and conditions directly, and it
+ * is loaded before any description is weighed. Until it is recorded, two
+ * result files that disagree are indistinguishable from two runs of the same
+ * configuration.
+ *
+ * This reads those files and never authors them. It is a digest, not a
+ * declaration, so it cannot become a second place that says what routes what.
+ */
+export async function fingerprintInstructions(
+	root: string,
+): Promise<InstructionFingerprint> {
+	const files = (await readAlwaysOnInstructions(root)).map(
+		({ path, contents }) => ({
+			path,
+			bytes: Buffer.byteLength(contents),
+			sha256: new Bun.CryptoHasher('sha256').update(contents).digest('hex'),
+		}),
+	);
+
+	const combined = files.map((f) => `${f.path}:${f.sha256}`).join('\n');
+
+	return {
+		files,
+		digest: new Bun.CryptoHasher('sha256').update(combined).digest('hex'),
+	};
+}
+
+/** Whether a stored run's numbers still describe the working tree. */
+export type RunComparability = 'comparable' | 'superseded' | 'undigested';
+
+/**
+ * Decide whether a stored run may still be quoted against the current tree.
+ *
+ * The proof this harness exists to serve is that always-on instructions cause
+ * routes, so a stored rate is a fact about the `AGENTS.md` that produced it and
+ * about no other one. `undigested` is its own verdict rather than a failure
+ * because a run recorded before the digest existed is not wrong, it is simply
+ * unable to answer the question.
+ */
+export function compareStoredRun(
+	stored: { instructions?: InstructionFingerprint },
+	current: InstructionFingerprint,
+): RunComparability {
+	if (!stored.instructions) return 'undigested';
+	return stored.instructions.digest === current.digest
+		? 'comparable'
+		: 'superseded';
+}
 
 /**
  * Which agent's routing a case is about.
@@ -91,6 +157,7 @@ const USAGE = `Usage: bun run .agents/skills/agent-instructions/scripts/run-trig
 Default mode is offline and reports description coverage, not routing.
 
   --corpus <file>   corpus JSON (default: ../evals/routing.json)
+  --verify-runs <dir>  report whether stored runs still describe this tree
   --case <id>       run one case (repeatable)
   --strict          exit 1 when the offline pass reports findings
   --json            emit results as JSON on stdout
@@ -408,6 +475,33 @@ if (import.meta.main) {
 
 	const scriptDir = dirname(fileURLToPath(import.meta.url));
 	const skillsDir = join(scriptDir, '..', '..');
+	const repoRoot = resolve(skillsDir, '..', '..');
+
+	// Answering "may I still quote this number?" needs no corpus and no quota,
+	// so it runs before the corpus is even loaded.
+	const verifyDir = flagValue(argv, '--verify-runs');
+	if (verifyDir !== undefined) {
+		const current = await fingerprintInstructions(repoRoot);
+		const files = (await readdir(resolve(verifyDir)))
+			.filter((name) => name.endsWith('.json'))
+			.sort();
+
+		let stale = 0;
+		for (const name of files) {
+			const stored = (await Bun.file(resolve(verifyDir, name)).json()) as {
+				instructions?: InstructionFingerprint;
+			};
+			const verdict = compareStoredRun(stored, current);
+			if (verdict !== 'comparable') stale++;
+			console.log(`${verdict}\t${name}`);
+		}
+
+		console.error(
+			`run-trigger-eval: ${files.length - stale}/${files.length} run(s) comparable against instructions=${current.digest.slice(0, 12)}.`,
+		);
+		process.exit(stale > 0 ? 1 : 0);
+	}
+
 	const corpusPath = resolve(
 		flagValue(argv, '--corpus') ??
 			join(scriptDir, '..', 'evals', 'routing.json'),
@@ -483,7 +577,7 @@ if (import.meta.main) {
 	const timeoutMs = Number(flagValue(argv, '--timeout-ms') ?? 120_000);
 	const budgetMs = Number(flagValue(argv, '--budget-ms') ?? 900_000);
 	const runsPerCase = Number(flagValue(argv, '--runs') ?? 1);
-	const cwd = resolve(skillsDir, '..', '..');
+	const cwd = repoRoot;
 
 	// Cases written for a Codex session cannot be judged by a Claude probe.
 	// Dropping them silently would manufacture failures, so name them instead.
@@ -525,6 +619,8 @@ if (import.meta.main) {
 		results.push(summarize(testCase.id, runs));
 	}
 
+	const instructions = await fingerprintInstructions(cwd);
+
 	const run = {
 		mode: 'live' as const,
 		model: model ?? '(cli default)',
@@ -533,6 +629,7 @@ if (import.meta.main) {
 		budgetExhausted,
 		notMeasured: unmeasurable.map((c) => ({ id: c.id, router: c.router })),
 		corpus: corpusPath,
+		instructions,
 		results,
 	};
 
@@ -553,7 +650,7 @@ if (import.meta.main) {
 
 	const failed = results.filter((r) => r.verdict !== 'pass');
 	console.error(
-		`run-trigger-eval: ${results.length - failed.length}/${results.length} clean over ${runsPerCase} run(s) each, model=${run.model} effort=${run.effort}.`,
+		`run-trigger-eval: ${results.length - failed.length}/${results.length} clean over ${runsPerCase} run(s) each, model=${run.model} effort=${run.effort}, instructions=${instructions.digest.slice(0, 12)} (${instructions.files.map((f) => f.path).join(', ') || 'none'}).`,
 	);
 	// An exhausted budget is an incomplete run, not a clean one.
 	process.exit(failed.length > 0 || budgetExhausted ? 1 : 0);
