@@ -1,3 +1,4 @@
+import { chmodSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -21,13 +22,19 @@ export function resolveDataDir(): string {
 }
 
 /**
- * One account's mirror directory: `<dataDir>/<accountEmail>/`. The account email
- * names a directory, so it must be exactly one path segment: emails reach here
- * from Google's profile endpoint or a store-validated override, and this guard
- * keeps any other string from escaping the data dir.
+ * One account's private directory: `<dataDir>/<accountEmail>/`. Three files live
+ * here and only one of them is disposable: the versioned `mail.v<n>.db` mirror,
+ * the durable `intent.db` holding triage Gmail has not been told about yet
+ * (ADR-0198), and the `lock.db` naming the account's single reconciler.
  *
- * This is the whole of Local Mail's per-tenant naming. What the mirror artifact
- * inside is called is the mirror's business, not this module's (ADR-0197).
+ * The account email names a directory, so it must be exactly one path segment:
+ * emails reach here from Google's profile endpoint or a store-validated
+ * override, and this guard keeps any other string from escaping the data dir.
+ *
+ * This is the whole of Local Mail's per-tenant naming, and every file under the
+ * directory is derived from this one function, so the guard has a single owner.
+ * What the mirror artifact inside is called is the mirror's business, not this
+ * module's (ADR-0197).
  */
 export function accountDir(dataDir: string, accountEmail: string): string {
 	if (
@@ -57,4 +64,39 @@ export function credentialsFilePath(dataDir: string): string {
 /** The 0600 machine-level provider-credentials file, sibling to credentials.json. */
 export function providerFilePath(dataDir: string): string {
 	return join(dataDir, 'provider.json');
+}
+
+/**
+ * The account directory, created `0700` if missing, along with the data dir
+ * above it. Everything that is about to open a file in it (the mirror, the
+ * intent store, the lock) goes through here, so the mode is applied once rather
+ * than restated per file.
+ */
+export function ensureAccountDir(
+	dataDir: string,
+	accountEmail: string,
+): string {
+	const dir = accountDir(dataDir, accountEmail);
+	for (const path of [dataDir, dir]) {
+		mkdirSync(path, { recursive: true, mode: 0o700 });
+		chmodSync(path, 0o700);
+	}
+	return dir;
+}
+
+/**
+ * Restrict a SQLite file and its WAL sidecars to the owner. Both files under an
+ * account directory hold someone's mail or their pending changes to it, so both
+ * are `0600`; the mirror primitive deliberately does not decide sensitivity for
+ * the app (ADR-0197). Missing sidecars are skipped: a database has no
+ * `-wal`/`-shm` until it is written.
+ */
+export function secureDbFiles(path: string): void {
+	for (const file of [path, `${path}-wal`, `${path}-shm`]) {
+		try {
+			chmodSync(file, 0o600);
+		} catch (error) {
+			if ((error as { code?: unknown }).code !== 'ENOENT') throw error;
+		}
+	}
 }
