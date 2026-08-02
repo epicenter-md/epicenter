@@ -5,6 +5,10 @@ description: Give Claude one fresh, read-only, evidence-seeking independent judg
 
 # Consult Claude
 
+This is deliberately the inverse direction of `/codex:rescue`: Codex asks
+Claude for a fresh read. It does not prescribe how a Claude Code mission uses
+Codex.
+
 Invite Claude to investigate one question as an independent collaborator. Give
 it the outcome you need, the few sources or facts worth seeing, and any real
 boundary. Do not give it a theory to defend, a mandatory form to complete, or a

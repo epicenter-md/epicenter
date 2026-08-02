@@ -37,12 +37,12 @@ export const PUBLICATION_DENY_RULES = [
  * loses to it, so the refusal has to arrive at the same altitude.
  */
 export const NO_PUBLICATION_PROMPT =
-	'This session may commit locally in its worktree. It must not push, open or merge a pull request, deploy, or perform another external write. Report work and requested external actions to the delegating session, which handles publication after user authorization.';
+	'This session may commit locally in its worktree. It must not push, open or merge a pull request, deploy, or perform another external write. Report work and requested external actions to the calling session. Publication requires separate user authorization.';
 
 /**
  * Applied to every launch and every resume, with no flag that lifts it.
- * Publication stays with the supervisor that talks to the user, so there is no
- * authority here to grant, forget, or accidentally inherit.
+ * The launcher never grants publication authority, so it cannot be forgotten
+ * or accidentally inherited on a resumed session.
  *
  * Placed ahead of every other flag: `--disallowed-tools` is variadic, so it
  * swallows following arguments, including the invitation itself, until it reaches
@@ -87,12 +87,12 @@ function usage() {
 Common direct forms of \`git push\`, \`gh pr create\`, and \`gh pr merge\` are
 denied on every launch and resume, and no flag grants them. This guard is not a
 shell or network sandbox. Other external writes remain outside the user's request
-and require separate user authorization after the supervisor verifies the work.`);
+and require separate user authorization after appropriate verification.`);
 }
 
 /**
  * There is deliberately no flag here that widens authority. An unknown flag is
- * rejected rather than ignored, so a supervisor reaching for one that used to
+ * rejected rather than ignored, so a caller reaching for one that used to
  * exist gets a usage error instead of a silent no-op.
  */
 export function parseStartArgs(args: string[]) {
@@ -281,7 +281,7 @@ async function start(args: string[]) {
 
 function reportPublicationGuard() {
 	console.error(
-		'[delegate-claude] Publication denied: local commits only. Push, pull request creation, and merge stay with you, each separately authorized.',
+		'[delegate-claude] Direct git push, gh pr create, and gh pr merge commands are denied. Other external writes still require separate user authorization.',
 	);
 }
 
@@ -299,7 +299,7 @@ function reportLaunchedJob(
 	}
 
 	// The launch line is research-preview CLI output. When it changes shape,
-	// recover the ID from the supervisor roster by the session's display name.
+	// recover the ID from the agent roster by the session's display name.
 	const id =
 		parseBackgroundId(result.stdout) ??
 		(fallbackName

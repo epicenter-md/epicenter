@@ -125,7 +125,7 @@ describe('parseStartArgs', () => {
 	});
 
 	test('offers no argument that widens publication authority', () => {
-		// A supervisor reaching for authority gets a usage error, never a launch
+		// A caller reaching for authority gets a usage error, never a launch
 		// that quietly granted nothing or, worse, quietly granted something.
 		for (const flag of [
 			'--allow-external-writes',
@@ -181,7 +181,7 @@ describe('parseContinueArgs', () => {
 });
 
 describe('command lifecycle', () => {
-	test('starts, finds, watches, and reads one supervisor job', () => {
+	test('starts, finds, watches, and reads one delegated job', () => {
 		const fixtureDirectory = mkdtempSync(join(tmpdir(), 'delegate-claude-'));
 		const fakeClaude = join(fixtureDirectory, 'claude-fixture.ts');
 		const argsLog = join(fixtureDirectory, 'args.jsonl');
@@ -255,6 +255,9 @@ if (args[0] === '--bg' && args.includes('--resume')) {
 			});
 			expect(started.status).toBe(0);
 			expect(started.stdout).toContain('DELEGATE_CLAUDE_JOB_ID=7c5dcf5d');
+			expect(started.stderr).toContain(
+				'Direct git push, gh pr create, and gh pr merge commands are denied.',
+			);
 			const startArgs = lastLaunch();
 			expect(startArgs).toContain('--bg');
 			expect(startArgs).not.toContain('--model');
@@ -338,7 +341,7 @@ if (args[0] === '--bg' && args.includes('--resume')) {
 			expect(interrupted.status).toBe(0);
 			expect(interrupted.stdout).toContain('DELEGATE_CLAUDE_JOB_ID=a5b4a85d');
 			expect(back(1)[0]).toBe('stop');
-			// Interrupting a live turn is a supervision decision, not a widening
+			// Interrupting a live turn is a caller decision, not a widening
 			// of what the resumed session may do.
 			expectPublicationDenied(lastLaunch());
 

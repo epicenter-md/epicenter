@@ -1,9 +1,13 @@
 ---
 name: delegate-claude
-description: Launch and supervise one durable Claude Code session that independently leads and implements a substantial mission. Use when the user asks Codex to have Claude execute or hand off the work, or when an ambitious, exploratory, multi-file task would benefit from a long-horizon collaborator. Do not use for an obvious bounded fix or to produce a copy-paste prompt; use handoff instead.
+description: Launch and follow one durable Claude Code session that independently leads and implements a substantial mission. Use when the user asks Codex to have Claude execute or hand off the work, or when an ambitious, exploratory, multi-file task would benefit from a long-horizon collaborator. Do not use for an obvious bounded fix or to produce a copy-paste prompt; use handoff instead.
 ---
 
 # Delegate Claude
+
+This is the inverse-direction workflow: Codex starts a Claude session for a
+specific task. It does not define the standing Claude Code relationship, where
+Claude leads the mission and may call Codex through `/codex:rescue`.
 
 Invite Claude to lead a substantial piece of work as a collaborator. Tell it
 what you want to become true, point it at the context worth seeing, and name
@@ -67,7 +71,9 @@ bun <skill-dir>/scripts/delegate-claude.ts continue <id>
 explicit. Cancel with `claude stop <id>` when the work is no longer relevant;
 use `claude respawn <id>` only after a confirmed process failure.
 
-When Claude finishes, inspect its worktree and complete diff, run the relevant
-proof independently, and check for unauthorized external actions. Treat the
-handoff as evidence, not proof. Publishing remains a separate user-authorized
-action.
+When Claude finishes, this Codex-initiated workflow may need to inspect its
+worktree and complete diff before the calling task uses or reconciles the
+result. Choose the verification appropriate to that task and check for
+unauthorized external actions. This does not override Claude's normal ownership
+of a Claude Code mission. Treat the handoff as evidence, not proof. Publishing
+remains a separate user-authorized action.
