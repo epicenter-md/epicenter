@@ -227,13 +227,22 @@ async function drain(
 			}
 			return true;
 		}
-		if (message.labelIds) {
-			deps.db.patchMessageLabels(
-				message.id,
-				message.labelIds,
-				new Date(deps.now()).toISOString(),
-			);
-		}
+		// An absent `labelIds` is an EMPTY label set, not "no answer". Gmail's JSON
+		// encoding omits empty repeated fields, so a message whose last label the
+		// caller just removed comes back without the key at all; `schema.ts` marks
+		// it optional because a thin `history.list` message really does lack it, not
+		// because a mutation response may decline to say.
+		//
+		// Skipping the fold here would leave the mirror asserting labels Gmail no
+		// longer has while the assertion that proved otherwise is retired one line
+		// below. The pull normally papers over that, but the pull is exactly what
+		// fails when anything is wrong, so the stale fact would resurface in the
+		// inbox and the user would watch their archive come back.
+		deps.db.patchMessageLabels(
+			message.id,
+			message.labelIds ?? [],
+			new Date(deps.now()).toISOString(),
+		);
 		delivered += deps.intent.retire(covered);
 		return true;
 	}

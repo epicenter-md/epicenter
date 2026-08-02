@@ -807,6 +807,42 @@ describe('drain', () => {
 	});
 });
 
+describe("folding Gmail's answer", () => {
+	test('an omitted labelIds is folded as an empty set, not skipped', async () => {
+		// Gmail's JSON encoding omits empty repeated fields, so removing a message's
+		// last label comes back as a Message with no `labelIds` key at all. Treating
+		// that as "no answer" and skipping the fold would retire the assertion while
+		// the mirror still claimed the old label, and the next pull is exactly what
+		// fails when anything is wrong, so the stale fact would resurface.
+		const client = fakeGmail(
+			new Map([['m1', { data: { id: 'm1', threadId: 't-m1' } }]]),
+		);
+		const { deps, db, intent, cleanup } = setup(client, [
+			message('m1', ['INBOX']),
+		]);
+		try {
+			intent.assert(
+				[{ messageId: 'm1', labelId: 'INBOX', want: false }],
+				new Date(NOW).toISOString(),
+			);
+
+			const outcome = await pass(deps);
+			expect(outcome.delivery.delivered).toBe(1);
+			expect(intent.pending()).toEqual([]);
+
+			// Gmail's answer, folded: the message carries nothing now.
+			expect(mirroredLabels(db, 'm1')).toEqual([]);
+			// And with the assertion retired there is no overlay left to hide the row,
+			// so this is the whole of what keeps it out of the inbox.
+			expect(
+				db.listMessages({ labelId: 'INBOX', limit: 10, offset: 0 }),
+			).toEqual([]);
+		} finally {
+			cleanup();
+		}
+	});
+});
+
 describe('ownership', () => {
 	test('a second reconciler cannot run while the first holds the account', async () => {
 		// The one-writer rule is the capability, not a convention. `reconcileAccount`

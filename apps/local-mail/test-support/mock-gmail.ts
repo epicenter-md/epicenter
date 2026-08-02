@@ -12,9 +12,6 @@
  *   MOCK_DB     absolute path to the copied mirror artifact,
  *               `mail.v<version>.db` (opened read-only)
  *   MOCK_LOG    absolute path for the modify JSONL log (optional)
- *   MOCK_FOLD   "false" => every modify omits `labelIds`, so the reconciler
- *               retires the assertion without folding an answer into the mirror
- *               and the row waits for the next pull; anything else folds
  *
  * Every route other than history-echo and modify returns a NON-retryable 403,
  * which the engine treats as a hard, non-destructive failure. That guarantees
@@ -30,7 +27,6 @@ import { appendFileSync } from 'node:fs';
 const PORT = Number(process.env.MOCK_PORT) || 0;
 const DB_PATH = process.env.MOCK_DB;
 const LOG_PATH = process.env.MOCK_LOG;
-const FOLD = process.env.MOCK_FOLD !== 'false';
 
 if (!DB_PATH) {
 	console.error('MOCK_DB is required (path to the copied mail.v<version>.db).');
@@ -105,17 +101,16 @@ const server = Bun.serve({
 			if (LOG_PATH) {
 				appendFileSync(
 					LOG_PATH,
-					`${JSON.stringify({ at: new Date().toISOString(), id, add, remove, resultLabelIds: labelIds, folded: FOLD })}\n`,
+					`${JSON.stringify({ at: new Date().toISOString(), id, add, remove, resultLabelIds: labelIds })}\n`,
 				);
 			}
 
-			// folded:true => return labelIds so the mirror row folds immediately.
-			// folded:false => omit labelIds so the reconciler has nothing to fold.
-			return json(
-				FOLD
-					? { id, threadId: cur.threadId, labelIds }
-					: { id, threadId: cur.threadId },
-			);
+			// Always the post-modify label set, the way Gmail answers. There is no
+			// omit-the-labels mode: an absent `labelIds` means the EMPTY set, which
+			// the reconciler folds as such, so a flag for it would only offer a way
+			// to strip every label off a row rather than a delivery path worth
+			// exercising.
+			return json({ id, threadId: cur.threadId, labelIds });
 		}
 
 		// history.list — echo the cursor with NO `history` key => no changes.

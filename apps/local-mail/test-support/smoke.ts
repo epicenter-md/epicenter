@@ -28,7 +28,7 @@ async function main(): Promise<void> {
 	// Fingerprint the real mirror BEFORE anything runs.
 	const before = await fingerprintReal();
 
-	const harness = await bootHarness({ fold: true });
+	const harness = await bootHarness({});
 	try {
 		const auth = {
 			authorization: `Bearer ${harness.bearer}`,

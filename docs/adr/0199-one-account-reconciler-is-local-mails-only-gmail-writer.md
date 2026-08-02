@@ -55,10 +55,14 @@ the network call one owner.
 
 1. **Drain.** Read every assertion for this account. Group by `message_id`, and
    deliver each message's opinions.
-2. **Retire on confirmation.** A Gmail response that carries the message's
-   current `labelIds` is the acceptance proof. Delete the exact rows it proves,
-   identified by `(message_id, label_id, seq)`, and fold the returned labels into
-   the mirror.
+2. **Retire on confirmation.** The Gmail response is the acceptance proof. Fold
+   its labels into the mirror, then delete the exact rows it proves, identified
+   by `(message_id, label_id, seq)`. An absent `labelIds` on that response is an
+   EMPTY label set, not a missing answer: Gmail's JSON encoding omits empty
+   repeated fields, so removing a message's last label returns a resource without
+   the key. Folding it as empty is what stops a retired assertion from leaving
+   the mirror asserting a label Gmail no longer has, which the following pull
+   would normally correct and cannot when the pull is what failed.
 3. **Pull.** Run the existing sync pass (`history.list`, or a full pull when the
    cursor is stale) against the same mirror.
 

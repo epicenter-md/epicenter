@@ -82,14 +82,11 @@ export type BootedHarness = {
 };
 
 /**
- * Copy the mirror with forged creds, boot the mock (with the requested fold
- * mode) and `local-mail app` against the copy on ephemeral ports, and hand back
- * the launch coordinates. Never touches the real mirror or real Gmail.
+ * Copy the data dir with forged creds, boot the mock and `local-mail app`
+ * against the copy on ephemeral ports, and hand back the launch coordinates.
+ * Never touches the real mirror, the real intent store, or real Gmail.
  */
 export async function bootHarness(opts: {
-	/** `false` => modifies omit labelIds, so the reconciler retires the assertion
-	 * without folding Gmail's answer into the mirror copy. */
-	fold: boolean;
 	lmTestDir?: string;
 }): Promise<BootedHarness> {
 	const lmTestDir =
@@ -110,7 +107,6 @@ export async function bootHarness(opts: {
 			MOCK_PORT: '0',
 			MOCK_DB: mockDb,
 			MOCK_LOG: mockLog,
-			MOCK_FOLD: opts.fold ? 'true' : 'false',
 		},
 		stdout: 'pipe',
 		stderr: 'inherit',
@@ -153,7 +149,6 @@ export type ModifyLogEntry = {
 	id: string;
 	add: string[];
 	remove: string[];
-	folded: boolean;
 };
 
 /** The modify entries the mock has logged so far, oldest first. */
