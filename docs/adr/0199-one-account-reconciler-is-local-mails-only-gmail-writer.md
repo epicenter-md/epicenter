@@ -171,6 +171,17 @@ reconciler lock, covering drain and pull together. There is no second lock and n
 second owner, so "who may write to Gmail for this account" and "who may advance
 this account's cursor" are one question with one answer.
 
+**Ownership is a capability the pass demands, not a convention its callers
+follow.** Running a pass requires the lock as a value: acquiring it is the only
+way to obtain one, it names the account it was acquired for, and a pass refuses a
+lock that names a different account. This matters because the alternative, a
+boolean or a comment saying "hold the lock around this call", is exactly the
+shape that decays: a new surface calls the pass, nobody notices the missing
+acquire, and there are two writers again. Anything that abandons undelivered
+work takes the same lock for the same reason, since deleting rows a running drain
+already snapshotted would report an abandonment that Gmail is concurrently being
+told the opposite of.
+
 Accounts remain independent. Each has its own reconciler, its own lock, and its
 own `intent.db`, and their passes overlap freely.
 

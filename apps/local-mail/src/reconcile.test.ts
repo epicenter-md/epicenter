@@ -27,6 +27,7 @@ import type { AppConfig } from './config.ts';
 import { type MailDb, openMailDb } from './db.ts';
 import { GmailApiError, type GmailClient } from './gmail-client.ts';
 import { type IntentDb, openIntentDb } from './intent.ts';
+import { acquireReconcileLock } from './lock.ts';
 import { type ReconcileDeps, reconcileAccount } from './reconcile.ts';
 import type { GmailLabel, GmailMessage, HistoryPage } from './schema.ts';
 
@@ -178,7 +179,14 @@ function setup(
 	// tests exercise delivery rather than a full backfill.
 	db.finishFullPull('1', syncedAt);
 	return {
-		deps: { db, intent, client, config: config(dir), now: () => NOW },
+		deps: {
+			db,
+			intent,
+			client,
+			config: config(dir),
+			now: () => NOW,
+			accountEmail: 'you@example.com',
+		},
 		db,
 		intent,
 		cleanup: () => {
@@ -189,8 +197,24 @@ function setup(
 	};
 }
 
-const pass = (deps: ReconcileDeps, readOnly = false) =>
-	reconcileAccount(deps, { forceFull: false, readOnly });
+/**
+ * One pass, as a real owner runs one: take the account's reconcile lock, deliver
+ * under it, release. A pass cannot be called without the capability, so the
+ * tests below reach the write path the only way production does. Ownership
+ * itself is tested in its own block; here it is setup.
+ */
+async function pass(deps: ReconcileDeps, readOnly = false) {
+	const lock = acquireReconcileLock({
+		dataDir: deps.config.dataDir,
+		accountEmail: deps.accountEmail,
+	});
+	if (!lock) throw new Error('the test could not become the reconcile owner');
+	try {
+		return await reconcileAccount(deps, { forceFull: false, readOnly, lock });
+	} finally {
+		lock.release();
+	}
+}
 
 /** Gmail's facts for one message, straight out of the mirror column, with no
  * intent overlay: what the reconciler folded, not what a reader would see. */
@@ -783,6 +807,91 @@ describe('drain', () => {
 	});
 });
 
+describe('ownership', () => {
+	test('a second reconciler cannot run while the first holds the account', async () => {
+		// The one-writer rule is the capability, not a convention. `reconcileAccount`
+		// takes a `ReconcileLock` that only `acquireReconcileLock` can mint, so a
+		// would-be second reconciler has nothing to pass it: the refusal happens at
+		// acquisition, before any Gmail call is even reachable.
+		const client = fakeGmail(
+			new Map([['m1', { data: message('m1', ['UNREAD']) }]]),
+		);
+		const { deps, intent, cleanup } = setup(client);
+		try {
+			intent.assert(
+				[{ messageId: 'm1', labelId: 'INBOX', want: false }],
+				new Date(NOW).toISOString(),
+			);
+
+			const first = acquireReconcileLock({
+				dataDir: deps.config.dataDir,
+				accountEmail: deps.accountEmail,
+			});
+			expect(first).not.toBeNull();
+
+			// The second owner is refused, so it never obtains the capability a pass
+			// requires. There is no other way in: `reconcileAccount` has no overload
+			// that skips the lock.
+			const second = acquireReconcileLock({
+				dataDir: deps.config.dataDir,
+				accountEmail: deps.accountEmail,
+			});
+			expect(second).toBeNull();
+
+			// Nothing reached Gmail on the refused path, and the change is still owed.
+			expect(client.modifyCalls).toEqual([]);
+			expect(intent.pending()).toHaveLength(1);
+
+			// The holder can still run, and the release hands ownership on.
+			const owned = await reconcileAccount(deps, {
+				forceFull: false,
+				readOnly: false,
+				// biome-ignore lint/style/noNonNullAssertion: asserted non-null above.
+				lock: first!,
+			});
+			expect(owned.delivery.delivered).toBe(1);
+			first?.release();
+
+			const third = acquireReconcileLock({
+				dataDir: deps.config.dataDir,
+				accountEmail: deps.accountEmail,
+			});
+			expect(third).not.toBeNull();
+			third?.release();
+		} finally {
+			cleanup();
+		}
+	});
+
+	test("one account's lock cannot authorize a pass over another's mirror", async () => {
+		// The desktop host holds one lock per connected account, so "has a lock" is
+		// not the same question as "has THIS account's lock". Crossing them would
+		// write to a mailbox nobody claimed, which is a programming error rather
+		// than a runtime condition, so the pass refuses loudly.
+		const client = fakeGmail(new Map());
+		const { deps, cleanup } = setup(client);
+		try {
+			const other = acquireReconcileLock({
+				dataDir: deps.config.dataDir,
+				accountEmail: 'someone-else@example.com',
+			});
+			expect(other).not.toBeNull();
+			expect(
+				reconcileAccount(deps, {
+					forceFull: false,
+					readOnly: false,
+					// biome-ignore lint/style/noNonNullAssertion: asserted non-null above.
+					lock: other!,
+				}),
+			).rejects.toThrow('someone-else@example.com');
+			expect(client.modifyCalls).toEqual([]);
+			other?.release();
+		} finally {
+			cleanup();
+		}
+	});
+});
+
 describe('across a restart', () => {
 	test('an act made offline survives the process and lands on the next pass', async () => {
 		// The product headline, end to end: archive on a plane, quit, reopen on the
@@ -811,6 +920,7 @@ describe('across a restart', () => {
 			client: offline,
 			config: config(dir),
 			now: () => NOW,
+			accountEmail: account.accountEmail,
 		};
 
 		expect(
@@ -848,6 +958,7 @@ describe('across a restart', () => {
 			client: online,
 			config: config(dir),
 			now: () => NOW,
+			accountEmail: account.accountEmail,
 		};
 
 		// The change was still owed when the new process opened the store.

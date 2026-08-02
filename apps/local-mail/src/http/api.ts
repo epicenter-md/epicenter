@@ -4,7 +4,7 @@ import { type } from 'arktype';
 import { Hono } from 'hono';
 import { assertMessageLabels } from '../assert.ts';
 import type { MailDb } from '../db.ts';
-import { reconcileOwnerBusy } from '../lock.ts';
+import { type ReconcileLock, reconcileOwnerBusy } from '../lock.ts';
 import {
 	type ReconcileDeps,
 	type ReconcileOutcome,
@@ -78,10 +78,10 @@ const MessageQuery = type({
 /**
  * Everything the `/api` surface needs to serve one account: its runtime (for
  * `status`), its mirror + intent store + Gmail client (`deps`), its per-account
- * serialize gate, the wake it asks for after an act, and whether THIS host owns
- * that account's reconcile loop (holds the `lock.ts` lock). Reads and acts never
- * take the lock, so they work regardless; only `POST .../reconcile` cares,
- * yielding busy when the loop is owned elsewhere.
+ * serialize gate, the wake it asks for after an act, and THIS host's reconcile
+ * ownership capability for the account if it won one. Reads and acts never take
+ * the lock, so they work regardless; only `POST .../reconcile` cares, yielding
+ * busy when the loop is owned elsewhere.
  */
 export type AccountApi = {
 	runtime: LocalMailRuntime;
@@ -104,10 +104,14 @@ export type AccountApi = {
 	 * produces it outlives any one request.
 	 */
 	lastFailure: () => string | null;
-	/** Whether this host holds the account's reconcile-owner lock (runs its
-	 * loop). A false value means another owner has it, so an explicit reconcile
-	 * yields `reconcileOwnerBusy` rather than racing a second writer. */
-	ownsLoop: boolean;
+	/**
+	 * This host's reconcile-owner capability for the account, or `null` when
+	 * another owner holds it. Deliberately the lock itself rather than a boolean:
+	 * a route cannot claim to own the loop and then call a pass, because the pass
+	 * demands the capability and only `acquireReconcileLock` mints one. `null`
+	 * yields `reconcileOwnerBusy` rather than racing a second writer.
+	 */
+	lock: ReconcileLock | null;
 };
 
 type ApiDeps = {
@@ -187,13 +191,14 @@ export function createApiApp(deps: ApiDeps) {
 			return c.json(detail);
 		})
 		.post('/reconcile', async (c) => {
-			const { runtime, deps: accountDeps, gate, ownsLoop } = c.var.account;
+			const { runtime, deps: accountDeps, gate, lock } = c.var.account;
 			// This host owns the loop only when it holds the lock. Without it,
 			// another owner delivers and pulls, so yield busy instead of becoming a
-			// second writer (the same contract the headless pass uses).
-			if (!ownsLoop) return c.json(reconcileOwnerBusy(runtime.accountEmail));
+			// second writer (the same contract the headless pass uses). The narrowing
+			// is what lets the pass below be called at all.
+			if (!lock) return c.json(reconcileOwnerBusy(runtime.accountEmail));
 			const outcome: ReconcileOutcome = await gate(() =>
-				reconcileAccount(accountDeps, { forceFull: false, readOnly }),
+				reconcileAccount(accountDeps, { forceFull: false, readOnly, lock }),
 			);
 			return c.json(outcome);
 		})

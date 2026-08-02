@@ -41,7 +41,10 @@ pair overwrites it. Archive, then un-archive, then archive is one row.
 
 **One reconciler per account is the only thing that writes to Gmail.** It drains
 the account's assertions, retires each one Gmail confirms, then pulls Gmail's
-facts. It holds the per-account lock, so writing and pulling cannot interleave.
+facts. Running a pass requires the per-account lock as a value, not as a promise
+the caller made: `reconcileAccount` takes the capability `acquireReconcileLock`
+mints, so writing and pulling cannot interleave and a second writer cannot be
+written by accident.
 It wakes on app start, the poll interval, a coalesced local write, and an
 explicit reconcile, and never after the app closes.
 

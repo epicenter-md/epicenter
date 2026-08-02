@@ -1,6 +1,7 @@
 import type { Result } from 'wellcrafted/result';
 import type { GmailClientError } from './gmail-client.ts';
 import type { IntentDb, LabelIntent } from './intent.ts';
+import type { ReconcileLock } from './lock.ts';
 import type { GmailMessage } from './schema.ts';
 import { type SyncDeps, type SyncOutcome, syncMailbox } from './sync.ts';
 
@@ -17,10 +18,14 @@ import { type SyncDeps, type SyncOutcome, syncMailbox } from './sync.ts';
  * would leave a window where the mirror says one thing, the intent store says
  * another, and Gmail has heard neither.
  *
- * Who may run a pass is the account lock (`lock.ts`), which the caller holds
- * around this call. That is the same lock the sync loop already took, widened
- * from "one puller" to "one writer": a delivery landing between two pages of a
- * pull was previously possible and is now structurally excluded.
+ * Who may run a pass is the account lock (`lock.ts`), and a pass ASKS FOR IT
+ * rather than trusting the caller to have taken one: `reconcileAccount` requires
+ * a `ReconcileLock`, which only `acquireReconcileLock` can produce and only for
+ * one named account. That is the same lock the sync loop already took, widened
+ * from "one puller" to "one writer", and moved out of convention into the
+ * signature: a delivery landing between two pages of a pull, or a second process
+ * writing behind the first one's back, is refused by the type rather than by
+ * every call site remembering.
  *
  * Failure handling has exactly two shapes, and no state is persisted for either:
  *
@@ -46,7 +51,16 @@ import { type SyncDeps, type SyncOutcome, syncMailbox } from './sync.ts';
  * still lands.
  */
 
-export type ReconcileDeps = SyncDeps & { intent: IntentDb };
+export type ReconcileDeps = SyncDeps & {
+	intent: IntentDb;
+	/**
+	 * The account this pass is for. It exists so the lock can be checked against
+	 * the work: a process that serves several accounts at once (the desktop host)
+	 * holds several locks, and handing the wrong one to a pass would authorize a
+	 * write to a mailbox nobody claimed.
+	 */
+	accountEmail: string;
+};
 
 /**
  * One assertion Gmail refused on its own terms, reported for THIS pass and
@@ -287,8 +301,30 @@ async function drain(
  */
 export async function reconcileAccount(
 	deps: ReconcileDeps,
-	{ forceFull, readOnly }: { forceFull: boolean; readOnly: boolean },
+	{
+		forceFull,
+		readOnly,
+		lock,
+	}: {
+		forceFull: boolean;
+		readOnly: boolean;
+		/**
+		 * Proof the caller is this account's one reconciler. Required, and only
+		 * `acquireReconcileLock` can produce one, so there is no way to reach the
+		 * Gmail write path without having become the owner first.
+		 */
+		lock: ReconcileLock;
+	},
 ): Promise<ReconcileOutcome> {
+	if (lock.accountEmail !== deps.accountEmail) {
+		// A programming error, not a runtime condition: some caller acquired one
+		// account's lock and pointed the pass at another's mirror. Throwing is the
+		// only honest answer, because continuing would write to Gmail under an
+		// ownership claim nobody holds.
+		throw new Error(
+			`Reconcile lock is for ${lock.accountEmail}, but the pass is for ${deps.accountEmail}.`,
+		);
+	}
 	const delivery = await drain(deps, { readOnly });
 	const pull = await syncMailbox(deps, { forceFull });
 	return { delivery, pull };
@@ -322,6 +358,9 @@ export async function runReconcileLoop(
 		forceFull: boolean;
 		readOnly: boolean;
 		intervalMs: number;
+		/** Held for the whole loop, not per pass: a watch loop is one owner for its
+		 * lifetime, and releasing between passes would let a second writer in. */
+		lock: ReconcileLock;
 		/** Aborting the signal stops the loop after the current pass or sleep. */
 		signal: AbortSignal;
 		/** Called after each pass with its outcome and 1-based pass number. */
@@ -333,6 +372,7 @@ export async function runReconcileLoop(
 		const outcome = await reconcileAccount(deps, {
 			forceFull: opts.forceFull && pass === 0,
 			readOnly: opts.readOnly,
+			lock: opts.lock,
 		});
 		pass += 1;
 		opts.onPass(outcome, pass);

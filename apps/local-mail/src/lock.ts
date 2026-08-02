@@ -21,14 +21,42 @@ import { ensureAccountDir } from './paths.ts';
  * in-process holder, not just a second process.
  */
 
-export type ReconcileLock = { release(): void };
+/**
+ * The capability's brand. Unexported and freshly minted, so no other module can
+ * name it and therefore no other module can build a value of the type below.
+ * Real at runtime rather than a `declare`d phantom, so the guarantee does not
+ * evaporate wherever the types do: a plain object cast through `any` still fails
+ * an `accountEmail` check but would pass a type-only brand silently.
+ */
+const RECONCILE_OWNER: unique symbol = Symbol('local-mail.reconcile-owner');
+
+/**
+ * Proof that the holder is the reconcile owner for ONE named account. It is a
+ * capability, not a flag: a function that requires one cannot be called by a
+ * caller who merely believes it has the right to write, which is what keeps
+ * "exactly one writer per account" a property of the types rather than of every
+ * call site remembering to take a lock first.
+ *
+ * `accountEmail` is on the lock because a process can hold several: the desktop
+ * host serves every connected account at once. A pass checks the lock it was
+ * handed against the account it is about to reconcile, so holding account A's
+ * lock cannot authorize a write to account B.
+ */
+export type ReconcileLock = {
+	readonly [RECONCILE_OWNER]: true;
+	readonly accountEmail: string;
+	release(): void;
+};
 
 /**
  * Try to become the reconcile owner for `<dataDir>/<accountEmail>`. Returns the
- * lock to `release()` when the pass or loop ends, or `null` when another owner
- * (the open app, another pass) already holds it. The account directory is
- * created if missing so the very first pass after `connect` can take the lock
- * before the mirror db exists.
+ * capability to hand to a pass and `release()` when the pass or loop ends, or
+ * `null` when another owner (the open app, another pass) already holds it. The
+ * account directory is created if missing so the very first pass after `connect`
+ * can take the lock before the mirror db exists.
+ *
+ * This is the only way a `ReconcileLock` comes into existence, in production or
+ * in a test, so a second reconciler is refused by the same mechanism everywhere.
  */
 export function acquireReconcileLock({
 	dataDir,
@@ -47,6 +75,8 @@ export function acquireReconcileLock({
 		return null;
 	}
 	return {
+		[RECONCILE_OWNER]: true,
+		accountEmail,
 		release() {
 			try {
 				db.run('ROLLBACK;');

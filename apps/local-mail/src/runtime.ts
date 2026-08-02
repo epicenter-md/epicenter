@@ -80,7 +80,7 @@ export async function openAccountSession(
 	const db = openMailDb({ dataDir: config.dataDir, accountEmail });
 	const intent = openIntentDb({ dataDir: config.dataDir, accountEmail });
 	return Ok({
-		deps: { db, intent, client, config, now, log: syncLog },
+		deps: { db, intent, client, config, now, accountEmail, log: syncLog },
 		close: () => {
 			intent.close();
 			db.close();

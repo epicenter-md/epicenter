@@ -157,6 +157,7 @@ const TOOLS: ToolDescriptor[] = [
 					const outcome = await reconcileAccount(session.deps, {
 						forceFull: args.full ?? false,
 						readOnly: ctx.config.readOnly,
+						lock,
 					});
 					// A failure in either phase is reportable, but the outcome rides
 					// along: the model should see what DID get delivered, and that

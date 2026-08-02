@@ -357,6 +357,7 @@ async function runReconcile(args: ParsedArgs): Promise<number> {
 			const outcome = await reconcileAccount(session.deps, {
 				forceFull: args.full,
 				readOnly: runtime.config.readOnly,
+				lock,
 			});
 			console.log(
 				args.json
@@ -377,6 +378,7 @@ async function runReconcile(args: ParsedArgs): Promise<number> {
 			forceFull: args.full,
 			readOnly: runtime.config.readOnly,
 			intervalMs,
+			lock,
 			signal: controller.signal,
 			onPass: (outcome, passNumber) => {
 				lastPassFailed = reconcileFailed(outcome);
@@ -474,6 +476,7 @@ async function runTriageAct(
 				reconcile = await reconcileAccount(deps, {
 					forceFull: false,
 					readOnly: runtime.config.readOnly,
+					lock,
 				});
 			} finally {
 				lock.release();

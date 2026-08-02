@@ -320,7 +320,10 @@ export async function runApp(options: { port?: number }): Promise<number> {
 				// Read through a closure, not copied: the loop overwrites it after
 				// every pass, and a status request must see the current answer.
 				lastFailure: () => engine.lastFailure,
-				ownsLoop: engine.lock !== null,
+				// The capability itself, not a claim about holding one. `null` means
+				// another owner has this account, and the reconcile route has nothing
+				// it could pass to a pass even if it tried.
+				lock: engine.lock,
 			},
 		]),
 	);
@@ -369,14 +372,18 @@ export async function runApp(options: { port?: number }): Promise<number> {
 			);
 			continue;
 		}
-		const { session, gate, clock, runtime } = engine;
+		const { session, gate, clock, runtime, lock } = engine;
 		(async () => {
 			while (!controller.signal.aborted) {
 				// A pass reports its failures in its outcome; a throw here is the
 				// unexpected kind, and it is recorded the same way so the status line
 				// never claims health the loop does not have.
 				engine.lastFailure = await gate(() =>
-					reconcileAccount(session.deps, { forceFull: false, readOnly }),
+					reconcileAccount(session.deps, {
+						forceFull: false,
+						readOnly,
+						lock,
+					}),
 				).then(passFailure, (cause) => {
 					console.error(
 						`[reconcile ${runtime.accountEmail}] pass failed: ${cause}`,

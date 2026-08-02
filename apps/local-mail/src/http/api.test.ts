@@ -21,6 +21,7 @@ import type { AppConfig } from '../config.ts';
 import { type MailDb, openMailDb } from '../db.ts';
 import type { GmailClient } from '../gmail-client.ts';
 import { type IntentDb, openIntentDb } from '../intent.ts';
+import { acquireReconcileLock, type ReconcileLock } from '../lock.ts';
 import type { ReconcileDeps } from '../reconcile.ts';
 import type { LocalMailRuntime } from '../runtime.ts';
 import type { GmailMessage } from '../schema.ts';
@@ -69,15 +70,26 @@ function message(id: string, subject: string): GmailMessage {
 /**
  * Build one account's `AccountApi` slice backed by a real on-disk mirror and
  * intent store under the shared data dir (the arrangement the host uses: one
- * dir, one subdir per account). `ownsLoop` defaults true; the gate is a
- * passthrough, and the wake is recorded rather than run.
+ * dir, one subdir per account). The gate is a passthrough and the wake is
+ * recorded rather than run.
+ *
+ * `owner` decides whether this slice holds the account's reconcile capability,
+ * and it is a REAL lock rather than a flag: `AccountApi.lock` is the capability
+ * itself, so a fixture cannot claim ownership the production type would refuse.
+ * `false` leaves it `null`, which is what a host that lost the race holds.
  */
 function account(
 	dataDir: string,
 	accountEmail: string,
 	seed: { messageId: string; subject: string; label: string },
-	ownsLoop = true,
-): { api: AccountApi; db: MailDb; intent: IntentDb; wakes: number } {
+	owner = true,
+): {
+	api: AccountApi;
+	db: MailDb;
+	intent: IntentDb;
+	lock: ReconcileLock | null;
+	wakes: number;
+} {
 	const db = openMailDb({ dataDir, accountEmail });
 	const intent = openIntentDb({ dataDir, accountEmail });
 	const syncedAt = '2026-07-08T00:00:00.000Z';
@@ -104,10 +116,14 @@ function account(
 		client: {} as unknown as GmailClient,
 		config: runtime.config,
 		now: () => Date.parse(syncedAt),
+		accountEmail,
 	};
+	const lock = owner ? acquireReconcileLock({ dataDir, accountEmail }) : null;
+	if (owner && !lock) throw new Error('the fixture could not take the lock');
 	const created = {
 		db,
 		intent,
+		lock,
 		wakes: 0,
 		api: {
 			runtime,
@@ -118,7 +134,7 @@ function account(
 			},
 			// No loop runs in these tests, so the host has no pass to report on.
 			lastFailure: () => null,
-			ownsLoop,
+			lock,
 		} as AccountApi,
 	};
 	return created;
@@ -171,8 +187,10 @@ describe('createApiApp multi-account routing', () => {
 
 		a.db.close();
 		a.intent.close();
+		a.lock?.release();
 		b.db.close();
 		b.intent.close();
+		b.lock?.release();
 		tmp.cleanup();
 	});
 
@@ -227,8 +245,10 @@ describe('createApiApp multi-account routing', () => {
 
 		a.db.close();
 		a.intent.close();
+		a.lock?.release();
 		b.db.close();
 		b.intent.close();
+		b.lock?.release();
 		tmp.cleanup();
 	});
 
@@ -252,6 +272,7 @@ describe('createApiApp multi-account routing', () => {
 
 		a.db.close();
 		a.intent.close();
+		a.lock?.release();
 		tmp.cleanup();
 	});
 
@@ -278,6 +299,7 @@ describe('createApiApp multi-account routing', () => {
 
 		a.db.close();
 		a.intent.close();
+		a.lock?.release();
 		tmp.cleanup();
 	});
 
@@ -309,6 +331,7 @@ describe('createApiApp multi-account routing', () => {
 
 		a.db.close();
 		a.intent.close();
+		a.lock?.release();
 		tmp.cleanup();
 	});
 });
@@ -379,6 +402,7 @@ describe('POST /messages/assert', () => {
 
 		a.db.close();
 		a.intent.close();
+		a.lock?.release();
 		tmp.cleanup();
 	});
 
@@ -407,6 +431,7 @@ describe('POST /messages/assert', () => {
 
 		a.db.close();
 		a.intent.close();
+		a.lock?.release();
 		tmp.cleanup();
 	});
 });
