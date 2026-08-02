@@ -1,17 +1,17 @@
 import { randomBytes } from 'node:crypto';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
-import type { Context } from 'hono';
 import { Hono } from 'hono';
+import { assertMessageLabels } from '../assert.ts';
 import type { MailDb } from '../db.ts';
-import { syncOwnerBusy } from '../lock.ts';
+import { reconcileOwnerBusy } from '../lock.ts';
 import {
-	resolveAndModifyMessageLabels,
-	setMessagesTrashed,
-} from '../modify.ts';
+	type ReconcileDeps,
+	type ReconcileOutcome,
+	reconcileAccount,
+} from '../reconcile.ts';
 import type { LocalMailRuntime } from '../runtime.ts';
 import { readMailStatus } from '../status.ts';
-import { type SyncDeps, syncMailbox } from '../sync.ts';
 import { ApiError } from './api-errors.ts';
 
 /**
@@ -20,8 +20,8 @@ import { ApiError } from './api-errors.ts';
  * (`Bun.serve` in `app.ts`) owns the Host-check kill switch and static SPA
  * serving: `/api/*` falls through to this Hono app, `/*` serves `ui/dist`.
  *
- * The app is built by a factory so its per-launch dependencies (the per-account
- * writer db + sync gate, the per-launch bearer) are injected rather than
+ * The app is built by a factory so its per-launch dependencies (each account's
+ * session and reconcile gate, the per-launch bearer) are injected rather than
  * captured at module load, while `export type ApiApp = ReturnType<typeof
  * createApiApp>` still hands the SPA a precise end-to-end typed `hc` client.
  * Every handler returns `c.json(...)`, so the client's response types are
@@ -31,21 +31,20 @@ import { ApiError } from './api-errors.ts';
  * The surface is multi-account. `GET /api/accounts` lists the accounts the host
  * loaded at launch, and every read/write route is scoped under
  * `/api/accounts/:account/*`: one loopback origin serves all connected mailboxes
- * (`app.ts` holds one sync session, one gate, and one per-account sync lock for
- * each). An unknown `:account` is a 404 (`AccountNotFound`); the set is frozen at
- * launch, matching the MCP one-session-per-account rule.
+ * (`app.ts` holds one session, one gate, and one reconcile-owner lock attempt
+ * for each). An unknown `:account` is a 404 (`AccountNotFound`); the set is
+ * frozen at launch, matching the MCP one-session-per-account rule.
  *
  * Auth is one per-launch bearer, minted by the host and handed to the SPA out of
  * band (an injected `window.__LOCAL_MAIL__` global, never the URL). Every `/api`
  * request must present it; there is no bootstrap-token exchange endpoint.
  *
- * Label writes go through the same core the CLI and MCP use
- * (`resolveAndModifyMessageLabels`); the archive/read/label intents desugar into
- * one `/api/accounts/:account/messages/modify` route, not per-intent routes.
- * Trash is separate because Gmail models trash/untrash as their own endpoints,
- * not a label delta, but it stays one route:
- * `/api/accounts/:account/messages/trash` carries the direction as a `trashed`
- * boolean, the same shape the core (`setMessagesTrashed`) already owns.
+ * No route here writes to Gmail (ADR-0199). Every triage act, archive, read,
+ * star, label, and trash alike, desugars into one `POST /messages/assert` that
+ * records a durable local assertion and asks the host's reconciler to wake; the
+ * reconciler delivers it (`POST /reconcile` is the explicit, synchronous form of
+ * the same pass). Reads answer from the mirror WITH those assertions overlaid,
+ * so the list a caller gets back already reflects the act it just made.
  */
 
 /** The per-launch local API bearer: 256 bits of CSPRNG, base64url. Minted once
@@ -58,18 +57,14 @@ export function mintBearer(): string {
 // `@hono/standard-validator`, as in `packages/server`). typebox stays for the
 // Gmail wire shapes in `schema.ts`; these are two different boundaries.
 
-/** `POST /api/messages/modify` body: ids plus the add/remove label sets the UI
- * desugars its archive/read/label intents into. */
-const ModifyBody = type({
+/** `POST /api/messages/assert` body: the concrete ids the caller acted on, plus
+ * the label sets every triage intent desugars into. Trash is not special here:
+ * moving to trash adds `TRASH`, and Undo removes it. */
+const AssertBody = type({
 	ids: 'string[]',
 	'addLabels?': 'string[]',
 	'removeLabels?': 'string[]',
 });
-
-/** `POST /api/messages/trash` body: the ids and the direction. `trashed:true`
- * moves them to Trash, `false` restores them (the write behind Undo). The
- * direction is explicit, matching the core's `setMessagesTrashed({trashed})`. */
-const TrashBody = type({ ids: 'string[]', trashed: 'boolean' });
 
 /** `GET /api/messages` query. Values arrive as strings; `limit`/`offset` are
  * parsed and clamped in the handler, matching the original bounds. */
@@ -82,22 +77,26 @@ const MessageQuery = type({
 
 /**
  * Everything the `/api` surface needs to serve one account: its runtime (for
- * `status`), its writer db + Gmail client (`syncDeps`, for reads and
- * Gmail-first writes), its per-account serialize gate, and whether THIS host
- * owns that account's sync loop (holds the `lock.ts` lock). Reads and triage
- * writes never take the lock, so they work regardless; only `POST .../sync`
- * cares, yielding busy when the loop is owned elsewhere.
+ * `status`), its mirror + intent store + Gmail client (`deps`), its per-account
+ * serialize gate, the wake it asks for after an act, and whether THIS host owns
+ * that account's reconcile loop (holds the `lock.ts` lock). Reads and acts never
+ * take the lock, so they work regardless; only `POST .../reconcile` cares,
+ * yielding busy when the loop is owned elsewhere.
  */
 export type AccountApi = {
 	runtime: LocalMailRuntime;
-	syncDeps: SyncDeps;
+	deps: ReconcileDeps;
 	/** The per-account serialize gate: this account's background loop and its
-	 * `POST .../sync` both enqueue here, so at most one pass touches its mirror
-	 * at a time. Distinct accounts sync concurrently. */
+	 * `POST .../reconcile` both enqueue here, so at most one pass touches its
+	 * mirror at a time. Distinct accounts reconcile concurrently. */
 	gate: <T>(fn: () => Promise<T>) => Promise<T>;
-	/** Whether this host holds the account's sync-owner lock (runs its loop). A
-	 * false value means another owner (a headless `sync`) has it, so a manual
-	 * refresh yields `syncOwnerBusy` rather than racing a second bulk pull. */
+	/** Ask the host's loop for a coalesced pass, so a local assertion is
+	 * delivered shortly after it is made rather than at the next poll. A no-op
+	 * when this host does not own the loop; that owner's poll picks it up. */
+	requestWake: () => void;
+	/** Whether this host holds the account's reconcile-owner lock (runs its
+	 * loop). A false value means another owner has it, so an explicit reconcile
+	 * yields `reconcileOwnerBusy` rather than racing a second writer. */
 	ownsLoop: boolean;
 };
 
@@ -115,29 +114,31 @@ type ApiDeps = {
 export function createApiApp(deps: ApiDeps) {
 	const { accounts, readOnly, bearer } = deps;
 
-	// Look up the account named by the `:account` segment, or undefined. The
-	// caller emits the 404 inline via `c.json`, NOT this helper: a helper that
-	// returned a bare `Response` would widen `c.json`'s `TypedResponse` and break
-	// `hc<ApiApp>` response inference for the whole route. `Context` is the
-	// untyped base, so `param('account')` is `string | undefined`; a missing
-	// segment can never key the map, so `?? ''` folds it into the same 404.
-	const accountFor = (c: Context): AccountApi | undefined =>
-		accounts.get(c.req.param('account') ?? '');
-
 	// The account-scoped surface, mounted under `/api/accounts/:account`. It is
-	// its own sub-app combined via `.route()` (not seven sibling `:account`
-	// routes on one chain) so `hc<ApiApp>` infers every route: Hono merges a
-	// mounted sub-schema under the param in one step, where a long chain of
+	// its own sub-app combined via `.route()` (not sibling `:account` routes on
+	// one chain) so `hc<ApiApp>` infers every route: Hono merges a mounted
+	// sub-schema under the param in one step, where a long chain of
 	// param-prefixed siblings degrades the generated client type. `:account`
-	// resolves from the mount path, so handlers read it via `accountFor(c)`.
-	const accountApp = new Hono()
-		.get('/status', async (c) => {
-			const account = accountFor(c);
+	// resolves from the mount path.
+	const accountApp = new Hono<{ Variables: { account: AccountApi } }>()
+		// Resolving the account is middleware, not a per-handler guard: a handler
+		// that never runs cannot forget the 404, and the answer to "which account is
+		// this?" gets exactly one owner. A middleware response stays out of
+		// `hc<ApiApp>`'s inferred union, unlike a helper returning a bare `Response`,
+		// so every handler below still types as its own `c.json` shape alone. The
+		// param is `string | undefined` on the untyped base context, and a missing
+		// segment can never key the map, so `?? ''` folds it into the same 404.
+		.use(async (c, next) => {
+			const account = accounts.get(c.req.param('account') ?? '');
 			if (!account) {
 				const err = ApiError.AccountNotFound();
 				return c.json(err, err.error.status);
 			}
-			const status = await readMailStatus(account.runtime);
+			c.set('account', account);
+			return next();
+		})
+		.get('/status', async (c) => {
+			const status = await readMailStatus(c.var.account.runtime);
 			return c.json({
 				accountEmail: status.accountEmail,
 				connected: status.connected,
@@ -146,25 +147,16 @@ export function createApiApp(deps: ApiDeps) {
 				lastSyncedAt: status.lastSyncedAt,
 				lastFullPullAt: status.lastFullPullAt,
 				rows: status.rows,
+				pending: status.pending,
 				readOnly,
 			});
 		})
-		.get('/labels', (c) => {
-			const account = accountFor(c);
-			if (!account) {
-				const err = ApiError.AccountNotFound();
-				return c.json(err, err.error.status);
-			}
-			return c.json({ labels: account.syncDeps.db.listLabels() });
-		})
+		.get('/labels', (c) =>
+			c.json({ labels: c.var.account.deps.db.listLabels() }),
+		)
 		.get('/messages', sValidator('query', MessageQuery), (c) => {
-			const account = accountFor(c);
-			if (!account) {
-				const err = ApiError.AccountNotFound();
-				return c.json(err, err.error.status);
-			}
 			const { label, q, limit, offset } = c.req.valid('query');
-			const db: MailDb = account.syncDeps.db;
+			const db: MailDb = c.var.account.deps.db;
 			return c.json({
 				messages: db.listMessages({
 					labelId: label,
@@ -176,71 +168,44 @@ export function createApiApp(deps: ApiDeps) {
 		})
 		// Hono already URL-decodes path params, so no manual decodeURIComponent.
 		.get('/messages/:id', (c) => {
-			const account = accountFor(c);
-			if (!account) {
-				const err = ApiError.AccountNotFound();
-				return c.json(err, err.error.status);
-			}
-			const detail = account.syncDeps.db.getMessageDetail(c.req.param('id'));
+			const detail = c.var.account.deps.db.getMessageDetail(c.req.param('id'));
 			if (!detail) {
 				const err = ApiError.MessageNotFound();
 				return c.json(err, err.error.status);
 			}
 			return c.json(detail);
 		})
-		.post('/sync', async (c) => {
-			const account = accountFor(c);
-			if (!account) {
-				const err = ApiError.AccountNotFound();
-				return c.json(err, err.error.status);
-			}
-			const { runtime, syncDeps, gate, ownsLoop } = account;
+		.post('/reconcile', async (c) => {
+			const { runtime, deps: accountDeps, gate, ownsLoop } = c.var.account;
 			// This host owns the loop only when it holds the lock. Without it,
-			// another owner keeps the mirror fresh, so yield busy instead of
-			// racing a second bulk pull (the same contract the headless `sync` uses).
-			if (!ownsLoop) return c.json(syncOwnerBusy(runtime.accountEmail));
-			const outcome = await gate(() =>
-				syncMailbox(syncDeps, { forceFull: false }),
+			// another owner delivers and pulls, so yield busy instead of becoming a
+			// second writer (the same contract the headless pass uses).
+			if (!ownsLoop) return c.json(reconcileOwnerBusy(runtime.accountEmail));
+			const outcome: ReconcileOutcome = await gate(() =>
+				reconcileAccount(accountDeps, { forceFull: false, readOnly }),
 			);
 			return c.json(outcome);
 		})
-		.post('/messages/modify', sValidator('json', ModifyBody), async (c) => {
-			const account = accountFor(c);
-			if (!account) {
-				const err = ApiError.AccountNotFound();
-				return c.json(err, err.error.status);
-			}
+		.post('/messages/assert', sValidator('json', AssertBody), (c) => {
+			const account = c.var.account;
 			const { ids, addLabels, removeLabels } = c.req.valid('json');
-			const { data, error } = await resolveAndModifyMessageLabels({
-				deps: account.syncDeps,
-				ids,
-				addLabels: addLabels ?? [],
-				removeLabels: removeLabels ?? [],
+			const { data, error } = assertMessageLabels({
+				deps: account.deps,
+				input: {
+					ids,
+					addLabels: addLabels ?? [],
+					removeLabels: removeLabels ?? [],
+				},
 				readOnly,
 			});
 			if (error) {
-				const err = ApiError.ModifyFailed({ message: error.message });
+				const err = ApiError.AssertFailed({ message: error.message });
 				return c.json(err, err.error.status);
 			}
-			return c.json(data);
-		})
-		.post('/messages/trash', sValidator('json', TrashBody), async (c) => {
-			const account = accountFor(c);
-			if (!account) {
-				const err = ApiError.AccountNotFound();
-				return c.json(err, err.error.status);
-			}
-			const { ids, trashed } = c.req.valid('json');
-			const { data, error } = await setMessagesTrashed({
-				deps: account.syncDeps,
-				ids,
-				trashed,
-				readOnly,
-			});
-			if (error) {
-				const err = ApiError.ModifyFailed({ message: error.message });
-				return c.json(err, err.error.status);
-			}
+			// The act is already durable and already visible to every read; the wake
+			// only decides how soon Gmail hears about it, so it is fired and not
+			// awaited.
+			account.requestWake();
 			return c.json(data);
 		});
 

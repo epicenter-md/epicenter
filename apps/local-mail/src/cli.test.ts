@@ -2,51 +2,52 @@
  * Local Mail CLI Parser Tests
  *
  * Covers parse-time argument validation that protects command handlers from
- * ambiguous or unsafe flag values.
+ * ambiguous or unsafe flag values, plus the refusals a triage verb and a
+ * discard make before touching anything.
  *
  * Key behaviors:
  * - `--watch` accepts only positive millisecond values
- * - invalid watch intervals fail before the sync loop can start polling
+ * - invalid watch intervals fail before the reconcile loop can start polling
+ * - `discard` refuses without `--all` and creates no durable file
  */
 
 import { expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { modifyExitCode, parseArgs, runCli } from './cli.ts';
+import { parseArgs, runCli } from './cli.ts';
 import { loadConfig } from './config.ts';
-import { acquireSyncLock } from './lock.ts';
-import type { MessageWriteOutcome } from './modify.ts';
+import { acquireReconcileLock } from './lock.ts';
 import { createFileTokenStore } from './token-store.ts';
 import type { TokenSet } from './tokens.ts';
 
 test('--watch rejects unit-suffixed intervals', () => {
-	expect(() => parseArgs(['sync', '--watch=30s'])).toThrow(
+	expect(() => parseArgs(['reconcile', '--watch=30s'])).toThrow(
 		'Invalid --watch interval "30s"',
 	);
 });
 
 test('--watch rejects zero milliseconds', () => {
-	expect(() => parseArgs(['sync', '--watch=0'])).toThrow(
+	expect(() => parseArgs(['reconcile', '--watch=0'])).toThrow(
 		'Invalid --watch interval "0"',
 	);
 });
 
 test('--watch accepts a space-separated interval', () => {
-	const args = parseArgs(['sync', '--watch', '5000']);
+	const args = parseArgs(['reconcile', '--watch', '5000']);
 	expect(args.watch).toBe(true);
 	expect(args.watchIntervalMs).toBe(5000);
 	expect(args.positionals).toEqual([]);
 });
 
 test('--watch space form validates the value instead of swallowing it', () => {
-	expect(() => parseArgs(['sync', '--watch', '30s'])).toThrow(
+	expect(() => parseArgs(['reconcile', '--watch', '30s'])).toThrow(
 		'Invalid --watch interval "30s"',
 	);
 });
 
 test('--watch followed by another flag stays flag-only', () => {
-	const args = parseArgs(['sync', '--watch', '--full']);
+	const args = parseArgs(['reconcile', '--watch', '--full']);
 	expect(args.watch).toBe(true);
 	expect(args.full).toBe(true);
 	expect(args.watchIntervalMs).toBeUndefined();
@@ -86,32 +87,6 @@ test('label parses repeatable label changes and --json', () => {
 	expect(args.addLabels).toEqual(['Work', 'Label_2']);
 	expect(args.removeLabels).toEqual(['Travel']);
 	expect(args.json).toBe(true);
-});
-
-test('modifyExitCode is nonzero on any per-id failure or systemic abort', () => {
-	const clean: MessageWriteOutcome = {
-		results: [{ id: 'm1', labelIds: ['INBOX'], folded: true, error: null }],
-		aborted: null,
-	};
-	const perId: MessageWriteOutcome = {
-		results: [
-			{ id: 'm1', labelIds: ['INBOX'], folded: true, error: null },
-			{
-				id: 'm2',
-				labelIds: null,
-				folded: false,
-				error: { name: 'Http', message: 'not found' },
-			},
-		],
-		aborted: null,
-	};
-	const aborted: MessageWriteOutcome = {
-		results: [{ id: 'm1', labelIds: ['INBOX'], folded: true, error: null }],
-		aborted: { name: 'Throttled', message: 'slow down' },
-	};
-	expect(modifyExitCode(clean)).toBe(0);
-	expect(modifyExitCode(perId)).toBe(1);
-	expect(modifyExitCode(aborted)).toBe(1);
 });
 
 test('LOCAL_MAIL_READ_ONLY enables read-only config mode', () => {
@@ -169,13 +144,19 @@ test('label honors LOCAL_MAIL_READ_ONLY before resolving labels', async () => {
 });
 
 /**
- * Drive `runCli` against a stored account whose sync lock is already held by
- * another owner (the open app or a watch loop), capturing both streams. Proves
- * the one-shot sync yields without opening a session or hitting the network.
+ * Drive `runCli` against a stored account whose reconcile lock is already held
+ * by another owner (the open app or a watch loop), capturing both streams.
+ * Proves a one-shot pass yields without opening a session or hitting the
+ * network.
  */
-async function runSyncWithLockHeld(
-	argv: string[],
-): Promise<{ code: number; stdout: string[]; stderr: string[] }> {
+async function runWithLockHeld(argv: string[]): Promise<{
+	code: number;
+	stdout: string[];
+	stderr: string[];
+	/** Whether the run left a durable intent store behind. Read here, before the
+	 * temp dir is removed, so a caller cannot assert it vacuously. */
+	intentDbExists: boolean;
+}> {
 	const dir = mkdtempSync(join(tmpdir(), 'local-mail-cli-lock-test-'));
 	const token: TokenSet = {
 		accountEmail: 'you@example.com',
@@ -202,14 +183,19 @@ async function runSyncWithLockHeld(
 	console.error = (message?: unknown) => {
 		stderr.push(String(message));
 	};
-	const held = acquireSyncLock({
+	const held = acquireReconcileLock({
 		dataDir: dir,
 		accountEmail: 'you@example.com',
 	});
 	expect(held).not.toBeNull();
 	try {
 		const code = await runCli(argv);
-		return { code, stdout, stderr };
+		return {
+			code,
+			stdout,
+			stderr,
+			intentDbExists: existsSync(join(dir, 'you@example.com', 'intent.db')),
+		};
 	} finally {
 		console.log = originalLog;
 		console.error = originalError;
@@ -225,22 +211,43 @@ async function runSyncWithLockHeld(
 	}
 }
 
-test('sync yields a human note on stdout when another owner holds the lock', async () => {
-	const { code, stdout } = await runSyncWithLockHeld(['sync']);
+test('reconcile yields a human note on stdout when another owner holds the lock', async () => {
+	const { code, stdout } = await runWithLockHeld(['reconcile']);
 	expect(code).toBe(0);
 	// The terminal outcome lands on stdout like the success/failure summaries do.
-	expect(stdout.join('\n')).toContain('already syncing you@example.com');
+	expect(stdout.join('\n')).toContain('already reconciling you@example.com');
 });
 
-test('sync --json yields a structured payload on stdout when the lock is held', async () => {
-	const { code, stdout } = await runSyncWithLockHeld(['sync', '--json']);
+test('reconcile --json yields a structured payload on stdout when the lock is held', async () => {
+	const { code, stdout } = await runWithLockHeld(['reconcile', '--json']);
 	expect(code).toBe(0);
 	// The whole yield must be a single clean JSON value on stdout, not a human
 	// note on stderr: a --json consumer piping stdout has to see it.
 	const payload = JSON.parse(stdout.join('\n'));
-	expect(payload.synced).toBe(false);
-	expect(payload.reason).toBe('sync-owner-active');
+	expect(payload.reconciled).toBe(false);
+	expect(payload.reason).toBe('reconcile-owner-active');
 	expect(payload.message).toContain('you@example.com');
+});
+
+test('discard refuses without --all and leaves no durable file behind', async () => {
+	// Discard is the only thing that drops a recorded change without delivering
+	// it, so it is deliberately not the default shape of the verb. The refusal
+	// also has to be a read-nothing path: asking about an account that never
+	// triaged must not create its intent store (ADR-0198).
+	const { code, stderr, intentDbExists } = await runWithLockHeld(['discard']);
+	expect(code).toBe(1);
+	expect(stderr.join('\n')).toContain('Refusing to discard without --all');
+	expect(intentDbExists).toBe(false);
+});
+
+test('discard --all reports that there was nothing to discard', async () => {
+	const { code, stdout, intentDbExists } = await runWithLockHeld([
+		'discard',
+		'--all',
+	]);
+	expect(code).toBe(0);
+	expect(stdout.join('\n')).toContain('Nothing to discard for you@example.com');
+	expect(intentDbExists).toBe(false);
 });
 
 test('status --json resolves the sole stored account and prints JSON', async () => {
