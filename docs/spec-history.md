@@ -16,13 +16,14 @@
 >
 > **Regenerate (deterministic per ref set, lossless):** `bun scripts/generate-spec-history.ts`. The totals track the refs this clone can see; `--all` is deliberate so the timeline recovers specs that only lived on unmerged or deleted branches.
 
-**1402 specs ever** (521 still in tree, 881 removed).
+**1403 specs ever** (522 still in tree, 881 removed).
 
 
 ## 2026
 
 | Date | Spec | State | Path |
 |------|------|-------|------|
+| 2026-08-02 | app-data-root-and-partitions | in tree | specs/20260802T120000-app-data-root-and-partitions.md |
 | 2026-08-01 | local-mail-intent-and-reconciler-clean-break | removed | specs/20260801T210000-local-mail-intent-and-reconciler-clean-break.md |
 | 2026-08-01 | local-mail-pending-overlays | removed | specs/20260801T164500-local-mail-pending-overlays.md |
 | 2026-08-01 | local-mail-convergent-request-plane | removed | specs/20260801T173435-local-mail-convergent-request-plane.md |
