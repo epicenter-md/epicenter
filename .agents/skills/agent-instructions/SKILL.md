@@ -98,10 +98,11 @@ discovery. A script that checks something the CLI does not look at, such as
 whether a Markdown link resolves, is a different job and is fine to keep.
 
 Codex ships its own `skill-creator` under `${CODEX_HOME:-$HOME/.codex}/skills/.system/`,
-and that guide teaches the list above. Do not edit it to settle the conflict:
-Codex installs that directory and rewrites it, so the edit disappears on the
-next update. Guidance that has to survive belongs here, or in `~/Code/dotfiles`
-when it should follow you across repositories.
+and that guide teaches the list above. Treat that directory as host-owned rather
+than a supported persistence point: packaged manifests and installation markers
+show Codex manages it, so a local edit may be regenerated. Guidance that has to
+survive belongs here, or in `~/Code/dotfiles` when it should follow you across
+repositories.
 
 ## Create A Skill
 
@@ -222,10 +223,11 @@ Its default pass is offline and reports what descriptions claim, which is a
 smoke test on coverage and not evidence about routing; `--live` spawns the
 Claude CLI per case to measure what a model actually loads.
 
-Descriptions are not the only surface that routes. `AGENTS.md` loads first and
-names skills outright, and a live A/B showed it decides the route for a broad
-phrase no description claims. Editing it is a routing change with effects past
-the clause you touched, so measure rather than reason about it.
+Descriptions are not the only surface that routes. In the Claude Code probe used
+here, `AGENTS.md` is present before descriptions are weighed and names skills
+outright; a live A/B showed it decides the route for a broad phrase no
+description claims. Editing it is a routing change with effects past the clause
+you touched, so measure rather than reason about it.
 
 Read [references/evaluation.md](references/evaluation.md) for trigger evals, always-on routing, execution trace review, and security checks.
 

@@ -159,19 +159,20 @@ cannot leave a case silently measuring nothing.
 
 ## Routing Surfaces
 
-Descriptions are not the only thing that routes. `AGENTS.md` loads before a
-single description is weighed and it names skills outright, so it claims phrases
-too, and a probe obeys it: an `AGENTS.md` sentence sending overflow reports to
-`documentation` beat `styling`'s own description 3 times out of 3. That is why
-the run record carries an `instructions` digest next to `model` and `effort`.
-Two result files can disagree with no description edit between them.
+Descriptions are not the only thing that routes. In the Claude Code probe used
+here, `AGENTS.md` is present before a description is weighed and it names skills
+outright, so it claims phrases too. A probe obeyed it: an `AGENTS.md` sentence
+sending overflow reports to `documentation` beat `styling`'s own description 3
+times out of 3. That is why the run record carries an `instructions` digest next
+to `model` and `effort`. Two result files can disagree with no description edit
+between them.
 
 Measure the gate by running one corpus against two worktrees that differ only in
 `AGENTS.md`, never by editing the file under a running probe: each probe re-reads
 it from disk at spawn. `evals/always-on-gate.json` is the corpus for the gate
 itself, split into phrases a description already owns and phrases none does.
 
-The A/B over that corpus, 5 runs per case, found one asymmetry:
+The historical A/B over that corpus, 5 runs per case, reported one asymmetry:
 
 ```txt
 no description owns the phrase  -> the gate decides the route
@@ -181,8 +182,9 @@ a description owns the phrase   -> the gate changes nothing
 Deleting the gate moved a phrase nothing claimed by 100 points ("anything before
 I stage this" went from `post-implementation-review` 5/5 to `standalone-commits`
 5/5) and moved a phrase `greenfield-clean-breaks` owns by 0 points (5/5 either
-way). Both controls held identical, so the arms differed by the gate and not by
-probe drift.
+way). These stored records are stale and do not preserve complete arm snapshots,
+so they are context for the hypothesis rather than independently replayable
+proof. Repeat the comparison in isolated worktrees before relying on a rate.
 
 A third arm then shortened the gate instead of deleting it, dropping the
 owned-phrase triggers and three sentences naming skills that own their own
