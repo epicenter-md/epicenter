@@ -21,7 +21,7 @@ describe('buildClaudeArgs', () => {
 			'--effort',
 			'high',
 			'--tools',
-			'Read,Glob,Grep,Bash,WebFetch,WebSearch',
+			'Read,Glob,Grep,WebFetch,WebSearch',
 			'--permission-mode',
 			'plan',
 			'--no-session-persistence',

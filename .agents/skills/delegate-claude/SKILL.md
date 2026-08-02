@@ -1,264 +1,79 @@
 ---
 name: delegate-claude
-description: Launch and supervise one durable Claude Code implementation session from Codex. Use when the user asks Codex to have Claude execute or hand off the implementation, or when implementation is authorized and the accepted direction is ambitious, exploratory, multi-file, or likely to benefit from a long-horizon worker; Codex may invoke it autonomously when the extra latency and quota are justified. Do not use to resolve product direction, for an obvious bounded fix, or to produce a copy-paste prompt; use consult-claude or handoff instead.
+description: Launch and follow one durable Claude Code session that independently leads and implements a substantial mission. Use when the user asks Codex to have Claude execute or hand off the work, or when an ambitious, exploratory, multi-file task would benefit from a long-horizon collaborator. Do not use for an obvious bounded fix or to produce a copy-paste prompt; use handoff instead.
 ---
 
 # Delegate Claude
 
-Delegate one substantial accepted mission to a full Claude Code session. Claude
-owns implementation decisions within that mission. Codex owns the escalation,
-user communication, supervision, reconciliation, independent verification, and
-final handoff. Claude Code's background supervisor owns durable process and
-conversation state.
+This is the inverse-direction workflow: Codex starts a Claude session for a
+specific task. It does not define the standing Claude Code relationship, where
+Claude leads the mission and may call Codex through `/codex:rescue`.
 
-## Keep the lanes separate
+Invite Claude to lead a substantial piece of work as a collaborator. Tell it
+what you want to become true, point it at the context worth seeing, and name
+only the boundaries that are real. Do not send a governance document, a
+pre-chosen plan, or a menu of decisions for Codex to make.
 
-Route by uncertainty and deliverable. Use `consult-claude` when product or
-architecture direction is still genuinely unresolved. Use this skill when the
-mission is accepted but finding and executing the implementation path requires
-sustained exploration. Use `handoff` only when the user wants a manual
-copy-paste prompt for another session.
+The invitation should feel like a useful message to a trusted maintainer. Add
+the current branch, worktree state, or proof target only when it helps Claude
+act well. Claude makes the in-scope calls, including product, architecture, and
+local implementation choices. It may reframe the work, discard an inherited
+approach, and explain the choice in its handoff. Do not interrupt it to decide
+ordinary alternatives.
 
-Codex may delegate autonomously when a durable independent worker materially
-reduces execution risk or interruption cost. Announce the delegation and why it
-earns the extra latency and quota before launch. Do not delegate merely because
-a diff is large, because the task is difficult, or to escape work Codex can
-complete directly with an obvious bounded fix.
+Use `consult-claude` for a one-shot read-only investigation. Use this skill
+when Claude should investigate, decide, and carry the work through. Use
+`handoff` only for a manual copy-paste prompt.
 
-Run at most one delegated Claude session for the current task unless the user
-explicitly requests parallel delegation. A quiet session is not evidence that a
-second session is needed.
+## Boundaries that remain real
 
-## Build the execution packet
+Local work and local commits are in scope. Destructive actions, external
+writes, unrelated private-data access, and material expansion beyond the user's
+request are not. Pushing, opening or merging a pull request, deploying, and
+other external writes require separate user authorization after verification.
 
-Gather the state Claude should not rediscover: relevant user direction, branch
-and dirty-worktree state, source paths, diffs, decisions, checks already run,
-and concrete proof targets. Give Claude room to revise the approach after
-reading live context.
+The launcher denies common direct forms of `git push`, `gh pr create`, and
+`gh pr merge` on every launch and resume. It is not a shell or network sandbox:
+deploys, APIs, and other external-write routes still rely on Claude following
+the invitation and on later verification.
 
-Make the packet cold-start complete:
+## Run and watch
 
-```txt
-Mission:
-  The outcome and artifact Claude owns.
-
-State:
-  Branch, worktree, existing changes, checks, and unfinished work.
-
-Sources:
-  Files, diffs, ADRs, specs, logs, or documentation to inspect first.
-
-Current read:
-  What Codex currently believes and why; identify what is not settled.
-
-Evolution:
-  User reactions, rejected approaches, and decisions that explain the mission.
-
-Recognition criteria:
-  What the user will recognize as right beyond mechanical test completion.
-
-Open questions:
-  Decisions Claude should resolve or challenge from evidence.
-
-Authority:
-  Claude owns local, reversible, evidence-dominated implementation decisions
-  within the originating request, including local commits in its worktree. It
-  may challenge the mission and investigate alternatives. It must return
-  product, promise, material scope, destructive, external-write, or
-  new-authority forks to Codex rather than silently choosing. Push, pull
-  request creation, merge, and deploy are not implied by this delegation.
-
-Codex posture:
-  Use /codex:rescue where it buys evidence, focused implementation, or
-  independent verification. Do not ask a rescued Codex agent to delegate back
-  to Claude.
-
-Proof:
-  Commands and evidence required before declaring the mission complete.
-
-Final packet:
-  Report the worktree path, branch and commits, changed files, diff summary,
-  verification results, remaining risks, and every external action taken.
-```
-
-Give Claude relevance-complete context, not a token-starved task summary. Within
-the task, Claude may receive the same relevant repository and conversational
-context Codex has. Ask the user before crossing into unrelated private material,
-credentials, personal data, or broader external systems. Claude inherits the
-user's task scope, never broader mutation authority.
-
-## Publication stays with Codex
-
-Delegating implementation never delegates publication. Claude may commit
-locally in its worktree. Pushing a branch, opening a pull request, merging one,
-deploying, and every other external write stay with Codex, which performs them
-itself after verifying the work.
-
-Each of those is authorized separately by the user. Authorization to push is
-not authorization to open a pull request, and authorization to open one is not
-authorization to merge it; a merge is always the user's explicit instruction,
-never Codex's read of a finished branch. "Implement it", "finish it",
-"integrate it", "hand it off", and "delegate it" authorize none of them, and
-neither does an authorized commit: a commit is local and reversible,
-publication is neither.
-
-Because publication is never Claude's to perform, the launcher grants no
-opt-in. It denies `git push`, `gh pr create`, and `gh pr merge` through
-Claude's permission rules on every launch and every resume, and appends a
-system-prompt-level refusal. There is no flag that lifts this, so there is no
-authority to forget on a resume and none that can widen from one command to the
-next. A supervisor who reaches for one gets a usage error rather than a launch.
-
-That last part matters more than it looks. Prose in the packet is not enough on
-its own: every background session already carries a standing instruction to
-commit, push, and open a draft pull request without stopping to ask, so a
-packet that only asks for restraint is arguing with the session's own system
-prompt and losing. Deny rules still cover only the commands an overreaching
-session actually reaches for, not every route to the network, so treat them as
-a floor under the packet's authority text rather than a fence around it.
-
-If the user wants the work published, verify it first, then push and open the
-pull request yourself.
-
-## Start one durable session
-
-Resolve this skill's directory from its loaded `SKILL.md` path. Start the
-launcher in the task's working directory:
+Resolve this skill's directory from its loaded `SKILL.md` path, then start one
+durable session in the task's working directory:
 
 ```bash
 bun <skill-dir>/scripts/delegate-claude.ts start --name <short-name>
 ```
 
-Write the complete packet to stdin, then close it (`Ctrl-D` on a PTY; piping
-the packet works the same). `--name` is optional; without it the launcher
-generates a unique `codex-delegate-*` name. The launcher inherits Claude's
-configured default model and uses high effort and auto permission mode. It
-deliberately leaves normal Claude configuration enabled so project instructions,
-skills, plugins, hooks, and `/codex:rescue` remain available.
+Write the invitation to stdin and close it (`Ctrl-D` on a PTY). The launcher
+uses high effort, normal project configuration, auto permission mode, and a
+separate worktree. Capture `DELEGATE_CLAUDE_JOB_ID=<id>`; if it is absent after
+a successful launch, inspect `claude agents` for the chosen name before trying
+again.
 
-Capture the `DELEGATE_CLAUDE_JOB_ID=<id>` line. Do not invent another job
-registry or status file. Background agents are a research preview, so the
-launcher parses Claude's launch line and falls back to looking the session up
-by name in `claude agents --json`; if it still exits without an ID, a session
-may nevertheless be running. Check `claude agents` for the chosen name before
-diagnosing, and never launch a duplicate speculatively.
-
-Authority is enforced by layers, not magic: the launcher's deny rules and
-appended refusal hold the publication boundary, the packet's authority text
-instructs the session, auto permission mode blocks actions that escalate beyond
-the request, worktree isolation bounds repository damage, and Codex's final
-verification catches the rest. A delegated session still holds the user's local
-credentials, so treat external mutation authority as the packet's most
-important line.
-
-The launcher refuses to run inside Claude Code (`CLAUDECODE=1`). That variable
-is the recursion boundary: a delegated worker sets it for every shell it
-spawns, so `delegate-claude` or `consult-claude` invoked from inside the
-worker, including through a rescued Codex, refuses itself.
-
-## Watch without flooding context
-
-Start the watcher in the task's working directory:
+Watch the session with:
 
 ```bash
 bun <skill-dir>/scripts/delegate-claude.ts watch <id>
 ```
 
-Keep that command session attached. The watcher checks Claude's local
-supervisor every 30 seconds, reports state changes, emits a heartbeat every
-minute, and exits when the job finishes, fails, stops, disappears, or needs
-input. Exit codes: 0 done, 10 blocked, 1 failed or stopped, 3 no such job, 4
-three consecutive status-check failures (run `claude daemon status`, then
-restart the watcher). Poll the watcher session without launching other Claude
-commands while it is quiet. Update the user at least once per minute with
-meaningful progress, consequential discoveries, or the reason it is still
-working. Do not stream repetitive logs or ordinary implementation choices.
-
-Supervision is resumable, not continuous. If Codex's turn ends or the watcher
-session dies, the delegation is not lost: Claude's supervisor still owns the
-job, and the next turn re-runs `watch <id>` or `status <id>` and continues.
-
-To inspect a state directly or read recent terminal output:
+Read logs on state changes, blocks, long silence, or completion. A block about
+an in-scope choice is a cue to tell Claude to make its best call, not a cue to
+make the choice for it. Continue only for new user direction or newly granted
+authority:
 
 ```bash
-bun <skill-dir>/scripts/delegate-claude.ts status <id>
-claude logs <id>
+bun <skill-dir>/scripts/delegate-claude.ts continue <id>
 ```
 
-Status polling is local and does not create another model turn. Read logs when
-the state changes, when the session blocks, after several minutes without
-useful progress, or at completion. Do not repeatedly inject identical logs into
-Codex's context.
+`continue` refuses to interrupt a working turn unless `--interrupt` is
+explicit. Cancel with `claude stop <id>` when the work is no longer relevant;
+use `claude respawn <id>` only after a confirmed process failure.
 
-## Intervene deliberately
-
-When the watcher reports a block, read `claude logs <id>` first to see the
-question (logs are the session's raw terminal output). Codex may answer verified
-repository facts and choices that are local, reversible, evidence-dominated,
-and already inside the accepted mission. Claude has broad latitude to challenge
-the plan and recommend a stronger direction, but not to silently change the
-product. Bring user-visible promises, consequential taste choices, material
-ownership or scope changes, destructive actions, external writes, production
-operations, and new authority back to the user with Claude's recommendation
-and Codex's read.
-
-Deliver Codex's answer with the launcher:
-
-```bash
-bun <skill-dir>/scripts/delegate-claude.ts reply <id>
-```
-
-Write the answer to stdin, then close it. The launcher stops the session's
-process and resumes the same conversation as a new background job with the
-answer as the next user message; the session keeps its name and worktree.
-Capture the new `DELEGATE_CLAUDE_JOB_ID=<id>` line and watch that ID from then
-on. The superseded job stays listed as `stopped`; leave it alone, and never run
-`claude rm` on it: that deletes the worktree the live session still uses.
-
-`reply` is for a blocked or already terminal job. Because resuming stops the
-running process first, replying to a working job throws away the turn in
-flight, so the launcher refuses that unless you pass `--interrupt`. Reach for
-`--interrupt` when the user genuinely changes direction mid-run, not to hurry a
-quiet session along. Interrupting changes what the session is working on, never
-what it is allowed to do: the resume reapplies the publication guard, which
-Claude does not otherwise carry across `--resume`.
-
-`claude attach <id>` opens the session's full-screen terminal UI in the current
-terminal; `Ctrl+Z` detaches while the session keeps running. Prefer attach when
-the user intervenes directly or a live back-and-forth is genuinely needed;
-prefer `reply` for machine-delivered answers.
-
-Cancel with `claude stop <id>` when the user changes direction or the work is no
-longer relevant. Use `claude respawn <id>` only to recover the same preserved
-conversation after a confirmed process failure.
-
-## Verify after Claude finishes
-
-Treat Claude's `done` state as a handoff, not proof of completion.
-
-Background sessions automatically move into a git worktree under
-`.claude/worktrees/` before their first edit; a read-only mission may finish
-without ever creating one. Once the move happens, the `status` record's `cwd`
-is the worktree path, the final packet reports it, and `git worktree list`
-confirms it (branch `worktree-<generated-name>`, locked).
-
-1. Read the final logs and locate the reported worktree and branch.
-2. Inspect the complete diff and repository status.
-3. Verify the mission's tests and proof targets independently.
-4. Check for unrelated edits and unauthorized commits, pushes, PRs, deploys, or
-   external mutations.
-5. Reconcile Claude's conclusions with local evidence.
-6. Integrate or commit only when the originating request authorizes it. Push,
-   open the pull request, and merge yourself, each only after the user
-   authorized that specific step. Finished and verified work is not an
-   authorization to publish it.
-
-If verification disproves Claude's completion claim, the session is healthy and
-wrong, not failed: attach and continue the same conversation with the concrete
-discrepancy, or finish the remainder locally. Do not respawn, and do not start
-a second delegation for the same mission without telling the user.
-
-A machine shutdown kills worker processes but keeps conversations. After a
-reboot the job shows `failed` with a dead process; that is recoverable process
-state, not a failed implementation. Read the logs first, then
-`claude respawn <id>` to continue the same conversation.
+When Claude finishes, this Codex-initiated workflow may need to inspect its
+worktree and complete diff before the calling task uses or reconciles the
+result. Choose the verification appropriate to that task and check for
+unauthorized external actions. This does not override Claude's normal ownership
+of a Claude Code mission. Treat the handoff as evidence, not proof. Publishing
+remains a separate user-authorized action.

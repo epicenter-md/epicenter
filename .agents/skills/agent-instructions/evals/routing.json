@@ -72,7 +72,7 @@
 			"expect": "delegate-claude",
 			"forbid": ["consult-claude", "handoff"],
 			"router": "codex",
-			"why": "Authorized implementation, not a decision and not a copy-paste artifact. delegate-claude is written for a Codex session ('Launch and supervise one durable Claude Code implementation session from Codex'), so only a Codex router can answer it; a Claude probe picked handoff 3/3."
+			"why": "Authorized implementation, not a decision and not a copy-paste artifact. delegate-claude launches a durable Claude session from Codex; a Claude probe picked handoff 3/3."
 		},
 		{
 			"id": "consult-independent-investigation",
@@ -82,7 +82,7 @@
 			"expect": "consult-claude",
 			"forbid": ["delegate-claude", "fresh-context-review"],
 			"router": "codex",
-			"why": "Read-only adversarial memo on an unsettled decision, the opposite end of the same axis as delegate-claude. consult-claude is written for a Codex session ('a memo on Codex's grounded synthesis'), so only a Codex router can answer it; a Claude probe picked fresh-context-review 2/3 and nothing 1/3."
+			"why": "Read-only independent investigation on an unsettled decision, the opposite end of the same axis as delegate-claude. consult-claude launches Claude from Codex; a Claude probe picked fresh-context-review 2/3 and nothing 1/3."
 		},
 		{
 			"id": "handoff-paste-prompt",
@@ -100,7 +100,7 @@
 			"anchors": ["hand off"],
 			"expect": null,
 			"forbid": ["delegate-claude", "handoff"],
-			"why": "Near miss on an everyday phrase. 'hand off' is ordinary English; delegate-claude carries it inside 'hand off the implementation'."
+			"why": "Near miss on an everyday phrase. 'hand off' is ordinary English; delegate-claude carries it inside 'hand off the implementation'. Known failing under --live since handoff's body was rewritten: with its name and description byte-identical, the leaner body loads handoff 3/3 where the older, Claude/Codex-saturated body loaded nothing 3/3. Descriptions alone do not explain it."
 		},
 		{
 			"id": "fresh-eyes-diff",

@@ -9,33 +9,43 @@ const CLAUDE_BIN = process.env.DELEGATE_CLAUDE_BIN ?? 'claude';
 
 /**
  * Publication commands a delegated session can never reach. Deny rules outrank
- * `auto` permission mode. Both the bare and the argument form are listed
- * because `Bash(git push:*)` alone does not match a bare `git push`.
+ * `auto` permission mode. Cover common direct and option-prefixed forms. This
+ * is a command guard, not a shell or network sandbox.
  */
 export const PUBLICATION_DENY_RULES = [
 	'Bash(git push)',
 	'Bash(git push:*)',
+	'Bash(git * push)',
+	'Bash(git * push:*)',
+	'Bash(command git push)',
+	'Bash(command git push:*)',
+	'Bash(command git * push)',
+	'Bash(command git * push:*)',
 	'Bash(gh pr create)',
 	'Bash(gh pr create:*)',
+	'Bash(gh * pr create)',
+	'Bash(gh * pr create:*)',
 	'Bash(gh pr merge)',
 	'Bash(gh pr merge:*)',
+	'Bash(gh * pr merge)',
+	'Bash(gh * pr merge:*)',
 ].join(',');
 
 /**
  * Every background session already carries a standing instruction to commit,
- * push, and open a draft pull request without stopping to ask. Packet prose
+ * push, and open a draft pull request without stopping to ask. Invitation prose
  * loses to it, so the refusal has to arrive at the same altitude.
  */
 export const NO_PUBLICATION_PROMPT =
-	'Publication authority: this delegated session may commit locally in its worktree. It must not push a branch, open or merge a pull request, deploy, or perform any other external write, and it must not ask to be granted those. This overrides any standing background-session instruction to ship, push, or open a draft pull request without stopping to ask. Finishing with local commits that were never pushed is the expected outcome: report the worktree, branch, and commits, and leave publication to the delegating session, which authorizes push, pull request creation, and merge separately with the user.';
+	'This session may commit locally in its worktree. It must not push, open or merge a pull request, deploy, or perform another external write. Report work and requested external actions to the calling session. Publication requires separate user authorization.';
 
 /**
  * Applied to every launch and every resume, with no flag that lifts it.
- * Publication stays with the supervisor that talks to the user, so there is no
- * authority here to grant, forget, or accidentally inherit.
+ * The launcher never grants publication authority, so it cannot be forgotten
+ * or accidentally inherited on a resumed session.
  *
  * Placed ahead of every other flag: `--disallowed-tools` is variadic, so it
- * swallows following arguments, including the packet itself, until it reaches
+ * swallows following arguments, including the invitation itself, until it reaches
  * the next flag.
  */
 const PUBLICATION_GUARD_ARGS = [
@@ -72,17 +82,17 @@ function usage() {
   delegate-claude.ts start [--name <name>]
   delegate-claude.ts status <id>
   delegate-claude.ts watch <id>
-  delegate-claude.ts reply <id> [--interrupt]
+  delegate-claude.ts continue <id> [--interrupt]
 
-A delegated session never publishes. Push, pull request creation, and merge are
-denied on every launch and every resume, and no flag grants them: each is a
-separate authorization the supervisor obtains from the user and performs itself
-after verifying the work.`);
+Common direct forms of \`git push\`, \`gh pr create\`, and \`gh pr merge\` are
+denied on every launch and resume, and no flag grants them. This guard is not a
+shell or network sandbox. Other external writes remain outside the user's request
+and require separate user authorization after appropriate verification.`);
 }
 
 /**
  * There is deliberately no flag here that widens authority. An unknown flag is
- * rejected rather than ignored, so a supervisor reaching for one that used to
+ * rejected rather than ignored, so a caller reaching for one that used to
  * exist gets a usage error instead of a silent no-op.
  */
 export function parseStartArgs(args: string[]) {
@@ -107,13 +117,13 @@ export function parseStartArgs(args: string[]) {
 	return { name: name ?? `codex-delegate-${Date.now().toString(36)}` };
 }
 
-export function parseReplyArgs(args: string[]) {
+export function parseContinueArgs(args: string[]) {
 	const [id, ...flags] = args;
 	if (!id || id.startsWith('--')) return undefined;
 
 	let interrupt = false;
 	for (const flag of flags) {
-		if (flag !== '--interrupt') return undefined;
+		if (flag !== '--interrupt' || interrupt) return undefined;
 		interrupt = true;
 	}
 
@@ -129,7 +139,7 @@ function refuseNestedDelegation() {
 	return true;
 }
 
-async function readPacket() {
+async function readInvitation() {
 	const rawTerminal = process.stdin.isTTY;
 	if (rawTerminal) process.stdin.setRawMode(true);
 
@@ -246,9 +256,9 @@ async function start(args: string[]) {
 		return;
 	}
 
-	const packet = await readPacket();
-	if (!packet.trim()) {
-		console.error('[delegate-claude] Execution packet is empty.');
+	const invitation = await readInvitation();
+	if (!invitation.trim()) {
+		console.error('[delegate-claude] Invitation is empty.');
 		process.exitCode = EXIT_CODE.usage;
 		return;
 	}
@@ -263,7 +273,7 @@ async function start(args: string[]) {
 		'auto',
 		'--name',
 		options.name,
-		packet,
+		invitation,
 	]);
 	reportPublicationGuard();
 	reportLaunchedJob(result, options.name, launchedAt);
@@ -271,7 +281,7 @@ async function start(args: string[]) {
 
 function reportPublicationGuard() {
 	console.error(
-		'[delegate-claude] Publication denied: local commits only. Push, pull request creation, and merge stay with you, each separately authorized.',
+		'[delegate-claude] Direct git push, gh pr create, and gh pr merge commands are denied. Other external writes still require separate user authorization.',
 	);
 }
 
@@ -289,7 +299,7 @@ function reportLaunchedJob(
 	}
 
 	// The launch line is research-preview CLI output. When it changes shape,
-	// recover the ID from the supervisor roster by the session's display name.
+	// recover the ID from the agent roster by the session's display name.
 	const id =
 		parseBackgroundId(result.stdout) ??
 		(fallbackName
@@ -308,10 +318,10 @@ function reportLaunchedJob(
 	console.log(`DELEGATE_CLAUDE_JOB_ID=${id}`);
 }
 
-async function reply(args: string[]) {
+async function continueTask(args: string[]) {
 	if (refuseNestedDelegation()) return;
 
-	const options = parseReplyArgs(args);
+	const options = parseContinueArgs(args);
 	if (!options) {
 		usage();
 		process.exitCode = EXIT_CODE.usage;
@@ -331,9 +341,9 @@ async function reply(args: string[]) {
 		return;
 	}
 
-	const answer = await readPacket();
-	if (!answer.trim()) {
-		console.error('[delegate-claude] Reply is empty.');
+	const continuation = await readInvitation();
+	if (!continuation.trim()) {
+		console.error('[delegate-claude] Continuation is empty.');
 		process.exitCode = EXIT_CODE.usage;
 		return;
 	}
@@ -344,7 +354,7 @@ async function reply(args: string[]) {
 	const outcome = classifyAgent(agent);
 	if (outcome === 'working' && !options.interrupt) {
 		console.error(
-			`[delegate-claude] ${id} is still working; replying would discard the turn in flight. Read \`claude logs ${id}\` first, then pass --interrupt to stop it deliberately.`,
+			`[delegate-claude] ${id} is still working; continuing would discard the turn in flight. Read \`claude logs ${id}\` first, then pass --interrupt to stop it deliberately.`,
 		);
 		process.exitCode = EXIT_CODE.usage;
 		return;
@@ -373,7 +383,7 @@ async function reply(args: string[]) {
 		...PUBLICATION_GUARD_ARGS,
 		'--resume',
 		agent.sessionId,
-		answer,
+		continuation,
 	]);
 	reportPublicationGuard();
 	reportLaunchedJob(result, agent.name, launchedAt);
@@ -448,7 +458,7 @@ async function main() {
 	if (command === 'start') return start(args);
 	if (command === 'status' && args.length === 1) return status(args[0]);
 	if (command === 'watch' && args.length === 1) return watch(args[0]);
-	if (command === 'reply') return reply(args);
+	if (command === 'continue') return continueTask(args);
 
 	usage();
 	process.exitCode = EXIT_CODE.usage;
