@@ -1,13 +1,17 @@
 # Local Mail write-path test support
 
-Local-only harness for exercising Local Mail's Gmail write path (archive, undo,
-label, mark read/unread, star) against a **mock Gmail backend** and a
-**throwaway copy** of your mirror, so you can verify write UX without ever
-touching real Gmail or your real mirror.
+Local-only harness for exercising Local Mail's triage path (archive, undo, label,
+mark read/unread, star, trash) against a **mock Gmail backend** and a **throwaway
+copy** of your data dir, so you can verify triage UX without ever touching real
+Gmail or your real mirror and intent store.
 
-This is developer tooling, not `bun test`. The write-path smoke needs a real
-connected mirror to copy from; `check-gmail-discovery.ts` makes a live Google
-call. Neither is hermetic, so both stay out of the offline suite.
+A triage act is a local write and the reconciler is the only thing that reaches
+Gmail (ADR-0199), so the harness covers both halves: the act, which must be
+visible to the next read immediately, and the pass that delivers it.
+
+This is developer tooling, not `bun test`. The smoke needs a real connected
+mirror to copy from; `check-gmail-discovery.ts` makes a live Google call. Neither
+is hermetic, so both stay out of the offline suite.
 
 ## Gmail API drift check
 
@@ -37,34 +41,36 @@ each drift.
 
 Four independent guarantees keep this from touching anything real:
 
-1. **A throwaway copy, never the real mirror.** `setup-copy.sh` copies
+1. **A throwaway copy, never the real data dir.** `setup-copy.sh` copies
    `~/Library/Application Support/local-mail` to `LM_TEST_DIR` (default
    `/tmp/local-mail-harness`) and points `local-mail app` at the copy via
-   `LOCAL_MAIL_DIR`.
+   `LOCAL_MAIL_DIR`. The copied `intent.db` is dropped: it holds triage the real
+   account still owes Gmail, and the copy starts owing nothing.
 2. **Forged credentials, so no Google contact.** The copy's `credentials.json`
    is rewritten with a dummy access token whose expiry is the year 2099. The
-   token manager only refreshes near expiry (`src/token-manager.ts`), so `up`
+   token manager only refreshes near expiry (`src/token-manager.ts`), so the app
    reuses the dummy bearer forever and never calls Google's token endpoint.
 3. **A local mock, not `gmail.googleapis.com`.** `LOCAL_MAIL_GMAIL_API_BASE`
    points the client at `mock-gmail.ts` on `127.0.0.1`. The mock services only
    `messages.modify` (logged) and a no-op `history.list`; **every other route
-   returns a non-retryable 403**, which the sync engine treats as a hard failure
+   returns a non-retryable 403**, which the pull phase treats as a hard failure
    rather than a signal to run a FULL pull. So the mock can never wipe even the
    copy.
-4. **A fingerprint proof.** `fingerprint.sh` hashes the real mirror's durable
-   files (`credentials.json` + every `mail.v<version>.db`, predecessors
-   included); capture it before and after and
-   diff to confirm nothing real changed.
+4. **A fingerprint proof.** `fingerprint.sh` hashes the real data dir's durable
+   files (`credentials.json`, every `mail.v<version>.db` including predecessors,
+   and every `intent.db`); capture it before and after and diff to confirm
+   nothing real changed. `intent.db` matters most: the mirror is re-pullable from
+   Gmail and undelivered triage is not (ADR-0198).
 
 ## Files
 
 | file               | what it is |
 |--------------------|------------|
 | `mock-gmail.ts`    | Mock Gmail REST server. Reads the copy's SQLite to know current labels, applies the modify, logs it, 403s everything else. |
-| `setup-copy.sh`    | Copies the real mirror to `LM_TEST_DIR` and forges dummy credentials. |
-| `fingerprint.sh`   | Hashes the real mirror's durable state, for the before/after safety proof. |
-| `boot.ts`          | Shared boot used by `smoke.ts` (and any manual session): stands up copy + mock + `up` on ephemeral ports and hands back the launch coordinates. The one owner of the safety-critical wiring. |
-| `smoke.ts`         | Headless one-shot: fires one real write through `/api/messages/modify`, asserts it hit the mock, asserts the real mirror is unchanged. |
+| `setup-copy.sh`    | Copies the real data dir to `LM_TEST_DIR`, drops the copied intent store and lock, and forges dummy credentials. |
+| `fingerprint.sh`   | Hashes the real data dir's durable state, for the before/after safety proof. |
+| `boot.ts`          | Shared boot used by `smoke.ts` (and any manual session): stands up copy + mock + the app on ephemeral ports and hands back the launch coordinates. The one owner of the safety-critical wiring. |
+| `smoke.ts`         | Headless one-shot: records one real act through `/api/accounts/:account/messages/assert`, proves the next read already reflects it, reconciles, asserts the delivery hit the mock, and asserts the real data dir is unchanged. |
 | `check-gmail-discovery.ts` | Gmail API drift check: fetches the live Discovery doc and asserts the methods (hand-listed) + schema fields (walked from `schema.ts`) the client relies on are still present and correctly typed. |
 
 Runtime artifacts (the copy, the modify log, server logs) live under
@@ -78,22 +84,23 @@ Proves the full server → mock write path end to end and tears itself down:
 bun run apps/local-mail/test-support/smoke.ts
 ```
 
-On success it prints `SMOKE PASS`, the mock log line for the write, and confirms
-the real mirror fingerprint is unchanged. Exits non-zero on any failure.
+On success it prints `SMOKE PASS`, the mock log line for the delivery, and
+confirms the real data dir's fingerprint is unchanged. Exits non-zero on any
+failure.
 
 ## Manual write-UX check (browser)
 
 The affordances the API smoke can't assert (undo toast, keyboard triage, the
-"catching up" mirror chip, the shortcuts overlay) are verified by hand. `boot.ts`
-exports `bootHarness()`, which stands up the same safe stack (copy + mock + `up`)
-and returns a launch URL; call it from a scratch script or the REPL, open the
-URL, and poke the SPA. Build the SPA first or the page is blank:
+pending chip, the shortcuts overlay) are verified by hand. `boot.ts` exports
+`bootHarness()`, which stands up the same safe stack (copy + mock + the app) and
+returns a launch URL; call it from a scratch script or the REPL, open the URL,
+and poke the SPA. Build the SPA first or the page is blank:
 
 ```sh
 bun run --cwd apps/local-mail/ui build
 ```
 
-Watch the writes land:
+Watch the deliveries land:
 
 ```sh
 tail -f /tmp/local-mail-harness/modify-log.jsonl
@@ -101,7 +108,7 @@ tail -f /tmp/local-mail-harness/modify-log.jsonl
 
 ## Read-only smoke against your real mirror
 
-No copy, no writes; a dead Gmail base no-ops the sync loop and every action
+No copy, no writes; a dead Gmail base no-ops the reconcile loop and every action
 button is disabled:
 
 ```sh

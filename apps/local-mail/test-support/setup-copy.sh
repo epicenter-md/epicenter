@@ -68,8 +68,17 @@ fi
 
 rm -rf "$COPY"
 cp -R "$REAL" "$COPY"
-# Drop any copied lock so `up` can acquire its own, plus stray journals/artifacts.
-rm -f "$COPY/$ACCT/lock.db" "$COPY/$ACCT/lock.db-journal" "$COPY/.DS_Store" || true
+# Drop any copied lock so the app can acquire its own, plus stray journals and
+# artifacts. The copied `intent.db` goes too: it holds triage the REAL account
+# still owes Gmail, and a harness run would deliver it into the mock and count
+# it in the smoke's assertions. The copy starts owing nothing.
+rm -f \
+	"$COPY/$ACCT/lock.db" \
+	"$COPY/$ACCT/lock.db-journal" \
+	"$COPY/$ACCT/intent.db" \
+	"$COPY/$ACCT/intent.db-wal" \
+	"$COPY/$ACCT/intent.db-shm" \
+	"$COPY/.DS_Store" || true
 
 # Forge credentials.json: dummy access+refresh tokens, expiry far in the future.
 # Shape mirrors src/token-store.ts: { "<accountEmail>": "<JSON-encoded TokenSet>" }.
