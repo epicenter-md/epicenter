@@ -31,6 +31,7 @@ import {
 	openMailDb,
 	openMailDbReadonly,
 } from './db.ts';
+import { openIntentDb } from './intent.ts';
 import type { GmailMessage } from './schema.ts';
 
 function tempDir() {
@@ -576,6 +577,58 @@ describe('the mirror', () => {
 		// Restarting the count would name a fresh artifact after a corpus that
 		// already existed.
 		expect(mailMirror('/data', 'you@example.com').version).toBeGreaterThan(4);
+	});
+});
+
+describe('the intent overlay attachment', () => {
+	test('survives a data dir whose path contains ? or #', () => {
+		// The intent store is attached by URI so it can be opened `mode=ro`, and
+		// SQLite reads an unescaped `?` or `#` in a URI as the query or fragment.
+		// Without percent-escaping it attaches a DIFFERENT database, so every read
+		// model breaks on a path nobody thought was special. Both openers are
+		// exercised: the writable one creates the store, the read-only one attaches
+		// an existing one.
+		const root = mkdtempSync(join(tmpdir(), 'local-mail-uri-'));
+		const dataDir = join(root, 'we?ird#dir');
+		const account = { dataDir, accountEmail: 'you@example.com' };
+		try {
+			const db = openMailDb(account);
+			db.ingestFullPullPage(
+				[
+					{
+						id: 'm1',
+						threadId: 't1',
+						labelIds: ['INBOX'],
+						payload: { headers: [] },
+					},
+				],
+				'2026-08-01T00:00:00.000Z',
+			);
+			const intent = openIntentDb(account);
+			intent.assert(
+				[{ messageId: 'm1', labelId: 'INBOX', want: false }],
+				'2026-08-01T00:00:00.000Z',
+			);
+			intent.close();
+
+			expect(
+				db.listMessages({ labelId: 'INBOX', limit: 10, offset: 0 }),
+			).toEqual([]);
+			db.close();
+
+			const readonly = openMailDbReadonly(account);
+			expect(readonly).not.toBeNull();
+			expect(
+				readonly?.raw
+					.query<{ label_id: string }, []>(
+						`SELECT label_id FROM effective_labels WHERE message_id = 'm1'`,
+					)
+					.all(),
+			).toEqual([]);
+			readonly?.close();
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 });
 

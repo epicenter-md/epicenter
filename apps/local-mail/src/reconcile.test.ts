@@ -782,3 +782,93 @@ describe('drain', () => {
 		}
 	});
 });
+
+describe('across a restart', () => {
+	test('an act made offline survives the process and lands on the next pass', async () => {
+		// The product headline, end to end: archive on a plane, quit, reopen on the
+		// ground, and the archive reaches Gmail. Everything else in this file tests
+		// one seam; this tests that the seams hold across the only event the design
+		// exists to survive, which is the process going away between the act and
+		// the delivery.
+		const dir = mkdtempSync(join(tmpdir(), 'local-mail-restart-'));
+		const account = { dataDir: dir, accountEmail: 'you@example.com' };
+		const syncedAt = new Date(NOW).toISOString();
+
+		// Session one: offline. Every Gmail call fails with a network error, which
+		// is systemic, so nothing may be retired and nothing may be written down
+		// about the failure.
+		const offline = fakeGmail(new Map());
+		offline.modifyMessage = async () =>
+			GmailApiError.Network({ cause: new Error('offline') });
+		const firstDb = openMailDb(account);
+		const firstIntent = openIntentDb(account);
+		firstDb.ingestFullPullPage([message('m1', ['INBOX', 'UNREAD'])], syncedAt);
+		firstDb.ingestLabels(MIRRORED_LABELS, syncedAt);
+		firstDb.finishFullPull('1', syncedAt);
+		const firstDeps: ReconcileDeps = {
+			db: firstDb,
+			intent: firstIntent,
+			client: offline,
+			config: config(dir),
+			now: () => NOW,
+		};
+
+		expect(
+			assertMessageLabels({
+				deps: firstDeps,
+				input: { ids: ['m1'], addLabels: [], removeLabels: ['INBOX'] },
+				readOnly: false,
+			}).error,
+		).toBeNull();
+		// The act is already true for every reader, before Gmail has heard.
+		expect(
+			firstDb.listMessages({ labelId: 'INBOX', limit: 10, offset: 0 }),
+		).toEqual([]);
+
+		const offlinePass = await pass(firstDeps);
+		expect(offlinePass.delivery.delivered).toBe(0);
+		expect(offlinePass.delivery.retained).toBe(1);
+		expect(offlinePass.delivery.failure).not.toBeNull();
+		expect(offlinePass.delivery.discarded).toEqual([]);
+
+		// The process goes away with the change undelivered.
+		firstIntent.close();
+		firstDb.close();
+
+		// Session two: a fresh open of both files, as a new process would do, and
+		// Gmail is reachable again.
+		const online = fakeGmail(
+			new Map([['m1', { data: message('m1', ['UNREAD']) }]]),
+		);
+		const secondDb = openMailDb(account);
+		const secondIntent = openIntentDb(account);
+		const secondDeps: ReconcileDeps = {
+			db: secondDb,
+			intent: secondIntent,
+			client: online,
+			config: config(dir),
+			now: () => NOW,
+		};
+
+		// The change was still owed when the new process opened the store.
+		expect(secondIntent.summary().assertions).toBe(1);
+
+		const landed = await pass(secondDeps);
+		expect(landed.delivery.delivered).toBe(1);
+		expect(landed.delivery.retained).toBe(0);
+		expect(landed.delivery.failure).toBeNull();
+		expect(online.modifyCalls).toEqual([
+			{ id: 'm1', addLabelIds: [], removeLabelIds: ['INBOX'] },
+		]);
+		// Gmail's own answer is now the mirror's fact, and nothing is overlaid on
+		// it any more, so the reader's answer is unchanged by the delivery.
+		expect(mirroredLabels(secondDb, 'm1')).toEqual(['UNREAD']);
+		expect(
+			secondDb.listMessages({ labelId: 'INBOX', limit: 10, offset: 0 }),
+		).toEqual([]);
+
+		secondIntent.close();
+		secondDb.close();
+		rmSync(dir, { recursive: true, force: true });
+	});
+});
