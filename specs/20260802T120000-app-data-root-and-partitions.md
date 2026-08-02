@@ -155,9 +155,13 @@ land on its own.
 
 ## Done means
 
-- No app computes an OS application-data path. `git grep "Application Support"`
-  under `apps/` returns only `@epicenter/constants/app-data`.
-- `git grep -E "LOCAL_(MAIL|BOOKS)_DIR"` returns nothing.
+- No app computes an OS application-data path.
+  `git grep "Application Support" -- 'apps/*/src'` returns nothing; the only
+  platform switch in the repo is in `@epicenter/constants/app-data`. Local Mail's
+  `test-support/*.sh` helpers point at the old location and are updated with it;
+  a Whispering JSDoc example mentioning the phrase is unrelated and stays.
+- `git grep -E "LOCAL_(MAIL|BOOKS)_DIR"` returns nothing outside
+  `apps/local-mail/test-support/`, which is retargeted in Wave 4.
 - No path segment reaches `join` from an external source without passing
   `partitionDir`.
 - The host and the CLI, run on one machine, operate on the same mailbox. Prove
