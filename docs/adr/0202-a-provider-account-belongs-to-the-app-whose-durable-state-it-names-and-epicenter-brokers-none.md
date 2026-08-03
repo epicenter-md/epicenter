@@ -98,16 +98,17 @@ ownership Epicenter does not have. An app with a directory and no way to reach i
 is waiting on a capability decision nobody has made, not on a promotion.
 
 **One app-id namespace, and the reserved set is how it stays one.** Catalog
-admission today reserves `Object.keys(SURFACE_ROUTES)` (`home`, `whispering`,
-`honeycrisp`, `mail`, `books`) and nothing else, so a folder named `local-mail`
-is admissible. Under the narrowing that was withdrawn this was a latent defect,
-harmless because an admitted app owned no place; now admitting that folder issues
-a second claim on the directory Local Mail's `intent.db` sits in. No admitted app
-can act on the claim today, because none can reach a filesystem, so what closes
-here is the ownership collision rather than an exploit. The ids the composition
-root has already spent
-join the reserved set: an app id that names a place is not available to a folder
-that would only borrow the name.
+admission reserved the built-in surface ids (`home`, `whispering`, `honeycrisp`,
+`mail`, `books`) and nothing else, so a folder named `local-mail` was
+admissible. Under the narrowing that was withdrawn this was a latent defect,
+harmless because an admitted app owned no place; once every app owns the
+directory its id names, admitting that folder issues a second claim on the
+directory Local Mail's `intent.db` sits in. No admitted app can act on that claim
+today, because none can reach a filesystem, so what closes is the ownership
+collision rather than an exploit. The ids the composition root has already spent
+join the reserved set, from one expression both admission call sites read: an app
+id that names a place is not available to a folder that would only borrow the
+name.
 
 ### What Epicenter does not keep
 
