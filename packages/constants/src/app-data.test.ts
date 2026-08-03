@@ -13,11 +13,12 @@ import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-	APP_DATA_IDS,
 	appDataDir,
+	COMPOSED_APP_IDS,
 	type DataRootSystem,
 	EPICENTER_BUNDLE_IDENTIFIER,
 	epicenterDataRoot,
+	isAppId,
 	partitionDir,
 } from './app-data.ts';
 
@@ -140,9 +141,33 @@ test('an app directory sits under apps/', () => {
 	expect(appDataDir('/root', 'local-books')).toBe('/root/apps/local-books');
 });
 
-test('every declared app id composes', () => {
-	for (const id of APP_DATA_IDS) {
+test('every id the composition root spent composes', () => {
+	for (const id of COMPOSED_APP_IDS) {
 		expect(appDataDir('/root', id)).toBe(`/root/apps/${id}`);
+	}
+});
+
+test('an admitted folder name is an app id too', () => {
+	// The id space is open: an admitted app's id is its folder name (ADR-0179),
+	// and it names its directory the same way a composed engine's literal does.
+	expect(appDataDir('/root', 'field-notes')).toBe('/root/apps/field-notes');
+});
+
+test('an app id that is not one lowercase segment is refused', () => {
+	for (const id of [
+		'',
+		'.',
+		'..',
+		'a/b',
+		'a\\b',
+		'../escape',
+		'/absolute',
+		'Local-Mail',
+		'local_mail',
+		'local mail',
+	]) {
+		expect(isAppId(id)).toBe(false);
+		expect(() => appDataDir('/root', id)).toThrow(/app id/);
 	}
 });
 

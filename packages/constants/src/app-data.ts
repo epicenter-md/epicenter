@@ -1,9 +1,9 @@
 /**
  * Where Epicenter stores things on a machine.
  *
- * Epicenter owns exactly one application-data root. An app receives one
- * directory below it and owns everything inside, partitioned by an identifier
- * the external authority owns and never reuses. See ADR-0201.
+ * Epicenter owns exactly one application-data root. Every trusted app it runs or
+ * admits receives one directory below it and owns everything inside, partitioned
+ * by an identifier the external authority owns and never reuses. See ADR-0201.
  *
  * Three parties choose names along that path, and each function below is one
  * hand-off between two of them: Epicenter names the root and its own
@@ -13,10 +13,10 @@
  * defended by the party that would have to defend it. There is no level here
  * that is not one of those hand-offs.
  *
- * These are three pure functions over strings. There is no store, no handle, no
- * registry of app directories, and no lifecycle: allocating a place is not
- * owning a store, and the host never opens, reads, or reclaims anything below
- * the directory it names.
+ * These are pure functions over strings and a grammar. There is no store, no
+ * handle, no registry of app directories, and no lifecycle: allocating a place
+ * is naming it, not owning a store, and the host never creates, opens, reads, or
+ * reclaims anything below the directory it names.
  */
 
 import { homedir } from 'node:os';
@@ -31,14 +31,38 @@ import { isAbsolute, join } from 'node:path';
 export const EPICENTER_BUNDLE_IDENTIFIER = 'so.epicenter';
 
 /**
- * The apps that own a directory under the root. An app id is the app's own
- * stable identifier and deliberately not a surface id: Local Books has no
- * launchable surface at all, and coupling a mailbox's location to a name Home's
- * launcher owns would let a surface rename strand data (ADR-0201).
+ * The one grammar for an app id, shared with catalog admission.
+ *
+ * An app id names a place, and two issuers name into that one space: admission
+ * issues one when it accepts a folder (the folder name, ADR-0179) and the
+ * composition root issues one for an engine it composes. The grammar has one
+ * definition because the namespace is one namespace; a second copy of this
+ * pattern is how the two would drift apart.
  */
-export const APP_DATA_IDS = ['local-mail', 'local-books'] as const;
+const APP_ID_PATTERN = /^[a-z0-9-]+$/;
 
-export type AppDataId = (typeof APP_DATA_IDS)[number];
+export function isAppId(value: string): boolean {
+	return APP_ID_PATTERN.test(value);
+}
+
+/**
+ * App ids the composition root has already spent, which admission therefore
+ * cannot re-issue to a folder.
+ *
+ * This is not the set of apps that own a directory: every trusted app owns one
+ * (ADR-0201). It is the set of ids that arrive through no catalog, because their
+ * apps are composed directly or ship as a standalone CLI, so admission has no
+ * other way to know the names are taken. A folder named `local-mail` would
+ * otherwise be admitted as a second claimant on the directory Local Mail's
+ * credentials and intent store already sit in.
+ *
+ * An app id is deliberately not a surface id: Local Books has no launchable
+ * surface at all, and coupling a mailbox's location to a name Home's launcher
+ * owns would let a surface rename strand data (ADR-0201).
+ */
+export const COMPOSED_APP_IDS = ['local-mail', 'local-books'] as const;
+
+export type ComposedAppId = (typeof COMPOSED_APP_IDS)[number];
 
 /**
  * The ambient inputs the root is computed from, passed as a value so the
@@ -128,12 +152,27 @@ function dataDir({ env, platform, homeDir }: DataRootSystem): string {
  * on an app id, and it is the boundary the host's promise is stated against:
  * everything under `apps/` is somebody else's, all of it, by position.
  *
+ * Allocation is nominal: this names a place and creates nothing. A directory
+ * exists exactly when its owner writes into it, the same rule
+ * {@link partitionDir} follows one level down, which is why every trusted app
+ * having one costs nothing to run.
+ *
  * The result is a string, injected at the owner's composition root the way the
  * sidecar already computes `join(root, 'data')` and `join(root, 'blobs')`. It is
  * deliberately not a capability: the bytes are not Epicenter's to offer
  * (ADR-0181, ADR-0183).
+ *
+ * The id is validated rather than typed, because it comes from an open space:
+ * an admitted app's id is a folder name (ADR-0179), not a literal this package
+ * could enumerate. {@link COMPOSED_APP_IDS} is what keeps the two issuers from
+ * naming the same directory, and it is checked at admission rather than here.
  */
-export function appDataDir(root: string, appId: AppDataId): string {
+export function appDataDir(root: string, appId: string): string {
+	if (!isAppId(appId)) {
+		throw new Error(
+			`The app id ${JSON.stringify(appId)} cannot name a directory.`,
+		);
+	}
 	return join(root, 'apps', appId);
 }
 
