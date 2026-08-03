@@ -16,6 +16,7 @@ import {
 	createEpicenterClient,
 	createOpenAiAgentEngine,
 } from '@epicenter/client';
+import { epicenterDataRoot } from '@epicenter/constants/app-data';
 import type { SyncCredentialProvider } from '@epicenter/data';
 import { createDesktopEpicenterOwner } from '@epicenter/data/desktop-owner';
 import { parseExchangeResponse } from '@epicenter/data/protocol';
@@ -64,19 +65,19 @@ async function main(): Promise<void> {
 
 		const { engine, model } = homeEngineFromEnvironment(process.env);
 
-		const epicenterDataDir = process.env.EPICENTER_DATA_DIR;
-		if (!epicenterDataDir) {
-			throw new Error(
-				'EPICENTER_DATA_DIR must name the Epicenter app data directory.',
-			);
-		}
+		// The one Epicenter root, resolved here rather than received. A desktop
+		// host and a CLI that each computed this path would have to agree on it
+		// exactly, so one TypeScript function owns it and everything else calls
+		// that (ADR-0201). `data`, `blobs`, and `app-catalog` below it are the
+		// host's own names, and everything under `apps/` is somebody else's.
+		const dataRoot = epicenterDataRoot();
 		const authorityFetch = createDesktopAuthorityFetch(auth);
 		const documentCredentials = createDesktopSyncCredentials();
 		if (auth.bootSnapshot.state.status === 'signed-in') {
 			await documentCredentials.refresh(auth);
 		}
 		dataOwner = await createDesktopEpicenterOwner({
-			directory: join(epicenterDataDir, 'data'),
+			directory: join(dataRoot, 'data'),
 		});
 		if (auth.bootSnapshot.state.status === 'signed-in') {
 			const syncUrl = new URL('/api/sync/v1', auth.baseURL);
@@ -115,7 +116,7 @@ async function main(): Promise<void> {
 			conversations: dataOwner.epicenter.bind(homeLens).tables,
 		});
 		const blobs = createBunBlobStore({
-			directory: join(epicenterDataDir, 'blobs'),
+			directory: join(dataRoot, 'blobs'),
 		});
 		// Identity is immutable per process generation, so remote availability
 		// is a boot-time fact: a signed-in generation composes the streaming
@@ -147,7 +148,7 @@ async function main(): Promise<void> {
 		// The generation selected here is what this process serves for its
 		// whole lifetime; promotions apply at the next restart (ADR-0153).
 		const appCatalog = await loadActiveAppCatalog(
-			join(epicenterDataDir, 'app-catalog'),
+			join(dataRoot, 'app-catalog'),
 			{ reservedIds: Object.keys(SURFACE_ROUTES) },
 		);
 		const origin = `http://127.0.0.1:${boot.port}`;

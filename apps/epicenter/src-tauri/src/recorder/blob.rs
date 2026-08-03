@@ -26,7 +26,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use log::{info, warn};
 use serde::Serialize;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 use crate::audio::decode_to_pcm16k_mono;
 use crate::recorder::error::RecorderError;
@@ -101,12 +101,15 @@ fn validate_blob_id(id: &str) -> Result<(), RecorderError> {
     Ok(())
 }
 
+/// `<root>/blobs`, resolved natively because a recording can start before this
+/// process has anything to be told (`crate::app_data`). The sidecar names the
+/// same directory from `epicenterDataRoot()`, and the two are pinned equal by
+/// `app_data`'s tests rather than by both reading the same constant.
 fn blobs_directory(app: &AppHandle) -> Result<PathBuf, RecorderError> {
-    let app_data = app
-        .path()
-        .app_data_dir()
-        .map_err(|error| RecorderError::failed(format!("resolve app data dir: {error}")))?;
-    Ok(app_data.join(BLOBS_DIRECTORY))
+    let root = crate::app_data::epicenter_data_root(app).map_err(|error| {
+        RecorderError::failed(format!("resolve the Epicenter data root: {error}"))
+    })?;
+    Ok(root.join(BLOBS_DIRECTORY))
 }
 
 fn blob_data_path(app: &AppHandle, id: &str) -> Result<PathBuf, RecorderError> {

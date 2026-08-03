@@ -28,6 +28,8 @@ use tauri_specta::Event as _;
 #[cfg(test)]
 mod command_names;
 
+pub mod app_data;
+
 pub mod audio;
 use audio::encode_recording_for_upload;
 
@@ -1004,11 +1006,15 @@ fn start_once(app: &DesktopAppHandle) -> Result<()> {
 
 fn launch_host(app: &DesktopAppHandle, port: u16) -> Result<LaunchedHost> {
     let log = open_log_file(app)?;
-    let app_data_dir = app.path().app_data_dir()?;
 
+    // The Bun host resolves the Epicenter data root itself, from the one
+    // TypeScript function that owns that path (ADR-0201). Do not pass one from
+    // here: a Rust-computed root leaves the desktop and every CLI as two
+    // implementations of a directory they have to agree on exactly, and it
+    // swallows the ambient `EPICENTER_DATA_DIR` that the host and the
+    // recorder's `crate::app_data` both honour.
     let mut command = host_command(app)?;
     command
-        .env("EPICENTER_DATA_DIR", &app_data_dir)
         .env("EPICENTER_APPS_DIST", apps_dist(app)?)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
