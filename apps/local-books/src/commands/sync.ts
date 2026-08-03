@@ -37,7 +37,7 @@ function reportOutcome(o: SyncOutcome): void {
  * `--interval` keeps the realm pass running on a loop until Ctrl-C.
  */
 export async function runSync(args: ParsedArgs): Promise<number> {
-	const { data: company, error } = resolveCompany(args);
+	const { data: company, error } = await resolveCompany(args);
 	if (error !== null) {
 		console.error(error);
 		return 1;

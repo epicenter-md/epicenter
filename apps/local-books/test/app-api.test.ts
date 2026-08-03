@@ -97,6 +97,9 @@ function buildApp({ readOnly = false }: { readOnly?: boolean } = {}) {
 		async get() {
 			return null;
 		},
+		async listRealms() {
+			return [];
+		},
 		async set() {},
 	};
 	const app = createApiApp({

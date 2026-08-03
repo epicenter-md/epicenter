@@ -302,8 +302,7 @@ the app chooses what it is called:
           intent.db                      durable app intent (ADR-0198)
           lock.db
     local-books/
-      credentials.json
-      companies.json
+      credentials.json                   0600, and the connected-company index
       companies/
         <realmId>/
           books.v1.db
@@ -316,9 +315,11 @@ thing being partitioned and only the app knows what that is.
 
 The single partition directory earns itself twice. App-root files and partition
 ids become structurally incapable of colliding, so no grammar has to forbid a
-company named `companies.json`. And listing the partitions becomes a directory
+company named `credentials.json`. And listing the partitions becomes a directory
 read rather than a filter that has to know which sibling names are files, which
-is what `companies.json` exists to work around today.
+is what Local Books' `companies.json` exists to work around today. That file is
+deleted rather than kept for its other job, for the reason in the consequences
+below: the token store already answers which companies are connected.
 
 ### There is no acquisition protocol
 

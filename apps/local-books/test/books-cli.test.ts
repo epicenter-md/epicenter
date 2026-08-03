@@ -10,7 +10,7 @@ import { expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { booksMirror, openBooksDb } from '../src/db.ts';
-import { tempDir } from './helpers.ts';
+import { tempRoot } from './helpers.ts';
 
 const BIN = join(import.meta.dir, '../src/bin.ts');
 
@@ -44,16 +44,17 @@ function seedMirror(dir: string): void {
 }
 
 test('CLI: `query` returns mirror rows as JSON', async () => {
-	const tmp = tempDir();
-	seedMirror(tmp.dir);
-	const res = await runCli([
-		'query',
-		'--realm',
-		'r1',
-		'--data-dir',
-		tmp.dir,
-		'SELECT doc_number, total_amt FROM invoices WHERE deleted = 0',
-	]);
+	const tmp = tempRoot();
+	seedMirror(tmp.appDir);
+	const res = await runCli(
+		[
+			'query',
+			'--realm',
+			'r1',
+			'SELECT doc_number, total_amt FROM invoices WHERE deleted = 0',
+		],
+		{ EPICENTER_DATA_DIR: tmp.root },
+	);
 	expect(res.exitCode).toBe(0);
 	const rows = JSON.parse(res.stdout);
 	expect(rows).toEqual([{ doc_number: 'INV-1', total_amt: 8000 }]);
@@ -61,20 +62,10 @@ test('CLI: `query` returns mirror rows as JSON', async () => {
 });
 
 test('CLI: `recategorize` is refused under LOCAL_BOOKS_READ_ONLY', async () => {
-	const tmp = tempDir();
+	const tmp = tempRoot();
 	const res = await runCli(
-		[
-			'recategorize',
-			'Purchase',
-			'p1',
-			'--to',
-			'61',
-			'--realm',
-			'r1',
-			'--data-dir',
-			tmp.dir,
-		],
-		{ LOCAL_BOOKS_READ_ONLY: '1' },
+		['recategorize', 'Purchase', 'p1', '--to', '61', '--realm', 'r1'],
+		{ EPICENTER_DATA_DIR: tmp.root, LOCAL_BOOKS_READ_ONLY: '1' },
 	);
 	expect(res.exitCode).toBe(1);
 	expect(res.stderr).toContain('Refusing to write');
@@ -82,11 +73,11 @@ test('CLI: `recategorize` is refused under LOCAL_BOOKS_READ_ONLY', async () => {
 });
 
 test('CLI: `demo` builds a sample company and prints example answers', async () => {
-	const tmp = tempDir();
-	const res = await runCli(['demo', '--data-dir', tmp.dir]);
+	const tmp = tempRoot();
+	const res = await runCli(['demo'], { EPICENTER_DATA_DIR: tmp.root });
 	expect(res.exitCode).toBe(0);
 	expect(res.stdout).toContain('sample company');
 	expect(res.stdout).toContain('Who owes us money');
-	expect(existsSync(booksMirror(tmp.dir, 'demo').path)).toBe(true);
+	expect(existsSync(booksMirror(tmp.appDir, 'demo').path)).toBe(true);
 	tmp.cleanup();
 });

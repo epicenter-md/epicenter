@@ -44,7 +44,6 @@ owner publishes or a fact a person promotes into the shared replica.
         mail.v5.db  intent.db  lock.db
     local-books/
       credentials.json                   0600
-      companies.json                     default selection only
       companies/<realmId>/
         books.v1.db  lock.db
 ```
@@ -115,7 +114,8 @@ rejected segment shape; `appDataDir` and `partitionDir` composition.
 ### Wave 2: Local Books moves and gains its guard
 
 - `resolveDataDir`, `defaultDataDir`, `LOCAL_BOOKS_DIR`, and `--data-dir` are
-  deleted from `apps/local-books/src/paths.ts` and `config.ts`.
+  deleted from `apps/local-books/src/paths.ts` and `config.ts`; `booksDataDir()`
+  is `appDataDir(epicenterDataRoot(), 'local-books')`.
 - `companyDir` becomes
   `partitionDir(appDataDir(root, 'local-books'), 'companies', realmId)`, which is
   where the missing validation arrives. Today `realmId` reaches

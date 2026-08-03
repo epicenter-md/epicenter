@@ -12,10 +12,9 @@
 import { rmSync } from 'node:fs';
 import type { Mirror } from '@epicenter/sqlite/bun-mirror';
 import { queryBooks } from '../books/query.ts';
-import type { ParsedArgs } from '../cli.ts';
 import { booksMirror, openBooksDb } from '../db.ts';
 import { entityDef, type QbObject } from '../entities.ts';
-import { companyDir, resolveDataDir } from '../paths.ts';
+import { booksDataDir, companyDir } from '../paths.ts';
 
 const DEMO_REALM = 'demo';
 
@@ -121,8 +120,8 @@ function table(mirror: Mirror, sql: string): void {
 	}
 }
 
-export async function runDemo(args: ParsedArgs): Promise<number> {
-	const dataDir = resolveDataDir(args.dataDir);
+export async function runDemo(): Promise<number> {
+	const dataDir = booksDataDir();
 	// Fresh each run: the demo is disposable sample data, not a real mirror, so it
 	// clears the whole realm directory rather than reclaiming one artifact.
 	rmSync(companyDir(dataDir, DEMO_REALM), { recursive: true, force: true });

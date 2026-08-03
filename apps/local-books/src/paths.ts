@@ -1,50 +1,43 @@
-import { homedir } from 'node:os';
 import { join } from 'node:path';
+import {
+	appDataDir,
+	epicenterDataRoot,
+	partitionDir,
+} from '@epicenter/constants/app-data';
 
 /**
- * OS-appropriate application-data directory for the mirror. Scoping the db by
- * `realmId` underneath keeps multiple QuickBooks companies from colliding.
+ * Local Books' one directory: `<epicenter-root>/apps/local-books`.
  *
- * macOS: `~/Library/Application Support/local-books`
- * Linux/other: `$XDG_DATA_HOME/local-books` or `~/.local/share/local-books`
+ * The app computes no OS application-data path of its own. Epicenter owns
+ * exactly one root and `EPICENTER_DATA_DIR` is the only override, so a CLI run
+ * from a terminal and the desktop host operate on the same books (ADR-0201).
+ * Everything below the result belongs to this app, and nothing outside it
+ * receives a path into it.
  */
-export function defaultDataDir(): string {
-	if (process.platform === 'darwin') {
-		return join(homedir(), 'Library', 'Application Support', 'local-books');
-	}
-	const xdg = process.env['XDG_DATA_HOME'];
-	if (xdg && xdg.length > 0) return join(xdg, 'local-books');
-	return join(homedir(), '.local', 'share', 'local-books');
-}
-
-/** `--data-dir` beats `LOCAL_BOOKS_DIR` beats the OS default. */
-export function resolveDataDir(override?: string): string {
-	if (override && override.length > 0) return override;
-	const env = process.env['LOCAL_BOOKS_DIR'];
-	if (env && env.length > 0) return env;
-	return defaultDataDir();
+export function booksDataDir(): string {
+	return appDataDir(epicenterDataRoot(), 'local-books');
 }
 
 /**
- * One directory per company, scoped by `realmId` under the data dir. It holds
- * the company's mirror artifacts (named by corpus version, see `booksMirror` in
- * `db.ts`) and the `app` verb's `lock.db`. This is the directory the mirror is
- * opened at, so `realmId` is the only per-tenant naming the mirror sees.
+ * One directory per company, named by QuickBooks' `realmId` under
+ * `companies/`. It holds the company's mirror artifacts (named by corpus
+ * version, see `booksMirror` in `db.ts`) and the `app` verb's `lock.db`. This is
+ * the directory the mirror is opened at, so `realmId` is the only per-tenant
+ * naming the mirror sees.
+ *
+ * `realmId` reaches here straight from the Intuit callback or `--realm`, so the
+ * shared `partitionDir` guard validating it as exactly one path component is the
+ * point of routing through it rather than joining (ADR-0201).
  */
 export function companyDir(dataDir: string, realmId: string): string {
-	return join(dataDir, realmId);
-}
-
-/** Tracks which companies have been authenticated and which is the default. */
-export function companiesFilePath(dataDir: string): string {
-	return join(dataDir, 'companies.json');
+	return partitionDir(dataDir, 'companies', realmId);
 }
 
 /**
- * The default file token store: `credentials.json` at the data-dir root, sibling
- * to `companies.json`. Deliberately not inside a company's `<realmId>/` mirror
- * dir, so the agent's read-only SQL surface over the mirror can never read it
- * (and one company's mirror can be shared without its refresh token).
+ * The default file token store: `credentials.json` at the app-directory root,
+ * sibling to `companies/`. Deliberately not inside a company's partition, so the
+ * agent's read-only SQL surface over the mirror can never read it (and one
+ * company's mirror can be shared without its refresh token). See ADR-0062.
  */
 export function credentialsFilePath(dataDir: string): string {
 	return join(dataDir, 'credentials.json');

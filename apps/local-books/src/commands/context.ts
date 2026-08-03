@@ -1,13 +1,16 @@
 import type { Mirror } from '@epicenter/sqlite/bun-mirror';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import { resolveRealm } from '../companies.ts';
 import {
 	type AppConfig,
 	type CliConfigOverrides,
 	loadConfig,
 } from '../config.ts';
 import { booksMirror } from '../db.ts';
-import { createFileTokenStore, type TokenStore } from '../token-store.ts';
+import {
+	createFileTokenStore,
+	resolveRealm,
+	type TokenStore,
+} from '../token-store.ts';
 
 /** Human-friendly "in 42m" / "3m ago" for the auth and status commands. */
 export function formatRelative(targetIso: string, now: number): string {
@@ -35,21 +38,22 @@ export type CompanyContext = {
 };
 
 /**
- * Resolve the target company shared by `sync` and `status`: load config, pick
- * the realm (explicit flag, recorded default, or the sole authenticated one),
- * and open its token store. Returns a user-facing error string when the realm is
- * ambiguous or none is authenticated.
+ * Resolve the target company shared by `sync` and `status`: load config, open
+ * the token store, and pick the realm from it (explicit flag, or the sole
+ * connected company). Returns a user-facing error string when the realm is
+ * ambiguous or none is connected.
  */
-export function resolveCompany(
+export async function resolveCompany(
 	overrides: CliConfigOverrides,
-): Result<CompanyContext, string> {
+): Promise<Result<CompanyContext, string>> {
 	const config = loadConfig(overrides);
-	const { data: realmId, error } = resolveRealm(config);
+	const store = createFileTokenStore(config.credentialsPath);
+	const { data: realmId, error } = await resolveRealm(config, store);
 	if (error !== null) return Err(error);
 	return Ok({
 		config,
 		realmId,
 		mirror: booksMirror(config.dataDir, realmId),
-		store: createFileTokenStore(config.credentialsPath),
+		store,
 	});
 }

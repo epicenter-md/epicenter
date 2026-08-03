@@ -28,7 +28,7 @@ export async function runRecategorize(args: ParsedArgs): Promise<number> {
 		return 1;
 	}
 
-	const { data: company, error } = resolveCompany(args);
+	const { data: company, error } = await resolveCompany(args);
 	if (error !== null) {
 		console.error(error);
 		return 1;

@@ -11,8 +11,9 @@ import { booksMirror } from '../src/db.ts';
 import { makeInvoice, startMockQbServer } from './mock-qb-server.ts';
 
 const BIN = join(import.meta.dir, '../src/bin.ts');
-const DATA_DIR = '/tmp/local-books-demo';
-rmSync(DATA_DIR, { recursive: true, force: true });
+const ROOT = '/tmp/local-books-demo';
+const APP_DIR = join(ROOT, 'apps', 'local-books');
+rmSync(ROOT, { recursive: true, force: true });
 
 async function sh(
 	cmd: string[],
@@ -37,11 +38,11 @@ function banner(label: string): void {
 
 const server = startMockQbServer();
 const realmId = server.realmId;
-const tokenFile = join(DATA_DIR, 'credentials.json');
-const dbFile = booksMirror(DATA_DIR, realmId).path;
+const tokenFile = join(APP_DIR, 'credentials.json');
+const dbFile = booksMirror(APP_DIR, realmId).path;
 
 const env = {
-	LOCAL_BOOKS_DIR: DATA_DIR,
+	EPICENTER_DATA_DIR: ROOT,
 	LOCAL_BOOKS_TOKEN_FILE: tokenFile,
 	LOCAL_BOOKS_QB_API_BASE: server.apiBase,
 	LOCAL_BOOKS_QB_TOKEN_URL: server.tokenUrl,
@@ -57,7 +58,7 @@ const sqlite = (sql: string) => sh(['sqlite3', dbFile, sql]);
 // the interactive browser hop. The mock accepts any bearer token.
 async function main() {
 	const { mkdirSync } = await import('node:fs');
-	mkdirSync(DATA_DIR, { recursive: true });
+	mkdirSync(APP_DIR, { recursive: true });
 	const now = Date.now();
 	writeFileSync(
 		tokenFile,

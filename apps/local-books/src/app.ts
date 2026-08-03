@@ -147,9 +147,9 @@ export async function runApp(
 	options: CliConfigOverrides & { noOpen?: boolean; port?: number },
 ): Promise<number> {
 	// Resolve the company the same way `sync`/`status` do: config from flags/env,
-	// then the realm (explicit flag, recorded default, or the sole authenticated
-	// one). Ambiguity is an error, not a silent guess.
-	const { data: company, error } = resolveCompany(options);
+	// then the realm (explicit flag, or the sole connected company). Ambiguity is
+	// an error, not a silent guess.
+	const { data: company, error } = await resolveCompany(options);
 	if (error !== null) {
 		console.error(error);
 		return 1;

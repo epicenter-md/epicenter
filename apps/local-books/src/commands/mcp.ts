@@ -51,11 +51,14 @@ import {
 import { fetchReport, ReportInput } from '../books/report.ts';
 import { readBooksStatus } from '../books/status.ts';
 import { type ParsedArgs, VERSION } from '../cli.ts';
-import { resolveRealm } from '../companies.ts';
 import { type AppConfig, loadConfig } from '../config.ts';
 import { booksMirror, openBooksDb } from '../db.ts';
 import { syncRealm } from '../sync.ts';
-import { createFileTokenStore, type TokenStore } from '../token-store.ts';
+import {
+	createFileTokenStore,
+	resolveRealm,
+	type TokenStore,
+} from '../token-store.ts';
 
 /** What every tool `run` is handed: the resolved company plus its opened deps. */
 type ToolContext = {
@@ -225,10 +228,9 @@ function toCallResult({ data, error }: ToolOutcome): CallToolResult {
 
 export async function runMcpServer(args: ParsedArgs): Promise<number> {
 	// Same precedence the other verbs use (CLI > env > config.json > defaults);
-	// the host typically passes LOCAL_BOOKS_DIR / _TOKEN_FILE / _READ_ONLY / the
-	// realm via the MCP client config's `env`.
+	// the host typically passes EPICENTER_DATA_DIR / LOCAL_BOOKS_TOKEN_FILE /
+	// LOCAL_BOOKS_READ_ONLY / the realm via the MCP client config's `env`.
 	const config = loadConfig({
-		dataDir: args.dataDir,
 		environment: args.environment,
 		realm: args.realm,
 	});
@@ -292,7 +294,10 @@ export async function runMcpServer(args: ParsedArgs): Promise<number> {
 
 		// Resolve the company per call so a freshly-authenticated realm is picked
 		// up, and a missing one is a self-correctable result, not a startup crash.
-		const { data: realmId, error: realmError } = resolveRealm(config);
+		const { data: realmId, error: realmError } = await resolveRealm(
+			config,
+			store,
+		);
 		if (realmError !== null) {
 			return { content: [{ type: 'text', text: realmError }], isError: true };
 		}
