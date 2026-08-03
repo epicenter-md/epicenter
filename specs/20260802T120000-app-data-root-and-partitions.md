@@ -185,6 +185,15 @@ Who eventually owns the recorder's root is a separate question and is not decide
 here. Until it is, one Rust caller remains and the equality above is the check
 that keeps it honest.
 
+There is a third participant in that same undecided question, found while
+auditing this wave: `apps/whispering/src/lib/services/fs-paths.ts` resolves
+`<root>/blobs` for itself through Tauri's `appDataDir()`, inside the desktop host
+only. It is not a peer-directory violation, since `blobs/` is the host's own
+directory and not an app partition, but it is a third resolver for a path the
+host already computes and injects elsewhere. Fold it into whichever wave settles
+the recorder's root; doing it here would put a Whispering change inside a Books
+and Mail move.
+
 If ADR-0191 has merged, this wave also passes `appDataDir(root, 'local-mail')`
 into the mail engine the host composes. If it has not, that half waits and the
 rest still lands.
@@ -234,9 +243,11 @@ Breaking: every connected account reconnects and re-pulls once.
 
 ## Done means
 
-- No app computes an OS application-data path.
-  `git grep "Application Support" -- 'apps/*/src'` returns nothing; the only
-  platform switch in the repo is in `@epicenter/constants/app-data`.
+- No app computes an OS application-data path for its own data. The only platform
+  switch in the repo is in `@epicenter/constants/app-data`, and
+  `git grep "Application Support" -- 'apps/local-mail/src' 'apps/local-books/src'`
+  returns nothing. Whispering's `<root>/blobs` resolution is out of scope and
+  tracked under Wave 5a.
 - `git grep -E "LOCAL_(MAIL|BOOKS)_DIR"` returns nothing outside
   `apps/local-mail/test-support/`, retargeted in Wave 4.
 - No path segment reaches `join` from an external source without passing
