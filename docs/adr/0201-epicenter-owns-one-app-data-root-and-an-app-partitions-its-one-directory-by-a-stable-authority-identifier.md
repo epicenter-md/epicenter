@@ -4,7 +4,8 @@
 - **Date:** 2026-08-02
 - **Provisional number.** ADR-0191, ADR-0192, ADR-0193, ADR-0195, and ADR-0200 are claimed by open branches and are not in this tree. Reconcile this integer at merge time (`docs/adr/README.md`).
 - **Amends:** [ADR-0062](0062-local-books-stores-oauth-tokens-in-a-single-0600-file.md) at one clause, the location of the token file, which is now the app directory's root and keeps its `0600` mode and its exclusion from any mirror directory; [ADR-0072](0072-local-books-ships-as-a-standalone-cli-the-daemon-surface-is-deferred.md) at one clause, where a standalone CLI's data lives, leaving its standalone shape and deferred daemon untouched.
-- **Amended by:** [ADR-0202](0202-a-provider-account-belongs-to-the-app-whose-durable-state-it-names-and-epicenter-brokers-none.md) at one clause, which apps "an app receives one directory" is about: it is the closed set of host-composed engines, and an admitted static app (ADR-0179) receives no directory at all. That record also decides who owns the provider grant that names a partition, which this one left open. The root, the levels, the place-not-an-API rule, and the partition-naming rule are unchanged.
+- **Completed by:** [ADR-0202](0202-a-provider-account-belongs-to-the-app-whose-durable-state-it-names-and-epicenter-brokers-none.md), which answers the one question this record left open: who owns the provider grant that names a partition. It amends nothing here.
+- **Corrected 2026-08-03, before merge, at one clause: which apps "an app" is.** A draft of ADR-0202 narrowed it to a closed set of host-composed engines and gave an admitted app (ADR-0179) no directory at all. That narrowing is withdrawn as a product decision, and the rule is restated below at the width it was always written at: **every trusted app Epicenter runs or admits has one place.** Nothing else in this record moves. Both records are unmerged, so this is an edit to an unlanded decision rather than a rewrite of a governing one.
 - **Relates:** [ADR-0198](0198-a-durable-local-mail-write-is-a-per-message-label-assertion-in-a-sibling-intent-database.md) (untouched, and deliberately: an intent store's durability is a rule about ordinary operation inside a partition, and this record decides only where the partition is), [ADR-0151](0151-local-workspace-stores-use-owner-first-directories.md) (owner-first directories inside the replica plane; this record governs the plane beside it), [ADR-0161](0161-each-person-has-one-epicenter-replicated-on-each-adapter-boundary.md), [ADR-0179](0179-an-installed-app-is-an-inert-built-folder-admitted-through-one-static-artifact-boundary.md), [ADR-0181](0181-every-app-receives-one-portable-epicenter-capability-handle.md) (the closed capability namespace, which this record does not widen), [ADR-0183](0183-epicenter-mediates-the-effects-it-owns-and-names-the-rest-unmediated.md), [ADR-0190](0190-a-build-declares-which-epicenter-owns-its-data-not-which-window-it-runs-in.md), [ADR-0196](0196-local-mails-mirror-is-a-reader-and-one-full-message-fetch-is-its-entire-budget.md), [ADR-0197](0197-a-mirrors-corpus-version-names-its-artifact-and-only-the-app-knows-when-one-is-ready.md) (the filename grammar inside a partition; this record decides the directory that grammar is applied in), [ADR-0199](0199-one-account-reconciler-is-local-mails-only-gmail-writer.md) (the one writer, whose delivery is how an intent store empties during ordinary operation inside a partition)
 - **Relates, not in this tree:** ADR-0191 (the Epicenter host process owns the mail engine in process) and ADR-0193 (durable authorities and disposable materializations) are on open branches. Where this record depends on one, it says so and restates the borrowed clause rather than linking a file that does not exist here.
 - **In force, partly executed.** The root, the app directory, and the single partition directory are code in both apps, and the desktop host now resolves the root through the same TypeScript function rather than being handed one Rust computed. The partition *name* has not changed yet: Local Mail still names one by the account's email address, so the strand-on-rename defect described below is open until the `sub` adoption ships. One clause is unimplemented and this line is where it is admitted.
@@ -75,13 +76,14 @@ rather than a migration.
 
 ## Decision
 
-**Epicenter owns exactly one application-data root on a machine. An app receives
-one directory below it, computed at its owner's composition root and injected as
-a string. Below that directory the app owns everything, and it partitions by an
-identifier the external authority owns and never reuses. The directory is a
-place and never an inter-app API: nothing outside the owning app receives a path
-into it, and a fact crosses to another app only as a verb the owner publishes or
-a fact a person promotes into the shared replica.**
+**Epicenter owns exactly one application-data root on a machine. Every trusted
+app it runs or admits receives one directory below it, named by the app's id and
+allocated when the host admits the app. Below that directory the app owns
+everything, and it partitions by an identifier the external authority owns and
+never reuses. The directory is a place and never an inter-app API: nothing
+outside the owning app receives a path into it, and a fact crosses to another app
+only as a verb the owner publishes or a fact a person promotes into the shared
+replica.**
 
 ### Why there are exactly these levels
 
@@ -174,27 +176,76 @@ No app computes an application-data path. `LOCAL_MAIL_DIR`, `LOCAL_BOOKS_DIR`,
 and `--data-dir` are deleted, along with both platform switches. There is one
 override for one root, not one per app.
 
-### An app receives a directory, not a storage service
+### Every app receives a directory, and no app receives a storage service
 
 An app's directory is `<root>/apps/<app-id>`, one segment below the hand-off
-above. The app id is the app's own stable identifier, and it is declared once in
-one place: a closed literal union in `@epicenter/constants`, not in each app.
-That is not a compromise of the ownership rule but a consequence of it, because
-the composition root that places every app has to be able to name them all, and
-a typed union is what makes a typo a compile error. What keeps an app from
-naming a peer is the call shape rather than the type: every `appDataDir` call in
-an app passes a literal id and takes no parameter that could carry somebody
-else's.
+above, and every trusted app has one. A host-composed engine has one, an
+admitted folder of static files (ADR-0179) has one, and a compiled application
+has one. Which of them has written anything into it yet is a fact about today,
+not a rule: an app's private operational state has one place from the moment the
+app exists, and the shared curated replica (ADR-0161) is the other half of what
+every app gets, not a substitute for the first half.
 
-The id is deliberately not a surface id: Local Books has no launchable surface
-at all (ADR-0072), and coupling a mailbox's location to a name that Home's
-launcher owns would let a surface rename strand data.
+The alternative was two classes of app, one with a place and one without, and it
+does not survive contact with the question it creates. An admitted app that
+later wants durable bytes of its own would have to be promoted into the other
+class, which means changing its identity, which means moving or abandoning bytes
+it is already storing somewhere worse. Refusing the directory does not refuse the
+state; it refuses the *place*, and the state then lands in the one storage the
+shared origin already gives every app, where it is neither private nor legible
+nor removable with the app. The boundary worth defending is who owns an app's
+interior, not whether the app is allowed to have one.
+
+**An app id names a place, so there is one app-id namespace with two issuers.**
+Admission issues one when it accepts a folder: the id is the folder name, which
+is already the id the host serves the app under (ADR-0179). The composition root
+issues one for an engine it composes, as a literal in `@epicenter/constants`,
+because a composed engine arrives through no catalog and Local Books has no
+launchable surface at all (ADR-0072). Since both issuers name into one space,
+admission reserves every id the other issuer has already spent, alongside the
+built-in surface ids it already reserves. Two names for one app is ordinary; two
+apps for one name is a directory with two claimants, and that is what the
+reservation refuses.
+
+The id is deliberately not a surface id. Home's launcher owns surface names and
+may rename one; a directory named after it would strand data on a rename. A
+surface id is nonetheless reserved against the app-id space for the same
+one-namespace reason.
+
+**Allocation is nominal, and that is the whole of the contract.** The path is a
+pure function of the root and the id, so allocating a place means the host has
+issued the id, not that anything exists on disk. There is no allocation call, no
+handle, no host verb an app invokes to obtain its directory, and nothing is
+created at admission. The directory exists exactly when its owner writes into it,
+which is the same rule a partition already follows below. An app that never
+writes has a place and an empty one, and the host does not know the difference.
+
+Because ids now reach the path function from an open space rather than a closed
+union, `appDataDir` validates the id against the same `[a-z0-9-]+` grammar
+admission validates a folder name with, from one shared definition. That is the
+one real cost of opening the class, it is a guard rather than a subsystem, and
+sharing the grammar is what makes "one namespace" a fact about the code instead
+of a claim in this paragraph.
 
 The directory is a string. It is computed where the owner is composed, the way
 the Epicenter sidecar already computes `join(root, 'data')` and
 `join(root, 'blobs')` in `apps/epicenter/src/main.ts`, and injected into the
 engine that needs it. This is the per-concern injection that ADR-0193 requires
 for a materialization, and it is why this record adds no capability.
+
+**How an app reaches its place is a separate question from whether it has one,
+and this record answers only the second.** A composed engine is handed the
+string at its composition root and can open files today. An admitted folder of
+static files runs in a webview with no filesystem reach at all, so its place is
+allocated and currently unreachable from its own code: it is a fact about
+ownership that becomes operational the day something native is composed for that
+app, and it is honest to say that day has not arrived. Nothing here narrows the
+gap. There is no `epicenter.storage`, no path in the capability handle, and no
+native verb that hands a webview a directory, because inventing one now would
+answer a question no app has asked and would do it in the namespace ADR-0181
+closed. What this record buys today is that the answer is already determined
+when the question is finally asked, by an id the app already has, and that no
+app has to change identity to get it.
 
 There is no `epicenter.storage` namespace and no `epicenter.database` namespace.
 ADR-0181 already refuses `storage` as an implementation category, and ADR-0193
@@ -399,6 +450,13 @@ the directory. There is no allocation call, no registration, no host handshake,
 no registry of partitions, and no storage manager. A partition exists exactly
 when its directory does.
 
+The app directory one level up follows the same rule, which is why giving one to
+every app costs nothing to run. The host issues an id and stops. It does not
+create the directory, count directories, notice an empty one, or remove one when
+an app leaves the catalog: a directory whose app is gone is inert disk a person
+deletes by hand, the same treatment a pre-record directory gets above. Reclaiming
+it would mean deciding that bytes the host cannot read are no longer wanted.
+
 ### Disposability stays legible in the filename
 
 Inside a partition, ADR-0197's grammar decides what is disposable:
@@ -477,11 +535,21 @@ directory is the thing handed to a read-only SQL surface or an agent.
   point.** The owner publishes a verb, or a person promotes the fact into the
   shared replica. Neither happens by accident, so a directory read never becomes
   an undeclared dependency between two apps that ship on different schedules.
+- **An app never has to change what it is in order to have somewhere to put its
+  own state.** There is no promotion, no request, and no reviewable widening of a
+  closed set. The cost of that is paid once, in a validated id rather than a
+  typed union, and the reservation at admission is what keeps two apps from
+  claiming one place.
+- **Directories outlive their apps, on purpose.** Removing an app from the
+  catalog leaves its directory whole, because the host cannot read what is inside
+  it and will not decide those bytes are unwanted. A person deletes it, or
+  deletes the one root and takes everything with it.
 - What this forecloses: a host-owned registry of app stores, a storage or
   database capability namespace, per-app data roots, a `cacheDir` beside the data
   dir, a generic app-database framework, any host feature that reads inside an
   app's directory, a cross-app SQL surface or query router, a directory lookup by
-  app id offered to app code, and a per-app storage permission model.
+  app id offered to app code, an allocation, uninstall, quota, or backup protocol
+  over app data, and a per-app storage permission model.
 
 ## Considered alternatives
 
@@ -503,6 +571,17 @@ directory is the thing handed to a read-only SQL surface or an agent.
   to know every app's schema to be useful and to keep working. The owning app
   already has the two shapes worth having, a verb and a read model, and it can
   name what it means by them.
+- **Give a directory only to a closed set of host-composed engines, and none to
+  an admitted app.** Drafted into ADR-0202 and withdrawn before either record
+  merged. It looked cheaper because an admitted app cannot reach a filesystem
+  today, so the place would go unused; what it actually bought was a second class
+  of app, a promotion ritual to move between them, and an identity change at
+  exactly the moment an app has state to lose. The costs it claimed to avoid all
+  survive the widening: allocation stays nominal so there is no verb, the host
+  still reclaims nothing so there is no uninstall lifecycle, a filesystem still
+  provides no quota so none is promised, and the one genuine cost, an open id
+  space reaching a `join`, is paid by validating the id against the grammar
+  admission already enforces.
 - **Give directory access a grant or permission model between apps.** Rejected:
   it would be a mechanism pretending to be a boundary. Every app here runs as the
   person who owns the machine and can already open any file that person can, so

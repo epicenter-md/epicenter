@@ -3,7 +3,9 @@
 - **Status:** Accepted
 - **Date:** 2026-08-03
 - **Provisional number.** ADR-0191, ADR-0192, ADR-0193, ADR-0195, and ADR-0200 are claimed by open branches and are not in this tree, and ADR-0201 carries the same caveat. Reconcile this integer at merge time (`docs/adr/README.md`).
-- **Amends:** [ADR-0074](0074-the-secret-vault-is-an-owner-scoped-synced-store-encrypted-under-a-server-derived-keyring.md) at one clause, what the vault may hold: accounts and third-party grants leave its scope, and it keeps the brought values that name no durable local state. Its key source, its refusal of a passphrase and a `locked` state, and its `available | missing` read contract are unchanged and restated as still governing. Also [ADR-0201](0201-epicenter-owns-one-app-data-root-and-an-app-partitions-its-one-directory-by-a-stable-authority-identifier.md) at one clause, which apps the phrase "an app receives one directory" is about: it is the closed set of host-composed engines, not every admitted app. Its root, its levels, its place-not-an-API rule, and its partition-naming rule are unchanged.
+- **Amends:** [ADR-0074](0074-the-secret-vault-is-an-owner-scoped-synced-store-encrypted-under-a-server-derived-keyring.md) at one clause, what the vault may hold: accounts and third-party grants leave its scope, and it keeps the brought values that name no durable local state. Its key source, its refusal of a passphrase and a `locked` state, and its `available | missing` read contract are unchanged and restated as still governing.
+- **Completes:** [ADR-0201](0201-epicenter-owns-one-app-data-root-and-an-app-partitions-its-one-directory-by-a-stable-authority-identifier.md) at the one question it left open, who owns the provider grant that names a partition. It amends nothing there.
+- **Corrected 2026-08-03, before merge.** A draft of this record carried a second amendment to ADR-0201, narrowing "an app receives one directory" to a closed set of host-composed engines and giving an admitted app none. That is withdrawn: every trusted app has one place, ADR-0201 says so at full width, and the section below is rewritten to decide only what this record is actually about. Every refusal here survives the correction unchanged, because none of them was resting on the narrowing.
 - **Relates:** [ADR-0188](0188-gmail-app-identity-belongs-to-the-distribution-and-no-epicenter-server-enters-the-gmail-path.md) (clause 5 decided this for Gmail; this record lifts it to the general rule without changing anything Gmail-specific), [ADR-0179](0179-an-installed-app-is-an-inert-built-folder-admitted-through-one-static-artifact-boundary.md) (admission is the protection, and there are no per-app permissions), [ADR-0181](0181-every-app-receives-one-portable-epicenter-capability-handle.md) (the closed capability namespace, which this record does not widen), [ADR-0183](0183-epicenter-mediates-the-effects-it-owns-and-names-the-rest-unmediated.md) and [ADR-0185](0185-trusted-app-http-uses-tauris-standard-transport-without-observation.md) (what the host mediates and what it declines to observe), [ADR-0186](0186-an-app-reaches-epicenter-through-one-bundled-mit-client-it-installs-itself.md) (how an admitted surface reaches Epicenter), [ADR-0109](0109-hosted-tauri-auth-keeps-app-owned-keyring-edges-until-three-real-callers-earn-sharing.md) (the third-caller trigger this record borrows for OAuth plumbing), [ADR-0062](0062-local-books-stores-oauth-tokens-in-a-single-0600-file.md) (the on-disk token lineage), [ADR-0081](0081-per-upstream-oauth-concurrency-decides-mirror-topology.md) (per-upstream concurrency, which is what a shared holder would violate), [ADR-0054](0054-an-inference-backend-is-the-metered-gateway-or-a-custom-server.md) (a device-scoped endpoint's key stays device-local), [ADR-0161](0161-each-person-has-one-epicenter-replicated-on-each-adapter-boundary.md) (the one replica a person promotes facts into), [ADR-0196](0196-local-mails-mirror-is-a-reader-and-one-full-message-fetch-is-its-entire-budget.md), [ADR-0197](0197-a-mirrors-corpus-version-names-its-artifact-and-only-the-app-knows-when-one-is-ready.md), [ADR-0198](0198-a-durable-local-mail-write-is-a-per-message-label-assertion-in-a-sibling-intent-database.md), and [ADR-0199](0199-one-account-reconciler-is-local-mails-only-gmail-writer.md) (all untouched, and deliberately: they govern ordinary operation inside a partition, and this record decides only who owns the partition and the grant that names it)
 <!-- doc-path-check: ignore-next-line (the vault wiring spec is deleted by this decision; git keeps the body recoverable) -->
 - **Deletes:** `specs/20260701T150000-api-keyring-and-vault-wiring.md`, which was ADR-0074's executable plan. It is unexecutable as written: it wires `packages/encryption` and `packages/workspace`, both since deleted from the tree, and half of what it moves into the vault leaves the vault's scope here. Git keeps the body recoverable and `docs/spec-history.md` keeps the row.
@@ -41,15 +43,10 @@ own primitives have since been deleted with the encryption layer, so the record
 now describes a subsystem that has no code and a scope the corpus contradicts in
 one place.
 
-The second unstated rule is which apps this is even about. ADR-0179 admits an
-inert folder of static files that runs as Epicenter and gains no background
-lifetime. ADR-0201 places a directory for "an app". Those are not the same
-object, and the code already knows it: `APP_DATA_IDS` in
-`packages/constants/src/app-data.ts` is the closed literal union
-`['local-mail', 'local-books']`, while a catalog member's id is any folder name
-matching `[a-z0-9-]+` that is not a reserved surface id. Reading ADR-0201's "an
-app" as "every app" is the most expensive available misreading, and it is
-currently available.
+The second unstated rule is which apps hold a grant at all. Every trusted app has
+a place under ADR-0201, and only some of them ever authenticate to a third party;
+nothing said which, or on what basis, so the answer would have been read off
+whichever app happened to do it first.
 
 ## Decision
 
@@ -72,41 +69,45 @@ inseparable from the bytes they address, and moving them somewhere the owning ap
 does not control means some other party can invalidate state it cannot read. The
 third is a value a person carries, and its home is the question ADR-0074 answers.
 
-### Two classes of app, and only one of them owns a directory
+### Every app has a place; not every app holds a grant
 
-They are both called "app" and they are not the same object. Naming the split is
-the whole of this record's amendment to ADR-0201.
+The discriminator above is about credentials, and it is enough on its own. A
+draft of this record reached for a second one, a split between host-composed
+engines and admitted surfaces, and used it to decide both questions at once: only
+an engine gets a directory, therefore only an engine holds a grant. The first
+half was wrong as a product decision and is withdrawn. The second half never
+needed it.
 
-| | **Composed engine** | **Admitted surface** |
-| --- | --- | --- |
-| Examples | `local-mail`, `local-books` | Whispering, Honeycrisp, any admitted folder |
-| Admitted as | a module its owner composes, or a standalone CLI | an inert built folder (ADR-0179) |
-| Identity | `AppDataId`, a closed union in `@epicenter/constants` | a folder name, open, not reserved |
-| Receives a directory | yes, computed at its owner's composition root and injected as a string | **no** |
-| Durable state | files it owns under `<root>/apps/<app-id>/` | the one replica, through a Lens |
-| Holds provider grants | yes, on disk, `0600` | none |
-| Reaches Epicenter through | direct composition | the bundled client (ADR-0186) |
+**Under ADR-0201 every trusted app has one private directory, allocated by its
+id when the host admits it.** So an app that connects a provider holds that
+provider's grant, in a `0600` file at its own app root, beside the state the
+grant names. Whether the app arrived as a composed engine or as an inert admitted
+folder decides nothing about ownership; it decides only what that app can reach
+today, which is a capability question and belongs to ADR-0181 and ADR-0186.
 
-An admitted surface's durable state is the replica, and that is the entire
-answer. It receives no directory, no allocation verb, and no path. The
-`epicenter` handle has three namespaces today (`data`, `recording`,
-`transcription`) and no filesystem anywhere in it, which is not an omission:
-ADR-0181 refuses `storage` as an implementation category and ADR-0201 refuses it
-as ownership Epicenter does not have.
+An app that authenticates nothing holds nothing, and that is most apps. The rule
+is not a split between kinds of app but a consequence of what a credential names:
+no durable state, no grant to own, and no place the grant would have to sit
+beside. A brought API key that names nothing at all keeps its own home, below.
 
-An admitted surface that needs durable bytes which are neither a Lens value nor a
-recording has discovered that it wants to be a composed engine. That is the
-honest trigger, and promotion is a deliberate act with an id added to a closed
-union, never a capability an app can call.
+What stays true either way is that Epicenter holds none of it. The `epicenter`
+handle has three namespaces today (`data`, `recording`, `transcription`), no
+filesystem and no accounts anywhere in it, and this record adds neither: ADR-0181
+refuses `storage` as an implementation category and ADR-0201 refuses it as
+ownership Epicenter does not have. An app with a directory and no way to reach it
+is waiting on a capability decision nobody has made, not on a promotion.
 
-**The two id namespaces are therefore one namespace, and the reserved set says
-so.** Catalog admission today reserves `Object.keys(SURFACE_ROUTES)`
-(`home`, `whispering`, `honeycrisp`, `mail`, `books`) and nothing else, so a
-folder named `local-mail` is admissible. It is harmless only because an admitted
-surface receives no directory, which makes it a defect that stays invisible until
-somebody widens the directory rule. `APP_DATA_IDS` joins the reserved set: an app
-id that names a place is not available to a folder that would only borrow the
-name.
+**One app-id namespace, and the reserved set is how it stays one.** Catalog
+admission today reserves `Object.keys(SURFACE_ROUTES)` (`home`, `whispering`,
+`honeycrisp`, `mail`, `books`) and nothing else, so a folder named `local-mail`
+is admissible. Under the narrowing that was withdrawn this was a latent defect,
+harmless because an admitted app owned no place; now admitting that folder issues
+a second claim on the directory Local Mail's `intent.db` sits in. No admitted app
+can act on the claim today, because none can reach a filesystem, so what closes
+here is the ownership collision rather than an exploit. The ids the composition
+root has already spent
+join the reserved set: an app id that names a place is not available to a folder
+that would only borrow the name.
 
 ### What Epicenter does not keep
 
@@ -203,16 +204,16 @@ rather than pretending to mediate it.
 - ADR-0074 shrinks to the case it actually had evidence for, and its executable
   spec is deleted rather than left in the tree describing packages that no longer
   exist. A future synced-secrets path is designed against the current data plane.
-- An admitted surface cannot quietly acquire durable bytes. Wanting them is a
-  promotion request, which is a reviewable change to a closed union, not a call.
-- The `local-mail` catalog-id collision is closed before it can be exploited by a
-  future widening rather than after.
+- An app that wants a provider does not need permission, a registry entry, or a
+  change of class. It needs a client id, a token file at its own app root, and a
+  partition named by the authority. That is the same list for every app.
+- The `local-mail` catalog-id collision is closed as part of the decision that
+  makes it real, rather than by a later widening that would have to remember it.
 - **What this forecloses:** a host-owned provider or integrations API, an
   `epicenter.accounts` namespace, incremental per-app scope grants, a shared
   refresh coordinator, revocation fan-out, a connection-id-to-provider-identifier
-  map, a directory for every admitted app, a host-owned uninstall or backup
-  protocol over app data, and any settings surface that must know every provider
-  to render.
+  map, a host-owned uninstall or backup protocol over app data, and any settings
+  surface that must know every provider to render.
 
 ## Considered alternatives
 
@@ -233,11 +234,11 @@ rather than pretending to mediate it.
   whether a person owns their provider key. Withdrawing the accounts clause is
   the part the evidence forces; withdrawing the rest is a bet this record has no
   cause to place.
-- **Give every admitted app a directory, for symmetry.** Rejected: it buys an
-  allocation verb in a namespace ADR-0181 closed, an uninstall and orphan
-  lifecycle nothing has today, a quota model a filesystem does not provide, a
-  path-escape guard over an open id space, and the `local-mail` id collision. The
-  replica through a Lens already gives an admitted app durable state.
+- **Give a directory only to host-composed engines.** Drafted here, then
+  withdrawn as a product decision; ADR-0201 records why and what the widening
+  does and does not cost. It is listed here because this record is where the
+  narrowing was written, and a reader who remembers it should find it refused
+  rather than absent.
 - **Keep the rule per app, as it is today.** Rejected: it is three records for one
   rule, none of which a third provider app can consult, and the shape it leaves
   undecided is the one that gets built by accident.
