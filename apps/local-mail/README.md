@@ -72,7 +72,14 @@ one is a decision with a record; the full list, with its reasons, is under
 
 - Runtime: Bun. `bun:sqlite` stores the mirror, built-in `fetch` calls Gmail,
   `oauth4webapi` handles OAuth.
-- One SQLite artifact per connected account, under `<data-dir>/<accountEmail>/`,
+- Local Mail's one directory is `<epicenter-root>/apps/local-mail`, partitioned
+  by account under `accounts/`. The app computes no OS application-data path of
+  its own: Epicenter owns exactly one root and `EPICENTER_DATA_DIR` is the only
+  override, so a CLI run from a terminal and the desktop host operate on the same
+  mailbox (ADR-0201). The directory is a place, not an inter-app API: no other
+  app receives a path or a SQLite handle into it, and `query`'s read-only SQL is
+  this app's surface over the file this app wrote.
+- One SQLite artifact per connected account, under `<app-dir>/accounts/<accountEmail>/`,
   named `mail.v<version>.db` after `MIRROR_VERSION` in `src/db.ts`: the version
   of the corpus contract this build stores, not the app's release version.
   `mirrorAt` from `@epicenter/sqlite/bun-mirror` owns the naming, the two opening
@@ -84,10 +91,10 @@ one is a decision with a record; the full list, with its reasons, is under
   reclaims it. There is no schema version stamped in the file. See ADR-0197.
   Bumping `MIRROR_VERSION` costs one full re-pull of the mailbox, and until that
   re-pull finishes `status` reports the artifact as `building`, never `ready`.
-  The refresh token lives in a separate `0600 credentials.json` at the data-dir
+  The refresh token lives in a separate `0600 credentials.json` at the app-dir
   root, never inside the mirror db.
 - One durable `intent.db` per account, beside the mirror at
-  `<data-dir>/<accountEmail>/intent.db`. It holds the account's undelivered label
+  `<app-dir>/accounts/<accountEmail>/intent.db`. It holds the account's undelivered label
   assertions and is the only irreplaceable local state in the app. Deliberately
   not inside the mirror: the mirror is version-named and reclaimable, so a corpus
   bump or a `reclaimPredecessors()` would silently discard pending work. It is
@@ -96,14 +103,19 @@ one is a decision with a record; the full list, with its reasons, is under
 - The per-account layout is therefore:
 
   ```
-  <data-dir>/credentials.json          0600  refresh tokens
-  <data-dir>/provider.json             0600  cached client-identity override
-  <data-dir>/<accountEmail>/
-      mail.v<version>.db               0600  Gmail facts, disposable, re-pullable
-      intent.db                        0600  undelivered assertions, durable
+  <root>/apps/local-mail/credentials.json   0600  refresh tokens
+  <root>/apps/local-mail/provider.json      0600  cached client-identity override
+  <root>/apps/local-mail/accounts/<accountEmail>/
+      mail.v<version>.db                    0600  Gmail facts, disposable, re-pullable
+      intent.db                             0600  undelivered assertions, durable
   ```
 
-- Data and account directories are `0700`. The mirror artifact, its `-wal` and
+  The account segment is the address Gmail reports, which Google does not
+  promise to keep: a renamed Workspace account would strand its partition and
+  start a second one. Adopting the OpenID `sub` claim is the fix, and it costs
+  one re-consent per account (ADR-0201); it has not shipped.
+
+- The app directory and every directory below it are `0700`. The mirror artifact, its `-wal` and
   `-shm` sidecars, `intent.db`, and `credentials.json` are `0600`.
 - Tables: `messages`, `labels`, and `_meta`. Thread facts are derived from live
   messages instead of stored in a separate `threads` table.
@@ -157,7 +169,7 @@ Provide the pair however you keep local secrets for the first connect:
 an export, a local `.env`, or a secrets manager such as
 `infisical run --path=/apps/local-mail -- bun run src/bin.ts connect`. On the
 first successful connect or refresh, Local Mail caches an explicit override to
-a 0600 `<data-dir>/provider.json` sibling to `credentials.json`. The
+a 0600 `<app-dir>/provider.json` sibling to `credentials.json`. The
 distribution identity is never copied into that user-owned file. Every later
 run and every other git worktree on this machine reads the override from there,
 so no per-worktree config is needed. See [`.env.example`](.env.example) for the
@@ -348,20 +360,29 @@ Tools:
 
 - `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET`: the machine-wide Google OAuth
   Desktop client override. The resolver reads the pair atomically from the
-  environment first, then `<data-dir>/provider.json`. A packaged distribution
+  environment first, then `<app-dir>/provider.json`. A packaged distribution
   identity is the fallback and is never persisted as an override. Missing
   credentials in a source build fail loudly naming the exact variables.
   Changing the effective client requires reconnecting every account on this
   machine.
 - `LOCAL_MAIL_ACCOUNT`: optional account override for `reconcile`, `query`, and
   `mcp`. Required only when more than one account is connected.
-- `LOCAL_MAIL_DIR`: data directory override.
+- `EPICENTER_DATA_DIR`: the one Epicenter data root. This app lives at
+  `<root>/apps/local-mail`; there is no per-app override.
 - `LOCAL_MAIL_TOKEN_FILE`: token file override.
 - `LOCAL_MAIL_GMAIL_API_BASE`: test plumbing only; points the Gmail client at
   a mock server in the MCP subprocess test.
 - `LOCAL_MAIL_PORT`: fallback for pinning the `app` server port; prefer
   `--port <n>` for normal use. Also names the port the Vite dev proxy targets
   when the host uses an ephemeral port.
+
+## The pre-Epicenter-root layout
+
+Local Mail used to keep its data in its own application-data directory
+(`~/Library/Application Support/local-mail` on macOS). That directory is not
+read, moved, or referenced by any code here. Connect the account again and the
+mirror re-pulls; the old directory is inert bytes you can delete whenever you
+notice it.
 
 ## Testing
 

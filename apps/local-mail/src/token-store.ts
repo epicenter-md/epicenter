@@ -63,7 +63,7 @@ export async function resolveAccount(
 }
 
 /**
- * The `0600` JSON-file token store at `<data-dir>/credentials.json` (or wherever
+ * The `0600` JSON-file token store at `<app-dir>/credentials.json` (or wherever
  * `LOCAL_MAIL_TOKEN_FILE` points). The set is not encrypted; the file mode is
  * the protection, the same tradeoff `git credential-store` and `~/.aws/credentials`
  * make. Disk bytes are untrusted, so a read validates against `TokenSetSchema`

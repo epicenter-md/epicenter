@@ -17,6 +17,7 @@ import { Buffer } from 'node:buffer';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { appDataDir } from '@epicenter/constants/app-data';
 import { openMailDb } from './db.ts';
 import type { GmailMessage } from './schema.ts';
 import { createFileTokenStore } from './token-store.ts';
@@ -26,8 +27,12 @@ const BIN = join(import.meta.dir, 'bin.ts');
 const ACCOUNT = 'you@example.com';
 
 function tempDir() {
-	const dir = mkdtempSync(join(tmpdir(), 'local-mail-mcp-test-'));
-	return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+	const root = mkdtempSync(join(tmpdir(), 'local-mail-mcp-test-'));
+	return {
+		root,
+		dir: appDataDir(root, 'local-mail'),
+		cleanup: () => rmSync(root, { recursive: true, force: true }),
+	};
 }
 
 function base64Url(input: string): string {
@@ -94,7 +99,7 @@ function startMcp(env: Record<string, string>) {
 	const proc = Bun.spawn([process.execPath, BIN, 'mcp'], {
 		env: {
 			...process.env,
-			LOCAL_MAIL_DIR: '',
+			EPICENTER_DATA_DIR: '',
 			LOCAL_MAIL_ACCOUNT: '',
 			LOCAL_MAIL_TOKEN_FILE: '',
 			...env,
@@ -184,7 +189,7 @@ test('mcp: tools/list, body query, status, errors, and a clean stream', async ()
 	const tmp = tempDir();
 	seedMirror(tmp.dir);
 	const mcp = await connect({
-		LOCAL_MAIL_DIR: tmp.dir,
+		EPICENTER_DATA_DIR: tmp.root,
 		LOCAL_MAIL_ACCOUNT: ACCOUNT,
 	});
 
@@ -293,7 +298,7 @@ test('mcp: LOCAL_MAIL_READ_ONLY hides mutation tools but leaves reads and reconc
 	const tmp = tempDir();
 	seedMirror(tmp.dir);
 	const mcp = await connect({
-		LOCAL_MAIL_DIR: tmp.dir,
+		EPICENTER_DATA_DIR: tmp.root,
 		LOCAL_MAIL_ACCOUNT: ACCOUNT,
 		LOCAL_MAIL_READ_ONLY: '1',
 	});
@@ -370,7 +375,7 @@ test('mcp: assert_labels records locally, and reconcile is what reaches Gmail', 
 		},
 	});
 	const mcp = await connect({
-		LOCAL_MAIL_DIR: tmp.dir,
+		EPICENTER_DATA_DIR: tmp.root,
 		LOCAL_MAIL_ACCOUNT: ACCOUNT,
 		LOCAL_MAIL_GMAIL_API_BASE: `http://127.0.0.1:${apiServer.port}`,
 	});
@@ -448,7 +453,7 @@ test('mcp: an unknown label name is refused without recording anything', async (
 	seedMirror(tmp.dir);
 	await seedToken(tmp.dir);
 	const mcp = await connect({
-		LOCAL_MAIL_DIR: tmp.dir,
+		EPICENTER_DATA_DIR: tmp.root,
 		LOCAL_MAIL_ACCOUNT: ACCOUNT,
 	});
 
@@ -478,7 +483,7 @@ test('mcp: a failed reconcile pass returns isError instead of a successful outco
 		},
 	});
 	const mcp = await connect({
-		LOCAL_MAIL_DIR: tmp.dir,
+		EPICENTER_DATA_DIR: tmp.root,
 		LOCAL_MAIL_ACCOUNT: ACCOUNT,
 		LOCAL_MAIL_GMAIL_API_BASE: `http://127.0.0.1:${apiServer.port}`,
 	});
@@ -505,7 +510,7 @@ test('mcp: exits at startup when no account is connected', async () => {
 	const proc = Bun.spawn([process.execPath, BIN, 'mcp'], {
 		env: {
 			...process.env,
-			LOCAL_MAIL_DIR: tmp.dir,
+			EPICENTER_DATA_DIR: tmp.root,
 			LOCAL_MAIL_ACCOUNT: '',
 			LOCAL_MAIL_TOKEN_FILE: '',
 		},

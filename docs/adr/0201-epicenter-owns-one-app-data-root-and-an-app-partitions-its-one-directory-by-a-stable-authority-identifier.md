@@ -1,11 +1,19 @@
 # 0201. Epicenter owns one app-data root, and an app partitions its one directory by a stable authority identifier
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-02
 - **Provisional number.** ADR-0191, ADR-0192, ADR-0193, ADR-0195, and ADR-0200 are claimed by open branches and are not in this tree. Reconcile this integer at merge time (`docs/adr/README.md`).
 - **Amends:** [ADR-0062](0062-local-books-stores-oauth-tokens-in-a-single-0600-file.md) at one clause, the location of the token file, which moves with the root and keeps its `0600` mode and its exclusion from any mirror directory; [ADR-0072](0072-local-books-ships-as-a-standalone-cli-the-daemon-surface-is-deferred.md) at one clause, where a standalone CLI's data lives, leaving its standalone shape and deferred daemon untouched; [ADR-0198](0198-a-durable-local-mail-write-is-a-per-message-label-assertion-in-a-sibling-intent-database.md) at one clause, adding that an intent store's emptiness is what licenses renaming the partition it sits in, and leaving its shape, durability, and refusals untouched.
 - **Relates:** [ADR-0151](0151-local-workspace-stores-use-owner-first-directories.md) (owner-first directories inside the replica plane; this record governs the plane beside it), [ADR-0161](0161-each-person-has-one-epicenter-replicated-on-each-adapter-boundary.md), [ADR-0179](0179-an-installed-app-is-an-inert-built-folder-admitted-through-one-static-artifact-boundary.md), [ADR-0181](0181-every-app-receives-one-portable-epicenter-capability-handle.md) (the closed capability namespace, which this record does not widen), [ADR-0183](0183-epicenter-mediates-the-effects-it-owns-and-names-the-rest-unmediated.md), [ADR-0190](0190-a-build-declares-which-epicenter-owns-its-data-not-which-window-it-runs-in.md), [ADR-0196](0196-local-mails-mirror-is-a-reader-and-one-full-message-fetch-is-its-entire-budget.md), [ADR-0197](0197-a-mirrors-corpus-version-names-its-artifact-and-only-the-app-knows-when-one-is-ready.md) (the filename grammar inside a partition; this record decides the directory that grammar is applied in), [ADR-0199](0199-one-account-reconciler-is-local-mails-only-gmail-writer.md) (the one writer, whose drain is how an intent store reaches the emptiness this record requires)
 - **Relates, not in this tree:** ADR-0191 (the Epicenter host process owns the mail engine in process) and ADR-0193 (durable authorities and disposable materializations) are on open branches. Where this record depends on one, it says so and restates the borrowed clause rather than linking a file that does not exist here.
+- **In force, partly executed.** The root, the app directory, and the single
+  partition directory are code in both apps: Local Books moved, and Local Mail
+  moved carrying each account's partition, which is the clause that protects
+  `intent.db`. The partition *name* has not changed yet: Local Mail still names
+  one by the account's email address, so the strand-on-rename defect this record
+  describes is open until the `sub` adoption ships. Nothing here is provisional
+  because of that; one clause is unimplemented and this line is where it is
+  admitted.
 - **Repriced 2026-08-02**, after ADR-0198 and ADR-0199 shipped as code on `claude/local-mail-intent-model`. The first draft argued this record should land *before* a durable intent store existed. It did not, and the sections below are written against the tree that now has one. Both decisions survive; one gets a precondition it did not need before, and the cost of deferring either went up rather than down.
 
 ## Context

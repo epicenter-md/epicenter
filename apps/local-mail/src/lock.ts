@@ -49,7 +49,7 @@ export type ReconcileLock = {
 };
 
 /**
- * Try to become the reconcile owner for `<dataDir>/<accountEmail>`. Returns the
+ * Try to become the reconcile owner for `<dataDir>/accounts/<accountEmail>`. Returns the
  * capability to hand to a pass and `release()` when the pass or loop ends, or
  * `null` when another owner (the open app, another pass) already holds it. The
  * account directory is created if missing so the very first pass after `connect`

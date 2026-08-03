@@ -8,6 +8,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { appDataDir } from '@epicenter/constants/app-data';
 import { readPresence } from '../src/presence.ts';
 
 const SCRIPT_DIR = import.meta.dir;
@@ -82,8 +83,9 @@ export type BootedHarness = {
 };
 
 /**
- * Copy the data dir with forged creds, boot the mock and `local-mail app`
- * against the copy on ephemeral ports, and hand back the launch coordinates.
+ * Copy the app dir with forged creds into a throwaway Epicenter data root, boot
+ * the mock and `local-mail app` against the copy on ephemeral ports, and hand
+ * back the launch coordinates.
  * Never touches the real mirror, the real intent store, or real Gmail.
  */
 export async function bootHarness(opts: {
@@ -118,7 +120,7 @@ export async function bootHarness(opts: {
 	const app = Bun.spawn(['bun', 'run', join(APP_DIR, 'src', 'bin.ts'), 'app'], {
 		env: {
 			...process.env,
-			LOCAL_MAIL_DIR: lmTestDir,
+			EPICENTER_DATA_DIR: lmTestDir,
 			LOCAL_MAIL_GMAIL_API_BASE: `http://127.0.0.1:${mockPort}`,
 			LOCAL_MAIL_PORT: '0',
 		},
@@ -131,7 +133,7 @@ export async function bootHarness(opts: {
 		15_000,
 		'app origin',
 	);
-	const presence = readPresence(lmTestDir);
+	const presence = readPresence(appDataDir(lmTestDir, 'local-mail'));
 	if (!presence) throw new Error('local-mail app did not write runtime.json');
 
 	return {

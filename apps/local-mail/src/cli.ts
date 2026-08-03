@@ -89,7 +89,8 @@ Options:
 Environment:
   GMAIL_CLIENT_ID / GMAIL_CLIENT_SECRET   Machine-wide Google OAuth client override.
   LOCAL_MAIL_ACCOUNT                      Account override when multiple are connected.
-  LOCAL_MAIL_DIR                          Where the local copy lives.
+  EPICENTER_DATA_DIR                      The one Epicenter data root. The local
+                                          copy lives at <root>/apps/local-mail.
   LOCAL_MAIL_TOKEN_FILE                   Override the credentials file path.
   LOCAL_MAIL_READ_ONLY                    Disable Gmail mutations.
 `;

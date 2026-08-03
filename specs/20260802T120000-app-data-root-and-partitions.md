@@ -101,72 +101,51 @@ comparison stays possible afterwards.
 
 Each wave is one reviewable PR and leaves the repo green.
 
-### Wave 1: the primitive
+### Landed: waves 1 through 4
 
-Add `@epicenter/constants/app-data` with the three functions and their tests.
-Nothing consumes it yet, and that is deliberate: its first consumer is a
-breaking change to where a person's books live, which deserves its own review.
+- **Wave 1, the primitive.** `@epicenter/constants/app-data` holds
+  `epicenterDataRoot`, `appDataDir`, and `partitionDir`, with the platform table
+  and every rejected segment shape as unit tests. The one thing a unit test
+  cannot prove is still open: nobody has printed `epicenterDataRoot()` beside a
+  real Tauri `app_data_dir()` on macOS. That comparison stays possible after
+  Wave 5a and is the check that keeps the recorder's `<root>/blobs` honest.
+- **Wave 2, Local Books.** Moved to `<root>/apps/local-books`, `companyDir` runs
+  through `partitionDir` (closing the unguarded `realmId` path), and
+  `companies.json` is deleted in favour of the token store's `listRealms()`. No
+  migration code: a person re-runs `auth` and re-syncs.
+- **Waves 3 and 4, Local Mail.** Wave 3 turned out to be three lines rather than
+  a wave: every name below the data directory already came from `paths.ts`
+  except the presence file, which moved there. Wave 4 landed with it, because
+  the move and the code that keeps `intent.db` from being stranded by the move
+  are one change; separating them would leave a commit whose first run costs
+  somebody their undelivered triage.
 
-Tests: the three platform rows above, including a relative `XDG_DATA_HOME` being
-ignored; `EPICENTER_DATA_DIR` precedence and the empty-string case; every
-rejected segment shape; `appDataDir` and `partitionDir` composition.
+Three decisions Wave 4 made that this spec had left open, each because the
+alternative loses durable work silently:
 
-### Wave 2: Local Books moves and gains its guard
+- **`LOCAL_MAIL_DIR` still set is refused**, naming the old directory, the new
+  one, and what to do. The spec said the variable is deleted and stopped there.
+  Reading it as the relocation source would move a directory a person chose into
+  a root they did not name (and could cross a filesystem); ignoring it strands
+  the mailbox it points at. The refusal is one sentence and dies with the rest of
+  the bridge.
+- **Nothing relocates when `EPICENTER_DATA_DIR` names a root.** The legacy
+  directory is the default root's history. Without this rule every test run and
+  every harness that names a temp root would inhale the developer's real
+  mailbox into it. A person who names a root moves their own directory, and the
+  README says so.
+- **A destination collision refuses only when the legacy partition holds an
+  `intent.db`**, and otherwise skips that account and reports it. The refusal is
+  sized to what could be lost: two mirrors are two rebuildable files, two intent
+  stores are two claims on somebody's triage that no code can adjudicate.
 
-- `resolveDataDir`, `defaultDataDir`, `LOCAL_BOOKS_DIR`, and `--data-dir` are
-  deleted from `apps/local-books/src/paths.ts` and `config.ts`; `booksDataDir()`
-  is `appDataDir(epicenterDataRoot(), 'local-books')`.
-- `companyDir` becomes
-  `partitionDir(appDataDir(root, 'local-books'), 'companies', realmId)`, which is
-  where the missing validation arrives. Today `realmId` reaches
-  `join(dataDir, realmId)` unvalidated from both the Intuit callback and
-  `--realm` (`apps/local-books/src/oauth.ts:158`, `src/paths.ts:34`).
-- `companies.json` is deleted. It indexed which companies are connected, and
-  `credentials.json` already is that index: the token store is keyed by
-  `realmId`. `TokenStore` gains `listRealms()` and `resolveRealm` asks it, which
-  is the shape Local Mail already has (`listAccounts` / `resolveAccount`). The
-  recorded default goes with the file; `--realm` and `LOCAL_BOOKS_QB_REALM`
-  cover the sticky case, and a sole connected company still resolves on its own.
-- The CLI help text drops the deleted variables. `.env.example` holds only the
-  Intuit keysets and is unaffected.
-
-Books first because it is the smaller change, has no identifier problem, and
-proves the primitive against a real caller before Mail's harder waves.
-
-No migration code. A user re-runs `local-books auth` and re-syncs; say so in the
-PR body. The legacy directory is left whole.
-
-### Wave 3: Local Mail's data directory gets one owner
-
-Preparation, not relocation, and it lands without a user-visible change.
-`resolveDataDir` stays for one more wave, but every caller that joins a path
-below it routes through `paths.ts`, so Wave 4 changes one function rather than a
-scatter. Verify by grep: no `join(` on a data directory outside `paths.ts`.
-
-### Wave 4: Local Mail moves under the root, carrying its partitions
-
-The only wave with migration code, and the only one that reads a pre-move path.
-
-- `LOCAL_MAIL_DIR` and the platform switch are deleted; the app resolves
-  `appDataDir(epicenterDataRoot(), 'local-mail')`.
-- On first run, if the legacy directory exists, move into the new one: the
-  app-root files (`credentials.json`, `provider.json`) and each `<accountEmail>/`
-  partition, which lands under `accounts/`. Every step is a `rename`. Nothing
-  reads a database, nothing interprets a stored shape, and nothing is deleted:
-  whatever the app did not put in the legacy directory stays there.
-- The partition segment stays the account email in this wave. Relocation does not
-  change identity, and bundling the two would put a gated, network-dependent step
-  inside a mechanical move (ADR-0201).
-- A partition that already exists at the destination is left alone and the legacy
-  one is not moved over it.
-
-The relocation code is deleted in the release after the one that ships it. Name
-that in the PR body so the follow-up is not archaeology.
-
-Tests: a legacy directory with two accounts, one holding undelivered assertions,
-ends up under the new root with the assertions still readable and `status`
-reporting the same count; a fresh install with no legacy directory does nothing;
-a destination collision is refused rather than merged.
+One deviation from "Done means" below, deliberate and scoped. Wave 4 needs to
+name the pre-move path in order to move out of it, so `apps/local-mail/src`
+holds one platform switch besides the shared resolver, in
+`legacy-data-dir.ts`. It reproduces the old rules verbatim, bugs included: the
+corrected rules would look for the bytes where they are not. That file, its
+test, and its one call in `runCli` are deleted in the release after the one that
+ships them, and the grep is clean again then.
 
 ### Wave 5a: the host injects, and Rust stops computing the sidecar's root
 
@@ -246,22 +225,28 @@ Breaking: every connected account reconnects and re-pulls once.
 - No app computes an OS application-data path for its own data. The only platform
   switch in the repo is in `@epicenter/constants/app-data`, and
   `git grep "Application Support" -- 'apps/local-mail/src' 'apps/local-books/src'`
-  returns nothing. Whispering's `<root>/blobs` resolution is out of scope and
+  returns nothing but Local Mail's one-release `legacy-data-dir.ts`, which names
+  the pre-move path in order to move out of it and is deleted with the bridge. Whispering's `<root>/blobs` resolution is out of scope and
   tracked under Wave 5a.
 - `git grep -E "LOCAL_(MAIL|BOOKS)_DIR"` returns nothing outside
-  `apps/local-mail/test-support/`, retargeted in Wave 4.
+  `legacy-data-dir.ts`, which refuses the deleted variable rather than reading
+  it. The test harness is retargeted to `EPICENTER_DATA_DIR`.
 - No path segment reaches `join` from an external source without passing
   `partitionDir`.
 - No app names another app's directory. `git grep -n "appDataDir(" -- 'apps/*/src'`
-  shows one call per app, in that app's own `paths.ts`, passing a literal app id
-  and no parameter that could carry a peer's. A CLI resolves its own root there
+  shows each app naming only itself: one call in that app's own `paths.ts`, plus
+  calls in that app's own tests placing a temp root, every one of them passing a
+  literal app id and no parameter that could carry a peer's. A CLI resolves its own root there
   rather than threading it down from `bin.ts`: a parameter for it is the
   per-app-root plumbing this record deletes, and the id being a literal is what
   makes a peer's directory unnameable. The host's `main.ts` is the one place that
   resolves the root and injects it, because it composes surfaces it does not own
   (Wave 5a).
 - A Local Mail user who upgrades with pending triage still has it afterwards, and
-  `status` reports the same undelivered count on both sides of Wave 4.
+  `status` reports the same undelivered count on both sides of Wave 4. Pinned by
+  `legacy-data-dir.test.ts`, which records an assertion through the real intent
+  store, lays it out the way an older build did, moves it, and compares
+  summaries.
 - The host and the CLI, run on one machine, operate on the same mailbox:
   `local-mail status` from a terminal while Epicenter is open reports the
   artifact the host is syncing.

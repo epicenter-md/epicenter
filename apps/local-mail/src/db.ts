@@ -29,7 +29,7 @@ import type { GmailLabel, GmailMessage } from './schema.ts';
  *   whole mailbox in memory before one transaction; the cursor only advances
  *   once, in `finishFullPull`, after every page has committed.
  *
- * The account owns its identity through the directory (`<dataDir>/<email>/`),
+ * The account owns its identity through the directory (`<dataDir>/accounts/<email>/`),
  * not a stored column. Inside that directory the artifact is named by
  * `MIRROR_VERSION` (ADR-0197): nothing about the stored shape is stamped inside
  * the file, and nothing is ever dropped, unlinked, or migrated on open. A shape
@@ -247,7 +247,7 @@ const MIRROR_TABLES: TableDeclaration[] = [
 const MIRROR_VERSION = 5;
 
 /**
- * The mirror as materialized for one account: `<dataDir>/<accountEmail>/`. Every
+ * The mirror as materialized for one account: `<dataDir>/accounts/<accountEmail>/`. Every
  * surface that needs the artifact's path or its inventory goes through here;
  * nothing outside this file names a mirror file.
  */

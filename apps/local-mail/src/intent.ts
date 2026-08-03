@@ -6,7 +6,7 @@ import { accountDir, ensureAccountDir, secureDbFiles } from './paths.ts';
 /**
  * `intent.db`: the durable half of an account's local state, and the only
  * irreplaceable bytes Local Mail keeps (ADR-0198). It sits beside the mirror in
- * `<dataDir>/<accountEmail>/` rather than inside it, because the mirror is a
+ * `<dataDir>/accounts/<accountEmail>/` rather than inside it, because the mirror is a
  * disposable copy of Gmail that a corpus-version bump replaces with a full
  * re-pull (ADR-0197), and a triage act the user made offline has to survive
  * that. The separation is mechanical, not merely intended: reclamation is scoped

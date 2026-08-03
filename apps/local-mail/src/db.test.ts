@@ -32,6 +32,7 @@ import {
 	openMailDbReadonly,
 } from './db.ts';
 import { openIntentDb } from './intent.ts';
+import { accountDir } from './paths.ts';
 import type { GmailMessage } from './schema.ts';
 
 function tempDir() {
@@ -338,7 +339,7 @@ describe('full pull page ingestion', () => {
 	test('creates data and account dirs as 0700 and artifact files as 0600', () => {
 		const tmp = tempDir();
 		chmodSync(tmp.dir, 0o755);
-		const accountDir = join(tmp.dir, 'you@example.com');
+		const dir = accountDir(tmp.dir, 'you@example.com');
 		// The mirror primitive does not know the artifact holds someone's mail, so
 		// the app is what applies the permissions to the handle it receives, to the
 		// versioned filename and both SQLite sidecars.
@@ -350,7 +351,7 @@ describe('full pull page ingestion', () => {
 		db.ingestFullPullPage([message()], 's1');
 
 		expect(mode(tmp.dir)).toBe(0o700);
-		expect(mode(accountDir)).toBe(0o700);
+		expect(mode(dir)).toBe(0o700);
 		expect(mode(path)).toBe(0o600);
 		expect(mode(`${path}-wal`)).toBe(0o600);
 		expect(mode(`${path}-shm`)).toBe(0o600);
@@ -515,7 +516,7 @@ describe('the read-only handle', () => {
 		).toBeNull();
 		// The whole point of `openReadonly`: a status or query read against an
 		// account that has never synced leaves the disk exactly as it found it.
-		expect(existsSync(join(tmp.dir, 'you@example.com'))).toBe(false);
+		expect(existsSync(accountDir(tmp.dir, 'you@example.com'))).toBe(false);
 		tmp.cleanup();
 	});
 
@@ -538,8 +539,8 @@ describe('the read-only handle', () => {
 		// ADR-0197 says the worst a mistaken writable open can do is leave an empty
 		// file, so a reader must report it, not crash on it.
 		const tmp = tempDir();
-		const accountDir = join(tmp.dir, 'you@example.com');
-		mkdirSync(accountDir, { recursive: true });
+		const dir = accountDir(tmp.dir, 'you@example.com');
+		mkdirSync(dir, { recursive: true });
 		const { path } = mailMirror(tmp.dir, 'you@example.com');
 		new Database(path, { create: true }).close();
 
@@ -555,21 +556,21 @@ describe('the read-only handle', () => {
 });
 
 describe('the mirror', () => {
-	test('an account email that is not one path segment cannot name a mirror directory', () => {
+	test('an account email that is not one path segment cannot name a partition', () => {
 		expect(() => mailMirror('/data', '../evil')).toThrow(
-			'cannot name a mirror directory',
+			'cannot name a directory',
 		);
 		expect(() => mailMirror('/data', 'a/b@example.com')).toThrow(
-			'cannot name a mirror directory',
+			'cannot name a directory',
 		);
-		expect(() => mailMirror('/data', '')).toThrow(
-			'cannot name a mirror directory',
-		);
+		expect(() => mailMirror('/data', '')).toThrow('cannot name a directory');
 	});
 
 	test('names the artifact by its corpus version, under the account dir', () => {
 		const { path, version } = mailMirror('/data', 'you@example.com');
-		expect(path).toBe(join('/data', 'you@example.com', `mail.v${version}.db`));
+		expect(path).toBe(
+			join('/data', 'accounts', 'you@example.com', `mail.v${version}.db`),
+		);
 	});
 
 	test('uses the post-reader corpus version, so v4 is never reopened', () => {
@@ -651,7 +652,7 @@ describe('the artifact lifecycle', () => {
 		// writable open prepares the durable store so the effective-label view has
 		// something to attach (ADR-0198).
 		expect(
-			readdirSync(join(tmp.dir, 'you@example.com'))
+			readdirSync(accountDir(tmp.dir, 'you@example.com'))
 				.filter((name) => name.endsWith('.db'))
 				.sort(),
 		).toEqual(
@@ -669,10 +670,10 @@ describe('the artifact lifecycle', () => {
 		// complete local copy while the successor backfills, and a reader compiled
 		// against it may still be running.
 		const tmp = tempDir();
-		const accountDir = join(tmp.dir, 'you@example.com');
-		mkdirSync(accountDir, { recursive: true, mode: 0o700 });
+		const dir = accountDir(tmp.dir, 'you@example.com');
+		mkdirSync(dir, { recursive: true, mode: 0o700 });
 		const previousVersion = mailMirror(tmp.dir, 'you@example.com').version - 1;
-		const predecessorPath = join(accountDir, `mail.v${previousVersion}.db`);
+		const predecessorPath = join(dir, `mail.v${previousVersion}.db`);
 		const predecessor = new Database(predecessorPath, { create: true });
 		predecessor.run(`CREATE TABLE messages (id TEXT PRIMARY KEY);`);
 		predecessor.run(`INSERT INTO messages (id) VALUES ('old');`);
@@ -707,14 +708,14 @@ describe('the artifact lifecycle', () => {
 
 	test('reclaim drops predecessors and cannot reach the siblings beside them', () => {
 		const tmp = tempDir();
-		const accountDir = join(tmp.dir, 'you@example.com');
+		const dir = accountDir(tmp.dir, 'you@example.com');
 		const db = openMailDb({
 			dataDir: tmp.dir,
 			accountEmail: 'you@example.com',
 		});
 		db.close();
 		const mirror = mailMirror(tmp.dir, 'you@example.com');
-		const predecessorPath = join(accountDir, `mail.v${mirror.version - 1}.db`);
+		const predecessorPath = join(dir, `mail.v${mirror.version - 1}.db`);
 		writeFileSync(predecessorPath, '');
 		writeFileSync(`${predecessorPath}-wal`, '');
 		// Local Mail's siblings: the reconcile-owner lock, the OAuth material, and
@@ -722,9 +723,9 @@ describe('the artifact lifecycle', () => {
 		// The filename grammar is what puts them out of reclaim's reach (ADR-0197,
 		// ADR-0198); `intent.db` is already present because opening the mirror
 		// created it.
-		writeFileSync(join(accountDir, 'lock.db'), '');
-		writeFileSync(join(accountDir, 'credentials.json'), '{}');
-		writeFileSync(join(accountDir, 'provider.json'), '{}');
+		writeFileSync(join(dir, 'lock.db'), '');
+		writeFileSync(join(dir, 'credentials.json'), '{}');
+		writeFileSync(join(dir, 'provider.json'), '{}');
 
 		expect(mirror.reclaimPredecessors().map((a) => a.version)).toEqual([
 			mirror.version - 1,
@@ -735,7 +736,7 @@ describe('the artifact lifecycle', () => {
 		// Sidecars of the live artifact are noise here; what matters is that every
 		// non-artifact file the app keeps beside the mirror survived untouched.
 		expect(
-			readdirSync(accountDir)
+			readdirSync(dir)
 				.filter((name) => !name.endsWith('-wal') && !name.endsWith('-shm'))
 				.sort(),
 		).toEqual(

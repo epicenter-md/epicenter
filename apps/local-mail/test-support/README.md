@@ -41,11 +41,12 @@ each drift.
 
 Four independent guarantees keep this from touching anything real:
 
-1. **A throwaway copy, never the real data dir.** `setup-copy.sh` copies
-   `~/Library/Application Support/local-mail` to `LM_TEST_DIR` (default
-   `/tmp/local-mail-harness`) and points `local-mail app` at the copy via
-   `LOCAL_MAIL_DIR`. The copied `intent.db` is dropped: it holds triage the real
-   account still owes Gmail, and the copy starts owing nothing.
+1. **A throwaway copy, never the real data dir.** `setup-copy.sh` copies the
+   real app dir (`~/Library/Application Support/so.epicenter/apps/local-mail`)
+   into `LM_TEST_DIR/apps/local-mail` (default root `/tmp/local-mail-harness`)
+   and points `local-mail app` at that root via `EPICENTER_DATA_DIR`. The copied
+   `intent.db` is dropped: it holds triage the real account still owes Gmail, and
+   the copy starts owing nothing.
 2. **Forged credentials, so no Google contact.** The copy's `credentials.json`
    is rewritten with a dummy access token whose expiry is the year 2099. The
    token manager only refreshes near expiry (`src/token-manager.ts`), so the app
@@ -67,7 +68,7 @@ Four independent guarantees keep this from touching anything real:
 | file               | what it is |
 |--------------------|------------|
 | `mock-gmail.ts`    | Mock Gmail REST server. Reads the copy's SQLite to know current labels, applies the modify, logs it, 403s everything else. |
-| `setup-copy.sh`    | Copies the real data dir to `LM_TEST_DIR`, drops the copied intent store and lock, and forges dummy credentials. |
+| `setup-copy.sh`    | Copies the real app dir into `LM_TEST_DIR/apps/local-mail`, drops the copied intent store and lock, and forges dummy credentials. |
 | `fingerprint.sh`   | Hashes the real data dir's durable state, for the before/after safety proof. |
 | `boot.ts`          | Shared boot used by `smoke.ts` (and any manual session): stands up copy + mock + the app on ephemeral ports and hands back the launch coordinates. The one owner of the safety-critical wiring. |
 | `smoke.ts`         | Headless one-shot: records one real act through `/api/accounts/:account/messages/assert`, proves the next read already reflects it, reconciles, asserts the delivery hit the mock, and asserts the real data dir is unchanged. |

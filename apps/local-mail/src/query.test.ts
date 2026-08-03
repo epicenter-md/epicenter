@@ -10,6 +10,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { mailMirror, openMailDb } from './db.ts';
+import { accountDir } from './paths.ts';
 import { queryMail } from './query.ts';
 import type { GmailMessage } from './schema.ts';
 
@@ -44,7 +45,7 @@ test('querying an absent mirror reports it and creates nothing', () => {
 	expect(error?.name).toBe('NoMirror');
 	expect(error?.message).toContain(mailMirror(tmp.dir, ACCOUNT).path);
 	expect(existsSync(mailMirror(tmp.dir, ACCOUNT).path)).toBe(false);
-	expect(existsSync(join(tmp.dir, ACCOUNT))).toBe(false);
+	expect(existsSync(accountDir(tmp.dir, ACCOUNT))).toBe(false);
 	tmp.cleanup();
 });
 

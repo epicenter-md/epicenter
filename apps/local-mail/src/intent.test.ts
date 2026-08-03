@@ -40,7 +40,9 @@ describe('openIntentDb', () => {
 	test('creates a 0600 intent.db inside the account directory', () => {
 		const { intent, dir, cleanup } = openTmp();
 		try {
-			expect(intent.path).toBe(join(dir, 'you@example.com', 'intent.db'));
+			expect(intent.path).toBe(
+				join(dir, 'accounts', 'you@example.com', 'intent.db'),
+			);
 			expect(existsSync(intent.path)).toBe(true);
 			expect(statSync(intent.path).mode & 0o777).toBe(0o600);
 		} finally {

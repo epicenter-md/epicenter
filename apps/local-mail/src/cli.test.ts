@@ -15,10 +15,12 @@ import { expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { appDataDir } from '@epicenter/constants/app-data';
 import { parseArgs, runCli } from './cli.ts';
 import { loadConfig } from './config.ts';
 import { openIntentDb, readPendingSummary } from './intent.ts';
 import { acquireReconcileLock } from './lock.ts';
+import { accountDir } from './paths.ts';
 import { createFileTokenStore } from './token-store.ts';
 import type { TokenSet } from './tokens.ts';
 
@@ -102,7 +104,8 @@ test('LOCAL_MAIL_READ_ONLY enables read-only config mode', () => {
 });
 
 test('label honors LOCAL_MAIL_READ_ONLY before resolving labels', async () => {
-	const dir = mkdtempSync(join(tmpdir(), 'local-mail-cli-readonly-test-'));
+	const root = mkdtempSync(join(tmpdir(), 'local-mail-cli-readonly-test-'));
+	const dir = appDataDir(root, 'local-mail');
 	const token: TokenSet = {
 		accountEmail: 'you@example.com',
 		clientIdUsed: 'client-id',
@@ -112,13 +115,13 @@ test('label honors LOCAL_MAIL_READ_ONLY before resolving labels', async () => {
 		obtainedAt: new Date(0).toISOString(),
 	};
 	await createFileTokenStore(join(dir, 'credentials.json')).set(token);
-	const previousDir = process.env.LOCAL_MAIL_DIR;
+	const previousRoot = process.env.EPICENTER_DATA_DIR;
 	const previousAccount = process.env.LOCAL_MAIL_ACCOUNT;
 	const previousTokenFile = process.env.LOCAL_MAIL_TOKEN_FILE;
 	const previousReadOnly = process.env.LOCAL_MAIL_READ_ONLY;
 	const errors: string[] = [];
 	const originalError = console.error;
-	process.env.LOCAL_MAIL_DIR = dir;
+	process.env.EPICENTER_DATA_DIR = root;
 	process.env.LOCAL_MAIL_ACCOUNT = '';
 	process.env.LOCAL_MAIL_TOKEN_FILE = '';
 	process.env.LOCAL_MAIL_READ_ONLY = '1';
@@ -131,8 +134,8 @@ test('label honors LOCAL_MAIL_READ_ONLY before resolving labels', async () => {
 		expect(errors.join('\n')).not.toContain('Unknown Gmail label');
 	} finally {
 		console.error = originalError;
-		if (previousDir === undefined) delete process.env.LOCAL_MAIL_DIR;
-		else process.env.LOCAL_MAIL_DIR = previousDir;
+		if (previousRoot === undefined) delete process.env.EPICENTER_DATA_DIR;
+		else process.env.EPICENTER_DATA_DIR = previousRoot;
 		if (previousAccount === undefined) delete process.env.LOCAL_MAIL_ACCOUNT;
 		else process.env.LOCAL_MAIL_ACCOUNT = previousAccount;
 		if (previousTokenFile === undefined)
@@ -140,7 +143,7 @@ test('label honors LOCAL_MAIL_READ_ONLY before resolving labels', async () => {
 		else process.env.LOCAL_MAIL_TOKEN_FILE = previousTokenFile;
 		if (previousReadOnly === undefined) delete process.env.LOCAL_MAIL_READ_ONLY;
 		else process.env.LOCAL_MAIL_READ_ONLY = previousReadOnly;
-		rmSync(dir, { recursive: true, force: true });
+		rmSync(root, { recursive: true, force: true });
 	}
 });
 
@@ -172,7 +175,8 @@ async function runCliOnAccount(
 	/** Undelivered assertions after the run, read the same way. */
 	pendingAfter: number;
 }> {
-	const dir = mkdtempSync(join(tmpdir(), 'local-mail-cli-lock-test-'));
+	const root = mkdtempSync(join(tmpdir(), 'local-mail-cli-lock-test-'));
+	const dir = appDataDir(root, 'local-mail');
 	const accountEmail = 'you@example.com';
 	const token: TokenSet = {
 		accountEmail,
@@ -197,14 +201,14 @@ async function runCliOnAccount(
 		intent.close();
 	}
 
-	const previousDir = process.env.LOCAL_MAIL_DIR;
+	const previousRoot = process.env.EPICENTER_DATA_DIR;
 	const previousAccount = process.env.LOCAL_MAIL_ACCOUNT;
 	const previousTokenFile = process.env.LOCAL_MAIL_TOKEN_FILE;
 	const stdout: string[] = [];
 	const stderr: string[] = [];
 	const originalLog = console.log;
 	const originalError = console.error;
-	process.env.LOCAL_MAIL_DIR = dir;
+	process.env.EPICENTER_DATA_DIR = root;
 	process.env.LOCAL_MAIL_ACCOUNT = '';
 	process.env.LOCAL_MAIL_TOKEN_FILE = '';
 	console.log = (message?: unknown) => {
@@ -223,7 +227,9 @@ async function runCliOnAccount(
 			code,
 			stdout,
 			stderr,
-			intentDbExists: existsSync(join(dir, accountEmail, 'intent.db')),
+			intentDbExists: existsSync(
+				join(accountDir(dir, accountEmail), 'intent.db'),
+			),
 			pendingAfter: readPendingSummary({ dataDir: dir, accountEmail })
 				.assertions,
 		};
@@ -231,14 +237,14 @@ async function runCliOnAccount(
 		console.log = originalLog;
 		console.error = originalError;
 		held?.release();
-		if (previousDir === undefined) delete process.env.LOCAL_MAIL_DIR;
-		else process.env.LOCAL_MAIL_DIR = previousDir;
+		if (previousRoot === undefined) delete process.env.EPICENTER_DATA_DIR;
+		else process.env.EPICENTER_DATA_DIR = previousRoot;
 		if (previousAccount === undefined) delete process.env.LOCAL_MAIL_ACCOUNT;
 		else process.env.LOCAL_MAIL_ACCOUNT = previousAccount;
 		if (previousTokenFile === undefined)
 			delete process.env.LOCAL_MAIL_TOKEN_FILE;
 		else process.env.LOCAL_MAIL_TOKEN_FILE = previousTokenFile;
-		rmSync(dir, { recursive: true, force: true });
+		rmSync(root, { recursive: true, force: true });
 	}
 }
 
@@ -328,7 +334,8 @@ test('discard --all --json yields the established busy payload when the lock is 
 });
 
 test('status --json resolves the sole stored account and prints JSON', async () => {
-	const dir = mkdtempSync(join(tmpdir(), 'local-mail-cli-test-'));
+	const root = mkdtempSync(join(tmpdir(), 'local-mail-cli-test-'));
+	const dir = appDataDir(root, 'local-mail');
 	const token: TokenSet = {
 		accountEmail: 'you@example.com',
 		clientIdUsed: 'client-id',
@@ -338,12 +345,12 @@ test('status --json resolves the sole stored account and prints JSON', async () 
 		obtainedAt: new Date(0).toISOString(),
 	};
 	await createFileTokenStore(join(dir, 'credentials.json')).set(token);
-	const previousDir = process.env.LOCAL_MAIL_DIR;
+	const previousRoot = process.env.EPICENTER_DATA_DIR;
 	const previousAccount = process.env.LOCAL_MAIL_ACCOUNT;
 	const previousTokenFile = process.env.LOCAL_MAIL_TOKEN_FILE;
 	const logs: string[] = [];
 	const originalLog = console.log;
-	process.env.LOCAL_MAIL_DIR = dir;
+	process.env.EPICENTER_DATA_DIR = root;
 	process.env.LOCAL_MAIL_ACCOUNT = '';
 	process.env.LOCAL_MAIL_TOKEN_FILE = '';
 	console.log = (message?: unknown) => {
@@ -354,13 +361,13 @@ test('status --json resolves the sole stored account and prints JSON', async () 
 		expect(JSON.parse(logs[0] ?? '{}').accountEmail).toBe('you@example.com');
 	} finally {
 		console.log = originalLog;
-		if (previousDir === undefined) delete process.env.LOCAL_MAIL_DIR;
-		else process.env.LOCAL_MAIL_DIR = previousDir;
+		if (previousRoot === undefined) delete process.env.EPICENTER_DATA_DIR;
+		else process.env.EPICENTER_DATA_DIR = previousRoot;
 		if (previousAccount === undefined) delete process.env.LOCAL_MAIL_ACCOUNT;
 		else process.env.LOCAL_MAIL_ACCOUNT = previousAccount;
 		if (previousTokenFile === undefined)
 			delete process.env.LOCAL_MAIL_TOKEN_FILE;
 		else process.env.LOCAL_MAIL_TOKEN_FILE = previousTokenFile;
-		rmSync(dir, { recursive: true, force: true });
+		rmSync(root, { recursive: true, force: true });
 	}
 });
