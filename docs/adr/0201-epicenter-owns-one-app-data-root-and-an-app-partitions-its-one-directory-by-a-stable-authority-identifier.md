@@ -424,9 +424,12 @@ directory is the thing handed to a read-only SQL surface or an agent.
   disk a person removes by hand, the same treatment ADR-0197 gives a pre-grammar
   `mail.db`, and for the same reason: code that touches a directory it cannot
   prove it wrote is the hazard the boundary exists to prevent.
-- No pre-record path appears anywhere in the tree, so nothing has to be deleted
-  later. This record leaves behind no transitional code, no one-release window,
-  and no environment variable kept alive to be refused.
+- No pre-record path appears in code, so nothing has to be deleted later. This
+  record leaves behind no transitional code, no one-release window, and no
+  environment variable kept alive to be refused. Each app's README names its old
+  directory once, in prose, so a person knows what the inert bytes on their disk
+  are; that sentence is the whole of the transition and it costs nothing to keep
+  correct.
 - `companies.json` is deleted outright. The file existed to answer "which
   companies are connected", and `credentials.json` already answers it: the token
   store is keyed by `realmId`, so the index was a second copy that could disagree

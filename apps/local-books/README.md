@@ -187,6 +187,10 @@ Tokens live in a `0600` `credentials.json` at the app-directory root, never insi
 
 Everything under the app directory belongs to local-books. No other Epicenter app receives a path or a database handle into it: a company's books reach another app only through a verb local-books publishes (the MCP tools above) or through a fact you promote into Epicenter yourself.
 
+## The pre-Epicenter-root layout
+
+local-books used to keep its data in its own application-data directory (`~/Library/Application Support/local-books` on macOS), with a `companies.json` index beside the tokens. That directory is not read, moved, or referenced by any code here. Run `local-books auth` again and `sync` re-pulls the mirror; the old directory is inert bytes you can delete whenever you notice it.
+
 ## Build a single binary
 
 ```sh

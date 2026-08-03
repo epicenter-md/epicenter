@@ -69,7 +69,7 @@ Four independent guarantees keep this from touching anything real:
 |--------------------|------------|
 | `mock-gmail.ts`    | Mock Gmail REST server. Reads the copy's SQLite to know current labels, applies the modify, logs it, 403s everything else. |
 | `setup-copy.sh`    | Copies the real app dir into `LM_TEST_DIR/apps/local-mail`, drops the copied intent store and lock, and forges dummy credentials. |
-| `fingerprint.sh`   | Hashes the real data dir's durable state, for the before/after safety proof. |
+| `fingerprint.sh`   | Hashes the real app dir's durable state, for the before/after safety proof. |
 | `boot.ts`          | Shared boot used by `smoke.ts` (and any manual session): stands up copy + mock + the app on ephemeral ports and hands back the launch coordinates. The one owner of the safety-critical wiring. |
 | `smoke.ts`         | Headless one-shot: records one real act through `/api/accounts/:account/messages/assert`, proves the next read already reflects it, reconciles, asserts the delivery hit the mock, and asserts the real data dir is unchanged. |
 | `check-gmail-discovery.ts` | Gmail API drift check: fetches the live Discovery doc and asserts the methods (hand-listed) + schema fields (walked from `schema.ts`) the client relies on are still present and correctly typed. |
@@ -134,6 +134,6 @@ one separately from a fingerprint window.
 
 | var                   | default | meaning |
 |-----------------------|---------|---------|
-| `LM_TEST_DIR`         | `/tmp/local-mail-harness` | where the throwaway copy + logs live |
-| `LOCAL_MAIL_REAL_DIR` | macOS Application Support dir | the mirror to copy/fingerprint |
+| `LM_TEST_DIR`         | `/tmp/local-mail-harness` | the throwaway Epicenter data root the copy and the logs live under; `EPICENTER_DATA_DIR` points the app at it |
+| `LOCAL_MAIL_REAL_DIR` | the real app dir under the macOS Epicenter data root | the app dir to copy/fingerprint |
 | `LOCAL_MAIL_ACCOUNT`  | the sole connected account | which account to forge (required if you have more than one) |
