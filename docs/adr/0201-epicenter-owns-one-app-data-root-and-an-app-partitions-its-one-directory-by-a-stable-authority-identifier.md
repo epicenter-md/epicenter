@@ -481,7 +481,9 @@ not have been.
 
 An app does not ask for a partition. It creates one by writing into it, at the
 moment it connects an authority and learns that authority's identifier for it.
-Listing partitions is a directory read. Removing one is the owning app deleting
+Listing them is a read of the app's own token store and never of the disk, for
+the reason given above: a partition that authenticated and never synced has no
+directory and is still connected. Removing one is the owning app deleting
 the directory. There is no allocation call, no registration, no host handshake,
 no registry of partitions, and no storage manager. A partition exists exactly
 when its directory does.
