@@ -10,10 +10,11 @@
 
 ## Product sentence
 
-Epicenter stores everything it stores on a machine under one root. A
-host-composed engine gets one directory below it and partitions that directory by
-an identifier the external authority owns, and it holds the provider grant that
-names each partition. The directory is a place, not an inter-app API: no app
+Epicenter stores everything it stores on a machine under one root. Every trusted
+app it runs or admits gets one directory below it, named by the app's id and
+allocated when the host admits the app, and an app that connects a provider
+partitions that directory by an identifier the external authority owns and holds
+the grant that names each partition. The directory is a place, not an inter-app API: no app
 receives a path into a peer's, and a fact reaches another app only as a verb the
 owner publishes or a fact a person promotes into the shared replica. Epicenter
 brokers no third-party grant and keeps no registry of them.
@@ -34,11 +35,16 @@ brokers no third-party grant and keeps no registry of them.
   the root move and again at the identifier. Wave 5b additionally costs the
   `openid` scope and one consent screen per account.
 - The mirrors are re-pulled when their partition is rebuilt, never migrated.
-- **Only a composed engine owns a directory, and the closed `APP_DATA_IDS` union
-  is what says so.** An admitted static app (ADR-0179) receives none, reaches
-  durable state through the replica, and holds no provider grant. No wave below
-  widens that set, and Wave 6 exists to keep the two id namespaces from
-  colliding while it stays narrow.
+- **Every trusted app owns one directory, and allocation is nominal.** The path
+  is a pure function of the root and the app id, nothing is created at admission,
+  and the host reclaims nothing. An earlier pass narrowed this to a closed set of
+  host-composed engines; that narrowing is withdrawn (ADR-0201), which is what
+  turns Wave 6 from a latent-defect cleanup into part of the model.
+- **How an app reaches its place is a separate question, and no wave answers it.**
+  A composed engine is handed the string at its composition root. An admitted
+  static app runs in a webview with no filesystem reach, so its place is allocated
+  and currently unreachable from its own code. No wave adds a capability, a native
+  verb, or a path in the `epicenter` handle to close that.
 - **No wave introduces a host-side account surface.** No registry, no shared
   token store, no connect/disconnect/refresh/revoke at the host, and no
   `epicenter.accounts` namespace (ADR-0202).
@@ -86,8 +92,13 @@ reopen that.
  * platform table is a unit test. */
 export function epicenterDataRoot(system?: DataRootSystem): string;
 
-/** `<root>/apps/<appId>`. The app owns everything below the result. */
-export function appDataDir(root: string, appId: AppDataId): string;
+/** `<root>/apps/<appId>`. The app owns everything below the result. The id is
+ * validated against the app-id grammar, because an admitted app's id is a folder
+ * name rather than a literal this package could enumerate. */
+export function appDataDir(root: string, appId: string): string;
+
+/** The one app-id grammar, shared with catalog admission. */
+export function isAppId(value: string): boolean;
 
 /** `<appDir>/<kind>/<partitionId>`, both segments validated. */
 export function partitionDir(appDir: string, kind: string, partitionId: string): string;
@@ -97,8 +108,13 @@ export function partitionDir(appDir: string, kind: string, partitionId: string):
 separator. That guard is the only reason the function exists rather than a bare
 `join`, and it is what closes the unguarded `realmId` path today.
 
-Three functions, no object, no class, no lifecycle. There is no
+Pure functions and a grammar. No object, no class, no lifecycle. There is no
 `StorageManager`, no `openAppStore`, no registry, and no `cacheDir`.
+
+`COMPOSED_APP_IDS` (formerly `APP_DATA_IDS`) stays, with its meaning inverted: it
+is not the apps that own a directory but the ids that arrive through no catalog,
+so admission knows those names are taken. It exists because admitted apps have
+directories, not because they do not.
 
 ### What `epicenterDataRoot` must equal, and why it is a test
 
@@ -232,22 +248,28 @@ The expensive wave, and the one that costs a user something real.
 
 Breaking: every connected account reconnects and re-pulls once.
 
-### Wave 6: an app id that names a place is not available to a folder
+### Landed: wave 6, one app-id namespace
 
-Independent of 5a and 5b, and small. Catalog admission reserves
-`Object.keys(SURFACE_ROUTES)` today (`home`, `whispering`, `honeycrisp`, `mail`,
-`books`), so a folder named `local-mail` is admissible. It is harmless only
-because an admitted surface receives no directory, which is exactly what makes it
-the kind of defect that stays invisible until somebody widens the directory rule.
+Independent of 5a and 5b, and it landed with the correction that made it
+necessary rather than after it. Admission reserved `Object.keys(SURFACE_ROUTES)`
+(`home`, `whispering`, `honeycrisp`, `mail`, `books`) and nothing else, so a
+folder named `local-mail` was admissible. Once every trusted app owns the
+directory its id names, admitting that folder issues a second claim on the
+directory holding Local Mail's credentials and its undelivered intent.
 
-- `apps/epicenter/src/main.ts` and `apps/epicenter/scripts/publish-app-catalog.ts`
-  both pass `reservedIds`. Both take the union of `SURFACE_ROUTES` keys and
-  `APP_DATA_IDS`, from one shared expression rather than two hand-written lists.
-- `apps/epicenter/src/app-catalog.test.ts` gains a case: a folder named
-  `local-mail` is not a catalog member.
+- `RESERVED_APP_IDS` in `apps/epicenter/src/app-catalog.ts` is the built-in
+  surface ids plus `COMPOSED_APP_IDS`, and both admission call sites read it.
+  Neither assembles its own: a call site that reserved half the namespace would
+  be the whole defect.
+- The app-id grammar moved to `@epicenter/constants/app-data`, so the pattern
+  that validates a served route's id and the one that validates a directory's are
+  the same pattern. `appDataDir` throws on an id that cannot name a directory.
+- `apps/epicenter/src/app-catalog.test.ts` refuses a candidate folder for every
+  id in `COMPOSED_APP_IDS` and leaves the previous selection active.
 
-No behavior a person can see changes. This closes ADR-0202's one named latent
-collision before a later widening can reach it.
+No behavior a person can see changes, and no admitted app could have acted on the
+collision anyway, because none can reach a filesystem. What closed is the
+ownership claim, at the moment the model made it real.
 
 ### Wave 7: one override for one root, and credentials stay at the app root
 
@@ -300,9 +322,11 @@ released install, and the replacement is moving the whole root.
   `epicenter.accounts` namespace. A read-only Home view over each engine's
   existing status verb is the sanctioned escape hatch and is built only when a
   person asks for it (ADR-0202).
-- A directory for an admitted static app, and any widening of `APP_DATA_IDS`.
-  Promotion to a composed engine is a reviewable change to a closed union, not a
-  wave here.
+- Any way for an admitted static app to reach the directory it owns. No
+  capability, no native verb, no path in the `epicenter` handle. Allocation is an
+  ownership answer; reach is a separate decision nobody has needed yet.
+- Any host lifecycle over an app directory: creation at admission, removal when
+  an app leaves the catalog, orphan detection, quota, or backup.
 - Rebuilding ADR-0074's synced secret vault. Its primitives are deleted from the
   tree, its scope is now brought values only, and Whispering's device-local
   plaintext facade is the correct shipped degenerate until a product answer
@@ -340,6 +364,8 @@ released install, and the replacement is moving the whole root.
 - A catalog folder named `local-mail` or `local-books` is refused by admission,
   proved by a case in `apps/epicenter/src/app-catalog.test.ts`, and the reserved
   set is one expression that both admission call sites read.
+- One app-id grammar in the tree. `git grep -n "a-z0-9-\]+" -- apps packages`
+  finds it in `@epicenter/constants/app-data` and nowhere that names an app.
 - No host code holds a third-party grant.
   `git grep -iEl "gmail\.modify|quickbooks|intuit|accounts\.google\.com" -- apps packages`
   outside the two engines finds only the landing pages and
