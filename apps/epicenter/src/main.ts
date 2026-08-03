@@ -22,7 +22,7 @@ import { createDesktopEpicenterOwner } from '@epicenter/data/desktop-owner';
 import { parseExchangeResponse } from '@epicenter/data/protocol';
 import { createHttpDocumentTransports } from '@epicenter/document-sync';
 import { extractErrorMessage } from 'wellcrafted/error';
-import { loadActiveAppCatalog } from './app-catalog.ts';
+import { loadActiveAppCatalog, RESERVED_APP_IDS } from './app-catalog.ts';
 import { COMPILED_APPLICATIONS } from './applications.ts';
 import {
 	createDesktopAuthAuthority,
@@ -30,7 +30,6 @@ import {
 } from './desktop-auth-authority.ts';
 import { createDesktopAuthorityFetch } from './desktop-authority-fetch.ts';
 import { createHomeHost, type HomeHost } from './host.ts';
-import { SURFACE_ROUTES } from './routes.ts';
 import { createHomeServer } from './server.ts';
 import {
 	createNativeAuthPort,
@@ -149,7 +148,7 @@ async function main(): Promise<void> {
 		// whole lifetime; promotions apply at the next restart (ADR-0153).
 		const appCatalog = await loadActiveAppCatalog(
 			join(dataRoot, 'app-catalog'),
-			{ reservedIds: Object.keys(SURFACE_ROUTES) },
+			{ reservedIds: RESERVED_APP_IDS },
 		);
 		const origin = `http://127.0.0.1:${boot.port}`;
 		const { app, websocket } = createHomeServer({

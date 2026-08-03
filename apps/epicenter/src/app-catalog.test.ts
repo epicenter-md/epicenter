@@ -31,14 +31,15 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { COMPOSED_APP_IDS } from '@epicenter/constants/app-data';
 import {
 	loadActiveAppCatalog,
 	promoteAppCatalogCandidate,
+	RESERVED_APP_IDS,
 } from './app-catalog.ts';
-import { SURFACE_ROUTES } from './routes.ts';
 import type { AppCatalog } from './static-assets.ts';
 
-const RESERVED = { reservedIds: Object.keys(SURFACE_ROUTES) };
+const RESERVED = { reservedIds: RESERVED_APP_IDS };
 
 function tempDir(prefix: string): string {
 	return mkdtempSync(join(tmpdir(), prefix));
@@ -204,6 +205,21 @@ describe('promoteAppCatalogCandidate', () => {
 			(name) => !name.startsWith('.'),
 		);
 		expect(generations).toHaveLength(1);
+	});
+
+	test('a folder claiming an app id that already names a directory is refused', async () => {
+		// An app id names a place under the one data root, and every trusted app
+		// has one (ADR-0201). Admitting `local-mail` as a folder would put a second
+		// claimant on the directory holding Local Mail's credentials and its
+		// undelivered intent, so the ids the composition root already spent are
+		// reserved beside the built-in surface ids.
+		const root = tempDir('epicenter-catalog-root-');
+		for (const id of COMPOSED_APP_IDS) {
+			await expect(
+				promoteAppCatalogCandidate(root, candidateWith(id), RESERVED),
+			).rejects.toThrow(id);
+		}
+		expect((await load(root)).apps).toEqual([]);
 	});
 
 	test('a failed copy cleans staging and path overlap is refused before copying', async () => {

@@ -21,10 +21,8 @@
 
 import { readdir, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { isAppId } from '@epicenter/constants/app-data';
 import mime from 'mime';
-
-/** The direct-folder-name contract for derived catalog app IDs (ADR-0153). */
-const APP_ID_PATTERN = /^[a-z0-9-]+$/;
 
 export type StaticAsset = {
 	file: ReturnType<typeof Bun.file>;
@@ -66,16 +64,13 @@ export type AppCatalog = {
 	apps: CatalogApp[];
 };
 
-export function isValidAppId(value: string): boolean {
-	return APP_ID_PATTERN.test(value);
-}
-
 /**
  * Derive the trusted app catalog from validated build output: one directory
  * per app below `catalogRoot`. The catalog is generated, never authored. A
  * missing root is an empty catalog; an entry that breaks the output contract
- * (invalid ID, reserved built-in ID, missing `index.html`, or a root that
- * escapes the catalog directory) is not a catalog member.
+ * (invalid ID, reserved ID, missing `index.html`, or a root that escapes the
+ * catalog directory) is not a catalog member. What is reserved is the caller's
+ * call: see `RESERVED_APP_IDS` in `app-catalog.ts`.
  */
 export async function deriveAppCatalog(
 	catalogRoot: string,
@@ -92,7 +87,7 @@ export async function deriveAppCatalog(
 	const apps: CatalogApp[] = [];
 	const names = (await readdir(root)).sort();
 	for (const name of names) {
-		if (!isValidAppId(name) || reservedIds.includes(name)) continue;
+		if (!isAppId(name) || reservedIds.includes(name)) continue;
 
 		let appRoot: string;
 		try {

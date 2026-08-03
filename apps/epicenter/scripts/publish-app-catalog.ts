@@ -19,8 +19,10 @@
 
 import { join, resolve } from 'node:path';
 import { epicenterDataRoot } from '@epicenter/constants/app-data';
-import { promoteAppCatalogCandidate } from '../src/app-catalog.ts';
-import { SURFACE_ROUTES } from '../src/routes.ts';
+import {
+	promoteAppCatalogCandidate,
+	RESERVED_APP_IDS,
+} from '../src/app-catalog.ts';
 
 function usage(): never {
 	console.error(
@@ -36,7 +38,7 @@ if (candidate === undefined || args.length !== 1) usage();
 const { generation, apps } = await promoteAppCatalogCandidate(
 	join(epicenterDataRoot(), 'app-catalog'),
 	resolve(candidate),
-	{ reservedIds: Object.keys(SURFACE_ROUTES) },
+	{ reservedIds: RESERVED_APP_IDS },
 );
 console.log(`Published catalog generation ${generation}:`);
 for (const app of apps) {

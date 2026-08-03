@@ -40,10 +40,29 @@ import {
 	stat,
 } from 'node:fs/promises';
 import { isAbsolute, join, relative, sep } from 'node:path';
+import { COMPOSED_APP_IDS } from '@epicenter/constants/app-data';
+import { SURFACE_ROUTES } from './routes.ts';
 import { type AppCatalog, deriveAppCatalog } from './static-assets.ts';
 
 const CURRENT_POINTER = 'current';
 const GENERATIONS_DIRECTORY = 'generations';
+
+/**
+ * The app ids a candidate folder cannot claim, because the host has already
+ * issued them.
+ *
+ * Two reasons, one namespace. A built-in surface id is a route this host serves
+ * itself (ADR-0179). A composed app id names a directory under the one data root
+ * that its app already owns, and every trusted app owns one (ADR-0201), so
+ * admitting `local-mail` as a folder would put two claimants on the directory
+ * holding Local Mail's credentials and its undelivered intent. Both call sites
+ * that admit a catalog read this one expression rather than assembling their
+ * own; a call site that assembled half of it would be the whole defect.
+ */
+export const RESERVED_APP_IDS: readonly string[] = [
+	...Object.keys(SURFACE_ROUTES),
+	...COMPOSED_APP_IDS,
+];
 
 /** Sortable, opaque `<epoch-ms>-<hex>`; content addressing earns nothing here. */
 const GENERATION_ID_PATTERN = /^\d+-[0-9a-f]{8}$/;

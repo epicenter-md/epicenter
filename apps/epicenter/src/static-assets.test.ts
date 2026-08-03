@@ -39,7 +39,6 @@ import { createHomeServer } from './server.ts';
 import {
 	type AppCatalog,
 	deriveAppCatalog,
-	isValidAppId,
 	loadStaticAssets,
 } from './static-assets.ts';
 import { writeAppsDist } from './test-apps-dist.ts';
@@ -81,25 +80,9 @@ async function derive(root: string): Promise<AppCatalog> {
 	return deriveAppCatalog(root, { reservedIds: RESERVED_IDS });
 }
 
-describe('isValidAppId', () => {
-	test('accepts direct folder names matching [a-z0-9-]+ and nothing else', () => {
-		for (const accepted of ['hello-http', 'a', 'notes2', 'x-y-z']) {
-			expect(isValidAppId(accepted)).toBe(true);
-		}
-		for (const denied of [
-			'',
-			'Hello',
-			'hello_http',
-			'hello.http',
-			'hello/http',
-			'..',
-			'hello http',
-			'héllo',
-		]) {
-			expect(isValidAppId(denied)).toBe(false);
-		}
-	});
-});
+// The app-id grammar itself lives in `@epicenter/constants/app-data` and is
+// tested there: an id names a served route and a directory, and one grammar is
+// what keeps those from being two namespaces (ADR-0201).
 
 describe('deriveAppCatalog', () => {
 	test('missing catalog root derives an empty catalog', async () => {
