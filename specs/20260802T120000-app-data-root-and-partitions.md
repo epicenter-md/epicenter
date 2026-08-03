@@ -18,17 +18,19 @@ owner publishes or a fact a person promotes into the shared replica.
 
 ## Accepted premises
 
-- **A Local Mail partition holds one irreplaceable file.** ADR-0198 and ADR-0199
-  are built, not proposed: `apps/local-mail/src/intent.ts` and the account
-  reconciler are in this tree. The earlier draft of this spec assumed no
-  `intent.db` existed and sequenced itself to land before one did. It did not,
-  and Wave 4 carries the consequence.
-- **Local Books users reconnect once and re-sync.** Its partition holds a
-  version-named mirror and a lock, both rebuildable, so its move is a clean break
-  with no migration code.
-- **Local Mail users do not reconnect for the move, and do reconnect once for the
-  identifier.** Wave 4 relocates credentials along with the partitions; Wave 5b
-  costs the `openid` scope and one consent screen per account.
+- **Neither app has a released install, so every path change is a clean break.**
+  No wave reads a pre-record path, moves a directory, or copies a database. A
+  person reconnects and re-syncs, in both apps and at both path changes.
+- **A Local Mail partition holds one irreplaceable file, and that is an argument
+  about the future.** ADR-0198 and ADR-0199 are built, not proposed:
+  `apps/local-mail/src/intent.ts` and the account reconciler are in this tree.
+  `intent.db` is why the partition needs an identifier Google promises to keep
+  (Wave 5b). It is not a reason to carry development-state bytes across a path
+  change; an intermediate draft of this spec argued that it was, built the
+  relocation, and the relocation is deleted.
+- **Local Mail reconnects once per path change**, so twice across this spec: at
+  the root move and again at the identifier. Wave 5b additionally costs the
+  `openid` scope and one consent screen per account.
 - The mirrors are re-pulled when their partition is rebuilt, never migrated.
 
 ## Destination
@@ -111,41 +113,28 @@ Each wave is one reviewable PR and leaves the repo green.
   Wave 5a and is the check that keeps the recorder's `<root>/blobs` honest.
 - **Wave 2, Local Books.** Moved to `<root>/apps/local-books`, `companyDir` runs
   through `partitionDir` (closing the unguarded `realmId` path), and
-  `companies.json` is deleted in favour of the token store's `listRealms()`. No
-  migration code: a person re-runs `auth` and re-syncs.
+  `companies.json` is deleted in favour of the token store's `listRealms()`.
 - **Waves 3 and 4, Local Mail.** Wave 3 turned out to be three lines rather than
   a wave: every name below the data directory already came from `paths.ts`
-  except the presence file, which moved there. Wave 4 landed with it, because
-  the move and the code that keeps `intent.db` from being stranded by the move
-  are one change; separating them would leave a commit whose first run costs
-  somebody their undelivered triage.
+  except the presence file, which moved there. Wave 4 landed with it. The app
+  resolves `appDataDir(epicenterDataRoot(), 'local-mail')`, `accountDir` is
+  `partitionDir(dataDir, 'accounts', accountEmail)`, and `LOCAL_MAIL_DIR` and the
+  platform switch are gone.
 
-Three decisions Wave 4 made that this spec had left open, each because the
-alternative loses durable work silently:
+Neither Mail wave carries migration code. An intermediate pass built one, on the
+reasoning that `intent.db` had shipped and a pre-record directory therefore had
+to be carried forward: a relocation, a refusal for the deleted environment
+variable, a rule for a destination collision, a rule for a lost race between two
+surfaces, and a rule for a cross-filesystem rename. All of it was bought for
+local development state on a product with no released install, and all of it is
+deleted. What remains is the path change itself.
 
-- **`LOCAL_MAIL_DIR` still set is refused**, naming the old directory, the new
-  one, and what to do. The spec said the variable is deleted and stopped there.
-  Reading it as the relocation source would move a directory a person chose into
-  a root they did not name (and could cross a filesystem); ignoring it strands
-  the mailbox it points at. The refusal is one sentence and dies with the rest of
-  the bridge.
-- **Nothing relocates when `EPICENTER_DATA_DIR` names a root.** The legacy
-  directory is the default root's history. Without this rule every test run and
-  every harness that names a temp root would inhale the developer's real
-  mailbox into it. A person who names a root moves their own directory, and the
-  README says so.
-- **A destination collision refuses only when the legacy partition holds an
-  `intent.db`**, and otherwise skips that account and reports it. The refusal is
-  sized to what could be lost: two mirrors are two rebuildable files, two intent
-  stores are two claims on somebody's triage that no code can adjudicate.
-
-One deviation from "Done means" below, deliberate and scoped. Wave 4 needs to
-name the pre-move path in order to move out of it, so `apps/local-mail/src`
-holds one platform switch besides the shared resolver, in
-`legacy-data-dir.ts`. It reproduces the old rules verbatim, bugs included: the
-corrected rules would look for the bytes where they are not. That file, its
-test, and its one call in `runCli` are deleted in the release after the one that
-ships them, and the grep is clean again then.
+A pre-record directory is left whole and named nowhere in the tree, so there is
+no transitional code to remove later and no one-release window to remember.
+Durable intent is protected where it is actually at risk, inside a partition
+under the new path, by the operations that already own it: `reconcile` delivers,
+`discard --all` abandons, both under the account's reconcile lock, and `status`
+reports what is owed.
 
 ### Wave 5a: the host injects, and Rust stops computing the sidecar's root
 
@@ -193,22 +182,19 @@ The expensive wave, and the one that costs a user something real.
   `config.account`, `resolveAccount`, `/api/accounts/:account/*`, the MCP account
   selection, and the SPA's account switcher.
 - `accountDir` is deleted in favour of the shared `partitionDir`.
-- **No partition is renamed.** The account starts an empty partition and
-  re-pulls. An email-named directory cannot be proven to belong to the account
-  that just authenticated, which is the defect being fixed (ADR-0201).
-- `connect` refuses to complete the identity change while that account holds an
-  undelivered assertion, reporting the count and the age of the oldest and naming
-  `reconcile` and `discard --all`. Both already exist and both take the reconcile
-  lock; nothing new is built.
+- **No partition is renamed, and none is read.** The account starts an empty
+  partition and re-pulls. An email-named directory cannot be proven to belong to
+  the account that just authenticated, which is the defect being fixed
+  (ADR-0201), and the email-named directories that exist today are development
+  state either way.
 
 Breaking: every connected account reconnects and re-pulls once.
 
 ## Explicitly out of scope
 
-- Any migration of Local Books' directories, and any deletion of a legacy
-  directory in either app.
-- Interpreting stored bytes anywhere. Wave 4 moves directories and reads nothing
-  inside them.
+- Any migration, relocation, or deletion of a pre-record directory in either
+  app, and any code that names one.
+- Interpreting stored bytes anywhere, including the app's own.
 - A capability namespace, a host registry, a generic database framework, a
   migration runner, or a backup protocol.
 - Any cross-app reader. No app receives a peer's path or handle, there is no
@@ -225,12 +211,10 @@ Breaking: every connected account reconnects and re-pulls once.
 - No app computes an OS application-data path for its own data. The only platform
   switch in the repo is in `@epicenter/constants/app-data`, and
   `git grep "Application Support" -- 'apps/local-mail/src' 'apps/local-books/src'`
-  returns nothing but Local Mail's one-release `legacy-data-dir.ts`, which names
-  the pre-move path in order to move out of it and is deleted with the bridge. Whispering's `<root>/blobs` resolution is out of scope and
+  returns nothing. Whispering's `<root>/blobs` resolution is out of scope and
   tracked under Wave 5a.
-- `git grep -E "LOCAL_(MAIL|BOOKS)_DIR"` returns nothing outside
-  `legacy-data-dir.ts`, which refuses the deleted variable rather than reading
-  it. The test harness is retargeted to `EPICENTER_DATA_DIR`.
+- `git grep -E "LOCAL_(MAIL|BOOKS)_DIR"` returns nothing. The test harness is
+  retargeted to `EPICENTER_DATA_DIR`.
 - No path segment reaches `join` from an external source without passing
   `partitionDir`.
 - No app names another app's directory. `git grep -n "appDataDir(" -- 'apps/*/src'`
@@ -242,11 +226,9 @@ Breaking: every connected account reconnects and re-pulls once.
   makes a peer's directory unnameable. The host's `main.ts` is the one place that
   resolves the root and injects it, because it composes surfaces it does not own
   (Wave 5a).
-- A Local Mail user who upgrades with pending triage still has it afterwards, and
-  `status` reports the same undelivered count on both sides of Wave 4. Pinned by
-  `legacy-data-dir.test.ts`, which records an assertion through the real intent
-  store, lays it out the way an older build did, moves it, and compares
-  summaries.
+- No wave names a pre-record path. `git grep -rn "local-mail'" -- 'apps/local-mail/src'`
+  finds the app id passed to `appDataDir`, and nothing that joins it to an OS
+  data directory.
 - The host and the CLI, run on one machine, operate on the same mailbox:
   `local-mail status` from a terminal while Epicenter is open reports the
   artifact the host is syncing.

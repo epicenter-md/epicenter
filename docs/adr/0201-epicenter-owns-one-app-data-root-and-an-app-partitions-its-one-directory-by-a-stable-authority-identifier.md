@@ -3,18 +3,11 @@
 - **Status:** Accepted
 - **Date:** 2026-08-02
 - **Provisional number.** ADR-0191, ADR-0192, ADR-0193, ADR-0195, and ADR-0200 are claimed by open branches and are not in this tree. Reconcile this integer at merge time (`docs/adr/README.md`).
-- **Amends:** [ADR-0062](0062-local-books-stores-oauth-tokens-in-a-single-0600-file.md) at one clause, the location of the token file, which moves with the root and keeps its `0600` mode and its exclusion from any mirror directory; [ADR-0072](0072-local-books-ships-as-a-standalone-cli-the-daemon-surface-is-deferred.md) at one clause, where a standalone CLI's data lives, leaving its standalone shape and deferred daemon untouched; [ADR-0198](0198-a-durable-local-mail-write-is-a-per-message-label-assertion-in-a-sibling-intent-database.md) at one clause, adding that an intent store's emptiness is what licenses renaming the partition it sits in, and leaving its shape, durability, and refusals untouched.
-- **Relates:** [ADR-0151](0151-local-workspace-stores-use-owner-first-directories.md) (owner-first directories inside the replica plane; this record governs the plane beside it), [ADR-0161](0161-each-person-has-one-epicenter-replicated-on-each-adapter-boundary.md), [ADR-0179](0179-an-installed-app-is-an-inert-built-folder-admitted-through-one-static-artifact-boundary.md), [ADR-0181](0181-every-app-receives-one-portable-epicenter-capability-handle.md) (the closed capability namespace, which this record does not widen), [ADR-0183](0183-epicenter-mediates-the-effects-it-owns-and-names-the-rest-unmediated.md), [ADR-0190](0190-a-build-declares-which-epicenter-owns-its-data-not-which-window-it-runs-in.md), [ADR-0196](0196-local-mails-mirror-is-a-reader-and-one-full-message-fetch-is-its-entire-budget.md), [ADR-0197](0197-a-mirrors-corpus-version-names-its-artifact-and-only-the-app-knows-when-one-is-ready.md) (the filename grammar inside a partition; this record decides the directory that grammar is applied in), [ADR-0199](0199-one-account-reconciler-is-local-mails-only-gmail-writer.md) (the one writer, whose drain is how an intent store reaches the emptiness this record requires)
+- **Amends:** [ADR-0062](0062-local-books-stores-oauth-tokens-in-a-single-0600-file.md) at one clause, the location of the token file, which is now the app directory's root and keeps its `0600` mode and its exclusion from any mirror directory; [ADR-0072](0072-local-books-ships-as-a-standalone-cli-the-daemon-surface-is-deferred.md) at one clause, where a standalone CLI's data lives, leaving its standalone shape and deferred daemon untouched.
+- **Relates:** [ADR-0198](0198-a-durable-local-mail-write-is-a-per-message-label-assertion-in-a-sibling-intent-database.md) (untouched, and deliberately: an intent store's durability is a rule about ordinary operation inside a partition, and this record decides only where the partition is), [ADR-0151](0151-local-workspace-stores-use-owner-first-directories.md) (owner-first directories inside the replica plane; this record governs the plane beside it), [ADR-0161](0161-each-person-has-one-epicenter-replicated-on-each-adapter-boundary.md), [ADR-0179](0179-an-installed-app-is-an-inert-built-folder-admitted-through-one-static-artifact-boundary.md), [ADR-0181](0181-every-app-receives-one-portable-epicenter-capability-handle.md) (the closed capability namespace, which this record does not widen), [ADR-0183](0183-epicenter-mediates-the-effects-it-owns-and-names-the-rest-unmediated.md), [ADR-0190](0190-a-build-declares-which-epicenter-owns-its-data-not-which-window-it-runs-in.md), [ADR-0196](0196-local-mails-mirror-is-a-reader-and-one-full-message-fetch-is-its-entire-budget.md), [ADR-0197](0197-a-mirrors-corpus-version-names-its-artifact-and-only-the-app-knows-when-one-is-ready.md) (the filename grammar inside a partition; this record decides the directory that grammar is applied in), [ADR-0199](0199-one-account-reconciler-is-local-mails-only-gmail-writer.md) (the one writer, whose delivery is how an intent store empties during ordinary operation inside a partition)
 - **Relates, not in this tree:** ADR-0191 (the Epicenter host process owns the mail engine in process) and ADR-0193 (durable authorities and disposable materializations) are on open branches. Where this record depends on one, it says so and restates the borrowed clause rather than linking a file that does not exist here.
-- **In force, partly executed.** The root, the app directory, and the single
-  partition directory are code in both apps: Local Books moved, and Local Mail
-  moved carrying each account's partition, which is the clause that protects
-  `intent.db`. The partition *name* has not changed yet: Local Mail still names
-  one by the account's email address, so the strand-on-rename defect this record
-  describes is open until the `sub` adoption ships. Nothing here is provisional
-  because of that; one clause is unimplemented and this line is where it is
-  admitted.
-- **Repriced 2026-08-02**, after ADR-0198 and ADR-0199 shipped as code on `claude/local-mail-intent-model`. The first draft argued this record should land *before* a durable intent store existed. It did not, and the sections below are written against the tree that now has one. Both decisions survive; one gets a precondition it did not need before, and the cost of deferring either went up rather than down.
+- **In force, partly executed.** The root, the app directory, and the single partition directory are code in both apps. The partition *name* has not changed yet: Local Mail still names one by the account's email address, so the strand-on-rename defect described below is open until the `sub` adoption ships. One clause is unimplemented and this line is where it is admitted.
+- **Repriced 2026-08-02, then re-decided as a clean break.** An intermediate draft argued that because ADR-0198's intent store had shipped as code, this record owed the old directory a relocation and the identity change an emptiness gate. That reasoning is withdrawn: Local Mail has no released install, so everything under the pre-record path is local development state, and buying a migration for it costs a code path that outlives its only use. What survives the withdrawal is the *fact* the reprice was built on, which is about the future rather than the past: a partition holds something irreplaceable, so the identifier naming it has to be one the provider promises to keep.
 
 ## Context
 
@@ -64,13 +57,19 @@ an installed app is, but no record says what one app may do with another app's
 bytes. Deciding it after the shared root ships means deciding it against an
 existing caller.
 
-Both defects changed price when ADR-0198 and ADR-0199 landed as code. A partition
-used to hold nothing but a re-pullable mirror, so stranding one cost quota. It
-now also holds `intent.db`, the triage a person recorded and Gmail has not been
-told about, which the app's own README calls the only irreplaceable local state
-it has. Stranding a partition is therefore a data-loss defect now, not a
-performance one, and every argument below that reads "this can be rebuilt" stops
-at the intent store's door.
+The second defect got worse when ADR-0198 and ADR-0199 landed as code. A
+partition used to hold nothing but a re-pullable mirror, so stranding one cost
+quota. It now also holds `intent.db`, the triage a person recorded and Gmail has
+not been told about, which the app's own README calls the only irreplaceable
+local state it has. A partition stranded *in service*, by a rename this app
+cannot see coming, is therefore a data-loss defect rather than a performance
+one, and every argument below that reads "this can be rebuilt" stops at the
+intent store's door.
+
+That is a statement about the future, not about the directories on a developer's
+machine today. Local Mail has never shipped an install, so there is no mailbox
+in the field to carry anywhere, which is what makes the move below a clean break
+rather than a migration.
 
 ## Decision
 
@@ -245,51 +244,45 @@ directory. Local Mail already does this; Local Books does not, and takes
 (`apps/local-books/src/oauth.ts`, `apps/local-books/src/paths.ts`). Two call
 sites, one of them currently unguarded, is what earns one shared guard.
 
-### Moving a partition and renaming one are different operations
+### The path change is a clean break, in both apps and both directions
 
-This record changes a partition's path twice, and the two changes are not the
-same act. Moving one is a relocation: the segment that names the account is
-unchanged, and the new path is computable from what is already on disk. Renaming
-one is an identity change: the segment itself becomes a different string, and
-the new one exists only after a network round trip. They get different
-treatments, because only one of them can be performed safely without knowing
-what is inside.
+This record changes a partition's path twice: once when the app directory moves
+under the one root, and once when the segment naming the account becomes the
+identifier Google issues. Neither carries anything forward. Nothing reads a
+pre-record path, nothing moves a directory, nothing copies a database, and there
+is no migration code in either app to keep correct after the release that ships
+it.
 
-**A relocation moves the directory.** `rename` interprets no bytes, so carrying
-a partition to the new root is not a migration in the sense this corpus refuses:
-nothing reads a stored shape, nothing transforms a row, and nothing has to stay
-correct after the release that performed it. The app moves each partition and
-the app-root files it owns, and the durable intent store rides along with the
-mirror beside it. The alternative, leaving the legacy directory inert and
-starting empty, would silently discard undelivered triage from a person who
-happened to upgrade with pending work, which is the failure this whole record
-exists to stop.
+The reason is a fact about this product rather than a preference: **neither app
+has a released install.** Every directory under a pre-record path is local
+development state, and paying for a relocation buys a person nothing that
+`connect` and a re-pull do not. The mirror is re-pullable by construction
+(ADR-0197). The intent store is not, and that is exactly why it does not belong
+in a migration: it is the one file whose meaning a future build cannot verify
+from the outside, so code that picks it up and carries it somewhere is code that
+has to stay correct forever for an operation that runs once.
 
-**A rename requires the partition's intent store to be empty, and refuses
-otherwise.** This is the case where relocation is unavailable, and the reason is
-the defect being fixed: an email-named directory cannot be proven to belong to
-the account that just authenticated. An address that moved between two Google
-accounts, one renamed away and one taking the freed address, produces exactly
-one directory that both can claim, and a rename would hand the second account
-the first's mailbox and the first's undelivered triage. Since email is not an
-identity, no code can tell those cases apart, which is why `sub` is being
-adopted at all. So the old partition is left where it stands and the new one
-starts empty.
+**A pre-record directory is left whole and untouched.** Not read, not moved, not
+deleted, not counted, not reported. A person removes it by hand when they notice
+it, the same treatment ADR-0197 gives a pre-grammar `mail.db`, and for the same
+reason: code that touches a directory it cannot prove it wrote is the hazard the
+boundary exists to prevent.
 
-That leaves the durable half to protect, and the app already owns every piece
-needed: **`local-mail connect` refuses to complete the identity change while the
-account holds an undelivered assertion, naming the count and the two ways to
-clear it.** `reconcile` drains the store by delivering it to Gmail (ADR-0199),
-`discard --all` abandons it, both take the account's reconcile lock so neither
-races a running pass, and `status` already reports the undelivered count and the
-age of the oldest. Nothing new is built, and the completed write model is
-untouched. The user-visible cost is one sentence inside a reconnect that is
-happening anyway: deliver your pending triage, or abandon it, before this
-account changes its name on disk.
+**Durable intent is still protected, inside the contract that owns it.** Once a
+partition exists under this record's path, nothing removes its intent store
+except the two operations that already exist for the purpose: `reconcile`
+delivers it to Gmail (ADR-0199) and `discard --all` abandons it, both under the
+account's reconcile lock, with `status` reporting what is owed. That guarantee is
+about ordinary operation, and it neither implies nor requires that bytes written
+before this record existed be carried into it.
 
-The mirror needs neither treatment in the rename case. ADR-0197 makes it a
-version-named artifact that a re-pull rebuilds, so the new partition builds its
-own and the old one becomes inert disk beside the rest of the legacy directory.
+The identity change gets the same treatment when it lands, for an additional
+reason of its own: an email-named directory cannot be proven to belong to the
+account that just authenticated. An address that moved between two Google
+accounts, one renamed away and one taking the freed address, produces exactly one
+directory that both can claim. No code can tell those cases apart, which is why
+`sub` is being adopted at all, so the authenticated account starts an empty
+partition and re-pulls.
 
 ### Partitions live under one directory the app names
 
@@ -357,47 +350,34 @@ directory is the thing handed to a read-only SQL surface or an agent.
 - One directory now answers "what has Epicenter stored on this machine", and
   removing it removes everything. Today that question has one answer per app and
   no list of apps to enumerate.
-- The two apps get different upgrade treatments, and the asymmetry is earned.
-  Local Books relocates nothing: its partition holds a rebuildable mirror and a
-  lock, so a person re-runs `auth` and re-syncs, and the wave carries no
-  migration code at all. Local Mail relocates, because one file in its partition
-  cannot be rebuilt. Imposing either treatment on the other app would be paying
-  for a guarantee it does not need or dropping one it does.
-- Local Mail's re-consent is one cost, not two. The relocation keeps its
-  credentials, so nobody reconnects for the root move; the reconnect happens once
-  later, when the account adopts `sub`, and the mirror is re-pulled then. That
-  re-pull is priced at 20 quota units per message (ADR-0196), which makes it slow
-  rather than risky, and it is what a materialization is for (ADR-0193).
-- **A partition now holds something irreplaceable, so the move is gated rather
-  than free.** The first draft of this record argued for landing before ADR-0198
-  shipped, when a partition held only rebuildable bytes and the move was a
-  delete-and-rebuild. That window closed: `intent.db` is built. The gate above is
-  what replaces the window, and it is cheaper than the migration the first draft
-  was trying to avoid, because the app already owns both ways to empty an intent
-  store and already reports whether it is empty.
-- **Deferring this got more expensive, not less.** Every day the partition is
+- Both apps get the same upgrade treatment, and it is the cheapest one: connect
+  again and re-sync. Neither carries migration code, neither names a pre-record
+  path, and neither app's wave has a step that has to keep working after it runs.
+  The symmetry is not tidiness; it is what having no released install buys, and
+  it is spent once.
+- Local Mail's cost is one reconnect per wave that changes a path, and there are
+  two such waves. The re-pull each one costs is priced at 20 quota units per
+  message (ADR-0196), which makes it slow rather than risky, and it is what a
+  materialization is for (ADR-0193).
+- **Deferring the identifier got more expensive, not less.** Every day the partition is
   named by an email is a day a Workspace rename can strand undelivered triage,
   and that failure is silent: the app finds no directory for the new address,
   creates one, and the old assertions are never delivered and never seen again.
   Before `intent.db` the same event cost a re-pull.
-- **The two waves have different risk now and must not be one PR.** Moving the
-  root is a location change whose new path is computable from what is already on
-  disk. Renaming a partition is an identity change whose new name only exists
-  after a network round trip. Bundling them would put a gated, once-per-account,
-  network-dependent step inside a mechanical directory move.
-- Nothing is deleted anywhere. `~/Library/Application Support/local-books` is
-  left whole and untouched, and the Local Mail relocation empties its legacy
-  directory by moving out of it rather than by removing anything, leaving behind
-  whatever the app did not put there. Both are inert disk a person removes by
-  hand, the same treatment ADR-0197 gives a pre-grammar `mail.db`, and for the
-  same reason: code that deletes a directory it cannot prove it wrote is the
-  hazard the boundary exists to prevent. Moving a directory the app demonstrably
-  wrote is a different act from deleting one it did not.
-- The legacy path survives one release in Local Mail and no longer. The
-  relocation needs to name the old location to move out of it, which is the only
-  thing in this record that reads a pre-move path. It is deleted in the release
-  after the one that ships it, and a person who skips that release keeps their
-  pending triage by draining it before upgrading.
+- **The two path changes are still separate waves, for a smaller reason than
+  before.** Moving the app directory is mechanical and offline. Changing the
+  segment that names an account needs a new OAuth scope, a live consent screen,
+  and a rewrite of every surface that treats an address as an identity. They are
+  not one PR because they are not one piece of work, not because one of them is
+  dangerous.
+- Nothing is deleted anywhere, and nothing is moved either. Both apps' pre-record
+  directories are left whole, and no code in either names one. They are inert
+  disk a person removes by hand, the same treatment ADR-0197 gives a pre-grammar
+  `mail.db`, and for the same reason: code that touches a directory it cannot
+  prove it wrote is the hazard the boundary exists to prevent.
+- No pre-record path appears anywhere in the tree, so nothing has to be deleted
+  later. This record leaves behind no transitional code, no one-release window,
+  and no environment variable kept alive to be refused.
 - `companies.json` is deleted outright. The file existed to answer "which
   companies are connected", and `credentials.json` already answers it: the token
   store is keyed by `realmId`, so the index was a second copy that could disagree
@@ -479,24 +459,26 @@ directory is the thing handed to a read-only SQL surface or an agent.
 - **Flat partitions directly under the app directory, as both apps do today.**
   Rejected: it makes app-root filenames and partition ids share one namespace and
   makes enumeration a filter that has to know the file list.
-- **Move the existing directories on first run, in both apps and both waves.**
-  Rejected as a blanket rule, and adopted for exactly one of the four cases. It
-  is unavailable for the identity change in either app, because the target name
-  is not computable from disk and, for Local Mail, is not even provably about the
-  same account. It is unnecessary for Local Books, whose partition holds only
-  rebuildable bytes, so paying for a move there buys a person nothing an `auth`
-  and a `sync` do not. It is required for the Local Mail relocation, where the
-  alternative discards durable work.
-- **Copy `intent.db` across the partition rename.** Rejected: it is a migration
-  for the one artifact the app defines as existing in order to stop existing, it
-  has to be written, tested, and kept correct forever for an operation that runs
-  once per account, and the two operations that empty an intent store already
-  ship. Requiring emptiness costs a refusal and a sentence; copying costs a code
-  path that outlives its only use.
-- **Rename the partition silently and strand whatever is pending.** Rejected: it
-  is the current defect, performed deliberately. The whole reason to adopt `sub`
-  is that a silent strand is unacceptable now that a partition holds durable
-  work.
+- **Move the existing directories on first run.** Built, then deleted, which is
+  the strongest form of the rejection. It reads a pre-record path, needs a rule
+  for a directory that is already at the destination, a rule for a lost race
+  between two surfaces, a rule for a cross-filesystem rename, and a refusal for
+  the collision it cannot resolve, and every one of those has to stay correct
+  until the code is removed. All of it is bought for local development state on
+  a product with no released install. `connect` and a re-pull cost a person less
+  than the paragraph explaining the alternative.
+- **Carry `intent.db` across either path change, by copy or by gate.** Rejected:
+  it is a migration for the one artifact the app defines as existing in order to
+  stop existing, written, tested, and kept correct forever for an operation that
+  runs once per account. Gating the change on an empty store is the same
+  purchase in a cheaper wrapper: it still teaches the identity path to reason
+  about the contents of a directory written under a contract that no longer
+  holds.
+- **Strand a partition silently while an account is in service.** Rejected, and
+  distinct from the clean break above. Leaving a pre-record directory alone costs
+  a person a reconnect they were told about; losing a live partition to a
+  Workspace rename costs them triage they recorded and were never told about.
+  That second failure is the whole reason to adopt `sub`.
 - **Put the app directory under the OS cache root so backup exclusion is free.**
   Rejected: a partition holds a durable intent store beside a disposable mirror,
   and cache-class storage on macOS is evictable under disk pressure. Free backup
