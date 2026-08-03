@@ -252,9 +252,14 @@ Breaking: every connected account reconnects and re-pulls once.
   `apps/local-mail/test-support/`, retargeted in Wave 4.
 - No path segment reaches `join` from an external source without passing
   `partitionDir`.
-- No app names another app's directory. `git grep "appDataDir(" -- 'apps/*/src'`
-  shows each app passing only its own id, and `epicenterDataRoot` is called at a
-  composition root (`bin.ts`, `main.ts`) rather than from app logic.
+- No app names another app's directory. `git grep -n "appDataDir(" -- 'apps/*/src'`
+  shows one call per app, in that app's own `paths.ts`, passing a literal app id
+  and no parameter that could carry a peer's. A CLI resolves its own root there
+  rather than threading it down from `bin.ts`: a parameter for it is the
+  per-app-root plumbing this record deletes, and the id being a literal is what
+  makes a peer's directory unnameable. The host's `main.ts` is the one place that
+  resolves the root and injects it, because it composes surfaces it does not own
+  (Wave 5a).
 - A Local Mail user who upgrades with pending triage still has it afterwards, and
   `status` reports the same undelivered count on both sides of Wave 4.
 - The host and the CLI, run on one machine, operate on the same mailbox:
