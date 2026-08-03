@@ -117,23 +117,27 @@ Both apps get two of those wrong today. Each accepts any non-empty
 install lands in `%USERPROFILE%\.local\share\local-mail`. The resolver is a
 correction, and each row above is a unit test rather than a hand comparison.
 
-The one thing a unit test cannot prove is that a real Tauri build agrees. Print
-`epicenterDataRoot()` beside `app.path().app_data_dir()` once, on macOS, in Wave
-1. Wave 5a removes the sidecar's Rust call but not the recorder's, so the
-comparison stays possible afterwards.
+A table transcribed from someone else's source is a claim, not a check. Wave 5a
+turns it into one: `src-tauri/src/app_data.rs` builds a Tauri app with the
+identifier read from `tauri.conf.json`, asks the real `PathResolver` for
+`app_data_dir()`, runs `epicenterDataRoot()` through Bun, and asserts the two
+strings are equal. It proves the row for whichever platform it runs on, which is
+the most any check here can do, and it fails on a `dirs` bump or an edited
+identifier instead of splitting a person's data quietly.
 
 ## Waves
 
 Each wave is one reviewable PR and leaves the repo green.
 
-### Landed: waves 1 through 4
+### Landed: waves 1 through 5a
 
 - **Wave 1, the primitive.** `@epicenter/constants/app-data` holds
   `epicenterDataRoot`, `appDataDir`, and `partitionDir`, with the platform table
-  and every rejected segment shape as unit tests. The one thing a unit test
-  cannot prove is still open: nobody has printed `epicenterDataRoot()` beside a
-  real Tauri `app_data_dir()` on macOS. That comparison stays possible after
-  Wave 5a and is the check that keeps the recorder's `<root>/blobs` honest.
+  and every rejected segment shape as unit tests. The comparison a unit test
+  could not make is no longer a manual print: Wave 5a turned it into a test that
+  builds a Tauri app with the real bundle identifier, asks its `PathResolver`
+  for `app_data_dir()`, and compares that to what Bun returns from
+  `epicenterDataRoot()` on the same machine.
 - **Wave 2, Local Books.** Moved to `<root>/apps/local-books`, `companyDir` runs
   through `partitionDir` (closing the unguarded `realmId` path), and
   `companies.json` is deleted in favour of the token store's `listRealms()`.
@@ -159,35 +163,50 @@ under the new path, by the operations that already own it: `reconcile` delivers,
 `discard --all` abandons, both under the account's reconcile lock, and `status`
 reports what is owed.
 
-### Wave 5a: the host injects, and Rust stops computing the sidecar's root
+- **Wave 5a, the sidecar resolves its own root.** `apps/epicenter/src/main.ts`
+  calls `epicenterDataRoot()`; `lib.rs` stops calling `app_data_dir()` and stops
+  setting `EPICENTER_DATA_DIR` for the child. `publish-app-catalog.ts` lost its
+  `--data-dir` flag with the same argument that deleted `LOCAL_BOOKS_DIR`: a
+  script that can name a different root than the running host publishes a
+  generation nothing selects.
 
-- `apps/epicenter/src/main.ts` calls `epicenterDataRoot()` instead of reading
-  `process.env.EPICENTER_DATA_DIR` directly.
-- `apps/epicenter/src-tauri/src/lib.rs:1007` stops calling `app_data_dir()` and
-  stops setting `EPICENTER_DATA_DIR`.
-- `recorder/blob.rs:107` keeps its call. It computes `<root>/blobs` in Rust for
-  the staged-recording store, which runs before the sidecar could have told it
-  anything. Prove the two still name one directory: record something, then read
-  it back through the sidecar's blob store.
-- Tests that set `EPICENTER_DATA_DIR` keep working, because the override
-  survives.
+  The recorder's call survived, moved into `src-tauri/src/app_data.rs`, and grew
+  the override rule on the way. That was forced rather than chosen. While Rust
+  passed the root down, an ambient `EPICENTER_DATA_DIR` was overwritten and
+  could split nothing; once the sidecar honours it, a recorder that only knew
+  the platform default writes recordings to a `blobs/` the host does not serve.
+  So the one remaining Rust resolution applies the same two rules, empty means
+  unset and relative is refused, and its tests cover both branches.
 
-Who eventually owns the recorder's root is a separate question and is not decided
-here. Until it is, one Rust caller remains and the equality above is the check
-that keeps it honest.
+  The check the recorder needed is the cross-language one described above,
+  rather than the record-and-read-back smoke this section originally asked for.
+  It is strictly better: it runs without audio hardware, covers the override
+  branch as well as the platform one, and names the drift in a diff rather than
+  in a missing recording. A live record-and-play-back on a built desktop is
+  still worth doing once, and is listed under what remains.
 
-There is a third participant in that same undecided question, found while
-auditing this wave: `apps/whispering/src/lib/services/fs-paths.ts` resolves
-`<root>/blobs` for itself through Tauri's `appDataDir()`, inside the desktop host
-only. It is not a peer-directory violation, since `blobs/` is the host's own
-directory and not an app partition, but it is a third resolver for a path the
-host already computes and injects elsewhere. Fold it into whichever wave settles
-the recorder's root; doing it here would put a Whispering change inside a Books
-and Mail move.
+  The mail-engine half did not apply. ADR-0191 has not merged into this tree:
+  `mail` and `books` are placeholder surface pages here, and no mail engine is
+  composed in `apps/epicenter/src`, so there is nothing to pass
+  `appDataDir(root, 'local-mail')` into yet.
 
-If ADR-0191 has merged, this wave also passes `appDataDir(root, 'local-mail')`
-into the mail engine the host composes. If it has not, that half waits and the
-rest still lands.
+Who eventually owns the recorder's root is still a separate question and is
+still not decided. Until it is, one Rust resolution remains and the equality
+test is what keeps it honest.
+
+The third participant in that same undecided question stayed put and is now
+documented where it lives: `apps/whispering/src/lib/services/fs-paths.ts`
+resolves `<root>/blobs` in the WebView through Tauri's `appDataDir()`. It is not
+a peer-directory violation, since `blobs/` is the host's own directory and not an
+app partition, and it is not an independent implementation either: `appDataDir()`
+is an IPC call into the same `PathResolver::app_data_dir` the recorder uses, so
+it agrees on the platform default by construction. What it cannot see is the
+override, because a WebView cannot read the process environment, so under one
+`EPICENTER_DATA_DIR` the "open the blobs folder" button opens the platform
+default while the recordings are elsewhere. Closing that needs the host to hand
+the WebView something, which is the wave that settles the recorder's root.
+Giving it a native verb of its own now would buy a command, a capability entry,
+and a binding, ahead of the decision that says who owns the value.
 
 ### Wave 5b: Local Mail adopts `sub`
 
@@ -294,8 +313,9 @@ released install, and the replacement is moving the whole root.
 - No app computes an OS application-data path for its own data. The only platform
   switch in the repo is in `@epicenter/constants/app-data`, and
   `git grep "Application Support" -- 'apps/local-mail/src' 'apps/local-books/src'`
-  returns nothing. Whispering's `<root>/blobs` resolution is out of scope and
-  tracked under Wave 5a.
+  returns nothing. Whispering's `<root>/blobs` resolution is out of scope; it is
+  documented in `fs-paths.ts` and waits on the wave that settles the recorder's
+  root.
 - `git grep -E "LOCAL_(MAIL|BOOKS)_DIR"` returns nothing. The test harness is
   retargeted to `EPICENTER_DATA_DIR`.
 - No path segment reaches `join` from an external source without passing

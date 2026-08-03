@@ -7,7 +7,7 @@
 - **Amended by:** [ADR-0202](0202-a-provider-account-belongs-to-the-app-whose-durable-state-it-names-and-epicenter-brokers-none.md) at one clause, which apps "an app receives one directory" is about: it is the closed set of host-composed engines, and an admitted static app (ADR-0179) receives no directory at all. That record also decides who owns the provider grant that names a partition, which this one left open. The root, the levels, the place-not-an-API rule, and the partition-naming rule are unchanged.
 - **Relates:** [ADR-0198](0198-a-durable-local-mail-write-is-a-per-message-label-assertion-in-a-sibling-intent-database.md) (untouched, and deliberately: an intent store's durability is a rule about ordinary operation inside a partition, and this record decides only where the partition is), [ADR-0151](0151-local-workspace-stores-use-owner-first-directories.md) (owner-first directories inside the replica plane; this record governs the plane beside it), [ADR-0161](0161-each-person-has-one-epicenter-replicated-on-each-adapter-boundary.md), [ADR-0179](0179-an-installed-app-is-an-inert-built-folder-admitted-through-one-static-artifact-boundary.md), [ADR-0181](0181-every-app-receives-one-portable-epicenter-capability-handle.md) (the closed capability namespace, which this record does not widen), [ADR-0183](0183-epicenter-mediates-the-effects-it-owns-and-names-the-rest-unmediated.md), [ADR-0190](0190-a-build-declares-which-epicenter-owns-its-data-not-which-window-it-runs-in.md), [ADR-0196](0196-local-mails-mirror-is-a-reader-and-one-full-message-fetch-is-its-entire-budget.md), [ADR-0197](0197-a-mirrors-corpus-version-names-its-artifact-and-only-the-app-knows-when-one-is-ready.md) (the filename grammar inside a partition; this record decides the directory that grammar is applied in), [ADR-0199](0199-one-account-reconciler-is-local-mails-only-gmail-writer.md) (the one writer, whose delivery is how an intent store empties during ordinary operation inside a partition)
 - **Relates, not in this tree:** ADR-0191 (the Epicenter host process owns the mail engine in process) and ADR-0193 (durable authorities and disposable materializations) are on open branches. Where this record depends on one, it says so and restates the borrowed clause rather than linking a file that does not exist here.
-- **In force, partly executed.** The root, the app directory, and the single partition directory are code in both apps. The partition *name* has not changed yet: Local Mail still names one by the account's email address, so the strand-on-rename defect described below is open until the `sub` adoption ships. One clause is unimplemented and this line is where it is admitted.
+- **In force, partly executed.** The root, the app directory, and the single partition directory are code in both apps, and the desktop host now resolves the root through the same TypeScript function rather than being handed one Rust computed. The partition *name* has not changed yet: Local Mail still names one by the account's email address, so the strand-on-rename defect described below is open until the `sub` adoption ships. One clause is unimplemented and this line is where it is admitted.
 - **Repriced 2026-08-02, then re-decided as a clean break.** An intermediate draft argued that because ADR-0198's intent store had shipped as code, this record owed the old directory a relocation and the identity change an emptiness gate. That reasoning is withdrawn: Local Mail has no released install, so everything under the pre-record path is local development state, and buying a migration for it costs a code path that outlives its only use. What survives the withdrawal is the *fact* the reprice was built on, which is about the future rather than the past: a partition holds something irreplaceable, so the identifier naming it has to be one the provider promises to keep.
 - **Re-challenged 2026-08-02, shape unchanged, argument replaced.** Every level was collapse-tested against the code that had shipped. The shape survived; two of the arguments for it did not. "Listing partitions is a directory read" was false against both apps, which enumerate from their token stores, and `apps/` had never been argued at all. Both are repaired below by the one rule the levels actually follow.
 
@@ -142,15 +142,33 @@ TypeScript resolver is therefore a correction, not a transcription, and its
 conformance to those three rules is a unit test rather than a one-time manual
 check.
 
-Rust keeps `app_data_dir()` for the native concerns that are genuinely its own.
-It has two call sites, not one: `lib.rs` computes the root to pass to the
-sidecar, and `recorder/blob.rs` computes `<root>/blobs` for the staged-recording
-store, which runs in Rust and cannot be handed a value the sidecar has not sent
-yet. Deleting the first is what this record asks for; deleting the second is a
+Rust keeps `app_data_dir()` for the native concern that is genuinely its own.
+It had two call sites: `lib.rs` computed the root to pass to the sidecar, and
+`recorder/blob.rs` computes `<root>/blobs` for the staged-recording store, which
+runs in Rust and cannot be handed a value the sidecar has not sent yet. Deleting
+the first is what this record asks for and it is done; deleting the second is a
 separate question about who tells the recorder where blobs live, and it is not
-decided here. Until it is, exactly one Rust caller remains and it derives a
-subdirectory the sidecar also derives, so the two must be verified equal in the
-wave that moves the first.
+decided here. Until it is, exactly one Rust resolution remains, in
+`src-tauri/src/app_data.rs`, and it derives a subdirectory the sidecar also
+derives, so the two are pinned equal by a test that runs both implementations on
+one machine rather than by reading either side.
+
+That surviving resolution owns the override too, and it has to. While Rust
+passed the root down, an ambient `EPICENTER_DATA_DIR` was overwritten and could
+not split anything. Once the sidecar resolves its own root and honours the
+variable, a recorder that only knew the platform default would write recordings
+to one `blobs/` while the host served another. So the Rust side applies the same
+two rules the TypeScript resolver does, empty means unset and relative is
+refused, and the test covers that branch as well as the platform one.
+
+One participant cannot be repaired this way and is named here rather than left
+to be discovered: `apps/whispering/src/lib/services/fs-paths.ts` resolves
+`<root>/blobs` in the WebView through Tauri's `appDataDir()`, which is the same
+`PathResolver::app_data_dir` the recorder uses, so it agrees on the platform
+default by construction and misses the override, which a WebView has no way to
+read. The consequence is one button opening the wrong folder, which is why it
+waits for the wave that settles the recorder's root rather than earning a native
+verb of its own now.
 
 No app computes an application-data path. `LOCAL_MAIL_DIR`, `LOCAL_BOOKS_DIR`,
 and `--data-dir` are deleted, along with both platform switches. There is one
@@ -440,10 +458,12 @@ directory is the thing handed to a read-only SQL surface or an agent.
   `--realm` or sets `LOCAL_BOOKS_QB_REALM`. The replacement is `listRealms()`,
   not a directory read: a company that authenticated and never synced has no
   directory and is still connected, so the disk cannot answer the question.
-- Rust owns one less fact. It stops computing the root for the sidecar, and a
-  Bun-side test exercises the exact resolution the desktop uses. It keeps the one
-  call the staged-recording blob store makes, so the wave that removes the first
-  has to prove the two still name the same `blobs/`.
+- Rust owns one less fact. It stopped computing the root for the sidecar, which
+  now resolves its own. It keeps the one resolution the staged-recording blob
+  store needs, and that one is checked against the TypeScript resolver by
+  running both on the machine the test is on: a `dirs` bump, a Tauri change, or
+  an edited bundle identifier fails a test instead of silently splitting a
+  person's data between the desktop and a CLI.
 - Two current resolution bugs are fixed on the way past. A non-absolute
   `XDG_DATA_HOME` is now ignored rather than honoured, matching what the desktop
   host does, and Windows gets a real branch instead of landing in
