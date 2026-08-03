@@ -16,13 +16,14 @@
 >
 > **Regenerate (deterministic per ref set, lossless):** `bun scripts/generate-spec-history.ts`. The totals track the refs this clone can see; `--all` is deliberate so the timeline recovers specs that only lived on unmerged or deleted branches.
 
-**1403 specs ever** (522 still in tree, 881 removed).
+**1404 specs ever** (521 still in tree, 883 removed).
 
 
 ## 2026
 
 | Date | Spec | State | Path |
 |------|------|-------|------|
+| 2026-08-02 | row-document-doc-status-reconciliation | removed | specs/20260802T101500-row-document-doc-status-reconciliation.md |
 | 2026-08-02 | app-data-root-and-partitions | in tree | specs/20260802T120000-app-data-root-and-partitions.md |
 | 2026-08-01 | local-mail-intent-and-reconciler-clean-break | removed | specs/20260801T210000-local-mail-intent-and-reconciler-clean-break.md |
 | 2026-08-01 | local-mail-pending-overlays | removed | specs/20260801T164500-local-mail-pending-overlays.md |
@@ -73,7 +74,7 @@
 | 2026-07-01 | local-mail-up-bun-served-shell | removed | specs/20260701T141500-local-mail-up-bun-served-shell.md |
 | 2026-07-01 | super-chat-canonicalization-handoff | removed | specs/20260701T235243-super-chat-canonicalization-handoff.md |
 | 2026-07-01 | local-mail-phase-2-engine | removed | specs/20260701T140000-local-mail-phase-2-engine.md |
-| 2026-07-01 | api-keyring-and-vault-wiring | in tree | specs/20260701T150000-api-keyring-and-vault-wiring.md |
+| 2026-07-01 | api-keyring-and-vault-wiring | removed | specs/20260701T150000-api-keyring-and-vault-wiring.md |
 | 2026-07-01 | progressive-sign-in-collapse | removed | specs/20260701T151347-progressive-sign-in-collapse.md |
 | 2026-07-01 | progressive-sign-in-collapse.prompt | removed | specs/20260701T151347-progressive-sign-in-collapse.prompt.md |
 | 2026-07-01 | honeycrisp-desktop-notes | in tree | specs/20260701T141841-honeycrisp-desktop-notes.md |
