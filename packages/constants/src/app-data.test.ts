@@ -104,6 +104,14 @@ test('an empty EPICENTER_DATA_DIR counts as unset', () => {
 	);
 });
 
+test('a relative EPICENTER_DATA_DIR is refused, not resolved', () => {
+	// Same drift a relative XDG_DATA_HOME is ignored for: two working directories
+	// would be two roots, and the desktop host a third.
+	expect(() =>
+		epicenterDataRoot(system({ env: { EPICENTER_DATA_DIR: 'tmp/data' } })),
+	).toThrow(/absolute/);
+});
+
 test('the bundle identifier equals the desktop bundle it has to match', () => {
 	// A drift here is a host and a CLI writing to two different mailboxes, and
 	// nothing else in either process would notice.

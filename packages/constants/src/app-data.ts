@@ -54,7 +54,8 @@ export type DataRootSystem = {
 /**
  * The one Epicenter application-data root. `EPICENTER_DATA_DIR` wins, for tests
  * and for a person who wants their data elsewhere; an empty value counts as
- * unset.
+ * unset and a relative one is refused, for the same reason a relative
+ * `XDG_DATA_HOME` is ignored below.
  *
  * Otherwise this reproduces what the desktop host resolves through Tauri, and
  * the equality is the point: a host and a CLI that disagree here write to two
@@ -76,7 +77,19 @@ export function epicenterDataRoot(
 	},
 ): string {
 	const override = system.env.EPICENTER_DATA_DIR;
-	if (override && override.length > 0) return override;
+	if (override && override.length > 0) {
+		// A relative override would resolve against the working directory, so a CLI
+		// run from two places would see two roots while the desktop host saw a
+		// third: the exact drift a relative `XDG_DATA_HOME` is ignored for. It is
+		// refused rather than resolved because that would read a fourth ambient
+		// input this function deliberately does not take.
+		if (!isAbsolute(override)) {
+			throw new Error(
+				`EPICENTER_DATA_DIR must be an absolute path, not ${JSON.stringify(override)}.`,
+			);
+		}
+		return override;
+	}
 	return join(dataDir(system), EPICENTER_BUNDLE_IDENTIFIER);
 }
 

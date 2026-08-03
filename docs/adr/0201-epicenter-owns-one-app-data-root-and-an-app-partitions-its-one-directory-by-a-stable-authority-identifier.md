@@ -118,7 +118,10 @@ would earn none, because no hand-off happens at any of them.
 
 The root is the directory the `so.epicenter` bundle identity names on each
 platform. `EPICENTER_DATA_DIR` overrides it, for tests and for a person who
-wants their data elsewhere. One TypeScript function owns this resolution and is
+wants their data elsewhere, and it has to be absolute: a relative override is
+refused rather than resolved, because resolving one against the working
+directory is the same drift a relative `XDG_DATA_HOME` is ignored for one
+paragraph below. One TypeScript function owns this resolution and is
 the authority on it, because a standalone CLI has no Tauri and needs the answer
 anyway; a second independent implementation of the same path is a drift hazard
 between a host and a CLI that must agree on which mailbox they are both writing

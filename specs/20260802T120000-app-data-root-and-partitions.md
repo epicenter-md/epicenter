@@ -71,8 +71,9 @@ naming out of the mirror primitive on purpose, and a path template there would
 reopen that.
 
 ```ts
-/** The one Epicenter application-data root. EPICENTER_DATA_DIR wins. The
- * ambient inputs are a value so the platform table is a unit test. */
+/** The one Epicenter application-data root. An absolute EPICENTER_DATA_DIR
+ * wins; a relative one is refused. The ambient inputs are a value so the
+ * platform table is a unit test. */
 export function epicenterDataRoot(system?: DataRootSystem): string;
 
 /** `<root>/apps/<appId>`. The app owns everything below the result. */
