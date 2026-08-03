@@ -78,6 +78,26 @@ test('--explain separates a sole hit that routes the phrase away', () => {
 	expect(out).toContain('control-flow/SKILL.md [disclaims]');
 });
 
+test('an always-on claimant is reported without changing stdout or the exit code', () => {
+	// AGENTS.md:35 routes "clean break" to post-implementation-review while
+	// greenfield-clean-breaks claims the phrase in its description, so the
+	// documented verdict says clean routing while two surfaces actually claim
+	// it. Reporting that on stderr is the whole point; changing the exit code
+	// would break the contract composition-audit.md documents.
+	const { code, out, err } = run('clean break');
+
+	expect(code).toBe(0);
+	expect(out).toBe('clean break -> greenfield-clean-breaks/SKILL.md\n');
+	expect(err).toContain('AGENTS.md');
+	expect(err).toContain('loads before any description');
+});
+
+test('a phrase no always-on file mentions reports no always-on claimant', () => {
+	const { err } = run('asymmetric wins');
+
+	expect(err).not.toContain('AGENTS.md');
+});
+
 test('multiple hits exit 1 and list every claimant', () => {
 	const { code, out, err } = run('delete disproportionate complexity');
 

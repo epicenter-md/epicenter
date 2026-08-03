@@ -30,6 +30,21 @@ Do not create a new skill when an existing skill already owns the same user
 intent. Update the existing skill, narrow its description, or move detail into a
 reference instead.
 
+## Always-On Rules Route
+
+An `AGENTS.md` rule that names a skill is a routing rule, and it is measurably
+the only thing that routes a broad intent no description claims. Where a
+description already owns the phrase, the description wins and the rule changes
+nothing about that route.
+
+That asymmetry says which rule earns its place. It does not license a cleanup
+pass over the ones that do not: shortening the paragraph cost orphan routes it
+still named, so gate influence is not the sum of its clauses. Treat every edit
+to an always-on file as a routing change and measure it.
+`references/evaluation.md` carries the method and the evidence;
+`audit-routing-collisions.ts` reports where a rule and a description claim the
+same phrase.
+
 ## Greenfield Questions
 
 Ask these questions in order:
