@@ -12,7 +12,9 @@
 
 Epicenter stores everything it stores on a machine under one root. An app gets
 one directory below it and partitions that directory by an identifier the
-external authority owns.
+external authority owns. The directory is a place, not an inter-app API: no app
+receives a path into a peer's, and a fact reaches another app only as a verb the
+owner publishes or a fact a person promotes into the shared replica.
 
 ## Accepted premises
 
@@ -119,9 +121,14 @@ rejected segment shape; `appDataDir` and `partitionDir` composition.
   where the missing validation arrives. Today `realmId` reaches
   `join(dataDir, realmId)` unvalidated from both the Intuit callback and
   `--realm` (`apps/local-books/src/oauth.ts:158`, `src/paths.ts:34`).
-- `companies.json` keeps `defaultRealm` and loses `realms`; `resolveRealm` reads
-  the directory.
-- `.env.example` and the CLI help text drop the deleted variables.
+- `companies.json` is deleted. It indexed which companies are connected, and
+  `credentials.json` already is that index: the token store is keyed by
+  `realmId`. `TokenStore` gains `listRealms()` and `resolveRealm` asks it, which
+  is the shape Local Mail already has (`listAccounts` / `resolveAccount`). The
+  recorded default goes with the file; `--realm` and `LOCAL_BOOKS_QB_REALM`
+  cover the sticky case, and a sole connected company still resolves on its own.
+- The CLI help text drops the deleted variables. `.env.example` holds only the
+  Intuit keysets and is unaffected.
 
 Books first because it is the smaller change, has no identifier problem, and
 proves the primitive against a real caller before Mail's harder waves.
@@ -216,6 +223,10 @@ Breaking: every connected account reconnects and re-pulls once.
   inside them.
 - A capability namespace, a host registry, a generic database framework, a
   migration runner, or a backup protocol.
+- Any cross-app reader. No app receives a peer's path or handle, there is no
+  host query verb taking an app id, and no permission model is built to say so:
+  the boundary is an API rule between admitted first-party code, not a sandbox
+  (ADR-0201).
 - Automatic reclamation of mirror predecessors. Still blocked on quiescence
   (ADR-0197).
 - Extracting `@epicenter/mirror`. Deferred to a third provider; two prototypes on
@@ -230,6 +241,9 @@ Breaking: every connected account reconnects and re-pulls once.
   `apps/local-mail/test-support/`, retargeted in Wave 4.
 - No path segment reaches `join` from an external source without passing
   `partitionDir`.
+- No app names another app's directory. `git grep "appDataDir(" -- 'apps/*/src'`
+  shows each app passing only its own id, and `epicenterDataRoot` is called at a
+  composition root (`bin.ts`, `main.ts`) rather than from app logic.
 - A Local Mail user who upgrades with pending triage still has it afterwards, and
   `status` reports the same undelivered count on both sides of Wave 4.
 - The host and the CLI, run on one machine, operate on the same mailbox:

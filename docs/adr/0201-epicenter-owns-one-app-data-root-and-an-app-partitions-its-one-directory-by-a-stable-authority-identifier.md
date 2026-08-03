@@ -45,6 +45,17 @@ therefore strands its partition and silently begins a second one, and on a
 case-insensitive filesystem two spellings of one address are one directory while
 on Linux they are two.
 
+Putting both apps' data under one root raises a third question that neither app
+has today, because today they cannot find each other. Once `<root>/apps/` exists,
+one app is one `join` away from a peer's mailbox, and the two apps already ship
+the surface that makes the shortcut tempting: each exposes read-only SQL over its
+own mirror, so a generic reader over `<root>/apps/*/**/*.db` looks like a feature
+rather than a coupling. Nothing in the corpus decides this. ADR-0181 closes the
+capability namespace against a *host* storage service and ADR-0179 governs what
+an installed app is, but no record says what one app may do with another app's
+bytes. Deciding it after the shared root ships means deciding it against an
+existing caller.
+
 Both defects changed price when ADR-0198 and ADR-0199 landed as code. A partition
 used to hold nothing but a re-pullable mirror, so stranding one cost quota. It
 now also holds `intent.db`, the triage a person recorded and Gmail has not been
@@ -58,7 +69,10 @@ at the intent store's door.
 **Epicenter owns exactly one application-data root on a machine. An app receives
 one directory below it, computed at its owner's composition root and injected as
 a string. Below that directory the app owns everything, and it partitions by an
-identifier the external authority owns and never reuses.**
+identifier the external authority owns and never reuses. The directory is a
+place and never an inter-app API: nothing outside the owning app receives a path
+into it, and a fact crosses to another app only as a verb the owner publishes or
+a fact a person promotes into the shared replica.**
 
 ### One root, one implementation
 
@@ -135,6 +149,66 @@ is a directory the OS may evict under disk pressure, and evicting undelivered
 triage is a silent data loss. So the split between disposable and durable lives
 inside the partition, in the filename grammar ADR-0197 already defines, and
 never in the choice of root.
+
+### An app directory is a place, never an inter-app API
+
+The section above says what the host does not do with an app's directory. This
+one says what a peer app does not do with it, and it needs saying separately:
+the host is not the only other thing running, and a rule written only against
+the host leaves the more likely leak undecided.
+
+**An app receives one string, the path of its own directory. It never receives a
+peer's directory, a path below one, an open SQLite handle to a peer's file, or a
+connection that reaches one.** There is no directory lookup by app id offered to
+app code, no `epicenter.apps.<id>` of any shape, and no host verb that takes an
+app id and returns rows. `appDataDir(root, appId)` takes an app id because the
+composition root that places every app has to name them all; it is called where
+an owner is composed, not from inside app logic that could ask it for somebody
+else's directory.
+
+Generic cross-app SQL is the specific thing refused, because it is the one that
+looks free. Both apps already expose read-only SQL over their own mirror
+(`queryMail` in `apps/local-mail/src/query.ts`, `queryBooks` in
+`apps/local-books/src/books/query.ts`). Each is the *owning* app's surface over
+the file that app wrote, offered to the person who owns the machine. Widening
+either into an engine that takes an app id, or adding a host verb that opens
+whichever app's database an argument names, would turn every app's stored shape
+into a public schema: the owner could no longer bump a corpus version, drop a
+column, or rebuild an artifact without breaking a reader it never agreed to
+have. A materialization exists in order to be rebuilt at its owner's discretion,
+and one that peers read directly is not that. This is also why the refusal is
+not softened by "read-only": the hazard is the coupling, not the mutation.
+
+Cross-app use has exactly two forms, and both are already built:
+
+- **The owning app publishes a verb.** A narrow capability or read model, in the
+  owner's own vocabulary, over data the owner interprets. Local Books' `query`,
+  `report`, `status`, and `recategorize` cores in `apps/local-books/src/books/`
+  are this shape, and its `mcp` verb (ADR-0073) is the same cores re-exposed to
+  a foreign caller without a rewrite; Local Mail's read models behind
+  `apps/local-mail/src/http/api.ts` are the same. A caller gets projected rows
+  with a meaning the owner promises to keep, not a file whose layout it must
+  reverse-engineer. What a verb hands back is data, never a location: paths are
+  for the person at the keyboard, so `MailStatus.dataDir`, `.tokenFile`, and
+  `.mirrorPath` are legitimate in a CLI's own output to its own user and do not
+  travel across an app boundary.
+- **A person promotes a durable fact into the shared Epicenter.** The one
+  replica (ADR-0161), reached through `epicenter.data` (ADR-0181), holds
+  intentionally curated portable facts and is schemaless by construction, so
+  facts that belong to more than one app go there by an act of curation rather
+  than by one app reading another's disk. Promotion is deliberate and lossy on
+  purpose: a mailbox does not become shared data because it exists.
+
+This boundary is an API rule between admitted first-party code, and stating that
+plainly is what keeps it from growing a mechanism. It is not a filesystem
+sandbox and must not be mistaken for one. Every app here runs as the person who
+owns the machine, reads what that person can read, and can be pointed at any
+file by that person on purpose: handing a mirror artifact to a coding agent is a
+documented thing to do with Local Books. The mode bits on a partition are there
+to keep *other users and other processes on the machine* out (ADR-0062), not to
+adjudicate between two Epicenter apps. So there is no grant, no permission
+prompt, no capability token for a directory, and no per-app storage policy to
+configure; there is a rule, one owner per directory, and code review.
 
 ### A partition is named by an identifier the authority owns
 
@@ -315,9 +389,16 @@ directory is the thing handed to a read-only SQL surface or an agent.
   thing in this record that reads a pre-move path. It is deleted in the release
   after the one that ships it, and a person who skips that release keeps their
   pending triage by draining it before upgrading.
-- A Local Books partition becomes enumerable, so `companies.json` loses its
-  index and keeps only the default selection. If the default is ever the only
-  survivor, the file goes too.
+- `companies.json` is deleted outright. The file existed to answer "which
+  companies are connected", and `credentials.json` already answers it: the token
+  store is keyed by `realmId`, so the index was a second copy that could disagree
+  with the first. Local Mail has no such file and resolves its account from its
+  token store, so this converges the two apps rather than inventing a shape. What
+  goes with it is the recorded default, and a person with two companies passes
+  `--realm` or sets `LOCAL_BOOKS_QB_REALM`. A partition directory being
+  enumerable is what makes the deletion safe to reason about, but it is not the
+  authority: a company authenticated and never synced has no directory, and it is
+  still connected.
 - Rust owns one less fact. It stops computing the root for the sidecar, and a
   Bun-side test exercises the exact resolution the desktop uses. It keeps the one
   call the staged-recording blob store makes, so the wave that removes the first
@@ -326,10 +407,20 @@ directory is the thing handed to a read-only SQL surface or an agent.
   `XDG_DATA_HOME` is now ignored rather than honoured, matching what the desktop
   host does, and Windows gets a real branch instead of landing in
   `%USERPROFILE%\.local\share`.
+- **An app's stored shape stays private, so its owner keeps the right to change
+  it.** No peer holds a path or a handle into it, so a corpus-version bump, a
+  dropped column, or a rebuilt artifact breaks nobody. That freedom is the whole
+  reason ADR-0197's version-named artifact works, and it survives only as long as
+  the only readers are the owning app and the person at the keyboard.
+- **Making a fact available to another app is deliberate work, and that is the
+  point.** The owner publishes a verb, or a person promotes the fact into the
+  shared replica. Neither happens by accident, so a directory read never becomes
+  an undeclared dependency between two apps that ship on different schedules.
 - What this forecloses: a host-owned registry of app stores, a storage or
   database capability namespace, per-app data roots, a `cacheDir` beside the data
-  dir, a generic app-database framework, and any host feature that reads inside
-  an app's directory.
+  dir, a generic app-database framework, any host feature that reads inside an
+  app's directory, a cross-app SQL surface or query router, a directory lookup by
+  app id offered to app code, and a per-app storage permission model.
 
 ## Considered alternatives
 
@@ -340,6 +431,24 @@ directory is the thing handed to a read-only SQL surface or an agent.
   the CLI.** Rejected: the CLI needs a TypeScript implementation regardless, so
   keeping the Rust one leaves two implementations of a path that a host and a CLI
   must agree on exactly or corrupt each other's view of a mailbox.
+- **Let one app read a peer's directory, read-only, since it is all local
+  anyway.** Rejected: "all local" is an argument about the filesystem, and the
+  cost is paid in the API. A peer that reads a mirror pins its stored shape, and
+  the owner loses the version bump and the rebuild that ADR-0197 exists to give
+  it. The owner would find out by breaking a caller, which is the coupling this
+  record refuses, not the access.
+- **Add a host query verb that takes an app id and runs SQL.** Rejected: it is
+  the same coupling with a host in the middle, plus a new host surface that has
+  to know every app's schema to be useful and to keep working. The owning app
+  already has the two shapes worth having, a verb and a read model, and it can
+  name what it means by them.
+- **Give directory access a grant or permission model between apps.** Rejected:
+  it would be a mechanism pretending to be a boundary. Every app here runs as the
+  person who owns the machine and can already open any file that person can, so
+  the grant would enforce nothing an app could not route around, while adding a
+  policy surface to configure and a false sense that the enforcement is real. The
+  rule and code review are the enforcement, and saying so is more honest than
+  shipping a lock with no door.
 - **Add `epicenter.storage.open(...)` to the capability handle.** Rejected:
   ADR-0181 refuses the namespace as an implementation category and ADR-0193
   refuses it as ownership Epicenter does not have. Neither refusal has weakened,
