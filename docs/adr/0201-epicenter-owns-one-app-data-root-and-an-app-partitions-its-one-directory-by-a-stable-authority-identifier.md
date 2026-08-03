@@ -8,6 +8,7 @@
 - **Relates, not in this tree:** ADR-0191 (the Epicenter host process owns the mail engine in process) and ADR-0193 (durable authorities and disposable materializations) are on open branches. Where this record depends on one, it says so and restates the borrowed clause rather than linking a file that does not exist here.
 - **In force, partly executed.** The root, the app directory, and the single partition directory are code in both apps. The partition *name* has not changed yet: Local Mail still names one by the account's email address, so the strand-on-rename defect described below is open until the `sub` adoption ships. One clause is unimplemented and this line is where it is admitted.
 - **Repriced 2026-08-02, then re-decided as a clean break.** An intermediate draft argued that because ADR-0198's intent store had shipped as code, this record owed the old directory a relocation and the identity change an emptiness gate. That reasoning is withdrawn: Local Mail has no released install, so everything under the pre-record path is local development state, and buying a migration for it costs a code path that outlives its only use. What survives the withdrawal is the *fact* the reprice was built on, which is about the future rather than the past: a partition holds something irreplaceable, so the identifier naming it has to be one the provider promises to keep.
+- **Re-challenged 2026-08-02, shape unchanged, argument replaced.** Every level was collapse-tested against the code that had shipped. The shape survived; two of the arguments for it did not. "Listing partitions is a directory read" was false against both apps, which enumerate from their token stores, and `apps/` had never been argued at all. Both are repaired below by the one rule the levels actually follow.
 
 ## Context
 
@@ -81,6 +82,38 @@ place and never an inter-app API: nothing outside the owning app receives a path
 into it, and a fact crosses to another app only as a verb the owner publishes or
 a fact a person promotes into the shared replica.**
 
+### Why there are exactly these levels
+
+The path is `<root>/apps/<app-id>/<kind>/<partition-id>`, and the rule that
+produces it is one sentence: **a directory level exists exactly where naming
+authority changes hands, and nowhere else.**
+
+Three parties choose names along that path, in order. Epicenter names the root
+and its own directories (`data`, `blobs`, `app-catalog`). An app names
+everything in its own directory (`credentials.json`, `provider.json`, a lock
+file). An external authority names a partition (`realmId`, Google's `sub`).
+Each hand-off gets one segment, because a namespace whose next name is chosen
+by somebody else cannot be defended by the party who would have to defend it:
+Epicenter cannot promise that a host directory it adds next year misses every
+app id, and an app cannot forbid Google from issuing an identifier that spells
+`credentials.json`. `apps/` is the first hand-off, the partition-kind directory
+is the second, and neither is a container for tidiness.
+
+Every level was challenged by collapsing it and asking what breaks. Collapsing
+`apps/` merges Epicenter's namespace with the apps', and takes with it the only
+positional statement of the host's promise: *everything under `apps/` is
+somebody else's*, which otherwise becomes a list of names to remember.
+Collapsing the partition-kind directory merges the app's namespace with a
+provider's and buys a reserved-name rule in exchange. Collapsing the partition
+level denies that two Gmail accounts are two things. No level is optional, and
+none is missing: disposability is not a naming authority,
+which is why it lives in ADR-0197's filename grammar and adds no level here.
+
+The rule also decides the questions this record does not have yet. A fourth
+authority naming something inside a partition would earn exactly one more
+segment; a second directory for the same app, a per-app root, or a `cacheDir`
+would earn none, because no hand-off happens at any of them.
+
 ### One root, one implementation
 
 The root is the directory the `so.epicenter` bundle identity names on each
@@ -121,11 +154,19 @@ override for one root, not one per app.
 
 ### An app receives a directory, not a storage service
 
-An app's directory is `<root>/apps/<app-id>`. The app id is the app's own stable
-identifier, declared once by the app. It is deliberately not a surface id: Local
-Books has no launchable surface at all (ADR-0072), and coupling a mailbox's
-location to a name that Home's launcher owns would let a surface rename strand
-data.
+An app's directory is `<root>/apps/<app-id>`, one segment below the hand-off
+above. The app id is the app's own stable identifier, and it is declared once in
+one place: a closed literal union in `@epicenter/constants`, not in each app.
+That is not a compromise of the ownership rule but a consequence of it, because
+the composition root that places every app has to be able to name them all, and
+a typed union is what makes a typo a compile error. What keeps an app from
+naming a peer is the call shape rather than the type: every `appDataDir` call in
+an app passes a literal id and takes no parameter that could carry somebody
+else's.
+
+The id is deliberately not a surface id: Local Books has no launchable surface
+at all (ADR-0072), and coupling a mailbox's location to a name that Home's
+launcher owns would let a surface rename strand data.
 
 The directory is a string. It is computed where the owner is composed, the way
 the Epicenter sidecar already computes `join(root, 'data')` and
@@ -314,13 +355,18 @@ Local Books is not made to say `accounts`. The rule is that there is one such
 directory, not what it is called, because the word has to be true about the
 thing being partitioned and only the app knows what that is.
 
-The single partition directory earns itself twice. App-root files and partition
-ids become structurally incapable of colliding, so no grammar has to forbid a
-company named `credentials.json`. And listing the partitions becomes a directory
-read rather than a filter that has to know which sibling names are files, which
-is what Local Books' `companies.json` exists to work around today. That file is
-deleted rather than kept for its other job, for the reason in the consequences
-below: the token store already answers which companies are connected.
+The single partition directory earns itself once, on the hand-off rule alone:
+the names above it are the app's and the names below it are an external
+authority's, so app-root files and partition ids become structurally incapable
+of colliding and no grammar has to forbid a company named `credentials.json`.
+
+It is not justified by enumeration, and this record does not claim it is.
+Neither app lists partitions by reading the directory; both ask their token
+store (`listAccounts`, `listRealms`), which is also what replaced Local Books'
+`companies.json`. A company that authenticated and never synced has no
+directory and is still connected, so the disk was never the authority on that
+question, and a level that exists only once its owner has written to it could
+not have been.
 
 ### There is no acquisition protocol
 
@@ -384,10 +430,9 @@ directory is the thing handed to a read-only SQL surface or an agent.
   with the first. Local Mail has no such file and resolves its account from its
   token store, so this converges the two apps rather than inventing a shape. What
   goes with it is the recorded default, and a person with two companies passes
-  `--realm` or sets `LOCAL_BOOKS_QB_REALM`. A partition directory being
-  enumerable is what makes the deletion safe to reason about, but it is not the
-  authority: a company authenticated and never synced has no directory, and it is
-  still connected.
+  `--realm` or sets `LOCAL_BOOKS_QB_REALM`. The replacement is `listRealms()`,
+  not a directory read: a company that authenticated and never synced has no
+  directory and is still connected, so the disk cannot answer the question.
 - Rust owns one less fact. It stops computing the root for the sidecar, and a
   Bun-side test exercises the exact resolution the desktop uses. It keeps the one
   call the staged-recording blob store makes, so the wave that removes the first
@@ -456,9 +501,18 @@ directory is the thing handed to a read-only SQL surface or an agent.
 - **Make both apps use `accounts/` for symmetry.** Rejected: a QuickBooks company
   is not an account, and imposing one app's vocabulary on another buys nothing
   the single-directory rule does not already buy.
-- **Flat partitions directly under the app directory, as both apps do today.**
-  Rejected: it makes app-root filenames and partition ids share one namespace and
-  makes enumeration a filter that has to know the file list.
+- **Flat partitions directly under the app directory, as both apps did before
+  this record.** Rejected: it merges a namespace the app names with one an
+  external authority names, and the app cannot defend the collision because it
+  does not issue the identifier. What replaces the level is a reserved-name rule
+  against a provider that never agreed to it.
+- **Drop `apps/` and put each app directly under the root.** Rejected on the
+  same rule one altitude up. The host's root namespace grows by host decisions
+  and the app namespace grows by app decisions, so merging them makes every
+  future host directory a collision risk against an app id. It also deletes the
+  only positional form of the host's promise: with `apps/`, "Epicenter does not
+  look inside" is a place; without it, it is a list of names that has to stay
+  correct as both sides grow.
 - **Move the existing directories on first run.** Built, then deleted, which is
   the strongest form of the rejection. It reads a pre-record path, needs a rule
   for a directory that is already at the destination, a rule for a lost race

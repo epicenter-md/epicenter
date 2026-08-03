@@ -50,6 +50,17 @@ owner publishes or a fact a person promotes into the shared replica.
         books.v1.db  lock.db
 ```
 
+Four levels, and one rule produces all of them: **a directory level exists
+exactly where naming authority changes hands.** Epicenter names the root and its
+own directories, an app names everything in its directory, an external authority
+names a partition. `apps/` is the first hand-off and the partition-kind
+directory is the second, because a namespace whose next name is chosen by
+somebody else cannot be defended by the party who would have to defend it.
+Nothing here is a container for tidiness, and nothing else earns a level:
+disposability is a property of a file, so it stays in ADR-0197's filename
+grammar. Each level was collapse-tested against shipped code and kept
+(ADR-0201).
+
 ## The primitive
 
 One new export, `@epicenter/constants/app-data`. That package is AGPL, both apps
@@ -60,8 +71,9 @@ naming out of the mirror primitive on purpose, and a path template there would
 reopen that.
 
 ```ts
-/** The one Epicenter application-data root. EPICENTER_DATA_DIR wins. */
-export function epicenterDataRoot(env?: Record<string, string | undefined>): string;
+/** The one Epicenter application-data root. EPICENTER_DATA_DIR wins. The
+ * ambient inputs are a value so the platform table is a unit test. */
+export function epicenterDataRoot(system?: DataRootSystem): string;
 
 /** `<root>/apps/<appId>`. The app owns everything below the result. */
 export function appDataDir(root: string, appId: AppDataId): string;
