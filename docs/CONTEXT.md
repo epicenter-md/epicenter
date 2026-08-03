@@ -279,7 +279,11 @@ shapes, see `docs/adr/`.
   machine collisions) versus synced settings (local shortcuts). The asymmetry is
   deliberate.
 - **Vault**: the designated, not-yet-built home for the one encryption that
-  survives ADR-0004: an explicitly encrypted store for secrets only (blind
-  relay, Argon2-derived key). Its primitives were removed with the encryption
-  layer, and `@epicenter/encryption` itself is now deleted; a secrets path
-  rebuilds from scratch. Distinct from the Matter vault (a folder of Markdown).
+  survives ADR-0004: an explicitly encrypted store for the values a person
+  brings that name no durable local state, such as a provider API key. The key
+  source is server-derived, not a passphrase (ADR-0074), and accounts and
+  third-party OAuth grants are outside its scope: those belong to the app whose
+  directory they name (ADR-0202). Its primitives were removed with the
+  encryption layer, and `@epicenter/encryption` itself is now deleted; a secrets
+  path rebuilds from scratch. Distinct from the Matter vault (a folder of
+  Markdown).
