@@ -25,8 +25,8 @@ import { companyDir } from './paths.ts';
  * ingest-and-advance is atomic and crash-safe.
  *
  * The realm owns its identity through the directory
- * (`<dataDir>/<realmId>/`), not a stored column, so the db need not know which
- * company it holds. Inside that directory the artifact is named by
+ * (`<dataDir>/companies/<realmId>/`), not a stored column, so the db need not
+ * know which company it holds. Inside that directory the artifact is named by
  * `MIRROR_VERSION` (ADR-0197), so nothing about the stored shape is stamped
  * inside the file and nothing is ever dropped on open.
  */
@@ -112,7 +112,7 @@ function declareEntityTable(def: EntityDef): TableDeclaration {
  */
 const MIRROR_VERSION = 1;
 
-/** The mirror as materialized for one company: `<dataDir>/<realmId>/`. */
+/** The mirror as materialized for one company: `<dataDir>/companies/<realmId>/`. */
 export function booksMirror(dataDir: string, realmId: string): Mirror {
 	return mirrorAt({
 		name: 'books',

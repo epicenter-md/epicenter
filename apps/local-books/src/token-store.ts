@@ -47,13 +47,16 @@ export async function resolveRealm(
 	if (realms.length === 0) {
 		return Err('No authenticated company. Run "local-books auth" first.');
 	}
+	// Both inputs are named because the MCP server returns this string verbatim to
+	// a foreign caller that has no command line: its host sets the environment
+	// variable instead (ADR-0073).
 	return Err(
-		`Multiple companies authenticated (${realms.join(', ')}). Pass --realm <realmId>.`,
+		`Multiple companies authenticated (${realms.join(', ')}). Pass --realm <realmId> or set LOCAL_BOOKS_QB_REALM.`,
 	);
 }
 
 /**
- * The `0600` JSON-file token store at `<data-dir>/credentials.json` (or wherever
+ * The `0600` JSON-file token store at `<app-dir>/credentials.json` (or wherever
  * `LOCAL_BOOKS_TOKEN_FILE` points). The set is not encrypted; the file mode is
  * the protection, the same tradeoff `git credential-store` and `~/.aws/credentials`
  * make. Works identically on a desktop, a headless server, an SSH session, and
