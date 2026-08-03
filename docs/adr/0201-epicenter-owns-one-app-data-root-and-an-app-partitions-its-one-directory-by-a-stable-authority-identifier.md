@@ -212,6 +212,16 @@ may rename one; a directory named after it would strand data on a rename. A
 surface id is nonetheless reserved against the app-id space for the same
 one-namespace reason.
 
+Local Mail is the ordinary case made concrete. `SURFACE_ROUTES` reserves `mail`
+and `COMPOSED_APP_IDS` reserves `local-mail`, both so that nothing collides, and
+one product therefore holds two ids in the one namespace. That is the normal
+case rather than a defect, because the two ids answer different questions: a
+surface id names a window, an app id names a place. `apps/mail/` stays
+permanently empty while `apps/local-mail/` holds the mailbox, and once the mail
+engine is composed behind the `mail` surface (ADR-0191, on an open branch and
+not in this tree) the two ids are two facts about one product rather than two
+claimants on one directory.
+
 **Allocation is nominal, and that is the whole of the contract.** The path is a
 pure function of the root and the id, so allocating a place means the host has
 issued the id, not that anything exists on disk. There is no allocation call, no
@@ -233,15 +243,37 @@ the Epicenter sidecar already computes `join(root, 'data')` and
 engine that needs it. This is the per-concern injection that ADR-0193 requires
 for a materialization, and it is why this record adds no capability.
 
-**How an app reaches its place is a separate question from whether it has one,
-and this record answers only the second.** A composed engine is handed the string
-at its composition root and can open files today. An admitted folder of static
-files runs in a webview with no filesystem reach at all, so its place is
-allocated and currently unreachable from its own code, and it is honest to say
-so. Nothing here narrows that gap, because inventing a way across it would answer
-a question no app has asked. What this record buys is that the answer is already
-determined when the question is finally asked, by an id the app already has, and
-that no app has to change identity to get it.
+**An admitted app reaches its place by shipping as a runtime, and the host never
+closes that distance on its behalf.** A composed engine is handed the string at
+its composition root and can open files today. An admitted folder of static files
+runs in a webview with no filesystem reach at all, so its place is spoken for and
+unwritable from its own code, and it is honest to say so. That gap is not a
+question waiting for an app to ask it. It is closed.
+
+What closes it is asking whether a per-app runtime is a resource anyone is
+contending for. The answer looks like yes, because the nouns arrive already
+sounding shared: processes, ports, restart policy, shutdown ordering. None of
+them is contended. Local Mail binds its own loopback port from its own process,
+and there is exactly one Local Mail. A host that spawned per-app runtimes would
+manufacture the port allocation, the supervision, and the lifecycle, and would
+then point at them as the reason it had to own them. A mechanism that generates
+its own justification is the shape behind every platform this corpus already
+refuses.
+
+**An app that needs a runtime ships as a runtime.** Local Mail is the existence
+proof, and it reads backwards from the way this gap is usually framed: it has
+`src-tauri/`, `src/bin.ts`, and an `src/app.ts` that runs its own `Bun.serve`,
+serves its own SPA from `ui/dist`, and injects a per-launch bearer as a
+`window.__LOCAL_MAIL__` global. It is not a static folder that acquired a
+process; it is a process that serves a folder.
+
+The directory is therefore a name reservation and not a promise of future reach.
+An admitted app owns `apps/<id>` in the one sense that matters, that nobody else
+can claim it. An app that later needs durable bytes ships as a runtime under the
+same id and finds the directory already there and already its own. That is the
+no-promotion, no-identity-change argument this record already makes for widening
+the rule, and it is stronger as a refusal than as a deferral: a deferred gap is
+an invitation to build the bridge.
 
 There is no `epicenter.storage` namespace and no `epicenter.database` namespace.
 ADR-0181 already refuses `storage` as an implementation category, and ADR-0193
@@ -586,6 +618,13 @@ directory is the thing handed to a read-only SQL surface or an agent.
   provides no quota so none is promised, and the one genuine cost, an open id
   space reaching a `join`, is paid by validating the id against the grammar
   admission already enforces.
+- **Give an admitted app a host-provided runtime, or any other host mechanism for
+  reaching its own directory.** Rejected: it would adopt a resource nothing is
+  contending for. A host that spawns per-app runtimes creates the port
+  allocation, the supervision, and the shutdown ordering it would then cite as
+  the reason it had to own them, which is a mechanism manufacturing its own
+  justification. An app that needs a runtime ships as one, under the id it
+  already has.
 - **Give directory access a grant or permission model between apps.** Rejected:
   it would be a mechanism pretending to be a boundary. Every app here runs as the
   person who owns the machine and can already open any file that person can, so
