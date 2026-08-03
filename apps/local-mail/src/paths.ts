@@ -2,6 +2,7 @@ import { chmodSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import {
 	appDataDir,
+	type ComposedAppId,
 	epicenterDataRoot,
 	partitionDir,
 } from '@epicenter/constants/app-data';
@@ -14,9 +15,13 @@ import {
  * from a terminal and the desktop host operate on the same mailbox (ADR-0201).
  * Everything below the result belongs to this app, and nothing outside it
  * receives a path into it.
+ *
+ * The id is pinned to `ComposedAppId` because that is the list catalog admission
+ * reserves: an id here that drifted from that list would leave this directory
+ * claimable by an admitted folder of the same name (ADR-0201).
  */
 export function mailDataDir(): string {
-	return appDataDir(epicenterDataRoot(), 'local-mail');
+	return appDataDir(epicenterDataRoot(), 'local-mail' satisfies ComposedAppId);
 }
 
 /** The word Local Mail partitions by. One directory between the names this app
