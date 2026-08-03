@@ -234,18 +234,14 @@ engine that needs it. This is the per-concern injection that ADR-0193 requires
 for a materialization, and it is why this record adds no capability.
 
 **How an app reaches its place is a separate question from whether it has one,
-and this record answers only the second.** A composed engine is handed the
-string at its composition root and can open files today. An admitted folder of
-static files runs in a webview with no filesystem reach at all, so its place is
-allocated and currently unreachable from its own code: it is a fact about
-ownership that becomes operational the day something native is composed for that
-app, and it is honest to say that day has not arrived. Nothing here narrows the
-gap. There is no `epicenter.storage`, no path in the capability handle, and no
-native verb that hands a webview a directory, because inventing one now would
-answer a question no app has asked and would do it in the namespace ADR-0181
-closed. What this record buys today is that the answer is already determined
-when the question is finally asked, by an id the app already has, and that no
-app has to change identity to get it.
+and this record answers only the second.** A composed engine is handed the string
+at its composition root and can open files today. An admitted folder of static
+files runs in a webview with no filesystem reach at all, so its place is
+allocated and currently unreachable from its own code, and it is honest to say
+so. Nothing here narrows that gap, because inventing a way across it would answer
+a question no app has asked. What this record buys is that the answer is already
+determined when the question is finally asked, by an id the app already has, and
+that no app has to change identity to get it.
 
 There is no `epicenter.storage` namespace and no `epicenter.database` namespace.
 ADR-0181 already refuses `storage` as an implementation category, and ADR-0193
@@ -422,7 +418,15 @@ the app chooses what it is called:
         <realmId>/
           books.v1.db
           lock.db
+    <admitted-app-id>/                   allocated by its id, and not on disk
+                                         until its app writes something here
 ```
+
+The third entry is the whole of what widening the rule costs on disk: a name
+that is spoken for. Every trusted app has one, an app that has written nothing
+has an empty one that does not exist yet, and the two above are simply the apps
+that have written something. An admitted app cannot write here today, which is a
+fact about what it can reach rather than about what it owns.
 
 Local Books is not made to say `accounts`. The rule is that there is one such
 directory, not what it is called, because the word has to be true about the
