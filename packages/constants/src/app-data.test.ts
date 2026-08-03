@@ -161,9 +161,9 @@ test('a partition kind that is not one path segment is refused', () => {
 	}
 });
 
-test('an email is still one segment, so relocation before the sub adoption works', () => {
-	// Local Mail keeps email-named partitions through its relocation wave, and
-	// the guard has to pass them; only the identifier wave changes the segment.
+test('an email is one segment, which is what Local Mail names a partition today', () => {
+	// The guard has to pass an email until the `sub` wave lands, because that is
+	// what Local Mail still partitions by; only that wave changes the segment.
 	expect(partitionDir('/app', 'accounts', 'person@example.com')).toBe(
 		'/app/accounts/person@example.com',
 	);

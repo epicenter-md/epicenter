@@ -19,12 +19,13 @@ export function mailDataDir(): string {
 	return appDataDir(epicenterDataRoot(), 'local-mail');
 }
 
-/** The word Local Mail partitions by. One directory, so an app-root filename
- * and an account can never collide and listing accounts is a directory read. */
+/** The word Local Mail partitions by. One directory between the names this app
+ * chooses (`credentials.json`, `provider.json`, `runtime.json`) and the ones
+ * Google issues, so neither namespace has to be defended against the other. */
 const ACCOUNTS = 'accounts';
 
 /** `<dataDir>/accounts`, the parent every account partition sits under. */
-export function accountsDir(dataDir: string): string {
+function accountsDir(dataDir: string): string {
 	return join(dataDir, ACCOUNTS);
 }
 

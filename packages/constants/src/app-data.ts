@@ -5,6 +5,14 @@
  * directory below it and owns everything inside, partitioned by an identifier
  * the external authority owns and never reuses. See ADR-0201.
  *
+ * Three parties choose names along that path, and each function below is one
+ * hand-off between two of them: Epicenter names the root and its own
+ * directories, an app names everything in its directory, and an external
+ * authority names a partition. `apps/` and the partition-kind directory exist
+ * because a namespace whose next name is chosen by somebody else cannot be
+ * defended by the party that would have to defend it. There is no level here
+ * that is not one of those hand-offs.
+ *
  * These are three pure functions over strings. There is no store, no handle, no
  * registry of app directories, and no lifecycle: allocating a place is not
  * owning a store, and the host never opens, reads, or reclaims anything below
@@ -101,6 +109,12 @@ function dataDir({ env, platform, homeDir }: DataRootSystem): string {
  * An app's one directory: `<root>/apps/<appId>`. The app owns everything below
  * the result and Epicenter never looks inside it (ADR-0201, ADR-0193).
  *
+ * `apps/` is where naming authority changes hands. Above it Epicenter chooses
+ * the names (`data`, `blobs`, `app-catalog`, and whatever it adds next); below
+ * it an app does. One segment keeps a host directory added later from landing
+ * on an app id, and it is the boundary the host's promise is stated against:
+ * everything under `apps/` is somebody else's, all of it, by position.
+ *
  * The result is a string, injected at the owner's composition root the way the
  * sidecar already computes `join(root, 'data')` and `join(root, 'blobs')`. It is
  * deliberately not a capability: the bytes are not Epicenter's to offer
@@ -115,15 +129,19 @@ export function appDataDir(root: string, appId: AppDataId): string {
  *
  * A partition holds everything scoped to one external account, company, or
  * tenancy, and `partitionId` must be an identifier that external authority
- * issues and never reuses. `kind` is the app's own word for what it partitions
- * (`accounts`, `companies`); there is one such directory per app so that
- * app-root filenames and partition ids cannot collide and listing partitions is
- * a directory read.
+ * issues and never reuses.
+ *
+ * `kind` is the same hand-off as `apps/`, one altitude down. The app chooses
+ * its root filenames (`credentials.json`, `provider.json`) and a provider
+ * chooses partition ids, so one directory sits between the two namespaces
+ * rather than a reserved-name rule the app would have to enforce against an
+ * authority it does not control. The app picks the word (`accounts`,
+ * `companies`), because only the app knows what it partitions.
  *
  * Both segments are validated as exactly one path component, which is the only
  * reason this exists rather than a bare `join`: a partition id arrives from a
- * provider callback or a command-line flag, and one of the two call sites this
- * replaces takes it verbatim today.
+ * provider callback or a command-line flag, and the Local Books call site this
+ * replaced joined `realmId` verbatim.
  *
  * There is no acquisition protocol. A partition exists exactly when its
  * directory does; this function names one and creates nothing.
