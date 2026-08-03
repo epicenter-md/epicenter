@@ -1,20 +1,22 @@
-# App-data root and app-owned partitions
+# App-data root, app-owned partitions, and app-owned provider accounts
 
 - **Status:** In Progress
-- **Date:** 2026-08-02
+- **Date:** 2026-08-02, extended 2026-08-03
 - **Program:** greenfield breaking replacement
-- **Decision owner:** [ADR-0201](../docs/adr/0201-epicenter-owns-one-app-data-root-and-an-app-partitions-its-one-directory-by-a-stable-authority-identifier.md) (provisional number)
+- **Decision owners:** [ADR-0201](../docs/adr/0201-epicenter-owns-one-app-data-root-and-an-app-partitions-its-one-directory-by-a-stable-authority-identifier.md) (the root, the levels, and the partition identifier) and [ADR-0202](../docs/adr/0202-a-provider-account-belongs-to-the-app-whose-durable-state-it-names-and-epicenter-brokers-none.md) (who owns the grant that names a partition, and which apps own a directory at all). Both numbers are provisional.
 - **Depends on, not in this tree:** ADR-0191 (mail engine in the host process) is
   on `claude/local-mail-in-epicenter`. Wave 5a assumes it has merged for half its
   scope. Waves 1 through 4 do not depend on it.
 
 ## Product sentence
 
-Epicenter stores everything it stores on a machine under one root. An app gets
-one directory below it and partitions that directory by an identifier the
-external authority owns. The directory is a place, not an inter-app API: no app
+Epicenter stores everything it stores on a machine under one root. A
+host-composed engine gets one directory below it and partitions that directory by
+an identifier the external authority owns, and it holds the provider grant that
+names each partition. The directory is a place, not an inter-app API: no app
 receives a path into a peer's, and a fact reaches another app only as a verb the
-owner publishes or a fact a person promotes into the shared replica.
+owner publishes or a fact a person promotes into the shared replica. Epicenter
+brokers no third-party grant and keeps no registry of them.
 
 ## Accepted premises
 
@@ -32,6 +34,14 @@ owner publishes or a fact a person promotes into the shared replica.
   the root move and again at the identifier. Wave 5b additionally costs the
   `openid` scope and one consent screen per account.
 - The mirrors are re-pulled when their partition is rebuilt, never migrated.
+- **Only a composed engine owns a directory, and the closed `APP_DATA_IDS` union
+  is what says so.** An admitted static app (ADR-0179) receives none, reaches
+  durable state through the replica, and holds no provider grant. No wave below
+  widens that set, and Wave 6 exists to keep the two id namespaces from
+  colliding while it stays narrow.
+- **No wave introduces a host-side account surface.** No registry, no shared
+  token store, no connect/disconnect/refresh/revoke at the host, and no
+  `epicenter.accounts` namespace (ADR-0202).
 
 ## Destination
 
@@ -203,6 +213,51 @@ The expensive wave, and the one that costs a user something real.
 
 Breaking: every connected account reconnects and re-pulls once.
 
+### Wave 6: an app id that names a place is not available to a folder
+
+Independent of 5a and 5b, and small. Catalog admission reserves
+`Object.keys(SURFACE_ROUTES)` today (`home`, `whispering`, `honeycrisp`, `mail`,
+`books`), so a folder named `local-mail` is admissible. It is harmless only
+because an admitted surface receives no directory, which is exactly what makes it
+the kind of defect that stays invisible until somebody widens the directory rule.
+
+- `apps/epicenter/src/main.ts` and `apps/epicenter/scripts/publish-app-catalog.ts`
+  both pass `reservedIds`. Both take the union of `SURFACE_ROUTES` keys and
+  `APP_DATA_IDS`, from one shared expression rather than two hand-written lists.
+- `apps/epicenter/src/app-catalog.test.ts` gains a case: a folder named
+  `local-mail` is not a catalog member.
+
+No behavior a person can see changes. This closes ADR-0202's one named latent
+collision before a later widening can reach it.
+
+### Wave 7: one override for one root, and credentials stay at the app root
+
+`LOCAL_MAIL_DIR`, `LOCAL_BOOKS_DIR`, and `--data-dir` are gone. Two overrides
+survive that move a credentials file out from under the app root:
+`LOCAL_MAIL_TOKEN_FILE` and `LOCAL_BOOKS_TOKEN_FILE`. They contradict ADR-0201's
+"credentials stay at the app root" and "one override for one root, not one per
+app", and the reason to take them seriously is that their producers are test
+harnesses rather than people.
+
+- Delete both variables, their `config.ts` resolution, their CLI help lines, and
+  their `AGENTS.md` and `README.md` entries in both apps.
+- Retarget every producer to `EPICENTER_DATA_DIR` pointed at a temp root, which
+  is the shape `apps/local-books/test/helpers.ts` and Local Mail's `tempDir()`
+  already use, and which additionally proves the app looks where the root says.
+  Producers today: `apps/local-mail/src/cli.test.ts`,
+  `apps/local-books/src/token-store.test.ts`,
+  `apps/local-books/test/cli-e2e.test.ts`,
+  `apps/local-books/test/grill-e2e.test.ts`,
+  `apps/local-books/test/mcp-server.test.ts`, and
+  `apps/local-books/test/demo-e2e.ts`.
+- `LOCAL_MAIL_ACCOUNT` and `LOCAL_BOOKS_QB_REALM` stay. They select a partition,
+  not a path, and nothing about them contradicts either record.
+
+Honest cost, stated because it is the one thing here a person could notice:
+Local Books' `AGENTS.md` currently advertises the token override for "any custom
+location". Deleting it removes a documented capability from an app with no
+released install, and the replacement is moving the whole root.
+
 ## Explicitly out of scope
 
 - Any migration, relocation, or deletion of a pre-record directory in either
@@ -218,6 +273,21 @@ Breaking: every connected account reconnects and re-pulls once.
   (ADR-0197).
 - Extracting `@epicenter/mirror`. Deferred to a third provider; two prototypes on
   open branches reached that conclusion independently.
+- Extracting the two apps' near-identical OAuth plumbing. Deferred to a third
+  composed engine with a loopback provider, and then as a library the app calls,
+  never a service it registers with (ADR-0109, ADR-0202).
+- Any host-side account surface: a connected-provider registry, a shared
+  refresh-token store, a cross-app connect or disconnect, or an
+  `epicenter.accounts` namespace. A read-only Home view over each engine's
+  existing status verb is the sanctioned escape hatch and is built only when a
+  person asks for it (ADR-0202).
+- A directory for an admitted static app, and any widening of `APP_DATA_IDS`.
+  Promotion to a composed engine is a reviewable change to a closed union, not a
+  wave here.
+- Rebuilding ADR-0074's synced secret vault. Its primitives are deleted from the
+  tree, its scope is now brought values only, and Whispering's device-local
+  plaintext facade is the correct shipped degenerate until a product answer
+  arrives.
 
 ## Done means
 
@@ -245,3 +315,18 @@ Breaking: every connected account reconnects and re-pulls once.
 - The host and the CLI, run on one machine, operate on the same mailbox:
   `local-mail status` from a terminal while Epicenter is open reports the
   artifact the host is syncing.
+- `git grep -E "LOCAL_(MAIL|BOOKS)_TOKEN_FILE"` returns nothing, and both apps'
+  test harnesses isolate themselves with `EPICENTER_DATA_DIR` alone.
+- A catalog folder named `local-mail` or `local-books` is refused by admission,
+  proved by a case in `apps/epicenter/src/app-catalog.test.ts`, and the reserved
+  set is one expression that both admission call sites read.
+- No host code holds a third-party grant.
+  `git grep -iEl "gmail\.modify|quickbooks|intuit|accounts\.google\.com" -- apps packages`
+  outside the two engines finds only the landing pages and
+  `packages/constants/src/provider-credentials.ts`, which resolves an app's own
+  client credentials by name and states in its own header that no package
+  accretes knowledge of every app's providers. Note that Epicenter's own OAuth
+  in `packages/auth` and `packages/server` is a different credential (ADR-0188
+  distinguishes them) and is not what this criterion is about.
+- The `epicenter` handle in `packages/app/src/index.ts` still has exactly `data`,
+  `recording`, and `transcription`. No `accounts`, no `storage`, no `providers`.
