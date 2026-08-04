@@ -95,11 +95,13 @@ export async function createDesktopEpicenterOwner({
 		switch (operation.kind) {
 			case 'table-create':
 				return operation.rowId === undefined
-					? bindSerializedTable(epicenter, operation.definition).create(operation.fields)
-						: (bindSerializedTable(epicenter, operation.definition).create as unknown as (
-								rowId: string,
-								fields: Record<string, unknown>,
-							) => Promise<unknown>)(operation.rowId, operation.fields);
+					? bindSerializedTable(epicenter, operation.definition).create(
+							operation.fields,
+						)
+					: bindSerializedTable(epicenter, operation.definition).create(
+							operation.rowId,
+							operation.fields,
+						);
 			case 'table-get':
 				return bindSerializedTable(epicenter, operation.definition).get(
 					operation.address.rowId,

@@ -237,7 +237,18 @@ export function createTableReadMethods<TDefinition extends TableDefinition>(
  * value the typed handle on the other side already knows how to read.
  */
 export type UntypedTableLens = {
+	/**
+	 * Both doors, because a host proxies for a surface that has both.
+	 *
+	 * A chosen id is the only way an application reaches a singleton, and every
+	 * proxied surface (the browser page, the desktop surface) creates one at
+	 * boot. Declaring one door here made both RPC hosts cast their way to the
+	 * other, and a cast to a two-parameter function does not give a
+	 * one-parameter forwarder a second parameter: the id arrived as the fields
+	 * and the fields were dropped.
+	 */
 	create(fields: Record<string, unknown>): Promise<unknown>;
+	create(rowId: string, fields: Record<string, unknown>): Promise<unknown>;
 	get(rowId: string): Promise<unknown>;
 	patch(rowId: string, changes: Record<string, unknown>): Promise<unknown>;
 	delete(rowId: string): Promise<boolean>;
@@ -284,7 +295,13 @@ export function bindSerializedTable(
 		}),
 	)[definition.table] as InternalTableLens<TableDefinition>;
 	return {
-		create: (fields) => bound.create(fields),
+		create: (
+			first: string | Record<string, unknown>,
+			second?: Record<string, unknown>,
+		) =>
+			typeof first === 'string'
+				? bound.create(first, second as Record<string, unknown>)
+				: bound.create(first),
 		get: (rowId) => bound.get(rowId),
 		patch: (rowId, changes) => bound.patch(rowId, changes),
 		delete: (rowId) => bound.delete(rowId),

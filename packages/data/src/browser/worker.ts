@@ -592,10 +592,10 @@ export function serveBrowserEpicenter(
 					? bindSerializedTable(store.epicenter, operation.definition).create(
 							operation.fields,
 						)
-						: (bindSerializedTable(store.epicenter, operation.definition).create as unknown as (
-								rowId: string,
-								fields: Record<string, unknown>,
-							) => Promise<unknown>)(operation.rowId, operation.fields);
+					: bindSerializedTable(store.epicenter, operation.definition).create(
+							operation.rowId,
+							operation.fields,
+						);
 			case 'table-get':
 				return bindSerializedTable(store.epicenter, operation.definition).get(
 					operation.address.rowId,

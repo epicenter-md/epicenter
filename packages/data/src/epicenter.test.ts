@@ -20,6 +20,7 @@ import {
 	defineLens,
 	defineTable,
 	optional,
+	serializeTableDefinition,
 	type TableInvalidation,
 } from '@epicenter/lens';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
@@ -28,7 +29,11 @@ import { createLogger, type Logger, memorySink } from 'wellcrafted/logger';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 
 import { openBunEpicenter } from './bun.js';
-import { createEpicenter, createTableReadMethods } from './epicenter.js';
+import {
+	bindSerializedTable,
+	createEpicenter,
+	createTableReadMethods,
+} from './epicenter.js';
 import { openReplica } from './replica/index.js';
 
 const TEST_NAMESPACE = 'so.epicenter.tests';
@@ -668,6 +673,44 @@ test('lenses with different namespaces isolate the same table name', async () =>
 
 	expect(expectOk(await first.notes.get(row.id))).toEqual(row);
 	expect(expectOk(await second.notes.get(row.id))).toBeUndefined();
+
+	await epicenter[Symbol.asyncDispose]();
+	rawDatabase.close();
+});
+
+/**
+ * The wire-named handle both RPC hosts route through.
+ *
+ * A chosen id is how every proxied surface reaches its singleton at boot, so a
+ * host that cannot forward one cannot start an app. This exercises the seam
+ * rather than either host, because the browser worker and the desktop owner
+ * differ only in how the operation arrived.
+ */
+test('a serialized table creates at a chosen id and refuses a second one', async () => {
+	const { rawDatabase, epicenter } = setup();
+	const untyped = bindSerializedTable(
+		epicenter,
+		serializeTableDefinition(TEST_NAMESPACE, 'notes', notesDefinition),
+	);
+
+	expect(await untyped.create('app', { title: 'named', rank: 1 })).toEqual({
+		id: 'app',
+		title: 'named',
+		rank: 1,
+	});
+	expect(await untyped.get('app')).toMatchObject({ data: { title: 'named' } });
+
+	// The minted door still works, and still mints rather than reusing.
+	const minted = (await untyped.create({ title: 'minted', rank: 2 })) as {
+		id: string;
+	};
+	expect(minted.id).not.toBe('app');
+
+	// create means create on this path too, so a live row is refused instead of
+	// being merged into by the patch a create lowers to.
+	await expect(
+		untyped.create('app', { title: 'second', rank: 3 }),
+	).rejects.toThrow('already exists');
 
 	await epicenter[Symbol.asyncDispose]();
 	rawDatabase.close();
