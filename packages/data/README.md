@@ -40,11 +40,11 @@ row_facts row
     └── { "title": "Draft", "status": "open" }
 ```
 
-That does not make the complete row the logical conflict unit. `update` lowers
+That does not make the complete row the logical conflict unit. `patch` lowers
 the supplied top-level fields into a patch:
 
 ```txt
-update(id, { title: "Final" })
+patch(id, { title: "Final" })
               |
               v
 { set: { title: "Final" }, unset: [] }
@@ -142,7 +142,7 @@ const exampleLens = defineLens({
 
 const profiles = epicenter.bind(exampleLens).tables.profiles;
 
-await profiles.update(id, { value: nextProfile });
+await profiles.patch(id, { value: nextProfile });
 ```
 
 The row ID remains structural. The `value` assignment replaces the complete

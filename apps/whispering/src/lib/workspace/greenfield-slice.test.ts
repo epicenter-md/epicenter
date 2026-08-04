@@ -98,7 +98,7 @@ test('two borrowed lenses compose recordings CRUD with application ordering', as
 			)[0],
 		).toEqual(newer);
 		expect(
-			expectOk(await recordings.update(older.id, { title: 'updated' }))?.title,
+			expectOk(await recordings.patch(older.id, { title: 'updated' }))?.title,
 		).toBe('updated');
 		expect(await recordings.delete(newer.id)).toBe(true);
 		expect(expectOk(await recordings.get(newer.id))).toBeUndefined();

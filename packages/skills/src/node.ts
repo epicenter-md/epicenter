@@ -104,7 +104,7 @@ export async function importSkillsFromDisk({
 		const existing = skillsBySourceId.get(sourceId);
 		let skill: Skill;
 		if (existing) {
-			const repaired = await data.tables.skills.update(existing.id, input);
+			const repaired = await data.tables.skills.patch(existing.id, input);
 			if (repaired.error !== null || repaired.data === undefined) {
 				throw new Error(
 					repaired.error?.message ?? `Skill '${existing.id}' disappeared`,
@@ -241,7 +241,7 @@ async function repairReference(
 	reference: { id: string },
 	path: string,
 ): Promise<Reference> {
-	const repaired = await data.tables.skillReferences.update(reference.id, {
+	const repaired = await data.tables.skillReferences.patch(reference.id, {
 		path,
 		updatedAt: InstantString.now(),
 	});

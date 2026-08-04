@@ -59,7 +59,7 @@ export function createFolders({
 		},
 
 		async rename(folderId: FolderId, name: string): Promise<void> {
-			const result = await honeycrisp.tables.folders.update(folderId, { name });
+			const result = await honeycrisp.tables.folders.patch(folderId, { name });
 			if (result.error !== null) throw result.error;
 			await refresh();
 		},

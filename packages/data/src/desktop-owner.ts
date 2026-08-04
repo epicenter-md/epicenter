@@ -103,7 +103,7 @@ export async function createDesktopEpicenterOwner({
 					operation.address.rowId,
 				);
 			case 'table-update':
-				return bindSerializedTable(epicenter, operation.definition).update(
+				return bindSerializedTable(epicenter, operation.definition).patch(
 					operation.address.rowId,
 					// The carrier named the two halves because JSON cannot hold an
 					// `undefined`; the lens takes one patch, so they are put back

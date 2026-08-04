@@ -69,7 +69,7 @@ test('WebView surfaces share one replica and state survives restart', async () =
 		});
 		expect(
 			(
-				await firstData.tables.recordings.update(recording.id, {
+				await firstData.tables.recordings.patch(recording.id, {
 					transcript: 'Updated transcript',
 				})
 			).data?.transcript,
@@ -165,7 +165,7 @@ test('unsetting an optional field crosses the JSON carrier', async () => {
 		// `JSON.stringify` drops a key whose value is `undefined`, so a patch that
 		// carried one arrived at the host meaning nothing and the field survived.
 		// The carrier names the two halves for exactly this.
-		const cleared = await data.tables.documents.update(row.id, {
+		const cleared = await data.tables.documents.patch(row.id, {
 			note: undefined,
 		});
 		expect(cleared.error).toBeNull();
@@ -223,7 +223,7 @@ test('a write in one surface invalidates the same lens in another', async () => 
 		writerData.tables.documents.subscribe((invalidation) =>
 			writerInvalidations.push(invalidation),
 		);
-		await writerData.tables.documents.update(created.id, { name: 'Renamed' });
+		await writerData.tables.documents.patch(created.id, { name: 'Renamed' });
 		await waitFor(() => writerInvalidations.length > 0);
 		expect(writerInvalidations).toEqual([
 			{ scope: 'rows', rowIds: [created.id] },

@@ -196,12 +196,12 @@ export async function openDesktopEpicenter({
 					address,
 				});
 			},
-			update<const TChanges extends Record<string, unknown>>(
+			patch<const TChanges extends Record<string, unknown>>(
 				rowId: string,
 				patch: TChanges & ConstrainedUpdate<TDefinition, TChanges>,
 			) {
 				const address = rowAddress(namespace, table, rowId);
-				return request<Awaited<ReturnType<TableLens<TDefinition>['update']>>>({
+				return request<Awaited<ReturnType<TableLens<TDefinition>['patch']>>>({
 					kind: 'table-update',
 					definition: serialized,
 					address,

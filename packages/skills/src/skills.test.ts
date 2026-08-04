@@ -78,7 +78,7 @@ test('a stricter Skills lens exposes nonconformance until typed update repairs i
 		]);
 
 		const repaired = expectOk(
-			await skills.tables.skills.update(oldSkill.id, {
+			await skills.tables.skills.patch(oldSkill.id, {
 				sourceId: 'agentskills-writing-voice',
 			}),
 		);

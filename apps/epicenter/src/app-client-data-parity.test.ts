@@ -149,7 +149,7 @@ test('the published client drives every data operation through the real host', a
 		'get',
 		'scan',
 		'subscribe',
-		'update',
+		'patch',
 	]);
 	expect(Object.keys(sortOrder).sort()).toEqual([
 		'get',
@@ -183,17 +183,17 @@ test('the published client drives every data operation through the real host', a
 	expect(read.error).toBeNull();
 	expect(read.data).toEqual({ id: created.id, title: 'First' });
 
-	// ── update, including unsetting one optional field ───────────────────
-	const updated = await notes.update(created.id, { title: 'Renamed' });
+	// ── patch, including unsetting one optional field ────────────────────
+	const updated = await notes.patch(created.id, { title: 'Renamed' });
 	expect(updated.error).toBeNull();
 	expect(updated.data?.title).toBe('Renamed');
-	const withBody = await notes.update(created.id, { body: 'note body' });
+	const withBody = await notes.patch(created.id, { body: 'note body' });
 	expect(withBody.data?.body).toBe('note body');
-	const withoutBody = await notes.update(created.id, { body: undefined });
+	const withoutBody = await notes.patch(created.id, { body: undefined });
 	expect(withoutBody.data).toEqual({ id: created.id, title: 'Renamed' });
 
 	// A row the host does not hold is `undefined`, not a failure.
-	const missing = await notes.update('zzzzzzzzzzzzzzzzzzzzzzzz', {
+	const missing = await notes.patch('zzzzzzzzzzzzzzzzzzzzzzzz', {
 		title: 'nobody',
 	});
 	expect(missing.error).toBeNull();

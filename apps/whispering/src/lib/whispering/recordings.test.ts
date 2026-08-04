@@ -126,7 +126,7 @@ test('CRUD stays live and recording order is newest first', async () => {
 			newer.id,
 			older.id,
 		]);
-		expectOk(await context.recordings.update(older.id, { title: 'updated' }));
+		expectOk(await context.recordings.patch(older.id, { title: 'updated' }));
 		expect(context.recordings.get(older.id)?.title).toBe('updated');
 		expectOk(await context.recordings.delete(newer.id));
 		expect(context.recordings.get(newer.id)).toBeUndefined();

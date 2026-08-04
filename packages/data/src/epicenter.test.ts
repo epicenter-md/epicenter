@@ -195,13 +195,13 @@ test('table CRUD lowers undefined and scan returns stable row-ID order', async (
 		title: 'first',
 		rank: 1,
 	});
-	expect(expectOk(await notes.update(third.id, { note: undefined }))).toEqual({
+	expect(expectOk(await notes.patch(third.id, { note: undefined }))).toEqual({
 		id: third.id,
 		title: 'third',
 		rank: 2,
 	});
 	expect(
-		expectOk(await notes.update('zzzzzzzzzzzzzzzzzzzzzzzz', { rank: 3 })),
+		expectOk(await notes.patch('zzzzzzzzzzzzzzzzzzzzzzzz', { rank: 3 })),
 	).toBeUndefined();
 
 	const nullLabel = await notes.create({

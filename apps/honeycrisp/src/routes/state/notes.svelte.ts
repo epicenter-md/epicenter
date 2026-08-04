@@ -53,7 +53,7 @@ export function createNotes({
 		noteId: NoteId,
 		changes: TChanges & ConstrainedUpdate<typeof notesTable, TChanges>,
 	): Promise<void> {
-		const result = await honeycrisp.tables.notes.update(noteId, changes);
+		const result = await honeycrisp.tables.notes.patch(noteId, changes);
 		if (result.error !== null) throw result.error;
 		await refresh();
 	}

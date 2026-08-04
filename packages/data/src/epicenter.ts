@@ -64,9 +64,9 @@ export type TableEntry<TDefinition extends TableDefinition> = Result<
 export type TableLens<TDefinition extends TableDefinition> = {
 	create(fields: CreateInputFor<TDefinition>): Promise<RowFor<TDefinition>>;
 	get(id: string): Promise<Result<RowFor<TDefinition> | undefined, ReadError>>;
-	update<const TChanges extends Record<string, unknown>>(
+	patch<const TChanges extends Record<string, unknown>>(
 		id: string,
-		patch: TChanges & ConstrainedUpdate<TDefinition, TChanges>,
+		changes: TChanges & ConstrainedUpdate<TDefinition, TChanges>,
 	): Promise<Result<RowFor<TDefinition> | undefined, ReadError>>;
 	delete(id: string): Promise<boolean>;
 	/**
@@ -242,7 +242,7 @@ export function createTableReadMethods<TDefinition extends TableDefinition>(
 export type UntypedTableLens = {
 	create(fields: Record<string, unknown>): Promise<unknown>;
 	get(rowId: string): Promise<unknown>;
-	update(rowId: string, patch: Record<string, unknown>): Promise<unknown>;
+	patch(rowId: string, changes: Record<string, unknown>): Promise<unknown>;
 	delete(rowId: string): Promise<boolean>;
 	entriesPage(after?: string): Promise<unknown>;
 	openDocument(rowId: string): Promise<RowDocument>;
@@ -297,7 +297,7 @@ export function bindSerializedTable(
 	return {
 		create: (fields) => bound.create(fields),
 		get: (rowId) => bound.get(rowId),
-		update: (rowId, patch) => bound.update(rowId, patch),
+		patch: (rowId, changes) => bound.patch(rowId, changes),
 		delete: (rowId) => bound.delete(rowId),
 		entriesPage: (after) => bound[readTableEntriesPage](after),
 		openDocument: (rowId) => bound.openDocument(rowId),
@@ -499,7 +499,7 @@ export function createEpicenter({
 					? Ok(undefined)
 					: compiled.project(address, stored.data);
 			},
-			async update(id: string, input: Record<string, unknown>) {
+			async patch(id: string, input: Record<string, unknown>) {
 				requireOpen();
 				const patch = compiled.normalizeUpdate(input);
 				const address = addressOf(id);

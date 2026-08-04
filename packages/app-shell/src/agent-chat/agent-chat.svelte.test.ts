@@ -71,7 +71,7 @@ function createFakeChat() {
 			for (const listener of listeners) listener();
 			return row;
 		},
-		async update(id: string, patch: Partial<Conversation>) {
+		async patch(id: string, patch: Partial<Conversation>) {
 			updates.push({ id, patch });
 			const existing = rows.get(id);
 			if (existing) rows.set(id, { ...existing, ...patch });

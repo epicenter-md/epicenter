@@ -77,7 +77,7 @@ test('offline Whispering scalar edits converge in both directions', async () => 
 			'Authored offline',
 		);
 
-		await secondRecordings.update(recording.id, {
+		await secondRecordings.patch(recording.id, {
 			title: 'Edited on second device',
 		});
 		expect((await second.attachSync(attachment)).error).toBeNull();

@@ -603,7 +603,7 @@ export function serveBrowserEpicenter(
 				return bindSerializedTable(
 					store.epicenter,
 					operation.definition,
-				).update(operation.address.rowId, operation.patch);
+				).patch(operation.address.rowId, operation.patch);
 			case 'table-delete':
 				return bindSerializedTable(
 					store.epicenter,

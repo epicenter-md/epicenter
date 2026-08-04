@@ -101,7 +101,7 @@ export function createSkillsState({ skills }: { skills: SkillsData }) {
 			return skill.id;
 		},
 		async updateSkill(id: string, updates: SkillMetadataUpdate): Promise<void> {
-			const result = await skills.tables.skills.update(id, {
+			const result = await skills.tables.skills.patch(id, {
 				...updates,
 				updatedAt: InstantString.now(),
 			});

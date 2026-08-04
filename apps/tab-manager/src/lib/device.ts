@@ -62,7 +62,7 @@ export async function registerDevice(
 	const { rows } = await data.tables.devices.scan();
 	const existing = rows.find((device) => device.nodeId === nodeId);
 	if (existing) {
-		const updated = await data.tables.devices.update(existing.id, {
+		const updated = await data.tables.devices.patch(existing.id, {
 			lastSeen: InstantString.now(),
 		});
 		if (updated.error !== null) throw updated.error;

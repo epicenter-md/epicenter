@@ -1,7 +1,7 @@
 /**
  * Compile-time tests for the public typed Data API.
  *
- * These assertions prove row inference, create/update inputs, and the
+ * These assertions prove row inference, create/patch inputs, and the
  * universal row-document capability directly from inert definitions.
  */
 import { field } from '@epicenter/field';
@@ -48,14 +48,14 @@ const bound = epicenter.bind(
 await bound.tables.ordinary.openDocument('aaaaaaaaaaaaaaaaaaaaaaaa');
 
 await bound.tables.ordinary.create({ title: 'valid' });
-await bound.tables.ordinary.update('aaaaaaaaaaaaaaaaaaaaaaaa', {
+await bound.tables.ordinary.patch('aaaaaaaaaaaaaaaaaaaaaaaa', {
 	note: undefined,
 });
 
 // @ts-expect-error Row ids are minted by the runtime.
 await bound.tables.ordinary.create({ id: 'caller-id', title: 'invalid' });
 
-await bound.tables.ordinary.update('aaaaaaaaaaaaaaaaaaaaaaaa', {
+await bound.tables.ordinary.patch('aaaaaaaaaaaaaaaaaaaaaaaa', {
 	// @ts-expect-error Required fields cannot be removed with undefined.
 	title: undefined,
 });

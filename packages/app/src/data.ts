@@ -108,9 +108,9 @@ export type TableHandle<TDefinition extends TableDefinition> = {
 	get(
 		rowId: string,
 	): Promise<Result<RowFor<TDefinition> | undefined, DataReadError>>;
-	update<const TChanges extends Record<string, unknown>>(
+	patch<const TChanges extends Record<string, unknown>>(
 		rowId: string,
-		patch: TChanges & ConstrainedUpdate<TDefinition, TChanges>,
+		changes: TChanges & ConstrainedUpdate<TDefinition, TChanges>,
 	): Promise<Result<RowFor<TDefinition> | undefined, DataReadError>>;
 	/** `false` when the row was already gone, which is not a failure. */
 	delete(rowId: string): Promise<Result<boolean, DataOperationError>>;
@@ -493,9 +493,9 @@ async function bind<
 				>({ kind: 'table-get', definition: wire, address: addressOf(rowId) });
 				return answered.error !== null ? Err(answered.error) : answered.data;
 			},
-			async update<const TChanges extends Record<string, unknown>>(
+			async patch<const TChanges extends Record<string, unknown>>(
 				rowId: string,
-				patch: TChanges & ConstrainedUpdate<TDefinition, TChanges>,
+				changes: TChanges & ConstrainedUpdate<TDefinition, TChanges>,
 			) {
 				const answered = await call<
 					Result<RowFor<TDefinition> | undefined, NonconformingRowError>
@@ -503,7 +503,7 @@ async function bind<
 					kind: 'table-update',
 					definition: wire,
 					address: addressOf(rowId),
-					...splitUpdate(patch),
+					...splitUpdate(changes),
 				});
 				return answered.error !== null ? Err(answered.error) : answered.data;
 			},

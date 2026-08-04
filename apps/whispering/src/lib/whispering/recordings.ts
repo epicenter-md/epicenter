@@ -68,10 +68,10 @@ export type WhisperingRecordings = {
 		>
 	>;
 	create(value: Omit<Recording, 'id' | 'uploadedAt'>): Promise<Recording>;
-	update(
+	patch(
 		id: Recording['id'],
 		partial: Partial<Omit<Recording, 'id' | 'audioBlobId' | 'uploadedAt'>>,
-	): ReturnType<TableLens<typeof recordingsTable>['update']>;
+	): ReturnType<TableLens<typeof recordingsTable>['patch']>;
 	delete(
 		toDelete: Recording['id'] | Recording['id'][],
 	): Promise<Result<void, RecordingAudioError | RecordingDeletionError>>;
@@ -140,7 +140,7 @@ export function createWhisperingRecordings({
 	const audio = createRecordingAudio({
 		blobs,
 		updateUploadedAt: async (id, uploadedAt) => {
-			const result = await table.update(id, {
+			const result = await table.patch(id, {
 				uploadedAt,
 			});
 			// Write the marker through to the cache before this workflow resolves,
@@ -341,7 +341,7 @@ export function createWhisperingRecordings({
 			void refresh();
 			return created;
 		},
-		async update(id, partial) {
+		async patch(id, partial) {
 			// Structural typing lets a whole row flow in as the partial, so drop
 			// the protected keys at runtime: the audio workflows stay the only
 			// writer of uploadedAt and audio identity stays immutable.
@@ -351,7 +351,7 @@ export function createWhisperingRecordings({
 				uploadedAt: _uploadedAt,
 				...changes
 			} = partial as Partial<Recording>;
-			const result = await table.update(id, changes);
+			const result = await table.patch(id, changes);
 			if (result.error === null && result.data !== undefined) {
 				applyRowToCache(result.data as Recording);
 			}

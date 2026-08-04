@@ -117,7 +117,7 @@
 			return;
 		}
 
-		const { error } = await app.recordings.update(recording.id, {
+		const { error } = await app.recordings.patch(recording.id, {
 			title: snapshot.title,
 			recordedAt: snapshot.recordedAt,
 			recordedAtZone: snapshot.recordedAtZone,
@@ -129,7 +129,7 @@
 		});
 
 		if (error) {
-			report.error({ title: 'Could not update recording', cause: error });
+			report.error({ title: 'Could not patch recording', cause: error });
 			return;
 		}
 

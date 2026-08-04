@@ -195,7 +195,7 @@ test('page CRUD, subscriptions, scans, and values round-trip through its worker'
 	await waitFor(() => invalidated.includes(created.id));
 	expect(expectOk(await data.tables.notes.get(created.id))).toEqual(created);
 	expectOk(
-		await data.tables.notes.update(created.id, {
+		await data.tables.notes.patch(created.id, {
 			title: 'Updated',
 			detail: 'RPC',
 		}),

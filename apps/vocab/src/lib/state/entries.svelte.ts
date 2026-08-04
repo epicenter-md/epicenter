@@ -53,12 +53,12 @@ export function createEntriesState(vocab: VocabData) {
 
 		/** Change an entry's acquisition stage. */
 		setStage(id: string, stage: Entry['stage']) {
-			void vocab.tables.entries.update(id, { stage });
+			void vocab.tables.entries.patch(id, { stage });
 		},
 
 		/** Edit an entry's note. Note is human-owned: only ever written from user edits. */
 		setNote(id: string, note: string) {
-			void vocab.tables.entries.update(id, { note });
+			void vocab.tables.entries.patch(id, { note });
 		},
 
 		/** Remove an entry from the pool. */

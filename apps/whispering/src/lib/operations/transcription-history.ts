@@ -33,9 +33,9 @@ export type TranscriptionSuccess = {
 };
 
 /**
- * Attempt one transcription-related recording update without letting storage,
+ * Attempt one transcription-related recording patch without letting storage,
  * transport, or release-lens failures escape the operation's Result contract.
- * The current workspace update may apply a patch before its row projection
+ * The current workspace patch may apply before its row projection
  * fails, so every non-success is described conservatively as an unconfirmed
  * history save rather than a definitive failed write.
  */
@@ -45,7 +45,7 @@ export async function saveRecordingHistory(
 	changes: Partial<Omit<Recording, 'id' | 'audioBlobId'>>,
 ): Promise<Result<void, RecordingHistoryError>> {
 	const { data: update, error: updateError } = await tryAsync({
-		try: () => app.recordings.update(recordingId, changes),
+		try: () => app.recordings.patch(recordingId, changes),
 		catch: (cause) =>
 			RecordingHistoryError.SaveUnconfirmed({ recordingId, cause }),
 	});

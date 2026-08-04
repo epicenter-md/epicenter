@@ -92,7 +92,7 @@ export function createWhisperingRecipes({
 			const { id: sourceId, ...value } = recipe;
 			const canonicalId = canonicalIdBySourceId.get(sourceId);
 			if (canonicalId) {
-				const result = await table.update(canonicalId, value);
+				const result = await table.patch(canonicalId, value);
 				if (result.error !== null) throw result.error;
 			} else {
 				await table.create({ sourceId, ...value });

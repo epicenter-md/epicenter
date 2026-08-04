@@ -296,7 +296,7 @@ export async function createHomeHost(
 	 */
 	const touchConversationRow = async (content: string) => {
 		const now = InstantString.now();
-		const result = await conversations.update(activeConversation.id, {
+		const result = await conversations.patch(activeConversation.id, {
 			title:
 				activeConversation.title === 'New Chat'
 					? content.slice(0, 50)

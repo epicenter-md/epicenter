@@ -162,12 +162,12 @@ export function createAgentChatState({
 		})();
 
 	/** Patch a conversation row and bump its recency in one write. */
-	function updateConversation(
+	function patchConversation(
 		conversationId: ConversationId,
 		patch: Partial<Omit<Conversation, 'id'>>,
 	) {
 		void table
-			.update(conversationId, {
+			.patch(conversationId, {
 				...patch,
 				updatedAt: InstantString.now(),
 			})
@@ -301,14 +301,14 @@ export function createAgentChatState({
 				return currentModel;
 			},
 			set model(value: string) {
-				updateConversation(conversationId, { model: value });
+				patchConversation(conversationId, { model: value });
 			},
 
 			/** Reset to the app's default model (the model-gap's "Use default"). The
 			 * default is the factory's `defaultModel`, owned here so a thread needn't be
 			 * told it a second time alongside the registry that already holds it. */
 			useDefaultModel() {
-				updateConversation(conversationId, { model: defaultModel });
+				patchConversation(conversationId, { model: defaultModel });
 			},
 
 			// ── Chat state (from the loop) ──
@@ -413,9 +413,9 @@ export function createAgentChatState({
 
 				// First user message names a conversation that has no name yet; a
 				// conversation opened with a real title, and every later send, just
-				// bumps recency (updateConversation always writes updatedAt).
+				// bumps recency (patchConversation always writes updatedAt).
 				const currentTitle = metadata?.title ?? UNTITLED;
-				updateConversation(conversationId, {
+				patchConversation(conversationId, {
 					title: currentTitle === UNTITLED ? text.slice(0, 50) : currentTitle,
 				});
 			},
