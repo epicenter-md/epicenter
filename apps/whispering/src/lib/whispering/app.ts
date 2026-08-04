@@ -189,56 +189,40 @@ function createWhisperingSettings({
 	const settingsTable = data.settings;
 	const fieldName = settingFieldName;
 
-	async function read<TKey extends SettingKey>(key: TKey) {
-		const result = await settingsTable.get(WHISPERING_SETTINGS_ROW_ID);
-		if (result.error !== null || result.data === undefined) return clone(defaults[key]);
-		return clone(result.data[fieldName(key) as keyof typeof result.data] ?? defaults[key]);
-	}
+	type SettingsRow = Record<string, unknown>;
+
+	const project = <TKey extends SettingKey>(row: SettingsRow, key: TKey) =>
+		clone(row[fieldName(key)] ?? defaults[key]);
 
 	/**
-	 * Read every setting once, for boot and for an explicit reload.
+	 * Read the row once and install every setting from it.
 	 *
-	 * Still batched: at first paint nothing is known yet, so thirty-seven reads
-	 * issued together beat thirty-seven rounds of the same work.
+	 * One row holds every setting now (ADR-0206), so one read answers all of
+	 * them and there is nothing a per-key read could learn that this does not.
+	 * Reading per key would issue one whole-row read per declared setting, on
+	 * boot and again on every invalidation, and on the worker and desktop paths
+	 * each of those is a round trip.
+	 *
+	 * Per-key generations still decide what lands: a key whose generation moved
+	 * while this read was in flight has a newer local write and keeps it.
 	 */
 	async function refreshAll(): Promise<void> {
 		const started = new Map(keys.map((key) => [key, bumpGeneration(key)]));
 		const existing = await settingsTable.get(WHISPERING_SETTINGS_ROW_ID);
 		if (existing.error !== null) throw existing.error;
-		if (existing.data === undefined) {
-			await settingsTable.create(
+		const row: SettingsRow =
+			existing.data ??
+			(await settingsTable.create(
 				WHISPERING_SETTINGS_ROW_ID,
 				Object.fromEntries(
 					keys.map((key) => [fieldName(key), defaults[key]]),
 				) as never,
-			);
-		}
-		const next = await Promise.all(
-			keys.map(async (key) => [key, await read(key)] as const),
-		);
+			));
 		if (isReleased()) return;
-		for (const [key, value] of next) {
+		for (const key of keys) {
 			if (readGenerations.get(key) !== started.get(key)) continue;
-			values.set(key, value);
+			values.set(key, project(row, key));
 		}
-		loadError = null;
-		notify();
-	}
-
-	/**
-	 * Re-read one setting, because one setting is what moved.
-	 *
-	 * A table invalidation names the table that changed, so
-	 * the honest response is to re-read that handle. Re-reading all thirty-seven
-	 * on every change was thirty-seven reads per keystroke-sized edit, and it
-	 * scaled with how many settings exist rather than with what happened.
-	 */
-	async function refreshOne(key: SettingKey): Promise<void> {
-		const generation = bumpGeneration(key);
-		const value = await read(key);
-		if (isReleased()) return;
-		if (readGenerations.get(key) !== generation) return;
-		values.set(key, value);
 		loadError = null;
 		notify();
 	}
@@ -259,8 +243,11 @@ function createWhisperingSettings({
 		);
 	};
 
+	// One row moved, so one read answers it. The invalidation names the row and
+	// not which field changed, which is exactly why fanning out per key would
+	// re-read the same row once per setting.
 	const stopValues = settingsTable.subscribe(() =>
-		keys.forEach((key) => inBackground(refreshOne(key))),
+		inBackground(refreshAll()),
 	);
 	const ready = refreshAll();
 	const settings: WhisperingSettings = {
