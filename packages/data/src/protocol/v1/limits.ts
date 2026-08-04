@@ -38,8 +38,8 @@ export type ScalarSyncLimits = JsonLimits & {
 	maxNamespaceBytes: number;
 	/** Maximum UTF-8 bytes of a table key. */
 	maxTableKeyBytes: number;
-	/** Maximum UTF-8 bytes of a value key. */
-	maxValueKeyBytes: number;
+	/** Maximum UTF-8 bytes of a row id. */
+	maxRowIdBytes: number;
 	/** Maximum UTF-8 bytes of an opaque authority-lifetime identity. */
 	maxLifetimeBytes: number;
 	/** Maximum UTF-8 bytes of a top-level field key inside a row payload. */
@@ -100,7 +100,7 @@ const SUBMISSION_ENVELOPE_SKELETON = utf8ByteLength(
 );
 const PARKED_SKELETON = utf8ByteLength(
 	canonicalize({
-		address: { kind: 'row', namespace: '', rowId: 'a'.repeat(24), table: '' },
+		address: { namespace: '', tableName: '', rowId: 'a' },
 		code: 'fact-too-large',
 		limitBytes: Number.MAX_SAFE_INTEGER,
 		measuredBytes: Number.MAX_SAFE_INTEGER,
@@ -185,7 +185,7 @@ const POSITIVE_LIMIT_KEYS = [
 	'jsonDepth',
 	'maxNamespaceBytes',
 	'maxTableKeyBytes',
-	'maxValueKeyBytes',
+	'maxRowIdBytes',
 	'maxLifetimeBytes',
 	'maxFieldKeyBytes',
 	'maxEncodedFactBytes',

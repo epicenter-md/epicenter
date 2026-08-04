@@ -20,7 +20,7 @@
  */
 
 import { afterEach, expect, test } from 'bun:test';
-import { defineLens, defineTable, defineValue, field } from '@epicenter/lens';
+import { defineLens, defineTable, field } from '@epicenter/lens';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 
 import { data } from './data.js';
@@ -30,7 +30,6 @@ const lens = defineLens({
 	tables: {
 		notes: defineTable({ fields: { title: field.string() } }),
 	},
-	values: {},
 });
 
 /** A second contract, because one app may declare more than one namespace. */
@@ -38,8 +37,8 @@ const otherLens = defineLens({
 	namespace: 'so.epicenter.app.other.tests',
 	tables: {
 		tags: defineTable({ fields: { label: field.string() } }),
+		settings: defineTable({ fields: { theme: field.string() } }),
 	},
-	values: { 'settings.theme': defineValue({ value: field.string() }) },
 });
 
 /** Every dial succeeds. */
@@ -90,7 +89,7 @@ test('a bind after a failed acquisition opens a new surface instead of replaying
 	expect(host.operations).toEqual(['open']);
 	// A retry is a new surface, never the one the failed bind gave back.
 	expect([...host.surfaceIds]).not.toEqual([...failed.surfaceIds]);
-	await bound.close();
+	await bound[Symbol.asyncDispose]();
 });
 
 test('binds in one document share one host surface until the last one closes', async () => {
@@ -109,14 +108,14 @@ test('binds in one document share one host surface until the last one closes', a
 	expect(host.surfaceIds.size).toBe(1);
 	expect(host.sockets.length).toBe(1);
 
-	await notes.close();
+	await notes[Symbol.asyncDispose]();
 	// One binding letting go is not the document letting go.
 	expect(host.operations).toEqual(['open']);
 	expect(host.sockets[0]?.isClosed).toBeFalse();
 	// Its handles refuse further use rather than reaching a surface it gave up.
-	expect(expectErr(await notes.tables.notes.scan()).name).toBe('DataFailed');
+	expect(expectErr(await notes.notes.scan()).name).toBe('DataFailed');
 
-	await tags.close();
+	await tags[Symbol.asyncDispose]();
 	expect(host.operations).toEqual(['open', 'disconnect']);
 	expect(host.sockets[0]?.isClosed).toBeTrue();
 });
@@ -129,9 +128,9 @@ test('a carrier gap invalidates the handles of every live binding', async () => 
 	const notesScopes: string[] = [];
 	const tagScopes: string[] = [];
 	let themeInvalidations = 0;
-	notes.tables.notes.subscribe((each) => notesScopes.push(each.scope));
-	tags.tables.tags.subscribe((each) => tagScopes.push(each.scope));
-	tags.values['settings.theme'].subscribe(() => {
+	notes.notes.subscribe((each) => notesScopes.push(each.scope));
+	tags.tags.subscribe((each) => tagScopes.push(each.scope));
+	tags.settings.subscribe(() => {
 		themeInvalidations += 1;
 	});
 
@@ -147,8 +146,8 @@ test('a carrier gap invalidates the handles of every live binding', async () => 
 	expect(tagScopes).toEqual(['table']);
 	expect(themeInvalidations).toBe(1);
 
-	await notes.close();
-	await tags.close();
+	await notes[Symbol.asyncDispose]();
+	await tags[Symbol.asyncDispose]();
 });
 
 test('scan returns DataFailed when the host rejects its traversal', async () => {
@@ -165,14 +164,14 @@ test('scan returns DataFailed when the host rejects its traversal', async () => 
 	});
 	const bound = expectOk(await data.bind(lens));
 
-	const error = expectErr(await bound.tables.notes.scan());
+	const error = expectErr(await bound.notes.scan());
 
 	expect(error.name).toBe('DataFailed');
 	if (error.name === 'DataFailed') {
 		expect(error.operation).toBe('table-entries-page');
 	}
 	expect(host.operations).toContain('table-entries-page');
-	await bound.close();
+	await bound[Symbol.asyncDispose]();
 });
 
 /**

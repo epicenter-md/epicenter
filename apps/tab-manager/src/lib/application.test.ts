@@ -93,14 +93,11 @@ function createRuntime(scan: () => Promise<never>) {
 			profile: { nodeId: 'test-node', defaultName: 'Chrome on macOS' },
 			epicenter: {
 				bind: () => ({
-					tables: {
 						devices: table,
 						savedTabs: table,
 						bookmarks: table,
 						toolTrust: table,
 						conversations: table,
-					},
-					values: {},
 				}),
 				syncStatus: { state: 'local', lastError: undefined },
 				subscribeSyncStatus: () => () => {},

@@ -50,7 +50,6 @@ import { DESKTOP_EPICENTER_ROUTE } from '@epicenter/data/desktop';
 import {
 	defineLens,
 	defineTable,
-	defineValue,
 	field,
 	optional,
 	type TableInvalidation,
@@ -66,6 +65,7 @@ import {
 } from './test-home-host.ts';
 
 const TOKEN = 'app-client-data-parity-token';
+const SETTINGS = 'app';
 
 /**
  * The contract, written the way an app author writes one: `@epicenter/lens` and
@@ -78,10 +78,8 @@ const notesContract = defineLens({
 		notes: defineTable({
 			fields: { title: field.string(), body: optional(field.string()) },
 		}),
-	},
-	values: {
-		'settings.sortOrder': defineValue({
-			value: field.select(['newest', 'oldest']),
+		settings: defineTable({
+			fields: { sortOrder: field.select(['newest', 'oldest']) },
 		}),
 	},
 });
@@ -97,7 +95,6 @@ const tagsContract = defineLens({
 	tables: {
 		tags: defineTable({ fields: { label: field.string() } }),
 	},
-	values: {},
 });
 
 /** One page is 100 rows, so 101 is the smallest table that must page twice. */
@@ -137,8 +134,8 @@ test('the published client drives every data operation through the real host', a
 	expect(bindError).toBeNull();
 	if (!bound) return;
 
-	const notes = bound.tables.notes;
-	const sortOrder = bound.values['settings.sortOrder'];
+	const notes = bound.notes;
+	const settings = bound.settings;
 
 	// A new method here means a new operation on the wire that this walk does
 	// not cover. Failing on the shape is what stops that from going unnoticed.
@@ -151,20 +148,23 @@ test('the published client drives every data operation through the real host', a
 		'subscribe',
 		'patch',
 	]);
-	expect(Object.keys(sortOrder).sort()).toEqual([
+	expect(Object.keys(settings).sort()).toEqual([
+		'create',
+		'delete',
+		'entries',
 		'get',
-		'set',
+		'scan',
 		'subscribe',
-		'unset',
+		'patch',
 	]);
-	expect(Object.keys(bound).sort()).toEqual(['close', 'tables', 'values']);
+	expect(Object.keys(bound).sort()).toEqual(['notes', 'settings']);
 
 	// ── Observation: subscribe before anything is written ────────────────
 	const rowInvalidations: TableInvalidation[] = [];
-	let valueInvalidations = 0;
+	let settingsInvalidations = 0;
 	notes.subscribe((invalidation) => rowInvalidations.push(invalidation));
-	sortOrder.subscribe(() => {
-		valueInvalidations += 1;
+	settings.subscribe(() => {
+		settingsInvalidations += 1;
 	});
 	expect(rowInvalidations).toEqual([]);
 
@@ -208,21 +208,17 @@ test('the published client drives every data operation through the real host', a
 		),
 	).toEqual([created.id, created.id, created.id, created.id]);
 
-	// ── values ───────────────────────────────────────────────────────────
-	const emptyValue = await sortOrder.get();
-	expect(emptyValue.error).toBeNull();
-	expect(emptyValue.data).toBeUndefined();
+	// ── settings row ─────────────────────────────────────────────────────
+	expect((await settings.get(SETTINGS)).data).toBeUndefined();
+	expect((await settings.create(SETTINGS, { sortOrder: 'newest' })).error).toBeNull();
+	expect((await settings.get(SETTINGS)).data?.sortOrder).toBe('newest');
+	expect((await settings.patch(SETTINGS, { sortOrder: 'oldest' })).error).toBeNull();
+	expect((await settings.get(SETTINGS)).data?.sortOrder).toBe('oldest');
+	expect((await settings.delete(SETTINGS)).error).toBeNull();
+	expect((await settings.get(SETTINGS)).data).toBeUndefined();
 
-	expect((await sortOrder.set('newest')).error).toBeNull();
-	const storedValue = await sortOrder.get();
-	expect(storedValue.error).toBeNull();
-	expect(storedValue.data).toBe('newest');
-
-	expect((await sortOrder.unset()).error).toBeNull();
-	expect((await sortOrder.get()).data).toBeUndefined();
-
-	await waitFor(() => valueInvalidations >= 2);
-	expect(valueInvalidations).toBeGreaterThanOrEqual(2);
+	await waitFor(() => settingsInvalidations >= 3);
+	expect(settingsInvalidations).toBeGreaterThanOrEqual(3);
 
 	// ── entries paging ───────────────────────────────────────────────────
 	// Seeded in process rather than through the client, because what is under
@@ -260,7 +256,7 @@ test('the published client drives every data operation through the real host', a
 	expect(deletedAgain.data).toBeFalse();
 	expect((await notes.get(created.id)).data).toBeUndefined();
 
-	await bound.close();
+	await bound[Symbol.asyncDispose]();
 
 	// Every operation this walk sent, accepted by the host. This is the half
 	// that catches a vocabulary the owner cannot parse: a drifted `kind` or a
@@ -277,9 +273,6 @@ test('the published client drives every data operation through the real host', a
 			'table-update',
 			'table-delete',
 			'table-entries-page',
-			'value-get',
-			'value-set',
-			'value-unset',
 		]),
 	);
 });
@@ -313,24 +306,24 @@ test('two bindings in one document share one host surface and one carrier', asyn
 	// ── one socket, fanned out to both bindings ──────────────────────────
 	const notesSeen: TableInvalidation[] = [];
 	const tagsSeen: TableInvalidation[] = [];
-	notesBinding.tables.notes.subscribe((each) => notesSeen.push(each));
-	tagsBinding.tables.tags.subscribe((each) => tagsSeen.push(each));
+	notesBinding.notes.subscribe((each) => notesSeen.push(each));
+	tagsBinding.tags.subscribe((each) => tagsSeen.push(each));
 
 	expect(
 		(
-			await notesBinding.tables.notes.create({
+			await notesBinding.notes.create({
 				title: 'Shared',
 				body: undefined,
 			})
 		).error,
 	).toBeNull();
 	expect(
-		(await tagsBinding.tables.tags.create({ label: 'shared' })).error,
+		(await tagsBinding.tags.create({ label: 'shared' })).error,
 	).toBeNull();
 	await waitFor(() => notesSeen.length >= 1 && tagsSeen.length >= 1);
 
 	// ── closing one binding leaves the other, and the carrier, alive ─────
-	await notesBinding.close();
+	await notesBinding[Symbol.asyncDispose]();
 	expect(
 		answers.slice(firstAnswer).filter((each) => each.kind === 'disconnect'),
 	).toEqual([]);
@@ -340,19 +333,19 @@ test('two bindings in one document share one host surface and one carrier', asyn
 	const tagsAfterClose = tagsSeen.length;
 	await harness.seedNotes(1);
 	expect(
-		(await tagsBinding.tables.tags.create({ label: 'still live' })).error,
+		(await tagsBinding.tags.create({ label: 'still live' })).error,
 	).toBeNull();
 	await waitFor(() => tagsSeen.length > tagsAfterClose);
 	// The closed binding released its listeners rather than clearing a
 	// dispatcher the surviving binding is still using.
 	expect(notesSeen.length).toBe(notesAfterClose);
 	// Its handles refuse further use rather than reaching a surface it gave up.
-	expect((await notesBinding.tables.notes.scan()).error?.name).toBe(
+	expect((await notesBinding.notes.scan()).error?.name).toBe(
 		'DataFailed',
 	);
 
 	// ── the last release is what the host and the socket hear ────────────
-	await tagsBinding.close();
+	await tagsBinding[Symbol.asyncDispose]();
 	expect(
 		answers
 			.slice(firstAnswer)
@@ -378,7 +371,7 @@ test('an operation from a surface that never opened is refused with 409', async 
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({
 				surfaceId: 'a-surface-that-never-opened',
-				operation: { kind: 'value-get' },
+				operation: { kind: 'table-get' },
 			}),
 		},
 	);
@@ -511,7 +504,7 @@ async function startHost(directory: string) {
 		async seedNotes(count: number): Promise<string[]> {
 			const ids: string[] = [];
 			for (let index = 0; index < count; index += 1) {
-				const row = await seedLens.tables.notes.create({
+				const row = await seedLens.notes.create({
 					title: `Seed ${index}`,
 					body: undefined,
 				});

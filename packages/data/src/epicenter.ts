@@ -2,24 +2,20 @@ import {
 	type ConstrainedUpdate,
 	type CreateInputFor,
 	compileTableDefinition,
-	compileValueDefinition,
 	createInvalidationDispatcher,
+	DATA_ADDRESS_CEILINGS,
 	type DataReadError,
 	defineLens,
 	defineTable,
-	defineValue,
+	isRowId,
 	type Lens,
 	type NonconformingRowError,
 	optional,
 	type RowFor,
 	type SerializedTableDefinition,
-	type SerializedValueDefinition,
 	type TableDefinition,
 	type TableDefinitions,
 	type TableInvalidation,
-	type ValueDefinition,
-	type ValueDefinitions,
-	type ValueFor,
 } from '@epicenter/lens';
 import type { SqliteDatabase, SqliteRow } from '@epicenter/sqlite';
 import { customAlphabet } from 'nanoid';
@@ -32,12 +28,7 @@ import {
 	type PullDocument,
 	type RowDocument,
 } from './documents.js';
-import type {
-	Address,
-	JsonObject,
-	RowAddress,
-	ValueAddress,
-} from './protocol/index.js';
+import type { JsonObject, RowAddress } from './protocol/index.js';
 import type { Replica, ReplicaError } from './replica/index.js';
 import {
 	createSyncSupervisor,
@@ -62,7 +53,24 @@ export type TableEntry<TDefinition extends TableDefinition> = Result<
 >;
 
 export type TableLens<TDefinition extends TableDefinition> = {
+	/**
+	 * Bring one row into being.
+	 *
+	 * Two doors, and which one you take is only whether you already know the id.
+	 * Without one the runtime mints it; with one you supply it, which is how a
+	 * singleton reaches the same address on every device without coordinating
+	 * (ADR-0206).
+	 *
+	 * This is the one verb that creates, because it is the one moment the type
+	 * system can demand a complete row. `patch` is partial by nature and refuses
+	 * an address that holds no live fact, so an id you already deleted stays
+	 * deleted rather than being resurrected by a write.
+	 */
 	create(fields: CreateInputFor<TDefinition>): Promise<RowFor<TDefinition>>;
+	create(
+		rowId: string,
+		fields: CreateInputFor<TDefinition>,
+	): Promise<RowFor<TDefinition>>;
 	get(id: string): Promise<Result<RowFor<TDefinition> | undefined, ReadError>>;
 	patch<const TChanges extends Record<string, unknown>>(
 		id: string,
@@ -123,26 +131,15 @@ export type TableLens<TDefinition extends TableDefinition> = {
 	openDocument(rowId: string): Promise<RowDocument>;
 };
 
-export type ValueLens<TDefinition extends ValueDefinition> = {
-	get(): Promise<Result<ValueFor<TDefinition> | undefined, ReadError>>;
-	set(value: ValueFor<TDefinition>): Promise<void>;
-	unset(): Promise<void>;
-	/**
-	 * Report when this value may be stale.
-	 *
-	 * The listener takes no payload because a value has no smaller identity to
-	 * name: the handle already is the thing that changed. Re-read through
-	 * {@link ValueLens.get} to find out what it now holds.
-	 */
-	subscribe(listener: () => void): () => void;
-};
-
-export type BoundData<
-	TTables extends TableDefinitions,
-	TValues extends ValueDefinitions,
-> = {
-	tables: { [K in keyof TTables]: TableLens<TTables[K]> };
-	values: { [K in keyof TValues]: ValueLens<TValues[K]> };
+/**
+ * One bound Lens: its tables, reached by their declared names.
+ *
+ * There is no `tables` level, because there is nothing to sit beside it. A Lens
+ * declares tables and fields and nothing else (ADR-0206), so a container with
+ * one member would be a level that only ever holds one thing.
+ */
+export type BoundData<TTables extends TableDefinitions> = {
+	[K in keyof TTables]: TableLens<TTables[K]>;
 };
 
 export type EpicenterSyncSession = SyncSupervisorSession & {
@@ -248,13 +245,6 @@ export type UntypedTableLens = {
 	openDocument(rowId: string): Promise<RowDocument>;
 };
 
-/** One value as an RPC host sees it. See {@link UntypedTableLens}. */
-export type UntypedValueLens = {
-	get(): Promise<unknown>;
-	set(value: unknown): Promise<void>;
-	unset(): Promise<void>;
-};
-
 function deserializeTable(
 	definition: SerializedTableDefinition,
 ): TableDefinition {
@@ -291,9 +281,8 @@ export function bindSerializedTable(
 		defineLens({
 			namespace: definition.namespace,
 			tables: { [definition.table]: deserializeTable(definition) },
-			values: {},
 		}),
-	).tables[definition.table] as InternalTableLens<TableDefinition>;
+	)[definition.table] as InternalTableLens<TableDefinition>;
 	return {
 		create: (fields) => bound.create(fields),
 		get: (rowId) => bound.get(rowId),
@@ -302,24 +291,6 @@ export function bindSerializedTable(
 		entriesPage: (after) => bound[readTableEntriesPage](after),
 		openDocument: (rowId) => bound.openDocument(rowId),
 	};
-}
-
-/** Rebuild one wire-named value. See {@link bindSerializedTable}. */
-export function bindSerializedValue(
-	epicenter: Epicenter,
-	definition: SerializedValueDefinition,
-): UntypedValueLens {
-	return epicenter.bind(
-		defineLens({
-			namespace: definition.address.namespace,
-			tables: {},
-			values: {
-				[definition.address.valueName]: defineValue({
-					value: definition.value as TSchema,
-				}) as ValueDefinition,
-			},
-		}),
-	).values[definition.address.valueName] as UntypedValueLens;
 }
 
 /** Create the adapter-agnostic Data runtime over one already-open replica. */
@@ -378,7 +349,7 @@ export function createEpicenter({
 		sync.requestDocumentDrain();
 	});
 	const observation = createInvalidationDispatcher({ log });
-	const commitListeners = new Set<(changes: readonly Address[]) => void>();
+	const commitListeners = new Set<(changes: readonly RowAddress[]) => void>();
 	let isDisposed = false;
 
 	function requireOpen(): void {
@@ -387,7 +358,6 @@ export function createEpicenter({
 
 	const stopReplicaSubscription = replica.subscribe((changes) => {
 		for (const address of changes) {
-			if (address.kind === 'value') continue;
 			const current = replica.readRow(address);
 			if (current.error !== null) {
 				// Liveness is unknowable this pass, so the open document keeps
@@ -417,31 +387,21 @@ export function createEpicenter({
 	/**
 	 * Bind one Lens over this runtime's replica.
 	 *
-	 * Each `tables` and `values` property name becomes the durable local key of
-	 * the address it reads and writes, under the Lens's single declared
-	 * namespace.
+	 * Each `tables` property name becomes the durable local key of the address it
+	 * reads and writes, under the Lens's single declared namespace.
 	 */
-	function bind<
-		const TTables extends TableDefinitions,
-		const TValues extends ValueDefinitions,
-	>(lens: Lens<TTables, TValues>): BoundData<TTables, TValues> {
+	function bind<const TTables extends TableDefinitions>(
+		lens: Lens<TTables>,
+	): BoundData<TTables> {
 		requireOpen();
-		const boundTables = Object.fromEntries(
-			Object.entries(lens.tables).map(([tableName, definition]) => [
-				tableName,
-				createTableLens(lens.namespace, tableName, definition),
-			]),
-		);
-		const boundValues = Object.fromEntries(
-			Object.entries(lens.values).map(([valueName, definition]) => [
-				valueName,
-				createValueLens(lens.namespace, valueName, definition),
-			]),
-		);
-		return Object.freeze({
-			tables: Object.freeze(boundTables),
-			values: Object.freeze(boundValues),
-		}) as BoundData<TTables, TValues>;
+		return Object.freeze(
+			Object.fromEntries(
+				Object.entries(lens.tables).map(([tableName, definition]) => [
+					tableName,
+					createTableLens(lens.namespace, tableName, definition),
+				]),
+			),
+		) as BoundData<TTables>;
 	}
 
 	function createTableLens<TDefinition extends TableDefinition>(
@@ -451,7 +411,6 @@ export function createEpicenter({
 	): TableLens<TDefinition> {
 		const compiled = compileTableDefinition(definition);
 		const addressOf = (rowId: string): RowAddress => ({
-			kind: 'row',
 			namespace,
 			tableName,
 			rowId,
@@ -467,10 +426,42 @@ export function createEpicenter({
 		};
 
 		const tableLens = {
-			async create(input: Record<string, unknown>) {
+			async create(
+				first: string | Record<string, unknown>,
+				second?: Record<string, unknown>,
+			) {
 				requireOpen();
+				const suppliedId = typeof first === 'string' ? first : undefined;
+				if (
+					suppliedId !== undefined &&
+					!isRowId(suppliedId, DATA_ADDRESS_CEILINGS)
+				) {
+					// Refused here rather than at the storage CHECK, because this is the
+					// boundary an application-chosen name crosses and the only place a
+					// caller can still be told which name was wrong.
+					throw new Error(
+						`Invalid row id '${suppliedId}'; start with a letter or digit and use letters, digits, '.', '-', and '_'`,
+					);
+				}
+				const input = (suppliedId === undefined ? first : second) as Record<
+					string,
+					unknown
+				>;
 				const fields = compiled.validateCreate(input);
-				const address = addressOf(mintRowId());
+				const address = addressOf(suppliedId ?? mintRowId());
+				if (suppliedId !== undefined) {
+					// A create is lowered to a patch, and a patch over a live row
+					// merges rather than refusing, so a supplied id needs this read to
+					// keep `create` meaning create. The read and the write are not
+					// separated by an await, so nothing can land between them.
+					const existing = replica.readRow(address);
+					if (existing.error !== null) throw existing.error;
+					if (existing.data !== undefined) {
+						throw new Error(
+							`Row '${namespace}/${tableName}/${address.rowId}' already exists`,
+						);
+					}
+				}
 				const written = replica.write({
 					verb: 'patch',
 					address,
@@ -479,11 +470,15 @@ export function createEpicenter({
 				});
 				if (written.error !== null) throw written.error;
 				if (!written.data.applied) {
-					// A freshly minted row id has no fact, so a refused patch means the
-					// address is already occupied or already a tombstone. Either way the
-					// mint collided, which a 24-character random id should never do.
+					// The live case is already refused above, so a patch refused here
+					// means a tombstone: deletion is terminal, and a name that was
+					// deleted is dead on every device forever (ADR-0206). For a minted
+					// id it means the mint collided, which a 24-character random id
+					// should never do.
 					throw new Error(
-						`Minted row '${namespace}/${tableName}/${address.rowId}' is already taken`,
+						suppliedId === undefined
+							? `Minted row '${namespace}/${tableName}/${address.rowId}' is already taken`
+							: `Row '${namespace}/${tableName}/${address.rowId}' was deleted, and a deleted name cannot be reused`,
 					);
 				}
 				const projected = compiled.project(address, fields);
@@ -546,43 +541,6 @@ export function createEpicenter({
 		return Object.freeze(tableLens) as InternalTableLens<TDefinition>;
 	}
 
-	function createValueLens<TDefinition extends ValueDefinition>(
-		namespace: string,
-		valueName: string,
-		definition: TDefinition,
-	): ValueLens<TDefinition> {
-		const compiled = compileValueDefinition(definition);
-		const address: ValueAddress = { kind: 'value', namespace, valueName };
-		return Object.freeze({
-			async get() {
-				requireOpen();
-				const stored = replica.readValue(address);
-				if (stored.error !== null) return stored;
-				return stored.data === undefined
-					? Ok(undefined)
-					: compiled.project(address, stored.data);
-			},
-			async set(content: unknown) {
-				requireOpen();
-				const written = replica.write({
-					verb: 'set',
-					address,
-					content: compiled.validate(content),
-				});
-				if (written.error !== null) throw written.error;
-			},
-			async unset() {
-				requireOpen();
-				const written = replica.write({ verb: 'unset', address });
-				if (written.error !== null) throw written.error;
-			},
-			subscribe(listener: () => void) {
-				requireOpen();
-				return observation.subscribeValue(address, listener);
-			},
-		}) as ValueLens<TDefinition>;
-	}
-
 	async function attachSync(
 		session: EpicenterSyncSession,
 	): Promise<Result<void, ReplicaError>> {
@@ -597,7 +555,7 @@ export function createEpicenter({
 		bind,
 		attachSync,
 		[subscribeCommittedAddresses](
-			listener: (changes: readonly Address[]) => void,
+			listener: (changes: readonly RowAddress[]) => void,
 		): () => void {
 			requireOpen();
 			commitListeners.add(listener);
@@ -651,7 +609,6 @@ export function createEpicenter({
 		for (const row of pageRows) {
 			const payload = JSON.parse(row.fields) as JsonObject;
 			const address: RowAddress = {
-				kind: 'row',
 				namespace,
 				tableName,
 				rowId: row.row_id,

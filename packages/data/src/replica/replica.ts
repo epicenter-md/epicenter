@@ -9,7 +9,6 @@ import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Ok, type Result, trySync } from 'wellcrafted/result';
 
 import {
-	type Address,
 	addressKey,
 	batchDigest,
 	DATA_ADDRESS_CEILINGS,
@@ -21,15 +20,12 @@ import {
 	foldIntent,
 	type Intent,
 	isRowAddress,
-	isValueAddress,
 	type JsonObject,
-	type JsonValue,
 	type LocalFact,
 	parseExchangeResponse,
 	parseIntent,
 	parseReplicaId,
 	type RowAddress,
-	type ValueAddress,
 } from '../protocol/index.js';
 import {
 	createReplicaSchema,
@@ -131,22 +127,13 @@ type RowFactRow = SqliteRow & {
 	authority_sequence: number;
 };
 
-type ValueFactRow = SqliteRow & {
-	namespace: string;
-	value_name: string;
-	presence: 'present' | 'absent';
-	content: string | null;
-	authority_sequence: number;
-};
-
 type PendingRow = SqliteRow & {
 	local_sequence: number;
-	intent_kind: string;
 	namespace: string;
-	local_key: string;
-	row_id: string | null;
+	table_name: string;
+	row_id: string;
 	verb: string;
-	payload: string | null;
+	patch: string | null;
 };
 
 export type ReplicaMetadata = {
@@ -202,7 +189,6 @@ function toMetadata(row: MetadataRow): ReplicaMetadata {
 
 function rowFactRowToFact(row: RowFactRow): LocalFact {
 	const address: RowAddress = {
-		kind: 'row',
 		namespace: row.namespace,
 		tableName: row.table_name,
 		rowId: row.row_id,
@@ -221,26 +207,6 @@ function rowFactRowToFact(row: RowFactRow): LocalFact {
 			};
 }
 
-function valueFactRowToFact(row: ValueFactRow): LocalFact {
-	const address: ValueAddress = {
-		kind: 'value',
-		namespace: row.namespace,
-		valueName: row.value_name,
-	};
-	return row.presence === 'absent'
-		? {
-				presence: 'absent',
-				address,
-				authoritySequence: row.authority_sequence,
-			}
-		: {
-				presence: 'present',
-				address,
-				authoritySequence: row.authority_sequence,
-				content: JSON.parse(row.content ?? 'null') as JsonValue,
-			};
-}
-
 /**
  * The replica's current view at one address.
  *
@@ -250,76 +216,48 @@ function valueFactRowToFact(row: ValueFactRow): LocalFact {
  */
 function readFact(
 	database: SqliteDatabase,
-	address: Address,
+	address: RowAddress,
 ): LocalFact | undefined {
-	if (address.kind === 'row') {
-		const row = database.all<RowFactRow>(
-			`SELECT namespace, table_name, row_id, presence, fields, authority_sequence
-			FROM main._replica_row_facts WHERE namespace = ? AND table_name = ? AND row_id = ?`,
-			[address.namespace, address.tableName, address.rowId],
-		)[0];
-		return row === undefined ? undefined : rowFactRowToFact(row);
-	}
-	const row = database.all<ValueFactRow>(
-		`SELECT namespace, value_name, presence, content, authority_sequence
-		FROM main._replica_value_facts WHERE namespace = ? AND value_name = ?`,
-		[address.namespace, address.valueName],
+	const row = database.all<RowFactRow>(
+		`SELECT namespace, table_name, row_id, presence, fields, authority_sequence
+		FROM main._replica_row_facts WHERE namespace = ? AND table_name = ? AND row_id = ?`,
+		[address.namespace, address.tableName, address.rowId],
 	)[0];
-	return row === undefined ? undefined : valueFactRowToFact(row);
+	return row === undefined ? undefined : rowFactRowToFact(row);
 }
 
 function storeFact(database: SqliteDatabase, fact: LocalFact): void {
-	if (fact.address.kind === 'row') {
-		const { namespace, tableName, rowId } = fact.address;
-		database.run(
-			`INSERT INTO main._replica_row_facts (
-				namespace, table_name, row_id, presence, fields, authority_sequence
-			) VALUES (?, ?, ?, ?, ?, ?)
-			ON CONFLICT (namespace, table_name, row_id) DO UPDATE SET
-				presence = excluded.presence,
-				fields = excluded.fields,
-				authority_sequence = excluded.authority_sequence`,
-			[
-				namespace,
-				tableName,
-				rowId,
-				fact.presence,
-				'fields' in fact ? JSON.stringify(fact.fields) : null,
-				fact.authoritySequence,
-			],
-		);
-		if (fact.presence === 'absent') {
-			// Scalar death, document death, and obligation death commit together:
-			// a deleted row can never leave orphaned bytes or a dirty publication
-			// that would republish content for a dead address (ADR-0174).
-			database.run(
-				'DELETE FROM document_updates WHERE namespace = ? AND table_name = ? AND row_id = ?',
-				[namespace, tableName, rowId],
-			);
-			database.run(
-				'DELETE FROM document_publication WHERE namespace = ? AND table_name = ? AND row_id = ?',
-				[namespace, tableName, rowId],
-			);
-		}
-		return;
-	}
-	const { namespace, valueName } = fact.address;
+	const { namespace, tableName, rowId } = fact.address;
 	database.run(
-		`INSERT INTO main._replica_value_facts (
-			namespace, value_name, presence, content, authority_sequence
-		) VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT (namespace, value_name) DO UPDATE SET
+		`INSERT INTO main._replica_row_facts (
+			namespace, table_name, row_id, presence, fields, authority_sequence
+		) VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT (namespace, table_name, row_id) DO UPDATE SET
 			presence = excluded.presence,
-			content = excluded.content,
+			fields = excluded.fields,
 			authority_sequence = excluded.authority_sequence`,
 		[
 			namespace,
-			valueName,
+			tableName,
+			rowId,
 			fact.presence,
-			'content' in fact ? JSON.stringify(fact.content) : null,
+			'fields' in fact ? JSON.stringify(fact.fields) : null,
 			fact.authoritySequence,
 		],
 	);
+	if (fact.presence === 'absent') {
+		// Scalar death, document death, and obligation death commit together:
+		// a deleted row can never leave orphaned bytes or a dirty publication
+		// that would republish content for a dead address (ADR-0174).
+		database.run(
+			'DELETE FROM document_updates WHERE namespace = ? AND table_name = ? AND row_id = ?',
+			[namespace, tableName, rowId],
+		);
+		database.run(
+			'DELETE FROM document_publication WHERE namespace = ? AND table_name = ? AND row_id = ?',
+			[namespace, tableName, rowId],
+		);
+	}
 }
 
 function enqueueIntent(
@@ -327,91 +265,42 @@ function enqueueIntent(
 	localSequence: number,
 	intent: Intent,
 ): void {
-	if (intent.address.kind === 'row') {
-		const { namespace, tableName, rowId } = intent.address;
-		database.run(
-			`INSERT INTO main._replica_row_outbox (
-				local_sequence, namespace, table_name, row_id, verb, patch
-			) VALUES (?, ?, ?, ?, ?, ?)`,
-			[
-				localSequence,
-				namespace,
-				tableName,
-				rowId,
-				intent.verb,
-				intent.verb === 'patch'
-					? JSON.stringify({ set: intent.set, unset: intent.unset })
-					: null,
-			],
-		);
-		return;
-	}
-	const { namespace, valueName } = intent.address;
+	const { namespace, tableName, rowId } = intent.address;
 	database.run(
-		`INSERT INTO main._replica_value_outbox (
-			local_sequence, namespace, value_name, verb, content
-		) VALUES (?, ?, ?, ?, ?)`,
+		`INSERT INTO main._replica_row_outbox (
+			local_sequence, namespace, table_name, row_id, verb, patch
+		) VALUES (?, ?, ?, ?, ?, ?)`,
 		[
 			localSequence,
 			namespace,
-			valueName,
+			tableName,
+			rowId,
 			intent.verb,
-			intent.verb === 'set' ? JSON.stringify(intent.content) : null,
+			intent.verb === 'patch'
+				? JSON.stringify({ set: intent.set, unset: intent.unset })
+				: null,
 		],
 	);
 }
 
 function pendingRowToIntent(row: PendingRow): Intent {
-	if (row.intent_kind === 'row') {
-		if (row.row_id === null) {
-			// `row_outbox.row_id` is NOT NULL, so this is unreachable unless the
-			// union projection above is edited wrongly. Refuse rather than coerce
-			// to an empty string: that empty-row-id sentinel is exactly what the
-			// split relations exist to make unrepresentable.
-			throw new Error('A pending row intent is missing its row id');
-		}
-		const address: RowAddress = {
-			kind: 'row',
-			namespace: row.namespace,
-			tableName: row.local_key,
-			rowId: row.row_id,
-		};
-		if (row.verb === 'delete') return { verb: 'delete', address };
-		const patch = JSON.parse(row.payload ?? 'null') as {
-			set: JsonObject;
-			unset: string[];
-		};
-		return { verb: 'patch', address, set: patch.set, unset: patch.unset };
-	}
-	const address: ValueAddress = {
-		kind: 'value',
+	const address: RowAddress = {
 		namespace: row.namespace,
-		valueName: row.local_key,
+		tableName: row.table_name,
+		rowId: row.row_id,
 	};
-	return row.verb === 'unset'
-		? { verb: 'unset', address }
-		: {
-				verb: 'set',
-				address,
-				content: JSON.parse(row.payload ?? 'null') as JsonValue,
-			};
+	if (row.verb === 'delete') return { verb: 'delete', address };
+	const patch = JSON.parse(row.patch ?? 'null') as {
+		set: JsonObject;
+		unset: string[];
+	};
+	return { verb: 'patch', address, set: patch.set, unset: patch.unset };
 }
 
-/**
- * One local-sequence-ordered view across both intent queues.
- *
- * The two relations keep their own shapes, so the union projects each onto the
- * shared columns the sealer needs; `local_key` carries the table or value name
- * and `row_id` is NULL for a value intent rather than an empty-string sentinel.
- */
+/** The one local-sequence-ordered read of the one intent queue. */
 const PENDING_QUERY = `
-	SELECT local_sequence, 'row' AS intent_kind, namespace,
-		table_name AS local_key, row_id, verb, patch AS payload
+	SELECT local_sequence, namespace, table_name, row_id, verb, patch
 	FROM main._replica_row_outbox
-	UNION ALL
-	SELECT local_sequence, 'value' AS intent_kind, namespace,
-		value_name AS local_key, NULL AS row_id, verb, content AS payload
-	FROM main._replica_value_outbox
 	ORDER BY local_sequence`;
 
 function pendingIntents(
@@ -428,20 +317,13 @@ function pendingIntents(
 
 function hasPendingAddress(
 	database: SqliteDatabase,
-	address: Address,
+	address: RowAddress,
 ): boolean {
-	const rows =
-		address.kind === 'row'
-			? database.all<SqliteRow>(
-					`SELECT 1 AS pending FROM main._replica_row_outbox
-					WHERE namespace = ? AND table_name = ? AND row_id = ? LIMIT 1`,
-					[address.namespace, address.tableName, address.rowId],
-				)
-			: database.all<SqliteRow>(
-					`SELECT 1 AS pending FROM main._replica_value_outbox
-					WHERE namespace = ? AND value_name = ? LIMIT 1`,
-					[address.namespace, address.valueName],
-				);
+	const rows = database.all<SqliteRow>(
+		`SELECT 1 AS pending FROM main._replica_row_outbox
+		WHERE namespace = ? AND table_name = ? AND row_id = ? LIMIT 1`,
+		[address.namespace, address.tableName, address.rowId],
+	);
 	return rows.length > 0;
 }
 
@@ -452,10 +334,6 @@ function deletePending(
 	for (const localSequence of localSequences) {
 		database.run(
 			'DELETE FROM main._replica_row_outbox WHERE local_sequence = ?',
-			[localSequence],
-		);
-		database.run(
-			'DELETE FROM main._replica_value_outbox WHERE local_sequence = ?',
 			[localSequence],
 		);
 	}
@@ -509,15 +387,13 @@ function createReplica(
 ) {
 	let nextLocalSequence =
 		(database.all<SqliteRow & { sequence: number }>(
-			`SELECT COALESCE(MAX(local_sequence), 0) AS sequence FROM (
-				SELECT local_sequence FROM main._replica_row_outbox
-				UNION ALL SELECT local_sequence FROM main._replica_value_outbox
-			)`,
+			`SELECT COALESCE(MAX(local_sequence), 0) AS sequence
+			FROM main._replica_row_outbox`,
 		)[0]?.sequence ?? 0) + 1;
-	const changeListeners = new Set<(changes: readonly Address[]) => void>();
+	const changeListeners = new Set<(changes: readonly RowAddress[]) => void>();
 	const outboxListeners = new Set<() => void>();
 
-	function notify(changes: readonly Address[]): void {
+	function notify(changes: readonly RowAddress[]): void {
 		if (changes.length === 0) return;
 		for (const listener of changeListeners) {
 			try {
@@ -639,7 +515,7 @@ function createReplica(
 	}
 
 	function subscribe(
-		listener: (changes: readonly Address[]) => void,
+		listener: (changes: readonly RowAddress[]) => void,
 	): () => void {
 		changeListeners.add(listener);
 		return () => changeListeners.delete(listener);
@@ -660,20 +536,6 @@ function createReplica(
 			const fact = readFact(database, address);
 			return fact !== undefined && 'fields' in fact
 				? structuredClone(fact.fields)
-				: undefined;
-		});
-	}
-
-	function readValue(
-		address: ValueAddress,
-	): Result<JsonValue | undefined, ReplicaError> {
-		if (!isValueAddress(address, DATA_ADDRESS_CEILINGS)) {
-			return ReplicaError.InvalidInput({ boundary: 'value address' });
-		}
-		return storageResult('read value', () => {
-			const fact = readFact(database, address);
-			return fact !== undefined && 'content' in fact
-				? structuredClone(fact.content)
 				: undefined;
 		});
 	}
@@ -745,7 +607,6 @@ function createReplica(
 							// queue must start from a fresh local sequence too.
 							const pending = pendingIntents(database, Number.MAX_SAFE_INTEGER);
 							database.run('DELETE FROM main._replica_row_outbox');
-							database.run('DELETE FROM main._replica_value_outbox');
 							for (const [index, entry] of pending.entries()) {
 								enqueueIntent(database, index + 1, entry.intent);
 							}
@@ -791,7 +652,7 @@ function createReplica(
 
 				const installed = storageResult('install exchange page', () =>
 					database.transaction(() => {
-						const changes = new Map<string, Address>();
+						const changes = new Map<string, RowAddress>();
 						if (isFirstPage && batch !== undefined && sealed !== undefined) {
 							deletePending(database, sealed.localSequences);
 							database.run(
@@ -841,7 +702,6 @@ function createReplica(
 		attach,
 		write,
 		readRow,
-		readValue,
 		subscribe,
 		subscribeOutbox,
 		synchronize,

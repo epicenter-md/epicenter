@@ -15,12 +15,10 @@ import {
 } from '../documents.js';
 import {
 	bindSerializedTable,
-	bindSerializedValue,
 	createEpicenter,
 	type Epicenter,
 } from '../epicenter.js';
 import {
-	type Address,
 	addressesEqual,
 	type ExchangeRequest,
 	type ExchangeResponse,
@@ -331,8 +329,7 @@ export function serveBrowserEpicenter(
 				let stopStatus: (() => void) | undefined;
 				try {
 					stopReplica = store.replica.subscribe((changes) => {
-						for (const change of changes) {
-							if (change.kind !== 'row') continue;
+							for (const change of changes) {
 							const row = store.replica.readRow(change);
 							if (row.error !== null) {
 								// Liveness is unknowable this pass, so open documents
@@ -400,7 +397,7 @@ export function serveBrowserEpicenter(
 		return ready;
 	}
 
-	function emitInvalidation(changes: readonly Address[]): void {
+	function emitInvalidation(changes: readonly RowAddress[]): void {
 		if (changes.length === 0) return;
 		send({ type: 'invalidation', changes });
 	}
@@ -591,10 +588,14 @@ export function serveBrowserEpicenter(
 			case 'open':
 				return undefined;
 			case 'table-create':
-				return bindSerializedTable(
-					store.epicenter,
-					operation.definition,
-				).create(operation.fields);
+				return operation.rowId === undefined
+					? bindSerializedTable(store.epicenter, operation.definition).create(
+							operation.fields,
+						)
+						: (bindSerializedTable(store.epicenter, operation.definition).create as unknown as (
+								rowId: string,
+								fields: Record<string, unknown>,
+							) => Promise<unknown>)(operation.rowId, operation.fields);
 			case 'table-get':
 				return bindSerializedTable(store.epicenter, operation.definition).get(
 					operation.address.rowId,
@@ -614,17 +615,6 @@ export function serveBrowserEpicenter(
 					store.epicenter,
 					operation.definition,
 				).entriesPage(operation.after);
-			case 'value-get':
-				return bindSerializedValue(store.epicenter, operation.definition).get();
-			case 'value-set':
-				return bindSerializedValue(store.epicenter, operation.definition).set(
-					operation.value,
-				);
-			case 'value-unset':
-				return bindSerializedValue(
-					store.epicenter,
-					operation.definition,
-				).unset();
 			case 'document-open':
 				return openDocument(store.epicenter, operation);
 			case 'document-update': {

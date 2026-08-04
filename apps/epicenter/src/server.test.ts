@@ -124,9 +124,9 @@ describe('sendObservationFrame', () => {
 		type: 'invalidation' as const,
 		changes: [
 			{
-				kind: 'value' as const,
-				namespace: 'test',
-				valueName: 'theme',
+				namespace: 'so.epicenter.test',
+				tableName: 'settings',
+				rowId: 'app',
 			},
 		],
 	};

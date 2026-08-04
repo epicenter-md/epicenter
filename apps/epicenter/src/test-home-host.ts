@@ -53,8 +53,8 @@ export async function createOwnedTestHomeHostBundle(
 		directory: workspacesRoot ?? join(dataDir, 'data'),
 	});
 	try {
-		const conversations = dataOwner.epicenter.bind(homeLens).tables;
-		const honeycrisp = dataOwner.epicenter.bind(honeycrispMirrorLens).tables;
+		const conversations = dataOwner.epicenter.bind(homeLens);
+		const honeycrisp = dataOwner.epicenter.bind(honeycrispMirrorLens);
 		const host = await createHomeHost({
 			...hostOptions,
 			honeycrisp,

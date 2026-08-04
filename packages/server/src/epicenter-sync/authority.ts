@@ -1,5 +1,4 @@
 import {
-	type Address,
 	batchDigest,
 	type Cursor,
 	DATA_ADMISSION_LIMITS,
@@ -8,11 +7,9 @@ import {
 	type Fact,
 	foldIntent,
 	type JsonObject,
-	type JsonValue,
 	parseExchangeRequest,
 	type Receipt,
 	type RowAddress,
-	type ValueAddress,
 } from '@epicenter/data/protocol';
 import type { SqliteDatabase, SqliteRow } from '@epicenter/sqlite';
 
@@ -27,19 +24,13 @@ type ReplicaRow = SqliteRow & {
 	receipt_sequence: number;
 };
 
-/**
- * One row of the sequence-ordered union over both fact relations.
- *
- * `local_key` carries the table or value name, and `row_id` is NULL for a value
- * fact rather than an empty-string sentinel.
- */
+/** One row of the sequence-ordered read over the one fact relation. */
 type FactRow = SqliteRow & {
-	fact_kind: string;
 	namespace: string;
-	local_key: string;
-	row_id: string | null;
+	table_name: string;
+	row_id: string;
 	presence: string;
-	payload: string | null;
+	fields: string | null;
 	authority_sequence: number;
 };
 
@@ -74,37 +65,10 @@ function receiptFrom(row: ReplicaRow): Receipt {
 }
 
 function factRowToFact(row: FactRow): Fact {
-	if (row.fact_kind === 'row') {
-		if (row.row_id === null) {
-			// `row_facts.row_id` is NOT NULL, so this is unreachable unless the
-			// union projection above is edited wrongly. Refuse rather than coerce
-			// to an empty string: that empty-row-id sentinel is exactly what the
-			// split relations exist to make unrepresentable.
-			throw new Error('A row fact is missing its row id');
-		}
-		const address: RowAddress = {
-			kind: 'row',
-			namespace: row.namespace,
-			tableName: row.local_key,
-			rowId: row.row_id,
-		};
-		return row.presence === 'absent'
-			? {
-					presence: 'absent',
-					address,
-					authoritySequence: row.authority_sequence,
-				}
-			: {
-					presence: 'present',
-					address,
-					authoritySequence: row.authority_sequence,
-					fields: JSON.parse(row.payload ?? 'null') as JsonObject,
-				};
-	}
-	const address: ValueAddress = {
-		kind: 'value',
+	const address: RowAddress = {
 		namespace: row.namespace,
-		valueName: row.local_key,
+		tableName: row.table_name,
+		rowId: row.row_id,
 	};
 	return row.presence === 'absent'
 		? {
@@ -116,70 +80,42 @@ function factRowToFact(row: FactRow): Fact {
 				presence: 'present',
 				address,
 				authoritySequence: row.authority_sequence,
-				content: JSON.parse(row.payload ?? 'null') as JsonValue,
+				fields: JSON.parse(row.fields ?? 'null') as JsonObject,
 			};
 }
 
 /**
- * The exchange page is one sequence-ordered stream over both fact relations, so
- * every read that pages by sequence goes through this projection.
+ * The exchange page is one sequence-ordered read of the one fact relation.
+ *
+ * It was a `UNION ALL` carrying a query-local `fact_kind` label while rows and
+ * values lived apart. One relation makes the label and the union unnecessary
+ * rather than cheaper (ADR-0206).
  */
 const FACTS_IN_RANGE = `
-	SELECT authority_sequence, 'row' AS fact_kind, namespace,
-		table_name AS local_key, row_id, presence, fields AS payload
+	SELECT authority_sequence, namespace, table_name, row_id, presence, fields
 	FROM main._authority_row_facts WHERE authority_sequence > ? AND authority_sequence <= ?
-	UNION ALL
-	SELECT authority_sequence, 'value' AS fact_kind, namespace,
-		value_name AS local_key, NULL AS row_id, presence, content AS payload
-	FROM main._authority_value_facts WHERE authority_sequence > ? AND authority_sequence <= ?
 	ORDER BY authority_sequence`;
 
 /**
  * Read the one current fact at an address.
  *
- * The address is already known here, so each branch selects only the payload and
+ * The address is already known here, so this selects only the payload and the
  * sequence and rebuilds the record around the caller's address.
  */
 function readFact(
 	database: SqliteDatabase,
-	address: Address,
+	address: RowAddress,
 ): Fact | undefined {
-	if (address.kind === 'row') {
-		const row = database.all<
-			SqliteRow & {
-				presence: string;
-				fields: string | null;
-				authority_sequence: number;
-			}
-		>(
-			`SELECT presence, fields, authority_sequence
-			FROM main._authority_row_facts WHERE namespace = ? AND table_name = ? AND row_id = ?`,
-			[address.namespace, address.tableName, address.rowId],
-		)[0];
-		if (row === undefined) return undefined;
-		return row.presence === 'absent'
-			? {
-					presence: 'absent',
-					address,
-					authoritySequence: row.authority_sequence,
-				}
-			: {
-					presence: 'present',
-					address,
-					authoritySequence: row.authority_sequence,
-					fields: JSON.parse(row.fields ?? 'null') as JsonObject,
-				};
-	}
 	const row = database.all<
 		SqliteRow & {
 			presence: string;
-			content: string | null;
+			fields: string | null;
 			authority_sequence: number;
 		}
 	>(
-		`SELECT presence, content, authority_sequence
-		FROM main._authority_value_facts WHERE namespace = ? AND value_name = ?`,
-		[address.namespace, address.valueName],
+		`SELECT presence, fields, authority_sequence
+		FROM main._authority_row_facts WHERE namespace = ? AND table_name = ? AND row_id = ?`,
+		[address.namespace, address.tableName, address.rowId],
 	)[0];
 	if (row === undefined) return undefined;
 	return row.presence === 'absent'
@@ -192,59 +128,39 @@ function readFact(
 				presence: 'present',
 				address,
 				authoritySequence: row.authority_sequence,
-				content: JSON.parse(row.content ?? 'null') as JsonValue,
+				fields: JSON.parse(row.fields ?? 'null') as JsonObject,
 			};
 }
 
 function storeFact(database: SqliteDatabase, fact: Fact): void {
-	if (fact.address.kind === 'row') {
-		const { namespace, tableName, rowId } = fact.address;
-		database.run(
-			`INSERT INTO main._authority_row_facts (
-				namespace, table_name, row_id, presence, fields, authority_sequence
-			) VALUES (?, ?, ?, ?, ?, ?)
-			ON CONFLICT (namespace, table_name, row_id) DO UPDATE SET
-				presence = excluded.presence,
-				fields = excluded.fields,
-				authority_sequence = excluded.authority_sequence`,
-			[
-				namespace,
-				tableName,
-				rowId,
-				fact.presence,
-				'fields' in fact ? JSON.stringify(fact.fields) : null,
-				fact.authoritySequence,
-			],
-		);
-		if (fact.presence === 'absent') {
-			database.run(
-				'DELETE FROM document_updates WHERE namespace = ? AND table_name = ? AND row_id = ?',
-				[namespace, tableName, rowId],
-			);
-			database.run(
-				'DELETE FROM document_versions WHERE namespace = ? AND table_name = ? AND row_id = ?',
-				[namespace, tableName, rowId],
-			);
-		}
-		return;
-	}
-	const { namespace, valueName } = fact.address;
+	const { namespace, tableName, rowId } = fact.address;
 	database.run(
-		`INSERT INTO main._authority_value_facts (
-			namespace, value_name, presence, content, authority_sequence
-		) VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT (namespace, value_name) DO UPDATE SET
+		`INSERT INTO main._authority_row_facts (
+			namespace, table_name, row_id, presence, fields, authority_sequence
+		) VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT (namespace, table_name, row_id) DO UPDATE SET
 			presence = excluded.presence,
-			content = excluded.content,
+			fields = excluded.fields,
 			authority_sequence = excluded.authority_sequence`,
 		[
 			namespace,
-			valueName,
+			tableName,
+			rowId,
 			fact.presence,
-			'content' in fact ? JSON.stringify(fact.content) : null,
+			'fields' in fact ? JSON.stringify(fact.fields) : null,
 			fact.authoritySequence,
 		],
 	);
+	if (fact.presence === 'absent') {
+		database.run(
+			'DELETE FROM document_updates WHERE namespace = ? AND table_name = ? AND row_id = ?',
+			[namespace, tableName, rowId],
+		);
+		database.run(
+			'DELETE FROM document_versions WHERE namespace = ? AND table_name = ? AND row_id = ?',
+			[namespace, tableName, rowId],
+		);
+	}
 }
 
 function readPage(
@@ -255,8 +171,6 @@ function readPage(
 	receipt: Receipt | undefined,
 ): { through: number; facts: Fact[]; next: Cursor | null } {
 	const available = database.all<FactRow>(`${FACTS_IN_RANGE} LIMIT ?`, [
-		position,
-		through,
 		position,
 		through,
 		pageSize + 1,
@@ -276,12 +190,8 @@ function readPage(
 	const lastPosition = facts.at(-1)?.authoritySequence ?? position;
 	const hasMore =
 		available.length > facts.length ||
-		database.all<FactRow>(`${FACTS_IN_RANGE} LIMIT 1`, [
-			lastPosition,
-			through,
-			lastPosition,
-			through,
-		]).length > 0;
+		database.all<FactRow>(`${FACTS_IN_RANGE} LIMIT 1`, [lastPosition, through])
+			.length > 0;
 	return {
 		through,
 		facts,

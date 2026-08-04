@@ -54,13 +54,9 @@ export type Note = RowFor<typeof notesTable>;
 export const honeycrispLens = defineLens({
 	namespace: 'so.epicenter.honeycrisp',
 	tables: { folders: foldersTable, notes: notesTable },
-	values: {},
 });
 
-export type HoneycrispData = BoundData<
-	typeof honeycrispLens.tables,
-	typeof honeycrispLens.values
->;
+export type HoneycrispData = BoundData<typeof honeycrispLens.tables>;
 
 /**
  * Delete a folder after best-effort re-parenting of its current notes.
@@ -73,14 +69,14 @@ export async function deleteHoneycrispFolder(
 	data: HoneycrispData,
 	folderId: FolderId,
 ): Promise<void> {
-	for await (const entry of data.tables.notes.entries()) {
+	for await (const entry of data.notes.entries()) {
 		if (entry.error !== null) continue;
 		const note = entry.data;
 		if (note.folderId !== folderId) continue;
-		const result = await data.tables.notes.patch(note.id, {
+		const result = await data.notes.patch(note.id, {
 			folderId: undefined,
 		});
 		if (result.error !== null) throw result.error;
 	}
-	await data.tables.folders.delete(folderId);
+	await data.folders.delete(folderId);
 }

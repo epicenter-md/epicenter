@@ -20,14 +20,14 @@ epicenter.bind(lens)
 The Lens is a partial interpretation of one durable namespace (ADR-0160). It
 creates no lifecycle scope, so binding it is the runtime's job, not its own.
 Fields validate present values and the table lens owns presence
-(`defineTable({ fields })` plus `optional(...)`, `defineValue`).
+(`defineTable({ fields })` plus `optional(...)`).
 
 Every ordinary row has at most one latent document, opened through
 `table.openDocument(rowId)`. Applications own the roots inside it.
 
-A bound handle reports staleness rather than pushing values: a table
-invalidation can sometimes name the changed row ids, a value invalidation
-cannot, because a value has no smaller identity to name (ADR-0187).
+A bound handle reports staleness rather than pushing rows: a table
+invalidation usually names the changed row ids, and says table scope when it
+cannot (ADR-0187).
 
 A Lens has no document declarations, room catalog, user-data migration API,
 schema hash, or successor database. Applications receive no SQL; relational

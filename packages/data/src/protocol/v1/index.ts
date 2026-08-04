@@ -17,8 +17,8 @@
  * storage owns its own schema; it does not borrow the live authority's.
  *
  * The kernel is a complete executable contract:
- * - structured row and value addresses;
- * - the four fact shapes and four intent shapes;
+ * - structured row addresses;
+ * - the two fact shapes and two intent shapes;
  * - the two wire operations, context-aware settlement admission, and the
  *   bounded parked-result shape;
  * - a mandatory limits validator that derives (never trusts) response capacity;
@@ -28,16 +28,13 @@
  */
 
 export {
-	type Address,
-	AddressSchema,
+	type RowAddress,
+	RowAddressSchema,
 	addressesEqual,
 	addressKey,
 	isAdmissibleAddress,
 	parseAddress,
-	type RowAddress,
-	RowAddressSchema,
-	type ValueAddress,
-	ValueAddressSchema,
+	isRowAddress,
 } from './addresses.js';
 export {
 	type AuthorityState,

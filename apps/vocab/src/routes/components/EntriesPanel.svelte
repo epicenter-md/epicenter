@@ -7,7 +7,7 @@
 	import TrashIcon from '@lucide/svelte/icons/trash';
 	import { getVocabApp } from '$lib/context';
 
-	const { entries } = getVocabApp();
+	const { entryState: entries } = getVocabApp();
 
 	let {
 		onPractice,

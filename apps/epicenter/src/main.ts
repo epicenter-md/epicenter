@@ -111,8 +111,8 @@ async function main(): Promise<void> {
 		host = await createHomeHost({
 			engine,
 			model,
-			honeycrisp: dataOwner.epicenter.bind(honeycrispMirrorLens).tables,
-			conversations: dataOwner.epicenter.bind(homeLens).tables,
+			honeycrisp: dataOwner.epicenter.bind(honeycrispMirrorLens),
+			conversations: dataOwner.epicenter.bind(homeLens),
 		});
 		const blobs = createBunBlobStore({
 			directory: join(dataRoot, 'blobs'),

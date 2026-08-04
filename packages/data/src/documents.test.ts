@@ -35,7 +35,6 @@ function rowId(seed: string): string {
 
 function address(seed: string): RowAddress {
 	return {
-		kind: 'row',
 		namespace: 'so.epicenter.tests',
 		tableName: 'notes',
 		rowId: rowId(seed),
@@ -55,7 +54,11 @@ function setup({ pull }: { pull?: PullDocument } = {}) {
 		expectOk(
 			replica.write({
 				verb: 'patch',
-				address: target,
+				address: {
+					namespace: target.namespace,
+					tableName: target.tableName,
+					rowId: target.rowId,
+				},
 				set: { title: 'owned' },
 				unset: [],
 			}),

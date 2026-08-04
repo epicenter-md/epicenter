@@ -14,7 +14,7 @@ export type ReferencesScan = {
 
 /** Read the complete skill traversal and surface nonconforming rows. */
 export async function scanSkills(data: SkillsData): Promise<SkillsScan> {
-	const { rows: skills, nonconforming } = await data.tables.skills.scan();
+	const { rows: skills, nonconforming } = await data.skills.scan();
 	return { skills, nonconforming };
 }
 
@@ -23,7 +23,7 @@ export async function scanReferences(
 	data: SkillsData,
 ): Promise<ReferencesScan> {
 	const { rows: references, nonconforming } =
-		await data.tables.skillReferences.scan();
+		await data.skillReferences.scan();
 	return { references, nonconforming };
 }
 
@@ -40,7 +40,7 @@ export async function listSkills(data: SkillsData) {
 
 /** Read one skill and lazily hydrate its row-owned instruction document. */
 export async function getSkill(data: SkillsData, id: string) {
-	const result = await data.tables.skills.get(id);
+	const result = await data.skills.get(id);
 	if (result.error !== null) {
 		return {
 			skill: undefined,
@@ -51,7 +51,7 @@ export async function getSkill(data: SkillsData, id: string) {
 	if (result.data === undefined) {
 		return { skill: undefined, instructions: undefined, nonconforming: [] };
 	}
-	await using instructions = await data.tables.skills.openDocument(id);
+	await using instructions = await data.skills.openDocument(id);
 	return {
 		skill: result.data,
 		instructions: instructions.get('content').toString(),
@@ -70,7 +70,7 @@ export async function getSkillWithReferences(data: SkillsData, id: string) {
 		scanned.references
 			.filter((reference) => reference.skillId === id)
 			.map(async (reference) => {
-				await using content = await data.tables.skillReferences.openDocument(
+				await using content = await data.skillReferences.openDocument(
 					reference.id,
 				);
 				return {

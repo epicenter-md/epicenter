@@ -2,12 +2,11 @@ import { BLOB_ID_ROUTE_REGEX, type BlobId } from '@epicenter/blobs';
 import {
 	defineLens,
 	defineTable,
-	defineValue,
 	type RowFor,
-	type ValueFor,
 } from '@epicenter/data';
 import { field } from '@epicenter/field';
 import { Type } from 'typebox';
+import type { Static } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 import { RECORDING_TRIGGERS } from '../constants/audio/recording-triggers';
 import { INFERENCE_PROVIDER_IDS } from '../constants/inference-provider-ids';
@@ -77,133 +76,66 @@ const KeyBindingSchema = Type.Object({
 	keys: Type.Array(Type.String()),
 });
 
-/** Inert singleton definitions for every persisted Whispering setting. */
-export const whisperingSettingValues = {
-	'settings.sound.manualStart': defineValue({
-		value: field.boolean(),
-	}),
-	'settings.sound.manualStop': defineValue({
-		value: field.boolean(),
-	}),
-	'settings.sound.manualCancel': defineValue({
-		value: field.boolean(),
-	}),
-	'settings.sound.vadStart': defineValue({
-		value: field.boolean(),
-	}),
-	'settings.sound.vadCapture': defineValue({
-		value: field.boolean(),
-	}),
-	'settings.sound.vadStop': defineValue({
-		value: field.boolean(),
-	}),
-	'settings.sound.transcriptionComplete': defineValue({
-		value: field.boolean(),
-	}),
-	'settings.sound.recipeComplete': defineValue({
-		value: field.boolean(),
-	}),
-	'settings.output.transcription.clipboard': defineValue({
-		value: field.boolean(),
-	}),
-	'settings.output.transcription.cursor': defineValue({
-		value: field.boolean(),
-	}),
-	'settings.output.transcription.enter': defineValue({
-		value: field.boolean(),
-	}),
-	'settings.output.recipe.clipboard': defineValue({
-		value: field.boolean(),
-	}),
-	'settings.output.recipe.cursor': defineValue({
-		value: field.boolean(),
-	}),
-	'settings.output.recipe.enter': defineValue({
-		value: field.boolean(),
-	}),
-	'settings.recording.trigger': defineValue({
-		value: field.select(RECORDING_TRIGGERS),
-	}),
-	'settings.recording.pausePlayback': defineValue({
-		value: field.boolean(),
-	}),
-	'settings.recording.autoUpload': defineValue({
-		value: field.boolean(),
-	}),
-	'settings.transcription.service': defineValue({
-		value: field.select(TRANSCRIPTION_SERVICE_IDS),
-	}),
-	'settings.transcription.openai.model': defineValue({
-		value: field.string(),
-	}),
-	'settings.transcription.groq.model': defineValue({
-		value: field.string(),
-	}),
-	'settings.transcription.elevenlabs.model': defineValue({
-		value: field.string(),
-	}),
-	'settings.transcription.deepgram.model': defineValue({
-		value: field.string(),
-	}),
-	'settings.transcription.mistral.model': defineValue({
-		value: field.string(),
-	}),
-	'settings.transcription.language': defineValue({
-		value: field.select(SUPPORTED_LANGUAGES),
-	}),
-	'settings.transcription.prompt': defineValue({
-		value: field.string(),
-	}),
-	'settings.completion.provider': defineValue({
-		value: field.select(INFERENCE_PROVIDER_IDS),
-	}),
-	'settings.completion.model': defineValue({
-		value: field.string(),
-	}),
-	'settings.dictionary': defineValue({
-		value: field.tags(),
-	}),
-	'settings.polish.enabled': defineValue({
-		value: field.boolean(),
-	}),
-	'settings.polish.instructions': defineValue({
-		value: field.string(),
-	}),
-	'settings.analytics.enabled': defineValue({
-		value: field.boolean(),
-	}),
-	'settings.shortcut.pushToTalk': defineValue({
-		value: field.json(KeyBindingSchema),
-	}),
-	'settings.shortcut.toggleManualRecording': defineValue({
-		value: field.json(KeyBindingSchema),
-	}),
-	'settings.shortcut.cancelRecording': defineValue({
-		value: field.json(KeyBindingSchema),
-	}),
-	'settings.shortcut.toggleVadRecording': defineValue({
-		value: field.json(KeyBindingSchema),
-	}),
-	'settings.shortcut.openRecipePicker': defineValue({
-		value: field.json(KeyBindingSchema),
-	}),
-	'settings.shortcut.runRecipeOnClipboard': defineValue({
-		value: field.json(KeyBindingSchema),
-	}),
-	'settings.shortcut.openSettings': defineValue({
-		value: field.json(KeyBindingSchema),
-	}),
+export const whisperingSettingFields = {
+	settings_sound_manualStart: field.boolean(), settings_sound_manualStop: field.boolean(), settings_sound_manualCancel: field.boolean(),
+	settings_sound_vadStart: field.boolean(), settings_sound_vadCapture: field.boolean(), settings_sound_vadStop: field.boolean(),
+	settings_sound_transcriptionComplete: field.boolean(), settings_sound_recipeComplete: field.boolean(),
+	settings_output_transcription_clipboard: field.boolean(), settings_output_transcription_cursor: field.boolean(), settings_output_transcription_enter: field.boolean(),
+	settings_output_recipe_clipboard: field.boolean(), settings_output_recipe_cursor: field.boolean(), settings_output_recipe_enter: field.boolean(),
+	settings_recording_trigger: field.select(RECORDING_TRIGGERS), settings_recording_pausePlayback: field.boolean(), settings_recording_autoUpload: field.boolean(),
+	settings_transcription_service: field.select(TRANSCRIPTION_SERVICE_IDS), settings_transcription_openai_model: field.string(), settings_transcription_groq_model: field.string(),
+	settings_transcription_elevenlabs_model: field.string(), settings_transcription_deepgram_model: field.string(), settings_transcription_mistral_model: field.string(),
+	settings_transcription_language: field.select(SUPPORTED_LANGUAGES), settings_transcription_prompt: field.string(),
+	settings_completion_provider: field.select(INFERENCE_PROVIDER_IDS), settings_completion_model: field.string(), settings_dictionary: field.tags(),
+	settings_polish_enabled: field.boolean(), settings_polish_instructions: field.string(), settings_analytics_enabled: field.boolean(),
+	settings_shortcut_pushToTalk: field.json(KeyBindingSchema), settings_shortcut_toggleManualRecording: field.json(KeyBindingSchema), settings_shortcut_cancelRecording: field.json(KeyBindingSchema),
+	settings_shortcut_toggleVadRecording: field.json(KeyBindingSchema), settings_shortcut_openRecipePicker: field.json(KeyBindingSchema), settings_shortcut_runRecipeOnClipboard: field.json(KeyBindingSchema), settings_shortcut_openSettings: field.json(KeyBindingSchema),
 } as const;
 
+type DottedSettingName<TName extends string> = TName extends `${infer Head}_${infer Tail}`
+	? `${Head}.${DottedSettingName<Tail>}`
+	: TName;
+
 export type WhisperingSettingValues = {
-	[K in keyof typeof whisperingSettingValues]: ValueFor<
-		(typeof whisperingSettingValues)[K]
-	>;
+	[K in keyof typeof whisperingSettingFields as K extends `settings_${infer Rest}`
+		? `settings.${DottedSettingName<Rest>}`
+		: never]: Static<(typeof whisperingSettingFields)[K]>;
 };
 
 /** The inert Whispering lens. Runtimes bind it to one Epicenter. */
 export const whisperingLens = defineLens({
 	namespace: 'so.epicenter.whispering',
-	tables: { recordings: recordingsTable, recipes: recipesTable },
-	values: whisperingSettingValues,
+	tables: {
+		recordings: recordingsTable,
+		recipes: recipesTable,
+		settings: defineTable({ fields: whisperingSettingFields }),
+	},
 });
+
+export const WHISPERING_SETTINGS_ROW_ID = 'settings';
+
+/**
+ * Whispering's dotted setting key spelled as the field it addresses.
+ *
+ * The fields above are the source of truth and the dotted keys are derived from
+ * them, so the two cannot drift. This is Whispering's own ergonomics over its
+ * own row, not a second durable name: nothing dotted reaches storage or the
+ * wire.
+ */
+export function settingFieldName(
+	key: keyof WhisperingSettingValues,
+): keyof typeof whisperingSettingFields {
+	return key.replaceAll('.', '_') as keyof typeof whisperingSettingFields;
+}
+
+/** The declared defaults as one complete settings row. */
+export function whisperingSettingRow(
+	values: WhisperingSettingValues,
+): Record<string, unknown> {
+	return Object.fromEntries(
+		Object.entries(values).map(([key, value]) => [
+			settingFieldName(key as keyof WhisperingSettingValues),
+			value,
+		]),
+	);
+}

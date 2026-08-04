@@ -14,13 +14,11 @@
  * candidate fact and decides whether to park it.
  *
  * Invariants encoded here:
- * - Row-present is upsert-patch: it folds over the live row, or over an empty
+ * - Present is upsert-patch: it folds over the live row, or over an empty
  *   object when the address has no fact.
  * - A terminal row tombstone dominates: a later row-present intent settles as
  *   superseded without resurrecting the row.
- * - A row-absent intent installs or preserves the terminal tombstone.
- * - Value-present replaces; value-absent installs or preserves the reversible
- *   unset.
+ * - An absent intent installs or preserves the terminal tombstone.
  * - `set` is applied before `unset`.
  *
  * Precondition: `current`, when defined, is the fact at `intent.address` (same
@@ -86,23 +84,7 @@ export function foldIntent(
 				},
 			};
 		}
-		// value-present replace
-		if (
-			current?.presence === 'present' &&
-			'content' in current &&
-			jsonEqual(intent.content, current.content)
-		) {
-			return UNCHANGED; // idempotent value set
-		}
-		return {
-			kind: 'changed',
-			fact: {
-				address: intent.address,
-				sequence: nextSequence,
-				presence: 'present',
-				content: structuredClone(intent.content),
-			},
-		};
+		return UNCHANGED;
 	}
 
 	// absent intent
@@ -110,9 +92,6 @@ export function foldIntent(
 	const address = intent.address;
 	return {
 		kind: 'changed',
-		fact:
-			address.kind === 'row'
-				? { address, sequence: nextSequence, presence: 'absent' }
-				: { address, sequence: nextSequence, presence: 'absent' },
+		fact: { address, sequence: nextSequence, presence: 'absent' },
 	};
 }

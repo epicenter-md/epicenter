@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { createAgentChatState } from '@epicenter/app-shell/agent-chat';
-	import { fromKv } from '@epicenter/svelte';
+	import { fromTable } from '@epicenter/svelte';
 	import { Button } from '@epicenter/ui/button';
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import { toast } from '@epicenter/ui/sonner';
 	import {
 		SHOW_READINGS_DEFAULT,
+		VocabSettingsRowId,
 		VOCAB_MODEL,
 		VOCAB_SYSTEM_PROMPT,
 	} from '@epicenter/vocab';
@@ -17,7 +18,7 @@
 	import VocabSidebar from './components/VocabSidebar.svelte';
 
 	const vocab = getVocabApp();
-	const showReadings = fromKv(vocab.values.showReadings);
+	const settingsView = fromTable(vocab.settings);
 
 	function reportBackgroundError(cause: unknown) {
 		toast.error('Vocab chat failed', {
@@ -30,8 +31,8 @@
 	// prompt, and the hosted VOCAB_MODEL as the default a new conversation starts
 	// on. The active conversation lives in internal state (Vocab has no URL seam).
 	const chat = createAgentChatState({
-		table: vocab.tables.conversations,
-		openConversationDocument: (id) => vocab.tables.conversations.openDocument(id),
+		table: vocab.conversations,
+		openConversationDocument: (id) => vocab.conversations.openDocument(id),
 		reportBackgroundError,
 		connections: inferenceConnections,
 		agent: {
@@ -40,8 +41,12 @@
 		},
 	});
 
-	// An unset value reads `undefined`; the app owns the default.
-	const readings = $derived(showReadings.current ?? SHOW_READINGS_DEFAULT);
+	const settings = $derived(
+		settingsView.all.find((row) => row.id === VocabSettingsRowId),
+	);
+	const readings = $derived(
+		settings?.showReadings ?? SHOW_READINGS_DEFAULT,
+	);
 
 	onDestroy(() => chat[Symbol.dispose]());
 
@@ -83,7 +88,10 @@
 				<Button
 					variant={readings ? 'default' : 'outline'}
 					size="sm"
-					onclick={() => (showReadings.current = !readings)}
+					onclick={() =>
+						void vocab.settings.patch(VocabSettingsRowId, {
+							showReadings: !readings,
+						})}
 					aria-pressed={readings}
 					aria-label="Toggle pronunciation readings"
 				>

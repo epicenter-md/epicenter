@@ -11,10 +11,6 @@ export const skillsLens = defineLens({
 		skills: skillsTable,
 		skillReferences: referencesTable,
 	},
-	values: {},
 });
 
-export type SkillsData = BoundData<
-	typeof skillsLens.tables,
-	typeof skillsLens.values
->;
+export type SkillsData = BoundData<typeof skillsLens.tables>;

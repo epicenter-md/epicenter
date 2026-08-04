@@ -97,29 +97,6 @@ export function foldIntent(
 						existing,
 					)
 				: { kind: 'noop', fact: existing };
-		case 'set':
-			return applyIfAdmissible(
-				{
-					presence: 'present',
-					address: intent.address,
-					authoritySequence: nextSequence,
-					content: structuredClone(intent.content),
-				},
-				existing,
-			);
-		case 'unset':
-			return existing !== undefined &&
-				existing.presence === 'present' &&
-				'content' in existing
-				? applyIfAdmissible(
-						{
-							presence: 'absent',
-							address: intent.address,
-							authoritySequence: nextSequence,
-						},
-						existing,
-					)
-				: { kind: 'noop', fact: existing };
 		default:
 			return intent satisfies never;
 	}

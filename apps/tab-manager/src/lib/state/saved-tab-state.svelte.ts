@@ -25,7 +25,7 @@ export function createSavedTabState({
 	data: TabManagerData;
 	actions: TabManagerActions;
 }) {
-	const tabsView = fromTable(data.tables.savedTabs);
+	const tabsView = fromTable(data.savedTabs);
 
 	/** All saved tabs, most recently saved first. */
 	const tabs = $derived(

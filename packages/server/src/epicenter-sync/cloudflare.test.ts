@@ -75,7 +75,6 @@ function requestBody() {
 		{
 			verb: 'patch' as const,
 			address: {
-				kind: 'row' as const,
 				namespace: 'so.epicenter.tests',
 				tableName: 'rows',
 				rowId: 'aaaaaaaaaaaaaaaaaaaaaaaa',

@@ -26,8 +26,8 @@ Deleting a row also deletes its owned document state.
 Instructions and reference bodies open through their owning rows:
 
 ```ts
-await skills.tables.skills.openDocument(skillId);
-await skills.tables.skillReferences.openDocument(referenceId);
+await skills.skills.openDocument(skillId);
+await skills.skillReferences.openDocument(referenceId);
 ```
 
 Application code never constructs document addresses, authority identities, or

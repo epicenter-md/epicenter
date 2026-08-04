@@ -20,17 +20,14 @@ test('a failed Skills open releases its runtime', async () => {
 				({
 					bind() {
 						return {
-							tables: {
-								skills: {
-									subscribe: () => () => {},
-									scan: () => Promise.reject(cause),
-								},
-								skillReferences: {
-									subscribe: () => () => {},
-									scan: () => new Promise<never>(() => {}),
-								},
+							skills: {
+								subscribe: () => () => {},
+								scan: () => Promise.reject(cause),
 							},
-							values: {},
+							skillReferences: {
+								subscribe: () => () => {},
+								scan: () => new Promise<never>(() => {}),
+							},
 						};
 					},
 					async [Symbol.asyncDispose]() {
@@ -57,8 +54,8 @@ test('aborting a pending Skills open rejects and releases its runtime', async ()
 							scan: () => new Promise<never>(() => {}),
 						};
 						return {
-							tables: { skills: table, skillReferences: table },
-							values: {},
+							skills: table,
+							skillReferences: table,
 						};
 					},
 					async [Symbol.asyncDispose]() {

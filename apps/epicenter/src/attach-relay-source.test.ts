@@ -231,7 +231,7 @@ async function readTranscript(dataDir: string): Promise<{
 	await using epicenter = await openBunEpicenter({
 		directory: join(dataDir, 'data'),
 	});
-	const conversations = epicenter.bind(homeLens).tables.conversations;
+	const conversations = epicenter.bind(homeLens).conversations;
 	const tableNames = ['conversations'];
 	const rows = (await conversations.scan()).rows;
 	let latest = rows[0];

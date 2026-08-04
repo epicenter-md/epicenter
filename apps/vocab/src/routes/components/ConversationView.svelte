@@ -17,7 +17,7 @@
 	import DictationButton from './DictationButton.svelte';
 	import ReadingMarkdown from './ReadingMarkdown.svelte';
 
-	const { entries } = getVocabApp();
+	const { entryState: entries } = getVocabApp();
 
 	let {
 		active,

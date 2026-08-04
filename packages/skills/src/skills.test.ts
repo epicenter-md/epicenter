@@ -40,7 +40,6 @@ const historicalSkillsTable = defineTable({
 const historicalSkillsLens = defineLens({
 	namespace: 'so.epicenter.skills',
 	tables: { skills: historicalSkillsTable },
-	values: {},
 });
 
 test('a stricter Skills lens exposes nonconformance until typed update repairs it', async () => {
@@ -49,7 +48,7 @@ test('a stricter Skills lens exposes nonconformance until typed update repairs i
 	try {
 		const historicalEpicenter = await openBunEpicenter({ path });
 		const historical = historicalEpicenter.bind(historicalSkillsLens);
-		const oldSkill = await historical.tables.skills.create({
+		const oldSkill = await historical.skills.create({
 			name: 'writing-voice',
 			description: 'Write directly',
 			updatedAt: InstantString.now(),
@@ -63,7 +62,7 @@ test('a stricter Skills lens exposes nonconformance until typed update repairs i
 			instructions: undefined,
 			nonconforming: [],
 		});
-		const error = expectErr(await skills.tables.skills.get(oldSkill.id));
+		const error = expectErr(await skills.skills.get(oldSkill.id));
 		expect(error.name).toBe('NonconformingRow');
 		if (error.name !== 'NonconformingRow') throw new Error(error.message);
 		expect(error.issues).toContainEqual({
@@ -78,23 +77,23 @@ test('a stricter Skills lens exposes nonconformance until typed update repairs i
 		]);
 
 		const repaired = expectOk(
-			await skills.tables.skills.patch(oldSkill.id, {
+			await skills.skills.patch(oldSkill.id, {
 				sourceId: 'agentskills-writing-voice',
 			}),
 		);
 		expect(repaired?.id).toBe(oldSkill.id);
 		expect((await scanSkills(skills)).nonconforming).toEqual([]);
-		await using instructions = await skills.tables.skills.openDocument(
+		await using instructions = await skills.skills.openDocument(
 			oldSkill.id,
 		);
 		writeDocumentText(instructions, 'Keep the answer concise.');
-		const another = await skills.tables.skills.create({
+		const another = await skills.skills.create({
 			sourceId: 'agentskills-other',
 			name: 'other',
 			description: 'Another skill',
 			updatedAt: InstantString.now(),
 		});
-		await using otherInstructions = await skills.tables.skills.openDocument(
+		await using otherInstructions = await skills.skills.openDocument(
 			another.id,
 		);
 		expect(otherInstructions.get('content').toString()).toBe('');

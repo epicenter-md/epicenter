@@ -1,6 +1,5 @@
 import type {
 	SerializedTableDefinition,
-	SerializedValueDefinition,
 } from '@epicenter/lens';
 import type {
 	DocumentPublishOutcome,
@@ -9,16 +8,12 @@ import type {
 
 export type {
 	SerializedTableDefinition,
-	SerializedValueDefinition,
 } from '@epicenter/lens';
 
 import type {
-	Address,
 	ExchangeRequest,
 	ExchangeResponse,
-	JsonValue,
 	RowAddress,
-	ValueAddress,
 } from '../protocol/index.js';
 import type { SyncState } from '../sync-supervisor.js';
 
@@ -46,6 +41,7 @@ export type BrowserOperation =
 	| {
 			kind: 'table-create';
 			definition: SerializedTableDefinition;
+			rowId?: string;
 			fields: Record<string, unknown>;
 	  }
 	| {
@@ -68,22 +64,6 @@ export type BrowserOperation =
 			kind: 'table-entries-page';
 			definition: SerializedTableDefinition;
 			after?: string;
-	  }
-	| {
-			kind: 'value-get';
-			definition: SerializedValueDefinition;
-			address: ValueAddress;
-	  }
-	| {
-			kind: 'value-set';
-			definition: SerializedValueDefinition;
-			address: ValueAddress;
-			value: JsonValue;
-	  }
-	| {
-			kind: 'value-unset';
-			definition: SerializedValueDefinition;
-			address: ValueAddress;
 	  }
 	| {
 			kind: 'document-open';
@@ -140,7 +120,7 @@ export type BrowserWorkerInbound = BrowserRequest | BrowserTransportResult;
  */
 export type BrowserInvalidation = {
 	type: 'invalidation';
-	changes: readonly Address[];
+	changes: readonly RowAddress[];
 };
 
 export type BrowserWorkerMessage =

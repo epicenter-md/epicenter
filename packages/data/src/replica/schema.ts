@@ -1,29 +1,30 @@
 import type { SqliteDatabase } from '@epicenter/sqlite';
 
-export const REPLICA_FORMAT_VERSION = 6;
+export const REPLICA_FORMAT_VERSION = 7;
 
 /**
- * Row facts and value facts are separate relations because their laws differ,
- * not because their payloads happen to differ (ADR-0163, ADR-0164).
+ * One relation holds every fact, because there is only one kind of fact
+ * (ADR-0206).
  *
- * A row fact has a runtime-minted row id, an object payload, a terminal
- * tombstone, and owns documents and blobs. A value fact has no row id, holds any
- * JSON, and its absence is a reversible unset. One shared `state` relation could
- * only express that by carrying a nullable row id plus a three-way status and
- * then re-asserting, in CHECK constraints, which combinations are legal. Two
- * relations let each law be a column constraint instead: `presence` is two-valued
- * in both tables and means "terminal tombstone" in one and "reversible unset" in
- * the other, and only `row_facts` has a `row_id` at all.
+ * An earlier layout split rows from values, on the reading that their laws
+ * differed. The difference was never a law: it was who supplied the third
+ * coordinate. A row id now comes from whoever knows it, minted when nobody does
+ * and chosen when an application does, so a value is a row you named and needs
+ * no relation of its own. `presence` is two-valued and has exactly one meaning,
+ * a terminal tombstone; a reversible unset is a field unset inside a patch,
+ * which the outbox verb already carries.
  *
- * The local intent queues split for the same reason. It also removes the last
- * two conflations of the single-table layout: an `address_kind = 'value'` row
- * forced to carry `row_id = ''` as a sentinel, and the sealed batch sequence
- * smuggled in as a negative-sequence pseudo-value at a reserved internal
- * address. The batch sequence is replica metadata, so it lives in `metadata`.
+ * The `row_id` CHECK admits both origins and nothing else. Every admitted
+ * character is safe verbatim in a URL path segment, because a row's bytes are
+ * read through a path built from its address, and the first character excludes
+ * `.`, `-`, and `_` so no id can be a relative path segment or a dotfile.
  *
- * `authority_sequence` uniqueness across both fact relations is an authority
- * property, not a local one: local writes land at sequence 0 until an exchange
- * assigns authority sequences, so these indexes are non-unique here.
+ * The sealed batch sequence is replica metadata and lives in `metadata`, where
+ * the previous layout had to smuggle it in as a negative-sequence pseudo-value.
+ *
+ * `authority_sequence` uniqueness is an authority property, not a local one:
+ * local writes land at sequence 0 until an exchange assigns authority
+ * sequences, so this index is non-unique here.
  */
 const SCHEMA = [
 	`CREATE TABLE main._replica_metadata (
@@ -45,7 +46,9 @@ const SCHEMA = [
 		namespace TEXT NOT NULL,
 		table_name TEXT NOT NULL,
 		row_id TEXT NOT NULL CHECK (
-			length(row_id) = 24 AND row_id NOT GLOB '*[^a-z0-9]*'
+			length(row_id) BETWEEN 1 AND 128 AND
+			row_id NOT GLOB '*[^A-Za-z0-9._-]*' AND
+			row_id GLOB '[A-Za-z0-9]*'
 		),
 		presence TEXT NOT NULL CHECK (presence IN ('present', 'absent')),
 		fields TEXT,
@@ -57,46 +60,22 @@ const SCHEMA = [
 		)
 	) WITHOUT ROWID, STRICT`,
 	'CREATE INDEX main._replica_row_facts_authority_sequence ON _replica_row_facts(authority_sequence)',
-	`CREATE TABLE main._replica_value_facts (
-		namespace TEXT NOT NULL,
-		value_name TEXT NOT NULL,
-		presence TEXT NOT NULL CHECK (presence IN ('present', 'absent')),
-		content TEXT,
-		authority_sequence INTEGER NOT NULL CHECK (authority_sequence >= 0),
-		PRIMARY KEY (namespace, value_name),
-		CHECK (
-			(presence = 'present' AND content IS NOT NULL AND json_valid(content)) OR
-			(presence = 'absent' AND content IS NULL)
-		)
-	) WITHOUT ROWID, STRICT`,
-	'CREATE INDEX main._replica_value_facts_authority_sequence ON _replica_value_facts(authority_sequence)',
-	// The two local intent queues share one strictly increasing local sequence
-	// space so a sealed batch has a stable order across both address kinds.
-	// Cross-table uniqueness is the single local writer's invariant; each table
-	// still refuses a duplicate of its own.
+	// One local intent queue with one strictly increasing local sequence, so a
+	// sealed batch has a stable order without a cross-relation invariant to keep.
 	`CREATE TABLE main._replica_row_outbox (
 		local_sequence INTEGER PRIMARY KEY CHECK (local_sequence > 0),
 		namespace TEXT NOT NULL,
 		table_name TEXT NOT NULL,
 		row_id TEXT NOT NULL CHECK (
-			length(row_id) = 24 AND row_id NOT GLOB '*[^a-z0-9]*'
+			length(row_id) BETWEEN 1 AND 128 AND
+			row_id NOT GLOB '*[^A-Za-z0-9._-]*' AND
+			row_id GLOB '[A-Za-z0-9]*'
 		),
 		verb TEXT NOT NULL CHECK (verb IN ('patch', 'delete')),
 		patch TEXT,
 		CHECK (
 			(verb = 'patch' AND patch IS NOT NULL AND json_valid(patch)) OR
 			(verb = 'delete' AND patch IS NULL)
-		)
-	) STRICT`,
-	`CREATE TABLE main._replica_value_outbox (
-		local_sequence INTEGER PRIMARY KEY CHECK (local_sequence > 0),
-		namespace TEXT NOT NULL,
-		value_name TEXT NOT NULL,
-		verb TEXT NOT NULL CHECK (verb IN ('set', 'unset')),
-		content TEXT,
-		CHECK (
-			(verb = 'set' AND content IS NOT NULL AND json_valid(content)) OR
-			(verb = 'unset' AND content IS NULL)
 		)
 	) STRICT`,
 	// Documents and blobs are owned by a row address, so they key on the exact
@@ -144,9 +123,7 @@ const SCHEMA = [
 export const REPLICA_TABLES = [
 	'_replica_metadata',
 	'_replica_row_facts',
-	'_replica_value_facts',
 	'_replica_row_outbox',
-	'_replica_value_outbox',
 	'document_updates',
 	'document_publication',
 ] as const;

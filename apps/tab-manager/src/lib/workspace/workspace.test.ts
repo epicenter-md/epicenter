@@ -29,10 +29,6 @@ describe('the Tab Manager Lens', () => {
 		]);
 	});
 
-	test('declares no durable values', () => {
-		expect(Object.keys(tabManagerLens.values)).toEqual([]);
-	});
-
 	test('never authors an id field, because row ids are runtime-minted', () => {
 		for (const [name, table] of Object.entries(tabManagerLens.tables)) {
 			expect(Object.keys(table.fields), name).not.toContain('id');

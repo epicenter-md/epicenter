@@ -172,10 +172,9 @@ test('local write triggers an exchange without waiting for the interval', async 
 			defineLens({
 				namespace: 'so.epicenter.tests',
 				tables: { notes },
-				values: {},
 			}),
 		)
-		.tables.notes.create({
+		.notes.create({
 			title: 'wake',
 		});
 	await waitFor(() => exchanges > initial);
@@ -260,9 +259,8 @@ test('rapid document edits inside the coalesce window become one publication', a
 		defineLens({
 			namespace: 'so.epicenter.tests',
 			tables: { notes },
-			values: {},
 		}),
-	).tables.notes;
+	).notes;
 	const row = await notesTable.create({ title: 'coalesce' });
 	await waitFor(() => epicenter.syncStatus.state === 'idle');
 
@@ -308,10 +306,9 @@ test('an unexpected dependency throw is reported as a fault, not a transport err
 			defineLens({
 				namespace: 'so.epicenter.tests',
 				tables: { notes },
-				values: {},
 			}),
 		)
-		.tables.notes.create({
+		.notes.create({
 			title: 'wake',
 		});
 	await waitFor(() => epicenter.syncStatus.state === 'offline');
@@ -356,10 +353,9 @@ test('an outbox-triggered failure is owned, not left as an unhandled rejection',
 			defineLens({
 				namespace: 'so.epicenter.tests',
 				tables: { notes },
-				values: {},
 			}),
 		)
-		.tables.notes.create({
+		.notes.create({
 			title: 'wake',
 		});
 	await waitFor(() => epicenter.syncStatus.state === 'offline');
@@ -428,9 +424,8 @@ test('a document-coalescing wake failure is owned by the supervisor', async () =
 		defineLens({
 			namespace: 'so.epicenter.tests',
 			tables: { notes },
-			values: {},
 		}),
-	).tables.notes;
+	).notes;
 	const row = await notesTable.create({ title: 'doc' });
 	await waitFor(() => epicenter.syncStatus.state === 'idle');
 
@@ -487,10 +482,9 @@ test('work queued during an active drain runs instead of being lost', async () =
 			defineLens({
 				namespace: 'so.epicenter.tests',
 				tables: { notes },
-				values: {},
 			}),
 		)
-		.tables.notes.create({
+		.notes.create({
 			title: 'queued',
 		});
 	gate.open();
@@ -626,10 +620,9 @@ test('a background wake failure cannot surface as the local write rejecting', as
 			defineLens({
 				namespace: 'so.epicenter.tests',
 				tables: { notes },
-				values: {},
 			}),
 		)
-		.tables.notes.create({ title: 'write' });
+		.notes.create({ title: 'write' });
 	expect(row.title).toBe('write');
 
 	await epicenter[Symbol.asyncDispose]();

@@ -6,11 +6,7 @@ import { Ok, type Result } from 'wellcrafted/result';
 
 export type { JsonObject, JsonValue } from '@epicenter/lens';
 
-import {
-	isRuntimeId,
-	RowAddressSchema,
-	ValueAddressSchema,
-} from '@epicenter/lens';
+import { RowAddressSchema } from '@epicenter/lens';
 import {
 	DATA_ADMISSION_LIMITS,
 	encodedJsonBytes,
@@ -32,7 +28,6 @@ export const ReplicaIdSchema = Type.String({
 });
 export type ReplicaId = Static<typeof ReplicaIdSchema>;
 
-const jsonValueSchema = Type.Unsafe<JsonValue>({});
 const jsonObjectSchema = Type.Unsafe<JsonObject>(
 	Type.Object({}, { additionalProperties: true }),
 );
@@ -68,24 +63,9 @@ const rowDeleteIntentSchema = Type.Object(
 	{ verb: Type.Literal('delete'), address: RowAddressSchema },
 	CLOSED,
 );
-const valueSetIntentSchema = Type.Object(
-	{
-		verb: Type.Literal('set'),
-		address: ValueAddressSchema,
-		content: jsonValueSchema,
-	},
-	CLOSED,
-);
-const valueUnsetIntentSchema = Type.Object(
-	{ verb: Type.Literal('unset'), address: ValueAddressSchema },
-	CLOSED,
-);
-
 export const IntentSchema = Type.Union([
 	rowPatchIntentSchema,
 	rowDeleteIntentSchema,
-	valueSetIntentSchema,
-	valueUnsetIntentSchema,
 ]);
 export type Intent = Static<typeof IntentSchema>;
 
@@ -123,29 +103,9 @@ const rowAbsentFactSchema = Type.Object(
 	},
 	CLOSED,
 );
-const valuePresentFactSchema = Type.Object(
-	{
-		presence: Type.Literal('present'),
-		address: ValueAddressSchema,
-		authoritySequence: positiveSequence,
-		content: jsonValueSchema,
-	},
-	CLOSED,
-);
-const valueAbsentFactSchema = Type.Object(
-	{
-		presence: Type.Literal('absent'),
-		address: ValueAddressSchema,
-		authoritySequence: positiveSequence,
-	},
-	CLOSED,
-);
-
 export const FactSchema = Type.Union([
 	rowPresentFactSchema,
 	rowAbsentFactSchema,
-	valuePresentFactSchema,
-	valueAbsentFactSchema,
 ]);
 export type Fact = Static<typeof FactSchema>;
 
@@ -172,17 +132,6 @@ export type LocalFact =
 	| {
 			presence: 'absent';
 			address: Static<typeof RowAddressSchema>;
-			authoritySequence: number;
-	  }
-	| {
-			presence: 'present';
-			address: Static<typeof ValueAddressSchema>;
-			authoritySequence: number;
-			content: JsonValue;
-	  }
-	| {
-			presence: 'absent';
-			address: Static<typeof ValueAddressSchema>;
 			authoritySequence: number;
 	  };
 
@@ -275,9 +224,7 @@ export type ProtocolValidationError = InferErrors<
 export function parseReplicaId(
 	value: unknown,
 ): Result<ReplicaId, ProtocolValidationError> {
-	return typeof value === 'string' &&
-		Value.Check(ReplicaIdSchema, value) &&
-		isRuntimeId(value)
+	return typeof value === 'string' && Value.Check(ReplicaIdSchema, value)
 		? Ok(value)
 		: ProtocolValidationError.Invalid({ boundary: 'replica id' });
 }
@@ -307,7 +254,7 @@ export function parseExchangeRequest(
 ): Result<ExchangeRequest, ProtocolValidationError> {
 	if (
 		!Value.Check(ExchangeRequestSchema, value) ||
-		!isRuntimeId(value.replicaId)
+		!Value.Check(ReplicaIdSchema, value.replicaId)
 	) {
 		return ProtocolValidationError.Invalid({ boundary: 'exchange request' });
 	}

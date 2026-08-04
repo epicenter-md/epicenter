@@ -29,7 +29,7 @@
 
 import { extractErrorMessage } from 'wellcrafted/error';
 
-import type { Address } from './addresses.js';
+import type { RowAddress } from './addresses.js';
 import type {
 	InvalidationDispatcher,
 	InvalidationErrorReporter,
@@ -80,9 +80,9 @@ export type ObservationFrame = {
 	/**
 	 * Read-only, because every producer of one already holds a committed batch it
 	 * must not mutate. A mutable array here would make each of them copy a
-	 * `readonly Address[]` per socket per commit purely to satisfy this type.
+	 * `readonly RowAddress[]` per socket per commit purely to satisfy this type.
 	 */
-	changes: readonly Address[];
+	changes: readonly RowAddress[];
 };
 
 export type ObservationCarrier = {
@@ -271,10 +271,10 @@ export async function openObservationCarrier({
  * stops updating.
  *
  * Keeping that promise means reading every address, not just the envelope
- * around them. The dispatcher dereferences `kind`, `namespace`, `tableName`,
- * `rowId`, and `valueName` off each element, so a well-formed envelope holding
- * one malformed element would throw a `TypeError` out of the socket's `message`
- * listener, where nothing is left to catch it.
+ * around them. The dispatcher dereferences `namespace`, `tableName`, and
+ * `rowId` off each element, so a well-formed envelope holding one malformed
+ * element would throw a `TypeError` out of the socket's `message` listener,
+ * where nothing is left to catch it.
  *
  * A frame with one bad address is rejected whole rather than filtered down to
  * its readable elements. The caller turns that rejection into
@@ -284,7 +284,7 @@ export async function openObservationCarrier({
 function readObservationFrame(
 	data: unknown,
 	log: InvalidationErrorReporter,
-): readonly Address[] | undefined {
+): readonly RowAddress[] | undefined {
 	if (typeof data !== 'string') {
 		log.error(new Error('Observation frame was not text'));
 		return undefined;
@@ -325,23 +325,15 @@ function readObservationFrame(
  * charge the carrier's hot path for a second opinion about data this client
  * could not repair either way.
  */
-function isReadableAddress(value: unknown): value is Address {
-	if (typeof value !== 'object' || value === null) return false;
-	if (!('namespace' in value) || typeof value.namespace !== 'string') {
-		return false;
-	}
-	if (!('kind' in value)) return false;
-	if (value.kind === 'row') {
-		return (
-			'tableName' in value &&
-			typeof value.tableName === 'string' &&
-			'rowId' in value &&
-			typeof value.rowId === 'string'
-		);
-	}
+function isReadableAddress(value: unknown): value is RowAddress {
 	return (
-		value.kind === 'value' &&
-		'valueName' in value &&
-		typeof value.valueName === 'string'
+		typeof value === 'object' &&
+		value !== null &&
+		'namespace' in value &&
+		typeof value.namespace === 'string' &&
+		'tableName' in value &&
+		typeof value.tableName === 'string' &&
+		'rowId' in value &&
+		typeof value.rowId === 'string'
 	);
 }

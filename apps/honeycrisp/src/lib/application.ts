@@ -98,7 +98,7 @@ export async function openHoneycrispApplication(
 			async openNoteDocument(noteId: string) {
 				// Opening hydrates locally durable state only; remote refresh is
 				// an explicit pull the view performs after this resolves.
-				const document = await data.tables.notes.openDocument(noteId);
+				const document = await data.notes.openDocument(noteId);
 				let disposed = false;
 				const opened: HoneycrispNoteDocument = {
 					document,

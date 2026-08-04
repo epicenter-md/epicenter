@@ -104,7 +104,7 @@ export async function importSkillsFromDisk({
 		const existing = skillsBySourceId.get(sourceId);
 		let skill: Skill;
 		if (existing) {
-			const repaired = await data.tables.skills.patch(existing.id, input);
+			const repaired = await data.skills.patch(existing.id, input);
 			if (repaired.error !== null || repaired.data === undefined) {
 				throw new Error(
 					repaired.error?.message ?? `Skill '${existing.id}' disappeared`,
@@ -113,7 +113,7 @@ export async function importSkillsFromDisk({
 			skill = repaired.data;
 			updated += 1;
 		} else {
-			skill = await data.tables.skills.create(input);
+			skill = await data.skills.create(input);
 			skillsBySourceId.set(sourceId, { id: skill.id });
 			created += 1;
 		}
@@ -125,7 +125,7 @@ export async function importSkillsFromDisk({
 				'utf8',
 			);
 		}
-		await using instructions = await data.tables.skills.openDocument(skill.id);
+		await using instructions = await data.skills.openDocument(skill.id);
 		writeDocumentText(instructions, read.instructions);
 
 		const referencesPath = join(read.skillPath, 'references');
@@ -144,13 +144,13 @@ export async function importSkillsFromDisk({
 				const existingReference = referencesByOwnerAndPath.get(key);
 				const reference = existingReference
 					? await repairReference(data, existingReference, path)
-					: await data.tables.skillReferences.create({
+					: await data.skillReferences.create({
 							skillId: skill.id,
 							path,
 							updatedAt: InstantString.now(),
 						});
 				referencesByOwnerAndPath.set(key, reference);
-				await using document = await data.tables.skillReferences.openDocument(
+				await using document = await data.skillReferences.openDocument(
 					reference.id,
 				);
 				writeDocumentText(document, content);
@@ -183,7 +183,7 @@ export async function exportSkillsToDisk({
 		skillsScan.skills.map(async (skill) => {
 			const skillDir = join(dir, skill.name);
 			await mkdir(skillDir, { recursive: true });
-			await using instructions = await data.tables.skills.openDocument(
+			await using instructions = await data.skills.openDocument(
 				skill.id,
 			);
 			await writeFile(
@@ -199,7 +199,7 @@ export async function exportSkillsToDisk({
 			await mkdir(referencesDir, { recursive: true });
 			await Promise.all(
 				references.map(async (reference) => {
-					await using content = await data.tables.skillReferences.openDocument(
+					await using content = await data.skillReferences.openDocument(
 						reference.id,
 					);
 					await writeFile(
@@ -241,7 +241,7 @@ async function repairReference(
 	reference: { id: string },
 	path: string,
 ): Promise<Reference> {
-	const repaired = await data.tables.skillReferences.patch(reference.id, {
+	const repaired = await data.skillReferences.patch(reference.id, {
 		path,
 		updatedAt: InstantString.now(),
 	});

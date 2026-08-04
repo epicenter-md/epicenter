@@ -10,7 +10,7 @@ import type { AgentToolDefinition } from '@epicenter/agent';
 import { getProfileVia } from '@epicenter/auth';
 import { type BlobId, type BlobRemote, parseBlobId } from '@epicenter/blobs';
 import type { BunBlobStore } from '@epicenter/blobs/bun';
-import type { Address } from '@epicenter/data';
+import type { RowAddress } from '@epicenter/data';
 import {
 	DESKTOP_EPICENTER_OBSERVE_ROUTE,
 	DESKTOP_EPICENTER_ROUTE,
@@ -546,7 +546,7 @@ export function createHomeServer({
 						return;
 					}
 					unsubscribe = dataOwner.subscribeInvalidations(
-						(changes: readonly Address[]) => {
+						(changes: readonly RowAddress[]) => {
 							const frame: DesktopInvalidationFrame = {
 								type: 'invalidation',
 								changes,

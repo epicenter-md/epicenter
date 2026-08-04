@@ -126,11 +126,7 @@ export const tabManagerLens = defineLens({
 		toolTrust: toolTrustTable,
 		conversations: conversationsTable,
 	},
-	values: {},
 });
 
 /** Tab Manager's bound data handle. */
-export type TabManagerData = BoundData<
-	typeof tabManagerLens.tables,
-	typeof tabManagerLens.values
->;
+export type TabManagerData = BoundData<typeof tabManagerLens.tables>;

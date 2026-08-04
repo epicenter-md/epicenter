@@ -41,7 +41,7 @@ export const V1_LIMITS = {
 	propertiesPerObject: 1024,
 	maxNamespaceBytes: 128,
 	maxTableKeyBytes: 64,
-	maxValueKeyBytes: 64,
+	maxRowIdBytes: 128,
 	maxLifetimeBytes: 64,
 	maxFieldKeyBytes: 512,
 	maxUnsetKeysPerIntent: 128,

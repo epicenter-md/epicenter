@@ -11,13 +11,7 @@
  * the same namespace, and therefore the same data.
  */
 
-import {
-	defineLens,
-	defineTable,
-	defineValue,
-	field,
-	optional,
-} from '@epicenter/lens';
+import { defineLens, defineTable, field, optional } from '@epicenter/lens';
 
 export const notesContract = defineLens({
 	namespace: 'so.epicenter.fixture.notes',
@@ -28,10 +22,17 @@ export const notesContract = defineLens({
 				body: optional(field.string()),
 			},
 		}),
-	},
-	values: {
-		'settings.sortOrder': defineValue({
-			value: field.select(['newest', 'oldest']),
+		settings: defineTable({
+			fields: { sortOrder: field.select(['newest', 'oldest']) },
 		}),
 	},
 });
+
+/**
+ * The one row id this contract chooses.
+ *
+ * A singleton is an ordinary row whose id the application supplies rather than
+ * a second kind of fact, so both devices reach the same address without
+ * coordinating (ADR-0206).
+ */
+export const SETTINGS = 'app';

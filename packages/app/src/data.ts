@@ -33,9 +33,10 @@
  *
  * So the carrier belongs to the document rather than to the binding. The first
  * `bind` opens it, every later `bind` joins it, and it closes when the last
- * binding lets go. `close()` still means what it says at the call site: this
- * binding is finished, its handles refuse further use, and its listeners are
- * released. Whether that was also the last one is the transport's business,
+	 * binding lets go. `[Symbol.asyncDispose]()` finishes the binding at the call
+	 * site, where it is normally used with `await using`; its handles refuse
+	 * further use and its listeners are released. Whether that was also the last
+	 * one is the transport's business,
  * not the app's.
  *
  * # Reading is a re-read, never a push
@@ -57,15 +58,10 @@ import {
 	type RowAddress,
 	type RowFor,
 	serializeTableDefinition,
-	serializeValueDefinition,
 	splitUpdate,
 	type TableDefinition,
 	type TableDefinitions,
 	type TableInvalidation,
-	type ValueAddress,
-	type ValueDefinition,
-	type ValueDefinitions,
-	type ValueFor,
 } from '@epicenter/lens';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, type Result } from 'wellcrafted/result';
@@ -103,6 +99,10 @@ export type Unsubscribe = () => void;
 
 export type TableHandle<TDefinition extends TableDefinition> = {
 	create(
+		fields: CreateInputFor<TDefinition>,
+	): Promise<Result<RowFor<TDefinition>, DataOperationError>>;
+	create(
+		rowId: string,
 		fields: CreateInputFor<TDefinition>,
 	): Promise<Result<RowFor<TDefinition>, DataOperationError>>;
 	get(
@@ -149,25 +149,9 @@ export type TableHandle<TDefinition extends TableDefinition> = {
 	subscribe(listener: (invalidation: TableInvalidation) => void): Unsubscribe;
 };
 
-export type ValueHandle<TDefinition extends ValueDefinition> = {
-	get(): Promise<Result<ValueFor<TDefinition> | undefined, DataReadError>>;
-	set(value: ValueFor<TDefinition>): Promise<Result<void, DataOperationError>>;
-	unset(): Promise<Result<void, DataOperationError>>;
-	/**
-	 * Report when this value may be stale.
-	 *
-	 * No payload, because a value has no smaller identity to name: the handle
-	 * already is the thing that changed. Re-read to find out what it holds.
-	 */
-	subscribe(listener: () => void): Unsubscribe;
-};
-
-export type BoundData<
-	TTables extends TableDefinitions,
-	TValues extends ValueDefinitions,
-> = {
-	tables: { [K in keyof TTables]: TableHandle<TTables[K]> };
-	values: { [K in keyof TValues]: ValueHandle<TValues[K]> };
+export type BoundData<TTables extends TableDefinitions> = {
+	[K in keyof TTables]: TableHandle<TTables[K]>;
+} & {
 	/**
 	 * Finish with this binding: its handles refuse further use and its listeners
 	 * stop firing.
@@ -176,7 +160,7 @@ export type BoundData<
 	 * binds and unbinds does. Other bindings in the same document are unaffected,
 	 * and the shared observation carrier closes only once the last one lets go.
 	 */
-	close(): Promise<void>;
+	[Symbol.asyncDispose](): Promise<void>;
 };
 
 export type DataNamespace = {
@@ -189,10 +173,7 @@ export type DataNamespace = {
 	 */
 	bind<
 		const TTables extends TableDefinitions,
-		const TValues extends ValueDefinitions,
-	>(
-		lens: Lens<TTables, TValues>,
-	): Promise<Result<BoundData<TTables, TValues>, BindDataError>>;
+	>(lens: Lens<TTables>): Promise<Result<BoundData<TTables>, BindDataError>>;
 };
 
 function originOf(): string {
@@ -377,10 +358,9 @@ export const data: DataNamespace = { bind };
 
 async function bind<
 	const TTables extends TableDefinitions,
-	const TValues extends ValueDefinitions,
 >(
-	lens: Lens<TTables, TValues>,
-): Promise<Result<BoundData<TTables, TValues>, BindDataError>> {
+	lens: Lens<TTables>,
+): Promise<Result<BoundData<TTables>, BindDataError>> {
 	if (!hostIsReachable()) {
 		return HostErrors.HostUnavailable({ operation: 'data.bind' });
 	}
@@ -407,7 +387,7 @@ async function bind<
 	/**
 	 * Remember one listener this binding installed on the shared dispatcher.
 	 *
-	 * The dispatcher outlives this binding, so `close()` has to take back exactly
+	 * The dispatcher outlives this binding, so disposal has to take back exactly
 	 * what this binding put in. Clearing the dispatcher, which is what a
 	 * per-binding carrier could afford to do, would silence every other binding
 	 * in the document.
@@ -428,24 +408,15 @@ async function bind<
 			createTableHandle(lens.namespace, tableName, definition),
 		]),
 	);
-	const values = Object.fromEntries(
-		Object.entries(lens.values).map(([valueName, definition]) => [
-			valueName,
-			createValueHandle(lens.namespace, valueName, definition),
-		]),
-	);
-
-	const bound: BoundData<TTables, TValues> = {
-		tables: Object.freeze(tables) as BoundData<TTables, TValues>['tables'],
-		values: Object.freeze(values) as BoundData<TTables, TValues>['values'],
-		async close() {
+	const bound = Object.freeze(Object.assign({}, tables, {
+		async [Symbol.asyncDispose]() {
 			if (isClosed) return;
 			isClosed = true;
 			for (const release of [...installed]) release();
 			await releaseTransport(transport);
 		},
-	};
-	return Ok(Object.freeze(bound));
+	})) as BoundData<TTables>;
+	return Ok(bound);
 
 	function createTableHandle<TDefinition extends TableDefinition>(
 		namespace: string,
@@ -454,7 +425,6 @@ async function bind<
 	): TableHandle<TDefinition> {
 		const wire = serializeTableDefinition(namespace, tableName, definition);
 		const addressOf = (rowId: string): RowAddress => ({
-			kind: 'row',
 			namespace,
 			tableName,
 			rowId,
@@ -481,11 +451,16 @@ async function bind<
 		}
 
 		return Object.freeze({
-			create: (fields: CreateInputFor<TDefinition>) =>
+			create: (
+				rowIdOrFields: string | CreateInputFor<TDefinition>,
+				maybeFields?: CreateInputFor<TDefinition>,
+			) =>
 				call<RowFor<TDefinition>>({
 					kind: 'table-create',
 					definition: wire,
-					fields: fields as Record<string, unknown>,
+					...(typeof rowIdOrFields === 'string'
+						? { rowId: rowIdOrFields, fields: maybeFields! }
+						: { fields: rowIdOrFields }),
 				}),
 			async get(rowId: string) {
 				const answered = await call<
@@ -537,28 +512,4 @@ async function bind<
 		}) as TableHandle<TDefinition>;
 	}
 
-	function createValueHandle<TDefinition extends ValueDefinition>(
-		namespace: string,
-		valueName: string,
-		definition: TDefinition,
-	): ValueHandle<TDefinition> {
-		const address: ValueAddress = { kind: 'value', namespace, valueName };
-		const wire = serializeValueDefinition(address, definition);
-		return Object.freeze({
-			async get() {
-				const answered = await call<
-					Result<ValueFor<TDefinition> | undefined, DataReadError>
-				>({ kind: 'value-get', definition: wire, address });
-				return answered.error !== null ? Err(answered.error) : answered.data;
-			},
-			set: (value: ValueFor<TDefinition>) =>
-				call<void>({ kind: 'value-set', definition: wire, address, value }),
-			unset: () =>
-				call<void>({ kind: 'value-unset', definition: wire, address }),
-			subscribe: (listener: () => void) =>
-				isClosed
-					? NOT_SUBSCRIBED
-					: retain(observation.subscribeValue(address, listener)),
-		}) as ValueHandle<TDefinition>;
-	}
 }

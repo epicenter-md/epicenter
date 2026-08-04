@@ -23,9 +23,14 @@ import type {
 	EngineChunk,
 } from '@epicenter/agent';
 import { openBunEpicenter } from '@epicenter/data/bun';
+import type { CreateInputFor } from '@epicenter/lens';
 import { type HomeHostInputs, parseHomeCommand } from './host.ts';
 import { createOwnedTestHomeHost } from './test-home-host.ts';
-import { homeLens } from './workspace.ts';
+import {
+	conversationsTable,
+	homeLens,
+	type ConversationsData,
+} from './workspace.ts';
 
 const FIXTURE = new URL('../test-fixtures/mini-mcp-server.ts', import.meta.url)
 	.pathname;
@@ -96,7 +101,7 @@ async function readConversationRows(dataDir: string) {
 	await using epicenter = await openBunEpicenter({
 		directory: join(dataDir, 'data'),
 	});
-	const conversations = epicenter.bind(homeLens).tables.conversations;
+	const conversations = epicenter.bind(homeLens).conversations;
 	return (await conversations.scan()).rows;
 }
 
@@ -458,14 +463,14 @@ describe('createHomeHost', () => {
 					...workspace,
 					conversations: {
 						...workspace.conversations,
-						async create(input) {
+						async create(input: CreateInputFor<typeof conversationsTable>) {
 							if (creates++ > 0) {
 								throw new Error('injected create failure');
 							}
 							return workspace.conversations.create(input);
 						},
 					},
-				};
+					} as ConversationsData;
 			},
 		});
 		await host.handleCommand({ type: 'send', content: 'first message' });

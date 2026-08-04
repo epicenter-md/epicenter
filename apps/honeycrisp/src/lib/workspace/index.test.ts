@@ -25,12 +25,12 @@ test('runtime-minted rows support optional fields and folder re-parenting', asyn
 			path: join(storageRoot, 'epicenter.sqlite3'),
 		});
 		const honeycrisp = epicenter.bind(honeycrispLens);
-		const folder = await honeycrisp.tables.folders.create({
+		const folder = await honeycrisp.folders.create({
 			name: 'Projects',
 			sortOrder: 0,
 		});
 		const now = InstantString.now();
-		const note = await honeycrisp.tables.notes.create({
+		const note = await honeycrisp.notes.create({
 			folderId: folder.id,
 			title: 'Cut over Honeycrisp',
 			preview: 'Use canonical rows',
@@ -43,8 +43,8 @@ test('runtime-minted rows support optional fields and folder re-parenting', asyn
 		expect(note.id).not.toBe(folder.id);
 		await deleteHoneycrispFolder(honeycrisp, folder.id);
 
-		const folders = await honeycrisp.tables.folders.scan();
-		const notes = await honeycrisp.tables.notes.scan();
+		const folders = await honeycrisp.folders.scan();
+		const notes = await honeycrisp.notes.scan();
 		expect(folders.rows).toEqual([]);
 		expect(notes.nonconforming).toEqual([]);
 		expect(notes.rows).toHaveLength(1);
@@ -68,7 +68,7 @@ test('note body documents remain durable across runtime reopen', async () => {
 			});
 			const honeycrisp = epicenter.bind(honeycrispLens);
 			const now = InstantString.now();
-			const note = await honeycrisp.tables.notes.create({
+			const note = await honeycrisp.notes.create({
 				title: 'Durable body',
 				preview: '',
 				pinned: false,
@@ -76,7 +76,7 @@ test('note body documents remain durable across runtime reopen', async () => {
 				updatedAt: now,
 			});
 			noteId = note.id;
-			await using document = await honeycrisp.tables.notes.openDocument(
+			await using document = await honeycrisp.notes.openDocument(
 				note.id,
 			);
 			const body = document.get('body');
@@ -88,7 +88,7 @@ test('note body documents remain durable across runtime reopen', async () => {
 			path: join(storageRoot, 'epicenter.sqlite3'),
 		});
 		const reopened = reopenedEpicenter.bind(honeycrispLens);
-		await using document = await reopened.tables.notes.openDocument(noteId);
+		await using document = await reopened.notes.openDocument(noteId);
 		expect(document.get('body').toString()).toBe('Persisted body');
 	} finally {
 		rmSync(storageRoot, { recursive: true, force: true });
@@ -103,16 +103,16 @@ test('deleting a note revokes its open body document', async () => {
 		});
 		const honeycrisp = epicenter.bind(honeycrispLens);
 		const now = InstantString.now();
-		const note = await honeycrisp.tables.notes.create({
+		const note = await honeycrisp.notes.create({
 			title: 'Delete me',
 			preview: '',
 			pinned: false,
 			createdAt: now,
 			updatedAt: now,
 		});
-		await using document = await honeycrisp.tables.notes.openDocument(note.id);
+		await using document = await honeycrisp.notes.openDocument(note.id);
 
-		await honeycrisp.tables.notes.delete(note.id);
+		await honeycrisp.notes.delete(note.id);
 
 		expect(() => document.get('body')).toThrow('was revoked');
 	} finally {

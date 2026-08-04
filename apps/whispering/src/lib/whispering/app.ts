@@ -1,10 +1,14 @@
-import type { BoundData, Epicenter, ValueLens } from '@epicenter/data';
+import type { BoundData, Epicenter } from '@epicenter/data';
 import type { TranscriptionServiceId } from '../services/transcription/providers';
 import {
 	createWhisperingSettingDefaults,
 	type WhisperingSettingValues,
 	whisperingLens,
 } from '../workspace';
+import {
+	settingFieldName,
+	WHISPERING_SETTINGS_ROW_ID,
+} from '../workspace/contract';
 import { createWhisperingRecipes, type WhisperingRecipes } from './recipes';
 import type { WhisperingBlobs } from './recording-audio';
 import {
@@ -14,10 +18,7 @@ import {
 
 export type { WhisperingBlobs } from './recording-audio';
 
-export type WhisperingData = BoundData<
-	typeof whisperingLens.tables,
-	typeof whisperingLens.values
->;
+export type WhisperingData = BoundData<typeof whisperingLens.tables>;
 
 /** Environment-owned inputs for one fully acquired Whispering app. */
 export type WhisperingAppDependencies = {
@@ -109,12 +110,12 @@ export async function openWhisperingApp(
 			reportBackgroundError,
 		});
 		const recordingsDomain = createWhisperingRecordings({
-			table: whispering.tables.recordings,
+			table: whispering.recordings,
 			blobs,
 			reportBackgroundError,
 		});
 		const recipesDomain = createWhisperingRecipes({
-			table: whispering.tables.recipes,
+			table: whispering.recipes,
 			reportBackgroundError,
 		});
 		disposeDomains = () => {
@@ -185,14 +186,13 @@ function createWhisperingSettings({
 	const notify = () => {
 		for (const listener of listeners) listener();
 	};
-	const lens = <TKey extends SettingKey>(key: TKey) =>
-		data.values[key] as ValueLens<(typeof whisperingLens.values)[TKey]>;
+	const settingsTable = data.settings;
+	const fieldName = settingFieldName;
 
 	async function read<TKey extends SettingKey>(key: TKey) {
-		const result = await lens(key).get();
-		return clone(
-			result.error === null ? (result.data ?? defaults[key]) : defaults[key],
-		);
+		const result = await settingsTable.get(WHISPERING_SETTINGS_ROW_ID);
+		if (result.error !== null || result.data === undefined) return clone(defaults[key]);
+		return clone(result.data[fieldName(key) as keyof typeof result.data] ?? defaults[key]);
 	}
 
 	/**
@@ -203,6 +203,16 @@ function createWhisperingSettings({
 	 */
 	async function refreshAll(): Promise<void> {
 		const started = new Map(keys.map((key) => [key, bumpGeneration(key)]));
+		const existing = await settingsTable.get(WHISPERING_SETTINGS_ROW_ID);
+		if (existing.error !== null) throw existing.error;
+		if (existing.data === undefined) {
+			await settingsTable.create(
+				WHISPERING_SETTINGS_ROW_ID,
+				Object.fromEntries(
+					keys.map((key) => [fieldName(key), defaults[key]]),
+				) as never,
+			);
+		}
 		const next = await Promise.all(
 			keys.map(async (key) => [key, await read(key)] as const),
 		);
@@ -218,7 +228,7 @@ function createWhisperingSettings({
 	/**
 	 * Re-read one setting, because one setting is what moved.
 	 *
-	 * A value invalidation names the handle that changed and nothing smaller, so
+	 * A table invalidation names the table that changed, so
 	 * the honest response is to re-read that handle. Re-reading all thirty-seven
 	 * on every change was thirty-seven reads per keystroke-sized edit, and it
 	 * scaled with how many settings exist rather than with what happened.
@@ -249,8 +259,8 @@ function createWhisperingSettings({
 		);
 	};
 
-	const stopValues = keys.map((key) =>
-		lens(key).subscribe(() => inBackground(refreshOne(key))),
+	const stopValues = settingsTable.subscribe(() =>
+		keys.forEach((key) => inBackground(refreshOne(key))),
 	);
 	const ready = refreshAll();
 	const settings: WhisperingSettings = {
@@ -264,7 +274,12 @@ function createWhisperingSettings({
 			bumpGeneration(key);
 			values.set(key, clone(value));
 			notify();
-			inBackground(lens(key).set(clone(value)));
+			inBackground(
+				settingsTable.patch(
+					WHISPERING_SETTINGS_ROW_ID,
+					{ [fieldName(key)]: clone(value) } as never,
+				),
+			);
 		},
 		getDefault<TKey extends SettingKey>(key: TKey) {
 			return clone(defaults[key]);
@@ -273,7 +288,12 @@ function createWhisperingSettings({
 			for (const key of keys) {
 				bumpGeneration(key);
 				values.set(key, clone(defaults[key]));
-				inBackground(lens(key).unset());
+				inBackground(
+					settingsTable.patch(
+						WHISPERING_SETTINGS_ROW_ID,
+						{ [fieldName(key)]: clone(defaults[key]) } as never,
+					),
+				);
 			}
 			notify();
 		},
@@ -291,7 +311,7 @@ function createWhisperingSettings({
 		ready,
 		dispose() {
 			for (const key of keys) bumpGeneration(key);
-			for (const stop of stopValues) stop();
+			stopValues();
 			listeners.clear();
 		},
 	};

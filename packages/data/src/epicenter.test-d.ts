@@ -40,22 +40,27 @@ const bound = epicenter.bind(
 	defineLens({
 		namespace: 'so.epicenter.types',
 		tables: { ordinary },
-		values: {},
 	}),
 );
 
-// Every table lens exposes the row-owned document at the row's own address.
-await bound.tables.ordinary.openDocument('aaaaaaaaaaaaaaaaaaaaaaaa');
+// A bound Lens is its tables. There is no `tables` level to reach through,
+// because a Lens declares nothing that would sit beside them (ADR-0206).
+await bound.ordinary.openDocument('aaaaaaaaaaaaaaaaaaaaaaaa');
 
-await bound.tables.ordinary.create({ title: 'valid' });
-await bound.tables.ordinary.patch('aaaaaaaaaaaaaaaaaaaaaaaa', {
-	note: undefined,
-});
+await bound.ordinary.create({ title: 'valid' });
+await bound.ordinary.patch('aaaaaaaaaaaaaaaaaaaaaaaa', { note: undefined });
 
-// @ts-expect-error Row ids are minted by the runtime.
-await bound.tables.ordinary.create({ id: 'caller-id', title: 'invalid' });
+// The second door: an id the application already knows, which is how a
+// singleton reaches the same address on every device.
+await bound.ordinary.create('app', { title: 'valid' });
 
-await bound.tables.ordinary.patch('aaaaaaaaaaaaaaaaaaaaaaaa', {
+// @ts-expect-error An id is a coordinate, never a field.
+await bound.ordinary.create({ id: 'caller-id', title: 'invalid' });
+
+// @ts-expect-error Supplying an id does not make the row's fields optional.
+await bound.ordinary.create('app', {});
+
+await bound.ordinary.patch('aaaaaaaaaaaaaaaaaaaaaaaa', {
 	// @ts-expect-error Required fields cannot be removed with undefined.
 	title: undefined,
 });

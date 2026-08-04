@@ -186,9 +186,9 @@ export async function openTabManagerApplication(
 		// capabilities as the tool surface, and the "Always Allow" set folded into
 		// the approval policy.
 		chat = createAgentChatState({
-			table: data.tables.conversations,
+			table: data.conversations,
 			openConversationDocument: (id) =>
-				data.tables.conversations.openDocument(id),
+				data.conversations.openDocument(id),
 			reportBackgroundError,
 			connections,
 			agent: {

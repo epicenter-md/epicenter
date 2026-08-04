@@ -142,9 +142,6 @@ const RAW_VIEWS = [
 	`CREATE TEMP VIEW _epicenter_rows AS
 		SELECT namespace, table_name, row_id, presence, fields AS fields_json
 		FROM main._replica_row_facts`,
-	`CREATE TEMP VIEW _epicenter_values AS
-		SELECT namespace, value_name, presence, content AS content_json
-		FROM main._replica_value_facts`,
 ] as const;
 
 const textEncoder = new TextEncoder();

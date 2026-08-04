@@ -20,15 +20,9 @@ import {
 
 const ROW_ID = 'abc123def456ghi789jkl012';
 const ROW_ADDRESS = {
-	kind: 'row',
 	namespace: 'so.epicenter.notes',
 	tableName: 'rows',
 	rowId: ROW_ID,
-} as const;
-const VALUE_ADDRESS = {
-	kind: 'value',
-	namespace: 'so.epicenter.settings',
-	valueName: 'theme',
 } as const;
 const row = (
 	fields: JsonObject = { title: 'A' },
@@ -42,17 +36,6 @@ const row = (
 const deleted = (): Fact => ({
 	presence: 'absent',
 	address: ROW_ADDRESS,
-	authoritySequence: 2,
-});
-const value = (): Fact => ({
-	presence: 'present',
-	address: VALUE_ADDRESS,
-	authoritySequence: 1,
-	content: 'dark',
-});
-const unset = (): Fact => ({
-	presence: 'absent',
-	address: VALUE_ADDRESS,
 	authoritySequence: 2,
 });
 
@@ -162,49 +145,5 @@ describe('row fold', () => {
 			9,
 		);
 		expect(folded.kind).toBe('noop');
-	});
-});
-
-describe('value fold', () => {
-	test('set always replaces absence, live, or unset', () => {
-		for (const current of [undefined, value(), unset()]) {
-			expect(
-				foldIntent(
-					current,
-					{ verb: 'set', address: VALUE_ADDRESS, content: 'light' },
-					7,
-				),
-			).toEqual({
-				kind: 'applied',
-				fact: {
-					presence: 'present',
-					address: VALUE_ADDRESS,
-					authoritySequence: 7,
-					content: 'light',
-				},
-			});
-		}
-	});
-
-	test('unset applies only at live and a later set revives it', () => {
-		const removed = foldIntent(
-			value(),
-			{ verb: 'unset', address: VALUE_ADDRESS },
-			2,
-		);
-		expect(removed).toEqual({ kind: 'applied', fact: unset() });
-		expect(
-			foldIntent(undefined, { verb: 'unset', address: VALUE_ADDRESS }, 3).kind,
-		).toBe('noop');
-		expect(
-			foldIntent(unset(), { verb: 'unset', address: VALUE_ADDRESS }, 3).kind,
-		).toBe('noop');
-		expect(
-			foldIntent(
-				unset(),
-				{ verb: 'set', address: VALUE_ADDRESS, content: 'again' },
-				3,
-			).kind,
-		).toBe('applied');
 	});
 });

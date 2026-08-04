@@ -20,7 +20,7 @@ export function createBookmarkState({
 	data: TabManagerData;
 	actions: TabManagerActions;
 }) {
-	const bookmarksView = fromTable(data.tables.bookmarks);
+	const bookmarksView = fromTable(data.bookmarks);
 
 	/** All bookmarks, most recently created first. */
 	const bookmarks = $derived(

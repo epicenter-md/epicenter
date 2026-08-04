@@ -1,10 +1,8 @@
 /**
  * JSON value vocabulary for scalar sync payloads.
  *
- * Fact and intent payloads are arbitrary JSON: a present value fact carries any
- * JSON value, and a present row fact carries a JSON object of top-level fields.
- * `null` and the empty object `{}` are ordinary present data, never a signal for
- * absence; absence is carried by the fact/intent presence axis instead.
+ * Fact and intent payloads carry JSON objects of top-level row fields. The empty
+ * object is ordinary present data, never a signal for absence.
  *
  * The structural TypeBox schemas below accept any JSON-shaped value so the
  * discriminated fact/intent schemas stay closed on their own keys. Depth,

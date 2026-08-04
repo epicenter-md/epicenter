@@ -26,7 +26,7 @@
  */
 import { Ok, type Result } from 'wellcrafted/result';
 
-import { type Address, addressKey } from './addresses.js';
+import { type RowAddress, addressKey } from './addresses.js';
 import {
 	canonicalize,
 	isWellFormedString,
@@ -57,7 +57,7 @@ export type ReplicaLedger = {
 	/** SHA-256 of the canonical last request; private fork-detection witness. */
 	readonly lastRequestHash: string;
 	/** Addresses touched by the last submission, in sealed intent order. */
-	readonly touchedAddresses: readonly Address[];
+	readonly touchedAddresses: readonly RowAddress[];
 	/** Bounded parked results of the last submission, remembered for exact retry. */
 	readonly parked: readonly ParkedIntent[];
 };
@@ -173,7 +173,7 @@ export function readFacts(
 
 function currentFactsFor(
 	facts: ReadonlyMap<string, Fact>,
-	addresses: readonly Address[],
+	addresses: readonly RowAddress[],
 ): Fact[] {
 	const result: Fact[] = [];
 	for (const address of addresses) {

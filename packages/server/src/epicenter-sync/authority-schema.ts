@@ -4,7 +4,7 @@ import {
 	StorageUpgradeRequiredError,
 } from '@epicenter/sqlite';
 
-export const AUTHORITY_FORMAT_VERSION = 5;
+export const AUTHORITY_FORMAT_VERSION = 6;
 
 /**
  * Every relation a current authority store owns.
@@ -18,26 +18,14 @@ const AUTHORITY_TABLES = [
 	'_authority_metadata',
 	'_authority_replicas',
 	'_authority_row_facts',
-	'_authority_value_facts',
+	'_authority_row_outbox',
 	'document_updates',
 	'document_versions',
 ] as const;
 
 /**
- * The authority mirrors the replica's split fact relations (ADR-0163,
- * ADR-0164): row facts carry a row id, an object payload, and a terminal
- * tombstone; value facts carry any JSON and a reversible unset. Neither relation
- * needs an `address_kind` column or an empty-string row id to say which laws
- * apply, because the relation itself says it.
- *
- * One invariant does span both relations: `authority_sequence` is globally unique
- * and increasing across every fact this authority stores, because the exchange
- * page is a single sequence-ordered stream over the union of the two. SQLite
- * cannot express a cross-relation unique constraint, and the guarantee does not
- * come from one: it comes from `metadata.next_sequence`, which this authority is
- * the only writer of and only ever advances. The per-relation unique indexes
- * below still refuse a duplicate within one relation, which is the failure a
- * paging or fold bug would actually produce.
+ * One relation holds every current row fact. Presence is two-valued and
+ * `absent` is a terminal tombstone.
  */
 const SCHEMA = [
 	`CREATE TABLE main._authority_metadata (
@@ -47,7 +35,9 @@ const SCHEMA = [
 	) STRICT`,
 	`CREATE TABLE main._authority_replicas (
 		replica_id TEXT PRIMARY KEY CHECK (
-			length(replica_id) = 24 AND replica_id NOT GLOB '*[^a-z0-9]*'
+			length(replica_id) BETWEEN 1 AND 128 AND
+			replica_id NOT GLOB '*[^A-Za-z0-9._-]*' AND
+			replica_id GLOB '[A-Za-z0-9]*'
 		),
 		accepted_batch INTEGER NOT NULL CHECK (accepted_batch >= 0),
 		request_digest TEXT,
@@ -63,7 +53,9 @@ const SCHEMA = [
 		namespace TEXT NOT NULL,
 		table_name TEXT NOT NULL,
 		row_id TEXT NOT NULL CHECK (
-			length(row_id) = 24 AND row_id NOT GLOB '*[^a-z0-9]*'
+			length(row_id) BETWEEN 1 AND 128 AND
+			row_id NOT GLOB '*[^A-Za-z0-9._-]*' AND
+			row_id GLOB '[A-Za-z0-9]*'
 		),
 		presence TEXT NOT NULL CHECK (presence IN ('present', 'absent')),
 		fields TEXT,
@@ -75,24 +67,29 @@ const SCHEMA = [
 		)
 	) WITHOUT ROWID, STRICT`,
 	'CREATE UNIQUE INDEX main._authority_row_facts_authority_sequence ON _authority_row_facts(authority_sequence)',
-	`CREATE TABLE main._authority_value_facts (
+	`CREATE TABLE main._authority_row_outbox (
+		local_sequence INTEGER PRIMARY KEY CHECK (local_sequence > 0),
 		namespace TEXT NOT NULL,
-		value_name TEXT NOT NULL,
-		presence TEXT NOT NULL CHECK (presence IN ('present', 'absent')),
-		content TEXT,
-		authority_sequence INTEGER NOT NULL CHECK (authority_sequence >= 1),
-		PRIMARY KEY (namespace, value_name),
+		table_name TEXT NOT NULL,
+		row_id TEXT NOT NULL CHECK (
+			length(row_id) BETWEEN 1 AND 128 AND
+			row_id NOT GLOB '*[^A-Za-z0-9._-]*' AND
+			row_id GLOB '[A-Za-z0-9]*'
+		),
+		verb TEXT NOT NULL CHECK (verb IN ('patch', 'delete')),
+		patch TEXT,
 		CHECK (
-			(presence = 'present' AND content IS NOT NULL AND json_valid(content)) OR
-			(presence = 'absent' AND content IS NULL)
+			(verb = 'patch' AND patch IS NOT NULL AND json_valid(patch)) OR
+			(verb = 'delete' AND patch IS NULL)
 		)
-	) WITHOUT ROWID, STRICT`,
-	'CREATE UNIQUE INDEX main._authority_value_facts_authority_sequence ON _authority_value_facts(authority_sequence)',
+	) STRICT`,
 	`CREATE TABLE document_updates (
 		namespace TEXT NOT NULL,
 		table_name TEXT NOT NULL,
 		row_id TEXT NOT NULL CHECK (
-			length(row_id) = 24 AND row_id NOT GLOB '*[^a-z0-9]*'
+			length(row_id) BETWEEN 1 AND 128 AND
+			row_id NOT GLOB '*[^A-Za-z0-9._-]*' AND
+			row_id GLOB '[A-Za-z0-9]*'
 		),
 		update_sequence INTEGER NOT NULL CHECK (update_sequence > 0),
 		update_bytes BLOB NOT NULL,
@@ -105,7 +102,9 @@ const SCHEMA = [
 		namespace TEXT NOT NULL,
 		table_name TEXT NOT NULL,
 		row_id TEXT NOT NULL CHECK (
-			length(row_id) = 24 AND row_id NOT GLOB '*[^a-z0-9]*'
+			length(row_id) BETWEEN 1 AND 128 AND
+			row_id NOT GLOB '*[^A-Za-z0-9._-]*' AND
+			row_id GLOB '[A-Za-z0-9]*'
 		),
 		version INTEGER NOT NULL CHECK (version > 0),
 		PRIMARY KEY (namespace, table_name, row_id)

@@ -43,12 +43,10 @@ const definition = defineTable({
 const lens = defineLens({
 	namespace: NAMESPACE,
 	tables: { notes: definition },
-	values: {},
 });
 
 function rowAddress(rowId: string) {
 	return {
-		kind: 'row',
 		namespace: NAMESPACE,
 		tableName: TABLE,
 		rowId,
@@ -121,7 +119,7 @@ function openClient(path = ':memory:') {
 		raw,
 		database,
 		epicenter,
-		notes: epicenter.bind(lens).tables.notes,
+		notes: epicenter.bind(lens).notes,
 	};
 }
 

@@ -35,7 +35,7 @@ function createRuntime(scanFolders: () => Promise<never>) {
 			return releases;
 		},
 		value: {
-			bind: () => ({ tables: { folders: table, notes: table }, values: {} }),
+			bind: () => ({ folders: table, notes: table }),
 			syncStatus: { state: 'local', lastError: undefined },
 			subscribeSyncStatus: () => () => {},
 			async [Symbol.asyncDispose]() {

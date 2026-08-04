@@ -2,13 +2,9 @@
  * @fileoverview What a bound handle reports when its data may be stale.
  *
  * One rule decides the shape of everything here: a bound handle reports when
- * data reachable *through it* may be stale. A table handle can sometimes name
- * the rows that moved, because a row has a runtime id the replica already
- * emitted. A value handle cannot, because a value has no smaller identity than
- * itself: there is nothing left to name once you have named the handle.
- *
- * That asymmetry is honest rather than tidy. Two shapes for two unlike things
- * beats one shape that lies about one of them.
+ * data reachable *through it* may be stale. A table handle can usually name the
+ * rows that moved, because every fact carries a row id the replica already
+ * emitted; when it cannot, it says so with table scope rather than guessing.
  *
  * # The laws
  *
@@ -26,10 +22,9 @@
  *    says "everything reachable here may be stale", which is strictly stronger
  *    than any set of row ids still being processed.
  * 6. **A carrier gap heals locally.** When an observation carrier reconnects,
- *    the client emits table scope to every subscribed table and a void
- *    invalidation to every subscribed value. Nothing on the wire encodes
- *    reconnection, reset, or scope; the client that noticed the gap is the one
- *    that knows which handles were listening across it.
+ *    the client emits table scope to every subscribed table. Nothing on the wire
+ *    encodes reconnection, reset, or scope; the client that noticed the gap is
+ *    the one that knows which handles were listening across it.
  *
  * Law 6 is why `scope: 'table'` exists at all. Without it the only honest
  * response to a gap would be to fail the handle closed and make the app reload,
@@ -39,7 +34,7 @@
 
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 
-import { type Address, addressKey, type ValueAddress } from './addresses.js';
+import type { RowAddress } from './addresses.js';
 
 /**
  * What a table handle reports when rows reachable through it may be stale.
@@ -61,7 +56,6 @@ export type TableInvalidation =
 export type TableInvalidationListener = (
 	invalidation: TableInvalidation,
 ) => void;
-export type ValueInvalidationListener = () => void;
 
 const ObservationError = defineErrors({
 	SubscriberThrew: ({ cause }: { cause: unknown }) => ({
@@ -117,7 +111,6 @@ export function createInvalidationDispatcher({
 	log?: InvalidationErrorReporter;
 } = {}) {
 	const tableListeners = new Map<string, Set<TableInvalidationListener>>();
-	const valueListeners = new Map<string, Set<ValueInvalidationListener>>();
 
 	/**
 	 * A subscriber that throws is contained rather than allowed to abort the
@@ -130,14 +123,6 @@ export function createInvalidationDispatcher({
 	): void {
 		try {
 			listener(invalidation);
-		} catch (cause) {
-			log.error(ObservationError.SubscriberThrew({ cause }));
-		}
-	}
-
-	function callValueListener(listener: ValueInvalidationListener): void {
-		try {
-			listener();
 		} catch (cause) {
 			log.error(ObservationError.SubscriberThrew({ cause }));
 		}
@@ -159,20 +144,6 @@ export function createInvalidationDispatcher({
 			};
 		},
 
-		subscribeValue(
-			address: ValueAddress,
-			listener: ValueInvalidationListener,
-		): () => void {
-			const key = addressKey(address);
-			const listeners = valueListeners.get(key) ?? new Set();
-			listeners.add(listener);
-			valueListeners.set(key, listeners);
-			return () => {
-				listeners.delete(listener);
-				if (listeners.size === 0) valueListeners.delete(key);
-			};
-		},
-
 		/**
 		 * Deliver one committed batch of addresses.
 		 *
@@ -182,15 +153,10 @@ export function createInvalidationDispatcher({
 		 * address can appear twice in one batch and a consumer that point-reads
 		 * should not read it twice.
 		 */
-		deliver(addresses: readonly Address[]): void {
+		deliver(addresses: readonly RowAddress[]): void {
 			if (addresses.length === 0) return;
 			const rowsByTable = new Map<string, Set<string>>();
-			const values = new Set<string>();
 			for (const address of addresses) {
-				if (address.kind === 'value') {
-					values.add(addressKey(address));
-					continue;
-				}
 				const key = tableKey(address.namespace, address.tableName);
 				const ids = rowsByTable.get(key) ?? new Set<string>();
 				ids.add(address.rowId);
@@ -207,21 +173,15 @@ export function createInvalidationDispatcher({
 					callTableListener(listener, invalidation);
 				}
 			}
-			for (const key of values) {
-				const listeners = valueListeners.get(key);
-				if (listeners === undefined) continue;
-				for (const listener of [...listeners]) callValueListener(listener);
-			}
 		},
 
 		/**
 		 * Heal an observation gap.
 		 *
-		 * Every subscribed table hears table scope and every subscribed value
-		 * hears its void invalidation. This is the whole of law 6: the carrier
-		 * says only that it reconnected, and the client that was holding the
-		 * subscriptions turns that into the strongest honest statement it can
-		 * make about each one.
+		 * Every subscribed table hears table scope. This is the whole of law 6:
+		 * the carrier says only that it reconnected, and the client that was
+		 * holding the subscriptions turns that into the strongest honest
+		 * statement it can make about each one.
 		 */
 		invalidateAll(): void {
 			const tableScope: TableInvalidation = { scope: 'table' };
@@ -230,14 +190,10 @@ export function createInvalidationDispatcher({
 					callTableListener(listener, tableScope);
 				}
 			}
-			for (const listeners of [...valueListeners.values()]) {
-				for (const listener of [...listeners]) callValueListener(listener);
-			}
 		},
 
 		clear(): void {
 			tableListeners.clear();
-			valueListeners.clear();
 		},
 	};
 }

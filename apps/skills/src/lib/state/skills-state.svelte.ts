@@ -58,10 +58,10 @@ export function createSkillsState({ skills }: { skills: SkillsData }) {
 	}
 
 	let isDisposed = false;
-	const stopSkills = skills.tables.skills.subscribe(() => {
+	const stopSkills = skills.skills.subscribe(() => {
 		if (!isDisposed) void refresh();
 	});
-	const stopSkillReferences = skills.tables.skillReferences.subscribe(() => {
+	const stopSkillReferences = skills.skillReferences.subscribe(() => {
 		if (!isDisposed) void refresh();
 	});
 	const whenReady = refresh({ throwOnError: true });
@@ -90,7 +90,7 @@ export function createSkillsState({ skills }: { skills: SkillsData }) {
 			selectedSkillId = id;
 		},
 		async createSkill(name: string): Promise<string> {
-			const skill = await skills.tables.skills.create({
+			const skill = await skills.skills.create({
 				sourceId: crypto.randomUUID(),
 				name,
 				description: 'TODO: describe when and why to use this skill.',
@@ -101,7 +101,7 @@ export function createSkillsState({ skills }: { skills: SkillsData }) {
 			return skill.id;
 		},
 		async updateSkill(id: string, updates: SkillMetadataUpdate): Promise<void> {
-			const result = await skills.tables.skills.patch(id, {
+			const result = await skills.skills.patch(id, {
 				...updates,
 				updatedAt: InstantString.now(),
 			});
@@ -111,10 +111,10 @@ export function createSkillsState({ skills }: { skills: SkillsData }) {
 		async deleteSkill(id: string): Promise<void> {
 			for (const reference of referenceRows) {
 				if (reference.skillId === id) {
-					await skills.tables.skillReferences.delete(reference.id);
+					await skills.skillReferences.delete(reference.id);
 				}
 			}
-			await skills.tables.skills.delete(id);
+			await skills.skills.delete(id);
 			if (selectedSkillId === id) {
 				selectedSkillId =
 					sortedSkills.find((skill) => skill.id !== id)?.id ?? null;
@@ -122,7 +122,7 @@ export function createSkillsState({ skills }: { skills: SkillsData }) {
 			await refresh();
 		},
 		async createReference(skillId: string, path: string): Promise<string> {
-			const reference = await skills.tables.skillReferences.create({
+			const reference = await skills.skillReferences.create({
 				skillId,
 				path,
 				updatedAt: InstantString.now(),
@@ -131,7 +131,7 @@ export function createSkillsState({ skills }: { skills: SkillsData }) {
 			return reference.id;
 		},
 		async deleteReference(id: string): Promise<void> {
-			await skills.tables.skillReferences.delete(id);
+			await skills.skillReferences.delete(id);
 			await refresh();
 		},
 		[Symbol.dispose]() {

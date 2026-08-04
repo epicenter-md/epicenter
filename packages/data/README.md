@@ -6,29 +6,30 @@ Epicenter data.
 ## One Lens declares one namespace
 
 A Lens is one application's interpretation of one durable namespace. The
-namespace is declared exactly once, and each `tables` or `values` property name
-is the durable local name of that table or value:
+namespace is declared exactly once, and each `tables` property name is the
+durable local name of that table:
 
 ```ts
 const notesLens = defineLens({
 	namespace: 'com.example.notes',
 	tables: { notes: defineTable({ fields: { title: field.string() } }) },
-	values: { theme: defineValue({ value: field.string() }) },
 });
 
 const data = epicenter.bind(notesLens);
 ```
 
-That makes `notes` address `{ kind: 'row', namespace: 'com.example.notes',
-table: 'notes', rowId }` forever. There is no second `key` to keep in step with
-the property name, and no rename: a different property name is a different
-address, and therefore different data.
+That makes `notes` address `{ namespace: 'com.example.notes', tableName:
+'notes', rowId }` forever. There is no second `key` to keep in step with the
+property name, and no rename: a different property name is a different address,
+and therefore different data.
 
-Table names and value names have different grammars, because they are consumed
-differently. A table name is one bare SQL identifier, since a trusted host
-mounts it as a relation. A value name is never a relation or a column, so it may
-carry dotted grouping such as `settings.sound.manualStart`; those dots are part
-of one opaque name and imply no nesting, prefix matching, or lifecycle.
+A table name is one bare SQL identifier, because a trusted host mounts it as a
+relation and `SELECT * FROM notes` must need no quoting.
+
+A row id comes from whoever knows it. Usually nobody does, so `create(fields)`
+mints one; when the application knows it, `create(rowId, fields)` uses that.
+A settings singleton is an ordinary row at a chosen id, which is why a Lens
+declares tables and fields and nothing else (ADR-0206).
 
 ## Physical storage is not the merge boundary
 
@@ -70,18 +71,18 @@ The schema already provides four useful choices. Keep the boundary as small as
 possible while still preserving the intent of one operation.
 
 ```txt
-Need a collection?
+What must merge alone?
 |
 +-- Independent bounded properties should compose
-|   `-- defineTable with ordinary top-level fields
+|   `-- ordinary top-level fields
 |
 +-- One bounded object should replace coherently
-|   `-- defineTable with one value: field.json(schema) field
+|   `-- one field holding field.json(schema), since a field replaces whole
 |
-+-- One singleton should replace coherently
-|   `-- defineValue with field.json(schema)
++-- One singleton, however many properties
+|   `-- the same table, at a row id the application chooses
 |
-`-- Independent edits inside the value must survive
+`-- Independent edits inside one value must survive
     `-- the row-owned Yjs document
 ```
 
@@ -137,10 +138,9 @@ const exampleLens = defineLens({
 			fields: { value: field.json(ProfileSchema) },
 		}),
 	},
-	values: {},
 });
 
-const profiles = epicenter.bind(exampleLens).tables.profiles;
+const profiles = epicenter.bind(exampleLens).profiles;
 
 await profiles.patch(id, { value: nextProfile });
 ```
@@ -165,12 +165,18 @@ A small inner edit sends the complete `value` in the local change. Atomic JSON
 is almost free in steady-state storage, but its edit cost is proportional to
 the whole payload.
 
-For one named singleton, use `defineValue` instead of inventing a one-row
-table:
+For one named singleton, declare an ordinary table and choose the row's id:
 
 ```ts
-const shortcut = defineValue({ value: field.json(ShortcutSchema) });
+const settings = defineTable({ fields: { shortcut: field.json(ShortcutSchema) } });
+
+const SETTINGS = 'app'; // the one name this application chooses
+await data.settings.patch(SETTINGS, { shortcut });
 ```
+
+Both devices compute the same address because the id is declared rather than
+minted, each field still merges independently, and unsetting one is reversible
+because it is a field unset rather than a row deletion.
 
 Use the row-owned Yjs document only when replacement would erase independent
 interior edits. Collaborative prose is the usual example. A document earns its

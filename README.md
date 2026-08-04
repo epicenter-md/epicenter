@@ -74,12 +74,11 @@ const notesLens = defineLens({
       },
     }),
   },
-  values: {},
 });
 
 const data = epicenter.bind({ notes: notesLens });
 
-await data.notes.tables.notes.create({
+await data.notes.create({
   title: 'Hello',
   body: 'Follow up on the README framing.',
 });

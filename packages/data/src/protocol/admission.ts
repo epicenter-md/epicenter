@@ -2,8 +2,6 @@ import {
 	DATA_ADDRESS_CEILINGS,
 	isAdmissibleAddress,
 	isJsonObject,
-	isJsonValue,
-	isRuntimeId,
 } from '@epicenter/lens';
 import type { Fact, Intent } from './schemas.js';
 
@@ -39,8 +37,6 @@ function isFieldKey(value: string): boolean {
 
 export function isAdmissibleIntent(intent: Intent): boolean {
 	if (!isAdmissibleAddress(intent.address, DATA_ADDRESS_CEILINGS)) return false;
-	if (intent.address.kind === 'row' && !isRuntimeId(intent.address.rowId))
-		return false;
 	if (encodedJsonBytes(intent) > DATA_ADMISSION_LIMITS.encodedIntentBytes)
 		return false;
 
@@ -62,10 +58,6 @@ export function isAdmissibleIntent(intent: Intent): boolean {
 		}
 		case 'delete':
 			return true;
-		case 'set':
-			return isJsonValue(intent.content);
-		case 'unset':
-			return true;
 		default:
 			return intent satisfies never;
 	}
@@ -86,12 +78,8 @@ export function isAdmissibleFact(fact: Fact): boolean {
 	) {
 		return false;
 	}
-	if (fact.address.kind === 'row' && !isRuntimeId(fact.address.rowId))
-		return false;
 	if (encodedJsonBytes(fact) > DATA_ADMISSION_LIMITS.encodedFactBytes)
 		return false;
 	if (fact.presence === 'absent') return true;
-	return 'fields' in fact
-		? isJsonObject(fact.fields)
-		: isJsonValue(fact.content);
+	return isJsonObject(fact.fields);
 }

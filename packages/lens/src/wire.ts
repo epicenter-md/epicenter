@@ -1,21 +1,10 @@
-import type { ValueAddress } from './addresses.js';
-import {
-	compileTableDefinition,
-	compileValueDefinition,
-	type TableDefinition,
-	type ValueDefinition,
-} from './definitions.js';
+import { compileTableDefinition, type TableDefinition } from './definitions.js';
 
 export type SerializedTableDefinition = {
 	namespace: string;
 	table: string;
 	fields: Record<string, unknown>;
 	optionalFields: string[];
-};
-
-export type SerializedValueDefinition = {
-	address: ValueAddress;
-	value: unknown;
 };
 
 export function serializeTableDefinition(
@@ -30,14 +19,6 @@ export function serializeTableDefinition(
 		fields: cloneJson(definition.fields),
 		optionalFields: [...compiled.optional],
 	};
-}
-
-export function serializeValueDefinition(
-	address: ValueAddress,
-	definition: ValueDefinition,
-): SerializedValueDefinition {
-	compileValueDefinition(definition);
-	return { address, value: cloneJson(definition.value) };
 }
 
 /**

@@ -2,7 +2,6 @@ import type { ObservationFrame } from '@epicenter/lens';
 import type {
 	BrowserOperation,
 	SerializedTableDefinition,
-	SerializedValueDefinition,
 } from './browser/protocol.js';
 import type { RowAddress } from './protocol/index.js';
 import type { ThrownErrorDescription } from './thrown-error.js';
@@ -88,4 +87,4 @@ export {
 	describeThrownError,
 	type ThrownErrorDescription,
 } from './thrown-error.js';
-export type { SerializedTableDefinition, SerializedValueDefinition };
+export type { SerializedTableDefinition };

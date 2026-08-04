@@ -38,7 +38,7 @@ export function createNotes({
 		const generation = ++refreshGeneration;
 		try {
 			const { rows: nextRows, nonconforming: nextNonconforming } =
-				await honeycrisp.tables.notes.scan();
+				await honeycrisp.notes.scan();
 			if (generation !== refreshGeneration) return;
 			rows = nextRows;
 			nonconforming = nextNonconforming;
@@ -53,7 +53,7 @@ export function createNotes({
 		noteId: NoteId,
 		changes: TChanges & ConstrainedUpdate<typeof notesTable, TChanges>,
 	): Promise<void> {
-		const result = await honeycrisp.tables.notes.patch(noteId, changes);
+		const result = await honeycrisp.notes.patch(noteId, changes);
 		if (result.error !== null) throw result.error;
 		await refresh();
 	}
@@ -81,7 +81,7 @@ export function createNotes({
 
 		async create(folderId: FolderId | null): Promise<{ id: NoteId }> {
 			const now = InstantString.now();
-			const note = await honeycrisp.tables.notes.create({
+			const note = await honeycrisp.notes.create({
 				...(folderId === null ? {} : { folderId }),
 				title: '',
 				preview: '',
@@ -113,7 +113,7 @@ export function createNotes({
 		},
 
 		async permanentlyDelete(noteId: NoteId): Promise<void> {
-			await honeycrisp.tables.notes.delete(noteId);
+			await honeycrisp.notes.delete(noteId);
 			await refresh();
 			if (searchParams.note === noteId) {
 				searchParams.update({ note: null });

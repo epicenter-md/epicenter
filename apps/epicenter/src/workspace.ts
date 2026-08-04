@@ -48,7 +48,6 @@ export const honeycrispNotesTable = defineTable({
 export const homeLens = defineLens({
 	namespace: 'so.epicenter.home',
 	tables: { conversations: conversationsTable },
-	values: {},
 });
 
 /**
@@ -61,15 +60,8 @@ export const homeLens = defineLens({
 export const honeycrispMirrorLens = defineLens({
 	namespace: 'so.epicenter.honeycrisp',
 	tables: { folders: honeycrispFoldersTable, notes: honeycrispNotesTable },
-	values: {},
 });
 
 export type Conversation = RowFor<typeof conversationsTable>;
-export type ConversationsData = BoundData<
-	typeof homeLens.tables,
-	typeof homeLens.values
->['tables'];
-export type HoneycrispData = BoundData<
-	typeof honeycrispMirrorLens.tables,
-	typeof honeycrispMirrorLens.values
->['tables'];
+export type ConversationsData = BoundData<typeof homeLens.tables>;
+export type HoneycrispData = BoundData<typeof honeycrispMirrorLens.tables>;

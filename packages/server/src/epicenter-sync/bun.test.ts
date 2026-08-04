@@ -32,7 +32,6 @@ const TABLE = 'documents';
 const ROW_ID = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 const REPLICA_ID = 'rrrrrrrrrrrrrrrrrrrrrrrr';
 const ROW_ADDRESS = {
-	kind: 'row',
 	namespace: NAMESPACE,
 	tableName: TABLE,
 	rowId: ROW_ID,

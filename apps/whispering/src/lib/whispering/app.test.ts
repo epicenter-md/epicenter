@@ -83,39 +83,38 @@ test('one changed setting rereads one setting, not every setting', async () => {
 						...epicenter,
 						bind(lens: Parameters<typeof epicenter.bind>[0]) {
 							const bound = epicenter.bind(lens);
-							return {
-								...bound,
-								values: Object.fromEntries(
-									Object.entries(bound.values).map(([name, value]) => [
-										name,
-										{
-											...value,
-											get() {
-												reads.push(name);
-												return value.get();
-											},
+							return Object.fromEntries(
+								Object.entries(bound).map(([tableName, table]) => [
+									tableName,
+									{
+										...table,
+										get(rowId: string) {
+											reads.push(`${tableName}/${rowId}`);
+											return table.get(rowId);
 										},
-									]),
-								),
-							};
+									},
+								]),
+							);
 						},
 					} as typeof epicenter;
 				},
 			}),
 		);
 
-		// Boot reads every setting once, batched: nothing is known yet.
-		const bootReads = reads.length;
-		expect(bootReads).toBeGreaterThan(1);
+		// Boot reads the settings row: nothing is known yet.
+		expect(reads.length).toBeGreaterThan(0);
 		reads.length = 0;
 
 		app.settings.set('settings.recording.autoUpload', true);
 		await Bun.sleep(25);
 
-		// The write's own invalidation rereads exactly the value that moved.
-		// Before this, it reread all of them, once per subscribed value.
-		expect(new Set(reads)).toEqual(new Set(['settings.recording.autoUpload']));
-		expect(reads.length).toBeLessThan(bootReads);
+		// Every setting lives in one row, so a write can only ever reread that one
+		// address: nothing unrelated is touched.
+		expect(new Set(reads)).toEqual(new Set(['settings/settings']));
+		// It is reread once per subscriber rather than once, which is the coarser
+		// invalidation ADR-0206 accepted: one row wakes every listener on it. The
+		// fan-out belongs in this settings layer, not in the platform.
+		expect(reads.length).toBeGreaterThan(0);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

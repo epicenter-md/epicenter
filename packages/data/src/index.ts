@@ -6,18 +6,13 @@ export {
 	DataReadError,
 	defineLens,
 	defineTable,
-	defineValue,
 	type FieldsFor,
 	type Lens,
 	type NonconformingRowError,
-	type NonconformingValueError,
 	optional,
 	type RowFor,
 	type TableDefinition,
 	type TableDefinitions,
-	type ValueDefinition,
-	type ValueDefinitions,
-	type ValueFor,
 } from '@epicenter/lens';
 export {
 	acceptedDocumentOrigin,
@@ -43,12 +38,9 @@ export {
 	type TableEntry,
 	type TableLens,
 	type TableScan,
-	type ValueLens,
 } from './epicenter.js';
 export type {
-	Address,
 	RowAddress,
-	ValueAddress,
 } from './protocol/index.js';
 export {
 	type Exchange,

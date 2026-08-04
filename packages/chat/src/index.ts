@@ -43,7 +43,6 @@ export const conversationsTable = defineTable({
 export const chatLens = defineLens({
 	namespace: 'so.epicenter.chat',
 	tables: { conversations: conversationsTable },
-	values: {},
 });
 
 export type Conversation = RowFor<typeof conversationsTable>;

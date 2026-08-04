@@ -8,7 +8,6 @@ import {
 } from './documents.js';
 import {
 	bindSerializedTable,
-	bindSerializedValue,
 	subscribeCommittedAddresses,
 } from './epicenter.js';
 import {
@@ -17,7 +16,7 @@ import {
 	type InspectionError,
 	openInspection,
 } from './inspection.js';
-import type { Address } from './protocol/index.js';
+import type { RowAddress } from './protocol/index.js';
 
 type OpenDocument = {
 	surfaceId: string;
@@ -95,9 +94,12 @@ export async function createDesktopEpicenterOwner({
 
 		switch (operation.kind) {
 			case 'table-create':
-				return bindSerializedTable(epicenter, operation.definition).create(
-					operation.fields,
-				);
+				return operation.rowId === undefined
+					? bindSerializedTable(epicenter, operation.definition).create(operation.fields)
+						: (bindSerializedTable(epicenter, operation.definition).create as unknown as (
+								rowId: string,
+								fields: Record<string, unknown>,
+							) => Promise<unknown>)(operation.rowId, operation.fields);
 			case 'table-get':
 				return bindSerializedTable(epicenter, operation.definition).get(
 					operation.address.rowId,
@@ -123,14 +125,6 @@ export async function createDesktopEpicenterOwner({
 				return bindSerializedTable(epicenter, operation.definition).entriesPage(
 					operation.after,
 				);
-			case 'value-get':
-				return bindSerializedValue(epicenter, operation.definition).get();
-			case 'value-set':
-				return bindSerializedValue(epicenter, operation.definition).set(
-					operation.value,
-				);
-			case 'value-unset':
-				return bindSerializedValue(epicenter, operation.definition).unset();
 			case 'document-open': {
 				const lens = bindSerializedTable(epicenter, operation.definition);
 				const document = await lens.openDocument(operation.address.rowId);
@@ -191,7 +185,7 @@ export async function createDesktopEpicenterOwner({
 		 * filtering and the host stays a pipe.
 		 */
 		subscribeInvalidations(
-			listener: (changes: readonly Address[]) => void,
+		listener: (changes: readonly RowAddress[]) => void,
 		): () => void {
 			return epicenter[subscribeCommittedAddresses](listener);
 		},

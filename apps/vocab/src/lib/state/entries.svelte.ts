@@ -11,7 +11,7 @@ import { fromTable } from '@epicenter/svelte';
 import type { Entry, VocabData } from '@epicenter/vocab';
 
 export function createEntriesState(vocab: VocabData) {
-	const entriesView = fromTable(vocab.tables.entries);
+	const entriesView = fromTable(vocab.entries);
 
 	/** Every saved entry, newest first. */
 	const entries = $derived(
@@ -42,7 +42,7 @@ export function createEntriesState(vocab: VocabData) {
 			const trimmed = text.trim();
 			if (!trimmed) return false;
 			if (entries.some((entry) => entry.text === trimmed)) return false;
-			void vocab.tables.entries.create({
+			void vocab.entries.create({
 				text: trimmed,
 				note: '',
 				stage: 'new',
@@ -53,17 +53,17 @@ export function createEntriesState(vocab: VocabData) {
 
 		/** Change an entry's acquisition stage. */
 		setStage(id: string, stage: Entry['stage']) {
-			void vocab.tables.entries.patch(id, { stage });
+			void vocab.entries.patch(id, { stage });
 		},
 
 		/** Edit an entry's note. Note is human-owned: only ever written from user edits. */
 		setNote(id: string, note: string) {
-			void vocab.tables.entries.patch(id, { note });
+			void vocab.entries.patch(id, { note });
 		},
 
 		/** Remove an entry from the pool. */
 		remove(id: string) {
-			void vocab.tables.entries.delete(id);
+			void vocab.entries.delete(id);
 		},
 	};
 }

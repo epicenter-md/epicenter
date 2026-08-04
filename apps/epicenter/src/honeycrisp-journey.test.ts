@@ -113,7 +113,7 @@ async function launchEpicenter(root: string) {
 		fetch: browserFetch,
 		/** What Home's honeycrisp tools see, through Home's own interpretation. */
 		homeTools: createHoneycrispCatalog(
-			dataOwner.epicenter.bind(honeycrispMirrorLens).tables,
+			dataOwner.epicenter.bind(honeycrispMirrorLens),
 		),
 		/** The replica the served Honeycrisp build opens, opened the same way. */
 		openHoneycrispSurface: () =>
@@ -162,7 +162,7 @@ test('Honeycrisp is listed, served, shared with Home, and durable across relaunc
 			// What the served build does once it is running: create a folder, a
 			// note, and a note body against the host-owned replica.
 			const surface = await epicenter.openHoneycrispSurface();
-			const honeycrisp = surface.bind(honeycrispLens).tables;
+			const honeycrisp = surface.bind(honeycrispLens);
 			const folder = await honeycrisp.folders.create({
 				name: 'Reading',
 				sortOrder: 0,
@@ -199,7 +199,7 @@ test('Honeycrisp is listed, served, shared with Home, and durable across relaunc
 		const relaunched = await launchEpicenter(root);
 		try {
 			const surface = await relaunched.openHoneycrispSurface();
-			const honeycrisp = surface.bind(honeycrispLens).tables;
+			const honeycrisp = surface.bind(honeycrispLens);
 			const { rows } = await honeycrisp.notes.scan();
 			expect(rows.map(({ title }) => title)).toEqual(['Apples']);
 

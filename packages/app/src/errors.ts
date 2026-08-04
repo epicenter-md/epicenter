@@ -22,7 +22,6 @@
 
 import type {
 	NonconformingRowError,
-	NonconformingValueError,
 } from '@epicenter/lens';
 import {
 	defineErrors,
@@ -281,4 +280,3 @@ export type DataOperationError = DataUnavailable | DataFailed;
 export type DataReadError =
 	| DataOperationError
 	| NonconformingRowError
-	| NonconformingValueError;

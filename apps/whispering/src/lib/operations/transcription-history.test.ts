@@ -18,7 +18,7 @@ import type { Recording, RecordingId } from '$lib/workspace';
 const recordingId = 'recording-1' as RecordingId;
 const recording = { id: recordingId } as Recording;
 type UpdateError = { name: string; message: string };
-const update = mock(
+const patch = mock(
 	async (): Promise<Result<Recording | undefined, UpdateError>> =>
 		Ok(recording),
 );
@@ -28,23 +28,23 @@ const { recordTranscriptionOutcome, saveRecordingHistory } = await import(
 );
 type WhisperingApp = import('$lib/whispering/app').WhisperingApp;
 
-const app = { recordings: { update } } as unknown as WhisperingApp;
+const app = { recordings: { patch } } as unknown as WhisperingApp;
 
 test('conforming updated row confirms the history save', async () => {
-	update.mockImplementationOnce(async () => Ok(recording));
+	patch.mockImplementationOnce(async () => Ok(recording));
 	expectOk(
 		await saveRecordingHistory(app, recordingId, {
 			transcript: 'saved transcript',
 		}),
 	);
-	expect(update).toHaveBeenLastCalledWith(recordingId, {
+	expect(patch).toHaveBeenLastCalledWith(recordingId, {
 		transcript: 'saved transcript',
 	});
 });
 
-test('rejected update becomes RecordingHistoryError', async () => {
+test('rejected patch becomes RecordingHistoryError', async () => {
 	const cause = new Error('workspace unavailable');
-	update.mockImplementationOnce(async () => {
+	patch.mockImplementationOnce(async () => {
 		throw cause;
 	});
 
@@ -61,7 +61,7 @@ test('rejected update becomes RecordingHistoryError', async () => {
 });
 
 test('missing row becomes an unconfirmed history save', async () => {
-	update.mockImplementationOnce(async () => Ok(undefined));
+	patch.mockImplementationOnce(async () => Ok(undefined));
 
 	const error = expectErr(
 		await saveRecordingHistory(app, recordingId, {
@@ -73,7 +73,7 @@ test('missing row becomes an unconfirmed history save', async () => {
 
 test('projection error becomes an unconfirmed history save', async () => {
 	const cause = { name: 'NonconformingRow', message: 'row does not conform' };
-	update.mockImplementationOnce(async () => Err(cause));
+	patch.mockImplementationOnce(async () => Err(cause));
 
 	const error = expectErr(
 		await saveRecordingHistory(app, recordingId, {
@@ -84,7 +84,7 @@ test('projection error becomes an unconfirmed history save', async () => {
 });
 
 test('successful transcription carries its history Result', async () => {
-	update.mockImplementationOnce(async () => Ok(recording));
+	patch.mockImplementationOnce(async () => Ok(recording));
 
 	const success = expectOk(
 		await recordTranscriptionOutcome(app, recordingId, Ok('usable text')),
@@ -98,7 +98,7 @@ test('provider error remains primary when its failed marker cannot be saved', as
 		name: 'ProviderFailed',
 		message: 'The provider could not transcribe the recording.',
 	};
-	update.mockImplementationOnce(async () => {
+	patch.mockImplementationOnce(async () => {
 		throw new Error('workspace unavailable');
 	});
 	const { sink, events } = memorySink();
@@ -112,7 +112,7 @@ test('provider error remains primary when its failed marker cannot be saved', as
 		),
 	);
 	expect(error).toBe(providerError);
-	expect(update).toHaveBeenLastCalledWith(recordingId, {
+	expect(patch).toHaveBeenLastCalledWith(recordingId, {
 		transcription: {
 			status: 'failed',
 			completedAt: expect.any(String),

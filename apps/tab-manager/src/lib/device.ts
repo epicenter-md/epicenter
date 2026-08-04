@@ -59,16 +59,16 @@ export async function registerDevice(
 	data: TabManagerData,
 	{ nodeId, defaultName }: DeviceProfile,
 ): Promise<void> {
-	const { rows } = await data.tables.devices.scan();
+	const { rows } = await data.devices.scan();
 	const existing = rows.find((device) => device.nodeId === nodeId);
 	if (existing) {
-		const updated = await data.tables.devices.patch(existing.id, {
+		const updated = await data.devices.patch(existing.id, {
 			lastSeen: InstantString.now(),
 		});
 		if (updated.error !== null) throw updated.error;
 		return;
 	}
-	await data.tables.devices.create({
+	await data.devices.create({
 		nodeId,
 		name: defaultName,
 		lastSeen: InstantString.now(),

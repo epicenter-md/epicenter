@@ -53,7 +53,6 @@ export type {
 	TableEntry,
 	TableHandle,
 	TableScan,
-	ValueHandle,
 } from './data.js';
 export type {
 	AudioUnreadable,

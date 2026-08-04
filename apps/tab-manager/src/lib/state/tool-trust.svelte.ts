@@ -14,7 +14,7 @@ import { fromTable } from '@epicenter/svelte';
 import type { TabManagerData } from '$lib/workspace';
 
 export function createToolTrustState({ data }: { data: TabManagerData }) {
-	const trustView = fromTable(data.tables.toolTrust);
+	const trustView = fromTable(data.toolTrust);
 
 	/** Tool names with a live grant, deduplicated and stable per change. */
 	const trustedNames = $derived([
@@ -39,7 +39,7 @@ export function createToolTrustState({ data }: { data: TabManagerData }) {
 		/** Auto-approve this tool from now on (the "Always Allow" action). */
 		async allow(name: string): Promise<void> {
 			if (trustedNames.includes(name)) return;
-			await data.tables.toolTrust.create({ toolName: name });
+			await data.toolTrust.create({ toolName: name });
 		},
 
 		/** Return this tool to the ask-every-time default. */
@@ -50,7 +50,7 @@ export function createToolTrustState({ data }: { data: TabManagerData }) {
 			const revoking = trustView.all
 				.filter((grant) => grant.toolName === name)
 				.map((grant) => grant.id);
-			for (const id of revoking) await data.tables.toolTrust.delete(id);
+		for (const id of revoking) await data.toolTrust.delete(id);
 		},
 
 		/** Every auto-approved tool name. */

@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { createLogger, memorySink } from 'wellcrafted/logger';
-import type { Address } from './addresses.js';
+import type { RowAddress } from './addresses.js';
 import {
 	createInvalidationDispatcher,
 	type TableInvalidation,
@@ -12,12 +12,8 @@ function rowId(index: number): string {
 	return `row${String(index).padStart(21, '0')}`;
 }
 
-function row(tableName: string, index: number): Address {
-	return { kind: 'row', namespace: NAMESPACE, tableName, rowId: rowId(index) };
-}
-
-function value(valueName: string): Address {
-	return { kind: 'value', namespace: NAMESPACE, valueName };
+function row(tableName: string, index: number): RowAddress {
+	return { namespace: NAMESPACE, tableName, rowId: rowId(index) };
 }
 
 test('one batched commit produces one invalidation per logical table', () => {
@@ -68,29 +64,6 @@ test('the same table name in two namespaces is two handles', () => {
 	expect(theirs).toEqual([]);
 });
 
-test('values invalidate without a payload, and only the one that moved', () => {
-	const dispatcher = createInvalidationDispatcher();
-	let theme = 0;
-	let language = 0;
-	dispatcher.subscribeValue(
-		{ kind: 'value', namespace: NAMESPACE, valueName: 'theme' },
-		() => {
-			theme += 1;
-		},
-	);
-	dispatcher.subscribeValue(
-		{ kind: 'value', namespace: NAMESPACE, valueName: 'language' },
-		() => {
-			language += 1;
-		},
-	);
-
-	dispatcher.deliver([value('theme'), value('theme')]);
-
-	expect(theme).toBe(1);
-	expect(language).toBe(0);
-});
-
 test('registration never fires and unsubscribing is complete', () => {
 	const dispatcher = createInvalidationDispatcher();
 	const seen: TableInvalidation[] = [];
@@ -109,19 +82,14 @@ test('registration never fires and unsubscribing is complete', () => {
 test('a gap heals every subscribed handle at the strongest honest scope', () => {
 	const dispatcher = createInvalidationDispatcher();
 	const notes: TableInvalidation[] = [];
-	let theme = 0;
+	const settings: TableInvalidation[] = [];
 	dispatcher.subscribeTable(NAMESPACE, 'notes', (i) => notes.push(i));
-	dispatcher.subscribeValue(
-		{ kind: 'value', namespace: NAMESPACE, valueName: 'theme' },
-		() => {
-			theme += 1;
-		},
-	);
+	dispatcher.subscribeTable(NAMESPACE, 'settings', (i) => settings.push(i));
 
 	dispatcher.invalidateAll();
 
 	expect(notes).toEqual([{ scope: 'table' }]);
-	expect(theme).toBe(1);
+	expect(settings).toEqual([{ scope: 'table' }]);
 });
 
 test('a subscriber that throws does not cost another handle its invalidation', () => {

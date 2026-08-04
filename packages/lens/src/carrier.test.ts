@@ -222,7 +222,7 @@ test('a reopen heals every subscribed handle once, and the first open heals none
 	const carrier = await opening;
 
 	const table: TableInvalidation[] = [];
-	let values = 0;
+	const settings: TableInvalidation[] = [];
 	observation.subscribeTable(
 		'so.epicenter.carrier.tests',
 		'notes',
@@ -230,21 +230,18 @@ test('a reopen heals every subscribed handle once, and the first open heals none
 			table.push(invalidation);
 		},
 	);
-	observation.subscribeValue(
-		{
-			kind: 'value',
-			namespace: 'so.epicenter.carrier.tests',
-			valueName: 'theme',
-		},
-		() => {
-			values += 1;
+	observation.subscribeTable(
+		'so.epicenter.carrier.tests',
+		'settings',
+		(invalidation) => {
+			settings.push(invalidation);
 		},
 	);
 
 	// Law 7: the opener resolved after the first open, so nothing could have
 	// subscribed across it and nothing is owed a gap.
 	expect(table).toEqual([]);
-	expect(values).toBe(0);
+	expect(settings).toEqual([]);
 
 	script.socketAt(0).emit('close');
 	await afterPendingTimers();
@@ -253,7 +250,7 @@ test('a reopen heals every subscribed handle once, and the first open heals none
 	// Law 6: the reopen is the whole signal, and the client turns it into the
 	// strongest honest statement it can make about each handle it holds.
 	expect(table).toEqual([{ scope: 'table' }]);
-	expect(values).toBe(1);
+	expect(settings).toEqual([{ scope: 'table' }]);
 	carrier.close();
 });
 
@@ -317,7 +314,6 @@ test.each([
 			type: 'invalidation',
 			changes: [
 				{
-					kind: 'row',
 					namespace: 'so.epicenter.carrier.tests',
 					tableName: 'notes',
 				},
@@ -343,7 +339,6 @@ test.each([
 			type: 'invalidation',
 			changes: [
 				{
-					kind: 'row',
 					namespace: 'so.epicenter.carrier.tests',
 					tableName: 'notes',
 					rowId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
@@ -388,7 +383,6 @@ test.each([
 			type: 'invalidation',
 			changes: [
 				{
-					kind: 'row',
 					namespace: 'so.epicenter.carrier.tests',
 					tableName: 'notes',
 					rowId: 'bbbbbbbbbbbbbbbbbbbbbbbb',

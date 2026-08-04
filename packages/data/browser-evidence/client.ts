@@ -29,7 +29,6 @@ const evidenceLens = defineLens({
 			},
 		}),
 	},
-	values: {},
 });
 
 let epicenter: BrowserEpicenter | undefined;
@@ -164,19 +163,19 @@ async function dispose(): Promise<void> {
 }
 
 async function create(title: string, writer: string): Promise<{ id: string }> {
-	const row = await requireData().tables.notes.create({ title, writer });
+	const row = await requireData().notes.create({ title, writer });
 	return { id: row.id };
 }
 
 async function get(
 	rowId: string,
 ): Promise<{ id: string; title: string; writer: string } | undefined> {
-	return unwrap(await requireData().tables.notes.get(rowId)) ?? undefined;
+	return unwrap(await requireData().notes.get(rowId)) ?? undefined;
 }
 
 async function snapshot(): Promise<EvidenceSnapshot> {
 	const rows: EvidenceSnapshot['rows'] = [];
-	for await (const entry of requireData().tables.notes.entries()) {
+	for await (const entry of requireData().notes.entries()) {
 		const row = unwrap(entry);
 		if (row === null)
 			throw new Error('Live evidence entry was unexpectedly null');
@@ -199,7 +198,7 @@ async function snapshot(): Promise<EvidenceSnapshot> {
 }
 
 async function setDocument(rowId: string, content: string): Promise<string> {
-	const document = await requireData().tables.notes.openDocument(rowId);
+	const document = await requireData().notes.openDocument(rowId);
 	try {
 		const text = document.get('content');
 		text.delete(0, text.length);
@@ -212,7 +211,7 @@ async function setDocument(rowId: string, content: string): Promise<string> {
 }
 
 async function readDocument(rowId: string): Promise<string> {
-	const document = await requireData().tables.notes.openDocument(rowId);
+	const document = await requireData().notes.openDocument(rowId);
 	try {
 		return document.get('content').toString();
 	} finally {

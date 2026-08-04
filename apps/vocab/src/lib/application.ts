@@ -23,7 +23,7 @@ export type VocabDependencies = {
 
 export type VocabApplication = VocabData & {
 	/** The one entry pool for this replica. */
-	entries: ReturnType<typeof createEntriesState>;
+	entryState: ReturnType<typeof createEntriesState>;
 	readonly syncStatus: SyncStatus;
 	subscribeSyncStatus(listener: (status: SyncStatus) => void): () => void;
 	[Symbol.asyncDispose](): Promise<void>;
@@ -72,7 +72,7 @@ export async function openVocabApplication(
 		const data = opened.epicenter.bind(vocabLens);
 		return Object.freeze({
 			...data,
-			entries: createEntriesState(data),
+			entryState: createEntriesState(data),
 			get syncStatus() {
 				return opened.epicenter.syncStatus;
 			},

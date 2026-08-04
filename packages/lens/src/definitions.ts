@@ -13,9 +13,7 @@ import {
 	DATA_ADDRESS_CEILINGS,
 	isNamespace,
 	isTableName,
-	isValueName,
 	type RowAddress,
-	type ValueAddress,
 } from './addresses.js';
 import { isJsonValue, type JsonObject, type JsonValue } from './json.js';
 
@@ -37,7 +35,6 @@ export type FieldsFor<TFields extends FieldSchemas> = {
 };
 
 declare const tableDefinitionParts: unique symbol;
-declare const valueDefinitionParts: unique symbol;
 declare const lensParts: unique symbol;
 
 export type TableDefinition<TFields extends FieldSchemas = FieldSchemas> = {
@@ -45,43 +42,29 @@ export type TableDefinition<TFields extends FieldSchemas = FieldSchemas> = {
 	[tableDefinitionParts]: { fields: TFields };
 };
 
-export type ValueDefinition<TValueSchema extends TSchema = TSchema> = {
-	value: TValueSchema;
-	[valueDefinitionParts]: TValueSchema;
-};
-
 export type TableDefinitions = Record<string, TableDefinition>;
-export type ValueDefinitions = Record<string, ValueDefinition>;
 
 /**
  * One application's complete interpretation of one durable namespace
- * (ADR-0160, ADR-0168).
+ * (ADR-0160, ADR-0168, ADR-0206).
  *
- * The namespace is declared exactly once, here. Each `tables` and `values`
- * property name is the durable local key for that table or value: `notes` in
- * `tables` addresses `{ kind: 'row', namespace, tableName: 'notes', rowId }`
- * forever. There is no second `key` field to keep in step with the property
- * name, and no rename operation: a different property name is a different
- * address, and therefore different data.
+ * The namespace is declared exactly once, here. Each `tables` property name is
+ * the durable local key for that table: `notes` addresses
+ * `{ namespace, tableName: 'notes', rowId }` forever. There is no second `key`
+ * field to keep in step with the property name, and no rename operation: a
+ * different property name is a different address, and therefore different data.
  *
- * Row and value names occupy disjoint key spaces, so one namespace may declare
- * both a `notes` table and a `notes` value.
+ * A Lens declares tables and fields and nothing else. A singleton is a row whose
+ * id the application chooses, so it needs no second declaration form and no
+ * vocabulary of its own.
  *
- * The two kinds have different grammars because they are consumed differently
- * (ADR-0162, ADR-0178). A table name must be a bare SQL identifier, since a
- * trusted host mounts it as a relation. A value name is never a relation or a
- * column, so it may carry opaque dotted grouping such as
- * `settings.sound.manualStart`; those dots are part of one durable name and
- * imply no nesting, prefix matching, or lifecycle of their own.
+ * A table name must be a bare SQL identifier, because a trusted host mounts it
+ * as a relation (ADR-0162).
  */
-export type Lens<
-	TTables extends TableDefinitions = TableDefinitions,
-	TValues extends ValueDefinitions = ValueDefinitions,
-> = {
+export type Lens<TTables extends TableDefinitions = TableDefinitions> = {
 	namespace: string;
 	tables: TTables;
-	values: TValues;
-	[lensParts]: { tables: TTables; values: TValues };
+	[lensParts]: { tables: TTables };
 };
 
 export type RowFor<TDefinition extends TableDefinition> =
@@ -108,9 +91,6 @@ export type ConstrainedUpdate<
 			}
 		: never;
 
-export type ValueFor<TDefinition extends ValueDefinition> =
-	TDefinition extends ValueDefinition<infer TSchema> ? Static<TSchema> : never;
-
 export type ConformanceIssue = {
 	field: string;
 	kind: 'missing' | 'invalid';
@@ -134,26 +114,11 @@ export const DataReadError = defineErrors({
 		raw,
 		issues,
 	}),
-	NonconformingValue: ({
-		address,
-		raw,
-	}: {
-		address: ValueAddress;
-		raw: JsonValue;
-	}) => ({
-		message: `Stored value '${address.namespace}/${address.valueName}' does not satisfy the current definition`,
-		address,
-		raw,
-	}),
 });
 export type DataReadError = InferErrors<typeof DataReadError>;
 export type NonconformingRowError = Extract<
 	DataReadError,
 	{ name: 'NonconformingRow' }
->;
-export type NonconformingValueError = Extract<
-	DataReadError,
-	{ name: 'NonconformingValue' }
 >;
 
 type CompiledField = {
@@ -176,16 +141,7 @@ export type CompiledTableDefinition = {
 	normalizeUpdate(input: Record<string, unknown>): NormalizedUpdate;
 };
 
-export type CompiledValueDefinition = {
-	project(
-		address: ValueAddress,
-		value: JsonValue,
-	): Result<unknown, NonconformingValueError>;
-	validate(value: unknown): JsonValue;
-};
-
 const compiledTables = new WeakMap<object, CompiledTableDefinition>();
-const compiledValues = new WeakMap<object, CompiledValueDefinition>();
 
 /**
  * Mark one field as optional in a table definition.
@@ -243,86 +199,37 @@ export function defineTable<const TFields extends FieldSchemas>({
 	return definition;
 }
 
-export function defineValue<const TSchemaValue extends TSchema>({
-	value: authoredSchema,
-}: {
-	value: TSchemaValue;
-}): ValueDefinition<TSchemaValue> {
-	if (IsOptional(authoredSchema)) {
-		throw new Error('Singleton values cannot use optional(...)');
-	}
-	const schema = cloneSchema(authoredSchema);
-	const recognized = recognize(schema);
-	if (recognized === null) {
-		throw new Error('Value must use the field.* vocabulary');
-	}
-	const check = compile(recognized.schema);
-	const definition = Object.freeze({
-		value: freezeJson(schema),
-	}) as ValueDefinition<TSchemaValue>;
-	compiledValues.set(definition, {
-		project(address, value) {
-			return check(value)
-				? Ok(cloneJsonValue(value))
-				: DataReadError.NonconformingValue({
-						address,
-						raw: cloneJsonValue(value),
-					});
-		},
-		validate(value) {
-			if (!check(value)) throw new TypeError('Invalid singleton value');
-			return cloneJsonValue(value);
-		},
-	});
-	return definition;
-}
-
 /**
  * Declare one application's interpretation of one durable namespace.
  *
- * Every table and value name must be usable as a SQL identifier, because a
- * trusted inspection host mounts a selected Lens as logical relations named
- * exactly after these properties (ADR-0162). SQL identifiers are
- * case-insensitive, so two names differing only in case are refused here rather
- * than colliding later at mount time.
+ * Every table name must be usable as a SQL identifier, because a trusted
+ * inspection host mounts a selected Lens as logical relations named exactly
+ * after these properties (ADR-0162). SQL identifiers are case-insensitive, so
+ * two names differing only in case are refused here rather than colliding later
+ * at mount time.
  */
-export function defineLens<
-	const TTables extends TableDefinitions,
-	const TValues extends ValueDefinitions,
->({
+export function defineLens<const TTables extends TableDefinitions>({
 	namespace,
 	tables,
-	values,
 }: {
 	namespace: string;
 	tables: TTables;
-	values: TValues;
-}): Lens<TTables, TValues> {
+}): Lens<TTables> {
 	if (!isNamespace(namespace, DATA_ADDRESS_CEILINGS)) {
 		throw new Error(
 			`Invalid namespace '${namespace}'; use two or more lowercase dot-separated labels`,
 		);
 	}
 	assertPlainObject(tables, 'Lens tables');
-	assertPlainObject(values, 'Lens values');
 	for (const [name, definition] of Object.entries(tables)) {
 		assertTableName(name);
 		compileTableDefinition(definition);
 	}
-	for (const [name, definition] of Object.entries(values)) {
-		assertValueName(name);
-		compileValueDefinition(definition);
-	}
-	// Only table names are checked for case-insensitive collision, because only
-	// they become SQL identifiers when a Lens is mounted. Value names are data in
-	// the raw value projection, never a relation or a column, so two value names
-	// differing only in case are simply two addresses (ADR-0162, ADR-0178).
 	assertNoCaseInsensitiveDuplicates(Object.keys(tables), 'table');
 	return Object.freeze({
 		namespace,
 		tables: Object.freeze(tables),
-		values: Object.freeze(values),
-	}) as Lens<TTables, TValues>;
+	}) as Lens<TTables>;
 }
 
 export function compileTableDefinition(
@@ -330,14 +237,6 @@ export function compileTableDefinition(
 ): CompiledTableDefinition {
 	const compiled = compiledTables.get(definition);
 	if (compiled === undefined) throw new Error('Unknown table definition');
-	return compiled;
-}
-
-export function compileValueDefinition(
-	definition: ValueDefinition,
-): CompiledValueDefinition {
-	const compiled = compiledValues.get(definition);
-	if (compiled === undefined) throw new Error('Unknown value definition');
 	return compiled;
 }
 
@@ -426,14 +325,6 @@ function assertTableName(name: string): void {
 	if (!isTableName(name, DATA_ADDRESS_CEILINGS)) {
 		throw new Error(
 			`Invalid table name '${name}'; start with a letter and use letters, digits, and underscores, because a table name is mounted as a SQL relation`,
-		);
-	}
-}
-
-function assertValueName(name: string): void {
-	if (!isValueName(name, DATA_ADDRESS_CEILINGS)) {
-		throw new Error(
-			`Invalid value name '${name}'; use dot-separated segments that each start with a letter, such as 'settings.sound.manualStart'`,
 		);
 	}
 }

@@ -93,7 +93,6 @@ const nonconforming = (id: string): StoredEntry => ({
 	kind: 'error',
 	error: DataReadError.NonconformingRow({
 		address: {
-			kind: 'row',
 			namespace: 'so.epicenter.test.svelte',
 			tableName: 'rows',
 			rowId: id,

@@ -20,7 +20,6 @@ import {
 	type BoundData,
 	defineLens,
 	defineTable,
-	defineValue,
 	type RowFor,
 } from '@epicenter/data';
 import { field } from '@epicenter/field';
@@ -105,6 +104,14 @@ export const entriesTable = defineTable({
 /** One entry row. Row ids are runtime-minted, so the lens owns `id`. */
 export type Entry = RowFor<typeof entriesTable>;
 
+export const VocabSettingsRowId = 'settings';
+
+export const settingsTable = defineTable({
+	fields: {
+		showReadings: field.boolean(),
+	},
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Lens
 // ─────────────────────────────────────────────────────────────────────────────
@@ -127,20 +134,15 @@ export const vocabLens = defineLens({
 	tables: {
 		conversations: conversationsTable,
 		entries: entriesTable,
-	},
-	values: {
-		showReadings: defineValue({ value: field.boolean() }),
+		settings: settingsTable,
 	},
 });
 
 /** Vocab's bound data handle. */
-export type VocabData = BoundData<
-	typeof vocabLens.tables,
-	typeof vocabLens.values
->;
+export type VocabData = BoundData<typeof vocabLens.tables>;
 
 /**
- * Readings render by default. A value has no declared default (an unset value
- * reads `undefined`), so the one place that decision lives is here.
+ * Readings render by default. The app owns that decision rather than the row
+ * definition.
  */
 export const SHOW_READINGS_DEFAULT = true;

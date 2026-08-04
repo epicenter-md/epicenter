@@ -671,7 +671,6 @@ export function createDocumentRuntime({
 						 ORDER BY namespace, table_name, row_id`,
 					)
 					.map(({ namespace, table_name, row_id }) => ({
-						kind: 'row' as const,
 						namespace,
 						tableName: table_name,
 						rowId: row_id,

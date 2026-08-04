@@ -84,9 +84,8 @@ async function setup({
 		defineLens({
 			namespace: 'so.epicenter.whispering',
 			tables: { recordings: recordingsTable },
-			values: {},
 		}),
-	).tables.recordings;
+	).recordings;
 	for (const row of seed) await table.create(row);
 	const domain = createWhisperingRecordings({
 		table,

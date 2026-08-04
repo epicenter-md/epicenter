@@ -26,7 +26,7 @@ test('the agent store observes writes and survives a runtime restart', async () 
 			});
 			const handle = epicenter.bind(chatLens);
 			const now = InstantString.fromDate(new Date('2026-07-19T00:00:00.000Z'));
-			const row = await handle.tables.conversations.create({
+			const row = await handle.conversations.create({
 				title: 'New Chat',
 				model: 'test',
 				createdAt: now,
@@ -34,7 +34,7 @@ test('the agent store observes writes and survives a runtime restart', async () 
 			});
 			rowId = row.id;
 			await using store = createAgentMessageDocumentStore(
-				await handle.tables.conversations.openDocument(row.id),
+				await handle.conversations.openDocument(row.id),
 			);
 			let observations = 0;
 			const unobserve = store.observe(() => observations++);
@@ -49,7 +49,7 @@ test('the agent store observes writes and survives a runtime restart', async () 
 		});
 		const handle = reopened.bind(chatLens);
 		await using store = createAgentMessageDocumentStore(
-			await handle.tables.conversations.openDocument(rowId),
+			await handle.conversations.openDocument(rowId),
 		);
 		expect([...store.entries()]).toEqual([{ key: message.id, val: message }]);
 	} finally {

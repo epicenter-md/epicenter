@@ -90,7 +90,7 @@ function addressFromPath(
 	tableName: string,
 	rowId: string,
 ): RowAddress | undefined {
-	const candidate = { kind: 'row', namespace, tableName, rowId } as const;
+	const candidate = { namespace, tableName, rowId } as const;
 	return isRowAddress(candidate, DATA_ADDRESS_CEILINGS) ? candidate : undefined;
 }
 

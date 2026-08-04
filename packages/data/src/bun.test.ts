@@ -19,7 +19,6 @@ import { EPICENTER_FILE_NAME, openBunEpicenter } from './bun.js';
 const notesLens = defineLens({
 	namespace: 'so.epicenter.tests',
 	tables: { notes: defineTable({ fields: { title: field.string() } }) },
-	values: {},
 });
 
 /** A path under a temporary root whose intermediate directories never existed. */
@@ -40,7 +39,7 @@ test('a directory that was never created still opens and persists', async () => 
 	expect(existsSync(root.directory)).toBeFalse();
 
 	const first = await openBunEpicenter({ directory: root.directory });
-	const created = await first.bind(notesLens).tables.notes.create({
+	const created = await first.bind(notesLens).notes.create({
 		title: 'first boot',
 	});
 	await first[Symbol.asyncDispose]();
@@ -49,7 +48,7 @@ test('a directory that was never created still opens and persists', async () => 
 
 	await using reopened = await openBunEpicenter({ directory: root.directory });
 	expect(
-		expectOk(await reopened.bind(notesLens).tables.notes.get(created.id)),
+		expectOk(await reopened.bind(notesLens).notes.get(created.id)),
 	).toEqual(created);
 });
 
@@ -61,10 +60,10 @@ test('a path whose parent directory does not exist opens the same way', async ()
 	expect(existsSync(root.directory)).toBeFalse();
 
 	await using epicenter = await openBunEpicenter({ path });
-	const created = await epicenter.bind(notesLens).tables.notes.create({
+	const created = await epicenter.bind(notesLens).notes.create({
 		title: 'path boot',
 	});
 	expect(
-		expectOk(await epicenter.bind(notesLens).tables.notes.get(created.id)),
+		expectOk(await epicenter.bind(notesLens).notes.get(created.id)),
 	).toEqual(created);
 });

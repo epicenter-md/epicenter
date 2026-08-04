@@ -8,14 +8,10 @@ import {
 	openObservationCarrier,
 	type RowFor,
 	serializeTableDefinition,
-	serializeValueDefinition,
 	splitUpdate,
 	type TableDefinition,
 	type TableDefinitions,
 	type TableInvalidation,
-	type ValueDefinition,
-	type ValueDefinitions,
-	type ValueFor,
 } from '@epicenter/lens';
 import * as Y from '@y/y';
 import { extractErrorMessage } from 'wellcrafted/error';
@@ -37,9 +33,8 @@ import {
 	createTableReadMethods,
 	type TableEntriesPage,
 	type TableLens,
-	type ValueLens,
 } from './epicenter.js';
-import type { JsonValue, RowAddress, ValueAddress } from './protocol/index.js';
+import type { RowAddress } from './protocol/index.js';
 
 export type OpenDesktopEpicenterOptions = {
 	baseUrl?: string;
@@ -145,27 +140,16 @@ export async function openDesktopEpicenter({
 
 	function bind<
 		const TTables extends TableDefinitions,
-		const TValues extends ValueDefinitions,
-	>(lens: Lens<TTables, TValues>): BoundData<TTables, TValues> {
+	>(lens: Lens<TTables>): BoundData<TTables> {
 		requireOpen();
-		return Object.freeze({
-			tables: Object.freeze(
-				Object.fromEntries(
-					Object.entries(lens.tables).map(([table, definition]) => [
-						table,
-						createTableLens(lens.namespace, table, definition),
-					]),
-				),
+		return Object.freeze(
+			Object.fromEntries(
+				Object.entries(lens.tables).map(([table, definition]) => [
+					table,
+					createTableLens(lens.namespace, table, definition),
+				]),
 			),
-			values: Object.freeze(
-				Object.fromEntries(
-					Object.entries(lens.values).map(([value, definition]) => [
-						value,
-						createValueLens(lens.namespace, value, definition),
-					]),
-				),
-			),
-		}) as BoundData<TTables, TValues>;
+		) as BoundData<TTables>;
 	}
 
 	function createTableLens<TDefinition extends TableDefinition>(
@@ -181,11 +165,16 @@ export async function openDesktopEpicenter({
 				...(after === undefined ? {} : { after }),
 			});
 		const lens = {
-			create(fields: CreateInputFor<TDefinition>) {
+			create(
+				rowIdOrFields: string | CreateInputFor<TDefinition>,
+				maybeFields?: CreateInputFor<TDefinition>,
+			) {
 				return request<RowFor<TDefinition>>({
 					kind: 'table-create',
 					definition: serialized,
-					fields,
+					...(typeof rowIdOrFields === 'string'
+						? { rowId: rowIdOrFields, fields: maybeFields! }
+						: { fields: rowIdOrFields }),
 				});
 			},
 			get(rowId: string) {
@@ -224,46 +213,6 @@ export async function openDesktopEpicenter({
 			openDocument: (rowId: string) => openDocument(serialized, rowId),
 		};
 		return Object.freeze(lens) as TableLens<TDefinition>;
-	}
-
-	function createValueLens<TDefinition extends ValueDefinition>(
-		namespace: string,
-		valueName: string,
-		definition: TDefinition,
-	): ValueLens<TDefinition> {
-		const address: ValueAddress = {
-			kind: 'value',
-			namespace,
-			valueName: valueName,
-		};
-		const serialized = serializeValueDefinition(address, definition);
-		return Object.freeze({
-			get: () =>
-				request<Awaited<ReturnType<ValueLens<TDefinition>['get']>>>({
-					kind: 'value-get',
-					definition: serialized,
-					address,
-				}),
-			set(value: ValueFor<TDefinition>) {
-				return request<void>({
-					kind: 'value-set',
-					definition: serialized,
-					address,
-					value: value as JsonValue,
-				});
-			},
-			unset() {
-				return request<void>({
-					kind: 'value-unset',
-					definition: serialized,
-					address,
-				});
-			},
-			subscribe(listener: () => void) {
-				requireOpen();
-				return observation.subscribeValue(address, listener);
-			},
-		});
 	}
 
 	async function openDocument(
@@ -411,7 +360,7 @@ function rowAddress(
 	tableName: string,
 	rowId: string,
 ): RowAddress {
-	return { kind: 'row', namespace, tableName, rowId };
+	return { namespace, tableName, rowId };
 }
 
 function decodeBytes(value: string): Uint8Array {

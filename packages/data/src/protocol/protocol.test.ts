@@ -10,17 +10,14 @@
  * - Canonical digests ignore object insertion order
  */
 import { describe, expect, test } from 'bun:test';
-import { isAddress, sha256Hex } from '@epicenter/lens';
+import { sha256Hex } from '@epicenter/lens';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import {
-	addressesEqual,
-	addressKey,
 	batchDigest,
 	DATA_ADDRESS_CEILINGS,
 	DATA_ADMISSION_LIMITS,
 	type Intent,
 	isRowAddress,
-	isValueAddress,
 	parseExchangeRequest,
 	parseExchangeResponse,
 	parseIntent,
@@ -30,47 +27,25 @@ import {
 const ROW_ID = 'abc123def456ghi789jkl012';
 const REPLICA_ID = 'rrrrrrrrrrrrrrrrrrrrrrrr';
 const ROW_ADDRESS = {
-	kind: 'row',
 	namespace: 'so.epicenter.notes',
 	tableName: 'rows',
 	rowId: ROW_ID,
-} as const;
-const VALUE_ADDRESS = {
-	kind: 'value',
-	namespace: 'so.epicenter.settings',
-	valueName: 'theme',
 } as const;
 
 describe('structured identifiers', () => {
 	test('addresses require a reverse-domain namespace and legal local key', () => {
 		expect(isRowAddress(ROW_ADDRESS, DATA_ADDRESS_CEILINGS)).toBe(true);
-		expect(isValueAddress(VALUE_ADDRESS, DATA_ADDRESS_CEILINGS)).toBe(true);
-		// A row address is not a value address and vice versa: `kind` keeps the two
-		// key spaces disjoint rather than merely labelling them.
-		expect(isValueAddress(ROW_ADDRESS, DATA_ADDRESS_CEILINGS)).toBe(false);
-		expect(isRowAddress(VALUE_ADDRESS, DATA_ADDRESS_CEILINGS)).toBe(false);
 		for (const address of [
 			{ ...ROW_ADDRESS, namespace: 'single' },
 			{ ...ROW_ADDRESS, namespace: 'So.epicenter.notes' },
 			{ ...ROW_ADDRESS, tableName: 'my-notes' },
-			{ ...VALUE_ADDRESS, valueName: '_theme' },
+			{ ...ROW_ADDRESS, rowId: '_theme' },
 		]) {
-			expect(isAddress(address, DATA_ADDRESS_CEILINGS)).toBe(false);
+			expect(isRowAddress(address, DATA_ADDRESS_CEILINGS)).toBe(false);
 		}
 	});
 
-	test('a value name may be dotted but a table name may not', () => {
-		// A table name is mounted as a SQL relation, so it stays a bare identifier.
-		// A value name is never a relation or a column, so it may group with dots.
-		expect(
-			isValueAddress(
-				{
-					...VALUE_ADDRESS,
-					valueName: 'settings.output.transcription.clipboard',
-				},
-				DATA_ADDRESS_CEILINGS,
-			),
-		).toBe(true);
+	test('a table name may not contain dots', () => {
 		expect(
 			isRowAddress(
 				{ ...ROW_ADDRESS, tableName: 'settings.sound' },
@@ -79,50 +54,11 @@ describe('structured identifiers', () => {
 		).toBe(false);
 	});
 
-	test('a dotted value name has exactly one spelling', () => {
-		for (const valueName of [
-			'.settings',
-			'settings.',
-			'settings..sound',
-			'settings.1sound',
-			'settings._sound',
-		]) {
-			expect(
-				isValueAddress({ ...VALUE_ADDRESS, valueName }, DATA_ADDRESS_CEILINGS),
-			).toBe(false);
-		}
-	});
-
-	test('dots in a value name are opaque, not a hierarchy', () => {
-		// The refusal this pins: a "parent" and a "child" spelling are simply two
-		// unrelated addresses. Nothing derives one from the other, and nothing may
-		// split a value name to find structure (ADR-0176 refuses prefix matching).
-		const parent = { ...VALUE_ADDRESS, valueName: 'settings.sound' } as const;
-		const child = {
-			...VALUE_ADDRESS,
-			valueName: 'settings.sound.manualStart',
-		} as const;
-		expect(isValueAddress(parent, DATA_ADDRESS_CEILINGS)).toBe(true);
-		expect(isValueAddress(child, DATA_ADDRESS_CEILINGS)).toBe(true);
-		expect(addressesEqual(parent, child)).toBe(false);
-		expect(addressKey(parent)).not.toBe(addressKey(child));
-	});
-
 	test('namespace byte length stops at 128 bytes', () => {
 		const exact = `a.${'c'.repeat(126)}`;
 		expect(new TextEncoder().encode(exact)).toHaveLength(128);
-		expect(
-			isValueAddress(
-				{ ...VALUE_ADDRESS, namespace: exact },
-				DATA_ADDRESS_CEILINGS,
-			),
-		).toBe(true);
-		expect(
-			isValueAddress(
-				{ ...VALUE_ADDRESS, namespace: `${exact}c` },
-				DATA_ADDRESS_CEILINGS,
-			),
-		).toBe(false);
+		expect(isRowAddress({ ...ROW_ADDRESS, namespace: exact }, DATA_ADDRESS_CEILINGS)).toBe(true);
+		expect(isRowAddress({ ...ROW_ADDRESS, namespace: `${exact}c` }, DATA_ADDRESS_CEILINGS)).toBe(false);
 	});
 
 	test('replica IDs require exactly 24 lowercase alphanumerics', () => {
@@ -149,12 +85,6 @@ describe('intent and exchange admission', () => {
 				unset: ['old'],
 			},
 			{ verb: 'delete', address: ROW_ADDRESS },
-			{
-				verb: 'set',
-				address: VALUE_ADDRESS,
-				content: { dark: true },
-			},
-			{ verb: 'unset', address: VALUE_ADDRESS },
 		];
 		for (const intent of intents)
 			expect(expectOk(parseIntent(intent))).toEqual(intent);
@@ -184,7 +114,7 @@ describe('intent and exchange admission', () => {
 	});
 
 	test('exchange request binds a bounded batch and forbids batches on continuation pages', () => {
-		const intents = [{ verb: 'unset', address: VALUE_ADDRESS }] as const;
+		const intents = [{ verb: 'delete', address: ROW_ADDRESS }] as const;
 		const batch = { seq: 1, digest: batchDigest(intents), intents };
 		expect(
 			expectOk(
@@ -206,9 +136,9 @@ describe('intent and exchange admission', () => {
 	test('exchange responses reject records beyond fixed through and moving cursors', () => {
 		const fact = {
 			presence: 'present',
-			address: VALUE_ADDRESS,
+			address: ROW_ADDRESS,
 			authoritySequence: 2,
-			content: 'dark',
+			fields: { title: 'dark' },
 		} as const;
 		expect(
 			expectOk(
@@ -225,12 +155,8 @@ describe('intent and exchange admission', () => {
 });
 
 test('canonical batch digest and SHA-256 are deterministic', () => {
-	const left = [
-		{ verb: 'set', address: VALUE_ADDRESS, content: { b: 2, a: 1 } },
-	] as const;
-	const right = [
-		{ verb: 'set', address: VALUE_ADDRESS, content: { a: 1, b: 2 } },
-	] as const;
+	const left: Intent[] = [{ verb: 'patch', address: ROW_ADDRESS, set: { b: 2, a: 1 }, unset: [] }];
+	const right: Intent[] = [{ verb: 'patch', address: ROW_ADDRESS, set: { a: 1, b: 2 }, unset: [] }];
 	expect(batchDigest(left)).toBe(batchDigest(right));
 	expect(sha256Hex('abc')).toBe(
 		'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',

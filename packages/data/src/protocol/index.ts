@@ -15,14 +15,11 @@
  * rest are imported from lens directly rather than through a second door.
  */
 export {
-	type Address,
 	addressesEqual,
 	addressKey,
 	DATA_ADDRESS_CEILINGS,
 	isRowAddress,
-	isValueAddress,
 	type RowAddress,
-	type ValueAddress,
 } from '@epicenter/lens';
 export { DATA_ADMISSION_LIMITS, encodedJsonBytes } from './admission.js';
 export { type FoldResult, foldIntent } from './fold.js';

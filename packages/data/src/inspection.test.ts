@@ -22,7 +22,6 @@ import { field } from '@epicenter/field';
 import {
 	defineLens,
 	defineTable,
-	defineValue,
 	optional,
 } from '@epicenter/lens';
 import { Type } from 'typebox';
@@ -54,14 +53,12 @@ const notesTable = defineTable({
 const lens = defineLens({
 	namespace: 'so.epicenter.honeycrisp',
 	tables: { notes: notesTable },
-	values: { theme: defineValue({ value: field.string() }) },
 });
 
 /** A second Lens over a different namespace, for the selection lifecycle. */
 const otherLens = defineLens({
 	namespace: 'so.epicenter.home',
 	tables: { conversations: defineTable({ fields: { title: field.string() } }) },
-	values: {},
 });
 
 let directory: string;
@@ -81,16 +78,15 @@ afterEach(async () => {
 
 async function seed() {
 	const data = epicenter.bind(lens);
-	const first = await data.tables.notes.create({
+	const first = await data.notes.create({
 		title: 'First',
 		pinned: true,
 	});
-	const second = await data.tables.notes.create({
+	const second = await data.notes.create({
 		title: 'Second',
 		pinned: false,
 		wordCount: 12,
 	});
-	await data.values.theme.set('dark');
 	return { data, first, second };
 }
 
@@ -126,7 +122,7 @@ test('committed writer changes are visible to the next inspection statement', as
 		);
 
 		// A live write on the owner's own connection, after inspection opened.
-		await data.tables.notes.create({ title: 'Third', pinned: false });
+		await data.notes.create({ title: 'Third', pinned: false });
 
 		const after = expectOk(
 			inspection.query('SELECT title FROM notes ORDER BY title'),
@@ -194,7 +190,7 @@ describe('friendly Lens tables', () => {
 
 	test('a deleted row leaves the friendly table but stays in the raw relation', async () => {
 		const { data, first } = await seed();
-		await data.tables.notes.delete(first.id);
+		await data.notes.delete(first.id);
 
 		const inspection = expectOk(openInspection({ path }));
 		try {
@@ -240,7 +236,7 @@ describe('friendly Lens tables', () => {
 
 			// Inspection names and extracts fields; only the typed Lens API certifies
 			// that a row conforms and reports why this one does not.
-			expect((await data.tables.notes.get(first.id)).error?.name).toBe(
+			expect((await data.notes.get(first.id)).error?.name).toBe(
 				'NonconformingRow',
 			);
 		} finally {
@@ -250,7 +246,7 @@ describe('friendly Lens tables', () => {
 
 	test('arrays and objects project as composable JSON text', async () => {
 		const data = epicenter.bind(lens);
-		await data.tables.notes.create({
+		await data.notes.create({
 			title: 'Structured',
 			pinned: true,
 			tags: ['local', 'important'],
@@ -377,59 +373,6 @@ describe('Lens selection lifecycle', () => {
 	});
 });
 
-test('raw value relation exposes unset values as absent', async () => {
-	const { data } = await seed();
-	await data.values.theme.unset();
-
-	const inspection = expectOk(openInspection({ path }));
-	try {
-		expect(
-			expectOk(
-				inspection.query(
-					'SELECT namespace, value_name, presence, content_json FROM _epicenter_values',
-				),
-			).rows,
-		).toEqual([
-			{
-				namespace: 'so.epicenter.honeycrisp',
-				value_name: 'theme',
-				presence: 'absent',
-				content_json: null,
-			},
-		]);
-	} finally {
-		inspection.close();
-	}
-});
-
-test('one submitted statement never runs a trailing statement', async () => {
-	await seed();
-	const inspection = expectOk(openInspection({ path }));
-	try {
-		// `prepare` compiles the first statement and ignores the rest. The write
-		// would also be refused by the read-only connection, so the guarantee holds
-		// on two independent grounds; this pins the first one.
-		const result = expectOk(
-			inspection.query(
-				"SELECT 1 AS a; INSERT INTO main._replica_value_facts VALUES ('a.b','c','present','1',1)",
-			),
-		);
-		expect(result.rows).toEqual([{ a: 1 }]);
-	} finally {
-		inspection.close();
-	}
-
-	// Nothing was written by the ignored trailing statement.
-	const reader = new Database(path, { readonly: true });
-	expect(
-		reader
-			.query<{ n: number }, []>(
-				'SELECT COUNT(*) AS n FROM main._replica_value_facts',
-			)
-			.get()?.n,
-	).toBe(1);
-	reader.close();
-});
 
 test('a TEMP view on the inspection connection cannot redirect the owner', async () => {
 	const { data } = await seed();
@@ -438,7 +381,7 @@ test('a TEMP view on the inspection connection cannot redirect the owner', async
 		expectOk(inspection.selectLens(lens));
 		// The owner reads its own storage, unaffected by anything inspection mounted:
 		// TEMP objects are connection-local, so this is structural, not a convention.
-		const rows = await data.tables.notes.scan();
+		const rows = await data.notes.scan();
 		expect(rows.rows).toHaveLength(2);
 	} finally {
 		inspection.close();
@@ -449,7 +392,7 @@ describe('result bounds', () => {
 	test('the row bound truncates and says so', async () => {
 		const data = epicenter.bind(lens);
 		for (let index = 0; index < 5; index += 1) {
-			await data.tables.notes.create({ title: `n${index}`, pinned: false });
+			await data.notes.create({ title: `n${index}`, pinned: false });
 		}
 		const inspection = expectOk(
 			openInspection({
@@ -471,7 +414,7 @@ describe('result bounds', () => {
 	test('the byte bound truncates a small number of large rows', async () => {
 		const data = epicenter.bind(lens);
 		for (let index = 0; index < 4; index += 1) {
-			await data.tables.notes.create({
+			await data.notes.create({
 				title: 'x'.repeat(4_000),
 				pinned: false,
 			});
@@ -572,7 +515,7 @@ test('inspection reads a live store without any journal-mode change', async () =
 		expectOk(inspection.selectLens(lens));
 		// Interleave owner writes and inspection reads on the one file.
 		for (let index = 0; index < 5; index += 1) {
-			await data.tables.notes.create({ title: `live${index}`, pinned: false });
+			await data.notes.create({ title: `live${index}`, pinned: false });
 			expect(
 				expectOk(inspection.query('SELECT COUNT(*) AS n FROM notes')).rows,
 			).toEqual([{ n: 3 + index }]);

@@ -29,7 +29,7 @@ Each skill and reference row owns one document. The skill document stores its
 instructions; the reference document stores its Markdown body:
 
 ```ts
-await using instructions = await skills.tables.skills.openDocument(skill.id);
+await using instructions = await skills.skills.openDocument(skill.id);
 const content = instructions.get('content');
 instructions.transact(() => content.insert(0, '# Instructions'));
 await instructions.whenDurable();

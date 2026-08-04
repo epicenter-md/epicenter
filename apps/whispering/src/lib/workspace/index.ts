@@ -7,5 +7,6 @@ export {
 	recordingsTable,
 	type WhisperingSettingValues,
 	whisperingLens,
-	whisperingSettingValues,
+	whisperingSettingFields,
+	WHISPERING_SETTINGS_ROW_ID,
 } from './definition';

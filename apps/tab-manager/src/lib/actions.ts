@@ -150,7 +150,6 @@ export function createTabManagerActions({
 	data: TabManagerData;
 	nodeId: string;
 }) {
-	const { tables } = data;
 
 	return {
 		devices_list: defineQuery({
@@ -158,7 +157,7 @@ export function createTabManagerActions({
 			description:
 				'List all synced devices with their names, browsers, and last-seen times.',
 			handler: async () => {
-				const { rows: devices } = await tables.devices.scan();
+				const { rows: devices } = await data.devices.scan();
 				return {
 					devices: devices.map((device) => ({
 						id: device.nodeId,
@@ -243,7 +242,7 @@ export function createTabManagerActions({
 					return [{ ...result.value, url: result.value.url }];
 				});
 				for (const tab of validTabs) {
-					await tables.savedTabs.create({
+					await data.savedTabs.create({
 						url: tab.url,
 						title: tab.title || 'Untitled',
 						favIconUrl: tab.favIconUrl,
@@ -348,7 +347,7 @@ export function createTabManagerActions({
 				pinned: Type.Boolean(),
 			}),
 			handler: async ({ browserTabId, url, title, favIconUrl, pinned }) => {
-				await tables.savedTabs.create({
+				await data.savedTabs.create({
 					url,
 					title,
 					favIconUrl,
@@ -384,7 +383,7 @@ export function createTabManagerActions({
 						TabError.BrowserApiFailed({ operation: 'tabs.create', cause }),
 				});
 				if (error) return Err(error);
-				await tables.savedTabs.delete(id);
+				await data.savedTabs.delete(id);
 				return Ok({ restored: true });
 			},
 		}),
@@ -392,7 +391,7 @@ export function createTabManagerActions({
 			title: 'Restore All Saved Tabs',
 			description: 'Re-open all saved tabs and delete their rows.',
 			handler: async () => {
-				const { rows: all } = await tables.savedTabs.scan();
+				const { rows: all } = await data.savedTabs.scan();
 				if (all.length === 0) return { restoredCount: 0 };
 				const created = await Promise.allSettled(
 					all.map((tab) =>
@@ -406,7 +405,7 @@ export function createTabManagerActions({
 				let restoredCount = 0;
 				for (const result of created) {
 					if (result.status !== 'fulfilled') continue;
-					await tables.savedTabs.delete(result.value.id);
+					await data.savedTabs.delete(result.value.id);
 					restoredCount += 1;
 				}
 				return { restoredCount };
@@ -417,7 +416,7 @@ export function createTabManagerActions({
 			description: 'Delete a saved tab without restoring it.',
 			input: Type.Object({ id: Type.String() }),
 			handler: async ({ id }) => {
-				await tables.savedTabs.delete(id);
+				await data.savedTabs.delete(id);
 				return { removed: true };
 			},
 		}),
@@ -425,8 +424,8 @@ export function createTabManagerActions({
 			title: 'Remove All Saved Tabs',
 			description: 'Delete all saved tabs without restoring them.',
 			handler: async () => {
-				const { rows: all } = await tables.savedTabs.scan();
-				for (const tab of all) await tables.savedTabs.delete(tab.id);
+				const { rows: all } = await data.savedTabs.scan();
+				for (const tab of all) await data.savedTabs.delete(tab.id);
 				return { removedCount: all.length };
 			},
 		}),
@@ -440,13 +439,13 @@ export function createTabManagerActions({
 				favIconUrl: Type.Optional(Type.String()),
 			}),
 			handler: async ({ url, title, favIconUrl }) => {
-				const { rows: bookmarks } = await tables.bookmarks.scan();
+				const { rows: bookmarks } = await data.bookmarks.scan();
 				const matching = bookmarks.filter((bookmark) => bookmark.url === url);
 				if (matching.length > 0) {
-					for (const match of matching) await tables.bookmarks.delete(match.id);
+					for (const match of matching) await data.bookmarks.delete(match.id);
 					return { action: 'removed' as const, removedCount: matching.length };
 				}
-				await tables.bookmarks.create({
+				await data.bookmarks.create({
 					url,
 					title,
 					favIconUrl,
@@ -476,7 +475,7 @@ export function createTabManagerActions({
 			description: 'Delete a bookmark by its ID.',
 			input: Type.Object({ id: Type.String() }),
 			handler: async ({ id }) => {
-				await tables.bookmarks.delete(id);
+				await data.bookmarks.delete(id);
 				return { removed: true };
 			},
 		}),
@@ -484,8 +483,8 @@ export function createTabManagerActions({
 			title: 'Remove All Bookmarks',
 			description: 'Delete every bookmark.',
 			handler: async () => {
-				const { rows: all } = await tables.bookmarks.scan();
-				for (const bookmark of all) await tables.bookmarks.delete(bookmark.id);
+				const { rows: all } = await data.bookmarks.scan();
+				for (const bookmark of all) await data.bookmarks.delete(bookmark.id);
 				return { removedCount: all.length };
 			},
 		}),

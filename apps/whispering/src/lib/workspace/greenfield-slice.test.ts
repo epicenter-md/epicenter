@@ -4,12 +4,18 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { generateBlobId } from '@epicenter/blobs';
-import { defineLens } from '@epicenter/data';
+import { defineLens, defineTable } from '@epicenter/data';
 import { openBunEpicenter } from '@epicenter/data/bun';
 import { InstantString } from '@epicenter/field';
 import { expectOk } from 'wellcrafted/testing';
 import { createBunEpicenterSyncRuntime } from '../../../../../packages/server/src/epicenter-sync/bun';
-import { recordingsTable, whisperingSettingValues } from './definition';
+import {
+	createWhisperingSettingDefaults,
+	recordingsTable,
+	whisperingSettingRow,
+	whisperingSettingFields,
+	WHISPERING_SETTINGS_ROW_ID,
+} from './definition';
 
 function recording(title: string, recordedAt: InstantString) {
 	return {
@@ -25,33 +31,40 @@ function recording(title: string, recordedAt: InstantString) {
 	};
 }
 
-test('settings values set, get, unset, and subscribe through a composed lens', async () => {
+test('settings are one row at a chosen id, patched and subscribed per field', async () => {
 	const root = mkdtempSync(join(tmpdir(), 'whispering-data-settings-'));
 	try {
 		await using epicenter = await openBunEpicenter({ directory: root });
-		const values = epicenter.bind(
+		const settings = epicenter.bind(
 			defineLens({
 				namespace: 'so.epicenter.whispering',
-				tables: {},
-				values: whisperingSettingValues,
+				tables: { settings: defineTable({ fields: whisperingSettingFields }) },
 			}),
-		).values;
+		).settings;
 		let changes = 0;
-		const stop = values['settings.transcription.language'].subscribe(() => {
+		const stop = settings.subscribe(() => {
 			changes += 1;
 		});
 		expect(
-			expectOk(await values['settings.transcription.language'].get()),
+			expectOk(await settings.get(WHISPERING_SETTINGS_ROW_ID)),
 		).toBeUndefined();
-		await values['settings.transcription.language'].set('en');
+		await settings.create(WHISPERING_SETTINGS_ROW_ID, {
+			...whisperingSettingRow(createWhisperingSettingDefaults('Groq')),
+			settings_transcription_language: 'en',
+		} as never);
 		expect(
-			expectOk(await values['settings.transcription.language'].get()),
+			expectOk(await settings.get(WHISPERING_SETTINGS_ROW_ID))
+				?.settings_transcription_language,
 		).toBe('en');
-		await values['settings.transcription.language'].unset();
-		expect(
-			expectOk(await values['settings.transcription.language'].get()),
-		).toBeUndefined();
-		expect(changes).toBe(2);
+		// Each setting is its own key, so one patch moves one setting and leaves
+		// the rest of the row alone.
+		await settings.patch(WHISPERING_SETTINGS_ROW_ID, {
+			settings_transcription_prompt: 'jargon',
+		} as never);
+		const after = expectOk(await settings.get(WHISPERING_SETTINGS_ROW_ID));
+		expect(after?.settings_transcription_prompt).toBe('jargon');
+		expect(after?.settings_transcription_language).toBe('en');
+		expect(changes).toBeGreaterThan(0);
 		stop();
 	} finally {
 		rmSync(root, { recursive: true, force: true });
@@ -66,19 +79,14 @@ test('two borrowed lenses compose recordings CRUD with application ordering', as
 			defineLens({
 				namespace: 'so.epicenter.whispering',
 				tables: { recordings: recordingsTable },
-				values: {},
 			}),
-		).tables.recordings;
+		).recordings;
 		const settings = epicenter.bind(
 			defineLens({
 				namespace: 'so.epicenter.whispering',
-				tables: {},
-				values: {
-					'settings.transcription.language':
-						whisperingSettingValues['settings.transcription.language'],
-				},
+				tables: { settings: defineTable({ fields: whisperingSettingFields }) },
 			}),
-		).values;
+		).settings;
 		const older = await recordings.create(
 			recording(
 				'older',
@@ -102,9 +110,13 @@ test('two borrowed lenses compose recordings CRUD with application ordering', as
 		).toBe('updated');
 		expect(await recordings.delete(newer.id)).toBe(true);
 		expect(expectOk(await recordings.get(newer.id))).toBeUndefined();
-		await settings['settings.transcription.language'].set('fr');
+		await settings.create(WHISPERING_SETTINGS_ROW_ID, {
+			...whisperingSettingRow(createWhisperingSettingDefaults('Groq')),
+			settings_transcription_language: 'fr',
+		} as never);
 		expect(
-			expectOk(await settings['settings.transcription.language'].get()),
+			expectOk(await settings.get(WHISPERING_SETTINGS_ROW_ID))
+				?.settings_transcription_language,
 		).toBe('fr');
 	} finally {
 		rmSync(root, { recursive: true, force: true });
@@ -123,27 +135,16 @@ test('first sign-in freezes attachment and converges through the in-process auth
 		await using second = await openBunEpicenter({
 			directory: join(root, 'second'),
 		});
-		const firstLanguage = first.bind(
-			defineLens({
-				namespace: 'so.epicenter.whispering',
-				tables: {},
-				values: {
-					'settings.transcription.language':
-						whisperingSettingValues['settings.transcription.language'],
-				},
-			}),
-		).values['settings.transcription.language'];
-		const secondLanguage = second.bind(
-			defineLens({
-				namespace: 'so.epicenter.whispering',
-				tables: {},
-				values: {
-					'settings.transcription.language':
-						whisperingSettingValues['settings.transcription.language'],
-				},
-			}),
-		).values['settings.transcription.language'];
-		await firstLanguage.set('de');
+		const settingsLens = defineLens({
+			namespace: 'so.epicenter.whispering',
+			tables: { settings: defineTable({ fields: whisperingSettingFields }) },
+		});
+		const firstSettings = first.bind(settingsLens).settings;
+		const secondSettings = second.bind(settingsLens).settings;
+		await firstSettings.create(WHISPERING_SETTINGS_ROW_ID, {
+			...whisperingSettingRow(createWhisperingSettingDefaults('Groq')),
+			settings_transcription_language: 'de',
+		} as never);
 		const attachment = Object.freeze({
 			deploymentId: 'https://example.com/',
 			principalId: 'principal-a',
@@ -151,7 +152,10 @@ test('first sign-in freezes attachment and converges through the in-process auth
 		const exchange = authority.locateAuthority('principal-a' as never);
 		expectOk(await first.attachSync({ ...attachment, exchange }));
 		expectOk(await second.attachSync({ ...attachment, exchange }));
-		expect(expectOk(await secondLanguage.get())).toBe('de');
+		expect(
+			expectOk(await secondSettings.get(WHISPERING_SETTINGS_ROW_ID))
+				?.settings_transcription_language,
+		).toBe('de');
 		const refused = await second.attachSync({
 			deploymentId: attachment.deploymentId,
 			principalId: 'principal-b',

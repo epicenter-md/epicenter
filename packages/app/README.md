@@ -163,7 +163,7 @@ the contract itself, depending on this client.
 
 ```ts
 // notes-contract.ts, imported by every app that reads these notes
-import { defineLens, defineTable, defineValue, field, optional } from '@epicenter/lens';
+import { defineLens, defineTable, field, optional } from '@epicenter/lens';
 
 export const notesContract = defineLens({
 	namespace: 'com.example.notes',
@@ -171,20 +171,23 @@ export const notesContract = defineLens({
 		notes: defineTable({
 			fields: { title: field.string(), body: optional(field.string()) },
 		}),
-	},
-	values: {
-		'settings.sortOrder': defineValue({ value: field.select(['newest', 'oldest']) }),
+		settings: defineTable({
+			fields: { sortOrder: field.select(['newest', 'oldest']) },
+		}),
 	},
 });
+
+/** The one row id this application chooses. Everything else is minted. */
+export const SETTINGS = 'app';
 ```
 
 ```ts
 const { data: notes, error } = await epicenter.data.bind(notesContract);
 if (error) return show(error.message);
 
-const { data: created } = await notes.tables.notes.create({ title: 'Hello' });
-const { data: all } = await notes.tables.notes.scan();
-await notes.values['settings.sortOrder'].set('newest');
+const { data: created } = await notes.notes.create({ title: 'Hello' });
+const { data: all } = await notes.notes.scan();
+await notes.settings.patch(SETTINGS, { sortOrder: 'newest' });
 ```
 
 `bind` is the one call in this client you await for a connection. It waits for
@@ -199,17 +202,14 @@ fires initially, so nothing can land in between and there is no first delivery
 to discard.
 
 ```ts
-notes.tables.notes.subscribe((invalidation) => {
+notes.notes.subscribe((invalidation) => {
 	if (invalidation.scope === 'table') return void reloadEverything();
 	for (const rowId of invalidation.rowIds) void reread(rowId);
 });
-
-notes.values['settings.sortOrder'].subscribe(() => void rereadSortOrder());
 ```
 
-A table can name the rows that moved; a value cannot, because a value has no
-smaller identity than itself. `{ scope: 'table' }` means the handle cannot name
-them, so everything reachable through it may have moved: it arrives after an
+A table can usually name the rows that moved. `{ scope: 'table' }` means it
+cannot, so everything reachable through it may have moved: it arrives after an
 observation gap, where a row deleted while the carrier was down left nothing
 behind to name.
 

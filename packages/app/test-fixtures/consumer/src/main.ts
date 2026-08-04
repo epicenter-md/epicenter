@@ -140,26 +140,26 @@ if (bindError) {
 } else {
 	// Subscribe first, then read. Registration is synchronous and never fires
 	// initially, so nothing can land in the gap and nothing has to be discarded.
-	notes.tables.notes.subscribe((invalidation) => {
+	notes.notes.subscribe((invalidation) => {
 		if (invalidation.scope === 'table') {
 			void renderEverything();
 			return;
 		}
 		for (const rowId of invalidation.rowIds) void rerender(rowId);
 	});
-	notes.values['settings.sortOrder'].subscribe(() => void renderEverything());
+	notes.settings.subscribe(() => void renderEverything());
 
 	await renderEverything();
 
 	document.querySelector('#note')?.addEventListener('click', () => {
-		void notes.tables.notes.create({ title: 'Untitled', body: undefined });
+		void notes.notes.create({ title: 'Untitled', body: undefined });
 	});
 }
 
 async function renderEverything() {
 	const bound = notes;
 	if (!bound) return;
-	const { data: scanned, error } = await bound.tables.notes.scan();
+	const { data: scanned, error } = await bound.notes.scan();
 	if (error) return show(error.message);
 	const list = document.querySelector('#notes');
 	if (list)
@@ -172,7 +172,7 @@ async function renderEverything() {
 async function rerender(rowId: string) {
 	const bound = notes;
 	if (!bound) return;
-	const { data: note, error } = await bound.tables.notes.get(rowId);
+	const { data: note, error } = await bound.notes.get(rowId);
 	if (error) return show(error.message);
 	if (!note) return void renderEverything();
 	show(`Updated ${note.title}.`);

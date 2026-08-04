@@ -19,7 +19,7 @@ import { Value } from 'typebox/value';
 import { Ok, type Result } from 'wellcrafted/result';
 
 import {
-	type Address,
+	type RowAddress,
 	addressesEqual,
 	addressKey,
 	isAdmissibleAddress,
@@ -49,8 +49,7 @@ const SubmissionNumberSchema = Type.Integer({
 	maximum: Number.MAX_SAFE_INTEGER,
 });
 const LifetimeSchema = Type.String({ minLength: 1 });
-// V1-local replica-id grammar. Unlike the 24-char row id (frozen by spec), the
-// replica-id shape is not yet frozen by an ADR and may change before V1.
+// V1-local replica-id grammar.
 const ReplicaIdSchema = Type.String({
 	minLength: 24,
 	maxLength: 24,
@@ -291,7 +290,7 @@ export type SubmissionResponse = Static<typeof SubmissionResponseSchema>;
 
 /** Whether an intent array holds at most one intent per distinct address. */
 function addressesAreDistinct(
-	intents: readonly { address: Address }[],
+	intents: readonly { address: RowAddress }[],
 ): boolean {
 	const seen = new Set<string>();
 	for (const intent of intents) {

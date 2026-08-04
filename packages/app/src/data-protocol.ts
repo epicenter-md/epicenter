@@ -30,8 +30,6 @@
 import type {
 	RowAddress,
 	SerializedTableDefinition,
-	SerializedValueDefinition,
-	ValueAddress,
 } from '@epicenter/lens';
 
 /** Where the host answers data operations, relative to the Epicenter origin. */
@@ -52,6 +50,7 @@ export type WireDataOperation =
 	| {
 			kind: 'table-create';
 			definition: SerializedTableDefinition;
+			rowId?: string;
 			fields: Record<string, unknown>;
 	  }
 	| {
@@ -83,22 +82,7 @@ export type WireDataOperation =
 			definition: SerializedTableDefinition;
 			after?: string;
 	  }
-	| {
-			kind: 'value-get';
-			definition: SerializedValueDefinition;
-			address: ValueAddress;
-	  }
-	| {
-			kind: 'value-set';
-			definition: SerializedValueDefinition;
-			address: ValueAddress;
-			value: unknown;
-	  }
-	| {
-			kind: 'value-unset';
-			definition: SerializedValueDefinition;
-			address: ValueAddress;
-	  };
+	;
 
 /** The envelope every data operation answers with. */
 export type WireDataResponse =

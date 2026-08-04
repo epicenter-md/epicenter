@@ -13,8 +13,7 @@ One principal owns one Epicenter:
 One principal
 └── one Epicenter
     ├── scalar facts
-    │   ├── typed rows
-    │   └── typed values
+    │   └── typed rows
     ├── lazy row documents
     │   └── Yjs state for merge-sensitive content
     └── blobs
@@ -31,21 +30,20 @@ A namespace is the first coordinate of a durable address:
 
 ```ts
 type RowAddress = {
-  kind: "row";
   namespace: string;
-  table: string;
+  tableName: string;
   rowId: string;
-};
-
-type ValueAddress = {
-  kind: "value";
-  namespace: string;
-  value: string;
 };
 ```
 
-The address kind distinguishes a row from a value. A row-owned document uses
-the same row address and gains no independent document ID.
+There is one address and it is always three coordinates deep: who owns it, what
+kind of thing it is, which one. A row-owned document and a row-owned blob use
+the same address and gain no identity of their own.
+
+A row id comes from whoever knows it. Usually nobody does and the runtime mints
+one; when an application knows it, such as the single row holding its settings,
+it supplies one and every device reaches that address without coordinating
+(ADR-0206).
 
 The logical hierarchy is honest and inspectable:
 
@@ -55,10 +53,11 @@ one Epicenter
 │   ├── table: recordings
 │   │   ├── row: abc
 │   │   └── row: def
-│   └── value: language
+│   └── table: settings
+│       └── row: app
 └── namespace: so.epicenter.honeycrisp
     ├── table: notes
-    └── value: appearance
+    └── table: settings
 ```
 
 ## A Lens is pure JSON
@@ -78,17 +77,19 @@ const whispering = defineLens({
       optional: [],
     }),
   },
-  values: {
-    language: defineValue({
-      title: "Language",
-      value: field.string(),
+    settings: defineTable({
+      title: "Settings",
+      fields: {
+        language: field.string(),
+      },
+      optional: [],
     }),
   },
 });
 ```
 
 `namespace` is a durable address coordinate. `tables.recordings` and
-`values.language` are the durable local keys. They are not aliases. Renaming a
+`tables.settings` are the durable local keys. They are not aliases. Renaming a
 property or moving it to another namespace addresses different data.
 
 A Lens interprets exactly one namespace but may describe only part of it.
@@ -145,7 +146,6 @@ session are:
 
 ```sql
 _epicenter_rows(namespace_key, table_key, row_id, fields_json)
-_epicenter_values(namespace_key, value_key, value_json)
 ```
 
 These are logical relations, not a promise about a live adapter's private

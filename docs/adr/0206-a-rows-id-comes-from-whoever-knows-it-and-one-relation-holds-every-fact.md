@@ -169,6 +169,14 @@ intended.
   workaround. The pattern of storing a foreign identifier as an ordinary field
   and scanning a table to find the matching row is available to delete wherever
   it appears.
+- **A chosen id is single-use for the life of the replica.** Deletion is
+  terminal, so deleting a row at a name burns that name: nothing can ever create
+  at it again, on any device, ever. A minted id never felt this because nobody
+  wanted a specific one back. An application that names rows after foreign
+  identifiers is choosing that trade knowingly, and any surface where a person
+  expects to remove something and later recreate it under the same name must not
+  key on that name. This is why a keyboard shortcut cannot be a row keyed by its
+  chord: unbinding would make the chord permanently unbindable.
 - **What this forecloses:** a second fact relation, a second declaration form
   such as `defineValue` or `defineKv`, a declared list of legal row names, prefix
   or wildcard matching on any coordinate, an upserting `patch`, and any address

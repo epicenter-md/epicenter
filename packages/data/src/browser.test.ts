@@ -23,7 +23,7 @@ import {
 	openBrowserEpicenter,
 } from './browser.js';
 import { createEpicenter } from './epicenter.js';
-import { defineLens, defineTable, defineValue, optional } from './index.js';
+import { defineLens, defineTable, optional } from './index.js';
 import type { ExchangeRequest, ExchangeResponse } from './protocol/index.js';
 import { openReplica } from './replica/index.js';
 
@@ -168,53 +168,45 @@ const notes = defineTable({
 	},
 });
 
-const theme = defineValue({
-	value: field.string(),
-});
 
 function bindTestData(epicenter: BrowserEpicenter) {
 	return epicenter.bind(
 		defineLens({
 			namespace: 'so.epicenter.test',
 			tables: { notes },
-			values: { theme },
 		}),
 	);
 }
 
-test('page CRUD, subscriptions, scans, and values round-trip through its worker', async () => {
+test('page CRUD, subscriptions, and scans round-trip through its worker', async () => {
 	const { openPage } = await setup();
 	await using epicenter = await openPage();
 	const data = bindTestData(epicenter);
 	const invalidated: string[] = [];
-	const unsubscribe = data.tables.notes.subscribe((invalidation) => {
+	const unsubscribe = data.notes.subscribe((invalidation) => {
 		if (invalidation.scope === 'rows') invalidated.push(...invalidation.rowIds);
 	});
 
-	const created = await data.tables.notes.create({ title: 'First' });
+	const created = await data.notes.create({ title: 'First' });
 	await waitFor(() => invalidated.includes(created.id));
-	expect(expectOk(await data.tables.notes.get(created.id))).toEqual(created);
+	expect(expectOk(await data.notes.get(created.id))).toEqual(created);
 	expectOk(
-		await data.tables.notes.patch(created.id, {
+		await data.notes.patch(created.id, {
 			title: 'Updated',
 			detail: 'RPC',
 		}),
 	);
-	expect((await data.tables.notes.scan()).rows).toEqual([
+	expect((await data.notes.scan()).rows).toEqual([
 		{ id: created.id, title: 'Updated', detail: 'RPC' },
 	]);
-	await data.values.theme.set('dark');
-	expect(expectOk(await data.values.theme.get())).toBe('dark');
-	await data.values.theme.unset();
-	expect(expectOk(await data.values.theme.get())).toBeUndefined();
-	expect(await data.tables.notes.delete(created.id)).toBe(true);
+	expect(await data.notes.delete(created.id)).toBe(true);
 	unsubscribe();
 });
 
 test('two document handles in one page persist updates and revoke together', async () => {
 	const { openPage } = await setup();
 	await using epicenter = await openPage();
-	const lens = bindTestData(epicenter).tables.notes;
+	const lens = bindTestData(epicenter).notes;
 	const row = await lens.create({ title: 'Document' });
 	const first = await lens.openDocument(row.id);
 	const second = await lens.openDocument(row.id);
@@ -265,7 +257,7 @@ test('a different principal is refused without replacing the active transport', 
 		}),
 	);
 	expect(refusal.name).toBe('WrongAttachment');
-	await bindTestData(epicenter).tables.notes.create({
+	await bindTestData(epicenter).notes.create({
 		title: 'Still attached',
 	});
 	await waitFor(() => activeExchanges > beforeRefusal);
@@ -291,7 +283,7 @@ test('a stalled network attachment does not block local RPC or disposal', async 
 		);
 	await waitFor(() => exchangeStarted);
 	const row = await settleWithin(
-		bindTestData(epicenter).tables.notes.create({
+		bindTestData(epicenter).notes.create({
 			title: 'Local remains live',
 		}),
 		1_000,
@@ -331,7 +323,7 @@ test('a newer attachment generation cancels a stalled predecessor', async () => 
 	);
 	expect(expectErr(await stalled).name).toBe('TransportFailed');
 	const beforeWrite = replacementExchanges;
-	await bindTestData(epicenter).tables.notes.create({
+	await bindTestData(epicenter).notes.create({
 		title: 'New generation',
 	});
 	await waitFor(() => replacementExchanges > beforeWrite);
@@ -374,7 +366,7 @@ test('timed-out exchanges stay serialized within their attachment generation', a
 	);
 	const beforeWrite = requests.length;
 	stallNext = true;
-	await bindTestData(epicenter).tables.notes.create({
+	await bindTestData(epicenter).notes.create({
 		title: 'Retry in order',
 	});
 	await waitFor(() => releaseStall !== undefined);
@@ -413,7 +405,7 @@ test('transport cancellation correlates request id and attachment generation', a
 		}),
 	);
 	stallNext = true;
-	await bindTestData(epicenter).tables.notes.create({ title: 'Correlate' });
+	await bindTestData(epicenter).notes.create({ title: 'Correlate' });
 	await waitFor(() => releaseExchange !== undefined);
 	const request = lastMessageOfType(page.workerMessages, 'transport-request');
 	if (
@@ -596,7 +588,7 @@ test('document disposal aggregates persistence and close failures', async () => 
 	const epicenter = await openBrowserEpicenter({
 		createWorker: () => ({ port: ports.page }),
 	});
-	const document = await bindTestData(epicenter).tables.notes.openDocument(
+	const document = await bindTestData(epicenter).notes.openDocument(
 		'000000000000000000000000',
 	);
 

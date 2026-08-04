@@ -17,7 +17,10 @@ import {
 } from '@epicenter/data/desktop';
 import { field, InstantString } from '@epicenter/field';
 import { optional } from '@epicenter/lens';
-import { whisperingLens } from '@epicenter/whispering/workspace-contract';
+import {
+	WHISPERING_SETTINGS_ROW_ID,
+	whisperingLens,
+} from '@epicenter/whispering/workspace-contract';
 import { COMPILED_APPLICATIONS } from './applications.ts';
 import { BOOTSTRAP_ROUTE } from './routes.ts';
 import { createHomeServer } from './server.ts';
@@ -49,14 +52,11 @@ test('WebView surfaces share one replica and state survives restart', async () =
 				tables: {
 					recordings: whisperingLens.tables.recordings,
 					documents: documentsTable,
-				},
-				values: {
-					'settings.analytics.enabled':
-						whisperingLens.values['settings.analytics.enabled'],
+					settings: whisperingLens.tables.settings,
 				},
 			}),
 		);
-		const recording = await firstData.tables.recordings.create({
+		const recording = await firstData.recordings.create({
 			audioBlobId: generateBlobId(),
 			uploadedAt: null,
 			title: 'Shared recording',
@@ -69,19 +69,21 @@ test('WebView surfaces share one replica and state survives restart', async () =
 		});
 		expect(
 			(
-				await firstData.tables.recordings.patch(recording.id, {
+				await firstData.recordings.patch(recording.id, {
 					transcript: 'Updated transcript',
 				})
 			).data?.transcript,
 		).toBe('Updated transcript');
-		await firstData.values['settings.analytics.enabled'].set(false);
+		await firstData.settings.patch(WHISPERING_SETTINGS_ROW_ID, {
+			settings_analytics_enabled: false,
+		});
 
-		const row = await firstData.tables.documents.create({
+		const row = await firstData.documents.create({
 			name: 'Shared document',
 			updatedAt: InstantString.now(),
 		});
 		{
-			await using document = await firstData.tables.documents.openDocument(
+			await using document = await firstData.documents.openDocument(
 				row.id,
 			);
 			document.get('content').insert(0, 'Desktop document');
@@ -94,15 +96,17 @@ test('WebView surfaces share one replica and state survives restart', async () =
 		const secondData = second.bind(
 			defineLens({
 				namespace: 'so.epicenter.whispering',
-				tables: { recordings: whisperingLens.tables.recordings },
-				values: {},
+				tables: {
+					recordings: whisperingLens.tables.recordings,
+					settings: whisperingLens.tables.settings,
+				},
 			}),
 		);
 		expect(
-			(await secondData.tables.recordings.get(recording.id)).data?.transcript,
+			(await secondData.recordings.get(recording.id)).data?.transcript,
 		).toBe('Updated transcript');
 		expect(
-			(await firstData.tables.recordings.get(recording.id)).data?.title,
+			(await firstData.recordings.get(recording.id)).data?.title,
 		).toBe('Shared recording');
 
 		await first[Symbol.asyncDispose]();
@@ -119,20 +123,18 @@ test('WebView surfaces share one replica and state survives restart', async () =
 					tables: {
 						recordings: whisperingLens.tables.recordings,
 						documents: documentsTable,
-					},
-					values: {
-						'settings.analytics.enabled':
-							whisperingLens.values['settings.analytics.enabled'],
+						settings: whisperingLens.tables.settings,
 					},
 				}),
 			);
 			expect(
-				(await data.tables.recordings.get(recording.id)).data?.transcript,
+				(await data.recordings.get(recording.id)).data?.transcript,
 			).toBe('Updated transcript');
 			expect(
-				(await data.values['settings.analytics.enabled'].get()).data,
+				(await data.settings.get(WHISPERING_SETTINGS_ROW_ID)).data
+					?.settings_analytics_enabled,
 			).toBeFalse();
-			await using document = await data.tables.documents.openDocument(row.id);
+			await using document = await data.documents.openDocument(row.id);
 			expect(document.get('content').toString()).toBe('Desktop document');
 			for (const request of operations) {
 				expect(request).not.toHaveProperty('lens');
@@ -153,25 +155,25 @@ test('unsetting an optional field crosses the JSON carrier', async () => {
 	try {
 		const client = await createClient(server);
 		const data = client.bind(sharedLens());
-		const row = await data.tables.documents.create({
+		const row = await data.documents.create({
 			name: 'Has a note',
 			updatedAt: InstantString.now(),
 			note: 'remove me',
 		});
-		expect((await data.tables.documents.get(row.id)).data?.note).toBe(
+		expect((await data.documents.get(row.id)).data?.note).toBe(
 			'remove me',
 		);
 
 		// `JSON.stringify` drops a key whose value is `undefined`, so a patch that
 		// carried one arrived at the host meaning nothing and the field survived.
 		// The carrier names the two halves for exactly this.
-		const cleared = await data.tables.documents.patch(row.id, {
+		const cleared = await data.documents.patch(row.id, {
 			note: undefined,
 		});
 		expect(cleared.error).toBeNull();
 		expect(cleared.data?.name).toBe('Has a note');
 		expect(cleared.data && 'note' in cleared.data).toBeFalse();
-		const reread = await data.tables.documents.get(row.id);
+		const reread = await data.documents.get(row.id);
 		expect(reread.data && 'note' in reread.data).toBeFalse();
 
 		await client[Symbol.asyncDispose]();
@@ -195,16 +197,16 @@ test('a write in one surface invalidates the same lens in another', async () => 
 		// discarded.
 		const rowInvalidations: TableInvalidation[] = [];
 		let valueInvalidations = 0;
-		readerData.tables.documents.subscribe((invalidation) =>
+		readerData.documents.subscribe((invalidation) =>
 			rowInvalidations.push(invalidation),
 		);
-		readerData.values['settings.analytics.enabled'].subscribe(() => {
+		readerData.settings.subscribe(() => {
 			valueInvalidations += 1;
 		});
 		expect(rowInvalidations).toEqual([]);
 		expect(valueInvalidations).toBe(0);
 
-		const created = await writerData.tables.documents.create({
+		const created = await writerData.documents.create({
 			name: 'Written elsewhere',
 			updatedAt: InstantString.now(),
 		});
@@ -213,27 +215,30 @@ test('a write in one surface invalidates the same lens in another', async () => 
 		// Exactly one rows-scoped invalidation naming exactly the row that moved,
 		// and the reader can go and read it.
 		expect(rowInvalidations).toEqual([{ scope: 'rows', rowIds: [created.id] }]);
-		expect((await readerData.tables.documents.get(created.id)).data?.name).toBe(
+		expect((await readerData.documents.get(created.id)).data?.name).toBe(
 			'Written elsewhere',
 		);
 
 		// The writer hears about its own write through the same authoritative
 		// broadcast. There is no local echo left to double-fire it.
 		const writerInvalidations: TableInvalidation[] = [];
-		writerData.tables.documents.subscribe((invalidation) =>
+		writerData.documents.subscribe((invalidation) =>
 			writerInvalidations.push(invalidation),
 		);
-		await writerData.tables.documents.patch(created.id, { name: 'Renamed' });
+		await writerData.documents.patch(created.id, { name: 'Renamed' });
 		await waitFor(() => writerInvalidations.length > 0);
 		expect(writerInvalidations).toEqual([
 			{ scope: 'rows', rowIds: [created.id] },
 		]);
 
-		await writerData.values['settings.analytics.enabled'].set(false);
+		await writerData.settings.patch(WHISPERING_SETTINGS_ROW_ID, {
+			settings_analytics_enabled: false,
+		});
 		await waitFor(() => valueInvalidations > 0);
 		expect(valueInvalidations).toBe(1);
 		expect(
-			(await readerData.values['settings.analytics.enabled'].get()).data,
+			(await readerData.settings.get(WHISPERING_SETTINGS_ROW_ID)).data
+				?.settings_analytics_enabled,
 		).toBeFalse();
 
 		await writer[Symbol.asyncDispose]();
@@ -260,10 +265,10 @@ test('a dropped carrier heals every handle it was holding', async () => {
 		const data = client.bind(sharedLens());
 		const rowInvalidations: TableInvalidation[] = [];
 		let valueInvalidations = 0;
-		data.tables.documents.subscribe((invalidation) =>
+		data.documents.subscribe((invalidation) =>
 			rowInvalidations.push(invalidation),
 		);
-		data.values['settings.analytics.enabled'].subscribe(() => {
+		data.settings.subscribe(() => {
 			valueInvalidations += 1;
 		});
 
@@ -279,7 +284,7 @@ test('a dropped carrier heals every handle it was holding', async () => {
 		expect(valueInvalidations).toBe(1);
 
 		// And the healed carrier is a working one, not just a reopened socket.
-		const created = await data.tables.documents.create({
+		const created = await data.documents.create({
 			name: 'After the gap',
 			updatedAt: InstantString.now(),
 		});
@@ -299,10 +304,9 @@ test('a dropped carrier heals every handle it was holding', async () => {
 function sharedLens() {
 	return defineLens({
 		namespace: 'so.epicenter.whispering',
-		tables: { documents: documentsTable },
-		values: {
-			'settings.analytics.enabled':
-				whisperingLens.values['settings.analytics.enabled'],
+		tables: {
+			documents: documentsTable,
+			settings: whisperingLens.tables.settings,
 		},
 	});
 }
