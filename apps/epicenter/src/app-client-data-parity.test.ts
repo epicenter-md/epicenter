@@ -144,18 +144,18 @@ test('the published client drives every data operation through the real host', a
 		'delete',
 		'entries',
 		'get',
+		'patch',
 		'scan',
 		'subscribe',
-		'patch',
 	]);
 	expect(Object.keys(settings).sort()).toEqual([
 		'create',
 		'delete',
 		'entries',
 		'get',
+		'patch',
 		'scan',
 		'subscribe',
-		'patch',
 	]);
 	expect(Object.keys(bound).sort()).toEqual(['notes', 'settings']);
 

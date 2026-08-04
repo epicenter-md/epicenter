@@ -17,10 +17,7 @@ import {
 } from '@epicenter/data/desktop';
 import { field, InstantString } from '@epicenter/field';
 import { optional } from '@epicenter/lens';
-import {
-	WHISPERING_SETTINGS_ROW_ID,
-	whisperingLens,
-} from '@epicenter/whispering/workspace-contract';
+import { whisperingLens } from '@epicenter/whispering/workspace-contract';
 import { COMPILED_APPLICATIONS } from './applications.ts';
 import { BOOTSTRAP_ROUTE } from './routes.ts';
 import { createHomeServer } from './server.ts';
@@ -40,6 +37,20 @@ const documentsTable = defineTable({
 	},
 });
 
+/**
+ * A row this test names, rather than one the runtime mints for it.
+ *
+ * What is under test is the platform property: a chosen id reaches the same
+ * address from every surface, and a write to it wakes the others (ADR-0206).
+ * Declared here rather than borrowed from Whispering because an app's product
+ * defaults are not part of that property, and reaching for them pulls a
+ * Svelte-typed module into this package's `tsc` graph.
+ */
+const SETTINGS_ROW_ID = 'settings';
+const settingsTable = defineTable({
+	fields: { analyticsEnabled: field.boolean() },
+});
+
 test('WebView surfaces share one replica and state survives restart', async () => {
 	const root = mkdtempSync(join(tmpdir(), 'epicenter-desktop-data-'));
 	const operations: Record<string, unknown>[] = [];
@@ -52,7 +63,7 @@ test('WebView surfaces share one replica and state survives restart', async () =
 				tables: {
 					recordings: whisperingLens.tables.recordings,
 					documents: documentsTable,
-					settings: whisperingLens.tables.settings,
+					settings: settingsTable,
 				},
 			}),
 		);
@@ -74,8 +85,14 @@ test('WebView surfaces share one replica and state survives restart', async () =
 				})
 			).data?.transcript,
 		).toBe('Updated transcript');
-		await firstData.settings.patch(WHISPERING_SETTINGS_ROW_ID, {
-			settings_analytics_enabled: false,
+		// A singleton is a row you named, and `patch` does not create (ADR-0206),
+		// so the row is seeded before it is edited exactly as the app does at boot.
+		await firstData.settings.create(
+			SETTINGS_ROW_ID,
+			{ analyticsEnabled: true },
+		);
+		await firstData.settings.patch(SETTINGS_ROW_ID, {
+			analyticsEnabled: false,
 		});
 
 		const row = await firstData.documents.create({
@@ -98,7 +115,7 @@ test('WebView surfaces share one replica and state survives restart', async () =
 				namespace: 'so.epicenter.whispering',
 				tables: {
 					recordings: whisperingLens.tables.recordings,
-					settings: whisperingLens.tables.settings,
+					settings: settingsTable,
 				},
 			}),
 		);
@@ -123,7 +140,7 @@ test('WebView surfaces share one replica and state survives restart', async () =
 					tables: {
 						recordings: whisperingLens.tables.recordings,
 						documents: documentsTable,
-						settings: whisperingLens.tables.settings,
+						settings: settingsTable,
 					},
 				}),
 			);
@@ -131,8 +148,8 @@ test('WebView surfaces share one replica and state survives restart', async () =
 				(await data.recordings.get(recording.id)).data?.transcript,
 			).toBe('Updated transcript');
 			expect(
-				(await data.settings.get(WHISPERING_SETTINGS_ROW_ID)).data
-					?.settings_analytics_enabled,
+				(await data.settings.get(SETTINGS_ROW_ID)).data
+					?.analyticsEnabled,
 			).toBeFalse();
 			await using document = await data.documents.openDocument(row.id);
 			expect(document.get('content').toString()).toBe('Desktop document');
@@ -192,19 +209,28 @@ test('a write in one surface invalidates the same lens in another', async () => 
 		const writerData = writer.bind(sharedLens());
 		const readerData = reader.bind(sharedLens());
 
+		// Seeding the named row is setup, not the write under test, and it is a
+		// write like any other now that a singleton is an ordinary row
+		// (ADR-0206). Doing it before subscribing keeps the counter below
+		// measuring exactly the edit this test is about.
+		await writerData.settings.create(
+			SETTINGS_ROW_ID,
+			{ analyticsEnabled: true },
+		);
+
 		// Subscribe, then read. Registration is synchronous and never fires
 		// initially, so nothing can land in between and nothing has to be
 		// discarded.
 		const rowInvalidations: TableInvalidation[] = [];
-		let valueInvalidations = 0;
+		let settingsInvalidations = 0;
 		readerData.documents.subscribe((invalidation) =>
 			rowInvalidations.push(invalidation),
 		);
 		readerData.settings.subscribe(() => {
-			valueInvalidations += 1;
+			settingsInvalidations += 1;
 		});
 		expect(rowInvalidations).toEqual([]);
-		expect(valueInvalidations).toBe(0);
+		expect(settingsInvalidations).toBe(0);
 
 		const created = await writerData.documents.create({
 			name: 'Written elsewhere',
@@ -231,14 +257,14 @@ test('a write in one surface invalidates the same lens in another', async () => 
 			{ scope: 'rows', rowIds: [created.id] },
 		]);
 
-		await writerData.settings.patch(WHISPERING_SETTINGS_ROW_ID, {
-			settings_analytics_enabled: false,
+		await writerData.settings.patch(SETTINGS_ROW_ID, {
+			analyticsEnabled: false,
 		});
-		await waitFor(() => valueInvalidations > 0);
-		expect(valueInvalidations).toBe(1);
+		await waitFor(() => settingsInvalidations > 0);
+		expect(settingsInvalidations).toBe(1);
 		expect(
-			(await readerData.settings.get(WHISPERING_SETTINGS_ROW_ID)).data
-				?.settings_analytics_enabled,
+			(await readerData.settings.get(SETTINGS_ROW_ID)).data
+				?.analyticsEnabled,
 		).toBeFalse();
 
 		await writer[Symbol.asyncDispose]();
@@ -306,7 +332,7 @@ function sharedLens() {
 		namespace: 'so.epicenter.whispering',
 		tables: {
 			documents: documentsTable,
-			settings: whisperingLens.tables.settings,
+			settings: settingsTable,
 		},
 	});
 }
