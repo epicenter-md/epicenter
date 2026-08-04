@@ -6,6 +6,7 @@
 - **Amends:** [ADR-0062](0062-local-books-stores-oauth-tokens-in-a-single-0600-file.md) at one clause, the location of the token file, which is now the app directory's root and keeps its `0600` mode and its exclusion from any mirror directory; [ADR-0072](0072-local-books-ships-as-a-standalone-cli-the-daemon-surface-is-deferred.md) at one clause, where a standalone CLI's data lives, leaving its standalone shape and deferred daemon untouched.
 - **Completed by:** [ADR-0202](0202-a-provider-account-belongs-to-the-app-whose-durable-state-it-names-and-epicenter-brokers-none.md), which answers the one question this record left open: who owns the provider grant that names a partition. It amends nothing here.
 - **Corrected 2026-08-03, before merge, at one clause: which apps "an app" is.** A draft of ADR-0202 narrowed it to a closed set of host-composed engines and gave an admitted app (ADR-0179) no directory at all. That narrowing is withdrawn as a product decision, and the rule is restated below at the width it was always written at: **every trusted app Epicenter runs or admits has one place.** Nothing else in this record moves. Both records are unmerged, so this is an edit to an unlanded decision rather than a rewrite of a governing one.
+- **Corrected 2026-08-03, before merge, at one level: `data/` is removed and the replica sits at the root.** The rule this record states is that a level exists exactly where naming authority changes hands, and Epicenter names `data/`, `blobs/`, `app-catalog/`, and `apps/` alike. No hand-off happens at `data/`, so by this record's own test it never earned a level. Removing it also puts `blobs/` beside a *file* rather than beside a folder, which is what makes the spill relationship legible: bytes adjacent to `epicenter.sqlite3` read as belonging to it, where bytes adjacent to a `data/` directory read as a second system. ADR-0172 already drew them as siblings under one storage root; this makes that root the actual root. The most important object in the product stops being hidden inside a folder named after a word that means nothing.
 - **Corrected 2026-08-03, before merge, at one word and everything that word was dragging: the host names a place, it does not allocate one.** Allocation is the vocabulary of a resource handed out and taken back, and this record kept the word while spending five lines denying every part of it (no allocation call, no handle, no host verb, nothing created at admission). The id is the only thing here with two possible claimants, and the path is a pure function of it, so naming is not a softer synonym for allocating but the accurate description. Nothing about the shape moves. The denials shrink to the one sentence that gives the reason, and the Decision statement now says what the host actually does.
 - **Relates:** [ADR-0203](0203-epicenter-owns-only-what-is-already-contended.md) (the general rule this record is one application of: the id is contended and the directory is not, which is why the host names rather than allocates, and why reach is refused rather than deferred), [ADR-0198](0198-a-durable-local-mail-write-is-a-per-message-label-assertion-in-a-sibling-intent-database.md) (untouched, and deliberately: an intent store's durability is a rule about ordinary operation inside a partition, and this record decides only where the partition is), [ADR-0151](0151-local-workspace-stores-use-owner-first-directories.md) (owner-first directories inside the replica plane; this record governs the plane beside it), [ADR-0161](0161-each-person-has-one-epicenter-replicated-on-each-adapter-boundary.md), [ADR-0179](0179-an-installed-app-is-an-inert-built-folder-admitted-through-one-static-artifact-boundary.md), [ADR-0181](0181-every-app-receives-one-portable-epicenter-capability-handle.md) (the closed capability namespace, which this record does not widen), [ADR-0183](0183-epicenter-mediates-the-effects-it-owns-and-names-the-rest-unmediated.md), [ADR-0190](0190-a-build-declares-which-epicenter-owns-its-data-not-which-window-it-runs-in.md), [ADR-0196](0196-local-mails-mirror-is-a-reader-and-one-full-message-fetch-is-its-entire-budget.md), [ADR-0197](0197-a-mirrors-corpus-version-names-its-artifact-and-only-the-app-knows-when-one-is-ready.md) (the filename grammar inside a partition; this record decides the directory that grammar is applied in), [ADR-0199](0199-one-account-reconciler-is-local-mails-only-gmail-writer.md) (the one writer, whose delivery is how an intent store empties during ordinary operation inside a partition)
 - **Relates, not in this tree:** ADR-0191 (the Epicenter host process owns the mail engine in process) and ADR-0193 (durable authorities and disposable materializations) are on open branches. Where this record depends on one, it says so and restates the borrowed clause rather than linking a file that does not exist here.
@@ -92,7 +93,7 @@ produces it is one sentence: **a directory level exists exactly where naming
 authority changes hands, and nowhere else.**
 
 Three parties choose names along that path, in order. Epicenter names the root
-and its own directories (`data`, `blobs`, `app-catalog`). An app names
+and its own directories (`epicenter.sqlite3`, `blobs`, `app-catalog`). An app names
 everything in its own directory (`credentials.json`, `provider.json`, a lock
 file). An external authority names a partition (`realmId`, Google's `sub`).
 Each hand-off gets one segment, because a namespace whose next name is chosen
@@ -242,9 +243,8 @@ sharing the grammar is what makes "one namespace" a fact about the code instead
 of a claim in this paragraph.
 
 The directory is a string. It is computed where the owner is composed, the way
-the Epicenter sidecar already computes `join(root, 'data')` and
-`join(root, 'blobs')` in `apps/epicenter/src/main.ts`, and injected into the
-engine that needs it. This is the per-concern injection that ADR-0193 requires
+the Epicenter sidecar already computes `join(root, 'blobs')` in
+`apps/epicenter/src/main.ts`, and injected into the engine that needs it. This is the per-concern injection that ADR-0193 requires
 for a materialization, and it is why this record adds no capability.
 
 **An admitted app reaches its place by shipping as a runtime, and the host never
@@ -438,18 +438,18 @@ the app chooses what it is called:
 
 ```txt
 <root>/
-  data/                                  the one Epicenter replica (ADR-0161)
-  blobs/
+  epicenter.sqlite3                      the one Epicenter replica (ADR-0161)
+  blobs/                                 the replica's byte spill (ADR-0172)
   app-catalog/
   apps/
-    local-mail/
+    so.epicenter.local-mail/
       credentials.json                   0600, app root, never inside a partition
       accounts/
         <google-sub>/
           mail.v5.db                     disposable materialization (ADR-0197)
           intent.db                      durable app intent (ADR-0198)
           lock.db
-    local-books/
+    so.epicenter.local-books/
       credentials.json                   0600, and the connected-company index
       companies/
         <realmId>/
