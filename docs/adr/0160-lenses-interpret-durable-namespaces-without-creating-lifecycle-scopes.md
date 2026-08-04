@@ -3,6 +3,7 @@
 - **Status:** Proposed
 - **Date:** 2026-07-20
 - **Supersedes:** [ADR-0156](0156-applications-bring-workspace-lenses-runtimes-own-workspaces-by-id.md), [ADR-0130](0130-workspace-definitions-expose-tables-with-row-owned-documents-and-a-release-local-kv-lens.md), and [ADR-0158](0158-installed-apps-declare-workspace-ids-but-run-no-bun-modules.md)
+- **Amended by:** [ADR-0206](0206-a-rows-id-comes-from-whoever-knows-it-and-one-relation-holds-every-fact.md) at one clause, "table rows have runtime-minted globally unique IDs that callers cannot replace." A row id now comes from whoever knows it: the runtime mints one when nobody does, and an application may supply one when it does. Everything else here stands.
 
 ## Context
 
