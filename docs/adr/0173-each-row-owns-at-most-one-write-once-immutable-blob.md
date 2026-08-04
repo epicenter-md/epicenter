@@ -51,6 +51,30 @@ before attachment, then reclaims only the pre-clear physical file identity under
 ADR-0172's debris rule. Later hydration of the same row address never adopts an
 unverified stale file and cannot make that file a target of delayed cleanup.
 
+### The two doors, added 2026-08-04
+
+This record said blob operations take a row address without naming the
+operations. There are exactly two, both on the table that owns the row:
+
+```ts
+table.blobUrl(rowId)            // pure, synchronous, a stable URL
+table.writeBlob(rowId, bytes)   // the slot law above, applied once
+```
+
+`blobUrl` is the row address spelled as a path. It is derivable from the address
+*and* parseable back into it, which is the opposite constraint from the internal
+filename below and deliberately so: a URL is a public spelling of a public
+address, while a filename is an internal surrogate whose one-way derivation is
+what forces recovery to start from a SQLite query rather than a directory scan.
+The URL is the same on every device; whether the host serves a local file or
+fetches from the authority behind it is not the application's business. Bytes
+never cross into JavaScript for playback or display, so a four-hour recording
+costs an element `src` rather than a buffer.
+
+`writeBlob` is how bytes an application already holds enter a row: an imported
+file, an attachment, an image. Recording is the other door onto the same slot,
+under the same write-once law. There is no third.
+
 The private live store may use the digest in a filename or transfer key, but no
 physical path is part of logical identity. A portable or inspection row exposes
 the accepted digest as nullable platform state beside the row's scalar fields

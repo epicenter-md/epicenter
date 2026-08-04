@@ -5,6 +5,7 @@
 - **Provisional number.** ADR-0191 through ADR-0204 are spread across open branches; `main` ends at ADR-0190. Reconcile this integer at merge time (`docs/adr/README.md`).
 - **Supersedes:** [ADR-0184](0184-one-host-recorder-progressively-stages-each-claimable-recording-until-its-owner-stops-or-cancels-it.md). Its one-recorder rule, its single slot and `Busy` refusal, its flat-memory streaming WAV, its refusal of a second audio channel, and its refusal of in-capture `fsync` and periodic header checkpoints are all restated below and unchanged. What is withdrawn is the claimable-recording model: the staging identity, the claim, and the clause "host death loses active capture."
 - **Depends on, not yet built:** [ADR-0172](0172-sqlite-stores-convergent-facts-and-documents-raw-files-store-blob-bytes.md) and [ADR-0173](0173-each-row-owns-at-most-one-write-once-immutable-blob.md), both still Proposed. The nullable blob digest on `_replica_row_facts` does not exist yet, and this record cannot be built before it does. Accepted rather than Proposed because the decision is made and ADR-0184 would otherwise keep governing a model this contradicts.
+- **Corrected 2026-08-04, before merge, at two clauses: `cancel` is deleted, and the application creates the row before `start`.** The first draft gave the recorder a verb that deletes a row it did not create, in a table it cannot read, belonging to a Lens it does not know; nothing else in the capability handle reaches across that line, and discard already has a spelling in the vocabulary that owns it. The second draft split naming from creating to protect a latency that does not exist: a row insert is a same-origin write into SQLite, and opening an input device costs more. Both corrections are restated in the Decision below, and a third clause is sharpened rather than changed: transcription returns text and never writes a field.
 - **Relates:** [ADR-0203](0203-epicenter-owns-only-what-is-already-contended.md) (the recorder is contended and keeps a lifecycle; a blob is not and keeps none), [ADR-0178](0178-row-facts-and-value-facts-are-separate-relations-keyed-by-structured-coordinates.md) ("row documents and blobs are not a new address kind; they use the exact row address"), [ADR-0181](0181-every-app-receives-one-portable-epicenter-capability-handle.md), [ADR-0186](0186-an-app-reaches-epicenter-through-one-bundled-mit-client-it-installs-itself.md), [ADR-0180](0180-epicenter-has-one-host-owned-active-local-transcription-model.md), [ADR-0016](0016-prewarm-the-cold-model-load-and-refuse-the-rest-of-the-latency-menu.md)
 
 ## Context
@@ -43,8 +44,7 @@ into its blob slot, and `stop` is what finalizes them.**
 ```ts
 await epicenter.recording.start(rowAddress)
 await epicenter.recording.stop(rowAddress)
-await epicenter.recording.cancel(rowAddress)
-epicenter.recording.current()   // { rowAddress, state, reason? } | null
+epicenter.recording.current()   // { rowAddress, microphone, endedReason } | null
 ```
 
 **No blob identity crosses the boundary, ever.** There is no `BlobId`, no claim
@@ -59,18 +59,30 @@ contended, one microphone and one slot, and a second `start` is still refused
 with `Busy`. It does not keep a name of its own, because contention earns a
 lifecycle and not an identity (ADR-0203).
 
-### Naming is free; creating is not
+### The application creates the row; `start` refuses one that is not there
 
-The app mints the row id, which is pure computation, and `start` opens the file
-before committing the row. Capture begins on the file rather than on a database
-write, and the row lands milliseconds later, off the capture path. The window in
-which bytes exist without a row therefore contains essentially no audio, which
-is what keeps this from reintroducing a latency the recorder cannot afford
-(ADR-0016).
+You do not record a recording. You record into a note. The row is the
+application's to make, and `start` names an existing one or fails.
 
-If that commit fails, capture is already running, and the host reports it
-through the ended-reason channel ADR-0184 already defines rather than through
-anything new.
+That ordering costs nothing worth protecting. A row insert is a same-origin
+write into SQLite whose sync obligation is asynchronous, and opening an input
+device is the larger cost by an order of magnitude, so the latency ADR-0016
+fights is the model load rather than a row.
+
+### There is no `cancel`
+
+Discard is `delete` on the row, which is terminal under ADR-0173 and takes the
+bytes with it. A capture in flight ends because its destination stopped
+existing, which is the host coordinating two things it already owns.
+
+A recorder that could delete a row would be reaching into a Lens it does not
+know, a table it cannot read, and a lifecycle that is not its own; nothing else
+in the capability handle does that. The same line also repairs a failed `start`,
+because a microphone that was denied and a take you threw away mean the same
+thing: this note never happened.
+
+New bytes still require a new row, exactly as ADR-0173 says, so a retake is a
+new row rather than a second attempt at one slot.
 
 ### A crash finishes the recording
 
@@ -111,22 +123,48 @@ publication path, with no second channel delivering audio anywhere else.
 
 ## Consequences
 
-- **An app never handles bytes.** Mint a row, `start`, `stop`, and read the
-  field. No blob id, no file path, no buffer, no publication step, and the same
-  code for four seconds or four hours.
-- Transcription follows the same address: `transcribe(rowAddress)` means
-  transcribe the audio on this row, and the transcript lands on that row. Every
-  operation in the handle now takes a row address, which is what makes the
-  capability surface one address space rather than three unrelated features.
-- `cancel` deletes a row, which is terminal under ADR-0173 and syncs a tombstone.
-  That is heavier than burning a staging id and it is correct: the row existed.
+- **An app never handles bytes.** Create a row, `start`, `stop`, read it back. No
+  blob id, no file path, no buffer, no publication step, and the same code for
+  four seconds or four hours.
+- **Transcription reads the row's bytes and answers text; it never writes a
+  field.** A host that wrote the transcript would have to be told which of the
+  application's declared fields holds one, and an application's schema is not
+  the host's to know. The caller patches, which is also where trimming and
+  transformation already live.
+- Discard syncs a tombstone, which is heavier than burning a staging id and is
+  correct: the row existed.
 - A recording in progress is visible on another device as a row with no bytes
   yet, which is true and useful rather than litter.
+
+```ts
+const { data: note } = await vocab.notes.create({
+  title: 'Untitled',
+  recordedAt: InstantString.now(),
+})
+const address = vocab.notes.address(note.id)
+
+const { error } = await epicenter.recording.start(address)
+//  -> RecorderBusy | MicrophoneAccessDenied | NoMicrophone | SlotAlreadyFilled
+if (error) return void vocab.notes.delete(note.id)
+
+const { data: stopped } = await epicenter.recording.stop(address)
+await vocab.notes.patch(note.id, { durationMs: stopped.durationMs })
+
+const { data: transcript } = await epicenter.transcription.transcribe(address)
+if (transcript.outcome === 'transcribed') {
+  await vocab.notes.patch(note.id, { transcript: transcript.text })
+}
+
+audio.src = vocab.notes.blobUrl(note.id)   // playback: a URL, never bytes
+await vocab.notes.delete(note.id)          // discard, and the audio goes too
+```
 - This cannot ship before the digest column exists. It is the second consumer of
   that column, after row-owned blobs themselves.
-- **What this forecloses:** a claim or adoption verb, an unclaimed-recording
-  inventory, a staging directory, a recording identity separate from its row,
-  and any startup path that scans `blobs/` to decide what to do.
+- **What this forecloses:** a claim or adoption verb, a `cancel` verb, an
+  unclaimed-recording inventory, a staging directory, a recording identity
+  separate from its row, a recorder that creates or deletes rows, a transcription
+  route that writes an application's fields, and any startup path that scans
+  `blobs/` to decide what to do.
 
 ## Considered alternatives
 
@@ -137,9 +175,16 @@ publication path, with no second channel delivering audio anywhere else.
 - **Create the row only at `stop`.** Drafted, and it is self-defeating: if no row
   exists during capture, a crash leaves a partial file that recovery cannot find,
   because recovery queries the replica. It would have shipped as a bug.
-- **Let `start` create the row synchronously before opening the file.** Rejected
-  on latency. Pressing record should open a file, not wait on a database write
-  and a sync obligation.
+- **Let `start` create the row itself.** Rejected on ownership rather than
+  latency. An earlier draft rejected it on latency and was wrong: a local insert
+  is far cheaper than opening an input device. The real objection is that a
+  recorder which creates rows also has to decide what fields they carry, which
+  Lens they belong to, and what happens to them when capture fails, none of
+  which it can know.
+- **Keep `cancel`, but let it discard the bytes and leave the row.** Rejected:
+  it keeps the tombstone away and leaves a titled, empty note behind, and it
+  still puts the recorder in the business of having opinions about rows. It also
+  invents a state ADR-0173 has no law for, a slot that was used and abandoned.
 - **Give the recording a token distinct from its row.** Rejected: two names for
   one thing, which ADR-0204 refuses one layer up for the same reason. The row
   address already discriminates, and a second identity would need its own
