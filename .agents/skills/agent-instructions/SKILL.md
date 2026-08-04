@@ -178,7 +178,7 @@ Use `scripts/` only for repeated, deterministic, fragile, or error-prone work. S
 
 Use Bun by default in this repository. Translate upstream Agent Skills CLI examples from `npx skills ...` to `bun x --package skills skills ...`. For other npm package commands, preserve the package and use `bun x` or `bunx`, pinning versions when behavior must be reproducible.
 
-Match the form of guidance to the work's source of correctness. Provide exact procedures where correctness depends on a fixed sequence, including commands, migrations, destructive operations, and brittle formats. Provide defaults, decision rules, and room for judgment where correctness depends on interpretation, including reviews and design work. For batch, destructive, external-state, or high-blast-radius operations, use plan-validate-execute: create the plan, validate it against the source of truth, then execute.
+Guide the decisions that matter; leave the route to the agent. State the intended outcome, the boundaries that matter, and the evidence of completion. Add procedural detail when the work's safety or correctness depends on it.
 
 ## Evaluate A Skill
 
