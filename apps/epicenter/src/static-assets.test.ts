@@ -24,6 +24,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -237,7 +238,10 @@ describe('home server catalog routes', () => {
 		const catalogRoot = tempDir('epicenter-catalog-');
 		writeApp(catalogRoot, 'so.epicenter.hello-http', {
 			title: 'Hello HTTP',
-			page: '<!doctype html>Hello HTTP<script src="./main.js"></script>',
+			// The inline script is the shape every SvelteKit build ships: the
+			// module that starts the app is written into the document, so if the
+			// host does not hash it into the CSP the app never boots at all.
+			page: '<!doctype html>Hello HTTP<script>start();</script><script src="./main.js"></script>',
 			files: { 'main.js': 'document.title;' },
 		});
 
@@ -298,12 +302,18 @@ describe('home server catalog routes', () => {
 	test('serves catalog members below /apps/<id>/ and keeps unknown apps 404', async () => {
 		const { origin, server } = await serveWithCatalog();
 		try {
-			const page = await fetch(`${origin}/apps/so.epicenter.hello-http/`);
+			const cookie = await bootstrapCookie(origin);
+			const page = await fetch(`${origin}/apps/so.epicenter.hello-http/`, {
+				headers: { cookie },
+			});
 			expect(page.status).toBe(200);
-			expect(page.headers.get('content-type')).toBe('text/html');
+			expect(page.headers.get('content-type')).toContain('text/html');
 			expect(await page.text()).toContain('Hello HTTP');
 
-			const script = await fetch(`${origin}/apps/so.epicenter.hello-http/main.js`);
+			const script = await fetch(
+				`${origin}/apps/so.epicenter.hello-http/main.js`,
+				{ headers: { cookie } },
+			);
 			expect(script.status).toBe(200);
 			expect(script.headers.get('content-type')).toBe('text/javascript');
 
@@ -314,7 +324,6 @@ describe('home server catalog routes', () => {
 			// documents carry the identity snapshot, so they require an
 			// established browser session and are served with the bootstrap
 			// element injected.
-			const cookie = await bootstrapCookie(origin);
 			const homeDocument = await (
 				await fetch(`${origin}/apps/home/`, { headers: { cookie } })
 			).text();
@@ -325,6 +334,46 @@ describe('home server catalog routes', () => {
 			).text();
 			expect(whisperingDocument).toContain('Whispering test application');
 			expect(whisperingDocument).toContain('epicenter-auth-bootstrap');
+		} finally {
+			await server.stop(true);
+		}
+	});
+
+	test('an admitted app is gated, stamped, and allowed to run its own boot script', async () => {
+		const { origin, server } = await serveWithCatalog();
+		try {
+			// Gated like every other document on this origin. Before this, an
+			// admitted app's document and assets were the one thing here that
+			// answered without a session.
+			const unauthenticated = await fetch(
+				`${origin}/apps/so.epicenter.hello-http/`,
+			);
+			expect(await unauthenticated.text()).not.toContain('Hello HTTP');
+			expect(
+				(await fetch(`${origin}/apps/so.epicenter.hello-http/main.js`)).status,
+			).toBe(401);
+
+			const cookie = await bootstrapCookie(origin);
+			const document = await fetch(`${origin}/apps/so.epicenter.hello-http/`, {
+				headers: { cookie },
+			});
+
+			// Stamped, so the app can reach the host-owned replica as itself
+			// rather than booting signed out.
+			expect(await document.text()).toContain('epicenter-auth-bootstrap');
+
+			// Hashed into the CSP. This is the one that made a correctly admitted
+			// app show a blank window: the policy covered every document the host
+			// held in memory, and an admitted app's was not one of them, so the
+			// browser refused the script that starts it.
+			const scriptSrc =
+				document.headers
+					.get('content-security-policy')
+					?.split(';')
+					.map((directive) => directive.trim())
+					.find((directive) => directive.startsWith('script-src ')) ?? '';
+			const inlineHash = createHash('sha256').update('start();').digest('base64');
+			expect(scriptSrc).toContain(`'sha256-${inlineHash}'`);
 		} finally {
 			await server.stop(true);
 		}

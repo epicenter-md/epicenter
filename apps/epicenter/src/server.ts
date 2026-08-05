@@ -174,14 +174,24 @@ export function createHomeServer({
 		home: injectAuthBootstrap(staticAssets.homePage, desktopAuth.bootSnapshot),
 		...PLACEHOLDER_SURFACE_PAGES,
 	};
-	const applications = staticAssets.applications.map((application) => ({
-		...application,
-		page: injectAuthBootstrap(application.page, desktopAuth.bootSnapshot),
-	}));
+	// A compiled application and an admitted catalog member are the same thing
+	// to this server: a built SPA below `/apps/<id>/` whose document the host
+	// stamps, gates, and hashes. They differ only in where they came from, so
+	// they are served by one loop rather than by two that have to be kept in
+	// agreement. Their ids cannot collide: an admitted app's id is the namespace
+	// it declares and always contains a dot, and every id this host issues
+	// itself is a bare label (ADR-0210).
+	const servedApps = [...staticAssets.applications, ...appCatalog.apps].map(
+		(application) => ({
+			id: application.id,
+			page: injectAuthBootstrap(application.page, desktopAuth.bootSnapshot),
+			resolve: application.resolve,
+		}),
+	);
 	const csp = contentSecurityPolicy(
 		[
 			...Object.values(hostPages),
-			...applications.map(({ page }) => page),
+			...servedApps.map(({ page }) => page),
 			SESSION_SHELL,
 		].join('\n'),
 	);
@@ -307,9 +317,9 @@ export function createHomeServer({
 			return c.html(hostPages[surface.id]);
 		});
 	}
-	// Compiled applications: one contained asset tree each, with the document
-	// served from memory so every client route lands on the stamped page.
-	for (const application of applications) {
+	// One contained asset tree each, with the document served from memory so
+	// every client route lands on the stamped page.
+	for (const application of servedApps) {
 		const prefix = `/apps/${application.id}/`;
 		app.get(`${prefix}*`, async (c) => {
 			const pathname = new URL(c.req.url).pathname;
@@ -331,20 +341,6 @@ export function createHomeServer({
 			return c.body(asset.file.stream());
 		});
 	}
-	// Derived catalog members (ADR-0153). Reserved built-in IDs never reach
-	// this handler: the surface and compiled-application routes above win
-	// registration order and the catalog derivation refuses them.
-	app.get('/apps/:appId/*', async (c) => {
-		const member = appCatalog.apps.find(
-			(catalogApp) => catalogApp.id === c.req.param('appId'),
-		);
-		if (!member) return c.text('Not Found', 404);
-		const asset = await member.resolve(new URL(c.req.url).pathname);
-		if (!asset) return c.text('Not Found', 404);
-		c.header('cache-control', 'no-store');
-		c.header('content-type', asset.contentType);
-		return c.body(asset.file.stream());
-	});
 	app.get('/apps/*', (c) => c.text('Not Found', 404));
 
 	app.use(APPLICATIONS_ROUTE.pattern, requireBrowserSession);
@@ -701,9 +697,16 @@ function injectAuthBootstrap(
 	const serialized = JSON.stringify(snapshot).replaceAll('<', '\\u003c');
 	const element = `<script id="epicenter-auth-bootstrap" type="application/json">${serialized}</script>`;
 	const head = page.search(/<\/head\s*>/i);
-	return head === -1
-		? page.replace(/<body\b/i, `${element}<body`)
-		: `${page.slice(0, head)}${element}${page.slice(head)}`;
+	if (head !== -1) return `${page.slice(0, head)}${element}${page.slice(head)}`;
+	// A document with no `</head>` and no `<body` used to come back unstamped,
+	// which is the worst of the three outcomes: the app loads, finds no
+	// snapshot, and boots signed out with nothing anywhere saying why. The
+	// element is inert JSON read by id, so where it lands does not matter and
+	// prepending always works. Position is a preference; stamping is not.
+	const body = page.search(/<body\b/i);
+	return body === -1
+		? `${element}${page}`
+		: `${page.slice(0, body)}${element}${page.slice(body)}`;
 }
 
 function blobResponseHeaders(contentType: string): Record<string, string> {

@@ -30,11 +30,29 @@ export type StaticAsset = {
 	isDocument: boolean;
 };
 
-/** One derived catalog member: enough to list it and serve its static root. */
-export type CatalogApp = {
-	/** The namespace this app owns, which is also its id (ADR-0210). */
+/**
+ * A built SPA the host serves below `/apps/<id>/`, and the document it boots
+ * from.
+ *
+ * `page` is held in memory rather than streamed off disk because the host has
+ * three things to do to it that a file cannot carry: gate it behind an
+ * established browser session, stamp the auth bootstrap into it, and hash its
+ * inline scripts into the one Content-Security-Policy this origin sends. That
+ * stamp is what lets a build open the host-owned replica instead of one of its
+ * own, and the hash is what lets its own boot script run at all.
+ */
+type ServedSpa = {
 	id: string;
 	title: string;
+	page: string;
+	resolve(pathname: string): Promise<StaticAsset | undefined>;
+};
+
+/**
+ * One derived catalog member: enough to list it and serve its static root. Its
+ * `id` is the namespace it declared and owns (ADR-0210).
+ */
+export type CatalogApp = ServedSpa & {
 	/** The interpretation it declared, which the host reads its rows through. */
 	lens: Lens;
 	/**
@@ -42,25 +60,17 @@ export type CatalogApp = {
 	 * promotion can report which candidate entry was refused.
 	 */
 	directory: string;
-	resolve(pathname: string): Promise<StaticAsset | undefined>;
 };
 
 /**
  * One compiled application's release build.
  *
- * Deliberately not an extension of {@link CatalogApp}: a compiled application
- * never enters the catalog (ADR-0179), and the two only look alike because the
- * host serves both below `/apps/<id>/`. What it has and a member does not is
- * `page`, its own document, which the host holds so it can gate it behind a
- * browser session and stamp the auth bootstrap into it. That stamp is what lets
- * the build open the host-owned replica instead of one of its own.
+ * A compiled application never enters the catalog (ADR-0179), so it declares no
+ * Lens and arrives in no candidate directory. Everything the server does with
+ * it, it does identically to an admitted member, which is why both are
+ * {@link ServedSpa} and one route loop serves them.
  */
-export type CompiledApplicationAssets = {
-	id: string;
-	title: string;
-	page: string;
-	resolve(pathname: string): Promise<StaticAsset | undefined>;
-};
+export type CompiledApplicationAssets = ServedSpa;
 
 export type EpicenterStaticAssets = {
 	homePage: string;
@@ -136,6 +146,7 @@ export async function deriveAppCatalog(catalogRoot: string): Promise<AppCatalog>
 		apps.push({
 			id: lens.namespace,
 			title: lens.title ?? lens.namespace,
+			page: await Bun.file(index.path).text(),
 			lens,
 			directory: name,
 			resolve: createContainedResolver({
