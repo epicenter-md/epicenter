@@ -212,6 +212,13 @@ async function main(): Promise<void> {
 			blobs,
 			desktopAuth: auth,
 			blobRemote,
+			// The raw view reads the same replica through its own read-only
+			// handle, and interprets it through the same Lenses the folder
+			// renders (ADR-0209).
+			inspect: {
+				replicaPath: epicenterPath({ directory: replicaDirectory }),
+				lenses: [honeycrispMirrorLens, homeLens],
+			},
 		});
 
 		server = Bun.serve({

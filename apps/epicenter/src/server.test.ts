@@ -42,16 +42,19 @@ import {
 } from '@epicenter/blobs';
 import { createBunBlobStore } from '@epicenter/blobs/bun';
 import { desktopBlobUrl } from '@epicenter/blobs/webview';
+import { epicenterPath, openBunEpicenter } from '@epicenter/data/bun';
 import {
 	DESKTOP_EPICENTER_OBSERVE_ROUTE,
 	DESKTOP_EPICENTER_ROUTE,
 	type DesktopResponse,
 } from '@epicenter/data/desktop';
 import type { DesktopEpicenterOwner } from '@epicenter/data/desktop-owner';
+import { InstantString } from '@epicenter/field';
 import { defineErrors } from 'wellcrafted/error';
 import { Ok } from 'wellcrafted/result';
 import { COMPILED_APPLICATIONS } from './applications.ts';
 import type { HomeHost, HomeHostInputs } from './host.ts';
+import type { InspectSource } from './inspect.ts';
 import {
 	ACCOUNT_INSTANCE_ROUTE,
 	ACCOUNT_PROFILE_ROUTE,
@@ -60,6 +63,8 @@ import {
 	BOOTSTRAP_ROUTE,
 	HOME_ROUTE,
 	HONEYCRISP_ROUTE,
+	INSPECT_QUERY_ROUTE,
+	INSPECT_ROUTE,
 	MAIL_ROUTE,
 	SESSION_ROUTE,
 	SESSION_STREAM_ROUTE,
@@ -70,6 +75,8 @@ import {
 	createHomeServer,
 	type HomeServerEvent,
 	type HomeSessionResponse,
+	type InspectQueryResponse,
+	type InspectResponse,
 	sendObservationFrame,
 } from './server.ts';
 import type { ReadyFrame } from './sidecar-runtime.ts';
@@ -82,6 +89,7 @@ import {
 	createOwnedTestHomeHost,
 	createTestDesktopAuth,
 } from './test-home-host.ts';
+import { homeLens } from './workspace.ts';
 
 const TOKEN = 'per-launch-secret';
 
@@ -203,6 +211,7 @@ async function serveHost(
 	page: string = PAGE,
 	blobRemote: BlobRemote | null = null,
 	dataOwner: DesktopEpicenterOwner | undefined = undefined,
+	inspect: InspectSource | undefined = undefined,
 ) {
 	const portProbe = Bun.serve({
 		hostname: '127.0.0.1',
@@ -221,6 +230,7 @@ async function serveHost(
 		desktopAuth: createTestDesktopAuth(),
 		blobRemote,
 		dataOwner,
+		inspect,
 	});
 	const server = Bun.serve({
 		hostname: '127.0.0.1',
@@ -469,6 +479,87 @@ describe('createHomeServer', () => {
 					blobRemote: null,
 				}),
 			).toThrow(/exact http:\/\/127\.0\.0\.1/);
+		}
+	});
+
+	test('the raw view lists namespaces and runs one statement inside one', async () => {
+		// ADR-0209: Epicenter's own surface. The sidebar comes from the Lenses
+		// this host can interpret, and picking one is what makes `notes` mean
+		// something.
+		const dataDir = testDataDir();
+		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
+		await using epicenter = await openBunEpicenter({
+			directory: join(dataDir, 'data'),
+		});
+		await epicenter.bind(homeLens).conversations.create({
+			title: 'Tuesday',
+			model: 'test-model',
+			createdAt: InstantString.now(),
+			updatedAt: InstantString.now(),
+		});
+
+		const server = await serveHost(host, PAGE, null, undefined, {
+			replicaPath: epicenterPath({ directory: join(dataDir, 'data') }),
+			lenses: [homeLens as never],
+		});
+		const { origin } = authenticationFor(server);
+		try {
+			const listed = (await (
+				await fetch(INSPECT_ROUTE.url(origin), {
+					headers: authenticatedHeaders(server),
+				})
+			).json()) as InspectResponse;
+			expect(listed.namespaces.map((entry) => entry.namespace)).toEqual([
+				'so.epicenter.home',
+			]);
+
+			const answered = (await (
+				await fetch(INSPECT_QUERY_ROUTE.url(origin), {
+					method: 'POST',
+					headers: {
+						...authenticatedHeaders(server),
+						'content-type': 'application/json',
+						origin,
+					},
+					body: JSON.stringify({
+						namespace: 'so.epicenter.home',
+						sql: 'SELECT title FROM conversations',
+					}),
+				})
+			).json()) as InspectQueryResponse;
+			expect(answered).toEqual({
+				rows: [{ title: 'Tuesday' }],
+				truncated: false,
+			});
+
+			// A refused statement is an answer you type another query against,
+			// not a server failure.
+			const refused = await fetch(INSPECT_QUERY_ROUTE.url(origin), {
+				method: 'POST',
+				headers: {
+					...authenticatedHeaders(server),
+					'content-type': 'application/json',
+					origin,
+				},
+				body: JSON.stringify({ sql: 'SELECT * FROM conversations' }),
+			});
+			expect(refused.status).toBe(200);
+			expect(((await refused.json()) as InspectQueryResponse).error).toContain(
+				'conversations',
+			);
+		} finally {
+			await server.stop(true);
+		}
+	});
+
+	test('the raw view is behind the browser session like every other Home route', async () => {
+		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
+		const server = await serveHost(host);
+		const { origin } = authenticationFor(server);
+		try {
+			expect((await fetch(INSPECT_ROUTE.url(origin))).status).toBe(401);
+		} finally {
+			await server.stop(true);
 		}
 	});
 

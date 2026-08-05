@@ -52,6 +52,16 @@ export const BOOKS_ROUTE = SURFACE_ROUTES.books;
 export const APPLICATIONS_ROUTE = route('/api/apps');
 export const SESSION_ROUTE = route('/api/home/session');
 export const SESSION_STREAM_ROUTE = route('/api/home/session/stream');
+/**
+ * The raw view: what namespaces exist, and one read-only statement (ADR-0209).
+ *
+ * On this one trusted origin an application could reach these too, so they are
+ * a product boundary rather than a sandbox, exactly as ADR-0162 says. What
+ * makes "applications receive no SQL" true is that no typed application API
+ * carries SQL, not that this route is hidden from them.
+ */
+export const INSPECT_ROUTE = route('/api/home/inspect');
+export const INSPECT_QUERY_ROUTE = route('/api/home/inspect/query');
 export const LOCAL_BLOB_ROUTE = {
 	pattern: `${LOCAL_BLOB_PATH}/:blobId`,
 } as const;

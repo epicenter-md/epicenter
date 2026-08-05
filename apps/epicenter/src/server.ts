@@ -22,6 +22,7 @@ import {
 	type DesktopEpicenterOwner,
 	EPICENTER_SURFACE_NOT_OPEN_ERROR_NAME,
 } from '@epicenter/data/desktop-owner';
+import type { InspectionRow } from '@epicenter/data/inspection';
 import { type Context, Hono, type Next } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
 import { getCookie, setCookie } from 'hono/cookie';
@@ -34,12 +35,20 @@ import {
 	parseHomeCommand,
 } from './host.ts';
 import {
+	type InspectNamespace,
+	type InspectSource,
+	listInspectNamespaces,
+	runInspectQuery,
+} from './inspect.ts';
+import {
 	ACCOUNT_INSTANCE_ROUTE,
 	ACCOUNT_PROFILE_ROUTE,
 	ACCOUNT_SIGN_IN_ROUTE,
 	ACCOUNT_SIGN_OUT_ROUTE,
 	APPLICATIONS_ROUTE,
 	BOOTSTRAP_ROUTE,
+	INSPECT_QUERY_ROUTE,
+	INSPECT_ROUTE,
 	LOCAL_BLOB_REMOTE_ROUTES,
 	LOCAL_BLOB_ROUTE,
 	SESSION_ROUTE,
@@ -63,6 +72,22 @@ export type ApplicationsResponse = {
 	apps: Application[];
 };
 
+/** The raw view's sidebar (ADR-0209). */
+export type InspectResponse = {
+	namespaces: InspectNamespace[];
+};
+
+/**
+ * One statement's answer, or the sentence explaining why it did not run.
+ *
+ * A syntax error, an unknown table, and an attempted write are all "your query
+ * did not run", and SQLite says which far better than a taxonomy would, so this
+ * carries the engine's own message.
+ */
+export type InspectQueryResponse =
+	| { rows: InspectionRow[]; truncated: boolean; error?: undefined }
+	| { rows?: undefined; truncated?: undefined; error: string };
+
 export type HomeServerOptions = {
 	host: HomeHost;
 	/** Exact active origin, including the Rust-selected explicit port. */
@@ -74,6 +99,12 @@ export type HomeServerOptions = {
 	/** Derived trusted app catalog (ADR-0153); absent means no members. */
 	appCatalog?: AppCatalog;
 	dataOwner?: DesktopEpicenterOwner;
+	/**
+	 * The replica and the Lenses the raw view reads (ADR-0209). Absent means
+	 * this host has no data browser, which is a composition a test makes and the
+	 * desktop host never does.
+	 */
+	inspect?: InspectSource;
 	/** Canonical device-local bytes shared by every trusted app surface. */
 	blobs: BunBlobStore;
 	/** One credential owner for every compiled desktop surface. */
@@ -128,6 +159,7 @@ export function createHomeServer({
 	staticAssets,
 	appCatalog = { apps: [] },
 	dataOwner,
+	inspect,
 	blobs,
 	desktopAuth,
 	blobRemote,
@@ -348,6 +380,52 @@ export function createHomeServer({
 			apps: listApplications(appCatalog),
 		} satisfies ApplicationsResponse),
 	);
+
+	// The raw view (ADR-0209). Epicenter's own job: what namespaces exist, and
+	// one read-only statement inside one of them or in none.
+	app.get(INSPECT_ROUTE.pattern, (c) =>
+		c.json({
+			namespaces: inspect ? listInspectNamespaces(inspect.lenses) : [],
+		} satisfies InspectResponse),
+	);
+
+	app.post(INSPECT_QUERY_ROUTE.pattern, async (c) => {
+		if (!inspect) {
+			return c.json(
+				{
+					error: 'This host has no data browser.',
+				} satisfies InspectQueryResponse,
+				404,
+			);
+		}
+		const body = (await c.req.json()) as {
+			namespace?: unknown;
+			sql?: unknown;
+		};
+		if (typeof body.sql !== 'string' || body.sql.trim() === '') {
+			return c.json(
+				{ error: 'A "sql" string is required.' } satisfies InspectQueryResponse,
+				400,
+			);
+		}
+		const { data, error } = runInspectQuery({
+			source: inspect,
+			// Absent namespace is "Everything raw", which is a selection rather
+			// than a missing field, so it is not defaulted to anything.
+			namespace:
+				typeof body.namespace === 'string' ? body.namespace : undefined,
+			sql: body.sql,
+		});
+		// A refused statement is an answer, not a server failure: 200 with the
+		// engine's sentence is what a person types another query against.
+		if (error !== null) {
+			return c.json({ error: error.message } satisfies InspectQueryResponse);
+		}
+		return c.json({
+			rows: data.rows,
+			truncated: data.truncated,
+		} satisfies InspectQueryResponse);
+	});
 
 	app.put(LOCAL_BLOB_ROUTE.pattern, async (c) => {
 		const id = parseBlobId(c.req.param('blobId'));
