@@ -17,6 +17,7 @@ export * from './addresses.js';
 export * from './canonical.js';
 export * from './carrier.js';
 export * from './definitions.js';
+export * from './from-json.js';
 export * from './json.js';
 export * from './observation.js';
 export * from './wire.js';

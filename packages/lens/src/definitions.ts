@@ -84,6 +84,16 @@ export type TableDefinitions = Record<string, TableDefinition>;
  */
 export type Lens<TTables extends TableDefinitions = TableDefinitions> = {
 	namespace: string;
+	/**
+	 * What a person calls this namespace, when it has a name worth showing.
+	 *
+	 * It names the namespace rather than whoever is holding the interpretation,
+	 * so a host reading another application's namespace through its own mirror
+	 * Lens still calls it what the application is called. Presentation only: no
+	 * address, no identity, and nothing resolves by it. Absent means a surface
+	 * shows the namespace itself, which is always correct if less friendly.
+	 */
+	title?: string;
 	tables: TTables;
 	[lensParts]: { tables: TTables };
 };
@@ -253,15 +263,20 @@ export function defineTable<const TFields extends FieldSchemas>({
  */
 export function defineLens<const TTables extends TableDefinitions>({
 	namespace,
+	title,
 	tables,
 }: {
 	namespace: string;
+	title?: string;
 	tables: TTables;
 }): Lens<TTables> {
 	if (!isNamespace(namespace, DATA_ADDRESS_CEILINGS)) {
 		throw new Error(
 			`Invalid namespace '${namespace}'; use two or more lowercase dot-separated labels`,
 		);
+	}
+	if (title !== undefined && title.trim() === '') {
+		throw new Error('A Lens title must say something or be absent');
 	}
 	assertPlainObject(tables, 'Lens tables');
 	for (const [name, definition] of Object.entries(tables)) {
@@ -271,6 +286,9 @@ export function defineLens<const TTables extends TableDefinitions>({
 	assertNoCaseInsensitiveDuplicates(Object.keys(tables), 'table');
 	return Object.freeze({
 		namespace,
+		// Absent rather than `undefined`, so an untitled Lens serializes and
+		// compares as the plain shape it was before this key existed.
+		...(title === undefined ? {} : { title }),
 		tables: Object.freeze(tables),
 	}) as Lens<TTables>;
 }
