@@ -1,6 +1,6 @@
 ---
 name: code-audit
-description: "Codebase-specific smell catalog with calibrated grep recipes: duck-typing at boundaries, value-discarding promise tails, console.* in library code, exhaustive `never` over-broad unions, single-method `Pick` deps, `*Like` boundary shape copies. Use for a periodic audit pass, scoping a cleanup PR, after a major refactor, or reviewing a primitive's consumers. Pairs with refactoring (fix mechanics) and post-implementation-review (second-read hub)."
+description: "Codebase-specific smell catalog with calibrated grep recipes: duck-typing at boundaries, value-discarding promise tails, unstructured or contract-bypassing logging, exhaustive `never` over-broad unions, single-method `Pick` deps, `*Like` boundary shape copies. Use for a periodic audit pass, scoping a cleanup PR, after a major refactor, or reviewing a primitive's consumers. Pairs with refactoring (fix mechanics) and post-implementation-review (second-read hub)."
 metadata:
   author: epicenter
   version: '1.0'
@@ -70,6 +70,17 @@ const log = config.log ?? createLogger('collaboration');
 ```
 
 **Triage**: this category is verified periodically: the codebase has historically been clean. Treat any hit as a regression and route through `wellcrafted/logger` before merging. New `console.*` in library code should be refused at PR review unless the call site is explicitly a CLI command, test, or benchmark.
+
+**Two evasions the `console\.` grep misses.** Both import from `wellcrafted/logger` and are therefore invisible to the pattern above, and both were found live in `apps/whispering`:
+
+```bash
+grep -rn "consoleSink({" apps packages --include="*.ts" --include="*.svelte"
+grep -rn "log\.(warn|error)(new Error" apps packages --include="*.ts" --include="*.svelte"
+```
+
+A direct `consoleSink({ ... })` call skips `createLogger`, and with it the `Logger` type that makes `warn`/`error` unary over a `LoggableError`. Whispering's `$lib/report` did this and grew a parallel `log` whose extra `data` argument silently discarded the error object. The only legitimate mention of `consoleSink` is composing it into a sink passed to `createLogger`.
+
+A `new Error(...)` inside a `warn`/`error` call type-checks (native `Error` satisfies `LoggableError` structurally) but hands the sink a message string and no filterable `name`. It usually means the boundary above types its failure callback `(cause: unknown)` and ships no vocabulary, so each implementer invents one. Fix it at the boundary: export the `defineErrors` variants from the file that declares the callback. See the `logging` skill.
 
 ## 4. Exhaustive `never` Checks as Union-Churn Signals
 

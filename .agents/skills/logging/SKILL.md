@@ -83,6 +83,43 @@ You can also mint-and-log a tagged variant directly inside a `.catch` tail when 
 });
 ```
 
+## Two anti-patterns, both already paid for
+
+`grep -rn "consoleSink({" src/` and `grep -rn "log\.\(warn\|error\)(new Error" src/` before adding either.
+
+### Do not call a sink directly
+
+Sinks take a raw `LogEvent`, which constrains nothing. `createLogger` is what binds the `Logger` type, and the `Logger` type is the only thing enforcing that `warn`/`error` are unary over a `LoggableError`. Reaching past the factory to `consoleSink({ ts, level, source, message, data })` is not a shortcut to the same behavior: it is opting out of the contract.
+
+Whispering did exactly this and grew a parallel `log` whose `warn(error: Error, data?: unknown)` silently dropped the error object whenever a caller passed the second argument. Nothing caught it, because nothing had promised anything. Import `createLogger`; import `consoleSink` only to compose it into a sink you pass to `createLogger`.
+
+### Do not mint a `new Error` at a log call site
+
+`log.warn(new Error('X failed', { cause }))` type-checks, because native `Error` satisfies `LoggableError` structurally. That escape hatch exists for migrating old `catch (e) { console.warn(e) }` sites, not for authoring new ones. A hand-built `Error` gives the sink a message string and no `name` worth filtering on, and the phrasing lives at the call site where the next similar failure will phrase it slightly differently.
+
+Mint a `defineErrors` variant instead, owned by the module that owns the failure.
+
+**The tell to watch for**: a boundary that types a failure callback as `(cause: unknown)` and ships no vocabulary with it. Every implementer must then invent a message, and `new Error` is the shortest way. If you declare such a callback, export the variants for it from the same file:
+
+```ts
+export const WhisperingBackgroundError = defineErrors({
+  AppFailed: ({ cause }: { cause: unknown }) => ({
+    message: 'Whispering app background work failed',
+    cause,
+  }),
+});
+
+export type WhisperingAppDependencies = {
+  reportBackgroundError(cause: unknown): void;
+};
+```
+
+Implementers then name a failure rather than describing one:
+
+```ts
+reportBackgroundError: (cause) => log.warn(WhisperingBackgroundError.AppFailed({ cause }))
+```
+
 ## Sinks
 
 A sink is `((event) => void) & Partial<AsyncDisposable>`: a callable with optional resource cleanup.
