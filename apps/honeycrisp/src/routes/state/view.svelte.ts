@@ -26,6 +26,7 @@
  */
 
 import type { FolderId, NoteId } from '@epicenter/honeycrisp';
+import type { NoteSearchIndex } from '../../lib/search-index.svelte.js';
 import type { createFolders } from './folders.svelte';
 import type { createNotes } from './notes.svelte';
 import { type SortBy, searchParams } from './search-params.svelte';
@@ -33,9 +34,11 @@ import { type SortBy, searchParams } from './search-params.svelte';
 export function createView({
 	folders,
 	notes,
+	searchIndex,
 }: {
 	folders: ReturnType<typeof createFolders>;
 	notes: ReturnType<typeof createNotes>;
+	searchIndex: NoteSearchIndex;
 }) {
 	let editorFocusRequest = $state(0);
 
@@ -49,12 +52,16 @@ export function createView({
 
 		return notes.all
 			.filter((n) => folderId === null || n.folderId === folderId)
-			.filter(
-				(n) =>
-					!q ||
-					n.title.toLowerCase().includes(q) ||
-					n.preview.toLowerCase().includes(q),
-			)
+			.filter((n) => {
+				if (!q) return true;
+				if (n.title.toLowerCase().includes(q)) return true;
+				// The whole note when it has been indexed, and its opening line
+				// until then. `preview` is a hundred characters for a list
+				// subtitle, so searching it alone could not find a word past the
+				// first line, and prose is not the row's to carry (ADR-0207).
+				const text = searchIndex.textFor(n.id);
+				return (text ?? n.preview).toLowerCase().includes(q);
+			})
 			.toSorted((a, b) => {
 				if (sort === 'title') return a.title.localeCompare(b.title);
 				if (sort === 'dateCreated')
@@ -189,9 +196,15 @@ export function createView({
 		/**
 		 * Update the search filter text.
 		 *
-		 * Filters the note list to show only notes whose title or preview
-		 * contains the search query (case-insensitive). Pass an empty string
-		 * to clear the search.
+		 * Filters the note list to show only notes whose title or body contains
+		 * the query (case-insensitive). Pass an empty string to clear it.
+		 *
+		 * Searching is also what warms the body index. A note's prose lives in
+		 * its document so it can merge per character (ADR-0207), so reading it
+		 * means opening documents, and someone who never searches should never
+		 * pay for that. The first query starts the sweep and results fill in as
+		 * it runs; until a note is reached its preview answers, which is the
+		 * behavior search had before the index existed.
 		 *
 		 * @example
 		 * ```typescript
@@ -201,6 +214,9 @@ export function createView({
 		 */
 		setSearchQuery(query: string) {
 			searchParams.update({ q: query });
+			if (query.trim() !== '') {
+				void searchIndex.warm(notes.all.map((note) => note.id));
+			}
 		},
 	};
 }

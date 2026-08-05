@@ -15,6 +15,17 @@ export type NoteMetadata = {
 	title: string;
 	preview: string;
 	wordCount: number;
+	/**
+	 * The note's whole flattened text, for the device-local search index.
+	 *
+	 * Deliberately not a row field. ADR-0207 keeps prose in the document plane so
+	 * it can merge per character, which means the folder does not carry it and
+	 * neither does the row. Searching it is therefore Honeycrisp's own job, and
+	 * this is the value that job runs on. It is already computed here to produce
+	 * `preview`, so exposing it costs nothing and stops search from standing on a
+	 * hundred-character display field.
+	 */
+	text: string;
 };
 
 /**
@@ -34,5 +45,6 @@ export function extractNoteMetadata(doc: Node): NoteMetadata {
 		title: firstLine.slice(0, 80).trim(),
 		preview: text.slice(0, 100).trim(),
 		wordCount: trimmed.length === 0 ? 0 : trimmed.split(/\s+/).length,
+		text: trimmed,
 	};
 }

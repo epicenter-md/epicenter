@@ -7,15 +7,18 @@ import type {
 	NoteId,
 	notesTable,
 } from '@epicenter/honeycrisp';
+import type { NoteSearchIndex } from '../../lib/search-index.svelte.js';
 import type { createFolders } from './folders.svelte.js';
 import { searchParams } from './search-params.svelte.js';
 
 export function createNotes({
 	folders,
 	honeycrisp,
+	searchIndex,
 }: {
 	folders: ReturnType<typeof createFolders>;
 	honeycrisp: HoneycrispData;
+	searchIndex: NoteSearchIndex;
 }) {
 	let rows = $state.raw<Note[]>([]);
 	let nonconforming = $state.raw<NonconformingRowError[]>([]);
@@ -137,10 +140,19 @@ export function createNotes({
 
 		async updateContent(
 			noteId: NoteId,
-			content: Pick<Note, 'title' | 'preview'> & { wordCount: number },
+			content: Pick<Note, 'title' | 'preview'> & {
+				wordCount: number;
+				text: string;
+			},
 		): Promise<void> {
+			// The body's text goes to the device-local index, never to the row:
+			// prose stays in the document plane so it can merge per character
+			// (ADR-0207), and this keeps the open note's index entry current
+			// without a sweep ever reaching it.
+			const { text, ...row } = content;
+			searchIndex.record(noteId, text);
 			await update(noteId, {
-				...content,
+				...row,
 				updatedAt: InstantString.now(),
 			});
 		},
