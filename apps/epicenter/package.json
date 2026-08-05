@@ -34,6 +34,8 @@
 		"@epicenter/data": "workspace:*",
 		"@epicenter/document-sync": "workspace:*",
 		"@epicenter/field": "workspace:*",
+		"@epicenter/lens": "workspace:*",
+		"@epicenter/matter-core": "workspace:*",
 		"@epicenter/server": "workspace:*",
 		"@epicenter/skills": "workspace:*",
 		"@epicenter/sync": "workspace:*",
@@ -48,7 +50,6 @@
 	"devDependencies": {
 		"@epicenter/app": "workspace:*",
 		"@epicenter/honeycrisp": "workspace:*",
-		"@epicenter/lens": "workspace:*",
 		"@sveltejs/vite-plugin-svelte": "catalog:",
 		"@tailwindcss/vite": "catalog:",
 		"@tauri-apps/cli": "catalog:",

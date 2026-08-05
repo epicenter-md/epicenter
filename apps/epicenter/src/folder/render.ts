@@ -32,7 +32,11 @@ export function renderRow({ id, fields, definition }: RenderInput): string {
 	const frontmatter: JsonObject = { id };
 	for (const name of Object.keys(definition.fields)) {
 		if (name === definition.body) continue;
-		if (Object.hasOwn(fields, name)) frontmatter[name] = fields[name] as never;
+		// An unset optional field is absent, never `key: null`, matching the nullish
+		// contract the frontmatter serializer already keeps. A field genuinely
+		// holding `null` is a value and survives.
+		const value = fields[name];
+		if (value !== undefined) frontmatter[name] = value;
 	}
 
 	const body =

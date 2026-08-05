@@ -98,6 +98,8 @@
         "@epicenter/data": "workspace:*",
         "@epicenter/document-sync": "workspace:*",
         "@epicenter/field": "workspace:*",
+        "@epicenter/lens": "workspace:*",
+        "@epicenter/matter-core": "workspace:*",
         "@epicenter/server": "workspace:*",
         "@epicenter/skills": "workspace:*",
         "@epicenter/sync": "workspace:*",
@@ -112,7 +114,6 @@
       "devDependencies": {
         "@epicenter/app": "workspace:*",
         "@epicenter/honeycrisp": "workspace:*",
-        "@epicenter/lens": "workspace:*",
         "@sveltejs/vite-plugin-svelte": "catalog:",
         "@tailwindcss/vite": "catalog:",
         "@tauri-apps/cli": "catalog:",
@@ -783,20 +784,6 @@
         "typescript": "catalog:",
       },
     },
-    "packages/folder": {
-      "name": "@epicenter/folder",
-      "version": "0.0.1",
-      "dependencies": {
-        "@epicenter/lens": "workspace:*",
-        "@epicenter/matter-core": "workspace:*",
-        "wellcrafted": "catalog:",
-      },
-      "devDependencies": {
-        "@epicenter/field": "workspace:*",
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
     "packages/identity": {
       "name": "@epicenter/identity",
       "version": "0.3.0",
@@ -1343,8 +1330,6 @@
     "@epicenter/epicenter": ["@epicenter/epicenter@workspace:apps/epicenter"],
 
     "@epicenter/field": ["@epicenter/field@workspace:packages/field"],
-
-    "@epicenter/folder": ["@epicenter/folder@workspace:packages/folder"],
 
     "@epicenter/honeycrisp": ["@epicenter/honeycrisp@workspace:apps/honeycrisp"],
 

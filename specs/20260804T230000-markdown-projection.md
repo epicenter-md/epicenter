@@ -47,6 +47,11 @@ on `defineTable`, which is a field name and touches no AGPL code.
 This is not a workaround. A filesystem projection is an application concern, and
 the split falls exactly where the licenses already put it.
 
+It lives at `apps/epicenter/src/folder/` rather than in a package. The host is
+the only consumer: the command surface calls actions (ADR-0021) rather than
+importing this, so a package would be speculative. Promoting it later is a
+directory move.
+
 ## Owners in the final shape
 
 | value | owner |
@@ -54,7 +59,7 @@ the split falls exactly where the licenses already put it.
 | row facts, outbox, sync | `packages/data` replica (unchanged) |
 | the row document | `packages/data` documents runtime (unchanged) |
 | a table's field types and which one is the body | `packages/lens` |
-| markdown text of a row | the renderer (AGPL, new) |
+| markdown text of a row | `apps/epicenter/src/folder/` |
 | what was last written to a file | the snapshot table, owned by the renderer |
 | when files are written | the host process |
 | applying a file back | `push`, through `patch` |
