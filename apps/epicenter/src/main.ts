@@ -21,6 +21,7 @@ import {
 	epicenterFolderRoot,
 } from '@epicenter/constants/app-data';
 import type { SyncCredentialProvider } from '@epicenter/data';
+import { epicenterPath } from '@epicenter/data/bun';
 import { createDesktopEpicenterOwner } from '@epicenter/data/desktop-owner';
 import { parseExchangeResponse } from '@epicenter/data/protocol';
 import { createHttpDocumentTransports } from '@epicenter/document-sync';
@@ -33,6 +34,7 @@ import {
 } from './desktop-auth-authority.ts';
 import { createDesktopAuthorityFetch } from './desktop-authority-fetch.ts';
 import { createFolderBridge, startFolderRenderer } from './folder/bridge.ts';
+import { startFolderProjector } from './folder/project.ts';
 import { openReceiptStore } from './folder/receipts.ts';
 import { createHomeHost, type HomeHost } from './host.ts';
 import { createHomeServer } from './server.ts';
@@ -52,6 +54,7 @@ async function main(): Promise<void> {
 	let host: HomeHost | undefined;
 	let folderReceipts: ReturnType<typeof openReceiptStore> | undefined;
 	let stopFolderRenderer: (() => void) | undefined;
+	let stopFolderProjector: (() => void) | undefined;
 	let dataOwner:
 		| Awaited<ReturnType<typeof createDesktopEpicenterOwner>>
 		| undefined;
@@ -77,13 +80,14 @@ async function main(): Promise<void> {
 		// that (ADR-0201). `data`, `blobs`, and `app-catalog` below it are the
 		// host's own names, and everything under `apps/` is somebody else's.
 		const dataRoot = epicenterDataRoot();
+		const replicaDirectory = join(dataRoot, 'data');
 		const authorityFetch = createDesktopAuthorityFetch(auth);
 		const documentCredentials = createDesktopSyncCredentials();
 		if (auth.bootSnapshot.state.status === 'signed-in') {
 			await documentCredentials.refresh(auth);
 		}
 		dataOwner = await createDesktopEpicenterOwner({
-			directory: join(dataRoot, 'data'),
+			directory: replicaDirectory,
 		});
 		if (auth.bootSnapshot.state.status === 'signed-in') {
 			const syncUrl = new URL('/api/sync/v1', auth.baseURL);
@@ -133,6 +137,18 @@ async function main(): Promise<void> {
 			receipts: folderReceipts,
 			bridge: folderBridge,
 			onError: (cause) => console.error('folder render failed', cause),
+		});
+		// The queryable half of the same folder (ADR-0208). It reads the replica
+		// file directly with `mode=ro` rather than going through the runtime,
+		// because what it writes is one real table per Lens table rather than a
+		// row at a time, and the extraction is `inspection.ts`'s already.
+		stopFolderProjector = startFolderProjector({
+			root: folderRoot,
+			replicaPath: epicenterPath({ directory: replicaDirectory }),
+			lenses: [honeycrispMirrorLens, homeLens],
+			subscribe: (listener) => folderBridge.subscribe(listener),
+			onError: (cause: unknown) =>
+				console.error('folder projection failed', cause),
 		});
 
 		host = await createHomeHost({
@@ -211,14 +227,16 @@ async function main(): Promise<void> {
 		const ownedData = dataOwner;
 		const ownedDesktopAuth = auth;
 		const ownedFolderStop = stopFolderRenderer;
+		const ownedProjectorStop = stopFolderProjector;
 		const ownedFolderReceipts = folderReceipts;
 		await superviseSidecar({
 			server,
 			host: {
 				async [Symbol.asyncDispose]() {
-					// Before the runtime, so no render is in flight against a disposed
-					// owner or a closed receipt store.
+					// Before the runtime, so no render or projection is in flight
+					// against a disposed owner or a closed receipt store.
 					ownedFolderStop?.();
+					ownedProjectorStop?.();
 					ownedFolderReceipts?.close();
 					ownedDesktopAuth[Symbol.dispose]();
 					await ownedHost[Symbol.asyncDispose]();
@@ -232,6 +250,7 @@ async function main(): Promise<void> {
 		if (!lifecycleOwnsResources) {
 			if (server) await server.stop(true);
 			stopFolderRenderer?.();
+			stopFolderProjector?.();
 			folderReceipts?.close();
 			desktopAuth?.[Symbol.dispose]();
 			if (host) await host[Symbol.asyncDispose]();

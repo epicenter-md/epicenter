@@ -129,6 +129,39 @@ function fieldColumnSql(fieldName: string): string {
 }
 
 /**
+ * The extraction for one Lens table: `id`, then one column per declared field,
+ * over present rows only.
+ *
+ * Exported because ADR-0208 materializes this same shape as a real table in an
+ * app's folder, beside its markdown. Two spellings of one extraction would
+ * drift, and the one that drifted would be the one nobody was testing, so both
+ * callers build their SQL here and ADR-0162 keeps owning what a Lens table
+ * looks like as a relation.
+ *
+ * `schema` names the database holding the fact relation: `main` on a connection
+ * opened against the replica, or the alias an attached read-only replica was
+ * given. It is quoted, and it is a caller-owned constant in both cases.
+ */
+export function lensTableExtractionSql({
+	schema = 'main',
+	namespace,
+	tableName,
+	fieldNames,
+}: {
+	schema?: string;
+	namespace: string;
+	tableName: string;
+	fieldNames: readonly string[];
+}): string {
+	const columns = ['f.row_id AS "id"', ...fieldNames.map(fieldColumnSql)];
+	return `SELECT ${columns.join(', ')}
+		FROM ${quoteIdentifier(schema)}._replica_row_facts AS f
+		WHERE f.namespace = ${quoteLiteral(namespace)}
+			AND f.table_name = ${quoteLiteral(tableName)}
+			AND f.presence = 'present'`;
+}
+
+/**
  * The two reserved raw relations, which exist for every inspection connection
  * whether or not a Lens is selected.
  *
@@ -287,20 +320,15 @@ function createInspection(database: Database, bounds: InspectionBounds) {
 				try: () => {
 					requireOpen();
 					dropFriendlyViews();
-					const namespace = quoteLiteral(lens.namespace);
 					try {
 						for (const [tableName, definition] of Object.entries(lens.tables)) {
-							const columns = [
-								'f.row_id AS "id"',
-								...Object.keys(definition.fields).map(fieldColumnSql),
-							];
 							database.run(
 								`CREATE TEMP VIEW ${quoteIdentifier(tableName)} AS
-									SELECT ${columns.join(', ')}
-									FROM main._replica_row_facts AS f
-									WHERE f.namespace = ${namespace}
-										AND f.table_name = ${quoteLiteral(tableName)}
-										AND f.presence = 'present'`,
+									${lensTableExtractionSql({
+										namespace: lens.namespace,
+										tableName,
+										fieldNames: Object.keys(definition.fields),
+									})}`,
 							);
 							mounted.push(tableName);
 						}
