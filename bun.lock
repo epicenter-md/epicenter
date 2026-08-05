@@ -783,6 +783,20 @@
         "typescript": "catalog:",
       },
     },
+    "packages/folder": {
+      "name": "@epicenter/folder",
+      "version": "0.0.1",
+      "dependencies": {
+        "@epicenter/lens": "workspace:*",
+        "@epicenter/matter-core": "workspace:*",
+        "wellcrafted": "catalog:",
+      },
+      "devDependencies": {
+        "@epicenter/field": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/identity": {
       "name": "@epicenter/identity",
       "version": "0.3.0",
@@ -1329,6 +1343,8 @@
     "@epicenter/epicenter": ["@epicenter/epicenter@workspace:apps/epicenter"],
 
     "@epicenter/field": ["@epicenter/field@workspace:packages/field"],
+
+    "@epicenter/folder": ["@epicenter/folder@workspace:packages/folder"],
 
     "@epicenter/honeycrisp": ["@epicenter/honeycrisp@workspace:apps/honeycrisp"],
 

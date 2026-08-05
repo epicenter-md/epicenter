@@ -1,0 +1,30 @@
+{
+	"name": "@epicenter/folder",
+	"description": "The Epicenter folder: render rows to markdown files and apply edited files back as patches (ADR-0207).",
+	"version": "0.0.1",
+	"private": true,
+	"type": "module",
+	"sideEffects": false,
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"files": [
+		"src",
+		"!src/**/*.test.ts"
+	],
+	"license": "AGPL-3.0-or-later",
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"test": "bun test"
+	},
+	"dependencies": {
+		"@epicenter/lens": "workspace:*",
+		"@epicenter/matter-core": "workspace:*",
+		"wellcrafted": "catalog:"
+	},
+	"devDependencies": {
+		"@epicenter/field": "workspace:*",
+		"@types/bun": "catalog:",
+		"typescript": "catalog:"
+	}
+}
