@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-08-04
 - **Provisional number.** `main` ends at ADR-0205; ADR-0206 lands with this branch, so 0207 is the next free integer today. Reconcile at merge time (`docs/adr/README.md`).
-- **Unbuilt:** nothing implements this. No renderer, no `epicenter push`, no snapshot table, and `defineTable` carries neither `materialize` nor `body`. The record decides the shape; the code does not exist.
+- **Unbuilt:** nothing implements this. No renderer, no `epicenter push`, no snapshot table, and `defineTable` carries no `body` key. The record decides the shape; the code does not exist.
 - **Relates:** [ADR-0206](0206-a-rows-id-comes-from-whoever-knows-it-and-one-relation-holds-every-fact.md) (one fact relation and a path-safe row id, which is what makes one projection rule sufficient), [ADR-0010](0010-whispering-exports-recordings-as-a-zip-continuous-markdown-is-the-mounts-job.md) (refused a continuous appdata sidecar and named the folder-the-user-controls shape this builds), [ADR-0065](0065-matter-is-a-standalone-disk-as-truth-tool-its-sqlite-is-a-read-only-query-surface.md) and [ADR-0026](0026-matter-vault-sqlite-is-a-projection-never-a-verdict-source.md) (Matter runs this same mapping at the opposite polarity and owns the serializer), [ADR-0176](0176-lenses-declare-no-query-capabilities-indexed-reads-require-separate-owners.md) (this adds no query surface), [ADR-0201](0201-epicenter-owns-one-app-data-root-and-an-app-partitions-its-one-directory-by-a-stable-authority-identifier.md) (app data is machine-facing; this is not), [ADR-0174](0174-row-documents-project-as-nullable-compact-cells-and-persist-as-bounded-live-chains.md), [ADR-0173](0173-each-row-owns-at-most-one-write-once-immutable-blob.md), [ADR-0203](0203-epicenter-owns-only-what-is-already-contended.md)
 
 ## Context
@@ -59,18 +59,25 @@ Both representations sit in one directory on purpose: an agent that wants prose
 reads the markdown, and an agent that wants a real query opens the database
 beside it.
 
-### Materialization is continuous, declared, and never destructive
+### Every table materializes, and there is no flag
 
-A table opts in at schema time, not at use time:
+There is no opt-in and no opt-out. Every table a Lens declares renders to files,
+so `ls ~/Epicenter` is the database, and an app author writes nothing to get it.
 
-```ts
-defineTable({ fields: { ... }, materialize: true })
-```
+A flag was considered and refused for lack of a producer. Every shipped Lens
+table is user data (`skills`, `notes`, `conversations`, `devices`, `bookmarks`,
+`entries`, `settings`, `tabs`), because a Lens table is by construction something
+an app author declared as their data model. The replica's own bookkeeping lives
+in the `_replica_*` schema and is not a Lens table at all. If a genuine
+machinery table ever appears, adding `materialize: false` then is one additive
+key and breaks nothing.
 
-The app author knows which tables are prose and which are bookkeeping, so `ls`
-shows everything that will ever be there and there is nothing to configure or
-remember. `defineTable` takes a single `fields` key today, so this is an additive
-option; `SerializedTableDefinition` grows the field too.
+The asymmetry that decided it: an author who forgets to opt in produces an empty
+directory that explains nothing, which is ADR-0010's failure arriving from the
+other side. An author who should have opted out produces a folder with a few
+opaque files in it, which is a wart someone fixes in a line.
+
+### Rendering is continuous and never destructive
 
 The renderer holds back **exactly what you could still push, and shows current
 state everywhere else**. A cell you changed is pending intent and is left alone.
@@ -117,7 +124,7 @@ has no honest markdown round trip. This record therefore adds the first
 declaration of a document's shape, alongside the fields the Lens already types:
 
 ```ts
-defineTable({ fields: { ... }, materialize: true, body: 'text' })
+defineTable({ fields: { ... }, body: 'text' })
 ```
 
 A table declaring `body: 'text'` owns one `Y.Text`, renders it as the file body,
@@ -217,8 +224,13 @@ previous version.
   behave the same way, which is the property the read-only-body version could not
   offer.
 - **The Lens now types a row document, which it never did before.** That is a new
-  responsibility for `defineTable` and a new field in the serialized form, and it
-  is the price of one universal projection rule instead of per-app rendering.
+  responsibility for `defineTable` and a new key in the serialized form, and it
+  is the price of one universal projection rule instead of per-app rendering. It
+  is also the *only* key this adds: `body` has a producer, since a `YXmlFragment`
+  cannot render to markdown, and a materialization flag does not.
+- **Every app gets the folder without writing a line.** An app author who never
+  reads this record still finds their tables on disk, which is the only way the
+  consumer ADR-0010 requires reliably exists.
 - **What this forecloses:** files as a durable form, a watcher that publishes on
   save, a second write path that bypasses `patch`, blob bytes on disk, a lock on
   any row, app-supplied render or parse callbacks in a table definition, and any
