@@ -28,6 +28,10 @@ import {
 	type AgentMessageDocumentStore,
 	createAgentMessageDocumentStore,
 } from './agent-message-store.ts';
+import {
+	createFolderCatalog,
+	type FolderCatalogOptions,
+} from './folder-catalog.ts';
 import { createHoneycrispCatalog } from './honeycrisp-catalog.js';
 import {
 	createLocalSourceCatalog,
@@ -75,6 +79,12 @@ export type HomeHostOptions = HomeHostInputs & {
 	honeycrisp: HoneycrispData;
 	/** Home conversation workspace opened by the same desktop owner. */
 	conversations: ConversationsData;
+	/**
+	 * The markdown folder's root, receipts, and write seam (ADR-0207). Required
+	 * rather than optional: every table materializes and there is no flag, so a
+	 * host without the folder's two verbs is not a shape this product has.
+	 */
+	folder: FolderCatalogOptions;
 };
 
 export type PendingApproval = {
@@ -220,6 +230,10 @@ export async function createHomeHost(
 	await honeycrisp.folders.scan();
 	const catalogs: ToolCatalog[] = [
 		namespaceToolCatalog('honeycrisp', createHoneycrispCatalog(honeycrisp)),
+		// The folder's own two verbs (ADR-0207). Not an app: this is the host's
+		// markdown surface over every app's rows, so it composes beside them rather
+		// than inside one of their catalogs.
+		namespaceToolCatalog('folder', createFolderCatalog(options.folder)),
 	];
 
 	// A read-only local source, if one is wired: one `query` verb the host reads

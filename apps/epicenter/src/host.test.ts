@@ -27,9 +27,9 @@ import type { CreateInputFor } from '@epicenter/lens';
 import { type HomeHostInputs, parseHomeCommand } from './host.ts';
 import { createOwnedTestHomeHost } from './test-home-host.ts';
 import {
-	conversationsTable,
-	homeLens,
 	type ConversationsData,
+	type conversationsTable,
+	homeLens,
 } from './workspace.ts';
 
 const FIXTURE = new URL('../test-fixtures/mini-mcp-server.ts', import.meta.url)
@@ -114,6 +114,27 @@ describe('createHomeHost', () => {
 		expect(names).toContain('honeycrisp__folders_create');
 		expect(names).toContain('honeycrisp__folders_list');
 		expect(names).toContain('honeycrisp__folders_delete');
+	});
+
+	test('the markdown folder contributes its two verbs, and push asks first', async () => {
+		await using host = await createTestHost({
+			engine: scriptedEngine([[]]),
+		});
+		const definitions = host.toolDefinitions();
+		const status = definitions.find((d) => d.name === 'folder__status');
+		const push = definitions.find((d) => d.name === 'folder__push');
+
+		// A read is a read; a write door is a mutation, so the session's default
+		// approval prompts before anything leaves the folder (ADR-0207).
+		expect(status?.kind).toBe('query');
+		expect(push?.kind).toBe('mutation');
+		// Neither takes an argument: any narrowing flag is the one ADR-0207
+		// forbids, because it could skip the deletion section of a push.
+		expect(push?.inputSchema).toEqual({
+			type: 'object',
+			properties: {},
+			additionalProperties: false,
+		});
 	});
 
 	test('one chat turn drives an in-process verb end to end', async () => {
@@ -470,7 +491,7 @@ describe('createHomeHost', () => {
 							return workspace.conversations.create(input);
 						},
 					},
-					} as ConversationsData;
+				} as ConversationsData;
 			},
 		});
 		await host.handleCommand({ type: 'send', content: 'first message' });

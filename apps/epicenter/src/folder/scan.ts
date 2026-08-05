@@ -11,7 +11,7 @@
  * three independent outcomes rather than one failed batch.
  */
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { JsonObject, RowAddress, TableDefinition } from '@epicenter/lens';
 
@@ -71,8 +71,16 @@ function addressKey(address: RowAddress): string {
  * Exactly three segments, because an address is exactly three deep (ADR-0206).
  * Anything shallower or deeper is not something the renderer wrote and is not
  * this function's business.
+ *
+ * A root that does not exist holds no files, which is the state a fresh install
+ * is in before the first render and the state `rm -rf ~/Epicenter` leaves. Both
+ * answer the same way rather than throwing: the second queues every row for
+ * deletion, which is exactly the intent ADR-0207 insists on always showing.
+ * Anything else the filesystem reports propagates, because reading a permission
+ * failure as an empty folder would queue those deletions silently.
  */
 export function listFolderFiles(root: string): string[] {
+	if (!existsSync(root)) return [];
 	return [...new Bun.Glob('*/*/*.md').scanSync({ cwd: root })]
 		.map((path) => path.split('\\').join('/'))
 		.sort();

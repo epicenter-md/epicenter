@@ -53,6 +53,31 @@ export type PushReport = {
 	skipped: { path: string; reason: SkipReason }[];
 };
 
+/**
+ * One summary line, then the files that were left alone, for a terminal.
+ *
+ * The skipped block is never abbreviated. A refusal is the only thing a push
+ * asks you to act on, so a report that buried them would be reporting success.
+ */
+export function formatPushReport(report: PushReport): string {
+	const sent = [
+		report.patched > 0 && `${report.patched} updated`,
+		report.created > 0 && `${report.created} created`,
+		report.deleted > 0 && `${report.deleted} deleted`,
+	].filter((part) => typeof part === 'string');
+	const summary = sent.length === 0 ? 'Nothing sent.' : `${sent.join(', ')}.`;
+	if (report.skipped.length === 0) return summary;
+
+	const width = Math.max(...report.skipped.map((entry) => entry.reason.length));
+	return [
+		summary,
+		`Skipped ${report.skipped.length}:`,
+		...report.skipped.map(
+			(entry) => `  ${entry.reason.padEnd(width)}  ${entry.path}`,
+		),
+	].join('\n');
+}
+
 /** Fold a plan's `set` and `unset` into the one partial `patch` accepts. */
 function changesFrom(set: JsonObject, unset: readonly string[]): JsonObject {
 	const changes: JsonObject = { ...set };

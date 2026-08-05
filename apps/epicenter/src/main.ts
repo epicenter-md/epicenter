@@ -115,29 +115,39 @@ async function main(): Promise<void> {
 			});
 			if (attached.error !== null) throw attached.error;
 		}
-		host = await createHomeHost({
-			engine,
-			model,
-			honeycrisp: dataOwner.epicenter.bind(honeycrispMirrorLens),
-			conversations: dataOwner.epicenter.bind(homeLens),
-		});
-
 		// The folder a person and an agent read (ADR-0207). Receipts are machinery
 		// and stay under the data root; the markdown is the only thing that leaves
 		// it. Failing to render must never take the host down with it, so the
 		// renderer reports and the app keeps running: a stale folder is a bad day,
 		// an unbootable Epicenter is a worse one.
+		const folderRoot = epicenterFolderRoot();
 		folderReceipts = openReceiptStore(
 			join(dataRoot, 'folder-receipts.sqlite3'),
 		);
+		const folderBridge = createFolderBridge({
+			source: dataOwner,
+			lenses: [honeycrispMirrorLens, homeLens],
+		});
 		stopFolderRenderer = startFolderRenderer({
-			root: epicenterFolderRoot(),
+			root: folderRoot,
 			receipts: folderReceipts,
-			bridge: createFolderBridge({
-				source: dataOwner,
-				lenses: [honeycrispMirrorLens, homeLens],
-			}),
+			bridge: folderBridge,
 			onError: (cause) => console.error('folder render failed', cause),
+		});
+
+		host = await createHomeHost({
+			engine,
+			model,
+			honeycrisp: dataOwner.epicenter.bind(honeycrispMirrorLens),
+			conversations: dataOwner.epicenter.bind(homeLens),
+			// The same bridge the renderer writes through, so `push` sends against
+			// exactly the tables the folder was rendered from.
+			folder: {
+				root: folderRoot,
+				receipts: folderReceipts,
+				lookup: folderBridge.lookup,
+				writer: folderBridge.writer,
+			},
 		});
 		const blobs = createBunBlobStore({
 			directory: join(dataRoot, 'blobs'),
