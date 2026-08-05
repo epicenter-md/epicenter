@@ -27,13 +27,43 @@
  *   between, so no initial fire is needed to cover a window that does not exist.
  */
 
-import { extractErrorMessage } from 'wellcrafted/error';
+import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 
 import type { Address } from './addresses.js';
 import type {
 	InvalidationDispatcher,
 	InvalidationErrorReporter,
 } from './observation.js';
+
+/**
+ * Not exported: nothing returns these, so no consumer can branch on them. They
+ * exist to give the reported failure a stable `name` and structured fields in
+ * place of a message string assembled at the call site. The dial failure that a
+ * caller does observe stays a thrown `Error`, because it escapes this module.
+ *
+ * Reported through `.error`, unwrapped from the `Err` these factories return.
+ * `InvalidationErrorReporter` deliberately does not require a `wellcrafted`
+ * `Logger` (see its declaration), so whatever reaches it must be plain readable
+ * data: a stranger's `{ error(e) { ... } }` reads `name`, `message`, and
+ * `cause` off the tagged object, and would find only a wrapper on the `Err`.
+ */
+const ObservationCarrierError = defineErrors({
+	RedialFailed: ({ cause }: { cause: unknown }) => ({
+		message: 'Observation carrier could not redial',
+		cause,
+	}),
+	FrameNotText: () => ({ message: 'Observation frame was not text' }),
+	FrameNotJson: ({ cause }: { cause: unknown }) => ({
+		message: 'Observation frame was not JSON',
+		cause,
+	}),
+	FrameNotInvalidation: () => ({
+		message: 'Observation frame was not an invalidation',
+	}),
+	FrameAddressUnreadable: () => ({
+		message: 'Observation frame named an unreadable address',
+	}),
+});
 
 /**
  * The two timer functions this loop needs, named locally.
@@ -169,9 +199,7 @@ export async function openObservationCarrier({
 						{ cause },
 					);
 				} else {
-					log.error(
-						new Error('Observation carrier could not redial', { cause }),
-					);
+					log.error(ObservationCarrierError.RedialFailed({ cause }).error);
 					redialAfterFailure();
 				}
 				return settle();
@@ -286,14 +314,14 @@ function readObservationFrame(
 	log: InvalidationErrorReporter,
 ): readonly Address[] | undefined {
 	if (typeof data !== 'string') {
-		log.error(new Error('Observation frame was not text'));
+		log.error(ObservationCarrierError.FrameNotText().error);
 		return undefined;
 	}
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(data);
 	} catch (cause) {
-		log.error(new Error('Observation frame was not JSON', { cause }));
+		log.error(ObservationCarrierError.FrameNotJson({ cause }).error);
 		return undefined;
 	}
 	if (
@@ -304,12 +332,12 @@ function readObservationFrame(
 		!('changes' in parsed) ||
 		!Array.isArray(parsed.changes)
 	) {
-		log.error(new Error('Observation frame was not an invalidation'));
+		log.error(ObservationCarrierError.FrameNotInvalidation().error);
 		return undefined;
 	}
 	const changes: unknown[] = parsed.changes;
 	if (!changes.every(isReadableAddress)) {
-		log.error(new Error('Observation frame named an unreadable address'));
+		log.error(ObservationCarrierError.FrameAddressUnreadable().error);
 		return undefined;
 	}
 	return changes;
