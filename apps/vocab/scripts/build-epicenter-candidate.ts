@@ -46,7 +46,9 @@ await Bun.write(
 
 console.log(`Candidate staged at ${candidate}`);
 console.log(`  ${vocabLens.namespace} (Vocab)`);
-console.log('\nAdmit it with:');
+console.log('\nAdmit it with `bun run install:vocab` from the repo root, or:');
+// An absolute path, because `catalog:publish` runs with `--cwd apps/epicenter`
+// and would resolve a relative one against that directory instead of yours.
 console.log(
-	`  bun run --cwd apps/epicenter catalog:publish ${candidate}\n\nThen restart Epicenter.`,
+	`  bun run --cwd apps/epicenter catalog:publish ${candidate}\n\nThen quit Epicenter completely and start it again.`,
 );
