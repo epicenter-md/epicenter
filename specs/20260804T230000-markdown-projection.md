@@ -148,11 +148,22 @@ uses, rather than the symbol behind it.
 replica: a row created through the API appears as a file, an edit to that file
 pushes back, and the folder goes quiet.
 
+### Wave 7: the renderer runs (done)
+
+`main.ts` opens the receipt store under the data root, starts the renderer over
+`~/Epicenter` (`epicenterFolderRoot()`), and stops both before the runtime is
+disposed so no render is in flight against a closed store. A render failure is
+reported and never takes the host down: a stale folder is a bad day, an
+unbootable Epicenter is worse.
+
 ### What is not wired yet
 
-Nothing calls `startFolderRenderer` from `main.ts`, and `status` and `push` are
-not yet host actions (ADR-0021). The pieces are built and tested; the host has
-not been told to run them.
+`status` and `push` are not host actions (ADR-0021), so the folder is currently
+read-only in practice: it renders and stays current, and nothing sends edits
+back. That is the last wave.
+
+Also unbuilt: ADR-0208's per-app projected database, and ADR-0209's switcher,
+which supersedes ADR-0189 while `launch_application` still opens windows.
 
 ## Deletion prize
 

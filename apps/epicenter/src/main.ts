@@ -16,7 +16,10 @@ import {
 	createEpicenterClient,
 	createOpenAiAgentEngine,
 } from '@epicenter/client';
-import { epicenterDataRoot } from '@epicenter/constants/app-data';
+import {
+	epicenterDataRoot,
+	epicenterFolderRoot,
+} from '@epicenter/constants/app-data';
 import type { SyncCredentialProvider } from '@epicenter/data';
 import { createDesktopEpicenterOwner } from '@epicenter/data/desktop-owner';
 import { parseExchangeResponse } from '@epicenter/data/protocol';
@@ -29,6 +32,8 @@ import {
 	type DesktopAuthAuthority,
 } from './desktop-auth-authority.ts';
 import { createDesktopAuthorityFetch } from './desktop-authority-fetch.ts';
+import { createFolderBridge, startFolderRenderer } from './folder/bridge.ts';
+import { openReceiptStore } from './folder/receipts.ts';
 import { createHomeHost, type HomeHost } from './host.ts';
 import { createHomeServer } from './server.ts';
 import {
@@ -45,6 +50,8 @@ import { homeLens, honeycrispMirrorLens } from './workspace.ts';
 async function main(): Promise<void> {
 	const parentPipe = watchParentPipe(Bun.stdin.stream());
 	let host: HomeHost | undefined;
+	let folderReceipts: ReturnType<typeof openReceiptStore> | undefined;
+	let stopFolderRenderer: (() => void) | undefined;
 	let dataOwner:
 		| Awaited<ReturnType<typeof createDesktopEpicenterOwner>>
 		| undefined;
@@ -114,6 +121,24 @@ async function main(): Promise<void> {
 			honeycrisp: dataOwner.epicenter.bind(honeycrispMirrorLens),
 			conversations: dataOwner.epicenter.bind(homeLens),
 		});
+
+		// The folder a person and an agent read (ADR-0207). Receipts are machinery
+		// and stay under the data root; the markdown is the only thing that leaves
+		// it. Failing to render must never take the host down with it, so the
+		// renderer reports and the app keeps running: a stale folder is a bad day,
+		// an unbootable Epicenter is a worse one.
+		folderReceipts = openReceiptStore(
+			join(dataRoot, 'folder-receipts.sqlite3'),
+		);
+		stopFolderRenderer = startFolderRenderer({
+			root: epicenterFolderRoot(),
+			receipts: folderReceipts,
+			bridge: createFolderBridge({
+				source: dataOwner,
+				lenses: [honeycrispMirrorLens, homeLens],
+			}),
+			onError: (cause) => console.error('folder render failed', cause),
+		});
 		const blobs = createBunBlobStore({
 			directory: join(dataRoot, 'blobs'),
 		});
@@ -175,10 +200,16 @@ async function main(): Promise<void> {
 		const ownedHost = host;
 		const ownedData = dataOwner;
 		const ownedDesktopAuth = auth;
+		const ownedFolderStop = stopFolderRenderer;
+		const ownedFolderReceipts = folderReceipts;
 		await superviseSidecar({
 			server,
 			host: {
 				async [Symbol.asyncDispose]() {
+					// Before the runtime, so no render is in flight against a disposed
+					// owner or a closed receipt store.
+					ownedFolderStop?.();
+					ownedFolderReceipts?.close();
 					ownedDesktopAuth[Symbol.dispose]();
 					await ownedHost[Symbol.asyncDispose]();
 					await ownedData[Symbol.asyncDispose]();
@@ -190,6 +221,8 @@ async function main(): Promise<void> {
 	} finally {
 		if (!lifecycleOwnsResources) {
 			if (server) await server.stop(true);
+			stopFolderRenderer?.();
+			folderReceipts?.close();
 			desktopAuth?.[Symbol.dispose]();
 			if (host) await host[Symbol.asyncDispose]();
 			if (dataOwner) await dataOwner[Symbol.asyncDispose]();

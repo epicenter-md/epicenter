@@ -117,6 +117,41 @@ export function epicenterDataRoot(
 	return join(dataDir(system), EPICENTER_BUNDLE_IDENTIFIER);
 }
 
+/**
+ * The one human-facing folder: where a person and an agent read this data.
+ *
+ * Deliberately not {@link epicenterDataRoot}. That directory is machinery, is
+ * explicitly not an inter-app API, and is where a continuous producer with no
+ * consumer went to die once already (ADR-0010). This one is a place you `cd`
+ * into, so it takes the shape every tool in its category converged on
+ * independently: the home directory, capitalized, no dot (`~/Dropbox`,
+ * `~/OneDrive`, and the same under `%USERPROFILE%` on Windows).
+ *
+ * Overridable, because a person may keep it elsewhere. The default has to stay
+ * typeable, because "point your agent at `~/Epicenter`" is the whole product
+ * (ADR-0207).
+ */
+export function epicenterFolderRoot(
+	system: Pick<DataRootSystem, 'env' | 'homeDir'> = {
+		env: process.env,
+		homeDir: homedir(),
+	},
+): string {
+	const override = system.env.EPICENTER_FOLDER_DIR;
+	if (override && override.length > 0) {
+		// Refused rather than resolved, for the same reason the data root refuses
+		// one: a relative path means the host and a CLI disagree about where the
+		// folder is, which is the drift this function exists to prevent.
+		if (!isAbsolute(override)) {
+			throw new Error(
+				`EPICENTER_FOLDER_DIR must be an absolute path, not ${JSON.stringify(override)}.`,
+			);
+		}
+		return override;
+	}
+	return join(system.homeDir, 'Epicenter');
+}
+
 function dataDir({ env, platform, homeDir }: DataRootSystem): string {
 	if (platform === 'darwin') {
 		return join(homeDir, 'Library', 'Application Support');
