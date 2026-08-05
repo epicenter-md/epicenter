@@ -74,3 +74,4 @@ test-results/
 
 # Smoke-test and tooling run logs (machine-local, regenerated per run)
 .artifacts/
+dist-epicenter
