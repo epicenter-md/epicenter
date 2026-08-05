@@ -4,6 +4,7 @@ import {
 	LogicalPosition,
 	primaryMonitor,
 } from '@tauri-apps/api/window';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { once } from 'wellcrafted/function';
 import { createLogger } from 'wellcrafted/logger';
 import { whisperingPath } from '$lib/constants/urls';
@@ -15,6 +16,18 @@ import {
 import type { RecordingPillStatus } from '$lib/recording-pill/model';
 
 const log = createLogger('whispering/recording-overlay');
+
+export const RecordingOverlayError = defineErrors({
+	WindowCreateFailed: ({ payload }: { payload: unknown }) => ({
+		message: 'Failed to create recording overlay window',
+		payload,
+	}),
+	SynchronizeFailed: ({ cause }: { cause: unknown }) => ({
+		message: 'Failed to synchronize the recording overlay window',
+		cause,
+	}),
+});
+export type RecordingOverlayError = InferErrors<typeof RecordingOverlayError>;
 
 // Fixed size in logical pixels. The width is the pill's max width (the cap in
 // RecordingPill); the transparent window centers the narrower states inside it.
@@ -82,9 +95,7 @@ async function createOverlayWindow(): Promise<WebviewWindow | null> {
 		overlay.once('tauri://created', () => resolve(overlay));
 		overlay.once('tauri://error', (event) => {
 			log.warn(
-				new Error(
-					`Failed to create recording overlay window: ${JSON.stringify(event.payload)}`,
-				),
+				RecordingOverlayError.WindowCreateFailed({ payload: event.payload }),
 			);
 			resolve(null);
 		});
@@ -135,7 +146,7 @@ export function synchronizeRecordingOverlayWindow(
 	latestStatus = status;
 	queue = queue
 		.then(() => applyOverlayStatus(status))
-		.catch((error) => {
-			log.warn(error instanceof Error ? error : new Error(String(error)));
+		.catch((cause) => {
+			log.warn(RecordingOverlayError.SynchronizeFailed({ cause }));
 		});
 }

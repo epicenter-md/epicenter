@@ -1,7 +1,12 @@
+import { createLogger } from 'wellcrafted/logger';
 import { auth } from '#platform/auth';
 import { BlobsLive } from '#platform/blobs';
-import { log } from '$lib/report';
-import type { WhisperingAppDependencies } from './app';
+import {
+	type WhisperingAppDependencies,
+	WhisperingBackgroundError,
+} from './app';
+
+const log = createLogger('whispering/dependencies');
 
 /**
  * The build's app dependencies. Pure data and factories: nothing here opens
@@ -17,8 +22,5 @@ export const whisperingDependencies: WhisperingAppDependencies = {
 	auth,
 	blobs: BlobsLive,
 	reportBackgroundError: (cause: unknown) =>
-		log.warn(
-			cause instanceof Error ? cause : new Error(String(cause)),
-			'Whispering app background failure',
-		),
+		log.warn(WhisperingBackgroundError.AppFailed({ cause })),
 };

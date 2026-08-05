@@ -1,5 +1,6 @@
 import type { BlobId } from '@epicenter/blobs';
 import type { DeviceAcquisitionOutcome } from '@epicenter/recorder';
+import { createLogger } from 'wellcrafted/logger';
 import { manualRecorderConfig } from '#platform/manual-recorder-config';
 import { reportRecordingMicLevel } from '#platform/recording-mic-level';
 import { goto } from '$app/navigation';
@@ -10,7 +11,7 @@ import { recordingMedia } from '$lib/operations/media';
 import { processRecordingPipeline } from '$lib/operations/pipeline';
 import { playSoundIfEnabled } from '$lib/operations/sound';
 import { prewarmOnDeviceModel } from '$lib/operations/transcribe';
-import { log, report } from '$lib/report';
+import { report } from '$lib/report';
 import {
 	RecorderError,
 	type RecordingEndedReason,
@@ -21,6 +22,8 @@ import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 import type { WhisperingApp } from '$lib/whispering/app';
+
+const log = createLogger('whispering/recording');
 
 /**
  * Surface the outcome of acquiring a recording device. A clean success is
