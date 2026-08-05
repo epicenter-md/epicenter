@@ -4,7 +4,7 @@ import { defineTable, optional } from '@epicenter/lens';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 
 import { parseRow } from './parse.js';
-import { isEmptyPlan, planPush, type RowState } from './plan.js';
+import { planPush } from './plan.js';
 import { renderRow } from './render.js';
 
 const notes = defineTable({
@@ -24,8 +24,8 @@ const settings = defineTable({
 
 const ROW = 'a8fk2mq7x3nb5wd9pc1rt4vz';
 
-function state(fields: Record<string, unknown>): RowState {
-	return { fields: fields as RowState['fields'] };
+function receipt(fields: Record<string, unknown>) {
+	return fields as Record<string, never>;
 }
 
 function claimFor(fields: Record<string, unknown>, definition = notes) {
@@ -67,8 +67,9 @@ test('the body field is written below the fence, not inside it', () => {
 
 test('prose that looks like frontmatter still round-trips', () => {
 	const content = '---\nnot: frontmatter\n---\n\nreal body\n';
-	expect(claimFor({ title: 'T', status: 'draft', tags: [], content }).fields)
-		.toHaveProperty('content', content);
+	expect(
+		claimFor({ title: 'T', status: 'draft', tags: [], content }).fields,
+	).toHaveProperty('content', content);
 });
 
 test('values YAML would coerce survive because parsing is schema-directed', () => {
@@ -141,127 +142,91 @@ test('putting the body in frontmatter is refused rather than given two homes', (
 // -- the plan ---------------------------------------------------------------
 
 test('a file you did not touch pushes nothing, however stale it is', () => {
-	// The property the whole design rests on. `theirs` has moved far past `base`,
-	// and the file is a month old, and still nothing is sent.
+	// The property the whole design rests on, and it needs nothing but the
+	// receipt: a file matching what was written into it sends nothing, no matter
+	// how far the row has moved since or how long it has been sitting.
 	const fields = {
 		title: 'Tuesday',
 		status: 'draft',
 		tags: ['work'],
 		content: 'Ship Friday.\n',
 	};
-	const base = state(fields);
-	const theirs = state({
-		title: 'Tuesday, revised',
-		status: 'published',
-		tags: ['work', 'urgent'],
-		content: 'Ship Friday, maybe.\n',
-	});
+	const base = receipt(fields);
 
-	expect(isEmptyPlan(planPush({ claim: claimFor(fields), base, theirs }))).toBe(
-		true,
-	);
+	expect(planPush({ claim: claimFor(fields), base })).toEqual({
+		kind: 'patch',
+		set: {},
+		unset: [],
+	});
 });
 
 test('a field you changed alone is patched', () => {
-	const base = state({ title: 'Tuesday', status: 'draft', tags: ['work'] });
-	const claim = claimFor({ ...base.fields, tags: ['work', 'sync'] });
+	const base = receipt({ title: 'Tuesday', status: 'draft', tags: ['work'] });
+	const claim = claimFor({ ...base, tags: ['work', 'sync'] });
 
-	const plan = planPush({ claim, base, theirs: base });
-	expect(plan.set).toEqual({ tags: ['work', 'sync'] });
-	expect(plan.conflicts).toEqual([]);
+	const plan = planPush({ claim, base });
+	expect(plan).toEqual({
+		kind: 'patch',
+		set: { tags: ['work', 'sync'] },
+		unset: [],
+	});
 });
 
 test('prose takes exactly the same path as any other field', () => {
-	const base = state({
+	const base = receipt({
 		title: 'T',
 		status: 'draft',
 		tags: [],
 		content: 'Ship Friday.\n',
 	});
-	const claim = claimFor({ ...base.fields, content: 'Ship Monday.\n' });
+	const claim = claimFor({ ...base, content: 'Ship Monday.\n' });
 
-	const plan = planPush({ claim, base, theirs: base });
-	expect(plan.set).toEqual({ content: 'Ship Monday.\n' });
-	expect(plan.conflicts).toEqual([]);
-});
-
-test('a peer changing a different field does not turn into a conflict', () => {
-	const base = state({ title: 'Tuesday', status: 'draft', tags: ['work'] });
-	const theirs = state({ ...base.fields, title: 'Tuesday, revised' });
-	const claim = claimFor({ ...base.fields, status: 'published' });
-
-	const plan = planPush({ claim, base, theirs });
-	expect(plan.set).toEqual({ status: 'published' });
-	expect(plan.conflicts).toEqual([]);
-	// Their title is untouched precisely because it never entered the plan.
-	expect('title' in plan.set).toBe(false);
-});
-
-test('the same field changed on both sides stops instead of guessing', () => {
-	const base = state({ title: 'Tuesday', status: 'draft', tags: ['work'] });
-	const theirs = state({ ...base.fields, tags: ['urgent'] });
-	const claim = claimFor({ ...base.fields, tags: ['sync'] });
-
-	const plan = planPush({ claim, base, theirs });
-	expect(plan.set).toEqual({});
-	expect(plan.conflicts).toEqual([
-		{
-			kind: 'field',
-			field: 'tags',
-			base: ['work'],
-			mine: ['sync'],
-			theirs: ['urgent'],
-		},
-	]);
-});
-
-test('prose changed on both sides stops, exactly like any other field', () => {
-	const base = state({
-		title: 'T',
-		status: 'draft',
-		tags: [],
-		content: 'Ship Friday.\n',
+	const plan = planPush({ claim, base });
+	expect(plan).toEqual({
+		kind: 'patch',
+		set: { content: 'Ship Monday.\n' },
+		unset: [],
 	});
-	const theirs = state({ ...base.fields, content: 'Ship Friday, maybe.\n' });
-	const claim = claimFor({ ...base.fields, content: 'Ship Monday.\n' });
+});
 
-	const plan = planPush({ claim, base, theirs });
-	expect(plan.set).toEqual({});
-	expect(plan.conflicts[0]).toMatchObject({ kind: 'field', field: 'content' });
+test('a field you never touched is never sent, whatever any peer did to it', () => {
+	// The only protection that matters, and it needs no knowledge of the row: a
+	// field matching the receipt is absent from the patch, so nothing can clobber
+	// what another device wrote to it.
+	const base = receipt({ title: 'Tuesday', status: 'draft', tags: ['work'] });
+	const claim = claimFor({ ...base, status: 'published' });
+
+	const plan = planPush({ claim, base });
+	expect(plan).toEqual({
+		kind: 'patch',
+		set: { status: 'published' },
+		unset: [],
+	});
 });
 
 test('clearing an optional field unsets it rather than writing null', () => {
-	const base = state({ title: 'T', status: 'draft', tags: [], reviewed: true });
+	const base = receipt({
+		title: 'T',
+		status: 'draft',
+		tags: [],
+		reviewed: true,
+	});
 	const claim = claimFor({ title: 'T', status: 'draft', tags: [] });
 
-	const plan = planPush({ claim, base, theirs: base });
-	expect(plan.unset).toEqual(['reviewed']);
-	expect(plan.set).toEqual({});
+	const plan = planPush({ claim, base });
+	expect(plan).toEqual({ kind: 'patch', set: {}, unset: ['reviewed'] });
 });
 
 test('a claim with no id plans a creation', () => {
 	const claim = expectOk(
 		parseRow('---\ntitle: New\nstatus: draft\ntags: []\n---\nHello\n', notes),
 	);
-	const plan = planPush({ claim, base: undefined, theirs: undefined });
+	const plan = planPush({ claim, base: undefined });
 
-	expect(plan.create).toBe(true);
-	expect(plan.set).toEqual({
-		title: 'New',
-		status: 'draft',
-		tags: [],
-		content: 'Hello\n',
+	expect(plan).toEqual({
+		kind: 'create',
+		set: { title: 'New', status: 'draft', tags: [], content: 'Hello\n' },
 	});
-});
-
-test('a file naming a vanished row reports rather than recreating it', () => {
-	const plan = planPush({
-		claim: claimFor({ title: 'T', status: 'draft', tags: [] }),
-		base: state({ title: 'T', status: 'draft', tags: [] }),
-		theirs: undefined,
-	});
-	expect(plan.conflicts).toEqual([{ kind: 'row-vanished' }]);
-	expect(plan.create).toBe(false);
 });
 
 test('a file with no recorded base is held rather than guessed at', () => {
@@ -270,8 +235,6 @@ test('a file with no recorded base is held rather than guessed at', () => {
 	const plan = planPush({
 		claim: claimFor({ title: 'T', status: 'draft', tags: [] }),
 		base: undefined,
-		theirs: state({ title: 'Other', status: 'draft', tags: [] }),
 	});
-	expect(plan.conflicts).toEqual([{ kind: 'unbased' }]);
-	expect(plan.set).toEqual({});
+	expect(plan).toEqual({ kind: 'unbased' });
 });

@@ -92,16 +92,24 @@ Nothing leaves the machine because a file changed. `status` and `push` are scans
 run when you type them; there is no watcher, so an edit made while the engine was
 stopped is found exactly as if it had been running.
 
-Push compares three values per field: `base`, the fields recorded when the file
-was written; `mine`, the file now; `theirs`, the row now.
+Push compares two values per field: `base`, the receipt of what was written into
+the file, and `mine`, the file now. Every field that matches the receipt is
+untouched and is not sent. Everything else is.
 
-| condition | result |
-| --- | --- |
-| `mine == base` | untouched. Send nothing, and a peer's change to it survives. |
-| `mine != base`, `base == theirs` | you changed it alone. **Patch.** |
-| `mine != base`, `base != theirs` | you both changed it. **Show it and stop.** |
+That is the entire rule, and it is what protects a peer: a field you did not
+change is absent from the patch, so nothing can clobber what another device
+wrote to it, however long the file has been sitting.
 
-There is no second table for prose, because the body is one of these fields.
+**There is no conflict.** Epicenter has no conflict concept anywhere. A write is
+`{ set, unset }` per field, the authority sequences them, and two devices setting
+one field resolve by order without asking anyone. A folder is another device, so
+it resolves the same way. Comparing against the row as it stands now, and
+stopping when both sides moved, would make this the only place in the system that
+escalates to a human, in service of a case the rest of the system settles
+silently.
+
+There is no second table for prose either, because the body is one of these
+fields.
 
 The snapshot lives in a table in `epicenter.sqlite3`, never in the folder, so the
 directory holds no hidden state and `rm -rf` on it costs nothing. It records
@@ -113,9 +121,10 @@ edit made in the same second the renderer wrote the file, which is git's
 racy-index problem, and buying it back costs a stat pair, a branch, and a rule.
 Add it when a scan is measured and found slow.
 
-A stale file cannot silently revert anything, however long it has been sitting
-dirty, because the comparison is per field. A file untouched for a month pushes
-only the fields you actually changed.
+The receipt is the only thing that can distinguish your edit from the state the
+file was rendered at. A file whose receipt was lost is therefore refused rather
+than pushed, since without it every field looks changed and a stale file would
+send fields you never touched. Re-rendering restores it.
 
 ### A body is a field, and row documents are never materialized
 
@@ -227,9 +236,12 @@ previous version.
   Matter's definition by design.
 - No lock, so no application ever has to implement a frozen state, and ADR-0203's
   contention question is answered by per-unit merge rather than by an owner.
-- **One rule, and only one kind of thing:** hold exactly what you could still
-  push, show current state everywhere else. The unit is a field, and prose is a
-  field, so there is no second behavior to keep in step.
+- **One rule, and only one kind of thing:** send the fields that differ from the
+  receipt. The unit is a field, and prose is a field, so there is no second
+  behavior to keep in step.
+- **Nothing in the folder ever asks a human to resolve anything.** Push either
+  sends or refuses for want of a receipt. That matches every other writer in the
+  system and is what keeps "point an agent at it and walk away" true.
 - **The folder never touches the document plane.** No `Y.Text`, no
   `YXmlFragment`, no text diff, no operational transform, no ProseMirror. The
   entire Yjs surface of this feature is that it has none.
@@ -242,8 +254,8 @@ previous version.
   consumer ADR-0010 requires reliably exists.
 - **What this forecloses:** files as a durable form, a watcher that publishes on
   save, a second write path that bypasses `patch`, blob bytes on disk, a lock on
-  any row, app-supplied render or parse callbacks in a table definition, and any
-  promise that the layout is stable across versions.
+  any row, a conflict surface, app-supplied render or parse callbacks in a table
+  definition, and any promise that the layout is stable across versions.
 
 ## Considered alternatives
 
@@ -290,6 +302,14 @@ previous version.
   `Y.Text`. Rejected: `Y.Doc['get']` coerces, so guessing wrong on a
   `YXmlFragment` corrupts rather than fails, and it would make what appears on
   disk a function of runtime state rather than the schema.
+- **Detecting conflicts by comparing against the row as it stands now.** Built,
+  then cut. It answered a question nothing else in the system asks: `replica.ts`
+  has no conflict concept, only a SQL upsert clause, because per-field patches
+  sequenced by the authority make one unnecessary. Keeping it would have made the
+  folder the single place that stops and demands a human, contradicting both the
+  rest of the data plane and the premise that a folder is another device. The
+  case it covered, you and a peer changing one field while your edit is unpushed,
+  now resolves by order exactly as it would between two applications.
 - **Keeping the base body, a minimal diff, and a `stat` fast path.** All three
   were written and then cut, and they share a shape: each pays real, permanent
   complexity for a cost nobody has measured. The base body doubled every byte of

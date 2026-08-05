@@ -77,14 +77,14 @@ The whole hard part, and it needs nothing that was deleted.
 ```txt
 renderRow({ id, fields, definition }) -> string
 parseRow(text, definition)            -> { id?, fields } | RefusedClaim
-planPush({ claim, base, theirs })     -> fields to set, unset, conflicts
+planPush({ claim, base })             -> create | patch | unbased
 ```
 
 No filesystem, no SQLite, no host. Depends on `matter-core` and `lens` types.
 
 Verification is a round-trip property: for any row conforming to a definition,
-`parse(render(row))` returns the same values, and `plan(base, base, theirs)`
-returns nothing to push. That second property is the one that protects a peer's
+`parse(render(row))` returns the same values, and a claim matching its receipt
+plans nothing to push. That second property is the one that protects a peer's
 work, so it is the test that matters most.
 
 Rollback point: nothing imports this yet.
@@ -154,4 +154,4 @@ and the edit appears on a second device.
 It is violated by: a file that stays stale after a peer's change to a field you
 did not touch; a push that sends a field you did not edit; any file appearing
 under an app data directory; a row document being read or written by the
-renderer; or a lock anywhere.
+renderer; a prompt asking you to resolve anything; or a lock anywhere.
