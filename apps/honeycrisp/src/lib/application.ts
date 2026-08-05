@@ -1,6 +1,26 @@
 import type { Epicenter, RowDocument, SyncStatus } from '@epicenter/data';
 import { type HoneycrispData, honeycrispLens } from '@epicenter/honeycrisp';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { createHoneycrispState } from '../routes/state/index.js';
+
+/**
+ * Failures that reach `reportBackgroundError`: work nobody is awaiting, so the
+ * only honest response is a log line. The `cause` is `unknown` because these
+ * arrive from rejected promises the application fired and forgot.
+ */
+export const HoneycrispBackgroundError = defineErrors({
+	RefreshFailed: ({ cause }: { cause: unknown }) => ({
+		message: 'Honeycrisp background refresh failed',
+		cause,
+	}),
+	SyncFailed: ({ cause }: { cause: unknown }) => ({
+		message: 'Honeycrisp background sync failed',
+		cause,
+	}),
+});
+export type HoneycrispBackgroundError = InferErrors<
+	typeof HoneycrispBackgroundError
+>;
 
 export type HoneycrispDependencies = {
 	/**

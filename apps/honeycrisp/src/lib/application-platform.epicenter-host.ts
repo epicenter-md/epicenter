@@ -1,6 +1,9 @@
 import { openDesktopEpicenter } from '@epicenter/data/desktop';
 import { createLogger } from 'wellcrafted/logger';
-import type { HoneycrispDependencies } from './application.js';
+import {
+	HoneycrispBackgroundError,
+	type HoneycrispDependencies,
+} from './application.js';
 
 const log = createLogger('honeycrisp/application');
 
@@ -21,5 +24,5 @@ const log = createLogger('honeycrisp/application');
 export const honeycrispPlatform: HoneycrispDependencies = {
 	openEpicenter: openDesktopEpicenter,
 	reportBackgroundError: (cause) =>
-		log.warn(new Error('Honeycrisp background refresh failed', { cause })),
+		log.warn(HoneycrispBackgroundError.RefreshFailed({ cause })),
 };
