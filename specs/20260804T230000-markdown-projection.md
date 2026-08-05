@@ -126,15 +126,33 @@ Remaining: wire it to `subscribeCommittedAddresses`, which `@epicenter/data`
 exports for exactly this caller, since the host is the process that constructed
 the runtime. `desktop-owner.ts` is the precedent.
 
-### Wave 5: push
+### Wave 5: push (done)
 
-Apply the plan: `patch` for fields, creation for a file with no id, deletion for
-a missing file. Per-file refusal on a malformed claim, because no transaction
-spans rows. Nothing here touches a row document.
+`pushFolder` applies the scan: `patch` for fields, `create` for a file with no
+id, `delete` for a missing file, and a per-file skip for everything it refuses.
+Three bugs were found by grilling before it was written, and each is a test:
+push must settle the receipt for what it sent, a minted id must be written back
+into the file, and a deletion must forget its receipt.
 
-### Wave 6: the command surface
+`FolderWriter` is three verbs and no reads, because a folder that could read rows
+would be tempted to compare against them.
 
-`status` and `push`, in whatever form Wave 4's host decision produced.
+### Wave 6: the command surface (done)
+
+`statusOf` and `formatStatus` for the review step; `createFolderBridge` and
+`startFolderRenderer` to wire it to a live runtime. The committed stream arrives
+through the owner's public `subscribeInvalidations`, which `server.ts` already
+uses, rather than the symbol behind it.
+
+`folder-live.test.ts` runs the recognition test end to end against a real
+replica: a row created through the API appears as a file, an edit to that file
+pushes back, and the folder goes quiet.
+
+### What is not wired yet
+
+Nothing calls `startFolderRenderer` from `main.ts`, and `status` and `push` are
+not yet host actions (ADR-0021). The pieces are built and tested; the host has
+not been told to run them.
 
 ## Deletion prize
 
