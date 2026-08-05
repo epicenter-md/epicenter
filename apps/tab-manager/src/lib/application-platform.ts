@@ -18,9 +18,10 @@
 import { EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth-clients';
 import { createAppAuthClient } from '@epicenter/svelte/auth';
 import { createLogger } from 'wellcrafted/logger';
-import type {
-	TabManagerDependencies,
-	TabManagerRuntime,
+import {
+	TabManagerBackgroundError,
+	type TabManagerDependencies,
+	type TabManagerRuntime,
 } from '$lib/application';
 import { createDeviceProfile } from '$lib/device';
 import {
@@ -33,7 +34,7 @@ import { openTabManagerBrowserEpicenter } from '$lib/workspace/browser';
 const log = createLogger('tab-manager/application');
 
 const reportBackgroundError = (cause: unknown) =>
-	log.warn(new Error('Tab Manager background work failed', { cause }));
+	log.warn(TabManagerBackgroundError.WorkFailed({ cause }));
 
 async function openExtensionRuntime(): Promise<TabManagerRuntime> {
 	const [persistedAuthStorage, instanceSetting, profile] = await Promise.all([

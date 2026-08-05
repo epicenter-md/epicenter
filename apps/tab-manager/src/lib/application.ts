@@ -31,6 +31,7 @@ import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { APP_URLS } from '@epicenter/constants/vite';
 import type { Epicenter, SyncStatus } from '@epicenter/data';
 import type { StorageItemKey } from '@wxt-dev/storage';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { createTabManagerActions, type TabManagerActions } from '$lib/actions';
 import { APP_MODELS, DEFAULT_MODEL } from '$lib/chat/models';
 import {
@@ -61,6 +62,21 @@ export type TabManagerRuntime = {
 	epicenter: Epicenter;
 	[Symbol.asyncDispose](): Promise<void>;
 };
+
+/**
+ * Failures that reach `reportBackgroundError`: work nobody is awaiting, so the
+ * only honest response is a log line. The `cause` is `unknown` because these
+ * arrive from rejected promises the application fired and forgot.
+ */
+export const TabManagerBackgroundError = defineErrors({
+	WorkFailed: ({ cause }: { cause: unknown }) => ({
+		message: 'Tab Manager background work failed',
+		cause,
+	}),
+});
+export type TabManagerBackgroundError = InferErrors<
+	typeof TabManagerBackgroundError
+>;
 
 export type TabManagerDependencies = {
 	openRuntime(): Promise<TabManagerRuntime>;
