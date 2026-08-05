@@ -120,6 +120,34 @@ Implementers then name a failure rather than describing one:
 reportBackgroundError: (cause) => log.warn(WhisperingBackgroundError.AppFailed({ cause }))
 ```
 
+## Log-only variants are not public API
+
+Minting a variant is not the same as publishing one. Two kinds:
+
+| | Returned in a `Result` | Only logged |
+|---|---|---|
+| Who sees it | Consumers, who branch on `.name` | A log sink |
+| Export it? | Yes; renaming a variant is a breaking change | No, `const` at module scope |
+| Examples | `ReplicaError`, `DocumentPullError`, `DataReadError`, `ScalarProtocolError` | `SyncSupervisorError`, `BrowserWorkerError`, `ObservationCarrierError` |
+
+Exporting a log-only set publishes a name no one can import for a reason and freezes a string you should stay free to reword. `packages/data` and `packages/lens` keep theirs private for exactly this; only errors that leave in a `Result` are in the published failure surface. Export a log-only set solely when a second file in the same package logs the same failure, and even then, only within the package.
+
+**Name the variant key for the log line, not for the set.** `defineErrors` stamps `name` from the key alone; the `const` you assign the set to never reaches the sink. `createLogger`'s `source` supplies the namespace, so `[data/sync] { name: 'StatusSubscriberThrew' }` reads fine and the key stays short.
+
+**Prefer a field over interpolation.** `` new Error(`could not ${what}`) `` produces a message no two calls share. `ContainedStepFailed({ step: what, cause })` gives one constant message and a structured `step`.
+
+### When the consumer is not a `Logger`
+
+`log.warn(Variant({ cause }))` passes the `Err` wrapper, and `createLogger` unwraps it. A hand-narrowed reporter type does not:
+
+```ts
+// packages/lens: deliberately not `Logger`, so published declarations never
+// reach AsyncDisposable and never dictate a consumer's logging stack
+export type InvalidationErrorReporter = { error(error: unknown): void };
+```
+
+Anything reaching a reporter like this must be plain readable data, so unwrap at the call site: `log.error(ObservationCarrierError.FrameNotText().error)`. A stranger's `{ error(e) { ... } }` then reads `name`, `message`, and `cause` off the object instead of finding a wrapper.
+
 ## Sinks
 
 A sink is `((event) => void) & Partial<AsyncDisposable>`: a callable with optional resource cleanup.
