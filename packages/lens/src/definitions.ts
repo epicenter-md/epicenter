@@ -37,8 +37,25 @@ export type FieldsFor<TFields extends FieldSchemas> = {
 declare const tableDefinitionParts: unique symbol;
 declare const lensParts: unique symbol;
 
+/**
+ * What a table's row document holds, when it holds anything renderable.
+ *
+ * A row document is an arbitrary `Y.Doc` (`RowDocument` exposes `Y.Doc['get']`),
+ * so nothing typed it before this. Declaring `'text'` says the document is one
+ * `Y.Text`, which is what makes a markdown body a total round trip rather than a
+ * lossy rendering of a structure markdown cannot hold (ADR-0207).
+ *
+ * A closed vocabulary of string tags, deliberately: `TableDefinition` crosses
+ * the wire through {@link SerializedTableDefinition}, and a render callback
+ * could not. A second document shape means a second tag and a renderer behind
+ * it, here, rather than a plugin surface every definition would have to carry.
+ */
+export type BodyKind = 'text';
+
 export type TableDefinition<TFields extends FieldSchemas = FieldSchemas> = {
 	fields: TFields;
+	/** Absent when this table's document is not renderable as markdown. */
+	body?: BodyKind;
 	[tableDefinitionParts]: { fields: TFields };
 };
 
@@ -163,8 +180,10 @@ export function optional<TSchemaValue extends TSchema>(
 
 export function defineTable<const TFields extends FieldSchemas>({
 	fields: fieldsInput,
+	body,
 }: {
 	fields: TFields & { id?: never };
+	body?: BodyKind;
 }): TableDefinition<TFields> {
 	assertPlainObject(fieldsInput, 'Table fields');
 	if (Object.keys(fieldsInput).some((name) => name.toLowerCase() === 'id')) {
@@ -189,8 +208,15 @@ export function defineTable<const TFields extends FieldSchemas>({
 		if (IsOptional(authoredSchema)) optionalFields.add(name);
 	}
 
+	if (body !== undefined && body !== 'text') {
+		throw new Error(`Unknown body kind '${body}'; the only kind is 'text'`);
+	}
+
 	const definition = Object.freeze({
 		fields: Object.freeze(fields),
+		// Absent rather than `undefined`, so a definition with no body serializes
+		// and compares as the plain shape it was before this key existed.
+		...(body === undefined ? {} : { body }),
 	}) as TableDefinition<TFields>;
 	compiledTables.set(
 		definition,

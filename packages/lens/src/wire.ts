@@ -1,10 +1,16 @@
-import { compileTableDefinition, type TableDefinition } from './definitions.js';
+import {
+	type BodyKind,
+	compileTableDefinition,
+	type TableDefinition,
+} from './definitions.js';
 
 export type SerializedTableDefinition = {
 	namespace: string;
 	table: string;
 	fields: Record<string, unknown>;
 	optionalFields: string[];
+	/** Absent when this table's document is not renderable as markdown. */
+	body?: BodyKind;
 };
 
 export function serializeTableDefinition(
@@ -18,6 +24,7 @@ export function serializeTableDefinition(
 		table: tableName,
 		fields: cloneJson(definition.fields),
 		optionalFields: [...compiled.optional],
+		...(definition.body === undefined ? {} : { body: definition.body }),
 	};
 }
 

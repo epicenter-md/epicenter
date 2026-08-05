@@ -267,7 +267,7 @@ function deserializeTable(
 			? optional(typedSchema)
 			: typedSchema;
 	}
-	return defineTable({ fields });
+	return defineTable({ fields, body: definition.body });
 }
 
 /**
