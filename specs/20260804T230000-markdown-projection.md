@@ -64,9 +64,10 @@ directory move.
 | when files are written | the host process |
 | applying a file back | `push`, through `patch` |
 
-The snapshot table is the one genuinely new owner. It is not the replica's (that
-is sync state) and not the Lens's (that is schema), so it gets its own reserved
-prefix beside `_replica_*` and the renderer owns it alone.
+The receipt store is the one genuinely new owner. It is not the replica's (that
+is sync state) and not the Lens's (that is schema), and it cannot live in
+`epicenter.sqlite3` anyway: `createEpicenter` returns a frozen surface with no
+database handle on it. It is the host's own store under the app data root.
 
 ## Waves
 
@@ -99,14 +100,16 @@ bare `TableDefinition`.
 
 It changes where a value is written, never what the row holds.
 
-### Wave 3: the snapshot table and the scan
+### Wave 3: the receipt store and the scan (done)
 
-`path`, address, fields object. Three columns, no `mtime` and no `size`: a scan
-reads and parses every file, which is slower and has no racy-index edge case.
+`openReceiptStore` over `bun:sqlite` in the host's app data root: path, address,
+fields. No `mtime` and no `size`; a scan reads and parses every file, which is
+slower and has no racy-index edge case.
 
-Produces a plan and writes nothing. Deletions are the set difference between the
-table and the directory listing. Duplicate ids are detected here, and refused by
-naming both paths.
+`scanFolder` produces one entry per path and writes nothing: `claim`, `new`,
+`refused`, `gone`, `duplicate`, `unknown-table`. Deletions are the set difference
+between the receipts and the directory listing. Duplicate ids name every path
+rather than guessing.
 
 ### Wave 4: the renderer (blocked on the host decision)
 

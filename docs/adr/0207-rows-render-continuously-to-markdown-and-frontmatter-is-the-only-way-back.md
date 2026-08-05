@@ -111,9 +111,17 @@ silently.
 There is no second table for prose either, because the body is one of these
 fields.
 
-The snapshot lives in a table in `epicenter.sqlite3`, never in the folder, so the
-directory holds no hidden state and `rm -rf` on it costs nothing. It records
-`path`, the address, and the fields object. Three columns.
+The receipts live in the host's own store under the app data root (ADR-0201),
+never in the folder and not in `epicenter.sqlite3`. Never in the folder so the
+directory holds no hidden state and `rm -rf` on it costs nothing. Not in the
+replica's file for two reasons, the second being the real one: `createEpicenter`
+deliberately does not expose its database handle, and this is the renderer's
+bookkeeping rather than the replica's. The folder is the human-facing artifact;
+this is the machinery behind it, and machinery is what the app data root is for.
+
+Each receipt is a path, an address, and the fields written. Losing the store is
+safe and self-healing: every file becomes unpushable until it is re-rendered,
+which costs unpushed edits and nothing else.
 
 A scan reads and parses every file rather than consulting `mtime` and `size`
 first. Slower, and free of edge cases: the fast path's failure mode is missing an
