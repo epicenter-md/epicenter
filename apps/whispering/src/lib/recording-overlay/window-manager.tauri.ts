@@ -4,7 +4,7 @@ import {
 	LogicalPosition,
 	primaryMonitor,
 } from '@tauri-apps/api/window';
-import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import { defineErrors } from 'wellcrafted/error';
 import { once } from 'wellcrafted/function';
 import { createLogger } from 'wellcrafted/logger';
 import { whisperingPath } from '$lib/constants/urls';
@@ -17,7 +17,7 @@ import type { RecordingPillStatus } from '$lib/recording-pill/model';
 
 const log = createLogger('whispering/recording-overlay');
 
-export const RecordingOverlayError = defineErrors({
+const RecordingOverlayError = defineErrors({
 	WindowCreateFailed: ({ payload }: { payload: unknown }) => ({
 		message: 'Failed to create recording overlay window',
 		payload,
@@ -27,7 +27,6 @@ export const RecordingOverlayError = defineErrors({
 		cause,
 	}),
 });
-export type RecordingOverlayError = InferErrors<typeof RecordingOverlayError>;
 
 // Fixed size in logical pixels. The width is the pill's max width (the cap in
 // RecordingPill); the transparent window centers the narrower states inside it.
