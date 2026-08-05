@@ -137,6 +137,22 @@ test('a committed row reaches the projection, and a deleted one leaves it', asyn
 	stop();
 });
 
+test('a projection that cannot open reports and leaves the host running', () => {
+	// The query surface is a convenience over rows the replica already holds.
+	// Refusing to boot over it would cost the applications instead.
+	const failures: unknown[] = [];
+	const stop = startFolderProjector({
+		root: folder,
+		replicaPath: join(root, 'no-such-replica.sqlite3'),
+		lenses: [lens as never],
+		subscribe: () => () => undefined,
+		onError: (cause) => failures.push(cause),
+	});
+
+	expect(failures).toHaveLength(1);
+	expect(() => stop()).not.toThrow();
+});
+
 test('the projection refuses a write to the replica through it', async () => {
 	await using epicenter = await openBunEpicenter({ directory: dataDirectory });
 	await epicenter.bind(lens).notes.create({ title: 'Held', tags: [] });

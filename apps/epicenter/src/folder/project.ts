@@ -197,8 +197,13 @@ export function openFolderProjections({
  *
  * The same invalidation stream the renderer reads, subscribed separately: the
  * markdown and the database are two views of one row and neither waits on the
- * other. Failing to project must never take the host down, so errors are
- * reported and the next commit is still attempted.
+ * other.
+ *
+ * Failing to project never takes the host down, and that includes failing to
+ * open. The projection is a query surface over rows the replica already holds,
+ * so losing it costs a convenience; refusing to boot over it would cost the
+ * applications. A caller that wants the failure calls `openFolderProjections`
+ * directly, which is what the tests do.
  */
 export function startFolderProjector({
 	root,
@@ -213,7 +218,14 @@ export function startFolderProjector({
 	subscribe(listener: (addresses: readonly RowAddress[]) => void): () => void;
 	onError?: (cause: unknown) => void;
 }): () => void {
-	const projections = openFolderProjections({ root, replicaPath, lenses });
+	let projections: FolderProjections;
+	try {
+		projections = openFolderProjections({ root, replicaPath, lenses });
+	} catch (cause) {
+		onError(cause);
+		return () => undefined;
+	}
+
 	const unsubscribe = subscribe((addresses) => {
 		try {
 			for (const address of addresses) projections.apply(address);
