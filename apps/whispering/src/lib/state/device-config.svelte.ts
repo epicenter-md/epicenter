@@ -1,10 +1,13 @@
 import { createPersistedMap, defineEntry } from '@epicenter/svelte';
 import { type } from 'arktype';
 import { extractErrorMessage } from 'wellcrafted/error';
+import { createLogger } from 'wellcrafted/logger';
 import { os } from '#platform/os';
 import { BITRATES_KBPS, DEFAULT_BITRATE_KBPS } from '$lib/constants/audio';
-import { log, report } from '$lib/report';
+import { report } from '$lib/report';
 import type { KeyBinding } from '$lib/utils/key-binding';
+
+const log = createLogger('whispering/device-config');
 
 // ── Global shortcut binding shape ────────────────────────────────────────────
 

@@ -1,3 +1,21 @@
+<script lang="ts" module>
+	import { defineErrors, type InferErrors } from 'wellcrafted/error';
+
+	/**
+	 * Overlay wiring is decoration around a capture that is already running, so
+	 * every failure here is logged and swallowed rather than surfaced.
+	 */
+	export const DictationIndicatorError = defineErrors({
+		OverlayWiringFailed: ({ cause }: { cause: unknown }) => ({
+			message: 'Failed to wire the dictation overlay',
+			cause,
+		}),
+	});
+	export type DictationIndicatorError = InferErrors<
+		typeof DictationIndicatorError
+	>;
+</script>
+
 <script lang="ts">
 	import type { UnlistenFn } from '@tauri-apps/api/event';
 	import { createLogger } from 'wellcrafted/logger';
@@ -18,9 +36,8 @@
 	const log = createLogger('whispering/dictation-indicator');
 	const status = $derived(projectLifecycleToStatus(dictationLifecycle.current));
 
-	function warn(cause: unknown): void {
-		log.warn(cause instanceof Error ? cause : new Error(String(cause)));
-	}
+	const warn = (cause: unknown) =>
+		log.warn(DictationIndicatorError.OverlayWiringFailed({ cause }));
 
 	$effect(() => {
 		synchronizeRecordingOverlayWindow(status);

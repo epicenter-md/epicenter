@@ -1,7 +1,12 @@
 import { openDesktopEpicenter } from '@epicenter/data/desktop';
+import { createLogger } from 'wellcrafted/logger';
 import { BlobsLive } from '#platform/blobs';
-import { log } from '$lib/report';
-import type { WhisperingAppDependencies } from './app';
+import {
+	type WhisperingAppDependencies,
+	WhisperingBackgroundError,
+} from './app';
+
+const log = createLogger('whispering/epicenter-host');
 
 /**
  * The Epicenter-hosted build's app dependencies. Pure data and
@@ -19,8 +24,5 @@ export const whisperingPlatform: WhisperingAppDependencies = {
 	blobs: BlobsLive,
 	defaultTranscriptionService: 'local',
 	reportBackgroundError: (cause) =>
-		log.warn(
-			cause instanceof Error ? cause : new Error(String(cause)),
-			'Whispering app background failure',
-		),
+		log.warn(WhisperingBackgroundError.AppFailed({ cause })),
 };

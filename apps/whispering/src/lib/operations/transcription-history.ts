@@ -88,7 +88,7 @@ export async function recordTranscriptionOutcome<TError extends AnyTaggedError>(
 			},
 		);
 		if (historyError !== null) {
-			log.warn(new Error(historyError.message, { cause: historyError }));
+			log.warn(historyError);
 		}
 		return Err(error);
 	}

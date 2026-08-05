@@ -1,9 +1,14 @@
 import { join } from 'node:path';
 import { createBunBlobStore } from '@epicenter/blobs/bun';
 import { openBunEpicenter } from '@epicenter/data/bun';
-import { consoleSink, type LogEvent } from 'wellcrafted/logger';
+import { createLogger } from 'wellcrafted/logger';
 import type { TranscriptionServiceId } from '../services/transcription/providers';
-import type { WhisperingAppDependencies } from './app';
+import {
+	type WhisperingAppDependencies,
+	WhisperingBackgroundError,
+} from './app';
+
+const log = createLogger('whispering/bun');
 
 export type CreateWhisperingBunDependenciesOptions = {
 	/**
@@ -33,14 +38,10 @@ export function createWhisperingBunDependencies({
 			remote: null,
 		},
 		defaultTranscriptionService,
+		// `error`, not `warn`: a headless Bun host has no UI to recover through,
+		// so background work giving up is the end of that operation.
 		reportBackgroundError(cause) {
-			consoleSink({
-				ts: Date.now(),
-				level: 'error',
-				source: 'whispering/app',
-				message: 'Whispering app background failure',
-				data: cause,
-			} satisfies LogEvent);
+			log.error(WhisperingBackgroundError.AppFailed({ cause }));
 		},
 	};
 }

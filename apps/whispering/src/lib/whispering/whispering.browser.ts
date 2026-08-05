@@ -1,8 +1,13 @@
+import { createLogger } from 'wellcrafted/logger';
 import { auth } from '#platform/auth';
 import { BlobsLive } from '#platform/blobs';
-import { log } from '$lib/report';
-import type { WhisperingAppDependencies } from './app';
+import {
+	type WhisperingAppDependencies,
+	WhisperingBackgroundError,
+} from './app';
 import { openWhisperingBrowserEpicenter } from './whispering.browser-runtime';
+
+const log = createLogger('whispering/browser');
 
 /**
  * The web build's app dependencies. Pure data and factories: nothing
@@ -15,16 +20,10 @@ export const whisperingPlatform: WhisperingAppDependencies = {
 		openWhisperingBrowserEpicenter({
 			auth,
 			reportBackgroundError: (cause) =>
-				log.warn(
-					cause instanceof Error ? cause : new Error(String(cause)),
-					'Whispering sync failure',
-				),
+				log.warn(WhisperingBackgroundError.SyncFailed({ cause })),
 		}),
 	blobs: BlobsLive,
 	defaultTranscriptionService: 'OpenAI',
 	reportBackgroundError: (cause) =>
-		log.warn(
-			cause instanceof Error ? cause : new Error(String(cause)),
-			'Whispering app background failure',
-		),
+		log.warn(WhisperingBackgroundError.AppFailed({ cause })),
 };

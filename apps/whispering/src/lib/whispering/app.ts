@@ -1,4 +1,5 @@
 import type { BoundData, Epicenter, ValueLens } from '@epicenter/data';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { TranscriptionServiceId } from '../services/transcription/providers';
 import {
 	createWhisperingSettingDefaults,
@@ -17,6 +18,25 @@ export type { WhisperingBlobs } from './recording-audio';
 export type WhisperingData = BoundData<
 	typeof whisperingLens.tables,
 	typeof whisperingLens.values
+>;
+
+/**
+ * Failures that reach `reportBackgroundError`: work nobody is awaiting, so the
+ * only honest response is a log line. The `cause` is `unknown` because these
+ * arrive from rejected promises the app fired and forgot.
+ */
+export const WhisperingBackgroundError = defineErrors({
+	AppFailed: ({ cause }: { cause: unknown }) => ({
+		message: 'Whispering app background work failed',
+		cause,
+	}),
+	SyncFailed: ({ cause }: { cause: unknown }) => ({
+		message: 'Whispering sync failed',
+		cause,
+	}),
+});
+export type WhisperingBackgroundError = InferErrors<
+	typeof WhisperingBackgroundError
 >;
 
 /** Environment-owned inputs for one fully acquired Whispering app. */
