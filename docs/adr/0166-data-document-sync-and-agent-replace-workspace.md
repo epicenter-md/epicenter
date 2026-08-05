@@ -1,6 +1,6 @@
 # 0166. Data, document sync, and agent replace Workspace
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-20
 
 ## Context

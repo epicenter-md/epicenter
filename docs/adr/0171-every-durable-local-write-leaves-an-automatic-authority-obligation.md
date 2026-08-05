@@ -1,6 +1,6 @@
 # 0171. Every durable local write leaves an automatic authority obligation
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-20 (revised 2026-07-24: document publication is HTTP-only
   and settles by revision, not by an exact frozen payload and digest receipt)
 - **Supersedes:** [ADR-0144](0144-scalar-rows-and-row-documents-synchronize-through-independent-client-planes.md), [ADR-0149](0149-local-blob-stores-are-canonical-and-remote-replication-is-explicit.md)

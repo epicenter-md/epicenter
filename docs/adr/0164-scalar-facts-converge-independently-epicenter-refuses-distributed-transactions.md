@@ -1,6 +1,6 @@
 # 0164. Scalar facts converge independently; Epicenter refuses distributed transactions
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-20
 - **Amends:** [ADR-0163](0163-scalar-sync-separates-fact-reads-from-numbered-intent-submissions.md) by defining the independently convergent semantic unit carried by the wire
 

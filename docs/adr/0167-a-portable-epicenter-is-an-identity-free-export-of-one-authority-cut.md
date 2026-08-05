@@ -1,7 +1,8 @@
 # 0167. A portable Epicenter is an identity-free export of one authority cut
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-20
+- **Unbuilt:** No export path exists. Nothing in `packages/` or `apps/` implements a portable Epicenter cut.
 - **Amends:** [ADR-0122](0122-logical-records-are-portable-sqlite-files-and-views-are-runtime-state.md) and [ADR-0162](0162-epicenter-home-owns-relational-inspection-applications-receive-no-sql.md)
 
 ## Context

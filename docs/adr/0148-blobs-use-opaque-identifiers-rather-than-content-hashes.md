@@ -3,6 +3,7 @@
 - **Status:** Superseded
 - **Date:** 2026-07-18
 - **Superseded by:** [ADR-0173](0173-each-row-owns-at-most-one-write-once-immutable-blob.md)
+- **Still governs shipped code.** ADR-0173 is accepted but unbuilt, so the opaque-identifier model this record decided is the one `packages/blobs` implements today. Read it as current until ADR-0173 lands.
 - **Amends:** [ADR-0089](0089-the-blob-store-is-a-presigned-s3-kernel-and-the-bucket-is-its-only-index.md), [ADR-0091](0091-blobs-trade-a-file-for-a-durable-content-addressed-url-documents-are-the-only-manifest.md), and [ADR-0092](0092-identity-is-the-partition.md)
 
 ## Context

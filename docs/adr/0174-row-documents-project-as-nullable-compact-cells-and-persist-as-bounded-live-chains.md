@@ -1,6 +1,6 @@
 # 0174. Row documents project as nullable compact cells and persist as bounded live chains
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-20 (revised 2026-07-23: closed documents finish
   publishing local work; revised 2026-07-24: one HTTP carrier owns
   publication, inbound refresh is an explicit application pull, and there is

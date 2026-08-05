@@ -1,7 +1,8 @@
 # 0169. Row references are non-enforcing table interpretations
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-20
+- **Unbuilt:** `packages/field` still ships a `reference` field kind carrying an `x-ref` marker inside its JSON Schema (`packages/field/src/field.ts`), which this record removes.
 - **Relates:** [ADR-0026](0026-matter-vault-sqlite-is-a-projection-never-a-verdict-source.md)
 
 ## Context

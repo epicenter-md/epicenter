@@ -1,7 +1,8 @@
 # 0170. One live Epicenter has sealed Backups; Restore creates a fresh authority lifetime
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-20
+- **Unbuilt:** No Backup or Restore path exists. Sealing a cut, and creating a fresh authority lifetime from one, are both unimplemented.
 - **Amends:** [ADR-0161](0161-each-person-has-one-epicenter-replicated-on-each-adapter-boundary.md), [ADR-0163](0163-scalar-sync-separates-fact-reads-from-numbered-intent-submissions.md), and [ADR-0167](0167-a-portable-epicenter-is-an-identity-free-export-of-one-authority-cut.md)
 
 ## Context

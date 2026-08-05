@@ -1,7 +1,8 @@
 # 0173. Each row owns at most one write-once immutable blob
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-20
+- **Unbuilt:** `packages/blobs` still ships ADR-0148's opaque minted `BlobId`, and no row-bound blob plane exists. **ADR-0148 continues to govern shipped code until this record is built**, so its `Superseded` status describes this corpus rather than the codebase.
 - **Supersedes:** [ADR-0148](0148-blobs-use-opaque-identifiers-rather-than-content-hashes.md)
 - **Amends:** [ADR-0154](0154-blob-access-is-address-only.md)
 - **Relates:** [ADR-0164](0164-scalar-facts-converge-independently-epicenter-refuses-distributed-transactions.md), [ADR-0167](0167-a-portable-epicenter-is-an-identity-free-export-of-one-authority-cut.md), [ADR-0171](0171-every-durable-local-write-leaves-an-automatic-authority-obligation.md), [ADR-0172](0172-sqlite-stores-convergent-facts-and-documents-raw-files-store-blob-bytes.md)
