@@ -1,9 +1,26 @@
-import { extractErrorMessage } from 'wellcrafted/error';
+import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Ok, type Result } from 'wellcrafted/result';
 
 import type { PublishDocument } from './documents.js';
 import { type Exchange, type Replica, ReplicaError } from './replica/index.js';
+
+/**
+ * Not exported: nothing returns these, so no consumer can branch on them. They
+ * exist to give the log event a stable `name` and structured fields in place of
+ * a message string assembled at the call site.
+ */
+const SyncSupervisorError = defineErrors({
+	StatusSubscriberThrew: ({ cause }: { cause: unknown }) => ({
+		message: 'Sync status subscriber threw',
+		cause,
+	}),
+	ContainedStepFailed: ({ step, cause }: { step: string; cause: unknown }) => ({
+		message: 'Sync supervisor could not complete a contained step',
+		step,
+		cause,
+	}),
+});
 
 const DEFAULT_EXCHANGE_INTERVAL_MS = 30_000;
 const DEFAULT_DOCUMENT_COALESCE_MS = 250;
@@ -94,7 +111,7 @@ export function createSyncSupervisor({
 			try {
 				listener(status);
 			} catch (cause) {
-				log.error(new Error('Sync status subscriber threw', { cause }));
+				log.error(SyncSupervisorError.StatusSubscriberThrew({ cause }));
 			}
 		}
 	}
@@ -124,7 +141,9 @@ export function createSyncSupervisor({
 			step();
 		} catch (cause) {
 			try {
-				log.error(new Error(`Sync supervisor could not ${what}`, { cause }));
+				log.error(
+					SyncSupervisorError.ContainedStepFailed({ step: what, cause }),
+				);
 			} catch {
 				// The logger is itself injected. If reporting fails there is nowhere
 				// left to report it, and it must not become the caller's problem.

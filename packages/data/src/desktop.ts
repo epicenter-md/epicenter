@@ -18,7 +18,7 @@ import {
 	type ValueFor,
 } from '@epicenter/lens';
 import * as Y from '@y/y';
-import { extractErrorMessage } from 'wellcrafted/error';
+import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import {
 	type DesktopOperation,
@@ -28,6 +28,20 @@ import {
 	desktopEpicenterUrl,
 	type SerializedTableDefinition,
 } from './desktop-protocol.js';
+
+/**
+ * Not exported: nothing returns these, so no consumer can branch on them. They
+ * exist to give the log event a stable `name` and structured fields in place of
+ * a message string assembled at the call site.
+ */
+const DesktopEpicenterError = defineErrors({
+	FailedRegistrationReleaseFailed: ({ cause }: { cause: unknown }) => ({
+		message:
+			'Desktop Epicenter could not release a failed surface registration',
+		cause,
+	}),
+});
+
 import {
 	type RowDocument,
 	registerRowDocumentConnectionTarget,
@@ -130,10 +144,9 @@ export async function openDesktopEpicenter({
 			await request<void>({ kind: 'disconnect' });
 		} catch (disconnectCause) {
 			log.error(
-				new Error(
-					'Desktop Epicenter could not release a failed surface registration',
-					{ cause: disconnectCause },
-				),
+				DesktopEpicenterError.FailedRegistrationReleaseFailed({
+					cause: disconnectCause,
+				}),
 			);
 		}
 		isDisposed = true;

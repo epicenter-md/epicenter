@@ -14,6 +14,7 @@ import {
 	type ValueFor,
 } from '@epicenter/lens';
 import * as Y from '@y/y';
+import { defineErrors } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import type {
 	BrowserOperation,
@@ -40,6 +41,22 @@ import {
 import type { JsonValue, RowAddress, ValueAddress } from './protocol/index.js';
 import type { SyncStatus } from './sync-supervisor.js';
 import { describeThrownError } from './thrown-error.js';
+
+/**
+ * Not exported: nothing returns these, so no consumer can branch on them. They
+ * exist to give the log event a stable `name` and structured fields in place of
+ * a message string assembled at the call site.
+ */
+const BrowserEpicenterError = defineErrors({
+	CredentialCleanupFailed: ({ cause }: { cause: unknown }) => ({
+		message: 'Browser sync credential cleanup failed',
+		cause,
+	}),
+	WorkerPortCleanupFailed: ({ cause }: { cause: unknown }) => ({
+		message: 'Browser worker port cleanup failed',
+		cause,
+	}),
+});
 
 type PendingRequest = {
 	resolve(value: unknown): void;
@@ -155,9 +172,7 @@ export async function openBrowserEpicenter({
 			stopCredentials?.();
 		} catch (cleanupCause) {
 			log.error(
-				new Error('Browser sync credential cleanup failed', {
-					cause: cleanupCause,
-				}),
+				BrowserEpicenterError.CredentialCleanupFailed({ cause: cleanupCause }),
 			);
 		}
 		stopCredentials = undefined;
@@ -171,9 +186,7 @@ export async function openBrowserEpicenter({
 			closePort();
 		} catch (cleanupCause) {
 			log.error(
-				new Error('Browser worker port cleanup failed', {
-					cause: cleanupCause,
-				}),
+				BrowserEpicenterError.WorkerPortCleanupFailed({ cause: cleanupCause }),
 			);
 		}
 	}

@@ -24,6 +24,7 @@ import {
 import type { SqliteDatabase, SqliteRow } from '@epicenter/sqlite';
 import { customAlphabet } from 'nanoid';
 import type { TSchema } from 'typebox';
+import { defineErrors } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Ok, type Result } from 'wellcrafted/result';
 
@@ -45,6 +46,18 @@ import {
 	type SyncStatus,
 	type SyncSupervisorSession,
 } from './sync-supervisor.js';
+
+/**
+ * Not exported: nothing returns these, so no consumer can branch on them. They
+ * exist to give the log event a stable `name` and structured fields in place of
+ * a message string assembled at the call site.
+ */
+const EpicenterRuntimeError = defineErrors({
+	CommitForwarderThrew: ({ cause }: { cause: unknown }) => ({
+		message: 'Committed-address forwarder threw',
+		cause,
+	}),
+});
 
 const mintRowId = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 24);
 const ENTRIES_PAGE_SIZE = 100;
@@ -409,7 +422,7 @@ export function createEpicenter({
 			try {
 				listener(changes);
 			} catch (cause) {
-				log.error(new Error('Committed-address forwarder threw', { cause }));
+				log.error(EpicenterRuntimeError.CommitForwarderThrew({ cause }));
 			}
 		}
 	});

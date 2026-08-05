@@ -6,6 +6,7 @@ import sqlite3InitModule, {
 	type Database,
 	type SAHPoolUtil,
 } from '@sqlite.org/sqlite-wasm';
+import { defineErrors } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import {
 	applyRowDocumentUpdate,
@@ -41,6 +42,34 @@ import {
 	type BrowserStorageLease,
 	type LockManagerPort,
 } from './storage-lease.js';
+
+/**
+ * Not exported: nothing returns these, so no consumer can branch on them. They
+ * exist to give the log event a stable `name` and structured fields in place of
+ * a message string assembled at the call site.
+ */
+const BrowserWorkerError = defineErrors({
+	PagePortCleanupFailed: ({ cause }: { cause: unknown }) => ({
+		message: 'Browser page port cleanup failed',
+		cause,
+	}),
+	PageTerminalCleanupFailed: ({ cause }: { cause: unknown }) => ({
+		message: 'Browser page terminal cleanup failed',
+		cause,
+	}),
+	LateStoreDisposalFailed: ({ cause }: { cause: unknown }) => ({
+		message: 'Late browser store disposal failed',
+		cause,
+	}),
+	LateDocumentCleanupFailed: ({ cause }: { cause: unknown }) => ({
+		message: 'Late browser document cleanup failed',
+		cause,
+	}),
+	DisconnectResultUnreachable: ({ cause }: { cause: unknown }) => ({
+		message: 'Browser disconnect result was unreachable',
+		cause,
+	}),
+});
 
 type MessagePortLike = {
 	postMessage(message: BrowserWorkerMessage): void;
@@ -180,7 +209,7 @@ export function serveBrowserEpicenter(
 		try {
 			port.close?.();
 		} catch (cause) {
-			log.error(new Error('Browser page port cleanup failed', { cause }));
+			log.error(BrowserWorkerError.PagePortCleanupFailed({ cause }));
 		}
 	}
 
@@ -215,9 +244,7 @@ export function serveBrowserEpicenter(
 				await performDisconnect();
 			} catch (cleanupCause) {
 				log.error(
-					new Error('Browser page terminal cleanup failed', {
-						cause: cleanupCause,
-					}),
+					BrowserWorkerError.PageTerminalCleanupFailed({ cause: cleanupCause }),
 				);
 			}
 		})();
@@ -321,9 +348,7 @@ export function serveBrowserEpicenter(
 					try {
 						await store.dispose();
 					} catch (cause) {
-						log.error(
-							new Error('Late browser store disposal failed', { cause }),
-						);
+						log.error(BrowserWorkerError.LateStoreDisposalFailed({ cause }));
 					}
 					throw storeClosingError(controller.signal.reason);
 				}
@@ -744,7 +769,7 @@ export function serveBrowserEpicenter(
 			try {
 				await trackDocumentClosure(document);
 			} catch (cause) {
-				log.error(new Error('Late browser document cleanup failed', { cause }));
+				log.error(BrowserWorkerError.LateDocumentCleanupFailed({ cause }));
 				throw cause;
 			}
 			requireConnected();
@@ -857,7 +882,7 @@ export function serveBrowserEpicenter(
 					);
 					if (!delivered && message.operation.kind === 'disconnect') {
 						log.error(
-							new Error('Browser disconnect result was unreachable', { cause }),
+							BrowserWorkerError.DisconnectResultUnreachable({ cause }),
 						);
 					}
 				}
