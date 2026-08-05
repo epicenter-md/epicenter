@@ -51,64 +51,89 @@ else to look.
 **An installed app may declare itself in one JSON file: what it is called, and
 the namespace it owns. The host reads it as data.**
 
-### One optional declaration beside the document
+### The declaration is one Lens, and it is the whole identity
 
-A candidate directory already holds `<id>/index.html`. It may also hold
-`<id>/epicenter.json`:
+A candidate directory already holds `<id>/index.html`. It also holds
+`<id>/lens.json`, and there is no wrapper around it:
 
 ```json
 {
+  "namespace": "so.epicenter.vocab",
   "title": "Vocab",
-  "lens": { "namespace": "so.epicenter.vocab", "tables": {} }
+  "tables": { }
 }
 ```
 
-Both members are optional and independent. A folder with no declaration is
-admitted exactly as before, and an app that stores nothing declares a title and
-no Lens.
+Nothing executes. `defineTable` and `defineLens` are the parser: they accept
+plain JSON field schemas, refuse any field outside the `field.*` vocabulary,
+refuse a table name that is not a bare SQL identifier, refuse case-insensitive
+duplicates, and refuse a body field that is not prose. A declaration that does
+not validate is not a catalog member, the same disposition a missing
+`index.html` gets.
 
-Nothing executes. For the Lens, `defineTable` and `defineLens` are the parser:
-they accept plain JSON field schemas, refuse any field outside the `field.*`
-vocabulary, refuse a table name that is not a bare SQL identifier, refuse
-case-insensitive duplicates, and refuse a body field that is not prose. A
-declaration that does not validate is not a catalog member, the same disposition
-a missing `index.html` gets.
+Everything the host needs to know is in it, and the folder name inside the
+candidate directory means nothing.
 
-### A name is declared, or it is the id
+### The id is the namespace, read short
 
-Title resolution is two steps: the declared title, or the app id. **The
-`<title>` scrape is deleted**, not kept as a middle fallback. An app that wants
-to be called something says so; one that does not is called what it is installed
-as, which is predictable and is already its name in the URL and in its data
-directory. A guess that is usually wrong is worse than a plain answer.
+There is one identity, the namespace. The app id is not a second fact derived
+from it, it is the same fact at the length a machine needs: the final
+dot-separated label. `so.epicenter.vocab` is the address you write in SQL, and
+`vocab` is the directory, the route, and the window label. This is how a domain
+already works: `mail.google.com` is the address and people call it "mail".
 
-This is presentation only, exactly as before. A title has never carried
-authority and still does not (ADR-0179).
+Every namespace label is already a valid app id (`[a-z0-9](?:[a-z0-9-]*[a-z0-9])?`
+against `[a-z0-9-]+`), so there is no conversion step and no escape hatch.
 
-### The namespace ends in the app id
+The id is not the namespace *entire*, and the reason is external. Tauri validates
+a window label as alphanumeric plus `-`, `/`, `:`, and `_`, with no `.`, and it
+enforces that with an assertion rather than an error
+(`tauri-runtime/src/window.rs`, `assert_label_is_valid`), so `app-so.epicenter.vocab`
+panics the host. The only way around it is escaping dots for the label alone,
+which reintroduces a derivation *and* makes it lossy: `so.epicenter.vocab` and
+`so_epicenter.vocab` would land on one window. A shortening that is exact beats
+an escaping that is not.
 
-An app admitted as `vocab` must declare a namespace whose final dot-separated
-label is `vocab`. `so.epicenter.vocab` qualifies; `so.epicenter.words` does not.
+### Collisions are refused where they already were
 
-This is not a style rule, it is the collision proof. A Lens namespace is
-reverse-domain by grammar (two or more labels) and an app id is a single
-lowercase label by grammar, so the two can never be the same string and "the id
-is the namespace" is not available. Constraining the final label buys the same
-guarantee from machinery that already exists: admission issues at most one member
-per id and already refuses reserved and duplicate ids, so two members can never
-share a final label, and no member can end in `home`, `honeycrisp`, `whispering`,
-`mail`, or `books`, because those are reserved ids already.
+Admission issues at most one member per id and already refuses reserved and
+duplicate ids, so two members can never share a final label, and no member can
+end in `home`, `honeycrisp`, `whispering`, `mail`, or `books`, because those are
+reserved ids already. Moving the id's source from the folder name to the
+namespace moves that check; it does not remove it.
 
 The publisher still owns the prefix. Two publishers who both want to be `vocab`
 collide at the app id, where admission already has an answer, rather than
 silently in one replica where ADR-0206 makes the namespace the address.
 
-### The id stays the folder name
+### An installed app owns a namespace, or it is not installed
 
-An app id names a place: a directory under the one data root, and a window label
-(ADR-0201). It is therefore derived from where the bytes are and never from
-anything inside them, so a declaration cannot rename an app into another app's
-directory. The declaration describes the app; the folder decides which app it is.
+The declaration is the identity, so an app with no Lens has no namespace, no id,
+and nothing to install under. This is a refusal and it is the price of the
+collapse: an Epicenter app is a view over a namespace it owns, and something
+that stores nothing is a bookmark. What it buys is that there is no second
+identity path to keep consistent, no folder-name rule, and no title fallback
+chain.
+
+Compiled applications are unaffected and keep taking their id and title from
+`SURFACE_ROUTES`. Whispering is the case that proves the asymmetry is real: it is
+launchable and declares no Lens this host binds. ADR-0179 already holds a
+compiled application and a catalog member apart deliberately, and this does not
+join them.
+
+### A name is declared, or it is the id
+
+Title resolution is two steps: the Lens's title, or the app id. **The `<title>`
+scrape is deleted**, not kept as a middle fallback. An app that wants to be
+called something says so; one that does not is called what it is installed as. A
+guess that is usually wrong is worse than a plain answer.
+
+The title lives in the Lens rather than beside it because it names the
+*namespace*: `so.epicenter.vocab` is called "Vocab" no matter who holds the
+interpretation, which is why a host's own mirror Lens for another application's
+namespace can carry it too. Field schemas have carried a `title` since ADR-0168;
+this is the same idea one level up. It is presentation only and carries no
+authority (ADR-0179).
 
 ### The generation is the release
 
@@ -136,12 +161,15 @@ sidebar, on the same terms as Honeycrisp.
   at the next full restart. No installation UI is added, so ADR-0189's refusal of
   one stands.
 - **An app's displayed name can change without its identity changing.** The title
-  is declared and the id is the folder, so renaming what a person sees never
-  moves a data directory or a window label.
-- **`epicenter.json` is a fourth thing that can fail admission**, after an invalid
-  id, a reserved id, and a missing `index.html`. It fails the same way: the folder
-  is not a member. There is no partial admission where an app is launchable but
-  its declaration was skipped, because a broken declaration is a broken app.
+  and the namespace are separate members of one file, so renaming what a person
+  sees never moves a data directory or a window label.
+- **`lens.json` is now required, and is a fourth thing that can fail admission**,
+  after an invalid id, a reserved id, and a missing `index.html`. It fails the
+  same way: the folder is not a member. There is no partial admission where an
+  app is launchable but its declaration was skipped, because the declaration is
+  what says which app it is.
+- **Every existing candidate folder needs one.** Nothing has shipped through this
+  boundary yet, so today that is a documentation cost rather than a migration.
 - **A namespace an installed app declares is not reclaimed when it leaves.**
   Allocation stays nominal (ADR-0201): removing an app removes its window, not
   its rows. Those rows keep answering in "Everything raw" with no friendly
@@ -159,10 +187,22 @@ sidebar, on the same terms as Honeycrisp.
   three resolution steps to answer "what is this app called", where the middle
   one is a regular expression over someone else's markup, is worse than two. An
   app that cares declares; an app that does not gets its id.
-- **Derive the app id from the declared namespace's final label**, so the folder
-  name stops mattering. Attractive, and refused because an id names a directory
-  and a window label (ADR-0201), so letting a file inside the folder choose it
-  means the bytes decide which app's data directory they are handed.
+- **Keep the folder name as the id**, with the namespace's final label required
+  to match it. Refused: the match is a cross-check between two sources of the
+  same fact, and a cross-check only earns itself when the two sources are
+  independent. They are not; one folder ships one Lens. The failure it would
+  catch is a mislabeled folder, which is exactly the case where the declaration
+  is right and the folder name is noise.
+- **Make the id the namespace entire**, so no shortening happens at all. This is
+  the shape the decision wants and it is refused by Tauri rather than by
+  Epicenter: a window label admits no `.` and the check is an assertion, so
+  `app-so.epicenter.vocab` panics the host. Escaping dots for the label alone
+  brings back a derivation that is also lossy, so two namespaces could share one
+  window. Revisit if Tauri ever widens the label grammar.
+- **Let an app install without a Lens**, taking a title from somewhere else so a
+  storage-free app can still be a member. Refused with the collapse: it is the
+  only thing that would require a second identity path, and it buys the ability
+  to install a bookmark.
 - **Compile Vocab into the release** as a third `COMPILED_APPLICATIONS` member
   with a host-held mirror Lens, the way Honeycrisp is. Works today and needs no
   decision, and refused because it answers a different question: an app that

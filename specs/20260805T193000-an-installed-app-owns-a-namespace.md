@@ -29,7 +29,7 @@ case-insensitive duplicates. Reading a Lens from disk is
 folder renderer, the projection, and the inspection source. Nothing an installed
 folder holds can enter it.
 
-## Wave 1: read a Lens from JSON
+## Wave 1: read a Lens from JSON (done, `063c8b294e`)
 
 `packages/lens`: add `lensFromJson(value: unknown): Result<Lens, ...>` composing
 `defineTable` and `defineLens` over parsed JSON, returning their throws as a
@@ -40,26 +40,34 @@ Tests: a round trip from `defineLens` through `JSON.stringify` and back is the
 same Lens; a field outside the `field.*` vocabulary is refused; a table name that
 is not a bare SQL identifier is refused; a single-label namespace is refused.
 
-## Wave 2: admission reads `epicenter.json`
+## Wave 2: admission reads `lens.json` and the id comes from it
 
-`deriveAppCatalog` reads `<id>/epicenter.json` when present, taking an optional
-`title` and an optional `lens`. `CatalogApp` gains `lens`. Three refusals, each
-making the folder not a member, the same disposition a missing `index.html` gets:
+`deriveAppCatalog` stops taking the id from the directory name and takes it from
+`<id>/lens.json`: read the file, `lensFromJsonText` it, and the namespace's final
+label is the id. `CatalogApp` gains `lens`. Four refusals, each making the folder
+not a member, the same disposition a missing `index.html` gets:
 
-- the file exists and is not valid JSON
-- `lens` is present and does not parse as a Lens
-- `lens` is present and its namespace's final label is not the app id
+- no `lens.json`
+- it does not parse as a Lens
+- the derived id is reserved (`RESERVED_APP_IDS`, unchanged)
+- the derived id duplicates one already taken in this generation
 
-A folder with no declaration is admitted exactly as today and owns no namespace.
+That last one is new and is the only check the filesystem used to make for us:
+two directories cannot share a name, but two Lenses can share a final label.
 
-**`documentTitle` is deleted in this wave.** Title resolution becomes the
-declared title or the app id, so the `<title>` regular expression and its
-fallback chain go with it. Compiled applications are unaffected: their titles
-come from `SURFACE_ROUTES`, never from that function.
+**`documentTitle` is deleted in this wave.** Title resolution becomes the Lens's
+title or the id, so the `<title>` regular expression goes with it. Compiled
+applications are unaffected: their titles come from `SURFACE_ROUTES`, never from
+that function.
 
-Tests: a valid declaration becomes a member carrying its title and Lens; a
-mismatched final label is not a member; malformed JSON is not a member; a folder
-with no declaration is a member titled by its id.
+`promoteAppCatalogCandidate` copies into `<generation>/<derived-id>/` rather than
+preserving the candidate's directory name, so a generation on disk is keyed by
+id the way everything downstream reads it.
+
+Tests: a valid declaration becomes a member with its derived id and title; a
+namespace whose last label is reserved is not a member; two candidates deriving
+one id admit neither; a folder with no `lens.json` is not a member; malformed
+JSON is not a member.
 
 ## Wave 3: the host composes the catalog's Lenses
 
@@ -70,9 +78,10 @@ the same list or the folder and the Data pane disagree about what exists.
 
 ## Wave 4: prove it end to end
 
-Build `apps/vocab`, write its `epicenter.json` (title `Vocab`, namespace
-`so.epicenter.vocab`, whose final label matches the app id and whose Lens is
-`vocabLens` from `apps/vocab/vocab.ts:132`), publish, restart.
+Build `apps/vocab` and write `lens.json` beside its `index.html`, which is
+`JSON.stringify(vocabLens)` from `apps/vocab/vocab.ts:132` with a title added.
+Its namespace is already `so.epicenter.vocab`, so the derived id is `vocab` with
+nothing to change. Publish, restart.
 Expect `so.epicenter.vocab` in the Data pane sidebar with its three tables, and
 `~/Epicenter/so.epicenter.vocab/` holding markdown beside
 `so.epicenter.vocab.sqlite3`.
