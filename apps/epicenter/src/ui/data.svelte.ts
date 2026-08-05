@@ -113,5 +113,15 @@ export function createDataBrowser() {
 			);
 			void run();
 		},
+		/**
+		 * Show one table of the namespace already selected.
+		 *
+		 * Not a second mode: the interpretation is whatever `select` last chose,
+		 * and this only replaces the statement, the same way typing would.
+		 */
+		selectTable(table: string) {
+			sql = `SELECT * FROM ${table}`;
+			void run();
+		},
 	};
 }

@@ -56,6 +56,24 @@
 					>
 						{entry.namespace}
 					</Button>
+
+					<!-- The tables of the selected namespace, because you cannot query a
+					     table you have no way to name. Their columns are what `selectLens`
+					     will produce, which is the same list the header shows once one
+					     runs. -->
+					{#if browser.selected === entry.namespace}
+						{#each entry.tables as table (table.name)}
+							<Button
+								variant="ghost"
+								size="sm"
+								class="ms-3 justify-start font-mono text-xs text-muted-foreground"
+								title={table.fields.join(', ')}
+								onclick={() => browser.selectTable(table.name)}
+							>
+								{table.name}
+							</Button>
+						{/each}
+					{/if}
 				{/each}
 
 				<!-- Everything raw sits below a gap rather than in the list: it is the
@@ -70,7 +88,11 @@
 				</Button>
 			</nav>
 
-			<div class="flex min-h-0 flex-1 flex-col">
+			<!-- `min-w-0` is load-bearing: a flex item defaults to `min-width: auto`,
+			     so a result wider than the window would widen this column instead of
+			     scrolling inside it, and carry the statement box and Run off-screen
+			     with it. Bounded here, `Table.Root`'s own container scrolls. -->
+			<div class="flex min-h-0 min-w-0 flex-1 flex-col">
 				<form
 					class="flex flex-none gap-2 border-b p-2"
 					onsubmit={(event) => {
@@ -90,7 +112,22 @@
 					</Button>
 				</form>
 
-				<div class="min-h-0 flex-1 overflow-auto">
+				{#if browser.truncated && !browser.failure}
+					<!-- Above the rows rather than after them. The rows below are correct
+					     and complete up to the bound; there were simply more, and a
+					     thousand of them put this sentence fifty screens down, which is
+					     the same as not saying it. -->
+					<p
+						class="flex-none border-b px-3 py-1.5 text-xs text-muted-foreground"
+					>
+						Stopped at the result bound. Narrow the query to see the rest.
+					</p>
+				{/if}
+
+				<!-- Vertical only: `Table.Root` ships its own horizontal scroll
+				     container, so letting this one scroll sideways too would take the
+				     header row away from its columns. -->
+				<div class="min-h-0 min-w-0 flex-1 overflow-y-auto">
 					{#if browser.failure}
 						<Alert.Root variant="destructive" class="m-3 w-auto">
 							<Alert.Title>That query did not run</Alert.Title>
@@ -131,13 +168,6 @@
 								{/each}
 							</Table.Body>
 						</Table.Root>
-						{#if browser.truncated}
-							<!-- The rows above are correct and complete up to the bound;
-							     there were simply more. -->
-							<p class="p-3 text-xs text-muted-foreground">
-								Stopped at the result bound. Narrow the query to see the rest.
-							</p>
-						{/if}
 					{/if}
 				</div>
 			</div>

@@ -42,8 +42,10 @@ export type InspectSource = {
 /**
  * What a person can pick in the sidebar.
  *
- * Field names travel because the raw view shows a table's columns before anyone
- * has run anything, and they are the columns `selectLens` will produce.
+ * Tables travel because you cannot query a table you have no way to name, and
+ * their field names travel with them because they are exactly the columns
+ * `selectLens` will produce, so the sidebar can say what a table holds before
+ * anyone has run anything against it.
  */
 export function listInspectNamespaces(
 	lenses: readonly HostLens[],
