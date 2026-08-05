@@ -114,26 +114,27 @@ test('an unchanged body produces no operations at all', () => {
 	expect(textEdits('same\ntext\n', 'same\ntext\n')).toEqual([]);
 });
 
-test('edits far apart stay separate rather than replacing everything between', () => {
-	const base = ['one\n', 'two\n', 'three\n', 'four\n', 'five\n'].join('');
-	const next = ['ONE\n', 'two\n', 'three\n', 'four\n', 'FIVE\n'].join('');
+test('a matching head and tail are left alone', () => {
+	const base = 'Met with Sam. Ship on Friday.\n';
+	const next = 'Met with Sam. Ship on Monday.\n';
 	const edits = textEdits(base, next);
 
-	expect(edits).toHaveLength(2);
-	// The untouched middle is never deleted and reinserted, so a rewritten line
-	// costs one small operation rather than the whole document.
-	expect(edits.every((edit) => edit.remove <= 'three\n'.length)).toBe(true);
+	expect(edits).toHaveLength(1);
+	// The point of an operation over a replacement: only the changed region is
+	// touched, so an open editor keeps everything around it.
+	expect(edits[0]?.remove).toBeLessThan(base.length);
 	expect(applyTextEdits(base, edits)).toBe(next);
 });
 
-test('edits are ordered so applying them in sequence needs no offset math', () => {
-	const base = 'a\nb\nc\nd\ne\n';
-	const next = 'A\nb\nc\nd\nE\n';
+test('an emoji is never split down the middle', () => {
+	const base = 'ship 🚢 today\n';
+	const next = 'ship 🚀 today\n';
 	const edits = textEdits(base, next);
-	expect(edits.map((edit) => edit.at)).toEqual(
-		[...edits.map((edit) => edit.at)].sort((left, right) => right - left),
-	);
-	expect(applyTextEdits(base, edits)).toBe(next);
+	const applied = applyTextEdits(base, edits);
+
+	expect(applied).toBe(next);
+	// A lone surrogate would survive a string comparison and corrupt the document.
+	expect([...applied].every((point) => !/[\uD800-\uDFFF]/.test(point.length === 1 ? point : ''))).toBe(true);
 });
 
 test('insertions, deletions, and rewrites all round-trip', () => {

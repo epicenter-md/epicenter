@@ -96,9 +96,9 @@ through `openDocument`.
 
 ### Wave 3: the snapshot table and the scan
 
-`path`, `address`, fields object, body bytes, `mtime`, `size`. A scan `stat`s
-everything, parses only what moved, hashes when mtime and size cannot separate a
-same-second edit from the renderer's own write.
+`path`, address, fields object, body hash. Four columns, no `mtime`, no `size`,
+no body bytes: a scan reads and parses everything, and the base body is
+recoverable from the current render in the only case that ever needs it.
 
 Produces a plan and writes nothing. Deletions are the set difference between the
 table and the directory listing. Duplicate ids are detected here, and refused by

@@ -107,10 +107,21 @@ rule rather than two behaviors that resemble each other.
 
 The snapshot lives in a table in `epicenter.sqlite3`, never in the folder, so the
 directory holds no hidden state and `rm -rf` on it costs nothing. It records
-`path`, the fields object, the body bytes, `mtime`, and `size`; a scan `stat`s
-and parses only what moved. Where mtime and size cannot distinguish a same-second
-edit from the renderer's own write, hash the bytes, as git does for the same
-reason.
+`path`, the address, the fields object, and **a hash of the body rather than the
+body**.
+
+Not storing the prose twice deserves its reason, because the shortcut is not
+obvious: a body is pushed only when nobody else moved it, and in exactly that
+case the base body equals what the row renders to right now. The base is
+therefore recoverable from the current render whenever it is actually needed, and
+the stored hash only has to answer two yes-or-no questions: did you change it,
+and did they.
+
+A scan reads and parses every file rather than consulting `mtime` and `size`
+first. Slower, and free of edge cases: the fast path's failure mode is missing an
+edit made in the same second the renderer wrote the file, which is git's
+racy-index problem, and buying it back costs a stat pair, a branch, and a rule.
+Add it when a scan is measured and found slow.
 
 A stale file cannot silently revert anything, however long it has been sitting
 dirty, because the comparison is per unit. A file untouched for a month pushes
@@ -140,10 +151,17 @@ could not. Supporting a second document shape later means adding a tag and the
 renderer behind it, in this repository, rather than opening a plugin surface that
 every table definition would then have to carry.
 
-A push diffs the file's body against the base bytes and applies the result to the
+A push diffs the file's body against the base and applies the result to the
 `Y.Text` as inserts and deletes inside one transaction. The document is **never
 replaced**, so its update chain and publication revision (ADR-0174) survive the
-round trip.
+round trip, and an editor holding the document open keeps everything outside the
+changed region.
+
+The diff is one hunk, found by trimming the matching head and tail. A minimal
+diff would split scattered edits and produce a tighter update log, which is worth
+nothing until a log is measured and found fat: applying either yields the same
+text, and ADR-0174 compacts. This is a pure function with tests around it, so
+replacing it later is contained.
 
 This is cheap for one reason worth stating, because it was mispriced twice during
 design: the hard case, applying your edit to a document a peer already moved,
@@ -270,6 +288,13 @@ previous version.
   `Y.Text`. Rejected: `Y.Doc['get']` coerces, so guessing wrong on a
   `YXmlFragment` corrupts rather than fails, and it would make what appears on
   disk a function of runtime state rather than the schema.
+- **Keeping the base body, a minimal diff, and a `stat` fast path.** All three
+  were written and then cut, and they share a shape: each pays real, permanent
+  complexity for a cost nobody has measured. The base body doubled every byte of
+  prose on disk to answer two questions a hash answers. The minimal diff was 100
+  lines producing identical text. The fast path bought scan latency at the price
+  of git's racy-index edge case. Each is a contained change to add back, behind a
+  measurement.
 - **A CLI or MCP server as the only write path.** Rejected: it is the difference
   between "point your agent at this folder" and "install our integration," and it
   gives up every external editor for a guarantee `patch` already enforces.

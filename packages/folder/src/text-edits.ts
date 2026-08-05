@@ -1,24 +1,26 @@
 /**
- * Turn "the body used to say this, now it says that" into operations a `Y.Text`
- * can accept.
+ * Turn "the body used to say this, now it says that" into an operation a
+ * `Y.Text` can accept.
  *
  * The distinction is the whole reason this file exists. Setting a document's
- * text replaces every character, which discards the concurrent structure a CRDT
- * exists to keep. Saying "delete six characters at 22, insert `Monday`" leaves
- * everything else alone, which is what makes a folder edit and an in-app edit
- * the same kind of event (ADR-0207).
+ * text replaces every character, which discards the structure a CRDT exists to
+ * keep and throws away anything an open editor is holding. Saying "delete six
+ * characters at 22, insert `Monday`" leaves everything else alone (ADR-0207).
  *
- * Diffing by line rather than by character, because these are markdown bodies
- * and a line is the unit a person and an agent both edit in. Character-level
- * minimality would produce tighter hunks and worse ones: it happily matches a
- * stray `the` across unrelated paragraphs.
+ * One hunk, found by trimming the matching head and tail. A minimal diff would
+ * split scattered edits into separate operations and produce a tighter update
+ * log, which is worth exactly nothing until a log is measured and found fat:
+ * the result of applying either is identical, and a body is only ever pushed
+ * when nobody else touched it. Put a real diff here when there is a log to point
+ * at, not before.
  */
 
 /**
  * One replacement, in character offsets against the text being edited.
  *
- * Emitted in DESCENDING `at` order, so a caller applies them in sequence with no
- * offset bookkeeping: every edit is positioned before the ones already applied.
+ * An array because the caller applies a sequence and should not care how many
+ * this produced, and in descending `at` order for the same reason: if a future
+ * diff emits several, they still apply without offset bookkeeping.
  */
 export type TextEdit = {
 	at: number;
@@ -26,99 +28,15 @@ export type TextEdit = {
 	insert: string;
 };
 
-/**
- * Beyond this many changed lines on either side, fall back to one coarse hunk.
- *
- * The quadratic table is the reason. This bound is reached only after common
- * leading and trailing lines are already trimmed, so hitting it means the middle
- * genuinely differs by more than a thousand lines, where a single replacement is
- * both what a person would call the change and what the log would have held
- * anyway.
- */
-const MAX_ALIGNED_LINES = 1200;
-
-/** Split keeping line terminators, so `join('')` reconstructs the input exactly. */
-function splitLines(text: string): string[] {
-	return text.length === 0 ? [] : text.split(/(?<=\n)/);
-}
-
-function charLength(lines: readonly string[]): number {
-	let total = 0;
-	for (const line of lines) total += line.length;
-	return total;
-}
-
-type LineHunk = {
-	/** Index into the trimmed middle, not into the whole document. */
-	atLine: number;
-	removeLines: number;
-	insertLines: string[];
-};
-
-/**
- * Longest common subsequence over lines, backtracked into replacement hunks.
- *
- * Deletions and insertions that touch are emitted as one hunk rather than an
- * adjacent pair, because a replaced paragraph should read as one operation.
- */
-function alignedHunks(base: string[], next: string[]): LineHunk[] {
-	const rows = base.length + 1;
-	const columns = next.length + 1;
-	const lengths = new Uint32Array(rows * columns);
-	for (let row = base.length - 1; row >= 0; row--) {
-		for (let column = next.length - 1; column >= 0; column--) {
-			lengths[row * columns + column] =
-				base[row] === next[column]
-					? (lengths[(row + 1) * columns + column + 1] ?? 0) + 1
-					: Math.max(
-							lengths[(row + 1) * columns + column] ?? 0,
-							lengths[row * columns + column + 1] ?? 0,
-						);
-		}
-	}
-
-	const hunks: LineHunk[] = [];
-	let open: LineHunk | undefined;
-	let row = 0;
-	let column = 0;
-	while (row < base.length && column < next.length) {
-		if (base[row] === next[column]) {
-			open = undefined;
-			row++;
-			column++;
-			continue;
-		}
-		open ??= { atLine: row, removeLines: 0, insertLines: [] };
-		if (hunks[hunks.length - 1] !== open) hunks.push(open);
-		if (
-			(lengths[(row + 1) * columns + column] ?? 0) >=
-			(lengths[row * columns + column + 1] ?? 0)
-		) {
-			open.removeLines++;
-			row++;
-		} else {
-			open.insertLines.push(next[column] as string);
-			column++;
-		}
-	}
-
-	// Whatever is left is a pure tail deletion, a pure tail insertion, or both.
-	if (row < base.length || column < next.length) {
-		const tail: LineHunk = open ?? {
-			atLine: row,
-			removeLines: 0,
-			insertLines: [],
-		};
-		if (hunks[hunks.length - 1] !== tail) hunks.push(tail);
-		tail.removeLines += base.length - row;
-		tail.insertLines.push(...next.slice(column));
-	}
-
-	return hunks;
+/** True when splitting here would cut a surrogate pair in half. */
+function splitsSurrogatePair(text: string, index: number): boolean {
+	const high = text.charCodeAt(index - 1);
+	const low = text.charCodeAt(index);
+	return high >= 0xd8_00 && high <= 0xdb_ff && low >= 0xdc_00 && low <= 0xdf_ff;
 }
 
 /**
- * The edits that carry `base` to `next`, as operations rather than a replacement.
+ * The edits that carry `base` to `next`, as an operation rather than a replacement.
  *
  * Returns an empty array when they already agree, which is the case that matters
  * most: a file whose body you never touched must produce no operations at all,
@@ -127,65 +45,35 @@ function alignedHunks(base: string[], next: string[]): LineHunk[] {
 export function textEdits(base: string, next: string): TextEdit[] {
 	if (base === next) return [];
 
-	const baseLines = splitLines(base);
-	const nextLines = splitLines(next);
+	const shorter = Math.min(base.length, next.length);
 
-	let leading = 0;
+	let head = 0;
+	while (head < shorter && base[head] === next[head]) head++;
+	if (head > 0 && head < shorter && splitsSurrogatePair(base, head)) head--;
+
+	let tail = 0;
 	while (
-		leading < baseLines.length &&
-		leading < nextLines.length &&
-		baseLines[leading] === nextLines[leading]
+		tail < shorter - head &&
+		base[base.length - 1 - tail] === next[next.length - 1 - tail]
 	) {
-		leading++;
+		tail++;
 	}
+	if (tail > 0 && splitsSurrogatePair(base, base.length - tail)) tail--;
 
-	let baseEnd = baseLines.length;
-	let nextEnd = nextLines.length;
-	while (
-		baseEnd > leading &&
-		nextEnd > leading &&
-		baseLines[baseEnd - 1] === nextLines[nextEnd - 1]
-	) {
-		baseEnd--;
-		nextEnd--;
-	}
-
-	const middleBase = baseLines.slice(leading, baseEnd);
-	const middleNext = nextLines.slice(leading, nextEnd);
-	const offset = charLength(baseLines.slice(0, leading));
-
-	if (
-		middleBase.length > MAX_ALIGNED_LINES ||
-		middleNext.length > MAX_ALIGNED_LINES
-	) {
-		return [
-			{
-				at: offset,
-				remove: charLength(middleBase),
-				insert: middleNext.join(''),
-			},
-		];
-	}
-
-	const edits: TextEdit[] = [];
-	for (const hunk of alignedHunks(middleBase, middleNext)) {
-		const removed = middleBase.slice(
-			hunk.atLine,
-			hunk.atLine + hunk.removeLines,
-		);
-		edits.push({
-			at: offset + charLength(middleBase.slice(0, hunk.atLine)),
-			remove: charLength(removed),
-			insert: hunk.insertLines.join(''),
-		});
-	}
-
-	// Descending, so the caller applies them in order without shifting offsets.
-	return edits.reverse();
+	return [
+		{
+			at: head,
+			remove: base.length - head - tail,
+			insert: next.slice(head, next.length - tail),
+		},
+	];
 }
 
 /** Apply edits to a plain string. The reference `Y.Text` mirrors this exactly. */
-export function applyTextEdits(base: string, edits: readonly TextEdit[]): string {
+export function applyTextEdits(
+	base: string,
+	edits: readonly TextEdit[],
+): string {
 	let text = base;
 	for (const edit of edits) {
 		text =
