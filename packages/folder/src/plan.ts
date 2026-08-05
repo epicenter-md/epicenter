@@ -1,26 +1,24 @@
 /**
- * What a file wants to change, decided per unit against what it was rendered
+ * What a file wants to change, decided per field against what it was rendered
  * from and what the row says now.
  *
  * The rule this encodes, and the only rule the folder has: hold exactly what you
- * could still push, and show current state everywhere else (ADR-0207). A unit is
- * one scalar field or the body, and all of them take the same three outcomes, so
- * fields and prose behave identically rather than merely resembling each other.
+ * could still push, and show current state everywhere else (ADR-0207). The unit
+ * is one field, and the body is one of them, so prose and metadata are not two
+ * behaviors that resemble each other. They are the same behavior.
  *
- * The consequence that matters most is the boring one. A unit you did not touch
+ * The consequence that matters most is the boring one. A field you did not touch
  * produces nothing, however long the file has been sitting dirty, so a peer's
  * work is never reverted by handing back an accurate picture of a stale world.
  */
 
-import type { JsonObject, JsonValue, TableDefinition } from '@epicenter/lens';
+import type { JsonObject, JsonValue } from '@epicenter/lens';
 
 import type { RowClaim } from './parse.js';
-import { type TextEdit, textEdits } from './text-edits.js';
 
-/** A row's fields and rendered body, either as last written or as it stands now. */
+/** A row's fields, either as last written to a file or as they stand now. */
 export type RowState = {
 	fields: JsonObject;
-	body: string;
 };
 
 export type Conflict =
@@ -31,7 +29,6 @@ export type Conflict =
 			mine: JsonValue | undefined;
 			theirs: JsonValue | undefined;
 	  }
-	| { kind: 'body' }
 	/** The file names a row that no longer exists. */
 	| { kind: 'row-vanished' }
 	/**
@@ -46,14 +43,7 @@ export type PushPlan = {
 	create: boolean;
 	set: JsonObject;
 	unset: string[];
-	body: TextEdit[];
 	conflicts: Conflict[];
-};
-
-const NOTHING: Omit<PushPlan, 'create' | 'conflicts'> = {
-	set: {},
-	unset: [],
-	body: [],
 };
 
 function sameJson(
@@ -85,33 +75,37 @@ export function planPush({
 	claim,
 	base,
 	theirs,
-	definition,
 }: {
 	claim: RowClaim;
 	/** What was last written to this file, or undefined if nothing was. */
 	base: RowState | undefined;
 	/** The row as it stands now, or undefined if there is no such row. */
 	theirs: RowState | undefined;
-	definition: TableDefinition;
 }): PushPlan {
 	if (claim.id === undefined) {
 		return {
 			create: true,
 			set: { ...claim.fields },
 			unset: [],
-			body:
-				definition.body === 'text' && claim.body.length > 0
-					? [{ at: 0, remove: 0, insert: claim.body }]
-					: [],
 			conflicts: [],
 		};
 	}
 
 	if (theirs === undefined) {
-		return { create: false, ...NOTHING, conflicts: [{ kind: 'row-vanished' }] };
+		return {
+			create: false,
+			set: {},
+			unset: [],
+			conflicts: [{ kind: 'row-vanished' }],
+		};
 	}
 	if (base === undefined) {
-		return { create: false, ...NOTHING, conflicts: [{ kind: 'unbased' }] };
+		return {
+			create: false,
+			set: {},
+			unset: [],
+			conflicts: [{ kind: 'unbased' }],
+		};
 	}
 
 	const set: JsonObject = {};
@@ -141,13 +135,7 @@ export function planPush({
 		else set[field] = mine;
 	}
 
-	let body: TextEdit[] = [];
-	if (definition.body === 'text' && claim.body !== base.body) {
-		if (base.body === theirs.body) body = textEdits(base.body, claim.body);
-		else conflicts.push({ kind: 'body' });
-	}
-
-	return { create: false, set, unset, body, conflicts };
+	return { create: false, set, unset, conflicts };
 }
 
 /** True when applying this plan would change nothing and report nothing. */
@@ -156,7 +144,6 @@ export function isEmptyPlan(plan: PushPlan): boolean {
 		!plan.create &&
 		Object.keys(plan.set).length === 0 &&
 		plan.unset.length === 0 &&
-		plan.body.length === 0 &&
 		plan.conflicts.length === 0
 	);
 }

@@ -92,30 +92,20 @@ Nothing leaves the machine because a file changed. `status` and `push` are scans
 run when you type them; there is no watcher, so an edit made while the engine was
 stopped is found exactly as if it had been running.
 
-Push compares three values per unit, where a unit is one scalar field or the
-body: `base`, the snapshot recorded when the file was written; `mine`, the file
-now; `theirs`, the row now.
+Push compares three values per field: `base`, the fields recorded when the file
+was written; `mine`, the file now; `theirs`, the row now.
 
 | condition | result |
 | --- | --- |
 | `mine == base` | untouched. Send nothing, and a peer's change to it survives. |
-| `mine != base`, `base == theirs` | you changed it alone. **Patch** the field, or apply the body diff. |
+| `mine != base`, `base == theirs` | you changed it alone. **Patch.** |
 | `mine != base`, `base != theirs` | you both changed it. **Show it and stop.** |
 
-Fields and the body take the same three rows, which is what makes the design one
-rule rather than two behaviors that resemble each other.
+There is no second table for prose, because the body is one of these fields.
 
 The snapshot lives in a table in `epicenter.sqlite3`, never in the folder, so the
 directory holds no hidden state and `rm -rf` on it costs nothing. It records
-`path`, the address, the fields object, and **a hash of the body rather than the
-body**.
-
-Not storing the prose twice deserves its reason, because the shortcut is not
-obvious: a body is pushed only when nobody else moved it, and in exactly that
-case the base body equals what the row renders to right now. The base is
-therefore recoverable from the current render whenever it is actually needed, and
-the stored hash only has to answer two yes-or-no questions: did you change it,
-and did they.
+`path`, the address, and the fields object. Three columns.
 
 A scan reads and parses every file rather than consulting `mtime` and `size`
 first. Slower, and free of edge cases: the fast path's failure mode is missing an
@@ -124,44 +114,44 @@ racy-index problem, and buying it back costs a stat pair, a branch, and a rule.
 Add it when a scan is measured and found slow.
 
 A stale file cannot silently revert anything, however long it has been sitting
-dirty, because the comparison is per unit. A file untouched for a month pushes
-only the cells you actually changed.
+dirty, because the comparison is per field. A file untouched for a month pushes
+only the fields you actually changed.
 
-### The body is a declared text document, and it round-trips
+### A body is a field, and row documents are never materialized
 
-`RowDocument` exposes `Y.Doc['get']`, so a row document is an arbitrary Yjs
-document today and nothing types it. A `YXmlFragment` behind a rich text editor
-has no honest markdown round trip. This record therefore adds the first
-declaration of a document's shape, alongside the fields the Lens already types:
+The file's body is one `string` field, named by the table:
 
 ```ts
-defineTable({ fields: { ... }, body: 'text' })
+defineTable({
+  fields: { title: field.string(), content: field.string() },
+  body: 'content',
+})
 ```
 
-A table declaring `body: 'text'` owns one `Y.Text`, renders it as the file body,
-and accepts edits back. A table declaring no body renders frontmatter and an
-empty body. A table whose document is a `YXmlFragment` or any richer structure
-declares no body and is never asked to round-trip through markdown, which is the
-honest outcome rather than a lossy one.
+A field name, checked at authoring time against that table's own fields and
+required to be `field.string()`. Absent is the ordinary case: every field renders
+in frontmatter and the file has no body.
 
-**The declaration is a closed vocabulary of string tags, never a callback.**
-`TableDefinition` round-trips through `serializeTableDefinition` and
-`deserializeTable`, so `'text'` crosses the wire as-is while a render function
-could not. Supporting a second document shape later means adding a tag and the
-renderer behind it, in this repository, rather than opening a plugin surface that
-every table definition would then have to carry.
+**A row document is never rendered and never written.** `RowDocument` exposes
+`Y.Doc['get']`, so a document is an arbitrary `Y.Doc`. Markdown can represent
+some of them and write back fewer: a `YXmlFragment` behind a rich text editor
+serializes out and does not come back without a ProseMirror schema every
+application would have to conform to, plus a tree diff through library internals.
+That is a large, permanent surface bought for one direction of one case.
 
-A push diffs the file's body against the base and applies the result to the
-`Y.Text` as inserts and deletes inside one transaction. The document is **never
-replaced**, so its update chain and publication revision (ADR-0174) survive the
-round trip, and an editor holding the document open keeps everything outside the
-changed region.
+A table whose prose lives in a document declares no body, and that prose stays
+where it is designed to be edited, in the application. This is the one place the
+folder is deliberately incomplete, and it is a refusal rather than a deferral.
 
-The diff is one hunk, found by trimming the matching head and tail. A minimal
-diff would split scattered edits and produce a tighter update log, which is worth
-nothing until a log is measured and found fat: applying either yields the same
-text, and ADR-0174 compacts. This is a pure function with tests around it, so
-replacing it later is contained.
+What it buys is that the folder has no second kind of anything. No text diff, no
+operational transform, no document plane, no vocabulary of body kinds, and no
+table whose body renders but cannot be pushed. Fields already round-trip, merge
+per cell, and validate, so prose inherits all three by being one.
+
+An application that wants its prose in the folder moves it to a `string` field
+and gives up character-level collaborative editing on it. That is the
+application's trade to make, openly, rather than a mechanism the folder grows to
+paper over it.
 
 This is cheap for one reason worth stating, because it was mispriced twice during
 design: the hard case, applying your edit to a document a peer already moved,
@@ -202,9 +192,9 @@ in-place field write this needs, and it is what lets a peer's field change land
 on a file whose body you are editing. A second serializer is refused.
 
 Parsing is schema-directed by the Lens, so a value that is a valid YAML scalar
-but wrong for its declared field is refused rather than coerced. The body diff is
-this record's own concern and sits above that boundary; `matter-core` owns the
-frontmatter fence and nothing else.
+but wrong for its declared field is refused rather than coerced. The body is
+carried verbatim in both directions and never reparsed, so prose that opens with
+its own `---` fence survives the round trip untouched.
 
 ### Blobs never enter
 
@@ -237,15 +227,16 @@ previous version.
   Matter's definition by design.
 - No lock, so no application ever has to implement a frozen state, and ADR-0203's
   contention question is answered by per-unit merge rather than by an owner.
-- **One rule covers fields and bodies alike:** hold exactly what you could still
-  push, show current state everywhere else. Two things that look alike in a file
-  behave the same way, which is the property the read-only-body version could not
-  offer.
-- **The Lens now types a row document, which it never did before.** That is a new
-  responsibility for `defineTable` and a new key in the serialized form, and it
-  is the price of one universal projection rule instead of per-app rendering. It
-  is also the *only* key this adds: `body` has a producer, since a `YXmlFragment`
-  cannot render to markdown, and a materialization flag does not.
+- **One rule, and only one kind of thing:** hold exactly what you could still
+  push, show current state everywhere else. The unit is a field, and prose is a
+  field, so there is no second behavior to keep in step.
+- **The folder never touches the document plane.** No `Y.Text`, no
+  `YXmlFragment`, no text diff, no operational transform, no ProseMirror. The
+  entire Yjs surface of this feature is that it has none.
+- **A table's prose is either in a field or unreachable from the folder.** That
+  is a real hole, and it lands hardest on rich text editors. It is the price of
+  the previous two lines, and it is paid by the application, visibly, rather than
+  by the mechanism.
 - **Every app gets the folder without writing a line.** An app author who never
   reads this record still finds their tables on disk, which is the only way the
   consumer ADR-0010 requires reliably exists.
@@ -279,11 +270,22 @@ previous version.
   edit to a document a peer already moved, never reaches the merge code, because
   concurrent edits stop at push like any other conflict. What was left is a text
   diff against a base that still matches byte for byte.
+- **Rendering the row document as the body.** Carried furthest of any rejected
+  option, through three shapes, and each one broke somewhere different. A plain
+  `Y.Text` round-trips, so a tag naming its key works, but the codebase already
+  disagrees on that key (`'body'`, `'content'`, `'draft'`) and the app that most
+  wants a folder is not text at all. Honeycrisp is ProseMirror, so its document
+  is a `YXmlFragment`: it serializes out through `prosemirror-markdown` and comes
+  back only with a schema every app must conform to, plus a tree diff through
+  `@y/prosemirror`'s unexported delta layer in a `2.0.0-6` prerelease. Supporting
+  both kinds means two renderers, and supporting one means a table whose body
+  renders but cannot be pushed. Refusing the document plane entirely deletes the
+  text diff, the operational transform, four ProseMirror dependencies, the schema
+  constraint, and the seam, and costs one honest hole an application can close
+  for itself.
 - **App-supplied render and parse functions on a table definition.** More
   expressive and immediately fatal: `TableDefinition` serializes to JSON, and a
-  function does not cross that boundary. A closed vocabulary of string tags keeps
-  the definition portable and keeps every renderer in one repository where it can
-  be tested.
+  function does not cross that boundary.
 - **Guessing the document's shape at runtime** by opening it and looking for a
   `Y.Text`. Rejected: `Y.Doc['get']` coerces, so guessing wrong on a
   `YXmlFragment` corrupts rather than fails, and it would make what appears on

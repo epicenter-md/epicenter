@@ -25,8 +25,8 @@ import { Err, Ok, type Result } from 'wellcrafted/result';
 export type RowClaim = {
 	/** Absent when this file is claiming to create a row. */
 	id: string | undefined;
+	/** Includes the declared body field, read back from below the fence. */
 	fields: JsonObject;
-	body: string;
 };
 
 /** Why a file could not be read as a claim about a row. */
@@ -39,6 +39,9 @@ export const RefusedClaim = defineErrors({
 	}),
 	UnknownField: ({ field }: { field: string }) => ({
 		message: `Unknown field '${field}' for this table`,
+	}),
+	BodyInFrontmatter: ({ field }: { field: string }) => ({
+		message: `Field '${field}' is this table's body; write it below the frontmatter, not inside it`,
 	}),
 	InvalidField: ({ field }: { field: string }) => ({
 		message: `Field '${field}' does not match its declared type`,
@@ -79,17 +82,25 @@ export function parseRow(
 		if (field === undefined) {
 			return Err(RefusedClaim.UnknownField({ field: name }).error);
 		}
+		// The body belongs below the fence. Accepting it in both places would give
+		// one value two homes and no rule for which wins.
+		if (name === definition.body) {
+			return Err(RefusedClaim.BodyInFrontmatter({ field: name }).error);
+		}
 		if (!field.check(value)) {
 			return Err(RefusedClaim.InvalidField({ field: name }).error);
 		}
 		fields[name] = value as never;
 	}
 
-	return Ok({
-		id: rawId as string | undefined,
-		fields,
-		// A table with no declared body has no prose to claim, whatever the file
-		// happens to hold below the fence.
-		body: definition.body === 'text' ? file.body : '',
-	});
+	if (definition.body !== undefined) {
+		// An empty body clears an optional field rather than setting it to the
+		// empty string, matching the nullish contract frontmatter already uses.
+		const isOptional = compiled.optional.has(definition.body);
+		if (file.body.length > 0 || !isOptional) {
+			fields[definition.body] = file.body;
+		}
+	}
+
+	return Ok({ id: rawId as string | undefined, fields });
 }

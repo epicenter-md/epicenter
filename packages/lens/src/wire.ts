@@ -1,16 +1,12 @@
-import {
-	type BodyKind,
-	compileTableDefinition,
-	type TableDefinition,
-} from './definitions.js';
+import { compileTableDefinition, type TableDefinition } from './definitions.js';
 
 export type SerializedTableDefinition = {
 	namespace: string;
 	table: string;
 	fields: Record<string, unknown>;
 	optionalFields: string[];
-	/** Absent when this table's document is not renderable as markdown. */
-	body?: BodyKind;
+	/** Which field is written below the frontmatter fence, if any. */
+	body?: string;
 };
 
 export function serializeTableDefinition(

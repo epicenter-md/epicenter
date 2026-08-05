@@ -12,47 +12,62 @@ test('a table declaring no body carries no body key at all', () => {
 	// Absent, not `undefined`: a definition written before this key existed must
 	// serialize to the same JSON it always did.
 	expect('body' in table).toBe(false);
-	expect(
-		'body' in serializeTableDefinition(NAMESPACE, 'notes', table),
-	).toBe(false);
+	expect('body' in serializeTableDefinition(NAMESPACE, 'notes', table)).toBe(
+		false,
+	);
 });
 
-test("a table declaring body: 'text' carries it through the wire form", () => {
+test('a declared body names one of the table’s own fields', () => {
 	const table = defineTable({
-		fields: { title: field.string(), tags: optional(field.string()) },
-		body: 'text',
+		fields: {
+			title: field.string(),
+			content: field.string(),
+			tags: optional(field.tags()),
+		},
+		body: 'content',
 	});
 
-	expect(table.body).toBe('text');
-
-	const wire = serializeTableDefinition(NAMESPACE, 'notes', table);
-	expect(wire.body).toBe('text');
-
-	// The whole point of a string tag over a callback: the declaration survives
-	// JSON, so a wire-named table rebuilt on the far side still knows its body is
-	// renderable (ADR-0207).
-	expect(JSON.parse(JSON.stringify(wire)).body).toBe('text');
+	expect(table.body).toBe('content');
+	expect(serializeTableDefinition(NAMESPACE, 'notes', table).body).toBe(
+		'content',
+	);
 });
 
-test('an unknown body kind is refused at definition time', () => {
+test('a body naming an undeclared field is refused', () => {
 	expect(() =>
 		defineTable({
 			fields: { title: field.string() },
-			// @ts-expect-error the vocabulary is closed on purpose
-			body: 'xml',
+			// @ts-expect-error only a declared field name is accepted
+			body: 'content',
 		}),
-	).toThrow("Unknown body kind 'xml'; the only kind is 'text'");
+	).toThrow("Body field 'content' is not a declared field");
 });
 
-test('declaring a body does not add a field to the row', () => {
-	const withBody = defineTable({
-		fields: { title: field.string() },
-		body: 'text',
-	});
-	const withoutBody = defineTable({ fields: { title: field.string() } });
+test('a body must be prose, not some other field kind', () => {
+	// Every other kind has a YAML representation that belongs in frontmatter, and
+	// a body is written verbatim with no type to recover it by.
+	expect(() =>
+		defineTable({ fields: { count: field.integer() }, body: 'count' }),
+	).toThrow("Body field 'count' must be field.string(), not field.integer()");
 
-	// A document is reached through `openDocument`, never as a field, so the two
-	// definitions must project identical rows.
-	expect(Object.keys(withBody.fields)).toEqual(Object.keys(withoutBody.fields));
-	expect(withBody.fields).toEqual(withoutBody.fields);
+	expect(() =>
+		defineTable({
+			fields: { status: field.select(['draft', 'live']) },
+			body: 'status',
+		}),
+	).toThrow("Body field 'status' must be field.string(), not field.select()");
+});
+
+test('the body is an ordinary field, not a fourth thing', () => {
+	const table = defineTable({
+		fields: { title: field.string(), content: field.string() },
+		body: 'content',
+	});
+
+	// The whole simplification in one assertion: declaring a body changes where
+	// the value is written, never what the row holds.
+	expect(Object.keys(table.fields)).toEqual(['title', 'content']);
+	expect(
+		serializeTableDefinition(NAMESPACE, 'notes', table).fields,
+	).toHaveProperty('content');
 });

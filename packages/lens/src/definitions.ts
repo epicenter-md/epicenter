@@ -37,25 +37,29 @@ export type FieldsFor<TFields extends FieldSchemas> = {
 declare const tableDefinitionParts: unique symbol;
 declare const lensParts: unique symbol;
 
-/**
- * What a table's row document holds, when it holds anything renderable.
- *
- * A row document is an arbitrary `Y.Doc` (`RowDocument` exposes `Y.Doc['get']`),
- * so nothing typed it before this. Declaring `'text'` says the document is one
- * `Y.Text`, which is what makes a markdown body a total round trip rather than a
- * lossy rendering of a structure markdown cannot hold (ADR-0207).
- *
- * A closed vocabulary of string tags, deliberately: `TableDefinition` crosses
- * the wire through {@link SerializedTableDefinition}, and a render callback
- * could not. A second document shape means a second tag and a renderer behind
- * it, here, rather than a plugin surface every definition would have to carry.
- */
-export type BodyKind = 'text';
-
 export type TableDefinition<TFields extends FieldSchemas = FieldSchemas> = {
 	fields: TFields;
-	/** Absent when this table's document is not renderable as markdown. */
-	body?: BodyKind;
+	/**
+	 * Which `string` field is this table's prose, written below the frontmatter
+	 * fence instead of inside it (ADR-0207).
+	 *
+	 * A field name, never a row document. A document is an arbitrary `Y.Doc`, so
+	 * markdown can only represent some of them and can write back fewer still,
+	 * and buying that back costs a ProseMirror schema every app would have to
+	 * conform to. A body is a field, and fields already round-trip, merge per
+	 * cell, and validate.
+	 *
+	 * Absent is the ordinary case: every field renders in frontmatter and the
+	 * file has no body. A table whose prose lives in a row document declares
+	 * nothing here, and that prose stays where it is designed to be edited.
+	 *
+	 * Typed as a plain `string` here while {@link defineTable} constrains the
+	 * argument to `keyof TFields`. The check belongs at authoring time; carrying
+	 * `keyof TFields` in the stored shape would make `TableDefinition<TFields>`
+	 * stop being assignable to a bare `TableDefinition`, which every consumer
+	 * that holds tables generically relies on.
+	 */
+	body?: string;
 	[tableDefinitionParts]: { fields: TFields };
 };
 
@@ -183,7 +187,7 @@ export function defineTable<const TFields extends FieldSchemas>({
 	body,
 }: {
 	fields: TFields & { id?: never };
-	body?: BodyKind;
+	body?: keyof TFields & string;
 }): TableDefinition<TFields> {
 	assertPlainObject(fieldsInput, 'Table fields');
 	if (Object.keys(fieldsInput).some((name) => name.toLowerCase() === 'id')) {
@@ -195,6 +199,7 @@ export function defineTable<const TFields extends FieldSchemas>({
 
 	const fields: FieldSchemas = {};
 	const compiledFields = new Map<string, CompiledField>();
+	const kinds = new Map<string, string>();
 	const optionalFields = new Set<string>();
 	for (const [name, authoredSchema] of Object.entries(fieldsInput)) {
 		assertFieldName(name);
@@ -205,11 +210,23 @@ export function defineTable<const TFields extends FieldSchemas>({
 		}
 		fields[name] = freezeJson(schema);
 		compiledFields.set(name, { check: compile(recognized.schema) });
+		kinds.set(name, recognized.kind);
 		if (IsOptional(authoredSchema)) optionalFields.add(name);
 	}
 
-	if (body !== undefined && body !== 'text') {
-		throw new Error(`Unknown body kind '${body}'; the only kind is 'text'`);
+	if (body !== undefined) {
+		const kind = kinds.get(body);
+		if (kind === undefined) {
+			throw new Error(`Body field '${body}' is not a declared field`);
+		}
+		// Prose, and only prose. Every other kind has a YAML representation that
+		// belongs in frontmatter, and a body is written verbatim below the fence
+		// with no type to recover it by.
+		if (kind !== 'string') {
+			throw new Error(
+				`Body field '${body}' must be field.string(), not field.${kind}()`,
+			);
+		}
 	}
 
 	const definition = Object.freeze({

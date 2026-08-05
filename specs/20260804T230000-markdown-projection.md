@@ -41,8 +41,8 @@ copying the source across is a relicensing act.
 
 Resolution, and it is better architecture anyway: **the renderer is AGPL and
 lives outside the MIT toolkit.** `packages/data` never learns about YAML,
-markdown, or the filesystem. The only thing that lands in MIT is the `body:
-'text'` tag on `defineTable`, which is a string and touches no AGPL code.
+markdown, or the filesystem. The only thing that lands in MIT is the `body` key
+on `defineTable`, which is a field name and touches no AGPL code.
 
 This is not a workaround. A filesystem projection is an application concern, and
 the split falls exactly where the licenses already put it.
@@ -53,11 +53,11 @@ the split falls exactly where the licenses already put it.
 | --- | --- |
 | row facts, outbox, sync | `packages/data` replica (unchanged) |
 | the row document | `packages/data` documents runtime (unchanged) |
-| a table's field types and `body: 'text'` | `packages/lens` |
+| a table's field types and which one is the body | `packages/lens` |
 | markdown text of a row | the renderer (AGPL, new) |
 | what was last written to a file | the snapshot table, owned by the renderer |
 | when files are written | the host process |
-| applying a file back | `push`, through `patch` and one `Y.Text` transaction |
+| applying a file back | `push`, through `patch` |
 
 The snapshot table is the one genuinely new owner. It is not the replica's (that
 is sync state) and not the Lens's (that is schema), so it gets its own reserved
@@ -70,9 +70,9 @@ prefix beside `_replica_*` and the renderer owns it alone.
 The whole hard part, and it needs nothing that was deleted.
 
 ```txt
-render(fields, body, definition) -> string
-parse(text, definition)          -> { id?, fields, body } | RefusedClaim
-plan(base, mine, theirs)         -> units to patch, body diff, conflicts
+renderRow({ id, fields, definition }) -> string
+parseRow(text, definition)            -> { id?, fields } | RefusedClaim
+planPush({ claim, base, theirs })     -> fields to set, unset, conflicts
 ```
 
 No filesystem, no SQLite, no host. Depends on `matter-core` and `lens` types.
@@ -86,19 +86,18 @@ Rollback point: nothing imports this yet.
 
 ### Wave 2: the declaration
 
-`defineTable({ fields, body: 'text' })` in `packages/lens`, plus
-`serializeTableDefinition` and `deserializeTable`. A closed vocabulary of string
-tags; a callback here would break the JSON round trip and is refused by
-ADR-0207.
+`defineTable({ fields, body: 'content' })` in `packages/lens`, plus
+`serializeTableDefinition` and `deserializeTable`. The value is one of the
+table's own `string` fields, constrained to `keyof TFields` at authoring time and
+stored as a plain `string` so `TableDefinition<TFields>` stays assignable to a
+bare `TableDefinition`.
 
-Metadata only. It does not change `RowFor<T>`, since documents are reached
-through `openDocument`.
+It changes where a value is written, never what the row holds.
 
 ### Wave 3: the snapshot table and the scan
 
-`path`, address, fields object, body hash. Four columns, no `mtime`, no `size`,
-no body bytes: a scan reads and parses everything, and the base body is
-recoverable from the current render in the only case that ever needs it.
+`path`, address, fields object. Three columns, no `mtime` and no `size`: a scan
+reads and parses every file, which is slower and has no racy-index edge case.
 
 Produces a plan and writes nothing. Deletions are the set difference between the
 table and the directory listing. Duplicate ids are detected here, and refused by
@@ -106,15 +105,15 @@ naming both paths.
 
 ### Wave 4: the renderer (blocked on the host decision)
 
-Subscribe to row changes, write files, hold back exactly the cells with pending
+Subscribe to row changes, write files, hold back exactly the fields with pending
 edits, apply a peer's field change in place with `matter-core`'s
 `applyFieldEdit`.
 
 ### Wave 5: push
 
-Apply the plan: `patch` for fields, one `Y.Text` transaction for the body,
-creation for a file with no id, deletion for a missing file. Per-file refusal on
-a malformed claim, because no transaction spans rows.
+Apply the plan: `patch` for fields, creation for a file with no id, deletion for
+a missing file. Per-file refusal on a malformed claim, because no transaction
+spans rows. Nothing here touches a row document.
 
 ### Wave 6: the command surface
 
@@ -128,8 +127,9 @@ there is no old path to stop importing.
 
 The asymmetric refusals were all made during design and are already in the
 record: no lock, no checkout, no git dependency, no watcher, no `materialize`
-flag, no state vector, no text merge library, and no second serializer. Each one
-deleted a code family before it was written. Looking for more deletion during
+flag, no text merge, no ProseMirror, no second serializer, and above all no row
+documents in the folder at all. Each one deleted a code family before it was
+written. Looking for more deletion during
 implementation would be looking in the wrong place.
 
 ## Recognition test
@@ -137,16 +137,16 @@ implementation would be looking in the wrong place.
 The destination exists when, with the host running:
 
 ```bash
-cd ~/Epicenter/so.epicenter.honeycrisp/notes
+cd ~/Epicenter/so.epicenter.skills/skills
 rg "sync rewrite" .          # finds prose, no tool installed
 $EDITOR $(rg -l "sync rewrite" . | head -1)
-epicenter status             # names the changed fields and the changed body
+epicenter status             # names the changed fields
 epicenter push
 ```
 
 and the edit appears on a second device.
 
-It is violated by: a file that stays stale after a peer's change to a cell you
-did not touch; a push that sends a field you did not edit; a body edit that
-replaces the document rather than transacting on it; any file appearing under an
-app data directory; or a lock anywhere.
+It is violated by: a file that stays stale after a peer's change to a field you
+did not touch; a push that sends a field you did not edit; any file appearing
+under an app data directory; a row document being read or written by the
+renderer; or a lock anywhere.
