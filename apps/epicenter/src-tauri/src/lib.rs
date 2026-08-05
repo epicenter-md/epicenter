@@ -116,8 +116,9 @@ impl Surface {
     /// Whether Home lists this surface as an application a person can open
     /// (ADR-0189).
     ///
-    /// Home is the shell the list lives in. Mail and Books are release-bundled
-    /// placeholder documents with nothing behind them to open. Both stay
+    /// Home is absent because you are already looking at it, not because it is
+    /// above the others (ADR-0209). Mail and Books are release-bundled
+    /// placeholder documents with nothing behind them to open. All stay
     /// reserved IDs the catalog refuses to admit, so "not launchable" never
     /// means "free for someone else to claim".
     const fn is_application(self) -> bool {
@@ -488,6 +489,12 @@ enum Application {
 /// Launch one application Home lists: reveal and focus its window, creating it
 /// the first time. Calling again focuses rather than duplicating, and Home is
 /// never hidden to do it.
+///
+/// Windows are deliberate (ADR-0209). One window that switched between
+/// applications would union every capability file onto one label, because a
+/// label is what native authority is granted to; separate windows are what keep
+/// `home`, `whispering`, and `app-*` meaning different things. From here the OS
+/// is the switcher.
 ///
 /// This is Home's verb, not an app-facing one. It deliberately does not reuse
 /// the `openApp(appId)` name ADR-0181 reserves for the portable handle, because

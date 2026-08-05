@@ -35,10 +35,13 @@ shapes, see `docs/adr/`.
   principal. First sign-in adds synchronization to the existing replica;
   signing out pauses it, and another principal requires a fresh replica or
   explicit destructive clearing.
-- **Epicenter Home**: the trusted shell above typed application surfaces. It owns
-  navigation, assistant sessions, commands, approvals, and human and agent
-  relational inspection; durable data such as conversations lives in ordinary
-  tables and values.
+- **Epicenter Home**: an application beside the other typed surfaces, not a shell
+  above them (ADR-0209). It owns the launchable list, assistant sessions,
+  commands, approvals, and human and agent relational inspection, and its own job
+  is the raw view: every namespace as real tables, read-only. The applications
+  are the crafted views over the same rows, the OS is the launcher and switcher,
+  and closing Home leaves them running. Durable data such as conversations lives
+  in ordinary tables and values.
 - **Home inspection session**: the store-owner-mediated read-only SQL capability
   supported only by Epicenter Home. One store owner exposes at most one active
   friendly Lens interpretation; ordinary application Lens binding creates no

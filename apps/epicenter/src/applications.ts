@@ -13,10 +13,12 @@
  * (window label, capability file, how Bun serves the document) is decided by
  * the host when Home launches one, so nothing downstream branches on origin.
  *
- * Home is not in the list: it is the shell the list lives in. Neither is a
- * release-bundled placeholder document, because there is nothing behind it to
- * open. Both remain reserved surface IDs the catalog refuses to admit, so "not
- * launchable" never means "available for someone else to claim".
+ * Home is not in the list, for a smaller reason than it used to be: you are
+ * already looking at it, so launching it is a no-op rather than a window
+ * (ADR-0209). It is not above the others, it simply has no second copy to open.
+ * Neither is a release-bundled placeholder document, because there is nothing
+ * behind it to open. Both remain reserved surface IDs the catalog refuses to
+ * admit, so "not launchable" never means "available for someone else to claim".
  */
 
 import { SURFACE_ROUTES } from './routes.ts';
