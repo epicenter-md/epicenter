@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-08-05
 - **Provisional number.** `main` ends at ADR-0205; ADR-0206 through ADR-0208 land with this branch, so 0209 is the next free integer today. Reconcile at merge time (`docs/adr/README.md`).
-- **Unbuilt:** nothing implements this. `launch_application` still opens windows.
+- **Unbuilt, and blocked on one question this record did not ask.** `launch_application` still opens windows. See "The window label is also the capability principal" below: taken literally, one window unions every native grant onto one surface and contradicts ADR-0180. Decide that before implementing.
 - **Supersedes:** [ADR-0189](0189-home-launches-applications-into-their-own-windows-and-stays-open-behind-them.md), whose decision is the window model this replaces. Its list, its one launch verb, and its refusal of an installation UI survive here; only "into its own window, with Home behind it" is withdrawn.
 - **Amends:** [ADR-0080](0080-the-super-app-is-a-desktop-host-cross-device-is-remote-access-to-the-session-not-a-per-app-capability-plane.md) at its per-app window clause only. The desktop-host decision, and cross-device as remote access to the session rather than a per-app capability plane, are untouched.
 - **Relates:** [ADR-0152](0152-epicenter-home-is-a-shell-above-workspaces.md) (Home owns navigation), [ADR-0118](0118-epicenter-is-one-trusted-bun-hosted-spa-origin.md) (one trusted origin, which is what makes a switch a navigation rather than a process), [ADR-0179](0179-an-installed-app-is-an-inert-built-folder-admitted-through-one-static-artifact-boundary.md), [ADR-0190](0190-a-build-declares-which-epicenter-owns-its-data-not-which-window-it-runs-in.md), [ADR-0207](0207-rows-render-continuously-to-markdown-and-frontmatter-is-the-only-way-back.md) and [ADR-0208](0208-every-app-folder-is-markdown-beside-one-queryable-database.md) (what an application contributes to the folder, independent of how it is shown)
@@ -51,6 +51,46 @@ installation UI is carried forward intact.
 A switch does not re-resolve which Epicenter owns the data. ADR-0190 already
 decides that by build, not by window, and this record removes windows rather
 than adding a second answer.
+
+## Open: the window label is also the capability principal
+
+This record treats a window as a navigation container. In Tauri it is also the
+unit native authority is granted to, and that was not priced.
+
+Every capability file in `src-tauri/capabilities/` selects by window label, and
+the labels draw real lines:
+
+| label | what it may do |
+| --- | --- |
+| `home` | `launch_application`, and the local-model administration commands |
+| `whispering` | write text, simulate keystrokes, control its own window |
+| `app-*`, `whispering` | HTTP egress, and the recording and transcription operations |
+| `recording-overlay` | emit and listen to events, nothing else |
+
+A capability that names a window is enabled for **every webview in it**, and a
+capability added at runtime cannot be removed. So one window is one label is the
+**union** of that table, held by whatever is showing. Two consequences, and the
+second is not a matter of taste:
+
+- Every admitted app folder would run holding Whispering's keystroke injection.
+  ADR-0190 says the trusted-app capability is "Whispering's own authority, not a
+  compiled application's default," and these files keep that distinction on
+  purpose.
+- Every application would hold the model-administration commands, which
+  **contradicts ADR-0180**: applications never choose the local transcription
+  model, and `get_active_model` is granted to Home "and nowhere else."
+
+There is an implementation that gives this record its window model and keeps
+every line above: one window holding one webview per surface, with capabilities
+selecting `webviews` rather than `windows`, which Tauri supports for exactly
+this case. It costs the `unstable` cargo feature, which this build does not
+enable today (`tauri = "2.11"`, features `macos-private-api`, `image-png`,
+`tray-icon`). Taking a Tauri feature marked unstable into the desktop host is a
+judgment about what this project is willing to depend on, not something the
+repository can answer, so it is named here rather than assumed.
+
+Until it is answered, "one window" cannot be implemented as literally one
+window without reopening ADR-0180.
 
 ## Consequences
 
