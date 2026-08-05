@@ -196,12 +196,11 @@ test('renaming a file carries its receipt with it', () => {
 	renameSync(join(root, path), join(root, NAMESPACE, 'notes', 'weekly.md'));
 
 	const entries = scanFolder({ root, receipts, lookup });
-	expect(entries).toEqual([
-		{
-			kind: 'claim',
-			path: `${NAMESPACE}/notes/weekly.md`,
-			address: { namespace: NAMESPACE, tableName: 'notes', rowId: ROW },
-			plan: { kind: 'patch', set: {}, unset: [] },
-		},
-	]);
+	expect(entries).toHaveLength(1);
+	expect(entries[0]).toMatchObject({
+		kind: 'claim',
+		path: `${NAMESPACE}/notes/weekly.md`,
+		address: { namespace: NAMESPACE, tableName: 'notes', rowId: ROW },
+		plan: { kind: 'patch', set: {}, unset: [] },
+	});
 });

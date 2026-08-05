@@ -13,21 +13,29 @@
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { RowAddress, TableDefinition } from '@epicenter/lens';
+import type { JsonObject, RowAddress, TableDefinition } from '@epicenter/lens';
 
 import { parseRow, type RefusedClaim } from './parse.js';
 import { type PushPlan, planPush } from './plan.js';
 import type { ReceiptStore } from './receipts.js';
 
 export type ScanEntry =
-	/** A readable file with an id, and what pushing it would do. */
-	| { kind: 'claim'; path: string; address: RowAddress; plan: PushPlan }
+	/** A readable file with an id, what it holds, and what pushing it would do. */
+	| {
+			kind: 'claim';
+			path: string;
+			address: RowAddress;
+			/** What the file holds now. Becomes the receipt once a push lands. */
+			fields: JsonObject;
+			plan: PushPlan;
+	  }
 	/** A readable file with no id, asking for a row to be minted. */
 	| {
 			kind: 'new';
 			path: string;
 			namespace: string;
 			tableName: string;
+			fields: JsonObject;
 			plan: PushPlan;
 	  }
 	/** The file could not be read as a claim. Named, and left alone. */
@@ -110,6 +118,7 @@ export function scanFolder({
 				path,
 				namespace,
 				tableName,
+				fields: claim.fields,
 				plan: planPush({ claim, base: undefined }),
 			});
 			continue;
@@ -126,6 +135,7 @@ export function scanFolder({
 			kind: 'claim',
 			path,
 			address,
+			fields: claim.fields,
 			plan: planPush({ claim, base: receipts.get(address)?.fields }),
 		});
 	}
