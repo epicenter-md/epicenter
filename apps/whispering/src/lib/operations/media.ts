@@ -1,11 +1,11 @@
-import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import { defineErrors } from 'wellcrafted/error';
 import { createLogger } from 'wellcrafted/logger';
 import { tauri } from '#platform/tauri';
 import type { WhisperingApp } from '$lib/whispering/app';
 
 const log = createLogger('whispering/recording-media');
 
-export const RecordingMediaError = defineErrors({
+const RecordingMediaError = defineErrors({
 	PauseFailed: ({ cause }: { cause: unknown }) => ({
 		message: 'Failed to pause playback',
 		cause,
@@ -15,7 +15,6 @@ export const RecordingMediaError = defineErrors({
 		cause,
 	}),
 });
-export type RecordingMediaError = InferErrors<typeof RecordingMediaError>;
 
 // The one best-effort side effect for recording: pause whatever the system is
 // playing while recording, resume it after. Recording never waits on this and

@@ -1,7 +1,7 @@
 import { toast as sonner } from '@epicenter/ui/sonner';
 import { nanoid } from 'nanoid/non-secure';
 import type { AnyTaggedError } from 'wellcrafted/error';
-import { consoleSink, type LogEvent } from 'wellcrafted/logger';
+import { createLogger } from 'wellcrafted/logger';
 import { osNotify } from '#platform/os-notify';
 import { moreDetailsDialog } from '$lib/components/MoreDetailsDialog.svelte';
 import { humanize } from './humanize';
@@ -29,7 +29,7 @@ export type StandingNotice = Notice & { id: string };
 
 type Level = 'error' | 'success' | 'info' | 'warning' | 'loading';
 
-const SOURCE = 'whispering/report';
+const log = createLogger('whispering/report');
 
 const TOAST_DURATION = {
 	error: Number.POSITIVE_INFINITY,
@@ -89,14 +89,17 @@ function emit(level: Level, notice: Notice, id?: string): void {
 		(notice.title ?? humanize(notice.cause?.name ?? '')) || 'Notice';
 	const description = notice.description ?? notice.cause?.message;
 
-	if (level !== 'loading') {
-		consoleSink({
-			ts: Date.now(),
-			level: level === 'error' ? 'error' : 'info',
-			source: SOURCE,
-			message: notice.title ?? notice.cause?.message ?? '',
-			data: id !== undefined ? { ...notice, id } : notice,
-		} satisfies LogEvent);
+	// A problem is logged as its tagged cause, so the console event carries the
+	// variant `name` and its captured fields. Everything else is an announcement
+	// with no error to name, which is exactly what `info` is for. `loading` says
+	// nothing: its resolve or reject is the event worth recording.
+	if (level === 'error' && notice.cause) {
+		log.error(notice.cause);
+	} else if (level !== 'loading') {
+		log.info(
+			notice.title ?? notice.cause?.message ?? '',
+			id !== undefined ? { ...notice, id } : notice,
+		);
 	}
 
 	sonner[level](title, {

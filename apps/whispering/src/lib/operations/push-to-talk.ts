@@ -1,5 +1,5 @@
 import type { BlobId } from '@epicenter/blobs';
-import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import { defineErrors } from 'wellcrafted/error';
 import { createLogger } from 'wellcrafted/logger';
 import { report } from '$lib/report';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
@@ -34,13 +34,12 @@ const MAX_HOLD_MS = 5 * 60 * 1000;
 
 const log = createLogger('whispering/push-to-talk');
 
-export const PushToTalkError = defineErrors({
+const PushToTalkError = defineErrors({
 	CapStopFailed: ({ cause }: { cause: unknown }) => ({
 		message: 'Push-to-talk cap failed to stop recording',
 		cause,
 	}),
 });
-export type PushToTalkError = InferErrors<typeof PushToTalkError>;
 
 type Session = {
 	/** Scopes every async continuation to the press that began it. */

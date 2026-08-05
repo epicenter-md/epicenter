@@ -1,19 +1,16 @@
 <script lang="ts" module>
-	import { defineErrors, type InferErrors } from 'wellcrafted/error';
+	import { defineErrors } from 'wellcrafted/error';
 
 	/**
 	 * Overlay wiring is decoration around a capture that is already running, so
 	 * every failure here is logged and swallowed rather than surfaced.
 	 */
-	export const DictationIndicatorError = defineErrors({
+	const DictationIndicatorError = defineErrors({
 		OverlayWiringFailed: ({ cause }: { cause: unknown }) => ({
 			message: 'Failed to wire the dictation overlay',
 			cause,
 		}),
 	});
-	export type DictationIndicatorError = InferErrors<
-		typeof DictationIndicatorError
-	>;
 </script>
 
 <script lang="ts">
