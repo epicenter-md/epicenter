@@ -29,6 +29,11 @@ export type HostLens = Lens<Record<string, TableDefinition>>;
 /** One namespace as the sidebar lists it. */
 export type InspectNamespace = {
 	namespace: string;
+	/**
+	 * What the Lens calls this namespace, when it says. Absent is normal and the
+	 * surface shows the namespace itself, which is always correct.
+	 */
+	title?: string;
 	tables: { name: string; fields: string[] }[];
 };
 
@@ -53,6 +58,7 @@ export function listInspectNamespaces(
 	return lenses
 		.map((lens) => ({
 			namespace: lens.namespace,
+			...(lens.title === undefined ? {} : { title: lens.title }),
 			tables: Object.entries(lens.tables)
 				.map(([name, definition]) => ({
 					name,

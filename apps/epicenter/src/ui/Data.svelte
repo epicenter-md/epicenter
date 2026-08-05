@@ -48,13 +48,24 @@
 				aria-label="Namespaces"
 			>
 				{#each browser.namespaces as entry (entry.namespace)}
+					<!-- The name a Lens gives its namespace, over the namespace itself.
+					     Both, because the friendly one is what you recognize and the
+					     address is what you type into the statement beside it. A Lens
+					     that declares no title shows the address alone. -->
 					<Button
 						variant={browser.selected === entry.namespace ? 'secondary' : 'ghost'}
 						size="sm"
-						class="justify-start font-mono text-xs"
+						class="h-auto flex-col items-start gap-0 py-1.5 text-xs"
 						onclick={() => browser.select(entry.namespace)}
 					>
-						{entry.namespace}
+						{#if entry.title}
+							<span>{entry.title}</span>
+							<span class="font-mono text-[0.6875rem] text-muted-foreground">
+								{entry.namespace}
+							</span>
+						{:else}
+							<span class="font-mono">{entry.namespace}</span>
+						{/if}
 					</Button>
 
 					<!-- The tables of the selected namespace, because you cannot query a

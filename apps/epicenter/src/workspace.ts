@@ -47,6 +47,7 @@ export const honeycrispNotesTable = defineTable({
  */
 export const homeLens = defineLens({
 	namespace: 'so.epicenter.home',
+	title: 'Home',
 	tables: { conversations: conversationsTable },
 });
 
@@ -59,6 +60,7 @@ export const homeLens = defineLens({
  */
 export const honeycrispMirrorLens = defineLens({
 	namespace: 'so.epicenter.honeycrisp',
+	title: 'Honeycrisp',
 	tables: { folders: honeycrispFoldersTable, notes: honeycrispNotesTable },
 });
 
