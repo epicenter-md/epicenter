@@ -13,21 +13,15 @@
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { TableDefinition } from '@epicenter/lens';
+import type { RowAddress, TableDefinition } from '@epicenter/lens';
 
 import { parseRow, type RefusedClaim } from './parse.js';
 import { type PushPlan, planPush } from './plan.js';
 import type { ReceiptStore } from './receipts.js';
 
-export type FolderAddress = {
-	namespace: string;
-	tableName: string;
-	rowId: string;
-};
-
 export type ScanEntry =
 	/** A readable file with an id, and what pushing it would do. */
-	| { kind: 'claim'; path: string; address: FolderAddress; plan: PushPlan }
+	| { kind: 'claim'; path: string; address: RowAddress; plan: PushPlan }
 	/** A readable file with no id, asking for a row to be minted. */
 	| {
 			kind: 'new';
@@ -39,12 +33,12 @@ export type ScanEntry =
 	/** The file could not be read as a claim. Named, and left alone. */
 	| { kind: 'refused'; path: string; reason: RefusedClaim }
 	/** A receipt with no file: a pending row deletion. */
-	| { kind: 'gone'; path: string; address: FolderAddress }
+	| { kind: 'gone'; path: string; address: RowAddress }
 	/**
 	 * Two or more files carry the same id, which `cp a.md b.md` produces. Refused
 	 * by naming every path rather than guessing which one is the row.
 	 */
-	| { kind: 'duplicate'; path: string; address: FolderAddress; paths: string[] }
+	| { kind: 'duplicate'; path: string; address: RowAddress; paths: string[] }
 	/** A file under a namespace or table no loaded Lens declares. */
 	| {
 			kind: 'unknown-table';
@@ -59,7 +53,7 @@ export type TableLookup = (
 	tableName: string,
 ) => TableDefinition | undefined;
 
-function addressKey(address: FolderAddress): string {
+function addressKey(address: RowAddress): string {
 	return `${address.namespace}\u0000${address.tableName}\u0000${address.rowId}`;
 }
 
@@ -129,15 +123,7 @@ export function scanFolder({
 		if (seen.has(path)) continue;
 		const receipt = receipts.get(path);
 		if (receipt === undefined) continue;
-		entries.push({
-			kind: 'gone',
-			path,
-			address: {
-				namespace: receipt.namespace,
-				tableName: receipt.tableName,
-				rowId: receipt.rowId,
-			},
-		});
+		entries.push({ kind: 'gone', path, address: receipt.address });
 	}
 
 	return entries.map((entry) => {

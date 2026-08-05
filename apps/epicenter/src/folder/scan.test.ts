@@ -47,9 +47,7 @@ function render(name: string, fields: Record<string, unknown>, rowId = ROW) {
 		renderRow({ id: rowId, fields: fields as never, definition: notes }),
 	);
 	receipts.record(path, {
-		namespace: NAMESPACE,
-		tableName: 'notes',
-		rowId,
+		address: { namespace: NAMESPACE, tableName: 'notes', rowId },
 		fields: fields as never,
 	});
 	return path;

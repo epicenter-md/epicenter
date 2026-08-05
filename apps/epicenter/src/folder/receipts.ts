@@ -14,12 +14,10 @@
  */
 
 import { Database } from 'bun:sqlite';
-import type { JsonObject } from '@epicenter/lens';
+import type { JsonObject, RowAddress } from '@epicenter/lens';
 
 export type Receipt = {
-	namespace: string;
-	tableName: string;
-	rowId: string;
+	address: RowAddress;
 	/** Exactly the fields rendered into the file, including the body field. */
 	fields: JsonObject;
 };
@@ -68,9 +66,11 @@ export function openReceiptStore(databasePath: string): ReceiptStore {
 				.get(path);
 			if (row === null) return undefined;
 			return {
-				namespace: row.namespace,
-				tableName: row.table_name,
-				rowId: row.row_id,
+				address: {
+					namespace: row.namespace,
+					tableName: row.table_name,
+					rowId: row.row_id,
+				},
 				fields: JSON.parse(row.fields) as JsonObject,
 			};
 		},
@@ -85,9 +85,9 @@ export function openReceiptStore(databasePath: string): ReceiptStore {
 					fields = excluded.fields`,
 				[
 					path,
-					receipt.namespace,
-					receipt.tableName,
-					receipt.rowId,
+					receipt.address.namespace,
+					receipt.address.tableName,
+					receipt.address.rowId,
 					JSON.stringify(receipt.fields),
 				],
 			);
