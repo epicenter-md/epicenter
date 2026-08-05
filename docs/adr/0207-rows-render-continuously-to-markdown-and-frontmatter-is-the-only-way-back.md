@@ -40,7 +40,6 @@ frontmatter is the only way back.**
 
 ```txt
 ~/Epicenter/
-  epicenter.sqlite3
   so.epicenter.honeycrisp/
     notes/
       <row>.md
@@ -52,12 +51,15 @@ under `%USERPROFILE%` on Windows), and lowercase-with-a-dot is the signal for
 hidden machine state, which this is not. Configurable, but the default has to be
 typeable, because "point your agent at `~/Epicenter`" is the whole product.
 
-This is **not** the app data root (ADR-0201). That directory holds the SQLite
-partition, blob bytes, and caches, is explicitly not an inter-app API, and
-putting a human surface in it recreates exactly the failure ADR-0010 refused.
-Both representations sit in one directory on purpose: an agent that wants prose
-reads the markdown, and an agent that wants a real query opens the database
-beside it.
+This is **not** the app data root (ADR-0201). That directory holds the replica,
+blob bytes, and caches, is explicitly not an inter-app API, and putting a human
+surface in it recreates exactly the failure ADR-0010 refused.
+
+The replica itself stays there and does not appear here. `epicenter.sqlite3` is
+one generic fact relation holding JSON, shared by every app: querying it means
+`json_extract` across a union, which is a storage format rather than a query
+surface. What belongs beside the markdown is a queryable projection, decided by
+[ADR-0208](0208-every-app-folder-is-markdown-beside-one-queryable-database.md).
 
 ### Every table materializes, and there is no flag
 
