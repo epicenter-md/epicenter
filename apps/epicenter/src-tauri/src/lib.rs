@@ -583,19 +583,32 @@ fn launch_on_main_thread(
         .context("the main thread stopped before opening the window")?
 }
 
-/// Accept the ID shapes this command can act on: the `[a-z0-9-]+` contract an
-/// admitted folder name must satisfy (ADR-0179), resolved against the compiled
+/// Accept the ID shapes this command can act on, resolved against the compiled
 /// surface table.
 ///
-/// This is a shape and reserved-name check, not a membership check. A reserved
-/// surface that is not an application (Home itself, a placeholder) and an ID
-/// with characters no folder name may contain are the same refusal, because
-/// Home offers neither.
+/// The grammar mirrors `APP_ID_PATTERN` in `@epicenter/constants`: lowercase
+/// alphanumerics, `-`, and `.`, beginning and ending alphanumeric. Dots are here
+/// because an admitted app's ID is the reverse-domain namespace its Lens
+/// declares (ADR-0210); bare labels stay legal for the compiled surfaces. The
+/// first and last character are constrained for the same reason the TypeScript
+/// side constrains them: an ID names a directory, and `.` or `..` would name one
+/// outside it.
+///
+/// This is a shape check, not a membership check. A reserved surface that is not
+/// an application (Home itself, a placeholder) and an ID with characters no ID
+/// may contain are the same refusal, because Home offers neither.
 fn parse_application_id(id: &str) -> Option<Application> {
-    let matches_pattern = !id.is_empty()
-        && id
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-');
+    let is_inner = |byte: u8| {
+        byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-' || byte == b'.'
+    };
+    let is_edge = |byte: u8| byte.is_ascii_lowercase() || byte.is_ascii_digit();
+    let bytes = id.as_bytes();
+    let matches_pattern = match (bytes.first(), bytes.last()) {
+        (Some(&first), Some(&last)) => {
+            is_edge(first) && is_edge(last) && bytes.iter().all(|&byte| is_inner(byte))
+        }
+        _ => false,
+    };
     if !matches_pattern {
         return None;
     }
@@ -606,8 +619,19 @@ fn parse_application_id(id: &str) -> Option<Application> {
     }
 }
 
+/// The Tauri handle for one application's window.
+///
+/// A window label admits alphanumerics, `-`, `/`, `:`, and `_`, and no `.`, and
+/// Tauri enforces that with an assertion rather than an error, so an ID that is
+/// a namespace would panic the host. Mapping `.` to `_` is a bijection and not
+/// an escape: an app ID's whole alphabet is `[a-z0-9-.]`, so `_` cannot occur in
+/// one and no two IDs can produce one label.
+///
+/// This is the only place Tauri's label grammar reaches. A window label is
+/// Tauri's handle for a window, not Epicenter's name for an application
+/// (ADR-0210).
 fn app_window_label(id: &str) -> String {
-    format!("{APP_WINDOW_PREFIX}{id}")
+    format!("{APP_WINDOW_PREFIX}{}", id.replace('.', "_"))
 }
 
 fn ensure_app_window(app: &DesktopAppHandle, id: &str, port: u16, token: &str) -> Result<()> {

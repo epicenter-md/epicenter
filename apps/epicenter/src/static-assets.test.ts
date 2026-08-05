@@ -33,7 +33,6 @@ import { COMPILED_APPLICATIONS } from './applications.ts';
 import {
 	APPLICATIONS_ROUTE,
 	BOOTSTRAP_ROUTE,
-	SURFACE_ROUTES,
 } from './routes.ts';
 import { createHomeServer } from './server.ts';
 import {
@@ -47,7 +46,6 @@ import {
 	createTestDesktopAuth,
 } from './test-home-host.ts';
 
-const RESERVED_IDS = Object.keys(SURFACE_ROUTES);
 const COMMITTED_FIXTURE_ROOT = fileURLToPath(
 	new URL('../test-fixtures/app-catalog', import.meta.url),
 );
@@ -65,10 +63,27 @@ function writeApp(
 	{
 		page = `<!doctype html><title>${id}</title>`,
 		files = {},
-	}: { page?: string; files?: Record<string, string> } = {},
+		title,
+		lens = {
+			namespace: id,
+			...(title === undefined ? {} : { title }),
+			tables: {},
+		} as unknown,
+	}: {
+		page?: string;
+		files?: Record<string, string>;
+		title?: string;
+		lens?: unknown;
+	} = {},
 ): void {
 	mkdirSync(join(root, id), { recursive: true });
 	writeFileSync(join(root, id, 'index.html'), page);
+	if (lens !== null) {
+		writeFileSync(
+			join(root, id, 'lens.json'),
+			typeof lens === 'string' ? lens : JSON.stringify(lens),
+		);
+	}
 	for (const [name, content] of Object.entries(files)) {
 		const path = join(root, id, ...name.split('/'));
 		mkdirSync(join(path, '..'), { recursive: true });
@@ -77,7 +92,7 @@ function writeApp(
 }
 
 async function derive(root: string): Promise<AppCatalog> {
-	return deriveAppCatalog(root, { reservedIds: RESERVED_IDS });
+	return deriveAppCatalog(root);
 }
 
 // The app-id grammar itself lives in `@epicenter/constants/app-data` and is
@@ -92,38 +107,58 @@ describe('deriveAppCatalog', () => {
 
 	test('derives members only from directories satisfying the output contract', async () => {
 		const root = tempDir('epicenter-catalog-');
-		writeApp(root, 'zeta');
-		writeApp(root, 'alpha');
-		writeApp(root, 'Bad-Case');
-		writeApp(root, 'bad_underscore');
-		// Reserved built-in IDs stay on the legacy path in this slice.
+		writeApp(root, 'so.test.zeta');
+		writeApp(root, 'so.test.alpha');
+		// A bare namespace is not a namespace, which is also why no built-in
+		// surface id can ever be claimed here (ADR-0210).
 		writeApp(root, 'whispering');
+		writeApp(root, 'so.test.badlens', { lens: '{ not json' });
+		writeApp(root, 'so.test.nolens', { lens: null });
 		mkdirSync(join(root, 'no-index'));
 		writeFileSync(join(root, 'plain-file'), 'not a directory');
 
 		const { apps } = await derive(root);
-		expect(apps.map((app) => app.id)).toEqual(['alpha', 'zeta']);
+		expect(apps.map((app) => app.id)).toEqual([
+			'so.test.alpha',
+			'so.test.zeta',
+		]);
 	});
 
-	test('derives title from the document <title> with the ID as fallback', async () => {
+	test('derives title from the declaration with the namespace as fallback', async () => {
 		const root = tempDir('epicenter-catalog-');
-		writeApp(root, 'titled', {
-			page: '<!doctype html><head><title> Fancy App </title></head>',
+		// The document's own <title> is deliberately misleading here: it used to
+		// be the source, and nothing reads it now (ADR-0210).
+		writeApp(root, 'so.test.titled', {
+			title: 'Fancy App',
+			page: '<!doctype html><head><title>Page Title</title></head>',
 		});
-		writeApp(root, 'untitled', { page: '<!doctype html><h1>no title</h1>' });
+		writeApp(root, 'so.test.untitled', {
+			page: '<!doctype html><head><title>Page Title</title></head>',
+		});
 
 		const { apps } = await derive(root);
 		expect(apps.map((app) => [app.id, app.title])).toEqual([
-			['titled', 'Fancy App'],
-			['untitled', 'untitled'],
+			['so.test.titled', 'Fancy App'],
+			['so.test.untitled', 'so.test.untitled'],
+		]);
+	});
+
+	test('two directories declaring one namespace yield one member', async () => {
+		const root = tempDir('epicenter-catalog-');
+		writeApp(root, 'first', { lens: { namespace: 'so.test.twin', tables: {} } });
+		writeApp(root, 'second', { lens: { namespace: 'so.test.twin', tables: {} } });
+
+		const { apps } = await derive(root);
+		expect(apps.map((app) => [app.id, app.directory])).toEqual([
+			['so.test.twin', 'first'],
 		]);
 	});
 
 	test('symlinked app roots escaping the catalog are not members', async () => {
 		const outside = tempDir('epicenter-outside-');
-		writeApp(outside, 'escapee');
+		writeApp(outside, 'so.test.escapee');
 		const root = tempDir('epicenter-catalog-');
-		symlinkSync(join(outside, 'escapee'), join(root, 'escapee'));
+		symlinkSync(join(outside, 'so.test.escapee'), join(root, 'so.test.escapee'));
 
 		const { apps } = await derive(root);
 		expect(apps).toEqual([]);
@@ -132,10 +167,12 @@ describe('deriveAppCatalog', () => {
 	test('the committed hello-http fixture is a valid catalog member', async () => {
 		const { apps } = await derive(COMMITTED_FIXTURE_ROOT);
 		expect(apps.map((app) => [app.id, app.title])).toEqual([
-			['hello-http', 'Hello HTTP'],
+			['so.epicenter.hello-http', 'Hello HTTP'],
 		]);
 
-		const script = await apps[0]?.resolve('/apps/hello-http/main.js');
+		const script = await apps[0]?.resolve(
+			'/apps/so.epicenter.hello-http/main.js',
+		);
 		expect(script?.contentType).toBe('text/javascript');
 		expect(await script?.file.text()).toContain('plugin:http|fetch');
 	});
@@ -151,44 +188,44 @@ describe('catalog member resolve', () => {
 
 	test('serves index, real assets, and extensionless SPA fallback below /apps/<id>/', async () => {
 		const root = tempDir('epicenter-catalog-');
-		writeApp(root, 'spa', {
+		writeApp(root, 'so.test.spa', {
 			page: '<!doctype html><title>SPA</title>',
 			files: { 'assets/entry.js': 'console.log(1);' },
 		});
-		const member = await memberOf(root, 'spa');
+		const member = await memberOf(root, 'so.test.spa');
 
-		const index = await member.resolve('/apps/spa/');
+		const index = await member.resolve('/apps/so.test.spa/');
 		expect(index?.contentType).toBe('text/html');
 		expect(await index?.file.text()).toContain('SPA');
 
-		const asset = await member.resolve('/apps/spa/assets/entry.js');
+		const asset = await member.resolve('/apps/so.test.spa/assets/entry.js');
 		expect(asset?.contentType).toBe('text/javascript');
 
-		const fallback = await member.resolve('/apps/spa/settings/audio');
+		const fallback = await member.resolve('/apps/so.test.spa/settings/audio');
 		expect(await fallback?.file.text()).toContain('SPA');
 
-		expect(await member.resolve('/apps/spa/assets/missing.js')).toBeUndefined();
+		expect(await member.resolve('/apps/so.test.spa/assets/missing.js')).toBeUndefined();
 	});
 
 	test('rejects traversal, smuggled separators, symlink escape, and foreign prefixes', async () => {
 		const root = tempDir('epicenter-catalog-');
-		writeApp(root, 'safe');
-		writeApp(root, 'other');
+		writeApp(root, 'so.test.safe');
+		writeApp(root, 'so.test.other');
 		const secret = join(tempDir('epicenter-secret-'), 'secret.txt');
 		writeFileSync(secret, 'secret');
-		symlinkSync(secret, join(root, 'safe', 'leak.txt'));
-		const member = await memberOf(root, 'safe');
+		symlinkSync(secret, join(root, 'so.test.safe', 'leak.txt'));
+		const member = await memberOf(root, 'so.test.safe');
 
 		for (const denied of [
-			'/apps/safe/../other/index.html',
-			'/apps/safe/%2e%2e/other/index.html',
-			'/apps/safe/%252e%252e/other/index.html',
-			'/apps/safe/..%2findex.html',
-			'/apps/safe/\\other/index.html',
-			'/apps/safe//index.html',
-			'/apps/safe/./index.html',
-			'/apps/other/index.html',
-			'/apps/safe/leak.txt',
+			'/apps/so.test.safe/../other/index.html',
+			'/apps/so.test.safe/%2e%2e/other/index.html',
+			'/apps/so.test.safe/%252e%252e/other/index.html',
+			'/apps/so.test.safe/..%2findex.html',
+			'/apps/so.test.safe/\\other/index.html',
+			'/apps/so.test.safe//index.html',
+			'/apps/so.test.safe/./index.html',
+			'/apps/so.test.other/index.html',
+			'/apps/so.test.safe/leak.txt',
 		]) {
 			expect(await member.resolve(denied)).toBeUndefined();
 		}
@@ -198,8 +235,9 @@ describe('catalog member resolve', () => {
 describe('home server catalog routes', () => {
 	async function serveWithCatalog() {
 		const catalogRoot = tempDir('epicenter-catalog-');
-		writeApp(catalogRoot, 'hello-http', {
-			page: '<!doctype html><title>Hello HTTP</title><script src="./main.js"></script>',
+		writeApp(catalogRoot, 'so.epicenter.hello-http', {
+			title: 'Hello HTTP',
+			page: '<!doctype html>Hello HTTP<script src="./main.js"></script>',
 			files: { 'main.js': 'document.title;' },
 		});
 
@@ -260,17 +298,17 @@ describe('home server catalog routes', () => {
 	test('serves catalog members below /apps/<id>/ and keeps unknown apps 404', async () => {
 		const { origin, server } = await serveWithCatalog();
 		try {
-			const page = await fetch(`${origin}/apps/hello-http/`);
+			const page = await fetch(`${origin}/apps/so.epicenter.hello-http/`);
 			expect(page.status).toBe(200);
 			expect(page.headers.get('content-type')).toBe('text/html');
 			expect(await page.text()).toContain('Hello HTTP');
 
-			const script = await fetch(`${origin}/apps/hello-http/main.js`);
+			const script = await fetch(`${origin}/apps/so.epicenter.hello-http/main.js`);
 			expect(script.status).toBe(200);
 			expect(script.headers.get('content-type')).toBe('text/javascript');
 
 			expect((await fetch(`${origin}/apps/unknown/`)).status).toBe(404);
-			expect((await fetch(`${origin}/apps/hello-http`)).status).toBe(404);
+			expect((await fetch(`${origin}/apps/so.epicenter.hello-http`)).status).toBe(404);
 
 			// The legacy closed layout stays intact beside the catalog. Surface
 			// documents carry the identity snapshot, so they require an
@@ -308,7 +346,7 @@ describe('home server catalog routes', () => {
 				apps: [
 					{ id: 'whispering', title: 'Whispering' },
 					{ id: 'honeycrisp', title: 'Honeycrisp' },
-					{ id: 'hello-http', title: 'Hello HTTP' },
+					{ id: 'so.epicenter.hello-http', title: 'Hello HTTP' },
 				],
 			});
 		} finally {

@@ -26,7 +26,7 @@ import { createDesktopEpicenterOwner } from '@epicenter/data/desktop-owner';
 import { parseExchangeResponse } from '@epicenter/data/protocol';
 import { createHttpDocumentTransports } from '@epicenter/document-sync';
 import { extractErrorMessage } from 'wellcrafted/error';
-import { loadActiveAppCatalog, RESERVED_APP_IDS } from './app-catalog.ts';
+import { loadActiveAppCatalog } from './app-catalog.ts';
 import { COMPILED_APPLICATIONS } from './applications.ts';
 import {
 	createDesktopAuthAuthority,
@@ -124,13 +124,26 @@ async function main(): Promise<void> {
 		// it. Failing to render must never take the host down with it, so the
 		// renderer reports and the app keeps running: a stale folder is a bad day,
 		// an unbootable Epicenter is a worse one.
+		// The selected generation, read before anything that interprets a
+		// namespace. Its members declare Lenses (ADR-0210), and the folder, the
+		// projection, and the raw view must all read one list or they disagree
+		// about which namespaces exist. The generation chosen here is what this
+		// process serves for its whole lifetime; promotions apply at the next
+		// restart (ADR-0179).
+		const appCatalog = await loadActiveAppCatalog(join(dataRoot, 'app-catalog'));
+		const hostLenses = [
+			honeycrispMirrorLens,
+			homeLens,
+			...appCatalog.apps.map((app) => app.lens),
+		];
+
 		const folderRoot = epicenterFolderRoot();
 		folderReceipts = openReceiptStore(
 			join(dataRoot, 'folder-receipts.sqlite3'),
 		);
 		const folderBridge = createFolderBridge({
 			source: dataOwner,
-			lenses: [honeycrispMirrorLens, homeLens],
+			lenses: hostLenses,
 		});
 		stopFolderRenderer = startFolderRenderer({
 			root: folderRoot,
@@ -145,7 +158,7 @@ async function main(): Promise<void> {
 		stopFolderProjector = startFolderProjector({
 			root: folderRoot,
 			replicaPath: epicenterPath({ directory: replicaDirectory }),
-			lenses: [honeycrispMirrorLens, homeLens],
+			lenses: hostLenses,
 			subscribe: (listener) => folderBridge.subscribe(listener),
 			onError: (cause: unknown) =>
 				console.error('folder projection failed', cause),
@@ -193,14 +206,6 @@ async function main(): Promise<void> {
 			appsDist,
 			COMPILED_APPLICATIONS,
 		);
-		// Source-built catalog members live in host-owned app data; the
-		// built-in surfaces stay on the legacy closed layout for this slice.
-		// The generation selected here is what this process serves for its
-		// whole lifetime; promotions apply at the next restart (ADR-0153).
-		const appCatalog = await loadActiveAppCatalog(
-			join(dataRoot, 'app-catalog'),
-			{ reservedIds: RESERVED_APP_IDS },
-		);
 		const origin = `http://127.0.0.1:${boot.port}`;
 		const { app, websocket } = createHomeServer({
 			host,
@@ -217,7 +222,7 @@ async function main(): Promise<void> {
 			// renders (ADR-0209).
 			inspect: {
 				replicaPath: epicenterPath({ directory: replicaDirectory }),
-				lenses: [honeycrispMirrorLens, homeLens],
+				lenses: hostLenses,
 			},
 		});
 

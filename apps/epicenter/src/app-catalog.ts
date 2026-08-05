@@ -9,7 +9,7 @@
  *   current                      one line: the selected generation ID
  *   generations/
  *     <generation>/              one complete, never-mutated catalog copy
- *       <app-id>/index.html ...
+ *       <any-name>/index.html + lens.json ...
  * ```
  *
  * The lifecycle contract:
@@ -40,29 +40,10 @@ import {
 	stat,
 } from 'node:fs/promises';
 import { isAbsolute, join, relative, sep } from 'node:path';
-import { COMPOSED_APP_IDS } from '@epicenter/constants/app-data';
-import { SURFACE_ROUTES } from './routes.ts';
 import { type AppCatalog, deriveAppCatalog } from './static-assets.ts';
 
 const CURRENT_POINTER = 'current';
 const GENERATIONS_DIRECTORY = 'generations';
-
-/**
- * The app ids a candidate folder cannot claim, because the host has already
- * issued them.
- *
- * Two reasons, one namespace. A built-in surface id is a route this host serves
- * itself (ADR-0179). A composed app id names a directory under the one data root
- * that its app already owns, and every trusted app owns one (ADR-0201), so
- * admitting `local-mail` as a folder would put two claimants on the directory
- * holding Local Mail's credentials and its undelivered intent. Both call sites
- * that admit a catalog read this one expression rather than assembling their
- * own; a call site that assembled half of it would be the whole defect.
- */
-export const RESERVED_APP_IDS: readonly string[] = [
-	...Object.keys(SURFACE_ROUTES),
-	...COMPOSED_APP_IDS,
-];
 
 /** Sortable, opaque `<epoch-ms>-<hex>`; content addressing earns nothing here. */
 const GENERATION_ID_PATTERN = /^\d+-[0-9a-f]{8}$/;
@@ -75,7 +56,6 @@ const GENERATION_ID_PATTERN = /^\d+-[0-9a-f]{8}$/;
  */
 export async function loadActiveAppCatalog(
 	catalogRoot: string,
-	{ reservedIds }: { reservedIds: readonly string[] },
 ): Promise<AppCatalog> {
 	let pointer: string;
 	try {
@@ -86,17 +66,15 @@ export async function loadActiveAppCatalog(
 		return { apps: [] };
 	}
 	if (!GENERATION_ID_PATTERN.test(pointer)) return { apps: [] };
-	return deriveAppCatalog(join(catalogRoot, GENERATIONS_DIRECTORY, pointer), {
-		reservedIds,
-	});
+	return deriveAppCatalog(join(catalogRoot, GENERATIONS_DIRECTORY, pointer));
 }
 
 /**
  * Validate a candidate directory of built app outputs and promote it to the
  * next-start catalog generation. Every non-dot entry below `candidateRoot`
- * must satisfy the member contract (ADR-0153 direct-folder ID, not a reserved
- * built-in surface, `index.html` present); one refused entry fails the whole
- * promotion so a typo cannot silently drop an app. The pointer is replaced
+ * must satisfy the member contract (`index.html` and a valid `lens.json`
+ * declaring a namespace no sibling already claimed, ADR-0210); one refused
+ * entry fails the whole promotion so a typo cannot silently drop an app. The pointer is replaced
  * only after the complete generation exists. Failed copies and validations
  * clean their staging paths; a failure after the generation rename may leave
  * a complete unselected generation, never a partial selection. The new
@@ -105,7 +83,6 @@ export async function loadActiveAppCatalog(
 export async function promoteAppCatalogCandidate(
 	catalogRoot: string,
 	candidateRoot: string,
-	{ reservedIds }: { reservedIds: readonly string[] },
 ): Promise<{ generation: string; apps: { id: string; title: string }[] }> {
 	if (!(await stat(candidateRoot).catch(() => undefined))?.isDirectory()) {
 		throw new Error(`Candidate catalog is not a directory: ${candidateRoot}`);
@@ -138,8 +115,11 @@ export async function promoteAppCatalogCandidate(
 		const expected = (await readdir(staging))
 			.filter((name) => !name.startsWith('.'))
 			.sort();
-		const { apps } = await deriveAppCatalog(staging, { reservedIds });
-		const admitted = new Set(apps.map((app) => app.id));
+		const { apps } = await deriveAppCatalog(staging);
+		// By directory, not by id: an id is the declared namespace now, so the
+		// only way to say which candidate entry was refused is the folder it
+		// arrived in.
+		const admitted = new Set(apps.map((app) => app.directory));
 		const refused = expected.filter((name) => !admitted.has(name));
 		if (refused.length > 0) {
 			throw new Error(

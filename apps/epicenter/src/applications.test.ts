@@ -20,6 +20,10 @@ function catalogOf(...members: { id: string; title: string }[]): AppCatalog {
 				({
 					id,
 					title,
+					// An id is the namespace its Lens declares (ADR-0210), so a
+					// fixture member carries the one it was named for.
+					lens: { namespace: id, title, tables: {} } as CatalogApp['lens'],
+					directory: id,
 					resolve: async () => undefined,
 				}) satisfies CatalogApp,
 		),

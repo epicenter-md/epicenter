@@ -21,7 +21,7 @@
 
 import { readdir, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
-import { isAppId } from '@epicenter/constants/app-data';
+import { type Lens, lensFromJsonText } from '@epicenter/lens';
 import mime from 'mime';
 
 export type StaticAsset = {
@@ -32,8 +32,16 @@ export type StaticAsset = {
 
 /** One derived catalog member: enough to list it and serve its static root. */
 export type CatalogApp = {
+	/** The namespace this app owns, which is also its id (ADR-0210). */
 	id: string;
 	title: string;
+	/** The interpretation it declared, which the host reads its rows through. */
+	lens: Lens;
+	/**
+	 * The directory it arrived in, which names nothing and is carried only so
+	 * promotion can report which candidate entry was refused.
+	 */
+	directory: string;
 	resolve(pathname: string): Promise<StaticAsset | undefined>;
 };
 
@@ -68,14 +76,20 @@ export type AppCatalog = {
  * Derive the trusted app catalog from validated build output: one directory
  * per app below `catalogRoot`. The catalog is generated, never authored. A
  * missing root is an empty catalog; an entry that breaks the output contract
- * (invalid ID, reserved ID, missing `index.html`, or a root that escapes the
- * catalog directory) is not a catalog member. What is reserved is the caller's
- * call: see `RESERVED_APP_IDS` in `app-catalog.ts`.
+ * (a missing `index.html`, a missing or invalid `lens.json`, a namespace a
+ * sibling already claimed, or a root that escapes the catalog directory) is not
+ * a catalog member.
+ *
+ * There is deliberately no reserved-id list. An installed app's id is the
+ * namespace it declares (ADR-0210), so it always contains a dot, and every id
+ * this host has already issued is a bare label: the built-in surface routes and
+ * the composed app ids that name a directory under the one data root
+ * (ADR-0201). The two sets are disjoint by grammar, so a candidate cannot claim
+ * `home` or `local-mail` whatever it declares, and a check for it could never
+ * fail. A check that cannot fail is worse than none, because it reads as
+ * protection.
  */
-export async function deriveAppCatalog(
-	catalogRoot: string,
-	{ reservedIds }: { reservedIds: readonly string[] },
-): Promise<AppCatalog> {
+export async function deriveAppCatalog(catalogRoot: string): Promise<AppCatalog> {
 	let root: string;
 	try {
 		root = await realpath(catalogRoot);
@@ -85,10 +99,9 @@ export async function deriveAppCatalog(
 	}
 
 	const apps: CatalogApp[] = [];
+	const claimed = new Set<string>();
 	const names = (await readdir(root)).sort();
 	for (const name of names) {
-		if (!isAppId(name) || reservedIds.includes(name)) continue;
-
 		let appRoot: string;
 		try {
 			appRoot = await requiredContainedDirectory(
@@ -102,23 +115,37 @@ export async function deriveAppCatalog(
 		const index = await containedFile(appRoot, resolve(appRoot, 'index.html'));
 		if (index.kind !== 'file') continue;
 
+		const declaration = await containedFile(
+			appRoot,
+			resolve(appRoot, 'lens.json'),
+		);
+		if (declaration.kind !== 'file') continue;
+		const { data: lens } = lensFromJsonText(
+			await Bun.file(declaration.path).text(),
+		);
+		if (lens === null) continue;
+
+		// The namespace is the id (ADR-0210), so the directory this arrived in
+		// names nothing and two directories may declare one namespace. The
+		// filesystem used to refuse that by refusing two directories with one
+		// name; now the first declaration wins and the second is not a member,
+		// which `promoteAppCatalogCandidate` turns into a refused promotion.
+		if (claimed.has(lens.namespace)) continue;
+		claimed.add(lens.namespace);
+
 		apps.push({
-			id: name,
-			title: documentTitle(await Bun.file(index.path).text()) ?? name,
+			id: lens.namespace,
+			title: lens.title ?? lens.namespace,
+			lens,
+			directory: name,
 			resolve: createContainedResolver({
-				prefix: `/apps/${name}/`,
+				prefix: `/apps/${lens.namespace}/`,
 				root: appRoot,
 				index: index.path,
 			}),
 		});
 	}
 	return { apps };
-}
-
-/** `<title>` from the app's own document; presentation metadata only. */
-function documentTitle(page: string): string | undefined {
-	const title = /<title[^>]*>([^<]*)<\/title>/i.exec(page)?.[1]?.trim();
-	return title === undefined || title === '' ? undefined : title;
 }
 
 /**

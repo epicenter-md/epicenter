@@ -10,7 +10,9 @@
  * Usage:
  *   bun run scripts/publish-app-catalog.ts <candidate-dir>
  *
- * `<candidate-dir>` holds one directory per app: `<id>/index.html ...`.
+ * `<candidate-dir>` holds one directory per app, each with `index.html` and
+ * a `lens.json` declaring the namespace it owns (ADR-0210). The directory name
+ * itself means nothing.
  * The catalog is published into the one Epicenter root, which the host itself
  * resolves at boot; `EPICENTER_DATA_DIR` moves both together (ADR-0201). There
  * is deliberately no second flag for it: a script that could name a different
@@ -19,10 +21,7 @@
 
 import { join, resolve } from 'node:path';
 import { epicenterDataRoot } from '@epicenter/constants/app-data';
-import {
-	promoteAppCatalogCandidate,
-	RESERVED_APP_IDS,
-} from '../src/app-catalog.ts';
+import { promoteAppCatalogCandidate } from '../src/app-catalog.ts';
 
 function usage(): never {
 	console.error(
@@ -38,7 +37,6 @@ if (candidate === undefined || args.length !== 1) usage();
 const { generation, apps } = await promoteAppCatalogCandidate(
 	join(epicenterDataRoot(), 'app-catalog'),
 	resolve(candidate),
-	{ reservedIds: RESERVED_APP_IDS },
 );
 console.log(`Published catalog generation ${generation}:`);
 for (const app of apps) {

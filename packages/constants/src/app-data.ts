@@ -34,12 +34,21 @@ export const EPICENTER_BUNDLE_IDENTIFIER = 'so.epicenter';
  * The one grammar for an app id, shared with catalog admission.
  *
  * An app id names a place, and two issuers name into that one space: admission
- * issues one when it accepts a folder (the folder name, ADR-0179) and the
- * composition root issues one for an engine it composes. The grammar has one
- * definition because the namespace is one namespace; a second copy of this
- * pattern is how the two would drift apart.
+ * issues one when it accepts a folder, which is the namespace that folder's Lens
+ * declares (ADR-0210), and the composition root issues one for an engine it
+ * composes. The grammar has one definition because the namespace is one
+ * namespace; a second copy of this pattern is how the two would drift apart.
+ *
+ * Dots are admitted because an admitted app's id *is* its reverse-domain
+ * namespace, and bare labels stay legal so the composed ids (`local-mail`,
+ * `local-books`) keep the directories they already own.
+ *
+ * The first and last character must be alphanumeric, and that is load-bearing
+ * rather than tidy: {@link appDataDir} joins an id onto the one data root, so a
+ * grammar admitting `.` or `..` would hand a caller a path out of the root, and
+ * one admitting a leading dot would let an app hide as a dotfile.
  */
-const APP_ID_PATTERN = /^[a-z0-9-]+$/;
+const APP_ID_PATTERN = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/;
 
 export function isAppId(value: string): boolean {
 	return APP_ID_PATTERN.test(value);
