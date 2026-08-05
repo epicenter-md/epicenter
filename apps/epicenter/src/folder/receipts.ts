@@ -18,6 +18,8 @@ import type { JsonObject, RowAddress } from '@epicenter/lens';
 
 export type Receipt = {
 	address: RowAddress;
+	/** Where it was written. A value, not the identity: renaming is free. */
+	path: string;
 	/** Exactly the fields rendered into the file, including the body field. */
 	fields: JsonObject;
 };
@@ -31,11 +33,11 @@ type ReceiptRow = {
 };
 
 export type ReceiptStore = {
-	get(path: string): Receipt | undefined;
-	/** Record a render. Replaces any previous receipt for the same path. */
-	record(path: string, receipt: Receipt): void;
-	forget(path: string): void;
-	paths(): string[];
+	get(address: RowAddress): Receipt | undefined;
+	/** Record a render. Replaces any previous receipt for the same row. */
+	record(receipt: Receipt): void;
+	forget(address: RowAddress): void;
+	all(): Receipt[];
 	close(): void;
 };
 
@@ -46,62 +48,70 @@ export type ReceiptStore = {
  * refuses to push rather than guessing, and the next render records fresh
  * receipts. The only cost is unpushed edits, which have to be re-made.
  */
+function toReceipt(row: ReceiptRow): Receipt {
+	return {
+		address: {
+			namespace: row.namespace,
+			tableName: row.table_name,
+			rowId: row.row_id,
+		},
+		path: row.path,
+		fields: JSON.parse(row.fields) as JsonObject,
+	};
+}
+
 export function openReceiptStore(databasePath: string): ReceiptStore {
 	const database = new Database(databasePath, { create: true });
 	database.run('PRAGMA journal_mode = WAL');
+	// Keyed by the row, not the file. The id in frontmatter is what binds a file
+	// to a row (ADR-0207), so a rename is a new value here and nothing more.
 	database.run(`CREATE TABLE IF NOT EXISTS folder_receipts (
-		path TEXT PRIMARY KEY,
 		namespace TEXT NOT NULL,
 		table_name TEXT NOT NULL,
 		row_id TEXT NOT NULL,
-		fields TEXT NOT NULL
+		path TEXT NOT NULL,
+		fields TEXT NOT NULL,
+		PRIMARY KEY (namespace, table_name, row_id)
 	) STRICT`);
 
 	return {
-		get(path) {
+		get(address) {
 			const row = database
-				.query<ReceiptRow, [string]>(
-					'SELECT * FROM folder_receipts WHERE path = ?',
+				.query<ReceiptRow, [string, string, string]>(
+					`SELECT * FROM folder_receipts
+					 WHERE namespace = ? AND table_name = ? AND row_id = ?`,
 				)
-				.get(path);
-			if (row === null) return undefined;
-			return {
-				address: {
-					namespace: row.namespace,
-					tableName: row.table_name,
-					rowId: row.row_id,
-				},
-				fields: JSON.parse(row.fields) as JsonObject,
-			};
+				.get(address.namespace, address.tableName, address.rowId);
+			return row === null ? undefined : toReceipt(row);
 		},
-		record(path, receipt) {
+		record(receipt) {
 			database.run(
-				`INSERT INTO folder_receipts (path, namespace, table_name, row_id, fields)
+				`INSERT INTO folder_receipts (namespace, table_name, row_id, path, fields)
 				 VALUES (?, ?, ?, ?, ?)
-				 ON CONFLICT (path) DO UPDATE SET
-					namespace = excluded.namespace,
-					table_name = excluded.table_name,
-					row_id = excluded.row_id,
+				 ON CONFLICT (namespace, table_name, row_id) DO UPDATE SET
+					path = excluded.path,
 					fields = excluded.fields`,
 				[
-					path,
 					receipt.address.namespace,
 					receipt.address.tableName,
 					receipt.address.rowId,
+					receipt.path,
 					JSON.stringify(receipt.fields),
 				],
 			);
 		},
-		forget(path) {
-			database.run('DELETE FROM folder_receipts WHERE path = ?', [path]);
+		forget(address) {
+			database.run(
+				`DELETE FROM folder_receipts
+				 WHERE namespace = ? AND table_name = ? AND row_id = ?`,
+				[address.namespace, address.tableName, address.rowId],
+			);
 		},
-		paths() {
+		all() {
 			return database
-				.query<{ path: string }, []>(
-					'SELECT path FROM folder_receipts ORDER BY path',
-				)
+				.query<ReceiptRow, []>('SELECT * FROM folder_receipts ORDER BY path')
 				.all()
-				.map((row) => row.path);
+				.map(toReceipt);
 		},
 		close() {
 			database.close();

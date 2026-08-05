@@ -32,7 +32,7 @@ export type ScanEntry =
 	  }
 	/** The file could not be read as a claim. Named, and left alone. */
 	| { kind: 'refused'; path: string; reason: RefusedClaim }
-	/** A receipt with no file: a pending row deletion. */
+	/** A receipt whose row no file claims any more: a pending row deletion. */
 	| { kind: 'gone'; path: string; address: RowAddress }
 	/**
 	 * Two or more files carry the same id, which `cp a.md b.md` produces. Refused
@@ -87,7 +87,6 @@ export function scanFolder({
 	const seen = new Set<string>();
 
 	for (const path of files) {
-		seen.add(path);
 		const [namespace = '', tableName = ''] = path.split('/');
 
 		const definition = lookup(namespace, tableName);
@@ -105,25 +104,41 @@ export function scanFolder({
 			continue;
 		}
 
-		const plan = planPush({ claim, base: receipts.get(path)?.fields });
 		if (claim.id === undefined) {
-			entries.push({ kind: 'new', path, namespace, tableName, plan });
+			entries.push({
+				kind: 'new',
+				path,
+				namespace,
+				tableName,
+				plan: planPush({ claim, base: undefined }),
+			});
 			continue;
 		}
 
+		// Matched by the id in frontmatter, never by the filename, so renaming a
+		// file carries its receipt with it instead of reading as a deletion plus a
+		// baseless stranger (ADR-0207).
 		const address = { namespace, tableName, rowId: claim.id };
 		const key = addressKey(address);
+		seen.add(key);
 		pathsByAddress.set(key, [...(pathsByAddress.get(key) ?? []), path]);
-		entries.push({ kind: 'claim', path, address, plan });
+		entries.push({
+			kind: 'claim',
+			path,
+			address,
+			plan: planPush({ claim, base: receipts.get(address)?.fields }),
+		});
 	}
 
-	// A receipt whose file is gone is the one place the folder's *absence* carries
-	// intent, so it is always reported and never inferred away.
-	for (const path of receipts.paths()) {
-		if (seen.has(path)) continue;
-		const receipt = receipts.get(path);
-		if (receipt === undefined) continue;
-		entries.push({ kind: 'gone', path, address: receipt.address });
+	// A row no file claims any more is the one place the folder's *absence*
+	// carries intent, so it is always reported and never inferred away.
+	for (const receipt of receipts.all()) {
+		if (seen.has(addressKey(receipt.address))) continue;
+		entries.push({
+			kind: 'gone',
+			path: receipt.path,
+			address: receipt.address,
+		});
 	}
 
 	return entries.map((entry) => {

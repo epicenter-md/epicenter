@@ -111,11 +111,20 @@ slower and has no racy-index edge case.
 between the receipts and the directory listing. Duplicate ids name every path
 rather than guessing.
 
-### Wave 4: the renderer (blocked on the host decision)
+### Wave 4: the renderer (done, except for the subscription)
 
-Subscribe to row changes, write files, hold back exactly the fields with pending
-edits, apply a peer's field change in place with `matter-core`'s
-`applyFieldEdit`.
+`renderIntoFolder` brings one row's file up to date and records what it wrote.
+Per field: if the file still holds what was written into it, take the row; if it
+does not, you changed it, so leave your value alone. A touched field keeps its
+OLD receipt value, so the edit stays visible to the next push.
+
+Receipts are keyed by address rather than path, so a rename carries its receipt
+and stays free (ADR-0207) instead of reading as a deletion plus a baseless
+stranger.
+
+Remaining: wire it to `subscribeCommittedAddresses`, which `@epicenter/data`
+exports for exactly this caller, since the host is the process that constructed
+the runtime. `desktop-owner.ts` is the precedent.
 
 ### Wave 5: push
 

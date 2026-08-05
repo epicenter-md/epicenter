@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	mkdirSync,
+	mkdtempSync,
+	renameSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { field } from '@epicenter/field';
@@ -46,8 +52,9 @@ function render(name: string, fields: Record<string, unknown>, rowId = ROW) {
 		join(root, path),
 		renderRow({ id: rowId, fields: fields as never, definition: notes }),
 	);
-	receipts.record(path, {
+	receipts.record({
 		address: { namespace: NAMESPACE, tableName: 'notes', rowId },
+		path,
 		fields: fields as never,
 	});
 	return path;
@@ -174,10 +181,27 @@ test('a file under a table no Lens declares is reported, not acted on', () => {
 test('a receipt store that was lost heals into refusals, never into bad pushes', () => {
 	const path = render('tuesday', { title: 'Tuesday', tags: ['work'] });
 	edit(path, `---\nid: ${ROW}\ntitle: Wednesday\ntags: []\n---\n`);
-	receipts.forget(path);
+	receipts.forget({ namespace: NAMESPACE, tableName: 'notes', rowId: ROW });
 
 	const [entry] = scanFolder({ root, receipts, lookup });
 	// Without a receipt every field looks changed, so pushing would send `tags`
 	// too and revert whatever a peer did to it. Refusing is the only safe read.
 	expect(entry).toMatchObject({ plan: { kind: 'unbased' } });
+});
+
+test('renaming a file carries its receipt with it', () => {
+	// The id in frontmatter binds, so the filename is decoration. A rename must
+	// not read as a deletion plus a stranger with no receipt (ADR-0207).
+	const path = render('tuesday', { title: 'Tuesday', tags: ['work'] });
+	renameSync(join(root, path), join(root, NAMESPACE, 'notes', 'weekly.md'));
+
+	const entries = scanFolder({ root, receipts, lookup });
+	expect(entries).toEqual([
+		{
+			kind: 'claim',
+			path: `${NAMESPACE}/notes/weekly.md`,
+			address: { namespace: NAMESPACE, tableName: 'notes', rowId: ROW },
+			plan: { kind: 'patch', set: {}, unset: [] },
+		},
+	]);
 });
