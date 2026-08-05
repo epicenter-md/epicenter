@@ -40,34 +40,53 @@ Tests: a round trip from `defineLens` through `JSON.stringify` and back is the
 same Lens; a field outside the `field.*` vocabulary is refused; a table name that
 is not a bare SQL identifier is refused; a single-label namespace is refused.
 
-## Wave 2: admission reads `lens.json` and the id comes from it
+## Wave 2: the id becomes the namespace, and a check disappears
+
+`APP_ID_PATTERN` in `packages/constants/src/app-data.ts` widens from
+`/^[a-z0-9-]+$/` to admit `.`, so a namespace is a valid app id. Bare ids stay
+legal, which is what leaves `local-mail` and `local-books` untouched.
 
 `deriveAppCatalog` stops taking the id from the directory name and takes it from
-`<id>/lens.json`: read the file, `lensFromJsonText` it, and the namespace's final
-label is the id. `CatalogApp` gains `lens`. Four refusals, each making the folder
-not a member, the same disposition a missing `index.html` gets:
+`<dir>/lens.json`: read, `lensFromJsonText`, and the namespace *is* the id. Three
+refusals, each making the folder not a member, the same disposition a missing
+`index.html` gets:
 
 - no `lens.json`
 - it does not parse as a Lens
-- the derived id is reserved (`RESERVED_APP_IDS`, unchanged)
-- the derived id duplicates one already taken in this generation
+- its namespace duplicates one already admitted in this generation
 
-That last one is new and is the only check the filesystem used to make for us:
-two directories cannot share a name, but two Lenses can share a final label.
+The last is new, and it is new because folder names stopped meaning anything: the
+filesystem used to refuse two directories with one name and now refuses nothing.
 
-**`documentTitle` is deleted in this wave.** Title resolution becomes the Lens's
-title or the id, so the `<title>` regular expression goes with it. Compiled
-applications are unaffected: their titles come from `SURFACE_ROUTES`, never from
-that function.
+**Deleted in this wave, because it became unreachable rather than tiresome:**
+`RESERVED_APP_IDS`, the `reservedIds` parameter on `loadActiveAppCatalog`,
+`deriveAppCatalog`, and `promoteAppCatalogCandidate`, both call sites that supply
+it (`main.ts`, `scripts/publish-app-catalog.ts`), the `isAppId` check on the
+candidate's directory name, and the AGENTS.md hazard note about assembling half
+the reserved list at one call site. Every reserved id is bare and every installed
+id has a dot, so the sets are disjoint by grammar.
 
-`promoteAppCatalogCandidate` copies into `<generation>/<derived-id>/` rather than
-preserving the candidate's directory name, so a generation on disk is keyed by
-id the way everything downstream reads it.
+**Also deleted:** `documentTitle`. Title resolution becomes the Lens's title or
+the namespace. Compiled applications are unaffected: their titles come from
+`SURFACE_ROUTES`, never from that function.
 
-Tests: a valid declaration becomes a member with its derived id and title; a
-namespace whose last label is reserved is not a member; two candidates deriving
-one id admit neither; a folder with no `lens.json` is not a member; malformed
-JSON is not a member.
+`promoteAppCatalogCandidate` copies into `<generation>/<namespace>/` rather than
+preserving the candidate's directory name.
+
+Tests: a valid declaration becomes a member whose id is its namespace, with its
+title; two candidates declaring one namespace admit neither; a folder with no
+`lens.json` is not a member; malformed JSON is not a member; a bare id is still
+valid so composed apps keep their directories.
+
+## Wave 2b: Rust stops assuming a bare id
+
+`parse_application_id` (`lib.rs:594`) accepts `[a-z0-9-]` today and must admit
+`.`. `app_window_label` maps `.` to `_`, which is a bijection because a namespace
+cannot contain `_`, `:`, `/`, or uppercase. The `app-*` capability glob is
+unaffected.
+
+Test: two namespaces never produce one label, and a label round trips to exactly
+one id.
 
 ## Wave 3: the host composes the catalog's Lenses
 
@@ -80,8 +99,8 @@ the same list or the folder and the Data pane disagree about what exists.
 
 Build `apps/vocab` and write `lens.json` beside its `index.html`, which is
 `JSON.stringify(vocabLens)` from `apps/vocab/vocab.ts:132` with a title added.
-Its namespace is already `so.epicenter.vocab`, so the derived id is `vocab` with
-nothing to change. Publish, restart.
+Its namespace is already `so.epicenter.vocab`, so that is its id, its route, and
+its directory, with nothing to change. Publish, restart.
 Expect `so.epicenter.vocab` in the Data pane sidebar with its three tables, and
 `~/Epicenter/so.epicenter.vocab/` holding markdown beside
 `so.epicenter.vocab.sqlite3`.

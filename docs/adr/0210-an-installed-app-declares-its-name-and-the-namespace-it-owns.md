@@ -74,37 +74,60 @@ not validate is not a catalog member, the same disposition a missing
 Everything the host needs to know is in it, and the folder name inside the
 candidate directory means nothing.
 
-### The id is the namespace, read short
+### The id is the namespace
 
-There is one identity, the namespace. The app id is not a second fact derived
-from it, it is the same fact at the length a machine needs: the final
-dot-separated label. `so.epicenter.vocab` is the address you write in SQL, and
-`vocab` is the directory, the route, and the window label. This is how a domain
-already works: `mail.google.com` is the address and people call it "mail".
+Not derived from it, not a short form of it. The same string.
 
-Every namespace label is already a valid app id (`[a-z0-9](?:[a-z0-9-]*[a-z0-9])?`
-against `[a-z0-9-]+`), so there is no conversion step and no escape hatch.
+```txt
+namespace   so.epicenter.vocab      the address, in SQL and in ~/Epicenter
+id          so.epicenter.vocab      the directory and the route
+label       app-so_epicenter_vocab  Tauri's handle, and nothing else's
+```
 
-The id is not the namespace *entire*, and the reason is external. Tauri validates
-a window label as alphanumeric plus `-`, `/`, `:`, and `_`, with no `.`, and it
-enforces that with an assertion rather than an error
-(`tauri-runtime/src/window.rs`, `assert_label_is_valid`), so `app-so.epicenter.vocab`
-panics the host. The only way around it is escaping dots for the label alone,
-which reintroduces a derivation *and* makes it lossy: `so.epicenter.vocab` and
-`so_epicenter.vocab` would land on one window. A shortening that is exact beats
-an escaping that is not.
+`APP_ID_PATTERN` widens from `[a-z0-9-]+` to admit `.`, so a namespace is a valid
+app id by construction. Bare ids stay legal, which is what leaves the composed
+apps (`local-mail`, `local-books`) and the built-in surfaces exactly where they
+are: one grammar widened, rather than two grammars.
 
-### Collisions are refused where they already were
+### Tauri gets one function, not a say in the identity
 
-Admission issues at most one member per id and already refuses reserved and
-duplicate ids, so two members can never share a final label, and no member can
-end in `home`, `honeycrisp`, `whispering`, `mail`, or `books`, because those are
-reserved ids already. Moving the id's source from the folder name to the
-namespace moves that check; it does not remove it.
+A Tauri window label admits alphanumerics, `-`, `/`, `:`, and `_`, and no `.`,
+enforced by an assertion rather than an error (`tauri-runtime/src/window.rs`,
+`assert_label_is_valid`), so `app-so.epicenter.vocab` would panic the host.
 
-The publisher still owns the prefix. Two publishers who both want to be `vocab`
-collide at the app id, where admission already has an answer, rather than
-silently in one replica where ADR-0206 makes the namespace the address.
+`.` maps to `_` for the label, and that is a **bijection, not an escape**. A
+namespace's whole alphabet is `[a-z0-9-.]`, so `_`, `:`, `/`, and uppercase
+cannot occur in one, and no two namespaces can produce one label.
+`so_epicenter.vocab` is not a namespace, so it is not a collision.
+
+The transform is one function at the one place Tauri is involved. A window label
+is Tauri's handle for a window, not Epicenter's name for an application, and
+confining it here is what stops the two from being confused again.
+
+### Collision refusal gets simpler, and one check disappears
+
+Two candidates declaring one namespace is refused at admission. It is one
+identity, so it is one check, and it is genuinely new: the filesystem used to
+make it for us by refusing two directories with one name, and folder names no
+longer mean anything.
+
+**The reserved-id check becomes unreachable, and is deleted.** Every reserved id
+is bare (`home`, `whispering`, `honeycrisp`, `mail`, `books`, `local-mail`,
+`local-books`) and every installed id contains a dot, because it is a namespace.
+The two sets are disjoint by grammar rather than by comparison.
+
+What goes with it is not one line: `RESERVED_APP_IDS`, the `reservedIds`
+parameter threaded through `loadActiveAppCatalog`, `deriveAppCatalog`, and
+`promoteAppCatalogCandidate`, both call sites that supply it, and the documented
+hazard that assembling half of it at one of them is the whole defect. A check
+that cannot fail is worse than no check, because it reads as protection.
+
+The folder name inside a candidate directory also stops being validated, because
+it has stopped meaning anything.
+
+The publisher still owns the prefix. Two publishers who both want `vocab` pick
+different namespaces and both install, which is the outcome a reverse-domain
+name is for.
 
 ### An installed app owns a namespace, or it is not installed
 
@@ -121,12 +144,13 @@ launchable and declares no Lens this host binds. ADR-0179 already holds a
 compiled application and a catalog member apart deliberately, and this does not
 join them.
 
-### A name is declared, or it is the id
+### A name is declared, or it is the namespace
 
-Title resolution is two steps: the Lens's title, or the app id. **The `<title>`
-scrape is deleted**, not kept as a middle fallback. An app that wants to be
-called something says so; one that does not is called what it is installed as. A
-guess that is usually wrong is worse than a plain answer.
+Title resolution is two steps: the Lens's title, or the namespace itself. **The
+`<title>` scrape is deleted**, not kept as a middle fallback. An app that wants
+to be called something says so; one that does not is listed as the namespace it
+owns, which is exactly what a person would need in order to go looking for its
+rows. A guess that is usually wrong is worse than a plain answer.
 
 The title lives in the Lens rather than beside it because it names the
 *namespace*: `so.epicenter.vocab` is called "Vocab" no matter who holds the
@@ -163,6 +187,15 @@ sidebar, on the same terms as Honeycrisp.
 - **An app's displayed name can change without its identity changing.** The title
   and the namespace are separate members of one file, so renaming what a person
   sees never moves a data directory or a window label.
+- **A URL and a data directory carry a reverse-domain name.**
+  `/apps/so.epicenter.vocab/` and `apps/so.epicenter.vocab/` are longer than
+  `/apps/vocab/` was going to be. This is the whole price of the collapse, it is
+  paid in places a person rarely reads, and `~/Epicenter/` already reads this way
+  because ADR-0206 makes the namespace the address there regardless.
+- **`isAppId` and `isNamespace` stop being two questions for an installed app.**
+  Its id is a namespace, so the narrower check is the wider one. Bare ids remain
+  for composed apps and built-in surfaces, which is the only reason `isAppId`
+  survives at all.
 - **`lens.json` is now required, and is a fourth thing that can fail admission**,
   after an invalid id, a reserved id, and a missing `index.html`. It fails the
   same way: the folder is not a member. There is no partial admission where an
@@ -187,18 +220,27 @@ sidebar, on the same terms as Honeycrisp.
   three resolution steps to answer "what is this app called", where the middle
   one is a regular expression over someone else's markup, is worse than two. An
   app that cares declares; an app that does not gets its id.
-- **Keep the folder name as the id**, with the namespace's final label required
-  to match it. Refused: the match is a cross-check between two sources of the
-  same fact, and a cross-check only earns itself when the two sources are
-  independent. They are not; one folder ships one Lens. The failure it would
-  catch is a mislabeled folder, which is exactly the case where the declaration
-  is right and the folder name is noise.
-- **Make the id the namespace entire**, so no shortening happens at all. This is
-  the shape the decision wants and it is refused by Tauri rather than by
-  Epicenter: a window label admits no `.` and the check is an assertion, so
-  `app-so.epicenter.vocab` panics the host. Escaping dots for the label alone
-  brings back a derivation that is also lossy, so two namespaces could share one
-  window. Revisit if Tauri ever widens the label grammar.
+- **Keep the folder name as the id**, with the declared namespace required to
+  match it. Refused: the match is a cross-check between two sources of one fact,
+  and a cross-check earns itself only when the sources are independent. They are
+  not; one folder ships one Lens. The failure it would catch is a mislabeled
+  folder, which is exactly the case where the declaration is right and the folder
+  name is noise.
+- **Shorten the id to the namespace's final label**, so `so.epicenter.vocab`
+  installs as `vocab` and paths stay short. Held for a while on the belief that
+  mapping `.` for the window label would be a lossy escape. It is not: a
+  namespace's alphabet is `[a-z0-9-.]`, so any of `_`, `:`, or `/` is a bijection
+  and `so_epicenter.vocab` is not a namespace to collide with. Once that is
+  false, shortening buys a nicer URL and costs a second name for one thing, plus
+  the reserved-id machinery that only exists because a short id can collide with
+  a built-in surface.
+- **Give the window an opaque label** (`app-1`, `app-2`) with Rust holding an
+  id-to-label map, so Tauri's grammar never touches identity again. More
+  principled: a label is a handle and should carry no identity at all. Refused
+  because it moves complexity rather than deleting it. It trades a pure
+  three-line function for mutable state in the Rust app, and a label nobody can
+  read when a window misbehaves. The transform already confines Tauri to one
+  place, which is what the map was for.
 - **Let an app install without a Lens**, taking a title from somewhere else so a
   storage-free app can still be a member. Refused with the collapse: it is the
   only thing that would require a second identity path, and it buys the ability
