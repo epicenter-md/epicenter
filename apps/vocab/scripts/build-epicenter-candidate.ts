@@ -11,6 +11,13 @@
  * namespace. It is named after it here only so a person reading the staged
  * folder recognizes what is in it.
  *
+ * This runs the build itself rather than expecting one to be sitting there. A
+ * build headed for Epicenter has to carry `/apps/<namespace>/` in its own asset
+ * URLs, and the namespace is declared in the Lens, so the one step that knows
+ * the namespace is the one that must set the prefix. Staging a build made
+ * without it produces a folder that admits cleanly and then shows a blank
+ * window, which is a failure worth making unreachable rather than documenting.
+ *
  * Usage:
  *   bun run build:epicenter          # then publish the printed path
  */
@@ -24,11 +31,17 @@ const app = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const built = join(app, 'build');
 const candidate = join(app, 'dist-epicenter');
 const member = join(candidate, vocabLens.namespace);
+const base = `/apps/${vocabLens.namespace}`;
+
+const build = Bun.spawnSync(['bun', 'run', 'build'], {
+	cwd: app,
+	env: { ...process.env, EPICENTER_APP_BASE: base },
+	stdio: ['inherit', 'inherit', 'inherit'],
+});
+if (!build.success) process.exit(build.exitCode ?? 1);
 
 if (!(await Bun.file(join(built, 'index.html')).exists())) {
-	console.error(
-		`No build at ${built}. Run \`bun run --cwd apps/vocab build\` first.`,
-	);
+	console.error(`Build reported success but wrote no index.html to ${built}.`);
 	process.exit(1);
 }
 
