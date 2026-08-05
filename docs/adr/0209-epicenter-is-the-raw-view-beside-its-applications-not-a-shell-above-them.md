@@ -3,8 +3,8 @@
 - **Status:** Accepted
 - **Date:** 2026-08-05
 - **Provisional number.** `main` ends at ADR-0205; ADR-0206 through ADR-0208 land with this branch, so 0209 is the next free integer today. Reconcile at merge time (`docs/adr/README.md`).
-- **Unbuilt.** Nothing implements the raw view. `openInspection` exists (ADR-0162) and is reachable from no surface; Home has three panes and no data browser.
-- **Amends:** [ADR-0189](0189-home-launches-applications-into-their-own-windows-and-stays-open-behind-them.md), withdrawing "Home stays open behind them" and Home-as-shell. Its per-application windows, its one launchable list, its one launch verb, and its refusal of a fourth pane and an installation UI all survive. [ADR-0152](0152-epicenter-home-is-a-shell-above-workspaces.md), withdrawing the word its title turns on: Home is not above the workspaces, it is beside them. Everything that record decided about ownership stands.
+- **Built.** The raw view is `apps/epicenter/src/inspect.ts` behind `/api/home/inspect`, with the Data pane over it (`src/ui/Data.svelte`). `openInspection` had existed since ADR-0162 with nothing reaching it.
+- **Amends:** [ADR-0189](0189-home-launches-applications-into-their-own-windows-and-stays-open-behind-them.md), withdrawing "Home stays open behind them", Home-as-shell, and the refusal of a fourth pane, which was a refusal of a fourth *launcher-shaped* pane and cannot survive a record whose whole point is that Epicenter has a job of its own. Its per-application windows, its one launchable list, its one launch verb, and its refusal of an installation UI all survive. [ADR-0152](0152-epicenter-home-is-a-shell-above-workspaces.md), withdrawing the word its title turns on: Home is not above the workspaces, it is beside them. Everything that record decided about ownership stands.
 - **Relates:** [ADR-0162](0162-epicenter-home-owns-relational-inspection-applications-receive-no-sql.md) (owns the inspection surface this finally gives a face), [ADR-0207](0207-rows-render-continuously-to-markdown-and-frontmatter-is-the-only-way-back.md) and [ADR-0208](0208-every-app-folder-is-markdown-beside-one-queryable-database.md) (the same data through files and SQL, which is what made an application a view), [ADR-0118](0118-epicenter-is-one-trusted-bun-hosted-spa-origin.md) (one origin), [ADR-0179](0179-an-installed-app-is-an-inert-built-folder-admitted-through-one-static-artifact-boundary.md), [ADR-0180](0180-epicenter-has-one-host-owned-active-local-transcription-model.md), [ADR-0190](0190-a-build-declares-which-epicenter-owns-its-data-not-which-window-it-runs-in.md)
 
 ## Context
@@ -78,6 +78,10 @@ Picking a namespace is `selectLens`: real tables, one column per declared field,
 present rows only, and `SELECT * FROM notes` works verbatim. "Everything raw" is
 `clearLens`: `_epicenter_rows`, the honest storage shape, JSON and tombstones
 included. Both are ADR-0162's, and this record adds no query capability to them.
+
+It is a fourth pane, `Data`, beside Apps, Chat, and Settings. Named for what a
+person is looking for rather than for the vocabulary: "records" would be a second
+word for a row, and "views" is now what the applications are.
 
 **Grouping by namespace is not a view option, it is the mode.** A table name is
 unqualified only inside one interpretation, and two applications may both
@@ -155,6 +159,12 @@ them, and is deferred.
   (ADR-0206), and the namespace is what stops two applications both owning
   `notes`. An address space and a navigation surface are allowed different
   shapes, and this record changes only the second.
-- **Keeping Home as the shell and adding the raw view as a fourth pane.**
-  Rejected: ADR-0189 refused a fourth pane, and the shell framing is the thing
-  this record is actually withdrawing.
+- **Folding the raw view into the Apps pane**, so the same sidebar lists
+  launchable applications above browsable namespaces. Attractive, and refused
+  because the two lists are not the same list: Whispering is launchable and
+  declares no Lens this host binds, and `so.epicenter.home` is a namespace with
+  no application to open. One sidebar would have to show that asymmetry or hide
+  it, and both are worse than two panes.
+- **Replacing the Apps pane with the raw view**, on the grounds that the OS is
+  the launcher now. Rejected: Epicenter's windows are not separately visible to
+  the OS, so the launchable list is still the only way to open anything.
