@@ -1,7 +1,7 @@
 # An installed app owns a namespace: working ADR-0210 backward
 
 - **Status:** Draft
-- **Decides nothing.** The decision is [ADR-0210](../docs/adr/0210-an-installed-app-declares-its-lens-as-data-and-its-namespace-ends-in-its-app-id.md). This is the sequence for building it, and it is deleted when the work lands.
+- **Decides nothing.** The decision is [ADR-0210](../docs/adr/0210-an-installed-app-declares-its-name-and-the-namespace-it-owns.md). This is the sequence for building it, and it is deleted when the work lands.
 
 ## What is already true, checked rather than assumed
 
@@ -40,19 +40,26 @@ Tests: a round trip from `defineLens` through `JSON.stringify` and back is the
 same Lens; a field outside the `field.*` vocabulary is refused; a table name that
 is not a bare SQL identifier is refused; a single-label namespace is refused.
 
-## Wave 2: admission reads `lens.json`
+## Wave 2: admission reads `epicenter.json`
 
-`deriveAppCatalog` gains an optional `lens` on `CatalogApp`, read from
-`<id>/lens.json` when present. Two refusals, both making the folder not a member,
-the same disposition a missing `index.html` gets:
+`deriveAppCatalog` reads `<id>/epicenter.json` when present, taking an optional
+`title` and an optional `lens`. `CatalogApp` gains `lens`. Three refusals, each
+making the folder not a member, the same disposition a missing `index.html` gets:
 
-- the file exists and does not parse as a Lens
-- the namespace's final dot-separated label is not the app id
+- the file exists and is not valid JSON
+- `lens` is present and does not parse as a Lens
+- `lens` is present and its namespace's final label is not the app id
 
-A folder with no `lens.json` is admitted exactly as today and owns no namespace.
+A folder with no declaration is admitted exactly as today and owns no namespace.
 
-Tests: a valid declaration becomes a member carrying its Lens; a mismatched final
-label is not a member; malformed JSON is not a member; absent is fine.
+**`documentTitle` is deleted in this wave.** Title resolution becomes the
+declared title or the app id, so the `<title>` regular expression and its
+fallback chain go with it. Compiled applications are unaffected: their titles
+come from `SURFACE_ROUTES`, never from that function.
+
+Tests: a valid declaration becomes a member carrying its title and Lens; a
+mismatched final label is not a member; malformed JSON is not a member; a folder
+with no declaration is a member titled by its id.
 
 ## Wave 3: the host composes the catalog's Lenses
 
@@ -63,8 +70,9 @@ the same list or the folder and the Data pane disagree about what exists.
 
 ## Wave 4: prove it end to end
 
-Build `apps/vocab`, write its `lens.json` (`so.epicenter.vocab`, final label
-`vocab`, matching `vocabLens` in `apps/vocab/vocab.ts:132`), publish, restart.
+Build `apps/vocab`, write its `epicenter.json` (title `Vocab`, namespace
+`so.epicenter.vocab`, whose final label matches the app id and whose Lens is
+`vocabLens` from `apps/vocab/vocab.ts:132`), publish, restart.
 Expect `so.epicenter.vocab` in the Data pane sidebar with its three tables, and
 `~/Epicenter/so.epicenter.vocab/` holding markdown beside
 `so.epicenter.vocab.sqlite3`.
