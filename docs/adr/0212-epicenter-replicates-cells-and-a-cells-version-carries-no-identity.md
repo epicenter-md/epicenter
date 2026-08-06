@@ -46,7 +46,7 @@
   `doc_state`. Its nullable compact projection survives.
   Also [ADR-0135](0135-row-documents-have-application-owned-roots.md) (`Accepted`)
   at row liveness only. Withdrawn: that the persistence owner "cannot recreate a
-  deleted row" (`:114-116`), since an address is reusable here and the open door
+  deleted row" (`:116-117`), since an address is reusable here and the open door
   replaces a stale-generation body rather than refusing on liveness. That
   Epicenter never declares, validates, versions, reserves, enumerates or
   interprets roots is untouched by the presence decision, though the open item below may reach it, and is the constraint ADR-0213's body entry is
@@ -507,7 +507,7 @@ exists and this is its complete state as of now", not "make sure this row exists
 That is what a mirror reconciler wants, and it is not what an accidental second
 `create` wants: a device with stale local state that calls `create` on a row
 another device has since edited erases those edits everywhere, silently, through a
-call that returns success. `epicenter.ts:465-481` already refuses `create` on a
+call that returns success. `epicenter.ts:469-481` already refuses `create` on a
 row it can see is live, and that guard reads local state only, so it catches the
 common accident and not the offline one. A caller that has not seen the row's
 current state should let the runtime mint the id, or read and `patch`.
@@ -672,7 +672,8 @@ a version. The floor is
 held  = the presence version the AUTHORITY holds for this row, returned with the
         refusal, or zero when it holds none
 local = the presence version this replica holds for the row, or zero
-floor = (max(the authority's time, min(held.version_ms, the authority's time),
+floor = (max(the authority's time,
+             min(held.version_ms, the authority's time + the clamp width),
              local.version_ms),
          the millisecond came from a presence version
            ? that version's seq + 1 + rank
@@ -688,8 +689,14 @@ And `held.version_ms` may be a full clamp width ahead, so flooring *to* it impor
 another device's skew into a re-stamp applied to a device already known to have a
 bad clock; measured over 800 traces, doing that drove user-visible create and
 delete losses from 308 to 322 while driving the internal counter it targeted from
-285 to 0. Clamping the forward reach keeps the counter at zero without the
-regression.
+285 to 0. Clamping the forward reach to **the authority's time plus the clamp width**, not
+to the authority's time, is what keeps the counter at zero without the regression.
+Clamping to the authority's time makes the whole `held` term inert: `min(H, A)` is
+never greater than `A`, and `A` is already a term of the same maximum, so the
+expression collapses to `max(A, local)` and the refusal's held version can never
+raise anything. That collapse is round-8's replica-only floor with a flat
+authority time beside it, which is the pair of defects this formula exists to
+avoid.
 
 **The floor is spent in the round that reads it.** The refusal carries the
 authority's held presence at refusal time, and pushing the re-stamped cells on the
@@ -698,7 +705,7 @@ presence is refused as stale and the user's create or delete is gone with nothin
 dirty. Measured: 179 stale re-stamped presence cells and 66 destroyed by R2, which
 re-pushing the row in the same round takes to 16 and 3.
 
-**The floor comes from the authority, not from the replica.** A presence write
+**The refusal names the authority's held presence, and the floor clears it.** A presence write
 overwrites the row's presence cell in place, so when the presence cell is itself
 refused the replica no longer holds the version it must clear, and an earlier
 draft floored that branch at the authority's time flat. Measured: a clamped

@@ -210,12 +210,12 @@ write landing ahead of the scan is counted twice and 40 of 40 completed passes
 leave the sum wrong in the other direction.
 
 The cost is not free and an earlier draft said it was: hashing every cell is
-**+295% on top of the scan** the pass already pays, about 2.5 seconds at 2.6M
-cells, and the body half is a document load and re-encode at 8.9 microseconds per
-small body and 38.6 at 40 KB, so 196k bodies is another 1.8 to 8.9 seconds. A
+**+295% on top of the scan** the pass already pays, about 1.9 seconds of added hashing on a
+2.5 second scan-plus-hash at 2.6M cells, and the body half is a document load and
+re-encode at 8.9 microseconds per small body and 38.6 at 40 KB, so 196k bodies is
+another 1.8 to 7.6 seconds. A
 completed pass therefore owes **about +3.6 seconds at an 80-character body and +9.4 at
-40 KB**, about one and a half times the projection rebuild this design
-calls its expensive cold start, now that the rebuild is priced on the query the
+40 KB**, roughly 1.8 times the projection rebuild, now that the rebuild is priced on the query the
 record decides.
 
 **That number also retires the bucket refusal below.** Enumerating a bucket was
@@ -314,7 +314,7 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
   reconciliation always converges" and be unable to say when to run it.
 - **It answers in 8 bytes.** A settled round compares two sums and stops.
 - **It does not localize.** A mismatch costs the full-range pass, which at
-  ADR-0212's fixture is 2.6M cells and roughly 315 MB. The precondition above is
+  ADR-0212's fixture is 2.6M cells and roughly 336 MB at an 80-character body. The precondition above is
   what keeps that rare; without it, it is every round. This is the whole reason
   the false-alarm rate matters more than the true-positive rate.
 - **It is a range reconciliation primitive, and both sides now have one.**

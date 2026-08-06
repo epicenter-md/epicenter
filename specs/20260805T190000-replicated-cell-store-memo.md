@@ -642,7 +642,7 @@ mutually exclusive states, one with every cell owed and one with none.
 
 | Refused | Why | Measured cost of refusing it |
 | --- | --- | --- |
-| Whole-row JSON as the stored shape | per-field and whole-row versions do not compose | 2.12x and 1.66x the size of what ships today (181.0 vs 85.3 MB, 342.4 vs 206.2 MB), re-deriving one changed row about 2.9x and 2.5x slower once the body load is counted, and the whole projection at least 64x and 43x slower |
+| Whole-row JSON as the stored shape | per-field and whole-row versions do not compose | 2.12x and 1.66x the size of what ships today (181.0 vs 85.3 MB, 342.4 vs 206.2 MB), re-deriving one changed row 3.8x and 3.3x slower as a point query, and the whole projection 42x and 37x slower |
 | Real typed columns | ADR-0125: nowhere to put an unknown key | 3.81x and 2.33x the disk, fixture-matched (181.0 vs 47.5 MB, 342.4 vs 147.1), against a shape that stores no version, no `dirty` and no presence, so the ratio is a floor |
 | One JSON record per row plus a version map | the map is opaque, so no version is legible and the merge cannot be one SQL predicate; one field change ships the whole record and map; merge-group names become an unversioned wire contract | THIS REFUSAL COSTS DISK. Packed as 18 binary bytes per field it is 127.9 MB and 274.1 on the same fixture, so the cell store is 41% and 25% LARGER. An earlier pass quoted 6.0% against a version map stored as base64 inside JSON, roughly 40 bytes per field. On the wire the cell store still wins, 8.9x at 12 columns and 3.0x at 3, both like for like |
 | Interning the address | the replica must be readable in a SQL console with no joins | at most 34% of the file, before dictionary tables and integer keys are added back |
