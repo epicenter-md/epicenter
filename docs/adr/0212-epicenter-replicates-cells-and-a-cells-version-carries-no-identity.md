@@ -169,8 +169,8 @@ CREATE TABLE _replica_metadata (
 ) STRICT;
 
 CREATE TABLE _replica_cell (
-	namespace TEXT NOT NULL,
-	table_name TEXT NOT NULL,
+	namespace TEXT NOT NULL CHECK (length(namespace) > 0),
+	table_name TEXT NOT NULL CHECK (length(table_name) > 0),
 	row_id TEXT NOT NULL CHECK (
 		length(row_id) BETWEEN 1 AND 128 AND
 		row_id NOT GLOB '*[^A-Za-z0-9._-]*' AND
@@ -197,11 +197,11 @@ CREATE TABLE _replica_cell (
 ) WITHOUT ROWID, STRICT;
 
 CREATE TABLE _replica_body (
-	namespace TEXT NOT NULL,
-	table_name TEXT NOT NULL,
+	namespace TEXT NOT NULL CHECK (length(namespace) > 0),
+	table_name TEXT NOT NULL CHECK (length(table_name) > 0),
 	row_id TEXT NOT NULL,
-	generation_ms INTEGER NOT NULL,
-	generation_seq INTEGER NOT NULL,
+	generation_ms INTEGER NOT NULL CHECK (generation_ms > 0),
+	generation_seq INTEGER NOT NULL CHECK (generation_seq >= 0),
 	doc_state BLOB NOT NULL,
 	pending_update BLOB,
 	inflight_update BLOB,
@@ -240,8 +240,8 @@ CREATE TABLE _authority_metadata (
 
 CREATE TABLE _authority_cell (
 	cursor INTEGER PRIMARY KEY,
-	namespace TEXT NOT NULL,
-	table_name TEXT NOT NULL,
+	namespace TEXT NOT NULL CHECK (length(namespace) > 0),
+	table_name TEXT NOT NULL CHECK (length(table_name) > 0),
 	row_id TEXT NOT NULL CHECK (
 		length(row_id) BETWEEN 1 AND 128 AND
 		row_id NOT GLOB '*[^A-Za-z0-9._-]*' AND
@@ -264,11 +264,11 @@ CREATE UNIQUE INDEX _authority_cell_address
 	ON _authority_cell(namespace, table_name, row_id, column_name);
 
 CREATE TABLE _authority_body (
-	namespace TEXT NOT NULL,
-	table_name TEXT NOT NULL,
+	namespace TEXT NOT NULL CHECK (length(namespace) > 0),
+	table_name TEXT NOT NULL CHECK (length(table_name) > 0),
 	row_id TEXT NOT NULL,
-	generation_ms INTEGER NOT NULL,
-	generation_seq INTEGER NOT NULL,
+	generation_ms INTEGER NOT NULL CHECK (generation_ms > 0),
+	generation_seq INTEGER NOT NULL CHECK (generation_seq >= 0),
 	doc_state BLOB NOT NULL,
 	cursor INTEGER NOT NULL,
 	PRIMARY KEY (namespace, table_name, row_id)
@@ -341,8 +341,8 @@ lives only in `_replica_body`, and the projection restores it as a field on the
 way out.
 
 Each metadata singleton carries columns it does not look like it needs: a
-lifetime, a `digest_format` that belongs to ADR-0213, and on the replica a
-`repair_from`. A replica stores `authority_lifetime` beside
+lifetime, a `digest_format` and a `digest_sum` that belong to ADR-0213, and on
+both sides a `repair_from` and a `repair_sum`. A replica stores `authority_lifetime` beside
 `last_applied_cursor`, and an authority mints a `lifetime` and re-mints it on
 restore or rebuild; the reason is under "the authority
 names its own lifetime" below.
@@ -362,7 +362,13 @@ the authority keep values opaque.
 
 `version_ms` is the version expressed as a time, chosen so a human can read it.
 It is not a claim about when a person acted, and the authority verifies only that
-it is not more than five minutes ahead of its own clock.
+it is not more than five minutes ahead of its **clamp reference**, which is not
+simply its own clock. The reference is
+`max(its own clock, the highest version_ms it has accepted minus the clamp width)`,
+and "the authority's time" means that quantity everywhere below: in the refusal
+payload, in the re-stamp floor, and in the inertness argument. A raw wall clock
+there is not a simplification, it is the livelock measured under "the clamp
+invariant is not unconditional".
 
 `version_seq` is local monotonicity done structurally. Inflating `version_ms`
 instead would store its own drift.
@@ -957,7 +963,8 @@ authority whose body is behind can never be detected or repaired. That is the
 failure the pass exists for, on the plane whose payload is largest, which is this
 record's own argument for making a body Yjs at all. So a repair sends each body's
 whole `doc_state`, which Yjs makes idempotent. **It is chunked by address range**, resuming from the
-last address it confirmed. Deleting `sealBatch` deleted the only bound on upload
+last address it confirmed, over ADR-0213's single sequence across both planes,
+with a body at `(namespace, table, row, '!body')`. Deleting `sealBatch` deleted the only bound on upload
 size in the system, and an unbounded pass at 200k rows of 12 columns is 2.6M
 cells, and roughly 336 MB in one request at an
 80-character body, because the pass ships every body's whole `doc_state` as well;
@@ -1008,7 +1015,8 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   to protect a 40KB document, and at that size `_replica_body` at 196k rows would
   be about 7.8 GB and the ratio below would collapse toward 1.0x. The headline is
   measured at the small size and the caveat belongs beside it, not only in prose.
-- **The store costs 2.12x today's whole-row JSON on disk** (181.0 MB against
+- **The store costs 2.14x and 1.69x today's whole-row JSON on disk** once the body
+  plane is counted, and 2.12x and 1.66x with the cell relation alone (181.0 MB against
   85.3 MB; 342.4 MB against 206.2 MB, or 1.66x), and 3.69x its own payload,
   falling to 2.48x at 1M rows of 3 columns, so the multiplier is a function of row
   width and a single figure for it is not meaningful.
@@ -1104,8 +1112,7 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   content fingerprints, which is how the mismatch was finally caught. Priced with
   the body plane on both sides, the arms fingerprint identically and the whole
   rebuild costs 1.76x and 1.31x. The body plane costs the opponent 1136 ms and
-  5604 ms, and is 54% and 74% of the cell store's own rebuild, both terms from one run.  No repeat runs of the decided query exist, so these figures carry one
-  significant figure. Four saved runs of the decided query exist and span about 10%
+  5604 ms, and is 54% and 74% of the cell store's own rebuild, both terms from one run. Four saved runs of the decided query exist and span about 10%
   at 12 columns (1990, 1969, 2095, 2168 ms); the cell arms repeat within about 3%
   inside a run, but the whole-row denominator's own control arm moves -15.4% to
   +11.9% across runs, so the ratio's
@@ -1242,7 +1249,7 @@ scheduled for deletion on acceptance; the git ref is `882cedea46`.
   measurable, at −2.6% to +7.2% across runs, from a measurement structurally
   unable to see the difference.
 - **Readable version columns.** ISO-8601 and hex order identically to the compact
-  encoding and cost 36% and 29% more disk. A view is free.
+  encoding and cost 37% and 29% more disk. A view is free.
 - **A 16-byte version hash.** Closes the exact-version oscillation for +19 MB and
   +30 MB. The value guard in the merge predicate closes it for nothing.
 - **Range-based set reconciliation instead of a cursor.** It would delete the

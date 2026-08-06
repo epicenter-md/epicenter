@@ -188,7 +188,8 @@ authority from `_authority_cell` and `_authority_body`.
 
 **Neither side's half can be a running total held nowhere.** Accumulating a
 partial sum in `digest_sum` itself leaves garbage rather than drift the moment a
-replica goes offline mid-pass, and two interleaved passes leave the loser's
+replica goes offline mid-pass, and, absent the one-pass-at-a-time rule ADR-0212
+decides for the authority, two interleaved passes leave the loser's
 partial as the durable value. Measured: a pass abandoned after six of ten pages
 leaves the side summing 60% of its own store, which every peer then mismatches
 every round. Both sides therefore carry a separate accumulator, `repair_sum`,
@@ -268,9 +269,12 @@ false, because nothing would ever recompute anything.
 Every removal subtracts, not only the obvious one. ADR-0212's R2 deletes a row's
 older cells when a presence cell is written, **and its body row with them**, and
 the open door **replaces** a stale-generation body with an empty document. The
+open door also **re-stamps** a body's generation when a clamp refusal moves its
+row's presence, and the entry below hashes `generation_ms` and `generation_seq`,
+so the entry changes while `doc_state` does not. The
 cell delete returns what it removed and subtracts each entry in the same
-transaction; the two body mutations have no write of their own to hang a fold on,
-so each must subtract the entry it removes explicitly. Miss any of the three and
+transaction; the three body mutations have no write of their own to hang a fold on,
+so each must subtract the entry it removes explicitly. Miss any of the four and
 the first deletion in the store guarantees a permanent false mismatch.
 
 The same rule generalizes: the digest sum and the write it describes are one
