@@ -280,11 +280,19 @@ buys undelete and costs a new failure mode.
 becomes a cell whose value is absent, with a clock. This preserves a distinction
 the current model loses: "the user cleared this" versus "it was never set."
 
-**Acknowledgement is not needed.** State-based merge is idempotent, so there is
-nothing to acknowledge; that is what deletes A3.
+**The batch receipt handshake is not needed.** State-based merge is idempotent,
+so there is nothing to acknowledge for a scalar cell; that is what deletes A3.
 
-**Garbage collection: none, and say so.** With terminal death, a returning
-replica would resurrect anything collected. If tombstone growth ever matters,
+> **Revision 2 qualifies this.** A body still needs an acknowledgement, and one
+> that names a monotonic send token: without it a late reply to a superseded send
+> empties both delivery slots and loses everything typed since.
+
+**Garbage collection: none, and say so.** The premise below is refused in
+Revision 2, since death is no longer terminal, but the conclusion survives for a
+different reason: a cell at a dead address cannot be collected locally, because a
+replica that collected it and one that did not would disagree if the address were
+re-created at a version between the two. The original argument was that with
+terminal death, a returning replica would resurrect anything collected. If tombstone growth ever matters,
 the answer is a policy, not a mechanism: retain N days, and a device dark longer
 re-bootstraps rather than merging. There is no staleness concept today at all;
 `_authority_replicas` has four columns and no timestamp
@@ -410,8 +418,9 @@ the local-vs-authority fold divergence risk (one pure function, two places)
 ADR-0142's unbuilt recovery taxonomy
 ```
 
-**User loss:** silent LWW resolution with no conflict surface; no counters; at an
-exact millisecond tie the winner is arbitrary; "synced" becomes a clock
+**User loss:** silent LWW resolution with no conflict surface; no counters; a
+losing window as wide as the authority's ingest clamp rather than the single
+millisecond stated here, which Revision 2 corrects; "synced" becomes a clock
 comparison rather than a receipt.
 
 **Also unlocked:** the authority stops being a sequencer, so two devices could
@@ -450,8 +459,9 @@ existing tests. It has to be a new differential test, written first.
 
 ## Revision 1: the version scheme is `(wall_ms, counter, actor)`
 
-> **Superseded by Revision 2 below on the actor, and on nothing else.** The
-> counter survives. Kept because Revision 2 only makes sense against it.
+> **Superseded by Revision 2 below on three things: the actor, the single body
+> delivery slot, and the tail-versus-vector byte comparison.** The counter
+> survives. Kept because Revision 2 only makes sense against it.
 
 Section 5 recommended `(wallMillis, valueHash)` and rejected a hybrid logical
 clock. **That was wrong.** Five parallel designs plus an adversarial pass
@@ -606,14 +616,14 @@ mutually exclusive states, one with every cell owed and one with none.
 
 | Refused | Why | Measured cost of refusing it |
 | --- | --- | --- |
-| Whole-row JSON as the stored shape | per-field and whole-row versions do not compose | the store is 2.12x and 1.66x its size (181.0 vs 85.3 MB, 342.4 vs 206.2 MB), and re-derives one changed row 1.69x and 1.21x slower, and rebuilds the whole projection 16.2x and 8.5x slower |
+| Whole-row JSON as the stored shape | per-field and whole-row versions do not compose | the store is 2.12x and 1.66x its size (181.0 vs 85.3 MB, 342.4 vs 206.2 MB); the settled schema measures 184.7 MB and 348.8 MB on a fixture with no dead rows, and re-derives one changed row 1.69x and 1.21x slower, and rebuilds the whole projection 16.8x and 8.5x slower |
 | Real typed columns | ADR-0125: nowhere to put an unknown key | 3.7x the disk (181.0 vs 48.5 MB), against a fixture that stores no version, no `dirty` and no presence, so the ratio is a floor rather than like for like |
 | One JSON record per row plus a version map | one field change ships the whole record and map; merge-group names become an unversioned wire contract | 8.9x at 12 columns and 3.0x at 3, like for like |
 | Interning the address | the replica must be readable in a SQL console with no joins | at most 34% of the file, before dictionary tables and integer keys are added back |
 | Readable version columns (ISO-8601 plus hex) | a view gives the same legibility for nothing | +65 MB (+36%) and +101 MB (+29%) |
 | A per-cell cursor on the replica | it is a durable local claim about the authority's state | about 20 MB for the column, 10% of the file; the 85 MB figure is an index on it that nothing in this design would query |
 | An index on `dirty` | the scan it replaces is cheap and once per round | +81 MB and +126 MB with local work standing, to save a 48 ms and 112 ms scan; in the state where it costs that, it saves 3.6% and 8.4% |
-| Row presence in its own relation | one algebra, one relation, and an address that can be reused | 1.02x and 1.27x slower projection rebuild (582 vs 568 ms, 1400 vs 1104 ms), once the two-relation query groups before it joins, for 1.7% and 4.9% less disk |
+| Row presence in its own relation | one algebra, one relation, and an address that can be reused | 1.02x and 1.27x slower projection rebuild (582 vs 568 ms, 1400 vs 1104 ms), once the two-relation query groups before it joins, for 1.5% and 4.1% less disk |
 | A generation column plus a `resurrect` verb | the presence cell's version already orders incarnations | one column on every cell, one new API surface, and it loses a concurrent write from a replica that has not seen the bump, where R1 and R2 keep it |
 | A 16-byte `version_hash` | the merge predicate's value guard closes the same hole | +19.4 MB (+10.7%) and +29.5 MB (+8.6%) |
 | A replica-global `version_seq` | it is not durable across a restart | a same-millisecond rewrite after a crash is silently discarded 50.3% of the time, measured over 20,000 trials |
@@ -639,9 +649,20 @@ mutually exclusive states, one with every cell owed and one with none.
 | An unbounded repair pass | `sealBatch` was the only upload bound in the system | 2.4M cells and 181 MB in one request |
 | Merging inside a `json(inner)` field | one cell is one merge unit, so declared-together values never tear | a whole-blob write, which is the point rather than a limitation |
 
-**Harness.** Every figure above comes from `bench.ts` through `bench7.ts` and
-`converge.ts` / `converge2.ts` / `converge3.ts`, built as runnable `bun:sqlite`
-schemas. An adversarial pass over the harness itself found and fixed four biases
+`Supersedes` and `Amends` carry reciprocal links on both records, as
+`docs/adr/README.md` requires. `Relates` does not: it is one-directional by
+convention here, and only ADR-0170 carries one back, because that record owns a
+noun this one borrows.
+
+**Harness.** The authoritative run is `bench9.ts`, which executes the settled
+`final-schema.sql` verbatim on both planes and covers the whole required set:
+insert, scattered row read, projection rebuild, changed-since, one-field write,
+row delete, on-disk after `wal_checkpoint(TRUNCATE)`, and wire bytes. `bench.ts`
+through `bench8.ts` measured shapes that have since been superseded and are kept
+as history; where a figure above still comes from one of them, it is because the
+comparison it makes is against a shape only that bench built. Convergence is
+`converge.ts`, `converge2.ts`, and `converge3.ts`; the layout is verified by
+`final-verify.ts` and `final-verify2.ts`. An adversarial pass over the harness itself found and fixed four biases
 worth recording, because they all ran in the same direction: the `dirty` index
 was measured with `dirty` cleared on every cell (reporting 65 KB for something
 that costs 75 MB), whole-row JSON carried an index no timed query used, the

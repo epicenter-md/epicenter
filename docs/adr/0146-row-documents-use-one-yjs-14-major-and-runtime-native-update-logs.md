@@ -2,6 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-07-17
+- **Amended by:** [ADR-0212](0212-epicenter-replicates-cells-and-a-cells-version-carries-no-identity.md) (`Proposed`) at the `DocumentStore` contract only, by the chain through ADR-0159: a body is one merged state rather than an append log. This record's choice of one Yjs 14 major and runtime-native V2 updates is untouched and relied on.
 - **Amends:** [ADR-0135](0135-row-documents-have-application-owned-roots.md)
 - **Amended by:** [ADR-0159](0159-row-documents-persist-in-one-owner-side-sqlite-update-log.md) (the per-runtime `DocumentStore` implementations collapse to one owner-side SQLite update log plus one shared attachment over a load/append seam; capture and deletion move to the owner), [ADR-0174](0174-row-documents-project-as-nullable-compact-cells-and-persist-as-bounded-live-chains.md) (every live owner stores a bounded baseline-plus-tail chain while logical artifacts project one compact document cell; an oversized lineage records one terminal address-scoped `too-large` issue). The Yjs-14-only rule and bounds stand.
 

@@ -28,7 +28,7 @@
   Also [ADR-0164](0164-scalar-facts-converge-independently-epicenter-refuses-distributed-transactions.md)
   at the unit of convergence. That record makes one scalar address the unit,
   "either a row addressed by `(namespace key, table key, row ID)` or a value"
-  (`:34-36`); the unit becomes a cell. Its refusal of distributed transactions is
+  (`:35-36`); the unit becomes a cell. Its refusal of distributed transactions is
   the reason this record can refuse cross-cell invariants, and survives intact.
   Also [ADR-0172](0172-sqlite-stores-convergent-facts-and-documents-raw-files-store-blob-bytes.md)
   at its storage inventory: "pending intents" (`:23`) and "accepted nullable blob
@@ -40,8 +40,17 @@
   record: a cell the authority has not confirmed *is* the obligation. Its blob
   plane, its terminal-issue mechanism, and its park state are withdrawn.
   Also [ADR-0174](0174-row-documents-project-as-nullable-compact-cells-and-persist-as-bounded-live-chains.md)
-  at the publication obligation: a revision counter is replaced by the unsent
-  bytes themselves. Its projection rule survives.
+  at both of its halves. Withdrawn: the publication obligation's revision counter,
+  replaced by the unsent bytes themselves, and the bounded live chain (`:63-69`, a
+  compact baseline plus a short ordered tail), replaced by one merged
+  `doc_state`. Its nullable compact projection survives.
+  Also [ADR-0159](0159-row-documents-persist-in-one-owner-side-sqlite-update-log.md)
+  (`Accepted`) and, by the contract it names,
+  [ADR-0146](0146-row-documents-use-one-yjs-14-major-and-runtime-native-update-logs.md).
+  Withdrawn: that `createSqliteDocumentLog` and its append log are "the only
+  durable document representation" (`0159:24-28`). A body is one merged state plus
+  two delivery slots, so append admission and compaction stop being concepts. The
+  Yjs 14 major and the V2 encoding both survive, and are relied on.
   Also [ADR-0207](0207-rows-render-continuously-to-markdown-and-frontmatter-is-the-only-way-back.md)
   at the hole it named and accepted (`:262-265`, "a table's prose is either in a
   field or unreachable from the folder"). A body becomes a Yjs plane, so folder
@@ -124,10 +133,12 @@ stored shape.
 CREATE TABLE _replica_cell (
 	namespace    TEXT NOT NULL,
 	table_name   TEXT NOT NULL,
-	row_id       TEXT NOT NULL,
+	row_id       TEXT NOT NULL CHECK (
+	               length(row_id) BETWEEN 1 AND 128 AND
+	               row_id NOT GLOB '*[^A-Za-z0-9._-]*' AND row_id GLOB '[A-Za-z0-9]*'),
 	column_name  TEXT NOT NULL CHECK (
 	               column_name = '!presence' OR column_name GLOB '[A-Za-z]*'),
-	value        TEXT,       -- canonical JSON; NULL is a cleared cell, which is a value
+	value        TEXT CHECK (value IS NULL OR json_valid(value)),  -- NULL is a cleared cell
 	version_ms   INTEGER NOT NULL,
 	version_seq  INTEGER NOT NULL,
 	version_hash BLOB NOT NULL CHECK (length(version_hash) = 8),
@@ -222,12 +233,14 @@ names its own lifetime" below.
 
 ```txt
 version_ms    Date.now() at the local write, never below what it overwrites
-version_seq   0, or one past the cell's own counter within the same version_ms
+version_seq   0, or one past whichever cell supplied the floor below
 version_hash  8 bytes of sha256 over the value's canonical JSON
 ```
 
-Compare left to right. **The comparison never touches the value itself and never
-names an actor.**
+Compare left to right. **The ordering never reads the value and never names an
+actor.** The equal arm of the merge predicate compares the value for byte
+equality, which is a test and not an ordering, and that difference is what lets
+the authority keep values opaque.
 
 `version_ms` is the version expressed as a time, chosen so a human can read it.
 It is not a claim about when a person acted, and the authority verifies only that
@@ -257,7 +270,7 @@ also argued that a hybrid logical clock spreads a skewed clock through
 minutes, exactly as it would bound an HLC. That argument is withdrawn rather
 than relied on.
 
-### The local write rule is derived from the cell being written
+### The local write rule is derived from the row being written
 
 ```txt
 version_ms  = max(Date.now(), current.version_ms, presence.version_ms)
@@ -265,7 +278,11 @@ version_seq = one past whichever of those two the floor came from, else 0
 ```
 
 Both components come from the row being written, which is already in hand, so
-this costs nothing and survives a crash.
+this costs nothing and survives a crash. **A replica-global counter does not.** A
+process restart inside one millisecond reissues `version_seq = 0`, so a rewrite
+and the value it replaces carry the same `(ms, seq)`, the tie falls to the hash,
+and the hash knows nothing about which write came second: measured over 20,000
+trials, the later write is silently discarded **50.3% of the time**.
 
 **The presence cell has to be in the floor, not just the cell.** A column that has
 never been set has no `current`, but R1 measures every write against the row's
@@ -274,11 +291,7 @@ clock that far out. Deriving the floor from the cell alone means a user typing
 into a never-set field on a replica with a correct clock has the write silently
 refused by R1, with no error and nothing dirty to retry, for the whole width of
 the clamp. Measured: refused at the moment of writing, again a second later, again
-a minute later, and stored only after 241 seconds. **A replica-global counter does not.**
-A process restart inside one millisecond reissues `version_seq = 0`, so a rewrite
-and the value it replaces carry the same `(ms, seq)`, the tie falls to the hash,
-and the hash knows nothing about which write came second: measured over 20,000
-trials, the later write is silently discarded **50.3% of the time**.
+a minute later, and stored only after 241 seconds.
 
 Raising `version_ms` to meet what it overwrites is what makes a local edit beat a
 version that arrived from a clock running ahead. It stores no drift: 200,000
@@ -473,7 +486,10 @@ with no bound: a laptop resuming with its clock a day fast strands the cell for
 about 24 hours, and one resuming with an RTC reading 2031 strands it for years.
 Rewriting cannot repair it, because the local write rule never lowers
 `version_ms`. So a **clamp** refusal names the address and the authority's own time, and the
-replica re-stamps the refused cell at that time. This is not a durable claim about
+replica re-stamps the refused cells of that row at that time, **presence cell
+first and in one transaction**, exempt from the write floor above. Re-stamping a
+field cell alone would land it below its own row's presence cell, which is exactly
+what R1 refuses, so the debt would never clear. This is not a durable claim about
 another party's state: it is a one-shot repair carried by the response, and the
 skewed version never propagated because the authority never accepted it.
 
@@ -489,8 +505,8 @@ because the obligation was discharged rather than deferred.
 ### The authority is a store, ordered by cursor, and names its own lifetime
 
 Its only two access patterns are point lookup by address, to merge, and range
-scan by cursor, to serve deltas. Since the comparison never touches the value, it
-stores values as **opaque bytes** it never parses. **The body plane is the one
+scan by cursor, to serve deltas. Since ordering never reads a value, it stores
+values as **opaque bytes** it never parses. **The body plane is the one
 exception**: merging a body means running Yjs, so the authority interprets there
 and the dependency is real, including for any future non-JavaScript authority.
 
@@ -547,8 +563,8 @@ replica. A repair pass therefore pushes every cell, ignoring `dirty`, which is
 sound precisely because merge is idempotent and affordable precisely because the
 equal case takes no cursor. **It is chunked by address range**, resuming from the
 last address it confirmed. Deleting `sealBatch` deleted the only bound on upload
-size in the system, and an unbounded pass at 200k rows of 12 columns is 2.4M cells
-and 181 MB in one request.
+size in the system, and an unbounded pass at 200k rows of 12 columns is 2.6M cells
+and 185 MB in one request.
 
 ADR-0142's separate bootstrap, history-gap, and lineage-mismatch recoveries are
 unnecessary as separate mechanisms. The lineage question is not: it is the authority lifetime
@@ -581,9 +597,9 @@ above.
   millisecond tie the winner is arbitrary" understated this by the width of the
   clamp. Relatedly, the local write rule raises a cell's `version_ms` to meet a
   skewed version it merged, so a correct clock inherits that floor for that cell:
-  the scheme is `max(observed)` bounded per cell rather than globally, which is
-  better than an HLC's global propagation and is not the absence of propagation.
-- **The store costs 2.13x whole-row JSON on disk** (181.0 MB against 85.3 MB at
+  the scheme is `max(observed)` bounded per cell rather than globally, and that is
+  not the absence of propagation.
+- **The store costs 2.12x whole-row JSON on disk** (181.0 MB against 85.3 MB at
   200k rows of 12 columns, so 2.12x; 342.4 MB against 206.2 MB, or 1.66x, at 1M
   rows of 3),
   and 3.69x its own payload. At 1M rows of 3 columns the payload ratio falls to
@@ -601,8 +617,9 @@ above.
   costs (6.9 against 4.09 microseconds, 4.79 against 3.95). That is the operation
   that runs in steady state, because a write touches one row, and the margin
   there is small.
-- **Rebuilding the WHOLE projection costs 568 ms at 2.4M cells and 1104 ms at
-  3M**, against 35 ms and 130 ms for whole-row JSON. That is a cold start, a
+- **Rebuilding the WHOLE projection costs 555 ms at 2.6M cells and 1109 ms at
+  4M** on the settled schema. Against whole-row JSON, measured in one run so the
+  ratio is self-consistent, it is 16.8x and 8.6x. That is a cold start, a
   repair, or a re-import, and it is the price of the layout rather than a
   steady-state cost.
 - **Collapsing presence into the cell relation buys almost no time, and that is
@@ -624,8 +641,8 @@ above.
 - **Counters are refused.** "Add one" is not expressible; two devices each adding
   one yields one. None exist today, and one would need its own CRDT regardless.
 - **Every value must round-trip canonical JSON byte-identically.** This is newly
-  load-bearing: because the comparison no longer touches the value, a lossy round
-  trip is invisible. Two findings, and neither is the one previously stated.
+  load-bearing: because ordering no longer reads the value, a lossy round trip
+  is invisible. Two findings, and neither is the one previously stated.
   Canonical JSON round-trips every integer byte-identically, including above
   2^53, because the precision is already gone before storage sees it: a caller
   writing 2^53 + 1 hands over 2^53, and half of the first thousand integers above
@@ -633,12 +650,15 @@ above.
   (`builders.ts:141` declares no maximum), not a storage bound. The one genuinely
   lossy round trip is negative zero, which is a legal finite number that canonical
   JSON writes as `0` and nothing refuses.
-- **A table must declare at least one required field.** Not for the reason an
-  earlier draft gave: a fieldless row still carries its presence cell, so it has
-  something to push and does not strand. The reason is that a row with no field
-  cells projects as an empty record, which no Lens can distinguish from a row
-  whose every optional field was cleared, so the folder rendering and the
-  projection both lose the ability to say what the row is.
+- **The rule that a table must declare at least one required field is retired.**
+  It was carried in on two justifications and neither survives. "A row with zero
+  cells has nothing to push and strands on its creator" fails because a row always
+  carries its presence cell. "An empty record is indistinguishable from a row
+  whose every optional field was cleared" fails because a cleared cell is a value:
+  it projects an explicit null where a never-set field projects nothing, and
+  preserving that distinction is one of the things this model buys. A table with
+  only optional fields is now representable, and a row of it projects as an empty
+  record, which is what it is.
 - **Presence is the sole liveness authority.** No read may infer existence from
   the other cells. Reading liveness as "this row has cells" resurrects a deleted
   row on the very replica that just pulled the tombstone, and R1 is what makes
