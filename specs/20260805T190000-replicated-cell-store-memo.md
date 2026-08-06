@@ -767,6 +767,24 @@ different and worse: `r8-digest-rerun.out` and `r8-delete-rerun.out` have no
 producing script at all, so they cannot be reproduced by anyone. They are replaced
 here by runs of the live producer.
 
+**Round 15 repaired the harness instead of counting it again.** Thirteen probes
+are retired to `superseded/` with a README: they name `_replica_digest` or
+`repair_epoch`, artifacts the design deleted, so they cannot run and must not be
+repaired. Two more are retired as covered elsewhere. The four broken by drift are
+repaired, and the one whose premise the schema made impossible is replaced:
+`value` is TEXT, so the non-UTF-8 wedge it tested cannot occur, and
+`r15-check-symmetry.ts` asserts what the settled schema actually does. **No
+current claim may be sourced from `superseded/`; a claim that needs one of those
+numbers is withdrawn instead.**
+
+That last repair changed a decision's justification. The authority-wedge passage
+read as present-tense fact and is a counterfactual: because neither side
+constrains `value` to `json_valid`, a poisoned value is stored by both and wedges
+neither, and the cost lands at read time on an unguarded projection. Measured on
+the settled schema, the whole page applies, the poisoned value round-trips byte
+for byte, and only an unguarded `json()` raises. The symmetry is what buys the
+wedge out; the record had been describing the disease rather than the cure.
+
 **Provenance decayed once before, and this is the third round it has bitten.** Fourteen harness
 scripts no longer execute against the settled schema, because every schema
 tightening breaks the positional inserts in probes nobody re-ran. Two claims in these records had a dead producer AND no saved output at the time round 13 checked:

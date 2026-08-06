@@ -290,10 +290,13 @@ which is all of them except one. A CHECK the replica holds and the authority doe
 not is a wedge: applying a page is one transaction, one unrepresentable cell
 aborts the whole page, the cursor never advances, and the only way to change a
 cell is to write a newer version of an address the replica cannot even express.
-The mechanism is that a single malformed value leaves a replica at cursor zero
-having applied nothing, forever. The probe that measured this no longer runs
-against the settled schema, so the figure is withdrawn under the rule the memo
-records, and the wedge follows from the CHECK asymmetry alone.
+That is a counterfactual, and the settled schema is on the other side of it:
+because neither side constrains `value` to `json_valid`, a value that is valid
+UTF-8 and invalid JSON is stored by both and wedges neither. Measured on the
+settled schema, a poisoned cell is applied along with every cell around it and the
+cursor advances past all of them; a nonconforming value is a read-time problem for
+the Lens, which is where the record puts it. The wedge is what the symmetry buys,
+not something the record has to live with.
 
 **The projection must therefore guard `json(value)`.** Removing the CHECK moved
 the wedge from the write path to the read path, where it is worse: one unreadable
