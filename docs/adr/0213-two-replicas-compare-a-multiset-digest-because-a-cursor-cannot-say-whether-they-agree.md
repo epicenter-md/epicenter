@@ -215,6 +215,13 @@ address the scan has already derived but the watermark has not yet passed is
 excluded as not-yet-passed while the scan already counted the old value, and the
 committed sum is permanently wrong.
 
+**And the pass scans both planes as ONE address sequence**, with a body at
+`(namespace, table, row, '!body')`. Atomic chunks alone are not enough: with cells
+scanned and then bodies, a body edited mid-pass sorts behind a cell watermark, is
+folded as a passed delta, and is then derived again when the body scan reaches it.
+Measured, that commits a sum counted twice, which is the same permanent false
+mismatch an omitted fold produces, through a door atomicity alone leaves open.
+
 `repair_from` is a **watermark, not an accumulator**, so it cannot carry the first
 term across a restart on its own: a pass chunked by address range that dies after
 three of ten chunks resumes with the scanned total at zero and commits a sum over

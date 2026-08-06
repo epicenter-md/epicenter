@@ -684,6 +684,11 @@ mutually exclusive states, one with every cell owed and one with none.
 | A repair watermark with no durable accumulator | `repair_from` is a watermark, not a running total, and the scanned term lives in memory | a pass that dies after three of ten chunks resumes and commits a sum over 280 of 400 addresses, which is a permanent false mismatch scheduling a full pass every round forever |
 | A terminal recompute under the authority's own write lock | an authority is the side N replicas push into, so its lock is not a local typist's | 0.81 microseconds per cell, so about 2.1 seconds of held write lock at 2.6M cells; a concurrent push fails after burning its full `busy_timeout`, measured at 0, 1000 and 5000 ms |
 | Refusing a causally gapped `doc_state` at the write door | the premise was that `load` drops structs it cannot integrate, so `{u1, u3}` and `{u1}` entry identically | the premise is false on the pinned Yjs: the stores are 45 and 32 bytes and their entries differ. Enforcing it discards recoverable user prose and ADR-0212's two body-refusal answers both lose it |
+| Letting a replica's repair pass own the authority's accumulator | the pair is one per store and a pass is one per replica, and a multiset sum has no idempotence | two interleaved passes over 200 addresses commit exactly twice the truth; a partial overlap commits a number related to neither. The authority opens one pass at a time and refuses a chunk whose `from` is not its current watermark |
+| Reading the floor's `local` term as "the presence this replica holds", full stop | after a clamp-refused create the replica holds the refused version, so the floor is the version just refused | the re-push never terminates: 32 inner rounds, the cell still dirty, the authority holding nothing. The fuzz always excluded a refused presence; the record did not say so |
+| Treating the clamp invariant as unconditional | it holds only while the authority's clock is monotonic | with the clock stepped back an hour, EVERY member of the floor family livelocks, because `local` is never clamped and the held version sits permanently above `A + width`. The clamp reference is now `max(own clock, highest accepted version_ms - width)` |
+| Scanning the cell plane and the body plane as two address sequences under one watermark | a body edited mid-pass sorts behind a cell watermark, is folded as a passed delta, and is derived again when the body scan reaches it | the committed sum counts it twice, which is the permanent false mismatch the recompute exists to remove. One sequence, with a body at `!body` |
+| Leaving the clamp silent about a body's generation | a body copies its generation from the presence cell, so a clamped create produces an equally skewed one | the prose is lost from the device that typed it, the authority holds it under a generation no row has, and the digest mismatches every round while the pass re-sends bytes the authority refuses |
 
 `Supersedes` and `Amends` carry reciprocal links on both records, as
 `docs/adr/README.md` requires. `Relates` does not: it is one-directional by
@@ -737,6 +742,15 @@ delivery counter in any form. Each patch added a proxy for the missing
 information; none of them added the information. The mechanism that carries it was
 priced in this table and deferred, and the deferral is what the three rounds cost.
 It is adopted above.
+
+**A fix that created the defect it was fixing, once.** Round 11 gave the authority
+`repair_sum` so its recompute could fold into the pages it serves rather than hold
+its write lock for two seconds. That is right for the lock and wrong for ownership:
+the column is one per store and the pass is one per replica, so round 12 measured
+two interleaved passes committing exactly twice the truth. The lock finding stands;
+the fix needed an ownership rule beside it, and now has one. Unlike rounds 10 and
+11, this was a real fix with a real new problem rather than arithmetic that could
+not change an outcome.
 
 **A fix that failed four times, and the root cause that stops it.** The re-stamp
 floor was patched in rounds 8, 9, 10 and 11, and each patch was reviewed, measured

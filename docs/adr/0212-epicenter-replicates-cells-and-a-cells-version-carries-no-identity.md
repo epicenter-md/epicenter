@@ -678,7 +678,8 @@ a version. The floor is
 ```txt
 held  = the presence version the AUTHORITY holds for this row, returned with the
         refusal, or zero when it holds none
-local = the presence version this replica holds for the row, or zero
+local = the presence version this replica holds for the row, or zero when it
+        holds none OR when the presence cell is itself among the refused cells
 floor = (max(the authority's time,
              held.version_ms,
              local.version_ms),
@@ -699,11 +700,23 @@ the forward reach of `held`, and both clamps are dead arithmetic:
   `max(A, local)` and the refusal's held version can never raise anything. That
   collapse is round-8's replica-only floor with a flat authority time beside it,
   which is the pair of defects the formula exists to avoid.
-- `min(held, A + the clamp width)` is inert by the clamp's own invariant. The
-  authority refuses any write above `A + the clamp width`, so a presence version
-  it *holds* is at or below that bound by construction and the `min` never binds.
-  Measured, it is byte-identical to the unclamped floor on every counter of a
-  1200-trace fuzz.
+- `min(held, A + the clamp width)` is inert by the clamp's own invariant, **while
+  the authority's clock is monotonic**. The authority refuses any write above
+  `A + the clamp width`, so a presence version it *holds* is at or below that bound
+  and the `min` never binds. Measured, it is byte-identical to the unclamped floor
+  on every counter of a 1200-trace fuzz.
+
+  The premise is load-bearing and is not free. Step the authority's clock back an
+  hour (an NTP correction, a VM migration, a restore onto a host whose clock is
+  behind, all reachable on the self-hosted deployable) and a presence it already
+  holds sits permanently above `A + the clamp width`. Measured there, **every**
+  member of the family livelocks: `local` is never clamped, R1 forces a field cell
+  above its row's presence, and nothing the replica can write inside the clamp
+  beats a held version the merge is monotone against. The 1200-trace fuzz cannot
+  reach this state, because its authority clock only ever advances. So the
+  authority's clamp reference is `max(its own clock, the highest version_ms it has
+  accepted minus the clamp width)`, which cannot ratchet past what the clamp
+  already permitted and restores the premise by construction.
 
 So the family has exactly two members, not three, and choosing between them is a
 trade rather than a defect to fix. Measured over 1200 traces of 70 steps, four
@@ -738,6 +751,20 @@ delete is gone from both sides with nothing dirty; a clamped `create` is worse,
 because the stale answer fires R2 and drops the fields with it. So the refusal
 names the authority's held presence version, and the floor clears it. It stays
 inside the clamp because the authority accepted that version itself.
+
+**The authority clamps a body's generation exactly as it clamps a cell's
+version, and a clamp-refused body is re-stamped with its row.** A body carries the
+generation copied from the presence cell that created it, so a clamped `create`
+produces an equally skewed generation. Left unstated, the other branch chains into
+permanent loss through this record's own rules: the authority refuses the skewed
+generation and answers with a newer one, a newer returned generation resets the
+body and both slots, and opening a body whose generation is not the row's current
+presence version replaces it with an empty document. Measured, the prose is gone
+from the device that typed it, the authority holds it under a generation no row
+has, and the digest mismatches every round while the repair pass re-sends bytes
+the authority refuses. A re-stamp that moves a row's presence also moves its body
+generation, and it leaves `send_token` and both delivery slots alone, because the
+row is the same incarnation rewritten rather than a new one.
 
 **The counter is part of the floor, not decoration.** R1 compares
 `(version_ms, version_seq)`, so flooring the millisecond alone still lands a
@@ -776,7 +803,20 @@ from its watermark alone commits a sum over 280 of 400 addresses, which is a
 permanent false mismatch that schedules a full pass every round forever. The
 authority holds the same pair, which is also what lets it fold ADR-0213's
 recompute into the pages it already serves instead of taking one terminal window
-under its own write lock. A digest mismatch is a **state** check, and ADR-0213 makes it
+under its own write lock.
+
+**The authority's pass belongs to the authority, not to whichever replica is
+pushing.** Its pair is one per store while a repair pass is one per replica, and a
+multiset sum has no idempotence, so two replicas folding overlapping ranges into
+the same accumulator add the overlap once each: measured, two interleaved passes
+over 200 addresses commit **exactly twice the truth**, and a partial overlap
+commits a number related to neither. This is the one pass whose safety the record
+elsewhere rests on "merge is idempotent, so re-sending anything is safe", and that
+argument does not reach the accumulator. So the authority opens at most one pass at
+a time, refuses a chunk whose `from` is not its current `repair_from`, and ignores
+a second replica's pass while one is open. `repair_from = ''` is the sentinel for
+owed-but-not-started: nothing has been reached yet, and the empty string sorts
+below every legal address. A digest mismatch is a **state** check, and ADR-0213 makes it
 one by recomputing the sum from the store when a pass completes, so a pass that
 clears the flag without finishing the job is re-raised by the next comparison and
 nothing is lost. Without that recompute the sum is incremental only, and a sum
