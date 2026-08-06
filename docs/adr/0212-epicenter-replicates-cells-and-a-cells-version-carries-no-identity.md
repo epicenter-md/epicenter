@@ -982,23 +982,30 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   and it measured **+65 MB (+36%) and +101 MB (+29%)** at the two shapes. A view
   rendering `version_ms` as a timestamp and `version_hash` as hex costs nothing
   and reads better than either, so the stored columns stay compact.
-- **Re-deriving one changed row costs about 2.9x and 2.5x** what whole-row JSON
-  costs, once the body load a row with prose actually needs is included (about
-  11.8 against 4.09 microseconds, and 9.8 against 3.95). The 1.69x and 1.21x this
-  record quoted omitted that load, against an opponent that reads its prose as an
-  ordinary column for nothing. That is the operation
+- **Re-deriving one changed row costs 3.8x and 3.3x** what whole-row JSON costs,
+  measured as a point query on the settled schema: 18.5 against 4.8 microseconds,
+  and 14.4 against 4.3. Two earlier figures were wrong in the same direction: 1.69x
+  omitted the body load entirely, and 2.9x built it by adding a bulk-scan render
+  cost to a point-query cost across two runs, which understates a random
+  `_replica_body` lookup by more than half. That is the operation
   that runs in steady state, because a write touches one row, and the margin
   there is small.
-- **Rebuilding the WHOLE projection costs about 2.9 s at 2.6M cells and 8.8 s at
-  4M**, warm, and against whole-row JSON that is **at least 64x and 43x**. Every
+- **Rebuilding the WHOLE projection costs about 2.0 s at 2.6M cells and 7.3 s at
+  4M**, warm, and against whole-row JSON that is **42x and 37x**. An earlier
+  measurement said 2.9 s and 64x, and it joined `_replica_body` before grouping,
+  which probes once per cell instead of once per row: the exact bias this record
+  documents two bullets below for the `_replica_row` opponent, repeated in the arm
+  producing its own headline. Grouping first costs 30% less at 12 columns and 13%
+  at 3, and the penalty scales with columns per row, which is the signature. Every
   earlier figure in this record, 0.57 s and 16.8x among them, priced a query this
   record does not decide: no `json_valid` guard, no `_replica_body` join, and no
   body render. The render is the term that dominates and no implementation can
   avoid it, because a body is Yjs bytes that no SQL restores: 4.9 microseconds per
   row, 977 ms and 5.05 s on its own, which alone exceeds the whole figure the
-  record used to quote. No repeat runs of the decided query exist, so these
-  figures carry one significant figure and no variance band; the 555 to 594 ms
-  band this record used to quote belongs to the retired query. That is a cold start, a
+  record used to quote.  No repeat runs of the decided query exist, so these figures carry one
+  significant figure and no variance band. The render is 960 ms of the total at 12
+  columns and about half the added cost at 3; the rest was a join written the way
+  this record elsewhere refuses. That is a cold start, a
   repair, or a re-import, and it is the price of the layout rather than a
   steady-state cost.
 - **Collapsing presence into the cell relation buys almost no time, and that is
@@ -1007,8 +1014,7 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   forces a temp b-tree over every cell. Written the obvious way instead, grouping
   first and joining liveness once per row, two relations project in 582 ms and
   1400 ms against one relation's 568 ms and 1104 ms, all four on the retired
-  query, so the comparison holds only if the body render is symmetric across the
-  two shapes, which is untested. At the wide shape that gap is
+  query. Against the decided projection a 296 ms gap is about 4%, not 27%. At the wide shape that gap is
   inside the 7% run-to-run band and is **no measurable difference**; at the narrow
   shape it is **1.27x**, for
   1.5% and 4.1% more disk. The collapse is justified by interpretability and by
