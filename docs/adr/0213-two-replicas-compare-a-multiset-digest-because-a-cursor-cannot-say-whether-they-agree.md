@@ -152,7 +152,7 @@ merged in both orders, and the empty document.
 Grouping entries into buckets so a mismatch could name a region was tried and
 refused, and refusing it is what leaves one sum. A bucket keyed on a hash of the
 address is a hash class rather than a range: its members are scattered across the
-whole address space, enumerating one costs a full scan plus a hash per cell (118 to 132
+whole address space, enumerating one costs a full scan plus a hash per cell (118 to 128
 milliseconds over 240,000 cells across four runs, so about 1.3 to 1.4 seconds at
 ADR-0212's fixture), and it cannot resume from an address the way
 the existing repair pass does. Storing a `bucket` column on every cell would fix
@@ -178,8 +178,10 @@ The sum would be incremental only, with nothing deriving it from the store, and 
 has drifted from its own content is a mismatch no amount of repair can close: the
 pass converges the content, the comparison reads the sum, and the two never meet.
 Measured with one fold omitted at one of the roughly ten sites that fold: two
-stores holding **41 identical cells**, sums unequal, **50 full-range passes over 50
-rounds**, still unequal. At this record's fixture that is 2.6 M cells and about
+stores whose sums have drifted from their own content never meet: the pass
+converges the content and the comparison reads the sum. The counts an earlier
+draft quoted here have no producing output and are withdrawn; the resumed-pass
+figure below is the sourced form of the same argument. At this record's fixture that is 2.6 M cells and about
 336 MB every round, forever, with nothing user-visible wrong.
 
 So a repair pass that completes **recomputes `digest_sum` on both sides**: the
@@ -190,9 +192,7 @@ authority from `_authority_cell` and `_authority_body`.
 partial sum in `digest_sum` itself leaves garbage rather than drift the moment a
 replica goes offline mid-pass, and, absent the one-pass-at-a-time rule ADR-0212
 decides for the authority, two interleaved passes leave the loser's
-partial as the durable value. Measured: a pass abandoned after six of ten pages
-leaves the side summing 60% of its own store, which every peer then mismatches
-every round. Both sides therefore carry a separate accumulator, `repair_sum`.
+partial as the durable value. A pass abandoned partway leaves the side summing only what it scanned, which every peer then mismatches every round; the resumed-pass measurement below is the sourced form of this. Both sides therefore carry a separate accumulator, `repair_sum`.
 Recomputing one side only leaves the other's drift permanent, and an authority
 whose sum has drifted is a mismatch every replica repairs every round forever,
 which is the failure this section exists to remove. **The recompute derives from content, and the arithmetic has to say so.** A pass
@@ -301,7 +301,8 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
 ## Consequences
 
 - **It costs one 8-byte column per side and about half a local write again.**
-  Measured on the settled one-column schema across four runs: **+49% to +72% at 12
+  Measured on the settled one-column schema across two runs of the live producer:
+  **+63% to +66% at 12
   columns and +41% to +59% at 3**, on a write that already pays ADR-0212's
   row-local floor. Against a store with neither, a local write costs **+82% to
   +117%**. The control arm sits within 5% and does not bound this: the ratio moves
@@ -316,10 +317,12 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
   write per transaction.
 - **A row delete costs far more than a write, and it scales with row width.**
   ADR-0212's R2 drops a row's cells when a presence cell is written, and each drop
-  is an entry to subtract. Measured across three runs whose control arms sit at 0.93x to
-  1.11x: **7.6x to 9.1x at 12 columns and 5.1x to 6.6x at 3**, falling to **5.7x
-  to 6.7x** and **4.2x to 5.2x** when the sum is folded in memory and written
-  once. "One add and one subtract per write" is true of a field write
+  is an entry to subtract. Measured across three runs of the live producer, whose control arms
+  sit at 0.93x to 1.11x: **8.3x to 9.1x at 12 columns and 5.1x to 6.6x at 3**,
+  falling to **6.0x to 6.5x** and **4.2x to 5.0x** when the sum is folded in memory
+  and written once. Earlier drafts quoted a 1.00x to 1.02x control and a 5.2x
+  folded figure from two saved outputs that have no producing script, so they
+  cannot be reproduced and are withdrawn. "One add and one subtract per write" is true of a field write
   and badly untrue of a delete.
 - **A body write's premium scales with the document, and is measured on the entry this record decides.** A linear entry, which a canonical re-encode is,
   measured **+26% to +40% at an 80-character body and +27% to +61% at 40 KB**:
@@ -333,8 +336,8 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
   earlier figures said the premium "does not scale with the document", which was
   true only of the snapshot, whose payload is 8 bytes at any size and which this
   record rejects. Hashing 40 KB of rendered text and 40 KB of `doc_state` cost
-  13.23 and 13.24 microseconds, so the input's shape is not what matters; its
-  length is.
+  indistinguishable times, so the input's shape is not what matters; its length is.
+  (The two figures an earlier draft gave have no producing output.)
 - **The recompute has not been fuzzed as decided.** The fuzz implements a terminal
   unscoped scan, where this record decides a recompute scoped by the pass's own
   watermark and accumulator. Every trace count attributed to the recompute

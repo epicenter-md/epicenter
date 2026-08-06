@@ -1145,9 +1145,8 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   earlier figure in this record, 0.57 s and 16.8x among them, priced a query this
   record does not decide: no `json_valid` guard, no `_replica_body` join, and no
   body render. The render is the term that dominates and no implementation can
-  avoid it, because a body is Yjs bytes that no SQL restores: 4.8 and 4.7 microseconds per
-  row, **954 to 979 ms and 4670 to 4769 ms** across three runs with control arms
-  within 1%, measured directly with the render switched off in the same loop, which
+  avoid it, because a body is Yjs bytes that no SQL restores: 4.8 to 4.9 and 4.7 microseconds per
+  row, **954 to 976 ms and 4670 to 4755 ms** across three runs with control arms within 1%, measured directly with the render switched off in the same loop, which
   alone exceeds the whole figure the record used to quote. Round 12 quoted 1028 ms
   and 5.1 microseconds, which is outside that band, while deleting an earlier
   977 ms and 4.9 microseconds for being unsourced: the deleted figure was accurate
@@ -1160,8 +1159,7 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   content fingerprints, which is how the mismatch was finally caught. Priced with
   the body plane on both sides, the arms fingerprint identically and the whole
   rebuild costs 1.76x and 1.31x. The body plane costs the opponent 1136 ms and
-  5604 ms, and is 54% and 74% of the cell store's own rebuild, both terms from one run. Four saved runs of the decided query exist and span about 10%
-  at 12 columns (1990, 1969, 2095, 2168 ms); the cell arms repeat within about 3%
+  5604 ms, and is 54% and 74% of the cell store's own rebuild, both terms from one run. Three saved runs of the decided query exist and span about 6% at 12 columns (1990, 1969, 2095 ms); the cell arms repeat within about 3%
   inside a run, but the whole-row denominator's own control arm moves -15.4% to
   +11.9% across runs, so the ratio's
   honest band at 12 columns is roughly 1.6x to 1.9x rather than a bare 1.76x. That is a cold start, a
@@ -1278,7 +1276,7 @@ commit before deletion, which cannot be written down before it exists.
   this design**, by 29% and 20% once the map is packed rather than stored as
   base64 in JSON, and faster to seed. Refused because the map is opaque, so no
   version is legible and the merge cannot be one SQL predicate; because one field
-  change ships the whole record and the whole map (8.9x at 12 columns and 3.0x at 3, like for like) and
+  change ships the whole record and the whole map (8.6x at 12 columns and 2.9x at 3, like for like) and
   because declaring merge groups makes the group names an unversioned wire
   contract a peer on another release cannot interpret.
 - **A hybrid logical clock with an actor id.** Its counter is adopted; its actor
@@ -1314,5 +1312,5 @@ commit before deletion, which cannot be written down before it exists.
   lifetime does not catch a restore, because it lives inside the file being
   restored, and neither does a cursor regression, because the cursor an authority
   is shown is what a replica read rather than what it wrote. The price paid is one
-  8-byte column per side and +49% to +72% on a local write. ADR-0213 carries the
+  8-byte column per side and +63% to +66% on a local write. ADR-0213 carries the
   rest.
