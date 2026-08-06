@@ -981,7 +981,7 @@ bodies are counted, and
 **A lifetime alone cannot see the case it was added for.** It is a column of the
 authority's own file, so restoring that file carries the old lifetime back with
 it, and measured with the column in place the replica still receives 0 cells over
-50 rounds and disagrees on 100 of 350 addresses. What survives of that attempt is a guard, not a detector. A replica presenting a
+50 rounds and disagrees on 100 addresses on a 300-cell fixture. What survives of that attempt is a guard, not a detector. A replica presenting a
 cursor past the authority's own counter holds something the authority cannot
 explain, so the authority **re-mints and persists its lifetime in the same
 transaction that reads the response**, and only within one page of its counter; a
@@ -1057,9 +1057,9 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   itself: the refusal names the row's presence but not the version the authority
   holds for each refused cell, so 223 of 5331 re-stamped field cells land on or below a held
   version, 66 of them exactly on it and 157 below, and 190 are discarded as stale,
-  silently, with both sides agreeing and nothing dirty. That 190 is 4.4% of the
-  4282 clamp re-stamps and is classified at push time, which is why it is not the
-  sum of the two landing counts. The collision has a second face the loss count
+  silently, with both sides agreeing and nothing dirty. That 190 is 3.6% of the 5331 field cells, or 4.4% of the 4282 clamp re-stamp
+  events, and it is classified at push time, which is why 190 and the 34 below
+  exceed 223 by one. The collision has a second face the loss count
   cannot show: 34 **of those 66** win the hash instead of losing it, silently
   displacing the value the authority held. They reach the intended result
   by a coin flip rather than by the floor's arithmetic. A fourth floor term, of the same shape as the second
@@ -1184,10 +1184,13 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   content fingerprints, which is how the mismatch was finally caught. Priced with
   the body plane on both sides, the arms fingerprint identically and the whole
   rebuild costs 1.76x and 1.31x. The body plane costs the opponent 1136 ms and
-  5604 ms, and is 54% and 74% of the cell store's own rebuild, both terms from one run. Three saved runs of the decided query exist and span about 6% at 12 columns (1990, 1969, 2095 ms); the cell arms repeat within about 3%
-  inside a run, but the whole-row denominator's own control arm moves -15.4% to
-  +11.9% across runs, so the ratio's
-  honest band at 12 columns is roughly 1.6x to 1.9x rather than a bare 1.76x. That is a cold start, a
+  5604 ms, and is 54% and 74% of the cell store's own rebuild, both terms from one run. Five saved runs of the decided query exist and span about 10% at 12 columns
+  (1969, 1990, 2082, 2095, 2168 ms); the cell arms repeat within about 3% inside a run, and 1.76x's own denominator
+  `RJY` has a control of 0.5%, -0.5% and -0.9% across three runs, which puts that
+  ratio's honest band at roughly **1.7x to 1.8x** (measured 1.76, 1.73, 1.74). The
+  -15.4% to +11.9% control belongs to the no-body whole-row arm, which is the
+  denominator of the layout term below and not of this one, so the wide band
+  attaches there. That is a cold start, a
   repair, or a re-import, and it is the price of the layout rather than a
   steady-state cost.
 - **Collapsing presence into the cell relation buys almost no time, and that is
@@ -1301,7 +1304,7 @@ commit before deletion, which cannot be written down before it exists.
   this design**, by 29% and 20% once the map is packed rather than stored as
   base64 in JSON, and faster to seed. Refused because the map is opaque, so no
   version is legible and the merge cannot be one SQL predicate; because one field
-  change ships the whole record and the whole map (8.6x at 12 columns and 2.9x at 3, like for like) and
+  change ships the whole record and the whole map (8.9x at 12 columns and 3.0x at 3, like for like) and
   because declaring merge groups makes the group names an unversioned wire
   contract a peer on another release cannot interpret.
 - **A hybrid logical clock with an actor id.** Its counter is adopted; its actor

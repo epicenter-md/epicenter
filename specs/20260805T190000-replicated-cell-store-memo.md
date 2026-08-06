@@ -644,7 +644,7 @@ mutually exclusive states, one with every cell owed and one with none.
 | --- | --- | --- |
 | Whole-row JSON as the stored shape | per-field and whole-row versions do not compose | 2.12x and 1.66x the size of what ships today (181.0 vs 85.3 MB, 342.4 vs 206.2 MB), re-deriving one changed row 1.32x and 1.07x slower as a point query, and the whole projection 1.76x and 1.31x slower. Four earlier speed figures in this row were retracted, the last of them (3.8x/3.3x and 42x/37x) because they charged the Yjs body plane to the cell layout: the opponent carried prose inline and never paid the render |
 | Real typed columns | ADR-0125: nowhere to put an unknown key | 3.81x and 2.33x the disk, fixture-matched (181.0 vs 47.5 MB, 342.4 vs 147.1), against a shape that stores no version, no `dirty` and no presence, so the ratio is a floor |
-| One JSON record per row plus a version map | the map is opaque, so no version is legible and the merge cannot be one SQL predicate; one field change ships the whole record and map; merge-group names become an unversioned wire contract | THIS REFUSAL COSTS DISK. Packed as 18 binary bytes per field it is 127.9 MB and 274.1 on the same fixture, so the cell store is 41% and 25% LARGER. An earlier pass quoted 6.0% against a version map stored as base64 inside JSON, roughly 40 bytes per field. On the wire the cell store still wins, 8.6x at 12 columns and 2.9x at 3, both like for like |
+| One JSON record per row plus a version map | the map is opaque, so no version is legible and the merge cannot be one SQL predicate; one field change ships the whole record and map; merge-group names become an unversioned wire contract | THIS REFUSAL COSTS DISK. Packed as 18 binary bytes per field it is 127.9 MB and 274.1 on the same fixture, so the cell store is 41% and 25% LARGER. An earlier pass quoted 6.0% against a version map stored as base64 inside JSON, roughly 40 bytes per field. On the wire the cell store still wins, 8.9x at 12 columns and 3.0x at 3, both like for like |
 | Interning the address | the replica must be readable in a SQL console with no joins | at most 34% of the file, before dictionary tables and integer keys are added back |
 | Readable version columns (ISO-8601 plus hex) | a view gives the same legibility for nothing | +69.1 MB (+37%) and +99.8 MB (+29%) |
 | A per-cell cursor on the replica | it is a durable local claim about the authority's state | +9.8 MB (5.4%) and +18.9 MB (5.5%) for the column, measured as a clean A/B on the settled schema; 91 MB and 140 MB if it is also indexed, which nothing here would query |
@@ -663,7 +663,7 @@ mutually exclusive states, one with every cell owed and one with none.
 | Counters | two devices each adding one yields one | none exist, and one needs its own CRDT regardless |
 | A body with no incarnation tag | it does not converge across a delete and a re-creation | two orderings give the new row the dead row's prose, two give it an empty body |
 | Never deleting a body instead | it converges, and a CRDT has no truncate | the deleted incarnation's prose stays in the new row forever, unremovable by any operation |
-| An authority lifetime as the only restore signal | the column lives inside the file being restored | a restore carries the old lifetime back: 0 cells over 50 rounds, 100 of 350 addresses wrong |
+| An authority lifetime as the only restore signal | the column lives inside the file being restored | a restore carries the old lifetime back: 0 cells over 50 rounds, 100 addresses on a 300-cell fixture addresses wrong |
 | A reset that only re-reads | the read direction is not the broken one | after the reset the replica still disagrees on the 50 cells the restore destroyed, and pushes nothing |
 | Re-stamping an R1 refusal at the authority clock | R1 and the clamp are different refusals | the previous incarnation's offline edit beats the re-creation's snapshot, which is what R2 exists to prevent |
 | A local write floor taken from the cell alone | R1 measures against the row's presence cell | correctness: a write to a never-set column is silently refused for the width of the clamp, measured at 241 seconds. The floor it costs: +18% to +38% on every local write, measured against a control arm |
@@ -694,7 +694,9 @@ mutually exclusive states, one with every cell owed and one with none.
 | "The authority ignores a second replica's pass while one is open" | `_authority_replicas` is deleted and nothing on the authority names a device | unbuildable, so it was a sentence rather than a decision. The from-guard alone commits exactly the truth with two replicas alternating chunks |
 | Leaving `row_id` unconstrained on the two body tables | the cell tables refuse addresses the body tables accept | a body at an address whose row can never exist: R2's body drop cannot fire on it and the repair pass ships it forever. Both sides now carry the cell tables' `row_id` CHECK, identical on both by
 normalized diff |
-| Carrying the authority's held version for each REFUSED ADDRESS in the refusal, not only the row's presence | the floor's terms are presence versions only, so a re-stamped field can land on or below the version the authority already holds for that same cell | NOT YET TAKEN, and the only priced item here that is an open option rather than a refusal. Measured cost of NOT taking it: of 5331 re-stamped field cells, 223 land on or below the version the authority holds (66 exactly on it, 157 below) and 190 are discarded as stale, silently, with both sides agreeing and nothing dirty. That 190 is 4.4% of the 4282 clamp re-stamps and is classified at push time. Of the 66 landing exactly on it, 34 WIN the hash instead of losing it, silently displacing the held value. The fix is a fourth term, of the same shape as the second; it was not taken in round 13 because the design was frozen, and every previous round's patch to this formula was defective |
+| Carrying the authority's held version for each REFUSED ADDRESS in the refusal, not only the row's presence | the floor's terms are presence versions only, so a re-stamped field can land on or below the version the authority already holds for that same cell | NOT YET TAKEN, and the only priced item here that is an open option rather than a refusal. Measured cost of NOT taking it: of 5331 re-stamped field cells, 223 land on or below the version the authority holds (66 exactly on it, 157 below) and 190 are discarded as stale, silently, with both sides agreeing and nothing dirty. That 190 is 3.6% of the 5331 field cells, or 4.4% of the 4282 clamp re-stamp
+events, and it is classified at push time, which is why 190 + 34 exceeds 223 by
+one. Of the 66 landing exactly on it, 34 WIN the hash instead of losing it, silently displacing the held value. The fix is a fourth term, of the same shape as the second; it was not taken in round 13 because the design was frozen, and every previous round's patch to this formula was defective |
 | Leaving the clamp silent about a body's generation | a body copies its generation from the presence cell, so a clamped create produces an equally skewed one | the prose is lost from the device that typed it, the authority holds it under a generation no row has, and the digest mismatches every round while the pass re-sends bytes the authority refuses |
 
 `Supersedes` and `Amends` carry reciprocal links on both records, as
@@ -777,11 +779,14 @@ replica whose own sum has drifted therefore heals only on a solo pass, at about
 336 MB per attempt. It self-limits, because the replicas that are not drifted stop
 repairing once the authority recomputes, so it is a disclosure rather than a break.
 
-**Round 15 repaired the harness instead of counting it again.** Eleven probes are retired to `superseded/` with a README: they name
+**Round 15 repaired the harness instead of counting it again.** Thirteen probes are retired to `superseded/` with a README. Eleven name
 `_replica_digest` or `repair_epoch`, artifacts the design deleted, so they cannot
-run and must not be repaired. Two more are retired as covered elsewhere, making
-thirteen. The four broken by drift are
-repaired, and the one whose premise the schema made impossible is replaced:
+run and must not be repaired; the other two are covered elsewhere. None of the
+four round-14 called "broken by drift" was in fact repaired: three were retired,
+and the fourth was never broken at all. Round 14's count of fourteen dead was
+thirteen, because its error extraction read a `SQLiteError` string that
+`r12-e-restamp-crosses-body.ts` PRINTS as evidence inside a passing assertion. The
+one whose premise the schema made impossible is replaced:
 `value` is TEXT, so the non-UTF-8 wedge it tested cannot occur, and
 `r15-check-symmetry.ts` asserts what the settled schema actually does. **No
 current claim may be sourced from `superseded/`; a claim that needs one of those
@@ -871,7 +876,8 @@ alternatives), `r2m-dirty-index*.ts`, `r2m-wire-and-intern.ts`,
 row-plus-version-map opponent), the surviving `r3-*` probes (`r3-body-plane`, `r3-create-and-restore`,
 `r3-restamp`, `r3-restore-race`), and `r15-check-symmetry.ts` for the CHECK
 symmetry that replaces the withdrawn authority-wedge figure, the
-`converge*.ts` proofs, `r4m5-body-plane-disk.ts` (the body plane on disk, on the settled schema under a control arm), the surviving `r5-*` probes (`r5-body`, `r5-digest-semantics`, `r5-fuzz`,
+`converge*.ts` proofs, `r4m5-body-plane-disk.ts` (the body plane on disk), `r11b-digest-io.ts` (the
+digest's storage type, on the settled schema under a control arm), the surviving `r5-*` probes (`r5-body`, `r5-digest-semantics`, `r5-fuzz`,
 `r5-repair`, `r5-trigger`), and `final-verify.ts`
 through `final-verify5.ts`. Where a row is not on the settled schema, it
 is because the comparison it makes needs an opponent only an earlier bench built;

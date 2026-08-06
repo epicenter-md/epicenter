@@ -32,7 +32,7 @@ nothing in the protocol notices.
    returned it on every response.
 2. The lifetime lives *inside* the file being restored, so a restore carries the
    old lifetime back with it. Measured with the column in place: a replica still
-   receives 0 cells over 50 rounds and disagrees on 100 of 350 addresses. A
+   receives 0 cells over 50 rounds and disagrees on 100 addresses on a 300-cell fixture. A
    cursor regression was added as the signal instead.
 3. The cursor an authority is shown is the replica's **read** cursor, and a
    restore destroys what a replica **wrote**. Clearing `dirty` by merging a push
@@ -308,7 +308,7 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
 - **It costs one 8-byte column per side and about half a local write again.**
   Measured on the settled one-column schema across two runs of the live producer:
   **+63% to +66% at 12
-  columns and +55% to +57% at 3**, on a write that already pays ADR-0212's
+  columns and +55% to +57% at 3**, both halves from the same two runs, on a write that already pays ADR-0212's
   row-local floor. Against a store with neither, a local write costs **+82% to
   +117%**. The control arm sits within 5% and does not bound this: the ratio moves
   20 points between process invocations, so the envelope is the number and a
@@ -317,7 +317,8 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
   is the third consecutive round in which the priced artifact was removed after
   pricing. Hashing the value rather than the version alone is 2 to 15 points across four
   runs. **Folding the sum in memory and writing it once per transaction
-  cuts the premium by about a third**, to **+31% to +48%** and **+22% to +37%**,
+  cuts the premium by about a third**, to **+35% to +44%** and **+30% to +35%**
+  across three runs of the live producer,
   and still satisfies the same-transaction rule; the higher figures assume one
   write per transaction.
 - **A row delete costs far more than a write, and it scales with row width.**
