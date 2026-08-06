@@ -61,8 +61,9 @@ with no bound: a laptop resuming with its clock a day fast strands the cell for
 about 24 hours, and one resuming with an RTC reading 2031 strands it for years.
 Rewriting cannot repair it, because the local write rule never lowers
 `version_ms`. So a **clamp** refusal names the address and the authority's own time, and the replica re-stamps the refused cells of that row, **the row's dirty presence
-cell if it is not already among them**, and the row's document generations with
-them, **in one transaction, at `(floor, rank)`**, where rank is each cell's
+cell when it is not already among them and the floor would LOWER it**, and the
+row's document generations with them, **in one transaction, at `(floor, rank)`**,
+generations before presence, where rank is each cell's
 position in the row's own `(version_ms, version_seq)` ascending order, and which is the one
 operation exempt from the local write rule above because it deliberately lowers
 a version. The floor is
@@ -81,15 +82,32 @@ local = the presence version this replica holds for the row, or zero when it hol
         UNDER a presence nothing lowered, and measured across four disjoint
         400-trace blocks that happens 96 to 105 times a block where the narrower
         rule never does it once. **So a dirty presence cell JOINS the re-stamp
-        set** when it is not already in the refusal, taking rank 0 so every field
-        ranks above it. That is safe precisely because it is dirty: this record
-        refuses to drag a CLEAN presence in, because the authority holds it and
-        lowering it is refused as stale, while a dirty presence has never been
-        accepted and lowering it costs the authority nothing. Measured, the three
-        rules give 0 / 96-105 / 0 re-stamps landing under presence and 182-199 /
-        176-190 / **149-159** writes lost while the row is live, so dragging the
-        dirty presence in beats both of the others on both counters rather than
-        trading between them
+        set** when it is not already in the refusal AND the floor would lower it,
+        taking rank 0 so every field ranks above it. Both halves are load-bearing.
+        Dirty, because the authority holds a clean presence and refuses a lowering
+        of it as stale, while a dirty presence has never been accepted and
+        lowering it costs the authority nothing. Lowering, because the floor is
+        bounded BELOW by `A` and a presence written before a forward clock jump
+        sits under `A`, so the unguarded rule RAISES it, and a raised presence is
+        an incarnation boundary rather than a rewrite: R2 then drops the row's own
+        document and the fields the authority already accepted, on every device,
+        with the row live, nothing dirty and the digest roots agreeing. Measured,
+        the unguarded rule raises 137 times per 2400 traces and kills 9 cells that
+        were never in the re-stamp set; guarded, both are zero. A refused presence
+        cannot reach this branch, because the clamp puts it above `A + CLAMP`
+        while the floor is at most `A + CLAMP`. **The order inside the transaction
+        is decided rather than left free**: generations move before the presence,
+        because the other order lets R2 fire against a generation the same
+        transaction is about to lift. Measured over four arms at
+        3 rows and 4 columns with the write door modelled, what separates them is
+        raises and landings-under-presence: 0/0 for the refused set, 0/330 for
+        zeroing, 137/0 for the unguarded drag, and **0/0 for the guarded drag**,
+        which is the only arm at zero on both. The writes-lost counter does NOT
+        separate them: it reads 28 / 73 / 59 / 53 at this fixture and inverts
+        against the narrower one, so the earlier 182-199 / 176-190 / 149-159
+        ranking is a fixture artefact and is withdrawn as evidence. It excused
+        every loss under a presence it had itself raised, which is how the raise
+        survived a round
 floor = (max(the authority's time,
              held.version_ms,
              local.version_ms),

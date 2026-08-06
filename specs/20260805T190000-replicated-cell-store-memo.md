@@ -32,8 +32,11 @@ mechanism defects in two rounds**, all four of them silent:
   than`, over 28,960 orderings.
 - the floor's `local` term, zeroed on a dirty presence, lands the re-stamped field
   **under** a presence nothing lowered: 96 to 105 times per 400-trace block. The
-  answer is to drag the dirty presence into the re-stamp set, which beats both
-  earlier rules on both counters.
+    answer is to drag the dirty presence into the re-stamp set **only when the floor
+  would lower it**. Unguarded, the drag RAISES a presence written before a forward
+  clock jump, 137 times per 2400 traces, and a raised presence is an incarnation
+  boundary: R2 then deletes the row's own document and 9 fields the authority had
+  already accepted. Round 23 shipped the unguarded form and round 24 caught it.
 - a newer-generation delivery left `pending_update` staged, so the deleted
   incarnation's prose is **spliced permanently into the live row** on every device,
   with both sides converged and the digest reading clean.
@@ -159,6 +162,7 @@ arm at all, and on which counter:
 | the authority's time | **crashes, 20/20** | `CHECK (version_ms > 0)` on the first re-stamp |
 | the counter half | **yes, on one counter only** | stale 115 to 156 against 11 to 31, disjoint 20/20. Its below-authority count equals decided in 3 of 20 blocks and its destroyed count is at or below decided in 12 of 20, so those two carry no signal |
 | spend-in-the-round | **yes, 20/20** | stale 235 to 294 against 11 to 31; destroyed 58 to 123 against 1 to 9 |
+| the drag's lowering guard | **yes** | raises 137 against 0 per 2400 traces, and 9 R2 kills of cells never in the re-stamp set against 0 |
 
 The coupling is the one figure worth quoting as a proportion, because the ratio is
 what holds: across 20 blocks it raises 2942 to 3140 times, lands 1602 to 1745
@@ -956,6 +960,7 @@ mutually exclusive states, one with every cell owed and one with none.
 | A terminal recompute under the authority's own write lock | an authority is the side N replicas push into, so its lock is not a local typist's | 0.84 microseconds per cell at the full fixture, so 2174 ms of held write lock at 2.6M cells, measured there rather than extrapolated; a concurrent push fails after burning its full `busy_timeout`, measured at 0, 1000 and 5000 ms |
 | Refusing a causally gapped `doc_state` at the write door | the premise was that `load` drops structs it cannot integrate, so `{u1, u3}` and `{u1}` entry identically | the premise is false on the pinned Yjs: the stores are 45 and 32 bytes and their entries differ. Enforcing it discards recoverable user prose and ADR-0212's two body-refusal answers both lose it |
 | Letting a replica's repair pass own the authority's accumulator | the pair is one per store and a pass is one per replica, and a multiset sum has no idempotence | two interleaved passes over 200 addresses commit exactly twice the truth; a partial overlap commits a number related to neither. The authority refuses a chunk whose `from` is neither its current watermark nor the sentinel, and a chunk at the sentinel restarts the pass |
+| Dragging the dirty presence into the re-stamp set unconditionally (round 23) | a dirty presence has never been accepted, so lowering it costs the authority nothing | the floor is bounded BELOW by `A`, so a presence written before a forward clock jump is RAISED, not lowered: 137 raises per 2400 traces, each an incarnation boundary that makes R2 delete the row's document and 9 already-accepted fields, with the row live, nothing dirty and the digest roots agreeing. Guarding on "only when the floor would lower it" takes every counter to zero |
 | Reading the floor's `local` term as "the presence this replica holds", full stop | after a clamp-refused create the replica holds the refused version, so the floor is the version just refused | the re-push never terminates: 32 inner rounds, the cell still dirty, the authority holding nothing. The fuzz always excluded a DIRTY presence, refused or not; the record said "refused", which is narrower and livelocks when a row's cells are chunked apart. Zeroing alone is then a regression of its own: 96 to 105 landings under an unlowered presence per 400-trace block, closed by dragging the dirty presence into the re-stamp set at rank 0 |
 | Treating the clamp invariant as unconditional | it holds only while the authority's clock is monotonic | with the clock stepped back an hour, EVERY member of the floor family livelocks, because `local` is never clamped and the held version sits permanently above `A + width`. The clamp reference is now `max(own clock, highest HELD version_ms - width)`, held rather than accepted because R2 and overwrites remove rows |
 | Scanning the cell plane and the body plane as two address sequences under one watermark | a body edited mid-pass sorts behind a cell watermark, is folded as a passed delta, and is derived again when the body scan reaches it | the committed sum counts it twice, which is the permanent false mismatch the recompute exists to remove. One sequence, with a document at its column name |
