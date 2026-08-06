@@ -18,7 +18,7 @@ Rewritten each round. History is below; this is the working copy.
 
 ### The scope question, which round 18 answered by measuring the record
 
-ADR-0212 is 1389 lines. By section: the refusal, clamp and re-stamp machinery is
+ADR-0212 is 1388 lines. By section: the refusal, clamp and re-stamp machinery is
 **247 lines**, the DDL and its comments 245, Consequences 237. The design that
 actually makes per-field merge work, the version, the local write rule, the
 reusable address and the write surface, is **175 lines**.
@@ -61,10 +61,17 @@ price of the re-stamp existing at all rather than of it being complicated. The f
 4. presence is an ordinary cell at `!presence`
 5. a cursor for delivery, never for deciding
 
-**Priced, and probably not worth building yet**
+**Load-bearing, and larger than it should be**
 
 - The **clamp floor and re-stamp**: 247 lines, a 4.4% silent loss, five rounds of
-  defects. Refuse-and-report replaces it.
+  defects, and it cannot be deferred, because refuse-and-report does not
+  terminate. What is open is how small it can be, not whether it exists. A fourth
+  floor term of the same shape as the second would close the 4.4%; it is priced in
+  the Rejected table and not taken.
+
+**Priced, and probably not worth building yet**
+
+
 - **Collaborative columns**: they collide with ADR-0130 (Accepted, one document per
   row, and it rejects declaring a document layout per table), ADR-0168 (tables
   declare no document capability) and ADR-0135's `open(row.id)` handle. Three
@@ -76,13 +83,25 @@ price of the re-stamp existing at all rather than of it being complicated. The f
 - The **digest**: one 8-byte column and one comparison, addable later with no
   migration, and it answers the one question a cursor structurally cannot.
 
+**Decided and still unwritten anywhere**
+
+- **`toDelta` is the canonical serialization** for a collaborative column.
+  Measured on v14: `applyDelta` round-trips plain text, rich text with marks,
+  attributes and nesting; `toString` loses marks in three of four; `toJSON` has no
+  inverse. This appears in no ADR and in no schema comment.
+- **What the projection emits** for a collaborative column: a rendered form and
+  the canonical delta, the delta measured at +7% over raw markdown. ADR-0212 says
+  only "the projection restores it as a field on the way out".
+
 **Open and unowned**
 
 - The **write path for a collaborative column**. Rendering is one-way; turning an
   edited string back into operations needs a diff, and no Lens can supply one.
-- A **cell and a document at one address**: the document wins by projection
-  assignment order, the cell goes inert and keeps replicating, and ADR-0125's
-  release-local Lenses reach the state without a bug.
+- A **cell and a document at one address**. ADR-0212 decides the outcome and the
+  owner: the document wins, the cell is inert, and the Lens holds the invariant.
+  What is genuinely open is narrower: the memo attributed the win to projection
+  assignment order and the ADR states it as a rule, and those are not the same
+  claim. If it is assignment order, the ADR over-claims.
 
 ### What the measurement apparatus cost, and what it is worth now
 
@@ -734,12 +753,14 @@ properly it is 1.02x, so that collapse is justified by interpretability and not
 by speed. And the dirty index's cost and its saving had been quoted from two
 mutually exclusive states, one with every cell owed and one with none.
 
-| Deleting the clamp machinery and refusing the write instead, returning the authority's time so the client corrects its offset and retries | the 247 lines exist to make a bad clock invisible, which looks like the wrong goal | it does not work, and a single-device probe hides it: the local write rule stamps at `max(now, the cell's own version, the row's presence) + 1`, so a device a day fast is refused, corrects its offset, and is floored back to `T+24h` by its OWN earlier local write. Four attempts, four refusals, no progress. The two exits are lowering what the device holds locally, which IS the re-stamp, or write-through, which costs the offline edit the design exists for. **A local-first store that stamps versions from a wall clock must be able to lower a version it already holds**, and every complication follows |
 | Refused | Why | Measured cost of refusing it |
 | --- | --- | --- |
+| Deleting the clamp machinery and refusing the write instead, returning the authority's time so the client corrects its offset and retries | the local write rule stamps at `max(now, the cell's own version, the row's presence) + 1`, so a device can never lower a version it already holds, and refusing does not give it a way to | a device a day fast is refused, corrects its offset, and is floored back to `T+24h` by its OWN earlier local write: four attempts, four refusals, no progress. The two exits are lowering what the device holds locally, which IS the re-stamp, or write-through, which costs the offline edit the design exists for |
 | Whole-row JSON as the stored shape | per-field and whole-row versions do not compose | 2.12x and 1.66x the size of what ships today (181.0 vs 85.3 MB, 342.4 vs 206.2 MB), re-deriving one changed row 1.32x and 1.07x slower as a point query, and the whole projection 1.76x and 1.31x slower. Four earlier speed figures in this row were retracted, the last of them (3.8x/3.3x and 42x/37x) because they charged the Yjs body plane to the cell layout: the opponent carried prose inline and never paid the render |
 | Real typed columns | ADR-0125: nowhere to put an unknown key | 3.81x and 2.33x the disk, fixture-matched (181.0 vs 47.5 MB, 342.4 vs 147.1), against a shape that stores no version, no `dirty` and no presence, so the ratio is a floor |
-| One JSON record per row plus a version map | the map is opaque, so no version is legible and the merge cannot be one SQL predicate; one field change ships the whole record and map; merge-group names become an unversioned wire contract | THIS REFUSAL COSTS DISK. Packed as 18 binary bytes per field it is 127.9 MB and 274.1 on the same fixture, so the cell store is 41% and 25% LARGER. An earlier pass quoted 6.0% against a version map stored as base64 inside JSON, roughly 40 bytes per field. On the wire the cell store still wins, 8.9x at 12 columns and 3.0x at 3, both like for like |
+| One JSON record per row plus a version map | the map is opaque, so no version is legible and the merge cannot be one SQL predicate; one field change ships the whole record and map; merge-group names become an unversioned wire contract | THIS REFUSAL COSTS DISK. Packed as 18 binary bytes per field it is 127.9 MB and 274.1 on the same fixture, so the cell store is 41% and 25% LARGER. An earlier pass quoted 6.0% against a version map stored as base64 inside JSON,
+roughly 40 bytes per field; ADR-0212 quotes 7.8% for what reads as the same
+opponent and the same encoding, and one of the two is wrong. On the wire the cell store still wins, 8.9x at 12 columns and 3.0x at 3, both like for like |
 | Interning the address | the replica must be readable in a SQL console with no joins | at most 34% of the file, before dictionary tables and integer keys are added back |
 | Readable version columns (ISO-8601 plus hex) | a view gives the same legibility for nothing | +69.1 MB (+37%) and +99.8 MB (+29%) |
 | A per-cell cursor on the replica | it is a durable local claim about the authority's state | +9.8 MB (5.4%) and +18.9 MB (5.5%) for the column, measured as a clean A/B on the settled schema; 91 MB and 140 MB if it is also indexed, which nothing here would query |

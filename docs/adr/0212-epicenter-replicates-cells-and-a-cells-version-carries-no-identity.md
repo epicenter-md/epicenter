@@ -365,8 +365,16 @@ outside that constraint entirely.
 
 Against ADR-0135 the conflict is real: either the projection is given a designated
 body root that ADR-0135 must be amended to allow, or the body is not restored as a
-field and ADR-0207's markdown round trip loses its source. This record does not
-settle it, and it should be settled before this one is Accepted. Note that the
+field and ADR-0207's markdown round trip loses its source. This record does not settle it, and it should be settled before this one is
+Accepted. The item is wider than ADR-0135. A collaborative column is a per-table
+declaration of a document capability, and several may sit on one row, which meets
+**ADR-0130** (Accepted: "Every ordinary row inherently owns one lazy collaborative
+document", and it explicitly rejects declaring a document layout per table) and
+**ADR-0168** ("Tables declare neither a document nor blob capability"). Neither is
+in this record's Amends list, and neither should be added until the item is
+settled, because the alternative resolution is that a row owns exactly one
+collaborative document after all, which is what those two records already
+decide and what would need no amendment. Note that the
 projection cost below is derived from the body render, so it is conditional on the
 first answer.
 
@@ -550,9 +558,9 @@ patch(id, changes): Promise<Result<Row | undefined, ReadError>>;
 delete(id): Promise<boolean>;
 ```
 
-This is `packages/data/src/epicenter.ts:69-79` unchanged. A body is reached
-through the row document handle ADR-0135 already defines, not through this
-surface, which is what keeps a value you `patch` and a document you open from
+This is `packages/data/src/epicenter.ts:69-79` unchanged. A collaborative column is reached through a row document handle, which ADR-0135
+defines per row and this record keys per column; reconciling those is the open item
+above, not something this record can assert away, which is what keeps a value you `patch` and a document you open from
 looking like the same kind of thing. The exploration memo
 proposed renaming `patch` to `set` and declaring that "create is not a verb"; both
 are withdrawn. `create` has to be a verb, because it is the only call that writes
@@ -1384,5 +1392,5 @@ commit before deletion, which cannot be written down before it exists.
   lifetime does not catch a restore, because it lives inside the file being
   restored, and neither does a cursor regression, because the cursor an authority
   is shown is what a replica read rather than what it wrote. The price paid is one
-  8-byte column per side and a median +62% on a local write. ADR-0213 carries the
+  8-byte column per side and a median of per-run minima at +62% on a local write, pooled +55.6%. ADR-0213 carries the
   rest.

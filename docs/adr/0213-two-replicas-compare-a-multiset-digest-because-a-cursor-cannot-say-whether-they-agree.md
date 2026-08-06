@@ -138,7 +138,7 @@ version at all.
 
 The prose the projection renders fails 3. Both sides fold the same entry, so the
 authority would have to render, which means naming a root; ADR-0135 forbids that,
-a root's type is still the application's: Yjs v14 collapses every type into one
+a root's type is still the application's: Yjs v14 collapses the sequence types into one
 `YType`, so the same root may be a character sequence or a tagged tree, and "the
 prose" is not well defined across those readings. (The which-root leg of this
 argument is gone: a column name is now a root name.)
@@ -344,7 +344,7 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
   pricing. Hashing the value rather than the version alone is 2 to 15 points across four
   runs. **Folding the sum in memory and writing it once per transaction
   cuts the premium by about a third**, to a median of **+37%** and **+32%**
-  across the same ten runs,
+  across the same fifteen runs,
   and still satisfies the same-transaction rule; the higher figures assume one
   write per transaction.
 - **A row delete costs far more than a write, and it scales with row width.**
