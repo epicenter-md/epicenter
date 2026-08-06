@@ -2,7 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-07-20
-- **Relates:** [ADR-0212](0212-epicenter-replicates-cells-and-a-cells-version-carries-no-identity.md) (`Proposed`) borrows this record's authority lifetime rather than minting a second noun, and makes it observable: the authority returns its lifetime with every response so a replica can tell that a restore happened, which a cursor alone cannot express.
+- **Relates:** [ADR-0212](0212-epicenter-replicates-cells-and-a-cells-version-carries-no-identity.md) (`Proposed`) borrows this record's authority lifetime rather than minting a second noun, as does [ADR-0213](0213-two-replicas-compare-a-multiset-digest-because-a-cursor-cannot-say-whether-they-agree.md), which distinguishes the lifetime from the digest, and makes it observable: the authority returns its lifetime with every response so a replica can tell that a restore happened, which a cursor alone cannot express.
 - **Amends:** [ADR-0161](0161-each-person-has-one-epicenter-replicated-on-each-adapter-boundary.md), [ADR-0163](0163-scalar-sync-separates-fact-reads-from-numbered-intent-submissions.md), and [ADR-0167](0167-a-portable-epicenter-is-an-identity-free-export-of-one-authority-cut.md)
 
 ## Context

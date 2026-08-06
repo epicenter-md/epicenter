@@ -692,18 +692,6 @@ lives in `editor`, or in a `Y.XmlFragment` rather than a `Y.Text`, renders the
 empty string and hashes identically to every other such document. The settled
 entry names no root at all.
 
-**A check that failed four times, and the constraint list that ended it.** The
-body digest entry was absent, then hashed `doc_state`, then hashed a Yjs snapshot,
-then hashed the rendered prose. Each attempt reached for whichever CRDT API
-sounded canonical and was tested only against the failure the previous attempt
-had. The constraints were never written down together, and each new entry
-violated one that had not been: an encoding is not a function of the operation
-set; a snapshot contains no content; rendered prose requires naming a root, which
-ADR-0135 forbids the authority from doing. Written down as a list of four, the
-answer is forced rather than searched for: a canonical re-encode of the merged
-operation set, which is root-agnostic, content-bearing, and byte-stable across
-encodings.
-
 **A verification method that failed twice, and what it cost.** Two adversarial
 rounds found a fatal defect that the previous round's verification could not have
 caught, because the verification modelled the mechanism rather than running it.

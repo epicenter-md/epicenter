@@ -44,6 +44,13 @@
   replaced by the unsent bytes themselves, and the bounded live chain (`:63-69`, a
   compact baseline plus a short ordered tail), replaced by one merged
   `doc_state`. Its nullable compact projection survives.
+  Also [ADR-0135](0135-row-documents-have-application-owned-roots.md) (`Accepted`)
+  at row liveness only. Withdrawn: that the persistence owner "cannot recreate a
+  deleted row" (`:114-116`), since an address is reusable here and the open door
+  replaces a stale-generation body rather than refusing on liveness. That
+  Epicenter never declares, validates, versions, reserves, enumerates or
+  interprets roots is untouched, and is the constraint ADR-0213's body entry is
+  shaped by.
   Also [ADR-0159](0159-row-documents-persist-in-one-owner-side-sqlite-update-log.md)
   (`Accepted`) and, by the contract it names,
   [ADR-0146](0146-row-documents-use-one-yjs-14-major-and-runtime-native-update-logs.md).
@@ -82,7 +89,7 @@
   and [ADR-0168](0168-lenses-are-complete-pure-json-interpretations.md) (why
   storage must be schemaless), [ADR-0208](0208-every-app-folder-is-markdown-beside-one-queryable-database.md)
   (the projection that makes the replica's own query shape irrelevant),
-  [ADR-0135](0135-row-documents-have-application-owned-roots.md) (the body)
+
 
 ## Context
 
@@ -589,10 +596,11 @@ types into produces no body update at all, so a rule attached to body ingest nev
 fires, and a replica that held the previous incarnation renders its prose in the
 new row while a replica that joined later renders nothing. That is divergence and
 a content leak at once. **The presence cell is the only cell with authority over other cells**, and it has
-six effects: R1 refuses an older cell, R2 drops older cells, R2 drops an older
+seven effects: R1 refuses an older cell, R2 drops older cells, R2 drops an older
 body, the open door replaces a stale-generation body, the projection renders one
-empty until that happens, and a clamp re-stamp moves the body's generation with
-it. Nothing else in the design reaches across
+empty until that happens, a clamp re-stamp moves the body's generation with it,
+and every local write reads it to compute its floor. Nothing else *writes* across
+an address or a plane. Nothing else in the design reaches across
 an address or a plane. Without this the body plane does not converge: a late update from a replica
 that never saw the delete produces `"the old note -- B typed this"` in two
 orderings and an empty body in two others. The alternative, never deleting a body,
@@ -603,8 +611,12 @@ A body still gets no *version*. A cell's version resolves conflicts, a body's
 marker tracks delivery, and a generation names which row it belongs to; giving a
 body a version would advertise a merge policy it does not have.
 
-**A replica never stores a claim that decides what to push.** It does store one
-`last_applied_cursor`, which decides what to *ask for* and is self-correcting: an
+**A replica stores three durable claims, and each one has to earn it.**
+`digest_sum` decides whether to run a repair, and is safe only because it is
+folded in the same transaction as the write it describes and recomputed from the
+store when a pass completes. `repair_from` decides whether one is owed, and is
+safe because the check that raises it is re-evaluated every round.
+`last_applied_cursor` decides what to *ask for* and is self-correcting: an
 understated cursor re-reads, and an overstated one is caught by the authority
 lifetime beside it. The dangerous class is the other one. Storing the authority's
 last-known Yjs state vector was tried and refused: an overstated
@@ -637,14 +649,26 @@ Rewriting cannot repair it, because the local write rule never lowers
 `version_ms`. So a **clamp** refusal names the address and the authority's own time, and the
 replica re-stamps the refused cells of that row, and the row's body generation
 with them, **in one transaction, at `(floor, rank)`**, where rank is each cell's
-position in the row's own `(version_ms, version_seq)` ascending order and the
-floor is
+position in the row's own `(version_ms, version_seq)` ascending order, and which is the one
+operation exempt from the local write rule above because it deliberately lowers
+a version. The floor is
 
 ```txt
 floor = the row's presence cell is itself refused
-      ? the authority's time
-      : max(the authority's time, the row's presence version)
+      ? (the authority's time, rank)
+      : (max(the authority's time, presence.version_ms),
+         presence.version_ms >= the authority's time
+           ? presence.version_seq + 1 + rank
+           : rank)
 ```
+
+**The counter is part of the floor, not decoration.** R1 compares
+`(version_ms, version_seq)`, so flooring the millisecond alone still lands a
+re-stamped cell under a presence cell whose own counter is above zero, which a
+delete-then-create inside one millisecond produces by the local write rule and
+which a previous re-stamp of presence produces by rank. Measured with the
+millisecond floored and the counter not: the re-creation is gone from both sides,
+nothing is dirty, the roots agree, and the call returned success.
 
 **The floor is the fix, and a flat authority time is the defect it repairs.**
 Re-stamping to authority time alone lands the cell *below* its own row's presence
@@ -684,7 +708,13 @@ the pass and the epoch only increases. A row-scoped raise could also clear a
 whole-store obligation it never discharged. Discharging the event inline removes
 the question rather than answering it.
 
-**A clamp refusal on a presence cell also schedules a repair for that row.**
+**A clamp refusal on a presence cell schedules the whole-store pass**, because
+that is the only repair the schema can represent and the record deleted the scope
+column that would have bounded it. At this fixture that is 2.6M cells and roughly
+315 MB, so a device whose clock sits permanently outside the clamp pays it on
+every re-creation. That is the cost of the collapse, and it is the reason a
+row-scoped alternative would have to come back with a column rather than a
+sentence.
 Lowering a presence cell is the one operation in the design that moves a version
 down, and it retroactively un-refuses every pull R1 rejected while the cell was
 high. Those pulls stored nothing and consumed their cursors, and a cell the
@@ -986,7 +1016,7 @@ conclusion. Timings taken on the settled schema use a 200k all-live fixture and
 are marked. The full table,
 including what each refusal costs, is in
 [the memo](../../specs/20260805T190000-replicated-cell-store-memo.md), which is
-scheduled for deletion on acceptance; the git ref is `6f73626ea2`.
+scheduled for deletion on acceptance; the git ref is `882cedea46`.
 
 - **Keep ordered patch replay.** It protects exactly one thing: `[create,
   delete]` reordered leaves a permanently live row, because `delete` no-ops at an

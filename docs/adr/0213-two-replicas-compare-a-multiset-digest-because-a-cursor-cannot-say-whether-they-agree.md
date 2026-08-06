@@ -165,7 +165,7 @@ schedules a full repair on **500 rounds out of 500**, with zero divergence.
 
 ### A completed pass recomputes the sum
 
-The sum is incremental, so nothing ever derives it from the store, and a sum that
+The sum would be incremental only, with nothing deriving it from the store, and a sum that
 has drifted from its own content is a mismatch no amount of repair can close: the
 pass converges the content, the comparison reads the sum, and the two never meet.
 Measured with one fold omitted at one of the roughly ten sites that fold: two
@@ -173,18 +173,27 @@ stores holding **41 identical cells**, sums unequal, **50 full-range passes over
 rounds**, still unequal. At this record's fixture that is 2.6 M cells and about
 315 MB every round, forever, with nothing user-visible wrong.
 
-So a repair pass that completes **recomputes `digest_sum` from `_replica_cell` and
-`_replica_body`** before clearing the obligation. The pass already scans
-everything, so the recompute is free, and it is what makes a sum a check on state
+So a repair pass that completes **recomputes `digest_sum` on both sides**: the
+replica from `_replica_cell` and `_replica_body`, and the authority from
+`_authority_cell` and `_authority_body` when it serves that pass to completion.
+Recomputing one side only leaves the other's drift permanent, and an authority
+whose sum has drifted is a mismatch every replica repairs every round forever,
+which is the failure this section exists to remove. The pass already visits every cell and every body, so the
+recompute adds one entry hash per cell and one re-encode per body rather than a
+second traversal, which is not free but is the cheapest place to put it, and it is what makes a sum a check on state
 rather than a durable local claim that decides what to send and perpetuates its
-own error. Without it, ADR-0212's phrase "a digest mismatch is a state check,
-recomputed every round" is false: nothing recomputes anything.
+own error. Without it, ADR-0212's claim that a digest mismatch is a state check would be
+false, because nothing would ever recompute anything.
 
 ### A drop subtracts, in the same transaction
 
-ADR-0212's R2 deletes a row's older cells when a presence cell is written. That
-delete returns what it removed and subtracts each entry in the same transaction,
-or the first deletion in the store guarantees a permanent false mismatch.
+Every removal subtracts, not only the obvious one. ADR-0212's R2 deletes a row's
+older cells when a presence cell is written, **and its body row with them**, and
+the open door **replaces** a stale-generation body with an empty document. The
+cell delete returns what it removed and subtracts each entry in the same
+transaction; the two body mutations have no write of their own to hang a fold on,
+so each must subtract the entry it removes explicitly. Miss any of the three and
+the first deletion in the store guarantees a permanent false mismatch.
 
 The same rule generalizes: the digest sum and the write it describes are one
 transaction. Otherwise the digest becomes the thing ADR-0212 refuses elsewhere, a
@@ -265,8 +274,9 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
   full adversarial round because the verification of the day modelled the digest
   in JavaScript maps and never wrote a sum to SQLite. Any check of this mechanism
   must round-trip through the database.
-- **The body entry was wrong three times, and the pattern is the lesson.** It was
-  first absent, then hashed the encoding, then hashed the history. Each attempt
+- **The body entry was wrong four times, and the pattern is the lesson.** It was
+  first absent, then hashed the encoding, then the history, then the rendered
+  prose of a root the authority is forbidden to name. Each attempt
   reached for whatever the CRDT library offered that sounded canonical, rather
   than asking what the question is about. The question is whether two sides hold
   the same document, so the answer is the document, and a check for this entry has
