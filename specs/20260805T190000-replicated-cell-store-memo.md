@@ -690,8 +690,9 @@ mutually exclusive states, one with every cell owed and one with none.
 | Scanning the cell plane and the body plane as two address sequences under one watermark | a body edited mid-pass sorts behind a cell watermark, is folded as a passed delta, and is derived again when the body scan reaches it | the committed sum counts it twice, which is the permanent false mismatch the recompute exists to remove. One sequence, with a body at `!body` |
 | A refusal that does not carry the authority's current `repair_from` | a refused replica has no legal `from` to send, so the sentinel is its only move | 0 passes complete in 300 rounds with two, three or four replicas repairing at once, the authority never past the first chunk of ten, because the replicas restart each other forever. Adopting the watermark the refusal carries completes in ten rounds |
 | "The authority ignores a second replica's pass while one is open" | `_authority_replicas` is deleted and nothing on the authority names a device | unbuildable, so it was a sentence rather than a decision. The from-guard alone commits exactly the truth with two replicas alternating chunks |
-| Leaving `row_id` unconstrained on the two body tables | the cell tables refuse addresses the body tables accept | a body at an address whose row can never exist: R2's body drop cannot fire on it and the repair pass ships it forever. Both sides now carry the cell tables' `row_id` CHECK, verified symmetric |
-| Carrying the authority's held version for each REFUSED ADDRESS in the refusal, not only the row's presence | the floor's terms are presence versions only, so a re-stamped field can land on or below the version the authority already holds for that same cell | NOT YET TAKEN, and the only priced item here that is an open option rather than a refusal. Measured cost of NOT taking it: of 4282 clamp re-stamps, 223 land on or below the version the authority holds (66 exactly on it, 157 below) and 190 (4.4%) are discarded as stale; a further 34 land exactly on it and WIN the hash, silently displacing the held value, silently, with both sides agreeing and nothing dirty. The fix is a fourth term of the same shape as the third; it was not taken in round 13 because the design was frozen, and every previous round's patch to this formula was defective |
+| Leaving `row_id` unconstrained on the two body tables | the cell tables refuse addresses the body tables accept | a body at an address whose row can never exist: R2's body drop cannot fire on it and the repair pass ships it forever. Both sides now carry the cell tables' `row_id` CHECK, identical on both by
+normalized diff |
+| Carrying the authority's held version for each REFUSED ADDRESS in the refusal, not only the row's presence | the floor's terms are presence versions only, so a re-stamped field can land on or below the version the authority already holds for that same cell | NOT YET TAKEN, and the only priced item here that is an open option rather than a refusal. Measured cost of NOT taking it: of 5331 re-stamped field cells, 223 land on or below the version the authority holds (66 exactly on it, 157 below) and 190 are discarded as stale, silently, with both sides agreeing and nothing dirty. That 190 is 4.4% of the 4282 clamp re-stamps and is classified at push time. Of the 66 landing exactly on it, 34 WIN the hash instead of losing it, silently displacing the held value. The fix is a fourth term, of the same shape as the second; it was not taken in round 13 because the design was frozen, and every previous round's patch to this formula was defective |
 | Leaving the clamp silent about a body's generation | a body copies its generation from the presence cell, so a clamped create produces an equally skewed one | the prose is lost from the device that typed it, the authority holds it under a generation no row has, and the digest mismatches every round while the pass re-sends bytes the authority refuses |
 
 `Supersedes` and `Amends` carry reciprocal links on both records, as
@@ -767,10 +768,10 @@ different and worse: `r8-digest-rerun.out` and `r8-delete-rerun.out` have no
 producing script at all, so they cannot be reproduced by anyone. They are replaced
 here by runs of the live producer.
 
-**Round 15 repaired the harness instead of counting it again.** Thirteen probes
-are retired to `superseded/` with a README: they name `_replica_digest` or
-`repair_epoch`, artifacts the design deleted, so they cannot run and must not be
-repaired. Two more are retired as covered elsewhere. The four broken by drift are
+**Round 15 repaired the harness instead of counting it again.** Eleven probes are retired to `superseded/` with a README: they name
+`_replica_digest` or `repair_epoch`, artifacts the design deleted, so they cannot
+run and must not be repaired. Two more are retired as covered elsewhere, making
+thirteen. The four broken by drift are
 repaired, and the one whose premise the schema made impossible is replaced:
 `value` is TEXT, so the non-UTF-8 wedge it tested cannot occur, and
 `r15-check-symmetry.ts` asserts what the settled schema actually does. **No
@@ -785,12 +786,12 @@ the settled schema, the whole page applies, the poisoned value round-trips byte
 for byte, and only an unguarded `json()` raises. The symmetry is what buys the
 wedge out; the record had been describing the disease rather than the cure.
 
-**Provenance decayed once before, and this is the third round it has bitten.** Fourteen harness
-scripts no longer execute against the settled schema, because every schema
-tightening breaks the positional inserts in probes nobody re-ran. Two claims in these records had a dead producer AND no saved output at the time round 13 checked:
+**Provenance decayed once before, and this is the third round it has bitten.** Round 14 counted fourteen harness scripts that no longer executed against the
+settled schema, because every schema tightening breaks the positional inserts in
+probes nobody re-ran. Round 15 retired or repaired all of them. Two claims in these records had a dead producer AND no saved output at the time round 13 checked:
 the authority wedge, the epoch collapse (quoted as "0 of 200 either way" where the live probe reports
 200 of 200 inline against 0 of 200 under the epoch, a tie reported where there was
-a rout), A third, the 280-of-400 resumed-pass figure, was suspected and cleared: `r11b-repair-pair.ts` runs and its output is kept. A further 22 saved outputs are
+a rout), A third claim, the 280-of-400 resumed-pass figure, was suspected and cleared: `r11b-repair-pair.ts` runs and its output is kept. A further 22 saved outputs are
 older than the scripts named for them. The rule this round adds: a claim whose
 producer does not run is withdrawn, not re-quoted, and the sweep that finds them
 runs every round rather than when a reviewer thinks to look.
@@ -836,8 +837,8 @@ arithmetic that could not change an outcome, and both were adopted with prose
 claiming a measured improvement.
 
 The root cause is not any of the four formulas. It is that the family
-`max(A, f(held), local)` has exactly two behaviours, because the authority never
-holds a presence more than one clamp width ahead of its own clock, so every `f`
+`max(A, f(held), local)` has exactly two behaviours, because the authority never holds a presence more than one clamp width ahead of
+its clamp reference, so every `f`
 that respects the clamp equals either `A` or `held`. There is no third formula,
 so there was never a fix to find: rounds 10 and 11 were searching a space with two
 points in it. Once that is stated, the remaining choice is a trade with measured
@@ -858,11 +859,11 @@ both planes, the whole required set), `bench8.ts` (per-row re-derivation),
 `r2m-storage.ts` (the settled schema against the two-relation and 16-byte-hash
 alternatives), `r2m-dirty-index*.ts`, `r2m-wire-and-intern.ts`,
 `r3m-cursor-column.ts` (the per-cell cursor A/B), `results2.json` (the
-row-plus-version-map opponent), the `r3-*` probes (every protocol claim: the
-authority wedge, the restore race, the re-stamp, the body plane), the
-`converge*.ts` proofs, `r4m5-*.ts` and `r6m-*.ts` (the digest, the write floor and
-the body plane, on the settled schema under a control arm), the `r5-*` probes
-(the digest's storage, semantics, trigger and repair), and `final-verify.ts`
+row-plus-version-map opponent), the surviving `r3-*` probes (`r3-body-plane`, `r3-create-and-restore`,
+`r3-restamp`, `r3-restore-race`), and `r15-check-symmetry.ts` for the CHECK
+symmetry that replaces the withdrawn authority-wedge figure, the
+`converge*.ts` proofs, `r4m5-body-plane-disk.ts` (the body plane on disk, on the settled schema under a control arm), the surviving `r5-*` probes (`r5-body`, `r5-digest-semantics`, `r5-fuzz`,
+`r5-repair`, `r5-trigger`), and `final-verify.ts`
 through `final-verify5.ts`. Where a row is not on the settled schema, it
 is because the comparison it makes needs an opponent only an earlier bench built;
 `r4m-headline.ts` is the exception, and builds both shapes in one run.

@@ -190,8 +190,8 @@ authority from `_authority_cell` and `_authority_body`.
 
 **Neither side's half can be a running total held nowhere.** Accumulating a
 partial sum in `digest_sum` itself leaves garbage rather than drift the moment a
-replica goes offline mid-pass, and, absent the one-pass-at-a-time rule ADR-0212
-decides for the authority, two interleaved passes leave the loser's
+replica goes offline mid-pass, and, because ADR-0212 has no one-pass-at-a-time rule to decide, nothing on the
+authority naming a device, two interleaved passes would leave the loser's
 partial as the durable value. A pass abandoned partway leaves the side summing only what it scanned, which every peer then mismatches every round; the resumed-pass measurement below is the sourced form of this. Both sides therefore carry a separate accumulator, `repair_sum`.
 Recomputing one side only leaves the other's drift permanent, and an authority
 whose sum has drifted is a mismatch every replica repairs every round forever,
@@ -230,10 +230,11 @@ mismatch an omitted fold produces, through a door atomicity alone leaves open.
 term across a restart on its own: a pass chunked by address range that dies after
 three of ten chunks resumes with the scanned total at zero and commits a sum over
 only the tail, which is exactly the failure this section diagnoses for the
-authority, on the side an earlier draft called safe. Both sides therefore hold
-**`repair_from` and `repair_sum` together**, advanced in the same transaction, and
-that pair is also what lets the authority fold its recompute into the pages it
-already serves instead of taking one terminal window under its own write lock.
+authority, on the side an earlier draft called safe. ADR-0212 decides the `repair_from` and `repair_sum` pair for both sides, and the
+consequence that belongs here is narrower: a completed pass recomputes from
+content rather than committing a running total, and folding that recompute into
+the pages the authority already serves is what keeps it off a terminal window
+under the write lock.
 
 The cost is not free and an earlier draft said it was: hashing every cell is
 **+295% on top of the scan** the pass already pays, about 1.9 seconds of added hashing on a
@@ -303,7 +304,7 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
 - **It costs one 8-byte column per side and about half a local write again.**
   Measured on the settled one-column schema across two runs of the live producer:
   **+63% to +66% at 12
-  columns and +41% to +59% at 3**, on a write that already pays ADR-0212's
+  columns and +55% to +57% at 3**, on a write that already pays ADR-0212's
   row-local floor. Against a store with neither, a local write costs **+82% to
   +117%**. The control arm sits within 5% and does not bound this: the ratio moves
   20 points between process invocations, so the envelope is the number and a

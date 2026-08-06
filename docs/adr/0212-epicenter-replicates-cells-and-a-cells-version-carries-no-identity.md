@@ -286,7 +286,8 @@ CREATE INDEX _authority_body_cursor ON _authority_body(cursor);
 ```
 
 **The authority repeats every CHECK it can evaluate without parsing a value**,
-which is all of them except one. A CHECK the replica holds and the authority does
+which is every CHECK the replica holds. The one constraint *neither* side carries
+is `json_valid`, and that is the point. A CHECK the replica holds and the authority does
 not is a wedge: applying a page is one transaction, one unrepresentable cell
 aborts the whole page, the cursor never advances, and the only way to change a
 cell is to write a newer version of an address the replica cannot even express.
@@ -378,7 +379,9 @@ It is not a claim about when a person acted, and the authority verifies only tha
 it is not more than five minutes ahead of its **clamp reference**, which is not
 simply its own clock. The reference is
 `max(its own clock, the highest version_ms it HOLDS minus the clamp width)`,
-  which the store derives by a scan an implementation caches, because the held
+  which the store derives by a scan an implementation must cache (uncached it is a
+  full scan of `_authority_cell` per ingest, 14.1 ms at 500,000 cells and about
+  73 ms at this record's fixture, with no index over `version_ms`), because the held
 maximum only rises while the file is the same file, and which "ever accepted"
 cannot be derived at all, because R2 and overwrites remove rows;
 and "the authority's time" means that quantity everywhere below: in the refusal
@@ -804,8 +807,7 @@ nothing is dirty, the roots agree, and the call returned success.
 
 **The floor is the fix, and a flat authority time is the defect it repairs.**
 Re-stamping to authority time alone lands the cell *below* its own row's presence
-cell, which the authority answers with that presence cell, which R2 then uses to
-drop the cell: measured, the user's write vanishes from the device that typed it
+cell, and the failure above follows: measured, the user's write vanishes from the device that typed it
 and from the authority, with nothing dirty and the digest roots agreeing. Flooring
 at the presence version stays inside the clamp, because the authority accepted
 that presence version in the first place. Dragging a clean presence cell into the
@@ -848,11 +850,14 @@ off a stale watermark is still refused, so the double-count is closed, and an
 abandoned pass is self-healing rather than a watermark nothing can clear.
 Discarding a partial accumulator costs nothing, because the sum is committed only
 at completion. **A refusal carries the authority's current `repair_from`, and a
-refused replica resumes from it rather than restarting.** Without that a refused
-replica has no legal `from` to send, and the sentinel is its only move: measured,
-two replicas repairing at once then restart each other forever, 0 passes complete
-in 300 rounds at two, three and four replicas, with the authority never past the
-first chunk of ten. Adopting the watermark the refusal carries completes in ten. An earlier draft added "and ignores a second replica's pass while
+refused replica resumes from it rather than restarting.** Without that the sentinel is otherwise its only move, and measured, two replicas
+repairing at once then restart each other forever: 0 passes complete in 300 rounds
+at two, three and four replicas, the authority never past the first chunk of ten.
+Adopting the carried watermark completes in ten, as does retrying the same `from`;
+what livelocks is restarting at the sentinel. **A replica that adopts another's
+watermark has not scanned the head of the address space, so it does not treat that
+pass as its own completed pass for ADR-0213's recompute.** Only the replica whose
+scan covered the full range recomputes. An earlier draft added "and ignores a second replica's pass while
 one is open", which is neither implementable nor needed: `_authority_replicas` is
 deleted and nothing on the authority names a device, and with the guard alone two
 replicas alternating chunks off the current watermark commit exactly the truth. `repair_from = ''` is the sentinel for
@@ -1035,12 +1040,14 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   measured, an hour's step back admits a write 55 minutes above the plain clock
   bound until the clock catches up. That is the deliberate price of the ratchet. A third window is the re-stamp
   itself: the refusal names the row's presence but not the version the authority
-  holds for each refused cell, so 223 of 4282 re-stamped field writes land on or below a
-  held version and 190 of them (4.4%) are discarded as stale, silently, with both
-  sides agreeing and nothing dirty. The collision has a second face the loss count
-  cannot show: 34 more re-stamps land on the identical version and *win* the hash,
-  silently displacing the value the authority held. They reach the intended result
-  by a coin flip rather than by the floor's arithmetic. A fourth floor term of the same shape as the third
+  holds for each refused cell, so 223 of 5331 re-stamped field cells land on or below a held
+  version, 66 of them exactly on it and 157 below, and 190 are discarded as stale,
+  silently, with both sides agreeing and nothing dirty. That 190 is 4.4% of the
+  4282 clamp re-stamps and is classified at push time, which is why it is not the
+  sum of the two landing counts. The collision has a second face the loss count
+  cannot show: 34 **of those 66** win the hash instead of losing it, silently
+  displacing the value the authority held. They reach the intended result
+  by a coin flip rather than by the floor's arithmetic. A fourth floor term, of the same shape as the second
   would close it; it is not taken here, and it is priced in the memo.
   Backwards there is no bound at all: the clamp only refuses a clock that is
   ahead, so a replica with a dead clock writes into the past, loses to a
@@ -1172,9 +1179,9 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   worth stating plainly.** An earlier draft claimed 2.1x and 1.8x. That was an
   artifact of a badly written opponent: joining `_replica_row` before grouping
   forces a temp b-tree over every cell. Written the obvious way instead, grouping
-  first and joining liveness once per row, two relations project in 582 ms and
-  1400 ms against one relation's 568 ms and 1104 ms, all four on the retired
-  query. Both frames below are on that retired query, and against the decided
+  first and joining liveness once per row, the two-relation and one-relation arms sit within the run-to-run band on the
+  retired query; the four raw timings an earlier draft gave here have no producing
+  output and are withdrawn. Both frames below are on that retired query, and against the decided
   projection the 296 ms gap is about **4%** of a 7.3 s rebuild. At the wide shape it
   is inside the 7% run-to-run band and is **no measurable difference**; at the
   narrow shape it is 1.27x of the retired query, which is the same 296 ms and not
