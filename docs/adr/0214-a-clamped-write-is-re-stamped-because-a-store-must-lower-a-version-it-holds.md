@@ -35,9 +35,11 @@ lower a version it already holds**, and every rule below follows from that: lowe
 is the one operation exempt from the local write rule, the lowered cell must not
 land under its own row's presence, and presence is a cell so R2 reaches it.
 
-The subsystem is 260 lines and it is **94% load-bearing**, measured by removing each
-rule and watching what breaks across 20 independent 1200-trace seed blocks. Only
-its former coupling to the whole-store repair pass was removable. The full knob
+This record is about 195 lines of decision, and it is load-bearing rule by rule,
+measured by removing each and watching what breaks across 20 independent
+1200-trace seed blocks. Two came out clean: the coupling to the whole-store repair
+pass, which is removed, and the floor's `local` term, which is inert on every
+counter in 20 of 20 blocks and survives on a hand-built case instead. The full knob
 table and the six priced refusals are in
 [the memo](../../specs/20260805T190000-replicated-cell-store-memo.md).
 
@@ -109,7 +111,7 @@ the forward reach of `held`, and both clamps are dead arithmetic:
   above its row's presence, and nothing the replica can write inside the clamp
   beats a held version the merge is monotone against. The 1200-trace fuzz cannot
   reach this state, because its authority clock only ever advances. The backward step is not a price of clamping: measured, the **decided** unclamped
-floor is the worst-affected arm by two orders of magnitude, 897,660 re-stamps
+floor is the worst-affected arm by 5.5x, 897,660 re-stamps
 against 164,528 for either clamped variant. So **ADR-0212's** clamp reference ratchets on the highest `version_ms` the
 authority holds, which cannot move past what the clamp already permitted and
 restores the premise by construction. It restores the premise and **not convergence**: measured at 300
@@ -212,22 +214,6 @@ authority already holds at that exact version takes no new cursor, so nothing
 redelivers them. That is the hazard the digest closes one round later, and it is
 why the re-stamp needs no obligation of its own: a clamp re-stamp is an **event**
 naming one row, discharged inline in the transaction that creates it.
-**A clamp refusal on a presence cell schedules the whole-store pass**, because
-that is the only repair the schema can represent and the record deleted the scope
-column that would have bounded it. At this fixture that is 2.6M cells and roughly
-336 MB at an 80-character body, or 8.2 GB at 40 KB, so a device whose clock sits
-permanently outside the clamp pays it on every re-creation. That is the cost of the collapse, and it is the reason a
-row-scoped alternative would have to come back with a column rather than a
-sentence.
-Lowering a presence cell is the one operation in the design that moves a version
-down, and it retroactively un-refuses every pull R1 rejected while the cell was
-high. Those pulls stored nothing and consumed their cursors, and a cell the
-authority already holds at that exact version takes no new cursor, so nothing
-redelivers them. The design already owns the machine that fixes this; it just has
-to call it. This is not a durable claim about
-another party's state: it is a one-shot repair carried by the response, and the
-skewed version never propagated because the authority never accepted it.
-
 An **R1** refusal must not be answered that way. R1 fires at the authority as well
 as the replica, and re-stamping there would promote a previous incarnation's value
 over the re-creation's own snapshot, which is exactly what R2 exists to prevent.
@@ -241,12 +227,14 @@ because the obligation was discharged rather than deferred.
 
 - **A re-stamp can lose a user's field write, silently.** The floor's terms are the
   clamp reference and presence versions, and the refusal does not carry the version
-  the authority holds for the refused cell itself. Measured on the settled schema, 223 of 5331 re-stamped field cells land on or below
-  a held version, 66 exactly on it and 157 below, and 190 are discarded as stale
-  with both sides agreeing and nothing dirty. That is 4.43% of clamp re-stamps,
-  unmoved from 4.44% before the document plane was keyed by column, and 3.56% of
-  field cells. A further 34 of the 66 win the hash instead of losing it, silently
-  displacing the value the authority held. A
+  the authority holds for the refused cell itself. Re-taken on the settled column-keyed schema, **224 of 5422** re-stamped field cells
+  land on or below a held version, 79 exactly on it and 145 below, and **193 are
+  discarded as stale** with both sides agreeing and nothing dirty. A further 35 of
+  the 79 win the hash instead of losing it, silently displacing the value the
+  authority held. The rates did not move: 4.43% of clamp re-stamps against 4.44%
+  before the rekey, and 3.56% of field cells against 3.56%. The counts did: an
+  earlier draft carried 223 / 5331 / 66 / 157 / 190 / 34 from the pre-rekey harness
+  and called them settled. A
   fourth floor term of the same shape as the second would close it. It is priced in
   the memo and not taken.
 - **The floor's three terms are each load-bearing**, and one of them is not
@@ -254,5 +242,5 @@ because the obligation was discharged rather than deferred.
   measured-inert standard that kills the two clamped variants to invite the same
   verdict, and it survives on a hand-built case instead.
 - **A backward step of the authority's own clock is this record's worst case**, and
-  the decided unclamped floor is the worst-affected arm by two orders of magnitude.
+  the decided unclamped floor is the worst-affected arm by 5.5x.
   The ratchet restores the clamp's invariant and not convergence.

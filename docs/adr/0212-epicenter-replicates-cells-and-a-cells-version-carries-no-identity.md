@@ -970,14 +970,7 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   After a backward step of the authority's own clock it is at most the clamp width plus
   that step, because the reference ratchets on what the authority already holds:
   measured, an hour's step back admits a write 55 minutes above the plain clock
-  bound until the clock catches up. That is the deliberate price of the ratchet. A third window is the re-stamp, which ADR-0214 owns and prices. Re-taken against the settled column-keyed schema, these counts did not move:
-  4.43% against 4.44%, and the field-cell rate 3.56% against 3.56%. That 190 is 3.6% of the 5331 field cells, or
-  4.4% of the 4282 clamp re-stamp
-  events, and it is classified at push time, which is why 190 + 34 exceeds 223 by one. The collision has a second face the loss count
-  cannot show: 34 **of those 66** win the hash instead of losing it, silently
-  displacing the value the authority held. They reach the intended result
-  by a coin flip rather than by the floor's arithmetic. A fourth floor term, of the same shape as the second
-  would close it; it is not taken here, and it is priced in the memo.
+  bound until the clock catches up. That is the deliberate price of the ratchet. A third window is the re-stamp, which ADR-0214 owns and prices.
   Backwards there is no bound at all: the clamp only refuses a clock that is
   ahead, so a replica with a dead clock writes into the past, loses to a
   months-old value, and is never refused, never re-stamped, and never repaired.
