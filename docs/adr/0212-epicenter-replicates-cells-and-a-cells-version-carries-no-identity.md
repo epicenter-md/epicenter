@@ -325,8 +325,7 @@ The projection reads
 restores every row for one `CASE`. "A nonconforming row at read time" is true of
 the JavaScript traversal and was not true of the SQL projection.
 
-**So the replica does not constrain `value` to valid JSON.** That is the one
-CHECK the authority cannot mirror, because mirroring it means parsing a value it
+**So the replica does not constrain `value` to valid JSON.** That is the one CHECK the authority cannot mirror, because mirroring it means parsing a value it
 is defined never to parse. A value this release's Lens cannot read is a
 nonconforming row at read time, which the traversal already reports
 (`Err(NonconformingRow)`), rather than a page that can never be applied.
@@ -774,7 +773,10 @@ floor = (max(the authority's time,
 ```
 
 **All three terms are load-bearing, and every clamped variant of `held` is
-provably inert.** Taking the floor from the authority alone loses the write
+provably inert.** One asymmetry has to be said out loud: `local` binds on 0 of 4361
+re-stamps, which is the same measured-inert standard that kills the two clamped
+variants below. It survives anyway, on a hand-built case rather than on the fuzz,
+so the fuzz is not what establishes it. Taking the floor from the authority alone loses the write
 outright when the authority holds no presence for the row, because `held` is then
 undefined and the re-stamped cell lands under the replica's own presence. Taking
 it from the replica alone is the round-8 defect. Two rounds then tried to clamp
@@ -788,8 +790,10 @@ the forward reach of `held`, and both clamps are dead arithmetic:
 - `min(held, A + the clamp width)` is inert by the clamp's own invariant, **while
   the authority's clock is monotonic**. The authority refuses any write above
   `A + the clamp width`, so a presence version it *holds* is at or below that bound
-  and the `min` never binds. Measured, it is byte-identical to the unclamped floor
-  on every counter of a 1200-trace fuzz.
+  and the `min` never binds. Measured, it is byte-identical to the unclamped floor on every counter of a
+  1200-trace fuzz. That measurement predates the doc plane being keyed by column,
+  and the port that re-keyed the fuzz dropped both clamped arms, so the claim is
+  inherited rather than re-verified against the settled schema.
 
   The premise is load-bearing and is not free. Step the authority's clock back an
   hour (an NTP correction, a VM migration, a restore onto a host whose clock is
@@ -816,8 +820,9 @@ Neither dominates. The decided floor removes 445 below-authority re-stamps and
 445 of the 470 destroyed creates and deletes that follow from them, and pays
 about **3% more lost intents** for importing another device's skew into a re-stamp
 applied to a device already known to have a bad clock. That is the honest shape
-of the choice. The first three columns scale linearly with traces and are
-unambiguous; the fourth is not measured to that precision. Across four disjoint
+of the choice. Only the first column is unambiguous: 0 against 422 to 499 in every seed block.
+The other three are small counters that move by half their value between blocks,
+so 1200 traces separates 488 from 0 and does not resolve 4 from 1. Across four disjoint
 1200-trace blocks the intent difference runs +18, -7, +33, +22, one block with the
 sign reversed and a block standard deviation near 17, so the +18 above is one
 standard deviation of block noise. At 4800 traces the totals are **1994 against
@@ -1032,9 +1037,7 @@ mismatch schedules; that one owns the detection and the `digest_format` and
 
 The lifetime stays, because it answers a different and cheaper question: am I
 talking to the authority I was talking to before. It is re-minted on restore and
-on rebuild, and **the re-mint is bounded**: a replica presenting a cursor beyond
-the authority's counter plus one page is a corrupt client rather than a rewound
-store, and is answered with a reset scoped to that client. Unbounded, one
+on rebuild, and **the re-mint is bounded**: . Unbounded, one
 unauthenticated request forces every replica to re-bootstrap, which at this record's own
 fixture and its own 121 bytes per cell is about 1.0 GB across three devices once
 bodies are counted, and
@@ -1119,7 +1122,9 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   itself: the refusal names the row's presence but not the version the authority
   holds for each refused cell, so 223 of 5331 re-stamped field cells land on or below a held
   version, 66 of them exactly on it and 157 below, and 190 are discarded as stale,
-  silently, with both sides agreeing and nothing dirty. That 190 is 3.6% of the 5331 field cells, or 4.4% of the 4282 clamp re-stamp
+  silently, with both sides agreeing and nothing dirty. These counts were taken before the doc plane was keyed by column and have not been
+  re-taken against the settled schema. That 190 is 3.6% of the 5331 field cells, or
+  4.4% of the 4282 clamp re-stamp
   events, and it is classified at push time, which is why 190 + 34 exceeds 223 by one. The collision has a second face the loss count
   cannot show: 34 **of those 66** win the hash instead of losing it, silently
   displacing the value the authority held. They reach the intended result

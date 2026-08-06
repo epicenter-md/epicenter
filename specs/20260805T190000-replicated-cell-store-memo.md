@@ -19,7 +19,7 @@ Rewritten each round. History is below; this is the working copy.
 ### The scope question, which round 18 answered by measuring the record
 
 ADR-0212 is about 1400 lines. By section: the refusal, clamp and re-stamp machinery is
-**247 lines**, the DDL and its comments 245, Consequences 237. The design that
+**247 lines**, the DDL and its comments 255, Consequences 237. The design that
 actually makes per-field merge work, the version, the local write rule, the
 reusable address and the write surface, is **175 lines**.
 
@@ -56,14 +56,15 @@ so ADR-0212's claim that `min(held, A + clamp)` is byte-identical to the unclamp
 floor still rests on the round-13 runs and has not been re-verified against the
 current key.
 
-Ranges are over five independent 1200-trace seed blocks, not one, because the small
-counters move by half their value between blocks:
+Ranges are over independent 1200-trace seed blocks, five for the floor arms and
+four for the counter-half and spend-in-the-round arms, because the small counters
+move by half their value between blocks:
 
 | rule removed | presence below authority | refused stale | destroyed by R2 |
 | --- | --- | --- | --- |
 | nothing (decided) | 0 every block | 11 to 28 | 2 to 5 |
 | the `local` term | 0 every block | 11 to 28 | 2 to 5 |
-| the `held` term | **422 to 499** | 506 | **125 to 153** |
+| the `held` term | **422 to 499** | **433 to 513** | **125 to 153** |
 | the authority's time | crashes on `version_ms > 0`, every block | | |
 | the counter half | 1 to 4 | **117 to 146** | 2 to 5 |
 | spend-in-the-round | 0 every block | **235 to 291** | **75 to 103** |
@@ -72,10 +73,7 @@ The `local` arm is byte-identical to the decided arm on every counter in every
 block, which is the finding rather than a tie.
 
 The large separations are solid across five independent 1200-trace seed blocks:
-dropping `held` gives 422 to 499 below-authority against 0 every time. The small
-counters are not, and the table above is one block. Across five, the decided arm's
-stale refusals run 11 to 28 and its R2 destructions 2 to 5; the counter-half arm
-runs 1 to 4 and 117 to 146. So "4 and 134 against 0 and 18" is two noisy small
+dropping `held` gives 422 to 499 below-authority against 0 every time. The small counters are not. So "4 and 134 against 0 and 18" is two noisy small
 numbers compared to two others: 1200 traces separates 488 from 0 and does not
 resolve 4 from 1. The verdict is robust; the precision is not.
 
@@ -814,7 +812,7 @@ mutually exclusive states, one with every cell owed and one with none.
 | Dropping the authority's time from the floor | it is the only ALWAYS-DEFINED term | for a row the authority has never seen whose presence is itself refused, `held` and `local` are both zero and the floor violates `CHECK (version_ms > 0)` on the first re-stamp. It crashes rather than degrades |
 | Dropping the counter half of the floor | flooring the millisecond alone still lands under a presence whose own counter is above zero | 4 presence cells below the authority's own and 134 stale refusals, against 0 and 18 decided |
 | Dropping spend-in-the-round | pushing the re-stamped cells on the NEXT round lets another replica move the presence in between | 291 stale refusals and 101 cells destroyed by R2, against 18 and 5 decided |
-| Dropping the `local` term because it binds on 0 of 4361 re-stamps | that is the same standard this record used to call two clamped variants provably inert, and it is the wrong standard here | not measurable by this fuzz, which is the finding. Built by hand through ADR-0213's third failure, a two-term floor lands the cell below its own row's presence, R1 refuses it forever, R2 drops it, and the user's edit is silently lost. Load-bearing AND unexercised |
+| Dropping the `local` term because it binds on 0 of 4361 re-stamps | that is the same standard this record used to call two clamped variants provably inert, and it is the wrong standard here | not measurable by this fuzz, which is the finding. Built by hand through ADR-0213's third failure, a two-term floor lands the cell below its own row's presence; the push is then accepted, because after the restore the authority holds no presence to refuse it against, and the repair pass later pushes presence first so R2 drops the field. Load-bearing AND unexercised |
 | Keeping the clamp refusal's coupling to the whole-store repair pass | ADR-0213's digest schedules the identical pass one round later, and only when something is actually wrong | REMOVED. The coupling fires unconditionally: 3051 raises across 1200 traces landing as 1683 additional whole-store passes, 6839 to 8522, up 24.6%, each pass at 2.6M cells and about 336 MB. With it off and the digest on, the same hazard still converges. 15 of the subsystem's 247 lines |
 | Deleting the clamp machinery and refusing the write instead, returning the authority's time so the client corrects its offset and retries | the local write rule stamps at `max(now, the cell's own version, the row's presence)`, with the `+ 1` on `version_seq` and never on `version_ms`, so a device can never lower a version it already holds, and refusing does not give it a way to | a device a day fast is refused, corrects its offset, and is floored back to `T+24h` by its OWN earlier local write: four attempts, four refusals, no progress. The two exits are lowering what the device holds locally, which IS the re-stamp, or write-through, which costs the offline edit the design exists for |
 | Whole-row JSON as the stored shape | per-field and whole-row versions do not compose | 2.12x and 1.66x the size of what ships today (181.0 vs 85.3 MB, 342.4 vs 206.2 MB), re-deriving one changed row 1.32x and 1.07x slower as a point query, and the whole projection 1.76x and 1.31x slower. Four earlier speed figures in this row were retracted, the last of them (3.8x/3.3x and 42x/37x) because they charged the Yjs body plane to the cell layout: the opponent carried prose inline and never paid the render |

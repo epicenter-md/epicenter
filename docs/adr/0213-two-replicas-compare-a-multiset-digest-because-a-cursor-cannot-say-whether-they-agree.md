@@ -337,7 +337,7 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
 
 - **It costs one 8-byte column per side and about half a local write again.**
   Measured on the settled one-column schema:
-  a **median of +62% at 12 columns and +56% at 3** across fifteen runs of one
+  a **median of +62% at 12 columns and +55% at 3** across fifteen runs of one
   unmodified probe (pooled over every raw sample, +55.6% and +50.7%), with three
   of those runs carrying an inverted write-floor control and worth excluding, on a write that already pays ADR-0212's
   row-local floor. Against a store with neither, a local write costs **+82% to
@@ -348,7 +348,7 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
   is the third consecutive round in which the priced artifact was removed after
   pricing. Hashing the value rather than the version alone is 2 to 15 points across four
   runs. **Folding the sum in memory and writing it once per transaction
-  cuts the premium by about a third**, to a median of **+37%** and **+32%**
+  cuts the premium by about a third**, to a median of **+37%** and **+30%**
   across the same fifteen runs,
   and still satisfies the same-transaction rule; the higher figures assume one
   write per transaction.
@@ -385,8 +385,11 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
 - **The body entry HAS been fuzzed as decided**, and an earlier draft of this
   bullet said it had not. The 1200-trace run behind these counts folds the
   canonical re-encode this record settles on, not the snapshot entry it rejects:
-  79,297 comparisons, 0 body divergences, 0 missed divergences, and a 0.08%
-  in-flight false-alarm rate. The caveat that survives is narrower: body text never
+  79,737 comparisons, 0 document divergences, 0 missed divergences and a 0.06%
+  in-flight false-alarm rate, on the settled column-keyed address with two
+  collaborative columns per row. An earlier run reported 79,297 and 0.08%, and it
+  supported only half of this: it hardcoded the literal `!body` address this record
+  now refuses, so it fuzzed the re-encode and not the addressing. The caveat that survives is narrower: body text never
   diverged in those traces, so the run confirms the entry does not false-alarm and
   does not confirm it would catch a divergence that never occurred.
 - **That is the price of knowing.** ADR-0212's repair pass is a correct repair
