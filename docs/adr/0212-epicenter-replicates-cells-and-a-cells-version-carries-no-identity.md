@@ -310,6 +310,16 @@ name it, and `!` sorts before every letter, so a row's liveness is the first thi
 an ordered scan of that row meets. The schema enforces both halves, so the
 reservation is a constraint rather than a convention.
 
+**Open: the projection restores a body as a field, and ADR-0213's digest may not
+name a root.** This record requires the projection to render a body back into the
+row it belongs to, which means naming the root that holds it. ADR-0213 refuses to
+let its body entry name a root at all, because ADR-0135 decides that Epicenter
+never interprets them and that one document may hold several. Both cannot be
+right as written: either the projection is given a designated body root that
+ADR-0135 must be amended to allow, or the body is not restored as a field and
+ADR-0207's markdown round trip loses its source. This record does not settle it,
+and it should be settled before either is Accepted.
+
 **A table's designated body field gets no cell.** It is an ordinary
 `field.string()` by ADR-0207's definition, so the `column_name` CHECK would admit
 it, and admitting it would give one value two homes and two merge rules. The body
@@ -839,8 +849,9 @@ record's own argument for making a body Yjs at all. So a repair sends each body'
 whole `doc_state`, which Yjs makes idempotent. **It is chunked by address range**, resuming from the
 last address it confirmed. Deleting `sealBatch` deleted the only bound on upload
 size in the system, and an unbounded pass at 200k rows of 12 columns is 2.6M
-cells, and, at the 121 bytes a one-field edit measures on the wire, roughly 315 MB in one
-request. That is arithmetic over a measured edit rather than a measured bootstrap,
+cells, and roughly 336 MB in one request at an
+80-character body, because the pass ships every body's whole `doc_state` as well;
+at the 40KB document this plane exists for it is about 8.2 GB. That is arithmetic over a measured edit rather than a measured bootstrap,
 though the fixture's mean cell is within about 2% of it.
 
 ADR-0142's separate bootstrap, history-gap, and lineage-mismatch recoveries are
@@ -921,6 +932,13 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   inside JSON text, roughly 40 bytes per field for what this schema holds in 18
   binary bytes. Packed fairly, the opponent wins on disk.
 
+  **And the first duty is not met for the plane holding most of the bytes.** A
+  body is opaque Yjs V2 binary in `_replica_body.doc_state`, reachable only
+  through a join, decodable by nothing in a SQL console, and covered by no view.
+  That is 28.3 MB at an 80-character body and a projected 7.8 GB at 40 KB, so the
+  legibility this record charges +41% and +25% for is legibility of the cells
+  only.
+
   The +41% and +25% buy two things and they are the two the record is built on. Every
   version is a legible column rather than a byte range inside a blob, which is the
   replica's stated first duty. And the merge's *comparison* is one SQL
@@ -938,14 +956,21 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   and it measured **+65 MB (+36%) and +101 MB (+29%)** at the two shapes. A view
   rendering `version_ms` as a timestamp and `version_hash` as hex costs nothing
   and reads better than either, so the stored columns stay compact.
-- **Re-deriving one changed row costs 1.69x** what whole-row JSON costs at 12
-  columns (6.9 against 4.09 microseconds), and **1.21x** at 3 (4.79
-  against 3.95 microseconds), from a single run with no control arm, so treat the
-  narrow-shape figure as unestablished rather than as parity. That is the operation
+- **Re-deriving one changed row costs about 2.9x and 2.5x** what whole-row JSON
+  costs, once the body load a row with prose actually needs is included (about
+  11.8 against 4.09 microseconds, and 9.8 against 3.95). The 1.69x and 1.21x this
+  record quoted omitted that load, against an opponent that reads its prose as an
+  ordinary column for nothing. That is the operation
   that runs in steady state, because a write touches one row, and the margin
   there is small.
-- **Rebuilding the WHOLE projection costs about 0.57 s at 2.6M cells and 1.1 s at
-  4M**, warm. Against whole-row JSON, measured in one run so the ratio is
+- **Rebuilding the WHOLE projection costs about 2.9 s at 2.6M cells and 8.8 s at
+  4M**, warm, and against whole-row JSON that is **at least 64x and 43x**. Every
+  earlier figure in this record, 0.57 s and 16.8x among them, priced a query this
+  record does not decide: no `json_valid` guard, no `_replica_body` join, and no
+  body render. The render is the term that dominates and no implementation can
+  avoid it, because a body is Yjs bytes that no SQL restores: 4.9 microseconds per
+  row, 977 ms and 5.05 s on its own, which alone exceeds the whole figure the
+  record used to quote. Against whole-row JSON, measured in one run so the ratio is
   self-consistent, it is 16.8x and 8.6x. Both figures carry two significant
   figures at most: the same query on the same schema has been recorded between
   555 ms and 594 ms across runs, and every one of them discards the first pass, so

@@ -192,10 +192,19 @@ remove. So the pass accumulates entries as it visits them and commits
 `sum_at_scan_start + every delta folded since`, in the same transactions it is
 already taking.
 
-The cost is not free and the record should not have said it was: hashing every
-cell is **+384% on top of the scan** the pass already pays, about 2.2 seconds at
-2.6M cells, and the body half is 13 microseconds per small body and 62 at 40 KB,
-so 196k bodies is another 2.6 to 12 seconds. A terminal scan would hold that as
+The cost is not free and an earlier draft said it was: hashing every cell is
+**+295% on top of the scan** the pass already pays, about 2.5 seconds at 2.6M
+cells, and the body half is a document load and re-encode at 8.9 microseconds per
+small body and 38.6 at 40 KB, so 196k bodies is another 1.8 to 8.9 seconds. A
+completed pass therefore owes **+4.3 seconds at an 80-character body and +11.3 at
+40 KB**, four times the projection rebuild this design already calls its expensive
+cold start.
+
+**That number also retires the bucket refusal below.** Enumerating a bucket was
+refused as a full scan plus a hash per cell, quoted at "of the order of a second";
+measured on the settled schema at the settled fixture that same computation is
+**2.5 seconds**, and this section now mandates it on every completed pass. The
+refusal stands on the resumability argument alone. A terminal scan would hold that as
 one window; folded into the pass's own transactions it is spread across them, and it is what makes a sum a check on state
 rather than a durable local claim that decides what to send and perpetuates its
 own error. Without it, ADR-0212's claim that a digest mismatch is a state check would be
@@ -256,8 +265,12 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
   and badly untrue of a delete.
 - **A body write's premium scales with the document, and is not yet measured for
   the entry this record decides.** A linear entry, which a canonical re-encode is,
-  measured **+11% to +23% at an 80-character body and +21% to +37% at 40 KB**:
-  about 4 microseconds added at the small size and 31 to 52 at the large one. The
+  measured **+26% to +40% at an 80-character body and +27% to +61% at 40 KB**:
+  7 to 11 microseconds added at the small size and 53 to 69 at the large one. The
+  new entry is free, because the write path already computes that byte string for
+  `doc_state`; the **old** entry is not, because nothing stores it and subtracting
+  it costs a full re-encode of the pre-edit document. A column holding the last
+  folded entry would recover most of it and no record proposes one. The
   earlier figures said the premium "does not scale with the document", which was
   true only of the snapshot, whose payload is 8 bytes at any size and which this
   record rejects. Hashing 40 KB of rendered text and 40 KB of `doc_state` cost
