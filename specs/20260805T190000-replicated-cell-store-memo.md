@@ -25,7 +25,7 @@ R3  Two devices editing different fields of one row both survive.
 R4  Row death is terminal. Nothing resurrects a deleted row.
     [REVERSED by Revision 2: terminality is what makes an address single-use,
     and an address must be reusable. What survives is that a delete beats every
-    concurrent edit, which is R1 and R2 rather than an absorbing element.]
+    concurrent edit, which is Revision 2's R1 and R2 rather than an absorbing element.]
 R5  A replica converges to the same state as every other replica.
 R6  A returning replica, however stale, receives everything it missed.
 ```
@@ -644,7 +644,7 @@ mutually exclusive states, one with every cell owed and one with none.
 | --- | --- | --- |
 | Whole-row JSON as the stored shape | per-field and whole-row versions do not compose | 2.12x and 1.66x the size of what ships today (181.0 vs 85.3 MB, 342.4 vs 206.2 MB), re-deriving one changed row 1.69x and 1.21x slower and the whole projection 16.8x and 8.6x slower |
 | Real typed columns | ADR-0125: nowhere to put an unknown key | 3.81x and 2.33x the disk, fixture-matched (181.0 vs 47.5 MB, 342.4 vs 147.1), against a shape that stores no version, no `dirty` and no presence, so the ratio is a floor |
-| One JSON record per row plus a version map | the map is opaque, so no version is legible and the merge cannot be one SQL predicate; one field change ships the whole record and map; merge-group names become an unversioned wire contract | THIS REFUSAL COSTS DISK. Packed as 18 binary bytes per field it is 127.9 MB and 274.1 on the same fixture, so the cell store is 41% and 25% LARGER. The 8.4% figure an earlier pass quoted was against a version map stored as base64 inside JSON, roughly 40 bytes per field. On the wire the cell store still wins, 8.6x at 12 columns and 2.9x at 3 |
+| One JSON record per row plus a version map | the map is opaque, so no version is legible and the merge cannot be one SQL predicate; one field change ships the whole record and map; merge-group names become an unversioned wire contract | THIS REFUSAL COSTS DISK. Packed as 18 binary bytes per field it is 127.9 MB and 274.1 on the same fixture, so the cell store is 41% and 25% LARGER. The 8.4% figure an earlier pass quoted was against a version map stored as base64 inside JSON, roughly 40 bytes per field. On the wire the cell store still wins, 8.9x at 12 columns and 3.0x at 3 |
 | Interning the address | the replica must be readable in a SQL console with no joins | at most 34% of the file, before dictionary tables and integer keys are added back |
 | Readable version columns (ISO-8601 plus hex) | a view gives the same legibility for nothing | +65 MB (+36%) and +101 MB (+29%) |
 | A per-cell cursor on the replica | it is a durable local claim about the authority's state | +9.8 MB (5.4%) and +18.9 MB (5.5%) for the column, measured as a clean A/B on the settled schema; 91 MB and 140 MB if it is also indexed, which nothing here would query |
@@ -655,8 +655,8 @@ mutually exclusive states, one with every cell owed and one with none.
 | A replica-global `version_seq` | it is not durable across a restart | a same-millisecond rewrite after a crash is discarded on a coin flip, which is what the mechanism predicts and what 20,000 trials measure |
 | A strict `>` merge predicate | the authority echoes a won push at its own version | the cell never clears `dirty` and re-pushes every round forever |
 | A single body delivery slot | an acknowledgement clears bytes the authority never received | every edit made during a push round trip is lost permanently, and no version exists that could notice |
-| Range-based set reconciliation as the delivery mechanism | it is a good verifier and a bad courier | finding one changed cell costs a 32 KB bucket exchange plus 586 address and version pairs, against one cell for a cursor |
-| ~~An incremental digest as a verifier, for now~~ **ADOPTED in round 4** | the deferral's two premises are both falsified: the lifetime does not catch a restore, and neither does a cursor regression | the deferral cost three rounds of patches to a mechanism that cannot carry the signal. Price paid: 72 KB of disk PER SIDE, and +52% on a local write that already pays the row-local floor, measured on the settled schema against a control arm; +61% and +52% on a bulk seed. It answers "are we equal" in 8 bytes |
+| Range-based set reconciliation as the delivery mechanism | it is a good verifier and a bad courier | finding one changed cell costs a 32 KB bucket exchange plus 635 address and version pairs, against one cell for a cursor |
+| ~~An incremental digest as a verifier, for now~~ **ADOPTED in round 4** | the deferral's two premises are both falsified: the lifetime does not catch a restore, and neither does a cursor regression | the deferral cost three rounds of patches to a mechanism that cannot carry the signal. Price paid: 144 KB across the pair, and +63% on a local write that already pays the row-local floor, re-measured on the settled schema after round 5 changed its semantics. It answers "are we equal" in 8 bytes. Settled as [ADR-0213](../docs/adr/0213-two-replicas-compare-a-multiset-digest-because-a-cursor-cannot-say-whether-they-agree.md) |
 | Renaming `patch` to `set`, and deleting `create` | `create` is the only verb that can reuse an address, and `patch` is already the right name | churn with no measured benefit, and a merge rule that cannot be expressed |
 | Terminal, absorbing row death | it makes an address single-use, against ADR-0206 | a provider-keyed row never returns: 30 reconciler passes at strictly later versions leave it absent |
 | An unconditional cell drop on `absent` | it does not converge | a cell at a dead address is retained, unreadable, until the address is re-created |
@@ -719,9 +719,10 @@ alternatives), `r2m-dirty-index*.ts`, `r2m-wire-and-intern.ts`,
 `r3m-cursor-column.ts` (the per-cell cursor A/B), `results2.json` (the
 row-plus-version-map opponent), the `r3-*` probes (every protocol claim: the
 authority wedge, the restore race, the re-stamp, the body plane), the
-`converge*.ts` proofs, `r4m5-*.ts` (the digest, the write floor and the body
-plane, all on the settled schema under a control arm), and `final-verify.ts`
-through `final-verify4.ts`. Where a row is not on the settled schema, it
+`converge*.ts` proofs, `r4m5-*.ts` and `r6m-*.ts` (the digest, the write floor and
+the body plane, on the settled schema under a control arm), the `r5-*` probes
+(the digest's storage, semantics, trigger and repair), and `final-verify.ts`
+through `final-verify5.ts`. Where a row is not on the settled schema, it
 is because the comparison it makes needs an opponent only an earlier bench built;
 `r4m-headline.ts` is the exception, and builds both shapes in one run.
 bench9's own 200k-all-live fixture measures 184.7 MB and 348.8 MB.
