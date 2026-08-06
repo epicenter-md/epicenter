@@ -84,8 +84,11 @@ floor = (max(the authority's time,
            ? that version's seq + 1 + rank
            : rank,
          and when the maximum TIES across terms the presence branch is taken,
-         because the alternative lands the re-stamp at seq 0 under a presence
-         already above it and R1 discards it with nothing dirty)
+         SEEDED FROM THE HIGHEST TIED PRESENCE VERSION'S SEQ, because `held` and
+         `local` can tie on the millisecond and differ on the counter, and seeding
+         from the lower one, like taking the non-presence branch, lands the
+         re-stamp under a presence already above it where R1 discards it with
+         nothing dirty)
 ```
 
 **All three terms are load-bearing, and every clamped variant of `held` is
@@ -128,20 +131,22 @@ dirty at quiescence, against 0 and 0 with a monotonic clock.
 
 So the family has exactly two members, not three, and choosing between them is a
 trade rather than a defect to fix. Measured over 1200 traces of 70 steps, four
-replicas skewed -3 to +12 minutes, 4282 clamp re-stamps (`r11b-fuzz.ts`):
+replicas skewed -3 to +12 minutes, 4361 clamp re-stamps (`r20-e-fuzz.ts`):
 
 | floor | presence re-stamped below the authority's own | then refused stale | destroyed by R2 | lost create/delete intents |
 | --- | --- | --- | --- | --- |
 | `max(A, local)`, and `min(held, A)` | 488 | 506 | 153 | 518 |
 | `max(A, held, local)` (**decided**) | 0 | 18 | 5 | 518 |
 
-Neither dominates. The decided floor removes 445 below-authority re-stamps and
-445 of the 470 destroyed creates and deletes that follow from them, and pays
-about **3% more lost intents** for importing another device's skew into a re-stamp
-applied to a device already known to have a bad clock. That is the honest shape
+Neither dominates. The decided floor removes 488 below-authority re-stamps and 488
+of the 506 stale refusals that follow from them, and pays nothing measurable in
+lost intents at 1200 traces, where both arms lose 518. The 4800-trace paired figure
+below is the only evidence the cost exists at all, at about **3%**, for importing
+another device's skew into a re-stamp applied to a device already known to have a
+bad clock. That is the honest shape
 of the choice. Only the first column is unambiguous: 0 against 418 to 524, disjoint in 20 of 20 seed blocks.
 The other three are small counters that move by half their value between blocks,
-so 1200 traces separates 488 from 0 and does not resolve 4 from 1. Across four disjoint
+so 1200 traces separates 488 from 0 and does not resolve 5 from 1. Across four disjoint
 1200-trace blocks the intent difference runs +18, -7, +33, +22, one block with the
 sign reversed and a block standard deviation near 17, so the +18 above is one
 standard deviation of block noise. At 4800 traces the totals are **1994 against
@@ -153,7 +158,7 @@ back is the one the invariant above makes inert.
 authority's held presence at refusal time, and pushing the re-stamped cells on the
 *next* round lets another replica move it in between, after which the re-stamped
 presence is refused as stale and the user's create or delete is gone with nothing
-dirty. Measured over the 4,282 re-stamps of the decided run above: the re-push settles at an inner depth of 1,
+dirty. Measured over the 4361 re-stamps of the decided run above: the re-push settles at an inner depth of 1,
 the 32-round cap is never reached, and a device three days fast settles in one
 inner round.
 
@@ -201,8 +206,9 @@ preserving it lets a cell written at a later millisecond land below one written
 earlier and be eaten by R2. Rank rather than address order too, which is what puts
 a `create`'s presence cell first. The body's generation is the presence cell's
 version, so a re-stamp that lowers presence and leaves the body behind makes a row
-stale against itself: the projection blanks it and the next open replaces it,
-losing prose the user typed seconds earlier on the device that typed it. Re-stamping a
+stale against itself: the projection blanks it, losing the prose the user typed seconds earlier from
+every read of the live row. The open door does not fire there: it predicates on
+older, and a body left behind by a lowered presence is newer than its row. Re-stamping a
 field cell alone would land it below its own row's presence cell, which is exactly
 what R1 refuses, so the debt would never clear.
 

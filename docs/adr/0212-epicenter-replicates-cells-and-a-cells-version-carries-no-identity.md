@@ -399,8 +399,7 @@ the cell's value in place; `json_patch` treats the blank as a delete and removes
 column entirely; and `json_group_object` over a `UNION ALL`, which is the most
 direct extension of the projection this record already specifies, does not
 deduplicate keys and emits the column twice. The cell meanwhile keeps its version
-and keeps replicating forever. Stating the order matters: measured, four natural spellings of
-that final assignment give two different answers from byte-identical stores, and
+and keeps replicating forever. 
 the digest cannot see the difference because it hashes both rows on both sides. The violation needs no Lens bug. ADR-0125 makes a
 Lens release-local and requires a release to preserve values it cannot read, so a
 release that writes `body` as an ordinary string and a later one that declares it
@@ -697,10 +696,9 @@ every other replica hold the text, with nothing dirty and the cursor spent. Edit
 made in that window stage at the dead generation, are refused as older, and are
 destroyed by the newer-generation reset. Under *older* the user opens the ahead
 document, sees the prose, types, stages at the generation the authority holds, and
-converges. **The projection gate keeps the unequal test**, because it must blank an
-ahead document or the live row renders a future incarnation's prose; and **the
-projection renders such a body as
-empty** until that happens. The write door is not optional, and the projection gate is not redundant beside
+converges. **The projection gate keeps the unequal test**, because it must blank an ahead document or the live row renders a future
+incarnation's prose, and it stays blank until the presence cell that created the
+document lands. The write door is not optional, and the projection gate is not redundant beside
 it. The write door handles the body a replica already holds when the re-creation
 arrives, and R2's drop below handles the same case transactionally. The
 projection gate handles the one neither can: a body update naming a *newer*
@@ -727,8 +725,8 @@ fires, and a replica that held the previous incarnation renders its prose in the
 new row while a replica that joined later renders nothing. That is divergence and
 a content leak at once. **The presence cell is the only cell with authority over other cells**, and it has
 seven effects: R1 refuses an older cell, R2 drops older cells, R2 drops an older
-body, the open door replaces a stale-generation body, the projection renders one
-empty until that happens, a clamp re-stamp moves the generation of every document of the row with it,
+body, the open door replaces an older-generation document, the projection blanks any
+document whose generation is unequal, a clamp re-stamp moves the generation of every document of the row with it,
 and every local write reads it to compute its floor. Nothing else *writes* across
 an address or a plane. Without this the body plane does not converge: a late update from a replica
 that never saw the delete produces `"the old note -- B typed this"` in two
