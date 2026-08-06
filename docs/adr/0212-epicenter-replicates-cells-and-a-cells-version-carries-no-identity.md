@@ -2,8 +2,8 @@
 
 - **Status:** Proposed
 - **Date:** 2026-08-06
-- **Provisional number.** `main` ends at ADR-0205; 0206 through 0211 land with
-  this branch. Reconcile at merge time (`docs/adr/README.md`).
+- **Provisional number.** `main` ends at ADR-0205; 0206 through 0211 and 0213 land
+  with this branch. Reconcile at merge time (`docs/adr/README.md`).
 - **Supersedes:** [ADR-0163](0163-scalar-sync-separates-fact-reads-from-numbered-intent-submissions.md)
   (`Proposed`), and with it the three records 0163 itself superseded, because
   retiring 0163 alone would revive them:
@@ -372,7 +372,7 @@ Both components come from the row being written, and cost one row-local aggregat
 read per write. That read is not cheap: measured as an interleaved A and B in one
 database, against a control arm of two identical passes and with WAL checkpointing
 moved outside the timed region, it takes the median local write from about 6.5 to
-about 8.6 microseconds, **+20% to +37%** depending on row width. Two earlier figures for this, "about 10%" and "at least double",
+about 8.6 microseconds, **+30% to +37%** depending on row width. Two earlier figures for this, "about 10%" and "at least double",
 were both artifacts: the first compared two different processes on two different
 schemas, and the second had no control arm, so a 3.6x drift within one arm was
 read as mechanism. It is the price of a write the user just made never being refused by R1,
@@ -573,9 +573,9 @@ generation and both slots cleared; and **the projection renders such a body as
 empty** until that happens. The write door is not optional, and the projection gate is not redundant beside
 it. The write door handles the body a replica already holds when the re-creation
 arrives, and R2's drop below handles the same case transactionally. The
-projection gate handles the one neither can: a body update that arrives *after*
-the re-creation naming the dead generation, which is refused but which a replica
-that already merged the old body would otherwise still render. That
+projection gate handles the one neither can: a body update naming a *newer*
+generation arriving before the presence cell that created it, which replaces
+`doc_state` and leaves a body ahead of its own row until that cell lands. That
 replacement is a cross-plane write, so R1 and R2 are not the only ones; the
 alternative is losing every edit made to a re-created row.
 
@@ -729,24 +729,14 @@ talking to a different one. A cursor is meaningless across a restore. Replace th
 file from an older snapshot and its counter comes back lower than watermarks
 already held: measured over 50 rounds with 50 real post-restore writes, a replica
 receives **0 cells** and disagrees on 300 of 300, pushing nothing because nothing
-is dirty. **Detection is not a cursor, and it is not this record's.** Three successive
-attempts to derive a divergence signal from the cursor each failed, in a different
-place, and the pattern is the finding: a cursor is a *delivery* mechanism, and
-whether the two sides actually hold the same thing is not answerable from a
-delivery counter in any of its forms. The last attempt is the clearest. A restore
-destroys what a replica *wrote*, and the cursor a replica can vouch for is what it
-*read*; clearing `dirty` by merging a push answer is a separate commit from
-advancing the read cursor, so a replica can push forty cells, have them accepted,
-and still present a cursor that predates them. Measured, with no clock skew and no
-concurrency: forty cells survive on exactly one device with nothing dirty, both
-sides report the same lifetime and a consistent cursor, and a new device
-bootstraps to a truncated store.
-
+is dirty. **Detection is not a cursor, and it is not this record's.** A cursor is
+a *delivery* mechanism, and whether two stores hold the same thing is not
+answerable from a delivery counter in any of its forms. Three attempts to derive
+it from one failed, each in a different place;
 [ADR-0213](0213-two-replicas-compare-a-multiset-digest-because-a-cursor-cannot-say-whether-they-agree.md)
-decides what does answer it: an incremental multiset digest both sides maintain,
-compared by its root. This record owns the repair a mismatch schedules; that one
-owns the detection, the two `_digest` relations, and the `digest_format` column in
-each metadata singleton.
+carries them, and decides what does answer it. This record owns the repair a
+mismatch schedules; that one owns the detection and the `digest_format` and
+`digest_sum` columns in each metadata singleton.
 
 The lifetime stays, because it answers a different and cheaper question: am I
 talking to the authority I was talking to before. It is re-minted on restore and
@@ -812,10 +802,9 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   an index.
 - **The authority stops being a sequencer and becomes a store.** Two replicas
   could therefore merge directly with no server, which is impossible today by
-  construction. The verifier half of that now exists: the digest is
-  a range reconciliation primitive and both sides maintain one. What is unbuilt is
-  the courier, because a cursor is server-assigned and has no meaning between
-  peers. The seam that keeps it cheap later is one rule: **a
+  construction. This record does not build that: a cursor is
+  server-assigned and has no meaning between peers, so peer sync needs a courier
+  it does not have. ADR-0213 supplies the verifier half. The seam that keeps it cheap later is one rule: **a
   per-cell cursor never appears in a replica.** A replica does hold one
   `last_applied_cursor`, which is a single scalar to discard rather than an index
   to unwind.
@@ -864,8 +853,10 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   while the opponent carries its prose inline as an ordinary column. At an
   80-character body it adds 0.7% and 2.0%, taking the headline ratio to 2.14x and
   1.69x. It is untested at the 40KB document this record uses to justify the plane
-  existing, and `_replica_body` spends 141.9 MB to hold 102.7 MB of state at the
-  narrow fixture, 38% overhead from repeating a three-part text key. An earlier
+  existing, and moving the body out of the cell relation shrinks that relation by
+  more than the body plane costs, which is why the net is 0.7% and 2.0% while
+  `_replica_body` itself is 28.3 MB and 141.9 MB. That relation carries 38%
+  overhead over the state it holds, from repeating a three-part text key. An earlier
   draft claimed the cell store was 7.8% *smaller* than the versioned opponent;
   that held only because the opponent it measured stored each version as base64
   inside JSON text, roughly 40 bytes per field for what this schema holds in 18
@@ -920,10 +911,9 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   first dead row, because `cellValue` draws a variable number of random values per
   column. The distributions match, so the storage and timing comparisons against
   it are unbiased, but they are distributional rather than exact.
-- **Detection is priced in ADR-0213**, and it is not cheap: about +75% on a local
-  write that already pays the floor here, +112% to +132% for the pair against a
-  store with neither, and **12.3x on a row delete at 12 columns**, because R2
-  drops a cell per column and the digest must subtract each one. It is the one mechanism here that exists to answer a question rather than
+- **Detection is priced in ADR-0213, and it is not cheap.** Its largest term
+  belongs to this record rather than that one: R2 drops a cell per column, and
+  every drop is an entry the digest has to subtract. It is the one mechanism here that exists to answer a question rather than
   to carry data, and the record spent three rounds discovering that no cheaper
   proxy answers it.
 - **Counters are refused.** "Add one" is not expressible; two devices each adding
@@ -964,10 +954,7 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   pulled page and advancing the stored cursor are one transaction, or a crash
   between them loses those cells with nothing able to notice. A body's merged
   state and its two slots are one transaction, or the body defect above
-  reappears through a different door. A digest bucket and the merge it describes
-  are one transaction, or the digest becomes the thing this record refuses
-  elsewhere: a durable marker that decides what to send, wrong in a way that
-  perpetuates itself.
+  reappears through a different door.
 - **The replaced path is close to untested**, so the migration's convergence
   check cannot be a regression test against what exists. It has to be a new
   differential test, written first.
@@ -980,7 +967,7 @@ conclusion. Timings taken on the settled schema use a 200k all-live fixture and
 are marked. The full table,
 including what each refusal costs, is in
 [the memo](../../specs/20260805T190000-replicated-cell-store-memo.md), which is
-scheduled for deletion on acceptance; the git ref is `1dda4e0f4d`.
+scheduled for deletion on acceptance; the git ref is `85ca7a8d51`.
 
 - **Keep ordered patch replay.** It protects exactly one thing: `[create,
   delete]` reordered leaves a permanently live row, because `delete` no-ops at an
@@ -1045,5 +1032,6 @@ scheduled for deletion on acceptance; the git ref is `1dda4e0f4d`.
   failed. The deferral rested on two premises and both are falsified: the store
   lifetime does not catch a restore, because it lives inside the file being
   restored, and neither does a cursor regression, because the cursor an authority
-  is shown is what a replica read rather than what it wrote. The price paid is
-  144 KB across the pair and +63% on a local write. ADR-0213 carries the rest.
+  is shown is what a replica read rather than what it wrote. The price paid is one
+  8-byte column per side and about +75% on a local write. ADR-0213 carries the
+  rest.

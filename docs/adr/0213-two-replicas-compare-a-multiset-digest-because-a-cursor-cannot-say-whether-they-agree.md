@@ -98,23 +98,30 @@ A body carries no version, so without an entry a body divergence is undetectable
 the cell roots agree, the cursor sees nothing, and a device that bootstraps
 afterwards gets an empty document while another holds the prose.
 
-**The entry cannot hash `doc_state`.** A Yjs update is an encoding, not an
-identity: a replica that applied a delete locally holds a document whose structs
-are split at the deletion point, while an authority that merged the same delete as
-an opaque update does not, and `mergeUpdatesV2` preserves the split. Both render
-the same prose in different bytes. Measured on one document with one writer: after
-a single delete the two sides hold 45 and 38 bytes for identical text, and over
-200 rounds with a delete every third round the entries disagreed on **199 of
-200**, with the prose never once differing and no amount of repair closing it.
-Each disagreement buys the full pass ADR-0212 prices at 315 MB.
+**The entry hashes the prose the projection renders**, and nothing else about the
+document. Two candidates were tried first and both were wrong, in opposite
+directions, and the pair is the argument for this one.
 
-So the entry hashes a canonical function of the document's logical state,
-`encodeSnapshotV2(snapshot(doc))`, which is identical on every path that reaches
-the same text. Measured: 0 false alarms over the same 200 rounds.
+`doc_state` is an encoding rather than an identity. A replica that applies a
+delete locally holds a document whose structs are split at the deletion point; an
+authority that merges the same delete as an opaque update does not, and
+`mergeUpdatesV2` preserves the split. Both render the same prose in different
+bytes: 45 against 38 after a single delete, and over 200 rounds with a delete
+every third round the entries disagreed on **199 of 200** while the prose never
+once differed.
 
-This is the round-5 comparison precondition re-entering through the body plane,
-where it could not see: the precondition tests `dirty`, `dirty` is a cell column,
-and a body divergence makes no cell dirty.
+`encodeSnapshotV2(snapshot(doc))` is worse, and fails both ways. A Yjs snapshot is
+a delete set and a state vector, which is to say clocks and deleted ranges and no
+content at all: two documents holding entirely different text of the same length,
+written at the same clock, produce **byte-identical snapshots**. It is
+simultaneously blind to the thing it is meant to compare and sensitive to the
+thing it is not, since identical prose typed by two different clients has two
+different state vectors.
+
+The rendered content has neither failure. It is a function of the content by
+construction, identical across encodings, and identical across authorship. It is
+also the honest reading of what the digest asks: for a body, "do we hold the same
+thing" means "does this render the same document".
 
 ### A mismatch does not localize
 
@@ -131,9 +138,12 @@ full-range pass, which already resumes by address.
 
 ### A comparison has a precondition
 
-A replica compares roots only when it owes nothing and has applied the page
-through `next_cursor`, and only against a root the authority read in the same
-transaction as that page. Without the precondition the comparison is not wrong so
+A replica compares sums only when it **owes nothing**, which means no cell is
+`dirty` **and** no body holds a `pending_update` or an `inflight_update`, and when
+it has applied the page through `next_cursor`, and only against a sum the
+authority read in the same transaction as that page. Defining "owes nothing" on
+cells alone would fire a full repair every round a user is typing into a body,
+because unsent body bytes set no cell `dirty`. Without the precondition the comparison is not wrong so
 much as useless: measured, a replica making one ordinary local write per round
 schedules a full repair on **500 rounds out of 500**, with zero divergence.
 
@@ -150,10 +160,18 @@ itself.
 
 ### The entry encoding is a cross-release contract
 
-Both metadata singletons carry a `digest_format`, compared before the sums. A peer
-on another format is **incomparable**, not divergent. The contract is the entry
-encoding alone, since there are no buckets to version: what an entry hashes, and
-in what order, is what two releases must agree on.
+An entry is the low 8 bytes, big-endian, of
+
+```txt
+cell:  sha256(ns \0 table \0 row \0 column \0 version_ms \0 version_seq \0 || version_hash || value_utf8)
+body:  sha256(ns \0 table \0 row \0 "!body" \0 generation_ms \0 generation_seq \0 || rendered_utf8)
+```
+
+where a cleared cell contributes no value bytes. Both metadata singletons carry a
+`digest_format`, compared before the sums, and a peer on another format is
+**incomparable** rather than divergent. It is separate from `format_version`
+because a release can change what it folds without changing the wire protocol,
+and `format_version` is a hard refusal that would stop the exchange entirely.
 
 ## Consequences
 
@@ -191,6 +209,13 @@ in what order, is what two releases must agree on.
   full adversarial round because the verification of the day modelled the digest
   in JavaScript maps and never wrote a sum to SQLite. Any check of this mechanism
   must round-trip through the database.
+- **The body entry was wrong three times, and the pattern is the lesson.** It was
+  first absent, then hashed the encoding, then hashed the history. Each attempt
+  reached for whatever the CRDT library offered that sounded canonical, rather
+  than asking what the question is about. The question is whether two sides hold
+  the same document, so the answer is the document, and a check for this entry has
+  to test both directions: identical prose must agree, and different prose must
+  differ. Testing only the first is what let the snapshot through.
 
 ## Considered alternatives
 
@@ -207,7 +232,11 @@ in what order, is what two releases must agree on.
   the Decision, and refusing it is what collapses 4096 rows per side into one
   column, because nothing then reads a bucket and the sum does not depend on how
   entries were grouped.
-- **Hash `doc_state` for a body entry.** The obvious encoding, and it is not a
-  function of the document's content: 199 false alarms in 200 rounds for a single
-  writer who deletes text.
+- **Hash `doc_state` for a body entry.** The obvious encoding, and not a function
+  of the document's content: 199 false alarms in 200 rounds for a single writer who
+  deletes text.
+- **Hash a Yjs snapshot for a body entry.** It sounds canonical and contains no
+  content: two documents with entirely different text of the same length, at the
+  same clock, hash identically. It also disagrees for identical prose typed by two
+  different clients, so it is wrong in both directions at once.
 - **Compare unconditionally.** 500 false full repairs out of 500 rounds.

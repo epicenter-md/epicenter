@@ -2,10 +2,10 @@
 
 - **Status:** In Progress
 - **Date:** 2026-08-05
-- **Settled as:** [ADR-0212](../docs/adr/0212-epicenter-replicates-cells-and-a-cells-version-carries-no-identity.md).
+- **Settled as:** [ADR-0212](../docs/adr/0212-epicenter-replicates-cells-and-a-cells-version-carries-no-identity.md) and [ADR-0213](../docs/adr/0213-two-replicas-compare-a-multiset-digest-because-a-cursor-cannot-say-whether-they-agree.md).
   This memo is the exploration behind that record and keeps the reversals and the
   Rejected table; the ADR is the decision, and carries the measurements that
-  were taken after this memo settled. Delete this file once the ADR is
+  were taken after this memo settled. Delete this file once both are
   Accepted and its schemas are built.
 
 Evaluates replacing ordered-patch replication with a generic replicated cell
@@ -683,7 +683,7 @@ mutually exclusive states, one with every cell owed and one with none.
 
 `Supersedes` and `Amends` carry reciprocal links on both records, as
 `docs/adr/README.md` requires. `Relates` does not: it is one-directional by
-convention here, and only ADR-0170 carries one back, because that record owns a
+convention here, and ADR-0170 and ADR-0213 each carry one back, because that record owns a
 noun this one borrows.
 
 **A verification method that failed twice, and what it cost.** Two adversarial
