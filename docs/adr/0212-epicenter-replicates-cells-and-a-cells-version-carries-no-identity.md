@@ -367,8 +367,12 @@ version_seq = one past whichever of those two the floor came from, else 0
 Both components come from the row being written, and cost one row-local aggregate
 read per write. That read is not cheap: measured as an interleaved A and B in one
 database, it takes the median local write from 10.5 to 16.8 microseconds at 200k
-rows of 12 columns, and from 6.4 to 19.5 at 1M rows of 3, so **+60% at the wide
-shape and triple at the narrow one**, and worse on the fastest writes. It is the price of a write the user just made never being refused by R1,
+rows of 12 columns, Measured against a control arm of two
+identical passes, with WAL checkpointing moved outside the timed region, it costs
+**+30% to +37%**. Two earlier figures for this, "about 10%" and "at least double",
+were both artifacts: the first compared two different processes on two different
+schemas, and the second had no control arm, so a 3.6x drift within one arm was
+read as mechanism. It is the price of a write the user just made never being refused by R1,
 and both components survive a crash. **A replica-global counter does not.** A
 process restart inside one millisecond reissues `version_seq = 0`, so a rewrite
 and the value it replaces carry the same `(ms, seq)`, the tie falls to the hash,
@@ -517,7 +521,7 @@ A cell carries an explicit `dirty` flag, **with no index**. A partial index on
 `dirty = 1` over a `WITHOUT ROWID` table carries the entire primary key per
 entry, which is the same cost this record refuses a replica-side cursor for: it
 measured on the decided schema at **+81 MB and +126 MB** with local work standing.
-The scan it replaces costs **59 ms and 112 ms** when nothing is owed, which is the
+The scan it replaces costs **about 50 ms and 120 ms** when nothing is owed, which is the
 common case, and in the state where the index actually costs those megabytes it
 saves 26 ms and 38 ms, or about 7%, because both sides then have to return every
 cell.
@@ -721,9 +725,13 @@ says that one is owed.
 
 **The digest covers cells, not bodies.** A body has no version to fold into a sum,
 so body repair stays unconditional: a repair sends each body's whole `doc_state`
-whether or not anything says it differs. It costs 72 KB
-of disk and roughly 20% to 30% per local write, and the deferral cost three rounds
-of patches to a mechanism that could not carry the signal. The two premises the
+whether or not anything says it differs. It costs 72 KB of disk per side, and **+52%** on a local write
+that already pays the row-local floor, measured on this schema with a control arm.
+Implemented naively, with a second read to find the version it must subtract, it
+is +64% to +73%; folding that lookup into the floor aggregate the write already
+performs is what buys the cheaper number. Floor and digest together roughly double
+a local write against a store that has neither. The deferral cost three rounds of
+patches to a mechanism that could not carry the signal. The two premises the
 deferral rested on are both falsified: the lifetime does not catch a restore, and
 the cursor regression does not catch one either.
 
@@ -732,8 +740,9 @@ talking to the authority I was talking to before. It is re-minted on restore and
 on rebuild, and **the re-mint is bounded**: a replica presenting a cursor beyond
 the authority's counter plus one page is a corrupt client rather than a rewound
 store, and is answered with a reset scoped to that client. Unbounded, one
-unauthenticated request forces every replica to re-bootstrap, which at this
-record's own fixture is about 1.7 GB across three devices.
+unauthenticated request forces every replica to re-bootstrap, which at this record's own
+fixture and its own 121 bytes per cell is about 945 MB across three devices, and
+1.4 GB at the narrow shape.
 
 **A lifetime alone cannot see the case it was added for.** It is a column of the
 authority's own file, so restoring that file carries the old lifetime back with
@@ -825,11 +834,22 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   | shape | disk | what it can do |
   | --- | --- | --- |
   | whole-row JSON, what ships today | 85.3 MB (206.2) | no per-field version at all |
-  | one record per row plus a packed version map | 130.5 MB (274.1) | per-field merge, versions opaque |
-  | this cell store | 181.0 MB (342.4) | per-field merge, every version legible |
+  | one record per row plus a packed version map | 127.9 MB (274.1) | per-field merge, versions opaque |
+  | this cell store, cells only | 181.0 MB (342.4) | per-field merge, every version legible |
+  | this cell store, with the body plane | 182.3 MB (349.4) | the shape as decided |
 
-  So per-field versioning costs **+53% and +33%** over what ships, and this shape
-  costs **a further +39% and +25%** over the cheapest way to have it. An earlier
+  So per-field versioning costs **+50% and +33%** over what ships, and this shape
+  costs **a further +41% and +25%** over the cheapest way to have it. An earlier
+  draft quoted +39% and +53% by pairing a 196k-live figure for this store against
+  an all-live figure for the opponent.
+
+  The fourth row is the honest total, and no earlier figure in this record
+  contained it: every storage number here was taken with `_replica_body` empty,
+  while the opponent carries its prose inline as an ordinary column. At an
+  80-character body it adds 0.7% and 2.0%, taking the headline ratio to 2.14x and
+  1.69x. It is untested at the 40KB document this record uses to justify the plane
+  existing, and `_replica_body` spends 141.9 MB to hold 102.7 MB of state at the
+  wide fixture, 38% overhead from repeating a three-part text key. An earlier
   draft claimed the cell store was 7.8% *smaller* than the versioned opponent;
   that held only because the opponent it measured stored each version as base64
   inside JSON text, roughly 40 bytes per field for what this schema holds in 18
@@ -858,7 +878,7 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   4M**, warm. Against whole-row JSON, measured in one run so the ratio is
   self-consistent, it is 16.8x and 8.6x. Both figures carry two significant
   figures at most: the same query on the same schema has been recorded between
-  555 ms and 598 ms across runs, and every one of them discards the first pass, so
+  555 ms and 594 ms across runs, and every one of them discards the first pass, so
   a genuinely cold rebuild is not what was measured. That is a cold start, a
   repair, or a re-import, and it is the price of the layout rather than a
   steady-state cost.
@@ -867,7 +887,9 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   artifact of a badly written opponent: joining `_replica_row` before grouping
   forces a temp b-tree over every cell. Written the obvious way instead, grouping
   first and joining liveness once per row, two relations project in 582 ms and
-  1400 ms against one relation's 568 ms and 1104 ms: **1.02x and 1.27x**, for
+  1400 ms against one relation's 568 ms and 1104 ms. At the wide shape that gap is
+  inside the 7% run-to-run band and is **no measurable difference**; at the narrow
+  shape it is **1.27x**, for
   1.5% and 4.1% more disk. The collapse is justified by interpretability and by
   being one relation with one algebra rather than two, and it is **separable from
   the correctness fix**: dropping absorbing death is what makes an address
@@ -879,9 +901,11 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   first dead row, because `cellValue` draws a variable number of random values per
   column. The distributions match, so the storage and timing comparisons against
   it are unbiased, but they are distributional rather than exact.
-- **Detection costs two relations and about a quarter of a local write.** The
-  digest is 4096 buckets a side, 72 KB of disk, and an add and a subtract per
-  write. It is the one mechanism here that exists to answer a question rather than
+- **Detection costs two relations and half again on every local write.** The
+  digest is 4096 buckets a side, 72 KB of disk each, and an add and a subtract per
+  write, measured at +52% on a write that already pays the row-local floor. With
+  the floor, a local write costs about double what it would in a store that had
+  neither. It is the one mechanism here that exists to answer a question rather than
   to carry data, and the record spent three rounds discovering that no cheaper
   proxy answers it.
 - **Counters are refused.** "Add one" is not expressible; two devices each adding
@@ -971,7 +995,7 @@ scheduled for deletion on acceptance; the git ref is `e77191a274`.
   this design**, by 29% and 20% once the map is packed rather than stored as
   base64 in JSON, and faster to seed. Refused because the map is opaque, so no
   version is legible and the merge cannot be one SQL predicate; because one field
-  change ships the whole record and the whole map (8.6x at 12 columns and 2.9x at 3, like for like) and
+  change ships the whole record and the whole map (8.9x at 12 columns and 3.0x at 3, like for like) and
   because declaring merge groups makes the group names an unversioned wire
   contract a peer on another release cannot interpret.
 - **A hybrid logical clock with an actor id.** Its counter is adopted; its actor
@@ -997,7 +1021,7 @@ scheduled for deletion on acceptance; the git ref is `e77191a274`.
   symmetry argument previously given: symmetry was never the reason to want it.
   It is refused because it is a bad *delivery* mechanism: finding one changed
   cell costs a 32KB bucket exchange plus the address and version of every cell in the
-  differing bucket, 586 and 732 at the two shapes, where a cursor costs the changed cell. The seam remains
+  differing bucket, 623 and 962 at the two shapes, where a cursor costs the changed cell. The seam remains
   one rule, that a per-cell cursor never appears in a replica.
 - **An incremental multiset digest, deferred.** Adopted instead, in the Decision
   above, after three successive attempts to derive detection from the cursor
