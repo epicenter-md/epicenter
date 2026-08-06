@@ -692,6 +692,8 @@ mutually exclusive states, one with every cell owed and one with none.
 | Scanning the cell plane and the body plane as two address sequences under one watermark | a body edited mid-pass sorts behind a cell watermark, is folded as a passed delta, and is derived again when the body scan reaches it | the committed sum counts it twice, which is the permanent false mismatch the recompute exists to remove. One sequence, with a body at `!body` |
 | Recomputing on "the scan covered the full range" rather than "derived every address exactly once" | an adopted watermark can sit BEHIND this replica's own scan, so the range is covered and part of it twice | 80 of 200 addresses derived twice and a permanent false mismatch on that replica until it walks a pass cleanly end to end |
 | Leaving the entry's `\0` delimiter to the address GLOBs | GLOB stops at the first NUL, so no CHECK ever saw one | `row_id "a\0b" + column "title"` and `row_id "a" + column "b\0title"` hash identically, a missed divergence in the detector itself. Closed with `instr(..., char(0)) = 0` on all four components, which costs nothing and refuses no legal address |
+| An entry that lets a cleared cell contribute no value bytes | a cell holding the empty string contributes zero value bytes too, and the empty string is storable because this record refuses `json_valid` | 1280 collisions in 5440 legal tuples, all one family: the two fold the same entry, the merge's value guard refuses both directions, the projection differs, and both sides read clean forever. Closed with a one-byte `present_tag`, which is the move ADR-0212 had already made one layer down in `version_hash` |
+| Recomputing on a criterion the schema cannot evaluate after a restart | `repair_from` records where a scan reached, not whether it got there contiguously | a restarted pass believes it derived every address once and commits a sum that is not its content. The bit is `repair_from` non-NULL and not the sentinel at open, which costs no column |
 | A refusal that does not carry the authority's current `repair_from` | a refused replica has no legal `from` to send, so the sentinel is its only move | 0 passes complete in 300 rounds with two, three or four replicas repairing at once, the authority never past the first chunk of ten, because the replicas restart each other forever. Adopting the watermark the refusal carries completes in ten rounds |
 | "The authority ignores a second replica's pass while one is open" | `_authority_replicas` is deleted and nothing on the authority names a device | unbuildable, so it was a sentence rather than a decision. The from-guard alone commits exactly the truth with two replicas alternating chunks |
 | Leaving `row_id` unconstrained on the two body tables | the cell tables refuse addresses the body tables accept | a body at an address whose row can never exist: R2's body drop cannot fire on it and the repair pass ships it forever. Both sides now carry the cell tables' `row_id` CHECK, identical on both by
@@ -789,9 +791,20 @@ that matched `8.6x` in an unrelated rebuild ratio and adopted it over the correc
 it sits; and a variance band attached to a ratio whose own control arm says
 something else. `check-claims.ts` now walks every saved output except
 `superseded/`, extracts every number-with-unit from all three records, and reports
-which files source each one. It currently reports **300 claims, 300 sourced, 0
-unsourced**. It cannot catch the third failure, which is a reasoning error rather
-than a lookup, and that is left to review.
+which files source each one. Its first honest run reported **300 claims, 300 sourced, 0 unsourced**, and that
+figure was wrong three ways, each of which round 16 found: it matched a bare
+decimal substring, so `3.69x` was "sourced" by `73.69583`; it tested for the unit
+per FILE, which is vacuous for units like `s`, `x` and `B` that occur in every log;
+and it sourced claims from provenance reports that merely QUOTE them, which is
+circular. Tightened to standalone numbers, adjacent units, rounding tolerance and
+no audit files, it reports **302 claims, 285 sourced, 14 matched by a bare number
+only, 3 unsourced**, and the residue is formatting variance rather than missing
+provenance: producers print `+9.8 MB` and `199,990 ms` where the regex wants
+`9.8 MB`. A looser check reporting a better number than the stricter one it
+replaced is the same failure as adopting a figure from the wrong file, and it is
+worth recording that the tool built to stop that failure committed it first. It
+still cannot catch the third round-15 error, a band attached to the wrong arm's
+control, which is a reasoning error rather than a lookup.
 
 **Round 15 repaired the harness instead of counting it again.** Thirteen probes are retired to `superseded/` with a README. Eleven name
 `_replica_digest` or `repair_epoch`, artifacts the design deleted, so they cannot
@@ -814,12 +827,12 @@ the settled schema, the whole page applies, the poisoned value round-trips byte
 for byte, and only an unguarded `json()` raises. The symmetry is what buys the
 wedge out; the record had been describing the disease rather than the cure.
 
-**Provenance decayed once before, and this is the third round it has bitten.** Round 14 counted fourteen harness scripts that no longer executed against the
-settled schema, because every schema tightening breaks the positional inserts in
-probes nobody re-ran. Round 15 retired or repaired all of them. Two claims in these records had a dead producer AND no saved output at the time round 13 checked:
+**Provenance decayed once before, and this is the third round it has bitten.** Round 14 counted the harness scripts that no longer executed, because every schema
+tightening breaks the positional inserts in probes nobody re-ran. Round 15 retired
+thirteen and repaired none, because none of them needed repairing. Two claims in these records had a dead producer AND no saved output at the time round 13 checked:
 the authority wedge, the epoch collapse (quoted as "0 of 200 either way" where the live probe reports
 200 of 200 inline against 0 of 200 under the epoch, a tie reported where there was
-a rout), A third claim, the 280-of-400 resumed-pass figure, was suspected and cleared: `r11b-repair-pair.ts` runs and its output is kept. A further 22 saved outputs are
+a rout). A third claim, the 280-of-400 resumed-pass figure, was suspected and cleared: `r11b-repair-pair.ts` runs and its output is kept. A further 22 saved outputs are
 older than the scripts named for them. The rule this round adds: a claim whose
 producer does not run is withdrawn, not re-quoted, and the sweep that finds them
 runs every round rather than when a reviewer thinks to look.

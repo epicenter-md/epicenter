@@ -177,9 +177,7 @@ schedules a full repair on **500 rounds out of 500**, with zero divergence.
 The sum would be incremental only, with nothing deriving it from the store, and a sum that
 has drifted from its own content is a mismatch no amount of repair can close: the
 pass converges the content, the comparison reads the sum, and the two never meet.
-Measured with one fold omitted at one of the roughly ten sites that fold: two
-stores whose sums have drifted from their own content never meet: the pass
-converges the content and the comparison reads the sum. The counts an earlier
+ The counts an earlier
 draft quoted here have no producing output and are withdrawn; the resumed-pass
 figure below is the sourced form of the same argument. At this record's fixture that is 2.6 M cells and about
 336 MB every round, forever, with nothing user-visible wrong.
@@ -190,9 +188,7 @@ authority from `_authority_cell` and `_authority_body`.
 
 **Neither side's half can be a running total held nowhere.** Accumulating a
 partial sum in `digest_sum` itself leaves garbage rather than drift the moment a
-replica goes offline mid-pass, and, because ADR-0212 has no one-pass-at-a-time rule to decide, nothing on the
-authority naming a device, two interleaved passes would leave the loser's
-partial as the durable value. A pass abandoned partway leaves the side summing only what it scanned, which every peer then mismatches every round; the resumed-pass measurement below is the sourced form of this. Both sides therefore carry a separate accumulator, `repair_sum`.
+replica goes offline mid-pass, and ADR-0212's from-guard is what refuses an interleaved chunk on the authority. A pass abandoned partway leaves the side summing only what it scanned, which every peer then mismatches every round; the resumed-pass measurement below is the sourced form of this. Both sides therefore carry a separate accumulator, `repair_sum`.
 Recomputing one side only leaves the other's drift permanent, and an authority
 whose sum has drifted is a mismatch every replica repairs every round forever,
 which is the failure this section exists to remove. **The recompute derives from content, and the arithmetic has to say so.** A pass
@@ -284,20 +280,30 @@ transaction. Otherwise the digest becomes the thing ADR-0212 refuses elsewhere, 
 durable marker that decides what to send and is wrong in a way that perpetuates
 itself.
 
-### The entry encoding is a cross-release contract, and its `\0` delimiter is a
-schema constraint rather than a write-door convention: ADR-0212 excludes `\0` from
-every address component with `instr(..., char(0)) = 0`, because GLOB stops at the
-first NUL and would otherwise let two different addresses join to one preimage.
-The encoding
+### The entry encoding is a cross-release contract
+
+Its `\0` delimiter is a schema constraint rather than a write-door convention:
+ADR-0212 excludes `\0` from every address component with
+`instr(..., char(0)) = 0`, because GLOB stops at the first NUL and would otherwise
+let two different addresses join to one preimage.
 
 An entry is the low 8 bytes, big-endian, of
 
 ```txt
-cell:  sha256(ns \0 table \0 row \0 column \0 version_ms \0 version_seq \0 || version_hash || value_utf8)
+cell:  sha256(ns \0 table \0 row \0 column \0 version_ms \0 version_seq \0 || version_hash || present_tag || value_utf8)
 body:  sha256(ns \0 table \0 row \0 "!body" \0 generation_ms \0 generation_seq \0 || encodeStateAsUpdateV2(load(doc_state)))
 ```
 
-where a cleared cell contributes no value bytes. Both metadata singletons carry a
+where `present_tag` is one byte, `0x00` for a cleared cell and `0x01` for a cell
+that holds a value. Without it a cleared cell and a cell holding the empty string
+produce a **byte-identical preimage**, because both contribute zero value bytes and
+the empty string is storable: this record refuses `json_valid`, so nothing rejects
+it. Measured, the two fold the same entry over a fixed version, 1280 collisions in
+5440 legal tuples, and the merge predicate's value guard refuses both directions,
+so both sides read clean forever. That is verbatim the failure this section exists
+to prevent, and ADR-0212 had already solved the identical ambiguity one layer down
+by hashing a marker canonical JSON cannot produce; the entry simply never applied
+the same move. Both metadata singletons carry a
 `digest_format`, compared before the sums, and a peer on another format is
 **incomparable** rather than divergent. It is separate from `format_version`
 because a release can change what it folds without changing the wire protocol,
@@ -330,7 +336,8 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
   folded figure from two saved outputs that have no producing script, so they
   cannot be reproduced and are withdrawn. "One add and one subtract per write" is true of a field write
   and badly untrue of a delete.
-- **A body write's premium scales with the document, and is measured on the entry this record decides.** A linear entry, which a canonical re-encode is,
+- **A body write's premium is measured on the entry this record decides, and
+  probably scales with the document.** A linear entry, which a canonical re-encode is,
   measured **+26% to +40% at an 80-character body and +27% to +61% at 40 KB**:
   7 to 11 microseconds added at the small size and 42 to 69 at the large one, on a 40 KB control arm wider than the effect (+15% to -14% against the small arm's 3%), so the scaling is where the numbers point rather than something they establish. **Both**
   halves cost a fresh load and a re-encode. The write path's own `doc_state` comes

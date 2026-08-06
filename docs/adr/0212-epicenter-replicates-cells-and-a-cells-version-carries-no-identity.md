@@ -302,8 +302,8 @@ because neither side constrains `value` to `json_valid`, a value that is valid
 UTF-8 and invalid JSON is stored by both and wedges neither. Measured on the
 settled schema, a poisoned cell is applied along with every cell around it and the
 cursor advances past all of them; a nonconforming value is a read-time problem for
-the Lens, which is where the record puts it. The wedge is what the symmetry buys,
-not something the record has to live with.
+the Lens, which is where the record puts it. Avoiding the wedge is what the symmetry buys, and the symmetry is why the record
+does not have to live with it.
 
 **The projection must therefore guard `json(value)`.** Removing the CHECK moved
 the wedge from the write path to the read path, where it is worse: one unreadable
@@ -820,9 +820,7 @@ nothing is dirty, the roots agree, and the call returned success.
 **The floor is the fix, and a flat authority time is the defect it repairs.**
 Re-stamping to authority time alone lands the cell *below* its own row's presence
 cell, and the failure above follows: measured, the user's write vanishes from the device that typed it
-and from the authority, with nothing dirty and the digest roots agreeing. Flooring
-at the presence version stays inside the clamp, because the authority accepted
-that presence version in the first place. Dragging a clean presence cell into the
+and from the authority, with nothing dirty and the digest roots agreeing.  Dragging a clean presence cell into the
 re-stamp set instead is worse: the authority refuses it as stale and R2 kills the
 cell anyway. Rank rather than the
 original counter: the re-stamp collapses a *range* of `version_ms` onto one time,
@@ -862,12 +860,21 @@ off a stale watermark is still refused, so the double-count is closed, and an
 abandoned pass is self-healing rather than a watermark nothing can clear.
 Discarding a partial accumulator costs nothing, because the sum is committed only
 at completion. **A refusal carries the authority's current `repair_from`, and a refused replica
-resumes from it rather than restarting, or from the sentinel when the refusal
-carries none because the pass it was refused behind has since completed.** Without that the sentinel is otherwise its only move, and measured, two replicas
+resumes from it rather than restarting, or from the sentinel when the refusal carries none, because the pass it was
+refused behind has since completed or the authority has itself been restored. A
+sentinel chunk racing a pass another replica has since opened discards that
+partial, which costs work and not correctness, because the sentinel resets the
+accumulator rather than blending into it.** Without that the sentinel is otherwise its only move, and measured, two replicas
 repairing at once then restart each other forever: 0 passes complete in 300 rounds
 at two, three and four replicas, the authority never past the first chunk of ten.
 Adopting the carried watermark completes in ten, as does retrying the same `from`;
-what livelocks is restarting at the sentinel. **Only a replica whose own scan derived every address exactly once recomputes.**
+what livelocks is restarting at the sentinel. **Only a replica whose own scan derived every address exactly once recomputes, and
+a pass it finds already open when it opens the store did not.** The pair records
+where the scan reached, not whether it got there contiguously, so an adoption made
+before a restart is invisible afterwards: measured, a restarted pass believes it
+derived every address once, recomputes, and commits a sum that is not its content.
+`repair_from` non-NULL and not the sentinel at open is the bit, it costs no column,
+and the next comparison re-raises the pass.
 An adopted watermark breaks that in both directions: forward by skipping what the
 other replica walked, and backward by re-deriving what this one already walked.
 "Covered the full range" is not the same criterion and admits the second case,
@@ -1058,8 +1065,7 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   holds for each refused cell, so 223 of 5331 re-stamped field cells land on or below a held
   version, 66 of them exactly on it and 157 below, and 190 are discarded as stale,
   silently, with both sides agreeing and nothing dirty. That 190 is 3.6% of the 5331 field cells, or 4.4% of the 4282 clamp re-stamp
-  events, and it is classified at push time, which is why 190 and the 34 below
-  exceed 223 by one. The collision has a second face the loss count
+  events, and it is classified at push time, which is why 190 + 34 exceeds 223 by one. The collision has a second face the loss count
   cannot show: 34 **of those 66** win the hash instead of losing it, silently
   displacing the value the authority held. They reach the intended result
   by a coin flip rather than by the floor's arithmetic. A fourth floor term, of the same shape as the second
@@ -1188,9 +1194,8 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   (1969, 1990, 2082, 2095, 2168 ms); the cell arms repeat within about 3% inside a run, and 1.76x's own denominator
   `RJY` has a control of 0.5%, -0.5% and -0.9% across three runs, which puts that
   ratio's honest band at roughly **1.7x to 1.8x** (measured 1.76, 1.73, 1.74). The
-  -15.4% to +11.9% control belongs to the no-body whole-row arm, which is the
-  denominator of the layout term below and not of this one, so the wide band
-  attaches there. That is a cold start, a
+  -15.4% to +11.9% control belongs to the no-body whole-row arm, which is the denominator of the layout term above and not of this one, so the
+  wide band attaches there. That is a cold start, a
   repair, or a re-import, and it is the price of the layout rather than a
   steady-state cost.
 - **Collapsing presence into the cell relation buys almost no time, and that is
