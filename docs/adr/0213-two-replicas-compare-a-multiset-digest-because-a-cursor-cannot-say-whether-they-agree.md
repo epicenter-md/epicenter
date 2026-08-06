@@ -143,7 +143,9 @@ a root's type is still the application's: Yjs v14 collapses every type into one
 prose" is not well defined across those readings. (The which-root leg of this
 argument is gone: a column name is now a root name.)
 
-A canonical re-encode satisfies all four. It never names a root, it contains every
+A canonical re-encode satisfies all four. Its payload never names a root, the
+address names one only as an address the authority stores and never interprets, it
+contains every
 operation, and Yjs re-encodes deterministically, so two sides that merged the same
 updates agree byte for byte however they got there. Verified across two encodings
 of one edit, a same-clock content change, a three-root document, concurrent edits
@@ -299,7 +301,16 @@ cell:  sha256(ns \0 table \0 row \0 column \0 version_ms \0 version_seq \0 || ve
 doc:   sha256(ns \0 table \0 row \0 column_name \0 generation_ms \0 generation_seq \0 || encodeStateAsUpdateV2(load(doc_state)))
 ```
 
-where `present_tag` is one byte, `0x00` for a cleared cell and `0x01` for a cell
+Addressing a document by its column rather than by a literal is not only about
+chunk boundaries. Measured, the literal form **missed real divergences**: two sides
+holding the same two documents with their contents swapped between columns, one
+document held at a different column on each side, and two never-typed-into
+documents at different columns all folded byte-identical sums. It caught the first
+of those only when each document's internal root happened to be named after its
+column, which is a convention ADR-0135 forbids Epicenter from validating, so the
+old entry's correctness rested on something the design cannot enforce.
+
+Where `present_tag` is one byte, `0x00` for a cleared cell and `0x01` for a cell
 that holds a value. Without it a cleared cell and a cell holding the empty string
 produce a **byte-identical preimage**, because both contribute zero value bytes and
 the empty string is storable: this record refuses `json_valid`, so nothing rejects

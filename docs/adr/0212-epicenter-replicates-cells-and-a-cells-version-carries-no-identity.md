@@ -375,9 +375,14 @@ first answer.
 give one value two homes and two merge rules. A collaborative column lives only in
 `_replica_doc` and the projection restores it as a field on the way out. An
 undeclared column, including a plain markdown body, is an ordinary cell and lives
-only in `_replica_cell`. The invariant is the Lens's to hold, because neither
-table can see the other's rows: a `CHECK` cannot express it and this record does
-not pretend otherwise.
+only in `_replica_cell`. The invariant is the Lens's to hold, because neither table can see the other's
+rows: a `CHECK` cannot express it and this record does not pretend otherwise. When
+it is violated the **document wins and the cell is inert**: the projection renders
+the document at that column and never the cell, while the cell keeps its version
+and keeps replicating forever. The violation needs no Lens bug. ADR-0125 makes a
+Lens release-local and requires a release to preserve values it cannot read, so a
+release that writes `body` as an ordinary string and a later one that declares it
+`collaborative()` both persist, and every replica holds both.
 
 Each metadata singleton carries columns it does not look like it needs: a
 lifetime, a `digest_format` and a `digest_sum` that belong to ADR-0213, and on
@@ -627,7 +632,12 @@ slot.
 
 Three details are load-bearing, and each was a live defect written the obvious
 way. The move **merges** rather than assigns, or an overlapping round clobbers
-bytes a live send is still carrying. An acknowledgement **names the incarnation and the token**, or a
+bytes a live send is still carrying. An acknowledgement **names the column, the incarnation and the token**. The column
+is load-bearing now that a row may carry several documents: `send_token` counts per
+document and every document of a row shares one incarnation, so an incarnation
+separates rounds and never separates columns. Two collaborative columns pushed in
+the same round both carry token 1 under the same generation, and an
+acknowledgement naming only those two matches both. Or a
 late reply to a superseded send empties both slots and loses everything typed
 since. The incarnation is not decoration: a new generation replaces the body row
 and restarts the counter, so a token alone is ambiguous across a re-creation and a
@@ -659,8 +669,15 @@ generation arriving before the presence cell that created it, which replaces
 replacement is a cross-plane write, so R1 and R2 are not the only ones; the
 alternative is losing every edit made to a re-created row.
 
-**R2's drop extends to the body.** A presence write that drops a row's older cells
-drops its body row in the same transaction. Without that, nothing in the design
+**R2's drop extends to the row's documents, and it is conditional.** A presence
+write drops every document of the row whose generation is older than that presence
+version, by the same `(version_ms, version_seq)` comparison the cell drop uses. The
+row prefix is how the drop is *found*, not what it is *predicated on*. Written
+unconditionally it diverges: measured over 120 orderings of a create, a field, a
+delete, a re-creation and a document, an unconditional prefix delete yields two
+stable final states and 60 of them destroy the re-created row's prose, because a
+stale in-flight presence write drops a document that a newer presence had already
+admitted. The conditional form yields one state in all 120. Without that, nothing in the design
 ever deletes a body: `delete(id)` writes a presence cell, and a deleted row leaves
 its full prose on every replica and on the authority forever, which the repair
 pass then re-uploads rather than collects. The gate has to
@@ -671,7 +688,7 @@ new row while a replica that joined later renders nothing. That is divergence an
 a content leak at once. **The presence cell is the only cell with authority over other cells**, and it has
 seven effects: R1 refuses an older cell, R2 drops older cells, R2 drops an older
 body, the open door replaces a stale-generation body, the projection renders one
-empty until that happens, a clamp re-stamp moves the body's generation with it,
+empty until that happens, a clamp re-stamp moves the generation of every document of the row with it,
 and every local write reads it to compute its floor. Nothing else *writes* across
 an address or a plane. Without this the body plane does not converge: a late update from a replica
 that never saw the delete produces `"the old note -- B typed this"` in two
@@ -1043,7 +1060,7 @@ failure the pass exists for, on the plane whose payload is largest, which is thi
 record's own argument for making a body Yjs at all. So a repair sends each body's
 whole `doc_state`, which Yjs makes idempotent. **It is chunked by address range**, resuming from the
 last address it confirmed, over ADR-0213's single sequence across both planes,
-with a body at `(namespace, table, row, '!body')`. Deleting `sealBatch` deleted the only bound on upload
+with a document at `(namespace, table, row, column_name)`. Deleting `sealBatch` deleted the only bound on upload
 size in the system, and an unbounded pass at 200k rows of 12 columns is 2.6M
 cells, and roughly 336 MB in one request at an
 80-character body, because the pass ships every body's whole `doc_state` as well;
