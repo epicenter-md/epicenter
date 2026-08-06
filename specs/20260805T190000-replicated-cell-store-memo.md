@@ -688,6 +688,7 @@ mutually exclusive states, one with every cell owed and one with none.
 | Reading the floor's `local` term as "the presence this replica holds", full stop | after a clamp-refused create the replica holds the refused version, so the floor is the version just refused | the re-push never terminates: 32 inner rounds, the cell still dirty, the authority holding nothing. The fuzz always excluded a refused presence; the record did not say so |
 | Treating the clamp invariant as unconditional | it holds only while the authority's clock is monotonic | with the clock stepped back an hour, EVERY member of the floor family livelocks, because `local` is never clamped and the held version sits permanently above `A + width`. The clamp reference is now `max(own clock, highest accepted version_ms - width)` |
 | Scanning the cell plane and the body plane as two address sequences under one watermark | a body edited mid-pass sorts behind a cell watermark, is folded as a passed delta, and is derived again when the body scan reaches it | the committed sum counts it twice, which is the permanent false mismatch the recompute exists to remove. One sequence, with a body at `!body` |
+| Carrying the authority's held version for each REFUSED ADDRESS in the refusal, not only the row's presence | the floor's terms are presence versions only, so a re-stamped field can land on or below the version the authority already holds for that same cell | NOT YET TAKEN, and the only priced item here that is an open option rather than a refusal. Measured cost of NOT taking it: of 4282 clamp re-stamps, 66 field cells land on the exact held version with a different value, 157 land below it, and 190 field writes (4.4%) are discarded as stale, silently, with both sides agreeing and nothing dirty. The fix is a fourth term of the same shape as the third; it was not taken in round 13 because the design was frozen, and every previous round's patch to this formula was defective |
 | Leaving the clamp silent about a body's generation | a body copies its generation from the presence cell, so a clamped create produces an equally skewed one | the prose is lost from the device that typed it, the authority holds it under a generation no row has, and the digest mismatches every round while the pass re-sends bytes the authority refuses |
 
 `Supersedes` and `Amends` carry reciprocal links on both records, as
@@ -742,6 +743,17 @@ delivery counter in any form. Each patch added a proxy for the missing
 information; none of them added the information. The mechanism that carries it was
 priced in this table and deferred, and the deferral is what the three rounds cost.
 It is adopted above.
+
+**Why round 13 froze the design, and what the freeze bought.** Rounds 8 through 12
+each found the PREVIOUS round's fix defective, in this one subsystem, because the
+design kept changing between rounds instead of being held still and verified.
+Round 13 held it: no new mechanisms, corrections to the written text only. All
+five round-12 changes verified, including three branches of the floor clause that
+had never been run, and the round found exactly one new mechanism defect, which had
+survived twelve rounds because the loss it causes is AGREED. Nothing diverges,
+nothing stays dirty, and the fuzz counted lost create and delete intents while
+never counting a lost field value. That is the shape of what a freeze finds: not
+the newest patch's bug, but the oldest unexamined assumption.
 
 **A fix that created the defect it was fixing, once.** Round 11 gave the authority
 `repair_sum` so its recompute could fold into the pages it serves rather than hold

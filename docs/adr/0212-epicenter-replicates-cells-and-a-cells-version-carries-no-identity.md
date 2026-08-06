@@ -364,7 +364,9 @@ the authority keep values opaque.
 It is not a claim about when a person acted, and the authority verifies only that
 it is not more than five minutes ahead of its **clamp reference**, which is not
 simply its own clock. The reference is
-`max(its own clock, the highest version_ms it has accepted minus the clamp width)`,
+`max(its own clock, the highest version_ms it HOLDS minus the clamp width)`,
+which the store can derive and "ever accepted" cannot, because R2 and overwrites
+remove rows;
 and "the authority's time" means that quantity everywhere below: in the refusal
 payload, in the re-stamp floor, and in the inertness argument. A raw wall clock
 there is not a simplification, it is the livelock measured under "the clamp
@@ -998,6 +1000,10 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
 - **The silent-loss window is the ingest clamp forwards, and unbounded
   backwards.** A device whose clock is four minutes fast, which the clamp admits,
   wins against an edit made three real minutes later, and nothing tells anyone.
+  After a backward step of the authority's own clock it is the clamp width plus
+  that step, because the reference ratchets on what the authority already holds:
+  measured, an hour's step back admits a write 55 minutes above the plain clock
+  bound until the clock catches up. That is the deliberate price of the ratchet.
   Backwards there is no bound at all: the clamp only refuses a clock that is
   ahead, so a replica with a dead clock writes into the past, loses to a
   months-old value, and is never refused, never re-stamped, and never repaired.
