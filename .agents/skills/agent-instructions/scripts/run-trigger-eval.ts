@@ -107,9 +107,9 @@ export function compareStoredRun(
 /**
  * Which agent's routing a case is about.
  *
- * `consult-claude` and `delegate-claude` are written for a Codex session
- * ("Launch and supervise one durable Claude Code session from Codex"), so a
- * Claude probe answering them picks a neighbour every time. That is a category
+ * `enlist-claude` is written for a Codex session ("Enlist one fresh, durable
+ * Claude Code collaborator"), so a
+ * Claude probe answering it picks a neighbour every time. That is a category
  * error in the measurement, not a defect in the description, and marking the
  * case is how the harness says so instead of reporting a failure it cannot
  * justify.

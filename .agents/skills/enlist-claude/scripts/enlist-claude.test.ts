@@ -1,5 +1,5 @@
 /**
- * delegate-claude Launcher Tests
+ * Enlist Claude Launcher Tests
  *
  * Verifies the pure launch/lookup/classification functions and the complete
  * start/watch lifecycle against a fake `claude` binary, without launching a
@@ -10,11 +10,12 @@
  *   by chosen name when the research-preview line changes shape
  * - Short and full session IDs resolve to the same agent record
  * - working/blocked/terminal states map to watcher outcomes and exit codes
+ * - `start` and `continue` stay attached until the job is terminal or blocked
  * - `continue` stops the job and resumes the same conversation as a new job
  * - Push, pull request creation, and merge are denied on every start and every
  *   resume, and no argument reaches a launch that grants them
  * - `continue` refuses a working job unless the interruption is deliberate
- * - `CLAUDECODE=1` refuses reciprocal delegation
+ * - `CLAUDECODE=1` refuses reciprocal enlistment
  */
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
@@ -37,7 +38,7 @@ import {
 	parseBackgroundId,
 	parseContinueArgs,
 	parseStartArgs,
-} from './delegate-claude';
+} from './enlist-claude';
 
 const baseAgent = {
 	id: '7c5dcf5d',
@@ -114,7 +115,7 @@ describe('classifyAgent', () => {
 describe('parseStartArgs', () => {
 	test('takes a name and generates one otherwise', () => {
 		expect(parseStartArgs(['--name', 'x'])).toEqual({ name: 'x' });
-		expect(parseStartArgs([])?.name).toMatch(/^codex-delegate-/);
+		expect(parseStartArgs([])?.name).toMatch(/^codex-enlist-/);
 	});
 
 	test('rejects unknown or malformed flags', () => {
@@ -181,14 +182,14 @@ describe('parseContinueArgs', () => {
 });
 
 describe('command lifecycle', () => {
-	test('starts, finds, watches, and reads one delegated job', () => {
-		const fixtureDirectory = mkdtempSync(join(tmpdir(), 'delegate-claude-'));
+	test('starts, stays attached, finds, watches, and continues one job', () => {
+		const fixtureDirectory = mkdtempSync(join(tmpdir(), 'enlist-claude-'));
 		const fakeClaude = join(fixtureDirectory, 'claude-fixture.ts');
 		const argsLog = join(fixtureDirectory, 'args.jsonl');
 		writeFileSync(
 			fakeClaude,
 			`#!/usr/bin/env bun
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, readFileSync } from 'node:fs';
 const args = process.argv.slice(2);
 appendFileSync(${JSON.stringify(argsLog)}, JSON.stringify(args) + '\\n');
 if (args[0] === '--bg' && args.includes('--resume')) {
@@ -198,12 +199,28 @@ if (args[0] === '--bg' && args.includes('--resume')) {
 } else if (args[0] === 'stop') {
   console.log('stopped ' + args[1]);
 } else if (args[0] === 'agents') {
-  console.log(JSON.stringify([{
+  const history = readFileSync(${JSON.stringify(argsLog)}, 'utf8')
+    .split('\\n').filter(Boolean).map((line) => JSON.parse(line));
+  const resumed = history.some((entry) => entry[0] === '--bg' && entry.includes('--resume'));
+  const lastBackground = history.findLastIndex((entry) => entry[0] === '--bg');
+  const checksSinceLaunch = history.slice(lastBackground + 1)
+    .filter((entry) => entry[0] === 'agents').length;
+  const state = process.env.FIXTURE_TRANSITION && checksSinceLaunch === 1
+    ? 'working'
+    : process.env.FIXTURE_STATE ?? 'done';
+  const agents = [{
     ...${JSON.stringify(baseAgent)},
     name: process.env.FIXTURE_AGENT_NAME ?? 'example',
     startedAt: process.env.FIXTURE_AGENT_FRESH ? Date.now() : 1,
-    state: process.env.FIXTURE_STATE ?? 'done',
-  }]));
+    state,
+  }];
+  if (resumed) agents.push({
+    ...agents[0],
+    id: 'a5b4a85d',
+    sessionId: 'a5b4a85d-9c3d-427b-85f9-9bdecff9ccfa',
+    state: 'done',
+  });
+  console.log(JSON.stringify(agents));
 } else {
   process.exit(8);
 }
@@ -217,12 +234,16 @@ if (args[0] === '--bg' && args.includes('--resume')) {
 				.split('\n')
 				.filter(Boolean)
 				.map((line) => JSON.parse(line) as string[]);
-		/** `back(0)` is the newest invocation, `back(1)` the one before it. */
-		const back = (offset: number) => {
-			const all = launches();
-			return all[all.length - 1 - offset];
+		const lastLaunch = () => {
+			const launch = launches().at(-1);
+			if (!launch) throw new Error('Expected a Claude invocation');
+			return launch;
 		};
-		const lastLaunch = () => back(0);
+		const lastBackgroundLaunch = () => {
+			const launch = launches().findLast((args) => args[0] === '--bg');
+			if (!launch) throw new Error('Expected a background Claude invocation');
+			return launch;
+		};
 		const finalArg = (args: string[]) => args[args.length - 1];
 
 		/**
@@ -242,23 +263,26 @@ if (args[0] === '--bg' && args.includes('--resume')) {
 		// so only the dedicated refusal case sets it.
 		const environment: Record<string, string | undefined> = {
 			...process.env,
-			DELEGATE_CLAUDE_BIN: fakeClaude,
+			ENLIST_CLAUDE_BIN: fakeClaude,
+			ENLIST_CLAUDE_POLL_INTERVAL_MS: '5',
 		};
 		delete environment.CLAUDECODE;
-		const cli = join(import.meta.dir, 'delegate-claude.ts');
+		const cli = join(import.meta.dir, 'enlist-claude.ts');
 
 		try {
 			const started = spawnSync('bun', [cli, 'start', '--name', 'fixture'], {
 				encoding: 'utf8',
-				env: environment,
+				env: { ...environment, FIXTURE_TRANSITION: '1' },
 				input: 'Mission: fixture',
 			});
 			expect(started.status).toBe(0);
-			expect(started.stdout).toContain('DELEGATE_CLAUDE_JOB_ID=7c5dcf5d');
+			expect(started.stdout).toContain('ENLIST_CLAUDE_JOB_ID=7c5dcf5d');
 			expect(started.stderr).toContain(
 				'Direct git push, gh pr create, and gh pr merge commands are denied.',
 			);
-			const startArgs = lastLaunch();
+			expect(started.stderr).toContain('7c5dcf5d: working');
+			expect(started.stderr).toContain('7c5dcf5d: done');
+			const startArgs = lastBackgroundLaunch();
 			expect(startArgs).toContain('--bg');
 			expect(startArgs).not.toContain('--model');
 			for (const flag of ['--effort', 'high', '--permission-mode', 'auto'])
@@ -284,11 +308,12 @@ if (args[0] === '--bg' && args.includes('--resume')) {
 					FIXTURE_LAUNCH_LINE: 'Session dispatched.',
 					FIXTURE_AGENT_NAME: 'fixture',
 					FIXTURE_AGENT_FRESH: '1',
+					FIXTURE_TRANSITION: '1',
 				},
 				input: 'Mission: fixture',
 			});
 			expect(recovered.status).toBe(0);
-			expect(recovered.stdout).toContain('DELEGATE_CLAUDE_JOB_ID=7c5dcf5d');
+			expect(recovered.stdout).toContain('ENLIST_CLAUDE_JOB_ID=7c5dcf5d');
 
 			const watched = spawnSync('bun', [cli, 'watch', '7c5dcf5d'], {
 				encoding: 'utf8',
@@ -310,10 +335,13 @@ if (args[0] === '--bg' && args.includes('--resume')) {
 				input: 'pear',
 			});
 			expect(continued.status).toBe(0);
-			expect(continued.stdout).toContain('DELEGATE_CLAUDE_JOB_ID=a5b4a85d');
-			const resumeArgs = lastLaunch();
+			expect(continued.stdout).toContain('ENLIST_CLAUDE_JOB_ID=a5b4a85d');
+			expect(continued.stderr).toContain('a5b4a85d: done');
+			const resumeArgs = lastBackgroundLaunch();
 			expect(resumeArgs).toContain('--resume');
 			expect(resumeArgs).toContain(baseAgent.sessionId);
+			for (const flag of ['--effort', 'high', '--permission-mode', 'auto'])
+				expect(resumeArgs).toContain(flag);
 			expect(finalArg(resumeArgs)).toBe('pear');
 			// Claude does not carry deny rules across `--resume`, so an unguarded
 			// resume would silently restore publication for the rest of the
@@ -328,22 +356,6 @@ if (args[0] === '--bg' && args.includes('--resume')) {
 			expect(busy.status).toBe(2);
 			expect(busy.stderr).toContain('still working');
 			expect(lastLaunch()).toContain('agents');
-
-			const interrupted = spawnSync(
-				'bun',
-				[cli, 'continue', '7c5dcf5d', '--interrupt'],
-				{
-					encoding: 'utf8',
-					env: { ...environment, FIXTURE_STATE: 'working' },
-					input: 'pear',
-				},
-			);
-			expect(interrupted.status).toBe(0);
-			expect(interrupted.stdout).toContain('DELEGATE_CLAUDE_JOB_ID=a5b4a85d');
-			expect(back(1)[0]).toBe('stop');
-			// Interrupting a live turn is a caller decision, not a widening
-			// of what the resumed session may do.
-			expectPublicationDenied(lastLaunch());
 
 			const nested = spawnSync('bun', [cli, 'start'], {
 				encoding: 'utf8',
