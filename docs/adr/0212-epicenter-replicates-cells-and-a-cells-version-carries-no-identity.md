@@ -310,15 +310,21 @@ name it, and `!` sorts before every letter, so a row's liveness is the first thi
 an ordered scan of that row meets. The schema enforces both halves, so the
 reservation is a constraint rather than a convention.
 
-**Open: the projection restores a body as a field, and ADR-0213's digest may not
-name a root.** This record requires the projection to render a body back into the
-row it belongs to, which means naming the root that holds it. ADR-0213 refuses to
-let its body entry name a root at all, because ADR-0135 decides that Epicenter
-never interprets them and that one document may hold several. Both cannot be
-right as written: either the projection is given a designated body root that
-ADR-0135 must be amended to allow, or the body is not restored as a field and
-ADR-0207's markdown round trip loses its source. This record does not settle it,
-and it should be settled before either is Accepted.
+**Open, and against ADR-0135 rather than against ADR-0213.** This record requires
+the projection to render a body back into the row it belongs to, which means
+naming the root that holds it, while ADR-0135 decides that Epicenter never
+interprets roots and that one document may hold several. An earlier draft stated
+this as a conflict with ADR-0213; it is not. That record forbids its *digest
+entry* from naming a root, because both sides fold the same entry and the
+authority would have to render. The projection is replica-side only, so it is
+outside that constraint entirely.
+
+Against ADR-0135 the conflict is real: either the projection is given a designated
+body root that ADR-0135 must be amended to allow, or the body is not restored as a
+field and ADR-0207's markdown round trip loses its source. This record does not
+settle it, and it should be settled before this one is Accepted. Note that the
+projection cost below is derived from the body render, so it is conditional on the
+first answer.
 
 **A table's designated body field gets no cell.** It is an ordinary
 `field.string()` by ADR-0207's definition, so the `column_name` CHECK would admit
@@ -982,7 +988,9 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   artifact of a badly written opponent: joining `_replica_row` before grouping
   forces a temp b-tree over every cell. Written the obvious way instead, grouping
   first and joining liveness once per row, two relations project in 582 ms and
-  1400 ms against one relation's 568 ms and 1104 ms. At the wide shape that gap is
+  1400 ms against one relation's 568 ms and 1104 ms, all four on the retired
+  query, so the comparison holds only if the body render is symmetric across the
+  two shapes, which is untested. At the wide shape that gap is
   inside the 7% run-to-run band and is **no measurable difference**; at the narrow
   shape it is **1.27x**, for
   1.5% and 4.1% more disk. The collapse is justified by interpretability and by

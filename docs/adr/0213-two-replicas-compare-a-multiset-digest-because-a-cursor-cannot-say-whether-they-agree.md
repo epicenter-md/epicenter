@@ -60,8 +60,7 @@ digest_sum    BLOB NOT NULL CHECK (length(digest_sum) = 8)
 ```
 
 **One column, not a table.** An earlier draft kept 4096 buckets a side so a
-mismatch could be localized. Nothing reads a bucket: the descent was refused for
-cost (below), so only the root is ever compared, and the root is a sum over every
+mismatch could be localized. Nothing reads a bucket: the descent was refused (below), so only the root is ever compared, and the root is a sum over every
 entry regardless of how they are grouped. A sum over every entry does not depend on how the
 entries were grouped, which is associativity rather than a measurement; the
 bucket table was 4096 rows per side that answered nothing.
@@ -183,22 +182,30 @@ replica from `_replica_cell` and `_replica_body`, and the authority from
 `_authority_cell` and `_authority_body` when it serves that pass to completion.
 Recomputing one side only leaves the other's drift permanent, and an authority
 whose sum has drifted is a mismatch every replica repairs every round forever,
-which is the failure this section exists to remove. **The recompute is a running total, not a terminal scan.** A pass that scans the
-store and then assigns what it found has no isolation story, and both readings
-fail: inside a transaction the terminal write raises `database is locked` while a
-user is typing, so the pass can never complete; outside one it writes back a sum
-for a snapshot the store has already left, which is the drift it was added to
-remove. So the pass accumulates entries as it visits them and commits
-`sum_at_scan_start + every delta folded since`, in the same transactions it is
-already taking.
+which is the failure this section exists to remove. **The recompute derives from content, and the arithmetic has to say so.** A pass
+that scans the store and then assigns what it found has no isolation story, and
+both readings fail: inside a transaction the terminal write raises `database is
+locked` while a user is typing, so the pass never completes; outside one it writes
+back a sum for a snapshot the store has already left, which is the drift it was
+added to remove.
+
+An earlier draft answered that with `sum_at_scan_start + every delta folded
+since`, which is a **self-assignment**: `digest_sum` is defined as exactly that
+running total, so committing it changes nothing and the omitted fold it exists to
+correct survives inside `sum_at_scan_start` untouched. What the commit has to be
+is **the sum of the entries the scan actually derived from content**, plus only
+those deltas for writes that landed after the scan had already passed their
+address. The first term is what makes it a recompute; without it there is no term
+that reads the store at all.
 
 The cost is not free and an earlier draft said it was: hashing every cell is
 **+295% on top of the scan** the pass already pays, about 2.5 seconds at 2.6M
 cells, and the body half is a document load and re-encode at 8.9 microseconds per
 small body and 38.6 at 40 KB, so 196k bodies is another 1.8 to 8.9 seconds. A
 completed pass therefore owes **+4.3 seconds at an 80-character body and +11.3 at
-40 KB**, four times the projection rebuild this design already calls its expensive
-cold start.
+40 KB**, about one and a half times the projection rebuild this design
+calls its expensive cold start, now that the rebuild is priced on the query the
+record decides.
 
 **That number also retires the bucket refusal below.** Enumerating a bucket was
 refused as a full scan plus a hash per cell, quoted at "of the order of a second";
@@ -266,10 +273,12 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
 - **A body write's premium scales with the document, and is not yet measured for
   the entry this record decides.** A linear entry, which a canonical re-encode is,
   measured **+26% to +40% at an 80-character body and +27% to +61% at 40 KB**:
-  7 to 11 microseconds added at the small size and 53 to 69 at the large one. The
-  new entry is free, because the write path already computes that byte string for
-  `doc_state`; the **old** entry is not, because nothing stores it and subtracting
-  it costs a full re-encode of the pre-edit document. A column holding the last
+  7 to 11 microseconds added at the small size and 53 to 69 at the large one. **Both**
+  halves cost a fresh load and a re-encode. The write path's own `doc_state` comes
+  from the application's live document, which is the one byte string this record
+  forbids the entry from using, so the new entry cannot reuse it; and nothing
+  stores the previous entry, so subtracting it costs a re-encode of the pre-edit
+  document. A column holding the last
   folded entry would recover most of it and no record proposes one. The
   earlier figures said the premium "does not scale with the document", which was
   true only of the snapshot, whose payload is 8 bytes at any size and which this
@@ -333,8 +342,8 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
   rounds.
 - **Hash only the version into an entry.** Cheaper per write by 2 to 15 points,
   and it makes the verifier trust exactly what it exists to verify.
-- **Bucket the entries so a mismatch can name a region.** Refused for the cost in
-  the Decision, and refusing it is what collapses 4096 rows per side into one
+- **Bucket the entries so a mismatch can name a region.** Refused on resumability
+  in the Decision, the cost argument having been retired by the recompute, and refusing it is what collapses 4096 rows per side into one
   column, because nothing then reads a bucket and the sum does not depend on how
   entries were grouped.
 - **Hash `doc_state` for a body entry.** The obvious encoding, and not a function
