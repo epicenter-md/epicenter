@@ -31,8 +31,8 @@
   (`:35-36`); the unit becomes a cell. Its refusal of distributed transactions is
   the reason this record can refuse cross-cell invariants, and survives intact.
   Also [ADR-0172](0172-sqlite-stores-convergent-facts-and-documents-raw-files-store-blob-bytes.md)
-  at its storage inventory: "pending intents" (`:23`) and "accepted nullable blob
-  digests" (`:26`) are both withdrawn. Its division of labour, SQLite for
+  at its storage inventory: "pending intents" (`:24`) and "accepted nullable blob
+  digests" (`:27`) are both withdrawn. Its division of labour, SQLite for
   convergent facts and raw files for blob bytes, is untouched.
   Also [ADR-0171](0171-every-durable-local-write-leaves-an-automatic-authority-obligation.md)
   at its mechanism, not its law. Every durable write still leaves the authority
@@ -58,13 +58,21 @@
   markdown-to-`Y.Text` minimal diff a prerequisite: `apps/epicenter/src/folder/parse.ts:96-101`
   assigns the body into a plain fields object today, which is correct for an LWW
   scalar and would destroy CRDT history once there is any.
+  Also [ADR-0206](0206-a-rows-id-comes-from-whoever-knows-it-and-one-relation-holds-every-fact.md)
+  (`Accepted`) at its presence law and its relations. Withdrawn: "`presence` is
+  two-valued and has one law: `absent` is a terminal tombstone" (`:50-51`), which
+  is what makes an address single-use and what collides with this record's own
+  reason for existing; and `_replica_row_facts` and `_replica_row_outbox`, which
+  become one cell relation with no queue. What survives, and is the premise this
+  record argues from throughout, is that a row's id comes from whoever knows it
+  and one relation holds every fact.
 - **Relates:** [ADR-0170](0170-one-live-epicenter-has-sealed-backups-and-restore-creates-a-fresh-authority-lifetime.md),
   which already decides that a restore creates a fresh authority lifetime. This
-  record borrows that noun rather than minting a second one, and adds only that
-  the lifetime is returned on the wire, because a replica cannot otherwise tell
-  it is talking to a different one.
-  [ADR-0206](0206-a-rows-id-comes-from-whoever-knows-it-and-one-relation-holds-every-fact.md)
-  (the address, and the reason an address must be reusable),
+  record borrows that noun rather than minting a second one, makes it observable
+  by returning it on every response, and adds one behaviour that record does not
+  decide: the authority re-mints its lifetime whenever a replica presents a cursor
+  at or beyond the authority's own counter. A cursor regression is the signal; the
+  lifetime is the durable carrier.
   [ADR-0125](0125-record-definitions-are-release-local-lenses-and-never-migrate-user-data.md)
   and [ADR-0168](0168-lenses-are-complete-pure-json-interpretations.md) (why
   storage must be schemaless), [ADR-0208](0208-every-app-folder-is-markdown-beside-one-queryable-database.md)
@@ -115,91 +123,131 @@ field it may know nothing about, so per-field and whole-row versions are not
 composable at any granularity.
 
 **Row presence is an ordinary cell** at a reserved column, not a second relation
-with a second merge rule. An earlier draft of this record gave row death its own
-algebra (`absent` beats `present` regardless of version, earliest death wins).
-That is deleted. It cost a relation, an algebra, and a join, and it made an
-address single-use for the lifetime of the Epicenter, which directly contradicts
-what ADR-0206 exists to allow.
+with a second merge rule. Giving row death its own absorbing algebra costs a
+relation, an algebra, and a join, and makes an address single-use for the lifetime
+of the Epicenter, which contradicts what ADR-0206 exists to allow.
 
-Whole-row JSON remains the **bootstrap transfer** format, where it measures **70% and 54% smaller on the
-wire** for a full seed by this record's own encoding (473 bytes per whole row
-against 121 per cell), and 3.0x to 3.4x faster to seed once JavaScript hashing and
-CHECK constraints are held constant on both sides. It is never a
-stored shape.
+There is one wire format, and it carries cells. Keeping whole-row JSON as a second
+format for the initial seed was considered on a size argument and refused: the 473
+bytes it compares against carry no per-field version, and this schema's version
+columns are `NOT NULL`. Against a whole-row encoding that does carry them, a seed
+is 34% smaller rather than 70%, which does not buy a second format the protocol
+would have to specify, version, and keep converging with the first.
 
 ### The layout
 
 ```sql
+CREATE TABLE _replica_metadata (
+	singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+	format_version INTEGER NOT NULL,
+	attached_deployment TEXT,
+	attached_principal TEXT,
+
+	authority_lifetime TEXT,
+	last_applied_cursor INTEGER NOT NULL CHECK (last_applied_cursor >= 0),
+
+	CHECK ((attached_deployment IS NULL) = (attached_principal IS NULL))
+) STRICT;
+
 CREATE TABLE _replica_cell (
-	namespace    TEXT NOT NULL,
-	table_name   TEXT NOT NULL,
-	row_id       TEXT NOT NULL CHECK (
-	               length(row_id) BETWEEN 1 AND 128 AND
-	               row_id NOT GLOB '*[^A-Za-z0-9._-]*' AND row_id GLOB '[A-Za-z0-9]*'),
-	column_name  TEXT NOT NULL CHECK (
-	               column_name = '!presence' OR column_name GLOB '[A-Za-z]*'),
-	value        TEXT,       -- canonical JSON; NULL is a cleared cell, which is a value
-	version_ms   INTEGER NOT NULL,
-	version_seq  INTEGER NOT NULL,
+	namespace TEXT NOT NULL,
+	table_name TEXT NOT NULL,
+	row_id TEXT NOT NULL CHECK (
+		length(row_id) BETWEEN 1 AND 128 AND
+		row_id NOT GLOB '*[^A-Za-z0-9._-]*' AND
+		row_id GLOB '[A-Za-z0-9]*'
+	),
+	column_name TEXT NOT NULL CHECK (
+		column_name = '!presence' OR column_name GLOB '[A-Za-z]*'
+	),
+
+	value TEXT,
+
+	version_ms INTEGER NOT NULL CHECK (version_ms > 0),
+	version_seq INTEGER NOT NULL CHECK (version_seq >= 0),
 	version_hash BLOB NOT NULL CHECK (length(version_hash) = 8),
-	dirty        INTEGER NOT NULL CHECK (dirty IN (0, 1)),
-	-- The NOT NULL is load-bearing: a CHECK only fails on FALSE, so
-	-- `value IN (...)` alone evaluates to NULL for a NULL value and would admit
-	-- a third liveness state.
-	CHECK (column_name <> '!presence' OR
-	       (value IS NOT NULL AND value IN ('"present"', '"absent"'))),
+
+	dirty INTEGER NOT NULL CHECK (dirty IN (0, 1)),
+
+	CHECK (
+		column_name <> '!presence' OR
+		(value IS NOT NULL AND value IN ('"present"', '"absent"'))
+	),
+
 	PRIMARY KEY (namespace, table_name, row_id, column_name)
 ) WITHOUT ROWID, STRICT;
 
 CREATE TABLE _replica_body (
-	namespace       TEXT NOT NULL,
-	table_name      TEXT NOT NULL,
-	row_id          TEXT NOT NULL,
-	generation_ms   INTEGER NOT NULL,   -- the presence cell that created this row
-	generation_seq  INTEGER NOT NULL,
-	doc_state       BLOB NOT NULL,
-	pending_update  BLOB,   -- local edits accumulate here
-	inflight_update BLOB,   -- sending MERGES pending into here and clears pending
-	send_token      INTEGER NOT NULL DEFAULT 0,   -- an ack must name the current one
+	namespace TEXT NOT NULL,
+	table_name TEXT NOT NULL,
+	row_id TEXT NOT NULL,
+	generation_ms INTEGER NOT NULL,
+	generation_seq INTEGER NOT NULL,
+	doc_state BLOB NOT NULL,
+	pending_update BLOB,
+	inflight_update BLOB,
+	send_token INTEGER NOT NULL DEFAULT 0 CHECK (send_token >= 0),
+	CHECK ((inflight_update IS NULL) OR send_token > 0),
 	PRIMARY KEY (namespace, table_name, row_id)
 ) WITHOUT ROWID, STRICT;
 
-CREATE TABLE _replica_metadata (
-	singleton           INTEGER PRIMARY KEY CHECK (singleton = 1),
-	format_version      INTEGER NOT NULL,
-	attached_deployment TEXT,
-	attached_principal  TEXT,
-	authority_lifetime  TEXT,   -- which authority the cursor below counts on
-	last_applied_cursor INTEGER NOT NULL CHECK (last_applied_cursor >= 0)
+CREATE VIEW replica_cell AS
+SELECT
+	namespace,
+	table_name,
+	row_id,
+	column_name,
+	value,
+	strftime('%Y-%m-%dT%H:%M:%fZ', version_ms / 1000.0, 'unixepoch') AS version_at,
+	version_seq,
+	lower(hex(version_hash)) AS version_hash,
+	dirty
+FROM _replica_cell;
+
+CREATE TABLE _authority_metadata (
+	singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+	format_version INTEGER NOT NULL,
+	lifetime TEXT NOT NULL,
+	next_cursor INTEGER NOT NULL CHECK (next_cursor >= 1)
 ) STRICT;
 
 CREATE TABLE _authority_cell (
-	cursor       INTEGER PRIMARY KEY,   -- the cursor IS the rowid
-	namespace    TEXT NOT NULL,
-	table_name   TEXT NOT NULL,
-	row_id       TEXT NOT NULL CHECK (/* the replica's CHECK, repeated */),
-	column_name  TEXT NOT NULL CHECK (/* the replica's CHECK, repeated */),
-	value        TEXT,       -- an opaque string, never parsed
-	version_ms   INTEGER NOT NULL CHECK (version_ms > 0),
-	version_seq  INTEGER NOT NULL CHECK (version_seq >= 0),
+	cursor INTEGER PRIMARY KEY,
+	namespace TEXT NOT NULL,
+	table_name TEXT NOT NULL,
+	row_id TEXT NOT NULL CHECK (
+		length(row_id) BETWEEN 1 AND 128 AND
+		row_id NOT GLOB '*[^A-Za-z0-9._-]*' AND
+		row_id GLOB '[A-Za-z0-9]*'
+	),
+	column_name TEXT NOT NULL CHECK (
+		column_name = '!presence' OR column_name GLOB '[A-Za-z]*'
+	),
+	value TEXT,
+	version_ms INTEGER NOT NULL CHECK (version_ms > 0),
+	version_seq INTEGER NOT NULL CHECK (version_seq >= 0),
 	version_hash BLOB NOT NULL CHECK (length(version_hash) = 8),
-	CHECK (/* the replica's !presence value CHECK, repeated */)
+	CHECK (
+		column_name <> '!presence' OR
+		(value IS NOT NULL AND value IN ('"present"', '"absent"'))
+	)
 ) STRICT;
+
 CREATE UNIQUE INDEX _authority_cell_address
 	ON _authority_cell(namespace, table_name, row_id, column_name);
 
 CREATE TABLE _authority_body (
-	namespace, table_name, row_id, generation_ms, generation_seq,
-	doc_state BLOB NOT NULL, cursor INTEGER NOT NULL,
+	namespace TEXT NOT NULL,
+	table_name TEXT NOT NULL,
+	row_id TEXT NOT NULL,
+	generation_ms INTEGER NOT NULL,
+	generation_seq INTEGER NOT NULL,
+	doc_state BLOB NOT NULL,
+	cursor INTEGER NOT NULL,
 	PRIMARY KEY (namespace, table_name, row_id)
 ) WITHOUT ROWID, STRICT;
 
-CREATE TABLE _authority_metadata (
-	singleton      INTEGER PRIMARY KEY CHECK (singleton = 1),
-	format_version INTEGER NOT NULL,
-	lifetime       TEXT NOT NULL,   -- re-minted on every restore or rebuild
-	next_cursor    INTEGER NOT NULL CHECK (next_cursor >= 1)
-) STRICT;
+CREATE INDEX _authority_body_cursor ON _authority_body(cursor);
 ```
 
 **The authority repeats every CHECK it can evaluate without parsing a value**,
@@ -241,7 +289,8 @@ way out.
 
 Each metadata singleton carries one more column than it looks like it needs. A
 replica stores `authority_lifetime` beside `last_applied_cursor`, and an
-authority mints a `lifetime` once per store; the reason is under "the authority
+authority mints a `lifetime` and re-mints it on restore, rebuild, or a cursor
+regression; the reason is under "the authority
 names its own lifetime" below.
 
 ### The version is `(version_ms, version_seq, version_hash)`
@@ -298,9 +347,8 @@ that takes no floor). They survive a crash. **A replica-global counter does not.
 process restart inside one millisecond reissues `version_seq = 0`, so a rewrite
 and the value it replaces carry the same `(ms, seq)`, the tie falls to the hash,
 and the hash knows nothing about which write came second: the later write is silently discarded on a
-**coin flip**, which is what 20,000 trials measure and what the mechanism
-predicts exactly, since the tie is broken by a hash that knows nothing about
-order.
+**coin flip**, which is what the mechanism predicts exactly and what 20,000 trials
+measure.
 
 **The presence cell has to be in the floor, not just the cell.** A column that has
 never been set has no `current`, but R1 measures every write against the row's
@@ -429,8 +477,7 @@ which is the whole point of dropping absorbing death.
 | cell, including presence | higher `(version_ms, version_seq, version_hash)` wins, plus R1 and R2 above, which are the only cross-cell effect in the design and belong to the presence cell alone |
 | body | `Y.mergeUpdatesV2` on raw bytes |
 
-There were three. Row death was the third, and collapsing it into the cell plane
-is what this revision is mostly about.
+Row death is not a third: it is a cell.
 
 A body is not last-write-wins, and the failure is not theoretical: two devices
 editing a 40KB document offline would lose one entire document. Last-write-wins
@@ -446,7 +493,7 @@ entry, which is the same cost this record refuses a replica-side cursor for: it
 measured on the decided schema at **+81 MB and +126 MB** with local work standing.
 The scan it replaces costs **48 ms and 112 ms** when nothing is owed, which is the
 common case, and in the state where the index actually costs those megabytes it
-saves only 13 ms and 50 ms, because both sides then have to return every cell.
+saves 26 ms and 38 ms, because both sides then have to return every cell.
 
 Encoding delivery as timestamp equality was tried and fails: write at T, confirm
 at T, write a new value at T again, and a derived `confirmed = written` flag reads
@@ -489,7 +536,7 @@ types into produces no body update at all, so a rule attached to body ingest nev
 fires, and a replica that held the previous incarnation renders its prose in the
 new row while a replica that joined later renders nothing. That is divergence and
 a content leak at once. Gating in the projection also keeps R1 and R2 the only
-cross-plane effects, because it reads rather than writes. Without this the body plane does not converge: a late update from a replica
+cross-cell effects and adds no cross-plane write, because it reads. Without this the body plane does not converge: a late update from a replica
 that never saw the delete produces `"the old note -- B typed this"` in two
 orderings and an empty body in two others. The alternative, never deleting a body,
 does converge and silently leaves the deleted incarnation's prose in the new row
@@ -574,9 +621,9 @@ to be assigned in address order, and 6.8x once they are assigned in arrival orde
 which is what a cursor means. Returning rows rather than counting them, at that
 same arrival-ordered fixture, it is 1894 ms against 282 ms. It is disk-neutral. On
 merge the chosen shape pays 1.3x at the arrival-ordered fixture and 1.9x at the
-address-ordered one, because moving a row to take a new cursor is real work. That is the price of moving a row to take a new
-cursor, it is paid once per changed cell rather than once per served page, and it
-is the trade this record takes deliberately rather than a wash.
+address-ordered one, because moving a row to take a new cursor is real work. It is
+paid once per changed cell rather than once per served page, and it is the trade
+this record takes deliberately rather than a wash.
 
 A new cursor is assigned only on a **strict** version increase, never on the
 equal case. Otherwise a retried byte-identical push takes fresh cursors for
@@ -639,8 +686,7 @@ size in the system, and an unbounded pass at 200k rows of 12 columns is 2.6M
 cells, and by this record's own wire encoding roughly 315 MB in one request.
 
 ADR-0142's separate bootstrap, history-gap, and lineage-mismatch recoveries are
-unnecessary as separate mechanisms. The lineage question is not: it is the authority lifetime
-above.
+unnecessary as separate mechanisms. The lineage question survives, as the authority lifetime above.
 
 ## Consequences
 
@@ -684,7 +730,7 @@ above.
   smaller.** Whole-row JSON holds no per-field version, which is the thing being
   refused, so pricing the refusal against it prices it against a shape that cannot
   do the job. One JSON record per row plus a per-field version map can, and there
-  the cell store is **7.5% and 8.9% smaller** (181.0 against 196.2 MB, 342.4
+  the cell store is **7.8% and 8.9% smaller** (181.0 against 196.2 MB, 342.4
   against 375.9). Both belong in the record: the first number is what the file
   grows by against what ships today, and the second is what per-field versioning
   costs once you insist on having it, which is nothing.
@@ -772,7 +818,9 @@ above.
 ## Considered alternatives
 
 Measured costs are at 200k rows of 12 columns unless stated. The full table,
-including what each refusal costs, is in the memo.
+including what each refusal costs, is in
+[the memo](../../specs/20260805T190000-replicated-cell-store-memo.md), which is
+scheduled for deletion on acceptance; the git ref is `f49ad33c44`.
 
 - **Keep ordered patch replay.** It protects exactly one thing: `[create,
   delete]` reordered leaves a permanently live row, because `delete` no-ops at an
@@ -803,7 +851,7 @@ including what each refusal costs, is in the memo.
   disagree.
 - **One JSON record per row with a parallel version map.** Cheaper on disk and
   faster to seed, and refused because one field change ships the whole record and
-  the whole map (8.9x at 12 columns and 3.0x at 3, like for like) and
+  the whole map (8.6x at 12 columns and 2.9x at 3, like for like) and
   because declaring merge groups makes the group names an unversioned wire
   contract a peer on another release cannot interpret.
 - **A hybrid logical clock with an actor id.** Its counter is adopted; its actor
@@ -816,9 +864,10 @@ including what each refusal costs, is in the memo.
   which forfeits the SQL projection.
 - **A dirty bit derived from timestamp equality.** Elegant, and it silently loses
   a same-millisecond rewrite.
-- **An index on `dirty`.** Costs up to 81 MB and 126 MB, around 30% of the file,
-  to save a 48 ms and 112 ms scan taken once per sync round; and in the state
-  where it costs that, it saves 3.6% and 8.4% rather than the whole scan.
+- **An index on `dirty`.** In the common case, with nothing owed, it costs no
+  extra disk and saves the whole scan. With every cell owed it costs +81 MB and
+  +126 MB, 45% and 37% of the base file, and then saves 7.2% and 6.3% rather than
+  the whole scan.
 - **Readable version columns.** ISO-8601 and hex order identically to the compact
   encoding and cost 36% and 29% more disk. A view is free.
 - **A 16-byte version hash.** Closes the exact-version oscillation for +19 MB and

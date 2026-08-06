@@ -134,7 +134,7 @@ There is **no** `field.body`, `field.text`, `field.blob`, or `field.document`.
 | `string`, `url`, `date`, `instant`, `datetime`, `select`, `number`, `integer`, `boolean`, `reference` | **LWW cell** | small, atomic, cheap to lose one of |
 | `json(inner)` | **LWW composite cell** | already the practice: `TranscriptionOutcome` is a discriminated union in one cell (`contract.ts:15-25`), `KeyBinding` is `{modifiers, keys}` in one |
 | `multiSelect`, `tags` | **LWW cell for v1**, first OR-Set candidate | concurrent tag additions on two devices lose one side. Rare, and OR-Set needs per-element tombstones. Name it, do not build it. |
-| the **body** field | **Yjs cell** (this is the change) | see below |
+| the **body** field | **Yjs plane**, not a cell (Revision 2) | see below |
 | row presence | **clocked row-level cell** | see section 7 |
 
 **The body is the finding.** A body is not a type; it is a designation on the
@@ -298,6 +298,11 @@ re-bootstraps rather than merging. There is no staleness concept today at all;
 `_authority_replicas` has four columns and no timestamp
 (`authority-schema.ts:36-50`).
 
+> **Revision 2 replaces this.** The delete-time cascade becomes a projection-time
+> generation gate: a body whose generation is not the row's current presence
+> version renders empty. A cascade cannot work once an address is reusable,
+> because a re-creation nobody types into produces no body update to hang it on.
+
 **Documents already cascade correctly and transactionally.** `storeFact` deletes the row's
 document state in the same transaction as the row delete: `document_updates` and
 `document_publication` on the replica (`replica.ts:248-260`), `document_updates`
@@ -394,6 +399,10 @@ outbox.
 **Amendment 2  -  no HLC, no actor id.** `version = (wallMillis, valueHash)` plus
 a local monotonic guard and a server clock clamp. Section 5.
 
+> **Revision 2 corrects the noun.** A body becomes a Yjs *plane* in its own
+> relation, carrying an incarnation and two delivery slots. It gets no cell:
+> admitting one would give a single value two homes and two merge rules.
+
 **Amendment 3  -  the body becomes a Yjs cell.** This closes the hole ADR-0207
 named and accepted, and it is the reason to do this work now rather than later.
 Section 4.
@@ -459,9 +468,12 @@ existing tests. It has to be a new differential test, written first.
 
 ## Revision 1: the version scheme is `(wall_ms, counter, actor)`
 
-> **Superseded by Revision 2 below on three things: the actor, the single body
-> delivery slot, and the tail-versus-vector byte comparison.** The counter
-> survives. Kept because Revision 2 only makes sense against it.
+> **Superseded by Revision 2 below on the actor.** Two further claims in this
+> section are reversed elsewhere and marked where they appear: the single body
+> delivery slot (see section 7 and the Rejected table), and the tail-versus-vector
+> byte comparison below, which ADR-0212 withdraws because this harness does not
+> reproduce it. The counter survives. Kept because Revision 2 only makes sense
+> against it.
 
 Section 5 recommended `(wallMillis, valueHash)` and rejected a hybrid logical
 clock. **That was wrong.** Five parallel designs plus an adversarial pass
@@ -510,6 +522,10 @@ marker.
 A body gets no clock at all. A scalar's clock resolves conflicts; a body's marker
 tracks delivery, and giving it a timestamp advertises a merge policy that does
 not exist.
+
+> **The byte comparison below is withdrawn.** ADR-0212 keeps this refusal on the
+> silent-failure argument alone: the 253B and 605B figures are not reproduced by
+> the harness that settles the record.
 
 **A state vector was tried and refused.** Pushing
 `encodeStateAsUpdateV2(doc, confirmedVector)` is 67x smaller than a full push,
@@ -616,9 +632,9 @@ mutually exclusive states, one with every cell owed and one with none.
 
 | Refused | Why | Measured cost of refusing it |
 | --- | --- | --- |
-| Whole-row JSON as the stored shape | per-field and whole-row versions do not compose | 2.12x and 1.66x the size of what ships today (181.0 vs 85.3 MB, 342.4 vs 206.2 MB), re-deriving one changed row 1.69x and 1.21x slower and the whole projection 16.8x and 8.6x slower. That opponent carries no per-field version at all; against one that does, the row-plus-version-map below, the cell store is 7.5% and 8.9% SMALLER |
+| Whole-row JSON as the stored shape | per-field and whole-row versions do not compose | 2.12x and 1.66x the size of what ships today (181.0 vs 85.3 MB, 342.4 vs 206.2 MB), re-deriving one changed row 1.69x and 1.21x slower and the whole projection 16.8x and 8.6x slower. That opponent carries no per-field version at all; against one that does, the row-plus-version-map below, the cell store is 7.8% and 8.9% SMALLER |
 | Real typed columns | ADR-0125: nowhere to put an unknown key | 3.7x the disk (181.0 vs 48.5 MB), against a fixture that stores no version, no `dirty` and no presence, so the ratio is a floor rather than like for like |
-| One JSON record per row plus a version map | one field change ships the whole record and map; merge-group names become an unversioned wire contract | 8.9x the wire at 12 columns and 3.0x at 3; on disk it is 8.1% and 8.9% LARGER than the cell store (196.2 vs 181.0 MB, 375.9 vs 342.4), so the refusal costs nothing on the top axis |
+| One JSON record per row plus a version map | one field change ships the whole record and map; merge-group names become an unversioned wire contract | 8.6x the wire at 12 columns and 2.9x at 3; on disk it is 8.4% and 9.8% LARGER than the cell store (196.2 vs 181.0 MB, 375.9 vs 342.4), so the refusal costs nothing on the top axis |
 | Interning the address | the replica must be readable in a SQL console with no joins | at most 34% of the file, before dictionary tables and integer keys are added back |
 | Readable version columns (ISO-8601 plus hex) | a view gives the same legibility for nothing | +65 MB (+36%) and +101 MB (+29%) |
 | A per-cell cursor on the replica | it is a durable local claim about the authority's state | +9.8 MB (5.4%) and +18.9 MB (5.5%) for the column, measured as a clean A/B on the settled schema; 91 MB and 140 MB if it is also indexed, which nothing here would query |
@@ -646,7 +662,7 @@ mutually exclusive states, one with every cell owed and one with none.
 | Tying `authority_lifetime` to `last_applied_cursor` in a CHECK | the two facts are independent | the reset state is unrepresentable and the replica re-resets every round forever |
 | Leaving the authority's address unchecked | a value is opaque, an address is not | one unrepresentable address aborts every page and wedges every replica permanently |
 | One hash for a cleared cell and for JSON `null` | they are different values | two replicas refuse each other forever, at probability 1 rather than 2^-64 |
-| An unbounded repair pass | `sealBatch` was the only upload bound in the system | 2.4M cells and 181 MB in one request |
+| An unbounded repair pass | `sealBatch` was the only upload bound in the system | 2.6M cells and roughly 315 MB in one request |
 | Merging inside a `json(inner)` field | one cell is one merge unit, so declared-together values never tear | a whole-blob write, which is the point rather than a limitation |
 
 `Supersedes` and `Amends` carry reciprocal links on both records, as
@@ -659,13 +675,16 @@ both planes, the whole required set), `bench8.ts` (per-row re-derivation),
 `r2m-storage.ts` (the settled schema against the two-relation and 16-byte-hash
 alternatives), `r2m-dirty-index*.ts`, `r2m-wire-and-intern.ts`,
 `r3m-cursor-column.ts` (the per-cell cursor A/B), `results2.json` (the
-row-plus-version-map opponent), and the `converge*.ts` proofs. Where a row quotes
+row-plus-version-map opponent), the `r3-*` probes (every protocol claim: the
+authority wedge, the restore race, the re-stamp, the body plane), the
+`converge*.ts` proofs, and `final-verify.ts`, `final-verify2.ts` and
+`final-verify3.ts`. Where a row quotes
 a fixture of 196k live rows rather than 200k, it is because the comparison it
 makes exists only on the bench that built both shapes; bench9's own 200k-live
 fixture measures 184.7 MB and 348.8 MB.
 
-**Harness.** The authoritative run is `bench9.ts`, which executes the settled
-`final-schema.sql` verbatim on both planes and covers the whole required set:
+**Harness.** The authoritative run is `bench9.ts`, which executes
+`final-schema.sql` as settled at the time of the run, on both planes and covers the whole required set:
 insert, scattered row read, projection rebuild, changed-since, one-field write,
 row delete, on-disk after `wal_checkpoint(TRUNCATE)`, and wire bytes. `bench.ts`
 through `bench8.ts` measured shapes that have since been superseded and are kept
