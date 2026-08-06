@@ -673,6 +673,12 @@ mutually exclusive states, one with every cell owed and one with none.
 | Leaving the authority's address unchecked | a value is opaque, an address is not | one unrepresentable address aborts every page and wedges every replica permanently |
 | One hash for a cleared cell and for JSON `null` | they are different values | two replicas refuse each other forever, at probability 1 rather than 2^-64 |
 | An unbounded repair pass | `sealBatch` was the only upload bound in the system | 2.6M cells and roughly 315 MB in one request |
+| A digest sum stored as `INTEGER` | every driver returns it as a double, and a sum is uniform over 2^64 | the stored sum becomes a function of write ORDER, so two sides holding identical cells compare unequal and repair fires on 89% of rounds instead of 13% |
+| A digest over cells only | a body has no version, so nothing detects a body divergence | 3 of 4000 randomized traces end at quiescence with divergent body text and identical cell roots; a body entry costs 48 extra repairs out of 42,641 |
+| A digest entry that hashes only the version | it would trust `version_hash`, which is what the merge already trusts | a value corrupted away from its own hash is invisible to the verifier AND unrepairable by the merge, on both sides, forever |
+| One column for both "a repair is owed" and "where the pass has reached" | a pass in flight overwrites it and clears it on completion | an obligation raised mid-pass is erased, leaving a row present and empty with nothing dirty and nothing owed |
+| An unscoped repair from a clamp re-stamp | the obligation names one row | a device permanently outside the clamp turns every write into a full-store re-read and re-push, 200 writes for 200 rewinds, never settling |
+| A root comparison with no precondition | a replica that owes work, or samples the root outside the page transaction, is not comparable | 500 full repair passes out of 500 rounds, with zero divergence |
 | Merging inside a `json(inner)` field | one cell is one merge unit, so declared-together values never tear | a whole-blob write, which is the point rather than a limitation |
 
 `Supersedes` and `Amends` carry reciprocal links on both records, as

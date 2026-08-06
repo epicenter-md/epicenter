@@ -148,6 +148,8 @@ CREATE TABLE _replica_metadata (
 	last_applied_cursor INTEGER NOT NULL CHECK (last_applied_cursor >= 0),
 
 	repair_from TEXT,
+	repair_epoch INTEGER NOT NULL DEFAULT 0 CHECK (repair_epoch >= 0),
+	digest_format INTEGER NOT NULL,
 
 	CHECK ((attached_deployment IS NULL) = (attached_principal IS NULL))
 ) STRICT;
@@ -196,7 +198,7 @@ CREATE TABLE _replica_body (
 
 CREATE TABLE _replica_digest (
 	bucket INTEGER PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
-	sum INTEGER NOT NULL
+	sum BLOB NOT NULL CHECK (length(sum) = 8)
 ) STRICT;
 
 CREATE VIEW replica_cell AS
@@ -216,7 +218,8 @@ CREATE TABLE _authority_metadata (
 	singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
 	format_version INTEGER NOT NULL,
 	lifetime TEXT NOT NULL,
-	next_cursor INTEGER NOT NULL CHECK (next_cursor >= 1)
+	next_cursor INTEGER NOT NULL CHECK (next_cursor >= 1),
+	digest_format INTEGER NOT NULL
 ) STRICT;
 
 CREATE TABLE _authority_cell (
@@ -259,7 +262,7 @@ CREATE INDEX _authority_body_cursor ON _authority_body(cursor);
 
 CREATE TABLE _authority_digest (
 	bucket INTEGER PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
-	sum INTEGER NOT NULL
+	sum BLOB NOT NULL CHECK (length(sum) = 8)
 ) STRICT;
 ```
 
@@ -559,8 +562,10 @@ either the acknowledgement fires anyway and clears bytes the authority rejected,
 or it does not and the replica retries forever.
 
 **A body belongs to an incarnation.** It carries the `(version_ms, version_seq)`
-of the presence cell that created its row, and nothing else. A body update naming
-an older generation is refused; **opening a body whose generation is not the row's
+of the presence cell that created its row, and nothing else. A body update naming an older
+generation is refused, and one naming a **newer** generation replaces `doc_state`
+rather than merging into it: `mergeUpdatesV2` across generations is what would
+splice the deleted incarnation's prose into the live row. **opening a body whose generation is not the row's
 current presence version replaces it** with an empty document at the current
 generation and both slots cleared; and **the projection renders such a body as
 empty** until that happens. The write door is not optional, and the projection gate is not redundant beside
@@ -633,16 +638,28 @@ original counter: the re-stamp collapses a *range* of `version_ms` onto one time
 and a `version_seq` was only ever meaningful inside its own millisecond, so
 preserving it lets a cell written at a later millisecond land below one written
 earlier and be eaten by R2. Rank rather than address order too, which is what puts
-a `create`'s presence cell first. Re-stamping a
+a `create`'s presence cell first. The body's generation is the presence cell's
+version, so a re-stamp that lowers presence and leaves the body behind makes a row
+stale against itself: the projection blanks it and the next open replaces it,
+losing prose the user typed seconds earlier on the device that typed it. Re-stamping a
 field cell alone would land it below its own row's presence cell, which is exactly
 what R1 refuses, so the debt would never clear.
 
-**A scheduled repair is durable, and it rewinds the read cursor.**
-`_replica_metadata.repair_from` holds the address the pass resumes at, so a crash
-between the re-stamp that created the obligation and the repair that discharges it
-does not lose it. The pass also resets `last_applied_cursor`, because a repair
-that only pushes leaves every cell the replica refused while its presence cell was
-high undelivered.
+**A scheduled repair is durable, and it carries two facts.**
+`_replica_metadata.repair_from` holds the address a running pass has reached;
+`repair_epoch` records that an obligation was raised, and a pass clears the
+obligation only if the epoch it began at is still current. One column cannot do
+both: a pass already in flight overwrites it continuously and clears it on
+completion, so an obligation raised mid-pass is erased by the pass that was
+already running, leaving a row present and empty with nothing dirty and nothing
+owed.
+
+A repair scheduled by a clamp re-stamp is **scoped to the row it names**, and only
+a presence-cell re-stamp rewinds `last_applied_cursor`. Unscoped, a device with a
+clock permanently outside the clamp turns every local write into a full-store
+re-read and re-push: measured, 200 ordinary writes produce 200 full rewinds and
+never settle, because the next write re-derives its version from the same fast
+clock.
 
 **A clamp refusal on a presence cell also schedules a repair for that row.**
 Lowering a presence cell is the one operation in the design that moves a version
@@ -717,15 +734,49 @@ cursor, and a new device bootstraps to a truncated store.
 So the multiset digest this record deferred is **adopted**. One table of 4096
 buckets on each side, a modular 64-bit sum per bucket, maintained by an add and a
 subtract per write. A cell's bucket is the first 12 bits of a hash of its
-address, so buckets are stable across releases and evenly filled, and a bucket is
-not an address range. Comparing roots answers "are we equal" in 8 bytes. A
-mismatch is not localized into a resumable cursor: it schedules the ordinary
-full-range repair pass, which already resumes by address, and the bucket set only
-says that one is owed.
+address, so buckets are stable and evenly filled. **A bucket is not an address
+range**, so a mismatch is not localized into a resumable cursor: it schedules the
+ordinary full-range pass, which already resumes by address, and the bucket set
+only says that one is owed. Enumerating a single bucket would cost a full scan
+plus a hash per cell, about 1.3 seconds at this record's own fixture, so the
+descent is not worth its own chunking scheme.
 
-**The digest covers cells, not bodies.** A body has no version to fold into a sum,
-so body repair stays unconditional: a repair sends each body's whole `doc_state`
-whether or not anything says it differs. It costs 72 KB of disk per side, and **+52%** on a local write
+**An entry hashes the address, the version, and the value.** Hashing only the
+version would make the verifier trust `version_hash`, which is the pairing the
+merge already trusts, so the one corruption this schema is shaped to prevent, a
+value that no longer matches its own hash, would be invisible to both.
+
+**A body has an entry too**, keyed on its address and generation and hashing
+`doc_state`. Without one a body divergence is undetectable: the cell roots agree,
+the cursor sees nothing, and a device that bootstraps afterwards gets an empty
+document while another holds the prose. Measured over 4000 randomized traces,
+three end at quiescence with divergent body text and identical cell roots; adding
+the body entry takes that to zero for 48 extra repair passes out of 42,641.
+
+**Both sides store a bucket sum as eight bytes, not as an integer.** A sum is
+uniform over 2^64 and every SQLite driver in this family returns `INTEGER` as a
+double unless a per-connection flag is set, so a sum read back is a different
+number from the one written. That makes the stored sum a function of write order
+rather than of the multiset, and two sides holding identical cells then compare
+unequal. A per-connection flag is the weaker fix: one connection opened without it
+corrupts the file.
+
+**A drop subtracts.** R2's delete returns what it removed and subtracts each entry
+in the same transaction, or the first deletion guarantees a permanent false
+mismatch.
+
+**A comparison has a precondition.** A replica compares roots only when it owes
+nothing and has applied the page through `next_cursor`, and only against a root
+the authority read in the same transaction as that page. Without it the comparison
+is not wrong so much as useless: measured, a replica making one ordinary local
+write per round schedules a full repair on 500 rounds out of 500.
+
+**The bucket count and the entry encoding are a cross-release contract**, so both
+metadata singletons carry a `digest_format` and it is compared before the roots.
+A peer on another format is incomparable rather than divergent. Measured, a
+release that changed the bucket count alone would report 496 buckets differing on
+identical state, and the root itself survives the change. It costs 72 KB of disk per side, 144 KB for the pair, and **+52%** on a local
+write
 that already pays the row-local floor, measured on this schema with a control arm.
 Implemented naively, with a second read to find the version it must subtract, it
 is +64% to +73%; folding that lookup into the floor aggregate the write already
