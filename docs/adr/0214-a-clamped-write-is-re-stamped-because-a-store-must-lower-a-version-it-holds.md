@@ -62,7 +62,8 @@ about 24 hours, and one resuming with an RTC reading 2031 strands it for years.
 Rewriting cannot repair it, because the local write rule never lowers
 `version_ms`. So a **clamp** refusal names the address and the authority's own time, and the replica re-stamps the refused cells of that row, **the row's dirty presence
 cell when it is not already among them and the floor would LOWER it**, and **every document
-generation that names the presence version being replaced, and only those**, in
+generation that names the presence version the row held when the transaction
+opened, and only those**, in
 one transaction at `(floor, rank)`. Scoping that move by the ROW instead unbinds a
 live row's prose whenever the presence does not move with it, which is the ordinary
 case: 174 blanked bodies per 1200 traces at 6 rows and 8 columns against 0 when it
@@ -88,7 +89,8 @@ local = the presence version this replica holds for the row, or zero when it hol
         set**, on the two conditions the rule above states. Both are load-bearing.
         Dirty, because the authority holds a clean presence and refuses a lowering
         of it as stale, while a dirty presence has never been accepted and
-        lowering it costs the authority nothing. Lowering, because the floor is
+        lowering it costs the authority nothing on the cell plane. On the body plane
+        it can cost everything, and that is what `heldGen` below answers. Lowering, because the floor is
         bounded BELOW by `A` and a presence written before a forward clock jump
         sits under `A`, so the unguarded rule RAISES it, and a raised presence is
         an incarnation boundary rather than a rewrite: R2 then drops the row's own
@@ -115,10 +117,20 @@ local = the presence version this replica holds for the row, or zero when it hol
         survived a round
 floor = (max(the authority's time,
              held.version_ms,
-             local.version_ms),
+             local.version_ms,
+             heldGen.generation_ms),
          the millisecond came from a presence version
            ? that version's seq + 1 + rank
            : rank,
+         where `heldGen` is the HIGHEST generation the authority holds for any document of
+         this row, returned with the refusal alongside `held`, because without it a
+         re-stamp lowers a generation the authority has already accepted: the body
+         strands above its own row, both stores converge on byte-identical bytes at
+         byte-identical generations so the digest agrees and schedules no repair, the
+         note renders empty on every device, and typing into it again writes into the
+         stranded document and still renders empty. A document whose generation crosses
+         one the authority holds sends its full `doc_state` rather than the staged
+         delta, because that push is a replace at the authority and not a merge,
          and when the maximum TIES across terms the presence branch is taken,
          SEEDED FROM THE HIGHEST TIED PRESENCE VERSION'S SEQ, because `held` and
          `local` can tie on the millisecond and differ on the counter, and seeding
