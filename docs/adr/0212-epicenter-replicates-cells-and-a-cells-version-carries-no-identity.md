@@ -436,10 +436,9 @@ simply its own clock. The reference is
   73 ms at this record's fixture, with no index over `version_ms`), because the held
 maximum only rises while the file is the same file, held rather than ever-accepted, because R2 and overwrites remove rows and no store
 without history can compute what it once held;
-and "the authority's time" means that quantity everywhere below: in the refusal
-payload, in the re-stamp floor, and in the inertness argument. A raw wall clock
-there is not a simplification, it is the livelock measured under "the clamp
-invariant is not unconditional".
+and "the authority's time" means that quantity in ADR-0214's refusal payload, re-stamp floor and inertness
+argument. A raw wall clock there is not a simplification: it is the livelock that
+record measures.
 
 `version_seq` is local monotonicity done structurally. Inflating `version_ms`
 instead would store its own drift.
@@ -750,8 +749,9 @@ argument above rather than on the byte count.
 
 ### The push response is a merge input, and its refusals are ADR-0214's
 
-A push is answered, and the answer is merged like any other delivery: a refusal is
-information the replica must act on, not an error it may drop. What a refusal
+A push is answered, and the answer is merged like any other delivery: a refusal is information the replica must act on, not an error it may drop, and
+clearing `dirty` is a consequence of merging that answer rather than a bookkeeping
+step, which is what covers a push that loses the authority's comparison. What a refusal
 means, how a clamped write is re-stamped, and why a local-first store must be able
 to lower a version it already holds are decided in
 [ADR-0214](0214-a-clamped-write-is-re-stamped-because-a-store-must-lower-a-version-it-holds.md).
@@ -837,6 +837,87 @@ those sit clean on the replica, which considers nothing owed and pushes nothing.
 
 ### Repair is bidirectional
 
+**A scheduled repair is one pair of columns, because neither source of obligation
+needs more.** `repair_from` is where a whole-store pass has reached, `repair_sum`
+is that pass's own accumulator, and non-NULL means one is owed. The accumulator is durable because a write folds a passed delta into it in the
+same transaction as the write, and because the **authority's** pass outlives the
+authority's own restart, where a watermark-only resume commits a sum over 280 of
+400 addresses, a permanent false mismatch that schedules a full pass every round
+forever. On a replica that harm is now unreachable by a different route: the rule
+below disqualifies a restarted pass from committing at all, so its accumulator
+carries the total rather than commits it. The
+authority holds the same pair, which is also what lets it fold ADR-0213's
+recompute into the pages it already serves instead of taking one terminal window
+under its own write lock.
+
+**The authority's pass belongs to the authority, not to whichever replica is
+pushing.** Its pair is one per store while a repair pass is one per replica, and a
+multiset sum has no idempotence, so two replicas folding overlapping ranges into
+the same accumulator add the overlap once each: measured, two interleaved passes
+over 200 addresses commit **exactly twice the truth**, and a partial overlap
+commits a number related to neither. This is the one pass whose safety the record
+elsewhere rests on "merge is idempotent, so re-sending anything is safe", and that
+argument does not reach the accumulator. So the authority refuses a chunk whose `from` is
+neither its current `repair_from` nor the sentinel `''`, and a chunk presented at
+the sentinel restarts the pass, discarding the partial accumulator. That guard is
+the whole fix and it uses only state the schema already carries: a mid-pass chunk
+off a stale watermark is still refused, so the double-count is closed, and an
+abandoned pass is self-healing rather than a watermark nothing can clear.
+Discarding a partial accumulator costs nothing, because the sum is committed only
+at completion. **A refusal carries the authority's current `repair_from`, and a refused replica
+resumes from it rather than restarting, or from the sentinel when the refusal carries none, because the pass it was
+refused behind has since completed or the authority has itself been restored. A
+sentinel chunk racing a pass another replica has since opened discards that
+partial, which costs work and not correctness, because the sentinel resets the
+accumulator rather than blending into it.** Without that the sentinel is otherwise its only move, and measured, two replicas
+repairing at once then restart each other forever: 0 passes complete in 300 rounds
+at two, three and four replicas, the authority never past the first chunk of ten.
+Adopting the carried watermark completes in ten, as does retrying the same `from`;
+what livelocks is restarting at the sentinel. **Only a replica whose own scan derived every address exactly once recomputes, and
+a pass it finds already open when it opens the store did not.** The pair records
+where the scan reached, not whether it got there contiguously, so an adoption made
+before a restart is invisible afterwards: measured, a restarted pass believes it
+derived every address once, recomputes, and commits a sum that is not its content.
+`repair_from` non-NULL and not the sentinel when this pass opens the store is the
+bit, and it disqualifies that pass rather than the process, so a later pass started
+cleanly at the sentinel recomputes normally; it costs no
+column, and the next comparison re-raises the pass. The rule is deliberately
+conservative and the cost is disclosed: a replica that restarts mid-pass pays a
+second full pass, and one that never completes a pass inside a single session
+never recomputes at all, so its own drifted sum is never repaired.
+An adopted watermark breaks that in both directions: forward by skipping what the
+other replica walked, and backward by re-deriving what this one already walked.
+"Covered the full range" is not the same criterion and admits the second case,
+measured at 80 of 200 addresses derived twice and a permanent false mismatch on
+that replica until it walks a pass cleanly end to end. An earlier draft added "and ignores a second replica's pass while
+one is open", which is neither implementable nor needed: `_authority_replicas` is
+deleted and nothing on the authority names a device, and with the guard alone two
+replicas alternating chunks off the current watermark commit exactly the truth. `repair_from` holds the address followed by one byte of plane, `0` for a cell and
+`1` for a document, because ADR-0213 orders the pass by `(address, plane)` and a
+cell and a document may share a column name: measured, an address-only watermark is
+wrong at chunk sizes 3 and 7, skipping a document forever under a strict `>` and
+double-counting under an inclusive `>=`, and correct at 5 by luck.
+`repair_from = ''` remains the sentinel for owed-but-not-started, since the empty
+string sorts below every legal value. A digest mismatch is a **state** check, and ADR-0213 makes it
+one by recomputing the sum from the store when a pass completes, so a pass that
+clears the flag without finishing the job is re-raised by the next comparison and
+nothing is lost. Without that recompute the sum is incremental only, and a sum
+that has drifted from its own content is a mismatch no pass can ever close. A clamp re-stamp is an
+**event**, and it names one row, so it is discharged inline in the transaction
+that creates it.
+
+An earlier draft scheduled both through an epoch, a covered-epoch and a scope, so
+that a running pass could absorb an obligation raised while it ran. Measured, that
+machinery was **worse** than the inline discharge that replaced it: a clamp
+re-stamp on a permanently skewed device discharges **200 of 200 times inline and
+0 of 200 under the epoch scheme**, because the covered epoch was read at the start
+of the pass and the epoch only increases. An earlier draft of this record said
+"0 of 200 either way", which understated the collapse by reporting a tie where the
+live probe reports a rout. A row-scoped raise could also clear a
+whole-store obligation it never discharged. Discharging the event inline removes
+the question rather than answering it.
+
+
 Merge is idempotent, so re-sending anything is safe and asking from cursor zero
 always converges. That repairs the replica and **not the authority**: every
 pulled cell has `dirty = 0`, so a replica whose authority has lost cells
@@ -889,11 +970,7 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   After a backward step of the authority's own clock it is at most the clamp width plus
   that step, because the reference ratchets on what the authority already holds:
   measured, an hour's step back admits a write 55 minutes above the plain clock
-  bound until the clock catches up. That is the deliberate price of the ratchet. A third window is the re-stamp
-  itself: the refusal names the row's presence but not the version the authority
-  holds for each refused cell, so 223 of 5331 re-stamped field cells land on or below a held
-  version, 66 of them exactly on it and 157 below, and 190 are discarded as stale,
-  silently, with both sides agreeing and nothing dirty. Re-taken against the settled column-keyed schema, these counts did not move:
+  bound until the clock catches up. That is the deliberate price of the ratchet. A third window is the re-stamp, which ADR-0214 owns and prices. Re-taken against the settled column-keyed schema, these counts did not move:
   4.43% against 4.44%, and the field-cell rate 3.56% against 3.56%. That 190 is 3.6% of the 5331 field cells, or
   4.4% of the 4282 clamp re-stamp
   events, and it is classified at push time, which is why 190 + 34 exceeds 223 by one. The collision has a second face the loss count

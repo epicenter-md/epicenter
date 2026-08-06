@@ -62,7 +62,7 @@ So the condition is not reachable by cutting words. Two things move it, and the
 first is **done**: the clamp, re-stamp and refusal subsystem is now
 [ADR-0214](../docs/adr/0214-a-clamped-write-is-re-stamped-because-a-store-must-lower-a-version-it-holds.md),
 260 lines lifted out verbatim with its own Context and Consequences, leaving
-ADR-0212 at 1180. It was self-contained, it is where rounds 8 to 14 spent almost
+ADR-0212 at 1264 once repair scheduling came back to it. It was self-contained, it is where rounds 8 to 14 spent almost
 every defect, and ADR-0213 had already proved the split works by taking detection
 out. Every extracted line was verified present in the new record before the old one
 was cut.
@@ -86,7 +86,7 @@ Rewritten each round. History is below; this is the working copy.
 
 ### The scope question, which round 18 answered by measuring the record
 
-ADR-0212 is about 1400 lines. By section: the refusal, clamp and re-stamp machinery is
+Measured on the pre-split record, ADR-0212 was about 1400 lines. By section: the refusal, clamp and re-stamp machinery is
 **247 lines**, the DDL and its comments 255, Consequences 237. The design that
 actually makes per-field merge work, the version, the local write rule, the
 reusable address and the write surface, is **175 lines**.
@@ -120,9 +120,8 @@ with the table rather than under it. The port draws one extra random number for 
 document column, which shifts the PRNG stream, so these traces are **not** the
 traces earlier rounds ran and the counters are not comparable across rounds. And
 "a knob on every rule" is not literal: the port dropped the two clamped floor arms,
-so ADR-0212's claim that `min(held, A + clamp)` is byte-identical to the unclamped
-floor still rests on the round-13 runs and has not been re-verified against the
-current key.
+so the claim, now ADR-0214's, that `min(held, A + clamp)` is byte-identical to the
+unclamped floor was re-verified in round 20: 40 of 41 counters identical.
 
 Reported as **separations over 20 independent 1200-trace seed blocks**, not as
 bands. A min-to-max band over N blocks has the identical defect this memo diagnoses

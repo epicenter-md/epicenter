@@ -2,7 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-08-06
-- **Provisional number.** `main` ends at ADR-0205; 0206 through 0212 land with
+- **Provisional number.** `main` ends at ADR-0205; 0206 through 0212 and 0214 land with
   this branch. Reconcile at merge time (`docs/adr/README.md`).
 - **Relates:** [ADR-0214](0214-a-clamped-write-is-re-stamped-because-a-store-must-lower-a-version-it-holds.md),
   whose clamp refusal no longer schedules a whole-store pass, because this record's
