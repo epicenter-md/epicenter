@@ -14,7 +14,7 @@ Always use bun: Prefer `bun` over npm, yarn, pnpm, and node. Use `bun run`, `bun
 
 Local dev: start apps from the repo root with `bun dev:<app>`; it runs every process the app needs, including the hosted API on `localhost:8787` for apps that talk to it. `bun dev:<app>:ui` is the frontend alone when that split exists; `bun dev:api` is the backend alone. Do not cd into an app to start it. Details in the `monorepo` skill.
 
-Agent instruction files: Treat `AGENTS.md` as the canonical shared instructions file. `CLAUDE.md` files are compatibility shims for Claude Code and should only import a sibling `AGENTS.md` with `@AGENTS.md`, plus rare Claude-specific notes if needed. When adding a nested `AGENTS.md`, add a sibling `CLAUDE.md` shim. Do not create orphan `CLAUDE.md` files.
+Agent instructions: `AGENTS.md` is canonical. Every `CLAUDE.md` imports its sibling with `@AGENTS.md`; add it with every nested `AGENTS.md`. Claude-specific notes are rare. Never create an orphan `CLAUDE.md`.
 
 Destructive actions need approval: Force pushes, hard resets (`--hard`), branch deletions.
 
@@ -31,5 +31,3 @@ Script suffix convention: `:local` suffix scripts work on a fresh clone without 
 Library logging: Do not use direct `console.*` in library code. Use `wellcrafted/logger`, except in CLIs, tests, and benchmarks.
 
 Writing conventions: Avoid en dash characters (`U+2013`). Prefer colon, comma, semicolon, parenthesis, or sentence break over em dash characters (`U+2014`), especially in UI strings, docs, comments, JSDoc, and commit messages. Keep user-facing text direct and concrete. When explaining Epicenter work, lead with a useful recommendation or outcome, carry implementation complexity the agent can safely handle, and surface only the reasoning and details that materially affect the user's judgment, action, safety, or review. Necessary difficulty is fine; incidental complexity is not. Load `writing-voice` for substantial prose or explicit tone/rewrite work.
-
-Review routing: For substantial implementations, public API changes, refactors, multi-file changes, or user requests to challenge, simplify, clean up, greenfield, or make a clean break, load `post-implementation-review` before final handoff or staging. Load `collapse-pass` directly for continuous indirection-reduction work. During review, escalate to `greenfield-clean-breaks` for ownership, lifecycle, API, package-boundary, clean-break, compatibility-refusal, or asymmetric-win decisions. Keep procedures in skills; keep `AGENTS.md` to routing.
