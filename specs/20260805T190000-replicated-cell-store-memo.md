@@ -317,6 +317,12 @@ that; it should be named as out of scope.
 
 ## 9. The mutation API, designed from scratch
 
+> **Revision 2 withdraws this section.** The API it proposes does not survive:
+> `create` has to be a verb, and `patch` is already the right name for a partial
+> per-cell write. The surface that ships is the one that already exists at
+> `packages/data/src/epicenter.ts:69-79`. Kept because the reasoning about
+> composite cells and named absence is still the reasoning that applies.
+
 Not CRUD, not JSON Patch. One primitive, `set`, over cells; the merge kind is
 visible at the call site because it is the thing that actually differs.
 
@@ -555,6 +561,15 @@ convergence proof rather than by reading.
 Each rule alone is order-dependent and the pair is not: 109,600 runs over all 255
 subsets of an eight-delivery set, zero divergent.
 
+**The mutation API does not change.** Section 9 proposed renaming `patch` to
+`set` and declaring "create is not a verb". Both are withdrawn. `create` is the
+only call that writes the presence cell, so it is the only one that can reuse an
+address, and it is already the one moment the type system can demand a complete
+row; `patch` is already partial by nature, which is what a per-cell write is.
+`create`'s two doors already implement ADR-0206 literally. One sentence in its
+docblock does stop being true: an id you deleted no longer "stays deleted",
+because `create` can reuse it.
+
 **A more appealing rule was tried and does not converge.** "A dead row holds
 nothing", where an `absent` write drops every cell regardless of version, is
 order-dependent: a cell newer than the delete survives if it arrives after a
@@ -587,9 +602,11 @@ Nothing in this table gets re-litigated without a number that beats it.
 | A single body delivery slot | an acknowledgement clears bytes the authority never received | every edit made during a push round trip is lost permanently, and no version exists that could notice |
 | Range-based set reconciliation as the delivery mechanism | it is a good verifier and a bad courier | finding one changed cell costs a 32 KB bucket exchange plus 586 address and version pairs, against one cell for a cursor |
 | An incremental digest as a verifier, for now | the store lifetime catches the realistic case for one column | 72 KB of disk and +17% to +27% per local write, an upper bound; it answers "are we equal" in 0.29 ms for 8 bytes |
+| Renaming `patch` to `set`, and deleting `create` | `create` is the only verb that can reuse an address, and `patch` is already the right name | churn with no measured benefit, and a merge rule that cannot be expressed |
 | Terminal, absorbing row death | it makes an address single-use, against ADR-0206 | a provider-keyed row never returns: 30 reconciler passes at strictly later versions leave it absent |
 | An unconditional cell drop on `absent` | it does not converge | a cell at a dead address is retained, unreadable, until the address is re-created |
 | Counters | two devices each adding one yields one | none exist, and one needs its own CRDT regardless |
+| Merging inside a `json(inner)` field | one cell is one merge unit, so declared-together values never tear | a whole-blob write, which is the point rather than a limitation |
 
 **Harness.** Every figure above comes from `bench.ts` through `bench7.ts` and
 `converge.ts` / `converge2.ts` / `converge3.ts`, built as runnable `bun:sqlite`

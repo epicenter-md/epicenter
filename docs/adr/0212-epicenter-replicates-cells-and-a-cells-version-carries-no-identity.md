@@ -261,31 +261,36 @@ and R2 discards it. It cannot be collected locally either, because a replica tha
 collected it and one that did not would disagree if the address were later
 re-created at a version between the two.
 
-### The write surface, which the merge rules dictate
+### The write surface, which is the one that already exists
 
 ```ts
-const noteId = newRowId();
-await notes.create(noteId, { title: 'Untitled' });   // asserts existence and a snapshot
-await notes.set(noteId, { title: 'Weeknotes' });     // one cell, last write wins
-await notes.set(noteId, { position: { x: 3, y: 7 } }); // one composite cell
-await notes.clear(noteId, ['summary']);              // absence is a value, not a missing key
-await using body = await notes.body(noteId);         // a body is opened, not set
-await notes.delete(noteId);
-await notes.create(noteId, { title: 'Back' });       // the same address, a new incarnation
+create(fields): Promise<Row>;          // the runtime mints the id and returns the row
+create(rowId, fields): Promise<Row>;   // an application supplies a key it already knows
+patch(id, changes): Promise<Result<Row | undefined, ReadError>>;
+delete(id): Promise<boolean>;
 ```
 
-`create` and `set` are separate because R2 makes them different operations, not
-as a matter of taste. `create` is the only call that writes the presence cell,
-and a presence write discards the previous incarnation's cells. If `set` wrote
-presence too, setting one field would drop every field older than it; if it never
-did, a `set` against a row the caller has never seen would store a cell at an
-address with no presence cell, unreachable by any read. `set` against a locally
-dead row is refused at the write door, where the caller can be told.
+This is `packages/data/src/epicenter.ts:69-79` unchanged. The exploration memo
+proposed renaming `patch` to `set` and declaring that "create is not a verb"; both
+are withdrawn. `create` has to be a verb, because it is the only call that writes
+the presence cell and therefore the only one that can reuse an address, and it is
+already the one moment the type system can demand a complete row. `patch` is
+already partial by nature, which is exactly what a per-cell write is.
 
-There is no `resurrect`: re-creating an address is `create`, and the complete
-snapshot an explicit resurrection API would have to demand is what R2 already
-enforces. Deliberately absent: `patch`, `update`, `upsert`, `transaction`,
-`updateMany`, and any call whose shape implies two cells move atomically.
+`create`'s two doors are ADR-0206 implemented literally: `suppliedId ?? mintRowId()`
+at `epicenter.ts:468`. Both doors return the row, so a caller never has to thread
+an id it did not choose.
+
+A `json(inner)` field is **one cell**. Its value is the whole blob, so a write
+replaces it whole and nothing merges inside it. That is the point rather than a
+limitation: one cell is one merge unit, so values that must move together are
+declared as one field and can never tear.
+
+One sentence in that docblock stops being true. It says `patch` "refuses an
+address that holds no live fact, so an id you already deleted stays deleted rather
+than being resurrected by a write." The refusal survives, and is R1's local
+counterpart. The conclusion does not: a deleted id can be reused, by `create`,
+which is the whole point of dropping absorbing death.
 
 ### Two merge algebras, deliberately not unified
 
@@ -448,13 +453,16 @@ lifetime above.
   and it measured **+65 MB (+36%) and +101 MB (+29%)** at the two shapes. A view
   rendering `version_ms` as a timestamp and `version_hash` as hex costs nothing
   and reads better than either, so the stored columns stay compact.
-- **Rebuilding the whole projection costs 580 ms at 2.4M cells and 1142 ms at
-  3M**, against 37 ms and 145 ms for whole-row JSON: a 16x and 7.9x regression on
-  the operation ADR-0208 depends on. It is affordable only because that
-  projection is derived on the reading side rather than being the replica's own
-  query path. Keeping presence in its own relation would have cost 1230 ms and
-  2090 ms, so the collapse recovered 2.1x and 1.8x of it for 1.7% and 4.9% more
-  disk. Every projection above was verified to produce byte-identical output.
+- **Re-deriving one changed row costs 1.69x and 1.21x** what whole-row JSON
+  costs (6.9 against 4.09 microseconds, 4.79 against 3.95). That is the operation
+  that runs in steady state, because a write touches one row, and the margin
+  there is small.
+- **Rebuilding the WHOLE projection costs 590 ms at 2.4M cells and 1122 ms at
+  3M**, against 35 ms and 130 ms: 16.8x and 8.6x. That number is a cold start, a
+  repair, or a re-import, and it is the price of the layout rather than a
+  steady-state cost. Keeping presence in its own relation would have cost 1230 ms
+  and 2090 ms, so the collapse recovered 2.1x and 1.8x of it for 1.7% and 4.9%
+  more disk. Every projection above was verified to produce identical output.
 - **Counters are refused.** "Add one" is not expressible; two devices each adding
   one yields one. None exist today, and one would need its own CRDT regardless.
 - **Every value must round-trip canonical JSON byte-identically.** This is newly
