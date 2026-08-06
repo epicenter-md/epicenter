@@ -283,7 +283,9 @@ false, because nothing would ever recompute anything.
 Every removal subtracts, not only the obvious one. ADR-0212's R2 deletes a row's
 older cells when a presence cell is written, **and its body row with them**, and
 the open door **replaces** a stale-generation body with an empty document. The
-**clamp re-stamp** moves a body's generation when it moves its row's presence, and the entry below hashes `generation_ms` and `generation_seq`,
+**clamp re-stamp** moves the generation of every document naming the presence
+version it replaces, and only those, and the entry below hashes `generation_ms`
+and `generation_seq`,
 so the entry changes while `doc_state` does not. The
 cell delete returns what it removed and subtracts each entry in the same
 transaction; the three body mutations move no `doc_state` a fold could hang on,
@@ -352,8 +354,7 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
   is the third consecutive round in which the priced artifact was removed after
   pricing. Hashing the value rather than the version alone is 2 to 15 points across four
   runs. **Folding the sum in memory and writing it once per transaction
-  cuts the premium by about a third**, to a median of **+37%** and **+30%**
-  across the same fifteen runs,
+  cuts the premium by about a third**, to a median of per-run minima of **+37%** and **+30%** across the same fifteen runs,
   and still satisfies the same-transaction rule; the higher figures assume one
   write per transaction.
 - **A row delete costs far more than a write, and it scales with row width.**

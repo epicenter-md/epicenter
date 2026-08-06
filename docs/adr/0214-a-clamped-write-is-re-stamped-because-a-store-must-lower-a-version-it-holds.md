@@ -63,8 +63,13 @@ Rewriting cannot repair it, because the local write rule never lowers
 `version_ms`. So a **clamp** refusal names the address and the authority's own time, and the replica re-stamps the refused cells of that row, **the row's dirty presence
 cell when it is not already among them and the floor would LOWER it**, and **every document
 generation that names the presence version being replaced, and only those**, in
-one transaction at `(floor, rank)`, where rank is each cell's
-position in the row's own `(version_ms, version_seq)` ascending order, and which is the one
+one transaction at `(floor, rank)`. Scoping that move by the ROW instead unbinds a
+live row's prose whenever the presence does not move with it, which is the ordinary
+case: 174 blanked bodies per 1200 traces at 6 rows and 8 columns against 0 when it
+is scoped, and an ahead-of-row document dragged down for R2 to destroy when its own
+presence lands. Rank is each cell's
+position in the row's own `(version_ms, version_seq)` ascending order, where the joined presence takes rank 0 by
+definition rather than by where its version happens to fall, and which is the one
 operation exempt from the local write rule above because it deliberately lowers
 a version. The floor is
 
@@ -79,9 +84,8 @@ local = the presence version this replica holds for the row, or zero when it hol
         re-stamp lowers nothing, four rounds with no progress. **Zeroing alone is
         not enough either, and is a regression on its own:** it removes the only
         term that knows about the skewed presence, so the re-stamped field lands
-        UNDER a presence nothing lowered. **So a dirty presence cell JOINS the re-stamp
-        set** when it is not already in the refusal AND the floor would lower it,
-        taking rank 0 so every field ranks above it. Both halves are load-bearing.
+        UNDER a presence nothing lowered. **So a dirty presence cell joins the
+        set**, on the two conditions the rule above states. Both are load-bearing.
         Dirty, because the authority holds a clean presence and refuses a lowering
         of it as stale, while a dirty presence has never been accepted and
         lowering it costs the authority nothing. Lowering, because the floor is
@@ -98,11 +102,12 @@ local = the presence version this replica holds for the row, or zero when it hol
         when a re-stamp raised a presence, and the lowering guard makes a raise
         unreachable: both orders are byte-identical on every case buildable under
         the guarded rule, so mandating one would be the dead arithmetic this record
-        kills elsewhere. Measured over four arms at
-        3 rows and 4 columns with the write door modelled, what separates them is
-        raises and landings-under-presence: 0/0 for the refused set, 0/330 for
-        zeroing, 137/0 for the unguarded drag, and **0/0 for the guarded drag**,
-        The writes-lost counter does NOT
+        kills elsewhere. Measured over four arms at 3 rows and
+        4 columns with the write door modelled, what separates the three rejected
+        arms from the decided one is raises and landings-under-presence, plus, for
+        the refused-set arm, the no-progress case above, which this pair does not
+        see: 0/0 for the refused set, 0/330 for
+        zeroing, 137/0 for the unguarded drag, and **0/0 for the guarded drag**. The writes-lost counter does NOT
         separate them: it reads 28 / 73 / 59 / 53 at this fixture and inverts
         against the narrower one, so the earlier 182-199 / 176-190 / 149-159
         ranking is a fixture artefact and is withdrawn as evidence. It excused
@@ -208,16 +213,17 @@ names the authority's held presence version, and the floor clears it. It stays
 inside the clamp because the authority accepted that version itself.
 
 **The authority clamps a body's generation exactly as it clamps a cell's
-version, and a clamp-refused body is re-stamped with its row.** A body carries the
+version, and a clamp-refused body is re-stamped with the incarnation it names.** A body carries the
 generation copied from the presence cell that created it, so a clamped `create`
 produces an equally skewed generation. Left unstated, the other branch chains into
 permanent loss through this record's own rules: the authority refuses the skewed
 generation and answers with a newer one, and ADR-0212's newer-generation reset then applies. Measured, the prose is gone
 from the device that typed it, the authority holds it under a generation no row
 has, and the digest mismatches every round while the repair pass re-sends bytes
-the authority refuses. A re-stamp that moves a row's presence also moves its body
-generation, and it leaves `send_token` and both delivery slots alone, because the
-row is the same incarnation rewritten rather than a new one.
+the authority refuses. A re-stamp moves the generation of every document
+naming the presence version it replaces, and only those; a document naming any
+other generation is untouched. It leaves `send_token` and both delivery slots
+alone, because the row is the same incarnation rewritten rather than a new one.
 
 **The counter is part of the floor, not decoration.** R1 compares
 `(version_ms, version_seq)`, so flooring the millisecond alone still lands a
@@ -230,7 +236,7 @@ nothing is dirty, the roots agree, and the call returned success.
 **The floor is the fix, and a flat authority time is the defect it repairs.**
 Measured, the write the Decision describes as lost outright vanishes from the
 device that typed it and from the authority, with nothing dirty and the digest
-roots agreeing.  Dragging a clean presence cell into the
+roots agreeing. Dragging a clean presence cell into the
 re-stamp set instead is worse: the authority refuses it as stale and R2 kills the
 cell anyway. Rank rather than the
 original counter: the re-stamp collapses a *range* of `version_ms` onto one time,

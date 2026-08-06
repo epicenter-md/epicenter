@@ -385,7 +385,10 @@ first answer.
 **A column declared `collaborative()` gets no cell.** Its name passes the
 `column_name` CHECK, so nothing in the schema refuses one, and admitting it would
 give one value two homes and two merge rules. A collaborative column lives only in
-`_replica_doc` and the projection restores it as a field on the way out. An
+`_replica_doc` and the projection restores it as a field on the way out, as
+`toDelta`, which is the canonical serialization: measured on Yjs v14, `applyDelta`
+round-trips plain text, rich text with marks, attributes and nesting, `toString`
+loses marks in three cases of four, and `toJSON` has no inverse. An
 undeclared column, including a plain markdown body, is an ordinary cell and lives
 only in `_replica_cell`. The invariant is the Lens's to hold, because neither table can see the other's
 rows: a `CHECK` cannot express it and this record does not pretend otherwise. When

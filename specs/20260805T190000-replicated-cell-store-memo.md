@@ -31,7 +31,8 @@ mechanism defects in two rounds**, all four of them silent:
   subsets order-dependent under the old predicate and **0 of 63** under `older
   than`, over 28,960 orderings.
 - the floor's `local` term, zeroed on a dirty presence, lands the re-stamped field
-  **under** a presence nothing lowered: 96 to 105 times per 400-trace block. The
+  **under** a presence nothing lowered: 330 times per 2400 traces at the four-arm
+  fixture, and 96 to 105 per 400-trace block at the narrower one it was found on. The
     answer is to drag the dirty presence into the re-stamp set **only when the floor
   would lower it**. Unguarded, the drag RAISES a presence written before a forward
   clock jump, 137 times per 2400 traces, and a raised presence is an incarnation
@@ -49,7 +50,7 @@ ten-delivery sweep. **The core is settled and the machinery around it was not**,
 and the prose churn was camouflage rather than the whole story.
 
 **The record describing it grew 5.2x.** ADR-0212 was 244 lines when this session
-began and is 1268 now. The design it describes is 175 lines. The memo went from roughly 700 to 1300.
+began and is 1272 now. The design it describes is 175 lines. The memo went from roughly 700 to 1300.
 
 **Findings per round are flat.** Rounds 17 through 20 produced 32, 31, 22 and 24
 findings; the correctness pass alone produced 8, 6, 4 and 5. That is not the shape
@@ -84,8 +85,7 @@ not a spec.
 So the condition is not reachable by cutting words. Two things move it, and the
 first is **done**: the clamp, re-stamp and refusal subsystem is now
 [ADR-0214](../docs/adr/0214-a-clamped-write-is-re-stamped-because-a-store-must-lower-a-version-it-holds.md),
-247 lines lifted out verbatim with its own Context and Consequences, leaving
-ADR-0212 at 1264 once repair scheduling came back to it. It was self-contained, it is where rounds 8 to 14 spent almost
+247 lines lifted out verbatim with its own Context and Consequences, leaving ADR-0212 at 1272 once repair scheduling came back to it. It was self-contained, it is where rounds 8 to 14 spent almost
 every defect, and ADR-0213 had already proved the split works by taking detection
 out. Every extracted line was verified present in the new record before the old one
 was cut.
@@ -231,11 +231,11 @@ re-stamp existing at all, and no fourth formula recovers it. The five ideas belo
 **Priced, and probably not worth building yet**
 
 
-- **Collaborative columns**: SETTLED, and the other way. They do collide with
+- **Collaborative columns**: BUILT by ADR-0212 and this heading does not apply to
+  them. What is OPEN is the reconciliation, not the feature. They collide with
   ADR-0130 (Accepted, one document per row, and it rejects declaring a document
   layout per table), ADR-0168 (tables declare no document capability) and
-  ADR-0135's `open(row.id)` handle. **The refusal stands and its stated reason was
-  false.**
+  ADR-0135's `open(row.id)` handle, and none of the three is amended yet.
   **Two errors in this row's earlier reasoning.** "Honeycrisp does not exist" is
   false: `apps/honeycrisp/` ships a ProseMirror editor today, wiring
   `configureYProsemirror` and `ySyncPlugin` (`src/lib/editor/Editor.svelte:6-14`),
@@ -956,7 +956,7 @@ mutually exclusive states, one with every cell owed and one with none.
 | A strict `>` merge predicate | the authority echoes a won push at its own version | the cell never clears `dirty` and re-pushes every round forever |
 | A single body delivery slot | an acknowledgement clears bytes the authority never received | every edit made during a push round trip is lost permanently, and no version exists that could notice |
 | Range-based set reconciliation as the delivery mechanism | it is a good verifier and a bad courier | finding one changed cell costs a bucket exchange and a per-bucket address list, against one cell for a cursor. The 32 KB and 635 pairs were arithmetic over a bucket count ADR-0213 has since deleted, so the magnitude no longer has a number behind it; the direction is what the refusal rests on |
-| ~~An incremental digest as a verifier, for now~~ **ADOPTED in round 4** | the deferral's two premises are both falsified: the lifetime does not catch a restore, and neither does a cursor regression | the deferral cost three rounds of patches to a mechanism that cannot carry the signal. Price paid: one 8-byte column per side, a median +62% on a local write that already pays the row-local floor, a median 8.3x on a row delete at 12 columns, and +26% to +40% on a body write rising to +27% to +61% at a 40KB document. It answers "are we equal" in 8 bytes. Settled as [ADR-0213](../docs/adr/0213-two-replicas-compare-a-multiset-digest-because-a-cursor-cannot-say-whether-they-agree.md) |
+| ~~An incremental digest as a verifier, for now~~ **ADOPTED in round 4** | the deferral's two premises are both falsified: the lifetime does not catch a restore, and neither does a cursor regression | the deferral cost three rounds of patches to a mechanism that cannot carry the signal. Price paid: one 8-byte column per side, a median of per-run minima of +62% (pooled +55.6%) on a local write that already pays the row-local floor, a median of per-run minima of 8.3x (pooled 7.81x) on a row delete at 12 columns, and +26% to +40% on a body write rising to +27% to +61% at a 40KB document. It answers "are we equal" in 8 bytes. Settled as [ADR-0213](../docs/adr/0213-two-replicas-compare-a-multiset-digest-because-a-cursor-cannot-say-whether-they-agree.md) |
 | Renaming `patch` to `set`, and deleting `create` | `create` is the only verb that can reuse an address, and `patch` is already the right name | churn with no measured benefit, and a merge rule that cannot be expressed |
 | Terminal, absorbing row death | it makes an address single-use, against ADR-0206 | a provider-keyed row never returns: 30 reconciler passes at strictly later versions leave it absent |
 | An unconditional cell drop on `absent` | it does not converge | a cell at a dead address is retained, unreadable, until the address is re-created |
@@ -980,7 +980,7 @@ mutually exclusive states, one with every cell owed and one with none.
 | Merging inside a `json(inner)` field | one cell is one merge unit, so declared-together values never tear | a whole-blob write, which is the point rather than a limitation |
 | Clamping the re-stamp floor's `held` term to the authority's time | `min(H, A)` is never greater than `A`, and `A` is already a term of the same maximum | zero. The term is inert by algebra and the floor collapses to `max(A, local)`, which is the round-8 defect: measured, 488 presence cells re-stamped below the authority's own and 506 then refused stale |
 | Clamping it to the authority's time plus the clamp width instead | the authority refuses anything above that bound, so a presence version it HOLDS is at or below it by construction | zero. The `min` never binds: byte-identical to the unclamped floor on every counter of a 1200-trace fuzz. The family has two members, not three |
-| Buying back the lost intents the unclamped floor costs | the only clamp that would do it is the one the invariant above makes inert | there is no third formula. The trade is 488 below-authority re-stamps and 488 of the 506 stale refusals against nothing measurable at 1200 traces, where both arms lose 518, and about 3% on the paired 4800-trace figure (1994 vs 2060 over 4800 traces, paired z = 2.67, bootstrap 95% CI 0.88% to 5.74%; the +18 at 1200 traces is one standard deviation of block noise), and it has to be chosen rather than engineered away |
+| Buying back the lost intents the unclamped floor costs | the only clamp that would do it is the one the invariant above makes inert | there is no third formula. The trade is 488 below-authority re-stamps and 488 of the 506 stale refusals against nothing measurable at 1200 traces, where both arms lose 518, and about 3% on the paired 4800-trace figure (1994 vs 2060 over 4800 traces, paired z = 2.67, bootstrap 95% CI 0.88% to 5.74%; the +18 at 1200 traces is one standard deviation of block noise; and this is pre-rekey and sign-flipping across later fixtures, so ADR-0214 rests nothing on it), and it has to be chosen rather than engineered away |
 | A repair watermark with no durable accumulator | `repair_from` is a watermark, not a running total, and the scanned term lives in memory | a pass that dies after three of ten chunks resumes and commits a sum over 280 of 400 addresses, which is a permanent false mismatch scheduling a full pass every round forever |
 | A terminal recompute under the authority's own write lock | an authority is the side N replicas push into, so its lock is not a local typist's | 0.84 microseconds per cell at the full fixture, so 2174 ms of held write lock at 2.6M cells, measured there rather than extrapolated; a concurrent push fails after burning its full `busy_timeout`, measured at 0, 1000 and 5000 ms |
 | Refusing a causally gapped `doc_state` at the write door | the premise was that `load` drops structs it cannot integrate, so `{u1, u3}` and `{u1}` entry identically | the premise is false on the pinned Yjs: the stores are 45 and 32 bytes and their entries differ. Enforcing it discards recoverable user prose and ADR-0212's two body-refusal answers both lose it |
@@ -993,9 +993,9 @@ mutually exclusive states, one with every cell owed and one with none.
 | Scanning the cell plane and the body plane as two address sequences under one watermark | a body edited mid-pass sorts behind a cell watermark, is folded as a passed delta, and is derived again when the body scan reaches it | the committed sum counts it twice, which is the permanent false mismatch the recompute exists to remove. One sequence, with a document at its column name |
 | Recomputing on "the scan covered the full range" rather than "derived every address exactly once" | an adopted watermark can sit BEHIND this replica's own scan, so the range is covered and part of it twice | 80 of 200 addresses derived twice and a permanent false mismatch on that replica until it walks a pass cleanly end to end |
 | Leaving the entry's `\0` delimiter to the address GLOBs | GLOB stops at the first NUL, so no CHECK ever saw one | `row_id "a\0b" + column "title"` and `row_id "a" + column "b\0title"` hash identically, a missed divergence in the detector itself. Closed with `instr(..., char(0)) = 0` on all four components, which costs nothing and refuses no legal address |
-| Quoting a band from whichever runs fit the sentence | six saved runs of one unmodified probe exist, and two consecutive claims used two different subsets of them | the 3-column digest premium was stated as +55% to +57% from two runs; a sixth run lands at +60%, outside the stated ceiling. The honest full-corpus bands are +49% to +66% and +54% to +60%, and +33% to +44% and +29% to +35% folded |
+| Quoting a band from whichever runs fit the sentence | six saved runs of one unmodified probe exist, and two consecutive claims used two different subsets of them | the 3-column digest premium was stated as +55% to +57% from two runs; a sixth run lands at +60%, outside the stated ceiling. The honest full-corpus spreads are in the provenance table and are not restated here |
 | Crediting the durable replica accumulator with preventing the 280-of-400 resume | round 16's restart bit forbids a restarted pass from committing at all, so that harm is unreachable on a replica | the column is still earned, by the authority's own restart and by the same-transaction fold of passed deltas. What the bit costs instead is disclosed: a replica that never completes a pass inside one session never recomputes, so its drifted sum is never repaired |
-| An entry that lets a cleared cell contribute no value bytes | a cell holding the empty string contributes zero value bytes too, and the empty string is storable because this record refuses `json_valid` | 1280 collisions among 6720 tuples, all one family: the two fold the same entry, the merge's value guard refuses both directions, the projection differs, and both sides read clean forever. Closed with a one-byte `present_tag`, which is the move ADR-0212 had already made one layer down in `version_hash` |
+| An entry that lets a cleared cell contribute no value bytes | a cell holding the empty string contributes zero value bytes too, and the empty string is storable because this record refuses `json_valid` | 1280 collisions among the 5440 pre-fix tuples, against 0 among the 6720 the decided entry forms, all one family: the two fold the same entry, the merge's value guard refuses both directions, the projection differs, and both sides read clean forever. Closed with a one-byte `present_tag`, which is the move ADR-0212 had already made one layer down in `version_hash` |
 | Recomputing on a criterion the schema cannot evaluate after a restart | `repair_from` records where a scan reached, not whether it got there contiguously | a restarted pass believes it derived every address once and commits a sum that is not its content. The bit is `repair_from` non-NULL and not the sentinel at open, which costs no column |
 | A refusal that does not carry the authority's current `repair_from` | a refused replica has no legal `from` to send, so the sentinel is its only move | 0 passes complete in 300 rounds with two, three or four replicas repairing at once, the authority never past the first chunk of ten, because the replicas restart each other forever. Adopting the watermark the refusal carries completes in ten rounds |
 | "The authority ignores a second replica's pass while one is open" | `_authority_replicas` is deleted and nothing on the authority names a device | unbuildable, so it was a sentence rather than a decision. The from-guard alone commits exactly the truth with two replicas alternating chunks |
@@ -1104,14 +1104,23 @@ it would withdraw eight of eight live figures sampled against it.
 | 2.0 s / 7.3 s projection rebuild, eight runs spanning 10% | `r10m-projection-fair.ts`, `r13m-render-cost.ts` | `PGBg` and `WITH` (byte-identical SQL) | `r10m-projection-fair.out`, `R11-proj-repro.log`, `R11-attr.log`, `rerun/RERUN-attr.log`, `r13m-render-cost.out`, `r13m-render-cost-2.out`, `r14m-attr.out`, `r14m-render-cost.out` |
 | 954 to 976 ms and 4670 to 4755 ms render, 4.8 and 4.7 us per row | `r13m-render-cost.ts` | `RENDER ALONE` = `WITH` minus `WITHOUT`, control `WITHb` | `r13m-render-cost.out`, `-2.out`, `r14m-render-cost.out` |
 | digest write premium, **median-of-per-run-minima +62% @12 and +55% @3** over fifteen runs (spread 49-69 and 48-63); median-of-medians is +57% and +51% | `r7m-digest-onecolumn.ts` | `FD vs F`, the **median of the per-run minimum**, which is not a median and is biased upward; the pooled median over every raw sample is +55.6% and +50.7% | `r7m-digest-onecolumn*.out`, `r13m-`, `r14b-`, `r16m-`, `r17m-` |
-| folded, **median +37% @12 and +32% @3** over ten runs (spread 31-44 and 26-38) | same | `FDM vs F`, **median** per run | same |
+| folded, **median-of-per-run-minima +37% @12 and +30% @3** over fifteen runs (spread 31-44 and 26-38) | same | `FDM vs F`, **median** per run | same |
 | row delete, **median 8.3x @12** over five runs (spread 7.5-9.1) | `r7m-body-and-delete-onecolumn.ts` | `DD vs D`, the **median of the per-run minimum**; pooled median 7.81x and 5.45x, control pooled at 1.00x | `r7m-body-and-delete-onecolumn.out`, `r13m-body-and-delete-onecolumn.out`, `r14b-delete.out`, `r17m-*` |
 | 2174 ms authority write lock, 0.84 us per cell | `r11-authority-lock.ts` | `scan + hash + commit`, `N=2600000` | `r13m-lock-2600k.out` |
 | 4361 re-stamps, 5422 field cells, 224 / 193 / 35 | `r20-e-fuzz.ts` | `FLOOR=r9 TRIALS=1200` on the settled column-keyed schema | `r22m-split-claims.out` |
 | 81.3% against 0% digest storage type | `r11b-digest-io.ts` | `INTEGER` against `BLOB`, 400 rounds | `r11b-digest-io.out` |
 | 199,990 ms monotonic-guard drift | `r16-monotonic-drift.ts` | the refused `max(now, prev+1)`; moves with machine speed | `r16-monotonic-drift.out` |
 | 109,600 orderings over 255 subsets, zero divergent | `converge3.ts` | exhaustive, JavaScript model of the algebra, no database | `r15-g-converge3.out` (NOT `r15m-converge.out`, which is `converge.ts`'s) |
-| 1280 collisions among 6720 tuples before the tag, 0 after | `r17m-presenttag.ts` | the encoding ADR-0213 decides, `0x00` cleared / `0x01` present | `r17m-presenttag.out` (`r16-nul.ts` measured a different tag shape) |
+| 96 to 105 landings under presence per 400-trace block (zeroing arm) | `r23-f-seedblocks.ts` | four disjoint blocks; superseded as evidence by the four-arm figure below | `r23-f-seedblocks.out` |
+| four arms, raises / under-presence `0/0`, `0/330`, `137/0`, `0/0`; writes lost `28 / 73 / 59 / 53` | `r24-h-fix-check.ts` | 3 rows, 4 columns, write door modelled, 6 blocks x 400 traces; the writes-lost column does NOT separate the arms and is not evidence | `r24-h-fix-check.out`, `r24-h-fix-check-2r3c.out` |
+| 137 raises per 2400 traces and 9 R2 kills outside the set (unguarded drag) | `r24-h-fix-check.ts` | the same harness; guarded arm 0 on both | `r24-h-fix-check.out` |
+| the raise witnessed end to end, and both intra-transaction orders | `r24-g-drag-raises.ts`, `r24-f-restamp-doc.ts` | empty databases, real Yjs, one forward clock jump, one chunked push | `r24-g-drag-raises.out`, `r24-f-restamp-doc.out` |
+| 174 blanked bodies per 1200 traces, 0 when the generation move is scoped | `r25-d-widefuzz.ts` | 6 rows, 8 columns, 3 replicas with a clock correction, 4 blocks x 300 traces, both gen-policies | `r25-d-widefuzz.out` |
+| the blank body and the destroyed ahead-document, witnessed | `r25-b-generations.ts` | real `bun:sqlite` on the settled schema, real Yjs, driven to quiescence | `r25-b-generations.out` |
+| the equality boundary: 566 field landings above, 10 at, 0 under | `r25-a-boundary.ts` | 288 re-stamps enumerated over dirty/clean x live/dead x 8 `held` shapes | `r25-a-boundary.out` |
+| termination under the guard, 2 rounds and 0 dirty on five adversarial shapes | `r25-c-terminate.ts` | chunks deliberately omitting the presence, cap 64 | `r25-c-terminate.out` |
+| the evidence base re-derived across 19 new fixtures, no ranking inverted | `r25e-arms-wide.ts` | rows, columns, replicas, skew, write door and clock-correction rate all parameterised | `r25e-*.out` |
+| 1280 collisions among the 5440 pre-fix tuples, against 0 among the 6720 the decided entry forms | `r17m-presenttag.ts` | the encoding ADR-0213 decides, `0x00` cleared / `0x01` present | `r17m-presenttag.out` (`r16-nul.ts` measured a different tag shape) |
 
 **And a min-to-max band over seed blocks is the same mistake in a different
 costume.** Round 19 replaced min-of-N with ranges over five blocks. Round 20 ran
@@ -1127,7 +1136,7 @@ breaking.** Four rounds running, a quoted band failed to bound a fresh run of it
 own probe on its own arm, and each round widened it. The cause is the statistic:
 almost every figure here was `min` over N runs, and the minimum of N samples falls
 monotonically as N rises, so a band anchored on it is guaranteed to breach the next
-time anyone runs the probe. Ten runs of the digest premium now span 49 to 69 where
+time anyone runs the probe. Fifteen runs of the digest premium now span 49 to 69 where
 six spanned 49 to 66; nothing changed but the count. The figures above are
 restated as **medians with the spread beside them**, because a median is stable
 under resampling and a minimum is not. The same defect explains the null control:
