@@ -192,8 +192,7 @@ replica goes offline mid-pass, and, absent the one-pass-at-a-time rule ADR-0212
 decides for the authority, two interleaved passes leave the loser's
 partial as the durable value. Measured: a pass abandoned after six of ten pages
 leaves the side summing 60% of its own store, which every peer then mismatches
-every round. Both sides therefore carry a separate accumulator, `repair_sum`,
-which is where the next section starts.
+every round. Both sides therefore carry a separate accumulator, `repair_sum`.
 Recomputing one side only leaves the other's drift permanent, and an authority
 whose sum has drifted is a mismatch every replica repairs every round forever,
 which is the failure this section exists to remove. **The recompute derives from content, and the arithmetic has to say so.** A pass
@@ -318,13 +317,12 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
   write per transaction.
 - **A row delete costs far more than a write, and it scales with row width.**
   ADR-0212's R2 drops a row's cells when a presence cell is written, and each drop
-  is an entry to subtract. Measured across runs whose control arms sit at 1.00x to
-  1.02x: **8.6x to 9.1x at 12 columns and 5.9x to 6.6x at 3**, falling to **6.5x
-  to 6.7x** and **4.9x to 5.2x** when the sum is folded in memory and written
+  is an entry to subtract. Measured across three runs whose control arms sit at 0.93x to
+  1.11x: **7.6x to 9.1x at 12 columns and 5.1x to 6.6x at 3**, falling to **5.7x
+  to 6.7x** and **4.2x to 5.2x** when the sum is folded in memory and written
   once. "One add and one subtract per write" is true of a field write
   and badly untrue of a delete.
-- **A body write's premium scales with the document, and is not yet measured for
-  the entry this record decides.** A linear entry, which a canonical re-encode is,
+- **A body write's premium scales with the document, and is measured on the entry this record decides.** A linear entry, which a canonical re-encode is,
   measured **+26% to +40% at an 80-character body and +27% to +61% at 40 KB**:
   7 to 11 microseconds added at the small size and 42 to 69 at the large one, on a 40 KB control arm wider than the effect (+15% to -14% against the small arm's 3%), so the scaling is where the numbers point rather than something they establish. **Both**
   halves cost a fresh load and a re-encode. The write path's own `doc_state` comes

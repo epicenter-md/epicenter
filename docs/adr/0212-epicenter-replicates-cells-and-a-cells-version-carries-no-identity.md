@@ -282,8 +282,10 @@ which is all of them except one. A CHECK the replica holds and the authority doe
 not is a wedge: applying a page is one transaction, one unrepresentable cell
 aborts the whole page, the cursor never advances, and the only way to change a
 cell is to write a newer version of an address the replica cannot even express.
-Measured: a single malformed value leaves a replica at cursor zero having applied
-nothing, forever, and a page size of one just moves where it wedges.
+The mechanism is that a single malformed value leaves a replica at cursor zero
+having applied nothing, forever. The probe that measured this no longer runs
+against the settled schema, so the figure is withdrawn under the rule the memo
+records, and the wedge follows from the CHECK asymmetry alone.
 
 **The projection must therefore guard `json(value)`.** Removing the CHECK moved
 the wedge from the write path to the read path, where it is worse: one unreadable
@@ -722,8 +724,8 @@ the forward reach of `held`, and both clamps are dead arithmetic:
   above its row's presence, and nothing the replica can write inside the clamp
   beats a held version the merge is monotone against. The 1200-trace fuzz cannot
   reach this state, because its authority clock only ever advances. So the
-  authority's clamp reference is `max(its own clock, the highest version_ms it has
-  accepted minus the clamp width)`, which cannot ratchet past what the clamp
+  authority's clamp reference is `max(its own clock, the highest version_ms it
+HOLDS minus the clamp width)`, which cannot ratchet past what the clamp
   already permitted and restores the premise by construction.
 
 So the family has exactly two members, not three, and choosing between them is a
@@ -744,7 +746,7 @@ unambiguous; the fourth is not measured to that precision. Across four disjoint
 1200-trace blocks the intent difference runs +18, -7, +33, +22, one block with the
 sign reversed and a block standard deviation near 17, so the +18 above is one
 standard deviation of block noise. At 4800 traces the totals are **1994 against
-2060, +66 or 3.3%**, about two standard errors: the direction is probably real and
+2060, +66 or 3.3%**, paired z = 2.67 with a bootstrap 95% CI of 0.88% to 5.74%: the direction is probably real and
 the magnitude at 1200 traces is not. No third formula recovers both: the clamp that would buy them
 back is the one the invariant above makes inert.
 
@@ -826,9 +828,17 @@ the same accumulator add the overlap once each: measured, two interleaved passes
 over 200 addresses commit **exactly twice the truth**, and a partial overlap
 commits a number related to neither. This is the one pass whose safety the record
 elsewhere rests on "merge is idempotent, so re-sending anything is safe", and that
-argument does not reach the accumulator. So the authority opens at most one pass at
-a time, refuses a chunk whose `from` is not its current `repair_from`, and ignores
-a second replica's pass while one is open. `repair_from = ''` is the sentinel for
+argument does not reach the accumulator. So the authority refuses a chunk whose `from` is
+neither its current `repair_from` nor the sentinel `''`, and a chunk presented at
+the sentinel restarts the pass, discarding the partial accumulator. That guard is
+the whole fix and it uses only state the schema already carries: a mid-pass chunk
+off a stale watermark is still refused, so the double-count is closed, and an
+abandoned pass is self-healing rather than a watermark nothing can clear.
+Discarding a partial accumulator costs nothing, because the sum is committed only
+at completion. An earlier draft added "and ignores a second replica's pass while
+one is open", which is neither implementable nor needed: `_authority_replicas` is
+deleted and nothing on the authority names a device, and with the guard alone two
+replicas alternating chunks off the current watermark commit exactly the truth. `repair_from = ''` is the sentinel for
 owed-but-not-started: nothing has been reached yet, and the empty string sorts
 below every legal address. A digest mismatch is a **state** check, and ADR-0213 makes it
 one by recomputing the sum from the store when a pass completes, so a pass that
@@ -1006,7 +1016,12 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   After a backward step of the authority's own clock it is the clamp width plus
   that step, because the reference ratchets on what the authority already holds:
   measured, an hour's step back admits a write 55 minutes above the plain clock
-  bound until the clock catches up. That is the deliberate price of the ratchet.
+  bound until the clock catches up. That is the deliberate price of the ratchet. A third window is the re-stamp
+  itself: the refusal names the row's presence but not the version the authority
+  holds for each refused cell, so 190 of 4282 re-stamped field writes (4.4%) land
+  on or below a held version and are discarded as stale, silently, with both sides
+  agreeing and nothing dirty. A fourth floor term of the same shape as the third
+  would close it; it is not taken here, and it is priced in the memo.
   Backwards there is no bound at all: the clamp only refuses a clock that is
   ahead, so a replica with a dead clock writes into the past, loses to a
   months-old value, and is never refused, never re-stamped, and never repaired.
@@ -1025,8 +1040,7 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   be about 7.8 GB and the ratio below would collapse toward 1.0x. The headline is
   measured at the small size and the caveat belongs beside it, not only in prose.
 - **The store costs 2.14x and 1.69x today's whole-row JSON on disk** once the body
-  plane is counted, and 2.12x and 1.66x with the cell relation alone (181.0 MB against
-  85.3 MB; 342.4 MB against 206.2 MB, or 1.66x), and 3.69x its own payload,
+  plane is counted, and 2.12x and 1.66x with the cell relation alone (181.0 MB against 85.3 MB, and 342.4 MB against 206.2 MB), and 3.69x its own payload,
   falling to 2.48x at 1M rows of 3 columns, so the multiplier is a function of row
   width and a single figure for it is not meaningful.
 - **Per-field versioning is not free, and this shape is not the cheapest way to
@@ -1213,8 +1227,8 @@ every storage comparison was built on, with 980k of 3 in brackets where it moves
 conclusion. Timings taken on the settled schema use a 200k all-live fixture and
 are marked. The full table,
 including what each refusal costs, is in
-[the memo](../../specs/20260805T190000-replicated-cell-store-memo.md), which is
-scheduled for deletion on acceptance; the git ref is `882cedea46`.
+[the memo](../../specs/20260805T190000-replicated-cell-store-memo.md), which is scheduled for deletion on acceptance; the git ref is that file's last
+commit before deletion, which cannot be written down before it exists.
 
 - **Keep ordered patch replay.** It protects exactly one thing: `[create,
   delete]` reordered leaves a permanently live row, because `delete` no-ops at an
@@ -1263,7 +1277,7 @@ scheduled for deletion on acceptance; the git ref is `882cedea46`.
 - **An index on `dirty`.** In the common case, with nothing owed, it costs no
   extra disk and saves the whole scan. With every cell owed it costs +81 MB and
   +126 MB, 45% and 37% of the base file, and then saves nothing
-  measurable, at −2.6% to +7.2% across runs, from a measurement structurally
+  measurable, at -2.6% to +7.2% across runs, from a measurement structurally
   unable to see the difference.
 - **Readable version columns.** ISO-8601 and hex order identically to the compact
   encoding and cost +69.1 MB (+37%) and +99.8 MB (+29%) more disk. A view is free.
