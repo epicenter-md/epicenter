@@ -56,15 +56,20 @@ so ADR-0212's claim that `min(held, A + clamp)` is byte-identical to the unclamp
 floor still rests on the round-13 runs and has not been re-verified against the
 current key.
 
-| rule removed | presence below authority | refused stale | destroyed by R2 |
+Ranges are over five independent 1200-trace seed blocks, not one, because the small
+counters move by half their value between blocks:
 
+| rule removed | presence below authority | refused stale | destroyed by R2 |
 | --- | --- | --- | --- |
-| nothing (decided) | 0 | 18 | 5 |
-| the `local` term | 0 | 18 | 5 |
-| the `held` term | 488 | 506 | 153 |
-| the authority's time | crashes on `version_ms > 0` | | |
-| the counter half | 4 | 134 | 5 |
-| spend-in-the-round | 0 | 291 | 101 |
+| nothing (decided) | 0 every block | 11 to 28 | 2 to 5 |
+| the `local` term | 0 every block | 11 to 28 | 2 to 5 |
+| the `held` term | **422 to 499** | 506 | **125 to 153** |
+| the authority's time | crashes on `version_ms > 0`, every block | | |
+| the counter half | 1 to 4 | **117 to 146** | 2 to 5 |
+| spend-in-the-round | 0 every block | **235 to 291** | **75 to 103** |
+
+The `local` arm is byte-identical to the decided arm on every counter in every
+block, which is the finding rather than a tie.
 
 The large separations are solid across five independent 1200-trace seed blocks:
 dropping `held` gives 422 to 499 below-authority against 0 every time. The small
