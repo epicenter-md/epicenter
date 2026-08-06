@@ -49,7 +49,7 @@
   deleted row" (`:114-116`), since an address is reusable here and the open door
   replaces a stale-generation body rather than refusing on liveness. That
   Epicenter never declares, validates, versions, reserves, enumerates or
-  interprets roots is untouched, and is the constraint ADR-0213's body entry is
+  interprets roots is untouched by the presence decision, though the open item below may reach it, and is the constraint ADR-0213's body entry is
   shaped by.
   Also [ADR-0159](0159-row-documents-persist-in-one-owner-side-sqlite-update-log.md)
   (`Accepted`) and, by the contract it names,
@@ -548,8 +548,7 @@ A cell carries an explicit `dirty` flag, **with no index**. A partial index on
 entry, which is the same cost this record refuses a replica-side cursor for: it
 measured on the decided schema at **+81 MB and +126 MB** with local work standing.
 The scan it replaces costs **about 50 ms and 120 ms** when nothing is owed, which is the
-common case, and in the state where the index actually costs those megabytes it
-the saving is not distinguishable from zero: three runs of the
+common case, and in the state where the index actually costs those megabytes the saving is not distinguishable from zero: three runs of the
 same script span -2.6% to +7.2%, on a measurement that has no control arm and
 that materialises every owed cell in both arms, which swamps the access path it
 is trying to compare.
