@@ -684,6 +684,14 @@ mutually exclusive states, one with every cell owed and one with none.
 convention here, and ADR-0170 and ADR-0213 each carry one back, because that record owns a
 noun this one borrows.
 
+**A check that has now failed five times.** The body digest entry was absent, then
+hashed `doc_state`, then a Yjs snapshot, then the rendered prose of a root named
+`body`. The fifth failure is the fourth attempt seen properly: ADR-0135 lets an
+application name arbitrary roots of arbitrary types, so a document whose prose
+lives in `editor`, or in a `Y.XmlFragment` rather than a `Y.Text`, renders the
+empty string and hashes identically to every other such document. The settled
+entry names no root at all.
+
 **A check that failed four times, and the constraint list that ended it.** The
 body digest entry was absent, then hashed `doc_state`, then hashed a Yjs snapshot,
 then hashed the rendered prose. Each attempt reached for whichever CRDT API

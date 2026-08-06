@@ -636,9 +636,25 @@ about 24 hours, and one resuming with an RTC reading 2031 strands it for years.
 Rewriting cannot repair it, because the local write rule never lowers
 `version_ms`. So a **clamp** refusal names the address and the authority's own time, and the
 replica re-stamps the refused cells of that row, and the row's body generation
-with them, **at `(authority time, rank)`, where rank is each cell's position in
-the row's own `(version_ms, version_seq)` ascending order, in one transaction**,
-exempt from the write floor above. Rank rather than the
+with them, **in one transaction, at `(floor, rank)`**, where rank is each cell's
+position in the row's own `(version_ms, version_seq)` ascending order and the
+floor is
+
+```txt
+floor = the row's presence cell is itself refused
+      ? the authority's time
+      : max(the authority's time, the row's presence version)
+```
+
+**The floor is the fix, and a flat authority time is the defect it repairs.**
+Re-stamping to authority time alone lands the cell *below* its own row's presence
+cell, which the authority answers with that presence cell, which R2 then uses to
+drop the cell: measured, the user's write vanishes from the device that typed it
+and from the authority, with nothing dirty and the digest roots agreeing. Flooring
+at the presence version stays inside the clamp, because the authority accepted
+that presence version in the first place. Dragging a clean presence cell into the
+re-stamp set instead is worse: the authority refuses it as stale and R2 kills the
+cell anyway. Rank rather than the
 original counter: the re-stamp collapses a *range* of `version_ms` onto one time,
 and a `version_seq` was only ever meaningful inside its own millisecond, so
 preserving it lets a cell written at a later millisecond land below one written
@@ -652,9 +668,11 @@ what R1 refuses, so the debt would never clear.
 
 **A scheduled repair is one column, because neither source of obligation needs
 more.** `repair_from` is where a whole-store pass has reached, and non-NULL means
-one is owed. A digest mismatch is a **state** check, recomputed from both stores
-every round, so a pass that clears the flag without finishing the job is simply
-re-raised by the next comparison and nothing is lost. A clamp re-stamp is an
+one is owed. A digest mismatch is a **state** check, and ADR-0213 makes it
+one by recomputing the sum from the store when a pass completes, so a pass that
+clears the flag without finishing the job is re-raised by the next comparison and
+nothing is lost. Without that recompute the sum is incremental only, and a sum
+that has drifted from its own content is a mismatch no pass can ever close. A clamp re-stamp is an
 **event**, and it names one row, so it is discharged inline in the transaction
 that creates it.
 

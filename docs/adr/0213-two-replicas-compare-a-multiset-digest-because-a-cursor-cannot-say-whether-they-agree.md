@@ -163,6 +163,23 @@ because unsent body bytes set no cell `dirty`. Without the precondition the comp
 much as useless: measured, a replica making one ordinary local write per round
 schedules a full repair on **500 rounds out of 500**, with zero divergence.
 
+### A completed pass recomputes the sum
+
+The sum is incremental, so nothing ever derives it from the store, and a sum that
+has drifted from its own content is a mismatch no amount of repair can close: the
+pass converges the content, the comparison reads the sum, and the two never meet.
+Measured with one fold omitted at one of the roughly ten sites that fold: two
+stores holding **41 identical cells**, sums unequal, **50 full-range passes over 50
+rounds**, still unequal. At this record's fixture that is 2.6 M cells and about
+315 MB every round, forever, with nothing user-visible wrong.
+
+So a repair pass that completes **recomputes `digest_sum` from `_replica_cell` and
+`_replica_body`** before clearing the obligation. The pass already scans
+everything, so the recompute is free, and it is what makes a sum a check on state
+rather than a durable local claim that decides what to send and perpetuates its
+own error. Without it, ADR-0212's phrase "a digest mismatch is a state check,
+recomputed every round" is false: nothing recomputes anything.
+
 ### A drop subtracts, in the same transaction
 
 ADR-0212's R2 deletes a row's older cells when a presence cell is written. That
