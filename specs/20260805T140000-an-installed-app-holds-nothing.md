@@ -202,6 +202,39 @@ events per day. Three natural triggers cover it:
 started (a recording in progress) is a different question and belongs to the
 recording door; see below.
 
+**Scope discovered while starting this, and larger than the section below
+implies.** Cross-process observation is not one channel with one consumer. It
+is reached by three clients over two transports, and `open`/`disconnect` are
+shared vocabulary rather than carrier bookkeeping:
+
+```txt
+packages/app/src/data.ts        installed apps, HTTP + WebSocket
+packages/data/src/desktop.ts    Home and Honeycrisp, HTTP + WebSocket
+packages/data/src/browser.ts    a SharedWorker, MessagePort
+```
+
+`DesktopOperation` is defined as `BrowserOperation` minus a few kinds, so
+`open` and `disconnect` are declared once in `browser/protocol.ts` and inherited
+by the desktop wire. The SharedWorker's `disconnect` is not carrier cleanup: it
+has real lifecycle meaning in `browser/worker.ts`, which branches on it in eight
+places around delivery after disconnect. Deleting the WebSocket carrier does not
+delete that, and the shared union means the two cannot be edited independently
+without splitting it first.
+
+So the honest decomposition is three steps, not one:
+
+```txt
+2a  stop the two WebSocket clients carrying invalidations, and delete the
+    host route, the fan-out, and the backpressure accounting
+2b  split DesktopOperation from BrowserOperation so the desktop wire can drop
+    `open` and `disconnect` without touching the SharedWorker's lifecycle
+2c  Honeycrisp and the Data pane re-read on focus instead of on a frame
+```
+
+Honeycrisp's consumer is small and clean: two `subscribe` calls in
+`apps/honeycrisp/src/routes/state/index.ts` that both call a `refresh()` that
+already exists, so 2c is a focus listener rather than a redesign.
+
 **What this deletes:**
 
 ```txt
