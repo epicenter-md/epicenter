@@ -49,13 +49,17 @@ the proof: the counter is not even a complete record of what one side delivered.
 comparing its root is how they learn they disagree.**
 
 ```sql
-CREATE TABLE _replica_digest (
-	bucket INTEGER PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
-	sum BLOB NOT NULL CHECK (length(sum) = 8)
-) STRICT;
+-- in each metadata singleton, replica and authority alike
+digest_format INTEGER NOT NULL,
+digest_sum    BLOB NOT NULL CHECK (length(digest_sum) = 8)
 ```
 
-The authority's is identical. Both metadata singletons carry a `digest_format`.
+**One column, not a table.** An earlier draft kept 4096 buckets a side so a
+mismatch could be localized. Nothing reads a bucket: the descent was refused for
+cost (below), so only the root is ever compared, and the root is a sum over every
+entry regardless of how they are grouped. Measured: a store bucketed 4096 ways and
+the same store bucketed 8192 ways produce the same root. The bucket table was 4096
+rows per side that answered nothing.
 
 ### A multiset sum, folded in the application
 
@@ -70,7 +74,7 @@ promoted it to REAL and silently destroyed the digest.
 
 ### The sum is stored as eight bytes, not as an integer
 
-A bucket sum is uniform over 2^64, and every SQLite driver in this family returns
+A sum is uniform over 2^64, and every SQLite driver in this family returns
 `INTEGER` as a double unless a per-connection flag is set. A sum read back is
 therefore a different number from the one written, which makes the stored sum a
 function of **write order** rather than of the multiset: two sides holding
@@ -88,26 +92,42 @@ shaped to prevent, a value that no longer matches its own hash, would then be
 invisible to the verifier *and* unrepairable by the merge: both sides read clean,
 both refuse each other, forever.
 
-### A body has an entry, keyed on its generation
+### A body has an entry, and it hashes the document's state, never its bytes
 
 A body carries no version, so without an entry a body divergence is undetectable:
 the cell roots agree, the cursor sees nothing, and a device that bootstraps
-afterwards gets an empty document while another holds the prose. Measured over
-4000 randomized traces, three end at quiescence with divergent body text and
-identical cell roots. The body entry takes that to zero, for 48 extra repair
-passes out of 42,641.
+afterwards gets an empty document while another holds the prose.
 
-### A bucket is not an address range
+**The entry cannot hash `doc_state`.** A Yjs update is an encoding, not an
+identity: a replica that applied a delete locally holds a document whose structs
+are split at the deletion point, while an authority that merged the same delete as
+an opaque update does not, and `mergeUpdatesV2` preserves the split. Both render
+the same prose in different bytes. Measured on one document with one writer: after
+a single delete the two sides hold 45 and 38 bytes for identical text, and over
+200 rounds with a delete every third round the entries disagreed on **199 of
+200**, with the prose never once differing and no amount of repair closing it.
+Each disagreement buys the full pass ADR-0212 prices at 315 MB.
 
-A cell's bucket is the first 12 bits of a hash of its address, so buckets are
-stable across releases and evenly filled. That deliberately makes a bucket
-useless as a repair unit: its members are scattered across the whole address
-space, and enumerating one would cost a full scan plus a hash per cell, about 1.3
-seconds at ADR-0212's own fixture.
+So the entry hashes a canonical function of the document's logical state,
+`encodeSnapshotV2(snapshot(doc))`, which is identical on every path that reaches
+the same text. Measured: 0 false alarms over the same 200 rounds.
 
-So a mismatch is **not** localized into a resumable cursor. It schedules the
-ordinary full-range repair pass, which already resumes by address, and the bucket
-set only says that one is owed.
+This is the round-5 comparison precondition re-entering through the body plane,
+where it could not see: the precondition tests `dirty`, `dirty` is a cell column,
+and a body divergence makes no cell dirty.
+
+### A mismatch does not localize
+
+Grouping entries into buckets so a mismatch could name a region was tried and
+refused, and refusing it is what leaves one sum. A bucket keyed on a hash of the
+address is a hash class rather than a range: its members are scattered across the
+whole address space, enumerating one costs a full scan plus a hash per cell (about
+1.3 seconds at ADR-0212's fixture), and it cannot resume from an address the way
+the existing repair pass does. Storing a `bucket` column on every cell would fix
+the scan, and costs disk ADR-0212 refuses for a cursor column on the same grounds.
+
+So a mismatch says only that a repair is owed. It schedules ADR-0212's ordinary
+full-range pass, which already resumes by address.
 
 ### A comparison has a precondition
 
@@ -123,32 +143,42 @@ ADR-0212's R2 deletes a row's older cells when a presence cell is written. That
 delete returns what it removed and subtracts each entry in the same transaction,
 or the first deletion in the store guarantees a permanent false mismatch.
 
-The same rule generalizes: a digest bucket and the write it describes are one
+The same rule generalizes: the digest sum and the write it describes are one
 transaction. Otherwise the digest becomes the thing ADR-0212 refuses elsewhere, a
 durable marker that decides what to send and is wrong in a way that perpetuates
 itself.
 
-### The bucket count and the entry encoding are a cross-release contract
+### The entry encoding is a cross-release contract
 
-Both metadata singletons carry a `digest_format`, compared before the roots. A
-peer on another format is **incomparable**, not divergent. Measured: a release
-that changed only the bucket count would report 496 buckets differing on
-identical state, while the root itself survives the change.
+Both metadata singletons carry a `digest_format`, compared before the sums. A peer
+on another format is **incomparable**, not divergent. The contract is the entry
+encoding alone, since there are no buckets to version: what an entry hashes, and
+in what order, is what two releases must agree on.
 
 ## Consequences
 
-- **It costs 72 KB of disk per side, 144 KB for the pair**, and **+63% on a local
-  write** that already pays ADR-0212's row-local floor (+77% at the minimum, on a
-  run whose control arm is 2%). Hashing the value rather than the version alone
-  accounts for 8 points of that. Against a store with neither the floor nor the
-  digest, a local write costs **+112%**.
+- **It costs one 8-byte column per side and about three quarters of a local
+  write.** Measured on the settled schema across three runs whose control arms sit
+  within 5%: **+75% at 12 columns and +65% at 3**, on a write that already pays
+  ADR-0212's row-local floor. Hashing the value rather than the version alone is 8
+  to 10 points of that; the BLOB round trip is most of the rest. Against a store
+  with neither the floor nor the digest, a local write costs **+112% to +132%**.
+- **A row delete costs far more than a write, and it scales with row width.**
+  ADR-0212's R2 drops a row's cells when a presence cell is written, and each drop
+  is an entry to subtract. Measured: **12.3x at 12 columns (5.9 to 72.8
+  microseconds) and 7.2x at 3**. "One add and one subtract per write" is true of a
+  field write and badly untrue of a delete.
+- **A body write costs +13%**, rising to **+24% to +30% at a 40KB document**,
+  because the entry re-hashes the whole canonical state. That is the document size
+  ADR-0212 uses to justify the Yjs plane existing.
 - **That is the price of knowing.** ADR-0212's repair pass is a correct repair
   that, without this, nothing can ever trigger: the record can say "full
   reconciliation always converges" and be unable to say when to run it.
-- **It answers in 8 bytes.** A settled round compares two roots and stops.
+- **It answers in 8 bytes.** A settled round compares two sums and stops.
 - **It does not localize.** A mismatch costs the full-range pass, which at
   ADR-0212's fixture is 2.6M cells and roughly 315 MB. The precondition above is
-  what keeps that rare; without it, it is every round.
+  what keeps that rare; without it, it is every round. This is the whole reason
+  the false-alarm rate matters more than the true-positive rate.
 - **It is a range reconciliation primitive, and both sides now have one.**
   ADR-0212 refuses peer-to-peer sync because a cursor is server-assigned and has
   no meaning between peers. That refusal now costs only the courier, not the
@@ -173,9 +203,11 @@ identical state, while the root itself survives the change.
   rounds.
 - **Hash only the version into an entry.** Cheaper per write by 8 points, and it
   makes the verifier trust exactly what it exists to verify.
-- **Descend into differing buckets to localize a repair.** About 1.3 seconds per
-  bucket at ADR-0212's fixture, because a bucket is a hash class rather than a
-  range, and it cannot resume from an address the way the existing pass does.
-  Storing a `bucket` column on every cell would fix the scan and costs disk that
-  ADR-0212 refuses for a cursor column on the same grounds.
+- **Bucket the entries so a mismatch can name a region.** Refused for the cost in
+  the Decision, and refusing it is what collapses 4096 rows per side into one
+  column, because nothing then reads a bucket and the sum does not depend on how
+  entries were grouped.
+- **Hash `doc_state` for a body entry.** The obvious encoding, and it is not a
+  function of the document's content: 199 false alarms in 200 rounds for a single
+  writer who deletes text.
 - **Compare unconditionally.** 500 false full repairs out of 500 rounds.

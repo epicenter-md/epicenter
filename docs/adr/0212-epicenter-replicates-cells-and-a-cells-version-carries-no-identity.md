@@ -153,7 +153,12 @@ CREATE TABLE _replica_metadata (
 
 	repair_from TEXT,
 	repair_epoch INTEGER NOT NULL DEFAULT 0 CHECK (repair_epoch >= 0),
+	repair_covers INTEGER NOT NULL DEFAULT 0 CHECK (repair_covers >= 0),
+	repair_scope TEXT,
+	repair_cursor INTEGER CHECK (repair_cursor IS NULL OR repair_cursor >= 0),
+
 	digest_format INTEGER NOT NULL,
+	digest_sum BLOB NOT NULL CHECK (length(digest_sum) = 8),
 
 	CHECK ((attached_deployment IS NULL) = (attached_principal IS NULL))
 ) STRICT;
@@ -200,11 +205,6 @@ CREATE TABLE _replica_body (
 	PRIMARY KEY (namespace, table_name, row_id)
 ) WITHOUT ROWID, STRICT;
 
-CREATE TABLE _replica_digest (
-	bucket INTEGER PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
-	sum BLOB NOT NULL CHECK (length(sum) = 8)
-) STRICT;
-
 CREATE VIEW replica_cell AS
 SELECT
 	namespace,
@@ -223,7 +223,8 @@ CREATE TABLE _authority_metadata (
 	format_version INTEGER NOT NULL,
 	lifetime TEXT NOT NULL,
 	next_cursor INTEGER NOT NULL CHECK (next_cursor >= 1),
-	digest_format INTEGER NOT NULL
+	digest_format INTEGER NOT NULL,
+	digest_sum BLOB NOT NULL CHECK (length(digest_sum) = 8)
 ) STRICT;
 
 CREATE TABLE _authority_cell (
@@ -263,11 +264,6 @@ CREATE TABLE _authority_body (
 ) WITHOUT ROWID, STRICT;
 
 CREATE INDEX _authority_body_cursor ON _authority_body(cursor);
-
-CREATE TABLE _authority_digest (
-	bucket INTEGER PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
-	sum BLOB NOT NULL CHECK (length(sum) = 8)
-) STRICT;
 ```
 
 **The authority repeats every CHECK it can evaluate without parsing a value**,
@@ -375,7 +371,8 @@ version_seq = one past whichever of those two the floor came from, else 0
 Both components come from the row being written, and cost one row-local aggregate
 read per write. That read is not cheap: measured as an interleaved A and B in one
 database, against a control arm of two identical passes and with WAL checkpointing
-moved outside the timed region, it costs **+20% to +37%** depending on row width. Two earlier figures for this, "about 10%" and "at least double",
+moved outside the timed region, it takes the median local write from about 6.5 to
+about 8.6 microseconds, **+20% to +37%** depending on row width. Two earlier figures for this, "about 10%" and "at least double",
 were both artifacts: the first compared two different processes on two different
 schemas, and the second had no control arm, so a 3.6x drift within one arm was
 read as mechanism. It is the price of a write the user just made never being refused by R1,
@@ -653,21 +650,27 @@ losing prose the user typed seconds earlier on the device that typed it. Re-stam
 field cell alone would land it below its own row's presence cell, which is exactly
 what R1 refuses, so the debt would never clear.
 
-**A scheduled repair is durable, and it carries two facts.**
-`_replica_metadata.repair_from` holds the address a running pass has reached;
-`repair_epoch` records that an obligation was raised, and a pass clears the
-obligation only if the epoch it began at is still current. One column cannot do
-both: a pass already in flight overwrites it continuously and clears it on
-completion, so an obligation raised mid-pass is erased by the pass that was
-already running, leaving a row present and empty with nothing dirty and nothing
-owed.
+**A scheduled repair is durable, and it carries five facts, each with a column.**
+`repair_from` is where a running pass has reached. `repair_epoch` records that an
+obligation was raised. `repair_covers` is the epoch a running pass will discharge,
+so a pass can absorb an obligation raised while it runs, and clears
+`WHERE repair_epoch <= repair_covers`; a strict "did anything change since I
+started" guard never clears at all on a device that raises faster than a pass
+completes, which is exactly the permanently skewed device this repair exists for.
+Measured without it: 200 writes, 200 raises, **0 of 200 passes cleared**, and
+digest comparison disabled forever because it is gated on nothing being owed.
 
-A repair scheduled by a clamp re-stamp is **scoped to the row it names**, and only
-a presence-cell re-stamp rewinds `last_applied_cursor`. Unscoped, a device with a
-clock permanently outside the clamp turns every local write into a full-store
-re-read and re-push: measured, 200 ordinary writes produce 200 full rewinds and
-never settle, because the next write re-derives its version from the same fast
-clock.
+`repair_scope` is what the obligation covers, NULL for the whole store and a row
+id to bound the pass. Without it "scoped to the row it names" is a sentence with
+no column: a full-store obligation and a row obligation are the same two values,
+so every clamp refusal re-reads everything. `repair_cursor` is where a rewind
+returns to, because the only rewind a schema without it can express is zero, and a
+device outside the clamp re-stamps presence on every `create`.
+
+One column cannot do any of this. A pass already in flight overwrites it
+continuously and clears it on completion, so an obligation raised mid-pass is
+erased by the pass that was already running, leaving a row present and empty with
+nothing dirty and nothing owed.
 
 **A clamp refusal on a presence cell also schedules a repair for that row.**
 Lowering a presence cell is the one operation in the design that moves a version
@@ -827,7 +830,10 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   ahead, so a replica with a dead clock writes into the past, loses to a
   months-old value, and is never refused, never re-stamped, and never repaired.
   The response carries the authority's time on every round rather than only on a
-  refusal, which is the one place a replica can notice its own backward skew. "At an exact
+  refusal, which is the one place a replica could notice its own backward skew.
+  **This record does not act on it.** Nothing re-stamps a backward-skewed write and
+  nothing repairs one, so the carrier exists and the consumer does not; a replica
+  that finds itself behind can only report it. "At an exact
   millisecond tie the winner is arbitrary" understated this by the width of the
   clamp. Relatedly, the local write rule raises a cell's `version_ms` to meet a
   skewed version it merged, so a correct clock inherits that floor for that cell:
@@ -867,9 +873,11 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
 
   The +41% and +25% buy two things and they are the two the record is built on. Every
   version is a legible column rather than a byte range inside a blob, which is the
-  replica's stated first duty. And the merge is one SQL predicate over columns
-  rather than a decode, compare, and re-encode of a map, which is what lets the
-  same comparison run on both sides. It also keeps a one-field change at 121 bytes
+  replica's stated first duty. And the merge's *comparison* is one SQL
+  predicate over columns rather than a decode, compare and re-encode of a map,
+  which is what lets the same comparison run on both sides. The merge as a whole
+  is more than one statement: R1 reads the row's presence cell, R2 is a separate
+  `DELETE ... RETURNING`, and R2's body drop is a third. It also keeps a one-field change at 121 bytes
   on the wire rather than the whole record and its whole map.
 - **Interning the address would recover at most 34%**, before adding back
   dictionary tables and integer keys, and is refused: the replica's first duty is
@@ -880,8 +888,9 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   and it measured **+65 MB (+36%) and +101 MB (+29%)** at the two shapes. A view
   rendering `version_ms` as a timestamp and `version_hash` as hex costs nothing
   and reads better than either, so the stored columns stay compact.
-- **Re-deriving one changed row costs 1.69x and 1.21x** what whole-row JSON
-  costs (6.9 against 4.09 microseconds, 4.79 against 3.95). That is the operation
+- **Re-deriving one changed row costs 1.69x** what whole-row JSON costs at 12
+  columns (6.9 against 4.09 microseconds), and **no measurable difference** at 3,
+  where the 0.84 microsecond gap sits inside the run-to-run spread. That is the operation
   that runs in steady state, because a write touches one row, and the margin
   there is small.
 - **Rebuilding the WHOLE projection costs about 0.57 s at 2.6M cells and 1.1 s at
@@ -911,9 +920,10 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   first dead row, because `cellValue` draws a variable number of random values per
   column. The distributions match, so the storage and timing comparisons against
   it are unbiased, but they are distributional rather than exact.
-- **Detection is priced in ADR-0213**, and it is not cheap: two relations, 144 KB
-  across the pair, and +63% on a local write that already pays the floor here.
-  Together they cost +112% against a store with neither. It is the one mechanism here that exists to answer a question rather than
+- **Detection is priced in ADR-0213**, and it is not cheap: about +75% on a local
+  write that already pays the floor here, +112% to +132% for the pair against a
+  store with neither, and **12.3x on a row delete at 12 columns**, because R2
+  drops a cell per column and the digest must subtract each one. It is the one mechanism here that exists to answer a question rather than
   to carry data, and the record spent three rounds discovering that no cheaper
   proxy answers it.
 - **Counters are refused.** "Add one" is not expressible; two devices each adding

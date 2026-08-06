@@ -644,7 +644,7 @@ mutually exclusive states, one with every cell owed and one with none.
 | --- | --- | --- |
 | Whole-row JSON as the stored shape | per-field and whole-row versions do not compose | 2.12x and 1.66x the size of what ships today (181.0 vs 85.3 MB, 342.4 vs 206.2 MB), re-deriving one changed row 1.69x and 1.21x slower and the whole projection 16.8x and 8.6x slower |
 | Real typed columns | ADR-0125: nowhere to put an unknown key | 3.81x and 2.33x the disk, fixture-matched (181.0 vs 47.5 MB, 342.4 vs 147.1), against a shape that stores no version, no `dirty` and no presence, so the ratio is a floor |
-| One JSON record per row plus a version map | the map is opaque, so no version is legible and the merge cannot be one SQL predicate; one field change ships the whole record and map; merge-group names become an unversioned wire contract | THIS REFUSAL COSTS DISK. Packed as 18 binary bytes per field it is 127.9 MB and 274.1 on the same fixture, so the cell store is 41% and 25% LARGER. The 8.4% figure an earlier pass quoted was against a version map stored as base64 inside JSON, roughly 40 bytes per field. On the wire the cell store still wins, 8.9x at 12 columns and 3.0x at 3 |
+| One JSON record per row plus a version map | the map is opaque, so no version is legible and the merge cannot be one SQL predicate; one field change ships the whole record and map; merge-group names become an unversioned wire contract | THIS REFUSAL COSTS DISK. Packed as 18 binary bytes per field it is 127.9 MB and 274.1 on the same fixture, so the cell store is 41% and 25% LARGER. An earlier pass quoted 6.0% against a version map stored as base64 inside JSON, roughly 40 bytes per field. On the wire the cell store still wins, 8.9x at 12 columns and 3.0x at 3, both like for like |
 | Interning the address | the replica must be readable in a SQL console with no joins | at most 34% of the file, before dictionary tables and integer keys are added back |
 | Readable version columns (ISO-8601 plus hex) | a view gives the same legibility for nothing | +65 MB (+36%) and +101 MB (+29%) |
 | A per-cell cursor on the replica | it is a durable local claim about the authority's state | +9.8 MB (5.4%) and +18.9 MB (5.5%) for the column, measured as a clean A/B on the settled schema; 91 MB and 140 MB if it is also indexed, which nothing here would query |
@@ -656,7 +656,7 @@ mutually exclusive states, one with every cell owed and one with none.
 | A strict `>` merge predicate | the authority echoes a won push at its own version | the cell never clears `dirty` and re-pushes every round forever |
 | A single body delivery slot | an acknowledgement clears bytes the authority never received | every edit made during a push round trip is lost permanently, and no version exists that could notice |
 | Range-based set reconciliation as the delivery mechanism | it is a good verifier and a bad courier | finding one changed cell costs a 32 KB bucket exchange plus 635 address and version pairs, against one cell for a cursor |
-| ~~An incremental digest as a verifier, for now~~ **ADOPTED in round 4** | the deferral's two premises are both falsified: the lifetime does not catch a restore, and neither does a cursor regression | the deferral cost three rounds of patches to a mechanism that cannot carry the signal. Price paid: 144 KB across the pair, and +63% on a local write that already pays the row-local floor, re-measured on the settled schema after round 5 changed its semantics. It answers "are we equal" in 8 bytes. Settled as [ADR-0213](../docs/adr/0213-two-replicas-compare-a-multiset-digest-because-a-cursor-cannot-say-whether-they-agree.md) |
+| ~~An incremental digest as a verifier, for now~~ **ADOPTED in round 4** | the deferral's two premises are both falsified: the lifetime does not catch a restore, and neither does a cursor regression | the deferral cost three rounds of patches to a mechanism that cannot carry the signal. Price paid: one 8-byte column per side, about +75% on a local write that already pays the row-local floor, 12.3x on a row delete at 12 columns, and +13% on a body write rising to +30% at a 40KB document. It answers "are we equal" in 8 bytes. Settled as [ADR-0213](../docs/adr/0213-two-replicas-compare-a-multiset-digest-because-a-cursor-cannot-say-whether-they-agree.md) |
 | Renaming `patch` to `set`, and deleting `create` | `create` is the only verb that can reuse an address, and `patch` is already the right name | churn with no measured benefit, and a merge rule that cannot be expressed |
 | Terminal, absorbing row death | it makes an address single-use, against ADR-0206 | a provider-keyed row never returns: 30 reconciler passes at strictly later versions leave it absent |
 | An unconditional cell drop on `absent` | it does not converge | a cell at a dead address is retained, unreadable, until the address is re-created |
@@ -685,6 +685,16 @@ mutually exclusive states, one with every cell owed and one with none.
 `docs/adr/README.md` requires. `Relates` does not: it is one-directional by
 convention here, and only ADR-0170 carries one back, because that record owns a
 noun this one borrows.
+
+**A verification method that failed twice, and what it cost.** Two adversarial
+rounds found a fatal defect that the previous round's verification could not have
+caught, because the verification modelled the mechanism rather than running it.
+Round 4's digest check used JavaScript maps and never wrote a sum to SQLite, so it
+missed that an `INTEGER` column cannot hold one. Round 5's body check hashed two
+byte strings and asserted sha256 is injective, so it missed that `doc_state` is
+not a function of a document's content. Both defects were fatal, both were in the
+newest mechanism, and in both cases a check that touched the database would have
+found them. Every check now writes to and reads from the settled schema.
 
 **A measurement method that failed three times, and what fixed it.** The
 row-local write floor was priced at "about 10%", then at "at least double", then
