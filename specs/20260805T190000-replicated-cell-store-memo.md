@@ -492,8 +492,10 @@ wedge:
   T, confirm at T, write a new value at T again, and `written_at_ms` equals
   `confirmed_at_ms` so the cell reads clean and never syncs.
 - The monotonic guard that fixes it (`written_at_ms = max(now, prev + 1)`) stores
-  its drift, so 200,000 same-cell writes take 129 ms of real time and produce
-  199,871 ms of drift. Once a stamp passes the authority's clamp the cell is
+  its drift: 200,000 same-cell writes advance the stamp by one millisecond each and
+real time by almost nothing, so the stamp ends about **199,990 ms** ahead of the
+wall clock (measured; the exact figure is one millisecond per write minus however
+long the loop took, so it moves with the machine and not with the mechanism). Once a stamp passes the authority's clamp the cell is
   unsyncable until wall time catches up, and the guard forbids the only repair.
   A clock set forward once and corrected, which a VM resume does routinely,
   strands cells for the length of the skew.
@@ -778,6 +780,18 @@ on 0.35% of passes at two replicas, 0.05% at three, and 0 of 2000 at four. A
 replica whose own sum has drifted therefore heals only on a solo pass, at about
 336 MB per attempt. It self-limits, because the replicas that are not drifted stop
 repairing once the authority recomputes, so it is a disclosure rather than a break.
+
+**Round 16 made the checking mechanical, because the remaining defects were
+mine.** Three of round 15's findings were errors introduced while fixing round
+14's, and each was a verification shortcut rather than a design mistake: a grep
+that matched `8.6x` in an unrelated rebuild ratio and adopted it over the correct
+8.87x; a figure DELETED as unsourced because a pass had not walked `rerun/`, where
+it sits; and a variance band attached to a ratio whose own control arm says
+something else. `check-claims.ts` now walks every saved output except
+`superseded/`, extracts every number-with-unit from all three records, and reports
+which files source each one. It currently reports **300 claims, 300 sourced, 0
+unsourced**. It cannot catch the third failure, which is a reasoning error rather
+than a lookup, and that is left to review.
 
 **Round 15 repaired the harness instead of counting it again.** Thirteen probes are retired to `superseded/` with a README. Eleven name
 `_replica_digest` or `repair_epoch`, artifacts the design deleted, so they cannot
