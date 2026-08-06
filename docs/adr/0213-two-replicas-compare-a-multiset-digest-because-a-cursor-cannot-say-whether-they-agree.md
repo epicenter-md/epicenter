@@ -104,7 +104,12 @@ the cell roots agree, the cursor sees nothing, and a device that bootstraps
 afterwards gets an empty document while another holds the prose.
 
 **The entry is a canonical re-encoding of the merged operation set**:
-`encodeStateAsUpdateV2` of a document loaded from `doc_state`. Four constraints
+`encodeStateAsUpdateV2` of a document loaded from `doc_state` **into a fresh
+`Y.Doc` with default options**, never into the application's own. The loader is
+part of the contract: an editor holding its document with `gc:false` writes a
+different `doc_state` for the same operation set, and computing the entry from
+that live document instead of a fresh load, which is the obvious optimisation,
+makes the two sides disagree. Four constraints
 decide it, and each of the three attempts before it violated one that had not been
 written down.
 
@@ -178,9 +183,20 @@ replica from `_replica_cell` and `_replica_body`, and the authority from
 `_authority_cell` and `_authority_body` when it serves that pass to completion.
 Recomputing one side only leaves the other's drift permanent, and an authority
 whose sum has drifted is a mismatch every replica repairs every round forever,
-which is the failure this section exists to remove. The pass already visits every cell and every body, so the
-recompute adds one entry hash per cell and one re-encode per body rather than a
-second traversal, which is not free but is the cheapest place to put it, and it is what makes a sum a check on state
+which is the failure this section exists to remove. **The recompute is a running total, not a terminal scan.** A pass that scans the
+store and then assigns what it found has no isolation story, and both readings
+fail: inside a transaction the terminal write raises `database is locked` while a
+user is typing, so the pass can never complete; outside one it writes back a sum
+for a snapshot the store has already left, which is the drift it was added to
+remove. So the pass accumulates entries as it visits them and commits
+`sum_at_scan_start + every delta folded since`, in the same transactions it is
+already taking.
+
+The cost is not free and the record should not have said it was: hashing every
+cell is **+384% on top of the scan** the pass already pays, about 2.2 seconds at
+2.6M cells, and the body half is 13 microseconds per small body and 62 at 40 KB,
+so 196k bodies is another 2.6 to 12 seconds. A terminal scan would hold that as
+one window; folded into the pass's own transactions it is spread across them, and it is what makes a sum a check on state
 rather than a durable local claim that decides what to send and perpetuates its
 own error. Without it, ADR-0212's claim that a digest mismatch is a state check would be
 false, because nothing would ever recompute anything.
@@ -274,6 +290,16 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
   full adversarial round because the verification of the day modelled the digest
   in JavaScript maps and never wrote a sum to SQLite. Any check of this mechanism
   must round-trip through the database.
+- **Subdocuments are invisible to this entry, and to the plane.** A `Y.Doc` is a
+  legal value inside a `Y.Map`, and typing into one leaves the parent's
+  `doc_state` unchanged, so a subdocument's prose is never delivered, never
+  repaired, and never detected. ADR-0212's body plane has one `doc_state` and two
+  slots per row, all of them the parent's stream, so this is a refusal that has to
+  be made at the write door rather than a gap to be closed here.
+- **`clientID` uniqueness is a precondition of the body algebra, not an
+  assumption.** Two offline documents that drew the same `clientID` merge to
+  different text depending on order, so the plane does not converge and the digest
+  then mismatches forever.
 - **The body entry was wrong four times, and the pattern is the lesson.** It was
   first absent, then hashed the encoding, then the history, then the rendered
   prose of a root the authority is forbidden to name. Each attempt

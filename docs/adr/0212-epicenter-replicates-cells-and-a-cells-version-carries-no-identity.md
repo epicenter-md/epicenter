@@ -654,13 +654,24 @@ operation exempt from the local write rule above because it deliberately lowers
 a version. The floor is
 
 ```txt
-floor = the row's presence cell is itself refused
-      ? (the authority's time, rank)
-      : (max(the authority's time, presence.version_ms),
-         presence.version_ms >= the authority's time
-           ? presence.version_seq + 1 + rank
+held  = the presence version the AUTHORITY holds for this row, returned with
+        the refusal
+floor = (max(the authority's time, held.version_ms),
+         held.version_ms >= the authority's time
+           ? held.version_seq + 1 + rank
            : rank)
 ```
+
+**The floor comes from the authority, not from the replica.** A presence write
+overwrites the row's presence cell in place, so when the presence cell is itself
+refused the replica no longer holds the version it must clear, and an earlier
+draft floored that branch at the authority's time flat. Measured: a clamped
+`delete` lands below the authority's own `present`, the answer restores it, the
+delete is gone from both sides with nothing dirty; a clamped `create` is worse,
+because the stale answer fires R2 and drops the fields with it. **285 of 2857
+re-stamps, 10.0%, take that branch.** So the refusal names the authority's held
+presence version, and the floor clears it. It stays inside the clamp because the
+authority accepted that version itself.
 
 **The counter is part of the floor, not decoration.** R1 compares
 `(version_ms, version_seq)`, so flooring the millisecond alone still lands a
