@@ -49,8 +49,7 @@ ten-delivery sweep. **The core is settled and the machinery around it was not**,
 and the prose churn was camouflage rather than the whole story.
 
 **The record describing it grew 5.2x.** ADR-0212 was 244 lines when this session
-began and is 1268 now. The design it describes is 175 lines. The memo went from
-roughly 700 to 1100.
+began and is 1268 now. The design it describes is 175 lines. The memo went from roughly 700 to 1300.
 
 **Findings per round are flat.** Rounds 17 through 20 produced 32, 31, 22 and 24
 findings; the correctness pass alone produced 8, 6, 4 and 5. That is not the shape
@@ -85,13 +84,13 @@ not a spec.
 So the condition is not reachable by cutting words. Two things move it, and the
 first is **done**: the clamp, re-stamp and refusal subsystem is now
 [ADR-0214](../docs/adr/0214-a-clamped-write-is-re-stamped-because-a-store-must-lower-a-version-it-holds.md),
-260 lines lifted out verbatim with its own Context and Consequences, leaving
+247 lines lifted out verbatim with its own Context and Consequences, leaving
 ADR-0212 at 1264 once repair scheduling came back to it. It was self-contained, it is where rounds 8 to 14 spent almost
 every defect, and ADR-0213 had already proved the split works by taking detection
 out. Every extracted line was verified present in the new record before the old one
 was cut.
 
-The knob table, the six priced refusals and the 4.4% partition are the evidence
+The knob table, the priced refusals and the 4.4% partition are the evidence
 behind ADR-0214 and stay here, which is what the README means by an ADR not being a
 spec. The second move is still open: Consequences and Considered alternatives,
 307 lines between them, belong here too, which would leave ADR-0212 near 960 lines
@@ -116,14 +115,21 @@ actually makes per-field merge work, the version, the local write rule, the
 reusable address and the write surface, is **175 lines**.
 
 The clamp machinery is larger than the core it protects, it is where rounds 8
-through 14 spent almost every defect, and it still carries a measured 4.4% silent
-loss of user field writes. So the obvious move is to delete it and refuse the
+through 14 spent almost every defect, and it still carries a measured silent loss.
+**State that loss with its denominator, because this file has repeatedly not.**
+ADR-0214 measures 193 of 5422 re-stamped field cells discarded as stale, which is
+**3.56% of re-stamped field cells**, plus 35 that win the hash and silently displace
+the authority's value; 4.43% is a different rate against clamp re-stamps. Both
+denominators count only cells that were **re-stamped**, and a cell is re-stamped
+only when its write was clamped, so neither number is a fraction of user field
+writes and the bare "4.4% silent loss" that appears elsewhere in this file reads as
+one. So the obvious move is to delete it and refuse the
 write instead, returning the authority's time so the client corrects its offset
 and retries.
 
-**Measured, that does not work, and the reason is worth writing down.** The local
-write rule stamps a write at `max(now, the cell's own version, the row's presence
-version) + 1`, so a device never lowers a version it already holds. A device a day
+**Measured, that does not work, and the reason is worth writing down.** The local write rule stamps a write at `max(now, the cell's own version, the row's
+presence version)`, with the `+ 1` on `version_seq` and never on `version_ms`, so a
+device never lowers a version it already holds. A device a day
 fast writes locally at `T+24h`, is refused, corrects its offset, and its next
 write is floored **back up to `T+24h` by its own earlier local write**. It is
 refused again, forever: four attempts, four refusals, no progress. The only two
@@ -225,10 +231,29 @@ re-stamp existing at all, and no fourth formula recovers it. The five ideas belo
 **Priced, and probably not worth building yet**
 
 
-- **Collaborative columns**: they collide with ADR-0130 (Accepted, one document per
-  row, and it rejects declaring a document layout per table), ADR-0168 (tables
-  declare no document capability) and ADR-0135's `open(row.id)` handle. Three
-  amendments for a feature only Honeycrisp needs, and Honeycrisp does not exist.
+- **Collaborative columns**: SETTLED, and the other way. They do collide with
+  ADR-0130 (Accepted, one document per row, and it rejects declaring a document
+  layout per table), ADR-0168 (tables declare no document capability) and
+  ADR-0135's `open(row.id)` handle. **The refusal stands and its stated reason was
+  false.**
+  **Two errors in this row's earlier reasoning.** "Honeycrisp does not exist" is
+  false: `apps/honeycrisp/` ships a ProseMirror editor today, wiring
+  `configureYProsemirror` and `ySyncPlugin` (`src/lib/editor/Editor.svelte:6-14`),
+  pinning `@y/prosemirror` `2.0.0-6` and `@y/y` `14.0.0-rc.24`
+  (`package.json:67-69`), and binding through `data.notes.openDocument(noteId)`
+  (`src/lib/application.ts:101`). Verified as far as imports and wiring; nobody has
+  observed two peers live on one note, so "collaborative" remains unobserved.
+  The larger error is that existence was ever the question. Honeycrisp already gets
+  character-level editing from the row document with zero collaborative columns, so
+  its presence does not justify them either, and the corrected fact does not move
+  the verdict. What would justify them is a requirement neither this row nor
+  ADR-0212 has stated: that the same prose be reachable from the application AND
+  from the folder, which needs a Lens declaration to tell the projection which root
+  is the body. That requirement is not established and the competing resolution,
+  one document per row with a designated root, is not priced against it, so the
+  item stays OPEN. Settling it costs three amendments and nothing has yet measured
+  which resolution is cheaper. If it were taken, the body would render one way,
+  and a folder edit to prose is not pushable.
 - The **repair pass**, which depends on the digest and on the clamp's obligations.
 
 **Worth keeping, because it is additive**
@@ -961,7 +986,7 @@ mutually exclusive states, one with every cell owed and one with none.
 | Refusing a causally gapped `doc_state` at the write door | the premise was that `load` drops structs it cannot integrate, so `{u1, u3}` and `{u1}` entry identically | the premise is false on the pinned Yjs: the stores are 45 and 32 bytes and their entries differ. Enforcing it discards recoverable user prose and ADR-0212's two body-refusal answers both lose it |
 | Letting a replica's repair pass own the authority's accumulator | the pair is one per store and a pass is one per replica, and a multiset sum has no idempotence | two interleaved passes over 200 addresses commit exactly twice the truth; a partial overlap commits a number related to neither. The authority refuses a chunk whose `from` is neither its current watermark nor the sentinel, and a chunk at the sentinel restarts the pass |
 | Dragging the dirty presence into the re-stamp set unconditionally (round 23) | a dirty presence has never been accepted, so lowering it costs the authority nothing | the floor is bounded BELOW by `A`, so a presence written before a forward clock jump is RAISED, not lowered: 137 raises per 2400 traces, each an incarnation boundary that makes R2 delete the row's document and 9 already-accepted fields, with the row live, nothing dirty and the digest roots agreeing. Guarding on "only when the floor would lower it" takes every counter to zero |
-| Reading the floor's `local` term as "the presence this replica holds", full stop | after a clamp-refused create the replica holds the refused version, so the floor is the version just refused | the re-push never terminates: 32 inner rounds, the cell still dirty, the authority holding nothing. The fuzz always excluded a DIRTY presence, refused or not; the record said "refused", which is narrower and livelocks when a row's cells are chunked apart. Zeroing alone is then a regression of its own: 96 to 105 landings under an unlowered presence per 400-trace block, closed by dragging the dirty presence into the re-stamp set at rank 0 |
+| Reading the floor's `local` term as "the presence this replica holds", full stop | after a clamp-refused create the replica holds the refused version, so the floor is the version just refused | the re-push never terminates: 32 inner rounds, the cell still dirty, the authority holding nothing. The fuzz always excluded a DIRTY presence, refused or not; the record said "refused", which is narrower and livelocks when a row's cells are chunked apart. Zeroing alone is then a regression of its own: landings under an unlowered presence, closed by the guarded drag in the row above |
 | Treating the clamp invariant as unconditional | it holds only while the authority's clock is monotonic | with the clock stepped back an hour, EVERY member of the floor family livelocks, because `local` is never clamped and the held version sits permanently above `A + width`. The clamp reference is now `max(own clock, highest HELD version_ms - width)`, held rather than accepted because R2 and overwrites remove rows |
 | Scanning the cell plane and the body plane as two address sequences under one watermark | a body edited mid-pass sorts behind a cell watermark, is folded as a passed delta, and is derived again when the body scan reaches it | the committed sum counts it twice, which is the permanent false mismatch the recompute exists to remove. One sequence, with a document at its column name |
 | Recomputing on "the scan covered the full range" rather than "derived every address exactly once" | an adopted watermark can sit BEHIND this replica's own scan, so the range is covered and part of it twice | 80 of 200 addresses derived twice and a permanent false mismatch on that replica until it walks a pass cleanly end to end |

@@ -35,12 +35,12 @@ lower a version it already holds**, and every rule below follows from that: lowe
 is the one operation exempt from the local write rule, the lowered cell must not
 land under its own row's presence, and presence is a cell so R2 reaches it.
 
-This record is about 195 lines of decision, and it is load-bearing rule by rule,
-measured by removing each and watching what breaks across 20 independent
-1200-trace seed blocks. Two came out clean: the coupling to the whole-store repair
+This record is about 220 lines of decision, and it is load-bearing rule by rule,
+measured by removing each and watching what breaks, most across 20 independent
+1200-trace seed blocks and the drag's lowering guard on a narrower four-arm
+fixture. Two came out clean: the coupling to the whole-store repair
 pass, which is removed, and the floor's `local` term, which is inert on every
-counter in 20 of 20 blocks and survives on a hand-built case instead. The full knob
-table and the six priced refusals are in
+counter in 20 of 20 blocks and survives on a hand-built case instead. The full knob table and the priced refusals are in
 [the memo](../../specs/20260805T190000-replicated-cell-store-memo.md).
 
 ## Decision
@@ -79,9 +79,7 @@ local = the presence version this replica holds for the row, or zero when it hol
         re-stamp lowers nothing, four rounds with no progress. **Zeroing alone is
         not enough either, and is a regression on its own:** it removes the only
         term that knows about the skewed presence, so the re-stamped field lands
-        UNDER a presence nothing lowered, and measured across four disjoint
-        400-trace blocks that happens 96 to 105 times a block where the narrower
-        rule never does it once. **So a dirty presence cell JOINS the re-stamp
+        UNDER a presence nothing lowered. **So a dirty presence cell JOINS the re-stamp
         set** when it is not already in the refusal AND the floor would lower it,
         taking rank 0 so every field ranks above it. Both halves are load-bearing.
         Dirty, because the authority holds a clean presence and refuses a lowering
@@ -207,8 +205,7 @@ version, and a clamp-refused body is re-stamped with its row.** A body carries t
 generation copied from the presence cell that created it, so a clamped `create`
 produces an equally skewed generation. Left unstated, the other branch chains into
 permanent loss through this record's own rules: the authority refuses the skewed
-generation and answers with a newer one, and a newer returned generation replaces
-`doc_state` and resets both delivery slots and `send_token`. Measured, the prose is gone
+generation and answers with a newer one, and ADR-0212's newer-generation reset then applies. Measured, the prose is gone
 from the device that typed it, the authority holds it under a generation no row
 has, and the digest mismatches every round while the repair pass re-sends bytes
 the authority refuses. A re-stamp that moves a row's presence also moves its body
