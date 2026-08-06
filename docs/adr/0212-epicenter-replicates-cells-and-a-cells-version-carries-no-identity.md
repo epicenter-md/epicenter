@@ -470,7 +470,9 @@ than relied on.
 
 ```txt
 version_ms  = max(Date.now(), current.version_ms, presence.version_ms)
-version_seq = one past whichever of those two the floor came from, else 0
+version_seq = 1 + max(current.version_seq  if current.version_ms  == version_ms,
+                      presence.version_seq if presence.version_ms == version_ms),
+              or 0 when neither ties the floor
 ```
 
 Both components come from the row being written, and cost one row-local aggregate
@@ -505,8 +507,10 @@ same-cell writes produce **0 ms** of drift, because `version_seq` absorbs them.
 ### The merge predicate is `>`, or `=` with a byte-equal value
 
 ```sql
-WHERE (excluded.version_ms, excluded.version_seq, excluded.version_hash)
-    > (cell.version_ms, cell.version_seq, cell.version_hash)
+WHERE (excluded.version_ms, excluded.version_seq, excluded.version_hash,
+       CAST(excluded.value AS BLOB))
+    > (cell.version_ms, cell.version_seq, cell.version_hash,
+       CAST(cell.value AS BLOB))
    OR ((excluded.version_ms, excluded.version_seq, excluded.version_hash)
      = (cell.version_ms, cell.version_seq, cell.version_hash)
       AND excluded.value IS cell.value)
