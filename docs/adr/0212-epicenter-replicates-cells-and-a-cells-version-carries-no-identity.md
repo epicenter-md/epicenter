@@ -48,7 +48,7 @@
   (`Accepted`) and, by the contract it names,
   [ADR-0146](0146-row-documents-use-one-yjs-14-major-and-runtime-native-update-logs.md).
   Withdrawn: that `createSqliteDocumentLog` and its append log are "the only
-  durable document representation" (`0159:24-28`). A body is one merged state plus
+  durable document representation" (`0159:27-29`). A body is one merged state plus
   two delivery slots, so append admission and compaction stop being concepts. The
   Yjs 14 major and the V2 encoding both survive, and are relied on.
   Also [ADR-0207](0207-rows-render-continuously-to-markdown-and-frontmatter-is-the-only-way-back.md)
@@ -60,7 +60,7 @@
   scalar and would destroy CRDT history once there is any.
   Also [ADR-0206](0206-a-rows-id-comes-from-whoever-knows-it-and-one-relation-holds-every-fact.md)
   (`Accepted`) at its presence law and its relations. Withdrawn: "`presence` is
-  two-valued and has one law: `absent` is a terminal tombstone" (`:50-51`), which
+  two-valued and has one law: `absent` is a terminal tombstone" (`:51-52`), which
   is what makes an address single-use and what collides with this record's own
   reason for existing; and `_replica_row_facts` and `_replica_row_outbox`, which
   become one cell relation with no queue. What survives, and is the premise this
@@ -70,9 +70,10 @@
   which already decides that a restore creates a fresh authority lifetime. This
   record borrows that noun rather than minting a second one, makes it observable
   by returning it on every response, and adds one behaviour that record does not
-  decide: the authority re-mints its lifetime whenever a replica presents a cursor
-  at or beyond the authority's own counter. A cursor regression is the signal; the
-  lifetime is the durable carrier.
+  decide: the authority re-mints its lifetime when a replica presents a cursor
+  past its own counter, which is a corrupt-client guard rather than a detector.
+  The two questions are separate. The lifetime answers "am I talking to the same
+  authority"; the digest answers "do we hold the same thing".
   [ADR-0125](0125-record-definitions-are-release-local-lenses-and-never-migrate-user-data.md)
   and [ADR-0168](0168-lenses-are-complete-pure-json-interpretations.md) (why
   storage must be schemaless), [ADR-0208](0208-every-app-folder-is-markdown-beside-one-queryable-database.md)
@@ -330,7 +331,7 @@ the authority keep values opaque.
 
 `version_ms` is the version expressed as a time, chosen so a human can read it.
 It is not a claim about when a person acted, and the authority verifies only that
-it is not absurdly ahead of its own clock.
+it is not more than five minutes ahead of its own clock.
 
 `version_seq` is local monotonicity done structurally. Inflating `version_ms`
 instead would store its own drift.
@@ -366,8 +367,8 @@ version_seq = one past whichever of those two the floor came from, else 0
 Both components come from the row being written, and cost one row-local aggregate
 read per write. That read is not cheap: measured as an interleaved A and B in one
 database, it takes the median local write from 10.5 to 16.8 microseconds at 200k
-rows of 12 columns, and from 6.4 to 19.5 at 1M rows of 3. Call it **at least
-double**. It is the price of a write the user just made never being refused by R1,
+rows of 12 columns, and from 6.4 to 19.5 at 1M rows of 3, so **+60% at the wide
+shape and triple at the narrow one**, and worse on the fastest writes. It is the price of a write the user just made never being refused by R1,
 and both components survive a crash. **A replica-global counter does not.** A
 process restart inside one millisecond reissues `version_seq = 0`, so a rewrite
 and the value it replaces carry the same `(ms, seq)`, the tie falls to the hash,
@@ -459,7 +460,7 @@ patch(id, changes): Promise<Result<Row | undefined, ReadError>>;
 delete(id): Promise<boolean>;
 ```
 
-This is `packages/data/src/epicenter.ts:69-80` unchanged. A body is reached
+This is `packages/data/src/epicenter.ts:69-79` unchanged. A body is reached
 through the row document handle ADR-0135 already defines, not through this
 surface, which is what keeps a value you `patch` and a document you open from
 looking like the same kind of thing. The exploration memo
@@ -479,7 +480,7 @@ exists and this is its complete state as of now", not "make sure this row exists
 That is what a mirror reconciler wants, and it is not what an accidental second
 `create` wants: a device with stale local state that calls `create` on a row
 another device has since edited erases those edits everywhere, silently, through a
-call that returns success. `epicenter.ts:465-480` already refuses `create` on a
+call that returns success. `epicenter.ts:465-481` already refuses `create` on a
 row it can see is live, and that guard reads local state only, so it catches the
 common accident and not the offline one. A caller that has not seen the row's
 current state should let the runtime mint the id, or read and `patch`.
@@ -489,7 +490,7 @@ replaces it whole and nothing merges inside it. That is the point rather than a
 limitation: one cell is one merge unit, so values that must move together are
 declared as one field and can never tear.
 
-One sentence in that docblock stops being true. It says `patch` "refuses an
+One sentence in that docblock (`epicenter.ts:66-67`) stops being true. It says `patch` "refuses an
 address that holds no live fact, so an id you already deleted stays deleted rather
 than being resurrected by a write." The refusal survives, and is R1's local
 counterpart. The conclusion does not: a deleted id can be reused, by `create`,
@@ -499,7 +500,7 @@ which is the whole point of dropping absorbing death.
 
 | Plane | Rule |
 | --- | --- |
-| cell, including presence | higher `(version_ms, version_seq, version_hash)` wins, plus R1 and R2 above, which are the only cross-cell effect in the design and belong to the presence cell alone |
+| cell, including presence | higher `(version_ms, version_seq, version_hash)` wins, plus R1 and R2 above, which belong to the presence cell alone |
 | body | `Y.mergeUpdatesV2` on raw bytes |
 
 Row death is not a third: it is a cell.
@@ -558,10 +559,12 @@ of the presence cell that created its row, and nothing else. A body update namin
 an older generation is refused; **opening a body whose generation is not the row's
 current presence version replaces it** with an empty document at the current
 generation and both slots cleared; and **the projection renders such a body as
-empty** until that happens. The write door is not optional. Gating only the read
-door leaves the stale row in place, so typing into a re-created row either pushes
-at the dead generation, where the authority accepts it and no reader ever sees it,
-or silently attaches the deleted incarnation's prose to the live row. That
+empty** until that happens. The write door is not optional, and the projection gate is not redundant beside
+it. The write door handles the body a replica already holds when the re-creation
+arrives, and R2's drop below handles the same case transactionally. The
+projection gate handles the one neither can: a body update that arrives *after*
+the re-creation naming the dead generation, which is refused but which a replica
+that already merged the old body would otherwise still render. That
 replacement is a cross-plane write, so R1 and R2 are not the only ones; the
 alternative is losing every edit made to a re-created row.
 
@@ -574,8 +577,10 @@ live in the projection rather than in the body merge: a re-creation that nobody
 types into produces no body update at all, so a rule attached to body ingest never
 fires, and a replica that held the previous incarnation renders its prose in the
 new row while a replica that joined later renders nothing. That is divergence and
-a content leak at once. Gating in the projection also keeps R1 and R2 the only
-cross-cell effects and adds no cross-plane write, because it reads. Without this the body plane does not converge: a late update from a replica
+a content leak at once. **The presence cell is the only cell with authority over other cells**, and it has
+four effects: R1 refuses an older cell, R2 drops older cells, R2 drops an older
+body, and the write door replaces one. Nothing else in the design reaches across
+an address or a plane. Without this the body plane does not converge: a late update from a replica
 that never saw the delete produces `"the old note -- B typed this"` in two
 orderings and an empty body in two others. The alternative, never deleting a body,
 does converge and silently leaves the deleted incarnation's prose in the new row
@@ -707,8 +712,16 @@ cursor, and a new device bootstraps to a truncated store.
 
 So the multiset digest this record deferred is **adopted**. One table of 4096
 buckets on each side, a modular 64-bit sum per bucket, maintained by an add and a
-subtract per write. Comparing roots answers "are we equal" in 8 bytes; a mismatch
-descends to the differing buckets and the repair pass runs there. It costs 72 KB
+subtract per write. A cell's bucket is the first 12 bits of a hash of its
+address, so buckets are stable across releases and evenly filled, and a bucket is
+not an address range. Comparing roots answers "are we equal" in 8 bytes. A
+mismatch is not localized into a resumable cursor: it schedules the ordinary
+full-range repair pass, which already resumes by address, and the bucket set only
+says that one is owed.
+
+**The digest covers cells, not bodies.** A body has no version to fold into a sum,
+so body repair stays unconditional: a repair sends each body's whole `doc_state`
+whether or not anything says it differs. It costs 72 KB
 of disk and roughly 20% to 30% per local write, and the deferral cost three rounds
 of patches to a mechanism that could not carry the signal. The two premises the
 deferral rested on are both falsified: the lifetime does not catch a restore, and
@@ -725,21 +738,18 @@ record's own fixture is about 1.7 GB across three devices.
 **A lifetime alone cannot see the case it was added for.** It is a column of the
 authority's own file, so restoring that file carries the old lifetime back with
 it, and measured with the column in place the replica still receives 0 cells over
-50 rounds and disagrees on 100 of 350 addresses. So the authority watches for it instead: every request carries the replica's
-cursor, and an authority that is shown a cursor at or beyond its own counter,
-and within one page of it, **re-mints and persists its lifetime in the same
-transaction that reads the response**. Atomicity is not decoration: two concurrent
-requests otherwise mint two lifetimes and keep the loser's, or answer from a
-pre-mint snapshot and tell a replica not to reset. A replica resets when the
-lifetime it holds is not the one it is shown.
+50 rounds and disagrees on 100 of 350 addresses. What survives of that attempt is a guard, not a detector. A replica presenting a
+cursor past the authority's own counter holds something the authority cannot
+explain, so the authority **re-mints and persists its lifetime in the same
+transaction that reads the response**, and only within one page of its counter; a
+wilder cursor is a corrupt client and gets a reset scoped to itself. Atomicity is
+not decoration: two concurrent requests otherwise mint two lifetimes and keep the
+loser's, or answer from a pre-mint snapshot and tell a replica not to reset. A
+replica resets when the lifetime it holds is not the one it is shown.
 
-The comparison alone is not enough, because it expires. It is true only until the
-authority has re-issued as many cursors as the restore rewound, and the first
-replica's repair pass is precisely what re-issues them. Measured: a replica
-offline across that window returns to a counter that has moved forward again,
-never resets, and is permanently wrong on 50 of 250 addresses with nothing dirty
-and its cursor level with everyone else's. Re-minting turns a transient
-comparison into durable state that reaches every replica.
+That guard detects nothing on its own, because it expires: it holds only until the
+authority has re-issued as many cursors as a restore rewound, and the first
+replica's repair pass is what re-issues them. Detection is the digest.
 
 A reset schedules the **bidirectional repair pass**, not a plain pull. Resetting
 and re-reading repairs the read direction only: measured, a replica that resets
@@ -780,9 +790,10 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   an index.
 - **The authority stops being a sequencer and becomes a store.** Two replicas
   could therefore merge directly with no server, which is impossible today by
-  construction. This record does not build that: a cursor is server-assigned and
-  has no meaning between peers, so peer sync would need range-based set
-  reconciliation instead. The seam that keeps it cheap later is one rule: **a
+  construction. The verifier half of that now exists: the digest is
+  a range reconciliation primitive and both sides maintain one. What is unbuilt is
+  the courier, because a cursor is server-assigned and has no meaning between
+  peers. The seam that keeps it cheap later is one rule: **a
   per-cell cursor never appears in a replica.** A replica does hold one
   `last_applied_cursor`, which is a single scalar to discard rather than an index
   to unwind.
@@ -868,6 +879,11 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   first dead row, because `cellValue` draws a variable number of random values per
   column. The distributions match, so the storage and timing comparisons against
   it are unbiased, but they are distributional rather than exact.
+- **Detection costs two relations and about a quarter of a local write.** The
+  digest is 4096 buckets a side, 72 KB of disk, and an add and a subtract per
+  write. It is the one mechanism here that exists to answer a question rather than
+  to carry data, and the record spent three rounds discovering that no cheaper
+  proxy answers it.
 - **Counters are refused.** "Add one" is not expressible; two devices each adding
   one yields one. None exist today, and one would need its own CRDT regardless.
 - **Every value must round-trip canonical JSON byte-identically.** This is newly
@@ -906,7 +922,10 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   pulled page and advancing the stored cursor are one transaction, or a crash
   between them loses those cells with nothing able to notice. A body's merged
   state and its two slots are one transaction, or the body defect above
-  reappears through a different door.
+  reappears through a different door. A digest bucket and the merge it describes
+  are one transaction, or the digest becomes the thing this record refuses
+  elsewhere: a durable marker that decides what to send, wrong in a way that
+  perpetuates itself.
 - **The replaced path is close to untested**, so the migration's convergence
   check cannot be a regression test against what exists. It has to be a new
   differential test, written first.
@@ -919,7 +938,7 @@ conclusion. Timings taken on the settled schema use a 200k all-live fixture and
 are marked. The full table,
 including what each refusal costs, is in
 [the memo](../../specs/20260805T190000-replicated-cell-store-memo.md), which is
-scheduled for deletion on acceptance; the git ref is `f49ad33c44`.
+scheduled for deletion on acceptance; the git ref is `e77191a274`.
 
 - **Keep ordered patch replay.** It protects exactly one thing: `[create,
   delete]` reordered leaves a permanently live row, because `delete` no-ops at an
@@ -980,20 +999,14 @@ scheduled for deletion on acceptance; the git ref is `f49ad33c44`.
   cell costs a 32KB bucket exchange plus the address and version of every cell in the
   differing bucket, 586 and 732 at the two shapes, where a cursor costs the changed cell. The seam remains
   one rule, that a per-cell cursor never appears in a replica.
-- **An incremental multiset digest beside the cursor, as a verifier rather than
-  a delivery mechanism.** This is the one thing that can detect divergence at
-  all, and it was measured rather than argued: a 4096-bucket table of modular
-  64-bit sums costs **72 KB** of disk and answers "are the two sides actually
-  equal" in **0.29 ms for 8 bytes on the wire**. It is deferred, not refused. Its
-  price is on the write path, at roughly **+30% and +20%** per local write, and **+63%
-  and +57%** on a bulk seed. An earlier draft called that an upper bound because the measurement
-  charged it a read of the old version a real merge already performs; that is
-  withdrawn. Removing the read moves the premium by about three points, which is
-  inside the 30% run-to-run spread of that metric, so the honest statement is one
-  significant figure. It is deferred because the store lifetime catches
-  the realistic divergence (a restored or rewound authority) for one column, and
-  the bidirectional repair pass can be triggered on demand or on a schedule
-  without it. Adopt it if silent divergence is ever actually observed. The sums
-  must be folded in the application and not in SQL: SQLite raises on 64-bit
-  integer overflow, and an earlier attempt to keep the running sum in a column
+- **An incremental multiset digest, deferred.** Adopted instead, in the Decision
+  above, after three successive attempts to derive detection from the cursor
+  failed. The deferral rested on two premises and both are falsified: the store
+  lifetime does not catch a restore, because it lives inside the file being
+  restored, and neither does a cursor regression, because the cursor an authority
+  is shown is what a replica read rather than what it wrote. The price paid is
+  72 KB of disk per side and roughly a quarter added to a local write. The one
+  implementation constraint that survives from the deferral: the sums must be
+  folded in the application and not in SQL, because SQLite raises on 64-bit
+  integer overflow, and an earlier attempt to keep a running sum in a column
   promoted it to REAL and silently destroyed the digest.

@@ -23,6 +23,9 @@ R2  A write is delivered exactly once in effect. A crash between "authority
     committed" and "client cleared its queue" must not double-apply.
 R3  Two devices editing different fields of one row both survive.
 R4  Row death is terminal. Nothing resurrects a deleted row.
+    [REVERSED by Revision 2: terminality is what makes an address single-use,
+    and an address must be reusable. What survives is that a delete beats every
+    concurrent edit, which is R1 and R2 rather than an absorbing element.]
 R5  A replica converges to the same state as every other replica.
 R6  A returning replica, however stale, receives everything it missed.
 ```
@@ -104,7 +107,8 @@ enqueues the delete. Tests pin both halves (`fold.test.ts:53`, `:93-98`) and
 `delete@T2` beats `create@T1` by clock comparison regardless of arrival order.
 Today the outcome depends on arrival order because "does the row exist" is a
 precondition rather than a comparison. So ordered replay is not protecting a
-requirement the new model lacks; it is a weaker implementation of R4.
+requirement the new model lacks; it is a weaker implementation of the delete-wins
+guarantee. (R4 as stated in section 1 is itself reversed; see Revision 2.)
 
 Everything else that looks order-dependent is not a requirement:
 
