@@ -60,9 +60,9 @@ what was stored. Its `dirty` flag is never cleared and the round repeats forever
 with no bound: a laptop resuming with its clock a day fast strands the cell for
 about 24 hours, and one resuming with an RTC reading 2031 strands it for years.
 Rewriting cannot repair it, because the local write rule never lowers
-`version_ms`. So a **clamp** refusal names the address and the authority's own time, and the
-replica re-stamps the refused cells of that row, and the row's body generation
-with them, **in one transaction, at `(floor, rank)`**, where rank is each cell's
+`version_ms`. So a **clamp** refusal names the address and the authority's own time, and the replica re-stamps the refused cells of that row, **the row's dirty presence
+cell if it is not already among them**, and the row's document generations with
+them, **in one transaction, at `(floor, rank)`**, where rank is each cell's
 position in the row's own `(version_ms, version_seq)` ascending order, and which is the one
 operation exempt from the local write rule above because it deliberately lowers
 a version. The floor is
@@ -105,10 +105,9 @@ floor = (max(the authority's time,
 ```
 
 **All three terms are load-bearing, and every clamped variant of `held` is
-provably inert.** One asymmetry has to be said out loud: `local` binds on 0 of 4361
-re-stamps, which is the same measured-inert standard that kills the two clamped
-variants below. It survives anyway, on a hand-built case rather than on the fuzz,
-so the fuzz is not what establishes it. Taking the floor from the authority alone loses the write
+provably inert.** One asymmetry has to be said out loud: `local` binds once in 86,913 re-stamps, which all but invites the verdict that
+kills the two clamped variants below; it survives on a hand-built case rather than on the fuzz, so the fuzz is not what
+establishes it and the Consequences carry the argument. Taking the floor from the authority alone loses the write
 outright when the authority holds no presence for the row, because `held` is then
 undefined and the re-stamped cell lands under the replica's own presence. Taking
 it from the replica alone is the round-8 defect. Two rounds then tried to clamp
@@ -190,9 +189,8 @@ version, and a clamp-refused body is re-stamped with its row.** A body carries t
 generation copied from the presence cell that created it, so a clamped `create`
 produces an equally skewed generation. Left unstated, the other branch chains into
 permanent loss through this record's own rules: the authority refuses the skewed
-generation and answers with a newer one, a newer returned generation resets the
-body and both slots, and opening a body whose generation is not the row's current
-presence version replaces it with an empty document. Measured, the prose is gone
+generation and answers with a newer one, and a newer returned generation replaces
+`doc_state` and resets both delivery slots and `send_token`. Measured, the prose is gone
 from the device that typed it, the authority holds it under a generation no row
 has, and the digest mismatches every round while the repair pass re-sends bytes
 the authority refuses. A re-stamp that moves a row's presence also moves its body
@@ -208,9 +206,9 @@ millisecond floored and the counter not: the re-creation is gone from both sides
 nothing is dirty, the roots agree, and the call returned success.
 
 **The floor is the fix, and a flat authority time is the defect it repairs.**
-Re-stamping to authority time alone lands the cell *below* its own row's presence
-cell, and the failure above follows: measured, the user's write vanishes from the device that typed it
-and from the authority, with nothing dirty and the digest roots agreeing.  Dragging a clean presence cell into the
+Measured, the write the Decision describes as lost outright vanishes from the
+device that typed it and from the authority, with nothing dirty and the digest
+roots agreeing.  Dragging a clean presence cell into the
 re-stamp set instead is worse: the authority refuses it as stale and R2 kills the
 cell anyway. Rank rather than the
 original counter: the re-stamp collapses a *range* of `version_ms` onto one time,

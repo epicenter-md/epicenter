@@ -2,10 +2,10 @@
 
 - **Status:** In Progress
 - **Date:** 2026-08-05
-- **Settled as:** [ADR-0212](../docs/adr/0212-epicenter-replicates-cells-and-a-cells-version-carries-no-identity.md) and [ADR-0213](../docs/adr/0213-two-replicas-compare-a-multiset-digest-because-a-cursor-cannot-say-whether-they-agree.md).
+- **Settled as:** [ADR-0212](../docs/adr/0212-epicenter-replicates-cells-and-a-cells-version-carries-no-identity.md), [ADR-0213](../docs/adr/0213-two-replicas-compare-a-multiset-digest-because-a-cursor-cannot-say-whether-they-agree.md) and [ADR-0214](../docs/adr/0214-a-clamped-write-is-re-stamped-because-a-store-must-lower-a-version-it-holds.md).
   This memo is the exploration behind that record and keeps the reversals and the
   Rejected table; the ADR is the decision, and carries the measurements that
-  were taken after this memo settled. Delete this file once both are
+  were taken after this memo settled. Delete this file once all three are
   Accepted and its schemas are built.
 
 Evaluates replacing ordered-patch replication with a generic replicated cell
@@ -24,7 +24,7 @@ stopped changing at round 2 and everything since was prose. What actually happen
 is that twenty rounds of passes were reading 1400 lines of prose and finding prose
 defects, so the mechanism went unattacked. Narrowing the brief to "is there
 anything wrong with the DESIGN, and nothing else counts" found **four real
-mechanism defects in two rounds**, two of them silent user-data loss:
+mechanism defects in two rounds**, all four of them silent:
 
 - the open door replaced any document whose generation was **unequal** to the row's
   presence, which destroys an ahead-of-row document. Measured, 23 of 63 delivery
@@ -45,8 +45,8 @@ The five ideas below did survive all of it: 109,600 exhaustive orderings, a
 ten-delivery sweep. **The core is settled and the machinery around it was not**,
 and the prose churn was camouflage rather than the whole story.
 
-**The record describing it grew 5.9x.** ADR-0212 was 244 lines when this session
-began and is 1429 now. The design it describes is 175 lines. The memo went from
+**The record describing it grew 5.2x.** ADR-0212 was 244 lines when this session
+began and is 1268 now. The design it describes is 175 lines. The memo went from
 roughly 700 to 1100.
 
 **Findings per round are flat.** Rounds 17 through 20 produced 32, 31, 22 and 24
@@ -91,7 +91,7 @@ was cut.
 The knob table, the six priced refusals and the 4.4% partition are the evidence
 behind ADR-0214 and stay here, which is what the README means by an ADR not being a
 spec. The second move is still open: Consequences and Considered alternatives,
-319 lines between them, belong here too, which would leave ADR-0212 near 860 lines
+307 lines between them, belong here too, which would leave ADR-0212 near 960 lines
 deciding one thing.
 
 **What is genuinely settled**, and should not be re-derived by whoever picks this
@@ -169,8 +169,8 @@ The `local` arm is byte-identical to the decided arm on every counter in every
 block, which is the finding rather than a tie.
 
 The large separations are solid across five independent 1200-trace seed blocks:
-dropping `held` gives 422 to 499 below-authority against 0 every time. The small counters are not: 1200 traces separates 418 from 0 in every block and
-does not resolve 4 from 1 in any. The verdict is robust; the precision never was.
+The small counters are not: 1200 traces separates 418 from 0 in every block and
+does not resolve 5 from 1 in any. The verdict is robust; the precision never was.
 
 Four of five are load-bearing, and the authority's time has a better argument than
 this record gives: it is the only **always-defined** term, so for a
@@ -956,7 +956,7 @@ mutually exclusive states, one with every cell owed and one with none.
 | A terminal recompute under the authority's own write lock | an authority is the side N replicas push into, so its lock is not a local typist's | 0.84 microseconds per cell at the full fixture, so 2174 ms of held write lock at 2.6M cells, measured there rather than extrapolated; a concurrent push fails after burning its full `busy_timeout`, measured at 0, 1000 and 5000 ms |
 | Refusing a causally gapped `doc_state` at the write door | the premise was that `load` drops structs it cannot integrate, so `{u1, u3}` and `{u1}` entry identically | the premise is false on the pinned Yjs: the stores are 45 and 32 bytes and their entries differ. Enforcing it discards recoverable user prose and ADR-0212's two body-refusal answers both lose it |
 | Letting a replica's repair pass own the authority's accumulator | the pair is one per store and a pass is one per replica, and a multiset sum has no idempotence | two interleaved passes over 200 addresses commit exactly twice the truth; a partial overlap commits a number related to neither. The authority refuses a chunk whose `from` is neither its current watermark nor the sentinel, and a chunk at the sentinel restarts the pass |
-| Reading the floor's `local` term as "the presence this replica holds", full stop | after a clamp-refused create the replica holds the refused version, so the floor is the version just refused | the re-push never terminates: 32 inner rounds, the cell still dirty, the authority holding nothing. The fuzz always excluded a DIRTY presence, refused or not; the record said "refused", which is narrower and livelocks when a row's cells are chunked apart |
+| Reading the floor's `local` term as "the presence this replica holds", full stop | after a clamp-refused create the replica holds the refused version, so the floor is the version just refused | the re-push never terminates: 32 inner rounds, the cell still dirty, the authority holding nothing. The fuzz always excluded a DIRTY presence, refused or not; the record said "refused", which is narrower and livelocks when a row's cells are chunked apart. Zeroing alone is then a regression of its own: 96 to 105 landings under an unlowered presence per 400-trace block, closed by dragging the dirty presence into the re-stamp set at rank 0 |
 | Treating the clamp invariant as unconditional | it holds only while the authority's clock is monotonic | with the clock stepped back an hour, EVERY member of the floor family livelocks, because `local` is never clamped and the held version sits permanently above `A + width`. The clamp reference is now `max(own clock, highest HELD version_ms - width)`, held rather than accepted because R2 and overwrites remove rows |
 | Scanning the cell plane and the body plane as two address sequences under one watermark | a body edited mid-pass sorts behind a cell watermark, is folded as a passed delta, and is derived again when the body scan reaches it | the committed sum counts it twice, which is the permanent false mismatch the recompute exists to remove. One sequence, with a document at its column name |
 | Recomputing on "the scan covered the full range" rather than "derived every address exactly once" | an adopted watermark can sit BEHIND this replica's own scan, so the range is covered and part of it twice | 80 of 200 addresses derived twice and a permanent false mismatch on that replica until it walks a pass cleanly end to end |
@@ -973,7 +973,7 @@ mutually exclusive states, one with every cell owed and one with none.
 
 `Supersedes` and `Amends` carry reciprocal links on both records, as
 `docs/adr/README.md` requires. `Relates` does not: it is one-directional by
-convention here, and ADR-0170 and ADR-0213 each carry one back, because that record owns a
+convention here, and ADR-0170, ADR-0213 and ADR-0214 each carry one back, because that record owns a
 noun this one borrows.
 
 **A check that has now failed five times.** The body digest entry was absent, then

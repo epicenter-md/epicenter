@@ -2,7 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-08-06
-- **Provisional number.** `main` ends at ADR-0205; 0206 through 0211 and 0213 land
+- **Provisional number.** `main` ends at ADR-0205; 0206 through 0211, 0213 and 0214 land
   with this branch. Reconcile at merge time (`docs/adr/README.md`).
 - **Supersedes:** [ADR-0163](0163-scalar-sync-separates-fact-reads-from-numbered-intent-submissions.md)
   (`Proposed`), and with it the three records 0163 itself superseded, because
@@ -399,8 +399,8 @@ the cell's value in place; `json_patch` treats the blank as a delete and removes
 column entirely; and `json_group_object` over a `UNION ALL`, which is the most
 direct extension of the projection this record already specifies, does not
 deduplicate keys and emits the column twice. The cell meanwhile keeps its version
-and keeps replicating forever. 
-the digest cannot see the difference because it hashes both rows on both sides. The violation needs no Lens bug. ADR-0125 makes a
+and keeps replicating forever, and the digest cannot see the difference because it
+hashes both rows on both sides. The violation needs no Lens bug. ADR-0125 makes a
 Lens release-local and requires a release to preserve values it cannot read, so a
 release that writes `body` as an ordinary string and a later one that declares it
 `collaborative()` both persist, and every replica holds both.
@@ -668,7 +668,7 @@ recovers a crash between the committed move and the request leaving the socket.
 **A body response is a merge input, exactly as a cell response is.** It returns
 the generation and the state the authority holds. An acknowledgement clears
 `inflight_update` only when the returned generation matches; a newer returned
-generation resets the body and both slots. Without this the body plane has a
+generation takes the same reset the delivery path takes below. Without this the body plane has a
 refusal, for an update naming an older generation, and no channel to report it:
 either the acknowledgement fires anyway and clears bytes the authority rejected,
 or it does not and the replica retries forever.
@@ -689,8 +689,7 @@ decoration: measured, a replace that leaves `pending_update` staged sends the de
 incarnation's bytes under the new generation, the authority accepts them because
 the generations now match, and the deleted row's prose is spliced permanently into
 the live row on every device, with both sides converged so the digest reads clean.
-The push-response path already resets both slots on a newer returned generation;
-the pull-delivery path needs the same clause. And replacing rather than merging is
+Replacing rather than merging is
 because: `mergeUpdatesV2` across generations is what would
 splice the deleted incarnation's prose into the live row. **opening a document whose generation is OLDER than the row's current presence
 version replaces it** with an empty document at the current generation and both
@@ -824,7 +823,8 @@ mismatch schedules; that one owns the detection and the `digest_format` and
 
 The lifetime stays, because it answers a different and cheaper question: am I
 talking to the authority I was talking to before. It is re-minted on restore and
-on rebuild, and **the re-mint is bounded**: . Unbounded, one
+on rebuild, and **the re-mint is bounded**: it fires only for a cursor within one page past
+the authority's own counter. Unbounded, one
 unauthenticated request forces every replica to re-bootstrap, which at this record's own
 fixture and its own 121 bytes per cell is about 1.0 GB across three devices once
 bodies are counted, and
