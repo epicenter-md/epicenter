@@ -3,8 +3,9 @@
 - **Status:** In Progress
 - **Date:** 2026-08-05
 - **Settled as:** [ADR-0212](../docs/adr/0212-epicenter-replicates-cells-and-a-cells-version-carries-no-identity.md).
-  This memo is the exploration behind that record and keeps the measurements and
-  the reversals; the ADR is the decision. Delete this file once the ADR is
+  This memo is the exploration behind that record and keeps the reversals and the
+  Rejected table; the ADR is the decision, and carries the measurements that
+  were taken after this memo settled. Delete this file once the ADR is
   Accepted and its schemas are built.
 
 Evaluates replacing ordered-patch replication with a generic replicated cell
@@ -141,10 +142,10 @@ table naming an ordinary `field.string()` (`definitions.ts:62`, `:227-240`,
 validated to reject non-string kinds). So **long-form prose is an LWW scalar
 today**, the one case where LWW is worst. ADR-0207 named that and shipped anyway:
 
-> `:261-264` "**A table's prose is either in a field or unreachable from the
+> `:262-265` "**A table's prose is either in a field or unreachable from the
 > folder.** That is a real hole, and it lands hardest on rich text editors."
 
-Yjs row documents merge per character but `:154` says "**A row document is never
+Yjs row documents merge per character but `:155` says "**A row document is never
 rendered and never written**" to the folder. So today you choose folder
 round-trip **or** character merge, never both.
 
@@ -229,7 +230,7 @@ T100  device A reconnects and uploads X@T5
       X@T5 is never delivered. Silently. Forever.
 ```
 
-**Minimal safe receipt cursor** — and most of it already exists:
+**Minimal safe receipt cursor**  -  and most of it already exists:
 
 ```txt
 1  The authority assigns a monotonic integer from one counter on every write
@@ -320,7 +321,7 @@ that; it should be named as out of scope.
 > **Revision 2 withdraws this section.** The API it proposes does not survive:
 > `create` has to be a verb, and `patch` is already the right name for a partial
 > per-cell write. The surface that ships is the one that already exists at
-> `packages/data/src/epicenter.ts:69-79`. Kept because the reasoning about
+> `packages/data/src/epicenter.ts:69-80`. Kept because the reasoning about
 > composite cells and named absence is still the reasoning that applies.
 
 Not CRUD, not JSON Patch. One primitive, `set`, over cells; the merge kind is
@@ -363,7 +364,14 @@ What is deliberately absent: `patch`, `update`, `create`, `transaction`,
 **Product contract:** *Every value you change is durable immediately, converges
 on your other devices without asking, and the most recent edit to a field wins.*
 
-**Amendment 1 — there is no outbox.** The proposal says the outbox "compacts
+> **Revision 1 reverses Amendment 1's mechanism and Revision 2 reverses
+> Amendment 3's naming.** The outbox is still deleted, which is the part that
+> holds. Pending-ness is NOT a derived query: a derived flag silently loses a
+> same-millisecond rewrite, so a cell carries an explicit `dirty` column. The
+> migration outline below also stages against a whole-row `fields TEXT` that the
+> settled design refuses as a stored shape.
+
+**Amendment 1 - there is no outbox.** The proposal says the outbox "compacts
 pending scalar writes by cell." That keeps a relation the design deletes. If a
 cell carries its own clock and its confirmed clock, pending-ness is a query:
 
@@ -375,10 +383,10 @@ A view, not a second relation to keep consistent. This also kills
 `replica.ts:375-376`, where one oversized intent **permanently wedges** the
 outbox.
 
-**Amendment 2 — no HLC, no actor id.** `version = (wallMillis, valueHash)` plus
+**Amendment 2  -  no HLC, no actor id.** `version = (wallMillis, valueHash)` plus
 a local monotonic guard and a server clock clamp. Section 5.
 
-**Amendment 3 — the body becomes a Yjs cell.** This closes the hole ADR-0207
+**Amendment 3  -  the body becomes a Yjs cell.** This closes the hole ADR-0207
 named and accepted, and it is the reason to do this work now rather than later.
 Section 4.
 
@@ -587,14 +595,14 @@ Nothing in this table gets re-litigated without a number that beats it.
 
 | Refused | Why | Measured cost of refusing it |
 | --- | --- | --- |
-| Whole-row JSON as the stored shape | per-field and whole-row versions do not compose | the store is 2.13x and 1.67x its size (181.4 vs 85.3 MB, 345.2 vs 206.2 MB), and rebuilds the projection 16x and 7.9x slower |
+| Whole-row JSON as the stored shape | per-field and whole-row versions do not compose | the store is 2.13x and 1.67x its size (181.4 vs 85.3 MB, 345.2 vs 206.2 MB), and re-derives one changed row 1.69x and 1.21x slower, and rebuilds the whole projection 16.8x and 8.6x slower |
 | Real typed columns | ADR-0125: nowhere to put an unknown key | 3.7x the disk (181.4 vs 48.5 MB) and 2.7x the scattered read (0.010 vs 0.0037 ms) |
 | One JSON record per row plus a version map | one field change ships the whole record and map; merge-group names become an unversioned wire contract | wire 1039 vs 121 bytes (8.6x) at 12 columns, 353 vs 121 (2.9x) at 3 |
 | Interning the address | the replica must be readable in a SQL console with no joins | at most 32% of the file, before dictionary tables and integer keys are added back |
 | Readable version columns (ISO-8601 plus hex) | a view gives the same legibility for nothing | +65 MB (+36%) and +101 MB (+29%) |
 | A per-cell cursor on the replica | it is a durable local claim about the authority's state | the index alone is 85.3 MB, 32% of the file |
 | An index on `dirty` | the scan it replaces is cheap and once per round | +75 MB and +92 MB with local work standing, to save 46 ms and 92 ms per sync round |
-| Row presence in its own relation | one algebra, one relation, and an address that can be reused | 2.1x and 1.8x slower projection rebuild (1230 vs 580 ms, 2090 vs 1142 ms), for 1.7% and 4.9% less disk |
+| Row presence in its own relation | one algebra, one relation, and an address that can be reused | 2.1x and 1.8x slower projection rebuild (1230 vs 590 ms, 2090 vs 1122 ms), for 1.7% and 4.9% less disk |
 | A generation column plus a `resurrect` verb | the presence cell's version already orders incarnations | one column on every cell, one new API surface, and it loses a concurrent write from a replica that has not seen the bump, where R1 and R2 keep it |
 | A 16-byte `version_hash` | the merge predicate's value guard closes the same hole | +36 MB (+11.5%) |
 | A replica-global `version_seq` | it is not durable across a restart | a same-millisecond rewrite after a crash is silently discarded 50.3% of the time, measured over 20,000 trials |
@@ -606,6 +614,18 @@ Nothing in this table gets re-litigated without a number that beats it.
 | Terminal, absorbing row death | it makes an address single-use, against ADR-0206 | a provider-keyed row never returns: 30 reconciler passes at strictly later versions leave it absent |
 | An unconditional cell drop on `absent` | it does not converge | a cell at a dead address is retained, unreadable, until the address is re-created |
 | Counters | two devices each adding one yields one | none exist, and one needs its own CRDT regardless |
+| A body with no incarnation tag | it does not converge across a delete and a re-creation | two orderings give the new row the dead row's prose, two give it an empty body |
+| Never deleting a body instead | it converges, and a CRDT has no truncate | the deleted incarnation's prose stays in the new row forever, unremovable by any operation |
+| An authority lifetime as the only restore signal | the column lives inside the file being restored | a restore carries the old lifetime back: 0 cells over 50 rounds, 100 of 350 addresses wrong |
+| A reset that only re-reads | the read direction is not the broken one | after the reset the replica still disagrees on the 50 cells the restore destroyed, and pushes nothing |
+| Re-stamping an R1 refusal at the authority clock | R1 and the clamp are different refusals | the previous incarnation's offline edit beats the re-creation's snapshot, which is what R2 exists to prevent |
+| A local write floor taken from the cell alone | R1 measures against the row's presence cell | a write to a never-set column is silently refused for the width of the clamp, measured at 241 seconds |
+| Assigning rather than merging into `inflight_update` | an overlapping round clobbers a live send | the bytes in flight are lost with nothing able to notice |
+| An acknowledgement with no send token | a late reply cannot be told from a current one | both slots empty, and everything typed since the first send is gone |
+| Tying `authority_lifetime` to `last_applied_cursor` in a CHECK | the two facts are independent | the reset state is unrepresentable and the replica re-resets every round forever |
+| Leaving the authority's address unchecked | a value is opaque, an address is not | one unrepresentable address aborts every page and wedges every replica permanently |
+| One hash for a cleared cell and for JSON `null` | they are different values | two replicas refuse each other forever, at probability 1 rather than 2^-64 |
+| An unbounded repair pass | `sealBatch` was the only upload bound in the system | 2.4M cells and 181 MB in one request |
 | Merging inside a `json(inner)` field | one cell is one merge unit, so declared-together values never tear | a whole-blob write, which is the point rather than a limitation |
 
 **Harness.** Every figure above comes from `bench.ts` through `bench7.ts` and

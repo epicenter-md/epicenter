@@ -2,6 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-07-20
+- **Amended by:** [ADR-0212](0212-epicenter-replicates-cells-and-a-cells-version-carries-no-identity.md) (`Proposed`) at the unit of convergence. Withdrawn: one scalar address as that unit (`:34-36`), which becomes a single cell at a `namespace / table / row / column` address. The refusal of distributed transactions survives, and is what lets that record refuse cross-cell invariants.
 - **Amends:** [ADR-0163](0163-scalar-sync-separates-fact-reads-from-numbered-intent-submissions.md) by defining the independently convergent semantic unit carried by the wire
 
 ## Context
