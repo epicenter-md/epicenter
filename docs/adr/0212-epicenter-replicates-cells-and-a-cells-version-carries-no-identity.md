@@ -669,13 +669,34 @@ operation exempt from the local write rule above because it deliberately lowers
 a version. The floor is
 
 ```txt
-held  = the presence version the AUTHORITY holds for this row, returned with
-        the refusal
-floor = (max(the authority's time, held.version_ms),
-         held.version_ms >= the authority's time
-           ? held.version_seq + 1 + rank
+held  = the presence version the AUTHORITY holds for this row, returned with the
+        refusal, or zero when it holds none
+local = the presence version this replica holds for the row, or zero
+floor = (max(the authority's time, min(held.version_ms, the authority's time),
+             local.version_ms),
+         the millisecond came from a presence version
+           ? that version's seq + 1 + rank
            : rank)
 ```
+
+**All three terms are load-bearing, and an earlier draft carried one.** Taking the
+floor from the authority alone loses the write outright when the authority holds
+no presence for the row, because `held` is then undefined and the re-stamped cell
+lands under the replica's own presence: measured, the note is gone from every
+device and the roots agree. Taking it from the replica alone is the round-8 defect.
+And `held.version_ms` may be a full clamp width ahead, so flooring *to* it imports
+another device's skew into a re-stamp applied to a device already known to have a
+bad clock; measured over 800 traces, doing that drove user-visible create and
+delete losses from 308 to 322 while driving the internal counter it targeted from
+285 to 0. Clamping the forward reach keeps the counter at zero without the
+regression.
+
+**The floor is spent in the round that reads it.** The refusal carries the
+authority's held presence at refusal time, and pushing the re-stamped cells on the
+*next* round lets another replica move it in between, after which the re-stamped
+presence is refused as stale and the user's create or delete is gone with nothing
+dirty. Measured: 179 stale re-stamped presence cells and 66 destroyed by R2, which
+re-pushing the row in the same round takes to 16 and 3.
 
 **The floor comes from the authority, not from the replica.** A presence write
 overwrites the row's presence cell in place, so when the presence cell is itself

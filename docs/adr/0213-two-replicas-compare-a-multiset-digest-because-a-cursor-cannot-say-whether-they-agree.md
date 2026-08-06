@@ -178,8 +178,18 @@ rounds**, still unequal. At this record's fixture that is 2.6 M cells and about
 315 MB every round, forever, with nothing user-visible wrong.
 
 So a repair pass that completes **recomputes `digest_sum` on both sides**: the
-replica from `_replica_cell` and `_replica_body`, and the authority from
-`_authority_cell` and `_authority_body` when it serves that pass to completion.
+replica from `_replica_cell` and `_replica_body`, scoped by `repair_from`, and the
+authority from `_authority_cell` and `_authority_body`.
+
+**The authority's half cannot be a running total, because the schema holds no
+state for one.** `_authority_metadata` has one 8-byte slot and it is `digest_sum`
+itself: accumulating a partial sum there leaves garbage rather than drift the
+moment a replica goes offline mid-pass, and two interleaved passes leave the
+loser's partial as the durable value. Measured: a pass abandoned after six of ten
+pages leaves the authority summing 60% of its own store, which every replica then
+mismatches every round. So the authority recomputes **terminally, under its own
+write lock**, which it can do and a replica cannot because it is not the side a
+user is typing into.
 Recomputing one side only leaves the other's drift permanent, and an authority
 whose sum has drifted is a mismatch every replica repairs every round forever,
 which is the failure this section exists to remove. **The recompute derives from content, and the arithmetic has to say so.** A pass
@@ -192,11 +202,12 @@ added to remove.
 An earlier draft answered that with `sum_at_scan_start + every delta folded
 since`, which is a **self-assignment**: `digest_sum` is defined as exactly that
 running total, so committing it changes nothing and the omitted fold it exists to
-correct survives inside `sum_at_scan_start` untouched. What the commit has to be
-is **the sum of the entries the scan actually derived from content**, plus only
-those deltas for writes that landed after the scan had already passed their
-address. The first term is what makes it a recompute; without it there is no term
-that reads the store at all.
+correct survives inside `sum_at_scan_start` untouched. What the commit has to be is **the sum of the entries the
+scan actually derived from content, plus only those deltas whose address the scan
+has already passed**. The first term is what makes it a recompute; the second must
+be scoped by the pass's own watermark, which `repair_from` already is, or every
+write landing ahead of the scan is counted twice and 40 of 40 completed passes
+leave the sum wrong in the other direction.
 
 The cost is not free and an earlier draft said it was: hashing every cell is
 **+295% on top of the scan** the pass already pays, about 2.5 seconds at 2.6M
@@ -285,6 +296,11 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
   record rejects. Hashing 40 KB of rendered text and 40 KB of `doc_state` cost
   13.23 and 13.24 microseconds, so the input's shape is not what matters; its
   length is.
+- **Neither the recompute nor the body entry has been fuzzed as decided.** Every
+  trace count attributed to them ran an earlier mechanism: the fuzz implements a
+  terminal scan, which this record rejects for the replica. That is the third time
+  a number here has been attributed to a mechanism that was not the one running,
+  and it is the reason the counts are reported as untested rather than restated.
 - **The body entry has no convergence evidence.** The 1200-trace fuzz reported for
   it ran the snapshot entry, which this record calls blind to the thing it
   compares, so "zero missed divergences" holds only because body text never
@@ -312,6 +328,13 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
   full adversarial round because the verification of the day modelled the digest
   in JavaScript maps and never wrote a sum to SQLite. Any check of this mechanism
   must round-trip through the database.
+- **A causally gapped `doc_state` is refused at the write door.** `load` drops
+  structs it cannot integrate, so a store holding `{u1, u3}` and one holding `{u1}`
+  produce byte-identical entries: the entry is a function of what a document can
+  integrate rather than of what the store holds, which is constraint 1, the one it
+  was adopted to satisfy. Refusing the gap is cheaper than folding the state
+  vector and the pending bytes alongside, and the plane already refuses
+  subdocuments at the same door.
 - **Subdocuments are invisible to this entry, and to the plane.** A `Y.Doc` is a
   legal value inside a `Y.Map`, and typing into one leaves the parent's
   `doc_state` unchanged, so a subdocument's prose is never delivered, never
