@@ -72,11 +72,24 @@ held  = the presence version the AUTHORITY holds for this row, returned with the
         refusal, or zero when it holds none
 local = the presence version this replica holds for the row, or zero when it holds
         none OR when the row's presence cell is DIRTY, whether or not it is in
-        this refusal. Zeroing only on the refused set assumes a row's dirty cells
-        push together, which nothing decides: measured, a field refused in a round
-        its own dirty presence was not sent in floors at the skewed version and
-        the re-stamp lowers nothing, four rounds with no progress, which is the
-        livelock this record exists to break
+        this refusal. Zeroing only on the refused set assumes a row's dirty cells push
+        together, which nothing decides: measured, a field refused in a round its
+        own dirty presence was not sent in floors at the skewed version and the
+        re-stamp lowers nothing, four rounds with no progress. **Zeroing alone is
+        not enough either, and is a regression on its own:** it removes the only
+        term that knows about the skewed presence, so the re-stamped field lands
+        UNDER a presence nothing lowered, and measured across four disjoint
+        400-trace blocks that happens 96 to 105 times a block where the narrower
+        rule never does it once. **So a dirty presence cell JOINS the re-stamp
+        set** when it is not already in the refusal, taking rank 0 so every field
+        ranks above it. That is safe precisely because it is dirty: this record
+        refuses to drag a CLEAN presence in, because the authority holds it and
+        lowering it is refused as stale, while a dirty presence has never been
+        accepted and lowering it costs the authority nothing. Measured, the three
+        rules give 0 / 96-105 / 0 re-stamps landing under presence and 182-199 /
+        176-190 / **149-159** writes lost while the row is live, so dragging the
+        dirty presence in beats both of the others on both counters rather than
+        trading between them
 floor = (max(the authority's time,
              held.version_ms,
              local.version_ms),

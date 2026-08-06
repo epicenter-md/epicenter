@@ -683,8 +683,15 @@ receives none. Measured, 30 of 63 delivery subsets diverge without it and 0 with
 it, and the smallest divergent case is two deliveries. The authority has the same
 hole and it is worse there, because the push takes a cursor, so every replica pulls
 the deleted row's prose back and the sums differ permanently on identical
-user-visible content. One naming a **newer** generation replaces `doc_state` rather
-than merging into it: `mergeUpdatesV2` across generations is what would
+user-visible content. One naming a **newer** generation replaces `doc_state` **and resets both delivery
+slots and `send_token`**, rather than merging into it. Resetting the slots is not
+decoration: measured, a replace that leaves `pending_update` staged sends the dead
+incarnation's bytes under the new generation, the authority accepts them because
+the generations now match, and the deleted row's prose is spliced permanently into
+the live row on every device, with both sides converged so the digest reads clean.
+The push-response path already resets both slots on a newer returned generation;
+the pull-delivery path needs the same clause. And replacing rather than merging is
+because: `mergeUpdatesV2` across generations is what would
 splice the deleted incarnation's prose into the live row. **opening a document whose generation is OLDER than the row's current presence
 version replaces it** with an empty document at the current generation and both
 slots cleared. The predicate is *older*, not *unequal*, and the difference is
