@@ -241,6 +241,5 @@ because the obligation was discharged rather than deferred.
   exercised by any fuzz. `local` binds once in 86,913 re-stamps, close enough to the
   measured-inert standard that kills the two clamped variants to invite the same
   verdict, and it survives on a hand-built case instead.
-- **A backward step of the authority's own clock is this record's worst case**, and
-  the decided unclamped floor is the worst-affected arm by 5.5x.
+- **A backward step of the authority's own clock is this record's worst case**, and the Decision above prices it.
   The ratchet restores the clamp's invariant and not convergence.
