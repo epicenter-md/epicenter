@@ -737,8 +737,8 @@ the question rather than answering it.
 **A clamp refusal on a presence cell schedules the whole-store pass**, because
 that is the only repair the schema can represent and the record deleted the scope
 column that would have bounded it. At this fixture that is 2.6M cells and roughly
-315 MB, so a device whose clock sits permanently outside the clamp pays it on
-every re-creation. That is the cost of the collapse, and it is the reason a
+336 MB at an 80-character body, or 8.2 GB at 40 KB, so a device whose clock sits
+permanently outside the clamp pays it on every re-creation. That is the cost of the collapse, and it is the reason a
 row-scoped alternative would have to come back with a column rather than a
 sentence.
 Lowering a presence cell is the one operation in the design that moves a version
@@ -975,11 +975,9 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   body render. The render is the term that dominates and no implementation can
   avoid it, because a body is Yjs bytes that no SQL restores: 4.9 microseconds per
   row, 977 ms and 5.05 s on its own, which alone exceeds the whole figure the
-  record used to quote. Against whole-row JSON, measured in one run so the ratio is
-  self-consistent, it is 16.8x and 8.6x. Both figures carry two significant
-  figures at most: the same query on the same schema has been recorded between
-  555 ms and 594 ms across runs, and every one of them discards the first pass, so
-  a genuinely cold rebuild is not what was measured. That is a cold start, a
+  record used to quote. No repeat runs of the decided query exist, so these
+  figures carry one significant figure and no variance band; the 555 to 594 ms
+  band this record used to quote belongs to the retired query. That is a cold start, a
   repair, or a re-import, and it is the price of the layout rather than a
   steady-state cost.
 - **Collapsing presence into the cell relation buys almost no time, and that is
