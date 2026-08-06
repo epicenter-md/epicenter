@@ -18,7 +18,7 @@ Rewritten each round. History is below; this is the working copy.
 
 ### The scope question, which round 18 answered by measuring the record
 
-ADR-0212 is 1388 lines. By section: the refusal, clamp and re-stamp machinery is
+ADR-0212 is about 1400 lines. By section: the refusal, clamp and re-stamp machinery is
 **247 lines**, the DDL and its comments 245, Consequences 237. The design that
 actually makes per-field merge work, the version, the local write rule, the
 reusable address and the write surface, is **175 lines**.
@@ -47,19 +47,35 @@ lowered cell must not land under its own row's presence, and presence is a cell 
 R2 reaches it.
 
 **And measured, it is not much smaller either.** Round 19 ported the 1200-trace
-fuzz to the current doc-plane key and put a knob on every rule:
+fuzz to the current doc-plane key and put a knob on each rule. Two caveats belong
+with the table rather than under it. The port draws one extra random number for the
+document column, which shifts the PRNG stream, so these traces are **not** the
+traces earlier rounds ran and the counters are not comparable across rounds. And
+"a knob on every rule" is not literal: the port dropped the two clamped floor arms,
+so ADR-0212's claim that `min(held, A + clamp)` is byte-identical to the unclamped
+floor still rests on the round-13 runs and has not been re-verified against the
+current key.
 
 | rule removed | presence below authority | refused stale | destroyed by R2 |
+
 | --- | --- | --- | --- |
 | nothing (decided) | 0 | 18 | 5 |
 | the `local` term | 0 | 18 | 5 |
-| the `held` term | 488 | 506 | 291 |
+| the `held` term | 488 | 506 | 153 |
 | the authority's time | crashes on `version_ms > 0` | | |
 | the counter half | 4 | 134 | 5 |
 | spend-in-the-round | 0 | 291 | 101 |
 
-Four of five are load-bearing at 1200 traces, and the authority's time has a better
-argument than this record gives: it is the only **always-defined** term, so for a
+The large separations are solid across five independent 1200-trace seed blocks:
+dropping `held` gives 422 to 499 below-authority against 0 every time. The small
+counters are not, and the table above is one block. Across five, the decided arm's
+stale refusals run 11 to 28 and its R2 destructions 2 to 5; the counter-half arm
+runs 1 to 4 and 117 to 146. So "4 and 134 against 0 and 18" is two noisy small
+numbers compared to two others: 1200 traces separates 488 from 0 and does not
+resolve 4 from 1. The verdict is robust; the precision is not.
+
+Four of five are load-bearing, and the authority's time has a better argument than
+this record gives: it is the only **always-defined** term, so for a
 row the authority has never seen whose presence is itself refused, a floor without
 it violates a schema CHECK on the first re-stamp.
 
@@ -67,15 +83,20 @@ The `local` term is the interesting one. It binds on **0 of 4361 re-stamps**, wh
 is the same standard used to call the two clamped variants provably inert, so by
 that standard it should go. It should not: built by hand through ADR-0213's own
 third failure, a two-term floor lands the re-stamped cell below its own row's
-presence, R1 refuses it forever, R2 drops it, and the user's edit is silently lost.
+presence. The push is then accepted, because after the restore the authority holds
+no presence to refuse it against; the edit is lost three steps later, when the
+repair pass pushes presence first (address order puts `!presence` before `title`)
+and R2 drops the field. The probe's own log says R1 refuses it, and the next line
+of that probe's output contradicts it.
 The honest disclosure is that the term is load-bearing **and this record's fuzz
 never exercises it**.
 
 **One rule goes.** A clamp refusal on a presence cell need not schedule the
 whole-store pass: ADR-0213's digest schedules the identical pass one round later
-and only when something is wrong, where the coupling fires unconditionally at 3051
-passes across 1200 traces, repair up 24.6%, each priced here at 2.6M cells and
-about 336 MB. With the coupling off and the digest on, the same hazard converges.
+and only when something is wrong, where the coupling raises the obligation 3051 times
+across 1200 traces, which lands as 1683 ADDITIONAL whole-store passes because
+roughly 45% fall on a round that already owed one: 6839 to 8522, up 24.6%, each
+pass at 2.6M cells and about 336 MB. With the coupling off and the digest on, the same hazard converges.
 That is **15 of the 247 lines, 6%**. The 4.4% silent loss is the price of the
 re-stamp existing at all, and no fourth formula recovers it. The five ideas below have not changed since round 2 and have survived
 109,600 exhaustive orderings.
@@ -91,8 +112,10 @@ re-stamp existing at all, and no fourth formula recovers it. The five ideas belo
 **Load-bearing, and larger than it should be**
 
 - The **clamp floor and re-stamp**: 247 lines, a 4.4% silent loss, five rounds of
-  defects, and it cannot be deferred, because refuse-and-report does not
-  terminate. What is open is how small it can be, not whether it exists. A fourth
+  defects, and it cannot be deferred, because refuse-and-report does not terminate.
+  The 4.4% was measured on the pre-rekey harness and has not been re-taken against
+  the current doc-plane key; the arithmetic behind it is sound and the figure is
+  not current. What is open is how small it can be, not whether it exists. A fourth
   floor term of the same shape as the second would close the 4.4%; it is priced in
   the Rejected table and not taken.
 
@@ -782,13 +805,13 @@ mutually exclusive states, one with every cell owed and one with none.
 
 | Refused | Why | Measured cost of refusing it |
 | --- | --- | --- |
-| Dropping the `held` term from the re-stamp floor | the authority's held presence is the only term that knows what the authority will accept | 488 presence cells re-stamped below the authority's own, 506 then refused stale, 291 destroyed by R2, over 1200 traces |
+| Dropping the `held` term from the re-stamp floor | the authority's held presence is the only term that knows what the authority will accept | 488 presence cells re-stamped below the authority's own, 506 then refused stale, 153 destroyed by R2, over 1200 traces. An earlier draft put 291 here, which belongs to a different arm |
 | Dropping the authority's time from the floor | it is the only ALWAYS-DEFINED term | for a row the authority has never seen whose presence is itself refused, `held` and `local` are both zero and the floor violates `CHECK (version_ms > 0)` on the first re-stamp. It crashes rather than degrades |
 | Dropping the counter half of the floor | flooring the millisecond alone still lands under a presence whose own counter is above zero | 4 presence cells below the authority's own and 134 stale refusals, against 0 and 18 decided |
 | Dropping spend-in-the-round | pushing the re-stamped cells on the NEXT round lets another replica move the presence in between | 291 stale refusals and 101 cells destroyed by R2, against 18 and 5 decided |
 | Dropping the `local` term because it binds on 0 of 4361 re-stamps | that is the same standard this record used to call two clamped variants provably inert, and it is the wrong standard here | not measurable by this fuzz, which is the finding. Built by hand through ADR-0213's third failure, a two-term floor lands the cell below its own row's presence, R1 refuses it forever, R2 drops it, and the user's edit is silently lost. Load-bearing AND unexercised |
-| Keeping the clamp refusal's coupling to the whole-store repair pass | ADR-0213's digest schedules the identical pass one round later, and only when something is actually wrong | REMOVED. The coupling fires unconditionally: 3051 whole-store passes across 1200 traces, repair passes up 24.6%, each at 2.6M cells and about 336 MB. With it off and the digest on, the same hazard still converges. 15 of the subsystem's 247 lines |
-| Deleting the clamp machinery and refusing the write instead, returning the authority's time so the client corrects its offset and retries | the local write rule stamps at `max(now, the cell's own version, the row's presence) + 1`, so a device can never lower a version it already holds, and refusing does not give it a way to | a device a day fast is refused, corrects its offset, and is floored back to `T+24h` by its OWN earlier local write: four attempts, four refusals, no progress. The two exits are lowering what the device holds locally, which IS the re-stamp, or write-through, which costs the offline edit the design exists for |
+| Keeping the clamp refusal's coupling to the whole-store repair pass | ADR-0213's digest schedules the identical pass one round later, and only when something is actually wrong | REMOVED. The coupling fires unconditionally: 3051 raises across 1200 traces landing as 1683 additional whole-store passes, 6839 to 8522, up 24.6%, each pass at 2.6M cells and about 336 MB. With it off and the digest on, the same hazard still converges. 15 of the subsystem's 247 lines |
+| Deleting the clamp machinery and refusing the write instead, returning the authority's time so the client corrects its offset and retries | the local write rule stamps at `max(now, the cell's own version, the row's presence)`, with the `+ 1` on `version_seq` and never on `version_ms`, so a device can never lower a version it already holds, and refusing does not give it a way to | a device a day fast is refused, corrects its offset, and is floored back to `T+24h` by its OWN earlier local write: four attempts, four refusals, no progress. The two exits are lowering what the device holds locally, which IS the re-stamp, or write-through, which costs the offline edit the design exists for |
 | Whole-row JSON as the stored shape | per-field and whole-row versions do not compose | 2.12x and 1.66x the size of what ships today (181.0 vs 85.3 MB, 342.4 vs 206.2 MB), re-deriving one changed row 1.32x and 1.07x slower as a point query, and the whole projection 1.76x and 1.31x slower. Four earlier speed figures in this row were retracted, the last of them (3.8x/3.3x and 42x/37x) because they charged the Yjs body plane to the cell layout: the opponent carried prose inline and never paid the render |
 | Real typed columns | ADR-0125: nowhere to put an unknown key | 3.81x and 2.33x the disk, fixture-matched (181.0 vs 47.5 MB, 342.4 vs 147.1), against a shape that stores no version, no `dirty` and no presence, so the ratio is a floor |
 | One JSON record per row plus a version map | the map is opaque, so no version is legible and the merge cannot be one SQL predicate; one field change ships the whole record and map; merge-group names become an unversioned wire contract | THIS REFUSAL COSTS DISK. Packed as 18 binary bytes per field it is 127.9 MB and 274.1 on the same fixture, so the cell store is 41% and 25% LARGER. An earlier pass quoted 6.0% against a version map stored as base64 inside JSON,
