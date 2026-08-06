@@ -8,6 +8,11 @@
   which decides the cell store this verifies and owns the repair pass a mismatch
   schedules. That record converges without this one; this one detects that it
   failed to.
+  [ADR-0135](0135-row-documents-have-application-owned-roots.md) (`Accepted`),
+  which decides that Epicenter never interprets a document's roots and that the
+  authority neither inspects nor validates its root layout. That is the constraint
+  the body entry is shaped by, and this record stays inside it rather than
+  amending it.
   [ADR-0170](0170-one-live-epicenter-has-sealed-backups-and-restore-creates-a-fresh-authority-lifetime.md),
   which owns the authority lifetime. The lifetime and the digest answer different
   questions and neither substitutes for the other.
@@ -92,36 +97,47 @@ shaped to prevent, a value that no longer matches its own hash, would then be
 invisible to the verifier *and* unrepairable by the merge: both sides read clean,
 both refuse each other, forever.
 
-### A body has an entry, and it hashes the document's state, never its bytes
+### A body has an entry, and it hashes the operation set, canonically
 
 A body carries no version, so without an entry a body divergence is undetectable:
 the cell roots agree, the cursor sees nothing, and a device that bootstraps
 afterwards gets an empty document while another holds the prose.
 
-**The entry hashes the prose the projection renders**, and nothing else about the
-document. Two candidates were tried first and both were wrong, in opposite
-directions, and the pair is the argument for this one.
+**The entry is a canonical re-encoding of the merged operation set**:
+`encodeStateAsUpdateV2` of a document loaded from `doc_state`. Four constraints
+decide it, and each of the three attempts before it violated one that had not been
+written down.
 
-`doc_state` is an encoding rather than an identity. A replica that applies a
-delete locally holds a document whose structs are split at the deletion point; an
-authority that merges the same delete as an opaque update does not, and
-`mergeUpdatesV2` preserves the split. Both render the same prose in different
-bytes: 45 against 38 after a single delete, and over 200 rounds with a delete
-every third round the entries disagreed on **199 of 200** while the prose never
-once differed.
+```txt
+1  a function of what the two sides actually hold
+2  sensitive to content, or it cannot detect the thing it exists for
+3  root-agnostic, because ADR-0135 says Epicenter "does not declare, validate,
+   version, reserve, enumerate, or interpret roots" and the authority "neither
+   inspects nor validates its root layout"
+4  canonical across two encodings of one operation set
+```
 
-`encodeSnapshotV2(snapshot(doc))` is worse, and fails both ways. A Yjs snapshot is
-a delete set and a state vector, which is to say clocks and deleted ranges and no
-content at all: two documents holding entirely different text of the same length,
-written at the same clock, produce **byte-identical snapshots**. It is
-simultaneously blind to the thing it is meant to compare and sensitive to the
-thing it is not, since identical prose typed by two different clients has two
-different state vectors.
+`doc_state` itself fails 4. A replica that applies a delete locally holds structs
+split at the deletion point; an authority that merges the same delete as an opaque
+update does not, and both render the same prose in different bytes: 199 false
+alarms in 200 rounds.
 
-The rendered content has neither failure. It is a function of the content by
-construction, identical across encodings, and identical across authorship. It is
-also the honest reading of what the digest asks: for a body, "do we hold the same
-thing" means "does this render the same document".
+`encodeSnapshotV2(snapshot(doc))` fails 2, and fails it completely. A Yjs snapshot
+is a delete set and a state vector, so two documents holding entirely different
+text of the same length at the same clock produce **byte-identical** entries. It is
+the version-only entry this record refuses for cells, adopted on the plane with no
+version at all.
+
+The prose the projection renders fails 3. Both sides fold the same entry, so the
+authority would have to render, which means naming a root; ADR-0135 forbids that,
+one document may hold any number of independently interpreted roots, and "the
+prose" is not well defined across them.
+
+A canonical re-encode satisfies all four. It never names a root, it contains every
+operation, and Yjs re-encodes deterministically, so two sides that merged the same
+updates agree byte for byte however they got there. Verified across two encodings
+of one edit, a same-clock content change, a three-root document, concurrent edits
+merged in both orders, and the empty document.
 
 ### A mismatch does not localize
 
@@ -140,7 +156,7 @@ full-range pass, which already resumes by address.
 
 A replica compares sums only when it **owes nothing**, which means no cell is
 `dirty` **and** no body holds a `pending_update` or an `inflight_update`, and when
-it has applied the page through `next_cursor`, and only against a sum the
+it has applied the page through `next_cursor - 1`, and only against a sum the
 authority read in the same transaction as that page. Defining "owes nothing" on
 cells alone would fire a full repair every round a user is typing into a body,
 because unsent body bytes set no cell `dirty`. Without the precondition the comparison is not wrong so
@@ -164,7 +180,7 @@ An entry is the low 8 bytes, big-endian, of
 
 ```txt
 cell:  sha256(ns \0 table \0 row \0 column \0 version_ms \0 version_seq \0 || version_hash || value_utf8)
-body:  sha256(ns \0 table \0 row \0 "!body" \0 generation_ms \0 generation_seq \0 || rendered_utf8)
+body:  sha256(ns \0 table \0 row \0 "!body" \0 generation_ms \0 generation_seq \0 || encodeStateAsUpdateV2(load(doc_state)))
 ```
 
 where a cleared cell contributes no value bytes. Both metadata singletons carry a
@@ -193,9 +209,10 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
   and 6.0x at 3**, falling to **6.7x and 4.9x** when the sum is folded in memory
   and written once. "One add and one subtract per write" is true of a field write
   and badly untrue of a delete.
-- **A body write costs +11% to +18%**, and the cost does not scale with the
-  document, because the entry hashes the rendered text rather than the stored
-  bytes: at 40KB it is +4% to +14%, which is inside the control arm.
+- **A body write's premium is not separately established.** The figures this
+  record carried were measured on two entries it no longer uses, and a canonical
+  re-encode is O(document) like the write it accompanies. It needs its own
+  measurement before anyone relies on a number.
 - **That is the price of knowing.** ADR-0212's repair pass is a correct repair
   that, without this, nothing can ever trigger: the record can say "full
   reconciliation always converges" and be unable to say when to run it.
@@ -244,6 +261,9 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
   deletes text.
 - **Hash a Yjs snapshot for a body entry.** It sounds canonical and contains no
   content: two documents with entirely different text of the same length, at the
-  same clock, hash identically. It also disagrees for identical prose typed by two
-  different clients, so it is wrong in both directions at once.
+  same clock, hash identically.
+- **Hash the prose a body renders.** Content-sensitive and canonical, and it
+  requires the authority to name a root and render it, which ADR-0135 forbids and
+  which is not even well defined for a document holding several independently
+  interpreted roots.
 - **Compare unconditionally.** 500 false full repairs out of 500 rounds.

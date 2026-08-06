@@ -338,7 +338,7 @@ that; it should be named as out of scope.
 > **Revision 2 withdraws this section.** The API it proposes does not survive:
 > `create` has to be a verb, and `patch` is already the right name for a partial
 > per-cell write. The surface that ships is the one that already exists at
-> `packages/data/src/epicenter.ts:69-80`. Kept because the reasoning about
+> `packages/data/src/epicenter.ts:69-79`. Kept because the reasoning about
 > composite cells and named absence is still the reasoning that applies.
 
 Not CRUD, not JSON Patch. One primitive, `set`, over cells; the merge kind is
@@ -666,7 +666,7 @@ mutually exclusive states, one with every cell owed and one with none.
 | An authority lifetime as the only restore signal | the column lives inside the file being restored | a restore carries the old lifetime back: 0 cells over 50 rounds, 100 of 350 addresses wrong |
 | A reset that only re-reads | the read direction is not the broken one | after the reset the replica still disagrees on the 50 cells the restore destroyed, and pushes nothing |
 | Re-stamping an R1 refusal at the authority clock | R1 and the clamp are different refusals | the previous incarnation's offline edit beats the re-creation's snapshot, which is what R2 exists to prevent |
-| A local write floor taken from the cell alone | R1 measures against the row's presence cell | correctness: a write to a never-set column is silently refused for the width of the clamp, measured at 241 seconds. The floor it costs: +30% to +37% on every local write, measured against a control arm |
+| A local write floor taken from the cell alone | R1 measures against the row's presence cell | correctness: a write to a never-set column is silently refused for the width of the clamp, measured at 241 seconds. The floor it costs: +24% to +37% on every local write, measured against a control arm |
 | Assigning rather than merging into `inflight_update` | an overlapping round clobbers a live send | the bytes in flight are lost with nothing able to notice |
 | An acknowledgement with no send token | a late reply cannot be told from a current one | both slots empty, and everything typed since the first send is gone |
 | Tying `authority_lifetime` to `last_applied_cursor` in a CHECK | the two facts are independent | the reset state is unrepresentable and the replica re-resets every round forever |
@@ -676,8 +676,6 @@ mutually exclusive states, one with every cell owed and one with none.
 | A digest sum stored as `INTEGER` | every driver returns it as a double, and a sum is uniform over 2^64 | the stored sum becomes a function of write ORDER, so two sides holding identical cells compare unequal and repair fires on 89% of rounds instead of 13% |
 | A digest over cells only | a body has no version, so nothing detects a body divergence | 3 of 4000 randomized traces end at quiescence with divergent body text and identical cell roots; a body entry costs 48 extra repairs out of 42,641 |
 | A digest entry that hashes only the version | it would trust `version_hash`, which is what the merge already trusts | a value corrupted away from its own hash is invisible to the verifier AND unrepairable by the merge, on both sides, forever |
-| One column for both "a repair is owed" and "where the pass has reached" | a pass in flight overwrites it and clears it on completion | an obligation raised mid-pass is erased, leaving a row present and empty with nothing dirty and nothing owed |
-| An unscoped repair from a clamp re-stamp | the obligation names one row | a device permanently outside the clamp turns every write into a full-store re-read and re-push, 200 writes for 200 rewinds, never settling |
 | A root comparison with no precondition | a replica that owes work, or samples the root outside the page transaction, is not comparable | 500 full repair passes out of 500 rounds, with zero divergence |
 | Merging inside a `json(inner)` field | one cell is one merge unit, so declared-together values never tear | a whole-blob write, which is the point rather than a limitation |
 
@@ -685,6 +683,18 @@ mutually exclusive states, one with every cell owed and one with none.
 `docs/adr/README.md` requires. `Relates` does not: it is one-directional by
 convention here, and ADR-0170 and ADR-0213 each carry one back, because that record owns a
 noun this one borrows.
+
+**A check that failed four times, and the constraint list that ended it.** The
+body digest entry was absent, then hashed `doc_state`, then hashed a Yjs snapshot,
+then hashed the rendered prose. Each attempt reached for whichever CRDT API
+sounded canonical and was tested only against the failure the previous attempt
+had. The constraints were never written down together, and each new entry
+violated one that had not been: an encoding is not a function of the operation
+set; a snapshot contains no content; rendered prose requires naming a root, which
+ADR-0135 forbids the authority from doing. Written down as a list of four, the
+answer is forced rather than searched for: a canonical re-encode of the merged
+operation set, which is root-agnostic, content-bearing, and byte-stable across
+encodings.
 
 **A verification method that failed twice, and what it cost.** Two adversarial
 rounds found a fatal defect that the previous round's verification could not have

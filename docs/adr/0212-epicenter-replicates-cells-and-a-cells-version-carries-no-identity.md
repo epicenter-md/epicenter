@@ -493,9 +493,10 @@ replaces it whole and nothing merges inside it. That is the point rather than a
 limitation: one cell is one merge unit, so values that must move together are
 declared as one field and can never tear.
 
-One sentence in that docblock (`epicenter.ts:65-67`) and the refusal it describes
-(`epicenter.ts:489-499`, which throws "a deleted name cannot be reused") both stop
-being true. It says `patch` "refuses an
+One sentence in that docblock (`epicenter.ts:65-67`) draws a conclusion that stops
+being true, and the refusal `create` builds on it (`epicenter.ts:489-499`, which
+throws "a deleted name cannot be reused") goes with it. `patch`'s own refusal
+survives. It says `patch` "refuses an
 address that holds no live fact, so an id you already deleted stays deleted rather
 than being resurrected by a write." The refusal survives, and is R1's local
 counterpart. The conclusion does not: a deleted id can be reused, by `create`,
@@ -958,7 +959,7 @@ conclusion. Timings taken on the settled schema use a 200k all-live fixture and
 are marked. The full table,
 including what each refusal costs, is in
 [the memo](../../specs/20260805T190000-replicated-cell-store-memo.md), which is
-scheduled for deletion on acceptance; the git ref is `85ca7a8d51`.
+scheduled for deletion on acceptance; the git ref is `6f73626ea2`.
 
 - **Keep ordered patch replay.** It protects exactly one thing: `[create,
   delete]` reordered leaves a permanently live row, because `delete` no-ops at an
