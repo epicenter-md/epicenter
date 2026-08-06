@@ -1,7 +1,11 @@
 # Architecture memo: a replicated cell store
 
-- **Status:** Draft
+- **Status:** In Progress
 - **Date:** 2026-08-05
+- **Settled as:** [ADR-0212](../docs/adr/0212-epicenter-replicates-cells-and-a-cells-version-carries-no-identity.md).
+  This memo is the exploration behind that record and keeps the measurements and
+  the reversals; the ADR is the decision. Delete this file once the ADR is
+  Accepted and its schemas are built.
 
 Evaluates replacing ordered-patch replication with a generic replicated cell
 store. Verdict first: **take the radical model, with three amendments**, one of
@@ -166,6 +170,11 @@ independently of this work.
 | **HLC + actor** | **Rejected.** Its guarantee is causal consistency, and this model refuses cross-cell invariants, so there is no causality to preserve. Worse, HLC takes `max(observed)`, so one device with a clock set to 2031 **propagates 2031 to every replica permanently**. HLC does not contain a bad clock; it spreads it. |
 | **Version vectors / DVV** | Detects concurrency rather than resolving it. Worth it only if the product surfaces conflicts. It does not, and a vector needs pruning as devices come and go. |
 | **Direct Yjs for scalars** | **Rejected on three independent grounds.** Verified upstream (yjs/yjs): a `Y.Map` key conflict is resolved by **highest random `clientID`**, with the Lamport clock only secondary, so the winner is unrelated to recency. `Y.Map` retains tombstone metadata forever (`gc:true` discards content, keeps a GC marker). And a key cannot be read from encoded update bytes without materializing the whole `Y.Doc`, which kills the SQL projection. Yjs is right for text and wrong for scalars. |
+
+> **This section's recommendation was reversed on 2026-08-06 after adversarial
+> testing. See "Revision: the version scheme is `(wall_ms, counter, actor)`" at
+> the end of this memo. The reasoning below is kept because the reversal only
+> makes sense against it.**
 
 **Recommended:** `version = (wallMillis, valueHash)`.
 
@@ -415,3 +424,76 @@ hard refusal (replica.ts:752-768).
 `authority.test.ts` claims coverage in a docblock that its one test does not
 provide. So step 3's convergence comparison is not a regression check against
 existing tests. It has to be a new differential test, written first.
+
+## Revision: the version scheme is `(wall_ms, counter, actor)`
+
+Section 5 recommended `(wallMillis, valueHash)` and rejected a hybrid logical
+clock. **That was wrong.** Five parallel designs plus an adversarial pass
+reversed it on evidence, and the reversal is recorded here rather than by editing
+section 5, because the argument only makes sense against what it replaced.
+
+**What broke it.** `(wall_ms, value)` needs five write-path rules to be correct,
+three of which SQLite cannot enforce, and two of them interact into a permanent
+wedge:
+
+- A derived `pending` column silently loses a same-millisecond rewrite: write at
+  T, confirm at T, write a new value at T again, and `written_at_ms` equals
+  `confirmed_at_ms` so the cell reads clean and never syncs.
+- The monotonic guard that fixes it (`written_at_ms = max(now, prev + 1)`) stores
+  its drift, so 200,000 same-cell writes take 129 ms of real time and produce
+  199,871 ms of drift. Once a stamp passes the authority's clamp the cell is
+  unsyncable until wall time catches up, and the guard forbids the only repair.
+  A clock set forward once and corrected, which a VM resume does routinely,
+  strands cells for the length of the skew.
+- Comparing `value` drags SQL's type order (`2 < '10'`) and UTF-8 versus UTF-16
+  order into the merge, so a merge computed in SQL and one computed in JS pick
+  opposite winners.
+
+Under `(wall_ms, counter, actor)` three of the five rules cease to exist: the
+counter is local monotonicity done structurally rather than by inflating a stored
+clock, and the comparator never touches `value`, so type order, encoding order,
+and NULL three-valued logic all stop mattering and the merge predicate can live
+in the schema where it is enforceable. The cost is +19.4 bytes per cell, measured.
+
+The earlier objections do not survive contact. The byte argument compared HLC
+against a *stored* hash this memo never proposed storing. The actor-stability
+objection cited `replicaId` rotating during fork recovery, a subsystem these
+waves delete, and HLC needs uniqueness rather than stability. `max(observed)`
+propagating a skewed clock is real, and the authority's ingest clamp bounds it to
+minutes, which is strictly better than what `(wall_ms, value)` achieves, where
+the monotonic guard makes local skew permanent.
+
+**Ordering is a timestamp. Delivery names what is owed.** That is the sentence
+the whole revision reduces to. `wall_ms` and `deleted_at_ms` survive because
+they order things. `confirmed_at_ms` does not, because it encoded delivery as
+timestamp equality and equality cannot tell "already sent" from "written again in
+the same millisecond". Cells carry an explicit dirty flag; a body carries the
+unsent bytes themselves in a `pending_update BLOB`, whose presence is the entire
+marker.
+
+A body gets no clock at all. A scalar's clock resolves conflicts; a body's marker
+tracks delivery, and giving it a timestamp advertises a merge policy that does
+not exist.
+
+**A state vector was tried and refused.** Pushing
+`encodeStateAsUpdateV2(doc, confirmedVector)` is 67x smaller than a full push,
+but an accumulated local tail is smaller still (253 B versus 605 B), because the
+vector diff echoes recently received remote bytes back at the authority. And an
+overstated stored vector produces a causally gapped update the authority accepts
+and buffers forever while its text never advances; the quiet variant is a 13-byte
+no-op that confirms state the authority does not hold. The rule that generalizes:
+**never store a durable local claim about another party's state.**
+
+**The push response is a merge input.** The authority answers with the winning
+version of every cell it processed, and the client merges that answer exactly as
+it merges a pull delta. Clearing the dirty flag stops being bookkeeping and
+becomes a consequence of merging, which is what fixes the case a conditional
+confirm misses: a push that *loses* the authority's comparison would otherwise
+clear its flag while the authority holds a different value, and a losing write
+takes no cursor, so the winner may never be redelivered.
+
+Still open, and each one changes the protocol rather than the schema: whether the
+authority keeps history or only current state, whether it is always in the sync
+path or two replicas may merge directly, and whether a user is ever shown that a
+conflict happened. The third is the only one that cannot be reversed later,
+because losers that were never stored cannot be recovered.
