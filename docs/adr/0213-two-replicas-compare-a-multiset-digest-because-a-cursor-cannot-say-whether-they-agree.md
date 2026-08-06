@@ -192,27 +192,42 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
 ## Consequences
 
 - **It costs one 8-byte column per side and about half a local write again.**
-  Measured on the settled one-column schema across three runs whose control arms
-  sit within 5%: **+50% to +63% at 12 columns and +41% to +59% at 3**, on a write
-  that already pays ADR-0212's row-local floor. Against a store with neither, a
-  local write costs **+93% to +111%**. An earlier draft said +75% and +65%; that
+  Measured on the settled one-column schema across four runs: **+49% to +72% at 12
+  columns and +41% to +59% at 3**, on a write that already pays ADR-0212's
+  row-local floor. Against a store with neither, a local write costs **+82% to
+  +117%**. The control arm sits within 5% and does not bound this: the ratio moves
+  20 points between process invocations, so the envelope is the number and a
+  tighter one would be invented. An earlier draft said +75% and +65%; that
   was measured against the 4096-row bucket table this record then deleted, which
   is the third consecutive round in which the priced artifact was removed after
-  pricing. Hashing the value rather than the version alone is 4 to 15 points,
-  which is two runs' worth of control-arm noise apart and does not support a
-  tighter figure. **Folding the sum in memory and writing it once per transaction
-  halves the premium**, to about +31% and +25%, and still satisfies the
-  same-transaction rule; the higher figures assume one write per transaction.
+  pricing. Hashing the value rather than the version alone is 2 to 15 points across four
+  runs. **Folding the sum in memory and writing it once per transaction
+  cuts the premium by about a third**, to **+31% to +48%** and **+22% to +37%**,
+  and still satisfies the same-transaction rule; the higher figures assume one
+  write per transaction.
 - **A row delete costs far more than a write, and it scales with row width.**
   ADR-0212's R2 drops a row's cells when a presence cell is written, and each drop
-  is an entry to subtract. Measured on the one-column schema: **9.0x at 12 columns
-  and 6.0x at 3**, falling to **6.7x and 4.9x** when the sum is folded in memory
-  and written once. "One add and one subtract per write" is true of a field write
+  is an entry to subtract. Measured across runs whose control arms sit at 1.00x to
+  1.02x: **8.6x to 9.1x at 12 columns and 5.9x to 6.6x at 3**, falling to **6.5x
+  to 6.7x** and **4.9x to 5.2x** when the sum is folded in memory and written
+  once. "One add and one subtract per write" is true of a field write
   and badly untrue of a delete.
-- **A body write's premium is not separately established.** The figures this
-  record carried were measured on two entries it no longer uses, and a canonical
-  re-encode is O(document) like the write it accompanies. It needs its own
-  measurement before anyone relies on a number.
+- **A body write's premium scales with the document, and is not yet measured for
+  the entry this record decides.** A linear entry, which a canonical re-encode is,
+  measured **+11% to +23% at an 80-character body and +21% to +37% at 40 KB**:
+  about 4 microseconds added at the small size and 31 to 52 at the large one. The
+  earlier figures said the premium "does not scale with the document", which was
+  true only of the snapshot, whose payload is 8 bytes at any size and which this
+  record rejects. Hashing 40 KB of rendered text and 40 KB of `doc_state` cost
+  13.23 and 13.24 microseconds, so the input's shape is not what matters; its
+  length is.
+- **The body entry has no convergence evidence.** The 1200-trace fuzz reported for
+  it ran the snapshot entry, which this record calls blind to the thing it
+  compares, so "zero missed divergences" holds only because body text never
+  diverged in those traces and the detector could not have seen it if it had. The
+  entry is verified against its four constraints and against nothing else. That is
+  the same error twice: evidence attributed to a mechanism that was never the one
+  running.
 - **That is the price of knowing.** ADR-0212's repair pass is a correct repair
   that, without this, nothing can ever trigger: the record can say "full
   reconciliation always converges" and be unable to say when to run it.
@@ -250,8 +265,8 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
 - **Store the sum as `INTEGER`.** Measured to make the stored sum a function of
   write order, so identical stores compare unequal and repair fires on 89% of
   rounds.
-- **Hash only the version into an entry.** Cheaper per write by 8 points, and it
-  makes the verifier trust exactly what it exists to verify.
+- **Hash only the version into an entry.** Cheaper per write by 2 to 15 points,
+  and it makes the verifier trust exactly what it exists to verify.
 - **Bucket the entries so a mismatch can name a region.** Refused for the cost in
   the Decision, and refusing it is what collapses 4096 rows per side into one
   column, because nothing then reads a bucket and the sum does not depend on how

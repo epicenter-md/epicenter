@@ -367,8 +367,9 @@ version_seq = one past whichever of those two the floor came from, else 0
 Both components come from the row being written, and cost one row-local aggregate
 read per write. That read is not cheap: measured as an interleaved A and B in one
 database, against a control arm of two identical passes and with WAL checkpointing
-moved outside the timed region, it takes the median local write from about 6.5 to
-about 8.6 microseconds, **+24% to +37%**, with no consistent dependence on row width across six paired runs. Two earlier figures for this, "about 10%" and "at least double",
+moved outside the timed region, it takes the median local write from about 7.0 to
+about 9.2 microseconds, **+18% to +38%** across four runs, with no consistent
+dependence on row width. Two earlier figures for this, "about 10%" and "at least double",
 were both artifacts: the first compared two different processes on two different
 schemas, and the second had no control arm, so a 3.6x drift within one arm was
 read as mechanism. It is the price of a write the user just made never being refused by R1,
@@ -525,9 +526,10 @@ entry, which is the same cost this record refuses a replica-side cursor for: it
 measured on the decided schema at **+81 MB and +126 MB** with local work standing.
 The scan it replaces costs **about 50 ms and 120 ms** when nothing is owed, which is the
 common case, and in the state where the index actually costs those megabytes it
-the saving is not distinguishable from zero: two consecutive runs of the same
-script give +1.4% and −10.8% at one shape and +15.0% and +4.9% at the other, on a
-measurement with no control arm.
+the saving is not distinguishable from zero: three runs of the
+same script span -2.6% to +7.2%, on a measurement that has no control arm and
+that materialises every owed cell in both arms, which swamps the access path it
+is trying to compare.
 
 Encoding delivery as timestamp equality was tried and fails: write at T, confirm
 at T, write a new value at T again, and a derived `confirmed = written` flag reads
@@ -778,7 +780,9 @@ record's own argument for making a body Yjs at all. So a repair sends each body'
 whole `doc_state`, which Yjs makes idempotent. **It is chunked by address range**, resuming from the
 last address it confirmed. Deleting `sealBatch` deleted the only bound on upload
 size in the system, and an unbounded pass at 200k rows of 12 columns is 2.6M
-cells, and by this record's own wire encoding roughly 315 MB in one request.
+cells, and, at the 121 bytes a one-field edit measures on the wire, roughly 315 MB in one
+request. That is arithmetic over a measured edit rather than a measured bootstrap,
+though the fixture's mean cell is within about 2% of it.
 
 ADR-0142's separate bootstrap, history-gap, and lineage-mismatch recoveries are
 unnecessary as separate mechanisms. The lineage question survives, as the authority lifetime above.
@@ -820,6 +824,10 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   skewed version it merged, so a correct clock inherits that floor for that cell:
   the scheme is `max(observed)` bounded per cell rather than globally, and that is
   not the absence of propagation.
+- **Every storage figure here uses an 80-character body.** The Yjs plane exists
+  to protect a 40KB document, and at that size `_replica_body` at 196k rows would
+  be about 7.8 GB and the ratio below would collapse toward 1.0x. The headline is
+  measured at the small size and the caveat belongs beside it, not only in prose.
 - **The store costs 2.12x today's whole-row JSON on disk** (181.0 MB against
   85.3 MB; 342.4 MB against 206.2 MB, or 1.66x), and 3.69x its own payload,
   falling to 2.48x at 1M rows of 3 columns, so the multiplier is a function of row
@@ -872,8 +880,9 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   rendering `version_ms` as a timestamp and `version_hash` as hex costs nothing
   and reads better than either, so the stored columns stay compact.
 - **Re-deriving one changed row costs 1.69x** what whole-row JSON costs at 12
-  columns (6.9 against 4.09 microseconds), and **no measurable difference** at 3,
-  where the 0.84 microsecond gap sits inside the run-to-run spread. That is the operation
+  columns (6.9 against 4.09 microseconds), and **1.21x** at 3 (4.79
+  against 3.95 microseconds), from a single run with no control arm, so treat the
+  narrow-shape figure as unestablished rather than as parity. That is the operation
   that runs in steady state, because a write touches one row, and the margin
   there is small.
 - **Rebuilding the WHOLE projection costs about 0.57 s at 2.6M cells and 1.1 s at
@@ -1007,8 +1016,9 @@ scheduled for deletion on acceptance; the git ref is `6f73626ea2`.
   a same-millisecond rewrite.
 - **An index on `dirty`.** In the common case, with nothing owed, it costs no
   extra disk and saves the whole scan. With every cell owed it costs +81 MB and
-  +126 MB, 45% and 37% of the base file, and then saves nothing measurable: the
-  same script gives −11% to +15% across runs.
+  +126 MB, 45% and 37% of the base file, and then saves nothing
+  measurable, at −2.6% to +7.2% across runs, from a measurement structurally
+  unable to see the difference.
 - **Readable version columns.** ISO-8601 and hex order identically to the compact
   encoding and cost 36% and 29% more disk. A view is free.
 - **A 16-byte version hash.** Closes the exact-version oscillation for +19 MB and
@@ -1017,13 +1027,15 @@ scheduled for deletion on acceptance; the git ref is `6f73626ea2`.
   cursor and make the authority just another peer. Refused, and not on the
   symmetry argument previously given: symmetry was never the reason to want it.
   It is refused because it is a bad *delivery* mechanism: finding one changed
-  cell costs a 32KB bucket exchange plus the address and version of every cell in the
-  differing bucket, 635 and 977 at the two shapes, where a cursor costs the changed cell. The seam remains
+  cell costs a 32KB bucket exchange plus the address and version of every cell in a
+  differing bucket, which at 4096 buckets is 635 and 977 cells, though that count
+  is arithmetic over a bucket count ADR-0213 has since deleted rather than a
+  property of anything now built, where a cursor costs the changed cell. The seam remains
   one rule, that a per-cell cursor never appears in a replica.
 - **An incremental multiset digest, deferred.** Adopted instead, by ADR-0213, after three successive attempts to derive detection from the cursor
   failed. The deferral rested on two premises and both are falsified: the store
   lifetime does not catch a restore, because it lives inside the file being
   restored, and neither does a cursor regression, because the cursor an authority
   is shown is what a replica read rather than what it wrote. The price paid is one
-  8-byte column per side and +50% to +63% on a local write. ADR-0213 carries the
+  8-byte column per side and +49% to +72% on a local write. ADR-0213 carries the
   rest.
