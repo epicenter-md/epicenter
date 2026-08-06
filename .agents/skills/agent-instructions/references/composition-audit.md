@@ -4,8 +4,7 @@ Load this when stress-testing how a *cluster* of skills composes, not a single s
 routing collisions, duplicated bodies, dead links, and unclear roles. Run it
 after extracting or merging a skill, after adding a description trigger, or on a
 cadence over a named cluster (for example the review/simplify cluster:
-`post-implementation-review`, `collapse-pass`, `fresh-context-review`,
-`greenfield-clean-breaks`, `radical-options`, `asymmetric-wins`,
+`post-implementation-review`, `collapse-pass`, `greenfield-clean-breaks`, `radical-options`, `asymmetric-wins`,
 `first-read-review`, `one-sentence-test`).
 
 This complements, does not replace:

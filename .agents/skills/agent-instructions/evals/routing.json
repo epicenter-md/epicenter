@@ -89,9 +89,9 @@
 			"prompt": "Before we commit to this ownership boundary, consult Claude for an independent investigation.",
 			"anchors": ["consult Claude", "independent investigation"],
 			"expect": "consult-claude",
-			"forbid": ["delegate-claude", "fresh-context-review"],
+			"forbid": ["delegate-claude"],
 			"router": "codex",
-			"why": "Read-only independent investigation on an unsettled decision, the opposite end of the same axis as delegate-claude. consult-claude launches Claude from Codex; a Claude probe picked fresh-context-review 2/3 and nothing 1/3."
+			"why": "Read-only independent investigation on an unsettled decision, the opposite end of the same axis as delegate-claude. consult-claude launches Claude from Codex"
 		},
 		{
 			"id": "handoff-paste-prompt",
@@ -110,15 +110,6 @@
 			"expect": null,
 			"forbid": ["delegate-claude", "handoff"],
 			"why": "Near miss on an everyday phrase. 'hand off' is ordinary English; delegate-claude carries it inside 'hand off the implementation'. Known failing under --live since handoff's body was rewritten: with its name and description byte-identical, the leaner body loads handoff 3/3 where the older, Claude/Codex-saturated body loaded nothing 3/3. Descriptions alone do not explain it."
-		},
-		{
-			"id": "fresh-eyes-diff",
-			"cluster": "delegation",
-			"prompt": "Give me fresh eyes on this diff, I have been staring at the state machine too long.",
-			"anchors": ["fresh eyes", "state machine"],
-			"expect": "fresh-context-review",
-			"forbid": ["consult-claude", "post-implementation-review"],
-			"why": "Independent review of a concrete diff, not a product decision and not the ordinary end-of-work sweep."
 		},
 		{
 			"id": "agent-goal-line",

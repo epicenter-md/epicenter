@@ -55,7 +55,6 @@ Load only the skills that match the touched surface:
 ```txt
 collapse-pass            continuous deletion of unearned indirection
 greenfield-clean-breaks    public API, package boundary, config, lifecycle, naming, ownership, greenfield, or clean-break decision
-fresh-context-review     independent adversarial review of a concrete diff or design
 asymmetric-wins          refuse a feature to collapse a disproportionate code family
 refactoring              caller counts, inlining, dead exports, stale imports, straggler sweep
 first-read-review        too many hops, misleading names, clever types, first-read confusion
@@ -66,10 +65,6 @@ typescript               type organization, inference, runtime schema, type test
 svelte                   Svelte components, stores, runes, query usage, UI state
 yjs                      CRDT documents, shared types, transactions, conflict behavior
 ```
-
-Use [fresh-context-review](../fresh-context-review/SKILL.md) after the local
-second read when an independent challenge could catch ownership, lifecycle, or
-type-shape mistakes.
 
 ## Review Order
 
