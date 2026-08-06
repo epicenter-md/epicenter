@@ -56,35 +56,44 @@ so ADR-0212's claim that `min(held, A + clamp)` is byte-identical to the unclamp
 floor still rests on the round-13 runs and has not been re-verified against the
 current key.
 
-Ranges are over independent 1200-trace seed blocks, five for the floor arms and
-four for the counter-half and spend-in-the-round arms, because the small counters
-move by half their value between blocks:
+Reported as **separations over 20 independent 1200-trace seed blocks**, not as
+bands. A min-to-max band over N blocks has the identical defect this memo diagnoses
+for min-of-N: both extremes move outward with N, so any band is guaranteed to
+breach the next run. Measured, nine of ten cells of the five-block band table
+breached at 20 blocks. What is stable is whether an arm separates from the decided
+arm at all, and on which counter:
 
-| rule removed | presence below authority | refused stale | destroyed by R2 |
-| --- | --- | --- | --- |
-| nothing (decided) | 0 every block | 11 to 28 | 2 to 5 |
-| the `local` term | 0 every block | 11 to 28 | 2 to 5 |
-| the `held` term | **422 to 499** | **433 to 513** | **125 to 153** |
-| the authority's time | crashes on `version_ms > 0`, every block | | |
-| the counter half | 1 to 4 | **117 to 146** | 2 to 5 |
-| spend-in-the-round | 0 every block | **235 to 291** | **75 to 103** |
+| rule removed | separates from decided? | on what |
+| --- | --- | --- |
+| nothing (decided) | baseline | stale 11 to 31, destroyed 1 to 9, below 0 in 20/20 |
+| the `local` term | **no**, byte-identical on every counter in **20/20 blocks** | nothing |
+| the `held` term | **yes, 20/20** | below-authority 418 to 524 against 0; destroyed 111 to 163 against 1 to 9, disjoint |
+| the authority's time | **crashes, 20/20** | `CHECK (version_ms > 0)` on the first re-stamp |
+| the counter half | **yes, on one counter only** | stale 115 to 156 against 11 to 31, disjoint 20/20. Its below-authority count equals decided in 3 of 20 blocks and its destroyed count is at or below decided in 12 of 20, so those two carry no signal |
+| spend-in-the-round | **yes, 20/20** | stale 235 to 294 against 11 to 31; destroyed 58 to 123 against 1 to 9 |
+
+The coupling is the one figure worth quoting as a proportion, because the ratio is
+what holds: across 20 blocks it raises 2942 to 3140 times, lands 1602 to 1745
+additional whole-store passes, **+22.6% to +25.4%**, with 44% to 47% absorbed by
+rounds that already owed one.
 
 The `local` arm is byte-identical to the decided arm on every counter in every
 block, which is the finding rather than a tie.
 
 The large separations are solid across five independent 1200-trace seed blocks:
-dropping `held` gives 422 to 499 below-authority against 0 every time. The small counters are not. So "4 and 134 against 0 and 18" is two noisy small
-numbers compared to two others: 1200 traces separates 488 from 0 and does not
-resolve 4 from 1. The verdict is robust; the precision is not.
+dropping `held` gives 422 to 499 below-authority against 0 every time. The small counters are not: 1200 traces separates 418 from 0 in every block and
+does not resolve 4 from 1 in any. The verdict is robust; the precision never was.
 
 Four of five are load-bearing, and the authority's time has a better argument than
 this record gives: it is the only **always-defined** term, so for a
 row the authority has never seen whose presence is itself refused, a floor without
 it violates a schema CHECK on the first re-stamp.
 
-The `local` term is the interesting one. It binds on **0 of 4361 re-stamps**, which
-is the same standard used to call the two clamped variants provably inert, so by
-that standard it should go. It should not: built by hand through ADR-0213's own
+The `local` term is the interesting one. It binds **once in 86,913 re-stamps** over 20 blocks,
+which is close enough to the measured-inert standard that kills the two clamped
+variants to invite the same verdict. It is not the same standard: those are
+provably zero by algebra, this is 1.2 in 100,000, and an earlier draft quoted it as
+0 of 4361, which was block 0's count. It should not: built by hand through ADR-0213's own
 third failure, a two-term floor lands the re-stamped cell below its own row's
 presence. The push is then accepted, because after the restore the authority holds
 no presence to refuse it against; the edit is lost three steps later, when the
@@ -810,14 +819,14 @@ mutually exclusive states, one with every cell owed and one with none.
 | --- | --- | --- |
 | Dropping the `held` term from the re-stamp floor | the authority's held presence is the only term that knows what the authority will accept | 488 presence cells re-stamped below the authority's own, 506 then refused stale, 153 destroyed by R2, over 1200 traces. An earlier draft put 291 here, which belongs to a different arm |
 | Dropping the authority's time from the floor | it is the only ALWAYS-DEFINED term | for a row the authority has never seen whose presence is itself refused, `held` and `local` are both zero and the floor violates `CHECK (version_ms > 0)` on the first re-stamp. It crashes rather than degrades |
-| Dropping the counter half of the floor | flooring the millisecond alone still lands under a presence whose own counter is above zero | 4 presence cells below the authority's own and 134 stale refusals, against 0 and 18 decided |
+| Dropping the counter half of the floor | flooring the millisecond alone still lands under a presence whose own counter is above zero | the stale-refusal count separates cleanly, 115 to 156 against a decided 11 to 31 with no overlap in 20 blocks. Its other two counters carry no signal: below-authority equals decided in 3 of 20 blocks and destroyed is at or below decided in 12 of 20 |
 | Dropping spend-in-the-round | pushing the re-stamped cells on the NEXT round lets another replica move the presence in between | 291 stale refusals and 101 cells destroyed by R2, against 18 and 5 decided |
 | Dropping the `local` term because it binds on 0 of 4361 re-stamps | that is the same standard this record used to call two clamped variants provably inert, and it is the wrong standard here | not measurable by this fuzz, which is the finding. Built by hand through ADR-0213's third failure, a two-term floor lands the cell below its own row's presence; the push is then accepted, because after the restore the authority holds no presence to refuse it against, and the repair pass later pushes presence first so R2 drops the field. Load-bearing AND unexercised |
 | Keeping the clamp refusal's coupling to the whole-store repair pass | ADR-0213's digest schedules the identical pass one round later, and only when something is actually wrong | REMOVED. The coupling fires unconditionally: 3051 raises across 1200 traces landing as 1683 additional whole-store passes, 6839 to 8522, up 24.6%, each pass at 2.6M cells and about 336 MB. With it off and the digest on, the same hazard still converges. 15 of the subsystem's 247 lines |
 | Deleting the clamp machinery and refusing the write instead, returning the authority's time so the client corrects its offset and retries | the local write rule stamps at `max(now, the cell's own version, the row's presence)`, with the `+ 1` on `version_seq` and never on `version_ms`, so a device can never lower a version it already holds, and refusing does not give it a way to | a device a day fast is refused, corrects its offset, and is floored back to `T+24h` by its OWN earlier local write: four attempts, four refusals, no progress. The two exits are lowering what the device holds locally, which IS the re-stamp, or write-through, which costs the offline edit the design exists for |
 | Whole-row JSON as the stored shape | per-field and whole-row versions do not compose | 2.12x and 1.66x the size of what ships today (181.0 vs 85.3 MB, 342.4 vs 206.2 MB), re-deriving one changed row 1.32x and 1.07x slower as a point query, and the whole projection 1.76x and 1.31x slower. Four earlier speed figures in this row were retracted, the last of them (3.8x/3.3x and 42x/37x) because they charged the Yjs body plane to the cell layout: the opponent carried prose inline and never paid the render |
 | Real typed columns | ADR-0125: nowhere to put an unknown key | 3.81x and 2.33x the disk, fixture-matched (181.0 vs 47.5 MB, 342.4 vs 147.1), against a shape that stores no version, no `dirty` and no presence, so the ratio is a floor |
-| One JSON record per row plus a version map | the map is opaque, so no version is legible and the merge cannot be one SQL predicate; one field change ships the whole record and map; merge-group names become an unversioned wire contract | THIS REFUSAL COSTS DISK. Packed as 18 binary bytes per field it is 127.9 MB and 274.1 on the same fixture, so the cell store is 41% and 25% LARGER. An earlier pass quoted 6.0% against a version map stored as base64 inside JSON, roughly 40 bytes per field; ADR-0212 quotes 7.8% for what reads as the same opponent and the same encoding, and one of the two is wrong. On the wire the cell store still wins, 8.9x at 12 columns and 3.0x at 3, both like for like |
+| One JSON record per row plus a version map | the map is opaque, so no version is legible and the merge cannot be one SQL predicate; one field change ships the whole record and map; merge-group names become an unversioned wire contract | THIS REFUSAL COSTS DISK. Packed as 18 binary bytes per field it is 127.9 MB and 274.1 on the same fixture, so the cell store is 41% and 25% LARGER. An earlier pass quoted 6.0% against a version map stored as base64 inside JSON, roughly 40 bytes per field; ADR-0212 withdraws a 7.8% figure for the same opponent and gives the same reason, so the two records agree and there is nothing to reconcile. On the wire the cell store still wins, 8.9x at 12 columns and 3.0x at 3, both like for like |
 | Interning the address | the replica must be readable in a SQL console with no joins | at most 34% of the file, before dictionary tables and integer keys are added back |
 | Readable version columns (ISO-8601 plus hex) | a view gives the same legibility for nothing | +69.1 MB (+37%) and +99.8 MB (+29%) |
 | A per-cell cursor on the replica | it is a durable local claim about the authority's state | +9.8 MB (5.4%) and +18.9 MB (5.5%) for the column, measured as a clean A/B on the settled schema; 91 MB and 140 MB if it is also indexed, which nothing here would query |
@@ -982,6 +991,15 @@ it would withdraw eight of eight live figures sampled against it.
 | 199,990 ms monotonic-guard drift | `r16-monotonic-drift.ts` | the refused `max(now, prev+1)`; moves with machine speed | `r16-monotonic-drift.out` |
 | 109,600 orderings over 255 subsets, zero divergent | `converge3.ts` | exhaustive, JavaScript model of the algebra, no database | `r15-g-converge3.out` (NOT `r15m-converge.out`, which is `converge.ts`'s) |
 | 1280 collisions among 6720 tuples before the tag, 0 after | `r17m-presenttag.ts` | the encoding ADR-0213 decides, `0x00` cleared / `0x01` present | `r17m-presenttag.out` (`r16-nul.ts` measured a different tag shape) |
+
+**And a min-to-max band over seed blocks is the same mistake in a different
+costume.** Round 19 replaced min-of-N with ranges over five blocks. Round 20 ran
+twenty and **nine of ten cells breached**, because a range is still two extremes
+and both extremes move outward with N. Two of those rows had only ever been run
+over four blocks, and the block nobody ran is the one that falsified a stated
+maximum. The statistic that survives resampling is not a band at all: it is whether
+an arm separates from the baseline, and on which counter. That is what the table
+now reports, and it is the fifth time this class has been found.
 
 **Bands built from `min` drift as the sample grows, which is why they kept
 breaking.** Four rounds running, a quoted band failed to bound a fresh run of its
