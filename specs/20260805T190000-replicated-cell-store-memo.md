@@ -46,11 +46,38 @@ lowering a version is the one operation exempt from the local write rule, the
 lowered cell must not land under its own row's presence, and presence is a cell so
 R2 reaches it.
 
-What is still worth questioning is the elaborateness rather than the existence:
-the two-member floor family and its two provably inert clamps, the spend-in-the-
-round rule, and the coupling to the repair pass. A smaller version of this
-subsystem is plausible. A tenth-size one is not, and the 4.4% silent loss is the
-price of the re-stamp existing at all rather than of it being complicated. The five ideas below have not changed since round 2 and have survived
+**And measured, it is not much smaller either.** Round 19 ported the 1200-trace
+fuzz to the current doc-plane key and put a knob on every rule:
+
+| rule removed | presence below authority | refused stale | destroyed by R2 |
+| --- | --- | --- | --- |
+| nothing (decided) | 0 | 18 | 5 |
+| the `local` term | 0 | 18 | 5 |
+| the `held` term | 488 | 506 | 291 |
+| the authority's time | crashes on `version_ms > 0` | | |
+| the counter half | 4 | 134 | 5 |
+| spend-in-the-round | 0 | 291 | 101 |
+
+Four of five are load-bearing at 1200 traces, and the authority's time has a better
+argument than this record gives: it is the only **always-defined** term, so for a
+row the authority has never seen whose presence is itself refused, a floor without
+it violates a schema CHECK on the first re-stamp.
+
+The `local` term is the interesting one. It binds on **0 of 4361 re-stamps**, which
+is the same standard used to call the two clamped variants provably inert, so by
+that standard it should go. It should not: built by hand through ADR-0213's own
+third failure, a two-term floor lands the re-stamped cell below its own row's
+presence, R1 refuses it forever, R2 drops it, and the user's edit is silently lost.
+The honest disclosure is that the term is load-bearing **and this record's fuzz
+never exercises it**.
+
+**One rule goes.** A clamp refusal on a presence cell need not schedule the
+whole-store pass: ADR-0213's digest schedules the identical pass one round later
+and only when something is wrong, where the coupling fires unconditionally at 3051
+passes across 1200 traces, repair up 24.6%, each priced here at 2.6M cells and
+about 336 MB. With the coupling off and the digest on, the same hazard converges.
+That is **15 of the 247 lines, 6%**. The 4.4% silent loss is the price of the
+re-stamp existing at all, and no fourth formula recovers it. The five ideas below have not changed since round 2 and have survived
 109,600 exhaustive orderings.
 
 **The core, which is settled**

@@ -222,7 +222,12 @@ address the scan has already derived but the watermark has not yet passed is
 excluded as not-yet-passed while the scan already counted the old value, and the
 committed sum is permanently wrong.
 
-**And the pass scans both planes as ONE address sequence**, with a document at
+**And the pass scans both planes as one sequence ordered by `(address, plane)`**,
+cells before documents at an equal address. The plane is load-bearing: keying
+documents by column moved the duplicate address rather than removing it, because a
+cell and a document may now share a column name, which is the double home ADR-0212
+declares reachable. Without the plane a strict `>` skips one of them forever and an
+inclusive `>=` re-derives the other and commits the double count. A document sits at
 `(namespace, table, row, column_name)`. Atomic chunks alone are not enough: with cells
 scanned and then bodies, a body edited mid-pass sorts behind a cell watermark, is
 folded as a passed delta, and is then derived again when the body scan reaches it.

@@ -385,9 +385,11 @@ give one value two homes and two merge rules. A collaborative column lives only 
 undeclared column, including a plain markdown body, is an ordinary cell and lives
 only in `_replica_cell`. The invariant is the Lens's to hold, because neither table can see the other's
 rows: a `CHECK` cannot express it and this record does not pretend otherwise. When
-it is violated the **document wins and the cell is inert**: the projection renders
-the document at that column and never the cell, while the cell keeps its version
-and keeps replicating forever. The violation needs no Lens bug. ADR-0125 makes a
+it is violated the **document wins and the cell is inert**: the projection materialises the cell fields first and then assigns each document
+over them, so the document wins, while the cell keeps its version and keeps
+replicating forever. Stating the order matters: measured, four natural spellings of
+that final assignment give two different answers from byte-identical stores, and
+the digest cannot see the difference because it hashes both rows on both sides. The violation needs no Lens bug. ADR-0125 makes a
 Lens release-local and requires a release to preserve values it cannot read, so a
 release that writes `body` as an ordinary string and a later one that declares it
 `collaborative()` both persist, and every replica holds both.
@@ -662,9 +664,17 @@ either the acknowledgement fires anyway and clears bytes the authority rejected,
 or it does not and the replica retries forever.
 
 **A body belongs to an incarnation.** It carries the `(version_ms, version_seq)`
-of the presence cell that created its row, and nothing else. A body update naming an older
-generation is refused, and one naming a **newer** generation replaces `doc_state`
-rather than merging into it: `mergeUpdatesV2` across generations is what would
+of the presence cell that created its row, and nothing else. A document update naming an older generation is refused, **and so is one whose
+generation is older than the row's current presence cell, even where no document is
+held at that address**. Without that second half a document delivered after a delete
+meets no rule at all: the replica holds nothing to compare against, stores it at a
+dead address, and no later presence write collects it, because a deleted row
+receives none. Measured, 30 of 63 delivery subsets diverge without it and 0 with
+it, and the smallest divergent case is two deliveries. The authority has the same
+hole and it is worse there, because the push takes a cursor, so every replica pulls
+the deleted row's prose back and the sums differ permanently on identical
+user-visible content. One naming a **newer** generation replaces `doc_state` rather
+than merging into it: `mergeUpdatesV2` across generations is what would
 splice the deleted incarnation's prose into the live row. **opening a body whose generation is not the row's
 current presence version replaces it** with an empty document at the current
 generation and both slots cleared; and **the projection renders such a body as
