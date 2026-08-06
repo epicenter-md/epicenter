@@ -41,12 +41,31 @@ in the file scheduled for deletion, a statistic relabelled without being
 recomputed. Five defects this session came from the mechanics of editing the
 record, not from thinking about it, and `guard.sh` exists because of them.
 
-**What would actually meet the condition** is not another round. It is making the
-record small enough to be correct: the decision, the schema, the measured
-consequences, and nothing else, with every "an earlier draft said" moved here and
-every figure carrying its probe and arm. A 1429-line record of a 175-line design
-will always have a defect in it, because there are 1254 lines that are not the
-design and each one can be wrong on its own.
+**A first answer to that, and its correction.** The obvious move is to cut the
+record, on the theory that it is mostly measurement archaeology. Measured, it is
+not: only **7% of lines outside the short sections carry a figure at all**, and the
+bulk is decision. The layout is 264 lines because the schema and its reasons are
+264 lines. The refusal, clamp and re-stamp section is 260 because that subsystem
+is 94% load-bearing, which round 19 established by removing each rule and watching
+what broke. Claiming "1254 lines that are not the design" was wrong, and the
+measurement that would have caught it took one command.
+
+**What is actually oversized is the number of decisions, not the prose.** ADR-0212
+carries roughly fourteen: the cell store, the version scheme, the local write rule,
+the merge predicate, R1 and R2, the write surface, two algebras, delivery flags,
+document slots and generations, the push-response merge, the clamp refusal and its
+floor, repair scheduling and ownership, the authority store shape, and the lifetime
+re-mint. `docs/adr/README.md` asks for one decision per record and says an ADR is
+not a spec.
+
+So the condition is not reachable by cutting words. Two things would move it. Split
+the clamp, re-stamp and refusal subsystem into its own record: it is self-contained
+at 260 lines, it is where rounds 8 to 14 spent almost every defect, and ADR-0213
+already proved the split works by taking detection out. And move Consequences and
+Considered alternatives, 319 lines between them, into this memo, which is where the
+README puts the deep evidence and which already carries the Rejected table. That
+leaves a record of about 850 lines that decides one thing, and it makes the next
+round's surface the design rather than the writing about it.
 
 **What is genuinely settled**, and should not be re-derived by whoever picks this
 up: the five core ideas; that the re-stamp is load-bearing and cannot be replaced
