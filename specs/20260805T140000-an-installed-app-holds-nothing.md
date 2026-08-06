@@ -221,6 +221,43 @@ places around delivery after disconnect. Deleting the WebSocket carrier does not
 delete that, and the shared union means the two cannot be edited independently
 without splitting it first.
 
+**Two claims made earlier in this document were wrong, and attempting the wave
+disproved them. They are corrected here rather than deleted, because both were
+load-bearing in how the wave was costed.**
+
+*`open` and `disconnect` do not die with observation.* They are a surface
+lifecycle, not carrier bookkeeping. In `packages/data/src/desktop-owner.ts`,
+`disconnect` closes every row document that surface opened, and every other
+operation throws `EPICENTER_SURFACE_NOT_OPEN_ERROR_NAME` if the surface was
+never opened. Deleting invalidations leaves all of that standing.
+
+*`bind` does not become synchronous.* It still has to register a surface over
+HTTP before handing back a handle, for the reason above. The carrier was never
+the only thing it awaited.
+
+*What the deletion actually turns on is `TableLens.subscribe`*
+(`packages/data/src/epicenter.ts`). Three adapters implement it, and
+`desktop.ts` returns its handle through an `as TableLens` cast, so removing the
+method there compiles clean and fails at runtime. The method has to come off the
+shared type, which means all three adapters lose it together, including the
+SharedWorker. In-process observation survives untouched under a different name:
+the Bun host's folder renderer (ADR-0207) reads `subscribeCommittedAddresses`,
+an owner-level symbol, and never `TableLens.subscribe`.
+
+The exact site list, measured rather than estimated:
+
+```txt
+epicenter.ts        the TableLens declaration and its in-process implementation
+desktop.ts          carrier, dispatcher, subscribe, ObservationSocket option
+browser.ts          subscribe, the 'invalidation' message case
+browser/worker.ts   the invalidation send
+packages/app        carrier, dispatcher, subscribe, DATA_OBSERVE_ROUTE
+lens/carrier.ts     deleted whole
+server.ts           the route, its guard, sendObservationFrame
+honeycrisp          two subscribe calls onto one existing refresh()
+tests               epicenter, browser, desktop, parity, desktop-workspace, server
+```
+
 So the honest decomposition is three steps, not one:
 
 ```txt
