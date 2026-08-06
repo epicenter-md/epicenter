@@ -649,7 +649,7 @@ mutually exclusive states, one with every cell owed and one with none.
 | A strict `>` merge predicate | the authority echoes a won push at its own version | the cell never clears `dirty` and re-pushes every round forever |
 | A single body delivery slot | an acknowledgement clears bytes the authority never received | every edit made during a push round trip is lost permanently, and no version exists that could notice |
 | Range-based set reconciliation as the delivery mechanism | it is a good verifier and a bad courier | finding one changed cell costs a 32 KB bucket exchange plus 586 address and version pairs, against one cell for a cursor |
-| An incremental digest as a verifier, for now | the store lifetime catches the realistic case for one column | 72 KB of disk, about +20% per local write and +63% on a bulk seed; it answers "are we equal" in 0.29 ms for 8 bytes |
+| ~~An incremental digest as a verifier, for now~~ **ADOPTED in round 4** | the deferral's two premises are both falsified: the lifetime does not catch a restore, and neither does a cursor regression | the deferral cost three rounds of patches to a mechanism that cannot carry the signal. Price paid: 72 KB of disk, about +30% and +20% per local write, +63% and +57% on a bulk seed; it answers "are we equal" in 0.29 ms for 8 bytes |
 | Renaming `patch` to `set`, and deleting `create` | `create` is the only verb that can reuse an address, and `patch` is already the right name | churn with no measured benefit, and a merge rule that cannot be expressed |
 | Terminal, absorbing row death | it makes an address single-use, against ADR-0206 | a provider-keyed row never returns: 30 reconciler passes at strictly later versions leave it absent |
 | An unconditional cell drop on `absent` | it does not converge | a cell at a dead address is retained, unreadable, until the address is re-created |
@@ -672,6 +672,23 @@ mutually exclusive states, one with every cell owed and one with none.
 `docs/adr/README.md` requires. `Relates` does not: it is one-directional by
 convention here, and only ADR-0170 carries one back, because that record owns a
 noun this one borrows.
+
+**A check that failed three times, and what it cost.** Restore detection was
+patched three times and failed three times. Round 2 added a `lifetime` column,
+because there was no signal at all. Round 3 found the lifetime lives inside the
+file being restored, and added a cursor-regression re-mint. Round 4 found the
+cursor an authority is shown is the replica's *read* cursor, while a restore
+destroys what the replica *wrote*, and clearing `dirty` is a separate commit from
+advancing that cursor: measured with no clock skew and no concurrency, forty cells
+survive on one device with nothing dirty and every side reporting a consistent
+cursor.
+
+The root cause is not any of the three patches. It is that a cursor is a delivery
+mechanism, and "do the two sides hold the same thing" is not derivable from a
+delivery counter in any form. Each patch added a proxy for the missing
+information; none of them added the information. The mechanism that carries it was
+priced in this table and deferred, and the deferral is what the three rounds cost.
+It is adopted above.
 
 **Provenance.** Figures in this table come from `bench9.ts` (the settled schema,
 both planes, the whole required set), `bench8.ts` (per-row re-derivation),

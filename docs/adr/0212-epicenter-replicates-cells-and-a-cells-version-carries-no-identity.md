@@ -146,6 +146,8 @@ CREATE TABLE _replica_metadata (
 	authority_lifetime TEXT,
 	last_applied_cursor INTEGER NOT NULL CHECK (last_applied_cursor >= 0),
 
+	repair_from TEXT,
+
 	CHECK ((attached_deployment IS NULL) = (attached_principal IS NULL))
 ) STRICT;
 
@@ -190,6 +192,11 @@ CREATE TABLE _replica_body (
 	CHECK ((inflight_update IS NULL) OR send_token > 0),
 	PRIMARY KEY (namespace, table_name, row_id)
 ) WITHOUT ROWID, STRICT;
+
+CREATE TABLE _replica_digest (
+	bucket INTEGER PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
+	sum INTEGER NOT NULL
+) STRICT;
 
 CREATE VIEW replica_cell AS
 SELECT
@@ -248,6 +255,11 @@ CREATE TABLE _authority_body (
 ) WITHOUT ROWID, STRICT;
 
 CREATE INDEX _authority_body_cursor ON _authority_body(cursor);
+
+CREATE TABLE _authority_digest (
+	bucket INTEGER PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
+	sum INTEGER NOT NULL
+) STRICT;
 ```
 
 **The authority repeats every CHECK it can evaluate without parsing a value**,
@@ -257,6 +269,16 @@ aborts the whole page, the cursor never advances, and the only way to change a
 cell is to write a newer version of an address the replica cannot even express.
 Measured: a single malformed value leaves a replica at cursor zero having applied
 nothing, forever, and a page size of one just moves where it wedges.
+
+**The projection must therefore guard `json(value)`.** Removing the CHECK moved
+the wedge from the write path to the read path, where it is worse: one unreadable
+value makes `json_group_object(column_name, json(value))` raise, and the rebuild
+returns **zero rows rather than every good row plus one nonconforming one**.
+Re-deriving that single row raises too, so no row-at-a-time rebuild escapes it.
+The projection reads
+`CASE WHEN json_valid(value) THEN json(value) ELSE json_quote(value) END`, which
+restores every row for one `CASE`. "A nonconforming row at read time" is true of
+the JavaScript traversal and was not true of the SQL projection.
 
 **So the replica does not constrain `value` to valid JSON.** That is the one
 CHECK the authority cannot mirror, because mirroring it means parsing a value it
@@ -533,8 +555,21 @@ or it does not and the replica retries forever.
 
 **A body belongs to an incarnation.** It carries the `(version_ms, version_seq)`
 of the presence cell that created its row, and nothing else. A body update naming
-an older generation is refused, and **the projection renders a body whose
-generation is not the row's current presence version as empty**. The gate has to
+an older generation is refused; **opening a body whose generation is not the row's
+current presence version replaces it** with an empty document at the current
+generation and both slots cleared; and **the projection renders such a body as
+empty** until that happens. The write door is not optional. Gating only the read
+door leaves the stale row in place, so typing into a re-created row either pushes
+at the dead generation, where the authority accepts it and no reader ever sees it,
+or silently attaches the deleted incarnation's prose to the live row. That
+replacement is a cross-plane write, so R1 and R2 are not the only ones; the
+alternative is losing every edit made to a re-created row.
+
+**R2's drop extends to the body.** A presence write that drops a row's older cells
+drops its body row in the same transaction. Without that, nothing in the design
+ever deletes a body: `delete(id)` writes a presence cell, and a deleted row leaves
+its full prose on every replica and on the authority forever, which the repair
+pass then re-uploads rather than collects. The gate has to
 live in the projection rather than in the body merge: a re-creation that nobody
 types into produces no body update at all, so a rule attached to body ingest never
 fires, and a replica that held the previous incarnation renders its prose in the
@@ -582,14 +617,23 @@ with no bound: a laptop resuming with its clock a day fast strands the cell for
 about 24 hours, and one resuming with an RTC reading 2031 strands it for years.
 Rewriting cannot repair it, because the local write rule never lowers
 `version_ms`. So a **clamp** refusal names the address and the authority's own time, and the
-replica re-stamps the refused cells of that row at that time, **presence cell
-first, preserving each cell's `version_seq`, in one transaction**, exempt from the
-write floor above. Preserving the counter is what stops R2 eating the row: walk
-the refusals with a fresh counter instead and the presence cell can land above the
-fields that arrived with it, which drops exactly the fields the caller passed to
-`create`. Re-stamping a
+replica re-stamps the refused cells of that row at that time, **at `(authority time, rank)`, where rank is each
+cell's position in the row's own `(version_ms, version_seq)` ascending order, in
+one transaction**, exempt from the write floor above. Rank rather than the
+original counter: the re-stamp collapses a *range* of `version_ms` onto one time,
+and a `version_seq` was only ever meaningful inside its own millisecond, so
+preserving it lets a cell written at a later millisecond land below one written
+earlier and be eaten by R2. Rank rather than address order too, which is what puts
+a `create`'s presence cell first. Re-stamping a
 field cell alone would land it below its own row's presence cell, which is exactly
 what R1 refuses, so the debt would never clear.
+
+**A scheduled repair is durable, and it rewinds the read cursor.**
+`_replica_metadata.repair_from` holds the address the pass resumes at, so a crash
+between the re-stamp that created the obligation and the repair that discharges it
+does not lose it. The pass also resets `last_applied_cursor`, because a repair
+that only pushes leaves every cell the replica refused while its presence cell was
+high undelivered.
 
 **A clamp refusal on a presence cell also schedules a repair for that row.**
 Lowering a presence cell is the one operation in the design that moves a version
@@ -648,12 +692,45 @@ talking to a different one. A cursor is meaningless across a restore. Replace th
 file from an older snapshot and its counter comes back lower than watermarks
 already held: measured over 50 rounds with 50 real post-restore writes, a replica
 receives **0 cells** and disagrees on 300 of 300, pushing nothing because nothing
-is dirty. **A lifetime alone cannot see the case it was added for.** It is a column of the
+is dirty. **Detection is a digest, not a cursor.** Three successive attempts to derive a
+divergence signal from the cursor each failed, in a different place, and the
+pattern is the finding: a cursor is a *delivery* mechanism, and the question "do
+the two sides actually hold the same thing" is not answerable from a delivery
+counter in any of its forms. The last attempt is the clearest. A restore destroys
+what a replica *wrote*, and the cursor a replica can vouch for is what it *read*;
+clearing `dirty` by merging a push answer is a separate commit from advancing the
+read cursor, so a replica can push forty cells, have them accepted, and still
+present a cursor that predates them. Measured, with no clock skew and no
+concurrency: the authority never re-mints, forty cells survive on exactly one
+device with nothing dirty, both sides report the same lifetime and a consistent
+cursor, and a new device bootstraps to a truncated store.
+
+So the multiset digest this record deferred is **adopted**. One table of 4096
+buckets on each side, a modular 64-bit sum per bucket, maintained by an add and a
+subtract per write. Comparing roots answers "are we equal" in 8 bytes; a mismatch
+descends to the differing buckets and the repair pass runs there. It costs 72 KB
+of disk and roughly 20% to 30% per local write, and the deferral cost three rounds
+of patches to a mechanism that could not carry the signal. The two premises the
+deferral rested on are both falsified: the lifetime does not catch a restore, and
+the cursor regression does not catch one either.
+
+The lifetime stays, because it answers a different and cheaper question: am I
+talking to the authority I was talking to before. It is re-minted on restore and
+on rebuild, and **the re-mint is bounded**: a replica presenting a cursor beyond
+the authority's counter plus one page is a corrupt client rather than a rewound
+store, and is answered with a reset scoped to that client. Unbounded, one
+unauthenticated request forces every replica to re-bootstrap, which at this
+record's own fixture is about 1.7 GB across three devices.
+
+**A lifetime alone cannot see the case it was added for.** It is a column of the
 authority's own file, so restoring that file carries the old lifetime back with
 it, and measured with the column in place the replica still receives 0 cells over
 50 rounds and disagrees on 100 of 350 addresses. So the authority watches for it instead: every request carries the replica's
-cursor, and an authority that is shown a cursor at or beyond its own counter
-**re-mints and persists its lifetime on the spot**. A replica resets when the
+cursor, and an authority that is shown a cursor at or beyond its own counter,
+and within one page of it, **re-mints and persists its lifetime in the same
+transaction that reads the response**. Atomicity is not decoration: two concurrent
+requests otherwise mint two lifetimes and keep the loser's, or answer from a
+pre-mint snapshot and tell a replica not to reset. A replica resets when the
 lifetime it holds is not the one it is shown.
 
 The comparison alone is not enough, because it expires. It is true only until the
