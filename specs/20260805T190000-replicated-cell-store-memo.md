@@ -39,7 +39,8 @@ A4  batch-conflict recovery that mints a new replica id and re-enrolls
     (replica.ts:587-619)
 A5  Whole-row JSON storage with one sequence per row (fields TEXT)
 A6  One batch sealed per round, so N intents cost ceil(N/64) round trips
-    (replica.ts:547, admission.ts:9)
+    (replica.ts:558-562 seals once per outer iteration, replica.ts:690-696
+    re-loops while work remains; the 64 is admission.ts:9)
 ```
 
 Every artifact exists to serve R1, R2 and R5 **given that the authority is the
@@ -83,7 +84,7 @@ That is exactly what an LWW cell is.
 
 One thing. It is real, and the proposed model handles it better.
 
-**Create-then-delete inverts into a permanent live row.** `fold.ts:85-97` makes
+**Create-then-delete inverts into a permanent live row.** `fold.ts:85-99` makes
 `delete` a no-op at an address that does not exist yet. So the batch
 `[patch(new row), delete(same row)]`:
 
@@ -143,7 +144,7 @@ today**, the one case where LWW is worst. ADR-0207 named that and shipped anyway
 > `:261-264` "**A table's prose is either in a field or unreachable from the
 > folder.** That is a real hole, and it lands hardest on rich text editors."
 
-Yjs row documents merge per character but `:156` says "**A row document is never
+Yjs row documents merge per character but `:154` says "**A row document is never
 rendered and never written**" to the folder. So today you choose folder
 round-trip **or** character merge, never both.
 
@@ -152,7 +153,9 @@ cleanup, and it is the strongest single argument for this model.
 
 Cost to scope honestly: writing markdown back into a `Y.Text` must be a minimal
 diff, not a replace, or every folder edit destroys the CRDT history that made it
-worth doing. `apps/epicenter/src/folder/parse.ts:96-101` currently replaces.
+worth doing. `apps/epicenter/src/folder/parse.ts:96-101` assigns the body into a
+plain fields object, which is correct for an LWW scalar and has no history to
+destroy. This is a prerequisite the Yjs body creates, not a defect it inherits.
 
 **Composite cells cost nothing.** No cross-field invariant exists anywhere in the
 repo; grep for one returns only unrelated hits. So "values that must change
@@ -171,10 +174,11 @@ independently of this work.
 | **Version vectors / DVV** | Detects concurrency rather than resolving it. Worth it only if the product surfaces conflicts. It does not, and a vector needs pruning as devices come and go. |
 | **Direct Yjs for scalars** | **Rejected on three independent grounds.** Verified upstream (yjs/yjs): a `Y.Map` key conflict is resolved by **highest random `clientID`**, with the Lamport clock only secondary, so the winner is unrelated to recency. `Y.Map` retains tombstone metadata forever (`gc:true` discards content, keeps a GC marker). And a key cannot be read from encoded update bytes without materializing the whole `Y.Doc`, which kills the SQL projection. Yjs is right for text and wrong for scalars. |
 
-> **This section's recommendation was reversed on 2026-08-06 after adversarial
-> testing. See "Revision: the version scheme is `(wall_ms, counter, actor)`" at
-> the end of this memo. The reasoning below is kept because the reversal only
-> makes sense against it.**
+> **This section's recommendation was reversed twice on 2026-08-06 after
+> adversarial testing. Revision 1 replaced it with `(wall_ms, counter, actor)`;
+> Revision 2 dropped the actor again and restored this section's hash as the
+> third component. Both are at the end of this memo. The reasoning below is kept
+> because the reversals only make sense against it.**
 
 **Recommended:** `version = (wallMillis, valueHash)`.
 
@@ -261,7 +265,10 @@ rather than adding one.
 
 **Row presence must stay row-level.** Per-cell tombstones alone cannot express
 "this row is gone" without allowing a concurrent cell write to leave a partial
-row behind. So keep one clocked presence cell per row.
+row behind. So keep one presence cell per row, carrying an ordinary version.
+
+> Revision 2 reverses the paragraph below. Terminal death is refused, and the
+> presence cell's version orders incarnations instead.
 
 **Keep terminal death.** Once absent, always absent, regardless of clocks. It
 matches today (`fold.ts:33-40`), it is what `epicenter.ts:489-500` reads, and it
@@ -282,9 +289,10 @@ re-bootstraps rather than merging. There is no staleness concept today at all;
 `_authority_replicas` has four columns and no timestamp
 (`authority-schema.ts:36-50`).
 
-**Documents already cascade correctly and transactionally.** `storeFact` deletes
-`document_updates` and `document_publication` in the same transaction as the row
-delete (`replica.ts:248-260`, `authority.ts:154-163`), with liveness gates
+**Documents already cascade correctly and transactionally.** `storeFact` deletes the row's
+document state in the same transaction as the row delete: `document_updates` and
+`document_publication` on the replica (`replica.ts:248-260`), `document_updates`
+and `document_versions` on the authority (`authority.ts:154-163`), with liveness gates
 against late writes and a test at `documents.test.ts:233`. Preserve this exactly.
 
 **Blobs do not cascade, and there is no linkage to hang one on.** No blob
@@ -372,7 +380,8 @@ Section 4.
 namespace/table/row/column; rows derived by grouping; per-cell merge kinds; a
 server-assigned change cursor distinct from the conflict clock; full
 reconciliation as a valid repair; clocked row tombstones; composite cells over
-cross-cell invariants; counters refused until one exists.
+cross-cell invariants; counters refused until one exists. (Revision 2 reverses
+"clocked row tombstones": presence became an ordinary cell.)
 
 **Deletion prize:**
 
@@ -425,7 +434,10 @@ hard refusal (replica.ts:752-768).
 provide. So step 3's convergence comparison is not a regression check against
 existing tests. It has to be a new differential test, written first.
 
-## Revision: the version scheme is `(wall_ms, counter, actor)`
+## Revision 1: the version scheme is `(wall_ms, counter, actor)`
+
+> **Superseded by Revision 2 below on the actor, and on nothing else.** The
+> counter survives. Kept because Revision 2 only makes sense against it.
 
 Section 5 recommended `(wallMillis, valueHash)` and rejected a hybrid logical
 clock. **That was wrong.** Five parallel designs plus an adversarial pass
@@ -497,3 +509,94 @@ authority keeps history or only current state, whether it is always in the sync
 path or two replicas may merge directly, and whether a user is ever shown that a
 conflict happened. The third is the only one that cannot be reversed later,
 because losers that were never stored cannot be recovered.
+
+## Revision 2: the actor is dropped, and death stops being its own algebra
+
+Revision 1 adopted `(wall_ms, counter, actor)`. The actor is now dropped and
+section 5's hash restored as the third component, so the settled scheme is
+`(version_ms, version_seq, version_hash)`. Two things had to be true for that,
+and both were tested rather than argued.
+
+**Revision 1 knocked down a design section 5 never proposed.** Its third bullet
+attacked comparing `value`, dragging SQL's type order and UTF-8 versus UTF-16
+into the merge. Section 5 proposed `sha256(canonicalJson(value))`, not the value.
+A fixed-width hash is `memcmp` on both sides, so that objection never applied,
+and the ADR now uses exactly this argument in the hash's favour.
+
+**Revision 1's remaining objection to the actor was withdrawn on its own terms.**
+It kept `max(observed)` propagating a skewed clock as a live cost of an HLC,
+while also adopting an authority ingest clamp that bounds precisely that. The
+clamp bounds an HLC the same way. What survives is smaller and sufficient: there
+is no identity to persist, rotate, intern, or reconcile.
+
+**Revision 1's byte argument was backwards.** It said the hash was never proposed
+to be stored. It is stored, at 8 bytes per cell, and that is what buys a total
+order both SQL and JavaScript agree on.
+
+**Terminal death is refused.** Row presence becomes an ordinary cell under the
+one scalar algebra. Absorbing death made an address single-use for the lifetime
+of the Epicenter, which collides head-on with ADR-0206: a mirror keyed by a
+provider id cannot re-create a record the provider restored, and 30 reconciler
+passes with strictly later versions leave the row absent. Two rules replace it,
+and the presence cell's own version does a generation column's work:
+
+```txt
+R1  a cell is refused if its (version_ms, version_seq) is older than the row's
+    presence cell
+R2  a presence write drops every cell older than itself by (version_ms, version_seq)
+```
+
+The incarnation boundary ignores `version_hash` on purpose. The hash breaks ties
+between competing values of one cell; across two different cells it means
+nothing, and letting it decide here dropped a cell written in the same
+transaction as its own create, on hash luck. That was a real bug, caught by the
+convergence proof rather than by reading.
+
+Each rule alone is order-dependent and the pair is not: 109,600 runs over all 255
+subsets of an eight-delivery set, zero divergent.
+
+**A more appealing rule was tried and does not converge.** "A dead row holds
+nothing", where an `absent` write drops every cell regardless of version, is
+order-dependent: a cell newer than the delete survives if it arrives after a
+later re-creation and dies if it arrives before. So a cell written concurrently
+by a replica that never saw the delete is stored at a dead address, unreachable
+by any read, until the address is re-created. It cannot be collected locally
+either, because a replica that collected it and one that did not would disagree
+if the address were later re-created at a version between the two.
+
+## Rejected, with what each refusal costs
+
+Measured at 200k rows of 12 columns and 1M rows of 3, on-disk after `VACUUM` and
+`wal_checkpoint(TRUNCATE)`, projections verified to produce identical output.
+Nothing in this table gets re-litigated without a number that beats it.
+
+| Refused | Why | Measured cost of refusing it |
+| --- | --- | --- |
+| Whole-row JSON as the stored shape | per-field and whole-row versions do not compose | the store is 2.13x and 1.67x its size (181.4 vs 85.3 MB, 345.2 vs 206.2 MB), and rebuilds the projection 16x and 7.9x slower |
+| Real typed columns | ADR-0125: nowhere to put an unknown key | 3.7x the disk (181.4 vs 48.5 MB) and 2.7x the scattered read (0.010 vs 0.0037 ms) |
+| One JSON record per row plus a version map | one field change ships the whole record and map; merge-group names become an unversioned wire contract | wire 1039 vs 121 bytes (8.6x) at 12 columns, 353 vs 121 (2.9x) at 3 |
+| Interning the address | the replica must be readable in a SQL console with no joins | at most 32% of the file, before dictionary tables and integer keys are added back |
+| Readable version columns (ISO-8601 plus hex) | a view gives the same legibility for nothing | +65 MB (+36%) and +101 MB (+29%) |
+| A per-cell cursor on the replica | it is a durable local claim about the authority's state | the index alone is 85.3 MB, 32% of the file |
+| An index on `dirty` | the scan it replaces is cheap and once per round | +75 MB and +92 MB with local work standing, to save 46 ms and 92 ms per sync round |
+| Row presence in its own relation | one algebra, one relation, and an address that can be reused | 2.1x and 1.8x slower projection rebuild (1230 vs 580 ms, 2090 vs 1142 ms), for 1.7% and 4.9% less disk |
+| A generation column plus a `resurrect` verb | the presence cell's version already orders incarnations | one column on every cell, one new API surface, and it loses a concurrent write from a replica that has not seen the bump, where R1 and R2 keep it |
+| A 16-byte `version_hash` | the merge predicate's value guard closes the same hole | +36 MB (+11.5%) |
+| A replica-global `version_seq` | it is not durable across a restart | a same-millisecond rewrite after a crash is silently discarded 50.3% of the time, measured over 20,000 trials |
+| A strict `>` merge predicate | the authority echoes a won push at its own version | the cell never clears `dirty` and re-pushes every round forever |
+| A single body delivery slot | an acknowledgement clears bytes the authority never received | every edit made during a push round trip is lost permanently, and no version exists that could notice |
+| Range-based set reconciliation as the delivery mechanism | it is a good verifier and a bad courier | finding one changed cell costs a 32 KB bucket exchange plus 586 address and version pairs, against one cell for a cursor |
+| An incremental digest as a verifier, for now | the store lifetime catches the realistic case for one column | 72 KB of disk and +17% to +27% per local write, an upper bound; it answers "are we equal" in 0.29 ms for 8 bytes |
+| Terminal, absorbing row death | it makes an address single-use, against ADR-0206 | a provider-keyed row never returns: 30 reconciler passes at strictly later versions leave it absent |
+| An unconditional cell drop on `absent` | it does not converge | a cell at a dead address is retained, unreadable, until the address is re-created |
+| Counters | two devices each adding one yields one | none exist, and one needs its own CRDT regardless |
+
+**Harness.** Every figure above comes from `bench.ts` through `bench7.ts` and
+`converge.ts` / `converge2.ts` / `converge3.ts`, built as runnable `bun:sqlite`
+schemas. An adversarial pass over the harness itself found and fixed four biases
+worth recording, because they all ran in the same direction: the `dirty` index
+was measured with `dirty` cleared on every cell (reporting 65 KB for something
+that costs 75 MB), whole-row JSON carried an index no timed query used, the
+authority comparison assigned cursors in address order rather than arrival order
+(flattering the shape being rejected), and `insert_ms` was mostly JavaScript
+hashing and CHECK constraints rather than storage shape.

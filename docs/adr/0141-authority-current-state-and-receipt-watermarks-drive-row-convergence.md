@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-17
+- **Superseded by:** [ADR-0212](0212-epicenter-replicates-cells-and-a-cells-version-carries-no-identity.md) (`Proposed`). Reached through the same chain as ADR-0140. Withdrawn: receipt watermarks as the convergence mechanism. Authority current state survives, and is what makes an arbitrarily stale cursor safe.
 - **Supersedes:** [ADR-0131](0131-row-sync-folds-sealed-row-intent-rounds-without-refusal.md), [ADR-0133](0133-row-authority-stores-documents-as-sequence-addressed-update-logs.md), [ADR-0134](0134-replicas-store-confirmed-state-and-compacted-row-intents.md)
 
 ## Context

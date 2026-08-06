@@ -2,6 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-07-20 (revised 2026-07-23: closed documents finish
+- **Amended by:** [ADR-0212](0212-epicenter-replicates-cells-and-a-cells-version-carries-no-identity.md) (`Proposed`) at the publication obligation. Withdrawn: the revision counter and `accepted_revision`, replaced by the unsent bytes themselves held in two slots, because a marker that decides what to push fails silently. The nullable compact projection this record decided survives unchanged.
   publishing local work; revised 2026-07-24: one HTTP carrier owns
   publication, inbound refresh is an explicit application pull, and there is
   no document WebSocket)

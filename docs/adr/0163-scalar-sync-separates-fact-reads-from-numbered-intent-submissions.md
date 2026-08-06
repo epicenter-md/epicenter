@@ -2,6 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-07-20
+- **Superseded by:** [ADR-0212](0212-epicenter-replicates-cells-and-a-cells-version-carries-no-identity.md) (`Proposed`), which replaces ordered patch intents with a replicated cell store. Withdrawn there: numbered intent submission, the sealed batch and its `(sequence, digest)` receipt, `batch-conflict` recovery and replica-id rotation, and the separation of fact reads from numbered intent writes. Conflict resolution moves from authority arrival order to a version the writer computes.
 - **Supersedes:** [ADR-0140](0140-open-workspaces-synchronize-automatically-and-callers-settle-one-watermark.md), [ADR-0141](0141-authority-current-state-and-receipt-watermarks-drive-row-convergence.md), and [ADR-0142](0142-bootstrap-history-gaps-and-lineage-mismatches-have-distinct-recovery.md)
 - **Amended by:** [ADR-0178](0178-row-facts-and-value-facts-are-separate-relations-keyed-by-structured-coordinates.md) (row and value facts get separate physical relations with inline coordinate columns; this ADR's wire model is unchanged)
 - **Amends:** the scalar protocol in [ADR-0145](0145-one-account-authority-owns-every-workspace-and-one-socket-per-open-row-document.md)
