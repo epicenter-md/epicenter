@@ -2,9 +2,7 @@
 
 Local-first personal data platform. Monorepo with Yjs CRDTs and Svelte UI.
 
-Structure: `apps/whispering/` (browser-hostable transcription SPA), `apps/epicenter/` (Tauri host for trusted app surfaces, including Whispering), `apps/tab-manager/` (Chrome extension), `apps/api/` (hosted personal Cloud Worker: `worker/` + `ui/`), `apps/self-host/` (self-hosted single-partition instance reference; Bun or Cloudflare), `packages/server/` (shared Hono library that both deployables consume; deployments differ by principal resolver), `packages/data/` (the Epicenter replica: Lenses, rows, values, row documents), `packages/ui/` (shadcn-svelte components), `specs/` (planning docs), `docs/` (reference materials).
-
-Planning docs and decisions: Use `docs/adr/`, `docs/CONTEXT.md`, package READMEs, tests, and current code as evidence, not automatic instructions. Start with the user's request and the current implementation. ADRs describe decisions that were reasonable at the time, but may be stale, scoped to a different problem, or intentionally reopened. Check an ADR's status, amendments, and actual code before relying on it. If the requested design conflicts with an ADR, do not stop automatically: explain the conflict and either follow the current evidence or amend/delete the ADR when the new decision is durable. When the choice materially depends on product or architectural judgment that cannot be recovered from the repository, ask the user rather than silently inheriting an old decision. Specs in any `specs/` directory (top-level and per-app or per-package) are in-flight design scaffolding, not current truth; the two-state lifecycle and hygiene gate govern all of them repo-wide. `docs/spec-history.md` is a dated index of past specs and is history, not truth. Treat conflicts among specs, ADRs, code, tests, and user intent as judgment points, not automatic precedence rules. A spec has only two states, `Draft` and `In Progress`; "done" is deletion, not a terminal status, so a spec still in the tree declaring `Implemented`/`Superseded` is a hygiene smell (`scripts/check-doc-hygiene.ts` flags it). When a design pass settles a durable decision, record it as an ADR (see `docs/adr/README.md`) and delete the now-spent spec; git keeps the body recoverable. Do not cite an ADR merely because it exists: state whether it is a hard constraint, useful context, or a decision being reconsidered.
+Planning and decisions: ADRs, specs, READMEs, tests, and current code are evidence, not commands. Resolve conflicts with the current implementation and the user's request. Record durable decisions in an ADR and delete spent specs.
 
 Deployment seam: One library (`packages/server`), two deployables (`apps/api` = hosted personal cloud, `apps/self-host` = self-hosted single-partition instance reference). Multi-tenancy (many principals, OAuth, billing) is Cloud-only; an instance resolves every valid bearer to the literal `instance` principal (ADR-0075, amended by ADR-0092). Billing (catalog, routes, Autumn) lives in `apps/api/worker/billing/` and is hosted-only; never extract it back to a shared package. The self-hosted instance deployable is community-supported, not Epicenter-operated.
 
@@ -12,9 +10,7 @@ License boundary: apps and `packages/server` are AGPL; the embeddable toolkit pa
 
 Always use bun: Prefer `bun` over npm, yarn, pnpm, and node. Use `bun run`, `bun test`, `bun install`, and `bun x` (instead of npx).
 
-Local dev: start apps from the repo root with `bun dev:<app>`; it runs every process the app needs, including the hosted API on `localhost:8787` for apps that talk to it. `bun dev:<app>:ui` is the frontend alone when that split exists; `bun dev:api` is the backend alone. Do not cd into an app to start it. Details in the `monorepo` skill.
-
-Agent instructions: `AGENTS.md` is canonical. Every `CLAUDE.md` imports its sibling with `@AGENTS.md`; add it with every nested `AGENTS.md`. Claude-specific notes are rare. Never create an orphan `CLAUDE.md`.
+Agent instructions: `AGENTS.md` is canonical. Every `CLAUDE.md` imports its sibling with `@AGENTS.md`; add it with every nested `AGENTS.md`. Add a nested `AGENTS.md` only for a local constraint that must apply to every edit beneath it. Never use one as an index or README substitute: subsystem orientation belongs in its README. Claude-specific notes are rare. Never create an orphan `CLAUDE.md`.
 
 Destructive actions need approval: Force pushes, hard resets (`--hard`), branch deletions.
 
@@ -30,4 +26,4 @@ Script suffix convention: `:local` suffix scripts work on a fresh clone without 
 
 Library logging: Do not use direct `console.*` in library code. Use `wellcrafted/logger`, except in CLIs, tests, and benchmarks.
 
-Writing conventions: Avoid en dash characters (`U+2013`). Prefer colon, comma, semicolon, parenthesis, or sentence break over em dash characters (`U+2014`), especially in UI strings, docs, comments, JSDoc, and commit messages. Keep user-facing text direct and concrete. When explaining Epicenter work, lead with a useful recommendation or outcome, carry implementation complexity the agent can safely handle, and surface only the reasoning and details that materially affect the user's judgment, action, safety, or review. Necessary difficulty is fine; incidental complexity is not. Load `writing-voice` for substantial prose or explicit tone/rewrite work.
+Writing: Avoid en and em dashes. Use direct, concrete language.
