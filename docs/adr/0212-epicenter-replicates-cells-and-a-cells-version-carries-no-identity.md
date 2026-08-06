@@ -121,10 +121,10 @@ That is deleted. It cost a relation, an algebra, and a join, and it made an
 address single-use for the lifetime of the Epicenter, which directly contradicts
 what ADR-0206 exists to allow.
 
-Whole-row JSON remains the **bootstrap transfer** format, where it measures 3.0x to
-3.4x faster to seed once JavaScript hashing and CHECK constraints are held
-constant on both sides, about 6x as the two schemas actually ship, and 53% smaller
-at 200k rows of 12 columns (40% at 1M rows of 3). It is never a
+Whole-row JSON remains the **bootstrap transfer** format, where it measures **70% and 54% smaller on the
+wire** for a full seed by this record's own encoding (473 bytes per whole row
+against 121 per cell), and 3.0x to 3.4x faster to seed once JavaScript hashing and
+CHECK constraints are held constant on both sides. It is never a
 stored shape.
 
 ### The layout
@@ -138,7 +138,7 @@ CREATE TABLE _replica_cell (
 	               row_id NOT GLOB '*[^A-Za-z0-9._-]*' AND row_id GLOB '[A-Za-z0-9]*'),
 	column_name  TEXT NOT NULL CHECK (
 	               column_name = '!presence' OR column_name GLOB '[A-Za-z]*'),
-	value        TEXT CHECK (value IS NULL OR json_valid(value)),  -- NULL is a cleared cell
+	value        TEXT,       -- canonical JSON; NULL is a cleared cell, which is a value
 	version_ms   INTEGER NOT NULL,
 	version_seq  INTEGER NOT NULL,
 	version_hash BLOB NOT NULL CHECK (length(version_hash) = 8),
@@ -179,10 +179,11 @@ CREATE TABLE _authority_cell (
 	table_name   TEXT NOT NULL,
 	row_id       TEXT NOT NULL CHECK (/* the replica's CHECK, repeated */),
 	column_name  TEXT NOT NULL CHECK (/* the replica's CHECK, repeated */),
-	value        BLOB,       -- opaque bytes, never parsed
-	version_ms   INTEGER NOT NULL,
-	version_seq  INTEGER NOT NULL,
-	version_hash BLOB NOT NULL
+	value        TEXT,       -- an opaque string, never parsed
+	version_ms   INTEGER NOT NULL CHECK (version_ms > 0),
+	version_seq  INTEGER NOT NULL CHECK (version_seq >= 0),
+	version_hash BLOB NOT NULL CHECK (length(version_hash) = 8),
+	CHECK (/* the replica's !presence value CHECK, repeated */)
 ) STRICT;
 CREATE UNIQUE INDEX _authority_cell_address
 	ON _authority_cell(namespace, table_name, row_id, column_name);
@@ -201,11 +202,25 @@ CREATE TABLE _authority_metadata (
 ) STRICT;
 ```
 
-**The authority repeats the replica's address CHECKs, and only those.** A value
-stays opaque; an address does not. Without them one unrepresentable address wedges
-every replica forever: applying a page is one transaction, the whole page aborts
-on the CHECK, the cursor cannot advance, and the only way to change a cell is to
-write a newer version of an address the replica cannot even express.
+**The authority repeats every CHECK it can evaluate without parsing a value**,
+which is all of them except one. A CHECK the replica holds and the authority does
+not is a wedge: applying a page is one transaction, one unrepresentable cell
+aborts the whole page, the cursor never advances, and the only way to change a
+cell is to write a newer version of an address the replica cannot even express.
+Measured: a single malformed value leaves a replica at cursor zero having applied
+nothing, forever, and a page size of one just moves where it wedges.
+
+**So the replica does not constrain `value` to valid JSON.** That is the one
+CHECK the authority cannot mirror, because mirroring it means parsing a value it
+is defined never to parse. A value this release's Lens cannot read is a
+nonconforming row at read time, which the traversal already reports
+(`Err(NonconformingRow)`), rather than a page that can never be applied.
+
+**And the authority's `value` is TEXT, not BLOB.** It is still opaque, and it
+still is never parsed. It is TEXT so that it round-trips into the replica's TEXT
+column losslessly: under `STRICT` there is no lossless path from non-UTF-8 bytes,
+and a lossy decode desynchronises a value from its own `version_hash`, which is
+the one thing the merge trusts.
 
 **`_replica_metadata` deliberately does not constrain the lifetime against the
 cursor.** "Do I know which authority this is" and "have I applied anything" are
@@ -277,12 +292,15 @@ version_ms  = max(Date.now(), current.version_ms, presence.version_ms)
 version_seq = one past whichever of those two the floor came from, else 0
 ```
 
-Both components come from the row being written, which is already in hand, so
-this costs nothing and survives a crash. **A replica-global counter does not.** A
+Both components come from the row being written, and cost one row-local aggregate
+read per write: measured at about 10% (24.7 microseconds against 22.6 for a write
+that takes no floor). They survive a crash. **A replica-global counter does not.** A
 process restart inside one millisecond reissues `version_seq = 0`, so a rewrite
 and the value it replaces carry the same `(ms, seq)`, the tie falls to the hash,
-and the hash knows nothing about which write came second: measured over 20,000
-trials, the later write is silently discarded **50.3% of the time**.
+and the hash knows nothing about which write came second: the later write is silently discarded on a
+**coin flip**, which is what 20,000 trials measure and what the mechanism
+predicts exactly, since the tie is broken by a hash that knows nothing about
+order.
 
 **The presence cell has to be in the floor, not just the cell.** A column that has
 never been set has no `current`, but R1 measures every write against the row's
@@ -382,6 +400,17 @@ already partial by nature, which is exactly what a per-cell write is.
 at `epicenter.ts:468`. Both doors return the row, so a caller never has to thread
 an id it did not choose.
 
+**`create` with a supplied id is a whole-row assertion, and it discards.** R2
+drops every cell older than the presence cell it writes, so it means "this row
+exists and this is its complete state as of now", not "make sure this row exists".
+That is what a mirror reconciler wants, and it is not what an accidental second
+`create` wants: a device with stale local state that calls `create` on a row
+another device has since edited erases those edits everywhere, silently, through a
+call that returns success. `epicenter.ts:465-480` already refuses `create` on a
+row it can see is live, and that guard reads local state only, so it catches the
+common accident and not the offline one. A caller that has not seen the row's
+current state should let the runtime mint the id, or read and `patch`.
+
 A `json(inner)` field is **one cell**. Its value is the whole blob, so a write
 replaces it whole and nothing merges inside it. That is the point rather than a
 limitation: one cell is one merge unit, so values that must move together are
@@ -435,16 +464,32 @@ slot.
 
 Three details are load-bearing, and each was a live defect written the obvious
 way. The move **merges** rather than assigns, or an overlapping round clobbers
-bytes a live send is still carrying. An acknowledgement **names a token**, or a
+bytes a live send is still carrying. An acknowledgement **names the incarnation and the token**, or a
 late reply to a superseded send empties both slots and loses everything typed
-since. And opening the store **merges inflight back into pending
+since. The incarnation is not decoration: a new generation replaces the body row
+and restarts the counter, so a token alone is ambiguous across a re-creation and a
+stranded reply from the previous life can match the current one. And opening the store **merges inflight back into pending
 unconditionally**, which is safe by idempotence and is the only thing that
 recovers a crash between the committed move and the request leaving the socket.
 
+**A body response is a merge input, exactly as a cell response is.** It returns
+the generation and the state the authority holds. An acknowledgement clears
+`inflight_update` only when the returned generation matches; a newer returned
+generation resets the body and both slots. Without this the body plane has a
+refusal, for an update naming an older generation, and no channel to report it:
+either the acknowledgement fires anyway and clears bytes the authority rejected,
+or it does not and the replica retries forever.
+
 **A body belongs to an incarnation.** It carries the `(version_ms, version_seq)`
 of the presence cell that created its row, and nothing else. A body update naming
-an older generation is refused; a creation at a newer generation starts the body
-empty. Without this the body plane does not converge: a late update from a replica
+an older generation is refused, and **the projection renders a body whose
+generation is not the row's current presence version as empty**. The gate has to
+live in the projection rather than in the body merge: a re-creation that nobody
+types into produces no body update at all, so a rule attached to body ingest never
+fires, and a replica that held the previous incarnation renders its prose in the
+new row while a replica that joined later renders nothing. That is divergence and
+a content leak at once. Gating in the projection also keeps R1 and R2 the only
+cross-plane effects, because it reads rather than writes. Without this the body plane does not converge: a late update from a replica
 that never saw the delete produces `"the old note -- B typed this"` in two
 orderings and an empty body in two others. The alternative, never deleting a body,
 does converge and silently leaves the deleted incarnation's prose in the new row
@@ -487,9 +532,21 @@ about 24 hours, and one resuming with an RTC reading 2031 strands it for years.
 Rewriting cannot repair it, because the local write rule never lowers
 `version_ms`. So a **clamp** refusal names the address and the authority's own time, and the
 replica re-stamps the refused cells of that row at that time, **presence cell
-first and in one transaction**, exempt from the write floor above. Re-stamping a
+first, preserving each cell's `version_seq`, in one transaction**, exempt from the
+write floor above. Preserving the counter is what stops R2 eating the row: walk
+the refusals with a fresh counter instead and the presence cell can land above the
+fields that arrived with it, which drops exactly the fields the caller passed to
+`create`. Re-stamping a
 field cell alone would land it below its own row's presence cell, which is exactly
-what R1 refuses, so the debt would never clear. This is not a durable claim about
+what R1 refuses, so the debt would never clear.
+
+**A clamp refusal on a presence cell also schedules a repair for that row.**
+Lowering a presence cell is the one operation in the design that moves a version
+down, and it retroactively un-refuses every pull R1 rejected while the cell was
+high. Those pulls stored nothing and consumed their cursors, and a cell the
+authority already holds at that exact version takes no new cursor, so nothing
+redelivers them. The design already owns the machine that fixes this; it just has
+to call it. This is not a durable claim about
 another party's state: it is a one-shot repair carried by the response, and the
 skewed version never propagated because the authority never accepted it.
 
@@ -511,13 +568,13 @@ exception**: merging a body means running Yjs, so the authority interprets there
 and the dependency is real, including for any future non-JavaScript authority.
 
 **The cursor is the rowid**, and the address is a unique index. The alternative,
-an address primary key with a secondary cursor index, is 2.9x slower on the
-authority's only range question at a fixed fixture, and 6.8x slower once cursors
-are assigned in arrival order rather than address order, which is what a cursor
-means. Returning rows rather than counting them, it is 964 ms against 285 ms. It is
-disk-neutral. It is **not** merge-neutral: on a sequential fixture with the
-redundant read removed, the chosen shape merges in 14.1 microseconds against 7.3,
-so it pays about 1.9x there. That is the price of moving a row to take a new
+an address primary key with a secondary cursor index, is slower on the authority's
+only range question, and the gap widens with the fixture: 2.4x when cursors happen
+to be assigned in address order, and 6.8x once they are assigned in arrival order,
+which is what a cursor means. Returning rows rather than counting them, at that
+same arrival-ordered fixture, it is 1894 ms against 282 ms. It is disk-neutral. On
+merge the chosen shape pays 1.3x at the arrival-ordered fixture and 1.9x at the
+address-ordered one, because moving a row to take a new cursor is real work. That is the price of moving a row to take a new
 cursor, it is paid once per changed cell rather than once per served page, and it
 is the trade this record takes deliberately rather than a wash.
 
@@ -528,9 +585,9 @@ everything it re-sent and redelivers the entire dataset to every other replica.
 The authority keeps current state only, with no history, so an arbitrarily stale
 cursor still works and bootstrap is just "everything since cursor zero".
 **A replica never stores a per-cell cursor**, because it would be a durable local
-claim about the authority's state. The column itself is about 20 MB, roughly 10%
-of the file; an index on it, which nothing in this design would even query, is
-85 MB.
+claim about the authority's state. Measured as a clean A and B on this schema, the
+column costs **+9.8 MB (5.4%) and +18.9 MB (5.5%)**; an index on it, which nothing
+in this design would query, costs **91 MB and 140 MB**.
 
 **The authority names its own lifetime, and returns it with every response.**
 This is ADR-0170's noun, not a second one: that record already decides that a
@@ -543,10 +600,18 @@ receives **0 cells** and disagrees on 300 of 300, pushing nothing because nothin
 is dirty. **A lifetime alone cannot see the case it was added for.** It is a column of the
 authority's own file, so restoring that file carries the old lifetime back with
 it, and measured with the column in place the replica still receives 0 cells over
-50 rounds and disagrees on 100 of 350 addresses. So the response carries
-`(lifetime, next_cursor)`, and a replica resets when the lifetime differs **or**
-when `next_cursor` is not ahead of the cursor it already holds. A cursor moving
-backwards is the signal a restore actually produces.
+50 rounds and disagrees on 100 of 350 addresses. So the authority watches for it instead: every request carries the replica's
+cursor, and an authority that is shown a cursor at or beyond its own counter
+**re-mints and persists its lifetime on the spot**. A replica resets when the
+lifetime it holds is not the one it is shown.
+
+The comparison alone is not enough, because it expires. It is true only until the
+authority has re-issued as many cursors as the restore rewound, and the first
+replica's repair pass is precisely what re-issues them. Measured: a replica
+offline across that window returns to a counter that has moved forward again,
+never resets, and is permanently wrong on 50 of 250 addresses with nothing dirty
+and its cursor level with everyone else's. Re-minting turns a transient
+comparison into durable state that reaches every replica.
 
 A reset schedules the **bidirectional repair pass**, not a plain pull. Resetting
 and re-reading repairs the read direction only: measured, a replica that resets
@@ -561,10 +626,17 @@ pulled cell has `dirty = 0`, so a replica whose authority has lost cells
 considers nothing owed and re-uploads nothing, while every byte sits on a live
 replica. A repair pass therefore pushes every cell, ignoring `dirty`, which is
 sound precisely because merge is idempotent and affordable precisely because the
-equal case takes no cursor. **It is chunked by address range**, resuming from the
+equal case takes no cursor.
+
+**It pushes every body too.** A settled body holds nothing in either delivery
+slot, so a pass that reads only what is owed carries nothing for it, and an
+authority whose body is behind can never be detected or repaired. That is the
+failure the pass exists for, on the plane whose payload is largest, which is this
+record's own argument for making a body Yjs at all. So a repair sends each body's
+whole `doc_state`, which Yjs makes idempotent. **It is chunked by address range**, resuming from the
 last address it confirmed. Deleting `sealBatch` deleted the only bound on upload
-size in the system, and an unbounded pass at 200k rows of 12 columns is 2.6M cells
-and 185 MB in one request.
+size in the system, and an unbounded pass at 200k rows of 12 columns is 2.6M
+cells, and by this record's own wire encoding roughly 315 MB in one request.
 
 ADR-0142's separate bootstrap, history-gap, and lineage-mismatch recoveries are
 unnecessary as separate mechanisms. The lineage question is not: it is the authority lifetime
@@ -591,23 +663,35 @@ above.
   "synced".** Both are refusals: retaining losers requires a different CRDT, and
   a sync assertion cannot be verified without a round trip, so a stale
   affirmation is worse than none.
-- **The silent-loss window is the ingest clamp, not a millisecond.** A device
-  whose clock is four minutes fast, which the clamp admits, wins against an edit
-  made three real minutes later, and nothing tells anyone. "At an exact
+- **The silent-loss window is the ingest clamp forwards, and unbounded
+  backwards.** A device whose clock is four minutes fast, which the clamp admits,
+  wins against an edit made three real minutes later, and nothing tells anyone.
+  Backwards there is no bound at all: the clamp only refuses a clock that is
+  ahead, so a replica with a dead clock writes into the past, loses to a
+  months-old value, and is never refused, never re-stamped, and never repaired.
+  The response carries the authority's time on every round rather than only on a
+  refusal, which is the one place a replica can notice its own backward skew. "At an exact
   millisecond tie the winner is arbitrary" understated this by the width of the
   clamp. Relatedly, the local write rule raises a cell's `version_ms` to meet a
   skewed version it merged, so a correct clock inherits that floor for that cell:
   the scheme is `max(observed)` bounded per cell rather than globally, and that is
   not the absence of propagation.
-- **The store costs 2.12x whole-row JSON on disk** (181.0 MB against 85.3 MB at
-  200k rows of 12 columns, so 2.12x; 342.4 MB against 206.2 MB, or 1.66x, at 1M
-  rows of 3),
-  and 3.69x its own payload. At 1M rows of 3 columns the payload ratio falls to
-  2.48x, so the multiplier is a function of row width and a single figure for it
-  is not meaningful. Interning the address would
-  recover at most 34%, before adding back dictionary tables and integer keys, and
-  is refused: the replica's first duty is to be readable in a SQL console, and an
-  interned file needs three dictionary joins before it says anything.
+- **The store costs 2.12x today's whole-row JSON on disk** (181.0 MB against
+  85.3 MB; 342.4 MB against 206.2 MB, or 1.66x), and 3.69x its own payload,
+  falling to 2.48x at 1M rows of 3 columns, so the multiplier is a function of row
+  width and a single figure for it is not meaningful.
+- **Against the only opponent that can carry this merge rule, the store is
+  smaller.** Whole-row JSON holds no per-field version, which is the thing being
+  refused, so pricing the refusal against it prices it against a shape that cannot
+  do the job. One JSON record per row plus a per-field version map can, and there
+  the cell store is **7.5% and 8.9% smaller** (181.0 against 196.2 MB, 342.4
+  against 375.9). Both belong in the record: the first number is what the file
+  grows by against what ships today, and the second is what per-field versioning
+  costs once you insist on having it, which is nothing.
+- **Interning the address would recover at most 34%**, before adding back
+  dictionary tables and integer keys, and is refused: the replica's first duty is
+  to be readable in a SQL console, and an interned file needs three dictionary
+  joins before it says anything.
 - **Legibility is bought with views, not with columns.** Storing the version as
   ISO-8601 text and the hash as hex is genuinely readable and orders identically,
   and it measured **+65 MB (+36%) and +101 MB (+29%)** at the two shapes. A view
@@ -617,9 +701,12 @@ above.
   costs (6.9 against 4.09 microseconds, 4.79 against 3.95). That is the operation
   that runs in steady state, because a write touches one row, and the margin
   there is small.
-- **Rebuilding the WHOLE projection costs 555 ms at 2.6M cells and 1109 ms at
-  4M** on the settled schema. Against whole-row JSON, measured in one run so the
-  ratio is self-consistent, it is 16.8x and 8.6x. That is a cold start, a
+- **Rebuilding the WHOLE projection costs about 0.57 s at 2.6M cells and 1.1 s at
+  4M**, warm. Against whole-row JSON, measured in one run so the ratio is
+  self-consistent, it is 16.8x and 8.6x. Both figures carry two significant
+  figures at most: the same query on the same schema has been recorded between
+  555 ms and 590 ms across runs, and every one of them discards the first pass, so
+  a genuinely cold rebuild is not what was measured. That is a cold start, a
   repair, or a re-import, and it is the price of the layout rather than a
   steady-state cost.
 - **Collapsing presence into the cell relation buys almost no time, and that is
@@ -632,8 +719,9 @@ above.
   being one relation with one algebra rather than two, and it is **separable from
   the correctness fix**: dropping absorbing death is what makes an address
   reusable, and R1 and R2 work equally well with presence in its own relation.
-- **The projections of every cell-store shape are mutually identical**, verified
-  by fingerprint. The whole-row JSON baseline is **not** comparable cell for cell
+- **The projections of every cell-store shape agree on row count and total
+  projected length**, which is what the fingerprint checks and is weaker than
+  identity. The whole-row JSON baseline is **not** comparable cell for cell
   and was never verified to be: its fixture desynchronises from the others at the
   first dead row, because `cellValue` draws a variable number of random values per
   column. The distributions match, so the storage and timing comparisons against

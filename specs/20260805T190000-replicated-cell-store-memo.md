@@ -616,17 +616,17 @@ mutually exclusive states, one with every cell owed and one with none.
 
 | Refused | Why | Measured cost of refusing it |
 | --- | --- | --- |
-| Whole-row JSON as the stored shape | per-field and whole-row versions do not compose | the store is 2.12x and 1.66x its size (181.0 vs 85.3 MB, 342.4 vs 206.2 MB); the settled schema measures 184.7 MB and 348.8 MB on a fixture with no dead rows, and re-derives one changed row 1.69x and 1.21x slower, and rebuilds the whole projection 16.8x and 8.5x slower |
+| Whole-row JSON as the stored shape | per-field and whole-row versions do not compose | 2.12x and 1.66x the size of what ships today (181.0 vs 85.3 MB, 342.4 vs 206.2 MB), re-deriving one changed row 1.69x and 1.21x slower and the whole projection 16.8x and 8.6x slower. That opponent carries no per-field version at all; against one that does, the row-plus-version-map below, the cell store is 7.5% and 8.9% SMALLER |
 | Real typed columns | ADR-0125: nowhere to put an unknown key | 3.7x the disk (181.0 vs 48.5 MB), against a fixture that stores no version, no `dirty` and no presence, so the ratio is a floor rather than like for like |
-| One JSON record per row plus a version map | one field change ships the whole record and map; merge-group names become an unversioned wire contract | 8.9x at 12 columns and 3.0x at 3, like for like |
+| One JSON record per row plus a version map | one field change ships the whole record and map; merge-group names become an unversioned wire contract | 8.9x the wire at 12 columns and 3.0x at 3; on disk it is 8.1% and 8.9% LARGER than the cell store (196.2 vs 181.0 MB, 375.9 vs 342.4), so the refusal costs nothing on the top axis |
 | Interning the address | the replica must be readable in a SQL console with no joins | at most 34% of the file, before dictionary tables and integer keys are added back |
 | Readable version columns (ISO-8601 plus hex) | a view gives the same legibility for nothing | +65 MB (+36%) and +101 MB (+29%) |
-| A per-cell cursor on the replica | it is a durable local claim about the authority's state | about 20 MB for the column, 10% of the file; the 85 MB figure is an index on it that nothing in this design would query |
-| An index on `dirty` | the scan it replaces is cheap and once per round | +81 MB and +126 MB with local work standing, to save a 48 ms and 112 ms scan; in the state where it costs that, it saves 3.6% and 8.4% |
+| A per-cell cursor on the replica | it is a durable local claim about the authority's state | +9.8 MB (5.4%) and +18.9 MB (5.5%) for the column, measured as a clean A/B on the settled schema; 91 MB and 140 MB if it is also indexed, which nothing here would query |
+| An index on `dirty` | the scan it replaces is cheap and once per round | in the common case, nothing owed, it costs 0 MB and saves the whole scan (about 0.05 s and 0.11 s); with every cell owed it costs +81 MB and +126 MB and saves 6% to 7%, which is inside the run-to-run spread |
 | Row presence in its own relation | one algebra, one relation, and an address that can be reused | 1.02x and 1.27x slower projection rebuild (582 vs 568 ms, 1400 vs 1104 ms), once the two-relation query groups before it joins, for 1.5% and 4.1% less disk |
 | A generation column plus a `resurrect` verb | the presence cell's version already orders incarnations | one column on every cell, one new API surface, and it loses a concurrent write from a replica that has not seen the bump, where R1 and R2 keep it |
 | A 16-byte `version_hash` | the merge predicate's value guard closes the same hole | +19.4 MB (+10.7%) and +29.5 MB (+8.6%) |
-| A replica-global `version_seq` | it is not durable across a restart | a same-millisecond rewrite after a crash is silently discarded 50.3% of the time, measured over 20,000 trials |
+| A replica-global `version_seq` | it is not durable across a restart | a same-millisecond rewrite after a crash is discarded on a coin flip, which is what the mechanism predicts and what 20,000 trials measure |
 | A strict `>` merge predicate | the authority echoes a won push at its own version | the cell never clears `dirty` and re-pushes every round forever |
 | A single body delivery slot | an acknowledgement clears bytes the authority never received | every edit made during a push round trip is lost permanently, and no version exists that could notice |
 | Range-based set reconciliation as the delivery mechanism | it is a good verifier and a bad courier | finding one changed cell costs a 32 KB bucket exchange plus 586 address and version pairs, against one cell for a cursor |
@@ -653,6 +653,16 @@ mutually exclusive states, one with every cell owed and one with none.
 `docs/adr/README.md` requires. `Relates` does not: it is one-directional by
 convention here, and only ADR-0170 carries one back, because that record owns a
 noun this one borrows.
+
+**Provenance.** Figures in this table come from `bench9.ts` (the settled schema,
+both planes, the whole required set), `bench8.ts` (per-row re-derivation),
+`r2m-storage.ts` (the settled schema against the two-relation and 16-byte-hash
+alternatives), `r2m-dirty-index*.ts`, `r2m-wire-and-intern.ts`,
+`r3m-cursor-column.ts` (the per-cell cursor A/B), `results2.json` (the
+row-plus-version-map opponent), and the `converge*.ts` proofs. Where a row quotes
+a fixture of 196k live rows rather than 200k, it is because the comparison it
+makes exists only on the bench that built both shapes; bench9's own 200k-live
+fixture measures 184.7 MB and 348.8 MB.
 
 **Harness.** The authoritative run is `bench9.ts`, which executes the settled
 `final-schema.sql` verbatim on both planes and covers the whole required set:
