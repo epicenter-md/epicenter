@@ -25,10 +25,32 @@ reusable address and the write surface, is **175 lines**.
 
 The clamp machinery is larger than the core it protects, it is where rounds 8
 through 14 spent almost every defect, and it still carries a measured 4.4% silent
-loss of user field writes. It exists to make a bad clock **invisible**. That is the
-wrong goal: refusing a write and returning the authority's time, so the client
-corrects its offset and retries, is better behaviour and roughly a tenth the
-surface. The five ideas below have not changed since round 2 and have survived
+loss of user field writes. So the obvious move is to delete it and refuse the
+write instead, returning the authority's time so the client corrects its offset
+and retries.
+
+**Measured, that does not work, and the reason is worth writing down.** The local
+write rule stamps a write at `max(now, the cell's own version, the row's presence
+version) + 1`, so a device never lowers a version it already holds. A device a day
+fast writes locally at `T+24h`, is refused, corrects its offset, and its next
+write is floored **back up to `T+24h` by its own earlier local write**. It is
+refused again, forever: four attempts, four refusals, no progress. The only two
+ways out are to lower what the device holds locally, which is exactly what the
+re-stamp does, or to not keep a local write until the authority accepts it, which
+is write-through and costs the offline edit the whole design exists for.
+
+So the re-stamp is load-bearing, and this section's first draft was wrong to call
+it optional. **A local-first store that stamps versions from a wall clock must be
+able to lower a version it already holds.** Every complication after that follows:
+lowering a version is the one operation exempt from the local write rule, the
+lowered cell must not land under its own row's presence, and presence is a cell so
+R2 reaches it.
+
+What is still worth questioning is the elaborateness rather than the existence:
+the two-member floor family and its two provably inert clamps, the spend-in-the-
+round rule, and the coupling to the repair pass. A smaller version of this
+subsystem is plausible. A tenth-size one is not, and the 4.4% silent loss is the
+price of the re-stamp existing at all rather than of it being complicated. The five ideas below have not changed since round 2 and have survived
 109,600 exhaustive orderings.
 
 **The core, which is settled**
