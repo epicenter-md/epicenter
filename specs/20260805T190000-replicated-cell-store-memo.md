@@ -642,20 +642,20 @@ mutually exclusive states, one with every cell owed and one with none.
 
 | Refused | Why | Measured cost of refusing it |
 | --- | --- | --- |
-| Whole-row JSON as the stored shape | per-field and whole-row versions do not compose | 2.12x and 1.66x the size of what ships today (181.0 vs 85.3 MB, 342.4 vs 206.2 MB), re-deriving one changed row 3.8x and 3.3x slower as a point query, and the whole projection 42x and 37x slower |
+| Whole-row JSON as the stored shape | per-field and whole-row versions do not compose | 2.12x and 1.66x the size of what ships today (181.0 vs 85.3 MB, 342.4 vs 206.2 MB), re-deriving one changed row 1.32x and 1.07x slower as a point query, and the whole projection 1.76x and 1.31x slower. Four earlier speed figures in this row were retracted, the last of them (3.8x/3.3x and 42x/37x) because they charged the Yjs body plane to the cell layout: the opponent carried prose inline and never paid the render |
 | Real typed columns | ADR-0125: nowhere to put an unknown key | 3.81x and 2.33x the disk, fixture-matched (181.0 vs 47.5 MB, 342.4 vs 147.1), against a shape that stores no version, no `dirty` and no presence, so the ratio is a floor |
 | One JSON record per row plus a version map | the map is opaque, so no version is legible and the merge cannot be one SQL predicate; one field change ships the whole record and map; merge-group names become an unversioned wire contract | THIS REFUSAL COSTS DISK. Packed as 18 binary bytes per field it is 127.9 MB and 274.1 on the same fixture, so the cell store is 41% and 25% LARGER. An earlier pass quoted 6.0% against a version map stored as base64 inside JSON, roughly 40 bytes per field. On the wire the cell store still wins, 8.9x at 12 columns and 3.0x at 3, both like for like |
 | Interning the address | the replica must be readable in a SQL console with no joins | at most 34% of the file, before dictionary tables and integer keys are added back |
 | Readable version columns (ISO-8601 plus hex) | a view gives the same legibility for nothing | +65 MB (+36%) and +101 MB (+29%) |
 | A per-cell cursor on the replica | it is a durable local claim about the authority's state | +9.8 MB (5.4%) and +18.9 MB (5.5%) for the column, measured as a clean A/B on the settled schema; 91 MB and 140 MB if it is also indexed, which nothing here would query |
 | An index on `dirty` | the scan it replaces is cheap and once per round | in the common case, nothing owed, it costs 0 MB and saves the whole scan (about 50 ms and 120 ms); with every cell owed it costs +81 MB and +126 MB and saves nothing measurable, at -2.6% to +7.2% across runs |
-| Row presence in its own relation | one algebra, one relation, and an address that can be reused | the projection rebuilds 1.02x and 1.27x FASTER once presence is a cell, for 1.5% and 4.1% more disk; the refusal costs disk and buys nothing measurable at the wide shape |
+| Row presence in its own relation | one algebra, one relation, and an address that can be reused | 1.5% and 4.1% more disk, and no measurable time either way: the 1.02x/1.27x quoted here was taken on a projection query ADR-0212 has since retired, and against the decided one the gap is about 4% |
 | A generation column plus a `resurrect` verb | the presence cell's version already orders incarnations | one column on every cell, one new API surface, and it loses a concurrent write from a replica that has not seen the bump, where R1 and R2 keep it |
 | A 16-byte `version_hash` | the merge predicate's value guard closes the same hole | +19.4 MB (+10.7%) and +29.5 MB (+8.6%) |
 | A replica-global `version_seq` | it is not durable across a restart | a same-millisecond rewrite after a crash is discarded on a coin flip, which is what the mechanism predicts and what 20,000 trials measure |
 | A strict `>` merge predicate | the authority echoes a won push at its own version | the cell never clears `dirty` and re-pushes every round forever |
 | A single body delivery slot | an acknowledgement clears bytes the authority never received | every edit made during a push round trip is lost permanently, and no version exists that could notice |
-| Range-based set reconciliation as the delivery mechanism | it is a good verifier and a bad courier | finding one changed cell costs a 32 KB bucket exchange plus 635 address and version pairs, against one cell for a cursor |
+| Range-based set reconciliation as the delivery mechanism | it is a good verifier and a bad courier | finding one changed cell costs a bucket exchange and a per-bucket address list, against one cell for a cursor. The 32 KB and 635 pairs were arithmetic over a bucket count ADR-0213 has since deleted, so the magnitude no longer has a number behind it; the direction is what the refusal rests on |
 | ~~An incremental digest as a verifier, for now~~ **ADOPTED in round 4** | the deferral's two premises are both falsified: the lifetime does not catch a restore, and neither does a cursor regression | the deferral cost three rounds of patches to a mechanism that cannot carry the signal. Price paid: one 8-byte column per side, +49% to +72% on a local write that already pays the row-local floor, 8.6x to 9.1x on a row delete at 12 columns, and +26% to +40% on a body write rising to +27% to +61% at a 40KB document. It answers "are we equal" in 8 bytes. Settled as [ADR-0213](../docs/adr/0213-two-replicas-compare-a-multiset-digest-because-a-cursor-cannot-say-whether-they-agree.md) |
 | Renaming `patch` to `set`, and deleting `create` | `create` is the only verb that can reuse an address, and `patch` is already the right name | churn with no measured benefit, and a merge rule that cannot be expressed |
 | Terminal, absorbing row death | it makes an address single-use, against ADR-0206 | a provider-keyed row never returns: 30 reconciler passes at strictly later versions leave it absent |
@@ -674,10 +674,16 @@ mutually exclusive states, one with every cell owed and one with none.
 | One hash for a cleared cell and for JSON `null` | they are different values | two replicas refuse each other forever, at probability 1 rather than 2^-64 |
 | An unbounded repair pass | `sealBatch` was the only upload bound in the system | 2.6M cells and roughly 336 MB at an 80-character body, or 8.2 GB at 40 KB |
 | A digest sum stored as `INTEGER` | every driver returns it as a double, and a sum is uniform over 2^64 | the stored sum becomes a function of write ORDER, so two sides holding identical cells compare unequal and repair fires on 89% of rounds instead of 13% |
-| A digest over cells only | a body has no version, so nothing detects a body divergence | 3 of 4000 randomized traces end at quiescence with divergent body text and identical cell roots; a body entry costs 48 extra repairs out of 42,641 |
+| A digest over cells only | a body has no version, so nothing detects a body divergence | 3 of 4000 randomized traces end at quiescence with divergent body text and identical cell roots. The 48-extra-repairs cost was measured with a body entry the record no longer decides; on the decided canonical re-encode, 1200 traces and 79,297 comparisons report 0 body divergences and a 0.08% false-alarm rate |
 | A digest entry that hashes only the version | it would trust `version_hash`, which is what the merge already trusts | a value corrupted away from its own hash is invisible to the verifier AND unrepairable by the merge, on both sides, forever |
 | A root comparison with no precondition | a replica that owes work, or samples the root outside the page transaction, is not comparable | 500 full repair passes out of 500 rounds, with zero divergence |
 | Merging inside a `json(inner)` field | one cell is one merge unit, so declared-together values never tear | a whole-blob write, which is the point rather than a limitation |
+| Clamping the re-stamp floor's `held` term to the authority's time | `min(H, A)` is never greater than `A`, and `A` is already a term of the same maximum | zero. The term is inert by algebra and the floor collapses to `max(A, local)`, which is the round-8 defect: measured, 445 presence cells re-stamped below the authority's own and 470 creates or deletes destroyed |
+| Clamping it to the authority's time plus the clamp width instead | the authority refuses anything above that bound, so a presence version it HOLDS is at or below it by construction | zero. The `min` never binds: byte-identical to the unclamped floor on every counter of a 1200-trace fuzz. The family has two members, not three |
+| Buying back the 18 lost intents the unclamped floor costs | the only clamp that would do it is the one the invariant above makes inert | there is no third formula. The trade is 445 below-authority re-stamps and 466 destroyed creates against 18 more lost intents (3.8%), and it has to be chosen rather than engineered away |
+| A repair watermark with no durable accumulator | `repair_from` is a watermark, not a running total, and the scanned term lives in memory | a pass that dies after three of ten chunks resumes and commits a sum over 280 of 400 addresses, which is a permanent false mismatch scheduling a full pass every round forever |
+| A terminal recompute under the authority's own write lock | an authority is the side N replicas push into, so its lock is not a local typist's | 0.81 microseconds per cell, so about 2.1 seconds of held write lock at 2.6M cells; a concurrent push fails after burning its full `busy_timeout`, measured at 0, 1000 and 5000 ms |
+| Refusing a causally gapped `doc_state` at the write door | the premise was that `load` drops structs it cannot integrate, so `{u1, u3}` and `{u1}` entry identically | the premise is false on the pinned Yjs: the stores are 45 and 32 bytes and their entries differ. Enforcing it discards recoverable user prose and ADR-0212's two body-refusal answers both lose it |
 
 `Supersedes` and `Amends` carry reciprocal links on both records, as
 `docs/adr/README.md` requires. `Relates` does not: it is one-directional by
@@ -700,7 +706,11 @@ missed that an `INTEGER` column cannot hold one. Round 5's body check hashed two
 byte strings and asserted sha256 is injective, so it missed that `doc_state` is
 not a function of a document's content. Both defects were fatal, both were in the
 newest mechanism, and in both cases a check that touched the database would have
-found them. Every check now writes to and reads from the settled schema.
+found them. Every check of a STORED mechanism now writes to and reads from the
+settled schema. Two do not and do not need to: `converge2.ts` and `converge3.ts`
+prove an algebra over orderings, not a layout, and never open a database. Saying
+otherwise was a third instance of the same error these two paragraphs record, and
+it is why the sentence now names the exception.
 
 **A measurement method that failed three times, and what fixed it.** The
 row-local write floor was priced at "about 10%", then at "at least double", then
@@ -728,6 +738,35 @@ information; none of them added the information. The mechanism that carries it w
 priced in this table and deferred, and the deferral is what the three rounds cost.
 It is adopted above.
 
+**A fix that failed five times, and the root cause that stops it.** The re-stamp
+floor was patched in rounds 8, 9, 10 and 11, and each patch was reviewed, measured
+and adopted before the next round showed it did nothing. Round 8 floored at the
+replica's own presence, which loses the write when the authority holds one that is
+newer. Round 9 added the authority's held presence, which fixed that and cost 18
+more lost intents. Round 10 clamped the new term to the authority's time, which is
+**inert by algebra**. Round 11 clamped it to the authority's time plus the clamp
+width, which is **inert by the clamp's own invariant**. Two consecutive fixes were
+arithmetic that could not change an outcome, and both were adopted with prose
+claiming a measured improvement.
+
+The root cause is not any of the four formulas. It is that the family
+`max(A, f(held), local)` has exactly two behaviours, because the authority never
+holds a presence more than one clamp width ahead of its own clock, so every `f`
+that respects the clamp equals either `A` or `held`. There is no third formula,
+so there was never a fix to find: rounds 10 and 11 were searching a space with two
+points in it. Once that is stated, the remaining choice is a trade with measured
+costs on both sides, recorded in the Rejected table above, and it has to be
+decided rather than engineered away.
+
+Two process failures made those rounds possible, and both are now closed. First,
+three of the numbers the record quoted for this subsystem had **no producing
+output**: the files named `r9-fuzz-*.out` print the round-8 header and the round-8
+flags, so they were produced by `r8-fuzz.ts`, and `r10-restamp-branches.ts` saved
+nothing at all. Every one of those numbers has been withdrawn and replaced with a
+1200-trace run whose output is kept. Second, the record asserted a counter went to
+zero **while its own saved evidence showed 445**; nothing checked a quoted figure
+against the file it came from. That check is now part of a round.
+
 **Provenance.** Figures in this table come from `bench9.ts` (the settled schema,
 both planes, the whole required set), `bench8.ts` (per-row re-derivation),
 `r2m-storage.ts` (the settled schema against the two-relation and 16-byte-hash
@@ -744,14 +783,19 @@ is because the comparison it makes needs an opponent only an earlier bench built
 bench9's own 200k-all-live fixture measures 184.7 MB and 348.8 MB.
 
 **Harness.** The authoritative run is `bench9.ts`, which executes
-`final-schema.sql` as settled at the time of the run, on both planes and covers the whole required set:
-insert, scattered row read, projection rebuild, changed-since, one-field write,
-row delete, on-disk after `wal_checkpoint(TRUNCATE)`, and wire bytes. `bench.ts`
+`final-schema.sql` as settled at the time of the run, on both planes and covers
+insert, scattered row read, changed-since, one-field write,
+row delete, on-disk after `wal_checkpoint(TRUNCATE)`, and wire bytes. **Projection
+rebuild is NOT among them**: `bench9.ts` still times a query with no `json_valid`
+guard, no `_replica_body` join and no body render, which ADR-0212 does not decide.
+That figure comes from `r10m-projection-fair.ts` and
+`r11m-bodyplane-attribution.ts`. `bench.ts`
 through `bench8.ts` measured shapes that have since been superseded and are kept
 as history; where a figure above still comes from one of them, it is because the
 comparison it makes is against a shape only that bench built. Convergence is
 `converge.ts`, `converge2.ts`, and `converge3.ts`; the layout is verified by
-`final-verify.ts` and `final-verify2.ts`. An adversarial pass over the harness itself found and fixed four biases
+`final-verify.ts` through `final-verify5.ts`, and the repair pair by
+`r11b-repair-pair.ts`. An adversarial pass over the harness itself found and fixed four biases
 worth recording, because they all ran in the same direction: the `dirty` index
 was measured with `dirty` cleared on every cell (reporting 65 KB for something
 that costs 75 MB), whole-row JSON carried an index no timed query used, the

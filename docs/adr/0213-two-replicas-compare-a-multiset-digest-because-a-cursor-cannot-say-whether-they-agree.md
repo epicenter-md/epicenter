@@ -82,8 +82,12 @@ A sum is uniform over 2^64, and every SQLite driver in this family returns
 `INTEGER` as a double unless a per-connection flag is set. A sum read back is
 therefore a different number from the one written, which makes the stored sum a
 function of **write order** rather than of the multiset: two sides holding
-identical cells then compare unequal. Measured, the digest degenerates into
-"repair always", firing on 89% of rounds against 13% with exact arithmetic.
+identical cells then compare unequal. Measured on the settled schema, two sides
+holding identical content and differing only in the order they folded their
+entries compare unequal on **81.3% of rounds** with the sum stored as `INTEGER`
+and on **0%** with it stored as eight bytes, which is the digest degenerating
+into "repair always". An earlier draft quoted 89% against 13% from a probe that
+wrote to a table this schema no longer has and aborted before measuring anything.
 
 A per-connection flag is the weaker fix, because one connection opened without it
 corrupts the file. Eight bytes read as bytes has no such door.
@@ -175,7 +179,7 @@ pass converges the content, the comparison reads the sum, and the two never meet
 Measured with one fold omitted at one of the roughly ten sites that fold: two
 stores holding **41 identical cells**, sums unequal, **50 full-range passes over 50
 rounds**, still unequal. At this record's fixture that is 2.6 M cells and about
-315 MB every round, forever, with nothing user-visible wrong.
+336 MB every round, forever, with nothing user-visible wrong.
 
 So a repair pass that completes **recomputes `digest_sum` on both sides**: the
 replica from `_replica_cell` and `_replica_body`, scoped by `repair_from`, and the
@@ -205,15 +209,31 @@ running total, so committing it changes nothing and the omitted fold it exists t
 correct survives inside `sum_at_scan_start` untouched. What the commit has to be is **the sum of the entries the
 scan actually derived from content, plus only those deltas whose address the scan
 has already passed**. The first term is what makes it a recompute; the second must
-be scoped by the pass's own watermark, which `repair_from` already is, or every
+be scoped by the pass's own watermark, or every
 write landing ahead of the scan is counted twice and 40 of 40 completed passes
-leave the sum wrong in the other direction.
+leave the sum wrong in the other direction. **A chunk's content read and its
+watermark advance are one transaction.** Without that, a write landing on an
+address the scan has already derived but the watermark has not yet passed is
+excluded as not-yet-passed while the scan already counted the old value, and the
+committed sum is permanently wrong.
+
+`repair_from` is a **watermark, not an accumulator**, so it cannot carry the first
+term across a restart on its own: a pass chunked by address range that dies after
+three of ten chunks resumes with the scanned total at zero and commits a sum over
+only the tail, which is exactly the failure this section diagnoses for the
+authority, on the side an earlier draft called safe. Both sides therefore hold
+**`repair_from` and `repair_sum` together**, advanced in the same transaction, and
+that pair is also what lets the authority fold its recompute into the pages it
+already serves instead of taking one terminal window under its own write lock.
 
 The cost is not free and an earlier draft said it was: hashing every cell is
 **+295% on top of the scan** the pass already pays, about 1.9 seconds of added hashing on a
 2.5 second scan-plus-hash at 2.6M cells, and the body half is a document load and
 re-encode at 8.9 microseconds per small body and 38.6 at 40 KB, so 196k bodies is
-another 1.8 to 7.6 seconds. A
+another 1.8 to 7.6 seconds. The second of those is arithmetic over a per-body cost
+measured on 2000 documents, not a measured pass: at 196k bodies of 40 KB the
+working set is about 7.8 GB of `doc_state` and the scale charges no disk, the same
+disclosure ADR-0212 makes for its own 8.2 GB figure. A
 completed pass therefore owes **about +3.6 seconds at an 80-character body and +9.4 at
 40 KB**, roughly 1.8 times the projection rebuild, now that the rebuild is priced on the query the
 record decides.
@@ -224,7 +244,13 @@ measured on the settled schema at the settled fixture the recompute is **2.5
 seconds**, against about 1.3 for the bucket enumeration, which hashes an address
 where this hashes an address, a version and a value, and this section now mandates it on every completed pass. The
 refusal stands on the resumability argument alone. A terminal scan on the replica would hold that as
-one window; folded into the pass's own transactions it is spread across them, and it is what makes a sum a check on state
+one window, and so would a terminal scan on the authority: measured on a real
+file, scan-plus-hash-plus-commit is 0.81 microseconds per cell, so 2.6M cells hold
+the write lock for about **2.1 seconds** before COMMIT, plus the body half, and a
+concurrent push fails after burning its full `busy_timeout` (measured at 0, 1000
+and 5000 ms). An authority is the side N replicas push into, so that window is an
+ingest outage, and every completed repair pass on every replica triggers one.
+Folded into the pass's own transactions it is spread across them, and it is what makes a sum a check on state
 rather than a durable local claim that decides what to send and perpetuates its
 own error. Without it, ADR-0212's claim that a digest mismatch is a state check would be
 false, because nothing would ever recompute anything.
@@ -329,13 +355,18 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
   full adversarial round because the verification of the day modelled the digest
   in JavaScript maps and never wrote a sum to SQLite. Any check of this mechanism
   must round-trip through the database.
-- **A causally gapped `doc_state` is refused at the write door.** `load` drops
-  structs it cannot integrate, so a store holding `{u1, u3}` and one holding `{u1}`
-  produce byte-identical entries: the entry is a function of what a document can
-  integrate rather than of what the store holds, which is constraint 1, the one it
-  was adopted to satisfy. Refusing the gap is cheaper than folding the state
-  vector and the pending bytes alongside, and the plane already refuses
-  subdocuments at the same door.
+- **A causally gapped `doc_state` is NOT refused, because the premise for
+  refusing it is false.** An earlier draft held that `load` drops structs it cannot
+  integrate, so a store holding `{u1, u3}` and one holding `{u1}` produce
+  byte-identical entries. On the pinned Yjs major, `encodeStateAsUpdateV2`
+  **includes** pending structs, so the two stores are 45 and 32 bytes and their
+  entries differ: the digest already sees the gap, and constraint 1 already holds.
+  Enforcing the refusal is worse than useless, because gapped bytes are user prose
+  that is still recoverable (merging `u2` in later renders `"one two three"` where
+  the clean store renders `"one two "`), and ADR-0212 gives a body refusal exactly
+  two answers, both of which lose it: a matching generation fires the
+  acknowledgement and drops the bytes from the only side holding them, or it does
+  not fire and the replica re-sends refused bytes forever.
 - **Subdocuments are invisible to this entry, and to the plane.** A `Y.Doc` is a
   legal value inside a `Y.Map`, and typing into one leaves the parent's
   `doc_state` unchanged, so a subdocument's prose is never delivered, never
@@ -362,8 +393,8 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
 - **XOR rather than modular addition.** Identical pairs cancel, so two different
   states agree. Free to compute and wrong.
 - **Store the sum as `INTEGER`.** Measured to make the stored sum a function of
-  write order, so identical stores compare unequal and repair fires on 89% of
-  rounds.
+  write order, so identical stores compare unequal and repair fires on 81.3% of
+  rounds against 0% for eight bytes.
 - **Hash only the version into an entry.** Cheaper per write by 2 to 15 points,
   and it makes the verifier trust exactly what it exists to verify.
 - **Bucket the entries so a mismatch can name a region.** Refused on resumability

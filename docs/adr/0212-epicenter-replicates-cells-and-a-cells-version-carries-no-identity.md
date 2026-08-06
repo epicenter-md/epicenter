@@ -159,11 +159,13 @@ CREATE TABLE _replica_metadata (
 	last_applied_cursor INTEGER NOT NULL CHECK (last_applied_cursor >= 0),
 
 	repair_from TEXT,
+	repair_sum BLOB CHECK (repair_sum IS NULL OR length(repair_sum) = 8),
 
 	digest_format INTEGER NOT NULL,
 	digest_sum BLOB NOT NULL CHECK (length(digest_sum) = 8),
 
-	CHECK ((attached_deployment IS NULL) = (attached_principal IS NULL))
+	CHECK ((attached_deployment IS NULL) = (attached_principal IS NULL)),
+	CHECK ((repair_from IS NULL) = (repair_sum IS NULL))
 ) STRICT;
 
 CREATE TABLE _replica_cell (
@@ -226,8 +228,14 @@ CREATE TABLE _authority_metadata (
 	format_version INTEGER NOT NULL,
 	lifetime TEXT NOT NULL,
 	next_cursor INTEGER NOT NULL CHECK (next_cursor >= 1),
+
+	repair_from TEXT,
+	repair_sum BLOB CHECK (repair_sum IS NULL OR length(repair_sum) = 8),
+
 	digest_format INTEGER NOT NULL,
-	digest_sum BLOB NOT NULL CHECK (length(digest_sum) = 8)
+	digest_sum BLOB NOT NULL CHECK (length(digest_sum) = 8),
+
+	CHECK ((repair_from IS NULL) = (repair_sum IS NULL))
 ) STRICT;
 
 CREATE TABLE _authority_cell (
@@ -672,37 +680,54 @@ held  = the presence version the AUTHORITY holds for this row, returned with the
         refusal, or zero when it holds none
 local = the presence version this replica holds for the row, or zero
 floor = (max(the authority's time,
-             min(held.version_ms, the authority's time + the clamp width),
+             held.version_ms,
              local.version_ms),
          the millisecond came from a presence version
            ? that version's seq + 1 + rank
            : rank)
 ```
 
-**All three terms are load-bearing, and an earlier draft carried one.** Taking the
-floor from the authority alone loses the write outright when the authority holds
-no presence for the row, because `held` is then undefined and the re-stamped cell
-lands under the replica's own presence: measured, the note is gone from every
-device and the roots agree. Taking it from the replica alone is the round-8 defect.
-And `held.version_ms` may be a full clamp width ahead, so flooring *to* it imports
-another device's skew into a re-stamp applied to a device already known to have a
-bad clock; measured over 800 traces, doing that drove user-visible create and
-delete losses from 308 to 322 while driving the internal counter it targeted from
-285 to 0. Clamping the forward reach to **the authority's time plus the clamp width**, not
-to the authority's time, is what keeps the counter at zero without the regression.
-Clamping to the authority's time makes the whole `held` term inert: `min(H, A)` is
-never greater than `A`, and `A` is already a term of the same maximum, so the
-expression collapses to `max(A, local)` and the refusal's held version can never
-raise anything. That collapse is round-8's replica-only floor with a flat
-authority time beside it, which is the pair of defects this formula exists to
-avoid.
+**Both terms are load-bearing, and every clamped variant of the second is
+provably inert.** Taking the floor from the authority alone loses the write
+outright when the authority holds no presence for the row, because `held` is then
+undefined and the re-stamped cell lands under the replica's own presence. Taking
+it from the replica alone is the round-8 defect. Two rounds then tried to clamp
+the forward reach of `held`, and both clamps are dead arithmetic:
+
+- `min(held, A)` is inert by algebra. It is never greater than `A`, and `A` is
+  already a term of the same maximum, so the expression collapses to
+  `max(A, local)` and the refusal's held version can never raise anything. That
+  collapse is round-8's replica-only floor with a flat authority time beside it,
+  which is the pair of defects the formula exists to avoid.
+- `min(held, A + the clamp width)` is inert by the clamp's own invariant. The
+  authority refuses any write above `A + the clamp width`, so a presence version
+  it *holds* is at or below that bound by construction and the `min` never binds.
+  Measured, it is byte-identical to the unclamped floor on every counter of a
+  1200-trace fuzz.
+
+So the family has exactly two members, not three, and choosing between them is a
+trade rather than a defect to fix. Measured over 1200 traces of 70 steps, four
+replicas skewed -3 to +12 minutes, 4282 clamp re-stamps (`r11b-fuzz.ts`):
+
+| floor | presence re-stamped below the authority's own | then refused stale | destroyed by R2 | lost create/delete intents |
+| --- | --- | --- | --- | --- |
+| `max(A, local)`, and every clamped variant | 445 | 470 | 133 | 479 |
+| `max(A, held, local)` (**decided**) | 0 | 25 | 4 | 497 |
+
+Neither dominates. The decided floor removes 445 below-authority re-stamps and
+466 of the 470 destroyed creates and deletes that follow from them, and pays 18
+more lost intents (3.8%) for importing another device's skew into a re-stamp
+applied to a device already known to have a bad clock. That is the honest shape
+of the choice, and no third formula recovers both: the clamp that would buy them
+back is the one the invariant above makes inert.
 
 **The floor is spent in the round that reads it.** The refusal carries the
 authority's held presence at refusal time, and pushing the re-stamped cells on the
 *next* round lets another replica move it in between, after which the re-stamped
 presence is refused as stale and the user's create or delete is gone with nothing
-dirty. Measured: 179 stale re-stamped presence cells and 66 destroyed by R2, which
-re-pushing the row in the same round takes to 16 and 3.
+dirty. Measured over 10,454 re-stamps: the re-push settles at an inner depth of 1,
+the 32-round cap is never reached, and a device three days fast settles in one
+inner round.
 
 **The refusal names the authority's held presence, and the floor clears it.** A presence write
 overwrites the row's presence cell in place, so when the presence cell is itself
@@ -710,10 +735,9 @@ refused the replica no longer holds the version it must clear, and an earlier
 draft floored that branch at the authority's time flat. Measured: a clamped
 `delete` lands below the authority's own `present`, the answer restores it, the
 delete is gone from both sides with nothing dirty; a clamped `create` is worse,
-because the stale answer fires R2 and drops the fields with it. **285 of 2857
-re-stamps, 10.0%, take that branch.** So the refusal names the authority's held
-presence version, and the floor clears it. It stays inside the clamp because the
-authority accepted that version itself.
+because the stale answer fires R2 and drops the fields with it. So the refusal
+names the authority's held presence version, and the floor clears it. It stays
+inside the clamp because the authority accepted that version itself.
 
 **The counter is part of the floor, not decoration.** R1 compares
 `(version_ms, version_seq)`, so flooring the millisecond alone still lands a
@@ -743,9 +767,16 @@ losing prose the user typed seconds earlier on the device that typed it. Re-stam
 field cell alone would land it below its own row's presence cell, which is exactly
 what R1 refuses, so the debt would never clear.
 
-**A scheduled repair is one column, because neither source of obligation needs
-more.** `repair_from` is where a whole-store pass has reached, and non-NULL means
-one is owed. A digest mismatch is a **state** check, and ADR-0213 makes it
+**A scheduled repair is one pair of columns, because neither source of obligation
+needs more.** `repair_from` is where a whole-store pass has reached, `repair_sum`
+is that pass's own accumulator, and non-NULL means one is owed. The accumulator is
+durable rather than in memory because a watermark cannot carry a partial total
+across a restart: measured, a pass that dies after three of ten chunks and resumes
+from its watermark alone commits a sum over 280 of 400 addresses, which is a
+permanent false mismatch that schedules a full pass every round forever. The
+authority holds the same pair, which is also what lets it fold ADR-0213's
+recompute into the pages it already serves instead of taking one terminal window
+under its own write lock. A digest mismatch is a **state** check, and ADR-0213 makes it
 one by recomputing the sum from the store when a pass completes, so a pass that
 clears the flag without finishing the job is re-raised by the next comparison and
 nothing is lost. Without that recompute the sum is incremental only, and a sum
@@ -956,8 +987,9 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   80-character body it adds 0.7% and 2.0%, taking the headline ratio to 2.14x and
   1.69x. It is untested at the 40KB document this record uses to justify the plane
   existing, and moving the body out of the cell relation shrinks that relation by
-  more than the body plane costs, which is why the net is 0.7% and 2.0% while
-  `_replica_body` itself is 28.3 MB and 141.9 MB. That relation carries 38%
+  almost as much as the body plane costs (27.5 against 28.3 MB, and 135.7 against
+  141.9 MB), which is why the net is only +0.7% and +2.0% rather than +16% and
+  +41%, while `_replica_body` itself is 28.3 MB and 141.9 MB. That relation carries 38%
   overhead over the state it holds, from repeating a three-part text key. An earlier
   draft claimed the cell store was 7.8% *smaller* than the versioned opponent;
   that held only because the opponent it measured stored each version as base64
@@ -988,16 +1020,19 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   and it measured **+65 MB (+36%) and +101 MB (+29%)** at the two shapes. A view
   rendering `version_ms` as a timestamp and `version_hash` as hex costs nothing
   and reads better than either, so the stored columns stay compact.
-- **Re-deriving one changed row costs 3.8x and 3.3x** what whole-row JSON costs,
-  measured as a point query on the settled schema: 18.5 against 4.8 microseconds,
-  and 14.4 against 4.3. Two earlier figures were wrong in the same direction: 1.69x
-  omitted the body load entirely, and 2.9x built it by adding a bulk-scan render
-  cost to a point-query cost across two runs, which understates a random
-  `_replica_body` lookup by more than half. That is the operation
-  that runs in steady state, because a write touches one row, and the margin
-  there is small.
+- **Re-deriving one changed row costs 1.32x and 1.07x** what whole-row JSON costs,
+  measured as a point query on the settled schema with the Yjs body plane on both
+  sides: 17.4 against 13.2 microseconds, and 16.9 against 15.8. Three earlier
+  figures were wrong in the same direction, each by a larger factor than the last
+  correction: 1.69x omitted the body load entirely; 2.9x built it by adding a
+  bulk-scan render cost to a point-query cost across two runs; and **3.8x and 3.3x
+  charged the body plane to the cell layout**, comparing an arm that loads a
+  `Y.Doc` against one that reads prose inline from a text column. The body plane
+  is a separate decision, and whole-row JSON can adopt it unchanged. That is the
+  operation that runs in steady state, because a write touches one row, and the
+  margin there is small.
 - **Rebuilding the WHOLE projection costs about 2.0 s at 2.6M cells and 7.3 s at
-  4M**, warm, and against whole-row JSON that is **42x and 37x**. An earlier
+  4M**, warm, and against whole-row JSON that is **1.76x and 1.31x**. An earlier
   measurement said 2.9 s and 64x, and it joined `_replica_body` before grouping,
   which probes once per cell instead of once per row: the exact bias this record
   documents two bullets below for the `_replica_row` opponent, repeated in the arm
@@ -1008,8 +1043,16 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   body render. The render is the term that dominates and no implementation can
   avoid it, because a body is Yjs bytes that no SQL restores: 4.9 microseconds per
   row, 977 ms and 5.05 s on its own, which alone exceeds the whole figure the
-  record used to quote.  No repeat runs of the decided query exist, so these figures carry one
-  significant figure and no variance band. The render is 960 ms of the total at 12
+  record used to quote. **Every ratio this record quoted before round 11 charged
+  that render to the cell layout alone**, because the `_replica_row` opponent
+  carried prose inline as text and never paid it: the two arms produced different
+  content fingerprints, which is how the mismatch was finally caught. Priced with
+  the body plane on both sides, the arms fingerprint identically and the layout's
+  own cost is 1.76x and 1.31x. The body plane costs the opponent 1136 ms and
+  5604 ms, and is 54% and 78% of the cell store's own rebuild.  No repeat runs of the decided query exist, so these figures carry one
+  significant figure. The cell arms repeat within about 3%, but the whole-row
+  denominator's own control arm moves -15.4% to +11.9% across runs, so the ratio's
+  honest band at 12 columns is roughly 1.6x to 1.9x rather than a bare 1.76x. The render is 960 ms of the total at 12
   columns and about half the added cost at 3; the rest was a join written the way
   this record elsewhere refuses. That is a cold start, a
   repair, or a re-import, and it is the price of the layout rather than a
@@ -1020,9 +1063,11 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   forces a temp b-tree over every cell. Written the obvious way instead, grouping
   first and joining liveness once per row, two relations project in 582 ms and
   1400 ms against one relation's 568 ms and 1104 ms, all four on the retired
-  query. Against the decided projection a 296 ms gap is about 4%, not 27%. At the wide shape that gap is
-  inside the 7% run-to-run band and is **no measurable difference**; at the narrow
-  shape it is **1.27x**, for
+  query. Both frames below are on that retired query, and against the decided
+  projection the 296 ms gap is about **4%** of a 7.3 s rebuild. At the wide shape it
+  is inside the 7% run-to-run band and is **no measurable difference**; at the
+  narrow shape it is 1.27x of the retired query, which is the same 296 ms and not
+  a second, larger finding, for
   1.5% and 4.1% more disk. The collapse is justified by interpretability and by
   being one relation with one algebra rather than two, and it is **separable from
   the correctness fix**: dropping absorbing death is what makes an address
