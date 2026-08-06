@@ -732,7 +732,8 @@ new row while a replica that joined later renders nothing. That is divergence an
 a content leak at once. **The presence cell is the only cell with authority over other cells**, and it has
 seven effects: R1 refuses an older cell, R2 drops older cells, R2 drops an older
 body, the open door replaces an older-generation document, the projection blanks any
-document whose generation is unequal, a clamp re-stamp moves the generation of every document of the row with it,
+document whose generation is unequal, a clamp re-stamp moves the generation of every document NAMING the presence version
+it replaces, and only those,
 and every local write reads it to compute its floor. Nothing else *writes* across
 an address or a plane. Without this the body plane does not converge: a late update from a replica
 that never saw the delete produces `"the old note -- B typed this"` in two

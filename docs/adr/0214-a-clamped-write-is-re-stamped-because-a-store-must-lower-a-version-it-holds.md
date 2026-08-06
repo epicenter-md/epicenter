@@ -61,9 +61,9 @@ with no bound: a laptop resuming with its clock a day fast strands the cell for
 about 24 hours, and one resuming with an RTC reading 2031 strands it for years.
 Rewriting cannot repair it, because the local write rule never lowers
 `version_ms`. So a **clamp** refusal names the address and the authority's own time, and the replica re-stamps the refused cells of that row, **the row's dirty presence
-cell when it is not already among them and the floor would LOWER it**, and the
-row's document generations with them, **in one transaction, at `(floor, rank)`**,
-generations before presence, where rank is each cell's
+cell when it is not already among them and the floor would LOWER it**, and **every document
+generation that names the presence version being replaced, and only those**, in
+one transaction at `(floor, rank)`, where rank is each cell's
 position in the row's own `(version_ms, version_seq)` ascending order, and which is the one
 operation exempt from the local write rule above because it deliberately lowers
 a version. The floor is
@@ -93,14 +93,16 @@ local = the presence version this replica holds for the row, or zero when it hol
         the unguarded rule raises 137 times per 2400 traces and kills 9 cells that
         were never in the re-stamp set; guarded, both are zero. A refused presence
         cannot reach this branch, because the clamp puts it above `A + CLAMP`
-        while the floor is at most `A + CLAMP`. **The order inside the transaction
-        is decided rather than left free**: generations move before the presence,
-        because the other order lets R2 fire against a generation the same
-        transaction is about to lift. Measured over four arms at
+        while the floor is at most `A + CLAMP`. **The order inside the transaction is left
+        free, and that is measured rather than assumed.** Ordering only mattered
+        when a re-stamp raised a presence, and the lowering guard makes a raise
+        unreachable: both orders are byte-identical on every case buildable under
+        the guarded rule, so mandating one would be the dead arithmetic this record
+        kills elsewhere. Measured over four arms at
         3 rows and 4 columns with the write door modelled, what separates them is
         raises and landings-under-presence: 0/0 for the refused set, 0/330 for
         zeroing, 137/0 for the unguarded drag, and **0/0 for the guarded drag**,
-        which is the only arm at zero on both. The writes-lost counter does NOT
+        The writes-lost counter does NOT
         separate them: it reads 28 / 73 / 59 / 53 at this fixture and inverts
         against the narrower one, so the earlier 182-199 / 176-190 / 149-159
         ranking is a fixture artefact and is withdrawn as evidence. It excused
@@ -138,7 +140,7 @@ the forward reach of `held`, and both clamps are dead arithmetic:
   the authority's clock is monotonic**. The authority refuses any write above
   `A + the clamp width`, so a presence version it *holds* is at or below that bound
   and the `min` never binds. Measured, it is byte-identical to the unclamped floor on every counter of a
-  1200-trace fuzz. Re-verified against the settled column-keyed schema: 40 of 41 counters identical
+  1200-trace fuzz. Re-verified against the settled column-keyed schema: 39 of 39 compared counters identical
   and the `min` binds 0 times in 4361 re-stamps, so the claim is no longer inherited
   from an earlier key.
 
@@ -179,7 +181,12 @@ so 1200 traces separates 488 from 0 and does not resolve 5 from 1. Across four d
 sign reversed and a block standard deviation near 17, so the +18 above is one
 standard deviation of block noise. At 4800 traces the totals are **1994 against
 2060, +66 or 3.3%**, paired z = 2.67 with a bootstrap 95% CI of 0.88% to 5.74%: the direction is probably real and
-the magnitude at 1200 traces is not. No third formula recovers both: the clamp that would buy them
+the magnitude at 1200 traces is not. **This is the weakest figure this record
+cites.** It comes from the round-10/11 fuzz, before the column-keyed document-plane
+rekey that every other count here was re-taken on, and at three later fixtures the
+difference reads +3, -3 and +8, so its sign is fixture-dependent in the way the
+withdrawn ranking was. Nothing rests on it: the decision takes the floor on the
+first column, where the separation is absolute. No third formula recovers both: the clamp that would buy them
 back is the one the invariant above makes inert.
 
 **The floor is spent in the round that reads it.** The refusal carries the

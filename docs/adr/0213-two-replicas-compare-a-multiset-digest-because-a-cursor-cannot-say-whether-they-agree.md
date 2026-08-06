@@ -322,7 +322,7 @@ Where `present_tag` is one byte, `0x00` for a cleared cell and `0x01` for a cell
 that holds a value. Without it a cleared cell and a cell holding the empty string
 produce a **byte-identical preimage**, because both contribute zero value bytes and
 the empty string is storable: this record refuses `json_valid`, so nothing rejects
-it. Measured, the two fold the same entry over a fixed version, 1280 collisions among 6720 tuples, and the merge predicate's value guard refuses both directions, so both
+it. Measured, the two fold the same entry over a fixed version, 1280 collisions among the 5440 tuples the pre-fix entry forms, against 0 among this record's 6720, and the merge predicate's value guard refuses both directions, so both
 sides read clean forever. The family is reachable only where a value has
 desynchronised from its own `version_hash`: with the hash derived from the value,
 as ADR-0212 decides, a cleared cell and the empty string can never share a version.
@@ -340,8 +340,9 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
 
 - **It costs one 8-byte column per side and about half a local write again.**
   Measured on the settled one-column schema:
-  a **median of +62% at 12 columns and +55% at 3** across fifteen runs of one
-  unmodified probe (pooled over every raw sample, +55.6% and +50.7%), with three
+  a **median of per-run MINIMA of +62% at 12 columns and +55% at 3** across fifteen
+  runs of one unmodified probe (median of per-run medians is +57% and +51%; pooled
+  over every raw sample, +55.6% and +50.7%), with three
   of those runs carrying an inverted write-floor control and worth excluding, on a write that already pays ADR-0212's
   row-local floor. Against a store with neither, a local write costs **+82% to
   +117%**. The control arm sits within 5% and does not bound this: the ratio moves
