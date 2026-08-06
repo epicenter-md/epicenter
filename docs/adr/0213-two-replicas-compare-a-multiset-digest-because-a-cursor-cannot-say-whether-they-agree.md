@@ -186,8 +186,8 @@ So a repair pass that completes **recomputes `digest_sum` on both sides**, subje
 to the precondition ADR-0212 decides (only a replica whose own scan derived every
 address exactly once, and a pass it finds already open when it opens the store did
 not): the
-replica from `_replica_cell` and `_replica_body`, scoped by `repair_from`, and the
-authority from `_authority_cell` and `_authority_body`.
+replica from `_replica_cell` and `_replica_doc`, scoped by `repair_from`, and the
+authority from `_authority_cell` and `_authority_doc`.
 
 **Neither side's half can be a running total held nowhere.** Accumulating a
 partial sum in `digest_sum` itself leaves garbage rather than drift the moment a

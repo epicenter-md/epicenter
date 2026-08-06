@@ -21,7 +21,7 @@ still unowned. History lives further down; this is the working copy.
 
 - A **collaborative column** is a column whose merge is Yjs instead of the version
   order. Not "the body": a Lens declares `collaborative()` on any column and a row
-  may carry several. `_replica_body` becomes `_replica_doc`, keyed by
+  may carry several. `_replica_doc` becomes `_replica_doc`, keyed by
   `(namespace, table, row, COLUMN)`. The lifecycle still attaches to the row: the
   key starts with the row, so deleting a row drops every document it owns in one
   range delete against the same primary key prefix, verified against the plan.
@@ -1020,7 +1020,7 @@ never been argued for.
 insert, scattered row read, changed-since, one-field write,
 row delete, on-disk after `wal_checkpoint(TRUNCATE)`, and wire bytes. **Projection
 rebuild is NOT among them**: `bench9.ts` still times a query with no `json_valid`
-guard, no `_replica_body` join and no body render, which ADR-0212 does not decide.
+guard, no `_replica_doc` join and no body render, which ADR-0212 does not decide.
 That figure comes from `r10m-projection-fair.ts` and
 `r11m-bodyplane-attribution.ts`. `bench.ts`
 through `bench8.ts` measured shapes that have since been superseded and are kept

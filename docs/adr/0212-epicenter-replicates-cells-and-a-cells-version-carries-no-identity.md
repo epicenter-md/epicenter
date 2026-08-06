@@ -198,7 +198,7 @@ CREATE TABLE _replica_cell (
 	PRIMARY KEY (namespace, table_name, row_id, column_name)
 ) WITHOUT ROWID, STRICT;
 
-CREATE TABLE _replica_body (
+CREATE TABLE _replica_doc (
 	namespace TEXT NOT NULL CHECK (length(namespace) > 0 AND instr(namespace, char(0)) = 0),
 	table_name TEXT NOT NULL CHECK (length(table_name) > 0 AND instr(table_name, char(0)) = 0),
 	row_id TEXT NOT NULL CHECK (
@@ -207,14 +207,21 @@ CREATE TABLE _replica_body (
 		row_id GLOB '[A-Za-z0-9]*' AND
 		instr(row_id, char(0)) = 0
 	),
+	-- The Lens column that declared `collaborative()`, and the Yjs root name.
+	column_name TEXT NOT NULL CHECK (
+		column_name GLOB '[A-Za-z]*' AND instr(column_name, char(0)) = 0
+	),
 	generation_ms INTEGER NOT NULL CHECK (generation_ms > 0),
 	generation_seq INTEGER NOT NULL CHECK (generation_seq >= 0),
 	doc_state BLOB NOT NULL,
 	pending_update BLOB,
 	inflight_update BLOB,
+	-- Monotonic within an incarnation, and reset by one, because a new
+	-- generation replaces this row. An acknowledgement therefore names
+	-- (generation_ms, generation_seq, send_token).
 	send_token INTEGER NOT NULL DEFAULT 0 CHECK (send_token >= 0),
 	CHECK ((inflight_update IS NULL) OR send_token > 0),
-	PRIMARY KEY (namespace, table_name, row_id)
+	PRIMARY KEY (namespace, table_name, row_id, column_name)
 ) WITHOUT ROWID, STRICT;
 
 CREATE VIEW replica_cell AS
@@ -272,7 +279,7 @@ CREATE TABLE _authority_cell (
 CREATE UNIQUE INDEX _authority_cell_address
 	ON _authority_cell(namespace, table_name, row_id, column_name);
 
-CREATE TABLE _authority_body (
+CREATE TABLE _authority_doc (
 	namespace TEXT NOT NULL CHECK (length(namespace) > 0 AND instr(namespace, char(0)) = 0),
 	table_name TEXT NOT NULL CHECK (length(table_name) > 0 AND instr(table_name, char(0)) = 0),
 	row_id TEXT NOT NULL CHECK (
@@ -281,14 +288,17 @@ CREATE TABLE _authority_body (
 		row_id GLOB '[A-Za-z0-9]*' AND
 		instr(row_id, char(0)) = 0
 	),
+	column_name TEXT NOT NULL CHECK (
+		column_name GLOB '[A-Za-z]*' AND instr(column_name, char(0)) = 0
+	),
 	generation_ms INTEGER NOT NULL CHECK (generation_ms > 0),
 	generation_seq INTEGER NOT NULL CHECK (generation_seq >= 0),
 	doc_state BLOB NOT NULL,
 	cursor INTEGER NOT NULL,
-	PRIMARY KEY (namespace, table_name, row_id)
+	PRIMARY KEY (namespace, table_name, row_id, column_name)
 ) WITHOUT ROWID, STRICT;
 
-CREATE INDEX _authority_body_cursor ON _authority_body(cursor);
+CREATE INDEX _authority_doc_cursor ON _authority_doc(cursor);
 ```
 
 **The authority repeats every CHECK it can evaluate without parsing a value**,
@@ -363,7 +373,7 @@ first answer.
 **A table's designated body field gets no cell.** It is an ordinary
 `field.string()` by ADR-0207's definition, so the `column_name` CHECK would admit
 it, and admitting it would give one value two homes and two merge rules. The body
-lives only in `_replica_body`, and the projection restores it as a field on the
+lives only in `_replica_doc`, and the projection restores it as a field on the
 way out.
 
 Each metadata singleton carries columns it does not look like it needs: a
@@ -1091,7 +1101,7 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   the scheme is `max(observed)` bounded per cell rather than globally, and that is
   not the absence of propagation.
 - **Every storage figure here uses an 80-character body.** The Yjs plane exists
-  to protect a 40KB document, and at that size `_replica_body` at 196k rows would
+  to protect a 40KB document, and at that size `_replica_doc` at 196k rows would
   be about 7.8 GB and the ratio below would collapse toward 1.0x. The headline is
   measured at the small size and the caveat belongs beside it, not only in prose.
 - **The store costs 2.14x and 1.69x today's whole-row JSON on disk** once the body
@@ -1115,21 +1125,21 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   an all-live figure for the opponent.
 
   The fourth row is the honest total, and no earlier figure in this record
-  contained it: every storage number here was taken with `_replica_body` empty,
+  contained it: every storage number here was taken with `_replica_doc` empty,
   while the opponent carries its prose inline as an ordinary column. At an
   80-character body it adds 0.7% and 2.0%, taking the headline ratio to 2.14x and
   1.69x. It is untested at the 40KB document this record uses to justify the plane
   existing, and moving the body out of the cell relation shrinks that relation by
   almost as much as the body plane costs (27.5 against 28.3 MB, and 135.7 against
   141.9 MB), which is why the net is only +0.7% and +2.0% rather than +16% and
-  +41%, while `_replica_body` itself is 28.3 MB and 141.9 MB. That relation carries 38% overhead at both shapes, from repeating a three-part text key. An earlier
+  +41%, while `_replica_doc` itself is 28.3 MB and 141.9 MB. That relation carries 38% overhead at both shapes, from repeating a three-part text key. An earlier
   draft claimed the cell store was 7.8% *smaller* than the versioned opponent;
   that held only because the opponent it measured stored each version as base64
   inside JSON text, roughly 40 bytes per field for what this schema holds in 18
   binary bytes. Packed fairly, the opponent wins on disk.
 
   **And the first duty is not met for the plane holding most of the bytes.** A
-  body is opaque Yjs V2 binary in `_replica_body.doc_state`, reachable only
+  body is opaque Yjs V2 binary in `_replica_doc.doc_state`, reachable only
   through a join, decodable by nothing in a SQL console, and covered by no view.
   That is 28.3 MB at an 80-character body and a projected 7.8 GB at 40 KB, so the
   legibility this record charges +41% and +25% for is legibility of the cells
@@ -1177,13 +1187,13 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   is clean. Round 11 corrected an overstatement
   by installing an understatement of the same kind, and both terms are stated here
   because neither answers the other's question. An earlier
-  measurement said 2.9 s and 64x, and it joined `_replica_body` before grouping,
+  measurement said 2.9 s and 64x, and it joined `_replica_doc` before grouping,
   which probes once per cell instead of once per row: the exact bias this record
   documents two bullets below for the `_replica_row` opponent, repeated in the arm
   producing its own headline. Grouping first costs 30% less at 12 columns and 13%
   at 3, and the penalty scales with columns per row, which is the signature. Every
   earlier figure in this record, 0.57 s and 16.8x among them, priced a query this
-  record does not decide: no `json_valid` guard, no `_replica_body` join, and no
+  record does not decide: no `json_valid` guard, no `_replica_doc` join, and no
   body render. The render is the term that dominates and no implementation can
   avoid it, because a body is Yjs bytes that no SQL restores: 4.8 to 4.9 and 4.7 microseconds per
   row, **954 to 976 ms and 4670 to 4755 ms** across three runs with control arms within 1%, measured directly with the render switched off in the same loop, which
