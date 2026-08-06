@@ -658,7 +658,7 @@ mutually exclusive states, one with every cell owed and one with none.
 | A strict `>` merge predicate | the authority echoes a won push at its own version | the cell never clears `dirty` and re-pushes every round forever |
 | A single body delivery slot | an acknowledgement clears bytes the authority never received | every edit made during a push round trip is lost permanently, and no version exists that could notice |
 | Range-based set reconciliation as the delivery mechanism | it is a good verifier and a bad courier | finding one changed cell costs a bucket exchange and a per-bucket address list, against one cell for a cursor. The 32 KB and 635 pairs were arithmetic over a bucket count ADR-0213 has since deleted, so the magnitude no longer has a number behind it; the direction is what the refusal rests on |
-| ~~An incremental digest as a verifier, for now~~ **ADOPTED in round 4** | the deferral's two premises are both falsified: the lifetime does not catch a restore, and neither does a cursor regression | the deferral cost three rounds of patches to a mechanism that cannot carry the signal. Price paid: one 8-byte column per side, +63% to +66% on a local write that already pays the row-local floor, 8.3x to 9.1x on a row delete at 12 columns, and +26% to +40% on a body write rising to +27% to +61% at a 40KB document. It answers "are we equal" in 8 bytes. Settled as [ADR-0213](../docs/adr/0213-two-replicas-compare-a-multiset-digest-because-a-cursor-cannot-say-whether-they-agree.md) |
+| ~~An incremental digest as a verifier, for now~~ **ADOPTED in round 4** | the deferral's two premises are both falsified: the lifetime does not catch a restore, and neither does a cursor regression | the deferral cost three rounds of patches to a mechanism that cannot carry the signal. Price paid: one 8-byte column per side, +49% to +66% on a local write that already pays the row-local floor, 8.3x to 9.1x on a row delete at 12 columns, and +26% to +40% on a body write rising to +27% to +61% at a 40KB document. It answers "are we equal" in 8 bytes. Settled as [ADR-0213](../docs/adr/0213-two-replicas-compare-a-multiset-digest-because-a-cursor-cannot-say-whether-they-agree.md) |
 | Renaming `patch` to `set`, and deleting `create` | `create` is the only verb that can reuse an address, and `patch` is already the right name | churn with no measured benefit, and a merge rule that cannot be expressed |
 | Terminal, absorbing row death | it makes an address single-use, against ADR-0206 | a provider-keyed row never returns: 30 reconciler passes at strictly later versions leave it absent |
 | An unconditional cell drop on `absent` | it does not converge | a cell at a dead address is retained, unreadable, until the address is re-created |
@@ -692,6 +692,7 @@ mutually exclusive states, one with every cell owed and one with none.
 | Scanning the cell plane and the body plane as two address sequences under one watermark | a body edited mid-pass sorts behind a cell watermark, is folded as a passed delta, and is derived again when the body scan reaches it | the committed sum counts it twice, which is the permanent false mismatch the recompute exists to remove. One sequence, with a body at `!body` |
 | Recomputing on "the scan covered the full range" rather than "derived every address exactly once" | an adopted watermark can sit BEHIND this replica's own scan, so the range is covered and part of it twice | 80 of 200 addresses derived twice and a permanent false mismatch on that replica until it walks a pass cleanly end to end |
 | Leaving the entry's `\0` delimiter to the address GLOBs | GLOB stops at the first NUL, so no CHECK ever saw one | `row_id "a\0b" + column "title"` and `row_id "a" + column "b\0title"` hash identically, a missed divergence in the detector itself. Closed with `instr(..., char(0)) = 0` on all four components, which costs nothing and refuses no legal address |
+| Quoting a band from whichever runs fit the sentence | five saved runs of one unmodified probe exist, and two consecutive claims used two different subsets of them | the 3-column digest premium was stated as +55% to +57% from two runs; a sixth run lands at +60%, outside the stated ceiling. The honest full-corpus bands are +49% to +66% and +54% to +60%, and +33% to +44% and +29% to +35% folded |
 | An entry that lets a cleared cell contribute no value bytes | a cell holding the empty string contributes zero value bytes too, and the empty string is storable because this record refuses `json_valid` | 1280 collisions in 5440 legal tuples, all one family: the two fold the same entry, the merge's value guard refuses both directions, the projection differs, and both sides read clean forever. Closed with a one-byte `present_tag`, which is the move ADR-0212 had already made one layer down in `version_hash` |
 | Recomputing on a criterion the schema cannot evaluate after a restart | `repair_from` records where a scan reached, not whether it got there contiguously | a restarted pass believes it derived every address once and commits a sum that is not its content. The bit is `repair_from` non-NULL and not the sentinel at open, which costs no column |
 | A refusal that does not carry the authority's current `repair_from` | a refused replica has no legal `from` to send, so the sentinel is its only move | 0 passes complete in 300 rounds with two, three or four replicas repairing at once, the authority never past the first chunk of ten, because the replicas restart each other forever. Adopting the watermark the refusal carries completes in ten rounds |
@@ -783,28 +784,36 @@ replica whose own sum has drifted therefore heals only on a solo pass, at about
 336 MB per attempt. It self-limits, because the replicas that are not drifted stop
 repairing once the authority recomputes, so it is a disclosure rather than a break.
 
-**Round 16 made the checking mechanical, because the remaining defects were
-mine.** Three of round 15's findings were errors introduced while fixing round
-14's, and each was a verification shortcut rather than a design mistake: a grep
-that matched `8.6x` in an unrelated rebuild ratio and adopted it over the correct
-8.87x; a figure DELETED as unsourced because a pass had not walked `rerun/`, where
-it sits; and a variance band attached to a ratio whose own control arm says
-something else. `check-claims.ts` now walks every saved output except
-`superseded/`, extracts every number-with-unit from all three records, and reports
-which files source each one. Its first honest run reported **300 claims, 300 sourced, 0 unsourced**, and that
-figure was wrong three ways, each of which round 16 found: it matched a bare
-decimal substring, so `3.69x` was "sourced" by `73.69583`; it tested for the unit
-per FILE, which is vacuous for units like `s`, `x` and `B` that occur in every log;
-and it sourced claims from provenance reports that merely QUOTE them, which is
-circular. Tightened to standalone numbers, adjacent units, rounding tolerance and
-no audit files, it reports **302 claims, 285 sourced, 14 matched by a bare number
-only, 3 unsourced**, and the residue is formatting variance rather than missing
-provenance: producers print `+9.8 MB` and `199,990 ms` where the regex wants
-`9.8 MB`. A looser check reporting a better number than the stricter one it
-replaced is the same failure as adopting a figure from the wrong file, and it is
-worth recording that the tool built to stop that failure committed it first. It
-still cannot catch the third round-15 error, a band attached to the wrong arm's
-control, which is a reasoning error rather than a lookup.
+**Round 16 built a provenance checker, and round 16 proved it cannot work.** The
+premise was that a figure is sourced when it appears in a saved output. It is not.
+A null control settles it: of 549 figures nobody ever measured, **506 pass**, and
+per unit that is **99 of 99 fabricated percentages, 90 of 90 ratios, 200 of 200
+millisecond values and 100 of 100 byte counts**. Only four-significant-figure MB
+values discriminate at all. Every count the tool has printed is withdrawn:
+300/300/0 was wrong three ways (bare substrings, a per-file unit test vacuous for
+`s`, `x` and `B`, and sourcing from provenance reports that merely quote a claim),
+and the tightened 285/14/3 is an artifact of which audit files happened to be in
+the directory when it ran, moving to **197/91/15** once that round's own audits are
+excluded. The regex is no better: it captures 370 numeric tokens and misses 857,
+including **both denominators of the sentence it was built to protect**, and its
+withdrawal skip exempts 31 live claims, among them the whole wire table row.
+
+The root cause is not tuning. **A figure's producer is a probe, an arm and a
+configuration, not a digit string.** `1968.65` under arm `PGBg` and `1969.23` under
+arm `PGBs` sit one keystroke apart in the corpus and mean opposite things, one
+being the decided query and the other the arm that replaces the Yjs render with a
+byte copy, which this record spends a paragraph forbidding. Nothing mechanical
+separates them. The wire figure makes the same point from the other side: `121 B`
+has exactly one producer, and it prints `"one_field_cell_bytes":121`, a JSON key
+with no unit anywhere near it, so a stricter matcher calls the true figure
+unsourced and a looser one accepts a hundred coincidences.
+
+What would actually work is inline provenance: each figure in these records
+carrying its producing file and arm beside it, so the claim names its source
+instead of a grep guessing. That is a rewrite of how the records cite, not a
+script, and it is the honest next step rather than a sixth tightening pass.
+`check-claims.ts` stays in the harness as a **coverage smoke test only**, useful
+for spotting a figure that appears nowhere at all, and its counts are not evidence.
 
 **Round 15 repaired the harness instead of counting it again.** Thirteen probes are retired to `superseded/` with a README. Eleven name
 `_replica_digest` or `repair_epoch`, artifacts the design deleted, so they cannot

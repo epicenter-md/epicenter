@@ -1190,8 +1190,8 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   content fingerprints, which is how the mismatch was finally caught. Priced with
   the body plane on both sides, the arms fingerprint identically and the whole
   rebuild costs 1.76x and 1.31x. The body plane costs the opponent 1136 ms and
-  5604 ms, and is 54% and 74% of the cell store's own rebuild, both terms from one run. Five saved runs of the decided query exist and span about 10% at 12 columns
-  (1969, 1990, 2082, 2095, 2168 ms); the cell arms repeat within about 3% inside a run, and 1.76x's own denominator
+  5604 ms, and is 54% and 74% of the cell store's own rebuild, both terms from one run. Eight saved runs of the decided query exist and span about 10% at 12 columns
+  (1969, 1990, 2067, 2082, 2088, 2095, 2095, 2168 ms); the cell arms repeat within about 3% inside a run, and 1.76x's own denominator
   `RJY` has a control of 0.5%, -0.5% and -0.9% across three runs, which puts that
   ratio's honest band at roughly **1.7x to 1.8x** (measured 1.76, 1.73, 1.74). The
   -15.4% to +11.9% control belongs to the no-body whole-row arm, which is the denominator of the layout term above and not of this one, so the
