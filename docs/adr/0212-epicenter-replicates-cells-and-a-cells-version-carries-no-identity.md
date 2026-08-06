@@ -370,11 +370,14 @@ settle it, and it should be settled before this one is Accepted. Note that the
 projection cost below is derived from the body render, so it is conditional on the
 first answer.
 
-**A table's designated body field gets no cell.** It is an ordinary
-`field.string()` by ADR-0207's definition, so the `column_name` CHECK would admit
-it, and admitting it would give one value two homes and two merge rules. The body
-lives only in `_replica_doc`, and the projection restores it as a field on the
-way out.
+**A column declared `collaborative()` gets no cell.** Its name passes the
+`column_name` CHECK, so nothing in the schema refuses one, and admitting it would
+give one value two homes and two merge rules. A collaborative column lives only in
+`_replica_doc` and the projection restores it as a field on the way out. An
+undeclared column, including a plain markdown body, is an ordinary cell and lives
+only in `_replica_cell`. The invariant is the Lens's to hold, because neither
+table can see the other's rows: a `CHECK` cannot express it and this record does
+not pretend otherwise.
 
 Each metadata singleton carries columns it does not look like it needs: a
 lifetime, a `digest_format` and a `digest_sum` that belong to ADR-0213, and on
@@ -1132,7 +1135,7 @@ unnecessary as separate mechanisms. The lineage question survives, as the author
   existing, and moving the body out of the cell relation shrinks that relation by
   almost as much as the body plane costs (27.5 against 28.3 MB, and 135.7 against
   141.9 MB), which is why the net is only +0.7% and +2.0% rather than +16% and
-  +41%, while `_replica_doc` itself is 28.3 MB and 141.9 MB. That relation carries 38% overhead at both shapes, from repeating a three-part text key. An earlier
+  +41%, while `_replica_doc` itself is 28.3 MB and 141.9 MB. That relation carries 38% overhead at both shapes, from repeating a three-part text key, measured before the doc plane gained its fourth key column and at one document per row. An earlier
   draft claimed the cell store was 7.8% *smaller* than the versioned opponent;
   that held only because the opponent it measured stored each version as base64
   inside JSON text, roughly 40 bytes per field for what this schema holds in 18

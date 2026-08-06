@@ -138,8 +138,10 @@ version at all.
 
 The prose the projection renders fails 3. Both sides fold the same entry, so the
 authority would have to render, which means naming a root; ADR-0135 forbids that,
-one document may hold any number of independently interpreted roots, and "the
-prose" is not well defined across them.
+a root's type is still the application's: Yjs v14 collapses every type into one
+`YType`, so the same root may be a character sequence or a tagged tree, and "the
+prose" is not well defined across those readings. (The which-root leg of this
+argument is gone: a column name is now a root name.)
 
 A canonical re-encode satisfies all four. It never names a root, it contains every
 operation, and Yjs re-encodes deterministically, so two sides that merged the same
@@ -218,8 +220,8 @@ address the scan has already derived but the watermark has not yet passed is
 excluded as not-yet-passed while the scan already counted the old value, and the
 committed sum is permanently wrong.
 
-**And the pass scans both planes as ONE address sequence**, with a body at
-`(namespace, table, row, '!body')`. Atomic chunks alone are not enough: with cells
+**And the pass scans both planes as ONE address sequence**, with a document at
+`(namespace, table, row, column_name)`. Atomic chunks alone are not enough: with cells
 scanned and then bodies, a body edited mid-pass sorts behind a cell watermark, is
 folded as a passed delta, and is then derived again when the body scan reaches it.
 Measured, that commits a sum counted twice, which is the same permanent false
@@ -294,7 +296,7 @@ An entry is the low 8 bytes, big-endian, of
 
 ```txt
 cell:  sha256(ns \0 table \0 row \0 column \0 version_ms \0 version_seq \0 || version_hash || present_tag || value_utf8)
-body:  sha256(ns \0 table \0 row \0 "!body" \0 generation_ms \0 generation_seq \0 || encodeStateAsUpdateV2(load(doc_state)))
+doc:   sha256(ns \0 table \0 row \0 column_name \0 generation_ms \0 generation_seq \0 || encodeStateAsUpdateV2(load(doc_state)))
 ```
 
 where `present_tag` is one byte, `0x00` for a cleared cell and `0x01` for a cell
@@ -405,8 +407,8 @@ and `format_version` is a hard refusal that would stop the exchange entirely.
 - **Subdocuments are invisible to this entry, and to the plane.** A `Y.Doc` is a
   legal value inside a `Y.Map`, and typing into one leaves the parent's
   `doc_state` unchanged, so a subdocument's prose is never delivered, never
-  repaired, and never detected. ADR-0212's body plane has one `doc_state` and two
-  slots per row, all of them the parent's stream, so this is a refusal that has to
+  repaired, and never detected. ADR-0212's collaborative-column plane has one `doc_state` and two slots per
+  collaborative column, all of them the parent's stream, so this is a refusal that has to
   be made at the write door rather than a gap to be closed here.
 - **`clientID` uniqueness is a precondition of the body algebra, not an
   assumption.** Two offline documents that drew the same `clientID` merge to

@@ -21,7 +21,7 @@ still unowned. History lives further down; this is the working copy.
 
 - A **collaborative column** is a column whose merge is Yjs instead of the version
   order. Not "the body": a Lens declares `collaborative()` on any column and a row
-  may carry several. `_replica_doc` becomes `_replica_doc`, keyed by
+  may carry several. `_replica_body` becomes `_replica_doc`, keyed by
   `(namespace, table, row, COLUMN)`. The lifecycle still attaches to the row: the
   key starts with the row, so deleting a row drops every document it owns in one
   range delete against the same primary key prefix, verified against the plan.
@@ -34,11 +34,31 @@ still unowned. History lives further down; this is the working copy.
 - A **plain markdown body is an ordinary cell**, merged last-writer-wins, silently.
   That is the common case and it needs none of the machinery above.
 
-**Closed by the above**
+**NOT closed, and the claim that it was is withdrawn**
 
-- The **ADR-0135 open item**. The conflict was that Epicenter had to name a root
-  and know its type. With one type and a Lens-declared column name, the
-  application names the root and Epicenter interprets nothing. No amendment.
+- The **ADR-0135 open item** was recorded as closed on the strength of one
+  argument: with one `YType` and a Lens-declared column name, the application names
+  the root and Epicenter interprets nothing. That argument holds. What it does not
+  do is close the item, because `collaborative()` collides with two records nobody
+  checked:
+  - **ADR-0130 (Accepted)**: "Every ordinary row inherently owns **one** lazy
+    collaborative document", and it explicitly rejects "Declare a document layout
+    per table". Several documents per row, declared per table, contradicts both.
+    ADR-0130 is not in ADR-0212's Amends list.
+  - **ADR-0168 (Proposed)**: "Tables declare **neither a document nor blob
+    capability**; both exist universally and inertly until the row stores
+    corresponding content." `collaborative()` is a table declaring a document
+    capability.
+  - **ADR-0135** itself reaches a document through `table.document.open(row.id)`.
+    With one document per `(row, column)` that handle no longer addresses a
+    document.
+
+  So the honest position is that keying by column costs nothing in storage and
+  costs **three ADR amendments**, one of them to an Accepted record. That is a
+  materially different price from the one this memo quoted a round ago, and it
+  reopens a question that was answered on incomplete information: whether a row
+  should own exactly one collaborative document after all, which is what ADR-0130
+  and ADR-0168 already decide and what would need no amendment at all.
 
 **Open, and unowned**
 
@@ -705,7 +725,7 @@ mutually exclusive states, one with every cell owed and one with none.
 | A strict `>` merge predicate | the authority echoes a won push at its own version | the cell never clears `dirty` and re-pushes every round forever |
 | A single body delivery slot | an acknowledgement clears bytes the authority never received | every edit made during a push round trip is lost permanently, and no version exists that could notice |
 | Range-based set reconciliation as the delivery mechanism | it is a good verifier and a bad courier | finding one changed cell costs a bucket exchange and a per-bucket address list, against one cell for a cursor. The 32 KB and 635 pairs were arithmetic over a bucket count ADR-0213 has since deleted, so the magnitude no longer has a number behind it; the direction is what the refusal rests on |
-| ~~An incremental digest as a verifier, for now~~ **ADOPTED in round 4** | the deferral's two premises are both falsified: the lifetime does not catch a restore, and neither does a cursor regression | the deferral cost three rounds of patches to a mechanism that cannot carry the signal. Price paid: one 8-byte column per side, +49% to +66% on a local write that already pays the row-local floor, 8.3x to 9.1x on a row delete at 12 columns, and +26% to +40% on a body write rising to +27% to +61% at a 40KB document. It answers "are we equal" in 8 bytes. Settled as [ADR-0213](../docs/adr/0213-two-replicas-compare-a-multiset-digest-because-a-cursor-cannot-say-whether-they-agree.md) |
+| ~~An incremental digest as a verifier, for now~~ **ADOPTED in round 4** | the deferral's two premises are both falsified: the lifetime does not catch a restore, and neither does a cursor regression | the deferral cost three rounds of patches to a mechanism that cannot carry the signal. Price paid: one 8-byte column per side, a median +62% on a local write that already pays the row-local floor, a median 8.3x on a row delete at 12 columns, and +26% to +40% on a body write rising to +27% to +61% at a 40KB document. It answers "are we equal" in 8 bytes. Settled as [ADR-0213](../docs/adr/0213-two-replicas-compare-a-multiset-digest-because-a-cursor-cannot-say-whether-they-agree.md) |
 | Renaming `patch` to `set`, and deleting `create` | `create` is the only verb that can reuse an address, and `patch` is already the right name | churn with no measured benefit, and a merge rule that cannot be expressed |
 | Terminal, absorbing row death | it makes an address single-use, against ADR-0206 | a provider-keyed row never returns: 30 reconciler passes at strictly later versions leave it absent |
 | An unconditional cell drop on `absent` | it does not converge | a cell at a dead address is retained, unreadable, until the address is re-created |
@@ -736,7 +756,7 @@ mutually exclusive states, one with every cell owed and one with none.
 | Letting a replica's repair pass own the authority's accumulator | the pair is one per store and a pass is one per replica, and a multiset sum has no idempotence | two interleaved passes over 200 addresses commit exactly twice the truth; a partial overlap commits a number related to neither. The authority refuses a chunk whose `from` is neither its current watermark nor the sentinel, and a chunk at the sentinel restarts the pass |
 | Reading the floor's `local` term as "the presence this replica holds", full stop | after a clamp-refused create the replica holds the refused version, so the floor is the version just refused | the re-push never terminates: 32 inner rounds, the cell still dirty, the authority holding nothing. The fuzz always excluded a refused presence; the record did not say so |
 | Treating the clamp invariant as unconditional | it holds only while the authority's clock is monotonic | with the clock stepped back an hour, EVERY member of the floor family livelocks, because `local` is never clamped and the held version sits permanently above `A + width`. The clamp reference is now `max(own clock, highest HELD version_ms - width)`, held rather than accepted because R2 and overwrites remove rows |
-| Scanning the cell plane and the body plane as two address sequences under one watermark | a body edited mid-pass sorts behind a cell watermark, is folded as a passed delta, and is derived again when the body scan reaches it | the committed sum counts it twice, which is the permanent false mismatch the recompute exists to remove. One sequence, with a body at `!body` |
+| Scanning the cell plane and the body plane as two address sequences under one watermark | a body edited mid-pass sorts behind a cell watermark, is folded as a passed delta, and is derived again when the body scan reaches it | the committed sum counts it twice, which is the permanent false mismatch the recompute exists to remove. One sequence, with a document at its column name |
 | Recomputing on "the scan covered the full range" rather than "derived every address exactly once" | an adopted watermark can sit BEHIND this replica's own scan, so the range is covered and part of it twice | 80 of 200 addresses derived twice and a permanent false mismatch on that replica until it walks a pass cleanly end to end |
 | Leaving the entry's `\0` delimiter to the address GLOBs | GLOB stops at the first NUL, so no CHECK ever saw one | `row_id "a\0b" + column "title"` and `row_id "a" + column "b\0title"` hash identically, a missed divergence in the detector itself. Closed with `instr(..., char(0)) = 0` on all four components, which costs nothing and refuses no legal address |
 | Quoting a band from whichever runs fit the sentence | six saved runs of one unmodified probe exist, and two consecutive claims used two different subsets of them | the 3-column digest premium was stated as +55% to +57% from two runs; a sixth run lands at +60%, outside the stated ceiling. The honest full-corpus bands are +49% to +66% and +54% to +60%, and +33% to +44% and +29% to +35% folded |
