@@ -12,6 +12,53 @@ Evaluates replacing ordered-patch replication with a generic replicated cell
 store. Verdict first: **take the radical model, with three amendments**, one of
 which is a product win rather than a simplification. Details in section 10.
 
+## Open right now
+
+A live list, rewritten each round, of what is decided but unwritten and what is
+still unowned. History lives further down; this is the working copy.
+
+**Decided this round, not yet in the ADRs**
+
+- A **collaborative column** is a column whose merge is Yjs instead of the version
+  order. Not "the body": a Lens declares `collaborative()` on any column and a row
+  may carry several. `_replica_body` becomes `_replica_doc`, keyed by
+  `(namespace, table, row, COLUMN)`. The lifecycle still attaches to the row: the
+  key starts with the row, so deleting a row drops every document it owns in one
+  range delete against the same primary key prefix, verified against the plan.
+- The **column name is the Yjs root name**. Yjs v14 collapses Text, Array, Map and
+  XmlFragment into one `YType`, and `doc.get(name)` takes no type argument, so a
+  Lens never declares a shape and Epicenter never guesses a root.
+- **`toDelta` is the canonical serialization.** Measured on v14: `applyDelta`
+  round-trips plain text, rich text with marks, attributes and nesting; `toString`
+  loses marks in every case but flat text; `toJSON` has no inverse and is a view.
+- A **plain markdown body is an ordinary cell**, merged last-writer-wins, silently.
+  That is the common case and it needs none of the machinery above.
+
+**Closed by the above**
+
+- The **ADR-0135 open item**. The conflict was that Epicenter had to name a root
+  and know its type. With one type and a Lens-declared column name, the
+  application names the root and Epicenter interprets nothing. No amendment.
+
+**Open, and unowned**
+
+- **The write path for a collaborative column.** Rendering is one-way. Turning an
+  edited string back into Yjs operations needs a diff against the previous text,
+  and nothing in a Lens can supply one. Measured: clear-and-reinsert keeps the text
+  correct and costs only about 2% more bytes, but every character becomes a
+  tombstone, so a concurrent edit from another device merges against deleted
+  content and is lost. This belongs to the editor, and no record says so yet.
+- **What the projection emits for a collaborative column.** The store holds update
+  bytes, which is settled. The projected database should probably carry both a
+  rendered form and the canonical delta, because it is derived and disposable, but
+  nothing has priced it. Delta JSON measured at +7% over raw markdown.
+- **The re-stamp's 4.4% silent loss.** A fourth floor term of the same shape as
+  the second would close it. Priced, not taken.
+- **A replica that never completes a repair pass inside one session never
+  recomputes**, so its own drifted sum is never repaired. Disclosed, not solved.
+- **Inline provenance covers sixteen figure families**; roughly twenty more are
+  attributed only at file granularity in Provenance below.
+
 ## 1. The current replication contract
 
 **Correctness requirements** (what a user would notice if broken):
