@@ -386,17 +386,6 @@ test('an operation from a surface that never opened is refused with 409', async 
 	);
 });
 
-test('a bound handle outside an Epicenter host declines instead of throwing', async () => {
-	const restore = harness.hideHost();
-	try {
-		const { data, error } = await epicenter.data.bind(notesContract);
-		expect(data).toBeNull();
-		expect(error?.name).toBe('HostUnavailable');
-	} finally {
-		restore();
-	}
-});
-
 /**
  * Serve the real host, and make this process look enough like an app window for
  * the published client to run unmodified.
@@ -457,13 +446,7 @@ async function startHost(directory: string) {
 		globalThis,
 		'location',
 	);
-	let hostVisible = true;
-
-	define('window', {
-		get __TAURI_INTERNALS__() {
-			return hostVisible ? {} : undefined;
-		},
-	});
+	define('window', { __TAURI_INTERNALS__: {} });
 	define('location', { origin });
 	define('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
 		const response = await nativeFetch(input, {
@@ -511,12 +494,6 @@ async function startHost(directory: string) {
 				ids.push(row.id);
 			}
 			return ids;
-		},
-		hideHost() {
-			hostVisible = false;
-			return () => {
-				hostVisible = true;
-			};
 		},
 		async dispose() {
 			define('fetch', nativeFetch);

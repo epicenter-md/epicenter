@@ -78,9 +78,7 @@ import {
 	DataErrors,
 	type DataOperationError,
 	type DataReadError,
-	HostErrors,
 } from './errors.js';
-import { hostIsReachable } from './host.js';
 
 /** One classified traversal, grouped. */
 export type TableScan<TDefinition extends TableDefinition> = {
@@ -167,9 +165,8 @@ export type DataNamespace = {
 	/**
 	 * Bind one Lens and wait for its liveness to be established.
 	 *
-	 * Outside an Epicenter host this answers `HostUnavailable`, like every other
-	 * capability here, rather than throwing or handing back a handle that will
-	 * fail on first use.
+	 * A carrier that cannot be opened answers `DataUnavailable` rather than
+	 * throwing or handing back a handle that will fail on first use.
 	 */
 	bind<
 		const TTables extends TableDefinitions,
@@ -361,9 +358,6 @@ async function bind<
 >(
 	lens: Lens<TTables>,
 ): Promise<Result<BoundData<TTables>, BindDataError>> {
-	if (!hostIsReachable()) {
-		return HostErrors.HostUnavailable({ operation: 'data.bind' });
-	}
 	const acquired = await acquireTransport();
 	if (acquired.error !== null) return Err(acquired.error);
 	const transport = acquired.data;

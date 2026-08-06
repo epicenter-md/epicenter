@@ -58,11 +58,9 @@ async function start() {
 	const { data: recording, error } = await epicenter.recording.start();
 	if (error) {
 		// Every reason this can decline, named. The compiler is what makes this
-		// list complete, and it does not include a case for "not on desktop":
-		// that is `HostUnavailable`, like everything else.
+		// list complete, and it has no case for "not on desktop": an installed
+		// app is served by a host and runs nowhere else.
 		switch (error.name) {
-			case 'HostUnavailable':
-				return show('Open this app in Epicenter to record.');
 			case 'CapabilityUnavailable':
 				return show('This app is not allowed to record here.');
 			case 'MicrophoneAccessDenied':
@@ -123,15 +121,11 @@ if (capabilitiesError?.name === 'TranscriptionUnavailable') {
 const { data: notes, error: bindError } =
 	await epicenter.data.bind(notesContract);
 if (bindError) {
-	// Every reason binding can decline, named. There is no case for "not on
-	// desktop": that is `HostUnavailable`, like everything else.
+	// Every reason binding can decline, named, and the compiler is what makes
+	// this list complete. It is two cases rather than four because binding never
+	// crosses Tauri: it opens a same-origin surface, so no grant and no
+	// environment check stands between this app and its data.
 	switch (bindError.name) {
-		case 'HostUnavailable':
-			show('Open this app in Epicenter to keep notes.');
-			break;
-		case 'CapabilityUnavailable':
-			show('This app is not allowed to read data here.');
-			break;
 		case 'DataUnavailable':
 		case 'DataFailed':
 			show(bindError.message);

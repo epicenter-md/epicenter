@@ -8,12 +8,14 @@
  * private global is a worse contract than a published one and would go stale
  * silently.
  *
- * It does *read* that global, for exactly one purpose. `invoke` dereferences
- * `window.__TAURI_INTERNALS__` when called, so its presence is precisely the
- * question "would this call reach a host". Asking it first is what turns a
- * plain browser tab from a thrown `TypeError` into a typed
- * `HostUnavailable`. The read is lazy, so a module imported before the host
- * finishes injecting the global is not permanently poisoned.
+ * It does not probe for that global. An installed app is served by an Epicenter
+ * host and runs nowhere else, so the host is present by construction; a check
+ * asking "is one here" could only ever answer yes, and a check that cannot fail
+ * is worse than no check because it reads as protection. If the global is
+ * somehow absent, `invoke` rejects and the rejection travels the ordinary path
+ * below, landing in the calling capability's own `*Failed` variant with its
+ * cause attached. That is the honest report: something broke, rather than a
+ * claim about which environment this is.
  *
  * # Three kinds of no
  *
@@ -67,27 +69,6 @@ export function isHostRejection(
 }
 
 /**
- * Whether an Epicenter host is reachable from here.
- *
- * `__TAURI_INTERNALS__` is present exactly when this document was served by an
- * Epicenter host, so this one read answers two questions: whether an `invoke`
- * would reach a command, and whether the same-origin data route exists at all.
- * `data.ts` asks the second and reaches this file for the answer, because a
- * second copy of the read is a second place to change if the host ever
- * announces itself differently.
- *
- * The read is lazy, so a module imported before the host finishes injecting the
- * global is not permanently poisoned.
- *
- * @internal
- */
-export function hostIsReachable(): boolean {
-	if (typeof window === 'undefined') return false;
-	const internals = Reflect.get(window, '__TAURI_INTERNALS__');
-	return typeof internals === 'object' && internals !== null;
-}
-
-/**
  * Invoke a host command.
  *
  * @internal
@@ -97,7 +78,6 @@ export async function callHost<T>(
 	command: string,
 	args?: Record<string, unknown>,
 ): Promise<Result<T, HostError | HostRejection>> {
-	if (!hostIsReachable()) return HostErrors.HostUnavailable({ operation });
 	try {
 		return Ok(await invoke<T>(command, args));
 	} catch (rejection) {
@@ -115,7 +95,6 @@ export async function observeHost<TPayload>(
 	event: string,
 	handler: (payload: TPayload) => void,
 ): Promise<Result<() => void, HostError | HostRejection>> {
-	if (!hostIsReachable()) return HostErrors.HostUnavailable({ operation });
 	try {
 		// Two upstream lifecycle facts worth stating, because neither is
 		// fixable from here and both would otherwise look like oversights.
@@ -160,7 +139,6 @@ export async function observeHost<TPayload>(
  * @internal
  */
 export function nudgeHost(command: string, args?: Record<string, unknown>) {
-	if (!hostIsReachable()) return;
 	// `invoke` is async, so every failure arrives as a rejection. Swallowing it
 	// here is the whole contract: this call has no outcome, so there is nowhere
 	// to report to, and leaving it unhandled would surface in a caller's error

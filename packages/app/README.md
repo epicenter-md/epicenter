@@ -63,19 +63,25 @@ values you render, not exceptions you catch.
 The one exception is `transcription.prewarm()`, which returns nothing because
 it has no outcome. It is described below.
 
-## The handle exists everywhere
+## The handle has one shape
 
-The same import works in an ordinary browser tab, in a test, and during a server
-render. There is no `isTauri()`, no optional namespace, no dynamic import
-guard. Outside an Epicenter host, every fallible operation answers a typed
-`HostUnavailable` error, and app code that already handles errors already
-handles that (`prewarm()` does nothing at all, which is the same promise it
-makes everywhere):
+There is no `isTauri()`, no optional namespace, and no dynamic import guard.
+Whether a capability can run right now is a typed `Result`, never a missing
+method.
+
+There is also no browser-tab mode. An installed app is served by an Epicenter
+host and runs nowhere else, so this client does not probe for one and carries no
+"you are not in Epicenter" error. A check that could only ever pass is worse
+than no check, because it reads as protection.
+
+What can still fail is a grant. If the window this app runs in was not given an
+operation, that operation answers `CapabilityUnavailable`, which is a fact about
+the host build rather than about the environment:
 
 ```ts
 const { error } = await epicenter.recording.start();
-if (error?.name === 'HostUnavailable') {
-	show('Open this in Epicenter to record.');
+if (error?.name === 'CapabilityUnavailable') {
+	show('This app is not allowed to record here.');
 }
 ```
 
@@ -232,7 +238,6 @@ Match on `error.name`.
 
 | Name | Meaning |
 | --- | --- |
-| `HostUnavailable` | Not running inside Epicenter. |
 | `CapabilityUnavailable` | Epicenter refused to route the call for this window. |
 | `MicrophoneAccessDenied` | The OS refused microphone access. |
 | `NoMicrophone` | No usable input device. |

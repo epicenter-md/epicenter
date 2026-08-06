@@ -7,13 +7,15 @@
  * const { data: recording, error } = await epicenter.recording.start();
  * ```
  *
- * One handle, the same shape everywhere. An app imports it, uses it, and never
- * asks which platform it is on: whether a capability can run right now is a
- * typed `Result`, not a missing namespace or an optional method. In an ordinary
- * browser tab every fallible operation answers `HostUnavailable`, which is a
- * value an app can render rather than a crash it has to guard. The one
- * operation with no outcome, `transcription.prewarm()`, keeps its promise by
- * doing nothing there, as it does anywhere.
+ * One handle, one shape. An app imports it, uses it, and never asks which
+ * platform it is on: whether a capability can run right now is a typed
+ * `Result`, not a missing namespace or an optional method.
+ *
+ * There is no browser-tab mode. An installed app is served by an Epicenter host
+ * and runs nowhere else, so the host is present by construction and this client
+ * neither probes for it nor carries a variant saying it is missing. A window
+ * that was not granted an operation still answers `CapabilityUnavailable`,
+ * because that is a build fact rather than an environment one.
  *
  * There is no `openEpicenter()`. The handle owns no connection, no session, and
  * no configuration, so there is nothing an opener could do except make every
@@ -64,7 +66,6 @@ export type {
 	DataReadError,
 	DataUnavailable,
 	HostError,
-	HostUnavailable,
 	MicrophoneAccessDenied,
 	ModelLoadFailed,
 	NoMicrophone,

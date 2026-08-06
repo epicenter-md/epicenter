@@ -1,6 +1,5 @@
 /**
- * @fileoverview What the client does when there is no host, and how it reads a
- * host that says no.
+ * @fileoverview How the client reads a host that says no.
  *
  * These drive the real transport rather than a stand-in for it: each test
  * installs the same `window.__TAURI_INTERNALS__` object `@tauri-apps/api`
@@ -37,36 +36,13 @@ afterEach(() => {
 	delete globals.window;
 });
 
-describe('no host', () => {
-	// The whole reason the handle is not optional: an app holds it in a browser
-	// tab, calls it, and gets a value it can render.
-	test('every operation answers HostUnavailable instead of throwing', async () => {
-		const outcomes = await Promise.all([
-			epicenter.recording.start(),
-			epicenter.recording.current(),
-			epicenter.recording.stop('blob_x'),
-			epicenter.recording.cancel('blob_x'),
-			epicenter.recording.onEnded(() => {}),
-			epicenter.transcription.capabilities(),
-			epicenter.transcription.transcribe('blob_x'),
-		]);
-
-		for (const { data, error } of outcomes) {
-			expect(data).toBeNull();
-			expect(error?.name).toBe('HostUnavailable');
-		}
-	});
-
-	// It has no outcome by contract, so the absence of a host has nowhere to be
-	// reported and must not surface as an unhandled rejection either.
+describe('an operation with no outcome', () => {
+	// `prewarm` has no outcome by contract, so a failure has nowhere to be
+	// reported and must not surface as a throw or an unhandled rejection. This
+	// runs with no host installed, which is the harshest version of that: even
+	// the transport failing has to stay silent.
 	test('prewarm is a silent no-op', () => {
 		expect(() => epicenter.transcription.prewarm()).not.toThrow();
-	});
-
-	test('a window without Tauri is not a host', async () => {
-		globals.window = {};
-		const { error } = await epicenter.recording.current();
-		expect(error?.name).toBe('HostUnavailable');
 	});
 });
 

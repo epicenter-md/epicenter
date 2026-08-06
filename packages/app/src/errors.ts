@@ -5,13 +5,14 @@
  * app does is read `error.name`, and each operation below declares exactly the
  * names it can produce.
  *
- * Two of them are about the environment rather than the capability.
- * `HostUnavailable` means the code is running somewhere Epicenter is not: an
- * ordinary browser tab, a test, a server render. `CapabilityUnavailable` means
- * Epicenter is there and refused to route the call at all, which is a wiring
- * fact (this window was not granted the operation) rather than something a user
- * can resolve. Both exist so an app can hold one handle everywhere instead of
- * checking for a platform before every call.
+ * One of them is about the environment rather than the capability.
+ * `CapabilityUnavailable` means Epicenter refused to route the call at all,
+ * which is a wiring fact (this window was not granted the operation) rather
+ * than something a user can resolve.
+ *
+ * There is deliberately no "no host here" variant. An installed app is served
+ * by an Epicenter host and runs nowhere else, so the host is present by
+ * construction and a variant claiming otherwise could never be produced.
  *
  * What is deliberately not here: a variant for a programming bug. An unexpected
  * rejection becomes `RecordingFailed` or `TranscriptionFailed` with its `cause`
@@ -33,17 +34,9 @@ import {
 /** @internal Environment failures shared by every capability. */
 export const HostErrors = defineErrors({
 	/**
-	 * No Epicenter host is present. The same call in an installed Epicenter app
-	 * would have reached the host.
-	 */
-	HostUnavailable: ({ operation }: { operation: string }) => ({
-		message: `Epicenter is not available here, so '${operation}' could not run. This capability needs the Epicenter desktop host.`,
-		operation,
-	}),
-	/**
-	 * Epicenter is present but refused to route the call. The window this app
-	 * runs in was not granted the operation, so no user action resolves it: the
-	 * host build has to grant it.
+	 * Epicenter refused to route the call. The window this app runs in was not
+	 * granted the operation, so no user action resolves it: the host build has to
+	 * grant it.
 	 */
 	CapabilityUnavailable: ({
 		operation,
@@ -59,7 +52,6 @@ export const HostErrors = defineErrors({
 });
 
 export type HostError = InferErrors<typeof HostErrors>;
-export type HostUnavailable = InferError<typeof HostErrors.HostUnavailable>;
 export type CapabilityUnavailable = InferError<
 	typeof HostErrors.CapabilityUnavailable
 >;
@@ -263,8 +255,16 @@ export const DataErrors = defineErrors({
 export type DataUnavailable = InferError<typeof DataErrors.DataUnavailable>;
 export type DataFailed = InferError<typeof DataErrors.DataFailed>;
 
-/** What binding a Lens can decline with. */
-export type BindDataError = HostError | DataUnavailable | DataFailed;
+/**
+ * What binding a Lens can decline with.
+ *
+ * Narrower than the capabilities above by the whole {@link HostError} union,
+ * because binding never crosses Tauri: it opens a same-origin HTTP surface and
+ * an observation carrier, so there is no access-control layer between the app
+ * and the host that could refuse it. A grant this window lacks is not among the
+ * ways this can fail.
+ */
+export type BindDataError = DataUnavailable | DataFailed;
 
 /** What a write, a delete, or a traversal can decline with. */
 export type DataOperationError = DataUnavailable | DataFailed;
